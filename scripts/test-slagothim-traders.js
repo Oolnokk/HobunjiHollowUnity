@@ -25,10 +25,12 @@ function makeZoneLayout() {
   return { cols, rows, tiles, toTownExit: { col: 20, row: 0 }, tradeExit: { col: 20, row: 59, side: 'south' }, buildings: [], dens: [], localeInstances: [] };
 }
 
-function makeHarness({ townValue = 3, season = 'Stormtide' } = {}) {
+function makeHarness({ townValue = 3, season = 'Stormtide', townBuildings = [], marketStations = [] } = {}) {
   const toasts = [];
+  const townZone = { buildings: townBuildings, npcStations: marketStations }; // Active authoring layout queried by caravan pathfinding.
   const window = {
     __farmLog: () => {},
+    TownZoneBuildings: { grassContext: () => ({ getTownZone: () => townZone }) },
     CalendarSystem: { constants: { TARGET_DAY_LENGTH_SECONDS: 672 }, currentSeason: () => ({ name: season }) },
     PorakanekiCamps: { occupiedSites: zoneId => zoneId === CF ? [{ x: 24, y: 40, w: 4, h: 4 }] : [] },
     FishCatalog: { entries: [
@@ -43,6 +45,7 @@ function makeHarness({ townValue = 3, season = 'Stormtide' } = {}) {
   };
   window.window = window;
   const context = vm.createContext(window);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'docs/js/building-subtle-elevation.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'docs/js/town-mine.js'), 'utf8'), context);
   window.TownMine.restore({ townValue });
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'docs/js/slagothim-traders.js'), 'utf8'), context);
@@ -124,6 +127,68 @@ function makeHarness({ townValue = 3, season = 'Stormtide' } = {}) {
   assert.ok(route.every(index => grid.cost[index] >= 0), 'route never crosses blocked tiles');
 }
 
+// ── Authored market and footprint safety ───────────────────────────
+{
+  const building = { gridX: 13, gridZ: 13, footprintW: 5, footprintD: 5 }; // Occupies the old average-of-gates market point.
+  const { T, calendar } = makeHarness({ townBuildings: [building], marketStations: [{ id: 'station_ginju_market_test', col: 22, row: 20 }] });
+  const caravan = T.__test.createCaravan(10);
+  const grid = T.__test.gridForArea('town');
+  for (let row = 13; row < 18; row++) for (let col = 13; col < 18; col++) {
+    assert.equal(grid.cost[row * grid.cols + col], -1, 'every authored building footprint cell is blocked');
+  }
+  const route = T.__test.legRoute(caravan, 1);
+  assert.ok(route, 'a routed approach to the authored market is available');
+  const market = route.points.at(-1);
+  assert.ok(Math.hypot(market.x - 22.5, market.z - 20.5) > 0, 'merchant avoids overlapping the NPC vendor station');
+  assert.ok(Math.hypot(market.x - 22.5, market.z - 20.5) <= 2.5, 'caravan stays within the authored market area');
+  for (let i = 1; i < route.points.length; i++) {
+    const a = route.points[i - 1], b = route.points[i];
+    for (let t = 0; t <= 1; t += 0.1) {
+      const c = Math.floor(a.x + (b.x - a.x) * t), r = Math.floor(a.z + (b.z - a.z) * t);
+      assert.ok(grid.cost[r * grid.cols + c] >= 0, 'town route never clips a building footprint');
+    }
+  }
+  caravan.legIndex = 1;
+  caravan.dist = route.length;
+  caravan.pauseLeft = 1;
+  caravan.members.forEach((_, i) => {
+    const point = T.__test.memberTarget(caravan, i, route, (calendar.day + calendar.time01) * 24);
+    assert.ok(grid.cost[Math.floor(point.z) * grid.cols + Math.floor(point.x)] >= 0, 'stationary trader is outside all buildings');
+    assert.notDeepEqual([Math.floor(point.x), Math.floor(point.z)], [22, 20], 'stationary trader does not overlap the market vendor');
+  });
+  assert.ok(caravan.members.every(member => member.gender === 'male'), 'new caravans contain only male traders');
+  // Starting within a footprint simulates a bad stale walker position. The
+  // runtime steering step must eject it rather than interpolate through walls.
+  caravan._walkers = [{ root: { position: { x: 17.5, y: 0, z: 17.5 } }, applyFacingDeadzone: () => {} }];
+  T.__test.steerWalkers(caravan, 0.001, (calendar.day + calendar.time01) * 24, null);
+  const walked = caravan._walkers[0].root.position;
+  assert.ok(grid.cost[Math.floor(walked.z) * grid.cols + Math.floor(walked.x)] >= 0, 'steering never leaves a walker inside a building');
+}
+
+// ── Rotated footprints and in-place map edits ────────────────────────
+{
+  // In the real town, the rotated Temple and potion shop extend beyond their
+  // original unrotated bounding boxes. Share the building footprint authority.
+  const rotated = { gridX: 13, gridZ: 13, footprintW: 5, footprintD: 3, rotationDeg: 270 };
+  const { T } = makeHarness({ townBuildings: [rotated], marketStations: [{ id: 'market_test', col: 22, row: 20 }] });
+  const before = T.__test.gridForArea('town');
+  assert.equal(before.cost[17 * before.cols + 14], -1, 'rotated building extension cell is blocked');
+  assert.ok(before.cost[14 * before.cols + 17] >= 0, 'unoccupied side of the original bbox stays passable');
+  rotated.gridZ = 15; // Existing Map Editor objects may be updated without replacing the buildings array.
+  const after = T.__test.gridForArea('town');
+  assert.notEqual(after, before, 'in-place building relocation invalidates the cached grid');
+  assert.ok(after.cost[13 * after.cols + 14] >= 0, 'old footprint is unblocked after moving');
+  assert.equal(after.cost[19 * after.cols + 14], -1, 'new rotated footprint is blocked');
+  const { T: shared, window } = makeHarness({ townBuildings: [rotated] });
+  const priorGrid = shared.__test.gridForArea('town');
+  window.BuildingGrassSuppression = { authoredBuildingFootprintKeys: () => new Set(['12,12', '13,12']) };
+  const sharedGrid = shared.__test.gridForArea('town');
+  assert.notEqual(sharedGrid, priorGrid, 'late-loaded footprint authority invalidates prior town grid');
+  assert.equal(sharedGrid.cost[12 * sharedGrid.cols + 12], -1, 'shared footprint includes placement extensions');
+  assert.ok(sharedGrid.cost[19 * sharedGrid.cols + 14] >= 0, 'shared footprint authority wins over the generic rectangular fallback');
+}
+
+
 // ── A full trip: arrival notice, road camp, market, home ────────────
 {
   const { T, toasts, step, calendar } = makeHarness();
@@ -194,6 +259,12 @@ function makeHarness({ townValue = 3, season = 'Stormtide' } = {}) {
   assert.equal(restored.id, caravan.id);
   assert.equal(restored.dist, 12.5);
   assert.deepEqual([...restored.stock], ['Winter Fish×0@66g']);
+  saved.caravans[0].members[0] = { index: 0, gender: 'female', name: 'Old Female', roster: { appearance: { speciesId: 'tletingan', gender: 'female' } } };
+  T.restore(saved);
+  const migrated = T.__test.state.caravans[0].members[0];
+  assert.equal(migrated.gender, 'male', 'female traders in existing saves migrate to male');
+  assert.notEqual(migrated.name, 'Old Female', 'migrated trader name matches male naming');
+  assert.equal(migrated.roster, null, 'female cosmetics are re-rolled for male anatomy');
 }
 
 // ── Dev Companion panel ──────────────────────────────────────────────
@@ -217,5 +288,18 @@ function makeHarness({ townValue = 3, season = 'Stormtide' } = {}) {
   assert.equal(refused.ok, false, 'Go to fails cleanly instead of teleporting within the wrong area');
   assert.equal((await panel.onAction('dismiss', { id: spawned.id })).ok, true);
   assert.equal(T.debugSnapshot().caravans.length, 0, 'dismiss removes it');
+  const { T: traders, window: traderWindow } = makeHarness();
+  let genderOverride = null;
+  traderWindow.BanditCombat = {
+    loadGangConfig: async () => ({}),
+    rollRoster: async (_cfg, _rank, _name, gender) => {
+      genderOverride = gender;
+      return { appearance: { speciesId: 'tletingan', gender }, equippedCosmetics: [], appliedDyes: {} };
+    },
+  };
+  const member = traders.__test.createCaravan(3).members[0];
+  await traders.__test.rollMemberRoster(member);
+  assert.equal(genderOverride, 'male', 'shared bandit clothing generator receives a male-only override');
+  assert.equal(member.roster.appearance.gender, 'male', 'roster never switches a trader to female');
   console.log('slagothim traders: ok');
 })().catch(error => { console.error(error); process.exit(1); });

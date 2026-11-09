@@ -16,6 +16,7 @@
     spearhead_unumanuk: Object.freeze({ name: 'Spearhead', toolKey: 'fishingspear', sprite: 'assets/toolsprites/harpoon_fishingspear.png', stance: 'light', mastery: 5, xp: 300, verdigris: 1 }),
   });
 
+  const activityPose = { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0, bodyYaw: 0, sweep: false, dirSign: 1 }; // Scratch for ToolActivityStages.poseAt.
   const states = new Set(); // Managed live walkers, iterable for cleanup/debug.
   const stateByWalker = new WeakMap(); // Prevents duplicate update wrappers.
   const claimedRigs = new WeakMap(); // Per-hand ownership so walk/idle fallback cannot overwrite a held right hand.
@@ -102,7 +103,7 @@
 
   function ensureBodyYawWrapper(state) {
     const three = T(), walker = state?.walker, rig = rigFor(walker);
-    const body = rig?.parent, root = walker?.root;
+    const body = avatarRootFor(walker)?.userData?.proceduralBodyRoot || rig?.parent, root = walker?.root; // Mounted hands and torso must turn together while the lower body keeps its own deadzone.
     if (!three || !body || !root || body === root || !body.parent) return null;
     if (state.bodyYaw?.body === body && body.parent === state.bodyYaw.wrapper) return state.bodyYaw;
     if (state.bodyYaw) disposeBodyYawWrapper(state);
@@ -146,6 +147,10 @@
 
   function setHolderPose(state, holder, pose) {
     const three = T(), walker = state?.walker, rig = rigFor(walker);
+    if (walker?.root) {
+      walker.root.userData = walker.root.userData || {};
+      walker.root.userData.hobunjiXrayActorRoot = true; // Held equipment shares this walker's authoritative standing elevation during terrain-depth replay.
+    }
     const separatedBodyYaw = applyBodyYaw(state, pose?.bodyYaw); // Mirrors WeaponIdleBodyYawRuntime instead of baking bodyYaw into the item.
     const sourceParent = rig?.parent || walker?.root;
     const holderParent = holder?.parent || walker?.root;
@@ -158,21 +163,23 @@
     holderParent.updateWorldMatrix?.(true, false);
     const avatar = avatarRootFor(walker); // Supplies cached identity, portrait height and weapon-orbit metadata.
     const armLength = Number(avatar?.userData?.armLength);
-    const poseOrbitScale = Number(avatar?.userData?.poseOrbitScale);
+    const poseOrbitScale = avatar?.userData?.poseOrbitAxes ?? Number(avatar?.userData?.poseOrbitScale); // Per-axis { x, y, z } when the species authored one.
     const speciesId = avatar?.userData?.speciesId || walker?.rec?.appearance?.speciesId || walker?.rec?.species || null; // Used by shared authored-Y height mapping.
     const gender = avatar?.userData?.gender || walker?.rec?.appearance?.gender || walker?.rec?.gender || 'male';
     const modelHeight = Number(avatar?.userData?.portraitModelHeight) || Number(walker?.avatarHeight) || .9;
     const scaler = window.HobunjiSpeciesPoseScale;
-    const scale = scaler?.scaleForPose?.(poseOrbitScale, armLength) ?? 1;
+    const orbitAxes = scaler?.axesForPose?.(poseOrbitScale, armLength) ?? { x: 1, y: 1, z: 1 };
     // sourceParent already contains any CharacterRigScale parent scale. Passing
     // rigScaleY=1 below avoids applying that body scale twice; the world-space
     // authored delta already carries the target rigScaleY once through the hierarchy.
     const height = scaler?.heightMetrics?.(speciesId, gender, modelHeight, 1) || null;
-    const needsPoseMap = Math.abs(scale - 1) > 1e-9 || Math.abs((height?.heightRatio ?? 1) - 1) > 1e-9;
+    const spine = avatar?.userData?.hobunjiSpine || null; // Hunched elders swing about lowered shoulders (js/character-spine.js).
+    const needsPoseMap = !!spine || Math.abs(orbitAxes.x - 1) > 1e-9 || Math.abs(orbitAxes.y - 1) > 1e-9 || Math.abs(orbitAxes.z - 1) > 1e-9 || Math.abs((height?.heightRatio ?? 1) - 1) > 1e-9;
     if (sourceParent === holderParent && !needsPoseMap) {
       holder.position.copy(p); // Preserve the exact identity path without unnecessary world/local round-trips.
       holder.quaternion.copy(q);
     } else {
+      const sourceWorldQ = sourceParent.getWorldQuaternion(new three.Quaternion()); // Rig parent's world rotation: orients the pose and gives the orbit frame's yaw.
       const worldP = sourceParent.localToWorld(p.clone()); // Finished point after the character hierarchy has contributed its real body scale once.
       if (avatar && needsPoseMap) {
         avatar.updateWorldMatrix?.(true, false);
@@ -182,19 +189,23 @@
           Number(avatar.userData?.visualCentroidLocalZ) || 0,
         );
         const centroid = avatar.localToWorld(centroidLocal); // Horizontal X/Z orbit center in world space.
+        // The pose is authored in the rig parent's frame; per-axis orbits scale its lateral/forward axes. Yaw of the
+        // frame's +Z axis, read straight off the quaternion so no extra vector is allocated.
+        const poseYawRad = Math.atan2(2 * (sourceWorldQ.x * sourceWorldQ.z + sourceWorldQ.w * sourceWorldQ.y), 1 - 2 * (sourceWorldQ.x * sourceWorldQ.x + sourceWorldQ.y * sourceWorldQ.y));
         const baseWorld = sourceParent.localToWorld(new three.Vector3(anchor.x, anchor.y, 0)); // Actual already-scaled raw hand base.
         const floorWorld = sourceParent.localToWorld(new three.Vector3(0, 0, 0)); // Actual already-scaled character floor.
         if (scaler?.transformPosePoint) {
           scaler.transformPosePoint(worldP, {
             cx: centroid.x, cz: centroid.z, floorY: floorWorld.y, baseY: baseWorld.y,
             speciesId, gender, modelHeight, rigScaleY: 1,
-            armLength, poseOrbitScale,
+            armLength, poseOrbitScale, yawRad: poseYawRad,
+            orbitOffset: spine ? window.HobunjiCharacterSpine?.orbitOffsetWorld(spine, sourceParent.localToWorld(new three.Vector3(1, 0, 0)).sub(floorWorld).length(), sourceParent.localToWorld(new three.Vector3(0, 1, 0)).y - floorWorld.y) || null : null, // sourceParent already carries the body scale, so measure its world X and Y units.
           });
         } else {
-          scaler?.scalePointAroundCentroid?.(worldP, centroid.x, centroid.y, centroid.z, armLength, poseOrbitScale);
+          scaler?.scalePointAroundCentroid?.(worldP, centroid.x, centroid.y, centroid.z, armLength, poseOrbitScale, poseYawRad);
         }
       }
-      const worldQ = sourceParent.getWorldQuaternion(new three.Quaternion()).multiply(q);
+      const worldQ = sourceWorldQ.multiply(q); // After the orbit's yaw above has been read from it.
       const parentQ = holderParent.getWorldQuaternion(new three.Quaternion()).invert();
       holder.position.copy(holderParent.worldToLocal(worldP));
       holder.quaternion.copy(parentQ.multiply(worldQ));
@@ -347,6 +358,30 @@
     return true;
   }
 
+  // A watchman's free hand holds an INVISIBLE copy of the weapon at the dual-wield offhand stance (js/dual-wield-weapon-visuals.js invisibleOffhandSocket)
+  // instead of the locomotion idle. The NPC owns its own hands, so this claims the left hand and places it exactly like attachPrimaryHand does the right.
+  function attachOffhandIdle(state, walker, holder, key, pose) {
+    if (grips()?.usesLegacyOffhandIdle?.(gripIdentity(walker).speciesId)) return false; // Keep the free arm on its normal NPC locomotion idle for the species exceptions.
+    const visuals = window.HobunjiDualWieldWeaponVisuals, rig = rigFor(walker), hand = handFrame(walker), socket = worldFrame(holder);
+    const plane = findToolPlane(holder), body = avatarRootFor(walker);
+    if (!visuals?.invisibleOffhandSocket || !rig?.placeHandWorld || !hand || !socket || !plane || !body || !pose) return false;
+    const claims = ensureClaims(rig);
+    if (claims) claims.left = 'offhand-idle';
+    const grip = grips()?.offhandPrimaryGripForTool?.(key, 'melee', gripIdentity(walker)) || primaryGrip(key);
+    const gripP = grip.position || {}, gripQ = gripQuaternion(grip), scale = gripScale(key, walker);
+    const target = grips()?.itemPointToHolder?.(key, gripP, 'melee', gripIdentity(walker))
+      || { x: (Number(gripP.x) || 0) * scale, y: (Number(gripP.y) || 0) * scale, z: (Number(gripP.z) || 0) * scale };
+    socket.position.add(new (T().Vector3)(target.x, target.y, target.z).applyQuaternion(socket.quaternion));
+    if (gripQ) socket.quaternion.multiply(gripQ);
+    const ctx = state.offhandCtx || (state.offhandCtx = {});
+    ctx.plane = plane; ctx.holder = holder; ctx.bodyRoot = body; ctx.carriedPose = pose; ctx.offhandPose = null; // The watchman's carried pose IS its stance pose.
+    const off = visuals.invisibleOffhandSocket(ctx, socket);
+    if (off === socket) return false;
+    rig.setSideVisible?.('left', true);
+    rig.placeHandWorld('left', off.position.clone().add(hand.position.clone().applyQuaternion(off.quaternion)), off.quaternion.clone().multiply(hand.quaternion));
+    return true;
+  }
+
   function findToolPlane(root) {
     if (!root) return null;
     if (root.userData?.toolPlane?.isObject3D) return root.userData.toolPlane;
@@ -492,6 +527,19 @@
     return !!state.walker?.area && state.walker.area !== area;
   }
 
+  // A watchman holds its weapon in the Light/Heavy idle stance, so it rests at the stance's idle body sink like the player and enemies
+  // (js/actor-body-sink.js). The NPC's body is its floor-anchored rig root, scaled by the species rig scale, which the legs live under.
+  function applyWatchmanSink(state, walker, pose) {
+    const sink = window.ActorBodySink;
+    if (!sink?.enabled() || !walker?.legs) return;
+    if (!state.sinkActor) {
+      const rigRoot = walker.root?.getObjectByName?.('npc_character_rig_root');
+      if (!rigRoot) return;
+      state.sinkActor = { legs: walker.legs, lower: [{ obj: rigRoot, factor: () => rigRoot.scale?.y || 1 }] };
+    }
+    sink.apply(state.sinkActor, window.SharedAttackPose?.idleBodySinkPct?.() ?? 0, Number(pose?.bodyYaw) || 0, false);
+  }
+
   function updateState(state) {
     const walker = state.walker;
     state.lastUpdateAt = performance.now();
@@ -508,14 +556,17 @@
       if (parent && state.holder.parent !== parent) parent.add(state.holder);
       const pose = watchmanPose(loadout);
       if (pose) setHolderPose(state, state.holder, pose);
+      applyWatchmanSink(state, walker, pose);
       state.holder.visible = walker?.root?.visible !== false;
       applyGripScale(state.holder.userData?.npcGripVisualV4, loadout.toolKey, walker);
       state.handsAttached = attachPrimaryHand(walker, state.holder, loadout.toolKey, `watchman:${loadout.toolKey}`);
+      attachOffhandIdle(state, walker, state.holder, loadout.toolKey, pose); // The free hand holds an invisible tool at the dual-wield offhand pose.
       state.mode = 'watchman'; state.key = loadout.toolKey; state.loadout = loadout;
       return;
     }
 
     state.loadout = null;
+    if (state.sinkActor) window.ActorBodySink?.release(state.sinkActor); // Off watch: stand up again.
     if (state.holder) state.holder.visible = false; // An existing outdoor holder must disappear immediately on interior entry.
     const target = walker?.currentScheduleTarget || null;
     const key = normalizeToolKey(target?.toolKey || walker?.stationToolKey);
@@ -526,6 +577,26 @@
       return;
     }
     stationVisual(walker.stationToolMesh, key, walker);
+    const activity = target?.toolActivity && window.ToolActivityStages?.ACTIVITIES?.[target.toolActivity] ? target.toolActivity : null;
+    if (activity) {
+      // Chop / mine / dig / fish: the player's own stage timeline and pose math (js/tool-activity-stages.js).
+      const now = performance.now();
+      if (state.activity !== activity) { state.activity = activity; state.activityClockS = 0; state.activityAt = now; }
+      state.activityClockS += Math.min(0.1, Math.max(0, (now - state.activityAt) / 1000));
+      state.activityAt = now;
+      const pose = window.ToolActivityStages.poseAt(activity, state.activityClockS, activityPose, Number(target.toolSpeed) || 1);
+      if (pose) {
+        setHolderPose(state, walker.stationToolMesh, pose);
+        const plane = walker.stationToolMesh.userData?.toolPlane;
+        if (plane) plane.rotation.z = pose.sweep ? -Math.PI / 2 : 0; // Same sweep-blade twist the player's updateToolMesh applies.
+        const visual = walker.stationToolMesh.userData?.npcGripVisualV4;
+        if (visual) visual.scale.x = Math.abs(visual.scale.x) * (pose.dirSign < 0 ? -1 : 1); // Backhand mirrors the whole tool.
+        state.mode = `station-${activity}`;
+        state.handsAttached = attachPrimaryHand(walker, walker.stationToolMesh, key, `station:${activity}`);
+        state.key = key;
+        return;
+      }
+    } else state.activity = null;
     if (key === 'hoe') {
       const interval = Math.max(.2, Number(target?.toolIntervalSec) || 2);
       const actionTime = Math.max(0, Number(walker.stationToolT) || 0);

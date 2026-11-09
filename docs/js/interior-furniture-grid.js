@@ -122,8 +122,19 @@
     };
   }
 
-  function occupiedTiles(piece) {
-    if (!piece) return [];
+  function isValidTableAttachment(piece, furniture) {
+    if (!piece?.tableAttachment || !piece.tableId || !Array.isArray(furniture)) return false;
+    const childKey = String(piece.itemKey || piece.key || '');
+    if (!/chair|bench|stool/i.test(childKey)) return false;
+    const table = furniture.find(item => item && item !== piece && String(item.id) === String(piece.tableId));
+    if (!table || !/table|desk|counter/i.test(table.itemKey || table.key || '')) return false;
+    const requiredMode = /round/i.test(table.itemKey || table.key || '') ? 'orbit' : 'edge';
+    return piece.tableAttachment.mode === requiredMode
+      && (requiredMode === 'orbit' || ['front', 'back', 'left', 'right'].includes(piece.tableAttachment.side));
+  }
+
+  function occupiedTiles(piece, furniture = null) {
+    if (!piece || (piece.tableAttachment && (!furniture || isValidTableAttachment(piece, furniture)))) return [];
     const info = placement(piece);
     const col = Math.round(finiteNumber(piece.col, 0));
     const row = Math.round(finiteNumber(piece.row, 0));
@@ -159,7 +170,7 @@
     const manualCount = out.length;
     for (const piece of (Array.isArray(furniture) ? furniture : [])) {
       if (!providesCollision(piece) || isDynamicMechanism(piece)) continue; // Dynamic furniture owns these exact tiles through FurniturePuzzleRuntime instead of baking permanent colliders.
-      for (const [col, row] of occupiedTiles(piece)) {
+      for (const [col, row] of occupiedTiles(piece, furniture)) { // Broken links regain their physical grid collider instead of creating ghost walk-through chairs.
         const key = `${col},${row}`;
         if (seen.has(key)) continue;
         seen.add(key);
@@ -248,6 +259,7 @@
     gridScale,
     legacyRecordFor,
     occupiedTiles,
+    isValidTableAttachment,
     providesCollision,
     isDynamicMechanism,
     mergedColliders,

@@ -117,7 +117,7 @@
       const stillFelled = [];
       let regrewAny = false;
       for (const entry of entries) {
-        if (deps.calendar.day - entry.feltDay < deps.TREE_REGROWTH_DAYS) { stillFelled.push(entry); continue; }
+        if (deps.calendar.day - entry.feltDay < (entry.regrowDays || deps.TREE_REGROWTH_DAYS)) { stillFelled.push(entry); continue; } // Collapsed hive stumps carry their own, longer regrowDays.
         if (zi.grid?.[entry.row]?.[entry.col]) zi.grid[entry.row][entry.col].type = deps.TileType.SHRUB;
         regrewAny = true;
       }

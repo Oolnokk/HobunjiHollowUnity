@@ -9,7 +9,7 @@ const vm = require('node:vm');
 const root = path.resolve(__dirname, '..');
 const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 const socialSource = read('docs/js/npc-social-relationship-bridge-v2.js');
-const wardrobeSource = read('docs/js/npc-furniture-wardrobe-bridge-v4.js'); // v4 is the version combat-config-loader.js actually boots.
+const wardrobeSource = read('docs/js/npc-furniture-wardrobe-bridge-v5.js'); // Shipped wardrobe adapter uses physical furniture targeting.
 const wardrobeEditorSource = read('docs/js/building-interior-npc-wardrobe-editor.js');
 const dialogueSource = read('docs/js/dialogue-content.js');
 const dialogueEditorState = read('docs/tools/dialogue-editor/dialogue-editor-state.js');
@@ -26,7 +26,7 @@ assert.match(socialSource, /eventDriven:\s*true/, 'Rapport v2 identifies its eve
 assert.match(wardrobeSource, /eventDriven:\s*true/, 'wardrobe v2 identifies its event-driven runtime');
 assert.match(socialSource, /effectiveInhibition/, 'liquor gating reads the real inhibition runtime result field');
 assert.match(socialSource, /mod\?\.key === 'player-dance-invitation'/, 'liquor gating reads the real inhibition modifier key');
-assert.match(loaderSource, /npc-furniture-wardrobe-bridge-v4\.js[\s\S]*?npc-social-relationship-bridge-v2\.js/, 'bootstrap loads registry-backed wardrobe v4 before event-driven Rapport v2');
+assert.match(loaderSource, /npc-furniture-wardrobe-bridge-v5\.js[\s\S]*?npc-social-relationship-bridge-v2\.js/, 'bootstrap loads furniture-targeted wardrobe v5 before event-driven Rapport v2');
 assert.doesNotMatch(loaderSource, /npc-furniture-wardrobe-bridge\.js\?v=/, 'bootstrap no longer executes polling wardrobe v1');
 assert.doesNotMatch(loaderSource, /npc-social-relationship-bridge\.js\?v=/, 'bootstrap no longer executes polling Rapport v1');
 
@@ -191,30 +191,18 @@ assert.match(wardrobeEditorSource, /other === piece[\s\S]*?delete other\[METADAT
 assert.match(panelUiSource, /building-interior-author[\s\S]*?building-interior-npc-wardrobe-editor\.js/, 'Interior Author loads the wardrobe assignment extension');
 
 const wardrobeWindow = {
-  SCRATCHBONES_CONFIG: { game: { input: { targeting: { orbitRadiusTiles: 0.62 } } } },
+  SCRATCHBONES_CONFIG: { game: {} },
   NpcWardrobe: { openWardrobePanel() { return true; } },
-  __hobunjiFurnitureDebug: { getCurrentArea: () => 'map_i_test_house', playerState: { x: (4.5 - 0.62) * 64, y: 2.5 * 64 }, targetAimAngleDeg: 0 },
-  matchMedia: () => ({ matches: false }),
-};
-const documentStub = { readyState: 'complete', documentElement: { dataset: {} }, body: { dataset: {} }, getElementById() { return null; }, addEventListener() {} };
-class MutationObserverStub { observe() {} }
-vm.runInNewContext(wardrobeSource, {
-  window: wardrobeWindow,
-  document: documentStub,
-  MutationObserver: MutationObserverStub,
-  fetch: async () => ({ ok: false, status: 404, json: async () => ({}) }),
-  queueMicrotask(fn) { fn(); },
-  localStorage: { getItem: () => null },
-  Math,
-  console,
-});
+}; // The wardrobe bridge no longer needs an NPC proxy, DOM prompt observer or fabricated aiming state.
+vm.runInNewContext(wardrobeSource, { window: wardrobeWindow, fetch: async () => ({ ok: false, json: async () => ({}) }), Math, console });
 const furnitureWardrobes = wardrobeWindow.NpcFurnitureWardrobes;
-assert.equal(furnitureWardrobes?.eventDriven, true, 'wardrobe v2 installs without any timer API in its VM');
+assert.equal(furnitureWardrobes?.version, 5, 'furniture-targeted wardrobe v5 is active');
+assert.equal(furnitureWardrobes?.eventDriven, true, 'wardrobes add no permanent timer/poll loop');
 const authoredMap = { cols: 10, rows: 10, furniture: [{ id: 'cabinet_1', itemKey: 'cabinetFurniture', col: 4, row: 2, npcWardrobeFor: 'gorobi_ginju' }, { id: 'chair_1', itemKey: 'chairFurniture', col: 1, row: 1 }] };
-assert.deepEqual(JSON.parse(JSON.stringify(furnitureWardrobes.wardrobeBindings(authoredMap))), [{ id: 'cabinet_1', itemKey: 'cabinetFurniture', col: 4, row: 2, npcId: 'gorobi_ginju', interactionRadiusTiles: 0.82, source: 'authored' }], 'runtime reads instance-level wardrobe metadata');
-assert.equal(furnitureWardrobes.bindingAtTarget(authoredMap)?.npcId, 'gorobi_ginju', 'aimed authored furniture resolves the assigned NPC');
-assert.match(wardrobeSource, /new MutationObserver\(scheduleActionRefresh\)/, 'wardrobe refresh piggybacks existing action-bar mutations');
-assert.match(wardrobeSource, /openWardrobePanel = function furnitureOnlyWardrobePanel/, 'old direct NPC wardrobe entry point is gated through authored furniture');
-assert.match(wardrobeSource, /__npcFurnitureWardrobeDebug/, 'wardrobe targeting remains mobile-debuggable');
+assert.deepEqual(JSON.parse(JSON.stringify(furnitureWardrobes.wardrobeBindings(authoredMap))), [{ id: 'cabinet_1', itemKey: 'cabinetFurniture', col: 4, row: 2, npcId: 'gorobi_ginju', interactionRadiusTiles: 0.82, source: 'authored' }], 'the authored interior still stores furniture-specific wardrobe owners');
+assert.equal(furnitureWardrobes.ownerForPlacement('map_i_test_house', authoredMap.furniture[0])?.npcId, 'gorobi_ginju', 'authored cabinet ownership resolves by furniture record, not approximate aim');
+assert.equal(furnitureWardrobes.ownerForPlacement('map_i_test_house', authoredMap.furniture[1]), null, 'nearby ordinary furniture has no wardrobe prompt');
+assert.doesNotMatch(wardrobeSource, /new MutationObserver/, 'v5 must not replace or hide the native input prompt buttons');
+assert.match(wardrobeSource, /__npcFurnitureWardrobeDebug/, 'physical wardrobe targeting remains mobile-debuggable');
 
 console.log('Event-driven NPC Rapport, social gates, dialogue, and furniture wardrobe regression checks passed.');

@@ -202,7 +202,7 @@
 
   function isClothingInstance(instance) {
     return !!(instance && (instance.colorA || instance.colorB || instance.cosmeticId
-      || ['hat', 'hood', 'pauldron', 'torso', 'overwear', 'pants'].includes(instance.slot)));
+      || ['hat', 'hood', 'mask', 'pauldron', 'torso', 'overwear', 'pants'].includes(instance.slot)));
   }
 
   function colorTraitsForInstance(instance) {

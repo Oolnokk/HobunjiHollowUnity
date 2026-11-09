@@ -43,6 +43,41 @@ vm.runInContext(read('docs/js/color-pools-system.js'), context, { filename: 'col
 const api = context.ColorPoolsSystem;
 assert(api, 'ColorPoolsSystem exports');
 assert.equal(api.stableMaxLevel(), 10, 'Color Pools reads the live refined Stable level cap');
+assert.equal(api.overpassUnlocked(), false, 'unfinished Quest 2 cannot add an overpass');
+assert.equal(api.__test.setOverpassPattern('base', 'overpass'), false, 'direct call cannot bypass quest gate');
+const banubuState = { stage: 2, status: 'active' }; // Uses the real Banubu quest progression state shape.
+context.BanubuQuestline = { ensureQuestState: () => banubuState };
+assert.equal(api.overpassUnlocked(), false, 'accepting the Nine Leaf Tea request is not enough');
+banubuState.stage = 3; banubuState.status = 'blocked';
+assert.equal(api.overpassUnlocked(), true, 'turning in Quest 2 unlocks permanent second-layer paint');
+banubuState.stage = 4; banubuState.status = 'active';
+assert.equal(api.overpassUnlocked(), true, 'reward remains unlocked when later Banubu quests resume');
+banubuState.stage = 3; banubuState.status = 'blocked';
+context.PatternLibrary = { getById: id => ({ motifDataUrl: 'data:image/png;base64,AA==', repoPatternId: id }) };
+api.__test.setLibraryPattern('base', 'primary');
+assert.equal(api.__test.setOverpassPattern('base', 'overpass'), true);
+assert.equal(api.__test.paintPatternStack({ pattern: { repoPatternId: 'primary' }, patterns: [{ repoPatternId: 'primary' }, { repoPatternId: 'overpass' }] })[1].repoPatternId, 'overpass');
+context.DyeSystem = { getById: id => ({ id, hex: id === 'primary-dye' ? '#225588' : '#cc7722' }) }; // Two independently unlocked game dyes.
+api.__test.setDye('base', 'primary-dye');
+api.__test.setOverpassDye('base', 'second-dye');
+const painted = api.__test.cleanDraft().base; // Same canonical paint snapshot written to the Stable genotype on Apply.
+assert.equal(painted.dyeHex, '#225588', 'primary retains its first dye');
+assert.equal(painted.patterns[1].inkColorHex, '#cc7722', 'overpass snapshot stores its independent dye');
+api.__test.setLibraryPattern('base', 'new-primary');
+assert.equal(api.__test.cleanDraft().base.patterns[1].inkColorHex, '#cc7722', 'replacing primary retains its independent overpass dye');
+api.__test.setOverpassPattern('base', '');
+assert.equal(api.__test.cleanDraft().base.patterns.length, 1, 'clearing only overpass leaves first paint intact');
+const previewSource = { dyeHex:'#225588', pattern:{ repoPatternId:'old' }, patterns:[
+  { repoPatternId:'old' }, { repoPatternId:'overpass', inkColorHex:'#cc7722' }
+] }; // Simulates Color Pools' saved two-color paint before opening PatternAuthoring.
+const preview = api.__test.previewPrimaryPatternPaint(previewSource, { repoPatternId:'unsaved-draft' });
+assert.equal(preview.pattern.repoPatternId,'unsaved-draft','legacy primary alias shows the unsaved edit');
+assert.equal(preview.patterns[0].repoPatternId,'unsaved-draft','actual two-slot compositor receives the unsaved primary edit');
+assert.equal(preview.patterns[1].inkColorHex,'#cc7722','editing primary does not erase the overpass color');
+assert.equal(previewSource.patterns[0].repoPatternId,'old','preview never mutates saved paint before Apply');
+
+assert.match(read('docs/js/banubu-questline.js'), /state\.stage = 3;/, 'real Banubu second turn-in owns the saved reward state');
+
 assert.deepEqual(api.eligibleStableAnimals().map(entry => entry.id), ['maxed'], 'only max-level Stable animals are eligible');
 assert.deepEqual(
   JSON.parse(JSON.stringify(api.regionsFor(stable[0]))).map(region => region.id),

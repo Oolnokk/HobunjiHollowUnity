@@ -101,7 +101,7 @@
       || [...configuredBanditShapes].find(shapeKey => originalKey?.startsWith?.(`${shapeKey}_`))
       || null;
 
-    if (opts?.defOverride && Object.prototype.hasOwnProperty.call(opts.defOverride, 'weaponKey')) {
+    if (global.EnemyLoadoutRules?.ruleFor(entity.enemyLoadoutKind)?.weapons || (opts?.defOverride && Object.prototype.hasOwnProperty.call(opts.defOverride, 'weaponKey'))) {
       return { originalKey, finalKey: originalKey, originalShape, finalShape: originalShape, allowed, overridden: true };
     }
     if (!allowed.length || !metalKey || !entity?.def) {
@@ -121,7 +121,7 @@
     entity.def.weaponKey = finalKey;
     entity.def.attackTag = shapeDef?.dmgType || 'sharp';
     const naturalStyle = shapeDef?.comboStyle || shapeDef?.animStyle;
-    if (entity.def.banditAbilityLoadout) entity.def.banditAbilityLoadout.tap1 = naturalStyle === 'thrust' ? 'pokeCombo' : 'swingCombo';
+    if (entity.def.banditAbilityLoadout && !global.EnemyLoadoutRules?.ruleFor(entity.enemyLoadoutKind)?.attacks?.tap1) entity.def.banditAbilityLoadout.tap1 = naturalStyle === 'thrust' ? 'pokeCombo' : 'swingCombo';
     const isSweep = (banditDeps.TOOL_ITEM_DEFS?.[finalKey]?.animStyle || shapeDef?.animStyle) === 'sweep';
     entity._banditSwingAnim = isSweep ? 'sweep' : 'thrust';
     entity._banditSwingPose = isSweep ? global.Combat?.poses?.SWEEP_POSE : null;
@@ -153,7 +153,7 @@
 
   function applyRangedRoll(entity, gangCfg, rank, speciesId, metalKey, opts) {
     const originalKey = entity?.def?.rangedWeaponKey || null;
-    if (opts?.defOverride && Object.prototype.hasOwnProperty.call(opts.defOverride, 'rangedWeaponKey')) {
+    if (global.EnemyLoadoutRules?.ruleFor(entity.enemyLoadoutKind)?.ranged || (opts?.defOverride && Object.prototype.hasOwnProperty.call(opts.defOverride, 'rangedWeaponKey'))) {
       return { originalKey, finalKey: originalKey, weights: null, overridden: true };
     }
     // The base BanditCombat roll already decided whether this rank receives a
@@ -175,7 +175,7 @@
   }
 
   function applyCulturalLoadout(entity, gangCfg, rank, opts) {
-    if (!entity?.isBandit || !entity?.def || entity?.enemyClass === 'minion') return entity; // Minions own their melee/no-ranged loadout and skip bandit cultural substitutions.
+    if (!entity?.isBandit || !entity?.def || entity?.isMinion || entity?.enemyClass === 'minion') return entity; // Minions own their melee/no-ranged loadout and skip bandit cultural substitutions.
     const speciesId = entity.rosterRecord?.appearance?.speciesId || null;
     const metalKey = metalKeyFromWeaponKey(entity.def.weaponKey);
     const melee = applyMeleeRoll(entity, speciesId, metalKey, opts);

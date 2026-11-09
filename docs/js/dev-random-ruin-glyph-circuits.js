@@ -159,9 +159,13 @@
 
   function build(root) {
     clear();
-    const snapshot = window.DevRandomRuinTileOccupancy?.getSnapshot?.();
+    // Cheap bail-outs first: frame() retries build() every rendered frame until a root has circuits, and
+    // getSnapshot() sorts every floor cell (hundreds of ms in a big ruin). Rooms without glyph targets
+    // (the Hachutu temple, any ruin with Projectile glyph targets off) used to pay that sort per frame.
     const source = window.DevRandomRuinHitPuzzles?.getGlyphCircuits?.() || [];
-    if (!snapshot || !source.length || !root.parent) return false;
+    if (!source.length || !root.parent) return false;
+    const snapshot = window.DevRandomRuinTileOccupancy?.getSnapshot?.();
+    if (!snapshot) return false;
     const floor = new Set(snapshot.floor || []);
     const gridBlocked = new Set(snapshot.gridBlocked || []);
     const tex = ensureTextures();
@@ -235,6 +239,23 @@
     const lights = [];
     mount.traverse(node => { if (node.userData?.glowLight) lights.push(node.userData.glowLight); });
     return { materials:[...materials], lights, mount };
+  }
+
+  // A projectile hit can occur between render callbacks (or during a heavy first frame).
+  // Colour the real source decals immediately so a struck target never remains orange
+  // until the next renderer update. The normal circuit frame still owns pulse and flash.
+  function refreshActivatedGlyph(target) {
+    if(!target?.active||!target.object)return false;
+    const decals=glyphDecals(target.object);
+    const hex='#'+new THREE.Color(DECAL_ACTIVE).getHexString();
+    for(const material of decals.materials){
+      material.userData ||= {};
+      material.userData.baseColor=hex;material.userData.activeColor=hex; // V50's next applyProgress must not restore an idle-orange source.
+      material.color?.set(hex);
+      if(material.emissive){material.emissive.setHex(DECAL_ACTIVE).multiplyScalar(.85);material.emissiveIntensity=1;}
+    }
+    for(const light of decals.lights)light.color?.setHex(DECAL_ACTIVE);
+    return decals.materials.length>0;
   }
 
   // Swap V50's placeholder decal meshes for authored ruinGlyphTarget plaques
@@ -375,7 +396,7 @@
 
   window.DevRandomRuinGlyphCircuits = Object.freeze({
     palette:PALETTE,
-    attachRune,
+    attachRune,refreshActivatedGlyph,
     setDebugMarkers,
     getDebugMarkers:() => debugMarkers,
     rebuild:() => { const root = window.DevRandomRuinHitPuzzles?.getRoot?.(); return root ? build(root) : false; },

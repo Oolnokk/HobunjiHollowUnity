@@ -5,7 +5,7 @@
 
   const BUTTON_ID = 'localSaveFolderDebugBtn'; // Settings button used to open the current save diagnostics snapshot.
   const SUMMARY_ID = 'localSaveFolderChangeSummary'; // Small Settings note describing the most recent folder-save UX change.
-  const CHANGE_SUMMARY = 'Latest: incubation travels in world/recovery saves; detached incubators stay accessible from Farm; map changes have a separate recovery slot and saves show their trigger. Existing protections: wilderness treasure meshes are excluded from save JSON, legacy mesh bloat no longer causes false shrink warnings, campfire saves have their own guarded recovery slot separate from pause-menu Manual Save, and unreadable character/world files block folder import instead of disappearing.'; // Human-readable current-change summary requested for mobile testing.
+  const CHANGE_SUMMARY = 'Latest: folder saves capture the live inventory and farm directly before writing disk; a failed browser backup cannot block Manual Save, campfire saves, autosync, Settings Save, or Quit. Explicit saves queue in order and share the cross-tab write lock; browser mirror/bookkeeping failures are secondary warnings. Existing protections: wilderness treasure meshes are excluded from save JSON; unreadable character/world files block folder import; missing-house guards also protect direct capture'; // Human-readable current-change summary requested for mobile testing.
   let scheduled = false; // Coalesces Settings DOM mutations so diagnostics controls are installed only once per frame.
 
   function safeSnapshot(fn) {
@@ -23,6 +23,7 @@
       emptyFolderBootstrap: safeSnapshot(() => window.__hobunjiFolderSaveEmptyBootstrapDebug?.snapshot?.()),
       provenance: safeSnapshot(() => window.__hobunjiFolderSaveProvenanceDebug?.snapshot?.()),
       runtimeFlush: safeSnapshot(() => window.__hobunjiRuntimeSaveDebug?.snapshot?.()),
+      browserQuota: safeSnapshot(() => window.HobunjiStorageQuota?.debugSnapshot?.()),
       quitGuard: safeSnapshot(() => window.__hobunjiFolderSaveQuitDebug?.snapshot?.()),
       creatorHandoff: creatorPatch?.status ? { ...creatorPatch.status } : null,
       page: {

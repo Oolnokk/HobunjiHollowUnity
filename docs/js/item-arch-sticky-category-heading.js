@@ -78,7 +78,6 @@
         display:inline-block !important;
         box-sizing:content-box !important;
         border-radius:0 !important;
-        background:none !important;
         box-shadow:none !important;
         font-size:.78em !important;
         filter:
@@ -86,6 +85,8 @@
           drop-shadow(0 0 5px rgba(var(--item-cat-rgb), .78)) !important;
         z-index:1;
       }
+      /* Emoji reset must not erase item sprites installed as background images. */
+      .arc-slot[data-item-category] .arc-icon:not(.sprited-icon) { background:none !important; }
       .arc-slot[data-item-category] .arc-icon img,
       .arc-slot[data-item-category] .arc-icon canvas,
       .arc-slot[data-item-category] .arc-icon svg {

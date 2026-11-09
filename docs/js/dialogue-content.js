@@ -45,6 +45,7 @@
   let _npcDialogueVisibleCharacters = 0; // Number of plain-text characters revealed by the existing cadence.
   let _npcDialogueTypeUnits = []; // Syllable reveal queue consumed by _setNpcDialogueText().
   const _npcDlgState = new Map(); // npcId → {visitedSeqSlots:{seqId:[slotIdx,...]}, localNickname}
+  const _contextProviders = new Map(); // Event-owned content routed at conversation/greeting time, never per frame.
   const _dialogueTreeProviders = new Map(); // npcId → provider(rec), used by stateful systems that select an authored tree at interaction time.
   const _dialogueActionHandlers = new Map(); // action type → handler(action, context), used to extend choice actions without adding NPC-specific branches here.
   const _dialogueNodeEnterHandlers = new Map(); // npcId → handler(node, context), used by feature-owned world presentation when an authored node becomes current.
@@ -115,8 +116,13 @@
     if (Array.isArray(rec.dialogueLines) && rec.dialogueLines.length) {
       return rec.dialogueLines.flatMap(line => _paginateNpcDialogueText(line));
     }
-    if (rec.bio) return _paginateNpcDialogueText(rec.bio);
-    return _paginateNpcDialogueText('');
+    // Bio and loreBackground are third-person editor notes, never NPC speech.
+    // When no tree is eligible (for example, during a storm), reuse an authored
+    // ordinary line instead of reading the character's backstory aloud.
+    const fallback = (rec.dialogueTrees || []).find(tree => tree.id === `tree_${rec.id}_fallback`); // Used only when the normal tree selector found no eligible conversation.
+    const entry = (fallback?.nodes || []).find(node => node.id === fallback.entryNode); // Used to recover this NPC's existing casual speech pool.
+    const speech = (entry?.type === 'text' || entry?.type === 'line') && typeof entry.text === 'string' ? _resolveTokens(entry.text, rec) : ''; // Resolves authored dialogue in either supported spoken node format, without exposing character notes.
+    return _paginateNpcDialogueText(speech);
   }
 
   function getNpcDlgState(npcId) {
@@ -133,6 +139,7 @@
     _npcDlgState.clear();
     const rels = playerData?.npcRelationships || {};
     for (const [npcId, rel] of Object.entries(rels)) {
+      if (npcId === '__factions') continue; // Member-scoped faction standings are not fake NPCs.
       _npcDlgState.set(npcId, {
         visitedSeqSlots: { ...(rel.visitedSeqSlots || {}) },
         localNickname:   rel.localNickname || null,
@@ -194,66 +201,30 @@
     if (st.memory.length > 50) st.memory.shift();
   }
 
-  // Favor "spillover" — helping (or upsetting) one NPC nudges the people
-  // close to them too, like an informal faction web where an NPC can
-  // belong to more than one circle at once. Two bond types, both derived
-  // straight from data every NPC already has (no new authored relationship
-  // graph needed):
-  //   - household ("familiar"): NPCs sharing the same homeId. Tooth
-  //     Hatayap's homeId is unumanuk_household (she lodges with that
-  //     family as a refugee, despite her own surname) — helping her nudges
-  //     favor with Teacup/Spearhead/Oddclaw/Binding too, and vice versa.
-  //   - workplace ("friendly"): NPCs sharing the same
-  //     scheduleHooks.workBuildingId, when that doesn't already overlap
-  //     with a shared homeId. Hreesh, Jubmir, and Tooth all have
-  //     workBuildingId 'inn' (Tooth waits tables there; Jubmir lodges
-  //     there rent-free as Hreesh's friend) — a second, independent circle
-  //     Tooth belongs to alongside her household one.
-  // A given pair only ever gets the stronger of the two fractions if both
-  // somehow apply (see relatedNpcBonds), and this never affects who counts
-  // as "known" for the Relationships tab (js/relationships-panel.js) or
-  // pops a reward toast — only actually talking to someone does that;
-  // spillover just quietly pre-seeds favor for people you haven't met yet.
-  const HOUSEHOLD_SPILLOVER_FRACTION = 0.25;
-  const WORKPLACE_SPILLOVER_FRACTION = 0.15;
-
+  // Household/workplace ties remain available for NPC seating and social decisions.
+  // Group standing in favor-heart-balance.js has replaced all cross-NPC Favor propagation.
   function relatedNpcBonds(npcId) {
     const records = deps.getNpcRecords?.() || [];
-    const source = records.find(r => r?.id === npcId);
+    const source = records.find(record => record?.id === npcId);
     if (!source) return [];
-    const bonds = new Map(); // relatedNpcId -> strongest applicable fraction
+    const bonds = new Map(); // Seating affinity is a maximum, never additive Favor.
     for (const other of records) {
       if (!other?.id || other.id === npcId) continue;
-      const sameHome = source.homeId && other.homeId === source.homeId;
-      const sameWork = source.scheduleHooks?.workBuildingId && other.scheduleHooks?.workBuildingId === source.scheduleHooks.workBuildingId;
-      if (!sameHome && !sameWork) continue;
-      const fraction = sameHome ? HOUSEHOLD_SPILLOVER_FRACTION : WORKPLACE_SPILLOVER_FRACTION;
-      if (!bonds.has(other.id) || bonds.get(other.id) < fraction) bonds.set(other.id, fraction);
+      const home = source.homeId && other.homeId === source.homeId;
+      const workId = source.workBuildingId || source.scheduleHooks?.workBuildingId; // Top-level workplace IDs and schedule hooks describe the same social link.
+      const work = workId && (other.workBuildingId || other.scheduleHooks?.workBuildingId) === workId;
+      if (home || work) bonds.set(other.id, Math.max(bonds.get(other.id) || 0, home ? .25 : .15));
     }
     return [...bonds.entries()];
   }
-
-  // No gift/relationship-building system exists yet to call this from —
-  // exposed as the entry point that one will use once built.
-  //
-  // _isSpillover is internal only (see relatedNpcBonds above) — a
-  // spillover application never triggers further spillover, so a tightly
-  // interconnected household/workplace can't cascade into a runaway favor
-  // chain reaction.
-  function adjustNpcFavor(npcId, amount, reason, _isSpillover = false) {
-    if (!npcId) return;
-    const st = getNpcDlgState(npcId);
-    if (amount > 0) amount *= window.AlchemySystem?.getPositiveFavorMultiplier?.() || 1; // Love Potion hooks the one favor adjustment path.
-    amount = Math.round(amount * 10) / 10;
-    st.favor = (st.favor || 0) + amount;
-    if (_isSpillover) return; // Quiet: no reward toast, no memory entry (see the header comment above).
-    if (amount) window.WorldPopupText?.queueReward('favor', `${amount > 0 ? '+' : '-'}${Math.abs(amount)} Favor`);
-    recordNpcMemory(npcId, reason || (amount >= 0 ? 'favor_up' : 'favor_down'));
-    if (amount) {
-      for (const [relatedId, fraction] of relatedNpcBonds(npcId)) {
-        adjustNpcFavor(relatedId, amount * fraction, `spillover_${npcId}`, true);
-      }
-    }
+  function adjustNpcFavor(npcId, amount, reason) {
+    if (!npcId || !Number.isFinite(Number(amount))) return 0;
+    const st = getNpcDlgState(npcId); // Used only if the canonical Favor-point module has not installed yet.
+    const applied = Math.round(Number(amount) * (Number(amount) > 0 ? (window.AlchemySystem?.getPositiveFavorMultiplier?.() || 1) : 1) * 10000) / 10000;
+    st.favor = (Number(st.favor) || 0) + applied;
+    if (applied) window.WorldPopupText?.queueReward('favor', (applied > 0 ? '+' : '−') + Math.abs(applied) + ' Favor');
+    recordNpcMemory(npcId, reason || (applied >= 0 ? 'favor_up' : 'favor_down'));
+    return applied;
   }
 
   function _resolveTokens(text, npcRec, _depth = 0) {
@@ -269,7 +240,8 @@
     let fl2v1 = '';
     for (const ch of name) { fl2v1 += ch; if (VOWELS.has(ch)) break; }
     const st    = getNpcDlgState(npcRec?.id);
-    const local = st.localNickname || name;
+    const local = window.CharacterNicknames?.addressPlayer?.(name, npcRec?.id, { favor: st.favor, customNickname: st.localNickname, gender: gen })
+      || window.RomanceSystem?.spouseDialogueFor?.(npcRec?.id)?.nickname || st.localNickname || name; // The same event-time nickname is used in dialogue and ambient greetings.
     let out = text
       .replace(/\{\{npcName\}\}/g,            npcRec?.name || '')
       .replace(/\{\{playerName\}\}/g,          name)
@@ -359,6 +331,23 @@
     if (!npcId || typeof provider !== 'function') return false;
     _dialogueTreeProviders.set(String(npcId), provider);
     return true;
+  }
+
+  function registerContextProvider(id, provider) {
+    if (!id) return false;
+    if (provider) _contextProviders.set(String(id), provider);
+    else _contextProviders.delete(String(id));
+    return true;
+  }
+
+  function contextGreeting(rec, context) {
+    for (const [id, provider] of _contextProviders) {
+      try {
+        const line = provider.greetingFor?.(rec, context);
+        if (line) return line;
+      } catch (error) { console.warn('[npc-dialogue] context greeting failed', id, error); }
+    }
+    return context.standardGreeting;
   }
 
   function registerActionHandler(type, handler) {
@@ -522,7 +511,8 @@
     queuedConversationTrees.set(npcId, tree);
     return true;
   }
-  function _pickDialogueTree(rec) {
+  function _pickDialogueTree(rec, options = {}) {
+    const chatOnly = options.chatOnly === true; // Used by Shop/Chat's Chat action to bypass generated shop menus for this conversation.
     if (queuedConversationTrees.has(rec?.id)) {
       const queued = queuedConversationTrees.get(rec.id); // Delete before playback so reopening cannot trap the player in a script.
       queuedConversationTrees.delete(rec.id);
@@ -544,11 +534,25 @@
     // it to the world's protagonist or to non-owner members respectively;
     // omitted/'any' (the default) is visible to everyone.
     const all = (rec?.dialogueTrees || [])
-      .filter(t => (t.trigger || 'interact') === 'interact' && deps.canAccessContent(t.visibility));
-    if (!all.length) return null;
+      .filter(t => (t.trigger || 'interact') === 'interact' && deps.canAccessContent(t.visibility)
+        && (!chatOnly || !t.generatedFromShopAccess));
     const world = _dlgWorldState(rec);
     const heard = getNpcDlgState(rec?.id).heardTrees || [];
-    const picked = _pickBestEntry(all, world, heard);
+    let picked = _pickBestEntry(all, world, heard);
+    // Keep eligible shops accessible even after their tree was heard and general chat was not:
+    // the shared unheard-first selector must not hide the merchant's Shop option.
+    if (!chatOnly && picked?.id === `tree_${rec?.id}_fallback`) {
+      const shops = all.filter(t => t.generatedFromShopAccess && _dlgEntryEligible(t, world)); // Used only when a fallback would displace a merchant's Shop menu.
+      if (shops.length) picked = _pickBestEntry(shops, world, heard);
+    }
+    for (const [id, context] of _contextProviders) {
+      try {
+        const provided = context.treeFor?.(rec, { world, defaultTree: picked });
+        if (!provided) continue;
+        if (_traceActive()) _dlgTraceSelection = { mode: 'context', source: id, reason: 'Contextual content replaced the normal fallback', world, candidates: [] };
+        return provided;
+      } catch (error) { console.warn('[npc-dialogue] context tree failed', id, rec?.id, error); }
+    }
     if (_traceActive()) _dlgTraceSelection = { mode: 'conditions', source: _npcDatabaseSource(), heard: heard.slice(), ..._explainSelection(all, world, heard, picked) };
     return picked;
   }
@@ -626,6 +630,11 @@
               window.NpcRapport?.adjust?.(_dlgNpcRec?.id, amount, `dialogue_choice:${_dlgTree?.id || 'synthetic'}:${node.id || i}`);
             }
           } else if (act.type === 'openShop') {
+            if (window.FestivalSystem?.shopsClosedFor?.(_dlgNpcRec)) {
+              deps.showToast('The shop is closed during the festival gathering.', false);
+              skipNav = true;
+              return;
+            }
             // `pool` names a WARES_POOLS entry; omitted defaults to the
             // General Store for backward compatibility with any tree
             // authored before pools existed (bare {type:'openShop'}).
@@ -634,6 +643,11 @@
             if (pool) { deps.closeNpcDialogue(); deps.openMenu(pool.menuId); }
             skipNav = true;
           } else if (act.type === 'openCraftMenu') {
+            if (window.FestivalSystem?.shopsClosedFor?.(_dlgNpcRec)) {
+              deps.showToast('The shop is closed during the festival gathering.', false);
+              skipNav = true;
+              return;
+            }
             // Sloomi/Kzubug's smithing counter — craft/plate/reinforce
             // verdigris tools from dug-up metal bars (see
             // renderMetalCraftShopPage). Both smiths offer the identical
@@ -641,7 +655,7 @@
             deps.closeNpcDialogue(); deps.openMenu('metalCraftShop');
             skipNav = true;
           } else if (act.type === 'startChat') {
-            _beginNpcConversation(_dlgNpcRec);
+            _beginNpcConversation(_dlgNpcRec, { chatOnly: true });
             skipNav = true;
           } else if (act.type === 'acceptFavor') {
             deps.setQuestStatus(act.taskId, 'available', {});
@@ -1099,14 +1113,14 @@
     _navigateDlgTo(next || null);
   }
 
-  // Starts the actual conversation content (dialogue tree, or the plain
-  // bio/line fallback) — shared by plain NPCs and by the "Chat" branch
+  // Starts the actual conversation content (dialogue tree, or authored
+  // spoken-line fallback) — shared by plain NPCs and by the "Chat" branch
   // of the merchant shop/chat choice in game.js's openNpcDialogue.
-  function _beginNpcConversation(rec) {
+  function _beginNpcConversation(rec, options = {}) {
     if (rec?.id) _lastNpcRec = rec;
     _dlgTraceSelection = null;
     _dlgTracePools.length = 0;
-    const tree = _pickDialogueTree(rec);
+    const tree = _pickDialogueTree(rec, options);
     if (tree) {
       _markDialogueTreeHeard(rec, tree);
       _dlgTree    = tree;
@@ -1121,7 +1135,7 @@
       hideChoiceButtons();
       _dialogueLines   = _npcDialogueLines(rec);
       _dialogueLineIdx = 0;
-      _traceDialogue('fallback-lines', { node: null, more: { fallbackLines: _dialogueLines.slice(0, 12), note: 'No dialogue tree was eligible, so the NPC record\'s plain bio/lines are shown.' } });
+      _traceDialogue('fallback-lines', { node: null, more: { fallbackLines: _dialogueLines.slice(0, 12), note: 'No dialogue tree was eligible, so authored spoken lines (never bio/lore) are shown.' } });
       _setNpcDialogueText(_dialogueLines[0]);
       updateNpcDialoguePortrait(0);
     }
@@ -1210,7 +1224,10 @@
     npcBaseDispositions: _npcBaseDispositions,
     hasQueuedConversationTree: npcId => queuedConversationTrees.has(npcId),
     queueConversationTree,
+    relatedNpcBonds, // Household/workplace ties for seating only; no cross-NPC Favor changes.
     registerTreeProvider,
+    registerContextProvider,
+    contextGreeting,
     registerActionHandler,
     registerNodeEnterHandler,
   };

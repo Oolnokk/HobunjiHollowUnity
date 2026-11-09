@@ -15,6 +15,7 @@
     cloudforest: 'assets/audio/sfx/bgs/bgs_cloudforest.ogg',
     cloudforestNight: 'assets/audio/sfx/bgs/bgs_cloudforest_night.ogg',
     river: 'assets/audio/sfx/bgs/bgs_river.ogg',
+    cave: 'assets/audio/sfx/bgs/bgs_cave.m4a', // Separate cave loop; never replaces the weather mixer.
   }); // Provides the Ogg Vorbis assets used by each persistent layer.
   const layers = new Map(); // Retains one reusable HTMLAudioElement per ambience layer.
   const debugState = {
@@ -183,6 +184,15 @@
     return area === CLOUD_FOREST_AREA || area === 'map_northern_cliffs' || area === 'map_western_slope' || area === 'map_eastern_mire';
   }
 
+  function isCaveArea(deps, area) {
+    // Mine floors and their safe room, procedural dens and authored cave scenes are distinct from other interiors.
+    if (/^map_i_town_mine_(?:f_|safe)/.test(area)) return true;
+    if (window.WildlifeSpawn?.denCavernZoneOf?.(area)) return true;
+    if (/^map_i_den_/.test(area)) return true; // Also works before den/zone registration on cold load.
+    if (window.CavernGenerator?.isLocaleCavernMapId?.(area)) return true;
+    return ['cavern', 'mine'].includes(deps?.buildingScenes?.get?.(area)?.wallStyle);
+  }
+
   function isNight(deps) {
     const musicAnswer = window.Music?.isNightTime?.(); // Reuses Music's authoritative 19:00-07:00 window when available.
     if (typeof musicAnswer === 'boolean') return musicAnswer;
@@ -287,16 +297,18 @@
     const nightbugsTarget = wildlifeAllowed && night && !inCloudForest ? genericNightbugsVolume : 0; // Routes generic night wildlife everywhere except the dedicated cloud-forest bed.
     const cloudforestTarget = wildlifeAllowed && inCloudForest && !night ? (bgs.cloudforestVolume ?? 0.30) : 0; // Routes the daytime cloud-forest recording only in its biome.
     const cloudforestNightTarget = wildlifeAllowed && inCloudForest && night ? (bgs.cloudforestNightVolume ?? 0.34) : 0; // Routes the night cloud-forest recording only in its biome.
-    const riverTarget = enabled ? riverMix(deps, area, bgs) : 0; // Keeps water proximity independent from rain while honoring the audio master switch.
+    const riverTarget = enabled ? riverMix(deps, area, bgs) : 0; // River proximity stays independent of rain.
+    const caveTarget = enabled && isCaveArea(deps, area) ? (bgs.caveVolume ?? 0.38) : 0; // Plays under muffled weather rather than replacing it.
     setLayerTarget('nightbugs', nightbugsTarget, now);
     setLayerTarget('cloudforest', cloudforestTarget, now);
     setLayerTarget('cloudforestNight', cloudforestNightTarget, now);
     setLayerTarget('river', riverTarget, now);
+    setLayerTarget('cave', caveTarget, now);
 
-    const mixKey = [area, enabled, night, rainy, nightbugsTarget > 0, cloudforestTarget > 0, cloudforestNightTarget > 0, riverTarget > 0].join('|'); // Detects meaningful ambience transitions without logging every timer tick.
+    const mixKey = [area, enabled, night, rainy, nightbugsTarget > 0, cloudforestTarget > 0, cloudforestNightTarget > 0, riverTarget > 0, caveTarget > 0].join('|'); // Detects meaningful ambience transitions without logging every timer tick.
     if (mixKey !== debugState.mixKey) {
       debugState.mixKey = mixKey;
-      log(`mix area=${area || 'none'} night=${night} rain=${rainy} targets bugs=${clamp01(nightbugsTarget).toFixed(2)} forest=${clamp01(cloudforestTarget).toFixed(2)} forestNight=${clamp01(cloudforestNightTarget).toFixed(2)} river=${clamp01(riverTarget).toFixed(2)} scans=${debugState.riverScanCount}`);
+      log(`mix area=${area || 'none'} night=${night} rain=${rainy} targets bugs=${clamp01(nightbugsTarget).toFixed(2)} forest=${clamp01(cloudforestTarget).toFixed(2)} forestNight=${clamp01(cloudforestNightTarget).toFixed(2)} river=${clamp01(riverTarget).toFixed(2)} cave=${clamp01(caveTarget).toFixed(2)} scans=${debugState.riverScanCount}`);
     }
     debugState.area = area;
     debugState.lastUpdateAt = Date.now();

@@ -562,8 +562,26 @@
     list.innerHTML = '';
     const dlgState = window.DialogueContent?.npcDlgState;
     const knownIds = dlgState ? [...dlgState.keys()].filter(id => (dlgState.get(id).memory || []).length > 0) : [];
+    const factions = window.NpcFavorBalance?.factionStandings?.() || []; // Group standings have their own rank; individual friendship is never copied to other members.
+    if (factions.length) {
+      const section = document.createElement('div'); // Renders standing in the existing Relationships tab for mobile/controller players.
+      section.className = 'shop-row relationship-row';
+      const heading = document.createElement('div'); // Labels the group ledger without replacing personal NPC rows.
+      heading.className = 'sh-name';
+      heading.textContent = 'Group Reputation';
+      section.appendChild(heading);
+      for (const group of factions) {
+        const line = document.createElement('div'); // One ranked household, workplace or authored faction.
+        line.className = 'sh-desc';
+        const points = Math.round(group.points * 100) / 100; // UI rounds display only; underlying saved reputation retains precision.
+        line.textContent = group.label + ' · Rank ' + (group.rank > 0 ? '+' : '') + group.rank
+          + ' · ' + points + ' reputation · ×' + group.multiplier.toFixed(2) + ' Favor gains';
+        section.appendChild(line);
+      }
+      list.appendChild(section);
+    }
     if (!knownIds.length) {
-      list.innerHTML = '<div class="delivery-row"><span class="dr-icon">💬</span><span class="dr-name">You haven\'t talked to anyone yet.</span><span class="dr-eta">—</span></div>';
+      if (!factions.length) list.innerHTML = '<div class="delivery-row"><span class="dr-icon">💬</span><span class="dr-name">You haven\'t talked to anyone yet.</span><span class="dr-eta">—</span></div>';
       return;
     }
     knownIds

@@ -373,6 +373,22 @@
           const sel = row.querySelector('.mc-reinforce-select');
           if (sel) reinforceMetalTool(itemKey, sel.value);
         });
+        if (plating?.mode === 'pattern') {
+          window.PatternQuickControls?.mount(row.querySelector('.sh-info') || row, {
+            title: 'Verdigris pattern placement',
+            getPattern: () => {
+              const active = deps.toolPlating(itemKey);
+              return active?.mode === 'pattern' ? (active.pattern || window.PatternLibrary?.getById?.(active.patternLibraryId) || null) : null;
+            },
+            onChange: pattern => {
+              const active = deps.toolPlating(itemKey);
+              if (active?.mode !== 'pattern') return;
+              deps.setToolVerdigrisPattern(itemKey, pattern, active.patternLibraryId || null); // Updates only this owned tool's pattern snapshot; no new plating materials.
+              deps.refreshMetalToolWorldTexture(itemKey);
+              deps.saveMemberWorldData();
+            },
+          });
+        }
         list.appendChild(row);
       });
     }

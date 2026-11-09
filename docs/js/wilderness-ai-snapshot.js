@@ -2,7 +2,8 @@
   'use strict';
 
   // One button dumps a world-wide text snapshot of Porakaneki camp residents
-  // plus the den-, nest-, and roaming-herd wildlife instantiated in the live runtime.
+  // plus the den-, nest-, and roaming-herd wildlife instantiated in the live
+  // runtime, and the active zone's full den and honeyfuzzle-hive lists.
   // Porakaneki camps retain abstract off-radius agents world-wide; wildlife
   // packs do not — WildlifeSpawn materializes them only for the active zone.
   // Keeping those scopes explicit prevents an empty section from being
@@ -20,8 +21,11 @@
 
   const SNAPSHOT_GUIDE = `HOBUNJI WILDERNESS AI SNAPSHOT -- interpretation guide for AI review
 One frozen instant of all Porakaneki camp residents world-wide plus currently instantiated den-, nest-, and roaming-herd wildlife. Porakaneki camps keep abstract off-radius agents, so their section spans all generated wilderness zones. WILDLIFE is different: it reads live hostileObjects entries carrying a denKey, nestTreeKey, or herdKey, and those animals are normally instantiated only for the active zone. Therefore an empty WILDLIFE section does NOT mean every den, nest, or roaming herd world-wide is empty.
-PORAKANEKI header reports runtime=<version> ticks=<planner ticks> owner=<frame owner>. Camp lines include generated=<live abstract residents>/<target residents>; a nonzero target with generated=0 means the planner cadence has not populated that camp yet. Each indented "res#<index>" line is one generated resident. act=<activity> is sleep|hunt-den|wander|socialize|camp|investigate. hunt-den residents share party=<id> and den=<denId>; camp lines expose the active hunting party den and exterior target. pos=(col,row) is the planner position. dist is tile distance to the player when in the active zone. lod<=N is the current materialization threshold: normally the enter radius, or the wider release radius while already live. full=1 means that distance gate currently requests full simulation. mat=1 means a real humanoid entity exists; vis=1 means its mesh is visible; reg=1 means that exact entity is still registered in hostileObjects. state is the shared hostile-loop state. planner=1 means neutral Porakaneki target planning owns its destination while the shared hostile loop owns locomotion/rendering. sim=(x,y) is the live entity position, render=(x,y) is the avatar root position, and rd is their tile-space render delta; a large/stuck rd identifies a simulation/render handoff failure directly.
-WILDLIFE header: activeArea=<area> is the player's current area, instantiatedWildlife=<n> counts live runtime creatures carrying a denKey, nestTreeKey, or herdKey; denCreatures/nestCreatures/herdCreatures split those sources. herdMothers/carriedBabies/sleepingHerdCreatures expose the Voorg-Ass herd state directly, and scope=active-runtime is a reminder that off-zone populations are not represented here. Creature lines report source/species/state/mode/tile/home; Herd-Mothers also report role=Herd-Mother and carriedBabies=<n>.`;
+PORAKANEKI header reports runtime=<version> ticks=<planner ticks> owner=<frame owner>. Camp lines include generated=<live abstract residents>/<target residents>; a nonzero target with generated=0 means the planner cadence has not populated that camp yet. Each indented "res#<index>" line is one generated resident. act=<activity> is sleep|hunt-den|wander|socialize|camp|investigate. hunt-den residents share party=<id> and den=<denId>; camp lines expose each independent hunting party and its own den and exterior target. pos=(col,row) is the planner position. dist is tile distance to the player when in the active zone. lod<=N is the current materialization threshold: normally the enter radius, or the wider release radius while already live. full=1 means that distance gate currently requests full simulation. mat=1 means a real humanoid entity exists; vis=1 means its mesh is visible; reg=1 means that exact entity is still registered in hostileObjects. state is the shared hostile-loop state. planner=1 means neutral Porakaneki target planning owns its destination while the shared hostile loop owns locomotion/rendering. sim=(x,y) is the live entity position, render=(x,y) is the avatar root position, and rd is their tile-space render delta; a large/stuck rd identifies a simulation/render handoff failure directly.
+WILDLIFE header: activeArea=<area> is the player's current area, instantiatedWildlife=<n> counts live runtime creatures carrying a denKey, nestTreeKey, or herdKey; denCreatures/nestCreatures/herdCreatures split those sources. herdMothers/carriedBabies/sleepingHerdCreatures expose the Voorg-Ass herd state directly, and scope=active-runtime is a reminder that off-zone populations are not represented here. Creature lines report source/species/state/mode/tile/home; Herd-Mothers also report role=Herd-Mother and carriedBabies=<n>.
+TZATZUL lists every live Tzatzul / Tzatzul hatchling in hostileObjects, which includes cliff-roost birds, indoor nest mothers and dev-spawned birds. They carry no denKey/nestTreeKey/herdKey so WILDLIFE never shows them. Header: activeArea, tzatzul=<n> birds, hatchlings=<n>, roosts=<area:count,...> real bird spires per cliff zone (only Northern Cliffs and Western Slope have any), flightActive=<birds owned by the cliff flight runtime>. Lines: phase/pose come from the flight runtime (perched, swooping, ...), perched=1 means standing on a perch, captive= is the creature it is carrying. Like WILDLIFE this is active-runtime only, so zero here does NOT mean other zones' spires are empty.
+DENS lists EVERY den anchor in the active zone's layout, occupied or not: species=<assigned den species> (legacy-pool = zone has no denSpecies list), stage=active|ready|cleared|collapsed, alive=<live registered pack members>, everSpawned/pendingRespawn = the wipe/next-day respawn bookkeeping. Den packs only appear in WILDLIFE while alive and instantiated, so use DENS to count caves.
+HIVES lists every honeyfuzzle hive stump in the active zone's layout: standing=0 means harvested/collapsed, swarm=1 means its swarm is out now. Swarms only come out by day and within spawnRadius tiles of the player, and excludedZone=1 (Western Slope) has stumps but no honeyfuzzles.`;
 
   const HANDOFF_GUIDE = `HOBUNJI PORAKANEKI CHUNK HANDOFF TRACE -- interpretation guide
 This is an isolated Wilderness Chunk Lab experiment. SPAWN_ARMED creates only abstract Porakaneki position/chunk data in a chunk the player is not standing in. No humanoid entity exists yet. PLAYER_CHUNK_CHANGED records the real WildernessChunks center as the player walks. TARGET_CHUNK_ENTERED is the handoff trigger. Materialization then uses BanditCombat.makeEntity with speciesWeights forced to Porakaneki, records the raw builder result, neutralizes the entity, and only then publishes it into hostileObjects. POST_PUBLISH_SAMPLE lines compare simulation position to the avatar root at 0/250/1000/2000 ms. renderDelta is measured in tile space; a large or growing value means the live entity and its rendered avatar diverged during the handoff. reputation reports the live Porakaneki faction Favor, attackOnSight state, player-attributed production Porakaneki kill count, and the reputation runtime's lastReason so intended hostility can be distinguished from a handoff bug. avatarInternals drills into the same front/back portrait pivots and assembled textures that a working Testing Arena Porakaneki uses, including child meshes, transforms, material/texture state, and sampled canvas alpha coverage.`;
@@ -242,9 +246,12 @@ This is an isolated Wilderness Chunk Lab experiment. SPAWN_ARMED creates only ab
     for (const [zoneId, zone] of Object.entries(debug.zones || {})) {
       for (const camp of zone.camps || []) {
         const sleeping = camp.hunters.filter(h => h.activity === 'sleep').length;
-        const hunt = camp.huntingParty;
-        const huntBits = hunt ? ` huntParty=${hunt.id} den=${hunt.denId || '-'} huntTarget=${hunt.target ? `(${hunt.target.col},${hunt.target.row})` : '-'} members=${hunt.memberCount}` : '';
-        lines.push(`camp=${zoneId}/${camp.id} kind=${camp.kind} center=(${camp.center.col},${camp.center.row}) generated=${camp.hunters.length}/${camp.residents ?? '-'} sleeping=${sleeping}/${camp.hunters.length}${huntBits}`);
+        const parties = camp.huntingParties || (camp.huntingParty ? [camp.huntingParty] : []); // All separate den parties, including the legacy one-party diagnostic fallback.
+        const ordinary = camp.hunters.filter(h => h.role === 'resident').length; // Excludes extra mounted Avengers from the original hunter headcount.
+        lines.push(`camp=${zoneId}/${camp.id} kind=${camp.kind} center=(${camp.center.col},${camp.center.row}) generated=${ordinary}/${camp.residents ?? '-'} totalActors=${camp.hunters.length} cohorts=${(camp.cohortSizes || []).join(',')} parties=${parties.length} sleeping=${sleeping}/${camp.hunters.length}`);
+        for (const party of parties) {
+          lines.push(`  huntParty=${party.id} cohort=${party.cohortIndex ?? 0} den=${party.denId || '-'} huntTarget=${party.target ? `(${party.target.col},${party.target.row})` : '-'} members=${party.memberCount}`);
+        }
         for (const h of camp.hunters) {
           const dist = h.distanceToPlayer == null ? '-' : h.distanceToPlayer;
           const state = h.entityState || '-';
@@ -294,10 +301,58 @@ This is an isolated Wilderness Chunk Lab experiment. SPAWN_ARMED creates only ab
     if (!wildlife.length) lines.push('(no den-, nest-, or roaming-herd creatures currently instantiated; off-zone populations are not represented in hostileObjects)');
     return lines.join('\n');
   }
+  function tzatzulSection() {
+    const birds = [];
+    for (const c of deps.hostileObjects) {
+      if (c?.creatureKey === 'tzatzul' || c?.creatureKey === 'tzatzul-hatchling') birds.push(c);
+    }
+    const flight = window.TzatzulFlightRuntime?.debugSnapshot?.() || null; // Spire counts and per-bird flight phase from the one flight owner.
+    const phaseById = new Map((flight?.birds || []).map(b => [b.id, b]));
+    const roosts = (flight?.roosts || []).map(r => `${r.area}:${r.count}`).join(',') || '-';
+    const hatchlings = birds.filter(c => c.creatureKey === 'tzatzul-hatchling').length;
+    const lines = [`TZATZUL activeArea=${activeArea()} tzatzul=${birds.length - hatchlings} hatchlings=${hatchlings} roosts=${roosts} flightActive=${flight ? flight.active : '-'} spawnedToday=${flight ? flight.populationKeys : '-'} scope=active-runtime`];
+    for (const c of birds) {
+      const f = c._tzFlight ? phaseById.get(c._tzFlight.identity?.id) : null;
+      const target = f?.target ? ` target=${f.target}` : '';
+      const captive = f?.captive ? ` captive=${f.captive}` : '';
+      lines.push(`id=${c.id} species=${c.creatureKey} area=${c.areaId} state=${c.state} phase=${f?.phase || c._tzFlight?.phase || '-'} pose=${f?.pose || c.tzatzulFlightPose || '-'} perched=${c.onPerch ? 1 : 0} hp=${Math.round(c.health)} tile=(${Math.round(c.x / deps.TILE)},${Math.round(c.y / deps.TILE)})${target}${captive}`);
+    }
+    if (!birds.length) lines.push('(no Tzatzul currently instantiated; off-zone populations are not represented in hostileObjects)');
+    return lines.join('\n');
+  }
+  function denSection() {
+    const dens = window.WildlifeSpawn?.denCensus?.() || [];
+    const bySpecies = {};
+    for (const den of dens) {
+      const kind = den.species || 'legacy-pool';
+      bySpecies[kind] = (bySpecies[kind] || 0) + 1;
+    }
+    const split = Object.entries(bySpecies).map(([kind, n]) => `${kind}:${n}`).join(',') || '-';
+    const lines = [`DENS activeArea=${activeArea()} dens=${dens.length} occupied=${dens.filter(den => den.alive > 0).length} species=[${split}] scope=active-zone-layout`];
+    for (const den of dens) {
+      lines.push(`den=${den.denId} tile=(${den.col},${den.row}) species=${den.species || 'legacy-pool'} stage=${den.stage} alive=${den.alive} everSpawned=${den.everSpawned ? 1 : 0} pendingRespawn=${den.pendingRespawn ? 1 : 0}`);
+    }
+    if (!dens.length) lines.push('(active area has no den anchors in its layout)');
+    return lines.join('\n');
+  }
+
+  function hiveSection() {
+    const census = window.HoneyfuzzleHives?.census?.();
+    if (!census) return `HIVES activeArea=${activeArea()} (HoneyfuzzleHives not loaded)`;
+    const standing = census.hives.filter(h => h.standing).length;
+    const swarms = census.hives.filter(h => h.swarm).length;
+    const lines = [`HIVES activeArea=${census.zoneId} hives=${census.hives.length} standing=${standing} swarmsOut=${swarms} night=${census.night ? 1 : 0} excludedZone=${census.excluded ? 1 : 0} spawnRadius=${census.spawnRadiusTiles} scope=active-zone-layout`];
+    for (const h of census.hives) {
+      lines.push(`hive tile=(${h.col},${h.row}) standing=${h.standing ? 1 : 0} swarm=${h.swarm ? 1 : 0}${h.swarmState ? ` swarmState=${h.swarmState}` : ''}${h.respawnInSeconds != null ? ` respawnIn=${h.respawnInSeconds.toFixed(1)}s` : ''}`);
+    }
+    if (!census.hives.length) lines.push('(active area has no honeyfuzzle hive stumps in its layout)');
+    return lines.join('\n');
+  }
+
   function captureSnapshotText() {
     const hour = Number(window.CalendarSystem?.getHour?.());
     const header = `--- WILDERNESS AI SNAPSHOT t=${new Date().toISOString()} gameHour=${Number.isFinite(hour) ? hour.toFixed(2) : '-'} activeArea=${activeArea()} ---`;
-    return [header, '', porakanekiSection(), '', wildlifeSection()].join('\n');
+    return [header, '', porakanekiSection(), '', wildlifeSection(), '', tzatzulSection(), '', denSection(), '', hiveSection()].join('\n');
   }
 
   async function copySnapshot() {

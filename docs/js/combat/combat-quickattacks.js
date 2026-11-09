@@ -97,14 +97,14 @@
   }
   window.Combat.buildQuickAttack = buildTechnique;
 
-  let WINDUP_S = 0.075;
+  let WINDUP_S = 0.1125;
   let STRIKE_S = 0.105;
   let COST_COMMIT = 60; // Up-front quick-attack commitment; configured by attack-values.json and spent in onTap().
   let CONDITIONAL_REFUND_FRACTION = 0.5; // Fraction of the actual post-modifier spend restored after at least one cooldown-ready conditional proc.
   let BONUS_EFFECT_COOLDOWN_S = 5; // Global default used to gate the stronger conditional package; individual techniques may override with bonusEffectCooldownS.
   let BONUS_EFFECT_POWER_MULTIPLIER = 2; // Multiplies mastery-derived conditional affliction/debuff strength; core bonus damage/knockback stay explicitly authored per technique.
   const bonusCooldownUntilMs = new Map(); // Enemy -> bonus cooldown end. One clock per enemy, shared by every weapon and Quick Attack; read by combat, the opportunity reticle, and mobile diagnostics.
-  let HOLD_S = 1; // post-strike pause before easing back to neutral
+  let HOLD_S = 0.48125; // post-strike pause before easing back to neutral
   // The jab's hit cone (scaled off the shared 'cut' ability's rangePx —
   // see baseAbil below) is intentionally tighter than the forward lunge.
   let RANGE_SCALE = 0.6;
@@ -204,6 +204,7 @@
     function onTap() {
       if (busyAction) return; // previous strike's windup/strike hasn't resolved yet
       const deps = window.Combat.deps;
+      const shapeStats = (window.WeaponShapeStats?.current?.() || { power: 1, speed: 1, range: 1, efficiency: 1 }); // Shared equipped-weapon modifiers for jab cadence and hit geometry.
       // Footing/impact stagger lockout — see combat-combo.js's matching guard.
       if (window.Combat.isStaggered(deps.player)) return;
 
@@ -212,20 +213,20 @@
       // upgrades (see combat-progression.js) — a fresh, unleveled jab deals
       // plain damage with no afflictions at all.
       const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), id) || { afflictions: {}, stats: {} };
-      const requestedCost = COST_COMMIT * (1 + (effects.stats.staminaCostMul || 0)); // Pre-ResourceSystem cost; perks/alchemy may reduce the real spend below this.
+      const requestedCost = (COST_COMMIT * (1 + (effects.stats.staminaCostMul || 0)) / shapeStats.efficiency); // Pre-ResourceSystem cost; perks/alchemy may reduce the real spend below this.
 
       // Never refuses for lack of stamina — overspending pushes into
       // Exhausted instead of blocking the jab (see resource-system.js's
       // spendStamina); Exhausted's reduced speed then slows this jab's own
       // windup/strike down.
-      const spendResult = window.ResourceSystem?.spendStamina(deps.player, requestedCost, def.label) || { spent: 0, excess: 0 };
+      const spendResult = window.ResourceSystem?.spendStamina(deps.player, requestedCost, def.label, { actionKind: 'combatQuickAttack', abilityId: id }) || { spent: 0, excess: 0 };
       const actualCost = round1((Number(spendResult.spent) || 0) + (Number(spendResult.excess) || 0)); // Actual post-perk/alchemy resource commitment used to calculate the conditional refund.
-      const timeScale = 1 / (window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1);
+      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)));
       const windupS = WINDUP_S * timeScale;
       const strikeS = STRIKE_S * timeScale;
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
-      const rangePx = baseAbil.rangePx * def.rangeMul * RANGE_SCALE * (1 + (effects.stats.rangeMul || 0));
-      const halfConeRad = def.halfConeDeg * Math.PI / 180;
+      const rangePx = baseAbil.rangePx * def.rangeMul * RANGE_SCALE * (1 + (effects.stats.rangeMul || 0)) * shapeStats.range;
+      const halfConeRad = Math.min(Math.PI, def.halfConeDeg * Math.PI / 180 * shapeStats.range * (1 + (effects.stats.coneWidthMul || 0)));
       const baseLungePx = deps.TILE * LUNGE_TILE_MUL * (1 + (effects.stats.lungeMul || 0)); // Existing Quick Attack lunge remains the base that Living Gust scales.
       const attackContext = window.CombatAttackEvents?.prepare?.({
         attacker: deps.player,
@@ -246,9 +247,10 @@
       // All quick attacks are aimed jabs — mirror the shovel's straight thrust.
       deps.triggerWeaponSwingVisual(windupS + strikeS, {
         anim: 'thrust',
+        pose: quickAttackPose(), // The editor's Quick Attack template.
         windupFrac: windupS / (windupS + strikeS),
         strikeFrac: 1,
-        holdS: HOLD_S,
+        holdS: HOLD_S / (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)),
         afflictionIds: Object.keys(attackAfflictions),
         afflictions: attackAfflictions,
         coneRangePx: rangePx,
@@ -294,11 +296,12 @@
             const damage = Math.round(baseAbil.damage * hitTech.damageMul * (1 + (effects.stats.damageMul || 0)) * (attackContext.modifiers?.damage || 1));
             const knockbackPxS = baseAbil.knockbackPxS * hitTech.knockbackMul * (attackContext.modifiers?.knockback || 1);
             const healthBefore = Math.max(0, Number(c.health) || 0); // Used to expose actual post-mitigation Health damage including a same-proc Bleedout.
+            const proneEffectMul = window.ResourceSystem?.getProneAttackMultiplier?.(c) ?? 1; // Pre-impact snapshot prevents the first knockdown from powering up its own proc.
             if (conditionBonusUsed) {
               for (const effect of quickBonusInstantEffects) {
                 const effectPower = (Number.isFinite(Number(effect.power)) ? Number(effect.power) : 1) * BONUS_EFFECT_POWER_MULTIPLIER; // Same stronger-bonus tuning and Immundanity scaling used by duration effects.
                 if (effect.id === 'bleedout') {
-                  const requestedBleedout = Math.max(0, (Number(effect.amount) || 0) * effectPower); // Default 6 base × 2 bonus power realizes 12 Bleeding Health.
+                  const requestedBleedout = Math.max(0, (Number(effect.amount) || 0) * effectPower * proneEffectMul); // Instant bonus effects scale with the target's pre-impact prone state.
                   const result = window.ResourceSystem?.bleedOut?.(c, requestedBleedout, { source: `Quick Attack: ${def.label}` }); // Existing Bleeding only; the resource helper clamps to what is actually present.
                   if (result?.consumed > 0) appliedInstantEffects.push({ target: c.id || c.name || c.def?.label || 'enemy', id: effect.id, ...result });
                 }
@@ -317,7 +320,8 @@
             if (conditionBonusUsed && c.health > 0) {
               for (const debuff of quickBonusDebuffs) {
                 const applied = window.ResourceSystem?.applyTimedDebuff?.(c, debuff.id, debuff.durationS, {
-                  power: (Number.isFinite(Number(debuff.power)) ? Number(debuff.power) : 1) * BONUS_EFFECT_POWER_MULTIPLIER,
+                  power: (Number.isFinite(Number(debuff.power)) ? Number(debuff.power) : 1) * (debuff.id === 'knockdown' ? 1 : BONUS_EFFECT_POWER_MULTIPLIER) * proneEffectMul,
+                  fromX: deps.player.x, fromY: deps.player.y, // Full ragdoll launch needs the authentic attacker origin.
                   source: `Quick Attack: ${def.label}`,
                 });
                 if (applied) appliedDebuffs.push({ target: c.id || c.name || c.def?.label || 'enemy', id: debuff.id, durationS: applied.durationS, power: applied.power, stacks: applied.stacks, maxStacks: applied.maxStacks });
@@ -332,6 +336,7 @@
               quickBonusEffectProc: conditionBonusUsed, // Cross-cutting effects such as Flourishes follow the same cooldown gate as the Quick Attack bonus package.
             });
             deps.playWeaponHitSfx?.(deps.currentWeaponDamageType(), c.x, c.y, c.areaId, undefined, conditionBonusUsed ? 'huge' : 'small');
+            if (conditionBonusUsed) window.AudioSystem?.playQuickAttackBonusSfx?.(c.x, c.y, c.areaId); // Each cooldown-ready qualifying hit gets its anime slash, in addition to the weapon's ordinary impact.
             hits++;
             lastName = c.def.label;
             if (hitTech.conditionMatched) conditionalHits++;
@@ -353,7 +358,7 @@
           for (const entry of appliedDebuffs) latestDebuffById.set(entry.id, entry);
           const debuffNames = [...latestDebuffById.values()].map(entry => {
             const label = window.ResourceSystem?.TIMED_DEBUFFS?.[entry.id]?.name || entry.id; // Registry label keeps player-facing text aligned with diagnostics.
-            return `${label} ×${entry.stacks || 1}`;
+            return entry.id === 'knockdown' ? `${label} ${Math.round(entry.durationS * 10) / 10}s` : `${label} ×${entry.stacks || 1}`;
           });
           const debuffText = debuffNames.length ? `; applied ${debuffNames.join(' + ')}` : '';
           const bleedoutTotal = round1(appliedInstantEffects.filter(entry => entry.id === 'bleedout').reduce((sum, entry) => sum + (Number(entry.consumed) || 0), 0)); // Reports real Bleeding consumed, not the requested amount when the target had less.
@@ -404,11 +409,16 @@
 
   for (const id of Object.keys(TECHNIQUES)) registerQuickAttack(id, TECHNIQUES[id]);
 
+  // Every quick attack is the editor's pickshovel_swing jab. Shared with
+  // BanditCombat so an enemy's quick attack swings exactly like the player's.
+  // Allocates a fresh pose: call once per swing.
+  function quickAttackPose() { return window.AttackPoseTemplates?.poseFor('pickshovel_swing') || null; }
+
   // Read-only data export for game.js's bandit AI and diagnostics.
   window.Combat.quickAttackData = {
     TECHNIQUES, WINDUP_S, STRIKE_S, COST_COMMIT, CONDITIONAL_REFUND_FRACTION,
     BONUS_EFFECT_COOLDOWN_S, BONUS_EFFECT_POWER_MULTIPLIER,
-    RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S, getConditions, refundStamina,
+    RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S, getConditions, refundStamina, quickAttackPose,
     bonusEffectCooldownS, bonusEffectCooldownRemaining, isBonusEffectReady, beginBonusEffectCooldown, resetBonusEffectCooldowns,
     cooldownSnapshot: () => Object.fromEntries([...bonusCooldownUntilMs.entries()].map(([enemy, until]) => [enemy?.id || enemy?.name || 'enemy', Math.max(0, round1((until - performance.now()) / 1000))])),
     lastResolution: null,
@@ -441,7 +451,7 @@
     Object.assign(window.Combat.quickAttackData, {
       WINDUP_S, STRIKE_S, COST_COMMIT, CONDITIONAL_REFUND_FRACTION,
       BONUS_EFFECT_COOLDOWN_S, BONUS_EFFECT_POWER_MULTIPLIER,
-      RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S, getConditions, refundStamina,
+      RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S, getConditions, refundStamina, quickAttackPose,
     });
   };
 })();

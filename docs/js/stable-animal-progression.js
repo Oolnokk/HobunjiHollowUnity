@@ -1,7 +1,8 @@
 (() => {
   'use strict';
 
-  const MAX_LEVEL = 20;
+  const MAX_LEVEL = 30; // Companion progression cap; other Stable roles retain level 10.
+  const OTHER_ROLE_MAX_LEVEL = 10; // Used by maxLevelForEntry for mounts and shoulder pets.
   const SERVICE_TICK_MS = 10000;
   const SERVICE_XP = 2;
   const ALERT_RANGE_TILES = 5.5;
@@ -82,10 +83,14 @@
       || 'companion';
   }
 
+  function maxLevelForEntry(entry) {
+    return roleForEntry(entry) === 'companion' ? MAX_LEVEL : OTHER_ROLE_MAX_LEVEL;
+  }
+
   function normalizeEntry(entry) {
     if (!entry) return entry;
-    entry.level = clampInt(entry.level, 0, MAX_LEVEL);
-    entry.stableXp = Math.max(0, Math.floor(Number(entry.stableXp) || 0));
+    entry.level = clampInt(entry.level, 0, maxLevelForEntry(entry));
+    entry.stableXp = entry.level >= maxLevelForEntry(entry) ? 0 : clampInt(entry.stableXp, 0, Number.MAX_SAFE_INTEGER);
     if (!entry.animalPerks || typeof entry.animalPerks !== 'object' || Array.isArray(entry.animalPerks)) entry.animalPerks = {};
     const role = roleForEntry(entry);
     const allowed = new Map((TREES[role] || []).map(def => [def.id, def]));
@@ -124,9 +129,10 @@
     return Math.max(0, entry.level - spentPoints(entry));
   }
 
-  function xpToNext(level) {
-    const safe = clampInt(level, 0, MAX_LEVEL);
-    return safe >= MAX_LEVEL ? 0 : 40 + safe * 20;
+  function xpToNext(level, entry) {
+    const cap = entry ? maxLevelForEntry(entry) : MAX_LEVEL; // Optional entry preserves the one-argument companion API.
+    const safe = clampInt(level, 0, cap);
+    return safe >= cap ? 0 : 40 + safe * 20;
   }
 
   function xpGainMultiplier(entry) {
@@ -193,19 +199,19 @@
     const entry = typeof entryOrId === 'string' ? findStableEntry(entryOrId) : entryOrId;
     if (!entry) return { ok: false, levels: 0, amount: 0 };
     normalizeEntry(entry);
-    if (entry.level >= MAX_LEVEL) return { ok: true, levels: 0, amount: 0 };
-    const amount = Math.max(0, Math.round((Number(rawAmount) || 0) * xpGainMultiplier(entry)));
+    if (entry.level >= maxLevelForEntry(entry)) return { ok: true, levels: 0, amount: 0 };
+    const amount = Math.max(0, Math.round((Number.isFinite(Number(rawAmount)) ? Number(rawAmount) : 0) * xpGainMultiplier(entry)));
     if (!amount) return { ok: false, levels: 0, amount: 0 };
     entry.stableXp += amount;
     let levels = 0;
-    while (entry.level < MAX_LEVEL) {
-      const needed = xpToNext(entry.level);
+    while (entry.level < maxLevelForEntry(entry)) {
+      const needed = xpToNext(entry.level, entry);
       if (entry.stableXp < needed) break;
       entry.stableXp -= needed;
       entry.level++;
       levels++;
     }
-    if (entry.level >= MAX_LEVEL) entry.stableXp = 0;
+    if (entry.level >= maxLevelForEntry(entry)) entry.stableXp = 0;
     saveStable();
     if (levels) {
       currentDeps()?.showToast?.(`🐾 ${entry.name || entry.kind || 'Animal'} reached level ${entry.level}! +${levels} training point${levels === 1 ? '' : 's'}.`, true);
@@ -478,35 +484,8 @@
   }
 
   function ambientLineFor(walker, animal) {
-    const npcId = walker?.rec?.id || '';
-    const name = animal.entry.name || animalSpeciesLabel(animal.entry);
-    const species = animalSpeciesLabel(animal.entry);
-    const rank = animal.bondRank;
-    const recognized = npcRecognizesAnimal(npcId, animal.entry);
-    if (recognized && rank >= DIRECT_PET_GREETING_RANK) {
-      return [`${name}! Good to see you.`, `Hello, ${name}!`, `There you are, ${name}.`][Math.abs(hashCode(`${npcId}:${name}`)) % 3];
-    }
-    if (rank >= DIRECT_PET_GREETING_RANK) {
-      return animal.role === 'mount'
-        ? `Oh, look at you. You're a magnificent one, aren't you?`
-        : animal.role === 'companion'
-          ? `Hello there, beautiful. You keep good watch over your person.`
-          : `Well hello, little one. Aren't you charming?`;
-    }
-    if (rank > 0) {
-      return animal.role === 'mount'
-        ? `You've trained that ${species} well. It carries itself gently around people.`
-        : animal.role === 'companion'
-          ? `${name} listens to you well. That's a good ${species}.`
-          : `${name} looks very comfortable up there.`;
-    }
-    if (animal.role === 'mount') {
-      return [`Easy with that ${species}, please.`, `Keep a good hold on that ${species} around town.`, `That's a lot of animal. Give me a little room, would you?`][Math.abs(hashCode(`${npcId}:${name}:mount`)) % 3];
-    }
-    if (animal.role === 'companion') {
-      return [`Keep ${name} close, please.`, `That ${species} isn't going to lunge, is it?`, `I know it's with you, but warn me before ${name} comes any closer.`][Math.abs(hashCode(`${npcId}:${name}:companion`)) % 3];
-    }
-    return [`Oh! You've got company on your shoulder.`, `I nearly missed that little ${species}.`, `Does ${name} always ride up there?`][Math.abs(hashCode(`${npcId}:${name}:shoulder`)) % 3];
+    const npcId = String(walker?.rec?.id || ''); // Speaker ID selects the authored personality; never use the old hardcoded animal lines.
+    return window.NpcReactionProfiles?.animalLineFor?.(npcId, animal) || null;
   }
 
   function hashCode(text) {
@@ -530,16 +509,16 @@
     const walkers = (ambientDeps.getNpcWalkers?.() || []).filter(walker => walker?.area === area && walker?.root);
     for (const walker of walkers) {
       const npcId = walker.rec?.id;
-      if (!npcId) continue;
+      if (!npcId || window.NpcInteractionPolicy?.isPassiveGreatFey?.(npcId)) continue; // Great Fey never acknowledge nearby companions, mounts, or shoulder pets.
       const distance = Math.hypot(walker.root.position.x - player.x, walker.root.position.z - player.z);
       if (distance > 3.3) continue;
       const animal = animals[Math.abs(hashCode(`${npcId}:${day}`)) % animals.length];
       const key = `${day}:${npcId}:${animal.entry.id}`;
       if (ambientSeen.has(key)) continue;
       ambientSeen.add(key);
-      lastAmbientSpokeAt = now;
-      const line = ambientLineFor(walker, animal);
-      window.AmbientDialogue?.show?.(walker.root, line, {
+      const line = ambientLineFor(walker, animal); // An empty authored pool must not produce an ambient bubble or consume the spoken-line cooldown.
+      if (!line) continue;
+      const shown = window.AmbientDialogue?.show?.(walker.root, line, {
         speakerId: npcId,
         profile: walker.profile,
         mode: 'chathead',
@@ -549,12 +528,14 @@
         faceWalker: walker,
         faceTarget: animal.actor?.avatarRef?.group ? { root: animal.actor.avatarRef.group } : player,
       });
+      if (!shown) continue;
+      lastAmbientSpokeAt = now;
       break;
     }
   }
 
   function recognitionCandidate(rec) {
-    if (!rec?.id) return null;
+    if (!rec?.id || window.NpcInteractionPolicy?.isPassiveGreatFey?.(rec)) return null; // Great Fey do not participate in automatic animal recognition.
     const state = window.DialogueContent?.getNpcDlgState?.(rec.id);
     if ((Number(state?.favor) || 0) < FRIEND_FAVOR_MIN) return null;
     for (const animal of presentAnimals()) {
@@ -563,13 +544,6 @@
       return animal;
     }
     return null;
-  }
-
-  function recognitionLine(rec, animal) {
-    const name = animal.entry.name || animalSpeciesLabel(animal.entry);
-    if (animal.role === 'mount') return `${name} has really grown on me. I was nervous around them at first, but now I look forward to seeing the two of you come by.`;
-    if (animal.role === 'companion') return `${name} has really grown on me. I can see how closely they watch you—and how carefully you've taught them to behave around people.`;
-    return `${name} has really grown on me. I think I'd notice if you came by without that little face perched beside yours.`;
   }
 
   function patchDialogueContent(api) {
@@ -584,24 +558,12 @@
     if (typeof api.beginNpcConversation === 'function') {
       const originalBegin = api.beginNpcConversation.bind(api);
       api.beginNpcConversation = function stableAnimalRecognitionConversation(rec, ...rest) {
-        const animal = recognitionCandidate(rec);
-        if (!animal) return originalBegin(rec, ...rest);
-        const previousTrees = rec.dialogueTrees;
-        const tree = {
-          id: `stable_animal_recognition_${animal.entry.id}`,
-          name: 'Animal Recognition',
-          trigger: 'interact',
-          priority: 999999,
-          conditions: {},
-          entryNode: 'recognition',
-          nodes: [{ id: 'recognition', type: 'text', text: recognitionLine(rec, animal), next: null }],
-        };
-        rec.dialogueTrees = [tree];
-        let result;
-        try { result = originalBegin(rec, ...rest); }
-        finally { rec.dialogueTrees = previousTrees; }
-        api.recordNpcMemory?.(rec.id, recognitionMemoryKey(animal.entry));
-        currentDeps()?.saveMemberWorldData?.();
+        const animal = recognitionCandidate(rec); // A friendly NPC silently remembers a bonded animal without replacing normal conversations.
+        const result = originalBegin(rec, ...rest); // Original dialogue trees keep their priority and are never interrupted by recognition copy.
+        if (animal) {
+          api.recordNpcMemory?.(rec.id, recognitionMemoryKey(animal.entry));
+          currentDeps()?.saveMemberWorldData?.();
+        }
         return result;
       };
     }
@@ -809,8 +771,8 @@
       const card = document.createElement('div');
       card.className = 'farm-row';
       card.style.cssText = 'display:flex;flex-direction:column;align-items:stretch;gap:7px;padding:9px;';
-      const next = xpToNext(entry.level);
-      card.appendChild(makeText('div', `${entry.name || entry.kind || 'Animal'} · ${ROLE_LABELS[role] || role} · Lv ${entry.level}${entry.level >= MAX_LEVEL ? ' MAX' : ` · ${entry.stableXp}/${next} XP`} · ${points} point${points === 1 ? '' : 's'}`, 'font-weight:700;'));
+      const next = xpToNext(entry.level, entry);
+      card.appendChild(makeText('div', `${entry.name || entry.kind || 'Animal'} · ${ROLE_LABELS[role] || role} · Lv ${entry.level}${entry.level >= maxLevelForEntry(entry) ? ' MAX' : ` · ${entry.stableXp}/${next} XP`} · ${points} point${points === 1 ? '' : 's'}`, 'font-weight:700;'));
       const tree = document.createElement('div');
       tree.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px;';
       for (const def of TREES[role] || []) {
@@ -864,7 +826,7 @@
         role: roleForEntry(entry),
         level: normalizeEntry(entry).level,
         xp: entry.stableXp,
-        nextXp: xpToNext(entry.level),
+        nextXp: xpToNext(entry.level, entry),
         spent: spentPoints(entry),
         available: availablePoints(entry),
         perks: { ...entry.animalPerks },
@@ -899,7 +861,8 @@
 
   const api = {
     install,
-    maxLevel: MAX_LEVEL, // StableAnimalTrainingRefinements replaces this live value with the corrected cap (currently 10).
+    maxLevel: MAX_LEVEL,
+    maxLevelForEntry,
     trees: TREES,
     stableEntries, // Shared live Stable collection; Color Pools edits the existing genotype objects rather than introducing a parallel save.
     findStableEntry,

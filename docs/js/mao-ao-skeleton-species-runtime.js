@@ -8,6 +8,7 @@
 (() => {
   'use strict';
 
+  const BEHIND_HEAD = 'fightersprites/special_cases/head-behind_mskel_m.png'; // Shared rear-skull art used by the skeleton enemy and Maskbound puppets.
   const bridge = window.HobunjiSkeletonSpeciesBridge.create({
     speciesId: 'mao-ao-skeleton',
     label: "Mao'ao Skeleton",
@@ -17,9 +18,10 @@
     genders: ['male'], // Only male maoskel sprites are authored.
     scaleMultiplier: 1,
     allowedClothingIds: ['ragged_hood', 'tankan_bodywrap', 'rugged_poncho', 'bandolier1'], // Grave rags only.
-    behindHeads: null, // No authored rear skull yet; the renderer keeps its default rear head.
+    behindHeads: { male: BEHIND_HEAD },
     expectedAssets: {
       maleHead: 'fightersprites/mao-ao-m/head_maoskel_m.png',
+      maleBehindHead: BEHIND_HEAD,
       maleTorso: 'portraitsprites/torso_maoskel_m.png',
       maleArmL: 'portraitsprites/arm-L_maoskel_m.png',
       maleArmR: 'portraitsprites/arm-R_maoskel_m.png',

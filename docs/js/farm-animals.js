@@ -28,6 +28,128 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
+  // Livestock interaction must follow the *rendered* animal, not its tile
+  // reservation. A wandering animal moves the worldObjects key at the start of
+  // a hop, while its PNG planes take several frames to reach the new tile.
+  const LIVESTOCK_INTERACTION_REACH = 2.25; // Maximum player-to-visible-hit ground distance, in farm tiles.
+  let interactionRaycaster = null; // Lazy Three.js raycaster reused by the farm action-arch and press dispatch.
+  const interactionRayHits = []; // Reused mesh-hit buffer for all visible animals within reach.
+  let aimedAnimalFrame = NaN; // Last game frame for which the camera ray was tested.
+  let aimedAnimalCache = null; // Selection shared by action buttons, prompts, and the press handler in that frame.
+  const livestockAlphaMasks = new WeakMap(); // Cached, reduced-resolution opacity data per decoded sprite image; shared across the entire herd.
+  let livestockUvScratch = null; // Reused UV coordinate for checking the actual alpha at each Three.js mesh hit.
+  const LIVESTOCK_ALPHA_MASK_SIZE = 192; // Caps readback/memory for full-resolution animal sprite sheets.
+  const LIVESTOCK_ALPHA_FALLBACK_INSET = 0.18; // If cross-origin pixels are unreadable, allow only the sprite's central body rather than its transparent rectangle.
+
+  function _livestockAlphaMask(texture) {
+    const image = texture?.image; // Actual loaded frame (plain PNG or genotype CanvasTexture) currently visible on the plane.
+    const width = Number(image?.width), height = Number(image?.height); // Source dimensions used to build a bounded mask once per image.
+    if (!image || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+    if (livestockAlphaMasks.has(image)) return livestockAlphaMasks.get(image);
+    let mask = null;
+    try {
+      const longest = Math.max(width, height); // Scales all species uniformly without allocating one full-resolution RGBA copy per livestock frame.
+      const maskWidth = Math.max(1, Math.round(width / longest * LIVESTOCK_ALPHA_MASK_SIZE)); // Horizontal sample count after downscaling.
+      const maskHeight = Math.max(1, Math.round(height / longest * LIVESTOCK_ALPHA_MASK_SIZE)); // Vertical sample count after downscaling.
+      const canvas = document.createElement('canvas'); // Temporary scratch used only on the first hit of each decoded image.
+      canvas.width = maskWidth;
+      canvas.height = maskHeight;
+      const context = canvas.getContext('2d', { willReadFrequently: true }); // Same opaque-pixel readback approach as den-nest-system.js.
+      if (context) {
+        context.drawImage(image, 0, 0, maskWidth, maskHeight);
+        mask = { width: maskWidth, height: maskHeight, data: context.getImageData(0, 0, maskWidth, maskHeight).data }; // Used by _livestockHitOpaque; canvas itself can be collected.
+      }
+    } catch (error) {
+      window.__farmLog?.(`[livestock-ray] alpha mask unavailable for ${texture?.name || 'sprite'}: ${error?.message || error}`, 'warn');
+    }
+    livestockAlphaMasks.set(image, mask); // Cache both successful masks and unreadable sources; never retry a tainted image every frame.
+    return mask;
+  }
+
+  function _livestockHitOpaque(hit, avatar) {
+    const mesh = hit?.object; // Exact front/back plane returned by Three.js raycasting, not the animal's reserved logical tile.
+    const uv = hit?.uv; // Mesh UVs follow even a skinned head rig; a rectangular geometry intersection alone does NOT test PNG transparency.
+    const texture = mesh?.material?.map; // This is the frame actually rendered (idle/run, genotype, blink, or plain texture).
+    if (!texture || !uv || !Number.isFinite(uv.x) || !Number.isFinite(uv.y)) return false;
+    const mask = _livestockAlphaMask(texture);
+    if (!mask) { // Missing/CORS-tainted pixel data: conservatively target the body, not the entire invisible rectangular plane.
+      return uv.x >= LIVESTOCK_ALPHA_FALLBACK_INSET && uv.x <= 1 - LIVESTOCK_ALPHA_FALLBACK_INSET
+        && uv.y >= LIVESTOCK_ALPHA_FALLBACK_INSET && uv.y <= 1 - LIVESTOCK_ALPHA_FALLBACK_INSET;
+    }
+    if (!livestockUvScratch) livestockUvScratch = new THREE.Vector2(); // Reused instead of allocating Vector2s for every potentially visible animal hit.
+    // PNGPlaneAvatar mirrors a shared front map on the back card in its vertex shader.
+    // When the back uses a separate pre-flipped map, Texture.transformUv itself supplies the mirror instead.
+    const isShaderMirroredBack = mesh === avatar.backPlane && texture === avatar.frontPlane?.material?.map; // Detects the shared-face shader's horizontal flip.
+    livestockUvScratch.set(isShaderMirroredBack ? 1 - uv.x : uv.x, uv.y);
+    texture.transformUv?.(livestockUvScratch); // Honors repeat/offset and flipY from the actual active texture.
+    const u = livestockUvScratch.x, v = livestockUvScratch.y; // Transformed image coordinates from 0 to 1.
+    if (!Number.isFinite(u) || !Number.isFinite(v)) return false;
+    const x = Math.min(mask.width - 1, Math.max(0, Math.floor(u * mask.width))); // One bounded alpha pixel, with no canvas readback on subsequent rays.
+    const y = Math.min(mask.height - 1, Math.max(0, Math.floor(v * mask.height))); // Canvas/ImageData uses top-left row 0 after texture flipY is applied.
+    const alpha = mask.data[(y * mask.width + x) * 4 + 3]; // The same alpha channel that the PNG-plane material uses for its visible silhouette.
+    return alpha >= Math.max(16, Math.round((Number(mesh.material?.alphaTest) || 0.35) * 255)); // Match the visual material's cutout threshold, ignoring transparent background.
+  }
+
+  function aimedAnimal() {
+    if (!deps || deps.getCurrentArea?.() !== 'farm') {
+      window.DebugHitboxes?.clearInteractionFocus?.('livestock'); // Prevent a stale farm hit from lingering after leaving the farm.
+      return null;
+    }
+    const frame = Number(deps.getInteractionFrameTime?.()); // Reuses game.js's frame clock to avoid repeatedly raycasting for each action-bar query.
+    if (Number.isFinite(frame) && frame > 0 && frame === aimedAnimalFrame) return aimedAnimalCache;
+    aimedAnimalFrame = frame;
+    aimedAnimalCache = null;
+    const ray = deps.getPlayerInteractionRay?.(); // Authoritative cursor/center camera ray, identical to Show Interaction Raycast.
+    const ox = Number(ray?.origin?.x), oy = Number(ray?.origin?.y), oz = Number(ray?.origin?.z); // Camera-space origin, in Three.js world units.
+    const dx = Number(ray?.direction?.x), dy = Number(ray?.direction?.y), dz = Number(ray?.direction?.z); // Camera-space direction, normalized below.
+    const directionLength = Math.hypot(dx, dy, dz); // Guard against missing/zero vectors rather than guessing a ground tile.
+    if (![ox, oy, oz, dx, dy, dz, directionLength].every(Number.isFinite) || directionLength < 1e-8 || !THREE?.Raycaster) {
+      window.DebugHitboxes?.clearInteractionFocus?.('livestock');
+      return null;
+    }
+    if (!interactionRaycaster) interactionRaycaster = new THREE.Raycaster();
+    interactionRaycaster.ray.origin.set(ox, oy, oz);
+    interactionRaycaster.ray.direction.set(dx / directionLength, dy / directionLength, dz / directionLength);
+    interactionRaycaster.near = 0;
+    interactionRaycaster.far = Infinity;
+    const playerX = Number(deps.player?.x) / Number(deps.TILE), playerZ = Number(deps.player?.y) / Number(deps.TILE); // Player location converted from gameplay pixels to Three.js tile units.
+    if (![playerX, playerZ].every(Number.isFinite)) return null;
+    let nearestDistance = Infinity; // Chooses the frontmost rendered animal when sprites overlap in the camera view.
+    let nearestPoint = null; // Exact mesh hit used by the existing in-game raycast diagnostic overlay.
+    for (const animal of deps.animalObjects || []) {
+      const avatar = animal?.avatarRef; // Uses the same live plane model that the game actually draws.
+      const root = avatar?.group; // World transform changes continuously even while the animal's reserved tile stays fixed.
+      if (!root?.visible || !root.parent || animal._barnHome || animal._vatWorkPose || animal._harvestFrozen) continue;
+      const scale = Math.max(Math.abs(Number(root.scale?.x) || 1), Math.abs(Number(root.scale?.y) || 1), Math.abs(Number(root.scale?.z) || 1)); // Coarse rejection includes authored large animals.
+      const visualExtent = Math.hypot(Number(animal.modelWidth) || 1, Number(animal.modelHeight) || 1) * scale * 0.5; // A full rectangle's half-diagonal (not merely half its longest side) bounds visible corners during rotation.
+      if (Math.hypot((Number(root.position?.x) || 0) - playerX, (Number(root.position?.z) || 0) - playerZ) > LIVESTOCK_INTERACTION_REACH + visualExtent) continue;
+      root.updateMatrixWorld?.(true); // Refresh after the animal's moving/rotating/squashing animation before evaluating its visible planes.
+      interactionRayHits.length = 0;
+      if (avatar.frontPlane?.isMesh && avatar.frontPlane.visible) interactionRaycaster.intersectObject(avatar.frontPlane, false, interactionRayHits);
+      if (avatar.backPlane?.isMesh && avatar.backPlane.visible) interactionRaycaster.intersectObject(avatar.backPlane, false, interactionRayHits);
+      for (const hit of interactionRayHits) {
+        if (!hit?.point || !Number.isFinite(hit.distance) || hit.distance >= nearestDistance) continue;
+        if (!_livestockHitOpaque(hit, avatar)) continue; // THREE.Raycaster tests triangles, not the PNG's visible alpha silhouette.
+        // Only the part of the sprite inside interaction reach may be selected;
+        // giant creatures cannot be activated from across the farm.
+        if (Math.hypot(hit.point.x - playerX, hit.point.z - playerZ) > LIVESTOCK_INTERACTION_REACH) continue;
+        nearestDistance = hit.distance;
+        aimedAnimalCache = animal;
+        nearestPoint = hit.point;
+      }
+    }
+    if (aimedAnimalCache && nearestPoint) {
+      window.DebugHitboxes?.noteInteractionFocus?.({
+        candidate: { type: 'livestock', id: aimedAnimalCache.livestockId },
+        point: nearestPoint,
+        distanceWorld: nearestDistance,
+      }); // Show Interaction Raycast marks the actual selected plane, usable on mobile without devtools.
+    } else {
+      window.DebugHitboxes?.clearInteractionFocus?.('livestock');
+    }
+    return aimedAnimalCache;
+  }
+
   // ── Heart levels (0-5, in 1/5-heart steps) ──────────────────────────
   // A housed animal's heart level rises or falls by one step per day
   // depending on whether its assigned trough held feed it actually eats
@@ -161,18 +283,16 @@
 
   // Composites a genotype's textures onto an animal's front/back planes —
   // shared by both factories' initial one-shot compose below and their
-  // per-frame blink-toggle recompose (item 3): a farm animal never runs,
-  // so there's no per-frame retry loop the way the wild/companion
-  // CREATURE_DB path needs via updateCreatureAnimFrame, but blinking still
-  // needs the composite reapplied each time window.CreatureBlink's
-  // eyes-open/shut state actually flips. Resolves true once a real
+  // per-frame frame/blink recompose (_tickFarmAnimalFrame): the composite
+  // is reapplied whenever the idle/run frame or window.CreatureBlink's
+  // eyes-open/shut state actually changes. Resolves true once a real
   // composited texture got applied, false otherwise (no genotype, no
   // renderer, or a failed compose) — callers use this to know whether to
   // retry.
   function _applyGenotypeCompositeTexture(avatarRef, kind, frame, genotype, blinkShut) {
     if (!genotype || !window.CreatureGeneticsRender) return Promise.resolve(false);
     const sig = window.CreatureGeneticsRender.genotypeSignature(kind, genotype);
-    const key = `${kind}|${frame}|${sig}|${blinkShut ? 'b' : 'o'}`;
+    const key = `${kind}|${frame}|${sig}|${window.CreatureGeneticsRender.eyeStateKey?.(blinkShut) || (blinkShut ? 'b' : 'o')}`;
     const applyCached = (tex) => {
       if (window.CreatureTextureCache.isDisposed(avatarRef)) return false; // A late compose must not attach textures to a despawned animal.
       tex = _farmTextureResidency.get(key) || _farmTextureResidency.put(key, tex); // A completed request may have waited through an idle-cache eviction.
@@ -202,19 +322,114 @@
     return pending.then(tex => tex ? applyCached(tex) : false);
   }
 
-  // Ticks a farm animal's eye-blink state and kicks off a recompose only
-  // when window.CreatureBlink's eyes-open/shut state actually flips —
-  // guarded by _blinkComposePending so an in-flight compose can't overlap
-  // with another one kicked off before it resolves.
-  function _tickFarmAnimalBlink(animal) {
-    if (!animal.genotype || !window.CreatureGeneticsRender || animal._blinkComposePending) return;
-    const blinkShut = window.CreatureBlink?.isShut(animal, performance.now()) || false;
-    if (animal._blinkAppliedShut === blinkShut) return;
-    animal._blinkComposePending = true;
-    _applyGenotypeCompositeTexture(animal.avatarRef, animal.animalKey, 'idle', animal.genotype, blinkShut).then(applied => {
-      animal._blinkComposePending = false;
-      if (applied) animal._blinkAppliedShut = blinkShut;
-    });
+  // ── Locomotion frames (idle ↔ run1/run2) ─────────────────────────────
+  // Wild creatures swap between their idle and run sprites as they move
+  // (game.js updateCreatureAnimFrame). Farm livestock use the same species
+  // art, so they cycle the same frames while a station-wander / barn-homing
+  // hop is actually moving them, advancing one frame per RUN_FRAME_STRIDE_PX
+  // (30px of a 55px tile) of ground covered, like the wild path.
+  const FARM_ANIMAL_RUN_STRIDE_TILES = 30 / 55;
+  const FARM_ANIMAL_IDLE_SETTLE_SEC = 0.12; // Holds the walk frame through a one-frame stall so hop-to-hop hand-offs don't flicker to idle.
+  const FARM_ANIMAL_TELEPORT_TILES = 2; // A bigger single-frame jump (barn wake-up, re-spawn) is a reposition, not a walk.
+
+  // Plain (no genotype) frames are static PNGs; a frame is only bound once it
+  // has loaded so a not-yet-decoded sprite never blanks the animal.
+  const _farmPlainFrameCache = new Map(); // url -> { front, back, ready }
+  window.HobunjiCacheAudit?.register('FarmAnimals.plainFrameCache', () => _farmPlainFrameCache.size);
+  function _farmPlainFrame(url) {
+    let entry = _farmPlainFrameCache.get(url);
+    if (entry) return entry;
+    entry = { ready: false };
+    const front = new THREE.TextureLoader().load(url, () => { entry.ready = true; });
+    front.colorSpace = THREE.SRGBColorSpace;
+    const back = front.clone(); // Shares the decoded image; only uploads if a non-mirroring back card binds it.
+    back.wrapS = THREE.RepeatWrapping; back.repeat.set(-1, 1); back.offset.set(1, 0);
+    entry.front = front; entry.back = back;
+    _farmPlainFrameCache.set(url, entry);
+    return entry;
+  }
+  function _applyPlainFrameTexture(avatarRef, url) {
+    const entry = _farmPlainFrame(url);
+    if (!entry.ready || window.CreatureTextureCache.isDisposed(avatarRef)) return false;
+    for (const child of avatarRef.group.children) {
+      if (!child.material) continue;
+      const hadMap = !!child.material.map;
+      if (child.name.endsWith('_front_plane')) child.material.map = entry.front;
+      else if (child.name.endsWith('_back_plane')) child.material.map = window.PNGPlaneAvatar?.backMapFor?.(child.material, entry) || entry.back;
+      else continue;
+      if (!hadMap) child.material.needsUpdate = true;
+    }
+    return true;
+  }
+
+  // Sprite set for a livestock kind: the shared CREATURE_DB def first, then the
+  // genetics renderer's base art. Returns null when a kind has no run frames.
+  function _farmAnimalSprites(kind) {
+    const def = deps.CREATURE_DB?.[kind]?.sprites;
+    if (def?.idle && def.run?.length) return def;
+    const base = window.CreatureGeneticsRender?.SPECIES?.[kind]?.base;
+    if (base?.idle && base.run1) return { idle: base.idle, run: [base.run1, base.run2].filter(Boolean) };
+    return null;
+  }
+
+  // Distance-driven walk cycle: advances the run frame by ground actually
+  // covered since the last call (never by elapsed time), so a standing animal
+  // idles and a walking one animates at a pace that matches its speed.
+  function _updateFarmAnimalLocomotion(animal, dt, forceIdle) {
+    const lastX = animal._locoLastX ?? animal.wx, lastZ = animal._locoLastZ ?? animal.wz;
+    const moved = Math.hypot(animal.wx - lastX, animal.wz - lastZ);
+    animal._locoLastX = animal.wx; animal._locoLastZ = animal.wz;
+    if (forceIdle || !(moved > 1e-4) || moved > FARM_ANIMAL_TELEPORT_TILES) {
+      animal._locoIdleT = (animal._locoIdleT || 0) + Math.max(0, dt || 0);
+      if (forceIdle || animal._locoIdleT >= FARM_ANIMAL_IDLE_SETTLE_SEC) { animal._locoWalking = false; animal._locoDist = 0; }
+      return;
+    }
+    animal._locoIdleT = 0;
+    if (!animal._locoWalking) { animal._locoWalking = true; animal._locoDist = 0; }
+    animal._locoDist = (animal._locoDist || 0) + moved;
+    const sprites = _farmAnimalSprites(animal.animalKey);
+    const frames = sprites?.run?.length || 0;
+    if (!frames) return;
+    while (animal._locoDist >= FARM_ANIMAL_RUN_STRIDE_TILES) {
+      animal._locoDist -= FARM_ANIMAL_RUN_STRIDE_TILES;
+      animal._locoRunFrame = ((animal._locoRunFrame || 0) + 1) % frames;
+    }
+  }
+
+  // Applies whichever sprite frame the animal should currently show (idle or
+  // the current run frame, plus eye-blink for genotype animals) and recomposes
+  // only when that frame/blink combination actually changed. One compose at a
+  // time per animal (_frameComposePending) so requests can't overlap or land
+  // out of order; the previous frame stays on screen until the next is ready.
+  function _tickFarmAnimalFrame(animal, dt, forceIdle) {
+    _updateFarmAnimalLocomotion(animal, dt, forceIdle);
+    if (animal._frameComposePending) return;
+    const sprites = _farmAnimalSprites(animal.animalKey);
+    const walking = !!animal._locoWalking && !!sprites?.run?.length;
+    const runIdx = walking ? (animal._locoRunFrame || 0) % sprites.run.length : 0;
+    const frameKey = walking ? 'run' + (runIdx + 1) : 'idle';
+    const genotypeAnimal = !!animal.genotype && !!window.CreatureGeneticsRender;
+    const blinkShut = genotypeAnimal ? (window.CreatureBlink?.getVisualState?.(animal, animal.animalKey, performance.now()) ?? false) : false;
+    if (animal._frameAppliedKey === frameKey && animal._blinkAppliedShut === blinkShut) return;
+    if (genotypeAnimal) {
+      animal._frameComposePending = true;
+      _applyGenotypeCompositeTexture(animal.avatarRef, animal.animalKey, frameKey, animal.genotype, blinkShut).then(applied => {
+        animal._frameComposePending = false;
+        if (applied) { animal._frameAppliedKey = frameKey; animal._blinkAppliedShut = blinkShut; }
+      });
+      return;
+    }
+    // Plain-sprite animal: nothing to swap unless it has distinct art to show.
+    if (!sprites) return;
+    if (!walking && animal._frameAppliedKey === undefined) { animal._frameAppliedKey = frameKey; animal._blinkAppliedShut = blinkShut; return; } // Spawned art is already the idle frame; don't rebind it until the animal first walks.
+    const url = walking ? sprites.run[runIdx] : sprites.idle;
+    if (_applyPlainFrameTexture(animal.avatarRef, url)) { animal._frameAppliedKey = frameKey; animal._blinkAppliedShut = blinkShut; }
+  }
+
+  // Blink-only tick for animals that are held still (dialogue / harvest): the
+  // frame logic above handles blink too, so this is just "stand and idle".
+  function _tickFarmAnimalBlink(animal, dt) {
+    _tickFarmAnimalFrame(animal, dt, true);
   }
 
   function canSpawnAt(col, row) {
@@ -412,6 +627,7 @@
   }
 
   function _restoreFarmAnimalHead(animal, dt) {
+    window.PerpRotation?.clearHeadtrackHint(animal.perpState);
     const restDeg = Number(animal.avatarRef?.headRig?.rig?.restDeg);
     animal._lookAtDebug = null;
     if (typeof animal.avatarRef?.updateHeadRotation === 'function') {
@@ -421,9 +637,20 @@
 
   function _farmAnimalLookTarget(animal, dt, idle) {
     const faceTargetRot = _farmAnimalFaceLook(animal, dt);
-    if (faceTargetRot !== null) return faceTargetRot;
+    if (faceTargetRot !== null) {
+      window.PerpRotation?.setHeadtrackHint(animal.perpState, faceTargetRot); // Farm livestock shares NPC gaze priority when watching the player.
+      return faceTargetRot;
+    }
     _restoreFarmAnimalHead(animal, dt);
     return idle ? deps.nearestAngleAmong(animal.groupRot, deps.cameraRelativePerps()) : animal.targetRot;
+  }
+
+  function _reportFarmAnimalMovementHint(animal) {
+    const dx = animal.wx - (animal.perpState.previousFarmX ?? animal.wx); // Actual tile-space displacement feeds movement priority without treating idle hops as travel.
+    const dz = animal.wz - (animal.perpState.previousFarmZ ?? animal.wz); // Paired with dx for the world-bearing convention used by PerpRotation.
+    animal.perpState.previousFarmX = animal.wx;
+    animal.perpState.previousFarmZ = animal.wz;
+    window.PerpRotation?.setMovementHint(animal.perpState, Math.hypot(dx, dz) > 1e-6 ? Math.atan2(dx, dz) : null);
   }
 
   function _updateFarmAnimalFacing(animal, dt, idle) {
@@ -431,6 +658,7 @@
       animal._lookAtDebug = null;
       return;
     }
+    _reportFarmAnimalMovementHint(animal);
     const lookTarget = _farmAnimalLookTarget(animal, dt, idle);
     const { effectiveTarget, snapTo } = deps.perpClamp(animal.perpState, lookTarget, deps.cameraRelativeCreaturePerps(), deps.CREATURE_PERP_DEAD_RAD);
     if (snapTo !== null) animal.groupRot = effectiveTarget;
@@ -619,14 +847,14 @@
   }
 
   function makeUumkaoiiAnimal(col, row, livestockId, genotype) {
-    const ANIMAL_W = 1.275;
-    const ANIMAL_H = ANIMAL_W * (451 / 641); // sprite is 641x451 px
+    const ANIMAL_W = 1.275 * (600 / 1375) / (451 / 641); // Use the real 641x451 source aspect, keeping the legacy animal height/ground-anchor calibration.
+    const ANIMAL_H = ANIMAL_W * (deps.CREATURE_DB.uumkaoii?.spriteAspect || (451 / 641)); // Match the new authored locomotion sheets instead of the retired single sprite.
     const sizeScale = window.CreatureGenetics.creatureSizeScale('uumkaoii', genotype); // Uses the Animation Author's class-specific proportions.
     const authoredGroundOffset = window.CreatureGenetics.creatureGroundOffset('uumkaoii', genotype); // Optional absolute floor-to-origin lift measured in Rigging.
     const halfH = ANIMAL_H * sizeScale.y / 2; // Existing automatic baseline and physical half-height.
     const groundLift = Number.isFinite(authoredGroundOffset) ? authoredGroundOffset : halfH; // Manual values replace automatic half-height placement instead of stacking with it.
 
-    const spriteUrl = "assets/creaturesprites/uumkao'ii.png";
+    const spriteUrl = "assets/creaturesprites/uumkao'ii_idle.png";
     const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, spriteUrl, {
       modelWidth: ANIMAL_W, modelHeight: ANIMAL_H,
       name: 'uumkaoii_' + col + '_' + row,
@@ -704,7 +932,7 @@
       },
       update(dt) {
         if (_applyVatWorkPose(this)) return;
-        if (this._dialogueFrozen) { _tickFarmAnimalBlink(this); return; }
+        if (this._dialogueFrozen) { _tickFarmAnimalBlink(this, dt); return; }
         const tx = this.targetCol + 0.5, tz = this.targetRow + 0.5;
         const grid = deps.getGrid();
         const tile = grid[this.targetRow]?.[this.targetCol];
@@ -715,7 +943,7 @@
         this.wy += Math.sin(performance.now() / 420 + this.targetCol * 1.3) * 0.006;
         this.avatarRef.group.position.set(this.wx, this.wy, this.wz);
         window.CreatureGenetics.applyCreatureBillboardScale(this.avatarRef.group, sizeScale, window.CreatureGenetics.creatureBreathScaleY(this.avatarRef, performance.now()));
-        _tickFarmAnimalBlink(this);
+        _tickFarmAnimalFrame(this, dt); // Idle/run frame + blink; js header 'Locomotion frames'.
 
         // Once it's settled at its target tile (not mid-hop), an animal has no
         // specific direction to look — let it rest broadside to the camera.
@@ -723,6 +951,7 @@
         _updateFarmAnimalFacing(this, dt, idle);
       },
       reset() {
+        if (this._voiceActor) window.AnimalVocalizations?.releaseCreature?.(this._voiceActor); // Removes the stable actor from the scheduler's strong tracking set on sale/despawn.
         deps.scene.remove(avatarRef.group);
         avatarRef.dispose();
       },
@@ -746,6 +975,7 @@
   // back to the plain uncolored sprite, already loaded synchronously
   // below, until that async compose resolves).
   function makePatternLivestockAnimal(kind, label, icon, col, row, livestockId, genotype) {
+    genotype = window.VoorgAssRegistration?.displayGenotypeFor?.(kind, genotype) ?? genotype; // Only legacy Voorg-Ass livestock without saved genes gets a stable coat-colored visual fallback.
     const ANIMAL_W = LIVESTOCK_ANIMAL_WIDTH[kind] || 1.7;
     const ANIMAL_H = ANIMAL_W * (deps.CREATURE_DB[kind]?.spriteAspect || (600 / 1375));
     const sizeScale = window.CreatureGenetics.creatureSizeScale(kind, genotype); // Uses the Animation Author's class-specific proportions.
@@ -813,7 +1043,7 @@
       },
       update(dt) {
         if (_applyVatWorkPose(this)) return;
-        if (this._dialogueFrozen) { _tickFarmAnimalBlink(this); return; }
+        if (this._dialogueFrozen) { _tickFarmAnimalBlink(this, dt); return; }
         const tx = this.targetCol + 0.5, tz = this.targetRow + 0.5;
         const grid = deps.getGrid();
         const tile = grid[this.targetRow]?.[this.targetCol];
@@ -824,12 +1054,13 @@
         this.wy += Math.sin(performance.now() / 420 + this.targetCol * 1.3) * 0.006;
         this.avatarRef.group.position.set(this.wx, this.wy, this.wz);
         window.CreatureGenetics.applyCreatureBillboardScale(this.avatarRef.group, sizeScale, window.CreatureGenetics.creatureBreathScaleY(this.avatarRef, performance.now()));
-        _tickFarmAnimalBlink(this);
+        _tickFarmAnimalFrame(this, dt); // Idle/run frame + blink; js header 'Locomotion frames'.
 
         const idle = Math.abs(tx - this.wx) < 0.02 && Math.abs(tz - this.wz) < 0.02;
         _updateFarmAnimalFacing(this, dt, idle);
       },
       reset() {
+        if (this._voiceActor) window.AnimalVocalizations?.releaseCreature?.(this._voiceActor); // Removes the stable actor from the scheduler's strong tracking set on sale/despawn.
         deps.scene.remove(avatarRef.group);
         avatarRef.dispose();
       },
@@ -854,11 +1085,23 @@
   function makeVoorgAssAnimal(col, row, livestockId, genotype) {
     return makePatternLivestockAnimal('voorg-ass', 'Voorg-Ass', '🫏', col, row, livestockId, genotype);
   }
+  function makeNelkAnimal(col, row, livestockId, genotype) {
+    return makePatternLivestockAnimal('nelk', 'Nelk', '🦎', col, row, livestockId, genotype);
+  }
+  function makeNazgrakuAnimal(col, row, livestockId, genotype) {
+    return makePatternLivestockAnimal('nazgraku', 'Nazgraku', '🐟', col, row, livestockId, genotype);
+  }
+  function makeMootAnimal(col, row, livestockId, genotype) {
+    return makePatternLivestockAnimal('moot', 'Moot', '🐾', col, row, livestockId, genotype); // Enables barn placement and save restoration for the former Ranch starter placeholder.
+  }
+  function makePingdortAnimal(col, row, livestockId, genotype) {
+    return makePatternLivestockAnimal('pingdort', 'Pingdort', '🐦', col, row, livestockId, genotype); // Reuses farm housing, breeding, size genetics and egg production without a second farm model.
+  }
 
   // Livestock kind → factory, so restoring saved livestock on world load
   // can dispatch by kind without hardcoding uumkao'ii — the array this
   // reads is meant to grow into other livestock types later.
-  const LIVESTOCK_FACTORIES = { uumkaoii: makeUumkaoiiAnimal, 'gar-wolf': makeGarWolfAnimal, 'dabinggi-hound': makeDabinggiHoundAnimal, grehlr: makeGrehlrAnimal, drenkirra: makeDrenkirraAnimal, puktuk: makePuktukAnimal, 'voorg-ass': makeVoorgAssAnimal };
+  const LIVESTOCK_FACTORIES = { uumkaoii: makeUumkaoiiAnimal, 'gar-wolf': makeGarWolfAnimal, 'dabinggi-hound': makeDabinggiHoundAnimal, grehlr: makeGrehlrAnimal, drenkirra: makeDrenkirraAnimal, puktuk: makePuktukAnimal, 'voorg-ass': makeVoorgAssAnimal, nelk: makeNelkAnimal, nazgraku: makeNazgrakuAnimal, moot: makeMootAnimal, pingdort: makePingdortAnimal };
 
   // itemKey -> FIFO queue of genotypes carried by not-yet-hatched units of
   // that item — populated when a Den-Mother's nest grants an egg/baby
@@ -930,6 +1173,7 @@
     const list = deps.loadWorldLivestock();
     const rec = list.find(l => l.id === livestockId);
     if (!rec) return { ok: false, message: 'Livestock not found.' };
+    if (window.SCRATCHBONES_CONFIG?.game?.livestock?.housing?.[rec.kind]) return { ok: false, message: `A ${window.CreatureGenetics.defaultLivestockName(rec.kind)} cannot live in a barn — it needs its own Honeyfuzzle House.` };
     if (rec.barnId === barnId) return { ok: true, message: `${rec.name} is already housed there.` };
     const tier = deps.getBarnTiers()[barn.tier];
     const occupants = list.filter(l => l.barnId === barnId).length;
@@ -1115,10 +1359,12 @@
       const eatableKeys = feedKeysForDiet(dietFor(l.kind));
       const eatenSlot = trough?.slots ? trough.slots.findIndex(s => s && eatableKeys.includes(s)) : -1;
       if (l.heartLevel == null) l.heartLevel = HEART_DEFAULT;
+      const heartsBefore = l.heartLevel; // Reward feedback uses only the care gain that fits below the cap.
       if (eatenSlot >= 0) {
         trough.slots[eatenSlot] = null;
         troughsToRefresh.push({ barnId: l.barnId, troughIndex: l.troughIndex });
         l.heartLevel = Math.min(HEART_MAX, l.heartLevel + HEART_STEP);
+        if (l.heartLevel > heartsBefore) window.WorldPopupText?.queueSocialGain?.('livestockFavor', l.heartLevel - heartsBefore, l.name || l.kind, l.id);
       } else {
         l.heartLevel = Math.max(0, l.heartLevel - HEART_STEP);
       }
@@ -1548,6 +1794,27 @@
     }
   }
 
+  function farmAnimalVoiceActor(animal) {
+    // Stable scheduler identity; live position and area are refreshed each rendered frame.
+    const actor = animal._voiceActor || (animal._voiceActor = {
+      id: `farm-voice:${animal.livestockId || animal.id}`,
+      creatureKey: animal.animalKey,
+      health: 1,
+      state: 'idle',
+    });
+    const tilePx = Number(deps.TILE) || 1; // Converts farm tile coordinates into AudioSystem pixel-space coordinates.
+    actor.creatureKey = animal.animalKey;
+    actor.genotype = animal.genotype || null;
+    actor.avatarRef = animal.avatarRef || null; // Lets AudioSystem sample the live sprite group's world height for elevation-aware spatial audio.
+    actor.areaId = deps.getCurrentArea?.() || window.GridTileAccessors?.getCurrentArea?.() || null;
+    actor.x = Number(animal.wx) * tilePx;
+    actor.y = Number(animal.wz) * tilePx;
+    actor.wy = Number(animal.wy) || 0;
+    actor.health = 1;
+    actor.state = 'idle';
+    return actor;
+  }
+
   function updateAnimalMeshes(dt) {
     // .tick() drives wander/barn-homing steps (throttled internally via
     // each animal's own tickCounter); .update(dt) is the continuous
@@ -1559,12 +1826,18 @@
     // persists it for real, so this is purely a read-dedup, not a
     // staleness risk.
     deps.setWorldLivestockFrameCache(deps.loadWorldLivestock());
-    for (const animal of deps.animalObjects) { animal.tick && animal.tick(dt); animal.update(dt); }
+    for (const animal of deps.animalObjects) {
+      animal.tick && animal.tick(dt);
+      animal.update(dt);
+      const frozen = !!(animal._vatWorkPose || animal._harvestFrozen || animal._dialogueFrozen);
+      window.AnimalVocalizations?.tickCreature?.(farmAnimalVoiceActor(animal), dt, { allowPassive: !frozen });
+    }
     deps.setWorldLivestockFrameCache(null);
   }
 
   window.FarmAnimals = {
     init,
+    aimedAnimal,
     canSpawnAt,
     queueItemGenotype,
     addFromItem,
@@ -1592,6 +1865,8 @@
     GESTATION_HOURS_PER_DAY,
     clearAnimalObjects,
     updateAnimalMeshes,
+    refreshGenotypeAvatar: (avatarRef, kind, genotype, frame = 'idle', blinkShut = false) =>
+      _applyGenotypeCompositeTexture(avatarRef, kind, frame, genotype, blinkShut), // Dev Companion reuses the live farm/wild texture residency and both mirrored sprite planes.
     setVatWorkerPose,
     clearVatWorkerPose,
     GESTATION_DAYS: LIVESTOCK_GESTATION_DAYS,

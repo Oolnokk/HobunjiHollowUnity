@@ -14,9 +14,13 @@
   const now = () => (Number(deps?.calendar.day) || 1) + (Number(deps?.calendar.time01) || 0); // World time, including sleeping/time-passage transitions.
   function init(injectedDeps) {
     deps = injectedDeps;
-    for (const definition of Object.values(catalog)) deps.ITEM_DEFS[definition.planItem] = { label: definition.label + ' Plan', icon: '📜', cat: 'building', sellPrice: 0, desc: 'Place from the Farm map. Persistent queue; slower processing with enhanced yield.' };
-    deps.ITEM_DEFS.mootBaby = { label: 'Baby Moot', icon: '🐾', cat: 'material', sellPrice: 0, desc: 'A baby Moot. Kept safely as an item until Moot animals are available.' };
-    deps.ITEM_DEFS.voorgAssBaby = { label: 'Baby Voorg-ass', icon: '🫏', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: 'A baby Voorg-ass for the farm Nursery.' };
+    window.CropVarieties?.attach?.({ cropData: deps.cropData, ITEM_DEFS: deps.ITEM_DEFS, inventory: deps.inventory,
+      inventoryItems: deps.inventoryItems, loadStorage: deps.loadStorage }); // Existing registries own produce, seeds and cooking effects.
+    for (const definition of Object.values(catalog)) deps.ITEM_DEFS[definition.planItem] = { label: definition.label + ' Plan', icon: '📜', cat: 'building', sellPrice: Math.round(definition.price * 0.4), desc: 'Place from the Farm map. Persistent queue; slower processing with enhanced yield.' };
+    window.MootRegistration?.registerBabyItem?.(deps.ITEM_DEFS); // Converts the Ranch's legacy baby placeholder into real deployable livestock.
+    window.MootRegistration?.registerLootItems?.(deps); // Preserve Moot carcass products in the same inventory catalog used by the Farm.
+
+    deps.ITEM_DEFS.voorgAssBaby = { label: 'Baby Voorg-ass', icon: '🫏', cat: 'livestock', sellPrice: 80, tags: ['Livestock', 'Baby'], desc: 'A baby Voorg-ass for the farm Nursery.' };
     if (deps.ITEM_DEFS.uumkaoiiEgg) { deps.ITEM_DEFS.uumkaoiiEgg.label = "Fertile Uumkao'ii Egg"; deps.ITEM_DEFS.uumkaoiiEgg.tags = [...new Set([...(deps.ITEM_DEFS.uumkaoiiEgg.tags || []), 'Fertile'])]; }
     if (timer) clearInterval(timer);
     timer = setInterval(tick, 1000);
@@ -24,13 +28,14 @@
   function serialize() {
     if (!loaded) return null;
     return buildings.map(entry => ({ id: entry.id, key: entry.key, col: entry.col, row: entry.row, rot: entry.rot || 0,
-      queue: copy(entry.queue), ready: copy(entry.ready), nextAt: entry.nextAt, water: entry.water }));
+      queue: copy(entry.queue), ready: copy(entry.ready), nextAt: entry.nextAt, water: entry.water, ...(entry.house ? { house: copy(entry.house) } : {}) }));
   }
   function clear() {
     for (const entry of buildings) removeVisual(entry);
     buildings = []; placement = null; loaded = false;
   }
   function removeVisual(entry) {
+    window.HoneyfuzzleHouse?.removeVisual(entry);
     const size = footprint(entry.key, entry.rot); // Occupied tiles follow the building's current rotation.
     for (let row = entry.row; row < entry.row + size.h; row++) for (let col = entry.col; col < entry.col + size.w; col++) {
       if (deps.worldObjects.get(col + ',' + row) === entry.object) deps.worldObjects.delete(col + ',' + row);
@@ -56,9 +61,10 @@
       getButtons: () => [{ icon: definition.icon, label: 'Manage ' + definition.label, action: 'obj_farmproduction_' + entry.id, style: 'primary', allowed: deps.hasFarmPermission('storage') }],
       onAction: action => { if (action !== 'obj_farmproduction_' + entry.id) return { ok: false, message: 'Unknown action.' }; open(entry.id); return { ok: true, message: 'Opened building.' }; } };
     for (let row = entry.row; row < entry.row + size.h; row++) for (let col = entry.col; col < entry.col + size.w; col++) deps.worldObjects.set(col + ',' + row, entry.object);
-    window.AuthoredFurniture.load(entry.key).then(data => {
+    window.HoneyfuzzleHouse?.syncVisual(entry, size); // Hovering swarm over an occupied Honeyfuzzle House.
+    window.AuthoredFurniture.load(definition.modelKey || entry.key).then(data => { // Only buildings with an explicit visual model alias reuse a mesh; other family.base values denote processor recipes.
       if (generation !== entry.visualGeneration || !buildings.includes(entry)) return;
-      if (!data) { lastError = 'Missing authored building: ' + entry.key; deps.debugLog(lastError, 'warn'); return; }
+      if (!data) { lastError = 'Missing authored building: ' + (definition.modelKey || entry.key); deps.debugLog(lastError, 'warn'); return; }
       entry.mesh = window.AuthoredFurniture.buildGroup(tintData(data), 0x8b6540);
       entry.mesh.position.set(entry.col + size.w / 2, deps.surfaceY(entry.col + size.w / 2, entry.row + size.h / 2), entry.row + size.h / 2);
       if (entry.mesh.rotation) entry.mesh.rotation.y = -(entry.rot || 0) * Math.PI / 2; // Clockwise quarter turns seen from above.
@@ -79,11 +85,15 @@
       const entry = { id: String(record.id || 'production_' + record.key + '_' + record.col + '_' + record.row), key: record.key, col: record.col, row: record.row, rot,
         queue: (record.queue || []).filter(batch => Number.isSafeInteger(batch.count) && batch.count > 0 && Array.isArray(batch.outputs)).map(copy),
         ready: (record.ready || []).filter(batch => Number.isSafeInteger(batch.count) && batch.count > 0).map(copy),
-        nextAt: Number.isFinite(record.nextAt) ? record.nextAt : null, water: Math.min(definition.waterCapacity, Math.max(0, Number(record.water) || 0)) }; // World-scoped durable queue and tank state.
+        nextAt: Number.isFinite(record.nextAt) ? record.nextAt : null, water: Math.min(definition.waterCapacity, Math.max(0, Number(record.water) || 0)),
+        ...(record.house && typeof record.house === 'object' ? { house: copy(record.house) } : {}) }; // World-scoped durable queue and tank state; a Honeyfuzzle House also keeps its egg/swarm slot.
       buildings.push(entry); spawn(entry);
     }
     loaded = true;
-    for (const entry of buildings) for (const result of entry.ready) window.ItemProcessing.ensureProcessedItemDef(result); // Saved finished goods remain registered even when their input queue is empty.
+    for (const entry of buildings) for (const result of entry.ready) {
+      if (catalog[entry.key]?.family === 'seedMaker') window.CropVarieties?.ensure?.(result.key);
+      else window.ItemProcessing.ensureProcessedItemDef(result); // Restored seeds and processed foods retain their distinct item authorities.
+    }
     ensureStarters(); tick();
   }
   function findStarterLocation(width, height, excludeId = null) {
@@ -209,7 +219,8 @@
         const batch = entry.queue[0]; // Only the front batch runs; subsequent batches start automatically.
         const completed = Math.min(batch.count, 1 + Math.floor((now() - entry.nextAt) / definition.daysPerInput)); // Aggregates time-passage catch-up without one loop per item.
         for (const output of batch.outputs) {
-          window.ItemProcessing.ensureProcessedItemDef(output);
+          if (definition.family === 'seedMaker') window.CropVarieties?.ensure?.(output.key);
+          else window.ItemProcessing.ensureProcessedItemDef(output);
           const previous = entry.ready.find(result => result.key === output.key && result.stars === batch.stars); // Output quality remains tied to its actual input quality.
           if (previous) previous.count += completed * definition.yield;
           else entry.ready.push({ ...copy(output), stars: batch.stars, count: completed * definition.yield });
@@ -221,6 +232,7 @@
       }
     }
     if (changed) { deps.saveFarmLayout(); deps.debugLog('Farm production finished queued batches.'); }
+    window.HoneyfuzzleHouse?.tick(buildings, now()); // Hatches due eggs; same low-frequency timer, no extra loop.
   }
   function collect(id) {
     if (!deps.hasFarmPermission('storage')) return { ok: false, message: 'Storage permission required.' };
@@ -231,10 +243,11 @@
     for (const result of entry.ready) {
       const amount = Math.min(result.count, Math.max(0, window.InventoryStacks.MAX_TOTAL - (Number(deps.inventory[result.key]) || 0))); // Per-item bag capacity.
       deps.inventory[result.key] = (Number(deps.inventory[result.key]) || 0) + amount;
-      window.CookingSystem?.recordItemQuality?.(result.key, result.stars, amount);
+      if (catalog[entry.key]?.family !== 'seedMaker') window.CookingSystem?.recordItemQuality?.(result.key, result.stars, amount); // Seeds have no cooked-food quality bucket.
       result.count -= amount; collected += amount;
     }
     entry.ready = entry.ready.filter(result => result.count > 0);
+    if (catalog[entry.key]?.family === 'seedMaker' && collected) window.CropVarieties?.refreshBrushes?.(); // New cultivars are selectable as soon as their seeds are collected.
     deps.saveMemberWorldData(); deps.saveFarmLayout();
     return { ok: collected > 0, message: collected ? 'Collected ' + collected + ' goods; excess stays here.' : 'Nothing fits in your bag, or no goods are ready.' };
   }
@@ -244,6 +257,8 @@
     const entry = buildings.find(candidate => candidate.id === id); // Modal reads actual persisted queue and output buffer.
     if (!entry) return;
     const definition = catalog[entry.key]; // Label/tier and silo capacity for this building.
+    if (definition.family === 'honeyfuzzleHouse') { window.HoneyfuzzleHouse?.open(entry); return; }
+    if (definition.family === 'seedMaker') { openSeedMaker(entry); return; } // Seed and crossbreeding controls have two parent selectors. // One-slot egg/swarm house with its own panel (js/honeyfuzzle-house.js).
     document.getElementById('farmProductionModal')?.remove();
     const modal = document.createElement('div'); // Touch-friendly in-file management and diagnostics.
     modal.id = 'farmProductionModal'; modal.style.cssText = 'position:fixed;inset:0;background:#000b;z-index:11000;display:grid;place-items:center;padding:12px';
@@ -350,20 +365,146 @@
     deps.saveMemberWorldData(); deps.saveFarmLayout();
     return { ok: used > 0, message: used ? 'Fertilized ' + used + ' crops for this harvest.' : 'Withdraw compost fertilizer and plant unfertilized crops first.' };
   }
-  function renderRows(list) {
+  // Seed-making takes exactly one harvested crop; optionally a second of the same species.
+  // Both parent stacks are checked before either is removed, including two from the same source.
+  function enqueueSeeds(id, first, second = null) {
+    if (!deps?.hasFarmPermission?.('storage')) return { ok: false, message: 'Storage permission required.' };
+    const entry = buildings.find(building => building.id === id && catalog[building.key]?.family === 'seedMaker');
+    if (!entry) return { ok: false, message: 'Seed maker not found.' };
+    const crops = window.CropVarieties; // The same genotype authority used by the trader, farming and cooking systems.
+    const family = crops?.produceFamily?.(first?.itemKey);
+    if (!family || (second && crops.produceFamily(second.itemKey) !== family))
+      return { ok: false, message: 'Choose harvested crops of the same kind. Different crop species cannot cross.' };
+    const storage = deps.loadStorage(); // One working storage snapshot prevents a double-spend on two parents.
+    const choices = [first, ...(second ? [second] : [])];
+    const needed = new Map(); // Source/key counters validate duplicates atomically before moving any item.
+    for (const choice of choices) {
+      if (!['bag', 'storage'].includes(choice.source)) return { ok: false, message: 'Invalid seed source.' };
+      const id = choice.source + ':' + choice.itemKey;
+      needed.set(id, { source: choice.source, key: choice.itemKey, count: (needed.get(id)?.count || 0) + 1 });
+    }
+    for (const value of needed.values()) {
+      const stock = value.source === 'bag' ? deps.inventory : storage;
+      if ((Number(stock[value.key]) || 0) < value.count) return { ok: false, message: 'Not enough harvested crops for this batch.' };
+    }
+    const rng = () => window.GameRandom?.random?.() ?? Math.random(); // Uses the same game RNG as harvests when available.
+    const offspring = second ? crops.breed(first.itemKey, second.itemKey, rng)
+      : crops.ensure(first.itemKey) || { seedKey: deps.cropData[family]?.seedKey, label: deps.cropData[family]?.label };
+    if (!offspring?.seedKey) return { ok: false, message: 'No compatible seeds were produced.' };
+    const quality = []; // Bag-grown input quality is consumed normally; storage crops use a neutral 3★.
+    for (const choice of choices) {
+      if (choice.source === 'bag') quality.push(Number(deps.consumeInput(choice.itemKey)) || 3);
+      else { storage[choice.itemKey]--; quality.push(3); }
+    }
+    if (choices.some(choice => choice.source === 'storage')) deps.saveStorage(storage);
+    entry.queue.push({ itemKey: first.itemKey, count: 1, stars: Math.min(...quality),
+      outputs: [{ key: offspring.seedKey, label: offspring.label + ' Seeds' }] }); // Queue snapshots preserve the generated seed key across saves.
+    if (entry.nextAt == null) entry.nextAt = now() + catalog[entry.key].daysPerInput;
+    deps.saveMemberWorldData(); deps.saveFarmLayout();
+    return { ok: true, message: second ? 'Crossbreeding ' + offspring.label + ' seeds.' : 'Extracting ' + offspring.label + ' seeds.' };
+  }
+
+  function openSeedMaker(entry) {
+    document.getElementById('farmProductionModal')?.remove();
+    const modal = document.createElement('div'); // Reuses the production modal's ID so only one building can be managed at a time.
+    modal.id = 'farmProductionModal';
+    modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-modal', 'true'); modal.setAttribute('data-ctrl-panel', '');
+    modal.style.cssText = 'position:fixed;inset:0;background:#000b;z-index:11000;display:grid;place-items:center;padding:12px';
+    const panel = document.createElement('div'); // Scrollable and touch-sized for mobile planting/breeding.
+    panel.style.cssText = 'background:#27231e;color:#eee;padding:18px;border:1px solid #89785d;border-radius:12px;max-height:85vh;overflow:auto;width:min(520px,90vw)';
+    const heading = document.createElement('h3'); heading.textContent = '🌱 Seed Maker'; panel.append(heading);
+    const status = document.createElement('p'); // Queue and ready totals persist with the farm layout.
+    status.textContent = 'One harvest → 2 seeds in 2 game days. Two compatible harvests → 2 crossbred seeds. ' +
+      entry.queue.reduce((n, batch) => n + batch.count, 0) + ' queued; ' +
+      entry.ready.reduce((n, batch) => n + batch.count, 0) + ' seeds ready.';
+    panel.append(status);
+    const available = []; // Harvested crop inventory in bag and Farm Storage; seeds and cooked goods never appear.
+    const storage = deps.loadStorage();
+    for (const [source, stock] of [['bag', deps.inventory], ['storage', storage]]) {
+      for (const [itemKey, count] of Object.entries(stock || {})) {
+        if (!(count > 0) || !window.CropVarieties?.produceFamily?.(itemKey)) continue;
+        window.CropVarieties?.ensure?.(itemKey);
+        available.push({ source, itemKey, count, label: deps.ITEM_DEFS[itemKey]?.label || itemKey });
+      }
+    }
+    function selector(label, empty) {
+      const title = document.createElement('label'); title.textContent = label; title.style.display = 'block'; panel.append(title);
+      const select = document.createElement('select'); select.style.cssText = 'width:100%;margin:8px 0'; select.setAttribute('aria-label', label);
+      if (empty) { const option = document.createElement('option'); option.value = ''; option.textContent = 'No second parent — extract seeds'; select.append(option); }
+      for (const item of available) {
+        const option = document.createElement('option'); option.value = JSON.stringify({ source: item.source, itemKey: item.itemKey });
+        option.textContent = item.label + ' ×' + item.count + ' · ' + (item.source === 'bag' ? 'Bag' : 'Farm storage'); select.append(option);
+      }
+      title.append(select); return select;
+    }
+    const first = selector('First harvested crop', false); // Input one is always required.
+    const second = selector('Second harvested crop (optional)', true); // Crossing is opt-in, not accidental.
+    const preview = document.createElement('div'); // Live parent/offspring color swatches work without a desktop console.
+    preview.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:9px 0 12px;font-size:12px';
+    preview.setAttribute('aria-live', 'polite');
+    panel.append(preview);
+    function renderColorPreview() {
+      preview.textContent = '';
+      if (!first.value) return;
+      const firstItem = JSON.parse(first.value).itemKey; // Select values were authored from filtered inventory, not external JSON.
+      const secondItem = second.value ? JSON.parse(second.value).itemKey : null;
+      const crops = window.CropVarieties; // Reuses the actual color-mixing calculation, never a separate UI formula.
+      const firstColor = crops?.colorOf?.(firstItem);
+      const secondColor = secondItem ? crops?.colorOf?.(secondItem) : null;
+      const mixed = secondItem ? crops?.blendedColor?.(firstItem, secondItem) : firstColor;
+      const swatch = (label, color) => {
+        if (!Number.isInteger(color)) return;
+        const pill = document.createElement('span');
+        pill.style.cssText = 'display:inline-flex;align-items:center;gap:5px';
+        const chip = document.createElement('span');
+        chip.style.cssText = 'display:inline-block;width:22px;height:22px;border-radius:6px;border:1px solid #aaa';
+        chip.style.backgroundColor = '#' + color.toString(16).padStart(6, '0'); // Paints the exact stored 24-bit pigment.
+        chip.setAttribute('aria-hidden', 'true');
+        pill.append(chip, document.createTextNode(label));
+        preview.append(pill);
+      };
+      swatch('Parent 1', firstColor);
+      if (secondItem) swatch('Parent 2', secondColor);
+      if (mixed != null) swatch(secondItem ? 'Blended offspring' : 'Resulting seeds', mixed);
+      else if (secondItem) preview.append(document.createTextNode('These crop species cannot be crossed.'));
+    }
+    first.addEventListener('change', renderColorPreview);
+    second.addEventListener('change', renderColorPreview);
+    renderColorPreview();
+    const button = (label, action) => { const el = document.createElement('button'); el.className = 'settings-small-btn'; el.textContent = label; el.onclick = action; panel.append(el); return el; };
+    button('Queue seeds', () => {
+      if (!first.value) return;
+      const outcome = enqueueSeeds(entry.id, JSON.parse(first.value), second.value ? JSON.parse(second.value) : null);
+      deps.showToast(outcome.message, outcome.ok); open(entry.id);
+    }).disabled = !available.length;
+    button('Collect finished seeds', () => { const outcome = collect(entry.id); deps.showToast(outcome.message, outcome.ok); open(entry.id); });
+    button('Close', () => modal.remove()).setAttribute('data-ctrl-cancel', '');
+    const diagnostics = document.createElement('details'); // Mobile-readable genotype and queue diagnostics.
+    const summary = document.createElement('summary'); summary.textContent = 'Seed maker diagnostics'; diagnostics.append(summary);
+    const pre = document.createElement('pre'); pre.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere';
+    pre.textContent = JSON.stringify({ mostRecentChange: window.CropVarieties?.lastChange, worldTime: now(),
+      lastError, queue: entry.queue, ready: entry.ready }, null, 2);
+    diagnostics.append(pre); panel.append(diagnostics); modal.append(panel); document.body.append(modal);
+  }
+
+  function renderRows(list, customization = list) {
     if (!deps || !list) return;
     const button = (row, label, action) => { const element = document.createElement('button'); element.className = 'settings-small-btn'; element.textContent = label; element.onclick = action; row.append(element); }; // Farm menu row actions reuse existing small button styling.
     for (const entry of buildings) {
       const row = document.createElement('div'); row.className = 'farm-row'; row.style.flexWrap = 'wrap'; // Multi-tile production appears beside other farm buildings.
       const name = document.createElement('span'); name.className = 'farm-row-name'; name.textContent = catalog[entry.key].icon + ' ' + catalog[entry.key].label; row.append(name);
       button(row, 'Manage', () => open(entry.id));
-      if (deps.hasFarmPermission('alterFarm')) button(row, 'Move', () => arm(entry.key, entry.id));
+      if (deps.hasFarmPermission('alterFarm')) {
+        const editRow = document.createElement('div'); // Layout controls live separately from the working building's Manage action.
+        editRow.className = 'farm-row'; editRow.textContent = name.textContent;
+        button(editRow, 'Move', () => window.FarmLayoutEditor?.open?.(entry.id)); customization.append(editRow);
+      }
       list.append(row);
     }
     if (deps.hasFarmPermission('alterFarm')) for (const definition of Object.values(catalog)) {
       if (!(deps.inventory[definition.planItem] > 0)) continue;
       const row = document.createElement('div'); row.className = 'farm-row'; // Plans are placed through the farm map, never furniture placement.
-      row.textContent = definition.label + ' Plan · ' + deps.inventory[definition.planItem]; button(row, 'Place', () => arm(definition.key)); list.append(row);
+      row.textContent = definition.label + ' Plan · ' + deps.inventory[definition.planItem]; button(row, 'Place', () => { arm(definition.key); window.FarmPanel?.showMap?.(); }); customization.append(row);
     }
     if (placement) { const row = document.createElement('div'); row.className = 'farm-row'; row.textContent = 'Tap the map to place ' + catalog[placement.key].label; button(row, 'Cancel', () => { placement = null; window.FarmPanel.render(); }); list.append(row); }
   }
@@ -380,6 +521,6 @@
     }
   }
   function refreshColors() { for (const entry of buildings) { removeVisual(entry); spawn(entry); } }
-  window.FarmProduction = { init, serialize, load, clear, arm, placeAt, move, rotate, footprint: entry => footprint(entry.key, entry.rot), enqueue, collect, tick, open, renderRows, renderShop, refreshColors,
+  window.FarmProduction = { init, serialize, load, clear, arm, placeAt, move, rotate, footprint: entry => footprint(entry.key, entry.rot), enqueue, enqueueSeeds, collect, tick, open, renderRows, renderShop, refreshColors,
     hasPlacement: () => !!placement, cancelPlacement: () => { placement = null; }, outputsFor, canPlace, irrigate, connectedCrops, fertilize, entries: () => buildings, now };
 })();

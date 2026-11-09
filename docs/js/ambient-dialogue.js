@@ -50,6 +50,7 @@
     ledgerKey: null,
     renderQueue: Promise.resolve(),
     lastFacingDebug: null, // Used by AmbientDialogue.getDebug and Pixel Probe to report the most recent greeting head-turn decision on mobile.
+    lastAddressDebug: null, // Used by mobile debugging to inspect the last spoken nickname without browser devtools.
   };
 
   function structuredCloneSafe(value) {
@@ -109,6 +110,8 @@
   }
 
   function greetingLinesFor(speakerId, targetId) {
+    const spouseLines = targetId === 'player' ? window.RomanceSystem?.spouseDialogueFor?.(speakerId)?.greetings : null; // Only the player's married partner receives the post-wedding pool.
+    if (spouseLines?.length) return spouseLines;
     const authored = state.settings.npcGreetings?.[speakerId];
     if (targetId === 'player' && authored?.player?.length) return authored.player;
     if (targetId !== 'player' && authored?.friends?.[targetId]?.length) return authored.friends[targetId];
@@ -135,6 +138,7 @@
   function playerGreetingPolicy(walker) {
     const npcId = walker?.rec?.id; // Used to apply the two NPC-specific greeting thresholds and the four actual-name exceptions in one event-time lookup.
     const favor = playerGreetingFavor(walker); // Used for both greeting eligibility and actual-name eligibility so favor is not fetched twice.
+    if (window.RomanceSystem?.spouseDialogueFor?.(npcId)) return { allowed: true, mayUseActualName: true }; // Marriage outranks old acquaintance greeting gates, even on a restored low-favor save.
     const playerSpeciesId = npcId === 'kinami_kunji' ? playerGreetingSpeciesId() : ''; // Used only for Kinami's Mao'ao exception, avoiding a species lookup for every other NPC.
     let allowed = true; // Used by tryGreeting to decide whether this already-dwelled proximity entry may actually fire.
     if (npcId === 'takua_ao_hakaru') allowed = favor >= 1;
@@ -183,7 +187,10 @@
     const unresolved = [...source.matchAll(/\{([A-Za-z][A-Za-z0-9_]*)\}/g)]
       .map(match => match[1]).filter(key => !(key in values));
     if (unresolved.length) state.deps?.debugLog?.(`[ambient-dialogue] Unknown placeholder(s) for ${speakerId}: ${[...new Set(unresolved)].join(', ')}`, 'warn');
-    return source.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (token, key) => key in values ? values[key] : token);
+    const standardGreeting = source.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (token, key) => key in values ? values[key] : token);
+    return targetId === 'player' && options.walker?.rec
+      ? window.DialogueContent?.contextGreeting?.(options.walker.rec, { standardGreeting, targetName: values.targetName, day, omitTargetName: !!options.omitTargetName }) || standardGreeting
+      : standardGreeting;
   }
 
   function friendSetFor(npcId) {
@@ -247,7 +254,8 @@
     let firstL2V1 = '';
     for (const ch of playerName) { firstL2V1 += ch; if (vowels.has(ch)) break; }
     const dlgState = window.DialogueContent?.getNpcDlgState?.(rec?.id) || {};
-    const localNickname = dlgState.localNickname || playerName;
+    const localNickname = window.CharacterNicknames?.addressPlayer?.(playerName, rec?.id, { favor: dlgState.favor, customNickname: dlgState.localNickname, gender })
+      || window.RomanceSystem?.spouseDialogueFor?.(rec?.id)?.nickname || dlgState.localNickname || playerName; // Same player form of address as normal conversations.
     let out = String(text || '')
       .replace(/\{\{npcName\}\}/g, rec?.name || '')
       .replace(/\{\{playerName\}\}/g, playerName)
@@ -271,8 +279,17 @@
     return out;
   }
 
+  function configuredPlayerGender() {
+    return state.dialogueDeps?.getPlayerData?.()?.appearance?.gender || window.__hobunjiPlayerProfile?.appearance?.gender || 'female'; // Target player gender used by world greetings and saved-date forms.
+  }
+
   function conditionedPlayerNicknameFor(walker) {
     const rec = walker?.rec; // Used to find this NPC's conditioned Nicknames phrase pool.
+    const intimateNickname = window.CharacterNicknames?.isAffectionateSpeaker?.(rec?.id)
+      ? window.CharacterNicknames.forRelationship(configuredPlayerGreetingName(), 'affectionate', configuredPlayerGender()) : null; // Most recent date and spouse outrank conditioned address pools.
+    if (intimateNickname) return intimateNickname;
+    const spouseNickname = window.RomanceSystem?.spouseDialogueFor?.(rec?.id)?.nickname; // Legacy fallback when the nickname module has not loaded.
+    if (spouseNickname) return spouseNickname;
     const pool = nicknamePoolFor(rec); // Used to preserve authored/conditioned nicknames even when the actual player name is relationship-gated.
     const entry = pickConditionedPoolEntry(pool, rec, walker); // Used to choose the same context-sensitive nickname normal ambient greetings already use.
     if (entry) {
@@ -285,16 +302,24 @@
   }
 
   function playerNicknameFor(walker) {
-    return conditionedPlayerNicknameFor(walker)
-      || state.dialogueDeps?.getPlayerData?.()?.nickname
-      || state.deps?.getPlayerName?.()
-      || 'neighbor';
+    const special = conditionedPlayerNicknameFor(walker); // Preserves authored terms and the spouse/last-date affectionate form.
+    if (special) return special;
+    const full = configuredPlayerGreetingName() || 'neighbor'; // Actual player name used only when ordinary greeting policy allows it.
+    return window.CharacterNicknames?.addressPlayer?.(full, walker?.rec?.id, { favor: playerGreetingFavor(walker), gender: configuredPlayerGender() }) || full;
   }
 
   function resolveTargetName(walker, target) {
     if (target?.id === 'player') return playerNicknameFor(walker);
-    const authored = state.settings.npcNicknames?.[walker?.rec?.id]?.[target?.id]; // Used for directional family/personal nicknames such as Dad, Mom, Sis, and Tak.
-    return String(authored || '').trim() || firstNameWord(target?.name);
+    const speakerId = walker?.rec?.id; // Directional NPC-NPC relation source.
+    const targetId = target?.id; // Directional nickname and social-graph lookup key.
+    const authored = state.settings.npcNicknames?.[speakerId]?.[targetId]; // Family/personal names such as Dad, Mom, Sis and Tak always win.
+    if (String(authored || '').trim()) return String(authored).trim();
+    const name = firstNameWord(target?.name); // Neutral NPC greeting retains its previous given-name behavior.
+    const bond = window.CharacterNicknames?.npcBond?.(speakerId, targetId); // Canonical social relationship tags also cover partners who do not share a greeting group.
+    const relationship = bond === 'partner' ? 'affectionate' : (bond === 'friend' || friendSetFor(speakerId).has(targetId) ? 'friend' : 'other');
+    const targetGender = target?.rec?.appearance?.gender || target?.rec?.avatarEditor?.rawExport?.appearance?.gender
+      || target?.rec?.gender || target?.gender || 'female'; // Gender of the NPC being addressed, not the speaking walker.
+    return window.CharacterNicknames?.forRelationship?.(name, relationship, targetGender) || name;
   }
 
   // Off-screen follow tuning for chatheads directed at the player: how far
@@ -641,7 +666,7 @@
   }
 
   function show(root, text, options = {}) {
-    if (String(options.speakerId || '') === 'banubu') return null; // Banubu speaks only through his authored, player-initiated quest dialogue.
+    if (window.NpcInteractionPolicy?.isPassiveGreatFey?.(options.speakerId)) return null; // Last-resort guard for ambient speech from the four Great Fey, including direct/queued pet callers; authored Talk/quest dialogue uses DialogueContent.
     const THREE = state.deps?.THREE;
     const scene = options.scene || state.deps?.getActiveScene?.();
     const message = String(text || '').trim();
@@ -819,7 +844,7 @@
 
   function tryGreeting(walker, target, now, day, override = null) {
     const speakerId = walker?.rec?.id;
-    if (speakerId === 'banubu') return false; // Avoid greeting policy, portrait composition, and ledger work for the sleeping Fey.
+    if (window.NpcInteractionPolicy?.isPassiveGreatFey?.(speakerId)) return false; // Great Fey use scripted conversations, not proximity greetings (player or NPC).
     if (walker?.rec?.ambientGreetings === false) return false; // Runtime-spawned records (e.g. babies/toddlers from js/romance-family.js) can opt out entirely.
     if (!speakerId || walker.area !== state.deps.getCurrentArea()) return false;
     if (window.HobunjiDrunkGameplayBridge?.isNpcBlackedOut?.(speakerId)) return false;
@@ -854,9 +879,12 @@
     const lowFavorNickname = targetId === 'player' && !mayUseActualPlayerName ? conditionedPlayerNicknameFor(walker) : ''; // Used only for a greeting that is firing now, never during the recurring proximity scan.
     const targetName = mayUseActualPlayerName ? resolveTargetName(walker, target) : lowFavorNickname; // Uses an NPC-specific nickname below +1 when available, otherwise leaves the name slot empty.
     const omitTargetName = targetId === 'player' && !mayUseActualPlayerName && !lowFavorNickname; // Used to clean punctuation only when neither an actual name nor a nickname may be spoken.
+    state.lastAddressDebug = { speakerId, targetId, targetName, relation: targetId === 'player'
+      ? (window.CharacterNicknames?.isAffectionateSpeaker?.(speakerId) ? 'affectionate' : (playerGreetingFavor(walker) >= 2 ? 'friend' : 'other'))
+      : (window.CharacterNicknames?.npcBond?.(speakerId, targetId) || (friendSetFor(speakerId).has(targetId) ? 'friend' : 'other')) }; // Captured only for an actual greeting, not during the proximity scan.
     const line = override?.text
       ? (mayUseActualPlayerName ? override.text : rewriteResolvedGreetingTargetName(override.text, configuredPlayerGreetingName(), lowFavorNickname))
-      : templateLine(targetName, speakerId, targetId, day, { omitTargetName });
+      : templateLine(targetName, speakerId, targetId, day, { omitTargetName, walker });
     show(walker.root, line, {
       speakerId,
       profile: walker.profile,
@@ -868,14 +896,14 @@
       faceWalker: walker,
       faceTarget: target.root ? { root: target.root } : { x: target.x, z: target.z },
       faceMode: 'head', // Walking and seated greetings to either the player or another NPC preserve body/seat heading and use only the neck.
-      traceSource: override ? 'pending-request call-over line (procedural task)' : `config/dialogue/ambient-dialogue.json greeting template${lowFavorNickname ? ' + NPC "Nicknames" phrase pool (below +1 heart)' : ''}`,
+      traceSource: override ? 'pending-request call-over line (procedural task)' : (window.RomanceSystem?.spouseDialogueFor?.(speakerId) && targetId === 'player' ? 'config/romance-config.js married spouse greeting' : `config/dialogue/ambient-dialogue.json greeting template${lowFavorNickname ? ' + NPC "Nicknames" phrase pool (below +1 heart)' : ''}`),
     });
     return true;
   }
 
   function playerGreetingWaitMsForWalker(walker, now = performance.now()) {
     const speakerId = String(walker?.rec?.id || ''); // Speaker whose pet reaction is deciding whether an ordinary player greeting still has priority.
-    if (!speakerId || !state.deps || walker?.area !== state.deps.getCurrentArea?.()) return 0;
+    if (!speakerId || window.NpcInteractionPolicy?.isPassiveGreatFey?.(speakerId) || !state.deps || walker?.area !== state.deps.getCurrentArea?.()) return 0; // No deferred greeting priority for excluded Great Fey.
     if (state.deps.isDialogueOpen?.() || state.deps.isPaused?.() || window.HobunjiDrunkGameplayBridge?.isNpcBlackedOut?.(speakerId)) return 0;
     const player = state.deps.getPlayerPosition?.();
     if (!player) return 0;
@@ -916,7 +944,7 @@
       const friends = friendSetFor(walker.rec?.id);
       for (const other of walkers) {
         if (walker === other || !friends.has(other.rec?.id)) continue;
-        if (tryGreeting(walker, { id: other.rec.id, name: other.rec.name, x: other.root.position.x, z: other.root.position.z, root: other.root }, now, day)) return;
+        if (tryGreeting(walker, { id: other.rec.id, name: other.rec.name, rec: other.rec, x: other.root.position.x, z: other.root.position.z, root: other.root }, now, day)) return;
       }
     }
   }
@@ -967,7 +995,7 @@
     };
   }
 
-  function showAlcoholOfferResponse(walker, response = resolveAlcoholOffer(walker)) {
+  function showSocialResponse(walker, response = resolveAlcoholOffer(walker)) {
     if (!walker?.root || !response?.text) return null;
     // Explicit interaction speech replaces that speaker's incidental greeting
     // so the accepted/refused line is never hidden under a second chathead.
@@ -1027,7 +1055,8 @@
     cheer: (root, options) => crowd(root, 'cheer', options),
     jeer: (root, options) => crowd(root, 'jeer', options),
     resolveAlcoholOffer,
-    showAlcoholOfferResponse,
+    showSocialResponse,
+    showAlcoholOfferResponse: showSocialResponse, // Existing drink callers share the same directed ambient response owner.
     // Runtime NPCs (children from js/romance-family.js) have no authored
     // ambient-dialogue.json entry; this registers their greeting pool.
     setNpcGreetings(npcId, greetings) {
@@ -1037,6 +1066,7 @@
       else delete state.settings.npcGreetings[id];
       return true;
     },
+    friendIdsFor: npcId => [...friendSetFor(npcId)], // Shared meal/group planning reuses authored friendship circles.
     playerGreetingWaitMsForWalker,
     clear,
     loadSettings,
@@ -1046,6 +1076,8 @@
       return {
         active: state.active.map(event => ({ speakerId: event.speakerId, greeting: event.greeting, directedAtPlayer: event.directedAtPlayer, faceMode: event.faceMode })),
         lastFacing: state.lastFacingDebug ? { ...state.lastFacingDebug } : null,
+        lastAddress: state.lastAddressDebug ? { ...state.lastAddressDebug } : null, // Current address choice exposed through existing mobile diagnostics.
+        spouseId: window.RomanceSystem?.getSpouse?.()?.npcId || null, // Mobile debug shows whether the wedding state was restored.
       };
     },
   };

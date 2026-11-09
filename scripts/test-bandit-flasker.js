@@ -23,8 +23,7 @@ assert.match(grips, /throwingflask:\s*\{[\s\S]*?toolScale: 0\.82[\s\S]*?primaryG
 assert.match(grips, /throwingflask:\s*\{[\s\S]*?rangedPrimaryGrip:[\s\S]*?x: -0\.01[\s\S]*?y: -0\.05[\s\S]*?z: -0\.09[\s\S]*?yaw: 0/, 'throwing flask uses the independently authored ranged throw grip export');
 assert.match(grips, /throwingflask:\s*\{[\s\S]*?heightMultiplier: 0\.5[\s\S]*?primaryGripSpan: \{ enabled: false, startZ: 0, endZ: 0 \}/, 'throwing flask retains the authored height multiplier and disabled primary span');
 assert.match(grips, /key\.includes\('flask'\).*return 'throwingflask'/, 'real alchemy flask item keys normalize onto the authored grip');
-assert.equal(cfg.gangComposition.flaskersMin, 1);
-assert.equal(cfg.gangComposition.flaskersMax, 2);
+assert.equal(cfg.gangComposition.regularBanditsPerFlasker, 4, 'one Flasker per four regular bandits');
 assert.equal(cfg.flasker.loadoutSize, 2, 'Flaskers always carry two distinct flask recipe types');
 assert.equal(cfg.rangedWeaponChanceByRank.flasker, 0, 'Flaskers reserve their ranged role for alchemy flasks');
 assert.equal(cfg.flasker.lootMinPerType, 2);

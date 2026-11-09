@@ -10,20 +10,22 @@
     { globalKey: 'AnimalSleepPresentation', src: 'js/animal-sleep-presentation.js?v=20261011h801c233' },
     { globalKey: 'OutdoorLivestockWelfare', src: 'js/outdoor-livestock-welfare.js?v=20260916outdoor1' },
     { globalKey: 'OutdoorLivestockPresence', src: 'js/outdoor-livestock-presence.js?v=20260916presence1' },
-    { globalKey: 'ANIMAL_GROWTH_CONFIG', src: 'config/animal-growth-config.js?v=20260903growth2' },
-    { globalKey: 'AnimalGrowth', src: 'js/animal-growth.js?v=20260903growth2' },
-    { globalKey: 'StableAnimalProgression', src: 'js/stable-animal-progression.js?v=20261007h051313c' },
-    { globalKey: 'StableAnimalPerkAdjustments', src: 'js/stable-animal-perk-adjustments.js?v=20260915ambient2' },
+    { globalKey: 'ANIMAL_GROWTH_CONFIG', src: 'config/animal-growth-config.js?v=20261019hd965d6f' },
+    { globalKey: 'AnimalBabyArrival', src: 'js/animal-baby-arrival.js?v=20261024naming3' },
+    { globalKey: 'AnimalGrowth', src: 'js/animal-growth.js?v=20261024naming1' },
+    { globalKey: 'StableAnimalProgression', src: 'js/stable-animal-progression.js?v=20261103crs2' },
+    { globalKey: 'StableAnimalPerkAdjustments', src: 'js/stable-animal-perk-adjustments.js?v=20261021hdf1c0e2' },
+    { globalKey: 'CompanionResilience', src: 'js/stable-companion-resilience.js?v=20261024resil1' }, // Appends offense/defense/revival perks to the tree perk-adjustments just replaced.
     { globalKey: 'StableAnimalTownFamiliarity', src: 'js/stable-animal-town-familiarity.js?v=20260917rapport2' },
-    { globalKey: 'StableAnimalTrainingRefinements', src: 'js/stable-animal-training-refinements.js?v=20260912pets3' },
+    { globalKey: 'StableAnimalTrainingRefinements', src: 'js/stable-animal-training-refinements.js?v=20261028hfurytactics1' },
     { globalKey: 'StableAnimalXpEvents', src: 'js/stable-animal-xp-events.js?v=20260924perf1' },
-    { globalKey: 'StableTrainingCompendiumPatch', src: 'js/stable-training-compendium-patch.js?v=20260912stableNative1' },
+    { globalKey: 'StableTrainingCompendiumPatch', src: 'js/stable-training-compendium-patch.js?v=20261026h2ddbb14' },
     { globalKey: 'JubmirDabinggiHounds', src: 'js/jubmir-dabinggi-hounds.js?v=20261006h1a27ed3' },
     { globalKey: 'BARN_INCUBATOR_CONFIG', src: 'config/barn-incubator-config.js?v=20261012h24b6e66' },
-    { globalKey: 'BarnIncubator', src: 'js/barn-incubator.js?v=20261015he04ec3e' },
-    { globalKey: 'FarmMenuLayout', src: 'js/farm-menu-layout.js?v=20260915farmui2' },
-    { globalKey: 'FarmGlancePalette', src: 'js/farm-glance-palette.js?v=20260916palette1' },
-    { globalKey: 'LivestockNurseryGrid', src: 'js/livestock-nursery-grid.js?v=20261016hbac65b8' },
+    { globalKey: 'BarnIncubator', src: 'js/barn-incubator.js?v=20261026h2bedc43' },
+    { globalKey: 'FarmMenuLayout', src: 'js/farm-menu-layout.js?v=20261026h4aaf980' },
+    { globalKey: 'FarmGlancePalette', src: 'js/farm-glance-palette.js?v=20261026hea788ca' },
+    { globalKey: 'LivestockNurseryGrid', src: 'js/livestock-nursery-grid.js?v=20261107flyers2' },
     { globalKey: 'LivestockNurseryInventoryPaging', src: 'js/livestock-nursery-inventory-paging.js?v=20260916nurserypage6' },
     { globalKey: 'LivestockNurseryGridUiFix', src: 'js/livestock-nursery-grid-ui-fix.js?v=20260916uifix1' },
   ];
@@ -51,6 +53,7 @@
         window.OutdoorLivestockPresence?.install?.();
         window.AnimalGrowth?.install?.();
         window.StableAnimalProgression?.install?.();
+        window.CompanionResilience?.install?.();
         window.StableAnimalTownFamiliarity?.install?.();
         window.StableAnimalTrainingRefinements?.install?.();
         window.StableAnimalXpEvents?.install?.();

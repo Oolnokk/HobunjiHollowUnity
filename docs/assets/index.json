@@ -29,7 +29,7 @@
     { "name": "Loom: Small", "path": "assets/models/furniture/loom_small.glb", "category": "furniture" },
     { "name": "Nightstand", "path": "assets/models/furniture/nightstand.glb", "category": "furniture" },
     { "name": "Rug: Woven Small", "path": "assets/models/furniture/rug_woven_small.glb", "category": "furniture" },
-    { "name": "Lamp: Standing Bronze", "path": "assets/models/furniture/standing_lamp_bronze.glb", "category": "furniture" },
+    { "name": "Legacy: Standing Bronze Lamp", "path": "assets/models/furniture/standing_lamp_bronze.glb", "category": "furniture" },
     { "name": "Station: Aging Barrel", "path": "assets/models/furniture/station_aging_barrel.glb", "category": "furniture" },
     { "name": "Station: Aging Vase", "path": "assets/models/furniture/station_aging_vase.glb", "category": "furniture" },
     { "name": "Station: Drying Rack", "path": "assets/models/furniture/station_drying_rack.glb", "category": "furniture" },

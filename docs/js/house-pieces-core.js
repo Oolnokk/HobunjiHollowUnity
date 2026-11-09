@@ -33,14 +33,11 @@
   // unenterable — placing any manual entrance makes that auto one disappear.
   // See _refreshArchitecturalFeatures/placeFeature/removeFeatureAt below.
   //
-  // All built pieces share ONE continuous interior (see game.js's
-  // rebuildInteriorGeometry()): every piece contributes a 2x2-interior-cell
-  // block per exterior farm tile, anchored directly at (farmCol*2, farmRow*2)
-  // — the interior grid is just the farm grid at 2x resolution, so no
-  // separate per-house coordinate origin bookkeeping is needed. Each door
-  // punches a 3-interior-cell-wide exit threshold through the boundary wall
-  // on whichever farm-tile side it faces — the same convention proven by the
-  // reference demo's entranceNubCells().
+  // Each built piece keeps its complete 2x interior floor footprint. The
+  // farmhouse planner offsets only indoor origins to create one-cell gaps
+  // between connected rooms; the exterior remains physically joined.
+  // Single floorless exit markers and generated join corridors use the same
+  // authored wooden doors as other building interiors.
   //
   // Interior furniture records the room piece and piece-local cell offset,
   // so moving or rotating a room carries its contents with it. demolish()
@@ -81,6 +78,36 @@
     const vertical   = (aCol + aW === bCol || bCol + bW === aCol) && aRow < bRow + bH && aRow + aH > bRow;
     const horizontal = (aRow + aH === bRow || bRow + bH === aRow) && aCol < bCol + bW && aCol + aW > bCol;
     return vertical || horizontal;
+  }
+
+  function _connectedRoomIds(pieces, startId) {
+    const connected = new Set([startId]); // Room IDs reachable through real shared edges, including foundations.
+    const pending = pieces.filter(piece => piece.id === startId); // Small edit-time traversal; never runs in the frame loop.
+    for (let index = 0; index < pending.length; index++) {
+      const room = pending[index]; // Expand this room's component using the same adjacency rule as placement.
+      for (const candidate of pieces) {
+        if (connected.has(candidate.id) || !rectsAdjacent(room.col, room.row, room.w, room.h,
+          candidate.col, candidate.row, candidate.w, candidate.h)) continue;
+        connected.add(candidate.id);
+        pending.push(candidate);
+      }
+    }
+    return connected;
+  }
+
+  function _preservesHouseConnections(nextPieces) {
+    const previousPieces = deps.getHousePieces(); // Keep existing components intact while allowing old disconnected saves to be repaired.
+    const unchecked = new Set(nextPieces.map(piece => piece.id)); // Removed rooms themselves do not need to stay reachable.
+    while (unchecked.size) {
+      const startId = unchecked.values().next().value; // Test one surviving representative of each previous component.
+      const previous = _connectedRoomIds(previousPieces, startId); // Includes a removed bridge so its surviving neighbors must still connect.
+      const next = _connectedRoomIds(nextPieces, startId); // Moving, turning or removing a room must not split that component.
+      for (const id of previous) {
+        if (unchecked.has(id) && !next.has(id)) return false;
+        unchecked.delete(id);
+      }
+    }
+    return true;
   }
 
   // In bounds, no trench/tilled/raised/paddy/water tile or crop, no other
@@ -380,9 +407,9 @@
     }
     return out;
   }
-  // Render-only rectangle for a piece — expanded 1 tile into a same-axis
-  // full-shared-edge neighbor per _sameDirectionExtensions. Never mutates
-  // the piece's own col/row/w/h (footprint, door resolution, save data).
+  // Roof-only render rectangle for a piece — expanded 1 tile into a same-axis
+  // full-shared-edge neighbor per _sameDirectionExtensions. Never use this
+  // for body walls, doors or windows: only the roof is allowed to overlap.
   function _renderRectFor(entry, exts) {
     let col = entry.col, row = entry.row, w = entry.w, h = entry.h;
     for (const e of exts) {
@@ -395,13 +422,42 @@
     return { col, row, w, h };
   }
   function getExteriorRenderRect(pieceId) {
-    const built = deps.getHousePieces().filter(piece => piece.stage === 'built'); // Uses the same neighboring rooms as the structure rebuild.
-    const entry = built.find(piece => piece.id === pieceId); // Identifies the rendered Highland body under a linked window.
-    return entry ? (entry._exteriorRenderRect || _renderRectFor(entry, _sameDirectionExtensions(built))) : null; // Reuses the last build's rectangle during player aiming.
+    const entry = deps.getHousePieces().find(piece => piece.id === pieceId && piece.stage === 'built'); // Window linkage follows the real exterior wall, never the roof-only overhang.
+    return entry ? (entry._exteriorRenderRect || { col: entry.col, row: entry.row, w: entry.w, h: entry.h }) : null;
   }
   // A partial (not full-length) same-axis shared edge can't expand the whole
   // source rectangle without spilling past the neighbor — just the 1-tile-
   // deep shared run gets its own small bridging piece instead.
+  // Remove the wall segment where this room meets any adjacent room. The
+  // same normalized apertures cut the body wall AND its gable end, so
+  // shared interior boundaries cannot show through as exterior brickwork.
+  function _sharedWallCutsFor(entry, all) {
+    const cuts = [];
+    for (const other of all) {
+      if (other === entry) continue;
+      const ad = _rectAdjacency(entry, other);
+      if (!ad) continue;
+      let side;
+      if (ad.orientation === 'vertical') {
+        side = entry.col + entry.w === other.col ? 'east' : 'west';
+      } else {
+        side = entry.row + entry.h === other.row ? 'south' : 'north';
+      }
+      // Store the actual shared interval in world tile coordinates. The
+      // gable edge is inset from the floor/body edge, so a normalized cut
+      // would leave a thin uncovered sliver on partial-length connections.
+      cuts.push({
+        side,
+        worldStart: ad.start,
+        worldEnd: ad.end,
+        vCenter: 0.5,
+        vHeight: 1,
+        kind: 'internal',
+      });
+    }
+    return cuts;
+  }
+
   function _partialExtensionRect(e, all) {
     const host = all.find(p => p.id === e.hostId);
     if (!host) return null;
@@ -522,27 +578,39 @@
     _refreshArchitecturalFeatures(built);
     const exts = _sameDirectionExtensions(built);
     const crossGables = _crossGableConnections(built);
-    built.forEach(entry => { entry._exteriorRenderRect = _renderRectFor(entry, exts); }); // Every window sees the new geometry even if its owner builds later in this loop.
+    built.forEach(entry => { entry._exteriorRenderRect = { col: entry.col, row: entry.row, w: entry.w, h: entry.h }; }); // Window/door linkage always targets the actual walls.
     for (const entry of built) {
       _disposeMesh(entry._mesh);
       const axis = _roofAxisDecision(entry, built);
-      const render = entry._exteriorRenderRect; // Window placement and the cut share this exact generated Highland footprint.
+      const wallRect = entry._exteriorRenderRect;
+      const roofRect = _renderRectFor(entry, exts); // Only roof surfaces use same-axis overhangs.
       const entrances = (entry.features || []).filter(f => f.type === 'entrance' && !f.invalid);
       const buildOpts = {
+        bodyOnly: true,
         farmNaturalColors: window.FarmWorldSettings?.current(),
         axisOverride: axis, wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: true, wbOpts: _wbDefaults,
-        windowCuts: window.HouseWindowLinkage?.getExteriorWindowCuts?.(render) || [], // Linked daylight windows subtract their full frame silhouettes before exterior WallBuilder bricks are generated.
+        windowCuts: window.HouseWindowLinkage?.getExteriorWindowCuts?.(wallRect) || [], // Linked windows cut the real wall, not the extended roof.
+        wallCuts: _sharedWallCutsFor(entry, built),
         doorCuts: entrances.map(f => {
           const { col, row } = _featureGlobalTile(entry, f);
           return {
             side: f.side,
-            idx: (f.side === 'south' || f.side === 'north') ? col - render.col : row - render.row,
-            len: (f.side === 'south' || f.side === 'north') ? render.w : render.h,
+            idx: (f.side === 'south' || f.side === 'north') ? col - wallRect.col : row - wallRect.row,
+            len: (f.side === 'south' || f.side === 'north') ? wallRect.w : wallRect.h,
           };
         }),
         ..._faceMats(),
       };
-      entry._mesh = HousePieceGen.buildGroup(THREE, render.col, render.col + render.w - 1, render.row, render.row + render.h - 1, buildOpts);
+      entry._mesh = HousePieceGen.buildGroup(THREE, wallRect.col, wallRect.col + wallRect.w - 1, wallRect.row, wallRect.row + wallRect.h - 1, buildOpts);
+      const roofMesh = HousePieceGen.buildGroup(THREE, roofRect.col, roofRect.col + roofRect.w - 1, roofRect.row, roofRect.row + roofRect.h - 1, {
+        roofOnly: true,
+        farmNaturalColors: window.FarmWorldSettings?.current(),
+        axisOverride: axis,
+        ..._faceMats(),
+      });
+      roofMesh.userData.housePieceRoofOnly = true;
+      roofMesh.userData.housePieceRoofExtension = roofRect.col !== wallRect.col || roofRect.row !== wallRect.row || roofRect.w !== wallRect.w || roofRect.h !== wallRect.h;
+      entry._mesh.add(roofMesh);
       (entry.features || []).forEach(f => {
         if (f.invalid) return;
         const { col, row } = _featureGlobalTile(entry, f);
@@ -569,8 +637,9 @@
       const rect = _partialExtensionRect(e, built);
       if (!rect || rect.w <= 0 || rect.h <= 0) return;
       const mesh = HousePieceGen.buildGroup(THREE, rect.col, rect.col + rect.w - 1, rect.row, rect.row + rect.h - 1, {
+        roofOnly: true,
         farmNaturalColors: window.FarmWorldSettings?.current(),
-        axisOverride: e.axis, wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: true, wbOpts: _wbDefaults, ..._faceMats(),
+        axisOverride: e.axis, ..._faceMats(),
       });
       deps.scene.add(mesh);
       _extensionProxyMeshes.push(mesh);
@@ -632,7 +701,7 @@
         onAction(action) {
           if (action === 'obj_enter_house') {
             recordEnteredEntrance(entry.id, f.id);
-            deps.startSceneTransition(() => deps.enterInterior(entry.id));
+            deps.startSceneTransition(() => deps.enterInterior(entry.id, f.id)); // Each attached doorway enters through its own interior landing, even when multiple doors share a room.
             return { ok: true, message: 'Entering the house…' };
           }
           return { ok: false, message: 'Unknown house action.' };
@@ -676,18 +745,13 @@
       get col() { return entry.col; }, get row() { return entry.row; },
       get label() { return '🏠 ' + label(entry); },
       getButtons() {
-        if (entry.stage === 'foundation') {
-          return [
-            { icon: '🔨', label: 'Build ' + label(entry), action: 'obj_house_build_' + entry.id, style: 'primary', allowed: deps.hasFarmPermission('alterFarm') },
-            { icon: '💥', label: 'Demolish', action: 'obj_house_demolish_' + entry.id, style: 'secondary', allowed: deps.hasFarmPermission('alterFarm') },
-          ];
-        }
-        if (entry.pieceKey === 'starter') return [];
-        return [{ icon: '💥', label: 'Demolish', action: 'obj_house_demolish_' + entry.id, style: 'secondary', allowed: deps.hasFarmPermission('alterFarm') }];
+        // An interaction prompt must never destroy a house section with a stray Action 2 press.
+        return entry.stage === 'foundation'
+          ? [{ icon: '🔨', label: 'Build ' + label(entry), action: 'obj_house_build_' + entry.id, style: 'primary', allowed: deps.hasFarmPermission('alterFarm') }]
+          : [];
       },
       onAction(action) {
         if (action === 'obj_house_build_' + entry.id) return build(entry.id);
-        if (action === 'obj_house_demolish_' + entry.id) return demolish(entry.id);
         return { ok: false, message: 'Unknown house action.' };
       },
       reset() { _disposeMesh(entry._mesh); entry._mesh = null; },
@@ -766,13 +830,18 @@
     const entry = pieces.find(p => p.id === id);
     if (!entry) return { ok: false, message: 'House piece not found.' };
     if (entry.pieceKey === 'starter') return { ok: false, message: "The original house can't be demolished." };
+    if (!_preservesHouseConnections(pieces.filter(piece => piece.id !== id)))
+      return { ok: false, message: 'Cannot demolish this room while it connects other rooms. Move those rooms first.' };
+    const interiorRoom = window.FarmhouseRoomPlanner?.roomRect?.(entry); // Recover only this full-size section's actual indoor furniture, not a neighbor's offset floor.
     const recovered = entry.stage === 'built'
-      ? deps.recoverFurnitureInInteriorRect(entry.col * 2, entry.row * 2, entry.w * 2, entry.h * 2)
+      ? deps.recoverFurnitureInInteriorRect(interiorRoom?.col ?? entry.col * 2, interiorRoom?.row ?? entry.row * 2,
+          interiorRoom?.w ?? entry.w * 2, interiorRoom?.h ?? entry.h * 2)
       : 0;
     _unregisterFeatureDoors(entry);
     _unregisterFootprint(entry);
     _disposeMesh(entry._mesh);
     deps.setHousePieces(pieces.filter(p => p.id !== id));
+    window.FarmhouseRoomPlanner?.onPieceRemoved?.(id); // Custom subdivisions belong to their wing; demolishing it removes their wall records.
     // Removing this piece can change its former neighbors' roof-axis vote
     // and/or same-direction extensions, not just its own geometry.
     _rebuildAllStructureMeshes();
@@ -841,6 +910,7 @@
     const entry = pieces.find(p => p.id === id);
     if (!entry || entry.id === 'house_starter') return false;
     const others = pieces.filter(p => p.id !== id);
+    if (!_preservesHouseConnections(pieces.map(piece => piece.id === id ? { ...piece, col, row } : piece))) return false;
     _unregisterFeatureDoors(entry);
     _unregisterFootprint(entry);
     const ok = _footprintClearOfHazardsAndBarns(col, row, entry.w, entry.h)
@@ -867,7 +937,7 @@
     if (entry.id === 'house_starter') return { ok: false, message: 'Move the whole house instead of the main room on its own.' };
     if (newCol === entry.col && newRow === entry.row) return { ok: false, message: 'Already there.' };
     if (!canMovePieceTo(id, newCol, newRow)) {
-      return { ok: false, message: 'Cannot move there — needs clear, untilled ground touching the rest of your house.' };
+      return { ok: false, message: 'Cannot move there — needs clear, untilled ground and must keep connected rooms together.' };
     }
 
     _unregisterFeatureDoors(entry);
@@ -906,6 +976,8 @@
     if (!entry) return { ok: false, message: 'House piece not found.' };
     if (entry.id === 'house_starter') return { ok: false, message: "The main room can't be rotated on its own." };
     const newW = entry.h, newH = entry.w;
+    if (!_preservesHouseConnections(pieces.map(piece => piece.id === id ? { ...piece, w: newW, h: newH } : piece)))
+      return { ok: false, message: 'Cannot rotate this room because it would disconnect other rooms.' };
 
     const others = pieces.filter(p => p.id !== id);
     _unregisterFeatureDoors(entry);
@@ -1040,6 +1112,35 @@
     return { ok: true, message: `${f.type === 'chimney' ? 'Chimney' : 'Entrance'} removed and stored — place it elsewhere any time.` };
   }
 
+  function getInteriorShiftableFeatures() {
+    return deps.getHousePieces().filter(entry => entry.stage === 'built').flatMap(entry =>
+      (entry.features || []).filter(feature => !feature.invalid && (feature.type === 'entrance' || feature.type === 'chimney'))
+        .map(feature => ({ pieceId: entry.id, featureId: feature.id, type: feature.type,
+          label: feature.type === 'chimney' ? 'Fireplace' : 'Entrance',
+          interiorShift: Math.max(-1, Math.min(1, Math.trunc(Number(feature.interiorShift) || 0))),
+          autoGenerated: !!feature.autoGenerated })));
+  }
+
+  function shiftInteriorFeature(pieceId, featureId, direction) {
+    if (!deps?.hasFarmPermission?.('alterFarm')) return { ok: false, message: 'You do not have permission to adjust farmhouse fixtures.' };
+    const entry = deps.getHousePieces().find(piece => piece.id === pieceId && piece.stage === 'built');
+    const feature = entry?.features?.find(item => item.id === featureId && !item.invalid
+      && (item.type === 'entrance' || item.type === 'chimney'));
+    const step = Math.sign(Number(direction) || 0);
+    if (!feature || !step) return { ok: false, message: 'That farmhouse fixture cannot be shifted.' };
+    const current = Math.max(-1, Math.min(1, Math.trunc(Number(feature.interiorShift) || 0)));
+    const baseSlot = feature.edgeSlot === 0 ? 0 : 1;
+    const rightAlongPositive = feature.side === 'north' || feature.side === 'east';
+    const minShift = Math.max(-1, feature.type === 'entrance' ? (rightAlongPositive ? -baseSlot : baseSlot - 1) : -1);
+    const maxShift = Math.min(1, feature.type === 'entrance' ? (rightAlongPositive ? 1 - baseSlot : baseSlot) : 1);
+    const next = Math.max(minShift, Math.min(maxShift, current + step));
+    if (next === current) return { ok: false, message: 'The interior fixture has reached its adjustment limit.' };
+    feature.interiorShift = next; // Positive means right when viewed from inside facing the fixture wall.
+    _rebuildAllStructureMeshes();
+    deps.saveFarmLayout();
+    return { ok: true, message: feature.type === 'chimney' ? 'Interior fireplace shifted.' : 'Interior entrance shifted.' };
+  }
+
   function getFixtureInventory() { return _fixtureInventory.map(x => ({ ...x })); }
   // Restores the fixture inventory from a save — replaces whatever's
   // currently held (called once at load, before any placement happens).
@@ -1077,31 +1178,40 @@
   // auto-derived entrances, but reflects where the player actually tapped
   // for a manually placed one (see placeFeature).
   function _entranceNubCells(entry, f) {
-    const gx = entry.col + f.lx, gy = entry.row + f.ly, slot = (f.edgeSlot === 0 ? 0 : 1);
-    if (f.side === 'north') { const c = gx * 2 + slot, r = gy * 2 - 1; return [-1, 0, 1].map(d => ({ c: c + d, r })); }
-    if (f.side === 'south') { const c = gx * 2 + slot, r = (gy + 1) * 2; return [-1, 0, 1].map(d => ({ c: c + d, r })); }
-    if (f.side === 'west')  { const r = gy * 2 + slot, c = gx * 2 - 1; return [-1, 0, 1].map(d => ({ c, r: r + d })); }
-    const r = gy * 2 + slot, c = (gx + 1) * 2; return [-1, 0, 1].map(d => ({ c, r: r + d }));
+    const room = window.FarmhouseRoomPlanner?.roomRect?.(entry); // Exterior positions remain untouched; indoor origin includes room-only separation.
+    const gx = (room?.col ?? entry.col * 2) + f.lx * 2, gy = (room?.row ?? entry.row * 2) + f.ly * 2;
+    const slot = Math.max(0, Math.min(1, (f.edgeSlot === 0 ? 0 : 1) + (Math.trunc(Number(f.interiorShift) || 0) * ((f.side === 'north' || f.side === 'east') ? 1 : -1))));
+    // Exactly one floorless exit marker per entrance; the door is rendered
+    // at the floor boundary using InteriorDoorTiles, like an authored church.
+    if (f.side === 'north') return [{ c: gx + slot, r: gy - 1 }];
+    if (f.side === 'south') return [{ c: gx + slot, r: gy + 2 }];
+    if (f.side === 'west') return [{ c: gx - 1, r: gy + slot }];
+    return [{ c: gx + 2, r: gy + slot }];
   }
   // One interior cell inward from the nub's center — where the player
   // spawns when entering through this feature's door.
   function _entranceEnterCell(entry, f) {
-    const gx = entry.col + f.lx, gy = entry.row + f.ly, slot = (f.edgeSlot === 0 ? 0 : 1);
-    if (f.side === 'north') return { c: gx * 2 + slot, r: gy * 2 };
-    if (f.side === 'south') return { c: gx * 2 + slot, r: gy * 2 + 1 };
-    if (f.side === 'west')  return { c: gx * 2, r: gy * 2 + slot };
-    return { c: gx * 2 + 1, r: gy * 2 + slot };
+    const room = window.FarmhouseRoomPlanner?.roomRect?.(entry); // Exterior positions remain untouched; indoor origin includes room-only separation.
+    const gx = (room?.col ?? entry.col * 2) + f.lx * 2, gy = (room?.row ?? entry.row * 2) + f.ly * 2;
+    const slot = Math.max(0, Math.min(1, (f.edgeSlot === 0 ? 0 : 1) + (Math.trunc(Number(f.interiorShift) || 0) * ((f.side === 'north' || f.side === 'east') ? 1 : -1))));
+    if (f.side === 'north') return { c: gx + slot, r: gy };
+    if (f.side === 'south') return { c: gx + slot, r: gy + 1 };
+    if (f.side === 'west')  return { c: gx, r: gy + slot };
+    return { c: gx + 1, r: gy + slot };
   }
   const HEARTH_YAW = { north: 0, east: -Math.PI / 2, south: Math.PI, west: Math.PI / 2 };
   // World-space (interior-grid-unit) center + facing for a chimney's
   // derived hearth, glued to the same wall the chimney backs onto — exact
   // port of the reference demo's derivedHearthGroup positioning.
   function _chimneyHearthPlacement(entry, f) {
-    const gx = (entry.col + f.lx) * 2, gy = (entry.row + f.ly) * 2;
+    const room = window.FarmhouseRoomPlanner?.roomRect?.(entry); // Hearth follows its room without modifying its exterior chimney.
+    const gx = (room?.col ?? entry.col * 2) + f.lx * 2, gy = (room?.row ?? entry.row * 2) + f.ly * 2;
+    const shift = Math.max(-1, Math.min(1, Math.trunc(Number(f.interiorShift) || 0))) * ((f.side === 'north' || f.side === 'east') ? 1 : -1); // Positive shifts to the viewer's right from inside the room.
     let cx = gx + 1, cz = gy + 0.5;
-    if (f.side === 'south') { cx = gx + 1; cz = gy + 1.5; }
-    else if (f.side === 'west') { cx = gx + 0.5; cz = gy + 1; }
-    else if (f.side === 'east') { cx = gx + 1.5; cz = gy + 1; }
+    if (f.side === 'south') { cx = gx + 1 + shift; cz = gy + 1.5; }
+    else if (f.side === 'west') { cx = gx + 0.5; cz = gy + 1 + shift; }
+    else if (f.side === 'east') { cx = gx + 1.5; cz = gy + 1 + shift; }
+    else cx += shift;
     return { pieceId: entry.id, featureId: f.id, cx, cz, yaw: HEARTH_YAW[f.side] ?? 0 };
   }
 
@@ -1114,9 +1224,12 @@
   // entrance feature (a piece can have more than one), for enterInterior(pieceId).
   function computeInteriorLayout() {
     const floorSet = new Set(), exitSet = new Set(), doors = [], hearths = [];
+    window.FarmhouseRoomPlanner?.layoutBuiltRooms?.(deps.getHousePieces()); // Resolve all indoor room origins before supplying floor/door positions.
     for (const entry of deps.getHousePieces()) {
       if (entry.stage !== 'built') continue;
-      const bx = entry.col * 2, by = entry.row * 2, w = entry.w * 2, h = entry.h * 2;
+      const room = window.FarmhouseRoomPlanner?.roomRect?.(entry); // Preserve the complete doubled footprint for each individual section.
+      const bx = room?.col ?? entry.col * 2, by = room?.row ?? entry.row * 2;
+      const w = room?.w ?? entry.w * 2, h = room?.h ?? entry.h * 2;
       for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) floorSet.add((bx + c) + ',' + (by + r));
       (entry.features || []).forEach(f => {
         if (f.invalid) return;
@@ -1124,14 +1237,14 @@
           if (!f._doorObj) return; // no farm-side entrance registered for this feature
           const nub = _entranceNubCells(entry, f);
           const enter = _entranceEnterCell(entry, f);
-          nub.forEach(q => { floorSet.add(q.c + ',' + q.r); exitSet.add(q.c + ',' + q.r); });
-          doors.push({ pieceId: entry.id, featureId: f.id, enter, exitCells: nub.map(q => q.c + ',' + q.r) });
+          nub.forEach(q => exitSet.add(q.c + ',' + q.r)); // Outside floor; one exit per door.
+           doors.push({ pieceId: entry.id, featureId: f.id, enter, side: f.side, exitCells: nub.map(q => q.c + ',' + q.r) });
         } else if (f.type === 'chimney') {
           hearths.push(_chimneyHearthPlacement(entry, f));
         }
       });
     }
-    return { floorSet, exitSet, doors, hearths };
+    return window.FarmhouseRoomPlanner?.apply?.({ floorSet, exitSet, doors, hearths }, deps.getHousePieces()) || { floorSet, exitSet, doors, hearths };
   }
 
   // Which entrance the player last went in by. Leaving the interior returns
@@ -1180,6 +1293,8 @@
     placeFeature,
     removeFeatureAt,
     getFixtureInventory,
+    getInteriorShiftableFeatures,
+    shiftInteriorFeature,
     loadFixtureInventory,
     setFeatures,
     rebuildStructureMeshes: _rebuildAllStructureMeshes,

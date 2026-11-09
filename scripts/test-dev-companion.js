@@ -202,6 +202,23 @@ function makeContext(extra = {}) {
     await ctx.fetch('assets/art.png');
     assert.deepEqual(JSON.parse(JSON.stringify(bridge.configLog().map(entry => entry.path))), ['config/npcs/test.json'], 'only config/JSON fetches are logged');
 
+
+    // The discovery channel only publishes candidate metadata, not commands.
+    const replies = [];
+    const scout = new FakeChannel('hobunji-dev-companion-discovery-v1');
+    scout.onmessage = e => replies.push(e.data);
+    scout.postMessage({ protocol: 1, type: 'find-games', requestId: 'd1' });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    const announcement = replies.find(m => m.type === 'game-available');
+    assert.equal(announcement?.requestId, 'd1');
+    assert.equal(announcement?.session, bridge.sessionId);
+    assert.equal(announcement?.gameHref, 'http://x/docs/index.html');
+    assert.equal(announcement?.companionHref, 'http://x/docs/tools/dev-companion/index.html?session=' + bridge.sessionId);
+    scout.postMessage({ protocol: 1, type: 'command', requestId: 'bad', name: 'echo' });
+    scout.postMessage({ protocol: 1, type: 'find-games', requestId: '' });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(replies.length, 1, 'discovery cannot execute commands or respond to invalid scans');
+
     const received = [];
     const companion = new FakeChannel('hobunji-dev-companion-v1:' + bridge.sessionId);
     const stranger = new FakeChannel('hobunji-dev-companion-v1:someone-else');
@@ -257,6 +274,74 @@ function makeContext(extra = {}) {
     ctx.__hobunjiGameStarted = false;
     await assert.rejects(grant, /not currently available/);
 
+  }
+
+
+  // ── Discovering one game must never automatically switch ────────────
+  {
+    const source = read('tools/dev-companion/dev-companion.js');
+    const html = read('tools/dev-companion/index.html');
+    // The newly selected game should reuse this popup, not spawn another.
+    const bootHeader = source.slice(source.indexOf('  const params ='), source.indexOf('  const CHANNEL_PREFIX ='));
+    const popup = { name: 'hobunji-dev-companion-soldgame123' };
+    const newBuild = vm.createContext({
+      URLSearchParams, location: { search: '?session=snextgame123' }, window: popup,
+    });
+    vm.runInContext(bootHeader, newBuild);
+    assert.equal(popup.name, 'hobunji-dev-companion-snextgame123', 'switched companion adopts the new session popup name');
+    const invalidPopup = { name: 'existing-popup' };
+    vm.runInContext(bootHeader, vm.createContext({
+      URLSearchParams, location: { search: '?session=invalid-session' }, window: invalidPopup,
+    }));
+    assert.equal(invalidPopup.name, 'existing-popup', 'invalid session IDs cannot change the popup name');
+    assert.match(html, /id="findGamesBtn"/);
+    assert.match(html, /id="gameDiscovery"/);
+    assert.match(source, /onclick: \(\) => switchToGame\(game\)/);
+    const begin = source.indexOf('  function validGameAnnouncement(');
+    const finish = source.indexOf('  function renderDiscovery()', begin);
+    assert.ok(begin > 0 && finish > begin, 'session switch helpers are available for testing');
+    const navigations = [];
+    const domNode = () => ({ hidden: false, textContent: '', replaceChildren() {} });
+    const context = {
+      URL, Date, Map, Number, String,
+      location: { origin: 'https://raw.githack.com', pathname: '/Oolnokk/HobunjiHollowUnity/abc/docs/tools/dev-companion/index.html', assign: href => navigations.push(href) },
+      '$': () => domNode(), renderDiscovery() {}, toast: message => { throw Error(message); },
+      clearTimeout() {}, setTimeout: () => 0,
+      sessionId: 'sinitial123', state: { connected: false, activeTab: 'now' },
+      discoveredGames: new Map(), conflictingSessions: new Set(), activeScanId: 'd2', scanSequence: 0,
+      scanning: false, scanFinished: false, scanTimer: null,
+      discoveryChannel: { postMessage() {} }, DISCOVERY_WAIT_MS: 1800,
+    };
+    vm.createContext(context);
+    vm.runInContext(source.slice(begin, finish) + '\nthis.discoveryAPI = { validGameAnnouncement, acceptDiscovery, switchToGame, scanGames };', context);
+    const url = 'https://raw.githack.com/Oolnokk/HobunjiHollowUnity/def/docs/tools/dev-companion/index.html?session=snextgame123';
+    const game = {
+      protocol: 1, type: 'game-available', requestId: 'd2', session: 'snextgame123',
+      gameHref: 'https://raw.githack.com/Oolnokk/HobunjiHollowUnity/def/docs/index.html',
+      companionHref: url, title: 'Hobunji Hollow',
+    };
+    context.discoveryAPI.acceptDiscovery(game);
+    assert.equal(context.discoveredGames.size, 1);
+    assert.equal(navigations.length, 0, 'even a single candidate does not cause a switch');
+    context.discoveryAPI.switchToGame(context.discoveredGames.get('snextgame123'));
+    assert.deepEqual(navigations, [url], 'Switch opens the target build and exact session');
+    assert.equal(context.discoveryAPI.validGameAnnouncement({ ...game, requestId: 'old' }), null);
+    assert.equal(context.discoveryAPI.validGameAnnouncement({ ...game, companionHref: url.replace('raw.githack.com', 'evil.example') }), null);
+    assert.equal(context.discoveryAPI.validGameAnnouncement({ ...game, companionHref: url.replace('snextgame123', 'swrong123') }), null);
+    assert.equal(context.discoveryAPI.validGameAnnouncement({ ...game, companionHref: url.replace('/tools/dev-companion/', '/other/') }), null);
+    // Duplicating a tab can clone sessionStorage and therefore the session ID.
+    // Two distinct pages on one command channel must never be selectable.
+    context.discoveryAPI.acceptDiscovery({ ...game, pageLoadId: 'different-page-instance' });
+    assert.equal(context.conflictingSessions.has('snextgame123'), true, 'duplicate-tab session IDs are flagged');
+    assert.throws(
+      () => context.discoveryAPI.switchToGame(context.discoveredGames.get('snextgame123')),
+      /share this session ID/,
+      'a duplicated session is never switched into'
+    );
+    assert.equal(navigations.length, 1, 'session conflict does not navigate');
+    context.discoveryAPI.scanGames();
+    assert.equal(context.conflictingSessions.size, 0, 'a new scan discards old collision reports');
+    assert.equal(navigations.length, 1, 'Find Games cannot navigate');
   }
 
   // ── Calendar time skips use the same time-of-day bands as conditions ─

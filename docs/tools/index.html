@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <script src="../js/tap-reliability.js?v=20261010a"></script>
 <title>Hobunji Hollow — Dev Tools</title>
-<script src="../js/panel-ui.js"></script>
+<script src="../js/panel-ui.js?v=20261107h64d192c"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;overflow:hidden;background:#07101a;color:#edf5ff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:13px}
@@ -38,6 +38,7 @@ input{font:inherit;background:rgba(255,255,255,.06);border:1px solid rgba(255,25
 .tab-dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.18);flex-shrink:0;transition:background .12s}.tab.active .tab-dot{background:var(--ok)}
 #frames{flex:1;position:relative;min-height:0}.frame-wrap{position:absolute;inset:0;display:none}.frame-wrap.active{display:block}
 iframe{width:100%;height:100%;border:none;display:block;background:var(--bg)}
+@media (max-width:680px){#body:has(#fw-flying-animal-author.active)>#npc-sidebar{display:none}}
 </style>
 </head>
 <body>
@@ -65,6 +66,8 @@ iframe{width:100%;height:100%;border:none;display:block;background:var(--bg)}
         <span class="tab-group">Combat</span>
         <button class="tab" data-target="world-popup-editor"><span class="tab-dot"></span>🔢 Popup Text Editor</button>
         <button class="tab" data-target="modular-weapon-editor"><span class="tab-dot"></span>⚒ Modular Weapons</button>
+        <button class="tab" data-target="multi-sprite-weapon-editor"><span class="tab-dot"></span>🔥 Complex Tool Visuals</button>
+        <button class="tab" data-target="enemy-loadout-editor"><span class="tab-dot"></span>◈ Enemy Loadout Workshop</button>
         <button class="tab" data-target="attack-animation-editor"><span class="tab-dot"></span>⚔ Attack Animation Editor</button>
         <span class="tab-group">Assets</span>
         <button class="tab" data-target="house-piece-author"><span class="tab-dot"></span>🏠 House Editor</button>
@@ -72,8 +75,10 @@ iframe{width:100%;height:100%;border:none;display:block;background:var(--bg)}
         <button class="tab" data-target="furniture-avatar-author"><span class="tab-dot"></span>🪑 Furniture + Avatar Author</button>
         <button class="tab" data-target="clothing-species-fit"><span class="tab-dot"></span>👕 Clothing Species Fit</button>
         <button class="tab" data-target="foliage-generator"><span class="tab-dot"></span>🌿 Foliage Generator</button>
+         <button class="tab" data-target="live-root-growth"><span class="tab-dot"></span>🌳 Live Root Growth</button>
         <button class="tab" data-target="fish-editor"><span class="tab-dot"></span>🐟 Fish Editor</button>
         <button class="tab" data-target="animal-head-rig"><span class="tab-dot"></span>🐾 Animal Head Rig</button>
+        <button class="tab" data-target="flying-animal-author"><span class="tab-dot"></span>Flying Animal Author</button>
         <button class="tab" data-target="pattern-editor"><span class="tab-dot"></span>🧵 Pattern Editor</button>
         <button class="tab" data-target="tree-asset-exporter"><span class="tab-dot"></span>🌲 Tree Assets</button>
         <span class="tab-group">World</span>
@@ -90,28 +95,32 @@ iframe{width:100%;height:100%;border:none;display:block;background:var(--bg)}
       <div id="frames">
         <div class="frame-wrap active" id="fw-map-editor"><iframe src="map-editor/index.html" title="Map Editor" id="if-map-editor"></iframe></div>
         <div class="frame-wrap" id="fw-schedule-editor"><iframe src="schedule-editor/index.html" title="Schedule Editor" id="if-schedule-editor" loading="lazy"></iframe></div>
-        <div class="frame-wrap" id="fw-character-studio"><iframe src="character-studio/index.html" title="Character Studio" id="if-character-studio" loading="lazy"></iframe></div>
-        <div class="frame-wrap" id="fw-color-editor"><iframe src="color-editor/index.html" title="Body &amp; Dye Color Editor" id="if-color-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-character-studio"><iframe src="character-studio/index.html?v=20261106hoodrear4" title="Character Studio" id="if-character-studio" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-color-editor"><iframe src="color-editor/index.html?v=20261106hoodrear4" title="Body &amp; Dye Color Editor" id="if-color-editor" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-dialogue-editor"><iframe src="dialogue-editor/index.html" title="Dialogue Editor" id="if-dialogue-editor" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-ambient-dialogue-editor"><iframe src="ambient-dialogue-editor/index.html" title="Ambient Dialogue Editor" id="if-ambient-dialogue-editor" loading="lazy"></iframe></div>
-        <div class="frame-wrap" id="fw-cutscene-director"><iframe src="cutscene-director/index.html" title="Cutscene Director" id="if-cutscene-director" loading="lazy"></iframe></div>
-        <div class="frame-wrap" id="fw-animation-author"><iframe src="animation-author/index.html" title="Animation Author" id="if-animation-author" loading="lazy"></iframe></div>
-        <div class="frame-wrap" id="fw-kurraya-music-lab"><iframe src="kurraya-music-lab/index.html?v=20260925lab12" title="Kurraya Music Lab" id="if-kurraya-music-lab" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-cutscene-director"><iframe src="cutscene-director/index.html?v=20261106hoodrear4" title="Cutscene Director" id="if-cutscene-director" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-animation-author"><iframe src="animation-author/index.html?v=20261030flailbootstrap3" title="Animation Author" id="if-animation-author" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-kurraya-music-lab"><iframe src="kurraya-music-lab/index.html?v=20261104puzzleHud1" title="Kurraya Music Lab" id="if-kurraya-music-lab" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-procedural-animation-editor"><iframe src="procedural-animation-editor/index.html" title="Procedural Animation" id="if-procedural-animation-editor" loading="lazy"></iframe></div>
-        <div class="frame-wrap" id="fw-modular-weapon-editor"><iframe src="modular-weapon-editor/index.html" title="Modular Weapon Attachments" id="if-modular-weapon-editor" loading="lazy"></iframe></div>
-        <div class="frame-wrap" id="fw-attack-animation-editor"><iframe src="attack-animation-editor/index.html" title="Attack Animation Editor" id="if-attack-animation-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-modular-weapon-editor"><iframe src="modular-weapon-editor/index.html?v=20261031rigqa8" title="Modular Weapon Attachments" id="if-modular-weapon-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-multi-sprite-weapon-editor"><iframe src="multi-sprite-weapon-editor/index.html?v=20261030torchstaffgeometry3" title="Multi-sprite Weapon Editor" id="if-multi-sprite-weapon-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-enemy-loadout-editor"><iframe src="enemy-loadout-editor/index.html?v=20261106hoodrear4" title="Enemy Loadout Workshop" id="if-enemy-loadout-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-attack-animation-editor"><iframe src="attack-animation-editor/index.html?v=20261107kurrayaGripOptIn1" title="Attack Animation Editor" id="if-attack-animation-editor" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-world-popup-editor"><iframe src="world-popup-editor/index.html" title="World Popup Text Editor" id="if-world-popup-editor" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-house-piece-author"><iframe src="house-piece-author/index.html" title="House Editor" id="if-house-piece-author" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-wall-builder"><iframe src="wall-builder/index.html" title="Wall Builder" id="if-wall-builder" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-furniture-avatar-author"><iframe src="furniture-avatar-author/index.html" title="Furniture + Avatar Author" id="if-furniture-avatar-author" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-clothing-species-fit"><iframe src="clothing-species-fit/index.html" title="Clothing Species Fit" id="if-clothing-species-fit" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-foliage-generator"><iframe src="foliage-generator/index.html" title="Foliage Generator" id="if-foliage-generator" loading="lazy"></iframe></div>
+         <div class="frame-wrap" id="fw-live-root-growth"><iframe src="live-root-growth/index.html" title="Live Root Growth Author" id="if-live-root-growth" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-fish-editor"><iframe src="../references/(HA)HobunjiFishEditorV1.html" title="Fish Editor" id="if-fish-editor" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-animal-head-rig"><iframe src="animal-head-rig/index.html" title="Animal Head Rig Author" id="if-animal-head-rig" loading="lazy"></iframe></div>
-        <div class="frame-wrap" id="fw-pattern-editor"><iframe src="pattern-editor/index.html" title="Pattern Editor" id="if-pattern-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-flying-animal-author"><iframe src="flying-animal-author/index.html?v=20261103tzatzul9" title="Flying Animal Author" id="if-flying-animal-author" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-pattern-editor"><iframe src="pattern-editor/index.html?v=20261106grehlr3" title="Pattern Editor" id="if-pattern-editor" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-tree-asset-exporter"><iframe src="tree-asset-exporter/index.html" title="Tree Asset Exporter" id="if-tree-asset-exporter" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-wilderness-generation-lab"><iframe src="wilderness-generation-lab/index.html" title="Wilderness + Surface Lab" id="if-wilderness-generation-lab" loading="lazy"></iframe></div>
-        <div class="frame-wrap" id="fw-background-scenery-author"><iframe src="background-scenery-author/index.html" title="Background Scenery Author" id="if-background-scenery-author" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-background-scenery-author"><iframe src="background-scenery-author/index.html?v=20261103hiddenTool2" title="Background Scenery Author" id="if-background-scenery-author" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-building-interior-author"><iframe src="building-interior-author/index.html" title="Interior Editor" id="if-building-interior-author" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-locale-editor"><iframe src="locale-editor/index.html" title="Locale Editor" id="if-locale-editor" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-loading-screen-editor"><iframe src="loading-screen-editor/index.html" title="Loading Screen Editor" id="if-loading-screen-editor" loading="lazy"></iframe></div>

@@ -121,6 +121,10 @@ const gameplayCollisionBindings = liveResetBindings.controller; // Exercises con
 gameplayCollisionBindings.interact = 'Button0';
 gameplayCollisionBindings.uiConfirm = 'Button0';
 assert.equal(resetApi.resolveActionForButton('controller', 'Button0'), 'interact', 'generic gameplay dispatch ignores same-button menu context actions');
+resetContext.window.Shattercasks={toolArchAction:()=> 'pickup'};
+assert.equal(resetApi.resolveActionForButton('controller','Button10'),'toolSelect','Contextual pickup reaches gameplay through the actual resolver');
+resetContext.window.Shattercasks.toolArchAction=()=>null;
+assert.notEqual(resetApi.resolveActionForButton('controller','Button10'),'toolSelect','Ordinary Tool Select stays with the selector');
 gameplayCollisionBindings.swapTarget = 'Button3';
 const contextualDown = new Set(['Button3']);
 assert.equal(resetApi.consumeControllerPress('swapTarget', contextualDown, new Set(), true), true, 'contextual controller press resolves from the configured binding');

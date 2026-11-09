@@ -18,7 +18,7 @@
   const HOOP_CORE = 0.03, HOOP_FADE = 0.07; // Distance (garment units) around an ankle spline that is fully rigid, and where that fades out.
   const SEGMENTS = 64; // Vertices per side of the garment grid: fine enough that weight transitions deform smoothly instead of faceting.
   const NPC_DEFAULT_PANTS_DYE = 'dye:CLOTH:brown'; // Same dye-reference format as the NPC overwear dye (appliedDyes.CLOTH).
-  const PANTLESS_SPECIES = new Set(); // Species that never wear pants in the game (none at the moment).
+  const PANTLESS_SPECIES = new Set(['omgurku']); // The hybrid lower body has no humanoid leg/pants rig.
   const DEFAULT_GARMENT_ID = 'pants_basic';
   const FALLBACK_CHARACTER_KEY = '__default'; // Species/gender without their own authored record share this fit.
   const DOUBLE_SIDE = 2;
@@ -388,7 +388,7 @@
    * @param opts.appearance  {primaryHex, secondaryHex, patternHex, weaving}
    * @returns handle {update, setAppearance, dispose, mesh} or null when pants cannot be drawn for this avatar
    */
-  function attach(THREE, { avatarGroup, legHandle, speciesId, gender, garmentId = DEFAULT_GARMENT_ID, appearance = {}, name = 'pants', overlayMask = null, garmentRecord = null, characterRecord = null, imageUrl = null, footObjects = null, debugSplines = false } = {}) {
+  function attach(THREE, { avatarGroup, legHandle, speciesId, gender, garmentId = DEFAULT_GARMENT_ID, appearance = {}, name = 'pants', overlayMask = null, garmentRecord = null, characterRecord = null, imageUrl = null, footObjects = null, debugSplines = false, spine = null } = {}) {
     if (!characterRecord && isPantlessSpecies(speciesId)) return null; // The author's live preview (explicit records) can still show them.
     const Core = core();
     const garment = garmentRecord || rigConfig().garments?.[garmentId]; // The editor passes its live, unsaved authoring records here.
@@ -404,34 +404,49 @@
     const data = buildGarmentData(THREE, Core, avatarGroup, plane, garment, character);
     if (!data) return null;
     const handle = {
-      name, garmentId, model: avatarGroup, nodes, mesh: null, disposed: false, texture: null, material: null,
+      name, garmentId, legHandle, model: avatarGroup, nodes, mesh: null, disposed: false, texture: null, material: null,
       geometry: data.geometry, basePositions: data.basePositions, weights: data.weights, bones2D: data.bones2D,
       beltCenter: data.beltCenter, beltEnds: data.beltEnds, planeNormal: data.planeNormal, rings: data.rings, splineSpec: data.splines, debugLines: null, showSplines: !!debugSplines,
       legRollGain: Math.min(4, Math.max(1, Number(character.legRollGain) || 2)),
       maskMapping: data.maskMapping, footLift, rest: null, restRaw: null, rotationScale: { left: 1, right: 1 }, restFrames: { left: {}, right: {} },
       maskUniforms: { uPantsDepthBias: { value: 0 }, uPantsMask: { value: null }, uPantsMaskOn: { value: 0 }, uPantsMaskO: { value: new THREE.Vector2(data.maskMapping.ox, data.maskMapping.oy) }, uPantsMaskInv: { value: new THREE.Vector4(...data.maskMapping.inv) } },
       scratch: makeScratch(THREE), appearance: { ...appearance, speciesId, gender, imageUrl }, renderToken: 0, ready: false, garment,
+      spineSource: spine, spineCurve: null, spineShift: null, // The portrait's spine curve (js/character-spine.js): the pants ride it like an extension of the portrait.
     };
+    // Per-vertex shift the spine curve gives the garment's mask lookup (see setSpineShift): zeros for an upright character.
+    handle.geometry.setAttribute('pantsSpineShift', new THREE.BufferAttribute(new Float32Array((handle.basePositions.length / 3) * 2), 2));
 
+    const depthBiasLimits=new Map(); // Scoped close-contact actions can suppress the cosmetic feet-covering pull without moving the garment or disabling depth tests.
+    handle.setDepthBiasLimit=(owner,limit=null)=>{
+      if(!owner)return false;
+      if(limit==null)depthBiasLimits.delete(owner);
+      else if(Number.isFinite(limit)&&limit>=0)depthBiasLimits.set(owner,limit);
+      else return false;
+      let bias=handle.depthBiasBase||0; // Restore the ordinary foot overlay automatically after the last scope releases it.
+      for(const value of depthBiasLimits.values())bias=Math.min(bias,value);
+      handle.maskUniforms.uPantsDepthBias.value=bias;
+      handle.legHandle?.setFootDepthPush?.(bias); // The pull is applied to the FEET (pushed away), never to the garment: see installFootDepthPush.
+      return true;
+    };
     const createMesh = canvas => {
       const surface = global.HobunjiSpritePngSurface;
       const texture = surface?.makeCanvasTexture ? surface.makeCanvasTexture(THREE, canvas, `${name}-pants`) : new THREE.CanvasTexture(canvas);
-      const overrides = { side: DOUBLE_SIDE, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
+      // The garment is a real 3D plane like the portrait's own front/back planes: depth-tested AND depth-writing, so whatever is nearer the camera covers
+      // whatever is behind it, with no other rule (a leg turned behind the portrait is hidden by it; a turned leg's own faces occlude each other).
+      // The small polygon offset is only a tie-breaker for the coplanar rest pose.
+      const overrides = { side: DOUBLE_SIDE, depthWrite: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
       const material = surface?.makeMaterial ? surface.makeMaterial(THREE, texture, `${name}-pants`, overrides) : new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.01, ...overrides });
       // Pixels covered by arm/overwear/pauldron/hood art stay in front of the pants: the portrait underneath shows through there.
       material.onBeforeCompile = shader => {
         Object.assign(shader.uniforms, handle.maskUniforms);
         shader.vertexShader = shader.vertexShader
-          .replace('#include <common>', '#include <common>\nvarying vec2 vPantsLocal;\nuniform float uPantsDepthBias;')
-          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvPantsLocal = position.xy;')
-          // Depth-only pull toward the camera: the garment stays exactly in the portrait plane on screen and in space, but
-          // wins the depth test against the procedural feet, so it reads over (x-rays through) them.
-          .replace('#include <project_vertex>', '#include <project_vertex>\n{ vec4 pantsBiased = projectionMatrix * (mvPosition + vec4(0.0, 0.0, uPantsDepthBias, 0.0)); gl_Position.z = pantsBiased.z / pantsBiased.w * gl_Position.w; }');
+          .replace('#include <common>', '#include <common>\nvarying vec2 vPantsLocal;\nattribute vec2 pantsSpineShift;')
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvPantsLocal = position.xy - pantsSpineShift;'); // No depth pull here: pants are pure 3D proximity against the avatar's own planes; the feet are pushed away instead.
         shader.fragmentShader = shader.fragmentShader
           .replace('#include <common>', '#include <common>\nvarying vec2 vPantsLocal;\nuniform sampler2D uPantsMask;\nuniform float uPantsMaskOn;\nuniform vec2 uPantsMaskO;\nuniform vec4 uPantsMaskInv;')
           .replace('#include <alphatest_fragment>', 'if (uPantsMaskOn > 0.5) { vec2 pd = vPantsLocal - uPantsMaskO; vec2 pc = vec2(uPantsMaskInv.x * pd.x + uPantsMaskInv.y * pd.y, uPantsMaskInv.z * pd.x + uPantsMaskInv.w * pd.y); float pantsInside = step(0.0, pc.x) * step(pc.x, 1.0) * step(0.0, pc.y) * step(pc.y, 1.0); diffuseColor.a *= 1.0 - pantsInside * texture2D(uPantsMask, vec2(pc.x, 1.0 - pc.y)).a; }\n#include <alphatest_fragment>');
       };
-      material.customProgramCacheKey = () => 'pantsOverlayMask';
+      material.customProgramCacheKey = () => 'pantsOverlayMaskSpine';
       return { texture, material };
     };
 
@@ -534,11 +549,20 @@
       return signature;
     };
     handle.restRecheckIn = REST_RECHECK_FRAMES;
+    // The roll amplification exaggerates a leg's sideways splay so face-on pants visibly follow it, but a sunk weapon stance splits the feet
+    // fore/aft under a body twist, which leans that split into the sideways axis and doubles it: the pant legs drift off the bones. Fade the
+    // exaggeration out as the stance sinks so the garment sits exactly on the real bones (legHandle.getStanceDrop, js/procedural-leg-animation.js).
+    const effectiveRollGain = () => {
+      const drop = Number(legHandle.getStanceDrop?.()) || 0;
+      if (drop <= 0) return handle.legRollGain;
+      const blend = Math.min(1, drop / Math.max(1e-6, (Number(legHandle.modelHeight) || 1) * 0.01));
+      return handle.legRollGain + (1 - handle.legRollGain) * blend;
+    };
     const aimAtLiveLegs = () => {
       const measured = readLiveBones(handle);
       const aim = handle.scratch.aim;
       for (const side of ['left', 'right']) {
-        Core.amplifyLegRoll(measured[side], handle.legRollGain, aim[side]);
+        Core.amplifyLegRoll(measured[side], effectiveRollGain(), aim[side]);
         for (const joint of ['hip', 'knee', 'ankle']) aim[side][joint].z += handle.bones2D[side][joint].z - handle.restRaw[side][joint].z;
       }
       return aim;
@@ -591,6 +615,36 @@
       if (!handle.showSplines && handle.debugLines) for (const entry of Object.values(handle.debugLines)) entry.line.visible = entry.points.visible = false;
     };
 
+    // The pants as an extension of the portrait: when the avatar has a spine (a hunch), every garment vertex is carried by the same curve the
+    // portrait skin follows, looked up by the vertex's REST height in the portrait plane's frame. The waistband therefore moves exactly with the
+    // portrait's lower edge (no seam, no separate plane), and everything at or below the posterior, where the curve is pinned to the root, is
+    // unchanged. The overlay mask that keeps arm/overwear art in front of the pants lives in portrait space, so the shader samples it at the
+    // vertex's un-displaced position (pantsSpineShift) to stay lined up with the portrait art, which has moved the same way.
+    const spineProfile = () => (typeof handle.spineSource === 'function' ? handle.spineSource() : handle.spineSource) || handle.model.userData?.hobunjiSpine || global.HobunjiCharacterSpine?.fromRoot?.(handle.model) || null;
+    const rebuildSpineShift = profile => {
+      handle.spineCurve = profile?.curve || null;
+      const count = handle.basePositions.length / 3;
+      const maskAttribute = handle.geometry.getAttribute('pantsSpineShift');
+      maskAttribute.array.fill(0);
+      maskAttribute.needsUpdate = true;
+      if (!handle.spineCurve || !global.HobunjiCharacterSpine?.deformAt) { handle.spineShift = null; return; }
+      const plane = findPortraitPlane(handle.model);
+      if (!plane) { handle.spineShift = null; return; }
+      handle.model.updateMatrixWorld?.(true);
+      plane.updateMatrixWorld?.(true);
+      const toPlane = new THREE.Matrix4().copy(plane.matrixWorld).invert().multiply(handle.model.matrixWorld); // Avatar-local -> portrait-plane-local.
+      const rotation = new THREE.Matrix3().setFromMatrix4(toPlane), back = rotation.clone().invert();
+      const point = new THREE.Vector3(), shift = new THREE.Vector3(), displacement = { x: 0, y: 0, z: 0 };
+      const shifts = new Float32Array(count * 3);
+      for (let i = 0; i < count; i++) {
+        point.set(handle.basePositions[i * 3], handle.basePositions[i * 3 + 1], handle.basePositions[i * 3 + 2]).applyMatrix4(toPlane);
+        global.HobunjiCharacterSpine.deformAt(profile, point.y, displacement);
+        shift.set(displacement.x, displacement.y, displacement.z).applyMatrix3(back); // The curve is in plane axes; the garment's positions are avatar-local.
+        shifts[i * 3] = shift.x; shifts[i * 3 + 1] = shift.y; shifts[i * 3 + 2] = shift.z;
+        maskAttribute.array[i * 2] = shift.x; maskAttribute.array[i * 2 + 1] = shift.y;
+      }
+      handle.spineShift = shifts;
+    };
     handle.update = () => {
       if (handle.disposed || !handle.mesh || !handle.model.parent) return;
       const visible = handle.model.visible !== false && legHandle.group?.visible !== false;
@@ -610,6 +664,8 @@
         for (const side of ['left', 'right']) for (const joint of ['hip', 'ankle']) { const p = stance.bones[side][joint]; moved = Math.max(moved, Math.abs(p.x - handle.lastStance[k]), Math.abs(p.y - handle.lastStance[k + 1]), Math.abs(p.z - handle.lastStance[k + 2])); k += 3; }
         if (moved > 2e-4) { handle.captureRest(); handle.alignToRest(); handle.dirty = true; aim = aimAtLiveLegs(); signature = legSignature(aim); } // aim offsets depend on the rest pose just captured.
       }
+      const spine = spineProfile();
+      if ((spine?.curve || null) !== handle.spineCurve) { rebuildSpineShift(spine); handle.dirty = true; } // A hunch applied (or changed) after attach reshapes the garment too.
       if (signature === handle.lastSignature && !handle.dirty) return;
       handle.lastSignature = signature;
       handle.dirty = false;
@@ -642,8 +698,10 @@
           out[i * 3] += dx * k; out[i * 3 + 1] += dy * k; out[i * 3 + 2] += dz * k;
         }
       }
+      if (handle.spineShift) for (let i = 0; i < out.length; i++) out[i] += handle.spineShift[i]; // Carried by the portrait's spine curve (see rebuildSpineShift).
       if (handle.showSplines) updateDebugSplines();
       position.needsUpdate = true; // frustumCulled is off, so no per-frame bounding-sphere work.
+      if (handle.mesh.userData?.hobunjiPantsLitNormals) handle.geometry.computeVertexNormals(); // Lit ghoul trousers need current surface normals after each actual pose change, never per idle frame.
     };
 
     // Diagnostics: how exactly the garment's bones land on the live 3D bones this frame (depth-corrected, roll-amplified).
@@ -692,7 +750,9 @@
 
     handle.model.updateMatrixWorld?.(true);
     const worldElements = handle.model.matrixWorld.elements;
-    handle.maskUniforms.uPantsDepthBias.value = footLift * Math.hypot(worldElements[0], worldElements[1], worldElements[2]); // View-space distance to pull the garment's depth toward the camera.
+    handle.depthBiasBase = footLift * Math.hypot(worldElements[0], worldElements[1], worldElements[2]); // How far the feet protrude toward the camera, in world units.
+    handle.maskUniforms.uPantsDepthBias.value = handle.depthBiasBase; // Stored feet-covering distance (scoped limits can lower it); drives the feet's depth push, not the garment.
+    legHandle.setFootDepthPush?.(handle.depthBiasBase);
     handle.captureRest(); // The legs' stance at attach is the rest pose the initial 2D warp targets.
     handle.baseOriginal = new Float32Array(handle.basePositions); // The art as the portrait places it, before the alignment below (which is redone whenever the rest stance changes).
     handle.alignToRest = () => {
@@ -752,7 +812,7 @@
     };
     handle.alignToRest();
     handles.add(handle);
-    handle.setAppearance({});
+    handle.readyPromise = handle.setAppearance({}); // Hostile builders wait for the garment before applying ghost or mine-light materials.
     if (overlayMask) Promise.resolve(overlayMask).then(canvas => { if (!handle.disposed) handle.setOverlayMask(canvas); }).catch(() => {});
     return handle;
   }
@@ -830,11 +890,11 @@
     return (cosmetics || []).find(id => !!rigConfig().garments?.[id]) || null;
   }
 
-  function ensureNpcPants(rec, { garmentId = DEFAULT_GARMENT_ID, isAnimal = false } = {}) {
-    if (!rec || isAnimal || rec.noPants === true || rec.kind === 'animal' || rec.avatarEditor || isPantlessSpecies(rec.speciesId || rec.species)) return false;
+  function ensureNpcPants(rec, { garmentId = DEFAULT_GARMENT_ID, isAnimal = false, preferSpeciesGarment = true } = {}) {
+    if (!rec || isAnimal || rec.noPants === true || rec.kind === 'animal' || rec.avatarEditor || isPantlessSpecies(rec.appearance?.speciesId || rec.speciesId || rec.species)) return false;
     if (!Array.isArray(rec.equippedCosmetics)) rec.equippedCosmetics = [];
     if (garmentForCosmetics(rec.equippedCosmetics)) return false;
-    if (garmentId === DEFAULT_GARMENT_ID && String(rec.appearance?.speciesId || rec.speciesId || rec.species).toLowerCase().replace(/_/g, '-') === 'mao-ao'
+    if (preferSpeciesGarment && garmentId === DEFAULT_GARMENT_ID && String(rec.appearance?.speciesId || rec.speciesId || rec.species).toLowerCase().replace(/_/g, '-') === 'mao-ao'
         && String(rec.appearance?.gender || rec.gender).toLowerCase() === 'female') garmentId = 'layered_skirt';
     rec.equippedCosmetics = [...rec.equippedCosmetics, garmentId];
     if (!rec.appliedDyes || typeof rec.appliedDyes !== 'object') rec.appliedDyes = {};
@@ -854,6 +914,6 @@
     resolveCharacter,
     posteriorPortraitYForAvatar: (THREE, avatarGroup, legGroup) => { const plane = findPortraitPlane(avatarGroup), nodes = findLegNodes({ group: legGroup }); return plane && nodes ? posteriorPortraitY(THREE, avatarGroup, plane, nodes) : null; },
     hasRigFor: (speciesId, gender, garmentId = DEFAULT_GARMENT_ID) => !!(rigConfig().garments?.[garmentId] && resolveCharacter(speciesId, gender)),
-    debugSnapshot: () => ({ live: handles.size, garments: Object.keys(rigConfig().garments || {}), characters: Object.keys(rigConfig().characters || {}), lastChange: 'Added separately dyed draped pants and layered skirts with nearest-opaque simple-pants weights.' }),
+    debugSnapshot: () => ({ live: handles.size, garments: Object.keys(rigConfig().garments || {}), characters: Object.keys(rigConfig().characters || {}), lastChange: 'Scoped depth-bias limits keep close-contact garments behind other characters; ordinary feet-covering depth is restored when the action releases.' }),
   });
 })(window);

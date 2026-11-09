@@ -21,8 +21,11 @@ assert.match(resourceSource, /fullFootingMax - getAffliction\(entity, "shambling
 assert.match(resourceSource, /def\.extend === "maxBack"/);
 assert.match(drunkProneSource, /RS\.getProneRecoveryFootingTarget\?\.\(entity\)/, 'prone recovery must ignore Drunken Footing while preserving permanent Shambling');
 assert.match(gameSource, /function proneRecoveryFootingTarget\(entity\)/, 'game must expose one unshambled prone recovery threshold');
-assert.equal((gameSource.match(/c\.footing >= proneRecoveryFootingTarget\(c\)/g) || []).length, 2, 'hostiles and companions must use the unshambled Footing get-up target');
-assert.match(gameSource, /player\.footing < proneRecoveryFootingTarget\(player\)/, 'player prone recovery input must use the same target');
+assert.equal((gameSource.match(/proneRecoveryReady\(c\)/g) || []).length, 2, 'hostiles and companions must share the authoritative prone get-up policy');
+assert.match(gameSource, /if \(!proneRecoveryReady\(player\)\)/, 'player prone recovery input must use the same policy');
+const pronePolicySource = gameSource.slice(gameSource.indexOf('function proneRecoveryReady(entity)'), gameSource.indexOf('// Called from updateHostiles once a prone creature', gameSource.indexOf('function proneRecoveryReady(entity)')));
+assert.match(pronePolicySource, /entity\.footing >= proneRecoveryFootingTarget\(entity\)/, 'the normal 0-Footing recovery path still demands the correct unshambled capacity');
+assert.match(pronePolicySource, /hasTimedDebuff\?\.\(entity, 'knockdown'\)/, 'timed Knockdown cannot bypass normal recovery while its timer remains active');
 assert.match(coreSource, /baseFootingMax = Math\.max\(0, Number\(original\.getEffectiveMax\(entity, key\)\)/);
 assert.match(trustSource, /entity\?\.enemyClass === 'minion'/);
 assert.match(gameConfigSource, /shamblingFooting:\s*'#[0-9a-fA-F]{6}'/);
@@ -147,7 +150,25 @@ townValue = 0;
   assert.equal(captured.opts.defOverride.rangedWeaponKey, null);
   assert.equal(captured.opts.enemyClass, 'minion');
   assert(!captured.opts.rosterOverride.equippedCosmetics.some(id => /hood|facewrap|headband/i.test(id)));
-  console.log('Minion enemy class and Town Value armor regression checks passed.');
+
+  const rejectedDemolitionist = await api.makeDemolitionist({ x:30, y:40, zoneId:'map_i_town_mine_41' });
+  assert.equal(rejectedDemolitionist, null, 'Harlyao Demolitionists require an explicitly authored ruin encounter');
+  const demolitionist = await api.makeDemolitionist({
+    ruinEncounter:true, x:30, y:40, zoneId:'map_i_dev_random_ruin', tier:3,
+    witchBombFuseSeconds:8.5,
+  });
+  assert.equal(demolitionist.enemyClass, 'harlyao-demolitionist');
+  assert.equal(demolitionist.isHarlyaoDemolitionist, true);
+  assert.equal(demolitionist.carriesHronalWitchBomb, true);
+  assert.equal(demolitionist.enemyLoadoutKind, 'harlyao-demolitionist');
+  assert.equal(captured.opts.enemyClass, 'harlyao-demolitionist');
+  assert.equal(captured.opts.extra.carriesHronalWitchBomb, true, 'BanditCombat is explicitly instructed to attach the physical Witch-bomb');
+  assert.equal(captured.opts.extra.isHarlyaoDemolitionist, true);
+  assert.equal(captured.opts.extra.witchBombFuseSeconds, 8.5, 'challenge-specific fuse tuning reaches the bomb carrier');
+  assert.equal(captured.opts.defOverride.weaponKey, null, 'the Demolitionist does not generate a competing weapon holder');
+  assert.equal(captured.opts.defOverride.rangedWeaponKey, null);
+  assert.equal(captured.opts.rosterOverride.appearance.speciesId, 'harlyao-skeleton');
+  console.log('Minion enemy, Town Value armor and ruin-only Harlyao Demolitionist regression checks passed.');
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;

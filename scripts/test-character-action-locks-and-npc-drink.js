@@ -53,7 +53,7 @@ assert.match(interaction, /function play[\s\S]*?owner: 'npc-drink-interaction'/,
   'NPC drink playback acquires the reusable interaction lock');
 assert.match(interaction, /phase: 'handoff'[\s\S]*?lerpVectors[\s\S]*?slerpQuaternions/,
   'the bottle position, scale, and orientation interpolate toward the NPC hand');
-assert.match(interaction, /walker\.root\.add\(interaction\.holder\)[\s\S]*?poseAt/,
+assert.match(interaction, /proceduralHandParent \|\| interaction\.walker\.root\)\.add\(interaction\.holder\)[\s\S]*?poseAt/,
   'the transferred bottle re-parents to the NPC and reuses authored drink poses');
 assert.match(interaction, /progress >= \(Number\(animation\.strikeFrac\)/,
   'the swig effect lands at the authored drink strike rather than before handoff');

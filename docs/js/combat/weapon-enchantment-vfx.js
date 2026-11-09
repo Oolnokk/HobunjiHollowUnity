@@ -14,13 +14,18 @@
   const SOURCE_ALPHA_MIN = 4; // Verdigris-compatible alpha floor used by buildMetalMask().
   const SCAN_INTERVAL_MS = 180; // Used by update() to avoid traversing held-weapon state every render frame.
   const MAX_PARTICLES_PER_PLANE = 24; // Used by spawnParticle() to cap draw-call growth, including dual-wield copies.
+  const FREE_DRIFT_FACTOR = 3.5; // Used by spawnParticle() to let emitted effects travel noticeably beyond the originating metal silhouette.
+  const BILLBOARD_RADIUS_FACTOR = 0.75; // Used by updateEmitters() to conservatively include any rotated sprite corners in held-overlay scissoring.
   const LICH_VARIANTS = Object.freeze(['pure', 'muted', 'dusty', 'dark_muted']); // Used by lichDyeIds() to mirror combat-lich.js wardrobe possibilities.
   const FALLBACK_VISUALS = {}; // Used only in isolated tools/tests where a live gear inventory is unavailable.
   const MASK_CACHE = new Map(); // Used by metalMaskForSprite() so each source PNG is decoded/scanned once per page load.
+  const OPAQUE_ANCHOR_CACHE = new Map(); // Used by opaqueAnchorForSprite() so projectile fire shares one alpha scan per source PNG.
   const SHAPE_TEXTURE_CACHE = new Map(); // Used by shapeTexture() to share one white alpha sprite texture per particle silhouette.
   const EMITTERS = new Map(); // Used by updateEmitters() to retain pooled particles for each currently visible weapon plane.
 
   let lastScanAt = -Infinity; // Used by update() to throttle held-plane/config resolution.
+  let lastHeldWeaponKey = null; // Used by update() to clear existing particles immediately on a held-slot, holster, or weapon change.
+  let lastHeldWeaponVisual = null; // Used by update() to recognize hot-swapped/rebuilt weapon meshes even if the item key stays the same.
   let activeSnapshot = null; // Used by updateEmitters()/debugSnapshot() as the latest resolved weapon + planar visual state.
   let scanGeneration = 0; // Used by update()/forceRefresh() so an older async mask scan can never overwrite a newer weapon/config snapshot.
   let updateLoopInstalled = false; // Used by installUpdateLoop() to avoid duplicate scheduler registration.
@@ -34,7 +39,7 @@
 
   const ALIGNMENTS = Object.freeze({
     Tothal: Object.freeze({
-      id: 'Tothal', label: 'Tothal · Motion / Blizzard', opacity: 0.78,
+      id: 'Tothal', label: 'Tothal · Motion / Blizzard', opacity: 0.9,
       dyeIds: lichDyeIds(['green_blue', 'blue', 'blue_indigo']),
       effects: Object.freeze([
         Object.freeze({ id: 'blizzard-orb', label: 'Blizzard Orbs', motion: 'swirl', shape: 'orb', blend: 'additive', size: 0.052, life: 1.05, speed: 0.045 }),
@@ -44,7 +49,7 @@
       lore: 'Constant motion: cold, wind, water, chaos, and change.',
     }),
     Hronal: Object.freeze({
-      id: 'Hronal', label: 'Hronal · Stillness / Stone & Lava', opacity: 0.86,
+      id: 'Hronal', label: 'Hronal · Stillness / Stone & Lava', opacity: 0.96,
       dyeIds: lichDyeIds(['red', 'red_orange', 'orange', 'yellow_orange', 'yellow']),
       effects: Object.freeze([
         Object.freeze({ id: 'lava-spit', label: 'Lava Spit', motion: 'lava', shape: 'drop', blend: 'additive', size: 0.055, life: 0.76, speed: 0.048 }),
@@ -54,7 +59,7 @@
       lore: 'Utter stillness: stable earth, dead heat, flat desert, short mountains, and lava.',
     }),
     Kanthic: Object.freeze({
-      id: 'Kanthic', label: 'Kanthic · Void-Nigh / Petroleum', opacity: 0.82,
+      id: 'Kanthic', label: 'Kanthic · Void-Nigh / Petroleum', opacity: 0.94,
       dyeIds: lichDyeIds(['indigo', 'indigo_violet', 'violet'], ['dye:CLOTH:white', 'dye:CLOTH:gray', 'dye:CLOTH:charcoal']),
       effects: Object.freeze([
         Object.freeze({ id: 'petroleum-drop', label: 'Petroleum Drops', motion: 'drip', shape: 'drop', blend: 'normal', size: 0.062, life: 1.16, speed: 0.035 }),
@@ -64,7 +69,7 @@
       lore: 'The void-nigh: oily filth, trapping pull, demonic violence, and death without release.',
     }),
     Ohthic: Object.freeze({
-      id: 'Ohthic', label: 'Ohthic · Spirit World / Dead-Light', opacity: 0.38,
+      id: 'Ohthic', label: 'Ohthic · Spirit World / Dead-Light', opacity: 0.75,
       dyeIds: Object.freeze([
         'dye:CLOTH:white', 'dye:CLOTH:silver',
         'dye:CLOTH:pure_green_blue', 'dye:CLOTH:muted_green_blue',
@@ -127,18 +132,20 @@
 
   function defaultStateForAlignment(alignment) {
     const def = ALIGNMENTS[alignment]; // Used to select the first authored dye/effect for a newly seen planar family.
-    return def ? { alignment, dyeId: def.dyeIds[0], effectId: def.effects[0]?.id || '' } : null;
+    return def ? { alignment, colorAlignment: alignment, dyeId: def.dyeIds[0], effectId: def.effects[0]?.id || '' } : null;
   }
 
   function normalizedState(key, raw = visualStore()[key]) {
     const active = activeAlignments(key); // Used to reject stale visual alignment choices after enchantments are removed/swapped.
     if (!active.length) return null;
     const alignment = active.includes(raw?.alignment) ? raw.alignment : strongestAlignment(key);
-    const def = ALIGNMENTS[alignment]; // Used to validate the alignment-scoped color and particle selections.
+    const colorAlignment = active.includes(raw?.colorAlignment) ? raw.colorAlignment : alignment; // Used to preserve an independent, enchantment-backed palette origin.
+    const def = ALIGNMENTS[alignment]; // Used to validate particle forms against their selected origin.
+    const colorDef = ALIGNMENTS[colorAlignment]; // Used to validate colors independently of particle forms.
     const fallback = defaultStateForAlignment(alignment); // Used when an old/malformed save lacks current visual fields.
-    const dyeId = def.dyeIds.includes(raw?.dyeId) ? raw.dyeId : fallback.dyeId;
+    const dyeId = colorDef.dyeIds.includes(raw?.dyeId) ? raw.dyeId : colorDef.dyeIds[0];
     const effectId = def.effects.some(effect => effect.id === raw?.effectId) ? raw.effectId : fallback.effectId;
-    return { alignment, dyeId, effectId };
+    return { alignment, colorAlignment, dyeId, effectId };
   }
 
   function stateFor(key = window.Combat?.deps?.currentWeaponKey?.() || 'none') {
@@ -147,17 +154,18 @@
 
   function setChoice(key, field, value) {
     const current = normalizedState(key); // Used as the validated base state for a single player-authored visual mutation.
-    if (!current || !['alignment', 'dyeId', 'effectId'].includes(field)) return false;
+    if (!current || !['alignment', 'colorAlignment', 'dyeId', 'effectId'].includes(field)) return false;
     let next = { ...current, [field]: value }; // Used as the candidate persistent visual state before alignment-specific normalization.
-    if (field === 'alignment') {
+    if (field === 'alignment' || field === 'colorAlignment') {
       if (!activeAlignments(key).includes(value)) return false;
-      next = defaultStateForAlignment(value);
+      if (field === 'alignment') next.effectId = ALIGNMENTS[value].effects[0].id;
+      else next.dyeId = ALIGNMENTS[value].dyeIds[0];
     }
     const def = ALIGNMENTS[next.alignment]; // Used to keep dye/effect selections within the chosen plane's authored vocabulary.
-    if (!def || !def.dyeIds.includes(next.dyeId) || !def.effects.some(effect => effect.id === next.effectId)) return false;
+    if (!def || !ALIGNMENTS[next.colorAlignment]?.dyeIds.includes(next.dyeId) || !def.effects.some(effect => effect.id === next.effectId)) return false;
     visualStore()[key] = next;
     window.Combat?.deps?.saveGearInventory?.();
-    lastEvent = `saved ${key}: ${next.alignment}/${next.dyeId}/${next.effectId}`;
+    lastEvent = `saved ${key}: ${next.alignment}/${next.colorAlignment}/${next.dyeId}/${next.effectId}`;
     scanGeneration++; // Invalidate any in-flight scan that still reflects the old visual choice.
     lastScanAt = -Infinity;
     activeSnapshot = null;
@@ -206,6 +214,25 @@
 
   function metalMaskForSprite(spritePath) {
     if (!spritePath || typeof Image === 'undefined' || typeof document === 'undefined') return Promise.resolve(null);
+    const modularParts = window.ModularWeapons?.decode?.(spritePath); // Virtual modular sprite keys must be composed, not loaded as image URLs.
+    if (modularParts) {
+      const revision = window.ModularWeapons.diagnostics?.(spritePath)?.revision ?? 0; // Separates cached masks after foundry authoring changes.
+      const cacheKey = `modular-mask:${revision}:${spritePath}`; // Reuses one source-metal scan for each assembled weapon configuration.
+      if (MASK_CACHE.has(cacheKey)) return MASK_CACHE.get(cacheKey);
+      const task = window.ModularWeapons.compose(modularParts.shaft, modularParts.head).then(canvas => {
+        const context = canvas?.getContext?.('2d', { willReadFrequently: true }); // Scan the exact assembled, unrecolored sprite used by tool-metal-recolor.
+        if (!context || !canvas.width || !canvas.height) throw new Error('Modular weapon composition has no readable pixels');
+        const mask = buildMetalMask(context.getImageData(0, 0, canvas.width, canvas.height));
+        if (!mask) throw new Error('Metal pixel scanner unavailable');
+        return mask;
+      }).catch(error => {
+        MASK_CACHE.delete(cacheKey); // Let later scans retry missing donor assets or transient canvas failures.
+        lastEvent = `modular metal mask failed: ${error?.message || error}`;
+        return null;
+      });
+      MASK_CACHE.set(cacheKey, task);
+      return task;
+    }
     const url = resolveSpriteUrl(spritePath); // Used as the stable per-source cache key and image URL.
     if (MASK_CACHE.has(url)) return MASK_CACHE.get(url);
     const promise = new Promise(resolve => {
@@ -239,55 +266,104 @@
     return promise;
   }
 
+  function opaqueAnchorForSprite(spritePath) {
+    if (!spritePath || typeof Image === 'undefined' || typeof document === 'undefined') return Promise.resolve(null);
+    const url = resolveSpriteUrl(spritePath); // Uses the same canonical asset resolution as the metal-region scanner.
+    const cacheKey = 'opaque-anchor:' + url;
+    if (OPAQUE_ANCHOR_CACHE.has(cacheKey)) return OPAQUE_ANCHOR_CACHE.get(cacheKey);
+    const task = new Promise(resolve => {
+      const image = new Image(); // Reads the original PNG alpha, never the recolored live projectile material.
+      image.crossOrigin = 'anonymous';
+      image.onload = () => {
+        try {
+          const width = image.naturalWidth || image.width;
+          const height = image.naturalHeight || image.height;
+          const canvas = document.createElement('canvas');
+          canvas.width = width; canvas.height = height;
+          const context = canvas.getContext('2d', { willReadFrequently:true });
+          if (!context) throw new Error('Projectile alpha scan has no canvas context');
+          context.drawImage(image, 0, 0, width, height);
+          const data = context.getImageData(0, 0, width, height).data;
+          let bestIndex = -1, bestY = Infinity, bestCenterDistance = Infinity, opaquePixels = 0;
+          for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+            const index = y * width + x;
+            if (data[index * 4 + 3] < SOURCE_ALPHA_MIN) continue;
+            opaquePixels++;
+            const centerDistance = Math.abs(x + 0.5 - width * 0.5);
+            if (y < bestY || (y === bestY && centerDistance < bestCenterDistance)) {
+              bestIndex = index; bestY = y; bestCenterDistance = centerDistance;
+            }
+          }
+          resolve(bestIndex >= 0 ? { width, height, index:bestIndex, opaquePixels } : null);
+        } catch (error) {
+          OPAQUE_ANCHOR_CACHE.delete(cacheKey); // A transient canvas/asset failure must be retryable.
+          lastEvent = 'opaque anchor scan failed: ' + (error?.message || error);
+          resolve(null);
+        }
+      };
+      image.onerror = () => {
+        OPAQUE_ANCHOR_CACHE.delete(cacheKey); // Do not poison this cache after a transient mobile asset miss.
+        lastEvent = 'opaque anchor image failed: ' + spritePath;
+        resolve(null);
+      };
+      image.src = url;
+    });
+    OPAQUE_ANCHOR_CACHE.set(cacheKey, task);
+    return task;
+  }
+
   function sourceSpriteForWeapon(key) {
-    const defs = window.Combat?.deps?.TOOL_ITEM_DEFS; // Used as the same literal weapon definition source makeToolPlaneMesh consumes.
+    const defs = window.Combat?.deps?.TOOL_ITEM_DEFS; // EquipmentPanel.exposeInventoryMasteryBridge() populates this existing Combat dependency before the first game frame.
     return defs?.[key]?.sprite || defs?.[key]?.baseSprite || null;
   }
 
-  function directHeldVisual(key) {
-    const handDeps = window.ProceduralHandAttachments?.gameDeps; // Used to reach the same live player-held seams as hand grips and dual-wield presentation.
-    const runtimeState = window.WeaponToolStances?.getRuntimeState?.() || window.WeaponToolStances?.debugSnapshot?.() || null; // Used to identify the active held slot without assuming 'weapon'.
-    const activeSlot = runtimeState?.activeSlot || handDeps?.getActiveTool?.() || null; // Used as the first optional toolMeshMap lookup key.
-    const meshMap = handDeps?.toolMeshMap; // Some runtime injections expose this map; others intentionally expose only toolHolder.
-    let visual = activeSlot && (meshMap?.get?.(activeSlot) || meshMap?.[activeSlot]); // Fast path when the equipment mesh map is present.
-    if (visual?.userData?.itemKey === key && visual?.userData?.toolPlane?.isObject3D) return visual;
-    const candidates = meshMap instanceof Map ? [...meshMap.values()] : Object.values(meshMap || {}); // Used as an equipment-slot fallback if the active-slot snapshot lags one frame.
-    visual = candidates.find(candidate => candidate?.userData?.itemKey === key && candidate?.userData?.toolPlane?.isObject3D) || null;
-    if (visual) return visual;
-    const holder = handDeps?.toolHolder; // Real gameplay may omit toolMeshMap; the holder child is the canonical fallback used by dual-wield-weapon-visuals.js.
-    return holder?.children?.find(child => child?.visible !== false && child?.userData?.itemKey === key && child?.userData?.toolPlane?.isObject3D)
-      || holder?.children?.find(child => child?.visible !== false && child?.userData?.toolPlane?.isObject3D)
-      || null;
+  function activeHeldWeaponKey() {
+    const deps = window.Combat?.deps; // Gameplay's authoritative held mode, equipment slot, and per-weapon enchantment identity.
+    const handDeps = window.ProceduralHandAttachments?.gameDeps; // Optional fallback for integrations without the Combat held-slot seams.
+    const activeSlot = deps?.getActiveTool?.() ?? handDeps?.getActiveTool?.() ?? window.WeaponToolStances?.getRuntimeState?.()?.activeSlot ?? null; // Prefer cheap authoritative slot getters; avoid refreshing the full stance snapshot every frame.
+    const heldMode = deps?.getHeldMode?.() ?? handDeps?.getHeldMode?.() ?? null; // Holstering or holding a bag item suppresses the aura.
+    if (activeSlot !== 'weapon' || heldMode !== 'tool') return null; // Fail closed if held-slot metadata is missing; never guess from a nearby mesh.
+    const weaponKey = deps?.currentWeaponKey?.() || null; // The weapon whose stored enchantments and verdigris mask will be read.
+    const equippedKey = deps?.equipmentSlots?.weapon ?? handDeps?.equipmentSlots?.weapon ?? window.WeaponToolStances?.getRuntimeState?.()?.itemKey ?? null; // Reject a stale weapon key; borrow the stance's item identity only when slot registries are unavailable.
+    if (!weaponKey || weaponKey === 'none' || (equippedKey && equippedKey !== weaponKey)) return null;
+    return weaponKey;
   }
 
-  function sceneHeldVisual(key) {
-    const scene = window.Combat?.deps?.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.(); // Used only when the shared hand dependency map is unavailable.
-    if (!scene?.traverse) return null;
-    const player = window.Combat?.deps?.player; // Used to prefer the matching weapon nearest the player if an enemy happens to carry the same item key.
-    const scratch = typeof THREE !== 'undefined' ? new THREE.Vector3() : null; // Used to score fallback scene candidates in world space without per-node allocation.
-    let best = null; // Used as the nearest valid player-held weapon candidate.
-    let bestDistance = Infinity; // Used to rank same-item candidates during fallback traversal.
-    scene.traverse(node => {
-      if (node?.userData?.itemKey !== key || !node?.userData?.toolPlane?.isObject3D) return;
-      let distance = 0; // Used as a player-proximity tie breaker; direct handDeps lookup normally avoids this path entirely.
-      if (scratch && Number.isFinite(Number(player?.x)) && Number.isFinite(Number(player?.y)) && node.getWorldPosition) {
-        node.getWorldPosition(scratch);
-        distance = Math.hypot(scratch.x - Number(player.x), scratch.z - Number(player.y));
+  function directHeldVisual(key) {
+    const handDeps = window.ProceduralHandAttachments?.gameDeps; // Shares the live held visual with procedural hands and dual wield.
+    const holder = handDeps?.toolHolder; // A player-owned holder is mandatory; a free-standing mesh or NPC must never inherit the aura.
+    if (!holder?.children) return null;
+    const meshMap = handDeps?.toolMeshMap; // Optional authoritative slot map; the shipped hand runtime can omit it.
+    const belongsToHolder = candidate => {
+      if (holder.children.includes(candidate)) return true; // Preserve the direct-child runtime and lightweight tool-holder contract even when the caller omits parent back-pointers.
+      for (let ancestor = candidate?.parent; ancestor; ancestor = ancestor.parent) {
+        if (ancestor === holder) return true; // Nested attachment/shaft rigs still belong to the exact player-held tool.
+        if (ancestor.visible === false) return false; // A hidden intermediate rig cannot be the currently drawn weapon.
       }
-      if (!best || distance < bestDistance) { best = node; bestDistance = distance; }
+      return false; // Never search the scene or accept an enemy/free-standing matching weapon.
+    };
+    const isHeldWeapon = candidate => candidate?.visible !== false
+      && candidate?.userData?.itemKey === key
+      && candidate?.userData?.toolPlane?.isObject3D
+      && belongsToHolder(candidate); // Exact item identity and player-holder ancestry must both agree.
+    const mapped = meshMap instanceof Map ? meshMap.get('weapon') : meshMap?.weapon; // Prefer the designated melee-slot visual when attached.
+    if (isHeldWeapon(mapped)) return mapped;
+    let held = null; // Fallback for nested attachments or a stale slot map during equipment rebuilds.
+    holder.traverse?.(candidate => {
+      if (!held && candidate !== holder && isHeldWeapon(candidate)) held = candidate;
     });
-    return best;
+    return held || holder.children.find(isHeldWeapon) || null;
   }
 
   function heldVisualForWeapon(key) {
-    return directHeldVisual(key) || sceneHeldVisual(key);
+    return activeHeldWeaponKey() === key ? directHeldVisual(key) : null; // No scene-wide fallback: it could attach an aura to an enemy carrying the same weapon.
   }
 
   function particlePlanesForVisual(visual) {
     const plane = visual?.userData?.toolPlane; // Used as the authored single-weapon plane and the root containing dual-wield duplicates.
     if (!plane?.isObject3D) return [];
     const dual = window.HobunjiDualWieldWeaponVisuals?.debugSnapshot?.(); // Used to avoid emitting around the hidden midpoint plane while dual wield is visually active.
-    if (!dual?.active) return [plane];
+    if (!(dual?.copiesVisible ?? dual?.active)) return [plane]; // The invisible idle-offhand tool reports active but draws nothing; only real dual wield replaces the plane.
     const duplicates = []; // Used as the visible main/offhand blade planes when the original source material is hidden.
     plane.traverse?.(node => {
       if (node?.userData?.hobunjiDualWieldDuplicate === true) duplicates.push(node);
@@ -296,13 +372,31 @@
   }
 
   function geometrySize(plane) {
-    const geometry = plane?.geometry; // Used to convert source-PNG normalized coordinates to this literal rendered plane's local coordinates.
+    const geometry = plane?.geometry; // Used to map source pixels onto the exact local quad, including the offset of a modular head/haft.
     const width = Number(geometry?.parameters?.width);
     const height = Number(geometry?.parameters?.height);
-    if (width > 0 && height > 0) return { width, height };
+    const layout = geometry?.userData?.modularLayout; // ModularWeapons.fitPlaneGeometry shifts quad vertices; width/height alone lose that offset.
+    const box = geometry?.boundingBox; // An existing bounding box also supports custom non-centered plane geometry.
+    const centerX = Number(layout?.x ?? (box ? (box.min.x + box.max.x) / 2 : 0)); // Used by spawnParticle() and scissor padding.
+    const centerY = Number(layout?.y ?? (box ? (box.min.y + box.max.y) / 2 : 0)); // Used by spawnParticle() and scissor padding.
+    if (width > 0 && height > 0) return { width, height, centerX, centerY };
     geometry?.computeBoundingBox?.();
-    const box = geometry?.boundingBox; // Used as a fallback for cloned/custom plane geometry lacking constructor parameters.
-    return box ? { width: Math.max(0.001, box.max.x - box.min.x), height: Math.max(0.001, box.max.y - box.min.y) } : { width: 0.5, height: 0.5 };
+    const bounds = geometry?.boundingBox; // Fallback for cloned/custom planes without constructor parameters.
+    return bounds
+      ? { width: Math.max(0.001, bounds.max.x - bounds.min.x), height: Math.max(0.001, bounds.max.y - bounds.min.y),
+        centerX: (bounds.min.x + bounds.max.x) / 2, centerY: (bounds.min.y + bounds.max.y) / 2 }
+      : { width: 0.5, height: 0.5, centerX: 0, centerY: 0 };
+  }
+
+  function metalPixelToLocal(index, mask, plane) {
+    const px = index % mask.width; // Source pixel index converted to the assembled sprite's X coordinate.
+    const py = Math.floor(index / mask.width); // Source pixel index converted to the assembled sprite's Y coordinate.
+    const size = geometrySize(plane); // Returned frame includes both logical dimensions and local-quad center.
+    return {
+      x: size.centerX + ((px + 0.5) / mask.width - 0.5) * size.width,
+      y: size.centerY + (0.5 - (py + 0.5) / mask.height) * size.height,
+      size,
+    };
   }
 
   function drawShape(context, shape) {
@@ -381,7 +475,10 @@
 
   function clearEmitter(emitter) {
     for (const particle of emitter?.particles || []) retireParticle(emitter, particle);
-    if (emitter) emitter.particles.length = 0;
+    if (emitter) {
+      emitter.particles.length = 0;
+      if (emitter.plane?.userData) emitter.plane.userData.hobunjiHeldOverlayVfxPadding = 0; // Clear the live overdraw envelope when the aura is reset.
+    }
   }
 
   function disposeEmitter(emitter) {
@@ -391,21 +488,35 @@
     for (const sprite of emitter.pool || []) disposeParticle({ sprite });
     if (emitter.pool) emitter.pool.length = 0;
     emitter.group?.parent?.remove?.(emitter.group);
+    if (emitter.plane?.userData) delete emitter.plane.userData.hobunjiHeldOverlayVfxPadding; // No stale scissor enlargement after unequipping.
   }
 
-  function makeEmitter(plane) {
+  function makeEmitter(plane, playerHeld = false) {
     if (typeof THREE === 'undefined' || !plane?.add) return null;
     const group = new THREE.Group(); // Used as the plane-local owner for all transient particles on this exact visible weapon copy.
     group.name = 'weapon_enchantment_metal_particles';
     group.userData.weaponEnchantmentVfx = true;
     group.position.z = 0.012;
     plane.add(group);
-    return { plane, group, particles: [], pool: [], accumulator: 0, token: '', lastTime: performance.now() };
+    plane.userData = plane.userData || {};
+    plane.userData.hobunjiHeldOverlayVfxPadding = 0; // Read by HeldObjectRenderOrder's scissor bounds for only this emitting weapon plane.
+    return { plane, group, particles: [], pool: [], accumulator: 0, token: '', lastTime: performance.now(), playerHeld }; // Only the actual player's held sprite may bypass replay culling; NPC and preview motes retain the draw-call optimization.
   }
 
   function styleFor(state) {
     const def = ALIGNMENTS[state?.alignment]; // Used to resolve the chosen plane-specific particle vocabulary.
     return def?.effects?.find(effect => effect.id === state?.effectId) || def?.effects?.[0] || null;
+  }
+
+  function syncParticleRenderLayers(sprite, plane, playerHeld = false) {
+    if (!sprite?.layers) return;
+    const overlayLayer = window.HeldObjectRenderOrder?.HELD_OVERLAY_LAYER; // Used to share the held-weapon selective replay without losing ordinary room rendering.
+    const overlays = Number.isInteger(overlayLayer) && overlayLayer > 0 && overlayLayer < 32
+      && ((Number(plane?.layers?.mask) >>> overlayLayer) & 1);
+    const wantedMask = (1 | (overlays ? (1 << overlayLayer) : 0)) >>> 0; // Normal rendering stays available if the selective depth replay skips this scene.
+    if ((Number(sprite.layers.mask) >>> 0) !== wantedMask) sprite.layers.mask = wantedMask;
+    sprite.userData = sprite.userData || {};
+    sprite.userData.hobunjiHeldOverlayParticle = !!overlays && playerHeld; // Only player-held motes are protected from the source-blade scissor's extra frustum cull.
   }
 
   function spawnParticle(emitter, mask, snapshot) {
@@ -438,20 +549,23 @@
     }
     sprite.name = `weapon_enchantment_${effect.id}`;
     sprite.renderOrder = Number(emitter.plane.renderOrder || 0) + 4;
+    // The held-object renderer hides the parent plane (and its children) in
+    // the base pass, then redraws it on the overlay layer. Retain layer 0 as
+    // well: rooms without ground replay still use the ordinary world pass.
+    // Recheck existing sprites each frame as the held renderer may mark a mesh
+    // after its first particle spawned (notably during scene/equipment rebuilds).
+    syncParticleRenderLayers(sprite, emitter.plane, emitter.playerHeld);
 
     const index = mask.indices[Math.floor(random() * mask.indices.length)]; // Used to choose one exact verdigris-qualified metal pixel uniformly.
-    const px = index % mask.width; // Used to map the selected source pixel into plane-local X.
-    const py = Math.floor(index / mask.width); // Used to map the selected source pixel into plane-local Y.
-    const size = geometrySize(emitter.plane); // Used so effects scale with the actual rendered weapon plane, not with source PNG dimensions.
-    const baseX = ((px + 0.5) / mask.width - 0.5) * size.width; // Spawn X on the authored metal pixel.
-    const baseY = (0.5 - (py + 0.5) / mask.height) * size.height; // Spawn Y on the authored metal pixel.
+    const origin = metalPixelToLocal(index, mask, emitter.plane); // Pixel emission follows even offset/expanded modular weapon geometry.
+    const { x: baseX, y: baseY, size } = origin;
     const particleSize = Math.max(0.008, Math.min(size.width, size.height) * effect.size * (0.76 + random() * 0.55)); // Used as a bounded local sprite size with slight natural variation.
     sprite.position.set(baseX, baseY, 0.004 + random() * 0.015);
     sprite.scale.set(particleSize, particleSize, 1);
     emitter.group.add(sprite);
 
     const angle = random() * Math.PI * 2; // Used by radial/swirling plane-local motion families.
-    const speed = effect.speed * Math.max(size.width, size.height) * (0.65 + random() * 0.7); // Used as weapon-scale-relative particle drift.
+    const speed = effect.speed * Math.max(size.width, size.height) * FREE_DRIFT_FACTOR * (0.65 + random() * 0.7); // Metal is only the birth mask; motion is free to leave its boundary.
     emitter.particles.push({
       sprite,
       age: 0,
@@ -466,7 +580,7 @@
       baseSize: particleSize,
       effectId: effect.id,
       motion: effect.motion,
-      maxOpacity: alignment.opacity * (0.72 + random() * 0.28),
+      maxOpacity: Math.max(0.6, alignment.opacity * (0.85 + random() * 0.15)),
     });
   }
 
@@ -518,9 +632,11 @@
     }
     sprite.position.x = x;
     sprite.position.y = y;
-    sprite.material.opacity = particle.maxOpacity * Math.sin(Math.PI * t); // Smooth birth/death fade prevents popping against the weapon edge.
-    const scalePulse = 0.78 + 0.36 * Math.sin(Math.PI * t); // Used to make particles bloom slightly away from the metal source.
-    sprite.scale.set(particle.baseSize * scalePulse, particle.baseSize * scalePulse, 1);
+    sprite.material.opacity = Math.max(0.6, particle.maxOpacity * Math.sin(Math.PI * t)); // Keep live particles at least 60% opaque; scale still eases their birth/death.
+    const scalePulse = 0.65 + 1.65 * Math.sin(Math.PI * t); // Used to bloom well beyond the source pixel without clipping to the metal mask.
+    const stretchX = particle.motion === 'crosswind' ? 1.25 + 1.2 * t : (particle.motion === 'thread' || particle.motion === 'wisp' ? 0.66 : 1); // Used to lengthen traveling streaks and thin spectral trails.
+    const stretchY = particle.motion === 'crosswind' ? 0.62 : (particle.motion === 'thread' || particle.motion === 'wisp' ? 1.35 + 0.7 * t : 1); // Used to stretch threads and wisps vertically as they drift.
+    sprite.scale.set(particle.baseSize * scalePulse * stretchX, particle.baseSize * scalePulse * stretchY, 1);
     sprite.material.rotation = particle.phase + particle.spin * particle.age;
     return true;
   }
@@ -534,7 +650,7 @@
     }
     for (const plane of wanted) {
       if (!EMITTERS.has(plane)) {
-        const emitter = makeEmitter(plane); // Used as the persistent particle pool for this visible blade copy.
+        const emitter = makeEmitter(plane, true); // Only these world-held player emitters bypass the replay's additional sprite cull.
         if (emitter) EMITTERS.set(plane, emitter);
       }
     }
@@ -556,6 +672,7 @@
     for (const emitter of emitters) {
       for (let index = emitter.particles.length - 1; index >= 0; index--) {
         const particle = emitter.particles[index]; // Used as the current pooled particle advanced this frame.
+        syncParticleRenderLayers(particle.sprite, emitter.plane, emitter.playerHeld); // Live weapons can acquire their replay layer after the first emission.
         if (updateParticle(particle, dt)) continue;
         retireParticle(emitter, particle);
         emitter.particles.splice(index, 1);
@@ -563,21 +680,76 @@
       emitter.accumulator += dt * emissionPerSecond;
       while (emitter.accumulator >= 1 && emitter.particles.length < MAX_PARTICLES_PER_PLANE) {
         emitter.accumulator -= 1;
-        spawnParticle(emitter, snapshot.mask, snapshot);
+        const originMask = snapshot.maskByPlane?.get(emitter.plane) || snapshot.mask; // Multi-sprite flails sample only visible metal pixels from each assembled head layer.
+        if (originMask?.indices?.length) spawnParticle(emitter, originMask, snapshot);
       }
+      // Sprites are independent children of the plane, not texture-masked to its metal.
+      // The held-weapon x-ray pass scissored to the mesh box, however, so grow
+      // that *rendering* box around all live billboards, including their growth
+      // and rotation. This changes draw coverage, never the particle positions.
+      const size = geometrySize(emitter.plane); // Used to measure how far live particle sprites extend outside the plane rectangle.
+      let padding = 0; // Used by HeldObjectRenderOrder to expand the replay scissor around live particle overdraw.
+      for (const particle of emitter.particles) {
+        const sprite = particle.sprite; // Used to measure current motion and sprite growth, not its original metal pixel.
+        const radius = Math.max(sprite.scale.x, sprite.scale.y) * BILLBOARD_RADIUS_FACTOR; // Includes rotated billboard corners in every view.
+        const outside = Math.max(
+          Math.abs(sprite.position.x - size.centerX) - size.width * 0.5,
+          Math.abs(sprite.position.y - size.centerY) - size.height * 0.5,
+          Math.abs(sprite.position.z) + Math.abs(emitter.group.position.z),
+        ); // Used to retain front/back face clearance even when the blade turns edge-on.
+        padding = Math.max(padding, outside + radius);
+      }
+      if (emitter.plane.userData) emitter.plane.userData.hobunjiHeldOverlayVfxPadding = padding;
     }
   }
 
   async function resolveActiveSnapshot() {
-    const weaponKey = window.Combat?.deps?.currentWeaponKey?.() || 'none'; // Used as the single enchantment/save/held-visual identity for this scan.
+    const weaponKey = activeHeldWeaponKey(); // Scans are valid only while this specific enchanted melee weapon is in hand.
+    if (!weaponKey) return null;
     const visual = normalizedState(weaponKey); // Used to decide whether this weapon should emit at all and which plane vocabulary to use.
     if (!visual) return null;
     const heldVisual = heldVisualForWeapon(weaponKey); // Used as the exact makeToolPlaneMesh object carrying the rendered PNG plane.
     const spritePath = sourceSpriteForWeapon(weaponKey); // Used to scan the untouched authored PNG for verdigris-compatible metal pixels.
     if (!heldVisual?.userData?.toolPlane || !spritePath) return { weaponKey, visual, heldVisual, spritePath, mask: null, counts: planarCounts(weaponKey), planes: [] };
+    const assembly = window.HobunjiWeaponSpriteAssemblies; // Flail layer renderer owns the final visible head masks.
+    if (assembly?.definitionFor?.(weaponKey, window.Combat?.deps?.TOOL_ITEM_DEFS?.[weaponKey])) {
+      // No fallback to the naked haft for an authored assembly while its sprites are
+      // still loading; the next periodic scan picks up ready visible-metal masks.
+      const targets = assembly.enchantmentTargets(heldVisual); // Each target is one ordered metal layer and its post-occlusion pixel mask.
+      const planes = targets.map(target => target.plane);
+      const maskByPlane = new Map(targets.map(target => [target.plane, target.mask]));
+      const matched = targets.reduce((sum, target) => sum + target.mask.matchedMetalPixels, 0);
+      const mask = targets[0]?.mask
+        ? { indices: targets[0].mask.indices, matchedMetalPixels: matched }
+        : null;
+      return { weaponKey, visual, heldVisual, spritePath, mask, maskByPlane, counts: planarCounts(weaponKey), planes };
+    }
     const mask = await metalMaskForSprite(spritePath); // Used as the exact legal particle-origin set.
+    if (activeHeldWeaponKey() !== weaponKey || directHeldVisual(weaponKey) !== heldVisual) return null; // A mask decoded after a same-key mesh rebuild must not bind to the old mesh.
     const planes = particlePlanesForVisual(heldVisual); // Used to target one normal blade or both visible dual-wield blade copies.
     return { weaponKey, visual, heldVisual, spritePath, mask, counts: planarCounts(weaponKey), planes };
+  }
+
+  // Particles sit just in front of the blade's +Z face. Light/heavy stances and
+  // attack poses show the camera either face, and from behind, the opaque blade
+  // depth-hid every particle, so each emitter is mirrored onto the visible face.
+  let faceScratch = null; // Lazily created { normal, toCamera, planePos, cameraPos }; this runs every frame.
+  function faceEmittersTowardCamera(emitters = EMITTERS.values(), cameraOverride = null) {
+    const camera = cameraOverride || window.Combat?.deps?.camera; // A menu preview supplies its own camera; gameplay keeps using the live combat camera. // Live game camera handed to Combat.init.
+    if (!camera?.matrixWorld || typeof THREE === 'undefined') return;
+    if (!faceScratch) faceScratch = { normal: new THREE.Vector3(), toCamera: new THREE.Vector3(), planePos: new THREE.Vector3(), cameraPos: new THREE.Vector3() };
+    const { normal, toCamera, planePos, cameraPos } = faceScratch;
+    cameraPos.setFromMatrixPosition(camera.matrixWorld);
+    for (const emitter of emitters) {
+      const plane = emitter?.plane;
+      if (!plane?.matrixWorld || !emitter.group) continue;
+      normal.set(0, 0, 1).transformDirection(plane.matrixWorld);
+      planePos.setFromMatrixPosition(plane.matrixWorld);
+      const side = normal.dot(toCamera.subVectors(cameraPos, planePos)) < 0 ? -1 : 1;
+      if (emitter.group.scale.z === side) continue;
+      emitter.group.scale.z = side;
+      emitter.group.position.z = 0.012 * side;
+    }
   }
 
   function clearAllEmitters() {
@@ -586,6 +758,18 @@
   }
 
   function update(nowMs) {
+    const heldWeaponKey = activeHeldWeaponKey(); // Checked every frame so tools, ranged weapons, and holstering clear particles without a 180-ms leak.
+    const heldWeaponVisual = heldWeaponKey ? directHeldVisual(heldWeaponKey) : null; // Used to detect replacement of the exact equipped weapon mesh.
+    if (heldWeaponKey !== lastHeldWeaponKey || heldWeaponVisual !== lastHeldWeaponVisual) {
+      lastHeldWeaponKey = heldWeaponKey;
+      lastHeldWeaponVisual = heldWeaponVisual;
+      scanGeneration++; // Invalidates any unresolved metal-mask scan from the previously held weapon or slot.
+      lastScanAt = -Infinity; // Rescan immediately when the actual melee weapon comes back into the player's hand.
+      activeSnapshot = null;
+      clearAllEmitters(); // Also clears overlay padding on the old blade rather than leaving drifting sprites on another item.
+      lastEvent = heldWeaponKey ? `held melee weapon: ${heldWeaponKey}` : 'melee weapon not held; aura cleared';
+    }
+    if (!heldWeaponKey) return;
     const now = Number.isFinite(Number(nowMs)) ? Number(nowMs) : performance.now(); // Used as scheduler/RAF-compatible wall time.
     const previous = activeSnapshot?.updatedAt ?? now; // Used to derive a bounded visual-only delta time.
     const dt = Math.min(0.05, Math.max(0, (now - previous) / 1000)); // Used to keep tab-resume gaps from launching particles far from the weapon.
@@ -595,10 +779,16 @@
       lastScanAt = now;
       const generation = ++scanGeneration; // Captured by this async scan; any newer scan/config refresh invalidates its eventual result.
       resolveActiveSnapshot().then(snapshot => {
-        if (generation !== scanGeneration) return;
+        if (generation !== scanGeneration || activeHeldWeaponKey() !== heldWeaponKey) return;
         if (!snapshot) {
           activeSnapshot = null;
           clearAllEmitters();
+          return; // Unenchanted weapons legitimately have no snapshot; retain the normal scan throttle.
+        }
+        if (snapshot.heldVisual !== directHeldVisual(heldWeaponKey)) {
+          activeSnapshot = null;
+          clearAllEmitters();
+          lastScanAt = -Infinity; // Retry a transient mesh rebuild immediately, rather than waiting an extra throttle interval.
           return;
         }
         snapshot.updatedAt = performance.now();
@@ -610,7 +800,10 @@
       }).catch(error => { if (generation === scanGeneration) lastEvent = `scan failed: ${error?.message || error}`; });
     }
 
-    if (activeSnapshot?.planes?.length && activeSnapshot.mask?.indices?.length) updateEmitters(dt, activeSnapshot);
+    if (activeSnapshot?.planes?.length && activeSnapshot.mask?.indices?.length) {
+      updateEmitters(dt, activeSnapshot);
+      faceEmittersTowardCamera();
+    }
   }
 
   function installUpdateLoop() {
@@ -682,15 +875,21 @@
       });
       alignmentSelect.id = 'weaponEnchantmentVfxAlignment';
       alignmentSelect.disabled = active.length < 2;
-      addControlRow(section, 'Planar appearance', alignmentDef.lore, alignmentSelect);
+      addControlRow(section, 'Particle form origin', alignmentDef.lore, alignmentSelect);
 
-      const colorSelect = makeSelect(state.dyeId, alignmentDef.dyeIds.map(dyeId => ({ value: dyeId, label: dyeLabel(dyeId) })), value => {
+      const colorDef = ALIGNMENTS[state.colorAlignment]; // Used for the independent palette picker and its lore.
+      const colorAlignmentSelect = makeSelect(state.colorAlignment, active.map(alignment => ({ value: alignment, label: ALIGNMENTS[alignment].label })), value => {
+        if (setChoice(key, 'colorAlignment', value)) window.CombatLoadoutUI?.render?.('weaponEnchantmentVfxColorAlignment');
+      });
+      colorAlignmentSelect.id = 'weaponEnchantmentVfxColorAlignment';
+      colorAlignmentSelect.disabled = active.length < 2;
+      addControlRow(section, 'Particle color origin', 'Choose any origin present on this weapon, independently of its particle form.', colorAlignmentSelect);
+
+      const colorSelect = makeSelect(state.dyeId, colorDef.dyeIds.map(dyeId => ({ value: dyeId, label: dyeLabel(dyeId) })), value => {
         if (setChoice(key, 'dyeId', value)) window.CombatLoadoutUI?.render?.('weaponEnchantmentVfxColor');
       });
       colorSelect.id = 'weaponEnchantmentVfxColor';
-      addControlRow(section, 'Particle color', state.alignment === 'Ohthic'
-        ? 'Ohthic colors render deliberately ghostly and semi-transparent.'
-        : 'Uses the same authored cloth-dye color possibilities as the matching lich tradition.', colorSelect);
+      addControlRow(section, 'Particle color', 'Uses the authored cloth-dye palette of the selected color origin.', colorSelect);
 
       const effectSelect = makeSelect(state.effectId, alignmentDef.effects.map(effect => ({ value: effect.id, label: effect.label })), value => {
         if (setChoice(key, 'effectId', value)) window.CombatLoadoutUI?.render?.('weaponEnchantmentVfxEffect');
@@ -702,7 +901,7 @@
       preview.className = 'loadout-slot-combo-note';
       const swatch = document.createElement('span'); // Used to show the exact dye hex at the plane's authored transparency.
       swatch.style.cssText = `display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:-2px;margin-right:6px;border:1px solid rgba(255,255,255,.55);background:${dyeHex(state.dyeId)};opacity:${alignmentDef.opacity};`;
-      preview.append(swatch, document.createTextNode(`${alignmentDef.label} · ${styleFor(state)?.label || state.effectId} · ${Math.round(alignmentDef.opacity * 100)}% base opacity`));
+      preview.append(swatch, document.createTextNode(`${alignmentDef.label} form / ${colorDef.label} color · ${styleFor(state)?.label || state.effectId} · ${Math.round(alignmentDef.opacity * 100)}% base opacity (60% minimum)`));
       section.appendChild(preview);
     }
 
@@ -756,13 +955,103 @@
       visual: state ? { ...state, colorHex: dyeHex(state.dyeId), opacity: ALIGNMENTS[state.alignment]?.opacity ?? null } : null,
       sourceSprite: sourceSpriteForWeapon(key),
       heldVisualFound: !!heldVisualForWeapon(key),
+      currentHeldVisualMatchesSnapshot: !!activeSnapshot?.heldVisual && activeSnapshot.heldVisual === heldVisualForWeapon(key), // True only when a real current visual matches a live snapshot.
+      activeHeldWeaponKey: activeHeldWeaponKey(), // Mobile diagnostics distinguish an enchanted weapon being equipped from actually drawn.
+      activeSlot: window.Combat?.deps?.getActiveTool?.() ?? window.WeaponToolStances?.getRuntimeState?.()?.activeSlot ?? null,
+      heldMode: window.Combat?.deps?.getHeldMode?.() ?? null,
       matchedMetalPixels: activeSnapshot?.weaponKey === key ? (activeSnapshot.mask?.matchedMetalPixels || 0) : null,
       visibleParticlePlanes: activeSnapshot?.weaponKey === key ? (activeSnapshot.planes?.length || 0) : 0,
       emitters: EMITTERS.size,
       particles: [...EMITTERS.values()].reduce((sum, emitter) => sum + emitter.particles.length, 0),
+      overlayPadding: [...EMITTERS.values()].map(emitter => Number((emitter.plane?.userData?.hobunjiHeldOverlayVfxPadding || 0).toFixed(4))), // Reveals the live out-of-weapon overdraw envelope on mobile.
       dualWield: window.HobunjiDualWieldWeaponVisuals?.debugSnapshot?.() || null,
       metalDetection: { sourceHex: SOURCE_HEX, hueToleranceDeg: SOURCE_HUE_TOL_DEG, saturationTolerance: SOURCE_SAT_TOL, alphaMin: SOURCE_ALPHA_MIN },
+      latestChange: 'An aura requires the exact player-held melee mesh and EquipmentPanel sprite source; slot, holster and same-key mesh rebuilds invalidate old emitters.',
       lastEvent,
+    };
+  }
+
+  // A separate emitter uses the same metal mask, authored particle shapes,
+  // colors, and motion as the held weapon. It never enters gameplay's EMITTERS
+  // map, which is intentionally limited to the actually drawn melee weapon.
+  function createPreviewEmitter(plane, key) {
+    if (!plane?.isObject3D || !key) return null;
+    const emitter = makeEmitter(plane); // Owned exclusively by the loadout's miniature 3D scene.
+    if (!emitter) return null;
+    let disposed = false; // Blocks late mask-decoding promises from attaching to a closed preview.
+    let generation = 0; // Invalidates an older preview scan whenever enchantments or visual choices change.
+    let activeToken = null; // Tracks the saved visual, enchantment counts and source sprite while this preview stays open.
+    let snapshot = null; // Supplies the existing particle integrator with the preview's independent metal mask.
+
+    function refresh() {
+      if (disposed) return;
+      const visual = normalizedState(key); // Same validated effect/plane/dye choice as the real held-weapon renderer.
+      const counts = planarCounts(key); // A newly applied or removed planar enchantment changes emission density.
+      const spritePath = sourceSpriteForWeapon(key); // Use the untouched sprite, never the already-verdigris-colored texture.
+      const token = JSON.stringify([visual, counts, spritePath]);
+      if (token === activeToken) return;
+      activeToken = token;
+      const request = ++generation;
+      clearEmitter(emitter);
+      emitter.accumulator = 0;
+      snapshot = null;
+      if (!visual || !spritePath) return; // Unenchanted weapons legitimately show no particles.
+      metalMaskForSprite(spritePath).then(mask => {
+        if (disposed || request !== generation) return;
+        snapshot = { weaponKey: key, visual, counts, spritePath, mask };
+      }).catch(error => {
+        if (disposed || request !== generation) return;
+        lastEvent = 'preview mask failed: ' + (error?.message || error);
+      });
+    }
+    refresh();
+    return {
+      update(dt, camera) {
+        if (disposed) return;
+        refresh();
+        if (!snapshot?.mask?.indices?.length) return;
+        updateEmitters(Math.min(0.05, Math.max(0, Number(dt) || 0)), snapshot, [emitter]);
+        if (camera) faceEmittersTowardCamera([emitter], camera); // Preview particles face its own camera, not the paused game camera.
+      },
+      refresh,
+      dispose() {
+        if (disposed) return;
+        disposed = true;
+        generation++;
+        disposeEmitter(emitter); // Dispose only this preview's sprite materials/pool; shared shape textures remain cached.
+      },
+      debugSnapshot() {
+        return { weaponKey: key, active: !disposed, visual: snapshot?.visual || null,
+          matchedMetalPixels: snapshot?.mask?.matchedMetalPixels || 0, particles: emitter.particles.length };
+      },
+    };
+  }
+
+  // Particles for a weapon the player does not own (an enemy's enchanted weapon): the same emitter, mask and integrator as the held weapon, with a
+  // fixed visual choice and planar counts supplied by the caller instead of the gear inventory. `config` = { visual, counts, spritePath }.
+  function createFixedEmitter(plane, config) {
+    const visual = config?.visual && ALIGNMENTS[config.visual.alignment] && ALIGNMENTS[config.visual.colorAlignment] ? config.visual : null;
+    if (!plane?.isObject3D || !visual || !config.spritePath) return null;
+    const emitter = makeEmitter(plane);
+    if (!emitter) return null;
+    let disposed = false;
+    let snapshot = null;
+    const counts = config.counts && typeof config.counts === 'object' ? config.counts : { [visual.alignment]: 1 };
+    metalMaskForSprite(config.spritePath).then(mask => {
+      if (!disposed) snapshot = { weaponKey: 'enemy:' + config.spritePath, visual, counts, spritePath: config.spritePath, mask };
+    }).catch(error => { lastEvent = 'enemy mask failed: ' + (error?.message || error); });
+    return {
+      update(dt) {
+        if (disposed || !snapshot?.mask?.indices?.length) return;
+        updateEmitters(Math.min(0.05, Math.max(0, Number(dt) || 0)), snapshot, [emitter]);
+        faceEmittersTowardCamera([emitter]); // The live combat camera, exactly like the held weapon.
+      },
+      dispose() {
+        if (disposed) return;
+        disposed = true;
+        disposeEmitter(emitter);
+      },
+      debugSnapshot() { return { active: !disposed, visual, matchedMetalPixels: snapshot?.mask?.matchedMetalPixels || 0, particles: emitter.particles.length }; },
     };
   }
 
@@ -777,11 +1066,18 @@
     setChoice,
     activeAlignments,
     buildMetalMask,
+    metalMaskForSprite, // Dungeon Fire samples the exact verdigris-compatible metal pixels used by this particle system.
+    opaqueAnchorForSprite, // Non-thrown projectile flame zones anchor to the topmost central opaque PNG pixel.
+    metalPixelToLocal, // Shared source-pixel to authored-plane transform for both visual systems.
+    heldVisualForItem: directHeldVisual, // Dungeon Fire reuses the exact player-owned weapon PNG, including virtual modular item keys.
+    sourceSpriteForWeapon, // Dungeon Fire scans the exact assembled weapon sprite instead of guessing from the shaft.
     renderControls,
+    createPreviewEmitter,
+    createFixedEmitter,
     debugSnapshot,
     copyDebug,
     forceRefresh() { scanGeneration++; lastScanAt = -Infinity; activeSnapshot = null; clearAllEmitters(); },
-    _test: Object.freeze({ makeEmitter, updateEmitters, clearEmitter, disposeEmitter }), // Particle lifecycle/pooling regression hooks.
+    _test: Object.freeze({ makeEmitter, updateEmitters, clearEmitter, disposeEmitter, faceEmittersTowardCamera, metalPixelToLocal }), // Particle lifecycle/pooling regression hooks.
   });
 
   bootstrap();

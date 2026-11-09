@@ -1,0 +1,616 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "looseCrate",
+  "name": "Wooden Crate",
+  "footprint": {
+    "w": 1,
+    "d": 1
+  },
+  "notes": "Throwable single crate, reused as the physical burden from wild crate piles. Carry anchors start from the Hronal Witch-bomb authoring profile.",
+  "parts": [
+    {
+      "id": "loose_crate_body",
+      "kind": "box",
+      "name": "Loose Wooden Crate",
+      "transform": {
+        "x": 0,
+        "y": 0.17,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.5,
+        "sy": 0.34,
+        "sz": 0.5
+      },
+      "color": "#8b6540",
+      "segments": 4,
+      "taperAxis": "y",
+      "topScaleX": 0.92,
+      "topScaleZ": 0.92,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0.015,
+      "materialRole": "wood",
+      "materialTexture": "crate_side.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "materialFillMode": "never",
+      "surfaceOpacity": 1,
+      "substanceColor": "#8b6540",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "tint": 1
+    }
+  ],
+  "seatAnchors": [],
+  "particleEmitters": [],
+  "processingWarps": [],
+  "processTimelines": [],
+  "stompAttachPoints": [],
+  "carryable": {
+    "enabled": true,
+    "billboardAnchor": {
+      "coordinateSpace": "posterior-relative",
+      "position": {
+        "x": 0,
+        "y": -0.333,
+        "z": -0.256
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "posteriorOffset": {
+        "x": 0,
+        "y": -0.02,
+        "z": 0
+      },
+      "size": 1
+    },
+    "hitbox": {
+      "enabled": true,
+      "center": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "size": {
+        "x": 0.4377,
+        "y": 0.4321,
+        "z": 0.4349
+      }
+    },
+    "handTargets": {
+      "left": {
+        "x": 0.245,
+        "y": 0,
+        "z": 0.021,
+        "rotation": {
+          "x": 180,
+          "y": 0,
+          "z": -90
+        }
+      },
+      "right": {
+        "x": -0.217,
+        "y": 0,
+        "z": 0.017,
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 90
+        }
+      }
+    },
+    "enemyHoldAnchor": {
+      "position": {
+        "x": 0,
+        "y": 0.02,
+        "z": -0.18
+      },
+      "scale": 0.82
+    },
+    "explodeOnHit": false,
+    "backCarry": {
+      "position": {
+        "x": 0,
+        "y": -0.186,
+        "z": -0.256
+      },
+      "rotation": {
+        "x": 0,
+        "y": 180,
+        "z": 0
+      },
+      "posteriorOffset": {
+        "x": 0,
+        "y": -0.02,
+        "z": 0
+      },
+      "size": 1,
+      "portraitAnchor": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    }
+  },
+  "sourceSchema": "hobunji_furniture_surface_author.v58",
+  "tileBase": {
+    "visible": true,
+    "tileSize": 1,
+    "footprintW": 1,
+    "footprintD": 1,
+    "y": 0,
+    "gridOpacity": 0.55
+  },
+  "surfaceSettings": {
+    "loose_crate_body:surface:0": {
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "paddingX": 0,
+        "paddingY": 0,
+        "opacity": 1,
+        "source": "../../assets/textures/crate_side.png",
+        "name": "crate_side.png",
+        "fillEnabled": false,
+        "fillColor": "#8b6540",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "loose_crate_body:surface:2": {
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "paddingX": 0,
+        "paddingY": 0,
+        "opacity": 1,
+        "source": "../../assets/textures/crate_side.png",
+        "name": "crate_side.png",
+        "fillEnabled": false,
+        "fillColor": "#8b6540",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "loose_crate_body:surface:4": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "paddingX": 0,
+        "paddingY": 0,
+        "opacity": 1,
+        "source": "../../assets/textures/crate_side.png",
+        "name": "crate_side.png",
+        "fillEnabled": false,
+        "fillColor": "#8b6540",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "loose_crate_body:surface:6": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "paddingX": 0,
+        "paddingY": 0,
+        "opacity": 1,
+        "source": "../../assets/textures/crate_side.png",
+        "name": "crate_side.png",
+        "fillEnabled": false,
+        "fillColor": "#8b6540",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "loose_crate_body:surface:8": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "paddingX": 0,
+        "paddingY": 0,
+        "opacity": 1,
+        "source": "../../assets/textures/crate_side.png",
+        "name": "crate_side.png",
+        "fillEnabled": false,
+        "fillColor": "#8b6540",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "loose_crate_body:surface:10": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "paddingX": 0,
+        "paddingY": 0,
+        "opacity": 1,
+        "source": "../../assets/textures/crate_side.png",
+        "name": "crate_side.png",
+        "fillEnabled": false,
+        "fillColor": "#8b6540",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    }
+  },
+  "recognizedSurfaces": [
+    {
+      "id": "loose_crate_body:surface:0",
+      "partId": "loose_crate_body",
+      "recognizedType": "underside",
+      "faceIndices": [
+        0,
+        1
+      ],
+      "area": 0.2605562207825529,
+      "localCentroid": [
+        -0.00033,
+        -0.168968,
+        -0.000027
+      ],
+      "localNormal": [
+        0.0338,
+        -0.999386,
+        0.009277
+      ],
+      "basisU": [
+        0,
+        -0.009282,
+        -0.999957
+      ],
+      "basisV": [
+        0.999429,
+        0.033798,
+        -0.000314
+      ],
+      "bounds": {
+        "minU": -0.2528016416967324,
+        "maxU": 0.2634455508549741,
+        "minV": -0.270040807882277,
+        "maxV": 0.25538321394964436
+      },
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "paddingX": 0,
+        "paddingY": 0,
+        "opacity": 1,
+        "source": "../../assets/textures/crate_side.png",
+        "name": "crate_side.png",
+        "fillEnabled": false,
+        "fillColor": "#8b6540",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "loose_crate_body:surface:2",
+      "partId": "loose_crate_body",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        2,
+        3
+      ],
+      "area": 0.20894938651313716,
+      "localCentroid": [
+        -0.000241,
+        0.165404,
+        -0.001012
+      ],
+      "localNormal": [
+        0.01523,
+        0.999795,
+        -0.013313
+      ],
+      "basisU": [
+        0,
+        0.013314,
+        0.999911
+      ],
+      "basisV": [
+        0.999884,
+        -0.015228,
+        0.000203
+      ],
+      "bounds": {
+        "minU": -0.23990181304181354,
+        "maxU": 0.244713222081551,
+        "minV": -0.232206788459893,
+        "maxV": 0.2194825978253796
+      },
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "paddingX": 0,
+        "paddingY": 0,
+        "opacity": 1,
+        "source": "../../assets/textures/crate_side.png",
+        "name": "crate_side.png",
+        "fillEnabled": false,
+        "fillColor": "#8b6540",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "loose_crate_body:surface:4",
+      "partId": "loose_crate_body",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        4,
+        5
+      ],
+      "area": 0.1637193643694866,
+      "localCentroid": [
+        -0.005667,
+        -0.006665,
+        -0.245088
+      ],
+      "localNormal": [
+        0.00035,
+        0.055362,
+        -0.998466
+      ],
+      "basisU": [
+        -1,
+        0,
+        -0.000351
+      ],
+      "basisV": [
+        -0.000019,
+        0.998466,
+        0.055362
+      ],
+      "bounds": {
+        "minU": -0.26061190379403626,
+        "maxU": 0.26414678827203375,
+        "minV": -0.1981995282213478,
+        "maxV": 0.15290193490708714
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "paddingX": 0,
+        "paddingY": 0,
+        "opacity": 1,
+        "source": "../../assets/textures/crate_side.png",
+        "name": "crate_side.png",
+        "fillEnabled": false,
+        "fillColor": "#8b6540",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "loose_crate_body:surface:6",
+      "partId": "loose_crate_body",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        6,
+        7
+      ],
+      "area": 0.15873469374213944,
+      "localCentroid": [
+        0.24095,
+        0.00236,
+        0.003889
+      ],
+      "localNormal": [
+        0.993273,
+        0.11572,
+        0.004197
+      ],
+      "basisU": [
+        0.004226,
+        0,
+        -0.999991
+      ],
+      "basisV": [
+        -0.115719,
+        0.993282,
+        -0.000489
+      ],
+      "bounds": {
+        "minU": -0.2532186094965276,
+        "maxU": 0.24307729989105206,
+        "minV": -0.19046220450768625,
+        "maxV": 0.13986596624090425
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "paddingX": 0,
+        "paddingY": 0,
+        "opacity": 1,
+        "source": "../../assets/textures/crate_side.png",
+        "name": "crate_side.png",
+        "fillEnabled": false,
+        "fillColor": "#8b6540",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "loose_crate_body:surface:8",
+      "partId": "loose_crate_body",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        8,
+        9
+      ],
+      "area": 0.1612148997058499,
+      "localCentroid": [
+        -0.002762,
+        -0.000433,
+        0.240071
+      ],
+      "localNormal": [
+        -0.026528,
+        0.069254,
+        0.997246
+      ],
+      "basisU": [
+        0.999646,
+        0,
+        0.026592
+      ],
+      "basisV": [
+        0.001842,
+        0.997599,
+        -0.06923
+      ],
+      "bounds": {
+        "minU": -0.24258853818605178,
+        "maxU": 0.2648934058275378,
+        "minV": -0.18525222747282977,
+        "maxV": 0.16364736974256044
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "paddingX": 0,
+        "paddingY": 0,
+        "opacity": 1,
+        "source": "../../assets/textures/crate_side.png",
+        "name": "crate_side.png",
+        "fillEnabled": false,
+        "fillColor": "#8b6540",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "loose_crate_body:surface:10",
+      "partId": "loose_crate_body",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        10,
+        11
+      ],
+      "area": 0.16599839819377799,
+      "localCentroid": [
+        -0.242374,
+        -0.007116,
+        -0.003103
+      ],
+      "localNormal": [
+        -0.996876,
+        0.077964,
+        0.01264
+      ],
+      "basisU": [
+        0.012678,
+        0,
+        0.99992
+      ],
+      "basisV": [
+        0.077957,
+        0.996956,
+        -0.000988
+      ],
+      "bounds": {
+        "minU": -0.26507570303312156,
+        "maxU": 0.24972170450830894,
+        "minV": -0.2037622461207243,
+        "maxV": 0.16091276023386575
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "paddingX": 0,
+        "paddingY": 0,
+        "opacity": 1,
+        "source": "../../assets/textures/crate_side.png",
+        "name": "crate_side.png",
+        "fillEnabled": false,
+        "fillColor": "#8b6540",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    }
+  ],
+  "elevation": {
+    "version": 1,
+    "mode": "auto",
+    "measured": {
+      "sizeX": 0.525,
+      "sizeY": 0.364,
+      "sizeZ": 0.516,
+      "minY": -0.014,
+      "maxY": 0.35,
+      "cellsW": 1,
+      "cellsD": 1,
+      "cellsH": 1
+    },
+    "manual": {}
+  },
+  "decals": [],
+  "decalAuthoring": {
+    "version": 4,
+    "coordinateSpace": "recognized-surface-local",
+    "sizeUnits": "surface-fraction",
+    "offsetUnits": "half-surface-span",
+    "sourceTypes": [
+      "image",
+      "tankanText"
+    ],
+    "tankanLayout": "vertical-word-columns",
+    "tankanSizing": "container-fit-down-v1"
+  },
+  "daylightWindowAuthoring": {
+    "version": 1,
+    "role": "daylightWindow",
+    "lightingModel": "interior-overlay-aperture",
+    "surfaceTint": "live-outdoor-rgb-over-neutralized-texture"
+  },
+  "pieceAnimations": [],
+  "pieceAnimationAuthoring": {
+    "version": 2,
+    "model": "rigid-piece-relative",
+    "separateFromProcessingWarps": true,
+    "windDirection": "furniture-local horizontal degrees",
+    "windAxisBias": true
+  }
+}

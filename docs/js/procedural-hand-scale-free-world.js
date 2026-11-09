@@ -122,7 +122,8 @@
     if (anchorName === 'posterior' && zeroPosteriorPlaceholder(binding?.referencePosition || anchor.position)) {
       const referenceHeight = positive(binding?.referenceModelHeight, metrics ? adultMetrics(metrics).modelHeight : .9 * profileAnatomy(profile).portraitScale); // Derived posterior stays in the binding's adult reference frame.
       const derivedY = priorRigMath?.characterPosteriorY?.(profile.posteriorRule, referenceHeight, referenceHeight / 2); // Use the original anatomical rule so a poisoned portrait binding cannot feed itself back into the hip.
-      if (Number.isFinite(derivedY) && derivedY > 0) {
+      // Floor-relative posteriors may be negative when the portrait itself extends below the procedural floor.
+      if (Number.isFinite(derivedY) && Math.abs(derivedY) > 1e-12) {
         anchor.portraitBinding = validBinding(binding) ? { ...binding, referencePosition: { x:0, y:derivedY, z:0 } } : makeBinding(profile, { x:0, y:derivedY, z:0 }, metrics);
         return anchor.portraitBinding;
       }

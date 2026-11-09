@@ -1,0 +1,135 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "hronalWitchBomb",
+  "name": "Hronal Witch-bomb",
+  "footprint": {
+    "w": 1,
+    "d": 1
+  },
+  "notes": "User-authored sphere retained from the furniture surface-author export. Harlyao glyph engraving covers every sphere face and uses the separate orange additive glow pass.",
+  "parts": [
+    {
+      "id": "hronal_witch_bomb_sphere",
+      "kind": "sphere",
+      "name": "Hronal Witch-bomb sphere",
+      "color": "#51483e",
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialLighting": "unlit",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6,
+      "wonkiness": 0.008,
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.45,
+        "sy": 0.45,
+        "sz": 0.45
+      },
+      "segments": 16,
+      "taperAxis": "y",
+      "topScaleX": 0.92,
+      "topScaleZ": 0.92,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "substanceColor": "#51483e",
+      "patternScale": 1.25,
+      "patternSurfaces": [
+        {
+          "slot": "hronal_witch_bomb_sphere:glyph",
+          "mode": "engraving",
+          "opacity": 0.95,
+          "engravingCoreOpacity": 0.96,
+          "random": false,
+          "scale": 1,
+          "palette": [
+            "#51483e",
+            "#ff7818",
+            "#ffad48"
+          ],
+          "selector": "all",
+          "patternId": "harlyao_glyph_entropy",
+          "glowColor": "#ff7417",
+          "glowIntensity": 0.88,
+          "glowPulseSpeed": 1.3,
+          "glowPulseDepth": 0.28
+        }
+      ]
+    }
+  ],
+  "carryable": {
+    "enabled": true,
+    "billboardAnchor": {
+      "coordinateSpace": "posterior-relative",
+      "position": {
+        "x": 0,
+        "y": -0.333,
+        "z": -0.256
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "posteriorOffset": {
+        "x": 0,
+        "y": -0.02,
+        "z": 0
+      },
+      "size": 1
+    },
+    "hitbox": {
+      "enabled": true,
+      "center": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "size": {
+        "x": 0.4377,
+        "y": 0.4321,
+        "z": 0.4349
+      }
+    },
+    "handTargets": {
+      "left": {
+        "x": 0.245,
+        "y": 0,
+        "z": 0.021,
+        "rotation": {
+          "x": 180,
+          "y": 0,
+          "z": -90
+        }
+      },
+      "right": {
+        "x": -0.217,
+        "y": 0,
+        "z": 0.017,
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 90
+        }
+      }
+    },
+    "enemyHoldAnchor": {
+      "position": {
+        "x": 0,
+        "y": 0.02,
+        "z": -0.18
+      },
+      "scale": 0.82
+    }
+  }
+}

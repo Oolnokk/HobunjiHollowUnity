@@ -83,7 +83,7 @@
     return { ...building, footprintShape: shape };
   }
 
-  function authoredBuildingFootprintKeys(mapData) {
+  function authoredBuildingFootprintKeys(mapData, area = mapData?.id) {
     const keys = new Set(); // Rotated authored building footprint cells filtered from town/zone grass.
     const elevation = window.BuildingSubtleElevation; // Existing footprint math keeps grass and collision/elevation shapes identical.
     for (const rawBuilding of (Array.isArray(mapData?.buildings) ? mapData.buildings : [])) {
@@ -98,6 +98,7 @@
       const row = Math.round(Number(building?.gridZ) || 0);
       for (let r = row; r < row + depth; r++) for (let c = col; c < col + width; c++) keys.add(keyOf(c, r));
     }
+    for (const key of window.FurnitureTableSystem?.grassFootprintKeys?.(area) || []) keys.add(key); // Furniture/locale footprints use the same reversible grass compaction as buildings.
     return keys;
   }
 
@@ -105,33 +106,23 @@
     return !!(mesh?.isInstancedMesh && mesh.userData?.isBillboard === true && mesh.instanceMatrix?.array);
   }
 
-  function _cacheNames(cacheKey) {
-    const stem = String(cacheKey || 'hobunjiBuildingGrass'); // Stable userData prefix keeps independent scene filters from overwriting each other.
-    return {
-      matrices: `${stem}BaseMatrices`,
-      count: `${stem}BaseCount`,
-      capacity: `${stem}BaseCapacity`,
-    };
-  }
-
   function filterBillboardMesh(mesh, blockedKeys, cacheKey) {
     if (!isGrassBillboardMesh(mesh)) return { source: 0, visible: 0, suppressed: 0 };
-    const names = _cacheNames(cacheKey); // Cache property names for this caller's immutable source matrices.
-    const capacity = mesh.instanceMatrix.array.length; // Current matrix-buffer length detects rebuilt InstancedMeshes.
-    if (!mesh.userData[names.matrices] || mesh.userData[names.capacity] !== capacity) {
-      mesh.userData[names.matrices] = new Float32Array(mesh.instanceMatrix.array);
-      mesh.userData[names.count] = mesh.count;
-      mesh.userData[names.capacity] = capacity;
+    mesh.userData.hobunjiBillboardBlockedKeys = blockedKeys || null; // Last footprint mask reused after a mutable farm billboard mesh is rebuilt.
+    const capacity = mesh.instanceMatrix.array.length;
+    if (!mesh.userData.hobunjiBillboardSourceMatrices || mesh.userData.hobunjiBillboardSourceMatrices.length !== capacity) {
+      mesh.userData.hobunjiBillboardSourceMatrices = new Float32Array(mesh.instanceMatrix.array);
+      mesh.userData.hobunjiBillboardSourceCount = mesh.count;
     }
-
-    const base = mesh.userData[names.matrices]; // Original unfiltered matrices used to restore grass after a footprint moves.
-    const sourceCount = Math.min(Number(mesh.userData[names.count]) || 0, Math.floor(base.length / 16));
+    const base = mesh.userData.hobunjiBillboardSourceMatrices;
+    const sourceCount = Math.min(Number(mesh.userData.hobunjiBillboardSourceCount) || 0, Math.floor(base.length / 16));
     mesh.updateMatrixWorld(true);
     let write = 0; // Next visible output slot while compacting around blocked building cells.
     let suppressed = 0; // Number of grass instances omitted because their center is inside a footprint.
 
     for (let i = 0; i < sourceCount; i++) {
       localMatrix.fromArray(base, i * 16);
+      mesh.userData.hobunjiBillboardProjectMatrix?.(localMatrix);
       worldMatrix.multiplyMatrices(mesh.matrixWorld, localMatrix);
       worldPos.setFromMatrixPosition(worldMatrix);
       const cellKey = keyOf(Math.floor(worldPos.x), Math.floor(worldPos.z));
@@ -147,6 +138,25 @@
     mesh.computeBoundingBox?.();
     mesh.computeBoundingSphere?.();
     return { source: sourceCount, visible: write, suppressed };
+  }
+
+  // Farm billboards refill their existing InstancedMesh after hoe, seed and shovel
+  // actions. Replace the immutable pre-filter source with those new matrices,
+  // then reapply the latest building footprint without resurrecting old grass.
+  function refreshRebuiltBillboardMesh(mesh) {
+    if (!isGrassBillboardMesh(mesh)) return null;
+    const matrices = mesh.instanceMatrix.array; // Live unfiltered buffer written by VegetationCropRendering.
+    let source = mesh.userData.hobunjiBillboardSourceMatrices; // Source copied before footprint compaction, reused across tile edits.
+    if (source) {
+      if (source.length !== matrices.length) {
+        source = mesh.userData.hobunjiBillboardSourceMatrices = new Float32Array(matrices);
+      } else {
+        source.set(matrices.subarray(0, mesh.count * 16));
+      }
+      mesh.userData.hobunjiBillboardSourceCount = mesh.count;
+    }
+    const blockedKeys = mesh.userData.hobunjiBillboardBlockedKeys; // Most recently applied farmhouse/barn footprint.
+    return blockedKeys ? filterBillboardMesh(mesh, blockedKeys, 'hobunjiFarmBuildingGrass') : null;
   }
 
   function filterObject(root, blockedKeys, cacheKey) {
@@ -189,8 +199,8 @@
     const scene = townDeps?.getTownScene?.(); // Active town scene whose decorative grass must respect authored buildings.
     const mapData = townDeps?.getTownZone?.(); // Active authored town map containing exact building footprint metadata.
     if (!scene || !mapData) return { meshes: 0, source: 0, visible: 0, suppressed: 0 };
-    const blocked = authoredBuildingFootprintKeys(mapData); // Exact, unexpanded building footprints; elevation falloff remains grassy.
-    _patchSceneAdd(scene, () => authoredBuildingFootprintKeys(townDeps?.getTownZone?.()), 'hobunjiTownBuildingGrass');
+    const blocked = authoredBuildingFootprintKeys(mapData, 'town'); // Projected runtime town layouts can omit the authored map ID; this owner still knows its area. elevation falloff remains grassy.
+    _patchSceneAdd(scene, () => authoredBuildingFootprintKeys(townDeps?.getTownZone?.(), 'town'), 'hobunjiTownBuildingGrass');
     const stats = filterScene(scene, blocked, 'hobunjiTownBuildingGrass');
     // Placement metadata may only contain the body bbox. Source piece JSON is
     // authoritative for porch/step/railing extension cells; refilter once those
@@ -199,7 +209,7 @@
       const liveScene = townDeps?.getTownScene?.();
       const liveMap = townDeps?.getTownZone?.();
       if (!liveScene || liveMap !== mapData) return;
-      const exact = filterScene(liveScene, authoredBuildingFootprintKeys(liveMap), 'hobunjiTownBuildingGrass');
+      const exact = filterScene(liveScene, authoredBuildingFootprintKeys(liveMap, 'town'), 'hobunjiTownBuildingGrass');
       if (exact.suppressed) townDeps?.debugLog?.(`Building piece footprints suppressed ${exact.suppressed} town grass instance(s), including extensions.`);
     });
     return stats;
@@ -207,6 +217,7 @@
 
   function _patchTownZoneBuildings(api) {
     if (!api || api.__hobunjiBuildingGrassPatched) return;
+    townDeps = api.grassContext?.() || townDeps; // house-pieces may load this after town furniture has already initialized.
     const originalInit = api.init; // Captured to preserve TownZoneBuildings' existing initialization behavior.
     const originalSpawnTown = api.spawnTownBuildings; // Captured so town grass filtering is an additive post-step.
     const originalSpawnZone = api.spawnZoneBuildings; // Captured so zone grass is filtered once an authored building map is known.
@@ -246,6 +257,7 @@
     }
     api.refreshBuildingGrassSuppression = _refreshTown;
     api.__hobunjiBuildingGrassPatched = true;
+    if (townDeps) _refreshTown(); // Bind and filter already-built grass when this module arrives late.
   }
 
   function _zoneMapForScene(scene) {
@@ -317,9 +329,11 @@
     authoredBuildingFootprintKeys,
     ensureAuthoredPieceShapes,
     filterBillboardMesh,
+    refreshRebuiltBillboardMesh,
     filterObject,
     filterScene,
     refreshTown: _refreshTown,
+    refreshArea: (area,scene,mapData) => filterScene(scene,authoredBuildingFootprintKeys({...mapData,id:area}),'hobunjiZoneBuildingGrass'),
   };
   window.BuildingGrassSuppression = api;
 

@@ -55,6 +55,11 @@
     potionOfSpeed: recipe('potionOfSpeed', 'bones', 'lighten', 'wind', { label: 'Potion of Speed', icon: '🏃', useMode: 'drink', application: 'buff', stat: 'movementSpeed', magnitude: 0.45, durationS: 52, desc: 'Increases movement speed.' }),
     potionOfEfficiency: recipe('potionOfEfficiency', 'breath', 'lighten', 'wind', { label: 'Potion of Efficiency', icon: '🪶', useMode: 'drink', application: 'buff', stat: 'staminaSpend', magnitude: 0.38, durationS: 52, desc: 'Reduces Stamina costs.' }),
 
+    fireFlask: recipe('fireFlask','senses','afflict','fire',{
+      baseBatch:2,label:'Fire Flask',icon:'🔥',useMode:'throw',application:'groundFire',
+      splashRadius:1.6,amount:10,particleColors:['#ff9b28','#ff4b1e'],
+      desc:'Shatters into a lingering burning patch. Fire catches on stone sconces and creatures.'
+    }),
     hemorrhageFlask: recipe('hemorrhageFlask', 'blood', 'afflict', 'fire', { baseBatch: 2, label: 'Hemorrhage Flask', icon: '🧨', useMode: 'throw', application: 'affliction', afflictionId: 'bleedingHealth', amount: 48, splashRadius: 1.45, particleColors: ['#b3132b', '#ff5668'], particleIntensity: 1.35, desc: 'Applies a large amount of Bleeding Health in a splash.' }),
     woundingFlask: recipe('woundingFlask', 'blood', 'afflict', 'water', { baseBatch: 2, label: 'Wounding Flask', icon: '🫙', useMode: 'throw', application: 'affliction', afflictionId: 'woundedStamina', amount: 28, splashRadius: 1.35, particleColors: ['#6aa8d9', '#bb263f'], desc: 'Applies Wounded Stamina in a splash.' }),
     congealingFlask: recipe('congealingFlask', 'blood', 'afflict', 'earth', { baseBatch: 2, label: 'Congealing Flask', icon: '🫙', useMode: 'throw', application: 'affliction', afflictionId: 'congealedHealth', amount: 30, splashRadius: 1.3, particleColors: ['#6d2c31', '#9b7452'], desc: 'Applies Congealed Health in a splash.' }),
@@ -269,7 +274,7 @@
     if (deps?.ITEM_DEFS && !deps.ITEM_DEFS[key]) {
       const modeTag = isThrowingFlask ? 'Flask' : definition.useMode === 'livestock' ? 'Livestock' : 'Potion'; // Inventory filter tag.
       const color = mixColor(reagentKeys); // Procedural bottle tint for ordinary potions and the initial fallback before flask-specific splitting.
-      deps.ITEM_DEFS[key] = { icon: definition.icon, label: `${definition.label}${safeTier ? ` · Potency ${safeTier + 1}` : ''}`, cat: 'processed', sellPrice: 0, tags: ['Alchemy', modeTag, definition.traits.drive, definition.traits.magnetism], desc: definition.desc, alchemyRecipeId: recipeId, alchemyPotencyTier: safeTier, useMode: definition.useMode, spriteIcon: 'bottle_potion.png', spriteColor: color, spriteMode: 'keyed' };
+      deps.ITEM_DEFS[key] = { icon: definition.icon, label: `${definition.label}${safeTier ? ` · Potency ${safeTier + 1}` : ''}`, cat: 'processed', sellPrice: 24 + safeTier * 12 + (isThrowingFlask ? 8 : 0), tags: ['Alchemy', modeTag, definition.traits.drive, definition.traits.magnetism], desc: definition.desc, alchemyRecipeId: recipeId, alchemyPotencyTier: safeTier, useMode: definition.useMode, spriteIcon: 'bottle_potion.png', spriteColor: color, spriteMode: 'keyed' };
     }
     const itemDef = deps?.ITEM_DEFS?.[key]; // Used to upgrade throwables from the generic bottle/fallback once ingredient provenance is available.
     if (isThrowingFlask && itemDef && itemDef.alchemyFlaskColorSource !== 'ingredients') applyThrowingFlaskSprite(itemDef, flaskColors, hasIngredientColors ? 'ingredients' : 'fallback');
@@ -280,7 +285,7 @@
     const definition = RECIPE_DEFS[recipeId]; // Authored recipe taught by the physical item.
     const key = recipeScrollKey(recipeId); // Stable recipe-item identity.
     if (!definition || !key) return null;
-    if (deps?.ITEM_DEFS && !deps.ITEM_DEFS[key]) deps.ITEM_DEFS[key] = { icon: '📜', label: `Recipe: ${definition.label}`, cat: 'processed', sellPrice: 8, tags: ['Alchemy', 'Recipe'], desc: `Read to learn the ${definition.traits.humour} + ${definition.traits.drive} + ${definition.traits.magnetism} reaction.`, alchemyRecipeScrollId: recipeId };
+    if (deps?.ITEM_DEFS && !deps.ITEM_DEFS[key]) deps.ITEM_DEFS[key] = { icon: '📜', label: `Recipe: ${definition.label}`, cat: 'processed', sellPrice: 35, tags: ['Alchemy', 'Recipe'], desc: `Read to learn the ${definition.traits.humour} + ${definition.traits.drive} + ${definition.traits.magnetism} reaction.`, alchemyRecipeScrollId: recipeId };
     return key;
   }
   function readRecipeItem(itemKey) {
@@ -298,7 +303,7 @@
     if (!effects?.length) return null;
     const key = `potion_${effects.slice().sort().join('_')}`; // Preserve old stacks without creating new ones.
     POTION_ITEMS[key] = Object.freeze({ legacyEffects: effects.slice() });
-    if (deps?.ITEM_DEFS && !deps.ITEM_DEFS[key]) deps.ITEM_DEFS[key] = { icon: '🧪', label: `Legacy Potion of ${effects.join(' & ')}`, cat: 'processed', sellPrice: 0, tags: ['Potion', 'Alchemy', 'Legacy'], desc: 'A preserved pre-refactor potion.', spriteIcon: 'bottle_potion.png', spriteColor: mixColor(reagentKeys), spriteMode: 'keyed' };
+    if (deps?.ITEM_DEFS && !deps.ITEM_DEFS[key]) deps.ITEM_DEFS[key] = { icon: '🧪', label: `Legacy Potion of ${effects.join(' & ')}`, cat: 'processed', sellPrice: 12, tags: ['Potion', 'Alchemy', 'Legacy'], desc: 'A preserved pre-refactor potion.', spriteIcon: 'bottle_potion.png', spriteColor: mixColor(reagentKeys), spriteMode: 'keyed' };
     return key;
   }
   function getPotionEffectsFromKey(key) { const modern = parseBrewedItemKey(key); if (modern) return modern; if (!String(key || '').startsWith('potion_')) return null; const legacyEffects = String(key).slice(7).split('_').filter(Boolean); return legacyEffects.length ? { legacyEffects } : null; } // Old loader compatibility.
@@ -356,7 +361,12 @@
   function brew() {
     const brewOptions = campfireBrewing ? { targetAlchemyLevel: alchemyLevel() * herbalistPrecisionFraction() } : {};
     const result = brewFrom(selectedReagents, brewOptions);
-    if (result.ok) selectedReagents = [];
+    if (result.ok) {
+      // Keep the same three reagents ready for another batch, dropping only exhausted stacks.
+      selectedReagents = selectedReagents.filter(key => (deps?.inventory?.[key] || 0) > 0);
+      // A missing reagent invalidates the previous target until a complete reaction is selected again.
+      if (targetedRecipeId && !enumerateRecipes(selectedReagents).some(outcome => outcome.recipeId === targetedRecipeId)) targetedRecipeId = null;
+    }
     deps?.refreshItemScroll?.();
     return result;
   } // Existing table adapter; also used by the campfire Herbalist flow via setCampfireBrewing.
@@ -375,7 +385,10 @@
     if (!definition || !entity || !(factor > 0)) return { ok: false, message: 'That alchemical reaction cannot be applied.' };
     if (options.skipEmpower !== true) factor *= empowerFactor(definition); // Player-made effects keep perk scaling; NPC/environment flask hits can explicitly bypass the player's perk.
     const amount = (Number(definition.amount) || 0) * factor; // Instant magnitude.
-    if (definition.application === 'restoreHealth') entity.health = Math.min(window.ResourceSystem?.getEffectiveMax?.(entity, 'health') ?? entity.maxHealth, (Number(entity.health) || 0) + amount);
+    if (definition.application === 'restoreHealth') {
+      if (window.ResourceSystem?.applyHealthRecovery && Number(entity?.health) > 0) window.ResourceSystem.applyHealthRecovery(entity, amount); // Living actors respect Berserker's Bargain and central healing modifiers.
+      else entity.health = Math.min(window.ResourceSystem?.getEffectiveMax?.(entity, 'health') ?? entity.maxHealth, (Number(entity.health) || 0) + amount); // Preserve the original zero-Health/restorative-preview behavior; the central recovery API intentionally refuses to resurrect a dead actor.
+    }
     else if (definition.application === 'restoreStamina') {
       window.ResourceSystem?.restoreStamina?.(entity, amount, {
         exhaustionAmount: (Number(definition.exhaustionAmount) || 0) * factor,
@@ -384,6 +397,7 @@
     else if (definition.application === 'cleanseFamily') window.ResourceSystem?.removeAfflictionsByFamily?.(entity, definition.family, amount);
     else if (definition.application === 'cleanseTag') window.ResourceSystem?.removeAfflictionsByTag?.(entity, definition.tag, amount);
     else if (definition.application === 'affliction') window.ResourceSystem?.addAffliction?.(entity, definition.afflictionId, amount);
+    else if (definition.application === 'groundFire') window.ResourceSystem?.addAffliction?.(entity, 'burningHealth', amount); // Instant splash then the world patch persists on the ground.
     else if (definition.application === 'buff') addTimedEffect(definition, factor, options.potencyTier || 0);
     else if (definition.application === 'narcotic') {
       addTimedEffect(definition, factor, options.potencyTier || 0);
@@ -507,6 +521,7 @@
     const preview = document.getElementById('alchemyEffectPreview'); // Existing reaction preview.
     if (!list) return;
     selectedReagents = selectedReagents.filter(key => (deps?.inventory?.[key] || 0) > 0);
+    if (targetedRecipeId && !enumerateRecipes(selectedReagents).some(outcome => outcome.recipeId === targetedRecipeId)) targetedRecipeId = null; // Inventory may change while this panel is open.
     const held = Object.keys(REAGENT_DEFS).filter(key => (deps?.inventory?.[key] || 0) > 0); // Owned rows.
     list.innerHTML = '';
     held.forEach(key => { const definition = REAGENT_DEFS[key]; const selected = selectedReagents.includes(key); const compatible = selected || !selectedReagents.length || canAddReagent(selectedReagents, key); const row = document.createElement('div'); row.className = `shop-row alch-reagent-row${selected?' selected':''}${compatible?'':' incompatible'}`; row.innerHTML = `<div class="sh-icon">${definition.icon}</div><div class="sh-info"><div class="sh-name">${definition.label} <span class="alch-count">×${deps.inventory[key]}</span></div><div class="alch-effects"><span class="alch-effect humour">${definition.traits.humour}</span><span class="alch-effect drive">${definition.traits.drive}</span><span class="alch-effect magnetism">${definition.traits.magnetism}</span></div></div><button class="shop-buy-btn" data-act="toggle" ${compatible?'':'disabled'}>${selected?'Selected':compatible?'Select':'Incompatible'}</button>`; row.querySelector('[data-act="toggle"]')?.addEventListener('click', () => toggleReagent(key)); list.appendChild(row); });
@@ -527,7 +542,7 @@
     const selectedKey = deps?.getSelectedItemKey?.() || null; // Current held/selected item.
     const flaskPayload = parseBrewedItemKey(selectedKey); // Current alchemy payload.
     const flaskDefinition = flaskPayload && RECIPE_DEFS[flaskPayload.recipeId]; // Current flask recipe.
-    return { alchemy:{level:alchemyLevel(),xp:skillSnapshot?.experience?.alchemy||0}, selectedReagents:selectedReagents.map(key=>({key,traits:REAGENT_DEFS[key]?.traits})), outcomes:outcomes.map(outcome=>({recipeId:outcome.recipeId,assignments:outcome.assignments})), everyIngredientContributes:outcomes.every(outcome=>outcome.assignments.every(a=>Object.values(a.contributes).every(list=>list.length))), targetedRecipeId, targetingProbability:targetedRecipeId?targetingProbability(alchemyLevel(),outcomes,targetedRecipeId):null, outcomeWeights:Object.fromEntries(outcomes.map(outcome=>[outcome.recipeId,outcomeWeight(outcome)])), discoveredRecipeCount:discoveredRecipes.size, activeEffects:serializeActiveEffects(), afflictions:afflictionTotals(entity), contextualRecommendation:contextualRestoratives(entity)[0]?.recipeId||null, selectedFlask:flaskDefinition?.useMode==='throw'?{recipeId:flaskDefinition.id,basePotency:flaskDefinition.amount,splashRadius:flaskDefinition.splashRadius}:null, projectile:window.AlchemyFlasks?.diagnostics?.()||null, lastBrew:lastBrewDiagnostics };
+    return { alchemy:{level:alchemyLevel(),xp:skillSnapshot?.experience?.alchemy||0}, selectedReagents:selectedReagents.map(key=>({key,traits:REAGENT_DEFS[key]?.traits})), repeatBrewReady:selectedReagents.length===MAX_REAGENTS&&selectedReagents.every(key=>(deps?.inventory?.[key]||0)>0)&&outcomes.length>0, outcomes:outcomes.map(outcome=>({recipeId:outcome.recipeId,assignments:outcome.assignments})), everyIngredientContributes:outcomes.every(outcome=>outcome.assignments.every(a=>Object.values(a.contributes).every(list=>list.length))), targetedRecipeId, targetingProbability:targetedRecipeId?targetingProbability(alchemyLevel(),outcomes,targetedRecipeId):null, outcomeWeights:Object.fromEntries(outcomes.map(outcome=>[outcome.recipeId,outcomeWeight(outcome)])), discoveredRecipeCount:discoveredRecipes.size, activeEffects:serializeActiveEffects(), afflictions:afflictionTotals(entity), contextualRecommendation:contextualRestoratives(entity)[0]?.recipeId||null, selectedFlask:flaskDefinition?.useMode==='throw'?{recipeId:flaskDefinition.id,basePotency:flaskDefinition.amount,splashRadius:flaskDefinition.splashRadius}:null, projectile:window.AlchemyFlasks?.diagnostics?.()||null, lastBrew:lastBrewDiagnostics };
   }
   function diagnosticsText() { return JSON.stringify(diagnosticsSnapshot(), null, 2); }
   window._doBrewPotion = () => { const result = brew(); deps?.showToast?.(result.message, result.ok !== false); renderPanel(); if (result.ok) deps?.saveMemberWorldData?.(); };

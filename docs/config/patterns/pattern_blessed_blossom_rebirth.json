@@ -1,0 +1,23 @@
+{
+  "schema": "hobunji_pattern.v1",
+  "id": "blessed_blossom_rebirth",
+  "name": "Blessed Blossom: Rebirth",
+  "motifPng": "assets/patterns/motif_blessed_blossom_rebirth.png",
+  "collectible": false,
+  "settings": {
+    "motifScale": 1,
+    "motifRotationDeg": 0,
+    "tiling": false,
+    "invert": false,
+    "motifThinPx": 3,
+    "frameShape": "square",
+    "frameX": 0,
+    "frameY": 0,
+    "frameRotationDeg": 0,
+    "frameScale": 1,
+    "meshScale": 3.2,
+    "meshRotationDeg": 0,
+    "overpassClearanceMultiplier": 3
+  },
+  "availableByDefault": true
+}

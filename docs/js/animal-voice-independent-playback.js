@@ -71,6 +71,7 @@
   const silenceTrimCache = new WeakMap(); // Decoded AudioBuffer -> WeakMap(AudioContext -> Map(settings -> trimmed result)); repeated breathing never rescans the same clip.
   const previewHandles = new Set();
   let sharedContext = null;
+  let pendingContextResume = null; // A pending gesture-unlock resume is shared by breathing retries rather than issuing one resume per frame.
   let adapterInstalled = false;
   let lastPlaybackError = null;
   let lastBackend = 'idle';
@@ -153,18 +154,33 @@
     try { sharedContext = new AudioCtx(); return sharedContext; }
     catch (error) { lastPlaybackError = error; return null; }
   }
-  function primeAudioContext() {
+  function primeAudioContext(fromUserGesture = false) {
     const context = ensureContext();
     if (!context) return false;
-    if (context.state === 'suspended') {
-      try { context.resume()?.catch?.(error => { lastPlaybackError = error; }); }
-      catch (error) { lastPlaybackError = error; }
+    // A background resume can remain pending until a trusted gesture, so never let it block the gesture itself.
+    if ((context.state === 'suspended' || context.state === 'interrupted') && (!pendingContextResume || fromUserGesture)) {
+      try {
+        const resumed = context.resume();
+        if (resumed?.then) {
+          const pending = Promise.resolve(resumed).catch(error => { lastPlaybackError = error; }); // Tracks one resume attempt so older pending completions cannot clear a newer gesture attempt.
+          pendingContextResume = pending;
+          pending.finally(() => { if (pendingContextResume === pending) pendingContextResume = null; });
+        }
+      } catch (error) { lastPlaybackError = error; }
     }
     return context.state === 'running';
   }
+
+  function readyForIndependentPitch() {
+    const context = ensureContext();
+    if (!context) return true; // Browsers without Web Audio retain the existing native playback behavior.
+    if (context.state === 'running') return true;
+    primeAudioContext(); // Unlock asynchronously; passive breathing retries on its existing short suppression timer.
+    return false;
+  }
   function installGestureUnlock() {
     if (typeof window.addEventListener !== 'function') return;
-    const unlock = () => primeAudioContext();
+    const unlock = () => primeAudioContext(true); // Trusted input may restart a resume left pending by a breathing-frame readiness check.
     window.addEventListener('pointerdown', unlock, { capture: true, passive: true });
     window.addEventListener('touchstart', unlock, { capture: true, passive: true });
     window.addEventListener('keydown', unlock, { capture: true });
@@ -540,7 +556,7 @@
 
   function renderDecodedIndependentBuffer(decoded, context, opts = {}) {
     if (!decoded || !context?.createBuffer) return Promise.reject(new Error('Pitch-preserving render requires a decoded AudioBuffer and AudioContext'));
-    const tempo = clampTempoFor(opts.tempo ?? 1, GENERIC_MAX_TEMPO);
+    const tempo = clampTempoFor(opts.tempo ?? 1, Math.max(GENERIC_MAX_TEMPO, Number(opts.maxTempo) || 0)); // Callers mapping a clip onto a short authored span may allow more compression.
     const pitchSemitones = clampPitchFor(opts.pitchSemitones ?? 0, GENERIC_MAX_SHIFT_SEMITONES);
     const pitchRatio = Math.pow(2, pitchSemitones / 12);
     const trimSettings = opts.trimSilence && typeof opts.trimSilence === 'object' ? opts.trimSilence : {}; // Normalize only options that affect rendered samples.
@@ -595,6 +611,13 @@
     // echo itself sounds (a real distant jungle echo reads as diffuse, not
     // pinned to one side).
     const panner = typeof context.createStereoPanner === 'function' ? context.createStereoPanner() : null;
+    let spatialRoute = null; // True HRTF is selected only for positioned creature/NPC vocalizations, not the local player.
+    const lowpassHz = Number(opts.lowpassHz); // Optional distance EQ for NPC combat voices; ordinary wildlife and player audio keep their current frequency response.
+    const lowpass = Number.isFinite(lowpassHz) && lowpassHz < 18000 && typeof context.createBiquadFilter === 'function' ? context.createBiquadFilter() : null;
+    if (lowpass) {
+      lowpass.type = 'lowpass';
+      lowpass.frequency.value = Math.max(600, lowpassHz);
+    }
     const startAt = context.currentTime + 0.012;
     const pitchRatio = Math.pow(2, clampPitchFor(opts.pitchSemitones, opts.pitchMaxSemitones ?? MAX_SHIFT_SEMITONES) / 12); // Used by native BufferSource resampling so audible transposition avoids the custom cubic resampler.
     const effectiveDurationS = buffer.duration / pitchRatio; // Used for completion timing after playbackRate changes the stretched buffer's wall-clock duration.
@@ -607,12 +630,17 @@
     source.playbackRate.value = pitchRatio;
     master.gain.value = clamp(finite(opts.volume, 0.7), 0, 1);
     source.connect(master);
-    if (panner) {
-      panner.pan.value = clamp(finite(opts.panX, 0), -1, 1);
-      master.connect(panner);
-      panner.connect(context.destination);
-    } else {
-      master.connect(context.destination);
+    if (lowpass) master.connect(lowpass); // Dry direct path alone is rolled off; reflections still receive the original master signal.
+    const dryOutput = lowpass || master;
+    if (opts.position3d) spatialRoute = window.AudioSystem?.connectCombatSpatialDry?.(context, dryOutput, opts);
+    if (!spatialRoute) {
+      if (panner) {
+        panner.pan.value = clamp(finite(opts.panX, 0), -1, 1);
+        dryOutput.connect(panner);
+        panner.connect(context.destination);
+      } else {
+        dryOutput.connect(context.destination);
+      }
     }
     // extraWetBoost (see audio-system.js's creatureAudioSpatial) grows with
     // distance on top of the fixed baseline — "farther away sounds more
@@ -631,6 +659,8 @@
       try { source.disconnect(); } catch (_) {}
       try { master.disconnect(); } catch (_) {}
       try { panner?.disconnect(); } catch (_) {}
+      try { spatialRoute?.dispose?.(); } catch (_) {}
+      try { lowpass?.disconnect(); } catch (_) {}
       try { wet?.send?.disconnect?.(); } catch (_) {}
       onFinished?.();
     }
@@ -693,7 +723,10 @@
     const pitch = clampPitchFor(opts.pitchSemitones, opts.pitchMaxSemitones ?? MAX_SHIFT_SEMITONES);
     const pitchRatio = Math.pow(2, pitch / 12);
     audio.volume = clamp(finite(opts.volume, 0.7), 0, 1);
-    if (Math.abs(pitch) < 0.05) {
+    if (opts.preserveDurationOnFallback === true && Math.abs(tempo - 1) < 0.0001) {
+      setPitchPreservation(audio, true);
+      audio.playbackRate = 1; // Stone cues must keep original duration even if independent DSP is unavailable.
+    } else if (Math.abs(pitch) < 0.05) {
       setPitchPreservation(audio, true);
       audio.playbackRate = tempo;
     } else {
@@ -778,6 +811,7 @@
     const completed = () => { activeHandles.delete(handle); opts.onFinished?.(); }; // Shared cleanup for decoded buffers and native fallback.
     if (!context || context.state !== 'running') {
       active = playNativeFallback(resolved, { ...opts, tempo, tempoMax: maxTempo, pitchSemitones, pitchMaxSemitones: maxPitchSemitones, onFinished: completed }, opts.fallbackAudio || null);
+      handle.independentPitch = active?.independentPitch ?? false; // Native fallback cannot preserve authored pitch independently of playback speed.
       return handle;
     }
     lastBackend = 'fixed render pending';
@@ -796,6 +830,7 @@
         if (stopped) return;
         lastPlaybackError = error;
         active = playNativeFallback(resolved, { ...opts, tempo, tempoMax: maxTempo, pitchSemitones, pitchMaxSemitones: maxPitchSemitones, onFinished: completed }, opts.fallbackAudio || null);
+        handle.independentPitch = active?.independentPitch ?? false; // Decoding/render failure also downgrades the handle's reported pitch backend.
       });
     return handle;
   }
@@ -918,6 +953,8 @@
         volume: clamp(finite(capture.audio.volume, opts.volume ?? 0.7), 0, 1),
         area: c?.areaId || null,
         panX: spatial.panX,
+        position3d: spatial.position3d, // Wildlife warning/growl calls share front-back/vertical positioning with combat strikes.
+        sourceActor: spatial.sourceActor, // A moving animal remains in the correct ear until its call ends.
         extraWetBoost: spatial.extraWetBoost,
         onStarted: opts.onStarted,
         onError: error => complete(error),
@@ -992,6 +1029,7 @@
     stopAllPreviews,
     stopAll() { for (const handle of [...activeHandles]) handle.stop(); },
     primeAudioContext,
+    readyForIndependentPitch,
     clampPitch,
     clampTempo,
     clipKey,

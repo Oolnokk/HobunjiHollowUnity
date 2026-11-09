@@ -219,11 +219,31 @@
     return live;
   }
 
-  let _fruitGeo = null, _fruitMat = null;
+  let _fruitGeo = null, _fruitMat = null; // Shared geometry/material for every hanging, carried and flying Soursap.
+  const FRUIT_SKIN_PNG = 'assets/objectsprites/soursap_fruit_skin.png?v=20261027rind1'; // Browser-loaded authored PNG map, including cached copies on existing fruit meshes.
   function fruitGeoMat() {
     if (!_fruitGeo) {
-      _fruitGeo = new THREE.SphereGeometry(0.15, 8, 6);
-      _fruitMat = new THREE.MeshStandardMaterial({ color: 0xd9542b, roughness: 0.6, metalness: 0.05 });
+      _fruitGeo = new THREE.SphereGeometry(0.15, 12, 9);
+      let skin = null; // One texture object reused by the entire fruit population, not an upload per fruit.
+      if (THREE.TextureLoader) {
+        skin = new THREE.TextureLoader().load(FRUIT_SKIN_PNG, texture => {
+          if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+          else if (THREE.sRGBEncoding != null) texture.encoding = THREE.sRGBEncoding;
+          texture.needsUpdate = true;
+        }, undefined, error => {
+          _fruitMat?.color?.setHex?.(0x60963a); // Distinct green fallback if the PNG cannot be fetched.
+          window.__farmLog?.('[soursap] rind texture unavailable: ' + (error?.message || error), 'warn');
+        });
+        if (skin) {
+          if ('colorSpace' in skin && THREE.SRGBColorSpace) skin.colorSpace = THREE.SRGBColorSpace;
+          else if (THREE.sRGBEncoding != null) skin.encoding = THREE.sRGBEncoding;
+          if (THREE.NearestFilter) skin.magFilter = THREE.NearestFilter;
+        }
+      }
+      _fruitMat = new THREE.MeshStandardMaterial({
+        color: skin ? 0xffffff : 0x60963a, map: skin,
+        roughness: 0.85, metalness: 0,
+      });
     }
     return { geo: _fruitGeo, mat: _fruitMat };
   }
@@ -250,8 +270,15 @@
         const pos = fruitWorldPos(branch);
         const mesh = new THREE.Mesh(geo, mat);
         mesh.position.set(pos.x, pos.y, pos.z);
-        zi.scene.add(mesh);
-        meshMap.set(key, mesh);
+        const burdenMesh = window.Shattercasks?.registerFruit?.(zoneId, branch, mesh);
+        if (!burdenMesh) zi.scene.add(mesh); // Keep a single visible fruit while the Burden runtime initializes.
+        meshMap.set(key, burdenMesh || mesh);
+      } else if (branch.fruit.available && meshMap.has(key)) {
+        const existing = meshMap.get(key); // Used to promote a provisional mesh and reconnect a rebuilt tree branch.
+        if (existing?.isMesh) {
+          const promoted=window.Shattercasks?.registerFruit?.(zoneId,branch,existing);
+          if (promoted) meshMap.set(key,promoted);
+        } else window.Shattercasks?.rebindFruitBranch?.(branch,zoneId,fruitWorldPos(branch));
       } else if (!branch.fruit.available && meshMap.has(key)) {
         // Respawned bookkeeping cleared the mesh from under us (e.g. a
         // reload mid-session) — drop the stale map entry so the next
@@ -261,8 +288,15 @@
     }
   }
 
+  function detachFruitMesh(branch) {
+    const key = branchKey(branch);
+    for (const meshMap of _fruitMeshes.values()) meshMap.delete(key);
+    // Do not remove the scene mesh: after plucking, chopping or shooting,
+    // Shattercasks owns the same physical object in hand/on ground/in flight.
+  }
   function removeFruitMesh(branch) {
     const key = branchKey(branch);
+    window.Shattercasks?.discardFruit?.(branch, CLOUD_FOREST_ZONE_ID);
     for (const [zoneId, meshMap] of _fruitMeshes) {
       const mesh = meshMap.get(key);
       if (mesh) {
@@ -281,36 +315,35 @@
     }
   }
 
-  // ── Fruit: instant player pickup ─────────────────────────────────────
-  // Registered into game.js's getWorldObjectAt zone-object chain — same
-  // { getButtons(), onAction() } pickable contract js/reagent-plants.js
-  // uses, keyed by the ground tile beneath where the fruit hangs (fruit is
-  // deliberately grab-from-the-ground-below, not a full climb interaction).
+  // ── Fruit: branch-only plucking ──────────────────────────────────────
+  // World-object lookup only offers a grab to a player physically ON the
+  // corresponding climbable branch; ground-level tile proximity is not enough.
+  // Once plucked, this becomes the same held Burden as a Shattercask.
   function makeFruitPickable(branch) {
     return {
       id: 'cfFruit_' + branchKey(branch), type: 'cloud_forest_fruit',
-      label: '🍈 Cloud Forest Fruit',
+      label: '🍈 Soursap Fruit',
       getButtons() {
-        return [{ icon: '🍈', label: 'Pick Fruit', action: 'obj_pick_cf_fruit', style: 'primary', allowed: true }];
+        return [{ icon: '🍈', label: 'Lift Soursap Fruit', action: 'obj_pick_cf_fruit', style: 'primary', allowed: true }];
       },
       onAction(action) {
         if (action !== 'obj_pick_cf_fruit') return { ok: false, message: 'Unknown action.' };
-        if (!branch.fruit?.available) return { ok: false, message: 'Already picked.' };
-        branch.fruit.available = false;
-        branch.fruit.reserved = false;
-        branch.fruit.eatenAtHours = nowHours();
-        removeFruitMesh(branch);
-        deps.showToast?.('🍈 Grabbed a cloud forest fruit.', false);
+        if (!branch.fruit?.available || branch.felled) return { ok: false, message: 'Fruit is no longer hanging here.' };
+        if (deps?.player?.onBranch !== branch) return { ok: false, message: 'Climb the tree before lifting its fruit.' };
+        if (!window.Shattercasks?.pickUpFruit?.(branch, CLOUD_FOREST_ZONE_ID))
+          return { ok: false, message: 'Cannot lift Soursap Fruit right now.' };
         window.AudioSystem?.playObjectSfx?.(window.AudioSystem?.objectSfxConfig?.().harvest);
-        return { ok: true, message: 'Picked a cloud forest fruit.' };
+        return { ok: true, message: 'Lifted Soursap Fruit. Drop or throw it to burst into edible flesh.' };
       },
     };
   }
 
   function fruitObjectAt(zoneId, col, row) {
     if (zoneId !== CLOUD_FOREST_ZONE_ID || !deps) return null;
+    const climbed = deps.player?.onBranch; // Only the exact branch being climbed permits direct fruit interaction.
+    if (!climbed || climbed.felled || !climbed.fruit?.available) return null;
     for (const branch of eligibleFruitBranches(zoneId)) {
-      if (!branch.fruit?.available) continue;
+      if (branch !== climbed || !branch.fruit?.available) continue;
       const pos = fruitWorldPos(branch);
       if (Math.floor(pos.x) === col && Math.floor(pos.z) === row) return makeFruitPickable(branch);
     }
@@ -598,6 +631,14 @@
     isPackOffShift,
     updateBranchDweller,
     fruitObjectAt,
+    detachFruitMesh,
+    markFruitHarvested(branch) {
+      if (!branch?.fruit) return;
+      branch.fruit.available = false;
+      branch.fruit.reserved = false;
+      branch.fruit.eatenAtHours = nowHours(); // Same clock used by Drenkirra and the 18-hour respawn policy.
+      detachFruitMesh(branch);
+    },
     interruptForFlee,
     // Read by js/wildlife-behavior-map.js's LOD near/far ring — exported
     // rather than duplicated so retuning this constant here keeps the

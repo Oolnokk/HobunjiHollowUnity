@@ -43,7 +43,7 @@
         const length = Math.max(0.001, Math.hypot(rawX, rawY)); // Used to keep every escape attempt at the same remaining per-frame movement budget.
         const escapeNX = rawX / length, escapeNY = rawY / length; // Used for both the collision probe and velocity reported to animation.
         const escapeX = c.x + escapeNX * step, escapeY = c.y + escapeNY * step; // Used as the local reposition destination rather than a persistent AI target.
-        if (!deps.creatureCanEnterTile(c.def, escapeX, escapeY)) continue;
+        if (!deps.creatureCanEnterTile(c.def, escapeX, escapeY, c.x, c.y, c)) continue;
         c.x = escapeX;
         c.y = escapeY;
         c._collisionRepositionSide = side;

@@ -17,7 +17,7 @@
     id: 'combat-grants', title: 'Combat grants', order: 30,
     render: () => ({
       summary: `${window.Combat.deps?.getMotesOfProwess?.() || 0} Motes of Prowess · ${window.CombatProgression?.getDebug?.().unlocked.length || 0} learned mastery bonuses`,
-      note: 'Latest change: reusable Mastery Tablets / Scrolls unlock individual damage-type and rank bonuses; matching bonuses stack across five ranks. Last mastery loot: ' + JSON.stringify(window.LootRolling?.getMasteryDebug?.().lastRoll || null) + '. Last learned: ' + JSON.stringify(window.CombatProgression?.getDebug?.().lastEvent || null),
+      note: 'Latest change: consumable Mastery Tablets / Scrolls permanently unlock individual damage-type and rank bonuses; matching bonuses stack across five ranks. Last mastery loot: ' + JSON.stringify(window.LootRolling?.getMasteryDebug?.().lastRoll || null) + '. Last learned: ' + JSON.stringify(window.CombatProgression?.getDebug?.().lastEvent || null),
       actions: [
         { id: 'mote', label: '+1 Mote of Prowess' },
         ...[1, 2, 3].map(tier => ({ id: 'scroll', label: `+T${tier} Technique Scroll`, args: { tier } })),
@@ -111,6 +111,10 @@
       focusedControlId: window.ControllerUI?.focusedElement?.()?.id || document.activeElement?.id || null,
       controller: window.ControllerUI?.debugState?.() || null,
       lastLoadoutControlChange,
+      weaponShapeStats: window.WeaponShapeStats?.snapshot?.() || null,
+      weaponProficiency: window.HobunjiMasteryPolicy?.proficiencyForWeapon?.(window.Combat.deps?.currentWeaponKey?.()) || null, // Family rank and next threshold for mobile debugging.
+      lastSpecialFinisher: window.Combat.comboData?.lastSpecialFinisher || null, // Latest resolved third hit, including any qualified special procs.
+      weaponPreview: window.CombatLoadoutWeaponPreview?.debugSnapshot?.() || null, // Includes GPU/mesh/VFX status in the existing mobile-copyable debug report.
     };
   }
 
@@ -283,6 +287,7 @@
     if (!pane) return;
     const requestedFocusId = typeof preferredFocusId === 'string' ? preferredFocusId : null; // Used to ignore CustomEvent objects when render is registered directly as an event listener.
     const restoreFocusId = requestedFocusId || focusedLoadoutControlId(pane); // Used to keep repeated controller swaps on the same slot instead of snapping focus back to the menu header.
+    const previousScroll = pane.scrollTop; // Only the left loadout list scrolls; rerenders retain its scroll position while the right preview remains fixed.
     pane.innerHTML = '';
 
     const title = document.createElement('div');
@@ -302,6 +307,23 @@
     weaponNote.style.marginBottom = '6px';
     weaponNote.textContent = `${weaponLabel} — Mastery ${mastery}/5 · ${motes}◆ Motes of Prowess`;
     pane.appendChild(weaponNote);
+    const proficiency = window.HobunjiMasteryPolicy?.proficiencyForWeapon?.(toolKey); // Read the canonical character-wide weapon family track.
+    if (proficiency) {
+      const familyNote = document.createElement('div'); // Player-readable rank, XP progress and mastery speed alongside individual tool Mastery.
+      familyNote.className = 'loadout-slot-combo-note';
+      const familyProgressText = proficiency.nextThreshold == null ? 'MAX' : `${proficiency.xp}/${proficiency.nextThreshold} XP`; // Shows a clean cap label rather than '300/MAX XP' after rank 5.
+      familyNote.textContent = `${proficiency.label} Proficiency ${proficiency.level}/${proficiency.maxLevel} · ${familyProgressText} · +${Math.round((proficiency.masteryXpMultiplier - 1) * 100)}% Mastery XP from kills`;
+      pane.appendChild(familyNote);
+    }
+    if (toolKey !== 'none') {
+      const stats = window.WeaponShapeStats?.forKey?.(toolKey, window.Combat.deps?.getWeaponDefinition?.(toolKey)); // Live equipped shape modifiers for the mobile loadout inspection pane.
+      if (stats) {
+        const statsNote = document.createElement('div'); // Readable stat breakdown next to the weapon's mastery and ability selections.
+        statsNote.className = 'loadout-slot-combo-note';
+        statsNote.textContent = `Power ×${stats.power.toFixed(2)} · Speed ×${stats.speed.toFixed(2)} · Stamina efficiency ×${stats.efficiency.toFixed(2)} · Range ×${stats.range.toFixed(2)} · Attack Power ${stats.attackPower.toFixed(0)} (afflictions)`;
+        pane.appendChild(statsNote);
+      }
+    }
 
     if (window.Combat.deps?.isDevMode?.()) {
       const devRow = document.createElement('div'); // Used to keep loadout test actions together without introducing another stylesheet dependency.
@@ -412,12 +434,25 @@
       }
 
       if (abilityId) renderLevelPicker(card, toolKey, abilityId);
+      if (slot.readOnly && (abilityId === 'swingCombo' || abilityId === 'pokeCombo')) {
+        const specialNote = document.createElement('div'); // Special finisher is an additional mastery track on the SAME automatic combo, not a selectable attack slot.
+        specialNote.className = 'loadout-slot-combo-note';
+        specialNote.textContent = 'Special Finisher: hit the same enemy with the first two combo swings, then connect with the third. Otherwise Cleave / Long Lunge remains normal. Learn bonus choices with the existing Mastery Scrolls and Tablets.';
+        card.appendChild(specialNote);
+        const specialTitle = document.createElement('div'); // Visually separates finisher upgrades from the ordinary combo's five ranks.
+        specialTitle.className = 'settings-name';
+        specialTitle.textContent = 'Special Finisher Mastery';
+        card.appendChild(specialTitle);
+        renderLevelPicker(card, toolKey, abilityId + 'Finisher');
+      }
 
       pane.appendChild(card);
     }
     window.EnchantmentSystem?.renderLoadoutUI?.(pane, toolKey); // Base/Flourish slots, planar alignment, Immundanity + diagnostics (js/combat/combat-enchantments.js).
     window.WeaponEnchantmentVFX?.renderControls?.(pane, toolKey); // Enchantment visuals use the loadout's authoritative render path so menu-tab/internal rerenders cannot bypass them.
     renderRangedLoadout(pane);
+    pane.scrollTop = previousScroll; // Changing an attack or enchantment must not jump the scrollable left half back to its top.
+    window.CombatLoadoutWeaponPreview?.sync?.(toolKey, weaponLabel); // Never recreates the persistent 3D right-hand viewport for a same-weapon rerender.
     restoreLoadoutControlFocus(pane, restoreFocusId);
   }
 
@@ -456,7 +491,7 @@
   if (window.CompendiumUI?.install) { window.CompendiumUI.install(); return; }
   if (document.querySelector('script[data-hobunji-compendium]')) return;
   const script = document.createElement('script'); // Used to load the isolated player-facing Compendium module once.
-  script.src = 'js/compendium-ui.js?v=20260918blackstamina1';
+  script.src = 'js/compendium-ui.js?v=20261018ringswap1';
   script.async = false;
   script.dataset.hobunjiCompendium = 'true';
   script.onload = () => window.CompendiumUI?.install?.();

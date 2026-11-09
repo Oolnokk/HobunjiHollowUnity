@@ -30,6 +30,9 @@
 
   function init(injectedDeps) {
     deps = injectedDeps;
+    Promise.all([window.AuthoredFurniture?.load?.('crateStack'),window.AuthoredFurniture?.load?.('looseCrate')]).then(() => {
+      for (const zoneId of _banditCampInstances.keys()) ensureBanditCampMeshes(zoneId);
+    });
     _loadBanditTentPiece().then(piece => {
       if (!piece) return;
       for (const zoneId of _banditCampInstances.keys()) ensureBanditCampMeshes(zoneId);
@@ -206,6 +209,7 @@
     });
     authored.position.set(-centerCol, -elevationY, -centerRow);
     const group = new THREE.Group();
+    authored.userData.banditTentAimSurface = true; // Only the authored canvas/door surfaces count for loot/burn aim; flames and outlines do not.
     group.add(authored);
     group.userData.projectileCoverHeightTiles = 1.7;
     group.userData.projectileCoverRadiusTiles = 1.5;
@@ -267,6 +271,7 @@
 
   function _disposeBanditProp(zoneId, entry) {
     _restoreBanditTentGridCollision(zoneId, entry);
+    if(entry.propId)window.CratePiles?.unregisterPile?.(zoneId,entry.propId);
     const zScene = deps.zoneScenes.get(zoneId)?.scene;
     if (zScene) {
       zScene.remove(entry.mesh);
@@ -278,7 +283,7 @@
   }
 
   function ensureBanditCampMeshes(zoneId) {
-    const zi = deps.zoneScenes.get(zoneId);
+    const zi = deps?.zoneScenes?.get?.(zoneId); // The async authored-crate/tent load may finish before a zone scene is registered.
     if (!zi) return;
     let meshes = _banditCampMeshes.get(zoneId);
     if (!meshes) { meshes = new Map(); _banditCampMeshes.set(zoneId, meshes); }
@@ -316,6 +321,17 @@
           const sfxDef = window.Music?.resolveFurnitureSfx?.({ sfxKey: 'fireplace' });
           const sfxSource = window.Music?.registerFurnitureSfxSource?.(zoneId, center.x / deps.TILE, center.y / deps.TILE, sfxDef);
           meshes.set(obj.id, { mesh, light, sfxSource, collisionTiles: [], propId: obj.id });
+        } else if (obj.key === 'crateStack') {
+          // Do not create a non-interactive placeholder while the authored recipe loads.
+          // init() invokes ensureBanditCampMeshes again after that promise resolves.
+          const recipe=window.AuthoredFurniture?.peek?.('crateStack');
+          if(!recipe)continue;
+          const mesh=window.AuthoredFurniture.buildGroup(recipe);
+          mesh.position.set(obj.x+.5,y,obj.y+.5);
+          deps.markOutline(mesh);zi.scene.add(mesh);
+          meshes.set(obj.id,{mesh,light:null,sfxSource:null,collisionTiles:[],propId:obj.id});
+          window.CratePiles?.registerPile?.({id:obj.id,mapId:zoneId,scene:zi.scene,group:mesh,
+            count:obj.crateCount??3,lootable:true,onChange:count=>{obj.crateCount=count;}});
         } else if (obj.key && window.ProceduralFurniture) {
           const result = deps.makeDecorativeFurnitureMesh(obj.x, obj.y, obj.key, zi.scene, zoneId);
           if (!result) continue;
@@ -330,6 +346,25 @@
       _disposeBanditProp(zoneId, entry);
       meshes.delete(id);
     }
+  }
+
+  function senseTargets(scene) {
+    if (!scene || !deps?.getCurrentArea) return [];
+    const zoneId = deps.getCurrentArea(); // Limits collection to the active camp registry, never cached off-zone props.
+    const meshes = _banditCampMeshes.get(zoneId); // Existing prop mesh owners; no scene-wide traversal or duplicate geometry.
+    if (!meshes) return [];
+    const roots = []; // Living camp tents and fires that Perception can tint as a recognizable landmark.
+    for (const record of _banditCampInstances.get(zoneId) || []) {
+      const site = record.instance?.site; // Exact temporary-locale camp footprint; every tent shares its center for the 24-tile visibility boundary.
+      const anchor = site && Number.isFinite(Number(site.x)) && Number.isFinite(Number(site.y))
+        ? { x: Number(site.x) + (Number(site.w) || 1) / 2, z: Number(site.y) + (Number(site.h) || 1) / 2 } : null;
+      for (const prop of record.props || []) {
+        if (prop.destroyed || (prop.type !== 'tent' && prop.key !== 'campfire')) continue;
+        const root = meshes.get(prop.id)?.mesh;
+        if (root?.parent === scene && root.visible !== false) roots.push(anchor ? { root, anchor } : root);
+      }
+    }
+    return roots;
   }
 
   function removeBanditCampProp(zoneId, propId) {
@@ -601,6 +636,7 @@
 
   const SIMPLE_HYDRA_DELAY_S = 5;
   const SIMPLE_HYDRA_DEFAULT_BURN_S = 8;
+  const SIMPLE_HYDRA_REINFORCEMENT_RANKS = ['grunt', 'flasker', 'lieutenant'];
 
   function simpleHydraPoint(rec, exterior = false) {
     if (exterior) {
@@ -622,12 +658,25 @@
     };
   }
 
+  // Reinforcement ranks are drawn in proportion to what is left in the camp's reserve, so a
+  // camp refills with the same mix it was staged with (a lone Flasker is not as likely as
+  // the dozen grunts beside it).
   function simpleHydraRank(rec) {
-    const choices = [];
-    if ((rec.reserveByRank.lieutenant || 0) > 0) choices.push('lieutenant');
-    if ((rec.reserveByRank.flasker || 0) > 0) choices.push('flasker');
-    if ((rec.reserveByRank.grunt || 0) > 0) choices.push('grunt');
-    return choices.length ? choices[Math.floor(deps.rnd() * choices.length)] : null;
+    let total = 0;
+    for (const rank of SIMPLE_HYDRA_REINFORCEMENT_RANKS) total += Math.max(0, rec.reserveByRank[rank] || 0);
+    if (!(total > 0)) return null;
+    let roll = deps.rnd() * total;
+    for (const rank of SIMPLE_HYDRA_REINFORCEMENT_RANKS) {
+      roll -= Math.max(0, rec.reserveByRank[rank] || 0);
+      if (roll < 0) return rank;
+    }
+    return SIMPLE_HYDRA_REINFORCEMENT_RANKS.find(rank => (rec.reserveByRank[rank] || 0) > 0) || null;
+  }
+
+  // One Flasker per `regularBanditsPerFlasker` grunts (the plain "Bandit" rank).
+  function flaskerCountForGrunts(comp, grunts) {
+    const perFlasker = Math.max(1, Math.floor(Number(comp?.regularBanditsPerFlasker) || 4));
+    return Math.floor(Math.max(0, grunts) / perFlasker);
   }
 
   function rollGruntVariant(rec, rank) {
@@ -645,7 +694,10 @@
     const distance = deps.TILE * 0.8;
     const spawnX = beastmaster.x + Math.cos(angle) * distance;
     const spawnY = beastmaster.y + Math.sin(angle) * distance;
+    const genotypeKind = window.CreatureGenetics?.SPECIES_ALIAS?.[creatureKey] || creatureKey; // Resolves coat aliases for the standard genetics roll.
+    const genotype = window.CreatureGenetics?.makeDefaultGenotype?.(genotypeKind) || null; // The factory uses this to paint the hound's coat, patterns, and eyes.
     const hound = deps.makeCreatureEntity(creatureKey, spawnX, spawnY, {
+      genotype,
       scene: beastmaster.scene,
       grid: beastmaster.areaGrid,
       cols: beastmaster.areaCols,
@@ -683,7 +735,7 @@
     deps.companionObjects.add(hound);
     rec.gangIds.add(hound.id);
     window.__farmLog?.(
-      `[bandits] Slagothim Beastmaster spawned ${creatureKey} companion ${hound.id} (${hound.maxHealth} HP, ${tunedDef.attackDamage} damage).`,
+      `[bandits] Slagothim Beastmaster spawned ${creatureKey} companion ${hound.id} (${hound.maxHealth} HP, ${tunedDef.attackDamage} damage; coat ${hound.genotype?.base?.color || 'missing'}).`,
       'wildlife',
     );
     return hound;
@@ -709,22 +761,28 @@
 
   async function spawnSimpleHydraBandit(rec, rank, nameOverride, exterior = false) {
     if (rec.zoneId !== deps.getCurrentArea()) return null;
+    if ((rec.reserveByRank[rank] || 0) <= 0) return null;
+    rec.reserveByRank[rank]--; // Claimed before the async avatar build: concurrent callers can never spawn past the camp's reserve.
     const point = simpleHydraPoint(rec, exterior);
-    const c = await spawnConfiguredBandit(rec, rank, point.x, point.y, {
-      zoneId: rec.zoneId,
-      extra: {
-        homeX: rec.homeX,
-        homeY: rec.homeY,
-        banditCampInstanceId: rec.instance.id,
-        state: 'idle',
-      },
-      nameOverride,
-    });
+    let c = null;
+    try {
+      c = await spawnConfiguredBandit(rec, rank, point.x, point.y, {
+        zoneId: rec.zoneId,
+        extra: {
+          homeX: rec.homeX,
+          homeY: rec.homeY,
+          banditCampInstanceId: rec.instance.id,
+          state: 'idle',
+        },
+        nameOverride,
+      });
+    } finally {
+      if (!c) rec.reserveByRank[rank]++; // Failed or thrown builds give the slot back.
+    }
     if (!c) return null;
     deps.hostileObjects.add(c);
     rec.gangIds.add(c.id);
     rec.activeRanksById.set(c.id, rank);
-    rec.reserveByRank[rank] = Math.max(0, (rec.reserveByRank[rank] || 0) - 1);
     if (rank === 'captain') rec.captainName = c.name || rec.captainName;
     return c;
   }
@@ -766,12 +824,15 @@
         );
       }
 
-      if (rec.reinforcementPending) {
+      if (rec.reinforcementPending && !rec.reinforcementSpawnInFlight) { // This runs every frame while the avatar build below is awaited; without the flag each frame launched another replacement.
         rec.reinforcementTimer -= dt;
         if (rec.reinforcementTimer <= 0) {
           const rank = simpleHydraRank(rec);
           if (rank) {
-            const c = await spawnSimpleHydraBandit(rec, rank);
+            rec.reinforcementSpawnInFlight = true;
+            let c = null;
+            try { c = await spawnSimpleHydraBandit(rec, rank); }
+            finally { rec.reinforcementSpawnInFlight = false; }
             if (c) {
               rec.reinforcementPending = false;
               window.__farmLog?.(
@@ -793,6 +854,7 @@
         && !rec.captainSpawnInFlight
         && (rec.reserveByRank.captain || 0) > 0
         && !rec.reinforcementPending
+        && !rec.reinforcementSpawnInFlight
         && (simpleHydraAllTentsBurning(rec)
           || ((rec.reserveByRank.grunt || 0) === 0
             && (rec.reserveByRank.lieutenant || 0) === 0
@@ -827,12 +889,13 @@
   // either side draws the player into combat.
   function porakanekiAvoidPoints(zoneId, minDistance) {
     if (!(minDistance > 0)) return [];
-    const camps = window.PorakanekiCamps?.debugSnapshot?.()?.zones?.[zoneId]?.camps;
-    if (!camps?.length) return [];
+    const tribes = window.TribeCamps?.list?.() || (window.PorakanekiCamps ? [window.PorakanekiCamps] : []); // Porakaneki and Omgurku camps get the same spacing.
+    const camps = tribes.flatMap(tribe => tribe.campCenters?.()?.zones?.[zoneId]?.camps || []);
+    if (!camps.length) return [];
     return camps.filter(camp => camp?.center).map(camp => ({ col: camp.center.col, row: camp.center.row, minDistance }));
   }
   function porakanekiAvoidChunks(zoneId) {
-    return window.PorakanekiCamps?.reservedCampChunks?.(zoneId) || [];
+    return window.TribeCamps?.reservedCampChunks?.(zoneId) || window.PorakanekiCamps?.reservedCampChunks?.(zoneId) || [];
   } // Hard 16x16 stream-chunk reservation; includes the future chief-camp site.
   function wildernessChunkSizeTiles() {
     return Math.max(1, Math.floor(Number(window.WildernessChunks?.constants?.CHUNK_TILES) || 16));
@@ -867,12 +930,15 @@
     // same-chunk rule never does: every retry still carries avoidChunks.
     if (!instance && avoidPoints.length) instance = tryStampBanditCamp(view, localeDef, placement, [], avoidChunks);
 
-    // Bandit placement may consume surplus Porakaneki hunting camps when
-    // chunk space is constrained, but PorakanekiCamps enforces a hard one-camp
-    // floor per wilderness zone. The seasonal chief reservation is also never
-    // sacrificed, so a constrained seed places fewer bandit camps rather than
-    // erasing Porakaneki from the zone or violating the hard chunk rule.
-    while (!instance && window.PorakanekiCamps?.reduceHuntingCampsForBandit?.(zoneId)) {
+    // Bandit placement may consume *surplus* Porakaneki hunting camps when chunk
+    // space is constrained, but PorakanekiCamps enforces a hard one-camp floor per
+    // tribe and zone, and since every tribe now gets exactly one hunting camp there
+    // is no surplus: reduceHuntingCampsForBandit() returns null and this loop is a
+    // no-op. It stays so a future config with several camps per tribe keeps working.
+    // The seasonal chief reservation is never sacrificed either, so a constrained
+    // seed places fewer bandit camps rather than erasing Porakaneki from the zone
+    // or violating the hard chunk rule.
+    while (!instance && (window.TribeCamps || window.PorakanekiCamps)?.reduceHuntingCampsForBandit?.(zoneId)) {
       avoidPoints = porakanekiAvoidPoints(zoneId, placement.minDistanceFromPorakanekiCamp ?? 12);
       avoidChunks = porakanekiAvoidChunks(zoneId);
       instance = tryStampBanditCamp(view, localeDef, placement, avoidPoints, avoidChunks)
@@ -899,6 +965,7 @@
       reserveByRank: { grunt: 0, flasker: 0, lieutenant: 0, captain: 0 },
       activeRanksById: new Map(),
       reinforcementPending: false,
+      reinforcementSpawnInFlight: false,
       reinforcementTimer: 0,
       captainSpawned: false,
       captainSpawnInFlight: false,
@@ -911,7 +978,7 @@
     const comp = cfg?.gangComposition || {};
     const grunts = (comp.gruntsMin ?? 3) + Math.floor(deps.rnd() * Math.max(1, (comp.gruntsMax ?? 6) - (comp.gruntsMin ?? 3) + 1));
     const lieutenants = (comp.lieutenantsMin ?? 1) + Math.floor(deps.rnd() * Math.max(1, (comp.lieutenantsMax ?? 2) - (comp.lieutenantsMin ?? 1) + 1));
-    const flaskers = (comp.flaskersMin ?? 1) + Math.floor(deps.rnd() * Math.max(1, (comp.flaskersMax ?? 2) - (comp.flaskersMin ?? 1) + 1)); // Supporting Flaskers are guaranteed in ordinary camps.
+    const flaskers = flaskerCountForGrunts(comp, grunts); // One Flasker per four regular bandits (gangComposition.regularBanditsPerFlasker).
     rec.reserveByRank.grunt = grunts;
     rec.reserveByRank.flasker = flaskers;
     rec.reserveByRank.lieutenant = lieutenants;
@@ -968,6 +1035,7 @@
     const tracked = _banditCampInstances.get(zoneId) || [];
     for (const rec of clearedRecs) {
       window.WildernessMap?.forgetDiscoveredThreat?.(rec.discoveryKey);
+      for(const obj of rec.props||[])if(obj.key==='crateStack')window.CratePiles?.forgetPile?.(zoneId,obj.id);
       for (const id of rec.instance.stampedObjectIds) removeBanditCampProp(zoneId, id);
       window.TemporaryLocales.release(view, rec.instance);
       _syncBanditFlora(zoneId, rec.instance.removedObjectSnapshots, true);
@@ -979,6 +1047,8 @@
   }
 
   function forgetZoneBanditState(zoneId) {
+    for(const rec of _banditCampInstances.get(zoneId)||[])for(const obj of rec.props||[])
+      if(obj.key==='crateStack')window.CratePiles?.unregisterPile?.(zoneId,obj.id);
     _banditCampMeshes.delete(zoneId);
     _banditCampInstances.delete(zoneId);
     _banditZoneViews.delete(zoneId);
@@ -1047,32 +1117,16 @@
     _tentActionHudEl?.classList.add('visible');
   }
 
-  function nearestBanditTent(zoneId) {
-    let best = null, bestDist = Infinity;
-    for (const obj of _banditZoneTents(zoneId)) {
-      if (obj.destroyed) continue;
-      const center = banditTentCenterPx(obj);
-      const dist = Math.hypot(deps.player.x - center.x, deps.player.y - center.y);
-      if (dist <= banditTentNearPx() && dist < bestDist) { best = obj; bestDist = dist; }
-    }
-    return best;
-  }
+  const BANDIT_TENT_AIM_MAX_WORLD = 24; // Camera-ray intersection budget for the visible tent surface, matching the shared world-focus range.
+  let _banditTentRaycaster = null; // Reused by aimedBanditTent so checking the target every frame does not allocate a Raycaster.
 
-  function banditTentInteractionBox(zoneId, obj) {
-    const mesh = _banditCampMeshes.get(zoneId)?.get(obj.id)?.mesh;
-    if (mesh?.isObject3D) {
-      mesh.updateWorldMatrix?.(true, true);
-      const meshBox = new THREE.Box3().setFromObject(mesh);
-      if (!meshBox.isEmpty()) return meshBox.expandByScalar(0.12);
-    }
-    const center = banditTentCenterPx(obj);
-    const tile = deps.TILE || 1;
-    const gridTile = deps.zoneScenes.get(zoneId)?.grid?.[obj.y]?.[obj.x];
-    const groundY = gridTile ? deps.tileSurfaceYInArea(gridTile, zoneId) : deps.NORMAL_TOP;
-    return new THREE.Box3(
-      new THREE.Vector3(center.x / tile - 0.9, groundY, center.y / tile - 0.9),
-      new THREE.Vector3(center.x / tile + 0.9, groundY + 1.45, center.y / tile + 0.9),
-    );
+  function banditTentRayHit(zoneId, obj, raycaster) {
+    const root = _banditCampMeshes.get(zoneId)?.get(obj.id)?.mesh; // Registered tent render group, never a proximity-only proxy.
+    const surface = root?.children?.find(child => child.userData?.banditTentAimSurface); // The authored canvas mesh, excluding burn flames/outline children.
+    if (!root?.visible || !surface?.visible) return null;
+    root.updateWorldMatrix?.(true, true);
+    return raycaster.intersectObject(surface, true)
+      .find(hit => Number.isFinite(hit.distance) && hit.distance >= 0) || null;
   }
 
   function aimedBanditTent(zoneId) {
@@ -1090,16 +1144,39 @@
       _lastTentFocus = { result: !ray ? 'missing-ray' : 'missing-focus-api', nearby: nearby.length, hasRay: !!ray, hasFocusApi: !!window.RangedWeapons?.focusCandidates };
       return null;
     }
-    const candidates = nearby.map(obj => ({
-      type: 'bandit-tent', id: obj.id, data: obj,
-      box: banditTentInteractionBox(zoneId, obj),
-    }));
-    const focus = window.RangedWeapons.focusCandidates(candidates, 24);
-    if (!focus?.candidate?.data) {
+    const origin = ray.origin, dir = ray.direction; // Authoritative cursor/center ray used by the shared world focus resolver.
+    if (![origin?.x, origin?.y, origin?.z, dir?.x, dir?.y, dir?.z].every(Number.isFinite)) {
+      _lastTentFocus = { result: 'invalid-ray', nearby: nearby.length, hasRay: true, hasFocusApi: true };
+      return null;
+    }
+    const direction = new THREE.Vector3(dir.x, dir.y, dir.z); // Normalized for exact Three.js surface intersection.
+    if (direction.lengthSq() < 1e-8) {
+      _lastTentFocus = { result: 'invalid-ray', nearby: nearby.length, hasRay: true, hasFocusApi: true };
+      return null;
+    }
+    const raycaster = _banditTentRaycaster ||= new THREE.Raycaster(); // Only one reusable 3D ray query across all nearby tents.
+    raycaster.set(new THREE.Vector3(origin.x, origin.y, origin.z), direction.normalize());
+    raycaster.near = 0;
+    raycaster.far = BANDIT_TENT_AIM_MAX_WORLD;
+    let focus = null; // Closest actual tent-surface intersection, not the closest large bounding box.
+    for (const obj of nearby) {
+      const hit = banditTentRayHit(zoneId, obj, raycaster);
+      if (!hit || (focus && focus.distanceWorld <= hit.distance)) continue;
+      focus = {
+        candidate: { type: 'bandit-tent', id: obj.id, data: obj },
+        point: hit.point,
+        distanceWorld: hit.distance,
+      };
+    }
+    if (!focus) {
       _lastTentFocus = { result: 'ray-missed', nearby: nearby.length, hasRay: true, hasFocusApi: true };
       return null;
     }
-    const hostile = window.RangedWeapons.focusedHostile?.(24);
+    if (focus.candidate.data.burning || !(focus.candidate.data.interactable?.lootable || focus.candidate.data.interactable?.burnable)) {
+      _lastTentFocus = { result: 'not-actionable', nearby: nearby.length, hasRay: true, hasFocusApi: true, tentId: focus.candidate.data.id };
+      return null; // A burning/empty tent physically blocks a tent behind it; never aim through its canvas.
+    }
+    const hostile = window.RangedWeapons.focusedHostile?.(BANDIT_TENT_AIM_MAX_WORLD);
     if (hostile && hostile.distanceWorld <= focus.distanceWorld + 0.05) {
       _lastTentFocus = { result: 'nearer-hostile', nearby: nearby.length, hasRay: true, hasFocusApi: true };
       return null;
@@ -1118,7 +1195,7 @@
     const zoneId = deps?.getCurrentArea?.();
     if (!(zoneId && deps.isZoneArea(zoneId))) return null;
     const tent = aimedBanditTent(zoneId);
-    if (!tent) return null;
+    if (!tent || !(tent.interactable?.lootable || tent.interactable?.burnable)) return null;
     return {
       icon: tent.interactable?.lootable ? '🪙' : '🔥',
       label: tent.interactable?.lootable ? 'Loot Tent' : 'Burn Tent',
@@ -1191,7 +1268,7 @@
       && actionHeldDown
       && !_banditTentHoldInterrupted;
     if (!interacting) {
-      if (_banditTentHoldT > 0) { _banditTentHoldT = 0; _banditTentHoldId = null; }
+      if (_banditTentHoldId !== null) { _banditTentHoldT = 0; _banditTentHoldId = null; }
       hideTentActionHud();
       return;
     }
@@ -1206,6 +1283,7 @@
     if (_banditTentHoldT < holdS) return;
     _banditTentHoldT = 0;
     _banditTentHoldId = null;
+    _banditTentHoldInterrupted = true; // One press performs one action; release before burning a tent you just looted.
     hideTentActionHud();
     if (looting) lootBanditTent(zoneId, tent);
     else burnBanditTent(zoneId, tent);
@@ -1253,30 +1331,69 @@
     return parts;
   }
 
-  function banditWornClothingItems(roster) {
+  // `source` (optional, the dead entity) lets a Maskbound's mask keep the exact random procedural pattern it was generated with.
+  function banditWornClothingItems(roster, source = null) {
     const catalog = deps.getDyeCatalog();
     const items = [];
+    const forcedBySlot = roster?.clothingPatterns?.forcedOverpassBySlot || {};
     for (const cosmeticId of (roster?.equippedCosmetics || [])) {
       const armor = roster.metalArmorItems?.find(item => window.MetalArmorSystem?.baseCosmeticId?.(item) === cosmeticId); // Preserve alloy, maximum Temper, and article identity instead of converting armor into dyed cloth.
-      if (armor) { items.push(JSON.parse(JSON.stringify(armor))); continue; }
+      if (armor) { items.push(applyLootCurse(JSON.parse(JSON.stringify(armor)), lootCurseFor(roster, cosmeticId, armor.slot))); continue; }
       const slot = roster.cosmeticSlots?.[cosmeticId] || 'torso';
       const piece = _banditClothingPiece(cosmeticId, slot);
-      const dyeId = roster.appliedDyes?.[window.BanditCombat.TINT_SLOT_BY_SLOT[piece.category]] || null;
+      const tintSlot = window.BanditCombat.TINT_SLOT_BY_SLOT[piece.category]; // Loot uses the same clothing channel as the deceased humanoid's portrait.
+      const dyeId = roster.appliedDyes?.[tintSlot] || null;
+      const dyeBId = tintSlot ? roster.appliedDyes?.[`${tintSlot}_B`] : null; // Preserves ghoul silver trims and draped-pants secondary color in actual looted items.
       const dye = dyeId ? catalog.find(d => d.id === dyeId) : null;
-      items.push({
+      const dyeB = dyeBId ? catalog.find(d => d.id === dyeBId) : null;
+      const lootItem = {
         uid: 'citem_bandit_' + Date.now().toString(36) + '_' + Math.floor(deps.rnd() * 1e6),
         cosmeticId: piece.id,
         slot: piece.category,
         label: (dye ? dye.label + ' ' : '') + piece.label,
         baseLabel: piece.label,
         colorA: deps.dyeToClothingColor(dye),
-        colorB: null,
+        colorB: dyeB ? deps.dyeToClothingColor(dyeB) : null,
         price: piece.price,
         sellPrice: Math.floor(piece.price * 0.4),
         sprite: deps.clothingSpriteForCosmetic(piece.id),
-      });
+      };
+      applyLootPattern(lootItem, forcedBySlot[slot], slot);
+      const maskPattern = slot === 'mask' ? (source?.avatarRef?.profile?.bodyColors?.__hobunjiWovenClothing || []).find(descriptor => descriptor?.slot === 'mask' && descriptor?.weaving) : null;
+      if (maskPattern) lootItem.weaving = JSON.parse(JSON.stringify(maskPattern.weaving)); // The worn mask's own generated primary + overpass patterns and ink colors.
+      items.push(applyLootCurse(lootItem, lootCurseFor(roster, cosmeticId, slot)));
     }
     return items;
+  }
+
+  // Cursed on loot (cannot be worn until dispelled), like enchanted relic weapons looted bound: a lich's tanged circlet (Garanki dispels it) and a
+  // Maskbound's mask (Father Hunundi, later). A lich's other garments, including face wraps, are ordinary.
+  function lootCurseFor(roster, cosmeticId, slot) {
+    if ((roster?.lichType || roster?.specialLichId) && /circlet/i.test(cosmeticId)) return { kind: 'circlet', dispelBy: 'garanki' };
+    if (roster?.maskboundTroop && (slot === 'mask' || window.isPortraitMaskCosmeticId?.(cosmeticId))) return { kind: 'mask', dispelBy: 'hunundi' };
+    return null;
+  }
+  function applyLootCurse(item, curse) {
+    if (!item || !curse) return item;
+    item.cursed = { ...curse, originalLabel: item.label }; // Dispelling restores the label and clears the flag.
+    item.label = 'Cursed ' + item.label;
+    return item;
+  }
+  // A forced woven pattern (including its per-spawn random frame and pattern color) travels with the looted piece as real weaving data.
+  function applyLootPattern(item, forced, slot) {
+    if (!item || !forced?.pattern) return item;
+    const pattern = window.NpcWardrobe?.forcedPatternForRender?.({}, slot, forced) || JSON.parse(JSON.stringify(forced.pattern)); // No body scale: the wearer's own rig differs.
+    item.weaving = { ...(item.weaving || {}), forcedOverpassPattern: pattern, ...(Array.isArray(forced.roles) && forced.roles.length ? { forcedOverpassRoles: [...forced.roles] } : {}) };
+    const patternHex = forced.fallbackColorC?.hex;
+    if (/^#[0-9a-f]{6}$/i.test(patternHex || '')) {
+      item.colorC = { hex: patternHex, label: 'Pattern' };
+      if (forced.baseUsesPatternColor) { // Draped pants: the base layer is the pattern color, the drape keeps the main color.
+        const main = item.colorA;
+        item.colorA = { hex: patternHex, label: 'Pattern' };
+        item.colorB = main || item.colorB;
+      }
+    }
+    return item;
   }
 
   function makeBanditCorpseWorldObject(c) {
@@ -1288,16 +1405,20 @@
       holdSeconds,
       holdLabel: 'Searching ' + (c.name || c.def.label) + '...',
       getButtons() {
+        if (c.ruinNoLoot===true)return []; // No corpse loot prompt in the isolated puzzle lab.
         if (holdSeconds > 0) return [{ icon: c.lootIcon || '🦴', label: 'Hold to Search', action: 'corpse_hold_loot', style: 'primary', allowed: true, worldInteraction: true, promptRoot: c.avatarRef?.group || null }];
         return [{ icon: '🪙', label: 'Loot ' + (c.name || c.def.label), action: 'obj_loot_corpse', style: 'primary', allowed: true }];
       },
       onAction(action) {
         if (action !== 'obj_loot_corpse') return { ok: false, message: 'Unknown action.' };
+        if(c.ruinNoLoot===true)return {ok:false,message:'This test-room opponent carries no loot.'}; // Also protects against calling the corpse action directly.
         const parts = grantBanditLoot(deps.rollLootPool(c.def.lootPool, { entity: c }));
         const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0;
         if (specialAmmo) parts.push(`🏹 Special Ammo×${specialAmmo}`);
         grantFlaskerLoadoutLoot(c, parts); // Flaskers always surrender several of both infinite combat loadout types on death.
-        for (const item of banditWornClothingItems(c.rosterRecord)) {
+        const relic = window.GhoulSpecialVariants?.lootEnchantedWeapon?.(c); // A Shadowknight's enchanted weapon comes off the body, still bound.
+        if (relic) parts.push('🗡️ Bound ' + relic.label);
+        for (const item of banditWornClothingItems(c.rosterRecord, c)) {
           deps.getPackClothing().push(item);
           window.MetalArmorSystem?.learnBlueprints?.([item]); // Unlock at acquisition even if the player sells the loot before visiting the smith.
           parts.push('👘 ' + item.label);
@@ -1322,8 +1443,10 @@
 
   window.BanditCamps = {
     init,
+    _simpleHydra: { campInstances: _banditCampInstances, update: updateSimpleHydra, spawnBandit: spawnSimpleHydraBandit, rankFor: simpleHydraRank, flaskerCountForGrunts }, // Test seam: executes the camp reinforcement lifecycle without a full zone.
     isCampCleared: isBanditCampCleared,
     updateCampBanners: updateBanditCampBanners,
+    senseTargets, // Active bandit-camp tents/fires for the Perception landmark glow.
     companionPerceptionRangePx: _companionPerceptionRangePx,
     updateCompanionPerception,
     forgetDenPerception,

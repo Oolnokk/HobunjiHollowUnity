@@ -1,0 +1,361 @@
+#!/usr/bin/env node
+'use strict';
+
+// Wilderness scenes used to stay cached forever once built. Only the current
+// zone plus the most recent inactive one(s) stay built now. This runs the real
+// eviction block and the real persistence capture/restore out of game.js
+// against fake zone state, so it covers the policy, not a copy of it.
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+
+const root = path.resolve(__dirname, '..');
+const game = fs.readFileSync(path.join(root, 'docs/game.js'), 'utf8');
+
+function slice(from, to) {
+  const start = game.indexOf(from), end = game.indexOf(to, start);
+  assert.ok(start >= 0 && end > start, `found ${from}`);
+  return game.slice(start, end);
+}
+const evictionBlock = slice('// ── Inactive wilderness zone cache', 'window.__zoneCacheDebug =');
+const persistenceFns = slice('function _captureLivePreviewZonePersistence(mapId)', 'function _disposeTownSceneForLivePreview');
+
+function makeWorld(config) {
+  const timers = [], disposed = [], campfireReleases = [], logs = [], holderCalls = [], despawned = [], forgotten = [];
+  const persist = { reagents: new Map(), berries: new Map(), treasure: new Map(), felled: new Map(), mined: new Map() };
+  const zoneScenes = new Map();
+  const hostiles = new Set(), corpses = new Set(), companions = new Set(), npcs = [], state = { failDespawn: false };
+  const traversable = objects => ({ objects, traverse(fn) { this.objects.forEach(fn); }, remove() {}, clear() { this.cleared = true; } });
+  const farmScene = traversable([]), buildingScenes = new Map();
+  const context = vm.createContext({
+    window: { SCRATCHBONES_CONFIG: config, DevSpawner: { DEV_ARENA_ZONE_ID: 'map_dev_arena', WILDERNESS_LAB_ZONE_ID: 'map_wilderness_lab' },
+      WildernessCampfire: { releaseVisualIfZone: id => campfireReleases.push(id) }, __farmLog: msg => logs.push(msg),
+      HeldObjectRenderOrder: { forgetScene: scene => holderCalls.push({ module: 'held', scene, clearedAtCall: !!scene.cleared }) },
+      CratePiles: { releaseZone: id => holderCalls.push({ module: 'crates', id }) },
+      PorakanekiCampPlacementPolicy: { forgetZone: id => holderCalls.push({ module: 'camps', id }) },
+      Shattercasks: { releaseZone: id => holderCalls.push({ module: 'shattercasks', id }) },
+      TzatzulCliffSites: { releaseArea: id => holderCalls.push({ module: 'tzatzul-spires', id }) },
+      WorldPopupText: { releaseScene: scene => holderCalls.push({ module: 'popups', scene, clearedAtCall: !!scene.cleared }) },
+      BanditCamps: { forgetZoneState: id => forgotten.push(id) } },
+    setTimeout: fn => { timers.push(fn); return timers.length; },
+    performance: { now: () => 0 }, localStorage: { getItem: () => null, setItem() {} },
+    _zoneScenes: zoneScenes, hostileObjects: hostiles, corpseObjects: corpses, companionObjects: companions, npcWalkers: npcs,
+    despawnCreature: c => { if (state.failDespawn) throw new Error('rig already gone'); despawned.push(c); },
+    _zoneReagentPersist: persist.reagents, _zoneBerryPersist: persist.berries, _zoneTreasurePersist: persist.treasure,
+    _zoneFelledTreePersist: persist.felled, _zoneMinedRockPersist: persist.mined,
+    scene: farmScene, townScene: null, _buildingScenes: buildingScenes,
+    currentArea: 'town', cutscenePreviewActive: false, _tothalShiftPromise: null,
+    _isZoneArea: id => String(id).startsWith('map_'), normalizeNpcArea: id => String(id),
+    releaseCreatureVisuals: c => { if (c.health <= 0 && c.state !== 'corpse') return; c._wildlifeVisualsReleased = true; c.avatarRef = { data: true }; }, // Same guard as the real one: a dying body keeps its rig.
+    // Mirrors the real _disposeZoneScene: it drops the scene AND the saved zone state (written for terrain regeneration).
+    _disposeZoneScene: id => { disposed.push(id); zoneScenes.delete(id); for (const m of Object.values(persist)) m.delete(id); },
+  });
+  vm.runInContext(fs.readFileSync(path.join(root, 'docs/js/entity-distance-lod.js'), 'utf8'), context);
+  vm.runInContext(fs.readFileSync(path.join(root, 'docs/js/wildlife-visual-lod.js'), 'utf8'), context); // The real isStreamableCorpse decides what may become data.
+  vm.runInContext(fs.readFileSync(path.join(root, 'docs/js/zone-bandit-release.js'), 'utf8'), context); // The real module game.js hands bandit-only zones to.
+  vm.runInContext(`${persistenceFns}\n${evictionBlock}\nwindow.ZoneBanditRelease.init({ zoneResidents, hostileObjects, corpseObjects, companionObjects, getCurrentArea: () => currentArea, despawnCreature, forgetCampState: id => window.BanditCamps.forgetZoneState(id) });\nthis.api = { releaseResidentRigs, parkZoneNpcs, noteZoneVisited, trimZoneCache, scheduleZoneCacheTrim, zoneEvictionBlocker, evictZoneScene, rebindZoneResidents, order: _zoneVisitOrder };`, context, { filename: 'zone-cache.js' });
+  const addZone = id => zoneScenes.set(id, { scene: Object.assign(traversable([]), { cleared: false }), grid: ['grid-' + id], cols: 200, rows: 200 });
+  const visit = id => { addZone(id); context.currentArea = id; context.api.noteZoneVisited(id); };
+  return { holderCalls, farmScene, buildingScenes, traversable, context, api: context.api, timers, disposed, campfireReleases, logs, persist, zoneScenes, hostiles, corpses, companions, npcs, despawned, forgotten, state, addZone, visit };
+}
+
+// ---- keeps the current zone and the most recent inactive one --------------
+{
+  const w = makeWorld({});
+  w.visit('map_a'); w.visit('map_b'); w.visit('map_c');
+  assert.deepEqual([...w.api.order], ['map_a', 'map_b', 'map_c']);
+  w.api.trimZoneCache();
+  assert.deepEqual(w.disposed, ['map_a'], 'the oldest inactive zone is evicted; current and the previous one stay');
+  assert.deepEqual([...w.zoneScenes.keys()].sort(), ['map_b', 'map_c']);
+  w.api.trimZoneCache();
+  assert.deepEqual(w.disposed, ['map_a'], 'trimming again changes nothing');
+  // Revisit: b becomes current, c the previous one; a is rebuilt by the normal enter path.
+  w.visit('map_b');
+  w.api.trimZoneCache();
+  assert.deepEqual(w.disposed, ['map_a'], 'going back to the kept zone evicts nothing');
+  assert.deepEqual([...w.api.order], ['map_a', 'map_c', 'map_b'], 'visit order tracks recency');
+  w.visit('map_a');
+  w.api.trimZoneCache();
+  assert.deepEqual(w.disposed, ['map_a', 'map_c'], 'after a is rebuilt and entered, the older inactive zone (c) goes');
+  assert.ok(w.zoneScenes.has('map_a') && w.zoneScenes.has('map_b') && !w.zoneScenes.has('map_c'), 'current and previous stay built');
+}
+
+// ---- config ---------------------------------------------------------------
+{
+  const w = makeWorld({ game: { zoneCache: { maxInactiveZones: 0 } } });
+  w.visit('map_a'); w.visit('map_b');
+  w.api.trimZoneCache();
+  assert.deepEqual(w.disposed, ['map_a'], 'maxInactiveZones 0 keeps only the current zone');
+  const roomy = makeWorld({ game: { zoneCache: { maxInactiveZones: 3 } } });
+  roomy.visit('map_a'); roomy.visit('map_b'); roomy.visit('map_c'); roomy.visit('map_d');
+  roomy.api.trimZoneCache();
+  assert.deepEqual(roomy.disposed, [], 'a larger bound keeps more zones');
+  const junk = makeWorld({ game: { zoneCache: { maxInactiveZones: -4 } } });
+  junk.visit('map_a'); junk.visit('map_b'); junk.visit('map_c');
+  junk.api.trimZoneCache();
+  assert.deepEqual(junk.disposed, ['map_a'], 'an invalid bound falls back to the default of 1');
+}
+
+// ---- saved zone state survives eviction -----------------------------------
+{
+  const w = makeWorld({});
+  w.visit('map_a'); w.visit('map_b'); w.visit('map_c');
+  const saved = { reagents: { day: 4, placements: [{ col: 1, row: 2, harvested: true }] }, berries: { day: 4 }, treasure: { day: 4 }, felled: [{ col: 3, row: 4, feltDay: 2 }], mined: [{ col: 5, row: 6, minedDay: 3 }] };
+  w.persist.reagents.set('map_a', saved.reagents); w.persist.berries.set('map_a', saved.berries); w.persist.treasure.set('map_a', saved.treasure);
+  w.persist.felled.set('map_a', saved.felled); w.persist.mined.set('map_a', saved.mined);
+  w.persist.felled.set('map_b', [{ col: 9, row: 9 }]);
+  w.api.trimZoneCache();
+  assert.deepEqual(w.disposed, ['map_a']);
+  assert.equal(w.persist.reagents.get('map_a'), saved.reagents, 'harvested reagent placements survive');
+  assert.equal(w.persist.berries.get('map_a'), saved.berries, 'berries survive');
+  assert.equal(w.persist.treasure.get('map_a'), saved.treasure, 'treasure survives');
+  assert.equal(w.persist.felled.get('map_a'), saved.felled, 'felled-tree timers survive');
+  assert.equal(w.persist.mined.get('map_a'), saved.mined, 'mined-rock timers survive');
+  assert.deepEqual(w.persist.felled.get('map_b'), [{ col: 9, row: 9 }], 'other zones are untouched');
+}
+
+// ---- NPCs are parked, not pinned ------------------------------------------
+{
+  const w = makeWorld({});
+  w.visit('map_a'); w.visit('map_b'); w.visit('map_c');
+  const removed = [], scene = { remove: r => removed.push(r) };
+  const inA = { area: 'map_a', root: { _npcScene: scene, _pendingZoneAdd: null }, resetRouteState() { this.reset = true; } };
+  const inB = { area: 'map_b', root: { _npcScene: scene, _pendingZoneAdd: null }, resetRouteState() { this.reset = true; } };
+  w.npcs.push(inA, inB);
+  w.api.trimZoneCache();
+  assert.deepEqual(w.disposed, ['map_a'], 'an NPC does not stop its zone from being evicted');
+  assert.deepEqual(removed, [inA.root], 'the NPC is taken out of the old scene');
+  assert.equal(inA.root._npcScene, null);
+  assert.equal(inA.root._pendingZoneAdd, 'map_a', 'and parked until the zone is rebuilt (buildZoneScene re-attaches it)');
+  assert.equal(inA.reset, true, 'its route state is reset');
+  assert.equal(inB.root._npcScene, scene, 'NPCs of zones that stay built are untouched');
+  assert.equal(inB.reset, undefined);
+}
+
+// ---- residents: ordinary creatures go to data, special ones pin -----------
+{
+  const w = makeWorld({});
+  w.visit('map_a'); w.visit('map_b'); w.visit('map_c');
+  const def = { label: 'x' };
+  const ambient = { areaId: 'map_a', def, health: 30, state: 'idle', streamVisuals: false, _wildlifeVisualsReleased: false, avatarRef: {} };
+  const streamed = { areaId: 'map_a', def, health: 10, streamVisuals: true, _wildlifeVisualsReleased: false };
+  const dataOnly = { areaId: 'map_a', def, health: 10, streamVisuals: true, _wildlifeVisualsReleased: true };
+  const settled = { areaId: 'map_a', def, health: 0, state: 'corpse', streamVisuals: true, _wildlifeVisualsReleased: false };
+  for (const c of [ambient, streamed, dataOnly]) w.hostiles.add(c);
+  w.corpses.add(settled);
+  w.api.trimZoneCache();
+  assert.deepEqual(w.disposed, ['map_a'], 'ordinary residents do not stop eviction');
+  assert.equal(ambient._wildlifeVisualsReleased, true, 'an ambient hostile that never streamed drops to data');
+  assert.equal(ambient.streamVisuals, true, 'and streams by distance from then on');
+  assert.equal(streamed._wildlifeVisualsReleased, true);
+  assert.equal(settled._wildlifeVisualsReleased, true, 'a settled corpse becomes data');
+  for (const c of [ambient, streamed, dataOnly, settled]) { assert.equal(c.scene, null); assert.equal(c.areaGrid, null); }
+}
+for (const [label, extra, store] of [
+  ['a maskbound troop', { maskboundTroop: 'headtaker', health: 20 }, 'hostiles'],
+  ['a dying body', { state: 'dying', health: 0, streamVisuals: true }, 'corpses'],
+  ['a skeleton that revives after looting', { state: 'corpse', health: 0, streamVisuals: true, keepCorpseAfterLoot: true }, 'corpses'],
+]) {
+  const w = makeWorld({});
+  w.visit('map_a'); w.visit('map_b'); w.visit('map_c');
+  const resident = { areaId: 'map_a', def: {}, _wildlifeVisualsReleased: false, ...extra };
+  w[store].add(resident);
+  w.api.trimZoneCache();
+  assert.deepEqual(w.disposed, [], `${label} keeps its rig, so its zone is kept`);
+  assert.match(w.logs.join('\n'), /kept map_a: resident rig/);
+  assert.equal(resident._wildlifeVisualsReleased, false, `${label} is left alone`);
+}
+
+// ---- bandits cannot become data, so an old zone's are released instead -----
+// They used to pin their whole zone forever: one idle bandit per zone kept four zones (about
+// 175 MB each) built in a headless run. Now they are removed and the zone's camps re-seed.
+const bandit = (area, extra = {}) => ({ areaId: area, def: {}, isBandit: true, health: 20, _wildlifeVisualsReleased: false, ...extra });
+{
+  const w = makeWorld({});
+  w.visit('map_a'); w.visit('map_b'); w.visit('map_c');
+  const alive = bandit('map_a'), pet = bandit('map_a', { isBandit: undefined, banditCompanion: true });
+  const body = bandit('map_a', { state: 'corpse', health: 0 }), wolf = { areaId: 'map_a', def: {}, health: 10, streamVisuals: true, _wildlifeVisualsReleased: false };
+  w.hostiles.add(alive); w.hostiles.add(pet); w.hostiles.add(wolf); w.corpses.add(body);
+  w.companions.add(pet);
+  w.api.trimZoneCache();
+  assert.deepEqual(w.disposed, ['map_a'], 'bandits no longer pin an old zone');
+  assert.equal(w.despawned.length, 3, 'a living bandit, a beastmaster pet and a dead bandit are despawned');
+  for (const c of [alive, pet, body]) assert.ok(w.despawned.includes(c));
+  assert.ok(!w.hostiles.has(alive) && !w.hostiles.has(pet) && !w.corpses.has(body) && !w.companions.has(pet), 'and leave every list');
+  assert.ok(w.hostiles.has(wolf) && !w.despawned.includes(wolf), 'wildlife went to data and is not despawned');
+  assert.deepEqual(w.forgotten, ['map_a'], 'the zone\'s camps are forgotten so they re-seed on the next entry');
+  assert.match(w.logs.join('\n'), /released 3 bandit\(s\) from map_a/);
+  assert.doesNotMatch(w.logs.join('\n'), /kept map_a/);
+}
+{
+  // Bandits parked by js/wilderness-simulation-lod.js get a synthetic areaId, so they used to be invisible to the zone
+  // cache: not pinning, not released, and each kept `scene` (the whole evicted zone) alive through hostileObjects.
+  const w = makeWorld({});
+  w.visit('map_a'); w.visit('map_b'); w.visit('map_c');
+  const sleeper = bandit('__wilderness_lod_sleep__:map_a', { _wildernessLodSleeping: true, _wildernessLodAreaId: 'map_a', state: 'idle' });
+  const awake = bandit('map_a', { state: 'idle' });
+  w.hostiles.add(sleeper); w.hostiles.add(awake);
+  assert.equal(w.api.zoneEvictionBlocker('map_a'), 'resident rig', 'a sleeping bandit still belongs to its zone');
+  w.api.trimZoneCache();
+  assert.deepEqual(w.disposed, ['map_a'], 'a zone whose bandits are asleep is still evictable');
+  assert.ok(w.despawned.includes(sleeper) && w.despawned.includes(awake), 'the sleeper is despawned with the rest');
+  assert.ok(!w.hostiles.has(sleeper), 'so nothing in hostileObjects points at the evicted scene');
+  // A zone that stays built keeps its sleepers.
+  const w2 = makeWorld({});
+  w2.visit('map_a'); w2.visit('map_b'); w2.visit('map_c');
+  const keep = bandit('__wilderness_lod_sleep__:map_c', { _wildernessLodSleeping: true, _wildernessLodAreaId: 'map_c' });
+  w2.hostiles.add(keep); w2.api.trimZoneCache();
+  assert.ok(w2.hostiles.has(keep) && w2.despawned.length === 0, 'sleepers of the current zone are untouched');
+}
+{
+  // The current zone and the one that stays built keep their bandits.
+  const w = makeWorld({});
+  w.visit('map_a'); w.visit('map_b'); w.visit('map_c');
+  const inB = bandit('map_b'), inC = bandit('map_c');
+  w.hostiles.add(inB); w.hostiles.add(inC);
+  w.api.trimZoneCache();
+  assert.deepEqual(w.disposed, ['map_a']);
+  assert.deepEqual(w.despawned, [], 'bandits of zones that stay built are untouched');
+  assert.deepEqual(w.forgotten, [], 'and so are their camps');
+  assert.ok(w.hostiles.has(inB) && w.hostiles.has(inC));
+}
+for (const [label, extra, store] of [
+  ['a maskbound troop', { maskboundTroop: 'headtaker', health: 20 }, 'hostiles'],
+  ['a dying body', { state: 'dying', health: 0, streamVisuals: true }, 'corpses'],
+  ['a skeleton that revives after looting', { state: 'corpse', health: 0, streamVisuals: true, keepCorpseAfterLoot: true }, 'corpses'],
+]) {
+  // Releasing the bandits while something else still pins the zone would reset its camps for nothing.
+  const w = makeWorld({});
+  w.visit('map_a'); w.visit('map_b'); w.visit('map_c');
+  const b = bandit('map_a');
+  w.hostiles.add(b); w[store].add({ areaId: 'map_a', def: {}, _wildlifeVisualsReleased: false, ...extra });
+  w.api.trimZoneCache();
+  assert.deepEqual(w.disposed, [], `${label} still pins the zone`);
+  assert.deepEqual(w.despawned, [], `so its bandits are left alone`);
+  assert.deepEqual(w.forgotten, [], 'and the camps are not reset');
+  assert.ok(w.hostiles.has(b));
+  assert.match(w.logs.join('\n'), /kept map_a: resident rig/);
+}
+{
+  // The old behaviour is one config flag away.
+  const w = makeWorld({ game: { zoneCache: { releaseBandits: false } } });
+  w.visit('map_a'); w.visit('map_b'); w.visit('map_c');
+  const b = bandit('map_a');
+  w.hostiles.add(b);
+  w.api.trimZoneCache();
+  assert.deepEqual(w.disposed, [], 'releaseBandits: false keeps a bandit zone built');
+  assert.deepEqual(w.despawned, []);
+  assert.deepEqual(w.forgotten, []);
+  assert.match(w.logs.join('\n'), /kept map_a: resident rig/);
+}
+{
+  // A despawn that throws must not abort the trim of the other zones.
+  const w = makeWorld({});
+  w.visit('map_a'); w.visit('map_b'); w.visit('map_c');
+  w.hostiles.add(bandit('map_a'));
+  w.state.failDespawn = true;
+  w.api.trimZoneCache();
+  assert.deepEqual(w.disposed, ['map_a'], 'the zone is still evicted');
+  assert.match(w.logs.join('\n'), /could not fully despawn a bandit in map_a: rig already gone/);
+}
+
+// ---- materials and textures of an evicted zone are released ---------------
+{
+  const resource = (name, extra = {}) => ({ name, disposed: 0, dispose() { this.disposed++; }, isTexture: undefined, ...extra });
+  const texture = name => resource(name, { isTexture: true });
+  const material = (name, props = {}, uniforms) => resource(name, { ...props, ...(uniforms ? { uniforms } : {}) });
+
+  const w = makeWorld({});
+  w.visit('map_a'); w.visit('map_b'); w.visit('map_c');
+  const own = texture('own-map'), uniformTex = texture('uniform-map'), sharedTex = texture('shared-with-b');
+  const ownMat = material('own', { map: own }), shaderMat = material('shader', {}, { uTex: { value: uniformTex }, uNumber: { value: 3 } });
+  const sharedMat = material('shared-with-farm'), sharedTexMat = material('uses-shared-texture', { map: sharedTex });
+  const arrayA = material('array-a', { map: texture('array-a-map') }), arrayB = material('array-b');
+  const inTown = material('in-town'), inBuilding = material('in-building');
+  w.zoneScenes.get('map_a').scene.objects.push(
+    { material: ownMat }, { material: shaderMat }, { material: sharedMat }, { material: sharedTexMat },
+    { material: [arrayA, arrayB] }, { material: inTown }, { material: inBuilding }, { material: ownMat }, { name: 'a group with no material' },
+  );
+  w.zoneScenes.get('map_b').scene.objects.push({ material: material('b-only', { map: sharedTex }) }); // a kept zone still draws with sharedTex
+  w.farmScene.objects.push({ material: sharedMat });
+  w.context.townScene = w.traversable([{ material: inTown }]);
+  w.buildingScenes.set('inn', { scene: w.traversable([{ material: inBuilding }]) });
+  w.api.trimZoneCache();
+  assert.deepEqual(w.disposed, ['map_a']);
+  assert.equal(ownMat.disposed, 1, 'a material only the evicted zone used is disposed, once');
+  assert.equal(own.disposed, 1, 'and so is its texture');
+  assert.equal(shaderMat.disposed, 1);
+  assert.equal(uniformTex.disposed, 1, 'a texture held in a shader uniform is released too');
+  assert.equal(arrayA.disposed + arrayB.disposed, 2, 'array materials are handled');
+  assert.equal(arrayA.map.disposed, 1);
+  assert.equal(sharedMat.disposed, 0, 'a material the farm scene still uses is kept');
+  assert.equal(inTown.disposed, 0, 'a material the town scene still uses is kept');
+  assert.equal(inBuilding.disposed, 0, 'a material a building interior still uses is kept');
+  assert.equal(sharedTexMat.disposed, 1, 'a material only the evicted zone used is disposed even when its texture is shared');
+  assert.equal(sharedTex.disposed, 0, 'but a texture a kept zone still draws with is not');
+  assert.match(w.logs.join('\n'), /evicted map_a \(\d+ materials, \d+ textures released\)/, 'the release is logged');
+}
+
+// ---- never the current zone, never dev zones ------------------------------
+{
+  const w = makeWorld({ game: { zoneCache: { maxInactiveZones: 0 } } });
+  w.visit('map_a');
+  w.addZone('map_dev_arena'); w.addZone('map_wilderness_lab');
+  w.api.trimZoneCache();
+  assert.deepEqual(w.disposed, [], 'the current zone and the dev zones are never evicted');
+}
+
+// ---- rebuild re-points residents ------------------------------------------
+{
+  const w = makeWorld({});
+  w.visit('map_a');
+  const wolf = { areaId: 'map_a', scene: null, areaGrid: null };
+  const other = { areaId: 'map_b', scene: 'keep', areaGrid: 'keep' };
+  w.hostiles.add(wolf); w.hostiles.add(other);
+  const info = { scene: { id: 'new' }, grid: ['new-grid'], cols: 120, rows: 90 };
+  w.api.rebindZoneResidents('map_a', info);
+  assert.equal(wolf.scene, info.scene);
+  assert.equal(wolf.areaGrid, info.grid);
+  assert.deepEqual([wolf.areaCols, wolf.areaRows], [120, 90]);
+  assert.equal(other.scene, 'keep', 'residents of other zones are untouched');
+}
+
+// ---- eviction details -----------------------------------------------------
+{
+  const w = makeWorld({});
+  w.visit('map_a'); w.visit('map_b'); w.visit('map_c');
+  const scene = w.zoneScenes.get('map_a').scene;
+  w.api.trimZoneCache();
+  assert.deepEqual(w.campfireReleases, ['map_a'], 'the saved campfire releases only its visual');
+  assert.equal(scene.cleared, true, 'the old scene is emptied so no stale mesh can keep it reachable');
+  // Modules that kept strong references to the old scene or grid (found in a heap snapshot) are told, for the evicted zone only.
+  assert.deepEqual(w.holderCalls.map(c => c.module).sort(), ['camps', 'crates', 'held', 'popups', 'shattercasks', 'tzatzul-spires'], 'each holder is released once');
+  assert.equal(w.holderCalls.find(c => c.module === 'popups').scene, scene, 'popups anchored in the evicted scene are released');
+  assert.equal(w.holderCalls.find(c => c.module === 'shattercasks').id, 'map_a');
+  const held = w.holderCalls.find(c => c.module === 'held');
+  assert.equal(held.scene, scene, 'the render-order registries forget the evicted scene');
+  assert.equal(held.clearedAtCall, false, 'before it is emptied, so its meshes can still be found');
+  assert.equal(w.holderCalls.find(c => c.module === 'crates').id, 'map_a');
+  assert.equal(w.holderCalls.find(c => c.module === 'camps').id, 'map_a');
+}
+
+// ---- scheduling and wiring ------------------------------------------------
+{
+  const w = makeWorld({});
+  w.visit('map_a'); w.visit('map_b'); w.visit('map_c');
+  w.api.scheduleZoneCacheTrim(); w.api.scheduleZoneCacheTrim();
+  assert.equal(w.timers.length, 1, 'trims are coalesced into one timer');
+  w.timers[0]();
+  assert.deepEqual(w.disposed, ['map_a'], 'the timer runs the trim');
+  w.context.cutscenePreviewActive = true;
+  w.visit('map_d'); w.api.scheduleZoneCacheTrim(); w.timers.at(-1)();
+  assert.deepEqual(w.disposed, ['map_a'], 'nothing is evicted during a cutscene preview');
+}
+const trigger = game.slice(game.indexOf('function releasePreviousAreaCreatureTextures()'), game.indexOf('function updateWildlifeVisualLod'));
+assert.match(trigger, /noteZoneVisited\(currentArea\)[\s\S]*scheduleZoneCacheTrim\(\)/, 'every area change records the visit and schedules a trim');
+assert.match(game, /_zoneScenes\.set\(mapId, info\);\s*\n\s*rebindZoneResidents\(mapId, info\)/, 'a rebuilt zone re-points its residents');
+assert.match(fs.readFileSync(path.join(root, 'docs/js/wilderness-campfire.js'), 'utf8'), /releaseVisualIfZone/, 'the campfire exposes the visual release');
+
+console.log('zone cache eviction regression passed');

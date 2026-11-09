@@ -52,8 +52,9 @@ assert(
   'tent focus participates in world interaction ray arbitration',
 );
 assert(
-  banditCamps.includes('focusedHostile?.(24)'),
-  'a nearer hostile keeps combat priority over tent interaction',
+  banditCamps.includes('const BANDIT_TENT_AIM_MAX_WORLD = 24;')
+    && banditCamps.includes('focusedHostile?.(BANDIT_TENT_AIM_MAX_WORLD)'),
+  'a nearer hostile keeps combat priority over tent interaction at the shared 24-unit aim range',
 );
 assert(
   banditCamps.includes("result: !ray ? 'missing-ray' : 'missing-focus-api'")

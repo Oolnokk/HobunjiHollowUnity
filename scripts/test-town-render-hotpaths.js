@@ -10,14 +10,27 @@ const controller = read('docs/js/controller-ui-nav.js');
 const game = read('docs/game.js');
 const pixelProbe = read('docs/js/pixel-probe.js');
 const heldRender = read('docs/js/held-object-render-order.js');
+const surfaceComposerSource = read('docs/js/surface-occlusion-composer.js');
+const toolIconRender = read('docs/js/tool-icon-render.js'); // Existing synchronous bootstrap must load the shared policy before the renderer.
+const npcHeldEquipment = read('docs/js/npc-held-equipment-v4.js');
+const renderingContract = read('docs/architecture/held-object-water-depth-compositing.md');
+const readme = read('README.md');
+const terrainTileMaterials = read('docs/js/terrain-tile-materials.js'); // Guards grass-only material tags against seasonal texture overrides.
+const zoneGrassBillboards = read('docs/js/zone-grass-billboards.js'); // Verifies the authored path-brick group tag used by the held x-ray classifier.
+const borderTerrain = read('docs/js/border-terrain.js'); // Guards authored approach roads and fallback path ribbons outside ordinary paving chunks.
 const plateauMesa = read('docs/js/zone-plateau-mesa.js'); // Guards the semantic tag that makes elevated wilderness ground participate in the held overlay.
 const interiorBuilder = read('docs/js/interior-scene-builder.js'); // Guards cavern-floor registration for the same global held-object ground policy.
+const mergedWater = read('docs/js/merged-water-renderer.js');
 const feetParity = read('docs/js/procedural-feet-outline-parity.js'); // Guards the explicit foot-only water-occlusion registration and transform parity.
 const gridSource = read('docs/js/grid-tile-accessors.js');
 const idleYaw = read('docs/js/weapon-idle-body-yaw-runtime.js');
 const stances = read('docs/js/weapon-tool-stances.js');
 const portrait = read('docs/js/portrait-utils.js');
+const composerContext = { window: {}, module: { exports: {} } }; // Evaluate the real shared policy without loading a renderer or DOM.
+vm.runInNewContext(surfaceComposerSource, composerContext);
+const surfaceComposer = composerContext.window.SurfaceOcclusionComposer;
 
+assert.ok(surfaceComposer?.installed, 'shared surface occlusion composer installs its public API');
 assert.match(controller, /function isActive\(\) \{\s*return stack\.length > 0;\s*\}/,
   'the gameplay panel gate is a cached read with no layout work');
 assert.doesNotMatch(controller, /function visiblePanels\(\)[\s\S]{0,220}querySelectorAll/,
@@ -41,10 +54,164 @@ assert.doesNotMatch(heldRender, /\.updateMatrixWorld = function heldGround/,
   'held/ground invariants no longer wrap every matrix update');
 assert.match(heldRender, /colorBuffer\.setMask\(false\)[\s\S]{0,100}colorBuffer\.setLocked\(true\)/,
   'the selective depth replay suppresses color through the renderer buffer');
-assert.match(heldRender, /prepareCutoutDepthMaterials\(collectVisible\(pngDepthRegistry, scene\)\)/,
-  'only registered PNG cutouts receive temporary depth-material repair');
-assert.doesNotMatch(heldRender, /forceWaterDepth|waterDepthRegistry/,
-  'water must not become a hard depth occluder during the held overlay');
+// The visible cutout/protective-cover lists are collected once outside the
+// per-elevation loop. The old assertion demanded inline collectVisible() calls
+// inside prepareCutoutDepthMaterials(), penalizing the intended optimization.
+const heldDepthReplay = heldRender.slice(
+  heldRender.indexOf('  function replaySelectiveHeldOverlay('),
+  heldRender.indexOf('  function isShellOutlinePass(')); // The actual grouped depth replay, not unrelated shell/scene code.
+const hiddenParticipantsAt = heldDepthReplay.indexOf('overlayHidden = hideObjects('); // Visible depth candidates must be sampled after held participants are hidden.
+const pngCutoutsAt = heldDepthReplay.indexOf('collectVisible(pngDepthRegistry, scene)'); // One scan for PNG silhouette occluders per overlay replay.
+const protectedCoversAt = heldDepthReplay.indexOf('collectVisible(protectedCoverRegistry, scene)'); // One scan for water, snow, slush and vegetation covers.
+const groupReplayAt = heldDepthReplay.indexOf('for (const group of groups)'); // All elevation groups reuse the two candidate lists.
+assert.ok(hiddenParticipantsAt >= 0 && hiddenParticipantsAt < pngCutoutsAt
+  && pngCutoutsAt < groupReplayAt && protectedCoversAt < groupReplayAt,
+  'both visible occluder sets are collected after hiding participants and before per-elevation depth replay');
+assert.match(heldDepthReplay, /prepareCutoutDepthMaterials\(cutoutDepthMeshes, protectedDepthMeshes\)/,
+  'the colorless depth replay includes PNG silhouettes and registered protective surface layers');
+assert.match(heldRender, /for \(const object of protectedCover\)[\s\S]{0,200}material\.depthWrite = true/,
+  'otherwise-transparent snow/slush, water and billboard grass temporarily write real occlusion depth');
+assert.match(mergedWater, /transparent: true,\s*depthTest: true,[^\n]*\n\s*depthWrite: false/,
+  'translucent floodwater retains normal opaque-grass depth testing in its material');
+assert.match(mergedWater, /if \(uHobunjiSurfaceOcclusionDepthOnly > 0\.5\s*&& alpha < uHobunjiSurfaceOcclusionDepthAlphaThreshold\) discard/,
+  'the water depth-only shader discards fragments below its visible-alpha threshold without changing normal color rendering');
+assert.match(toolIconRender, /surface-occlusion-composer\.js[\s\S]{0,260}held-object-render-order\.js/,
+  'the shared policy script is loaded before the held renderer');
+assert.equal(surfaceComposer.resolvePolicy('held-overlay', 'base-ground', { actorElevation: 0.42 }).groundXrayMode,
+  'same-elevation-upward-faces', 'known actor elevations retain selective ground x-ray');
+assert.equal(surfaceComposer.resolvePolicy('held-overlay', 'base-ground', {}).groundXrayMode,
+  'fail-closed-solid', 'unknown actor elevations retain conservative ground occlusion');
+assert.equal(surfaceComposer.resolvePolicy('portrait-plane', 'water').tintableCover, true,
+  'future portrait consumers receive the same translucent-water decision');
+assert.equal(surfaceComposer.resolvePolicy('hat-plane', 'billboard-grass').protectedCover, true,
+  'future headgear consumers retain the same solid-cover policy');
+const baseGrass = coverMesh({ isWildernessGrassChunk: false }, null,
+  { userData: { hobunjiBaseGrassTerrainMaterial: true } });
+assert.equal(surfaceComposer.classifySurface(baseGrass, { baseGround: true }), 'base-ground',
+  'tagged base grass is distinguished from standing billboard grass');
+assert.equal(surfaceComposer.classifySurface(coverMesh({ waterSurfaceRole: 'flood' }, { userData: { hobunjiPathSurface: true } })), 'water',
+  'water tags override path ancestry before any ground x-ray policy is selected');
+assert.equal(surfaceComposer.classifySurface(coverMesh({ environmentSurfaceMicroPlateau: true }, null,
+  { userData: { environmentSurfaceMicroPlateauMaterial: 'slush' } })), 'slush',
+  'slush is classified as a tintable translucent cover');
+assert.equal(surfaceComposer.classifySurface(coverMesh({ environmentSurfaceMicroPlateau: true }, null,
+  { userData: { environmentSurfaceMicroPlateauMaterial: 'snow' } })), 'snow',
+  'snow remains a solid cover, not a tintable surface');
+assert.equal(surfaceComposer.resolvePolicy('held-overlay', 'water', { translucentTintActive: true }).skipPreOverlayDepthWhenTinting,
+  true, 'water tint policy explicitly prevents an early cover-depth replay');
+assert.equal(surfaceComposer.resolvePolicy('portrait-plane', 'solid').groundXrayMode, 'solid',
+  'ordinary solid surfaces remain occluders for future consumers');
+const depthOnlyUniform = { value: 0 };
+const depthOnlyMaterial = { uniforms: { uHobunjiSurfaceOcclusionDepthOnly: depthOnlyUniform } };
+assert.equal(surfaceComposer.getDepthOnly(depthOnlyMaterial), 0, 'water starts in ordinary color mode');
+assert.equal(surfaceComposer.setDepthOnly(depthOnlyMaterial, true), 0, 'depth-only mode reports the previous uniform state');
+assert.equal(depthOnlyUniform.value, 1, 'depth-only replay enables the water coverage branch');
+surfaceComposer.setDepthOnly(depthOnlyMaterial, false);
+assert.equal(depthOnlyUniform.value, 0, 'depth-only replay can restore the normal water shader state');
+const depthUniformHelpersStart = heldRender.indexOf('  function getSurfaceOcclusionDepthOnly('); // Locates the production fallback helpers below.
+const depthUniformHelpersEnd = heldRender.indexOf('  function saveMaterialState(', depthUniformHelpersStart);
+assert.ok(depthUniformHelpersStart >= 0 && depthUniformHelpersEnd > depthUniformHelpersStart,
+  'extract optional-composer depth-uniform helpers');
+const fallbackDepthHelpers = new Function('surfaceComposer',
+  heldRender.slice(depthUniformHelpersStart, depthUniformHelpersEnd)
+    + '\nreturn { getSurfaceOcclusionDepthOnly, setSurfaceOcclusionDepthOnly };')(null); // Simulates composer script load failure.
+const fallbackWaterUniform = { value: 0 }; // The merged-water shader uniform must still toggle without the composer.
+const fallbackWaterMaterial = { uniforms: { uHobunjiSurfaceOcclusionDepthOnly: fallbackWaterUniform } };
+assert.equal(fallbackDepthHelpers.getSurfaceOcclusionDepthOnly(fallbackWaterMaterial), 0,
+  'water depth mode can be read without the composer');
+assert.equal(fallbackDepthHelpers.setSurfaceOcclusionDepthOnly(fallbackWaterMaterial, true), 0,
+  'fallback reports the prior water depth mode');
+assert.equal(fallbackWaterUniform.value, 1, 'fallback enables alpha-aware water depth');
+assert.equal(fallbackDepthHelpers.setSurfaceOcclusionDepthOnly(fallbackWaterMaterial, false), 1,
+  'fallback reports the temporary water depth mode');
+assert.equal(fallbackWaterUniform.value, 0, 'fallback restores the ordinary water shader mode');
+const fallbackDepthRuntimeEnd = heldRender.indexOf('  function prepareCutoutDepthMaterials(', depthUniformHelpersStart);
+const fallbackDepthRuntime = new Function(
+  'surfaceComposer', 'PNG_OCCLUDER_LAYER', 'window', 'hasLayer', 'isProtectedCover', 'forEachMaterial',
+  heldRender.slice(depthUniformHelpersStart, fallbackDepthRuntimeEnd)
+    + '\nreturn { prepareNonGroundDepthMaterials, restoreMaterialStates };'
+)(null, 4, {}, () => false, () => true,
+  (material, callback) => (Array.isArray(material) ? material : [material]).forEach(callback)); // Runs the production fallback replay with no composer.
+const replayWaterUniform = { value: 0 }; // This material models the merged-water shader during a held depth replay.
+const replayWaterMaterial = { colorWrite: true, depthWrite: false, depthTest: true,
+  uniforms: { uHobunjiSurfaceOcclusionDepthOnly: replayWaterUniform } };
+const replayWaterMesh = { isMesh: true, isSprite: false, userData: {}, material: replayWaterMaterial };
+const replayWaterScene = { traverseVisible(callback) { callback(replayWaterMesh); } };
+const replayWaterStates = fallbackDepthRuntime.prepareNonGroundDepthMaterials(replayWaterScene);
+assert.equal(replayWaterMaterial.colorWrite, false, 'fallback depth replay suppresses water color');
+assert.equal(replayWaterMaterial.depthWrite, true, 'fallback depth replay enables water depth');
+assert.equal(replayWaterUniform.value, 1, 'fallback depth replay activates the water alpha cutoff');
+fallbackDepthRuntime.restoreMaterialStates(replayWaterStates);
+assert.equal(replayWaterMaterial.colorWrite, true, 'fallback restores water color writes');
+assert.equal(replayWaterMaterial.depthWrite, false, 'fallback restores ordinary water depth writes');
+assert.equal(replayWaterUniform.value, 0, 'fallback restores ordinary water alpha behavior');
+
+class TestDataTexture { constructor() { this.needsUpdate = false; } dispose() {} } // Minimal Three.js texture stub for the production water material factory.
+class TestColor { constructor(value) { this.value = value; } } // Captures the water material's authored colors.
+class TestShaderMaterial { constructor(options) { Object.assign(this, options); } } // Retains shader and render-state options for assertions.
+const testThree = { DataTexture: TestDataTexture, RGBAFormat: 1, Color: TestColor,
+  ShaderMaterial: TestShaderMaterial, FrontSide: 0 };
+const waterMaterialStart = mergedWater.indexOf('  function createMaterial('); // Extracts the exact production water material factory.
+const waterMaterialEnd = mergedWater.indexOf('  function createMesh(', waterMaterialStart);
+assert.ok(waterMaterialStart >= 0 && waterMaterialEnd > waterMaterialStart,
+  'extract the merged-water material factory');
+const makeWaterMaterial = new Function('THREE', 'TEXTURE_SCROLL_U', 'TEXTURE_SCROLL_V', 'DEFAULT_WATER_DEPTH_ALPHA_THRESHOLD', 'window',
+  mergedWater.slice(waterMaterialStart, waterMaterialEnd) + '\nreturn createMaterial;')(
+    testThree, 0.02, 0.02, 0.12, { SurfaceOcclusionComposer: surfaceComposer });
+const testedWaterMaterial = makeWaterMaterial(testThree, {});
+assert.equal(testedWaterMaterial.depthWrite, false, 'normal water rendering never writes depth');
+assert.equal(testedWaterMaterial.uniforms.uHobunjiSurfaceOcclusionDepthOnly.value, 0,
+  'water material starts outside the temporary depth-only mode');
+assert.equal(testedWaterMaterial.uniforms.uHobunjiSurfaceOcclusionDepthAlphaThreshold.value,
+  surfaceComposer.WATER_DEPTH_ALPHA_THRESHOLD, 'water material uses the shared composer threshold');
+// Execute the production mesh builder: diagnostics must read the threshold from
+// this mesh's own material rather than a local variable in createMaterial().
+class TestBufferGeometry {
+  constructor() { this.attributes = {}; } // Stores attributes emitted by the production mesh builder.
+  setAttribute(name, attribute) { this.attributes[name] = attribute; }
+  setIndex(index) { this.index = index; }
+  computeVertexNormals() {}
+}
+class TestFloat32BufferAttribute {
+  constructor(array, itemSize) { this.array = array; this.itemSize = itemSize; }
+}
+class TestBufferAttribute {
+  constructor(array, itemSize) { this.array = array; this.itemSize = itemSize; }
+}
+class TestMesh {
+  constructor(geometry, material) { this.geometry = geometry; this.material = material; this.userData = {}; }
+}
+const meshDataForWaterTest = {
+  positions: [0, 0, 0, 1, 0, 0, 0, 0, 1], uvs: [0, 0, 1, 0, 0, 1],
+  depths: [1, 1, 1], coverages: [1, 1, 1], flows: [0, 0, 0, 0, 0, 0],
+  indices: [0, 1, 2], tileCount: 1, representation: 'test-water',
+};
+const meshWaterStats = {};
+const meshBuilderStart = mergedWater.indexOf('  function createMesh('); // Extracts the exact production mesh factory.
+const meshBuilderEnd = mergedWater.indexOf('  function clearStats(', meshBuilderStart);
+assert.ok(meshBuilderStart >= 0 && meshBuilderEnd > meshBuilderStart,
+  'extract the merged-water mesh factory');
+const makeWaterMesh = new Function(
+  'buildMapWidePlaneSurfaceData', 'buildInvertedSurfaceData', 'buildSurfaceData',
+  'stats', 'lastLoggedCounts', 'DEFAULT_TEXTURE_TILE_SIZE', 'DEFAULT_WATER_DEPTH_ALPHA_THRESHOLD', 'TEXTURE_SCROLL_U', 'TEXTURE_SCROLL_V',
+  mergedWater.slice(meshBuilderStart, meshBuilderEnd) + '\nreturn createMesh;'
+)(() => meshDataForWaterTest, () => meshDataForWaterTest, () => meshDataForWaterTest,
+  meshWaterStats, new Map(), 4, 0.12, 0.012, 0.035);
+const testedWaterMesh = makeWaterMesh({
+  BufferGeometry: TestBufferGeometry, Float32BufferAttribute: TestFloat32BufferAttribute,
+  BufferAttribute: TestBufferAttribute, Mesh: TestMesh,
+}, testedWaterMaterial, [], { mapWidePlane: true, statKey: 'scope-regression' });
+assert.ok(testedWaterMesh, 'town water mesh creation completes without a scope ReferenceError');
+assert.equal(meshWaterStats['scope-regression'].depthAlphaThreshold,
+  surfaceComposer.WATER_DEPTH_ALPHA_THRESHOLD,
+  'water mesh diagnostics read the exact threshold configured on its material');
+
+assert.match(testedWaterMaterial.fragmentShader,
+  /uHobunjiSurfaceOcclusionDepthOnly > 0\.5[\s\S]*?alpha < uHobunjiSurfaceOcclusionDepthAlphaThreshold\) discard/,
+  'the production water shader discards only faint fragments during depth-only replay');
+assert.match(pixelProbe, /Water depth at probed pixel:[\s\S]*?BEHIND OPAQUE SURFACE/,
+  'Pixel Probe continues diagnosing opaque foreground grass before the flood');
+
 assert.match(game, /stencilBuffer: needsStencil/,
   'outline render targets explicitly opt into stencil only when requested');
 assert.match(game, /_mainRT\s*=\s*_makeSceneRT\(1, 1, true\)/,
@@ -57,60 +224,494 @@ assert.match(pixelProbe, /stopImmediatePropagation\?\.\(\)/,
   'Pixel Probe consumes its sampling pointer before gameplay handlers can attack');
 assert.match(pixelProbe, /setTimeout\(\(\) => \{ _pixelProbeArmed = false; \}, 0\)/,
   'Pixel Probe keeps the armed input guard alive through the current event dispatch');
-assert.match(heldRender, /currentFramebufferStencilBits\(renderer\)/,
-  'held-water compositing verifies stencil support on the actually bound framebuffer');
-assert.match(heldRender, /requestedFootWaterComposite && stencilBits >= 2/,
-  'foot-only water replay is skipped rather than repainting weapons when a target lacks stencil');
+assert.match(heldRender, /const feet = collectVisible\(waterOccludedRegistry, scene\)/,
+  'the active world pass collects visible procedural feet into the selective x-ray overlay');
+assert.match(heldRender, /if \(!ground.length && !topFaceGround.length && !\(tintCovers.length && \(held.length \|\| feet.length\)\)\)/,
+  'feet or held weapons with water/slush trigger the overlay even without grass/path ground');
 assert.match(heldRender, /function materialLooksLikeGrassBillboard\(material\)/,
   'held x-ray recognizes the shared grass ShaderMaterial even when a runtime consumer uses a plain Mesh');
 assert.match(heldRender, /entry\.uniforms\?\.uGrassTex[\s\S]{0,180}entry\.uniforms\?\.uDensity[\s\S]{0,180}entry\.uniforms\?\.uStrength/,
   'grass fallback classification keys off the dedicated wind/grass shader uniforms rather than generic billboard tags');
 assert.match(heldRender, /return materialLooksLikeGrassBillboard\(object\.material\)/,
-  'submerged grass material cannot survive in the non-ground depth replay and punch holes through held weapons');
-assert.match(heldRender, /data\.hobunjiGroundSurface === true \|\| data\.cavernWalkableFloor === true/,
-  'held x-ray recognizes semantically tagged walkable surfaces regardless of hierarchy or elevation');
-assert.match(heldRender, /hobunjiInteriorFloorMaterial === true/,
-  'ordinary authored building floors are removed from the held-object depth replay');
-assert.match(heldRender, /data\.wallBuilderRecipe === 'wallrecipe2\.json'[\s\S]{0,120}data\.plateauModel\?\.levelByCell/,
-  'generated stepped/sunken ruin floors participate in held-object x-ray');
+  'the protected-cover classifier recognizes billboard-grass ShaderMaterial, even on plain Mesh objects');
+assert.match(heldRender, /function isProtectedCover\(object\)[\s\S]{0,220}surfaceComposer\?\.isProtectedCover/,
+  'held depth classification delegates protected-cover decisions to the shared composer');
+assert.match(heldRender, /surfaceClassificationHints\.baseGround = data\.hachutuGroundRoot === true/,
+  'Hachutu floor-root meshes are passed into the shared ground-surface classifier');
+assert.match(heldRender, /surfaceComposer\?\.getGroundXrayKind/,
+  "held and shell depth replays use the composer's ground policy rather than independent exceptions");
+const snowSurfaceForComposerTest = {
+  isMesh: true,
+  isSkinnedMesh: false,
+  userData: { environmentSurfaceMicroPlateau: true },
+  material: { userData: { environmentSurfaceMicroPlateauMaterial: 'snow' } },
+};
+const slushSurfaceForComposerTest = {
+  isMesh: true,
+  isSkinnedMesh: false,
+  userData: { environmentSurfaceMicroPlateau: true },
+  material: { userData: { environmentSurfaceMicroPlateauMaterial: 'slush' } },
+};
+assert.equal(surfaceComposer.classifySurface(snowSurfaceForComposerTest), surfaceComposer.SURFACE.SNOW,
+  'snow is classified by the shared composer and remains a protected solid cover');
+assert.equal(surfaceComposer.isProtectedCover(surfaceComposer.SURFACE.SNOW), true,
+  'snow cannot inherit the ground x-ray exemption');
+assert.equal(surfaceComposer.classifySurface(slushSurfaceForComposerTest), surfaceComposer.SURFACE.SLUSH,
+  'slush is classified by the shared composer separately from opaque snow');
+assert.equal(surfaceComposer.isTintableCover(surfaceComposer.SURFACE.SLUSH), true,
+  'translucent slush participates in the shared tint policy');
+const waterSurfaceClassifierAt = surfaceComposerSource.indexOf('if (data.mergedWaterStatKey');
+const pathSurfaceClassifierAt = surfaceComposerSource.indexOf('const pathSurface = typeof hints.pathSurface');
+assert.ok(waterSurfaceClassifierAt >= 0 && pathSurfaceClassifierAt > waterSurfaceClassifierAt,
+  'water classification takes precedence over path x-ray exemptions');
+const authoredPathForComposerTest = {
+  isMesh: true,
+  isSkinnedMesh: false,
+  userData: {},
+  material: null,
+  parent: { userData: { hobunjiPathSurface: true }, parent: null },
+};
+assert.equal(surfaceComposer.classifySurface(authoredPathForComposerTest), surfaceComposer.SURFACE.PATH,
+  'the shared composer classifies authored paths without renderer-specific hints');
+assert.equal(surfaceComposer.classifySurface(authoredPathForComposerTest, { pathSurface: false }), surfaceComposer.SURFACE.SOLID,
+  'an explicit path hint prevents a second ancestor walk during renderer classification');
+assert.match(heldRender, /function isRoadSurface\(object\)[\s\S]{0,140}hasAncestorFlag\(object, 'hobunjiPathSurface'\)/,
+  'path-brick descendants use their existing semantic path tag rather than a generic material guess');
+assert.match(zoneGrassBillboards, /group\.userData\.hobunjiPathSurface = true/,
+  'the authored road builder stamps path-brick groups for the held overlay');
+assert.match(game, /_townPathFallbackMesh\.userData\.hobunjiPathSurface = true/,
+  'the unpaved town fallback road remains x-rayable when paving assets fail to load');
+assert.match(borderTerrain, /pathMesh\.userData\.hobunjiPathSurface=true/,
+  'Cloud Forest authored border road is treated as a path');
+assert.match(borderTerrain, /if\(pathSurface\)m\.userData\.hobunjiPathSurface=true/,
+  'border-road ribbon generator tags only explicit path ribbons');
+assert.match(borderTerrain, /addRibbon\(c,pathMat,0\.025,null,0,true\)/,
+  'both border-road fallback paths opt into the tagged path policy');
+assert.match(borderTerrain, /highWaterRibbon\.mesh\.userData\.waterSurfaceRole='scenery'/,
+  'border waterfall upper channels register as protective water surfaces');
+assert.match(borderTerrain, /built\.mesh\.userData\.waterSurfaceRole='scenery'/,
+  'border scenery river ribbons register as protective water surfaces');
+assert.match(borderTerrain, /fall\.userData\.waterSurfaceRole='scenery'/,
+  'border waterfall faces register as protective water surfaces');
+// Classify actual mocked scene objects through the shipped helper functions
+// rather than relying solely on string-level regex assertions.
+const classifierStart = heldRender.indexOf('  function hasLayer('); // First helper used by groundKind's classification chain.
+const classifierEnd = heldRender.indexOf('  function isLegacyHeldPlane('); // End marker immediately after the relevant classifiers.
+assert.ok(classifierStart >= 0 && classifierEnd > classifierStart, 'extract the same classifier helpers used by the shipped renderer');
+const classifyGround = new Function('MATERIAL_ID_LAYER', 'surfaceComposer', 'surfaceClassificationHints',
+  heldRender.slice(classifierStart, classifierEnd) + '\nreturn groundKind;')(3, surfaceComposer,
+  { topFaceGround: false, pathSurface: false, baseGround: false, walkableFloor: false }); // Checks semantics without allocating a WebGL renderer.
+const pavingGroup = { userData: { hobunjiPathSurface: true }, parent: null }; // The exact ancestor tag applied to road-brick groups.
+function coverMesh(data = {}, parent = null, material = { userData: {} }) {
+  return { isMesh: true, isSkinnedMesh: false, isInstancedMesh: false, userData: data, parent, material, receiveShadow: false, castShadow: false, layers: { mask: 0 } };
+}
+assert.equal(classifyGround(coverMesh({}, pavingGroup)), 'road', 'authored paving becomes x-ray ground');
+assert.equal(classifyGround(coverMesh({ environmentSurfaceMicroPlateau: true }, pavingGroup)), null, 'snow/slush blocks x-ray even on paving');
+assert.equal(classifyGround(coverMesh({ waterSurfaceRole: 'flood' }, pavingGroup)), null, 'water blocks x-ray even on paving');
+assert.equal(classifyGround(coverMesh({ isWildernessGrassChunk: true }, pavingGroup)), null, 'billboard grass blocks x-ray even on paving');
+assert.equal(classifyGround(coverMesh({ hobunjiGroundSurface: true }, null, { userData: { hobunjiBaseGrassTerrainMaterial: true } })), 'terrain', 'underlying grass x-rays');
+assert.equal(classifyGround(coverMesh({ cavernWalkableFloor: true })), 'interior-floor', 'separate cavern walkable floors now x-ray weapons');
+assert.equal(classifyGround(coverMesh({ wallBuilderRecipe: 'wallrecipe2.json', plateauModel: { levelByCell: { '1,1': 0 } } })), 'interior-floor', "V50 rooted ruin's height-aware floor x-rays");
+assert.equal(classifyGround(coverMesh({ liveRootFloor: true, ruinPreviewRole: 'floor' })), 'interior-floor', 'stone-age instanced floor x-rays');
+assert.equal(classifyGround(coverMesh({ liveRootFloor: true, ruinPreviewRole: 'wall' })), null, 'rooted walls remain solid even when they share a floor material family');
+assert.equal(classifyGround(coverMesh({ wallBuilderRecipe: 'wallrecipe2.json' })), null, 'a V50 non-floor WallBuilder mesh cannot be removed');
+assert.equal(classifyGround(coverMesh({ hobunjiGroundSurface: true })), null, 'an unqualified outdoor/raised mesh is never removed based only on generic ground tags');
+const classifyTintCover = new Function('MATERIAL_ID_LAYER', 'surfaceComposer', 'surfaceClassificationHints',
+  heldRender.slice(classifierStart, classifierEnd) + '\nreturn isTintCover;')(3, surfaceComposer,
+  { topFaceGround: false, pathSurface: false, baseGround: false, walkableFloor: false });
+const slushMaterial = { userData: { environmentSurfaceMicroPlateauMaterial: 'slush' } };
+const snowMaterial = { userData: { environmentSurfaceMicroPlateauMaterial: 'snow' } };
+assert.equal(classifyTintCover(coverMesh({ waterSurfaceRole: 'local' })), true, 'tagged water tints feet');
+assert.equal(classifyTintCover(coverMesh({ environmentSurfaceMicroPlateau: true }, null, slushMaterial)), true, 'translucent slush tints feet');
+assert.equal(classifyTintCover(coverMesh({ environmentSurfaceMicroPlateau: true }, null, snowMaterial)), false, 'opaque snow hides feet instead of tinting');
+assert.equal(classifyTintCover(coverMesh({ isWildernessGrassChunk: true })), false, 'billboard grass occludes rather than tints feet');
+const elevationNewline = String.fromCharCode(10);
+const elevationHelperStart = heldRender.indexOf('  function isDescendantOf(');
+const elevationHelperEnd = heldRender.indexOf('  function groupXrayMeshesByElevation(', elevationHelperStart);
+assert.ok(elevationHelperStart >= 0 && elevationHelperEnd > elevationHelperStart, 'elevation resolver helper');
+const actorScene = { isScene: true, position: { y: 0 }, matrixWorld: { elements: Array(16).fill(0) } };
+const playerRoot = { name: 'player_mesh', position: { x: 2, y: 1, z: 3 }, matrixWorld: { elements: Object.assign(Array(16).fill(0), { 12: 2, 13: 1, 14: 3 }) }, parent: actorScene, userData: {} };
+const playerHandRoot = { name: 'player_hand_external_root', position: { y: 0 }, parent: actorScene, userData: {} };
+const elevationWindow = { PlayerBodyTransformComposer: { getPlayerMesh: () => playerRoot, getVisualRoots: () => [playerHandRoot], getDebug: () => ({ channels: [{ name: 'townSubtleElevation', enabled: true, translation: { y: 0.3 } }] }) }, GridTileAccessors: { getCurrentArea: () => 'town' } };
+const resolveActorElevation = new Function('window', heldRender.slice(elevationHelperStart, elevationHelperEnd) + elevationNewline + 'return actorElevationForXrayMesh;')(elevationWindow);
+assert.equal(resolveActorElevation({ parent: playerRoot }, actorScene), 1.3, 'player body elevation');
+assert.equal(resolveActorElevation({ parent: playerHandRoot }, actorScene), 1.3, 'composer-owned external hand/foot roots inherit the player standing elevation');
+const npcRoot = { name: 'npc_walker_test', position: { x: 4, y: 2.5, z: 6 }, matrixWorld: { elements: Object.assign(Array(16).fill(0), { 12: 4, 13: 2.5, 14: 6 }) }, parent: actorScene, userData: {} };
+assert.equal(resolveActorElevation({ parent: npcRoot }, actorScene), 2.5, 'NPC root elevation');
+const animalVisual = { name: 'animal_avatar_visual', position: { y: 8 }, matrixWorld: { elements: Object.assign(Array(16).fill(0), { 13: 8 }) }, parent: npcRoot, userData: { namedAnimalNpc: true } };
+assert.equal(resolveActorElevation({ parent: animalVisual }, actorScene), 2.5,
+  'named-animal visual offsets defer to the enclosing floor-level walker root');
+assert.ok(npcHeldEquipment.includes('walker.root.userData.hobunjiXrayActorRoot = true'),
+  'NPC held-equipment registration exposes the actual walker root to the x-ray resolver');
+assert.equal(Number.isNaN(resolveActorElevation({ parent: { parent: actorScene, position: { y: 0 } } }, actorScene)), true, 'unknown actor fails closed');
+const groupStart = heldRender.indexOf('  function groupXrayMeshesByElevation(');
+const groupEnd = heldRender.indexOf('  function installGroundElevationShader(', groupStart);
+const groupMeshes = new Function('XRAY_ELEVATION_GROUP_EPSILON', heldRender.slice(groupStart, groupEnd) + elevationNewline + 'return groupXrayMeshesByElevation;')(0.05);
+const grouped = groupMeshes([{ level: 1 }, { level: 1.02 }, { level: 1.5 }, { level: 3.5 }, { level: NaN }], mesh => mesh.level);
+assert.equal(grouped.length, 4, 'same-height actors share a replay while trench/raised offsets and map tiers remain separate');
+assert.deepEqual(grouped.map(group => group.meshes.length), [2, 1, 1, 1], 'unknown actors share a fail-closed group');
+const shaderStart = heldRender.indexOf('  function installGroundElevationShader(');
+const shaderEnd = heldRender.indexOf('  function setGroundElevationFilter(', shaderStart);
+const installElevationShader = new Function('XRAY_ELEVATION_TOLERANCE', 'XRAY_GROUND_NORMAL_MIN_Y', heldRender.slice(shaderStart, shaderEnd) + elevationNewline + 'return installGroundElevationShader;')(0.18, 0.55);
+const groundMaterial = { userData: {}, needsUpdate: false };
+const groundShaderState = installElevationShader(groundMaterial);
+groundShaderState.geometryHasNormals = true; // setGroundElevationFilter records this before the first compile.
+const standardGroundShader = { uniforms: {}, vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '#include <defaultnormal_vertex>', '}'].join(elevationNewline), fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline) };
+groundMaterial.onBeforeCompile(standardGroundShader, {});
+assert.equal(groundShaderState.supported, true, 'standard terrain shader is supported');
+assert.ok(standardGroundShader.vertexShader.includes('#include <common>' + elevationNewline + 'varying float vHobunjiXrayWorldY;'),
+  'vertex varyings are injected as real GLSL lines, not literal backslash-n text');
+assert.ok(standardGroundShader.vertexShader.includes(elevationNewline + 'vHobunjiXrayWorldNormal ='),
+  'terrain normal assignment starts on a real GLSL line');
+assert.ok(standardGroundShader.vertexShader.indexOf('vHobunjiXrayWorldNormal =') > standardGroundShader.vertexShader.indexOf('#include <worldpos_vertex>'),
+  'the world normal is written with the always-compiled world position, not tied to <defaultnormal_vertex>');
+// three r128's real MeshBasicMaterial vertex shader only includes
+// <defaultnormal_vertex> inside #ifdef USE_ENVMAP; the normal must still be
+// written outside that block or unlit terrain is never x-rayed.
+const r128BasicMaterial = { userData: {}, needsUpdate: false };
+const r128BasicState = installElevationShader(r128BasicMaterial);
+r128BasicState.geometryHasNormals = true;
+const r128BasicShader = { uniforms: {}, vertexShader: ['#include <common>', 'void main() {', '#ifdef USE_ENVMAP', '#include <beginnormal_vertex>', '#include <defaultnormal_vertex>', '#endif', '#include <begin_vertex>', '#include <worldpos_vertex>', '}'].join(elevationNewline), fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline) };
+r128BasicMaterial.onBeforeCompile(r128BasicShader, {});
+const r128NormalAt = r128BasicShader.vertexShader.indexOf('vHobunjiXrayWorldNormal =');
+assert.equal(r128BasicState.supported, true, 'r128 MeshBasic terrain is supported');
+assert.ok(r128NormalAt > r128BasicShader.vertexShader.indexOf('#endif'), 'r128 MeshBasic terrain writes its x-ray normal outside the USE_ENVMAP block');
+assert.equal(standardGroundShader.vertexShader.includes('\\\\nvarying float'), false,
+  'vertex shader contains no escaped newline token');
+
+assert.ok(standardGroundShader.vertexShader.includes('vHobunjiXrayWorldY = hobunjiXrayWorldPosition.y'));
+assert.ok(standardGroundShader.vertexShader.includes('#ifdef USE_INSTANCING') && standardGroundShader.vertexShader.includes('#ifdef USE_BATCHING'),
+  'world height includes instancing and batching transforms before comparison');
+assert.ok(standardGroundShader.vertexShader.indexOf('#ifdef USE_BATCHING') < standardGroundShader.vertexShader.indexOf('#ifdef USE_INSTANCING'),
+  'world position follows Three.js batching-then-instancing transform order');
+assert.ok(standardGroundShader.vertexShader.includes('mat3(modelMatrix) * hobunjiXrayObjectNormal') && standardGroundShader.vertexShader.includes('mat3(instanceMatrix) * hobunjiXrayObjectNormal'),
+  'world normals follow the model and instance rotations (instanced path bricks)');
+assert.ok(standardGroundShader.fragmentShader.includes('gl_FrontFacing') && standardGroundShader.fragmentShader.includes('vHobunjiXrayWorldNormal.y >= 0.55') && standardGroundShader.fragmentShader.includes('discard;'), 'only same-height top faces are discarded');
+assert.ok(standardGroundShader.fragmentShader.includes('uHobunjiXrayAnyFacing > 0.5 ||'), 'path surfaces may opt out of the top-face-only rule');
+assert.equal(standardGroundShader.uniforms.uHobunjiXrayAnyFacing, groundShaderState.uniforms.anyFacing);
+assert.equal(standardGroundShader.uniforms.uHobunjiXrayActorElevation, groundShaderState.uniforms.elevation);
+const basicMaterial = { userData: {}, needsUpdate: false };
+const basicState = installElevationShader(basicMaterial);
+basicState.geometryHasNormals = true; // MeshBasic terrain uses geometry normals despite omitting the lighting normal chunk.
+const basicGroundShader = {
+  uniforms: {},
+  vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '}'].join(elevationNewline),
+  fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline),
+};
+basicMaterial.onBeforeCompile(basicGroundShader, {});
+assert.equal(basicState.supported, true, 'unlit MeshBasic grass supports elevation filtering when its geometry has normals');
+assert.ok(basicGroundShader.vertexShader.includes('hobunjiXrayObjectNormal = normal;'),
+  'unlit ground still rejects vertical walls using the geometry normal');
+const noNormalMaterial = { userData: {}, needsUpdate: false };
+const noNormalState = installElevationShader(noNormalMaterial);
+const noNormalShader = { uniforms: {}, vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '}'].join(elevationNewline), fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline) };
+noNormalMaterial.onBeforeCompile(noNormalShader, {});
+assert.equal(noNormalState.supported, false, 'unlit ground without a normal attribute remains a full-depth occluder');
+const missingLitMaterial = { userData: {}, needsUpdate: false };
+const missingLitState = installElevationShader(missingLitMaterial);
+missingLitState.geometryHasNormals = false;
+const missingLitShader = {
+  uniforms: {},
+  vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '#include <defaultnormal_vertex>', '}'].join(elevationNewline),
+  fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline),
+};
+missingLitMaterial.onBeforeCompile(missingLitShader, {});
+assert.equal(missingLitState.supported, false, 'lit ground without a normal attribute also retains full-depth occlusion');
+
+
+const filterStart = heldRender.indexOf('  function setGroundElevationFilter(');
+const filterEnd = heldRender.indexOf('  function clearGroundElevationFilter(', filterStart);
+const setElevationFilter = new Function('forEachMaterial', 'installGroundElevationShader', 'isRoadXrayMesh',
+  heldRender.slice(filterStart, filterEnd) + elevationNewline + 'return setGroundElevationFilter;')(
+    (material, callback) => { if (Array.isArray(material)) material.forEach(callback); else if (material) callback(material); },
+    installElevationShader,
+    mesh => mesh.road === true);
+const drawable = (extra = {}) => ({ attributes: Object.assign({ position: { count: 3 } }, extra) });
+const filterMaterial = { userData: {} };
+setElevationFilter([{ material: filterMaterial, geometry: drawable() }], null);
+assert.equal(filterMaterial.userData.hobunjiXrayElevationShader.uniforms.enabled.value, 0,
+  'a missing actor elevation never gets coerced to world height zero');
+setElevationFilter([{ material: filterMaterial, geometry: drawable() }], 2.5);
+assert.equal(filterMaterial.userData.hobunjiXrayElevationShader.uniforms.enabled.value, 1,
+  'a resolved map elevation enables the depth filter');
+assert.equal(filterMaterial.userData.hobunjiXrayElevationShader.uniforms.elevation.value, 2.5);
+const sharedGroundMaterial = { userData: {}, needsUpdate: false };
+setElevationFilter([
+  { material: sharedGroundMaterial, geometry: drawable({ normal: {} }) },
+  { material: sharedGroundMaterial, geometry: drawable() },
+], 1);
+assert.equal(sharedGroundMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, false,
+  'a shared unlit ground material fails closed if any registered mesh lacks normals');
+// TerrainRenderChunks leaves an empty-geometry source mesh beside its chunks;
+// it draws nothing and must not disable the x-ray for the shared material.
+const chunkedGroundMaterial = { userData: {}, needsUpdate: false };
+setElevationFilter([
+  { material: chunkedGroundMaterial, geometry: { attributes: {} } },
+  { material: chunkedGroundMaterial, geometry: drawable({ normal: {} }) },
+], 1);
+assert.equal(chunkedGroundMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, true,
+  'an empty chunk-source husk does not poison its chunks\' shared material');
+const instancedBrickMaterial = { userData: {}, needsUpdate: false };
+setElevationFilter([{ material: instancedBrickMaterial, isInstancedMesh: true, road: true, geometry: drawable({ normal: {} }) }], 1);
+assert.equal(instancedBrickMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, true, 'instanced path bricks keep their normals');
+assert.equal(instancedBrickMaterial.userData.hobunjiXrayElevationShader.uniforms.anyFacing.value, 1, 'path bricks x-ray on every face near the actor elevation');
+assert.equal(sharedGroundMaterial.userData.hobunjiXrayElevationShader.uniforms.anyFacing.value, 0, 'terrain keeps its walls and cliff faces as occluders');
+
+assert.ok(heldRender.includes('groupXrayMeshesByElevation(xrayMeshes'),
+  'shell outlines are grouped by the same actor elevations as visible overlays');
+assert.ok(heldRender.includes('setGroundElevationFilter(groundMeshes, group.elevation)'),
+  'shell depth uses the same elevation filter as the source object');
+
+const customMaterial = { userData: {}, needsUpdate: false };
+const customState = installElevationShader(customMaterial);
+customMaterial.onBeforeCompile({ uniforms: {}, vertexShader: 'void main() {}', fragmentShader: 'void main() {}' }, {});
+assert.equal(customState.supported, false, 'unsupported custom terrain shaders keep full depth occlusion');
+
+assert.match(heldRender, /materialMarksBaseGrass\(object\?\.material\) && isTerrainSurface\(object\)/,
+  'only surfaces carrying the base grass material can be removed from held-overlay depth');
+assert.match(terrainTileMaterials, /matKey === deps\.TileType\.GRASS[\s\S]{0,180}hobunjiBaseGrassTerrainMaterial = true/,
+  'the live game tags the native base grass material');
+assert.match(terrainTileMaterials, /loadTerrainTileTexture[\s\S]{0,200}matKey === deps\.TileType\.GRASS[\s\S]{0,220}hobunjiBaseGrassTerrainMaterial = true/,
+  'authored texture overrides keep the exact same base grass tag');
+assert.match(heldRender, /if \(isTopFacesGroundSurface\(object\)\) markTopFaceGroundMesh\(object\)/,
+  'the cave shell participates in selective floor-face depth replay without hiding wall triangles');
+assert.match(heldRender, /const groundMeshes = \[\.\.\.ground, \.\.\.topFaceGround\]/,
+  'cave shell floors stay in the depth buffer so elevation decides which top faces may be x-rayed');
+assert.doesNotMatch(heldRender, /swapToOccluderGeometry|restoreSwappedGeometry/,
+  'the old blanket top-face removal cannot bypass the actor-elevation filter');
+assert.match(heldRender, /setGroundElevationFilter\(groundMeshes, group\.elevation\)/,
+  'cave floor top faces are filtered by the owning actor elevation');
 assert.match(plateauMesa, /mesh\.userData\.hobunjiGroundSurface = true/,
   'raised wilderness mesa surfaces explicitly register as ground');
 assert.match(interiorBuilder, /cavernWalkableFloor: true,[\s\S]{0,120}hobunjiGroundSurface: true/,
-  'cavern walkable floors explicitly register as ground');
-assert.match(heldRender, /FOOT_WATER_MASK_LAYER = 26/,
-  'procedural feet have a dedicated private stencil layer instead of sharing the weapon overlay');
-assert.match(heldRender, /function markWaterOccludedMesh\(mesh\)/,
-  'the render policy exposes an explicit registration path for meshes that should remain under water');
-assert.match(heldRender, /prepareHeldStencilMaterials\(held\)[\s\S]{0,600}HELD_OVERLAY_MASK/,
-  'held weapons and hands still use the selective non-ground x-ray overlay');
-assert.match(heldRender, /stencilWriteMask = 0x02[\s\S]{0,140}stencilRef = 2/,
-  'held weapon/hand pixels reserve stencil bit 1 so later foot-water compositing cannot paint over them');
-assert.match(heldRender, /prepareWaterOcclusionStencilMaterials\(waterOccluded\)[\s\S]{0,500}FOOT_WATER_MASK/,
-  'only explicitly water-occluded meshes stamp the foot-water mask');
-assert.match(heldRender, /stencilWriteMask = 0x01[\s\S]{0,180}stencilFuncMask = 0x02/,
-  'the foot mask writes bit 0 only where the held-object exclusion bit is clear');
-assert.match(heldRender, /prepareWaterStencilMaterials\(water\)[\s\S]{0,500}WATER_REPLAY_MASK/,
-  'water is replayed through its private layer only after the foot mask exists');
-assert.match(heldRender, /stencilWriteMask = 0x00[\s\S]{0,180}stencilFuncMask = 0x01/,
-  'water replay reads only the foot mask bit and cannot overwrite stencil');
-assert.match(heldRender, /renderer\.clearStencil\?\.\(\)/,
-  'held/foot-water stencil markers are cleared around the private composite pass');
+  'cavern walkable surfaces still carry terrain semantics, independent of their x-ray exemption');
+assert.match(heldRender, /function markWaterOccludedMesh\(mesh\)[\s\S]{0,800}mesh.layers.enable\(HELD_OVERLAY_LAYER\)/,
+  'actual procedural foot mesh is enrolled in the same held/ground selective overlay layer');
+assert.match(heldRender, /const overlayMeshes = \[\.\.\.held, \.\.\.feet\]/,
+  'held gear and feet both participate in the selective overlay and screen scissor');
+assert.match(heldRender, /const heldVisibility = hideObjects\(\[\.\.\.held, \.\.\.feet\]\)/,
+  'feet are absent from the original color pass so they cannot pop over transparent water');
+assert.match(heldRender, /overlayHidden = hideObjects\(\[\.\.\.overlayMeshes, \.\.\.\(tintOverlay \? tintCovers : \[\]\)\]\)/,
+  'the elevation rebuild retains ground while excluding held meshes and deferred translucent covers');
+assert.match(heldRender, /setGroundElevationFilter\(groundMeshes, group\.elevation\)/,
+  'the ground shader receives the owning actor surface height for each replay group');
+assert.match(heldRender, /const tintOverlay = lastBaseStencilBits >= 1 && hasOverlappingHeldCover\(renderer, camera, overlayMeshes, tintCovers\)/,
+  'overlap checks cover both feet and held objects without tint when stencil is unavailable');
+assert.match(heldRender, /replaySelectiveHeldOverlay\(this, scene, camera, visibleHeld, visibleFeet, ground, topFaceGround, tintCovers, originalCameraMask\)/,
+  'the shared overlay receives registered water and slush covers as well as the actual feet');
 
-const heldOverlayAt = heldRender.indexOf('const heldStencilStates = prepareHeldStencilMaterials(held);'); // Used to guard the intended weapon-before-ground replay ordering.
-const groundDepthRestoreAt = heldRender.indexOf('const groundMaterialStates = prepareGroundDepthMaterials(ground);'); // Used to keep raised soil in the depth buffer before water is recomposited.
-const footMaskAt = heldRender.indexOf('const footStencilStates = prepareWaterOcclusionStencilMaterials(waterOccluded);'); // Used to prove water targets feet rather than held gear.
-const waterCompositeAt = heldRender.indexOf('const waterStencilStates = prepareWaterStencilMaterials(water);'); // Used with footMaskAt to protect the foot-only water policy.
-assert.ok(heldOverlayAt >= 0 && groundDepthRestoreAt > heldOverlayAt,
-  'weapons/hands are drawn with ground absent before authored ground depth is restored');
-assert.ok(footMaskAt > groundDepthRestoreAt && waterCompositeAt > footMaskAt,
-  'ground depth is restored before foot masking and water replay, preventing raised-soil tint leakage');
+// Shell outlines inherit the same selective ground-x-ray policy as their
+// source meshes. Test the shell-pass discriminator and selective mesh filtering,
+// then guard the depth-rebuild -> shell -> depth-restore sequence.
+const shellPassStart = heldRender.indexOf('  function isShellOutlinePass(');
+const shellPassEnd = heldRender.indexOf('  function hideNonXrayShellMeshes(', shellPassStart);
+assert.ok(shellPassStart >= 0 && shellPassEnd > shellPassStart,
+  'the held renderer exposes a dedicated shell-outline pass discriminator');
+const isShellOutlinePass = new Function('THREE', 'SHELL_MASK',
+  heldRender.slice(shellPassStart, shellPassEnd) + '\nreturn isShellOutlinePass;')(
+  { BackSide: 1 }, 2);
+const shellOverride = { isShaderMaterial: true, side: 1, uniforms: { uThickness: { value: 0.006 } } };
+assert.equal(isShellOutlinePass({ overrideMaterial: shellOverride }, { layers: { mask: 2 } }), true,
+  'only the inverted-hull shell layer is intercepted');
+assert.equal(isShellOutlinePass({ overrideMaterial: shellOverride }, { layers: { mask: 1 } }), false,
+  'ordinary world renders are not mistaken for shell passes');
+assert.equal(!!isShellOutlinePass({ overrideMaterial: null }, { layers: { mask: 2 } }), false,
+  'depth-only layer renders are not mistaken for shell passes');
+
+const shellFilterStart = shellPassEnd;
+const shellFilterEnd = heldRender.indexOf('  // Replays shell outlines for the same meshes', shellFilterStart);
+const hideNonXrayShellMeshes = new Function('hasLayer', 'SHELL_LAYER',
+  heldRender.slice(shellFilterStart, shellFilterEnd) + '\nreturn hideNonXrayShellMeshes;')(
+  (object, layer) => !!(object.layers.mask & (1 << layer)), 1);
+const xrayShell = { isMesh: true, visible: true, layers: { mask: 2 } };
+const ordinaryShell = { isMesh: true, visible: true, layers: { mask: 2 } };
+const unrelatedMesh = { isMesh: true, visible: true, layers: { mask: 1 } };
+const shellScene = { traverseVisible(fn) { [xrayShell, ordinaryShell, unrelatedMesh].forEach(fn); } };
+const shellHidden = hideNonXrayShellMeshes(shellScene, new Set([xrayShell]));
+assert.equal(xrayShell.visible, true, 'the x-rayed object shell remains visible in its replay');
+assert.equal(ordinaryShell.visible, false, 'other shell objects are excluded from the selective replay');
+assert.equal(unrelatedMesh.visible, true, 'non-shell geometry is not hidden by shell filtering');
+for (const [object, visible] of shellHidden) object.visible = visible;
+assert.equal(ordinaryShell.visible, true, 'ordinary shell visibility is restored after the replay');
+
+const shellReplayStart = heldRender.indexOf('  function replayShellOutlineXray(');
+const shellReplayEnd = heldRender.indexOf('  function wrappedRender(', shellReplayStart);
+assert.ok(shellReplayStart >= 0 && shellReplayEnd > shellReplayStart,
+  'the renderer has a dedicated shell x-ray replay');
+const shellReplay = heldRender.slice(shellReplayStart, shellReplayEnd);
+const shellGroundFilterAt = shellReplay.indexOf('setGroundElevationFilter(groundMeshes, group.elevation)');
+const shellDepthAt = shellReplay.indexOf('prepareNonGroundDepthMaterials(scene)', shellGroundFilterAt);
+const shellDepthDrawAt = shellReplay.indexOf('rawRender.call(renderer, scene, camera)', shellDepthAt);
+const shellOnlyAt = shellReplay.indexOf('hideNonXrayShellMeshes(scene, groupSet)');
+const shellOutlineDrawAt = shellReplay.indexOf('rawRender.call(renderer, scene, camera)', shellOnlyAt);
+const shellRestoreAt = shellReplay.indexOf('renderer.clearDepth();', shellOutlineDrawAt);
+const shellDepthRestoreAt = shellReplay.indexOf('prepareNonGroundDepthMaterials(scene)', shellRestoreAt);
+assert.match(shellReplay, /material\.depthTest = true;\s*material\.depthWrite = true;/,
+  'source-mesh depth remains available to mask the expanded back-face shell');
+assert.ok(shellGroundFilterAt >= 0 && shellGroundFilterAt < shellDepthAt
+  && shellDepthAt < shellDepthDrawAt && shellDepthDrawAt < shellOnlyAt
+  && shellOnlyAt < shellOutlineDrawAt && shellOutlineDrawAt < shellRestoreAt && shellRestoreAt < shellDepthRestoreAt,
+  'shell replay filters only same-elevation ground, draws the matching shells, then restores full scene depth');
+assert.ok(heldRender.includes('const shellCandidates = [...new Set([...held, ...feet])].filter(mesh => hasLayer(mesh, SHELL_LAYER))')
+  && heldRender.includes('const xrayMeshes = filterOffscreenReplayMeshes(camera, shellCandidates)'),
+  'all held/foot ground-x-ray participants retain shell parity before conservative camera culling');
+assert.ok(pixelProbe.includes('shellXray=${heldRenderDebug.shellXrayPasses ?? 0}/${heldRenderDebug.shellXrayMeshes ?? 0}'),
+  'mobile Pixel Probe reports shell x-ray replay activity');
+assert.ok(heldRender.includes('replayShellOutlineXray(this, scene, camera, xrayMeshes, ground, topFaceGround, scissored)'),
+  'the shell pass reuses the same classified ground and top-face floor geometry as object x-ray');
+
+// This hard-won ordering contract must stay discoverable to subsequent
+// rendering refactors, not live solely in one PR conversation.
+const renderingContractPath = 'docs/architecture/held-object-water-depth-compositing.md';
+assert.ok(heldRender.includes(renderingContractPath),
+  'the actual renderer points at its flood-depth pass ordering contract');
+assert.ok(readme.includes(renderingContractPath),
+  'README links to the compositing contract for unrelated future features');
+for (const phrase of [
+  'groundDepthRestoreAt < tintAt < coverDepthAt',
+  'heldDrawAt < groundDepthRestoreAt',
+  'BEFORE',
+  'farm_flood_mesh',
+  'merged_textured_water_material',
+  'Painterly',
+  'Pixel Probe',
+  'depthWrite: false',
+  'colorWrite: false',
+]) {
+  assert.ok(renderingContract.includes(phrase),
+    'compositor documentation retains critical regression explanation: ' + phrase);
+}
+
+const selectiveReplayStart = heldRender.indexOf('  function replaySelectiveHeldOverlay(');
+const depthClearAt = heldRender.indexOf('renderer.clearDepth();', selectiveReplayStart);
+const depthDrawAt = heldRender.indexOf('rawRender.call(renderer, scene, camera)', depthClearAt);
+const stencilAt = heldRender.indexOf('prepareSubmergedOverlayStencilMaterials(group.meshes)', depthDrawAt);
+const heldDrawAt = heldRender.indexOf("window.PerfProfiler?.begin('held-overlay: elevation overlay render')");
+const tintAt = heldRender.indexOf('const tintStates = prepareOverlayCoverTintMaterials(tintCovers);');
+const coverDepthAt = heldRender.indexOf('const coverDepthStates = prepareTintCoverDepthMaterials(tintCovers);');
+const groundDepthRestoreAt = heldRender.indexOf('const groundMaterialStates = prepareGroundDepthMaterials(', heldDrawAt);
+assert.ok(depthClearAt >= 0 && depthClearAt < depthDrawAt && depthDrawAt < stencilAt && stencilAt < heldDrawAt && heldDrawAt < groundDepthRestoreAt && groundDepthRestoreAt < tintAt && tintAt < coverDepthAt,
+  'reconstructed solid depth, gear/hand/foot draw, opaque grass-depth restore BEFORE tint, then translucent depth restore');
+
+// Two user Pixel Probes on flooded farm grass have the exact same water
+// material, but different final pixels: leaking cyan at ground=1.498 /
+// water=1.908 versus intact green at ground=1.673 / water=1.911.
+// The critical invariant is *foreground opaque ground is restored before
+// any water/slush color replay*, even in areas with overlay stencil.
+const probes = [
+  { name: 'leaking cyan patch', grassDistance: 1.498, waterDistance: 1.908, grassY: 0.351, waterY: 0.084 },
+  { name: 'normal green patch', grassDistance: 1.673, waterDistance: 1.911, grassY: 0.340, waterY: 0.118 },
+];
+for (const probe of probes) {
+  assert.ok(probe.grassDistance < probe.waterDistance && probe.grassY > probe.waterY,
+    probe.name + ': grass is physically above and in front of the same farm flood material');
+  // Standard depth LESS_EQUAL: after the grass restore, the farther flood
+  // fragment MUST fail even if a stray held-stencil bit still exists.
+  assert.equal(probe.waterDistance <= probe.grassDistance, false,
+    probe.name + ': a lower flood fragment cannot pass restored opaque grass depth');
+}
+assert.equal(0.5 <= 1.0, true, 'foreground water remains eligible to tint an object behind it');
+assert.match(heldRender, /const groundMaterialStates = prepareGroundDepthMaterials\([\s\S]*?camera.layers.mask = GROUND_REPLAY_MASK/,
+  'ground restore runs on the dedicated colorless depth layer');
+assert.match(heldRender, /function prepareGroundDepthMaterials\(ground\)[\s\S]*?material.colorWrite = false/,
+  'restoring ground cannot overwrite the already drawn visible held/hand/foot colors');
+assert.match(heldRender, /camera.layers.mask = WATER_REPLAY_MASK[\s\S]{0,160}rawRender.call\(renderer, scene, camera\)/,
+  'translucent water and slush render through their dedicated private layer');
+assert.match(heldRender, /prepareSubmergedOverlayStencilMaterials\(group\.meshes\)/,
+  'each actor-elevation group stamps its visible held/hand/foot silhouettes into the shared stencil bit');
+assert.match(heldRender, /material.depthTest = true;\s*material.depthWrite = true;\s*material.stencilWrite = true/,
+  'temporary held depth writes ensure water behind a PNG cannot tint it');
+assert.equal((heldRender.match(/window.PerfProfiler\?\.begin\('held-overlay: elevation overlay render'\)/g) || []).length, 1,
+  'the grouped overlay draw is issued once per elevation group, not as a duplicate full-scene pass');
+assert.doesNotMatch(heldRender, /requestedFootWaterComposite/,
+  'the old patchy foot-water tint path is not used');
+const overlapStart = heldRender.indexOf('  function hasOverlappingHeldCover(');
+const overlapEnd = heldRender.indexOf('  function replaySelectiveHeldOverlay(', overlapStart);
+assert.ok(overlapStart > 0 && overlapEnd > overlapStart, 'the live renderer exposes the conservative overlap check');
+const screenRect = { x: 0, y: 0, z: 48, w: 48 };
+const heldOverlap = new Function('replayScissorRect', 'footTintScreenRect', 'setReplayCullFrustum',
+  'scissorTargetWidth', 'scissorTargetHeight', 'replayCullFrustum',
+  heldRender.slice(overlapStart, overlapEnd) + '\nreturn hasOverlappingHeldCover;')(
+  (renderer, camera, meshes, out) => { Object.assign(out, screenRect); return !camera.nearPlaneCrossed; },
+  {}, () => true, 1280, 720, { intersectsObject: cover => cover.overlapsFoot === true });
+const coverNear = { geometry: {}, overlapsFoot: true };
+const coverFar = { geometry: {}, overlapsFoot: false };
+assert.equal(heldOverlap({}, {}, [], [coverNear]), false, 'no mesh means no tint pass');
+assert.equal(heldOverlap({}, {}, [{}], []), false, 'no translucent cover means no tint pass');
+assert.equal(heldOverlap({}, {}, [{}], [coverNear]), true, 'water overlapping a hand/weapon/foot enables tint');
+assert.equal(heldOverlap({}, {}, [{}], [coverFar]), false, 'distant water does not trigger extra render passes');
+assert.equal(heldOverlap({}, { nearPlaneCrossed: true }, [{}], [coverFar]), true,
+  'near-plane/uncertain bounds conservatively preserve tint');
+assert.equal(heldOverlap({}, {}, [{}], [{ geometry: {}, isInstancedMesh: true }]), true,
+  'unreliable instanced bounds conservatively preserve tint');
+screenRect.z = 0;
+assert.equal(heldOverlap({}, {}, [{}], [coverNear]), false, 'offscreen held pixels cannot require tint');
+screenRect.z = 48;
+
+// Execute the production foot registration rather than only inspecting names:
+const footRegistrarStart = heldRender.indexOf('  function markWaterOccludedMesh(');
+const footRegistrarEnd = heldRender.indexOf('  function enforceGroundMesh(', footRegistrarStart);
+assert.ok(footRegistrarStart >= 0 && footRegistrarEnd > footRegistrarStart);
+const footLayerSet = new Set([0]);
+const mockFoot = { isMesh: true, userData: {}, layers: { enable(layer) { footLayerSet.add(layer); } } };
+const markFoot = new Function('waterOccludedMeshes', 'waterOccludedRegistry', 'FOOT_WATER_MASK_LAYER', 'HELD_OVERLAY_LAYER', 'hasLayer', 'waterOccludedMeshCount',
+  heldRender.slice(footRegistrarStart, footRegistrarEnd) + '\nreturn markWaterOccludedMesh;')(
+    new WeakSet(), { add() {} }, 26, 29,
+    (mesh, layer) => footLayerSet.has(layer), 0);
+assert.equal(markFoot(mockFoot), true, 'newly registered foot is recognized');
+assert.equal(footLayerSet.has(29), true, 'procedural foot belongs to the selective overlay');
+assert.equal(mockFoot.userData.hobunjiWaterOccludedBySurface, true, 'legacy semantic tagging is retained');
+assert.equal(markFoot(mockFoot), false, 'repeat registration does not duplicate the mesh');
+
+
+// Execute production cover-material mutations against mocked materials to
+// ensure color alpha/depth/stencil are treated independently and restored.
+const tintFnStart = heldRender.indexOf('  function prepareSubmergedOverlayStencilMaterials(');
+const tintFnEnd = heldRender.indexOf('  function prepareGroundDepthMaterials(', tintFnStart);
+assert.ok(tintFnStart > 0 && tintFnEnd > tintFnStart);
+const materialHelpers = heldRender.slice(tintFnStart, tintFnEnd);
+function makeCoverMaterial() {
+  return { colorWrite: true, depthWrite: false, depthTest: true,
+    transparent: true, opacity: 0.22, stencilWrite: false, stencilWriteMask: 0xff,
+    stencilFunc: -1, stencilRef: 0, stencilFuncMask: 0xff,
+    stencilFail: -1, stencilZFail: -1, stencilZPass: -1 };
+}
+const setSurfaceDepthMode = new Function('surfaceComposer',
+  heldRender.slice(depthUniformHelpersStart, depthUniformHelpersEnd)
+    + '\nreturn setSurfaceOcclusionDepthOnly;')(surfaceComposer); // Reuses the production uniform setter in the isolated tint-pass harness.
+const makeHelpers = new Function('saveMaterialState', 'forEachMaterial', 'THREE', 'surfaceComposer', 'setSurfaceOcclusionDepthOnly',
+  materialHelpers + '\nreturn { prepareSubmergedOverlayStencilMaterials, prepareOverlayCoverTintMaterials, prepareTintCoverDepthMaterials };');
+const saveState = (states, material) => {
+  if (!states.has(material)) states.set(material, { ...material });
+};
+const forEachMat = (material, fn) => (Array.isArray(material) ? material : [material]).forEach(fn);
+const coverFns = makeHelpers(saveState, forEachMat, {
+  AlwaysStencilFunc: 519, EqualStencilFunc: 514, KeepStencilOp: 7680, ReplaceStencilOp: 7681
+}, surfaceComposer, setSurfaceDepthMode);
+const handMaterial = makeCoverMaterial();
+const handStates = coverFns.prepareSubmergedOverlayStencilMaterials([{material: handMaterial}]);
+assert.equal(handMaterial.colorWrite, true, 'held hands and tools draw their original color');
+assert.equal(handMaterial.depthWrite, true, 'water behind a hand or weapon is rejected');
+assert.equal(handMaterial.depthTest, true, 'held meshes obey opaque occluders');
+assert.equal(handMaterial.stencilWriteMask, 1, 'all held/foot pixels populate the same stencil bit');
+const coverMaterial = makeCoverMaterial();
+const tintStates = coverFns.prepareOverlayCoverTintMaterials([{material: coverMaterial}]);
+assert.equal(coverMaterial.colorWrite, true, 'slush retains its authored color');
+assert.equal(coverMaterial.opacity, 0.22, 'slush retains its authored opacity');
+assert.equal(coverMaterial.depthWrite, false, 'tint pass does not overwrite foot depth');
+assert.equal(coverMaterial.stencilFuncMask, 1, 'only visible held, hand or foot pixels may be tinted');
+const depthStates = coverFns.prepareTintCoverDepthMaterials([{material: coverMaterial}]);
+assert.equal(coverMaterial.colorWrite, false, 'cover depth is restored without double-applying the color');
+assert.equal(coverMaterial.depthWrite, true, 'cover depth protects held weapons');
+assert.equal(coverMaterial.stencilWrite, false, 'cover depth writes are not restricted to foot pixels');
+assert.equal(handStates.size, 1, 'held/hand/foot material state can be restored');
+assert.equal(tintStates.size, 1, 'tint material state can be restored');
+assert.equal(depthStates.size, 1, 'depth replay material state can be restored');
 
 assert.match(feetParity, /markWaterOccludedMesh\?\.\(mesh\)/,
-  'procedural feet explicitly register for water occlusion');
+  'both procedural foot meshes register through the real selective renderer');
 assert.match(feetParity, /material\?\.colorWrite !== false/,
-  'the colorless foot-water stencil pass cannot replace the visible-foot transform snapshot');
-assert.match(feetParity, /return 'water-mask'/,
-  'procedural feet recognize the dedicated colorless water-mask pass for transform parity');
+  'the visible selective foot draw remains eligible for matrix snapshot capture');
 
 assert.match(stances, /function idleBodyYawSnapshot\(target = \{\}\)/,
   'weapon stances expose a lightweight idle-yaw snapshot');

@@ -12,6 +12,10 @@
 (() => {
   'use strict';
 
+  // Keep one owner for scene sprites, hit listeners, and the scheduler callback.
+  // Replacing only the callback strands the previous instance's visible cues.
+  if (window.QuickAttackBonusIndicator) return;
+
   if (typeof THREE === 'undefined' || !window.Combat || !window.WorldPopupText?.avatarCentroidWorld) {
     console.error('quick-attack-bonus-indicator.js requires THREE, Combat, and WorldPopupText');
     return;
@@ -23,12 +27,13 @@
   const OPPORTUNITY_TEXTURE_URL = 'assets/hud/opportunity_reticle.png'; // Used automatically once the authored HUD sprite is added at this path.
   const DEBUG_QUERY_KEY = 'debugQuickBonus'; // Used by the mobile-friendly URL debug readout (?debugQuickBonus=1).
   const GLOW_LAYER_CONFIG = [
-    { scale: 1.08, opacity: 0.17, followRate: 34 },
-    { scale: 1.15, opacity: 0.14, followRate: 27 },
-    { scale: 1.23, opacity: 0.11, followRate: 20 },
-    { scale: 1.32, opacity: 0.08, followRate: 15 },
+    { scale: 1.08, opacity: 0.64, followRate: 34 },
+    { scale: 1.18, opacity: 0.48, followRate: 27 },
+    { scale: 1.32, opacity: 0.34, followRate: 20 },
+    { scale: 1.50, opacity: 0.22, followRate: 15 },
   ]; // Used for additive affliction glow; lower layers are larger, dimmer, and fractionally slower.
   const MAX_RETICLES = 12; // Nearest cued hostiles only, bounding per-frame sprite work in large fights.
+  const POP_DURATION_MS = 480; // Keeps confirmed bonus impacts visible through cooldown and killing blows.
   const visualRootCache = new WeakMap(); // Used to avoid re-traversing a target avatar every frame when sizing the reticle.
 
   const sights = new Map(); // target -> its reticle (main sprite + glow layers), alive while that target stays cued.
@@ -46,6 +51,7 @@
   const viewMatrix = new THREE.Matrix4(); // Camera projection × view, rebuilt once per frame for the in-view test.
   const viewFrustum = new THREE.Frustum(); // Camera field of view the cue is limited to.
   const viewSphere = new THREE.Sphere(); // Target body bounds tested against the frustum.
+  const SAME_ELEVATION_MAX_DELTA = 1.25; // World units of terrain-height difference tolerated; half of game.js's 2.5 plateau tier, so ramps/slopes still count but a different tier does not.
 
   function currentQuickAttack() {
     const attackId = window.Combat.loadout?.getSlot?.('tap2') || null; // Used to resolve the currently equipped Quick Attack.
@@ -91,8 +97,20 @@
     return viewFrustum.setFromProjectionMatrix(viewMatrix);
   }
 
-  // Every live, attackable hostile in this area whose body is inside the
-  // camera's view, nearest first. Same eligibility as Quick Attack strike
+  // True when the target stands at the player's terrain elevation. Uses the same
+  // worldSurfaceY the combat deps expose (plateau tiers + ramps), so a hostile on
+  // a cliff ledge above or a shelf below never gets a cue the player cannot act on.
+  // Without the lookup (early boot, test stubs) every target counts as level.
+  function sameElevationAsPlayer(deps, target) {
+    if (typeof deps?.worldSurfaceY !== 'function' || !deps.player) return true;
+    const playerY = Number(deps.worldSurfaceY(Number(deps.player.x) || 0, Number(deps.player.y) || 0));
+    const targetY = Number(deps.worldSurfaceY(Number(target.x) || 0, Number(target.y) || 0));
+    if (!Number.isFinite(playerY) || !Number.isFinite(targetY)) return true;
+    return Math.abs(targetY - playerY) <= SAME_ELEVATION_MAX_DELTA;
+  }
+
+  // Every live, attackable hostile in this area, at the player's elevation, whose
+  // body is inside the camera's view, nearest first. Same eligibility as Quick Attack strike
   // resolution (deps.hostileObjects in the current area), without any reach
   // or aim requirement.
   function visibleCandidates(deps) {
@@ -103,6 +121,7 @@
     for (const target of deps.hostileObjects || []) {
       if (!target || !(target.health > 0) || (area && target.areaId !== area)) continue;
       if (target.isCompanion || target._denHidden || target._grehlrBurrowProtected) continue;
+      if (!sameElevationAsPlayer(deps, target)) continue;
       const root = targetRoot(target);
       const scene = root && shownScene(target, root);
       if (!scene) continue;
@@ -224,6 +243,9 @@
       phaseMs: Math.random() * 60000, // Each sight roams on its own phase so several cues never wobble in lockstep.
       frame: 0,
       fresh: true,
+      popStartedMs: null, // Set only by a confirmed Quick Attack bonus hit; cleared when pooled.
+      baseSize: 1, // Last body-scaled size used by the stationary impact burst.
+      baseRotation: 0, // Last cue rotation retained when the burst starts.
     };
   }
 
@@ -267,6 +289,7 @@
     sight = spareSights.pop() || makeSight();
     sight.target = target;
     sight.fresh = true; // Glow layers snap to the first position instead of trailing in from a previous target.
+    sight.popStartedMs = null;
     sights.set(target, sight);
     return sight;
   }
@@ -347,22 +370,19 @@
     }; // Same irregular reacquisition character as the former canvas-local movement, now in sprite space so glow layers can trail it.
   }
 
-  function applyAfflictionGlow(sight, state) {
-    const afflictions = resolvedAfflictions(state);
+  function applyAfflictionGlow(sight, state, appliedAfflictions) {
+    const afflictions = appliedAfflictions || resolvedAfflictions(state); // Confirmed hits supply their actual payload, including enchantments.
     const signature = afflictions.join('|');
     if (signature === sight.afflictionSignature) return afflictions;
     sight.afflictionSignature = signature;
 
     const palette = window.ResourceRings?.AFFLICTION_COLORS || {};
-    const fallback = [1.0, 0.78, 0.35];
+    const fallback = 0xffc759; // Warm light for bonuses without a colored affliction payload.
     for (let index = 0; index < sight.glows.length; index++) {
       const affliction = afflictions.length ? afflictions[index % afflictions.length] : null;
-      const rgb = (affliction && Array.isArray(palette[affliction])) ? palette[affliction] : fallback;
-      sight.glows[index].material.color.setRGB(
-        Number(rgb[0]) || 0,
-        Number(rgb[1]) || 0,
-        Number(rgb[2]) || 0,
-      ); // Canonical ResourceRings palette keeps the cue aligned with the affliction HUD.
+      const color = palette[affliction] ?? fallback; // ResourceRings exports packed hex colors, including valid black.
+      if (Array.isArray(color)) sight.glows[index].material.color.setRGB(...color);
+      else sight.glows[index].material.color.setHex(color);
     }
     return afflictions;
   }
@@ -375,6 +395,7 @@
 
   function attachSight(entry, state, nowMs, dt) {
     const sight = acquireSight(entry.target);
+    if (sight.popStartedMs !== null) return; // A confirmed impact owns this sight until its burst finishes.
     sight.frame = frameSerial;
     attachLayerToScene(sight.sprite, entry.scene);
     for (const glow of sight.glows) attachLayerToScene(glow.sprite, entry.scene);
@@ -382,6 +403,7 @@
     const metrics = resolveVisualMetrics(entry.root); // Used to make the enlarged sight cover the current species' body.
     const bodySpan = Math.max(metrics.width, metrics.height);
     const baseSize = Math.max(0.72, Math.min(2.85, bodySpan * RETICLE_SCALE_RATIO));
+    sight.baseSize = baseSize;
     const localMs = nowMs + sight.phaseMs; // Per-sight phase: same motion character, desynchronised between targets.
     const t = localMs * 0.001;
     const scalePulse = 1 + Math.sin(t * 8.2 + 0.4) * 0.035 + Math.sin(t * 19.3) * 0.015;
@@ -406,6 +428,7 @@
     sight.sprite.position.copy(tempPosition);
     sight.sprite.scale.set(baseSize * scalePulse, baseSize * scalePulse, 1);
     sight.material.rotation = motion.rotation;
+    sight.baseRotation = motion.rotation;
     sight.material.opacity = 0.9 + 0.1 * (0.5 + 0.5 * Math.sin(t * 11.5));
     sight.sprite.visible = true;
 
@@ -425,6 +448,47 @@
     applyAfflictionGlow(sight, state);
   }
 
+  function popConfirmedBonus(event) {
+    if (!event?.quickBonusEffectProc || event.attackCategory !== 'quickAttack') return;
+    const deps = window.Combat.deps; // Current area and HUD suppression remain authoritative at impact.
+    const target = event.target; // The hit event identifies each cleaved enemy independently.
+    if (!deps || !target || cueSuppressed(deps) || (deps.getCurrentArea?.() && target.areaId !== deps.getCurrentArea()) || !sameElevationAsPlayer(deps, target)) return;
+    let sight = sights.get(target); // Reuse the visible cue so the burst starts exactly where it was floating.
+    if (!sight) {
+      const root = targetRoot(target); // A hit between readiness frames can still create its impact cue.
+      const scene = root && shownScene(target, root); // Dead targets may already have been detached by damage resolution.
+      const anchor = root && window.WorldPopupText.avatarCentroidWorld(root); // Same anchor as readiness cues.
+      if (!scene || !anchor || sights.size >= MAX_RETICLES) return;
+      const frustum = cameraFrustum(deps.camera); // Offscreen cleave hits should not create a floating HUD cue.
+      viewSphere.center.copy(anchor);
+      viewSphere.radius = 0;
+      if (frustum && !frustum.intersectsSphere(viewSphere)) return;
+      attachSight({ target, root, scene, anchor }, { deps }, performance.now(), 0);
+      sight = sights.get(target);
+    }
+    const afflictions = Object.entries(event.afflictionBonuses || {}).filter(([, amount]) => Number(amount) > 0).map(([id]) => id); // Use only afflictions carried by this confirmed hit.
+    applyAfflictionGlow(sight, null, afflictions);
+    sight.popStartedMs = performance.now();
+    animatePop(sight, sight.popStartedMs); // Flash immediately in the hit's render frame.
+  }
+
+  function animatePop(sight, nowMs) {
+    const progress = Math.min(1, Math.max(0, (nowMs - sight.popStartedMs) / POP_DURATION_MS)); // Absolute timing stays consistent across low-FPS frames.
+    const expansion = 1 - Math.pow(1 - progress, 3); // Fast initial punch, then a softer outward fade.
+    const size = sight.baseSize * (0.72 + expansion * 1.85); // A brief inward snap opens into a large impact.
+    sight.sprite.scale.set(size, size, 1);
+    sight.material.opacity = Math.pow(1 - progress, 1.4);
+    sight.material.rotation = sight.baseRotation + expansion * 0.32;
+    for (const glow of sight.glows) {
+      const glowSize = size * (glow.scale + expansion * (glow.scale - 1)); // Each colored layer separates as the burst expands.
+      glow.sprite.position.copy(sight.sprite.position);
+      glow.sprite.scale.set(glowSize, glowSize, 1);
+      glow.material.opacity = Math.min(1, glow.opacity * 3.5) * (1 - progress);
+      glow.material.rotation = sight.material.rotation;
+    }
+    return progress < 1;
+  }
+
   function detachAllSights() {
     for (const [target, sight] of sights) releaseSight(target, sight);
   }
@@ -434,9 +498,13 @@
     lastTarget = state.target;
     frameSerial++;
     const dt = Math.min(0.08, Math.max(0, (nowMs - lastFrameMs) / 1000));
-    if (state.readyTargets.length) drawProceduralReticle(nowMs);
+    if (state.readyTargets.length || sights.size) drawProceduralReticle(nowMs);
     for (const entry of state.readyTargets) attachSight(entry, state, nowMs, dt);
-    for (const [target, sight] of sights) if (sight.frame !== frameSerial) releaseSight(target, sight); // Condition ended, left view, died or cooldown started.
+    for (const [target, sight] of sights) {
+      if (sight.popStartedMs !== null) {
+        if (cueSuppressed(state.deps) || target.areaId !== state.deps?.getCurrentArea?.() || !animatePop(sight, nowMs)) releaseSight(target, sight);
+      } else if (sight.frame !== frameSerial) releaseSight(target, sight);
+    }
     updateDebugBadge(state);
     return state;
   }
@@ -504,6 +572,7 @@
       `Afflictions: ${afflictions.length ? afflictions.join(', ') : '-'}`,
       `Timed debuffs: ${timedDebuffText}`,
       `Last instant: ${instantText}`,
+      `Impact bursts: ${[...sights.values()].filter(sight => sight.popStartedMs !== null).length}`,
       `Generic telegraph: ${state.target?.telegraphState || '-'}`,
       `Animal attack: ${state.target?._animalAttack?.id || '-'} / ${state.target?._animalAttack?.state?.stage || '-'}`,
       `Popup root: ${state.root ? 'yes' : 'no'}`,
@@ -523,14 +592,17 @@
       updateDebugBadge(getReadyState());
     },
     snapshot: () => ({
-      latestChange: 'Opportunity reticles show on every hostile in view whose Quick Attack bonus condition is met, independent of reach and aim.',
+      latestChange: 'One cue owner survives repeated script loads so death cleanup removes every reticle and glow; confirmed bonus hits still briefly burst.',
       targetId: lastTarget?.id || null,
       visible: sights.size > 0,
       visibleCount: sights.size,
       visibleTargetIds: [...sights.keys()].map(target => target?.id || target?.name || null),
+      poppingTargetIds: [...sights.values()].filter(sight => sight.popStartedMs !== null).map(sight => sight.target?.id || null),
       lastFrameError,
     }),
   };
+
+  window.CombatAttackEvents?.on('hit', popConfirmedBonus);
 
   window.RuntimeFrameScheduler.register(SCHEDULER_ID, scheduledFrame, {
     phase: 'pre-game', // Historically ran before gameLoop via independent RAF registration order; pre-game preserves that same ordering explicitly.

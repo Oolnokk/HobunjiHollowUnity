@@ -31,6 +31,7 @@
         `Outline parity: rigs=${parity.activeRigs ?? '-'} captures=${parity.baseMatrixCaptures ?? '-'} `
         + `shellLocks=${parity.lockedShellDraws ?? '-'} idLocks=${parity.lockedMaterialIdDraws ?? '-'} `
         + `misses=${parity.missedOutlineSnapshots ?? '-'} xrayTagged=${parity.heldXrayTaggedMeshes ?? '-'} `
+        + `resyncs=${parity.visualMatrixResyncs ?? '-'} maxOriginDrift=${Number(parity.largestVisualMatrixDrift || 0).toFixed(4)}u `
         + `distance=${parity.outlineDistanceScaling ?? '-'} reference=${parity.outlineReferenceDepth ?? '-'} latest="${parity.latestChange ?? '-'}"`
       );
     } else {
@@ -70,7 +71,8 @@
           + `owners=L:${fallback.owners?.left || '-'},R:${fallback.owners?.right || '-'} `
           + `hooked=${hand.outlineHookedMeshes ?? '-'} xray=${hand.heldXrayMeshes ?? '-'} `
           + `captures=${hand.outlineBaseMatrixCaptures ?? '-'} depth=${hand.outlineLockedOccluderDepthDraws ?? '-'} shell=${hand.outlineLockedShellDraws ?? '-'} `
-          + `id=${hand.outlineLockedMaterialIdDraws ?? '-'} misses=${hand.outlineMissedSnapshots ?? '-'}`
+          + `id=${hand.outlineLockedMaterialIdDraws ?? '-'} misses=${hand.outlineMissedSnapshots ?? '-'} `
+          + `resyncs=${hand.visualMatrixResyncs ?? '-'} maxOriginDrift=${Number(hand.largestVisualMatrixDrift || 0).toFixed(4)}u`
         );
       }
     } else {

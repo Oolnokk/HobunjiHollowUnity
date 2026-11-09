@@ -127,30 +127,8 @@
 
   chainFutureGlobal('FarmAnimals', patchFarmAnimals);
 
-  // ── Corpses: skip the persistent corpse registry when nothing is tumbling ──
-  const activeDyingCorpses = new Set();
-
-  function patchCreatureDeath(api) {
-    if (!api?.begin || !api?.updateCorpses || api.__hobunjiActiveDeathOptimized) return;
-    const originalBegin = api.begin;
-    const originalUpdate = api.updateCorpses;
-    api.begin = function optimizedCreatureDeathBegin(creature, ...args) {
-      const result = originalBegin.call(this, creature, ...args);
-      if (creature?.state === 'dying') activeDyingCorpses.add(creature);
-      return result;
-    };
-    api.updateCorpses = function optimizedCreatureDeathUpdate(dt) {
-      if (!activeDyingCorpses.size) return;
-      const result = originalUpdate.call(this, dt);
-      for (const creature of activeDyingCorpses) {
-        if (creature?.state !== 'dying') activeDyingCorpses.delete(creature);
-      }
-      return result;
-    };
-    api.__hobunjiActiveDeathOptimized = true;
-  }
-
-  chainFutureGlobal('CreatureDeath', patchCreatureDeath);
+  // CreatureDeath now owns its finite dying-corpse and effect registries.
+  // Its own updater returns early when both are empty, so no wrapper is needed.
 
   // ── Alcohol bridge: run full-frame only while player drunken inertia needs it ──
   let alcoholCallback = null;

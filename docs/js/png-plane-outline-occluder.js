@@ -56,6 +56,12 @@
     obj.userData.isPngPlane = true;
     obj.traverse(child => {
       if (!child.isMesh) return;
+      // A hostile's portrait root also contains real GLB hands/feet. Those
+      // already own volume-shell and visible-matrix hooks; tagging the whole
+      // avatar as PNG must never disable their outlines or repaint their color.
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      if (child.userData.hobunjiProceduralHand || child.userData.hobunjiProceduralFoot
+          || materials.some(material => material?.userData?.hobunjiHandRole || material?.userData?.hobunjiFootRole)) return;
       // PNG art supplies its own outline. Disable the shell layer on the
       // mesh itself, while retaining this layer for depth-only occlusion of
       // genuine 3D outlines behind the sprite.
@@ -97,9 +103,15 @@
 
   function captureMaterial(material) {
     if (!material || materialStates.has(material)) return;
-    materialStates.set(material, { colorWrite: material.colorWrite, depthWrite: material.depthWrite, depthTest: material.depthTest, depthFunc: material.depthFunc });
+    materialStates.set(material, { colorWrite: material.colorWrite, depthWrite: material.depthWrite, depthTest: material.depthTest, depthFunc: material.depthFunc, alphaTest: material.alphaTest });
     material.colorWrite = false;
     material.depthWrite = true;
+    // Color-only portraits may normally avoid depth writing, but this replay
+    // must still ignore faint anti-alias fringe when building an outline mask.
+    if (material.map && Number(material.alphaTest) > 0) {
+      const maskCutoff = Number(window.HobunjiSpritePngSurface?.maskAlphaTest?.()) || 0.35; // Matches the shared PNG plane's solid-coverage threshold.
+      material.alphaTest = Math.max(material.alphaTest, maskCutoff);
+    }
     // The replay must obey the completed scene depth. AlwaysDepth let a
     // player behind furniture overwrite that nearer furniture depth, so the
     // later black shell appeared through benches and walls.
@@ -145,6 +157,7 @@
         material.depthWrite = state.depthWrite;
         material.depthTest = state.depthTest;
         material.depthFunc = state.depthFunc;
+        if (state.alphaTest !== undefined) material.alphaTest = state.alphaTest;
       }
       materialStates.clear();
     }

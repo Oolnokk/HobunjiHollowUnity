@@ -1,0 +1,574 @@
+// Dungeon Fire mechanisms for Harlyao's authored/generated ruin spaces.
+// Fire source interaction, theme-specific targets, and modular ceiling Burdens
+// all share the ordinary SimplePuzzles composer and RangedWeapons collision path.
+(() => {
+  'use strict';
+  const SP = window.DevRandomRuinSimplePuzzles;
+  const THREE = window.THREE;
+  if (!SP?.registerComposer || !THREE) return;
+
+  const MAP_ID = 'map_i_dev_random_ruin';
+  const PAYLOAD_KIND = 'shattercask'; // Default physical burden; other kinds register factories and impact handlers with Shattercasks.
+  let payloadKind = PAYLOAD_KIND; // Used by the next generated net/icicle payload; changed through the mobile-safe debug API.
+  const CLEANSING_RADIUS = 2.4; // Kanthic cleansing radius in world tiles.
+  const FIRE_CONTACT_PADDING = .2; // Slightly forgiving contact around mesh geometry, never through terrain/cover.
+  // Ice collider height now comes from the actual door leaf. No visible rectangular ice barrier is constructed.
+  const MELT_SECONDS = 1.6; // Lerp duration to visibly reverse each crystal's upward growth after the fire breaks the ice blockade.
+  let world = null; // Active composer; replaced on ruin reroll and disposed on exit.
+  let lastEvent = 'idle'; // Visible in the mobile dungeon-fire snapshot.
+
+  const clamp01 = value => Math.max(0, Math.min(1, Number(value) || 0));
+  const tileKey = (x,z) => Math.floor(x) + ',' + Math.floor(z);
+  const distanceSq = (a,b) => (a.x-b.x)**2 + (a.z-b.z)**2;
+
+  function material(color, options = {}) {
+    const hex='#'+(Number(color)>>>0).toString(16).padStart(6,'0'); // Source tint for reused Furniture Editor PNG textures.
+    const file=options.texture||(options.metalness>.4?'iridescent_sheen.png':'carved_smooth.png'); // Authored bronze sheen or carved stone; nets request boards.png.
+    const authored=window.ProceduralFurniture?.makePartMaterial?.({
+      materialTexture:file,materialLighting:'lit',materialFillEnabled:true,
+      materialFillColor:hex,materialFillMode:'always',color:hex,
+    }); // Avoid introducing a parallel untextured dungeon furniture material system.
+    if(authored){
+      if(authored.emissive)authored.emissive.setHex(options.emissive??0x000000);
+      if('emissiveIntensity' in authored)authored.emissiveIntensity=options.emissiveIntensity??0;
+      if('metalness' in authored)authored.metalness=options.metalness??0;
+      if('roughness' in authored)authored.roughness=options.roughness??.78;
+      authored.transparent=options.transparent===true;
+      authored.opacity=options.opacity??1;
+      authored.depthWrite=options.depthWrite!==false;
+      authored.side=THREE.DoubleSide;
+      return authored;
+    }
+    return new THREE.MeshStandardMaterial({
+      color,metalness:options.metalness??0,roughness:options.roughness??.78,
+      transparent:options.transparent===true,opacity:options.opacity??1,
+      emissive:options.emissive??0x000000,emissiveIntensity:options.emissiveIntensity??0,
+      depthWrite:options.depthWrite!==false,side:THREE.DoubleSide,
+    });
+  }
+
+  function addRod(group, from, to, radius, mat, name) {
+    const a = new THREE.Vector3(from.x,from.y,from.z), b = new THREE.Vector3(to.x,to.y,to.z);
+    const direction = b.clone().sub(a), length = direction.length();
+    if (length < .001) return null;
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius,radius,length,6),mat);
+    mesh.name = name || 'dungeonFire_rod';
+    mesh.position.copy(a).add(b).multiplyScalar(.5);
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),direction.normalize());
+    group.add(mesh);
+    return mesh;
+  }
+
+  function basketBrazier(x,y,z,kind='source') {
+    const group = new THREE.Group();
+    group.name = kind==='cleansing'?'kanthic_cleansing_brazier':'dungeon_fire_basket_brazier';
+    group.position.set(x,y,z);
+    group.userData.interactive3D = kind==='source';
+    group.userData.devRuinInteractionType = kind==='source'?'dungeonFireSource':'dungeonFireTarget';
+    const bronze = material(0x855326,{metalness:.78,roughness:.34});
+    const darkBronze = material(0x4a2c19,{metalness:.7,roughness:.48});
+    const coal = material(kind==='cleansing'?0x1b3432:0x241c18,{roughness:.92,emissive:kind==='cleansing'?0x174f47:0x842600,emissiveIntensity:.5});
+    const amber = material(kind==='cleansing'?0x51c9a0:0xff7a1b,{emissive:kind==='cleansing'?0x19896b:0xb62c00,emissiveIntensity:1.6,roughness:.38});
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(.23,.27,.10,10),darkBronze);
+    base.position.y=.055;base.name='bronze_brazier_foot';group.add(base);
+    const bowl = new THREE.Mesh(new THREE.CylinderGeometry(.32,.205,.29,10,1,true),bronze);
+    bowl.position.y=.245;bowl.name='bronze_basket_bowl';group.add(bowl);
+    const lowerRing = new THREE.Mesh(new THREE.TorusGeometry(.22,.035,6,12),darkBronze);
+    lowerRing.rotation.x=Math.PI/2;lowerRing.position.y=.12;group.add(lowerRing);
+    const upperRing = new THREE.Mesh(new THREE.TorusGeometry(.315,.034,6,12),bronze);
+    upperRing.rotation.x=Math.PI/2;upperRing.position.y=.39;group.add(upperRing);
+    for(let i=0;i<9;i++){
+      const angle=i*Math.PI*2/9;
+      const lower={x:Math.cos(angle)*.2,y:.12,z:Math.sin(angle)*.2};
+      const upper={x:Math.cos(angle)*.292,y:.4,z:Math.sin(angle)*.292};
+      addRod(group,lower,upper,.024,bronze,'basket_slat_'+i);
+      if(i%2===0)addRod(group,{x:lower.x*.92,y:.2,z:lower.z*.92},{x:upper.x*.92,y:.31,z:upper.z*.92},.012,darkBronze,'basket_cross_slat_'+i);
+    }
+    const coals = new THREE.Mesh(new THREE.SphereGeometry(.17,10,6),coal);
+    coals.scale.set(1,.32,1);coals.position.y=.37;group.add(coals);
+    const ember = new THREE.Mesh(new THREE.SphereGeometry(.085,8,6),amber);
+    ember.scale.set(1,.35,1);ember.position.y=.41;ember.name='brazier_ember';group.add(ember);
+    const pilot = new THREE.Mesh(new THREE.SphereGeometry(.065,8,6),amber);
+    pilot.position.y=.54;pilot.visible=false;pilot.name='brazier_armed_pilot';group.add(pilot); // A simple glowing ember marker, not a second fake flame.
+    const collider = new THREE.Mesh(new THREE.BoxGeometry(.75,.68,.75),new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false,colorWrite:false}));
+    collider.position.y=.34;collider.name='brazier_fire_contact';group.add(collider);
+    group.userData.dungeonFireParts={bronze,darkBronze,coal,amber,ember,pilot,collider};
+    return group;
+  }
+
+  function attachBrazierFire(group,{colorA=null,colorB=null,lit=true}={}) {
+    const anchor=new THREE.Group(); // Reuses the player's campfire_fire emitter, attached to the physical bronze bowl.
+    anchor.name='dungeon_fire_authored_campfire';anchor.position.y=.48;anchor.visible=lit;group.add(anchor);
+    const flame=window.PersistentGroundFire?.attachCampfireFlame?.(anchor,{
+      scale:.78,rateScale:.62,colorA,colorB,
+    }); // Theme recolors affect particles but never replace the campfire's authored speed, size or shape.
+    if(flame)world?.flames?.push(flame);
+    return anchor; // Cleansing braziers keep this hidden until their plasm is burned away.
+  }
+
+  function floorPoints(kit,context,room) {
+    const bounds=kit.roomBounds(context.meta,room),cx=(bounds.minX+bounds.maxX)*.5,cz=(bounds.minZ+bounds.maxZ)*.5;
+    const points=[];
+    for(const key of context.floorSet||[]){
+      const [tx,tz]=String(key).split(',').map(Number);
+      if(!Number.isFinite(tx)||!Number.isFinite(tz))continue;
+      const x=tx+.5,z=tz+.5;
+      if(x<bounds.minX+.3||x>bounds.maxX-.3||z<bounds.minZ+.3||z>bounds.maxZ-.3)continue;
+      const support=kit.sampleSupport(x,z);
+      if(!support)continue;
+      if(window.DevRandomRuinTileOccupancy?.blocksAt?.(x,z,.3))continue;
+      points.push({x,z,y:Number(support.y)||0,centerDistance:distanceSq({x,z},{x:cx,z:cz})});
+    }
+    points.sort((a,b)=>a.centerDistance-b.centerDistance||a.x-b.x||a.z-b.z);
+    return points;
+  }
+
+  function choosePoint(kit,context,room,mode='center') {
+    const points=floorPoints(kit,context,room);
+    if(!points.length)return null;
+    if(mode==='edge')return points[points.length-1];
+    if(mode==='alternate')return points[Math.min(points.length-1,Math.floor(points.length*.65))];
+    return points[0];
+  }
+
+  function addMechanismRecord(record) {
+    world.records.push(record);
+    return record;
+  }
+
+  function registerFireTarget(record,onBurn) {
+    record.targetId=window.DungeonFire?.registerTarget?.({
+      id:record.id,object:record.hitObject||record.group,
+      active:true,contactPadding:FIRE_CONTACT_PADDING,
+      onBurn:payload=>onBurn(record,payload),
+    }) || null;
+    return record.targetId;
+  }
+
+  function buildSourceBrazier(kit,point,index=0) {
+    const group=basketBrazier(point.x,point.y,point.z,'source');
+    group.name='dungeon_fire_source_brazier_'+index;
+    world.group.add(group);
+    attachBrazierFire(group); // Every lit dungeon ignition source has real authored campfire particles.
+    const record=addMechanismRecord({id:'dungeon-fire-source-'+index,kind:'source',group,point,armed:false});
+    record.control={
+      kind:'dungeonFireSource',object:group,promptRoot:group,
+      range:1.55,priority:34,claimAction1:true,touchIcon:'🔥',
+      label:'Ignite Next Shot',
+      onPress:()=>{
+        const armed=window.DungeonFire?.armNextProjectile?.()===true;
+        if(!armed){kit.deps?.showToast?.('Equip a ranged weapon first.',false);return;}
+        record.armed=true;
+        kit.deps?.showToast?.('Next ranged projectile ignited.',true);
+        lastEvent='source armed';
+      },
+    };
+    return record;
+  }
+
+  function buildNet(point,ceilingY,index) {
+    const group=new THREE.Group();
+    group.name='dungeon_fire_burden_net_'+index;
+    group.position.set(point.x,ceilingY-.05,point.z);
+    const beamMat=material(0x59432d,{roughness:.92,texture:'boards.png'}); // Use the author's wooden PNG on the actual net ceiling spars.
+    const width=.82,depth=.68,drop=.92;
+    addRod(group,{x:-width*.5,y:0,z:0},{x:width*.5,y:0,z:0},.035,beamMat,'net_top_beam');
+    addRod(group,{x:0,y:0,z:-depth*.5},{x:0,y:0,z:depth*.5},.025,beamMat,'net_top_crossbeam');
+    // One open, four-sided upside-down transparent frustum replaces 25+ rod meshes.
+    // Its PNG atlas contains separated full-length rope stripes and crossing strands, never UV-tiled.
+    const netSkin=window.DungeonRopeArt?.createNetFrustum?.(width,depth,drop);
+    if(!netSkin){
+      group.traverse(node=>node.geometry?.dispose?.());beamMat.dispose?.();
+      lastEvent='rope_long net art unavailable';return null; // Do not create an out-of-style cord net that differs from the furniture-authored PNG.
+    }
+    group.add(netSkin);
+    const anchor=new THREE.Group();
+    anchor.name='net_burden_attachment';
+    anchor.position.set(0,-drop*.8,0);
+    group.add(anchor);
+    const hitObject=new THREE.Mesh(new THREE.BoxGeometry(width*.88,drop,depth*.88),new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false,colorWrite:false}));
+    hitObject.position.y=-drop*.48;hitObject.name='dungeon_fire_net_contact';group.add(hitObject);
+    const record=addMechanismRecord({
+      id:'dungeon-fire-net-'+index,kind:'net',group,hitObject,anchor,burden:null,
+      payloadPending:false,releaseRequested:false,removed:false,phase:'hanging',
+    });
+    world.group.add(group);
+    registerFireTarget(record,net=>{
+      if(net.phase!=='hanging')return false;
+      net.phase='burned';net.group.visible=false;
+      net.releaseRequested=true;
+      releasePayload(net,'dungeon-fire-net');
+      lastEvent='net burned: '+(net.burden?.displayName||'payload')+' released';
+      return true;
+    });
+    mountPayload(record);
+    return record;
+  }
+
+  function buildIcicle(point,ceilingY,index) {
+    const group=new THREE.Group();
+    group.name='tothal_dungeon_fire_burden_icicle_'+index;
+    group.position.set(point.x,ceilingY-.08,point.z);
+    const recipe=window.DungeonDoorIceCoverage?.scaledRecipe?.(1.75,
+      'burden-icicle:'+String(world?.context?.seed||'ruin')+':'+index,{
+        count:20,density:1,iceHeightMin:1.25,iceHeightMax:1.8,
+        radius:.28,iceFootprintPadding:.14,iceEngulf:.8,
+      }); // The boss-door's authored stalagmite recipe now also governs frozen hanging burdens.
+    const ice=window.IceStalagmiteCoverage?.buildCeiling?.(THREE,group,{
+      width:.92,depth:.92,height:1.7,recipe,
+    }); // Furniture Editor growth is authored upright, then turned over against the dungeon ceiling.
+    if(!ice){lastEvent='authored ceiling ice unavailable';return null;} // Never replace faceted ice with unrelated cones.
+    const anchor=new THREE.Group();
+    anchor.position.set(0,-.9,0);anchor.name='icicle_burden_attachment';group.add(anchor);
+    const hitObject=new THREE.Mesh(new THREE.BoxGeometry(.82,1.55,.82),new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false,colorWrite:false}));
+    hitObject.position.y=-.83;hitObject.name='dungeon_fire_icicle_contact';group.add(hitObject);
+    const record=addMechanismRecord({
+      id:'dungeon-fire-icicle-'+index,kind:'icicle',group,hitObject,anchor,burden:null,
+      payloadPending:false,releaseRequested:false,removed:false,phase:'encased',iceLayer:ice.layer,
+    });
+    world.group.add(group);
+    registerFireTarget(record,icicle=>{
+      if(icicle.phase!=='encased')return false;
+      icicle.phase='shattered';icicle.group.visible=false;
+      icicle.releaseRequested=true;
+      releasePayload(icicle,'dungeon-fire-icicle');
+      lastEvent='icicle shattered: '+(icicle.burden?.displayName||'payload')+' released';
+      return true;
+    });
+    mountPayload(record);
+    return record;
+  }
+
+  function mountPayload(record) {
+    const burdens=window.Shattercasks;
+    if(!burdens?.createHangingBurden&&!burdens?.createHangingShattercask){record.payloadUnavailable=true;lastEvent='Burden runtime unavailable';return;}
+    record.payloadPending=true;
+    const createPayload=burdens.createHangingBurden||burdens.createHangingShattercask;
+    const task=createPayload.call(burdens,{
+      id:record.id+'_payload',mapId:MAP_ID,scene:world.context.scene,anchor:record.anchor,
+      localY:record.kind==='icicle'?-.34:-.32,
+      mechanismId:record.id,kind:payloadKind,
+      furnitureKey:payloadKind==='shattercask'?'shattercaskBlasting':null,
+      displayName:payloadKind==='shattercask'?'Shattercask':payloadKind,
+    });
+    Promise.resolve(task).then(burden=>{
+      record.payloadPending=false;
+      if(!burden){record.payloadUnavailable=true;lastEvent='ceiling Burden model unavailable: '+record.id;return;}
+      if(!world||record.removed){burdens.discardBurden?.(burden);return;}
+      record.burden=burden;
+      if(record.releaseRequested)releasePayload(record,record.kind==='icicle'?'dungeon-fire-icicle':'dungeon-fire-net');
+    }).catch(error=>{
+      record.payloadPending=false;record.payloadUnavailable=true;
+      console.warn('[Dungeon Fire] ceiling Burden creation failed',error);
+      lastEvent='payload creation failed: '+record.id;
+    });
+  }
+
+  function releasePayload(record,cause) {
+    if(!record?.releaseRequested||!record.burden)return false;
+    const released=window.Shattercasks?.releaseBurdenDownward?.(record.burden,cause)===true;
+    if(released){record.phase='released';record.releaseRequested=false;}
+    else lastEvent='payload release rejected: '+record.id;
+    return released;
+  }
+
+  function iceDoorCandidates(kit,context) {
+    const candidates=[]; // Actual authored/generated/modular doors, never bare room passageways.
+    const seen=new Set(); // Prevent nested roots or duplicate scene trees from frosting the same door twice.
+    for(const source of [context.root,kit.state?.group]){
+      source?.traverse?.(object=>{
+        if(!object?.isObject3D||seen.has(object.uuid))return;
+        const info=object.userData||{}; // Door eligibility is semantic, not based on one boss-door key.
+        if(info.dungeonFireIceEligible===false)return;
+        const type=info.previewMotion?.type==='stoneDoor'?'stoneDoor'
+          :info.transitDoor===true?'transitDoor'
+          :info.devRandomRuinModularDoor===true?'modularDoor'
+          :info.dungeonFireIceEligible===true?'markedDoor'
+          :(/door/i.test(String(info.authoredFurnitureKey||info.ruinFurnitureKey||'')) &&
+            !/seal|glyph|decal|handle|knob|frame|ornament|plaque/i.test(String(info.authoredFurnitureKey||info.ruinFurnitureKey||'')) &&
+            info.authoredFurnitureData?.parts)?'authoredDoor':null; // Sanctum re-labels furniture to ruinFurnitureKey; door seals are ornamental, never independent doors.
+        if(!type)return;
+        for(let parent=object.parent;parent&&parent!==source;parent=parent.parent)if(seen.has(parent.uuid))return; // A tagged door's inner panel must not receive a duplicate ice layer.
+        seen.add(object.uuid);
+        const module=kit.state?.lockDoors?.find(item=>item.panel===object); // Standalone locked doors can begin raised/open.
+        if(module && module.progress>.72)return; // Never freeze an already open doorway with a floating ice barrier.
+        if(info.__devRuinTransitDoorState?.open>.72)return;
+        const bounds=window.DungeonDoorIceCoverage?.doorBounds?.(object); // One geometry probe supports every door kind.
+        if(!bounds)return;
+        candidates.push({object,type,bounds});
+      });
+    }
+    candidates.sort((a,b)=>a.bounds.center.x-b.bounds.center.x||a.bounds.center.z-b.bounds.center.z||a.type.localeCompare(b.type)); // Deterministic Tothal seeding across identical layouts.
+    return candidates;
+  }
+
+  function buildIceWall(kit,context,door,index) {
+    const coverage=window.DungeonDoorIceCoverage; // Shared procedural recipe recreates the boss-door scale on any eligible door.
+    if(!coverage?.create)return null;
+    const {object,type,bounds}=door; // The actual door object/leaf replaces the former arbitrary wall across an opening.
+    const support=kit.sampleSupport(bounds.center.x,bounds.center.z); // All crystals anchor at the real floor, not at the door's animated midpoint.
+    const floorY=support&&Number.isFinite(Number(support.y))&&Number(support.y)<=bounds.box.min.y+.45
+      ?Number(support.y):bounds.box.min.y; // If support is absent or hits an elevated door face, use the actual leaf bottom rather than fabricating Y=0.
+    const placement=coverage.create({door:object,parent:world.group,groundY:floorY,
+      seed:'tothal-door:'+String(context.seed||'ruin')+':'+String(object.userData?.mechanismId||object.name||index)});
+    if(!placement)return null; // No invisible blocker is created if the coverage system fails to produce ice.
+    placement.iceLayer.userData.devRuinFootprintIgnore=true; // Faceted ice is visual-only; the timed box below is the sole gameplay blocker.
+    const coverBounds=bounds.box.clone(); // Include both the physical panel and the ice that visibly protrudes from it.
+    const iceBounds=new THREE.Box3().setFromObject(placement.iceLayer); // Crystal tips and bases can extend well beyond a narrow door leaf.
+    if(!iceBounds.isEmpty())coverBounds.union(iceBounds);
+    const coverCenter=coverBounds.getCenter(new THREE.Vector3()); // Bounds follow generated crystals, including asymmetric seeded clusters.
+    const height=Math.max(1.3,Math.min(5,coverBounds.max.y-floorY)); // Players may shoot any visible ice facet, not merely the stone behind it.
+    const halfX=Math.max(.14,Math.min(3.5,(coverBounds.max.x-coverBounds.min.x)*.5+.03)); // Contact reaches outer crystals while remaining bounded.
+    const halfZ=Math.max(.14,Math.min(3.5,(coverBounds.max.z-coverBounds.min.z)*.5+.03)); // Thin leaves still receive a usable fire-contact volume.
+    const collisionGeometry=new THREE.BoxGeometry(halfX*2,height,halfZ*2); // Collision-only proxy is not visible ice or an additional door slab.
+    const collisionMaterial=new THREE.MeshBasicMaterial({colorWrite:false,transparent:true,opacity:0,depthWrite:false,side:THREE.DoubleSide}); // Projectile/fire raycasts still see the collider without any rendered sheet.
+    const mesh=new THREE.Mesh(collisionGeometry,collisionMaterial);
+    mesh.name='tothal_dungeon_fire_ice_door_hitbox_'+index;
+    mesh.position.set(coverCenter.x,floorY+height*.5,coverCenter.z);
+    mesh.userData.dungeonFireMechanism='tothalIceWall';
+    mesh.userData.devRuinFootprintManaged=true; // The existing on/off occupancy callback is authoritative for movement.
+    mesh.userData.devRuinFootprintIgnore=true; // Excludes the contact-only mesh from any later static-prop scan.
+    mesh.userData.projectileCoverHeightTiles=height;
+    mesh.userData.projectileCoverHalfXTiles=halfX;
+    mesh.userData.projectileCoverHalfZTiles=halfZ;
+    mesh.userData.projectileCoverBottomOffsetTiles=-height*.5;
+    mesh.userData.projectileCoverKind='tothal-ice-wall'; // Reuses Dungeon Fire and ranged-weapon collision semantics.
+    world.group.add(mesh);
+    const wall={ // Preserves the existing Dungeon Fire target/occupancy/clear lifecycle for all source door kinds.
+      id:'dungeon-fire-ice-wall-'+index,kind:'iceWall',group:placement.iceLayer,mesh,icePlacement:placement,
+      doorType:type,doorObject:object,doorCenter:{x:bounds.center.x,z:bounds.center.z},point:{x:coverCenter.x,y:floorY,z:coverCenter.z},
+      blocking:true,phase:'frozen',elapsed:0,height,footprintId:'dungeon-fire-ice-wall-footprint-'+index,
+    };
+    window.DevRandomRuinTileOccupancy?.addSolidBox?.(wall.footprintId,
+      {cx:coverCenter.x,cz:coverCenter.z,halfX,halfZ},
+      ()=>wall.blocking,'dungeon-fire-ice-walls');
+    world.walls.push(wall);world.records.push(wall);
+    const target={id:wall.id,object:mesh,active:true,contactPadding:.16,onBurn:()=>{
+      if(wall.phase!=='frozen')return false;
+      wall.phase='melting';wall.elapsed=0;wall.blocking=false;
+      delete mesh.userData.projectileCoverHeightTiles;
+      delete mesh.userData.projectileCoverHalfXTiles;
+      delete mesh.userData.projectileCoverHalfZTiles;
+      delete mesh.userData.projectileCoverBottomOffsetTiles;
+      delete mesh.userData.projectileCoverKind;
+      window.NearbyVolumeCollision?.invalidate?.(); // Fire unlocks the passage immediately; visible crystals then retract over time.
+      window.DevRandomRuinTileOccupancy?.refresh?.();
+      lastEvent='Tothal ice on '+type+' melting';
+      return true;
+    }};
+    wall.targetId=window.DungeonFire?.registerTarget?.(target)||null;
+    window.NearbyVolumeCollision?.invalidate?.(); // The new invisible collider receives projectile hits, not the old ice slab.
+    return wall;
+  }
+
+  function discoverIcedDoors(kit,context) {
+    if(!world||world.theme!=='tothal')return 0;
+    const candidates=iceDoorCandidates(kit,context); // Door-kind-neutral discovery is shared by authored, generated, and modular panels.
+    world.iceEligibleCount=candidates.length; // Mobile diagnostics distinguish missing door assets from a broken ice builder.
+    let added=0; // Mobile snapshot exposes how many real doors acquired visual ice.
+    for(const candidate of candidates){
+      if(world.walls.length>=2)break; // Matches the existing maximum of two frozen doors per Tothal layout.
+      if(world.icedDoorIds.has(candidate.object.uuid))continue;
+      if(world.walls.some(wall=>Math.hypot(wall.doorCenter.x-candidate.bounds.center.x,wall.doorCenter.z-candidate.bounds.center.z)<.22))continue; // Different door systems can point to the same physical doorway; avoid double-frosting it.
+      if(buildIceWall(kit,context,candidate,world.walls.length)){
+        world.icedDoorIds.add(candidate.object.uuid);
+        added++;
+      }
+    }
+    return added;
+  }
+
+  function buildCleansingBrazier(kit,point,index) {
+    const group=basketBrazier(point.x,point.y,point.z,'cleansing');
+    group.name='kanthic_cleansing_brazier_'+index;
+    world.group.add(group);
+    const cleansingFire=attachBrazierFire(group,{colorA:'#72ffbd',colorB:'#19896b',lit:false}); // Green campfire variant is lit only after cleansing.
+    const targetMesh=group.userData.dungeonFireParts.collider;
+    const record=addMechanismRecord({id:'dungeon-fire-cleansing-brazier-'+index,kind:'cleansingBrazier',group,hitObject:targetMesh,point,radius:CLEANSING_RADIUS,cleansed:0});
+    registerFireTarget(record,brazier=>{
+      if(brazier.cleansed>0)return false;
+      brazier.cleansed=window.DevRandomRuinLichThemes?.clearPlasmRadius?.(point.x,point.z,brazier.radius)||0;
+      if(!brazier.cleansed){lastEvent='cleansing brazier burned but no plasm in radius';return false;}
+      const parts=group.userData.dungeonFireParts;
+      parts.ember.material.color.setHex(0x72ffbd);
+      parts.pilot.visible=true;
+      cleansingFire.visible=true; // The same player campfire particles announce a successful cleansing.
+      lastEvent='Kanthic plasm cleansed '+brazier.cleansed+' tiles';
+      return true;
+    });
+    return record;
+  }
+
+  function buildThemeMechanisms(kit,context) {
+    const theme=String(context.theme||'').toLowerCase();
+    if(theme==='tothal'){
+      // Door ice is populated after other composers finish building, so modular and transit doors are also eligible.
+      const rooms=(context.meta?.rooms||[]).slice(-2);
+      rooms.forEach((room,index)=>{
+        const point=choosePoint(kit,context,room,index?'edge':'alternate');
+        if(point)buildIcicle(point,Number(context.ceilingY)||point.y+3.15,index);
+      });
+    }
+    if(theme==='kanthic'){
+      const centers=window.DevRandomRuinLichThemes?.plasmTileCenters?.()||[];
+      const chosen=[];
+      if(centers.length){
+        chosen.push(centers[0]);
+        if(centers.length>5){
+          const first=centers[0];
+          const farthest=centers.reduce((best,item)=>distanceSq(item,first)>distanceSq(best,first)?item:best,first);
+          if(distanceSq(farthest,first)>CLEANSING_RADIUS*CLEANSING_RADIUS*.8)chosen.push(farthest);
+        }
+      }
+      chosen.slice(0,2).forEach((entry,index)=>buildCleansingBrazier(kit,{x:entry.x,y:Number(entry.y)||0,z:entry.z},index));
+    }
+  }
+
+  function mountWorld(kit,context) {
+    clear();
+    if(context.hachutu===true||!context.floorSet?.size)return;
+    const rooms=context.meta?.rooms||[];
+    if(!rooms.length)return;
+    world={
+      context,kit,theme:String(context.theme||'').toLowerCase(),
+      group:new THREE.Group(),records:[],walls:[],flames:[],icedDoorIds:new Set(),iceEligibleCount:0,iceScanTries:0,iceScanElapsed:0,source:null,
+      ceilingY:Number(context.ceilingY)||(Number(context.meta?.floorSurfaceY)||0)+(Number(context.meta?.wallHeight)||3),
+      startedAt:performance.now(),
+    };
+    world.group.name='dev_random_ruin_dungeon_fire';
+    kit.group().add(world.group);
+    return rooms;
+  }
+
+  function buildRooms(kit,context) {
+    const rooms=mountWorld(kit,context);
+    if(!rooms)return;
+    const sourcePoint=choosePoint(kit,context,rooms[0],'center');
+    if(sourcePoint)world.source=buildSourceBrazier(kit,sourcePoint,0);
+    const netRooms=[rooms[Math.min(rooms.length-1,1)]||rooms[0]];
+    if(rooms.length>=4&&rooms[rooms.length-1]!==netRooms[0])netRooms.push(rooms[rooms.length-1]);
+    netRooms.forEach((room,index)=>{
+      const point=choosePoint(kit,context,room,index?'alternate':'edge')||sourcePoint;
+      if(point)buildNet(point,world.ceilingY,index);
+    });
+    buildThemeMechanisms(kit,context);
+    // Nets, braziers and icicle shells are intentionally non-blocking; only Tothal ice walls register a solid footprint.
+    lastEvent='generated:'+world.theme;
+  }
+
+  const FIXTURE_KINDS=['ignitionBrazier','burnableNet','burdenIcicle']; // Shared with the solo composer's dispatch.
+  function buildFixture(kit,context,kind) {
+    const rooms=mountWorld(kit,context);
+    if(!rooms)return null;
+    const source=choosePoint(kit,context,rooms[0],'center'); // An ignition source lets a normal projectile exercise the selected fire target.
+    const target=kind==='ignitionBrazier'?null:choosePoint(kit,context,rooms[0],'edge');
+    if(!source||(kind!=='ignitionBrazier'&&!target)){clear();return null;}
+    world.isolated=true;
+    world.source=buildSourceBrazier(kit,source,0);
+    if(kind==='burnableNet')return buildNet(target,world.ceilingY,0);
+    if(kind==='burdenIcicle')return buildIcicle(target,world.ceilingY,0);
+    return world.source;
+  }
+
+  function update(_kit,_now,dt) {
+    if(!world||dt<=0)return;
+    for(const flame of world.flames)flame.update?.(Math.max(0,Math.min(.05,dt))); // Existing composer tick owns the authored GPU particles.
+    if(!world.isolated&&world.theme==='tothal'&&world.walls.length<2&&world.iceScanTries<6){
+      world.iceScanElapsed+=dt;
+      if(world.iceScanTries===0||world.iceScanElapsed>=.5){
+        world.iceScanElapsed=0;world.iceScanTries++;
+        discoverIcedDoors(world.kit,world.context); // Late build pass includes modules added after this composer ran.
+        if(world.iceScanTries===6&&!world.walls.length)lastEvent=world.iceEligibleCount
+          ?'Tothal ice unavailable: eligible door found but coverage could not be generated'
+          :'Tothal ice skipped: no ice-eligible physical doors in this layout'; // Visible on mobile without devtools.
+      }
+    }
+    const fireState=window.DungeonFire?.debugSnapshot?.()||{};
+    if(world.source){
+      const pilot=world.source.group.userData?.dungeonFireParts?.pilot;
+      if(pilot)pilot.visible=fireState.armed===true;
+    }
+    for(const wall of world.walls){
+      if(wall.phase!=='melting')continue;
+      wall.elapsed+=dt;
+      const t=clamp01(wall.elapsed/MELT_SECONDS);
+      window.DungeonDoorIceCoverage?.setGrowth?.(wall.icePlacement,1-t); // Each faceted spike lerps toward its own floor origin, rather than squashing/fading a box.
+      if(t>=1){
+        wall.mesh.visible=false;
+        if(wall.targetId)window.DungeonFire?.unregisterTarget?.(wall.targetId);
+        wall.phase='melted';
+      }
+    }
+    for(const record of world.records){
+      if(record.kind==='cleansingBrazier'&&record.cleansed>0){
+        const pilot=record.group.userData?.dungeonFireParts?.pilot;
+        if(pilot)pilot.visible=true;
+      }
+    }
+  }
+
+  function controls(kit) {
+    if(!world?.source||!window.RangedWeapons?.equippedRangedKey?.())return [];
+    return [world.source.control];
+  }
+
+  function snapshot() {
+    if(!world)return {active:false,lastEvent};
+    return {
+      active:true,theme:world.theme,
+      source:world.source?{id:world.source.id,armed:window.DungeonFire?.debugSnapshot?.().armed===true,at:world.source.point}:null,
+      iceWalls:world.walls.map(wall=>({id:wall.id,doorType:wall.doorType,phase:wall.phase,blocking:wall.blocking,elapsed:+wall.elapsed.toFixed(2),growth:+(wall.icePlacement.iceLayer.userData.iceGrowthProgress??1).toFixed(3),spikes:wall.icePlacement.iceLayer.userData.surfaceGrowthStats?.spikes||0})), // No devtools required to inspect melting or generated ice.
+      iceDiscovery:{eligible:world.iceEligibleCount,attempts:world.iceScanTries,spawned:world.walls.length}, // Diagnoses scenes with no matching physical door.
+      nets:world.records.filter(record=>record.kind==='net').map(record=>({id:record.id,phase:record.phase,payload:record.burden?.id||null,payloadPending:record.payloadPending,unavailable:!!record.payloadUnavailable,visual:record.group?.children?.some(mesh=>mesh.userData?.dungeonNetAtlas)?'sprite-frustum':'fallback-cords'})),
+      icicles:world.records.filter(record=>record.kind==='icicle').map(record=>({id:record.id,phase:record.phase,payload:record.burden?.id||null,payloadPending:record.payloadPending})),
+      cleansers:world.records.filter(record=>record.kind==='cleansingBrazier').map(record=>({id:record.id,cleansed:record.cleansed,radius:record.radius})),
+      ropeArt:window.DungeonRopeArt?.debugSnapshot?.() || null, // Exposes actual PNG-loading state in the mobile Dungeon Fire debug report.
+      authoredCampfireEmitters:world.flames.length, // Mobile-only diagnostic: every lit source and cleanser uses the shared player effect.
+      lastEvent,
+    };
+  }
+
+  function clear() {
+    if(!world)return;
+    for(const record of world.records){
+      record.removed=true;
+      if(record.targetId)window.DungeonFire?.unregisterTarget?.(record.targetId);
+      if(record.burden)window.Shattercasks?.discardBurden?.(record.burden);
+    }
+    for(const wall of world.walls){
+      if(wall.targetId)window.DungeonFire?.unregisterTarget?.(wall.targetId);
+      wall.blocking=false;
+      window.DungeonDoorIceCoverage?.clear?.(wall.icePlacement); // Borrowed authored ice remains intact across rerolls/scene teardown.
+    }
+    for(const flame of world.flames)flame.dispose?.(); // Release cached campfire renderer state before removing puzzle geometry.
+    window.DevRandomRuinTileOccupancy?.clearSolids?.('dungeon-fire-ice-walls');
+    window.DevRandomRuinTileOccupancy?.clearSolids?.('dungeon-fire-mechanisms');
+    window.DevRandomRuinTileOccupancy?.refresh?.();
+    const geometries=new Set(),materials=new Set();
+    world.group.traverse(object=>{
+      if(object.geometry)geometries.add(object.geometry);
+      for(const entry of Array.isArray(object.material)?object.material:[object.material])if(entry)materials.add(entry);
+    });
+    world.group.parent?.remove(world.group);
+    window.NearbyVolumeCollision?.invalidate?.(); // Remove any cached cover candidates that still reference this detached ruin group.
+    for(const geometry of geometries)geometry.dispose?.();
+    for(const entry of materials)entry.dispose?.();
+    window.DungeonFire?.clear?.(); // Reroll/exit cannot leave armed shots, flame zones, or orphaned target callbacks.
+    world=null;
+    lastEvent='cleared';
+  }
+
+  SP.registerComposer({id:'dungeonFire',buildRooms,fixtureKinds:FIXTURE_KINDS,buildFixture,update,controls,snapshot,clear});
+  window.DevRandomRuinDungeonFire=Object.freeze({
+    snapshot,clear,
+    armNextProjectile:()=>window.DungeonFire?.armNextProjectile?.()===true,
+    setPayloadKind:kind=>{const value=String(kind||'').trim();if(!value)return false;payloadKind=value;return true;}, // Applies to the next generated net/icicle set; custom kinds use Shattercasks.registerBurdenFactory/ImpactHandler.
+    releaseBurden:recordId=>{
+      const record=world?.records?.find(item=>item.id===recordId);
+      if(!record||!record.burden)return false;
+      record.releaseRequested=true;
+      return releasePayload(record,'dev-dungeon-fire-release');
+    },
+    debugSnapshot:()=>({composer:snapshot(),fire:window.DungeonFire?.debugSnapshot?.()||null,burdens:window.Shattercasks?.debugSnapshot?.().downwardBurdenFalls||[]}),
+  });
+})();

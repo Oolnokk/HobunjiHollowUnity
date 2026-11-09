@@ -10,7 +10,7 @@
       label: 'Growth Tonic',
       icon: '🌱',
       category: 'processed',
-      sellPrice: 0,
+      sellPrice: 80, // Resale is 40% of Kunji's authored 200g retail price.
       tags: Object.freeze(['Livestock', 'Animal Care']),
       description: 'Matures one baby animal into an adult. Stable babies can be grown directly when equipping them.',
       spriteIcon: 'bottle_potion.png',

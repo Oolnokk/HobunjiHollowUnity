@@ -1,0 +1,41 @@
+{
+  "schema": "hobunji_furniture_surface_author.v58",
+  "id": "stone_age_pillar_square",
+  "pieceId": "stone_age_pillar_square",
+  "name": "Slab Standing Stone",
+  "equivalentTo": "pillar_square",
+  "notes": "Stone Age equivalent of pillar_square. Same placement footprint; unworked megaliths without plinths, collars, moulding, capitals or carved decoration.",
+  "tileBase": {
+    "visible": true,
+    "tileSize": 1,
+    "footprintW": 1,
+    "footprintD": 1,
+    "y": 0,
+    "gridOpacity": 0.55
+  },
+  "parts": [
+    {
+      "id": "pillar_square_standing_stone",
+      "name": "Standing Stone",
+      "kind": "legSquare",
+      "transform": {
+        "x": 0,
+        "y": 0.875,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.6864,
+        "sy": 1.75,
+        "sz": 0.663
+      },
+      "color": "#777970",
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "wonkiness": 0.025,
+      "topScaleX": 0.84,
+      "topScaleZ": 0.9,
+      "topSkewX": 0.035
+    }
+  ]
+}

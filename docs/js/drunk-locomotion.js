@@ -124,7 +124,8 @@
     return function syncToothAmbientBottle(enabled) {
       if (!resolved) {
         const avatarGroup = resolveAmbientAvatarGroup(parent, options);
-        const root = avatarGroup?.parent?.isObject3D ? avatarGroup.parent : null;
+        const portraitParent = avatarGroup?.parent?.isObject3D ? avatarGroup.parent : null; // A humanoid runner places a visual-only pitch pivot between this portrait and its normal alcohol pose.
+        const root = portraitParent?.name === 'npc_run_lean_visual' ? portraitParent.parent : portraitParent; // Tooth's ambient bottle still hangs from the non-leaning pose anchor, not from the sprint pivot.
         if (avatarGroup && root) resolved = { avatarGroup, root };
       }
       window.NpcDrinkInteraction?.setAmbientCarry?.({

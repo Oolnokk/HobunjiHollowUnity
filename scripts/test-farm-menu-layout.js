@@ -8,18 +8,53 @@ const layoutSource = fs.readFileSync('docs/js/farm-menu-layout.js', 'utf8'); // 
 const paletteSource = fs.readFileSync('docs/js/farm-glance-palette.js', 'utf8'); // Pins and exercises the Farm glance marker palette/shape contract added for map readability.
 const bridgeSource = fs.readFileSync('docs/js/livestock-nursery-install-bridge.js', 'utf8'); // Verifies parser-time loading stays wired through the existing farm bootstrap.
 
-assert.match(layoutSource, /grid-template-columns:\s*minmax\(0,\s*1\.15fr\)\s+minmax\(300px,\s*\.85fr\)/, 'desktop Farm workspace uses the formerly empty right side');
-assert.match(layoutSource, /#mpFarm \{\s*overflow:\s*hidden;/s, 'desktop Farm pane delegates scrolling to its full-height columns');
-assert.match(layoutSource, /#mpFarm \.farm-pane \{[\s\S]*height:\s*100%;[\s\S]*min-height:\s*0;/, 'Farm pane fills the available menu body height');
-assert.match(layoutSource, /#\$\{WORKSPACE_ID\} \{[\s\S]*flex:\s*1 1 auto;[\s\S]*min-height:\s*0;[\s\S]*height:\s*0;/, 'Farm workspace consumes the remaining height below the Farm header');
-assert.match(layoutSource, /#\$\{ANIMALS_COLUMN_ID\}, #\$\{OPERATIONS_COLUMN_ID\} \{[\s\S]*overflow-y:\s*auto;/, 'desktop Farm columns own the vertical scroll instead of an inner roster list');
+// Run the actual workspace builder: every existing section must become a
+// full-width sibling, retaining node identity/listeners and authored order.
+function layoutFunction(name) {
+  const start = layoutSource.indexOf(`  function ${name}(`); // Finds the real implementation boundary.
+  const end = layoutSource.indexOf('\n  function ', start + 1); // Excludes unrelated presentation helpers.
+  return layoutSource.slice(start, end);
+}
+class LayoutNode {
+  constructor(id, classes = []) {
+    this.id = id; this.children = []; this.parentElement = null; this.dataset = {};
+    this.classList = { contains: value => classes.includes(value) };
+  }
+  appendChild(child) {
+    if (child.parentElement) child.parentElement.children.splice(child.parentElement.children.indexOf(child), 1);
+    child.parentElement = this; this.children.push(child); return child;
+  }
+  querySelector(selector) { return selector === ':scope > .farm-header' ? this.children.find(child => child.id === 'header') : null; }
+  get nextSibling() { return this.parentElement?.children[this.parentElement.children.indexOf(this) + 1] || null; }
+  insertBefore(child, before) {
+    this.appendChild(child); this.children.pop(); this.children.splice(this.children.indexOf(before), 0, child);
+  }
+}
+const farmPane = new LayoutNode('pane'); // Mounted Farm pane with original section order.
+const farmHeader = farmPane.appendChild(new LayoutNode('header')); // Stays outside the scrolling section workspace.
+const farmSections = ['layout', 'buildings', 'livestock', 'storage'].map(id => farmPane.appendChild(new LayoutNode(id, ['farm-section']))); // Exact nodes must survive the move.
+const findLayoutNode = (id, node = farmPane) => node.id === id ? node : node.children.map(child => findLayoutNode(id, child)).find(Boolean); // Resolves the same DOM ownership as getElementById.
+const layoutContext = vm.createContext({
+  document: {
+    querySelector: () => farmPane,
+    getElementById: id => findLayoutNode(id),
+    createElement: () => new LayoutNode(''),
+  },
+  classifySection: section => section.id,
+}); // Runs DOM movement without browser/style dependencies.
+vm.runInContext(`const WORKSPACE_ID = 'farmMenuWorkspace'; ${layoutFunction('ensureWorkspace')}; this.build = ensureWorkspace;`, layoutContext);
+const farmWorkspace = layoutContext.build(); // Existing authored sections are moved once, never cloned.
+assert.deepEqual(farmPane.children, [farmHeader, farmWorkspace]);
+assert.deepEqual(farmWorkspace.children, farmSections, 'all Farm pages share one full-width host without horizontal column wrappers');
+assert.equal(layoutContext.build(), farmWorkspace);
+assert.deepEqual(farmWorkspace.children, farmSections, 'repeated layout passes preserve page identity/order without moving controls again');
+assert.match(layoutSource, /#\$\{WORKSPACE_ID\} \{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;/, 'Farm workspace stacks full-width sections');
+assert.match(layoutSource, /#\$\{WORKSPACE_ID\} > \.farm-section\.ctrl-nav-subtab-selected \{[\s\S]*?width:\s*100%;/, 'selected Farm sub-tab fills the available width');
+assert.match(layoutSource, /#farmSectionLivestock:has\(#livestockNurserySection\.ctrl-nav-subtab-selected\) > :not\(#farmLivestockList\)/, 'Nursery page hides unrelated breeding content');
+assert.match(layoutSource, /#mpFarm \.farm-pane:has\(#livestockNurserySection\.ctrl-nav-subtab-selected\) > \.farm-header/, 'Nursery page also reclaims Farm header space');
 assert.match(layoutSource, /#farmLivestockList \{[\s\S]*max-height:\s*none !important;[\s\S]*overflow:\s*visible !important;/, 'livestock roster no longer inherits the old 320px nested scroller');
-assert.match(layoutSource, /@media \(max-width: 900px\)/, 'Farm workspace collapses back to one column on narrow screens');
+assert.match(layoutSource, /@media \(max-width: 900px\)/, 'Farm workspace adapts pane scrolling on narrow screens');
 assert.match(layoutSource, /#mpFarm \{ overflow-y: auto; overflow-x: hidden; \}/, 'narrow layouts return to one ordinary pane-level scroll');
-assert.match(layoutSource, /ANIMALS_COLUMN_ID = 'farmMenuAnimalsColumn'/, 'animals and breeding have a dedicated primary column');
-assert.match(layoutSource, /OPERATIONS_COLUMN_ID = 'farmMenuOperationsColumn'/, 'layout/buildings/processors share a separate facilities column');
-assert.match(layoutSource, /\.farm-menu-column-label \{[\s\S]*font-size:\s*16px;/, 'both Farm column headings are large enough to establish the panel hierarchy');
-assert.match(layoutSource, /\.farm-menu-column-label::after \{[\s\S]*height:\s*1px;/, 'column headings carry a horizontal separator rule');
 assert.match(layoutSource, /\.farm-section > \.settings-section-title \{[\s\S]*font-size:\s*14px;/, 'top-level sections in both Farm columns use larger headings');
 assert.match(layoutSource, /\.farm-section > \.settings-section-title::after \{[\s\S]*height:\s*1px;/, 'top-level section headings extend into a separator rule');
 assert.match(layoutSource, /\.farm-animal-divider \{[\s\S]*font-size:\s*13px;/, 'Farm livestock, Stable candidates, and active breeding subheadings are visually stronger');

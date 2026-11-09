@@ -23,7 +23,7 @@
     strike:  { x: 0, y: 0.05, z: 0.30, pitch: 14, yaw: 0, bodyYaw: -20, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
   };
   let BLOCK_WINDUP_S = 0.12, BLOCK_STRIKE_S = 0.12;
-  let COUNTER_WINDUP_S = 0.035, COUNTER_STRIKE_S = 0.16, COUNTER_HOLD_S = 1;
+  let COUNTER_WINDUP_S = 0.0525, COUNTER_STRIKE_S = 0.16, COUNTER_HOLD_S = 0.49125;
 
   // Counter Shield keeps four under-weapon layers. Offensive holds reuse
   // those plus six initially-transparent over-layers (two per Charged
@@ -99,7 +99,10 @@
   const silhouetteByHolder = new Map();
   const offensiveGlowByOwner = new Map(); // Used by held offensive techniques to reuse Counter Shield's weapon-silhouette language without particle emitters.
   const trailGhosts = []; // Active weapon-shape afterimages; never updated while no offensive glow request is active.
+  const trailGhostPool = []; // Detached mesh/material pairs can be reused across actors and scenes.
+  const MAX_MOTION_TRAILS = 32; // Global draw/heap budget even when many hostile Charged Breakers swing together.
   const trailSampleBySource = new WeakMap(); // Last sampled world transform per real weapon mesh while an offensive attack is active.
+  let trailScratch = null; // Lazily initialized once; no per-sample THREE transform allocations.
   let externalWeaponGlowActive = false; // Set by enemy heavy presentation only while a bandit heavy/Counter Shield is actually active.
   let cleanupVisualsNextTick = false; // Runs one final disposal pass immediately after an effect ends, then returns to the idle O(1) gate.
   const OFFENSIVE_CHARGE_COLOR = 0xffc85a; // Used by bandit Charged Breaker so its shared silhouette glow matches the player's authored charge color.
@@ -287,13 +290,17 @@
     return node?.isScene ? node : window.Combat.deps?.getActiveScene?.();
   }
 
-  function removeTrailGhost(ghost) {
-    ghost?.mesh?.parent?.remove(ghost.mesh);
-    ghost?.mesh?.material?.dispose?.();
+  function recycleTrailGhost(ghost) {
+    ghost.mesh.parent?.remove(ghost.mesh);
+    ghost.mesh.visible = false;
+    ghost.mesh.geometry = null; // Don't retain old actors' weapon geometries across zone unloads.
+    if (ghost.mesh.material.uniforms?.map) ghost.mesh.material.uniforms.map.value = null;
+    if (trailGhostPool.length < MAX_MOTION_TRAILS) trailGhostPool.push(ghost);
+    else ghost.mesh.material?.dispose?.();
   }
 
   function clearTrailGhosts() {
-    while (trailGhosts.length) removeTrailGhost(trailGhosts.pop());
+    while (trailGhosts.length) recycleTrailGhost(trailGhosts.pop());
   }
 
   function updateTrailGhosts(timeS) {
@@ -301,7 +308,7 @@
       const ghost = trailGhosts[i];
       const age = Math.max(0, timeS - ghost.bornAt);
       if (age >= TRAIL_LIFETIME_S) {
-        removeTrailGhost(ghost);
+        recycleTrailGhost(ghost);
         trailGhosts.splice(i, 1);
         continue;
       }
@@ -314,41 +321,61 @@
 
   function maybeSpawnMotionTrail(source, style, timeS, color) {
     if (!style.motionTrail || !source?.parent) return;
+    if (!trailScratch) trailScratch = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), scale: new THREE.Vector3() };
     source.updateWorldMatrix?.(true, false);
-    const position = new THREE.Vector3();
-    const quaternion = new THREE.Quaternion();
-    const scale = new THREE.Vector3();
+    const { position, quaternion, scale } = trailScratch;
     source.matrixWorld.decompose(position, quaternion, scale);
 
-    const previous = trailSampleBySource.get(source);
-    trailSampleBySource.set(source, {
-      position: position.clone(),
-      quaternion: quaternion.clone(),
-      sampledAt: timeS,
-    });
-    if (!previous) return;
+    let previous = trailSampleBySource.get(source);
+    if (!previous) {
+      previous = { position: position.clone(), quaternion: quaternion.clone(), sampledAt: timeS };
+      trailSampleBySource.set(source, previous);
+      return;
+    }
     const dt = Math.max(1 / 240, timeS - previous.sampledAt);
     const angularSpeed = previous.quaternion.angleTo(quaternion) / dt;
     const linearSpeed = previous.position.distanceTo(position) / dt;
+    previous.position.copy(position);
+    previous.quaternion.copy(quaternion);
+    previous.sampledAt = timeS;
     if (angularSpeed < TRAIL_MIN_ANGULAR_SPEED && linearSpeed < TRAIL_MIN_LINEAR_SPEED) return;
+    if (trailGhosts.length >= MAX_MOTION_TRAILS) return;
 
     const scene = rootSceneForSource(source);
     if (!scene?.add) return;
-    const material = makeSilhouetteMaterial(sourceTexture(source), 0.20);
-    if (material.uniforms?.glowColor) material.uniforms.glowColor.value.setHex(color);
-    if (material.uniforms?.flowStrength) material.uniforms.flowStrength.value = clamp01(style.flowStrength ?? 0);
-    if (material.uniforms?.flowSpeed) material.uniforms.flowSpeed.value = Math.max(0, Number(style.flowSpeed) || 0);
-    if (material.uniforms?.flowTime) material.uniforms.flowTime.value = timeS;
-    if (material.color) material.color.setHex?.(color);
-    const mesh = new THREE.Mesh(source.geometry, material);
-    mesh.name = 'weapon-charge-motion-trail';
-    mesh.userData.weaponChargeMotionTrail = true;
+    const texture = sourceTexture(source);
+    const needsShader = !!texture;
+    let poolIndex = -1;
+    for (let i = trailGhostPool.length - 1; i >= 0; i--) {
+      if (!!trailGhostPool[i].mesh.material.uniforms?.map === needsShader) { poolIndex = i; break; }
+    }
+    let ghost;
+    if (poolIndex >= 0) {
+      ghost = trailGhostPool.splice(poolIndex, 1)[0];
+    } else {
+      const material = makeSilhouetteMaterial(texture, 0.20);
+      const mesh = new THREE.Mesh(source.geometry, material);
+      mesh.name = 'weapon-charge-motion-trail';
+      mesh.userData.weaponChargeMotionTrail = true;
+      ghost = { mesh, bornAt: timeS, baseOpacity: 0 };
+    }
+    const mesh = ghost.mesh;
+    mesh.geometry = source.geometry; // Geometry is borrowed from the live weapon and never disposed by the ghost.
+    if (mesh.material.uniforms?.map) mesh.material.uniforms.map.value = texture;
+    if (mesh.material.uniforms?.glowColor) mesh.material.uniforms.glowColor.value.setHex(color);
+    if (mesh.material.uniforms?.flowStrength) mesh.material.uniforms.flowStrength.value = clamp01(style.flowStrength ?? 0);
+    if (mesh.material.uniforms?.flowSpeed) mesh.material.uniforms.flowSpeed.value = Math.max(0, Number(style.flowSpeed) || 0);
+    if (mesh.material.uniforms?.flowTime) mesh.material.uniforms.flowTime.value = timeS;
+    if (mesh.material.color) mesh.material.color.setHex?.(color);
     mesh.position.copy(position);
     mesh.quaternion.copy(quaternion);
     mesh.scale.copy(scale).multiplyScalar(1.02 + clamp01(style.intensity) * 0.025);
     mesh.renderOrder = Number(source.renderOrder || 0) + 1;
+    mesh.visible = true;
     scene.add(mesh);
-    trailGhosts.push({ mesh, bornAt: timeS, baseOpacity: 0.20 + clamp01(style.intensity) * 0.16 });
+    ghost.bornAt = timeS;
+    ghost.baseOpacity = 0.20 + clamp01(style.intensity) * 0.16;
+    trailGhosts.push(ghost);
   }
 
   function overlayOpacityScale(mesh, style) {
@@ -532,6 +559,8 @@
       glowLayersPerWeaponMesh: GLOW_LAYERS.length,
       glowLayering: 'weapon-child under+over layers',
       activeMotionTrailGhosts: trailGhosts.length,
+      pooledMotionTrailGhosts: trailGhostPool.length,
+      maxMotionTrailGhosts: MAX_MOTION_TRAILS,
       runtimeActive: !!offensiveGlowByOwner.size || externalWeaponGlowActive,
       offensiveGlowRequests: [...offensiveGlowByOwner.values()].map(glow => ({ ...glow })),
     };
@@ -636,7 +665,8 @@
     }
 
     function raiseBlockPose(deps) {
-      deps.triggerWeaponHoldVisual(BLOCK_WINDUP_S + BLOCK_STRIKE_S, {
+      const shapeStats = (window.WeaponShapeStats?.current?.() || { power: 1, speed: 1, range: 1, efficiency: 1 }); // Defensive raise uses the weapon's real animation speed.
+      deps.triggerWeaponHoldVisual((BLOCK_WINDUP_S + BLOCK_STRIKE_S) / shapeStats.speed, {
         anim: 'sweep',
         pose: BLOCK_POSE,
         meleeSpacing: false, // Defensive raised-block stance is not an attack; the automatic thrust counter still receives normal melee spacing.
@@ -650,8 +680,7 @@
       const deps = window.Combat.deps;
       const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'counterShield')
         || { afflictions: {}, stats: {} };
-      const staminaCost = Math.max(MIN_STAMINA_TO_RAISE, amount * 0.5)
-        * (1 + (effects.stats.absorbMul || 0));
+      const staminaCost = (Math.max(MIN_STAMINA_TO_RAISE, amount * 0.5) * (1 + (effects.stats.absorbMul || 0)) / (window.WeaponShapeStats?.current?.()?.efficiency || 1));
       window.ResourceSystem?.spendStamina(deps.player, staminaCost, 'Counter Shield block');
       deps.playCounterShieldBlockSfx?.(deps.player.x, deps.player.y, deps.getCurrentArea());
       deps.showToast(`Blocked! (-${Math.round(staminaCost)} stamina)`, true);
@@ -671,7 +700,8 @@
 
     function triggerCounter(effects) {
       const t = now();
-      const cooldownS = COUNTER_COOLDOWN_S * (1 + (effects.stats.cooldownMul || 0));
+      const shapeStats = (window.WeaponShapeStats?.current?.() || { power: 1, speed: 1, range: 1, efficiency: 1 }); // Separate counter lockout must follow the visual attack tempo.
+      const cooldownS = COUNTER_COOLDOWN_S * (1 + (effects.stats.cooldownMul || 0)) / (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1));
       if (t - lastCounterAt < cooldownS) return;
       const deps = window.Combat.deps;
       if (window.Combat.isStaggered(deps.player)) return;
@@ -679,8 +709,8 @@
       const baseAbil = deps.weaponAbility('cut')
         || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
       const baseDamage = baseAbil.damage * COUNTER_DAMAGE_MUL * (1 + (effects.stats.damageMul || 0)); // Existing riposte payload before cross-cutting enchantment modifiers.
-      const rangePx = baseAbil.rangePx * COUNTER_RANGE_MUL;
-      const halfConeRad = COUNTER_HALF_CONE_DEG * Math.PI / 180;
+      const rangePx = baseAbil.rangePx * COUNTER_RANGE_MUL * shapeStats.range;
+      const halfConeRad = Math.min(Math.PI, COUNTER_HALF_CONE_DEG * Math.PI / 180 * shapeStats.range * (1 + (effects.stats.coneWidthMul || 0)));
       const baseKnockbackPxS = baseAbil.knockbackPxS * COUNTER_KNOCKBACK_MUL;
       const attackContext = window.CombatAttackEvents?.prepare?.({
         attacker: deps.player,
@@ -697,24 +727,24 @@
       const knockbackPxS = (attackContext.knockbackPxS ?? baseKnockbackPxS) * (attackContext.modifiers?.knockback || 1);
       const attackAfflictions = window.CombatAttackEvents?.scaleAfflictions?.(attackContext.afflictionBonuses || effects.afflictions, attackContext.modifiers?.affliction || 1)
         || effects.afflictions;
-      const counterDurationS = COUNTER_WINDUP_S + COUNTER_STRIKE_S;
+      const counterDurationS = (COUNTER_WINDUP_S + COUNTER_STRIKE_S) / (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1));
 
       deps.triggerWeaponSwingVisual(counterDurationS, {
         anim: 'thrust',
-        windupFrac: COUNTER_WINDUP_S / counterDurationS,
+        windupFrac: COUNTER_WINDUP_S / Math.max(0.001, COUNTER_WINDUP_S + COUNTER_STRIKE_S), // Preserve the authored windup fraction when Bloodrush shortens both phases equally.
         strikeFrac: 1,
-        holdS: COUNTER_HOLD_S,
+        holdS: COUNTER_HOLD_S / (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)),
         afflictionIds: Object.keys(attackAfflictions),
         coneRangePx: rangePx,
         coneHalfConeRad: halfConeRad,
         coneAngle: deps.player.angle,
       });
       const counterReturnTailS = Math.max(0.12, counterDurationS * 0.35);
-      reassertBlockAt = now() + counterDurationS + counterReturnTailS + COUNTER_HOLD_S;
+      reassertBlockAt = now() + counterDurationS + counterReturnTailS + COUNTER_HOLD_S / (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1));
 
       window.Combat.beginStagedAction({
-        windupS: COUNTER_WINDUP_S,
-        strikeS: COUNTER_STRIKE_S,
+        windupS: COUNTER_WINDUP_S / (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)),
+        strikeS: COUNTER_STRIKE_S / (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)),
         recoverS: 0,
         onStrike: () => {
           deps.clearVegetationInAttackCone?.(
@@ -771,7 +801,7 @@
 
     function onHoldStart() {
       const deps = window.Combat.deps;
-      if (deps.player.stamina <= MIN_STAMINA_TO_RAISE) {
+      if (deps.player.stamina <= (MIN_STAMINA_TO_RAISE / (window.WeaponShapeStats?.current?.()?.efficiency || 1))) {
         restorePlayerPresentationScene(deps);
         logPresentationSnapshot('raise-failed', true);
         deps.showToast('Counter Shield failed: no stamina.', false);
@@ -797,7 +827,7 @@
       );
       window.ResourceSystem?.spendStamina(
         deps.player,
-        Math.min(deps.player.stamina, DRAIN_PER_S * drainMul * dt),
+        Math.min(deps.player.stamina, (DRAIN_PER_S * drainMul * dt / (window.WeaponShapeStats?.current?.()?.efficiency || 1))),
         'Counter Shield (holding)'
       );
       if (deps.player.stamina <= 0) {

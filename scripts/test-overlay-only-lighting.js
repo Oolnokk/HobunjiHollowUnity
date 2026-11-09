@@ -193,7 +193,7 @@ function makeScene(initialChildren = []) {
   assert.match(windowsSource, /updatePaneTint\(currentOutdoorLighting\(\)\)/,
     'building window panes must continue sampling the shared outdoor time/weather color');
   assert.match(overlaySource,
-    /if \(ordinaryBuildingInterior\(currentArea\)\) drawWindowLightMasks\(\)/,
+    /if \(ordinaryBuildingInterior\(currentArea\) && !ruinTradition\) drawWindowLightMasks\(\)/,
     'shared 2D lighting must apply daylight-window masks to authored buildings');
 
   console.log('overlay-only local lights + authored-building farmhouse lighting regression checks: PASS');

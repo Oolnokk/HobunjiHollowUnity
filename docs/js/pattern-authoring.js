@@ -67,6 +67,8 @@
     // legacy pre-frame-tool field names (see legacyFrameFields below).
     meshScale: 1, // Normalized whole-pattern scale: 1.00 renders at the pre-normalization 0.25 mesh scale.
     meshRotationDeg: 0,
+    usageOffsetX: 0, // Per-instance completed-pattern translation survives an Author Pattern round trip.
+    usageOffsetY: 0, // Used by the placement renderer and external quick controls.
     overpassClearanceMultiplier: OVERPASS_CLEARANCE_MIN, // Used only when this pattern occupies slot 2; measured against that usage's normal black-outline width.
   });
 
@@ -243,6 +245,9 @@
     let drawing = false;
     let lastPt = null;
     let previewToken = 0;
+    let motifLoadRevision = 0; // Invalidates a pending PNG load when a newer selection or sketch edit takes precedence.
+    let motifLoadPending = false; // Prevents saving a previous sketch while a selected library motif is still loading.
+    let motifLoadError = ''; // Persist PNG import errors in the editor's preview/status area on mobile.
     let previewView = 'front'; // 'front' | 'behind' — only meaningful when options.renderPreviewBehind exists.
     // Tracks whether the pattern currently loaded is an UNMODIFIED library
     // entry (options.initialPatternLibraryId at open, or a "Load" click) —
@@ -401,24 +406,29 @@
         frameScale: Number(cfg.frameScale) || 1,
         meshScale: clamp(Number(cfg.meshScale) || 1, PATTERN_SCALE_MIN, PATTERN_SCALE_MAX),
         meshRotationDeg: Number(cfg.meshRotationDeg) || 0,
+        usageOffsetX: clamp(Number(cfg.usageOffsetX) || 0, -4096, 4096), // Keep saved instance placement when reopening the full author.
+        usageOffsetY: clamp(Number(cfg.usageOffsetY) || 0, -4096, 4096),
         overpassClearanceMultiplier: clamp(Number(cfg.overpassClearanceMultiplier) || OVERPASS_CLEARANCE_MIN, OVERPASS_CLEARANCE_MIN, OVERPASS_CLEARANCE_MAX), // Saved on the pattern so every shared renderer and future unlocked slot-2 UI reads the same player-authored gap.
       };
     }
 
     let previewTimer = 0;
     function schedulePreview() {
+      ++previewToken; // Reject an older asynchronous preview immediately, rather than waiting for the 160ms redraw debounce.
       window.clearTimeout(previewTimer);
       previewTimer = window.setTimeout(runPreview, 160);
     }
 
     async function runPreview() {
+      const token = ++previewToken; // Even an empty sketch invalidates older asynchronous render results.
       const data = currentPatternData();
       const renderFn = previewView === 'behind' ? options.renderPreviewBehind : options.renderPreview;
       if (!data.motifDataUrl || typeof renderFn !== 'function' && !previewController) {
-        previewStatus.textContent = data.motifDataUrl ? 'Rendering preview…' : 'Draw a motif to preview.';
+        if (!data.motifDataUrl) previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height); // Do not display an old preview beside a loading/failed motif.
+        previewStatus.textContent = motifLoadPending ? 'Loading motif artwork…'
+          : motifLoadError || (data.motifDataUrl ? 'Rendering preview…' : 'Draw a motif to preview.');
         return;
       }
-      const token = ++previewToken;
       previewStatus.textContent = 'Rendering preview…';
       try {
         const rendered = previewController ? await previewController.update(data) : await renderFn(data);
@@ -650,6 +660,9 @@
     }
     undoBtn.addEventListener('click', () => {
       if (!undoStack.length) return;
+      motifLoadRevision++;
+      motifLoadPending = false;
+      motifLoadError = '';
       const current = snapshotSketch();
       const previous = undoStack.pop();
       if (current) redoStack.push(current);
@@ -661,6 +674,9 @@
     });
     redoBtn.addEventListener('click', () => {
       if (!redoStack.length) return;
+      motifLoadRevision++;
+      motifLoadPending = false;
+      motifLoadError = '';
       const current = snapshotSketch();
       const next = redoStack.pop();
       if (current) undoStack.push(current);
@@ -706,6 +722,9 @@
     }
     sketchCanvas.addEventListener('pointerdown', evt => {
       evt.preventDefault();
+      motifLoadRevision++;
+      motifLoadPending = false;
+      motifLoadError = '';
       pushUndo();
       drawing = true;
       lastPt = null;
@@ -733,23 +752,40 @@
     // Shared by the initial load below and by "Load" in the Library card —
     // NOT used by "Reset placement", which deliberately leaves whatever is
     // currently drawn on the sketchpad untouched.
-    function drawMotifImageIntoSketch(dataUrl) {
+    function drawMotifImageIntoSketch(source) {
+      const revision = ++motifLoadRevision;
+      motifLoadPending = !!source;
+      motifLoadError = '';
       pushUndo();
-      sketchCtx.clearRect(0, 0, SKETCH_CANVAS_SIZE, SKETCH_CANVAS_SIZE);
-      if (!dataUrl) { drawFrameCanvas(); schedulePreview(); return; }
+      sketchCtx.clearRect(0, 0, SKETCH_CANVAS_SIZE, SKETCH_CANVAS_SIZE); // A new selection replaces the old sketch immediately; failed imports cannot reuse its pixels.
+      previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+      drawFrameCanvas();
+      schedulePreview();
+      if (!source) return;
       const img = new Image();
+      img.crossOrigin = 'anonymous'; // Repo-unlocked patterns use PNG URLs; their pixels must stay readable for saving and previewing.
       img.onload = () => {
+        if (closed || revision !== motifLoadRevision) return;
         sketchCtx.clearRect(0, 0, SKETCH_CANVAS_SIZE, SKETCH_CANVAS_SIZE);
+        sketchCtx.globalCompositeOperation = 'source-over';
         // Drawn at native size, centered on the canvas — a legacy SKETCH_SIZE
         // (192x192) motif from before this margin existed lands centered
         // inside the dashed boundary exactly where it always was, rather than
         // being stretched to fill the new, larger canvas.
         const w = img.naturalWidth || img.width || SKETCH_SIZE, h = img.naturalHeight || img.height || SKETCH_SIZE;
         sketchCtx.drawImage(img, (SKETCH_CANVAS_SIZE - w) / 2, (SKETCH_CANVAS_SIZE - h) / 2, w, h);
+        motifLoadPending = false;
         drawFrameCanvas();
         schedulePreview();
       };
-      img.src = dataUrl;
+      img.onerror = () => {
+        if (closed || revision !== motifLoadRevision) return;
+        motifLoadPending = false;
+        loadedLibraryId = null;
+        motifLoadError = 'Could not load motif artwork. Check your connection and try Load again.';
+        previewStatus.textContent = motifLoadError;
+      };
+      img.src = source;
     }
     function syncInputsFromCfg() {
       overlay.querySelectorAll('.pa-in[data-field]').forEach(input => {
@@ -765,15 +801,15 @@
     // with, so a library pattern authored before some newer field existed
     // still loads sane values for it.
     function applyPatternData(data) {
-      Object.assign(cfg, PATTERN_DEFAULTS, legacyFrameFields(data) || {});
+      Object.assign(cfg, PATTERN_DEFAULTS, { motifDataUrl: null, motifUrl: null }, legacyFrameFields(data) || {}); // Clear the previous image source: repo PNGs must not reuse a preceding saved motif's embedded data URL.
       cfg.meshScale = clamp(Number(cfg.meshScale) || 1, PATTERN_SCALE_MIN, PATTERN_SCALE_MAX); // Library/legacy loads retain their stored normalized value when valid and clamp only outside the authored range.
       cfg.overpassClearanceMultiplier = clamp(Number(cfg.overpassClearanceMultiplier) || OVERPASS_CLEARANCE_MIN, OVERPASS_CLEARANCE_MIN, OVERPASS_CLEARANCE_MAX); // Old patterns without the field inherit the former fixed 3× behavior.
       syncInputsFromCfg();
       updateValLabels();
-      drawMotifImageIntoSketch(cfg.motifDataUrl);
+      drawMotifImageIntoSketch(cfg.motifDataUrl || cfg.motifUrl);
     }
 
-    if (cfg.motifDataUrl) drawMotifImageIntoSketch(cfg.motifDataUrl);
+    if (cfg.motifDataUrl || cfg.motifUrl) drawMotifImageIntoSketch(cfg.motifDataUrl || cfg.motifUrl);
     else drawFrameCanvas();
     updateUndoRedoButtons();
 
@@ -788,6 +824,9 @@
       overlay.querySelector('.pa-brushSizeVal').textContent = `${brushSize}px`;
     });
     overlay.querySelector('[data-act="clearSketch"]').addEventListener('click', () => {
+      motifLoadRevision++;
+      motifLoadPending = false;
+      motifLoadError = '';
       pushUndo();
       sketchCtx.clearRect(0, 0, SKETCH_CANVAS_SIZE, SKETCH_CANVAS_SIZE);
       loadedLibraryId = null;
@@ -905,6 +944,7 @@
     if (options.library) {
       renderLibraryList();
       overlay.querySelector('[data-act="saveToLibrary"]')?.addEventListener('click', () => {
+        if (motifLoadPending) { previewStatus.textContent = 'Motif is still loading; save once it appears.'; return; }
         const data = currentPatternData();
         if (!data.motifDataUrl) { previewStatus.textContent = 'Draw a motif before saving to the library.'; return; }
         const nameInput = overlay.querySelector('.pa-libraryName');
@@ -918,6 +958,8 @@
     function close() {
       if (closed) return;
       closed = true;
+      motifLoadRevision++;
+      motifLoadPending = false;
       window.clearTimeout(previewTimer);
       previewController?.dispose?.(); // Release caller-owned WebGL resources on save, cancel, Escape, or backdrop close.
       overlay.remove();
@@ -933,6 +975,7 @@
     overlay.addEventListener('click', evt => { if (evt.target === overlay) { options.onCancel?.(); close(); } });
 
     overlay.querySelector('[data-act="save"]').addEventListener('click', async () => {
+      if (motifLoadPending) { previewStatus.textContent = 'Motif is still loading; save once it appears.'; return; }
       const data = currentPatternData();
       if (!data.motifDataUrl) { previewStatus.textContent = 'Draw a motif before saving.'; return; }
       if (typeof options.onSave !== 'function') { close(); return; }
@@ -947,6 +990,104 @@
   function escapeHtml(str) {
     return String(str).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
   }
+
+  // Instance-only pattern placement tweaks. Crafting menus keep the motif/library source intact.
+  const QUICK_TRANSFORMS = Object.freeze([
+    { key: 'meshScale', label: 'Pattern scale', min: .4, max: 3.2, step: .05, fallback: 1, unit: '×' },
+    { key: 'motifScale', label: 'Motif scale', min: .1, max: 3, step: .05, fallback: 1, unit: '×' },
+    { key: 'usageOffsetY', label: 'Translate pattern Y', min: -512, max: 512, step: 4, fallback: 0, unit: 'px' },
+    { key: 'usageOffsetX', label: 'Translate pattern X', min: -512, max: 512, step: 4, fallback: 0, unit: 'px' },
+    { key: 'meshRotationDeg', label: 'Rotate pattern', min: -180, max: 180, step: 5, fallback: 0, unit: '°' },
+  ]);
+  const quickClamp = (value, spec) => Math.min(spec.max, Math.max(spec.min, Number.isFinite(Number(value)) ? Number(value) : spec.fallback)); // Shared numeric validation for text and controller inputs.
+
+  function addArrowButtons(host) {
+    if (!host) return;
+    for (const input of host.querySelectorAll('input[type="range"]')) {
+      if (input.dataset.arrowButtons === 'yes') continue;
+      input.dataset.arrowButtons = 'yes';
+      const wrap = document.createElement('span'); // Keeps the existing range slider between two controller-focusable step buttons.
+      wrap.style.cssText = 'display:inline-flex;align-items:center;gap:4px;max-width:100%;';
+      input.before(wrap); wrap.appendChild(input);
+      for (const direction of [-1, 1]) {
+        const button = document.createElement('button'); // Native buttons participate in controller/keyboard focus navigation.
+        button.type = 'button'; button.textContent = direction < 0 ? '‹' : '›';
+        button.setAttribute('aria-label', (direction < 0 ? 'Decrease ' : 'Increase ') + (input.getAttribute('aria-label') || 'pattern setting'));
+        button.style.cssText = 'min-width:30px;min-height:30px;padding:2px 6px;border:1px solid #78908b;border-radius:6px;background:#22302f;color:#fff;cursor:pointer;';
+        button.addEventListener('click', () => {
+          if (input.disabled) return;
+          const step = Number(input.step) > 0 ? Number(input.step) : .1; // Re-read step and limits because editors update range bounds on selection.
+          const min = Number.isFinite(Number(input.min)) && input.min !== '' ? Number(input.min) : -Infinity;
+          const max = Number.isFinite(Number(input.max)) && input.max !== '' ? Number(input.max) : Infinity;
+          const next = Math.min(max, Math.max(min, Number((Number(input.value) + direction * step).toFixed(5))));
+          input.value = String(next);
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        if (direction < 0) wrap.prepend(button); else wrap.appendChild(button);
+      }
+    }
+  }
+
+  function mountQuickControls(host, options = {}) {
+    if (!host || typeof options.getPattern !== 'function' || typeof options.onChange !== 'function') return null;
+    const details = document.createElement('details'); // Visible outside Author Pattern; expandable without losing controller focus.
+    details.open = true;
+    details.className = 'pattern-quick-controls';
+    details.style.cssText = 'margin:7px 0;padding:7px;border:1px solid #627d78;border-radius:8px;color:inherit;';
+    const summary = document.createElement('summary'); // A normal focusable disclosure for compact/mobile menus.
+    summary.textContent = options.title || 'Pattern placement';
+    summary.style.cssText = 'cursor:pointer;font-weight:650;margin-bottom:6px;';
+    details.appendChild(summary);
+    const inputs = new Map(); // Keyed controls are refreshed after a source pattern is selected or an editor save completes.
+    for (const spec of QUICK_TRANSFORMS) {
+      const row = document.createElement('div'); // Every quick setting is individually keyboard/controller accessible.
+      row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:5px;margin:5px 0;';
+      const label = document.createElement('label');
+      label.textContent = spec.label;
+      label.style.cssText = 'font-size:12px;flex:1 1 115px;';
+      const group = document.createElement('span');
+      group.style.cssText = 'display:inline-flex;align-items:center;gap:3px;';
+      const input = document.createElement('input'); // Numeric entry allows precise adjustments on touch/desktop as well as buttons.
+      input.type = 'number'; input.min = spec.min; input.max = spec.max; input.step = spec.step;
+      input.setAttribute('aria-label', spec.label);
+      input.style.cssText = 'box-sizing:border-box;width:70px;min-height:30px;padding:3px;background:#182625;color:#fff;border:1px solid #718d87;border-radius:5px;';
+      inputs.set(spec.key, input);
+      const change = value => {
+        const pattern = options.getPattern();
+        if (!pattern) return;
+        const updated = { ...pattern, [spec.key]: quickClamp(value, spec) }; // Snapshot override, never mutating a library definition.
+        options.onChange(updated);
+        refresh();
+      };
+      input.addEventListener('change', () => change(input.value));
+      for (const direction of [-1, 1]) {
+        const button = document.createElement('button');
+        button.type = 'button'; button.textContent = direction < 0 ? '‹' : '›';
+        button.setAttribute('aria-label', (direction < 0 ? 'Decrease ' : 'Increase ') + spec.label);
+        button.style.cssText = 'min-width:30px;min-height:30px;padding:2px 6px;border:1px solid #78908b;border-radius:6px;background:#22302f;color:#fff;cursor:pointer;';
+        button.addEventListener('click', () => change(quickClamp(inputs.get(spec.key).value, spec) + direction * spec.step));
+        if (direction < 0) group.appendChild(button);
+        else { group.appendChild(input); group.appendChild(button); }
+      }
+      const unit = document.createElement('span'); unit.textContent = spec.unit; unit.style.fontSize = '11px';
+      group.appendChild(unit); row.append(label, group); details.appendChild(row);
+    }
+    host.appendChild(details);
+    function refresh() {
+      const pattern = options.getPattern();
+      details.hidden = !pattern;
+      for (const spec of QUICK_TRANSFORMS) {
+        const input = inputs.get(spec.key);
+        input.disabled = !pattern;
+        if (pattern && document.activeElement !== input) input.value = String(quickClamp(pattern[spec.key] ?? spec.fallback, spec));
+      }
+    }
+    refresh();
+    return { element: details, refresh };
+  }
+
+  window.PatternQuickControls = Object.freeze({ mount: mountQuickControls, addArrowButtons });
 
   window.PatternAuthoring = { openEditor };
 })();

@@ -25,13 +25,15 @@ const deps = {
 context.GridTileAccessors.init(deps);
 
 for (let row = den.mouthAnchor.y; row < den.y + den.h; row++) {
-  for (let col = den.x; col < den.x + den.w; col++) {
+  for (let col = den.mouthAnchor.x - 1; col <= den.mouthAnchor.x + 1; col++) {
     assert.equal(
       context.GridTileAccessors.isAnimalDenCollisionTile(col, row, area),
       false,
-      `cliff entrance clearance must extend sideways through ${col},${row}`,
+      `three-column cliff entrance swathe must remain open at ${col},${row}`,
     );
   }
+  assert.equal(context.GridTileAccessors.isAnimalDenCollisionTile(10, row, area), true, 'rock left of the swathe stays solid');
+  assert.equal(context.GridTileAccessors.isAnimalDenCollisionTile(15, row, area), true, 'rock right of the swathe stays solid');
 }
 assert.equal(context.GridTileAccessors.isAnimalDenCollisionTile(10, 11, area), true, 'rock behind the entrance band remains solid');
 assert.equal(context.GridTileAccessors.isAnimalDenCollisionTile(9, 12, area), false, 'tiles outside the den footprint stay unaffected');
@@ -43,7 +45,7 @@ context.ZoneDenTotemFeatures = {
   }),
 };
 assert.equal(context.GridTileAccessors.isAnimalDenCollisionTile(10, 12, area), true, 'authored colliders still override the widened legacy entrance clearance');
-assert.equal(context.GridTileAccessors.isAnimalDenCollisionTile(11, 12, area), false, 'legacy shell remains clear beside an authored collider');
+assert.equal(context.GridTileAccessors.isAnimalDenCollisionTile(12, 12, area), false, 'legacy shell remains clear beside an authored collider');
 
 den.collapsed = true;
 assert.equal(context.GridTileAccessors.isAnimalDenCollisionTile(13, 12, area), true, 'collapsed dens keep the entire former entrance solid');

@@ -1,0 +1,363 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "ruinPassageDoorWide",
+  "id": "ruinPassageDoorWide",
+  "name": "Ruin Passage Door (Wide)",
+  "sourceSchema": "hobunji_furniture_surface_author.v58",
+  "notes": "Five-wide variant of the ruin passage door for the wide native upper-floor chamber gates.",
+  "footprint": {
+    "w": 5,
+    "d": 1
+  },
+  "tileBase": {
+    "visible": true,
+    "tileSize": 1,
+    "footprintW": 5,
+    "footprintD": 1,
+    "y": 0,
+    "gridOpacity": 0.55
+  },
+  "parts": [
+    {
+      "id": "post_left",
+      "kind": "box",
+      "name": "Left Post",
+      "transform": {
+        "x": -2.32,
+        "y": 1.05,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.36,
+        "sy": 2.1,
+        "sz": 0.78
+      },
+      "color": "#7a746b",
+      "segments": 1,
+      "taperAxis": "y",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "surfaceOpacity": 1,
+      "substanceColor": "#7a746b",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "materialLighting": "unlit"
+    },
+    {
+      "id": "post_right",
+      "kind": "box",
+      "name": "Right Post",
+      "transform": {
+        "x": 2.32,
+        "y": 1.05,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.36,
+        "sy": 2.1,
+        "sz": 0.78
+      },
+      "color": "#7a746b",
+      "segments": 1,
+      "taperAxis": "y",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "surfaceOpacity": 1,
+      "substanceColor": "#7a746b",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "materialLighting": "unlit"
+    },
+    {
+      "id": "lintel",
+      "kind": "box",
+      "name": "Lintel",
+      "transform": {
+        "x": 0,
+        "y": 2.25,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 5.0,
+        "sy": 0.3,
+        "sz": 0.86
+      },
+      "color": "#8a847a",
+      "segments": 1,
+      "taperAxis": "y",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "surfaceOpacity": 1,
+      "substanceColor": "#8a847a",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "materialLighting": "unlit"
+    },
+    {
+      "id": "sill",
+      "kind": "box",
+      "name": "Sill",
+      "transform": {
+        "x": 0,
+        "y": 0.04,
+        "z": 0.06,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 4.28,
+        "sy": 0.08,
+        "sz": 0.94
+      },
+      "color": "#5d5850",
+      "segments": 1,
+      "taperAxis": "y",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "surfaceOpacity": 1,
+      "substanceColor": "#5d5850",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "materialLighting": "unlit"
+    },
+    {
+      "id": "leaf",
+      "kind": "box",
+      "name": "Door Leaf",
+      "transform": {
+        "x": 0,
+        "y": 1.09,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 4.32,
+        "sy": 2.02,
+        "sz": 0.28
+      },
+      "color": "#6f6a62",
+      "segments": 1,
+      "taperAxis": "y",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "surfaceOpacity": 1,
+      "substanceColor": "#6f6a62",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "materialLighting": "unlit"
+    }
+  ],
+  "recognizedSurfaces": [
+    {
+      "id": "leaf:surface:front",
+      "partId": "leaf",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        8,
+        9
+      ],
+      "area": 8.7264,
+      "localCentroid": [
+        0,
+        0,
+        0.14
+      ],
+      "localNormal": [
+        0,
+        0,
+        1
+      ],
+      "basisU": [
+        1,
+        0,
+        0
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -2.16,
+        "maxU": 2.16,
+        "minV": -1.01,
+        "maxV": 1.01
+      },
+      "label": "Front",
+      "role": "none"
+    }
+  ],
+  "decals": [
+    {
+      "id": "seal",
+      "name": "Door Seal",
+      "surfaceId": "leaf:surface:front",
+      "surfacePartId": "leaf",
+      "surfaceType": "vertical side",
+      "surfaceFaces": [
+        8,
+        9
+      ],
+      "imageSource": "../../../docs/assets/textures/decals/ruin_seal_circle.png",
+      "imageName": "docs/assets/textures/decals/ruin_seal_circle.png",
+      "offsetU": 0,
+      "offsetV": 0.12,
+      "width": 0.1389,
+      "height": 0.297,
+      "rotationDeg": 0,
+      "normalOffset": 0.004,
+      "opacity": 1,
+      "visible": true,
+      "glow": {
+        "off": [
+          "#ff3b30"
+        ],
+        "on": [
+          "#ffffff"
+        ],
+        "cycleSeconds": 1.6,
+        "pulse": 0.15
+      }
+    }
+  ],
+  "decalAuthoring": {
+    "version": 4
+  },
+  "puzzle": {
+    "role": "mechanism",
+    "behavior": "stoneDoor",
+    "blocksMovement": true,
+    "motion": {
+      "durationSeconds": 2.2,
+      "collisionOpenProgress": 0.8,
+      "parts": {
+        "leaf": {
+          "off": {
+            "x": 0,
+            "y": 1.09,
+            "z": 0,
+            "rx": 0,
+            "ry": 0,
+            "rz": 0,
+            "sx": 4.32,
+            "sy": 2.02,
+            "sz": 0.28
+          },
+          "on": {
+            "x": 0,
+            "y": -1.11,
+            "z": 0,
+            "rx": 0,
+            "ry": 0,
+            "rz": 0,
+            "sx": 4.32,
+            "sy": 2.02,
+            "sz": 0.28
+          }
+        }
+      }
+    }
+  }
+}

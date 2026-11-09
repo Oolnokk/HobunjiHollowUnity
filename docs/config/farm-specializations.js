@@ -22,12 +22,23 @@
         minTownValue: [0, 1, 2][index] }; // Carpenter sale gate only (see FarmProduction.renderShop); farm presets still grant any tier.
     });
   }
+  // Small, inexpensive seed maker reuses the 2×1 compost-crate exterior and the production queue system.
+  buildings.seedMakerSmall = { key: 'seedMakerSmall', family: 'seedMaker', tier: 'small', label: 'Seed Maker',
+    icon: '🌱', modelKey: 'compostBinSmall', w: 2, h: 1, planItem: 'seedMakerSmallPlan',
+    price: 150, yield: 2, daysPerInput: 2, waterCapacity: 0, minTownValue: 0 };
+  // Honeyfuzzle swarms are never barn animals: each lives in its own 1x1 house on the farm
+  // (see js/honeyfuzzle-house.js). It is a production-style building — placed from a plan,
+  // moved on the Farm map, managed from outside, never entered — whose one slot holds a
+  // fertile egg waiting to hatch or the swarm that hatched from it.
+  buildings.honeyfuzzleHouse = { label: 'Honeyfuzzle House', icon: '🍯', method: null, key: 'honeyfuzzleHouse', family: 'honeyfuzzleHouse', tier: 'single',
+    w: 1, h: 1, planItem: 'honeyfuzzleHousePlan', price: 450, yield: 1, daysPerInput: 1, waterCapacity: 0, minTownValue: 0, hatchDays: 2,
+    description: 'A hollow-log house for one honeyfuzzle swarm. Set a fertile egg inside and wait for it to hatch, or use a Growth Tonic to hatch it at once.' };
   const specializations = { // These supplies belong to shared world storage, granted once at creation.
-    grower: { label: 'Farm', buildings: ['waterSiloSmall', 'compostBinSmall', 'windmillSmall'], storage: {
+    grower: { label: 'Farm', buildings: ['waterSiloSmall', 'compostBinSmall', 'windmillSmall', 'seedMakerSmall'], storage: {
       needlegrainSeeds: 48, heftrootSeeds: 48, garlinkSeeds: 48, ongyumsSeeds: 48, redberrySeeds: 24, blueberrySeeds: 24,
       yellowberrySeeds: 24, whiteberrySeeds: 24, blackberrySeeds: 24, blackMustardSeed: 24, greenMustardSeed: 24,
     }, description: 'Grow crops, turn harvests into ingredients, and expand a productive farm. Suits players who enjoy industry, expansion, or cooking their own unique dishes with different combinations of buffs.',
-      starterDescription: 'Starts with a small rainwater silo, compost bin and windmill, plus a generous seed stock in farm storage.' },
+      starterDescription: 'Starts with a small rainwater silo, compost bin, windmill and slow seed maker, plus a generous seed stock in farm storage.' },
     rancher: { label: 'Ranch', buildings: ['barnMedium', 'barnIncubatorSmall', 'fodderMillSmall'], storage: {
       plantFodder: 99, meatFodder: 99,
       uumkaoiiEgg: 1, fertileDrenkirraEgg: 1, voorgAssBaby: 1, mootBaby: 1,

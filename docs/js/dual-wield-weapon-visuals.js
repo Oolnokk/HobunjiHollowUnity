@@ -1,4 +1,8 @@
-// Dual-wield presentation shared by gameplay and the Attack Animation Editor.
+// Dual-wield presentation shared by gameplay, the Attack Animation Editor and every
+// humanoid that holds a dual-wield weapon. The player has one state; each enemy that
+// holds a dual-wield weapon gets its own (keyed by its avatar root, driven by that
+// actor's own grip state and animated holder), so a Dagger-wielding bandit shows the
+// same two copies, offhand idle stance and main-hand lag the player does.
 //
 // The authored/original weapon plane remains the transform authority but becomes
 // material-hidden while dual wield is active. Two transform-following roots live
@@ -14,12 +18,14 @@
   const grips = global.HobunjiHandToolGrips;
   if (!grips || global.HobunjiDualWieldWeaponVisuals) return;
 
-  const DUPLICATE_Z_GAP = 0.30; // Total plane-normal distance between visible copies.
+  const DUPLICATE_Z_GAP = 0.15; // Total plane-normal distance between visible copies, halved from 0.30; shared by attack, idle and hand sockets.
   const HALF_Z_SEPARATION = DUPLICATE_Z_GAP * 0.5; // Each copy sits on one side of the hidden sprite plane.
   const MAIN_HAND_LAG_MS = 45; // Small visual follow lag behind the offhand/original weapon transform.
   const HISTORY_WINDOW_MS = 240; // Keeps enough parent poses to resolve the short lag through low-FPS frames.
   const ACTIVE_EPSILON = 0.0001;
-  let state = null;
+  const PLAYER_KEY = 'player'; // The local player's state; every other actor is keyed by its avatar root.
+  const states = new Map(); // key -> per-actor duplicate state.
+  let editorOffhandAuthoring = false; // Attack Editor only: the holder IS the offhand weapon while its idle stance is being dragged.
 
   function clamp01(value) {
     const n = Number(value);
@@ -57,6 +63,8 @@
       return {
         influence: clamp01(direct.influence),
         idleBlend: clamp01(direct.idleBlend ?? direct.dualWieldIdleBlend),
+        offhandIdle: clamp01(direct.offhandIdle),
+        offhandPose: direct.offhandPose || null,
         source: direct.source || 'animation',
       };
     }
@@ -64,8 +72,32 @@
     return {
       influence: clamp01(fallback?.dualWieldInfluence),
       idleBlend: clamp01(fallback?.dualWieldIdleBlend),
+      offhandIdle: clamp01(fallback?.offhandIdleBlend),
+      offhandPose: fallback?.offhandIdlePose || null,
       source: fallback?.source || 'animation',
     };
+  }
+
+  // ── Per-actor contexts ─────────────────────────────────────────────
+  // A humanoid that is not the local player publishes its animated holder and its own grip state on
+  // its avatar root (see combat-bandit.js updateBanditToolMesh); that root is its key.
+  function keyFor(record) {
+    const root = record?.avatarRoot;
+    return root?.userData?.proceduralHandToolHolder ? root : PLAYER_KEY;
+  }
+
+  function actorContext(record) {
+    const root = record?.avatarRoot;
+    const holder = root?.userData?.proceduralHandToolHolder || null;
+    const visual = holder?.children?.find(child => child.visible !== false && child.userData?.toolPlane?.isObject3D) || holder?.children?.[0] || null;
+    const plane = visual?.userData?.toolPlane || null;
+    return { visual, plane, holder, bodyRoot: root || null, source: 'actor' };
+  }
+
+  // The actor's own animation grip (hand-tool-grips animationGripAt, evaluated against ITS weapon and swing).
+  function actorDualState(record) {
+    const grip = record?.avatarRoot?.userData?.proceduralHandAnimationGrip || null;
+    return { influence: clamp01(grip?.dualWieldInfluence), idleBlend: clamp01(grip?.dualWieldIdleBlend), offhandIdle: clamp01(grip?.offhandIdleBlend), offhandPose: grip?.offhandIdlePose || null, source: grip?.source || 'animation' }; // Invisible idle offhand: the actor's own animation grip says when (the carried pose comes from its swing sampler).
   }
 
   function materialList(material) {
@@ -140,15 +172,22 @@
     for (const record of current?.originalMaterials || []) if (record.material) record.material.visible = false;
   }
 
-  function teardown() {
-    const old = state;
+  function teardown(key = PLAYER_KEY) {
+    const old = states.get(key);
     if (!old) return;
     restoreOriginalMaterial(old);
     old.mainRoot?.parent?.remove?.(old.mainRoot);
     old.offRoot?.parent?.remove?.(old.offRoot);
     disposeOwnedMaterial(old.mainMesh?.material);
     disposeOwnedMaterial(old.offMesh?.material);
-    state = null;
+    for (const record of old.assemblyCopies?.values?.() || []) {
+      for (const copy of [record.main, record.off]) {
+        copy?.parent?.remove?.(copy);
+        disposeOwnedMaterial(copy?.material);
+      }
+      if (record.sourceMaterial) record.sourceMaterial.visible = record.originalVisible;
+    }
+    states.delete(key);
   }
 
   function hierarchyWorldQuaternion(node, target) {
@@ -168,9 +207,9 @@
     return target.set(source.x, -source.y, -source.z, source.w).normalize();
   }
 
-  function bakedWorldQuaternion(node, target) {
-    if (state && node.matrixWorld?.decompose) {
-      node.matrixWorld.decompose(state.worldPositionScratch, target, state.worldScaleScratch);
+  function bakedWorldQuaternion(node, target, current) {
+    if (current?.worldPositionScratch && node.matrixWorld?.decompose) {
+      node.matrixWorld.decompose(current.worldPositionScratch, target, current.worldScaleScratch);
       return target.normalize();
     }
     return hierarchyWorldQuaternion(node, target);
@@ -190,7 +229,7 @@
       posePitch: q(), poseRoll: q(), mainQ: q(), offQ: q(),
       holderWorld: m(), holderPosition: v(), holderQuaternion: q(), ignoredScale: v(),
       baseQuaternion: q(), mainPoseOffset: v(), basePosition: v(),
-      bodyPosition: v(), bodyQuaternion: q(), bodyRight: v(), mirroredBasePosition: v(), offPoseOffset: v(),
+      bodyPosition: v(), bodyQuaternion: q(), poseFrameYawQuaternion: q(), bodyRight: v(), mirroredBasePosition: v(), offPoseOffset: v(),
       targetHolderQuaternion: q(), targetHolderWorld: m(), inverseHolderWorld: m(), planeRelative: m(), inversePlaneWorld: m(),
       idleResult: { position: v(), quaternion: q() },
       offTargetPosition: v(), offTargetQuaternion: q(),
@@ -203,7 +242,7 @@
   function currentPlanePose(current, target = null) {
     const pose = target || { position: new current.plane.position.constructor(), quaternion: new current.plane.quaternion.constructor() };
     pose.position.setFromMatrixPosition(current.plane.matrixWorld);
-    bakedWorldQuaternion(current.plane, pose.quaternion);
+    bakedWorldQuaternion(current.plane, pose.quaternion, current);
     return pose;
   }
 
@@ -233,12 +272,41 @@
     return sample || currentPlanePose(current);
   }
 
-  function idleStancePoses() {
+  // The pose the main holder is carrying right now (percent-free channel degrees), reported each frame by whoever samples the swing. Lets the
+  // invisible offhand peel the CURRENT pose off the holder instead of assuming the idle stance, so it stays put on the body through a swing.
+  const carriedPoses = new Map(); // key -> { pose, at }
+  const CARRIED_POSE_FRESH_MS = 120;
+  function setCarriedPose(pose, record = null) {
+    const key = keyFor(record);
+    if (!pose) { carriedPoses.delete(key); return; }
+    const entry = carriedPoses.get(key) || { pose: { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 }, at: 0 };
+    for (const channel of ['x', 'y', 'z', 'pitch', 'yaw', 'roll']) entry.pose[channel] = Number(pose[channel]) || 0;
+    entry.at = global.performance?.now?.() ?? Date.now();
+    carriedPoses.set(key, entry);
+  }
+  // Allocation-free variant for per-frame callers holding a SharedAttackPose sample (radians for the three rotations).
+  function setCarriedSample(sample, record = null) {
+    const key = keyFor(record);
+    const entry = carriedPoses.get(key) || { pose: { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 }, at: 0 };
+    const deg = 180 / Math.PI, pose = entry.pose;
+    pose.x = sample.x; pose.y = sample.y; pose.z = sample.z;
+    pose.pitch = sample.pitchRad * deg; pose.yaw = sample.yawRad * deg; pose.roll = sample.rollRad * deg;
+    entry.at = global.performance?.now?.() ?? Date.now();
+    carriedPoses.set(key, entry);
+  }
+  function freshCarriedPose(key) {
+    const entry = carriedPoses.get(key);
+    return entry && (global.performance?.now?.() ?? Date.now()) - entry.at < CARRIED_POSE_FRESH_MS ? entry.pose : null;
+  }
+
+  function idleStancePoses(current = null) {
     const stances = inAttackEditor()
       ? global.AttackIdleStanceEditor?.getConfig?.()?.stances
       : global.WeaponToolStances?.poses;
-    const main = stances?.dualWieldMain || stances?.lightWeapon || null;
-    let offhand = stances?.dualWieldOffhand || null;
+    let main = stances?.dualWieldMain || stances?.lightWeapon || null;
+    const carried = current?.invisible ? (current.carriedPoseOverride || freshCarriedPose(current.key)) : null;
+    if (carried) main = carried;
+    let offhand = current?.invisible ? (current.offhandPoseOverride || global.SharedAttackPose?.IDLE_OFFHAND_POSE || stances?.dualWieldOffhand || null) : (stances?.dualWieldOffhand || null); // An invisible tool uses its own default pose; a real Dual Wield offhand weapon keeps its stance.
     if (!offhand && main) {
       offhand = {
         ...main,
@@ -258,8 +326,16 @@
   }
 
   function idleOffhandLocalTransform(current) {
-    const poses = idleStancePoses();
-    if (!poses || !current.holder?.matrixWorld || !current.plane?.matrixWorld || !current.bodyRoot) return null;
+    const poses = idleStancePoses(current);
+    return poses ? idleCounterpartTransform(current, poses.main, poses.offhand) : null;
+  }
+
+  // Places the hand opposite the one whose pose the holder currently carries. In play and
+  // pair preview the holder carries MAIN and this yields the offhand. While authoring the
+  // offhand stance the holder carries OFFHAND, so the roles swap and this yields main.
+  function idleCounterpartTransform(current, sourcePose, derivedPose) {
+    if (!sourcePose || !derivedPose || !current.holder?.matrixWorld || !current.plane?.matrixWorld || !current.bodyRoot) return null;
+    const poses = { main: sourcePose, offhand: derivedPose };
     const s = frameScratch(current);
     const mainQ = poseQuaternion(s, poses.main, s.mainQ);
     const offQ = poseQuaternion(s, poses.offhand, s.offQ);
@@ -268,7 +344,7 @@
     // the part Mirror Animation also mirrors by negating toolBase.x. Runtime's
     // holder is scene-level, so deriving the anchor from the baked holder pose is
     // more reliable than assuming a particular parent hierarchy.
-    const bakedHolderWorld = !inAttackEditor() ? global.WeaponToolStances?.lastHolderMatrixWorld?.() : null;
+    const bakedHolderWorld = !inAttackEditor() && current.source === 'runtime' ? global.WeaponToolStances?.lastHolderMatrixWorld?.() : null; // Only the player's holder goes through the stance owner's baked matrix; an actor's holder matrix is its own.
     const holderWorld = s.holderWorld.copy(bakedHolderWorld || current.holder.matrixWorld);
     const holderPosition = s.holderPosition;
     const holderQuaternion = s.holderQuaternion;
@@ -287,6 +363,8 @@
     current.bodyRoot.updateWorldMatrix?.(true, false);
     const bodyPosition = current.bodyRoot.getWorldPosition?.(s.bodyPosition) || s.bodyPosition.setFromMatrixPosition(current.bodyRoot.matrixWorld);
     const bodyQuaternion = hierarchyWorldQuaternion(current.bodyRoot, s.bodyQuaternion);
+    const poseFrameYaw = Number(current.bodyRoot.userData?.poseFrameYawOffsetRad) || 0; // Hostile roots are yawed away from the pose frame whose +X is the character's lateral axis.
+    if (poseFrameYaw) bodyQuaternion.multiply(s.poseFrameYawQuaternion.setFromAxisAngle(s.axisY, poseFrameYaw));
     const bodyRight = s.bodyRight.set(1, 0, 0).applyQuaternion(bodyQuaternion).normalize();
     const sideDistance = basePosition.clone().sub(bodyPosition).dot(bodyRight);
     const mirroredBasePosition = s.mirroredBasePosition.copy(basePosition).addScaledVector(bodyRight, -2 * sideDistance);
@@ -328,7 +406,7 @@
     if (!root) return;
     const { localPosition, desiredWorldPosition, basePosition, baseQuaternion, localQuaternion, inverseCurrentQuaternion } = current.lagScratch;
 
-    if (state !== current || !current.plane?.parent) return;
+    if (states.get(current.key) !== current || !current.plane?.parent) return;
     const now = global.performance?.now?.() ?? Date.now();
     recordParentHistory(current, now);
     const currentPose = currentPlanePose(current, frameScratch(current).currentPose);
@@ -343,7 +421,7 @@
     setRootToward(root, localPosition, localQuaternion, current.influence);
   }
 
-  function buildState(context) {
+  function buildState(context, key, record) {
     const plane = context.plane;
     if (!plane?.parent) return null;
     const mainRoot = makeRoot(plane, 'main');
@@ -361,6 +439,8 @@
     plane.add(mainRoot);
     const next = {
       ...context,
+      key,
+      record,
       mainRoot,
       offRoot,
       mainMesh,
@@ -378,36 +458,101 @@
       lastHistoryFrame: null,
       originalMaterials: materialList(plane.material).map(material => ({ material, visible: material.visible !== false })),
     };
-    state = next;
+    states.set(key, next);
     return next;
   }
 
-  function syncNow() {
-    const context = currentContext();
+  // Static multi-layer weapons may acquire their overlays asynchronously.
+  // Each visible main/offhand weapon must duplicate the entire authored sprite
+  // stack. The source layers are hidden while dual wield is active, exactly
+  // like its original base material; the original ordinary weapon remains the
+  // sole hand-grip/animation authority.
+  function syncAssemblyLayers(current, active) {
+    const source = current?.plane;
+    if (!source?.children || !current.mainMesh || !current.offMesh) return;
+    if (!current.assemblyCopies) current.assemblyCopies = new Map(); // Source PNG layer -> two owned visible sprite copies.
+    for (const layer of source.children) {
+      if (!layer?.isMesh || layer.userData?.hobunjiWeaponAssemblyPart !== true) continue;
+      let record = current.assemblyCopies.get(layer);
+      if (!record) {
+        const build = (side, parent) => {
+          const copy = layer.clone?.(false) || new layer.constructor(layer.geometry, layer.material);
+          if (!copy) return null;
+          copy.material = cloneOwnedMaterial(layer.material); // Different materials/maps from source so duplicate cleanup remains local.
+          copy.position.copy(layer.position);
+          copy.quaternion.copy(layer.quaternion);
+          copy.scale.copy(layer.scale);
+          copy.renderOrder = layer.renderOrder;
+          if (copy.layers && layer.layers) copy.layers.mask = layer.layers.mask;
+          copy.userData = { ...layer.userData, hobunjiDualWeaponSourceLayer: layer, hobunjiWeaponAssemblyPart: true, hobunjiHeldObjectPlane: true, side };
+          parent.add(copy);
+          return copy;
+        };
+        record = {
+          main: build('main', current.mainMesh),
+          off: build('off', current.offMesh),
+          sourceMaterial: layer.material,
+          originalVisible: layer.material?.visible !== false,
+        };
+        current.assemblyCopies.set(layer, record);
+      }
+      if (record.sourceMaterial) record.sourceMaterial.visible = active ? false : record.originalVisible;
+      // Surface maps may be replaced when a metal tool gains mastery or changes plating.
+      const sourceMap = layer.material?.map; // Same source image for each authored overlay; duplicate materials retain separate ownership.
+      if (sourceMap) {
+        const main = record.main, off = record.off;
+        if (main?.material?.map && main.material.map.image !== sourceMap.image) {
+          main.material.map.image = sourceMap.image; main.material.map.needsUpdate = true;
+        }
+        if (off?.material?.map && off.material.map.image !== sourceMap.image) {
+          off.material.map.image = sourceMap.image; off.material.map.needsUpdate = true;
+        }
+      }
+    }
+  }
+
+  function syncNow(record = null) {
+    const key = keyFor(record);
+    const context = key === PLAYER_KEY ? currentContext() : actorContext(record);
     if (!context.visual || !context.plane) {
-      teardown();
+      teardown(key);
       return null;
     }
-    if (state && (state.visual !== context.visual || state.plane !== context.plane)) teardown();
-    const dual = currentDualState();
-    if (!state && dual.influence <= ACTIVE_EPSILON) return null;
-    const current = state || buildState(context);
+    const existing = states.get(key);
+    if (existing && (existing.visual !== context.visual || existing.plane !== context.plane)) teardown(key);
+    const dual = key === PLAYER_KEY ? currentDualState() : actorDualState(record);
+    const found = states.get(key);
+    // Invisible offhand tool: a pose that is neither 2H nor Dual Wield can still hold an INVISIBLE copy of the weapon in the free hand, placed by the
+    // same idle-offhand math (authored per pose, defaulting to the dual-wield offhand stance). The real weapon stays untouched and visible.
+    const invisible = dual.influence <= ACTIVE_EPSILON && dual.offhandIdle > ACTIVE_EPSILON;
+    if (!found && dual.influence <= ACTIVE_EPSILON && !invisible) return null;
+    const current = found || buildState(context, key, record);
     if (!current) return null;
-    current.influence = dual.influence;
-    current.idleBlend = dual.idleBlend;
-    current.dualSource = dual.source;
+    current.invisible = invisible;
+    current.offhandPoseOverride = invisible ? dual.offhandPose : null;
+    current.influence = invisible ? dual.offhandIdle : dual.influence;
+    current.idleBlend = invisible ? 1 : dual.idleBlend;
+    current.dualSource = invisible ? 'invisible-offhand' : dual.source;
     const active = dual.influence > ACTIVE_EPSILON;
     if (active) hideOriginalMaterial(current);
     else restoreOriginalMaterial(current);
+    syncAssemblyLayers(current, active); // Includes newly loaded sprite overlays in both visible copies.
     current.mainRoot.visible = active;
-    current.offRoot.visible = active;
+    current.offRoot.visible = active || invisible;
+    if (current.offMesh) {
+      current.offMesh.visible = !invisible; // The offhand tool exists for hand placement only; nothing is drawn.
+      current.offMesh.position.z = invisible ? 0 : HALF_Z_SEPARATION; // No bread-slice separation for a tool that is never seen.
+    }
 
     // Bake the source first. Runtime idle stances are temporarily applied by
     // the holder's updateMatrixWorld owner, so updateWorldMatrix would bypass them.
     if (inAttackEditor()) current.plane.updateWorldMatrix?.(true, false);
     else current.holder?.updateMatrixWorld?.(true);
     const scratch = frameScratch(current);
-    const idleTransform = current.idleBlend > ACTIVE_EPSILON ? idleOffhandLocalTransform(current) : null;
+    // Authoring the offhand stance: the gizmo/Neutral sliders move the offhand weapon directly (it stays
+    // on the holder), and the main-hand copy is placed from its saved stance instead.
+    const authoringOffhand = editorOffhandAuthoring && inAttackEditor() && current.idleBlend > ACTIVE_EPSILON;
+    const idleTransform = current.idleBlend > ACTIVE_EPSILON && !authoringOffhand ? idleOffhandLocalTransform(current) : null;
     const idleAmount = clamp01(current.idleBlend);
     const targetPosition = idleTransform ? scratch.offTargetPosition.copy(idleTransform.position).multiplyScalar(idleAmount) : scratch.offTargetPosition.set(0, 0, 0);
     const targetQuaternion = idleTransform
@@ -421,14 +566,22 @@
       current.mainRoot.scale.set(1, 1, 1);
       current.history.length = 0;
     }
-    if (active) applyMainLag(current);
+    if (active && authoringOffhand) {
+      const poses = idleStancePoses();
+      const mainTransform = poses ? idleCounterpartTransform(current, poses.offhand, poses.main) : null;
+      if (mainTransform) {
+        scratch.offTargetPosition.copy(mainTransform.position).multiplyScalar(idleAmount);
+        scratch.offTargetQuaternion.identity().slerp(mainTransform.quaternion, idleAmount);
+        setRootToward(current.mainRoot, scratch.offTargetPosition, scratch.offTargetQuaternion, current.influence); // No lag: a stance is authored directly.
+      }
+    } else if (active && !invisible) applyMainLag(current);
     current.offRoot.updateMatrixWorld?.(true);
     current.mainRoot.updateMatrixWorld?.(true);
     return current;
   }
 
   function transformSocketForHand(record, side, socketFrame) {
-    const current = syncNow();
+    const current = syncNow(record);
     if (!current || current.influence <= ACTIVE_EPSILON || !socketFrame?.position || !socketFrame?.quaternion) return socketFrame;
     const weapon = side === 'right' ? current.mainMesh : current.offMesh;
     if (!weapon?.matrixWorld || !current.plane?.matrixWorld) return socketFrame;
@@ -444,8 +597,8 @@
     const position = planeLocalPosition.clone().applyMatrix4(weapon.matrixWorld);
 
     const Quaternion = weapon.quaternion.constructor;
-    const planeWorldQ = bakedWorldQuaternion(current.plane, new Quaternion());
-    const weaponWorldQ = bakedWorldQuaternion(weapon, new Quaternion());
+    const planeWorldQ = bakedWorldQuaternion(current.plane, new Quaternion(), current);
+    const weaponWorldQ = bakedWorldQuaternion(weapon, new Quaternion(), current);
     const planeLocalQ = planeWorldQ.clone().invert().multiply(socketFrame.quaternion.clone()).normalize();
     const mirroredChild = side === 'left'; // Flip the offhand grip independently of the weapon sprite's facing.
     const childLocalQ = mirroredChild
@@ -468,11 +621,38 @@
     };
   }
 
-  function resetPoseHistory() {
-    if (!state) return;
-    state.history.length = 0;
-    state.lastHistoryAt = -Infinity;
-    state.lastHistoryFrame = null;
+  function resetPoseHistory(record = null) {
+    const current = states.get(keyFor(record));
+    if (!current) return;
+    current.history.length = 0;
+    current.lastHistoryAt = -Infinity;
+    current.lastHistoryFrame = null;
+  }
+
+  // Stateless invisible offhand for actors that place their own hands (watchman NPCs): maps `socketFrame` (a grip on the MAIN holder) onto an invisible
+  // copy of the weapon held in the free hand, with no duplicate meshes or per-actor state. `ctx` supplies { plane, holder, bodyRoot, carriedPose?,
+  // offhandPose? } and is reused as scratch storage between calls. Returns the same shape transformSocketForHand does, or `socketFrame` when it cannot resolve.
+  function invisibleOffhandSocket(ctx, socketFrame) {
+    if (!ctx?.plane?.matrixWorld || !ctx.holder?.matrixWorld || !ctx.bodyRoot || !socketFrame?.position || !socketFrame?.quaternion) return socketFrame;
+    if (!ctx.worldPositionScratch) { ctx.worldPositionScratch = new ctx.plane.position.constructor(); ctx.worldScaleScratch = new ctx.plane.scale.constructor(); }
+    ctx.invisible = true; ctx.source = 'actor'; ctx.key ||= ctx.bodyRoot;
+    ctx.carriedPoseOverride = ctx.carriedPose || null;
+    ctx.offhandPoseOverride = ctx.offhandPose || null;
+    ctx.holder.updateMatrixWorld?.(true);
+    const idle = idleOffhandLocalTransform(ctx);
+    if (!idle) return socketFrame;
+    const s = frameScratch(ctx);
+    const Matrix4 = ctx.plane.matrixWorld.constructor;
+    const weaponWorld = (ctx.weaponWorldScratch ||= new Matrix4()).compose(idle.position, idle.quaternion, s.unitScale).premultiply(ctx.plane.matrixWorld); // plane * offhand-root; the copy sits at its origin (no bread-slice offset)
+    const inversePlaneWorld = (ctx.inversePlaneScratch ||= new Matrix4()).copy(ctx.plane.matrixWorld).invert();
+    const planeLocalPosition = socketFrame.position.clone().applyMatrix4(inversePlaneWorld);
+    const position = planeLocalPosition.clone().applyMatrix4(weaponWorld);
+    const Quaternion = socketFrame.quaternion.constructor;
+    const planeWorldQ = bakedWorldQuaternion(ctx.plane, new Quaternion(), ctx);
+    const planeLocalQ = planeWorldQ.clone().invert().multiply(socketFrame.quaternion.clone()).normalize();
+    const weaponWorldQ = planeWorldQ.clone().multiply(idle.quaternion);
+    const quaternion = weaponWorldQ.multiply(mirrorQuaternionAcrossLocalX(planeLocalQ, new Quaternion())).normalize(); // The offhand grip is the mirror of the main grip.
+    return { ...socketFrame, position, quaternion, dualWield: { side: 'left', invisible: true, mirroredGripFrame: true } };
   }
 
   function setEditorIdlePreview(active) {
@@ -483,9 +663,20 @@
     return editorIdlePreviewActive;
   }
 
+  function setEditorOffhandAuthoring(active) {
+    editorOffhandAuthoring = !!active;
+    resetPoseHistory();
+    syncNow();
+    global.ProceduralHandFrameDriver?.syncNow?.();
+    return editorOffhandAuthoring;
+  }
+
   function debugSnapshot() {
+    const state = states.get(PLAYER_KEY) || null; // The local player's duplicates; actors are counted separately below.
     return {
-      active: !!state && state.influence > ACTIVE_EPSILON,
+      actorStates: states.size - (state ? 1 : 0),
+      active: !!state && state.influence > ACTIVE_EPSILON, // Also true for the invisible idle-offhand tool, whose clones are never drawn: use copiesVisible to ask "are the clones what the player sees?".
+      copiesVisible: !!state && !state.invisible && state.influence > ACTIVE_EPSILON, // True dual wield only: the original plane is hidden and the two clones are the drawn weapon.
       influence: state?.influence || 0,
       idleBlend: state?.idleBlend || 0,
       source: state?.dualSource || state?.source || null,
@@ -494,7 +685,7 @@
       mainHandLagMs: MAIN_HAND_LAG_MS,
       historySamples: state?.history?.length || 0,
       originalPlaneName: state?.plane?.name || null,
-      originalMaterialHidden: !!state && state.influence > ACTIVE_EPSILON,
+      originalMaterialHidden: !!state && !state.invisible && state.influence > ACTIVE_EPSILON, // The invisible offhand tool leaves the real weapon untouched and visible.
       mainRootScale: state?.mainRoot?.scale?.toArray?.() || null,
       offRootScale: state?.offRoot?.scale?.toArray?.() || null,
       mainChildLocalPosition: state?.mainMesh?.position?.toArray?.() || null,
@@ -506,18 +697,36 @@
     };
   }
 
+  // Pre-render: the player, then every actor that currently has duplicates. An actor whose holder left the scene
+  // (despawned, or its animated holder was cleared) is torn down here, so no removal path needs its own hook.
+  function syncAll() {
+    syncNow();
+    for (const [key, actor] of [...states]) {
+      if (key === PLAYER_KEY) continue;
+      if (!actor.holder?.parent || !actor.record?.avatarRoot?.parent) teardown(key);
+      else syncNow(actor.record);
+    }
+  }
+
   global.HobunjiDualWieldWeaponVisuals = {
     syncNow,
     teardown,
     resetPoseHistory,
     transformSocketForHand,
+    setCarriedPose,
+    setCarriedSample,
+    invisibleOffhandSocket,
+    defaultOffhandPose: () => { const pose = global.SharedAttackPose?.IDLE_OFFHAND_POSE || idleStancePoses()?.offhand || null; return pose ? { x: pose.x, y: pose.y, z: pose.z, pitch: pose.pitch, yaw: pose.yaw, roll: pose.roll } : null; }, // The invisible idle offhand's default pose (the shared IDLE_OFFHAND_POSE).
     setEditorIdlePreview,
+    setEditorOffhandAuthoring,
+    editorMainCopy: () => { const state = states.get(PLAYER_KEY); return state && state.influence > ACTIVE_EPSILON ? state.mainMesh : null; }, // The visible main-hand weapon when Dual Wield is showing both copies.
+    editorOffhandCopy: () => { const state = states.get(PLAYER_KEY); return state && editorOffhandAuthoring && state.influence > ACTIVE_EPSILON ? state.offMesh : null; }, // The visible offhand weapon the Attack Editor gizmo should pivot on.
     debugSnapshot,
     constants: Object.freeze({ DUPLICATE_Z_GAP, HALF_Z_SEPARATION, MAIN_HAND_LAG_MS }),
   };
 
   if (global.RuntimeFrameScheduler?.register) {
-    global.RuntimeFrameScheduler.register('dual-wield-weapon-visuals', syncNow, {
+    global.RuntimeFrameScheduler.register('dual-wield-weapon-visuals', syncAll, {
       phase: 'pre-render',
       owner: 'HobunjiDualWieldWeaponVisuals',
       description: 'Maintains hidden-original dual weapon duplicates, plane-normal separation, authored idle offhand placement, and small main-hand attack lag.',

@@ -11,7 +11,7 @@ This file records project-specific implementation rules that are easy to miss wh
 
 ## Driving the game headlessly
 
-- Use the `headless-game-test` skill. A new world opens with a long, input-gated introduction: skip it with `?skipIntro=1` on the URL or `window.LoadingScreenRuntime.skipIntroduction()` (dev/test only; the loading work still completes).
+- Use the `headless-game-test` skill. A new world opens with a long, input-gated introduction: skip it with `?skipIntro=1` on the URL or `window.LoadingScreenRuntime.skipIntroduction()` (dev/test only; the loading work still completes). Add `&skipRescue=1&skipMeeting=1` to also skip the opening rescue and Hunundi meeting cutscenes.
 - Don't wrap `THREE.WebGLRenderer` from an init script to find scenes — the game's own renderer hook breaks on it ("reading 'bind'" in `dynamic-surfaces.js`). Hook `window.__hobunjiGameRenderer.render` after it exists instead.
 
 ## Recurring mistakes — check these before finishing
@@ -28,8 +28,21 @@ Drawn from the commit history (~9k commits) and the periodic review-fix commits.
 8. **Code that is never wired in.** A new module or builder function isn't done until something calls it. Trace the call from `index.html` / the loader / `game.js` to your code, and cover it with a test that executes it.
 9. **Missing-key math.** Inventory/stat lookups that can be `undefined` become `NaN`, and every `NaN < cost` comparison is false — which makes things free. Default missing keys to `0`.
 10. **New CI workflows.** Don't add them; `scripts/test-*.js` is picked up by `regression-suite.yml` automatically (per-feature workflows and ones scoped to scratch branches have gone stale before).
+11. **Forking attack-pose math.** The swing timeline, per-style rest poses, mirroring, legacy thrust/chop/sweep arcs and Light/Heavy stance baking live once in `docs/js/combat/shared-attack-pose.js` (`window.SharedAttackPose`) and drive the player *and* every `BanditCombat` humanoid (bandits, ghouls, skeletons, …). Change them there; don't re-implement a lerp or a neutral table in `game.js`, `combat-bandit.js` or a stance adapter. See `docs/architecture/shared-attack-pose.md`.
 
 Before finishing: `node --check` the files you touched, `node scripts/check-cache-busts.js --fix`, then `node scripts/run-tests.js`.
+
+## Performance work
+
+Before investigating a lag, memory or "slow after fights" report, read [`docs/architecture/performance-investigation-log.md`](docs/architecture/performance-investigation-log.md). It records the causes already found and fixed (bandit/tribe corpse rigs that never go away, zones that could never be evicted), the suspects that were measured and ruled out (character data, wilderness terrain, outline toggles in an empty scene), the measurement traps that produced wrong conclusions, and the leads that are real but not yet fixed. Add to it when you rule something in or out.
+
+## Game feel and ruin feedback
+
+Camera shake, controller rumble, hit-stop, the hurt flash, puzzle progress/solve audio, the reveal shot that pans to what a solve opened, sinking gates, and chest fanfares all live in `docs/js/game-feel.js` (`window.GameFeel`); desktop/controller Lock-On reuses the mobile auto-target in `game.js`. Read [`docs/architecture/game-feel.md`](docs/architecture/game-feel.md) before adding impact or puzzle feedback, and call those owners (`RuinInteractionAudio.progress/puzzleComplete/mechanism`, `GameFeel.addTrauma`) instead of adding local shakes, beeps or camera moves.
+
+## Ruin size, shaft traversal and witch-bombs
+
+Generated ruins are sized by rarity (cave / hole / lich) through `RuinLayerPlan.TIERS`; the shaft is a free-jump platform staircase (`docs/js/ruin-jump-shaft.js`), not the old obelisk timing puzzle; witch-bombs are three variants (Hronal / Tothal frost / Kanthic plasm) of one pipeline that follow the ruin's tradition. Read [`docs/architecture/ruin-tiers-and-jump-shaft.md`](docs/architecture/ruin-tiers-and-jump-shaft.md) before changing wing counts, shaft size, platform hazards or bomb behaviour, and extend `TIERS` / `VARIANTS` rather than adding another special case.
 
 ## Runtime frame ownership
 

@@ -20,17 +20,17 @@
   const DEFAULTS = {
     assignments: {
       damage: 'floatPlus', healing: 'floatPlus', skillXp: 'centeredFiveRow',
-      masteryXp: 'centeredFiveRow', favor: 'centeredFiveRow',
+      masteryXp: 'centeredFiveRow', favor: 'centeredFiveRow', rapport: 'centeredFiveRow', romance: 'centeredFiveRow', festivalFun: 'centeredFiveRow', livestockFavor: 'centeredFiveRow',
       currency: 'centeredFiveRow', loot: 'centeredFiveRow', interaction: 'centeredFiveRow',
     },
     floatPlus: { worldHeight: 0.36, xOffsetPercent: 10, yOffsetPercent: 13, lifetimeMs: 1150 },
     centeredFiveRow: { worldHeight: 0.32, xOffsetPercent: 40, yOffsetPercent: -4, lifetimeMs: 3200, rowSpacing: 1.08, maxRows: 5, textAlign: 'left' },
     colors: {
       damage: '#fff4e2', healing: '#71f59a', skillXp: '#9de7ff',
-      masteryXp: '#78cfff', favor: '#ff9fd7', currency: '#ffe181', loot: '#ffffff', interaction: '#ffffff', conditionReady: '#fff4e2',
+      masteryXp: '#78cfff', favor: '#ff9fd7', rapport: '#ffd84d', romance: '#ff3d73', festivalFun: '#b8f080', livestockFavor: '#ffb8d8', currency: '#ffe181', loot: '#ffffff', interaction: '#ffffff', conditionReady: '#fff4e2',
     },
   };
-  const PRIORITY = { skillXp: 0, masteryXp: 1, favor: 2, currency: 3, loot: 4 };
+  const PRIORITY = { skillXp: 0, masteryXp: 1, favor: 2, rapport: 2, romance: 2, festivalFun: 2, livestockFavor: 2, currency: 3, loot: 4 };
   const state = {
     deps: null, settings: DEFAULTS, active: [], sequence: 0, pending: [], flushQueued: false,
     interactionSignature: '', interactionClearTimer: null, conditionCallout: null, aimLabel: null,
@@ -224,6 +224,7 @@
     const size = layout.worldHeight; // Used to preserve the authored interaction-list world height.
     const canvas = document.createElement('canvas'); // Used as the texture backing for the mixed-size, mixed-color row.
     const ctx = canvas.getContext('2d'); // Used to measure and paint each independently styled text segment.
+    const inputPrefix = String(prompt.inputPrefix || '').trim(); // Hold hints share the bound glyph's existing color and spacing.
     const inputHint = String(prompt.inputHint || '').trim(); // Rendered in the semantic color of its matching arch input.
     const label = String(prompt.label || prompt.text || '').trim(); // Split below so only the leading verb receives emphasis.
     const words = label.split(/\s+/).filter(Boolean); // Used to style each label word according to its grammatical role.
@@ -237,12 +238,13 @@
       ctx.font = `900 ${fontPx}px ${POPUP_FONT_FAMILY}`;
       return ctx.measureText(text).width;
     };
+    const prefixWidth = textWidth(inputPrefix, mainFontPx);
     const inputWidth = textWidth(inputHint, mainFontPx); // Used in the row's exact texture width.
     const labelWidth = words.reduce((total, word, index) => { // Used to size the canvas for mixed-size label tokens.
       const fontPx = INTERACTION_CONNECTORS.has(word.toLowerCase()) ? connectorFontPx : mainFontPx;
       return total + textWidth(word, fontPx) + (index ? wordGapPx : 0);
     }, 0);
-    canvas.width = Math.max(64, Math.ceil(28 + inputWidth + (inputHint ? gapPx : 0) + labelWidth));
+    canvas.width = Math.max(64, Math.ceil(28 + prefixWidth + (inputPrefix ? wordGapPx : 0) + inputWidth + (inputHint ? gapPx : 0) + labelWidth));
     canvas.height = 112;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
@@ -258,6 +260,8 @@
       ctx.fillText(text, x, canvas.height / 2);
       x += ctx.measureText(text).width;
     };
+    drawSegment(inputPrefix, mainFontPx, INTERACTION_VERB_COLOR);
+    if (inputPrefix) x += wordGapPx;
     drawSegment(inputHint, mainFontPx, prompt.inputColor || INTERACTION_INPUT_FALLBACK_COLOR);
     if (inputHint) x += gapPx;
     words.forEach((word, index) => { // Used to keep connector words small while emphasizing each actual action verb.
@@ -336,6 +340,14 @@
     event.texture.dispose();
   }
 
+  // A rendered acquisition is handed to the readout after its floating popup finishes,
+  // irrespective of the world popup style selected in the authoring tool.
+  // RewardReadout excludes damage, non-acquisitions, and negative values.
+  function forwardToReadout(event) {
+    if (!event || event.interactionPrompt || !['centeredFiveRow', 'floatPlus'].includes(event.mode)) return;
+    window.RewardReadout?.enqueue(event.kind, event.text, { color: state.settings.colors[event.kind] });
+  }
+
   function listFor(root) {
     return state.active
       .filter(event => event.root === root && event.mode === 'centeredFiveRow' && !event.interactionPrompt)
@@ -372,15 +384,18 @@
     const mode = entry.modeOverride || state.settings.assignments[entry.kind];
     if (!state.deps || !entry.root || (mode !== 'floatPlus' && mode !== 'centeredFiveRow')) return null;
     const cfg = state.settings[mode];
+    const scene = entry.scene || state.deps.getActiveScene?.(); // Resolved scene owner is retained so zone cleanup sees default-scene rewards.
+    if (!scene?.add) return null;
     const planeCfg = mode === 'centeredFiveRow'
       ? { ...cfg, worldHeight: cfg.worldHeight * CENTERED_LIST_SCALE }
       : cfg;
     const parts = makePlane(entry.text, entry.kind, planeCfg);
-    const event = { ...entry, ...parts, mode, sequence: state.sequence++, startedAt: performance.now(), lifetimeMs: cfg.lifetimeMs, listSlot: -1, offsetX: 0, offsetY: 0 };
+    const event = { ...entry, scene, ...parts, mode, sequence: state.sequence++, startedAt: performance.now(), lifetimeMs: cfg.lifetimeMs, listSlot: -1, offsetX: 0, offsetY: 0 };
     if (mode === 'centeredFiveRow') {
       const list = listFor(entry.root);
       if (list.length >= cfg.maxRows) {
         const oldest = list.reduce((candidate, item) => item.sequence < candidate.sequence ? item : candidate, list[0]);
+        forwardToReadout(oldest); // A sixth world reward cannot erase a gain before it reaches the reading queue.
         dispose(oldest);
         state.active.splice(state.active.indexOf(oldest), 1);
       }
@@ -391,9 +406,35 @@
       event.offsetX = offset.x;
       event.offsetY = offset.y;
     }
-    (entry.scene || state.deps.getActiveScene()).add(event.plane);
+    scene.add(event.plane);
     state.active.push(event);
     return event.sequence;
+  }
+
+  const socialGains = new Map(); // Coalesces frequent social ticks into one readable player popup per kind.
+  let socialGainTimer = null; // One short event timer flushes all ongoing social gains together.
+  let lastSocialGains = []; // Exposed in debugSnapshot for mobile verification.
+  function queueSocialGain(kind, amount, subject = '', recipientId = subject) {
+    if (!['favor', 'rapport', 'romance', 'festivalFun', 'livestockFavor'].includes(kind) || !Number.isFinite(amount) || amount <= 0) return false;
+    const entry = socialGains.get(kind) || { amount: 0, subjects: new Map() }; // Accumulates actual applied gains, not requested amounts.
+    entry.amount += amount;
+    if (subject) entry.subjects.set(String(recipientId || subject), String(subject));
+    socialGains.set(kind, entry);
+    if (socialGainTimer === null) socialGainTimer = setTimeout(() => {
+      socialGainTimer = null;
+      lastSocialGains = [];
+      for (const [type, gain] of socialGains) {
+        const label = { favor: 'Favor', rapport: 'Rapport', romance: 'Romance', festivalFun: 'Festival Fun', livestockFavor: 'Livestock Favor' }[type]; // Player-facing labels distinguish the five progress types.
+        const value = Math.round(gain.amount * 100) / 100; // Preserve small continuous gains rather than rounding them to zero.
+        const subject = gain.subjects.values().next().value || ''; // Display label is independent of the unique recipient id.
+        const target = gain.subjects.size === 1 ? (type === 'livestockFavor' ? subject : state.deps?.getNpcName?.(subject) || subject) : gain.subjects.size > 1 ? `${gain.subjects.size} recipients` : ''; // Names a single target or summarizes a group.
+        const text = `${target ? target + ': ' : ''}+${value || '<0.01'} ${label}`; // Existing centered reward list supplies placement and fade.
+        queueReward(type, text);
+        lastSocialGains.push({ kind: type, amount: gain.amount, text, recipients: [...gain.subjects.keys()] });
+      }
+      socialGains.clear();
+    }, 1000);
+    return true;
   }
 
   function queueReward(kind, text, options = {}) {
@@ -489,7 +530,7 @@
   }
 
   function setInteractionPrompts(root, prompts, options = {}) {
-    const entries = (prompts || []).filter(prompt => prompt && prompt.allowed !== false)
+    const entries = (prompts || []).filter(prompt => prompt && (prompt.allowed !== false || prompt.showWhenUnavailable))
       .slice(0, state.settings.centeredFiveRow.maxRows)
       .map(prompt => ({
         text: String(prompt.text || prompt.label || '').trim(),
@@ -497,6 +538,7 @@
         action: prompt.action || '',
         inputActionId: prompt.inputActionId || '',
         inputHint: String(prompt.inputHint || '').trim(),
+        inputPrefix: String(prompt.inputPrefix || '').trim(),
         inputColor: prompt.inputColor || INTERACTION_INPUT_FALLBACK_COLOR,
       }))
       .filter(prompt => prompt.label);
@@ -505,7 +547,7 @@
       return [];
     }
     cancelInteractionPromptClear();
-    const signature = `${root.uuid || root.name || 'root'}|${entries.map(entry => `${entry.action}:${entry.inputActionId}:${entry.inputHint}:${entry.inputColor}:${entry.label}`).join('|')}`;
+    const signature = `${root.uuid || root.name || 'root'}|${entries.map(entry => `${entry.action}:${entry.inputActionId}:${entry.inputHint}:${entry.inputPrefix}:${entry.inputColor}:${entry.label}`).join('|')}`;
     if (signature === state.interactionSignature) return interactionListFor(root).map(event => event.sequence);
     clearInteractionPrompts();
     state.interactionSignature = signature;
@@ -583,19 +625,20 @@
     }
     const promptKeys = options.promptKeys || ['E', 'Q', 'F3', 'F4', 'F5'];
     const promptInputs = Array.isArray(options.promptInputs) ? options.promptInputs : []; // Preferred structured hints carry semantic action IDs and arch-matched colors.
-    const prompts = worldInteractions.map(button => {
+    const prompts = worldInteractions.flatMap(button => {
       const slot = buttons.indexOf(button);
       const promptInput = promptInputs[slot] || null; // Supplies the binding label, semantic action, and matching color for this exact list row.
       const keyHint = options.showInputHints !== false && slot >= 0 // Used as the colored leading segment, including rebound keys/buttons.
         ? String(promptInput?.label || promptKeys[slot] || `Action ${slot + 1}`)
         : '';
-      return {
+      const prompt = {
         ...button,
         text: `${keyHint}${keyHint ? '  ' : ''}${button.label}`,
         inputActionId: promptInput?.actionId || '',
         inputHint: keyHint,
         inputColor: promptInput?.color || INTERACTION_INPUT_FALLBACK_COLOR,
       };
+      return button.holdLabel && keyHint ? [prompt,{...prompt,action:`${button.action}:hold-hint`,label:button.holdLabel,inputPrefix:'Hold',text:`Hold ${keyHint}  ${button.holdLabel}`}] : [prompt]; // Informational list row only: no duplicate arch button or input dispatch.
     });
     return setInteractionPrompts(options.root, prompts, { scene: options.scene });
   }
@@ -769,18 +812,50 @@
     event.material.opacity = 1;
   }
 
+  // Slide a prompt row sideways (camera-right axis) so it never hangs off the
+  // left/right edge of the viewport when its anchor sits near the frame edge.
+  function keepPromptRowOnScreen(plane, camera, right, back, halfFovTan) {
+    const dx = plane.position.x - camera.position.x, dy = plane.position.y - camera.position.y, dz = plane.position.z - camera.position.z;
+    const depth = -(dx * back.x + dy * back.y + dz * back.z);
+    if (!(depth > 0.05)) return;
+    const halfViewWidth = depth * halfFovTan * (Number(camera.aspect) || 1) * 0.94;
+    const halfRow = ((Number(plane.geometry?.parameters?.width) || 1) / 2) * plane.scale.x;
+    const lo = -halfViewWidth + halfRow, hi = halfViewWidth - halfRow;
+    if (lo > hi) return; // Wider than the view: leave it centred on its anchor.
+    const x = dx * right.x + dy * right.y + dz * right.z;
+    const clamped = Math.max(lo, Math.min(hi, x));
+    if (clamped !== x) plane.position.addScaledVector(right, clamped - x);
+  }
+  const INTERACTION_MAX_SCREEN_FRACTION = 0.035; // A prompt row never exceeds 3.5% of the viewport height.
+  const _updateScratch = { right: null, forward: null };
   function update(now) {
     const camera = state.deps?.camera;
     if (!camera) return;
-    const cameraRight = new state.deps.THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+    if (!_updateScratch.right) { _updateScratch.right = new state.deps.THREE.Vector3(); _updateScratch.forward = new state.deps.THREE.Vector3(); }
+    const cameraRight = _updateScratch.right.setFromMatrixColumn(camera.matrixWorld, 0).normalize(); // Reused per frame (was a new Vector3 every frame).
+    const cameraBack = _updateScratch.forward.setFromMatrixColumn(camera.matrixWorld, 2).normalize(); // Camera looks down -Z, so view depth is minus the dot with this axis.
+    const halfFovTan = Math.tan(((Number(camera.fov) || 42) * Math.PI / 180) / 2);
+    const finishedRewards = []; // Completed rewards are forwarded in their original event order after the reverse removal pass.
     for (let index = state.active.length - 1; index >= 0; index--) {
       const event = state.active[index];
       const progress = event.interactionPrompt ? 0 : Math.max(0, Math.min(1, (now - event.startedAt) / event.lifetimeMs));
       const center = popupAnchorWorld(event.root, event.mode);
       if (!center || progress >= 1) {
+        finishedRewards.push(event); // Also covers a player root lost during a scene change.
         dispose(event);
         state.active.splice(index, 1);
         continue;
+      }
+      // Interaction prompts are world-anchored, so a camera pushed against a
+      // wall used to blow the list up to fill the screen. Cap each row's
+      // on-screen height (and the list spacing with it) without changing how
+      // it looks at ordinary distances.
+      let screenClamp = 1;
+      if (event.interactionPrompt) {
+        const depth = Math.max(0.05, -((center.x - camera.position.x) * cameraBack.x + (center.y - camera.position.y) * cameraBack.y + (center.z - camera.position.z) * cameraBack.z));
+        const baseHeight = state.settings[event.mode].worldHeight * (event.mode === 'centeredFiveRow' ? CENTERED_LIST_SCALE : 1);
+        const maxHeight = INTERACTION_MAX_SCREEN_FRACTION * 2 * depth * halfFovTan;
+        if (baseHeight > maxHeight) screenClamp = maxHeight / baseHeight;
       }
       if (event.mode === 'floatPlus') {
         center.addScaledVector(cameraRight, event.offsetX + Math.sin(progress * Math.PI) * event.height * 0.12);
@@ -791,16 +866,18 @@
         const centerSlot = event.interactionPrompt
           ? (Math.max(1, list.length) - 1) * 0.5
           : (state.settings.centeredFiveRow.maxRows - 1) * 0.5;
-        center.y += (centerSlot - event.listSlot) * event.height * state.settings.centeredFiveRow.rowSpacing;
-        if (state.settings.centeredFiveRow.textAlign === 'left') center.addScaledVector(cameraRight, event.width * 0.5);
+        center.y += (centerSlot - event.listSlot) * event.height * state.settings.centeredFiveRow.rowSpacing * screenClamp;
+        if (state.settings.centeredFiveRow.textAlign === 'left') center.addScaledVector(cameraRight, event.width * 0.5 * screenClamp);
       }
       event.plane.position.copy(center);
       event.plane.quaternion.copy(camera.quaternion);
       event.material.opacity = event.interactionPrompt ? 1 : progress < 0.72 ? 1 : (1 - progress) / 0.28;
       const pop = event.kind === 'damage' ? 1.1 - 0.1 * Math.min(1, progress / 0.24) : 1;
       const listScale = event.mode === 'centeredFiveRow' ? CENTERED_LIST_SCALE : 1;
-      event.plane.scale.setScalar(state.settings[event.mode].worldHeight * listScale * pop);
+      event.plane.scale.setScalar(state.settings[event.mode].worldHeight * listScale * pop * screenClamp);
+      if (event.interactionPrompt) keepPromptRowOnScreen(event.plane, camera, cameraRight, cameraBack, halfFovTan);
     }
+    finishedRewards.sort((a, b) => a.sequence - b.sequence).forEach(forwardToReadout);
     updateConditionCallout(camera, cameraRight);
     updateAimLabel(camera);
     updateInfoLists(camera, cameraRight);
@@ -815,6 +892,9 @@
 
   function clear() {
     cancelInteractionPromptClear();
+    if (socialGainTimer !== null) clearTimeout(socialGainTimer);
+    socialGainTimer = null;
+    socialGains.clear();
     state.active.splice(0).forEach(dispose);
     state.pending.length = 0;
     state.levelUpQueue.length = 0;
@@ -833,8 +913,31 @@
     return clone(state.settings);
   }
 
+  // The inactive zone cache calls this for a zone whose scene it is discarding. Popups and the aim label are normally
+  // gone within seconds, but one still anchored in that scene would keep the whole scene reachable until it expired.
+  function releaseScene(scene) {
+    if (!scene) return 0;
+    let released = 0;
+    const finishedRewards = []; // Zone disposal must not silently discard reward rows already displayed in that scene.
+    for (let index = state.active.length - 1; index >= 0; index--) {
+      if (state.active[index].scene !== scene) continue;
+      finishedRewards.push(state.active[index]);
+      dispose(state.active[index]);
+      state.active.splice(index, 1);
+      released++;
+    }
+    if (typeof forwardToReadout === 'function') finishedRewards.sort((a, b) => a.sequence - b.sequence).forEach(forwardToReadout);
+    const before = state.pending.length + state.levelUpQueue.length;
+    state.pending = state.pending.filter(item => item.scene !== scene);
+    state.levelUpQueue = state.levelUpQueue.filter(item => item.scene !== scene);
+    released += before - state.pending.length - state.levelUpQueue.length;
+    if (state.aimLabel?.scene === scene) { dispose(state.aimLabel); state.aimLabel = null; released++; }
+    return released;
+  }
+
   const api = {
-    init, update, showChange, queueReward, queueLevelUp,
+    releaseScene,
+    init, update, showChange, queueReward, queueSocialGain, queueLevelUp,
     setInteractionPrompts, syncInteractionPrompts, clearInteractionPrompts,
     setConditionCallout, clearConditionCallout,
     setAimLabel, clearAimLabel,
@@ -842,6 +945,9 @@
     avatarCentroidWorld, loadSettings, applySettings, clear,
     defaults: clone(DEFAULTS), storageKey: STORAGE_KEY,
     debugSnapshot: () => ({
+      latestChange: 'Social gain batches distinguish same-named livestock by record id; all five gain types are configurable in the popup editor.',
+      lastSocialGains: lastSocialGains.map(gain => ({ ...gain, recipients: [...gain.recipients] })),
+      pendingSocialGainKinds: [...socialGains.keys()],
       interactionSignature: state.interactionSignature,
       interactionClearPending: state.interactionClearTimer != null,
       interactionClearGraceMs: INTERACTION_CLEAR_GRACE_MS,
@@ -853,6 +959,7 @@
       levelUpQueueLength: state.levelUpQueue.length,
       levelUpActive: state.levelUpActive ? { ...state.levelUpActive } : null,
       infoLists: [...state.infoLists.keys()],
+      rewardReadout: window.RewardReadout?.debugSnapshot?.() || null, // Mobile debug surfaces can inspect the five visible and remaining queued gains.
     }),
   };
   window.WorldPopupText = api;

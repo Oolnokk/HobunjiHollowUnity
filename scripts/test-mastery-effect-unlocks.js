@@ -11,12 +11,27 @@ async function main() {
   const context = { window, document: { addEventListener(name, callback) { listeners[name] = callback; } }, localStorage: { getItem: () => saved, setItem(key, value) { saved = value; } }, CustomEvent: class { constructor(name, data) { this.type = name; this.detail = data?.detail; } } }; // Minimal browser dependencies leave all progression behavior intact.
   vm.runInNewContext(fs.readFileSync('docs/js/combat/combat-progression.js', 'utf8'), context);
   const api = window.CombatProgression; // Canonical unlock, choice and effect authority.
-  const items = { ITEM_DEFS: {}, inventoryItems: [], inventory: {} }; // Real registration supplies reusable tablets and scrolls.
+  const items = { ITEM_DEFS: {}, inventoryItems: [], inventory: {} }; // Real registration supplies consumable tablets and scrolls.
   api.registerItems(items);
+  const scrollKey = api.itemKey('sharp', 1, 'stat_rangeMul_0p12', 'scroll'); // Real registered mastery scroll used to verify the Pack selection path.
+  let processorProbes = 0; // Verifies selecting or viewing a mastery item never enumerates workstation outputs.
+  const processorWindow = {};
+  vm.runInNewContext(fs.readFileSync('docs/js/item-processing.js', 'utf8'), { window: processorWindow });
+  processorWindow.ItemProcessing.init({
+    ITEM_DEFS: items.ITEM_DEFS,
+    getInventoryItems() { processorProbes++; throw new Error('mastery literature must never enter wheel seed catalog'); },
+    PROCESSING_METHODS: new Proxy([], { get() { processorProbes++; throw new Error('mastery literature must never enter workstation discovery'); } }),
+  });
+  assert.equal(processorWindow.ItemProcessing.isWheelEligible(scrollKey), false, 'mastery scrolls are read from their detail, not the wheel');
+  assert.equal(processorWindow.ItemProcessing.isWheelEligible(api.itemKey('sharp', 1, 'stat_rangeMul_0p12', 'tablet')), false, 'mastery tablets are not processor inputs');
+  assert.equal(processorProbes, 0, 'mastery selection bypasses every material/processor discovery path');
   const itemCount = items.inventoryItems.length; // Repeated initialization must not duplicate item rows.
+  assert.equal(items.ITEM_DEFS[api.itemKey('sharp', 1, 'stat_rangeMul_0p12')].sellPrice, 140, 'entry-level mastery literature has meaningful resale value');
   api.registerItems(items);
   assert.equal(items.inventoryItems.length, itemCount);
 
+  const clearedFinalCopyKeys = []; // Ensures successful last-copy reads ask the existing Hold owner to release its empty stack.
+  window.InventoryHeldOverride = { clearExhaustedBagHold(key) { clearedFinalCopyKeys.push(key); return true; }, refreshInventoryUseButton() {} };
   const effect = api.getEffectCatalog().find(entry => entry.id === 'stat_rangeMul_0p12'); // Extended Reach is supported by the sharp combo at every rank after expansion.
   assert.ok(effect);
   for (let rank = 1; rank <= 5; rank++) {
@@ -33,12 +48,13 @@ async function main() {
     items.inventory[key] = 1;
     assert.equal(api.readMasteryItem(key), true);
     assert.equal(api.readMasteryItem(key), false, 'duplicate reads are harmless');
-    assert.equal(items.inventory[key], 1, 'reading keeps the reusable item');
+    assert.equal(items.inventory[key], 0, 'successful reading consumes exactly one copy');
     assert.equal(api.hasEffectUnlock('sharp', rank, effect.id), true);
     assert.equal(api.hasEffectUnlock('blunt', rank, effect.id), false);
     assert.equal(api.choose('axe', 'swingCombo', rank, index), true);
     assert.equal(api.isOptionUnlocked('sword', 'pokeCombo', rank, index), true, 'same-type weapons share the permanent lesson');
   }
+  assert.equal(clearedFinalCopyKeys.length, 5, 'every exhausted mastery stack triggers Hold cleanup exactly once');
   assert.equal(api.getEffects('axe', 'swingCombo').stats.rangeMul, 0.6, 'all five repeated bonuses add');
   assert.equal(spent, 5);
   assert.equal(api.choose('axe', 'swingCombo', 1, 0.5), false);
@@ -92,7 +108,68 @@ async function main() {
   window.DevRandomRuin = { getState: () => ({ theme: 'kanthic' }) };
   vm.runInNewContext(fs.readFileSync('docs/js/loot-rolling.js', 'utf8'), context);
   const loot = window.LootRolling; // Production roll entry point used by chests and corpses.
-  loot.init({ calendar: {}, getPlayerData: () => null, getCurrentArea: () => 'map_eastern_mire', weaponDamageTypeForTool: key => key === 'mace' ? 'blunt' : 'sharp' });
+  const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Reuse the live crafted-weapon shape metadata rather than independently assuming Kylie's damage type.
+
+  // Execute the real Pack detail renderer, not a duplicate mock of its item-info
+  // logic: a mastery scroll selected first must show details, and transitions from
+  // an ordinary item or a tablet must never leave the previous item's content.
+  class InventoryDetailElement {
+    constructor() {
+      this.style = {}; this.dataset = {}; this.textContent = ''; this.children = [];
+      this.classList = { remove() {}, toggle() {} };
+    }
+    set innerHTML(value) { this.markup = value; this.children = []; }
+    get innerHTML() { return this.markup || ''; }
+    appendChild(element) { this.children.push(element); }
+  }
+  const detailIds = ['iiEmpty', 'iiDetail', 'iiIcon', 'iiName', 'iiPrice', 'iiQuality', 'iiTags', 'iiDesc', 'iiActions']; // Real game.js detail element IDs.
+  const detailEls = Object.fromEntries(detailIds.map(id => [id, new InventoryDetailElement()])); // Mutable test DOM used by the original item selection function.
+  const detailDocument = {
+    getElementById: id => detailEls[id] || null,
+    querySelectorAll: () => [{ dataset: {}, classList: { toggle() {} } }],
+    createElement: () => new InventoryDetailElement(),
+  };
+  const detailWindow = {
+    ItemProcessing: processorWindow.ItemProcessing,
+    InventoryStacks: { applyHeadIcon() {} },
+    CookingSystem: { valueMultiplierForStars: () => 1 },
+  }; // Real item wheel policy, with only art and unrelated consumption behavior stubbed.
+  processorWindow.ItemProcessing.init({ ITEM_DEFS: items.ITEM_DEFS, getInventoryItems: () => items.inventoryItems, PROCESSING_METHODS: [] });
+  const first = gameSource.indexOf('function selectInventoryItem(key, skipGridUpdate, selectedStack = null)');
+  const last = gameSource.indexOf('function disposeAvatarGroup(', first);
+  assert(first >= 0 && last > first, 'the actual game.js Pack item selection renderer is present');
+  const actualSelect = new Function('deps', 'document', 'window', `
+    let invSelectedKey = null, invSelectedStack = null, activeItemIndex = 0, heldMode = 'tool';
+    const inventory = deps.inventory, ITEM_DEFS = deps.ITEM_DEFS, TOOL_ITEM_DEFS = {}, gearInventory = { tools: {} }, equipmentSlots = {};
+    const LIVESTOCK_ITEM_KINDS = {}, QUALITY_DESCRIPTORS = {}, MYSTERY_DYE_POOL_BY_ITEM_KEY = {};
+    const clampInventoryStack = () => {}, starGlyphs = () => '', qualityDisplayForItem = () => '';
+    const itemDescriptionWithFlavor = (key, def) => def.desc;
+    const itemIconForKey = key => ITEM_DEFS[key]?.icon || '📦';
+    const applyItemSpriteIcon = () => {}, getManualHeldItem = () => null, setManualHeldItem = () => {};
+    const getInventoryStackItems = () => [], showToast = () => {}, saveMemberWorldData = () => {};
+    const refreshActionBar = () => {}, closeMenu = () => {}, spGoldAmount = null;
+    ${gameSource.slice(first, last)}
+    return selectInventoryItem;
+  `)({ inventory: { apple: 1, [scrollKey]: 1, [api.itemKey('sharp', 1, 'stat_rangeMul_0p12')]: 1 }, ITEM_DEFS: {
+    ...items.ITEM_DEFS,
+    apple: { label: 'Apple', icon: '🍎', cat: 'material', sellPrice: 1, tags: ['Fruit'], desc: 'A piece of fruit.' },
+  } }, detailDocument, detailWindow);
+  const tabletKey = api.itemKey('sharp', 1, 'stat_rangeMul_0p12'); // Concrete mastery tablet sharing the scroll's learning effect.
+  for (const [key, label] of [
+    [scrollKey, items.ITEM_DEFS[scrollKey].label], ['apple', 'Apple'],
+    [tabletKey, items.ITEM_DEFS[tabletKey].label], [scrollKey, items.ITEM_DEFS[scrollKey].label],
+    ['apple', 'Apple'], [tabletKey, items.ITEM_DEFS[tabletKey].label],
+  ]) {
+    actualSelect(key, false, { key, count: 1, stackId: key + '|plain|0' });
+    assert.equal(detailEls.iiName.textContent, label + ' ×1', 'selected item always replaces the item-info heading');
+    assert.notEqual(detailEls.iiDetail.style.display, 'none', 'selected item details remain visible');
+    assert.ok(detailEls.iiDesc.textContent.length > 5, 'selected item description remains populated');
+    if (key !== 'apple') assert.match(detailEls.iiDesc.textContent, /Read to permanently unlock/, 'real mastery item detail shows its lesson');
+  }
+
+  const generatedShapeCatalog = gameSource.slice(gameSource.indexOf('      const TOOL_SHAPE_DEFS ='), gameSource.indexOf('      window.ModularWeapons?.registerDefinitions')); // Executes only the existing weapon definition + smith-crafted registration block.
+  const toolDefs = vm.runInNewContext(`const TOOL_ITEM_DEFS = {}; const METAL_DEFS = { nativeCopper: {label:'Native Copper'} }; const VERDIGRIS_METAL_KEYS = ['nativeCopper']; ${generatedShapeCatalog}; TOOL_ITEM_DEFS;`, { window: {} }); // Canonical runtime keys, including Kylie, feed the actual mastery loot type lookup.
+  loot.init({ calendar: {}, getPlayerData: () => null, getCurrentArea: () => 'map_eastern_mire', weaponDamageTypeForTool: key => toolDefs[key]?.dmgType || (key === 'mace' ? 'blunt' : 'sharp') });
   await loot.loadLootShopConfig();
   for (const [id, pool] of Object.entries(pools)) if (pool.mastery) for (const type of ['sharp', 'blunt']) for (const rank of Object.keys(pool.mastery.rankWeights)) {
     const weights = Object.entries(pool.mastery.rankWeights); // Sample the midpoint of every authored rank interval.
@@ -119,6 +196,11 @@ async function main() {
   assert.equal(loot.masteryPoolForLoot('bandit_captain', { entity: { enemyClass: 'bandit' } }), 'mastery_captain');
   assert.ok(Object.keys(loot.rollLootPool('bandit_grunt', { entity: skeleton }))[0].includes(':blunt:'), 'enemy weapon determines the damage type');
   assert.ok(Object.keys(loot.rollLootPool('bandit_captain', { entity: { enemyClass: 'bandit', def: { weaponKey: 'sword' } } }))[0].includes(':sharp:'));
+  const kylieBandit = { enemyClass: 'bandit', def: { weaponKey: 'kylie_nativeCopper', attackTag: 'blunt' } }; // A real generated Kylie on a bandit must route to the existing blunt scroll pool.
+  const kylieDrops = loot.rollLootPool('bandit_captain', { entity: kylieBandit });
+  const kylieScroll = Object.keys(kylieDrops)[0];
+  assert(kylieScroll?.startsWith('masteryScroll:blunt:'), 'Kylie bandits drop blunt mastery scrolls, not sharp ones');
+  assert.equal(items.ITEM_DEFS[kylieScroll]?.masteryUnlock?.type, 'blunt');
 
   const noop = () => {}; // Minimal existing initialization owners let the held-item integration run without a browser.
   let held = null; // Simulate Inventory Hold while the item arch is inactive.
@@ -131,13 +213,14 @@ async function main() {
   vm.runInNewContext(fs.readFileSync('docs/js/combat/technique-scrolls.js', 'utf8'), context);
   window.CookingSystem.init({ ...items, getManualHeldItem: () => held, getHeldMode: () => 'tool' });
   const heldKey = api.itemKey('sharp', 5, 'stat_lungeMul_0p2', 'scroll'); // This rank-specific lesson was not learned by the earlier migration test.
-  items.inventory[heldKey] = 1;
+  items.inventory[heldKey] = 2;
   held = { kind: 'bagItem', key: heldKey };
   assert.equal(window.HobunjiDrunkGameplayBridge.getHeldItemAction().allowed, true);
   assert.equal(window.HobunjiDrunkGameplayBridge.consumeHeldItemImmediate(), true, 'normal item action reads a manually held mastery scroll');
-  assert.equal(items.inventory[heldKey], 1);
+  assert.equal(items.inventory[heldKey], 1, 'one held copy is consumed from a two-item stack');
   assert.equal(window.HobunjiDrunkGameplayBridge.getHeldItemAction().allowed, false, 'already learned lessons remain held, with Read disabled');
   assert.equal(window.HobunjiDrunkGameplayBridge.beginHeldItemAction(), false);
+  assert.equal(items.inventory[heldKey], 1, 'repeat reads cannot consume the remaining duplicate');
 
   const fresh = { abilityProgression: {} }; // Five repeated cooldown reductions must never produce a negative cooldown.
   window.__hobunjiPlayerProfile = fresh;
@@ -153,6 +236,6 @@ async function main() {
     assert.equal(stacked.choose('axe', 'counterShield', rank, index), true);
   }
   assert.equal(stacked.getEffects('axe', 'counterShield').stats.cooldownMul, -1);
-  console.log('Mastery discoveries: permanent reusable lessons, five-rank stacking, legacy saves, all source allocations, exact rank boundaries and live loot routing passed.');
+  console.log('Mastery discoveries: permanent single-use lessons, five-rank stacking, legacy saves, all source allocations, exact rank boundaries and live loot routing passed.');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

@@ -48,6 +48,7 @@
           { slot: 'facialHair', label: 'Facial Hair', options: [
             { id: null,  label: 'None' },
             { id: 'appearance::Mao-ao_M::mao-ao_wildbeard', label: 'Wild Beard' },
+            { id: 'appearance::Mao-ao_M::mao-ao_grandbeard', label: 'Grand Beard' },
           ]},
         ],
         colorOptions: bodyPalette('mao-ao', 'male'),
@@ -114,6 +115,7 @@
           { slot: 'facialHair', label: 'Facial Hair', options: [
             { id: null,  label: 'None' },
             { id: 'appearance::Tletingan_M::tl_wildbeard', label: 'Wild Beard' },
+            { id: 'appearance::Tletingan_M::tl_grandbeard', label: 'Grand Beard' },
           ]},
         ],
         colorOptions: bodyPalette('tletingan', 'male'),
@@ -146,6 +148,7 @@
           { slot: 'facialHair', label: 'Facial Hair', options: [
             { id: null,  label: 'None' },
             { id: 'appearance::Kenkari_M::kenk_wildbeard', label: 'Wild Beard' },
+            { id: 'appearance::Kenkari_M::kenk_grandbeard', label: 'Grand Beard' },
           ]},
         ],
         colorOptions: bodyPalette('kenkari', 'male'),
@@ -201,6 +204,7 @@
           { slot: 'facialHair', label: 'Facial Hair', options: [
             { id: null,  label: 'None' },
             { id: 'appearance::Mao-ao_M::mao-ao_wildbeard', label: 'Wild Beard' },
+            { id: 'appearance::Mao-ao_M::mao-ao_grandbeard', label: 'Grand Beard' },
           ]},
         ],
         colorOptions: bodyPalette('engh-sho', 'male'),
@@ -261,6 +265,7 @@
           { slot: 'facialHair', label: 'Facial Hair', options: [
             { id: null,  label: 'None' },
             { id: 'appearance::Mashtzarr_M::mashtz_wildbeard', label: 'Wild Beard' },
+            { id: 'appearance::Mashtzarr_M::mashtz_grandbeard', label: 'Grand Beard' },
           ]},
         ],
         colorOptions: bodyPalette('mashtzarr', 'male'),
@@ -273,15 +278,62 @@
   SPECIES_DATA.mammakhbuur.genders = ['male', 'female'];
   SPECIES_DATA.mammakhbuur.female = JSON.parse(JSON.stringify(SPECIES_DATA.mashtzarr.female || SPECIES_DATA.mashtzarr.male));
   for (const gender of SPECIES_DATA.mammakhbuur.genders) {
-    const authored = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species?.mashtzarr?.[gender]; // Creator uses the matching donor gender's existing cosmetic choices.
-    if (authored?.slots) SPECIES_DATA.mammakhbuur[gender].slots = JSON.parse(JSON.stringify(authored.slots));
+    const speciesConfig = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species; // Resolve the Mammakhbuur-specific no-front-hair rule before falling back to their Mashtzarr donor.
+    const authored = speciesConfig?.mammakhbuur?.[gender] || speciesConfig?.mashtzarr?.[gender];
+    if (Array.isArray(authored?.slots)) {
+      SPECIES_DATA.mammakhbuur[gender].slots = JSON.parse(JSON.stringify(authored.slots))
+        .filter(slot => slot?.slot !== 'hairFront'); // Mammakhbuur never expose front hair, but retain Mashtzarr Grand Beard on males.
+    }
     SPECIES_DATA.mammakhbuur[gender].colorOptions = bodyPalette('mashtzarr', gender);
+  }
+
+  // Resolve creator options again for returning players. The Mashtzarr and
+  // Nuhongan compatibility bridges used to patch this private table only
+  // during the first character-creation render; a returning player's first
+  // visit may instead be the Grooming Kit, long after those hooks retire.
+  function creatorSpeciesData(speciesId) {
+    const configured = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species || {}; // Authoritative slots for species/genders missing from the original creator snapshot.
+    const key = String(speciesId || '').trim().toLowerCase().replace(/_/g, '-'); // Lookup-only normalization keeps old saved identities unchanged.
+    if (key === 'rakakoan' && !SPECIES_DATA.rakakoan && configured.rakakoan?.male?.slots?.length) {
+      SPECIES_DATA.rakakoan = {
+        ...configured.rakakoan,
+        genders: [...(configured.rakakoan.genders || ['male', 'female'])],
+      }; // Preserve Rakako'an eyepatches and Kenkari beard options on an existing save, including the active species button for the 3D preview.
+    }
+    window.hobunjiOnboardingMashtzarrFemale?.hydratePrivateSpeciesTable?.(SPECIES_DATA);
+    for (const [key, spec] of Object.entries(SPECIES_DATA)) {
+      for (const gender of ['male', 'female']) {
+        const authored = configured[key]?.[gender];
+        if (Array.isArray(spec[gender]?.slots) && spec[gender].slots.length) continue;
+        if (!Array.isArray(authored?.slots) || !authored.slots.length) continue;
+        spec[gender] = {
+          ...authored,
+          colorOptions: authored.colorOptions || bodyPalette(key, gender),
+        };
+        if (!spec.genders.includes(gender)) spec.genders.push(gender);
+      }
+    }
+    window.HobunjiNuhonganSpecies?.hydrateOnboardingSpeciesTable?.(SPECIES_DATA);
+    const spec = SPECIES_DATA[key];
+    if (spec) return spec;
+    const authored = configured[key];
+    return authored ? {
+      ...authored,
+      label: authored.label || key,
+      genders: authored.genders || ['male', 'female'].filter(g => Array.isArray(authored[g]?.slots)),
+    } : null;
+  }
+
+  function creatorGenderData(speciesId, gender) {
+    const key = String(gender || '').trim().toLowerCase();
+    return creatorSpeciesData(speciesId)?.[key === 'f' ? 'female' : key === 'm' ? 'male' : key] || null;
   }
 
   // Clothing slots for collections tab (mirrors scratchbones shop catalog categories)
   const CLOTHING_SLOTS = [
     { key: 'hat',      label: '🎩 Hat',      category: 'hat' },
     { key: 'hood',     label: '🧣 Hood',     category: 'hood' },
+    { key: 'mask',     label: 'Mask',         category: 'mask' },
     { key: 'pauldron', label: '🛡 Pauldrons', category: 'pauldron' },
     { key: 'torso',    label: '👘 Torso',    category: 'torso' },
     { key: 'overwear', label: '🧥 Overwear', category: 'overwear' },
@@ -384,6 +436,7 @@
   // falls back to the first starter dye so clothing always has some color
   // even before the player has touched the picker.
   function selectedClothDye(which) {
+    if (_creatorSession?.cosmeticsOnly) return null; // Existing clothing dyes remain unchanged in grooming previews and results.
     const dyes = starterClothDyes();
     const id = which === 'B' ? _clothDyeBId : _clothDyeAId;
     return dyes.find(d => d.id === id) || dyes[0] || null;
@@ -456,8 +509,9 @@
       // VERDIGRIS_METAL_KEYS/METAL_DEFS/toolMetalMultiplier) rather than the
       // old unscaled legacy keys, which fought at a flat, mid-hierarchy 1.0x
       // multiplier with no room to grow into.
-      tools:    { hoe_nativeCopper: true, hatchet_nativeCopper: true, fishingmace_nativeCopper: true, fishingspear_nativeCopper: true, pickshovel_nativeCopper: true },
-      clothing: { hat: null, hood: null, pauldron: null, torso: null, overwear: null, pants: null },
+      tools:    { hoe_nativeCopper: true, hatchet_nativeCopper: true, fishingmace_nativeCopper: true, fishingspear_nativeCopper: true, pickshovel_nativeCopper: true, flute: true },
+      starterFluteGranted: true, // Every newly created character owns their own flute; EquipmentPanel migrates existing characters once.
+      clothing: { hat: null, hood: null, mask: null, pauldron: null, torso: null, overwear: null, pants: null },
       charms: [], whistles: [],
       keyItems: [], // Character-scoped progression keys (for example Banubu's War-Paint Kit) travel with this gear save between worlds.
       // Redye system: every dye the character has ever unlocked (see
@@ -472,10 +526,23 @@
       // and metal-reinforcement services. No starting stipend for motes —
       // earned through play (or the loadout page's dev-mode +1 button).
       toolMastery: {},
+      weaponFamilyProficiency: {}, // Stores character-wide kill-earned proficiency by polearms, blades, axes, bludgeons and improvised weapons.
       toolPlating: {},
       toolReinforcement: {},
       motesOfProwess: 0,
     };
+  }
+
+  function ensureCharacterStarterFlute(character) {
+    if (!character) return false;
+    const gear = character.gearInventory || (character.gearInventory = makeDefaultGear()); // Authoritative character gear saved with the character, before any game instance starts.
+    if (gear.starterFluteGranted) return false;
+    gear.tools ||= {};
+    gear.tools.flute = true;
+    gear.starterFluteGranted = true;
+    character.equipmentSlots ||= {};
+    if (!character.equipmentSlots.instrument) character.equipmentSlots.instrument = 'flute'; // Preserve an older player's existing choice.
+    return true;
   }
 
   function makeClothingItem(catalogItem, colorA, colorB) {
@@ -515,6 +582,7 @@
       alchemyActiveEffects: [],       // [{ key, remainingS }] — still-active buffs/debuffs at last save
       alchemyReagentState: {},        // { [zoneMapId]: { day, placements: [{col,row,key}] } }
       cookingState: {},               // quality buckets, generated meals, and active food effects
+      animalHides: { version: 1, pack: {} }, // Exact coat/genotype records for the count-based world-member hide inventory.
       // A brand-new member has no legacy favor to fix, so it starts already
       // "migrated" — see game.js's DialogueContent.loadNpcRelationships/
       // _applyLegacyFavorRescale. A member saved before this field existed
@@ -549,6 +617,7 @@
       lastSeason:        'Stormtide',
       createdAt:         Date.now(),
       lastPlayed:        Date.now(),
+      openingStory:      { opening: '', farmTourComplete: false, farmTourCompletedAtHours: null, jubmirFeyComplete: false },
     };
     window.FarmWorldSettings.initializeWorld(world, _newFarmSettings);
     world.members[characterId] = makeDefaultMemberState();
@@ -621,7 +690,7 @@
   function makeDefaultState(speciesId, gender) {
     speciesId = speciesId || 'mao-ao';
     gender    = gender    || 'male';
-    const spec = SPECIES_DATA[speciesId] || SPECIES_DATA['mao-ao'];
+    const spec = creatorSpeciesData(speciesId) || SPECIES_DATA['mao-ao'];
     if (!spec.genders.includes(gender)) gender = spec.genders[0];
     const gData = spec[gender];
     const opts  = gData?.colorOptions || [];
@@ -644,7 +713,7 @@
   }
 
   function currentGenderData() {
-    return _state ? SPECIES_DATA[_state.appearance.speciesId]?.[_state.appearance.gender] : null;
+    return _state ? creatorGenderData(_state.appearance.speciesId, _state.appearance.gender) : null;
   }
 
   // ── Portrait rendering ────────────────────────────────────────────────
@@ -747,6 +816,7 @@
     };
     applyEquip('hat',      'hat',           hatOptions?.[0]);
     applyEquip('hood',     'hood',          hoodOptions?.[0]);
+    applyEquip('mask',     'mask',          cosm.maskOptions?.[0]);
     applyEquip('pauldron', 'pauldron',      none);
     applyEquip('torso',    'torsoCosmetic', torsoPortraitOptions?.[0]);
     applyEquip('overwear', 'armCosmetic',   armPortraitOptions?.[0]);
@@ -785,14 +855,14 @@
     if (clothDyeA) {
       profile.bodyColors = {
         ...(profile.bodyColors || {}),
-        HAT: clothDyeColor(clothDyeA), HOOD: clothDyeColor(clothDyeA),
+        HAT: clothDyeColor(clothDyeA), HOOD: clothDyeColor(clothDyeA), MASK: clothDyeColor(clothDyeA),
         PAULDRON: clothDyeColor(clothDyeA), TORSO: clothDyeColor(clothDyeA), CLOTH: clothDyeColor(clothDyeA),
       };
     }
     if (clothDyeB) {
       profile.bodyColors = {
         ...(profile.bodyColors || {}),
-        HOOD_B: clothDyeColor(clothDyeB), CLOTH_B: clothDyeColor(clothDyeB),
+        HOOD_B: clothDyeColor(clothDyeB), MASK_B: clothDyeColor(clothDyeB), CLOTH_B: clothDyeColor(clothDyeB),
       };
     }
 
@@ -1379,6 +1449,7 @@
     }
     const memberState = ensureWorldMember(world, char.id);
     char.lastPlayed = Date.now();
+    ensureCharacterStarterFlute(char); // Persist the flute before constructing the live player snapshot; no dependency on Gear UI opening.
     saveSaveMeta(_saveMeta);
 
     const playerData = {
@@ -1419,12 +1490,15 @@
       alcoholBottleSwigs: { ...(memberState.alcoholBottleSwigs || {}) },
       npcAlcoholState: { ...(memberState.npcAlcoholState || {}) },
       npcWardrobeState: { ...(memberState.npcWardrobeState || {}) },
+      festivals:         { ...(memberState.festivals || {}) },
       npcDiscoveredGiftTraits: { ...(memberState.npcDiscoveredGiftTraits || {}) },
       alchemyKnownEffects: { ...(memberState.alchemyKnownEffects || {}) },
       alchemyKnownRecipes: [...(memberState.alchemyKnownRecipes || [])],
       alchemyActiveEffects: [...(memberState.alchemyActiveEffects || [])],
       alchemyReagentState: { ...(memberState.alchemyReagentState || {}) },
+      knownFurnitureBlueprints: [...(memberState.knownFurnitureBlueprints || [])],
       cookingState:      { ...(memberState.cookingState || {}) },
+      animalHides:       memberState.animalHides || { version: 1, pack: {} }, // Pass saved per-hide genetics from the world member into game.js restore.
       // These were being saved by game.js's saveMemberWorldData() but never
       // actually read back out here — every one of them silently reset on
       // a real browser close+reopen (a fresh page load re-runs this whole
@@ -1453,18 +1527,20 @@
   // ── HTML renderers ────────────────────────────────────────────────────
   function renderAppearanceBody() {
     const ap        = _state.appearance;
-    const specData  = SPECIES_DATA[ap.speciesId];
-    const gData     = specData?.[ap.gender];
+    const specData  = creatorSpeciesData(ap.speciesId);
+    const gData     = creatorGenderData(ap.speciesId, ap.gender);
+    const activeSpecies = String(ap.speciesId || '').trim().toLowerCase().replace(/_/g, '-'); // Keeps the selected species button accurate for old saved spellings in the grooming preview.
+    const activeGender = /^(female|f)$/i.test(String(ap.gender || '')) ? 'female' : 'male'; // Mirrors the creator's gender resolution for saved abbreviated values.
     const colorOpts = gData?.colorOptions || [];
 
     const speciesBtns = Object.entries(SPECIES_DATA).map(([sid, sd]) =>
-      `<button class="ob-sel-btn${ap.speciesId === sid ? ' ob-active' : ''}" data-ob-species="${esc(sid)}">${esc(sd.label)}</button>`
+      `<button class="ob-sel-btn${activeSpecies === sid ? ' ob-active' : ''}" data-ob-species="${esc(sid)}">${esc(sd.label)}</button>`
     ).join('');
 
     const availGenders = specData?.genders || ['male'];
     const genderBtns = ['male', 'female'].map(g => {
       const avail = availGenders.includes(g);
-      return `<button class="ob-sel-btn${ap.gender === g ? ' ob-active' : ''}${!avail ? ' ob-disabled' : ''}"
+      return `<button class="ob-sel-btn${activeGender === g ? ' ob-active' : ''}${!avail ? ' ob-disabled' : ''}"
                        data-ob-gender="${g}"${!avail ? ' disabled' : ''}>${g === 'male' ? 'Male' : 'Female'}</button>`;
     }).join('');
 
@@ -1581,6 +1657,7 @@
       <div class="ob-two-col">${body}</div>
       <div class="ob-footer">
         <span class="ob-footer-hint">${_creatorSession ? esc(_creatorSession.hint || '') : 'Saved automatically — you can change this later.'}</span>
+        ${_creatorSession?.cosmeticsOnly ? '<button class="ob-sel-btn" id="ob-cancel-btn" data-ctrl-cancel>Cancel</button>' : ''}
         <button class="ob-start-btn" id="ob-start-btn">${_creatorSession ? esc(_creatorSession.confirmLabel) : '🌱 Start Farming'}</button>
       </div>
     </div>`;
@@ -1590,6 +1667,10 @@
     if (!_el) return;
     if (_flowStep === 'save-select') { rerenderSaveSelect(); return; }
     _el.innerHTML = renderOverlay();
+    if (_creatorSession?.cosmeticsOnly) {
+      _el.querySelectorAll('[data-ob-species], [data-ob-gender]').forEach(button => { button.disabled = true; });
+      _el.querySelector('[data-ob-tab="collections"]')?.remove();
+    }
     attachListeners();
     schedulePreviewRender();
   }
@@ -1605,11 +1686,13 @@
     });
 
     _el.querySelectorAll('[data-ob-tab]').forEach(btn => btn.addEventListener('click', () => {
+      if (_creatorSession?.cosmeticsOnly && btn.dataset.obTab !== 'appearance') return;
       _activeTab = btn.dataset.obTab;
       rerender();
     }));
 
     _el.querySelectorAll('[data-ob-species]').forEach(btn => btn.addEventListener('click', () => {
+      if (_creatorSession?.cosmeticsOnly) return;
       const sid   = btn.dataset.obSpecies;
       const spec  = SPECIES_DATA[sid];
       if (!spec) return;
@@ -1630,6 +1713,7 @@
     }));
 
     _el.querySelectorAll('[data-ob-gender]').forEach(btn => btn.addEventListener('click', () => {
+      if (_creatorSession?.cosmeticsOnly) return;
       if (btn.disabled) return;
       const g = btn.dataset.obGender;
       const gData = SPECIES_DATA[_state.appearance.speciesId]?.[g];
@@ -1650,7 +1734,7 @@
       const slot = sel.dataset.obSlot;
       const val  = sel.value || undefined;
       if (val) { _state.appearance.cosmetics[slot] = val; }
-      else     { delete _state.appearance.cosmetics[slot]; }
+      else     { _state.appearance.cosmetics[slot] = null; } // Explicit None must clear the slot instead of re-enabling randomized defaults.
       schedulePreviewRender();
     }));
 
@@ -1706,6 +1790,7 @@
     const nicknameEl = _el.querySelector('#ob-nickname');
     if (nicknameEl) nicknameEl.addEventListener('input', () => { _state.nickname = nicknameEl.value; });
 
+    _el.querySelector('#ob-cancel-btn')?.addEventListener('click', cancelCreator);
     const startBtn = _el.querySelector('#ob-start-btn');
     if (startBtn) startBtn.addEventListener('click', _complete);
   }
@@ -1747,6 +1832,7 @@
           }
           return gear;
         })(),
+        equipmentSlots:  { instrument: 'flute' }, // A fresh character starts with the owned flute already assigned.
         skillLevels:      makeDefaultSkills(),
         skillExperience:  {},
         combatTechniqueUnlocks: [],
@@ -1772,6 +1858,7 @@
       playerData.isWorldOwner   = true;
       playerData.farmhandPermissions = getFarmhandPermissions(newWorld, charId);
       playerData.gearInventory  = newChar.gearInventory;
+      playerData.equipmentSlots = { ...newChar.equipmentSlots }; // Carry starter instrument assignment into the just-created live player.
       playerData.combatTechniqueUnlocks = [...(newChar.combatTechniqueUnlocks || [])];
       playerData.skillLevels    = newChar.skillLevels;
       playerData.skillExperience = newChar.skillExperience;
@@ -1788,12 +1875,15 @@
       playerData.alcoholBottleSwigs = { ...(memberState.alcoholBottleSwigs || {}) };
       playerData.npcAlcoholState = { ...(memberState.npcAlcoholState || {}) };
       playerData.npcWardrobeState = { ...(memberState.npcWardrobeState || {}) };
+      playerData.festivals = { ...(memberState.festivals || {}) };
       playerData.npcDiscoveredGiftTraits = { ...(memberState.npcDiscoveredGiftTraits || {}) };
       playerData.alchemyKnownEffects = { ...(memberState.alchemyKnownEffects || {}) };
       playerData.alchemyKnownRecipes = [...(memberState.alchemyKnownRecipes || [])];
       playerData.alchemyActiveEffects = [...(memberState.alchemyActiveEffects || [])];
       playerData.alchemyReagentState = { ...(memberState.alchemyReagentState || {}) };
+      playerData.knownFurnitureBlueprints = [...(memberState.knownFurnitureBlueprints || [])];
       playerData.cookingState = { ...(memberState.cookingState || {}) };
+      playerData.animalHides = memberState.animalHides || { version: 1, pack: {} }; // New characters use the same saved-hide payload shape.
       // Same fields as the returning-player branch above, for consistency —
       // memberState here is always freshly empty (a brand-new world/member),
       // so these are no-ops today, but keep the two branches' playerData
@@ -1832,8 +1922,8 @@
   function makeDefaultGenotype(kind) {
     if (kind === 'uumkaoii') {
       return {
-        fur:    { color: '#8a6d4b', copies: 2, inheritance: 'dominant' },
-        plates: { color: '#4b6d5f', copies: 2, inheritance: 'dominant' },
+        base: { color: '#8a6d4b', copies: 2, inheritance: 'dominant' },
+        shell: { color: '#4b6d5f', copies: 2, inheritance: 'dominant', enabled: true },
       };
     }
     return {};
@@ -1990,13 +2080,32 @@
       hideName: options.hideName === true,
       child: options.child === true,
       mode: String(options.mode || 'custom'),
+      cosmeticsOnly: options.cosmeticsOnly === true, // Grooming keeps character identity and equipped clothing fixed.
       onComplete: typeof options.onComplete === 'function' ? options.onComplete : null,
+      onCancel: typeof options.onCancel === 'function' ? options.onCancel : null, // Lets in-game editors release their movement/pause ownership without applying edits.
     };
     _flowStep = 'char-create';
     _state = makeDefaultState(options.speciesId || 'mao-ao', options.gender || 'male');
+    if (options.appearance) {
+      const initialAppearance = JSON.parse(JSON.stringify(options.appearance)); // Old/imported appearances may omit cosmetic or color maps.
+      _state.appearance = { ..._state.appearance, ...initialAppearance,
+        cosmetics: { ...(initialAppearance.cosmetics || {}) },
+        bodyColors: { ...(initialAppearance.bodyColors || options.resolvedProfile?.bodyColors || _state.appearance.bodyColors) },
+      };
+    }
+    if (Array.isArray(options.equippedCosmetics)) _state.equippedCosmetics = [...options.equippedCosmetics];
+    if (options.appliedDyes) _state.appliedDyes = JSON.parse(JSON.stringify(options.appliedDyes));
+    if (_creatorSession.cosmeticsOnly && options.resolvedProfile) {
+      for (const { slot } of currentGenderData()?.slots || []) {
+        const cosmetic = options.resolvedProfile[slot]; // Freeze current visible defaults so editing one cosmetic cannot reroll untouched slots.
+        _state.appearance.cosmetics[slot] = cosmetic?.id && cosmetic.id !== 'none' ? cosmetic.id : null;
+      }
+    }
     _activeTab = 'appearance';
-    _colorAIdx = 0;
-    _colorBIdx = 0;
+    const palette = currentGenderData()?.colorOptions || []; // Find active grooming swatches without replacing custom body colors.
+    const colorIndex = key => palette.findIndex(color => ['h', 's', 'v'].every(component => color[component] === _state.appearance.bodyColors?.[key]?.[component])); // Custom colors remain unselected but preserved.
+    _colorAIdx = options.appearance ? colorIndex('A') : 0;
+    _colorBIdx = options.appearance ? colorIndex('B') : 0;
     _clothDyeAId = null;
     _clothDyeBId = null;
     _el = mountOnboardingOverlay();
@@ -2007,8 +2116,19 @@
     return true;
   }
 
+  function cancelCreator() {
+    if (!_creatorSession) return false;
+    const session = _creatorSession; // Cancel applies no appearance or other character mutations.
+    _creatorSession = null;
+    _flowStep = null;
+    removeOnboardingOverlay();
+    document.dispatchEvent(new CustomEvent('hobunji-creator-session', { detail: { phase: 'close', mode: session.mode } }));
+    session.onCancel?.();
+    return true;
+  }
+
   function creatorSessionInfo() {
-    return _creatorSession ? { mode: _creatorSession.mode, child: _creatorSession.child } : null;
+    return _creatorSession ? { mode: _creatorSession.mode, child: _creatorSession.child, cosmeticsOnly: _creatorSession.cosmeticsOnly } : null;
   }
 
   function _completeCreatorSession() {
@@ -2017,7 +2137,7 @@
     const dyeB = selectedClothDye('B') || dyeA;
     // NPC records carry clothing dyes as tint-slot → dye id (the same tint
     // namespace buildPreviewProfile previews them in).
-    const clothDyes = dyeA ? { HAT: dyeA.id, HOOD: dyeA.id, PAULDRON: dyeA.id, TORSO: dyeA.id, CLOTH: dyeA.id, HOOD_B: dyeB.id, CLOTH_B: dyeB.id } : {};
+    const clothDyes = dyeA ? { HAT: dyeA.id, HOOD: dyeA.id, MASK: dyeA.id, PAULDRON: dyeA.id, TORSO: dyeA.id, CLOTH: dyeA.id, HOOD_B: dyeB.id, MASK_B: dyeB.id, CLOTH_B: dyeB.id } : {};
     const result = {
       nickname: (_state.nickname || '').trim(),
       appearance: { ..._state.appearance, cosmetics: { ..._state.appearance.cosmetics }, bodyColors: { ..._state.appearance.bodyColors } },
@@ -2043,5 +2163,5 @@
     _saveFlowStep = null;
   }
 
-  window.HobunjiOnboarding = { init, reset, loadProfile, loadSaveMeta, openCreator, creatorSessionInfo };
+  window.HobunjiOnboarding = { init, reset, loadProfile, loadSaveMeta, openCreator, cancelCreator, creatorSessionInfo };
 })();

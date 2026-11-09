@@ -93,6 +93,26 @@ function baseMap(id) {
     denMotherKind: 'gar-wolf-den-mother',
   };
 }
+// Real cave maps have solid rim/collider tiles on both edges of every corridor.
+// That rim cannot prohibit the very wall-to-wall cut that defines a separator.
+function withRockRim(map) {
+  const floors = new Set(map.floor.map(tile => tile.join(','))); // Authoritative walkable footprint for synthetic cave boundary construction.
+  const rim = new Set(); // Nonwalkable rock cells exactly surrounding the cavern, as produced by CavernGenerator.
+  for (const [col, row] of map.floor) for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+    const key = (col + dc) + ',' + (row + dr);
+    if (!floors.has(key)) rim.add(key);
+  }
+  map.outerRimTiles = [...rim].map(key => key.split(',').map(Number));
+  map.colliders = map.outerRimTiles.map(cell => [...cell]);
+  return map;
+}
+const rimmed = withRockRim(baseMap('rimmed_separator_test'));
+const rimReservations = new Set(rimmed.outerRimTiles.map(cell => cell.join(',')));
+const rimPlan = { separator: null };
+assert(Cave.__test.installMineableSeparator(rimmed, rngFactory('rimmed-cave'), rimReservations, rimPlan),
+  'realistic rim/colliders no longer reject the cave corridor');
+assert(rimPlan.separator.cells.some(tile => tile.layer === 5), 'the rimmed corridor still receives five contiguous mineable rock strata');
+assert(rimReservations.has('6,3'), 'installed wall is reserved for later features');
 const separator = Cave.__test.findMineableSeparator(baseMap('separator_test'));
 assert(separator && separator.col === 6 && separator.row === 3, 'separator finder picks the existing corridor as a mineable partition');
 assert(separator.nearKeys.length >= 20 && separator.farKeys.length >= 20, 'separator preserves substantial chambers on both sides');
@@ -133,14 +153,65 @@ function decorate(p) {
 }
 
 // Two independent layers: every contents type and every inhabitant occurs.
-const CONTENTS = ['ore_mine', 'trapped_cache', 'catacomb', 'ruin_entrance', 'mushroom_cave'];
+const CONTENTS = ['ore_mine', 'trapped_cache', 'catacomb', 'ruin_entrance', 'mushroom_cave', 'puzzle_cave'];
 const INHABITANTS = ['animal_den', 'bandit_hideout', 'none'];
 const rolled = Array.from({ length: 400 }, (_, i) => Cave.__test.rollProfile('map_roll_zone', { id: `animalDen_${i}`, x: i * 7, y: i * 3 }));
-for (const type of CONTENTS) assert(rolled.some(p => p.contents === type), `contents ${type} can roll`);
+for (const type of CONTENTS.filter(type => type !== 'puzzle_cave')) assert(rolled.some(p => p.contents === type), 'ordinary contents '+type+' can roll');
 for (const type of INHABITANTS) assert(rolled.some(p => p.inhabitant === type), `inhabitant ${type} can roll`);
 assert(rolled.every(p => CONTENTS.includes(p.contents) && INHABITANTS.includes(p.inhabitant)), 'every cave has exactly one contents and one inhabitant');
+assert(rolled.every(p => p.contents !== 'puzzle_cave'), 'Puzzle Caves never consume an ordinary cave contents slot');
+const independentShelves = Array.from({length:30},(_,i)=>({
+  id:'mini_'+i,base:{footprint:[[1,1]]},
+  footprint:[{c:i*5+2,r:10},{c:i*5+3,r:10},{c:i*5+2,r:11},{c:i*5+3,r:11}],
+  x:i*5+2.5,z:10.5,y:2,width:2.2,depth:1.5,normal:{x:0,z:1},tangent:{x:1,z:0},
+})); // Independent ledge fixtures: no animal den or ordinary cave anchor accompanies them.
+const outdoor = Cave.registerOutdoorPuzzleSites('map_test_wilds',independentShelves);
+assert(outdoor.length>=4 && outdoor.length<=24, 'generous independent cliff door population respects the cap');
+assert(outdoor.every(site=>site.contents==='puzzle_cave'&&site.inhabitant==='none'&&site.source==='independent_cliff'),
+  'outdoor sites are player-only puzzle caves without wildlife ownership');
+assert.deepEqual(Cave.registerOutdoorPuzzleSites('map_test_wilds',independentShelves),outdoor,
+  'independent cliff door rolls are stable within a world and Tothal cycle');
+assert.equal(Cave.sitesForZone('map_test_wilds').length,workspace.animalDens.length,
+  'outdoor puzzle density does not consume or duplicate ordinary cave anchors');
 assert.equal(Cave.__test.caveTitle('mushroom_cave', 'animal_den'), 'Mushroom Cave — Animal Den', 'label names both layers');
 assert.equal(Cave.__test.caveTitle('ore_mine', 'none'), 'Ore-rich Cave', 'uninhabited caves are named by contents only');
+
+// Real Puzzle Cave generation must carve an accessible one-puzzle room instead
+// of silently labelling a former den cave while leaving it empty.
+const puzzleCaves=[]; // Seeded one-room caverns used to cover both authored puzzle mechanisms.
+for(let i=0;i<32 && (!puzzleCaves.some(map=>map.cavePuzzle?.kind==='fireSconces') ||
+                      !puzzleCaves.some(map=>map.cavePuzzle?.kind==='timedMelody'));i++){
+  puzzleCaves.push(decorate(profile('map_i_test_puzzle_'+i,'puzzle_cave')));
+}
+assert(puzzleCaves.some(map=>map.cavePuzzle?.kind==='fireSconces'),
+  'a fire-sconce Puzzle Cave can be generated');
+assert(puzzleCaves.some(map=>map.cavePuzzle?.kind==='timedMelody'),
+  'a timed-melody Puzzle Cave can be generated');
+for(const map of puzzleCaves){
+  const puzzle=map.cavePuzzle;
+  assert(puzzle && puzzle.room.width===9 && puzzle.room.depth===9,
+    'Puzzle Cave always receives its own nine-by-nine room');
+  const floorKeys=new Set(map.floor.map(tile=>tile.join(','))); // Source-of-truth carved floor validates puzzle placement.
+  for(let row=puzzle.room.row;row<puzzle.room.row+9;row++)
+    for(let col=puzzle.room.col;col<puzzle.room.col+9;col++)
+      assert(floorKeys.has(col+','+row), 'the whole challenge room remains walkable after cavern collision carving');
+  assert.equal(map.creatureSpawns.length,0,'Puzzle Cave contains no inherited Den-Mother spawns');
+  const treasure=map.cavePuzzleTreasure; // The earned loot has a tangible authored chest even when it is initially concealed.
+  assert(treasure&&floorKeys.has(treasure.col+','+treasure.row),'puzzle chest is on an actual carved floor tile');
+  const gateZ=puzzle.room.row+9-2.8; // Same chamber gate depth used by the live puzzle compositor.
+  assert(treasure.row+.5-gateZ>1.05,"the treasure is beyond the player\'s front-of-door interaction reach");
+  assert(treasure.row+.5-gateZ<2,'the opened passage leads to a nearby, walkable reward alcove');
+  assert(map.caveProps.some(prop=>prop.id===treasure.id&&prop.key==='ruinDungeonChestT2'),
+    'both puzzle types build the ordinary authored bronze treasure chest');
+  if(puzzle.kind==='fireSconces'){
+    const charges=map.caveShattercasks.filter(charge=>charge.kind==='flameShattercask'&&charge.guaranteed);
+    assert.equal(charges.length,2,'two usable flame charges prevent a one-use fire-sconce softlock');
+    assert(charges.every(charge=>floorKeys.has(charge.col+','+charge.row)),
+      'both flame charges are on rendered cave floor');
+    assert(Math.hypot(charges[0].col-charges[1].col,charges[0].row-charges[1].row)>=2,
+      'two charges do not overlap');
+  }
+}
 
 const mineMap = decorate(profile('map_i_test_mine', 'ore_mine'));
 assert.equal(mineMap.denMotherKind, null, 'cave without an animal den strips Den-Mother');
@@ -170,12 +241,85 @@ assert(cacheMap.caveProps.some(item => item.key === 'ruinDungeonChestT2'), 'cach
 assert(cacheMap.caveCache && cacheMap.caveTraps.length >= 1, 'cache has functional runtime plan plus at least one trap');
 const wall = cacheMap.caveSitePlan.separatorRock;
 assert(wall && wall.cells.length === cacheMap.oreRocks.filter(rock => rock.caveSeparator).length, 'hidden cache is sealed behind a wall of mineable ore rocks');
+assert(wall.cells.some(cell => cell.layer === 5), 'sealed chamber uses five successive mineable strata');
+assert(cacheMap.oreRocks.filter(rock=>rock.caveSeparator).every(rock=>Number.isInteger(rock.caveSeparatorLayer)), 'each wall rock records its layer for diagnostics');
+assert(cacheMap.caveShattercasks.some(charge=>charge.guaranteed), 'every mineable cave separator guarantees an entrance-side Shattercask');
 const plan = Cave.__test.plansByMapId.get('map_i_test_cache');
 assert(plan.separator.farKeys.includes(`${cacheMap.caveCache.col},${cacheMap.caveCache.row}`), 'cache sits behind the wall');
+assert(cacheMap.caveShattercasks.filter(charge=>charge.guaranteed).every(charge =>
+  plan.separator.nearKeys.includes(charge.col+','+charge.row)
+  && !wall.cells.some(cell=>cell.col===charge.col&&cell.row===charge.row)
+), 'guaranteed charge stays on the accessible side and never inside the wall');
 assert(cacheMap.caveBanditSpawns.length >= 2 && cacheMap.caveBanditSpawns.every(s => plan.separator.nearKeys.includes(`${s.col},${s.row}`)), 'bandit inhabitants stay on the entrance side of the wall');
 
 const mushroomMap = decorate(profile('map_i_test_mushroom', 'mushroom_cave'));
 assert(mushroomMap.caveMushrooms.length >= 6 && mushroomMap.caveMushrooms.every(m => m.reagentKey === 'duskcapMushroom'), 'mushroom cave grows Duskcap Mushroom clusters');
+
+// Compact test caves keep their original spawn budget instead of spending scarce
+// floor tiles on an optional rock barricade. Real generated caves are bigger.
+assert(catMap.floor.length < Cave.__test.MIN_OPTIONAL_EXTENSION_FLOOR && !catMap.caveSitePlan.extension, 'compact catacomb does not lose its minimum skeleton population');
+
+// Wide paired chambers are a realistic fixture for the new optional extension.
+// They leave room for the original content on both sides of the blastable wall.
+function extendedCave(p) {
+  installProfile(p);
+  const map = baseMap(p.mapId);
+  map.floor = [];
+  for (let row = 1; row <= 11; row++) {
+    for (let col = 1; col <= 11; col++) map.floor.push([col, row]);
+    for (let col = 15; col <= 25; col++) map.floor.push([col, row]);
+  }
+  for (let col = 12; col <= 14; col++) for (let row = 5; row <= 6; row++) map.floor.push([col, row]);
+  map.cols = 27; map.rows = 13;
+  withRockRim(map); // Extend feature tests over a physical rock boundary, not an impossible rim-free cave.
+  map.exitCol = 1; map.exitRow = 5;
+  map.exits[0].tiles = [[1, 5]];
+  return Cave.decorateCavernMapData(p.mapId, map);
+}
+
+// Any standard cave history can contain an optional blastable side chamber;
+// contents-specific rewards must actually spawn on its inaccessible side.
+// The deterministic extension stream must not depend on the ordinary loot RNG.
+for (const contents of ['ore_mine', 'catacomb', 'mushroom_cave']) {
+  let extended = null; // First eligible seeded cave exercising this history.
+  for (let index = 0; index < 32 && !extended; index++) {
+    const candidate = extendedCave(profile(`map_i_side_${contents}_${index}`, contents));
+    if (candidate.caveSitePlan.separatorRock) extended = candidate;
+  }
+  assert(extended, `${contents}: multiple seeds can produce a mineable side chamber`);
+  const plan = Cave.__test.plansByMapId.get(extended.id);
+  const hidden = new Set(plan.separator.farKeys); // Confirms the reward lies behind the actual mined barrier, not just nearby.
+  const far = item => hidden.has(item.col + ',' + item.row);
+  assert(extended.caveSitePlan.extension?.contentType === contents, `${contents}: extension metadata is recorded`);
+  assert(extended.oreRocks.some(rock => rock.caveSeparator && rock.caveSeparatorLayer === 1), `${contents}: its entrance wall is mineable`);
+  assert(extended.caveShattercasks.some(charge => charge.guaranteed && plan.separator.nearKeys.includes(charge.col + ',' + charge.row)),
+    `${contents}: reachable shattercask is provided on the entrance side`);
+  if (contents === 'ore_mine') assert(extended.oreRocks.some(rock => !rock.caveSeparator && far(rock)), 'ore vein rewards the excavation');
+  if (contents === 'catacomb') assert(extended.caveProps.some(prop => prop.key === 'ruinSanctumCoffin' && far(prop)), 'buried coffin rewards the excavation');
+  if (contents === 'mushroom_cave') assert(extended.caveMushrooms.some(far), 'hidden grotto includes a pickable Duskcap');
+}
+
+// Ruin-door caves are also eligible, provided the extension doesn't wall off the
+// mandatory doorway. Use an explicit near-side doorway fixture to isolate that
+// safety rule from the more restrictive full SDF ruin-door placement.
+{
+  const ruinSide = baseMap('ruin_side_extension');
+  const plan = { ruinEntrance: { col: 3, row: 3 }, separator: null };
+  const reserved = new Set();
+  assert(Cave.__test.EXTENSION_CHANCES.ruin_entrance > 0, 'ruin caves are eligible for side extensions');
+  assert(Cave.__test.installMineableSeparator(ruinSide, rngFactory('ruin-side'), reserved, plan), 'near-side ruin door permits a mined annex');
+  assert(plan.separator.nearKeys.includes('3,3'), 'the original ruin door remains accessible before any rock is broken');
+  assert(!plan.separator.farKeys.includes('3,3'), 'the ruin doorway is never sealed behind the annex wall');
+
+  // An animal Den-Mother and her eggs must never be locked inside a pocket:
+  // the optional extension adds loot, it must not alter the boss encounter.
+  const denSide = baseMap('den_side_extension');
+  denSide.nestCol = 9; denSide.nestRow = 3;
+  const denPlan = { ruinEntrance: null, separator: null };
+  Cave.__test.installMineableSeparator(denSide, rngFactory('den-side'), new Set(), denPlan);
+  assert(!denPlan.separator || denPlan.separator.nearKeys.includes('9,3'), 'Den-Mother nest is on the reachable side of any extension');
+}
+
 
 const ruinMap = decorate(profile('map_i_test_ruin', 'ruin_entrance'));
 assert(ruinMap.caveProps.some(item => item.key === 'ruinEntranceDoor'), 'ruin cave places the authored ruin entrance door');
@@ -187,7 +331,7 @@ assert.equal(ruinSeed, Cave.decorateCavernMapData('map_i_test_ruin', baseMap('ma
 function assertSpaced(map) {
   const features = [...map.oreRocks, ...(map.caveProps || []).filter(prop => !prop.embedded), ...(map.caveBodies || []), ...(map.caveMushrooms || []), ...(map.caveBanditSpawns || []), ...(map.caveTraps || [])]; // All feature centres used to check cross-layer spacing.
   for (let i = 0; i < features.length; i++) for (let j = i + 1; j < features.length; j++) {
-    if (features[i].caveSeparator && features[j].caveSeparator) continue; // A single mineable wall deliberately uses touching rocks.
+    if (features[i].caveSeparator && features[j].caveSeparator) continue; // Five mineable wall strata deliberately touch each other.
     assert(Math.hypot(features[i].col - features[j].col, features[i].row - features[j].row) >= 1.4, `${map.id}: ${JSON.stringify(features[i])} too close to ${JSON.stringify(features[j])}`);
   }
 }
@@ -273,22 +417,102 @@ const census = context.WildlifeSpawn.denNestCensus('map_test_wilds');
 assert.equal(census.caveCount, workspace.animalDens.length, 'wildlife diagnostics expose generic cave total');
 assert.equal(census.denCount, expectedAnimalDens, 'wildlife diagnostics retain true animal-den count');
 
-// Mushroom harvest: walking onto a cluster grants Duskcap via the loot grant, with Foraging XP, once per regrow window.
+// Cave cache loot is no longer auto-granted while walking near its rendered chest.
+// The existing aimed cave world action must claim a lock and wait for a victory.
 {
-  const granted = [];
-  let xp = 0;
+  const started = []; // Pending Ring Tumblers callbacks inspected without synthetic successes in the cave tick.
+  const lootGranted = []; // Real DevSpawner loot adapter receives the original cache reward only after success.
+  context.ChestLockpicking = {
+    open(options) { started.push(options); return true; },
+  };
+  context.DevSpawner.init({ grantLoot(gained) { lootGranted.push(gained); return Object.keys(gained); } });
+  const chestTile = cacheMap.caveCache; // Authored cache and targeted tile are the same physical object.
+  Object.assign(deps, { getCurrentArea: () => 'map_i_test_cache', showToast() {} });
+  deps.player.x = (chestTile.col + .5) * deps.TILE;
+  deps.player.y = (chestTile.row + .5) * deps.TILE;
+  const cacheProfile = Cave.profileForMapId('map_i_test_cache'); // Saved state owner remains this cavern profile.
+  assert.equal(Cave.__test.runtimeStateBySignature.get(cacheProfile.signature)?.cacheOpened || false, false);
+  const chest = Cave.objectAt('map_i_test_cache', chestTile.col, chestTile.row);
+  assert.equal(chest?.getButtons()?.[0]?.action, 'obj_pick_cave_cache', 'visible cache uses the ordinary targeted world-object action');
+  assert.equal(chest?.onAction('wrong_action')?.ok, false, 'other actions never open the cache');
+  assert.equal(chest.onAction('obj_pick_cave_cache').ok, false, 'starting Ring Tumblers does not immediately grant loot');
+  assert.equal(started.length, 1);
+  assert.equal(started[0].tier, 2, 'cave caches use the three-ring tier');
+  assert.equal(lootGranted.length, 0, 'mere presence or a pending lock cannot award cave loot');
+  started[0].onCancel?.('cancelled');
+  assert.equal(lootGranted.length, 0, 'cancelling cannot loot cave treasure');
+  assert.equal(chest.onAction('obj_pick_cave_cache').ok, false, 'cancelled attempt can be retried');
+  assert.equal(started.length, 2);
+  started[1].onSuccess();
+  assert.equal(Cave.__test.runtimeStateBySignature.get(cacheProfile.signature).cacheOpened, true, 'successful lock updates canonical cacheOpened state');
+  assert.equal(lootGranted.length, 1, 'successful lock grants precisely one original cache reward');
+  assert.equal(Cave.objectAt('map_i_test_cache', chestTile.col, chestTile.row), null, 'opened cache cannot be interacted with again');
+  started[1].onSuccess(); // The original loot function guards its own saved cache flag.
+  assert.equal(lootGranted.length, 1, 'repeating a stale win callback cannot duplicate rewards');
+  deps.getCurrentArea = () => 'map_test_wilds';
+}
+
+// Puzzle treasure remains visibly claimable after solving rather than being silently auto-granted.
+{
+  const rewardMap=puzzleCaves.find(map=>map.cavePuzzleTreasure); // A generated chamber supplies both its chest and canonical save identity.
+  const tile=rewardMap.cavePuzzleTreasure;
+  const rewardProfile=Cave.profileForMapId(rewardMap.id);
+  assert(rewardProfile,'the puzzle treasure fixture has an independent cave profile');
+  const saved={discovered:true,puzzleSolved:true,puzzleRewardTier:2,puzzleRewardClaimed:false};
+  Cave.__test.runtimeStateBySignature.set(rewardProfile.signature,saved); // Simulate the persisted just-solved cave without side-stepping the real interaction.
+  deps.getCurrentArea=()=>rewardMap.id;
+  deps.player.x=(tile.col+.5)*deps.TILE;
+  deps.player.y=(rewardMap.cavePuzzle.room.row+9-2.8-.2)*deps.TILE;
+  assert.equal(Cave.objectAt(rewardMap.id,tile.col,tile.row),null,
+    'the chest cannot be claimed through the closed stone wall from its front side, even on a saved solved map');
+  deps.player.y=(tile.row+.5)*deps.TILE;
+  const chest=Cave.objectAt(rewardMap.id,tile.col,tile.row);
+  assert.equal(chest?.getButtons()?.[0]?.action,'obj_claim_puzzle_treasure','the visible puzzle chest has a standard aimed action');
+  assert.equal(chest.onAction('obj_claim_puzzle_treasure').ok,false,'missing trinket definitions do not consume earned treasure');
+  assert.equal(saved.puzzleRewardPending,true,'unavailable reward is persisted as pending');
+  const oldTrinkets=context.TrinketSystem,oldLoot=context.LootRolling;
+  let claimed=0; // Ensures pressing a cached chest button twice cannot duplicate its single reward.
+  context.TrinketSystem={DEFINITIONS:{cave_test:{}},claimLoot(gained){claimed++;return ['Cave Test Trinket'];}};
+  context.LootRolling={getLootPools:()=>({puzzleCave:{entries:[{tier:2,itemKey:'trinket_cave_test'}]}}),
+    rollLootPool:()=>({trinket_cave_test:1})};
+  assert.equal(chest.onAction('obj_claim_puzzle_treasure').ok,true,'the earned chest can be claimed once definitions are available');
+  assert.equal(saved.puzzleRewardClaimed,true,'claim persists the one-shot reward state');
+  assert.equal(Cave.objectAt(rewardMap.id,tile.col,tile.row),null,'claimed chest cannot be reopened');
+  assert.equal(chest.onAction('obj_claim_puzzle_treasure').ok,false,'stale button cannot award another trinket');
+  assert.equal(claimed,1,'loot was granted exactly once');
+  context.TrinketSystem=oldTrinkets;context.LootRolling=oldLoot;
+  deps.getCurrentArea=()=> 'map_test_wilds';
+}
+
+// Cave Duskcaps now use ordinary aimed getButtons/onAction picking, never proximity harvest.
+{
+  const granted = []; // Captures the isolated legacy loot adapter when no game-owned lightweight grant is injected.
+  let xp = 0; // Counts Foraging XP earned only by a successful explicit pick.
   context.DevSpawner.init({ grantLoot(gained) { granted.push(gained); return Object.keys(gained); } });
-  const cluster = mushroomMap.caveMushrooms[0];
+  const cluster = mushroomMap.caveMushrooms[0]; // Stable authored cave tile used to check aimed interaction and regrowth.
   Object.assign(deps, { getCurrentArea: () => 'map_i_test_mushroom', calendar: { day: 10 }, awardForagingXp: () => { xp++; }, bonusYieldChance: () => 0, showToast() {} });
   deps.player.x = (cluster.col + 0.5) * deps.TILE; deps.player.y = (cluster.row + 0.5) * deps.TILE;
   Cave.updateCurrentCaveRuntime(1);
-  assert.deepEqual(granted, [{ duskcapMushroom: 1 }], 'walking onto a mushroom cluster picks Duskcap Mushroom');
-  assert.equal(xp, 1, 'picking awards Foraging XP');
+  assert.equal(granted.length, 0, 'walking across a mushroom never picks it automatically');
+  const mushroom = Cave.objectAt('map_i_test_mushroom', cluster.col, cluster.row); // Aimed cave world object used by the same action path as wild reagents.
+  assert.equal(mushroom?.getButtons()?.[0]?.action, 'obj_pick_cave_mushroom', 'aiming at a cluster offers the explicit pick action');
+  assert.equal(Cave.objectAt('map_test_wilds', cluster.col, cluster.row), null, 'another area cannot target a cave cluster');
+  assert.equal(mushroom.onAction('wrong_action').ok, false, 'a wrong action cannot harvest a cave cluster');
+  const picked = mushroom.onAction('obj_pick_cave_mushroom'); // Result controls the generic game obj_* save dispatcher.
+  assert.equal(picked.ok, true, 'manual pick succeeds');
+  assert.equal(picked.deferMemberSave, true, 'pickup defers generic synchronous world save');
+  assert.deepEqual(granted, [{ duskcapMushroom: 1 }], 'manual pick grants one Duskcap using the existing loot fallback');
+  assert.equal(xp, 1, 'manual pick awards Foraging XP');
+  assert.equal(mushroom.onAction('obj_pick_cave_mushroom').ok, false, 'the stale button cannot harvest the same cluster twice');
+  assert.equal(Cave.objectAt('map_i_test_mushroom', cluster.col, cluster.row), null, 'picked clusters no longer show their action prompt');
   Cave.updateCurrentCaveRuntime(1);
-  assert.equal(granted.length, 1, 'a picked cluster is not picked again the same day');
+  assert.equal(granted.length, 1, 'the proximity tick cannot re-pick a harvested cluster');
   deps.calendar.day = 13;
   Cave.updateCurrentCaveRuntime(1);
-  assert.equal(granted.length, 2, 'the cluster regrows after three days');
+  const regrown = Cave.objectAt('map_i_test_mushroom', cluster.col, cluster.row); // Restores the usual three-day cave mushroom cycle.
+  assert(regrown, 'mushroom can be aimed at again after its three-day regrowth window');
+  assert.equal(regrown.onAction('obj_pick_cave_mushroom').ok, true, 'regrown mushroom can be picked again manually');
+  assert.equal(granted.length, 2, 'regrowth still grants a second harvest only after another action');
   deps.getCurrentArea = () => 'map_test_wilds';
 }
 
@@ -312,24 +536,170 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
 // Mine path); stone-look rocks stay stone-only. No iron/crystal looks remain.
 {
   const oreSource = fs.readFileSync(path.join(root, 'docs/js/cavern-ore-rocks.js'), 'utf8');
-  class Obj { constructor() { this.position = { set() {} }; this.children = []; } add(c) { this.children.push(c); } }
-  const oreCtx = { THREE: { Mesh: Obj, Group: Obj, MeshLambertMaterial: class {} }, TerrainGeometry: { buildRockTileGeo: () => ({ stoneGeo: {} }) } };
+  class Obj {
+    constructor(geometry=null,material=null) {
+      this.position = { set() {} };this.scale={set() {}};this.rotation={y:0};
+      this.geometry=geometry;this.material=material;this.children = []; this.userData = {}; this.parent = null;
+    }
+    add(c) { this.children.push(c); c.parent = this; }
+    remove(c) { this.children = this.children.filter(node => node !== c); c.parent = null; }
+    traverse(fn) { fn(this); for (const child of this.children) child.traverse(fn); }
+  }
+  let fittedFaces = 0; // Verifies both random-cave builds reach the shared ore-rock face fitting helper.
+  class RockGeometry {
+    constructor(){this.disposed=false;this.attributes={};this.positions=Array.from({length:12},(_,i)=>[i/12-.5,(i%3)/4-.25,(i%5)/6-.35]);}
+    getAttribute(key){if(key!=='position')return null;return {count:this.positions.length,
+      getX:i=>this.positions[i][0],getY:i=>this.positions[i][1],getZ:i=>this.positions[i][2],
+      setXYZ:(i,x,y,z)=>{this.positions[i]=[x,y,z];}};}
+    setAttribute(name,attribute){this.attributes[name]=attribute;}
+    computeVertexNormals(){}
+    dispose(){this.disposed=true;}
+  }
+  class RockMaterial {constructor(){this.userData={};}dispose(){}}
+  const oreCtx = { THREE: { Mesh: Obj, Group: Obj, MeshStandardMaterial: RockMaterial,
+      MeshBasicMaterial:RockMaterial,IcosahedronGeometry:RockGeometry,BufferGeometry:RockGeometry,
+      Float32BufferAttribute:class{constructor(array,itemSize){this.array=array;this.itemSize=itemSize;}},DoubleSide:2 },
+    TerrainGeometry: { buildRockTileGeo: () => ({ stoneGeo: new RockGeometry() }) },
+    OreRockTextures: { materialFor: (_three, key) => ({ key, userData: { sharedOreRockMaterial: true } }),
+      fitRockMesh: () => { fittedFaces++; } } };
   oreCtx.window = oreCtx;
   vm.createContext(oreCtx);
   vm.runInContext(oreSource, oreCtx, { filename: 'cavern-ore-rocks.js' });
-  const ORE_DEFS = { copper: {}, tin: {}, arsenic: {}, lead: {}, silver: {}, gold: {} };
+  const ORE_DEFS = { copper: {}, tinCopper: {}, mushistonite: {}, tin: {}, arsenic: {}, lead: {}, silver: {}, gold: {} };
   oreCtx.CavernOreRocks.init({ TileType: { ROCK: 'rock' }, markOutline() {}, zoneMineableRockMeshes: new Map(), oreDefs: ORE_DEFS });
   const grid = [[{}, {}]];
-  oreCtx.CavernOreRocks.build('map_i_den_test', { oreRocks: [{ col: 0, row: 0, oreKind: 'copper' }, { col: 1, row: 0, oreKind: 'stone' }] }, new Obj(), grid);
+  const oreScene = new Obj(); // Scene-local Sense Mode tests reject the old cave and accept only intact mounds.
+  oreCtx.CavernOreRocks.build('map_i_den_test', { oreRocks: [{ col: 0, row: 0, oreKind: 'copper' }, { col: 1, row: 0, oreKind: 'stone' }] }, oreScene, grid);
+  assert.equal(oreCtx.CavernOreRocks.senseTargets(oreScene).length, 2, 'Sense Mode highlights every intact cave mound, including stone');
+  assert.equal(oreCtx.CavernOreRocks.senseTargets(new Obj()).length, 0, 'stale cave scenes cannot leak highlights');
   assert.equal(grid[0][0].oreKey, 'copper', 'copper-look cavern rock drops copper ore');
+  assert.equal(oreCtx.CavernOreRocks.CAVERN_ORE_TINTS.tin, 0xc8ccd0, 'Cassiterite rock cave swatch uses its contained tin metal color');
+  assert.equal(oreCtx.CavernOreRocks.CAVERN_ORE_TINTS.copper, 0xb87333, 'Cave diagnostic swatch shows metallic copper underneath patina');
+  assert.equal(oreCtx.CavernOreRocks.CAVERN_ORE_TINTS.tinCopper, 0xb66a2e, 'Crude bronze cave swatch uses low-tin bronze metal beneath patina');
+  assert.equal(oreCtx.CavernOreRocks.CAVERN_ORE_TINTS.mushistonite, 0xcd7f32, 'Natural bronze cave swatch uses tin-bronze metal beneath patina');
   assert.equal(grid[0][1].oreKey, null, 'stone-look cavern rock drops stone only');
+  assert.equal(oreCtx.CavernOreRocks.removeVisual('map_i_den_test', 0, 0), true);
+  assert.equal(oreCtx.CavernOreRocks.senseTargets(oreScene).length, 1, 'mining removes that exact mound from Sense Mode');
   for (const kind of Object.keys(oreCtx.CavernOreRocks.CAVERN_ORE_TINTS)) assert(kind === 'stone' || ORE_DEFS[kind], `cavern tint ${kind} is a real ore`);
+  const newGrid = [[{}, {}, {}]];
+  oreCtx.CavernOreRocks.build('map_i_new_ores', { oreRocks: [{ col: 0, row: 0, oreKind: 'tinCopper' }, { col: 1, row: 0, oreKind: 'mushistonite' }, { col: 2, row: 0, oreKind: 'tin' }] }, new Obj(), newGrid);
+  assert.equal(fittedFaces, 5, 'Ordinary cave resource rock mounds keep the UV-preserving fitting helper');
+  assert.deepEqual(newGrid[0].map(cell => cell.oreKey), ['tinCopper', 'mushistonite', 'tin'], 'Wild-cave rocks preserve all three new ore identities and drops');
+  const separatorScene=new Obj(),separatorGrid=[[{},{}]],separatorMap='map_i_cave_rock_wall';
+  const separatorGroups=oreCtx.CavernOreRocks.build(separatorMap,{oreRocks:[
+    {col:0,row:0,oreKind:'stone',caveSeparator:true,caveSeparatorLayer:1},
+    {col:1,row:0,oreKind:'stone',caveSeparator:true,caveSeparatorLayer:2},
+  ]},separatorScene,separatorGrid); // Adjacent layers share a logical cave wall but each tile is a standalone diggable rock.
+  const rock0=separatorGroups.get('0,0'),rock1=separatorGroups.get('1,0');
+
+  const assertSealedStone=mesh=>{
+    const vertices=mesh.geometry.attributes.position.array;
+    const edges=new Map(); // Every triangulated cut must have both matching sides; an unmatched edge would reveal a literal hole.
+    for(let i=0;i<vertices.length;i+=9){
+      const corners=[0,3,6].map(offset=>[0,1,2].map(j=>Math.round(vertices[i+offset+j]*1e5)).join(','));
+      for(let j=0;j<3;j++){
+        const edge=[corners[j],corners[(j+1)%3]].sort().join('|');
+        edges.set(edge,(edges.get(edge)||0)+1);
+      }
+    }
+    assert([...edges.values()].every(count=>count===2),'fused stone is a sealed manifold with no open intersection or cut edges');
+  };
+  const fused=()=>separatorScene.children.filter(child=>child.userData?.caveSeparatorFused);
+  assert.equal(fused().length,1,'touching rocks fuse into exactly one rendered rock wall, without overlapping clipped lobes');
+  const oldMesh=fused()[0],oldGeo=oldMesh.geometry;
+  assert.equal(oldMesh.userData.caveSeparatorLiveTiles,2,'shared wall tracks both independently mineable tiles');
+  assert(oldGeo.userData.caveFusedRockTriangles>0,'the wall is an actual triangulated solid');
+  assertSealedStone(oldMesh);
+  assert.equal(oldGeo.attributes.position.array.length,oldGeo.attributes.uv.array.length/2*3,'each fused stone vertex receives continuous stone UVs');
+  assert(oreCtx.CavernOreRocks.probeRock(separatorMap,1,1,.5)<0,'the shared seam inside neighboring tiles is filled with uninterrupted rock');
+  assert(oreCtx.CavernOreRocks.probeRock(separatorMap,.55,1,.5)<0,'the left mineable tile is initially solid');
+  assert(oreCtx.CavernOreRocks.debugSnapshot(separatorMap)[0].height>=8,'the wall penetrates the highest ordinary cave ceiling rather than stopping as a mound');
+  assert.equal(rock0.children.length,0,'a mineable tile is a collision/loot handle, not a second clipping visual');
+  assert.equal(rock1.children.length,0,'neighboring tiles do not contribute their own overlapping visible surface');
+  assert.equal(separatorGrid[0][0].rockKind,'diggableRockOre','rocky barrier uses the existing pickaxe mining tile contract');
+  assert.equal(separatorGrid[0][1].caveSeparator,true,'adjacent barrier layers preserve the existing Shattercask blast contract');
+  assert.equal(separatorGrid[0][0].projectileCoverHeightTiles,8,'the sculpted ceiling-high wall blocks projectiles above an ordinary ore mound');
+  assert.equal(separatorGroups.delete('0,0'),true,'ordinary indexed pickaxe removal heals an exposed stone cut');
+  assert.equal(separatorGrid[0][0].projectileCoverHeightTiles,undefined,'a mined wall tile loses its old tall projectile cover');
+  assert.equal(separatorGroups.has('0,0'),false,'the mined tile is no longer registered as solid scene rock');
+  assert.equal(separatorGroups.has('1,0'),true,'the neighbouring mineable wall rock remains intact');
+  assert.equal(oldGeo.disposed,true,'old triangulations are disposed after remeshing, avoiding a mobile GPU leak');
+  assert.equal(fused().length,1,'rebuilding replaces the wall mesh instead of leaving overlaid versions');
+  assert.equal(fused()[0].userData.caveSeparatorLiveTiles,1,'only unbroken tiles contribute to the unified visible wall');
+  assert(oreCtx.CavernOreRocks.probeRock(separatorMap,.55,1,.5)>0,'the mined gap is genuinely open, not an invisible overlapping mesh');
+  assert(oreCtx.CavernOreRocks.probeRock(separatorMap,1.5,1,.5)<0,'remaining rock has a freshly sealed exposed rock face');
+  assert.equal(oreCtx.CavernOreRocks.removeVisual(separatorMap,1,0),true,'Shattercask blasts can retire the next rock independently');
+  assert.equal(fused().length,0,'a completely mined barrier leaves no empty rock mesh');
+
+  const doorScene=new Obj(),doorMap='map_i_fused_secret_door',doorGrid=[[{},{},{},{}]];
+  oreCtx.CavernOreRocks.build(doorMap,{oreRocks:[
+    {col:1,row:0,oreKind:'stone',caveSeparator:true},
+    {col:2,row:0,oreKind:'stone',caveSeparator:true},
+  ],caveSitePlan:{puzzleDoor:{col:3,row:0}}},doorScene,doorGrid);
+  const doorMesh=doorScene.children.find(child=>child.userData?.caveSeparatorFused);
+  assert.equal(doorMesh.userData.caveSeparatorDoorOpening,true,'the hidden puzzle door is carved as a real opening in the fused stone');
+  assert(oreCtx.CavernOreRocks.probeRock(doorMap,3.5,1,.5)>0,'the door center is air, not an overlaid rock plane');
+  assert(oreCtx.CavernOreRocks.probeRock(doorMap,3.5,1,1.03)<0,'cutting the door heals the exposed stone jamb');
+  assert(oreCtx.CavernOreRocks.probeRock(doorMap,3.5,2.6,.5)<0,'the carved passage has a solid stone lintel above the doorway');
+  assert(doorMesh.geometry.userData.caveFusedRockTriangles>0,'the healed doorway is triangulated into the rock rather than a texture mask');
+  assertSealedStone(doorMesh); // The rough stone donut must have a complete closed inner surface around its hole.
+  assert.equal(oreCtx.CavernOreRocks.debugSnapshot(doorMap)[0].doorOpening,true,'the mobile diagnostics identify a carved door');
+  const stagedScene=new Obj(),stagedMap='map_i_batch_wall',stagedGrid=[[{},{},{}]];
+  oreCtx.CavernOreRocks.build(stagedMap,{oreRocks:[0,1,2].map(col=>({
+    col,row:0,oreKind:'stone',caveSeparator:true,
+  }))},stagedScene,stagedGrid);
+  const stagedInitial=stagedScene.children.find(child=>child.userData?.caveSeparatorFused);
+  oreCtx.CavernOreRocks.withBatchedCuts(()=>{
+    oreCtx.CavernOreRocks.removeVisual(stagedMap,0,0);
+    oreCtx.CavernOreRocks.withBatchedCuts(()=>oreCtx.CavernOreRocks.removeVisual(stagedMap,1,0));
+    assert.equal(stagedInitial.geometry.disposed,false,'nested blast/restore cuts do not remesh before the final tile changes');
+    assert.equal(stagedScene.children.find(child=>child.userData?.caveSeparatorFused),stagedInitial,
+      'one continuous blast footprint retains its scene mesh until the batch ends');
+  });
+  assert.equal(stagedInitial.geometry.disposed,true,'the batched removals dispose the previous visual exactly once');
+  assert.equal(stagedScene.children.filter(child=>child.userData?.caveSeparatorFused).length,1,
+    'one final rock wall remains after clearing two adjacent tiles with a Shattercask');
+  assert.equal(oreCtx.CavernOreRocks.debugSnapshot(stagedMap)[0].liveTiles,1,
+    'multiple blasted cuts heal into a single surviving column');
+
+  const gateScene=new Obj();
+  const stoneGate=oreCtx.CavernOreRocks.carveStoneGate(gateScene,{
+    x:5,y:0,z:7,openingWidth:4.78,openingHeight:3.55,sideThickness:1.24,roofHeight:9,
+  });
+  assert(stoneGate?.geometry?.userData?.caveFusedRockTriangles>0,
+    'puzzle-locked fire and melody doors receive an actual sculpted, roof-height stone opening');
+  assert.equal(stoneGate.userData.caveCarvedDoorOpening,true,
+    'the gate geometry advertises its carved door for mobile visual diagnostics');
+  assert.equal(stoneGate.userData.caveSeparatorHeight,9,'the stone gate rises through the cavern ceiling');
+  assert.equal(gateScene.children.length,1,'one fused rock wall replaces a cluster of intersecting doorframe boulders');
+  assertSealedStone(stoneGate);
+
   const mineKinds = new Set();
   for (let i = 0; i < 40; i++) {
     for (const rock of decorate(profile(`map_i_test_ores_${i}`, 'ore_mine')).oreRocks) mineKinds.add(rock.oreKind);
   }
   for (const kind of mineKinds) assert(kind === 'stone' || ORE_DEFS[kind], `ore-mine rock kind ${kind} is stone or a real ore`);
   console.log(`PASS cavern-ore-rocks: real ore drops; mine kinds ${[...mineKinds].sort().join(', ')}`);
+}
+
+// Cave mushrooms have their own visuals rather than a permanent worldObjects entry.
+{
+  const oldArea = deps.getCurrentArea; // Restored before the combat tests that follow.
+  const mushroomScene = { add(group) { group.parent = this; } };
+  context.THREE = { Group: class {
+    constructor() { this.children = []; this.position = { set() {} }; this.userData = {}; this.parent = null; }
+    add(child) { this.children.push(child); child.parent = this; }
+  } };
+  context.ReagentPlants = { buildReagentPlantMesh: () => ({ position: { set() {} }, scale: { multiplyScalar() {} } }) };
+  deps.getCurrentArea = () => mushroomMap.id;
+  deps.calendar.day = 30;
+  Cave.buildInteriorProps(mushroomMap.id, mushroomMap, mushroomScene);
+  assert.equal(Cave.senseTargets(mushroomScene).length, mushroomMap.caveMushrooms.length, 'every standing mushroom cluster glows green in Sense Mode');
+  assert.equal(Cave.senseTargets({}).length, 0, 'no cave feature highlights in another scene');
+  const mushroomState = Cave.__test.runtimeStateBySignature.get(profile(mushroomMap.id, 'mushroom_cave').signature);
+  mushroomState.mushroomsPickedDay[mushroomMap.caveMushrooms[0].id] = 30;
+  assert.equal(Cave.senseTargets(mushroomScene).length, mushroomMap.caveMushrooms.length - 1, 'recently harvested clusters do not glow');
+  deps.getCurrentArea = oldArea;
 }
 
 // Catacomb bodies: laid out as settled corpses with a short loot hold; a

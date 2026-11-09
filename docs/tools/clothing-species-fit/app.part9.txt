@@ -22,20 +22,46 @@ function makeExtendedRigPlanes(THREE,canvas,modelWidth,modelHeight){
   back.rotation.y=Math.PI;back.position.set(0,centerY,-.008);back.name='extended_overlay_back_plane';group.add(back);
   return group;
 }
-async function updateThreePreview(){
-  if(!R.body||!ensureThreePreview())return;
-  const buildId=++R.three.buildGeneration;
+function startOptionalThreePreview(){
+  try{return ensureThreePreview()}catch(error){
+    E.threeStatus.textContent='3D unavailable: '+(error?.message||error)+'. The 2D editor remains usable.';
+    log('3D STARTUP ERROR '+(error?.message||error));
+    return false;
+  }
+} // Hardware/WebGL failures cannot interrupt independent 2D fitting and export.
+async function withThreePreviewDeadline(promise,timeoutMs,step){
+  let timer;
   try{
-    await ensureRigRuntime();
+    return await Promise.race([
+      promise,
+      new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error(step+' exceeded '+Math.round(timeoutMs/1000)+' seconds; 2D fitting remains available. Tap Retry runtime to try again.')),timeoutMs)})
+    ]);
+  }finally{clearTimeout(timer)}
+} // A slow third-party 3D dependency cannot leave the preview in an infinite loading state.
+async function updateThreePreview(){
+  if(!R.body)return;
+  if(!startOptionalThreePreview()){
+    if(E.match3D.checked)E.match3DStatus.textContent='3D is not available yet; displaying raw sprite art. Use Retry runtime if it does not load.';
+    return;
+  }
+  const buildId=++R.three.buildGeneration;
+  let pendingRigGroup=null, pendingAvatarModel=null, pendingFeet=null; // Dispose incomplete previews if any 3D construction stage fails.
+  try{
+    await withThreePreviewDeadline(ensureRigRuntime(),60000,'3D module loading');
     if(buildId!==R.three.buildGeneration)return;
-    E.threeStatus.textContent='Rendering runtime portrait + cloud mask…';
+    E.threeStatus.textContent='Rendering runtime portrait…';
 
-    const avatar=await composeRuntimePortrait();
+    const avatar=await withThreePreviewDeadline(composeRuntimePortrait(),35000,'3D avatar rendering');
     if(buildId!==R.three.buildGeneration)return;
+    if(fitRegion()==='headwear'&&avatar.headOnlyFront&&!R.headReference?._canonical){
+      const reference=canonicalHeadReference(avatar.headOnlyFront);
+      if(reference){R.headReference=reference;render(false)}
+    }
     const THREE=window.THREE;
     disposeRuntimeRig();
 
     const rigGroup=new THREE.Group();
+    pendingRigGroup=rigGroup;
     rigGroup.name=`RuntimeCharacterRig_${E.species.value}_${E.gender.value}`;
     const avatarCfg=window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar||{};
     const baseWidth=Number(avatarCfg.worldModelWidth)>0?Number(avatarCfg.worldModelWidth):.9;
@@ -51,6 +77,7 @@ async function updateThreePreview(){
       name:'ClothingFitRuntimePortrait',
       userData:{source:'clothing-fit-runtime-preview',nonInteractive:true},
     });
+    pendingAvatarModel=model;
     model.userData.proceduralHandParent=rigGroup;
     model.userData.rigAvatarProfile=avatar.profile;
     rigGroup.add(model);
@@ -69,6 +96,7 @@ async function updateThreePreview(){
       profile:avatar.profile,
       portraitSize:avatar.frontComposed.width||200,
     })||null;
+    pendingFeet=feet;
     feet?.update?.(0,0,false,null);
 
     if(E.showExtended3D.checked&&R.extendedSource){
@@ -82,6 +110,7 @@ async function updateThreePreview(){
 
     R.three.group.add(rigGroup);
     R.three.rigRoot=rigGroup;R.three.avatarModel=model;R.three.feet=feet;
+    pendingRigGroup=null;pendingAvatarModel=null;pendingFeet=null; // Ownership now belongs to R.three and disposeRuntimeRig().
 
     // Match the full-character preview contract used elsewhere in the repository.
     const scale=window.HobunjiCharacterRigScale?.scaleFor?.(E.species.value,E.gender.value)||null;
@@ -91,61 +120,118 @@ async function updateThreePreview(){
     rigGroup.updateMatrixWorld(true);
     R.three.group.rotation.set(R.three.rotX,R.three.rotY,0);
     frameRuntimeRig();
-    const cloud=R.speciesCfg.get(E.species.value)?.[E.gender.value]?.portraitOpacityMaskLayer?.url?'cloud mask active':'no species cloud mask';
+    const cloud=R.speciesCfg.get(E.species.value)?.[E.gender.value]?.portraitOpacityMaskLayer?.url?'arm-cut mask source':'no arm-cut mask source'; // Full-portrait cloud masking was removed from the game.
     const handState=model.userData?.proceduralHandRig?'hands attached':'hands queued';
-    E.threeStatus.textContent=`Runtime rig: portrait + neck + ${handState} + feet + ${cloud}${R.extendedGroup?' + extended overlay':''}.`;
+    // Commit the paired preview only after the new 3D rig is ready. The 2D
+    // canvas now uses these exact composited front pixels instead of rebuilding
+    // a differently tinted, layered character from raw PNGs.
+    R.three.matchedFront2D={
+      canvas:projectRuntimeFrontToFittingCanvas(avatar.frontComposed),
+      buildGeneration:buildId,
+      assetGeneration:R.assetGeneration,
+      species:E.species.value,
+      gender:E.gender.value
+    };
+    render(false); // Paint the synchronized 2D texture without scheduling a recursive 3D rebuild.
+    const garmentParity=avatar.canonicalGarmentPreview?'canonical game clothing renderer'
+      :R.patchWorkflow.active?'custom patch overlay (approximate garment layering)'
+      :mode==='body'?'canonical bare-body portrait'
+      :R.cloth?'manual garment fallback (not runtime-parity verified)':'canonical bare-body portrait'; // Mobile diagnostics must distinguish exact rendering from fallback.
+    E.threeStatus.textContent=`Target: ${E.species.value} ${E.gender.value} • Source: ${E.sourceSpecies.value} ${E.sourceGender.value} • Runtime rig: portrait + neck + ${handState} + feet + ${cloud} + garment preset B • ${garmentParity}${R.three.extendedGroup?' + extended overlay':''}.`;
   }catch(error){
     if(buildId!==R.three.buildGeneration)return;
-    console.error(error);E.threeStatus.textContent='Runtime rig preview failed: '+error.message;log('3D RUNTIME ERROR '+error.message);
+    try{pendingFeet?.dispose?.()}catch{}
+    try{if(pendingAvatarModel)window.PNGPlaneAvatar?.disposeAvatarModel?.(pendingAvatarModel)}catch{}
+    if(pendingRigGroup)disposeObjectTree(pendingRigGroup);
+    disposeRuntimeRig(); // Never leave the last successful character visible after a failed new garment build.
+    R.three.matchedFront2D=null;
+    render(false); // Repaint the raw 2D fallback without triggering another failed 3D attempt.
+    console.error(error);E.threeStatus.textContent=`Target ${E.species.value} ${E.gender.value}: runtime rig failed: ${error.message}`;
+    if(E.match3D.checked)E.match3DStatus.textContent='Game-matched portrait unavailable; showing raw artwork. '+error.message;
+    log('3D RUNTIME ERROR '+error.message);
   }
 }
 function scheduleThreePreview(delay=90){
   clearTimeout(R.three.buildTimer);
   R.three.buildTimer=setTimeout(()=>updateThreePreview(),delay);
 }
-function render(){
+function render(scheduleRig=true){
   if(!R.body)return;
+  if(scheduleRig!==false){
+    R.three.buildGeneration++; // Invalidate any in-flight portrait before an edit changes its visual inputs; avoids reinstalling an older wearer/garment during the debounce.
+    R.three.matchedFront2D=null;
+  }
   sizeStage();C.setTransform(1,0,0,1,0,0);C.clearRect(0,0,E.stage.width,E.stage.height);C.imageSmoothingEnabled=false;
-  if(E.showBody.checked)C.drawImage(R.body,0,0);
-
-  if(mode==='transform'||mode==='fit'||mode==='preview'){
-    R.warped=currentWarp();
-    const showRoutedSource=routedPatchIsBody()?E.showBody.checked:E.showGarment.checked;
-    if(R.warped&&showRoutedSource){
-      C.save();C.globalAlpha=routedPatchIsBody()?1:+E.opacity.value;C.drawImage(R.warped,0,0);C.restore();
+  const matched=E.match3D.checked&&E.showBody.checked&&
+    R.three.matchedFront2D?.buildGeneration===R.three.buildGeneration&&
+    R.three.matchedFront2D?.assetGeneration===R.assetGeneration&&
+    R.three.matchedFront2D?.species===E.species.value&&
+    R.three.matchedFront2D?.gender===E.gender.value
+    ?R.three.matchedFront2D.canvas:null; // The exact front texture used by the currently displayed 3D rig, inverse-mapped to the fit grid.
+  E.match3DStatus.textContent=!E.match3D.checked
+    ?'Raw sprite artwork (game tinting and head depth disabled in 2D).'
+    :!E.showBody.checked
+      ?'Body hidden for 2D editing. Enable body to see the game-matched portrait; the 3D rig remains complete.'
+      :matched
+        ?(R.extendedSource&&E.showExtended3D?.checked
+          ?'Game-matched: front portrait shared; imported extended sprite planes appear in 3D only.'
+          :'Game-matched: both views share the same front portrait artwork, inverse-projected for the 2D fit grid. 3D adds neck, hands, feet and perspective.')
+        :'Rendering game-matched front portrait; showing raw art until the rig is ready…';
+  if(matched){
+    C.drawImage(matched,0,0); // Display pixels only: neither grids nor fitted PNG exports are rewritten.
+    R.warped=null;
+  }else if(fitRegion()==='headwear'){
+    const warpedBack=mode!=='body'?headwearWarpForView('under'):null;
+    const warpedFront=mode!=='body'?headwearWarpForView('front'):null;
+    if(warpedBack&&E.showGarment.checked){C.globalAlpha=+E.opacity.value;C.drawImage(warpedBack,0,0);C.globalAlpha=1}
+    if(E.showBody.checked&&R.headReference)C.drawImage(R.headReference,0,0);
+    if(warpedFront&&E.showGarment.checked){C.globalAlpha=+E.opacity.value;C.drawImage(warpedFront,0,0);C.globalAlpha=1}
+    R.warped=null; // The split front/rear warps above are sufficient; do not bake a redundant third full headwear warp.
+    if(mode!=='body'&&E.showAuthored.checked&&R.authoredTargetCloth){
+      C.save();C.globalAlpha=+E.authoredOpacity.value;
+      if(R.authoredTargetCloth._back)C.drawImage(R.authoredTargetCloth._back,0,0);
+      if(R.headReference&&E.showBody.checked)C.drawImage(R.headReference,0,0);
+      if(R.authoredTargetCloth._front)C.drawImage(R.authoredTargetCloth._front,0,0);
+      C.restore();
+    }
+  }else{
+    if(E.showBody.checked)C.drawImage(R.body,0,0);
+    if(mode==='transform'||mode==='fit'||mode==='preview'){
+      R.warped=currentWarp();
+      const showRoutedSource=routedPatchIsBody()?E.showBody.checked:E.showGarment.checked;
+      if(R.warped&&showRoutedSource){
+        C.save();C.globalAlpha=routedPatchIsBody()?1:+E.opacity.value;C.drawImage(R.warped,0,0);C.restore();
+      }
+    }
+    if(mode!=='body'&&E.showAuthored.checked&&R.authoredTargetCloth){
+      C.save();C.globalAlpha=+E.authoredOpacity.value;
+      C.drawImage(R.authoredTargetCloth,0,0);C.restore();
     }
   }
 
-  if(E.showAuthored.checked&&R.authoredTargetCloth){
-    C.save();
-    C.globalAlpha=+E.authoredOpacity.value;
-    C.drawImage(R.authoredTargetCloth,0,0); // Existing hand-authored target-species art overlays the experimental warp for visual matching.
-    C.restore();
-  }
-
   if(E.showMeshes.checked){
-    drawGrid(C,SOURCE_GRID,'#ffb84a',false); // Fixed Mao-ao source.
+    drawGrid(C,SOURCE_GRID,'#ffb84a',false); // Fixed normalized starting-species source.
     drawGrid(C,transformedSourceGrid(),'#65d48a',mode==='transform'); // Recorded scale + translation.
     if(mode!=='transform')drawGrid(C,targetGrid(),'#45c3ff',mode!=='preview'); // Base transform plus local fit.
   }
 
-  E.label.textContent=
-    mode==='transform'
+  E.label.textContent=(fitRegion()==='headwear'?'HEADWEAR • ':'BODY • ')+
+    (mode==='transform'
       ?`Base Transform • ${garmentRecord()?.label||''} • ${E.species.options[E.species.selectedIndex]?.text||E.species.value} ${E.gender.value}`
       :mode==='body'
         ?`Grid only • ${E.species.options[E.species.selectedIndex]?.text||E.species.value} ${E.gender.value}`
         :mode==='fit'
-          ?`Species Fit • ${garmentRecord()?.label||''} • Mao-ao ${E.gender.value} → ${E.species.options[E.species.selectedIndex]?.text||E.species.value}`
-          :`Preview • recorded base transform + local 6×6 deformation applied to ${garmentRecord()?.label||''}`;
+          ?`Species Fit • ${garmentRecord()?.label||''} • ${E.sourceSpecies.value} ${E.sourceGender.value} → ${E.species.options[E.species.selectedIndex]?.text||E.species.value} ${E.gender.value}`
+          :`Preview • recorded base transform + local 6×6 deformation applied to ${garmentRecord()?.label||''}`);
 
-  refreshHelp();refreshDebug();scheduleThreePreview();
+  refreshHelp();refreshDebug();if(scheduleRig!==false)scheduleThreePreview();
 }
 function refreshHelp(){
-  E.help.textContent=
-    mode==='transform'
+  E.help.textContent=(fitRegion()==='headwear'?'Headwear: fit hats and hoods against the selected head; saved separately from body. ':'')+
+    (mode==='transform'
       ?'First fit overall size and position: independent Scale X / Scale Y plus translation. Drag the canvas to translate quickly.'
       :mode==='body'
         ?'Edit only the local target 6×6 corrections without clothing.'
         :mode==='fit'
           ?'Now drag BLUE points for local shape corrections on top of the recorded global transform.'
-          :'Switch garments to verify the same saved global transform and local corrections are reused.';
+          :'Switch garments to verify the same saved global transform and local corrections are reused.');

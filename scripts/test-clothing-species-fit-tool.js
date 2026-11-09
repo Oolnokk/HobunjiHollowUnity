@@ -25,8 +25,11 @@ assert(hub.includes('src="clothing-species-fit/index.html"'), 'dev tools hub mus
 // V24 (#971) removed the derived-overlay cutoff mode; the extended overlay is imported top-aligned and warped directly.
 assert(index.includes('id="downloadExtended"'), 'tool must expose the warped extended-overlay PNG export');
 assert(index.includes('id="importDiagnostics"'), 'tool must accept a pasted diagnostics fit');
-assert(loader.includes('i<=12'), 'loader must concatenate every app chunk');
-assert(/behind\.part\$\{i\}\.txt/.test(loader) && loader.includes('i<=5'), 'loader must attach every behind-sprite patch author chunk after the core app');
+assert(loader.includes("fetchParts('app.part',12,'clothing fit editor')") &&
+       loader.includes("return output.join('')"), 'loader must fetch every app chunk and concatenate them in original order');
+assert(loader.includes("fetchParts('behind.part',5,'behind-sprite extension')") &&
+       loader.indexOf("fetchParts('behind.part'")>loader.indexOf("fetchParts('app.part'"),
+       'loader must attach all five behind-sprite modules after the core editor');
 assert(app.includes('warpExtendedOverlay'), 'extended overlay must pass through the extended warp');
 assert(app.includes('downloadExtendedWarp'), 'tool must bake/export the final warped overlay');
 assert(app.includes('GRID_SIZE=6'), 'species-fit mesh must remain 6x6');

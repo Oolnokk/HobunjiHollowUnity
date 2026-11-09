@@ -357,6 +357,18 @@
           "gender": "male"
         }
       }
+    },
+    "baruhi_chief": {
+      "species": "omgurku",
+      "avatarExport": {
+        "schema": "npc_avatar_editor_export.v1",
+        "source": "character-studio",
+        "name": "Chief Unek-tai of the Hrekemgi Omgurku",
+        "appearance": {
+          "speciesId": "omgurku",
+          "gender": "male"
+        }
+      }
     }
   }
 }

@@ -1,0 +1,525 @@
+// Furniture Author: carried world-object billboard and hand grip authoring.
+// These guides exist only in the editor. Exported metadata is consumed by
+// Shattercasks and future carryable furniture through their existing meshes.
+(() => {
+  'use strict';
+  if (typeof state === 'undefined' || typeof helperRoot === 'undefined'
+    || typeof THREE === 'undefined' || typeof setEditorMode !== 'function') {
+    const status=document.getElementById('carryAuthorLoadStatus'); // Mobile-visible reason for a tab whose editor dependencies were unavailable.
+    if(status)status.textContent='Carryable editor dependencies are missing. Check the on-screen debug log.';
+    return;
+  }
+
+  function normalized(value) {
+    const obj=value&&typeof value==='object'?value:{};
+    const anchor=obj.billboardAnchor||{},pos=anchor.position||{},rot=anchor.rotation||{};
+    const back=obj.backCarry||{}; // Default: held transform rotated 180 degrees around the portrait's vertical axis.
+    const hand=obj.handTargets||{},hitbox=obj.hitbox||{};
+    const vector=(v,fallback)=>Object.fromEntries(['x','y','z']
+      .map(key=>[key,Number.isFinite(Number(v?.[key]))?Number(v[key]):fallback[key]]));
+    const grip=(v,p)=>({...vector(v,p),rotation:vector(v?.rotation,{x:0,y:0,z:0})});
+    return {
+      enabled:obj.enabled===true,
+      billboardAnchor:{
+        coordinateSpace:'posterior-relative',
+        position:vector(pos,{x:0,y:.53,z:0}),
+        rotation:vector(rot,{x:0,y:0,z:0}),
+        posteriorOffset:vector(anchor.posteriorOffset,{x:0,y:0,z:0}),
+        size:Math.max(.1,Number(anchor.size)||1)
+      },
+      backCarry:{
+        position:vector(back.position,vector(pos,{x:0,y:.53,z:0})),
+        rotation:vector(back.rotation,{x:Number(rot.x)||0,y:(Number(rot.y)||0)+180,z:Number(rot.z)||0}),
+        posteriorOffset:vector(back.posteriorOffset,vector(anchor.posteriorOffset,{x:0,y:0,z:0})),
+        size:Math.max(.1,Number(back.size)||Number(anchor.size)||1),
+        portraitAnchor:vector(back.portraitAnchor,{x:0,y:0,z:0}) // Portrait-local attachment point; the default is its center.
+      },
+      hitbox:{enabled:hitbox.enabled!==false,
+        center:vector(hitbox.center,{x:0.025,y:.25,z:0}),
+        size:Object.fromEntries(['x','y','z'].map(axis=>
+          [axis,Math.max(.01,Math.abs(Number(hitbox.size?.[axis])||({x:.43,y:.49,z:.31})[axis]))]))},
+      handTargets:{
+        left:grip(hand.left,{x:-.3,y:.46,z:.08}),
+        right:grip(hand.right,{x:.3,y:.46,z:.08})
+      }
+    };
+  }
+  state.carryable=normalized(state.carryable);
+
+  const tabs=document.querySelector('.tabs');
+  const button=document.getElementById('carryModeTab')||document.createElement('button'); // Reuse the permanent tab; avoid duplicates on older editor pages.
+  button.type='button';
+  button.textContent='Carryable';
+  button.dataset.leftTab='carry';
+  if(!button.isConnected)tabs.appendChild(button);
+  const pane=document.getElementById('tab-carry')||document.createElement('div'); // Replace the permanent diagnostic placeholder with live controls.
+  pane.id='tab-carry';
+  pane.classList.add('hidden');
+  const bootStatus=pane.querySelector('#carryAuthorLoadStatus'); // Keep mobile error reporting available until every editor control is initialized.
+  pane.innerHTML=[
+    '<section class="fed-section">',
+    '<h2>Carryable world objects</h2>',
+    '<p class="muted">The orange square marks the furniture-local grip frame aligned with the avatar’s posterior plus the offset below. Purple marks the real posterior on the avatar; cyan marks the attachment point. Rotate the actual hand sockets with the gizmo or degree fields. Only the avatar and guides are editor-only.</p>',
+    '<label class="row"><input type="checkbox" id="carryEnabled"> Enable carrying for this furniture</label>',
+    '<div class="g2"><button type="button" id="carrySelectAnchor">▣ Held anchor</button><button type="button" id="carrySelectBack">▣ Back-carry anchor</button></div>',
+    '<div class="g2"><button type="button" id="carrySelectLeft">◉ Left hand grip</button><button type="button" id="carrySelectRight">◉ Right hand grip</button></div>',
+    '<div class="section"><h2>Projectile / impact hitbox</h2>',
+    '<label class="row"><input id="carryHitboxEnabled" type="checkbox" checked> Use authored hitbox</label>',
+    '<button type="button" id="carrySelectHitbox">▧ Edit hitbox in viewport</button>',
+    '<p class="muted">Purple wireframe is the collision box; translate with the gizmo and resize with the half-extents fields. This box affects projectile hits without changing the visible furniture or the carried avatar.</p>',
+    '<div class="g3">',
+    '<label>Width X<input id="carryHitboxSX" type="number" min="0.01" step="0.01"></label>',
+    '<label>Height Y<input id="carryHitboxSY" type="number" min="0.01" step="0.01"></label>',
+    '<label>Depth Z<input id="carryHitboxSZ" type="number" min="0.01" step="0.01"></label>',
+    '</div></div>',
+    '<label>Selected guide <strong id="carryGuideLabel">Billboard anchor</strong></label>',
+    '<div class="g3">',
+    '<label>X<input id="carryX" type="number" step="0.01"></label>',
+    '<label>Y<input id="carryY" type="number" step="0.01"></label>',
+    '<label>Z<input id="carryZ" type="number" step="0.01"></label>',
+    '</div>',
+    '<div id="carryAnchorRotation">',
+    '<p class="muted" id="carryRotationLabel">Anchor plane orientation (degrees)</p>',
+    '<div class="g3">',
+    '<label>Pitch<input id="carryRX" type="number" step="1"></label>',
+    '<label>Yaw<input id="carryRY" type="number" step="1"></label>',
+    '<label>Roll<input id="carryRZ" type="number" step="1"></label>',
+    '</div><label id="carrySizeRow">Billboard size <input id="carrySize" type="number" min="0.1" max="10" step="0.05"></label>',
+    '</div>',
+    '<p class="muted">Held and back-stowed poses use the SAME species/gender-adjusted posterior. From hip offsets work in either pose. Back fine offsets below are additional values.</p>',
+    '<div class="g3">',
+    '<label>From hip X<input id="carryPosteriorX" type="number" step="0.01"></label>',
+    '<label>From hip Y<input id="carryPosteriorY" type="number" step="0.01"></label>',
+    '<label>From hip Z<input id="carryPosteriorZ" type="number" step="0.01"></label>',
+    '</div>',
+    '<div id="carryPortraitAnchorRow"><p class="muted">Additional back offset from the anatomical posterior (legacy portraitAnchor data, added to From hip). It no longer replaces the posterior with the portrait center.</p>',
+    '<div class="g3">',
+    '<label>Back fine X<input id="carryPortraitX" type="number" step="0.01"></label>',
+    '<label>Back fine Y<input id="carryPortraitY" type="number" step="0.01"></label>',
+    '<label>Back fine Z<input id="carryPortraitZ" type="number" step="0.01"></label>',
+    '</div></div>',
+    '<div class="section"><h2>Held avatar preview</h2>',
+    '<label class="row"><input type="checkbox" id="carryShowAvatar" checked> Show Mao’ao avatar automatically in Carryable mode</label>',
+    '<button type="button" id="carryFrameHoldingPose">Frame holding pose</button>',
+    '<p class="muted tight">The purple posterior is calculated from the exact avatar model and shared character rig rule; the cyan attachment point is offset from it. Real hands use the combat handFromTool GLB calibration, with editable individual grip rotations.</p>',
+    '<div class="pill" id="carryAvatarStatus">An avatar preview appears automatically when Carryable mode opens.</div></div>',
+    '<p class="muted">Use the viewport translate / rotate gizmos or edit numeric values. Avatar preview is editor-only; exported JSON retains the invisible billboard anchor and both hand targets.</p>',
+    '<div id="carrySummary" class="pill"></div>',
+    '</section>'
+  ].join('');
+  if(bootStatus)pane.prepend(bootStatus); // Module errors after constructing controls must still be visible in the Carryable tab.
+  if(!pane.isConnected)document.querySelector('#tab-effects').insertAdjacentElement('afterend',pane);
+  const el=id=>document.getElementById(id);
+  const guideRoot=new THREE.Group();
+  guideRoot.name='CarryableAuthoringGuides';
+  guideRoot.visible=false;
+  helperRoot.add(guideRoot);
+  const guides={};
+  // Transient reference model, kept outside root and never included in the exported furniture.
+  const heldPreview=new THREE.Group();
+  heldPreview.name='carry_avatar_preview_only';
+  heldPreview.visible=false;helperRoot.add(heldPreview);
+  let previewEnabled=true,previewStarted=false,previewActor=null,previewHands=null,modelW=.9,modelH=.9;
+  let previewPortraitModel=null,previewSource='not-started'; // Replaces the immediate placeholder with loaded portrait art; mobile diagnostics report which is visible.
+  let previewPosterior=new THREE.Vector3(0,.42,0),posteriorMarker=null,attachmentMarker=null,attachmentLine=null;
+  const handLocalEuler=new THREE.Euler(0,0,0,'XYZ'),handLocalQuat=new THREE.Quaternion();
+  const handInverse=new THREE.Quaternion(),handAbsolute=new THREE.Quaternion(),avatarScaleScratch=new THREE.Vector3();
+  const handTurn={
+    left:new THREE.Quaternion().setFromEuler(new THREE.Euler(0,Math.PI/2,0)),
+    right:new THREE.Quaternion().setFromEuler(new THREE.Euler(0,-Math.PI/2,0))};
+  const tempRotation=new THREE.Quaternion(),tempOffset=new THREE.Vector3();
+  const status=message=>{const node=document.getElementById('carryAvatarStatus');if(node)node.textContent=message;};
+  const previewActive=()=>activeEditorMode==='carry'&&previewEnabled;
+  function syncHoldingPreview(){
+    heldPreview.visible=previewActive()&&!!previewActor;
+    if(!heldPreview.visible)return;
+    const isBack=state.selectedType==='carry'&&state.selectedId==='back';
+    const a=isBack?state.carryable.backCarry:state.carryable.billboardAnchor,p=a.position,r=a.rotation;
+    const scale=Math.max(.1,Number(a.size)||1);
+    // The preview holds the furniture at its authored transform and solves
+    // for the avatar's posterior, exactly inverting the in-game mount solve.
+    tempRotation.setFromEuler(new THREE.Euler(r.x*DEG,r.y*DEG,r.z*DEG,'XYZ'));
+    previewActor.scale.setScalar(scale);
+    previewActor.quaternion.copy(tempRotation);
+    const offset=a.posteriorOffset||{};
+    const fine=isBack?a.portraitAnchor||{}:{}; // Old portraitAnchor now adds to the common posterior origin.
+    const mountPoint=previewPosterior; // Both authored poses share the anatomical hip frame.
+    const attachmentOffset=new THREE.Vector3(
+      (Number(offset.x)||0)+(Number(fine.x)||0),
+      (Number(offset.y)||0)+(Number(fine.y)||0),
+      (Number(offset.z)||0)+(Number(fine.z)||0)); // Distinct held/back adjustments in one reference frame.
+    tempOffset.copy(mountPoint).add(attachmentOffset);
+    tempOffset.multiplyScalar(scale).applyQuaternion(tempRotation);
+    previewActor.position.set(p.x,p.y,p.z).sub(tempOffset);
+    if(posteriorMarker)posteriorMarker.position.copy(mountPoint);
+    if(attachmentMarker){
+      attachmentMarker.position.copy(mountPoint).add(attachmentOffset);
+      attachmentLine?.geometry?.setFromPoints?.([mountPoint,attachmentMarker.position]);
+    }
+    previewActor.updateWorldMatrix(true,true);
+    if(previewHands){
+      for(const side of ['left','right'])previewHands.setSideVisible?.(side,!isBack); // Hide hand GLBs entirely in back-carry preview.
+      root.updateWorldMatrix(true,false);
+      // Hand sockets share the game's authored-world position/rotation path:
+      // local grip + canonical side frame + local XYZ grip rotation, and the
+      // same model-specific handFromTool correction used by combat.
+      const calibration=window.ProceduralHandAttachments?.modelCalibrationForSpecies?.('mao-ao','male',modelH);
+      for(const side of (isBack?[]:['left','right'])){
+        const h=state.carryable.handTargets[side],world=new THREE.Vector3(h.x,h.y,h.z);
+        root.localToWorld(world);
+        const rr=h.rotation||{};
+        handLocalEuler.set((Number(rr.x)||0)*DEG,(Number(rr.y)||0)*DEG,(Number(rr.z)||0)*DEG,'XYZ');
+        const q=handLocalQuat.copy(handTurn[side]).multiply(new THREE.Quaternion().setFromEuler(handLocalEuler));
+        previewHands.placeHandWorld?.(side,world,q,calibration);
+      }
+    }
+    status((isBack?'Back-mounted posterior pose':'Posterior-based held pose')+' · cyan socket at posterior + offset · scale '+scale.toFixed(2));
+  }
+  function frameHoldingPreview(){
+    const bounds=new THREE.Box3().setFromObject(root);
+    if(heldPreview.visible&&previewActor)bounds.expandByObject(previewActor);
+    if(bounds.isEmpty())return;
+    const center=bounds.getCenter(new THREE.Vector3()),extents=bounds.getSize(new THREE.Vector3());
+    const radius=Math.max(1,extents.x,extents.y,extents.z);
+    orbit?.target.copy(center);
+    camera.position.copy(center).add(new THREE.Vector3(radius*1.2,radius*.75,radius*2.1));
+    camera.lookAt(center);camera.updateProjectionMatrix();orbit?.update();
+  }
+  function installPreviewPortrait(portrait,placeholder=false){
+    const width=Number(effectiveAvatarConfig().worldModelWidth)||.9;
+    const options={backCanvas:portrait.back,profile:portrait.profile,
+      speciesId:'mao-ao',gender:'male',appearance:{speciesId:'mao-ao',species:'mao-ao',gender:'male'},
+      npcRecord:{species:'mao-ao',gender:'male'},name:'carry_preview_maoao',
+      modelWidth:width,modelHeight:width};
+    let model;
+    if(placeholder)model=buildFallbackSeatedAvatarModel(portrait,options,'mao-ao','male');
+    else{
+      try{
+        model=window.PNGPlaneAvatar?.buildSinglePlaneAvatarModel
+          ?window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE,portrait.front,options)
+          :buildFallbackSeatedAvatarModel(portrait,options,'mao-ao','male');
+      }catch(error){
+        log('Carry avatar runtime model unavailable; using rendered portrait plane. '+(error?.message||error),'warn');
+        model=buildFallbackSeatedAvatarModel(portrait,options,'mao-ao','male');
+      }
+    }
+    if(!model)throw new Error('Carry preview avatar model could not be constructed');
+    const nextHeight=Math.max(.01,Number(model.userData?.portraitModelHeight)||width);
+    const nextWidth=Math.max(.01,Number(model.userData?.portraitModelWidth)||width);
+    if(!previewActor){
+      const actor=new THREE.Group(); // Stable preview transform owns the visible avatar and reference markers.
+      actor.name='carry_preview_actor';
+      heldPreview.add(actor);previewActor=actor;
+      posteriorMarker=new THREE.Group();posteriorMarker.name='carry_reference_posterior';
+      const hipBall=new THREE.Mesh(new THREE.SphereGeometry(.02,12,10),
+        new THREE.MeshBasicMaterial({color:0xc788ff,depthTest:false,depthWrite:false}));
+      hipBall.renderOrder=90;posteriorMarker.add(hipBall,new THREE.AxesHelper(.13));
+      attachmentMarker=new THREE.Group();attachmentMarker.name='carry_reference_attachment';
+      const attachBall=new THREE.Mesh(new THREE.SphereGeometry(.025,12,10),
+        new THREE.MeshBasicMaterial({color:0x73fbef,depthTest:false,depthWrite:false}));
+      attachBall.renderOrder=91;attachmentMarker.add(attachBall,new THREE.AxesHelper(.09));
+      attachmentLine=new THREE.Line(new THREE.BufferGeometry(),
+        new THREE.LineBasicMaterial({color:0x9fe9ef,depthTest:false,depthWrite:false}));
+      attachmentLine.renderOrder=90;actor.add(posteriorMarker,attachmentMarker,attachmentLine);
+    }
+    if(previewPortraitModel){ // The async actual portrait replaces the placeholder instead of stacking duplicate avatars.
+      previewActor.remove(previewPortraitModel);
+      disposeObject(previewPortraitModel);
+    }
+    modelH=nextHeight;modelW=nextWidth;
+    model.position.y=modelH/2;
+    previewActor.add(model);previewPortraitModel=model;
+    const profile=window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.['mao-ao::male']||{};
+    const fromModel=posteriorAnchorForModel(model,'mao-ao','male').position;
+    const sharedY=window.HOBUNJI_ATTACHMENT_RIG_MATH?.characterPosteriorY?.(
+      profile.posteriorRule,modelH,Number(model.userData?.handAttachY));
+    previewPosterior=new THREE.Vector3(
+      Number(profile.anchors?.posterior?.position?.x)||fromModel.x,
+      Number.isFinite(sharedY)?sharedY:fromModel.y,
+      Number(profile.anchors?.posterior?.position?.z)||fromModel.z);
+    if(!placeholder&&!previewHands){
+      previewHands=window.ProceduralHandAttachments?.attach?.(THREE,previewActor,{
+        name:'carry_preview',speciesId:'mao-ao',gender:'male',modelHeight:modelH,
+        handAttachY:Number(model.userData?.handAttachY)||modelH*.45,
+        avatarRoot:previewActor,
+        bodyColors:portrait.profile?.appearance?.bodyColors||portrait.profile?.bodyColors
+      })||null;
+    }
+    previewSource=placeholder?'placeholder':'runtime-portrait'; // Mobile debug distinguishes instant feedback from completed loading.
+    syncHoldingPreview();
+    if(avatarGroup)avatarGroup.visible=!heldPreview.visible; // Hide the separate Avatar-tab reference when the Carryable preview exists.
+    if(previewActive())frameHoldingPreview();
+  }
+  async function startPreview(){
+    if(previewStarted||!previewEnabled)return;
+    previewStarted=true;
+    try{
+      // Opening the Carryable tab must not wait on async portrait or cosmetic assets.
+      installPreviewPortrait({front:placeholderAvatarCanvas('runtimePortrait'),back:null,profile:null},true);
+      status('Showing Mao’ao reference avatar · loading rendered portrait and hands…');
+    }catch(error){
+      log('Carry preview immediate avatar failed: '+(error?.stack||error),'warn');
+    }
+    try{
+      const portrait=await renderSeatPortrait('mao-ao','male');
+      installPreviewPortrait(portrait);
+      if(!previewHands)status('Mao’ao avatar shown; hand assets unavailable, grip guides remain.');
+    }catch(error){
+      if(previewActor){
+        status('Mao’ao reference avatar shown (portrait assets unavailable).');
+        log('Carry preview kept visible fallback: '+(error?.stack||error),'warn');
+      }else{
+        previewStarted=false;
+        status('Avatar unavailable: '+(error?.message||error));
+        log('Carry preview: '+(error?.stack||error),'warn');
+      }
+    }
+  }
+  function setHoldingVisibility(){
+    heldPreview.visible=previewActive()&&!!previewActor;
+    if(avatarGroup)avatarGroup.visible=!(previewActive()&&!!previewActor);
+    if(previewActive())startPreview();
+    syncHoldingPreview();
+  }
+  const originalBuildAvatarFromCanvas=buildAvatarFromCanvas; // Keeps the standalone Avatar-tab model hidden if a late portrait rebuild happens in Carryable mode.
+  buildAvatarFromCanvas=function(...args){
+    const result=originalBuildAvatarFromCanvas(...args);
+    if(avatarGroup)avatarGroup.visible=!(previewActive()&&!!previewActor); // Async cosmetics must not reveal a duplicate avatar over the active Carryable preview.
+    return result;
+  };
+  document.getElementById('carryShowAvatar').addEventListener('change',e=>{
+    previewEnabled=!!e.target.checked;setHoldingVisibility();
+  });
+  document.getElementById('carryFrameHoldingPose').addEventListener('click',frameHoldingPreview);
+
+
+  function positionGuide(id) {
+    const c=state.carryable;
+    return id==='anchor'?c.billboardAnchor.position:id==='back'?c.backCarry.position:id==='hitbox'?c.hitbox.center:c.handTargets[id];
+  }
+  function renderControls() {
+    const c=state.carryable,id=state.selectedType==='carry'?state.selectedId:'anchor';
+    const pos=positionGuide(id)||c.billboardAnchor.position;
+    el('carryEnabled').checked=!!c.enabled;
+    el('carryGuideLabel').textContent=id==='anchor'?'Held anchor':id==='back'?'Back-carry anchor':id==='left'?'Left hand grip':id==='right'?'Right hand grip':'Impact hitbox center';
+    for(const axis of ['X','Y','Z']) {
+      const input=el('carry'+axis);
+      if(document.activeElement!==input)input.value=Number(pos[axis.toLowerCase()]||0).toFixed(3);
+    }
+    const r=id==='anchor'?c.billboardAnchor.rotation:id==='back'?c.backCarry.rotation:c.handTargets[id]?.rotation||{};
+    el('carryRotationLabel').textContent=id==='anchor'||id==='back'?'Mount orientation (degrees)':'Hand socket rotation relative to its calibrated GLB (degrees)';
+    el('carryAnchorRotation').hidden=id==='hitbox';
+    el('carryHitboxEnabled').checked=c.hitbox.enabled;
+    for(const axis of ['X','Y','Z']) {
+      const field=el('carryHitboxS'+axis);
+      if(document.activeElement!==field)field.value=Number(c.hitbox.size[axis.toLowerCase()]).toFixed(3);
+    }
+    el('carrySizeRow').hidden=id!=='anchor'&&id!=='back';
+    el('carryPortraitAnchorRow').hidden=id!=='back';
+    for(const axis of ['X','Y','Z'])el('carryPosterior'+axis).disabled=false; // Both poses are hip-relative in the species-adjusted frame.
+    for(const axis of ['X','Y','Z']){
+      const input=el('carryR'+axis);
+      if(document.activeElement!==input)input.value=Number(r[axis.toLowerCase()]||0).toFixed(2);
+      const portraitInput=el('carryPortrait'+axis);
+      if(document.activeElement!==portraitInput)portraitInput.value=Number(c.backCarry.portraitAnchor[axis.toLowerCase()]||0).toFixed(3);
+      const offsetInput=el('carryPosterior'+axis);
+      if(document.activeElement!==offsetInput)offsetInput.value=Number((id==='back'?c.backCarry:c.billboardAnchor).posteriorOffset?.[axis.toLowerCase()]||0).toFixed(3);
+    }
+    if(document.activeElement!==el('carrySize'))el('carrySize').value=(id==='back'?c.backCarry:c.billboardAnchor).size;
+    el('carrySummary').textContent=c.enabled
+      ?'Authoring enabled: held/back anchors and both hand positions will be exported.'
+      :'Carrying disabled: configure the anchors here and enable when ready.';
+    for(const key of ['anchor','back','left','right','hitbox']){
+      const idKey='carrySelect'+key[0].toUpperCase()+key.slice(1);
+      el(idKey)?.classList.toggle('active',id===key);
+    }
+  }
+  function createGuides() {
+    for(const item of guideRoot.children.slice()){
+      guideRoot.remove(item);
+      item.traverse(o=>{o.geometry?.dispose?.();o.material?.dispose?.();});
+    }
+    for(const id of ['anchor','back','left','right','hitbox']){
+      const marker=new THREE.Group();
+      marker.name='carry_author_'+id;
+      marker.userData.carryGuide=id;
+      if(id==='hitbox'){
+        const hitWire=new THREE.LineSegments(
+          new THREE.EdgesGeometry(new THREE.BoxGeometry(1,1,1)),
+          new THREE.LineBasicMaterial({color:0xc98aff,depthTest:false,depthWrite:false}));
+        hitWire.name='carry_hitbox_wireframe';
+        hitWire.renderOrder=97;
+        marker.add(hitWire);
+      }else if(id==='anchor'||id==='back'){
+        const plane=new THREE.Mesh(new THREE.PlaneGeometry(1,1),
+          new THREE.MeshBasicMaterial({color:0xffb75d,transparent:true,opacity:.16,side:THREE.DoubleSide,depthWrite:false,depthTest:false}));
+        marker.add(plane);
+        const outline=new THREE.LineSegments(
+          new THREE.EdgesGeometry(new THREE.PlaneGeometry(1,1)),
+          new THREE.LineBasicMaterial({color:0xffb75d,depthTest:false}));
+        marker.add(outline);
+      }else{
+        // The real calibrated GLBs render in previewHands. These are only
+        // nonselectable socket axes for precise translation and rotation.
+        const axes=new THREE.AxesHelper(.095);
+        axes.renderOrder=92;
+        marker.add(axes);
+      }
+      guideRoot.add(marker);
+      guides[id]=marker;
+    }
+    refreshGuides();
+    // Rebind to the new marker after any furniture rebuild or JSON import.
+    if(activeEditorMode==='carry')select(state.selectedType==='carry'&&guides[state.selectedId]?state.selectedId:'anchor');
+  }
+  function refreshGuides() {
+    const c=state.carryable;
+    for(const id of ['anchor','back','left','right','hitbox']){
+      const marker=guides[id],pos=positionGuide(id);
+      if(!marker||!pos)continue;
+      marker.position.set(pos.x,pos.y,pos.z);
+      if(id==='hitbox'){
+        marker.visible=c.hitbox.enabled;
+        // Outer marker scale is authoritative so TransformControls scale-gizmo
+        // edits can resize the hitbox, not only its numeric inputs.
+        marker.scale.set(c.hitbox.size.x,c.hitbox.size.y,c.hitbox.size.z);
+      }else if(id==='anchor'||id==='back'){
+        const a=id==='back'?c.backCarry:c.billboardAnchor,r=a.rotation;
+        marker.rotation.set(r.x*DEG,r.y*DEG,r.z*DEG,'XYZ');
+        for(const child of marker.children)child.scale.setScalar(a.size);
+      }else{
+        const r=c.handTargets[id]?.rotation||{};
+        handLocalEuler.set((Number(r.x)||0)*DEG,(Number(r.y)||0)*DEG,(Number(r.z)||0)*DEG,'XYZ');
+        marker.quaternion.copy(handTurn[id]).multiply(handAbsolute.setFromEuler(handLocalEuler));
+      }
+    }
+  }
+  function select(id) {
+    if(!guides[id])return;
+    state.selectedType='carry';
+    state.selectedId=id;
+    transform.detach();
+    transform.enabled=true;
+    transform.visible=true;
+    transform.setSpace?.('local'); // Rotation gizmo follows actual calibrated hand socket orientation.
+    if((transform.getMode?.()||'translate')==='scale')setTransformMode('translate');
+    transform.attach(guides[id]);
+    renderControls();
+    syncHoldingPreview();
+  }
+  function fromInputs() {
+    const id=state.selectedType==='carry'?state.selectedId:'anchor';
+    const point=positionGuide(id);
+    if(!point)return;
+    for(const axis of ['X','Y','Z']){
+      const n=Number(el('carry'+axis).value);
+      if(Number.isFinite(n))point[axis.toLowerCase()]=n;
+    }
+    const rotations=id==='anchor'?state.carryable.billboardAnchor.rotation:id==='back'?state.carryable.backCarry.rotation:state.carryable.handTargets[id]?.rotation;
+    if(rotations)for(const axis of ['X','Y','Z']){
+      const n=Number(el('carryR'+axis).value);
+      if(Number.isFinite(n))rotations[axis.toLowerCase()]=n;
+    }
+    for(const axis of ['X','Y','Z']){
+      const n=Number(el('carryHitboxS'+axis).value);
+      if(Number.isFinite(n))state.carryable.hitbox.size[axis.toLowerCase()]=Math.max(.01,Math.abs(n));
+    }
+    if(id==='anchor'||id==='back')(id==='back'?state.carryable.backCarry:state.carryable.billboardAnchor).size=Math.max(.1,Math.min(10,Number(el('carrySize').value)||1));
+    for(const axis of ['X','Y','Z']){
+      const n=Number(el('carryPosterior'+axis).value);
+      if(Number.isFinite(n))(id==='back'?state.carryable.backCarry:state.carryable.billboardAnchor).posteriorOffset[axis.toLowerCase()]=n;
+    }
+    for(const axis of ['X','Y','Z']){
+      const n=Number(el('carryPortrait'+axis).value);
+      if(id==='back'&&Number.isFinite(n))state.carryable.backCarry.portraitAnchor[axis.toLowerCase()]=n;
+    }
+    refreshGuides();
+    syncHoldingPreview();
+    queueUndoHistory('carryable guide edit');
+    renderControls();
+  }
+  function fromGizmo() {
+    if(activeEditorMode!=='carry'||state.selectedType!=='carry')return;
+    const id=state.selectedId,marker=guides[id],point=positionGuide(id);
+    if(!marker||!point)return;
+    for(const axis of ['x','y','z'])point[axis]=Number(marker.position[axis].toFixed(4));
+    if(id==='hitbox'){
+      for(const axis of ['x','y','z'])
+        state.carryable.hitbox.size[axis]=Math.max(.01,Number(Math.abs(marker.scale[axis]).toFixed(4)));
+    }else if(id==='anchor'||id==='back'){
+      for(const axis of ['x','y','z'])
+        (id==='back'?state.carryable.backCarry:state.carryable.billboardAnchor).rotation[axis]=Number((marker.rotation[axis]*180/Math.PI).toFixed(3));
+    }else if(id==='left'||id==='right'){
+      // A hand's gizmo rotates in canonical side-hand space, so recover the
+      // authored local correction instead of baking the ±90° wrist basis.
+      handInverse.copy(handTurn[id]).invert();
+      handAbsolute.copy(handInverse).multiply(marker.quaternion);
+      handLocalEuler.setFromQuaternion(handAbsolute,'XYZ');
+      for(const axis of ['x','y','z'])
+        state.carryable.handTargets[id].rotation[axis]=Number((handLocalEuler[axis]*180/Math.PI).toFixed(3));
+    }
+    renderControls();
+    syncHoldingPreview();
+  }
+  el('carrySelectAnchor').onclick=()=>select('anchor');
+  el('carrySelectBack').onclick=()=>select('back');
+  el('carrySelectLeft').onclick=()=>select('left');
+  el('carrySelectRight').onclick=()=>select('right');
+  el('carrySelectHitbox').onclick=()=>select('hitbox');
+  el('carryHitboxEnabled').onchange=e=>{
+    state.carryable.hitbox.enabled=!!e.target.checked;
+    refreshGuides();renderControls();queueUndoHistory('carryable hitbox toggle');
+  };
+  el('carryEnabled').onchange=event=>{
+    state.carryable.enabled=!!event.target.checked;
+    queueUndoHistory('carryable toggle');
+    renderControls();
+  };
+  for(const id of ['carryX','carryY','carryZ','carryRX','carryRY','carryRZ','carrySize','carryPosteriorX','carryPosteriorY','carryPosteriorZ','carryPortraitX','carryPortraitY','carryPortraitZ','carryHitboxSX','carryHitboxSY','carryHitboxSZ'])
+    el(id).addEventListener('change',fromInputs);
+  transform.addEventListener?.('objectChange',fromGizmo);
+
+  const originalExport=exportData;
+  exportData=function(...args) {
+    const data=originalExport(...args);
+    data.carryable=cloneJson(state.carryable);
+    return data;
+  };
+  const originalLoad=loadData;
+  loadData=function(data){
+    state.carryable=normalized(data?.carryable);
+    const result=originalLoad(data);
+    createGuides();
+    renderControls();
+    setHoldingVisibility();
+    return result;
+  };
+  const originalRebuild=rebuildAll;
+  rebuildAll=function(...args){
+    const result=originalRebuild(...args);
+    createGuides();
+    renderControls();
+    setHoldingVisibility();
+    return result;
+  };
+  const originalMode=setEditorMode;
+  setEditorMode=function(mode){
+    const result=originalMode(mode);
+    pane.classList.toggle('hidden',mode!=='carry');
+    guideRoot.visible=mode==='carry';
+    document.querySelectorAll('[data-left-tab]').forEach(tab=>
+      tab.classList.toggle('active',tab.dataset.leftTab===mode));
+    if(mode==='carry')select('anchor');
+    setHoldingVisibility();
+    if(mode==='carry')frameHoldingPreview();
+    return result;
+  };
+  if(!button.onclick)button.addEventListener('click',()=>setEditorMode('carry')); // Only legacy pages without a core tab binding need a second listener.
+  createGuides();
+  renderControls();
+  window.HobunjiCarryableFurnitureAuthor={
+    normalize:normalized,
+    snapshot:()=>({carryable:cloneJson(state.carryable),selected:state.selectedType==='carry'?state.selectedId:null,backPreview:state.selectedId==='back',preview:{visible:heldPreview.visible,ready:!!previewActor,hands:!!previewHands,source:previewSource}})
+  };
+  if(bootStatus)bootStatus.hidden=true; // Hide the pending notice only after the complete Carryable API is ready.
+})();

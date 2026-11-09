@@ -6,14 +6,14 @@
   // while index.html keeps a single long-lived js/house-pieces.js include.
   const current = document.currentScript;
   const baseUrl = current?.src ? new URL('.', current.src) : new URL('js/', document.baseURI);
-  const naturalSurfaceUvVersion = current?.src ? (new URL(current.src).searchParams.get('surfaceUv') || '20261006cliffparity1') : '20261006cliffparity1'; // Used by the natural rock/cliff UV stack below; decoupled from this bootstrap's own v= cache key so unrelated loader changes cannot invalidate the tightly-coupled surface generation.
+  const naturalSurfaceUvVersion = current?.src ? (new URL(current.src).searchParams.get('surfaceUv') || '20261026orequad1') : '20261026orequad1'; // Used by the natural rock/cliff UV stack below; decoupled from this bootstrap's own v= cache key so unrelated loader changes cannot invalidate the tightly-coupled surface generation.
   window.HobunjiNaturalSurfaceUvLoaderVersion = naturalSurfaceUvVersion; // Used by Pixel Probe diagnostics to show which coherent natural-surface script generation actually loaded on-device.
   const naturalSurfaceScript = (file) => `${file}?v=${encodeURIComponent(naturalSurfaceUvVersion)}`; // Used only by the tightly-coupled natural-surface UV modules so stale child scripts cannot mix generations.
   const scripts = [
     ['SurfaceTint', 'surface-tint.js?v=20261007hec88e1c'],
-    ['NaturalSurfaceMaterialConfig', '../config/natural-surface-materials.js?v=20260813b'],
+    ['NaturalSurfaceMaterialConfig', '../config/natural-surface-materials.js?v=20261027h1fb8ced'],
     ['NaturalSurfaceTextureReady', 'natural-surface-texture-ready.js?v=20260915perf1'],
-    ['NaturalSurfaceMaterials', 'natural-surface-materials.js?v=20260812a'],
+    ['NaturalSurfaceMaterials', 'natural-surface-materials.js?v=20261027h1fb8ced'],
     ['WildernessTerrainCleanupConfig', '../config/wilderness-terrain-cleanup.js?v=20260812a'],
     ['WildernessTerrainCleanup', 'wilderness-terrain-cleanup.js?v=20260812a'],
     ['NaturalSurfaceRuntimeFixes', 'natural-surface-runtime-fixes.js?v=20260813d'],
@@ -32,25 +32,27 @@
     ['StructurePreload', 'structure-preload.js?v=20260812a'],
     // Shared distance-hysteresis/tick-rate-accumulator math reused by the two LOD modules below and by game.js's NPC walker distance LOD -- must load before both.
     ['EntityDistanceLod', 'entity-distance-lod.js?v=20260919b'],
+    // View-direction counterpart: hostile leg/hand procedural animation pauses while the actor is behind or beside the camera.
+    ['OffscreenRigLod', 'offscreen-rig-lod.js?v=20261107a'],
     ['WildernessSimulationLOD', 'wilderness-simulation-lod.js?v=20261009hcee431b'],
     // Wildlife's own visibility/render-cost LOD (distance-hidden avatar/shadow/ring HUD), sibling to the bandit-sleep LOD just above.
-    ['WildlifeVisualLod', 'wildlife-visual-lod.js?v=20261009h54b7caa'],
+    ['WildlifeVisualLod', 'wildlife-visual-lod.js?v=20261108h3efca83'],
     // Adds the Harlyao-zone second darkness pass, then re-clears lantern/furniture-light masks. Terror later supplies the cached stack darkness/radius modifiers read by this adapter.
-    ['HarlyaoNightMarchAtmosphere', 'harlyao-night-march-atmosphere.js?v=20260909b'],
+    ['HarlyaoNightMarchAtmosphere', 'harlyao-night-march-atmosphere.js?v=20261104habd63f8'],
     // Reusable solid-color translucent/emissive character treatment plus one cheap WeatherFX lantern-style glow provider per formation/object group.
-    ['Ghostify', 'ghostify.js?v=20260909a'],
-    // Chunk-only offscreen Harlyao army state; materializes ~20 real humanoid combatants only while the player shares its nightly route chunk.
-    ['HarlyaoNightMarch', 'harlyao-night-march-runtime.js?v=20260911a'],
+    ['Ghostify', 'ghostify.js?v=20261104hf464126'],
+    // Commander-led Harlyao simulation: persistent offscreen positions, regrouping followers, and individual distance-based promotion to native humanoid travel.
+    ['HarlyaoNightMarch', 'harlyao-night-march-runtime.js?v=20261024h604e509'],
     // Porakaneki temporary locales can clear ordinary procedural shrub/rock clutter and relax only their own placement margins when dense wilderness would otherwise prevent any camp from existing.
-    ['PorakanekiCampPlacementPolicy', 'porakaneki-camp-placement-policy.js?v=20260924chunkecology2'],
+    ['PorakanekiCampPlacementPolicy', 'porakaneki-camp-placement-policy.js?v=20261105h58f3c87'],
     // Porakaneki camp network: distance/hysteresis LOD, shared den-to-den hunting parties, planner-owned destinations, shared hostile-loop locomotion/rendering, and seasonal chief migration.
-    ['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20261015h81a4d86'],
+    ['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20261108tribalRanged2'],
     // Keeps neutral Porakaneki off companion target lists, classifies self-defense vs initiated kills, applies Omgurku rivalry favor, and composes the faction rename into NPC database loads.
-    ['PorakanekiFactionRules', 'porakaneki-faction-rules.js?v=20261012h76657f9'],
+    ['PorakanekiFactionRules', 'porakaneki-faction-rules.js?v=20261104faction-luau1'],
     // Map-only locale proxies: chief camp is always known; each little camp gets its own independent discovery identity through the existing wilderness-map fog/discovery system.
-    ['PorakanekiMapMarkers', 'porakaneki-map-markers.js?v=20261012h601b36f'],
-    // Draws one all-distance serpentine spectral locator at the army chunk; once soldiers are visible it follows their actual formation centroid.
-    ['HarlyaoNightMarchBeacon', 'harlyao-night-march-beacon.js?v=20260911a'],
+    ['PorakanekiMapMarkers', 'porakaneki-map-markers.js?v=20261022h909ded2'],
+    // A world-space spectral column follows the exact commander's bearing, settling onto the actor as the player approaches.
+    ['HarlyaoNightMarchBeacon', 'harlyao-night-march-beacon.js?v=20261104hcaf06bb'],
     // Makes the Ghoul mine-floor track the Music scheduler's exclusive looping BGM owner; chunk-distance checks are cached/throttled while gain interpolation remains smooth.
     ['HarlyaoNightMarchMusic', 'harlyao-night-march-music.js?v=20260919combatbgm2'],
     // Maps the cached music distance stage to Terror stacks, composes movement slowing into on-foot/mounted speed hooks, and exposes darkness/lantern multipliers.
@@ -58,7 +60,7 @@
     // Decorates Calendar day cells with the nightly route and reveals zone/direction details when a marked date is clicked.
     ['HarlyaoNightMarchCalendar', 'harlyao-night-march-calendar.js?v=20260909b'],
     // Appends route/chunk/build/placement/provocation state to the copyable Pixel Probe report on mobile without requiring console access.
-    ['HarlyaoNightMarchPixelProbe', 'harlyao-night-march-pixel-probe.js?v=20260911a'],
+    ['HarlyaoNightMarchPixelProbe', 'harlyao-night-march-pixel-probe.js?v=20261021h381bf6c'],
     // Keep Cloud Forest mist in the ordinary scene render. The retired soft-depth
     // post-composite pass disabled depth testing and could wash mist over the player
     // and nearby world geometry even when every cylinder surface was behind them.
@@ -66,21 +68,21 @@
     // depth writes, so provide a colorless order-889 depth copy before mist 890-892
     // without changing the visible player/pet ordering that relies on depthWrite=false.
     ['CloudForestAvatarDepthOccluder', 'cloud-forest-avatar-depth-occluder.js?v=20260906a'],
-    ['OutlineRenderPerformance', 'outline-render-performance.js?v=20260924perf1'],
+    ['OutlineRenderPerformance', 'outline-render-performance.js?v=20261102h0878552'],
     // Rocks and cliffs already use the farm-cliff-style irregular-surface PNG mapper; this policy makes that authored edge treatment authoritative and removes redundant shell participation.
-    ['FacetedNaturalSurfaceShellReduction', 'faceted-natural-surface-shell-reduction.js?v=20260905a'],
+    ['FacetedNaturalSurfaceShellReduction', 'faceted-natural-surface-shell-reduction.js?v=20261026orefaces3'],
     ['FarmCliffRockOutline', 'farm-cliff-rock-outline.js?v=20260907b'],
     // Wilderness cliff builders can alter geometry after the generic natural-surface pass; rerun the farm-style material + connected-surface stretch once the full builder stack has finished.
     ['WildernessCliffSurfaceParity', naturalSurfaceScript('wilderness-cliff-surface-parity.js')],
-    ['TerrainRenderChunks', 'terrain-render-chunks.js?v=20261013h5b4c1b6'],
+    ['TerrainRenderChunks', 'terrain-render-chunks.js?v=20261102hfc82af9'],
     // Terrain Jigsaw still exists for other opaque terrain. This final wrapper remains as a safety net for old/untagged natural surfaces before spatial chunking and drawing.
     ['NaturalSurfaceStretchPostJigsaw', naturalSurfaceScript('natural-surface-stretch-post-jigsaw.js')],
     ['BuildingSubtleElevation', 'building-subtle-elevation.js?v=20260811a'],
-    ['BuildingGrassSuppression', 'building-grass-suppression.js?v=20260823b'],
+    ['BuildingGrassSuppression', 'building-grass-suppression.js?v=20261031farmworkGrass1'],
     ['PlayerHouseElevation', 'player-house-elevation.js?v=20260823b'],
     ['FarmBuildingElevationParity', 'farm-building-elevation-parity.js?v=20260920furniture1'],
-    ['HousePieces', 'house-pieces-core.js?v=20261004hf503d1e'],
-    [null, 'house-pieces-registry-stability.js?v=20260906a'],
+    ['HousePieces', 'house-pieces-core.js?v=20261107ha23d22f'],
+    [null, 'house-pieces-registry-stability.js?v=20261022he201668'],
     [null, 'house-pieces-elevation-bootstrap.js?v=20260823a'],
   ];
 

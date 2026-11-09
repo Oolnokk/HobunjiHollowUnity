@@ -9,6 +9,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm'); // Reads the runtime category icon table without duplicating its mapping.
 
 const DOCS = path.join(__dirname, '..', 'docs');
 
@@ -65,6 +66,12 @@ function extractItemDefs(gameJsSource) {
   return splitTopLevelEntries(block).map(parseEntry).filter(Boolean);
 }
 
+// The runtime material registration bridge is authoritative for recently added animal drops.
+function extractWildlifeMaterials(registrationSource) {
+  const block = findBlock(registrationSource, 'const WILDLIFE_MATERIAL_DEFS = Object.freeze({'); // Same literals registered by PuktukDenNestRegistration during CookingSystem.init.
+  return block ? splitTopLevelEntries(block).map(parseEntry).filter(Boolean) : [];
+}
+
 function extractToolItemDefs(gameJsSource) {
   const block = findBlock(gameJsSource, 'const TOOL_ITEM_DEFS = {');
   if (!block) return [];
@@ -72,7 +79,8 @@ function extractToolItemDefs(gameJsSource) {
     .map(item => ({ ...item, cat: item.cat || 'tool' }));
 }
 
-function extractCookingIngredients(cookingDataSource) {
+function extractCookingIngredients(cookingDataSource, cookingSystemSource) {
+  const categoryIcons = vm.runInNewContext('(' + findBlock(cookingSystemSource, 'const CATEGORY_ICONS = {') + ')'); // Same placeholders as runtime ingredients.
   const block = findBlock(cookingDataSource, 'window.HobunjiCookingData = {');
   if (!block) return [];
   let parsed;
@@ -83,7 +91,7 @@ function extractCookingIngredients(cookingDataSource) {
   return Object.entries(parsed.items || {}).map(([key, def]) => ({
     key,
     label: def.name || key,
-    icon: '',
+    icon: categoryIcons[def.categories?.[0]] || '🥣',
     cat: 'ingredient',
   }));
 }
@@ -109,12 +117,15 @@ function extractCosmetics(cosmeticsIndexJson) {
 function main() {
   const gameJsSource = fs.readFileSync(path.join(DOCS, 'game.js'), 'utf8');
   const cookingDataSource = fs.readFileSync(path.join(DOCS, 'js', 'cooking-data.js'), 'utf8');
+  const cookingSystemSource = fs.readFileSync(path.join(DOCS, 'js', 'cooking-system.js'), 'utf8'); // Supplies canonical ingredient placeholders.
+  const animalMaterialsSource = fs.readFileSync(path.join(DOCS, 'js', 'puktuk-den-nest-registration.js'), 'utf8'); // Reads the exact wild shell/hide material catalog registered at runtime.
   const cosmeticsIndexJson = fs.readFileSync(path.join(DOCS, 'config', 'cosmetics', 'index.json'), 'utf8');
 
   const items = {};
   for (const item of extractItemDefs(gameJsSource)) items[item.key] = item;
   for (const item of extractToolItemDefs(gameJsSource)) if (!items[item.key]) items[item.key] = item;
-  for (const item of extractCookingIngredients(cookingDataSource)) if (!items[item.key]) items[item.key] = item;
+  for (const item of extractCookingIngredients(cookingDataSource, cookingSystemSource)) if (!items[item.key]) items[item.key] = item;
+  for (const item of extractWildlifeMaterials(animalMaterialsSource)) items[item.key] = item; // New wildlife materials stay visible in the item editor when this index is regenerated.
   for (const item of extractCosmetics(cosmeticsIndexJson)) if (!items[item.key]) items[item.key] = item;
 
   const sortedKeys = Object.keys(items).sort((a, b) => a.localeCompare(b));

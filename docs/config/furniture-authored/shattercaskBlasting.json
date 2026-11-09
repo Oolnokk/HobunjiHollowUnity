@@ -1,0 +1,1622 @@
+{
+  "schema": "hobunji_furniture_surface_author.v58",
+  "id": "shattercaskBlasting",
+  "notes": "Original user-authored twin-neck Shattercask model; the separate gameplay module handles carrying and blasting.",
+  "portraitFogMaskHidden": false,
+  "bladedHazard": false,
+  "fireHazard": false,
+  "createdAt": "2026-10-21T01:35:30.192Z",
+  "surfaceRecognition": {
+    "splitAngleDeg": 68,
+    "colorCode": false,
+    "selectSurfaces": true,
+    "multiSelect": true
+  },
+  "partMultiSelect": false,
+  "tileBase": {
+    "visible": true,
+    "tileSize": 1,
+    "footprintW": 1,
+    "footprintD": 1,
+    "y": 0,
+    "gridOpacity": 0.55
+  },
+  "placementGrid": {
+    "visible": true,
+    "snap": true,
+    "opacity": 0.85
+  },
+  "seating": {
+    "visible": true,
+    "opacity": 0.9,
+    "surfaceId": null,
+    "defaultSpecies": "mao-ao",
+    "defaultGender": "male",
+    "cellSpanScale": 1,
+    "showLegs": true,
+    "showLegBones": true
+  },
+  "seatLegModel": {
+    "version": 14,
+    "sourceCommit": "48ccf77f607a6ec62fcdeef4d7f202640d6d1468",
+    "solver": "fixed-equal-half-reach-v4",
+    "runtimeReferenceSolver": "docs/js/leg-bones.js solveTwoBoneLeg",
+    "sourcePose": "equal fixed bones; thigh projected flush to the area-weighted average seat plane; calf stays exactly straight while the knee is over the seat footprint and bends exactly 90 degrees only after clearing the edge",
+    "footSource": "scratchbones-config proceduralFeet species GLBs or exact generated runtime fallback",
+    "coordinateSpace": "actor floor-relative; PNGPlaneAvatar visual model lifted portraitModelHeight/2 as required by its authored portrait-space anchors",
+    "posteriorSource": "species+gender attachment-rig heightPercentOffset applied to PNGPlaneAvatar portrait-derived handAttachY/baseY",
+    "handAttachYFallback": "local alpha-bottom scan using PNGPlaneAvatar placement formula, then the profile heightPercentOffset",
+    "legSpacingSource": "runtime torso-only widest-opaque-row pixel scan, cached by species+gender",
+    "anchorDifference": "measured posterior is directly verified against the authored chair seat anchor",
+    "hipDifference": "semantic 90-degree seated hip turn is solved directly as a thigh tangent to the averaged seat plane",
+    "seatSurfaceRule": "recognized seat faces contribute an area-weighted average normal; each thigh is projected to that plane with 0.001 clearance",
+    "calfRule": "two-state seated chain: calf is exactly collinear with the thigh while the knee projection remains inside the seat-face bounds; exact 90-degree drop opposite the average normal after the knee clears the edge",
+    "seatGeometryCalibration": {
+      "source": "adjustedchair2.json",
+      "currentBasicSeat": {
+        "x": 0.65,
+        "z": 0.65
+      },
+      "adjustedSeat": {
+        "x": 0.5158,
+        "z": 0.4164
+      },
+      "scaleX": 0.7935384615384615,
+      "scaleZ": 0.6406153846153846,
+      "benchWidthScale": 1,
+      "benchDepthScale": 0.6406153846153846,
+      "defaultSeatNormalOffset": 0.01,
+      "backrestHeightMultiplier": 1.1,
+      "standardBackrestHeight": 0.458
+    },
+    "anchorLocalYRule": "seat-anchor normal offset is authored per anchor; new and reset anchors use the adjusted-chair-derived 0.01 default",
+    "backrestRule": "seat backrests are shortened from the top while preserving their lower attachment; target height is 1.10 times seat depth, so bench width is never used",
+    "edgeBehavior": "seat-face footprint bounds determine whether the calf remains straight or drops 90 degrees; no furniture-edge raycast is needed",
+    "standingComparison": "per-avatar optional linked half-width viewport using the runtime standing leg solver, posterior marker, outer-box edges, and optional billboarded numeric labels",
+    "posteriorAdjustmentPreview": "per-avatar non-destructive portrait-relative draft with draggable 2D guide, exact numeric fields, one-tap posterior-X centering between live left/right leg X values, live seated/standing preview, persisted override, repository reset, and copyable attachment-profile patch",
+    "portraitFogMask": "global authoring toggle removes fighter.opacityMaskLayer from every generated front/rear portrait without changing the deterministic avatar profile"
+  },
+  "seatedAvatars": [],
+  "seatAnchors": [],
+  "particleEmitters": [
+    {
+      "id": "emitter_mvezacs8_2uryh",
+      "name": "Bubble Emitter",
+      "type": "bubbles",
+      "enabled": true,
+      "attachedPartId": "part_mveyqf1t_9i1bs",
+      "position": {
+        "x": 0,
+        "y": 0.10382727,
+        "z": 0
+      },
+      "rotation": {
+        "x": -0.027,
+        "y": -0.02,
+        "z": -0.046
+      },
+      "rate": 8,
+      "lifetime": 2,
+      "size": 0.04522168,
+      "speed": 0.04602273,
+      "spread": 0.04482639,
+      "radius": 0.06723959,
+      "gravity": 0,
+      "colorA": "#0000ff",
+      "colorB": "#ff00ff"
+    },
+    {
+      "id": "emitter_mvezf0ge_hwj2g",
+      "name": "Bubble Emitter",
+      "type": "bubbles",
+      "enabled": true,
+      "attachedPartId": "part_mveyvcjl_p5vm5",
+      "position": {
+        "x": 0.00024096,
+        "y": 0.08322193,
+        "z": -0.00136294
+      },
+      "rotation": {
+        "x": 0.093,
+        "y": 1.008,
+        "z": -5.177
+      },
+      "rate": 8,
+      "lifetime": 2,
+      "size": 0.03467354,
+      "speed": 0.04751408,
+      "spread": 0.06840462,
+      "radius": 0.04560308,
+      "gravity": 0,
+      "colorA": "#ffff00",
+      "colorB": "#ffff00"
+    }
+  ],
+  "processingWarps": [],
+  "processTimelines": [],
+  "stompAttachPoints": [],
+  "carryable": {
+    "enabled": true,
+    "billboardAnchor": {
+      "coordinateSpace": "posterior-relative",
+      "position": {
+        "x": -0.004,
+        "y": -0.0788,
+        "z": -0.1535
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "posteriorOffset": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "size": 0.6
+    },
+    "handTargets": {
+      "left": {
+        "x": 0.1701,
+        "y": 0.123,
+        "z": 0.016,
+        "rotation": {
+          "x": -180,
+          "y": 0,
+          "z": -90
+        }
+      },
+      "right": {
+        "x": -0.1132,
+        "y": 0.12,
+        "z": 0.006,
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 90
+        }
+      }
+    },
+    "hitbox": {
+      "enabled": true,
+      "center": {
+        "x": 0.0275,
+        "y": 0.19235,
+        "z": 0
+      },
+      "size": {
+        "x": 0.335,
+        "y": 0.417,
+        "z": 0.315
+      }
+    }
+  },
+  "avatar": {
+    "visible": false,
+    "sourceMode": "runtimePortrait",
+    "sourcePixels": [
+      200,
+      200
+    ],
+    "baseModelWidth": 0.9,
+    "scaleMultiplier": 1,
+    "placementRatio": 0.95,
+    "widthMode": "world",
+    "visualLift": 0,
+    "transform": {
+      "x": 0,
+      "y": 0,
+      "z": 0,
+      "rx": 0,
+      "ry": 0,
+      "rz": 0
+    },
+    "textureDataUrl": null,
+    "textureName": "actual GitHub Mao’ao render",
+    "calculated": {
+      "pxW": 200,
+      "pxH": 200,
+      "aspect": 1,
+      "width": 0.9,
+      "height": 0.9,
+      "placementRatio": 0.95,
+      "assemblyOffsetY": 0.40499999999999997,
+      "authoredAnchorY": 0,
+      "visualLift": 0,
+      "visualRootY": 0.45,
+      "visibleBottomY": 0,
+      "visibleTopY": 0.9,
+      "groundContactY": 0.45
+    }
+  },
+  "parts": [
+    {
+      "id": "part_mveymg6k_k3x7h",
+      "kind": "barrel",
+      "name": "Unified Barrel Body",
+      "transform": {
+        "x": 0.0156,
+        "y": 0.1274,
+        "z": 0.0002,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.2902,
+        "sy": 0.267,
+        "sz": 0.295
+      },
+      "color": "#7a4924",
+      "segments": 20,
+      "taperAxis": "y",
+      "topScaleX": 0.4,
+      "topScaleZ": 0.37,
+      "bottomScaleX": 0.7,
+      "bottomScaleZ": 0.7,
+      "topSkewX": -0.05,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "wood",
+      "materialTexture": "boards.png",
+      "materialRotationDeg": 180,
+      "materialCapTexture": "carved_smooth.png",
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "materialFillMode": "never",
+      "surfaceOpacity": 1,
+      "substanceColor": "#7a4924",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1
+    },
+    {
+      "id": "part_mveyqf1t_9i1bs",
+      "kind": "cup",
+      "name": "Cup / Basin",
+      "transform": {
+        "x": 0.0047,
+        "y": 0.2855,
+        "z": 0.0002,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.1261,
+        "sy": 0.2106,
+        "sz": 0.116
+      },
+      "color": "#8a6a3a",
+      "segments": 20,
+      "taperAxis": "y",
+      "topScaleX": 1.2,
+      "topScaleZ": 1.2,
+      "bottomScaleX": 0.78,
+      "bottomScaleZ": 0.78,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.78,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "wood",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "materialFillMode": "never",
+      "surfaceOpacity": 1,
+      "substanceColor": "#8a6a3a",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1
+    },
+    {
+      "id": "part_mveyvcjl_p5vm5",
+      "kind": "cup",
+      "name": "Cup / Basin Copy",
+      "transform": {
+        "x": 0.1023,
+        "y": 0.2072,
+        "z": 0.0016,
+        "rx": 0,
+        "ry": 0,
+        "rz": -14.892,
+        "sx": 0.0985,
+        "sy": 0.194,
+        "sz": 0.1268
+      },
+      "color": "#8a6a3a",
+      "segments": 20,
+      "taperAxis": "y",
+      "topScaleX": 1.2,
+      "topScaleZ": 1.2,
+      "bottomScaleX": 0.78,
+      "bottomScaleZ": 0.78,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.78,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "wood",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "materialFillMode": "never",
+      "surfaceOpacity": 1,
+      "substanceColor": "#8a6a3a",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1
+    }
+  ],
+  "surfaceSettings": {
+    "part_mveymg6k_k3x7h:surface:0": {
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/boards.png",
+        "name": "boards.png",
+        "fillEnabled": false,
+        "fillColor": "#7a4924",
+        "mapping": "stretch",
+        "rotationDeg": 180,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveymg6k_k3x7h:surface:2": {
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/boards.png",
+        "name": "boards.png",
+        "fillEnabled": false,
+        "fillColor": "#7a4924",
+        "mapping": "stretch",
+        "rotationDeg": 180,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveymg6k_k3x7h:surface:4": {
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#7a4924",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveymg6k_k3x7h:surface:5": {
+      "label": "Barrel Top",
+      "role": "decorTop",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#7a4924",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveyqf1t_9i1bs:surface:0": {
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveyqf1t_9i1bs:surface:2": {
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveyqf1t_9i1bs:surface:4": {
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveyqf1t_9i1bs:surface:6": {
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveyqf1t_9i1bs:surface:7": {
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveyvcjl_p5vm5:surface:0": {
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveyvcjl_p5vm5:surface:2": {
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveyvcjl_p5vm5:surface:4": {
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveyvcjl_p5vm5:surface:6": {
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveyvcjl_p5vm5:surface:7": {
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveyqf1t_9i1bs:surface:80": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": null,
+        "name": "",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mveyqf1t_9i1bs:surface:82": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": null,
+        "name": "",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    }
+  },
+  "recognizedSurfaces": [
+    {
+      "id": "part_mveyvcjl_p5vm5:surface:0",
+      "partId": "part_mveyvcjl_p5vm5",
+      "recognizedType": "underside",
+      "faceIndices": [
+        0,
+        1,
+        8,
+        9,
+        16,
+        17,
+        24,
+        25,
+        32,
+        33,
+        40,
+        41,
+        48,
+        49,
+        56,
+        57,
+        64,
+        65,
+        72,
+        73,
+        80,
+        81,
+        88,
+        89,
+        96,
+        97,
+        104,
+        105,
+        112,
+        113,
+        120,
+        121,
+        128,
+        129,
+        136,
+        137,
+        144,
+        145,
+        152,
+        153
+      ],
+      "area": 0.06843398622129299,
+      "localCentroid": [
+        0,
+        0.006858,
+        0
+      ],
+      "localNormal": [
+        0,
+        -1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        -1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.07608000189065933,
+        "maxU": 0.07608000189065933,
+        "minV": -0.05909999832510948,
+        "maxV": 0.05909999832510948
+      },
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mveyvcjl_p5vm5:surface:2",
+      "partId": "part_mveyvcjl_p5vm5",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        2,
+        3,
+        10,
+        11,
+        18,
+        19,
+        26,
+        27,
+        34,
+        35,
+        42,
+        43,
+        50,
+        51,
+        58,
+        59,
+        66,
+        67,
+        74,
+        75,
+        82,
+        83,
+        90,
+        91,
+        98,
+        99,
+        106,
+        107,
+        114,
+        115,
+        122,
+        123,
+        130,
+        131,
+        138,
+        139,
+        146,
+        147,
+        154,
+        155
+      ],
+      "area": 0.0453181345798339,
+      "localCentroid": [
+        0,
+        0.021902,
+        0
+      ],
+      "localNormal": [
+        0,
+        1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.059342000633478165,
+        "maxU": 0.059342000633478165,
+        "minV": -0.046098001301288605,
+        "maxV": 0.046098001301288605
+      },
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mveyvcjl_p5vm5:surface:4",
+      "partId": "part_mveyvcjl_p5vm5",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        4,
+        5,
+        12,
+        13,
+        20,
+        21,
+        28,
+        29,
+        36,
+        37,
+        44,
+        45,
+        52,
+        53,
+        60,
+        61,
+        68,
+        69,
+        76,
+        77,
+        84,
+        85,
+        92,
+        93,
+        100,
+        101,
+        108,
+        109,
+        116,
+        117,
+        124,
+        125,
+        132,
+        133,
+        140,
+        141,
+        148,
+        149,
+        156,
+        157
+      ],
+      "area": 0.005440977125996213,
+      "localCentroid": [
+        0,
+        0.097,
+        0
+      ],
+      "localNormal": [
+        0,
+        1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.07608000189065933,
+        "maxU": 0.07608000189065933,
+        "minV": -0.05909999832510948,
+        "maxV": 0.05909999832510948
+      },
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mveyvcjl_p5vm5:surface:6",
+      "partId": "part_mveyvcjl_p5vm5",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        6,
+        14,
+        22,
+        30,
+        38,
+        46,
+        54,
+        62,
+        70,
+        78,
+        86,
+        94,
+        102,
+        110,
+        118,
+        126,
+        134,
+        142,
+        150,
+        158
+      ],
+      "area": 0.004297409708052494,
+      "localCentroid": [
+        0,
+        -0.06208,
+        0
+      ],
+      "localNormal": [
+        0,
+        1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.04231100156903267,
+        "maxU": 0.04231100156903267,
+        "minV": -0.032868001610040665,
+        "maxV": 0.032868001610040665
+      },
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mveyvcjl_p5vm5:surface:7",
+      "partId": "part_mveyvcjl_p5vm5",
+      "recognizedType": "underside",
+      "faceIndices": [
+        7,
+        15,
+        23,
+        31,
+        39,
+        47,
+        55,
+        63,
+        71,
+        79,
+        87,
+        95,
+        103,
+        111,
+        119,
+        127,
+        135,
+        143,
+        151,
+        159
+      ],
+      "area": 0.005870429710168379,
+      "localCentroid": [
+        0,
+        -0.097,
+        0
+      ],
+      "localNormal": [
+        0,
+        -1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        -1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.04945199936628342,
+        "maxU": 0.04945199936628342,
+        "minV": -0.03841499984264374,
+        "maxV": 0.03841499984264374
+      },
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mveymg6k_k3x7h:surface:0",
+      "partId": "part_mveymg6k_k3x7h",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        0,
+        1,
+        2,
+        3,
+        5,
+        6,
+        7,
+        8,
+        9,
+        11,
+        12,
+        13,
+        14,
+        15,
+        17,
+        18,
+        19,
+        20,
+        21,
+        23,
+        24,
+        25,
+        26,
+        27,
+        29,
+        30,
+        31,
+        32,
+        33,
+        35,
+        36,
+        37,
+        38,
+        39,
+        41,
+        42,
+        43,
+        44,
+        45,
+        47,
+        48,
+        49,
+        50,
+        51,
+        53,
+        54,
+        55,
+        56,
+        57,
+        59,
+        60,
+        61,
+        62,
+        63,
+        65,
+        66,
+        67,
+        68,
+        69,
+        71,
+        72,
+        73,
+        74,
+        75,
+        77,
+        78,
+        79,
+        80,
+        81,
+        83,
+        84,
+        85,
+        86,
+        87,
+        89,
+        90,
+        91,
+        92,
+        93,
+        95,
+        96,
+        97,
+        98,
+        99,
+        101,
+        102,
+        103,
+        104,
+        105,
+        107,
+        108,
+        109,
+        110,
+        111,
+        113,
+        114,
+        115,
+        116,
+        117,
+        119
+      ],
+      "area": 0.22083587594306356,
+      "localCentroid": [
+        -0.00228,
+        0.001069,
+        0
+      ],
+      "localNormal": [
+        0,
+        1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.14749999344348907,
+        "maxU": 0.14749999344348907,
+        "minV": -0.14509999752044678,
+        "maxV": 0.14509999752044678
+      },
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/boards.png",
+        "name": "boards.png",
+        "fillEnabled": false,
+        "fillColor": "#7a4924",
+        "mapping": "stretch",
+        "rotationDeg": 180,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mveymg6k_k3x7h:surface:4",
+      "partId": "part_mveymg6k_k3x7h",
+      "recognizedType": "underside",
+      "faceIndices": [
+        4,
+        10,
+        16,
+        22,
+        28,
+        34,
+        40,
+        46,
+        52,
+        58,
+        64,
+        70,
+        76,
+        82,
+        88,
+        94,
+        100,
+        106,
+        112,
+        118
+      ],
+      "area": 0.032407007284042694,
+      "localCentroid": [
+        0,
+        -0.1335,
+        0
+      ],
+      "localNormal": [
+        0,
+        -1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        -1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.10324999690055847,
+        "maxU": 0.10324999690055847,
+        "minV": -0.1015700027346611,
+        "maxV": 0.1015700027346611
+      },
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#7a4924",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mveyqf1t_9i1bs:surface:0",
+      "partId": "part_mveyqf1t_9i1bs",
+      "recognizedType": "underside",
+      "faceIndices": [
+        0,
+        1,
+        8,
+        9,
+        16,
+        17,
+        24,
+        25,
+        32,
+        33,
+        40,
+        41,
+        48,
+        49,
+        56,
+        57,
+        64,
+        65,
+        72,
+        73,
+        80,
+        81,
+        88,
+        89,
+        96,
+        97,
+        104,
+        105,
+        112,
+        113,
+        120,
+        121,
+        128,
+        129,
+        136,
+        137,
+        144,
+        145,
+        152,
+        153
+      ],
+      "area": 0.07955449579747295,
+      "localCentroid": [
+        0,
+        0.007445,
+        0
+      ],
+      "localNormal": [
+        0,
+        -1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        -1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.06960000097751617,
+        "maxU": 0.06960000097751617,
+        "minV": -0.07565999776124954,
+        "maxV": 0.07565999776124954
+      },
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mveyqf1t_9i1bs:surface:2",
+      "partId": "part_mveyqf1t_9i1bs",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        2,
+        3,
+        10,
+        11,
+        18,
+        19,
+        26,
+        27,
+        34,
+        35,
+        42,
+        43,
+        50,
+        51,
+        58,
+        59,
+        66,
+        67,
+        74,
+        75,
+        82,
+        83,
+        90,
+        91,
+        98,
+        99,
+        106,
+        107,
+        114,
+        115,
+        122,
+        123,
+        130,
+        131,
+        138,
+        139,
+        146,
+        147,
+        154,
+        155
+      ],
+      "area": 0.052681138826501654,
+      "localCentroid": [
+        0,
+        0.023776,
+        0
+      ],
+      "localNormal": [
+        0,
+        1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.054287999868392944,
+        "maxU": 0.054287999868392944,
+        "minV": -0.059014998376369476,
+        "maxV": 0.059014998376369476
+      },
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mveyqf1t_9i1bs:surface:4",
+      "partId": "part_mveyqf1t_9i1bs",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        4,
+        5,
+        12,
+        13,
+        20,
+        21,
+        28,
+        29,
+        36,
+        37,
+        44,
+        45,
+        52,
+        53,
+        60,
+        61,
+        68,
+        69,
+        76,
+        77,
+        84,
+        85,
+        92,
+        93,
+        100,
+        101,
+        108,
+        109,
+        116,
+        117,
+        124,
+        125,
+        132,
+        133,
+        140,
+        141,
+        148,
+        149,
+        156,
+        157
+      ],
+      "area": 0.006372437259831651,
+      "localCentroid": [
+        0,
+        0.1053,
+        0
+      ],
+      "localNormal": [
+        0,
+        1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.06960000097751617,
+        "maxU": 0.06960000097751617,
+        "minV": -0.07565999776124954,
+        "maxV": 0.07565999776124954
+      },
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mveyqf1t_9i1bs:surface:6",
+      "partId": "part_mveyqf1t_9i1bs",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        6,
+        14,
+        22,
+        30,
+        38,
+        46,
+        54,
+        62,
+        70,
+        78,
+        86,
+        94,
+        102,
+        110,
+        118,
+        126,
+        134,
+        142,
+        150,
+        158
+      ],
+      "area": 0.005033005558732782,
+      "localCentroid": [
+        0,
+        -0.067392,
+        0
+      ],
+      "localNormal": [
+        0,
+        1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.03870699927210808,
+        "maxU": 0.03870699927210808,
+        "minV": -0.04207799956202507,
+        "maxV": 0.04207799956202507
+      },
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mveyqf1t_9i1bs:surface:7",
+      "partId": "part_mveyqf1t_9i1bs",
+      "recognizedType": "underside",
+      "faceIndices": [
+        7,
+        15,
+        23,
+        31,
+        39,
+        47,
+        55,
+        63,
+        71,
+        79,
+        87,
+        95,
+        103,
+        111,
+        119,
+        127,
+        135,
+        143,
+        151,
+        159
+      ],
+      "area": 0.00687521434227753,
+      "localCentroid": [
+        0,
+        -0.1053,
+        0
+      ],
+      "localNormal": [
+        0,
+        -1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        -1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.045239999890327454,
+        "maxU": 0.045239999890327454,
+        "minV": -0.04917899891734123,
+        "maxV": 0.04917899891734123
+      },
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#8a6a3a",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    }
+  ],
+  "itemPlacements": [],
+  "globalCharacterDeadzoneDeg": 40,
+  "decals": [],
+  "decalAuthoring": {
+    "version": 4,
+    "coordinateSpace": "recognized-surface-local",
+    "sizeUnits": "surface-fraction",
+    "offsetUnits": "half-surface-span",
+    "sourceTypes": [
+      "image",
+      "tankanText"
+    ],
+    "tankanLayout": "vertical-word-columns",
+    "tankanSizing": "container-fit-down-v1"
+  },
+  "daylightWindowAuthoring": {
+    "version": 1,
+    "role": "daylightWindow",
+    "lightingModel": "interior-overlay-aperture",
+    "surfaceTint": "live-outdoor-rgb-over-neutralized-texture"
+  },
+  "pieceAnimations": [],
+  "pieceAnimationAuthoring": {
+    "version": 2,
+    "model": "rigid-piece-relative",
+    "separateFromProcessingWarps": true,
+    "windDirection": "furniture-local horizontal degrees",
+    "windAxisBias": true
+  }
+}

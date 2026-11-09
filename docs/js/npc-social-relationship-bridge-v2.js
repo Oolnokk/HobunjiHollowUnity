@@ -92,7 +92,14 @@
       if (Array.isArray(state.memory)) state.memory.push({ type: 'romance_rollover', day: today, amount: romanceFavor, sourceRomance: oldRomance });
       window.__farmLog?.(`Romance with ${npcId} became ${romanceFavor} permanent favor at midnight.`);
     }
-    if (favorGain) state.favor = num(state.favor, 0) + favorGain;
+    if (favorGain) {
+      if (typeof window.DialogueContent?.adjustNpcFavor === 'function') {
+        window.DialogueContent.adjustNpcFavor(npcId, favorGain, 'rapport_romance_rollover'); // Real runtime: faction standing and personal Favor update together.
+      } else {
+        state.favor = num(state.favor, 0) + favorGain; // Older isolated contexts without DialogueContent's mutation entry point still settle Rapport.
+        if (favorGain > 0) window.WorldPopupText?.queueSocialGain?.('favor', favorGain, npcId);
+      }
+    }
     return favorGain;
   }
   function relationship(npcId) {
@@ -119,6 +126,7 @@
     state.rapport = after;
     state.rapportDay = socialDay();
     if (after !== before && Array.isArray(state.memory)) state.memory.push({ type: 'rapport', day: socialDay(), amount: after - before, reason: String(reason || 'social') });
+    if (after > before) window.WorldPopupText?.queueSocialGain?.('rapport', after - before, npcId);
     return after - before;
   }
   function getRomance(npcId) {
@@ -133,6 +141,7 @@
     state.romance = after;
     state.rapportDay = socialDay();
     if (after !== before && Array.isArray(state.memory)) state.memory.push({ type: 'romance', day: socialDay(), amount: after - before, reason: String(reason || 'date') });
+    if (after > before) window.WorldPopupText?.queueSocialGain?.('romance', after - before, npcId);
     return after - before;
   }
   function canGiftToday(npcId) {
@@ -172,6 +181,7 @@
       flushRollover();
       const snapshot = originalSnapshot(...args) || {};
       for (const id of new Set([...Object.keys(snapshot), ...touchedNpcIds])) {
+        if (id === '__factions') continue; // Saved group standings never become Rapport-bearing NPCs.
         const state = relationship(id);
         if (!state) continue;
         snapshot[id] = snapshot[id] || {};
@@ -186,6 +196,7 @@
     dialogue.loadNpcRelationships = function (playerData, ...args) {
       const result = originalLoad(playerData, ...args);
       for (const [id, saved] of Object.entries(playerData?.npcRelationships || {})) {
+        if (id === '__factions') continue; // Only real NPC records roll over overnight.
         const state = rawRelationship(id);
         if (!state) continue;
         touchedNpcIds.add(id);
@@ -270,7 +281,7 @@
     return Math.max(0, Math.max(0, num(config.drinkAcceptedCooldownMinutes, DEFAULTS.drinkAcceptedCooldownMinutes)) - Math.max(0, absoluteGameMinute() - last));
   }
   function bottleSignature(bridge) {
-    try { return JSON.stringify(bridge?.serializeBottleSwigs?.() || null); } catch (_) { return ''; }
+    try { return JSON.stringify([bridge?.serializeBottleSwigs?.() || null, bridge?.virtualSwigSerial?.() || 0]); } catch (_) { return ''; }
   }
   function refuseDrink(walker, reason) {
     const text = reason === 'cooldown' ? `${walker?.rec?.name || 'They'} has had enough for the moment.` : `${walker?.rec?.name || 'They'} declines the drink.`;

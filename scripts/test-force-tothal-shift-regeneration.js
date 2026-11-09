@@ -8,7 +8,7 @@ const index = fs.readFileSync('docs/index.html', 'utf8');
 
 assert(game.includes('async function performTothalShift(year, { silent = false, forceRegenerate = false } = {})'),
   'performTothalShift must expose a forceRegenerate option');
-assert(game.includes('const cached = forceRegenerate ? null : await _loadTothalZoneCache(cacheKey);'),
+assert(game.includes('const cachedZonesPromise = forceRegenerate ? null : window.TothalZoneCache.loadAll('),
   'forced shifts must bypass the same-year IndexedDB zone cache');
 assert(game.includes('const forceRegenerate = force || forceQuery;'),
   'button/query forcing must map to forceRegenerate');

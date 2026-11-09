@@ -16,7 +16,10 @@
     "standaloneCanopy": 0.35,
     "sarcophagi": 0.3,
     "ambientLift": 0.38,
-    "ceilingRailTargets": 0.55
+    "ceilingRailTargets": 0.55,
+    "composedTrialDev": 0.48,
+    "composedTrialSite": 0.55,
+    "burdenOffering": 0.7
   },
   "ambientLift": {
     "size": 2.2,
@@ -37,7 +40,7 @@
     "pillarRise": 0.62,
     "ropeSpacing": [
       5.4,
-      5.0,
+      5,
       4.7
     ],
     "lavaBurn": 16,

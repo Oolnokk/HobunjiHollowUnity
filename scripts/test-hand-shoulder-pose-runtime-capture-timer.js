@@ -154,4 +154,40 @@ function buildFixture() {
   assert.equal(windowObject.Combat.deps.triggerWeaponSwingVisual, wrapped, 'a second tick after install must not re-wrap the already-captured deps');
 }
 
+
+// --- Direct hand/shoulder pose matches the actual first-frame projectile release ---
+{
+  const rangedSource = fs.readFileSync('docs/js/combat/ranged-weapons.js', 'utf8'); // Extracts the production timing authority rather than duplicating the release formula in this test.
+  const start = rangedSource.indexOf('  function fireReleaseFrac(def) {');
+  const end = rangedSource.indexOf('  function isLoaded(', start);
+  assert(start >= 0 && end > start, 'the shared ranged release and windup timing functions must remain available');
+  const timingSandbox = { Math, Number, MAX_FIRE_TRIGGER_TO_PROJECTILE_S: 0.012 }; // Uses the actual firing cap to exercise both exported phase calculators.
+  vm.createContext(timingSandbox);
+  vm.runInContext(rangedSource.slice(start, end) + '\n' +
+    'globalThis.fireTiming = { fireReleaseFrac, fireWindupFrac };', timingSandbox);
+  const { windowObject } = buildFixture();
+  const def = {
+    fireDurationS: 1.04, fireAtFrac: 0.08, fireWindupFrac: 0.05, fireHoldFrac: 0.17, fireSequence: 'attack',
+    firePose: {
+      neutral: { shoulderAim: { grip: true, palmNormal: true }, elbows: { right: { x: 0, y: 0, z: 0 } } },
+      windup: { shoulderAim: { grip: false, palmNormal: true }, elbows: { right: { x: 0.2, y: 0, z: 0 } } },
+      strike: { shoulderAim: { grip: false, palmNormal: false }, elbows: { right: { x: 0.7, y: 0, z: 0 } } },
+    },
+  }; // A pronounced authored strike endpoint reveals hand lag if the old 8% timing is accidentally used.
+  const releaseFrac = timingSandbox.fireTiming.fireReleaseFrac(def);
+  const action = { itemKey: 'crossbow', kind: 'fire', durationS: def.fireDurationS, t: releaseFrac * def.fireDurationS };
+  windowObject.RangedWeapons = {
+    config: { crossbow: def }, playerActionState: () => action,
+    fireReleaseFrac: timingSandbox.fireTiming.fireReleaseFrac,
+    fireWindupFrac: timingSandbox.fireTiming.fireWindupFrac,
+  };
+  assert(releaseFrac * def.fireDurationS <= 0.012 + 1e-9, 'projectile release must happen within 12ms');
+  assert(timingSandbox.fireTiming.fireWindupFrac(def) < releaseFrac, 'the shoulder windup must finish before the new strike');
+  const shoulder = windowObject.HobunjiHandShoulderPoseRuntime.currentWeights('right');
+  const elbow = windowObject.HobunjiHandShoulderPoseRuntime.currentElbow('right');
+  assert(Math.abs(shoulder.grip) < 1e-9 && Math.abs(shoulder.palmNormal) < 1e-9,
+    'hand shoulder weights must reach the fired strike on the actual projectile release frame');
+  assert(Math.abs(elbow.x - 0.7) < 1e-9, 'authored elbow must reach strike when the projectile leaves, not at the former 8% boundary');
+}
+
 console.log('hand shoulder pose runtime capture-loop timer conversion passed');

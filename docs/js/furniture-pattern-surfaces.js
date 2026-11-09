@@ -7,6 +7,9 @@
   const ATLAS_QUANTUM_PX = 64; // Atlas edges round up to this step so similarly sized surfaces share one composited GPU tile.
   const textureCache = new WeakMap(); // Identical tiles share one GPU texture while any furniture material still uses it.
   const tileCache = new Map(); // Bounded composite promises shared by identical pattern/palette definitions.
+  const ruinSignalTextures = new Map(); // Keyed by resolved path: a ruin's tradition motif replaces the generic rune.
+  let ruinSignalTexture = null; // Shared repository PNG rune used by interactive stone markings, never by the stone body.
+  const ruinAwardTargets = new WeakMap(); // Maps visual-only ruin groups to their owning gameplay root without serializable object cycles.
   const hex = (value, fallback) => /^#[0-9a-f]{6}$/i.test(value || '') ? value : fallback;
   const finite = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 
@@ -17,9 +20,14 @@
       mode: ['cloth', 'glass', 'engraving'].includes(record.mode) ? record.mode : 'cloth',
       selector: String(record.selector || 'all'),
       scale: Math.max(.05, Math.min(20, finite(record.scale, 1))),
-      palette: [hex(record.palette?.[0], '#b7a185'), hex(record.palette?.[1], '#315b67')],
+      palette: [hex(record.palette?.[0], '#b7a185'), hex(record.palette?.[1], '#315b67'),
+        ...(record.palette?.[2] ? [hex(record.palette[2], hex(record.palette?.[1], '#315b67'))] : [])], // Optional third palette channel exclusively colors the overpass.
       engravingCoreOpacity: Number(record.opacity) === 0 ? 0 : Math.max(0,Math.min(1,finite(record.engravingCoreOpacity,.85))), // Core opacity is independent of the softer restored stroke.
       opacity: Math.max(0, Math.min(1, finite(record.opacity, record.mode === 'glass' ? .8 : record.mode === 'engraving' ? .5 : 1))),
+      glowColor: hex(record.glowColor, '#ff7818'), // Used by the separate additive glyph pass; stone/base pixels are never tinted by the glow.
+      glowIntensity: Math.max(0, Math.min(2, finite(record.glowIntensity, 0))), // Zero keeps every existing pattern visually unchanged.
+      glowPulseSpeed: Math.max(0, Math.min(16, finite(record.glowPulseSpeed, 1.4))), // Cycles/second; runtime may accelerate it as a fuse approaches zero.
+      glowPulseDepth: Math.max(0, Math.min(1, finite(record.glowPulseDepth, .35))), // Fraction of the glow intensity modulated by the pulse.
     };
   }
 
@@ -49,14 +57,113 @@
     return {...pattern,motifDataUrl:canvas.toDataURL('image/png')};
   }
 
+  function placedPatterns(record, patternOverride, size) {
+    const patterns = [...(record.patterns?.length ? record.patterns : [resolvePattern(record)])].slice(0, 2); // Copy the stack so editing one instance cannot change another or the library.
+    if (patternOverride) patterns[0] = patternOverride;
+    return patterns.filter(Boolean).map((pattern, index) => {
+      const placement = record.layerTransforms?.[index]; // Optional instance settings preserve older authored transforms unchanged.
+      const raster = size[2] || 1;
+      if (!placement) return {...pattern, renderRasterScale:raster};
+      return {...pattern, renderRasterScale:raster,
+        tiling:placement.tiling !== false,
+        usageScaleMultiplier:finite(pattern.usageScaleMultiplier,1) * Math.max(.1, Math.min(20,finite(placement.scale,1))),
+         motifScale: Math.max(.05, Math.min(20, finite(pattern.motifScale,1) * finite(placement.motifScale,1))), // Instance-only motif zoom.
+        usageRotationDeg:finite(pattern.usageRotationDeg,0) + finite(placement.rotationDeg,0),
+        usageOffsetX:finite(pattern.usageOffsetX,0) * raster + finite(placement.offsetX,0) * TILE_PX / record.scale * raster,
+        usageOffsetY:finite(pattern.usageOffsetY,0) * raster + finite(placement.offsetY,0) * TILE_PX / record.scale * raster}; // Offsets are surface tile units, independent of atlas resolution.
+    });
+  }
+
+  function patternCatalog() {
+    return [...(window.PatternLibrary?.getCatalog?.() || []), ...(window.PatternLibrary?.listAvailable?.() || []), ...(window.RepoPatternLibrary?.listCached?.() || [])];
+  }
+
+  function placementControls(host, baseInput, dyeInput, overpassInput = null) {
+    const controls = document.createElement('div'); // The same controls author defaults and per-instance furniture/window overrides.
+    controls.innerHTML = '<label>Game base dye <select data-dye-base></select></label><label>Game pattern dye <select data-dye-ink></select></label><label>Game overpass dye <select data-dye-overpass></select></label>' +
+      '<p>Offsets use surface tile units: X right, Y down. A non-tiling layer stamps its motif once.</p>' +
+      [0,1].map(index => `<fieldset><legend>${index ? 'Overpass' : 'Primary pattern'}</legend>${index ? '<label>Overpass pattern <select data-overpass></select></label>' : ''}
+        <label><input data-repeat-${index} type="checkbox" checked>Repeat / tile</label>
+        <label>Scale multiplier <input data-zoom-${index} type="range" min="0.1" max="20" step="0.1" value="1" aria-label="${index ? "Overpass" : "Primary"} pattern scale"></label><output data-zoom-value-${index}>1.0×</output>
+        <label>Motif scale <input data-motif-${index} type="range" min="0.1" max="3" step="0.05" value="1" aria-label="${index ? "Overpass" : "Primary"} motif scale"></label><output data-motif-value-${index}>1.00×</output>
+        <label>Rotation (degrees) <input data-rotation-${index} type="range" min="-180" max="180" step="1" value="0" aria-label="${index ? "Overpass" : "Primary"} pattern rotation"></label><output data-rotation-value-${index}>0°</output>
+        <label>X offset <input data-x-${index} type="range" min="-10" max="10" step="0.05" value="0" aria-label="${index ? "Overpass" : "Primary"} pattern X offset"></label><output data-x-value-${index}>0.00</output>
+        <label>Y offset <input data-y-${index} type="range" min="-10" max="10" step="0.05" value="0" aria-label="${index ? "Overpass" : "Primary"} pattern Y offset"></label><output data-y-value-${index}>0.00</output></fieldset>`).join('');
+    host.appendChild(controls);
+    // Keep arrows in both game furniture/rug menus and standalone furniture authoring tools.
+    const addArrows = window.PatternQuickControls?.addArrowButtons || (node => {
+      for (const slider of node.querySelectorAll?.('input[type="range"]') || []) {
+        if (slider.dataset.arrowButtons) continue;
+        slider.dataset.arrowButtons = 'yes';
+        const wrap = document.createElement('span'); // Slider remains intact between native controller-focusable buttons.
+        wrap.style.cssText = 'display:inline-flex;align-items:center;gap:4px;max-width:100%';
+        slider.before(wrap); wrap.appendChild(slider);
+        for (const dir of [-1, 1]) {
+          const button = document.createElement('button');
+          button.type = 'button'; button.textContent = dir < 0 ? '‹' : '›';
+          button.setAttribute('aria-label', (dir < 0 ? 'Decrease ' : 'Increase ') + (slider.getAttribute('aria-label') || 'pattern setting'));
+          button.style.cssText = 'min-width:30px;min-height:30px;border:1px solid #78908b;border-radius:6px;background:#22302f;color:#fff';
+          button.addEventListener('click', () => {
+            if (slider.disabled) return;
+            const next = Math.min(Number(slider.max), Math.max(Number(slider.min), Number((Number(slider.value) + dir * Number(slider.step || .1)).toFixed(5))));
+            slider.value = String(next);
+            slider.dispatchEvent(new Event('input', { bubbles: true }));
+            slider.dispatchEvent(new Event('change', { bubbles: true }));
+          });
+          if (dir < 0) wrap.prepend(button); else wrap.appendChild(button);
+        }
+      }
+    });
+    addArrows(controls);
+    const field = name => controls.querySelector(`[data-${name}]`); // Scoped fields allow multiple authoring panels without ID collisions.
+    for(let index=0;index<2;index++) for(const name of ['zoom','motif','rotation','x','y']) field(`${name}-${index}`)?.addEventListener?.('input',()=>{const output=field(`${name}-value-${index}`),value=Number(field(`${name}-${index}`).value);if(output)output.textContent=name==='zoom'?`${value.toFixed(1)}×`:name==='motif'?`${value.toFixed(2)}×`:name==='rotation'?`${value}°`:value.toFixed(2);});
+    const dyes = () => window.DyeSystem?.getCatalog?.() || window.ScratchbonesAccount?.getDyeCatalog?.() || window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || [];
+    const populate = (select, entries, first, selected) => {
+      select.replaceChildren(); select.add(new Option(first,''));
+      const seen = new Set();
+      for (const entry of entries) if(entry.id && !seen.has(entry.id)) {seen.add(entry.id);select.add(new Option(entry.label || entry.name || entry.id,entry.id));}
+      select.value = selected || '';
+    };
+    for (const [name,input] of [['base',baseInput],['ink',dyeInput], ...(overpassInput ? [['overpass',overpassInput]] : [])]) {
+      field(`dye-${name}`).onchange = () => { const dye=dyes().find(entry=>entry.id===field(`dye-${name}`).value); if(dye?.hex)input.value=dye.hex; };
+      input.addEventListener?.('input', () => { field(`dye-${name}`).value=dyes().find(entry=>entry.hex?.toLowerCase()===input.value.toLowerCase())?.id || ''; });
+    }
+    return {
+      addArrows, // The surrounding furniture/rug modal also has a separate tile-size slider.
+      refresh(record = {}) {
+        for (const [name,input] of [['base',baseInput],['ink',dyeInput], ...(overpassInput ? [['overpass',overpassInput]] : [])]) populate(field(`dye-${name}`),dyes(),'Custom color',dyes().find(entry=>entry.hex?.toLowerCase()===input.value.toLowerCase())?.id);
+        if (!overpassInput) field('dye-overpass').disabled = true;
+        const entries=patternCatalog();
+        if(record.patterns?.[1] && !entries.some(entry=>entry.id===record.overpassPatternId))entries.unshift({id:record.overpassPatternId || '__custom',label:'Current overpass'});
+        populate(field('overpass'),entries,'None',record.patterns?.[1] ? record.overpassPatternId || '__custom' : '');
+        for(let index=0;index<2;index++) {
+          const transform=record.layerTransforms?.[index] || {}, pattern=record.patterns?.[index] || (index===0 ? resolvePattern(record) : null);
+          field(`repeat-${index}`).checked=transform.tiling ?? pattern?.tiling !== false;
+          for(const [name,key,fallback] of [['zoom','scale',1],['motif','motifScale',1],['rotation','rotationDeg',0],['x','offsetX',0],['y','offsetY',0]]) { const value=finite(transform[key],fallback),input=field(`${name}-${index}`); if(name==='rotation'){input.min=Math.min(-180,value);input.max=Math.max(180,value);} else if(name==='x'||name==='y'){input.min=Math.min(-10,value);input.max=Math.max(10,value);} input.value=value; const output=field(`${name}-value-${index}`); if(output)output.textContent=name==='zoom'?`${value.toFixed(1)}×`:name==='motif'?`${value.toFixed(2)}×`:name==='rotation'?`${value}°`:value.toFixed(2); }
+        }
+      },
+      read(record) {
+        const patterns=[...(record.patterns?.length ? record.patterns : [resolvePattern(record)])].slice(0,2), id=field('overpass').value;
+        if(!id)patterns.length=1;
+        else if(id!==(record.overpassPatternId || '__custom') || !patterns[1])patterns[1]=resolvePattern({patternId:id});
+        const layerTransforms=[0,1].map(index=>({tiling:field(`repeat-${index}`).checked,
+          scale:Math.max(.1,Math.min(20,finite(field(`zoom-${index}`).value,1))),motifScale:Math.max(.1,Math.min(3,finite(field(`motif-${index}`).value,1))),rotationDeg:finite(field(`rotation-${index}`).value,0),
+          offsetX:finite(field(`x-${index}`).value,0),offsetY:finite(field(`y-${index}`).value,0)}));
+        return {...record,patterns,overpassPatternId:id || null,layerTransforms}; // Snapshot + transforms serialize with the existing part/instance record.
+      }
+    };
+  }
+
   async function renderTile(raw, patternOverride, size = [TILE_PX, TILE_PX]) {
     const record = normalize(raw); // Validation is shared by the author preview and runtime.
+    if(record.solid){const canvas=document.createElement('canvas');canvas.width=size[0];canvas.height=size[1];const ctx=canvas.getContext('2d');ctx.fillStyle=record.palette[0];ctx.fillRect(0,0,canvas.width,canvas.height);return canvas;} // Solid glass shares the same pane and projected-light path without inventing a motif.
     if (!patternOverride && !resolvePattern(record)) await window.RepoPatternLibrary?.load?.();
     const pattern = patternOverride || record.patterns?.[0] || resolvePattern(record); // Never mutate a shared library definition.
     if (!pattern) throw new Error(`Pattern unavailable: ${record.patternId || 'custom'}`);
     const compositor = window.ClothingWeavingSystem?.applyPatternStackToTintedImage; // Canonical tiling, inversion, thickness and overpass implementation.
     if (!compositor) throw new Error('The weaving pattern renderer has not loaded');
-    const patterns = (patternOverride ? [patternOverride] : record.patterns?.length ? record.patterns : [pattern]).slice(0,2); // Furniture previews share the canonical primary/overpass stack.
+    const patterns = placedPatterns(record, patternOverride, size); // Furniture previews share the canonical primary/overpass stack.
+    if (patterns[1] && record.palette[2]) patterns[1] = { ...patterns[1], inkColorHex: record.palette[2] }; // The third dye is an instance placement color, not a mutation of a saved motif.
     const key = JSON.stringify([record.mode, record.palette, patterns, size, record.mode === 'engraving' ? [record.opacity,record.engravingCoreOpacity] : null]); // Scale/opacity belong to placement rather than the reusable tile pixels.
     if (tileCache.has(key)) return tileCache.get(key);
     const pending = (async () => {
@@ -68,7 +175,7 @@
       shading.width = canvas.width; shading.height = canvas.height;
       shading.getContext('2d').drawImage(canvas, 0, 0);
       ctx.fillStyle = record.palette[0]; ctx.fillRect(0, 0, canvas.width, canvas.height);
-      const result = await compositor(canvas, patterns.map(entry=>({...entry,renderRasterScale:size[2] || 1})), record.palette[1], `furniture:${key}`, shading, 'woven-motif', {inkOnly: record.mode === 'engraving', cache:false}); // Use authored settings without an extra purpose-specific magnification.
+      const result = await compositor(canvas, patterns, record.palette[1], `furniture:${key}`, shading, 'woven-motif', {inkOnly: record.mode === 'engraving', cache:false}); // Use authored settings without an extra purpose-specific magnification.
       if (record.mode !== 'engraving') return result;
       const engraving = document.createElement('canvas'); // Never mutate the compositor's cached mask.
       engraving.width = canvas.width; engraving.height = canvas.height;
@@ -112,8 +219,12 @@
     const count = indices ? indices.count : position.count;
     const vertices = [], uvs = [], axes = [], weights = [], baseUvs = [], materialIds = []; // Temporary arrays exist only during construction, never per frame.
     const allowRegions = record.allowRegions ? new Set(record.allowRegions) : null; // Optional planar-region whitelist (ruin rules).
-    const bounds = {x:0,z:0}; // Dimensions of the actual source geometry anchor the continuous side unwrap.
-    for (let i=0;i<position.count;i++) { bounds.x=Math.max(bounds.x,Math.abs(position.array[i*3])); bounds.z=Math.max(bounds.z,Math.abs(position.array[i*3+2])); }
+    const bounds = {x:0,y:0,z:0}; // Dimensions of the actual source geometry anchor the curved unwrap in all three axes.
+    for (let i=0;i<position.count;i++) {
+      bounds.x=Math.max(bounds.x,Math.abs(position.array[i*3]));
+      bounds.y=Math.max(bounds.y,Math.abs(position.array[i*3+1]));
+      bounds.z=Math.max(bounds.z,Math.abs(position.array[i*3+2]));
+    }
     const curved = ['cylinder','disc','legRound','barrel','cup','sphere'].includes(part.kind); // Curved side groups use angular coordinates rather than switching box planes.
     const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(); // Reused triangle scratch vectors.
     const edge = new THREE.Vector3(), normal = new THREE.Vector3(); // Reused normal computation for selection and offset.
@@ -140,11 +251,26 @@
         vertices.push(point.x, point.y, point.z); // Polygon offset prevents z-fighting without opening cracks between neighboring triangle planes.
         let u = axis === 'x' ? point.z : point.x; // Default planar mapping is continuous across the selected face.
         let ux=axis === 'x' ? 0 : point.x, uz=axis === 'x' ? point.z : 0; // Linear coordinates let non-uniform resizing preserve the side perimeter.
-        if (record.selector === 'sides' && curved) u = angles[vertex] * Math.sqrt((bounds.x*bounds.x+bounds.z*bounds.z)/2);
-        else if (record.selector === 'sides') { ux=normal.z > .7 ? point.x : normal.x > .7 ? bounds.x : normal.z < -.7 ? 2*bounds.x-point.x : 3*bounds.x; uz=normal.z > .7 ? 0 : normal.x > .7 ? bounds.z-point.z : normal.z < -.7 ? 2*bounds.z : 3*bounds.z+point.z; u=ux+uz; } // One perimeter coordinate continues around rectangular pillars.
-        uvs.push(u / record.scale, (axis === 'y' ? -point.z : point.y) / record.scale);
+        let v = axis === 'y' ? -point.z : point.y;
+        let uAxis = axis === 'x' ? 2 : 0, vAxis = axis === 'y' ? 2 : 1;
+        if (part.kind === 'sphere') {
+          const equatorialRadius=Math.sqrt((bounds.x*bounds.x+bounds.z*bounds.z)/2);
+          const verticalRadius=Math.max(.001,bounds.y);
+          const latitude=Math.asin(Math.max(-1,Math.min(1,point.y/verticalRadius)));
+          u=angles[vertex]*equatorialRadius;
+          v=(latitude+Math.PI/2)*verticalRadius;
+          uAxis=3;vAxis=4; // Longitude scales with equatorial X/Z; latitude scales with vertical Y.
+        } else if (record.selector === 'sides' && curved) {
+          u = angles[vertex] * Math.sqrt((bounds.x*bounds.x+bounds.z*bounds.z)/2);
+          uAxis=3;
+        } else if (record.selector === 'sides') {
+          ux=normal.z > .7 ? point.x : normal.x > .7 ? bounds.x : normal.z < -.7 ? 2*bounds.x-point.x : 3*bounds.x;
+          uz=normal.z > .7 ? 0 : normal.x > .7 ? bounds.z-point.z : normal.z < -.7 ? 2*bounds.z : 3*bounds.z+point.z;
+          u=ux+uz;
+        } // One perimeter coordinate continues around rectangular pillars.
+        uvs.push(u / record.scale, v / record.scale);
         vertex++;
-        axes.push(record.selector === 'sides' && curved ? 3 : axis === 'x' ? 2 : 0, axis === 'y' ? 2 : 1);
+        axes.push(uAxis,vAxis);
         weights.push(ux/record.scale,uz/record.scale); // U axis may depend on both X and Z for a continuous box-side unwrap.
       }
     }
@@ -231,6 +357,168 @@
     entry.texture.dispose();
   }
 
+  function installEngravingGlow(overlay, texture, sourceMesh, record) {
+    const intensity = Math.max(0, Number(record.glowIntensity) || 0);
+    if (record.mode !== 'engraving' || intensity <= 0 || overlay.userData.engravingGlowMesh) return null;
+    const THREE = window.THREE;
+    if (!THREE?.MeshBasicMaterial || !THREE?.Mesh) return null;
+    const material = new THREE.MeshBasicMaterial({
+      map:texture, color:record.glowColor, transparent:true, opacity:0,
+      depthWrite:false, depthTest:true, side:THREE.DoubleSide,
+      blending:THREE.AdditiveBlending, polygonOffset:true,
+      polygonOffsetFactor:-2, polygonOffsetUnits:-2,
+    }); // Uses the already-carved engraving alpha; the opaque stone never enters this pass.
+    material.onBeforeCompile = shader => {
+      shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `
+        #ifdef USE_MAP
+          diffuseColor.a *= texture2D(map, vUv).a;
+        #endif
+      `); // The carved core is nearly black. Sample its coverage without multiplying the emitted color by its dark ink.
+    };
+    const glow = new THREE.Mesh(overlay.geometry, material);
+    glow.name = 'engraving-glyph-glow';
+    glow.raycast = () => {};
+    glow.frustumCulled = false;
+    glow.renderOrder = (overlay.renderOrder || 0) + 1;
+    glow.onBeforeRender = () => {
+      const live = sourceMesh.userData?.furniturePatternGlowState || {};
+      const currentIntensity = Math.max(0, Math.min(2,
+        finite(live.intensity, intensity)));
+      const speed = Math.max(0, Math.min(16,
+        finite(live.pulseSpeed, record.glowPulseSpeed)));
+      const depth = Math.max(0, Math.min(1,
+        finite(live.pulseDepth, record.glowPulseDepth)));
+      const phase = live.phase ?? (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000 * speed * Math.PI * 2;
+      material.opacity = currentIntensity * (1 - depth + depth * (.5 + .5 * Math.sin(phase)));
+      material.visible = currentIntensity > .001;
+      const color = live.color || record.glowColor;
+      if (material.color?.set && color !== material.userData?.lastGlowColor) {
+        material.color.set(color);
+        material.userData ||= {};
+        material.userData.lastGlowColor = color;
+      }
+    };
+    overlay.add(glow); // Child-local coordinates exactly match the underlying engraved mesh, including a sphere's unwrap.
+    overlay.userData.engravingGlowMesh = glow;
+    return glow;
+  }
+
+  function createStoneSignalBatch(count, options = {}) {
+    const THREE = window.THREE; // Keep one draw call for many stateful plates without ever recoloring their stone instances.
+    if (!THREE?.InstancedMesh || !THREE?.PlaneGeometry || !THREE?.InstancedBufferAttribute || !THREE?.TextureLoader || !Number.isInteger(count) || count < 1) return null;
+    {
+      const path = window.RuinEmblem?.resolve?.('assets/textures/decals/ruin_glyph_rune.png') || 'assets/textures/decals/ruin_glyph_rune.png';
+      ruinSignalTexture = ruinSignalTextures.get(path);
+      if (!ruinSignalTexture) {
+        ruinSignalTexture = new THREE.TextureLoader().load(path);
+        if (THREE.SRGBColorSpace) ruinSignalTexture.colorSpace = THREE.SRGBColorSpace;
+        ruinSignalTextures.set(path, ruinSignalTexture);
+      }
+    }
+    const geometry = new THREE.PlaneGeometry(Math.max(.1,Number(options.width)||.34),Math.max(.1,Number(options.height)||.34));
+    geometry.rotateX?.(-Math.PI/2); // World-space up-facing glyph without rotating instance translations.
+    const material = new THREE.MeshBasicMaterial({
+      map:ruinSignalTexture,color:0xffffff,transparent:true,opacity:.92,
+      depthWrite:false,depthTest:true,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,
+    });
+    material.onBeforeCompile = shader => {
+      shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `
+        #ifdef USE_MAP
+          diffuseColor.a *= texture2D(map, vUv).a;
+        #endif
+      `);
+    }; // Glowing white glyph ink, tinted only by instanceColor; the stone beneath remains unmodified.
+    const batch = new THREE.InstancedMesh(geometry,material,count);
+    batch.count=0;
+    batch.instanceColor=new THREE.InstancedBufferAttribute(new Float32Array(count*3),3); // Initialized before setColorAt when count is zero (Three r128).
+    batch.name='ruin-stone-interaction-glyphs';
+    batch.userData.ruinStoneSignalBatch=true;
+    batch.userData.devRuinFootprintIgnore=true;
+    batch.frustumCulled=false;
+    batch.renderOrder=2;
+    batch.raycast=()=>{};
+    return batch;
+  }
+
+  function attachStoneSignal(mesh, options = {}) {
+    const THREE = window.THREE; // Reuse the existing PNG decal pipeline without repainting the stone material.
+    if (!mesh?.add || !THREE?.TextureLoader || !THREE?.MeshBasicMaterial || !THREE?.PlaneGeometry) return null;
+    {
+      const path = window.RuinEmblem?.resolve?.('assets/textures/decals/ruin_glyph_rune.png') || 'assets/textures/decals/ruin_glyph_rune.png';
+      ruinSignalTexture = ruinSignalTextures.get(path);
+      if (!ruinSignalTexture) {
+        ruinSignalTexture = new THREE.TextureLoader().load(path);
+        if (THREE.SRGBColorSpace) ruinSignalTexture.colorSpace = THREE.SRGBColorSpace;
+        ruinSignalTextures.set(path, ruinSignalTexture);
+      }
+    }
+    const size = mesh.geometry?.parameters || {}; // Centered box/cylinder dimensions locate the actual visible face.
+    const face = options.face || 'top'; // Top plates and upright projectile plaques share the same glowing glyph.
+    const width = Math.max(.1, Number(options.width) || .34), height = Math.max(.1, Number(options.height) || width);
+    const material = new THREE.MeshBasicMaterial({
+      map:ruinSignalTexture, color:options.idleColor || '#e59a56',
+      transparent:true, opacity:.72, depthWrite:false, depthTest:true,
+      side:THREE.DoubleSide, blending:THREE.AdditiveBlending,
+      polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-2,
+    }); // The carved_smooth.png pixels underneath never change when the puzzle state changes.
+    material.onBeforeCompile = shader => {
+      shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `
+        #ifdef USE_MAP
+          diffuseColor.a *= texture2D(map, vUv).a;
+        #endif
+      `); // The PNG's dark ink cannot multiply away its emitted glyph color.
+    };
+    const glyph = new THREE.Mesh(new THREE.PlaneGeometry(width,height),material);
+    glyph.name = 'ruin-stone-interaction-glyph';
+    glyph.raycast = () => {};
+    glyph.renderOrder = 2;
+    glyph.userData.devRuinFootprintIgnore = true;
+    glyph.userData.ruinStoneSignalGlyph = true;
+    const lift = .012;
+    const extentY = (Number(size.height) || .06) * .5;
+    const extentX = (Number(size.width) || Number(size.radiusTop) * 2 || .5) * .5;
+    const extentZ = (Number(size.depth) || Number(size.radiusTop) * 2 || .5) * .5;
+    if (face === 'top') {glyph.rotation.x = -Math.PI/2; glyph.position.y = extentY + lift;}
+    else if (face === 'left' || face === 'right') {
+      glyph.rotation.y = face === 'right' ? Math.PI/2 : -Math.PI/2;
+      glyph.position.x = (face === 'right' ? 1 : -1) * (extentX + lift);
+    } else {
+      glyph.rotation.y = face === 'back' ? Math.PI : 0;
+      glyph.position.z = (face === 'back' ? -1 : 1) * (extentZ + lift);
+    }
+    mesh.add(glyph);
+    const state = {texture:'ruin_glyph_rune.png',face,active:false}; // Exposed to mobile diagnostics.
+    mesh.userData ||= {};
+    mesh.userData.ruinStoneSignal = state;
+    const setActive = active => {
+      state.active = active === true;
+      state.pressed = active === 'pressed'; // A held pressure plate glows amber; solved mechanisms glow green.
+      material.color.set(state.active ? (options.activeColor || '#69ffc4')
+        : state.pressed ? (options.pressedColor || '#ffd77c') : (options.idleColor || '#e59a56'));
+      material.opacity = state.active || state.pressed ? 1 : .72;
+    };
+    setActive(options.active);
+    return {glyph,setActive}; // Ruin cleanup disposes owned geometry/material; the PNG texture is shared.
+  }
+
+  function setGlowState(root, state = {}) {
+    if (!root?.traverse) return false;
+    const normalized = {
+      intensity:Math.max(0, Math.min(2, finite(state.intensity, 0))),
+      pulseSpeed:Math.max(0, Math.min(16, finite(state.pulseSpeed, 1.4))),
+      pulseDepth:Math.max(0, Math.min(1, finite(state.pulseDepth, .35))),
+      ...(Number.isFinite(state.phase) ? {phase:state.phase} : {}),
+      ...( /^#[0-9a-f]{6}$/i.test(state.color || '') ? { color:state.color } : {}),
+    };
+    root.traverse(node => {
+      if (node.userData?.furniturePattern) {
+        const source = node.parent;
+        if (source?.userData) source.userData.furniturePatternGlowState = normalized;
+      }
+    });
+    return true;
+  }
+
   function applyPart(mesh, part) {
     const records = Array.isArray(part?.patternSurfaces) ? part.patternSurfaces : []; // Unknown metadata survives the base editor's part normalization.
     if (!records.length || !mesh) return mesh;
@@ -256,15 +544,27 @@
       mesh.add(overlay);
       let ownedTexture = null; // Material disposal releases exactly one reference to a shared GPU tile.
       let disposed = false; // Prevents asynchronous tile completion from reviving disposed preview/world objects.
-      material.addEventListener?.('dispose', () => { if (disposed) return; disposed = true; releaseTexture(ownedTexture); });
+      material.addEventListener?.('dispose', () => {
+        if (disposed) return;
+        disposed = true;
+        const glow=overlay.userData.engravingGlowMesh;
+        if (glow?.parent) overlay.remove(glow);
+        glow?.material?.dispose?.(); // The additive glyph pass owns a material, but borrows the base engraving geometry and tile texture.
+        releaseTexture(ownedTexture);
+      });
       let generation = 0; // Discard stale atlas loads if an instance is resized again before composition finishes.
       overlay.userData.refreshPatternAtlas = size => {
         const request = ++generation; // Each rescale owns one asynchronous atlas generation.
         overlay.userData.patternReady = renderTile(record, null, size).then(canvas => { // Preview callers can await the exact atlas uploaded by this surface.
           if (disposed || request !== generation) return;
-          releaseTexture(ownedTexture); ownedTexture = retainTexture(canvas);
+          const previousTexture = ownedTexture; // Both decal passes borrow this retained texture.
+          ownedTexture = retainTexture(canvas);
           material.map = ownedTexture.texture; material.needsUpdate = true;
           overlay.visible = true; overlay.userData.furniturePattern.status = 'ready';
+          const glow = overlay.userData.engravingGlowMesh; // A resized atlas must update both passes before the old texture is released.
+          if (glow) glow.material.map = ownedTexture.texture;
+          else installEngravingGlow(overlay, ownedTexture.texture, mesh, record); // A separate additive pass makes only the cut-out glyph pixels emit light.
+          releaseTexture(previousTexture);
           if (record.mode === 'glass') syncGlass(mesh);
         }).catch(error => { if (!disposed && request === generation) { overlay.visible = false; overlay.userData.furniturePattern.status = error.message; } });
       };
@@ -282,12 +582,13 @@
       if (!source) continue;
       source.patternMeshes = patterns.filter(child => child.userData.furniturePattern.slot === source.surfaceId || !child.userData.furniturePattern.slot.includes(':surface:'));
       pane.material.visible = !source.patternMeshes.length;
+      source.projectionPalette = source.patternMeshes[0]?.userData?.furniturePattern?.palette || null; // Shared fake daylight softly blends these authored dyes; no texture or floor projection is needed.
     }
   }
 
   function retainPatternScale(mesh, record = {}) {
     const base = mesh.geometry.userData.patternBaseUvs, axes = mesh.geometry.userData.patternUvAxes; // Rest UVs retain authored coordinates without cumulative drift.
-    const previous = [-1, -1, -1], lengths = [1, 1, 1]; // Reused scale scratch; no per-frame vector allocations.
+    const previous = [-1, -1, -1], lengths = [1, 1, 1, 1, 1]; // Reused scale scratch; axes 3/4 are curved equator/latitude scale channels.
     const beforeRender = mesh.onBeforeRender; // Preserve the banner's existing time update.
     mesh.onBeforeRender = function (renderer, scene, camera, geometry, material, group) {
       beforeRender?.call(this, renderer, scene, camera, geometry, material, group);
@@ -297,6 +598,7 @@
       const uv = mesh.geometry.getAttribute('uv'); // Resample only when the furniture was resized; ordinary frames do no buffer writes.
       const weights=mesh.geometry.userData.patternUvWeights,radii=mesh.geometry.userData.patternSideRadii; // Source unwrap metadata is immutable across resizes.
       lengths[3]=Math.hypot(radii[0]*lengths[0],radii[1]*lengths[2])/Math.max(.001,Math.hypot(...radii)); // Elliptical side mapping retains one consistent circumference scale.
+      lengths[4]=lengths[1]; // Spherical latitude tracks the source mesh's independent vertical scale.
       const atlas=mesh.geometry.userData.patternAtlas || mesh.geometry.userData; // Partitions share the original full selected-surface extent.
       let minU=Infinity,maxU=-Infinity,minV=Infinity,maxV=-Infinity;
       for(let i=0;i<atlas.patternBaseUvs.length;i++) {
@@ -346,20 +648,40 @@
     return key || 'other';
   }
 
-  function decorateRuin(root, seed) {
+  function setRuinAwardTarget(visualRoot, owningRuinRoot) {
+    if (visualRoot && owningRuinRoot) ruinAwardTargets.set(visualRoot, owningRuinRoot);
+  }
+
+  function decorateRuin(root, seed, special = null) {
     if (!root) return [];
     const catalog = [...(window.PatternLibrary?.getCatalog?.() || []), ...(window.RepoPatternLibrary?.listCached?.() || []).filter(entry=>entry.collectible)]; // Engravings grant exactly the reusable catalog motif rendered on the ruin.
+    root.userData ||= {};
+    if (root.userData.ruinPatternLoad === 'pending') return []; // Repeated decoration before PNG preload must not leak unrelated motifs.
+    if (!window.RepoPatternLibrary?.listCached?.().length && window.RepoPatternLibrary?.load
+      && root.userData.ruinPatternLoad !== 'pending' && root.userData.ruinPatternLoad !== 'empty') {
+      root.userData.ruinPatternLoad = 'pending'; // Never choose an unrelated player motif before the Harlyao PNG catalog is ready.
+      root.userData.ruinPatternSeed = seed;
+      window.RepoPatternLibrary.load().then(() => {
+        if (root.userData.ruinPatternLoad !== 'pending') return;
+        root.userData.ruinPatternLoad = window.RepoPatternLibrary.listCached().length ? 'loaded' : 'empty';
+        if (root.parent || root.isScene) window.FurniturePatternSurfaces?.decorateRuin?.(root,seed,special); // Re-enter the public Harlyao-filtered decorator once.
+      }).catch(error => {root.userData.ruinPatternLoad = 'failed: ' + (error?.message || error);});
+      return [];
+    }
     const ids = new Set(), meshes = []; // Collect first so adding overlay children cannot extend traversal.
     const rules = window.RuinPatternSurfaceRules; // Optional per-piece enable/scale/atlas rules (docs/js/ruin-pattern-surface-rules.js).
     const types = new Map(), overlays = []; // Per repeated piece type, for the Dev Companion's live surface list.
     root.userData.ruinPatternSeed = seed; // Rule edits re-run decoration with the same deterministic choices.
     root.updateMatrixWorld?.(true); // Rules measure faces in world space (a sideways pillar's faces are short, not tall).
-    root.traverse(node => { if (node.isMesh && !node.userData?.furniturePattern) meshes.push(node); });
+    root.traverse(node => { if (node.isMesh && !node.userData?.furniturePattern && !node.userData?.ruinStoneSignalGlyph && node.name !== 'engraving-glyph-glow') meshes.push(node); });
     for (let index = 0; index < meshes.length; index++) {
       const mesh = meshes[index];
       let node = mesh, role = ''; // Walk ancestors only once at generation to find renderer-owned structural semantics.
       while (node && node !== root) { role += ` ${node.name || ''} ${node.userData?.interiorRuinRole || ''} ${node.userData?.ruinFurnitureKey || ''}`; if (node.userData?.ruinInteriorWall) role += ' wall'; node = node.parent; }
-      const structural = /wall|pillar|pedestal|platform/i.test(role) && !/seal|glyph|decal|fire|ceiling/i.test(mesh.name || ''); // Built-in eligibility when no rules module is loaded.
+      const structural = /wall|pillar|pedestal|platform/i.test(role) && !/seal|glyph|decal|fire|ceiling/i.test(mesh.name || '');
+      const namedWall = !!special?.specialBoss && /wall/i.test(role) && !/seal|glyph|decal|fire|ceiling/i.test(mesh.name || ''); // Only the named tomb's walls glow with the guardian's own glyph. // Built-in eligibility when no rules module is loaded.
+      const traditionWall = !namedWall && !!special?.tradition && !!special.patternId && /wall/i.test(role) && !/seal|glyph|decal|fire|ceiling/i.test(mesh.name || ''); // Ordinary ruins: the tradition's own glyph and lich colour on their walls, never a random catalog glyph.
+      const ownGlyph = namedWall || traditionWall;
       if ((!rules && !structural) || !catalog.length) continue;
       for (const child of [...mesh.children]) if (child.userData?.furniturePattern?.mode === 'engraving') { mesh.remove(child); child.geometry?.dispose(); child.material?.map?.dispose(); child.material?.dispose(); } // Re-decoration (rule edits) starts clean, including types now switched off.
       const rule = rules?.resolve?.(mesh, root, structural) || null; // { key, label, context, enabled, scale, partScale, defaultScale, maxAtlasPx, minSurfaceTiles, tilePx }; every ruin mesh gets a type so the Dev Companion can list it.
@@ -382,17 +704,32 @@
       const records = templates.map(template => {
         const slot = template.slot; // Sides and tops of one surface type roll separately.
         const entry = catalog[hash(`${seed}|${category}|${slot}`) % catalog.length]; // Stable per-ruin, per-surface-type selection.
-        const patternId = template.random === false && template.patternId ? template.patternId : entry.id; // Completion grants the actual displayed motif.
-        return { ...template, pattern: template.random === false ? template.pattern : null, patternId, palette: template.palette || ['#b7a185', '#625447'], scale: template.scale || rule?.defaultScale || 1.5,
+        const patternId = ownGlyph && special.patternId ? special.patternId : template.random === false && template.patternId ? template.patternId : entry.id; // Completion grants the actual displayed motif.
+        return { ...template, pattern: template.random === false ? template.pattern : null,
+          patterns:template.random === false ? template.patterns : template.patterns?.length > 1 ? [resolvePattern({patternId}),template.patterns[1]] : null, // Keep seeded ruin primaries independent of the authored overpass snapshot.
+          patternId, palette: ownGlyph ? [special.ink || '#ffd5a3', special.ink || '#ffd5a3'] : (template.palette || ['#b7a185', '#625447']), scale: template.scale || rule?.defaultScale || 1.5,
+          glowColor:template.glowColor || (ownGlyph ? special.ink || '#ffd5a3' : '#7cebc6'),
+          glowIntensity:template.glowIntensity ?? (namedWall ? 1.5 : traditionWall ? 1.1 : .95),
+          glowPulseDepth:template.glowPulseDepth ?? .14,
           ...(rule?.scale > 0 ? { scaleOverride: rule.scale } : {}), ...(rule ? { maxAtlasPx: rule.maxAtlasPx, minSurfaceTiles: template.allowRegions ? 0 : rule.minSurfaceTiles, tilePx: rule.tilePx } : {}) }; // Region-picked faces were size-checked in world space already.
       });
       const authored = mesh.userData?.authoredPart; // Piece JSON data for V50 repo pieces is preloaded by the rules module.
       applyPart(mesh, { ...authored, patternScale: authored?.patternScale ?? rule?.partScale, patternSurfaces: records });
-      for (const child of mesh.children) if (child.userData?.furniturePattern?.mode === 'engraving') { ids.add(child.userData.furniturePattern.patternId); overlays.push(child); if (type) type.overlays++; } // Only motifs actually shown are granted on completion.
+      for (const child of mesh.children) if (child.userData?.furniturePattern?.mode === 'engraving') {
+        ids.add(child.userData.furniturePattern.patternId); overlays.push(child); if (type) type.overlays++;
+        if (namedWall && child.material) {
+          child.userData.specialLichGlyphGlow = {id:special.patternId, ink:special.ink}; // The separate glyph pass glows; the wall itself keeps its stone PNG.
+        }
+      } // Only motifs actually shown are granted on completion.
     }
     root.userData.ruinPatternTypes = types;
     root.userData.ruinPatternOverlays = overlays;
     root.userData.ruinPatternIds = [...ids];
+    const awardRoot=ruinAwardTargets.get(root); // Some shaft/wing glyph groups are separate visuals but grant to their owning playable ruin.
+    if(awardRoot?.userData && awardRoot!==root)
+      awardRoot.userData.ruinPatternIds=[...new Set([...(awardRoot.userData.ruinPatternIds||[]),...ids])];
+    root.userData.ruinPatternGlow = {engraved:overlays.length, glowing:overlays.filter(item => !!item.userData?.engravingGlowMesh).length,
+      pending:overlays.filter(item => item.userData?.furniturePattern?.status === 'loading').length}; // Inspect readiness via mobile diagnostics.
     return [...ids];
   }
 
@@ -418,6 +755,7 @@
 
   async function editInstance(object, persist) {
     await window.AuthoredFurniture?.load?.(object.key); // Wait for the existing live visual upgrade before opening a cold-loaded rug/window.
+    await window.RepoPatternLibrary?.load?.();
     const candidates = []; // Authored patterned slots and existing daylight panes are eligible.
     object.mesh?.traverse(node => {
       const part = node.userData?.authoredPart;
@@ -426,30 +764,41 @@
     if (!candidates.length) return false;
     const panel = document.createElement('div'); // Touch-sized controls share the player's unlocked/saved pattern library.
     panel.setAttribute('data-ctrl-panel', ''); // Lets controller navigation reach the surface dropdown and buttons.
-    panel.style.cssText = 'position:fixed;inset:10% 5%;z-index:9400;background:#172126;color:white;padding:18px;overflow:auto;border:2px solid #b7a185;border-radius:12px';
-    panel.innerHTML = '<h3>Furniture pattern</h3><label>Surface <select data-part></select></label><br><label>Pattern tile size <input data-scale type="number" min="0.05" max="20" step="0.05"></label><br><label>Base dye <input data-base type="color"></label><br><label>Pattern dye <input data-dye type="color"></label><br><button data-edit>Choose / draw pattern</button> <button data-apply>Apply settings</button> <button data-close data-ctrl-cancel>Close</button><pre data-debug style="white-space:pre-wrap"></pre>';
+    panel.style.cssText = 'position:fixed;inset:5% 3%;z-index:9400;background:#172126;color:white;padding:18px;overflow:auto;border:2px solid #b7a185;border-radius:12px;box-shadow:0 12px 40px #000b;display:flex;flex-direction:column;gap:12px;max-height:90dvh';
+    panel.innerHTML = '<h2 style="margin:0">Furniture pattern</h2><p style="margin:0;color:#c6d0d2">Choose a surface, motif and dyes. Sliders are directly focusable with a controller.</p><section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px"><label>Surface <select data-part data-ctrl-default></select></label><label>Pattern <select data-pattern></select></label><label>Pattern tile size <input data-scale-range type="range" min="0.05" max="20" step="0.05" aria-label="Pattern tile size"></label><output data-scale-value aria-live="polite"></output><label>Base dye <input data-base type="color"></label><label>Pattern dye <input data-dye type="color"></label><label>Overpass dye <input data-overpass-ink type="color"></label><label><input data-solid type="checkbox">Solid color (no motif)</label></section><h3 style="margin:4px 0 0">Pattern placement</h3><p style="margin:0;color:#c6d0d2">Adjust each layer independently. Repeat controls whether the motif tiles or appears once.</p><button data-edit>Choose / draw pattern</button><button data-apply>Apply settings</button><button data-close data-ctrl-cancel>Close</button><details><summary>Pattern diagnostics</summary><pre data-debug style="white-space:pre-wrap;max-height:180px;overflow:auto"></pre></details>';
+    const placement = placementControls(panel,panel.querySelector('[data-base]'),panel.querySelector('[data-dye]'),panel.querySelector('[data-overpass-ink]'));
+    placement.addArrows(panel); // Wrap tile-size too, while respecting already-stepped pattern sliders.
     const find = name => panel.querySelector(`[data-${name}]`); // Dialog-scoped lookup avoids collisions with the furniture editor.
     candidates.forEach(({part}, index) => { const option = document.createElement('option'); option.value = index; option.textContent = part.name || part.id; find('part').appendChild(option); });
     const selected = () => candidates[Number(find('part').value) || 0]; // Selection is read at each action, never inferred from a global mesh name.
     const current = () => {
       const part = selected().part;
-      return normalize(object.patternOverrides?.[part.id]?.[0] || part.patternSurfaces?.[0] || {slot:'stained-glass',mode:'glass',selector:'all',patternId:'diamond-ring'});
+      return normalize(object.patternOverrides?.[part.id]?.[0] || part.patternSurfaces?.[0] || {slot:'stained-glass',mode:'glass',selector:'all',normal:[0,0,1],patternId:'diamond-ring',solid:true});
     };
-    const refresh = () => { const record = current(); find('scale').value = record.scale; find('base').value = record.palette[0]; find('dye').value = record.palette[1]; find('debug').textContent = JSON.stringify(debug(object.mesh), null, 2); };
-    const settings = () => normalize({...current(),scale:find('scale').value,palette:[find('base').value,find('dye').value]});
+    const refresh = () => { const record = current(); find('scale-range').value = record.scale; find('scale-value').textContent = `Tile size: ${record.scale.toFixed(2)}×`; find('base').value = record.palette[0]; find('dye').value = record.palette[1]; find('overpass-ink').value = record.palette[2] || record.palette[1]; find('solid').checked=!!record.solid;
+      const catalog=[...(window.PatternLibrary?.getCatalog?.()||[]),...(window.RepoPatternLibrary?.listCached?.()||[])]; // Every authored/saved motif is selectable without redrawing it.
+      find('pattern').replaceChildren();const ids=new Set();for(const entry of [{id:record.patternId,name:record.patternId},...catalog])if(entry.id&&!ids.has(entry.id)){ids.add(entry.id);find('pattern').add(new Option(entry.name||entry.label||entry.id,entry.id));}
+      find('pattern').value=record.patternId||'';placement.refresh(record);find('debug').textContent = JSON.stringify(debug(object.mesh), null, 2); };
+    const settings = () => {
+      const record=placement.read(current()),patternId=find('pattern').value;
+      if(patternId!==record.patternId){record.pattern=null;record.patterns[0]=resolvePattern({patternId});}
+      return normalize({...record,patternId,solid:find('solid').checked,scale:find('scale-range').value,palette:[find('base').value,find('dye').value,find('overpass-ink').value]});
+    };
     const save = record => {
       const overrides = {...object.patternOverrides, [selected().part.id]: [record]}; // Per-instance only; does not edit shared furniture definitions.
       object.patternOverrides = overrides;
       applyOverrides(object.mesh, overrides); persist?.(overrides); refresh();
     };
-    find('part').onchange = refresh; find('close').onclick = () => panel.remove();
+    panel.querySelector('[data-overpass]').onchange = () => { if(panel.querySelector('[data-overpass]').value)find('solid').checked=false; }; // Adding an overpass enables patterned glass.
+    find('pattern').onchange = () => { find('solid').checked=false; }; // Choosing a motif switches plain glass back to patterned glass.
+    find('part').onchange = refresh; find('scale-range').addEventListener('input', () => { find('scale-value').textContent = `Tile size: ${Number(find('scale-range').value).toFixed(2)}×`; }); find('close').onclick = () => panel.remove();
     find('apply').onclick = () => save(settings());
     find('edit').onclick = async () => {
-      const record = settings(); // Preview and save use the same record and shared compositor.
+      const record = {...settings(),solid:false}; // Preview and save use the same record and shared compositor.
       const initialPattern = await editablePattern(record); // Existing repo/custom ink appears when reopening a placed pattern.
       window.PatternAuthoring?.openEditor?.({ title:'Furniture pattern',initialPattern,
         library:{list:()=>window.PatternLibrary?.listAvailable?.() || [],get:id=>window.PatternLibrary?.getById?.(id),save:(label,data)=>window.PatternLibrary?.saveToLibrary?.(label,data),remove:id=>window.PatternLibrary?.removeSaved?.(id)},
-        renderPreview:pattern=>renderTile(record,pattern),onSave:async (pattern,id)=>save({...record,patternId:id || null,pattern:await editablePattern({pattern})}) });
+        renderPreview:pattern=>renderTile(record,pattern),onSave:async (pattern,id)=>{const snapshot=await editablePattern({pattern});save({...record,patternId:id || null,pattern:snapshot,patterns:[snapshot,...(record.patterns || []).slice(1)]});} });
     };
     document.body.appendChild(panel); refresh();
     return true;
@@ -461,5 +810,5 @@
     return records;
   }
 
-  window.FurniturePatternSurfaces = { surfaceCategory, regionKey, normalize, resolvePattern, editablePattern, renderTile, surfaceGeometry, applyPart, decorateRuin, unlockRuin, applyOverrides, editInstance, debug, hash };
+  window.FurniturePatternSurfaces = { surfaceCategory, regionKey, normalize, resolvePattern, editablePattern, placedPatterns, placementControls, renderTile, surfaceGeometry, applyPart, attachStoneSignal, createStoneSignalBatch, setRuinAwardTarget, setGlowState, decorateRuin, unlockRuin, applyOverrides, editInstance, debug, hash };
 })();

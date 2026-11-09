@@ -120,3 +120,34 @@ vm.runInNewContext(guardSource, guardContext);
 assert.equal(guardContext.reviewInterruptionBlocked(), true, 'gameplay combat/menu guard defers review');
 guardContext.calendarDeps.isReviewBlocked = () => false;
 assert.equal(guardContext.reviewInterruptionBlocked(), false, 'review unblocks when combat and menus finish');
+
+// Input shield: events aimed outside the open review must never reach the dialogue/cutscene underneath.
+const shieldSource = source.slice(source.indexOf('  function installReviewInputShield('), source.indexOf('  function gainRows(')); // Executes the shield as shipped.
+const shieldListeners = {}; // type -> capture handler registered on window.
+const reviewRootStub = { classList: { contains: name => name === 'open' }, contains: node => node === reviewInside };
+const reviewInside = { id: 'inside' };
+const continueStub = { classList: { contains: () => false } };
+const shieldContext = {
+  REVIEW_ROOT_ID: 'review-root',
+  activeReviewPromise: {},
+  fastForwardReveal: false,
+  finishActiveReview() { shieldContext.finished = true; },
+  document: { getElementById: id => (id === 'review-root' ? reviewRootStub : id === 'dayReviewContinue' ? continueStub : null) },
+  window: { addEventListener(type, handler) { shieldListeners[type] = handler; } },
+};
+vm.runInNewContext(`${shieldSource}\ninstallReviewInputShield();`, shieldContext);
+const fakeEvent = (type, key, target) => ({ type, key, target, stopped: false, preventDefault() {}, stopImmediatePropagation() { this.stopped = true; } });
+const escape = fakeEvent('keydown', 'Escape', {});
+shieldListeners.keydown(escape);
+assert.equal(escape.stopped, true, 'Escape outside the review is swallowed so it cannot close the dialogue below');
+assert.equal(vm.runInContext('fastForwardReveal', vm.createContext(shieldContext)), true, 'Escape while revealing only fast-forwards the review');
+const outsideClick = fakeEvent('click', undefined, {});
+shieldListeners.click(outsideClick);
+assert.equal(outsideClick.stopped, true, 'clicks outside the review are swallowed');
+const insideClick = fakeEvent('click', undefined, reviewInside);
+shieldListeners.click(insideClick);
+assert.equal(insideClick.stopped, false, 'events inside the review still work');
+shieldContext.activeReviewPromise = null;
+const idleKey = fakeEvent('keydown', 'Escape', {});
+shieldListeners.keydown(idleKey);
+assert.equal(idleKey.stopped, false, 'with no review active the shield passes input through');

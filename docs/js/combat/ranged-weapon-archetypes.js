@@ -6,7 +6,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 15;
+  const VERSION = 17;
   const PATCH_RETRY_MS = 50; // Used while game.js finishes constructing generated metal weapon definitions.
   const PATCH_RETRY_LIMIT = 160; // Used to stop the bootstrap poll after roughly eight seconds instead of polling forever.
   const THROWN_TYPE = 'thrown';
@@ -30,10 +30,11 @@
     fadeS: 0.65,
   });
   const BLOWGUN_RAW_DAMAGE = 2; // Used as the deliberately tiny direct dart hit; mastery afflictions are the blowgun's real damage identity.
-  const BLOWGUN_AFFLICTION_SCALE = 40; // Multiplies the ranged system's normal 0.15-per-rank buildup into a huge 6.0x raw-damage multiplier per chosen affliction rank.
+  const BLOWGUN_FIRE_SPEED_MULTIPLIER = 2; // Scales only B'shuakauitl firing action time, preserving its authored strike/hold phase ratios and separate load time.
+  const BLOWGUN_AFFLICTION_SCALE = 10; // Independent 18-point Attack Power yields 27 buildup per rank while preserving only 2 Health damage per dart.
   const BLOWGUN_AFFLICTION_EFFECT_IDS = Object.freeze([
     'bleedingHealth', 'woundedStamina', 'congealedHealth', 'infectedStamina',
-    'windedStamina', 'bruisedHealth', 'shatteredStamina', 'poisonedHealth',
+    'windedStamina', 'bruisedHealth', 'shatteredStamina', 'poisonedHealth', 'scentMarkedHealth',
   ]); // Used by Blowgun mastery to offer the full authored affliction set instead of a physical-damage-biased subset.
   const KYLIE_BLUNT_EFFECT_IDS = Object.freeze([
     'bruisedHealth', 'windedStamina', 'congealedHealth', 'shatteredStamina', 'knockback',
@@ -85,36 +86,37 @@
       strikeFrac: 0.57,
       holdFrac: 0.82,
       poses: {
-        neutral: { x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: 2, roll: -82, shoulderAim: { grip: true, palmNormal: true } },
+        neutral: { x: -0.04, y: 0.29, z: -0.1, pitch: 47, yaw: 107, bodyYaw: -55, roll: 88, shoulderAim: { grip: true, palmNormal: true } },
         windup: { x: 0.41, y: 0.37, z: 0.42, pitch: -180, yaw: 139, bodyYaw: -152, roll: -92, shoulderAim: { grip: false, palmNormal: false } },
         strike: { x: -0.57, y: 0.33, z: 0.17, pitch: -25, yaw: -65, bodyYaw: 63, roll: -88, shoulderAim: { grip: true, palmNormal: false } },
       },
     };
   }
 
-  function sharedDrinkStrikePose() {
-    return window.HeldActionAnimations?.drink?.poses?.strike || {
-      x: 0.4, y: 0.4, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0,
-    };
-  }
+  const BLOWGUN_READY_FALLBACK = Object.freeze({
+    x: 0, y: 0, z: 0, pitch: -180, yaw: 0, roll: 4, bodyYaw: 0, headRelative: true,
+  }); // Used by the fire-pose defaults and missing-animation fallback: the mouth anchors the weapon and its barrel points along the head-forward ray.
 
   // Editable authored copies. These intentionally do not alias the Crossbow or
   // Drink objects: later tuning can change Blowgun without changing either source.
   const BLOWGUN_LOAD_POSE = {
-    neutral: { x: 0, y: 0.12, z: 0.18, pitch: -8, yaw: 0, bodyYaw: 0, roll: 0, scale: 1.30 },
+    neutral: { x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0, scale: 1.30 }, // Unloaded rest = the thrust-style rest a shovel uses in the shovel slot; syncBlowgunStance keeps it on SharedAttackPose's value.
     windup: { x: 0, y: -0.17, z: 0.09, pitch: 77, yaw: 0, bodyYaw: -10, roll: 0, scale: 1.30 },
     strike: { x: 0, y: 0.18, z: 0.08, pitch: -11, yaw: 0, bodyYaw: 7, roll: 0, scale: 1.30 },
   };
   const BLOWGUN_FIRE_POSE = {
-    neutral: { x: 0.4, y: 0.4, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0, scale: 1.30 },
-    windup: { x: 0.4, y: 0.4, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0, scale: 1.30 },
-    strike: { x: 0.4, y: 0.4, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0, scale: 1.30 },
+    neutral: { ...BLOWGUN_READY_FALLBACK, scale: 1.30 },
+    windup: { ...BLOWGUN_READY_FALLBACK, roll: 0, scale: 1.30 },
+    strike: { ...BLOWGUN_READY_FALLBACK, scale: 1.30 },
   };
 
-  function syncBlowgunStanceFromDrink() {
-    const strike = sharedDrinkStrikePose();
+  function syncBlowgunStance() {
+    const authored = window.HeldActionAnimations?.blowgunReady; // Uploaded blowgun tuning now owns its endpoints independently of drinking.
+    const strike = BLOWGUN_READY_FALLBACK; // Missing authored data never inherits Drink's off-axis yaw.
+    const shovelRest = window.SharedAttackPose?.STYLE_NEUTRAL_POSE?.thrust; // The one authority for the pose a shovel idles in outside the weapon slot.
+    if (shovelRest) Object.assign(BLOWGUN_LOAD_POSE.neutral, { x: shovelRest.x, y: shovelRest.y, z: shovelRest.z, pitch: shovelRest.pitch, yaw: shovelRest.yaw, roll: shovelRest.roll, bodyYaw: shovelRest.bodyYaw });
     for (const phase of ['neutral', 'windup', 'strike']) {
-      Object.assign(BLOWGUN_FIRE_POSE[phase], withScale(strike, 1.30));
+      Object.assign(BLOWGUN_FIRE_POSE[phase], withScale(authored?.poses?.[phase] || strike, 1.30));
     }
   }
 
@@ -180,6 +182,8 @@
       speedPxS: projectileStats.speedPxS || base.speedPxS,
       label: toolDef?.label || 'Thrown Weapon',
       rangedType: THROWN_TYPE,
+      attackPower: finiteOr(toolDef?.rangedAttackPower, window.WeaponShapeStats?.forKey?.(itemKey, toolDef)?.attackPower ?? 12), // Shared shape Attack Power also applies to thrown weapons.
+      dmgType: toolDef?.dmgType === 'blunt' ? 'blunt' : 'sharp', // Used by RangedWeapons.playProjectileImpactSfx so a thrown hit sounds like the same weapon's melee hit.
       inputMode: 'hold-release',
       gripMode: animation.gripMode || 'palm-parallel',
       toolEndFlip: animation.toolEndFlip === true || END_FLIPPED_THROW_SHAPES.has(shapeKey),
@@ -239,6 +243,7 @@
 
   function blowgunConfig(toolDef) {
     const base = crossbowDefaults();
+    const animation = window.HeldActionAnimations?.blowgunReady; // Uses the complete authored loaded/fire export, including timing and grip mode.
     const projectileStats = projectileStatsForTool(toolDef, STRAIGHT_PROJECTILE_DEFAULTS);
     return {
       ...base,
@@ -247,6 +252,7 @@
       damage: finiteOr(toolDef?.rangedDamage, BLOWGUN_RAW_DAMAGE),
       label: toolDef?.label || 'Blowgun',
       rangedType: BLOWGUN_TYPE,
+      attackPower: finiteOr(toolDef?.rangedAttackPower, 18), // B'shuakauitl is a status weapon, deliberately not a damaging dart.
       afflictionProfile: toolDef?.rangedAfflictionProfile || BLOWGUN_TYPE,
       basicAfflictionScale: Math.max(1, finiteOr(toolDef?.rangedAfflictionScale, BLOWGUN_AFFLICTION_SCALE)),
       basicAmmoEffectIds: authoredEffectIds(toolDef, BLOWGUN_AFFLICTION_EFFECT_IDS),
@@ -257,11 +263,12 @@
       reloadWindupFrac: 0.55,
       reloadStrikeFrac: 0.56,
       reloadHoldFrac: 0.692,
-      fireDurationS: 1.04,
-      fireSequence: 'attack',
-      fireWindupFrac: 0.05,
-      fireAtFrac: 0.08,
-      fireHoldFrac: 0.17,
+      gripMode: animation?.gripMode || 'palm-parallel',
+      fireDurationS: (animation?.durationS ?? 1.04) / BLOWGUN_FIRE_SPEED_MULTIPLIER,
+      fireSequence: animation?.sequence || 'attack',
+      fireWindupFrac: animation?.windupFrac ?? 0.05,
+      fireAtFrac: animation?.strikeFrac ?? 0.08,
+      fireHoldFrac: animation?.holdFrac ?? 0.17,
       firePose: clonePoseSet(BLOWGUN_FIRE_POSE),
       loadPose: clonePoseSet(BLOWGUN_LOAD_POSE),
     };
@@ -298,7 +305,7 @@
     const highBuildup = Number(config.basicAfflictionScale) > 1;
     const shotNoun = config.rangedType === BLOWGUN_TYPE ? 'dart' : (config.rangedType === THROWN_TYPE ? 'throw' : 'shot');
     return baseBasicAmmoDescriptors
-      .filter(effect => allowed.has(effect.id))
+      .filter(effect => allowed.has(effect.id) && (!effect.onlyRangedType || effect.onlyRangedType === config.rangedType))
       .map(effect => ({
         ...effect,
         desc: highBuildup && effect.afflictionId
@@ -382,6 +389,7 @@
       label: effect.label,
       desc: effect.desc,
       afflictionId: effect.afflictionId || null,
+      onlyRangedType: effect.onlyRangedType || null,
       knockbackMul: effect.knockbackMul || 0,
     }));
 
@@ -439,7 +447,7 @@
     const defs = toolDefinitions();
     if (!defs || !window.RangedWeapons?.config) return false;
     installAmmoProfiles();
-    syncBlowgunStanceFromDrink();
+    syncBlowgunStance();
     let changed = 0;
     for (const [itemKey, def] of Object.entries(defs)) {
       const type = rangedTypeFor(itemKey, def);
@@ -470,7 +478,7 @@
     }
     pendingThrownHold = null;
     const def = window.RangedWeapons.config[itemKey];
-    thrownCharge = { itemKey, source, pointerId, startedAt: performance.now() };
+    thrownCharge = { itemKey, source, pointerId, startedAt: performance.now(), paidChargeCost: 0, committedChargeCost: 0 }; // Tracks actual and pre-tax committed Stamina separately.
     window.RangedWeapons.setLoaded?.(itemKey, false);
     const totalS = Math.max(0.05, Number(def.throwDurationS) || ((def.chargeWindupS || 0.5096) + (def.fireDurationS || 0.5304)));
     window.RangedWeapons.triggerPlayerVisual?.(totalS, {
@@ -489,6 +497,45 @@
     return true;
   }
 
+  function thrownChargeCostForPose(poseCharge, itemKey) {
+    const ranged = window.RangedWeapons;
+    const effects = window.CombatProgression?.getEffects?.(itemKey, 'chargedBreaker') || { stats: {} }; // Reuses the charged-attack stamina modifier for the weapon currently being held.
+    const shapeStats = window.WeaponShapeStats?.current?.() || { efficiency: 1 }; // Matches Charged Breaker's weapon-efficiency adjustment for the same pose-cost curve.
+    const staminaCostMul = 1 + (Number(effects.stats?.staminaCostMul) || 0);
+    const baseCost = ranged?.chargeStaminaCostForPose?.(poseCharge, staminaCostMul)
+      ?? (() => { const pose = Math.max(0, Math.min(1, Number(poseCharge) || 0)); return (pose < 0.48 ? 0 : 24 + 30 * (pose - 0.48) / 0.52) * staminaCostMul; })(); // Backward-compatible fallback for isolated editor/test hosts without the runtime helper.
+    return Math.max(0, baseCost / Math.max(0.05, Number(shapeStats.efficiency) || 1));
+  }
+
+  function payThrownChargeStamina(charge, poseCharge, reason = 'Thrown weapon charge') {
+    if (!charge) return 0;
+    const targetPaid = thrownChargeCostForPose(poseCharge, charge.itemKey);
+    const remainder = Math.max(0, targetPaid - (Number(charge.committedChargeCost) || 0)); // Compare against committed pre-ResourceSystem cost, never the perk-discounted amount.
+    if (!(remainder > 0)) return 0;
+    const payment = window.ResourceSystem?.spendStamina?.(
+      window.Combat?.deps?.player,
+      remainder,
+      reason,
+      { actionKind: 'offensiveHeldCharge', abilityId: 'thrownWeapon' },
+    );
+    const paid = Math.max(0, Number(payment?.enhancedPaid || 0) + Number(payment?.spent || 0) + Number(payment?.excess || 0));
+    charge.committedChargeCost = targetPaid; // Guarantees the same visible pose cannot be billed twice after discounts or enhanced Stamina.
+    charge.paidChargeCost = (Number(charge.paidChargeCost) || 0) + paid;
+    return paid;
+  }
+
+  function updateThrownChargeStamina() {
+    const charge = thrownCharge;
+    if (!charge) return;
+    const player = window.Combat?.deps?.player; // Same actor whose held-charge Stamina transaction is being funded.
+    const poseCharge = Number(window.RangedWeapons?.playerWindupPoseProgress?.());
+    if (Number.isFinite(poseCharge)) payThrownChargeStamina(charge, Math.max(0, Math.min(1, poseCharge)), 'Thrown weapon charge (holding)');
+    const hasEnhancedStamina = (window.ResourceSystem?.getEnhancedResources?.(player, 'stamina', {
+      actionKind: 'offensiveHeldCharge', abilityId: 'thrownWeapon',
+    }) || []).length > 0;
+    if (player?.stamina <= 0 && !hasEnhancedStamina) releaseThrownCharge('stamina-depleted'); // Mirrors Charged Breaker's automatic release when neither ordinary nor enhanced Stamina can fund another charge segment.
+  }
+
   function releaseThrownCharge(source = 'release') {
     const charge = thrownCharge;
     if (!charge) {
@@ -503,6 +550,7 @@
     const liveCharge = Number(ranged.playerWindupPoseProgress?.());
     const timeFallback = Math.max(0, Math.min(1, heldMs / Math.max(1, (Number(ranged.config[charge.itemKey]?.chargeWindupS) || 0.5096) * 1000)));
     const poseCharge = Number.isFinite(liveCharge) ? Math.max(0, Math.min(1, liveCharge)) : timeFallback;
+    payThrownChargeStamina(charge, poseCharge, 'Thrown weapon charge (release)'); // Catch up the final partial frame exactly once, matching Charged Breaker's release settlement.
 
     // Same release contract as current Charged Breaker: freeze the charge at
     // the exact visible Neutral→Windup percentage, slice Windup/Strike to that
@@ -564,6 +612,7 @@
       const baseUpdate = ranged.update.bind(ranged);
       ranged.update = function archetypeAwareUpdate(dt) {
         const result = baseUpdate(dt);
+        updateThrownChargeStamina();
         if (pendingThrownHold) resumePendingThrownHold();
         return result;
       };
@@ -618,6 +667,14 @@
     }, PATCH_RETRY_MS);
   }
 
+  function equippedBlowgunTiming() {
+    const ranged = window.RangedWeapons; // Used by mobile diagnostics to inspect the real live weapon config.
+    const itemKey = ranged?.equippedRangedKey?.(); // Identifies the currently equipped ranged weapon for the timing snapshot.
+    const def = ranged?.config?.[itemKey]; // Reads the generated archetype config actually consumed by player and NPC action scheduling.
+    if (def?.rangedType !== BLOWGUN_TYPE) return null;
+    return { fireDurationS: def.fireDurationS, triggerToShotS: def.fireDurationS * def.fireAtFrac, reloadDurationS: def.reloadDurationS };
+  }
+
   window.HobunjiRangedWeaponArchetypes = {
     version: VERSION,
     patchGeneratedDefinitions,
@@ -648,8 +705,11 @@
       lastRelease,
       blowgunRawDamage: BLOWGUN_RAW_DAMAGE,
       blowgunAfflictionScale: BLOWGUN_AFFLICTION_SCALE,
-      blowgunLoadSource: 'crossbow-load-copy',
-      blowgunStanceSource: 'drink-strike-copy',
+      blowgunFireSpeedMultiplier: BLOWGUN_FIRE_SPEED_MULTIPLIER, // Exposes the effective firing-time scale in mobile debug without changing editor-authored pose data.
+      blowgunFireTiming: equippedBlowgunTiming(), // Reports actual trigger-to-shot delay plus load/recovery timing when a blowgun is equipped.
+      blowgunLoadSfx: window.AudioSystem?.combatSfxConfig?.()?.blowgunLoad?.url || null, // Identifies the real active dart-loading recording in mobile debug.
+      blowgunLoadSource: 'crossbow-load-copy', blowgunLoadNeutralSource: 'shovel-thrust-rest',
+      blowgunStanceSource: window.HeldActionAnimations?.blowgunReady ? 'blowgun-authored-mouth-to-reticle' : 'blowgun-head-forward-fallback',
     }),
   };
   window.__rangedArchetypeDebug = window.HobunjiRangedWeaponArchetypes;

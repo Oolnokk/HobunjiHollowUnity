@@ -6,13 +6,45 @@ on:
     paths:
       - '.github/workflows/smoke-dev-random-ruin-full.yml'
       - 'docs/js/dev-random-ruin-*.js'
+      - 'docs/js/dev-hachutu-ruin.js'
+      - 'docs/js/hachutu-relics.js'
+      - 'scripts/test-hachutu-rooted-ruins.js'
+      - 'scripts/test-hachutu-root-tear.js'
+      - 'scripts/test-hachutu-root-tear-browser.js'
+      - 'scripts/test-hachutu-root-ruin-browser.js'
+      - 'scripts/test-grapple-dodge-payment.js'
+      - 'docs/js/root-snare-player-tear.js'
       - 'docs/js/dynamic-surfaces.js'
+      - 'docs/js/ruin-composer*.js'
+      - 'docs/config/furniture-authored/ruinPillarBridge.json'
+      - 'scripts/test-ruin-construction-browser.js'
+      - 'scripts/v50-native-playthrough-browser.js'
+      - 'docs/js/ruin-v50-native-*.js'
+      - 'docs/js/ruin-layer-*.js'
+      - 'docs/tools/debris-ifier/debrisifier-v50-api.js'
+      - 'scripts/test-ruin-composer-playable.js'
       - 'scripts/test-dev-random-ruin-*.js'
   pull_request:
     paths:
       - '.github/workflows/smoke-dev-random-ruin-full.yml'
       - 'docs/js/dev-random-ruin-*.js'
+      - 'docs/js/dev-hachutu-ruin.js'
+      - 'docs/js/hachutu-relics.js'
+      - 'scripts/test-hachutu-rooted-ruins.js'
+      - 'scripts/test-hachutu-root-tear.js'
+      - 'scripts/test-hachutu-root-tear-browser.js'
+      - 'scripts/test-hachutu-root-ruin-browser.js'
+      - 'scripts/test-grapple-dodge-payment.js'
+      - 'docs/js/root-snare-player-tear.js'
       - 'docs/js/dynamic-surfaces.js'
+      - 'docs/js/ruin-composer*.js'
+      - 'docs/config/furniture-authored/ruinPillarBridge.json'
+      - 'scripts/test-ruin-construction-browser.js'
+      - 'scripts/v50-native-playthrough-browser.js'
+      - 'docs/js/ruin-v50-native-*.js'
+      - 'docs/js/ruin-layer-*.js'
+      - 'docs/tools/debris-ifier/debrisifier-v50-api.js'
+      - 'scripts/test-ruin-composer-playable.js'
       - 'scripts/test-dev-random-ruin-*.js'
   workflow_dispatch:
 
@@ -21,7 +53,7 @@ permissions:
 
 jobs:
   smoke:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30 # Established-player WebGL fixtures run both an isolated seed and the complete multi-seed audit.
     steps:
       - uses: actions/checkout@v4
@@ -31,6 +63,19 @@ jobs:
       - name: Static integration audit
         run: |
           node scripts/test-dev-random-ruin-integration.js
+          node scripts/test-hachutu-rooted-ruins.js
+          node scripts/test-hachutu-root-tear.js
+          node scripts/test-grapple-dodge-payment.js
+          node scripts/test-ruin-composer.js
+          node scripts/test-ruin-composer-playable.js
+          node --check docs/js/ruin-composer-playable.js
+          node --check scripts/test-ruin-construction-browser.js
+          node --check scripts/v50-native-playthrough-browser.js
+          node --check docs/js/ruin-v50-native-floors.js
+          node --check docs/js/ruin-v50-native-mechanisms.js
+          node --check docs/js/root-snare-player-tear.js
+          node --check docs/js/dev-hachutu-ruin.js
+          node --check docs/js/hachutu-relics.js
           node --check docs/js/dynamic-surfaces.js
           node --check docs/js/dev-random-ruin-tile-occupancy.js
           node --check docs/js/dev-random-ruin-wall-render-proxy.js
@@ -42,8 +87,16 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Serve repo
         run: python3 -m http.server 8000 --directory docs >/tmp/hobunji-http.log 2>&1 &
+      - name: Exercise real skinned Hachutu player tearing and cinematic cleanup
+        run: node scripts/test-hachutu-root-tear-browser.js
+      - name: Verify Hachutu game generation, authentic root hands and paid escape
+        run: node scripts/test-hachutu-root-ruin-browser.js
       - name: Verify shared occupancy and puzzle visibility
         run: node scripts/test-dev-random-ruin-collision-browser.js
+      - name: Verify playable composed trial and shaft wing in the real game
+        run: node scripts/test-ruin-construction-browser.js
+      - name: Verify single-room no-loot puzzle lab in real Chromium
+        run: node scripts/smoke-dev-ruin-single-room-browser.js
       - name: Isolate previously failing seed
         env:
           HOBUNJI_RUIN_FIXED_SEEDS: '0x2468ace0'

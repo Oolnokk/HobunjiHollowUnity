@@ -92,10 +92,17 @@
 
   // A rule may restrict itself to one or more weekdays via "day" (single
   // name) or "days" (array); rules with neither run every day.
-  function isNpcRuleActiveOnDay(rule) {
-    if (rule.day) return rule.day === window.CalendarSystem.currentWeekdayName();
-    if (rule.days) return rule.days.includes(window.CalendarSystem.currentWeekdayName());
+  function isNpcRuleActiveOnDay(rule, weekday = window.CalendarSystem.currentWeekdayName()) {
+    if (rule.day) return rule.day === weekday;
+    if (rule.days) return rule.days.includes(weekday);
     return true;
+  }
+
+  function weekdayOfNpcRuleStart(now, start, end) {
+    const today = window.CalendarSystem.currentWeekdayName(); // Used for ordinary rules and the start of overnight ones.
+    if (!(start > end && now < end)) return today;
+    const index = VISITOR_WEEKDAYS.indexOf(today); // Finds the preceding weekday when a rule started before midnight.
+    return index < 0 ? today : VISITOR_WEEKDAYS[(index + VISITOR_WEEKDAYS.length - 1) % VISITOR_WEEKDAYS.length];
   }
 
   const VISITOR_WEEKDAYS = ['Anan', 'Hronu', 'Kruru', 'Muunu', 'Naru', 'Tothu', 'Uung']; // Used to compare recurring visitor windows on one canonical Sunday-first week.
@@ -104,7 +111,17 @@
     const minute = parseNpcTimeMinutes(time); // Used to place the authored arrival/departure clock time on that day.
     return dayIndex >= 0 && minute !== null ? dayIndex * 1440 + minute : null;
   }
+  const presenceProviders = new Map(); // NPC-keyed event windows reuse visitor arrival/departure and flood sheltering.
+  function registerPresenceProvider(npcId, provider) {
+    if (!npcId) return false;
+    if (typeof provider === 'function') presenceProviders.set(String(npcId), provider);
+    else presenceProviders.delete(String(npcId));
+    return true;
+  }
+  function hasPresenceSchedule(rec) { return !!rec?.visitorPresence || presenceProviders.has(rec?.id); }
   function getVisitorPresence(rec) {
+    const provided = presenceProviders.get(rec?.id)?.(rec);
+    if (provided) return provided;
     const presence = rec?.visitorPresence; // Used as the optional recurring lifecycle authored by schedule-overrides.json.
     if (!presence?.entrance || !Array.isArray(presence.visits)) return null;
     const dayIndex = VISITOR_WEEKDAYS.indexOf(window.CalendarSystem.currentWeekdayName()); // Used to locate the current game time within the visitor week.
@@ -156,10 +173,14 @@
       c, r,
       rotY: Number.isFinite(station.rotY) ? station.rotY : 0,
       pose: station.pose || 'stand',
-      furnitureKey: station.furnitureKey
-        || deps.getDecorativeFurnitureKeyByItemKey(station.sourceFurnitureKey)
-        || (deps.decorativeFurnitureDefs[station.sourceFurnitureKey] ? station.sourceFurnitureKey : ''),
+      furnitureKey: (deps.decorativeFurnitureDefs?.[station.furnitureKey] ? station.furnitureKey : '')
+        || deps.getDecorativeFurnitureKeyByItemKey?.(station.furnitureKey)
+        || station.furnitureKey
+        || deps.getDecorativeFurnitureKeyByItemKey?.(station.sourceFurnitureKey)
+        || (deps.decorativeFurnitureDefs?.[station.sourceFurnitureKey] ? station.sourceFurnitureKey : ''),
       seatIndex: Number.isFinite(station.seatIndex) ? station.seatIndex : 0,
+      furnitureId: station.furnitureId || '', // Optional explicit chair instance, shared by table membership and seated pose resolution.
+      tableId: station.tableId || '', // Authored relationship; never guessed from nearby tables.
       toolKey: station.toolKey || '',
       toolIntervalSec: Number.isFinite(station.toolIntervalSec) ? station.toolIntervalSec : 0,
       toolAnimStyle: station.toolAnimStyle || '',
@@ -185,6 +206,10 @@
       // no roles authored is simply never returned by findStationsByRole
       // below, and every existing exact-stationId lookup is unaffected.
       roles: Array.isArray(station.roles) ? station.roles.filter(r => typeof r === 'string' && r) : [],
+      festivalLocaleKind: station.festivalLocaleKind || '', // Lets the festival controller recognize dancing and dining targets after normalizing the station.
+      festivalLocaleParent: station.festivalLocaleParent || '', // Keeps a stable movable locale identity when players relocate its root in the editor.
+      festivalRole: station.festivalRole || '', // Preserves guest/musician/diner semantics across the existing pathfinding registry.
+      festivalNpcId: station.festivalNpcId || '', // Preserves named host assignment without cloning or mutating NPC schedules.
       lookAt: normalizeStationLookAt(station.lookAt),
     };
   }
@@ -423,12 +448,18 @@
     };
   }
 
-  const _scheduleFallbackLogKeys = new Set();
+  const _scheduleFallbackLogKeys = new Set(); // Bounded recent warning keys, shared by missing stations and timed default fallbacks.
+  const MAX_SCHEDULE_LOG_KEYS = 512; // Prevents diagnostic log deduplication from growing forever on long-running worlds.
+  function logScheduleKeyOnce(key) {
+    if (_scheduleFallbackLogKeys.has(key)) return false;
+    _scheduleFallbackLogKeys.add(key);
+    if (_scheduleFallbackLogKeys.size > MAX_SCHEDULE_LOG_KEYS) _scheduleFallbackLogKeys.delete(_scheduleFallbackLogKeys.values().next().value);
+    return true;
+  }
   function logScheduleFallbackOnce(rec, kind, area, c, r) {
     const minuteBucket = Math.floor(currentGameMinutes() / 10);
     const key = [rec?.id || 'npc', kind, deps.getCurrentArea(), area, c, r, minuteBucket].join('|');
-    if (_scheduleFallbackLogKeys.has(key)) return;
-    _scheduleFallbackLogKeys.add(key);
+    if (!logScheduleKeyOnce(key)) return;
     window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: no rule matched (playerMap=${deps.getCurrentArea()}) → fallback ${kind} area=${area} c=${c} r=${r}`, 'warn');
   }
 
@@ -447,10 +478,10 @@
     const now = currentGameMinutes();
     for (const rule of hooks.rules || []) {
       if (rule.contentIncomplete) continue; // flagged by the Schedule Editor / migration — not a real target yet
-      if (!isNpcRuleActiveOnDay(rule)) continue;
       const start = parseNpcTimeMinutes(rule.start ?? rule.from);
       const end   = parseNpcTimeMinutes(rule.end   ?? rule.to);
-      const ruleActive = isNowWithinNpcRuleWindow(now, start, end);
+      const ruleActive = isNowWithinNpcRuleWindow(now, start, end)
+        && isNpcRuleActiveOnDay(rule, weekdayOfNpcRuleStart(now, start, end)); // Early-morning tail belongs to the preceding scheduled weekday.
       if (ruleActive && rule.stationId) {
         const stationTarget = resolveNpcStationTarget(rule.stationId);
         if (stationTarget) return { ...stationTarget, routeId: rule.routeId || null, activity: rule.activity || '' };
@@ -461,8 +492,7 @@
         const missingArea = deps.normalizeNpcArea(rule.area ?? rule.mapId ?? hooks.defaultMapId ?? 'town');
         if (deps.isBuildingArea(missingArea) && !deps.buildingScenes.has(missingArea)) deps.loadBuildingScene(missingArea);
         const warnKey = `${rec?.id || 'npc'}|${rule.stationId}`;
-        if (!_scheduleFallbackLogKeys.has(warnKey)) {
-          _scheduleFallbackLogKeys.add(warnKey);
+        if (logScheduleKeyOnce(warnKey)) {
           window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: stationId "${rule.stationId}" not found (warming up ${missingArea})`, 'warn');
         }
       }
@@ -491,8 +521,8 @@
     for (const shared of deps.getSharedSchedules()) {
       if (!shared || shared.contentIncomplete) continue;
       const start = parseNpcTimeMinutes(shared.from), end = parseNpcTimeMinutes(shared.to);
-      if (window.CalendarSystem.currentWeekdayName() !== shared.day) continue;
       if (!isNowWithinNpcRuleWindow(now, start, end)) continue;
+      if (weekdayOfNpcRuleStart(now, start, end) !== shared.day) continue;
       if (shared.appliesToTag && !(rec?.tags || []).includes(shared.appliesToTag)) continue;
       if ((shared.excludeNpcIds || []).includes(rec?.id)) continue;
       const ids = shared.stationIds || [];
@@ -503,7 +533,8 @@
     if (hooks.defaultStationId) {
       const stationTarget = resolveNpcStationTarget(hooks.defaultStationId);
       if (stationTarget) return stationTarget;
-      window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: defaultStationId "${hooks.defaultStationId}" not found`, 'warn');
+      const missingDefaultKey = `${rec?.id || 'npc'}|default|${hooks.defaultStationId}`; // Warn once per missing default instead of once per rendered frame.
+      if (logScheduleKeyOnce(missingDefaultKey)) window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: defaultStationId "${hooks.defaultStationId}" not found`, 'warn');
     }
     // contentIncomplete NPCs (flagged by the migration/Schedule Editor — e.g.
     // a defaultPosition that was only ever a {0,0} placeholder) skip the
@@ -669,6 +700,7 @@
         area: walker.area, state: walker.state,
         x: walker.root?.position?.x, z: walker.root?.position?.z,
         stationToolKey: walker.stationToolKey || null,
+        updateError: walker._npcUpdateError?.stack || null, // Read-only mobile diagnostic for an NPC isolated from the world loop until its next retry.
         currentScheduleTarget: walker.currentScheduleTarget ? { ...walker.currentScheduleTarget } : null,
         floodShelter: floodShelterAssignmentsByNpcId.get(npcId) ? { ...floodShelterAssignmentsByNpcId.get(npcId) } : null,
       };
@@ -692,6 +724,8 @@
     resolveNpcStationTarget,
     findStationsByRole,
     getVisitorPresence,
+    registerPresenceProvider,
+    hasPresenceSchedule,
     resolveNpcScheduleTarget,
     registerTargetOverride,
     applyTownFloodShelter,

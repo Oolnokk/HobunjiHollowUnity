@@ -17,6 +17,23 @@
   const PROJECTILE_MIN_TRAVEL_S = 0.42; // Near throws remain responsive.
   const PROJECTILE_MAX_TRAVEL_S = 0.9; // Distant throws remain readable without feeling sluggish.
   const RELEASE_DELAY_S = 0.28; // Authored windup→strike release point.
+  // Shared physical flask and carryable-object ballistic contract.
+  function flightDuration(distanceTiles){
+    return Math.min(PROJECTILE_MAX_TRAVEL_S,Math.max(PROJECTILE_MIN_TRAVEL_S,
+      PROJECTILE_MIN_TRAVEL_S+Math.max(0,Number(distanceTiles)||0)*.034));
+  }
+  function flightPosition(origin,target,ratio,distanceTiles,out){
+    const t=Math.max(0,Math.min(1,Number(ratio)||0));
+    const arc=Math.sin(Math.PI*t)*Math.min(1.65,.72+Math.max(0,Number(distanceTiles)||0)*.065);
+    const x=origin.x+(target.x-origin.x)*t;
+    const y=origin.y+(target.y-origin.y)*t+arc;
+    const z=origin.z+(target.z-origin.z)*t;
+    if(out?.set){out.set(x,y,z);return out;}
+    return {x,y,z};
+  }
+  const LANDING_SHADOW_TERRAIN_STEPS = 8; // The shadow re-drapes over the terrain this many times per flight rather than every frame.
+  const LANDING_SHADOW_MIN_OPACITY = 0.75; // The shared character-shadow opacity (~0.28) is too faint for a telegraph the player must read mid-fight.
+  const LANDING_SHADOW_FADE_IN_S = 0.12; // Ground cue appears almost immediately at release, independent of flight length.
   const impactEffects = []; // Bounded, module-owned Three.js splash presentations.
   const projectileTrails = []; // Short luminous motes shed by active flask projectiles.
   const SFX_CUES = Object.freeze({ // Semantic placeholders; audio assets are intentionally configured outside this module.
@@ -27,6 +44,7 @@
 
   function init(injectedDeps = {}) {
     deps = injectedDeps; // Used by every later render/gameplay operation.
+    window.PersistentGroundFire?.init?.(injectedDeps); // Shared entity query and scene adapter, without a second game.js dependency bag.
   }
 
   function heldPayload() {
@@ -93,21 +111,65 @@
     return clampTarget(Number(player?.x || 0) + Number(direction.x) / horizontalLength * MAX_THROW_RADIUS_TILES * tile, Number(player?.y || 0) + Number(direction.z) / horizontalLength * MAX_THROW_RADIUS_TILES * tile);
   }
 
-  function syncShoulderRayTarget() {
-    const target = interactionRayGroundTarget(); // Shoulder view owns aim continuously; top-down keeps cursor/stick input.
-    if (!target) return false;
+  function heldThrowOrigin() {
+    const tile = deps?.TILE || 64; // Converts the player-held world socket into the same world units as the throw arc.
+    const held = deps?.getHeldWorldPosition?.();
+    if (held && [held.x, held.y, held.z].every(Number.isFinite)) return held;
+    const player = deps?.getPlayer?.();
+    const x = Number(player?.x || 0) / tile, z = Number(player?.y || 0) / tile;
+    return { x, y:groundAt(x, z) + 1.05, z }; // NPC-compatible fallback used before the held avatar is ready.
+  }
+
+  function coveredTarget(worldX, worldY, origin = heldThrowOrigin()) {
+    const tile = deps?.TILE || 64;
+    const requested = clampTarget(worldX, worldY);
+    const x = requested.x / tile, z = requested.y / tile;
+    const result = window.ThrowCoverTrajectory?.resolve?.(origin,
+      { x, y:groundAt(x, z), z },
+      { deps, tile, groundAt, flightPosition });
+    const point = result?.target || { x, z };
+    return { x:point.x * tile, y:point.z * tile, blocked:!!result?.blocked, kind:result?.kind || null };
+  }
+
+  function setCoveredAimTarget(worldX, worldY) {
+    if (!aimState) return false;
+    const requested = clampTarget(worldX, worldY);
+    const origin = heldThrowOrigin();
+    const previous = aimState.coverSample;
+    const now = performance.now();
+    // Reuse short-lived preview results while the camera and throw socket are still.
+    if (previous && now - previous.at < 120
+      && Math.hypot(previous.x - requested.x, previous.y - requested.y) < 2
+      && Math.hypot(previous.origin.x - origin.x, previous.origin.y - origin.y, previous.origin.z - origin.z) < 0.04) {
+      aimState.targetX = previous.target.x;
+      aimState.targetY = previous.target.y;
+      aimState.coverBlocked = previous.target.blocked;
+      return true;
+    }
+    const target = coveredTarget(requested.x, requested.y, origin);
+    aimState.requestedX = requested.x;
+    aimState.requestedY = requested.y;
     aimState.targetX = target.x;
     aimState.targetY = target.y;
+    aimState.coverBlocked = target.blocked;
+    aimState.coverKind = target.kind;
+    aimState.coverSample = { x:requested.x, y:requested.y, origin:{x:origin.x,y:origin.y,z:origin.z}, target, at:now };
     return true;
+  }
+
+  function syncShoulderRayTarget() {
+    const target = interactionRayGroundTarget(); // Shoulder view owns aim continuously; top-down keeps cursor/stick input.
+    return target ? setCoveredAimTarget(target.x, target.y) : false;
   }
 
   function groundAt(x, z) {
     return Number(deps.getGroundYAtWorld?.(x, z) ?? deps.getGroundY?.(x * (deps.TILE || 64), z * (deps.TILE || 64))) || 0;
   }
 
-  function splashRadius(definition, playerOwned = true) {
+  function splashRadius(definition, playerOwned = true, flaskmasterRadius = null) {
     const rank = playerOwned ? (window.PerkSystem?.rank('alchemy', 'empowerFlasks') || 0) : 0; // Shared preview/impact perk authority.
-    return (definition.splashRadius || window.AlchemySystem.DEFAULT_SPLASH_RADIUS_TILES) * (1 + rank * 0.1);
+    const trinketRadius = !playerOwned ? 1 : (flaskmasterRadius ?? window.TrinketSystem?.combatMultiplier?.('flaskRadius') ?? 1); // NPC flasks never inherit the wearer's equipment; launched player flasks keep their release-time bonus.
+    return (definition.splashRadius || window.AlchemySystem.DEFAULT_SPLASH_RADIUS_TILES) * (1 + rank * 0.1) * trinketRadius;
   }
 
   function makeTargetRing() {
@@ -118,6 +180,7 @@
     window.EnvironmentSurfaceMicroPlateau?.bindGroundProjection(targetRing);
     targetRing.rotation.x = -Math.PI / 2;
     targetRing.renderOrder = 40;
+    window.ThrowCoverTrajectory?.attachOutline?.(targetRing, deps.THREE); // Matching black edge for both thrown-item ground reticles.
     return targetRing;
   }
 
@@ -143,6 +206,7 @@
         positions.needsUpdate = true;
         ring.geometry.computeBoundingSphere?.();
       }
+      window.ThrowCoverTrajectory?.projectOutline?.(ring, radius, groundY, groundAt); // Outline follows the same elevated terrain as the filled disc.
       if (ring.userData) Object.assign(ring.userData, { targetX: aimState.targetX, targetY: aimState.targetY, radius, groundY });
     }
   }
@@ -154,6 +218,7 @@
     const direction = deps.getAimAngle?.() ?? (Number(player?.angle) || 0); // Existing targeting language.
     const distance = 3 * (deps.TILE || 64); // Readable initial aim distance.
     aimState = { ...held, area: deps.getCurrentArea?.(), targetX: player.x + Math.cos(direction) * distance, targetY: player.y + Math.sin(direction) * distance, phase: 'aim', releaseT: 0 };
+    setCoveredAimTarget(aimState.targetX, aimState.targetY); // Respect cover even before the first camera/stick update.
     syncShoulderRayTarget();
     deps.startThrowWindup?.(held.itemKey);
     emitSfx('aimStart', { itemKey: held.itemKey, recipeId: held.definition.id });
@@ -165,8 +230,7 @@
 
   function setTarget(worldX, worldY) {
     if (!aimState || aimState.phase !== 'aim' || !Number.isFinite(worldX) || !Number.isFinite(worldY)) return false;
-    const target = clampTarget(worldX, worldY); // Authoritative clamped ground point.
-    aimState.targetX = target.x; aimState.targetY = target.y;
+    setCoveredAimTarget(worldX, worldY); // Both the aim ring and the eventual projectile use the same cover-clipped landing.
     syncTargetRing();
     return true;
   }
@@ -194,6 +258,7 @@
   function confirmThrow() {
     if (!aimState || aimState.phase !== 'aim') return false;
     syncShoulderRayTarget(); // Freeze the live camera target on release.
+    setCoveredAimTarget(aimState.requestedX ?? aimState.targetX, aimState.requestedY ?? aimState.targetY);
     aimState.phase = 'releasing';
     aimState.releaseT = RELEASE_DELAY_S;
     deps.confirmThrowAnimation?.(aimState.itemKey);
@@ -216,7 +281,56 @@
     deps.getActiveScene?.()?.add(group);
     record.mesh = group;
     record.disposables = [auraGeometry, auraMaterial]; // Released at impact with the projectile group.
+    record.landingShadow = makeLandingShadow(record);
     return record;
+  }
+
+  // Fixed (non-tracking) ground cue for an in-flight flask: the same soft disc
+  // that sits under characters, fading in at the splash radius and contracting
+  // over the flight to half the player's shadow so it "lands" with the flask.
+  function makeLandingShadow(record) {
+    const make = window.CharacterGroundShadow?.make; // Shared character-shadow material (color/opacity from config).
+    const scene = deps.getActiveScene?.();
+    if (!make || !scene) return null;
+    const config = window.CharacterGroundShadow.config(); // Player shadow footprint the cue shrinks toward.
+    const mesh = make('flask_landing_shadow');
+    const radiusTiles = splashRadius(record.definition, record.playerOwned !== false, record.flaskmasterRadius); // Same radius as the aim ring and impact query.
+    const baseOpacity = Math.max(mesh.material.opacity, LANDING_SHADOW_MIN_OPACITY); // Telegraph opacity reached after the quick fade-in; never fainter than a character shadow.
+    const groundY = record.target.y; // Landing surface shared with the projectile.
+    mesh.material.opacity = 0;
+    mesh.position.set(record.target.x, groundY + window.CharacterGroundShadow.surfaceOffset(), record.target.z);
+    mesh.scale.set(radiusTiles, 1, radiusTiles);
+    scene.add(mesh);
+    return { mesh, baseOpacity, groundY, terrainStep: -1, startX: radiusTiles, startZ: radiusTiles, endX: (config.radiusX ?? 0.34) * 0.5, endZ: (config.radiusZ ?? 0.22) * 0.5 };
+  }
+
+  function updateLandingShadow(projectile, ratio) {
+    const shadow = projectile.landingShadow; // Null when the shared shadow factory is unavailable.
+    if (!shadow) return;
+    const scaleX = shadow.startX + (shadow.endX - shadow.startX) * ratio; // Linear contraction spans the whole flight.
+    const scaleZ = shadow.startZ + (shadow.endZ - shadow.startZ) * ratio;
+    shadow.mesh.scale.set(scaleX, 1, scaleZ);
+    shadow.mesh.material.opacity = shadow.baseOpacity * Math.min(1, projectile.t / LANDING_SHADOW_FADE_IN_S);
+    const terrainStep = Math.floor(Math.min(1, Math.max(0, ratio)) * LANDING_SHADOW_TERRAIN_STEPS); // Sampling terrain per vertex and re-uploading the buffer every frame is wasted on a slowly contracting disc.
+    if (terrainStep === shadow.terrainStep) return;
+    shadow.terrainStep = terrainStep;
+    const positions = shadow.mesh.geometry.attributes?.position; // Unit disc in the XZ plane; local Y carries terrain height.
+    if (!positions?.setY) return;
+    const centerX = projectile.target.x; // Landing point in Three units.
+    const centerZ = projectile.target.z;
+    for (let index = 0; index < positions.count; index++) {
+      positions.setY(index, groundAt(centerX + positions.getX(index) * scaleX, centerZ + positions.getZ(index) * scaleZ) - shadow.groundY);
+    }
+    positions.needsUpdate = true;
+  }
+
+  function disposeLandingShadow(projectile) {
+    const shadow = projectile.landingShadow;
+    if (!shadow) return;
+    shadow.mesh.parent?.remove?.(shadow.mesh);
+    shadow.mesh.geometry?.dispose?.();
+    shadow.mesh.material?.dispose?.();
+    projectile.landingShadow = null;
   }
 
   function releaseProjectile() {
@@ -226,10 +340,13 @@
     deps.inventory[state.itemKey]--; deps.clampInventoryStack?.(state.itemKey); // Exactly-once consumption at authored release.
     const origin = deps.getHeldWorldPosition?.() || { x: deps.getPlayer().x / (deps.TILE || 64), y: 1, z: deps.getPlayer().y / (deps.TILE || 64) }; // Hand/source transform.
     const tile = deps.TILE || 64; // Target conversion.
-    const target = { x: state.targetX / tile, y: deps.getGroundYAtWorld?.(state.targetX / tile, state.targetY / tile) ?? deps.getGroundY?.(state.targetX, state.targetY) ?? 0.05, z: state.targetY / tile }; // Terrain-aware landing point.
+    const finalAim = coveredTarget(state.requestedX ?? state.targetX, state.requestedY ?? state.targetY, origin); // Release-frame socket is authoritative even if the held animation moved.
+    const target = { x: finalAim.x / tile, y:groundAt(finalAim.x / tile, finalAim.y / tile), z: finalAim.y / tile }; // Preview and in-flight destination use the identical height-aware cover resolver.
     const distanceTiles = Math.hypot(target.x - origin.x, target.z - origin.z); // Scales flight time/arc for the extended shoulder range.
-    const durationS = Math.min(PROJECTILE_MAX_TRAVEL_S, Math.max(PROJECTILE_MIN_TRAVEL_S, PROJECTILE_MIN_TRAVEL_S + distanceTiles * 0.034)); // Readable distance-scaled travel time.
-    projectiles.push(makeProjectile({ itemKey: state.itemKey, payload: state.payload, definition: state.definition, area: deps.getCurrentArea?.(), t: 0, durationS, distanceTiles, trailAccumulator:0, origin: { x: origin.x, y: origin.y, z: origin.z }, target }));
+    const durationS = flightDuration(distanceTiles); // Readable distance-scaled travel time.
+    const flaskmasterPower = window.TrinketSystem?.combatMultiplier?.('flaskPower') || 1; // Captured at the wearer's throw release; swapping trinkets mid-flight cannot change the payload.
+    const flaskmasterRadius = window.TrinketSystem?.combatMultiplier?.('flaskRadius') || 1; // Keeps the flight's impact footprint equal to its authored release-time bonus.
+    projectiles.push(makeProjectile({ itemKey: state.itemKey, payload: state.payload, definition: state.definition, area: deps.getCurrentArea?.(), t: 0, durationS, distanceTiles, trailAccumulator:0, origin: { x: origin.x, y: origin.y, z: origin.z }, target, flaskmasterPower, flaskmasterRadius }));
     emitSfx('release', { itemKey: state.itemKey, recipeId: state.definition.id, x: origin.x, y: origin.y, z: origin.z });
     aimState = null;
     if (targetRing) targetRing.visible = false;
@@ -256,13 +373,11 @@
     const landingY = sourceY + dy * clampScale; // Final gameplay-pixel landing Y.
     const sourceGroundY = Number(deps.getGroundY?.(sourceX, sourceY) ?? 0); // Used to launch from a readable chest/hand height above local terrain.
     const origin = { x: sourceX / tile, y: sourceGroundY + 1.05, z: sourceY / tile }; // NPC hand approximation; no player held-item transform is required.
-    const target = {
-      x: landingX / tile,
-      y: deps.getGroundYAtWorld?.(landingX / tile, landingY / tile) ?? deps.getGroundY?.(landingX, landingY) ?? 0.05,
-      z: landingY / tile,
-    }; // Same terrain-aware landing representation as player throws.
+    const rawTarget = { x:landingX / tile, y:groundAt(landingX / tile, landingY / tile), z:landingY / tile };
+    const covered = window.ThrowCoverTrajectory?.resolve?.(origin, rawTarget, { deps, tile, groundAt, flightPosition });
+    const target = covered?.target || rawTarget; // NPC Flaskers obey the same cover heights, without using the player's aiming state.
     const distanceTiles = Math.hypot(target.x - origin.x, target.z - origin.z); // Used to share the player's readable flight-time curve.
-    const durationS = Math.min(PROJECTILE_MAX_TRAVEL_S, Math.max(PROJECTILE_MIN_TRAVEL_S, PROJECTILE_MIN_TRAVEL_S + distanceTiles * 0.034)); // Same deterministic travel timing as player flasks.
+    const durationS = flightDuration(distanceTiles); // Same deterministic travel timing as player flasks.
     const safeTier = Math.max(0, Math.min(4, Math.floor(Number(potencyTier) || 0))); // Used to keep enemy potency inside the stored potion-tier range.
     projectiles.push(makeProjectile({
       itemKey: `npc_flask_${recipeId}_p${safeTier}`,
@@ -278,7 +393,7 @@
       origin,
       target,
     }));
-    lastNpcThrow = { recipeId, potencyTier: safeTier, sourceId: sourceEntity.id || null, targetX: landingX, targetY: landingY, at: performance.now() }; // Mobile-safe proof of Flasker loadout use.
+    lastNpcThrow = { recipeId, potencyTier: safeTier, sourceId: sourceEntity.id || null, targetX: target.x * tile, targetY: target.z * tile, coverBlocked:!!covered?.blocked, at: performance.now() }; // Mobile-safe proof of Flasker loadout use.
     emitSfx('release', { itemKey: `npc_flask_${recipeId}_p${safeTier}`, recipeId, x: origin.x, y: origin.y, z: origin.z, npc: true });
     return true;
   }
@@ -287,23 +402,29 @@
     const tile = deps.TILE || 64; // Three-unit to gameplay-pixel conversion.
     const x = projectile.target.x * tile; // Splash center X.
     const y = projectile.target.z * tile; // Splash center Y.
+    if(projectile.definition.application==='groundFire'){
+      window.PersistentGroundFire?.ignite?.({area:projectile.area,x:projectile.target.x,
+        z:projectile.target.z,y:projectile.target.y,
+        radius:Number(projectile.definition.splashRadius)||1.6,source:'fireFlask'});
+    }
     const playerOwned = projectile.playerOwned !== false; // Used to keep enemy Flaskers from borrowing the player's Empower Flasks perk.
-    const radiusTiles = splashRadius(projectile.definition, playerOwned); // Same radius as the ground preview.
+    const radiusTiles = splashRadius(projectile.definition, playerOwned, projectile.flaskmasterRadius); // NPCs have no trinket, while player flight retains release-time potency.
     const entities = deps.getSplashEntities?.(projectile.area, x, y, radiusTiles * tile) || []; // Existing entity/friendly-fire query adapter.
     let affected = 0; // Impact diagnostic count.
     entities.forEach(entity => {
-      const result = window.AlchemySystem.applyRecipeToEntity(projectile.definition.id, window.AlchemySystem.potencyMultiplier(projectile.payload.potencyTier), entity, { splash: true, potencyTier: projectile.payload.potencyTier, skipEmpower: !playerOwned }); // ResourceSystem-backed gameplay resolution; NPC throws never inherit player perk magnitude.
+      const result = window.AlchemySystem.applyRecipeToEntity(projectile.definition.id, window.AlchemySystem.potencyMultiplier(projectile.payload.potencyTier) * (playerOwned ? projectile.flaskmasterPower || 1 : 1), entity, { splash: true, potencyTier: projectile.payload.potencyTier, skipEmpower: !playerOwned }); // ResourceSystem-backed gameplay resolution; NPC throws never inherit player perk magnitude.
       if (result.ok) affected++;
     });
     deps.spawnImpactPresentation?.({ x, y, radiusTiles, definition: projectile.definition }); // Presentation-only burst.
     spawnImpactEffect(projectile, radiusTiles);
     emitSfx('impact', { itemKey: projectile.itemKey, recipeId: projectile.definition.id, x: projectile.target.x, y: projectile.target.y, z: projectile.target.z, radiusTiles, affected });
-    lastImpact = { recipeId: projectile.definition.id, x, y, radiusTiles, affected, at: performance.now() };
+    lastImpact = { recipeId: projectile.definition.id, x, y, radiusTiles, affected, flaskmasterPower: playerOwned ? projectile.flaskmasterPower || 1 : 1, at: performance.now() };
     disposeProjectile(projectile);
   }
 
   function disposeProjectile(projectile) {
     projectile.mesh?.parent?.remove?.(projectile.mesh);
+    disposeLandingShadow(projectile);
     projectile.disposables?.forEach(resource => resource?.dispose?.());
     deps.disposeFlaskProjectile?.(projectile.sprite, projectile.mesh);
   }
@@ -383,6 +504,7 @@
 
   function update(dt) {
     if (!Number.isFinite(dt) || dt < 0) return;
+    window.PersistentGroundFire?.update?.(dt); // Fire patches continue ticking with no flask in flight.
     if (aimState && (aimState.area !== deps.getCurrentArea?.() || heldPayload()?.itemKey !== aimState.itemKey)) cancelAim(); // Selection/map changes cannot release a stale held flask.
     if (aimState?.phase === 'releasing') {
       aimState.releaseT -= Math.max(0, dt); // Windup→strike release countdown.
@@ -394,11 +516,20 @@
     for (let index = projectiles.length - 1; index >= 0; index--) {
       const projectile = projectiles[index]; // Active deterministic flight.
       if (deps.getCurrentArea?.() !== projectile.area) { disposeProjectile(projectile); projectiles.splice(index, 1); continue; } // Never render an old-area splash in the new scene.
+      const before = Math.min(1, projectile.t / projectile.durationS); // Previous arc progress for dynamic-cover sweep.
       projectile.t += Math.max(0, dt);
       const ratio = Math.min(1, projectile.t / projectile.durationS); // Authoritative destination progress.
-      const arc = Math.sin(Math.PI * ratio) * Math.min(1.65, 0.72 + projectile.distanceTiles * 0.065); // Taller arc for distant shoulder throws.
-      projectile.mesh?.position.set(projectile.origin.x + (projectile.target.x - projectile.origin.x) * ratio, projectile.origin.y + (projectile.target.y - projectile.origin.y) * ratio + arc, projectile.origin.z + (projectile.target.z - projectile.origin.z) * ratio);
+      const next = flightPosition(projectile.origin, projectile.target, ratio, projectile.distanceTiles);
+      const coverHit = window.ThrowCoverTrajectory?.sweepFlight?.(projectile.origin, projectile.target, before, ratio, { deps, groundAt, flightPosition }); // Follow the true curved path even across a dropped frame.
+      if (coverHit) {
+        projectile.target = { x:coverHit.x, y:groundAt(coverHit.x, coverHit.z), z:coverHit.z }; // Splash at the first cover contact, not through it.
+        projectile.mesh?.position?.set?.(coverHit.x, coverHit.y, coverHit.z);
+        impact(projectile); projectiles.splice(index, 1);
+        continue;
+      }
+      if(projectile.mesh)projectile.mesh.position.set(next.x, next.y, next.z); // Shared with physical carried throws.
       projectile.mesh?.rotation.set(projectile.t * 8, 0, projectile.t * 5);
+      updateLandingShadow(projectile, ratio);
       projectile.trailAccumulator += Math.max(0, dt);
       if (projectile.trailAccumulator >= 0.045 && ratio < 0.96) { projectile.trailAccumulator = 0; spawnProjectileTrail(projectile); }
       if (ratio >= 1) { impact(projectile); projectiles.splice(index, 1); }
@@ -450,11 +581,11 @@
   }
 
   function primaryAction() { return aimState ? confirmThrow() : beginAim(); }
-  function diagnostics() { return { aiming: !!aimState, phase: aimState?.phase || null, itemKey: aimState?.itemKey || null, target: aimState ? { x: aimState.targetX, y: aimState.targetY } : null, latestChange:'Terrain-projected filled splash preview and authored flask projectile; existing impact particles retained.', previewRadius:aimState ? splashRadius(aimState.definition) : null, shoulderRayTargeting:!!(aimState && shoulderViewActive()), projectileCount: projectiles.length, projectileVisuals:projectiles.map(projectile => projectile.visual), trailCount:projectileTrails.length, impactEffectCount:impactEffects.length, lastNpcThrow, lastSfxCue, lastImpact }; }
+  function diagnostics() { return { aiming: !!aimState, phase: aimState?.phase || null, itemKey: aimState?.itemKey || null, target: aimState ? { x: aimState.targetX, y: aimState.targetY } : null, latestChange:'Flasks and NPC throws respect finite-height tile/semantic cover; ground preview is clipped and outlined in black.', coverBlocked:!!aimState?.coverBlocked, coverKind:aimState?.coverKind || null, previewRadius:aimState ? splashRadius(aimState.definition) : null, shoulderRayTargeting:!!(aimState && shoulderViewActive()), projectileCount: projectiles.length, projectileVisuals:projectiles.map(projectile => projectile.visual), trailCount:projectileTrails.length, impactEffectCount:impactEffects.length, lastNpcThrow, lastSfxCue, lastImpact }; }
 
   addEventListener('blur', cancelAim); // Losing input focus cancels without consuming a flask.
 
-  window.AlchemyFlasks = { init, beginAim, setTarget, setTargetFromVector, cancelAim, confirmThrow, throwFromEntity, primaryAction, heldActions, update, diagnostics, SFX_CUES, get aiming() { return !!aimState; }, MAX_THROW_RADIUS_TILES };
+  window.AlchemyFlasks = { flightDuration,flightPosition,init, beginAim, setTarget, setTargetFromVector, cancelAim, confirmThrow, throwFromEntity, primaryAction, heldActions, update, diagnostics, SFX_CUES, get aiming() { return !!aimState; }, MAX_THROW_RADIUS_TILES };
 })();
 
 // The shared selector presentation and contextual Potion Select adapter both

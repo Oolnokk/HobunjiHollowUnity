@@ -126,7 +126,7 @@
       icon: definition.icon || '🪺',
       label: definition.label || CONFIG.addition.label,
       cat: 'processed',
-      sellPrice: 0,
+      sellPrice: Math.round(definition.price * 0.4),
       tags: ['Building Plan', 'Barn Addition'],
       desc: definition.desc || 'A modular addition installed against a barn wall.',
     };
@@ -630,12 +630,13 @@
     slot.blockedReason = null;
     slot.troughBarnId = null;
     slot.troughIndex = null; // The newly adult animal now occupies that trough, so this incubator slot must reserve another unused one next time.
-    return { ok: true, message: `${name} matured and moved into its reserved barn trough.` };
+    return { ok: true, entry: baby, message: `${name} matured and moved into its reserved barn trough.` };
   }
 
   function advanceMaturationDay() {
     normalizeState();
     const completed = []; // Successful maturation messages returned for diagnostics/tests.
+    const maturedAnimals = []; // Records to celebrate only after successful placement and the incubator save.
     const blocked = []; // Failed ready-slot messages retained for diagnostics.
     for (const addition of allAdditions()) {
       for (const slot of addition.slots || []) {
@@ -644,10 +645,12 @@
         if (slot.daysRemaining > 0) continue;
         const result = completeSlot(addition, slot); // Reuses existing FarmAnimals barn/trough placement at the end of the timer.
         (result.ok ? completed : blocked).push(result.message);
+        if (result.ok && result.entry) maturedAnimals.push(result.entry);
       }
     }
     saveState(`Incubator day advanced: ${completed.length} matured, ${blocked.length} blocked.`);
     if (completed.length) animalDeps?.showToast?.(`🪺 ${completed.join(' ')}`, true);
+    for (const animal of maturedAnimals) window.AnimalBabyArrival?.celebrateMaturation?.(animal); // A blocked/rolled-back slot never gets a false evolution screen.
     refreshAllUi();
     syncSleepingBabies(true);
     return { completed, blocked };
@@ -957,8 +960,8 @@
     if (!renderer || !avatarApi?.buildAnimalPlaneAvatarModel || !idleUrl || !scene || !anchor) return;
     const speciesDef = animalDeps?.CREATURE_DB?.[slot.baby.kind] || {}; // Sprite aspect source shared with farm animals.
     const configuredWidths = window.SCRATCHBONES_CONFIG?.game?.livestock?.animalWidths || {}; // Existing per-species size overrides.
-    const adultWidth = slot.baby.kind === 'uumkaoii' ? 1.275 : (Number(configuredWidths[slot.baby.kind]) || 1.7); // Same fallback convention as Nursery visuals.
-    const aspect = Number(speciesDef.spriteAspect) || (600 / 1375); // Model height aspect.
+    const adultWidth = slot.baby.kind === 'uumkaoii' ? 1.275 * (600 / 1375) / (451 / 641) : (Number(configuredWidths[slot.baby.kind]) || 1.7); // Match corrected standing-adult Uumkao'ii width.
+    const aspect = Number(speciesDef.spriteAspect) || (slot.baby.kind === 'uumkaoii' ? 451 / 641 : 600 / 1375); // Preserve native Uumkao'ii aspect even before the species definition loads.
     const modelWidth = adultWidth * CONFIG.visuals.babyScale; // Baby-scale billboard width.
     const modelHeight = adultWidth * aspect * CONFIG.visuals.babyScale; // Baby-scale billboard height.
     const avatarRef = avatarApi.buildAnimalPlaneAvatarModel(THREE, idleUrl, {
@@ -1357,6 +1360,7 @@
     if (!list) return;
     ensureStyles();
     document.getElementById('barnLayoutEditorLaunchers')?.remove();
+    document.getElementById('farmBuildingCustomizationList')?.querySelectorAll('.farm-barn-layout-launcher').forEach(button => button.remove()); // Dedicated customization actions must not duplicate during decoration-only refreshes.
     const barns = regularBarns(); // Each built adult barn gets its own sub-editor launcher.
     const detached = allAdditions().filter(addition => additionHasBaby(addition) && !owningBarnOfAddition(addition.id)); // Layout replacement must not hide the only copy of a baby.
     if (!barns.length && !detached.length) return;
@@ -1366,15 +1370,15 @@
     wrap.style.marginTop = '8px';
     const heading = document.createElement('div'); // Explains the new barn-specific modular layout system.
     heading.className = 'farm-note';
-    heading.textContent = 'Barn layouts — attach purchased room additions along clear barn walls:';
+    heading.textContent = 'Incubator status and management — building edits are on Customize Farm:';
     wrap.appendChild(heading);
     barns.forEach((barn, index) => {
       const button = document.createElement('button'); // Mobile-friendly barn editor launcher.
-      button.className = 'settings-small-btn';
+      button.className = 'settings-small-btn farm-barn-layout-launcher';
       const label = buildingDeps?.getBarnTiers?.()?.[barn.tier]?.label || 'Barn'; // Human-readable tier.
       button.textContent = `Edit ${label}${barns.length > 1 ? ` ${index + 1}` : ''} Layout`;
       button.addEventListener('click', () => openBarnEditor(barn.id));
-      wrap.appendChild(button);
+      (document.getElementById('farmBuildingCustomizationList') || wrap).appendChild(button);
       for (const addition of additionsForBarn(barn.id)) {
         const card = document.createElement('div'); // Farm-tab status and direct management for this installed incubator.
         card.className = 'incubator-slot';
@@ -1472,6 +1476,7 @@
       detachedIncubators: allAdditions().filter(addition => !owningBarnOfAddition(addition.id)), // Reports babies excluded from the visible barn list.
       reservedTroughs: [...reservedTroughMap().keys()],
       nurseryBabyCount: nurseryBabies().length,
+      babyArrival: window.AnimalBabyArrival?.debugSnapshot?.() || null, // Incubator Debug reveals success animations and pending prompts.
       currentArea: currentArea(),
       sleepingVisuals: [...sleepingBabies.keys()],
       layoutEditor: window.FarmPanel?.layoutEditorDebug?.() || null,

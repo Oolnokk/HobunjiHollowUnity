@@ -162,16 +162,20 @@
     const entry = window.RepoPatternLibrary?.listCached?.().find(entry => entry.id === id && entry.collectible); // Only author-designated collectibles are unlockable.
     return entry ? {...entry,pattern:window.RepoPatternLibrary.getCachedById(id)} : null;
   }
+  function defaultRepoEntry(id) {
+    return (window.RepoPatternLibrary?.listCached?.() || []).find(entry => entry.id === id && entry.availableByDefault === true) || null; // Only explicitly free authored presets bypass collectible inventory ownership.
+  }
   function owns(patternId) {
     ensureCollection();
-    return Array.isArray(gearInventory()?.unlockedPatternIds) && gearInventory().unlockedPatternIds.includes(patternId);
+    return !!defaultRepoEntry(patternId)
+      || (Array.isArray(gearInventory()?.unlockedPatternIds) && gearInventory().unlockedPatternIds.includes(patternId)); // Accessible-by-default patterns count as owned for consumers of this gate.
   }
   // The hook: call from any in-game source (treasure loot, an NPC gift, a
   // quest reward, a future achievement) to grant a catalog pattern by id.
   // Idempotent — false if the id isn't real or is already owned.
   function unlock(patternId) {
     ensureCollection();
-    if (!catalogById(patternId)) return false;
+    if (defaultRepoEntry(patternId) || !catalogById(patternId)) return false; // Free defaults need no inventory unlock or save writes.
     const gear = gearInventory();
     if (!gear || gear.unlockedPatternIds.includes(patternId)) return false;
     gear.unlockedPatternIds.push(patternId);
@@ -190,11 +194,16 @@
   function listAvailable() {
     const saved = listSaved().map(entry => ({ id: entry.id, label: entry.label, source: 'saved', removable: true }));
     const unlocked = unlockedCatalogEntries().map(entry => ({ id: entry.id, label: entry.label, source: 'catalog', removable: false }));
-    return [...saved, ...unlocked];
+    const defaults = (window.RepoPatternLibrary?.listCached?.() || [])
+      .filter(entry => entry.availableByDefault === true && !entry.collectible)
+      .map(entry => ({ id: entry.id, label: entry.label, source: 'repo-default', removable: false })); // Lets Loom/Color Pools list only deliberately free decorative motifs.
+    const seen = new Set(); // Prevents duplicates when a saved or previously unlocked pattern shares an authored ID.
+    return [...saved, ...unlocked, ...defaults].filter(entry => !seen.has(entry.id) && seen.add(entry.id));
   }
   function getById(id) {
     const saved = getSaved(id);
     if (saved) return saved.pattern;
+    if (defaultRepoEntry(id)) return window.RepoPatternLibrary?.getCachedById?.(id) || null; // Read-only authored default; clone comes from RepoPatternLibrary.
     const cat = catalogById(id);
     return cat && owns(id) ? cat.pattern : null;
   }

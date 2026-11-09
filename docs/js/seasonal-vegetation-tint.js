@@ -6,14 +6,44 @@
   if (typeof window === 'undefined' || typeof THREE === 'undefined') return;
   if (window.SeasonalVegetationTint?.__sourceTaggedV6) return;
 
-  const trackedMaterials = new Set();
-  const grassSurfaceMaterials = new Set();
-  const plainGrassFloorMaterials = new Set();
-  const grassBillboardMaterials = new Set();
-  const weedFloorMaterials = new Set();
-  const proceduralWeedMaterials = new Set();
-  const seasonalLeafCardMaterials = new Set();
-  const proceduralShrubLeafMaterials = new Set();
+  // Materials are tracked weakly. A zone that is evicted drops its materials without every one of them being disposed
+  // (disposeSceneResources only disposes what it can prove no live scene uses), and a strong Set kept each of those
+  // materials, with its textures and uniforms, alive for the rest of the session. Heap snapshots showed about 13 MB of
+  // that per four wilderness visits. Disposal still removes entries eagerly; this only stops a missed dispose from leaking.
+  class WeakMaterialSet {
+    constructor() { this.refs = new Set(); this.byMaterial = new WeakMap(); }
+    add(material) {
+      if (this.byMaterial.has(material)) return this;
+      const ref = new WeakRef(material);
+      this.byMaterial.set(material, ref);
+      this.refs.add(ref);
+      return this;
+    }
+    has(material) { return this.byMaterial.has(material); }
+    delete(material) {
+      const ref = this.byMaterial.get(material);
+      if (!ref) return false;
+      this.byMaterial.delete(material);
+      return this.refs.delete(ref);
+    }
+    get size() { this._prune(); return this.refs.size; }
+    _prune() { for (const ref of this.refs) if (!ref.deref()) this.refs.delete(ref); }
+    *[Symbol.iterator]() {
+      for (const ref of this.refs) {
+        const material = ref.deref();
+        if (material) yield material; else this.refs.delete(ref);
+      }
+    }
+  }
+
+  const trackedMaterials = new WeakMaterialSet();
+  const grassSurfaceMaterials = new WeakMaterialSet();
+  const plainGrassFloorMaterials = new WeakMaterialSet();
+  const grassBillboardMaterials = new WeakMaterialSet();
+  const weedFloorMaterials = new WeakMaterialSet();
+  const proceduralWeedMaterials = new WeakMaterialSet();
+  const seasonalLeafCardMaterials = new WeakMaterialSet();
+  const proceduralShrubLeafMaterials = new WeakMaterialSet();
   const leafBaseColors = new WeakMap();
   const grassTextureNames = new Set(['wavy_surface.png']);
 

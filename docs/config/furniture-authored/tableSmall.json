@@ -242,5 +242,32 @@
   "particleEmitters": [],
   "processingWarps": [],
   "processTimelines": [],
-  "stompAttachPoints": []
+  "stompAttachPoints": [],
+  "recognizedSurfaces": [
+    {
+      "id": "table-top",
+      "partId": "part_msc11c4z_an9an",
+      "localCentroid": [
+        0,
+        0.05,
+        0
+      ],
+      "localNormal": [
+        0,
+        1,
+        0
+      ],
+      "basisU": [
+        1,
+        0,
+        0
+      ],
+      "basisV": [
+        0,
+        0,
+        1
+      ],
+      "role": "workSurface"
+    }
+  ]
 }

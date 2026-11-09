@@ -14,6 +14,8 @@
 
   const MAP_ID = 'map_i_dev_random_ruin';
   const CONTROL_RANGE = 1.65;
+  const PLAYER_REACH_HEIGHT = 1.65; // Used by torch pickup, rung restrictions and hit-driven prompt suppression, measured above the actual supported feet.
+  const PLAYER_REACH_BELOW = .18; // A dropped torch just below the supporting surface remains reachable; adjacent stories do not.
   const TORCH_BURN_MS = 12000;
   const TORCH_SPRITE = 'assets/toolsprites/harpoon_fishingmace.png';
   const TORCH_PLANE_WIDTH = 0.50 * 1.15; // Fishing-mace baseline weapon scale.
@@ -37,6 +39,8 @@
   let equipmentDeps = null;
   let combatDeps = null;
   let root = null;
+  const extraNativeRoots = new Set(); // The upper V50 floor owner registers/deregisters its real authored puzzle roots here.
+  let nativeRootsChanged = false; // Rebuilds the shared glyph/torch scan only when a native floor is mounted or removed.
   let generatorApi = null;
   let glyphTargets = [];
   let ignitionTargets = [];
@@ -91,11 +95,14 @@
     return { x: deps.player.x / deps.TILE, z: deps.player.y / deps.TILE };
   }
   function currentSupportY() {
-    const p = currentPlayerWorld();
-    if (!p) return 0;
-    const meshY = Number(devDeps?.playerMesh?.position?.y);
-    if (Number.isFinite(meshY)) return meshY;
-    return DS.sampleSupport(p.x, p.z, { minY:-8, maxY:12, pad:.02 })?.y || 0;
+    const physical=window.DevRandomRuin?.getPlayerGroundSupportY?.(); // The authoritative height is ruin.supportY, not a sinking/jumping visual mesh or the highest overlapping DynamicSurfaces floor.
+    if(typeof physical==='number'&&Number.isFinite(physical))return physical;
+    const presented=window.DevRandomRuin?.getPlayerSupportY?.();
+    if(typeof presented==='number'&&Number.isFinite(presented))return presented;
+    const meshY=devDeps?.playerMesh?.position?.y;
+    if(typeof meshY==='number'&&Number.isFinite(meshY))return meshY;
+    const p=currentPlayerWorld();
+    return p?DS.sampleSupport(p.x,p.z,{minY:-8,maxY:24,pad:.02})?.y??0:0;
   }
   function boxFor(object) {
     if (!object) return null;
@@ -108,10 +115,14 @@
     return boxFor(object)?.getCenter(new THREE.Vector3()) || new THREE.Vector3();
   }
   function worldDistanceTo(object) {
-    const p = currentPlayerWorld();
-    if (!p || !object) return Infinity;
-    const c = centerFor(object);
-    return Math.hypot(c.x - p.x, c.z - p.z);
+    const p=currentPlayerWorld(),y=currentSupportY();
+    if(!p||!object||!Number.isFinite(y))return Infinity;
+    const box=boxFor(object);
+    if(!box)return Infinity;
+    const gap=(value,min,max)=>Math.max(min-value,0,value-max); // Clamps the player to an actual physical target, not its potentially distant center point.
+    const dx=gap(p.x,box.min.x,box.max.x),dz=gap(p.z,box.min.z,box.max.z);
+    const dy=Math.max(box.min.y-(y+PLAYER_REACH_HEIGHT),0,(y-PLAYER_REACH_BELOW)-box.max.y);
+    return Math.hypot(dx,dy,dz); // An upper-floor torch cannot be reached through its floor even at identical X/Z.
   }
   function rootContainsActivatorDescendant(object, type) {
     let found = false;
@@ -147,6 +158,16 @@
     return scene?.children?.find?.(object => /^dev_v50_ruin_/.test(object?.name || '')) || null;
   }
 
+  function scanGeneratedRoots(visitor) {
+    root?.traverse?.(visitor);
+    for(const native of extraNativeRoots)if(native!==root)native?.traverse?.(visitor);
+  }
+  function registerExternalRoot(native) {
+    if(!native?.traverse)return null;
+    extraNativeRoots.add(native);nativeRootsChanged=true;
+    return () => {if(extraNativeRoots.delete(native))nativeRootsChanged=true;}; // Cleanup is owned by its native floor, not by the base root.
+  }
+
   function makeSignalProxy(mechanismId, mechanismRoot) {
     const proxy = { userData:{ solveProgress:0, __devRuinHitSignal:true, mechanismId } };
     const originalLinkedCube = mechanismRoot.userData?.linkedCubePuzzleRoot || null;
@@ -160,6 +181,7 @@
       progress:0,
       target:0,
       glyphRequired:0,
+      commandTarget:null, // V50 bridge-drop rooms use distinct ON and OFF projectile glyph commands, rather than an all-glyphs-complete gate.
       glyphTargets:[],
       ignitionTargets:[],
     };
@@ -181,7 +203,7 @@
 
   function deepestGlyphNodes() {
     const candidates = [];
-    root?.traverse?.(object => {
+    scanGeneratedRoots(object => {
       if (object.userData?.activatorType !== 'glyphObelisk') return;
       if (rootContainsActivatorDescendant(object, 'glyphObelisk')) return;
       const mechanismId = inheritedData(object, 'linkedMechanismId');
@@ -202,7 +224,7 @@
     torchSources = [];
     ladders = [];
 
-    root.traverse(object => {
+    scanGeneratedRoots(object => {
       const data = object.userData || {};
       if (data.mechanismId && data.previewMotion?.type) mechanismRoots.set(data.mechanismId, object);
       if (data.generatedAccessType === 'stoneLadder') ladders.push(object);
@@ -213,6 +235,7 @@
       const required = Math.max(1, finite(inheritedData(entry.object, 'requiredTriggers'), 1));
       const state = signalFor(entry.mechanismId);
       if (!state) continue;
+      const command=String(inheritedData(entry.object,'bridgeCommand')||'').toUpperCase(); // The authored ON/OFF glyph groups carry this flag on their parent V50 set root.
       const target = {
         id:`glyph-${entry.object.id}`,
         kind:'glyph',
@@ -220,13 +243,14 @@
         mechanismId:entry.mechanismId,
         active:false,
         required,
+        command:command==='ON'||command==='OFF'?command:null,
       };
       glyphTargets.push(target);
       state.glyphTargets.push(target);
       state.glyphRequired = Math.max(state.glyphRequired, required);
     }
 
-    root.traverse(object => {
+    scanGeneratedRoots(object => {
       const type = object.userData?.activatorType;
       if (type !== 'brazier' && type !== 'torch') return;
       const mechanismId = inheritedData(object, 'linkedMechanismId');
@@ -348,13 +372,32 @@
   function activateGlyph(target) {
     if (!target || target.active) return false;
     target.active = true;
+    window.DevRandomRuinGlyphCircuits?.refreshActivatedGlyph?.(target); // Immediate source tint; render-loop pulses and hit flash still follow.
     hitSerial++;
     const state = mechanismSignals.get(target.mechanismId);
-    const active = state?.glyphTargets.filter(entry => entry.active).length || 0;
-    const required = state?.glyphRequired || target.required || 1;
-    if (state && active >= required && state.target < 1) { state.target = 1; window.AudioSystem?.playObjectSfxKey?.('puzzleComplete'); }
-    const circuit = target.circuitName ? `${target.circuitName} ` : '';
-    devDeps?.showToast?.(active >= required ? `${circuit}glyph circuit complete (${active}/${required}) — its mechanism is moving.` : `${circuit}glyph struck (${active}/${required}).`, true);
+    let relevant=state?.glyphTargets||[],required=state?.glyphRequired||target.required||1;
+    if(target.command&&state){
+      relevant=relevant.filter(entry=>entry.command===target.command); // ON and OFF are separate multi-hit groups; shooting one must never count toward the other.
+      required=Math.max(1,...relevant.map(entry=>entry.required||1));
+    }
+    const active=relevant.filter(entry=>entry.active).length;
+    const complete=active>=required;
+    if(state&&complete){
+      if(target.command){
+        state.commandTarget=target.command==='ON'?.5:0; // Hold the V50 bridge in the extended midpoint; OFF returns to the retracted zero pose.
+        for(const other of state.glyphTargets)if(other.command&&other.command!==target.command)other.active=false;
+        (window.RuinInteractionAudio?.puzzleComplete?.()||window.AudioSystem?.playObjectSfxKey?.('puzzleComplete'));
+      }else if(state.target<1){
+        state.target=1;(window.RuinInteractionAudio?.puzzleComplete?.()||window.AudioSystem?.playObjectSfxKey?.('puzzleComplete'));
+      }
+    }
+    if(!complete)window.RuinInteractionAudio?.progress?.(active,required); // Rising bell per glyph; the last one plays the full solve motif above.
+    window.GameFeel?.addTrauma?.(complete?.1:.06);
+    const circuit=target.circuitName?`${target.circuitName} `:'';
+    const result=target.command?`${target.command} glyph`:'glyph circuit';
+    devDeps?.showToast?.(complete
+      ?`${circuit}${result} complete (${active}/${required}) — its mechanism is moving.`
+      :`${circuit}glyph struck (${active}/${required}).`,true);
     window.__farmLog?.(`[random-ruin-hit] projectile glyph ${target.id} ${active}/${required}`, 'world');
     return true;
   }
@@ -392,7 +435,9 @@
 
   function updateSignalState(dt) {
     for (const state of mechanismSignals.values()) {
-      if (state.glyphTargets.length) {
+      if(state.commandTarget!=null){
+        state.target=state.commandTarget; // A native ON/OFF bridge must stay usable until the player shoots the opposite command.
+      }else if (state.glyphTargets.length) {
         const active = state.glyphTargets.filter(target => target.active).length;
         state.target = active >= Math.max(1, state.glyphRequired) ? 1 : 0;
       }
@@ -549,9 +594,11 @@
 
   function setTorchLit(record, lit, resetTimer = false) {
     if (!record) return;
+    const wasLit=!!record.lit; // The carried torch's fire state controls whether a re-ignition sound is warranted.
     record.lit = !!lit;
-    if (record.lit && resetTimer) record.burnUntil = performance.now() + TORCH_BURN_MS;
-    if (!record.lit) record.burnUntil = 0;
+    if(record.lit&&!wasLit)window.RuinInteractionAudio?.igniteTorch?.();
+    if(record.lit&&resetTimer)record.burnRemainingMs=TORCH_BURN_MS;
+    if(!record.lit)record.burnRemainingMs=0; // Torch lifetime is measured in active, frame-clamped game time; a stuck WebGL frame cannot consume an entire puzzle window.
     updateFlameVisual(record);
   }
 
@@ -564,7 +611,7 @@
       ...visual,
       status:'held',
       lit:true,
-      burnUntil:performance.now()+TORCH_BURN_MS,
+      burnRemainingMs:TORCH_BURN_MS, // Twelve active gameplay seconds, excluding GPU/GC stalls.
       restoreState:null,
       expectedSignature:null,
       ignoreSwitchUntil:0,
@@ -580,25 +627,29 @@
     if (!record || record.status !== 'dropped' || carriedTorch) return false;
     forceTorchWeaponMode(record);
     attachTorchToHand(record);
-    const left = record.lit ? Math.max(0, (record.burnUntil-performance.now())/1000) : 0;
+    const left=record.lit?Math.max(0,(record.burnRemainingMs||0)/1000):0;
     devDeps?.showToast?.(record.lit ? `Picked up torch — ${left.toFixed(1)}s burn left.` : 'Picked up an extinguished torch.', true);
     return true;
   }
 
   function nearestPickupControl() {
     if (carriedTorch || !root) return null;
-    const p = currentPlayerWorld();
-    if (!p) return null;
-    let nearest = null;
-    let best = CONTROL_RANGE*CONTROL_RANGE;
-    for (const source of torchSources) {
-      const c = centerFor(source), d=(c.x-p.x)**2+(c.z-p.z)**2;
-      if (d <= best) { best=d; nearest={kind:'torchSource',object:source,label:'Take Lit Torch',onPress:()=>spawnSourceTorch(source)}; }
+    if(!currentPlayerWorld())return null;
+    let nearest=null;
+    let best=CONTROL_RANGE;
+    for(const source of torchSources){
+      const distance=worldDistanceTo(source);
+      if(distance>best)continue;
+      best=distance;nearest={kind:'torchSource',object:source,
+        label:'Take Lit Torch',onPress:()=>worldDistanceTo(source)<=CONTROL_RANGE&&spawnSourceTorch(source)};
     }
-    for (const record of temporaryTorches) {
-      if (record.status !== 'dropped') continue;
-      const c = centerFor(record.group), d=(c.x-p.x)**2+(c.z-p.z)**2;
-      if (d <= best) { best=d; nearest={kind:'droppedTorch',object:record.group,label:record.lit?'Pick Up Lit Torch':'Pick Up Torch',onPress:()=>pickupDroppedTorch(record)}; }
+    for(const record of temporaryTorches){
+      if(record.status!=='dropped')continue;
+      const distance=worldDistanceTo(record.group);
+      if(distance>best)continue;
+      best=distance;nearest={kind:'droppedTorch',object:record.group,
+        label:record.lit?'Pick Up Lit Torch':'Pick Up Torch',
+        onPress:()=>worldDistanceTo(record.group)<=CONTROL_RANGE&&pickupDroppedTorch(record)};
     }
     return nearest;
   }
@@ -729,8 +780,9 @@
     }
     if (carriedTorch.lit && !target.lit) {
       target.lit = true;
+      window.RuinInteractionAudio?.igniteTorch?.(); // The actual torch or brazier takes fire, not just a puzzle-complete flag.
       const state = mechanismSignals.get(target.mechanismId);
-      if (state && state.target < 1) { state.target = 1; window.AudioSystem?.playObjectSfxKey?.('puzzleComplete'); }
+      if (state && state.target < 1) { state.target = 1; (window.RuinInteractionAudio?.puzzleComplete?.()||window.AudioSystem?.playObjectSfxKey?.('puzzleComplete')); }
       devDeps?.showToast?.(target.kind === 'brazier' ? 'Brazier lit.' : 'Ruin torch lit.', true);
       window.__farmLog?.(`[random-ruin-hit] lit ${target.kind} ${target.id}`, 'world');
       return true;
@@ -767,9 +819,12 @@
     transferFire(nearest.target);
   }
 
-  function updateTorchTimers(now) {
-    for (const record of temporaryTorches) {
-      if (record.lit && record.burnUntil > 0 && now >= record.burnUntil) {
+  function updateTorchTimers(dt) {
+    for(const record of temporaryTorches){
+      if(record.lit){
+        record.burnRemainingMs=Math.max(0,(Number(record.burnRemainingMs)||0)-dt*1000);
+      }
+      if(record.lit&&record.burnRemainingMs<=0){
         setTorchLit(record, false, false);
         if (record.status === 'held') devDeps?.showToast?.('The ruin torch burns out.', false);
       }
@@ -837,13 +892,17 @@
       return;
     }
     const activeRoot = activeGeneratedRoot();
-    if (activeRoot && activeRoot !== root) buildForRoot(activeRoot);
+    if (activeRoot && (activeRoot !== root || nativeRootsChanged)) {
+      buildForRoot(activeRoot);
+      nativeRootsChanged = false;
+      window.DevRandomRuinGlyphCircuits?.rebuild?.(); // Native glyphs get the same visible plaques/hitboxes as base-level glyphs.
+    }
     if (!root) return;
     const now = performance.now();
     const dt = clamp((now-lastFrameMs)/1000, 0, .05);
     lastFrameMs = now;
     updateCarrySwitchDetection(now);
-    updateTorchTimers(now);
+    updateTorchTimers(dt);
     updateCarryVisual();
     updateTorchSwing(now);
     updateSignalState(dt);
@@ -886,6 +945,31 @@
   setTimeout(() => setTimeout(() => DS.addBeforeRenderClient(postBaseFrame), 0), 0);
 
   window.DevRandomRuinHitPuzzles = Object.freeze({
+    registerExternalRoot,
+    getNativeRoots:()=>[...extraNativeRoots], // The ordinary stone-ladder and semantic interaction provider reuses the active native story roots.
+    debugEnsureRuntimeReady:()=>{
+      if(window.localStorage?.getItem('hobunjiDevMode')!=='1')return false;
+      preBaseFrame(); // Reuse the exact before-render lifecycle callback when software WebGL first-frame compilation is delayed in Chromium. Never invent a puzzle state.
+      return !!root&&currentArea()===MAP_ID;
+    },
+    debugAdvanceSignals:frames=>{
+      if(window.localStorage?.getItem('hobunjiDevMode')!=='1'||!root||currentArea()!==MAP_ID)return false;
+      const ticks=Math.min(240,Math.max(0,Math.floor(Number(frames)||0)));
+      for(let i=0;i<ticks;i++)updateSignalState(.05); // Runs the unchanged gameplay target/proxy interpolation in deterministic 50 ms fixed steps, not a fabricated solve event.
+      return ticks;
+    },
+    debugTorchSources:()=>window.localStorage?.getItem('hobunjiDevMode')==='1'?[...torchSources]:[], // CI locates the actual lit torch fixtures; the result is never a replacement pickup object.
+    debugPickupTorch:()=>{
+      if(window.localStorage?.getItem('hobunjiDevMode')!=='1')return false;
+      const pickup=nearestPickupControl();
+      return pickup?.kind==='torchSource'&&pickup.onPress()===true; // Use the production range-checked pickup callback, not a forced held-weapon state.
+    },
+    debugIgniteTarget:object=>{
+      if(window.localStorage?.getItem('hobunjiDevMode')!=='1')return false;
+      const target=ignitionTargets.find(candidate=>candidate.object===object);
+      return !!target&&worldDistanceTo(object)<=CONTROL_RANGE&&transferFire(target); // CI invokes the genuine fire-transfer callback within reach; weapon sweep/aiming is a separate browser test.
+    },
+    distanceToWorldObject:worldDistanceTo, // One authoritative physical reach calculation for torches, glyphs and native ladder prompts.
     isCarryingTorch:() => !!carriedTorch,
     dropTorch:() => carriedTorch ? dropTorch(carriedTorch, 'dropped') : false,
     debugActivateGlyph(object = null) {
@@ -905,11 +989,14 @@
       glyphs:{ total:glyphTargets.length, active:glyphTargets.filter(target => target.active).length },
       ignitionTargets:ignitionTargets.map(target => ({ id:target.id, kind:target.kind, mechanismId:target.mechanismId, lit:target.lit })),
       torchSources:torchSources.length,
-      temporaryTorches:temporaryTorches.map(record => ({ id:record.id, status:record.status, lit:record.lit, burnMs:record.lit?Math.max(0,Math.round(record.burnUntil-performance.now())):0 })),
+      temporaryTorches:temporaryTorches.map(record => ({ id:record.id, status:record.status, lit:record.lit, burnMs:record.lit?Math.max(0,Math.round(record.burnRemainingMs||0)):0 })),
       carryingTorch:carriedTorch?.id || null,
       activeSwing:!!activeSwing,
-      signalStates:[...mechanismSignals.values()].map(state => ({ mechanismId:state.mechanismId, progress:state.progress, target:state.target, glyphRequired:state.glyphRequired, glyphActive:state.glyphTargets.filter(target=>target.active).length, ignitionLit:state.ignitionTargets.some(target=>target.lit) })),
+      signalStates:[...mechanismSignals.values()].map(state => ({ mechanismId:state.mechanismId, progress:state.progress, target:state.target, commandTarget:state.commandTarget, glyphRequired:state.glyphRequired, glyphActive:state.glyphTargets.filter(target=>target.active).length, ignitionLit:state.ignitionTargets.some(target=>target.lit) })), // Includes ON/OFF bridge midpoint state for mobile puzzle diagnostics.
       suppressedBaseInteract,
+      proximity:{playerGroundY:currentSupportY(),nearestPickup:nearestPickupControl()?.kind||null,
+        nearestLadder:nearestLadderDistance(),nearestHitDriven:nearestHitDrivenDistance(),
+        registeredNativeRoots:extraNativeRoots.size}, // In-game/mobile diagnostics for stacked-floor reach and cross-floor input suppression.
       hitSerial,
       hooks:{ inputBindingGuard:installedInputBindingGuard, rangedProjectile:installedRangedHook, combatAbility:installedCombatAbility },
     }),

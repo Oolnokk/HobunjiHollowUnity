@@ -27,6 +27,7 @@
   const EXCLUDED_NAME = /rope|lava|pressure_plate|chord_plate|projectile|ceiling|PathBrick|floor|balcony|platform|elevator|dais|bridge|stair|ladder|glyph_marker|circuit_lamp/i;
 
   function ghostMaterial(object) {
+    if(object.userData?.rootGrowthSurfaceSuppressed)return false; // Rooted doors retain this semantic footprint; their growth binding controls enabled(), while the native material stays hidden.
     const material = Array.isArray(object.material) ? object.material[0] : object.material;
     return !material || material.visible === false || material.colorWrite === false || (material.transparent && Number(material.opacity) < 0.2);
   }

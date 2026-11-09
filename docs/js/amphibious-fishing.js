@@ -162,9 +162,17 @@
       0,
       c.def.lungeHeightUnits ?? 1,
     ) || { distancePx: baseLungeDistancePx, hopUnits: 0, pitch: state.aimPitch };
-    state.maxDistancePx = Math.max(0, state.lungeProfile.distancePx * FISH_LEAP_DISTANCE_MULTIPLIER);
-    state.traveledPx = 0;
-    state.collideRadiusPx = deps.TILE * 0.32;
+    // Pounce's shared sub-stepped leap (combat-animal-attacks.js), committed to the trigger-time bearing.
+    const attacks = window.Combat.animalAttacks;
+    attacks.beginConeLunge(c, state, ctx, deps, {
+      targets: state.targets.map(target => target.ref),
+      rangePx: state.rangePx,
+      halfConeRad: state.halfConeRad,
+      maxDistancePx: Math.max(0, state.lungeProfile.distancePx * FISH_LEAP_DISTANCE_MULTIPLIER),
+      speedPxS: c.isCompanion ? Math.max(FISH_LEAP_SPEED_PX_S, state.lungeProfile.distancePx * FISH_LEAP_DISTANCE_MULTIPLIER / (attacks.companionLungeTuning?.durationS || 0.12)) : FISH_LEAP_SPEED_PX_S, // Companion leaps travel in one weapon-speed burst; wild Gurumahi keep authored pacing.
+      collideRadiusPx: deps.TILE * 0.32,
+      detect: attacks.leapConeDetect(),
+    });
     c.facing = state.angle;
     c.scaleY = 1;
     c._banditLungeHopCurrent = 0;
@@ -197,43 +205,19 @@
       return true;
     }
 
-    const dirX = Math.cos(state.angle), dirY = Math.sin(state.angle);
-    const remainingPx = Math.max(0, state.maxDistancePx - state.traveledPx);
-    if (remainingPx <= 0.001) { c._banditLungeHopCurrent = 0; return false; }
-    const stepPx = Math.min(FISH_LEAP_SPEED_PX_S * dt, remainingPx);
-    const nx = c.x + dirX * stepPx, ny = c.y + dirY * stepPx;
-    if (!deps.canOccupyAt(nx, ny, state.collideRadiusPx)) { c._banditLungeHopCurrent = 0; return false; }
-    c.x = nx;
-    c.y = ny;
-    state.traveledPx += stepPx;
-    const leapProgress = state.maxDistancePx > 0.001 ? state.traveledPx / state.maxDistancePx : 1;
-    c._banditLungeHopCurrent = (state.lungeProfile.hopUnits || 0) * Math.sin(Math.min(1, leapProgress) * Math.PI);
-    deps.tickCreatureFootsteps?.(c, stepPx);
     const afflictionBonuses = {
       woundedHealth: FISH_LEAP_WOUNDED_MULTIPLIER,
       scentMarkedHealth: FISH_LEAP_SCENT_MULTIPLIER,
     };
-    deps.tickCreatureLungeTrail?.(c, stepPx, afflictionBonuses);
-
-    for (const target of state.targets) {
-      const ref = target.ref;
-      if (!ref || ref.health <= 0) continue;
-      const hit = window.Combat?.meleeHit
-        ? window.Combat.meleeHit(c, ref, {
-            rangePx: state.rangePx,
-            halfConeRad: state.halfConeRad,
-            yaw: state.angle,
-            pitch: state.aimPitch,
-          })
-        : deps.inCone(c.x, c.y, state.angle, ref.x, ref.y, state.rangePx, state.halfConeRad);
-      if (!hit) continue;
-      const damageOpts = { tag: 'amphibiousFish', afflictionBonuses, amphibiousFish: true, attacker: c };
-      if (target.isPlayer) deps.damagePlayer(state.damage, c.x, c.y, FISH_LEAP_KNOCKBACK_PX_S, damageOpts);
-      else deps.damageCreature(ref, state.damage, c.x, c.y, FISH_LEAP_KNOCKBACK_PX_S, damageOpts);
-      deps.playCreatureClawHit?.(c);
-      return false;
-    }
-    return true;
+    const stopReason = window.Combat.animalAttacks.advanceLeap(c, state, dt, deps, afflictionBonuses);
+    if (!stopReason) return true;
+    const ref = stopReason === 'target' ? state.lungeContact : null; // First living target the moving cone caught.
+    if (!ref) return false; // Ran out of travel or hit terrain; animalAttacks.update lowers the hop.
+    const damageOpts = { tag: 'amphibiousFish', afflictionBonuses, amphibiousFish: true, attacker: c };
+    if (state.targets.some(target => target.isPlayer && target.ref === ref)) deps.damagePlayer(state.damage, c.x, c.y, FISH_LEAP_KNOCKBACK_PX_S, damageOpts);
+    else deps.damageCreature(ref, state.damage, c.x, c.y, FISH_LEAP_KNOCKBACK_PX_S, damageOpts);
+    deps.playCreatureClawHit?.(c);
+    return false;
   }
 
   function fishLeapCancel(c) {
@@ -246,6 +230,7 @@
     if (fishLeapInstalled || !attacks?.register) return false;
     attacks.register('fishLeap', {
       label: 'Fish Leap',
+      ownsApproach: true, // Fish Leap already begins with an authored crouch and long-distance lunge.
       start: fishLeapStart,
       update: fishLeapUpdate,
       cancel: fishLeapCancel,
@@ -268,6 +253,16 @@
     if (entity.health > cap) entity.health = Math.round(cap * 10) / 10;
   }
 
+  const scentDamageDebug = { consumed: 0, hits: 0, last: null }; // Mobile diagnostics count successful animal-attack scent conversions, not mere targeting.
+
+  function isAnimalDamage(opts) {
+    if (opts?.environmentalImpact === true) return false; // Wall impacts cannot cash out animal-applied scent as a second attack.
+    if (opts?.amphibiousFish || opts?.animalAttack) return true;
+    const attacker = opts?.attacker || opts?.fromCompanion; // The common animal hit source, including Whistle/Sicced companion wrappers.
+    return !!attacker && !attacker.isBandit && !attacker.isNpcWalker && !attacker.isTribeHunter && !attacker.isPorakanekiHunter && !attacker.maskboundTroop &&
+      (attacker.isCompanion === true || !!attacker.creatureKey);
+  }
+
   function installResourceRules(RS = window.ResourceSystem) {
     if (resourceRulesInstalled || !RS?.AFFLICTIONS || !RS?.applyDamage || !RS?.tick) return false;
     RS.AFFLICTIONS.woundedHealth ||= {
@@ -278,7 +273,7 @@
     RS.AFFLICTIONS.scentMarkedHealth ||= {
       name: 'Scent-marked Health', resource: 'health', extend: 'currentBack', priority: 61, recovers: false,
       family: 'offensiveDebuff', tags: ['scent', 'amphibious'],
-      desc: 'Amphibious fish attacks consume the mark for bonus damage. The scent fades slowly on its own.'
+      desc: 'Animal attacks, including companion attacks, consume this mark for bonus damage (up to one normal hit). Wild animals and enemy animal companions prioritize marked opponents until the scent is spent. It fades slowly.'
     };
 
     const originalApplyDamage = RS.applyDamage.bind(RS);
@@ -287,15 +282,40 @@
     const originalEnforceCaps = RS.enforceCaps.bind(RS);
 
     RS.applyDamage = (entity, amount, opts = {}) => {
-      if (!opts?.amphibiousFish) return originalApplyDamage(entity, amount, opts);
-      const baseAmount = Math.max(0, Number(amount) || 0); // Used so new affliction buildup is based on the attack itself, not the scent bonus it consumed.
+      const originalAmount = Math.max(0, Number(amount) || 0); // Original incoming Health hit; used to cap scent spending and prevent bogus zero-hits.
+      if (!isAnimalDamage(opts) || !(originalAmount > 0)) return originalApplyDamage(entity, amount, opts);
       const scent = Math.max(0, RS.getAffliction(entity, 'scentMarkedHealth') || 0);
-      const scentBonus = Math.min(scent, baseAmount); // Mirrors Bruised Health's cap: bonus damage can at most double this hit.
-      if (scentBonus > 0) RS.removeAffliction(entity, 'scentMarkedHealth', scentBonus);
+      const initialBonus = Math.min(scent, originalAmount); // One hit cannot spend more scent than its own base Health damage.
+      if (!(initialBonus > 0) && !opts.amphibiousFish) return originalApplyDamage(entity, amount, opts);
+      const skirmishFloor = Number(opts.wildlifeSkirmishFloor); // Optional nonlethal ecology boundary forwarded from WildlifeSpawn's ordinary bite path.
+      const hasSkirmishFloor = opts.wildlifeSkirmishFloor != null && Number.isFinite(skirmishFloor) && skirmishFloor >= 0;
+      const skirmishBudget = hasSkirmishFloor ? Math.max(0, (Number(entity?.health) || 0) - skirmishFloor) : Infinity;
+      const scale = originalAmount + initialBonus > skirmishBudget
+        ? skirmishBudget / (originalAmount + initialBonus) : 1; // Reserve room for BOTH the bite and its scent payout; cannot kill a wildlife skirmish opponent.
+      const baseAmount = originalAmount * scale; // Proportionately capped ordinary Health damage; all other hits remain unchanged.
+      const scentBonus = initialBonus * scale;
+      const spent = scentBonus > 0 ? RS.removeAffliction(entity, 'scentMarkedHealth', scentBonus) : 0;
+      if (spent > 0) {
+        scentDamageDebug.consumed += spent;
+        scentDamageDebug.hits++;
+        scentDamageDebug.last = { attacker: opts?.attacker?.id || opts?.attacker?.creatureKey || 'animal', spent };
+      }
+      if (!opts.amphibiousFish) {
+        // Keep ordinary affliction perks/flat buildup/heavy behavior in the central damage path;
+        // only scale coefficient-based buildup back to this attack's ORIGINAL damage.
+        const adjusted = opts.afflictionBonuses && spent > 0
+          ? Object.fromEntries(Object.entries(opts.afflictionBonuses).map(([id, multiplier]) =>
+            [id, multiplier * baseAmount / (baseAmount + spent)])) : opts.afflictionBonuses;
+        const combinedAmount = Math.min(baseAmount + spent, skirmishBudget); // Clamp again after 0.1-unit affliction rounding to maintain nonlethal wildlife Health.
+        return originalApplyDamage(entity, combinedAmount,
+          adjusted === opts.afflictionBonuses ? opts : { ...opts, afflictionBonuses: adjusted });
+      }
+      // Fish Leap retains its existing special Wounded Health cap/buildup semantics,
+      // while sharing exactly the same scent payout with every other animal.
       const bonuses = opts.afflictionBonuses || null;
       const cleanOpts = { ...opts, afflictionBonuses: null };
       const before = entity.health;
-      originalApplyDamage(entity, baseAmount + scentBonus, cleanOpts);
+      originalApplyDamage(entity, baseAmount + spent, cleanOpts);
       if (bonuses) {
         for (const [id, multiplier] of Object.entries(bonuses)) {
           if (RS.AFFLICTIONS[id] && multiplier > 0) RS.addAffliction(entity, id, baseAmount * multiplier);
@@ -312,7 +332,8 @@
         const cfg = RS.config();
         const rest = RS.getRestInfo(entity, cfg);
         const rate = cfg.afflictionRecoveryPerSec * SCENT_RECOVERY_MULTIPLIER * (rest.rested ? 2 : 1); // Used to fade scent slowly, with the existing rested recovery bonus intact.
-        RS.removeAffliction(entity, 'scentMarkedHealth', rate * dt);
+        RS.recoverAfflictionNaturally(entity, 'scentMarkedHealth',
+          rate * dt * RS.getAfflictionNaturalRecoveryScale('scentMarkedHealth'));
       }
       enforceWoundedHealthCap(entity, RS);
       return result;
@@ -534,6 +555,7 @@
       playerInWater: playerInWater(),
       playerTile: playerTile() ? { col: playerTile().col, row: playerTile().row, type: String(playerTile().tile?.type || '') } : null,
       resourceRulesInstalled,
+      scentDamage: { ...scentDamageDebug },
       fishLeapInstalled,
       creatureDefInstalled: !!wildlifeDeps?.CREATURE_DB?.[GURUMAHI_KIND],
       liveCreatures: [...liveAmphibiousCreatures].map(c => ({ id: c.id, state: c.state, key: c._amphibiousFishItemKey, health: c.health, stamina: c.stamina })),

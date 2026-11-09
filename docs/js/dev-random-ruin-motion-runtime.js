@@ -222,6 +222,7 @@
   function carryMovingDaisRiders() {
     const player = playerWorld();
     for (const record of daises) {
+      if(record.root.rootGrowthBinding)continue; // Stationary rooted keyframes cannot carry riders using the hidden native moving deck.
       const state = platformState(record);
       if (!state) continue;
       const delta = state.center.clone().sub(record.lastCenter);
@@ -270,7 +271,7 @@
 
   function snapLoosePushBlocksToSupport() {
     for (const block of pushBlocks) {
-      if (block.userData.__devRuinRideDaisId) continue;
+      if (block.userData.__devRuinRideDaisId || window.DevRandomRuin?.isSlidingPushBlock?.(block)) continue;
       const center = centerFor(block);
       const support = supportAt(center.x, center.z);
       if (!support) continue;
@@ -362,11 +363,8 @@
   }, true);
 
   function updateBadge() {
-    const badge = document.getElementById('devRandomRuinBadge');
-    if (!badge || !root) return;
-    const base = badge.dataset.motionBase || badge.textContent;
-    badge.dataset.motionBase = base;
-    badge.textContent = `${base} · motion ${daises.length}/${elevatorBlocks.length} · ladders ${authoredLadderCount}`;
+    if (!root) return;
+    window.DevRandomRuin?.setDebugBadgePart?.('motion',` · motion ${daises.length}/${elevatorBlocks.length} · ladders ${authoredLadderCount}`);
   }
 
   function clear() {
@@ -374,8 +372,7 @@
     nearestElevatorBlock = null; controllerInteractDown = false;
     if (promptOwned) window.ActionPromptUI?.hideActionPrompt?.();
     promptOwned = false;
-    const badge = document.getElementById('devRandomRuinBadge');
-    if (badge) delete badge.dataset.motionBase;
+    window.DevRandomRuin?.setDebugBadgePart?.('motion',''); // Cleared by the central badge lifecycle on ruin exit.
   }
 
   function frameUpdate() {
@@ -390,7 +387,7 @@
     snapLoosePushBlocksToSupport();
     updatePrompt();
     const badge = document.getElementById('devRandomRuinBadge');
-    if (badge && !badge.dataset.motionBase) updateBadge();
+    if (badge && !badge._ruinDebugBadgeParts?.motion) updateBadge();
   }
 
   async function auditSeeds(count = 12) {

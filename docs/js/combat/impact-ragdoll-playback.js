@@ -8,6 +8,7 @@
 
   const BODY_CHANNEL = 'ragdoll';
   const BODY_PRIORITY = 100;
+  const LEGS_LIFT_Y = 0.06; // Recorded foot centres sit ~0.04 above the floor, but the rendered foot mesh extends below its centre; this keeps the soles on the ground.
   const CREATURE_REFERENCE_HEIGHT = 0.9; // Converts player-authored body-height offsets to each animal plane's visible height in applyCreatureFrame.
   const CREATURE_DIRECTION_QUARTER_TURN = Object.freeze({ front: 'left', right: 'front', back: 'right', left: 'back' }); // Rotates the humanoid blend poles +90° for side-on animal planes.
   const CREATURE_BASIS_QUATERNION = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2); // Rotates humanoid-authored motion axes into the animal card's local basis.
@@ -86,10 +87,16 @@
     };
   }
 
-  function publishBodyPose(quaternion, yOffset = 0) {
+  // absoluteLegs: recorded clip frames carry floor-relative leg poses, so the
+  // composer must not tilt/lower the leg group along with the body again (that
+  // left the feet hanging in the air). Procedural recovery rolls keep the legs
+  // attached to the rolling body.
+  function publishBodyPose(quaternion, yOffset = 0, absoluteLegs = false) {
     window.PlayerBodyTransformComposer?.setChannel(BODY_CHANNEL, {
       priority: BODY_PRIORITY,
       mode: 'override',
+      absoluteLegs,
+      absoluteLegsLiftY: absoluteLegs ? LEGS_LIFT_Y : 0,
       quaternion,
       translation: { x: 0, y: Number(yOffset) || 0, z: 0 },
     });
@@ -99,7 +106,7 @@
     if (!frameA || !frameB) return;
 
     const body = sampleBody(frameA, frameB, t);
-    publishBodyPose(body.quaternion, body.y - baseBodyY);
+    publishBodyPose(body.quaternion, body.y - baseBodyY, true);
 
     if (!playerLegsRef) return;
     playerLegsRef.applyRecordedLegPose(
@@ -110,6 +117,7 @@
       'right',
       sampleLeg(frameA.ragdoll.ik.right, frameB.ragdoll.ik.right, t)
     );
+    playerLegsRef.pants?.update?.(); // legs.update() normally drives the pants; it is skipped while a recorded pose owns the legs, which left the garment on the old stance.
   }
 
   function holdHumanoidProne(walker, direction = 'front', blend = 1) {
@@ -174,6 +182,56 @@
     // blendspace instead of merely renaming its four directional clips.
     state.pivot.quaternion.copy(CREATURE_BASIS_QUATERNION).multiply(body.quaternion).multiply(CREATURE_BASIS_INVERSE);
     state.pivot.position.y = (body.y - state.baseBodyY) * state.heightScale;
+  }
+
+  // Death owns an independent, persistent sample of the same recorded prone
+  // throw used by zero-Footing hits. Unlike a living impact it isn't updated by
+  // updateCreatureMesh(), and it must never return to the standing pose.
+  function startCreatureDeath(entity, direction = 'front') {
+    stopCreature(entity);
+    const mappedDirection = CREATURE_DIRECTION_QUARTER_TURN[direction] || 'front';
+    const clip = window.ImpactBlendLibrary?.getClip('breakThrow', mappedDirection);
+    const pivot = ensureCreatureImpactPivot(entity);
+    if (!clip?.frames?.length || !pivot) return 0;
+    // Bandit hands and legs are siblings of the portrait planes; take them
+    // along for a death without changing the normal live knockdown rig.
+    for (const limb of [entity.avatarRef?.handsPivot, entity.avatarRef?.legsPivot]) {
+      if (limb?.isObject3D && limb.parent === pivot.parent) pivot.add(limb);
+    }
+    const visibleHeight = Math.max(0.05, Number(entity?.halfHeight) * 2 || CREATURE_REFERENCE_HEIGHT);
+    entity._deathRecordedThrow = {
+      pivot, clip,
+      baseBodyY: Number(clip.frames[0]?.ragdoll?.body?.localPosition?.y) || 0,
+      heightScale: visibleHeight / CREATURE_REFERENCE_HEIGHT,
+    }; // Sampled by CreatureDeath while dying and retained as the corpse's pose.
+    sampleCreatureDeath(entity, 0);
+    return Math.max(0.05, clip.durationSeconds);
+  }
+
+  function sampleCreatureDeath(entity, phase) {
+    const state = entity?._deathRecordedThrow;
+    if (!state?.clip?.frames?.length) return false;
+    const time = Math.max(0, Math.min(1, Number(phase) || 0)) * state.clip.durationSeconds;
+    const [frameA, frameB, blend] = findBracket(state.clip.frames, time);
+    applyCreatureFrame(state, frameA, frameB, blend);
+    const legs = entity.avatarRef?.legs;
+    if (typeof legs?.applyRecordedLegPose === 'function') {
+      for (const side of ['left', 'right']) {
+        if (frameA?.ragdoll?.ik?.[side] && frameB?.ragdoll?.ik?.[side])
+          legs.applyRecordedLegPose(side, sampleLeg(frameA.ragdoll.ik[side], frameB.ragdoll.ik[side], blend));
+      }
+    }
+    legs?.pants?.update?.(); // Recorded deaths bypass legs.update(); refresh the garment after both authored leg poses are applied.
+    return true;
+  }
+
+  function stopCreatureDeath(entity) {
+    const state = entity?._deathRecordedThrow;
+    if (!state) return false;
+    state.pivot?.quaternion?.identity?.();
+    if (state.pivot?.position) state.pivot.position.y = 0;
+    entity._deathRecordedThrow = null;
+    return true;
   }
 
   function stopCreature(entity) {
@@ -407,6 +465,7 @@
     isHolding,
     currentDirection,
     triggerCreature,
+    startCreatureDeath, sampleCreatureDeath, stopCreatureDeath,
     updateCreature,
     stopCreature,
     getDebug,

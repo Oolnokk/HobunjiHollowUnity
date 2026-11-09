@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  if (window.HobunjiMenuTabIcons?.version >= 9) return;
+  if (window.HobunjiMenuTabIcons?.version >= 10) return;
 
   const TAB_SELECTOR = '.mp-tabs .mp-tab[data-mpanel]'; // Used to target only the main menu's navigation tabs.
   const RELATIONSHIPS_PANEL_ID = 'relationships'; // Used to preserve the PNG heart authored by generic-hud-icons.js.
@@ -34,6 +34,23 @@
     progress: { base: 'action', file: 'tool_select.png', color: '#b38bdd' },
     map: { base: 'generic', file: 'icon_map.png', color: '#67aee8' },
   });
+  const MENU_PAGES = Object.freeze({
+    inventory: ['Character', 'Items you carry, clothing, equipment and money.'],
+    loadout: ['Character', 'Choose your weapons and combat setup.'],
+    progress: ['Character', 'Review skills, mastery and perks.'],
+    crafting: ['Character', 'Make items using your known recipes.'],
+    map: ['World', 'Find places and plan where to go next.'],
+    tasks: ['World', 'Track quests, requests and rumors.'],
+    calendar: ['World', 'Check upcoming events and important dates.'],
+    compendium: ['World', 'Look up discoveries and information about the world.'],
+    farm: ['Home', 'Check your farm, buildings, storage and layout.'],
+    stable: ['Home', 'Manage animals, companions and the nursery.'],
+    relationships: ['Home', 'Review friendships, romance and family.'],
+    settings: ['System', 'Adjust controls, sound, display and game preferences.'],
+    debug: ['Developer', 'Inspect developer tools and diagnostics.'],
+    wildlife: ['Developer', 'Inspect wildlife developer tools.'],
+  }); // Shared destination order, category labels and explanations for the menu header.
+  let menuContext = null; // Retains the visible location and purpose below the main navigation.
   const debugState = {
     transformed: 0,
     lastPanel: null,
@@ -58,8 +75,30 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        min-width: 34px;
-        gap: 0;
+        position: relative;
+        flex: 0 0 auto;
+        min-width: 80px;
+        min-height: 44px;
+        gap: .4em;
+        padding: 18px 9px 6px;
+        overflow: visible;
+      }
+      #menuPanel .mp-header { height: auto; min-height: 54px; }
+      #menuPanel .mp-tabs { overflow-x: auto; overflow-y: hidden; height: auto; align-self: stretch; scrollbar-width: thin; }
+      ${TAB_SELECTOR}[data-menu-group-start] { margin-left: 10px; border-left: 1px solid var(--border); }
+      ${TAB_SELECTOR}[data-menu-group-start]::before {
+        content: attr(data-menu-group-start);
+        position: absolute; top: 3px; left: 9px;
+        font-size: 9px; color: var(--muted); letter-spacing: .08em;
+      }
+      ${TAB_SELECTOR} .menu-tab-label { pointer-events: none; font-size: 11px; }
+      .menu-page-context { flex: 0 0 auto; padding: 7px 12px; border-bottom: 1px solid var(--border); background: #0002; }
+      .menu-page-context strong { display: block; color: var(--accent); font-size: 12px; }
+      .menu-page-context p { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
+      @media (max-height: 500px) {
+        .menu-page-context { padding-block: 4px; display: flex; align-items: baseline; gap: 10px; }
+        .menu-page-context strong { flex: 0 0 auto; }
+        .menu-page-context p { margin: 0; font-size: 10px; }
       }
       ${TAB_SELECTOR}[data-mpanel="compendium"] {
         gap: .35em;
@@ -445,9 +484,9 @@
   }
 
   function transformTab(tab) {
-    if (!(tab instanceof Element) || tab.dataset.menuTabIconOnly === '3') return false;
+    if (!(tab instanceof Element) || tab.dataset.menuTabIconOnly === '4') return false;
     const panelId = String(tab.dataset.mpanel || ''); // Used to select a dedicated PNG, loadout composite, or the existing emoji fallback.
-    const label = visibleLabel(tab); // Used after the visible words are removed so keyboard/screen-reader navigation remains clear.
+    const label = visibleLabel(tab); // Shared visible and accessible destination name.
 
     if (panelId === RELATIONSHIPS_PANEL_ID) {
       window.HobunjiGenericHudIcons?.scan?.(); // Used to ensure the relationships tab has its PNG heart before we finalize it.
@@ -458,38 +497,94 @@
       tab.replaceChildren(makeLoadoutNode());
     } else if (TAB_ART[panelId]) {
       tab.replaceChildren(makeArtNode(TAB_ART[panelId]));
-      if (TAB_ART[panelId].showLabel) tab.append(label);
+
     } else {
       const glyph = firstGrapheme(tab.textContent); // Used to retain exactly the tab's existing leading emoji/symbol for untouched tabs.
       if (!glyph) return false;
       tab.replaceChildren(makeGlyphNode(glyph));
     }
 
+    const textLabel = document.createElement('span'); // Keeps destination names visible alongside their existing artwork.
+    textLabel.className = 'menu-tab-label';
+    textLabel.textContent = label;
+    tab.appendChild(textLabel);
     tab.setAttribute('aria-label', label);
     tab.title = label;
-    tab.dataset.menuTabIconOnly = '3';
+    tab.dataset.menuTabIconOnly = '4';
     debugState.transformed += 1;
     debugState.lastPanel = panelId || null;
     return true;
   }
 
+  function updateMenuContext() {
+    const active = document.querySelector(`${TAB_SELECTOR}.active`); // Active destination remains owned by the existing menu implementation.
+    if (!active || !menuContext) return;
+    const page = MENU_PAGES[active.dataset.mpanel] || ['Menu', '']; // Future plugin destinations retain their authored names.
+    const label = active.getAttribute('aria-label') || visibleLabel(active); // Reads the same label shown on the destination button.
+    const heading = menuContext.querySelector('strong'); // Reuses context nodes so tab changes do not rebuild a panel.
+    const description = menuContext.querySelector('p'); // Explains the selected destination in plain language.
+    const location = `${page[0]} › ${label}`; // Visible location helps players distinguish the main page from local sections.
+    if (heading.textContent !== location) heading.textContent = location;
+    if (description.textContent !== page[1]) description.textContent = page[1];
+    for (const tab of document.querySelectorAll(TAB_SELECTOR)) {
+      const selected = String(tab === active); // Keeps screen-reader selection synchronized with the menu's active class.
+      if (tab.getAttribute('aria-selected') !== selected) tab.setAttribute('aria-selected', selected);
+    }
+    if (menuContext.dataset.panel !== active.dataset.mpanel) {
+      menuContext.dataset.panel = active.dataset.mpanel;
+      active.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+    }
+  }
+
+  function organizeMenuTabs() {
+    const tabs = document.querySelector('#menuPanel .mp-tabs'); // Keeps all buttons as direct siblings for the controller's existing tab navigator.
+    if (!tabs) return;
+    const buttons = [...tabs.querySelectorAll('.mp-tab[data-mpanel]')]; // Existing DOM nodes preserve game-owned click handlers and state.
+    const order = Object.keys(MENU_PAGES); // Uses one ordering authority for static and late-inserted destinations.
+    const sorted = buttons.slice().sort((a, b) => {
+      return (order.indexOf(a.dataset.mpanel) < 0 ? order.length : order.indexOf(a.dataset.mpanel))
+        - (order.indexOf(b.dataset.mpanel) < 0 ? order.length : order.indexOf(b.dataset.mpanel));
+    }); // Unknown destinations retain their relative order at the end.
+    if (sorted.some((tab, index) => tab !== buttons[index])) sorted.forEach(tab => tabs.appendChild(tab));
+    let previous = null; // Marks each contiguous category boundary without adding extra controller stops.
+    for (const tab of sorted) {
+      const group = MENU_PAGES[tab.dataset.mpanel]?.[0] || 'Other'; // New destinations receive a neutral category.
+      if (group !== previous) {
+        if (tab.dataset.menuGroupStart !== group) tab.dataset.menuGroupStart = group;
+      } else if (tab.hasAttribute('data-menu-group-start')) tab.removeAttribute('data-menu-group-start');
+      previous = group;
+    }
+    if (!menuContext) {
+      menuContext = document.createElement('div');
+      menuContext.className = 'menu-page-context';
+      menuContext.innerHTML = '<strong></strong><p></p>';
+      tabs.closest('.mp-header').after(menuContext);
+    }
+    updateMenuContext();
+  }
+
   function installDynamicTabObserver() {
     if (menuTabsObserver || typeof MutationObserver !== 'function') return;
-    const tabs = document.querySelector('#menuPanel .mp-tabs'); // Used as the narrow parent watched for menu tabs added after startup.
+    const tabs = document.querySelector('#menuPanel .mp-tabs'); // Only destination insertion and active-class changes need observation.
     if (!tabs) return;
     menuTabsObserver = new MutationObserver(mutations => {
+      let added = false; // Reorganizes late destinations once; the stable-order check prevents observer feedback.
       for (const mutation of mutations) {
-        for (const node of mutation.addedNodes) {
+        for (const node of mutation.addedNodes || []) {
           if (!(node instanceof Element) || !node.matches(TAB_SELECTOR)) continue;
           if (transformTab(node)) debugState.dynamicTabTransforms += 1;
+          added = true;
         }
       }
-    }); // Used only for direct tab insertions; icon child rewrites do not retrigger it.
-    menuTabsObserver.observe(tabs, { childList: true });
+      if (added) organizeMenuTabs();
+      updateMenuContext();
+    });
+    menuTabsObserver.observe(tabs, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
   }
 
   function transformAll() {
     document.querySelectorAll(TAB_SELECTOR).forEach(transformTab);
+    organizeMenuTabs();
     applyWalletCurrencyIcon();
     applyHudCurrencyPresentation();
     installHudCurrencyRepair();
@@ -499,13 +594,15 @@
   function debugSnapshot() {
     const tabs = [...document.querySelectorAll(TAB_SELECTOR)]; // Used to inspect all icon-only tab state without devtools.
     return {
-      version: 9,
+      version: 10,
       transformed: debugState.transformed,
       lastPanel: debugState.lastPanel,
       dynamicTabTransforms: debugState.dynamicTabTransforms,
       dynamicTabObserverInstalled: Boolean(menuTabsObserver),
       totalTabs: tabs.length,
-      iconOnlyTabs: tabs.filter(tab => tab.dataset.menuTabIconOnly === '3').length,
+      labeledTabs: tabs.filter(tab => tab.querySelector('.menu-tab-label')).length,
+      location: menuContext?.querySelector('strong')?.textContent || '',
+      groups: tabs.filter(tab => tab.dataset.menuGroupStart).map(tab => tab.dataset.menuGroupStart),
       labels: Object.fromEntries(tabs.map(tab => [tab.dataset.mpanel || '', tab.getAttribute('aria-label') || ''])),
       customArtPanels: tabs.filter(tab => tab.querySelector('.menu-tab-art')).map(tab => tab.dataset.mpanel || ''),
       relationshipHeartGlowing: !!document.querySelector(`${TAB_SELECTOR}[data-mpanel="relationships"] .relationships-tab-heart`),
@@ -521,7 +618,7 @@
       currencyColor: CURRENCY_VERDIGRIS_COLOR,
       currencyGlowColor: CURRENCY_VERDIGRIS_GLOW,
       currencyOutlined: true,
-      latestChange: 'Shop wallets use Current bronze and share inventory verdigris amount styling.',
+      latestChange: 'Menu destinations now show names, purpose groups and a visible location with a plain-language explanation.',
       currencyIconScale: CURRENCY_ICON_SCALE,
       currencyIconAnchor: 'bottom-left',
     };
@@ -532,6 +629,6 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', transformAll, { once: true });
   else transformAll();
 
-  window.HobunjiMenuTabIcons = Object.freeze({ version: 9, refresh: transformAll, debugSnapshot });
+  window.HobunjiMenuTabIcons = Object.freeze({ version: 10, refresh: transformAll, debugSnapshot });
   window.__menuTabIconsDebug = debugSnapshot;
 })();

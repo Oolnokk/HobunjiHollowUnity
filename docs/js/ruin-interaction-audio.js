@@ -1,0 +1,132 @@
+// Shared recorded cues for stone interactions and fire ignition in ruins and Puzzle Caves.
+// Uses AudioSystem's object-SFX config instead of spawning raw Audio elements.
+// Sound-size references: authored 0.82-unit push block for activators; large ruin door for mechanisms.
+(function(root,factory){
+  const api=factory(root);
+  if(typeof module==='object'&&module.exports)module.exports=api;
+  else root.RuinInteractionAudio=api;
+})(typeof globalThis!=='undefined'?globalThis:this,function(root){
+  'use strict';
+  const REFERENCE_SPAN=Object.freeze({activator:.82,mechanism:4}); // World-space spans whose uploaded recordings play at original pitch.
+  const movement=new WeakMap(); // Per physical mechanism: previous progress/direction, to play once per motion or reversal.
+  const plateStates=new WeakMap(); // Per physical pressure plate: last pressed state, to suppress continuous audio.
+  const debug={lastCue:null,lastPitch:1,lastSpan:null,lastTempo:1,lastPitchMode:'neutral',plays:0,metronomeBeats:0,lastMetronomeDownbeat:false,metronomeSource:null,metronomePreloaded:null,metronomeReadyState:null,metronomeVolume:0,metronomeError:null}; // Mobile diagnostics prove which recorded pick cue was dispatched and whether its preload is ready. // Mobile-friendly pitch-versus-tempo playback diagnostics.
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  function spanFor(object,explicitSize){
+    const override=Number(explicitSize??object?.userData?.ruinSoundSize); // Optional authored physical dimension avoids using decorative parent meshes.
+    if(Number.isFinite(override)&&override>0)return override;
+    const T=root.THREE;
+    if(object?.isObject3D&&T?.Box3&&T?.Vector3){
+      try{
+        const box=new T.Box3().setFromObject(object);
+        if(!box.isEmpty()){
+          const size=box.getSize(new T.Vector3());
+          const extent=Math.max(size.x,size.y,size.z);
+          if(Number.isFinite(extent)&&extent>.01)return extent;
+        }
+      }catch(_){} // A partially loaded visual should still play its neutral-size cue.
+    }
+    const scale=object?.scale;
+    const extent=Math.max(Number(scale?.x)||0,Number(scale?.y)||0,Number(scale?.z)||0);
+    return extent>.01?extent:null;
+  }
+  function pitchFor(kind,object,options={}){
+    if(kind!=='activator'&&kind!=='mechanism')return 1;
+    const span=spanFor(object,options.size);
+    if(!span)return 1; // Missing geometry never invents object size.
+    return clamp(Math.pow(REFERENCE_SPAN[kind]/span,.30),.67,1.6);
+  }
+  function play(key,pitch=1,span=null){
+    const audio=root.AudioSystem;
+    if(typeof audio?.playObjectSfxKey!=='function')return false;
+    const stone=key==='stoneActivator'||key==='stoneMechanism'; // Only these size-based cues require independent pitch at original duration.
+    if(stone&&typeof audio.playObjectSfxKeyIndependentPitch==='function'){
+      if(!audio.playObjectSfxKeyIndependentPitch(key,pitch))return false;
+    }else{
+      audio.playObjectSfxKey(key,1,1); // Legacy/ignition fallback stays at normal speed, never size-scaled playbackRate.
+    }
+    debug.lastCue=key;debug.lastPitch=pitch;debug.lastSpan=span;debug.lastTempo=1;
+    debug.lastPitchMode=stone?(audio.objectSfxDebugSnapshot?.()?.last?.pitchMode||'neutral'):'neutral';
+    debug.plays++;
+    return true;
+  }
+  function activator(object=null,options={}){
+    return play('stoneActivator',pitchFor('activator',object,options),spanFor(object,options.size));
+  }
+  function mechanism(object=null,options={}){
+    try{root.GameFeel?.mechanismMoved?.(object,options);}catch(_){} // Moving stone rumbles the camera and, right after a solve, earns the reveal shot.
+    return play('stoneMechanism',pitchFor('mechanism',object,options),spanFor(object,options.size));
+  }
+  function progress(step,total){ // Partial success on a multi-part puzzle: rising bell rung (the final step plays puzzleComplete instead).
+    try{return !!root.GameFeel?.progressNote?.(step,total);}catch(_){return false;}
+  }
+  let lastPuzzleCompleteAt=-Infinity;
+  function puzzleComplete(){
+    const now=Number(root.performance?.now?.()??Date.now());
+    if(now-lastPuzzleCompleteAt<500)return true; // One solve reported by both a nested puzzle and its chamber plays once.
+    lastPuzzleCompleteAt=now;
+    try{root.GameFeel?.puzzleSolved?.();}catch(_){} // Original bell motif + reveal window for the mechanism this solve sets moving.
+    root.AudioSystem?.playObjectSfxKey?.('puzzleComplete');
+    debug.lastCue='puzzleComplete';debug.plays++;
+    return true;
+  }
+  function igniteTorch(){return play('igniteLarge');}
+  function igniteAmmo(){return play('igniteSmall');}
+  function metronomeTick({downbeat=false,beatIndex=0}={}){
+    const audio=root.AudioSystem; // Uses the same genuine preloaded pick-strike recording as mining, at unchanged pitch and duration.
+    const configuration=audio?.objectSfxConfig?.();
+    const clip=configuration?.pick;
+    if((typeof audio?.playObjectSfxKey!=='function'&&typeof audio?.playObjectSfxKeyMetronome!=='function')||
+      configuration&&(!clip?.url||configuration.enabled===false)){
+      debug.metronomeError=!audio?'AudioSystem unavailable':'Recorded pick SFX missing or disabled';
+      return false;
+    }
+    const volume=downbeat?.72:.54; // Distinct first beat, with enough volume to hear quarter-note timing over cave ambience.
+    const shortCue=typeof audio.playObjectSfxKeyMetronome==='function';
+    const played=shortCue?audio.playObjectSfxKeyMetronome(volume):
+      (audio.playObjectSfxKey('pick',volume,1),true); // Headless/legacy adapter retains the same recorded pick key.
+    if(played===false){debug.metronomeError='Recorded pick unavailable or audio muted';return false;}
+    const playback=audio.objectSfxDebugSnapshot?.()?.last; // Pixel Probe exposes the trimmed single-voice click and recording readiness.
+    debug.metronomeSource=clip?.url||playback?.url||'pick';
+    debug.metronomePreloaded=playback?.preloaded??null;
+    debug.metronomeReadyState=playback?.readyState??null;
+    debug.metronomeVolume=volume;
+    debug.metronomeShortVoice=shortCue;debug.metronomeMaxDurationSec=playback?.maxDurationSec??null;
+    debug.metronomeError=playback?.found===false?'AudioSystem did not resolve recorded pick SFX':null;
+    debug.lastCue='pick';debug.lastPitch=1;debug.lastSpan=null;debug.lastTempo=1;
+    debug.metronomeBeats++;debug.lastMetronomeDownbeat=!!downbeat;debug.lastMetronomeBeatIndex=beatIndex;debug.plays++;
+    return !debug.metronomeError;
+  }
+  function watchMovement(object,progress,options={}){
+    if(!object||!Number.isFinite(progress))return false;
+    const previous=movement.get(object);
+    const now=Number(root.performance?.now?.()??Date.now()); // Used for an idle timeout rather than resetting on duplicate same-frame progress reads.
+    if(!previous){
+      movement.set(object,{progress,direction:0,initialMotion:!options.silent&&progress>.001&&progress<.999,lastMoveAt:now}); // The first mid-motion sample is audible; learn its direction without double-playing next frame.
+      if(options.silent||progress<=.001||progress>=.999)return false;
+      return mechanism(object,options); // A first sampled in-progress animation is a genuine move, not a restored end pose.
+    }
+    const delta=progress-previous.progress; // Progress is signed, so reversing a sliding door plays again.
+    previous.progress=progress;
+    if(Math.abs(delta)<.001){
+      if(now-previous.lastMoveAt>150)previous.direction=0; // performance.now() is milliseconds: only a genuinely idle 150 ms resets the direction.
+      return false;
+    }
+    previous.lastMoveAt=now;
+    const direction=Math.sign(delta);
+    if(previous.initialMotion){previous.initialMotion=false;previous.direction=direction;return false;} // First measured direction belongs to the already-audible initial movement.
+    if(previous.direction===direction)return false;
+    previous.direction=direction;
+    return mechanism(object,options);
+  }
+  function watchPlate(object,pressed,options={}){
+    if(!object)return false;
+    const next=!!pressed,previous=plateStates.get(object);
+    if(previous===next)return false;
+    plateStates.set(object,next);
+    if(options.silent||previous===undefined&&!next)return false; // An initial unpressed plate is silent.
+    return activator(object,options); // A newly seated or released stone plate clicks only on its state edge.
+  }
+  return Object.freeze({pitchFor,spanFor,activator,mechanism,puzzleComplete,progress,igniteTorch,igniteAmmo,metronomeTick,watchMovement,watchPlate,
+    debugSnapshot:()=>({...debug,trackedMotion:'per-object',trackedPlates:'per-object'})});
+});

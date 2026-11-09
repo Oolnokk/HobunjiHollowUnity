@@ -90,7 +90,7 @@ assert.equal(game.grips.currentDualWieldAnimationState().influence, 0);
   const pending = new Map(), installed = [], disposed = [];
   let toolChanges = 0;
   const scope = { window: { HobunjiDualWieldWeaponVisuals: { teardown() {} }, HobunjiHandToolGrips: { editorToolChanged() { toolChanges++; } } },
-    toolPlaneMesh: null, currentToolKey: '', toolHolder: { add: mesh => installed.push(mesh), remove() {} },
+    toolPlaneMesh: null, currentToolKey: '', syncGripAxisMarkers() {}, toolHolder: { add: mesh => installed.push(mesh), remove() {} },
     buildToolPlaneMesh: key => new Promise(resolve => pending.set(key, resolve)), disposeToolPlaneMesh: mesh => disposed.push(mesh), logDebug() {} };
   vm.createContext(scope);
   vm.runInContext(html.slice(start, end) + '\nthis.swap = setToolSprite;', scope);
@@ -127,6 +127,7 @@ for (const key of ['dagger', 'kylie', 'daggersword-nativecopper', 'warCleaver', 
 assert.equal(selectStance('weapon', 'hatchet', {}), lightPose);
 // A stale holder/plane matrix used to make idle placement depend on the last render.
 // Run the production sync ordering with a matrix owner that marks its bake.
+assert.match(visualSource, /function syncAssemblyLayers\(/, 'the shared flail/layer duplicate renderer remains installed');
 const syncStart = visualSource.indexOf('  function syncNow(');
 const syncEnd = visualSource.indexOf('  function transformSocketForHand(', syncStart);
 for (const editor of [true, false]) {
@@ -139,8 +140,8 @@ for (const editor of [true, false]) {
   const context = { visual: {}, plane, holder };
   const current = { ...context, mainRoot: root(), offRoot: root() };
   const sync = vm.runInNewContext(`(${visualSource.slice(syncStart, syncEnd).trim()})`, {
-    state: current, currentContext: () => context, currentDualState: () => ({ influence: 1, idleBlend: 1 }), ACTIVE_EPSILON: 0.0001,
-    inAttackEditor: () => editor, clamp01: value => value, hideOriginalMaterial() {},
+    states: new Map([['player', current]]), PLAYER_KEY: 'player', keyFor: () => 'player', teardown() {}, buildState() { throw new Error('the player state already exists'); }, editorOffhandAuthoring: false, currentContext: () => context, currentDualState: () => ({ influence: 1, idleBlend: 1 }), ACTIVE_EPSILON: 0.0001,
+    inAttackEditor: () => editor, clamp01: value => value, hideOriginalMaterial() {}, syncAssemblyLayers() {}, // Only stance order is under test; layered sprite copies need real meshes.
     idleOffhandLocalTransform() {
       assert.equal(operations[0], editor ? 'editor-bake' : 'game-bake', 'source matrices must be baked before calculating the offhand idle pose');
       operations.push('idle-pose'); return { position: new Vector(), quaternion: new Quaternion() };
@@ -150,6 +151,29 @@ for (const editor of [true, false]) {
   });
   sync();
   assert.deepEqual(operations, [editor ? 'editor-bake' : 'game-bake', 'idle-pose', 'main-pose', 'root-world', 'root-world']);
+}
+// Authoring the offhand idle stance in the editor: the holder IS the offhand weapon, so the offhand copy is not derived
+// from it any more; the main-hand copy is derived from the holder instead (roles swapped), with no attack lag.
+{
+  const operations = [];
+  class Vector { clone() { return new Vector(); } copy() { return this; } set() { return this; } multiplyScalar() { return this; } }
+  class Quaternion { identity() { return this; } slerp() { return this; } }
+  const root = () => ({ updateMatrixWorld() {} });
+  const plane = { position: new Vector(), quaternion: new Quaternion(), updateWorldMatrix() {} };
+  const context = { visual: {}, plane, holder: {} };
+  const current = { ...context, mainRoot: root(), offRoot: root() };
+  const poses = { main: { id: 'main' }, offhand: { id: 'offhand' } };
+  const sync = vm.runInNewContext(`(${visualSource.slice(syncStart, syncEnd).trim()})`, {
+    states: new Map([['player', current]]), PLAYER_KEY: 'player', keyFor: () => 'player', teardown() {}, buildState() { throw new Error('the player state already exists'); }, editorOffhandAuthoring: true, currentContext: () => context, currentDualState: () => ({ influence: 1, idleBlend: 1 }), ACTIVE_EPSILON: 0.0001,
+    inAttackEditor: () => true, clamp01: value => value, hideOriginalMaterial() {}, syncAssemblyLayers() {}, // The authored offhand pose is independent of sprite-copy synchronization.
+    idleOffhandLocalTransform() { operations.push('offhand-derived-from-holder'); return { position: new Vector(), quaternion: new Quaternion() }; },
+    idleStancePoses: () => poses,
+    idleCounterpartTransform(_current, source, derived) { operations.push(`${derived.id}-derived-from-${source.id}`); return { position: new Vector(), quaternion: new Quaternion() }; },
+    setRootToward() {}, applyMainLag() { operations.push('main-lag'); },
+    frameScratch: () => ({ offTargetPosition: new Vector(), offTargetQuaternion: new Quaternion() }),
+  });
+  sync();
+  assert.deepEqual(operations, ['main-derived-from-offhand'], 'offhand authoring moves the offhand weapon directly and derives main from the saved stance');
 }
 // Independent flags select behavior by weapon without rewriting the authored animation.
 const bothFlags = {
@@ -226,7 +250,10 @@ function assertAuthoredFlags(poses, name) {
     assert.equal(poses[phase].secondaryGrip.enabled, phase !== 'neutral', `${name}/${phase} explicitly authors 2H only on Windup/Strike`);
   }
 }
-for (const [path, constant] of [['docs/js/combat/combat-combo.js', 'SWEEP_POSE'], ['docs/js/combat/combat-counter-shield.js', 'BLOCK_POSE']]) {
+const templateWindow = {}; // Attack templates shared by the game and the attack-animation editor.
+vm.runInNewContext(fs.readFileSync('docs/js/combat/attack-pose-templates.js', 'utf8'), { window: templateWindow, JSON });
+for (const [id, template] of Object.entries(templateWindow.AttackPoseTemplates.TEMPLATES)) assertAuthoredFlags(template, id);
+for (const [path, constant] of [['docs/js/combat/combat-counter-shield.js', 'BLOCK_POSE']]) {
   const source = fs.readFileSync(path, 'utf8');
   const start = source.indexOf(`  const ${constant} = `), end = source.indexOf('\n  };', start) + '\n  };'.length;
   const poses = vm.runInNewContext(source.slice(start, end) + `\n${constant}`);
@@ -242,6 +269,7 @@ const html = fs.readFileSync('docs/tools/attack-animation-editor/index.html', 'u
 const presetStart = html.indexOf('const TOOL_PRESETS = ['), presetEnd = html.indexOf('\n];', presetStart) + '\n];'.length;
 const presets = vm.runInNewContext(html.slice(presetStart, presetEnd) + '\nTOOL_PRESETS;', {
   window: {}, defaultPose: () => ({}), neutralPoseFor: () => ({}),
+  sharedAttackPoses: id => templateWindow.AttackPoseTemplates.poseFor(id),
 });
 const meleePresets = presets.filter(preset => preset.id.endsWith('_swing'));
 assert.equal(meleePresets.length, 5);

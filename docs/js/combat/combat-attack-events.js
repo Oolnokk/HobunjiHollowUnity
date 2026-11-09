@@ -105,7 +105,8 @@
   }
 
   function prepare(input = {}) {
-    return notify('prepare', makeContext(input));
+    const context = makeContext(input); // Shared offensive multipliers apply before enchantment prepare listeners.
+    return notify('prepare', window.WeaponShapeStats?.applyPower?.(context) || context);
   }
 
   function hit(baseContext, patch = {}) {

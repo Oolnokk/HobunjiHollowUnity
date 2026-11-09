@@ -85,10 +85,14 @@ run('docs/config/romance-config.js');
 run('docs/js/npc-scheduling.js');
 run('docs/js/npc-social-relationship-bridge-v2.js');
 run('docs/js/romance-family.js');
+run('docs/js/npc-following.js');
 run('docs/js/romance-system.js');
 run('docs/js/npc-command-wheel.js');
 
 const W = windowStub;
+W.SCRATCHBONES_CONFIG.game.socialRelationships.relationships = []; // Live relation graph for newly born village children.
+const socialReplies=[]; // Acceptance and refusal must use ordinary ambient chatheads without changing date eligibility.
+W.AmbientDialogue={showSocialResponse:(walker,response)=>socialReplies.push({id:walker.rec.id,...response})};
 assert.ok(W.HobunjiActivityEvents && W.RomanceSystem && W.RomanceFamily && W.NpcCommandWheel && W.NpcRapport?.adjustRomance, 'all modules install');
 
 // ── Romance pool + midnight conversion ──────────────────────────────────
@@ -120,6 +124,7 @@ const plain = makeWalker({ id: 'kzubug', name: 'Kzubug', relationship: { canDate
 npcWalkers.push(tooth, hunundi, plain);
 const player = { x: 21.5, z: 20.5, area: 'town' };
 const opened = [];
+let combatOn = false; // A live combat gate for Talk/Commands claims and active wheel cancellation.
 const toasts = [];
 let nearby = tooth;
 const interior = [{ id: 'bed1', key: 'doubleBed', area: 'interior', col: 4, row: 4, rotYDeg: 0 }];
@@ -150,12 +155,15 @@ const choose = (stepIndex, choiceIndex) => W.DialogueContent.handlers.romance({ 
 // ── Asking out ──────────────────────────────────────────────────────────
 relState('tooth_hatayap').favor = 40; // 1 heart: not enough
 assert.equal(W.RomanceSystem.askEligibility('tooth_hatayap').reason, 'hearts');
+assert.equal(W.RomanceSystem.askOnDate(tooth),false);
+assert.equal(socialReplies.at(-1).accepted,false,'date refusal appears as ambient speech');
 relState('tooth_hatayap').favor = 120; // 3 hearts
 assert.equal(W.RomanceSystem.askEligibility('tooth_hatayap').ok, true);
 assert.equal(W.RomanceSystem.askEligibility('kzubug').ok, false, 'non-romanceable NPCs cannot be asked out');
 W.RomanceSystem.askOnDate(tooth);
 assert.equal(opened.at(-1).node.type, 'choice', 'asking out opens a synthetic dialogue choice');
 choose(0, 0); // "Follow me."
+assert.equal(socialReplies.at(-1).accepted,true,'confirmed date acceptance appears as ambient speech');
 assert.equal(W.RomanceSystem.activeDate()?.npcId, 'tooth_hatayap', 'accepting starts the date');
 assert.equal(W.RomanceSystem.dateHoursLeft(), 4, 'dates last the configured in-game hours');
 
@@ -183,6 +191,20 @@ clock.hour += 0.2;
 W.HobunjiActivityEvents.emit('creature_killed', { isBarbarian: false });
 assert.equal(romance(), 30, 'the date must be close enough to notice');
 player.x = 21.5;
+
+// Real deaths go through emitCreatureKilled: only the player's own kills are
+// announced, and a barbarian that was hostile and attacked first is self-defense.
+W.PlayerDowned = { isTeamKill: c => c.playerKill === true };
+W.PorakanekiFactionRules = { killedInSelfDefense: c => c.hostileFirst === true };
+clock.hour += 0.2;
+assert.equal(W.HobunjiActivityEvents.emitCreatureKilled({ isTribeHunter: true, isBandit: true, playerKill: false }), false, 'an NPC battle nearby is not announced as the player\'s kill');
+assert.equal(romance(), 30, 'barbarians killing each other near a date cost nothing');
+W.HobunjiActivityEvents.emitCreatureKilled({ isTribeHunter: true, isBandit: true, playerKill: true, hostileFirst: true });
+assert.equal(romance(), 30, 'killing a barbarian that attacked first is neither a loss nor a bandit-kill like');
+W.HobunjiActivityEvents.emitCreatureKilled({ isTribeHunter: true, isBandit: true, playerKill: true });
+assert.equal(romance(), 10, 'killing a barbarian unprovoked is still a loss');
+delete W.PlayerDowned;
+delete W.PorakanekiFactionRules;
 
 // ── Follow / wait ───────────────────────────────────────────────────────
 let target = W.RomanceSystem._test.scheduleOverride(tooth.rec);
@@ -259,10 +281,32 @@ clock.hour = 23;
 target = W.RomanceSystem._test.scheduleOverride(tooth.rec);
 assert.equal(target.area, 'interior');
 assert.equal(target.activity, 'sleeping', 'the spouse sleeps in the farmhouse bed');
+assert.equal(target.pose, 'lie', 'the real spouse schedule requests the lie-down presentation');
+assert.equal(target.bedCenter, true, 'spouse sleep is anchored to the bed center, not the adjacent navigation tile');
+assert.equal(target.furnitureId, 'bed1', 'spouse sleep resolves the exact placed bed instance');
 W.NpcScheduling.registerNpcStations([{ id: 'chair_1', area: 'interior', c: 2, r: 2, pose: 'sit', furnitureKey: 'chairSimple', roles: ['sit'] }], 'interior');
 const daytime = new Set();
 for (let h = 7; h < 22; h += 0.5) { clock.hour = h; const t = W.RomanceSystem._test.scheduleOverride(tooth.rec); daytime.add(t ? t.activity : 'town'); }
 assert.ok(daytime.has('relaxing at home'), 'the spouse sits in the farmhouse chairs during the day');
+const townCfg = W.SCRATCHBONES_CONFIG.game.romance.spouse.townAfternoon;
+const oldTownMod = townCfg.daysOfWeekMod;
+townCfg.daysOfWeekMod = 1; // Force a scheduled town day and check farming cannot override it.
+clock.hour = 14;
+assert.equal(W.RomanceSystem.spouseTownVisitNow('tooth_hatayap'), true, 'shared town visit eligibility is available to the Ginju work planner');
+const plotTarget = { area: 'farm', c: 12, r: 14, activity: 'tilling family plot' };
+let plotLookups = 0;
+W.NpcFarmPlots = { targetFor(_rec, options) { plotLookups++; assert.equal(options?.familyOnly, true); return plotTarget; } };
+assert.equal(W.RomanceSystem._test.scheduleOverride(tooth.rec), null, 'authored town visits beat assigned family plot jobs');
+assert.equal(plotLookups, 0, 'farmwork not consulted on town-visit afternoons');
+clock.hour = 11;
+assert.equal(W.RomanceSystem.spouseTownVisitNow('tooth_hatayap'), false);
+assert.equal(W.RomanceSystem._test.scheduleOverride(tooth.rec)?.activity, plotTarget.activity, 'morning assigned chores beat idle farm routines');
+clock.hour = 23;
+assert.equal(W.RomanceSystem.spouseTownVisitNow('tooth_hatayap'), false);
+assert.equal(W.RomanceSystem._test.scheduleOverride(tooth.rec)?.activity, 'sleeping', 'bedtime beats assigned family plot jobs');
+delete W.NpcFarmPlots;
+townCfg.daysOfWeekMod = oldTownMod;
+
 
 // ── Family ──────────────────────────────────────────────────────────────
 const fam = W.RomanceFamily._test;
@@ -279,6 +323,8 @@ for (const channel of ['A', 'B', 'C']) assert.ok(Math.abs(mixed[channel].h) <= 6
 
 const child = W.RomanceFamily.createChild({ name: 'Pip', speciesId: 'engh-sho', gender: 'female', bodyColors: mixed, origin: 'birth', otherParentId: 'tooth_hatayap' });
 assert.equal(child.basketId, 'basket1', 'newborns get a baby basket in the house');
+assert.ok(W.SCRATCHBONES_CONFIG.game.socialRelationships.relationships.some(link =>
+  link.type === 'friend' && link.members.includes(child.id) && link.members.includes('gantami_ginju')), 'family child joins Gantami friendship network');
 assert.equal(fam.phaseOf(child), 'basket');
 assert.equal(fam.childTarget(child).activity, 'napping in the basket');
 let childRec = fam.childRecord(child);
@@ -298,9 +344,43 @@ assert.equal(childRec.childBodyScale, undefined, 'grown children use the shared 
 assert.equal(fam.toddlingFooting(child), 0);
 clock.hour = 12;
 assert.equal(fam.childTarget(child).area, 'farm', 'grown children leave the house during the day');
+assert.ok(childRec.tags.includes('villager'), 'grown children participate in villager social schedules');
+const townRules = W.SCRATCHBONES_CONFIG.game.romance.family.childTown; // Force deterministic town social tests without relying on day hashes.
+townRules.visitPercent = 100;
+townRules.peerMeetPercent = 100;
+const gantami = makeWalker({ id: 'gantami_ginju', name: 'Gantami Ginju', isChild: true }, 'town', 14.5, 18.5);
+npcWalkers.push(gantami);
+const townTarget = fam.childTarget(child);
+assert.equal(townTarget.area, 'town', 'grown children spend some afternoons in town');
+assert.match(townTarget.activity, /Gantami/, 'a present Gantami is the preferred town playmate');
+child.vatId = 'pending-vat-job';
+assert.equal(fam.childTarget(child).area, 'farm', 'vat assignments prevent unsupervised town trips');
+child.vatId = null;
+townRules.visitPercent = 0; // Restore farm behavior for the rest of the test.
+
+const priorPlan = fam.getFamily().pregnancy; // Save the old biological plan while exercising adoption deferrals.
+const dream = { spouseId: 'tooth_hatayap', kind: 'adoption', dueRawDay: clock.rawDay, announced: true, born: false };
+fam.getFamily().pregnancy = dream;
+const oldArea = player.area;
+player.area = 'interior';
+assert.equal(fam.postponeDream(1), true);
+assert.equal(dream.nextDreamRawDay, clock.rawDay + 1, 'one-day postponement persists as an absolute game day');
+let beforeDreamTimers = timeouts.length;
+W.dispatchEvent(new context.CustomEvent('hobunji-time-passage', { detail: { kind: 'sleep' } }));
+assert.equal(timeouts.length, beforeDreamTimers, 'postponed dream does not immediately reappear on sleep');
+clock.rawDay += 1;
+W.dispatchEvent(new context.CustomEvent('hobunji-time-passage', { detail: { kind: 'sleep' } }));
+assert.equal(timeouts.length, beforeDreamTimers + 1, 'dream is offered after the postponed day and a farmhouse sleep');
+assert.equal(dream.born, false, 'the dream cannot mark an adoption complete before character creation');
+assert.equal(fam.postponeDream(14), true);
+assert.equal(dream.nextDreamRawDay, clock.rawDay + 14, 'two-week postponement uses fourteen game days');
+assert.equal(fam.postponeDream(28), true);
+assert.equal(dream.nextDreamRawDay, clock.rawDay + 28, 'one-month postponement uses the 28-day calendar');
+fam.getFamily().pregnancy = priorPlan;
+player.area = oldArea;
 
 // ── Hold-Action-1 wheel claim ───────────────────────────────────────────
-W.NpcCommandWheel.init({ getNearbyNpcWalker: () => nearby, isDialogueOpen: () => false, isMenuOpen: () => false, isFarmEditMode: () => false, openNpcDialogue: walker => opened.push({ walker, node: null, tap: true }) });
+W.NpcCommandWheel.init({ getNearbyNpcWalker: () => nearby, isCombatActive: () => combatOn, isDialogueOpen: () => false, isMenuOpen: () => false, isFarmEditMode: () => false, openNpcDialogue: walker => opened.push({ walker, node: null, tap: true }) });
 W.NpcCommandWheel._test.syncClaims();
 assert.equal(W.WorldActionInputClaims.claimFor('action1')?.ownerId, 'npc-command-wheel', 'facing a romanceable NPC claims Action 1');
 const before = opened.length;
@@ -321,7 +401,20 @@ W.NpcCommandWheel.commit();
 assert.equal(W.NpcCommandWheel.isOpen(), false);
 nearby = plain;
 W.NpcCommandWheel._test.syncClaims();
-assert.equal(W.WorldActionInputClaims.claimFor('action1'), null, 'NPCs with no commands leave Action 1 unclaimed');
+assert.equal(W.WorldActionInputClaims.claimFor('action1')?.ownerId, 'npc-command-wheel', 'friendly nonromance NPCs now offer ordinary Follow commands');
+assert(W.NpcCommandWheel.optionsFor(plain).some(option=>option.id==='follow'));
+nearby=null;W.NpcCommandWheel._test.syncClaims();
+assert.equal(W.WorldActionInputClaims.claimFor('action1'),null,'looking away releases the Talk input claim');
+nearby = plain;
+W.NpcCommandWheel._test.syncClaims();
+assert.equal(W.WorldActionInputClaims.claimFor('action1')?.ownerId, 'npc-command-wheel');
+combatOn = true;
+W.NpcCommandWheel._test.syncClaims();
+assert.equal(W.WorldActionInputClaims.claimFor('action1'), null, 'combat cancels claims for all NPC social commands');
+assert.equal(W.NpcCommandWheel.open(plain), false, 'Follow/Wait and other commands cannot open in combat');
+combatOn = false;
+nearby = null;
+W.NpcCommandWheel._test.syncClaims();
 
 // ── Save round-trip ─────────────────────────────────────────────────────
 const saved = JSON.parse(JSON.stringify(W.RomanceSystem.serialize()));

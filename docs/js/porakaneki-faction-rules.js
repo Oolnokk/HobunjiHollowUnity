@@ -1,7 +1,6 @@
 (() => {
   'use strict';
 
-  const CONFIG_URL = 'config/porakaneki-camp.json'; // Used to keep kill/reputation tuning beside the existing Porakaneki settings.
   const PORAKANEKI_CHIEF_ID = 'porakaneki_chief'; // Used for Porakaneki-side kill penalties.
   const LEGACY_OMGURKU_CHIEF_ID = 'baruhi_chief'; // Used only to migrate old saves after the faction rename.
   const OMGURKU_CHIEF_ID = 'omgurku_chief'; // Used for the rival-faction reward on every player-attributed Porakaneki kill.
@@ -12,12 +11,16 @@
   const countedDeaths = new WeakSet(); // Used to prevent duplicate reputation changes for one dead hunter.
   const recentEvents = []; // Used by the mobile-friendly copyable debug snapshot.
 
-  let tuning = {
-    selfDefenseKillPenalty: -1,
-    murderKillPenalty: -3,
-    rivalNpcId: OMGURKU_CHIEF_ID,
-    rivalKillFavor: 1,
-  }; // Replaced from porakaneki-camp.json when available.
+  // Both camp tribes follow the same rules: killing one of a tribe's hunters
+  // costs that tribe's chief Favor (less in self-defense) and earns the rival
+  // chief's Favor. Tuning is replaced from each tribe's camp config.
+  const TRIBES = [
+    { id: 'porakaneki', label: 'Porakaneki', chiefId: PORAKANEKI_CHIEF_ID, configUrl: 'config/porakaneki-camp.json', camps: () => window.PorakanekiCamps,
+      tuning: { selfDefenseKillPenalty: -1, murderKillPenalty: -3, rivalNpcId: OMGURKU_CHIEF_ID, rivalKillFavor: 1 } },
+    { id: 'omgurku', label: 'Omgurku', chiefId: OMGURKU_CHIEF_ID, configUrl: 'config/omgurku-camp.json', camps: () => window.OmgurkuCamps,
+      tuning: { selfDefenseKillPenalty: -1, murderKillPenalty: -3, rivalNpcId: PORAKANEKI_CHIEF_ID, rivalKillFavor: 1 } },
+  ];
+  const labelForChief = npcId => TRIBES.find(tribe => tribe.chiefId === npcId)?.label || npcId;
   let banditRulesInstalled = false; // Used by the dependency retry loop below.
   let combatGuardInstalled = false; // Used by the dependency retry loop below.
   let animalAttackGuardInstalled = false; // Used to reject neutral Porakaneki before a companion named attack begins and to identify synchronous companion attack effects.
@@ -52,6 +55,7 @@
     if (!value || typeof value !== 'object' || seen.has(value)) return value;
     seen.add(value);
     if (value.id === PORAKANEKI_CHIEF_ID) value.name = 'Chief Nakaraka of the Pakapohi Porakaneki'; // Keeps locally saved NPC database overrides aligned with the authored chief name.
+    if (value.id === OMGURKU_CHIEF_ID || value.id === LEGACY_OMGURKU_CHIEF_ID) value.name = 'Chief Unek-tai of the Hrekemgi Omgurku'; // Same for the rival chief, including saves still keyed by the legacy id.
     if (Array.isArray(value)) {
       for (let i = 0; i < value.length; i++) value[i] = canonicalizeNpcDatabaseInPlace(value[i], seen);
       return value;
@@ -152,25 +156,36 @@
     const next = clamp(current + Number(amount), FAVOR_MIN, FAVOR_MAX);
     const applied = Math.round((next - current) * 10) / 10;
     if (!applied) return 0;
-    state.favor = next;
+    if (typeof window.DialogueContent?.adjustNpcFavor === 'function') {
+      return window.DialogueContent.adjustNpcFavor(npcId, applied, reason); // Combat-caused tribal standing passes through the same canonical faction-rank/Favor path.
+    }
+    state.favor = next; // Legacy fallback for isolated combat/tests without a loaded relationship authority.
     window.DialogueContent?.recordNpcMemory?.(npcId, reason);
     window.WorldPopupText?.queueReward?.('favor', `${applied > 0 ? '+' : '-'}${Math.abs(applied)} ${label} Favor`);
     return applied;
   }
 
-  function porakanekiEntities() {
+  function tribeOf(entity) {
+    if (entity?.isTribeHunter === true) return String(entity.tribeId || '');
+    return entity?.isPorakanekiHunter === true ? 'porakaneki' : '';
+  } // Older Porakaneki-only spawns carry just isPorakanekiHunter.
+  function tribeEntities(tribeId) {
     const hostiles = window.Combat?.deps?.hostileObjects;
-    return hostiles ? [...hostiles].filter(entity => entity?.isPorakanekiHunter === true) : [];
+    return hostiles ? [...hostiles].filter(entity => tribeOf(entity) === tribeId) : [];
+  }
+  function allTribeEntities() {
+    const hostiles = window.Combat?.deps?.hostileObjects;
+    return hostiles ? [...hostiles].filter(entity => !!tribeOf(entity)) : [];
   }
 
   const campIdFor = entity => String(entity?.porakanekiCampId || entity?.id || 'unknown');
 
   function isNeutralPorakaneki(entity) {
-    return entity?.isPorakanekiHunter === true && entity?._porakanekiPlannerControlled === true;
-  }
+    return !!tribeOf(entity) && entity?._porakanekiPlannerControlled === true;
+  } // Any neutral tribe-camp hunter (the planner flag keeps its Porakaneki-era name for both tribes).
 
   function sharedEnemyNearby(entity) {
-    return window.PorakanekiCamps?.hasSharedEnemyNearby?.(entity) === true;
+    return (window.TribeCamps || window.PorakanekiCamps)?.hasSharedEnemyNearby?.(entity) === true;
   } // Same exact active-stream-chunk scope as the faction ecology runtime.
   function markPlayerAggression(entity, source = 'player hit') {
     if (!isNeutralPorakaneki(entity)) return false;
@@ -184,6 +199,15 @@
       record(`${campId}: player initiated combat (${source})`);
     }
     return true;
+  }
+
+  // A tribe hunter that was already hostile to the player when it died, in a
+  // fight the player did not start (attack-on-sight or the tribe's own
+  // aggression), was killed in self-defense. Read at the moment of death by
+  // HobunjiActivityEvents.emitCreatureKilled so dates don't hold it against you.
+  function killedInSelfDefense(entity) {
+    if (!tribeOf(entity) || entity._porakanekiPlannerControlled === true) return false; // Still neutral: the player picked this fight.
+    return campAggressionOrigin.get(campIdFor(entity)) !== 'player';
   }
 
   function syncCompanionTargetability(entity) {
@@ -317,7 +341,8 @@
     return true;
   }
 
-  function classifyCampOrigins(entities, attackOnSight) {
+  // Origin 'porakaneki' means "the hunters' own tribe started it" for either tribe.
+  function classifyCampOrigins(entities, attackOnSight, tribe = TRIBES[0]) {
     const liveByCamp = new Map(); // Used to clear stale origin state after the whole camp returns to neutral.
 
     for (const entity of entities) {
@@ -328,10 +353,10 @@
       const previous = priorEntityState.get(entity);
       if (previous && previous.plannerControlled === true && entity._porakanekiPlannerControlled !== true && !campAggressionOrigin.has(campId)) {
         campAggressionOrigin.set(campId, 'porakaneki');
-        record(`${campId}: Porakaneki initiated combat`);
+        record(`${campId}: ${tribe.label} initiated combat`);
       } else if (!previous && entity._porakanekiPlannerControlled !== true && attackOnSight && !campAggressionOrigin.has(campId)) {
         campAggressionOrigin.set(campId, 'porakaneki');
-        record(`${campId}: Porakaneki attack-on-sight combat`);
+        record(`${campId}: ${tribe.label} attack-on-sight combat`);
       }
     }
     for (const [campId, members] of liveByCamp) {
@@ -339,7 +364,8 @@
     }
   }
 
-  function processDeaths(entities, favorBefore) {
+  function processDeaths(entities, favorBefore, tribe = TRIBES[0]) {
+    const tuning = tribe.tuning;
     const deaths = [];
     for (const entity of entities) {
       const previous = priorEntityState.get(entity);
@@ -347,26 +373,27 @@
       countedDeaths.add(entity);
       const campId = campIdFor(entity);
       if (sharedEnemyNearby(entity)) {
-        record(`${campId}: ignored Porakaneki death during shared-enemy crossfire`);
+        record(`${campId}: ignored ${tribe.label} death during shared-enemy crossfire`);
         continue;
       }
       const origin = campAggressionOrigin.get(campId);
       if (origin !== 'player' && origin !== 'porakaneki') {
-        record(`${campId}: ignored Porakaneki death with no player/Porakaneki combat origin`);
+        record(`${campId}: ignored ${tribe.label} death with no player/${tribe.label} combat origin`);
         continue;
       }
       deaths.push({ campId, selfDefense: origin === 'porakaneki' });
     }
     if (!deaths.length) return;
 
-    const desiredPorakanekiDelta = deaths.reduce((sum, death) => sum + (death.selfDefense ? tuning.selfDefenseKillPenalty : tuning.murderKillPenalty), 0);
-    const nativePorakanekiDelta = favorOf(PORAKANEKI_CHIEF_ID) - favorBefore;
-    const correction = desiredPorakanekiDelta - nativePorakanekiDelta;
-    if (correction) adjustFactionFavorExact(PORAKANEKI_CHIEF_ID, correction, 'porakaneki_kill_classification_correction', 'Porakaneki');
+    const desiredDelta = deaths.reduce((sum, death) => sum + (death.selfDefense ? tuning.selfDefenseKillPenalty : tuning.murderKillPenalty), 0);
+    const nativeDelta = favorOf(tribe.chiefId) - favorBefore;
+    const correction = desiredDelta - nativeDelta;
+    if (correction) adjustFactionFavorExact(tribe.chiefId, correction, `${tribe.id}_kill_classification_correction`, tribe.label);
 
+    const rivalLabel = labelForChief(tuning.rivalNpcId);
     for (const death of deaths) {
-      adjustFactionFavorExact(tuning.rivalNpcId, tuning.rivalKillFavor, `porakaneki_kill_${death.selfDefense ? 'self_defense' : 'murder'}`, 'Omgurku');
-      record(`${death.campId}: kill=${death.selfDefense ? 'self-defense' : 'murder'} Porakaneki=${death.selfDefense ? tuning.selfDefenseKillPenalty : tuning.murderKillPenalty} Omgurku=+${tuning.rivalKillFavor}`);
+      adjustFactionFavorExact(tuning.rivalNpcId, tuning.rivalKillFavor, `${tribe.id}_kill_${death.selfDefense ? 'self_defense' : 'murder'}`, rivalLabel);
+      record(`${death.campId}: kill=${death.selfDefense ? 'self-defense' : 'murder'} ${tribe.label}=${death.selfDefense ? tuning.selfDefenseKillPenalty : tuning.murderKillPenalty} ${rivalLabel}=+${tuning.rivalKillFavor}`);
     }
 
     const livingCampIds = new Set(entities.filter(entity => entity?.health > 0).map(campIdFor)); // Used to prevent a fully dead/despawned camp from leaking its old initiator into a later spawn.
@@ -387,14 +414,16 @@
     if (api.updateCampBanners.__porakanekiFactionRulesWrapped) { banditRulesInstalled = true; return true; }
     const updateCampBanners = api.updateCampBanners.bind(api); // Used as the existing Porakaneki/Bandit tick inside the reputation classifier wrapper.
     const wrapped = function porakanekiFactionRulesTick(dt, ...args) {
-      const favorBefore = favorOf(PORAKANEKI_CHIEF_ID);
+      const favorBefore = TRIBES.map(tribe => favorOf(tribe.chiefId));
       const result = updateCampBanners(dt, ...args);
-      const entities = porakanekiEntities();
-      const camps = window.PorakanekiCamps; // Per-frame tick: use the cheap accessor, not the full debug snapshot.
-      const attackOnSight = !!(camps?.attackOnSight ? camps.attackOnSight() : camps?.debugSnapshot?.().attackOnSight);
-      classifyCampOrigins(entities, attackOnSight);
-      processDeaths(entities, favorBefore);
-      refreshEntityState(entities);
+      TRIBES.forEach((tribe, index) => {
+        const entities = tribeEntities(tribe.id);
+        const camps = tribe.camps(); // Per-frame tick: use the cheap accessor, not the full debug snapshot.
+        const attackOnSight = !!(camps?.attackOnSight ? camps.attackOnSight() : camps?.debugSnapshot?.().attackOnSight);
+        classifyCampOrigins(entities, attackOnSight, tribe);
+        processDeaths(entities, favorBefore[index], tribe);
+      });
+      refreshEntityState(allTribeEntities());
       return result;
     };
     wrapped.__porakanekiFactionRulesWrapped = true;
@@ -404,12 +433,13 @@
     return true;
   }
 
-  async function loadTuning() {
+  async function loadTribeTuning(tribe) {
     try {
-      const response = await fetch(CONFIG_URL);
+      const response = await fetch(tribe.configUrl);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const reputation = (await response.json())?.reputation || {};
-      tuning = {
+      const tuning = tribe.tuning;
+      tribe.tuning = {
         selfDefenseKillPenalty: Number.isFinite(Number(reputation.selfDefenseKillPenalty))
           ? Number(reputation.selfDefenseKillPenalty)
           : (Number.isFinite(Number(reputation.killPenalty)) && Number(reputation.killPenalty) !== 0 ? Number(reputation.killPenalty) : tuning.selfDefenseKillPenalty),
@@ -417,8 +447,9 @@
         rivalNpcId: String(reputation.rivalNpcId || tuning.rivalNpcId),
         rivalKillFavor: Number.isFinite(Number(reputation.rivalKillFavor)) ? Number(reputation.rivalKillFavor) : tuning.rivalKillFavor,
       };
-    } catch (error) { console.warn('[PorakanekiFactionRules] reputation config failed; using defaults:', error); }
+    } catch (error) { console.warn(`[PorakanekiFactionRules] ${tribe.label} reputation config failed; using defaults:`, error); }
   }
+  const loadTuning = () => Promise.all(TRIBES.map(loadTribeTuning));
 
   function installAvailableHooks() {
     installNpcDatabaseCanon();
@@ -449,9 +480,11 @@
     version: 3,
     canonicalizeNpcDatabaseInPlace,
     migrateLegacyRelationshipState: mergeLegacyRelationshipState,
-    syncNow: () => refreshEntityState(porakanekiEntities()),
+    syncNow: () => refreshEntityState(allTribeEntities()),
+    killedInSelfDefense,
     debugSnapshot: () => ({
-      tuning: { ...tuning },
+      tuning: { ...TRIBES[0].tuning },
+      tribeTuning: Object.fromEntries(TRIBES.map(tribe => [tribe.id, { ...tribe.tuning }])),
       hooks: {
         banditRulesInstalled,
         combatGuardInstalled,
@@ -461,8 +494,8 @@
         skillHitMarkerInstalled,
         dialogueMigrationInstalled,
       },
-      materializedHunters: porakanekiEntities().length,
-      neutralHunters: porakanekiEntities().filter(entity => entity._porakanekiPlannerControlled === true).length,
+      materializedHunters: allTribeEntities().length,
+      neutralHunters: allTribeEntities().filter(entity => entity._porakanekiPlannerControlled === true).length,
       activeCompanionAnimalAttack: activeCompanionAnimalAttack?.id || null,
       pendingLegacyPlayerHit,
       campAggressionOrigin: Object.fromEntries(campAggressionOrigin),

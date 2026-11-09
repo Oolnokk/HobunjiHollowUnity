@@ -9,10 +9,10 @@
   const FACE_ZOOM = 2.25; // Same close-up strength as the first face-view pass, now anchored to the actual current head.
   const FACE_NECK_OFFSET = 0.13; // Model-height fraction from neck joint toward the visual center of the face.
   const STARTER_WEAPONS = Object.freeze([
-    Object.freeze({ itemKey: 'hoe_nativeCopper', shape: 'hoe', label: 'Native Copper Hoe', sprite: './assets/toolsprites/hoe_bronzehoe.png', idleClass: 'heavy', animStyle: 'chop' }),
-    Object.freeze({ itemKey: 'hatchet_nativeCopper', shape: 'hatchet', label: 'Native Copper Hatchet', sprite: './assets/toolsprites/axe_hatchet.png', idleClass: 'heavy', animStyle: 'sweep' }),
-    Object.freeze({ itemKey: 'fishingspear_nativeCopper', shape: 'fishingspear', label: 'Native Copper Fishing Spear', sprite: './assets/toolsprites/harpoon_fishingspear.png', idleClass: 'light', animStyle: 'sweep' }),
-    Object.freeze({ itemKey: 'pickshovel_nativeCopper', shape: 'pickshovel', label: 'Native Copper Pick-Shovel', sprite: './assets/toolsprites/shovel_pickshovel.png', idleClass: 'light', animStyle: 'thrust' }),
+    Object.freeze({ itemKey: 'hoe_nativeCopper', shape: 'hoe', label: 'Copper Hoe', sprite: './assets/toolsprites/hoe_bronzehoe.png', idleClass: 'heavy', animStyle: 'chop' }),
+    Object.freeze({ itemKey: 'hatchet_nativeCopper', shape: 'hatchet', label: 'Copper Hatchet', sprite: './assets/toolsprites/axe_hatchet.png', idleClass: 'heavy', animStyle: 'sweep' }),
+    Object.freeze({ itemKey: 'fishingspear_nativeCopper', shape: 'fishingspear', label: 'Copper Fishing Spear', sprite: './assets/toolsprites/harpoon_fishingspear.png', idleClass: 'light', animStyle: 'sweep' }),
+    Object.freeze({ itemKey: 'pickshovel_nativeCopper', shape: 'pickshovel', label: 'Copper Pick-Shovel', sprite: './assets/toolsprites/shovel_pickshovel.png', idleClass: 'light', animStyle: 'thrust' }),
   ]); // Fishing Mace is friendship-gated away from fresh characters by weapon-trust-visits, so it is not a true post-onboarding starter choice.
 
   const state = {
@@ -223,7 +223,7 @@
     if (authored) return { key, pose: authored };
     return choice?.idleClass === 'heavy'
       ? { key, pose: { x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 } }
-      : { key, pose: { x: -0.09, y: -0.08, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 } };
+      : { key, pose: { x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 } };
   }
 
   function applyPoseQuaternion(THREE, object, pose) {
@@ -335,7 +335,7 @@
     holder.position.set(Number(pose.x) || 0, Number(pose.y) || 0, Number(pose.z) || 0);
     const poseScale = window.HobunjiSpeciesPoseScale; // Shared X/Z orbit and authored-Y height mapping used by gameplay/editor.
     const armLength = Number(model.userData?.armLength); // Anatomical reach remains only a legacy orbit fallback.
-    const poseOrbitScale = Number(model.userData?.poseOrbitScale);
+    const poseOrbitScale = model.userData?.poseOrbitAxes ?? Number(model.userData?.poseOrbitScale); // Per-axis { x, y, z } when the species authored one; this preview point is already in the pose frame.
     const identity = { speciesId: model.userData?.speciesId || null, gender: model.userData?.gender || 'male' }; // Used below to select the same species/gender vertical proportions as runtime.
     const finalPoint = new THREE.Vector3(toolBase.position.x + holder.position.x, toolBase.position.y + holder.position.y, toolBase.position.z + holder.position.z);
     if (poseScale?.transformPosePoint) {

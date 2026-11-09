@@ -32,7 +32,8 @@
   // browser that already cached an older lyre-performance.html under this
   // exact URL would keep serving it indefinitely after an update, since
   // nothing about the request ever changes.
-  const MUSIC_MINIGAME_SRC = 'assets/minigames/lyre-performance.html?v=20260926clockcache1';
+  const MUSIC_MINIGAME_SRC = 'assets/minigames/lyre-performance.html?v=20261107fluteMonophonic1';
+  const PUZZLE_MINIGAME_SRC = 'assets/minigames/kurraya-puzzle.html?v=20261107fluteMonophonic1'; // The default eight-note puzzle surface, independent of the performance engine.
   // The ONE songbook entry the ported app currently knows (see
   // lyre-performance.html's SONGBOOK) — surfaced to the compact song
   // picker below alongside Free Play and the built-in practice patterns.
@@ -141,6 +142,9 @@
     ['tremolo-16', 'Rapid Tremolo · sixteenths'],
     ['tremolo-triplet', 'Triplet Tremolo'],
     ['tremolo-burst-16', 'Three-Stroke Tremolo Burst'],
+    ['strum-down-4', 'Steady Downstrokes'],
+    ['strum-alternating-8', 'Alternating Down–Up'],
+    ['strum-pop-8', 'Down–Down–Up–Up–Down–Up'],
     ['strum-reggae-8', 'Reggae Offbeat Skank'],
     ['strum-bossa-16', 'Bossa Nova Syncopation'],
     ['strum-rasgueado-16', 'Rasgueado Burst'],
@@ -181,7 +185,7 @@
     const saved = loadLyreAppSettings();
     const savedTonicMidi = Number.isFinite(saved.tonicMidi) ? saved.tonicMidi : FREEPLAY_TONIC_BASE_MIDI;
     const currentOffset = ((savedTonicMidi - FREEPLAY_TONIC_BASE_MIDI) % 12 + 12) % 12;
-    const currentScale = FREEPLAY_SCALE_NAMES.includes(saved.scaleName) ? saved.scaleName : 'Major';
+    const currentScale = FREEPLAY_SCALE_NAMES.includes(saved.scaleName) ? saved.scaleName : 'Pentatonic Minor';
 
     const keyRow = document.createElement('div');
     keyRow.className = 'input-binding-row';
@@ -203,6 +207,7 @@
   const overlayEl = document.getElementById('musicMinigameOverlay');
   const frameEl = document.getElementById('musicMinigameFrame');
   const closeBtnEl = document.getElementById('musicMinigameCloseBtn');
+  const modeBtnEl = document.getElementById('musicMinigameModeBtn'); // In-world switch between default Puzzle and legacy Performance modes.
   const menuBtnEl = document.getElementById('menuBtn');
 
   // While the overlay is open, the menu button becomes the minigame's own
@@ -243,6 +248,113 @@
   let playerSession = null; // { mode:'lead'|'backup', area, npcId, songId } while the overlay is open, else null.
   const leaderByArea = new Map(); // area -> { type:'player'|'npc', id, songId, startedAt }
   const ambientFrames = new Map(); // npcId -> hidden <iframe>, for each NPC currently the ambient audio source in their area.
+  let unsubscribePuzzleController = null; // Shared music-priority controller subscription, retired when the puzzle closes or changes mode.
+  const puzzleHeldActions = new Set(); // Edge-tracks controller buttons so holding a note cannot produce repeats.
+  let lastPuzzleSong = null; // Kept for in-game diagnostics and future puzzle/ruin mechanisms.
+  function silenceAmbientForPuzzle() {
+    // Puzzle input is strictly monophonic; any nearby NPC backing track must
+    // also go quiet until Performance mode or normal overworld playback resumes.
+    const area = playerSession?.area;
+    if (!area || playerSession?.instrumentMode !== 'puzzle') return;
+    for (const performer of deps?.listInstrumentPerformers?.() || []) {
+      if (performer.area !== area || !ambientFrames.has(performer.npcId)) continue;
+      if (!playerSession.suspendedNpcSong || playerSession.suspendedNpcSong.npcId !== performer.npcId) {
+        playerSession.suspendedNpcSong = {
+          npcId:performer.npcId,
+          songSnapshot:ambientSongSnapshotForNpc(performer.npcId)
+        }; // Reuse the exact procedural song if the player switches to Performance.
+      }
+      stopAmbientForNpc(performer.npcId);
+    }
+  }
+  function puzzleNote(index) {
+    if (playerSession?.instrumentMode !== 'puzzle') return;
+    try { frameEl?.contentWindow?.HobunjiPuzzleInstrument?.playNote(index); } catch (error) {
+      window.__farmLog?.('Kurraya puzzle note failed: ' + error.message, 'warn');
+    }
+  }
+  const puzzleFaceActions = ['musicNote1','musicNote2','musicNote3','musicNote4']; // Match the performance note order and its configurable bindings.
+  const puzzleBookAction = 'musicBank3'; // Reuse the music binding that defaults to LB, including conflict checks and remaps.
+  function puzzleView() {
+    return frameEl?.contentWindow?.HobunjiPuzzleInstrument;
+  }
+  function musicControllerBindings() {
+    const bindings = window.InputBindings?.getCurrentBindings?.()?.controller || {};
+    const defaults = window.InputBindings?.getDefaultBindings?.('controller') || {};
+    return action => Object.prototype.hasOwnProperty.call(bindings,action) ? bindings[action] : defaults[action];
+  }
+  function showPuzzleInput(device, binding = musicControllerBindings()) {
+    const label = code => code ? window.InputBindings?.buttonLabel?.(code) || code : '—'; // Use the same glyph names as the game settings.
+    const faces = puzzleFaceActions.map(binding); // The displayed notes follow the same binding snapshot as playback.
+    const modifier = binding('musicBank1');
+    const upper = faces.map(face => modifier && face ? label(modifier) + ' + ' + label(face) : '—');
+    puzzleView()?.setInputDevice?.(device,faces.map(label).concat(upper),label(binding(puzzleBookAction)));
+  }
+  function puzzleKeyboard(event) {
+    if (playerSession?.instrumentMode !== 'puzzle') return;
+    showPuzzleInput('desktop');
+    if (event.repeat) return;
+    if (event.code === 'Escape') {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      close();
+      return;
+    }
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    if (document.activeElement?.matches?.('input,textarea,select,[contenteditable="true"]')) return;
+    const index = window.KurrayaPuzzle.NOTE_CODES.indexOf(event.code); // Keep host and iframe keyboard paths on the same map.
+    if (index < 0 && event.code !== 'KeyB') return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (index < 0) puzzleView()?.toggleSongbook?.();
+    else puzzleNote(index);
+  }
+  function stopPuzzleInputs() {
+    window.removeEventListener?.('keydown', puzzleKeyboard, true);
+    unsubscribePuzzleController?.();
+    unsubscribePuzzleController = null;
+    puzzleHeldActions.clear();
+    if (window.ControllerInput?.owner === 'music-puzzle') window.ControllerInput.setOwner('gameplay');
+  }
+  function startPuzzleInputs() {
+    stopPuzzleInputs();
+    window.ControllerInput?.setOwner?.('music-puzzle');
+    showPuzzleInput(deps.getLastInputDevice?.() || 'desktop');
+    window.addEventListener('keydown',puzzleKeyboard,true);
+    const binding = musicControllerBindings(); // Settings are closed during a puzzle session.
+    const isDown = (frame,code) => Boolean(code && frame.pad && frame.isDown(code,{triggerThreshold:0.3,buttonThreshold:0.55,stickThreshold:0.55}));
+    function pressed(action,down) {
+      const fresh = down && !puzzleHeldActions.has(action); // Track physical face edges independently of the modifier.
+      if (down) puzzleHeldActions.add(action);
+      else puzzleHeldActions.delete(action);
+      return fresh;
+    }
+    const exitCode = binding('musicPause'); // Resolve once for this puzzle session.
+    const bookCode = binding(puzzleBookAction);
+    const modifier = binding('musicBank1');
+    const faceCodes = puzzleFaceActions.map(binding);
+    function readFrame(frame,ready) {
+      const shifted = isDown(frame,modifier); // LT changes the pitch of the next face press.
+      const shiftedNow = pressed('shift',shifted);
+      const stickMoved = pressed('stick',(frame.move?.magnitude || 0) > 0 || (frame.look?.magnitude || 0) > 0);
+      const exit = pressed('exit',isDown(frame,exitCode));
+      const book = pressed('book',isDown(frame,bookCode));
+      let note = -1; // Consume all edges but sound only the first new note.
+      for (let index = 0; index < faceCodes.length; index++) {
+        if (pressed(index,isDown(frame,faceCodes[index])) && note < 0) note = index;
+      }
+      if (!ready) return; // Seed held buttons from the shared snapshot so opening the HUD cannot play a note.
+      if (exit) { close(); return; }
+      if (frame.pressed?.size || shiftedNow || stickMoved || book || note >= 0) showPuzzleInput('controller',binding);
+      if (book) puzzleView()?.toggleSongbook?.();
+      if (note >= 0) puzzleNote(note + (shifted ? faceCodes.length : 0));
+    }
+    const initialFrame = window.ControllerInput?.frame?.(); // Snapshot from the normal controller poller, even if the overlay opened mid-press.
+    if (initialFrame) readFrame(initialFrame,false);
+    unsubscribePuzzleController = window.ControllerInput?.subscribe?.('music-puzzle', frame => {
+      if (playerSession?.instrumentMode === 'puzzle') readFrame(frame,true);
+    },window.ControllerInput.PRIORITY.music) || null;
+  }
 
   function bridgeOf(frame) {
     try { return frame?.contentWindow?.HobunjiMusicControlBridge || null; }
@@ -266,6 +378,18 @@
   // ── Player session (the visible overlay) ────────────────────────────
   function onPlayerFrameLoaded() {
     if (!playerSession) return;
+    if (playerSession.instrumentMode === 'puzzle') {
+      // The puzzle iframe owns its eight single-note buttons and audio; never boot the chord/timing bridge here.
+      startPuzzleInputs();
+      if (playerSession.echoChallenge) {
+        const challenge = playerSession.echoChallenge; // The ruin owns the generated melody; the iframe owns playback and the eight-note touch/keyboard/controller UI.
+        if (!frameEl?.contentWindow?.HobunjiPuzzleInstrument?.startEchoChallenge?.(challenge.id,challenge.notes)) {
+          window.__farmLog?.('Ruin echo challenge could not start in the music iframe.', 'warn');
+          deps?.showToast?.('Melody playback failed to initialize. Step on the trigger again.',false);
+        }
+      }
+      return;
+    }
     const bridge = bridgeOf(frameEl);
     if (!bridge) { window.__farmLog?.('music minigame: control bridge missing after load', 'warn'); return; }
     if (playerSession.mode === 'backup') {
@@ -274,46 +398,126 @@
       if (snapshot?.melodyNotes?.length) bridge.setKurrayaSongMelody?.(snapshot.melodyNotes);
       bridge.startBackupPreviewSong?.(playerSession.songId);
     } else bridge.enterJamMode?.(); // Regular/improvise mode — the compact song picker (see buildEdgeControls) handles picking a real song from here.
+    const footstepUrls = deps.getPlayerFootstepSampleUrls?.() || []; // Surface recordings feed the same sample-accurate beat scheduler used in Music Lab.
+    bridge.useGameplayFootstepMetronome?.(footstepUrls).catch(error => window.__farmLog?.(`kurraya metronome: ${error.message}`, 'warn'));
     buildEdgeControls(frameEl);
-    // The iframe's own keydown listeners (ASDF notes, arrow-key banks, ...)
-    // only fire while it actually has focus — without this, whichever
-    // element the page happened to have focused keeps eating keystrokes.
-    try { frameEl.contentWindow?.focus(); } catch {}
+    // Host capture handlers route music keys; retaining host focus also keeps viewport mouse-look active.
+    try { window.focus(); } catch {}
   }
   frameEl?.addEventListener('load', onPlayerFrameLoaded);
 
-  function beginPlayerSession() {
-    if (playerSession || !overlayEl || !frameEl || !deps) return;
-    const instrumentKey = deps.getEquippedInstrument?.(); // Captured for the performance prop and ownership validation.
-    if (!instrumentKey) { deps.showToast?.('Equip an instrument in your gear before playing.', false); return false; }
-    const area = deps.getCurrentArea();
-    const nearbyPerformer = deps.listInstrumentPerformers().find(p => p.area === area);
-    if (nearbyPerformer) {
-      // Someone's already leading here — capture the live procedural composition before stopping
-      // their standalone ambient iframe. The player's visible iframe then restarts that SAME
-      // generated song as backup accompaniment instead of reverting to the static authored melody.
-      const songSnapshot = ambientSongSnapshotForNpc(nearbyPerformer.npcId);
-      stopAmbientForNpc(nearbyPerformer.npcId);
-      playerSession = { active: true, mode: 'backup', area, npcId: nearbyPerformer.npcId, songId: nearbyPerformer.songId, songSnapshot };
-      deps.showToast?.(`Playing along with ${nearbyPerformer.name}.`, true);
+  let unsubscribeModeToggle = null; // Stays installed through iframe reloads so one held RS click cannot switch twice.
+  function startModeToggle() {
+    if (!window.ControllerInput || playerSession.echoChallenge) return;
+    const code = musicControllerBindings()('musicModeToggle'); // Use the music context, where RS click defaults to switching modes.
+    if (!code) return;
+    const isDown = frame => Boolean(frame?.pad && frame.isDown(code));
+    let held = isDown(window.ControllerInput.frame?.()); // An input held while opening the instrument cannot change modes.
+    unsubscribeModeToggle = window.ControllerInput.subscribe('music-mode-toggle',frame => {
+      const down = isDown(frame); // Share controller edge state across Puzzle and Performance.
+      const fresh = down && !held;
+      held = down;
+      if (fresh) toggleInstrumentMode();
+    },window.ControllerInput.PRIORITY.music - 1);
+  }
+
+  function toggleInstrumentMode() {
+    switchInstrumentMode(playerSession?.instrumentMode === 'puzzle' ? 'performance' : 'puzzle');
+  }
+
+  function switchInstrumentMode(view) {
+    if (!playerSession || !frameEl) return false;
+    const next = view === 'performance' ? 'performance' : 'puzzle';
+    if (next === 'performance' && playerSession.echoChallenge) return false; // A ruin challenge cannot be bypassed by swapping to the unrelated chord/timing minigame.
+    if (playerSession.instrumentMode === next) return true;
+    teardownEdgeControls();
+    stopPuzzleInputs();
+    const area = playerSession.area;
+    if (next === 'performance') {
+      const performer = deps.listInstrumentPerformers?.().find(person => person.area === area);
+      if (performer) {
+        // Legacy backup/accompaniment stays intact when explicitly entering Performance.
+        const songSnapshot = ambientSongSnapshotForNpc(performer.npcId) ||
+          (playerSession.suspendedNpcSong?.npcId === performer.npcId ? playerSession.suspendedNpcSong.songSnapshot : null);
+        stopAmbientForNpc(performer.npcId);
+        Object.assign(playerSession,{mode:'backup',npcId:performer.npcId,songId:performer.songId,songSnapshot});
+        deps.showToast?.('Playing along with ' + performer.name + '.',true);
+      } else {
+        leaderByArea.set(area,{type:'player',id:'player',startedAt:Date.now()});
+        Object.assign(playerSession,{mode:'lead',npcId:null,songId:null,songSnapshot:null});
+      }
     } else {
-      leaderByArea.set(area, { type: 'player', id: 'player', startedAt: Date.now() });
-      playerSession = { active: true, mode: 'lead', area };
+      if (playerSession.mode === 'backup' && playerSession.npcId) {
+        playerSession.suspendedNpcSong = {npcId:playerSession.npcId,songSnapshot:playerSession.songSnapshot};
+      }
+      if (playerSession.mode === 'lead' && leaderByArea.get(area)?.type === 'player') leaderByArea.delete(area);
+      playerSession.mode = 'puzzle'; // Nearby NPC audio is suspended to keep puzzle notes strictly monophonic.
+      playerSession.npcId = null;
+      playerSession.songSnapshot = null;
     }
-    playerSession.instrumentKey = instrumentKey;
-    playerSession.instrumentItem = { key: instrumentKey }; // Reused by the held-instrument renderer for the whole session.
+    playerSession.instrumentMode = next;
+    if (next === 'puzzle') {
+      window.ShoulderCamPointerLock?.release?.(); // Give the cursor back to the playable glyphs when entering from a locked camera.
+      window.ControllerInput?.setOwner?.('music-puzzle'); // Claim the frame before a switch from Performance can also trigger the gameplay RS action.
+      silenceAmbientForPuzzle();
+    }
+    if (overlayEl.dataset) overlayEl.dataset.instrumentMode = next; // Real DOM dataset controls Kurraya's presentation and responsive CSS.
+    if (modeBtnEl) {
+      const mode = next === 'puzzle' ? 'Performance Mode' : 'Puzzle Mode'; // Name the mode the player is about to enter.
+      const code = musicControllerBindings()('musicModeToggle');
+      const hint = code && window.InputBindings?.buttonLabel?.(code);
+      modeBtnEl.textContent = hint ? mode + ' (' + hint + ')' : mode;
+      modeBtnEl.setAttribute('aria-label','Switch to ' + mode);
+    }
+    frameEl.title = next === 'puzzle' ? 'Eight-note melody puzzle' : 'Instrument performance';
+    frameEl.src = next === 'puzzle'
+      ? PUZZLE_MINIGAME_SRC + (playerSession.instrumentKey === 'flute' ? '&instrument=flute' : '') +
+        (/(?:[?&])debugMusic=1(?:&|$)/.test(window.location?.search || '') ? '&debugMusic=1' : '')
+      : MUSIC_MINIGAME_SRC + (playerSession.instrumentKey === 'flute' ? '&instrument=flute' : ''); // Performance retains its chords, arpeggios and song controls while the iframe selects the flute's own sound.
+    return true;
+  }
+  modeBtnEl?.addEventListener('click',event => {
+    event.stopPropagation();
+    toggleInstrumentMode();
+  });
+
+  function beginPlayerSession(options = {}) {
+    if (playerSession || !overlayEl || !frameEl || !deps) return false;
+    const proposedEcho = options?.echoChallenge; // Optional, ephemeral encounter melody; no songbook writes or global music-mode changes.
+    if (proposedEcho && (!proposedEcho.id || !Array.isArray(proposedEcho.notes) || proposedEcho.notes.length < 3 ||
+        proposedEcho.notes.length > 12 || !proposedEcho.notes.every(note => Number.isInteger(note) && note >= 0 && note < (window.KurrayaPuzzle?.NOTE_CODES.length ?? 8)))) return false;
+    window.EquipmentPanel?.ensureStarterFlute?.(); // Existing saved characters receive their one-time flute before the first music session.
+    const instrumentKey = deps.getEquippedInstrument?.(); // Both instrument modes use the currently assigned slot item.
+    if (!instrumentKey) { deps.showToast?.('Equip an instrument in your gear before playing.',false); return false; }
+    playerSession = {
+      active:true,mode:'puzzle',instrumentMode:'initializing',area:deps.getCurrentArea(),
+      instrumentKey:instrumentKey,instrumentItem:{key:instrumentKey},
+      echoChallenge:proposedEcho ? {id:String(proposedEcho.id),notes:proposedEcho.notes.slice()} : null
+    };
     overlayEl.classList.add('open');
-    frameEl.src = MUSIC_MINIGAME_SRC;
-    deps.beginMusicCamera?.(playerSession.npcId || null);
+    if (modeBtnEl) { modeBtnEl.disabled = !!proposedEcho; modeBtnEl.hidden = !!proposedEcho; } // Ruin echoes use puzzle-only controls; restore the performance switch on close.
+    switchInstrumentMode('puzzle'); // Puzzle is always the default.
+    startModeToggle();
+    if (instrumentKey === 'flute') window.KurrayaInstrument?.beginFlute?.(); // A flute session has its own mouth-held gameplay animation.
+    else if (instrumentKey === 'kurraya') window.KurrayaInstrument?.beginPlayerKurraya?.(); // Enables player-only plucking-hand animation; NPCs have their own note clocks.
+    deps.beginMusicCamera?.(null);
     deps.refreshActionBar?.();
     setHostChromeSuppressed(true);
+    return true;
   }
 
   function close() {
     if (!playerSession) return;
     const { area, mode } = playerSession;
     playerSession = null;
+    window.KurrayaInstrument?.endFlute?.(); // Stops the head-mounted flute without disturbing Kurraya or any other equipped gear.
+    window.KurrayaInstrument?.endPlayerKurraya?.(); // Releases free-hand ownership when the player leaves the Kurraya session.
     overlayEl?.classList.remove('open');
+    if (modeBtnEl) { modeBtnEl.disabled = false; modeBtnEl.hidden = false; }
+    if (overlayEl?.dataset) delete overlayEl.dataset.instrumentMode;
+    stopPuzzleInputs();
+    unsubscribeModeToggle?.();
+    unsubscribeModeToggle = null;
     if (frameEl) frameEl.src = 'about:blank'; // Tears the iframe down immediately, stopping its AudioContext with it.
     teardownEdgeControls();
     if (mode === 'lead') {
@@ -329,7 +533,7 @@
     setHostChromeSuppressed(false);
   }
 
-  closeBtnEl?.addEventListener('pointerup', (event) => { event.stopPropagation(); close(); });
+  closeBtnEl?.addEventListener('click', (event) => { event.stopPropagation(); close(); });
   closeBtnEl?.addEventListener('pointerdown', (event) => { event.stopPropagation(); });
   // The iframe's own Start/Escape (see requestExitOrPause in
   // lyre-performance.html) asks to be closed the same way — its usual job,
@@ -338,7 +542,34 @@
   window.addEventListener('message', (event) => {
     if (event.source !== frameEl?.contentWindow) return;
     const data = event.data;
-    if (data?.source === 'hobunji-music-minigame' && data.type === 'exit-requested') close();
+    if (data?.source !== 'hobunji-music-minigame') return;
+    if (data.type === 'exit-requested') close();
+    if (data.type === 'puzzle-note' && playerSession?.instrumentMode === 'puzzle' &&
+        Number.isInteger(data.noteIndex) && data.noteIndex >= 0 && data.noteIndex < (window.KurrayaPuzzle?.NOTE_CODES?.length ?? 8)) {
+      const detail = {noteIndex:data.noteIndex,area:playerSession.area,instrumentKey:playerSession.instrumentKey}; // The active player's normal instrument publishes notes; ruin listeners never receive example playback or NPC notes.
+      window.dispatchEvent(new CustomEvent('hobunji-kurraya-puzzle-note',{detail})); // The iframe separately reports its sounded-note event after audio actually plays; that one alone animates.
+    }
+    if (data.type === 'puzzle-echo-result' && playerSession?.instrumentMode === 'puzzle' &&
+        playerSession.echoChallenge?.id === data.id) {
+      const detail = {id:data.id,solved:data.solved === true,
+        progress:Number(data.progress)||0,mistakes:Number(data.mistakes)||0}; // Only the active iframe and current ruin challenge may report a result.
+      window.dispatchEvent(new CustomEvent('hobunji-ruin-melody-result',{detail}));
+      window.__farmLog?.('Ruin echo ' + detail.id + ': ' + (detail.solved ? 'solved' : 'retry'), 'input');
+      if (detail.solved) {
+        // Let the last played note sound before tearing down the instrument iframe; closing instantly silenced the winning tone.
+        const solvedId = detail.id;
+        setTimeout(() => { if (playerSession?.echoChallenge?.id === solvedId) close(); },480);
+      }
+    }
+    if (data.type === 'puzzle-song-recognized' && playerSession?.instrumentMode === 'puzzle') {
+      const song = window.KurrayaPuzzle?.normalizeSong?.(data.song) || data.song;
+      if (!song || typeof song.id !== 'string' || !Array.isArray(song.notes)) return;
+      lastPuzzleSong = {id:song.id,title:song.title,scale:data.scale,tonicMidi:data.tonicMidi};
+      const detail = {songId:song.id,title:song.title,notes:song.notes.slice(),scale:data.scale,tonicMidi:data.tonicMidi};
+      window.dispatchEvent(new CustomEvent('hobunji-kurraya-puzzle-song',{detail}));
+      window.HobunjiActivityEvents?.emit?.('kurraya_puzzle_song_recognized',detail);
+      window.__farmLog?.('Kurraya puzzle recognized: ' + song.title,'input');
+    }
   });
 
   // Drives each performer's Kurraya twitch (see js/kurraya-instrument.js via
@@ -360,6 +591,11 @@
     playerSession.announcedPlaying = true;
     window.HobunjiActivityEvents?.emit('kurraya_played', { mode: playerSession.mode });
   }
+  function animatePlayerNote() {
+    if (!playerSession) return; // Only the local player's sounded notes animate their equipped instrument.
+    if (playerSession.instrumentKey === 'flute') window.KurrayaInstrument?.playFluteNote?.();
+    else window.KurrayaInstrument?.playPlayerKurrayaNote?.(); // One authored note drives holder, independent hand, grip spans and leg stance. No second twitch on the sprite.
+  }
   function onSoundedNote(data, source) {
     if (source === frameEl?.contentWindow) {
       if (playerSession?.mode === 'backup') {
@@ -368,10 +604,10 @@
         // was torn down for the duration — see beginPlayerSession — so this
         // is the only place those notes are still observable) and 'backup'
         // notes are the player's own input.
-        if (data.performer === 'backup') { deps?.triggerPlayerKurrayaTwitch?.(); announcePlayerPlaying(); }
+        if (data.performer === 'backup') { animatePlayerNote(); announcePlayerPlaying(); } // Accompaniment sounds only animate the actual player voice.
         else if (playerSession.npcId) deps?.triggerNpcKurrayaTwitch?.(playerSession.npcId);
       } else {
-        deps?.triggerPlayerKurrayaTwitch?.();
+        animatePlayerNote();
         announcePlayerPlaying();
       }
       return;
@@ -382,6 +618,10 @@
   }
 
   function teardownEdgeControls() {
+    window.__hobunjiHostedMusicResizeCleanup?.();
+    window.__hobunjiHostedMusicResizeCleanup = null; // The retired performance picker must not hold a window resize listener.
+    if (typeof clearInterval === 'function') clearInterval(window.__hobunjiModeLabelTimer); // Retire legacy performance HUD polling on puzzle switch/exit.
+    window.__hobunjiModeLabelTimer = null;
     const leftMount = document.getElementById('leftMusicControls');
     const rightMount = document.getElementById('rightMusicControls');
     if (leftMount) leftMount.innerHTML = '';
@@ -469,6 +709,9 @@
         <div class="concertinaGroupHead"><strong>Auto Pick</strong><small>4 slottable modes</small></div>
         <div class="edgeLeftStickRow fourWayAutoPickRow" aria-label="Four-way Auto Pick controls">
           <div class="autoPickCrossWrap">
+            <label style="display:grid;gap:3px;font-size:11px">Plucking pattern
+              <select data-plucking-pattern aria-label="Pattern for selected direction" style="min-width:0;max-width:100%;width:100%;color:inherit;background:#18222c">${AUTO_PICK_PATTERNS.map(([id,label]) => `<option value="${id}">${label}</option>`).join('')}</select>
+            </label>
             <div class="autoPickCross" aria-label="Four-way Auto Pick mode cross">
               <button class="edgeControllerBtn autoPickCrossBtn" type="button" data-auto-pick-sector="0" aria-label="Select Up Auto Pick mode"><span class="directionGlyph">▲</span><span class="modeText">UP</span></button>
               <button class="edgeControllerBtn autoPickCrossBtn" type="button" data-auto-pick-sector="1" aria-label="Select Right Auto Pick mode"><span class="directionGlyph">▶</span><span class="modeText">RIGHT</span></button>
@@ -580,6 +823,7 @@
       requestAnimationFrame(positionCompactSongPicker);
       setTimeout(positionCompactSongPicker, 120);
       window.addEventListener('resize', positionCompactSongPicker, { passive: true });
+      window.__hobunjiHostedMusicResizeCleanup = () => window.removeEventListener('resize',positionCompactSongPicker);
       renderCompactSongPicker();
     }
 
@@ -645,6 +889,22 @@
       try { if (frame.contentWindow) frame.contentWindow.__hobunjiHostedInputLayout = activeInputLayout; } catch {}
     };
     const glyphsForLayout = layout => noteGlyphsByLayout[layout] || noteGlyphsByLayout.mobile;
+    const heldNoteButtons = new Map(); // Physical input sources own their lit button until release, independently of touch holds.
+    const setHostedNoteHeld = (noteIndex, sourceId, isDown) => {
+      const button = isDown
+        ? rightMount.querySelector(`.fiveGroupNoteBtn[data-direct-bank="${activeBankSlot}"][data-direct-note="${noteIndex}"]`)
+        : heldNoteButtons.get(sourceId); // Release the bank captured at note-down even if the modifier changed meanwhile.
+      if (!button) return;
+      if (isDown) heldNoteButtons.set(sourceId, button);
+      else heldNoteButtons.delete(sourceId);
+      const held = isDown || [...heldNoteButtons.values()].includes(button); // Another physical source can still own this same note.
+      if (button.classList.contains('input-held') !== held) button.classList.toggle('input-held', held);
+    };
+    const setHostedActionHeld = (action, held) => {
+      const selector = `[data-bridge-action="${action}"]`; // Reuses the visible scale/exit buttons for controller action feedback.
+      const button = leftMount.querySelector(selector) || rightMount.querySelector(selector); // Actions occur on either side of the instrument overlay.
+      if (button && button.classList.contains('input-held') !== held) button.classList.toggle('input-held', held);
+    };
     const pulseNoteButton = (bankSlot, noteIndex) => {
       const button = rightMount.querySelector(`.fiveGroupNoteBtn[data-direct-bank="${bankSlot}"][data-direct-note="${noteIndex}"]`);
       if (!button) return;
@@ -707,7 +967,10 @@
 
     const releaseHostedKeyboardInputs = () => {
       for (const [code, binding] of hostedKeyboardSources.entries()) {
-        if (binding.kind === 'note') bridge.noteUp(binding.value, binding.sourceId);
+        if (binding.kind === 'note') {
+          bridge.noteUp(binding.value, binding.sourceId);
+          setHostedNoteHeld(binding.value, binding.sourceId, false);
+        }
         if (binding.kind === 'bank') {
           bridge.bankUp(binding.value, binding.sourceId);
           heldBankControls.delete(binding.value);
@@ -785,6 +1048,11 @@
         () => endVisibleNoteHold(button));
     });
 
+    leftMount.querySelector('[data-plucking-pattern]')?.addEventListener('change', event => {
+      const sector = Number(bridge.getState?.()?.leftStickSector) || 0; // Assigns the chosen figure to the active direction, including every strum.
+      bridge.setAutoPickSlot?.(sector, event.target.value);
+      readMode();
+    });
     leftMount.querySelectorAll('[data-auto-pick-sector]').forEach(button => {
       button.addEventListener('pointerdown', event => {
         event.preventDefault();
@@ -820,6 +1088,9 @@
         if (modeText) modeText.textContent = String(labels[sector] || `MODE ${sector + 1}`).replace(/\s+/g, ' ').slice(0, 8);
         button.classList.toggle('selected', sector === selectedSector);
       });
+      const patternSelect = leftMount.querySelector('[data-plucking-pattern]'); // Mirrors the selected directional slot without overwriting a user's open picker each frame.
+      const patternId = stateSnapshot.autoPickSlots?.[selectedSector] || DEFAULT_AUTO_PICK_SLOTS[selectedSector]; // Shared slot id from the engine.
+      if (patternSelect && patternSelect.value !== patternId) patternSelect.value = patternId;
       const hint = leftMount.querySelector('[data-auto-pick-hint]');
       if (hint) hint.textContent = activeInputLayout === 'keyboard' ? 'Hold Shift' : (activeInputLayout === 'controller' ? 'Left stick' : 'Tap direction');
     };
@@ -881,6 +1152,7 @@
           hostedKeyboardSources.set(event.code, { kind:'note', value:noteIndex, sourceId });
           bridge.wakeAudio().catch(() => {});
           bridge.noteDown(noteIndex, sourceId);
+          setHostedNoteHeld(noteIndex, sourceId, true);
           pulseNoteButton(activeBankSlot, noteIndex);
           return;
         }
@@ -902,7 +1174,10 @@
         if (!binding) return;
         event.preventDefault();
         event.stopImmediatePropagation?.();
-        if (binding.kind === 'note') bridge.noteUp(binding.value, binding.sourceId);
+        if (binding.kind === 'note') {
+          bridge.noteUp(binding.value, binding.sourceId);
+          setHostedNoteHeld(binding.value, binding.sourceId, false);
+        }
         if (binding.kind === 'bank') {
           bridge.bankUp(binding.value, binding.sourceId);
           heldBankControls.delete(binding.value);
@@ -943,11 +1218,15 @@
     // stacking two. ──────────────────────────────────────────────────────
     const releaseHostedControllerInputs = () => {
       for (const [key, binding] of hostedControllerSources.entries()) {
-        if (binding.kind === 'note') bridge.noteUp(binding.value, binding.sourceId);
+        if (binding.kind === 'note') {
+          bridge.noteUp(binding.value, binding.sourceId);
+          setHostedNoteHeld(binding.value, binding.sourceId, false);
+        }
         if (binding.kind === 'bank') {
           bridge.bankUp(binding.value, binding.sourceId);
           heldBankControls.delete(binding.value);
         }
+        if (binding.kind === 'tap') setHostedActionHeld(binding.value, false);
         hostedControllerSources.delete(key);
       }
       bridge.releaseRightStick?.();
@@ -980,9 +1259,11 @@
           hostedControllerSources.set(key, { kind, value, sourceId });
           bridge.wakeAudio().catch(() => {});
           bridge.noteDown(value, sourceId);
+          setHostedNoteHeld(value, sourceId, true);
           pulseNoteButton(activeBankSlot, value);
         } else {
           bridge.noteUp(value, sourceId);
+          setHostedNoteHeld(value, sourceId, false);
           hostedControllerSources.delete(key);
         }
         return;
@@ -1004,9 +1285,13 @@
         }
         return;
       }
-      if (kind === 'tap' && pressed) {
-        bridge.wakeAudio().catch(() => {});
-        bridge.tap(value);
+      if (kind === 'tap') {
+        setHostedActionHeld(value, pressed);
+        if (pressed) {
+          hostedControllerSources.set(key, { kind, value, sourceId });
+          bridge.wakeAudio().catch(() => {});
+          bridge.tap(value);
+        } else hostedControllerSources.delete(key);
       }
     };
 
@@ -1027,14 +1312,15 @@
         return;
       }
 
-      controllerButton(frame, 'musicNote1', 'note-1', 'note', 0);
-      controllerButton(frame, 'musicNote2', 'note-2', 'note', 1);
-      controllerButton(frame, 'musicNote3', 'note-3', 'note', 2);
-      controllerButton(frame, 'musicNote4', 'note-4', 'note', 3);
       controllerButton(frame, 'musicBank1', 'bank-1', 'bank', 'lt');
       controllerButton(frame, 'musicBank2', 'bank-2', 'bank', 'rt');
       controllerButton(frame, 'musicBank3', 'bank-3', 'bank', 'lb');
       controllerButton(frame, 'musicBank4', 'bank-4', 'bank', 'rb');
+      // Resolve modifiers first so simultaneous bank + note presses sound and light the same bank.
+      controllerButton(frame, 'musicNote1', 'note-1', 'note', 0);
+      controllerButton(frame, 'musicNote2', 'note-2', 'note', 1);
+      controllerButton(frame, 'musicNote3', 'note-3', 'note', 2);
+      controllerButton(frame, 'musicNote4', 'note-4', 'note', 3);
       controllerButton(frame, 'musicPause', 'pause', 'tap', 'pause');
       controllerButton(frame, 'musicScalePrev', 'scale-prev', 'tap', 'scale-prev');
       controllerButton(frame, 'musicScaleNext', 'scale-next', 'tap', 'scale-next');
@@ -1052,17 +1338,9 @@
         }
       } else controllerAutoPickSector = -1;
 
-      const rxRaw = Number(gamepad.axes[2]) || 0;
-      const ryRaw = Number(gamepad.axes[3]) || 0;
-      const rx = Math.abs(rxRaw) < 0.14 ? 0 : rxRaw;
-      const ry = Math.abs(ryRaw) < 0.14 ? 0 : ryRaw;
-      if (Math.hypot(rx, ry) >= 0.12) {
-        controllerRightStickActive = true;
-        bridge.rightStick(rx, ry, 'host-gamepad-right-stick');
-      } else if (controllerRightStickActive) {
-        controllerRightStickActive = false;
-        bridge.releaseRightStick();
-      }
+      // The gameplay camera owner reads RS from this same ControllerInput frame.
+      // Music owns note buttons and LS only; RS never triggers a manual strum.
+
     };
     unsubscribeHostedController = window.ControllerInput?.subscribe?.(
       'music-minigame', pollHostedController, window.ControllerInput.PRIORITY.music,
@@ -1164,6 +1442,7 @@
     if (!deps) return;
     const performers = deps.listInstrumentPerformers();
     const performingIds = new Set(performers.map(p => p.npcId));
+    if (playerSession?.instrumentMode === 'puzzle') silenceAmbientForPuzzle(); // Includes NPCs whose schedules become active mid-puzzle.
     // The hidden ambient <iframe> plays through the browser's normal (non-
     // positional) audio output, so it's audible everywhere regardless of
     // which map it's attached to — only ever start/keep one sounding for
@@ -1183,6 +1462,7 @@
 
     for (const performer of performers) {
       if (performer.area !== currentArea) continue; // Not audible from here — don't even start it.
+      if (playerSession?.instrumentMode === 'puzzle' && playerSession.area === performer.area) continue; // Puzzle mode never has an NPC chord or root-pad backing track.
       if (ambientFrames.has(performer.npcId)) continue; // Already sounding.
       if (playerSession?.mode === 'backup' && playerSession.area === performer.area && playerSession.npcId === performer.npcId) continue; // The player's own overlay is standing in as this NPC's audio right now.
       const leader = leaderByArea.get(performer.area);
@@ -1197,6 +1477,8 @@
     beginPlayerSession,
     getEquippedInstrument: () => deps?.getEquippedInstrument?.() || null,
     close,
+    switchInstrumentMode, // Lets other gameplay systems open the legacy performance controls without rewriting the puzzle path.
+    get lastPuzzleSong() { return lastPuzzleSong; },
     tick,
     renderNoteKeySettings, // Called once at boot by game.js, the same way it calls window.InputSettingsPanel.render().
     renderPatternLoadoutSettings,
@@ -1207,5 +1489,10 @@
     // js/music-system.js, which ducks the game's ambient bgm/cues for as
     // long as either this or the player session is active.
     get ambientActive() { return ambientFrames.size > 0; },
+    diagnostics: () => ({latestChange:'Puzzle instrument publishes player note events for passive ruin melody listeners; ordinary instrument modes stay independent.',
+      player:playerSession?{mode:playerSession.mode,instrumentMode:playerSession.instrumentMode,instrumentKey:playerSession.instrumentKey,echoChallengeId:playerSession.echoChallenge?.id||null,npcId:playerSession.npcId||null}:null,
+      lastPuzzleSong:lastPuzzleSong,
+      flute:window.KurrayaInstrument?.fluteDiagnostics?.()||null,
+      npcPerformances:[...ambientFrames].map(([npcId,frame])=>({npcId,...bridgeOf(frame)?.ambientPerformanceState?.()}))}),
   };
 })();

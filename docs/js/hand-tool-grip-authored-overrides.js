@@ -7,13 +7,15 @@
   if (!api?.mutate || global.HobunjiAuthoredGripOverrides) return;
 
   const PREVIOUS_REVISION = 'spear-bshuakauitl-authored-20261006-v1'; // Identifies already-migrated drafts whose only new correction is the spear's fixed melee Z.
-  const REVISION = 'spear-bshuakauitl-authored-20261007-v2'; // Stored on grip data so these authored coordinates migrate exactly once.
+  const RANGED_PREVIOUS_REVISION = 'spear-bshuakauitl-authored-20261007-v2'; // Previous grip drafts also receive this ranged-only correction.
+  const HEAD_PREVIOUS_REVISION = 'bshuakauitl-ranged-head-20261022-v3'; // Existing head-relative drafts need only the revised ranged grip depth.
+  const REVISION = 'bshuakauitl-ranged-head-20261022-v4'; // Stored on grip data so these authored coordinates migrate exactly once.
   const AUTHORED = Object.freeze({ // Canonical values copied from the newest Attack Animation Editor grip export.
     bshuakauitl: Object.freeze({
       primaryGrip: Object.freeze({ position: Object.freeze({ x: -0.04, y: -0.04, z: 0.05 }), rotationDeg: Object.freeze({ pitch: 90, yaw: -90, roll: 0 }) }),
       primaryGripSpan: Object.freeze({ enabled: true, startZ: 0.0394, endZ: 0.1594 }),
       secondaryGripSpan: Object.freeze({ enabled: true, startZ: -0.1606, endZ: -0.0406 }),
-      rangedPrimaryGrip: Object.freeze({ position: Object.freeze({ x: -0.04, y: -0.04, z: -0.0006 }), rotationDeg: Object.freeze({ pitch: 90, yaw: -90, roll: 0 }) }),
+      rangedPrimaryGrip: Object.freeze({ position: Object.freeze({ x: -0.04, y: 0.02, z: 0.24 }), rotationDeg: Object.freeze({ pitch: -90, yaw: 90, roll: 0 }) }),
       rangedSecondaryGripSpan: Object.freeze({ enabled: false, startZ: 0, endZ: 0 }),
     }),
     fishingspear: Object.freeze({
@@ -32,6 +34,15 @@
     if (!data || typeof data !== 'object') return data;
     if (data.authoredGripRevision === REVISION) return data;
     data.tools ||= {};
+    if (data.authoredGripRevision === HEAD_PREVIOUS_REVISION || data.authoredGripRevision === RANGED_PREVIOUS_REVISION || data.authoredGripRevision === PREVIOUS_REVISION) {
+      const entry = data.tools.bshuakauitl ||= {}; // Preserve all existing melee calibration during ranged-only migration.
+      entry.rangedPrimaryGrip = clone(AUTHORED.bshuakauitl.rangedPrimaryGrip);
+      entry.rangedSecondaryGripSpan = clone(AUTHORED.bshuakauitl.rangedSecondaryGripSpan);
+      if (data.authoredGripRevision === RANGED_PREVIOUS_REVISION || data.authoredGripRevision === HEAD_PREVIOUS_REVISION) {
+        data.authoredGripRevision = REVISION;
+        return data;
+      }
+    }
     if (data.authoredGripRevision === PREVIOUS_REVISION && data.tools.fishingspear?.primaryGrip?.position) {
       data.tools.fishingspear.primaryGrip.position.z = AUTHORED.fishingspear.primaryGrip.position.z;
       data.authoredGripRevision = REVISION;

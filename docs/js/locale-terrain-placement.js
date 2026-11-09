@@ -389,6 +389,7 @@
       const worldR = anchorR + cell.r;
       const host = tileRecord(context.root, worldC, worldR);
       if (!host) return { ok: false, reason: 'footprint out of bounds', floorTier: floor.tier };
+      if (context.claimed?.has(sourceKey(worldC, worldR))) return { ok: false, reason: 'occupied by an earlier terrain-aware locale', floorTier: floor.tier, failAt: { c: worldC, r: worldR } }; // Painted locale tiles read as plain ground, so same-facing ruin copies would otherwise stack on one cliff.
       const blocking = objectBlockingReason(host);
       if (blocking) return { ok: false, reason: blocking, floorTier: floor.tier, failAt: { c: worldC, r: worldR } };
       if (!localTileCanCoverHost(cell.value.type, host) && !compiled.embedded.has(sourceKey(cell.c, cell.r))) {
@@ -596,6 +597,7 @@
       npcAnchors: (locale.npcAnchors || []).map(anchor => ({ ...scaledPoint(selected.anchorC, selected.anchorR, compiled.scale, anchor), npcId: anchor.npcId, name: anchor.name, facing: anchor.facing })),
       objects: (locale.objects || []).map(object => ({
         id: object.id, kind: object.kind, key: object.key, label: object.label,
+        wallMountId: object.wallMountId || undefined, // Locale Editor placeholder association survives stamping into unknown runtime cliff geometry.
         ...scaledPoint(selected.anchorC, selected.anchorR, compiled.scale, object),
         w: Math.max(1, Number(object.w) || 1) * compiled.scale,
         h: Math.max(1, Number(object.h) || 1) * compiled.scale,
@@ -675,6 +677,8 @@
     }
     const clearedObjectIds = clearClearableObjectsUnderFootprint(context, compiled, search.best.anchorC, search.best.anchorR); // Clearable clutter is removed before tile metadata is overwritten.
     for (const cell of compiled.tiles.values()) paintLocaleTile(context, compiled, search.best, cell);
+    context.claimed = context.claimed || new Set(); // Footprints placed earlier in this pass; evaluateCandidate rejects any overlap.
+    for (const cell of compiled.tiles.values()) context.claimed.add(sourceKey(search.best.anchorC + cell.c, search.best.anchorR + cell.r));
     const instance = localeInstance(compiled, search.best); // Runtime consumes the same localeInstances shape used by legacy stamped locales.
     context.workspace.localeInstances = Array.isArray(context.workspace.localeInstances) ? context.workspace.localeInstances : [];
     context.workspace.localeInstances.push(instance);

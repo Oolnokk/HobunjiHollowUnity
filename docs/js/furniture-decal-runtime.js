@@ -55,6 +55,10 @@
   }
 
   function resolvedImageSource(record) {
+    const path = resolvedImageSourceRaw(record);
+    return window.RuinEmblem?.resolve?.(path) || path; // Ruins swap the generic round emblem for the lich tradition's motif.
+  }
+  function resolvedImageSourceRaw(record) {
     const raw = String(record?.runtimeImageSource || record?.imageSource || record?.imageName || '').trim();
     if (!raw || /^(?:data|blob):/i.test(raw)) return raw;
     const docsAsset = raw.lastIndexOf('docs/assets/');
@@ -407,7 +411,19 @@
     const glow = normalizeGlow(record.glow);
     if (glow) {
       mesh.userData.decalGlow = glow;
+      mesh.userData.decalGlowOverlay = true; // Pixel Probe and in-game reports can distinguish a live glow from an ordinary opaque decal.
       material.color.set(glow.off[0]);
+      material.blending = THREE.AdditiveBlending;
+      material.transparent = true;
+      material.depthWrite = false;
+      material.onBeforeCompile = shader => {
+        shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `
+          #ifdef USE_MAP
+            diffuseColor.a *= texture2D(map, vUv).a;
+          #endif
+        `); // PNG alpha forms the luminous glyph; dark image RGB cannot extinguish it.
+      };
+      mesh.renderOrder = 2; // Bright markings draw over the textured stone without changing its pixels or tint.
       (group.userData.glowDecalMeshes ||= []).push(mesh);
     }
 

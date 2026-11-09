@@ -14,7 +14,7 @@
       : 'inactive';
     const player = data.playerChunk ? `${data.playerChunk.cx},${data.playerChunk.cz}` : 'none';
     const live = data.liveChunk ? `${data.liveChunk.cx},${data.liveChunk.cz}` : 'none';
-    const anchor = data.liveAnchor ? `${Number(data.liveAnchor.x).toFixed(2)},${Number(data.liveAnchor.z).toFixed(2)}` : 'none'; // Exact visible formation centroid used by the beacon.
+    const anchor = data.liveAnchor ? `${Number(data.liveAnchor.x).toFixed(2)},${Number(data.liveAnchor.z).toFixed(2)}` : 'none'; // Exact commander position used by the 3D beacon.
     const groundErr = Number.isFinite(data.placement?.groundErrorY) ? Number(data.placement.groundErrorY).toFixed(3) : '-'; // Zero confirms rendered feet match sampled elevation.
     const buildText = `${data.membersCached ?? 0}/${data.expectedMembers ?? '-'}${data.building ? ':building' : ':idle'}`; // Distinguishes async portrait construction from a failed spawn.
     const music = window.HarlyaoNightMarchMusic?.debugSnapshot?.(); // Adds cached proximity/audio lerp state to the same mobile-copyable line.
@@ -25,7 +25,7 @@
     const terrorText = terror
       ? ` terror=${terror.stacks}/${terror.maxStacks}/move${Number(terror.movementMultiplier || 1).toFixed(3)}/dark${Number(terror.darknessAlpha || 0).toFixed(3)}/lantern${Number(terror.lanternRadiusMultiplier || 1).toFixed(3)}`
       : ' terror=unavailable';
-    return `${LINE_PREFIX} scheduled=${scheduled} playerChunk=${player} liveChunk=${live} anchor=${anchor} build=${buildText} members=${data.membersAlive}/${data.membersCached} visible=${!!data.visible} groundErr=${groundErr} ticks=${data.updateTicks ?? '-'} provoked=${!!data.provoked} reason=${data.reason || '-'}${musicText}${terrorText}`;
+    return `${LINE_PREFIX} scheduled=${scheduled} playerChunk=${player} liveChunk=${live} anchor=${anchor} build=${buildText} members=${data.membersAlive}/${data.membersCached} visible=${!!data.visible} groundErr=${groundErr} ticks=${data.updateTicks ?? '-'} provoked=${!!data.provoked} reason=${data.reason || '-'}${musicText}${terrorText} commander=${data.commander?.id || '-'} detailed=${data.detailedMembers ?? 0} regrouping=${!!data.regrouping} owner=${data.tickOwner || '-'} change=${data.latestChange || '-'} beacon=[${window.HarlyaoNightMarchBeacon?.formatDebug?.() || 'unavailable'}]`;
   }
 
   function appendOrReplace(report) {

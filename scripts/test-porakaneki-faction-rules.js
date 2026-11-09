@@ -76,9 +76,9 @@ const sandbox = {
   WeakSet,
   JSON,
   Promise,
-  fetch: async () => ({
+  fetch: async url => ({
     ok: true,
-    json: async () => ({ reputation: { killPenalty: 0, selfDefenseKillPenalty: -1, murderKillPenalty: -3, rivalNpcId: 'omgurku_chief', rivalKillFavor: 1 } }),
+    json: async () => ({ reputation: { killPenalty: 0, selfDefenseKillPenalty: -1, murderKillPenalty: -3, rivalNpcId: String(url).includes('omgurku') ? 'porakaneki_chief' : 'omgurku_chief', rivalKillFavor: 1 } }),
   }),
   setInterval(fn) { return { unref() {} }; },
   clearInterval() {},
@@ -162,6 +162,23 @@ window.BanditCamps.updateCampBanners();
 assert(relationMap.get('porakaneki_chief').favor === -3, `murder favor ${relationMap.get('porakaneki_chief').favor}`);
 assert(relationMap.get('omgurku_chief').favor === 1, `murder rival favor ${relationMap.get('omgurku_chief').favor}`);
 
+// Symmetric rivalry: murdering a neutral Omgurku costs Omgurku Favor and earns Porakaneki Favor.
+const omg = { ...hunter('omg', 'omgurku_camp'), isPorakanekiHunter: false, isTribeHunter: true, tribeId: 'omgurku' };
+hostileObjects.delete(e);
+hostileObjects.add(omg);
+resetFavor();
+rules.syncNow();
+assert(omg.def.hostile === false, 'neutral Omgurku is not a companion target');
+assert(window.Combat.meleeHit({ isCompanion: true }, omg, {}) === false, 'neutral Omgurku companion melee blocked');
+window._duringTick = () => { window.Combat.deps.damageCreature(omg, 10, player.x, player.y, 0, { tag: 'sharp' }); };
+window.BanditCamps.updateCampBanners();
+assert(relationMap.get('omgurku_chief').favor === -3, `Omgurku murder favor ${relationMap.get('omgurku_chief').favor}`);
+assert(relationMap.get('porakaneki_chief').favor === 1, `Omgurku murder rival favor ${relationMap.get('porakaneki_chief').favor}`);
+assert(popups.some(([, text]) => text === '+1 Porakaneki Favor'), 'rival reward is labelled with the Porakaneki tribe');
+hostileObjects.delete(omg);
+hostileObjects.add(e);
+window._duringTick = null;
+
 // Shared-enemy crossfire: a player hit/kill while a bandit or predator is in
 // the same observed chunk is forgiven rather than becoming murder/self-defense.
 const crossfire = hunter('crossfire', 'camp_crossfire');
@@ -236,6 +253,25 @@ window._duringTick = () => {
 window.BanditCamps.updateCampBanners();
 assert(relationMap.get('porakaneki_chief').favor === -3, `legacy murder favor ${relationMap.get('porakaneki_chief').favor}`);
 assert(relationMap.get('omgurku_chief').favor === 1, `legacy rival favor ${relationMap.get('omgurku_chief').favor}`);
+
+// Date/romance classification at the moment of death: a still-neutral hunter
+// or one the player provoked is not self-defense; an already-hostile hunter
+// whose camp attacked first (attack-on-sight / its own aggression) is.
+const sd = hunter('sd');
+sd.porakanekiCampId = 'sd_camp';
+sd._porakanekiPlannerControlled = true;
+assert(rules.killedInSelfDefense(sd) === false, 'a neutral hunter is never killed in self-defense');
+sd._porakanekiPlannerControlled = false;
+assert(rules.killedInSelfDefense(sd) === true, 'a hostile hunter that attacked first is self-defense');
+const provoked = hunter('provoked');
+provoked.porakanekiCampId = 'provoked_camp';
+hostileObjects.add(provoked);
+rules.syncNow();
+window.Combat.deps.damageCreature(provoked, 1, player.x, player.y, 0, { tag: 'sharp' }); // Player first blood on a neutral camp.
+provoked._porakanekiPlannerControlled = false; // Camp retaliates.
+assert(rules.killedInSelfDefense(provoked) === false, 'a fight the player started is not self-defense');
+assert(rules.killedInSelfDefense({ id: 'wolf' }) === false, 'non-tribe creatures are never classified');
+hostileObjects.delete(provoked);
 
 const hooks = rules.debugSnapshot().hooks;
 assert(Object.values(hooks).every(Boolean), `all hooks installed: ${JSON.stringify(hooks)}`);

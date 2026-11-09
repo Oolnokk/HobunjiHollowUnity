@@ -148,7 +148,7 @@
     }
 
     function weightsFor(side) {
-      const weights = poseRuntime?.currentWeights?.(side) || { grip: 1, palmNormal: 1 };
+      const weights = poseRuntime?.currentWeights?.(side, avatarRoot) || { grip: 1, palmNormal: 1 }; // Avatar scope prevents the player's musical stance leaking to NPCs.
       return { grip: clamp01(weights.grip), palmNormal: clamp01(weights.palmNormal) };
     }
 
@@ -208,7 +208,7 @@
 
     function shoulderInParent(side) {
       const profileShoulder = profileShoulderInParent(side); // Attachment-rig coordinates already share the floor-relative hand-parent space.
-      if (profileShoulder) return shoulderParent.copy(profileShoulder);
+      if (profileShoulder) return spineLowered(shoulderParent.copy(profileShoulder));
       const source = shoulderAvatar[side];
       if (!source) return null;
       shoulderWorld.copy(source);
@@ -217,8 +217,30 @@
       shoulderParent.copy(shoulderWorld);
       parent.updateWorldMatrix?.(true, false);
       parent.worldToLocal(shoulderParent);
-      return shoulderParent;
+      return spineLowered(shoulderParent);
     }
+
+    // Shoulder anchors keep their 2D portrait coordinates; a hunched spine (js/character-spine.js, bound on the avatar root) carries them along
+    // the same curve the portrait skin follows: the point is taken into the avatar's frame, displaced (down, forward and sideways, off the local
+    // root's x = 0, z = 0) by the curve at its own height, and brought back to the parent frame.
+    const spineScratch = new THREE.Vector3();
+    const spineDisplacement = { x: 0, y: 0, z: 0 };
+    function spineLowered(point) {
+      const spine = avatarRoot.userData?.hobunjiSpine;
+      if (!spine?.curve) return point;
+      parent.updateWorldMatrix?.(true, false);
+      avatarRoot.updateWorldMatrix?.(true, false);
+      spineScratch.copy(point);
+      parent.localToWorld(spineScratch);
+      avatarRoot.worldToLocal(spineScratch);
+      const d = window.HobunjiCharacterSpine.deformAt(spine, spineScratch.y - assemblyY, spineDisplacement);
+      spineScratch.x += d.x; spineScratch.y += d.y; spineScratch.z += d.z;
+      avatarRoot.localToWorld(spineScratch);
+      parent.worldToLocal(spineScratch);
+      return point.copy(spineScratch);
+    }
+
+    rig.shoulderPositionLocal = (side,out) => { const point=shoulderInParent(side);return point ? out.copy(point) : null; }; // Paired poses capture the same authored/scanned shoulder the existing hand aim uses.
 
     function posteriorYInParent() {
       const resolvedY = Number(attachmentRigProfile()?.resolvedPosteriorPosition?.y); // Animation Author publishes the exact live posterior gizmo coordinate here.
@@ -241,7 +263,7 @@
       const socket = socketFor(side); // Free-hand socket whose idle position follows shoulder X and posterior Y.
       const shoulder = shoulderInParent(side); // Resolved rig/manual/scanned shoulder point in the socket parent's local space.
       if (!socket || !shoulder) return false;
-      socket.position.x = shoulder.x;
+      socket.position.x = shoulder.x + (Number(fallbackPose?.position?.x) || 0); // Walk/idle poses author x = 0; gameplay poses (crawl) may reach sideways.
       socket.position.y = posteriorYInParent() + armLengthOffsetY() + (Number(fallbackPose?.position?.y) || 0);
       socket.updateMatrix?.();
       socket.updateMatrixWorld?.(true);
@@ -292,7 +314,7 @@
     function resolveElbowInParent(side, shoulder, target = guideElbow) {
       const socket = socketFor(side);
       if (!socket || !shoulder) return null;
-      const authoredOffset = poseRuntime?.currentElbow?.(side) || null; // Direct pose data: shoulder-relative elbow offset in the same local space as shoulder/wrist.
+      const authoredOffset = poseRuntime?.currentElbow?.(side, avatarRoot) || null; // Match the current player's authored elbow without changing other hand rigs. // Direct pose data: shoulder-relative elbow offset in the same local space as shoulder/wrist.
       if (authoredOffset) {
         target.set(
           shoulder.x + Number(authoredOffset.x || 0),
@@ -325,33 +347,41 @@
       const root = new THREE.Group(); // Parent-local x-ray scaffold; it never drives hand or shoulder transforms.
       root.name = `${side}_paper_arm_guide`;
       root.userData = { visualOnly: true, elbowPoseAuthoritative: true, jointLimitsApplied: false };
-      const material = new THREE.MeshBasicMaterial({
-        color: 0xffffff, wireframe: true, transparent: true, opacity: 0.82,
-        depthTest: false, depthWrite: false, side: THREE.DoubleSide,
-      });
-      material.name = 'paper_arm_xray_wire';
-      const width = Math.max(0.012, modelHeight * 0.035); // Visible strip width used by both upper/lower guide segments.
-      const makeStrip = name => {
-        const strip = new THREE.Mesh(new THREE.PlaneGeometry(width, 1), material);
-        strip.name = name;
-        strip.renderOrder = 9999;
-        strip.frustumCulled = false;
-        root.add(strip);
-        return strip;
+      // Solid, always-on-top, colour-coded joints so the elbow is unmistakable (and never confused with the blue grip/anchor
+      // markers): green = shoulder, orange = elbow, cyan = hand socket; the arm bones between them are drawn as capsule-like bars.
+      const solid = (name, color, opacity) => {
+        const material = new THREE.MeshBasicMaterial({ color, transparent: opacity < 1, opacity, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
+        material.name = name;
+        material.toneMapped = false;
+        return material;
       };
-      const upper = makeStrip(`${side}_paper_upper_arm`);
-      const lower = makeStrip(`${side}_paper_forearm`);
-      const elbow = new THREE.Mesh(
-        new THREE.SphereGeometry(Math.max(0.012, modelHeight * 0.026), 10, 8),
-        material,
-      );
-      elbow.name = `${side}_paper_elbow`;
-      elbow.renderOrder = 10000;
-      elbow.frustumCulled = false;
-      root.add(elbow);
+      const material = solid('paper_arm_bone', 0xf1f5f9, 0.78);
+      const radius = Math.max(0.014, modelHeight * 0.03); // Joint sphere size; the elbow is a little larger so it reads first.
+      const boneRadius = Math.max(0.006, radius * 0.38);
+      const makeBone = name => {
+        const bone = new THREE.Mesh(new THREE.CylinderGeometry(boneRadius, boneRadius, 1, 10), material); // Unit-length cylinder along local Y; placePaperStrip stretches it between joints.
+        bone.name = name;
+        bone.renderOrder = 9999;
+        bone.frustumCulled = false;
+        root.add(bone);
+        return bone;
+      };
+      const makeBall = (name, color, scale = 1) => {
+        const ball = new THREE.Mesh(new THREE.SphereGeometry(radius * scale, 14, 10), solid(`${name}_material`, color, 0.97));
+        ball.name = name;
+        ball.renderOrder = 10000;
+        ball.frustumCulled = false;
+        root.add(ball);
+        return ball;
+      };
+      const upper = makeBone(`${side}_paper_upper_arm`);
+      const lower = makeBone(`${side}_paper_forearm`);
+      const shoulder = makeBall(`${side}_paper_shoulder`, 0x22c55e);
+      const elbow = makeBall(`${side}_paper_elbow`, 0xf97316, 1.3);
+      const wrist = makeBall(`${side}_paper_hand_socket`, 0x22d3ee);
       root.visible = false;
       parent.add(root);
-      paperArmBySide[side] = { root, upper, lower, elbow, material };
+      paperArmBySide[side] = { root, upper, lower, shoulder, elbow, wrist, material };
       return paperArmBySide[side];
     }
 
@@ -387,6 +417,11 @@
       placePaperStrip(guide.upper, shoulder, elbow);
       placePaperStrip(guide.lower, elbow, socket.position);
       guide.elbow.position.copy(elbow);
+      guide.shoulder.position.copy(shoulder);
+      guide.wrist.position.copy(socket.position);
+      const elbowAuthored = elbowSolve.source === 'pose-authored';
+      guide.elbow.visible = elbowAuthored; // With no authored elbow the arm aims straight at the shoulder: drawing an elbow there would just sit on top of the shoulder sphere.
+      if (!elbowAuthored) guide.upper.visible = false;
       guide.root.userData.armLength = elbowSolve.diagnosticArmLength;
       guide.root.userData.armLengthSource = avatarRoot.userData?.armLengthSource || 'fallback';
       guide.root.userData.upperArmLength = elbowSolve.upperArmLength;

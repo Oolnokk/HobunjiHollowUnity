@@ -13,7 +13,12 @@
   let combatVisualState = null;
   let lastDebugSignature = '';
   let stanceApplied = false;
-  let stanceConfigLoadStarted = false;
+  let stanceConfigRequest = null; // Shares the in-flight JSON fetch across repeated init/reload calls.
+  let stanceConfigLoaded = false; // Prevents repeated fetches after a successful committed-config load.
+  let stanceRetryTimer = null; // Retries transient fetch failures without requiring a page reload.
+  let stanceConfigFailures = 0; // Powers bounded exponential retry delays and diagnostic snapshots.
+  let stanceConfigLastError = null; // Exposes the latest recoverable fetch error to mobile debug UI.
+  let localStanceOverride = null; // Reapplied after each successful fetch so local changes keep priority.
   let stanceConfigSource = 'built-in-defaults';
   // toolHolder.matrixWorld as actually baked by the most recent
   // updateMatrixWorld() call below (idle stance included, when one applied).
@@ -26,18 +31,22 @@
   // hand socket sync) can read it without triggering that recompute.
   let lastBakedHolderMatrixWorld = null;
 
-  const STANCE_CONFIG_URL = 'config/combat/weapon-idle-stances.json?v=20261005dualidle1';
+  const STANCE_CONFIG_URL = 'config/combat/weapon-idle-stances.json?v=20261027hcarryjson1';
   const STANCE_LOCAL_STORAGE_KEY = 'hobunji.weaponIdleStances.v1';
-  const POSE_KEYS = Object.freeze(['x', 'y', 'z', 'pitch', 'yaw', 'bodyYaw', 'roll']);
-  const MIRRORED_POSE_KEYS = new Set(['x', 'yaw', 'bodyYaw', 'roll']);
-  const RAD_TO_DEG = 180 / Math.PI;
+  // The pose schema, the legacy rest poses and the stance-baking policy (power,
+  // spacing, Neutral handedness) are window.SharedAttackPose's, shared with
+  // EnemyWeaponStances so the player and every BanditCombat humanoid bake an
+  // attack against a Light/Heavy stance identically.
+  const SAP = window.SharedAttackPose;
+  const POSE_KEYS = SAP.POSE_KEYS;
+  const normalizePose = SAP.normalizePose;
 
   // game.js's legacy rest poses. These remain the source basis for ordinary tool
-  // mode and for converting old procedural combat arcs into pose-driven attacks.
+  // mode (the idle holder pose below).
   const ENGINE_NEUTRAL_POSES = Object.freeze({
-    thrust: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }),
-    sweep: Object.freeze({ x: 0, y: 0, z: 0.16, pitch: 0, yaw: 0, bodyYaw: 0, roll: 0 }),
-    chop: Object.freeze({ x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: 2, roll: -82 }),
+    thrust: SAP.STYLE_NEUTRAL_POSE.thrust,
+    sweep: SAP.STYLE_NEUTRAL_POSE.sweep,
+    chop: SAP.STYLE_NEUTRAL_POSE.chop,
   });
 
   // Mirrors docs/config/combat/weapon-idle-stances.json so a missing fetch never
@@ -45,11 +54,14 @@
   const DEFAULT_IDLE_STANCES = Object.freeze({
     tool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }),
     hoeTool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: -95 }),
+    topHeavyTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
+    longHaftedTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
     heavyWeapon: Object.freeze({ x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 }),
     lightWeapon: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }),
     dualWieldMain: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }),
-    dualWieldOffhand: Object.freeze({ x: 0.09, y: 0, z: -0.04, pitch: 37, yaw: 68, bodyYaw: -40, roll: 114 }),
+    dualWieldOffhand: Object.freeze({ x: 0.13, y: -0.04, z: 0.1, pitch: 40, yaw: 88, bodyYaw: -40, roll: -73 }),
   });
+  const PREVIOUS_TOP_HEAVY_TOOL_STANCE = Object.freeze({ x: -0.14, y: -0.07, z: -0.18, pitch: -22, yaw: -21, bodyYaw: -8, roll: -99 }); // Recognizes untouched pre-copy browser overrides.
   const PREVIOUS_LIGHT_WEAPON_STANCE = Object.freeze({ x: -0.09, y: -0.08, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 });
 
   // Keep these objects stable so external debug/editor references do not go stale
@@ -57,20 +69,13 @@
   const idleStances = {
     tool: { ...DEFAULT_IDLE_STANCES.tool },
     hoeTool: { ...DEFAULT_IDLE_STANCES.hoeTool },
+    topHeavyTool: { ...DEFAULT_IDLE_STANCES.topHeavyTool },
+    longHaftedTool: { ...DEFAULT_IDLE_STANCES.longHaftedTool },
     heavyWeapon: { ...DEFAULT_IDLE_STANCES.heavyWeapon },
     lightWeapon: { ...DEFAULT_IDLE_STANCES.lightWeapon },
     dualWieldMain: { ...DEFAULT_IDLE_STANCES.dualWieldMain },
     dualWieldOffhand: { ...DEFAULT_IDLE_STANCES.dualWieldOffhand },
   };
-
-  function normalizePose(raw, fallback) {
-    const pose = {};
-    for (const key of POSE_KEYS) {
-      const value = Number(raw?.[key]);
-      pose[key] = Number.isFinite(value) ? value : Number(fallback?.[key]) || 0;
-    }
-    return pose;
-  }
 
   function clonePose(pose) {
     return normalizePose(pose, {});
@@ -83,38 +88,78 @@
   function applyStanceConfig(raw, sourceLabel) {
     if (!raw || raw.kind !== 'hobunji_weapon_idle_stances' || !raw.stances) return false;
     for (const key of Object.keys(idleStances)) {
-      const normalized = normalizePose(raw.stances[key], DEFAULT_IDLE_STANCES[key]);
+      const incoming = raw.stances[key]; // Only explicit local overrides should replace a committed stance.
+      if (sourceLabel === 'local-override' && (!incoming || typeof incoming !== 'object')) continue;
+      const baseline = sourceLabel === 'local-override' ? idleStances[key] : DEFAULT_IDLE_STANCES[key]; // Missing local channels inherit the actual loaded stance.
+      const normalized = normalizePose(incoming, baseline);
       if (key === 'lightWeapon' && isPreviousLightWeaponPose(raw.stances[key])) normalized.y = 0; // Migrate only the exact former committed default; authored local overrides remain intact.
+      if (key === 'topHeavyTool' && sourceLabel === 'local-override' && POSE_KEYS.every(field =>
+        Math.abs((Number(incoming?.[field]) || 0) - PREVIOUS_TOP_HEAVY_TOOL_STANCE[field]) < 1e-9)) {
+        Object.assign(normalized, DEFAULT_IDLE_STANCES.topHeavyTool); // An untouched saved default should receive the working Pick-Shovel copy; user edits remain untouched.
+      }
       Object.assign(idleStances[key], normalized);
     }
     stanceConfigSource = sourceLabel;
     return true;
   }
 
-  async function loadStanceConfig() {
-    if (stanceConfigLoadStarted) return;
-    stanceConfigLoadStarted = true;
+  function hasCompleteCommittedStances(config) {
+    return config?.kind === 'hobunji_weapon_idle_stances'
+      && config.stances && typeof config.stances === 'object'
+      && Object.keys(idleStances).every(key => POSE_KEYS.every(field =>
+        typeof config.stances[key]?.[field] === 'number' && Number.isFinite(config.stances[key][field])));
+  }
 
+  function loadLocalStanceOverride() {
     try {
-      const response = await fetch(STANCE_CONFIG_URL, { cache: 'no-store' });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const parsed = await response.json();
-      if (!applyStanceConfig(parsed, 'committed-json')) throw new Error('schema mismatch');
+      const saved = localStorage.getItem(STANCE_LOCAL_STORAGE_KEY); // Existing saved stance settings, available even if the network is offline.
+      localStanceOverride = saved ? JSON.parse(saved) : null;
+      if (localStanceOverride && !applyStanceConfig(localStanceOverride, 'local-override')) throw new Error('schema mismatch');
     } catch (error) {
-      window.__farmLog?.(`[weapon-stance] idle config fallback: ${error?.message || error}`, 'warn');
-    }
-
-    try {
-      const localRaw = localStorage.getItem(STANCE_LOCAL_STORAGE_KEY);
-      if (localRaw) {
-        const parsed = JSON.parse(localRaw);
-        if (!applyStanceConfig(parsed, 'local-override')) throw new Error('schema mismatch');
-      }
-    } catch (error) {
+      localStanceOverride = null;
       window.__farmLog?.(`[weapon-stance] ignored invalid local idle override: ${error?.message || error}`, 'warn');
     }
+  }
 
-    window.__farmLog?.(`[weapon-stance] idle config source=${stanceConfigSource}`, 'combat');
+  function loadStanceConfig({ force = false } = {}) {
+    if (stanceConfigRequest) return stanceConfigRequest;
+    if (stanceConfigLoaded && !force) return Promise.resolve(true);
+    if (stanceRetryTimer !== null && !force) return Promise.resolve(false); // Respect scheduled backoff across repeated EquipmentPanel init calls.
+    if (stanceRetryTimer !== null) {
+      clearTimeout(stanceRetryTimer);
+      stanceRetryTimer = null;
+    }
+
+    stanceConfigRequest = (async () => {
+      const controller = typeof AbortController === 'function' ? new AbortController() : null; // Bounds stalled requests so retries can actually happen.
+      const deadline = controller ? setTimeout(() => controller.abort(), 10000) : null; // Ten-second network deadline for each attempt.
+      try {
+        const response = await fetch(STANCE_CONFIG_URL, { cache: 'no-store', ...(controller ? { signal: controller.signal } : {}) });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const parsed = await response.json();
+        if (!hasCompleteCommittedStances(parsed) || !applyStanceConfig(parsed, 'committed-json')) throw new Error('incomplete stance config');
+        if (localStanceOverride) applyStanceConfig(localStanceOverride, 'local-override');
+        stanceConfigLoaded = true;
+        stanceConfigFailures = 0;
+        stanceConfigLastError = null;
+        window.__farmLog?.(`[weapon-stance] idle config source=${stanceConfigSource}`, 'combat');
+        return true;
+      } catch (error) {
+        stanceConfigLoaded = false;
+        stanceConfigLastError = String(error?.message || error);
+        stanceConfigFailures += 1;
+        const retryMs = Math.min(30000, 1000 * (2 ** Math.min(stanceConfigFailures - 1, 5))); // Back off up to 30s; keep recovering during long sessions.
+        window.__farmLog?.(`[weapon-stance] idle config unavailable (${stanceConfigLastError}); retry in ${retryMs}ms`, 'warn');
+        stanceRetryTimer = setTimeout(() => {
+          stanceRetryTimer = null;
+          void loadStanceConfig();
+        }, retryMs);
+        return false;
+      } finally {
+        if (deadline !== null) clearTimeout(deadline);
+      }
+    })().finally(() => { stanceConfigRequest = null; });
+    return stanceConfigRequest;
   }
 
   function shapeFor(itemKey, def) {
@@ -162,7 +207,8 @@
   function targetPoseFor(activeSlot, itemKey, def, { dualWield = null } = {}) {
     const shape = shapeFor(itemKey, def);
     if (activeSlot !== 'weapon') {
-      if (activeSlot === 'hoe' && shape === 'hoe') return idleStances.hoeTool;
+      if (shape === 'hoe' || shape === 'hatchet' || shape === 'fishingmace') return idleStances.topHeavyTool; // Head-weighted tools share one carried stance.
+      if (shape === 'fishingspear' || shape === 'pickshovel') return idleStances.longHaftedTool; // Same carry, pitched up 10° and gripped nearer the haft's middle.
       if (def?.animStyle === 'thrust') return idleStances.tool;
       return null;
     }
@@ -245,57 +291,6 @@
     return now < holderMotionBusyUntil;
   }
 
-  // Bake game.js's old procedural attack endpoints into the generic pose schema.
-  // Once an attack has a pose object, game.js's own fourPhaseLerp() can use the
-  // active Heavy/Light stance as Neutral for the real Neutral→Windup→Strike→Neutral cycle.
-  function legacyProceduralEndpoints(anim, power) {
-    const p = Number.isFinite(Number(power)) ? Number(power) : 1;
-    if (anim === 'chop') {
-      const neutral = ENGINE_NEUTRAL_POSES.chop;
-      const rawWindup = { x: -0.18, y: 0.41, z: -0.15, pitch: -165, yaw: 13, bodyYaw: -29, roll: -112 };
-      const rawStrike = { x: 0, y: 0, z: 0.12, pitch: 13, yaw: -28, bodyYaw: 29, roll: -91 };
-      const scaleFromNeutral = raw => {
-        const out = {};
-        for (const key of POSE_KEYS) out[key] = neutral[key] + (raw[key] - neutral[key]) * p;
-        return out;
-      };
-      return { windup: scaleFromNeutral(rawWindup), strike: scaleFromNeutral(rawStrike) };
-    }
-    if (anim === 'sweep') {
-      return {
-        windup: { x: 0, y: 0, z: 0.16, pitch: 0, yaw: 0, bodyYaw: -2.20 * RAD_TO_DEG * p, roll: 0 },
-        strike: { x: 0, y: 0, z: 0.16, pitch: 0, yaw: 0, bodyYaw: 2.12 * RAD_TO_DEG * p, roll: 0 },
-      };
-    }
-    // Thrust's pitch is intentionally not power-scaled in game.js; the reach,
-    // lateral offset, tool yaw and body yaw are.
-    return {
-      windup: { x: 0, y: 0, z: -0.40 * p, pitch: 10.31, yaw: 0, bodyYaw: -45 * p, roll: 0 },
-      strike: { x: -0.23 * p, y: 0, z: 0.32 * p, pitch: 1, yaw: -45 * p, bodyYaw: 46 * p, roll: 0 },
-    };
-  }
-
-  function bakeAuthoredEndpoint(raw, sourceNeutral, power) {
-    const out = { ...raw }; // Keep independently authored hand flags while baking only transform channels.
-    for (const key of POSE_KEYS) {
-      const rawValue = Number(raw?.[key]);
-      const endpoint = Number.isFinite(rawValue) ? rawValue : sourceNeutral[key];
-      out[key] = sourceNeutral[key] + (endpoint - sourceNeutral[key]) * power;
-    }
-    return out;
-  }
-
-  // game.js mirrors x/yaw/roll/bodyYaw after interpolating them whenever dirSign
-  // is -1. Convert a desired visible Neutral handedness back into the input pose
-  // that will produce it after that runtime mirror is applied.
-  function neutralInputForSigns(targetNeutral, visibleSign, runtimeSign) {
-    const out = {};
-    for (const key of POSE_KEYS) {
-      out[key] = MIRRORED_POSE_KEYS.has(key) ? targetNeutral[key] * visibleSign * runtimeSign : targetNeutral[key];
-    }
-    return out;
-  }
-
   function prepareCombatOptions(rawOpts = {}) {
     const state = activeState();
     const useDualWieldIdle = dualWieldIdleRequested(rawOpts);
@@ -304,53 +299,33 @@
 
     const anim = rawOpts.anim || state.def?.animStyle || 'thrust';
     const authoredPose = rawOpts.pose && typeof rawOpts.pose === 'object' ? rawOpts.pose : null;
-    const requestedSign = rawOpts.dirSign === -1 ? -1 : 1;
-    // Legacy procedural thrust/chop never used combatSwingSign; preserve that.
-    const effectiveSign = authoredPose || anim === 'sweep' ? requestedSign : 1;
-    const alternatesHeavyNeutral = weaponIdleClass(state.itemKey, state.def) === 'heavy';
-    // Heavy swings finish ready on the opposite side. A mirrored/backhand swing
-    // therefore starts mirrored and returns to the regular Heavy idle; a regular
-    // swing does the inverse. Light weapons retain their one-sided idle stance.
-    const startNeutralSign = alternatesHeavyNeutral ? effectiveSign : 1;
-    const returnNeutralSign = alternatesHeavyNeutral ? -effectiveSign : 1;
     const powerValue = Number(rawOpts.power);
     const power = Number.isFinite(powerValue) ? powerValue : 1;
-    let windup;
-    let strike;
 
-    if (authoredPose) {
-      const styleNeutral = ENGINE_NEUTRAL_POSES[anim] || ENGINE_NEUTRAL_POSES.thrust;
-      const sourceNeutral = normalizePose(authoredPose.neutral, styleNeutral);
-      windup = bakeAuthoredEndpoint(authoredPose.windup, sourceNeutral, power);
-      strike = bakeAuthoredEndpoint(authoredPose.strike, sourceNeutral, power);
-    } else {
-      ({ windup, strike } = legacyProceduralEndpoints(anim, power));
-    }
+    // The stance policy (legacy-arc / authored endpoints with power baked in, the shared melee spacing calibration,
+    // the sign rule, and Heavy weapons' alternating start/return Neutral) is SharedAttackPose.bakeStanceSequence,
+    // the same function every enemy bakes with. Only the hand-flag decoration below is player-side.
+    const sequence = SAP.bakeStanceSequence(anim, authoredPose, rawOpts.dirSign === -1 ? -1 : 1, power, targetNeutral, {
+      alternatesHeavyNeutral: weaponIdleClass(state.itemKey, state.def) === 'heavy',
+      meleeSpacing: rawOpts.meleeSpacing !== false,
+    });
 
-    // All offensive melee endpoints pass through one shared Mao'ao-space
-    // calibration after their original power/pose math is baked.  The helper
-    // applies the uploaded +Y lift, measures this endpoint's character-local
-    // direction/range, and extends it by the Forehand-derived phase delta
-    // without replacing its original direction with Forehand's accidental X.
-    if (rawOpts.meleeSpacing !== false && anim !== 'ranged' && window.MeleePoseSpacing?.adjustEndpoint) {
-      windup = window.MeleePoseSpacing.adjustEndpoint(windup, 'windup');
-      strike = window.MeleePoseSpacing.adjustEndpoint(strike, 'strike');
-    }
+    const idleSink = SAP.idleBodySinkPct(); // The swing eases out of and back into the stance's rest sink (weapon-stance-drop-runtime.js); Windup/Strike may author their own.
 
     return {
       ...rawOpts,
       anim,
-      dirSign: effectiveSign,
+      dirSign: sequence.effectiveSign,
       // Windup/strike are already baked to the exact endpoints the old animation
       // would have reached. power=1 prevents a changed Neutral from rescaling them.
       power: 1,
       pose: {
-        neutral: { dualWield: { enabled: true }, ...authoredPose?.neutral, secondaryGrip: { ...authoredPose?.neutral?.secondaryGrip, enabled: false }, ...neutralInputForSigns(targetNeutral, startNeutralSign, effectiveSign) },
-        returnNeutral: neutralInputForSigns(targetNeutral, returnNeutralSign, effectiveSign),
-        neutralMirrorSign: startNeutralSign,
-        returnNeutralMirrorSign: returnNeutralSign,
-        windup: { secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true }, ...windup },
-        strike: { secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true }, ...strike },
+        neutral: { dualWield: { enabled: true }, ...authoredPose?.neutral, secondaryGrip: { ...authoredPose?.neutral?.secondaryGrip, enabled: false }, ...sequence.neutral, bodySink: idleSink },
+        returnNeutral: { ...sequence.returnNeutral, bodySink: idleSink },
+        neutralMirrorSign: sequence.startNeutralSign,
+        returnNeutralMirrorSign: sequence.returnNeutralSign,
+        windup: { secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true }, ...sequence.windup },
+        strike: { secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true }, ...sequence.strike },
       },
     };
   }
@@ -359,14 +334,10 @@
     const duration = Math.max(0, Number(durationS) || 0);
     const windupFrac = Number.isFinite(Number(opts?.windupFrac)) ? Number(opts.windupFrac) : 0.16;
     const strikeFrac = Number.isFinite(Number(opts?.strikeFrac)) ? Number(opts.strikeFrac) : 0.28;
-    const returnTailS = strikeFrac < 0.999 ? 0 : Math.max(0.12, duration * 0.35);
     const holdS = Math.max(0, Number(opts?.holdS) || 0);
-    const totalS = Math.max(0.05, duration + returnTailS + holdS);
-    const wf = Math.max(0, Math.min(0.99, windupFrac * duration / totalS));
-    const sf = Math.max(wf, Math.min(0.99, strikeFrac * duration / totalS));
-    const hf = holdS > 0
-      ? Math.min(0.99, sf + holdS / totalS)
-      : Math.min(0.99, sf + (1 - sf) * 0.3);
+    // The exact clock game.js's triggerWeaponSwingVisual (and every enemy) builds for this swing, so hands, grips and
+    // the Neutral blend can't drift from the weapon pose they accompany.
+    const { totalS, wf, sf, hf } = SAP.swingTimeline({}, duration, windupFrac, strikeFrac, holdS);
     const activeMirrorSign = opts?.dirSign === -1 ? -1 : 1;
     const neutralMirrorSign = Number(opts?.pose?.neutralMirrorSign) === -1 ? -1 : 1;
     const returnNeutralMirrorSign = Number(opts?.pose?.returnNeutralMirrorSign) === -1 ? -1 : 1;
@@ -398,7 +369,14 @@
     const dt = Math.max(0, (now - state.lastNow) / 1000);
     state.lastNow = now;
     const windupEndS = state.wf * state.totalS;
-    if (state.held) state.elapsedS = Math.min(windupEndS, state.elapsedS + dt);
+    // game.js owns the swing clock and caps its frame dt, so on slow frames the body/tool fall
+    // behind wall time. Follow its timeline whenever it is live; a wall-clock step would run the
+    // hands, grips and Neutral blend ahead of the pose the editor shows for the same phase.
+    const gameRemainingS = Number(window.Combat?.deps?.getWeaponAttackTimeline?.()?.remainingS);
+    if (Number.isFinite(gameRemainingS) && gameRemainingS > 0) {
+      const gameElapsedS = Math.max(0, state.totalS - gameRemainingS);
+      state.elapsedS = Math.min(state.held ? windupEndS : state.totalS, Math.max(state.elapsedS, gameElapsedS));
+    } else if (state.held) state.elapsedS = Math.min(windupEndS, state.elapsedS + dt);
     else state.elapsedS = Math.min(state.totalS, state.elapsedS + dt);
     state.progress = Math.max(0, Math.min(1, state.elapsedS / state.totalS));
     if (!state.held && state.progress >= 1 && !state.clearQueued) {
@@ -427,6 +405,16 @@
     if (p <= state.hf) return 1 - poseScale;
     const returnT = Math.max(0, Math.min(1, (p - state.hf) / Math.max(1e-6, 1 - state.hf))); // Used to blend the partial active pose back to full Neutral during recovery.
     return (1 - poseScale) + poseScale * returnT;
+  }
+
+  // How much of the sweep style's -90° in-plane twist to cancel this frame (1 = fully at Neutral). Weapons fade it
+  // with their attack. Tool slots (axe, fishing mace, ...) only cancel it while their idle stance is what is drawn:
+  // the Attack Editor cancels it at every sweep-style Neutral, so an axe at rest would otherwise sit turned 90° about
+  // its own face while the hands keep the editor's grip frame. Their own swings suppress the stance and keep the twist.
+  function sweepTwistCancelWeight(activeSlot, def, visual, stanceApplied) {
+    if (activeSlot !== 'weapon' && !stanceApplied) return 0;
+    if (activeSlot === 'weapon' && visual?.anim === 'sweep') return neutralWeightForVisual(visual);
+    return !visual && def?.animStyle === 'sweep' ? 1 : 0;
   }
 
   function installCombatVisualHooks() {
@@ -506,6 +494,8 @@
 
     holder.position.add(positionDelta);
     holder.quaternion.copy(baseQ).multiply(targetQ);
+    const facing = new THREE.Vector3(0, 0, 1).applyQuaternion(baseQ); // The pose frame's forward axis: lets per-axis species orbits scale its lateral/forward axes.
+    return { yawRad: Math.atan2(facing.x, facing.z) };
   }
 
   function logState(activeSlot, itemKey, def, stateLabel) {
@@ -545,8 +535,8 @@
         savedPosition = this.position.clone();
         savedQuaternion = this.quaternion.clone();
         try {
-          applyRelativeHolderPose(this, sourcePose, targetPose);
-          if (activeSlot === 'weapon') deps?.scaleToolWorldPointAroundPlayerCentroid?.(this.position); // Weapon idle uses the same finished-point centroid orbit as attacks.
+          const stanceFrame = applyRelativeHolderPose(this, sourcePose, targetPose);
+          if (activeSlot === 'weapon') deps?.scaleToolWorldPointAroundPlayerCentroid?.(this.position, stanceFrame.yawRad); // Weapon idle uses the same finished-point centroid orbit as attacks.
           stanceApplied = true;
         } catch (error) {
           window.__farmLog?.(`[weapon-stance] holder pose failed: ${error.message}`, 'warn');
@@ -559,10 +549,8 @@
       // (fully while idle, fading out by windup, fading back in on return)
       // directly on the child plane's own local axis instead of guessing a
       // compensating holder/global Euler rotation.
-      if (toolPlane && activeSlot === 'weapon') {
-        const idleSweep = !visual && def?.animStyle === 'sweep';
-        const attackSweep = visual?.anim === 'sweep';
-        const neutralWeight = attackSweep ? neutralWeightForVisual(visual) : (idleSweep ? 1 : 0);
+      if (toolPlane) {
+        const neutralWeight = sweepTwistCancelWeight(activeSlot, def, visual, stanceApplied);
         if (neutralWeight > 0) {
           savedPlaneRotationZ = toolPlane.rotation.z;
           toolPlane.rotation.z += Math.PI / 2 * neutralWeight;
@@ -654,11 +642,17 @@
         ? Math.round(90 * neutralWeightForVisual(visual))
         : (state.activeSlot === 'weapon' && state.def?.animStyle === 'sweep' ? 90 : 0),
       stanceConfigSource,
+      stanceConfigLoaded,
+      stanceConfigFailures,
+      stanceConfigLastError,
+      stanceConfigRetryPending: stanceRetryTimer !== null,
       hoeWeaponEligible: !!deps?.TOOL_ITEM_DEFS?.bronzehoe?.slots?.includes('weapon'),
       hoeDamageType: deps?.TOOL_ITEM_DEFS?.bronzehoe?.dmgType || null,
       poses: {
         tool: { ...idleStances.tool },
         hoeTool: { ...idleStances.hoeTool },
+        topHeavyTool: { ...idleStances.topHeavyTool },
+        longHaftedTool: { ...idleStances.longHaftedTool },
         heavyWeapon: { ...idleStances.heavyWeapon },
         lightWeapon: { ...idleStances.lightWeapon },
       },
@@ -697,12 +691,26 @@
     return target;
   }
 
+  // True while the player holds a weapon in its Light/Heavy idle stance or is mid-attack with it: the poses the stance-drop runtime
+  // (weapon-stance-drop-runtime.js) lowers the whole body for. Allocation-free; same put-away/seated gates as idleBodyYawSnapshot.
+  function stanceEngaged() {
+    if (window.__hobunjiFurnitureDebug?.sitInteraction && window.__hobunjiFurnitureDebug.sitInteraction.phase !== 'out') return false;
+    const heldMode = deps?.getHeldMode?.();
+    if (heldMode != null && heldMode !== 'tool') return false;
+    if (deps?.getActiveTool?.() !== 'weapon') return false;
+    if (combatVisualState) return true;
+    const itemKey = deps?.equipmentSlots?.weapon || null;
+    const idleClass = itemKey ? weaponIdleClass(itemKey, deps?.TOOL_ITEM_DEFS?.[itemKey]) : null;
+    return idleClass === 'light' || idleClass === 'heavy';
+  }
+
   function init(injectedDeps) {
     deps = injectedDeps;
     augmentToolDefinitions();
     installCombatVisualHooks();
     installHolderMatrixHook();
-    loadStanceConfig();
+    if (!stanceConfigLoaded && !stanceConfigRequest) loadLocalStanceOverride();
+    void loadStanceConfig();
     window.__farmLog?.(
       `[weapon-stance] initialized hook=${holderHookInstalled ? 'holder-matrix' : 'missing'} neutral=attack-cycle sweep-plane=local hoes=weapon/blunt heavy=hoe+axe light=spear+mace+pick-shovel`,
       'combat'
@@ -713,12 +721,14 @@
     init,
     refreshDefinitions: augmentToolDefinitions,
     reloadConfig() {
-      stanceConfigLoadStarted = false;
-      return loadStanceConfig();
+      loadLocalStanceOverride();
+      return loadStanceConfig({ force: true });
     },
     combatNeutralPose: currentCombatNeutral,
     prepareCombatOptions,
+    sweepTwistCancelWeight,
     idleBodyYawSnapshot,
+    stanceEngaged,
     // Borrowed read-only view: consume immediately; use debugSnapshot for retained diagnostics.
     getRuntimeState,
     debugSnapshot,

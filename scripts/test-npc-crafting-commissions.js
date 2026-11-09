@@ -9,6 +9,7 @@ const masterySource = read('docs/js/crafting-mastery-system.js');
 const dyesSource = read('docs/js/dye-trait-labels.js');
 const generatorSource = read('docs/js/npc-crafting-commission-generator.js');
 const deliverySource = read('docs/js/npc-crafting-commission-delivery.js');
+const gameSource = read('docs/game.js');
 const adapterSource = read('docs/js/npc-crafting-commissions.js');
 const craftingPanelSource = read('docs/js/crafting-panel.js');
 
@@ -39,6 +40,17 @@ assert.match(deliverySource, /awardMotes\(moteReward, `commission:\$\{taskId\}`,
 assert.match(deliverySource, /mastery\.saveState\(masteryBefore\)/, 'failed literal delivery rolls back the Mote award');
 
 assert.match(adapterSource, /getTurnInReadyTaskForNpc = function npcCraftingCommissionTurnInReady/, 'commission readiness overrides the empty-items false positive');
+assert.match(gameSource, /turnInTask: taskId => window\.ProceduralTasks\.turnInTask\(taskId\)/, 'dialogue resolves live commission handler instead of capturing the generic fetch-only function');
+assert.match(gameSource, /NpcCraftingCommissionDelivery\?\.turnInPrompt\?\./, 'NPC hand-in label uses the commission type even when there are no fetch items');
+const turnInScreenPosition = gameSource.indexOf('const _turnInTask = rec?.id ? window.ProceduralTasks.getTurnInReadyTaskForNpc(rec.id)');
+assert(turnInScreenPosition > 0, 'main NPC dialogue uses the shared ready-commission lookup');
+const tutorialPosition = gameSource.indexOf("if (rec?.id === 'spearhead_unumanuk' && window.CombatTutorial?.active())");
+assert(tutorialPosition > turnInScreenPosition, 'finished crafting commissions can be handed to Spearhead even during his active training, while ordinary coaching is still protected');
+
+for (const specialMenu of ["if (isGeneralStoreNpcOnDuty(walker))", "if (isCarpenterNpcOnDuty(walker))", "if (rec?.id === 'jubmir')"]) {
+  assert(gameSource.indexOf(specialMenu, turnInScreenPosition) > turnInScreenPosition, 'ready crafting hand-in precedes special first-dialogue menu: ' + specialMenu);
+}
+
 assert.match(adapterSource, /__craftCommissionDebug/, 'mobile-friendly commission diagnostics exist');
 assert.match(dyesSource, /colorTraitsForHsv/, 'dye labels reuse the gifting color classifier');
 assert.match(dyesSource, /dye-trait-readout/, 'swatch menus have a visible mobile classification readout');
@@ -96,4 +108,296 @@ worldId = 'world-a';
 assert.equal(mastery.rank('efficientJoinery'), 1, 'switching back restores world A progression');
 assert.equal(mastery.rank('specificTest'), 0, 'newly registered specific perk remains isolated to the world that bought it');
 
-console.log('npc crafting commissions regression: ok');
+
+// Functional tier-zero commission: generator, offered -> accepted -> delivered,
+// and quest reward all use the actual same market/labor quote.
+const mockMath = Object.create(Math);
+mockMath.random = () => 0.05;
+const commissionProgress = {};
+const commissionInventory = { gold: 0, pineLog: 10, chairFurniture: 0 };
+let earnedFavor = 0;
+let earnedMotes = 0;
+const completionPopups = []; // Records the actual world-list categories emitted by a commission turn-in.
+const furniture = { key: 'chairBlueprint', furnitureKey: 'chairFurniture', name: 'Wooden Chair', category: 'seating', craftCost: { wood: 4 } };
+const commissionContext = {
+  console, Math: mockMath, document: { getElementById: () => null },
+  ProceduralTasks: {
+    init() {}, isQuestEligibleNpc: () => true, isRequestGiver: () => false,
+    friendshipTier: () => 0, maybeOfferFavor: () => null,
+    favorAskLine: () => 'generic', turnInTask: () => ({ ok: false }),
+    getTurnInReadyTaskForNpc: () => null, makeTaskId: () => 'craft-test',
+  },
+  CraftingPanel: { init() {}, render() {} },
+  NpcGifting: { init() {} },
+  DialogueContent: { adjustNpcFavor(_id, amount) { earnedFavor += amount; return amount; } },
+  CraftingMasterySystem: {
+    debugSnapshot: () => ({ worldId: 'world-test' }),
+    getState: () => ({ motes: earnedMotes }),
+    saveState(state) { earnedMotes = state.motes; },
+    awardMotes(amount) { earnedMotes += amount; return amount; },
+    renderPanel() {},
+  },
+  ClothingWeavingSystem: { woolCostForSlot: slot => ({ hat: 1, hood: 2, torso: 3, overwear: 4, pants: 2 })[slot] || 1 },
+  WorldPopupText: { queueReward(kind, message) { completionPopups.push({ kind, message }); } },
+};
+commissionContext.window = commissionContext;
+vm.createContext(commissionContext);
+for (const [filename, source] of [
+  ['generator', generatorSource], ['delivery', deliverySource], ['adapter', adapterSource],
+]) vm.runInContext(source, commissionContext, { filename });
+const taskDeps = {
+  calendar: { day: 1 }, inventory: commissionInventory, getQuestProgress: () => commissionProgress,
+  getNpcRecordById: id => ({ id, role: 'carpenter' }),
+  setQuestStatus(id, status, progressPatch) {
+    const prior = commissionProgress[id]?.progress || {};
+    commissionProgress[id] = { status, progress: { ...prior, ...progressPatch } };
+  },
+  clampInventoryStack() {}, buildInventoryGrid() {}, saveMemberWorldData() {}, showToast() {},
+};
+commissionContext.CraftingPanel.init({
+  FURNITURE_BLUEPRINT_CATALOG: [furniture],
+  ITEM_DEFS: { pineLog: { sellPrice: 6 }, shadewoodLog: { sellPrice: 5 } },
+});
+commissionContext.ProceduralTasks.init(taskDeps);
+const offered = commissionContext.ProceduralTasks.maybeOfferFavor({ id: 'carpenter', name: 'Carpenter', role: 'carpenter' });
+assert(offered?.commission, 'crafting commissions must be offered even at friendship tier zero');
+assert.equal(commissionContext.NpcCraftingCommissions.debugSnapshot().lastAttempt.generated, true);
+const quote = commissionContext.NpcCraftingCommissionGenerator.rewardQuote(offered);
+assert(quote.gold > 70 + (4 * 6 * 1.5), 'crafting income covers material opportunity cost and real labor');
+assert(quote.favor >= 6, 'commission Favor is rewarded in the same 40-point-per-heart scale as gifts');
+taskDeps.setQuestStatus(offered.id, 'available', {});
+assert.equal(commissionInventory.chairBlueprint, 1, 'acceptance grants the required blueprint');
+const furniturePrompt = commissionContext.NpcCraftingCommissionDelivery.turnInPrompt(offered); // The dialogue must not label an empty commission item list as "Here's your .".
+assert.match(furniturePrompt.label, /Wooden Chair/, 'furniture hand-in names the actual craft, not an empty fetch-item list');
+commissionInventory.chairFurniture = 1;
+const result = commissionContext.ProceduralTasks.turnInTask(offered.id);
+assert.equal(result.ok, true, 'commission consumes the freshly crafted piece');
+assert.equal(commissionInventory.chairFurniture, 0);
+assert.equal(commissionInventory.gold, quote.gold);
+assert.equal(earnedFavor, quote.favor);
+assert.equal(earnedMotes, quote.motes);
+assert.equal(commissionProgress[offered.id].status, 'completed');
+assert(completionPopups.some(entry => entry.kind === 'currency' && entry.message === '+' + quote.gold + 'g'), 'commission gold appears in the world reward list');
+assert(completionPopups.some(entry => entry.kind === 'masteryXp' && entry.message.includes(quote.motes + ' Mote')), 'Craft Motes use a recognized mastery popup category');
+assert(!completionPopups.some(entry => entry.kind === 'craft'), 'the unsupported craft popup category must not be used');
+const legacyQuote = commissionContext.NpcCraftingCommissionGenerator.rewardQuote({
+  ...offered, rewardGold: 80, rewardFriendship: 1, rewardMotes: 1,
+});
+assert(legacyQuote.gold >= quote.gold, 'an old saved commission also receives the new payout floor');
+
+// A composite requirement must match a real dye the player has actually unlocked.
+// Independently selecting a liked hue, saturation, and brightness used to produce impossible jobs.
+const palette = [
+  { id: 'red-hot-bright', traits: ['hueRed', 'hot', 'bright'] },
+  { id: 'blue-muted-dark', traits: ['hueBlue', 'muted', 'dark'] },
+];
+const unlockedDyeIds = new Set(['red-hot-bright']); // Matches one character's currently unlocked loom swatches.
+commissionContext.DyeSystem = {
+  ensureCollection() {},
+  getCatalog: () => palette,
+  owns: id => unlockedDyeIds.has(id),
+};
+commissionContext.ItemTraits = {
+  resolveHsv: dye => dye,
+  colorTraitsForHsv: dye => dye.traits,
+};
+const feasible = commissionContext.NpcCraftingCommissionGenerator.__test.colorRequirement(['hueRed', 'hot', 'dark']);
+assert(feasible?.includes('hueRed') && feasible.includes('hot'), 'must request the recipient’s preferred hue and saturation');
+assert(!feasible.includes('dark'), 'cannot demand a dark swatch when the only unlocked red is bright');
+assert(feasible.every(trait => palette[0].traits.includes(trait)), 'every AND-ed dye requirement must match a single unlocked swatch');
+assert.equal(commissionContext.NpcCraftingCommissionGenerator.__test.colorRequirement(['hueBlue']), null, 'locked dyes never produce undeliverable commissions');
+unlockedDyeIds.add('blue-muted-dark');
+assert(commissionContext.NpcCraftingCommissionGenerator.__test.colorRequirement(['hueBlue', 'dark'])?.includes('dark'), 'unlocked dye traits become valid immediately');
+
+// Functional special-NPC clothing turn-in: a ready commission from Spearhead creates
+// a garment for Jubmir and uses the commission-only wardrobe path, not the ordinary
+// gift acceptance rules. The quest remains owned by Spearhead for Favor/turn-in.
+let commissionedPack = [{
+  uid: 'newly-woven-hood', cosmeticId: 'fine_hood#loom:newly-woven-hood',
+  baseCosmeticId: 'fine_hood', slot: 'hood', weaveMaterial: 'light', craftedAt: 200,
+  colorA: palette[0],
+}]; // Live inventory pack read by the commission matcher and consumed after delivery.
+let commissionRecipient = null; // Records which NPC receives the real wardrobe garment.
+let commissionOption = null; // Proves the delivery path deliberately opts out of unsolicited gift style vetoes.
+taskDeps.getPackClothing = () => commissionedPack;
+taskDeps.setPackClothing = items => { commissionedPack = items; };
+commissionContext.NpcWardrobe = {
+  offerClothing(npcId, item, options) {
+    commissionRecipient = npcId;
+    commissionOption = options;
+    return { accepted: options?.commission === true };
+  },
+};
+const clothingTaskId = 'special-npc-clothing';
+taskDeps.setQuestStatus(clothingTaskId, 'available', {
+  kind: 'favor', npcId: 'spearhead_unumanuk', npcName: 'Spearhead', domain: 'crafting', items: [],
+  rewardGold: 200, rewardFriendship: 8, rewardMotes: 2, tier: 1,
+  commission: {
+    type: 'clothing', articleId: 'fine_hood', articleLabel: 'Fine Hood',
+    slot: 'hood', material: 'light', patterned: false, startedAt: 100,
+    dyeSlots: [{ key: 'A', traits: ['hueRed'] }],
+    recipientId: 'jubmir', recipientName: 'Jubmir',
+  },
+});
+// Do not turn a correctly assigned but physically unready commission into a fake hand-in.
+commissionedPack[0].craftedAt = 50;
+assert.equal(commissionContext.ProceduralTasks.getTurnInReadyTaskForNpc('spearhead_unumanuk'), null, 'an older pre-commission garment cannot be handed to Spearhead');
+commissionedPack[0].craftedAt = 200;
+commissionedPack[0].cursed = { kind: 'circlet' };
+assert.equal(commissionContext.ProceduralTasks.getTurnInReadyTaskForNpc('spearhead_unumanuk'), null, 'a cursed commissioned garment must not be offered as ready');
+delete commissionedPack[0].cursed;
+const specialReady = commissionContext.ProceduralTasks.getTurnInReadyTaskForNpc('spearhead_unumanuk');
+assert.equal(specialReady?.id, clothingTaskId, 'crafting commission is ready when talking to the original NPC who requested it');
+const specialPrompt = commissionContext.NpcCraftingCommissionDelivery.turnInPrompt(specialReady);
+assert.match(specialPrompt.label, /Fine Hood for Jubmir/, 'clothing hand-in names the garment and recipient');
+assert.equal(commissionContext.ProceduralTasks.turnInTask(clothingTaskId).ok, true, 'ready crafting commission can be delivered by special NPC requester');
+assert.equal(commissionRecipient, 'jubmir', 'commission physically delivers the garment to its intended wearer');
+assert.equal(commissionOption?.commission, true, 'commission-specific wardrobe context reaches the recipient');
+assert.equal(commissionedPack.length, 0, 'the actual matching garment leaves the player pack');
+assert.equal(commissionProgress[clothingTaskId].status, 'completed', 'special-NPC commission becomes completed exactly once');
+assert.equal(commissionContext.ProceduralTasks.getTurnInReadyTaskForNpc('spearhead_unumanuk'), null, 'completed commission is no longer offered');
+
+// Jubmir is a second *requester*, not the recipient in this case. His shop
+// menu must not intercept a furniture commission that he himself assigned.
+const jubmirTaskId = 'jubmir-requester-commission'; // Verifies task ownership routes to the actual quest giver, not a wearable recipient.
+commissionInventory.chairFurniture = 1;
+taskDeps.setQuestStatus(jubmirTaskId, 'available', {
+  kind: 'favor', npcId: 'jubmir', npcName: 'Jubmir', domain: 'crafting', items: [],
+  rewardGold: 180, rewardFriendship: 8, rewardMotes: 2, tier: 1,
+  commission: {
+    type: 'furniture', furnitureKey: 'chairFurniture', furnitureLabel: 'Wooden Chair',
+    blueprintKey: 'chairBlueprint', startingOwned: 0, rewardMotes: 2, rewardGold: 180,
+  },
+});
+commissionInventory.chairFurniture = 0;
+assert.equal(commissionContext.ProceduralTasks.getTurnInReadyTaskForNpc('jubmir'), null, 'Jubmir gets no premature hand-in while the commissioned furniture is missing');
+commissionInventory.chairFurniture = 1;
+const jubmirReady = commissionContext.ProceduralTasks.getTurnInReadyTaskForNpc('jubmir'); // Shared turn-in lookup called before Jubmir's shop options.
+assert.equal(jubmirReady?.id, jubmirTaskId, 'Jubmir is recognized as the commission requester, independent of his See Wares menu');
+assert.match(commissionContext.NpcCraftingCommissionDelivery.turnInPrompt(jubmirReady).label, /Wooden Chair/, 'Jubmir receives a proper furniture turn-in prompt');
+assert.equal(commissionContext.ProceduralTasks.turnInTask(jubmirTaskId).ok, true, 'Jubmir can receive his commissioned furniture and pay the reward');
+assert.equal(commissionInventory.chairFurniture, 0, 'Jubmir receives the newly crafted furniture');
+assert.equal(commissionProgress[jubmirTaskId].status, 'completed', 'Jubmir’s commission completes without using his shop dialogue');
+assert.equal(commissionContext.ProceduralTasks.getTurnInReadyTaskForNpc('jubmir'), null, 'Jubmir’s finished commission is removed from subsequent conversations');
+
+
+
+
+// Both quest-log preview and ordinary task turn-in read this single method.
+const regularPopups = []; // Captures regular task world-list rewards at the actual completion point.
+const taskContext = {
+  console,
+  DialogueContent: { adjustNpcFavor(_id, reward) { return reward; } },
+  WorldPopupText: { queueReward(kind, message) { regularPopups.push({ kind, message }); } },
+};
+taskContext.window = taskContext;
+vm.createContext(taskContext);
+vm.runInContext(read('docs/js/procedural-tasks.js'), taskContext);
+const regularDeps = {
+  calendar: { day: 3 }, ITEM_DEFS: { berry: { sellPrice: 3 } },
+  inventory: { berry: 5, gold: 0 },
+  getQuestProgress: () => ({ oldRequest: { status: 'available', progress: {
+    kind: 'request', npcId: 'hreesh', npcName: 'Hreesh', domain: 'farming',
+    items: [{ itemKey: 'berry', qty: 5 }], rewardGold: 15, rewardFriendship: 1.5,
+    tier: 2, deadlineDay: 5, bonusMultiplier: 2,
+  } } }),
+  setQuestStatus() {}, clampInventoryStack() {}, showToast() {},
+};
+taskContext.ProceduralTasks.init(regularDeps);
+const onTime = taskContext.ProceduralTasks.rewardPreview(regularDeps.getQuestProgress().oldRequest.progress);
+assert(onTime.baseGold > 15 && onTime.gold === onTime.baseGold * 2, 'labor premium is doubled for an on-time request');
+assert.equal(onTime.favor, 9);
+regularDeps.calendar.day = 6;
+const overdue = taskContext.ProceduralTasks.rewardPreview(regularDeps.getQuestProgress().oldRequest.progress);
+assert.equal(overdue.gold, overdue.baseGold, 'expired requests pay the displayed base, not the expired bonus');
+assert.equal(taskContext.ProceduralTasks.turnInTask('oldRequest').ok, true);
+assert.equal(regularDeps.inventory.gold, overdue.gold, 'the task credits exactly the amount in its reward preview');
+assert.equal(regularDeps.inventory.berry, 0, 'turn-in consumes the requested inventory');
+assert(regularPopups.some(entry => entry.kind === 'currency' && entry.message === '+' + overdue.gold + 'g'), 'regular task money is included in the floating reward list');
+
+
+// Exercise the shipped game.js openNpcDialogue function directly, not just its
+// source-code ordering. Special first-dialogue options must not hide ready jobs.
+const dialogueStart = gameSource.indexOf('async function openNpcDialogue(walker, opts = null) {'); // Bounds the game-owned interaction router without copying production logic.
+const dialogueEnd = gameSource.indexOf('// advanceNpcDialogue now lives', dialogueStart); // Stops before the next top-level game helper.
+assert(dialogueStart > 0 && dialogueEnd > dialogueStart, 'production openNpcDialogue function is available for executable regression coverage');
+const dialogueRouterSource = gameSource.slice(dialogueStart, dialogueEnd); // Exact shipped function evaluated in a minimal DOM-free harness.
+
+async function runRealNpcDialogueRoute({ npcId, readyTask = null, tutorialActive = false, queued = false, options = null }) {
+  const rendered = []; // Captures the synthetic choice screens made by the real dialogue router.
+  const calls = []; // Captures fallback/provider calls when a turn-in is not ready.
+  const dialogueWorld = {
+    DialogueContent: {
+      recordNpcMemory() {}, renderRelationshipHearts: () => '',
+      hasQueuedConversationTree: () => queued,
+      beginNpcConversation: () => calls.push('ordinary-conversation'),
+      beginSyntheticChoice: () => calls.push('synthetic'),
+      renderDlgNode: node => rendered.push(node),
+    },
+    ProceduralTasks: {
+      getTurnInReadyTaskForNpc(id) {
+        assert.equal(id, npcId, 'the dialogue looks up quests by the requesting NPC id');
+        return readyTask;
+      },
+      maybeProposeRequest: async () => null,
+      maybeOfferFavor: () => null,
+    },
+    CombatTutorial: { active: () => tutorialActive },
+    NpcCraftingCommissionDelivery: commissionContext.NpcCraftingCommissionDelivery,
+    WorldPopupText: { clearInteractionPrompts() {} },
+    DialogueCameraFraming: { end() {} },
+    CinematicCameraRuntime: { beginDialogue() {} },
+  }; // Runtime-owned systems stubbed only at their dependency boundaries.
+  const context = {
+    window: dialogueWorld,
+    THREE: { MathUtils: { radToDeg: value => value } },
+    ITEM_DEFS: { berry: { label: 'Berry' } },
+    currentArea: 'town', dialogueOpen: false, _dialogueWalker: null,
+    activeCameraMode: null, activeCameraTarget: null, dialogueEntryCameraAzimuthDeg: 0,
+    _npcDialogueEl: { classList: { add() {} }, setAttribute() {} },
+    _npcDialogueNameEl: { textContent: '' }, _npcDialogueHeartsEl: { innerHTML: '' },
+    _arcContainerEl: { classList: { add() {} } },
+    isPlayerInCombat: () => false, activeCameraAzimuthRad: () => 0,
+    holsterToolForDialogue() {}, npcDialogueCameraMode: () => 'portrait',
+    beginNpcDialogueStaging() {}, updateDialogueZoomIndicator() {},
+    isGeneralStoreNpcOnDuty: () => false,
+    isCarpenterNpcOnDuty: () => false,
+  }; // Only the runtime dependencies referenced by the actual NPC dialogue function.
+  const openDialogue = vm.runInNewContext(dialogueRouterSource + '\nopenNpcDialogue;', context);
+  const npc = { rec: { id: npcId, name: npcId }, root: {}, pause: 0 }; // Uses canonical NPC IDs from saved commissions.
+  await openDialogue(npc, options);
+  return { rendered, calls, npc };
+}
+
+(async () => {
+  const readyClothing = {
+    id: 'spearhead-quest', kind: 'favor', npcId: 'spearhead_unumanuk', items: [],
+    commission: { type: 'clothing', articleLabel: 'Fine Hood', recipientName: 'Jubmir' },
+  }; // Saved ready commission from Spearhead, regardless of his default offer-generation policy.
+  const spearhead = await runRealNpcDialogueRoute({ npcId: 'spearhead_unumanuk', readyTask: readyClothing, tutorialActive: true });
+  assert.equal(spearhead.rendered[0]?.choices?.[0]?.actions?.[0]?.type, 'turnInTask', 'Spearhead accepts ready crafting work even when his lesson menu is active');
+  assert.equal(spearhead.rendered[0]?.choices?.[0]?.actions?.[0]?.taskId, readyClothing.id, 'Spearhead hand-in targets the correct task');
+  assert.match(spearhead.rendered[0].choices[0].label, /Fine Hood for Jubmir/, 'the dialogue identifies the crafted garment and intended recipient');
+  assert(!spearhead.calls.includes('ordinary-conversation'), 'Spearhead training did not displace the ready hand-in');
+
+  const noWorkDuringTraining = await runRealNpcDialogueRoute({ npcId: 'spearhead_unumanuk', tutorialActive: true });
+  assert(noWorkDuringTraining.calls.includes('ordinary-conversation'), 'Spearhead resumes his training conversation when no hand-in is ready');
+  assert.equal(noWorkDuringTraining.rendered.length, 0, 'no spurious turn-in is offered during training');
+
+  const readyFurniture = {
+    id: 'jubmir-quest', kind: 'favor', npcId: 'jubmir', items: [],
+    commission: { type: 'furniture', furnitureLabel: 'Wooden Chair' },
+  }; // Jubmir's own requested job, independent of his special traveling shop menu.
+  const jubmir = await runRealNpcDialogueRoute({ npcId: 'jubmir', readyTask: readyFurniture });
+  assert.equal(jubmir.rendered[0]?.choices?.[0]?.actions?.[0]?.type, 'turnInTask', 'Jubmir accepts his own commission rather than only showing See Wares');
+  assert.equal(jubmir.rendered[0]?.choices?.[0]?.actions?.[0]?.taskId, readyFurniture.id, 'Jubmir hand-in targets his own task');
+  assert.match(jubmir.rendered[0].choices[0].label, /Wooden Chair/, 'Jubmir sees a proper furniture hand-in');
+
+  const jubmirWithoutWork = await runRealNpcDialogueRoute({ npcId: 'jubmir' });
+  assert.equal(jubmirWithoutWork.rendered[0]?.choices?.[0]?.label, 'See Wares', 'Jubmir retains his default shop dialogue when no commission is ready');
+
+  const queuedStory = await runRealNpcDialogueRoute({ npcId: 'jubmir', readyTask: readyFurniture, queued: true });
+  assert(queuedStory.calls.includes('ordinary-conversation') && !queuedStory.rendered.length, 'explicitly queued story conversations retain their scripted priority');
+
+  console.log('npc crafting commissions regression: ok (including real NPC dialogue routing)');
+})().catch(error => { console.error(error); process.exitCode = 1; });

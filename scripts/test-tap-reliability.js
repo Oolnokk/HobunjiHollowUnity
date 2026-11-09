@@ -79,7 +79,8 @@ for (const dir of fs.readdirSync('docs/tools', { withFileTypes: true })) {
   const page = path.join('docs/tools', dir.name, 'index.html');
   if (fs.existsSync(page)) pages.push(page);
 }
-const missing = pages.filter(page => !/<script src="(?:\.\.\/)*(?:js\/)?(?:\.\.\/)*js\/tap-reliability\.js\?v=[A-Za-z0-9_-]+"><\/script>|<script src="(?:\.\.\/)*js\/tap-reliability\.js\?v=[A-Za-z0-9_-]+"><\/script>/.test(read(page)));
+// Defer is valid for the shared tap helper and keeps optional loading from blocking the document parser.
+const missing = pages.filter(page => !/<script(?: defer)? src="(?:\.\.\/)*(?:js\/)?(?:\.\.\/)*js\/tap-reliability\.js\?v=[A-Za-z0-9_-]+"><\/script>|<script(?: defer)? src="(?:\.\.\/)*js\/tap-reliability\.js\?v=[A-Za-z0-9_-]+"><\/script>/.test(read(page)));
 assert.deepStrictEqual(missing, [], `pages without docs/js/tap-reliability.js: ${missing.join(', ')}`);
 assert(pages.length >= 30, `expected to cover the game and all tools, found only ${pages.length} pages`);
 

@@ -44,12 +44,12 @@
     return Math.max(1e-6, diagonal * 1e-6);
   }
 
-  function vertexKey(position, index, epsilon) {
+  function vertexKey(position, index, epsilon, pieceIds) {
     const inv = 1 / epsilon; // Used to quantize duplicated triangle corners back into logical topology vertices.
     const x = Math.round(position.getX(index) * inv); // Used as the topology key's X component.
     const y = Math.round(position.getY(index) * inv); // Used as the topology key's Y component.
     const z = Math.round(position.getZ(index) * inv); // Used as the topology key's Z component.
-    return `${x},${y},${z}`;
+    return `${pieceIds ? pieceIds.getX(index) + ':' : ''}${x},${y},${z}`; // Explicit piece identity keeps touching batched rocks in independent texture charts.
   }
 
   function selectedTriangleSet(geometry, materialIndex) {
@@ -89,6 +89,7 @@
 
   function collectTriangles(geometry, materialIndex, epsilon) {
     const position = geometry.getAttribute('position'); // Used to read each non-indexed triangle corner.
+    const pieceIds = geometry.getAttribute('surfacePieceId'); // Optional caller-authored boundaries survive cloning and non-indexing.
     const selected = selectedTriangleSet(geometry, materialIndex); // Used to omit non-cliff triangles on shared plateau geometry.
     const triangleCount = Math.floor(position.count / 3); // Used as the source triangle count in the expanded geometry.
     const triangles = []; // Used by adjacency recognition and UV writing.
@@ -98,7 +99,7 @@
     for (let triangleIndex = 0; triangleIndex < triangleCount; triangleIndex++) {
       if (selected && !selected.has(triangleIndex)) continue;
       const base = triangleIndex * 3; // Used as the first BufferAttribute vertex for this triangle.
-      const keys = [vertexKey(position, base, epsilon), vertexKey(position, base + 1, epsilon), vertexKey(position, base + 2, epsilon)]; // Used to reconstruct shared topology edges without artificial spatial patch seams.
+      const keys = [vertexKey(position, base, epsilon, pieceIds), vertexKey(position, base + 1, epsilon, pieceIds), vertexKey(position, base + 2, epsilon, pieceIds)]; // Used to reconstruct shared topology edges without artificial spatial patch seams.
       const a = new THREE.Vector3(position.getX(base), position.getY(base), position.getZ(base)); // Used to calculate the face normal.
       const b = new THREE.Vector3(position.getX(base + 1), position.getY(base + 1), position.getZ(base + 1)); // Used to calculate the face normal.
       const c = new THREE.Vector3(position.getX(base + 2), position.getY(base + 2), position.getZ(base + 2)); // Used to calculate the face normal.
@@ -125,7 +126,7 @@
     return { triangles, vertexPositions, edgeToTriangles };
   }
 
-  function segmentSurfaceIslands(topology, splitAngleDeg, splitAtThreshold, ignoreReversedCoplanarFaces) {
+  function segmentSurfaceIslands(topology, splitAngleDeg, splitAtThreshold, ignoreReversedCoplanarFaces, preserveQuadPairs = false) {
     const triangles = topology.triangles; // Used as the face set consumed by the furniture-style flood fill.
     const cosThreshold = Math.cos(THREE.MathUtils.degToRad(splitAngleDeg)); // Used as the adjacent-face normal similarity threshold.
     const neighbors = Array.from({ length: triangles.length }, () => new Set()); // Used as each triangle's edge-sharing neighbor set.
@@ -150,11 +151,13 @@
         for (const neighborIndex of neighbors[currentIndex]) {
           if (visited[neighborIndex]) continue;
           const neighbor = triangles[neighborIndex]; // Used as the candidate adjacent face.
+          const sameSourceQuad = preserveQuadPairs && (current.triangleIndex ^ 1) === neighbor.triangleIndex
+            && current.keys.filter(key => neighbor.keys.includes(key)).length === 2; // Explicit two-triangle heightfield cells are one UV-capable quadrilateral even when diagonal triangulation bends by over 24°.
           let similarity = current.normal.dot(neighbor.normal); // Uses geometric face normals rather than smoothed vertex normals for the side boundary.
           // Concave GLB end-cap fans can contain reversed, nearly coplanar
           // triangles. Their winding is not a physical crease in that side.
           if (ignoreReversedCoplanarFaces && similarity < -Math.cos(THREE.MathUtils.degToRad(10))) similarity = -similarity;
-          if (splitAtThreshold ? similarity <= cosThreshold + 1e-7 : similarity + 1e-7 < cosThreshold) continue;
+          if (!sameSourceQuad && (splitAtThreshold ? similarity <= cosThreshold + 1e-7 : similarity + 1e-7 < cosThreshold)) continue;
           visited[neighborIndex] = 1;
           stack.push(neighborIndex);
         }
@@ -170,6 +173,27 @@
       islands.push({ triangleIndices, normal: normalSum });
     }
     return islands;
+  }
+
+
+  function splitIntoSourceQuadIslands(topology, island) {
+    const quadGroups = new Map(); // Pairs the two triangles belonging to each explicit indexed rock-heightfield cell.
+    for (const index of island.triangleIndices) {
+      const triangle = topology.triangles[index];
+      const quadId = Math.floor(triangle.triangleIndex / 2); // Used only by the ore-rock opt-in; other geometry retains ordinary face recognition.
+      if (!quadGroups.has(quadId)) quadGroups.set(quadId, []);
+      quadGroups.get(quadId).push(index);
+    }
+    const quads = []; // Used to retry an unsolvable island one full four-corner quad at a time.
+    for (const indices of quadGroups.values()) {
+      if (indices.length !== 2) return null;
+      const [a, b] = indices.map(index => topology.triangles[index]);
+      if (a.keys.filter(key => b.keys.includes(key)).length !== 2) return null; // Never stitch unrelated triangles.
+      const normal = new THREE.Vector3().addScaledVector(a.normal, Math.max(a.area, 1e-8))
+        .addScaledVector(b.normal, Math.max(b.area, 1e-8)).normalize(); // Fit each curved original cell against its own plane.
+      quads.push({ triangleIndices: indices, normal });
+    }
+    return quads;
   }
 
   function projectionBasis(normal) {
@@ -479,9 +503,10 @@
     const splitAngleDeg = Number.isFinite(Number(options.angleToleranceDeg)) ? Math.max(1, Math.min(89, Number(options.angleToleranceDeg))) : DEFAULT_SPLIT_ANGLE_DEG; // Used as the furniture-style adjacent-face split threshold.
     const splitAtThreshold = options.splitAtThreshold === true; // Lets shingles treat the exact authored cutoff as a new side while retaining the default natural-surface behavior.
     const ignoreReversedCoplanarFaces = options.ignoreReversedCoplanarFaces === true; // Repairs surface recognition for malformed cap winding without changing triangles or ordinary terrain.
+    const preserveQuadPairs = options.preserveQuadPairs === true && options.materialIndex == null; // Ore-rock-only opt-in: treat each indexed mound cell's two triangles as one surface, not two degenerate triangular patches.
     const materialIndex = options.materialIndex == null ? null : Number(options.materialIndex); // Used to isolate only the cliff material slot on a shared grass/cliff mesh.
     const edgeOptions = mappingOptions(options); // Used as the single centralized edge-preserving stretch policy for every caller.
-    const signature = `surface-island-v3|furniture-adjacency|angle=${splitAngleDeg}|material=${materialIndex == null ? '*' : materialIndex}|edge=${edgeOptions.edgeSourceFraction}|reference=${edgeOptions.edgeReferenceWorldSize}${splitAtThreshold ? '|split-at-threshold' : ''}${ignoreReversedCoplanarFaces ? '|repair-cap-winding' : ''}${edgeOptions.avoidCollapsedUvs ? '|preserve-triangle-coverage' : ''}`; // Separates shingle-side UVs from the default natural-surface cache.
+    const signature = `surface-island-v3|furniture-adjacency|angle=${splitAngleDeg}|material=${materialIndex == null ? '*' : materialIndex}|edge=${edgeOptions.edgeSourceFraction}|reference=${edgeOptions.edgeReferenceWorldSize}${splitAtThreshold ? '|split-at-threshold' : ''}${ignoreReversedCoplanarFaces ? '|repair-cap-winding' : ''}${edgeOptions.avoidCollapsedUvs ? '|preserve-triangle-coverage' : ''}${preserveQuadPairs ? '|keep-source-quads' : ''}${sourceGeometry.getAttribute('surfacePieceId') ? '|piece-boundaries' : ''}`; // Separates shingle-side UVs from the default natural-surface cache.
     const sourcePosition = sourceGeometry.getAttribute('position'); // Used to validate a cached signature against the actual surviving vertex buffer.
     const sourceUv = sourceGeometry.getAttribute('uv'); // Used to reject stale metadata when downstream code lost the UV attribute.
     const cachedUvValid = !!(sourcePosition && sourceUv?.count === sourcePosition.count && Number(sourceUv.itemSize || 2) >= 2); // Used to trust the v3 signature only when real UV data still exists.
@@ -493,15 +518,23 @@
     const epsilon = chooseQuantizationEpsilon(geometry); // Used to reconstruct shared topology after non-indexing.
     const topology = collectTriangles(geometry, materialIndex, epsilon); // Used by furniture-style surface recognition without obsolete fixed-distance UV patch splitting.
     if (!topology.triangles.length) return sourceGeometry;
-    const islands = segmentSurfaceIslands(topology, splitAngleDeg, splitAtThreshold, ignoreReversedCoplanarFaces); // Used so each true connected furniture-recognized surface gets one continuous PNG domain.
-    let fallbackCount = 0; // Used to summarize malformed/tiny surface fallbacks.
+    const islands = segmentSurfaceIslands(topology, splitAngleDeg, splitAtThreshold, ignoreReversedCoplanarFaces, preserveQuadPairs); // Used so each true connected furniture-recognized surface gets one continuous PNG domain.
+    let fallbackCount = 0; // Used to summarize only final failures after optional ore-rock quad repair.
     let boundaryLoopCount = 0; // Used to expose recognized-boundary complexity in diagnostics.
+    let mappedPatchCount = 0; // Counts continuous or rescued quad-face texture islands.
     const edgeBands = []; // Used to expose per-island physical edge preservation without requiring DevTools geometry inspection.
-    for (const island of islands) {
-      const report = unwrapIsland(topology, island, uv, edgeOptions); // Used to map one recognized surface and then preserve its PNG borders at native perpendicular scale.
+    function recordIslandReport(report) {
+      mappedPatchCount++;
       if (report.usedFallback) fallbackCount++;
       boundaryLoopCount += report.boundaryLoops;
       edgeBands.push(report.edgeScale);
+    }
+    for (const island of islands) {
+      const report = unwrapIsland(topology, island, uv, edgeOptions); // Prefer one connected-surface nine-slice when possible.
+      const repairedQuads = report.usedFallback && preserveQuadPairs ? splitIntoSourceQuadIslands(topology, island) : null;
+      if (repairedQuads) {
+        for (const quad of repairedQuads) recordIslandReport(unwrapIsland(topology, quad, uv, edgeOptions)); // Split only a failed chart, never a successfully connected one.
+      } else recordIslandReport(report);
     }
     uv.needsUpdate = true;
     const edgeWorldSize = edgeOptions.edgeSourceFraction * edgeOptions.edgeReferenceWorldSize; // Used by reports and compatibility metadata as the protected border's physical thickness.
@@ -512,13 +545,14 @@
       angleToleranceDeg: splitAngleDeg,
       splitAtThreshold,
       ignoreReversedCoplanarFaces,
+      preserveQuadPairs,
       materialIndex,
       maxPatchWorldSize: null,
       legacyPatchHintIgnored: Object.prototype.hasOwnProperty.call(options, 'maxPatchWorldSize'),
       edgeSourceFraction: edgeOptions.edgeSourceFraction,
       edgeReferenceWorldSize: edgeOptions.edgeReferenceWorldSize,
       edgeWorldSize,
-      patchCount: islands.length,
+      patchCount: mappedPatchCount,
       fallbackCount,
       boundaryLoopCount,
       edgeBands,
@@ -530,7 +564,7 @@
       referenceWorldSize: edgeOptions.edgeReferenceWorldSize,
       edgeWorldSize,
       materialIndex,
-      patchCount: islands.length,
+      patchCount: mappedPatchCount,
       warpedUvCount: topology.triangles.length * 3,
       ignoredPatchSplitting: true,
     }; // Used for compatibility with the later post-Jigsaw/cross-mesh diagnostics layer.
@@ -542,9 +576,9 @@
       hobunjiSurfacePerimeterFrame: perimeterFrame,
     });
     debugState.mappedGeometries++;
-    debugState.patches += islands.length;
+    debugState.patches += mappedPatchCount;
     debugState.fallbacks += fallbackCount;
-    debugState.edgeProtectedPatches += islands.length;
+    debugState.edgeProtectedPatches += mappedPatchCount;
     debugState.edgeFallbackPatches += fallbackCount;
     return geometry;
   }

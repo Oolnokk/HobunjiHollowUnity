@@ -81,13 +81,13 @@ assert.match(gameSource,
   /npcSeatTransformForTarget[\s\S]{0,900}resolveSeatWorldTransform/,
   'NPCs reuse the player seat-anchor resolver');
 assert.match(gameSource,
-  /this\.legs\.update\(dt, this\._moveSpeedTiles, !isVisibleArea, seatedPose\)/,
+  /this\.legs\.update\(dt, this\._moveSpeedTiles, !isVisibleArea, seatedPose, \{ allowSpeedRun: this\._npcRunning \}\)/,
   'NPC legs receive the same seated-pose data as player legs');
 assert.match(npcPathfindingSource,
   /allowOccupiedTarget[\s\S]{0,500}c === targetC && r === targetR/,
   'NPC pathing allows the occupied chair only as its final destination');
 assert.match(gameSource,
-  /root\.position\.x = seatTransform\.x[\s\S]{0,500}seatTransform\.y - standingPosteriorY[\s\S]{0,400}seatTransform\.facingRad/,
+  /root\.position\.x = seatTransform\.x[\s\S]{0,1100}seatTransform\.y - scaledPosteriorY[\s\S]{0,550}seatTransform\.facingRad/,
   'seated NPC bodies align, lower, and face using the authored seat transform');
 assert.match(gameSource,
   /root\.rotation\.y = this\.rot;[\s\S]{0,240}this\.legs\?\.group[\s\S]{0,120}rawRot - root\.rotation\.y/,

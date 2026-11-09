@@ -27,8 +27,8 @@ vm.runInContext(fs.readFileSync('docs/js/stable-training-compendium-patch.js', '
 assert.equal(context.StableTrainingCompendiumPatch.installed, true, 'Stable Compendium copy patch installs');
 context.CompendiumUI.render();
 assert.equal(renders, 1, 'original Compendium render still runs exactly once');
-assert.equal(kicker.textContent, 'Level 10 animal training', 'obsolete coming-soon kicker is replaced');
-assert.match(body.textContent, /gain XP while active, up to level 10/i, 'Compendium explains live Stable XP progression');
+assert.equal(kicker.textContent, 'Companion training and tactics', 'obsolete coming-soon kicker is replaced');
+assert.match(body.textContent, /companions train up to level 30/i, 'Compendium explains live Stable XP progression');
 assert.match(body.textContent, /Tap an animal in the Stable to expand its perk tree/i, 'Compendium documents the player-facing expandable tree workflow');
 
 const bridge = fs.readFileSync('docs/js/livestock-nursery-install-bridge.js', 'utf8');

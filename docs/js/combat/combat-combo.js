@@ -27,6 +27,8 @@
   let RANGE_SCALE = 0.6;
   let LUNGE_SCALE = 1.5;
 
+  const FINISHER_MASTERY_SCALE = 0.5; // Scales only the qualified third hit's scroll/mastery bonuses against the equivalent Quick Attack bonuses.
+  const SPECIAL_FINISHER_DAMAGE_MULTIPLIER = 1.5; // A qualified third hit is visibly stronger, even before unlocked mastery bonuses.
   // Populated by attack-values.json through applyComboConfig below. Keeping
   // the fallback empty means an unavailable config produces no override and
   // the shared SFX pipeline retains its neutral pitch.
@@ -53,11 +55,9 @@
   // (power:1.3) and slowed down for a heavier finisher, instead of any of
   // them needing a separate bespoke animation. game.js's pose-driven swing
   // branch (updateToolMesh) applies this generically.
-  const SWEEP_POSE = {
-    neutral: { x: 0, y: 0, z: 0, pitch: 0, yaw: 0,   bodyYaw: 0, secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
-    windup:  { x: 0, y: 0, z: 0, pitch: 0, yaw: -42, bodyYaw: -90, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
-    strike:  { x: 0, y: 0, z: 0, pitch: 0, yaw: 20,  bodyYaw: 120, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
-  };
+  // The editor-authored sweep (js/combat/attack-pose-templates.js 'hatchet_swing'),
+  // exported below as Combat.poses.SWEEP_POSE for the bandit AI.
+  const SWEEP_POSE = window.AttackPoseTemplates?.poseFor('hatchet_swing');
 
   // holdS: how long (seconds) the swing dwells at its strike pose before
   // easing back to neutral — a per-step config knob, not an engine default.
@@ -82,34 +82,34 @@
   // the big shove for Cleave, means the combo has something left to hit by
   // the time the finisher's own knockbackMul (2.4) fires.
   const SWING_STEPS = [
-    { name: 'Forehand Swing', damageMul: 1.0, halfConeDeg: 26, rangeMul: 1.0,  knockbackMul: 0.45, staminaCost: 16, windupS: 0.23,  strikeS: 0.07,  anim: 'sweep', dirSign: 1,  pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt', lungeMul: 2.0 },
-    { name: 'Backhand Swing', damageMul: 1.25, halfConeDeg: 30, rangeMul: 1.05, knockbackMul: 0.55, staminaCost: 19, windupS: 0.23,  strikeS: 0.07,  anim: 'sweep', dirSign: -1, pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt', lungeMul: 1.0 },
+    { name: 'Forehand Swing', damageMul: 1.0, halfConeDeg: 26, rangeMul: 1.0,  knockbackMul: 0.45, staminaCost: 16, windupS: 0.345,  strikeS: 0.07,  anim: 'sweep', dirSign: 1,  pose: SWEEP_POSE, holdS: 0.43, dmgTag: 'blunt', lungeMul: 2.0 },
+    { name: 'Backhand Swing', damageMul: 1.25, halfConeDeg: 30, rangeMul: 1.05, knockbackMul: 0.55, staminaCost: 19, windupS: 0.345,  strikeS: 0.07,  anim: 'sweep', dirSign: -1, pose: SWEEP_POSE, holdS: 0.43, dmgTag: 'blunt', lungeMul: 1.0 },
     // Cleave is the combo's 3rd step and its `heavy` flag — see the `heavy`
     // handling in onTap below — barely outdamages Backhand Swing on its own
     // (1.35 vs 1.25); its real payoff is the Death Mark it leaves on
     // whatever it hits (see combat-death-mark.js), not its own base damage.
     // Keeps an extra x1.5 knockback bump (2.4) on top of the shared
     // knockback baseline, same as charged breaker/riposte/flurry.
-    { name: 'Cleave',         damageMul: 1.35, halfConeDeg: 42, rangeMul: 1.15, knockbackMul: 2.4,  staminaCost: 28, windupS: 0.345, strikeS: 0.105, returnS: 0.30, anim: 'sweep', dirSign: 1, power: 1.3, pose: SWEEP_POSE, holdS: 1, dmgTag: 'blunt', heavy: true, lungeMul: 1.0 },
+    { name: 'Cleave',         damageMul: 1.35, halfConeDeg: 42, rangeMul: 1.15, knockbackMul: 2.4,  staminaCost: 28, windupS: 0.5175, strikeS: 0.105, returnS: 0.30, anim: 'sweep', dirSign: 1, power: 1.3, pose: SWEEP_POSE, holdS: 0.41375, dmgTag: 'blunt', heavy: true, lungeMul: 1.0 },
   ];
 
-  // Long Lunge's power>1 drives game.js's thrust pose to rotate the body and
-  // push the weapon out farther than the first two (plain) pokes, per the
-  // demo's "third one rotates even farther, pushes even farther forward" spec.
-  // Same low-early-knockback rationale as SWING_STEPS above. Step/Long
+  // Every poke plays the editor's pickshovel_swing template (comboStepPose
+  // below). The template's power rule only scales a SWEEP's body turn, so Long
+  // Lunge's power:1.35 does not change its animation -- the player's swing is
+  // the reference and enemies now match it. Same low-early-knockback rationale as SWING_STEPS above. Step/Long
   // Thrust's cone also widens a little over Short Thrust's — by the time
   // those land, the target has already reacted to (or been nudged by) the
   // opener, so the follow-ups bias toward forgiving the combo continuing
   // over staying razor-precise.
   const POKE_STEPS = [
-    { name: 'Short Thrust', damageMul: 0.95, halfConeDeg: 9,  rangeMul: 1.15, knockbackMul: 0.4, staminaCost: 13,  windupS: 0.12, strikeS: 0.09, anim: 'thrust', dirSign: 1, holdS: 1, dmgTag: 'sharp', lungeMul: 2.0 },
-    { name: 'Step Thrust',  damageMul: 1.15, halfConeDeg: 12, rangeMul: 1.35, knockbackMul: 0.5, staminaCost: 16, windupS: 0.16, strikeS: 0.10, anim: 'thrust', dirSign: 1, holdS: 1, dmgTag: 'sharp', lungeMul: 1.0 },
+    { name: 'Short Thrust', damageMul: 0.95, halfConeDeg: 9,  rangeMul: 1.15, knockbackMul: 0.4, staminaCost: 13,  windupS: 0.18, strikeS: 0.09, anim: 'thrust', dirSign: 1, holdS: 0.47, dmgTag: 'sharp', lungeMul: 2.0 },
+    { name: 'Step Thrust',  damageMul: 1.15, halfConeDeg: 12, rangeMul: 1.35, knockbackMul: 0.5, staminaCost: 16, windupS: 0.24, strikeS: 0.10, anim: 'thrust', dirSign: 1, holdS: 0.46, dmgTag: 'sharp', lungeMul: 1.0 },
     // Long Lunge is the poke combo's 3rd step and its `heavy` flag — barely
     // outdamages Step Thrust on its own (1.25 vs 1.15); its real payoff is
     // the Death Mark it leaves on whatever it hits, the same way Cleave's
     // does (see combat-death-mark.js). Same extra x1.5 knockback bump as
     // Cleave.
-    { name: 'Long Lunge',   damageMul: 1.25, halfConeDeg: 13, rangeMul: 1.65, knockbackMul: 2.85, staminaCost: 25, windupS: 0.27, strikeS: 0.12, returnS: 0.35, anim: 'thrust', dirSign: 1, power: 1.35, holdS: 1, dmgTag: 'sharp', heavy: true, lungeMul: 1.0 },
+    { name: 'Long Lunge',   damageMul: 1.25, halfConeDeg: 13, rangeMul: 1.65, knockbackMul: 2.85, staminaCost: 25, windupS: 0.405, strikeS: 0.12, returnS: 0.35, anim: 'thrust', dirSign: 1, power: 1.35, holdS: 0.4325, dmgTag: 'sharp', heavy: true, lungeMul: 1.0 },
   ];
 
   function now() { return performance.now() / 1000; }
@@ -120,27 +120,54 @@
     return (rs.getAffliction(entity, 'bruisedHealth') || 0) + (rs.getAffliction(entity, 'corrodedHealth') || 0);
   }
 
-  function registerCombo(id, label, steps) {
+  // templateId: the attack-animation editor template these steps show (see
+  // the editor's ACTION_DEFS), so in-game poses match the editor exactly.
+  const COMBO_TEMPLATE_IDS = {}; // Combo id -> attack-editor template, filled by registerCombo.
+
+  // The authored pose a combo step plays, with the editor's power rule already
+  // applied (so callers pass power 1). The ONE source for the player's onTap,
+  // BanditCombat combo steps and lich casts, so every actor swings a step alike.
+  // Allocates a fresh pose: call once per swing, not per frame.
+  function comboStepPose(comboId, step) {
+    const templateId = COMBO_TEMPLATE_IDS[comboId];
+    return (templateId && window.AttackPoseTemplates?.poseFor(templateId, step?.power || 1)) || step?.pose || null;
+  }
+
+  function registerCombo(id, label, steps, templateId) {
+    COMBO_TEMPLATE_IDS[id] = templateId;
     let comboIndex = 0;
     let lastTapAt = -99;
     let busyAction = null;
+    let lastWeaponKey = null; // Switching weapons invalidates the previous weapon's combo and its landed setup hits.
+    let firstHits = new Set(); // Exact creatures struck by step one; geometry alone does not count if they dodge.
+    let secondHits = new Set(); // Exact creatures struck by step two; a special third hit requires membership in both sets.
 
     function onTap() {
       if (busyAction) return; // previous step's windup/strike hasn't resolved yet
       const deps = window.Combat.deps;
+      const shapeStats = (window.WeaponShapeStats?.current?.() || { power: 1, speed: 1, range: 1, efficiency: 1 }); // Applies this equipped weapon's tempo, stamina, and hit geometry.
       // Footing/impact stagger lockout (see combat-core.js's isStaggered/
       // beginStagger, set by game.js's damagePlayer) — a staggered player
       // can't start a new combo step until it clears.
       if (window.Combat.isStaggered(deps.player)) return;
       const t = now();
-      if (t - lastTapAt > COMBO_RESET_S) comboIndex = 0;
+      const weaponKey = deps.currentWeaponKey(); // Stable ownership snapshot for this entire three-hit chain.
+      if (t - lastTapAt > COMBO_RESET_S || weaponKey !== lastWeaponKey) {
+        comboIndex = 0;
+        firstHits.clear();
+        secondHits.clear();
+      }
       lastTapAt = t;
+      lastWeaponKey = weaponKey;
       // Preserve the selected zero-based step before advancing the combo so
       // strike-time consumers receive the identity/pitch of this attack,
       // rather than the next attack in the sequence.
       const comboStep = comboIndex % steps.length;
       const step = steps[comboStep];
       const isFinisher = comboStep === steps.length - 1; // Used for explicit power-hit vulnerability consumption and its conditional huge impact cue.
+      const qualifiedTargets = isFinisher ? new Set([...firstHits].filter(target => secondHits.has(target) && target.health > 0 && target.areaId === deps.getCurrentArea())) : new Set(); // Dead/area-transferred enemies cannot empower a new finisher.
+      const finisherEffects = qualifiedTargets.size ? window.CombatProgression?.getEffects(weaponKey, id + 'Finisher', { includePerks: false }) : null; // Scroll-unlocked Quick Attack payload; inert without a connected chain.
+      const finisherStats = Object.fromEntries(Object.entries(finisherEffects?.stats || {}).map(([stat, value]) => [stat, value * FINISHER_MASTERY_SCALE])); // Halve finisher-only stat bonuses, including damage, reach, lunge and cost.
       const configuredPitch = SFX_PITCH_BY_STEP[comboStep];
       const sfxPitch = Number.isFinite(configuredPitch) && configuredPitch > 0 ? configuredPitch : undefined;
       comboIndex = (comboIndex + 1) % steps.length;
@@ -150,7 +177,9 @@
       // upgrades on the equipped weapon's own mastery track (see combat-
       // progression.js) — a fresh, unleveled combo deals plain damage with
       // no afflictions at all.
-      const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), id) || { afflictions: {}, stats: {} };
+      const effects = window.CombatProgression?.getEffects(weaponKey, id) || { afflictions: {}, stats: {} };
+      const activeStats = { ...effects.stats }; // The ordinary Cleave/Long Lunge always keeps its own mastery modifiers.
+      if (qualifiedTargets.size) for (const stat of ['staminaCostMul', 'rangeMul', 'coneWidthMul', 'lungeMul']) activeStats[stat] = (activeStats[stat] || 0) + (finisherStats[stat] || 0); // Conditional attack-wide modifiers are committed before the strike.
       // Sharp/blunt is determined by whichever tool occupies the weapon
       // slot (see TOOL_ITEM_DEFS' own dmgType, and weaponDamageTypeForTool)
       // -- not by step.dmgTag, a per-combo-family value (swingCombo always
@@ -167,16 +196,18 @@
       // then slows this swing's own windup/strike/return down instead,
       // same as the source demo's "the same multiplier slows attack
       // cooldown" rule.
-      window.ResourceSystem?.spendStamina(deps.player, step.staminaCost * (1 + (effects.stats.staminaCostMul || 0)), step.name);
-      const timeScale = 1 / (window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1);
+      window.ResourceSystem?.spendStamina(deps.player, (step.staminaCost * (1 + (activeStats.staminaCostMul || 0)) / shapeStats.efficiency), step.name, { actionKind: 'combatCombo', abilityId: id, heavy: !!step.heavy }); // Weapon-only Stamina trade-offs preserve the latest active stage multipliers.
+      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)); // Bloodrush changes weapon tempo, not lunge distance.
       const windupS = step.windupS * timeScale;
       const strikeS = step.strikeS * timeScale;
       const returnS = (step.returnS || 0) * timeScale;
 
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
-      const rangePx = baseAbil.rangePx * step.rangeMul * RANGE_SCALE * (1 + (effects.stats.rangeMul || 0));
-      const halfConeRad = step.halfConeDeg * Math.PI / 180;
-      const baseLungePx = deps.TILE * step.lungeMul * LUNGE_SCALE * (1 + (effects.stats.lungeMul || 0)); // Existing lunge computation remains authoritative before cross-cutting attack modifiers.
+      const normalRangePx = baseAbil.rangePx * step.rangeMul * RANGE_SCALE * (1 + (effects.stats.rangeMul || 0)) * shapeStats.range; // Normal third-hit geometry, also used for enemies that missed either setup attack.
+      const normalHalfConeRad = Math.min(Math.PI, step.halfConeDeg * Math.PI / 180 * shapeStats.range * (1 + (effects.stats.coneWidthMul || 0))); // Stops conditional reach upgrades leaking to unrelated targets.
+      const rangePx = baseAbil.rangePx * step.rangeMul * RANGE_SCALE * (1 + (activeStats.rangeMul || 0)) * shapeStats.range;
+      const halfConeRad = Math.min(Math.PI, step.halfConeDeg * Math.PI / 180 * shapeStats.range * (1 + (activeStats.coneWidthMul || 0)));
+      const baseLungePx = deps.TILE * step.lungeMul * LUNGE_SCALE * (1 + (activeStats.lungeMul || 0)); // Existing lunge computation remains authoritative before cross-cutting attack modifiers.
       const attackContext = window.CombatAttackEvents?.prepare?.({
         attacker: deps.player,
         weaponKey: deps.currentWeaponKey(),
@@ -184,8 +215,8 @@
         damage: baseAbil.damage * step.damageMul * (1 + (effects.stats.damageMul || 0)),
         afflictionBonuses: effects.afflictions,
         knockbackPxS: baseAbil.knockbackPxS * step.knockbackMul * (1 + (effects.stats.knockbackMul || 0)),
-        rangePx,
-        halfConeRad,
+        rangePx: normalRangePx,
+        halfConeRad: normalHalfConeRad,
         lungePx: baseLungePx,
         comboStep: comboStep + 1,
         comboFinisher: isFinisher,
@@ -206,9 +237,9 @@
         dirSign: step.dirSign,
         windupFrac: windupS / totalVisual,
         strikeFrac: (windupS + strikeS) / totalVisual,
-        power: step.power || 1,
-        pose: step.pose,
-        holdS: step.holdS || 0,
+        power: 1, // poseFor already applied the editor's power rule to this pose.
+        pose: comboStepPose(id, step),
+        holdS: (step.holdS || 0) / (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)),
         afflictionIds: Object.keys(attackAfflictions),
         afflictions: attackAfflictions,
         coneRangePx: rangePx,
@@ -221,7 +252,7 @@
       // early the moment a hostile is inside this step's own hit cone
       // instead of always covering the full lunge distance (see
       // game.js's beginCombatLunge/updateMovement).
-      deps.beginCombatLunge(lungePx, windupS + strikeS, 0, { rangePx, halfConeRad });
+      deps.beginCombatLunge(lungePx, windupS + strikeS, 0, { rangePx: normalRangePx, halfConeRad: normalHalfConeRad }); // Don't stop the lunge early on a bystander who only appears inside the conditional finisher's bonus reach.
 
       // The pose reaches its authored Strike endpoint only after BOTH the
       // windup and strike interpolation intervals. Firing gameplay impact at
@@ -230,7 +261,7 @@
       // visually inventing a fourth, unrelated-looking pose in gameplay that
       // the animation editor (which has no hit event) never showed.
       const impactAtS = windupS + strikeS;
-      busyAction = window.Combat.beginStagedAction({
+      const stagedAction = window.Combat.beginStagedAction({ // Capture the engine return before claiming a busy action: it may cancel synchronously for player action locks.
         windupS: impactAtS,
         strikeS: 0,
         recoverS: 0,
@@ -238,16 +269,36 @@
           const vegetationCleared = deps.clearVegetationInAttackCone?.(deps.player.x, deps.player.y, deps.player.angle, rangePx, halfConeRad) || 0; // Used for accurate hit feedback when the cone only cuts growth.
           let hits = 0, lastName = '';
           const ordinaryHitTargets = new Set(); // Used after the ordinary hit loop so Living Gust can affect only the widened peripheral cone without duplicating normal damage.
+          const landedTargets = new Set(); // Used to advance ONLY actually connected hits, not geometric overlaps during an iframe dodge.
+          let specialProcs = 0; // Per-strike count for sound feedback and mobile diagnostics.
+          const quickBonusPower = Number(window.Combat.quickAttackData?.BONUS_EFFECT_POWER_MULTIPLIER); // The same configurable bonus multiplier that Quick Attacks use; zero remains a valid tuning value.
+          const bonusPower = (Number.isFinite(quickBonusPower) ? Math.max(0, quickBonusPower) : 2) * FINISHER_MASTERY_SCALE; // Qualified finisher afflictions, debuffs and instant effects get half of Quick Attack strength.
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
+            const specialProc = isFinisher && qualifiedTargets.has(c); // Third hit must reconnect with the same enemy that took both openers.
             if (!window.Combat.meleeHit(deps.player, c, {
-              rangePx, halfConeRad,
+              rangePx: specialProc ? rangePx : normalRangePx,
+              halfConeRad: specialProc ? halfConeRad : normalHalfConeRad, // Unqualified targets never inherit special-only reach or cone modifiers.
               yaw: deps.player.angle,
               pitch: deps.getPlayerMeleeAimPitch?.() || 0,
             })) continue;
+            if (Number(c.invulnUntil) > performance.now()) continue; // A dodged/iframe-blocked opener cannot seed a finisher.
             const vulnerabilityBefore = isFinisher ? powerHitVulnerabilityTotal(c) : 0; // Used before this hit's own affliction payload can replace consumed buildup.
             const healthBefore = Math.max(0, Number(c.health) || 0); // Used to report post-mitigation damage to Mirrored Health and other post-hit observers.
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, {
+            const pronePower = window.ResourceSystem?.getProneAttackMultiplier?.(c) ?? 1; // Snapshot before a possible Knockdown so the proc cannot empower itself.
+            const hitAfflictions = { ...attackAfflictions }; // Never contaminate unqualified Cleave/Long Lunge targets with bonus effects.
+            if (specialProc) {
+              for (const [effectId, amount] of Object.entries(finisherEffects?.quickBonusAfflictions || {})) {
+                hitAfflictions[effectId] = (hitAfflictions[effectId] || 0) + amount * (attackContext.modifiers?.affliction || 1) * bonusPower;
+              }
+              for (const effect of finisherEffects?.quickBonusInstantEffects || []) if (effect.id === 'bleedout') {
+                const amount = Math.max(0, (Number(effect.amount) || 0) * (Number(effect.power) || 1) * bonusPower * pronePower); // Same pre-hit Bleedout calculation as conditional Quick Attacks.
+                window.ResourceSystem?.bleedOut?.(c, amount, { source: 'Combo: Special Finisher' });
+              }
+            }
+            const actualDamage = specialProc ? Math.round(damage * SPECIAL_FINISHER_DAMAGE_MULTIPLIER * (1 + (finisherStats.damageMul || 0))) : damage; // Unqualified targets retain normal third-hit damage.
+            const actualKnockback = specialProc ? knockbackPxS * Math.max(0, 1 + (finisherStats.knockbackMul || 0)) : knockbackPxS;
+            deps.damageCreature(c, actualDamage, deps.player.x, deps.player.y, actualKnockback, {
               abilityId: id, // Identifies the committed hit for authored training objectives.
               tag: dmgType,
               heavy: step.heavy,
@@ -259,22 +310,40 @@
               // already on the target (so stacks can climb past 1).
               appliesDeathMark: step.heavy,
               consumeHealthVulnerability: isFinisher,
-              afflictionBonuses: attackAfflictions,
+              afflictionBonuses: hitAfflictions,
+              specialComboFinisher: specialProc, // Distinguishes the qualified bonus from the ordinary heavy third hit.
             });
+            if (specialProc && c.health > 0) for (const debuff of finisherEffects?.quickBonusDebuffs || []) {
+              window.ResourceSystem?.applyTimedDebuff?.(c, debuff.id, debuff.durationS, {
+                power: (Number.isFinite(Number(debuff.power)) ? Number(debuff.power) : 1) * (debuff.id === 'knockdown' ? FINISHER_MASTERY_SCALE : bonusPower) * pronePower, // Knockdown scales duration via power, rather than using the regular debuff severity multiplier.
+                fromX: deps.player.x, fromY: deps.player.y,
+                source: 'Combo: Special Finisher',
+              }); // Reuse existing timed-debuff stacking, including additive Knockdown durations.
+            }
             ordinaryHitTargets.add(c);
+            landedTargets.add(c);
             window.CombatAttackEvents?.hit?.(attackContext, {
               target: c,
               actualDamage: Math.max(0, healthBefore - (Number(c.health) || 0)),
-              afflictionBonuses: attackAfflictions,
+              afflictionBonuses: hitAfflictions,
               comboStep: comboStep + 1,
               comboFinisher: isFinisher,
+              comboSpecialFinisher: specialProc, // Cross-cutting observers can distinguish an earned special from ordinary Cleave/Long Lunge.
             });
-            const impactSize = isFinisher && vulnerabilityBefore > 0 ? 'huge' : ['small', 'medium', 'large'][comboStep]; // A finisher escalates only when it actually had vulnerability available to consume.
+            const impactSize = specialProc || (isFinisher && vulnerabilityBefore > 0) ? 'huge' : ['small', 'medium', 'large'][comboStep]; // A finisher escalates only when it actually had vulnerability available to consume.
             deps.playWeaponHitSfx?.(dmgType, c.x, c.y, c.areaId, sfxPitch, impactSize);
+            if (specialProc) { specialProcs++; window.AudioSystem?.playComboFinisherBonusSfx?.(c.x, c.y, c.areaId); } // Only qualified third hits receive the faster, double anime-slash cue.
             hits++;
             lastName = c.def.label;
           }
           window.EnchantmentSystem?.applyPeripheralGust?.(attackContext, ordinaryHitTargets);
+          if (comboStep === 0) firstHits = landedTargets; // A miss clears step-one eligibility even if a previous sequence hit.
+          else if (comboStep === 1) secondHits = landedTargets;
+          else {
+            window.Combat.comboData.lastSpecialFinisher = { comboId: id, weaponKey, qualifiedTargets: qualifiedTargets.size, specialProcs, ordinaryHits: hits - specialProcs, at: performance.now() }; // Copyable mobile diagnostics.
+            firstHits.clear();
+            secondHits.clear();
+          }
           const msg = hits > 0
             ? (hits > 1 ? `${step.name}: hit ${hits} creatures!` : `${step.name}: hit the ${lastName}!`)
             : vegetationCleared > 0
@@ -283,14 +352,14 @@
           // silent: every swing already has its own weapon swing/impact
           // sfx — the generic confirm/error chime on top of that, on every
           // single hit or miss, was redundant and noisy.
-          deps.showToast(msg, hits > 0 || vegetationCleared > 0, true);
+          deps.showToast(specialProcs > 0 ? `${msg} — Special Finisher!` : msg, hits > 0 || vegetationCleared > 0, true); // Only a confirmed third-hit proc earns the special announcement.
           if (hits > 0) {
             window.PlayerLunge?.confirmEnemyHit?.(); // A real enemy hit grants the one-second slow-fall aerial follow-up window; misses grant nothing.
             deps.awardWeaponMasteryXp();
           }
         },
         onComplete: () => { busyAction = null; },
-        onCancel: () => { busyAction = null; },
+        onCancel: () => { busyAction = null; comboIndex = 0; firstHits.clear(); secondHits.clear(); lastTapAt = -99; }, // A stagger/cancel cannot preserve earned setup hits.
         data: {
           comboId: id, comboStep, sfxPitch,
           meleeThreat: window.Combat.playerMeleeThreat(rangePx, halfConeRad, {
@@ -300,13 +369,15 @@
           }),
         },
       });
+      busyAction = stagedAction && !stagedAction.cancelled && stagedAction.phase !== 'done' ? stagedAction : null; // Synchronous cancel/zero-duration completion must not re-arm a dead action.
+      if (!busyAction) { comboIndex = 0; firstHits.clear(); secondHits.clear(); lastTapAt = -99; } // Failed action creation must not preserve phantom setup hits.
     }
 
     window.Combat.abilities.register(id, { label, slotFamily: 'tap', category: 'combo', onTap });
   }
 
-  registerCombo('swingCombo', '3-Swing Combo', SWING_STEPS);
-  registerCombo('pokeCombo', '3-Poke Combo', POKE_STEPS);
+  registerCombo('swingCombo', '3-Swing Combo', SWING_STEPS, 'hatchet_swing');
+  registerCombo('pokeCombo', '3-Poke Combo', POKE_STEPS, 'pickshovel_swing');
 
   // Shared with other sweep-style abilities (e.g. combat-flurry.js) so every
   // sweeping attack uses this same authored pose rather than each falling
@@ -319,6 +390,7 @@
   // Keyed by the same ability ids ('swingCombo'/'pokeCombo') a loadout slot
   // stores, not the raw step-array constant names, so a lookup by loadout
   // value works directly.
+  window.Combat.comboStepPose = comboStepPose;
   window.Combat.comboData = { swingCombo: SWING_STEPS, pokeCombo: POKE_STEPS, sfxPitchByStep: SFX_PITCH_BY_STEP, RANGE_SCALE, LUNGE_SCALE, COMBO_RESET_S };
 
   // Applies docs/config/combat/attack-values.json's `combo` section (called

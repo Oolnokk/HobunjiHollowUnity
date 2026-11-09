@@ -25,7 +25,6 @@
     chest: 'furniture/chest_storage.glb',
     hearth: 'furniture/hearth_fireplace.glb',
     crateStack: 'furniture/crate_stack.glb',
-    standingLamp: 'furniture/standing_lamp_bronze.glb',
     bucket: 'furniture/bucket_tin.glb',
     stool: 'furniture/stool_round.glb',
     dryingRack: 'furniture/station_drying_rack.glb',
@@ -180,10 +179,11 @@
       localeEditorTextureLoad.__localeEditorPathRemap = true;
       THREE.TextureLoader.prototype.load = localeEditorTextureLoad;
     }
+    await loadScript('../../js/terrain-preview.js?v=20261013he41c002', () => !!window.TerrainPreview?.buildRockMoundBumpField);
     await loadScript('../../js/procedural-furniture.js', () => !!window.ProceduralFurniture?.buildPartMesh);
-    await loadScript('../../js/authored-furniture-runtime.js', () => !!window.AuthoredFurniture?.buildGroup);
+    await loadScript('../../js/authored-furniture-runtime.js?v=20261104hf23bb18', () => !!window.AuthoredFurniture?.buildGroup);
     await loadScript('../../js/color-fill.js?v=20260923colorfill7', () => !!window.ColorFill?.shadeFillPixels);
-    await loadScript('../../js/portrait-utils.js?v=20261016h340e25a', () => !!window.getShadeFillCanvas && !!window.parseHexColor);
+    await loadScript('../../js/portrait-utils.js?v=20261107h7418f3e', () => !!window.getShadeFillCanvas && !!window.parseHexColor);
     await loadScript('../../js/terrain-preview.js', () => !!window.TerrainPreview?.buildMergedZoneGrid);
     await loadScript('../../js/den-cliff-placement.js', () => !!window.DenCliffPlacement?.findSites); // Den-entrance templates fit dens into cliffs inside the generator.
     await loadScript('../../js/wilderness-map-generator.js', () => !!window.WildernessMapGenerator?.generateZoneWorkspace);
@@ -934,7 +934,7 @@
     return promise;
   }
 
-  async function addAuthoredFurnitureObject(group, object, merged, token, ghost) {
+  async function addAuthoredFurnitureObject(group, object, merged, token, ghost, wall = null) {
     if (!window.AuthoredFurniture?.buildGroup) return false;
     const data = await loadAuthoredFurnitureData(object.key);
     if (!data || token !== generationToken) return false;
@@ -944,20 +944,42 @@
     const h = Math.max(.1, Number(object.h) || Number(data.footprint?.d) || 1);
     const x = Number(object.x) + w / 2, z = Number(object.y) + h / 2;
     const groundY = surfaceY(merged, x, z);
-    model.position.set(x, groundY, z);
-    model.rotation.y = THREE.MathUtils.degToRad(Number(object.rot) || 0);
+    if(wall){
+      const wx=Number(wall.x)+Math.max(1,Number(wall.w)||1)/2;
+      const wz=Number(wall.y)+Math.max(1,Number(wall.h)||1)/2;
+      const amount=Number(object.visual?.mountHeightFraction); // Omitted height defaults to the middle of the authoring plane.
+      const fraction=Math.max(0,Math.min(1,Number.isFinite(amount)?amount:.5));
+      const faceY=surfaceY(merged,wx,wz)+Math.max(.6,Number(wall.visual?.height)||2.6)*fraction;
+      model.position.set(wx,faceY+(Number(object.visual?.mountOffsetY)||0),wz);
+      model.rotation.y=THREE.MathUtils.degToRad((Number(wall.rot)||0)+(Number(object.rot)||0));
+      model.userData.localeWallMountPreview=wall.id;
+    }else{
+      model.position.set(x, groundY, z);
+      model.rotation.y = THREE.MathUtils.degToRad(Number(object.rot) || 0);
+    }
     tintGhost(model, ghost);
     group.add(model);
     return true;
   }
 
-  function addColliderMarker(group, object, merged) {
-    const collision = object?.collision;
-    if (!collision || collision.mode === 'auto' || collision.mode === 'none') return;
-    const x = collision.mode === 'custom' && Number.isFinite(Number(collision.x)) ? Number(collision.x) : Number(object.x);
-    const z = collision.mode === 'custom' && Number.isFinite(Number(collision.y)) ? Number(collision.y) : Number(object.y);
-    const w = collision.mode === 'custom' ? Math.max(.1, Number(collision.w) || Number(object.w) || 1) : Math.max(.1, Number(object.w) || 1);
-    const h = collision.mode === 'custom' ? Math.max(.1, Number(collision.h) || Number(object.h) || 1) : Math.max(.1, Number(object.h) || 1);
+  function colliderMarkerRect(object, source = null) {
+    const collision = object?.collision; // Authored Locale Editor collider or its already-scaled runtime instance.
+    if (!collision || collision.mode === 'auto' || collision.mode === 'none') return null;
+    const custom = collision.mode === 'custom'; // Custom rectangles may differ from the rendered cave/prop footprint.
+    const scaleX = Math.max(.01, Number(object.w) || 1) / Math.max(.01, Number(source?.w) || Number(object.w) || 1); // Preview's source-to-world column scale.
+    const scaleZ = Math.max(.01, Number(object.h) || 1) / Math.max(.01, Number(source?.h) || Number(object.h) || 1); // Preview's source-to-world row scale.
+    const worldRect = custom && Number.isFinite(Number(collision.x)) && Number.isFinite(Number(collision.y)); // Terrain-aware instances already contain absolute world-grid collider coordinates/sizes.
+    const x = worldRect ? Number(collision.x) : Number(object.x) + (custom ? (Number(collision.colOffset) || 0) * scaleX : 0); // Locale-relative custom offset when previewing an unstamped template.
+    const z = worldRect ? Number(collision.y) : Number(object.y) + (custom ? (Number(collision.rowOffset) || 0) * scaleZ : 0); // Same rule for depth.
+    const w = custom ? Math.max(.1, Number(collision.w) || Number(source?.w) || Number(object.w) || 1) * (worldRect ? 1 : scaleX) : Math.max(.1, Number(object.w) || 1); // Runtime-scaled collision sizes must not be scaled a second time.
+    const h = custom ? Math.max(.1, Number(collision.h) || Number(source?.h) || Number(object.h) || 1) * (worldRect ? 1 : scaleZ) : Math.max(.1, Number(object.h) || 1); // Used to draw the true collision depth.
+    return { x, z, w, h };
+  }
+
+  function addColliderMarker(group, object, merged, source) {
+    const rect = colliderMarkerRect(object, source); // Both generated and ghost/authoring previews use the same actual collider shape.
+    if (!rect) return;
+    const { x, z, w, h } = rect;
     const y = surfaceY(merged, x + w/2, z + h/2) + 0.08;
     const edges = new THREE.EdgesGeometry(new THREE.BoxGeometry(w, .16, h));
     const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color:0xff6b6b, transparent:true, opacity:.85 }));
@@ -1006,6 +1028,25 @@
     mesh.castShadow = true; mesh.receiveShadow = true;
     group.add(mesh);
   }
+  function addUnknownWallPlane(group,object,merged,ghost) {
+    const span=Math.max(.3,Number(object.w)||2);
+    const tall=Math.max(.6,Number(object.visual?.height)||2.6);
+    const x=Number(object.x)+span/2,z=Number(object.y)+Math.max(.3,Number(object.h)||1)/2;
+    const floorY=surfaceY(merged,x,z);
+    const material=new THREE.MeshBasicMaterial({
+      color:0x5acdf1,transparent:true,opacity:ghost?.18:.25,depthWrite:false,
+      side:THREE.DoubleSide,
+    });
+    const plane=new THREE.Mesh(new THREE.PlaneGeometry(span,tall),material);
+    plane.name='localeObject_unknownCliffFace';
+    plane.position.set(x,floorY+tall/2,z);
+    plane.rotation.y=THREE.MathUtils.degToRad(Number(object.rot)||0);
+    plane.userData.localeAuthoringPlaceholder=true; // Editor-only mounting plane; the stamped wilderness uses its real cliff geometry.
+    const outline=new THREE.LineSegments(new THREE.EdgesGeometry(plane.geometry),
+      new THREE.LineBasicMaterial({color:0x8de5ff,transparent:true,opacity:ghost?.4:.9}));
+    plane.add(outline);group.add(plane);
+  }
+
   async function renderLocaleObjects(workspace, locale, instance, merged, terrainRoot, token, ghost) {
     if (!instance) return;
     const group = new THREE.Group();
@@ -1016,17 +1057,22 @@
       object.visual ||= source?.visual;
       object.collision ||= source?.collision;
       object.rot = object.rot ?? source?.rot ?? 0;
+      if(object.key==='unknownCliffFace'||object.visual?.renderer==='unknown_wall_plane'){
+        addUnknownWallPlane(group,object,merged,ghost); // Vertical wall mount is visible at any preview elevation.
+        continue; // Never render a solid furniture fallback or collider for this authoring-only marker.
+      }
       if (object.key === 'cave_small' || source?.visual?.renderer === 'cave_small') {
-        addColliderMarker(group, object, merged);
+        addColliderMarker(group, object, merged, source);
         continue;
       }
       let loaded = false;
       if (['furniture','decor','bench','processor','prop'].includes(object.kind)) {
-        loaded = await addAuthoredFurnitureObject(group, object, merged, token, ghost);
+        const wall=(instance.objects||[]).find(item=>item.id===object.wallMountId && (item.key==='unknownCliffFace'||item.visual?.renderer==='unknown_wall_plane'))||null;
+        loaded = await addAuthoredFurnitureObject(group, object, merged, token, ghost, wall); // Editor references the selected placeholder; game substitutes the real cliff surface.
       }
       if (!loaded) loaded = await addGlbObject(group, object, merged, token, ghost);
       if (!loaded && token === generationToken) addFallbackObject(group, object, merged, ghost);
-      addColliderMarker(group, object, merged);
+      addColliderMarker(group, object, merged, source);
     }
     renderAnchorMarkers(group, instance, merged, ghost);
 

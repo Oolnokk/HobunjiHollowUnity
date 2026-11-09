@@ -182,6 +182,8 @@
           targetMapId: String(exit?.targetMap || ''),
           spawnCol: finiteNumber(exit?.spawnCol, 0),
           spawnRow: finiteNumber(exit?.spawnRow, 0),
+          generateDoor: exit.generateDoor === true,
+          direction: exit.direction || '',
         });
       }
     }

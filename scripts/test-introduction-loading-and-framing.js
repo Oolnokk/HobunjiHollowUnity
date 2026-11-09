@@ -97,7 +97,7 @@ assert.equal(controller.focus.c,900,'mini-map cleanup returns streaming to gamep
 
 async function verifyAssetReadiness() {
   const calls = [], texture = {isTexture:true,image:{complete:true,decode:async()=>calls.push('decode')}}; // A decoded scene texture must reach the GPU before readiness completes.
-  const context={window:{CreatureGenetics:{SPECIES_ALIAS:{}},CreatureGeneticsRender:{SPECIES:{wolf:{}},genotypeSignature:()=> 'g',composeFrame:async(kind,frame,g,blink)=>({width:4,height:4,frame,blink})}},THREE:{CanvasTexture:class {constructor(canvas){this.image=canvas;this.repeat={set(){}};this.offset={set(){}};}},SRGBColorSpace:'srgb',RepeatWrapping:1},_genotypeTexCache:{front:new Map(),back:new Map()},_genotypeTexPending:new Map(),_genotypeUnsupportedKinds:new Set(),_genotypeTexFailedAt:new Map(),_genotypeTexLogged:new Set(),performance:{now:()=>0},renderer:{initTexture:tex=>{assert.equal(tex,texture);calls.push('upload');},compileAsync:async()=>calls.push('compile')},camera:{},updateCameraPosition(){},updateCreatureAnimFrame:()=>calls.push('idle'),setTimeout};
+  const context={window:{CreatureGenetics:{SPECIES_ALIAS:{}},CreatureGeneticsRender:{SPECIES:{wolf:{}},genotypeSignature:()=> 'g',eyeStatesForKind:()=>[false,true],eyeStateKey:state=>state?'b':'o',composeFrame:async(kind,frame,g,blink)=>({width:4,height:4,frame,blink})}},THREE:{CanvasTexture:class {constructor(canvas){this.image=canvas;this.repeat={set(){}};this.offset={set(){}};}},SRGBColorSpace:'srgb',RepeatWrapping:1},_genotypeTexCache:{front:new Map(),back:new Map()},_genotypeTexPending:new Map(),_genotypeUnsupportedKinds:new Set(),_genotypeTexFailedAt:new Map(),_genotypeTexLogged:new Set(),performance:{now:()=>0},renderer:{initTexture:tex=>{assert.equal(tex,texture);calls.push('upload');},compileAsync:async()=>calls.push('compile')},camera:{},updateCameraPosition(){},updateCreatureAnimFrame:()=>calls.push('idle'),setTimeout};
   vm.runInNewContext(read('docs/js/creature-texture-cache.js'), context);
   context._genotypeTextureResidency = context.window.CreatureTextureCache.create('test', context._genotypeTexCache);
   const start=game.indexOf('      function _getGenotypeTextures('),end=game.indexOf('      // Returns true when a real composited texture',start);
@@ -116,7 +116,7 @@ async function verifyAssetReadiness() {
 // Temporary player doubles must clamp against their own live camera bearing, not gameplay azimuth.
 const facingStart=game.indexOf('          applyFacingDeadzone(rawRot'),facingEnd=game.indexOf('          resetRouteState()',facingStart);
 const facingContext={window:rotation.window,root:{position:{x:0,z:0},rotation:{y:0}},camera:{position:{x:5,z:0}},cameraRelativePerps:()=>[Math.PI/2,-Math.PI/2]};
-vm.runInNewContext('walker={rot:0,perpState:{},'+game.slice(facingStart,facingEnd)+'};walker.applyFacingDeadzone(0,1);',facingContext);
+vm.runInNewContext('walker={rot:0,perpState:{},_reportDeadzoneMovementHint(){},'+game.slice(facingStart,facingEnd)+'};walker.applyFacingDeadzone(0,1);',facingContext);
 assert(Math.abs(facingContext.walker.rot)>=40*Math.PI/180-1e-8,'the temporary player avoids the actual view deadzone');
 
 async function main() {

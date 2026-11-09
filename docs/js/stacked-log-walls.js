@@ -20,7 +20,7 @@
     trunkNoiseOctaves: 3,
     radialSegments: 8,
     ringSegments: 12,
-    barkColor: '#372f18',
+    barkColor: '#6e5e30', // Approved dark-olive hue (#372f18) at twice the value: the darker swatch is flattened into a near-black slab by the painterly shadow crush and oil binning.
     overhang: 0.12,
     courseGap: -0.03,
     rowRollDeg: 1.5,
@@ -483,7 +483,7 @@
       materialCacheLimit: MATERIAL_CACHE_LIMIT,
       defaultLogColorHex: DEFAULTS.barkColor,
       gableEdgeSpanReclaim: EDGE_SPAN_RECLAIM,
-      latestChange: 'Opening cuts stay on their own wall; preview caches retain at most 256 geometry variants and 64 bark-color atlases.',
+      latestChange: 'Default bark keeps the dark-olive hue at twice the value (#6e5e30) so log courses survive the painterly filter instead of reading as a black slab.',
     });
     return group;
   }

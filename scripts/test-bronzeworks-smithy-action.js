@@ -27,7 +27,7 @@ assert.match(config, /"smithyButton": \{[\s\S]{0,400}"npcIds": \["kzubug", "sloo
   assert.match(game, /const \{[^}]*isSmithyNpcInBronzeworks[^}]*\} = window\.NpcShopButtons;/, 'game.js aliases the extracted shop buttons');
   assert.match(index, /js\/npc-shop-buttons\.js\?v=[A-Za-z0-9_-]+/, 'the shop-button module is loaded');
 }
-assert.match(game, /const btns = (?:nearbyNpcWalker\.isPorakanekiHunter \? \[\] : )?\[npcDialogueButton\(\)\];[\s\S]{0,240}if \(isSmithyNpcInBronzeworks\(nearbyNpcWalker\)\) btns\.push\(smithyButton\(\)\);/,
+assert.match(game, /const btns = (?:[^;\[]*\? \[\] : )?\[npcDialogueButton\(\)\];[\s\S]{0,240}if \(isSmithyNpcInBronzeworks\(nearbyNpcWalker\)\) btns\.push\(smithyButton\(\)\);/,
   'Smithy is inserted directly after Talk and therefore occupies Action 2');
 assert.match(game, /if \(activeAction === smithyAction\(\)\) \{[\s\S]{0,260}openMenu\('metalCraftShop'\); return;/,
   'using the action opens the existing metal craft shop menu');

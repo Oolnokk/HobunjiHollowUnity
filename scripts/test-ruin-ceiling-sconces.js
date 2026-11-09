@@ -1,0 +1,176 @@
+// Run with: node scripts/test-ruin-ceiling-sconces.js
+// Lightweight geometry/connection regression; does not require WebGL or devtools.
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const ROOT = path.resolve(__dirname, '..'); // Shared repo root for all source and generator assertions.
+const source = file => fs.readFileSync(path.join(ROOT, file), 'utf8'); // Reads actual shipped code, not a second copied factory.
+
+class Vector3 {
+  constructor(x = 0, y = 0, z = 0) { this.set(x, y, z); }
+  set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
+  copy(other) { return this.set(other.x, other.y, other.z); } // Rail placement copies world-space coordinates onto each mesh.
+}
+class Group {
+  constructor() { this.name = ''; this.children = []; this.position = new Vector3(); this.userData = {}; }
+  add(node) { this.children.push(node); node.parent = this; }
+}
+class Color {
+  constructor(hex) { this.hex = hex; }
+  setHex(hex) { this.hex = hex; }
+}
+class Mesh {
+  constructor(geometry, material) {
+    this.geometry = geometry; this.material = material;
+    this.position = new Vector3(); this.rotation = { y:0 };
+    this.userData = {}; this.name = '';
+  }
+}
+class Material {
+  constructor(options) { Object.assign(this, options); this.color = new Color(options.color); }
+}
+class PlaneGeometry {
+  constructor(width, height) { this.parameters = {width, height}; this.type = 'plane'; }
+}
+class TextureLoader {
+  load(path) { return {path}; }
+}
+const THREE = { Vector3, Group, Mesh, MeshBasicMaterial:Material, PlaneGeometry, TextureLoader, DoubleSide:2, SRGBColorSpace:'srgb' }; // Minimal Three primitives sufficient to prove mount bounds.
+const sandbox = { window:{THREE}, THREE };
+const files = [
+  'docs/js/dev-random-ruin-ceiling-target-visuals.js',
+  'docs/js/dev-random-ruin-simple-puzzles.js',
+  'docs/js/dev-random-ruin-rail-targets.js',
+  'docs/js/dev-random-ruin-interior-map.js',
+  'docs/js/dev-random-ruin-bootstrap.js',
+];
+for (const file of files) new vm.Script(source(file), {filename:file}); // Parse both composers and generator without invoking browser-only runtime.
+vm.runInNewContext(source(files[0]), sandbox, { filename:files[0] });
+const Visuals = sandbox.window.DevRandomRuinCeilingTargetVisuals;
+assert.ok(Visuals?.create, 'Shared ceiling target factory is exported');
+const kit = {
+  sharedBoxGeometry(width, height, depth) { return {parameters:{width,height,depth},type:'box'}; },
+  makeBasic(color) { return new Material({color}); },
+  naturalizeStone(mesh) { return mesh; },
+}; // Stand-in for the same geometry/material kit used by the simple and rail composers.
+
+const root = new Group();
+const first = Visuals.create(kit, {parent:root,name:'test-ceiling',x:3,y:5,z:7});
+const second = Visuals.create(kit, {parent:root,name:'second-ceiling',x:6,y:5,z:8});
+assert.equal(root.children.length, 2);
+assert.equal(first.object.position.y, 5);
+assert.ok(Math.abs(first.attachmentGap(5) + .05) < 1e-9, 'Ceiling plate embeds into the roof instead of hovering');
+assert.equal(first.object.children.length, 9, 'Five joined solids plus four decaled aiming faces');
+assert.ok(first.object.userData.devRuinFootprintIgnore, 'Ceiling target never blocks walking paths');
+assert.equal(first.object.userData.devRuinProjectileHumOffsetY, Visuals.BLOCK_CENTER_Y, 'Hum is anchored to the actual glyph block instead of the carriage');
+const stones = first.object.children.filter(item => item.geometry?.type === 'box');
+assert.equal(stones.length, 5);
+const bounds = stone => ({
+  top:stone.position.y + stone.geometry.parameters.height / 2,
+  bottom:stone.position.y - stone.geometry.parameters.height / 2,
+});
+for (let i = 1; i < stones.length; i++) {
+  assert.ok(bounds(stones[i]).top >= bounds(stones[i - 1]).bottom - 1e-9,
+    stones[i].name + ' is physically disconnected from the piece above');
+}
+const decals = first.object.children.filter(item => item.geometry?.type === 'plane');
+assert.equal(decals.length, 4);
+assert.ok(decals.every(item => item.geometry === decals[0].geometry), 'Decals share one reusable plane geometry');
+assert.ok(decals.every(item => item.material === first.material), 'All decal faces have a consistent activation state');
+assert.equal(first.material.map.path, 'assets/textures/decals/ruin_glyph_rune.png');
+assert.equal(first.material.color.hex, 0xff8a2a);
+first.setActive(true);
+assert.equal(first.material.color.hex, 0x4dff6e);
+assert.equal(second.material.color.hex, 0xff8a2a, 'Hitting one target never changes the others');
+first.object.position.y = 4.95; // Rail carriage is placed .05 under a rail at world Y=5.
+assert.ok(Math.abs(first.attachmentGap(5)) < 1e-9, 'Moving target plate touches its rail exactly');
+
+const simple = source(files[1]), rail = source(files[2]), ceiling = source(files[3]), bootstrap = source(files[4]);
+assert.ok(source('docs/js/dev-random-ruin-target-hum.js').includes('devRuinProjectileHumOffsetY'), 'Shared target hum reads the block offset');
+assert.ok(simple.includes('consider(glyph.hitMesh||glyph.mesh'), 'Fixed glyph hits use the stone block, not the overhead plate');
+assert.ok(simple.includes('consider(target.hitMesh||target.object'), 'Moving glyph hits use the stone block');
+assert.ok(!simple.includes("glyph.rune=window.DevRandomRuinGlyphCircuits?.attachRune"), 'No detached ceiling rune sprites');
+assert.ok(rail.includes('RAIL_DROP + .06'), 'Rail hangers must penetrate both ceiling and rail');
+assert.ok(rail.includes('target.visual.setActive(true)'), 'Moving targets change decal state when struck');
+assert.ok(ceiling.includes('for(const room of meta?.rooms||[])'), 'Roof covers pit openings beneath ceiling-mounted targets');
+assert.ok(bootstrap.indexOf('dev-random-ruin-ceiling-target-visuals.js') < bootstrap.indexOf('dev-random-ruin-simple-puzzles.js'), 'Target factory loads before consumers');
+
+// Exercise the real rail composer rather than only checking its source text.
+// The fake kit implements just the rendering/room contracts used at build time.
+let composer = null; // Receives the composer registered by the existing rail source.
+sandbox.window.DevRandomRuinSimplePuzzles = {
+  registerComposer(value) { composer = value; },
+};
+let chestCreated = null; // Proves that hitting the moving blocks still awards the reward.
+sandbox.window.DevRandomRuinDungeonChests = {
+  create(options) { chestCreated = options; return {id:options.id}; },
+};
+vm.runInNewContext(source(files[2]), sandbox, { filename:files[2] });
+assert.equal(composer?.id, 'ceilingRailTargets', 'Rail-target composer remains registered');
+const scene = new Group(); // Owns the generated rail, hanger, slot and target geometry.
+const registered = []; // Projectiles route their hit result through these actual composer target records.
+const placements = []; // Verifies the room is still claimed as a ceiling-target puzzle.
+let impacts = 0; // Count genuine target activation SFX for this simulated room.
+const railKit = {
+  ...kit,
+  group:() => scene,
+  roomBounds:() => ({minX:2,maxX:10,minZ:2,maxZ:8}),
+  roomDoorways:() => [],
+  doorwayWorld:() => null,
+  registerProjectileTarget:target => { registered.push(target); return target; },
+  recordModulePlacement:(...values) => placements.push(values),
+  sampleSupport:() => ({y:0}),
+  playerWorld:() => ({x:6,y:0,z:5}),
+  deps:{showToast:() => {}},
+  playStoneUnlockKchunk:() => { impacts++; },
+};
+const usedRooms = new Set(); // Tracks composer room ownership just like procedural generation.
+const room = {id:'ceiling-rail-test',col:0,row:0,w:8,h:6};
+composer.buildLate(railKit, {meta:{rooms:[room],floorSurfaceY:0,wallHeight:4}}, () => .25, usedRooms);
+assert.equal(usedRooms.has(room.id), true, 'A suitable room receives its ceiling-rail puzzle');
+assert.equal(placements.length, 1);
+assert.equal(registered.length, 3, 'Default 3-target rail configuration is retained');
+const railGroup = scene.children[0];
+const railBar = railGroup.children.find(item => item.name.includes('_bar_'));
+const hangers = railGroup.children.filter(item => item.name.includes('_hanger_'));
+const slots = railGroup.children.filter(item => item.name.includes('_slot_'));
+assert.ok(railBar && hangers.length > 0 && slots.length === 2);
+assert.ok(railBar.geometry.parameters.width > 8, 'Rail ends embed in both room walls');
+const trackCenterY = 4 - .18; // Authored rail center below the ceiling datum.
+const railTop = trackCenterY + railBar.geometry.parameters.height / 2;
+for (const hanger of hangers) {
+  const {top,bottom} = bounds(hanger);
+  const worldTop = top; // bounds() already incorporates mesh.position.
+  const worldBottom = bottom;
+  assert.ok(worldTop >= 4, 'Every rail hanger penetrates the physical ceiling');
+  assert.ok(worldBottom < railTop, 'Every rail hanger intersects the rail');
+}
+for (const target of registered) {
+  assert.equal(target.hittable(), false, 'Unemerged targets cannot be shot through end walls');
+  assert.equal(target.object.children.length, 9, 'Rail targets contain the same joined sconce and four decals');
+  assert.ok(Math.abs(target.visual.attachmentGap(trackCenterY)) < 1e-9, 'Rail carriage plate touches its rail');
+  assert.ok(target.hitMesh.name.endsWith('_decaled_block'), 'Projectile collisions select the decaled block');
+}
+composer.update(railKit, 0, .016);
+for (const target of registered) {
+  assert.equal(target.object.visible, true, 'Entering the room reveals its moving targets');
+  assert.equal(target.hittable(), true, 'Exposed moving targets can be hit');
+}
+composer.update(railKit, 0, .12);
+for (const target of registered) {
+  assert.ok(target.s >= -.45 && target.s <= 8.45, 'Target remains in its authored rail span');
+  assert.ok(Math.abs(target.visual.attachmentGap(trackCenterY)) < 1e-9,
+    'Targets stay attached while traveling across the rail');
+  target.onHit();
+  assert.equal(target.material.color.hex, 0x4dff6e, 'Projectile hit recolors all rune decals');
+}
+assert.equal(impacts, 3, 'Exactly one activation effect fires per struck target');
+assert.equal(chestCreated?.id, 'rail-ceiling-rail-test_cache', 'Hitting every target still creates the cache');
+assert.equal(composer.snapshot().rooms[0].solved, true);
+assert.ok(composer.snapshot().rooms[0].targets.every(item => item.mountConnected), 'Diagnostics report no floating targets');
+composer.clear();
+assert.equal(composer.snapshot().rooms.length, 0, 'Composer clears its targets on a ruin reroll');
+
+console.log('Ceiling-sconce target geometry, connections, hit selection and integration: OK');

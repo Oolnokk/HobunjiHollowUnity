@@ -141,14 +141,14 @@ function makeEntity(overrides = {}) {
   assert.equal(entity.exhaustion.blackStamina, 55, 'black-Stamina regeneration resumes after the hold blocker clears');
 }
 
-// Recovering Stamina afflictions gain x1.25, while recovering Health afflictions keep their old rate.
+// Stamina's x1.25 recovery boost composes with slow brittle/starved natural recovery.
 {
   const entity = makeEntity({ stamina: 50 });
   ResourceSystem.addAffliction(entity, 'windedStamina', 10);
   ResourceSystem.addAffliction(entity, 'bruisedHealth', 10);
   ResourceSystem.tick(entity, 1, { staminaRegenPerSec: 0, healthRegenPerSec: 0, footingRegenPerSec: 0 });
-  assert.equal(ResourceSystem.getAffliction(entity, 'windedStamina'), 5.5, 'Stamina-affliction recovery rises from 3.6/s to 4.5/s');
-  assert.equal(ResourceSystem.getAffliction(entity, 'bruisedHealth'), 6.4, 'Health-affliction recovery remains at 3.6/s');
+  assert.equal(ResourceSystem.getAffliction(entity, 'windedStamina'), 6.4, 'Winded Stamina recovers at 80% of the 1.25x Stamina-affliction rate');
+  assert.equal(ResourceSystem.getAffliction(entity, 'bruisedHealth'), 9.1, 'Brittle Bruised Health recovers at a quarter of the former base rate');
 }
 
 console.log('Stamina recovery x1.25 regression passed');

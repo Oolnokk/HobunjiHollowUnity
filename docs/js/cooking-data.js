@@ -12,7 +12,7 @@
     "powder": "Dry Powder",
     "curds": "Curd",
     "mayonnaise": "Mayonnaise",
-    "mustardSeed": "Mustard Seed",
+    "mustardSeed": "Mushtard Seed",
     "pungentPaste": "Pungent Paste",
     "noodleBase": "Noodle Base",
     "cheese": "Cheese",
@@ -160,6 +160,20 @@
     }
   },
   "items": {
+    "tzatzulEgg": {
+      "id": "tzatzulEgg",
+      "name": "Tzatzul Egg",
+      "categories": ["egg"],
+      "quality": 3,
+      "baseBoost": 4,
+      "processingTier": "raw",
+      "primaryEffect": "perception",
+      "sellPrice": 240,
+      "infertile": true,
+      "incubatable": false,
+      "description": "An exceptionally valuable, infertile Tzatzul egg. An ingredient, not a hatchable creature.",
+      "tags": ["Tzatzul", "Egg", "Rare", "Infertile"]
+    },
     "yellowDew": {
       "id": "yellowDew",
       "name": "Yellow Uumkao’ii Dew",
@@ -686,7 +700,7 @@
     },
     "blackMustard": {
       "id": "blackMustard",
-      "name": "Black Mustard",
+      "name": "Black Mushtard",
       "categories": [
         "vegetable",
         "spice",
@@ -697,14 +711,14 @@
       "processingTier": "raw",
       "primaryEffect": "combat",
       "tags": [
-        "Mustard",
+        "Mushtard",
         "Hot",
         "Crop"
       ]
     },
     "greenMustard": {
       "id": "greenMustard",
-      "name": "Green Mustard",
+      "name": "Green Mushtard",
       "categories": [
         "vegetable",
         "spice",
@@ -715,7 +729,7 @@
       "processingTier": "raw",
       "primaryEffect": "foraging",
       "tags": [
-        "Mustard",
+        "Mushtard",
         "Fresh",
         "Crop"
       ]
@@ -834,7 +848,7 @@
     },
     "blackMustardSeed": {
       "id": "blackMustardSeed",
-      "name": "Black Mustard Seed",
+      "name": "Black Mushtard Seed",
       "categories": [
         "mustardSeed",
         "seeds",
@@ -845,7 +859,7 @@
       "processingTier": "raw",
       "primaryEffect": "combat",
       "tags": [
-        "Mustard",
+        "Mushtard",
         "Hot",
         "Seed",
         "Raw"
@@ -853,7 +867,7 @@
     },
     "greenMustardSeed": {
       "id": "greenMustardSeed",
-      "name": "Green Mustard Seed",
+      "name": "Green Mushtard Seed",
       "categories": [
         "mustardSeed",
         "seeds",
@@ -864,7 +878,7 @@
       "processingTier": "raw",
       "primaryEffect": "foraging",
       "tags": [
-        "Mustard",
+        "Mushtard",
         "Fresh",
         "Seed",
         "Raw"
@@ -872,7 +886,7 @@
     },
     "blackMustardPaste": {
       "id": "blackMustardPaste",
-      "name": "Black Mustard Paste",
+      "name": "Black Mushtard Paste",
       "categories": [
         "pungentPaste",
         "spice",
@@ -883,7 +897,7 @@
       "processingTier": "quick",
       "primaryEffect": "cooking",
       "tags": [
-        "Mustard",
+        "Mushtard",
         "Hot",
         "Processed",
         "Pungent Paste"
@@ -891,7 +905,7 @@
     },
     "greenMustardPaste": {
       "id": "greenMustardPaste",
-      "name": "Green Mustard Paste",
+      "name": "Green Mushtard Paste",
       "categories": [
         "pungentPaste",
         "spice",
@@ -902,7 +916,7 @@
       "processingTier": "quick",
       "primaryEffect": "cooking",
       "tags": [
-        "Mustard",
+        "Mushtard",
         "Fresh",
         "Processed",
         "Pungent Paste"
@@ -1404,6 +1418,16 @@
         "Pungent Paste"
       ]
     },
+    "mootMeat": { // Northern Cliffs Moot: ordinary meat, using the existing food-processing paths.
+      "id": "mootMeat",
+      "name": "Moot Meat",
+      "categories": ["meat"],
+      "quality": 2,
+      "baseBoost": 1,
+      "processingTier": "raw",
+      "primaryEffect": "speed",
+      "tags": ["Meat", "Moot"]
+    },
     "voorgAssMeat": {
       "id": "voorgAssMeat",
       "name": "Voorg-Ass Meat",
@@ -1762,14 +1786,65 @@
         "Mineral",
         "Non-Cooking"
       ]
+    },
+    "cloudSaffron": {
+      "id": "cloudSaffron",
+      "name": "Cloud Saffron",
+      "description": "A fragrant, tiny highland flower stigma, traded over great distances.",
+      "categories": [
+        "spice"
+      ],
+      "quality": 3,
+      "baseBoost": 1,
+      "processingTier": "raw",
+      "primaryEffect": "clarity",
+      "tags": [
+        "Imported",
+        "Rare",
+        "Spice"
+      ]
+    },
+    "starpepper": {
+      "id": "starpepper",
+      "name": "Starpepper",
+      "description": "A prized intensely aromatic pepper brought by distant caravans.",
+      "categories": [
+        "spice"
+      ],
+      "quality": 3,
+      "baseBoost": 1,
+      "processingTier": "raw",
+      "primaryEffect": "combat",
+      "tags": [
+        "Imported",
+        "Rare",
+        "Spice"
+      ]
+    },
+    "nightCardamom": {
+      "id": "nightCardamom",
+      "name": "Night Cardamom",
+      "description": "Dark fragrant pods used to season expensive meat and dairy dishes.",
+      "categories": [
+        "spice"
+      ],
+      "quality": 3,
+      "baseBoost": 1,
+      "processingTier": "raw",
+      "primaryEffect": "fortitude",
+      "tags": [
+        "Imported",
+        "Rare",
+        "Spice"
+      ]
     }
   },
   "recipes": [
     {
       "id": "sweetGoopyMustardSauce",
-      "name": "Sweet Goopy Mustard Sauce",
+      "name": "Sweet Goopy Mushtard Sauce",
       "description": "A sticky local sauce. Sweet paste + mayonnaise + pungent paste.",
-      "baseOutputName": "Sweet Goopy Mustard Sauce",
+      "baseOutputName": "Sweet Goopy Mushtard Sauce",
       "slots": [
         {
           "id": "sweetPaste",
@@ -2624,8 +2699,8 @@
     "whiteberryJelly": "Whiteberry",
     "blackberryJam": "Blackberry",
     "mixedBerryJam": "Mixed Berry",
-    "blackMustardPaste": "Black Mustard",
-    "greenMustardPaste": "Green Mustard",
+    "blackMustardPaste": "Black Mushtard",
+    "greenMustardPaste": "Green Mushtard",
     "denaturedStinkOil": "Stink Oil",
     "demoPlainNoodles": "Plain Noodles",
     "needlegrainFlour": "Needlegrain",
@@ -2634,8 +2709,8 @@
     "uumkaoiiEgg": "Uumkao’ii",
     "nazgrakuEggs": "Nazgraku",
     "drenkirraEgg": "Drenkirra",
-    "blackMustardSeed": "Black Mustard",
-    "greenMustardSeed": "Green Mustard",
+    "blackMustardSeed": "Black Mushtard",
+    "greenMustardSeed": "Green Mushtard",
     "travelSpice": "Trader-Sloth",
     "cloudHerbs": "Cloud Herb",
     "mireHerbs": "Mire Herb",
@@ -2646,6 +2721,7 @@
     "nazgrakuMeat": "Nazgraku",
     "drenkirraMeat": "Drenkirra",
     "grehlrMeat": "Grehlr",
+    "mootMeat": "Moot",
     "voorgAssMeat": "Voorg-Ass",
     "smokedMeat": "Smoked Meat",
     "riverFish": "Northern River Fish",

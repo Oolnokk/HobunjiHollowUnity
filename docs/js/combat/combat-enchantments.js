@@ -530,7 +530,8 @@
     const widened = context.halfConeRad * TUNING.LIVING_GUST_CONE_MULTIPLIER;
     const strength = Math.max(0, context.knockbackPxS)
       * (1 + (TUNING.LIVING_GUST_KNOCKBACK_MULTIPLIER - 1) * getEnchantmentPowerMultiplier(context.weaponKey))
-      * TUNING.LIVING_GUST_PERIPHERAL_KNOCKBACK_MULTIPLIER;
+      * TUNING.LIVING_GUST_PERIPHERAL_KNOCKBACK_MULTIPLIER
+      * (window.WeaponShapeStats?.forKey?.(context.weaponKey, deps.getWeaponDefinition?.(context.weaponKey))?.power || 1); // Peripheral knockback bypasses ordinary hit modifiers, so apply shape Power explicitly once.
     let affected = 0;
     for (const target of deps.hostileObjects || []) {
       if (!target || target.health <= 0 || ordinaryHitTargets.has(target) || target.areaId !== deps.getCurrentArea?.()) continue;

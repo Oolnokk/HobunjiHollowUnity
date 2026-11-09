@@ -53,7 +53,7 @@
     const indices = [];
     for (let cj = 0; cj < GH - 1; cj++) for (let ci = 0; ci < GW - 1; ci++) { if (isPlayable(ci, cj)) continue; const v00 = cj*GW+ci, v10=v00+1, v01=(cj+1)*GW+ci, v11=v01+1; indices.push(v00,v01,v11,v00,v11,v10); }
     const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); geo.setIndex(new THREE.BufferAttribute(new Uint16Array(indices), 1)); geo.computeVertexNormals();
-    const mesh = new THREE.Mesh(geo, deps.resolveTileMat('farm', deps.TileType.GRASS)); mesh.receiveShadow = true; deps.scene.add(mesh);
+    const mesh = new THREE.Mesh(geo, deps.resolveTileMat('farm', deps.TileType.GRASS)); mesh.receiveShadow = true; mesh.userData.hobunjiGroundSurface = true; mesh.userData.terrainRenderChunkEligible = true; deps.scene.add(mesh); // Ground tag: held weapons x-ray border terrain like the playable floor; chunk opt-in lets TerrainRenderChunks frustum-cull this ~120k-triangle ring.
     const cliffMat = deps.resolveCliffMat('farm');
     function elevStoneSkin(gjMin, gjMax, giMin, giMax) {
       const positions=[], skinUv=[], idxArr=[]; let vi=0;
@@ -92,8 +92,71 @@
     function pickCell(outerBias){const rim=BV>>2;for(let attempt=0;attempt<300;attempt++){let ci,cj;if(rng()<outerBias){const side=Math.floor(rng()*4);if(side===0){ci=Math.floor(rng()*CW);cj=Math.floor(rng()*rim);}else if(side===1){ci=Math.floor(rng()*CW);cj=(CH-1-Math.floor(rng()*rim))|0;}else if(side===2){ci=Math.floor(rng()*rim);cj=Math.floor(rng()*CH);}else{ci=(CW-1-Math.floor(rng()*rim))|0;cj=Math.floor(rng()*CH);}}else{ci=Math.floor(rng()*CW);cj=Math.floor(rng()*CH);}if(!isPlayable(ci,cj))return[ci,cj];}return[0,0];}
     for(let p=0;p<55;p++){const[ci,cj]=pickCell(0.12);raiseGroup(pickGroup(ci,cj,4+Math.floor(rng()*18)),0.05+rng()*0.32);}for(let p=0;p<32;p++){const[ci,cj]=pickCell(0.88);raiseGroup(pickGroup(ci,cj,10+Math.floor(rng()*38)),0.9+rng()*3.2);}
     const RIM_V=20,RIM_MIN=BASE+3.0;for(let gj=0;gj<GH;gj++)for(let gi=0;gi<GW;gi++){if(gj>=RIM_V&&gj<=GH-1-RIM_V&&gi>=RIM_V&&gi<=GW-1-RIM_V)continue;const k=gj*GW+gi;if(Y[k]<RIM_MIN)Y[k]=RIM_MIN;}
+
+    // The playable Northern Cliffs river now leaves through the southeast edge.
+    // Extend that watercourse across the otherwise solid decorative scenery rim,
+    // not the world boundary: collision/traversal still end at the playable grid.
+    let southeastMireMouth = null; // Actual rendered edge-water span, used by the exterior bank cut and decorative water sheet.
+    if (mapId === 'map_northern_cliffs' && zGrid && zcols > 2 && zrows > 2) {
+      const expectedRow = Math.round(zrows * 0.8); // Mirrors the generator's southeast Mire outlet latitude after tile-density scaling.
+      const firstRow = Math.floor(zrows * 0.65); // Avoids recognizing unrelated northern or central edge waterways.
+      const lastRow = Math.min(zrows - 1, Math.ceil(zrows * 0.9));
+      const isRiver = row => ['river', 'waterfall'].includes(zGrid[row]?.[zcols - 1]?.type); // Only broad river-mouth tiles, not incidental stream/pond water, open this rim.
+      let closestRow = -1; // Nearest east-edge water row to the authored outlet latitude.
+      for (let row = firstRow; row <= lastRow; row++) {
+        if (!isRiver(row)) continue;
+        if (closestRow < 0 || Math.abs(row - expectedRow) < Math.abs(closestRow - expectedRow)) closestRow = row;
+      }
+      if (closestRow >= 0) {
+        let minRow = closestRow, maxRow = closestRow; // Contiguous river width to continue without widening unrelated scenery cuts.
+        while (minRow > 0 && isRiver(minRow - 1)) minRow--;
+        while (maxRow + 1 < zrows && isRiver(maxRow + 1)) maxRow++;
+        const center = (minRow + maxRow + 1) * 0.5; // World-Z center shared by the bank cut and external water ribbon.
+        const halfWidth = Math.max(0.5, (maxRow - minRow + 1) * 0.5); // Exact east-edge river width, not an arbitrary new channel.
+        const mouthTier = Number(zGrid[closestRow][zcols - 1].elevTier) || 0; // Aligns the exterior water surface with the final exported river tier.
+        const floorY = deps.NORMAL_TOP + mouthTier * deps.PLATEAU_UNIT - 0.8; // Sits beneath the river surface, so the decorative ground cannot bury the water.
+        const waterY = deps.NORMAL_TOP + mouthTier * deps.PLATEAU_UNIT - 0.55 + 0.015; // Mirrors the shared deep-water surface offset at the playable edge.
+        const bankShoulder = 1.25; // Soft rocky bank between the water ribbon and the raised outer cliffs.
+        southeastMireMouth = { center, halfWidth, waterY }; // Used below to render the water continuation across the lowered rim.
+        for (let gj = BV; gj <= BV + PVH; gj++) {
+          const worldZ = (gj - BV) * 0.5; // Z coordinate of this border terrain vertex.
+          const outsideBank = Math.abs(worldZ - center) - halfWidth; // Negative inside the water channel, positive on its shoulders.
+          if (outsideBank >= bankShoulder) continue;
+          const weight = outsideBank <= 0 ? 1 : 1 - outsideBank / bankShoulder; // Keeps the bank lip natural rather than a vertical slot.
+          for (let gi = BV + PVW; gi < GW; gi++) {
+            const vertexIndex = gj * GW + gi; // Exterior heightfield vertex to lower before its geometry is built.
+            Y[vertexIndex] += (floorY - Y[vertexIndex]) * weight;
+          }
+        }
+      }
+    }
+
     const pos=new Float32Array(GW*GH*3),uv=new Float32Array(GW*GH*2);for(let gj=0;gj<GH;gj++)for(let gi=0;gi<GW;gi++){const k=gj*GW+gi,wx=(gi-BV)*0.5,wz=(gj-BV)*0.5;pos[k*3]=wx;pos[k*3+1]=Y[k];pos[k*3+2]=wz;uv[k*2]=wx;uv[k*2+1]=wz;}
-    const idx=[];for(let cj=0;cj<CH;cj++)for(let ci=0;ci<CW;ci++){if(isPlayable(ci,cj))continue;const[v00,v10,v01,v11]=cv4(ci,cj);idx.push(v00,v01,v11,v00,v11,v10);}const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.BufferAttribute(pos,3));geo.setAttribute('uv',new THREE.BufferAttribute(uv,2));geo.setIndex(new THREE.BufferAttribute(idx.length>65535?new Uint32Array(idx):new Uint16Array(idx),1));geo.computeVertexNormals();const mesh=new THREE.Mesh(geo,deps.resolveTileMat(mapId,deps.TileType.GRASS));mesh.receiveShadow=true;zScene.add(mesh);
+    const idx=[];for(let cj=0;cj<CH;cj++)for(let ci=0;ci<CW;ci++){if(isPlayable(ci,cj))continue;const[v00,v10,v01,v11]=cv4(ci,cj);idx.push(v00,v01,v11,v00,v11,v10);}const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.BufferAttribute(pos,3));geo.setAttribute('uv',new THREE.BufferAttribute(uv,2));geo.setIndex(new THREE.BufferAttribute(idx.length>65535?new Uint32Array(idx):new Uint16Array(idx),1));geo.computeVertexNormals();const mesh=new THREE.Mesh(geo,deps.resolveTileMat(mapId,deps.TileType.GRASS));mesh.receiveShadow=true;mesh.userData.hobunjiGroundSurface=true;mesh.userData.terrainRenderChunkEligible=true;zScene.add(mesh); // Ground tag: held weapons x-ray border terrain like the playable floor; chunk opt-in lets TerrainRenderChunks frustum-cull this ~120k-triangle ring.
+    if (southeastMireMouth) {
+      const { center, halfWidth, waterY } = southeastMireMouth; // Same channel extents carved into the surrounding terrain.
+      const verts = [], uvs = [], faces = []; // Simple decorative water ribbon extending out past the world boundary.
+      for (let step = 0; step <= BORDER_W; step++) {
+        const x = zcols + step; // Scenic world-X coordinate from the map's east edge to its outer border.
+        const vertex = step * 2; // Pair of left/right vertices for one lengthwise ribbon segment.
+        verts.push(x, waterY, center - halfWidth, x, waterY, center + halfWidth);
+        uvs.push(step, 0, step, halfWidth * 2);
+        if (step) faces.push(vertex - 2, vertex, vertex + 1, vertex - 2, vertex + 1, vertex - 1);
+      }
+      const waterGeometry = new THREE.BufferGeometry(); // A single draw call for the southeast scenic water continuation.
+      waterGeometry.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+      waterGeometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+      waterGeometry.setIndex(faces);
+      waterGeometry.computeVertexNormals();
+      const waterMaterial = new THREE.MeshStandardMaterial({ color: 0x4f9fbd, transparent: true, opacity: 0.78, roughness: 0.28, metalness: 0, side: THREE.DoubleSide, depthWrite: false }); // Matches the existing town scenery-water fallback.
+      const waterMesh = new THREE.Mesh(waterGeometry, waterMaterial); // Non-interactive river surface outside the playable map.
+      waterMesh.name = `${mapId}_southeast_mire_water_continuation`;
+      waterMesh.userData.waterSurfaceRole = 'scenery';
+      waterMesh.userData.nonTraversableRiverOutlet = true;
+      waterMesh.renderOrder = 2;
+      zScene.add(waterMesh);
+    }
+
     const cliffMat=deps.resolveCliffMat(mapId);function elevStoneSkin(gjMin,gjMax,giMin,giMax){const skinPos=[],skinUv=[],idxArr=[];let vi=0;for(let gj=gjMin;gj<gjMax;gj++)for(let gi=giMin;gi<giMax;gi++){const y00=Y[gj*GW+gi],y10=Y[gj*GW+gi+1],y01=Y[(gj+1)*GW+gi],y11=Y[(gj+1)*GW+gi+1],cnx=-0.5*((y10+y11)-(y00+y01)),cnz=0.5*((y10-y01)-(y11-y00));if(cnx*cnx+cnz*cnz<=0.194)continue;const x0=(gi-BV)*0.5,x1=x0+0.5,z0=(gj-BV)*0.5,z1=z0+0.5;skinPos.push(x0,y00,z0,x1,y10,z0,x0,y01,z1,x1,y11,z1);skinUv.push(x0,z0,x1,z0,x0,z1,x1,z1);idxArr.push(vi,vi+2,vi+3,vi,vi+3,vi+1);vi+=4;}if(!skinPos.length)return;const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(skinPos,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(skinUv,2));g.setIndex(new THREE.BufferAttribute(idxArr.length>65535?new Uint32Array(idxArr):new Uint16Array(idxArr),1));g.computeVertexNormals();zScene.add(cliffSkinMesh(g,cliffMat));}
     elevStoneSkin(0,BV,0,GW-1);elevStoneSkin(GH-1-BV,GH-1,0,GW-1);elevStoneSkin(BV,GH-1-BV,0,BV);elevStoneSkin(BV,GH-1-BV,GW-1-BV,GW-1);
 
@@ -161,14 +224,14 @@
     for(let rz=0;rz<zCount;rz++)for(let cx=0;cx<xCount;cx++){const x=Math.min(zcols,cx*step),z=-Math.min(depth,rz*step),k=rz*xCount+cx,y=heightAt(x,z)+0.015;positions[k*3]=x;positions[k*3+1]=y;positions[k*3+2]=z;uvs[k*2]=x;uvs[k*2+1]=z;}
     for(let rz=0;rz<zCount-1;rz++)for(let cx=0;cx<xCount-1;cx++){const v00=rz*xCount+cx,v10=v00+1,v01=(rz+1)*xCount+cx,v11=v01+1;indices.push(v00,v11,v01,v00,v10,v11);}
     const slopeGeo=new THREE.BufferGeometry();slopeGeo.setAttribute('position',new THREE.BufferAttribute(positions,3));slopeGeo.setAttribute('uv',new THREE.BufferAttribute(uvs,2));slopeGeo.setIndex(new THREE.BufferAttribute(positions.length/3>65535?new Uint32Array(indices):new Uint16Array(indices),1));slopeGeo.computeVertexNormals();
-    const slope=new THREE.Mesh(slopeGeo,deps.resolveTileMat(mapId,deps.TileType.GRASS));slope.name='AuthoredCloudForestNorthIncline';slope.receiveShadow=true;slope.renderOrder=1;slope.userData.backgroundScenery=true;scene.add(slope);
+    const slope=new THREE.Mesh(slopeGeo,deps.resolveTileMat(mapId,deps.TileType.GRASS));slope.name='AuthoredCloudForestNorthIncline';slope.receiveShadow=true;slope.renderOrder=1;slope.userData.backgroundScenery=true;slope.userData.hobunjiGroundSurface=true;scene.add(slope);
 
     // Continue the generated entrance road visibly through the scenery. The
     // forest cut is based on this same run, so the road remains centered even
     // when the proc-gen entrance moves after a Tothal Shift.
     const half=pathWidth*0.5,pathVerts=[],pathUvs=[],pathIdx=[];
     for(let i=0;i<zCount;i++){const z=-Math.min(depth,i*step),lx=Math.max(0,pathCenter-half),rx=Math.min(zcols,pathCenter+half),v=i*2;pathVerts.push(lx,heightAt(lx,z)+0.045,z,rx,heightAt(rx,z)+0.045,z);pathUvs.push(0,-z,pathWidth,-z);if(i){pathIdx.push(v-2,v+1,v,v-2,v-1,v+1);}}
-    if(pathVerts.length>=12){const pathGeo=new THREE.BufferGeometry();pathGeo.setAttribute('position',new THREE.Float32BufferAttribute(pathVerts,3));pathGeo.setAttribute('uv',new THREE.Float32BufferAttribute(pathUvs,2));pathGeo.setIndex(pathIdx);pathGeo.computeVertexNormals();let pathMat=null;try{pathMat=deps.resolveTileMat(mapId,deps.TileType.PATH||'path');}catch(_){pathMat=null;}if(!pathMat)pathMat=new THREE.MeshStandardMaterial({color:0x9f8357,roughness:1});const pathMesh=new THREE.Mesh(pathGeo,pathMat);pathMesh.name='AuthoredCloudForestTownPath';pathMesh.renderOrder=3;pathMesh.receiveShadow=true;pathMesh.userData.backgroundScenery=true;scene.add(pathMesh);}
+    if(pathVerts.length>=12){const pathGeo=new THREE.BufferGeometry();pathGeo.setAttribute('position',new THREE.Float32BufferAttribute(pathVerts,3));pathGeo.setAttribute('uv',new THREE.Float32BufferAttribute(pathUvs,2));pathGeo.setIndex(pathIdx);pathGeo.computeVertexNormals();let pathMat=null;try{pathMat=deps.resolveTileMat(mapId,deps.TileType.PATH||'path');}catch(_){pathMat=null;}if(!pathMat)pathMat=new THREE.MeshStandardMaterial({color:0x9f8357,roughness:1});const pathMesh=new THREE.Mesh(pathGeo,pathMat);pathMesh.name='AuthoredCloudForestTownPath';pathMesh.renderOrder=3;pathMesh.receiveShadow=true;pathMesh.userData.backgroundScenery=true;pathMesh.userData.hobunjiGroundSurface=true;pathMesh.userData.hobunjiPathSurface=true;scene.add(pathMesh); /* Authored approach path remains x-rayable. */}
 
     // Tree positions are authored as a few staggered rows rather than generated
     // from the wilderness seed. The only dynamic cut is the entrance corridor.
@@ -465,29 +528,29 @@
     for(let gj=0;gj<GH;gj++)for(let gi=0;gi<GW;gi++){if(vSteps(gi,gj)===0)continue;const wx=(gi-BV)*0.5,wz=(gj-BV)*0.5,k=gj*GW+gi,base=deps.NORMAL_TOP+hashDisp(gi-BV,gj-BV);for(const c of routeContinuations){const half=c.a.width*c.settings.widthScale*0.5,d=bgDistToPolyline(wx,wz,c.points),shoulder=c.settings.shoulderTiles;if(d>half+shoulder)continue;const weight=d<=half?1:shoulder>0?1-(d-half)/shoulder:0,s=weight*weight*(3-2*weight);Y[k]=Y[k]+(base-Y[k])*s;}for(const c of riverContinuations){const half=c.a.width*c.settings.widthScale*0.5,d=bgDistToPolyline(wx,wz,c.points),bank=c.settings.bankTiles;if(d>half+bank)continue;const weight=d<=half?1:bank>0?1-(d-half)/bank:0;if(c.waterfallProfile){const out=bgOutwardDistance(c,[wx,wz]);if(out<c.waterfallProfile.lipDistance)continue;const bedY=c.waterfallProfile.highY-Math.max(0.08,c.settings.channelDepth),target=Math.min(Y[k],bedY);Y[k]=Y[k]+(target-Y[k])*weight;}else{const minY=base-0.35;Y[k]=Math.max(minY,Y[k]-c.settings.channelDepth*weight);}}}
     const sampleHeight=(x,z)=>{const gx=bgClamp(x*2+BV,0,GW-1),gz=bgClamp(z*2+BV,0,GH-1),x0=Math.floor(gx),z0=Math.floor(gz),x1=Math.min(GW-1,x0+1),z1=Math.min(GH-1,z0+1),tx=gx-x0,tz=gz-z0,a=Y[z0*GW+x0]*(1-tx)+Y[z0*GW+x1]*tx,b=Y[z1*GW+x0]*(1-tx)+Y[z1*GW+x1]*tx;return a*(1-tz)+b*tz;};
     const pos=new Float32Array(GW*GH*3),uv=new Float32Array(GW*GH*2);for(let gj=0;gj<GH;gj++)for(let gi=0;gi<GW;gi++){const k=gj*GW+gi,wx=(gi-BV)*0.5,wz=(gj-BV)*0.5;pos[k*3]=wx;pos[k*3+1]=Y[k];pos[k*3+2]=wz;uv[k*2]=wx;uv[k*2+1]=wz;}
-    const indices=[];for(let cj=0;cj<GH-1;cj++)for(let ci=0;ci<GW-1;ci++){if(isPlayable(ci,cj))continue;const v00=cj*GW+ci,v10=v00+1,v01=(cj+1)*GW+ci,v11=v01+1;indices.push(v00,v01,v11,v00,v11,v10);}const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.BufferAttribute(pos,3));geo.setAttribute('uv',new THREE.BufferAttribute(uv,2));geo.setIndex(new THREE.BufferAttribute((pos.length/3>65535)?new Uint32Array(indices):new Uint16Array(indices),1));geo.computeVertexNormals();const mesh=new THREE.Mesh(geo,deps.resolveTileMat('map_hobunji_town',deps.TileType.GRASS));mesh.receiveShadow=true;townScene.add(mesh);
+    const indices=[];for(let cj=0;cj<GH-1;cj++)for(let ci=0;ci<GW-1;ci++){if(isPlayable(ci,cj))continue;const v00=cj*GW+ci,v10=v00+1,v01=(cj+1)*GW+ci,v11=v01+1;indices.push(v00,v01,v11,v00,v11,v10);}const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.BufferAttribute(pos,3));geo.setAttribute('uv',new THREE.BufferAttribute(uv,2));geo.setIndex(new THREE.BufferAttribute((pos.length/3>65535)?new Uint32Array(indices):new Uint16Array(indices),1));geo.computeVertexNormals();const mesh=new THREE.Mesh(geo,deps.resolveTileMat('map_hobunji_town',deps.TileType.GRASS));mesh.receiveShadow=true;mesh.userData.hobunjiGroundSurface=true;mesh.userData.terrainRenderChunkEligible=true;townScene.add(mesh); // Ground tag: held weapons x-ray border terrain like the playable floor; chunk opt-in lets TerrainRenderChunks frustum-cull this ~120k-triangle ring.
     const cliffMat=deps.resolveCliffMat('map_hobunji_town');function elevStoneSkin(gjMin,gjMax,giMin,giMax){const positions=[],skinUv=[],idxArr=[];let vi=0;for(let gj=gjMin;gj<gjMax;gj++)for(let gi=giMin;gi<giMax;gi++){const y00=Y[gj*GW+gi],y10=Y[gj*GW+gi+1],y01=Y[(gj+1)*GW+gi],y11=Y[(gj+1)*GW+gi+1],cnx=-0.5*((y10+y11)-(y00+y01)),cnz=0.5*((y10-y01)-(y11-y00));if(cnx*cnx+cnz*cnz<=0.194)continue;const x0=(gi-BV)*0.5,x1=x0+0.5,z0=(gj-BV)*0.5,z1=z0+0.5;positions.push(x0,y00,z0,x1,y10,z0,x0,y01,z1,x1,y11,z1);skinUv.push(x0,z0,x1,z0,x0,z1,x1,z1);idxArr.push(vi,vi+2,vi+3,vi,vi+3,vi+1);vi+=4;}if(!positions.length)return;const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(skinUv,2));g.setIndex(new THREE.BufferAttribute(new Uint32Array(idxArr),1));g.computeVertexNormals();townScene.add(cliffSkinMesh(g,cliffMat));}
     elevStoneSkin(0,BV,0,GW-1);elevStoneSkin(BV,GH-1-BV,0,BV);elevStoneSkin(BV,GH-1-BV,GW-1-BV,GW-1);elevStoneSkin(GH-1-BV,GH-1,0,BV);elevStoneSkin(GH-1-BV,GH-1,GW-1-BV,GW-1);
-    function addRibbon(c,material,yLift,heightFn=null,minOut=0){const samples=bgDensify(c.points,0.45).filter(p=>bgOutwardDistance(c,p)+1e-5>=minOut);if(samples.length<2)return null;const verts=[],uvs=[],idx=[];let vDist=0;for(let i=0;i<samples.length;i++){const p=samples[i],p0=samples[Math.max(0,i-1)],p1=samples[Math.min(samples.length-1,i+1)],dx=p1[0]-p0[0],dz=p1[1]-p0[1],dl=Math.hypot(dx,dz)||1,px=-dz/dl,pz=dx/dl,half=c.a.width*c.settings.widthScale*0.5,y=(heightFn?heightFn(p):sampleHeight(p[0],p[1]))+yLift;if(i)vDist+=Math.hypot(p[0]-samples[i-1][0],p[1]-samples[i-1][1]);verts.push(p[0]+px*half,y,p[1]+pz*half,p[0]-px*half,y,p[1]-pz*half);uvs.push(0,vDist,Math.max(1,c.a.width*c.settings.widthScale),vDist);if(i){const v=i*2;idx.push(v-2,v,v+1,v-2,v+1,v-1);}}const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));g.setIndex(idx);g.computeVertexNormals();const m=new THREE.Mesh(g,material);m.renderOrder=2;townScene.add(m);return{samples,mesh:m};}
+    function addRibbon(c,material,yLift,heightFn=null,minOut=0,pathSurface=false){const samples=bgDensify(c.points,0.45).filter(p=>bgOutwardDistance(c,p)+1e-5>=minOut);if(samples.length<2)return null;const verts=[],uvs=[],idx=[];let vDist=0;for(let i=0;i<samples.length;i++){const p=samples[i],p0=samples[Math.max(0,i-1)],p1=samples[Math.min(samples.length-1,i+1)],dx=p1[0]-p0[0],dz=p1[1]-p0[1],dl=Math.hypot(dx,dz)||1,px=-dz/dl,pz=dx/dl,half=c.a.width*c.settings.widthScale*0.5,y=(heightFn?heightFn(p):sampleHeight(p[0],p[1]))+yLift;if(i)vDist+=Math.hypot(p[0]-samples[i-1][0],p[1]-samples[i-1][1]);verts.push(p[0]+px*half,y,p[1]+pz*half,p[0]-px*half,y,p[1]-pz*half);uvs.push(0,vDist,Math.max(1,c.a.width*c.settings.widthScale),vDist);if(i){const v=i*2;idx.push(v-2,v,v+1,v-2,v+1,v-1);}}const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));g.setIndex(idx);g.computeVertexNormals();const m=new THREE.Mesh(g,material);m.renderOrder=2;if(pathSurface)m.userData.hobunjiPathSurface=true;townScene.add(m);return{samples,mesh:m};}
 
     // Use the same WallBuilder paving recipe as normal playable paths. Keep a
     // flat-material fallback only for a failed recipe/GLB load.
     buildSceneryPathBrickSurface(routeContinuations,townScene,sampleHeight).then(built=>{
       if(built)return;
-      let pathMat=null;try{pathMat=deps.resolveTileMat('map_hobunji_town',deps.TileType.PATH||'path');}catch(_){pathMat=null;}if(!pathMat)pathMat=new THREE.MeshStandardMaterial({color:0x9f8357,roughness:1});for(const c of routeContinuations)addRibbon(c,pathMat,0.025);
+      let pathMat=null;try{pathMat=deps.resolveTileMat('map_hobunji_town',deps.TileType.PATH||'path');}catch(_){pathMat=null;}if(!pathMat)pathMat=new THREE.MeshStandardMaterial({color:0x9f8357,roughness:1});for(const c of routeContinuations)addRibbon(c,pathMat,0.025,null,0,true);
     }).catch(()=>{
-      let pathMat=null;try{pathMat=deps.resolveTileMat('map_hobunji_town',deps.TileType.PATH||'path');}catch(_){pathMat=null;}if(!pathMat)pathMat=new THREE.MeshStandardMaterial({color:0x9f8357,roughness:1});for(const c of routeContinuations)addRibbon(c,pathMat,0.025);
+      let pathMat=null;try{pathMat=deps.resolveTileMat('map_hobunji_town',deps.TileType.PATH||'path');}catch(_){pathMat=null;}if(!pathMat)pathMat=new THREE.MeshStandardMaterial({color:0x9f8357,roughness:1});for(const c of routeContinuations)addRibbon(c,pathMat,0.025,null,0,true);
     });
 
     const waterMat=new THREE.MeshStandardMaterial({color:0x4f9fbd,transparent:true,opacity:0.78,roughness:0.28,metalness:0,side:THREE.DoubleSide,depthWrite:false});
     for(const c of riverContinuations){
       if(c.waterfallProfile){
         const profile=c.waterfallProfile,topY=profile.highY+0.035,botY=profile.edgeY+0.035;
-        addRibbon(c,waterMat,0,p=>profile.highY+0.035,profile.lipDistance);
-        const start=c.points[0],n=bgEdgeNormal(c.settings.edge),lip=[start[0]+n[0]*profile.lipDistance,start[1]+n[1]*profile.lipDistance],dense=bgDensify(c.points,0.45),near=dense.find(p=>bgOutwardDistance(c,p)>=profile.lipDistance)||dense[1]||c.points[1],dx=near[0]-start[0],dz=near[1]-start[1],dl=Math.hypot(dx,dz)||1,px=-dz/dl,pz=dx/dl,half=c.a.width*c.settings.widthScale*0.5,v=[lip[0]+px*half,topY,lip[1]+pz*half,lip[0]-px*half,topY,lip[1]-pz*half,lip[0]+px*half,botY,lip[1]+pz*half,lip[0]-px*half,botY,lip[1]-pz*half],g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(v,3));g.setAttribute('uv',new THREE.Float32BufferAttribute([0,1,1,1,0,0,1,0],2));g.setIndex([0,2,3,0,3,1]);g.computeVertexNormals();const fall=new THREE.Mesh(g,waterMat);fall.name='BackgroundSceneryWaterfall';fall.renderOrder=3;townScene.add(fall);
+        const highWaterRibbon=addRibbon(c,waterMat,0,p=>profile.highY+0.035,profile.lipDistance);if(highWaterRibbon)highWaterRibbon.mesh.userData.waterSurfaceRole='scenery';
+        const start=c.points[0],n=bgEdgeNormal(c.settings.edge),lip=[start[0]+n[0]*profile.lipDistance,start[1]+n[1]*profile.lipDistance],dense=bgDensify(c.points,0.45),near=dense.find(p=>bgOutwardDistance(c,p)>=profile.lipDistance)||dense[1]||c.points[1],dx=near[0]-start[0],dz=near[1]-start[1],dl=Math.hypot(dx,dz)||1,px=-dz/dl,pz=dx/dl,half=c.a.width*c.settings.widthScale*0.5,v=[lip[0]+px*half,topY,lip[1]+pz*half,lip[0]-px*half,topY,lip[1]-pz*half,lip[0]+px*half,botY,lip[1]+pz*half,lip[0]-px*half,botY,lip[1]-pz*half],g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(v,3));g.setAttribute('uv',new THREE.Float32BufferAttribute([0,1,1,1,0,0,1,0],2));g.setIndex([0,2,3,0,3,1]);g.computeVertexNormals();const fall=new THREE.Mesh(g,waterMat);fall.name='BackgroundSceneryWaterfall';fall.userData.waterSurfaceRole='scenery';fall.renderOrder=3;townScene.add(fall);
         continue;
       }
-      const built=addRibbon(c,waterMat,0.035);if(!built)continue;const s=built.samples;for(let i=0;i<s.length-1;i++){const a=s[i],b=s[i+1],ya=sampleHeight(a[0],a[1])+0.035,yb=sampleHeight(b[0],b[1])+0.035;if(Math.abs(ya-yb)<c.settings.waterfallThreshold)continue;const mx=(a[0]+b[0])*0.5,mz=(a[1]+b[1])*0.5,dx=b[0]-a[0],dz=b[1]-a[1],dl=Math.hypot(dx,dz)||1,px=-dz/dl,pz=dx/dl,half=c.a.width*c.settings.widthScale*0.5,top=Math.max(ya,yb),bot=Math.min(ya,yb),v=[mx+px*half,top,mz+pz*half,mx-px*half,top,mz-pz*half,mx+px*half,bot,mz+pz*half,mx-px*half,bot,mz-pz*half],g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(v,3));g.setAttribute('uv',new THREE.Float32BufferAttribute([0,1,1,1,0,0,1,0],2));g.setIndex([0,2,3,0,3,1]);g.computeVertexNormals();const fall=new THREE.Mesh(g,waterMat);fall.renderOrder=3;townScene.add(fall);}
+      const built=addRibbon(c,waterMat,0.035);if(!built)continue;built.mesh.userData.waterSurfaceRole='scenery';const s=built.samples;for(let i=0;i<s.length-1;i++){const a=s[i],b=s[i+1],ya=sampleHeight(a[0],a[1])+0.035,yb=sampleHeight(b[0],b[1])+0.035;if(Math.abs(ya-yb)<c.settings.waterfallThreshold)continue;const mx=(a[0]+b[0])*0.5,mz=(a[1]+b[1])*0.5,dx=b[0]-a[0],dz=b[1]-a[1],dl=Math.hypot(dx,dz)||1,px=-dz/dl,pz=dx/dl,half=c.a.width*c.settings.widthScale*0.5,top=Math.max(ya,yb),bot=Math.min(ya,yb),v=[mx+px*half,top,mz+pz*half,mx-px*half,top,mz-pz*half,mx+px*half,bot,mz+pz*half,mx-px*half,bot,mz-pz*half],g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(v,3));g.setAttribute('uv',new THREE.Float32BufferAttribute([0,1,1,1,0,0,1,0],2));g.setIndex([0,2,3,0,3,1]);g.computeVertexNormals();const fall=new THREE.Mesh(g,waterMat);fall.userData.waterSurfaceRole='scenery';fall.renderOrder=3;townScene.add(fall);}
     }
     _townBorderGrassPoints=[];for(let cj=0;cj<CH;cj++)for(let ci=0;ci<CW;ci++){if(isPlayable(ci,cj)||vSteps(ci,cj)>16)continue;const y00=Y[cj*GW+ci],y10=Y[cj*GW+ci+1],y01=Y[(cj+1)*GW+ci],y11=Y[(cj+1)*GW+ci+1],cnx=-0.5*((y10+y11)-(y00+y01)),cnz=0.5*((y10-y01)-(y11-y00));if(cnx*cnx+cnz*cnz>0.194)continue;const seed=(ci*7919+cj*104173)>>>0;if(deps.mbRng(seed)()>0.44)continue;const px=(ci-BV)*0.5+0.25,pz=(cj-BV)*0.5+0.25,py=(y00+y10+y01+y11)/4;_townBorderGrassPoints.push({px,pz,py,seed});}_buildTownBorderGrassBillboards();
     if(window.FoliageGenerator){const STEP=4;for(let cj=BV+PVH;cj<CH;cj+=STEP){const depth=cj-(BV+PVH);if(depth>22)continue;for(let ci=0;ci<CW;ci+=STEP){const px=(ci-BV)*0.5+0.25,pz=(cj-BV)*0.5+0.25;if(routeContinuations.some(c=>bgDistToPolyline(px,pz,c.points)<=c.a.width*c.settings.widthScale*0.5+c.settings.shoulderTiles+0.75))continue;const seed=(777+ci*7919+cj*104173)>>>0,r=deps.mbRng(seed);if(r()>0.22)continue;const y00=Y[cj*GW+ci],y10=Y[cj*GW+ci+1],y01=Y[(cj+1)*GW+ci],y11=Y[(cj+1)*GW+ci+1],cnx=-0.5*((y10+y11)-(y00+y01)),cnz=0.5*((y10-y01)-(y11-y00));if(cnx*cnx+cnz*cnz>0.194)continue;const py=(y00+y10+y01+y11)/4,vegGroup=window.FoliageGenerator.buildShrubMesh(1000+ci,1000+cj),sc=1.6+r()*1.2;vegGroup.scale.set(sc,sc,sc);vegGroup.rotation.y=r()*Math.PI*2;vegGroup.position.set(px,py,pz);townScene.add(vegGroup);deps.markOutline(vegGroup);}}}

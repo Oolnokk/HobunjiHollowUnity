@@ -15,6 +15,7 @@ window.SCRATCHBONES_CONFIG = {
     wildlifeStreaming: { // Data-tracked den/herd actors keep identity and AI; only nearby ones allocate a native-resolution rig.
       wakeRadiusTiles: 14,
       releaseRadiusTiles: 18,
+      combatReleaseRadiusTiles: 32, // Fighting animals stay visible out to here, then go back to data (hysteresis 4 tiles).
       releaseDelaySeconds: 2,
       promotionsPerFrame: 1,
     },
@@ -60,6 +61,36 @@ window.SCRATCHBONES_CONFIG = {
           {id:'fox-red',name:'Fox Red',hex:'#b15d30',weight:1},{id:'rosy-beige',name:'Rosy Beige',hex:'#997267',weight:4},
           {id:'lilac-grey',name:'Lilac Grey',hex:'#746775',weight:4},{id:'black-brown',name:'Black-Brown',hex:'#4f3f36',weight:4},
         ],
+        // Small forest/mire hunters: woodland earth pigments with muted greens, not tropical parrot hues.
+        "pingdort": [
+          {id:'soot-brown',name:'Soot Brown',hex:'#5b4c43',weight:5},{id:'ash',name:'Ash',hex:'#6d7068',weight:4},
+          {id:'warm-grey',name:'Warm Grey',hex:'#74685f',weight:4},{id:'mushroom',name:'Mushroom',hex:'#77635b',weight:4},
+          {id:'fawn',name:'Fawn',hex:'#a47650',weight:4},{id:'sand',name:'Sand',hex:'#b28754',weight:4},
+          {id:'sable',name:'Sable',hex:'#714c37',weight:4},{id:'chocolate',name:'Chocolate',hex:'#6a412e',weight:3},
+          {id:'cream',name:'Cream',hex:'#c7aa77',weight:2},{id:'russet',name:'Russet',hex:'#994b30',weight:1},
+          {id:'olive-grey',name:'Olive Grey',hex:'#6d7058',weight:4},{id:'moss',name:'Moss Green',hex:'#536747',weight:3},
+          {id:'sage',name:'Sage Green',hex:'#859578',weight:3},{id:'fern',name:'Fern Green',hex:'#55744e',weight:3},
+          {id:'lichen',name:'Lichen Green',hex:'#a3a77e',weight:2},{id:'deep-pine',name:'Deep Pine',hex:'#354b3f',weight:1},
+        ],
+        // Nelk favor pale and middle tones; the darkest coats remain inheritable, but uncommon.
+        "nelk": [
+          {id:'soot-brown',name:'Soot Brown',hex:'#5b4c43',weight:1},{id:'charcoal',name:'Charcoal',hex:'#55585c',weight:1},
+          {id:'blue-grey',name:'Blue Grey',hex:'#596879',weight:6},{id:'ash',name:'Ash',hex:'#6d7068',weight:7},
+          {id:'dove',name:'Dove Grey',hex:'#756f78',weight:7},{id:'warm-grey',name:'Warm Grey',hex:'#74685f',weight:7},
+          {id:'olive-grey',name:'Olive Grey',hex:'#6d7058',weight:6},{id:'pale-cream',name:'Pale Cream',hex:'#c8b991',weight:10},
+          {id:'cream',name:'Cream',hex:'#c7aa77',weight:10},{id:'champagne',name:'Champagne',hex:'#b99a72',weight:9},
+          {id:'biscuit',name:'Biscuit',hex:'#bd9463',weight:9},{id:'sand',name:'Sand',hex:'#b28754',weight:8},
+          {id:'buff',name:'Buff',hex:'#b77c49',weight:5},{id:'honey',name:'Honey',hex:'#b97832',weight:5},
+          {id:'golden',name:'Golden',hex:'#ae8430',weight:5},{id:'fawn',name:'Fawn',hex:'#a47650',weight:7},
+          {id:'taupe',name:'Taupe',hex:'#806a5b',weight:4},{id:'mushroom',name:'Mushroom',hex:'#77635b',weight:4},
+          {id:'sable',name:'Sable',hex:'#714c37',weight:1},{id:'seal-brown',name:'Seal Brown',hex:'#5e493c',weight:1},
+          {id:'chocolate',name:'Chocolate',hex:'#6a412e',weight:1},{id:'liver',name:'Liver',hex:'#65403d',weight:1},
+          {id:'chestnut',name:'Chestnut',hex:'#894e31',weight:1},{id:'mahogany',name:'Mahogany',hex:'#784337',weight:1},
+          {id:'cinnamon',name:'Cinnamon',hex:'#a45b37',weight:2},{id:'russet',name:'Russet',hex:'#994b30',weight:1},
+          {id:'auburn',name:'Auburn',hex:'#874438',weight:1},{id:'copper',name:'Copper',hex:'#a85e3a',weight:2},
+          {id:'fox-red',name:'Fox Red',hex:'#b15d30',weight:1},{id:'rosy-beige',name:'Rosy Beige',hex:'#997267',weight:6},
+          {id:'lilac-grey',name:'Lilac Grey',hex:'#746775',weight:6},{id:'black-brown',name:'Black-Brown',hex:'#4f3f36',weight:1}
+        ],
         "drenkirra": [
           {id:'scarlet',name:'Scarlet',hex:'#ef3340',weight:1},{id:'tangerine',name:'Tangerine',hex:'#ff7a18',weight:1},
           {id:'sun-yellow',name:'Sun Yellow',hex:'#ffd629',weight:1},{id:'lime',name:'Lime',hex:'#8bdc24',weight:1},
@@ -80,7 +111,9 @@ window.SCRATCHBONES_CONFIG = {
         "gar-wolf": { "creatureKey": "gar-wolf-den-mother", "nestItemKey": "garWolfBaby" },
         "uumkaoii-wild": { "creatureKey": "uumkaoii-wild-den-mother", "nestItemKey": "uumkaoiiEgg" },
         "grehlr": { "creatureKey": "grehlr-den-mother", "nestItemKey": "grehlrBaby" },
-        "drenkirra": { "creatureKey": "drenkirra-den-mother", "nestItemKey": "fertileDrenkirraEgg" }
+        "drenkirra": { "creatureKey": "drenkirra-den-mother", "nestItemKey": "fertileDrenkirraEgg" },
+        "nelk": { "creatureKey": "nelk", "nestItemKey": "nelkBaby", "liveBirth": true }, // Nest contents are already-hatched babies; adult Nelk still lay eggs.
+        "nazgraku": { "creatureKey": "nazgraku", "nestItemKey": "nazgrakuBaby", "liveBirth": true } // Already-hatched nest contents; ordinary farm eggs remain food.
       },
       "nestClutch": { "min": 1, "max": 3 }
     },
@@ -89,9 +122,10 @@ window.SCRATCHBONES_CONFIG = {
         "voorgAssBaby": "voorg-ass",
         "uumkaoiiCrate": "uumkaoii", "uumkaoiiEgg": "uumkaoii",
         "garWolfBaby": "gar-wolf", "dabinggiHoundEgg": "dabinggi-hound",
-        "grehlrBaby": "grehlr", "fertileDrenkirraEgg": "drenkirra"
+        "grehlrBaby": "grehlr", "fertileDrenkirraEgg": "drenkirra",
+        "nelkCrate": "nelk", "nelkBaby": "nelk", "nazgrakuCrate": "nazgraku", "nazgrakuBaby": "nazgraku"
       },
-      "animalWidths": { "gar-wolf": 1.9, "dabinggi-hound": 1.7, "grehlr": 2.2, "drenkirra": 0.82 },
+      "animalWidths": { "gar-wolf": 1.9, "dabinggi-hound": 1.7, "grehlr": 2.2, "drenkirra": 0.82, "nelk": 0.89, "nazgraku": 1.21 },
       // Daytime roaming cycle: choose a genuinely distant station, travel
       // there without changing targets, then remain there before repeating.
       "wander": {
@@ -106,19 +140,26 @@ window.SCRATCHBONES_CONFIG = {
       // Diet classification, used by barn troughs to decide which fodder
       // (plantFodder/meatFodder) a housed animal will actually eat —
       // predator: meatFodder only, prey: plantFodder only, omnivore: either.
+      // Species that are never barn animals: kind -> the Farm production building that houses them.
+      "housing": { "honeyfuzzle": "honeyfuzzleHouse" },
       "diet": {
         "uumkaoii": "prey",
         "gar-wolf": "predator",
         "dabinggi-hound": "predator",
         "grehlr": "omnivore",
-        "drenkirra": "prey"
+        "drenkirra": "prey",
+        "nelk": "prey",
+        "nazgraku": "prey",
+        "honeyfuzzle": "prey"
       },
       "resources": {
         "uumkaoii": { "itemKey": "uumkaoiiEgg", "cooldownDays": 2 },
         "gar-wolf": { "itemKey": "garWolfMilk", "cooldownDays": 1, "verb": "Milk", "interactive": true },
         "dabinggi-hound": { "itemKey": "dabinggiHoundVenom", "cooldownDays": 1, "verb": "Milk", "interactive": true },
         "grehlr": { "itemKey": "grehlrStinkOil", "cooldownDays": 1, "verb": "Extract", "interactive": true },
-        "drenkirra": { "itemKey": "drenkirraEgg", "cooldownDays": 1 }
+        "drenkirra": { "itemKey": "drenkirraEgg", "cooldownDays": 1 },
+        "nelk": { "itemKey": "nelkEggs", "cooldownDays": 1 },
+        "nazgraku": { "itemKey": "nazgrakuEggs", "cooldownDays": 2 }
       }
     },
     "debug": {
@@ -138,7 +179,10 @@ window.SCRATCHBONES_CONFIG = {
         "rugged_poncho": "assets/cosmetics/clothes/overwear/portrait/poncho1_mao_m.png",
         "rounded_pauldron": "assets/cosmetics/clothes/pauldrons/rounded_pauldron_m.png",
         "fine_poncho": "assets/cosmetics/clothes/overwear/portrait/poncho1_mao_m.png",
+        "fine_bodywrap": "assets/cosmetics/clothes/overwear/portrait/tankanbodywrap_mao-ao.png",
         "fine_hood": "assets/cosmetics/clothes/hood/finehood-base_m.png",
+        "simple_hood": "assets/cosmetics/clothes/hood/simplehood_tl_m.png",
+        "fur_lined_hood": "assets/cosmetics/clothes/hood/simplehood_tl_m.png",
         "facewrap": "assets/cosmetics/clothes/hood/facewrap_m.png",
         "pants_basic": "assets/cosmetics/clothes/legs/pants_basic.png",
         "draped_pants": "assets/cosmetics/clothes/legs/pants_basic.png",
@@ -152,12 +196,15 @@ window.SCRATCHBONES_CONFIG = {
     },
     "movement": {
       "perpRotDeadzoneDeg": 40,
+      "toolEdgeOnDeadzoneDeg": 10,
       "creaturePerpRotDeadzoneDeg": 27.5,
+      "perpCorrectiveDirectionPriority": ["movement", "headtrack", "lastMovement", "player"],
       "npc": {
         "speedTilesPerSecond": 1.25,
         "endpointPauseSeconds": 1.6,
         "arrivalRadiusTiles": 0.18,
         "interactionRadiusTiles": 2.0,
+        "socialInteractionRadiusTiles": 6.0,
         "routeSnapRadiusTiles": 8,
         "beelineSampleStepTiles": 0.25
       }
@@ -280,8 +327,7 @@ window.SCRATCHBONES_CONFIG = {
     "desktopControls": {
       "tapWindowMs": 350,
       "cameraRotateDegPerPx": 0.15,
-      "cameraRotateClampDeg": 45,
-      "cameraRotateUpClampDeg": 85, // Used by gameplay pitch so upward look can be wider without loosening downward/yaw limits.
+      "cameraRotateClampDeg": 45, // Retained for limited yaw in non-free camera modes; vertical pitch is handled independently.
       "wheelZoomStep": 0.05,
       "wheelZoomMin": 0.75,
       "wheelZoomMax": 2.5
@@ -306,7 +352,8 @@ window.SCRATCHBONES_CONFIG = {
       },
       "actions": [
         { "id": "interact", "label": "Interact", "desktop": "KeyE", "controller": "Button0" },
-        { "id": "dodge", "label": "Dodge", "desktop": "Space", "controller": "Button1" },
+        { "id": "dodge", "label": "Dodge", "desktop": "ShiftLeft", "controller": "Button1" },
+        { "id": "jump", "label": "Jump / Climb", "desktop": "Space", "controller": null },
         { "id": "action1", "label": "Tool/Item Action 1", "desktop": "Mouse0", "controller": "RightTrigger" },
         { "id": "action2", "label": "Tool/Item Action 2", "desktop": "Mouse2", "controller": "LeftTrigger" },
         { "id": "action3", "label": "Tool/Item Action 3", "desktop": "KeyF", "controller": "Button2" },
@@ -315,7 +362,7 @@ window.SCRATCHBONES_CONFIG = {
         { "id": "action6", "label": "Tool/Item Action 6", "desktop": "Digit8", "controller": "Button9" },
         { "id": "action7", "label": "Tool/Item Action 7", "desktop": "Digit9", "controller": "Button14" },
         { "id": "action8", "label": "Tool/Item Action 8", "desktop": "Digit0", "controller": "Button15" },
-        { "id": "swapTarget", "label": "Swap Target", "desktop": "KeyG", "controller": "Button5" },
+        { "id": "swapTarget", "label": "Swap Target", "desktop": "KeyC", "controller": "Button5" },
         { "id": "toggleMount", "label": "Call/Dismiss Mount", "desktop": "KeyV", "controller": "Button13" },
         { "id": "perceptionMode", "label": "Perception Mode", "desktop": "KeyB", "controller": "Button14" },
         { "id": "weaponSwitch", "label": "Swap Melee / Ranged", "desktop": "KeyR", "controller": "Button11" },
@@ -578,7 +625,8 @@ window.SCRATCHBONES_CONFIG = {
               ]},
               { "slot": "facialHair", "label": "Facial Hair", "options": [
                 { "id": null, "label": "None" },
-                { "id": "appearance::Mao-ao_M::mao-ao_wildbeard", "label": "Wild Beard" }
+                { "id": "appearance::Mao-ao_M::mao-ao_wildbeard", "label": "Wild Beard" },
+                { "id": "appearance::Mao-ao_M::mao-ao_grandbeard", "label": "Grand Beard" }
               ]}
             ],
             "colorOptions": [
@@ -668,7 +716,8 @@ window.SCRATCHBONES_CONFIG = {
               ]},
               { "slot": "facialHair", "label": "Facial Hair", "options": [
                 { "id": null, "label": "None" },
-                { "id": "appearance::Mashtzarr_M::mashtz_wildbeard", "label": "Wild Beard" }
+                { "id": "appearance::Mashtzarr_M::mashtz_wildbeard", "label": "Wild Beard" },
+                { "id": "appearance::Mashtzarr_M::mashtz_grandbeard", "label": "Grand Beard" }
               ]}
             ],
             "colorOptions": [
@@ -793,7 +842,9 @@ window.SCRATCHBONES_CONFIG = {
           "rakakoan": "kenkari",
           "tletingan": "slagothim",
           "engh_sho": "engh_sho",
-          "engh-sho": "engh_sho"
+          "engh-sho": "engh_sho",
+          "harlyao": "harlyao",
+          "harlyao-skeleton": "harlyao"
         }
       },
       "cultures": {
@@ -953,6 +1004,21 @@ window.SCRATCHBONES_CONFIG = {
               }
             }
           }
+        },
+        "harlyao": {
+          "id": "harlyao",
+          "displayName": "Harlyao",
+          "casing": "title",
+          "harlyaoRules": {
+            "firstParts": ["na", "az", "im", "kril", "am", "nar", "gar", "mal", "il", "ur", "zan", "hal", "dran", "gril", "kal", "an", "zen", "mar", "lor", "rak", "ir", "ran", "kar", "zul", "orl", "ga", "va", "ha"],
+            "middleParts": ["na", "gar", "la", "ri", "ra", "ha", "mi", "nar", "nu", "ril", "ar", "ma", "zul", "va", "gal", "lu", "n"],
+            "lastParts": ["hi", "lu", "lao", "larg", "nao", "ri", "ra", "na", "aru", "ar", "an", "il", "ir", "or", "ur", "gar", "ga", "nir", "kal", "arg", "lar", "ma", "ha", "no", "za", "ai"],
+            "surnameFirstParts": ["gar", "kril", "az", "mal", "nar", "zan", "hal", "dran", "gril", "kal", "zen", "mar", "lor", "rak", "ran", "kar", "zul", "orl", "var", "am", "im", "grar", "tarl"],
+            "surnameLastParts": ["gar", "larg", "kal", "ril", "nar", "arg", "lur", "mar", "nil", "rak", "lan", "ral", "har", "nir", "zar", "kul", "gal", "ran", "lar", "ai", "nao"],
+            "threePartChance": 0.38,
+            "bridgeConsonants": ["n", "l", "r", "g", "k", "m", "h"],
+            "reservedNames": ["Nanahi", "Azgarlu", "Imlao"]
+          }
         }
       }
     },
@@ -979,10 +1045,13 @@ window.SCRATCHBONES_CONFIG = {
         { "id": "tankan_tunic",     "label": "Tankan Tunic",      "price": 50, "category": "torso",    "description": "A fitted tankan-style tunic." },
         { "id": "bandolier1",       "label": "Bandolier",         "price": 40, "category": "torso",    "description": "A rugged leather bandolier.", "material": "leather" },
         { "id": "tankan_bodywrap",  "label": "Tankan Body Wrap",  "price": 60, "category": "overwear", "description": "A wrapped ceremonial bodywrap." },
+        { "id": "fine_bodywrap", "label": "Fine Body Wrap", "price": 80, "category": "overwear", "usesB": true, "description": "A fitted cloth body wrap with separately dyed shoulder trim.", "material": "cloth" },
         { "id": "rugged_poncho", "label": "Rugged Poncho", "price": 70, "category": "overwear", "description": "A reinforced poncho layered with a rugged body wrap.", "material": "cloth" },
         { "id": "rounded_pauldron", "label": "Rounded Pauldrons", "price": 0, "category": "pauldron", "description": "Smith-forged shoulder armor whose color and patina come from its metal.", "material": "metal", "smithOnly": true, "dyeable": false },
         { "id": "fine_poncho", "label": "Fine Poncho", "price": 80, "category": "overwear", "description": "A finely trimmed cloth poncho.", "material": "cloth" },
-        { "id": "fine_hood",        "label": "Fine Hood",         "price": 60, "category": "hood",     "description": "A finely crafted hood with trim." }
+        { "id": "fine_hood",        "label": "Fine Hood",         "price": 60, "category": "hood",     "description": "A finely crafted hood with trim." },
+        { "id": "simple_hood", "label": "Simple Hood", "price": 40, "category": "hood", "material": "cloth", "description": "A plain hood; its fabric takes one cloth dye." },
+        { "id": "fur_lined_hood", "label": "Fur-lined Hood", "price": 0, "category": "hood", "material": "leather", "description": "A dyeable cloth hood with naturally colored fur trim, crafted at a loom with one hide." }
       ]
     },
     "dyes": {
@@ -1527,11 +1596,12 @@ window.SCRATCHBONES_CONFIG = {
       },
       "randomization": {
         "minimumNpcClothingArticles": 1,
-        "clothingSlots": ["hat", "hood", "torsoCosmetic", "armCosmetic"],
+        "clothingSlots": ["hat", "hood", "mask", "torsoCosmetic", "armCosmetic"],
         "clothingRepairSlotPreference": ["torsoCosmetic", "armCosmetic", "hat", "hood"],
         "clothingOptionPoolsBySlot": {
           "hat": "hatOptions",
           "hood": "hoodOptions",
+          "mask": "maskOptions",
           "torsoCosmetic": "torsoPortraitOptions",
           "armCosmetic": "armPortraitOptions"
         },
@@ -1543,6 +1613,7 @@ window.SCRATCHBONES_CONFIG = {
         "clothingFallbackTintSlotsBySlot": {
           "hat": "HAT",
           "hood": "HOOD",
+          "mask": "MASK",
           "torsoCosmetic": "CLOTH",
           "armCosmetic": "CLOTH"
         }
@@ -3550,15 +3621,17 @@ window.SCRATCHBONES_CONFIG = {
         // Combat tracks loop by default until the existing combat state clears.
         // Area BGM/cues tagged exclusiveSoundtrack stay in control instead, which
         // keeps authored special soundtracks such as Just Beyond the Torchlight
-        // uninterrupted and leaves room for more opt-outs later.
+        // uninterrupted and leaves room for more opt-outs later. Inside generated ruins
+        // (Harlyao ruins and the Hachutu Root Temple) combat plays Just Beyond the Torchlight instead of Pure Focus.
         "combatBgm": [
-          { "url": "assets/audio/music/bgm/bgm_pure_focus.m4a", "loop": true, "gaplessLoop": { "sourceSampleRate": 44100, "encoderDelaySamples": 2048, "paddingSamples": 631, "contentSamples": 5667209 } }
+          { "url": "assets/audio/music/bgm/bgm_pure_focus.m4a", "loop": true, "gaplessLoop": { "sourceSampleRate": 44100, "encoderDelaySamples": 2048, "paddingSamples": 631, "contentSamples": 5667209 }, "excludeConditions": { "maps": ["map_i_dev_random_ruin"] } },
+          { "url": "assets/audio/music/bgm/bgm_just_beyond_the_torchlight.ogg", "loop": true, "conditions": { "maps": ["map_i_dev_random_ruin"] } }
         ],
         // Short musical stings fired by explicit gameplay milestones through
         // Music.playGameplayCue(); they use the BGM volume path without taking
         // ownership away from the currently scheduled area/combat soundtrack.
         "gameplayCues": {
-          "fishCaught": { "url": "assets/audio/music/cues/gameplaycues/gpq_fish_caught.m4a", "volume": 1 },
+          "fishCaught": { "url": "assets/audio/music/cues/gameplaycues/gpq_fish_caught.m4a", "volume": 1, "duckBackground": true, "duckOutMs": 90, "duckInMs": 260 },
           "progressDeeper": { "url": "assets/audio/music/cues/gameplaycues/gpq_progress_deeper.m4a", "volume": 1 }
         },
         "startupBgm": { "url": "assets/audio/music/bgm/bgm_remembrance.m4a", "loop": true },
@@ -3568,7 +3641,20 @@ window.SCRATCHBONES_CONFIG = {
         "bgsFadeMs": 1600,
         "ambientCueMinDelaySec": 20,
         "ambientCueMaxDelaySec": 45,
+        // Gap after each finished cue is one of these, picked when the cue ends;
+        // shorter gaps are likelier. Overrides the min/max range above.
+        "ambientCueDelayChoicesSec": [
+          { "sec": 0, "weight": 5 },
+          { "sec": 4, "weight": 4 },
+          { "sec": 8, "weight": 3 },
+          { "sec": 12, "weight": 2 },
+          { "sec": 16, "weight": 1 }
+        ],
+        "ambientCuePhaseDurationSec": 120, // Stage B runs random standalone cues for two minutes after each complete song.
         "areaBgm": {
+          "map_i_dev_random_ruin": [
+            { "url": "assets/audio/music/bgm/bgm_of_bygone_Kings.ogg", "loop": true }
+          ],
           "farm": [
             { "url": "assets/audio/music/bgm/bgm_farm1.m4a", "fallback": true, "rainingOnly": true },
             { "url": "assets/audio/music/bgm/bgm_still_waking_up.mp3", "sunriseOnly": true, "oncePerDay": true, "sunriseHour": 6, "sunriseWindowHours": 1 },
@@ -3618,30 +3704,39 @@ window.SCRATCHBONES_CONFIG = {
         "furnitureSfx": {
           "fireplace": { "url": "assets/audio/sfx/bgs/bgs_fire1.wav", "rangeTiles": 6, "volume": 0.65 }
         },
-        // Flask gameplay emits these semantic phases without importing or
-        // calling the audio system. Set any value here to an objectSfx key
-        // below when a real recording is added; null deliberately stays
-        // silent while still appearing in flask diagnostics/debug logs.
+        // Flask gameplay emits semantic phases without importing the audio
+        // system. Map a phase to an objectSfx key when a recording is available;
+        // null keeps that phase intentionally silent and diagnosable.
         "alchemyFlasks": {
           "aimStart": null,
           "release": null,
-          "impact": null
+          "impact": "flaskImpact"
         },
         // Generic object/machine/UI interaction sfx — see playObjectSfx in
-        // game.js and docs/assets/audio/sfx/README.md. Every entry names a
-        // real recording (`url`) that does NOT exist yet — a human needs to
-        // source/record/generate it, see the README — plus a placeholder
-        // that plays instead until the real file shows up in the repo:
-        // either a single generated `placeholderUrl` (committed, see
-        // scripts/generate-placeholder-sfx.js) or a `placeholderUrls` list
-        // reusing the real footstep recordings (also committed, see
-        // docs/assets/audio/sfx/footsteps/) at a different volume/pitch —
-        // a real recording standing in for a similar-enough sound beats a
-        // from-scratch synth attempt, so several material-impact cues
-        // (digging, mashing, grinding, a barrel knock) borrow gravel/water
-        // steps this way instead of having their own generated .wav.
+        // game.js and docs/assets/audio/sfx/README.md. Entries may use a real
+        // recording (`url`) and optionally provide a fallback placeholder
+        // for missing media. Set `preload: true` for frequently used cues.
         "objectSfx": {
           "enabled": true,
+          "flaskImpact": {
+            "url": "assets/audio/sfx/sfx_flask_shatter.mp3",
+            "volume": 0.9,
+            "preload": true
+          },
+          "shattercaskBlast": {
+            "url": "assets/audio/sfx/sfx_shattercask.m4a",
+            "volume": 0.95,
+            "preload": true
+          },
+          "witchBombBlast": { // Used by HronalWitchBombs for the dedicated lowblast detonation sound.
+            "url": "assets/audio/sfx/sfx_lowblast.mp3",
+            "volume": 0.95,
+            "preload": true
+          },
+          "igniteLarge": { "url": "assets/audio/sfx/sfx_ignite_big.m4a", "volume": 0.85, "preload": true },
+          "igniteSmall": { "url": "assets/audio/sfx/sfx_ignite_small.m4a", "volume": 0.78, "preload": true },
+          "stoneActivator": { "url": "assets/audio/sfx/sfx_stone_activator.m4a", "volume": 0.8, "preload": true },
+          "stoneMechanism": { "url": "assets/audio/sfx/sfx_stone_mechanism.m4a", "volume": 0.86, "preload": true },
           "uiClick": {
             "url": "assets/audio/sfx/ui/sfx_ui_click.mp3",
             "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_ui_click.wav",
@@ -3829,7 +3924,11 @@ window.SCRATCHBONES_CONFIG = {
           "weaponSwing1": { "url": "assets/audio/sfx/combat/sfx_swing_1.mp3", "volume": 1.0, "pitchVarianceMul": 0.025, "preload": true },
           "weaponSwing2": { "url": "assets/audio/sfx/combat/sfx_swing_2.mp3", "volume": 1.0, "pitchVarianceMul": 0.025, "preload": true },
           "weaponSwing3": { "url": "assets/audio/sfx/combat/sfx_swing_3.mp3", "volume": 1.0, "pitchVarianceMul": 0.025, "preload": true },
+          "quickAttackBonusSlash": { "url": "assets/audio/sfx/combat/sfx_anime_slash.wav", "volume": 0.9, "preload": true }, // Plays for every player/NPC Quick Attack hit whose conditional bonus actually procs.
+          "soursapSplat": { "url": "assets/audio/sfx/combat/sfx_splat_1.mp3", "volume": 0.9, "preload": true }, // Reuses the Drenkirra pellet wet splat at the fruit's explosion position.
+          "harpoonHit": { "url": "assets/audio/sfx/sfx_harpoon_hit_1.mp3", "volume": 1.0 },
           "rangedLoad": { "url": "assets/audio/sfx/combat/sfx_loading_mechanism.m4a", "volume": 0.42, "pitchVarianceMul": 0.025 },
+          "blowgunLoad": { "url": "assets/audio/sfx/sfx_load_dart.m4a", "volume": 0.42, "pitchVarianceMul": 0.025 }, // Dedicated blowgun loading recording (currently committed as sfx_load_dart.m4a).
           "rangedFire": { "url": "assets/audio/sfx/combat/sfx_shootarrow.m4a", "volume": 1.0, "pitchVarianceMul": 0.02 },
           "rangedImpact": { "url": "assets/audio/sfx/combat/sfx_arrow_hit.mp3", "volume": 1.0, "pitchVarianceMul": 0.025, "preload": true },
           "creatureClawHit": { "url": "assets/audio/sfx/combat/sfx_claw-basic.m4a", "volume": 0.9, "pitchVarianceMul": 0.06 },
@@ -4001,6 +4100,7 @@ window.SCRATCHBONES_CONFIG = {
         },
         "anchorZ": 0,
         "alphaTest": 0.001,
+        "maskAlphaTest": 0.35,
         "backPlaneOffsetZ": 0.001,
         "portraitVerticalPlacement": {
           "default": 0.5,
@@ -4017,6 +4117,7 @@ window.SCRATCHBONES_CONFIG = {
           "footHeightFraction": 0.11,
           "sizeBalanceMultiplier": 1.2,
           "referenceSpeedWorldUnitsPerSecond": 4.3,
+          "stanceDrop": { "enabled": true, "heightFraction": 0.06 },
           "alphaThreshold": 8,
           "boneColorHex": "#D8C7A3",
           "keratinColorHex": "#44484D",
@@ -4414,7 +4515,8 @@ window.SCRATCHBONES_CONFIG.game.layout.fitter = window.SCRATCHBONES_CONFIG.game.
         ]},
         { slot: 'facialHair', label: 'Facial Hair', options: [
           { id: null, label: 'None' },
-          { id: 'appearance::Kenkari_M::kenk_wildbeard', label: 'Wild Beard' }
+          { id: 'appearance::Kenkari_M::kenk_wildbeard', label: 'Wild Beard' },
+          { id: 'appearance::Kenkari_M::kenk_grandbeard', label: 'Grand Beard' }
         ]}
       ],
       colorOptions: [

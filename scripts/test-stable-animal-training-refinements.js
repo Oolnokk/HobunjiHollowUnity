@@ -40,6 +40,8 @@ const trees = {
 function entryById(id) { return stable.find(entry => entry.id === id) || null; }
 const progression = {
   trees,
+  maxLevel: 30,
+  maxLevelForEntry: entry => entry?.role === 'companion' ? 30 : 10,
   roleForEntry: entry => entry?.role || 'companion',
   perkRank(entry, perkId) { return Math.max(0, Math.floor(Number(entry?.animalPerks?.[perkId]) || 0)); },
   availablePoints(entry) {
@@ -96,13 +98,17 @@ api.install();
 context.FarmAnimals.init(farmDeps);
 context.FarmPanel.init(farmDeps);
 
-assert.equal(api.maxLevel, 10, 'all stabled animals use the corrected level-10 cap');
-assert.equal(stable[0].level, 10, 'an existing over-cap stable level is clamped to 10');
-assert.equal(stable[0].stableXp, 0, 'max-level animals cannot retain progress toward an eleventh level');
-progression.awardXp('hound1', 500, 'cap-check');
-assert.equal(stable[0].level, 10, 'public XP awards cannot advance a max-level stable animal');
-assert.equal(stable[0].stableXp, 0, 'public XP awards are discarded at the level cap');
-assert.equal(progression.maxLevel, 10, 'the progression API exposes the corrected cap to UI/debug callers');
+assert.equal(api.maxLevel, 30, 'refinements expose the companion cap owned by progression');
+assert.equal(stable[0].level, 20, 'existing companion levels survive below the new cap');
+assert.equal(stable[0].stableXp, 999, 'existing sub-cap XP survives');
+stable[0].level = 40;
+api.ensureStableCaps();
+assert.equal(stable[0].level, 30, 'companion cap is enforced by normalization');
+assert.equal(stable[0].stableXp, 0, 'XP is cleared at the new cap');
+stable[1].level = 40;
+api.ensureStableCaps();
+assert.equal(stable[1].level, 10, 'mounts retain the level-10 cap');
+assert.equal(progression.maxLevel, 30, 'refinements do not overwrite the progression authority');
 
 const houndPerks = api.speciesCombatPerksForEntry(stable[0]);
 assert.deepEqual(Array.from(houndPerks, perk => perk.id), ['species_dabinggi_toxicPounce', 'species_dabinggi_pursuit'], 'Dabinggi companions receive their own combat branch');
@@ -133,7 +139,7 @@ assert.match(formatUtilsSource, /livestock-nursery-install-bridge\.js\?v=[A-Za-z
 assert.match(formatUtilsSource, /data-stable-animal-feature-bridge/, 'direct pre-game Stable loader is parser-synchronous and duplicate guarded');
 assert.match(source, /document\.getElementById\('stableAnimalProgression'\)\?\.remove\(\)/, 'old separate Animal Training block is removed');
 assert.match(source, /expandedStableId === entry\.id \? null : entry\.id/, 'tapping the open animal collapses it and tapping another switches the single expanded tree');
-assert.match(source, /Lv\. \$\{entry\.level\}\/\$\{MAX_STABLE_LEVEL\}/, 'Stable row itself displays the current level and cap');
+assert.match(source, /Lv\. \$\{entry\.level\}\/\$\{maxLevelForEntry\(entry\)\}/, 'Stable row itself displays the current level and cap');
 assert.equal(showToastCalls, 0, 'regression setup does not invent UI side effects');
 
 console.log('Stable animal training refinements regression tests passed.');

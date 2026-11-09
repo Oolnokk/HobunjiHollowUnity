@@ -1,0 +1,314 @@
+// Focused runtime regression for shared Dungeon Fire and Harlyao reactive mechanism contracts.
+'use strict';
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+
+const root = path.resolve(__dirname, '..');
+const fireCode = fs.readFileSync(path.join(root, 'docs/js/dungeon-fire.js'), 'utf8');
+const mechanismCode = fs.readFileSync(path.join(root, 'docs/js/dev-random-ruin-dungeon-fire.js'), 'utf8');
+const rangedCode = fs.readFileSync(path.join(root, 'docs/js/combat/ranged-weapons.js'), 'utf8');
+const burdenCode = fs.readFileSync(path.join(root, 'docs/js/shattercasks.js'), 'utf8');
+const themeCode = fs.readFileSync(path.join(root, 'docs/js/dev-random-ruin-lich-themes.js'), 'utf8');
+const weaponVfxCode = fs.readFileSync(path.join(root, 'docs/js/combat/weapon-enchantment-vfx.js'), 'utf8'); // Verifies the production held-plane and modular source adapters are exported.
+
+class Vector3 {
+  constructor(x = 0, y = 0, z = 0) { this.set(x, y, z); }
+  set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
+  copy(v) { return this.set(v.x, v.y, v.z); }
+  clone() { return new Vector3(this.x, this.y, this.z); }
+  add(v) { this.x += v.x; this.y += v.y; this.z += v.z; return this; }
+  lerp(v, alpha) {
+    this.x += (v.x - this.x) * alpha;
+    this.y += (v.y - this.y) * alpha;
+    this.z += (v.z - this.z) * alpha;
+    return this;
+  }
+}
+class Object3D {
+  constructor() {
+    this.isObject3D = true;
+    this.position = new Vector3();
+    this.scale = new Vector3(1, 1, 1);
+    this.rotation = { x: 0, y: 0, z: 0 };
+    this.userData = {};
+    this.children = [];
+    this.parent = null;
+    this.visible = true;
+  }
+  add(child) {
+    child.parent?.remove?.(child);
+    this.children.push(child);
+    child.parent = this;
+    return this;
+  }
+  remove(child) {
+    this.children = this.children.filter(entry => entry !== child);
+    if (child.parent === this) child.parent = null;
+    return this;
+  }
+  updateWorldMatrix() {}
+  updateMatrixWorld() {}
+  localToWorld(point) {
+    for (let node = this; node; node = node.parent) point.add(node.position);
+    return point;
+  }
+}
+class Mesh extends Object3D {
+  constructor(geometry, material) {
+    super();
+    this.isMesh = true;
+    this.geometry = geometry;
+    this.material = material;
+  }
+}
+class Shape {
+  moveTo() {}
+  bezierCurveTo() {}
+}
+class ShapeGeometry {
+  constructor(shape, segments) { this.shape = shape; this.segments = segments; }
+  dispose() {}
+}
+class Material {
+  constructor(options) { Object.assign(this, options); }
+  dispose() {}
+}
+class Box3 {
+  constructor() { this.min = new Vector3(Infinity, Infinity, Infinity); this.max = new Vector3(-Infinity, -Infinity, -Infinity); }
+  setFromObject(object) {
+    const bounds = object?.userData?.bounds;
+    if (!bounds) return this;
+    this.min.copy(bounds.min);
+    this.max.copy(bounds.max);
+    return this;
+  }
+  isEmpty() {
+    return this.max.x < this.min.x || this.max.y < this.min.y || this.max.z < this.min.z;
+  }
+  expandByScalar(value) {
+    this.min.x -= value; this.min.y -= value; this.min.z -= value;
+    this.max.x += value; this.max.y += value; this.max.z += value;
+    return this;
+  }
+}
+
+const THREE = {
+  Vector3, Box3, Object3D, Group: Object3D, Mesh, Shape, ShapeGeometry,
+  MeshBasicMaterial: Material, DoubleSide: 2, AdditiveBlending: 2,
+};
+const window = { THREE };
+const fireStreams = []; // Captures authored particle emitter definitions for the palette/rise regression.
+let heldWeapon = null; // Simulated player-owned modular ranged weapon presented by the shared hand renderer.
+window.AuthoredFurniture = { createEmitterVisual(group, emitter, capacity) {
+  fireStreams.push({ group, emitter, capacity });
+  const points = new Object3D();
+  group.add(points);
+  return { points, update() {}, dispose() { group.remove(points); } };
+} };
+let metalMaskCalls = 0, opaqueCalls = 0, mappedIndices = [];
+window.WeaponEnchantmentVFX = {
+  metalMaskForSprite: async () => {
+    metalMaskCalls++;
+    return { width: 4, height: 4, indices: Uint32Array.from([0, 1, 5, 6]), matchedMetalPixels: 4 };
+  },
+  opaqueAnchorForSprite: async () => {
+    opaqueCalls++;
+    return { width: 4, height: 4, index: 2, opaquePixels: 8 };
+  },
+  metalPixelToLocal: (index, mask) => {
+    mappedIndices.push(index);
+    return { x: (index % mask.width) / 10, y: Math.floor(index / mask.width) / 10 };
+  },
+};
+window.WeaponEnchantmentVFX.heldVisualForItem = key => key === 'test-bow' ? heldWeapon : null;
+window.WeaponEnchantmentVFX.sourceSpriteForWeapon = () => 'modular:bshuakauitl:fishing-mace:arsenicalBronze';
+window.RangedWeapons = { equippedRangedKey: () => 'test-bow' };
+const context = vm.createContext({
+  window, THREE, Promise, Map, Set, Math, Number, String, Object, Array,
+  Uint32Array, performance: { now: () => 1234 },
+  console: { warn() {} },
+});
+vm.runInContext(fireCode, context, { filename: 'dungeon-fire.js' });
+
+function makeProjectile(type, sprite) {
+  const scene = new Object3D();
+  const mesh = new Object3D();
+  mesh.position.set(1, 1, 1);
+  const plane = new Object3D();
+  plane.geometry = { parameters: { width: 2, height: 2 } };
+  mesh.userData.projectilePlane = plane; // Matches the production ranged-projectile root contract.
+  mesh.add(plane);
+  scene.add(mesh);
+  return {
+    scene, plane,
+    projectile: {
+      dungeonFire: true, team: 'player', dead: false,
+      def: { rangedType: type, projectileSprite: sprite },
+      mesh,
+    },
+  };
+}
+
+async function settleAsync() {
+  await new Promise(resolve => setImmediate(resolve));
+}
+
+async function main() {
+  const api = window.DungeonFire;
+  assert(api, 'Dungeon Fire registers when THREE is present');
+  assert(api.armNextProjectile(), 'a ranged weapon can arm the one-shot ignition');
+  assert.equal(api.consumeNextProjectile(), true, 'first released projectile consumes the ignition');
+  assert.equal(api.consumeNextProjectile(), false, 'the ignition cannot be consumed twice');
+
+  const thrown = makeProjectile('thrown', 'assets/test-metal-weapon.png');
+  assert(api.attachProjectile(thrown.projectile), 'thrown projectile receives the shared flame');
+  await settleAsync();
+  assert.equal(metalMaskCalls, 1, 'thrown weapons use the same source-metal mask as enchantment VFX');
+  assert.equal(opaqueCalls, 0, 'a valid thrown metal mask takes priority over the general alpha anchor');
+  assert.equal(thrown.projectile._dungeonFire.anchorKind, 'metal', 'thrown plume is anchored to source metal');
+  assert.equal(mappedIndices[0], 1, 'the chosen anchor is the actual metal pixel nearest the metal-region centroid');
+  assert.equal(thrown.projectile._dungeonFire.worldFlame.name, 'dungeonFire_worldUprightFlame',
+    'thrown weapons use the same tall world-upright plume object');
+  assert.deepEqual(
+    [thrown.projectile._dungeonFire.worldFlame.position.x,thrown.projectile._dungeonFire.worldFlame.position.y,thrown.projectile._dungeonFire.worldFlame.position.z],
+    [thrown.projectile.mesh.position.x,thrown.projectile.mesh.position.y,thrown.projectile.mesh.position.z],
+    'the flame starts at the projectile rather than flashing at scene origin before the image anchor resolves'
+  );
+
+  assert.equal(thrown.projectile._dungeonFire.worldFlame.userData.fireEmitterVisuals.length, 3,
+    'projectiles use three actual authored particle emitters, not flame-shaped meshes');
+  assert.deepEqual(fireStreams.slice(0, 3).map(item => item.emitter.rate), [18, 15, 7],
+    'yellow increases 50%, red 25%, and orange absorbs their combined increase');
+  assert(fireStreams.every(item => item.emitter.speed > .7 && item.emitter.lifetime > .72),
+    'the emitter rises much higher than the ordinary campfire');
+  const arrow = makeProjectile('arrow', 'assets/test-arrow.png');
+  assert(api.attachProjectile(arrow.projectile), 'ordinary ranged projectile receives the shared flame');
+  await settleAsync();
+  assert.equal(opaqueCalls, 1, 'non-thrown projectiles use source PNG alpha anchoring');
+  assert.equal(arrow.projectile._dungeonFire.anchorKind, 'opaque', 'ordinary projectile uses its opaque anchor');
+
+  const target = new Object3D();
+  target.userData.bounds = {
+    min: new Vector3(.8, 2, .8),
+    max: new Vector3(1.2, 2.2, 1.2),
+  };
+  let rejectedBurns = 0, burns = 0;
+  assert(api.registerTarget({
+    id: 'test-rejecting-target',
+    object: target,
+    onBurn: () => { rejectedBurns++; return false; },
+  }), 'a target may legitimately reject ignition');
+  assert(api.registerTarget({
+    id: 'test-ceiling-target',
+    object: target,
+    onBurn: () => { burns++; return true; },
+  }), 'fire-reactive target registers');
+  api.updateProjectile(thrown.projectile, .016);
+  assert.doesNotThrow(() => api.contactProjectile(
+    thrown.projectile, thrown.projectile.mesh.position, thrown.projectile.mesh.position, 1, .05
+  ), 'contact calculation must use the defined plume height');
+  assert.equal(rejectedBurns, 1, 'the closest mechanism receives its fire callback');
+  assert.equal(burns, 1, 'a rejecting target does not shield the next valid target in the same fire sweep');
+
+  api.disposeProjectile(thrown.projectile);
+  api.disposeProjectile(arrow.projectile);
+  assert.equal(api.debugSnapshot().activeVisuals, 0, 'projectile disposal releases every attached flame');
+  const scene = new Object3D();
+  const holder = new Object3D(), plane = new Object3D();
+  heldWeapon = new Object3D();
+  heldWeapon.userData.itemKey = 'test-bow';
+  heldWeapon.userData.toolPlane = plane;
+  heldWeapon.add(plane);
+  scene.add(holder);
+  holder.add(heldWeapon);
+  assert.equal(api.armNextProjectile(), true, 'charge can be armed for a visible modular weapon');
+  await settleAsync();
+  assert.equal(api.debugSnapshot().heldFire, true, 'fire is rendered on the charged weapon before release');
+  assert.equal(api.debugSnapshot().heldAnchorKind, 'metal', 'modular fishing mace uses its assembled metal mask');
+  assert.equal(api.debugSnapshot().heldWeaponKey, 'test-bow');
+  assert.equal(fireStreams.length, 9, 'held weapons use the same three-stream particle system as projectiles');
+  const formerFlame = scene.children.find(child => child.name === 'dungeonFire_chargedHeldWeapon'); // Captures room-owned fire before a simulated ruin-room transition.
+  const secondRoom = new Object3D(); // Tests an actual reparent instead of a stale Combat.deps.scene pointer.
+  secondRoom.add(holder);
+  assert.equal(api.updateHeldVisual(.016), true, 'a charged weapon resumes fire after changing scenes');
+  assert.equal(formerFlame.parent, null, 'changing rooms removes particles from the previous scene');
+  assert(secondRoom.children.some(child => child.name === 'dungeonFire_chargedHeldWeapon'),
+    'charged fire is created in the weapon\'s new scene');
+  holder.visible = false;
+  assert.equal(api.updateHeldVisual(.016), false, 'hidden holder suppresses charged fire');
+  assert.equal(api.debugSnapshot().heldFire, false, 'no floating fire remains while the weapon is hidden');
+  assert.equal(api.debugSnapshot().armed, true, 'a temporarily hidden weapon retains its one-shot charge');
+  holder.visible = true;
+  assert.equal(api.updateHeldVisual(.016), true, 'revealing the held weapon restores its fire');
+  assert.equal(api.debugSnapshot().heldFire, true);
+
+  assert.equal(api.consumeNextProjectile(), true, 'firing transfers one charge away from the weapon');
+  assert.equal(api.debugSnapshot().heldFire, false, 'the in-hand fire disappears when consumed');
+  assert.equal(api.armNextProjectile(), true);
+  assert.equal(api.debugSnapshot().heldFire, true);
+  api.clear();
+  assert.equal(api.debugSnapshot().heldFire, false, 'ruin cleanup removes held weapon fire too');
+  assert.equal(api.debugSnapshot().reactiveTargets, 0, 'clear removes all fire-reactive targets');
+
+  const sourceBuilder=mechanismCode.slice(mechanismCode.indexOf('function buildSourceBrazier'),mechanismCode.indexOf('function buildNet'));
+  assert(sourceBuilder.includes('world.group.add(group)'),
+    'the source brazier belongs to the composer-owned group and is removed on clear/reroll');
+  assert(mechanismCode.includes('const candidates=iceDoorCandidates(kit,context)') &&
+    mechanismCode.includes("info.previewMotion?.type==='stoneDoor'") &&
+    mechanismCode.includes('info.transitDoor===true') &&
+    mechanismCode.includes('info.devRandomRuinModularDoor===true') &&
+    mechanismCode.includes("info.dungeonFireIceEligible===true") &&
+    !mechanismCode.includes('new THREE.Mesh(geometry,iceMat)'),
+    'Tothal ice covers actual generated, transit, modular and explicitly eligible doors instead of visible doorway sheets');
+  assert(/dev-random-ruin-dungeon-fire\.js\?v=[A-Za-z0-9_-]+/.test(fs.readFileSync(path.join(root,'docs/js/dev-random-ruin-bootstrap.js'),'utf8')),
+    'the dungeon-fire mechanism loader has a cache-busting token');
+  assert.match(mechanismCode,/registerComposer\(\{id:'dungeonFire',buildRooms,.*\bupdate,controls,snapshot,clear\}\)/,
+    'Dungeon Fire is registered with the generated Harlyao ruin composer');
+  assert(mechanismCode.includes('registerFireTarget(record,brazier=>') &&
+    mechanismCode.includes('brazier.cleansed=window.DevRandomRuinLichThemes?.clearPlasmRadius?.(point.x,point.z,brazier.radius)||0;') &&
+    !mechanismCode.includes('brazer=>'),
+    'Kanthic cleansing callback consistently uses its brazier record');
+  assert(mechanismCode.includes('mesh.userData.projectileCoverHeightTiles=height') &&
+    mechanismCode.includes('mesh.userData.projectileCoverHalfXTiles=halfX') &&
+    mechanismCode.includes('delete mesh.userData.projectileCoverHeightTiles') &&
+    mechanismCode.includes('NearbyVolumeCollision?.invalidate?.()') &&
+    mechanismCode.includes('projectileCoverBottomOffsetTiles=-height*.5') &&
+    mechanismCode.includes('world.iceScanTries<6') &&
+    mechanismCode.includes('DungeonDoorIceCoverage?.setGrowth?.(wall.icePlacement,1-t)'),
+    'Dynamic door ice preserves projectile/occupancy blocking and reverses generated growth during melting');
+  assert(mechanismCode.includes('buildNet(point,world.ceilingY,index)') &&
+    mechanismCode.includes('buildIcicle(point,Number(context.ceilingY)||point.y+3.15,index)') &&
+    mechanismCode.includes('buildThemeMechanisms(kit,context)'),
+    'nets are shared across Harlyao themes and icicle payloads are added to Tothal ruins');
+  assert(mechanismCode.includes('releaseBurdenDownward?.(record.burden,cause)') &&
+    burdenCode.includes('function updateBurdenFalls(dt)') &&
+    burdenCode.includes("resolveDownwardImpact(burden,state.cause+'-ground-impact',state.groundY)"),
+    'ceiling payloads drop vertically through the shared Burden impact resolver');
+  assert(themeCode.includes('function clearPlasmRadius(') &&
+    themeCode.includes('clearPlasmRadius,') &&
+    themeCode.includes('room.plasm.delete(key)'),
+    'Kanthic cleansing removes live plasm tiles and rebuilds affected surfaces');
+  assert(burdenCode.includes('BURDEN_FACTORIES') &&
+    burdenCode.includes('BURDEN_IMPACT_HANDLERS') &&
+    burdenCode.includes('registerBurdenFactory,registerBurdenImpactHandler'),
+    'ceiling mechanisms support future modular Burden factories and impact handlers');
+  assert(weaponVfxCode.includes('heldVisualForItem: directHeldVisual') &&
+    weaponVfxCode.includes('sourceSpriteForWeapon,'),
+    'the charged fire uses production player-held plane and assembled modular source exports');
+  assert(rangedCode.includes('window.DungeonFire?.updateHeldVisual?.(dt)'),
+    'the regular ranged frame must animate the already-armed held weapon before firing');
+  const heldOverlayCode = fs.readFileSync(path.join(root, 'docs/js/held-object-render-order.js'), 'utf8'); // Confirms every world-up particle stays inside the shared weapon x-ray replay.
+  assert(heldOverlayCode.includes('hobunjiDungeonFireVfxPadding') &&
+    /held-object-render-order\.js\?v=[A-Za-z0-9_-]+/.test(fs.readFileSync(path.join(root, 'docs/js/tool-icon-render.js'), 'utf8')), // Any token: scripts/check-cache-busts.js moves it whenever the module changes, so pinning one value breaks on every later edit.
+    'the authored flame padding is supported and the dynamic loader still carries a cache token');
+  assert(rangedCode.includes('const dungeonFire = window.DungeonFire?.consumeNextProjectile?.() === true;') &&
+    rangedCode.includes('shotOptions?.dungeonFire === true && i > 0'),
+    'only one player projectile in a volley consumes the one-shot fire charge');
+
+  console.log('ok   shared Dungeon Fire anchors, contact, one-shot state and mechanism contracts');
+}
+
+main().catch(error => { console.error(error); process.exitCode = 1; });

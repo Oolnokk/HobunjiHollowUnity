@@ -21,6 +21,8 @@
 (() => {
   "use strict";
 
+  const DEFAULT_ATTACK_POWER = 12; // Neutral outgoing status potency for attacks without an authored Attack Power stat; never inherited from Health damage.
+
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
   const round1 = value => Math.round(value * 10) / 10;
   const nowMs = () => performance.now();
@@ -108,6 +110,11 @@
       name: "Congealed Health", resource: "health", extend: "zero", priority: 50, recovers: false, reducesEffectiveMax: true,
       family: "damage", tags: ["physical", "blood"],
       desc: "Temporarily lowers effective Health max without reducing it below 1, then recovers its own points every tick."
+    },
+    rentHealth: {
+      name: "Rent Health", resource: "health", extend: "zero", priority: 57, recovers: false, reducesEffectiveMax: true,
+      family: "damage", tags: ["wyrm", "sacred-cleansable"],
+      desc: "Rended life permanently reserves maximum Health until the bearer enters sacred ground (such as a Root Totem or the Life Temple)."
     },
     infectedStamina: {
       name: "Infected Stamina", resource: "stamina", extend: "zero", priority: 65, recovers: true, punishedAction: "staminaSpend",
@@ -245,6 +252,11 @@
       name: "Inhibited", maxStacks: 5, minModifier: 0.2,
       modifiers: Object.freeze({ healingReceived: 0.90 }),
       desc: "Receives less Health recovery per stack."
+    }),
+    knockdown: Object.freeze({
+      name: "Knockdown", maxStacks: 1, durationStacksInstead: true,
+      modifiers: Object.freeze({}),
+      desc: "Drops prone in the full break-throw animation. Further applications extend time instead of stacks; Footing stays unchanged."
     })
   });
 
@@ -280,36 +292,36 @@
   }
 
   function applyTimedDebuff(entity, id, durationS, options = {}) {
-    const def = TIMED_DEBUFFS[id]; // Registry entry supplies stack cap, authored per-stack percentages, and safety clamps.
-    const duration = Math.max(0, Number(durationS) || 0); // Used to refresh the lifetime of the complete same-name stack.
+    const def = TIMED_DEBUFFS[id]; // Registry controls normal stack-bearing effects and duration-only knockdown.
+    const duration = Math.max(0, Number(durationS) || 0); // Base seconds contributed by each application or stack-granting perk.
     if (!entity || !def || !(duration > 0)) return null;
-    const appliedAtMs = nowMs(); // Shared monotonic combat clock used to make the effect save-agnostic and immune to wall-clock changes.
+    if (id === 'knockdown' && (!(Number(entity.health) > 0) || entity._downed)) return null;
+    const incomingPower = Math.max(0, Number.isFinite(Number(options.power)) ? Number(options.power) : 1); // For knockdown, mastery power scales duration.
+    const durationOnly = def.durationStacksInstead === true; // Repeated knockdown applies additional seconds, not increased severity.
+    if (durationOnly && !(incomingPower > 0)) return null;
+    const appliedAtMs = nowMs(); // Statuses use one monotonic runtime clock.
     cleanupTimedDebuffs(entity, appliedAtMs);
-    const store = timedDebuffStore(entity, true); // Runtime-only storage shared by combat/resource/movement consumers.
-    const previous = store[id]; // Existing active same-name entry contributes its stack count and strongest power.
-    const addedStacks = Math.max(1, Math.floor(Number(options.stacks) || 1)); // One successful application adds one stack unless an authored caller explicitly adds more.
-    const maxStacks = Math.max(1, Math.floor(Number(def.maxStacks) || 1)); // Hard cap keeps percentage debuffs readable and prevents pathological movement/timing values.
-    const stacks = Math.min(maxStacks, Math.max(0, Number(previous?.stacks) || 0) + addedStacks); // Same-name stacks add while the duration refreshes.
-    const incomingPower = Math.max(0, Number.isFinite(Number(options.power)) ? Number(options.power) : 1); // Current application strength after Immundanity/mastery scaling.
-    const power = Math.max(incomingPower, Number(previous?.power) || 0); // A weaker refresh never downgrades already-earned stacks.
+    const store = timedDebuffStore(entity, true); // Existing runtime-only status store.
+    const previous = store[id]; // Captures active remaining duration or normal stacks.
+    const addedStacks = Math.max(1, Math.floor(Number(options.stacks) || 1)); // Stack-granting perks count as extra duration units for knockdown.
+    const maxStacks = Math.max(1, Math.floor(Number(def.maxStacks) || 1)); // Normal stack cap; knockdown displays just one.
+    const stacks = durationOnly ? 1 : Math.min(maxStacks, Math.max(0, Number(previous?.stacks) || 0) + addedStacks);
+    const power = durationOnly ? 1 : Math.max(incomingPower, Number(previous?.power) || 0); // A weaker refresh never downgrades normal debuffs.
     const modifiers = Object.fromEntries(Object.entries(def.modifiers || {}).map(([key, value]) => [
       key,
       scaledTimedDebuffModifier(value, power, stacks, def.minModifier, def.maxModifier),
-    ])); // Materialized current percentages let every runtime consumer stay a cheap lookup.
-    const expiresAtMs = Math.max(Number(previous?.expiresAtMs) || 0, appliedAtMs + duration * 1000); // Every added stack refreshes the full authored window.
+    ])); // Every runtime consumer can read cheap materialized modifiers.
+    const expiresAtMs = durationOnly
+      ? Math.max(appliedAtMs, Number(previous?.expiresAtMs) || 0) + duration * addedStacks * incomingPower * 1000
+      : Math.max(Number(previous?.expiresAtMs) || 0, appliedAtMs + duration * 1000); // Existing named debuffs still refresh their shared window.
     const entry = {
-      id,
-      name: def.name,
-      appliedAtMs,
-      expiresAtMs,
-      durationS: Math.max(duration, Number(previous?.durationS) || 0),
-      power,
-      stacks,
-      maxStacks,
-      modifiers,
+      id, name: def.name, appliedAtMs, expiresAtMs,
+      durationS: durationOnly ? (expiresAtMs - appliedAtMs) / 1000 : Math.max(duration, Number(previous?.durationS) || 0),
+      power, stacks, maxStacks, modifiers,
       source: options.source || previous?.source || null,
     };
     store[id] = entry;
+    if (id === 'knockdown' && !previous) window.HobunjiKnockdown?.enter?.(entity, options); // First application alone throws, cancels, and enters faux-ragdoll.
     return { ...entry, remainingS: Math.max(0, (expiresAtMs - appliedAtMs) / 1000) };
   }
 
@@ -328,6 +340,19 @@
     return !!timedDebuffStore(entity)?.[id];
   }
 
+  function clearTimedDebuff(entity, id) {
+    const store = timedDebuffStore(entity); // Respawn cleanup avoids carrying one life\'s knockdown into the next.
+    if (!store || !Object.prototype.hasOwnProperty.call(store, id)) return false;
+    delete store[id];
+    cleanupTimedDebuffs(entity);
+    return true;
+  }
+
+  function getProneAttackMultiplier(entity) {
+    if (!entity?.prone) return 1;
+    return entity._temporaryKnockdownProne === true ? 1.75 : 2.5; // Footing-break prone stays stronger while Footing refills.
+  }
+
   function timedDebuffModifier(entity, key) {
     const store = timedDebuffStore(entity); // Fast no-status path used by per-frame movement/combat loops.
     if (!store) return 1;
@@ -342,9 +367,36 @@
     return multiplier;
   }
 
+  // The natural recovery scalars are shared by base and late-installed status
+  // modules; DoTs deliberately retain their original damage/tick semantics.
+  const PASSIVE_RECOVERY_SCALES = Object.freeze({
+    bruisedHealth: .25, corrodedHealth: .25,
+    woundedStamina: .25, infectedStamina: .25,
+    frostbittenStamina: .25, shatteredStamina: .25,
+    scentMarkedHealth: .25, drunkenHealth: .25,
+    congealedHealth: .8, woundedHealth: .8,
+    windedStamina: .8, drunkenFooting: .8,
+    shamblingFooting: .8, // Immutable; it cannot naturally recover.
+  });
+  const getAfflictionNaturalRecoveryScale = id => PASSIVE_RECOVERY_SCALES[id] ?? 1;
+  const recoveryRemainders = new WeakMap();
+  function recoverAfflictionNaturally(entity, id, amount) {
+    if (!(amount > 0) || !entity || !(getAffliction(entity, id) > 0)) return 0;
+    let balances = recoveryRemainders.get(entity);
+    if (!balances) { balances = new Map(); recoveryRemainders.set(entity, balances); }
+    const total = (balances.get(id) || 0) + amount;
+    const steps = Math.floor(total * 10 + 1e-7);
+    if (!steps) { balances.set(id, total); return 0; }
+    balances.set(id, Math.max(0, total - steps / 10));
+    const actual = (window.ResourceSystem?.removeAffliction || removeAffliction)(entity, id, steps / 10);
+    if (!(getAffliction(entity, id) > 0)) balances.delete(id);
+    return actual;
+  }
   const RECOVERING_AFFLICTIONS = Object.entries(AFFLICTIONS)
     .filter(([id, def]) => def.recovers && id !== "bleedingHealth" && id !== "poisonedHealth" && id !== "congealedHealth")
-    .map(([id]) => id); // Avoids allocating and filtering the full affliction entry list on every entity maintenance tick.
+    .map(([id]) => id);
+  // Wounded Health is registered later by amphibious-fishing.js.
+  RECOVERING_AFFLICTIONS.push('woundedHealth');
 
   // Baseline afflictions a creature's plain attackTag applies (see game.js's
   // CREATURE_DB attackTag field — gar-wolves 'sharp', dabinggi-hounds
@@ -413,6 +465,7 @@
     // clears it. staggered: the shared lockout combat-core.js's
     // isStaggered/beginStagger read to block starting new staged actions.
     if (entity.prone === undefined) entity.prone = false;
+    entity._temporaryKnockdownProne = false; // Spawn/profile initialization resets session-only prone-source metadata.
     entity.staggered = { active: false, direction: null, endsAt: 0, ...(entity.staggered || {}) };
     return entity;
   }
@@ -479,6 +532,7 @@
     const family = AFFLICTIONS[id]?.family; // Used to apply Thickblood once at the central buildup path.
     const player = window.Combat?.deps?.player; // Used to restrict the player's active potion modifier to the player.
     if (family === "damage" && entity === player) amount *= window.AlchemySystem?.getIncomingDamageAfflictionMultiplier?.() || 1;
+    if (entity === player && !AFFLICTIONS[id]?.immutable && ['damage', 'control', 'offensiveDebuff', 'defensiveDebuff'].includes(family)) amount *= statModifier(entity, 'incomingAffliction'); // Venomous Blood magnifies harmful buildup only, never enhancements or immutable Shambling Footing.
     const before = getAffliction(entity, id);
     setAffliction(entity, id, before + amount);
     const added = round1(getAffliction(entity, id) - before);
@@ -496,6 +550,7 @@
 
   function removeAffliction(entity, id, amount) {
     if (!(amount > 0)) return 0;
+    if (id === 'rentHealth' && !window.HobunjiSacredGround?.contains?.(entity)) return 0; // Generic cleanses and passive recovery cannot remove a sacred-only wound.
     const before = getAffliction(entity, id);
     setAffliction(entity, id, before - amount);
     return round1(before - getAffliction(entity, id));
@@ -505,7 +560,7 @@
     const requested = Math.max(0, Number(amount) || 0); // Requested Bleeding Health conversion shown in Quick Attack diagnostics.
     const available = getAffliction(entity, "bleedingHealth"); // Existing buildup is the only legal source; Bleedout never invents Bleeding.
     const consumed = removeAffliction(entity, "bleedingHealth", Math.min(requested, available)); // Exact buildup removed before its normal gradual tick can resolve it.
-    const damage = consumed > 0 ? applyHealthAfflictionDamage(entity, consumed) : 0; // Realizes consumed Bleeding immediately through the same enhanced-Health-aware damage path as normal Bleeding ticks.
+    const damage = consumed > 0 ? applyHealthAfflictionDamage(entity, consumed, 'bleedingHealth') : 0; // Realizes consumed Bleeding immediately through the same enhanced-Health-aware damage path as normal Bleeding ticks.
     return { requested: round1(requested), available: round1(available), consumed: round1(consumed), damage: round1(damage), source: options.source || null };
   }
 
@@ -581,7 +636,8 @@
     if (key === "stamina") return clamp((entity.maxStamina || 0) * staminaMul - getAffliction(entity, "windedStamina"), 0, (entity.maxStamina || 0) * staminaMul);
     if (key === "health") {
       const fullHealthMax = Math.max(0, (entity.maxHealth || 0) * healthMul); // Used to keep capacity afflictions nonlethal without inventing Health on entities whose authored maximum is zero.
-      const afflictedHealthMax = clamp(fullHealthMax - getAffliction(entity, "congealedHealth"), 0, fullHealthMax); // Used as the raw Congealed-Health-reduced capacity before the living-target floor.
+      const rentHealth = Math.max(0, getAffliction(entity, "rentHealth")); // Persistent Wyrm-witch capacity loss; cleared only by shared sacred-ground detection.
+      const afflictedHealthMax = clamp(fullHealthMax - getAffliction(entity, "congealedHealth") - rentHealth, 0, fullHealthMax); // Used as the raw Congealed-Health-reduced capacity before the living-target floor.
       return fullHealthMax > 0 ? Math.max(Math.min(1, fullHealthMax), afflictedHealthMax) : 0;
     }
     if (key === "footing") return getProneRecoveryFootingTarget(entity); // Standing usable max and prone recovery target share the same permanent Shambling reservation.
@@ -636,20 +692,25 @@
     const before = Number(entity.health) || 0; // Used to keep resource-tick recovery from resurrecting dead actors or rounding tiny living Health to zero.
     const effectiveMax = getLiveEffectiveHealthMax(entity); // Used so recovery and cap maintenance honor every installed maximum-Health reducer.
     const livingFloor = Math.min(before, effectiveMax); // Used to allow a lowered max-Health cap to reduce current Health while never reducing it further merely because recovery is rounded to tenths.
-    const recoveryAmount = Math.max(0, Number(amount) || 0) * timedDebuffModifier(entity, "healingReceived"); // Inhibited scales recovery percentage without altering Health-affliction state.
+    const lowHealthThreshold = Math.max(0, getLiveEffectiveHealthMax(entity)) * 0.35; // Berserker's Bargain tests current Health before healing, preventing a potion from dodging its penalty when it crosses the threshold.
+    const lowHealthHealMultiplier = before < lowHealthThreshold ? statModifier(entity, 'lowHealthHealing') : 1; // Multiplies the existing Inhibited healing penalty without changing Health capacity.
+    const recoveryAmount = Math.max(0, Number(amount) || 0) * timedDebuffModifier(entity, "healingReceived") * lowHealthHealMultiplier; // Inhibited scales recovery percentage without altering Health-affliction state.
     const target = clamp(before + recoveryAmount, 0, effectiveMax); // Used as the unrounded recovery target before the living floor is reapplied.
     entity.health = clamp(round1(target), livingFloor, effectiveMax);
     return round1(entity.health - before);
   }
 
-  function applyHealthAfflictionDamage(entity, amount) {
+  function applyHealthAfflictionDamage(entity, amount, cause = 'affliction') {
     if (!(amount > 0) || !(entity?.health > 0)) return 0;
-    const enhanced = resolveEnhancedResourceTransaction(entity, "health", amount, { kind: "damage", source: "afflictionTick" }); // Enhanced Health absorbs DoT through the same transaction path as direct damage.
+    const enhanced = resolveEnhancedResourceTransaction(entity, "health", amount * statModifier(entity, 'incomingHealthDamage'), { kind: "damage", source: "afflictionTick" }); // Glass Fang / False Courage change actual DoT Health loss without creating extra affliction buildup. // Enhanced Health absorbs DoT through the same transaction path as direct damage.
     const remaining = enhanced.ordinaryRemaining;
     if (!(remaining > 0)) return 0;
     const before = Number(entity.health) || 0; // Used to report actual Health lost when an already-applied DoT buildup ticks.
     const effectiveMax = getLiveEffectiveHealthMax(entity); // Used only as the current upper cap; DoT damage itself remains fully lethal down to zero.
     entity.health = round1(clamp(before - remaining, 0, effectiveMax));
+    // Only the transaction that actually exhausted ordinary Health owns the death visual.
+    // A second DoT later in the same tick must not overwrite the first lethal cause.
+    if (before > 0 && entity.health <= 0) entity._lethalDamageCause = cause;
     return round1(before - entity.health);
   }
 
@@ -837,6 +898,15 @@
     entity.lastAttackAttemptAt = nowMs();
     amount *= timedDebuffModifier(entity, "staminaCost"); // Taxed raises the price of the action itself without altering the Stamina resource/affliction bands.
     if (entity === window.Combat?.deps?.player) {
+      const actionKind = String(transaction?.actionKind || ''); // Structured action type is authoritative when callers provide one.
+      const label = String(reason || ''); // Legacy combat actions that don't yet supply a type still retain their costs.
+      const dodge = actionKind === 'combatDodge' || /\bdodge\b/i.test(label); // Fractured Guard taxes dodges, not movement or weapon attacks.
+      const attacking = !dodge && (/^(combatCombo|combatQuickAttack|offensiveHeldCharge|offensiveHeldFlurry|rangedWeaponLoad|rangedWeaponFire|combatWeaponAttack)$/.test(actionKind) || (!actionKind && /attack|swing|strike|breaker|flurry|quick|jab|stab|shot|reload|heavy/i.test(label)));
+      const heavy = transaction?.heavy === true || (actionKind === 'offensiveHeldCharge' && transaction?.abilityId === 'chargedBreaker') || (actionKind === 'offensiveHeldFlurry' && transaction?.abilityId === 'acceleratingFlurry'); // Heavy melee abilities pay Lead Knuckles tax; a charged thrown/ranged projectile is not a knuckle attack.
+      if (dodge) amount *= statModifier(entity, 'dodgeStaminaCost');
+      if (attacking) amount *= statModifier(entity, 'attackStaminaCost') * (heavy ? statModifier(entity, 'heavyAttackStaminaCost') : 1);
+    }
+    if (entity === window.Combat?.deps?.player) {
       amount *= window.AlchemySystem?.getStaminaSpendMultiplier?.() || 1;
       amount *= 1 - Math.min(0.6, (window.PerkSystem?.rank('combat', 'reduceStaminaUse') || 0) * 0.08); // Reduce Stamina Use perk.
     }
@@ -874,7 +944,7 @@
   function spendFooting(entity, amount, reason = "hit") {
     if (entity.prone) return 0;
     if (!(amount > 0) || !Number.isFinite(entity.footing)) return 0;
-    amount *= timedDebuffModifier(entity, "footingDamageTaken"); // Brittle amplifies percentage Footing loss without creating or consuming any Footing affliction.
+    amount *= timedDebuffModifier(entity, "footingDamageTaken") * statModifier(entity, 'incomingFootingDamage'); // Double-edged balance trinkets adjust only received Footing damage, before existing resistance and enhanced Footing.
     if (entity === window.Combat?.deps?.player) amount *= 1 - Math.min(0.6, (window.PerkSystem?.rank('combat', 'increaseFootingResistance') || 0) * 0.08); // Increase Footing Resistance perk.
     const enhanced = resolveEnhancedResourceTransaction(entity, "footing", amount, { kind: "loss", reason }); // Resolute Footing absorbs at its authored 3:1 effective value.
     const ordinaryLoss = enhanced.ordinaryRemaining;
@@ -924,6 +994,11 @@
   // for the heavy-consumption rule above and any caller-side flavor (hit
   // SFX, UI labels) — it no longer implies any specific affliction. Returns
   // the actual Health lost.
+  function attackPowerForAttack(opts = {}) {
+    const raw = Number(opts.attackPower ?? opts.attacker?.def?.attackPower ?? opts.attacker?.def?.weaponShapeStats?.attackPower ?? (opts.attacker === window.Combat?.deps?.player ? window.WeaponShapeStats?.current?.().attackPower : null) ?? DEFAULT_ATTACK_POWER); // Player shape, NPC shape, or ranged weapon declares offensive status strength.
+    return Number.isFinite(raw) ? Math.max(0, Math.min(500, raw)) : DEFAULT_ATTACK_POWER; // Only gameplay's authored Attack Power affects on-hit buildup, not post-defense Health damage.
+  }
+
   function applyDamage(entity, amount, opts = {}) {
     if (!(amount > 0)) return 0;
     entity.lastAttackReceivedAt = nowMs();
@@ -937,18 +1012,35 @@
       }
     }
 
+    const buildupAttackPower = attackPowerForAttack(opts); // One shared source for ordinary and Drunken Health damage adapters.
+    finalDamage *= statModifier(entity, 'incomingHealthDamage'); // Player trade-offs apply to actual direct Health damage (including heavy Bruised consumption), not raw affliction chances.
     const enhanced = resolveEnhancedResourceTransaction(entity, "health", finalDamage, { kind: "damage", reason: opts.reason || "damage" }); // Resolute/Mirrored Health absorb before ordinary Health through the shared enhanced transaction.
     const before = entity.health;
     entity.health = round1(clamp(entity.health - enhanced.ordinaryRemaining, 0, getEffectiveMax(entity, "health")));
     const lost = round1(before - entity.health);
+    // Shared player/NPC damage path: retain the real lethal weapon type, not a
+    // currently-active bleed/poison buildup that may have come from an older hit.
+    if (before > 0 && entity.health <= 0) entity._lethalDamageCause = String(opts.tag || opts.damageType || opts.reason || 'impact').toLowerCase();
 
     if (opts.afflictionBonuses) {
       const FAMILY_PERK = { damage: 'empowerDamageEffects', control: 'empowerControlEffects', offensiveDebuff: 'empowerOffensiveDebuffs', defensiveDebuff: 'empowerDefensiveDebuffs' }; // Only the player currently inflicts afflictionBonuses (see damageCreature) — safe to apply these perks unconditionally.
       for (const [id, mul] of Object.entries(opts.afflictionBonuses)) {
-        if (!AFFLICTIONS[id] || !(mul > 0)) continue;
-        const perkId = FAMILY_PERK[AFFLICTIONS[id].family];
+        const definition = AFFLICTIONS[id]; // Ranged weapon archetypes may register a 40× buildup alias for B'shuakauitl darts.
+        if (!definition || !(mul > 0)) continue;
+        const actualId = definition.rangedAliasFor && AFFLICTIONS[definition.rangedAliasFor] ? definition.rangedAliasFor : id; // Never store an internal alias as a separate, unspendable status.
+        const aliasScale = actualId !== id ? Math.max(1, Number(definition.rangedScale) || 1) : 1; // Converts authored alias into the real affliction exactly once.
+        const perkId = FAMILY_PERK[AFFLICTIONS[actualId].family];
         const familyMul = perkId ? 1 + (window.PerkSystem?.rank('combat', perkId) || 0) * 0.12 : 1;
-        addAffliction(entity, id, finalDamage * mul * familyMul);
+        addAffliction(entity, actualId, buildupAttackPower * mul * aliasScale * familyMul); // Status buildup follows Attack Power, not the dart/club's Health damage.
+      }
+    }
+    if (opts.fixedAfflictionBuildup) {
+      // On-hit flat buildup belongs inside the authoritative damage transaction: invulnerability,
+      // blocked attacks and intercepted damage never call applyDamage. Unlike percentage-based
+      // afflictions, flat buildup cannot inherit prone vulnerability from the scaled hit amount.
+      const flatProneMul = opts.environmentalImpact === true ? 1 : getProneAttackMultiplier(entity); // Applies 1.75x/2.5x to authored flat attack effects only, never ambient collision damage.
+      for (const [id, amount] of Object.entries(opts.fixedAfflictionBuildup)) {
+        if (AFFLICTIONS[id] && Number.isFinite(amount) && amount > 0) addAffliction(entity, id, amount * flatProneMul);
       }
     }
 
@@ -980,7 +1072,7 @@
     const mul = rest.rested ? 2 : 1;
     const isPlayer = entity === window.Combat?.deps?.player; // Used to apply the consumer's central regeneration modifiers.
     const staminaRegenMultiplier = statModifier(entity, "staminaRegen") * timedDebuffModifier(entity, "staminaRegen"); // Used by both ordinary and Exhausted Stamina recovery so Sapped cannot be bypassed by entering black Stamina.
-    const staminaRate = (opts.staminaRegenPerSec ?? cfg.staminaRegenPerSec) * STAMINA_RECOVERY_MULTIPLIER * (isPlayer ? window.AlchemySystem?.getStaminaRegenMultiplier?.() || 1 : 1) * staminaRegenMultiplier;
+    const staminaRate = (opts.staminaRegenPerSec ?? cfg.staminaRegenPerSec) * STAMINA_RECOVERY_MULTIPLIER * (isPlayer ? window.AlchemySystem?.getStaminaRegenMultiplier?.() || 1 : 1) * staminaRegenMultiplier * statModifier(entity, 'ordinaryStaminaRegen'); // Death's Momentum reduces ordinary Stamina regen only, without unintentionally slowing black-Stamina debt recovery.
     const healthRecoveryBlocked = opts.healthRecoveryBlocked === true; // Used by the shared combat-recovery policy to suppress automatic current-Health gains without disabling the rest of ResourceSystem maintenance.
     const healthRate = healthRecoveryBlocked ? 0 : (opts.healthRegenPerSec ?? cfg.healthRegenPerSec) * (isPlayer ? window.AlchemySystem?.getHealthRegenMultiplier?.() || 1 : 1)
       * statModifier(entity, "healthRegen") * timedDebuffModifier(entity, "healthRegen") * (rest.rested ? 1 : statModifier(entity, "healthRegenInCombat")); // In-combat = not yet rested (the same quietSeconds rule that doubles out-of-combat regen).
@@ -989,7 +1081,7 @@
     if (entity.exhaustion.active) {
       entity.stamina = 0; // Black Stamina recovery owns the stamina channel until the debt is completely cleared.
       if (!staminaRegenBlocked) {
-        entity.exhaustion.blackStamina = round1(clamp(entity.exhaustion.blackStamina + cfg.exhaustionRegenPerSec * STAMINA_RECOVERY_MULTIPLIER * staminaRegenMultiplier * mul * dt, 0, 100));
+        entity.exhaustion.blackStamina = round1(clamp(entity.exhaustion.blackStamina + cfg.exhaustionRegenPerSec * STAMINA_RECOVERY_MULTIPLIER * staminaRegenMultiplier * statModifier(entity, 'exhaustionRecovery') * mul * dt, 0, 100));
       }
       clearExhaustedIfFull(entity);
     } else if (!staminaRegenBlocked) {
@@ -1011,6 +1103,7 @@
     resolvePoisonTick(entity, dt, cfg);
     resolveCongealedTick(entity, dt, rest, cfg, healthRecoveryBlocked);
     resolveGenericRecovery(entity, dt, rest, cfg);
+    if (getAffliction(entity, 'rentHealth') > 0) window.HobunjiSacredGround?.cleanseRentHealth?.(entity); // All gameplay healing reads the reusable location registry.
     const puked = maybeTriggerPuke(entity, dt, cfg);
 
     enforceCaps(entity);
@@ -1025,7 +1118,7 @@
     const amount = Math.min(bleed, cfg.bleedTickPerSec * dt);
     removeAffliction(entity, "bleedingHealth", amount);
     if (rest.rested && !healthRecoveryBlocked) applyHealthRecovery(entity, amount);
-    else applyHealthAfflictionDamage(entity, amount);
+    else applyHealthAfflictionDamage(entity, amount, 'bleedingHealth');
   }
 
   function resolveBurningTick(entity, dt, cfg) {
@@ -1033,7 +1126,7 @@
     if (burning <= 0) return;
     const amount = Math.min(burning, cfg.burnTickPerSec * dt);
     removeAffliction(entity, "burningHealth", amount);
-    applyHealthAfflictionDamage(entity, amount);
+    applyHealthAfflictionDamage(entity, amount, 'burningHealth');
   }
 
   function resolveKindlingTick(entity, dt) {
@@ -1042,7 +1135,7 @@
     const rate = Math.max(0, Number(window.EnchantmentSystem?.TUNING?.LIVING_FLAME_KINDLING_TICK_PER_SEC) || 0.75); // Living Flame owns the balance constant; ResourceSystem owns the actual Health-loss transaction.
     const amount = Math.min(kindling, rate * Math.max(0, Number(dt) || 0));
     removeAffliction(entity, "kindlingHealth", amount);
-    applyHealthAfflictionDamage(entity, amount);
+    applyHealthAfflictionDamage(entity, amount, 'kindlingHealth');
   }
 
   function resolvePoisonTick(entity, dt, cfg) {
@@ -1050,15 +1143,15 @@
     if (poison <= 0) return;
     const amount = Math.min(poison, cfg.poisonTickPerSec * dt);
     removeAffliction(entity, "poisonedHealth", amount);
-    applyHealthAfflictionDamage(entity, amount);
+    applyHealthAfflictionDamage(entity, amount, 'poisonedHealth');
   }
 
   function resolveCongealedTick(entity, dt, rest, cfg, healthRecoveryBlocked = false) {
     const congealed = getAffliction(entity, "congealedHealth");
     if (congealed <= 0) return;
-    const amount = Math.min(congealed, cfg.afflictionRecoveryPerSec * (rest.rested ? 2 : 1) * dt);
-    removeAffliction(entity, "congealedHealth", amount);
-    if (!healthRecoveryBlocked) applyHealthRecovery(entity, amount);
+    const amount = Math.min(congealed, cfg.afflictionRecoveryPerSec * getAfflictionNaturalRecoveryScale('congealedHealth') * statModifier(entity, 'afflictionRecovery') * (rest.rested ? 2 : 1) * dt);
+    const recovered = recoverAfflictionNaturally(entity, "congealedHealth", amount);
+    if (!healthRecoveryBlocked && recovered > 0) applyHealthRecovery(entity, recovered);
   }
 
   function getAfflictionRecoveryMultiplier(entity, id, rested = false) {
@@ -1071,14 +1164,14 @@
       const elapsedSinceActionMs = getPunishedActionElapsedMs(entity, def.punishedAction); // Used after prone ends to reward refraining from whichever action this affliction explicitly punishes.
       if (forcedAvoidanceRecovery || elapsedSinceActionMs >= ACTION_PUNISHMENT_RECOVERY_GRACE_MS) multiplier *= ACTION_PUNISHMENT_RECOVERY_MULTIPLIER;
     }
-    return multiplier;
+    return multiplier * getAfflictionNaturalRecoveryScale(id) * statModifier(entity, 'afflictionRecovery');
   }
 
   function resolveGenericRecovery(entity, dt, rest, cfg) {
     for (const id of RECOVERING_AFFLICTIONS) {
       if (getAffliction(entity, id) <= 0) continue;
       const recoveryMultiplier = getAfflictionRecoveryMultiplier(entity, id, rest.rested); // Keeps ordinary recovery unchanged while action-punishing afflictions accelerate after their punished action is avoided.
-      removeAffliction(entity, id, cfg.afflictionRecoveryPerSec * recoveryMultiplier * dt);
+      recoverAfflictionNaturally(entity, id, cfg.afflictionRecoveryPerSec * recoveryMultiplier * dt);
     }
   }
 
@@ -1134,6 +1227,8 @@
     applyTimedDebuff,
     getTimedDebuffs,
     hasTimedDebuff,
+    clearTimedDebuff,
+    getProneAttackMultiplier,
     timedDebuffModifier,
     registerStatModifierProvider,
     statModifier,
@@ -1159,6 +1254,8 @@
     applyHealthAfflictionDamage,
     getExhaustionSpeed,
     getAfflictionRecoveryMultiplier,
+    getAfflictionNaturalRecoveryScale,
+    recoverAfflictionNaturally,
     getPunishedActionElapsedMs,
     setStaminaRegenBlocked,
     isStaminaRegenBlocked,
@@ -1171,6 +1268,7 @@
     spendStamina,
     spendFooting,
     applyDamage,
+    attackPowerForAttack, // Shared by the Drunken Health adapter and mobile combat diagnostics.
     tick,
     getRestInfo,
     getRingFillFraction,

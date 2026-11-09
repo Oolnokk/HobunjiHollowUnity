@@ -41,6 +41,7 @@ function mesh(parent) {
 
 const scene = node('scene', { x: 0, z: 0 });
 scene.isScene = true;
+scene.getObjectByName = name => scene.children.find(child => child.name === name) || null; // Resolves the live cave-mouth group without a scene traversal.
 const otherScene = node('other', { x: 0, z: 0 });
 otherScene.isScene = true;
 
@@ -52,6 +53,7 @@ const angryDeer = { health: 10, def: { hostile: false }, _territorialBehavior: {
 const neutralHunter = { health: 10, isPorakanekiHunter: true, _porakanekiPlannerControlled: true, avatarRef: { group: entity({ x: 4, z: 0 }) } };
 const hostileHunter = { health: 10, isPorakanekiHunter: true, avatarRef: { group: entity({ x: 4.5, z: 0 }) } };
 const bandit = { health: 10, isBandit: true, avatarRef: { group: entity({ x: 5, z: 0 }) } };
+const denMother = { health: 10, isDenMother: true, def: { hostile: false }, avatarRef: { group: entity({ x: 5, z: 1 }) } }; // Guardian status overrides a normally peaceful species.
 const farWolf = { health: 10, def: { hostile: true }, avatarRef: { group: entity({ x: 40, z: 0 }) } };
 const offSceneWolf = { health: 10, def: { hostile: true }, avatarRef: { group: entity({ x: 1, z: 0 }, otherScene) } };
 const companion = { health: 10, isCompanion: true, avatarRef: { group: entity({ x: 1, z: 1 }) } };
@@ -59,6 +61,12 @@ const npc = { root: entity({ x: 1, z: 2 }) };
 const cow = { livestockId: 'live1', type: 'animal', avatarRef: { group: entity({ x: 2, z: 2 }) } };
 const chest = { promptRoot: entity({ x: 3, z: 3 }) };
 const bigBarn = { mesh: entity({ x: 4, z: 4 }) };
+// Real feature providers own these roots independently of worldObjects/getSources.
+const ore = entity({ x: 6, z: 1 }), separator = entity({ x: 6, z: 2 });
+const shattercask = entity({ x: 6, z: 3 }), nest = entity({ x: 3, z: 5 }), hive = entity({ x: 2, z: 5 });
+const mushroom = entity({ x: 7, z: 1 }), ruinEntrance = entity({ x: 8, z: 1 });
+const wildOre = entity({ x: 9, z: 2 }); // Existing tile-indexed wilderness/mine rock, not a cave-site module target.
+const farRock = entity({ x: 40, z: 0 }), staleRock = entity({ x: 3, z: 1 }, otherScene);
 bigBarn.mesh.userData.size = 8;
 const growing = { col: 1, row: 1, root: entity({ x: 1, z: 1.5 }), tile: { crop: 'garlink', cropAge: 1.5, water: 0.9, cropReady: false, stress: '' }, data: { label: 'garlink', growDays: 3, idealMin: 0.15, idealMax: 0.45 }, maxWater: 3 };
 const ripe = { col: 2, row: 1, root: entity({ x: 2, z: 1.5 }), tile: { crop: 'needlegrain', cropAge: 3, water: 0, cropReady: true, stress: 'too dry' }, data: { label: 'needlegrain', growDays: 3, idealMin: 0.2, idealMax: 0.5 }, maxWater: 3 };
@@ -86,6 +94,11 @@ const sandbox = {
 };
 sandbox.window.THREE = THREE;
 sandbox.window.WorldPopupText = { syncInfoLists: entries => { synced.push(entries); return entries.length; }, clearInfoLists: () => synced.push('cleared') };
+sandbox.window.CavernOreRocks = { senseTargets: () => [ore, separator, farRock, staleRock] };
+sandbox.window.Shattercasks = { senseTargets: () => [shattercask] };
+sandbox.window.DenNestSystem = { senseTargets: () => [nest] };
+sandbox.window.HoneyfuzzleHives = { senseTargets: () => [hive] };
+sandbox.window.CaveSiteSystem = { senseTargets: () => [mushroom, ruinEntrance, chest.promptRoot] }; // A registered chest must never glow twice.
 sandbox.window.FarmAnimals = {
   livestockStatus: ids => new Map(ids.map(id => [id, {
     name: 'Mabel', hearts: 3.2, heartMax: 5, hasTrough: true, fed: false, feedDays: 0, pettedToday: true,
@@ -104,8 +117,8 @@ PM.init({
   getActiveScene: () => scene,
   getPlayerTile: () => ({ x: 0, z: 0 }),
   getSources: () => ({
-    creatures: [wolf, deer, angryDeer, neutralHunter, hostileHunter, bandit, farWolf, offSceneWolf, { health: 0, def: { hostile: true }, avatarRef: { group: entity({ x: 1, z: 0 }) } }],
-    companions: [companion], npcs: [npc], livestock: [cow], corpses: [], interactables: [chest, bigBarn, cow], crops: [growing, ripe],
+    creatures: [wolf, deer, angryDeer, neutralHunter, hostileHunter, bandit, denMother, farWolf, offSceneWolf, { health: 0, def: { hostile: true }, avatarRef: { group: entity({ x: 1, z: 0 }) } }],
+    companions: [companion], npcs: [npc], livestock: [cow], corpses: [], interactables: [chest, bigBarn, cow], oreRocks: [wildOre], crops: [growing, ripe],
   }),
   onToggle: on => toggles.push(on),
 });
@@ -114,8 +127,13 @@ assert.strictEqual(PM.toggle(), true);
 assert.strictEqual(PM.speedMultiplier(), 0.5, 'movement is halved while active');
 PM.update(5000);
 const snap = PM.debugSnapshot();
-assert.deepStrictEqual(JSON.parse(JSON.stringify(snap.byCategory)), { hostile: 4, neutral: 2, friendly: 4, interact: 2 },
-  'wolf/angry deer/hostile hunter/bandit red; deer/neutral hunter yellow; companion/npc/cow/growing crop white; chest/ripe crop green; far, off-scene, dead and oversized excluded');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(snap.byCategory)), { hostile: 5, neutral: 2, friendly: 4, interact: 10 },
+  'hostiles including Den-Mother red; harmless animals yellow; creatures/crops white; live scene-owned interactables green; far/off-scene/dead/oversized excluded');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(snap.specialSources)),
+  { oreRocks: 4, shattercasks: 1, nests: 1, hives: 1, caveFeatures: 3, shaftLadders: 0 },
+  'mobile Sense Mode diagnostics show registered providers before range/scene filtering');
+assert.equal(snap.sources.oreRocks, 1, 'outdoor/mine ore rock roots flow through the game-owned source list');
+assert(snap.rejected.offScene >= 1 && snap.rejected.outOfRange >= 1, 'stale cave roots and out-of-range rocks are rejected');
 
 // Info lists: both crops and the cow, nothing else.
 const entries = Array.from(synced[synced.length - 1], e => ({ key: e.key, rows: JSON.parse(JSON.stringify(e.rows)) })); // vm-realm arrays → this realm (roots are circular, so only keys/rows).
@@ -136,6 +154,43 @@ assert.strictEqual(cowRows[0][0].text, 'Mabel');
 assert.deepStrictEqual(cowRows[1].map(s => s.text), ['Fed', 'No', '(trough empty)']);
 assert.deepStrictEqual(cowRows[2].map(s => s.text), ['Petted', 'Yes']);
 assert.deepStrictEqual(cowRows[3].map(s => s.text), ['Egg', 'in 2 days']);
+
+// Wilderness landmarks use independent discovery distances, share verdigris, and do
+// not extend the original 14-tile actor/interactable perception radius.
+const entrances = node('animalDenEntrances', { x: 0, z: 0 }, scene); // Existing cave renderer's scene-root group.
+const denAt24 = entity({ x: 24, z: 0 }, entrances); denAt24.userData.denCaveEntrance = true;
+const localeCave = entity({ x: 22, z: 1 }, entrances); localeCave.userData.localeCave = true;
+const denBeyond24 = entity({ x: 24.01, z: 0 }, entrances); denBeyond24.userData.denCaveEntrance = true;
+entity({ x: 2, z: 0 }, entrances); // Den furniture without a cave-mouth flag must not glow.
+const banditCampAt24 = entity({ x: 0, z: 26 }); // A peripheral tent beyond 24 still glows when the camp center reaches the boundary.
+const banditCampBeyond24 = entity({ x: 0, z: 23 }); // A nearby tent does not glow when its camp center is outside the boundary.
+const porakanekiCamp = entity({ x: 18, z: 0 });
+const omgurkuCamp = entity({ x: 21, z: 0 });
+const cliffDoorAt12 = entity({ x: 12, z: 0 });
+const cliffDoorBeyond12 = entity({ x: 12.01, z: 0 });
+const herbAt12 = entity({ x: 0, z: 12 });
+const leafTexture = {}; // Custom grass shader's alpha texture used to shape herb silhouettes.
+herbAt12.children[0].material.uniforms = { uGrassTex: { value: leafTexture } };
+herbAt12.children[0].material.alphaTest = 0.5;
+const herbBeyond12 = entity({ x: 0, z: 12.01 });
+const staleHerb = entity({ x: 2, z: 0 }, otherScene);
+sandbox.window.BanditCamps = { senseTargets: () => [
+  { root: banditCampAt24, anchor: { x: 0, z: 24 } },
+  { root: banditCampBeyond24, anchor: { x: 0, z: 24.01 } },
+] }; // The camp's center, not a prop's position, controls the whole landmark boundary.
+sandbox.window.PorakanekiCamps = { senseTargets: () => [porakanekiCamp] };
+sandbox.window.OmgurkuCamps = { senseTargets: () => [omgurkuCamp] };
+sandbox.window.PuzzleCaveEntrances = { senseTargets: () => [cliffDoorAt12, cliffDoorBeyond12] };
+sandbox.window.CliffRouteNetwork = { senseTargets: () => [herbAt12, herbBeyond12, staleHerb] };
+PM.update(7000);
+const landmarkSnap = PM.debugSnapshot();
+assert.equal(landmarkSnap.byCategory.landmark, 7, 'two cave mouths, three camps, one cliffdoor and one herb glow at their individual distance boundaries');
+assert.equal(landmarkSnap.landmarkSources.camps, 4, 'both near and far camp tents reach source collection before site-centered range filtering');
+assert.equal(landmarkSnap.byCategory.hostile, 5, 'ordinary creature range stays unchanged');
+assert.equal(landmarkSnap.byCategory.interact, 10, 'ordinary interactables retain their existing 14-tile radius');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(landmarkSnap.landmarkRanges)), { caves: 24, camps: 24, cliffDoors: 12, herbClusters: 12 });
+assert.deepStrictEqual(JSON.parse(JSON.stringify(landmarkSnap.landmarkSources)), { caves: 3, camps: 4, cliffDoors: 2, herbClusters: 3 }, 'provider counts appear in mobile debug before distance/off-scene rejection');
+assert.equal(PM.COLORS.landmark, '#6ab69e', 'all four landmark kinds share the bronze-verdigris mask material');
 
 // lerpHex endpoints.
 assert.strictEqual(PM.__test.lerpHex('#ffffff', '#dc143c', 1), '#dc143c');
@@ -175,6 +230,9 @@ const renderer = {
     const mask = renderScene === scene;
     if (mask) {
       assert.notStrictEqual(targetMesh.material, originalMaterial, 'mask pass draws with the category material');
+      assert.strictEqual(cliffDoorAt12.children[0].material.args[0].color, PM.COLORS.landmark, 'landmarks render in bronze verdigris through the actual mask pipeline');
+      assert.strictEqual(herbAt12.children[0].material.args[0].map, leafTexture, 'herb highlight uses the custom grass blade silhouette rather than an opaque rectangle');
+      assert.strictEqual(herbAt12.children[0].material.args[0].alphaTest, 0.5, 'herb highlight clips to the existing grass alpha threshold');
       assert.strictEqual(this.autoClear, false);
       if (this.failMask) throw new Error('mask failure');
     }
@@ -198,5 +256,49 @@ renderer.failMask = true;
 assert.throws(() => PM.renderOverlay(renderer, scene, camera), /mask failure/);
 assert.deepStrictEqual(renderer.passes, [], 'no composite of an incomplete mask');
 assertRestored('failed mask pass');
+
+// Farmwork uses the exact same mask/composite while keeping Perception speed/info semantics off.
+PM.setActive(false);
+let farmworkOpen = true, visualUpdates = 0;
+const farmPlot = entity({ x: 30, z: 30 }); // Full farm footprints are not limited to Perception's nearby radius.
+const farmVat = entity({ x: 3, z: 2 });
+sandbox.window.FarmworkUI = {
+  isOpen: () => farmworkOpen,
+  close: () => { farmworkOpen = false; },
+  updateVisuals: () => { visualUpdates++; },
+  glowTargets: () => [
+    { root: farmPlot, category: 'farmSelected' },
+    { root: farmVat, category: 'farmAssignable' },
+    { root: offSceneWolf.avatarRef.group, category: 'farmAssignable' },
+  ],
+};
+PM.update(10000);
+assert.equal(visualUpdates, 1);
+assert.equal(PM.isActive(), false);
+assert.equal(PM.speedMultiplier(), 1, 'Farmwork does not inherit Perception movement penalty');
+assert.equal(synced.at(-1), 'cleared', 'Farmwork does not add Perception information lists');
+assert.deepEqual(JSON.parse(JSON.stringify(PM.debugSnapshot().byCategory)), { farmSelected: 1, farmAssignable: 1 });
+assert.notEqual(PM.COLORS.farmSelected, PM.COLORS.friendly);
+assert.notEqual(PM.COLORS.farmAssignable, PM.COLORS.interact);
+renderer.failMask = false;
+renderer.passes = [];
+const farmMaterial = farmPlot.children[0].material;
+renderer.render = function(renderScene) {
+  if (renderScene === scene) {
+    assert.equal(farmPlot.children[0].material.args[0].color, PM.COLORS.farmSelected);
+    assert.equal(farmVat.children[0].material.args[0].color, PM.COLORS.farmAssignable);
+  }
+  this.passes.push(renderScene === scene ? 'mask' : 'composite');
+};
+PM.renderOverlay(renderer, scene, camera);
+assert.deepEqual(renderer.passes, ['mask', 'composite'], 'Farmwork renders through the existing glow pipeline');
+assert.equal(farmPlot.children[0].material, farmMaterial);
+PM.setActive(true);
+assert.equal(farmworkOpen, false, 'turning Perception on closes Farmwork first');
+PM.setActive(false);
+PM.update(11000);
+renderer.passes = [];
+PM.renderOverlay(renderer, scene, camera);
+assert.equal(renderer.passes.length, 0, 'closed modes leave no stale highlight pass');
 
 console.log('perception mode: ok');

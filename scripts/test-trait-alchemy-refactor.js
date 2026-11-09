@@ -45,7 +45,8 @@ for (const [key, definition] of reagentEntries) {
   assert.ok(A.nativeRecipeForReagent(key), `${key}'s native trio must be authored`);
   assert.ok(['waterEdge','treeRoots','cliffBase','rockEdge','shrubEdge'].includes(definition.habitat), `${key} must declare a terrain sub-habitat`);
 }
-assert.strictEqual(Object.keys(A.RECIPE_DEFS).length, 35, 'only the explicitly authored reactions should exist');
+assert.strictEqual(Object.keys(A.RECIPE_DEFS).length, 36, 'all 35 established reactions plus the authored Fire Flask must exist');
+assert.strictEqual(A.RECIPE_BY_TRAITS['senses.afflict.fire']?.id, 'fireFlask', 'Fire Flask must be brewable from the standard three-trait reaction system');
 assert.strictEqual(A.RECIPE_BY_TRAITS['senses.lighten.fire'], undefined, 'undefined permutations must remain invalid');
 
 function combinations(values, size, start = 0, prefix = [], out = []) {
@@ -227,6 +228,31 @@ assert.ok(R.getAffliction(player, 'poisonedHealth') > 0 && R.getAffliction(victi
 assert.equal(disposedFlasks, 1, 'the rendered flask must release its sprite at impact');
 assert.strictEqual(window.AlchemyFlasks.diagnostics().lastImpact.radiusTiles, A.RECIPE_DEFS.venomFlask.splashRadius, 'splash must use the recipe radius');
 assert.ok(flaskSfxCues.includes('flask_throw_release') && flaskSfxCues.includes('flask_impact'), 'release and impact must emit decoupled semantic SFX placeholders');
+// Landing-shadow cue: a fixed disc at the splash radius that fades in quickly
+// and contracts over the flight to half the player's shadow footprint.
+const shadowCfg = { radiusX:0.34, radiusZ:0.22, opacity:0.28 };
+class ShadowGeometry extends Geometry { constructor() { super(); const array = new Float32Array([0,0,0, 1,0,0, 0,0,1]); this.setAttribute('position', Object.assign(new BufferAttribute(array, 3), { getZ(i) { return this.array[i * 3 + 2]; }, setY(i, y) { this.array[i * 3 + 1] = y; } })); } }
+window.CharacterGroundShadow = { config:() => shadowCfg, surfaceOffset:() => 0.018, make:name => Object.assign(new Mesh(new ShadowGeometry(), new Material({ opacity:shadowCfg.opacity })), { name }) };
+window.AlchemyFlasks.beginAim();
+window.AlchemyFlasks.setTarget(128, 0);
+window.AlchemyFlasks.confirmThrow();
+window.AlchemyFlasks.update(.27);
+window.AlchemyFlasks.update(.02); // Crosses the release delay and starts the flight 0.01s in.
+const landingShadow = scene.children.find(mesh => mesh.name === 'flask_landing_shadow');
+const telegraphOpacity = Math.max(shadowCfg.opacity, 0.75); // The telegraph is never fainter than the readability floor, even if the character shadow is.
+assert.ok(landingShadow, 'a released flask must place a ground cue at its landing point');
+assert.ok(landingShadow.material.opacity > 0 && landingShadow.material.opacity < telegraphOpacity, 'cue fades in rather than popping');
+assert.ok(Math.abs(landingShadow.scale.x - A.RECIPE_DEFS.venomFlask.splashRadius) < 0.1, 'cue starts at the splash radius');
+assert.ok(Math.abs(landingShadow.position.x - 2) < 0.00001 && Math.abs(landingShadow.position.z) < 0.00001, 'cue is fixed on the landing point');
+window.AlchemyFlasks.update(.1);
+assert.ok(Math.abs(landingShadow.material.opacity - telegraphOpacity) < 0.00001 && telegraphOpacity > shadowCfg.opacity, 'cue reaches its raised telegraph opacity quickly');
+const shrinkingScale = landingShadow.scale.x;
+window.AlchemyFlasks.update(.05);
+assert.ok(landingShadow.scale.x < shrinkingScale, 'cue contracts during flight');
+window.AlchemyFlasks.update(1);
+assert.ok(!scene.children.includes(landingShadow), 'cue is removed at impact');
+assert.ok(Math.abs(landingShadow.scale.x - shadowCfg.radiusX * 0.5) < 0.00001 && Math.abs(landingShadow.scale.z - shadowCfg.radiusZ * 0.5) < 0.00001, 'cue ends at half the player shadow footprint');
+delete window.CharacterGroundShadow;
 const npcSource = { id:'flasker-test', x:-128, y:0, areaId:'farm' }; // Enemy source proves throwFromEntity does not depend on player inventory.
 const inventoryBeforeNpcThrow = inventory[flaskKey] || 0;
 const npcPoisonBefore = R.getAffliction(victim, 'poisonedHealth');

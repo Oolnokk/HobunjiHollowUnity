@@ -228,15 +228,15 @@
       for (const w of deps.npcWalkers) {
         if (node === w.root) {
           const appearance = w.rec?.appearance || {};
-          return { kind: 'npc', label: w.rec?.name || w.rec?.id || 'npc', speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: w.profile?.bodyColors || appearance.bodyColors, walker: w, root: w.root };
+          return { kind: 'npc', label: w.rec?.name || w.rec?.id || 'npc', speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: w.profile?.bodyColors || appearance.bodyColors, walker: w, perpState: w.perpState, root: w.root };
         }
       }
-      for (const c of deps.companionObjects) {
+      for (const c of new Set([...(deps.companionObjects || []), ...(deps.hostileObjects || []), ...(deps.animalObjects || [])])) {
         if (node === c.avatarRef?.group) {
           const sizeClass = c.genotype?.sizeClass || c.def?.defaultSizeClass || 'medium'; // Makes size mutations visible in copied mobile probe reports.
           const scaleLabel = `${Math.round((c.visualScaleX || 1) * 100)}%×${Math.round((c.visualScaleY || 1) * 100)}%`; // Confirms the authored class scale reached this live mesh.
           const renderedScaleLabel = `${Math.round((c.avatarRef.group.scale.z || 1) * 100)}%w×${Math.round((c.avatarRef.group.scale.y || 1) * 100)}%h`; // Reports the rotated billboard's actual visible width/height axes.
-          return { kind: 'creature', label: `${c.creatureKey || 'creature'}${c.stableRole ? ` (${c.stableRole})` : ''} · ${sizeClass} configured ${scaleLabel} · rendered ${renderedScaleLabel}`, speciesId: c.creatureKey, gender: null, bodyColors: c.genotype?.base ? { A: c.genotype.base.color ? { hex: c.genotype.base.color } : null } : null, root: c.avatarRef.group };
+          return { kind: 'creature', label: `${c.creatureKey || 'creature'}${c.stableRole ? ` (${c.stableRole})` : ''} · ${sizeClass} configured ${scaleLabel} · rendered ${renderedScaleLabel}`, speciesId: c.creatureKey, gender: null, bodyColors: c.genotype?.base ? { A: c.genotype.base.color ? { hex: c.genotype.base.color } : null } : null, perpState: c.perpState, root: c.avatarRef.group };
         }
       }
       node = node.parent;
@@ -687,6 +687,33 @@
     if (!debug) return null;
     const entries = debug.entries || [];
     const lines = [`Frame scheduler: registered=${debug.registered} enabled=${debug.enabled} scheduled=${debug.scheduled ? 1 : 0} frameDriver=${debug.hasFrameDriver ? 'attached' : 'MISSING'}${debug.frameDriverErrorCount ? ` driverErrors=${debug.frameDriverErrorCount} lastDriverError=${String(debug.frameDriverLastError || '').split('\n')[0]}` : ''}`];
+    if (debug.frameDriverLastError) lines.push(`Gameplay error trace: ${String(debug.frameDriverLastError).split('\n').slice(0, 6).join(' | ')}`);
+    const portraitLife = window.WorldPortraitLife?.snapshot?.(); // On-demand mobile report verifies the one-tile breathing limit and crowd render pressure.
+    if (portraitLife) {
+      lines.push(`World breathing: player + NPCs within ${portraitLife.config.farTiles} tile; NPC refreshes=${portraitLife.npcRefreshes} distance skips=${portraitLife.npcDistanceSkips} busy skips=${portraitLife.npcBudgetSkips} pending=${portraitLife.npcLifePending ? 1 : 0}`);
+      lines.push('Latest breathing change: one-tile NPC radius; one NPC portrait composite at a time; player animation remains independent.');
+    }
+    for (const walker of window._npcWalkers || []) {
+      if (walker._npcUpdateError) lines.push(`NPC update error (${walker.rec?.id || 'npc'}): ${walker._npcUpdateError.stack.split('\n').slice(0, 6).join(' | ')}`);
+    }
+    const tables = window.FurnitureTableSystem?.snapshot?.(); // On-demand, so table diagnostics never add per-frame serialization.
+    if (tables) lines.push(`Furniture tables: ${JSON.stringify(tables)}`);
+    const rugPlacement = window.__hobunjiFurnitureDebug?.furniturePlacementSnapshot?.(); // Mobile Pixel Probe exposes every current rug's size, stack level and pending move corner.
+    if (rugPlacement?.rugs?.length || rugPlacement?.rugFirstCorner) lines.push(`Rug placement: ${JSON.stringify({ firstCorner: rugPlacement.rugFirstCorner, movedId: rugPlacement.moveId, rugs: rugPlacement.rugs })}`);
+    const sleeping = window.BedLiePose?.debug?.(); // Check mattress contact height, flattened pose fraction, and how many front meshes actually received bed x-ray.
+    if (sleeping?.begins) lines.push(`Bed lie-down: ${JSON.stringify(sleeping)}`);
+    const npcBedPoses = window.BedLiePose?.npcDebug?.(window._npcWalkers || []) || []; // Real NPC mattress height, full-body blend and x-ray are inspectable on mobile.
+    if (npcBedPoses.length) lines.push(`NPC bed poses: ${JSON.stringify(npcBedPoses)}`);
+    const pairedDance = window.FestivalWheelDanceRuntime?.diagnostics?.(); // On-demand mobile report includes the latest repair, rig failures, camera mode and garment depth.
+    if (pairedDance) lines.push(`Paired dance: ${JSON.stringify(pairedDance)}`);
+    const npcPathing = window.NpcPathfinding?.debugSnapshot?.(); // Search/blocked-move counters help distinguish a stuck sleeper from a scheduling issue.
+    if (npcPathing) lines.push(`NPC pathfinding: ${JSON.stringify(npcPathing)}`);
+    const following = window.NpcFollowing?.snapshot?.(); // On-demand diagnostics keep mobile reports useful without adding per-frame serialization.
+    if (following) lines.push(`NPC company: ${JSON.stringify(following)}`);
+    const music = window.MusicMinigame?.diagnostics?.();
+    if (music) lines.push(`NPC music: ${JSON.stringify(music)}`);
+    const stoneAudio=window.RuinInteractionAudio?.debugSnapshot?.(); // The Debug tab exposes the latest recorded cue/pitch on mobile without a console.
+    if(stoneAudio)lines.push(`Ruin stone/fire audio: ${JSON.stringify(stoneAudio)}`);
     const erroring = entries.filter(entry => entry.errorCount > 0);
     if (erroring.length) {
       lines.push(`>>> Frame scheduler subscriber errors: ${erroring.map(entry => `${entry.id}(${entry.owner}) x${entry.errorCount}: ${String(entry.lastError || '').split('\n')[0]}`).join(' | ')}`);
@@ -957,6 +984,8 @@
 
     const lines = [];
     lines.push('Pixel Probe report');
+    const interiorLightingDebug = window.CloudForestFog?.getDebugState?.(); // Copies darkness and light-profile changes into the existing mobile report.
+    if (interiorLightingDebug) lines.push(`Interior lighting: darkness=${interiorLightingDebug.undergroundDarknessOverlayAlpha} lastMask=${interiorLightingDebug.lastInteriorDarknessDraw?.alpha ?? 'none'} activeFarmhouse=${interiorLightingDebug.lastInteriorDarknessDraw?.farmhouseSceneActive === true} radius=x${interiorLightingDebug.interiorLightRadiusMultiplier} falloff=${interiorLightingDebug.interiorLightFalloff} windows=${interiorLightingDebug.daylightWindowMasks?.sources || 0} daylight=${(interiorLightingDebug.daylightWindowMasks?.daylight ?? 0).toFixed(2)} stained-glass auras=${interiorLightingDebug.daylightWindowMasks?.colorAuras || 0}; outdoor lights=${interiorLightingDebug.outdoorLightVisibility?.drawn ?? 0}/${interiorLightingDebug.outdoorLightVisibility?.considered ?? 0} culled=${interiorLightingDebug.outdoorLightVisibility?.culled ?? 0} fading=${interiorLightingDebug.outdoorLightVisibility?.fading ?? 0}; ${interiorLightingDebug.latestChange}`); // Existing mobile Pixel Probe now reports real outdoor distance culling alongside interior mask diagnostics.
     const portraitSpeciesDebug = window.portraitSpeciesLoadSnapshot?.(); // Identifies incomplete data loads directly in copied mobile reports.
     if (portraitSpeciesDebug) lines.push('Portrait species loading: ' + JSON.stringify(portraitSpeciesDebug));
     const playerAppearanceDebug = window.__playerAvatarRefreshDebug?.(); // Shows saved versus rendered identity and the latest rebuild failure.
@@ -966,14 +995,24 @@
     const shingleSurfaces = window.HousePieceGen?.shingleSurfaceSnapshot?.(); // Copies roof-side UV recognition and the latest change for mobile debugging.
     if (shingleSurfaces) lines.push('Shingle surfaces: ' + JSON.stringify(shingleSurfaces));
     lines.push('Performance cleanup v1: unchanged frame cadence/targeting; reticle writes deduplicated; hand diagnostics on demand.');
+    try {
+      const nestDebug = window.DenNestSystem?.debugSnapshot?.(); // Makes missing records, empty saved clutches and baby build failures visible in the user's copied report.
+      lines.push('Den nests: ' + JSON.stringify(nestDebug || { missingRuntime: true }));
+      lines.push('Den locale: ' + JSON.stringify(window.DenLocaleRuntime?.debugSnapshot?.() || { missingRuntime: true }));
+    } catch (error) {
+      lines.push('Den nest diagnostics failed: ' + String(error?.message || error));
+    }
     const metalArmorDiagnostics = window.MetalArmorSystem?.diagnosticsText?.(); // Copyable on-phone proof of every equipped metal article's slot, alloy, Temper, verdigris, weight, and XP-hook readiness.
     if (metalArmorDiagnostics) lines.push(metalArmorDiagnostics);
+    if (window.OreRockTextures?.debugSnapshot) lines.push('Ore rock materials: ' + JSON.stringify(window.OreRockTextures.debugSnapshot())); // Copyable mobile proof of ore texture loading and fallback status.
     const mammakhbuurDebug = window.HobunjiMammakhbuurSpecies?.debugSnapshot?.(); // Copies the new species' size/placement and fallback contract on mobile.
     if (mammakhbuurDebug) lines.push('Mammakhbuur: ' + JSON.stringify(mammakhbuurDebug));
     const cutsceneDebug = window.AuthoredCutsceneRuntime?.debugSnapshot?.(); // Copies the active stage and latest runner fixes while a live scene is paused.
     if (cutsceneDebug) lines.push('Cutscene: ' + JSON.stringify(cutsceneDebug));
     const openingDebug = window.OpeningStoryCutscene?.debugSnapshot?.(); // Story phase and wilderness-gate status remain visible without a console.
     if (openingDebug) lines.push('Opening: ' + JSON.stringify(openingDebug));
+    const guildDebug = window.DelversGuild?.debugSnapshot?.(); // Mobile Pixel Probe exposes the membership gate, cutscene phase and key quest without DevTools.
+    if (guildDebug) lines.push('Delver\'s Guild: ' + JSON.stringify(guildDebug));
     const harlyaoSkeletonDebugLine = window.HobunjiHarlyaoSkeletonSpecies?.formatDebug?.(); // Keeps the NPC-only skeleton bridge's rig/extremity/cosmetic status copyable from the mobile Pixel Probe without DevTools.
     if (harlyaoSkeletonDebugLine) lines.push(harlyaoSkeletonDebugLine);
     const maoAoSkeletonDebugLine = window.HobunjiMaoAoSkeletonSpecies?.formatDebug?.(); // Same diagnostics for the catacomb Mao'ao Skeleton bridge.
@@ -1017,6 +1056,15 @@
     const burningVfxDebug = window.BurningAfflictionVfx?.debugSnapshot?.(); // Confirms authored furniture fire emitters are attached without requiring a console.
     if (burningVfxDebug) {
       lines.push(`Burning VFX: active=${burningVfxDebug.activeEntities || 0} template=${burningVfxDebug.templateReady ? 'ready' : (burningVfxDebug.loading ? 'loading' : 'missing')} last=${burningVfxDebug.lastEvent?.phase || '-'} entity=${burningVfxDebug.lastEvent?.entity || '-'}`);
+      for (const fire of burningVfxDebug.entities || []) lines.push(`  Fire ${fire.entity}: Burning=${fire.burning} Kindling=${fire.kindling} particles=${fire.visible == null ? '?' : (fire.visible ? 'visible' : 'hidden')}`);
+      if (burningVfxDebug.latestChange) lines.push(`  Latest change: ${burningVfxDebug.latestChange}`);
+    }
+    const dungeonFireDebug = window.DungeonFire?.debugSnapshot?.(); // Mobile-readable status for player-held charges and live world-upright projectile particles.
+    if (dungeonFireDebug) {
+      lines.push(`Dungeon Fire: armed=${dungeonFireDebug.armed ? 'yes' : 'no'} held=${dungeonFireDebug.heldFire ? dungeonFireDebug.heldWeaponKey : 'none'} source=${dungeonFireDebug.heldAnchorKind || '-'} projectiles=${dungeonFireDebug.activeVisuals} targets=${dungeonFireDebug.reactiveTargets}`);
+      if (dungeonFireDebug.armed || dungeonFireDebug.activeVisuals) {
+        lines.push(`  Palette: ${(dungeonFireDebug.fireStreams || []).map(stream => stream.color + ':' + stream.rate).join(', ')} | Last: ${dungeonFireDebug.lastEvent || '-'}`);
+      }
     }
     const tentDebug = window.BanditCamps?.tentInteractionDebug; // Identifies missing ray/focus/nearby state without requiring a console.
     if (tentDebug?.focus) lines.push(`Bandit tent focus: ${tentDebug.focus.result} nearby=${tentDebug.focus.nearby} ray=${tentDebug.focus.hasRay ? 1 : 0} api=${tentDebug.focus.hasFocusApi ? 1 : 0}`);
@@ -1051,8 +1099,11 @@
     if (controllerUiDebug) lines.push(`Controller UI cache: panels=${controllerUiDebug.knownPanels} active=${controllerUiDebug.stackDepth} top=${controllerUiDebug.panelId || 'none'} nest=${controllerUiDebug.groupDepth || 0}:${controllerUiDebug.groupId || 'root'} target=${controllerUiDebug.targetId || controllerUiDebug.targetText || 'none'}`);
     const gridDebug = window.GridTileAccessors?.debugSnapshot?.(); // Makes building-footprint cache effectiveness visible during movement without a console.
     if (gridDebug) lines.push(`Building footprint cache: builds=${gridDebug.buildingFootprintCacheBuilds} hits=${gridDebug.buildingFootprintCacheHits}`);
+    const farmhouseLightingDebug = window.FarmhouseFlatLighting?.debugSnapshot?.(); // Player farmhouse scene tagging and flat-overlay installation diagnostics for mobile testers.
+    if (farmhouseLightingDebug) lines.push(`Farmhouse lighting: installed=${farmhouseLightingDebug.installed} playerScenes=${farmhouseLightingDebug.playerFarmhouseSceneCount} overlay=${farmhouseLightingDebug.overlayLightingAuthority} activePlayerHouse=${activeScene?.userData?.hobunjiPlayerFarmhouseInterior === true}`);
     const heldRenderDebug = window.HeldObjectRenderOrder?.snapshot?.(); // Exposes the retained selective-x-ray render mode and pass counters on mobile.
-    if (heldRenderDebug) lines.push(`Held x-ray: mode=${heldRenderDebug.mode} ground=${heldRenderDebug.groundMeshes} held=${heldRenderDebug.heldMeshes} footWater=${heldRenderDebug.waterOccludedMeshes ?? '-'}/${heldRenderDebug.waterReplayMeshes ?? '-'}/${heldRenderDebug.waterReplays ?? '-'} stencil=${heldRenderDebug.stencilBits ?? '-'} skips=${heldRenderDebug.missingStencilFootReplaySkips ?? '-'} passes=${heldRenderDebug.baseWorldRenders}/${heldRenderDebug.selectiveOverlays}/${heldRenderDebug.nonGroundDepthReplays}/${heldRenderDebug.groundDepthRestores}`);
+    if (heldRenderDebug) lines.push(`Held x-ray: mode=${heldRenderDebug.mode} ground=${heldRenderDebug.groundMeshes} interiorFloor=${heldRenderDebug.interiorFloorMeshes ?? 0} cavernShell=${heldRenderDebug.topFaceGroundMeshes ?? 0} farmhouseFloor=${heldRenderDebug.farmhouseFloorMeshes ?? 0} held=${heldRenderDebug.heldMeshes} footWater=${heldRenderDebug.waterOccludedMeshes ?? '-'}/${heldRenderDebug.waterReplayMeshes ?? '-'}/${heldRenderDebug.waterReplays ?? '-'} stencil=${heldRenderDebug.stencilBits ?? '-'} skips=${heldRenderDebug.missingStencilFootReplaySkips ?? '-'} passes=${heldRenderDebug.baseWorldRenders}/${heldRenderDebug.selectiveOverlays}/${heldRenderDebug.nonGroundDepthReplays}/${heldRenderDebug.groundDepthRestores} shellXray=${heldRenderDebug.shellXrayPasses ?? 0}/${heldRenderDebug.shellXrayMeshes ?? 0} elevationGroups=${heldRenderDebug.elevationReplayGroups ?? 0} unknownElevation=${heldRenderDebug.unknownElevationMeshes ?? 0} elevationShaders=${heldRenderDebug.elevationShaderMaterials ?? 0}/${heldRenderDebug.elevationShaderFallbacks ?? 0} surfaceComposer=${heldRenderDebug.surfaceOcclusionComposer?.version ?? '-'}:${heldRenderDebug.surfaceOcclusionComposer?.consumers?.join(',') ?? '-'} waterDepthAlpha=${heldRenderDebug.surfaceOcclusionComposer?.waterDepthAlphaThreshold ?? '-'}`);
+    if (heldRenderDebug) lines.push(`Held replay budget: offscreen=${heldRenderDebug.baseOffscreenFiltered ?? '-'}/${heldRenderDebug.baseReplayCandidates ?? '-'} shellOffscreen=${heldRenderDebug.shellOffscreenFiltered ?? '-'}/${heldRenderDebug.shellReplayCandidates ?? '-'} elevationGroupScissors=${heldRenderDebug.groupScissors ?? '-'} fullscreenReasons=${heldRenderDebug.lastHeldFullscreenReason ?? '-'}/${heldRenderDebug.lastShellFullscreenReason ?? '-'} scissorCoverage=${heldRenderDebug.lastReplayScissorCoverage ?? '-'}`); // Mobile A/B proof that expensive outdoor depth passes are filtered and individually bounded.
     const waterFootLines = _pixelProbeWaterFootContactLines(activeScene, currentArea, playerMesh); // Used to distinguish real foot/water intersection from camera-perspective illusions on mobile.
     if (waterFootLines) lines.push(...waterFootLines);
     const controllerDebug = window.HOBUNJI_CONTROLLER_STATUS; // Published by game.js so controller ownership and raw browser mapping are copyable on mobile.
@@ -1085,11 +1136,14 @@
       const ready = combatSfxDebug.preloads.filter(entry => entry.readyState >= 2).length;
       const ageMs = lastCue ? Math.max(0, Math.round(performance.now() - lastCue.atMs)) : null;
       lines.push(`Combat SFX: preload ready=${ready}/${combatSfxDebug.preloads.length} last=${lastCue ? `${lastCue.key}/${ageMs}ms ago detail=${JSON.stringify(lastCue.detail)} preloaded=${lastCue.preloaded} readyState=${lastCue.readyState}` : 'none'}`);
+      const spatial = combatSfxDebug.spatial; // Copyable world-origin evidence for mobile testing at cliffs/ravines.
+      if (spatial) lines.push(`Combat origin: ${spatial.source} area=${spatial.area || '-'} horizontal=${Number(spatial.horizontalTiles).toFixed(1)} tiles vertical=${Number(spatial.verticalTiles).toFixed(1)} tiles 3D=${Number(spatial.distanceTiles).toFixed(1)} tiles gain=${spatial.gain} pan=${spatial.panX} HRTFxyz=${spatial.position3d ? `(${Object.values(spatial.position3d).map(v => Number(v).toFixed(2)).join(',')})` : 'none'}`);
+      lines.push(`Combat direction: backend=${combatSfxDebug.backend || 'unknown'} HRTF starts=${combatSfxDebug.spatialStarts || 0} native fallbacks=${combatSfxDebug.nativeFallbacks || 0} active HRTF=${combatSfxDebug.activeRoutes || 0} decoded=${combatSfxDebug.decoded || 0} decoding=${combatSfxDebug.decoding || 0} queued=${combatSfxDebug.queued || 0} decode errors=${combatSfxDebug.decodeFailures || 0} lastError=${combatSfxDebug.spatialError || '-'}`);
     }
     const chargedBreakerDebug = window.Combat?.chargedBreakerDebug?.snapshot?.(); // Used to verify visible pose charge and its derived lunge/control stats on mobile.
     if (chargedBreakerDebug) {
       const release = chargedBreakerDebug.lastRelease;
-      lines.push(`Charged Breaker: active=${chargedBreakerDebug.active ? 1 : 0} held=${Number(chargedBreakerDebug.heldSeconds || 0).toFixed(2)}s pose=${Math.round(Number(chargedBreakerDebug.poseCharge || 0) * 100)}% glowTier=${Number(chargedBreakerDebug.glowOverlayLevel || 0)} flare=${Number(chargedBreakerDebug.glowFlareTier || 0)}:${Math.round(Number(chargedBreakerDebug.glowFlare || 0) * 100)}%${release ? ` last=[pose ${Math.round(Number(release.poseCharge || 0) * 100)}% lunge ${(Number(release.lungePx || 0) / Math.max(1, Number(deps.TILE) || 1)).toFixed(2)}t cone ${Number(release.halfConeDeg || 0).toFixed(1)}° knockback ${Number(release.knockbackPxS || 0).toFixed(0)}px/s gravityResist ${Math.round(Number(release.pitchDistanceResistance || 0) * 100)}% directFlight ${Math.round(Number(release.directFlightStrength || 0) * 100)}%]` : ''}`);
+      lines.push(`Charged Breaker: active=${chargedBreakerDebug.active ? 1 : 0} regenLock=${chargedBreakerDebug.staminaRegenBlocked ? 1 : 0} cost=${Number(chargedBreakerDebug.staminaCostCommitted || 0).toFixed(2)}/${Number(chargedBreakerDebug.staminaCostTarget || 0).toFixed(2)} actual=${Number(chargedBreakerDebug.staminaCostActual || 0).toFixed(2)} held=${Number(chargedBreakerDebug.heldSeconds || 0).toFixed(2)}s pose=${Math.round(Number(chargedBreakerDebug.poseCharge || 0) * 100)}% glowTier=${Number(chargedBreakerDebug.glowOverlayLevel || 0)} flare=${Number(chargedBreakerDebug.glowFlareTier || 0)}:${Math.round(Number(chargedBreakerDebug.glowFlare || 0) * 100)}%${release ? ` last=[pose ${Math.round(Number(release.poseCharge || 0) * 100)}% lunge ${(Number(release.lungePx || 0) / Math.max(1, Number(deps.TILE) || 1)).toFixed(2)}t cone ${Number(release.halfConeDeg || 0).toFixed(1)}° knockback ${Number(release.knockbackPxS || 0).toFixed(0)}px/s gravityResist ${Math.round(Number(release.pitchDistanceResistance || 0) * 100)}% directFlight ${Math.round(Number(release.directFlightStrength || 0) * 100)}%]` : ''}`);
     }
     const flurryDebug = window.Combat?.flurryDebug?.snapshot?.(); // Used to verify the held Flurry glow ramp and strike count without developer tools.
     if (flurryDebug) {
@@ -1104,7 +1158,12 @@
     const furnitureCraftingDebug = window.CraftingPanel?.debugSnapshot?.(); // Copyable mobile evidence for material requirements and the world mastery gate.
     if (furnitureCraftingDebug) lines.push(`Furniture crafting: ${JSON.stringify({ latestChange: furnitureCraftingDebug.latestChange, recipes: furnitureCraftingDebug.recipes.length, advancedLoom: furnitureCraftingDebug.recipes.find(recipe => recipe.key === 'advancedLoomFurnitureBlueprint') })}`);
     const combatVoiceDebug = window.CombatVocalizations?.debugSnapshot?.(); // Reports retained winded NPCs after leaving an area.
-    if (combatVoiceDebug) lines.push(`Combat voices: tracked NPC breathers=${combatVoiceDebug.trackedNpcBreathers}; attack delay=${Number(combatVoiceDebug.attackStartDelayS || 0).toFixed(3)}s; queued inputs=${(combatVoiceDebug.queuedAttacks || []).join(',') || 'none'}`);
+    if (combatVoiceDebug) {
+      lines.push(`Combat voices: tracked NPC breathers=${combatVoiceDebug.trackedNpcBreathers}; attack delay=${Number(combatVoiceDebug.attackStartDelayS || 0).toFixed(3)}s; queued inputs=${(combatVoiceDebug.queuedAttacks || []).join(',') || 'none'}`);
+      lines.push(`Combat voice modulation: ${JSON.stringify({ latestChange: combatVoiceDebug.latestChange, modulation: combatVoiceDebug.modulation, breath: combatVoiceDebug.lastBreath, dodge: combatVoiceDebug.lastDodge, failure: combatVoiceDebug.failedPlayback })}`);
+      const vocalRenderer = window.AnimalVoiceIndependentPlayback?.debugSnapshot?.(); // Captures the real browser backend and last requested pitch without desktop devtools.
+      if (vocalRenderer) lines.push(`Vocal pitch renderer (last clip): ${JSON.stringify({ backend: vocalRenderer.backend, lastUrl: vocalRenderer.lastUrl, lastPitchSemitones: vocalRenderer.lastPitchSemitones, contextState: vocalRenderer.contextState })}`);
+    }
     const animalVoiceDebug = window.AnimalVocalizations?.debugSnapshot?.(); // Copyable proof of semantic intent routing on mobile.
     if (animalVoiceDebug) {
       const last = animalVoiceDebug.last;
@@ -1123,6 +1182,17 @@
     const climbSafety = window.ClimbSystem?.debug; // Used to diagnose mounted-climb rejection without desktop developer tools.
     if (climbSafety) {
       lines.push(`Climb safety: active=${climbSafety.playerClimbing} mount=${climbSafety.mountRideState} lastBlock=${climbSafety.lastBlockReason || 'none'}${climbSafety.lastBlockReason ? `/${climbSafety.lastBlockRideState}` : ''}${Number.isFinite(climbSafety.lastWallFacingAngle) ? ` wallFacing=${climbSafety.lastWallFacingSource || 'unknown'}:${(climbSafety.lastWallFacingAngle * 180 / Math.PI).toFixed(1)}°/${climbSafety.lastWallFacingCardinal || '?'}` : ''}`);
+    }
+    const crawl = window.CliffCrawlPresentation?.getDebug?.(); // Report live grip contact and hidden held-object count without desktop devtools.
+    if (crawl?.active || crawl?.error) lines.push(`Cliff crawl: route=${crawl.routeId ?? '-'} moving=${!!crawl.moving} handIK=${!!crawl.handRigOwned} footIK=${!!crawl.feetPosed} hiddenHeld=${crawl.hiddenHeldVisuals ?? 0} hook=${!!crawl.hookInstalled}${crawl.error ? ' error=' + crawl.error : ''}`);
+    const cliffRegistry = window.CliffElevatedSurfaces?.debugSnapshot?.(); // Scoped CellGrid3D + DynamicSurfaces status for mobile, no console required.
+    const cliffGraph = window.CliffRouteNetwork?.debugSnapshot?.(); // Surfaces and route proof must agree after terrain regeneration.
+    if (cliffRegistry?.areas?.length || cliffGraph?.areas?.length) {
+      const support = cliffRegistry?.areas?.[cliffRegistry.areas.length - 1];
+      const route = cliffGraph?.areas?.find?.(item => item.area === support?.area)
+        || cliffGraph?.areas?.[cliffGraph.areas.length - 1];
+      lines.push(`Cliff navigation: area=${support?.area || route?.area || '-'} handholds=${route?.routes ?? '?'} raised=${support?.balconies ?? route?.balconies ?? '?'} supports=${support?.supportRectangles ?? '?'} unreachablePlateaus=${route?.unreachablePlateaus ?? '?'} unreachableBalconies=${route?.unreachableBalconies ?? '?'} invalidHops=${route?.invalidHops ?? '?'} rejectedRoutes=${route?.rejectedRoutes ?? '?'} error=${cliffRegistry?.lastError || 'none'}`);
+      if (climbSafety?.balcony) lines.push(`Cliff player: shelf=${climbSafety.balcony} route=${climbSafety.handholdRoute ?? '-'} node=${climbSafety.handholdNode ?? '-'}`);
     }
     const creatureDeathDebug = window.CreatureDeath?.getDebug?.(); // Used to make interrupted lethal-hit recovery visible in copyable mobile probe reports.
     if (creatureDeathDebug?.lastRecovery) {
@@ -1321,9 +1391,33 @@
       }
       const owner = _pixelProbeOwnerInfo(o);
       if (owner) {
+        const facingDecision = owner.perpState?.pixelProbeDebug; // Tap-to-copy diagnostic exposes the live animal/NPC corrective priority on mobile.
+        if (facingDecision) lines.push(`     Facing priority: ${facingDecision.correctiveSource} side=${facingDecision.selectedSide} locked=${facingDecision.isLocked}; latest change: animals hold a priority-selected edge instead of timed flips.`);
         lines.push(`     owner: ${owner.kind} "${owner.label}" species=${owner.speciesId || '?'} gender=${owner.gender || '-'} bodyColors: ${_pixelProbeBodyColorSummary(owner.bodyColors, owner.speciesId)}`);
       }
     });
+    // Diagnose the exact failure case from the flooding report: raycast
+    // finds opaque raised grass BEFORE the flood mesh. That geometry cannot
+    // legitimately receive ordinary water-surface color while depthTest=true.
+    // Do not infer pixel ownership from material UV sampling alone; a
+    // postprocess spatial filter can bleed neighboring flood colors across
+    // this depth discontinuity even while the world pass is correct.
+    const firstOpaqueDepthHit = hits.find(hit => hit.object?.visible !== false
+      && (Array.isArray(hit.object.material) ? hit.object.material : [hit.object.material])
+        .some(mat => mat && mat.depthTest !== false && mat.depthWrite !== false
+          && mat.transparent !== true && mat.opacity >= 1));
+    const firstWaterDepthHit = hits.find(hit => hit.object?.visible !== false
+      && (hit.object?.userData?.waterSurfaceRole || hit.object?.userData?.mergedWaterStatKey));
+    if (firstOpaqueDepthHit && firstWaterDepthHit) {
+      const waterBehind = firstWaterDepthHit.distance > firstOpaqueDepthHit.distance + 0.001;
+      lines.push('Water depth at probed pixel: '
+        + (waterBehind ? 'BEHIND OPAQUE SURFACE' : 'in front of or coincident with opaque surface')
+        + ' opaque=' + (firstOpaqueDepthHit.object.name || '(unnamed)')
+        + '@' + firstOpaqueDepthHit.distance.toFixed(3)
+        + ' water=' + (firstWaterDepthHit.object.name || '(unnamed)')
+        + '@' + firstWaterDepthHit.distance.toFixed(3)
+        + (waterBehind ? ' — any remaining flood-colored blotch is not the ordinary depth-tested water fragment; check postprocessing/compositing.' : ''));
+    }
     if (!hits.length) lines.push('(nothing hit — probably clicked empty sky/background)');
 
     // Only when this probe actually landed on the player's own avatar
@@ -1347,7 +1441,9 @@
     if (boom) {
       const wall = boom.directHitDistance == null ? 'none' : boom.directHitDistance.toFixed(3); // Formats the nearest wall separately from terrain shortening.
       lines.push('');
-      lines.push(`Shoulder camera boom: ideal=${boom.idealDistance.toFixed(3)} actual=${boom.solvedDistance.toFixed(3)} wallHit=${wall} groundSlide=${boom.groundLimited ? 'yes' : 'no'} pitch=${boom.requestedPitchDeg.toFixed(2)}deg solvedPitch=${boom.solvedPitchDeg.toFixed(2)}deg clearance=${boom.floorClearance.toFixed(3)} targetY=${boom.targetY.toFixed(3)} floorY=${boom.floorY.toFixed(3)}`);
+      lines.push(`Shoulder camera boom: ideal=${boom.idealDistance.toFixed(3)} actual=${boom.solvedDistance.toFixed(3)} wallHit=${wall} corridorReframe=${boom.corridorReframe ? 'yes' : 'no'} groundSlide=${boom.groundLimited ? 'yes' : 'no'} pitch=${boom.requestedPitchDeg.toFixed(2)}deg solvedPitch=${boom.solvedPitchDeg.toFixed(2)}deg clearance=${boom.floorClearance.toFixed(3)} targetY=${boom.targetY.toFixed(3)} floorY=${boom.floorY.toFixed(3)}`);
+      lines.push(`Camera collision framing: minSetback=${Number(boom.minimumSetbackTiles || 0).toFixed(3)} fadeStart=${Number(boom.offsetFadeStartTiles || 0).toFixed(3)} manualOffset=${Number(boom.manualShoulderOffsetTiles || 0).toFixed(3)} offsetTarget=${Number(boom.minimumShoulderOffsetTiles || 0).toFixed(3)} appliedOffset=${Number(boom.appliedShoulderOffsetTiles || 0).toFixed(3)} spatialCompression=${(Number(boom.shoulderOffsetBlend || 0) * 100).toFixed(1)}% smoothedCorrection=${(Number(boom.appliedShoulderOffsetBlend || 0) * 100).toFixed(1)}% bodyLimit=${boom.bodyLimited ? 'yes' : 'no'}`);
+      if (boom.radialCamera) lines.push(`Indoor camera radial zoom: radius=${Number(boom.radialCamera.distance || 0).toFixed(3)} nearestWall=${boom.radialCamera.hitDistance == null ? 'none' : boom.radialCamera.hitDistance.toFixed(3)} spokes=${boom.radialCamera.rays} (independent of turning)`);
       lines.push(`Latest camera change: ${boom.latestChange}`);
       const framing = window.HobunjiShoulderCameraCharacterFraming?.snapshot?.(); // Reads the event-time framing report so mobile users can verify head-centered targeting.
       if (framing) lines.push(`Shoulder framing: species=${framing.speciesId || '-'} center=${framing.targetSource || '-'} headY=${Number(framing.headHeightTiles || 0).toFixed(3)} neckY=${Number(framing.neckHeightTiles || 0).toFixed(3)} targetOffset=${Number(framing.resolvedTargetYOffsetTiles || 0).toFixed(3)}; ${framing.latestChange || ''}`);
@@ -1484,6 +1580,19 @@
 
   document.getElementById('debugProbeArmBtn')?.addEventListener('click', () => armPixelProbe());
   document.getElementById('debugRigTransformDumpBtn')?.addEventListener('click', () => dumpRuntimeRigTransforms());
+  // Full root-relative rig dump (js/rig-transform-dump.js): text for reading plus a JSON block the Attack Animation Editor's diff box accepts.
+  document.getElementById('debugFullRigDumpBtn')?.addEventListener('click', async () => {
+    const api = window.HobunjiRigDump;
+    if (!api) { deps.showToast?.('Rig dump module not loaded.', false); return; }
+    const { dumps, text } = await api.dumpGame(2);
+    const report = `${text}\n\n--- JSON (paste into the Attack Animation Editor "Compare with game dump" box) ---\n${JSON.stringify(dumps)}`;
+    const resultEl = document.getElementById('debugProbeResult');
+    if (resultEl) resultEl.textContent = report;
+    const screenshotEl = document.getElementById('debugProbeScreenshot');
+    if (screenshotEl) screenshotEl.style.display = 'none';
+    _setDebugView('probe');
+    deps.showToast?.(`Full rig dumped for ${dumps.length} character(s) — Copy exports it.`, true);
+  });
   document.getElementById('pixelProbeCancelBtn')?.addEventListener('click', () => disarmPixelProbe());
   document.getElementById('debugViewLogBtn')?.addEventListener('click', () => _setDebugView('log'));
   document.getElementById('debugViewProbeBtn')?.addEventListener('click', () => _setDebugView('probe'));

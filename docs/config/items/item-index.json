@@ -14,7 +14,7 @@
   "arsenic": {
     "key": "arsenic",
     "label": "Arsenic",
-    "icon": "",
+    "icon": "💎",
     "cat": "ingredient"
   },
   "banditScrapMetal": {
@@ -38,7 +38,7 @@
   "blackberryJam": {
     "key": "blackberryJam",
     "label": "Blackberry Jam",
-    "icon": "",
+    "icon": "🍯",
     "cat": "ingredient"
   },
   "blackberrySeeds": {
@@ -49,19 +49,19 @@
   },
   "blackMustard": {
     "key": "blackMustard",
-    "label": "Black Mustard",
+    "label": "Black Mushtard",
     "icon": "⚫",
     "cat": "crop"
   },
   "blackMustardPaste": {
     "key": "blackMustardPaste",
-    "label": "Black Mustard Paste",
-    "icon": "",
+    "label": "Black Mushtard Paste",
+    "icon": "🧄",
     "cat": "ingredient"
   },
   "blackMustardSeed": {
     "key": "blackMustardSeed",
-    "label": "Black Mustard Seed",
+    "label": "Black Mushtard Seed",
     "icon": "⚫",
     "cat": "seed"
   },
@@ -74,7 +74,7 @@
   "blueberryJam": {
     "key": "blueberryJam",
     "label": "Blueberry Jam",
-    "icon": "",
+    "icon": "🍯",
     "cat": "ingredient"
   },
   "blueberrySeeds": {
@@ -92,13 +92,13 @@
   "blueDewCurds": {
     "key": "blueDewCurds",
     "label": "Blue Uumkao’ii Curds",
-    "icon": "",
+    "icon": "🍯",
     "cat": "ingredient"
   },
   "blueDewMilk": {
     "key": "blueDewMilk",
     "label": "Blue Uumkao’ii Milk",
-    "icon": "",
+    "icon": "🫙",
     "cat": "ingredient"
   },
   "bronzehoe": {
@@ -110,25 +110,25 @@
   "caveGlass": {
     "key": "caveGlass",
     "label": "Cave Glass",
-    "icon": "",
+    "icon": "💎",
     "cat": "ingredient"
   },
   "cliffMollusk": {
     "key": "cliffMollusk",
     "label": "Cliff Mollusk",
-    "icon": "",
+    "icon": "🐚",
     "cat": "ingredient"
   },
   "cloudFish": {
     "key": "cloudFish",
     "label": "Cloud-Flood Fish",
-    "icon": "",
+    "icon": "🐟",
     "cat": "ingredient"
   },
   "cloudHerbs": {
     "key": "cloudHerbs",
     "label": "Cloud Herbs",
-    "icon": "",
+    "icon": "🌿",
     "cat": "ingredient"
   },
   "cosmetic:anuri_hood": {
@@ -683,6 +683,12 @@
     "icon": "👕",
     "cat": "clothing"
   },
+  "cosmetic:fine_bodywrap": {
+    "key": "cosmetic:fine_bodywrap",
+    "label": "Fine Body Wrap",
+    "icon": "👕",
+    "cat": "clothing"
+  },
   "cosmetic:fine_hood": {
     "key": "cosmetic:fine_hood",
     "label": "Fine Hood",
@@ -752,13 +758,13 @@
   "crownedPineNutOil": {
     "key": "crownedPineNutOil",
     "label": "Crowned Pine Nut Oil",
-    "icon": "",
+    "icon": "🫗",
     "cat": "ingredient"
   },
   "crownedPineNuts": {
     "key": "crownedPineNuts",
     "label": "Crowned Pine Nuts",
-    "icon": "",
+    "icon": "🥜",
     "cat": "ingredient"
   },
   "dabinggiHoundEgg": {
@@ -788,7 +794,7 @@
   "denaturedStinkOil": {
     "key": "denaturedStinkOil",
     "label": "Denatured Stink Oil",
-    "icon": "",
+    "icon": "🧄",
     "cat": "ingredient"
   },
   "drenkirraEgg": {
@@ -800,7 +806,7 @@
   "drenkirraEggs": {
     "key": "drenkirraEggs",
     "label": "Drenkirra Eggs",
-    "icon": "",
+    "icon": "🥚",
     "cat": "ingredient"
   },
   "drenkirraHide": {
@@ -812,7 +818,7 @@
   "drenkirraMayonnaise": {
     "key": "drenkirraMayonnaise",
     "label": "Drenkirra Mayonnaise",
-    "icon": "",
+    "icon": "🥚",
     "cat": "ingredient"
   },
   "drenkirraMeat": {
@@ -824,12 +830,18 @@
   "drySeasonSpice": {
     "key": "drySeasonSpice",
     "label": "Dry-Season Spice",
-    "icon": "",
+    "icon": "🌶️",
     "cat": "ingredient"
   },
   "fertileDrenkirraEgg": {
     "key": "fertileDrenkirraEgg",
     "label": "Fertile Drenkirra Egg",
+    "icon": "🥚",
+    "cat": "livestock"
+  },
+  "fertileHoneyfuzzleEgg": {
+    "key": "fertileHoneyfuzzleEgg",
+    "label": "Fertile Honeyfuzzle Egg",
     "icon": "🥚",
     "cat": "livestock"
   },
@@ -848,7 +860,7 @@
   "fishSauce": {
     "key": "fishSauce",
     "label": "Fish Sauce",
-    "icon": "",
+    "icon": "🫙",
     "cat": "ingredient"
   },
   "garlink": {
@@ -884,13 +896,13 @@
   "grassSeeds": {
     "key": "grassSeeds",
     "label": "Grass Seeds",
-    "icon": "",
+    "icon": "🌾",
     "cat": "ingredient"
   },
   "greenBread": {
     "key": "greenBread",
     "label": "Green Bread",
-    "icon": "",
+    "icon": "🍞",
     "cat": "ingredient"
   },
   "greenDew": {
@@ -902,30 +914,30 @@
   "greenDewCurds": {
     "key": "greenDewCurds",
     "label": "Green Uumkao’ii Curds",
-    "icon": "",
+    "icon": "🍯",
     "cat": "ingredient"
   },
   "greenDewMilk": {
     "key": "greenDewMilk",
     "label": "Green Uumkao’ii Milk",
-    "icon": "",
+    "icon": "🫙",
     "cat": "ingredient"
   },
   "greenMustard": {
     "key": "greenMustard",
-    "label": "Green Mustard",
+    "label": "Green Mushtard",
     "icon": "🥬",
     "cat": "crop"
   },
   "greenMustardPaste": {
     "key": "greenMustardPaste",
-    "label": "Green Mustard Paste",
-    "icon": "",
+    "label": "Green Mushtard Paste",
+    "icon": "🧄",
     "cat": "ingredient"
   },
   "greenMustardSeed": {
     "key": "greenMustardSeed",
-    "label": "Green Mustard Seed",
+    "label": "Green Mushtard Seed",
     "icon": "🥬",
     "cat": "seed"
   },
@@ -968,7 +980,7 @@
   "heftrootFlour": {
     "key": "heftrootFlour",
     "label": "Heftroot Flour",
-    "icon": "",
+    "icon": "🥣",
     "cat": "ingredient"
   },
   "heftrootSeeds": {
@@ -977,16 +989,22 @@
     "icon": "🟡",
     "cat": "seed"
   },
+  "honey": {
+    "key": "honey",
+    "label": "Honey",
+    "icon": "🍯",
+    "cat": "material"
+  },
   "impureCopper": {
     "key": "impureCopper",
     "label": "Impure Copper",
-    "icon": "",
+    "icon": "💎",
     "cat": "ingredient"
   },
   "localNuts": {
     "key": "localNuts",
     "label": "Local Nuts",
-    "icon": "",
+    "icon": "🥜",
     "cat": "ingredient"
   },
   "meatFodder": {
@@ -998,13 +1016,25 @@
   "mireHerbs": {
     "key": "mireHerbs",
     "label": "Mire Herbs",
-    "icon": "",
+    "icon": "🌿",
     "cat": "ingredient"
   },
   "mixedBerryJam": {
     "key": "mixedBerryJam",
     "label": "Mixed Berry Jam",
-    "icon": "",
+    "icon": "🍯",
+    "cat": "ingredient"
+  },
+  "mootHide": {
+    "key": "mootHide",
+    "label": "Moot Hide",
+    "icon": "🟫",
+    "cat": "material"
+  },
+  "mootMeat": {
+    "key": "mootMeat",
+    "label": "Moot Meat",
+    "icon": "🥩",
     "cat": "ingredient"
   },
   "mulch": {
@@ -1016,19 +1046,19 @@
   "nazgrakuEggs": {
     "key": "nazgrakuEggs",
     "label": "Nazgraku Eggs",
-    "icon": "",
+    "icon": "🥚",
     "cat": "ingredient"
   },
   "nazgrakuMayonnaise": {
     "key": "nazgrakuMayonnaise",
     "label": "Nazgraku Mayonnaise",
-    "icon": "",
+    "icon": "🥚",
     "cat": "ingredient"
   },
   "nazgrakuMeat": {
     "key": "nazgrakuMeat",
     "label": "Nazgraku Meat",
-    "icon": "",
+    "icon": "🍗",
     "cat": "ingredient"
   },
   "needlegrain": {
@@ -1040,7 +1070,7 @@
   "needlegrainFlour": {
     "key": "needlegrainFlour",
     "label": "Needlegrain Flour",
-    "icon": "",
+    "icon": "🥣",
     "cat": "ingredient"
   },
   "needlegrainSeeds": {
@@ -1052,31 +1082,37 @@
   "nelkEggs": {
     "key": "nelkEggs",
     "label": "Nelk Eggs",
-    "icon": "",
+    "icon": "🥚",
     "cat": "ingredient"
+  },
+  "nelkHide": {
+    "key": "nelkHide",
+    "label": "Nelk Hide",
+    "icon": "🟫",
+    "cat": "material"
   },
   "nelkMayonnaise": {
     "key": "nelkMayonnaise",
     "label": "Nelk Mayonnaise",
-    "icon": "",
+    "icon": "🥚",
     "cat": "ingredient"
   },
   "nelkMeat": {
     "key": "nelkMeat",
     "label": "Nelk Meat",
-    "icon": "",
+    "icon": "🍗",
     "cat": "ingredient"
   },
   "nutButter": {
     "key": "nutButter",
     "label": "Nut Butter",
-    "icon": "",
+    "icon": "🧈",
     "cat": "ingredient"
   },
   "nutOil": {
     "key": "nutOil",
     "label": "Nut Oil",
-    "icon": "",
+    "icon": "🫗",
     "cat": "ingredient"
   },
   "ongyums": {
@@ -1100,13 +1136,13 @@
   "orangeDewCurds": {
     "key": "orangeDewCurds",
     "label": "Orange Uumkao’ii Curds",
-    "icon": "",
+    "icon": "🍯",
     "cat": "ingredient"
   },
   "orangeDewMilk": {
     "key": "orangeDewMilk",
     "label": "Orange Uumkao’ii Milk",
-    "icon": "",
+    "icon": "🫙",
     "cat": "ingredient"
   },
   "pebble": {
@@ -1127,22 +1163,28 @@
     "icon": "🪵",
     "cat": "material"
   },
+  "puktukHide": {
+    "key": "puktukHide",
+    "label": "Puktuk Hide",
+    "icon": "🟫",
+    "cat": "material"
+  },
   "puktukMeat": {
     "key": "puktukMeat",
     "label": "Puktuk Meat",
-    "icon": "",
+    "icon": "🥩",
     "cat": "ingredient"
   },
   "puktukMilk": {
     "key": "puktukMilk",
     "label": "Puktuk Milk",
-    "icon": "",
+    "icon": "🥛",
     "cat": "ingredient"
   },
   "puktukWool": {
     "key": "puktukWool",
     "label": "Puktuk Wool",
-    "icon": "",
+    "icon": "🧶",
     "cat": "ingredient"
   },
   "purpleDew": {
@@ -1154,13 +1196,13 @@
   "purpleDewCurds": {
     "key": "purpleDewCurds",
     "label": "Purple Uumkao’ii Curds",
-    "icon": "",
+    "icon": "🍯",
     "cat": "ingredient"
   },
   "purpleDewMilk": {
     "key": "purpleDewMilk",
     "label": "Purple Uumkao’ii Milk",
-    "icon": "",
+    "icon": "🫙",
     "cat": "ingredient"
   },
   "redberries": {
@@ -1172,7 +1214,7 @@
   "redberryJam": {
     "key": "redberryJam",
     "label": "Redberry Jam",
-    "icon": "",
+    "icon": "🍯",
     "cat": "ingredient"
   },
   "redberrySeeds": {
@@ -1190,25 +1232,25 @@
   "redDewCurds": {
     "key": "redDewCurds",
     "label": "Red Uumkao’ii Curds",
-    "icon": "",
+    "icon": "🍯",
     "cat": "ingredient"
   },
   "redDewMilk": {
     "key": "redDewMilk",
     "label": "Red Uumkao’ii Milk",
-    "icon": "",
+    "icon": "🫙",
     "cat": "ingredient"
   },
   "riverFish": {
     "key": "riverFish",
     "label": "Northern River Fish",
-    "icon": "",
+    "icon": "🐟",
     "cat": "ingredient"
   },
   "roughTin": {
     "key": "roughTin",
     "label": "Rough Tin",
-    "icon": "",
+    "icon": "💎",
     "cat": "ingredient"
   },
   "scatterbow": {
@@ -1226,19 +1268,19 @@
   "shadewoodNutOil": {
     "key": "shadewoodNutOil",
     "label": "Shadewood Nut Oil",
-    "icon": "",
+    "icon": "🫗",
     "cat": "ingredient"
   },
   "shadewoodNuts": {
     "key": "shadewoodNuts",
     "label": "Shadewood Nuts",
-    "icon": "",
+    "icon": "🥜",
     "cat": "ingredient"
   },
   "smokedMeat": {
     "key": "smokedMeat",
     "label": "Smoked Meat",
-    "icon": "",
+    "icon": "🥩",
     "cat": "ingredient"
   },
   "stone": {
@@ -1250,19 +1292,19 @@
   "travelSpice": {
     "key": "travelSpice",
     "label": "Trader-Sloth Spice",
-    "icon": "",
+    "icon": "🌶️",
     "cat": "ingredient"
   },
   "uumkaoiiButter": {
     "key": "uumkaoiiButter",
     "label": "Uumkao’ii Butter",
-    "icon": "",
+    "icon": "🧈",
     "cat": "ingredient"
   },
   "uumkaoiiCheese": {
     "key": "uumkaoiiCheese",
     "label": "Uumkao’ii Cheese",
-    "icon": "",
+    "icon": "🧀",
     "cat": "ingredient"
   },
   "uumkaoiiCrate": {
@@ -1280,13 +1322,13 @@
   "uumkaoiiEggs": {
     "key": "uumkaoiiEggs",
     "label": "Uumkao’ii Eggs",
-    "icon": "",
+    "icon": "🥚",
     "cat": "ingredient"
   },
   "uumkaoiiMayonnaise": {
     "key": "uumkaoiiMayonnaise",
     "label": "Uumkao’ii Mayonnaise",
-    "icon": "",
+    "icon": "🥚",
     "cat": "ingredient"
   },
   "uumkaoiiMeat": {
@@ -1295,28 +1337,40 @@
     "icon": "🥩",
     "cat": "material"
   },
+  "uumkaoiiShell": {
+    "key": "uumkaoiiShell",
+    "label": "Uumkao'ii Shell",
+    "icon": "🐚",
+    "cat": "material"
+  },
   "uumkaoiiWhiteDewCurds": {
     "key": "uumkaoiiWhiteDewCurds",
     "label": "White Uumkao’ii Curds",
-    "icon": "",
+    "icon": "🍯",
     "cat": "ingredient"
   },
   "uumkaoiiWhiteDewMilk": {
     "key": "uumkaoiiWhiteDewMilk",
     "label": "White Uumkao’ii Milk",
-    "icon": "",
+    "icon": "🫙",
     "cat": "ingredient"
+  },
+  "voorgAssHide": {
+    "key": "voorgAssHide",
+    "label": "Voorg-Ass Hide",
+    "icon": "🟫",
+    "cat": "material"
   },
   "voorgAssMeat": {
     "key": "voorgAssMeat",
     "label": "Voorg-Ass Meat",
-    "icon": "",
+    "icon": "🥩",
     "cat": "ingredient"
   },
   "voorgAssMilk": {
     "key": "voorgAssMilk",
     "label": "Voorg-Ass Milk",
-    "icon": "",
+    "icon": "🥛",
     "cat": "ingredient"
   },
   "whiteberries": {
@@ -1328,7 +1382,7 @@
   "whiteberryJelly": {
     "key": "whiteberryJelly",
     "label": "Whiteberry Jelly",
-    "icon": "",
+    "icon": "🍯",
     "cat": "ingredient"
   },
   "whiteberrySeeds": {
@@ -1352,7 +1406,7 @@
   "yellowberryJam": {
     "key": "yellowberryJam",
     "label": "Yellowberry Jam",
-    "icon": "",
+    "icon": "🍯",
     "cat": "ingredient"
   },
   "yellowberrySeeds": {
@@ -1364,61 +1418,145 @@
   "yellowBread": {
     "key": "yellowBread",
     "label": "Yellow Bread",
-    "icon": "",
+    "icon": "🍞",
     "cat": "ingredient"
   },
   "yellowDew": {
     "key": "yellowDew",
     "label": "Yellow Uumkao’ii Dew",
-    "icon": "",
+    "icon": "🍯",
     "cat": "ingredient"
   },
   "yellowDewCurds": {
     "key": "yellowDewCurds",
     "label": "Yellow Uumkao’ii Curds",
-    "icon": "",
+    "icon": "🍯",
     "cat": "ingredient"
   },
   "yellowDewMilk": {
     "key": "yellowDewMilk",
     "label": "Yellow Uumkao’ii Milk",
-    "icon": "",
+    "icon": "🫙",
     "cat": "ingredient"
   },
   "zinc": {
     "key": "zinc",
     "label": "Zinc",
-    "icon": "",
+    "icon": "💎",
     "cat": "ingredient"
   },
   "cosmetic:tangedcirclet": {
     "key": "cosmetic:tangedcirclet",
     "label": "Tanged Circlet",
-    "icon": "\ud83d\udc55",
+    "icon": "👕",
     "cat": "clothing"
   },
   "cosmetic:festivalmask_gar-wolf": {
     "key": "cosmetic:festivalmask_gar-wolf",
     "label": "Festivalmask Gar-Wolf",
-    "icon": "\ud83d\udc55",
+    "icon": "👕",
     "cat": "clothing"
   },
   "cosmetic:festivalmask_grehlr": {
     "key": "cosmetic:festivalmask_grehlr",
     "label": "Festivalmask Grehlr",
-    "icon": "\ud83d\udc55",
+    "icon": "👕",
     "cat": "clothing"
   },
   "cosmetic:festivalmask_uumkao'ii": {
     "key": "cosmetic:festivalmask_uumkao'ii",
     "label": "Festivalmask Uumkao'Ii",
-    "icon": "\ud83d\udc55",
+    "icon": "👕",
     "cat": "clothing"
   },
   "cosmetic:festivalmask_voorg-ass": {
     "key": "cosmetic:festivalmask_voorg-ass",
     "label": "Festivalmask Voorg-Ass",
-    "icon": "\ud83d\udc55",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "nelkCrate": {
+    "key": "nelkCrate",
+    "label": "Nelk Crate",
+    "icon": "🦎",
+    "cat": "livestock"
+  },
+  "nelkBaby": {
+    "key": "nelkBaby",
+    "label": "Nelk Hatchling",
+    "icon": "🦎",
+    "cat": "livestock"
+  },
+  "nazgrakuBaby": {
+    "key": "nazgrakuBaby",
+    "label": "Nazgraku Hatchling",
+    "icon": "🐟",
+    "cat": "livestock"
+  },
+  "nazgrakuCrate": {
+    "key": "nazgrakuCrate",
+    "label": "Nazgraku Crate",
+    "icon": "🐟",
+    "cat": "livestock"
+  },
+  "cosmetic:replica_bzabag_helm": {
+    "key": "cosmetic:replica_bzabag_helm",
+    "label": "Replica Helm of Bzabag",
+    "icon": "🪖",
+    "cat": "clothing"
+  },
+  "cloudSaffron": {
+    "key": "cloudSaffron",
+    "label": "Cloud Saffron",
+    "icon": "🌶️",
+    "cat": "ingredient"
+  },
+  "starpepper": {
+    "key": "starpepper",
+    "label": "Starpepper",
+    "icon": "🌶️",
+    "cat": "ingredient"
+  },
+  "nightCardamom": {
+    "key": "nightCardamom",
+    "label": "Night Cardamom",
+    "icon": "🌶️",
+    "cat": "ingredient"
+  },
+  "cosmetic:appearance::Kenkari_M::kenk_grandbeard": {
+    "key": "cosmetic:appearance::Kenkari_M::kenk_grandbeard",
+    "label": "Kenk Grandbeard",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mao-ao_M::mao-ao_grandbeard": {
+    "key": "cosmetic:appearance::Mao-ao_M::mao-ao_grandbeard",
+    "label": "Mao Ao Grandbeard",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mashtzarr_M::mashtz_grandbeard": {
+    "key": "cosmetic:appearance::Mashtzarr_M::mashtz_grandbeard",
+    "label": "Mashtz Grandbeard",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Tletingan_M::tl_grandbeard": {
+    "key": "cosmetic:appearance::Tletingan_M::tl_grandbeard",
+    "label": "Tl Grandbeard",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:simple_hood": {
+    "key": "cosmetic:simple_hood",
+    "label": "Simple Hood",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:fur_lined_hood": {
+    "key": "cosmetic:fur_lined_hood",
+    "label": "Fur-lined Hood",
+    "icon": "👕",
     "cat": "clothing"
   }
 }

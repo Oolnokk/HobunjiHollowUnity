@@ -112,7 +112,56 @@
     return p;
   }
 
+  // Paint separate layers instead of hue-keying the combined sprite; paper and binding
+  // share coordinates but receive independent colors before they are composited.
+  function tintLayer(image, tint) {
+    const canvas = document.createElement('canvas'); // Shared-size tint buffer for layered authored icons.
+    canvas.width = image.naturalWidth || image.width;
+    canvas.height = image.naturalHeight || image.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx || !canvas.width || !canvas.height) throw new Error('Sprite layer has no usable image pixels');
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    recolorImageData(pixels.data, tint, 'direct');
+    ctx.putImageData(pixels, 0, 0);
+    return canvas;
+  }
+
+  function getCompositeCanvas(spritePath, targetHex, mode) {
+    const binding = /^layered-scroll:([0-9a-f]{6})$/i.exec(mode); // UI slot color encoded in the item's spriteMode.
+    const isSheen = mode === 'direct-sheen'; // Optional iridescence on bright Koma and comparable powders.
+    if (!binding && !isSheen) return null;
+    const key = 'shared-color-fill-v2|' + spritePath + '|' + mode + '|' + targetHex;
+    if (_canvasCache.has(key)) return Promise.resolve(_canvasCache.get(key));
+    const overlayPath = binding ? 'assets/objectsprites/scroll_binding.png' : 'assets/objectsprites/iridescent_sheen.png';
+    const pending = Promise.all([loadImage(spritePath), loadImage(overlayPath)]).then(([baseImage, overlayImage]) => {
+      const painted = tintLayer(baseImage, targetHex); // Scroll paper or solid powder body: color never leaks onto the second layer.
+      const ctx = painted.getContext('2d');
+      if (binding) {
+        const color = parseInt(binding[1], 16); // Exact canonical melee action-slot tint.
+        const ribbon = tintLayer(overlayImage, color);
+        ctx.drawImage(ribbon, 0, 0, painted.width, painted.height);
+      } else {
+        ctx.save();
+        ctx.globalCompositeOperation = 'source-atop'; // Sheen only colors the nontransparent object, never its transparent bounding rectangle.
+        ctx.globalAlpha = 0.34;
+        ctx.drawImage(overlayImage, 0, 0, painted.width, painted.height);
+        ctx.restore();
+      }
+      window.__farmLog?.('[sprite-recolor] layered ' + spritePath + ' mode=' + mode, 'items');
+      _canvasCache.set(key, painted);
+      return painted;
+    }).catch(error => {
+      if (_canvasCache.get(key) === pending) _canvasCache.delete(key); // A temporary missing asset must be retryable on mobile.
+      throw error;
+    });
+    _canvasCache.set(key, pending); // Share in-flight canvas work across Pack, HUD and held-item rendering.
+    return pending;
+  }
+
   function getRecoloredCanvas(spritePath, targetHex, mode, opts) {
+    const composite = getCompositeCanvas(spritePath, targetHex, mode); // Separate scroll paper/binding and iridescent powder modes.
+    if (composite) return composite;
     if (typeof mode === 'string' && mode.startsWith('fish:') && window.FishCatalog?.getRecoloredCanvas) return window.FishCatalog.getRecoloredCanvas(spritePath, mode.slice(5));
     const cacheKey='shared-color-fill-v2|'+spritePath+'|'+mode+'|'+targetHex;
     const cached=_canvasCache.get(cacheKey);
@@ -141,15 +190,15 @@
 
   function loadFishCatalogForGame(){
     if(typeof document==='undefined'||!document.getElementById('fishingOverlay'))return;
-    parserOrderedScript('fish-catalog.js','fish-catalog','20260924perf5',()=>!!window.FishCatalog);
+    parserOrderedScript('fish-catalog.js','fish-catalog','20261018h1c2396a',()=>!!window.FishCatalog);
   }
   function loadFishingEventsForGame(){
     if(typeof document==='undefined'||!document.getElementById('fishingOverlay'))return;
-    parserOrderedScript('fishing-events.js','fishing-events','20261014catchrewards1');
+    parserOrderedScript('fishing-events.js','fishing-events','20261018h19942c7');
   }
   function loadAmphibiousFishingForGame(){
     if(typeof document==='undefined'||!document.getElementById('fishingOverlay'))return;
-    parserOrderedScript('amphibious-fishing.js','amphibious-fishing','20261001quickdebuff2',()=>!!window.AmphibiousFishing);
+    parserOrderedScript('amphibious-fishing.js','amphibious-fishing','20261104scent1439',()=>!!window.AmphibiousFishing);
     parserOrderedScript('amphibious-fish-corpse-cleanup.js','amphibious-corpse-cleanup','20260826a');
     parserOrderedScript('fishing-presentation-debug.js','fishing-presentation-debug','20260826a',()=>!!window.FishingPresentationDebug);
   }

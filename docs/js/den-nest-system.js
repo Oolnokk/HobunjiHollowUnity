@@ -162,6 +162,8 @@
   let _activeNestContentHoldId = null; // Used to reset the hold if the reticle moves from one clutch member to another.
   let _lastFocusedNestContent = null; // Used by mobile-visible diagnostics and the interaction-ray overlay.
   const _nestContentDebug = {
+    furnitureBuilds: 0,
+    legacyMarkersReplaced: 0,
     lastChange: 'Individual nest contents ready.',
     renderedNests: 0,
     renderedContents: 0,
@@ -181,6 +183,62 @@
     lastFocusedAlpha: null,
     lastError: null,
   }; // Mobile-friendly summary exposed through DenNestSystem.debugSnapshot().
+
+  function isLegacyCavernNestMarker(marker, nest) {
+    const shape = marker?.geometry?.parameters; // Identifies the exact old box at this nest's centre, including cached mesh references.
+    return !!marker?.isMesh && marker.material?.color?.getHex?.() === 0x3a2a1a
+      && shape?.width === 2 && shape?.height === 0.12 && shape?.depth === 2
+      && Math.abs(marker.position.x - nest.col - nest.w / 2) <= 0.01
+      && Math.abs(marker.position.z - nest.row - nest.h / 2) <= 0.01;
+  }
+
+  function ensureCavernNestFurniture(nest, scene, buildFurniture = deps?.buildFurnitureVisual) {
+    if (!nest || !scene) return null;
+    if (nest.devArenaTestNest) return nest.mesh || null; // The arena spawner owns and disposes its own test furniture.
+    if (nest.mesh?.parent === scene && !isLegacyCavernNestMarker(nest.mesh, nest)) return nest.mesh;
+    if (!buildFurniture || performance.now() < (nest._furnitureRetryAt || 0)) return null;
+    try {
+      const mesh = buildFurniture('nest', 0xc9a227); // Uses the ordinary furniture pipeline, including its hollow-cup fallback and authored upgrade.
+      if (!mesh) return null;
+      const x = nest.col + nest.w / 2, z = nest.row + nest.h / 2; // Shared nest centre used to place the mesh and recognize old boxes.
+      const y = Number.isFinite(nest.floorY) ? nest.floorY : (deps?.activeSurfaceYAtWorld?.(x, z) || 0); // Captured cave floor wins when the scene is being built off-screen.
+      mesh.position.set(x, y, z);
+      mesh.userData.denNestFurniture = true;
+      scene.add(mesh);
+      nest.mesh = mesh;
+      _nestContentDebug.furnitureBuilds++;
+      for (const marker of [...(scene.children || [])]) {
+        if (!isLegacyCavernNestMarker(marker, nest)) continue;
+        scene.remove(marker);
+        marker.geometry?.dispose?.();
+        marker.material?.dispose?.();
+        _nestContentDebug.legacyMarkersReplaced++;
+      }
+      _nestContentDebug.lastChange = 'Real cavern nest built directly; existing brown markers are repaired without resetting the clutch.';
+      return mesh;
+    } catch (error) {
+      nest._furnitureRetryAt = performance.now() + 1000;
+      _nestContentDebug.lastError = `Nest furniture: ${String(error?.message || error)}`;
+      return null;
+    }
+  }
+
+  function createExteriorNestFurniture(scene, x, worldY, z) {
+    if (!scene || typeof deps?.buildFurnitureVisual !== 'function') return null;
+    try {
+      const mesh = deps.buildFurnitureVisual('nest', 0xc9a227); // The same authored hollow-cup model as Drenkirra, reduced to one ground tile.
+      if (!mesh) return null;
+      mesh.scale?.multiplyScalar?.(0.48);
+      mesh.position?.set?.(x, worldY + .02, z);
+      mesh.userData = mesh.userData || {};
+      mesh.userData.pingdortNestFurniture = true;
+      scene.add(mesh);
+      return mesh;
+    } catch (error) {
+      _nestContentDebug.lastError = 'Exterior nest furniture: ' + String(error?.message || error);
+      return null;
+    }
+  }
 
   function isPlayerNearDenNest(nest) {
     const cx = (nest.col + nest.w / 2) * deps.TILE, cy = (nest.row + nest.h / 2) * deps.TILE;
@@ -309,14 +367,14 @@
 
   function _nestBasePosition(state) {
     const nest = state.nest;
-    if (state.mode === 'branch') {
+    if (state.mode === 'branch' || state.mode === 'exterior') {
       const branch = state.branch;
       const fallbackY = branch ? (Number(branch.baseWorldY || 0) + Number(branch.tipWorldY || 0)) / 2 : 0;
       const y = Number.isFinite(Number(nest.worldY)) ? Number(nest.worldY) : fallbackY;
       return { x: nest.x / deps.TILE, y, z: nest.y / deps.TILE };
     }
     const x = nest.col + nest.w / 2, z = nest.row + nest.h / 2;
-    return { x, y: deps.activeSurfaceYAtWorld(x, z), z };
+    return { x, y: Number.isFinite(nest.floorY) ? nest.floorY : deps.activeSurfaceYAtWorld(x, z), z };
   }
 
   function _contentOffset(index, count) {
@@ -452,10 +510,10 @@
       const babyScale = Number(window.LivestockNursery?.constants?.BABY_SCALE)
         || Number(window.BARN_INCUBATOR_CONFIG?.visuals?.babyScale) || 0.3125;
       const sleepScaleY = Number(window.BARN_INCUBATOR_CONFIG?.visuals?.sleepScaleY) || 0.5;
-      const speciesDef = window.CREATURE_DB?.[kind] || {};
+      const speciesDef = deps.CREATURE_DB?.[kind] || {};
       const configuredWidths = window.SCRATCHBONES_CONFIG?.game?.livestock?.animalWidths || {};
-      const adultWidth = kind === 'uumkaoii' ? 1.275 : (Number(configuredWidths[kind]) || 1.7);
-      const spriteAspect = Number(speciesDef.spriteAspect) || (600 / 1375);
+      const adultWidth = kind === 'uumkaoii' ? 1.275 * (600 / 1375) / (451 / 641) : (Number(configuredWidths[kind]) || 1.7); // Match the corrected standing adult rather than using a wider baby.
+      const spriteAspect = Number(speciesDef.spriteAspect) || (kind === 'uumkaoii' ? 451 / 641 : 600 / 1375);
       const sizeScale = window.CreatureGenetics?.creatureSizeScale?.(kind, nest.genotype) || { x: 1, y: 1 };
       const modelWidth = adultWidth * babyScale;
       const modelHeight = adultWidth * spriteAspect * babyScale;
@@ -588,7 +646,10 @@
 
     const area = deps.getCurrentArea();
     const cavernNest = deps._denNests.get(area);
-    if (cavernNest && activeScene) _syncOneNest(cavernNest, activeScene, 'cavern');
+    if (cavernNest && activeScene) {
+      ensureCavernNestFurniture(cavernNest, activeScene);
+      _syncOneNest(cavernNest, activeScene, 'cavern');
+    }
 
     const branches = window.ClimbSystem?.debugBranchesFor?.(area) || [];
     for (const branch of branches) {
@@ -597,8 +658,12 @@
       if (nest && nestScene) _syncOneNest(nest, nestScene, 'branch', branch);
     }
 
+    // Surface nests use the same egg imagery, aiming and 5-second hold as cavern and branch nests.
+    for (const nest of window.PingdortFlocks?.nestRecords?.(area) || []) {
+      if (nest.mesh?.parent === activeScene) _syncOneNest(nest, activeScene, 'exterior');
+    }
     for (const state of [..._activeNestContentStates]) {
-      if (!state.seen || !state.scene || (state.mode === 'cavern' && state.scene !== activeScene)) _disposeNestContentState(state);
+      if (!state.seen || !state.scene || (state.mode !== 'branch' && state.scene !== activeScene)) _disposeNestContentState(state);
     }
   }
 
@@ -738,6 +803,15 @@
     if (cavernNest && cavernNest.remaining > 0 && isPlayerNearDenNest(cavernNest)) {
       return _focusNestState(_nestContentStates.get(cavernNest));
     }
+    const actualFeet = deps.player?.physicalFeetY; // May be null while not airborne; null must not be interpreted as ground elevation 0.
+    const feetY = typeof actualFeet === 'number' && Number.isFinite(actualFeet) ? actualFeet
+      : Number(deps.playerMesh?.position?.y); // Stable player rig elevation is the grounded fallback for elevated nests.
+    for (const nest of window.PingdortFlocks?.nestRecords?.(deps.getCurrentArea()) || []) {
+      if (nest.remaining <= 0 || !nest.mesh?.parent || !isPlayerNearDenNest(nest)) continue;
+      if (Number.isFinite(feetY) && Math.abs(feetY - Number(nest.worldY)) > 1.25) continue;
+      const focused = _focusNestState(_nestContentStates.get(nest));
+      if (focused) return focused;
+    }
     return null;
   }
 
@@ -791,10 +865,16 @@
       deps.player._nestTakeActive = false;
       _activeNestContentHoldId = null;
       _nestTakeHudEl?.classList.remove('visible');
+      if ((deps.inventory[nest.itemKey] || 0) >= window.InventoryStacks.MAX_TOTAL) {
+        _nestContentDebug.lastChange = 'Bag full; nest contents and inherited genotype kept in place.';
+        deps.showToast('No room in your bag for this baby or egg.', false);
+        return;
+      }
       const state = focused.state;
       _removeContentRecord(state, content);
       nest.remaining = Math.max(0, Number(nest.remaining) - 1);
-      window.WildlifeSpawn?.updateDenClutchState?.(deps.getCurrentArea(), nest); // Persists remaining clutch contents until the cave reaches its discovery-based deadline.
+      if (typeof nest.onEggCollected === 'function') nest.onEggCollected(nest);
+      else window.WildlifeSpawn?.updateDenClutchState?.(deps.getCurrentArea(), nest); // Cave clutches keep their original persistence contract.
       deps.inventory[nest.itemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[nest.itemKey] || 0) + 1);
       window.HobunjiActivityEvents?.emit('nest_stolen', { liveBirth: !!nest.liveBirth, itemKey: nest.itemKey });
       window.FarmAnimals.queueItemGenotype(nest.itemKey, nest.genotype);
@@ -828,6 +908,11 @@
     }
     return {
       ..._nestContentDebug,
+      furnitureRevision: 'direct-cavern-nest-v1',
+      currentNest: (() => {
+        const nest = deps?._denNests?.get?.(deps?.getCurrentArea?.()); // Reports the actual cached record instead of inferring offspring from a visible mesh.
+        return nest ? { itemKey: nest.itemKey || null, remaining: nest.remaining, liveBirth: nest.liveBirth, hasGenotype: !!nest.genotype, mesh: nest.mesh?.name || null, meshAttached: !!nest.mesh?.parent } : null;
+      })(),
       area: deps?.getCurrentArea?.() || null,
       alphaThreshold: NEST_CONTENT_ALPHA_THRESHOLD,
       holdSeconds: NEST_TAKE_HOLD_S,
@@ -857,7 +942,24 @@
     });
   }
 
+  function senseTargets(scene) {
+    if (!deps || !scene) return [];
+    const area = deps.getCurrentArea?.(); // The player can only interact with clutches in the current cave/zone.
+    const roots = []; // Rendered nest furniture, not phantom eggs or an entire tree/cavern.
+    const cavern = deps._denNests?.get?.(area);
+    if (Number(cavern?.remaining) > 0 && cavern.mesh) roots.push(cavern.mesh);
+    for (const branch of window.ClimbSystem?.debugBranchesFor?.(area) || []) {
+      const nest = branch?.nest;
+      if (Number(nest?.remaining) > 0 && nest.mesh) roots.push(nest.mesh);
+    }
+    for (const nest of window.PingdortFlocks?.nestRecords?.(area) || []) {
+      if (Number(nest?.remaining) > 0 && nest.mesh?.parent === scene) roots.push(nest.mesh);
+    }
+    return roots;
+  }
+
   window.DenNestSystem = {
+    ensureCavernNestFurniture, createExteriorNestFurniture, senseTargets,
     init: (injectedDeps) => { init(injectedDeps); _bindListeners(); },
     teleportToRandomDen, warpToDenAnchor,
     isPlayerNearDenNest, aimedCavernNest, currentAimedNest,

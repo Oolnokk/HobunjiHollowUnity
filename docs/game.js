@@ -19,6 +19,7 @@
       const cameraJoystickZone = document.getElementById('cameraJoystickZone');
       const cameraJoystickKnob = document.getElementById('cameraJoystickKnob');
       const dodgeBtn = document.getElementById('dodgeBtn');
+      const jumpBtn = document.getElementById('jumpBtn');
       const btnSwapTarget = document.getElementById('btnSwapTarget');
       const btnWeaponSwitch = document.getElementById('btnWeaponSwitch');
       const btnWeaponSwitchIcon = document.getElementById('btnWeaponSwitchIcon');
@@ -186,6 +187,16 @@
       }
       menuBtn.addEventListener('click', () => menuOpen ? closeMenu() : openMenu());
       menuBackdrop.addEventListener('click', closeMenu);
+      // Menu-tab letter hotkeys (M/I/K/J/N/P/L/O), the F1 controls cheat
+      // sheet and the H message log live in js/qol-hotkeys.js
+      // (window.QolHotkeys); the keydown handler below forwards to it.
+      window.QolHotkeys.init({
+        openMenu: panel => openMenu(panel),
+        closeMenu: () => closeMenu(),
+        switchMenuPanel: panel => switchMenuPanel(panel),
+        isMenuOpen: () => menuOpen,
+        isBlocked: () => !!window.MusicMinigame?.state?.active || dialogueOpen,
+      });
       spDay.addEventListener('click', () => {
         const onCalendarTab = document.querySelector('.mp-tab[data-mpanel="calendar"]')?.classList.contains('active');
         if (menuOpen && onCalendarTab) closeMenu();
@@ -298,39 +309,17 @@
 
       // ── Legend + old legend toggle removed — handled by menu now
       // ── Toast ──────────────────────────────────────────────
-      let _toastTimer = null;
-      // `silent` skips the "can't do that" error chime while still showing
-      // the visual toast — used by per-swing combat hit/miss results (combo/
-      // quick attacks/Charged Breaker/basic weapon tap), which fire on
-      // *every* attack and already have their own dedicated combat sfx
-      // (weaponSlash/creatureClawHit).
-      //
-      // Deliberately no sound on ok===true here: a ding on every successful
-      // action (dig, till, plant, harvest, process...) was just noise that
-      // meant "you pressed something and it worked" — no actual information
-      // beyond what the player already knows from doing the thing. The
-      // error chime survives because a *blocked* action is the one case
-      // that's actually worth a distinct "that didn't work" cue.
+      // showToast/showZoneBanner (plus the recent-message history behind the
+      // Message Log overlay) now live in js/toast-notifications.js
+      // (window.ToastNotifications). These hoisted wrappers keep every
+      // existing call site in this file unchanged.
+      window.ToastNotifications.init({ toastEl, zoneBannerEl });
+      window.LocationArrival.init({ getCurrentArea: () => currentArea }); // Keeps stale arrival notices from showing after a map change.
       function showToast(msg, ok = true, silent = false) {
-        toastEl.textContent = msg;
-        toastEl.className = 'show ' + (ok ? 'ok' : 'fail');
-        clearTimeout(_toastTimer);
-        _toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2800);
-        if (!silent && !ok) window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().error);
+        return window.ToastNotifications.showToast(msg, ok, silent);
       }
-
-      // A location title card -- fades in near the top of the screen and
-      // holds, then fades out, same genre convention as an "Entering X"
-      // banner. Separate from showToast (a small ok/fail status ping):
-      // this holds noticeably longer (a title card is meant to be READ,
-      // not just glanced at) and has no ok/fail styling since it's never
-      // reporting an outcome.
-      let _zoneBannerTimer = null;
       function showZoneBanner(text) {
-        zoneBannerEl.textContent = text;
-        zoneBannerEl.classList.add('show');
-        clearTimeout(_zoneBannerTimer);
-        _zoneBannerTimer = setTimeout(() => zoneBannerEl.classList.remove('show'), 4200);
+        return window.LocationArrival.announce(text);
       }
 
       // gameAudioConfig() and the whole footstep/one-shot SFX layer now live
@@ -370,6 +359,7 @@
       // conversations such as js/romance-system.js's date/proposal/wedding
       // scripts) instead of the NPC's ordinary tree/turn-in/favor routing.
       async function openNpcDialogue(walker, opts = null) {
+        if (!walker || isPlayerInCombat()) return false; // Combat disables both direct dialogue calls and contextual Talk commands.
         const rec  = walker.rec;
         window.DialogueContent?.recordNpcMemory(rec?.id, 'talked');
         window.WorldPopupText?.clearInteractionPrompts?.();
@@ -414,11 +404,6 @@
 
         if (window.DialogueContent?.hasQueuedConversationTree?.(rec?.id)) { window.DialogueContent.beginNpcConversation(rec); return; }
 
-        if (rec?.id === 'spearhead_unumanuk' && window.CombatTutorial?.active()) {
-          window.DialogueContent?.beginNpcConversation(rec); // Automatic coaching must not be displaced by procedural requests.
-          return;
-        }
-
         // Task turn-in — checked before everything else (including a fresh
         // request/favor ask): if this NPC posted/asked a quest that's now
         // sitting ready in the player's log, offer to hand it over right
@@ -426,16 +411,22 @@
         // one.
         const _turnInTask = rec?.id ? window.ProceduralTasks.getTurnInReadyTaskForNpc(rec.id) : null;
         if (_turnInTask) {
-          const _turnInLabel = _turnInTask.items.map(it => `${ITEM_DEFS[it.itemKey]?.label || it.itemKey} ×${it.qty}`).join(', ');
+          const _commissionPrompt = _turnInTask.commission ? window.NpcCraftingCommissionDelivery?.turnInPrompt?.(_turnInTask) : null; // Crafting jobs carry a real garment/furniture deliverable, not fetch items.
+          const _turnInLabel = (_turnInTask.items || []).map(it => `${ITEM_DEFS[it.itemKey]?.label || it.itemKey} ×${it.qty}`).join(', '); // Ordinary request/favor items still use their existing labels.
           window.DialogueContent?.beginSyntheticChoice(rec);
           window.DialogueContent?.renderDlgNode({
             type: 'choice',
-            text: `Ah — did you bring what I asked for?`,
+            text: _commissionPrompt?.text || 'Ah — did you bring what I asked for?',
             choices: [
-              { label: `Here's your ${_turnInLabel}.`, actions: [{ type: 'turnInTask', taskId: _turnInTask.id }] },
+              { label: _commissionPrompt?.label || (_turnInLabel ? `Here's your ${_turnInLabel}.` : 'Here is what you asked for.'), actions: [{ type: 'turnInTask', taskId: _turnInTask.id }] },
               { label: 'Not yet.', actions: [] },
             ],
           });
+          return;
+        }
+
+        if (rec?.id === 'spearhead_unumanuk' && window.CombatTutorial?.active()) {
+          window.DialogueContent?.beginNpcConversation(rec); // Resume active coaching unless a finished task was just handed in; never replace training with a new request/favor.
           return;
         }
 
@@ -634,7 +625,7 @@
       const MOVE_BOB_WALK_AMP = 0.0075;
       const MOVE_BOB_RUN_AMP  = 0.015;
       const ACCEL         = 980;  // px/s²; used by updateMovement() for snappier starts.
-      const TURN_ACCEL    = 1320; // px/s²; used when input reverses or sharply turns.
+      const TURN_ACCEL    = 2000; // px/s²; used when input reverses or sharply turns (a full reversal settles in ~0.18 s, matching the start-up time).
       const DECEL         = 1850; // px/s²; used by updateMovement() to avoid floaty stops.
       const CARDINAL_BIAS = 0.18; // used by updateMovement(); lower keeps diagonals less sticky.
       // Config-backed (docs/config/scratchbones-config.js game.input.touchJoystick)
@@ -679,8 +670,8 @@
       // HousePieces.computeInteriorLayout()) — sized to the whole farm
       // rather than tightly to the current house, since the merged interior
       // grows as more pieces get built.
-      const INTERIOR_COLS        = COLS * 2;
-      const INTERIOR_ROWS        = ROWS * 2;
+      const INTERIOR_COLS        = COLS * 3; // One added indoor grid cell per joined section fits within 3× the exterior bounds.
+      const INTERIOR_ROWS        = ROWS * 3; // Outdoor geometry retains the original farm grid; only interior room allocation expands.
       const INTERIOR_WALL_HEIGHT = 1.75; // wall height in world units
 
       // ── Voxel render constants ──
@@ -738,8 +729,8 @@
         yellowberries: { emoji: '🟡', seedKey: 'yellowberrySeeds',   cropKey: 'yellowberries', growDays: 4, idealMin: 0.25, idealMax: 0.60, label: 'yellowberries', needsAdjacentDitch: true, tags: ['Berry', 'Ditch-loving'] },
         whiteberries:  { emoji: '⚪', seedKey: 'whiteberrySeeds',    cropKey: 'whiteberries',  growDays: 4, idealMin: 0.40, idealMax: 0.75, label: 'whiteberries',  needsAdjacentDitch: true, tags: ['Berry', 'Ditch-loving'] },
         blackberries:  { emoji: '⚫', seedKey: 'blackberrySeeds',    cropKey: 'blackberries',  growDays: 4, idealMin: 0.45, idealMax: 0.80, label: 'blackberries',  needsAdjacentDitch: true, tags: ['Berry', 'Ditch-loving'] },
-        blackMustard:  { emoji: '⚫', seedKey: 'blackMustardSeed',   cropKey: 'blackMustard',  growDays: 3, idealMin: 0.15, idealMax: 0.40, label: 'black mustard', tags: ['Mustard', 'Hot'] },
-        greenMustard:  { emoji: '🥬', seedKey: 'greenMustardSeed',   cropKey: 'greenMustard',  growDays: 3, idealMin: 0.30, idealMax: 0.65, label: 'green mustard', tags: ['Mustard', 'Fresh'] },
+        blackMustard:  { emoji: '⚫', seedKey: 'blackMustardSeed',   cropKey: 'blackMustard',  growDays: 3, idealMin: 0.15, idealMax: 0.40, label: 'black mushtard', tags: ['Mushtard', 'Hot'] },
+        greenMustard:  { emoji: '🥬', seedKey: 'greenMustardSeed',   cropKey: 'greenMustard',  growDays: 3, idealMin: 0.30, idealMax: 0.65, label: 'green mushtard', tags: ['Mushtard', 'Fresh'] },
       };
 
       // Each tool gets at most 3 actions — the action bar only has 3 tool-
@@ -834,6 +825,10 @@
         // (no stamina cost, no terrain collision) rendered as a chain of
         // staggered hops rather than a continuous slide; climbSurfaceY/
         // climbHopBounce are consumed by updatePlayerMesh for the vertical rise.
+        physicalFeetY: null, // Jump's physical foot elevation, used by the renderer and height-aware traversal.
+        heightAboveGround: 0, // Actual distance above the local terrain, including raised furniture support.
+        jumpHeightAboveGround: 0, // Debug-compatible alias consumed by the jump system.
+        _freeJump: null, // Transient airborne/elevated-support motion, never part of save data.
         climbing: false, climbElapsed: 0, climbHopCount: 0,
         climbStartX: 0, climbStartY: 0, climbEndX: 0, climbEndY: 0,
         climbSurfaceStartY: 0, climbSurfaceEndY: 0, climbSurfaceY: 0, climbHopBounce: 0,
@@ -1110,31 +1105,76 @@
         return Number.isFinite(resolved) ? Math.max(0, resolved) : Math.max(0, Number(entity?.maxFooting) || 0); // Legacy/no-ResourceSystem actors still use literal max Footing.
       }
 
-      // Zero-Footing transition — called only once applyHitStagger's own
-      // spendFooting has already driven entity.footing to 0. Both the player
-      // and any creature/bandit go fully prone here (immune to further
-      // Footing loss — see resource-system.js's spendFooting), then
-      // automatically recover once Footing reaches the same full unshambled
-      // target — the player uses updateProneState's in-place recovery arc,
-      // while creature AI uses beginCreatureSomersaultRecovery below.
-      // Creature planes use the same authored clips through
-      // ImpactRagdollPlayback's quarter-turned body-only adapter; humanoid leg
-      // channels remain player-only. Both kinds use a dedicated prone-throw
-      // displacement so compatibility adapters can still clear stale ordinary
-      // knockback without erasing the intentional knockdown launch.
-      function enterProneIfFootingDepleted(entity, isPlayer, direction) {
-        if (entity.footing > 0 || entity.prone) return;
+      // The same full breakThrow knockdown (launch, action interruption and
+      // pose hold) is shared by depleted Footing and the short timed Knockdown
+      // debuff. Temporary knockdown does not modify the target's Footing.
+      function enterPronePose(entity, isPlayer, direction, temporary) {
+        if (entity.prone) return false;
+        entity._temporaryKnockdownProne = temporary === true; // Used by prone recovery and the two distinct prone attack multipliers.
         entity.prone = true;
-        // damageCreature already cancelled any in-progress attack; the
-        // creature playback holds its final breakThrow frame until recovery.
         if (!isPlayer) {
           window.ImpactRagdollPlayback?.triggerCreature(entity, 'breakThrow', direction, { durationMultiplier: 1 });
-          return;
+          return true;
         }
         player.somersaultRecovering = false;
         player.vx = 0; player.vy = 0;
         window.Combat?.cancelAllStaged?.();
         window.ImpactRagdollPlayback?.trigger('breakThrow', direction, { durationMultiplier: 1 });
+        return true;
+      }
+
+      // Normal 0-Footing hits have already launched the victim in applyHitStagger.
+      // Their recovery still needs a full refill, irrespective of any timed debuff.
+      function enterProneIfFootingDepleted(entity, isPlayer, direction) {
+        if (entity.footing > 0 || entity.prone) return;
+        enterPronePose(entity, isPlayer, direction, false);
+      }
+
+      function enterTimedKnockdown(entity, options = {}) {
+        if (!entity || !(entity.health > 0) || entity._downed) return false;
+        const isPlayer = entity === player; // Only the local player uses the procedural humanoid ragdoll channel.
+        const interruptingGetUp = isPlayer && entity.prone && player.somersaultRecovering; // A new hit must supersede an unfinished recovery arc.
+        if (entity.prone && !interruptingGetUp) return false; // Already prone: only the expiry timer should extend, never replay the fall.
+        const facingAngle = isPlayer ? (Number(entity.angle) || 0) : (Number(entity.facing) || 0);
+        const direction = hitDirectionRelativeToFacing(facingAngle, entity.x, entity.y, options.fromX, options.fromY);
+        if (isPlayer) {
+          _nestHoldT = 0;
+          player._nestTakeActive = false;
+          window.BanditCamps?.interruptTentHold?.();
+          window.CorpseHoldLoot?.interrupt?.();
+        } else {
+          // Direct perk/buff applications must perform the same instantaneous
+          // attack cancellation as a 0-Footing hit, even without damageCreature.
+          window.Combat?.telegraph?.cancel?.(entity);
+          window.Combat?.animalAttacks?.cancel?.(entity);
+          window.EnemyDodge?.cancel?.(entity);
+          if (entity.isBandit) {
+            entity._banditAction?.cancel?.();
+            entity._banditAction = null;
+            entity.telegraphState = null;
+            entity._banditComboIndex = 0;
+            window.RangedWeapons?.cancelBanditAction?.(entity);
+            window.BanditCombat?.cancelLunge?.(entity);
+          }
+        }
+        startProneThrow(entity, isPlayer, facingAngle, direction);
+        if (interruptingGetUp) {
+          player.somersaultRecovering = false; // The old get-up callback must no longer clear prone while Knockdown is active.
+          player.vx = 0; player.vy = 0;
+          window.Combat?.cancelAllStaged?.();
+          window.ImpactRagdollPlayback?.trigger('breakThrow', direction, { durationMultiplier: 1 }); // Replaces the in-flight recovery arc with a fresh full fall.
+          return true;
+        }
+        return enterPronePose(entity, isPlayer, direction, !(Number(entity.footing) <= 0)); // A victim already at 0 Footing keeps the stronger genuine prone source.
+      }
+
+      window.HobunjiKnockdown = { enter: enterTimedKnockdown }; // Called only on first timed Knockdown application by ResourceSystem.
+
+      function proneRecoveryReady(entity) {
+        if (window.ResourceSystem?.hasTimedDebuff?.(entity, 'knockdown')) return false; // Duration must end before either prone source may recover.
+        return entity._temporaryKnockdownProne === true
+          ? (Number(entity.footing) > 0) // The timed effect never drains Footing, so no full-refill requirement.
+          : entity.footing >= proneRecoveryFootingTarget(entity); // Genuine Footing breaks keep their original full-refill rule.
       }
 
       // Called from updateHostiles once a prone creature's Footing reaches
@@ -1146,6 +1186,7 @@
       // chaining falls out of that existing call for free.
       function beginCreatureSomersaultRecovery(c, targetPlayer) {
         c.prone = false;
+        c._temporaryKnockdownProne = false; // The departing actor no longer has a timed-prone source.
         c.state = 'chase';
         c.targetPlayer = targetPlayer;
         window.ResourceSystem?.spendStamina(c, SOMERSAULT_STAMINA_COST, 'somersault recovery');
@@ -1255,8 +1296,8 @@
         // be summoned via the same generic companion AI as the dabinggi-hound.
         // Routed to 'vigilantProtector' as a stand-in per design direction —
         // a gentler, dedicated AI type can replace this once one exists.
-        // Reuses the existing livestock sprite as-is (already the right
-        // 1375x600 side-view sheet convention makeCreatureEntity expects).
+        // Uumkao'ii now uses a 641x451 idle/run canvas, not the legacy 1375x600 sheet.
+        // The actual height/width ratio must survive all size-class scales.
         uumkaoii: {
           label: "Uumkao'ii", hostile: false,
           maxHealth: 40, maxStamina: 30,
@@ -1270,16 +1311,57 @@
           // no match for a hound's nose.
           perceptionTiles: 5,
           canClimb: false, canSwim: false,
-          modelWidth: 1.6, tint: 0xffffff, lungeHeightUnits: 0.08, // Nearly grounded; high aim should shed almost all travel.
+          modelWidth: 1.6, spriteAspect: 451 / 641, tint: 0xffffff, lungeHeightUnits: 0.08, // Real 641x451 Uumkao'ii art; prevents legacy horizontal stretch. // Nearly grounded; high aim should shed almost all travel.
           // See dabinggi-hound's matching comment — Uumkao'ii default large
           // (mount-eligible in the stable).
           defaultSizeClass: 'large',
           mountSpeed: 340,
           sprites: {
-            idle: "assets/creaturesprites/uumkao'ii.png",
-            run: ["assets/creaturesprites/uumkao'ii.png"],
+            idle: "assets/creaturesprites/uumkao'ii_idle.png",
+            run: ["assets/creaturesprites/uumkao'ii_run1.png", "assets/creaturesprites/uumkao'ii_run2.png"],
           },
           lootPool: 'creature_uumkaoii',
+        },
+        // New creature art registered alongside Gar-wolf; biome ecology and rewards remain to be authored.
+        nelk: {
+          label: 'Nelk', hostile: false, diet: 'carnivore', liveBirth: false, // Prey selected by the food-web graph, not the old blanket role.
+          aggroRangePx: TILE * 5, leashRangePx: TILE * 14,
+          maxHealth: 42, maxStamina: 36, moveSpeed: 135, chaseSpeed: 195,
+          attackDamage: 8, attackRangePx: TILE * 0.85, attackHalfConeRad: 42 * Math.PI / 180,
+          attackStaminaCost: 12, attackCooldownS: 1.05,
+          attacks: ['pounce'], attackTag: 'blunt', aiType: 'vigilantProtector',
+          canClimb: true, canSwim: false, modelWidth: 0.89, spriteAspect: 525 / 800, tint: 0xffffff, // Width/aspect from the real 800x525 sprite: Large Nelk's opaque width is ~90% of a Large Voorg-Ass.
+          defaultSizeClass: 'large', mountSpeed: 340, // Wild specimens roll the species default Size, so Nelk spawn Large.
+          sprites: { idle: 'assets/creaturesprites/nelk_idle.png', run: ['assets/creaturesprites/nelk_run1.png', 'assets/creaturesprites/nelk_run2.png'] },
+        },
+        nazgraku: {
+          label: 'Nazgraku', hostile: false, diet: 'herbivore', liveBirth: false,
+          aggroRangePx: TILE * 3, leashRangePx: TILE * 8, // Food-site combat leash; no proactive aggression elsewhere.
+          maxHealth: 52, maxStamina: 40, moveSpeed: 130, chaseSpeed: 185,
+          attackDamage: 10, attackRangePx: TILE * 0.85, attackHalfConeRad: 42 * Math.PI / 180,
+          attackStaminaCost: 12, attackCooldownS: 1.05,
+          attacks: ['pounce'], attackTag: 'blunt', aiType: 'vigilantProtector',
+          canClimb: false, canSwim: true, modelWidth: 1.21, spriteAspect: 378 / 900, tint: 0xffffff, // From the real 900x378 sprite: Large Nazgraku's opaque height is ~110% of a Large Voorg-Ass.
+          defaultSizeClass: 'large', mountSpeed: 340,
+          // Mounted animals deliberately use the regular whiskered sprites until rein deformation is designed.
+          sprites: { idle: 'assets/creaturesprites/nazgraku_idle.png', run: ['assets/creaturesprites/nazgraku_run1.png', 'assets/creaturesprites/nazgraku_run2.png'] },
+        },
+        // Honeyfuzzle SWARM: one gameplay entity drawn as an instanced flock of
+        // hummingbird-like members (js/honeyfuzzle-swarm.js). Hive-stump
+        // dwellers hatched from fertile eggs; always Medium (companion role),
+        // never a barn animal (needs a Honeyfuzzle House). `sprites` only
+        // names the wing frames for UI/icon consumers — the swarm renderer owns
+        // its own atlas and ignores idle/run switching.
+        honeyfuzzle: {
+          label: 'Honeyfuzzle Swarm', hostile: false, diet: 'herbivore', liveBirth: false, swarm: { members: 24, memberWidth: 0.26, hoverY: 0.12 },
+          aggroRangePx: TILE * 3, leashRangePx: TILE * 8,
+          maxHealth: 30, maxStamina: 30, moveSpeed: 150, chaseSpeed: 210,
+          attackDamage: 5, attackRangePx: TILE * 0.8, attackHalfConeRad: 45 * Math.PI / 180,
+          attackStaminaCost: 10, attackCooldownS: 1.2,
+          attacks: ['swarm'], attackTag: 'poison', realAttackEvery: 1, aiType: 'vigilantProtector', perceptionTiles: 6,
+          canClimb: true, canSwim: true, modelWidth: 1.5, spriteAspect: 0.5, tint: 0xffffff,
+          defaultSizeClass: 'medium', fixedSizeClass: 'medium', mountSpeed: 340,
+          sprites: { idle: 'assets/creaturesprites/honeyfuzzle_wings-mid.png', run: ['assets/creaturesprites/honeyfuzzle_wings-up.png', 'assets/creaturesprites/honeyfuzzle_wings-down.png'] },
         },
         'gar-wolf': {
           label: 'Gar-wolf', hostile: true, liveBirth: true,
@@ -1372,10 +1454,10 @@
           maxHealth: 30, maxStamina: 20,
           moveSpeed: 110, chaseSpeed: 110,
           canClimb: false, canSwim: false,
-          modelWidth: 1.6, tint: 0xffffff,
+          modelWidth: 1.6, spriteAspect: 451 / 641, tint: 0xffffff, // Wild Uumkao'ii share the same 641x451 idle and run art.
           sprites: {
-            idle: "assets/creaturesprites/uumkao'ii.png",
-            run: ["assets/creaturesprites/uumkao'ii.png"],
+            idle: "assets/creaturesprites/uumkao'ii_idle.png",
+            run: ["assets/creaturesprites/uumkao'ii_run1.png", "assets/creaturesprites/uumkao'ii_run2.png"],
           },
           lootPool: 'creature_uumkaoii-wild',
         },
@@ -1415,10 +1497,10 @@
           attackTag: 'blunt',
           aggroRangePx: TILE * 5.5, leashRangePx: TILE * 4.5,
           canClimb: false, canSwim: false,
-          modelWidth: 2.8, tint: 0x8a6a3a,
+          modelWidth: 2.8, spriteAspect: 451 / 641, tint: 0x8a6a3a, // The enlarged den mother uses the same source sprite ratio.
           sprites: {
-            idle: "assets/creaturesprites/uumkao'ii.png",
-            run: ["assets/creaturesprites/uumkao'ii.png"],
+            idle: "assets/creaturesprites/uumkao'ii_idle.png",
+            run: ["assets/creaturesprites/uumkao'ii_run1.png", "assets/creaturesprites/uumkao'ii_run2.png"],
           },
           lootPool: 'creature_uumkaoii-wild-den-mother',
         },
@@ -1487,7 +1569,10 @@
           // wiped-out den's replacement pack isn't necessarily the same
           // species as the one it replaces.
           packSpecies: ['grehlr'],
-          // Northern Cliffs caverns are Grehlr dens. Voorg-Asses are not
+          denSpecies: ['grehlr', 'nazgraku'], // Both native den families provide collectible offspring with inherited genes.
+          roamingForagerSpecies: ['nazgraku'], // Separate forager slot preserves both existing Voorg-Ass herds.
+          roamingForagerCount: 1,
+          // Northern Cliffs caverns house Grehlr or Nazgraku. Voorg-Asses are not
           // den wildlife at all: WildlifeSpawn maintains two independent
           // large exterior herds that bed down together in the open at night.
           herbivoreSpecies: [],
@@ -1562,6 +1647,7 @@
           cols: 50, rows: 40,
           groundColor: 0x6b6a52, fogColor: 0x35342a,
           herbivoreSpecies: ['uumkaoii-wild'],
+          packSpecies: ['nelk'], // Selective carnivore, not a generic hunter of any herbivore.
           entryCol: 48, entryRow: 20,
           exitCol: 48, exitRow: 20,
           townReturnCol: 1, townReturnRow: 25,
@@ -1659,7 +1745,7 @@
         blackMustardSeed: 3, greenMustardSeed: 3,
         uumkaoiiCrate: 1,
         barnPlanSmall: 1,
-        campfireKitFurnitureBlueprint: 1, // Always-available campfire blueprint — see DECORATIVE_FURNITURE_DEFS.campfire; blueprints are reusable (see craftFurnitureFromBlueprint), so one copy is permanent.
+        // Campfire Kit is automatically known; no permanent blueprint item occupies the bag.
         gold: 100, // Covers a first seed order at SUPPLY_CATALOG prices on day 1.
       };
 
@@ -1749,6 +1835,9 @@
         // which only fires for entries with a metalKey). Held by Foroji at
         // station_foroji_music (see map_hobunji_town.map.json's toolKey) so
         // he visibly has his instrument out while playing.
+        grappleFlail: { label: 'Grapple-Flail', icon: '🪝', sprite: 'assets/toolsprites/grapple-flail_handle.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'blunt', weaponIdleClass: 'heavy', shapeKey: 'grappleFlail', metalKey: 'tinBronze' }, // Unique rope flail; reuses the same shaft-attached weapon assembly and hit logic.
+        hachutuTorchFlail: { label: 'Hachutu Torch-Flail', icon: '🔥', sprite: 'assets/toolsprites/hachutu_torch-flail_handle.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'blunt', weaponIdleClass: 'heavy', shapeKey: 'hachutuTorchFlail', metalKey: 'tinBronze' }, // Legacy unique-item key (kept for saves/dev grants); the smithable shape of the same name now crafts hachutuTorchFlail_<metal>. The haft remains its original grip/hitbox mesh.
+        hachutuTorchStaff: { label: 'Hachutu Torch-Staff', icon: '🔥', sprite: 'assets/toolsprites/hachutu_torch-staff.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light', shapeKey: 'hachutuTorchStaff' }, // Legacy unique-item key (kept for saves/dev grants); the smithable shape of the same name now crafts hachutuTorchStaff_<metal>. B'shuakauitl melee stance/attacks; this bare key has no metalKey, so it never grows verdigris.
         kurraya:      { label: 'Kurraya',       icon: '🎵', sprite: 'assets/toolsprites/kurraya_front.png',        slots: ['instrument'], animStyle: 'strum' },
       };
 
@@ -1761,7 +1850,7 @@
       // Sloomi/Kzubug can craft real tools from and reinforce a tool up
       // through (see toolEffectiveMetalKey). Placeholder tuning throughout.
       const METAL_DEFS = {
-        nativeCopper:    { label: 'Native Copper',    hex: '#B87333', verdigrisHex: '#3FAF9F', tier: 1 },
+        nativeCopper:    { label: 'Copper',    hex: '#B87333', verdigrisHex: '#3FAF9F', tier: 1 },
         lowTinBronze:    { label: 'Low-Tin Bronze',   hex: '#B66A2E', verdigrisHex: '#4EAA86', tier: 2 },
         tinBronze:       { label: 'Tin Bronze',       hex: '#CD7F32', verdigrisHex: '#57B38B', tier: 3 },
         highTinBronze:   { label: 'High-Tin Bronze',  hex: '#BAA06A', verdigrisHex: '#78BFA5', tier: 4 },
@@ -1773,11 +1862,13 @@
         gold:            { label: 'Gold',              hex: '#D4AF37', verdigrisHex: null, tier: null },
         electrumGold:    { label: 'Electrum',          hex: '#DCCB71', verdigrisHex: null, tier: null },
         electrumSilver:  { label: 'Pale Electrum',     hex: '#CEC88E', verdigrisHex: null, tier: null },
-        pewter:          { label: 'Early Pewter',      hex: '#AEB4B5', verdigrisHex: null, tier: null },
+        pewter:          { label: 'Pewter',      hex: '#AEB4B5', verdigrisHex: null, tier: null },
       };
       const ORE_DEFS = {
-        copper:  { label: 'Copper Ore',  hex: '#B87333', verdigrisHex: '#3FAF9F', oxidationAmount: 0.58 },
-        tin:     { label: 'Tin Ore',     hex: '#C8CCD0', verdigrisHex: null, oxidationAmount: 0 },
+        copper:  { label: 'Copper Ore',  hex: '#B87333', verdigrisHex: METAL_DEFS.nativeCopper.verdigrisHex, oxidationAmount: 0.58 },
+        tinCopper: { label: 'Crude Bronze Ore', hex: '#58A28D', rockMetalHex: METAL_DEFS.lowTinBronze.hex, verdigrisHex: METAL_DEFS.lowTinBronze.verdigrisHex, oxidationAmount: 0 }, // Surface deposit takes the matching alloy's verdigris rather than this raw ore icon hue.
+        mushistonite: { label: 'Natural Bronze Ore', hex: '#7BA963', rockMetalHex: METAL_DEFS.tinBronze.hex, verdigrisHex: METAL_DEFS.tinBronze.verdigrisHex, oxidationAmount: 0 }, // Mineral surface reads as the corresponding tin-bronze oxidation color.
+        tin:     { label: 'Tin Ore',     hex: '#513C32', rockMetalHex: METAL_DEFS.tin.hex, verdigrisHex: null, oxidationAmount: 0 }, // Cassiterite; reuses the existing tin-ore item rather than creating duplicate Tin Ores.
         arsenic: { label: 'Arsenic Ore', hex: '#AAA58F', verdigrisHex: null, oxidationAmount: 0 },
         lead:    { label: 'Lead Ore',    hex: '#6D7375', verdigrisHex: null, oxidationAmount: 0 },
         silver:  { label: 'Silver Ore',  hex: '#C0C0C0', verdigrisHex: null, oxidationAmount: 0 },
@@ -1785,9 +1876,9 @@
       }; // Used by mine drops, inventory registration, crafting discovery, and the masked rock-texture recolor.
       const METAL_BAR_RECIPES = {
         nativeCopper:    { copper: 5 },
-        lowTinBronze:    { copper: 4, tin: 1 },
-        tinBronze:       { copper: 3, tin: 2 },
-        highTinBronze:   { copper: 2, tin: 3 },
+        lowTinBronze:    { tinCopper: 5 },
+        tinBronze:       { mushistonite: 5 },
+        highTinBronze:   { tin: 5 },
         arsenicalBronze: { copper: 4, arsenic: 1 },
         leadedBronze:    { copper: 3, tin: 1, lead: 1 },
         tin:             { tin: 5 },
@@ -1797,7 +1888,11 @@
         electrumGold:    { gold: 3, silver: 2 },
         electrumSilver:  { gold: 2, silver: 3 },
         pewter:          { tin: 4, lead: 1 },
-      }; // Used by the Crafting pane; every bar consumes exactly five elemental ore and alloys always combine distinct ores.
+      }; // Used by the Crafting pane; direct smelting consumes five ore per bar.
+      const METAL_BAR_ALTERNATES = {
+        lowTinBronze: [{ bar_nativeCopper: 1, tin: 1 }],
+        tinBronze: [{ bar_nativeCopper: 1, tin: 2 }],
+      }; // Optional bronze alloying with native copper bars; available whenever the ingredients are owned.
       // Weakest → strongest, i.e. the hierarchy Sloomi/Kzubug craft/reinforce with.
       const VERDIGRIS_METAL_KEYS = Object.keys(METAL_DEFS)
         .filter(k => METAL_DEFS[k].tier != null)
@@ -1835,14 +1930,17 @@
       // below, but future weapons no longer have to masquerade as tool definitions.
       const MELEE_WEAPON_SHAPE_DEFS = {
         warhammer: { label: 'Warhammer', icon: '🔨', baseSprite: 'assets/toolsprites/warhammer.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'blunt', weaponIdleClass: 'heavy', requiresDiscovery: true },
-        harlyaoLongsword: { label: 'Harlyao Longsword', icon: '🗡️', baseSprite: 'assets/toolsprites/harlyao_longsword.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'heavy', requiresDiscovery: true },
-        harlyaoBroadsword: { label: 'Harlyao Broadsword', icon: '🗡️', baseSprite: 'assets/toolsprites/harlyao_broadsword.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'heavy', requiresDiscovery: true },
+        porakanekiGreatclub: { label: 'Porakaneki Spiked Club', icon: '🪵', baseSprite: 'assets/toolsprites/porakaneki_greatclub.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'blunt', weaponIdleClass: 'heavy', requiresDiscovery: true }, // Native Porakaneki armament; tribe weapon roll and Foundry share the same authored sprite and stats.
+        harlyaoLongsword: { label: 'Harlyao Longsword', icon: '🗡️', baseSprite: 'assets/toolsprites/harlyao_longsword.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light', requiresDiscovery: true },
+        harlyaoBroadsword: { label: 'Harlyao Broadsword', icon: '🗡️', baseSprite: 'assets/toolsprites/harlyao_broadsword.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light', requiresDiscovery: true },
         bshuakauitl:  { label: "B'shuakauitl", icon: '🗡️', baseSprite: "assets/toolsprites/b'shuakauitl.png",       slots: ['weapon'], animStyle: 'sweep',  dmgType: 'sharp', weaponIdleClass: 'light' },
         daggerSword:  { label: 'Dagger-Sword',  icon: '🗡️', baseSprite: 'assets/toolsprites/dagger-sword_sweep.png', slots: ['weapon'], animStyle: 'sweep',  comboStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light' },
         plainsSword:  { label: 'Plains-Sword',  icon: '🗡️', baseSprite: 'assets/toolsprites/plains-sword.png',       slots: ['weapon'], animStyle: 'sweep',  dmgType: 'sharp', weaponIdleClass: 'heavy' },
         dagger:       { label: 'Dagger',        icon: '🗡️', baseSprite: 'assets/toolsprites/dagger.png',             slots: ['weapon'], animStyle: 'thrust', dmgType: 'sharp', weaponIdleClass: 'light' },
-        kylie:        { label: 'Kylie',         icon: '🗡️', baseSprite: 'assets/toolsprites/kylie.png',              slots: ['weapon'], animStyle: 'sweep',  dmgType: 'sharp', weaponIdleClass: 'light' },
+        kylie:        { label: 'Kylie',         icon: '🪃', baseSprite: 'assets/toolsprites/kylie.png',              slots: ['weapon'], animStyle: 'sweep',  dmgType: 'blunt', weaponIdleClass: 'light' },
         warCleaver:   { label: 'War-Cleaver',   icon: '🗡️', baseSprite: 'assets/toolsprites/war-cleaver.png',        slots: ['weapon'], animStyle: 'sweep',  dmgType: 'sharp', weaponIdleClass: 'light' },
+        hachutuTorchFlail: { label: 'Hachutu Torch-Flail', icon: '🔥', baseSprite: 'assets/toolsprites/hachutu_torch-flail_handle.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'blunt', weaponIdleClass: 'heavy', requiresDiscovery: true }, // Smithable once the player has acquired one (owning any item of this shape unlocks it, see weapon-trust-visits.js): crafted keys hachutuTorchFlail_<metal>; its chain/brazier/fire assembly resolves through the shape key (weapon-sprite-assemblies.js).
+        hachutuTorchStaff: { label: 'Hachutu Torch-Staff', icon: '🔥', baseSprite: 'assets/toolsprites/hachutu_torch-staff.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light', requiresDiscovery: true }, // Smithable once the player has acquired one (owning any item of this shape unlocks it, see weapon-trust-visits.js): crafted keys hachutuTorchStaff_<metal>; B'shuakauitl melee stance/attacks (weapon-shape-stats.js), two-tip fire from the shape's assembly.
       };
       const HELD_SHAPE_DEFS = { ...TOOL_SHAPE_DEFS, ...MELEE_WEAPON_SHAPE_DEFS }; // Shared smithing/equipment catalog used by the existing generated-item pipeline.
       // Full catalog; WeaponTrustVisits filters discovery/friendship gates.
@@ -1873,6 +1971,8 @@
             dmgType: shape.dmgType,
             spinning: shape.spinning,
             weaponIdleClass: shape.weaponIdleClass,
+            spriteLayers: shape.spriteLayers, // Future ordinary multi-PNG shapes inherit the reusable visual layers.
+            weaponAssembly: shape.weaponAssembly, // Future flail shapes inherit their authored chain/head layout.
             shapeKey, metalKey,
             itemKey, // self-reference — lets icon rendering resolve mastery/plating without a separate key param
           };
@@ -2236,7 +2336,7 @@
           // room to grow into) — a fresh character now genuinely starts at
           // the bottom of the smithing ladder (see toolMetalMultiplier).
           tools:    { hoe_nativeCopper: true, hatchet_nativeCopper: true, fishingmace_nativeCopper: true, fishingspear_nativeCopper: true, pickshovel_nativeCopper: true, crossbow: true, scatterbow: true },
-          clothing: { hat: null, hood: null, torso: null, overwear: null, pants: null },
+          clothing: { hat: null, hood: null, mask: null, torso: null, overwear: null, pants: null },
           clothingItems: [],
           charms: [],
           whistles: [
@@ -2347,7 +2447,7 @@
       const PROCESSING_FURNITURE_DEFS = {
         pestle: {
           itemKey: 'pestleFurniture', icon: '🥣', name: 'Pestle Station', method: 'mashing', color: 0x9a6a3a,
-          desc: 'Placeable processor for mashing: berries into jam, mustard seed into paste, and starchy crops into mash.'
+          desc: 'Placeable processor for mashing: berries into jam, mushtard seed into paste, and starchy crops into mash.'
         },
         squeezer: {
           itemKey: 'squeezerFurniture', icon: '🧃', name: window.HobunjiFoodProcessing?.SQUEEZING_VAT?.name || 'Squeezing Vat', method: 'squeezing', color: 0x4f9eb8,
@@ -2355,7 +2455,7 @@
         },
         handMill: {
           itemKey: 'handMillFurniture', icon: '⚙️', name: 'Hand Mill', method: 'grinding', color: 0x8f8a78,
-          desc: 'Placeable processor for grinding: needlegrain/heftroot into flour and mustard seed into powder.'
+          desc: 'Placeable processor for grinding: needlegrain/heftroot into flour and mushtard seed into powder.'
         },
         teaGrinder: {
           itemKey: 'teaGrinderFurniture', icon: '🍵', name: 'Tea Grinder', method: 'teaGrinding', specialMode: 'teaGrinder', questOnly: true, color: 0x617a4b,
@@ -2414,6 +2514,7 @@
       // These are placed inside the house. Each has a GLB model in assets/models/furniture/.
       // area: 'interior' = house only, 'farm' = farm only, 'any' = either
       const DECORATIVE_FURNITURE_DEFS = {
+        groomingKit: { itemKey: 'groomingKitFurniture', icon: '🪞', name: 'Grooming Kit', price: 20, fw: 1, fd: 1, color: 0x8b6540, area: 'any', alwaysKnown: true, desc: 'A basin of water on a short table. Change your appearance cosmetics.' },
         basicBed:      { itemKey: 'basicBedFurniture',      icon: '🛏️', name: 'Single Bed',          modelFile: 'basicbed_single_refined.glb',  price: 35, fw: 1, fd: 2, color: 0x8b6540, area: 'interior', desc: 'A comfortable single bed for restful sleep.' },
         doubleBed:     { itemKey: 'doubleBedFurniture',     icon: '🛏️', name: 'Double Bed',           modelFile: 'basicbed_double_refined.glb',  price: 55, fw: 2, fd: 2, color: 0x8b6540, area: 'interior', desc: 'A spacious double bed.' },
         bedroll:       { itemKey: 'bedrollFurniture',       icon: '🛌', name: 'Bedroll',              modelFile: 'bedroll_folded.glb',            price: 12, fw: 1, fd: 1, color: 0x6b8c5e, area: 'interior', desc: 'A simple folded bedroll for sleeping rough.' },
@@ -2442,6 +2543,12 @@
         nightstand:    { itemKey: 'nightstandFurniture',    icon: '🕯️', name: 'Nightstand',           modelFile: 'nightstand.glb',               price: 18, fw: 1, fd: 1, color: 0x6b4a28, area: 'interior', desc: 'A small bedside table.', light: { color: 0xffaa44, intensity: 0.5, distance: 4, height: 0.5 } },
         hangingBanner: { itemKey:'hangingBannerFurniture',icon:'🎏',name:'Hanging Banner',price:25,fw:2,fd:1,color:0x8b6540,area:'any',desc:'Patterned cloth suspended from a wooden beam; its free edge moves with the wind.' },
         rug:           { itemKey: 'rugFurniture',           icon: '🧶', name: 'Woven Rug',            modelFile: 'rug_woven_small.glb',          price: 22, fw: 2, fd: 2, color: 0x8a5a3a, area: 'interior', walkable: true, desc: 'A small decorative woven rug.' },
+        servingTable: { itemKey:'servingTableFurniture', icon:'🍲', name:'Serving Table', fw:4, fd:1, color:0x926a43, area:'any', price:40, desc:'A table with reusable furniture placed on its authored surface.' },
+        servingPot: { itemKey:'servingPotFurniture', icon:'🍲', name:'Serving Pot', fw:1, fd:1, color:0x52433e, area:'any', price:10, desc:'An open serving pot for surface placement.' },
+        bowlStack: { itemKey:'bowlStackFurniture', icon:'🥣', name:'Stack of Bowls', fw:1, fd:1, color:0x906344, area:'any', price:8, desc:'Stacked bowls for a shared table.' },
+        festivalStage: { itemKey:'festivalStageFurniture',icon:'🎵',name:'Festival Bandstand Stage',fw:2,fd:2,color:0x906344,area:'any',walkable:true,price:80,desc:'Editable wooden stage, platform, steps, and back rail.' },
+        festivalDanceFloor: { itemKey:'festivalDanceFloorFurniture',icon:'💃',name:'Festival Dance Floor',fw:2,fd:2,color:0x906344,area:'any',walkable:true,price:60,desc:'A broad wooden dance floor with carved edging.' },
+        festivalArch: { itemKey:'festivalArchFurniture',icon:'🎏',name:'Festival Road Arch',fw:1,fd:1,color:0x906344,area:'any',walkable:true,price:32,desc:'Editable overhead wooden arch with cloth pennants; festivalArchWidth sets its clear span in authored maps.' },
         standingLamp:  { itemKey: 'standingLampFurniture',  icon: '💡', name: 'Bronze Standing Lamp', modelFile: 'standing_lamp_bronze.glb',     price: 28, fw: 1, fd: 1, color: 0xb87333, area: 'interior', desc: 'A tall bronze oil lamp.', light: { color: 0xffc266, intensity: 0.9, distance: 6, height: 1.3 } },
         artifactPedestal: { itemKey: 'artifactPedestalFurniture', icon: '🏛️', name: 'Artifact Pedestal', price: 0, fw: 1, fd: 1, color: 0x7b7466, area: 'any', fixture: true, desc: 'Garanki’s display pedestal for donated artifacts.' },
         statue:        { itemKey: 'statueFurniture',        icon: '🗿', name: 'Weathered Statue',     modelFile: 'statue_weathered.glb',         price: 30, fw: 1, fd: 1, color: 0x54585e, area: 'any',      desc: 'A weathered stone statue, worn by time.' },
@@ -2467,7 +2574,7 @@
         // DECORATIVE_FURNITURE_CATALOG just below. They're still ordinary
         // mapData.furniture entries otherwise: placeable, moveable and
         // duplicateable in the Interior Editor like anything else.
-        alchemyTable:  { itemKey: 'alchemyTableFurniture',  icon: '⚗️', name: 'Alchemy Table',        price: 0,  fw: 1, fd: 1, color: 0x6b4a8a, area: 'interior', desc: 'A cauldron table for brewing potions.', fixture: true },
+        alchemyTable:  { itemKey: 'alchemyTableFurniture',  icon: '⚗️', name: 'Alchemy Cauldron',     price: 55, fw: 1, fd: 1, color: 0x6b4a8a, area: 'interior', desc: 'A home cauldron for brewing potions using the same recipes as the potion shop.' },
         bulletinBoard: { itemKey: 'bulletinBoardFurniture', icon: '📋', name: 'Bulletin Board',       price: 0,  fw: 1, fd: 1, color: 0x8a6a3a, area: 'interior', desc: 'A notice board for public tasks and favors.', fixture: true },
         mineLadder:    { itemKey: 'mineLadderFurniture',    icon: '🪜', name: 'Mine Ladder',          price: 0,  fw: 1, fd: 1, color: 0x7a5c3a, area: 'interior', desc: 'The mine ladder and its construction plans.', fixture: true },
         // Authored interior fire furniture (see interior-fire-void-runtime.js's
@@ -2496,6 +2603,7 @@
         .map(([, def]) => ({
           key: def.itemKey, icon: def.icon, name: def.name, desc: def.desc,
           price: def.price, gives: { [def.itemKey]: 1 }, category: 'furniture',
+          alwaysKnown: !!def.alwaysKnown || def.itemKey === 'campfireKitFurniture', // Starter designs need no physical recipe.
           moteOnly: !!def.moteOnly, masteryUnlockId: def.masteryUnlockId || null, // Preserve mastery gates when projecting definitions into shop/blueprint catalogs.
         }));
 
@@ -2508,6 +2616,9 @@
       // actually placed/rendered; buildFurnitureVisual falls back to the
       // procedural CATALOG for any key not (yet) in this list.
       const AUTHORED_FURNITURE_KEYS = new Set([
+        'servingTable', 'servingPot', 'bowlStack',
+        'festivalStage', 'festivalDanceFloor', 'festivalArch',
+        'festivalGifts', 'festivalAncestors', 'festivalBlossoms', 'festivalFeast', 'festivalSweets', 'festivalMasks', 'festivalBunting',
         'chairSimple', 'chairCushion', 'stool', 'bench',
         'pestle', 'squeezer', 'handMill', 'dryingRack', 'smoker', 'agingBarrel', 'agingVase',
         'basicBed', 'doubleBed', 'bedroll', 'bookshelf', 'bucket', 'candleTable',
@@ -2549,6 +2660,9 @@
       // and mechanisms use the existing copper/tin/bronze hierarchy, never rare
       // weapon-tier alloys merely for decoration. Wool supplies actual textiles.
       const FURNITURE_MATERIAL_COSTS = { // Used by the shared blueprint catalog and all Crafting-tab material checks.
+        festivalStageFurniture: { wood: 24 },
+        festivalDanceFloorFurniture: { wood: 18 },
+        festivalArchFurniture: { wood: 8, lightWool: 2 },
         pestleFurniture: { wood: 2, stone: 4 },
         squeezerFurniture: { wood: 4, bar_nativeCopper: 1 },
         handMillFurniture: { wood: 3, stone: 5, bar_lowTinBronze: 1 },
@@ -2556,11 +2670,13 @@
         smokerFurniture: { wood: 4, stone: 4, bar_nativeCopper: 1 },
         agingBarrelFurniture: { wood: 6, bar_nativeCopper: 2 },
         agingVaseFurniture: { stone: 6 },
+        alchemyTableFurniture: { wood: 4, stone: 3, bar_nativeCopper: 2 }, // Used by Dzibim's learnable home-cauldron blueprint.
         basicBedFurniture: { wood: 6, puktukWool: 4 },
         doubleBedFurniture: { wood: 9, puktukWool: 8 },
         bedrollFurniture: { puktukWool: 3 },
         benchFurniture: { wood: 3 },
         bookshelfFurniture: { wood: 5 },
+        groomingKitFurniture: { wood: 3, bar_tin: 1 },
         bucketFurniture: { bar_tin: 2 },
         candleTableFurniture: { wood: 2, bar_nativeCopper: 1 },
         chairSimpleFurniture: { wood: 2 },
@@ -2592,7 +2708,7 @@
       }
       const FURNITURE_BLUEPRINT_CATALOG = [
         ...PROCESSING_FURNITURE_CATALOG.map(item => ({ item, category: 'processing' })),
-        ...DECORATIVE_FURNITURE_CATALOG.map(item => ({ item, category: 'decorative' })),
+        ...DECORATIVE_FURNITURE_CATALOG.map(item => ({ item, category: item.key === 'alchemyTableFurniture' ? 'processing' : 'decorative' })), // Cauldrons craft under Processing, while the placed piece uses decorative furniture placement.
       ].map(({ item, category }) => ({
         key: blueprintItemKey(item.key),
         furnitureKey: item.key,
@@ -2601,20 +2717,26 @@
         desc: item.desc,
         moteOnly: !!item.moteOnly, // Used to keep Mote-only mastery blueprints out of the gold Carpenter inventory.
         masteryUnlockId: item.masteryUnlockId || null, // Used by CraftingPanel to treat the world-scoped mastery purchase as permanent blueprint ownership.
-        // A permanent, reusable unlock (see craftFurnitureFromBlueprint —
-        // building from a blueprint only ever spends materials, never the
-        // blueprint itself), so it's priced above the finished piece's own
+        // Reading consumes the paper and permanently learns the design;
+        // building then spends only materials. Price the lesson above the finished piece's own
         // price rather than a fraction of it.
         price: Math.max(15, Math.round(item.price * 1.5)),
         craftCost: furnitureCraftCost(item),
         category,
+        alwaysKnown: !!item.alwaysKnown, // Preserves automatically known starter designs in CraftingPanel.
       }));
+
+      // Synchronize module-added furniture before the Pack registers its item definitions.
+      // The Butter Churn's late init hooks alone run after ITEM_DEFS/inventoryItems are built,
+      // which otherwise leaves purchased churn recipes invisible or unreadable in the Pack.
+      window.HobunjiFoodProcessing?.ensureProcessingFurnitureDef?.(PROCESSING_FURNITURE_DEFS);
+      window.HobunjiFoodProcessing?.ensureBlueprint?.(FURNITURE_BLUEPRINT_CATALOG);
 
       const LIVESTOCK_CATALOG = [
         { key: 'puktuk',   icon: '🐐', name: 'Puktuk',   desc: 'Coming soon: meat, milk, and wool livestock.', price: 120, comingSoon: true },
-        { key: 'nelk',     icon: '🐔', name: 'Nelk',     desc: 'Coming soon: meat, eggs, and mayonnaise chain.', price: 90,  comingSoon: true },
+        { key: 'nelkCrate', icon: '🦎', name: 'Nelk Crate', desc: 'A Nelk for your farm. Add the crate from the Farm tab and assign the animal to a barn.', price: 90, gives: { nelkCrate: 1 }, category: 'livestock' },
         { key: 'uumkaoiiCrate', icon: '🦆', name: 'Uumkao’ii Crate', desc: 'A travel crate with one uumkao’ii inside. Add it to the farm’s livestock from the Farm tab.', price: 150, gives: { uumkaoiiCrate: 1 }, category: 'livestock' },
-        { key: 'nazgraku', icon: '🦃', name: 'Nazgraku', desc: 'Coming soon: meat, eggs, and combat-leaning produce.', price: 160, comingSoon: true },
+        { key: 'nazgrakuCrate', icon: '🐟', name: 'Nazgraku Crate', desc: 'A Nazgraku for your farm. Add the crate from the Farm tab and assign it to a barn.', price: 160, gives: { nazgrakuCrate: 1 }, category: 'livestock' },
         { key: 'drenkirra', icon: '🪿', name: 'Drenkirra', desc: 'Coming soon: meat, eggs, and agile produce.', price: 140, comingSoon: true },
         { key: 'grehlr',   icon: '🦨', name: 'Grehlr',   desc: 'Coming soon: meat and denatured stink oil.', price: 130, comingSoon: true },
         { key: 'voorgAss', icon: '🫏', name: 'Voorg-Ass', desc: 'Coming soon: meat and white milk.', price: 135, comingSoon: true },
@@ -2628,8 +2750,8 @@
         // Berry seeds are intentionally not sold — all 5 varieties grow wild
         // across the wilderness zones instead (see WILD_BERRY_ZONES) and
         // have a small chance to yield a seed when foraged.
-        { key: 'blackMustardSeed',   icon: '⚫', name: 'Black Mustard Seed',  desc: 'Hot mustard crop. Ideal water 15–40%.', price: 14, gives: { blackMustardSeed: 2 } },
-        { key: 'greenMustardSeed',   icon: '🥬', name: 'Green Mustard Seed',  desc: 'Fresh mustard crop. Ideal water 30–65%.', price: 14, gives: { greenMustardSeed: 2 } },
+        { key: 'blackMustardSeed',   icon: '⚫', name: 'Black Mushtard Seed',  desc: 'Hot mushtard crop. Ideal water 15–40%.', price: 14, gives: { blackMustardSeed: 2 } },
+        { key: 'greenMustardSeed',   icon: '🥬', name: 'Green Mushtard Seed',  desc: 'Fresh mushtard crop. Ideal water 30–65%.', price: 14, gives: { greenMustardSeed: 2 } },
         { key: 'mulchBag',           icon: '🍂', name: 'Mulch Bag',           desc: 'Boosts soil recovery and gives clearing material.', price: 3, gives: { mulch: 5 } },
         // Furniture (processing stations and decorative pieces) is no longer
         // mail-order-able — see FURNITURE_BLUEPRINT_CATALOG. Blueprints are
@@ -2689,6 +2811,7 @@
 
       // Pending orders: [{catalogKey, qty, arrivalDay, name}]
       let pendingOrders  = [];
+      let pendingOrdersWorldId = null; // Only save this world's orders after spawnPlayerAvatar has hydrated its receipts.
       let deliveryLog    = [];
       const SELL_INTERVAL_HOURS = 4;  // sell crate empties every N game-hours
 
@@ -3000,15 +3123,17 @@
         return obj;
       }
 
-      function placeProcessingFurniture(col, row, furnitureKey) {
+      function placeProcessingFurniture(col, row, furnitureKey, source = 'bag') {
         const def = PROCESSING_FURNITURE_DEFS[furnitureKey];
         if (!def) return { ok: false, message: 'Unknown furniture.' };
         if (!canPlaceFurnitureAt(col, row)) return { ok: false, message: 'Place furniture on an empty grass, tilled, or raised tile.' };
-        if ((inventory[def.itemKey] || 0) < 1) return { ok: false, message: 'No ' + def.name + ' in your bag.' };
+        if (!hasFarmPermission('placeFurniture') || furnitureStock(def.itemKey, source) < 1) return { ok: false, message: 'No available ' + def.name + ' or furniture permission.' };
         const obj = makeProcessingFurniture(col, row, furnitureKey);
         if (!obj) return { ok: false, message: 'Could not make furniture object.' };
-        inventory[def.itemKey]--;
-        clampInventoryStack(def.itemKey);
+        if (!consumeFurnitureStock(def.itemKey, source)) {
+          obj.reset(); // Dispose the new processor/VFX before it can enter the world when storage cannot be debited.
+          return { ok: false, message: 'Could not save furniture consumption. Nothing was placed.' };
+        }
         worldObjects.set(col + ',' + row, obj);
         processingFurnitureObjects.add(obj);
         return { ok: true, message: 'Placed ' + def.icon + ' ' + def.name + '.' };
@@ -3087,9 +3212,11 @@
         return entry ? entry[0] : null;
       }
 
-      function decorativeFurnitureSize(furnitureKey, rotYDeg = 0) {
+      function decorativeFurnitureSize(furnitureKey, rotYDeg = 0, dimensions = null) {
         const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
-        const baseW = def?.fw || 1, baseD = def?.fd || 1;
+        const isRug = furnitureKey === 'rug'; // Only woven rugs use two-corner tile sizing; ordinary furniture keeps its authored footprint.
+        const baseW = isRug && Number.isInteger(dimensions?.widthTiles) ? Math.max(1, Math.min(16, dimensions.widthTiles)) : (def?.fw || 1);
+        const baseD = isRug && Number.isInteger(dimensions?.heightTiles) ? Math.max(1, Math.min(16, dimensions.heightTiles)) : (def?.fd || 1);
         const angle = (rotYDeg || 0) * Math.PI / 180;
         const cos = Math.abs(Math.cos(angle)), sin = Math.abs(Math.sin(angle));
         return {
@@ -3098,9 +3225,9 @@
         };
       }
 
-      function canPlaceDecorativeFurnitureAt(col, row, ignoreId = null, furnitureKey = null, rotYDeg = 0, area = currentArea) {
+      function canPlaceDecorativeFurnitureAt(col, row, ignoreId = null, furnitureKey = null, rotYDeg = 0, area = currentArea, dimensions = null) {
         const g = area === 'interior' ? interiorGrid : grid;
-        const { fw, fd } = decorativeFurnitureSize(furnitureKey, rotYDeg);
+        const { fw, fd } = decorativeFurnitureSize(furnitureKey, rotYDeg, dimensions);
         // Farm decor also has to respect worldObjects — the same shared
         // occupancy map processing furniture, barns, and the sell/supply
         // crates register into (see canPlaceFurnitureAt above) — or a
@@ -3111,34 +3238,52 @@
         // or moving a farm-placed sittable piece doesn't see its own
         // pre-move registration as a collision.
         const ignoreObj = ignoreId ? interiorFurnitureObjects.find(o => o.id === ignoreId) : null;
+        const placingRug = furnitureKey === 'rug'; // Rugs never claim collision occupancy, even beneath an existing chest, chair or other rug.
         for (let r = row; r < row + fd; r++) {
           for (let c = col; c < col + fw; c++) {
             const tile = g[r]?.[c];
             if (!tile || tile.type === TileType.ROCK) return false;
+            if (area === 'interior' && (_interiorRoomDoorTiles.has(c + ',' + r)
+                || _interiorArrivalTiles.has(c + ',' + r))) return false; // Keep room doors and exterior entrance landings free of furniture.
             if (area === 'farm') {
               if (window.GridTileAccessors.isHouseFootprint(c, r)) return false;
               const occupyingWorldObject = getWorldObjectAt(c, r);
               const isOwnCurrentTile = ignoreObj && ignoreObj.col === c && ignoreObj.row === r;
-              if (occupyingWorldObject && !isOwnCurrentTile) return false;
+              if (!placingRug && occupyingWorldObject && !isOwnCurrentTile) return false;
             }
           }
         }
         return !interiorFurnitureObjects.find(o => {
-          if (o.id === ignoreId || o.area !== area) return false;
-          const { fw: ow, fd: od } = decorativeFurnitureSize(o.key, o.rotYDeg || 0);
+          if (o.id === ignoreId || o.area !== area || placingRug || o.key === 'rug') return false; // Rugs remain overlap-friendly.
+          if (o.tableAttachment && o.tableId === ignoreId) return false; // A parent carries its own chairs to the new position.
+          if (o.tableAttachment) {
+            const candidate = DECORATIVE_FURNITURE_DEFS[furnitureKey];
+            const attached = DECORATIVE_FURNITURE_DEFS[o.key];
+            return !!(candidate && attached && window.TableChairPlacement?.overlapsFootprints?.(
+              { x: col + fw / 2, z: row + fd / 2, width: candidate.fw || 1, depth: candidate.fd || 1, yaw: rotYDeg * Math.PI / 180 },
+              { x: o.mesh.position.x, z: o.mesh.position.z, width: attached.fw || 1, depth: attached.fd || 1, yaw: o.mesh.rotation.y }
+            )); // No grid tile claimed by the attached chair, but physical overlap is still prohibited.
+          }
+          const { fw: ow, fd: od } = decorativeFurnitureSize(o.key, o.rotYDeg || 0, o);
           return col < o.col + ow && col + fw > o.col && row < o.row + od && row + fd > o.row;
         });
       }
 
-      function housePieceOwningInteriorCell(col, row) {
-        return housePieces.find(p => p.stage === 'built'
-          && col >= p.col * 2 && col < (p.col + p.w) * 2
-          && row >= p.row * 2 && row < (p.row + p.h) * 2) || null;
+      function interiorRoomRect(piece) {
+        return window.FarmhouseRoomPlanner?.roomRect?.(piece) // New room space keeps exterior house rectangles untouched.
+          || (piece ? { col: piece.col * 2, row: piece.row * 2, w: piece.w * 2, h: piece.h * 2 } : null);
       }
-
+      function housePieceOwningInteriorCell(col, row) {
+        return housePieces.find(p => {
+          if (p.stage !== 'built') return false;
+          const rect = interiorRoomRect(p); // Each room has its own offset and original full-size footprint.
+          return rect && col >= rect.col && col < rect.col + rect.w && row >= rect.row && row < rect.row + rect.h;
+        }) || null;
+      }
       function furnitureOwnerFields(col, row) {
         const owner = housePieceOwningInteriorCell(col, row);
-        return owner ? { ownerPieceId: owner.id, localCol: col - owner.col * 2, localRow: row - owner.row * 2 } : {};
+        const rect = interiorRoomRect(owner);
+        return rect ? { ownerPieceId: owner.id, localCol: col - rect.col, localRow: row - rect.row } : {};
       }
 
       // Exact oriented-footprint collision for furniture. Placement remains
@@ -3148,8 +3293,8 @@
       function decorativeFurnitureBlocksPoint(obj, x, z) {
         const def = DECORATIVE_FURNITURE_DEFS[obj.key];
         if (!def || def.walkable) return false;
-        const bounds = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0);
-        const cx = obj.col + bounds.fw * 0.5, cz = obj.row + bounds.fd * 0.5;
+        const bounds = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0, obj);
+        const cx = obj.tableAttachment ? obj.mesh.position.x : obj.col + bounds.fw * 0.5, cz = obj.tableAttachment ? obj.mesh.position.z : obj.row + bounds.fd * 0.5;
         const angle = -(obj.rotYDeg || 0) * Math.PI / 180;
         const dx = x - cx, dz = z - cz;
         const localX = dx * Math.cos(angle) - dz * Math.sin(angle);
@@ -3157,8 +3302,23 @@
         return Math.abs(localX) < (def.fw || 1) * 0.5 && Math.abs(localZ) < (def.fd || 1) * 0.5;
       }
 
-      function furnitureBlocksMovementAt(area, x, z) {
-        if (window.AreaFootprintBlockers?.blocksPoint(area, x, z)) return true;
+      function decorativeFurnitureClaimsInteriorCell(obj, c, r) {
+        if (obj.tableAttachment) {
+          const def = DECORATIVE_FURNITURE_DEFS[obj.key];
+          return !!(def && obj.mesh && window.TableChairPlacement?.overlapsFootprints?.(
+            { x: c + 0.5, z: r + 0.5, width: 1, depth: 1, yaw: 0 },
+            { x: obj.mesh.position.x, z: obj.mesh.position.z, width: def.fw || 1,
+              depth: def.fd || 1, yaw: obj.mesh.rotation.y }
+          ));
+        }
+        const bounds = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0, obj);
+        return c >= obj.col && r >= obj.row
+          && c < obj.col + bounds.fw && r < obj.row + bounds.fd;
+      }
+
+      function furnitureBlocksMovementAt(area, x, z, worldY = null) {
+        if (window.AreaFootprintBlockers?.blocksBox(area, x, z, 0, worldY)) return true;
+        if (window.FurnitureTableSystem?.blocksBox(area, x, z, 0, worldY)) return true; // Exterior and locale furniture share the normal NPC/player movement authority.
         if (_isZoneArea(area) && window.FoliageFurnitureRuntime?.blocksPoint(area, x, z)) return true;
         if (interiorFurnitureObjects.some(obj => obj.area === area && decorativeFurnitureBlocksPoint(obj, x, z))) return true;
         if (area === 'interior' && _derivedHearthMeshes.some(h => {
@@ -3549,7 +3709,27 @@
       // baked onto each placed instance, so it applies uniformly to every
       // creation path (placing one fresh, loading a saved layout, restoring
       // on reset) with no extra bookkeeping at any of those call sites.
+      function makeAlchemyTableInteractable() {
+        return {
+          interactIcon: '⚗️',
+          interactLabel: 'Brew Potion',
+          getButtons() {
+            return [{ icon: '⚗️', label: 'Brew Potion', action: 'obj_alchemy', style: 'primary', allowed: true }];
+          },
+          onAction(action) {
+            if (action !== 'obj_alchemy' && action !== 'obj_interact') return { ok: false, message: 'Unknown action.' };
+            openMenu('alchemy');
+            return { ok: true, message: 'Opened the alchemy cauldron.' };
+          },
+        };
+      }
+
       function getInteriorInteractableAt(col, row) {
+        const houseDoor = _farmhouseDoorInteractables.get(col + ',' + row); // A partition's opening uses the same wooden-door interaction as a town interior.
+        if (houseDoor?.getButtons?.().length) {
+          const button = houseDoor.getButtons()[0]; // Live Open/Close name follows its animation state.
+          return { interactIcon: button.icon, interactLabel: button.label, onAction: () => houseDoor.onAction('obj_door_toggle') };
+        }
         const derivedHearth = _derivedHearthMeshes.find(hearth => {
           const dx = col + 0.5 - hearth.cx, dz = row + 0.5 - hearth.cz;
           const localX = dx * Math.cos(-hearth.yaw) - dz * Math.sin(-hearth.yaw); // Used to test the authored two-by-one hearth footprint in its local rotation.
@@ -3558,11 +3738,13 @@
         });
         if (derivedHearth) return makeCookingInteractable();
         const o = interiorFurnitureObjects.find(f => {
-          if (f.area !== 'interior') return false;
-          const size = decorativeFurnitureSize(f.key, f.rotYDeg || 0); // Used to make every tile of a multi-cell hearth targetable.
+          if (f.area !== 'interior' || f.key === 'rug') return false; // A rug under a bed/chair must never steal that furniture's interaction.
+          const size = decorativeFurnitureSize(f.key, f.rotYDeg || 0, f); // Each resizable rug retains its actual tile footprint.
           return col >= f.col && col < f.col + size.fw && row >= f.row && row < f.row + size.fd;
         });
         if (!o) return null;
+        if (o.key === 'groomingKit') return makeGroomingInteractable();
+        if (o.key === 'alchemyTable') return makeAlchemyTableInteractable(); // The player's farmhouse cauldron uses the potion shop's menu.
         if (o.key === 'hearth') return makeCookingInteractable();
         if (o.key === 'loom') return makeLoomInteractable(false); // Simple Loom keeps the ordinary one-pattern weaving rules.
         if (o.key === 'advancedLoom') return makeLoomInteractable(true); // Advanced Loom opts the shared panel into overpass authoring and doubled overpass costs.
@@ -3572,13 +3754,14 @@
             interactLabel: 'Sleep',
             onAction(action) {
               if (action !== 'obj_interact') return { ok: false, message: 'Unknown action.' };
-              return sleepInBed();
+              if (sitInteraction || dialogueOpen || window.FarmAnimals.isHarvesting() || (window.Mounts?.rideState ?? 'none') !== 'none') return { ok: false, message: 'Cannot lie down right now.' };
+              return window.BedLiePose?.begin?.(o) || { ok: false, message: 'Lie-down animation is not available.' };
             },
           };
         }
         const def = DECORATIVE_FURNITURE_DEFS[o.key];
         if (def?.sit) {
-          const { fw, fd } = decorativeFurnitureSize(o.key, o.rotYDeg || 0);
+          const { fw, fd } = decorativeFurnitureSize(o.key, o.rotYDeg || 0, o);
           return makeSitInteractable(o.key, o.col, o.row, fw, fd, o.rotYDeg || 0);
         }
         return null;
@@ -3594,19 +3777,26 @@
         return light;
       }
 
-      function makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene, area = currentArea, rotYDeg = 0) {
+      function makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene, area = currentArea, rotYDeg = 0, dimensions = null) {
         const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
         if (!def) return null;
-        const { fw, fd } = decorativeFurnitureSize(furnitureKey, rotYDeg);
+        const { fw, fd } = decorativeFurnitureSize(furnitureKey, rotYDeg, dimensions);
         const centerX = col + fw * 0.5; // Furniture anchor X used by placement and the farm's continuous height sampler.
         const centerZ = row + fd * 0.5; // Furniture anchor Z paired with centerX for slope-conforming placement.
         const surfaceY = furnitureSurfaceYAtWorld(area, centerX, centerZ); // Farm decor follows the farmhouse/barn hill; interiors and authored external maps keep their existing local Y.
         const group = buildFurnitureVisual(furnitureKey, def.color || 0x8b6540);
-        group.position.set(centerX, surfaceY, centerZ);
+        if (furnitureKey === 'rug' && dimensions) {
+          const rugSize = decorativeFurnitureSize('rug', 0, dimensions); // Sanitize saved sizes before any visual scale.
+          const farmhouseInset = area === 'interior' ? 1 : 0; // Half-tile inset on each side; logical footprint remains unchanged.
+          group.scale.set(Math.max(0.05, rugSize.fw - farmhouseInset) / def.fw, 1, Math.max(0.05, rugSize.fd - farmhouseInset) / def.fd);
+        } // Stretch the authored woven-rug visual to its two selected tile dimensions.
+        const rugLayer = furnitureKey === 'rug' ? Math.max(0, Math.min(32, Number(dimensions?.rugLayer) || 0)) : 0; // Render-only rug stack index; each full layer clears the prior rug's thickness.
+        group.position.set(centerX, surfaceY + rugLayer * 0.032, centerZ);
         group.rotation.y = rotYDeg * Math.PI / 180;
         _markOutline(group);
         _markFurnitureEdgeId(group);
         targetScene.add(group);
+        // Registration happens only after the owning placed record receives its stable id. Rug overlaps cannot share fallback tile ids.
 
         let light = null;
         if (def.light) {
@@ -3629,26 +3819,61 @@
         }));
       }
 
-      function placeDecorativeFurniture(col, row, furnitureKey) {
+      // Farm-yard cauldrons need a world object, like outdoor seats. Every furniture lifecycle path calls this.
+      function registerFarmDecorativeInteractable(furnitureKey, col, row, fw, fd, rotYDeg) {
+        if (furnitureKey === 'alchemyTable') {
+          worldObjects.set(col + ',' + row, Object.assign(makeAlchemyTableInteractable(), {
+            type: 'decorative_furniture', col, row,
+          }));
+        } else if (DECORATIVE_FURNITURE_DEFS[furnitureKey]?.sit) {
+          registerSitWorldObject(furnitureKey, col, row, fw, fd, rotYDeg);
+        }
+      }
+      function isFarmDecorativeInteractable(furnitureKey) {
+        return furnitureKey === 'alchemyTable' || !!DECORATIVE_FURNITURE_DEFS[furnitureKey]?.sit;
+      }
+
+      function placeDecorativeFurniture(col, row, furnitureKey, source = 'bag', dimensions = null) {
         const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
         if (!def) return { ok: false, message: 'Unknown furniture type.' };
         const isInInterior = currentArea === 'interior';
         const isOnFarm = currentArea === 'farm';
         if (def.area === 'interior' && !isInInterior && !isOnFarm) return { ok: false, message: `${def.name} can only be placed inside the house or on your farm.` };
         if (def.area === 'farm' && !isOnFarm) return { ok: false, message: `${def.name} must be placed on the farm.` };
-        if (!canPlaceDecorativeFurnitureAt(col, row, null, furnitureKey)) return { ok: false, message: 'Cannot place furniture here.' };
+        if (furnitureKey === 'rug' && !dimensions) {
+          // Held-item placement uses the same compulsory two-click rug
+          // workflow as Furniture Placer, rather than creating a default rug
+          // immediately on the very first Action 1.
+          if (rugFirstCorner && furniturePlacementArmedKey === def.itemKey) {
+            commitFurniturePlacementAt(col, row);
+            return { ok: true, message: 'Rug corner confirmed.' };
+          }
+          if (!canPlaceDecorativeFurnitureAt(col, row, null, 'rug', 0, currentArea, { widthTiles: 1, heightTiles: 1 })) {
+            return { ok: false, message: 'Choose a clear first corner for the woven rug.' };
+          }
+          if (!hasFarmPermission('placeFurniture') || furnitureStock(def.itemKey, source) < 1) return { ok: false, message: 'No available rug or furniture permission.' };
+          armFurniturePlacement(def.itemKey, source);
+          rugFirstCorner = { col, row }; // The original held-item tile becomes the first corner; no inventory consumed yet.
+          return { ok: true, message: 'First rug corner set. Aim at the opposite corner and press Action 1.' };
+        }
+        if (!canPlaceDecorativeFurnitureAt(col, row, null, furnitureKey, 0, currentArea, dimensions)) return { ok: false, message: 'Cannot place furniture here.' };
         const itemKey = def.itemKey;
-        if ((inventory[itemKey] || 0) < 1) return { ok: false, message: `No ${def.name} in inventory.` };
+        if (!hasFarmPermission('placeFurniture') || furnitureStock(itemKey, source) < 1) return { ok: false, message: `No available ${def.name} or furniture permission.` };
         const targetScene = isInInterior ? interiorScene : scene;
-        const result = makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene, currentArea);
+        const result = makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene, currentArea, 0, dimensions);
         if (!result) return { ok: false, message: 'Could not create furniture mesh.' };
-        inventory[itemKey]--;
-        clampInventoryStack(itemKey);
+        if (!consumeFurnitureStock(itemKey, source)) {
+          disposeDecorativeFurniture({ ...result, key: furnitureKey, col, row, area: currentArea });
+          return { ok: false, message: 'Could not save furniture consumption. Nothing was placed.' };
+        }
         const owner = isInInterior ? furnitureOwnerFields(col, row) : {};
-        interiorFurnitureObjects.push({ id: 'decor_' + Math.random().toString(36).slice(2, 10), key: furnitureKey, col, row,
-          mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: currentArea, rotYDeg: 0, ...owner });
-        if (isOnFarm && def.sit) registerSitWorldObject(furnitureKey, col, row, def.fw, def.fd, 0);
-        registerChairNpcStation(furnitureKey, col, row, 0, normalizeNpcArea(currentArea));
+        const placedFurniture = { id: 'decor_' + Math.random().toString(36).slice(2, 10), key: furnitureKey, col, row,
+          mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: currentArea, rotYDeg: 0,
+          ...(furnitureKey === 'rug' && dimensions ? { widthTiles: dimensions.widthTiles, heightTiles: dimensions.heightTiles, rugLayer: 0 } : {}), ...owner }; // Every rug owns the dimensions chosen with its two corners.
+        interiorFurnitureObjects.push(placedFurniture);
+        window.FurnitureTableSystem?.registerPlacement(currentArea, placedFurniture, result.mesh, def);
+        if (isOnFarm) registerFarmDecorativeInteractable(furnitureKey, col, row, def.fw, def.fd, 0);
+        placedFurniture.npcStationId = registerChairNpcStation(furnitureKey, col, row, 0, normalizeNpcArea(currentArea), null, null, placedFurniture.id);
         window.HudUpdate.refreshItemScroll();
         window.FarmEditor.saveFarmLayout();
         return { ok: true, message: `${def.icon} ${def.name} placed.` };
@@ -3682,7 +3907,9 @@
         const result = makeDecorativeFurnitureMesh(col, row, furnitureKey, interiorScene, 'interior');
         if (!result) return null;
         const id = 'decor_' + Math.random().toString(36).slice(2, 10);
-        interiorFurnitureObjects.push({ id, key: furnitureKey, col, row, mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: 'interior', rotYDeg: 0, ...furnitureOwnerFields(col, row) });
+        const fixture = { id, key: furnitureKey, col, row, mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: 'interior', rotYDeg: 0, ...furnitureOwnerFields(col, row) }; // Stable fixture id is registered once after spawning.
+        interiorFurnitureObjects.push(fixture);
+        window.FurnitureTableSystem?.registerPlacement('interior', fixture, result.mesh, DECORATIVE_FURNITURE_DEFS[furnitureKey]);
         window.FarmEditor.saveFarmLayout();
         return { id, col, row, stored };
       }
@@ -3696,6 +3923,9 @@
 
       function disposeDecorativeFurniture(obj, refundToInventory = false) {
         const targetScene = obj.area === 'interior' ? interiorScene : scene;
+        const linkedChairs = interiorFurnitureObjects.filter(child =>
+          child.id !== obj.id && child.area === obj.area && child.tableId === obj.id); // Retained after the parent leaves its footprint.
+        window.FurnitureTableSystem?.unregisterPlacement?.(obj.area, obj.id || obj.mesh); // Removes precisely this furniture instance, leaving stacked rugs registered.
         targetScene.remove(obj.mesh);
         obj.mesh?.traverse?.(child => {
           if (child.geometry) child.geometry.dispose();
@@ -3703,37 +3933,336 @@
         });
         if (obj.light) targetScene.remove(obj.light);
         window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
-        if (obj.area === 'farm' && DECORATIVE_FURNITURE_DEFS[obj.key]?.sit) worldObjects.delete(obj.col + ',' + obj.row);
-        unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
+        if (obj.area === 'farm' && isFarmDecorativeInteractable(obj.key)) worldObjects.delete(obj.col + ',' + obj.row);
+        unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area), obj.npcStationId);
         const idx = interiorFurnitureObjects.indexOf(obj);
         if (idx >= 0) interiorFurnitureObjects.splice(idx, 1);
+        for (const child of linkedChairs) {
+          const wasAttached = !!child.tableAttachment;
+          child.tableAttachment = null;
+          child.tableId = '';
+          if (wasAttached) {
+            const tile = nearestDetachedChairTile(child);
+            if (tile && moveDecorativeFurniture(child.id, tile.col, tile.row, { area: child.area, skipSave: true }).ok) continue;
+            window.__farmLog?.('[furniture] No free tile when removing a table; chair kept at its world position.', 'warn');
+            const dimensions = decorativeFurnitureSize(child.key, child.rotYDeg || 0, child);
+            child.col = child.mesh.position.x - dimensions.fw / 2;
+            child.row = child.mesh.position.z - dimensions.fd / 2;
+            child.npcStationId = registerChairNpcStation(child.key, child.col, child.row, child.rotYDeg || 0,
+              normalizeNpcArea(child.area), null, null, child.id, child.npcStationId);
+          }
+          window.FurnitureTableSystem?.registerPlacement(child.area, child, child.mesh, DECORATIVE_FURNITURE_DEFS[child.key]);
+        }
         if (refundToInventory) {
           const itemKey = DECORATIVE_FURNITURE_DEFS[obj.key]?.itemKey;
           if (itemKey) { inventory[itemKey] = (inventory[itemKey] || 0) + 1; clampInventoryStack(itemKey); }
         }
       }
 
-      function moveDecorativeFurniture(id, col, row) {
-        const obj = interiorFurnitureObjects.find(o => o.id === id && o.area === currentArea);
+      window.HobunjiFurnitureTableAttachmentMoved = record => {
+        if (!record?.tableAttachment || !record.mesh) return;
+        const area = normalizeNpcArea(record.area);
+        record.npcStationId ||= furnitureNpcStationId(area, record.col, record.row, record.id);
+        unregisterChairNpcStation(record.key, record.col, record.row, area, record.npcStationId);
+        const size = decorativeFurnitureSize(record.key, record.mesh.rotation.y * 180 / Math.PI, record);
+        record.col = record.mesh.position.x - size.fw * 0.5;
+        record.row = record.mesh.position.z - size.fd * 0.5;
+        record.rotYDeg = record.mesh.rotation.y * 180 / Math.PI;
+        if (record.area === 'interior') {
+          const parentTable = interiorFurnitureObjects.find(obj => obj.id === record.tableId && obj.area === record.area);
+          const owner = parentTable ? housePieces.find(piece => piece.id === parentTable.ownerPieceId) : null;
+          const rect = interiorRoomRect(owner);
+          if (parentTable && rect) {
+            record.ownerPieceId = owner.id;
+            record.localCol = record.col - rect.col;
+            record.localRow = record.row - rect.row;
+          }
+        }
+        // The approach tile is selected from the actual chair center, not its potentially negative fractional bounds.
+        record.npcStationId = registerChairNpcStation(record.key, record.mesh.position.x, record.mesh.position.z,
+          record.rotYDeg, area, record.roles, record.lookAt, record.id, record.npcStationId);
+      };
+
+      function nearestDetachedChairTile(chair) {
+        // Used after manual detachment and table removal to restore a real independent tile.
+        const size = decorativeFurnitureSize(chair.key, chair.rotYDeg || 0, chair);
+        const baseCol = Math.round(chair.mesh.position.x - size.fw / 2);
+        const baseRow = Math.round(chair.mesh.position.z - size.fd / 2);
+        for (let radius = 0; radius <= 8; radius++) {
+          for (let dc = -radius; dc <= radius; dc++) for (let dr = -radius; dr <= radius; dr++) {
+            if (Math.max(Math.abs(dc), Math.abs(dr)) !== radius) continue;
+            const col = baseCol + dc, row = baseRow + dr;
+            if (canPlaceDecorativeFurnitureAt(col, row, chair.id, chair.key, chair.rotYDeg || 0, chair.area, chair)) return { col, row };
+          }
+        }
+        return null;
+      }
+
+      function canKeepAttachedChairHere(chair, table) {
+        const def = DECORATIVE_FURNITURE_DEFS[chair.key];
+        if (!def || chair.area !== 'interior') return false;
+        const position = chair.mesh.position, yaw = chair.mesh.rotation.y;
+        const cos = Math.cos(yaw), sin = Math.sin(yaw);
+        for (const dx of [-0.49 * (def.fw || 1), 0.49 * (def.fw || 1)]) {
+          for (const dz of [-0.49 * (def.fd || 1), 0.49 * (def.fd || 1)]) {
+            const col = Math.floor(position.x + dx * cos + dz * sin);
+            const row = Math.floor(position.z - dx * sin + dz * cos);
+            const tile = interiorGrid[row]?.[col];
+            if (!tile || tile.type === TileType.ROCK
+              || _interiorRoomDoorTiles.has(col + ',' + row)
+              || _interiorArrivalTiles.has(col + ',' + row)) return false;
+          }
+        }
+        return !interiorFurnitureObjects.some(other => {
+          if (other === chair || other === table || other.area !== chair.area || other.key === 'rug') return false;
+          const otherDef = DECORATIVE_FURNITURE_DEFS[other.key];
+          if (!otherDef || otherDef.walkable) return false;
+          const size = decorativeFurnitureSize(other.key, other.rotYDeg || 0, other);
+          const centerX = other.tableAttachment ? other.mesh.position.x : other.col + size.fw / 2;
+          const centerZ = other.tableAttachment ? other.mesh.position.z : other.row + size.fd / 2;
+          return !!window.TableChairPlacement?.overlapsFootprints?.(
+            { x: position.x, z: position.z, width: def.fw || 1, depth: def.fd || 1, yaw },
+            { x: centerX, z: centerZ, width: otherDef.fw || 1, depth: otherDef.fd || 1,
+              yaw: other.tableAttachment ? other.mesh.rotation.y : (other.rotYDeg || 0) * Math.PI / 180 }
+          );
+        });
+      }
+
+      function canTransformTableWithAttachedChairs(table, x, y, z, rotYDeg) {
+        if (table.area !== 'interior') return true;
+        const children = interiorFurnitureObjects.filter(child =>
+          child.area === table.area && child.tableId === table.id && child.tableAttachment);
+        if (!children.length) return true;
+        const meshes = [table, ...children].map(record => ({
+          record, position: record.mesh.position.clone(), yaw: record.mesh.rotation.y,
+        })); // Transaction snapshot prevents rejected table moves from altering any child mesh.
+        const def = DECORATIVE_FURNITURE_DEFS[table.key];
+        try {
+          table.mesh.position.set(x, y, z);
+          table.mesh.rotation.y = rotYDeg * Math.PI / 180;
+          table.mesh.updateWorldMatrix?.(true, false);
+          for (const child of children) {
+            if (!window.TableChairPlacement?.apply?.(child.mesh, table.mesh, child.tableAttachment,
+              { width: def?.fw || 1, depth: def?.fd || 1 })) return false;
+          }
+          return children.every(child => canKeepAttachedChairHere(child, table));
+        } finally {
+          for (const snapshot of meshes) {
+            snapshot.record.mesh.position.copy(snapshot.position);
+            snapshot.record.mesh.rotation.y = snapshot.yaw;
+            snapshot.record.mesh.updateWorldMatrix?.(true, false);
+          }
+        }
+      }
+
+      function placeTableAttachedChair(itemKey, requested, source = 'bag') {
+        if (currentArea !== 'interior') return { ok: false, message: 'Table-child placement is available inside your house.' };
+        const key = getDecorativeFurnitureKeyByItemKey(itemKey) || itemKey;
+        const def = DECORATIVE_FURNITURE_DEFS[key];
+        if (!def?.sit) return { ok: false, message: 'Choose a chair, stool, or other sitting furniture.' };
+        const table = interiorFurnitureObjects.find(obj =>
+          obj.area === 'interior' && obj.id === requested?.tableId && /table|desk|counter/i.test(obj.key));
+        if (!table) return { ok: false, message: 'Select an existing table.' };
+        const descriptor = window.TableChairPlacement?.normalize?.(requested);
+        if (!descriptor || descriptor.mode !== window.TableChairPlacement.modeForTable(table.key)) {
+          return { ok: false, message: 'Choose orbit placement for round tables or a side for flat tables.' };
+        }
+        if (!hasFarmPermission('placeFurniture') || furnitureStock(def.itemKey, source) < 1) {
+          return { ok: false, message: 'You do not have permission or an available chair.' };
+        }
+        // The new chair exists as a mesh first, not a grid occupant: this permits table-child placement in a full room.
+        const result = makeDecorativeFurnitureMesh(table.col, table.row, key, interiorScene, 'interior');
+        if (!result) return { ok: false, message: 'Could not build chair furniture.' };
+        const chair = {
+          id: 'decor_' + Math.random().toString(36).slice(2, 10),
+          key, col: table.col, row: table.row, mesh: result.mesh, light: result.light,
+          sfxSource: result.sfxSource, area: 'interior', rotYDeg: 0, tableId: table.id,
+          tableAttachment: descriptor, npcStationId: null,
+        }; // Candidate is persisted only after the complete relative placement passes collision validation.
+        const discard = () => {
+          chair.npcStationId = 'unregistered_' + chair.id; // Cleanup must never remove another chair's legacy tile-based station.
+          disposeDecorativeFurniture(chair, false);
+        };
+        const tableDef = DECORATIVE_FURNITURE_DEFS[table.key];
+        if (!window.TableChairPlacement?.apply?.(chair.mesh, table.mesh, descriptor,
+          { width: tableDef?.fw || 1, depth: tableDef?.fd || 1 })
+          || !canKeepAttachedChairHere(chair, table)) {
+          discard();
+          return { ok: false, message: 'The attached chair would overlap a wall, doorway, or another object.' };
+        }
+        if (!consumeFurnitureStock(def.itemKey, source)) {
+          discard();
+          return { ok: false, message: 'Could not consume chair inventory.' };
+        }
+        interiorFurnitureObjects.push(chair);
+        window.HobunjiFurnitureTableAttachmentMoved?.(chair);
+        if (chair.light) chair.light.position.set(chair.mesh.position.x,
+          chair.mesh.position.y + (def.light?.height || 0.6), chair.mesh.position.z);
+        window.Music?.unregisterFurnitureSfxSource(chair.sfxSource);
+        chair.sfxSource = window.Music?.registerFurnitureSfxSource(chair.area,
+          chair.mesh.position.x, chair.mesh.position.z, window.Music?.resolveFurnitureSfx(def));
+        window.FurnitureTableSystem?.registerPlacement('interior', chair, chair.mesh, def);
+        window.HudUpdate.refreshItemScroll();
+        window.FarmEditor.saveFarmLayout();
+        return { ok: true, message: 'Chair placed directly at the table without occupying its own grid tile.' };
+      }
+
+      function setFurnitureTableAttachment(id, requested) {
+        const chair = interiorFurnitureObjects.find(obj => obj.id === id && obj.area === currentArea);
+        const def = chair && DECORATIVE_FURNITURE_DEFS[chair.key];
+        if (!chair || !def?.sit || chair.area !== 'interior') {
+          return { ok: false, message: 'Only indoor chairs and other sitting furniture can attach to a table.' };
+        }
+        if (!requested) {
+          if (!chair.tableAttachment) {
+            chair.tableId = '';
+            window.FurnitureTableSystem?.registerPlacement(chair.area, chair, chair.mesh, def);
+            window.FarmEditor.saveFarmLayout();
+            return { ok: true, message: 'Table relationship cleared.' };
+          }
+          const tile = nearestDetachedChairTile(chair);
+          if (!tile) return { ok: false, message: 'No free tile near this table. Move the table or chair before detaching.' };
+          const prior = { tableId: chair.tableId, tableAttachment: chair.tableAttachment };
+          chair.tableAttachment = null;
+          chair.tableId = '';
+          const moved = moveDecorativeFurniture(chair.id, tile.col, tile.row, { area: chair.area });
+          if (!moved.ok) {
+            chair.tableId = prior.tableId;
+            chair.tableAttachment = prior.tableAttachment;
+            window.FurnitureTableSystem?.registerPlacement(chair.area, chair, chair.mesh, def);
+            return moved;
+          }
+          return { ok: true, message: 'Chair detached onto a free floor tile.' };
+        }
+        const table = interiorFurnitureObjects.find(obj =>
+          obj.id === requested.tableId && obj.area === chair.area && obj.id !== chair.id
+          && /table|desk|counter/i.test(obj.key));
+        if (!table) return { ok: false, message: 'Choose a table in this room.' };
+        const descriptor = window.TableChairPlacement?.normalize?.(requested);
+        if (!descriptor) return { ok: false, message: 'The table-relative placement settings are invalid.' };
+        if (descriptor.mode !== window.TableChairPlacement.modeForTable(table.key)) {
+          return { ok: false, message: 'Use orbit placement for round tables and side placement for flat-edged tables.' };
+        }
+        const before = {
+          tableId: chair.tableId, tableAttachment: chair.tableAttachment,
+          position: chair.mesh.position.clone(), yaw: chair.mesh.rotation.y,
+        }; // Transaction snapshot used if the new placement cannot fit.
+        const tableDef = DECORATIVE_FURNITURE_DEFS[table.key];
+        const applied = window.TableChairPlacement.apply(chair.mesh, table.mesh, descriptor,
+          { width: tableDef?.fw || 1, depth: tableDef?.fd || 1 });
+        if (!applied || !canKeepAttachedChairHere(chair, table)) {
+          chair.mesh.position.copy(before.position);
+          chair.mesh.rotation.y = before.yaw;
+          chair.mesh.updateWorldMatrix?.(true, false);
+          return { ok: false, message: 'The chair would overlap another object, doorway, or leave the interior floor.' };
+        }
+        chair.tableId = table.id;
+        chair.tableAttachment = descriptor;
+        window.HobunjiFurnitureTableAttachmentMoved?.(chair);
+        window.FurnitureTableSystem?.registerPlacement(chair.area, chair, chair.mesh, def);
+        window.FarmEditor.saveFarmLayout();
+        return { ok: true, message: 'Chair attached. It follows the table and faces its center.' };
+      }
+
+      function moveDecorativeFurniture(id, col, row, options = {}) {
+        const area = options.area || currentArea; // Partition migration may move indoor furniture while the player is still outside.
+        const obj = interiorFurnitureObjects.find(o => o.id === id && o.area === area);
         if (!obj) return { ok: false, message: 'Furniture not found.' };
-        if (!canPlaceDecorativeFurnitureAt(col, row, obj.id, obj.key, obj.rotYDeg || 0)) return { ok: false, message: 'Cannot move furniture there.' };
+        if (obj.tableAttachment) return { ok:false, message:'Detach this chair before moving it independently.' };
+        const dimensions = obj.key === 'rug' && options.dimensions ? { ...options.dimensions, rugLayer: obj.rugLayer || 0 } : obj; // Two-corner moves can resize while retaining the rug's stack layer.
+        if (!canPlaceDecorativeFurnitureAt(col, row, obj.id, obj.key, obj.rotYDeg || 0, area, dimensions)) return { ok: false, message: 'Cannot move furniture there.' };
         const def = DECORATIVE_FURNITURE_DEFS[obj.key];
-        const { fw, fd } = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0);
-        if (obj.area === 'farm' && def?.sit) worldObjects.delete(obj.col + ',' + obj.row);
-        unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
+        const { fw, fd } = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0, dimensions);
+        const nextX = col + fw / 2, nextZ = row + fd / 2;
+        if (!canTransformTableWithAttachedChairs(obj, nextX, furnitureSurfaceYAtWorld(obj.area, nextX, nextZ),
+          nextZ, obj.rotYDeg || 0)) {
+          return { ok: false, message: 'Attached chairs would collide or leave the floor. Adjust the table placement first.' };
+        }
+        if (obj.key === 'rug' && options.dimensions) {
+          obj.widthTiles = dimensions.widthTiles; obj.heightTiles = dimensions.heightTiles; // Persist the moved rug's freshly selected rectangle.
+          const farmhouseInset = obj.area === 'interior' ? 1 : 0; // Match initial placement when an interior rug is moved or resized.
+          obj.mesh.scale.set(Math.max(0.05, dimensions.widthTiles - farmhouseInset) / def.fw, 1, Math.max(0.05, dimensions.heightTiles - farmhouseInset) / def.fd);
+        }
+        if (obj.area === 'farm' && isFarmDecorativeInteractable(obj.key)) worldObjects.delete(obj.col + ',' + obj.row);
+        unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area), obj.npcStationId);
         obj.col = col; obj.row = row;
         const centerX = col + fw * 0.5; // Moved furniture center used for both visual placement and exact farm grounding.
         const centerZ = row + fd * 0.5; // Moved furniture center paired with centerX for the continuous height sample.
         const surfaceY = furnitureSurfaceYAtWorld(obj.area, centerX, centerZ); // Recomputed so moving onto/off the farmhouse incline cannot retain stale Y.
-        obj.mesh.position.set(centerX, surfaceY, centerZ);
+        obj.mesh.position.set(centerX, surfaceY + (obj.key === 'rug' ? Math.max(0, Math.min(32, Number(obj.rugLayer) || 0)) * 0.032 : 0), centerZ);
         if (obj.light) obj.light.position.set(centerX, surfaceY + (def?.light?.height || 0.6), centerZ);
         window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
         obj.sfxSource = window.Music?.registerFurnitureSfxSource(obj.area, col + fw * 0.5, row + fd * 0.5, window.Music?.resolveFurnitureSfx(def));
         if (obj.area === 'interior') Object.assign(obj, furnitureOwnerFields(col, row));
-        if (obj.area === 'farm' && def?.sit) registerSitWorldObject(obj.key, col, row, fw, fd, obj.rotYDeg || 0);
-        registerChairNpcStation(obj.key, col, row, obj.rotYDeg || 0, normalizeNpcArea(obj.area));
-        window.FarmEditor.saveFarmLayout();
+        if (obj.area === 'farm') registerFarmDecorativeInteractable(obj.key, col, row, fw, fd, obj.rotYDeg || 0);
+        obj.npcStationId = registerChairNpcStation(obj.key, col, row, obj.rotYDeg || 0, normalizeNpcArea(obj.area), null, null, obj.id, obj.npcStationId);
+        window.FurnitureTableSystem?.registerPlacement(obj.area, obj, obj.mesh, def);
+        if (!options.skipSave) window.FarmEditor.saveFarmLayout(); // The caller batches migration saves only after all furniture and rooms have loaded.
         return { ok: true, message: `${def?.icon || '🪑'} ${def?.name || 'Furniture'} moved.` };
+      }
+
+      function setRugLayer(id, value) {
+        const obj = interiorFurnitureObjects.find(entry => entry.id === id && entry.area === currentArea && entry.key === 'rug'); // Only the placed rug's authoritative record is mutable.
+        const layer = Number(value); // Reject fractional, missing or out-of-range UI input rather than silently changing another rug.
+        if (!obj || !Number.isInteger(layer) || layer < 0 || layer > 32) return { ok: false, message: 'Rug layer must be a whole number from 0 to 32.' };
+        obj.rugLayer = layer;
+        obj.mesh.position.y = furnitureSurfaceYAtWorld(obj.area, obj.mesh.position.x, obj.mesh.position.z) + layer * 0.032;
+        window.FarmEditor.saveFarmLayout();
+        return { ok: true, message: 'Rug now uses layer ' + layer + '.' };
+      }
+
+      function reconcileFurnitureWithFarmhousePartitions() {
+        const changes = []; // Visible mobile diagnostics report displaced saved items rather than silently losing them.
+        const built = housePieces.filter(piece => piece.stage === 'built'); // Search valid rooms before considering storage recovery.
+        for (const obj of [...interiorFurnitureObjects]) {
+          if (obj.area !== 'interior' || obj.derivedLinkedWindow || obj.tableAttachment || window.WallOrnamentPlacement?.isPlayerMounted?.(obj.id)) continue;
+          const { fw, fd } = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0, obj);
+          const clearFootprint = (c, r) => {
+            for (let y = r; y < r + fd; y++) for (let x = c; x < c + fw; x++) {
+              if (!interiorGrid[y]?.[x] || interiorGrid[y][x].type === TileType.ROCK || _interiorRoomDoorTiles.has(x + ',' + y) || _interiorArrivalTiles.has(x + ',' + y)) return false;
+            }
+            return true;
+          };
+          if (clearFootprint(obj.col, obj.row)) continue;
+          const preferredRoom = built.find(piece => piece.id === obj.ownerPieceId)
+            || built.find(piece => { const rect = interiorRoomRect(piece); return obj.col >= rect.col && obj.col < rect.col + rect.w
+              && obj.row >= rect.row && obj.row < rect.row + rect.h; }); // Old saves may predate stable ownerPieceId.
+          const orderedRooms = preferredRoom ? [preferredRoom, ...built.filter(piece => piece !== preferredRoom)] : built;
+          const candidates = [];
+          for (const piece of orderedRooms) {
+            const room = interiorRoomRect(piece); // Search full room footprints, excluding corridor and door cells.
+            for (let row = room.row; row <= room.row + room.h - fd; row++) {
+              for (let col = room.col; col <= room.col + room.w - fw; col++) {
+                if (!clearFootprint(col, row)) continue;
+                const distance = Math.abs(col - obj.col) + Math.abs(row - obj.row);
+                candidates.push({ col, row, distance, preferred: piece === preferredRoom ? 0 : 1 });
+              }
+            }
+          }
+          candidates.sort((a, b) => a.preferred - b.preferred || a.distance - b.distance || a.row - b.row || a.col - b.col);
+          const candidate = candidates.find(pos => canPlaceDecorativeFurnitureAt(pos.col, pos.row, obj.id, obj.key, obj.rotYDeg || 0, 'interior', obj));
+          if (candidate) {
+            const originalTile = [obj.col, obj.row]; // Report the actual pre-migration position in the mobile diagnostic.
+            const moved = moveDecorativeFurniture(obj.id, candidate.col, candidate.row, { area: 'interior', skipSave: true });
+            if (moved.ok) {
+              changes.push({ id: obj.id, furniture: obj.key, action: 'moved', from: originalTile, to: [candidate.col, candidate.row] });
+              continue;
+            }
+          }
+          const itemKey = DECORATIVE_FURNITURE_DEFS[obj.key]?.itemKey;
+          if (itemKey) {
+            const stored = _loadWorldStorage(); // Refund only after the world-scoped storage transaction succeeds.
+            stored[itemKey] = (stored[itemKey] || 0) + 1;
+            if (_saveWorldStorage(stored)) {
+              disposeDecorativeFurniture(obj, false);
+              changes.push({ id: obj.id, furniture: obj.key, action: 'stored' });
+              continue;
+            }
+          }
+          changes.push({ id: obj.id, furniture: obj.key, action: 'unresolved' }); // Never delete an item if safe recovery fails.
+        }
+        window.__farmhouseFurnitureRecovery = changes; // Displayed by the in-game furniture debug button on mobile.
+        return changes;
       }
 
       function removeDecorativeFurniture(id) {
@@ -3749,14 +4278,20 @@
       function rotateDecorativeFurniture(id, degrees = 45) {
         const obj = interiorFurnitureObjects.find(o => o.id === id && o.area === currentArea);
         if (!obj) return { ok: false, message: 'Furniture not found.' };
+        if (obj.tableAttachment) return { ok:false, message:'A table-attached chair always faces its table. Detach it before rotating.' };
         const nextRot = ((obj.rotYDeg || 0) + degrees + 360) % 360;
-        if (!canPlaceDecorativeFurnitureAt(obj.col, obj.row, obj.id, obj.key, nextRot)) {
+        if (!canPlaceDecorativeFurnitureAt(obj.col, obj.row, obj.id, obj.key, nextRot, currentArea, obj)) {
           return { ok: false, message: 'Cannot rotate here — the turned furniture would overlap a wall or another item.' };
         }
         const def = DECORATIVE_FURNITURE_DEFS[obj.key];
-        const { fw, fd } = decorativeFurnitureSize(obj.key, nextRot);
-        unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
-        if (obj.area === 'farm' && def?.sit) worldObjects.delete(obj.col + ',' + obj.row);
+        const { fw, fd } = decorativeFurnitureSize(obj.key, nextRot, obj);
+        const nextX = obj.col + fw / 2, nextZ = obj.row + fd / 2;
+        if (!canTransformTableWithAttachedChairs(obj, nextX, furnitureSurfaceYAtWorld(obj.area, nextX, nextZ),
+          nextZ, nextRot)) {
+          return { ok: false, message: 'Rotation would place an attached chair outside the floor or inside furniture.' };
+        }
+        unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area), obj.npcStationId);
+        if (obj.area === 'farm' && isFarmDecorativeInteractable(obj.key)) worldObjects.delete(obj.col + ',' + obj.row);
         obj.rotYDeg = nextRot;
         obj.mesh.rotation.y = nextRot * Math.PI / 180;
         const centerX = obj.col + fw * 0.5; // Rotated footprint center can move for non-square furniture, so its farm sample must move too.
@@ -3767,8 +4302,9 @@
         window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
         obj.sfxSource = window.Music?.registerFurnitureSfxSource(obj.area, obj.col + fw * 0.5, obj.row + fd * 0.5, window.Music?.resolveFurnitureSfx(def));
         if (obj.area === 'interior') Object.assign(obj, furnitureOwnerFields(obj.col, obj.row));
-        if (obj.area === 'farm' && def?.sit) registerSitWorldObject(obj.key, obj.col, obj.row, fw, fd, nextRot);
-        registerChairNpcStation(obj.key, obj.col, obj.row, nextRot, normalizeNpcArea(obj.area));
+        if (obj.area === 'farm') registerFarmDecorativeInteractable(obj.key, obj.col, obj.row, fw, fd, nextRot);
+        obj.npcStationId = registerChairNpcStation(obj.key, obj.col, obj.row, nextRot, normalizeNpcArea(obj.area), null, null, obj.id, obj.npcStationId);
+        window.FurnitureTableSystem?.registerPlacement(obj.area, obj, obj.mesh, def);
         window.FarmEditor.saveFarmLayout();
         return { ok: true, message: `${def?.icon || '🪑'} ${def?.name || 'Furniture'} rotated 45°.` };
       }
@@ -3782,35 +4318,58 @@
       });
 
       function transformFurnitureWithHousePiece(pieceId, oldRect, newRect, rotateClockwise) {
+        window.FarmhouseRoomPlanner?.transformWithPiece?.(pieceId, oldRect, newRect, rotateClockwise); // Room-owned walls remain in local coordinates.
+        const oldRoom = interiorRoomRect({ ...oldRect, id: pieceId }); // Cached old indoor origin before the geometry rebuild.
         interiorFurnitureObjects.filter(o => o.area === 'interior').forEach(obj => {
-          const insideOld = obj.col >= oldRect.col * 2 && obj.col < (oldRect.col + oldRect.w) * 2
-            && obj.row >= oldRect.row * 2 && obj.row < (oldRect.row + oldRect.h) * 2;
+          if (obj.derivedLinkedWindow || obj.tableAttachment || window.WallOrnamentPlacement?.isPlayerMounted?.(obj.id)) return;
+          const insideOld = oldRoom && obj.col >= oldRoom.col && obj.col < oldRoom.col + oldRoom.w
+            && obj.row >= oldRoom.row && obj.row < oldRoom.row + oldRoom.h;
           if (obj.ownerPieceId !== pieceId && !(obj.ownerPieceId == null && insideOld)) return;
-          const def = DECORATIVE_FURNITURE_DEFS[obj.key];
-          const oldSize = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0);
-          let fw = oldSize.fw, fd = oldSize.fd;
-          let localCol = Number.isFinite(obj.localCol) ? obj.localCol : obj.col - oldRect.col * 2;
-          let localRow = Number.isFinite(obj.localRow) ? obj.localRow : obj.row - oldRect.row * 2;
+          const size = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0, obj);
+          let localCol = Number.isFinite(obj.localCol) ? obj.localCol : obj.col - oldRoom.col;
+          let localRow = Number.isFinite(obj.localRow) ? obj.localRow : obj.row - oldRoom.row;
+          let fw = size.fw, fd = size.fd;
           if (rotateClockwise) {
             const nextCol = oldRect.h * 2 - (localRow + fd);
             const nextRow = localCol;
             localCol = nextCol; localRow = nextRow;
             obj.rotYDeg = ((obj.rotYDeg || 0) + 90) % 360;
             obj.mesh.rotation.y = obj.rotYDeg * Math.PI / 180;
-            const newSize = decorativeFurnitureSize(obj.key, obj.rotYDeg);
-            fw = newSize.fw; fd = newSize.fd;
+            const rotated = decorativeFurnitureSize(obj.key, obj.rotYDeg, obj);
+            fw = rotated.fw; fd = rotated.fd;
           }
-          localCol = Math.max(0, Math.min(newRect.w * 2 - fw, localCol));
-          localRow = Math.max(0, Math.min(newRect.h * 2 - fd, localRow));
-          unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
-          obj.ownerPieceId = pieceId; obj.localCol = localCol; obj.localRow = localRow;
-          obj.col = newRect.col * 2 + localCol; obj.row = newRect.row * 2 + localRow;
-          obj.mesh.position.set(obj.col + fw * 0.5, 0, obj.row + fd * 0.5);
-          if (obj.light) obj.light.position.set(obj.col + fw * 0.5, def?.light?.height || 0.6, obj.row + fd * 0.5);
-          window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
-          obj.sfxSource = window.Music?.registerFurnitureSfxSource('interior', obj.col + fw * 0.5, obj.row + fd * 0.5, window.Music?.resolveFurnitureSfx(def));
-          registerChairNpcStation(obj.key, obj.col, obj.row, obj.rotYDeg || 0, normalizeNpcArea(obj.area));
+          obj.ownerPieceId = pieceId;
+          obj.localCol = Math.max(0, Math.min(newRect.w * 2 - fw, localCol));
+          obj.localRow = Math.max(0, Math.min(newRect.h * 2 - fd, localRow));
+          // The whole-house/section geometry callback updates every room's
+          // absolute furniture positions once the new offsets are known.
         });
+      }
+
+      function syncFurnitureWithIndoorRoomOrigins() {
+        for (const obj of interiorFurnitureObjects) {
+          if (obj.area !== 'interior' || obj.derivedLinkedWindow || obj.tableAttachment || window.WallOrnamentPlacement?.isPlayerMounted?.(obj.id)) continue;
+          const piece = housePieces.find(p => p.id === obj.ownerPieceId && p.stage === 'built')
+            || housePieces.find(p => p.stage === 'built' && obj.col >= p.col * 2 && obj.col < (p.col + p.w) * 2
+              && obj.row >= p.row * 2 && obj.row < (p.row + p.h) * 2); // Compatibility with pre-room-local legacy furniture.
+          if (!piece) continue;
+          const rect = interiorRoomRect(piece);
+          const localCol = Number.isFinite(obj.localCol) ? obj.localCol : obj.col - piece.col * 2;
+          const localRow = Number.isFinite(obj.localRow) ? obj.localRow : obj.row - piece.row * 2;
+          const col = rect.col + localCol, row = rect.row + localRow;
+          obj.ownerPieceId = piece.id; obj.localCol = localCol; obj.localRow = localRow;
+          if (obj.col === col && obj.row === row) continue;
+          const size = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0, obj);
+          const def = DECORATIVE_FURNITURE_DEFS[obj.key];
+          unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area), obj.npcStationId);
+          obj.col = col; obj.row = row;
+          obj.mesh.position.set(col + size.fw * 0.5, obj.key === 'rug' ? Math.max(0, Math.min(32, Number(obj.rugLayer) || 0)) * 0.032 : 0, row + size.fd * 0.5); // Room moves preserve the rug's own visual stack level.
+          if (obj.light) obj.light.position.set(col + size.fw * 0.5, def?.light?.height || 0.6, row + size.fd * 0.5);
+          window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
+          obj.sfxSource = window.Music?.registerFurnitureSfxSource('interior', col + size.fw * 0.5, row + size.fd * 0.5, window.Music?.resolveFurnitureSfx(def));
+          obj.npcStationId = registerChairNpcStation(obj.key, col, row, obj.rotYDeg || 0, normalizeNpcArea(obj.area), null, null, obj.id, obj.npcStationId);
+          window.FurnitureTableSystem?.registerPlacement('interior', obj, obj.mesh, def);
+        }
       }
 
       function clearInteriorFurniture() {
@@ -3823,8 +4382,8 @@
           });
           if (obj.light) s.remove(obj.light);
           window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
-          if (obj.area === 'farm' && DECORATIVE_FURNITURE_DEFS[obj.key]?.sit) worldObjects.delete(obj.col + ',' + obj.row);
-          unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
+          if (obj.area === 'farm' && isFarmDecorativeInteractable(obj.key)) worldObjects.delete(obj.col + ',' + obj.row);
+          unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area), obj.npcStationId);
         });
         interiorFurnitureObjects.length = 0;
       }
@@ -3841,24 +4400,15 @@
         const c1 = c0 + w, r1 = r0 + h;
         const toRemove = interiorFurnitureObjects.filter(o => {
           if (o.area !== 'interior') return false;
-          const { fw, fd } = decorativeFurnitureSize(o.key, o.rotYDeg || 0);
+          const { fw, fd } = decorativeFurnitureSize(o.key, o.rotYDeg || 0, o);
           return o.col < c1 && o.col + fw > c0 && o.row < r1 && o.row + fd > r0;
         });
         if (!toRemove.length) return 0;
         const store = _loadWorldStorage();
         toRemove.forEach(obj => {
-          interiorScene.remove(obj.mesh);
-          obj.mesh.traverse && obj.mesh.traverse(child => {
-            if (child.geometry) child.geometry.dispose();
-            if (child.material) child.material.dispose();
-          });
-          if (obj.light) interiorScene.remove(obj.light);
-          window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
-          unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
           const itemKey = DECORATIVE_FURNITURE_DEFS[obj.key]?.itemKey;
+          disposeDecorativeFurniture(obj, false); // Also detaches surviving chairs, unregisters surface/NPC state and disposes meshes.
           if (itemKey) store[itemKey] = (store[itemKey] || 0) + 1;
-          const idx = interiorFurnitureObjects.indexOf(obj);
-          if (idx >= 0) interiorFurnitureObjects.splice(idx, 1);
         });
         _saveWorldStorage(store);
         return toRemove.length;
@@ -3871,19 +4421,41 @@
       // item instead of a terrain/crop type. Set by the Furniture Placer
       // panel (js/furniture-placer.js), consumed by the pointerdown handler
       // right after the farm editor's own.
+      let furniturePlacementSource = 'bag'; // Armed placements debit this source only after a successful placement.
       let furniturePlacementArmedKey = null;
       let furnitureMoveArmedId = null;
+      let rugFirstCorner = null; // First rug placement Action 1 tile, retained until the opposite corner is selected or canceled.
       let furniturePlacementGhost = null;
-      function armFurniturePlacement(itemKey) {
+      function armFurniturePlacement(itemKey, source = 'bag') {
+        furniturePlacementSource = source === 'storage' ? 'storage' : 'bag';
         furniturePlacementArmedKey = itemKey || null;
+        rugFirstCorner = null; // Starting any new piece does not reuse another rug's original corner.
         if (furniturePlacementArmedKey) furnitureMoveArmedId = null;
         clearFurniturePlacementGhost();
         window.FurniturePlacer?.render();
         refreshActionBar(); // Placement mode owns the mobile action arch immediately after the selector closes.
       }
+      function furnitureStock(itemKey, source = 'bag') {
+        if (source === 'storage' && !hasFarmPermission('storage')) return 0;
+        return Math.max(0, Number((source === 'storage' ? _loadWorldStorage() : inventory)?.[itemKey]) || 0);
+      }
+      function consumeFurnitureStock(itemKey, source = 'bag') {
+        if (!hasFarmPermission('placeFurniture') || furnitureStock(itemKey, source) < 1) return false;
+        if (source === 'storage') {
+          const store = _loadWorldStorage(); // Read at commit time so intervening storage changes cannot be overwritten.
+          store[itemKey]--;
+          if (store[itemKey] <= 0) delete store[itemKey];
+          if (!_saveWorldStorage(store)) return false;
+        } else {
+          inventory[itemKey]--;
+          clampInventoryStack(itemKey);
+        }
+        return true;
+      }
       function getArmedFurniturePlacementKey() { return furniturePlacementArmedKey; }
       function armFurnitureMove(id) {
         furnitureMoveArmedId = id || null;
+        rugFirstCorner = null; // Moving a rug starts a NEW two-corner rectangle, exactly like placing one.
         if (furnitureMoveArmedId) furniturePlacementArmedKey = null;
         clearFurniturePlacementGhost();
         window.FurniturePlacer?.render();
@@ -3905,7 +4477,7 @@
       function furniturePlacementSpec() {
         if (furnitureMoveArmedId) {
           const obj = interiorFurnitureObjects.find(o => o.id === furnitureMoveArmedId && o.area === currentArea);
-          if (obj) return { kind: 'decorative', key: obj.key, rotYDeg: obj.rotYDeg || 0, ignoreId: obj.id };
+          if (obj) return { kind: 'decorative', key: obj.key, rotYDeg: obj.rotYDeg || 0, ignoreId: obj.id, dimensions: obj };
           const processor = currentArea === 'farm' ? processingFurnitureById(furnitureMoveArmedId) : null;
           return processor ? { kind: 'processing', key: processor.furnitureKey, rotYDeg: processor.rotYDeg || 0, ignoreId: processor.id, ignoreObject: processor } : null;
         }
@@ -3915,13 +4487,53 @@
         return processingKey ? { kind: 'processing', key: processingKey, rotYDeg: 0, ignoreId: null } : null;
       }
 
+      function rugRectangleAt(col, row) {
+        if (!rugFirstCorner) return null;
+        return {
+          col: Math.min(col, rugFirstCorner.col), row: Math.min(row, rugFirstCorner.row),
+          widthTiles: Math.abs(col - rugFirstCorner.col) + 1, heightTiles: Math.abs(row - rugFirstCorner.row) + 1,
+        }; // Inclusive opposite corners match the Interior Editor's broad tile-dimension resizing.
+      }
+      function showFarmhousePartitionGhost(col, row) {
+        const planner = window.FarmhouseRoomPlanner; // The same Action 1 target is previewed for every input device.
+        const valid = planner.canTarget(col, row); // Invalid diagonal, occupied or off-room targets display red.
+        if (!furniturePlacementGhost || furniturePlacementGhost.kind !== 'farmhouse-partition') {
+          clearFurniturePlacementGhost();
+          const material = new THREE.MeshBasicMaterial({ color: 0xefffff, transparent: true, opacity: 0.5, depthWrite: false }); // Disposable preview, never saved as furniture.
+          const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 0.12, 1), material); // Stretchable tile-space wall strip, also used as a door-slot marker.
+          mesh.raycast = () => {}; // Preview must not steal touch/controller reticle hits from the ground.
+          mesh.renderOrder = 1000;
+          const group = new THREE.Group(); // Standard furniture ghost cleanup owns the preview's mesh and material.
+          group.add(mesh);
+          interiorScene.add(group);
+          furniturePlacementGhost = { kind: 'farmhouse-partition', group, mesh, area: 'interior' };
+        }
+        const first = planner.debug()?.firstCorner; // A two-corner wall previews the inclusive rectangle between both ground targets.
+        const aligned = first && (first.c === col || first.r === row);
+        const c0 = aligned ? Math.min(first.c, col) : col;
+        const r0 = aligned ? Math.min(first.r, row) : row;
+        const w = aligned ? Math.abs(first.c - col) + 1 : 1;
+        const h = aligned ? Math.abs(first.r - row) + 1 : 1;
+        furniturePlacementGhost.mesh.scale.set(w, 1, h);
+        furniturePlacementGhost.group.position.set(c0 + w * 0.5, 0.09, r0 + h * 0.5);
+        furniturePlacementGhost.mesh.material.color.set(valid ? 0xd9f9ff : 0xff6666);
+        furniturePlacementGhost.col = col;
+        furniturePlacementGhost.row = row;
+        furniturePlacementGhost.valid = valid; // Exposed through the existing mobile furniture-placement debug snapshot.
+      }
+
       function showFurniturePlacementGhost(col, row) {
+        if (window.FarmhouseRoomPlanner?.isArmed?.()) { showFarmhousePartitionGhost(col, row); return; }
         const spec = furniturePlacementSpec();
         if (!spec) { clearFurniturePlacementGhost(); return; }
+        const rect = spec.key === 'rug' ? rugRectangleAt(col, row) : null;
+        const anchorCol = rect?.col ?? col, anchorRow = rect?.row ?? row; // The top-left rug tile becomes its permanent placement anchor.
+        const dimensions = rect ? { ...rect, rugLayer: spec.dimensions?.rugLayer || 0 } : (spec.key === 'rug' ? { widthTiles: 1, heightTiles: 1, rugLayer: spec.dimensions?.rugLayer || 0 } : spec.dimensions); // Moving/placing rugs share the same live rectangle while the preview retains the saved stack level.
+        const dimensionsValid = !rect || (rect.widthTiles <= 16 && rect.heightTiles <= 16);
         const isProcessing = spec.kind === 'processing';
-        const valid = isProcessing
-          ? canPlaceFurnitureAt(col, row, spec.ignoreObject)
-          : canPlaceDecorativeFurnitureAt(col, row, spec.ignoreId, spec.key, spec.rotYDeg);
+        const valid = dimensionsValid && (isProcessing
+          ? canPlaceFurnitureAt(anchorCol, anchorRow, spec.ignoreObject)
+          : canPlaceDecorativeFurnitureAt(anchorCol, anchorRow, spec.ignoreId, spec.key, spec.rotYDeg, currentArea, dimensions));
         if (!furniturePlacementGhost || furniturePlacementGhost.kind !== spec.kind || furniturePlacementGhost.key !== spec.key || furniturePlacementGhost.rotYDeg !== spec.rotYDeg || furniturePlacementGhost.area !== currentArea) {
           clearFurniturePlacementGhost();
           const group = buildFurnitureVisual(spec.key, 0x5cff7a);
@@ -3932,20 +4544,23 @@
           (currentArea === 'interior' ? interiorScene : scene).add(group);
           furniturePlacementGhost = { group, kind: spec.kind, key: spec.key, rotYDeg: spec.rotYDeg, area: currentArea };
         }
-        const { fw, fd } = isProcessing ? { fw: 1, fd: 1 } : decorativeFurnitureSize(spec.key, spec.rotYDeg);
-        const previewX = col + fw * 0.5; // Shared preview center used for both placement X and the exact farm-height sample.
-        const previewZ = row + fd * 0.5; // Shared preview center used for both placement Z and the exact farm-height sample.
+        const { fw, fd } = isProcessing ? { fw: 1, fd: 1 } : decorativeFurnitureSize(spec.key, spec.rotYDeg, dimensions);
+        const def = DECORATIVE_FURNITURE_DEFS[spec.key]; // Fixed authored rug dimensions supply the visual stretch baseline.
+        furniturePlacementGhost.group.scale.set(spec.key === 'rug' && dimensions ? dimensions.widthTiles / (def.fw || 2) : 1, 1,
+          spec.key === 'rug' && dimensions ? dimensions.heightTiles / (def.fd || 2) : 1);
+        const previewX = anchorCol + fw * 0.5; // Shared preview center used for both placement X and the exact farm-height sample.
+        const previewZ = anchorRow + fd * 0.5; // Shared preview center used for both placement Z and the exact farm-height sample.
         const previewBaseY = currentArea === 'farm'
           ? farmSurfaceYAtWorld(previewX, previewZ)
           : (isProcessing ? tileSurfaceY(grid[row]?.[col]?.type) : 0); // Interior decor stays on its local floor.
-        const previewY = previewBaseY + (isProcessing ? 0 : 0.04); // Preserve the decor ghost's tiny anti-z-fighting hover.
+        const previewY = previewBaseY + (isProcessing ? 0 : 0.04) + (spec.key === 'rug' ? Math.max(0, Math.min(32, Number(dimensions?.rugLayer) || 0)) * 0.032 : 0); // Preview the destination rug layer.
         furniturePlacementGhost.group.position.set(previewX, previewY, previewZ);
         furniturePlacementGhost.group.visible = true;
         furniturePlacementGhost.group.traverse(child => {
           if (child.isMesh) child.material.color.set(valid ? 0x5cff7a : 0xff5555);
         });
-        furniturePlacementGhost.col = col;
-        furniturePlacementGhost.row = row;
+        furniturePlacementGhost.col = anchorCol;
+        furniturePlacementGhost.row = anchorRow;
         furniturePlacementGhost.valid = valid;
       }
 
@@ -4125,7 +4740,6 @@
         }
       }
       const SEATED_LOOK_ROTATE_DEG_PER_SEC = 110; // movement input's rotate-the-view speed while seated (see updateSitInteraction)
-      const SEATED_CAMERA_PITCH_CLAMP_DEG = 45; // up/down joystick pitch allowance while seated, matches the desktop drag default
 
       // Resolves a furniture instance's seat anchor (local, footprint-center-
       // relative — see docs/js/authored-furniture-runtime.js) into this
@@ -4153,21 +4767,23 @@
           // rotation applied for rotYDeg. Yaw is already represented by
           // facingRad; the leg solver consumes seat-local pitch/roll.
           normalDeg: { x: anchor.rotationDeg.x || 0, z: anchor.rotationDeg.z || 0 },
-          footprintHalfDepth: Math.max(0.05, (Number(data.footprint?.d) || 1) / 2),
+          footprintHalfDepth: window.AuthoredFurniture?.seatedKneeReach?.(data) || 0.11, // Match the chair seat front, not the full tile footprint.
           anchorZ: az,
         };
       }
 
       function beginSitInteraction(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex) {
         if (sitInteraction || window.FarmAnimals.isHarvesting() || dialogueOpen || (window.Mounts?.rideState ?? 'none') !== 'none') return { ok: false, message: 'Cannot sit right now.' };
-        const seat = resolveSeatWorldTransform(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex);
+        if (window.FurnitureTableSystem?.isSeatTaken(currentArea, {col,row,seatIndex}, 'player')) return {ok:false,message:'Someone has already taken this seat.'};
+        const seat = window.FurnitureTableSystem?.seatTransform(currentArea, { furnitureKey, col, row, seatIndex })
+          || resolveSeatWorldTransform(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex);
         if (!seat) return { ok: false, message: 'Nowhere to sit there.' };
         const seatSurfaceY = activeSurfaceYAtWorld(seat.x, seat.z); // Used to lift the seated camera with zone plateau/ramp terrain.
         const seatAbsoluteWorldY = seatSurfaceY + seat.y; // Used only by world-space camera/debug consumers; seat.y stays floor-relative for anatomy.
         const targetX = seat.x * TILE, targetY = seat.z * TILE;
         const targetAngle = seat.facingRad;
         sitInteraction = {
-          furnitureKey, col, row,
+          furnitureKey, col, row, seatIndex,
           phase: 'in', t: 0,
           startX: player.x, startY: player.y, startAngle: facingAngle,
           targetX, targetY, targetAngle,
@@ -4225,7 +4841,7 @@
             cameraAzimuthOffsetDeg = wrapAzimuthDeg(cameraAzimuthOffsetDeg - ix * SEATED_LOOK_ROTATE_DEG_PER_SEC * dt);
           }
           if (Math.abs(iy) > 0.001) {
-            cameraAngleOffsetDeg = window.FormatUtils.clamp(cameraAngleOffsetDeg + iy * SEATED_LOOK_ROTATE_DEG_PER_SEC * dt, -SEATED_CAMERA_PITCH_CLAMP_DEG, SEATED_CAMERA_PITCH_CLAMP_DEG);
+            cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(cameraAngleOffsetDeg + iy * SEATED_LOOK_ROTATE_DEG_PER_SEC * dt);
           }
           return;
         }
@@ -4262,7 +4878,13 @@
       // free-look treats the orbited camera direction as the aim target.
       function updatePlayerHeadAim() {
         window.PlayerBodyTransformComposer?.setHeadAimTarget?.(null);
+        if (window.CharacterActionLocks?.isLocked?.('player','head')) return; // Explicit paired gaze owns the same neck until its scoped lock releases.
         if (!playerNeckJoint) return;
+        if (window.BedLiePose?.isActive?.()) { // Sleeping rests the head with the flattened body instead of camera-tracking the reticle.
+          playerNeckJoint.rotation.set(0, 0, 0);
+          playerNeckJoint.userData.hobunjiPerspectiveAimLocked = false;
+          return;
+        }
         playerNeckJoint.userData.hobunjiPerspectiveAimLocked = (
           activeCameraMode === SHOULDER_SURF_MODE
           && !cutscenePreviewActive
@@ -4335,6 +4957,51 @@
         };
       }
 
+      function makeGroomingInteractable() {
+        return {
+          interactIcon: '🪞', interactLabel: 'Groom',
+          getButtons: () => [{ icon: '🪞', label: 'Change Appearance', action: 'obj_interact', style: 'primary', allowed: !isPlayerInCombat() }],
+          onAction(action) {
+            if (action !== 'obj_interact' || isPlayerInCombat()) return { ok: false, message: 'Cannot groom right now.' };
+            const profile = _playerData || window.__hobunjiPlayerProfile; // Preserve current identity, equipment, progression and live world data.
+            if (!profile?.appearance) return { ok: false, message: 'Appearance is not ready.' };
+            const previewProfile = window.EquipmentPanel?.applyGearClothingToPlayerData?.(profile) || profile; // Preview the actual worn clothing while editing only appearance cosmetics.
+            let resolvedProfile = null; // Canonical rendered cosmetic choices, including legacy randomized defaults omitted from the saved selections.
+            try { resolvedProfile = window.NpcAvatarPreview?.buildProfileFromNpcExport?.(previewProfile); }
+            catch (error) { return { ok: false, message: 'Your appearance is still loading. Please try again.' }; }
+            if (!resolvedProfile) return { ok: false, message: 'Your appearance is still loading. Please try again.' };
+            const started = window.HobunjiOnboarding?.openCreator({
+              title: 'Grooming Kit', confirmLabel: 'Apply Appearance', hideName: true, cosmeticsOnly: true, mode: 'grooming',
+              speciesId: profile.appearance.speciesId, gender: profile.appearance.gender,
+              resolvedProfile, appearance: previewProfile.appearance, equippedCosmetics: previewProfile.equippedCosmetics, appliedDyes: previewProfile.appliedDyes,
+              onCancel: closeMenu,
+              onComplete(result) {
+                closeMenu();
+                const bodyColors = { ...profile.appearance.bodyColors }; // Preserve equipment tints and change only the creator's body palette channels.
+                for (const key of ['A', 'B', 'C']) if (result.appearance.bodyColors[key]) bodyColors[key] = { ...result.appearance.bodyColors[key] };
+                const appearance = { ...profile.appearance, cosmetics: { ...result.appearance.cosmetics }, bodyColors }; // Species and gender remain the saved values.
+                if (!window.CharacterMetaSave?.update(character => { character.appearance = appearance; })) {
+                  showToast('Could not save your appearance. Please try again.', false);
+                  return;
+                }
+                profile.appearance = appearance;
+                if (window.__hobunjiPlayerProfile) window.__hobunjiPlayerProfile.appearance = appearance;
+                refreshPlayerAvatar();
+                saveMemberWorldData();
+                showToast('Appearance updated.', true);
+              },
+            });
+            if (started) {
+              menuOpen = true; paused = true; // Ordinary modal gates stop world time, movement and world actions during grooming.
+              player.vx = 0; player.vy = 0; input.x = 0; input.y = 0;
+              releaseShoulderSurfPointerLock();
+              window.WorldPopupText?.clearInteractionPrompts?.();
+            }
+            return { ok: !!started, message: started ? 'Choose your appearance.' : 'Appearance editor is already open.' };
+          },
+        };
+      }
+
       function makeCookingInteractable() {
         return {
           interactIcon: '🔥',
@@ -4377,7 +5044,7 @@
       window.HobunjiCacheAudit?.register('game.creatureTexCache', () => _creatureTexCache.front.size);
       function _getCreatureFrontTexture(url) {
         if (!_creatureTexCache.front.has(url)) {
-          const tex = new THREE.TextureLoader().load(url);
+          const tex = new THREE.TextureLoader().load(url, window.CreatureTextureCache?.capLoadedTexture); // Oversized art (grehlr 3000x2250) is scaled once at load; see creature-texture-cache.js.
           tex.colorSpace = THREE.SRGBColorSpace;
           _creatureTexCache.front.set(url, tex);
         }
@@ -4385,7 +5052,7 @@
       }
       function _getCreatureBackTexture(url) {
         if (!_creatureTexCache.back.has(url)) {
-          const tex = new THREE.TextureLoader().load(url);
+          const tex = new THREE.TextureLoader().load(url, window.CreatureTextureCache?.capLoadedTexture); // Same cap as the front texture.
           tex.colorSpace = THREE.SRGBColorSpace;
           tex.wrapS = THREE.RepeatWrapping;
           tex.repeat.set(-1, 1);
@@ -4436,7 +5103,7 @@
           return null;
         }
         const sig = renderer.genotypeSignature(kind, genotype);
-        const key = `${kind}|${frame}|${sig}|${blinkShut ? 'b' : 'o'}`;
+        const key = `${kind}|${frame}|${sig}|${renderer.eyeStateKey?.(blinkShut) || (blinkShut ? 'b' : 'o')}`;
         if (_genotypeTexCache.front.has(key)) {
           return _genotypeTextureResidency.get(key);
         }
@@ -4521,54 +5188,10 @@
         return !!genoTex;
       }
 
-      // spriteUrl -> resolved bottom-opacity ratio (0..1, see
-      // creaturePlaneGroundOffset), or a Set of pending callbacks while
-      // the very first scan of that species' idle sprite is still loading.
-      const _creatureGroundAnchorCache = new Map();
-      window.HobunjiCacheAudit?.register('game.creatureGroundAnchorCache', () => _creatureGroundAnchorCache.size);
-      const CREATURE_FULL_OPAQUE_ALPHA_THRESHOLD = 254; // scanOpaqueVerticalBounds uses >, so 254 selects only alpha 255 pixels.
-
-      // Scans a species' idle sprite (cached per URL, so only the first
-      // creature of each species actually pays for it) for how far down its
-      // fully opaque pixels extend. All these sprites are nominally
-      // 1375×600, but if the art itself doesn't reach the canvas's bottom
-      // edge (transparent padding), anchoring on the raw rectangle leaves
-      // the visible creature hovering above the ground/its own shadow.
-      // Using alpha 255 deliberately ignores antialiased fringe pixels that
-      // would otherwise make the apparent foot line vary with faint padding.
-      function resolveCreatureGroundAnchorRatio(spriteUrl, onReady) {
-        const cached = _creatureGroundAnchorCache.get(spriteUrl);
-        if (typeof cached === 'number') { onReady(cached); return; }
-        if (cached instanceof Set) { cached.add(onReady); return; }
-        const waiters = new Set([onReady]);
-        _creatureGroundAnchorCache.set(spriteUrl, waiters);
-        const finish = (ratio) => {
-          _creatureGroundAnchorCache.set(spriteUrl, ratio);
-          waiters.forEach(fn => fn(ratio));
-        };
-        const img = new Image();
-        img.onload = () => {
-          const bounds = window.PNGPlaneAvatar?.scanOpaqueVerticalBoundsOfImage?.(img, CREATURE_FULL_OPAQUE_ALPHA_THRESHOLD);
-          finish(bounds ? (bounds.bottom + 1) / img.naturalHeight : 1);
-        };
-        img.onerror = () => finish(1);
-        img.src = spriteUrl;
-      }
-
-      // The prism (avatarRef.group — see updateCreatureMesh's "Prism (group)
-      // tracks the raw aim angle..." comment) keeps its true, unpadded size:
-      // its floor is local Y = -halfH exactly as CREATURE_DB's modelWidth/
-      // modelHeight define it, which is what places it correctly at surfY
-      // and is what any future hitbox/collision use of that size would
-      // expect. The correction belongs on the PLANE meshes themselves
-      // (children of the prism), not on the prism's own placement: shifting
-      // them down by the padding's share of modelHeight moves the art's
-      // real opaque bottom onto the prism's actual floor without changing
-      // the prism's own footprint at all. bottomRatio=1 (no padding) gives
-      // an offset of 0 — the plane stays exactly where it started.
-      function creaturePlaneGroundOffset(modelHeight, bottomRatio) {
-        return -modelHeight * (1 - bottomRatio);
-      }
+      // Ground-anchor scan/offset now live in js/creature-ground-anchor.js (window.CreatureGroundAnchor);
+      // these aliases keep every existing call site and dependency bag unchanged.
+      const resolveCreatureGroundAnchorRatio = window.CreatureGroundAnchor.resolveRatio;
+      const creaturePlaneGroundOffset = window.CreatureGroundAnchor.planeOffset;
 
       function makeCreatureEntity(creatureKey, x, y, opts = {}) {
         const def = CREATURE_DB[creatureKey];
@@ -4629,6 +5252,7 @@
           scene: targetScene, areaGrid: targetGrid, areaCols: gridCols, areaRows: gridRows, areaId: currentArea,
           ...restOpts,
         };
+        creature.genotype = window.VoorgAssRegistration?.displayGenotypeFor?.(creatureKey, creature.genotype) ?? creature.genotype; // Old/wizard-spawned Voorg-Asses without genes still render their coat-colored default beard; no random reroll.
         window.__farmLog?.(`[size-render] ${creatureKey}: ${sizeScale.sizeClass} at ${Math.round(sizeScale.x * 100)}% × ${Math.round(sizeScale.y * 100)}%`, 'wildlife');
         window.ResourceSystem?.initEntity(creature);
         if (!opts.streamVisuals) createCreatureVisuals(creature); // Companions, cinematic actors, and ordinary callers keep immediate construction.
@@ -4649,14 +5273,20 @@
         const sizeScale = { x: c.visualScaleX, y: c.visualScaleY }; // Already resolved by the factory, including authored size class.
         const targetScene = c.scene, targetGrid = c.areaGrid, gridCols = c.areaCols, gridRows = c.areaRows; // Stored area ownership survives town/wilderness transitions.
         const groundLift = c.groundLift; // Authored floor lift remains unchanged.
-        const avatarRef = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, def.sprites.idle, {
+        // A swarm species (honeyfuzzle) is one entity drawn as an instanced
+        // flock — see js/honeyfuzzle-swarm.js; frontPlane is its yaw pivot.
+        const avatarRef = def.swarm && window.HoneyfuzzleSwarm
+          ? window.HoneyfuzzleSwarm.buildAvatar(THREE, { name: c.id, seed: window.HoneyfuzzleSwarm.seedFromString(c.id), modelWidth, count: def.swarm.members, memberWidth: def.swarm.memberWidth, hoverY: def.swarm.hoverY, color: c.swarmColor })
+          : window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, def.sprites.idle, {
           modelWidth, modelHeight,
           name: c.id,
           creatureId: creatureKey,
           headRig: window.CreatureGeneticsRender?.headRigForKind?.(creatureKey) || undefined,
         });
-        avatarRef.frontPlane = avatarRef.group.children[0] || null;
-        avatarRef.backPlane  = avatarRef.group.children[1] || null;
+        if (!def.swarm) {
+          avatarRef.frontPlane = avatarRef.group.children[0] || null;
+          avatarRef.backPlane  = avatarRef.group.children[1] || null;
+        }
         window.CreatureGenetics.applyCreatureBillboardScale(avatarRef.group, sizeScale); // Animal planes face along group Z, so visible width cannot use group X.
         // Skip the species-differentiation tint for genotype-bearing
         // creatures (gar-wolf/dabinggi-hound) — their sprite is about to be
@@ -4701,21 +5331,24 @@
         // prism's floor instead of on the raw sprite rectangle's edge.
         // Fires synchronously if this species' sprite was already scanned
         // by an earlier creature.
-        resolveCreatureGroundAnchorRatio(def.sprites.idle, (bottomRatio) => {
+        if (!def.swarm) resolveCreatureGroundAnchorRatio(def.sprites.idle, (bottomRatio) => { // A hovering swarm has no feet to anchor.
           if (c.avatarRef !== avatarRef) return; // Ignore an opacity scan that completes after this visual rig was retired.
           const offsetY = creaturePlaneGroundOffset(modelHeight, bottomRatio);
           if (avatarRef.frontPlane) avatarRef.frontPlane.position.y = offsetY;
           if (avatarRef.backPlane) avatarRef.backPlane.position.y = offsetY;
         });
         window.WildlifeSpawn?.restoreHerdMotherVisuals?.(c); // Recreates shared-map saddle babies after a data-only mother's promotion.
+        if (c.state === 'corpse') window.CreatureDeath?.restoreSettledPose?.(c); // A corpse promoted from data lies exactly where and how it settled.
       }
 
       function releaseCreatureVisuals(c) {
-        if (!c.streamVisuals || c.isCompanion || c.health <= 0 || c._wildlifeVisualsReleased) return;
+        if (!c.streamVisuals || c.isCompanion || c._wildlifeVisualsReleased) return;
+        if (c.health <= 0 && !window.WildlifeVisualLod.isStreamableCorpse(c)) return; // Dying bodies and revivable skeletons keep their rig; a settled wildlife corpse is plain data when far away.
         disposeCreaturePresentation(c); // Releases only visuals; health, genes, movement state, and population keys remain registered.
         c.avatarRef = dataCreatureAvatar();
         c.groundShadow = null;
         c._carriedBabyVisuals = null;
+        c._deathRecordedThrow = null; c._deathScorch = null; c._impactRagdollPlayback = null; // Pose state belonged to the released rig; CreatureDeath.restoreSettledPose rebuilds it on promotion.
         c._wildlifeVisualsReleased = true;
         c._wildlifeVisualLodHidden = true;
         c.currentFrameUrl = null;
@@ -4723,7 +5356,9 @@
       }
 
       function despawnCreature(c) {
+        if (c?.maskboundTroop === 'headtaker') window.MaskboundHeadtaker?.cancel?.(c, 'despawn'); // Release the player's neck/input lock before removing this attacker and its visual rig.
         clearKnockbackLedgeMotion(c);
+        window.AnimalVocalizations?.releaseCreature?.(c); // Drops the scheduler's strong tracking-set reference; without this every despawned wild animal (and its whole rig object graph) stayed reachable forever.
         disposeCreaturePresentation(c); // Ordinary despawns and data-only retirement share one visual disposal owner.
       }
 
@@ -4737,16 +5372,10 @@
           c.groundShadow.geometry.dispose();
           c.groundShadow.material.dispose();
         }
-        if (c._banditToolHolder) {
-          (c.scene || scene).remove(c._banditToolHolder);
-          c._banditToolHolder.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
-          c._banditToolHolder = null;
-        }
-        if (c._banditRangedToolHolder) {
-          (c.scene || scene).remove(c._banditRangedToolHolder);
-          c._banditRangedToolHolder.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
-          c._banditRangedToolHolder = null;
-        }
+        disposeBanditWeaponHolder(c._banditToolHolder);
+        c._banditToolHolder = null;
+        disposeBanditWeaponHolder(c._banditRangedToolHolder);
+        c._banditRangedToolHolder = null;
         if (c._banditFlaskToolHolder) {
           c._banditFlaskToolHolder.parent?.remove(c._banditFlaskToolHolder);
           c._banditFlaskToolHolder.traverse(o => { o.geometry?.dispose(); o.material?.map?.dispose(); o.material?.dispose(); });
@@ -4761,6 +5390,18 @@
         window.ResourceRings?.disposeRingHud(c);
       }
 
+      function disposeBanditWeaponHolder(holder) {
+        if (!holder) return;
+        holder.parent?.remove(holder);
+        // The assembly root stays parented to the holder after scene removal.
+        // Drop it explicitly so it stops ticking and releases its owned layers and fire.
+        for (const weapon of holder.children) window.HobunjiWeaponSpriteAssemblies?.drop(weapon);
+        holder.traverse(object => {
+          if (!object.userData.sharedToolGeometry) object.geometry?.dispose();
+          object.material?.dispose();
+        });
+      }
+
       // ── Loot & Shop config (docs/config/loot/loot-pools.json,
       // docs/config/shops/shop-stock.json) ────────────────────────────
       // Single source of truth for every drop table and shop's stock,
@@ -4772,12 +5413,17 @@
       // resolved — same assumption docs/game.js's other cached config
       // loaders make (see loadBanditGangConfig). Moved into
       // docs/js/loot-rolling.js; game.js just wires it up and kicks it off.
+      let shopStockCatalogReady = false; // The async shop config callback is gated until barn/house defaults and item registration exist.
+      let shopStockApplyPending = false; // Replays a fast cached config resolution once the late game startup declarations initialize.
       window.LootRolling.init({
         weaponDamageTypeForTool,
         getCurrentArea: () => currentArea,
         getPlayerData: () => _playerData,
         calendar,
-        applyLoadedShopStock: () => _applyLoadedShopStock(),
+        applyLoadedShopStock: () => {
+          if (shopStockCatalogReady) _applyLoadedShopStock();
+          else shopStockApplyPending = true; // Promise may resolve during staged startup; never touch BARN_TIERS in its TDZ.
+        },
       });
       window.LootRolling.loadLootShopConfig();
 
@@ -4794,7 +5440,7 @@
         return {
           id: 'corpse_' + c.id,
           type: 'creature_corpse',
-          promptRoot: c.avatarRef?.group || null,
+          promptRoot: c._wildlifeVisualsReleased ? null : (c.avatarRef?.group || null), // A far, data-only corpse has no rig to anchor a prompt to.
           getButtons() {
             return [{ icon: '🍖', label: 'Butcher ' + c.def.label, action: 'obj_loot_corpse', style: 'primary', allowed: true }];
           },
@@ -4803,12 +5449,17 @@
             const gained = window.LootRolling.rollLootPool(c.def.lootPool, { entity: c });
             const parts = [];
             Object.entries(gained).forEach(([key, qty]) => {
-              inventory[key] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[key] || 0) + qty);
-              // Meat gets a quality roll same as fish/crops; hides and other
-              // butchering byproducts don't.
-              const meatStars = /meat/i.test(key) ? window.LootRolling.rollItemStars('combat') : null;
-              if (meatStars) window.CookingSystem.recordItemQuality(key, meatStars, qty);
-              parts.push((meatStars ? window.LootRolling.starRatingText(meatStars) + ' ' : '') + itemIconForKey(key) + '×' + qty);
+              const previousCount = Math.max(0, Number(inventory[key]) || 0); // The accepted amount, not the rolled amount, determines how many hides retain provenance.
+              inventory[key] = Math.min(window.InventoryStacks.MAX_TOTAL, previousCount + qty);
+              const received = inventory[key] - previousCount; // Full bag stacks must not create phantom coat records or quality units.
+              if (received < 1) return;
+              const hideRecord = window.AnimalHides?.isHide?.(key)
+                ? window.AnimalHides.recordFromCreature(key, c, received, ITEM_DEFS[key]?.sellPrice)
+                : null; // Uses this exact dead animal's existing coat-rarity calculation and genetic colors/patterns.
+              const meatStars = /meat/i.test(key) ? window.LootRolling.rollItemStars('combat') : null; // Meat retains the existing independent Combat quality roll.
+              if (meatStars) window.CookingSystem.recordItemQuality(key, meatStars, received);
+              const stars = hideRecord?.stars || meatStars;
+              parts.push((stars ? window.LootRolling.starRatingText(stars) + ' ' : '') + itemIconForKey(key) + '×' + received);
             });
             const carriedBabyKey = c.carriedBabyItemKey; // Herd-Mothers expose their carried young only through the corpse interaction, never while alive.
             const carriedBabyCount = Math.max(0, Math.floor(Number(c.carriedBabyCount) || 0));
@@ -4824,8 +5475,8 @@
             }
             const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0; // Every creature corpse gets the same high-chance shared-ammo roll as bandits.
             if (specialAmmo) parts.push(`🏹 Special Ammo×${specialAmmo}`);
-            corpseObjects.delete(c);
-            despawnCreature(c);
+            if (c.keepCorpseAfterLoot) c.corpseLooted = true; // Tzatzul victim piles retain their bodies and one-shot searched state.
+            else { corpseObjects.delete(c); despawnCreature(c); }
             return {
               ok: true,
               message: parts.length ? `Butchered the ${c.def.label}: ${parts.join(' ')}` : `Nothing usable left on the ${c.def.label}.`,
@@ -4895,6 +5546,8 @@
       function transitionCreatureToDeath(c, fromX = c?.x, fromY = c?.y) {
         if (c?.combatTutorialTarget) { c.health = c.maxHealth; return false; } // Sparring partners never produce kills, corpses, or loot.
         if (!c || Number(c.health) > 0 || c._deathTransitionStarted) return false;
+        if (window.CompanionDowned?.tryDown?.(c)) return false; // The player's animal companion is downed (js/companion-downed.js), never killed: no corpse, loot or removal.
+        window.WildlifeFoodWeb?.abandon?.(c); // Release reserved bushes when an animal dies or is forcibly removed.
         c._deathTransitionStarted = true; // Prevents duplicate rewards/corpse creation when several lethal systems observe zero Health in one frame.
         // damageCreature's lethal branch returns before its "every hit cancels
         // the attack" block, and bandit swings/ripostes tick from Combat.update
@@ -4904,9 +5557,10 @@
         window.Combat?.animalAttacks?.cancel?.(c);
         window.Combat?.cancelStagedForAttacker?.(c);
         window.EnemyDodge?.cancel?.(c);
-        if (c.isBandit) { c._banditAction = null; window.RangedWeapons?.cancelBanditAction?.(c); c._banditLunging = false; }
+        if (c.isBandit) { c._banditAction = null; window.RangedWeapons?.cancelBanditAction?.(c); window.BanditCombat?.cancelLunge?.(c); }
         hostileObjects.delete(c);
         companionObjects.delete(c);
+        window.AnimalVocalizations?.releaseCreature?.(c); // A dead creature is never ticked again, so nothing else would ever drop it from the vocalization scheduler's strong set.
         const mineDeathArea = window.TownMine?.floorFromMapId?.(c.areaId) ? c.areaId : c.zoneId;
         if (!c.isCompanion && !c._mineDescentDeathRolled && window.TownMine?.floorFromMapId?.(mineDeathArea)) {
           c._mineDescentDeathRolled = true;
@@ -4918,15 +5572,13 @@
         }
         // A killed wild creature is the starting source of Motes of Prowess;
         // companions never award kill progression.
-        if (!c.isCompanion) {
+        window.PlayerDowned?.noteKill?.(c); // A kill by the player or their companion triggers Second Wind (js/player-downed.js).
+        if (!c.isCompanion && (window.PlayerDowned?.isTeamKill?.(c) ?? true)) { // Only the player's/companion's own kills reward Motes and combat XP, never NPC-vs-NPC deaths nearby.
           awardMotesOfProwess(MOTES_PER_KILL);
           window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatKill || 8, 'defeated creature');
-          const isBarbarian = c.isPorakanekiHunter === true; // The Porakaneki/Omgurku war bands are the setting's "barbarians".
-          window.HobunjiActivityEvents?.emit('creature_killed', {
-            creatureKey: c.def?.key || c.kind || null, label: c.def?.label || null,
-            isBandit: !!c.isBandit, isBarbarian,
-            isPredator: !c.isBandit && !isBarbarian && !!c.def?.hostile && c.def?.diet !== 'herbivore',
-          });
+        }
+        if (!c.isCompanion) {
+          window.HobunjiActivityEvents?.emitCreatureKilled?.(c); // Kill attribution and barbarian/self-defense classification now live in js/activity-events.js.
         }
         if (c._wildlifeVisualsReleased) {
           createCreatureVisuals(c); // Environmental/resource deaths still produce the normal visible, lootable corpse.
@@ -4940,13 +5592,18 @@
       function damageCreature(c, amount, fromX, fromY, knockbackPxS, dmgOpts) {
         const environmentalImpact = dmgOpts?.environmentalImpact === true; // Wall/furniture collision damage keeps death cleanup but is not a second attack.
         if (!environmentalImpact && performance.now() < (Number(c?.invulnUntil) || 0) && !dmgOpts?.ignoreDodge) return false; // Enemy dodge iframes reject the complete direct hit before damage, afflictions, Footing, or stagger side effects.
+        if (c?._downed) return false; // A downed companion is untargetable until it is revived (js/companion-downed.js).
+        if (!environmentalImpact && window.Combat?.attach?.blocksDamage(c, dmgOpts, fromX, fromY)) return false; // A creature sitting on a host (honeyfuzzle Swarm) is immune to that host's attacks (js/combat/combat-attach.js).
         if (dmgOpts?.ranged && !environmentalImpact) window.CreatureCliffClimb?.knockOff?.(c, 'shot while climbing'); // A projectile hit mid-climb peels an attacker off the cliff face.
         // Player melee must overlap the target vertically as well as pass its
         // existing top-down cone/range test. Ranged projectiles already run
         // their own swept 3D Box3 collision and deliberately bypass this.
         const sourceNearPlayer = Number.isFinite(fromX) && Number.isFinite(fromY)
           && Math.hypot(fromX - player.x, fromY - player.y) <= TILE * 1.5;
-        if (!environmentalImpact && !dmgOpts?.ranged && heldMode === 'tool' && activeTool === 'weapon' && sourceNearPlayer) {
+        // Bandit/tribe actor-vs-actor hits name their attacker; standing near
+        // the player must not turn them into the player's own swing.
+        const actorAttacker = dmgOpts?.attacker && dmgOpts.attacker !== player ? dmgOpts.attacker : null;
+        if (!environmentalImpact && !actorAttacker && !dmgOpts?.ranged && heldMode === 'tool' && activeTool === 'weapon' && sourceNearPlayer) {
           const reach = window.RangedWeapons?.meleeReachCheck?.(player, c, 0.4);
           if (reach && !reach.reachable) {
             lastMeleeHeightBlock = {
@@ -4968,12 +5625,17 @@
         if (!environmentalImpact) {
           const damageSource = dmgOpts?.attacker || (sourceNearPlayer ? player : null); // Explicit NPC attacker wins; ordinary player melee/ranged still resolves from its existing source position.
           amount *= window.ResourceSystem?.timedDebuffModifier?.(damageSource, 'outgoingDamage') ?? 1; // Enfeebled reduces the attacker's direct damage without altering target affliction buildup rules.
-          amount *= window.SkillSystem?.attackMultiplier?.() || 1;
-          amount *= window.AlchemySystem?.getOutgoingDamageMultiplier?.() || 1;
-          amount *= window.PerkSystem?.combatDamageMultiplier?.(dmgOpts) || 1; // Empower Raw Damage / Quick / Defensive / Heavy Attacks.
-          amount = banditTryGuard(c, amount, player);
-          if (!c.combatTutorialTarget) window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatHit || 1, 'landed hit');
+          if (c.isCompanion) amount *= window.CompanionResilience?.damageTakenMultiplier?.(c) ?? 1; // Thick Hide / Guardian Fury companion training (js/stable-companion-resilience.js).
+          else window.PlayerDowned?.noteTeamHit?.(c, dmgOpts); // Remembers player/companion hits so their kills count toward Second Wind; ranged hits focus the companion.
+          if (!actorAttacker) { // The player's skill, potion and perk multipliers only scale the player's own hits.
+            amount *= window.SkillSystem?.attackMultiplier?.() || 1;
+            amount *= window.AlchemySystem?.getOutgoingDamageMultiplier?.() || 1;
+            amount *= window.PerkSystem?.combatDamageMultiplier?.(dmgOpts) || 1; // Empower Raw Damage / Quick / Defensive / Heavy Attacks.
+          }
+          amount = banditTryGuard(c, amount, actorAttacker || player);
+          if (!actorAttacker && !c.combatTutorialTarget) window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatHit || 1, 'landed hit');
         }
+        if (!environmentalImpact) amount *= window.ResourceSystem?.getProneAttackMultiplier?.(c) ?? 1; // 1.75x temporary, 2.5x true Footing-break; scales direct damage and attack afflictions once.
         const resourceDamage = environmentalImpact ? { health: amount, footing: 0 } : hitResourceDamage(amount, dmgOpts);
         const impactMultiplier = environmentalImpact ? 1 : (window.AlchemySystem?.getFootingDamageMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseFootingDamage') || 0) * 0.1); // Collision profiles are already authored at final strength.
         resourceDamage.footing *= impactMultiplier;
@@ -4995,12 +5657,13 @@
         // like Pounce) rather than just pausing it through the knockback
         // freeze below and letting it resume where it left off once knockback
         // decays.
+        if (dmgOpts?.noStagger || window.Combat?.attach?.suppressesStagger(c)) { c.lastAttackReceivedAt = performance.now(); return; } // Damage-over-time ticks and an attached rider take the damage without being staggered, knocked back or scared off.
         window.Combat?.telegraph?.cancel(c);
         window.Combat?.animalAttacks?.cancel(c);
         // Getting hit breaks a bandit's in-progress ability the same way it
         // cancels any other mid-attack state above, rather than letting a
         // combo silently resume its step count once it recovers.
-        if (c.isBandit) { c._banditAction?.cancel(); c._banditAction = null; window.RangedWeapons?.cancelBanditAction?.(c); c.telegraphState = null; c._banditComboIndex = 0; c._banditLunging = false; }
+        if (c.isBandit) { c._banditAction?.cancel(); c._banditAction = null; window.RangedWeapons?.cancelBanditAction?.(c); c.telegraphState = null; c._banditComboIndex = 0; window.BanditCombat?.cancelLunge?.(c); } // cancelLunge also lowers a mid-arc hop.
         // Referenced by wildlife-territorial.js's own attackedDuringWarning
         // check (an already-attacked creature escalates straight to
         // fighting even from outside its proximity trigger) — that check
@@ -5022,19 +5685,29 @@
         // animal mid-fight should never make it flee instead; it's
         // supposed to protect its home, not bail the moment it takes a hit.
         const territorialPhase = c._territorialBehavior?.phase;
-        if (c.def?.hostile === false && !c.isCompanion && territorialPhase !== 'warning' && territorialPhase !== 'fight') {
-          // A drenkirra mid-forage or asleep is pinned to a branch —
-          // clear that (see wildlife-cloud-forest-behavior.js's
-          // interruptForFlee) before the state flip below, or the
-          // branch-pin's own per-frame early-continue in updateHostiles
-          // keeps re-snapping it right back to that spot forever, never
-          // actually reaching the movement this state is supposed to
-          // trigger. A no-op for anything not currently on a branch.
+        if (c.def?.hostile === false && !c.isCompanion && !window.WildlifeFoodWeb?.isDefending?.(c) && territorialPhase !== 'warning' && territorialPhase !== 'fight') {
+          // A hit wakes passive wildlife and unpins branch sleepers before either retaliation or flight.
           window.HobunjiCloudForestWildlife?.interruptForFlee?.(c);
-          c._animalSleeping = false; // A hit wakes open-air herd sleepers immediately before the flee state takes ownership of movement.
+          c._animalSleeping = false;
           c.scaleY = 1;
-          c.state = 'fleeing-low-health';
-          c.targetCreature = null;
+          const retaliator = dmgOpts?.attacker || (sourceNearPlayer || dmgOpts?.ranged ? player : null); // The actual attacker is preferred; normal player melee/ranged hits also identify their owner.
+          const voorgCanKick = window.VoorgAssRearKick?.isVoorgAss?.(c)
+            && retaliator && retaliator !== c && retaliator.health > 0
+            && c.state !== 'fleeing-low-health' && !c._voorgRearKickSpent
+            && !(c._fleeCooldownUntil > performance.now());
+          if (voorgCanKick) {
+            c._voorgRearKickThreat = retaliator; // Carries the one-off defensive target through the existing chase/patrol-chase state machine.
+            const targetIsPlayer = retaliator === player || players.includes(retaliator);
+            c.state = targetIsPlayer ? 'chase' : 'patrol-chase';
+            c.targetPlayer = targetIsPlayer ? retaliator : null;
+            c.targetCreature = targetIsPlayer ? null : retaliator;
+            c.attackCooldownT = 0; // Retaliate promptly after the knockback/stagger completes.
+            window.__farmLog?.('[voorg-kick] wild animal retaliating before fleeing', 'wildlife');
+          } else {
+            c.state = 'fleeing-low-health';
+            c.targetCreature = null;
+            c._voorgRearKickThreat = null;
+          }
         }
         if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS * impactMultiplier);
         applyHitStagger(c, false, c.facing || 0, c.x, c.y, fromX, fromY, resourceDamage.footing);
@@ -5042,18 +5715,24 @@
 
       function damagePlayer(amount, fromX, fromY, knockbackPxS = PLAYER_KNOCKBACK_PX_S, dmgOpts) {
         const environmentalImpact = dmgOpts?.environmentalImpact === true; // Collision Health damage cannot be countered or treated as a second incoming attack.
+        if (window.PlayerDowned?.isDowned?.()) { // A downed player takes no Health damage, knockback or stagger; each hit only shortens the bleed-out timer (js/player-downed.js).
+          if (!environmentalImpact) window.PlayerDowned.noteHitWhileDowned();
+          return environmentalImpact ? { applied: 0, lethal: false } : undefined;
+        }
         if (!environmentalImpact && performance.now() < player.invulnUntil) return;
         if (!environmentalImpact) {
           const attacker = dmgOpts?.attacker || null; // Enemy modules pass their owning actor when available so Enfeebled follows the source rather than the victim.
           amount *= window.ResourceSystem?.timedDebuffModifier?.(attacker, 'outgoingDamage') ?? 1;
           amount *= window.SkillSystem?.damageTakenMultiplier?.() || 1;
         }
+        if (!environmentalImpact) amount *= window.ResourceSystem?.getProneAttackMultiplier?.(player) ?? 1; // Same prone vulnerability for the player; collision damage remains unchanged.
         const resourceDamage = environmentalImpact ? { health: amount, footing: 0 } : hitResourceDamage(amount, dmgOpts);
         // Lets a held defensive ability (Counter Shield) absorb the hit and
         // riposte instead of applying damage normally — only one hold
         // ability can be active at a time, so this is a single settable slot.
         if (!environmentalImpact && window.Combat?.tryInterceptPlayerDamage?.(resourceDamage.health, fromX, fromY)) return;
-        if (!environmentalImpact) {
+        const staggerless = dmgOpts?.noStagger === true; // Damage-over-time ticks (a Swarm sitting on the player) do not interrupt or stagger.
+        if (!environmentalImpact && !staggerless) {
           _nestHoldT = 0; // getting hit interrupts a den-nest egg/baby take
           player._nestTakeActive = false;
           window.BanditCamps?.interruptTentHold(); // ...and a bandit-tent loot/burn, same reasoning
@@ -5063,7 +5742,8 @@
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(player, resourceDamage.health, dmgOpts || {});
         else player.health = Math.max(0, player.health - resourceDamage.health);
         const appliedImpactHealth = environmentalImpact ? Math.max(0, healthBeforeImpact - Math.max(0, Number(player.health) || 0)) : 0; // Reports actual clamped collision damage to the resolver.
-        if (player.health > 0 && !environmentalImpact) {
+        if (resourceDamage.health > 0) window.GameFeel?.playerHurt?.(environmentalImpact ? appliedImpactHealth : resourceDamage.health); // Shake, hit-stop and red edge flash (js/game-feel.js).
+        if (player.health > 0 && !environmentalImpact && !staggerless) {
           // Every attack staggers its target — same interrupt-plus-knockback
           // rule as damageCreature above, mirrored onto whatever combo/quick-
           // attack/charged-breaker strike the player was mid-windup on.
@@ -5072,39 +5752,39 @@
           applyHitStagger(player, true, player.angle, player.x, player.y, fromX, fromY, resourceDamage.footing);
         }
         if (player.health <= 0) {
+          if (!environmentalImpact && window.PlayerDowned?.tryDown?.('damage')) return; // Combat damage puts the player down (Second Wind) instead of killing them outright.
           respawnPlayer();
           if (environmentalImpact) return { applied: appliedImpactHealth, lethal: true };
         }
         if (environmentalImpact) return { applied: appliedImpactHealth, lethal: false };
       }
 
-      // Closest Root Totem (see wilderness-map-generator.js's
-      // placeRootTotems) to a given world position, within one zone only —
-      // totems don't offer a way to reach a different zone's terrain from
-      // where the player actually died, so a death is always recovered
-      // within its own zone or (if that zone has none, or the player wasn't
-      // in a wilderness zone at all) falls back to the farmhouse. Returns
-      // the totem's pathAnchor tile ({x,y}) or null.
-      function nearestRootTotemFor(zoneId, worldX, worldY) {
-        const totems = _zoneLayouts.get(zoneId)?.rootTotems;
-        if (!totems || !totems.length) return null;
-        const px = worldX / TILE, py = worldY / TILE;
-        let best = null, bestDist = Infinity;
-        for (const t of totems) {
-          const anchor = t.pathAnchor || t;
-          const d = Math.hypot(anchor.x - px, anchor.y - py);
-          if (d < bestDist) { bestDist = d; best = anchor; }
-        }
-        return best;
-      }
+      // nearestRootTotemFor (closest zone Root Totem for death recovery) now lives in js/sacred-ground.js as HobunjiSacredGround.nearestRootTotem.
+
+      window.HobunjiSacredGround?.init?.({
+        tileSize: TILE,
+        getPlayer: () => player, // The live avatar determines its zone even when player.areaId has not been rewritten on a map swap.
+        getCurrentArea: () => currentArea,
+        getRootTotems: areaId => _zoneLayouts.get(areaId)?.rootTotems || [],
+        getFarmRootTotem: () => window.TownMine?.farmRootTotem?.(COLS, ROWS),
+      }); // Shared registry is initialized once and can be used by future sacred-ground mechanics.
 
       function respawnPlayer(reason = 'death') {
-        if (window.DevRandomRuinSimplePuzzles?.respawnAtCheckpoint?.(reason)) return; // Session ruin checkpoints override every canonical death source before mine/totem/farm recovery while preserving the source for mobile diagnostics.
+        window.ResourceSystem?.clearTimedDebuff?.(player, 'knockdown'); // No death/checkpoint may carry timed immobilization into the next life.
+        player._temporaryKnockdownProne = false; // Reset 1.75x attack vulnerability and the temporary source before any respawn branch.
+        if (player.prone) {
+          player.prone = false;
+          player.somersaultRecovering = false;
+          window.ImpactRagdollPlayback?.stop?.(); // Clear the held break-throw rig before placing the player at a respawn point.
+        }
+        window.PlayerDowned?.reset?.(); // Any respawn ends the downed state.
+        if (window.DevRandomRuinSimplePuzzles?.respawnAtCheckpoint?.(reason)) { window.CompanionDowned?.reviveAll?.({ reason: 'player-respawn', teleport: 'deferred' }); return; } // Session ruin checkpoints override every canonical death source before mine/totem/farm recovery while preserving the source for mobile diagnostics.
         if (window.CombatTutorial?.active?.()) {
           window.CombatTutorial.leave(true);
           showToast('Spearhead stops the exercise. Your progress is saved; talk to him to resume.', false);
           return;
         }
+        window.CompanionDowned?.reviveAll?.({ reason: 'player-respawn', teleport: 'deferred' }); // A downed companion rises and rejoins the owner once they have been moved by the branches below.
         if (window.TownMine?.floorFromMapId?.(currentArea)) {
           window.WildernessCampfire?.clearMineCampfireOnDeath?.(); // Mine death ends the one underground camp, while wilderness camps survive.
           _returnToFarmMeshes();
@@ -5116,6 +5796,7 @@
           player.stamina = player.maxStamina;
           player.invulnUntil = performance.now() + 1000;
           _snapCameraTarget();
+          window.HobunjiSacredGround?.cleanseRentHealth?.(player); // Mine death returns to a root totem, so sacred-only wounds clear immediately.
           showToast('You awaken at the farm Root Totem, carrying everything you found...', false);
           return;
         }
@@ -5130,6 +5811,8 @@
           player.stamina = player.maxStamina;
           if (Number.isFinite(player.maxFooting)) player.footing = player.maxFooting; // Death reset should not strand an arena test subject prone at the entry point.
           player.prone = false;
+          player._temporaryKnockdownProne = false;
+          window.ResourceSystem?.clearTimedDebuff?.(player, 'knockdown'); // Arena respawns cannot preserve the previous knockdown lock.
           if (player.staggered) { player.staggered.active = false; player.staggered.endsAt = 0; }
           for (const id of Object.keys(window.ResourceSystem?.AFFLICTIONS || {})) {
             const buildup = window.ResourceSystem?.getAffliction?.(player, id) || 0; // Clears lethal/punishing carry-over so the test respawn cannot immediately die again from the previous bout.
@@ -5141,7 +5824,7 @@
           showToast('Respawned at the Testing Arena entrance.', false);
           return;
         }
-        const totem = _isZoneArea(currentArea) ? nearestRootTotemFor(currentArea, player.x, player.y) : null;
+        const totem = _isZoneArea(currentArea) ? (window.HobunjiSacredGround?.nearestRootTotem?.(currentArea, player.x, player.y) || null) : null;
         if (totem) {
           player.x = (totem.x + 0.5) * TILE;
           player.y = (totem.y + 0.5) * TILE;
@@ -5149,6 +5832,7 @@
           player.health = Math.round(player.maxHealth * 0.5);
           player.invulnUntil = performance.now() + 1000;
           _snapCameraTarget();
+          window.HobunjiSacredGround?.cleanseRentHealth?.(player); // Same instant sacred-ground reset as physically approaching the totem.
           showToast('You awaken at the nearest Root Totem...', false);
           return;
         }
@@ -5230,7 +5914,52 @@
       let autoTargetSightObstacles = []; // Cached active-area geometry for all candidate checks in the same frame.
 
       function mobileAutoTargetEnabled() {
-        return !isDesktop && !!window.Combat?.input?.isAutoTargetEnabled?.();
+        return desktopLockOnActive || (!isDesktop && !!window.Combat?.input?.isAutoTargetEnabled?.());
+      }
+      // Desktop/controller Lock-On (Z-targeting): the same persistent target,
+      // red lock ring and camera tracking the mobile auto-target uses, toggled
+      // by the 'lockOn' input (middle click / controller Y). Releases itself when the
+      // target dies, leaves retention range, or the weapon is put away.
+      let desktopLockOnActive = false;
+      const LOCK_ON_ACQUIRE_TILES = 10;
+      const LOCK_ON_ACQUIRE_HALF_CONE = Math.PI * 80 / 180;
+      function autoTargetPlatformAllowed() {
+        return !isDesktop || desktopLockOnActive;
+      }
+      function releaseLockOn() {
+        if (!desktopLockOnActive) return false;
+        desktopLockOnActive = false;
+        manualAutoTarget = null;
+        invalidateAutoTargetCache();
+        window.GameFeel?.blip?.(880, 0.14, 0.35);
+        return true;
+      }
+      function toggleLockOn() {
+        if (releaseLockOn()) return false;
+        const rangedOut = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged;
+        if (!meleeWeaponOut() && !rangedOut) {
+          if (!equipmentSlots.weapon) return false;
+          heldMode = 'tool';
+          setActiveTool('weapon'); // Zelda-style: locking on readies the sword.
+        }
+        const aimAngle = currentMeleeAimAngle();
+        const maxDist = TILE * LOCK_ON_ACQUIRE_TILES;
+        let best = null, bestScore = Infinity;
+        for (const c of hostileObjects) {
+          if (!autoTargetCandidateValid(c, maxDist)) continue;
+          const dx = c.x - player.x, dy = c.y - player.y;
+          const error = Number.isFinite(aimAngle) ? Math.abs(angleDiff(Math.atan2(dy, dx), aimAngle)) : 0;
+          if (error > LOCK_ON_ACQUIRE_HALF_CONE) continue;
+          const score = error + Math.hypot(dx, dy) / maxDist * 0.6; // Prefer what the camera points at; distance breaks near-ties.
+          if (score >= bestScore || !autoTargetVisible(c)) continue;
+          bestScore = score; best = c;
+        }
+        if (!best) return false;
+        desktopLockOnActive = true;
+        manualAutoTarget = best;
+        invalidateAutoTargetCache();
+        window.GameFeel?.blip?.(1318.5, 0.2, 0.5);
+        return true;
       }
 
       function autoTargetRange() {
@@ -5258,7 +5987,8 @@
 
       function updateMobileAutoTargetCamera(dt) {
         const target = findAutoTarget(); // Keep the selected creature while manual attack-stick input owns camera aim.
-        const suppressed = isDesktop || !target || manualCombatReticleAim() || menuOpen || dialogueOpen || sitInteraction
+        if (desktopLockOnActive && !target) releaseLockOn(); // Target died, escaped retention range, or the weapon was put away.
+        const suppressed = !autoTargetPlatformAllowed() || !target || manualCombatReticleAim() || menuOpen || dialogueOpen || sitInteraction
           || farmEditMode || characterViewMode.enabled || window.AuthoredCutsceneRuntime?.isActive?.()
           || window.__mapEditorOrbitActive; // Scripted/menu/editor camera owners remain authoritative.
         mobileAutoCameraActive = false;
@@ -5348,7 +6078,7 @@
       }
 
       function meleeAttackTargetCandidate(preview = false) {
-        if (isDesktop || (!preview && !mobileAutoTargetEnabled()) || !meleeWeaponOut()) return null;
+        if (!autoTargetPlatformAllowed() || (!preview && !mobileAutoTargetEnabled()) || !meleeWeaponOut()) return null;
         if (autoTargetCandidateValid(manualAutoTarget, autoTargetRetentionRange())) return manualAutoTarget;
         if (!preview) manualAutoTarget = null;
         const aimAngle = currentMeleeAimAngle(); // Live camera/stick/body bearing used for initial acquisition in the front half-plane.
@@ -5375,7 +6105,7 @@
 
       function computeAutoTarget(preview = false) {
         const rangedActive = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged; // Only equipped mobile combat tools acquire targets.
-        if (isDesktop || (!preview && !mobileAutoTargetEnabled()) || (!meleeWeaponOut() && !rangedActive)) {
+        if (!autoTargetPlatformAllowed() || (!preview && !mobileAutoTargetEnabled()) || (!meleeWeaponOut() && !rangedActive)) {
           if (!preview) manualAutoTarget = null;
           return null;
         }
@@ -5410,7 +6140,7 @@
       }
 
       function findAvailableAutoTarget() {
-        if (isDesktop) return null;
+        if (isDesktop && !desktopLockOnActive) return null;
         if (mobileAutoTargetEnabled()) return findAutoTarget();
         if (availableAutoTargetCacheFrame !== gameFrameSerial) {
           availableAutoTargetCacheValue = computeAutoTarget(true); // Uses ordinary range, visibility, and weapon/cone rules without selecting or turning toward prey.
@@ -5462,9 +6192,13 @@
         return Math.asin(window.FormatUtils.clamp(Number(direction?.y) || 0, -1, 1));
       }
 
+      // A live _chunkCombatTarget means a tribe/bandit ecology fight
+      // (js/porakaneki-camps-runtime.js) chasing another actor, not the player.
+      // Planner-controlled (neutral) tribe hunters are never hostile to the player,
+      // whatever transient state the planner leaves them in between its 5 Hz ticks.
       function isPlayerInCombat() {
         for (const c of hostileObjects) {
-          if (c.health > 0 && c.areaId === currentArea && !c._denHidden && !c.denDisplacedPrey && (c.state === 'chase' || c.state === 'searching')) return true;
+          if (c.health > 0 && c.areaId === currentArea && !c._denHidden && !c.denDisplacedPrey && c._porakanekiPlannerControlled !== true && (c.state === 'chase' || c.state === 'searching') && !(c._chunkCombatTarget?.health > 0)) return true;
         }
         return false;
       }
@@ -5508,17 +6242,11 @@
         if (c.areaId !== currentArea) return; // not in the player's current area; inaudible
         if (!Number.isFinite(c.x) || !Number.isFinite(c.y)) return; // belt-and-suspenders: see moveCreatureToward/creatureCanEnterTile's own NaN guards
         if (!window.AudioSystem?.footstepAdvance(c, distPx)) return;
-        const distToPlayer = Math.hypot(c.x - player.x, c.y - player.y);
-        if (distToPlayer > window.AudioSystem.FOOTSTEP_EARSHOT_PX) return;
-        // Linear, not squared — squared falloff made anything past ~30% of
-        // earshot drop to near-silence, which was most of the usable range.
-        const falloff = Math.max(0, 1 - distToPlayer / window.AudioSystem.FOOTSTEP_EARSHOT_PX);
+        const spatial = window.AudioSystem?.combatAudioSpatial(c, { earshotTiles: 9 }); // Footstep falloff includes real cliff/branch height, not just flat map distance.
+        if (!spatial || spatial.gain <= 0.002) return;
         const tile = window.AudioSystem?.footstepTileAt(c.areaId, c.x, c.y, c.areaGrid);
-        // Whistled companions stay quiet (like the player) and unpanned —
-        // hostiles/wild creatures get the full directional treatment.
-        if (c.isCompanion) { window.AudioSystem?.playFootstepSfx(c.areaId, tile, falloff * window.AudioSystem.FOOTSTEP_QUIET_SCALE); return; }
-        const pan = Math.max(-1, Math.min(1, (c.x - player.x) / window.AudioSystem.FOOTSTEP_PAN_RANGE_PX));
-        window.AudioSystem?.playFootstepSfx(c.areaId, tile, falloff, pan);
+        if (c.isCompanion) { window.AudioSystem?.playFootstepSfx(c.areaId, tile, spatial.gain * window.AudioSystem.FOOTSTEP_QUIET_SCALE); return; }
+        window.AudioSystem?.playFootstepSfx(c.areaId, tile, spatial.gain, spatial.panX, { source: c }); // 3D source lets recorded and procedural hostile steps share weapon HRTF.
       }
 
       // Terrain/structure gate for creature movement — unlike tileSpeedAt
@@ -5536,7 +6264,7 @@
       // already does axis-separated movement, so a creature blocked here
       // slides along the obstacle's edge instead of freezing, exactly like
       // the player's own wall collision.
-      function creatureCanEnterTile(def, wx, wy, fromX = NaN, fromY = NaN) {
+      function creatureCanEnterTile(def, wx, wy, fromX = NaN, fromY = NaN, actor = null, walkingPath = false) {
         // A NaN/Infinite coordinate compares false against every bound
         // check below (NaN is never < or >= anything), so without this it
         // would silently pass through as "allowed" and let a corrupted
@@ -5547,6 +6275,7 @@
         if (!Number.isFinite(wx) || !Number.isFinite(wy)) return false;
         const aC = window.GridTileAccessors.getActiveCols(), aR = window.GridTileAccessors.getActiveRows();
         if (wx < 0 || wy < 0 || wx >= aC * TILE || wy >= aR * TILE) return false;
+        if (window.DevRandomRuin?.shaftCreatureCanEnter?.(actor, wx, wy, walkingPath) === false) return false;
         const col = Math.floor(wx / TILE), row = Math.floor(wy / TILE);
         if (currentArea === 'farm' && (worldObjects.has(col + ',' + row) || window.GridTileAccessors.isHouseFootprint(col, row))) return false;
         if (currentArea === 'town' && window.GridTileAccessors.isTownBuildingCollisionTile(col, row)) return false;
@@ -5554,6 +6283,17 @@
         // Map-boundary escarpments are airtight to creatures too (fromX/Y lets
         // one that is already standing on one walk off it).
         if (window.MapBoundaryGuard?.blocksCreatureStep?.(window.GridTileAccessors.getActiveGrid(), TILE, fromX, fromY, wx, wy)) return false;
+        if (_isZoneArea(currentArea)) {
+          const g = actor?.areaGrid || window.GridTileAccessors.getActiveGrid();
+          const toTile = g?.[row]?.[col];
+          if (toTile?.incline && !actor?._cliffClimb) return false; // Faces require selected handholds, even for animals with canClimb.
+          if (!toTile) return false;
+          if (Number.isFinite(fromX) && Number.isFinite(fromY) && !actor?._cliffClimb) {
+            const fromTile = g?.[Math.floor(fromY / TILE)]?.[Math.floor(fromX / TILE)];
+            if (fromTile && fromTile !== toTile && fromTile.type !== TileType.RAMP && toTile.type !== TileType.RAMP &&
+                Math.abs(tileSurfaceYInArea(toTile, currentArea) - tileSurfaceYInArea(fromTile, currentArea)) > 0.55) return false;
+          }
+        }
         return true;
       }
 
@@ -5609,13 +6349,17 @@
         // silently false rather than throwing, and c.x/c.y would end up
         // permanently NaN with nothing downstream ever catching it directly.
         if (!Number.isFinite(tx) || !Number.isFinite(ty)) { c.vx = 0; c.vy = 0; return false; }
+        // One central navigation entry for herds, prey, companions and
+        // returning wildlife. The route graph prevents shortcutting vertically.
+        if (window.CreatureCliffClimb?.navigate?.(c, tx, ty, speed, dt)) return true;
         const dx = tx - c.x, dy = ty - c.y;
         const dist = Math.hypot(dx, dy);
         if (dist < 1) { c.vx = 0; c.vy = 0; return false; }
         const directionMul = window.RangedWeapons?.movementDirectionMultiplier?.(c) || 1; // Disorient inverts normal movement AI at this shared choke point.
         const nx = dx / dist * directionMul, ny = dy / dist * directionMul;
         const heavyMoveMul = window.ResourceSystem?.timedDebuffModifier?.(c, 'moveSpeed') ?? 1; // Heavy composes with global/swim/climb movement instead of mutating authored creature speeds.
-        const baseSpeed = speed * devGlobalSpeedMul * heavyMoveMul;
+        const stickySpeedMul = window.RangedWeapons?.movementSpeedMultiplier?.(c) ?? 1; // Soursap Sticky scales native creature locomotion.
+        const baseSpeed = speed * devGlobalSpeedMul * heavyMoveMul * stickySpeedMul;
         const effectiveSpeed = isCreatureSwimming(c) ? baseSpeed * SWIM_SPEED_MUL : isCreatureClimbing(c) ? baseSpeed * CLIMB_SPEED_MUL : baseSpeed;
         const step = Math.min(dist, effectiveSpeed * dt);
         // Axis-separated so a creature turned back by a cliff face or river
@@ -5624,9 +6368,9 @@
         // gets one short lateral/backoff escape attempt below.
         const prevX = c.x, prevY = c.y;
         const desiredX = c.x + nx * step, desiredY = c.y + ny * step;
-        const canMoveX = creatureCanEnterTile(c.def, desiredX, c.y, prevX, prevY); // Used both to apply the normal X slide and to identify the blocking axis for escape diagnostics.
+        const canMoveX = creatureCanEnterTile(c.def, desiredX, c.y, prevX, prevY, c); // Used both to apply the normal X slide and to identify the blocking axis for escape diagnostics.
         if (canMoveX) c.x = desiredX;
-        const canMoveY = creatureCanEnterTile(c.def, c.x, desiredY, prevX, prevY); // Used after X resolution so the ordinary axis-separated slide keeps its existing behavior.
+        const canMoveY = creatureCanEnterTile(c.def, c.x, desiredY, prevX, prevY, c); // Used after X resolution so the ordinary axis-separated slide keeps its existing behavior.
         if (canMoveY) c.y = desiredY;
         const blockedX = Math.abs(desiredX - prevX) > 0.001 && !canMoveX; // Used below to detect a real collision rather than a zero-length axis request.
         const blockedY = Math.abs(desiredY - prevY) > 0.001 && !canMoveY; // Used with blockedX to distinguish collision stalls from ordinary target arrival.
@@ -5644,7 +6388,10 @@
           c._collisionRepositionDebug.active = false;
         }
         c.vx = motionNX * effectiveSpeed; c.vy = motionNY * effectiveSpeed;
-        if (moved > 0) tickCreatureFootsteps(c, moved);
+        if (moved > 0) {
+          window.DevRandomRuin?.syncShaftCreatureFloor?.(c);
+          tickCreatureFootsteps(c, moved);
+        }
         return moved > 0;
       }
 
@@ -5652,8 +6399,8 @@
       // coordinates — reuses creatureCanEnterTile at the tile's center so
       // the pathfinder's notion of "blocked" always matches what actual
       // movement will (and won't) let a creature step onto.
-      function creatureTileWalkable(col, row) {
-        return creatureCanEnterTile(null, (col + 0.5) * TILE, (row + 0.5) * TILE);
+      function creatureTileWalkable(col, row, actor = null) {
+        return creatureCanEnterTile(actor?.def, (col + 0.5) * TILE, (row + 0.5) * TILE, NaN, NaN, actor, true);
       }
 
       const CREATURE_STUCK_THRESHOLD_S = 0.6;
@@ -5697,7 +6444,7 @@
         c._travelStuckT = 0;
         const startCol = Math.floor(c.x / TILE), startRow = Math.floor(c.y / TILE);
         const targetCol = Math.floor(tx / TILE), targetRow = Math.floor(ty / TILE);
-        const path = window.TilePathfinding?.findPath(startCol, startRow, targetCol, targetRow, creatureTileWalkable, {
+        const path = window.TilePathfinding?.findPath(startCol, startRow, targetCol, targetRow, (col, row) => creatureTileWalkable(col, row, c), {
           bounds: window.TilePathfinding.boxAround(startCol, startRow, targetCol, targetRow, CREATURE_PATH_SEARCH_PADDING_TILES),
         });
         if (path && path.length) { c._travelPath = path; c._travelPathTarget = { x: tx, y: ty }; }
@@ -5760,7 +6507,7 @@
         // climbSurfaceY exists: it's mid-crossing through impassable incline
         // tiles, so a raw tile lookup would pop between the cliff base and
         // landing the instant the crossing tile flips underneath it.
-        const dynamicSurfaceY = Number(c.surfaceYOverride?.()); // Optional per-entity world-height authority for generated/moving interiors whose 2D gameplay grid intentionally has no elevation tiers.
+        const dynamicSurfaceY = Number(c.shaftSupportY ?? c.surfaceYOverride?.()); // Optional per-entity world-height authority for generated/moving interiors whose 2D gameplay grid intentionally has no elevation tiers.
         const ordinarySurfY = c.onBranch ? c.branchSurfaceY
           : c._climbLeap ? c._climbLeap.surfaceY
           : c._cliffClimb ? c._cliffClimb.surfaceY
@@ -5774,12 +6521,20 @@
         // center — the target height keeps the creature's feet grounded at
         // surfY instead of sinking into the floor as it crouches.
         const scaleY = c.scaleY ?? 1;
-        const vocalHeadNodDeg = window.AnimalVocalizations?.headNodOffsetDeg?.(c) || 0; // Added to the live neck pose below; body scale and collision remain untouched.
+        const kickPoseHeld = window.VoorgAssRearKick?.isHoldingKickPose?.(c) === true; // A hoof impact hold freezes rendered motion, not just the underlying collision position.
+        const vocalHeadNodDeg = kickPoseHeld ? 0 : (window.AnimalVocalizations?.headNodOffsetDeg?.(c) || 0); // Suppress additive head motion while the authored kick silhouette is held.
         c.avatarRef?.setHeadAdditiveRotation?.(vocalHeadNodDeg);
         const meleeLeapY = c._banditLungeHopCurrent || 0; // Used by pitched enemy lunges to raise the actual rendered body/hitbox volume.
         const tx = c.x / TILE, tz = c.y / TILE, ty = surfY + (c.groundLift ?? c.halfHeight) * scaleY + meleeLeapY;
-        if (c._wildlifeVisualLodJustWoke) {
-          grp.position.set(tx, ty, tz);
+        const headtakerAttached = c.maskboundTroop === 'headtaker' && c._attachment?.id === 'maskbound-headtaker' && c._attachment.stage === 'attached'; // Shared grapple owns its exact world-space position until dodge, death or completion.
+        const headtakerDescending = c.maskboundTroop === 'headtaker' && window.MaskboundHeadtaker?.isDescending?.(c) === true; // During skyfall, combat owns Y; ordinary renderer still updates feet and other animations.
+        const headtakerOwnsFacing = headtakerAttached || headtakerDescending; // Only this pose is excluded from the generic target-facing billboard deadzone.
+        if (headtakerAttached) {
+          grp.position.set(tx, ty, tz); // Follow a moving/dodging victim without the ordinary 100ms/140ms sprite-position lag.
+        } else if (headtakerDescending) {
+          grp.position.x = tx; grp.position.z = tz; // Preserve the combat module's exact sky-to-host Y interpolation rather than ease toward it again.
+        } else if (c._wildlifeVisualLodJustWoke || kickPoseHeld) {
+          grp.position.set(tx, ty, tz); // A held kick cannot visually keep sliding toward a previous fast-lunge target through the ordinary position lerp.
           c._wildlifeVisualLodJustWoke = false;
         } else {
           grp.position.x += (tx - grp.position.x) * Math.min(1, dt * 10);
@@ -5801,8 +6556,8 @@
             grp.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * bobEffort);
           }
         }
-        const breathScaleY = window.CreatureGenetics.creatureBreathScaleY(c.avatarRef, performance.now());
-        window.CreatureGenetics.applyCreatureBillboardScale(grp, { x: c.visualScaleX, y: c.visualScaleY }, scaleY * breathScaleY); // Preserves both authored size axes through attack squash, plus a subtle idle breathing multiplier.
+        const breathScaleY = kickPoseHeld ? 1 : window.CreatureGenetics.creatureBreathScaleY(c.avatarRef, performance.now()); // Keep the whole held kick silhouette truly still, without idle breathing.
+        window.CreatureGenetics.applyCreatureBillboardScale(grp, { x: c.visualScaleX, y: c.visualScaleY, z: c.visualScaleZ }, scaleY * breathScaleY); // Preserves both authored size axes through attack squash, plus a subtle idle breathing multiplier.
         // Tracks the body's own smoothed XZ (not the raw target, and not
         // its squash/height) so the shadow doesn't lead a fast-moving
         // creature or float with it during a pounce crouch.
@@ -5831,7 +6586,9 @@
         // Prism (group) tracks the raw aim angle freely — deadzone only governs
         // the interior PNG plane, not the prism's spatial orientation or the
         // movement/targeting logic that drives aimAngle.
-        c.groupRot += angleDiff(rawTargetRotY, c.groupRot) * Math.min(1, dt * 10);
+        if (headtakerOwnsFacing) { /* Skyfall/grapple already authored groupRot parallel to the target portrait, including its 15-degree forward lean. */ }
+        else if (kickPoseHeld) c.groupRot = rawTargetRotY; // Finish the 180° turn at impact rather than leaving the render rig slowly rotating through the held pose.
+        else c.groupRot += angleDiff(rawTargetRotY, c.groupRot) * Math.min(1, dt * 10);
         grp.rotation.y = c.groupRot;
 
         // PNG planes get a separate deadzone from the prism, never freely
@@ -5842,8 +6599,21 @@
         // change independently of this call site, so don't infer the active
         // behavior from this comment — read that constant.
         c.pngRot ??= c.groupRot;
+        const humanoidVelocityFacing = c.isBandit === true || c.isTribeHunter === true; // Keep existing humanoid movement hints; animals measure actual travel rather than stale requested velocities.
+        const sampledAnimalMovement = dt > 0 && Number.isFinite(c.x) && Number.isFinite(c.y) && Number.isFinite(c.perpState.travelSampleX) && Number.isFinite(c.perpState.travelSampleY); // First render establishes a position sample without inventing movement.
+        const creatureMoveX = humanoidVelocityFacing ? (c.vx || 0) : sampledAnimalMovement ? (c.x - c.perpState.travelSampleX) / dt : 0; // Actual horizontal speed drives animal correction, including collision slides.
+        const creatureMoveY = humanoidVelocityFacing ? (c.vy || 0) : sampledAnimalMovement ? (c.y - c.perpState.travelSampleY) / dt : 0; // Paired with X to report world-bearing movement below.
+        c.perpState.travelSampleX = c.x;
+        c.perpState.travelSampleY = c.y;
+        const creatureIsMoving = Math.hypot(creatureMoveX, creatureMoveY) > 5; // Stopped/blocked animals clear the live hint while retaining last movement.
+        c.perpState.correctiveYawOffset = -(c.def.aimAngleOffset || 0); // Convert world-bearing hints into this creature's sprite yaw convention.
+        window.PerpRotation.setMovementHint(c.perpState, creatureIsMoving ? Math.atan2(creatureMoveX, creatureMoveY) : null);
         const shoulderPetBypassesPlaneDeadzone = c.stableRole === 'shoulderPet';
-        if (shoulderPetBypassesPlaneDeadzone) {
+        if (headtakerOwnsFacing) {
+          c.pngRot = c.groupRot; // Portrait, legs, and hands stay in the grapple frame even while the victim turns or moves.
+        } else if (kickPoseHeld) {
+          // Preserve the same camera-facing PNG orientation across the full kick hold. Camera deadzone easing must not keep turning a supposedly frozen silhouette.
+        } else if (shoulderPetBypassesPlaneDeadzone) {
           // A perched animal already gets its final orientation from the authored
           // shoulderPerch/shoulderGrip solve below. Running the generic creature
           // billboard deadzone here rotates a flat card around its own center —
@@ -5857,13 +6627,19 @@
             mode: window.PerpRotation.CREATURE_PLANE_ROT_MODE,
             reason: 'perched-attachment-owns-orientation',
           };
+        } else if (c.isBandit === true || c.isTribeHunter === true) {
+          // Bandit/barbarian portraits halt on one dead-zone edge chosen by the
+          // corrective-direction hierarchy (movement > combat target > last
+          // movement > player) instead of flip-flopping on a timer, so the
+          // player can tell whether one is closing on them or on someone else.
+          const { effectiveTarget: pngTarget, snapTo: pngSnapTo } = window.PerpRotation.perpClamp(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD);
+          if (pngSnapTo !== null) c.pngRot = pngTarget;
+          else c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
         } else if (window.PerpRotation.CREATURE_PLANE_ROT_MODE === 'snap') {
-          const creatureIsMoving = Math.hypot(c.vx || 0, c.vy || 0) > 5;
           const { target: pngTarget, snap } = window.PerpRotation.creatureSnapSwayTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD, dt, creatureIsMoving);
           if (snap) c.pngRot = pngTarget;
           else c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
         } else if (window.PerpRotation.CREATURE_PLANE_ROT_MODE === 'sway') {
-          const creatureIsMoving = Math.hypot(c.vx || 0, c.vy || 0) > 5;
           const pngTarget = window.PerpRotation.creatureDeadzoneTarget(c.perpState, rawTargetRotY, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD, dt, creatureIsMoving);
           c.pngRot += angleDiff(pngTarget, c.pngRot) * Math.min(1, dt * 10);
         } else { // 'halt'
@@ -5880,14 +6656,18 @@
         // (unlike a plane, no extra ±PI/2 twist) so the legs track whichever
         // dead-zone behavior currently governs the sprite instead of the
         // prism's own free-tracking groupRot.
-        if (c.avatarRef.legsPivot) c.avatarRef.legsPivot.rotation.y = planeDelta;
-        if (c.avatarRef.legs) c.avatarRef.legs.update(dt, Math.hypot(c.vx || 0, c.vy || 0) / TILE, false, undefined, {
+        // Behind-the-camera actors skip the procedural leg solve and hand-frame sync until they re-enter view; js/offscreen-rig-lod.js.
+        const rigInView = window.OffscreenRigLod.shouldAnimate(c, tx, ty + 0.8, tz, dt, Math.hypot(player.x - c.x, player.y - c.y) / TILE);
+        if (c.avatarRef.legsPivot) { c.avatarRef.legsPivot.rotation.y = planeDelta; if (rigInView) c.avatarRef.syncHandFrame?.(); } // Hands share the legs' yaw frame so free hands rest on the lateral axis.
+        if (c.avatarRef.bodySinkActor && (Number(c.health) || 0) <= 0) window.ActorBodySink?.release(c.avatarRef.bodySinkActor); // A corpse stands back up; js/actor-body-sink.js.
+        if (c.avatarRef.legs && rigInView) c.avatarRef.legs.update(dt, Math.hypot(c.vx || 0, c.vy || 0) / TILE, false, undefined, {
           combat: c.state === 'chase' || c.state === 'searching' || !!c._banditAction,
           lunging: !!c._banditLunging,
           airborne: (c._banditLungeHopCurrent || 0) > 0.03 || !!c._knockbackLedgeAir || !!c._knockbackLedgeFall,
           directionX: c._banditLungeDirX, directionZ: c._banditLungeDirY,
         });
         window.ImpactRagdollPlayback?.updateCreature?.(c, dt);
+        if (c.avatarRef.swarm) c.avatarRef.update(Math.hypot(c.vx || 0, c.vy || 0), performance.now(), dt, c.def.moveSpeed, c._attachVisualSpread || 1); // Honeyfuzzle swarm (js/honeyfuzzle-swarm.js): runs even while a named attack (Swarm) owns the creature.
 
         if (c.hitFlashT > 0) c.hitFlashT = Math.max(0, c.hitFlashT - dt);
         // Telegraph tell (combat-enemy-telegraph.js) takes a back seat to the
@@ -5958,16 +6738,17 @@
         // short-circuit it here instead of teaching a shared, per-instance
         // timer about one species' mode field.
         const asleep = c._cfDrenkirra?.mode === 'sleeping';
-        const blinkShut = genotypeKind ? (asleep || (window.CreatureBlink?.isShut(c, performance.now()) || false)) : false;
+        const blinkShut = genotypeKind ? (asleep ? true : (window.CreatureBlink?.getVisualState?.(c, genotypeKind, performance.now()) ?? false)) : false;
         // Sprite-sheet frame cycling is animal-only. A bandit's avatar is a
         // single portrait plane baked once at spawn (see buildBanditAvatar), so
         // it has no def.sprites to swap between — it still gets every
         // position/rotation/facing update via updateCreatureMesh, just no
         // idle/run frame swap.
         if (!c.def.sprites) return;
+        if (c.avatarRef?.swarm) return; // Honeyfuzzle swarm: no idle/run states; updateCreatureMesh drives its shared wing tick every frame.
         if (!moving) {
           const frameKey = 'idle';
-          const blinkFrameKey = frameKey + (blinkShut ? ':blink' : '');
+          const blinkFrameKey = frameKey + (typeof blinkShut === 'string' ? ':eye-' + blinkShut : (blinkShut ? ':blink' : ''));
           const needsRetry = genotypeKind && !c._genotypeReadyFrames?.has(blinkFrameKey);
           if (needsRetry && !c._genotypeLogged?.has(blinkFrameKey)) {
             (c._genotypeLogged || (c._genotypeLogged = new Set())).add(blinkFrameKey);
@@ -6005,7 +6786,7 @@
         }
         const url = c.def.sprites.run[c.runFrame];
         const frameKey = 'run' + (c.runFrame + 1);
-        const blinkFrameKey = frameKey + (blinkShut ? ':blink' : '');
+        const blinkFrameKey = frameKey + (typeof blinkShut === 'string' ? ':eye-' + blinkShut : (blinkShut ? ':blink' : ''));
         const needsRetry = genotypeKind && !c._genotypeReadyFrames?.has(blinkFrameKey);
         if (needsRetry && !c._genotypeLogged?.has(blinkFrameKey)) {
           (c._genotypeLogged || (c._genotypeLogged = new Set())).add(blinkFrameKey);
@@ -6211,6 +6992,7 @@
         opts.staminaRegenPerSec = c.maxStamina * 0.25;
         window.ResourceSystem?.tick(c, elapsed, opts);
         if (Number(c.health) <= 0) {
+          c._deathByAffliction = true; // Burn/bleed/poison tick: PlayerDowned.isTeamKill gives the player's earlier hit a longer credit window.
           transitionCreatureToDeath(c, c.x, c.y);
           return false;
         }
@@ -6233,6 +7015,8 @@
       function releasePreviousAreaCreatureTextures() {
         if (_lastInactiveCreatureTextureArea === currentArea || cutscenePreviewActive) return;
         _lastInactiveCreatureTextureArea = currentArea;
+        noteZoneVisited(currentArea); // Fires once per area change; the inactive zone cache trims shortly after the arrival settles.
+        scheduleZoneCacheTrim();
         for (const c of hostileObjects) if (c.areaId !== currentArea) {
           releaseInactiveCreatureTextures(c);
           releaseCreatureVisuals(c); // An inactive zone keeps creature data, not full animal rigs.
@@ -6245,9 +7029,49 @@
         return hidden;
       }
 
+      // Settled wildlife corpses leave hostileObjects, so the per-creature LOD
+      // above never saw them and each kept a full rig for the whole session.
+      // This drives the same distance owner for them on a short timer, and
+      // releases them outright once the player is in another area.
+      let _corpseVisualLodAt = 0;
+      function updateCorpseVisualLod() {
+        const now = performance.now();
+        if (now - _corpseVisualLodAt < 400) return; // Wall clock, so a slow frame rate does not stretch the interval.
+        _corpseVisualLodAt = now;
+        for (const c of corpseObjects) { // Promotion shares the per-frame allowance set by updateHostiles, so corpses wake over successive ticks.
+          if (!window.WildlifeVisualLod.isStreamableCorpse(c)) continue;
+          if (c.areaId !== currentArea) { if (!c._wildlifeVisualsReleased) releaseCreatureVisuals(c); continue; }
+          updateWildlifeVisualLod(c, Math.hypot(player.x - c.x, player.y - c.y) / TILE);
+        }
+      }
+      function tickCorpses(dt) {
+        window.CreatureDeath.updateCorpses(dt);
+        updateCorpseVisualLod();
+        window.BanditCorpseRetirement.tick(performance.now()); // Bandit corpses cannot stream to data, so old ones lose their rig instead (js/bandit-corpse-retirement.js); throttled inside.
+      }
+
       window.WildlifeVisualLod.init({ createVisuals: createCreatureVisuals, releaseVisuals: releaseCreatureVisuals }); // Existing LOD owns streamed wildlife presentation lifetime.
+      // Bandit corpse rig retirement now lives in js/bandit-corpse-retirement.js.
+      window.BanditCorpseRetirement.init({
+        corpseObjects,
+        getPlayer: () => player,
+        getTile: () => TILE,
+        getCurrentArea: () => currentArea,
+        getDefaultScene: () => scene,
+        disposeCreaturePresentation, // The same shared owner despawnCreature uses.
+        tileSurfaceYInArea,
+      });
 
       function updateHostiles(dt) {
+        for (const entity of hostileObjects) {
+          if (entity?.maskboundTroop === 'headtaker' && window.MaskboundHeadtaker?.isActive?.(entity)
+            && entity.areaId && entity.areaId !== currentArea) { // Catches both an airborne leap and a landed neck-grip when the target changes maps.
+            window.MaskboundHeadtaker?.cancel?.(entity, 'area-changed'); // The old area's AI won't tick the grapple again; never strand the player's head lock across a doorway.
+          }
+        }
+        window.WildlifeFoodWeb?.tickParticles?.(dt); // Integrates scene-owned dig clods even when their owner is out of visual range.
+        const foodWebCtx = { zoneId: currentArea, tile: TILE, canOccupyAt, moveCreatureToward }; // Shared across the actor batch to avoid per-animal allocation.
+        window.OffscreenRigLod.beginFrame(camera); // One frustum per frame for the behind-camera rig skip in updateCreatureMesh.
         window.WildlifeVisualLod.beginFrame(); // Caps calm character-rig promotions during an entry burst; combatants always wake immediately.
         releasePreviousAreaCreatureTextures();
         currentHostilesFrame.length = 0;
@@ -6271,10 +7095,33 @@
             if (c.isBandit) { window.BanditCombat.updateToolMesh(c); window.BanditCombat.updateTrailArc(c, dt); }
             continue;
           }
+          if (c.tzatzulCapturedBy) {
+            if (!tickCreatureResources(c, dt, false)) continue; // Poison/bleeding still resolve while the original actor is airborne.
+            updateWildlifeVisualLod(c, 0); // Promote the original carried portrait even when viewed through a distant spyglass.
+            updateCreatureMesh(c, dt, c.facing);
+            updateCreatureAnimFrame(c, dt, false);
+            window.TzatzulLiveVisuals?.alignCaptive?.(c);
+            continue; // The carrier owns position; ground AI and attacks must not overwrite it.
+          }
           // Beastmaster pets stay in hostileObjects so player targeting and
           // damage can find them, but companionObjects owns their movement
           // and attacks so they can follow their bandit master.
           if (c.banditCompanion) continue;
+          // The canonical wildlife tick already moved this Tzatzul's body
+          // before updateHostiles. Keep live vitals/LOD/portrait animation,
+          // but do not let the ordinary ground AI move it a second time.
+          if (window.TzatzulFlightRuntime?.owns?.(c)) {
+            const distanceTiles = Math.hypot(player.x - c.x, player.y - c.y) / TILE;
+            updateWildlifeVisualLod(c, distanceTiles);
+            if (!tickCreatureResources(c, dt, false)) continue;
+            updateCreatureMesh(c, dt, c.facing);
+            updateCreatureAnimFrame(c, dt, c._tzFlight?.phase !== 'perched');
+            continue;
+          }
+          // Honeyfuzzle swarms fly home to their hive stump at dusk and tuck
+          // inside it overnight (js/honeyfuzzle-hives.js) — hive-controlled
+          // frames skip the generic wildlife AI entirely.
+          if (c.hiveKey && window.HoneyfuzzleHives?.control(c, dt)) continue;
           // Tucked inside its den for the off-shift/overnight branch below
           // (see the denKey settle branch) — frozen and invisible rather
           // than idling in the open, so no AI/vocalization/stamina tick
@@ -6317,7 +7164,21 @@
           // persists for the rest of the chase so the creature doesn't
           // flicker between equally-near players every frame.
           if (c.state !== 'chase' && c.state !== 'searching') c.targetPlayer = null;
-          const targetPlayer = c.targetPlayer || nearestPlayer(c.x, c.y);
+          window.WildlifeFoodWeb?.updateThreats?.(c, entityDt, currentHostilesFrame, players, npcWalkers, foodWebCtx); // Food-chain hunting + food-site defense coexist with existing enemy/creature states.
+          // The den-night/retaliation/chase branches outrank forage animation.
+          // Cancel its residual dive/chew pose here rather than waiting for
+          // tickForage (which those higher-priority branches never reach).
+          if (c._foodWeb?.phase && c._foodWeb.phase !== 'rest' &&
+              (c.state === 'chase' || c.state === 'patrol-chase' || c.state === 'fleeing-low-health' ||
+               c.state === 'return' || c.prone || c.knockbackT > 0 ||
+               ((c.denKey || c.herdKey) && window.Music?.isNightTime?.()))) {
+            window.WildlifeFoodWeb?.cancelForage?.(c);
+          }
+          // A tribe-camp ecology fight (js/porakaneki-camps-runtime.js) assigns a
+          // humanoid a live actor target and zeroes its player aggro; chase,
+          // leash and sight below must follow that actor, not the player.
+          const chunkCombatTarget = c.isBandit && c._chunkCombatTarget?.health > 0 && c._chunkCombatTarget.areaId === c.areaId ? c._chunkCombatTarget : null;
+          let targetPlayer = chunkCombatTarget || c.targetPlayer || nearestPlayer(c.x, c.y); // Scent priority can change this frame's active chase target before movement/attack.
           if (window.ClimbSystem?.updateBranchDefender?.(c, entityDt, targetPlayer)) continue;
           // Attackers scale cliffs after a target that climbed away from them
           // (js/creature-cliff-climb.js); the scripted climb owns position.
@@ -6328,8 +7189,8 @@
           // entirely this frame" escape hatch, gated on its own per-creature
           // marker so it never touches the Nestmother's branch-defend flow.
           if (c.onBranch && window.HobunjiCloudForestWildlife?.updateBranchDweller?.(c, entityDt)) continue;
-          const dxp = targetPlayer.x - c.x, dyp = targetPlayer.y - c.y;
-          const distToPlayer = Math.hypot(dxp, dyp);
+          let dxp = targetPlayer.x - c.x, dyp = targetPlayer.y - c.y; // Refreshed when scent chooses a different player in this same AI tick.
+          let distToPlayer = Math.hypot(dxp, dyp);
           const distFromHome = Math.hypot(c.x - c.homeX, c.y - c.homeY);
           const visuallyLodSleeping = updateWildlifeVisualLod(c, distToPlayer / TILE); // Rechecks after target selection before choosing the resource cadence.
           if (!tickCreatureResources(c, entityDt, visuallyLodSleeping)) continue;
@@ -6379,12 +7240,39 @@
             c.state = 'chase';
             c.targetPlayer = targetPlayer;
           }
-          if (c.state === 'chase' && (distToPlayer > def.leashRangePx || distFromHome > def.leashRangePx)) {
+          // An ecology fight's home is the planner's travel destination, not a
+          // leash anchor; leashing to it flipped chase -> return every frame
+          // between 5 Hz ecology ticks, so travel won and the fight never landed.
+          // The ecology pass itself drops the target once it leaves the chunk.
+          // The home leash is the actual pursuit boundary. Player distance alone must
+          // not cancel combat: otherwise a player can break engagement just by
+          // running a short distance, even while the hostile can still pursue.
+          if (c.state === 'chase' && !chunkCombatTarget && distFromHome > def.leashRangePx) {
             c.state = 'return';
-          } else if (c.state === 'chase' && !enemyAttackBusy(c) && !enemyCanSeeTarget(c, targetPlayer, def.aggroRangePx)) {
+          } else if (c.state === 'chase' && !chunkCombatTarget && !enemyAttackBusy(c) && !enemyCanSeeTarget(c, targetPlayer, def.aggroRangePx)) {
             beginEnemySearch(c, targetPlayer);
           }
           if (c.state === 'return' && distFromHome < TILE * 0.6) c.state = 'idle';
+          // Scent-marked opponents take priority without bypassing wild animals' existing
+          // aggro, leash, perception or attack-commitment rules.
+          window.AnimalScentTargeting?.prioritizeWild?.(
+            c, players, companionObjects, currentArea, opponent => enemyCanSeeTarget(c, opponent, def.aggroRangePx), LEASH_REENTER_FRAC
+          );
+          if (c.state === 'chase' && c.targetPlayer && c.targetPlayer !== targetPlayer) {
+            targetPlayer = c.targetPlayer; // The chosen scent opponent must own movement, alignment and strikes immediately.
+            dxp = targetPlayer.x - c.x; dyp = targetPlayer.y - c.y;
+            distToPlayer = Math.hypot(dxp, dyp);
+          }
+          if (window.VoorgAssRearKick?.isHoldingKickPose?.(c)) {
+            c.state = 'chase'; // Preserve the already-fired rear-kick freeze through the one-second impact pose even if its target died or fled outside the leash.
+          }
+          if (c._voorgRearKickThreat && c.state !== 'chase' && c.state !== 'patrol-chase') {
+            c._voorgRearKickThreat = null; // A chased-away attacker ends the defensive encounter; escape instead of searching indefinitely.
+            c._voorgRearKickSpent = true;
+            c.state = 'fleeing-low-health';
+            c.targetPlayer = null;
+            c.targetCreature = null;
+          }
 
           // Patrol sighting: a predator that's out patrolling its route (or
           // fallback-wandering with no route) is alert the whole time it's
@@ -6393,7 +7281,7 @@
           // radius check against grazing herbivores tied to the same foliage
           // patch (no line-of-sight system exists for creature-vs-creature
           // sight today).
-          const predatorAvailable = def.diet !== 'herbivore' && !onFleeCooldown
+          const predatorAvailable = def.diet !== 'herbivore' && !window.WildlifeFoodWeb?.profile?.(c)?.hunts && !onFleeCooldown
             && c.state !== 'chase' && c.state !== 'patrol-chase' && c.state !== 'return' && c.state !== 'fleeing-low-health';
           if (predatorAvailable) {
             if (!Number.isFinite(c._predatorSightT)) c._predatorSightT = rnd() * PREDATOR_SIGHT_INTERVAL_S;
@@ -6414,17 +7302,18 @@
           // telegraphed bite/modular attack rather than landing it from way
           // out of range.
           if (c.state !== 'chase' && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
-          if (c.state !== 'chase' && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
+          if (c.state !== 'chase' && !(c.state === 'patrol-chase' && c._voorgRearKickThreat) && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
           if (c.state !== 'chase') {
             clearCreatureStage(c);
             if (c.isBandit) {
-              c._banditAction?.cancel(); c._banditAction = null; c.telegraphState = null; c._banditComboIndex = 0; c._banditLunging = false;
+              c._banditAction?.cancel(); c._banditAction = null; c.telegraphState = null; c._banditComboIndex = 0; window.BanditCombat?.cancelLunge?.(c);
               window.EnemyDodge?.cancel?.(c); // Dodge only advances inside chase AI; leaving chase mid-roll otherwise froze the avatar tilted.
-              window.BanditCombat?.restNeckLook?.(c, entityDt);
+              // Defer the noncombat neck reset until movement has been resolved.
+              // Resetting here and then reaiming later cancels the carrot every frame.
             }
           }
 
-          let moving = false, aimAngle = c.facing || 0;
+          let moving = false, aimAngle = c.facing || 0, forageResult = null; // Shared foraging return feeds ordinary movement + sprite animation.
           if (c._knockbackLedgeFall) {
             advanceKnockbackLedgeFall(c, entityDt);
           } else if (c.prone) {
@@ -6433,7 +7322,7 @@
             // as ordinary knockback. ImpactRagdollPlayback simultaneously
             // drives the quarter-turned animal/bandit breakThrow pose.
             advanceCreatureProneThrow(c, entityDt);
-            if (c.footing >= proneRecoveryFootingTarget(c) && !(c.proneThrowT > 0) && !c._knockbackLedgeFall) beginCreatureSomersaultRecovery(c, targetPlayer);
+            if (proneRecoveryReady(c) && !(c.proneThrowT > 0) && !c._knockbackLedgeFall) beginCreatureSomersaultRecovery(c, targetPlayer);
           } else if (c.knockbackT > 0) {
             // Reeling from a hit; let the impulse play out before resuming AI.
             // Per-axis canOccupyAt check (same primitive/radius convention as
@@ -6458,6 +7347,10 @@
             }
           } else if (c.combatTutorialTarget && !c.combatTutorialHostile) {
             c.vx = 0; c.vy = 0; // Passive previews still run normal resource and swept knockback physics above.
+          } else if (c.maskboundTroop === 'headtaker' && window.MaskboundHeadtaker?.isActive?.(c)) {
+            const result = window.BanditCombat.updateCombatAI(c, entityDt, c._attachment?.host || targetPlayer, distToPlayer);
+            aimAngle = result.aimAngle;
+            moving = result.moving; // Preserve a committed leap/grapple across search/flee AI transitions; otherwise a freely moving victim can strand the head lock.
           } else if (c.state === 'fleeing-low-health') {
             // Beelines home ignoring player/prey aggro (see the guards above)
             // until it settles, then starts its re-aggro cooldown — nothing
@@ -6465,6 +7358,7 @@
             if (distFromHome < DEN_SETTLE_RADIUS_PX) {
               c.state = 'idle';
               c._fleeCooldownUntil = performance.now() + WILDLIFE_FLEE_REAGGRO_COOLDOWN_MS;
+              if (window.VoorgAssRearKick?.isVoorgAss?.(c)) c._voorgRearKickSpent = false; // Another encounter can trigger a kick after the usual flee grace period.
               aimAngle = idleCreatureAimAngle(c.groupRot);
             } else {
               moving = travelCreatureToward(c, c.homeX, c.homeY, def.chaseSpeed || def.moveSpeed, entityDt);
@@ -6478,25 +7372,57 @@
             const prey = c.targetCreature;
             const preyGone = !prey || prey.health <= 0 || prey.areaId !== c.areaId || prey.state === 'fleeing-low-health';
             if (preyGone) {
-              c.state = 'idle'; c.targetCreature = null;
+              c.state = c._voorgRearKickThreat ? 'fleeing-low-health' : 'idle';
+              if (c._voorgRearKickThreat) c._voorgRearKickSpent = true; // Don't wander or hunt after an interrupted defense.
+              c._voorgRearKickThreat = null;
+              c.targetCreature = null;
             } else {
               const pdx = prey.x - c.x, pdy = prey.y - c.y;
               const pdist = Math.hypot(pdx, pdy);
               if (pdist > (def.leashRangePx || TILE * 9) || distFromHome > (def.leashRangePx || TILE * 9)) {
-                c.state = 'return'; c.targetCreature = null;
+                c.state = c._voorgRearKickThreat ? 'fleeing-low-health' : 'return';
+                if (c._voorgRearKickThreat) c._voorgRearKickSpent = true;
+                c._voorgRearKickThreat = null;
+                c.targetCreature = null;
               } else {
-                aimAngle = Math.atan2(pdy, pdx);
-                moving = moveCreatureToward(c, prey.x, prey.y, def.chaseSpeed || def.moveSpeed, entityDt);
-                const triggerRangePx = def.attackRangePx || TILE * 0.85;
-                if (pdist <= triggerRangePx && c.attackCooldownT <= 0) {
-                  c.attackCooldownT = def.attackCooldownS || 1.0;
-                  window.WildlifeSpawn.applyWildlifeSkirmishDamage(c, prey, def.attackDamage || 8);
+                const defensiveKick = window.VoorgAssRearKick?.isVoorgAss?.(c) && c._voorgRearKickThreat === prey; // Only a struck Voorg-Ass uses named combat against another creature.
+                if (defensiveKick && window.Combat?.animalAttacks?.isBusy(c)) {
+                  window.Combat.animalAttacks.update(c, entityDt);
+                  aimAngle = c.facing; // A kicking animal must keep its head pointed away from its target.
+                } else {
+                  aimAngle = Math.atan2(pdy, pdx);
+                  moving = moveCreatureToward(c, prey.x, prey.y, def.chaseSpeed || def.moveSpeed, entityDt);
+                  const triggerRangePx = def.attackRangePx || TILE * 0.85;
+                  if (pdist <= triggerRangePx && c.attackCooldownT <= 0) {
+                    if (defensiveKick && !isCreatureSwimming(c) && c.stamina >= def.attackStaminaCost) {
+                      window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'rear kick');
+                      c.attackCooldownT = def.attackCooldownS || 1.0;
+                      if (window.Combat?.animalAttacks?.start(c, 'rearKick', { target: prey })) aimAngle = c.facing;
+                    } else if (defensiveKick) {
+                      c._voorgRearKickSpent = true; // No Stamina or unsuitable water: flee instead of repeatedly trying to kick.
+                      c._voorgRearKickThreat = null;
+                      c.targetCreature = null;
+                      c.state = 'fleeing-low-health';
+                    } else {
+                      c.attackCooldownT = def.attackCooldownS || 1.0;
+                      window.WildlifeSpawn.applyWildlifeSkirmishDamage(c, prey, def.attackDamage || 8);
+                    }
+                  }
                 }
               }
             }
           } else if (c.state === 'searching') {
-            moving = false;
             aimAngle = updateEnemySearch(c, entityDt, targetPlayer);
+            // Search is an active pursuit: move to the position where the
+            // player was last seen, then scan there instead of standing still.
+            const lastKnownX = c._enemySearchLastKnownX;
+            const lastKnownY = c._enemySearchLastKnownY;
+            if (c.state === 'searching' && Number.isFinite(lastKnownX) && Number.isFinite(lastKnownY)) {
+              const lastKnownDistance = Math.hypot(lastKnownX - c.x, lastKnownY - c.y);
+              moving = lastKnownDistance > TILE * 0.45
+                ? moveCreatureToward(c, lastKnownX, lastKnownY, def.chaseSpeed, entityDt)
+                : false;
+            }
           } else if (c.state === 'chase') {
             aimAngle = Math.atan2(dyp, dxp);
             if (c.isBandit) {
@@ -6523,6 +7449,14 @@
               // scale, and sprite frame for its full duration.
               window.Combat.animalAttacks.update(c, entityDt);
               aimAngle = c.facing;
+            } else if (c._voorgRearKickThreat && window.VoorgAssRearKick?.isVoorgAss?.(c)
+              && (targetPlayer.health <= 0 || c.stamina < def.attackStaminaCost || isCreatureSwimming(c))) {
+              c._voorgRearKickSpent = true; // Match creature-target retaliation: an unavailable kick ends the defense instead of chasing forever.
+              c._voorgRearKickThreat = null;
+              c.targetPlayer = null;
+              c.targetCreature = null;
+              c.state = 'fleeing-low-health';
+              c.vx = 0; c.vy = 0;
             } else if (def.behaviorStages) {
               // Slottable behavior-stage cycle (Pounce attempt <-> evasive
               // orbit, separated by a backing-up beat) replaces the plain
@@ -6660,6 +7594,9 @@
               if (c.avatarRef?.group) c.avatarRef.group.visible = false;
               aimAngle = idleCreatureAimAngle(c.groupRot);
             }
+          } else if ((forageResult = window.WildlifeFoodWeb?.tickForage?.(c, entityDt, foodWebCtx))?.handled) {
+            moving = forageResult.moving;
+            aimAngle = forageResult.aimAngle;
           } else if (def.diet === 'herbivore') {
             // Active hours: a herbivore periodically breaks off grazing to
             // visit water (see assignWildlifeStation's waterTile, checked
@@ -6747,7 +7684,9 @@
           // livestock glance-at-the-player branch, which only ever nods
           // (pitch) and has no yaw tracking at all.
           const territorialActive = c._territorialBehavior?.phase === 'warning' || c._territorialBehavior?.phase === 'fight';
-          if (def.hostile === false && !territorialActive) {
+          if (c._animalAttack?.id === 'rearKick') {
+            if (!window.VoorgAssRearKick?.isHoldingKickPose?.(c)) _restoreCompanionHead(c, entityDt); // Return to the authored idle head before hoof contact; freeze pitch/yaw during the impact hold.
+          } else if (def.hostile === false && !territorialActive) {
             const canLook = livestockLookCandidate
               && !c.prone
               && !c._animalSleeping
@@ -6817,7 +7756,11 @@
           }
 
           const skipDistantVisualUpdate = updateWildlifeVisualLod(c, Math.hypot(targetPlayer.x - c.x, targetPlayer.y - c.y) / TILE); // Wakes state-changed creatures or omits distant mesh/animation work.
-          if (skipDistantVisualUpdate) continue;
+          if (skipDistantVisualUpdate) {
+            if (c.isBandit && c.state !== 'chase') window.BanditCombat?.restNeckLook?.(c, entityDt); // Off-screen hostiles can cheaply return their neck to neutral.
+            continue;
+          }
+          window.WildlifeFoodWeb?.applyPose?.(c, entityDt); // Burrow-first-phase reversal and staggered chewing applied before final creature mesh placement.
           updateCreatureMesh(c, entityDt, aimAngle);
           // Runs AFTER updateCreatureMesh, not before -- during an active
           // swing, updateBanditToolMesh leans the avatar body's own rotation
@@ -6828,7 +7771,14 @@
           // same frame, since it always hard-sets grp.rotation.y from
           // c.groupRot. Also lets feetY read this frame's fresh avatar Y
           // position instead of last frame's.
-          if (c.isBandit) { window.BanditCombat.updateToolMesh(c); window.BanditCombat.updateTrailArc(c, entityDt); }
+          if (c.isBandit) {
+            // Combat-head tracking wins during engagement; outside combat, moving
+            // humanoids get the same hidden forward carrot as town NPCs.
+            const hasMovementGaze = window.BanditCombat?.updateMovementHeadLook?.(c, entityDt, moving, aimAngle); // A travel gaze owns the neck instead of fighting the idle reset.
+            if (c.state !== 'chase' && !hasMovementGaze) window.BanditCombat?.restNeckLook?.(c, entityDt); // Clear only after there is neither combat nor movement gaze.
+            window.BanditCombat.updateToolMesh(c);
+            window.BanditCombat.updateTrailArc(c, entityDt);
+          }
           // A modular attack in its leap stage owns the sprite frame (locked
           // onto a non-idle pose) — don't let the default idle/run cycling
           // stomp it back every tick.
@@ -6839,6 +7789,29 @@
       const FOLLOW_FAR_PX  = TILE * 2.2;
       const FOLLOW_NEAR_PX = TILE * 1.1;
       const ALERT_RANGE_PX = TILE * 4.5;
+
+      // Resolve a moving owner's *walkable landing*, not their midair position.
+      // CreatureCliffClimb.navigate owns actual cliff travel and its collision rules.
+      function companionFollowGoal(c, master) {
+        const hasLanding = !!master.climbing && Number.isFinite(master.climbEndX) && Number.isFinite(master.climbEndY); // Used to target the owner's landing during a scripted climb.
+        const x = hasLanding ? master.climbEndX : master.x; // Ground destination passed to travelCreatureToward.
+        const y = hasLanding ? master.climbEndY : master.y; // Ground destination passed to travelCreatureToward.
+        const followGrid = _isZoneArea(currentArea) ? (c.areaGrid || window.GridTileAccessors.getActiveGrid()) : null; // Used only for wilderness elevation comparisons.
+        const hereTile = followGrid?.[Math.floor(c.y / TILE)]?.[Math.floor(c.x / TILE)]; // Companion's current elevation for the route decision.
+        const goalTile = followGrid?.[Math.floor(y / TILE)]?.[Math.floor(x / TILE)]; // Destination elevation for the route decision.
+        const differentTier = !!hereTile && !!goalTile && !hereTile.incline && !goalTile.incline
+          && (hereTile.elevTier || 0) !== (goalTile.elevTier || 0); // Prevents a nearby companion idling below its owner.
+        const routeNetwork = followGrid && window.CliffRouteNetwork?.forArea?.(currentArea); // Existing cached network differentiates disconnected platforms at the SAME elevation.
+        const fromComponent = routeNetwork && window.CliffRouteNetwork.componentAt(routeNetwork, Math.floor(c.x / TILE), Math.floor(c.y / TILE)); // Companion's walkable connected component.
+        const toComponent = routeNetwork && window.CliffRouteNetwork.componentAt(routeNetwork, Math.floor(x / TILE), Math.floor(y / TILE)); // Owner/landing's walkable connected component.
+        const separatePlatforms = Number.isInteger(fromComponent) && fromComponent >= 0
+          && Number.isInteger(toComponent) && toComponent >= 0 && fromComponent !== toComponent; // Forces route finding even when two plateaus share a height tier.
+        return {
+          x, y,
+          distance: Math.hypot(x - c.x, y - c.y),
+          routeRequired: differentTier || separatePlatforms || !!c._cliffClimb || !!c._cliffRouteTravel, // In-progress hops must finish before ordinary wandering or attacks resume.
+        };
+      }
 
       // Shared ground truth for where a mount saddle, shoulder-pet grip,
       // character posterior (seat), and character shoulder-perch actually sit
@@ -7074,7 +8047,10 @@
         // switched to this shared rest path instead, since nothing else
         // here ever drove it back down.
         if (typeof c?.avatarRef?.updateHeadYaw === 'function') c.avatarRef.updateHeadYaw(0, dt);
-        if (c) c._lookAtDebug = null;
+        if (c) {
+          c._lookAtDebug = null;
+          window.PerpRotation.clearHeadtrackHint(c.perpState);
+        }
       }
 
       // Look targets use the character's face, not the feet/body center. The
@@ -7100,6 +8076,7 @@
       // out of a rotated (and, for animals, mirrored front/back) bone
       // transform. Cleared wherever the corresponding look resets to rest.
       function _setLookAtDebug(looker, targetX, targetY, targetWorldY) {
+        window.PerpRotation.setHeadtrackHint(looker.perpState, Math.atan2(targetX - looker.x, targetY - looker.y)); // Active gaze supplies the same second-priority bearing as NPC head tracking.
         looker._lookAtDebug = {
           head: { x: (Number(looker?.x) || 0) / TILE, y: _creatureHeadWorldY(looker), z: (Number(looker?.y) || 0) / TILE },
           target: { x: targetX / TILE, y: targetWorldY, z: targetY / TILE },
@@ -7279,7 +8256,7 @@
         const rawMoveInput = keyboard.active || Math.hypot(input.x, input.y) > 0.08;
         if (rawMoveInput || playerAutoWalk) return false;
         if (Math.hypot(player.vx || 0, player.vy || 0) > 5) return false;
-        if (player.climbing || player.onBranch || player.dodging || player.lunging || player.knockbackT > 0 || player.prone) return false;
+        if (player.climbing || player.onBranch || player.onClimbSurface || player.dodging || player.lunging || player.knockbackT > 0 || player.prone) return false;
         if (dialogueOpen || sitInteraction || actionHeldDown || chargeAction || toolSwingT > 0 || combatSwingAnim || combatSwingHeld) return false;
         if (window.PlayerChat?.isOpen || window.PlayerSocialPoses?.active || window.Fishing?.state?.active || window.MusicMinigame?.state?.active) return false;
         if (window.Mounts?.rideState && window.Mounts.rideState !== 'none') return false;
@@ -7804,6 +8781,12 @@
         for (const c of companionObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
+          if (c.tzatzulCapturedBy) {
+            updateCreatureMesh(c, dt, c.facing);
+            updateCreatureAnimFrame(c, dt, false);
+            window.TzatzulLiveVisuals?.alignCaptive?.(c);
+            continue; // Captured companions share the carrier's flight path instead of following their master.
+          }
           window.AnimalVocalizations?.tickCreature?.(c, dt, {
             allowPassive: c.stableRole !== 'mount',
           });
@@ -7814,28 +8797,6 @@
           // `player` only so any pre-existing companion spawned before this
           // field existed (e.g. a save mid-load) doesn't go masterless.
           const master = c.master || player;
-
-          if (master.climbing) {
-            _clearCompanionTreasureCue(c, dt, 'master climbing');
-            _clearCompanionWatchIdle(c, 'master climbing');
-            // Teleport-and-stick: an untagged companion can't path through an
-            // incline tile on its own (see CREATURE_DB canClimb / moveCreatureToward),
-            // so for the duration of the climb it just clings to its master's
-            // back instead of trying to follow normally.
-            const backAngle = master.angle + Math.PI;
-            c.x = master.x + Math.cos(backAngle) * TILE * 0.35;
-            c.y = master.y + Math.sin(backAngle) * TILE * 0.35;
-            c.facing = master.angle;
-            c.vx = 0; c.vy = 0;
-            updateCreatureMesh(c, dt, c.facing);
-            updateCreatureAnimFrame(c, dt, false);
-            // Pin to the master's actual climb-blended height rather than the
-            // incline tile's raw (unblended) surface — see updatePlayerMesh.
-            // (Only the real player has a climb-blended playerMesh height;
-            // a non-player master would need its own mesh reference here.)
-            c.avatarRef.group.position.y = playerMesh.position.y + c.halfHeight * 0.5;
-            continue;
-          }
 
           // A mount is driven entirely by updateMountRide/updateMountedMovement
           // (see the V-key/D-pad-down call-in/dismiss flow) — it never runs
@@ -7944,25 +8905,42 @@
           }
 
           const def = c.def;
-          c.attackCooldownT = Math.max(0, c.attackCooldownT - dt);
+          c.attackCooldownT = c._furiousSpecial
+            ? c._furiousSpecial.cooldownBefore // Freeze the original companion cooldown while an interrupt attack runs.
+            : Math.max(0, c.attackCooldownT - dt);
           if (!tickCreatureResources(c, dt)) continue;
+          const companionTempo = window.StableAnimalTrainingRefinements?.combatTempo?.(c); // Saved tempo changes recovery/base Stamina while species attack timelines stay intact.
 
           const dxp = master.x - c.x, dyp = master.y - c.y;
           const distToMaster = Math.hypot(dxp, dyp);
+          const followGoal = companionFollowGoal(c, master); // Shared walking/cliff-route destination for ordinary companions.
+          c._companionGroundFollow = {
+            mode: master.climbing ? 'owner-climbing' : followGoal.routeRequired ? 'cliff-route' : 'ground',
+            distancePx: Math.round(followGoal.distance),
+            destinationX: Math.round(followGoal.x), destinationY: Math.round(followGoal.y),
+            routeActive: !!c._cliffClimb || !!c._cliffRouteTravel,
+          }; // Included in the existing mobile-friendly CompanionCombatResponse diagnostics.
+          if (master.climbing && c.stableRole === 'companion') {
+            if (c.treasureCue) _clearCompanionTreasureCue(c, dt, 'owner climbing');
+            if (c.watchPlayerIdle) _clearCompanionWatchIdle(c, 'owner climbing');
+          }
           const isBanditCompanion = c.banditCompanion === true; // Used to invert only a Beastmaster pet's target faction while retaining companion movement.
           const playerNearBanditMaster = Math.hypot(player.x - master.x, player.y - master.y) <= ALERT_RANGE_PX; // Used to give the enemy pet the same master-centered alert rule as a player companion.
           let target = isBanditCompanion && player.health > 0 && playerNearBanditMaster ? player : null;
           if (!isBanditCompanion) {
-            for (const h of hostileObjects) {
-              if (h.health <= 0) continue;
-              if (h.areaId !== currentArea) continue;
-              if (h._denHidden) continue;
-              // Wild herbivores (e.g. uumkaoii-wild) live in hostileObjects too
-              // (see spawnPackAtDen/EXTERIOR_ZONES.herbivoreSpecies) but never
-              // fight — companions should ignore them, not treat them as prey.
-              if (h.def?.hostile === false) continue;
-              if (Math.hypot(h.x - master.x, h.y - master.y) <= ALERT_RANGE_PX) { target = h; break; }
+            if (window.CompanionCombatResponse) {
+              target = window.CompanionCombatResponse.chooseTarget(c, master, hostileObjects, currentArea, ALERT_RANGE_PX); // Nearest active threat, with persistent commitment to avoid flip-flopping.
+            } else {
+              for (const h of hostileObjects) {
+                if (h.health > 0 && h.areaId === currentArea && !h._denHidden && h.def?.hostile !== false
+                    && Math.hypot(h.x - master.x, h.y - master.y) <= ALERT_RANGE_PX) { target = h; break; }
+              }
             }
+          }
+          if (isBanditCompanion) {
+            target = window.AnimalScentTargeting?.prioritizeEnemyCompanion?.(
+              c, master, player, companionObjects, currentArea, ALERT_RANGE_PX, target
+            ) || target; // Enemy pets focus marked opponents until the mark has been spent.
           }
           // Sicced (weapon Flourish, js/combat/combat-enchantments.js) makes
           // one living marked enemy the player companion's exclusive target,
@@ -7970,11 +8948,29 @@
           if (!isBanditCompanion && master === player && c.stableRole === 'companion') {
             const sicced = window.EnchantmentSystem?.getCurrentSiccedTarget?.();
             if (sicced && sicced.health > 0 && sicced.areaId === currentArea) target = sicced;
+            const downedFocus = window.PlayerDowned?.getFocusTarget?.(); // While the owner is down, the enemy they last shot with a ranged weapon is the companion's priority.
+            if (downedFocus && downedFocus.health > 0 && !downedFocus._downed && downedFocus.areaId === currentArea) target = downedFocus; // Never chase a dead or already-downed target until its downed-focus state clears.
           }
 
-          if (!target && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
-          if (!target && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
-          if (!target) c._stage = null;
+          const rescueHost = c._honeyfuzzleRescueTarget; // Combat.attach assigns the swarmed ally this pet is actively rescuing.
+          const rescueActive = !!rescueHost && rescueHost.health > 0
+            && !!window.Combat?.attach?.attachersOf?.(rescueHost)?.some(attacker => window.Combat.attach.isAttached(attacker) && attacker.creatureKey === 'honeyfuzzle');
+          if (!rescueActive && rescueHost) c._honeyfuzzleRescueTarget = null; // Detachment and interrupted rescue cannot leave a stale friendly-fire focus.
+          if (rescueActive && !window.Combat?.animalAttacks?.isBusy(c) && !window.Combat?.telegraph?.isBusy(c)) {
+            target = null; // The dedicated rescue attack is applied by Combat.attach, not the normal hostile-target routine.
+          }
+          // Once a named move owns its lunge/strike, preserve the original living target
+          // even if the master briefly runs outside ALERT_RANGE_PX. Without this, pets
+          // cancelled a committed swing as soon as its enemy crossed the alert boundary.
+          const committedTarget = c._animalAttack?.ctx?.target;
+          if (!target && !rescueActive && committedTarget?.health > 0 && !committedTarget._downed
+              && committedTarget.areaId === currentArea) target = committedTarget;
+          if (!target && window.VoorgAssRearKick?.isHoldingKickPose?.(c)) {
+            target = c._animalAttack?.state?.target || c; // A kicked/killed target must not interrupt the Voorg-Ass's one-second stationary impact pose.
+          }
+          if (!target && !rescueActive && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
+          if (!target && !rescueActive && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
+          if (!target && !rescueActive) c._stage = null;
 
           if (target && c.treasureCue) _clearCompanionTreasureCue(c, dt, 'combat');
           if (target && c.watchPlayerIdle) _clearCompanionWatchIdle(c, 'combat');
@@ -7998,6 +8994,12 @@
             && !window.Combat?.telegraph?.isBusy(c)) _tickCompanionHorizonScan(c, master, dt);
 
           let moving = false, runInPlace = false, aimAngle = c.facing || 0;
+          if (c._knockbackLedgeFall || c.prone || c.knockbackT > 0) {
+            // An interrupted animal must not resume a stale lunge after recovering.
+            // cancel() also restores any paused Furious cooldown; its attack owns the cleanup.
+            if (window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
+            if (window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
+          }
           if (c._knockbackLedgeFall) {
             _clearCompanionTreasureCue(c, dt, 'falling');
             _clearCompanionWatchIdle(c, 'falling');
@@ -8006,8 +9008,9 @@
             _clearCompanionTreasureCue(c, dt, 'prone');
             _clearCompanionWatchIdle(c, 'prone');
             advanceCreatureProneThrow(c, dt);
-            if (c.footing >= proneRecoveryFootingTarget(c) && !(c.proneThrowT > 0) && !c._knockbackLedgeFall) {
+            if (proneRecoveryReady(c) && !(c.proneThrowT > 0) && !c._knockbackLedgeFall) {
               c.prone = false;
+              c._temporaryKnockdownProne = false; // Companion standing back up also clears the temporary prone source.
               window.ResourceSystem?.spendStamina(c, SOMERSAULT_STAMINA_COST, 'somersault recovery');
               c.retreatT = Math.max(c.retreatT || 0, FORCED_SOMERSAULT_RETREAT_S);
             }
@@ -8033,6 +9036,12 @@
             } else if (c.knockbackT <= 0) {
               if (!beginKnockbackLedgeFall(c)) window.KnockbackCollisionImpact?.cancel?.(c);
             }
+          } else if (c._cliffClimb || c._cliffRouteTravel) {
+            // A crossing already in progress owns the animal's physical position.
+            // Finish it before any newly acquired combat target can trigger a
+            // melee animation or backup movement while hanging off a cliff.
+            moving = travelCreatureToward(c, followGoal.x, followGoal.y, def.chaseSpeed, dt);
+            aimAngle = c.facing;
           } else if (target) {
             const dist = Math.hypot(target.x - c.x, target.y - c.y);
             aimAngle = Math.atan2(target.y - c.y, target.x - c.x);
@@ -8045,56 +9054,87 @@
               // Tamed companions cycle plain active-vs-backing-up (no
               // evasive-orbit stage — that's wild-creature-only, see
               // updateCreatureBehaviorStage) so every attack/charge is still
-              // separated from the next by the same global ~2s backup beat.
+              // separated from the next by a tempo-scaled backup beat.
               const st = c._stage || (c._stage = { mode: 'active', t: 0 });
               st.t += dt;
-              if (st.mode === 'backingUp') {
+              if (window.CompanionCombatResponse?.shouldRestartApproach?.(st, dist, def.attackRangePx,
+                target.targetPlayer === master || target.targetCreature === master)) {
+                st.mode = 'active'; st.t = 0; // Enemy escaped the backup circle: resume pursuit rather than finishing a retreat away from the fight.
+              }
+              const furiousEngageRangePx = window.Combat?.animalAttacks?.companionEngagementRangePx?.(c, TILE) ?? def.attackRangePx; // Uses the same collision-limited reach as an ordinary named attack.
+              const furiousStarted = !c.banditCompanion && !isCreatureSwimming(c) && dist <= furiousEngageRangePx
+                && !!window.Combat?.animalAttacks?.startFuriousSpecial?.(c, { target }); // Bypasses current cooldown and Stamina only when the most expensive enabled special is fully funded.
+              if (furiousStarted) {
+                st.mode = 'backingUp'; st.t = 0; aimAngle = c.facing; // Attack owns motion immediately; its saved cooldown resumes after completion/cancellation.
+              } else if (st.mode === 'backingUp') {
                 const awayAngle = aimAngle + Math.PI;
                 moving = moveCreatureToward(c, c.x + Math.cos(awayAngle) * TILE, c.y + Math.sin(awayAngle) * TILE, def.moveSpeed, dt);
-                if (st.t >= STAGE_BACKUP_S) { st.mode = 'active'; st.t = 0; }
+                if (st.t >= STAGE_BACKUP_S * (companionTempo?.recovery || 1)) { st.mode = 'active'; st.t = 0; }
               } else {
-                if (dist > def.attackRangePx * 0.8) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt);
-                if (dist <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost && !isCreatureSwimming(c)) {
-                  window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'creature attack');
-                  c.attackCooldownT = def.attackCooldownS;
-                  // Tamed behavior: the real species attack set (e.g. Pounce)
-                  // fires only once every 4 behavior actions; the other 3 use
-                  // the short 0-damage/high-knockback guard charge instead.
-                  c._behaviorActionCount = (c._behaviorActionCount || 0) + 1;
-                  const useRealAttack = def.attacks?.length > 0 && (c._behaviorActionCount % 4 === 0);
-                  const attackId = useRealAttack ? def.attacks[Math.floor(rnd() * def.attacks.length)] : 'guardCharge';
-                  const startedModular = window.Combat?.animalAttacks?.start(c, attackId, { target });
-                  if (startedModular) {
-                    aimAngle = c.facing;
-                  } else {
-                    window.__farmLog?.(`[wildlife] companion ${c.creatureKey} (${c.id}): "${attackId}" failed to start against target (fallback: plain bite telegraph).`, 'wildlife');
-                    window.Combat.telegraph.start(c, {
-                      windupS: BITE_TELEGRAPH_WINDUP_S,
-                      strikeS: BITE_TELEGRAPH_STRIKE_S,
-                      onStrike: () => {
-                        if (target.health > 0 && Math.hypot(target.x - c.x, target.y - c.y) <= def.attackRangePx) {
-                          const damageOptions = { tag: def.attackTag || 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) }; // Used by either faction's fallback bite damage route.
-                          if (target === player) damagePlayer(def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions);
-                          else if (window.CompanionOffense) window.CompanionOffense.damageCreature(damageCreature, c, target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions); // Shared Whistle/Sicced companion empowerment (js/combat/companion-offense.js).
-                          else damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions);
-                          window.AudioSystem?.playCreatureClawHit(c);
-                        }
-                      },
-                    });
+                const companionAttackCost = def.attackStaminaCost * (companionTempo?.stamina || 1); // Same scaled amount is checked and paid, including empty Stamina edge cases.
+                const companionEngageRangePx = window.Combat?.animalAttacks?.companionEngagementRangePx?.(c, TILE) ?? def.attackRangePx; // Attack selection includes one short, collision-checked lunge instead of requiring ordinary chase into melee range.
+                const taxedStaminaFactor = Number(window.ResourceSystem?.timedDebuffModifier?.(c, 'staminaCost') ?? 1); // Taxed affects the actual attack payment, not just the displayed base cost.
+                const readyStamina = companionAttackCost * (Number.isFinite(taxedStaminaFactor) && taxedStaminaFactor >= 0 ? taxedStaminaFactor : 1); // Keeps the AI's affordability check aligned with ResourceSystem.
+                const companionCanCommit = dist <= companionEngageRangePx && c.attackCooldownT <= 0 && c.stamina + 0.0001 >= readyStamina && !isCreatureSwimming(c); // Don't begin attacks that would immediately exhaust a pet.
+                if (!companionCanCommit && dist > def.attackRangePx * 0.8) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt);
+                if (companionCanCommit) {
+                  const tacticalAttack = window.StableAnimalTrainingRefinements?.chooseAttack?.(c); // Selection happens once, before any action cost or committed lunge.
+                  if (tacticalAttack?.waiting && dist > def.attackRangePx * 0.8) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt); // Waiting for tactical cooldown must not strand an animal at the outer burst radius.
+                  if (!tacticalAttack?.waiting) {
+                    window.ResourceSystem?.spendStamina(c, companionAttackCost, 'creature attack');
+                    c.attackCooldownT = def.attackCooldownS * (companionTempo?.cooldown || 1);
+                    // Saved tactics choose the action for trained companions;
+                    // legacy actors retain their existing species cadence.
+                    c._behaviorActionCount = (c._behaviorActionCount || 0) + 1;
+                    const useRealAttack = def.attacks?.length > 0 && (c._behaviorActionCount % (def.realAttackEvery || 4) === 0); // Species whose signature attack is not a lunge (honeyfuzzle Swarm) set realAttackEvery: 1.
+                    const kickSpecies = window.VoorgAssRearKick?.isVoorgAss?.(c) && def.attacks?.includes('rearKick'); // Only Voorg-Ass companions use a distinct special cooldown.
+                    const attackId = tacticalAttack?.id || (kickSpecies
+                      ? (window.VoorgAssRearKick.canUse(c) ? 'rearKick' : 'guardCharge')
+                      : (useRealAttack ? def.attacks[Math.floor(rnd() * def.attacks.length)] : 'guardCharge')); // Legacy cadence remains the fallback for enemy pets or unavailable training.
+                    const startedModular = window.Combat?.animalAttacks?.start(c, attackId, { target });
+                    if (startedModular) {
+                      aimAngle = c.facing;
+                    } else {
+                      window.__farmLog?.(`[wildlife] companion ${c.creatureKey} (${c.id}): "${attackId}" failed to start against target (fallback: plain bite telegraph).`, 'wildlife');
+                      window.Combat.telegraph.start(c, {
+                        windupS: BITE_TELEGRAPH_WINDUP_S,
+                        strikeS: BITE_TELEGRAPH_STRIKE_S,
+                        onStrike: () => {
+                          if (target.health > 0 && Math.hypot(target.x - c.x, target.y - c.y) <= def.attackRangePx) {
+                            const damageOptions = { tag: def.attackTag || 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag), attacker: c }; // Fallback animal bites retain their attacker identity for scent spending and debuff attribution.
+                            if (target === player) damagePlayer(def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions);
+                            else if (window.CompanionOffense) window.CompanionOffense.damageCreature(damageCreature, c, target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions); // Shared Whistle/Sicced companion empowerment (js/combat/companion-offense.js).
+                            else damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions);
+                            window.AudioSystem?.playCreatureClawHit(c);
+                          }
+                        },
+                      });
+                    }
+                    st.mode = 'backingUp';
+                    st.t = 0;
                   }
-                  st.mode = 'backingUp';
-                  st.t = 0;
                 }
               }
             }
+          } else if (rescueActive) {
+            // Combat.attach owns movement and attack timing for a rescue. Stop ordinary follow/chase from fighting it.
+            c.vx = 0; c.vy = 0;
+            aimAngle = Math.atan2(rescueHost.y - c.y, rescueHost.x - c.x);
+            moving = false;
           } else if (c.treasureCue) {
             const cueMotion = _tickCompanionTreasureCue(c, master, dt);
             moving = cueMotion.moving;
             runInPlace = cueMotion.runInPlace;
             aimAngle = cueMotion.aimAngle;
-          } else if (distToMaster > FOLLOW_FAR_PX) {
-            moving = travelCreatureToward(c, master.x, master.y, def.chaseSpeed, dt);
-            aimAngle = Math.atan2(dyp, dxp);
+          } else if (master.climbing || followGoal.routeRequired || distToMaster > FOLLOW_FAR_PX) {
+            // A climbing owner is not a carrier: chase the walkable destination via
+            // the shared cliff-route network, or wait on the ground once nearby.
+            if (followGoal.routeRequired || followGoal.distance > (master.climbing ? FOLLOW_NEAR_PX : FOLLOW_FAR_PX)) {
+              moving = travelCreatureToward(c, followGoal.x, followGoal.y, def.chaseSpeed, dt);
+              if (moving) aimAngle = Math.atan2(c.vy, c.vx);
+            } else {
+              c.vx = 0; c.vy = 0;
+            }
           } else if (!isBanditCompanion && _isPlayerFocusedOnHead(c)) {
             // The player is staring right at its head — hold position and
             // let them approach instead of drifting back out to the donut
@@ -8118,6 +9158,7 @@
           c.x = window.FormatUtils.clamp(c.x, 0, (c.areaCols || COLS) * TILE);
           c.y = window.FormatUtils.clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
 
+          if (c._animalAttack?.id === 'rearKick' && !window.VoorgAssRearKick?.isHoldingKickPose?.(c)) _restoreCompanionHead(c, dt); // Companions release old gaze during windup, not during their frozen hoof pose.
           updateCreatureMesh(c, dt, aimAngle);
           if (!window.Combat?.animalAttacks?.isBusy(c)) updateCreatureAnimFrame(c, dt, moving || runInPlace, runInPlace);
         }
@@ -8290,14 +9331,14 @@
           // the legacy whistle.
           const activeStabled = activeId ? stable.find(s => s.id === activeId) : null;
           const stableCompanion = (activeStabled && CREATURE_DB[activeStabled.kind])
-            ? { creatureKey: activeStabled.kind, name: activeStabled.name, genotype: activeStabled.genotype }
+            ? { creatureKey: activeStabled.kind, name: activeStabled.name, genotype: activeStabled.genotype, swarmColor: activeStabled.swarmColor, stableId: activeStabled.id }
             : null;
           // Only the companion slot honors the legacy whistle fallback —
           // mount/shoulder-pet have no equivalent item-based summon path.
           const whistle = (role === 'companion' && !activeStabled && equipmentSlots.whistle)
             ? (gearInventory?.whistles || []).find(w => w.id === equipmentSlots.whistle)
             : null;
-          const desired = stableCompanion || whistle;
+          const desired = stableCompanion || (whistle ? { ...whistle, stableId: `whistle:${whistle.id}` } : null); // stableId keys downed-companion state (js/companion-downed.js).
 
           const existing = [...companionObjects].find(c => c.master === master && c.stableRole === role);
           if (!desired) {
@@ -8308,15 +9349,17 @@
           // two differently-bred gar-wolves) still needs a respawn so the new
           // one's genotype actually renders.
           if (existing && existing.creatureKey === desired.creatureKey && existing.areaId === currentArea
-            && JSON.stringify(existing.genotype || null) === JSON.stringify(desired.genotype || null)) continue;
+            && JSON.stringify(existing.genotype || null) === JSON.stringify(desired.genotype || null)
+            && (existing.swarmColor || null) === (desired.swarmColor || null)) continue;
           despawnCompanions(master, role);
           const spawnX = master.x + Math.cos(master.angle + Math.PI) * TILE * 1.4;
           const spawnY = master.y + Math.sin(master.angle + Math.PI) * TILE * 1.4;
           const companion = makeCreatureEntity(desired.creatureKey, spawnX, spawnY, {
-            isCompanion: true, name: desired.name, homeX: spawnX, homeY: spawnY, state: 'idle', master, genotype: desired.genotype, stableRole: role,
+            isCompanion: true, name: desired.name, homeX: spawnX, homeY: spawnY, state: 'idle', master, genotype: desired.genotype, swarmColor: desired.swarmColor, stableRole: role, stableId: desired.stableId,
           });
           if (companion) {
             companionObjects.add(companion);
+            if (role === 'companion') window.CompanionDowned?.onCompanionSpawned?.(companion); // A companion that was downed before an area change comes back down.
             window.__farmLog?.(`[companion] spawned ${role} ${desired.creatureKey} in ${currentArea}`, 'wildlife');
           }
         }
@@ -8442,7 +9485,7 @@
       function _loadWorldBreedingPairs() { return window.WorldMetaStore.loadBreedingPairs(_tothalWorldId()); }
       function _saveWorldBreedingPairs(list) { window.WorldMetaStore.saveBreedingPairs(_tothalWorldId(), list); }
       function _loadWorldStorage() { return window.WorldMetaStore.loadStorage(_tothalWorldId()); }
-      function _saveWorldStorage(store) { window.WorldMetaStore.saveStorage(_tothalWorldId(), store); }
+      function _saveWorldStorage(store) { return window.WorldMetaStore.saveStorage(_tothalWorldId(), store); }
 
       // Jubmir's daily trader stock/shop page now lives in
       // js/jubmir-shop.js (window.JubmirShop) — see its init(deps) call
@@ -8468,50 +9511,65 @@
       // directly, but under world.members[characterId] instead of the
       // character record — this is the data that stays behind in the world
       // when a character leaves, rather than following them.
+      function captureMemberWorldData(meta) {
+        const worldId = _tothalWorldId(); // Active world whose live member data replaces the snapshot's saved copy.
+        const charId = (window.__hobunjiPlayerProfile || _playerData)?.characterId; // Active farmer captured by both browser and direct folder saves.
+        if (!worldId || !charId) throw new Error('The active farmer/world is unavailable for save capture.');
+        const world = (meta?.worlds || []).find(w => w.id === worldId);
+        if (!world) throw new Error('The active world is missing from the save snapshot.');
+        if (!world.members) world.members = {};
+        if (typeof pendingOrdersWorldId !== 'undefined' && pendingOrdersWorldId === worldId) world.pendingSupplyOrders = pendingOrders.map(order => ({ ...order })); // World-scoped paid receipts survive reload and changes of player character.
+        const member = world.members[charId] || (world.members[charId] = defaultWorldMemberState());
+        member.nonGearInventory = { ...inventory };
+        member.packClothing    = [...packClothing];
+        member.npcRelationships = window.DialogueContent?.npcRelationshipsSnapshot();
+        member.npcFavorRescaleApplied = window.DialogueContent?.npcFavorRescaleApplied?.() ?? true;
+        member.questProgress    = { ...questProgress };
+        member.alcoholBottleSwigs = window.HobunjiDrunkGameplayBridge?.serializeBottleSwigs?.() || {};
+        member.npcAlcoholState = window.HobunjiDrunkGameplayBridge?.serializeNpcAlcoholState?.() || {};
+        member.npcWardrobeState = window.NpcWardrobe?.serialize?.() || {};
+        member.festivals = window.FestivalSystem?.serialize?.() || {};
+        member.npcDiscoveredGiftTraits = window.NpcGifting?.serializeDiscoveredPrefs?.() || {};
+        member.alchemyKnownEffects = window.AlchemySystem.serializeKnownEffects();
+        member.alchemyKnownRecipes = window.AlchemySystem.serializeKnownRecipes();
+        member.alchemyActiveEffects = window.AlchemySystem.serializeActiveEffects();
+        member.alchemyReagentState = window.ReagentPlants.serializeZoneReagentState();
+        member.knownFurnitureBlueprints = window.CraftingPanel?.serializeBlueprints?.() || [];
+        member.cookingState = window.CookingSystem.serialize();
+        member.animalHides = window.AnimalHides?.serialize?.() || { version: 1, pack: {} }; // Persist individual hide genetics beside the world-member's count inventory.
+        member.wildBerryState = window.WildBerries.serializeState();
+        member.zoneTreasureState = window.WildTreasure.serializeState();
+        member.cliffBalconyRewards = window.CliffRouteNetwork?.serializeRewards?.() || {}; // Layer-specific dig/mining state independent of the ground tile.
+        member.wildernessChunkState = serializeWildernessChunkState();
+        member.wildernessCampfireState = window.WildernessCampfire?.serialize?.() || null;
+        member.felledTreeState = serializeZoneFelledTreeState();
+        member.minedRockState = serializeZoneMinedRockState();
+        member.townMineState = window.TownMine?.serialize?.() || null;
+        member.slagothimTradersState = window.SlagothimTraders?.serialize?.() || null;
+        member.tzatzulNestState = window.TzatzulNestEncounter?.serialize?.() || null;
+        member.caveSiteState = window.CaveSiteSystem?.serialize?.() || null;
+        member.doorstepVisitState = window.DoorstepVisits?.serialize?.() || {};
+        member.romanceState = window.RomanceSystem?.serialize?.() || null;
+        member.npcFarmPlotState = window.NpcFarmPlots?.serialize?.() || null; // Persist NPC-tended field state.
+        // Only ever consumed on the next boot if it lands in a wilderness
+        // zone with a still-active campfire there (see spawnPlayerAvatar) —
+        // saved unconditionally anyway since it's cheap and harmless
+        // otherwise; farm/town/interior/building sessions always start
+        // inside the farmhouse (see spawnPlayerAvatar).
+        member.lastPosition = { area: currentArea, x: player.x, y: player.y, angle: player.angle };
+        return meta;
+      }
+
       function saveMemberWorldData() {
-        const worldId  = _tothalWorldId();
-        const charId   = (window.__hobunjiPlayerProfile || _playerData)?.characterId;
-        if (!worldId || !charId) return;
         try {
-          const meta  = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-          const world = (meta?.worlds || []).find(w => w.id === worldId);
-          if (!world) return;
-          if (!world.members) world.members = {};
-          const member = world.members[charId] || (world.members[charId] = defaultWorldMemberState());
-          member.nonGearInventory = { ...inventory };
-          member.packClothing    = [...packClothing];
-          member.npcRelationships = window.DialogueContent?.npcRelationshipsSnapshot();
-          member.npcFavorRescaleApplied = window.DialogueContent?.npcFavorRescaleApplied?.() ?? true;
-          member.questProgress    = { ...questProgress };
-          member.alcoholBottleSwigs = window.HobunjiDrunkGameplayBridge?.serializeBottleSwigs?.() || {};
-          member.npcAlcoholState = window.HobunjiDrunkGameplayBridge?.serializeNpcAlcoholState?.() || {};
-          member.npcWardrobeState = window.NpcWardrobe?.serialize?.() || {};
-          member.festivals = window.FestivalSystem?.serialize?.() || {};
-          member.npcDiscoveredGiftTraits = window.NpcGifting?.serializeDiscoveredPrefs?.() || {};
-          member.alchemyKnownEffects = window.AlchemySystem.serializeKnownEffects();
-          member.alchemyKnownRecipes = window.AlchemySystem.serializeKnownRecipes();
-          member.alchemyActiveEffects = window.AlchemySystem.serializeActiveEffects();
-          member.alchemyReagentState = window.ReagentPlants.serializeZoneReagentState();
-          member.cookingState = window.CookingSystem.serialize();
-          member.wildBerryState = window.WildBerries.serializeState();
-          member.zoneTreasureState = window.WildTreasure.serializeState();
-          member.wildernessChunkState = serializeWildernessChunkState();
-          member.wildernessCampfireState = window.WildernessCampfire?.serialize?.() || null;
-          member.felledTreeState = serializeZoneFelledTreeState();
-          member.minedRockState = serializeZoneMinedRockState();
-          member.townMineState = window.TownMine?.serialize?.() || null;
-          member.slagothimTradersState = window.SlagothimTraders?.serialize?.() || null;
-          member.caveSiteState = window.CaveSiteSystem?.serialize?.() || null;
-          member.doorstepVisitState = window.DoorstepVisits?.serialize?.() || {};
-          member.romanceState = window.RomanceSystem?.serialize?.() || null;
-          // Only ever consumed on the next boot if it lands in a wilderness
-          // zone with a still-active campfire there (see spawnPlayerAvatar) —
-          // saved unconditionally anyway since it's cheap and harmless
-          // otherwise; farm/town/interior/building sessions always start
-          // inside the farmhouse (see spawnPlayerAvatar).
-          member.lastPosition = { area: currentArea, x: player.x, y: player.y, angle: player.angle };
-          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
-        } catch {}
+          const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null'); // Existing canonical metadata receives the shared live serialization.
+          if (!meta) return false;
+          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(captureMemberWorldData(meta)));
+          return true; // The imperial custody handoff must know the character inventory really reached persistent storage.
+        } catch (error) {
+          window.__farmLog?.('[member-save] Failed to persist world-member data: ' + String(error?.message || error), 'warn');
+          return false; // Existing callers may ignore this result; custody uses it to avoid finalizing incomplete transfers.
+        }
       }
 
       // ── Owner/farmhand content visibility ─────────────────────────────
@@ -8565,133 +9623,9 @@
       // exact same map, not a fresh reroll.
       let _tothalShiftedThisSession = false;
 
-      // Cache of performTothalShift's per-zone generator output, keyed by
-      // world+year+zone (the same string already used to seed the
-      // generator) plus the generator/fold scripts' own cache-busting
-      // ?v= tags. generateZoneWorkspace + buildMergedZoneGrid are pure
-      // functions of that seed — reachability validation/repair, plateau
-      // generation and animal-route pathfinding inside them measured at
-      // several seconds of blocking main-thread work per zone, redone from
-      // scratch on *every single page load* even though a same-year reload
-      // always reproduces the exact same result. Caching their raw output
-      // here lets a same-year session skip straight to replaying the
-      // (cheap) NPC-station/building/decor bookkeeping that follows.
-      //
-      // IndexedDB, not localStorage: one zone's merged tile grid alone
-      // serializes to several MB, which blew straight through localStorage's
-      // ~5-10MB per-origin quota after just the first zone — the other three
-      // zones' writes then failed (silently, since caching here is a pure
-      // optimization) and kept regenerating every load anyway. IndexedDB's
-      // quota is disk-sized, and its structured-clone storage accepts the
-      // tiles Map directly, no JSON (de)serialization needed. Mirrors the
-      // openDb/idbGet/idbSet helper shape docs/js/local-save-folder-core.js
-      // already uses for its own IndexedDB store, as its own separate DB
-      // (this one is a disposable cache, not save data worth backing up).
-      const _TOTHAL_GEN_VERSION_TAG = (() => {
-        const versionOf = (fileName) => {
-          const el = document.querySelector(`script[src*="${fileName}"]`);
-          const m = el && el.src.match(/[?&]v=([^&]+)/);
-          return m ? m[1] : 'noversion';
-        };
-        return `${versionOf('wilderness-map-generator.js')}_${versionOf('terrain-preview.js')}`;
-      })();
-      const _TOTHAL_CACHE_DB_NAME = 'hobunji-tothal-zone-cache';
-      const _TOTHAL_CACHE_STORE = 'zones';
-      function _tothalCacheOpenDb() {
-        return new Promise((resolve, reject) => {
-          const req = indexedDB.open(_TOTHAL_CACHE_DB_NAME, 1);
-          req.onupgradeneeded = () => {
-            if (!req.result.objectStoreNames.contains(_TOTHAL_CACHE_STORE)) req.result.createObjectStore(_TOTHAL_CACHE_STORE);
-          };
-          req.onsuccess = () => resolve(req.result);
-          req.onerror = () => reject(req.error);
-        });
-      }
-      async function _tothalCacheGet(key) {
-        try {
-          const db = await _tothalCacheOpenDb();
-          return await new Promise((resolve, reject) => {
-            const req = db.transaction(_TOTHAL_CACHE_STORE, 'readonly').objectStore(_TOTHAL_CACHE_STORE).get(key);
-            req.onsuccess = () => resolve(req.result ?? null);
-            req.onerror = () => reject(req.error);
-          });
-        } catch (_) { return null; }
-      }
-      async function _tothalCacheSet(key, value) {
-        try {
-          const db = await _tothalCacheOpenDb();
-          await new Promise((resolve, reject) => {
-            const tx = db.transaction(_TOTHAL_CACHE_STORE, 'readwrite');
-            tx.objectStore(_TOTHAL_CACHE_STORE).put(value, key);
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
-          });
-        } catch (_) {
-          // Quota exceeded or storage unavailable — this cache is a pure
-          // optimization; silently skip it and let next session regenerate.
-        }
-      }
-      async function _tothalCacheDeleteKeys(keys) {
-        if (!keys.length) return;
-        try {
-          const db = await _tothalCacheOpenDb();
-          await new Promise((resolve, reject) => {
-            const tx = db.transaction(_TOTHAL_CACHE_STORE, 'readwrite');
-            keys.forEach(k => tx.objectStore(_TOTHAL_CACHE_STORE).delete(k));
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
-          });
-        } catch (_) {}
-      }
-      async function _tothalCacheAllKeys() {
-        try {
-          const db = await _tothalCacheOpenDb();
-          return await new Promise((resolve, reject) => {
-            const req = db.transaction(_TOTHAL_CACHE_STORE, 'readonly').objectStore(_TOTHAL_CACHE_STORE).getAllKeys();
-            req.onsuccess = () => resolve(req.result || []);
-            req.onerror = () => reject(req.error);
-          });
-        } catch (_) { return []; }
-      }
-      function _tothalZoneCacheKey(worldId, year, zoneId) {
-        return `hobunji_tothal_zonecache_v2_${_TOTHAL_GEN_VERSION_TAG}_${worldId}_y${year}_${zoneId}`;
-      }
-      async function _loadTothalZoneCache(key) {
-        const cached = await _tothalCacheGet(key);
-        if (!cached?.merged || !cached?.workspace) return null;
-        return cached; // merged.tiles is already a real Map (IndexedDB structured clone, not JSON)
-      }
-      async function _saveTothalZoneCache(key, workspace, merged) {
-        await _tothalCacheSet(key, {
-          workspace: {
-            entry: workspace.entry || null,
-            tradeExit: workspace.tradeExit || null,
-            animalDens: workspace.animalDens || [],
-            localeInstances: workspace.localeInstances || [],
-            localeTransitions: (workspace.maps || []).find(map => map && !map.isSubmap)?.transitions?.filter(t => t?.generatedLocaleId) || [], // Restored zones need the stamped cave entrances as well as their instance markers.
-            rootTotems: workspace.rootTotems || [],
-            foliagePatches: workspace.foliagePatches || [],
-            wildernessFoliageFurniture: workspace.wildernessFoliageFurniture || [],
-            ambushStations: workspace.ambushStations || [],
-          },
-          merged: {
-            cols: merged.cols, rows: merged.rows, tiles: merged.tiles,
-            mesas: merged.mesas, buildings: merged.buildings,
-          },
-        });
-      }
-      // Drops this world's stale zone caches (older years or a stale
-      // generator/fold version) before writing this shift's entries, so a
-      // save that's played across many Tothal years doesn't accumulate an
-      // unbounded pile of dead cache entries. Other worlds' caches are left
-      // untouched.
-      async function _evictStaleTothalZoneCaches(worldId, year) {
-        const prefixes = ['hobunji_tothal_zonecache_v1_', 'hobunji_tothal_zonecache_v2_']; // Discard obsolete entries that lost stamped locale entrances.
-        const keep = new Set(WildernessMapGenerator.zoneMapIds().map(zoneId => _tothalZoneCacheKey(worldId, year, zoneId)));
-        const allKeys = await _tothalCacheAllKeys();
-        const stale = allKeys.filter(k => typeof k === 'string' && prefixes.some(prefix => k.startsWith(prefix)) && k.includes(`_${worldId}_y`) && !keep.has(k));
-        await _tothalCacheDeleteKeys(stale);
-      }
+      // The IndexedDB cache of performTothalShift's per-zone generator output
+      // (key/load/save/evictStale) now lives in js/tothal-zone-cache.js
+      // (window.TothalZoneCache).
 
       // Regenerates all four wilderness zones for the given Tothal year and
       // saves that year to the world file so future checks this session skip
@@ -8720,6 +9654,11 @@
           // it's generating -- so the pool of locales still needing a home
           // shrinks as each zone claims one, and a zone that couldn't fit a
           // locale simply leaves it for the next zone to try.
+          // Every zone's cache read is issued now, alongside the locale
+          // fetch and before this shift writes anything: IndexedDB queues a
+          // read behind any earlier multi-MB zone write, which made each
+          // later zone's lookup wait tens of seconds when read in the loop.
+          const cachedZonesPromise = forceRegenerate ? null : window.TothalZoneCache.loadAll(worldId, year, WildernessMapGenerator.zoneMapIds()); // Explicit dev forcing must rebuild this deterministic same-year zone instead of replaying its IndexedDB cache.
           const localeDefs = await loadStampableLocaleDefs();
           // Warm the bandit config/locale fetches now (both are cached-promise
           // singletons) so the first wilderness visit doesn't have to wait on
@@ -8728,13 +9667,15 @@
           // against the finished zone (see ensureCurrentZoneBanditCamps).
           window.BanditCombat?.loadGangConfig();
           window.BanditCombat?.loadCampLocaleDefs();
-          await _evictStaleTothalZoneCaches(worldId, year);
+          // Housekeeping for the IndexedDB cache isn't awaited: it never
+          // touches this shift's keys, and enterZone waits on this whole shift.
+          window.TothalZoneCache.evictStale(worldId, year, WildernessMapGenerator.zoneMapIds());
           let remainingLocales = window.RuinSites?.expandLocaleDefs?.(localeDefs, year, WildernessMapGenerator.zoneMapIds()) || localeDefs.slice(); // Ruin-entrance templates become rotated per-zone copies for this cycle (js/ruin-site-locales.js).
           for (const zoneId of WildernessMapGenerator.zoneMapIds()) {
             const seed = `${worldId}_tothal_y${year}_${zoneId}`;
             const preserved = TOTHAL_PRESERVED_TRANSITIONS[zoneId] || [];
-            const cacheKey = _tothalZoneCacheKey(worldId, year, zoneId);
-            const cached = forceRegenerate ? null : await _loadTothalZoneCache(cacheKey); // Explicit dev forcing must rebuild this deterministic same-year zone instead of replaying its IndexedDB cache.
+            const cacheKey = window.TothalZoneCache.key(worldId, year, zoneId);
+            const cached = cachedZonesPromise ? (await cachedZonesPromise).get(zoneId) || null : null;
             let workspace, merged;
             if (cached) {
               ({ workspace, merged } = cached);
@@ -8759,7 +9700,7 @@
                 continue;
               }
               if (!merged) { debugLog(`Tothal Shift: no fold math available for ${zoneId}, skipping`, 'warn'); continue; }
-              await _saveTothalZoneCache(cacheKey, workspace, merged);
+              window.TothalZoneCache.save(cacheKey, workspace, merged); // Next-load optimization only; snapshotted now, committed in the background.
             }
 
             const localeInstances = workspace.localeInstances || [];
@@ -8883,6 +9824,7 @@
                 row: t.row,
                 target: 'building',
                 targetMapId: t.targetMapId,
+                direction: t.direction || '',
                 targetSpotId: t.targetSpotId || '',
                 generatedLocaleId: t.generatedLocaleId,
               })); // Terrain placement exports these after generation; without this promotion they existed only in workspace JSON and never became an interactable in-game spot.
@@ -9328,7 +10270,7 @@
         // (and any ledge fall it can become) prevents the roll from cancelling
         // displacement that still has to resolve.
         if (!(player.proneThrowT > 0) && !player._knockbackLedgeFall
-            && player.footing >= proneRecoveryFootingTarget(player)) {
+            && proneRecoveryReady(player)) {
           beginSomersaultRecovery();
         }
       }
@@ -9345,19 +10287,22 @@
       const SOMERSAULT_RECOVERY_DUR_S = 0.5;
       function beginSomersaultRecovery() {
         if (!player.prone || player.somersaultRecovering) return false;
-        if (player.footing < proneRecoveryFootingTarget(player)) {
-          showToast("Footing hasn't recovered enough yet.", false);
+        if (!proneRecoveryReady(player)) {
+          if (!window.ResourceSystem?.hasTimedDebuff?.(player, 'knockdown'))
+            showToast("Footing hasn't recovered enough yet.", false);
           return false;
         }
         player.somersaultRecovering = true;
         window.ImpactRagdollPlayback?.beginRecoveryArc(SOMERSAULT_RECOVERY_DUR_S, () => {
           player.prone = false;
+          player._temporaryKnockdownProne = false; // Reset the 1.75x state after the normal in-place get-up arc.
           player.somersaultRecovering = false;
         });
         return true;
       }
 
       function performDodge() {
+        if (window.PlayerDowned?.isDowned?.()) return false; // A downed player can only crawl.
         if (window.Mounts?.rideState && window.Mounts.rideState !== 'none') return false; // Mounted movement owns cliff leaps; on-foot rolls cannot finish while riding.
         if (window.DevRandomRuinSimplePuzzles?.releaseActiveRope?.()) return true; // Dodge is the native rope jump-off input; release carries pendulum tangent instead of starting an evasive roll.
         // While prone, the automatic get-up owns the normal recovery. Keep
@@ -9376,8 +10321,14 @@
           dirX = Math.cos(aimAngle);
           dirY = Math.sin(aimAngle);
         }
-        if (window.ResourceSystem) window.ResourceSystem.spendStamina(player, DODGE_STAMINA_COST, 'dodge');
-        else player.stamina = Math.max(0, player.stamina - DODGE_STAMINA_COST);
+        const normalDodgeStaminaBefore = Number(player.stamina) || 0; // Used only to determine whether this roll is a paid escape from neck/root grapples.
+        const dodgeSpendResult = window.ResourceSystem
+          ? window.ResourceSystem.spendStamina(player, DODGE_STAMINA_COST, 'dodge')
+          : null; // The authoritative spend result includes enhancements, discounts and black-Stamina overdraw.
+        if (!window.ResourceSystem) player.stamina = Math.max(0, player.stamina - DODGE_STAMINA_COST);
+        player._grappleEscapeDodgePaid = !!(dodgeSpendResult
+          ? Number(dodgeSpendResult.excess) <= 0
+          : normalDodgeStaminaBefore >= DODGE_STAMINA_COST); // Ordinary exhausted rolls still animate; only fully funded rolls break a lethal grab.
         window.KnockbackCollisionImpact?.coolBurningOnDodge?.(player);
         player.dodging = true;
         player.dodgeT = DODGE_DUR_S;
@@ -9385,6 +10336,7 @@
         player.dodgeDirY = dirY;
         player.dodgeCooldownT = DODGE_COOLDOWN_S;
         player.invulnUntil = performance.now() + DODGE_IFRAME_MS;
+        window.CombatVocalizations?.playDodge?.(player);
         window.CombatTutorial?.observe?.('dodge');
         return true;
       }
@@ -9425,17 +10377,29 @@
       }
 
       function performContextAction() {
+        if (window.PlayerDowned?.isDowned?.()) return; // While down, only the held Dodge input may cause a respawn; never climb/travel on a tap.
+        // During a Headtaker grip, dodge must take priority over nearby doors,
+        // climbing, fishing panels and other context actions: it is the only escape.
+        if (window.Combat?.attach?.attachersOf?.(player)?.some(attacker => attacker._attachment?.id === 'maskbound-headtaker')) {
+          performDodge();
+          return;
+        }
         if (window.Fishing?.state?.active) { window.Fishing.close(); return; } // Dodge dismisses every fishing phase through the shared camera/pose cleanup.
         if (window.DevRandomRuinSimplePuzzles?.releaseActiveRope?.()) return; // Rope traversal outranks climb/door context while attached.
+        if (window.ClimbSystem?.cliffDodge?.()) return; // On a cliff face or ledge, Dodge is a projectile-dodging sidestep and never lets go; leaving the rock is the Jump action.
         if (player.climbing || player.dodging) return;
         if (_pendingSpotTransition) { startSceneTransition(() => performTravel(_pendingSpotTransition)); return; }
-        // Climbing is now the forward-dodge context action. Sideways/backward
-        // dodges remain ordinary evasive movement and cannot grab a nearby tree.
-        const climb = window.ClimbSystem.getClimbTarget();
-        if (climb && (climb.type === 'branchJumpDown' || dodgeInputIsForward())) { window.ClimbSystem.startClimb(climb); return; }
-        const worldClimb = window.ClimbSystem.getWorldClimbTarget?.(); // Non-grid ledges (ruins) climb from the same forward dodge.
-        if (worldClimb && dodgeInputIsForward()) { worldClimb.start(); return; }
         performDodge();
+      }
+
+      // Jump/Climb: the one deliberate vertical action (Space, pad A when nothing
+      // else wants it, touch inner ring). Climbing used to be the forward dodge.
+      function performJumpAction() {
+        if (window.PlayerDowned?.isDowned?.() || player.prone) return false;
+        if (window.DevRandomRuinSimplePuzzles?.releaseActiveRope?.()) return true; // Rope traversal: jump lets go, as dodge used to.
+        if (window.ClimbSurfaces?.release?.()) return true; // Attached climbable wall: jump lets go.
+        if (player.dodging) return false;
+        return !!window.ClimbSystem?.jumpAction?.();
       }
 
       // Combat-ability movement: a short forward step/leap toward the aim
@@ -9474,6 +10438,9 @@
         player.lungeDur = durationS;
         player.lungeStartX = player.x;
         player.lungeStartY = player.y;
+        player.lungeOriginX = player.x; // Immutable record of where this attack's lunge began (lungeStartX/Y are re-seated when a flight freezes); read by hanging ropes to turn lunge distance into swing force.
+        player.lungeOriginY = player.y;
+        player.lungeOriginMs = nowMs;
         const aimDirection = currentPlayerMeleeAimDirection(); // Used to pitch this lunge and its 3D hit cone from the centered reticle.
         const aimYaw = Math.atan2(aimDirection.z, aimDirection.x);
         const aimPitch = Math.asin(window.FormatUtils.clamp(aimDirection.y, -1, 1));
@@ -9535,19 +10502,9 @@
       // True if any live hostile in the current area is already inside the
       // given hit cone from the player's current position/facing — used to
       // cut a combat lunge short (see beginCombatLunge/updateMovement).
-      function isHostileInLungeCone(hitTest) {
-        if (!hitTest) return false;
-        for (const c of hostileObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea || c._denHidden) continue;
-          if (window.Combat?.meleeHit?.(player, c, {
-            rangePx: hitTest.rangePx,
-            halfConeRad: hitTest.halfConeRad,
-            yaw: Math.atan2(player.lungeDirY, player.lungeDirX),
-            pitch: player.lungeAimPitch || 0,
-          })) return true;
-        }
-        return false;
-      }
+      // The lunge-stop target test (hostiles plus any Targetable with the 'lungeStop'
+      // capability) now lives in js/lunge-targeting.js.
+      function isHostileInLungeCone(hitTest) { return window.LungeTargeting.hasTargetInCone(hitTest); }
 
       // ── World travel: transition spots + shared NPC routes (map editor data) ─
       // Authored in docs/tools/map-editor and carried in hobunji_farm_layout_v3
@@ -9563,6 +10520,7 @@
       const routeGraphsByArea  = new Map();
       const npcWalkers         = [];
       const scheduledNpcRecords = new Map(); // Used to respawn recurring visitors at their authored entrance on later visits.
+      const npcSpawnDiagnostics = new Map(); // Retains scheduled-avatar build outcomes for mobile doorstep diagnostics.
       const visitorSpawnPending = new Set(); // Used to prevent duplicate asynchronous visitor avatar builds.
       window._npcWalkers = window.NpcPathfinding?.trackWalkerArray?.(npcWalkers) || npcWalkers; // Pushed walkers get collision-aware movement (js/npc-pathfinding.js).
       const PLAYER_ACTION_LOCK_ID = 'player'; // Used by shared interaction locks at player movement/tool/action chokepoints.
@@ -9592,7 +10550,7 @@
       // sprite/scale is known.
       let playerToolBaseX = -0.45, playerToolBaseY = 0.45;
       let playerArmLength = 0.558; // Anatomical species+gender reach cached at avatar rebuild; retained independently from weapon pose orbit.
-      let playerPoseOrbitScale = 1; // Explicit species+gender weapon-distance multiplier authored separately from anatomy.
+      let playerPoseOrbitScale = 1; // Explicit species+gender weapon-distance multiplier authored separately from anatomy: a number, or per-axis { x, y, z }.
       let playerPoseCentroidY = 0.45; // Floor-relative visual/body centroid cached from the actual portrait hierarchy for per-frame pose scaling.
       // The player's own rendered bust-portrait model height (avatarHeight in
       // refreshPlayerAvatar) — recomputed there alongside playerToolBaseX/Y.
@@ -9854,19 +10812,11 @@
       // itemKey -> () => { getButtons(), onAction() } factory, for furniture
       // whose placement should also register a _buildingInteractables entry.
       const BUILDING_FIXTURE_INTERACTABLES = {
+        groomingKitFurniture: () => makeGroomingInteractable(),
         hearthFurniture: () => makeCookingInteractable(),
         loomFurniture: () => makeLoomInteractable(false), // Map-authored Simple Looms share the same ordinary interaction object as player-placed ones.
         advancedLoomFurniture: () => makeLoomInteractable(true), // Map-authored Advanced Looms opt into overpass weaving through the same interaction path.
-        alchemyTableFurniture: () => ({
-          getButtons() {
-            return [{ icon: '⚗️', label: 'Brew Potion', action: 'obj_alchemy', style: 'primary', allowed: true }];
-          },
-          onAction(action) {
-            if (action !== 'obj_alchemy') return { ok: false, message: 'Unknown action.' };
-            openMenu('alchemy');
-            return { ok: true, message: 'Opened the alchemy table.' };
-          },
-        }),
+        alchemyTableFurniture: () => makeAlchemyTableInteractable(), // Town and player cauldrons share the same interactive action.
         // Barn-interior fixtures — synthesizeBarnInteriorMapData bakes
         // barnId/troughIndex right onto the furniture record so these
         // factories (called with that record as their one argument) don't
@@ -9929,6 +10879,7 @@
       };
       let _currentBuildingMapId = null;
       let _pendingEntrySpawnFromExit = false; // true when enterBuilding fired before scene loaded
+      let _pendingArrivalFromArea = null; // Source area retained until an asynchronously loaded interior can resolve its inward door direction.
       let _pendingEntrySpotId = ''; // Named locale-cavern connector requested before its destination scene finished generating.
       let _workspaceMaps = null;       // all maps from town-workspace-v1.json, cached for building interiors
       const _rawExteriorMaps = new Map(); // Keeps base arrays intact when live calendar layouts are reapplied.
@@ -9981,6 +10932,7 @@
         getInteriorGrid: () => interiorGrid,
         getTownGrid: () => townGrid,
         getTownScene: () => townScene,
+        DECORATIVE_FURNITURE_DEFS, // Shared exterior chair definitions for direct interaction and table membership.
         getTownZone: () => _townZone,
         getHousePieces: () => housePieces,
         getFarmBuildings: () => farmBuildings,
@@ -10180,6 +11132,7 @@
         }; // Restricts tile-owned meshes to one streaming chunk.
         const includeTiles = options.includeTiles !== false; // Lets the global path layer build without duplicating ordinary tiles.
         const includeGlobalPath = options.includeGlobalPath !== false; // Keeps the one zone-wide route mesh outside streamed chunks.
+        const komaCosmeticSites = includeTiles ? window.RoadsideKomaHedges?.hedgePlan?.(zGrid, mapId) : null; // Cached entire-zone, generated from real roads but emitted in chunk-local lifecycle.
         const _floorBuckets = new Map();
         const _addToBucket = (matKey, geo, x, y, z) => {
           if (!geo) return;
@@ -10232,6 +11185,21 @@
           const cx = c + 0.5, cz = r + 0.5;
           const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
 
+          // Guaranteed long Koma hedgerows are *decorative*, not SHRUB terrain:
+          // keep the roadside shoulder walkable and collision/pathfinding/save state untouched.
+          // Adding to this chunk's floorMeshes also guarantees unload/abort cleanup.
+          if (tile.type === TileType.GRASS && komaCosmeticSites?.has(c + ',' + r)) {
+            const komaBush = window.FoliageGenerator?.buildKomaHedgeBushMesh?.(c, r); // Cached variant geometry and material, never regenerated from scratch for each tile.
+            if (komaBush) {
+              komaBush.position.set(cx, tileSurfaceY(TileType.GRASS) + tierY, cz);
+              komaBush.userData.roadsideKomaCosmetic = true; // Exposes planned bush ownership to Pixel Probe and mobile diagnostics.
+              komaBush.userData.skipOcclusionFade = true; // Short decorative plants never trigger the player/companion camera fade.
+              zScene.add(komaBush);
+              _markOutline(komaBush);
+              meshes.push(komaBush);
+            }
+          }
+
           // A genuine plateau-top tile is normally left to buildPlateauMesa's
           // own continuous lid entirely (skipFloor) — but that lid already
           // leaves a deliberate hole over any CARVED_TILE_TYPES cell (see
@@ -10265,7 +11233,9 @@
               for (const [geometry, matKey] of [[stoneGeo, TileType.ROCK], [grassGeo, TileType.GRASS]]) {
                 if (!geometry) continue;
                 geometry.computeVertexNormals();
-                const rockMesh = new THREE.Mesh(geometry, resolveTileMat(mapId, matKey)); // One material layer of the removable mound.
+                const rockMaterial = matKey === TileType.ROCK ? window.OreRockTextures.materialFor(THREE, tile.oreKey || tile.oreKind, ORE_DEFS) : resolveTileMat(mapId, matKey); // Metal-colored rock with optional verdigris markings, shared with caves and the town mine.
+                const rockMesh = new THREE.Mesh(geometry, rockMaterial); // One material layer of the removable mound.
+                if (matKey === TileType.ROCK) window.OreRockTextures.fitRockMesh(rockMesh, `${mapId}:${c},${r}`); // Preserve original continuous rock UVs after terrain displacement.
                 rockMesh.castShadow = rockMesh.receiveShadow = true;
                 rockMesh.userData.wildernessChunkOwnsGeometry = true;
                 _markTerrainEdgeId(rockMesh, _terrainCategoryFor(matKey));
@@ -10306,18 +11276,25 @@
               // (fruitBush/mushroomPatch/unknown/hand-authored data with no
               // floraKind at all — which also covers every other zone that
               // has no dedicated tree species).
+              const isDeadTree = mapId === 'map_western_slope' && (tile.floraKind === 'copse' || !tile.floraKind); // Existing slope copses become harvestable dead trees, including saved layouts.
+              const isDeadBush = mapId === 'map_western_slope' && !isDeadTree; // All other slope ground vegetation uses bare woody bushes.
               const isTreeZone = mapId === 'map_northern_cliffs' || EXTERIOR_ZONES[mapId]?.cloudForest;
               const isCrownedPine = isTreeZone && mapId === 'map_northern_cliffs' && (tile.floraKind === 'copse' || !tile.floraKind);
               const isShadewood   = isTreeZone && EXTERIOR_ZONES[mapId]?.cloudForest && (tile.floraKind === 'copse' || !tile.floraKind);
               const isBush   = tile.floraKind === 'bush';
               const isStump  = tile.floraKind === 'beehive';
-              const vegGroup = isCrownedPine ? window.FoliageGenerator.buildCrownedPineMesh(c, r)
+              const isKomaHedge = !isDeadTree && !isDeadBush && !isCrownedPine && !isShadewood && !isStump
+                && window.RoadsideKomaHedges?.isHedgeBush?.(zGrid, c, r, mapId); // Only shrub lines beside Slagothim wilderness roads.
+              const vegGroup = isDeadTree ? window.FoliageGenerator.buildDeadTreeMesh(c, r)
+                             : isDeadBush ? window.FoliageGenerator.buildDeadBushMesh(c, r)
+                             : isCrownedPine ? window.FoliageGenerator.buildCrownedPineMesh(c, r)
                              : isShadewood   ? window.FoliageGenerator.buildShadewoodMesh(c, r)
+                             : isKomaHedge   ? window.FoliageGenerator.buildKomaHedgeBushMesh(c, r)
                              : isBush        ? window.FoliageGenerator.buildWildernessBushMesh(c, r)
                              : isStump       ? window.FoliageGenerator.buildStumpMesh(c, r)
                              : window.FoliageGenerator.buildShrubMesh(c, r);
-              const isNativeBuild = isCrownedPine || isShadewood || isBush || isStump;
-              if (isCrownedPine || isShadewood) {
+              const isNativeBuild = isDeadTree || isDeadBush || isCrownedPine || isShadewood || isBush || isStump;
+              if (isDeadTree || isCrownedPine || isShadewood) {
                 // Their visible trunk base is centered on this solid SHRUB
                 // tile. Projectile cover can therefore use the existing tile
                 // collision instead of raycasting the full procedural tree.
@@ -10341,7 +11318,7 @@
               // not because they were occluding one another, but because
               // shrubs everywhere kept getting flagged as the "blocking
               // tree" for one or both of them.
-              if (isBush || !isNativeBuild) vegGroup.userData.skipOcclusionFade = true;
+              if (isDeadBush || isBush || !isNativeBuild) vegGroup.userData.skipOcclusionFade = true;
               const groundY = tileSurfaceY(TileType.GRASS) + tierY;
               vegGroup.position.set(cx, groundY, cz);
               if (isShadewood) {
@@ -10525,7 +11502,7 @@
           const felledEntries = _zoneFelledTreePersist.get(mapId);
           if (felledEntries?.length) {
             const stillFelled = felledEntries.filter(entry => {
-              const due = calendar.day - entry.feltDay >= TREE_REGROWTH_DAYS;
+              const due = calendar.day - entry.feltDay >= (entry.regrowDays || TREE_REGROWTH_DAYS); // Collapsed hive stumps regrow on their own longer clock.
               if (!due && zGrid[entry.row]?.[entry.col]) zGrid[entry.row][entry.col].type = TileType.GRASS;
               return !due;
             });
@@ -10597,6 +11574,7 @@
         // 1-tile margin (exactly how much smaller each plateau sub-map is than its
         // parent, so that margin is the cliff-face band).
         _zoneMesaMeshGroups.set(mapId, window.ZonePlateauMesa.buildZoneMesaMeshes(zScene, mapId, plateauMesas, zGrid));
+        window.WildernessBedrock?.build(zScene, zGrid, ZCOLS, ZROWS, mapId); // Persistent cliff-material backing under every heightfield gap/water drop — see js/wilderness-bedrock.js.
 
         window.ZoneDenTotemFeatures.buildAnimalDenMeshes(zScene, zGrid, zoneData?.dens || [], mapId);
         window.RuinSites?.buildZoneMeshes?.(zScene, zGrid, mapId); // Ruin entrances + burrow holes (authored furniture pieces).
@@ -10649,6 +11627,7 @@
 
         const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions, occlusionMeshes, canopyZones, cullables, chunkController: null, pathNet: zonePathNet };
         _zoneScenes.set(mapId, info);
+        rebindZoneResidents(mapId, info); // Creatures that outlived an evicted copy of this zone point at the new scene and grid.
 
         const floorRegistry = _zoneFloorMeshGroups.get(mapId); // Tracks global path meshes plus every currently loaded chunk floor object.
         const waterRegistry = _zoneWaterMeshes.get(mapId); // Tracks only resident water meshes for shared water animation/debug consumers.
@@ -10793,6 +11772,19 @@
         // limbo (see makeNpcWalker/transferToArea) -- drop them in now that it's here.
         for (const w of npcWalkers) {
           if (w.root._pendingZoneAdd === mapId) {
+            // The NPC may have arrived before its zone grid existed. Validate against the NOW-built
+            // wilderness terrain before attaching, otherwise the follower remains inside entry cliffs.
+            const fromC = Math.floor(w.root.position.x), fromR = Math.floor(w.root.position.z); // Cached pre-build entry coordinate for relocation diagnostics.
+            const arrival = window.NpcPathfinding?.nearestWalkableTile?.(mapId, fromC, fromR) || { c: fromC, r: fromR }; // Uses the loaded zone grid after _zoneScenes.set().
+            if (arrival.c !== fromC || arrival.r !== fromR) {
+              w.root.position.set(arrival.c + 0.5, npcSurfaceY(mapId, arrival.c, arrival.r), arrival.r + 0.5);
+              w._legsPrevX = w.root.position.x; w._legsPrevZ = w.root.position.z; // Prevent a teleport from looking like a super-speed run.
+              window.__farmLog?.(`[npc zone entry] ${w.rec?.id || 'npc'} repositioned ${fromC},${fromR} → ${arrival.c},${arrival.r} in ${mapId}`, 'npc');
+            }
+            // Paths tried while the zone's terrain grid was unavailable are invalid
+            // even when this arrival tile itself happened to be safe.
+            w.resetRouteState?.();
+            w._npcPathFailKey = null; w._npcPathFailUntil = 0;
             w.root._pendingZoneAdd = null;
             zScene.add(w.root); w.root._npcScene = zScene;
           }
@@ -10909,11 +11901,10 @@
           exitBuilding();
         } else if (t.target === 'building') {
           const proceduralMineTarget = !!window.TownMine?.floorFromMapId?.(t.targetMapId); // Used to let the generated floor choose its guaranteed-walkable entrance instead of stale 0,0 coordinates.
-          const mineDescentFloor = t.mineDynamicDescent && proceduralMineTarget ? window.TownMine.floorFromMapId(t.targetMapId) : null; // Used only for the discovered-hole loading cue/heading, never ladder or camp travel.
-          enterBuilding(t.targetMapId, proceduralMineTarget ? undefined : t.targetCol, proceduralMineTarget ? undefined : t.targetRow, t.targetSpotId || '', mineDescentFloor ? `Floor ${mineDescentFloor}` : '');
-          if (mineDescentFloor) {
-            window.Music?.playGameplayCue?.('progressDeeper'); // The authored descent sting belongs only to a discovered hole, never ladder shortcuts or ordinary building entry.
-            window.__farmLog?.('[mine] descending through hole to floor ' + mineDescentFloor, 'mine');
+          enterBuilding(t.targetMapId, proceduralMineTarget ? undefined : t.targetCol, proceduralMineTarget ? undefined : t.targetRow, t.targetSpotId || '');
+          if (t.mineDynamicDescent && proceduralMineTarget) {
+            window.LocationArrival.mineDescent(t.targetMapId); // Shows the mine floor title and plays progressDeeper together after the loader closes.
+            window.__farmLog?.('[mine] descending through hole to floor ' + proceduralMineTarget, 'mine');
           }
         } else if (t.target === 'interior') {
           if (currentArea !== 'interior') enterInterior();
@@ -11249,6 +12240,7 @@
         const horizontal = Math.hypot(direction.x, direction.z);
         if (direction.lengthSq() < 1e-8) return false;
         const yawDeg = Math.max(-maxYawDeg, Math.min(maxYawDeg, Math.atan2(direction.x, direction.z) * 180 / Math.PI));
+        if (debugEntity?.perpState) window.PerpRotation.setHeadtrackHint?.(debugEntity.perpState, Math.atan2(targetWorld.x - selfEyeWorld.x, targetWorld.z - selfEyeWorld.z)); // World gaze bearing: 'headtrack' tier of the body's dead-zone corrective direction.
         const pitchDeg = Math.max(-maxPitchDeg, Math.min(maxPitchDeg, -Math.atan2(direction.y, Math.max(.0001, horizontal)) * 180 / Math.PI));
         neckJoint.rotation.set(pitchDeg * Math.PI / 180, window.PerpRotation.clampedNeckYaw?.(neckJoint, selfRootPosition, yawDeg * Math.PI / 180, maxYawDeg * Math.PI / 180, camera.position) ?? yawDeg * Math.PI / 180, 0);
         return true;
@@ -11293,6 +12285,23 @@
           walker._ambientLookActive = false;
         }
       }
+
+      // Allocation-free callbacks for the invisible movement head target. The
+      // walker simulation owns priority/area, while the tiny shared module
+      // owns the travel threshold, carrot position and restoration boundary.
+      const npcMovementHeadLookOptions = {
+        currentArea: '', // Set per update pass to skip off-area cosmetic neck solves.
+        hasScriptedGaze: false, // Set per walker: cutscene/dialogue have higher priority than locomotion.
+        eyeHeightRatio: PLAYER_FACE_HEIGHT_RATIO, // Same upright eye-height convention used by dialogue.
+        getFaceWorld: _npcFaceWorldPosition, // Samples the live skinned head after the body-lean pivot is rotated.
+        makeWorldPoint: point => new THREE.Vector3(point.x, point.y, point.z), // Converts the lightweight carrot target to the existing THREE solver.
+        aimAtWorldPoint: (walker, point, eye) => _aimNeckAtWorldPoint(
+          walker.neckJoint, walker.root.position, walker.avatarHeight, point,
+          window.NpcMovementHeadTarget.MAX_YAW_DEG,
+          window.NpcMovementHeadTarget.MAX_PITCH_DEG,
+          walker, eye,
+        ), // Reuses ordinary dialogue yaw/pitch limits and the mobile head-look debug ray.
+      };
 
       function applyNpcDialogueFacingExact(walker, rawRot, lerp) {
         if (!walker?.root || !Number.isFinite(rawRot)) return;
@@ -11409,6 +12418,7 @@
         return {
           icon: cfg.icon || '💬',
           label: name ? `${cfg.label || 'Talk'}: ${name}` : (cfg.label || 'Talk'),
+          holdLabel: window.NpcCommandWheel?.hasOptions?.(nearbyNpcWalker) ? 'More' : '', // Floating list adds Hold <bound input> More without changing the ordinary Talk label.
           action: npcDialogueAction(),
           style: cfg.style || 'primary',
           allowed: true,
@@ -11524,16 +12534,19 @@
       // placed — no map author has to hand-add an npcStations entry for
       // player-placed furniture. Deterministic id (area+tile) so placing the
       // same spot twice is idempotent and a schedule rule survives a reload.
-      function furnitureNpcStationId(area, col, row) {
-        return `furniture_chair_${area}_${col}_${row}`;
+      function furnitureNpcStationId(area, col, row, furnitureId = null) {
+        // Unique instance ids preserve several independent chairs within the same navigation tile.
+        return furnitureId ? `furniture_chair_${area}_${furnitureId}` : `furniture_chair_${area}_${col}_${row}`;
       }
-      function registerChairNpcStation(furnitureKey, col, row, rotYDeg, area, extraRoles, lookAt) {
+      function registerChairNpcStation(furnitureKey, col, row, rotYDeg, area, extraRoles, lookAt, furnitureId = null, stationId = null) {
         const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
         if (!def?.sit) return null;
-        const id = furnitureNpcStationId(area, col, row);
+        const id = stationId || furnitureNpcStationId(area, col, row, furnitureId);
+        // NPC pathfinding indexes whole grid tiles; the furniture mesh may have a fractional center.
+        const tileCol = Math.floor(col), tileRow = Math.floor(row);
         registerNpcStations([{
-          id, label: def.name,
-          area, c: col, r: row, rotY: rotYDeg || 0, pose: 'sit', furnitureKey, seatIndex: 0,
+          id, label: def.name, furnitureId: furnitureId || null,
+          area, c: tileCol, r: tileRow, rotY: rotYDeg || 0, pose: 'sit', furnitureKey, seatIndex: 0,
           // Every sittable piece of furniture is automatically a 'sit'
           // free-time opportunity (design doc §14/§16) — no per-chair
           // authoring needed for the Activity Planner's free-time/break
@@ -11551,9 +12564,9 @@
         }], area);
         return id;
       }
-      function unregisterChairNpcStation(furnitureKey, col, row, area) {
+      function unregisterChairNpcStation(furnitureKey, col, row, area, stationId = null) {
         if (!DECORATIVE_FURNITURE_DEFS[furnitureKey]?.sit) return;
-        npcStationsById.delete(furnitureNpcStationId(area, col, row));
+        npcStationsById.delete(stationId || furnitureNpcStationId(area, col, row));
       }
 
       function sceneForNpcArea(area) {
@@ -11650,7 +12663,8 @@
           window.NpcWardrobe?.captureDefaultOutfitTraits?.(rec); // Freeze authored default-clothing traits before save restoration/manual outfit overrides can redefine this NPC's gift-acceptance style.
           if (rec?.id) scheduledNpcRecords.set(rec.id, rec);
           const target = resolveNpcScheduleTarget(rec);
-          if (!target) { if (!rec?.visitorPresence) deferred.push(rec); continue; }
+          npcSpawnDiagnostics.set(rec.id, { stage: target ? 'Queued for avatar build' : 'No schedule target', error: null });
+          if (!target) { if (!window.NpcScheduling.hasPresenceSchedule(rec)) deferred.push(rec); continue; }
           spawnable.push({ rec, target });
         }
         // Each makeNpcWalker is a long async build (portrait composite, world
@@ -11667,10 +12681,18 @@
         const spawnWorker = async () => {
           while (nextSpawn < spawnable.length) {
             const { rec, target } = spawnable[nextSpawn++];
-            if (rec?.visitorPresence) visitorSpawnPending.add(rec.id);
-            try { const w = await makeNpcWalker(rec, target); if (w) npcWalkers.push(w); }
-            catch (e) { console.warn('NPC walker failed for schedule', rec?.id, e); }
-            finally { if (rec?.visitorPresence) visitorSpawnPending.delete(rec.id); }
+            if (window.NpcScheduling.hasPresenceSchedule(rec)) visitorSpawnPending.add(rec.id);
+            npcSpawnDiagnostics.set(rec.id, { stage: 'Building avatar', error: null });
+            try {
+              const w = await makeNpcWalker(rec, target); // Records null returns separately from asset/build exceptions.
+              if (w) npcWalkers.push(w);
+              npcSpawnDiagnostics.set(rec.id, { stage: w ? 'Walker created' : 'Avatar build returned no walker', error: null });
+            }
+            catch (e) {
+              npcSpawnDiagnostics.set(rec.id, { stage: 'Avatar build failed', error: String(e?.message || e) });
+              console.warn('NPC walker failed for schedule', rec?.id, e);
+            }
+            finally { if (window.NpcScheduling.hasPresenceSchedule(rec)) visitorSpawnPending.delete(rec.id); }
           }
         };
         await Promise.all(Array.from({ length: Math.min(NPC_SPAWN_CONCURRENCY, spawnable.length) }, spawnWorker));
@@ -11703,11 +12725,22 @@
           for (const rec of records) {
             if (npcWalkers.some(walker => walker.rec?.id === rec.id) || visitorSpawnPending.has(rec.id)) continue;
             const target = resolveNpcScheduleTarget(rec);
-            if (!target) { stillDeferred.push(rec); continue; }
-            if (rec?.visitorPresence) visitorSpawnPending.add(rec.id);
-            try { const w = await makeNpcWalker(rec, target); if (w) { npcWalkers.push(w); console.log(`[NPC] ${rec.id} spawned on retry ${attempt + 1}`); } }
-            catch (e) { console.warn('NPC walker failed for schedule (retry)', rec?.id, e); }
-            finally { if (rec?.visitorPresence) visitorSpawnPending.delete(rec.id); }
+            if (!target) {
+              npcSpawnDiagnostics.set(rec.id, { stage: attempt + 1 >= MAX_ATTEMPTS ? 'No schedule target; retries exhausted' : 'Waiting for schedule target', error: null });
+              stillDeferred.push(rec); continue;
+            }
+            if (window.NpcScheduling.hasPresenceSchedule(rec)) visitorSpawnPending.add(rec.id);
+            npcSpawnDiagnostics.set(rec.id, { stage: 'Building avatar on retry', error: null });
+            try {
+              const w = await makeNpcWalker(rec, target); // Keeps retry outcomes visible alongside initial spawn results.
+              if (w) { npcWalkers.push(w); console.log(`[NPC] ${rec.id} spawned on retry ${attempt + 1}`); }
+              npcSpawnDiagnostics.set(rec.id, { stage: w ? 'Walker created on retry' : 'Avatar retry returned no walker', error: null });
+            }
+            catch (e) {
+              npcSpawnDiagnostics.set(rec.id, { stage: 'Avatar retry failed', error: String(e?.message || e) });
+              console.warn('NPC walker failed for schedule (retry)', rec?.id, e);
+            }
+            finally { if (window.NpcScheduling.hasPresenceSchedule(rec)) visitorSpawnPending.delete(rec.id); }
           }
           if (!stillDeferred.length) return;
           if (attempt + 1 < MAX_ATTEMPTS) _retrySpawnDeferredNpcs(stillDeferred, attempt + 1);
@@ -11803,11 +12836,14 @@
         isBuildingArea: _isBuildingArea,
         furnitureBlocksMovementAt,
         npcGridForArea,
+        npcSurfaceY, // Cliff route graph uses the same tier surface as scheduled NPCs.
+        tileSurfaceYInArea, // Injected so graph builds never depend on tile coordinate metadata.
         npcMovementConfig,
         npcTransitionPool,
         buildingScenes: _buildingScenes,
         loadBuildingScene,
         buildingSpawnFromExit,
+        npcSeatTransformForTarget, // Shared seat authority used by collision checks and final approach pathing.
       });
       const {
         isNpcTileWalkable,
@@ -11840,6 +12876,8 @@
         if (target?.pose !== 'sit' || !target.furnitureKey) return null;
         const def = DECORATIVE_FURNITURE_DEFS[target.furnitureKey];
         if (!def?.sit) return null;
+        const placedSeat = window.FurnitureTableSystem?.seatTransform(target.area, target); // Named chairs retain their table binding and locale transform.
+        if (placedSeat) return placedSeat;
         return resolveSeatWorldTransform(
           target.furnitureKey, target.c, target.r, def.fw || 1, def.fd || 1,
           target.rotY || 0, target.seatIndex || 0
@@ -11852,7 +12890,7 @@
         window.NpcWardrobe?.applyOutfitOverrideToRecord?.(rec); // Applies a restored manual outfit before profile construction, including deferred/visitor NPCs that had no walker when save restoration ran.
         const guessSpecies = (rec?.species || '').toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
         const appearance = (rec?.appearance && rec.appearance.speciesId) ? rec.appearance : {
-          speciesId: NPC_SPECIES_IDS.includes(guessSpecies) ? guessSpecies : undefined,
+          speciesId: (NPC_SPECIES_IDS.includes(guessSpecies) || Object.hasOwn(window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species || {}, guessSpecies)) ? guessSpecies : undefined,
           gender: rec?.gender === 'female' ? 'female' : 'male',
           cosmetics: {},
         };
@@ -11904,7 +12942,8 @@
         );
         const baseAvatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W; // Unscaled model height produced by the portrait/animal-plane builder.
         const avatarHeight = namedAnimalDef ? baseAvatarHeight * namedAnimalSizeScale.y : baseAvatarHeight; // Dialogue/interaction height follows the actually rendered animal size.
-        const avatarGroundLift = namedAnimalDef
+        const authoredGroundLift = avatarGroup.userData?.avatarGroundLift; // Compound avatars can own a floor origin instead of the ordinary centered portrait origin.
+        const avatarGroundLift = Number.isFinite(authoredGroundLift) ? authoredGroundLift : namedAnimalDef
           ? (Number.isFinite(namedAnimalGroundOffset) ? namedAnimalGroundOffset : avatarHeight / 2)
           : avatarHeight / 2; // Animal ground lift exactly mirrors makeCreatureEntity; humanoids keep their historical center placement.
         if (namedAnimalDef) window.CreatureGenetics.applyCreatureBillboardScale(avatarGroup, namedAnimalSizeScale); // Grehlr size class owns world scaling before any NPC state wrapper.
@@ -11930,8 +12969,24 @@
           groundShadow.scale.set(animalShadow.radiusX, 1, animalShadow.radiusZ);
         }
         root.add(groundShadow);
-        const alcoholPoseGroup = window.NpcCharacterState?.attachAlcoholPose?.(THREE, root, avatarGroup, rec?.id);
-        if (!alcoholPoseGroup) root.add(avatarGroup);
+        // Humanoids get one floor-relative rig root owning portrait, hands AND
+        // feet (the NPC equivalent of the player's playerMesh), so
+        // HobunjiCharacterRigScale's species body scale reaches all three. It
+        // used to land on the lean pivot (the hands' parent) and leave NPC feet
+        // at 1.0 under a scaled body.
+        const npcCharacterRigRoot = namedAnimalDef ? root : new THREE.Group();
+        if (npcCharacterRigRoot !== root) {
+          npcCharacterRigRoot.name = 'npc_character_rig_root';
+          npcCharacterRigRoot.userData.hobunjiCharacterRigScaleRoot = true; // Hand attachment scales this instead of the lean pivot (HobunjiCharacterRigScale.rigScaleRootFor).
+          root.add(npcCharacterRigRoot);
+        }
+        const alcoholPoseGroup = window.NpcCharacterState?.attachAlcoholPose?.(THREE, npcCharacterRigRoot, avatarGroup, rec?.id);
+        const npcRunLeanPivot = namedAnimalDef ? null : new THREE.Group(); // Only humanoids need the shared full-body run lean; the separate feet and held tools remain unaffected.
+        if (npcRunLeanPivot) {
+          npcRunLeanPivot.name = 'npc_run_lean_visual';
+          (alcoholPoseGroup || npcCharacterRigRoot).add(npcRunLeanPivot);
+          npcRunLeanPivot.add(avatarGroup); // Reparent the portrait under an additive ground-anchored pivot, not under the animated foot bones.
+        } else if (!alcoholPoseGroup) root.add(avatarGroup);
 
         const spawnTarget = resolveNpcSpawnPosition(rec, initialTarget);
         const spawnArea = normalizeNpcArea(spawnTarget.area);
@@ -11950,17 +13005,19 @@
           root._npcScene = null; root._pendingTownAdd = false; root._pendingBuildingAdd = null; root._pendingZoneAdd = spawnArea;
         } else { scene.add(root); root._npcScene = scene; root._pendingTownAdd = false; root._pendingBuildingAdd = null; root._pendingZoneAdd = null; }
 
-        // Procedural feet attach directly under `root` (floor-anchored, Y=0),
+        // Procedural feet attach directly under the floor-anchored rig root (Y=0),
         // NOT under avatarGroup (offset up by avatarHeight/2 — see
         // buildSinglePlaneAvatarModel) — see docs/js/procedural-leg-animation.js.
         // Creatures/wildlife never call this; only humanoid species get legs.
-        const legs = namedAnimalDef ? null : window.ProceduralLegAnimation?.attach(THREE, root, {
+        const legs = namedAnimalDef ? null : window.ProceduralLegAnimation?.attach(THREE, npcCharacterRigRoot, {
           speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: profile?.bodyColors || appearance.bodyColors,
           modelWidth: avatarGroup.userData?.portraitModelWidth || MODEL_W, modelHeight: avatarHeight,
           handAttachY: avatarGroup.userData?.handAttachY,
           name: rec?.id || rec?.name || 'npc', profile, portraitSize: PORTRAIT_SIZE,
           drunkLossProvider: () => window.HobunjiDrunkGameplayBridge?.npcDrunkFraction?.(rec?.id) || 0,
           drunkBodyRoot: avatarGroup,
+          spine: window.HobunjiCharacterSpine?.resolve({ profile, npcRecord: rec, appearance }), // Elders' authored aging.hunch widens the stance and stride (js/character-spine.js).
+          portraitRig: avatarGroup.userData?.neckRig, // "Show bones" also draws the portrait's spine and neck.
         }) || null;
         // Pants are a skinned mesh on the avatar that follows these procedural legs; attachToLegs hooks them into
         // legs.update()/dispose(), so every existing leg tick/teardown site drives them (js/pants-garment-renderer.js).
@@ -11984,15 +13041,28 @@
           // portrait) — see faceNpcDialogueParticipants for the one place
           // this is driven today.
           neckJoint: avatarGroup.userData?.neckRig?.neckJoint || null,
-          legs, _legsPrevX: root.position.x, _legsPrevZ: root.position.z,
+          legs, _npcCharacterRigRoot: namedAnimalDef ? null : npcCharacterRigRoot, // BedLiePose tilts this floor-relative body/feet root while NPC pathing remains attached to root.
+          _legsPrevX: root.position.x, _legsPrevZ: root.position.z,
           state: 'idle', routeNode: null, routeTarget: null, routePath: null, _exitSpot: null, _entrySpot: null, _exitToArea: null,
           pause: 0, catchup: 1, catchupDur: 0,
+          _npcRunning: false, _npcRunMode: null, _npcRunLeanActive: false, _npcRunLeanPivot: npcRunLeanPivot, // Drives the same sprint body pitch as the player without pitching feet or held tools.
           rot: Math.PI / 2, desiredRot: Math.PI / 2, perpState: {}, stationToolKey: '', stationToolMesh: null, stationToolT: 0,
           _seatedStationKey: null, // Tracks enter/leave transitions for the mobile-visible schedule log.
           _ambientLookActive: false, // Whether _applyNpcAmbientLook currently owns this walker's neck joint (so it knows to ease back to rest once a station's `lookAt` no longer applies).
           // Keeps the logical facing separate from the rendered facing. The
           // latter is camera-relative, so even an idle NPC must refresh it as
           // the camera changes or a 90° station pose can become edge-on.
+          // Feeds the dead-zone corrective-direction hierarchy with this
+          // walker's actual travel direction (from root displacement between
+          // facing updates), or null while it isn't moving.
+          _reportDeadzoneMovementHint() {
+            const prevX = this._deadzonePrevX, prevZ = this._deadzonePrevZ;
+            this._deadzonePrevX = root.position.x; this._deadzonePrevZ = root.position.z;
+            const moving = this._moveSpeedTiles > 0.05;
+            const dx = Number.isFinite(prevX) ? root.position.x - prevX : 0, dz = Number.isFinite(prevZ) ? root.position.z - prevZ : 0;
+            if (moving && Math.hypot(dx, dz) > 1e-5) this._deadzoneMoveYaw = Math.atan2(dx, dz);
+            window.PerpRotation.setMovementHint(this.perpState, moving && Number.isFinite(this._deadzoneMoveYaw) ? this._deadzoneMoveYaw : null);
+          },
           applyFacingDeadzone(rawRot = this.desiredRot, lerp = 0.15) {
             if (!Number.isFinite(rawRot)) return;
             this.desiredRot = rawRot;
@@ -12002,6 +13072,7 @@
               this.rot += angleDiff(rawRot, this.rot) * animalTurnLerp; // Animal root follows its true movement heading; the camera-relative deadzone belongs on the two sprite cards, matching updateCreatureMesh.
               root.rotation.y = this.rot;
               this.animalPngRot ??= this.rot;
+              this._reportDeadzoneMovementHint();
               if (window.PerpRotation.CREATURE_PLANE_ROT_MODE === 'snap') {
                 const moving = this._moveSpeedTiles > 0.05;
                 const solved = window.PerpRotation.creatureSnapSwayTarget(this.perpState, rawRot, cameraRelativeCreaturePerps(), window.PerpRotation.CREATURE_PERP_DEAD_RAD, animalDt, moving);
@@ -12027,6 +13098,7 @@
               if (this.legs?.group) this.legs.group.rotation.y = 0;
               return;
             }
+            this._reportDeadzoneMovementHint();
             const stanceYaw = Number(this._heldBodyYawRad) || 0; // The portrait may also be turned by its held-weapon wrapper.
             this.rot = window.PerpRotation.clampedRotation(
               this.perpState, this.rot + stanceYaw, rawRot + stanceYaw, window.PerpRotation.cameraRelativePerpsAtWorldPosition(root.position, camera.position) || cameraRelativePerps(), lerp,
@@ -12042,6 +13114,9 @@
             this.routeTarget = null;
             this.routePath = null;
             this._routePathTargetKey = null;
+            this._gridPath = null; this._gridPathTargetKey = null; // Cross-area hops must not retain a path planned on a different terrain grid.
+            this._npcPathFailKey = null; this._npcPathFailUntil = 0; // Reset failed-path cooldown when an area becomes newly available.
+            this._wanderTarget = null; this._wanderGridPath = null;
           },
           // `spawnPos` is where the NPC reappears in `nextArea` — normally the
           // Spot they're entering through, never the final schedule target,
@@ -12064,7 +13139,8 @@
             } else { scene.add(root); root._npcScene = scene; }
             this.area = area;
             this.resetRouteState();
-            root.position.set(spawnPos.c + 0.5, npcSurfaceY(area, spawnPos.c, spawnPos.r), spawnPos.r + 0.5); // Buildings/caverns can carry nonzero rendered floor surfaces; never force animal/person walkers to Y=0.
+            const arrival = window.NpcPathfinding.nearestWalkableTile(area, spawnPos.c, spawnPos.r); // Never arrive off the destination map's walkable floor (js/npc-pathfinding.js).
+            root.position.set(arrival.c + 0.5, npcSurfaceY(area, arrival.c, arrival.r), arrival.r + 0.5); // Buildings/caverns can carry nonzero rendered floor surfaces; never force animal/person walkers to Y=0.
           },
           // Surface/interior-aware placeholder footstep hook — shared by every
           // NPC movement path since they all funnel through moveToward().
@@ -12072,14 +13148,11 @@
             if (this.area !== currentArea) return; // not in the player's current area; inaudible
             if (!window.AudioSystem?.footstepAdvance(this, distTiles * TILE)) return;
             const wx = root.position.x * TILE, wy = root.position.z * TILE;
-            const distToPlayer = Math.hypot(wx - player.x, wy - player.y);
-            if (distToPlayer > window.AudioSystem.FOOTSTEP_EARSHOT_PX) return;
-            // Linear, not squared — squared falloff made anything past ~30% of
-        // earshot drop to near-silence, which was most of the usable range.
-        const falloff = Math.max(0, 1 - distToPlayer / window.AudioSystem.FOOTSTEP_EARSHOT_PX);
-            const pan = Math.max(-1, Math.min(1, (wx - player.x) / window.AudioSystem.FOOTSTEP_PAN_RANGE_PX));
+            const source = { x: wx, y: wy, areaId: this.area, root }; // Real walker elevation stays attached to its audible footfalls.
+            const spatial = window.AudioSystem?.combatAudioSpatial(source, { earshotTiles: 9 });
+            if (!spatial || spatial.gain <= 0.002) return;
             const tile = window.AudioSystem?.footstepTileAt(this.area, wx, wy, npcGridForArea(this.area));
-            window.AudioSystem?.playFootstepSfx(this.area, tile, falloff, pan);
+            window.AudioSystem?.playFootstepSfx(this.area, tile, spatial.gain, spatial.panX, { source });
           },
           // Ad-hoc grid pathfinding fallback — used when neither a direct
           // beeline nor the authored route-node graph can get this NPC to
@@ -12098,7 +13171,7 @@
             if (!window.TilePathfinding) return false;
             const startCol = Math.floor(root.position.x), startRow = Math.floor(root.position.z);
             const path = window.TilePathfinding.findPath(startCol, startRow, target.c, target.r,
-              (c, r) => (target.pose === 'sit' && c === target.c && r === target.r) || isNpcTileWalkable(this.area, c, r),
+              (c, r) => ((target.pose === 'sit' || target.pose === 'lie') && c === target.c && r === target.r) || isNpcTileWalkable(this.area, c, r),
               { bounds: window.TilePathfinding.boxAround(startCol, startRow, target.c, target.r, 6) });
             if (!path || !path.length) return false;
             this._gridPath = path;
@@ -12195,7 +13268,8 @@
             const cfg = npcMovementConfig();
             const sobrietySpeedMul = window.NpcCharacterState?.movementSpeedMultiplier?.(rec?.id) ?? 1;
             const speciesSpeedTiles = this.animalDef ? (Number(this.animalDef.moveSpeed) || 0) * devGlobalSpeedMul / TILE : 0; // Named animals walk at their real creature speed before NPC catch-up/sobriety modifiers.
-            const speed = (this.animalDef ? speciesSpeedTiles : (cfg.speedTilesPerSecond ?? 1.25)) * this.catchup * sobrietySpeedMul;
+            const runMultiplier = !this.animalDef && this._npcRunning ? (this._npcRunMode === 'follow' ? 1.35 : 1.9) : 1; // Only follow, retreat and flood-shelter movement may sprint.
+            const speed = (this.animalDef ? speciesSpeedTiles : (cfg.speedTilesPerSecond ?? 1.25)) * this.catchup * sobrietySpeedMul * runMultiplier;
             const dx = tx - root.position.x, dz = tz - root.position.z;
             const d = Math.hypot(dx, dz);
             if (d <= Math.max(0.001, speed * dt)) {
@@ -12212,6 +13286,23 @@
           },
           update(dt) {
             this._lastUpdateDt = dt; // Animal-facing deadzone/smoothing consumes the same real dt as updateCreatureMesh.
+            if (window.NpcPathfinding?.updateCliffClimb?.(this, dt)) return; // A selected cliff crossing owns all three world coordinates during its hops.
+            // Scheduled NPCs don't carry creature Health; a Nazgraku bite provokes
+            // a visible nonlethal flight instead of a fake resource-system death.
+            // Existing moveToward stays responsible for walking/collision and
+            // the normal authored schedule resumes as soon as the threat expires.
+            if (this.area === currentArea && this._wildlifeThreatUntil > performance.now() && this._wildlifeThreatSource) {
+              const source = this._wildlifeThreatSource; // Threat position saved by WildlifeFoodWeb's NPC-actor skirmish adapter.
+              const awayX = root.position.x - source.x / TILE;
+              const awayZ = root.position.z - source.y / TILE;
+              const len = Math.max(0.001, Math.hypot(awayX, awayZ));
+              const targetC = Math.floor(root.position.x + awayX / len * 3);
+              const targetR = Math.floor(root.position.z + awayZ / len * 3);
+              const safe = window.NpcPathfinding?.nearestWalkableTile?.(this.area, targetC, targetR);
+              if (safe) this.moveToward(safe.c + 0.5, safe.r + 0.5, dt * 1.55);
+              this.state = 'wildlife-flight';
+              return;
+            }
             if (this.animalDef && !this._animalSleepPresentationRegistered && window.AnimalSleepPresentation?.registerExternalSleeper) {
               this._animalSleepPresentationRegistered = window.AnimalSleepPresentation.registerExternalSleeper(this, {
                 id: this.rec?.id || this.animalKind,
@@ -12251,8 +13342,16 @@
               const breathScaleY = window.CreatureGenetics.creatureBreathScaleY(this.animalAvatarRef, performance.now()); // Named animals keep the same subtle alive-at-rest scale cycle as ordinary creatures.
               window.CreatureGenetics.applyCreatureBillboardScale(this.avatarGroup, this.animalSizeScale, breathScaleY);
             }
-            const target = resolveNpcScheduleTarget(this.rec);
+            const scheduledTarget = resolveNpcScheduleTarget(this.rec); // Raw schedule target; spouse/child overrides historically describe sleeping without a pose.
+            const target = scheduledTarget && scheduledTarget.pose !== 'lie' && /sleep/i.test(String(scheduledTarget.activity || ''))
+              ? { ...scheduledTarget, pose: 'lie' } : scheduledTarget; // Unifies all humanoid sleepers with existing authored pose:'lie' stations.
+            window.FurnitureTableSystem?.setSeatTarget(this.rec.id, target); // Publish the reservation before movement/arrival so later walkers cannot choose the same physical seat.
             this.currentScheduleTarget = target || null;
+            // Running remains limited to player-following, combat escape and flood evacuation.
+            this._npcRunMode = target?.floodShelter ? 'flood' : target?.activity === 'taking cover' ? 'cover' : target?.activity === 'following you' ? 'follow' : null;
+            this._npcRunning = !this.animalDef && !!this._npcRunMode && (this._npcRunMode !== 'flood' || this.area === 'town')
+              && (target?.run !== false || this._npcRunMode === 'flood')
+              && (target?.floodShelter || target?.area !== this.area || Math.hypot(root.position.x - (target.c + 0.5), root.position.z - (target.r + 0.5)) > (npcMovementConfig().arrivalRadiusTiles ?? 0.18));
             this._animalSleepRequested = !!this.animalDef && /sleep/i.test(String(target?.activity || '')); // Schedule-authored sleeping named animals enter the same visual sleep system before any state module can early-return.
             if (this._animalSleepRequested && this.rec && typeof this.rec._animalDialogueEyesOpen !== 'boolean') this.rec._animalDialogueEyesOpen = false; // Closed is the safe default until an authored dialogue system explicitly wakes the animal's eyes.
             if (window.NpcCharacterState?.update?.(this, dt, {
@@ -12263,8 +13362,10 @@
             const targetArea = target ? normalizeNpcArea(target.area) : null;
             const cfg = npcMovementConfig();
             const seatTransform = targetArea === this.area ? npcSeatTransformForTarget(target) : null; // Supplies the same authored seat anchor the player uses.
-            const tx = seatTransform?.x ?? ((target?.c ?? root.position.x - 0.5) + 0.5);
-            const tz = seatTransform?.z ?? ((target?.r ?? root.position.z - 0.5) + 0.5);
+            const bedTransform = targetArea === this.area && target?.pose === 'lie' ? window.FurnitureTableSystem?.lieTransform?.(this.area, target) : null; // NPC beds follow real authored mattress position/height, not an arbitrary tile Y.
+            const tx = seatTransform?.x ?? bedTransform?.x ?? ((target?.c ?? root.position.x - 0.5) + 0.5);
+            const tz = seatTransform?.z ?? bedTransform?.z ?? ((target?.r ?? root.position.z - 0.5) + 0.5);
+            this._bedLieSurface = target?.pose === 'lie' ? (bedTransform || { x: tx, z: tz, y: npcSurfaceY(this.area, target.c, target.r), facingRad: THREE.MathUtils.degToRad(Number(target.rotY) || 0) }) : null; // Non-bed tent sleepers lie on the existing floor surface instead.
             const arrival = cfg.arrivalRadiusTiles ?? 0.18;
             const seatedAtTarget = !!seatTransform && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival;
             const seatedPose = seatedAtTarget ? {
@@ -12291,8 +13392,20 @@
             // Off-area walkers can't be seen at all: settle their resting pose
             // at ~2 Hz instead of solving it (plus the drunk layer) every frame.
             if (this.legs) {
-              if (sameArea) { this._offAreaLegsDt = 0; this.legs.update(dt, this._moveSpeedTiles, !isVisibleArea, seatedPose); }
-              else if ((this._offAreaLegsDt = (this._offAreaLegsDt || 0) + dt) >= NPC_OFF_AREA_LEGS_INTERVAL_S) { this.legs.update(this._offAreaLegsDt, this._moveSpeedTiles, true, seatedPose); this._offAreaLegsDt = 0; }
+              if (sameArea) { this._offAreaLegsDt = 0; this.legs.update(dt, this._moveSpeedTiles, !isVisibleArea, seatedPose, { allowSpeedRun: this._npcRunning }); }
+              else if ((this._offAreaLegsDt = (this._offAreaLegsDt || 0) + dt) >= NPC_OFF_AREA_LEGS_INTERVAL_S) { this.legs.update(this._offAreaLegsDt, this._moveSpeedTiles, true, seatedPose, { allowSpeedRun: this._npcRunning }); this._offAreaLegsDt = 0; }
+            }
+            if (this._npcRunLeanPivot) {
+              const pitch = isVisibleArea && this._npcRunning && !seatedPose ? (Number(this.legs?.getRunLean?.()) || 0) : 0; // The canonical leg gait supplies the same run-lean strength used by the player.
+              if (pitch > 0.0001) {
+                const heading = this.desiredRot - root.rotation.y; // Respect actual travel direction independently of camera-facing portrait yaw/deadzones.
+                const sinHalf = Math.sin(pitch * 0.5); // Reused for this avatar's local pitch quaternion; avoids allocations in the frame loop.
+                this._npcRunLeanPivot.quaternion.set(Math.cos(heading) * sinHalf, 0, -Math.sin(heading) * sinHalf, Math.cos(pitch * 0.5));
+                this._npcRunLeanActive = true;
+              } else if (this._npcRunLeanActive) {
+                this._npcRunLeanPivot.quaternion.identity(); // Do not dirty every idle NPC's transform every frame.
+                this._npcRunLeanActive = false;
+              }
             }
             const seatedStationKey = seatedAtTarget ? (target.stationId || target.id || `${target.area}_${target.c}_${target.r}`) : null;
             if (seatedStationKey !== this._seatedStationKey) {
@@ -12385,7 +13498,7 @@
               // normally from wherever it was left.
               if (isVisibleArea) {
                 this._updateStationWander(target, dt);
-                const wty = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
+                const wty = this._cliffNpcY ?? npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
                 root.position.y += (wty - root.position.y) * (1 - Math.exp(-13.4 * dt)); // Framerate-independent ground-snap: same catch-up feel at any dt, not just one frame's worth per call.
                 if (this._moveSpeedTiles > 0.05) {
                   const npcBobEffort = window.FormatUtils.clamp(this._moveSpeedTiles / (cfg.speedTilesPerSecond ?? 1.25), 0, 1);
@@ -12401,23 +13514,29 @@
               if (seatTransform) {
                 root.position.x = seatTransform.x;
                 root.position.z = seatTransform.z;
-                const standingPosteriorY = Number(this.legs?.standingPosteriorY); // Converts the seat height into the whole-avatar sink used below.
-                const seatSink = Number.isFinite(standingPosteriorY) ? seatTransform.y - standingPosteriorY : -0.32;
+                const standingPosteriorY = Number(this.legs?.standingPosteriorY); // Per-species hip in the floor-relative leg rig.
+                const visualRigScaleY = Number(this._npcCharacterRigRoot?.scale?.y); // NPC species/age scaling lives on this shared parent of legs, torso and hands.
+                const scaledPosteriorY = standingPosteriorY * (Number.isFinite(visualRigScaleY) && visualRigScaleY > 0 ? visualRigScaleY : 1); // Chair sink uses actual world hip height, not pre-scale height.
+                const seatSink = Number.isFinite(scaledPosteriorY) ? seatTransform.y - scaledPosteriorY
+                  : avatarGroup.userData?.avatarGroundLift === 0 ? 0 : -0.32; // Floor-relative compound bodies have no humanoid hip/leg solve to sink into a chair.
                 root.position.y += (groundY + seatSink - root.position.y) * (1 - Math.exp(-11.9 * dt)); // Framerate-independent seat-sink catch-up.
                 this.applyFacingDeadzone(-seatTransform.facingRad + Math.PI / 2, 1);
               } else {
-                root.position.y = groundY + Math.sin(performance.now() / 600) * 0.005;
+                if (bedTransform) { root.position.x = bedTransform.x; root.position.z = bedTransform.z; } // Real mattress's placed center offsets win over legacy station tile.
+                root.position.y = groundY + (target.pose === 'lie' ? 0 : Math.sin(performance.now() / 600) * 0.005);
                 if (Number.isFinite(target.rotY)) this.applyFacingDeadzone(THREE.MathUtils.degToRad(target.rotY), 1);
               }
-              _applyNpcAmbientLook(this, target);
+              if (target.pose !== 'lie') _applyNpcAmbientLook(this, target); // A sleeper keeps their neck neutral instead of following an ambient gaze marker.
               if (target.toolKey && typeof makeToolPlaneMesh === 'function') {
                 const isKurraya = target.toolKey === 'kurraya';
-                if (this.stationToolKey !== target.toolKey) {
-                  if (this.stationToolMesh) root.remove(this.stationToolMesh);
-                  this.stationToolMesh = isKurraya ? buildKurrayaAssembly() : makeToolPlaneMesh(target.toolKey);
+                const toolFlip = target.toolFlip === true;
+                if (this.stationToolKey !== target.toolKey || this.stationToolFlip !== toolFlip) {
+                  if (this.stationToolMesh) this.stationToolMesh.parent?.remove(this.stationToolMesh);
+                  this.stationToolMesh = isKurraya ? buildKurrayaAssembly() : makeToolPlaneMesh(target.toolKey, { flip: toolFlip });
                   this.stationToolKey = this.stationToolMesh ? target.toolKey : '';
+                  this.stationToolFlip = toolFlip; // Same pick-shovel sprite must rebuild when switching between shovel and pick orientation.
                   this.stationKurrayaTwitch = isKurraya ? newKurrayaTwitchState() : null;
-                  if (this.stationToolMesh) root.add(this.stationToolMesh);
+                  if (this.stationToolMesh) (avatarGroup.userData?.proceduralHandParent || root).add(this.stationToolMesh);
                 }
                 if (this.stationToolMesh && isKurraya) {
                   // Same held-still-until-a-note-sounds treatment as the
@@ -12471,14 +13590,14 @@
                   this.stationToolMesh.quaternion.setFromAxisAngle(NPC_TOOL_SWING_AXIS, swingAngle);
                 }
               } else if (this.stationToolMesh) {
-                root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationKurrayaTwitch = null;
+                this.stationToolMesh.parent?.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationToolFlip = false; this.stationKurrayaTwitch = null;
               }
               groundShadow.position.y = groundY - root.position.y + characterGroundShadowSurfaceOffset();
               return;
             }
-            if (this.stationToolMesh) { root.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationKurrayaTwitch = null; }
+            if (this.stationToolMesh) { this.stationToolMesh.parent?.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationToolFlip = false; this.stationKurrayaTwitch = null; }
             if (this.catchupDur > 0) { this.catchupDur -= dt; if (this.catchupDur <= 0) { this.catchupDur = 0; this.catchup = 1; } }
-            if (!target.routeId && canNpcBeeline(this.area, root.position.x, root.position.z, target.c, target.r, target.pose === 'sit')) {
+            if (!target.routeId && canNpcBeeline(this.area, root.position.x, root.position.z, seatTransform || bedTransform ? tx - 0.5 : target.c, seatTransform || bedTransform ? tz - 0.5 : target.r, target.pose === 'sit' || target.pose === 'lie')) {
               this.state = 'beeline'; this.routeNode = this.routeTarget = this.routePath = this._gridPath = null; this._routePathTargetKey = null;
               this.moveToward(tx, tz, dt);
             } else if (this.state === 'grid-path') {
@@ -12528,7 +13647,7 @@
               this.routeNode = this.routeTarget; this.routeTarget = null; this.routePath = null; this.state = 'on-route';
             }
             if (this.state === 'breakoff') this.state = 'idle';
-            const ty = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
+            const ty = this._cliffNpcY ?? npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
             root.position.y += (ty - root.position.y) * (1 - Math.exp(-13.4 * dt)); // Framerate-independent ground-snap.
             // Bob animation when moving — mirrors the player's own
             // effort-based move bob (updateMovement): amplitude ramps from
@@ -12553,7 +13672,12 @@
         walker.root?.parent?.remove?.(walker.root);
         walker.root?._npcScene?.remove?.(walker.root);
         if (walker._animalSleepPresentationRegistered) window.AnimalSleepPresentation?.unregisterExternalSleeper?.(walker); // Releases the shared sleep presenter when a visitor despawns.
+        window.NpcHeldEquipment?.detachCutsceneWalker?.(walker); // Release owned tool/hand claims before the avatar hierarchy is torn down.
         walker.legs?.dispose?.();
+        if (walker.avatarGroup) {
+          window.PNGPlaneAvatar?.disposeAvatarModel?.(walker.avatarGroup); // Refcounted hybrid textures and procedural hands must use their owning disposer.
+          walker.avatarGroup.parent?.remove(walker.avatarGroup);
+        }
         walker.root?.traverse?.(object => {
           object.geometry?.dispose?.();
           const materials = Array.isArray(object.material) ? object.material : object.material ? [object.material] : []; // Used to release this visitor avatar's per-spawn GPU materials.
@@ -12570,7 +13694,7 @@
         if (visitorArrivalCheckT > 0) return;
         visitorArrivalCheckT = 0.5;
         for (const rec of scheduledNpcRecords.values()) {
-          if (!rec?.visitorPresence || npcWalkers.some(walker => walker.rec?.id === rec.id) || visitorSpawnPending.has(rec.id)) continue;
+          if (!window.NpcScheduling.hasPresenceSchedule(rec) || npcWalkers.some(walker => walker.rec?.id === rec.id) || visitorSpawnPending.has(rec.id)) continue;
           const target = resolveNpcScheduleTarget(rec); // Used to return the entrance only while one of this visitor's windows is active.
           if (!target?.visitorArrival) continue;
           visitorSpawnPending.add(rec.id);
@@ -12648,6 +13772,21 @@
       // avatars (with distance-scaled refresh rates) now lives in
       // js/world-portrait-life.js.
       window.__playerAvatarRefreshDebug = () => ({ ...playerAvatarRefreshDebug, currentGeneration: playerAvatarRefreshGeneration, savedSpecies: _playerData?.appearance?.speciesId, renderedSpecies: playerAvatarProfile?.fighter?.speciesId, hasGroup: !!playerAvatarGroup, hasFrontCanvas: !!playerAvatarFrontCanvas, profileWovenDescriptors: Array.isArray(playerAvatarProfile?.bodyColors?.__hobunjiWovenClothing) ? playerAvatarProfile.bodyColors.__hobunjiWovenClothing.length : 0, textureHasVariantCanvas: !!playerAvatarGroup?.userData?.frontTexture?.image && playerAvatarGroup.userData.frontTexture.image !== playerAvatarFrontCanvas });
+      window.FurnitureTableSystem?.init({
+        getArea: () => currentArea,
+        getWalkers: () => npcWalkers,
+        getPlayerSeat: () => sitInteraction,
+        getPlayerPosition: () => ({x:player.x/TILE,z:player.y/TILE}),
+        focusCandidates: (candidates,range) => window.RangedWeapons?.focusCandidates?.(candidates,range), // Existing camera-ray authority selects NPCs, chairs and serving objects together.
+        actorHitbox: walker => window.RangedWeapons?.actorHitbox?.(walker),
+        frameId: () => window.RuntimeFrameScheduler?.frameId?.(),
+        npcReach: () => npcMovementConfig().socialInteractionRadiusTiles ?? 6,
+        extraWalker: () => window.NpcGifting?.isItemGiftable?.(getHeldGiftItem()) ? (window.PorakanekiCamps?.getNearbyGiftWalker?.(player.x/TILE,player.y/TILE,2) || window.OmgurkuCamps?.getNearbyGiftWalker?.(player.x/TILE,player.y/TILE,2)) : null,
+        getAim: () => { const aim = getReticleTile(); return { c:aim.probeX / TILE, r:aim.probeY / TILE }; },
+        assignmentChanged: area => { if (area === 'farm' || area === 'interior') window.FarmEditor?.saveFarmLayout?.(); }, // Stable inventory chair/table links survive reloads.
+        surfaceY: furnitureSurfaceYAtWorld,
+        makeSitInteractable,
+      });
       window.WorldPortraitLife.init({
         getCurrentArea: () => currentArea,
         getPlayerTile: () => ({ x: player.x / TILE, y: player.y / TILE }),
@@ -12664,6 +13803,7 @@
         // NPC detection below running so a frozen villager is still talkable.
         if (!window.DevTestingSwitchbox?.flags?.noNpcBehavior) {
           updateNpcVisitorArrivals(dt);
+          const npcUpdateNowMs = performance.now(); // Bounds retries for one broken NPC without stalling the rest of the simulation.
           // Backwards indexed loop (not `for...of [...npcWalkers]`) so a walker
           // that despawns itself mid-update (npcWalkers.splice in
           // despawnNpcVisitor above) is tolerated without cloning the whole
@@ -12671,24 +13811,37 @@
           for (let i = npcWalkers.length - 1; i >= 0; i--) {
             const w = npcWalkers[i];
             if (w.combatTutorialSuspended) { w.root.visible = false; continue; } // Oddclaw's combat rig temporarily owns his presence.
-            w.update(dt);
-            if (npcWalkers[i] === w) _tickNpcPortraitLife(w, dt);
+            if (window.FestivalWheelDanceRuntime?.isPartner?.(w)) continue; // Paired dance owns this avatar's visual transform and temporarily suspends only its walker AI.
+            if (w._npcUpdateError?.retryAt > npcUpdateNowMs) continue;
+            try {
+              const oldHeadX = w.root?.position?.x, oldHeadZ = w.root?.position?.z; // Real travel this frame drives the head target, not a stale requested speed.
+              const oldHeadArea = w.area; // Area transfers must never be mistaken for extreme one-frame movement.
+              w.update(dt);
+              if (npcWalkers[i] === w) {
+                window.BedLiePose?.syncNpc?.(w, w.currentScheduleTarget, dt, w._bedLieSurface); // Every humanoid NPC uses real schedule-driven lie/stand poses, not just the player.
+                npcMovementHeadLookOptions.currentArea = currentArea;
+                npcMovementHeadLookOptions.hasScriptedGaze = cutscenePreviewActive
+                  || npcDialogueStaging?.walker === w || _dialogueWalker === w || oldHeadArea !== w.area;
+                window.NpcMovementHeadTarget?.updateWalker?.(w, oldHeadX, oldHeadZ, npcMovementHeadLookOptions);
+                _tickNpcPortraitLife(w, dt);
+              }
+              if (w._npcUpdateError) w._npcUpdateError = null;
+            } catch (error) {
+              const message = String(error?.message || error); // Identifies repeated failures while retaining the full location in the mobile Debug report.
+              const previous = w._npcUpdateError; // Reuses the reporting deadline when the same NPC fails again after its cooldown.
+              w._npcUpdateError = { message, stack: String(error?.stack || message), retryAt: npcUpdateNowMs + 1000,
+                reportAt: previous?.message === message ? previous.reportAt : -Infinity };
+              if (npcUpdateNowMs >= w._npcUpdateError.reportAt) {
+                w._npcUpdateError.reportAt = npcUpdateNowMs + 5000;
+                window.__farmLog?.(`[schedule] ${w.rec?.id || 'npc'} update failed; retrying in 1s: ${w._npcUpdateError.stack}`, 'error');
+              }
+            }
           }
           _logGarankiDiagnostic(dt);
         }
-        let closest = null, closestDist = npcMovementConfig().interactionRadiusTiles ?? 2.0;
-        const px = player.x / TILE, pz = player.y / TILE;
-        for (const w of npcWalkers) {
-          if (w.combatTutorialSuspended || w.area !== currentArea) continue;
-          const d = Math.hypot(w.root.position.x - px, w.root.position.z - pz);
-          if (d < closestDist) { closestDist = d; closest = w; }
-        }
-        if (window.NpcGifting?.isItemGiftable?.(getHeldGiftItem())) {
-          const hunter = window.PorakanekiCamps?.getNearbyGiftWalker?.(px, pz, closestDist); // Neutral procedural hunters reuse the existing gift action and dispatch target.
-          if (hunter) closest = hunter;
-        }
-        nearbyNpcWalker = closest;
+        nearbyNpcWalker = isPlayerInCombat() ? null : window.FurnitureTableSystem?.focusedTarget(currentArea)?.walker || null; // Preserve aimed-NPC selection, but disable every NPC social action during combat.
         if (previousNearbyNpcWalker !== nearbyNpcWalker) refreshActionBar();
+        window.InteriorDoorTiles?.update(dt);
       }
 
       // ── Town zone ──────────────────────────────────────────────────
@@ -12953,6 +14106,7 @@
                 continue;
               }
               let type = t.type || 'grass';
+              if (!offsetC && !offsetR && (type === 'tilled' || type === 'trench') && window.NpcFarmPlots?.isManagedTile(m.id, c, r)) type = 'grass'; // Worked by NPCs instead.
               // Decorative (non-plateau) rock tiles are always-solid in the engine
               // (isSolid()), and Northern Cliffs' authored data scatters hundreds of
               // them across the walkable ground — turn the un-tagged ones back to
@@ -12973,6 +14127,8 @@
                 // field (named rockKind to avoid colliding with the generator's
                 // own per-object oreKind material pick) and isMineableRockTile below.
                 rockKind: type === 'rock' ? (t.generatedObjectType || null) : undefined,
+                oreKind: type === 'rock' && t.generatedObjectType === 'diggableRockOre' ? (t.generatedObjectOreKind || 'stone') : undefined, // Preserves the authored mineral for the shared ore rock renderer.
+                oreKey: type === 'rock' && t.generatedObjectType === 'diggableRockOre' && ORE_DEFS[t.generatedObjectOreKind] ? t.generatedObjectOreKind : null, // Wilderness ore rocks yield their depicted mineral.
                 // Exact generator identity (mirrors terrain-preview.js) so
                 // ZoneTerrainFeatures.buildUndiggableBoulderMeshes assembles each
                 // multi-tile boulder as one shell instead of rediscovering it.
@@ -13024,6 +14180,7 @@
             if (EXTERIOR_ZONES[zoneMapId]) continue; // owned entirely by performTothalShift now
             const zm = resolvedMaps.find(m => m.id === zoneMapId);
             if (!zm) continue;
+            window.NpcFarmPlots?.registerMap(zoneMapId, zm.farmPlots); // NPC-tended plots start as grass (js/npc-farm-plots.js).
             const outTiles = new Map(), mesas = [], outBuildings = [], outDecor = [], outFurniture = [];
             mergeZoneTiles(zm, 0, 0, 0, outTiles, mesas, outBuildings, outDecor, outFurniture);
             window.MapBoundaryGuard?.markMergedTiles?.(zm, outTiles); // Border escarpments stay unclimbable/unwalkable (js/map-boundary-guard.js).
@@ -13074,10 +14231,11 @@
           }
           _workspaceDefinition = window.MapLivePreview.clone({ ...ws, maps: resolvedMaps.map(map => _rawExteriorMaps.get(map.id) || map) });
           await window.TownMine?.decorateTownMap?.(townM);
-          const layout = { version: 1, activeLayoutId: townM.activeLayoutId || 'default', name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [], decor: townM.decor || [], furniture: townM.furniture || [] };
+          window.NpcFarmPlots?.registerMap(townM.id, townM.farmPlots); // NPC-tended plots start as grass (js/npc-farm-plots.js).
+          const layout = { id: townM.id, version: 1, activeLayoutId: townM.activeLayoutId || 'default', name: townM.name || 'Hobunji Hollow — Town', cols: townM.cols, rows: townM.rows, tiles: [], npcPaths: [], transitions: [], npcStations: [], buildings: townM.buildings || [], decor: townM.decor || [], furniture: townM.furniture || [] };
           for (let r = 0; r < townM.rows; r++) for (let c = 0; c < townM.cols; c++) {
             const t = townM.tiles[`${c},${r}`];
-            if (t) layout.tiles.push({ c, r, type: t.type || 'grass' });
+            if (t) layout.tiles.push({ c, r, type: window.NpcFarmPlots?.isManagedTile(townM.id, c, r) && (t.type === 'tilled' || t.type === 'trench') ? 'grass' : (t.type || 'grass') });
           }
           layout.routes = [];
           (townM.routes || townM.npcPaths || []).forEach(p => {
@@ -13103,6 +14261,7 @@
                 // Retained so the building renderer can keep this spot on
                 // the piece's authored door after rotations or old exports.
                 buildingId: t.buildingId || '',
+                direction: t.direction || '',
                 targetSpotId: t.targetSpotId || '',
               });
             } else if (allZoneMapIds.has(t.targetMapId)) {
@@ -13245,6 +14404,7 @@
         // Drop the outgoing layout's seats/stations (e.g. wedding pews) so a
         // rebuilt room only advertises what it actually contains.
         for (const id of info.registeredStationIds || []) npcStationsById.delete(id);
+        window.InteriorDoorTiles?.discard(mapId);
         info.scene.traverse(object => object.geometry?.dispose?.());
         info.scene.clear();
         _buildingScenes.delete(mapId);
@@ -13364,8 +14524,13 @@
             }
           }
           // Colliders override back to solid
+          const manualColliderKeys = new Set(mapData._interiorManualColliderKeys || []); // Explicit authored walls remain hard blockers even beneath a seat.
           for (const [c, r] of (mapData.colliders || [])) {
-            if (bGrid[r]?.[c]) bGrid[r][c].type = TileType.ROCK;
+            if (bGrid[r]?.[c]) {
+              bGrid[r][c].type = TileType.ROCK;
+              bGrid[r][c].npcFurnitureCollider = Array.isArray(mapData._interiorManualColliderKeys)
+                && floorSet.has(`${c},${r}`) && !manualColliderKeys.has(`${c},${r}`);
+            }
           }
           // Build transitions from exits array
           const transitions = [];
@@ -13376,6 +14541,7 @@
               exitTileSet.add(`${tc},${tr}`);
               const t = {
                 col: tc, row: tr, area: mapId, target, exitId: exit.id,
+                ...window.InteriorDoorTiles.exitSettings(mapData, { exitId: exit.id, col: tc, row: tr }, floorSet),
                 targetSpotId: exit.targetSpotId || '',
                 requiresKeyItem: exit.requiresKeyItem || '',
                 hiddenUntilKeyItem: exit.hiddenUntilKeyItem === true,
@@ -13396,14 +14562,28 @@
               const target = !t.targetMapId ? 'exit_building' : 'building';
               const tr = {
                 col: t.col, row: t.row, area: mapId, target, exitId: t.exitId,
+                ...window.InteriorDoorTiles.exitSettings(mapData, t, floorSet),
                 targetSpotId: t.targetSpotId || '',
                 requiresKeyItem: t.requiresKeyItem || '',
                 hiddenUntilKeyItem: t.hiddenUntilKeyItem === true,
               };
               if (t.targetMapId) { tr.targetMapId = t.targetMapId; tr.targetCol = t.spawnCol ?? 0; tr.targetRow = t.spawnRow ?? 0; }
               transitions.push(tr);
-              if (!t.targetMapId) exitTileSet.add(`${t.col},${t.row}`);
+              exitTileSet.add(`${t.col},${t.row}`); // Interior map-switch doors need wall openings just like front doors.
             }
+          }
+          // The painted floor is visual; an exit-only tile may remain reachable
+          // immediately outside its boundary without rendering a floor slab.
+          const manualExitBlockers = new Set((mapData.colliders || []).map(([c, r]) => `${c},${r}`));
+          for (const transition of transitions) {
+            const key = `${transition.col},${transition.row}`;
+            if (floorSet.has(key) || manualExitBlockers.has(key)) continue;
+            const inner = window.InteriorDoorTiles?.insideFloorForExit?.(floorSet, transition.col, transition.row, transition.direction);
+            const cell = bGrid[transition.row]?.[transition.col];
+            if (!inner || !cell) continue; // Prevent distant or ambiguous exit markers from creating fake traversable tiles.
+            cell.type = TileType.GRASS;
+            cell.surfaceY = bGrid[inner.row]?.[inner.col]?.surfaceY ?? 0;
+            cell.exitOnlyNoVisualFloor = true;
           }
           const entranceLightTileSet = Array.isArray(mapData.entranceLightTiles) && mapData.entranceLightTiles.length
             ? new Set(mapData.entranceLightTiles.map(([c, r]) => c + ',' + r))
@@ -13471,6 +14651,7 @@
             // Floor tiles only for defined floor set
             for (const [c, r] of (mapData.floor || [])) {
               const fl = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), floorMat);
+              fl.userData.surfaceFoliageRole = "floors";
               fl.position.set(c + 0.5, -0.05, r + 0.5);
               if (farmNaturalColors) fl.userData.farmMaterialRole = 'wood';
               bScene.add(fl);
@@ -13513,36 +14694,12 @@
               bScene.add(ceilingGroup);
             }
           }
-          // A den's cavern entrance had no visual distinguishing it from any
-          // other dark corner of the cave (see generateCavernFloor's
-          // guaranteed 3-wide south opening) — a warm point light standing
-          // in for daylight spilling through the mouth, plus a lighter floor
-          // patch, makes it read as "the way out" and gives the player's
-          // spawn point some actual light instead of pitch dark.
-          if (mapData.wallStyle === 'cavern' && entranceLightTileSet.size) {
-            let ex = 0, ez = 0;
-            for (const key of entranceLightTileSet) { const [c, r] = key.split(',').map(Number); ex += c; ez += r; }
-            ex = ex / entranceLightTileSet.size + 0.5; ez = ez / entranceLightTileSet.size + 0.5;
-            const doorLight = new THREE.PointLight(0xfff2d0, 1.4, 7, 2);
-            doorLight.position.set(ex, 1.6, ez + 0.6);
-            doorLight.userData.furnitureLightMask = true; // Local lights only reach the screen through the 2D fake-light overlay (js/furniture-light-registry.js).
-            window.FurnitureLightRegistry?.register(doorLight);
-            bScene.add(doorLight);
-            const glowMat = new THREE.MeshBasicMaterial({ color: 0xe9dcb8, transparent: true, opacity: 0.35 });
-            const glow = new THREE.Mesh(new THREE.CircleGeometry(1.8, 20), glowMat);
-            glow.rotation.x = -Math.PI / 2;
-            // y=0.02 used to sit right at the entrance's own carved floor
-            // surface — not reliably ABOVE it: confirmed directly (SDF
-            // field sampling, not just visual guessing) that the true
-            // floor at the entrance's exact centroid only clears open air
-            // somewhere between y=0.02 and y=0.05, so the glow patch was
-            // landing inside the floor/rock there on every single den,
-            // reading as "a little arch of light placed inside a rock,
-            // cutting a hole in it" instead of lying flat on open floor.
-            // 0.15 clears that transition with real margin.
-            const glowTileY = tileSurfaceYInArea(bGrid?.[Math.floor(ez)]?.[Math.floor(ex)], mapId);
-            glow.position.set(ex, glowTileY + 0.02, ez);
-            bScene.add(glow);
+          // Den cavern entrance light + floor glow now live in js/cavern-entrance-light.js.
+          if (mapData.wallStyle === 'cavern') {
+            window.CavernEntranceLight?.build?.({
+              THREE, scene: bScene, entranceTiles: entranceLightTileSet,
+              surfaceYAt: (col, row) => tileSurfaceYInArea(bGrid?.[row]?.[col], mapId),
+            });
           }
           window.ColorPoolsSystem?.decorateScene?.({ THREE, scene: bScene, mapData }); // Renders Color Pools metadata as the three tinted 2x2 water surfaces without adding a second cave-generation path.
           window.BanubuCaveClouds?.decorate?.({ THREE, scene: bScene, mapData }); // Authored low clouds and nearby cool lights only in Banubu's cavern.
@@ -13604,6 +14761,7 @@
           // Dev Companion map-furniture overlay (js/dev-map-furniture.js) merges in
           // dev-placed/moved/removed pieces; returns the authored list untouched otherwise.
           const buildingFurniture = window.DevMapFurniture?.mergeBuildingFurniture?.(mapId, mapData.furniture) || mapData.furniture || [];
+          const buildingCameraFurniture = []; // Capture true rendered furniture geometry once, not an entire interior-scene traverse every camera frame.
           for (const f of buildingFurniture) {
             const def = allFurnDefs[f.itemKey];
             const furnitureKey = furnKeyByItemKey[f.itemKey];
@@ -13614,7 +14772,7 @@
             const scY = f.postSY != null ? f.postSY : (f.postScale != null ? f.postScale : 1);
             const scZ = f.postSZ != null ? f.postSZ : (f.postScale != null ? f.postScale : 1);
             const bx = (f.col + (def?.fw || 1) * 0.5) + (f.postX || 0);
-            const floorSurfaceY = tileSurfaceYInArea(bGrid?.[f.row]?.[f.col], mapId); // Used to ground this furniture on the authored floor surface even when its footprint tile is also collision-solid.
+            const floorSurfaceY = InteriorSceneBuilder.furnitureFloorElevation(f, tileSurfaceYInArea(bGrid?.[f.row]?.[f.col], mapId)); // Wall-attached windows keep the editor/opening Y even when their anchor tile is outside the floor.
             const authoredPostY = Number(f.postY) || 0; // Used to preserve intentional editor-authored stacking/lift above the floor.
             const by = floorSurfaceY + authoredPostY; // Final furniture root Y shared by the visual, light, and mobile grounding diagnostics below.
             const bz = (f.row + (def?.fd || 1) * 0.5) + (f.postZ || 0);
@@ -13638,8 +14796,6 @@
               _markFurnitureEdgeId(model);
               bScene.add(model);
               furnitureSfxSource = window.Music?.registerFurnitureSfxSource(mapId, bx, bz, window.Music?.resolveFurnitureSfx(def));
-              const seatStationId = registerChairNpcStation(furnitureKey, f.col, f.row, f.rotY || 0, normalizeNpcArea(mapId), f.roles, f.lookAt);
-              if (seatStationId) registeredStationIds.push(seatStationId);
               if (furnitureKey === 'trough' && f.barnId != null && f.troughIndex != null) {
                 const authoredData = window.AuthoredFurniture?.peek('trough');
                 window.FarmTroughs.registerMesh(f.barnId, f.troughIndex, model, authoredData);
@@ -13657,6 +14813,14 @@
               bScene.add(ph);
               furnitureSfxSource = window.Music?.registerFurnitureSfxSource(mapId, bx, bz, window.Music?.resolveFurnitureSfx(def));
             }
+            // Keep a live record shared by the registry and NPC stations, so the chair can move if its table is registered later.
+            const furnitureRecord = { ...f, key: furnitureKey, area: mapId, mesh: renderedFurniture };
+            furnitureRecord.npcStationId = registerChairNpcStation(furnitureKey, f.col, f.row, f.rotY || 0,
+              normalizeNpcArea(mapId), f.roles, f.lookAt, f.id);
+            if (furnitureRecord.npcStationId) registeredStationIds.push(furnitureRecord.npcStationId);
+            window.FurnitureTableSystem?.registerPlacement(mapId, furnitureRecord, renderedFurniture, def);
+            if (def?.walkable !== true) buildingCameraFurniture.push(renderedFurniture); // Nonwalkable furniture blocks the camera; rugs and other traversable floor decor do not.
+            renderedFurniture.userData.surfaceFoliageId = f.id; // Captured per-instance growth targets from the interior editor.
             renderedFurniture.userData.mapEditorRef = {
               mapId, layoutId: mapData.activeLayoutId || 'default', kind: 'furniture',
               id: f.id || null, itemKey: f.itemKey, col: f.col, row: f.row,
@@ -13710,6 +14874,15 @@
               _buildingInteractables.set(mapId + ',' + f.col + ',' + f.row, makeSitInteractable(seatFurnitureKey, f.col, f.row, def.fw, def.fd, f.rotY || 0));
             }
           }
+          window.FoliageGenerator?.applySurfaceGrowth(bScene, mapData.surfaceGrowth); // Includes completed walls, generated gables, ceiling and selected furniture.
+          // Authored door tiles (mapData.doorTiles) live in js/interior-door-tiles.js.
+          await window.InteriorDoorTiles?.build({
+            THREE, scene: bScene, mapId, floorSet,
+            mapData: { ...mapData, exits: transitions.map(t => ({ id: t.exitId, tiles: [[t.col, t.row]], direction: t.direction, generateDoor: t.generateDoor, doorwayTiles: (mapData.exits || []).find(e => e.id === t.exitId)?.doorwayTiles || [] })) }, // Doors preserve authored outside markers and effective workspace transitions.
+            surfaceYAt: (c, r) => tileSurfaceYInArea(bGrid?.[r]?.[c], mapId),
+            registerInteractable: (c, r, interactable) => _buildingInteractables.set(mapId + ',' + c + ',' + r, interactable),
+            decorate: group => { _markOutline(group); _markFurnitureEdgeId(group); },
+          });
           // A den's cavern (mapData.wallStyle === 'cavern') guards a 2x2 nest
           // with a Den-Mother mini-boss that never leaves — see synthesizeCavernMapData
           // / generateCavernFloor for nestCol/nestRow/denMotherKind.
@@ -13746,21 +14919,22 @@
               const clutchMin = Math.max(1, Math.floor(Number(clutchCfg.min) || 1));
               const clutchMax = Math.max(clutchMin, Math.floor(Number(clutchCfg.max) || clutchMin));
               const remaining = clutchMin + Math.floor(nestRng() * (clutchMax - clutchMin + 1));
-              const liveBirth = !!motherDef?.liveBirth;
+              const motherConfig = Object.values(DEN_MOTHER_DEFS).find(def => def.creatureKey === motherKey); // Nest presentation may use hatched babies for an egg-laying species.
+              const liveBirth = !!(motherConfig?.liveBirth ?? motherDef?.liveBirth);
               const itemKey = DEN_MOTHER_ITEM_KEYS[motherKey];
-              if (itemKey) {
-                _denNests.set(mapId, {
-                  col: nestCol, row: nestRow, w: 2, h: 2,
-                  itemKey, liveBirth, remaining: mapData.nestState ? Math.max(0, Number(mapData.nestState.remaining) || 0) : remaining, genotype: denGenotype,
-                });
-              } else {
+              // The authored nest renderer also needs a record when collection
+              // is disabled. Only the clutch count depends on having a reward.
+              _denNests.set(mapId, {
+                col: nestCol, row: nestRow, w: 2, h: 2,
+                floorY: tileSurfaceYInArea(bGrid?.[nestRow]?.[nestCol], mapId),
+                itemKey, liveBirth, remaining: itemKey ? (mapData.nestState ? Math.max(0, Number(mapData.nestState.remaining) || 0) : remaining) : 0, genotype: denGenotype,
+              });
+              if (!itemKey) {
                 window.__farmLog?.(`[wildlife] Den-Mother "${motherKey || 'missing'}" has no configured nest reward; nest collection is disabled.`, 'warn');
               }
-              // Simple nest marker so the 2x2 chamber reads as an objective.
-              const nestMat = new THREE.MeshBasicMaterial({ color: 0x3a2a1a });
-              const nestMarker = new THREE.Mesh(new THREE.BoxGeometry(2, 0.12, 2), nestMat);
-              nestMarker.position.set(nestCol + 1, 0.02, nestRow + 1);
-              bScene.add(nestMarker);
+              // Build the actual nest even when the optional locale document
+              // is unavailable; do not depend on a later box-replacement pass.
+              window.DenNestSystem.ensureCavernNestFurniture(_denNests.get(mapId), bScene, buildFurnitureVisual);
             }
 
             // A "bigger, tunnely" den (see generateCavernFloor) deserves real
@@ -13771,6 +14945,7 @@
             // cavern-generator.js's pickOreRockTiles/pickCreatureSpawnTiles).
             // Cavern ore-rock placement (tile marking + tinted rock meshes
             // registered for mining) now lives in js/cavern-ore-rocks.js.
+            window.TzatzulNestEncounter?.buildNest?.(mapId, mapData, bScene); // Native egg furniture and mobile hold-to-take interaction.
             window.CavernOreRocks.build(mapId, mapData, bScene, bGrid);
             // Cave-site history props (catacomb coffins, cache chest, ruin door)
             // are authored furniture placed by js/cave-site-system.js.
@@ -13824,39 +14999,7 @@
             _zoneMineableRockMeshes.set(mapId, oreRockMeshes);
             const descentHoleMeshes = new Map();
             _mineDescentHoleMeshes.set(mapId, descentHoleMeshes);
-            const carvedTexture = new THREE.TextureLoader().load('assets/textures/carved_smooth.png'); // Used so interior rocks match the mine shell and exterior carved rocks.
-            carvedTexture.wrapS = carvedTexture.wrapT = THREE.RepeatWrapping;
-            carvedTexture.repeat.set(0.7, 0.7);
-            if ('colorSpace' in carvedTexture && THREE.SRGBColorSpace) carvedTexture.colorSpace = THREE.SRGBColorSpace;
-            const mineOreTexturePromises = new Map(); // Used to generate each ore's masked PNG texture once per floor rather than once per rock.
-            const mineRockTextureFor = oreKey => {
-              if (!oreKey || !ORE_DEFS[oreKey] || !window.ToolMetalRecolor) return Promise.resolve(carvedTexture);
-              if (mineOreTexturePromises.has(oreKey)) return mineOreTexturePromises.get(oreKey);
-              const ore = ORE_DEFS[oreKey]; // Used to feed the exact clean-metal/verdigris palette into the shared weapon PNG effect.
-              const seed = Array.from(oreKey).reduce((value, char) => Math.imul(value ^ char.charCodeAt(0), 16777619) >>> 0, 2166136261); // Stable per-ore blotch layout used by ToolMetalRecolor.
-              const request = window.ToolMetalRecolor.getRecoloredCanvas('assets/textures/carved_smooth.png', {
-                sourceHex: '#635544',
-                targetHex: ore.hex,
-                verdigrisHex: ore.verdigrisHex,
-                oxidationAmount: ore.oxidationAmount,
-                hueToleranceDeg: 8,
-                saturationTolerance: 0.12,
-                outlineWidth: 1,
-                seed,
-              }).then(canvas => {
-                const texture = new THREE.CanvasTexture(canvas); // Applies the recolored/oxidized PNG directly to the rock mesh instead of adding colored geometry.
-                texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-                texture.repeat.set(0.7, 0.7);
-                if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
-                texture.needsUpdate = true;
-                return texture;
-              }).catch(error => {
-                window.__farmLog?.(`[town-mine] ${ore.label} texture recolor failed; using carved stone: ${error?.message || error}`, 'warn', 'mine');
-                return carvedTexture;
-              });
-              mineOreTexturePromises.set(oreKey, request);
-              return request;
-            };
+            const mineRockMaterialFor = oreKey => window.OreRockTextures.materialFor(THREE, oreKey, ORE_DEFS); // Shared metal-bodied ore material with patterned verdigris.
             for (const rock of (mapData.oreRocks || [])) {
               const rockKey = `${rock.col},${rock.row}`;
               const tile = bGrid[rock.row]?.[rock.col];
@@ -13870,8 +15013,8 @@
               const { stoneGeo } = window.TerrainGeometry.buildRockTileGeo(rock.col, rock.row);
               if (!stoneGeo) continue;
               const rockGroup = new THREE.Group();
-              const rockTexture = await mineRockTextureFor(rock.oreKey); // Uses the shared PNG mask/verdigris processor before this rock enters the scene.
-              const baseMesh = new THREE.Mesh(stoneGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, map: rockTexture, roughness: 0.94 }));
+              const baseMesh = new THREE.Mesh(stoneGeo, mineRockMaterialFor(rock.oreKey || rock.oreKind)); // Same ore-bearing stone texture as wilderness caverns.
+              window.OreRockTextures.fitRockMesh(baseMesh, `town-mine:${rock.col},${rock.row}`); // Full authored PNG per detected mineral-bearing rock face.
               baseMesh.castShadow = baseMesh.receiveShadow = true;
               rockGroup.add(baseMesh);
               rockGroup.position.set(rock.col + 0.5, 0, rock.row + 0.5);
@@ -13888,21 +15031,38 @@
                 continue;
               }
               const gender = ((spawn.col + spawn.row + mapData.mineFloor) & 1) ? 'female' : 'male'; // Used to distribute both authored Ghoul appearances deterministically.
+              const isShadowknight = spawn.kind === 'ghoul-shadowknight'; // Mine Tier 4+ counterpart to a Bandit Lieutenant.
+              const isWitch = spawn.kind === 'ghoul-wyrm-witch'; // Mine Tier 5+ has two distinct magical attack packages.
+              const rank = isShadowknight ? 'lieutenant' : 'grunt'; // Reuse the shared rank/mastery and staged melee mechanics.
+              const label = isShadowknight ? 'Ghoul Shadowknight' : isWitch
+                ? (spawn.witchType === 'rend-water' ? 'Rend-water Wyrm-witch' : 'Shadow-wind Wyrm-witch') : 'Ghoul';
               const rosterOverride = {
-                name: 'Ghoul',
+                name: label,
                 appearance: { speciesId: 'ghoul', gender, cosmetics: {}, randomSeed: `mine-ghoul:${mapData.mineFloor}:${spawn.col}:${spawn.row}` }, // Use Ghoul's authored pink skin palette instead of the old bright desaturated white override.
                 equippedCosmetics: [],
                 appliedDyes: {},
               };
-              const ghoul = await window.BanditCombat?.makeEntity?.(gangConfig || {}, 'grunt', Math.max(1, mapData.mineTier), (spawn.col + 0.5) * TILE, (spawn.row + 0.5) * TILE, {
+              const ghoul = await window.BanditCombat?.makeEntity?.(gangConfig || {}, rank, Math.max(1, mapData.mineTier), (spawn.col + 0.5) * TILE, (spawn.row + 0.5) * TILE, {
                 zoneId: mapId,
                 scene: bScene,
                 grid: bGrid,
                 cols,
                 rows,
                 rosterOverride,
-                defOverride: { label: 'Ghoul', maxHealth: 34, maxStamina: 55, attackDamage: 6, rangedWeaponKey: null, aggroRangePx: TILE * 8, leashRangePx: TILE * 30 },
-                extra: { isMineGhoul: true, mineGroupId: `mine-ghouls-${mapData.mineFloor}` },
+                defOverride: {
+                  label,
+                  maxHealth: isShadowknight ? 78 : isWitch ? 60 : 34,
+                  maxStamina: isShadowknight ? 75 : 55,
+                  attackDamage: isShadowknight ? 13 : isWitch ? 10 : 6,
+                  rangedWeaponKey: isWitch ? null : (spawn.rangedWeaponKey || null),
+                  aggroRangePx: TILE * (isWitch ? 10 : 8),
+                  leashRangePx: TILE * 30,
+                },
+                extra: {
+                  isMineGhoul: true, isGhoulShadowknight: isShadowknight,
+                  mineWyrmWitchType: isWitch ? (spawn.witchType || 'shadow-wind') : null,
+                  mineGroupId: `mine-ghouls-${mapData.mineFloor}`,
+                },
               });
               if (ghoul) { hostileObjects.add(ghoul); spawnedMineEnemyCount++; }
             }
@@ -13931,8 +15091,10 @@
           // own `.userData.cameraObstacle` tags) — collected once here, same
           // as buildZoneScene's occlusionMeshes, rather than walking the
           // whole scene graph every frame in occlusionSafeCameraPosition.
-          const occlusionMeshes = [];
+          let occlusionMeshes = [];
           bScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
+          for (const furniture of buildingCameraFurniture) if (!occlusionMeshes.includes(furniture)) occlusionMeshes.push(furniture); // Track even furniture that has no collision-grid marker.
+          occlusionMeshes = window.CameraOcclusionChunks?.replaceLargeMeshes?.(THREE, occlusionMeshes) || occlusionMeshes; // Cavern shells become near-ray-only chunk proxies (camera raycasts were the mine's main per-frame cost).
           window.BanubuCaveClouds?.validateCaveMaterials?.({ THREE, scene: bScene, mapData }); // Repairs malformed cave texture UV transforms once before Three.js renders the scene.
           window.CinematicCameraRuntime?.registerArea?.(mapId, mapData.cinematicCameras || []); // Cave/building cameras share this scene's local tile coordinate space.
           const info = { scene: bScene, registeredStationIds, grid: bGrid, cols, rows, transitions, vendorZones: mapData.vendorZones || [], routes: buildingRoutes, loadSource, fallback: loadSource !== 'config', name: mapData.name || mapId, wallStyle: mapData.wallStyle || '', entrySpots: mapData.entrySpots || {}, keyDoorGroups, mineFloor: mapData.mineFloor || null, minePlacementSafeTileCount: mapData.minePlacementSafeTileCount ?? null, disconnectedFloorTilesRemoved: mapData.disconnectedFloorTilesRemoved ?? 0, occlusionMeshes };
@@ -13989,6 +15151,12 @@
               if (safeSpawn && (safeSpawn.x !== intendedX || safeSpawn.y !== intendedY)) window.__farmLog?.(`[cavern] corrected unsafe entry spawn in ${mapId}`, 'warn', 'mine');
               if (mapId === 'map_i_den_banubu') setPlayerFacingInstant(-Math.PI / 2, { clearLook: true, syncCamera: true }); // Async cave completion must not restore the exterior look authority.
               _snapCameraTarget();
+            }
+            if (_pendingArrivalFromArea !== null) {
+              const arrivalAngle = window.BuildingEntrySpawn.arrivalAngle(info, player.x / TILE - 0.5, player.y / TILE - 0.5, _pendingArrivalFromArea); // Resolve after floor and authored transitions have loaded.
+              _pendingArrivalFromArea = null;
+              if (arrivalAngle !== null) setPlayerFacingInstant(arrivalAngle, { clearLook: true, syncCamera: true });
+              window.__farmLog?.(`[door arrival] ${mapId} facing=${arrivalAngle ?? 'default'}`, 'info');
             }
             window.LoadingScreenRuntime?.hide();
           }
@@ -14060,29 +15228,10 @@
         debugLog('loadBuildingScene: ' + mapId + ' (' + cols + 'x' + rows + ')');
       }
 
+      // buildingSpawnFromExit's body now lives in js/building-entry-spawn.js
+      // (pure function of the scene's transitions).
       function buildingSpawnFromExit(bi, fallbackCols, fallbackRows) {
-        const exitTiles = (bi?.transitions || []).filter(t => t.target === 'exit_building');
-        if (!exitTiles.length) return { col: Math.floor(fallbackCols / 2), row: Math.max(0, fallbackRows - 2) };
-        // Multiple unrelated exit_building tiles can exist on one map (e.g. a real
-        // exterior door plus an unwired stairwell stub). Cluster tiles that share the
-        // same exitId/door, then use the largest cluster so a stray single-tile stub
-        // can't drag the computed spawn point away from the actual entrance.
-        const clusters = new Map();
-        for (const t of exitTiles) {
-          const key = t.exitId != null ? t.exitId : `${t.col},${t.row}`;
-          if (!clusters.has(key)) clusters.set(key, []);
-          clusters.get(key).push(t);
-        }
-        let mainCluster = exitTiles;
-        if (clusters.size > 1) {
-          mainCluster = [...clusters.values()].reduce((a, b) => (b.length > a.length ? b : a));
-        }
-        const avgCol = mainCluster.reduce((sum, t) => sum + t.col, 0) / mainCluster.length;
-        const northRow = Math.min(...mainCluster.map(t => t.row)) - 1;
-        return {
-          col: window.FormatUtils.clamp(Math.round(avgCol), 0, fallbackCols - 1),
-          row: window.FormatUtils.clamp(northRow, 0, fallbackRows - 1)
-        };
+        return window.BuildingEntrySpawn.fromExit(bi, fallbackCols, fallbackRows);
       }
 
       function mapDebugName(area) {
@@ -14103,7 +15252,8 @@
         window.__farmLog?.(`[map] ${label}: currentMap=${area} name="${mapDebugName(area)}" source=${source} fallback=${fallback}${loading ? ' loading=true' : ''}${target} heldObjects=${heldObjectAttachment}`, fallback ? 'warn' : 'info');
       }
 
-      function enterBuilding(mapId, defaultCol, defaultRow, targetSpotId = '', loadingContextText = '') {
+      function enterBuilding(mapId, defaultCol, defaultRow, targetSpotId = '') {
+        const arrivalFromArea = currentArea; // Used to match the destination's reciprocal exit for cached and fresh scenes.
         if (window.TownMine?.floorFromMapId?.(mapId) && _buildingScenes.get(mapId)) discardGeneratedMineFloor(mapId);
         // A room visited earlier this session and still cached may no longer
         // match its own `layouts` schedule (e.g. the temple's spirit
@@ -14130,8 +15280,8 @@
         // a blank/frozen interior. Hidden from loadBuildingScene itself
         // once the scene it's building for THIS mapId actually lands.
         if (!bi) {
-          const loadingMineFloor = window.TownMine?.floorFromMapId?.(mapId); // Used only to label this as a mine load in diagnostics; the visible floor heading remains hole-descent-specific.
-          window.LoadingScreenRuntime?.show(loadingContextText ? { reason: loadingMineFloor ? 'mine-floor-load' : 'map-change', contextText: loadingContextText } : undefined);
+          const loadingMineFloor = window.TownMine?.floorFromMapId?.(mapId); // Mine loading remains distinguishable in diagnostics; the floor number appears in-world.
+          window.LoadingScreenRuntime?.show(loadingMineFloor ? { reason: 'mine-floor-load' } : undefined);
         }
         const bCols = bi?.cols || 20, bRows = bi?.rows || 20;
         // Default entry is one tile north of the building's exit. Explicit
@@ -14142,6 +15292,7 @@
         const row = Number.isFinite(Number(namedSpot?.row)) ? Number(namedSpot.row) : Number.isFinite(defaultRow) ? defaultRow : exitSpawn.row;
         // If the scene hasn't loaded yet, preserve a requested named connector
         // so loadBuildingScene can resolve it against the generated locale data.
+        _pendingArrivalFromArea = !bi ? arrivalFromArea : null;
         _pendingEntrySpotId = !bi && targetSpotId ? String(targetSpotId) : '';
         _pendingEntrySpawnFromExit = !bi && !_pendingEntrySpotId && !Number.isFinite(defaultCol);
         player.x = (col + 0.5) * TILE; player.y = (row + 0.5) * TILE;
@@ -14151,8 +15302,8 @@
           playerMesh.position.y = entrySurfaceY;
           playerGroundShadow.position.y = entrySurfaceY + characterGroundShadowSurfaceOffset();
         }
-        const entryFacing = mapId === 'map_i_den_banubu' ? -Math.PI / 2 : Math.PI / 2; // -Z/north for Banubu's south-edge entrance; ordinary interiors retain their existing south-facing default.
-        setPlayerFacingInstant(entryFacing, { clearLook: mapId === 'map_i_den_banubu', syncCamera: mapId === 'map_i_den_banubu' });
+        const entryFacing = window.BuildingEntrySpawn.arrivalAngle(bi, col, row, arrivalFromArea) ?? (mapId === 'map_i_den_banubu' ? -Math.PI / 2 : Math.PI / 2); // -Z/north for Banubu's south-edge entrance; ordinary interiors retain their existing south-facing default.
+        setPlayerFacingInstant(entryFacing, { clearLook: true, syncCamera: true });
         _snapCameraTarget();
         if (fromScene) {
           fromScene.remove(playerMesh); fromScene.remove(playerGroundShadow);
@@ -14289,7 +15440,7 @@
           currentArea = returnArea;
           if (farmPlayerSave) {
             player.x = farmPlayerSave.x; player.y = farmPlayerSave.y;
-            player.angle = farmPlayerSave.angle; facingAngle = farmPlayerSave.angle;
+            setPlayerFacingInstant(farmPlayerSave.angle + Math.PI, { clearLook: true, syncCamera: true });
           }
           player.vx = 0; player.vy = 0;
           _snapCameraTarget();
@@ -14668,8 +15819,175 @@
         _zoneVegetationMeshes.delete(mapId);
         _zoneMineableRockMeshes.delete(mapId);
         _zoneGrassMeshes.delete(mapId);
+        window.ZonePlateauMesa?.releaseZone?.(mapId); // Its render batches (and the hidden source meshes behind them) were kept in a module-level map forever.
         _zoneMesaMeshGroups.delete(mapId);
+        window.CliffElevatedSurfaces?.clear?.(mapId); // Release only this wilderness area's stacked support scope on unload.
+        window.CliffRouteNetwork?.releaseArea?.(mapId); // Drop transient scene/route references; saved balcony rewards survive.
       }
+
+      // ── Inactive wilderness zone cache ────────────────────────────────
+      // A wilderness scene used to stay cached forever once built, so every
+      // zone the player had ever entered kept its scene graph, GPU buffers and
+      // per-tile data (about 170 MB of JS heap and several hundred MB of
+      // process memory each). Only the current zone plus the most recent
+      // inactive one(s) stay built now
+      // (SCRATCHBONES_CONFIG.game.zoneCache.maxInactiveZones, default 1).
+      // Older zones are torn down with _disposeZoneScene and rebuilt by the
+      // ordinary enterZone path from _zoneLayouts, the tile deltas and the
+      // persist maps, which already restore edited tiles, felled trees, mined
+      // rocks, berries, reagents and treasure. Wildlife, bandit camps and the
+      // player's campfire keep their own state and re-attach on entry; NPCs are
+      // parked until the zone is rebuilt and ordinary creatures drop to data. A
+      // zone with a resident that must keep its rig (a bandit, a dying body)
+      // is never evicted.
+      const _zoneVisitOrder = []; // Wilderness zone ids, most recently entered last.
+      let _zoneCacheTrimTimer = null;
+      function zoneCacheMaxInactive() {
+        const configured = Number(window.SCRATCHBONES_CONFIG?.game?.zoneCache?.maxInactiveZones);
+        return Number.isFinite(configured) && configured >= 0 ? Math.floor(configured) : 1;
+      }
+      function noteZoneVisited(mapId) {
+        if (!_isZoneArea(mapId)) return;
+        const at = _zoneVisitOrder.indexOf(mapId);
+        if (at >= 0) _zoneVisitOrder.splice(at, 1);
+        _zoneVisitOrder.push(mapId);
+      }
+      function zoneResidents(mapId) {
+        const residents = [];
+        // A bandit parked by js/wilderness-simulation-lod.js carries a synthetic areaId ("__wilderness_lod_sleep__:<zone>") so
+        // the hostile update skips it; its real zone is _wildernessLodAreaId. Matching only areaId made sleepers invisible here:
+        // they neither pinned the zone nor were released with it, and each one kept `scene` (so the whole evicted zone's render
+        // lists and geometry) alive through hostileObjects. Found with heap snapshots.
+        for (const set of [hostileObjects, corpseObjects]) for (const c of set) if (((c._wildernessLodSleeping && c._wildernessLodAreaId) || c.areaId || c.zoneId) === mapId) residents.push(c);
+        return residents;
+      }
+      // Ordinary creatures (wildlife and ambient hostiles) are rebuilt from their
+      // own data by createCreatureVisuals, so an inactive zone can hold them as
+      // plain data and the distance LOD promotes them again on return. Anything
+      // with its own rig builder or a rider/follower relationship stays put.
+      function canHoldAsData(c) {
+        if (c.isBandit || c.isCompanion || c.banditCompanion || c.maskboundTroop || c.mountedBy || c.rider || !c.def) return false;
+        return c.health > 0 || window.WildlifeVisualLod.isStreamableCorpse({ ...c, streamVisuals: true });
+      }
+      function releaseResidentRigs(mapId) {
+        for (const c of zoneResidents(mapId)) {
+          if (c._wildlifeVisualsReleased || !canHoldAsData(c)) continue;
+          c.streamVisuals = true; // From here on it streams by distance like any other wildlife.
+          releaseCreatureVisuals(c);
+        }
+      }
+      // NPCs have a parked state for a zone whose scene does not exist yet
+      // (_pendingZoneAdd, see makeNpcWalker/transferToArea); buildZoneScene drops
+      // them back in at the nearest walkable tile when the zone is rebuilt.
+      function parkZoneNpcs(mapId) {
+        const area = normalizeNpcArea(mapId);
+        for (const w of npcWalkers) {
+          if (normalizeNpcArea(w.area) !== area) continue;
+          if (w.root._npcScene) w.root._npcScene.remove(w.root); else w.root.parent?.remove?.(w.root);
+          w.root._npcScene = null; w.root._pendingZoneAdd = mapId;
+          w.resetRouteState?.();
+        }
+      }
+      function zoneEvictionBlocker(mapId) {
+        if (mapId === window.DevSpawner?.DEV_ARENA_ZONE_ID || mapId === window.DevSpawner?.WILDERNESS_LAB_ZONE_ID) return 'dev zone';
+        for (const c of zoneResidents(mapId)) if (!c._wildlifeVisualsReleased && !c.isCompanion) return 'resident rig';
+        return null;
+      }
+      // _disposeZoneScene frees geometry only, because tileMats and the house
+      // wall builder's materials are shared by every map. An evicted zone would
+      // otherwise leave all of its other materials and textures resident, and its
+      // rebuild would create a second set (about 370 textures per cycle). Anything
+      // still referenced by a scene that stays alive is skipped; r128 re-uploads a
+      // disposed resource on next use, so a skipped-or-missed share costs a
+      // re-upload at worst.
+      function materialTextures(material) {
+        const found = [];
+        for (const key in material) { const value = material[key]; if (value?.isTexture) found.push(value); }
+        if (material.uniforms) for (const uniform of Object.values(material.uniforms)) if (uniform?.value?.isTexture) found.push(uniform.value);
+        return found;
+      }
+      function materialsOf(object) { return Array.isArray(object.material) ? object.material : [object.material]; }
+      function collectLiveSceneResources() {
+        const materials = new Set(), textures = new Set();
+        const scenes = [scene, townScene, ...[..._buildingScenes.values()].map(b => b?.scene), ...[..._zoneScenes.values()].map(zi => zi.scene)];
+        for (const s of scenes) s?.traverse?.(object => {
+          for (const material of materialsOf(object)) {
+            if (!material || materials.has(material)) continue;
+            materials.add(material);
+            for (const texture of materialTextures(material)) textures.add(texture);
+          }
+        });
+        return { materials, textures };
+      }
+      function disposeSceneResources(zoneScene, live) {
+        const seen = new Set(); let materials = 0, textures = 0;
+        zoneScene.traverse(object => {
+          for (const material of materialsOf(object)) {
+            if (!material || seen.has(material) || live.materials.has(material)) continue;
+            seen.add(material);
+            for (const texture of materialTextures(material)) if (!live.textures.has(texture)) { texture.dispose(); textures++; }
+            material.dispose(); materials++;
+          }
+        });
+        return { materials, textures };
+      }
+      function evictZoneScene(mapId) {
+        const zi = _zoneScenes.get(mapId);
+        if (!zi) return false;
+        const persisted = _captureLivePreviewZonePersistence(mapId); // _disposeZoneScene was written for terrain regeneration and drops this saved state.
+        window.WildernessCampfire?.releaseVisualIfZone?.(mapId); // Keeps the saved campfire; only its visual belonged to this scene.
+        for (const c of zoneResidents(mapId)) { c.scene = null; c.areaGrid = null; } // Data-only residents must not keep the old scene and grid alive; rebindZoneResidents restores them.
+        parkZoneNpcs(mapId);
+        _disposeZoneScene(mapId);
+        _restoreLivePreviewZonePersistence(mapId, persisted);
+        const freed = disposeSceneResources(zi.scene, collectLiveSceneResources()); // _zoneScenes no longer lists this zone, so only scenes that stay alive count as users.
+        // Modules that keep strong, zone-keyed references to the old scene or grid (found with a heap snapshot).
+        window.HeldObjectRenderOrder?.forgetScene?.(zi.scene);
+        window.CratePiles?.releaseZone?.(mapId);
+        window.PorakanekiCampPlacementPolicy?.forgetZone?.(mapId);
+        window.Shattercasks?.releaseZone?.(mapId);
+        window.WorldPopupText?.releaseScene?.(zi.scene);
+        window.TzatzulCliffSites?.releaseArea?.(mapId); // Nest spires keep the scene they were drawn into until the next area change; make eviction not depend on that.
+        zi.scene.clear(); // One stale reference to a mesh would otherwise keep the whole old zone reachable through its parent chain.
+        window.__farmLog?.(`[zone-cache] evicted ${mapId} (${freed.materials} materials, ${freed.textures} textures released)`, 'perf');
+        return true;
+      }
+      function rebindZoneResidents(mapId, info) {
+        for (const c of zoneResidents(mapId)) { c.scene = info.scene; c.areaGrid = info.grid; c.areaCols = info.cols; c.areaRows = info.rows; }
+      }
+      // Releasing an old zone's bandits (they cannot become data) now lives in js/zone-bandit-release.js.
+      window.ZoneBanditRelease.init({
+        zoneResidents,
+        hostileObjects,
+        corpseObjects,
+        companionObjects,
+        getCurrentArea: () => currentArea,
+        despawnCreature,
+        forgetCampState: mapId => window.BanditCamps.forgetZoneState(mapId), // Camps re-seed on the next entry.
+      });
+      const _zoneCacheHistory = []; // QA record of recent trim decisions, newest last (window.__zoneCacheDebug.history).
+      function trimZoneCache() {
+        _zoneCacheTrimTimer = null;
+        const entry = { at: Date.now(), current: currentArea, order: [..._zoneVisitOrder], built: [..._zoneScenes.keys()], skipped: null, kept: [], evicted: [], blocked: [] };
+        _zoneCacheHistory.push(entry);
+        if (_zoneCacheHistory.length > 40) _zoneCacheHistory.shift();
+        if (cutscenePreviewActive || _tothalShiftPromise) { entry.skipped = cutscenePreviewActive ? 'cutscene preview' : 'tothal shift'; return; }
+        const inactive = _zoneVisitOrder.filter(id => id !== currentArea && _zoneScenes.has(id));
+        const keep = new Set(inactive.slice(Math.max(0, inactive.length - zoneCacheMaxInactive())));
+        for (const mapId of [..._zoneScenes.keys()]) {
+          if (mapId === currentArea || keep.has(mapId)) { entry.kept.push(mapId); continue; }
+          releaseResidentRigs(mapId);
+          let blocker = zoneEvictionBlocker(mapId);
+          if (blocker === 'resident rig' && window.ZoneBanditRelease.releaseZone(mapId)) blocker = zoneEvictionBlocker(mapId); // Only when bandits are the sole pin; see js/zone-bandit-release.js.
+          if (blocker) { entry.blocked.push(`${mapId}: ${blocker}`); window.__farmLog?.(`[zone-cache] kept ${mapId}: ${blocker}`, 'perf'); continue; }
+          if (evictZoneScene(mapId)) entry.evicted.push(mapId);
+        }
+      }
+      function scheduleZoneCacheTrim() {
+        if (_zoneCacheTrimTimer) return;
+        _zoneCacheTrimTimer = setTimeout(trimZoneCache, 6000); // Never in the frame the player arrives: a freshly entered area gets a few quiet seconds first.
+      }
+      window.__zoneCacheDebug = { trim: trimZoneCache, order: () => [..._zoneVisitOrder], built: () => [..._zoneScenes.keys()], blocker: zoneEvictionBlocker, history: () => _zoneCacheHistory.map(e => ({ ...e })), sceneRef: id => _zoneScenes.get(id)?.scene || null, gridRef: id => _zoneScenes.get(id)?.grid || null }; // QA hook, mirrors window.__regenerateWildernessLab.
 
       // Finds one already-built wilderness shrub/tree group by indexed tile
       // lookup and removes it with light list bookkeeping. The grass floor
@@ -14721,73 +16039,11 @@
         return true;
       }
 
-      function revealMineDescentVisual(mapId, col, row) {
-        const info = _buildingScenes.get(mapId);
-        const floor = window.TownMine?.floorFromMapId?.(mapId);
-        if (!info?.scene || !floor || floor >= 100) return false;
-        const key = `${col},${row}`;
-        let hole = _mineDescentHoleMeshes.get(mapId)?.get(key);
-        if (!hole) {
-          hole = new THREE.Group();
-          const voidDisk = new THREE.Mesh(new THREE.CircleGeometry(0.37, 24), new THREE.MeshBasicMaterial({ color: 0x000000, depthWrite: false }));
-          voidDisk.rotation.x = -Math.PI / 2;
-          voidDisk.position.y = 0.135;
-          hole.add(voidDisk);
-          const rim = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.065, 8, 24), new THREE.MeshLambertMaterial({ color: 0x73777b }));
-          rim.rotation.x = Math.PI / 2;
-          rim.position.y = 0.15;
-          hole.add(rim);
-          const innerRim = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.025, 6, 20), new THREE.MeshBasicMaterial({ color: 0x25282b }));
-          innerRim.rotation.x = Math.PI / 2;
-          innerRim.position.y = 0.145;
-          hole.add(innerRim);
-          hole.position.set(col + 0.5, 0, row + 0.5);
-          info.scene.add(hole);
-          if (!_mineDescentHoleMeshes.has(mapId)) _mineDescentHoleMeshes.set(mapId, new Map());
-          _mineDescentHoleMeshes.get(mapId).set(key, hole);
-        }
-        if (!info.transitions.some(transition => transition.mineDynamicDescent)) {
-          info.transitions.push({
-            col, row, area: mapId, target: 'building',
-            targetMapId: window.TownMine.mapIdForFloor(floor + 1),
-            mineDynamicDescent: true,
-          });
-        }
-        return true;
-      }
-
-      function nearestWalkableMineHoleTile(mapId, preferredCol, preferredRow) {
-        const info = _buildingScenes.get(mapId);
-        if (!info?.grid) return null;
-        const occupiedTransitions = new Set(info.transitions.map(transition => `${transition.col},${transition.row}`));
-        for (let radius = 0; radius <= 6; radius++) {
-          for (let row = preferredRow - radius; row <= preferredRow + radius; row++) {
-            for (let col = preferredCol - radius; col <= preferredCol + radius; col++) {
-              if (Math.max(Math.abs(col - preferredCol), Math.abs(row - preferredRow)) !== radius) continue;
-              const tile = info.grid[row]?.[col];
-              if (!tile || tile.type === TileType.ROCK || occupiedTransitions.has(`${col},${row}`)) continue;
-              return { col, row };
-            }
-          }
-        }
-        return null;
-      }
-
+      // Mine descent-hole discovery (revealMineDescentVisual /
+      // nearestWalkableMineHoleTile / tryRevealMineDescent) now lives in
+      // js/town-mine-descent.js (window.TownMineDescent); wired by init below.
       function tryRevealMineDescent(mapId, preferredCol, preferredRow, source) {
-        const state = _mineFloorRunStates.get(mapId);
-        if (!state || state.descentRevealed) return false;
-        if (source === 'rock') state.remainingRocks = Math.max(0, state.remainingRocks - 1);
-        if (source === 'enemy') state.remainingEnemies = Math.max(0, state.remainingEnemies - 1);
-        if (!state.canDescend) return false;
-        const chance = window.TownMine?.descentChance?.(source) || (source === 'enemy' ? 0.16 : 0.08); // Doubled base odds; TownMine adds the source-specific perk rank.
-        const guaranteedFallback = state.remainingRocks + state.remainingEnemies === 0;
-        if (!guaranteedFallback && Math.random() >= chance) return false;
-        const tile = nearestWalkableMineHoleTile(mapId, preferredCol, preferredRow);
-        if (!tile || !revealMineDescentVisual(mapId, tile.col, tile.row)) return false;
-        state.descentRevealed = true;
-        state.descentCol = tile.col;
-        state.descentRow = tile.row;
-        return true;
+        return window.TownMineDescent.tryReveal(mapId, preferredCol, preferredRow, source);
       }
 
       // Wilderness zone ground-visual refresh after a runtime tile edit
@@ -15107,6 +16363,7 @@
           // the corridor reading as empty grass forever.
           _townPathFallbackMesh = new THREE.Mesh(pathNet.pathGeo, resolveTileMat('map_hobunji_town', TileType.PATH));
           _townPathFallbackMesh.name = 'TownPathFallback';
+          _townPathFallbackMesh.userData.hobunjiPathSurface = true; // Fallback remains x-rayable when paved path chunks cannot load.
           _townPathFallbackMesh.visible = false;
           _townPathFallbackMesh.receiveShadow = true;
           townScene.add(_townPathFallbackMesh);
@@ -15243,6 +16500,7 @@
       }
 
       function enterTown(col, row) {
+        const fromArea = currentArea; // Used to distinguish a genuine exterior-to-town gate crossing from other town spawns.
         const fromScene = window.GridTileAccessors.getActiveScene();
         buildTownScene();
         farmPlayerSave = { x: player.x, y: player.y, angle: player.angle };
@@ -15273,6 +16531,7 @@
           townScene.add(reticleWavyGroup);
         }
         refreshActionBar();
+        window.TownMagicCheckpoint?.onTownEntered?.({ fromArea, col, row }); // The imperial perimeter is checked only after canonical town travel completes.
       }
 
       // Processing-station recipe resolution, berry/dew/alcohol key & color
@@ -15408,7 +16667,12 @@
             const fromArea = sceneTransFromArea;
             try {
               _cb();
-              if (fromArea && fromArea !== currentArea) catchNpcsOnPlayerAreaTransition(fromArea, currentArea);
+              if (fromArea && fromArea !== currentArea) {
+                // Delivers completed exits even when timer polling misses the interior; isolated so a visitor failure never skips the NPC catch-up below.
+                try { window.DoorstepVisits?.onAreaTransition?.(fromArea, currentArea); }
+                catch (e) { debugLog('doorstep area transition error: ' + (e?.stack || e), 'error'); }
+                catchNpcsOnPlayerAreaTransition(fromArea, currentArea);
+              }
             } catch(e) { debugLog('scene transition error: ' + (e?.stack || e), 'error'); }
           }
         } else {
@@ -15431,18 +16695,22 @@
       // spawns just inside that piece's room. Falls back to any available
       // door (or the interior's center, if somehow none exist yet) when
       // called without one, e.g. legacy 'interior' travel transitions.
-      function enterInterior(pieceId) {
+      function enterInterior(pieceId, featureId = null) {
         const fromScene = currentArea === 'town' ? townScene : scene;
         farmPlayerSave = { x: player.x, y: player.y, angle: player.angle, area: currentArea };
         currentArea    = 'interior';
         const layout = window.HousePieces.computeInteriorLayout();
-        const door = layout.doors.find(d => d.pieceId === pieceId) || layout.doors[0];
+        const selectedFeatureId = featureId || (window.HousePieces?.lastEnteredEntrance?.()?.pieceId === pieceId
+          ? window.HousePieces.lastEnteredEntrance().featureId : null); // Remember which independently attached door the player used.
+        const door = layout.doors.find(d => d.pieceId === pieceId && d.featureId === selectedFeatureId)
+          || layout.doors.find(d => d.pieceId === pieceId) || layout.doors[0];
         const entryCol = door ? door.enter.c : INTERIOR_COLS / 2;
         const entryRow = door ? door.enter.r : INTERIOR_ROWS / 2;
         player.x       = (entryCol + 0.5) * TILE;
         player.y       = (entryRow + 0.5) * TILE;
         player.vx      = 0;  player.vy = 0;
-        facingAngle    = Math.PI / 2;   // face south (into the room)
+        const enterFacing = { north: Math.PI / 2, south: -Math.PI / 2, west: 0, east: Math.PI }; // Match the actual interior direction of each exterior entrance.
+        facingAngle    = enterFacing[door?.side] ?? Math.PI / 2;
         player.angle   = facingAngle;
         _snapCameraTarget();
         // Move player mesh into interior scene
@@ -15489,7 +16757,144 @@
         });
       }
 
+      function getCliffBalconyResourceAt(col, row) {
+        if (!_isZoneArea(currentArea) || !player.onCliffBalcony) return null;
+        const routeNet = window.CliffRouteNetwork?.forArea?.(currentArea); // Reuse rendered Y-layer state rather than the underlying single-height grid.
+        const shelf = window.CliffRouteNetwork?.shelfAt?.(routeNet, player.onCliffBalcony);
+        if (!shelf || !shelf.footprint.some(f => f.c === col && f.r === row)) return null;
+        // A clustered herb patch belongs to one walkable mini-cliff tile, even on long ledges.
+        if (shelf.reward === 'herbCluster' && shelf.herbTile &&
+          (shelf.herbTile.c !== col || shelf.herbTile.r !== row)) return null;
+        const state = window.CliffRouteNetwork.getRewardState(currentArea, shelf.id);
+        if (state.claimed) return null;
+        const areaAtCreation = currentArea; // Asynchronous lockpicking validates the original area/ledge before paying.
+        const isAvailable = () => currentArea === areaAtCreation && player.onCliffBalcony === shelf.id &&
+          window.CliffRouteNetwork.shelfAt(window.CliffRouteNetwork.forArea(currentArea), shelf.id) === shelf &&
+          !window.CliffRouteNetwork.getRewardState(currentArea, shelf.id).claimed;
+        const award = () => {
+          const rewards = [];
+          if (shelf.reward === 'oreRock') {
+            const amount = 2 + (shelf.routeId % 3); // Fixed per-rock amount; prevents rerolling on repeated failed actions.
+            inventory.stone = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory.stone || 0) + amount);
+            rewards.push(amount + ' Stone');
+            const metals = Object.keys(ORE_DEFS || {});
+            const oreKey = metals.length ? metals[shelf.routeId % metals.length] : null;
+            const oreItem = oreKey ? metalOreItemKey(oreKey) : null;
+            if (oreItem) {
+              inventory[oreItem] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[oreItem] || 0) + 2);
+              window.TownMine?.recordHeldOres?.([oreKey]);
+              rewards.push('2 ' + (ORE_DEFS[oreKey]?.label || oreKey));
+              window.HobunjiActivityEvents?.emit('ore_mined', { oreKey });
+            }
+            window.SkillSystem?.award?.('mining', window.SkillSystem?.XP_GAINS?.rock || 8, 'mined cliff ore');
+            window.HobunjiActivityEvents?.emit('rock_broken', { area: currentArea });
+          } else if (shelf.reward === 'herbCluster') {
+            const reagentKey = shelf.reagentKey; // Chosen from this area's native plants by the cliff renderer.
+            const reagent = window.AlchemySystem?.REAGENT_DEFS?.[reagentKey]; // Shared reagent definition used by ordinary gathering.
+            if (!reagent) return { ok: false, message: 'These herbs cannot be identified yet.' };
+            const pickCount = 5; // One cluster represents five normal herb picks for yield, perks, and XP.
+            const bonusChance = window.SkillSystem?.bonusYieldChance?.('foraging') || 0; // Extra-yield chance from the ordinary Foraging perks and buffs.
+            const doubleRank = window.PerkSystem?.rank?.('foraging', 'doubleForageables') || 0; // Normal Double Forageables perk applies to every pick.
+            let amount = 0; // Total yield from five independent bonus rolls before accepting the harvest.
+            for (let pick = 0; pick < pickCount; pick++) {
+              amount += (1 + (rnd() < bonusChance ? 1 : 0)) * (doubleRank > 0 ? 2 : 1);
+            }
+            const previous = inventory[reagentKey] || 0; // Current stack before adding the whole cluster's reward.
+            if (previous + amount > window.InventoryStacks.MAX_TOTAL) {
+              return { ok: false, message: 'Not enough inventory space for all five herb picks.' }; // Never consume a cluster while discarding its herbs.
+            }
+            inventory[reagentKey] = previous + amount;
+            rewards.push(amount + ' ' + (reagent.label || reagentKey));
+            for (let pick = 0; pick < pickCount; pick++) {
+              window.SkillSystem?.award?.('foraging', window.SkillSystem?.XP_GAINS?.forage || 4, 'picked cliff herb cluster');
+              window.HobunjiActivityEvents?.emit('herb_picked', { area: currentArea, source: 'miniCliff' });
+            }
+            window.AudioSystem?.playObjectSfx?.(window.AudioSystem?.objectSfxConfig?.()?.harvest);
+          } else if (shelf.reward === 'buriedTreasure') {
+            const metalLoot = window.WildTreasure?.rollTreasureMetalBarLoot?.() || {}; // Existing wilderness buried-chest metal picker.
+            for (const [itemKey, amount] of Object.entries(metalLoot)) {
+              inventory[itemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[itemKey] || 0) + amount);
+              rewards.push(amount + ' ' + (ITEM_DEFS[itemKey]?.label || itemKey));
+            }
+            const gold = 14 + (shelf.routeId % 7) * 4;
+            inventory.gold = (inventory.gold || 0) + gold;
+            rewards.push(gold + 'g');
+            window.HobunjiActivityEvents?.emit('chest_opened', { buried: true, mapId: currentArea });
+          }
+          window.CliffRouteNetwork.setRewardStage(currentArea, shelf.id, 'claimed');
+          refreshItemScroll(); buildInventoryGrid(); buildPackClothingSection();
+          return { ok: true, zoneVisualsUpdated: true, message: 'Found: ' + rewards.join(', ') };
+        };
+        return {
+          id: shelf.id + '-resource', col, row, type: 'cliff_balcony_resource',
+          label: shelf.reward === 'oreRock' ? 'Ore Rock'
+            : shelf.reward === 'herbCluster' ? 'Herb Cluster' : 'Buried Cliff Chest',
+          getButtons() {
+            if (shelf.reward === 'herbCluster') return [{
+              icon: '🌿', label: 'Pick the mini-cliff herb cluster',
+              action: 'obj_balcony_pick', inputAction: 'action1', worldInteraction: true,
+              style: 'primary', allowed: true,
+            }];
+            if (shelf.reward === 'oreRock') return [{
+              icon: '⛏️', label: 'Mine the balcony ore rock',
+              action: 'obj_balcony_mine', inputAction: 'action1', worldInteraction: true,
+              style: 'primary', allowed: activeTool === 'pick' && heldMode === 'tool',
+            }];
+            if (!state.revealed) return [{
+              icon: '🪏', label: 'Dig for buried treasure',
+              action: 'obj_balcony_dig', inputAction: 'action1', worldInteraction: true,
+              style: 'primary', allowed: activeTool === 'shovel' && heldMode === 'tool',
+            }];
+            return [{
+              icon: '🗝️', label: 'Open the cliff chest',
+              action: 'obj_balcony_open', inputAction: 'action1', worldInteraction: true,
+              style: 'primary', allowed: true,
+            }];
+          },
+          onAction(action) {
+            if (!isAvailable()) return { ok: false, message: 'That ledge is no longer accessible.' };
+            if (action === 'obj_balcony_mine' && shelf.reward === 'oreRock') {
+              if (activeTool !== 'pick' || heldMode !== 'tool') return { ok: false, message: 'Equip a pick to mine this rock.' };
+              return award();
+            }
+            if (action === 'obj_balcony_pick' && shelf.reward === 'herbCluster') return award(); // Direct picking, no shovel.
+            if (action === 'obj_balcony_dig' && shelf.reward === 'buriedTreasure' && !state.revealed) {
+              if (activeTool !== 'shovel' || heldMode !== 'tool') return { ok: false, message: 'Equip a shovel to dig here.' };
+              window.CliffRouteNetwork.setRewardStage(currentArea, shelf.id, 'revealed');
+              awardToolUseMasteryXp('shovel');
+              return { ok: true, zoneVisualsUpdated: true, message: 'The dirt breaks away, revealing a buried chest.' };
+            }
+            if (action === 'obj_balcony_open' && shelf.reward === 'buriedTreasure' && state.revealed) {
+              const valid = () => isAvailable() && window.CliffRouteNetwork.getRewardState(currentArea, shelf.id).revealed;
+              const started = window.ChestLockpicking?.open?.({
+                id: shelf.id, title: 'Cliff Chest', tier: 1, valid,
+                onSuccess: () => {
+                  if (!valid()) return;
+                  const result = award();
+                  if (result.message) showToast(result.message, result.ok);
+                  if (result.ok) {
+                    const saved = window.HobunjiRuntimeSave?.flushNow?.({ reason: 'cliff-balcony-chest-opened' })
+                      ?? (saveMemberWorldData(), { ok: true });
+                    if (saved?.ok === false || saved?.captured === false) showToast('Chest opened, but save was not confirmed.', false);
+                  }
+                },
+              });
+              return { ok: false, deferMemberSave: true, message: started ? '' : 'Lockpicking unavailable.' };
+            }
+            return { ok: false, message: 'Unavailable.' };
+          },
+        };
+      }
+
       function getWorldObjectAt(col, row) {
+        // FurnitureTableSystem.objectAt answers "what is the camera ray focused on" and ignores
+        // col/row, so only the reticle tile may use it; placement/occupancy probes of other
+        // tiles must not all report the currently focused chair or serving pot.
+        const aim = getReticleTile();
+        const furniture = aim.col === col && aim.row === row ? window.FurnitureTableSystem?.objectAt(currentArea, col, row) : null; // Exterior chairs and attached surface furniture use ordinary world inputs.
+        if (furniture) return furniture;
+        const cliffResource = getCliffBalconyResourceAt(col, row); // Real elevation layer wins over objects on ground below.
+        if (cliffResource) return cliffResource;
         const corpse = getCorpseObjectAt(col, row);
         if (corpse) return corpse;
         if (currentArea === 'interior') return interiorWorldObjects.get(col + ',' + row) || null;
@@ -15502,25 +16907,52 @@
               || window.HobunjiCloudForestWildlife?.fruitObjectAt?.(currentArea, col, row)
               || null;
         }
+        // Cave reagent clusters share the ordinary aimed world-object contract;
+        // they are never collected by a proximity tick or registered on the farm.
+        if (_isCavernBuildingArea(currentArea)) return window.CaveSiteSystem?.objectAt?.(currentArea, col, row) || null;
         if (currentArea !== 'farm') return null;
+        const groomingKit = interiorFurnitureObjects.find(obj => obj.area === 'farm' && obj.key === 'groomingKit' && obj.col === col && obj.row === row); // Lookup from placed records also covers restored/moved furniture without another registry.
+        if (groomingKit) return makeGroomingInteractable();
         return worldObjects.get(col + ',' + row) || null;
+      }
+
+      // Aimed interactions use the rendered livestock planes, not the
+      // reservation tile that is updated at the START of a wandering hop.
+      // Ordinary getWorldObjectAt stays tile-based for occupancy, placement,
+      // collision, and all other world-object consumers.
+      function getAimedFarmInteractionObject(col, row) {
+        const object = getWorldObjectAt(col, row); // Existing furniture/corpse/processor focus retains priority over livestock.
+        if (currentArea !== 'farm' || (object && object.type !== 'animal')) return object;
+        return window.FarmAnimals?.aimedAnimal?.() || null; // A ray miss must not activate an animal merely because its reserved tile is under the ground reticle.
       }
 
       function worldObjectMorningTick() {
         // Deliver pending orders
         const today = calendar.day;
-        const arriving = pendingOrders.filter(o => o.arrivalDay <= today);
-        pendingOrders   = pendingOrders.filter(o => o.arrivalDay >  today);
-        for (const o of arriving) {
-          const item = o.item;
-          Object.entries(item.gives).forEach(([k, v]) => {
-            inventory[k] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[k] || 0) + v * o.qty);
-          });
-          const line = 'Day ' + today + ' — ' + o.qty + '× ' + item.name + ' delivered';
+        let deliveredAny = false; // Persist successful non-seed deliveries and retryable receipts after the morning batch.
+        for (const o of [...pendingOrders]) {
+          if (o.arrivalDay > today) continue;
+          const item = o.item || SUPPLY_CATALOG.find(entry => entry.key === o.key);
+          if (!item?.gives) continue; // An unknown item stays pending until its catalog is available.
+          const entries = Object.entries(item.gives);
+          const seeds = entries.filter(([key]) => ITEM_DEFS[key]?.cat === 'seed'); // Ordered plantable seeds belong to shared Farm Storage, not the player's pack.
+          if (seeds.length && !window.WorldMetaStore?.completeSeedSupplyOrder?.(_tothalWorldId(), o, Object.fromEntries(seeds))) {
+            showToast('Could not deliver ' + item.name + ' to Farm Storage; order retained.', false);
+            continue; // A failed atomic transaction cannot consume a paid receipt.
+          }
+          // Once the seed credit and receipt removal have committed together, local state can follow.
+          for (const [key, count] of entries) {
+            if (ITEM_DEFS[key]?.cat === 'seed') continue;
+            inventory[key] = Math.min(window.InventoryStacks.MAX_TOTAL, (Number(inventory[key]) || 0) + count * o.qty);
+          }
+          pendingOrders.splice(pendingOrders.indexOf(o), 1);
+          deliveredAny = true;
+          const line = 'Day ' + today + ' — ' + o.qty + '× ' + item.name + (seeds.length ? ' delivered to Farm Storage' : ' delivered');
           deliveryLog.unshift({ type: 'delivery', text: line });
-          showToast('📦 ' + o.qty + '× ' + item.name + ' delivered!', true);
+          showToast('📦 ' + o.qty + '× ' + item.name + (seeds.length ? ' delivered to Farm Storage!' : ' delivered!'), true);
         }
         deliveryLog = deliveryLog.slice(0, 12);
+        if (deliveredAny) saveMemberWorldData(); // Non-seed orders and the updated inventory must also survive a reload.
         if (menuOpen) window.SupplyPage.render();
         // Tick sell crate clock
         tickWorldObjects();
@@ -15568,8 +17000,8 @@
         { key: 'yellowberrySeeds',   icon: '🟡', label: 'YELLOWBERRY SEEDS', max: 99, seedFor: 'yellowberries' },
         { key: 'whiteberrySeeds',    icon: '⚪', label: 'WHITEBERRY SEEDS',  max: 99, seedFor: 'whiteberries' },
         { key: 'blackberrySeeds',    icon: '⚫', label: 'BLACKBERRY SEEDS',  max: 99, seedFor: 'blackberries' },
-        { key: 'blackMustardSeed',   icon: '⚫', label: 'BLACK MUSTARD SEED', max: 99, seedFor: 'blackMustard' },
-        { key: 'greenMustardSeed',   icon: '🥬', label: 'GREEN MUSTARD SEED', max: 99, seedFor: 'greenMustard' },
+        { key: 'blackMustardSeed',   icon: '⚫', label: 'BLACK MUSHTARD SEED', max: 99, seedFor: 'blackMustard' },
+        { key: 'greenMustardSeed',   icon: '🥬', label: 'GREEN MUSHTARD SEED', max: 99, seedFor: 'greenMustard' },
         { key: 'needlegrain',        icon: '🌾', label: 'NEEDLEGRAIN',       max: 99 },
         { key: 'heftroot',           icon: '🟡', label: 'HEFTROOT',          max: 99 },
         { key: 'garlink',            icon: '🧄', label: 'GARLINK',           max: 99 },
@@ -15579,8 +17011,8 @@
         { key: 'yellowberries',      icon: '🟡', label: 'YELLOWBERRIES',     max: 99 },
         { key: 'whiteberries',       icon: '⚪', label: 'WHITEBERRIES',      max: 99 },
         { key: 'blackberries',       icon: '⚫', label: 'BLACKBERRIES',      max: 99 },
-        { key: 'blackMustard',       icon: '⚫', label: 'BLACK MUSTARD',     max: 99 },
-        { key: 'greenMustard',       icon: '🥬', label: 'GREEN MUSTARD',     max: 99 },
+        { key: 'blackMustard',       icon: '⚫', label: 'BLACK MUSHTARD',     max: 99 },
+        { key: 'greenMustard',       icon: '🥬', label: 'GREEN MUSHTARD',     max: 99 },
         { key: 'mulch',              icon: '🍂', label: 'MULCH',            max: 99 },
         { key: 'garWolfMeat',        icon: '🥩', label: 'GAR-WOLF MEAT',    max: 99 },
         { key: 'garWolfHide',        icon: '🟫', label: 'GAR-WOLF HIDE',    max: 99 },
@@ -15589,12 +17021,18 @@
         { key: 'dabinggiHoundMeat',  icon: '🥩', label: 'DABINGGI-HOUND MEAT', max: 99 },
         { key: 'dabinggiHoundHide',  icon: '🟫', label: 'DABINGGI-HOUND HIDE', max: 99 },
         { key: 'uumkaoiiCrate',      icon: '🦆', label: 'UUMKAO\'II CRATE',  max: 9  },
+        { key: 'nelkCrate',          icon: '🦎', label: 'NELK CRATE',        max: 9  },
+        { key: 'nelkBaby',           icon: '🦎', label: 'NELK HATCHLING',    max: 9  },
+        { key: 'nazgrakuCrate',      icon: '🐟', label: 'NAZGRAKU CRATE',    max: 9  },
+        { key: 'nazgrakuBaby',       icon: '🐟', label: 'NAZGRAKU HATCHLING', max: 9 },
         { key: 'uumkaoiiMeat',       icon: '🥩', label: 'UUMKAO\'II MEAT',  max: 99 },
         { key: 'uumkaoiiEgg',        icon: '🥚', label: 'UUMKAO\'II EGG',   max: 9  },
         { key: 'garWolfBaby',        icon: '🐾', label: 'GAR-WOLF PUP',    max: 9  },
         { key: 'dabinggiHoundEgg',   icon: '🥚', label: 'DABINGGI-HOUND EGG', max: 9  },
         { key: 'grehlrBaby',          icon: '🐾', label: 'GREHLR BABY', max: 9  },
         { key: 'fertileDrenkirraEgg', icon: '🥚', label: 'FERTILE DRENKIRRA EGG', max: 9  },
+        { key: 'fertileHoneyfuzzleEgg', icon: '🥚', label: 'FERTILE HONEYFUZZLE EGG', max: 9 },
+        { key: 'honey', icon: '🍯', label: 'HONEY', max: 99 },
         { key: 'drenkirraEgg',        icon: '🥚', label: 'DRENKIRRA EGG', max: 99 },
         { key: 'bronzehoe',    icon: '🪓', label: 'BRONZE HOE',    max: 9 },
         { key: 'hatchet',      icon: '🪓', label: 'HATCHET',       max: 9 },
@@ -15614,8 +17052,8 @@
         yellowberrySeeds: { icon: '🟡', label: 'Yellowberry Seeds', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Berry'], desc: 'Plants yellowberries. Berries grow best when any adjacent tile is a ditch; ideal water 25–60%.' },
         whiteberrySeeds: { icon: '⚪', label: 'Whiteberry Seeds', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Berry'], desc: 'Plants whiteberries. Berries grow best when any adjacent tile is a ditch; ideal water 40–75%.' },
         blackberrySeeds: { icon: '⚫', label: 'Blackberry Seeds', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Berry'], desc: 'Plants blackberries. Berries grow best when any adjacent tile is a ditch; ideal water 45–80%.' },
-        blackMustardSeed: { icon: '⚫', label: 'Black Mustard Seed', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Mustard'], desc: 'Plants black mustard. Hot mustard crop; ideal water 15–40%.' },
-        greenMustardSeed: { icon: '🥬', label: 'Green Mustard Seed', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Mustard'], desc: 'Plants green mustard. Fresh mustard crop; ideal water 30–65%.' },
+        blackMustardSeed: { icon: '⚫', label: 'Black Mushtard Seed', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Mushtard'], desc: 'Plants black mushtard. Hot mushtard crop; ideal water 15–40%.' },
+        greenMustardSeed: { icon: '🥬', label: 'Green Mushtard Seed', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Mushtard'], desc: 'Plants green mushtard. Fresh mushtard crop; ideal water 30–65%.' },
         needlegrain: { icon: '🌾', label: 'Needlegrain', cat: 'crop', sellPrice: CROP_SELL_PRICES.needlegrain, tags: ['Crop', 'Sellable', 'Grain'], desc: 'Dry-default grain crop from the cooking system.' },
         heftroot: { icon: '🟡', label: 'Heftroot', cat: 'crop', sellPrice: CROP_SELL_PRICES.heftroot, tags: ['Crop', 'Sellable', 'Root'], desc: 'Starchy root crop used for heftroot flour and yellow noodles.' },
         garlink: { icon: '🧄', label: 'Garlink', cat: 'crop', sellPrice: CROP_SELL_PRICES.garlink, tags: ['Crop', 'Sellable', 'Pungent'], desc: 'Pungent vegetable and broth base.' },
@@ -15625,9 +17063,10 @@
         yellowberries: { icon: '🟡', label: 'Yellowberries', cat: 'crop', sellPrice: CROP_SELL_PRICES.yellowberries, tags: ['Crop', 'Sellable', 'Berry'], desc: 'Berry crop. Grows well beside adjacent ditches.' },
         whiteberries: { icon: '⚪', label: 'Whiteberries', cat: 'crop', sellPrice: CROP_SELL_PRICES.whiteberries, tags: ['Crop', 'Sellable', 'Berry'], desc: 'Mild berry crop. Grows well beside adjacent ditches.' },
         blackberries: { icon: '⚫', label: 'Blackberries', cat: 'crop', sellPrice: CROP_SELL_PRICES.blackberries, tags: ['Crop', 'Sellable', 'Berry'], desc: 'Dark berry crop. Grows well beside adjacent ditches.' },
-        blackMustard: { icon: '⚫', label: 'Black Mustard', cat: 'crop', sellPrice: CROP_SELL_PRICES.blackMustard, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Hot mustard crop. Can be processed into pungent paste later.' },
-        greenMustard: { icon: '🥬', label: 'Green Mustard', cat: 'crop', sellPrice: CROP_SELL_PRICES.greenMustard, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Fresh mustard crop. Can be processed into pungent paste later.' },
+        blackMustard: { icon: '⚫', label: 'Black Mushtard', cat: 'crop', sellPrice: CROP_SELL_PRICES.blackMustard, tags: ['Crop', 'Sellable', 'Mushtard'], desc: 'Hot mushtard crop. Can be processed into pungent paste later.' },
+        greenMustard: { icon: '🥬', label: 'Green Mushtard', cat: 'crop', sellPrice: CROP_SELL_PRICES.greenMustard, tags: ['Crop', 'Sellable', 'Mushtard'], desc: 'Fresh mushtard crop. Can be processed into pungent paste later.' },
         mulch: { icon: '🍂', label: 'Mulch', cat: 'material', sellPrice: 2, tags: ['Material', 'Organic'], desc: 'Organic matter from cleared vegetation. Useful by-product of land clearing.' },
+        soursapFruitFlesh: { icon: '🍈', label: 'Soursap Fruit Flesh', cat: 'crop', sellPrice: 10, tags: ['Fruit', 'Food', 'Foraged', 'Sellable'], desc: 'Sticky, sour pulp collected from a Soursap Fruit after its impact burst. The intact fruit is a physical burden, not an inventory stack.' },
         // Instrument metadata pairs with TOOL_ITEM_DEFS for permanent gear assignment.
         // Playback validates the equipped Instrument slot through MusicMinigame.
         kurraya: { icon: '🎵', label: 'Kurraya', cat: 'instrument', sellPrice: 250, tags: ['Instrument'], isInstrument: true, desc: "A simple lyre, like the one Foroji always has on him. Transfer it to gear, assign it as your Instrument, and play — solo, or fall in behind whoever's already playing nearby." },
@@ -15648,12 +17087,18 @@
         drenkirraMeat: { icon: '🥩', label: 'Drenkirra Meat', cat: 'material', sellPrice: 10, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a cloud-forest drenkirra.' },
         drenkirraHide: { icon: '🟫', label: 'Drenkirra Hide', cat: 'material', sellPrice: 15, tags: ['Material', 'Hide'], desc: 'A sleek hide stripped from a fallen drenkirra.' },
         uumkaoiiCrate: { icon: '🦆', label: 'Uumkao\'ii Crate', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Crate'], desc: 'Select this in your bag and use it while targeting an open tile to release the uumkao\'ii.' },
+        nelkCrate: { icon: '🦎', label: 'Nelk Crate', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Crate'], desc: 'Add this Nelk to your livestock through the Farm tab.' },
+        nelkBaby: { icon: '🦎', label: 'Nelk Hatchling', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: 'A Nelk hatchling taken from a western-slope den. Add it to a farm or stable to raise it.' },
+        nazgrakuCrate: { icon: '🐟', label: 'Nazgraku Crate', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Crate'], desc: 'Add this Nazgraku to your livestock through the Farm tab.' },
+        nazgrakuBaby: { icon: '🐟', label: 'Nazgraku Hatchling', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: 'A Nazgraku hatchling taken from a northern-cliff den. Add it to a farm or stable to raise it.' },
         uumkaoiiMeat: { icon: '🥩', label: 'Uumkao\'ii Meat', cat: 'material', sellPrice: 7, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a wild uumkao\'ii.' },
         uumkaoiiEgg: { icon: '🥚', label: 'Uumkao\'ii Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg'], desc: 'A warm egg taken from a den nest. Add it to your stable to raise the uumkao\'ii inside.' },
         garWolfBaby: { icon: '🐾', label: 'Gar-wolf Pup', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: 'A gar-wolf pup taken from a den nest. Add it to your stable to raise it.' },
         dabinggiHoundEgg: { icon: '🥚', label: 'Dabinggi-hound Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg'], desc: "A warm, oddly leathery egg — Jubmir swears it's a dabinggi-hound egg. Add it to your farm's livestock from the Farm tab, or to your stable to raise it as a companion." },
         grehlrBaby: { icon: '🐾', label: 'Grehlr Baby', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: 'A grehlr baby rescued from a northern-cliff den. Add it to a farm or stable to raise it.' },
         fertileDrenkirraEgg: { icon: '🥚', label: 'Fertile Drenkirra Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg', 'Fertile'], desc: 'A fertile egg taken from a southern-cloud-forest den. Add it to a farm or stable to hatch the drenkirra inside.' },
+        fertileHoneyfuzzleEgg: { icon: '🥚', label: 'Fertile Honeyfuzzle Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg', 'Fertile'], desc: 'A fertile egg taken from a hive stump. Place it in an empty Honeyfuzzle House and wait for it to hatch, or feed it a Growth Tonic to hatch it at once.' },
+        honey: { icon: '🍯', label: 'Honey', cat: 'material', sellPrice: 12, tags: ['Ingredient', 'Food', 'Sweet'], desc: 'Thick golden honey scraped from a hollow hive stump.' },
         drenkirraEgg: { icon: '🥚', label: 'Drenkirra Egg', cat: 'material', sellPrice: 8, tags: ['Ingredient', 'Egg', 'Food'], desc: 'A regular unfertilized egg laid by a farmed drenkirra, suitable for eating or cooking.' },
         bronzehoe:    { icon: '🪓', label: 'Bronze Hoe',    cat: 'tool', sellPrice: 0, tags: ['Tool', 'Hoe'],     desc: 'A sturdy bronze hoe for tilling and smoothing soil.' },
         hatchet:      { icon: '🪓', label: 'Hatchet',       cat: 'tool', sellPrice: 0, tags: ['Tool', 'Axe', 'Weapon'],             desc: 'A sharp hatchet. Fits in the axe or weapon slot.' },
@@ -15740,7 +17185,7 @@
         ITEM_DEFS[key] = {
           icon: '🪨', label: ore.label, cat: 'material', sellPrice: 2,
           tags: ['Material', 'Ore', oreKey],
-          desc: 'Raw ore from the Town Mine. Five total ore can be worked into one metal bar through Crafting.',
+          desc: oreKey === 'tin' ? 'Cassiterite, a natural tin mineral. Smelt into tin or high-tin bronze; can also alloy with copper.' : 'Raw mineral ore. Smelt five matching ore into a bar or use discovered recipes to alloy metals.',
         };
       });
 
@@ -15769,6 +17214,9 @@
       // ── Smith-crafted verdigris tools (see craftedToolItemKey) — one per
       // TOOL_ITEM_DEFS entry carrying a metalKey. Sellable like the starting
       // 5 hand-authored tool keys just above.
+      ITEM_DEFS.grappleFlail = { icon: '🪝', label: 'Grapple-Flail', cat: 'tool', sellPrice: 0, tags: ['Weapon', 'Flail', 'Grapple'], desc: 'A two-part metal grapple head suspended on a generated rope.' }; // Inventory metadata only; acquisition remains authored separately.
+      ITEM_DEFS.hachutuTorchFlail = { icon: '🔥', label: 'Hachutu Torch-Flail', cat: 'tool', sellPrice: 0, tags: ['Weapon', 'Hachutu', 'Flail'], desc: 'A Hachutu flail with a suspended, layered torch brazier.' }; // Legacy unique-item key registered for inventory lookups; the smithable shape crafts hachutuTorchFlail_<metal>.
+      ITEM_DEFS.hachutuTorchStaff = { icon: '🔥', label: 'Hachutu Torch-Staff', cat: 'tool', sellPrice: 0, tags: ['Weapon', 'Hachutu', 'Staff'], desc: 'An ancient double-ended torch-staff. Mastery brings its little flames together into two blazes.' }; // Weapon-only relic metadata; acquisition remains a separate authoring decision.
       Object.entries(TOOL_ITEM_DEFS).forEach(([key, def]) => {
         if (!def.metalKey || ITEM_DEFS[key]) return;
         const shape = HELD_SHAPE_DEFS[def.shapeKey];
@@ -15833,7 +17281,7 @@
           ITEM_DEFS[bp.key] = {
             icon: '📜', label: bp.name + ' Blueprint', cat: 'blueprint', sellPrice: 0,
             tags: ['Blueprint', 'Craftable'],
-            desc: `A permanent, reusable design. Build a ${bp.name} from the Inventory's Crafting tab any time using ${bp.craftCost.wood} Wood and ${bp.craftCost.stone} Stone.`,
+            desc: `Read from your bag to consume this blueprint and permanently learn ${bp.name} for this character in this world. Build it from the Crafting tab using the listed materials.`,
           };
         }
       });
@@ -15894,6 +17342,11 @@
         });
       }
       _registerHousePieceDeedItemDefs();
+      shopStockCatalogReady = true; // Barn/house catalog declarations and both item registration helpers are initialized.
+      if (shopStockApplyPending) {
+        shopStockApplyPending = false;
+        _applyLoadedShopStock(); // Apply cached shop stock once, after defaults exist; slower network resolutions use the normal callback.
+      }
 
       // ── Fish catalog ────────────────────────────────────────────
       // Keyed by zone category. "town" is the only zone with real river/stream
@@ -15966,7 +17419,10 @@
       });
 
       function itemIconForKey(key) {
-        return ITEM_DEFS[key]?.icon || SUPPLY_CATALOG.find(item => item.key === key)?.icon || '□';
+        const def = ITEM_DEFS[key]; // Shared fallback for incomplete item metadata in Pack, shipping and reward text.
+        const icon = def?.icon || SUPPLY_CATALOG.find(item => item.key === key)?.icon; // Preserve authored placeholders when present.
+        if (typeof icon === 'string' && icon.trim() && !['□', '[]'].includes(icon.trim())) return icon;
+        return ({ seed: '🌱', crop: '🌾', food: '🍲', ingredient: '🥣', material: '🔩', tool: '🔧', livestock: '🐾', furniture: '🏠', buildingPlan: '📜', instrument: '🎵' })[def?.cat] || '📦';
       }
 
       // Upgrades an already-rendered emoji icon element to a recolored PNG
@@ -15995,16 +17451,39 @@
         getBottleSwigStatus: (...args) => window.HobunjiDrunkGameplayBridge?.getBottleSwigStatus?.(...args),
       });
 
+      // One trim/recolor per flask variant, shared across Pack cells, HUD and item wheel.
+      const _flaskIconFrames = new Map(); // Request-key -> pending or completed framed icon URL; avoids repeated large alpha scans on mobile.
+      function framedFlaskIconUrl(spritePath, targetColor, spriteMode, requestKey) {
+        const cached = _flaskIconFrames.get(requestKey);
+        if (cached) return cached;
+        const source = targetColor == null
+          ? new Promise((resolve, reject) => {
+              const image = new Image(); // Uncolored flasks still need the same opaque-pixel trim as weapons.
+              image.crossOrigin = 'anonymous';
+              image.onload = () => resolve(image);
+              image.onerror = () => reject(new Error('Failed to load flask sprite ' + spritePath));
+              image.src = spritePath;
+            })
+          : window.SpriteRecolor.getRecoloredCanvas(spritePath, targetColor, spriteMode);
+        const framed = source.then(image => window.EquipmentPanel.squareToolIcon(image)); // Exact weapon thumbnail crop: fill the square with the flask's body.
+        _flaskIconFrames.set(requestKey, framed);
+        if (_flaskIconFrames.size > 128) _flaskIconFrames.delete(_flaskIconFrames.keys().next().value);
+        framed.catch(() => { if (_flaskIconFrames.get(requestKey) === framed) _flaskIconFrames.delete(requestKey); }); // A failed load can be retried on next rebuild.
+        return framed;
+      }
+
       function applyItemSpriteIcon(el, def, key) {
         if (!el || !def) return;
         window.ItemProcessing.normalizeAlcoholItemDef(def);
+        window.ObjectSpriteCatalog?.ensure?.(key, def); // Dynamic items acquire artwork before the existing Pack/HUD/arch sprite renderer.
         window.AlcoholInventoryUI?.applySwigBadge?.(el, key, def);
         if (!def.spriteIcon) { clearItemSpriteIcon(el, true); return; }
         // The source PNG replaces the emoji immediately; the recolored canvas
         // upgrades it below without leaving alcohol as an emoji while loading.
         const spritePath = 'assets/objectsprites/' + def.spriteIcon;
-        const hasSpriteColor = def.spriteColor != null && Number.isFinite(Number(def.spriteColor)); // Used below to keep source-colored PNGs untouched while explicitly tinted items still use SpriteRecolor.
-        const targetColor = hasSpriteColor ? Number(def.spriteColor) : null; // Used by the recolor request/log only when this definition actually authors a tint.
+        const frameFlask = def.spriteIcon === 'throwing_flask.png' && typeof window.EquipmentPanel?.squareToolIcon === 'function'; // Only flasks use the equipment thumbnail crop; others retain their authored icon proportions.
+        const hasSpriteColor = def.spriteColor != null && Number.isFinite(Number(def.spriteColor)); // Explicit source-color metadata selects the original keyed recolor.
+        const targetColor = hasSpriteColor ? Number(def.spriteColor) : null; // Null means direct-color source and no recolor.
         const spriteMode = def.spriteMode || 'direct';
         const requestKey = `${def.spriteIcon}|${hasSpriteColor ? targetColor : 'source'}|${spriteMode}`;
         // updateHud refreshes the item strip every frame. Keep an identical
@@ -16017,6 +17496,25 @@
         el.dataset.itemSpriteState = 'pending';
         el.style.backgroundImage = `url("${spritePath}")`;
         el.classList.add('sprited-icon');
+        if (frameFlask && (!hasSpriteColor || window.SpriteRecolor)) {
+          framedFlaskIconUrl(spritePath, targetColor, spriteMode, requestKey)
+            .then(iconUrl => {
+              if (el.dataset.itemSpriteRequest !== requestKey) return;
+              el.style.backgroundImage = `url(${iconUrl})`;
+              el.dataset.itemSpriteState = 'ready';
+              if (!_itemSpriteReadyLogged.has(requestKey)) {
+                _itemSpriteReadyLogged.add(requestKey);
+                window.__farmLog?.(`[item-icon] flask framed ${def.label || def.spriteIcon} (${spriteMode})`, 'items');
+              }
+            })
+            .catch(error => {
+              if (el.dataset.itemSpriteRequest !== requestKey) return;
+              el.dataset.itemSpriteState = 'fallback';
+              el.dataset.itemSpriteError = String(error?.message || error);
+              window.__farmLog?.(`[item-icon] flask framing failed: ${error?.message || error}`, 'warn');
+            });
+          return;
+        }
         if (!hasSpriteColor) { el.dataset.itemSpriteState = 'source'; return; }
         if (!window.SpriteRecolor) { el.dataset.itemSpriteState = 'fallback'; return; }
         window.SpriteRecolor.getRecoloredCanvas(spritePath, targetColor, spriteMode)
@@ -16053,7 +17551,9 @@
         return {
           key: active?.key || null,
           spriteIcon: def?.spriteIcon || null,
+          equipmentThumbnails: window.EquipmentPanel?.getIconDebug?.() || null, // Pixel Probe exposes thumbnail bounds/failures without a desktop console.
           targetColor: def?.spriteColor ?? null,
+          wheelCache: { reads: inventoryWheelCache.reads, builds: inventoryWheelCache.builds, frame: inventoryWheelCache.frame },
           swigs: active ? window.HobunjiDrunkGameplayBridge?.getBottleSwigStatus?.(active.key, def, inventory) || null : null,
           nearbyNpcAlcohol: nearbyNpcWalker?.rec?.id ? {
             id: nearbyNpcWalker.rec.id,
@@ -16071,20 +17571,55 @@
       let invActiveCat   = 'all';
       const INVENTORY_EMPTY_SLOT_FLOOR = 28; // Used by buildInventoryGrid() so the bag reads as open generic storage.
 
-      function getKnownItemRank(key) {
-        const idx = inventoryItems.findIndex(item => item.key === key);
-        return idx === -1 ? 9999 : idx;
+      window.InventorySearch.init({ rebuild: () => buildInventoryGrid(), getItemDefs: () => ITEM_DEFS });
+      function matchesPackCategory(cat, key) {
+        const def = ITEM_DEFS[key]; // The same item metadata feeds regular Pack, filtered Pack and the item wheel.
+        if (!def) return false;
+        if (cat === 'all') return true;
+        const tags = new Set((def.tags || []).map(tag => String(tag).toLowerCase())); // Classifies item families without changing their existing crafting/shipping categories.
+        if (cat !== 'other' && def.cat === cat) return true; // "Other" must never swallow items already covered by a more useful filter.
+        switch (cat) {
+          case 'food': return def.isCookedFood === true || def.cat === 'crop' || def.cat === 'ingredient'
+            || (Array.isArray(def.cookingCategories) && def.cookingCategories.length > 0)
+            || ['food', 'meal', 'drink', 'beverage', 'alcohol', 'ingredient', 'meat', 'egg', 'milk', 'fish', 'fruit', 'berry', 'vegetable', 'grain', 'honey', 'wine', 'sake', 'vodka', 'airag', 'nectar', 'cheese', 'butter', 'cream', 'jam', 'juice', 'bread', 'lard'].some(tag => tags.has(tag));
+          case 'fish': return tags.has('fish') || key.startsWith('fish_');
+          case 'ore': return tags.has('ore') || tags.has('metal bar');
+          case 'reagent': return tags.has('reagent'); // "Alchemy" alone also labels finished potions and recipes.
+          case 'livestock': return tags.has('livestock') || (def.cat === 'material' && /Baby$/.test(key));
+          case 'tool': return ['instrument', 'weapon'].includes(def.cat) || tags.has('tool') || tags.has('weapon') || tags.has('instrument');
+          case 'plans': return ['blueprint', 'buildingPlan', 'scroll', 'tablet'].includes(def.cat)
+            || ['blueprint', 'plan', 'building plan', 'deed', 'recipe', 'scroll', 'tablet'].some(tag => tags.has(tag))
+            || /^(?:alchemy_recipe_|recipe_)/.test(key);
+          case 'dye': return tags.has('dye');
+          case 'other': return !['seed', 'crop', 'material', 'furniture', 'processed', 'food', 'ingredient', 'tool', 'weapon', 'instrument', 'livestock', 'blueprint', 'buildingPlan', 'scroll', 'tablet', 'dye'].includes(def.cat)
+            && !def.isCookedFood && !(Array.isArray(def.cookingCategories) && def.cookingCategories.length > 0)
+            && !['food', 'fish', 'ore', 'metal bar', 'reagent', 'livestock', 'tool', 'weapon', 'instrument', 'plan', 'deed', 'blueprint', 'building plan', 'recipe', 'scroll', 'tablet', 'dye'].some(tag => tags.has(tag));
+          default: return false;
+        }
       }
 
       function getInventoryStackKeys(cat = 'all') {
         // Used by inventory grid, item scroll, and shipping left panel to avoid preassigned item slots.
+        const ranks = new Map(); // Resolves catalog order once instead of scanning it in every sort comparison.
+        inventoryItems.forEach((item, index) => { if (!ranks.has(item.key)) ranks.set(item.key, index); });
         return Object.keys(inventory)
           .filter(key => key !== 'gold' && ITEM_DEFS[key] && (inventory[key] || 0) > 0)
-          .filter(key => cat === 'all' || ITEM_DEFS[key].cat === cat)
-          .sort((a, b) => getKnownItemRank(a) - getKnownItemRank(b) || ITEM_DEFS[a].label.localeCompare(ITEM_DEFS[b].label));
+          .filter(key => matchesPackCategory(cat, key))
+          .sort((a, b) => (ranks.get(a) ?? 9999) - (ranks.get(b) ?? 9999) || ITEM_DEFS[a].label.localeCompare(ITEM_DEFS[b].label));
       }
 
+      const inventoryWheelCache = { frame: -1, keys: [], defs: [], catalog: [], held: null, eligible: null, stacks: [], reads: 0, builds: 0 }; // Shared by held-item consumers; counters appear in the existing item-sprite diagnostics.
+
       function getInventoryStackItems() {
+        const keys = Object.keys(inventory).filter(key => key !== 'gold' && ITEM_DEFS[key] && (inventory[key] || 0) > 0); // Checks ownership changes immediately, even between two actions in one frame.
+        const eligible = window.ItemProcessing.isWheelEligible; // A replacement eligibility provider also invalidates this frame's result.
+        inventoryWheelCache.reads++;
+        if (inventoryWheelCache.frame === gameFrameSerial && inventoryWheelCache.eligible === eligible
+            && inventoryWheelCache.held === manualHeldItem
+            && keys.length === inventoryWheelCache.keys.length
+            && keys.every((key, index) => key === inventoryWheelCache.keys[index] && ITEM_DEFS[key] === inventoryWheelCache.defs[index])
+            && inventoryItems.length === inventoryWheelCache.catalog.length
+            && inventoryItems.every((item, index) => item === inventoryWheelCache.catalog[index])) return inventoryWheelCache.stacks;
         // The item wheel/scroller's own list — every consumer of this
         // function (the active-item scroll, the desktop selection arc,
         // refreshActionBar's held-item resolution, the two inventory-panel
@@ -16095,12 +17630,22 @@
         // inventory grid — see isWheelEligible's own comment for what does
         // and doesn't qualify, and its own "Hold" button (selectInventoryItem)
         // for how a non-wheel item still gets offered as a gift.
-        return getInventoryStackKeys('all').filter(window.ItemProcessing.isWheelEligible).map(key => inventoryItems.find(item => item.key === key) || {
+        const itemsByKey = new Map(); // Reuses the first catalog entry, matching the previous Array.find behavior.
+        inventoryItems.forEach(item => { if (!itemsByKey.has(item.key)) itemsByKey.set(item.key, item); });
+        inventoryWheelCache.stacks = getInventoryStackKeys('all').filter(eligible).map(key => itemsByKey.get(key) || {
           key,
           icon: ITEM_DEFS[key].icon,
           label: ITEM_DEFS[key].label.toUpperCase(),
           max: 99,
         });
+        inventoryWheelCache.frame = gameFrameSerial;
+        inventoryWheelCache.keys = keys;
+        inventoryWheelCache.defs = keys.map(key => ITEM_DEFS[key]);
+        inventoryWheelCache.catalog = inventoryItems.slice();
+        inventoryWheelCache.held = manualHeldItem;
+        inventoryWheelCache.eligible = eligible;
+        inventoryWheelCache.builds++;
+        return inventoryWheelCache.stacks;
       }
 
       function getActiveInventoryItem(stacks = getInventoryStackItems()) {
@@ -16112,6 +17657,7 @@
       }
 
       function cycleActiveInventoryItem(delta) {
+        window.FestivalSystem?.discardFestivalBowl?.('selected-another-item'); // A bowl is a temporary held item, not part of the ordinary inventory carousel.
         const stacks = getInventoryStackItems();
         if (stacks.length === 0) { activeItemIndex = 0; return null; }
         activeItemIndex = (activeItemIndex + delta + stacks.length) % stacks.length;
@@ -16130,6 +17676,10 @@
       // the wheel decide" via clearManualHeldItem.
       let manualHeldItem = null; // { kind: 'clothing', uid } | null
       function setManualHeldItem(item) {
+        if (item?.kind === 'clothing' && packClothing.some(c => c.uid === item.uid && c.cursed)) {
+          showToast('A cursed garment cannot be given away until its curse is lifted.', false);
+          return;
+        }
         if (item?.kind === 'clothing' && !window.NpcGifting?.isItemGiftable?.({ kind: 'clothing', instance: { uid: item.uid } })) {
           showToast('Only clothing in your pack can be held or given away.', false);
           return;
@@ -16144,6 +17694,7 @@
       // the player is currently offering up") should call — resolves the
       // manual hold first, falling back to the ordinary wheel selection.
       function getHeldGiftItem() {
+        if (window.FestivalSystem?.festivalCup?.()) return null; // The keg cup is temporary and can be shared as a swig, never gifted.
         if (manualHeldItem?.kind === 'clothing') {
           const item = packClothing.find(c => c.uid === manualHeldItem.uid); // Only uncollected pack clothing may be offered.
           if (item && window.NpcGifting?.isItemGiftable?.({ kind: 'clothing', instance: item })) return { kind: 'clothing', instance: item };
@@ -16177,14 +17728,15 @@
         const emptyEl  = document.getElementById('iiEmpty');
         const detailEl = document.getElementById('iiDetail');
         if (emptyEl) { emptyEl.style.display = ''; emptyEl.textContent = message; }
-        if (detailEl) detailEl.style.display = 'none';
+        if (detailEl) { detailEl.style.display = 'none'; delete detailEl.dataset.itemKey; delete detailEl.dataset.itemKind; } // Clear preview/action identity when no Pack item is shown.
       }
 
       function buildInventoryGrid() {
         const grid = document.getElementById('invGrid');
         if (!grid) return;
         grid.innerHTML = '';
-        const keys = getInventoryStackKeys(invActiveCat);
+        // The Pack search box (js/inventory-search.js) narrows the active category further.
+        const keys = window.InventorySearch ? window.InventorySearch.filterKeys(getInventoryStackKeys(invActiveCat)) : getInventoryStackKeys(invActiveCat);
         // A count past InventoryStacks.STACK_SIZE spills into extra boxes of
         // the same item (250 -> 99, 99, 52) rather than one oversized stack.
         const boxStacks = keys.flatMap(key => window.InventoryStacks.variants(key, inventory[key] || 0, isQualityTrackedItem(ITEM_DEFS[key])));
@@ -16200,7 +17752,7 @@
           box.dataset.stackId = stack.stackId;
           box.setAttribute('data-ctrl-detail', 'invInfo');
           box.innerHTML =
-            `<span class="iib-icon">${def.icon}</span>` +
+            `<span class="iib-icon">${itemIconForKey(key)}</span>` +
             `<span class="iib-count">${stars ? stars + '★ · ' : ''}×${count}</span>`;
           // Corner badge listing every slot this item is assigned to
           const badges = Object.entries(equipmentSlots)
@@ -16213,6 +17765,7 @@
             box.appendChild(badge);
           }
           box.addEventListener('click', () => selectInventoryItem(key, false, stack));
+          box.addEventListener('hobunji-controller-focus', () => selectInventoryItem(key, true, stack)); // Passive controller preview preserves the actual selection and exact item variant.
           applyItemSpriteIcon(box.querySelector('.iib-icon'), def, key);
           window.InventoryStacks.applyHeadIcon(box.querySelector('.iib-icon'), LIVESTOCK_ITEM_KINDS[key], stack.genotype, stack.variant);
           grid.appendChild(box);
@@ -16236,7 +17789,16 @@
           if (selected) selectInventoryItem(invSelectedKey, false, selected);
           else clearInventoryDetail();
         }
-        else clearInventoryDetail(keys.length ? '← Select an item' : 'Bag is empty');
+        else {
+          window.EquipmentPanel.buildPackClothingSection();
+          const packClothingVisible = (invActiveCat === 'all' || invActiveCat === 'clothing')
+            && [...document.querySelectorAll('#invPackClothing .inv-pcloth-item')].some(button =>
+              window.InventorySearch?.matches?.(button.getAttribute('data-key'), { label:button.textContent }) ?? true); // Clothing may be the only thing matching a search/category.
+          clearInventoryDetail(keys.length || packClothingVisible ? '← Select an item'
+            : window.InventorySearch?.query ? 'No items match your search'
+            : invActiveCat === 'clothing' ? 'No clothing in pack' : 'No items in this category');
+          return; // Clothing source has already been rebuilt for this empty/detail state.
+        }
         window.EquipmentPanel.buildPackClothingSection();
       }
 
@@ -16313,8 +17875,22 @@
         const def   = ITEM_DEFS[key];
         const stack = selectedStack || (invSelectedKey === key ? invSelectedStack : null); // Closure pins actions to the selected variant.
         const count = stack ? stack.count : (inventory[key] || 0);
-        const unitPrice = stack?.stars ? Math.max(1, Math.round((def?.sellPrice || 0) * window.CookingSystem.valueMultiplierForStars(stack.stars))) : (def?.sellPrice || 0); // Same shared quality multipliers as other sales.
+        const isHide = window.AnimalHides?.isHide?.(key) || false; // A selected hide stack represents one source coat, not an ordinary rolled-quality bucket.
+        const hideRecord = isHide ? stack?.hideRecord : null; // Includes the original animal's inheritable coat colors, patterns, and painted overlays.
+        const quoteHideSale = amount => window.AnimalHides?.quote?.(key, amount, 'pack', def?.sellPrice || 1, inventory[key] || 0, stack?.variant || null); // Uses exact coat variants, including mixed unselected stacks.
+        const unitPrice = isHide
+          ? (quoteHideSale(1)?.total ?? def?.sellPrice ?? 0) // Animal rarity already determines the price; do not multiply it by stars again.
+          : (stack?.stars ? Math.max(1, Math.round((def?.sellPrice || 0) * window.CookingSystem.valueMultiplierForStars(stack.stars))) : (def?.sellPrice || 0));
+        const fullStackPrice = isHide ? (quoteHideSale(count)?.total ?? count * unitPrice) : count * unitPrice; // Prevent mixed or controller-preview hides from being sold at one arbitrary coat price.
         function consumeSelected(amount) {
+          if (isHide) {
+            const beforeCount = Math.max(0, Number(inventory[key]) || 0); // Needed to distinguish recorded specimens from legacy generic hides.
+            const consumed = window.AnimalHides.consume(key, amount, 'pack', def?.sellPrice || 1, beforeCount, stack?.variant || null);
+            if (!consumed.ok) return false;
+            inventory[key] = beforeCount - amount;
+            clampInventoryStack(key);
+            return true;
+          }
           if (stack?.stars) return window.CookingSystem.consumeQuality(key, stack.stars, amount);
           if ((inventory[key] || 0) < amount) return false;
           inventory[key] -= amount;
@@ -16333,10 +17909,10 @@
         const emptyEl  = document.getElementById('iiEmpty');
         const detailEl = document.getElementById('iiDetail');
         if (emptyEl)  emptyEl.style.display  = 'none';
-        if (detailEl) detailEl.style.display  = '';
+        if (detailEl) { detailEl.style.display = ''; detailEl.dataset.itemKey = key; detailEl.dataset.itemKind = 'pack'; } // Item identity and kind keep preview actions attached to the displayed stack.
 
         const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
-        set('iiIcon',  def.icon);
+        set('iiIcon',  itemIconForKey(key));
         const iiIconEl = document.getElementById('iiIcon');
         if (iiIconEl) { iiIconEl.style.backgroundImage = ''; iiIconEl.classList.remove('sprited-icon'); }
         if (iiIconEl) delete iiIconEl.dataset.animalHeadRequest;
@@ -16344,9 +17920,12 @@
         window.InventoryStacks.applyHeadIcon(iiIconEl, LIVESTOCK_ITEM_KINDS[key], stack?.genotype, stack?.variant);
         set('iiName',  `${def.label} ×${count}`);
         set('iiPrice', def.sellPrice > 0 ? `${unitPrice}g each` : '');
-        set('iiQuality', stack?.stars ? `${starGlyphs(stack.stars)} ${QUALITY_DESCRIPTORS[stack.stars]}` : qualityDisplayForItem(key, def));
+        set('iiQuality', isHide
+          ? (hideRecord ? `${starGlyphs(hideRecord.stars)} ${hideRecord.rarity?.tier || 'Common'} coat rarity` : 'Unrecorded hide (legacy stock)')
+          : (stack?.stars ? `${starGlyphs(stack.stars)} ${QUALITY_DESCRIPTORS[stack.stars]}` : qualityDisplayForItem(key, def)));
         set('iiTags',  def.tags.map(t => `<span class="ii-tag">${t}</span>`).join(''));
-        set('iiDesc',  itemDescriptionWithFlavor(key, def));
+        if (isHide) set('iiDesc', [itemDescriptionWithFlavor(key, def), window.AnimalHides.describe(hideRecord)].filter(Boolean).join(' · ')); // Mobile Pack details expose the actual fur colors/patterns.
+        else set('iiDesc', itemDescriptionWithFlavor(key, def)); // All non-hide items retain their established cooking-buff-aware description path.
 
         const actEl = document.getElementById('iiActions');
         if (actEl) {
@@ -16397,9 +17976,9 @@
             });
           }
           if (def.sellPrice > 0 && count > 0) {
-            mkBtn(`Sell Stack (${count} × ${unitPrice}g = ${count * unitPrice}g)`, 'sell', () => {
+            mkBtn(isHide ? `Sell Stack (${count} hides = ${fullStackPrice}g)` : `Sell Stack (${count} × ${unitPrice}g = ${fullStackPrice}g)`, 'sell', () => {
               if (!consumeSelected(count)) return;
-              const earned = count * unitPrice; // Only this quality stack is sold.
+              const earned = fullStackPrice; // Exact selected hide values or the existing quality-tier valuation.
               inventory.gold = (inventory.gold || 0) + earned;
               showToast(`Sold ${count} ${def.label} for ${earned}g`, true);
               if (spGoldAmount) spGoldAmount.textContent = inventory.gold;
@@ -16766,12 +18345,15 @@
         const cachedArmLength = Number(avatarGroup.userData?.armLength); // Anatomical reach is independent from the authored weapon orbit multiplier.
         playerArmLength = Number.isFinite(cachedArmLength) && cachedArmLength > 0 ? cachedArmLength : 0.558;
         const cachedPoseOrbitScale = Number(avatarGroup.userData?.poseOrbitScale);
-        playerPoseOrbitScale = Number.isFinite(cachedPoseOrbitScale) && cachedPoseOrbitScale > 0
-          ? cachedPoseOrbitScale
-          : (window.HobunjiSpeciesPoseScale?.scaleForArmLength?.(playerArmLength) ?? 1); // Legacy-avatar fallback only.
+        const cachedPoseOrbitAxes = window.HobunjiSpeciesPoseScale?.axesFromValue?.(avatarGroup.userData?.poseOrbitAxes); // Per-axis { x, y, z } the species authored; null on legacy avatars.
+        playerPoseOrbitScale = cachedPoseOrbitAxes
+          ? cachedPoseOrbitAxes
+          : (Number.isFinite(cachedPoseOrbitScale) && cachedPoseOrbitScale > 0
+            ? cachedPoseOrbitScale
+            : (window.HobunjiSpeciesPoseScale?.scaleForArmLength?.(playerArmLength) ?? 1)); // Legacy-avatar fallback only.
         const cachedPoseCentroidY = Number(avatarGroup.userData?.poseCentroidY); // PNGPlaneAvatar already accounts for the internal assemblyY portrait shift.
         playerPoseCentroidY = Number.isFinite(cachedPoseCentroidY) ? cachedPoseCentroidY : avatarHeight * (Number(avatarGroup.userData?.portraitVerticalPlacementRatio) || 0.5);
-        window.__farmLog?.(`[combat] pose orbit cached: ${_playerData?.appearance?.speciesId || 'unknown'}/${_playerData?.appearance?.gender || 'unknown'} orbit=${playerPoseOrbitScale.toFixed(5)} arm=${playerArmLength.toFixed(3)} centroidY=${playerPoseCentroidY.toFixed(3)}`, 'info', 'combat');
+        window.__farmLog?.(`[combat] pose orbit cached: ${_playerData?.appearance?.speciesId || 'unknown'}/${_playerData?.appearance?.gender || 'unknown'} orbit=${(() => { const a = window.HobunjiSpeciesPoseScale?.axesForPose?.(playerPoseOrbitScale, playerArmLength) || { x: playerPoseOrbitScale, y: 1, z: playerPoseOrbitScale }; return `${a.x.toFixed(5)}/${a.y.toFixed(5)}/${a.z.toFixed(5)}`; })()} arm=${playerArmLength.toFixed(3)} centroidY=${playerPoseCentroidY.toFixed(3)}`, 'info', 'combat');
         // Re-clear (not just at this function's top): the 'posterior' anchor
         // is derived from playerAvatarModelHeight/playerToolBaseY, just set
         // above — anything that called playerAttachmentAnchor('posterior')
@@ -16815,6 +18397,7 @@
           speciesId: _playerData?.appearance?.speciesId, gender: _playerData?.appearance?.gender, bodyColors: profile?.bodyColors || _playerData?.appearance?.bodyColors,
           modelWidth: avatarWidth, modelHeight: avatarHeight, handAttachY: avatarGroup.userData?.handAttachY,
           name: 'player', profile, portraitSize: PORTRAIT_SIZE,
+          portraitRig: avatarGroup.userData?.neckRig, // "Show bones" also draws the portrait's spine and neck.
         }) || null;
         // Stagger/Footing ragdoll playback (see docs/js/combat/impact-ragdoll-
         // playback.js) writes directly into this same legs handle — re-attach
@@ -16870,6 +18453,10 @@
       // backing variables are initialized, so the forward closure reference
       // is safe).
       window.FarmEditor.init({
+        getReticleTile, refreshActionBar,
+        suspendMouseCameraForUi: releaseShoulderSurfPointerLock,
+        resumeMouseCameraAfterUi: requestShoulderSurfPointerLock,
+        getMouseAction: button => getActionForButton('desktop', 'Mouse' + button),
         getGrid: () => grid,
         getCurrentArea: () => currentArea,
         getFarmEditMode: () => farmEditMode,
@@ -16915,6 +18502,7 @@
         normalizeNpcArea,
         transformFurnitureWithHousePiece,
         rebuildInteriorGeometry,
+        reconcileInteriorFurniture: reconcileFurnitureWithFarmhousePartitions, // FarmEditor runs this once after all saved rooms and decor are loaded.
         createDayOneTile,
         _screenToFarmTile,
         debugLog,
@@ -17271,6 +18859,16 @@
       }
 
       function updateMovement(dt) {
+        if (player.tzatzulCapturedBy) {
+          // TzatzulFlightRuntime owns the original player's position and elevation
+          // during a successful beak-first capture. Joystick/controller movement
+          // must not overwrite the bird's shared perch path or restart combat.
+          playerAutoWalk = null;
+          input.x = 0; input.y = 0;
+          player.vx = 0; player.vy = 0;
+          player.inputX = 0; player.inputY = 0; player.inputStrength = 0;
+          return;
+        }
         syncMobileAutoTargetCombatState();
         syncMobileAutoTargetButton(); // Target availability refreshes even when prone, mounted, or another mode skips ordinary movement.
         updateMobileArchCombatAimLifecycle();
@@ -17325,6 +18923,7 @@
         }
         if (dialogueOpen) { updateNpcDialogueStaging(dt); return; }
         if (window.FarmAnimals.isHarvesting()) { window.FarmAnimals.updateHarvestInteraction(dt); return; }
+        if (window.BedLiePose?.isActive?.()) { player.vx = 0; player.vy = 0; return; } // Animated bed entry owns movement until morning.
         if (sitInteraction) { updateSitInteraction(dt); return; }
         if (window.Fishing?.state?.active) return;
         if (window.MusicMinigame?.state?.active) return;
@@ -17341,13 +18940,23 @@
 
         const _fsPrevX = player.x, _fsPrevY = player.y;
 
+        if (window.PlayerJump?.tick?.(dt)) return; // Free-jump movement owns its physical elevation without impersonating a wall climb.
         if (player.climbing) {
           window.ClimbSystem.updateClimb(dt);
           return;
         }
 
+        // Real stacked mini-cliff footprints own movement while the player
+        // stands on them, independently of any underlying ground tile.
+        if (player.onCliffBalcony && window.ClimbSystem?.updateBalcony?.(dt)) return;
+
         if (player.onBranch) {
           window.ClimbSystem.updateBranchMovement(dt);
+          return;
+        }
+
+        if (player.onClimbSurface) { // Attached to a wall (js/climb-surfaces.js): input moves along the wall plane, not the ground.
+          window.ClimbSurfaces.updatePlayer(dt);
           return;
         }
 
@@ -17560,24 +19169,51 @@
         // while it's converting movement into zips; 1 (no change) otherwise.
         const combatSpeedMul = window.Combat?.getMovementSpeedMul ? window.Combat.getMovementSpeedMul() : 1;
         const footingSpeedMul = getFootingSpeedMul(player);
-        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * footingSpeedMul * window.AlchemySystem.getSpeedMul() * window.CookingSystem.getSpeedMultiplier() * (window.FestivalSystem?.blessingMultiplier?.('speed') || 1) * devGlobalSpeedMul * (window.PerceptionMode?.speedMultiplier() ?? 1);
-        if (inputStrength > 0.001) {
+        const stickySpeedMul = window.RangedWeapons?.movementSpeedMultiplier?.(player) ?? 1; // Soursap Sticky composes with ordinary player terrain/combat speed.
+        const targetSpeed = MOVE_SPEED * speedMul * analogEase * combatSpeedMul * footingSpeedMul * stickySpeedMul * window.AlchemySystem.getSpeedMul() * window.CookingSystem.getSpeedMultiplier() * (window.FestivalSystem?.blessingMultiplier?.('speed') || 1) * devGlobalSpeedMul * (window.PerceptionMode?.speedMultiplier() ?? 1);
+        // Tothal ice changes the *native* acceleration and ground friction,
+        // exactly where keyboard/controller/mobile intent drives velocity.
+        // This runs before ordinary player collision, footsteps and facing:
+        // no extra post-movement teleport or input-duration imitation.
+        const icePhysics = currentArea === 'map_i_dev_random_ruin'
+          ? window.DevRandomRuinLichThemes?.movementPhysicsAt?.(player.x / TILE, player.y / TILE)
+          : null;
+        // A downed player crawls (js/player-crawl.js): velocity follows the
+        // pull of the left arm along its reach axis, and inputs outside that
+        // cone pivot the body instead of moving it.
+        const crawlMotion = window.PlayerCrawl?.isCrawling?.() ? window.PlayerCrawl.step(dt, ix, iy, inputStrength, speedMul) : null;
+        if (crawlMotion) {
+          player.vx = crawlMotion.vx;
+          player.vy = crawlMotion.vy;
+        } else if (inputStrength > 0.001) {
           const targetVx = ix * targetSpeed;
           const targetVy = iy * targetSpeed;
           const currentSpeed = Math.hypot(player.vx, player.vy);
           const targetDot = currentSpeed > 0.001 ? (player.vx / currentSpeed) * ix + (player.vy / currentSpeed) * iy : 1;
-          const accel = (targetDot < 0.35 ? TURN_ACCEL : ACCEL) * footingSpeedMul;
+          const accel = icePhysics
+            ? (targetDot < 0.35 ? TURN_ACCEL * icePhysics.turningFactor : ACCEL * icePhysics.accelerationFactor) * footingSpeedMul
+            : (targetDot < 0.35 ? TURN_ACCEL : ACCEL) * footingSpeedMul;
           const step = accel * dt;
           player.vx += window.FormatUtils.clamp(targetVx - player.vx, -step, step);
           player.vy += window.FormatUtils.clamp(targetVy - player.vy, -step, step);
         } else {
           const speed = Math.hypot(player.vx, player.vy);
           if (speed > 0) {
-            const decelStep = DECEL * dt;
-            const newSpeed = Math.max(0, speed - decelStep);
-            const ratio = newSpeed / speed;
-            player.vx *= ratio;
-            player.vy *= ratio;
+            if (icePhysics) {
+              // Minecraft-like low traction preserves inertia with a stable,
+              // frame-rate-independent retention factor (20 Hz reference).
+              // No hard stop on input release: drift fades with surface drag.
+              const ratio = Math.pow(icePhysics.retention20Hz, Math.max(0, dt) / 0.05);
+              player.vx *= ratio;
+              player.vy *= ratio;
+              if (Math.hypot(player.vx, player.vy) < 1) { player.vx = 0; player.vy = 0; }
+            } else {
+              const decelStep = DECEL * dt;
+              const newSpeed = Math.max(0, speed - decelStep);
+              const ratio = newSpeed / speed;
+              player.vx *= ratio;
+              player.vy *= ratio;
+            }
           }
         }
 
@@ -17695,6 +19331,7 @@
         // than the mover cannot slip between two corner samples. worldY is
         // only passed by projectile sweeps, so shots can clear low props.
         if (window.AreaFootprintBlockers?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, worldY)) return false;
+        if (window.FurnitureTableSystem?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, worldY)) return false;
         const tileWorldY = Number.isFinite(worldY) ? worldY - radius / TILE : worldY; // Include the projectile underside when testing finite tile cover.
         return tileSpeedAt(wx - radius, wy - radius, tileWorldY) !== null
             && tileSpeedAt(wx + radius, wy - radius, tileWorldY) !== null
@@ -17702,7 +19339,34 @@
             && tileSpeedAt(wx + radius, wy + radius, tileWorldY) !== null;
       }
 
+      function canPlayerOccupyAtHeight(wx, wy, feetY) {
+        if (!Number.isFinite(feetY)) return canPlayerOccupy(wx, wy);
+        const radius = PLAYER_RADIUS * 0.72; // Physical free-jump footprint matches normal walking.
+        if (window.InteriorDoorTiles?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE)) return false;
+        // Projectile-height occupancy skips some legacy 2D-only colliders.
+        // Check those at each player-collider corner, separately from the
+        // providers that already understand furniture and footprint height.
+        const grid = window.GridTileAccessors.getActiveGrid();
+        for (const [dx, dy] of [[-radius, -radius], [radius, -radius], [-radius, radius], [radius, radius]]) {
+          const x = (wx + dx) / TILE, z = (wy + dy) / TILE;
+          if (grid[Math.floor(z)]?.[Math.floor(x)]?._banditTentCollisionId) return false;
+          if (furnitureBlocksMovementAt(currentArea, x, z, feetY + 0.05)) return false;
+        }
+        const footprintY = feetY + 0.05; // Native footprint providers sample the actual foot height, not the projectile's radius-offset value.
+        // A narrow blocker can touch the middle of the player footprint while
+        // missing all four sampled corners. Test the FULL box at real feet Y.
+        // canOccupyAt checks tile cover separately with a projectile underside
+        // offset and must not be the sole authority for narrow 3D furniture.
+        if (window.AreaFootprintBlockers?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, footprintY)) return false;
+        if (window.FurnitureTableSystem?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, footprintY)) return false;
+        // canOccupyAt subtracts its collision radius from worldY to form a
+        // projectile's underside. Offset by that same radius so the player's
+        // actual feet, not a point below them, clear the top of a low rock.
+        return canOccupyAt(wx, wy, radius, footprintY + radius / TILE);
+      }
+
       function canPlayerOccupy(wx, wy) {
+        if (window.InteriorDoorTiles?.blocksBox(currentArea, wx / TILE, wy / TILE, PLAYER_RADIUS * 0.72 / TILE)) return false; // Closed interior doors stop the player only (js/interior-door-tiles.js); NPC pathing ignores them.
         if (canOccupyAt(wx, wy, PLAYER_RADIUS * 0.72)) return true;
         // Universal "unstuck" escape: if the player's own true position is
         // itself embedded in solid geometry (spawned/teleported into a wall
@@ -17824,11 +19488,12 @@
       // metadata) defaults to "is a tree", matching _buildZoneFloorMeshes'
       // own fallback.
       function isChoppableTreeTile(col, row) {
-        if (currentArea !== 'map_northern_cliffs' && currentArea !== 'map_southern_cloud_forest') return false;
+        if (currentArea !== 'map_northern_cliffs' && currentArea !== 'map_southern_cloud_forest' && currentArea !== 'map_western_slope') return false;
         const tile = window.GridTileAccessors.getActiveGrid()[row]?.[col];
         if (!tile || tile.crop || tile.type !== TileType.SHRUB) return false;
         return tile.floraKind === 'copse' || !tile.floraKind;
       }
+      // Dead slope trees yield the existing pineLog: every any-wood consumer already accepts it.
       function treeLogItemKey() {
         return currentArea === 'map_southern_cloud_forest' ? 'shadewoodLog' : 'pineLog';
       }
@@ -17870,6 +19535,10 @@
         // Combat and its selectors target actors/world space, including when
         // the centered camera reticle reaches a cave wall or leaves the grid.
         if (tool === 'weapon' || tool === 'ranged') return true;
+        // Mini-cliffs are real separate floor layers. Never let terrain
+        // tools edit the ground tile beneath an elevated balcony.
+        if (typeof player !== 'undefined' && player?.onCliffBalcony &&
+            ['pick', 'shovel', 'hoe', 'axe', 'machete', 'seeds'].includes(tool)) return false;
         const tile = window.GridTileAccessors.getActiveGrid()?.[row]?.[col]; // Terrain tools require an actual aimed tile.
         if (!tile) return false;
         // A mineable ore rock is the one ROCK-tile exception to the blanket
@@ -18781,6 +20450,8 @@
       // object a press/strike is aimed at.
       function resolveObjActionTarget(action) {
         const _r = getReticleTile();
+        const furniture = window.FurnitureTableSystem?.objectAt(currentArea, _r.col, _r.row); // Same target used by the action bar, across every map kind.
+        if (furniture) return furniture;
         // worldObjects is farm-scene-only (see its declaration) — interior
         // interactables (e.g. a bed) live in interiorFurnitureObjects
         // instead, via getInteriorInteractableAt. Ordinary building/town
@@ -18789,14 +20460,25 @@
         // and now sittable furniture — see the mapData.furniture loader).
         return currentArea === 'interior' ? getInteriorInteractableAt(_r.col, _r.row)
           : (_isBuildingArea(currentArea) || currentArea === 'town') ? (_buildingInteractables.get(currentArea + ',' + _r.col + ',' + _r.row) || getCorpseObjectForAction(action, _r.col, _r.row) || getWorldObjectAt(_r.col, _r.row))
-          : getCorpseObjectForAction(action, _r.col, _r.row) || getWorldObjectAt(_r.col, _r.row);
+          : getCorpseObjectForAction(action, _r.col, _r.row) || getAimedFarmInteractionObject(_r.col, _r.row);
       }
 
       function useActiveAction() {
+        // A stale bound button/press may arrive after combat began but before the next action-bar refresh.
+        if (isPlayerInCombat() && (activeAction === npcDialogueAction() || activeAction === smithyAction() || activeAction === generalStoreAction() || activeAction === carpenterAction()
+          || activeAction === 'npc_offer_alcohol_swig' || activeAction === 'npc_offer_gift' || activeAction === 'npc_open_wardrobe' || activeAction === 'npc_slagothim_trade'
+          || activeAction === 'festival_npc_gift' || activeAction === 'festival_npc_sweet')) return;
         if (activeAction === 'dance_spin' && !menuOpen && !dialogueOpen && !paused) { window.SocialActionWheel?.spin?.(); return; }
         if ((activeTool === 'weapon' && (activeAction === toolActions.weapon[0] || activeAction === toolActions.weapon[1])) || (activeTool === 'ranged' && activeAction === 'shoot')) window.BandageSystem?.cancel?.('attack');
         if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'actions')) return;
-        if (sitInteraction) { if (activeAction === 'obj_stand') endSitInteraction(); return; }
+        if (window.PlayerDowned?.allowsAction?.(heldMode, activeTool) === false) return; // Only the ranged weapon works while downed (js/player-downed.js).
+        if (sitInteraction) {
+          if (activeAction === 'obj_stand') endSitInteraction();
+          else if (activeAction === 'obj_eat_meal') window.FestivalSystem?.toggleSeatedMeal?.();
+          else if (activeAction === 'calendar_wait') window.CalendarSystem?.openTimePassage?.('wait');
+          else if (activeAction === 'temple_pray') window.TemplePrayerRestBlessings?.openMenu?.();
+          return;
+        }
         if (dialogueOpen) { window.DialogueContent?.advanceNpcDialogue(); return; }
         // Dispatch for the fish_primary/fish_cancel arc buttons computeActionButtons()
         // builds while fishing is active — mirrors runInputAction's existing
@@ -18804,6 +20486,11 @@
         if (window.Fishing?.state?.active) {
           if (activeAction === 'fish_primary') window.Fishing?.primaryAction();
           else if (activeAction === 'fish_cancel') window.Fishing?.close();
+          return;
+        }
+        if (window.FarmworkUI?.isPlanning?.()) {
+          if (activeAction === 'farmwork_done') window.FarmworkUI.setPlanning(false);
+          else window.FarmworkUI.applyAimedTile(activeAction === 'farmwork_add');
           return;
         }
         if (window.DevMapFurniture?.isActive?.() && window.DevMapFurniture.handleArchAction(activeAction)) {
@@ -18897,6 +20584,7 @@
         // each of these fires straight from its own action-bar slot near a
         // placed campfire (see getNearbyActions in wilderness-campfire.js)
         // instead of opening a shared panel first.
+        if (activeAction === 'shattercask_collect') { window.Shattercasks?.collectAimedPile?.(getReticleTile()); return; }
         if (activeAction === 'campfire_save') { window.WildernessCampfire?.doSave(); return; }
         if (activeAction === 'campfire_cook') { window.WildernessCampfire?.doCook(); return; }
         if (activeAction === 'campfire_brew') { window.WildernessCampfire?.doBrew(); return; }
@@ -18907,14 +20595,11 @@
         }
         if (activeAction === 'festival_npc_gift' || activeAction === 'festival_npc_sweet') { window.FestivalSystem?.receiveNpcReward?.(nearbyNpcWalker, activeAction); refreshActionBar(); return; }
         if (activeAction === 'festival_activity') { window.FestivalUI?.open?.(); return; }
+        if (activeAction === 'festival_dance_view') { window.FestivalWheelDanceRuntime?.toggleCameraView?.(); return; }
         if (activeAction === 'festival_stop_dance') { window.FestivalSystem?.cancelDance?.(); refreshActionBar(); return; }
         if (activeAction === 'npc_offer_gift') {
           window.NpcGifting?.offerGift?.(nearbyNpcWalker);
           refreshActionBar();
-          return;
-        }
-        if (activeAction === 'npc_open_wardrobe') {
-          window.NpcWardrobe?.openWardrobePanel?.(nearbyNpcWalker?.rec?.id);
           return;
         }
         if (activeAction === 'npc_slagothim_trade') {
@@ -19062,8 +20747,8 @@
           const _o = resolveObjActionTarget(activeAction);
           const _res = _o ? _o.onAction(activeAction) : { ok: false, message: 'No object here.' };
           lastActionMessage = _res.message;
-          showToast(_res.message, _res.ok !== false);
-          if (_res.ok !== false) saveMemberWorldData();
+          if (_res.message) showToast(_res.message, _res.ok !== false); // Opening an overlay is not a blank toast notification.
+          if (_res.ok !== false && !_res.deferMemberSave) saveMemberWorldData(); // Cave Duskcaps queue their large world save for idle time instead of freezing pickup.
           return;
         }
 
@@ -19480,11 +21165,31 @@
         }
         // Auto-reserved plateau cliff-face ring — impassable except where a
         // ramp tile explicitly cuts through it (which never sets `incline`).
-        if (tile.incline) return null;
-        // Map-boundary escarpment tops are airtight scenery. A player who is
-        // somehow already standing on one (old save, teleport) may still walk
-        // off it rather than being welded in place.
-        if (tile.mapBoundary && !window.GridTileAccessors.getActiveGrid()[Math.floor(player.y / TILE)]?.[Math.floor(player.x / TILE)]?.mapBoundary) return null;
+        if (tile.incline || tile.mapBoundary) {
+          // Cliffs stop walking, but rays can clear their finite physical height.
+          // Auto-reserved incline rings store the LOWER adjacent tier; their
+          // true upper lip is the highest adjacent walkable plateau or ramp.
+          let cliffTopY = tileSurfaceYInArea(tile, currentArea); // Only projectile cover uses this ceiling; walking remains blocked.
+          if (projectile && tile.incline) {
+            const grid = window.GridTileAccessors.getActiveGrid();
+            for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+              const neighbour = grid[row + dz]?.[col + dx];
+              if (neighbour && !neighbour.incline && !neighbour.mapBoundary) {
+                cliffTopY = Math.max(cliffTopY, tileSurfaceYInArea(neighbour, currentArea));
+              }
+            }
+          }
+          const geometryY = projectile && !tile.mapBoundary
+            ? window.ZonePlateauMesa?.surfaceYAt?.(currentArea, wx / TILE, wy / TILE) : null; // Airborne actors and shots use the visible displaced cliff skin.
+          if (Number.isFinite(geometryY)) cliffTopY = geometryY;
+          else if (projectile && !tile.mapBoundary && window.ZonePlateauMesa?.hasTerrain?.(currentArea)) cliffTopY = -Infinity;
+          const intersectsCliff = !projectile || worldY <= cliffTopY + 0.01;
+          if (tile.incline && intersectsCliff) return null;
+          // Preserve the original escape exception for an actor already on
+          // a boundary tile; it does not give ordinary walkers a route up.
+          if (tile.mapBoundary && intersectsCliff
+            && (projectile || !window.GridTileAccessors.getActiveGrid()[Math.floor(player.y / TILE)]?.[Math.floor(player.x / TILE)]?.mapBoundary)) return null; // Only actors stuck on old-save boundary tiles may step off; shots never inherit their escape exception.
+        }
         // Rivers/streams are swimmable, not blocked — the player has no
         // canSwim tag of their own (see CREATURE_DB's comment on the flag),
         // so this is always the slow "non-swimmer" pace; see isPlayerSwimming
@@ -19653,6 +21358,11 @@
       // it doesn't wall off the opening. Rebuilt by rebuildInteriorGeometry()
       // whenever a piece is built/demolished.
       let _interiorExitTiles = new Set();
+      let _interiorRoomDoorTiles = new Set(); // Shared no-furniture doorway footprint for partition doors.
+      let _interiorArrivalTiles = new Set(); // Prevent furniture from blocking a floorless exterior entrance's indoor landing.
+      let _farmhouseDoorRoot = null; // Replaced on each rebuild to keep door meshes attached exactly once.
+      let _farmhouseDoorVersion = 0; // Guards asynchronous authored-door asset loading after house edits.
+      const _farmhouseDoorInteractables = new Map(); // Room-door tile -> shared wooden-door runtime interaction.
 
       // Rebuilds the merged house interior — floor tiles, walls, the
       // interiorGrid walkability data, and the exit-trigger tile set — from
@@ -19667,8 +21377,10 @@
       function rebuildInteriorGeometry() {
         _interiorGeometryBuilt = true;
         window.FarmWorldSettings.tintMaterial(interiorFloorMaterial, 'wood'); // Existing shared floor material follows the current world even after a world switch.
-        const { floorSet, exitSet, hearths } = window.HousePieces.computeInteriorLayout();
-        _interiorExitTiles = exitSet;
+        const { floorSet, exitSet, doors, doorTiles = [], hearths } = window.HousePieces.computeInteriorLayout();
+        _interiorExitTiles = exitSet; // ONLY outdoor thresholds trigger Exit House; room-door corridors never do.
+        _interiorRoomDoorTiles = new Set(doorTiles.map(([c, r]) => c + ',' + r)); // Generated interior doors must remain unobstructed.
+        _interiorArrivalTiles = new Set(doors.map(d => d.enter.c + ',' + d.enter.r)); // Existing entrance triggers remain on the floorless marker.
 
         _derivedHearthMeshes.forEach(h => {
           interiorScene.remove(h.mesh);
@@ -19695,6 +21407,10 @@
             interiorGrid[r][c].type = floorSet.has(c + ',' + r) ? TileType.GRASS : TileType.ROCK;
           }
         }
+        syncFurnitureWithIndoorRoomOrigins(); // All room furniture keeps its full local coordinate even if a neighboring room moves.
+        if (!window.FarmEditor?.isRestoringLayout?.()) {
+          reconcileFurnitureWithFarmhousePartitions(); // Intermediate room builds during a save restore must not displace saved furniture.
+        }
 
         if (interiorFloorGroup) { interiorScene.remove(interiorFloorGroup); interiorFloorGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
         if (interiorWallGroup)  { WallBuilder.disposeGroup(interiorWallGroup); interiorScene.remove(interiorWallGroup); }
@@ -19709,6 +21425,39 @@
           interiorFloorGroup.add(fl);
         });
         interiorScene.add(interiorFloorGroup);
+
+        // Use the same authored Wooden Door furniture as church/map interiors,
+        // with a single floorless exit marker at each exterior entrance and
+        // a movable door at every generated or player-built partition.
+        const doorVersion = ++_farmhouseDoorVersion; // Only the newest asynchronous build may populate the farmhouse scene.
+        if (_farmhouseDoorRoot) {
+          interiorScene.remove(_farmhouseDoorRoot);
+          _farmhouseDoorRoot.traverse(node => { node.geometry?.dispose?.(); });
+        }
+        _farmhouseDoorInteractables.clear();
+        const doorRoot = new THREE.Group(); // Group is the sole ownership root for all rebuilt farmhouse door visuals.
+        _farmhouseDoorRoot = doorRoot;
+        interiorScene.add(doorRoot);
+        const directions = { north: 'south', south: 'north', east: 'west', west: 'east' }; // Interior exit directions point INTO the floor.
+        const mapExits = doors.flatMap(d => d.exitCells.map((tile, index) => ({
+          id: 'farmhouse_' + d.featureId + '_' + index,
+          tiles: [tile.split(',').map(Number)],
+          direction: directions[d.side] || 'north',
+          generateDoor: true,
+        }))); // One authored door record per independently attached exterior door.
+        Promise.resolve(window.InteriorDoorTiles?.build?.({
+          THREE, scene: doorRoot, mapId: 'interior',
+          mapData: { doorTiles, exits: mapExits }, floorSet,
+          surfaceYAt: () => 0, decorate: _markOutline,
+          registerInteractable: (c, r, object) => {
+            if (doorVersion === _farmhouseDoorVersion) _farmhouseDoorInteractables.set(c + ',' + r, object);
+          },
+        })).then(() => {
+          if (doorVersion !== _farmhouseDoorVersion) {
+            interiorScene.remove(doorRoot);
+            doorRoot.traverse(node => { node.geometry?.dispose?.(); });
+          }
+        }).catch(error => debugLog('Farmhouse door build failed: ' + (error?.message || error), 'error'));
 
         const panels = InteriorSceneBuilder.buildWallPanels(floorSet, exitSet, INTERIOR_WALL_HEIGHT);
         const houseWindowOpenings = window.HouseWindowLinkage?.getInteriorWallOpenings?.() || []; // Farmhouse openings must be applied even when this rebuild is triggered while the player is still outside.
@@ -20298,6 +22047,24 @@
       // piece of furniture right behind it) — so those are gathered fresh
       // each call instead. Cheap in practice: a handful of structures/
       // furniture pieces at most, and this only runs once a frame.
+      // An occupied authored seat appears in the building scene's cached camera
+      // obstacle list. Keep its other pews and walls solid, but never let the
+      // camera collide with the chair containing its own look-at target.
+      function cameraObstacleIsCurrentSeat(candidate) {
+        if (!sitInteraction) return false;
+        const seatItemKey = DECORATIVE_FURNITURE_DEFS[sitInteraction.furnitureKey]?.itemKey
+          || PROCESSING_FURNITURE_DEFS[sitInteraction.furnitureKey]?.itemKey
+          || sitInteraction.furnitureKey; // Resolve runtime key (bench) to map itemKey (benchFurniture).
+        // Chunked camera proxy meshes retain the original source node; children
+        // inherit the authored placement metadata from their furniture root.
+        for (let node = candidate?.userData?.cameraObstacleSource || candidate; node; node = node.parent) {
+          const placement = node.userData?.mapEditorRef;
+          if (placement?.kind === 'furniture' && placement.mapId === currentArea
+            && placement.itemKey === seatItemKey && placement.col === sitInteraction.col
+            && placement.row === sitInteraction.row) return true;
+        }
+        return false;
+      }
       function currentAreaOcclusionMeshes() {
         if (_isZoneArea(currentArea)) {
           const meshes = (_zoneScenes.get(currentArea)?.occlusionMeshes || []).slice();
@@ -20312,7 +22079,9 @@
         // pulled the camera in when it got between the camera and the
         // player, unlike the outdoor case just above.
         if (_isBuildingArea(currentArea)) {
-          for (const m of (_buildingScenes.get(currentArea)?.occlusionMeshes || [])) meshes.push(m);
+          for (const m of (_buildingScenes.get(currentArea)?.occlusionMeshes || [])) {
+            if (!cameraObstacleIsCurrentSeat(m)) meshes.push(m); // Seated camera must not hit its own pew, including tagged child meshes and chunk proxies.
+          }
         }
         if (currentArea === 'farm') {
           for (const entry of housePieces) if (entry._mesh) meshes.push(entry._mesh);
@@ -20321,13 +22090,32 @@
         if (currentArea === 'town') {
           for (const entry of _townBuildingGroups) if (entry.group) meshes.push(entry.group);
         }
-        if (currentArea === 'interior' && activeCameraMode === 'seated' && interiorWallGroup) meshes.push(interiorWallGroup);
+        if (currentArea === 'interior' && (activeCameraMode === 'seated' || activeCameraMode === SHOULDER_SURF_MODE)) {
+          if (interiorWallGroup) meshes.push(interiorWallGroup);
+          if (activeCameraMode === SHOULDER_SURF_MODE) {
+            for (const hearth of _derivedHearthMeshes) if (hearth.mesh) meshes.push(hearth.mesh);
+          }
+        }
         for (const obj of interiorFurnitureObjects) {
           const isActiveSeat = sitInteraction && obj.area === currentArea
             && obj.key === sitInteraction.furnitureKey && obj.col === sitInteraction.col && obj.row === sitInteraction.row;
           if (obj.area === currentArea && obj.mesh && !isActiveSeat) meshes.push(obj.mesh);
         }
         return meshes;
+      }
+      let enemySightOccluderFrame = -1; // Rebuilds the NPC sight obstacle list once per gameplay frame, not once per hostile.
+      let enemySightOccluderArea = null; // Prevents an old area's wall meshes surviving a fast doorway transition.
+      let enemySightOccluderMeshes = []; // Shared geometry list for every hostile's cached visibility ray this frame.
+      function enemySightOccluders() {
+        if (enemySightOccluderFrame !== gameFrameSerial || enemySightOccluderArea !== currentArea) {
+          enemySightOccluderMeshes = currentAreaOcclusionMeshes();
+          if (currentArea === 'interior' && interiorWallGroup && !enemySightOccluderMeshes.includes(interiorWallGroup)) {
+            enemySightOccluderMeshes.push(interiorWallGroup); // NPC sight must see interior walls even when the player camera is in its ordinary follow mode.
+          }
+          enemySightOccluderFrame = gameFrameSerial;
+          enemySightOccluderArea = currentArea;
+        }
+        return enemySightOccluderMeshes;
       }
       // Pulls the camera in along the target→camera line if something from
       // currentAreaOcclusionMeshes() sits between them — the fixed south-of-
@@ -20343,12 +22131,22 @@
       const INTERIOR_CAMERA_WALL_CLEARANCE = 0.35; // gap kept between an interior (building-area) boom and the wall that pulled it in
       const SEATED_CAMERA_MIN_FRAMING_DISTANCE = 0.8; // closest useful third-person framing distance before the camera searches sideways for room
       const SHOULDER_CAMERA_MIN_TARGET_HEIGHT = 0.04; // Keeps lowered shoulder offsets above the terrain so upward aim has room to shorten its boom.
+      const SHOULDER_COLLISION_OFFSET_MIN_ABS = 0.35; // Collision only reduces manual horizontal offset beyond ±0.35 tiles, leaving clear sight around the avatar's head.
       let _cameraBoomDebug = null; // Latest shoulder collision and ground solve, read by the copyable Pixel Probe report.
+      let _shoulderCollisionOffsetBlend = 0; // Spatial easing target is additionally time-smoothed: a sudden wall hit must not snap the shoulder laterally.
+      let _shoulderCollisionOffsetAt = 0; // Last camera-frame timestamp for collision-only offset easing.
+      let _shoulderCollisionOffsetArea = null; // Reset correction when travelling between areas; old wall offsets must not leak across scenes.
       let _occlusionCameraMode = null; // Resets collision smoothing when switching between shoulder, seated, and scripted cameras.
       let _seatedOcclusionDistance = null; // smoothed seated-camera distance used while an obstruction clears
       let _seatedOcclusionUpdatedAt = 0; // previous seated occlusion update time used to calculate smoothing delta
       let _seatedCameraDebug = null; // latest seated obstruction solve, exposed to Pixel Probe for mobile diagnosis
       function cameraSurfaceYAtWorld(x, z) {
+        if (currentArea === 'map_i_dev_random_ruin') {
+          const supportY = window.DevRandomRuin?.getPlayerSupportY?.(); // Bound the camera floor query to the player's current ruin level, excluding overhead bridges.
+          const surface = window.DynamicSurfaces?.sampleSupport?.(x, z, { minY:-60, maxY:(Number.isFinite(supportY) ? supportY : 0) + .45, pad:.02 }); // Real basin floors replace the flat interior-grid proxy.
+          if (Number.isFinite(surface?.y)) return surface.y;
+          if (Number.isFinite(supportY)) return supportY;
+        }
         const ground = activeSurfaceYAtWorld(x, z); // Gameplay ground remains the authority for movement and uncovered tiles.
         const cover = window.EnvironmentSurfaceMicroPlateau?.cameraSurfaceYAt?.(x, z); // Exact rendered snow/slush height, exclusively for camera clearance.
         const support = window.HobunjiWalkableElevation?.worldSurfaceTopAt?.(x, z, ground, currentArea); // Porch decks and walkable furniture (inn stage) are rendered above the gameplay ground.
@@ -20378,16 +22176,164 @@
         return 1;
       }
 
+      // The grid half of camera boom collision (cameraTileCollisionDistance)
+      // now lives in js/camera-tile-collision.js (window.CameraTileCollision).
+      window.CameraTileCollision.init({
+        getCurrentArea: () => currentArea,
+        npcGridForArea: area => (typeof npcGridForArea === 'function' ? npcGridForArea(area) : null),
+        isSolid: type => isSolid(type),
+        isNpcTileWalkable: (area, c, r) => isNpcTileWalkable(area, c, r),
+        tileSurfaceYInArea: (tile, area) => tileSurfaceYInArea(tile, area),
+        isBuildingArea: area => _isBuildingArea(area),
+        interiorWallHeight: () => INTERIOR_WALL_HEIGHT,
+      });
+      function cameraTileCollisionDistance(fromX, fromY, fromZ, toX, toY, toZ, structuralOnly = false) {
+        return window.CameraTileCollision.distance(fromX, fromY, fromZ, toX, toY, toZ, structuralOnly);
+      }
+
+      let _cameraHorizontalDebug = null; // Last horizontal clearance calculation, included in cutscene Pixel Probe reports.
+      let _cameraHorizontalSafeDistance = null; // Smoothed X/Z boom extension; obstructions retract immediately, clear space extends gradually.
+      let _cameraHorizontalUpdatedAt = 0; // Real-time reference for frame-rate-independent horizontal collision recovery.
+      let _cameraHorizontalArea = null; // Prevents a previous building's wall from shortening another area's camera.
+      let _cameraHorizontalShotSignature = null; // A hard cut must not inherit the preceding paragraph's eased wall clearance.
+      // Indoor gameplay uses a world-aligned clearance ring, NOT the direction of
+      // the camera at this moment. Otherwise a tiny yaw can alternate between
+      // a nearby corridor wall and open space and violently pump the zoom.
+      const SHOULDER_RADIAL_SPOKES = 16;
+      const SHOULDER_RADIAL_REFRESH_MS = 120;
+      let _shoulderRadialSample = null;
+      function shoulderRadialClearance(lookAtX, lookAtY, lookAtZ, idealX, idealY, idealZ, obstacles) {
+        const dx = idealX - lookAtX, dy = idealY - lookAtY, dz = idealZ - lookAtZ;
+        const requested = Math.hypot(dx, dy, dz);
+        const flat = Math.hypot(dx, dz);
+        const now = performance.now();
+        // The shoulder look-at point shifts sideways when the camera yaws.
+        // Keep the radial ring centered on the player's real position, NOT
+        // that rotating shoulder offset.
+        const centerX = Number.isFinite(camTargetX) ? camTargetX : lookAtX;
+        const centerZ = Number.isFinite(camTargetZ) ? camTargetZ : lookAtZ;
+        const sideMargin = Math.abs(Number(s_shoulderSurfOffsetH_current) || 0);
+        const cached = _shoulderRadialSample;
+        // Neither yaw nor the camera's X/Z direction participates in the
+        // cache identity. Motion, changed pitch/zoom, or a fresh interval does.
+        if (cached && cached.area === currentArea && cached.obstacleCount === (obstacles?.length || 0)
+          && Math.hypot(centerX - cached.x, centerZ - cached.z) < 0.1
+          && Math.abs(lookAtY - cached.y) < 0.1 && Math.abs(sideMargin - cached.sideMargin) < 0.01
+          && Math.abs(requested - cached.requested) < 0.05
+          && Math.abs(dy / Math.max(0.01, requested) - cached.verticalRatio) < 0.025
+          && now >= cached.at && now - cached.at < SHOULDER_RADIAL_REFRESH_MS) return cached;
+        let nearestHit = Infinity;
+        const horizontalRatio = flat / Math.max(0.01, requested);
+        const verticalRatio = dy / Math.max(0.01, requested);
+        // Fixed WORLD directions are essential: rotating the camera should
+        // never rotate these samples or change the clearance radius.
+        for (let i = 0; i < SHOULDER_RADIAL_SPOKES && requested > 0.08; i++) {
+          const angle = (i * Math.PI * 2) / SHOULDER_RADIAL_SPOKES;
+          const rx = Math.cos(angle) * horizontalRatio;
+          const rz = Math.sin(angle) * horizontalRatio;
+          let meshDistance = Infinity;
+          if (obstacles?.length) {
+            _cameraOcclusionRaycaster.set(
+              _cameraOcclusionOriginVec.set(centerX, lookAtY, centerZ),
+              _cameraOcclusionDirVec.set(rx, verticalRatio, rz),
+            );
+            _cameraOcclusionRaycaster.near = 0.02;
+            _cameraOcclusionRaycaster.far = requested;
+            meshDistance = _cameraOcclusionRaycaster.intersectObjects(obstacles, true)[0]?.distance ?? Infinity;
+          }
+          // Structural walls can lack meshes. Furniture stays mesh-based:
+          // its movement footprint is too coarse for radial camera clearance.
+          const tileDistance = cameraTileCollisionDistance(
+            centerX, lookAtY, centerZ,
+            centerX + rx * requested, idealY, centerZ + rz * requested,
+            true,
+          );
+          nearestHit = Math.min(nearestHit, meshDistance, tileDistance ?? Infinity);
+        }
+        const clearance = Number.isFinite(nearestHit)
+          ? Math.max(SEATED_CAMERA_MIN_DISTANCE, nearestHit - INTERIOR_CAMERA_WALL_CLEARANCE - sideMargin) : requested;
+        _shoulderRadialSample = { area: currentArea, x: centerX, y: lookAtY, z: centerZ,
+          requested, verticalRatio, sideMargin, obstacleCount: obstacles?.length || 0,
+          at: now, distance: Math.min(requested, clearance),
+          hitDistance: Number.isFinite(nearestHit) ? nearestHit : null, rays: requested > 0.08 ? SHOULDER_RADIAL_SPOKES : 0 };
+        return _shoulderRadialSample;
+      }
       function occlusionSafeCameraPosition(lookAtX, lookAtY, lookAtZ, idealX, idealY, idealZ) {
+        const originalIdealX = idealX, originalIdealZ = idealZ; // Authored X/Z intent, preserved for diagnostics.
+        const horizontalObstacles = currentAreaOcclusionMeshes(); // Same tagged walls/furniture used by the existing full 3D boom collision.
+        const activeCinematicShot = window.CinematicCameraRuntime?.activeRecord?.(); // The active authored shot alone controls whether extra horizontal collision probes run.
+        const horizontalSqueezeEnabled = activeCinematicShot?.camera?.horizontalCameraCollision === true; // Off in ordinary gameplay, interiors and unmarked cutscenes.
+        const shotSignature = activeCinematicShot?.signature || null;
+        if (_cameraHorizontalArea !== currentArea || _occlusionCameraMode !== activeCameraMode || _cameraHorizontalShotSignature !== shotSignature) {
+          _cameraHorizontalSafeDistance = null;
+          _cameraHorizontalUpdatedAt = 0;
+          _cameraHorizontalArea = currentArea;
+          _cameraHorizontalShotSignature = shotSignature;
+          // Instant cuts must discard the older direct-ray distance too;
+          // otherwise an unobstructed new paragraph inherits a slow push-out.
+          _seatedOcclusionDistance = null;
+          _seatedOcclusionUpdatedAt = 0;
+        }
+        const hx = idealX - lookAtX, hy = idealY - lookAtY, hz = idealZ - lookAtZ; // True tilted camera trajectory; a fixed-Y probe would miss lower walls.
+        const reach = Math.hypot(hx, hz);
+        const boomLength = Math.hypot(hx, hy, hz);
+        let permittedReach = reach; // Maximum unobstructed horizontal camera offset along the requested trajectory.
+        let horizontalRays = 0; // Exposed on the mobile diagnostic to identify when expensive lateral checks run.
+        if (horizontalSqueezeEnabled && reach > 0.08 && boomLength > 0.08) { // Also check grid colliders when no tagged meshes exist.
+          const rightX = -hz / reach * 0.18, rightZ = hx / reach * 0.18; // Three boom rays approximate camera's horizontal width.
+          const dirX = hx / boomLength, dirY = hy / boomLength, dirZ = hz / boomLength; // Probe through actual wall heights, not just the final camera Y.
+          for (const side of [-1, 0, 1]) {
+            let meshDistance = Infinity;
+            if (horizontalObstacles?.length) {
+              _cameraOcclusionRaycaster.set(
+                _cameraOcclusionOriginVec.set(lookAtX + rightX * side, lookAtY, lookAtZ + rightZ * side),
+                _cameraOcclusionDirVec.set(dirX, dirY, dirZ),
+              );
+              _cameraOcclusionRaycaster.near = 0.02;
+              _cameraOcclusionRaycaster.far = boomLength;
+              meshDistance = _cameraOcclusionRaycaster.intersectObjects(horizontalObstacles, true)[0]?.distance ?? Infinity;
+            }
+            const tileDistance = cameraTileCollisionDistance(
+              lookAtX + rightX * side, lookAtY, lookAtZ + rightZ * side,
+              idealX + rightX * side, idealY, idealZ + rightZ * side,
+            );
+            horizontalRays++;
+            const hitDistance = Math.min(meshDistance, tileDistance ?? Infinity);
+            if (Number.isFinite(hitDistance)) permittedReach = Math.min(permittedReach, reach * Math.max(0.025, hitDistance - 0.12) / boomLength);
+          }
+        }
+        if (horizontalSqueezeEnabled && reach > 0.08) {
+          const now = performance.now(); // The same clock as seated-wall recovery.
+          const dt = _cameraHorizontalUpdatedAt ? Math.max(0, Math.min(0.1, (now - _cameraHorizontalUpdatedAt) / 1000)) : 0;
+          _cameraHorizontalUpdatedAt = now;
+          if (_cameraHorizontalSafeDistance == null || permittedReach < _cameraHorizontalSafeDistance) _cameraHorizontalSafeDistance = permittedReach;
+          else _cameraHorizontalSafeDistance += (permittedReach - _cameraHorizontalSafeDistance) * (1 - Math.exp(-8 * dt));
+          const safeReach = window.FormatUtils.clamp(_cameraHorizontalSafeDistance, 0.025, reach);
+          const factor = safeReach / reach; // Only the X/Z offset is squeezed; keep the authored vertical offset.
+          idealX = lookAtX + hx * factor;
+          idealZ = lookAtZ + hz * factor;
+        } else {
+          _cameraHorizontalSafeDistance = null;
+          _cameraHorizontalUpdatedAt = 0;
+        }
+        _cameraHorizontalDebug = horizontalSqueezeEnabled ? {
+          area: currentArea, factor: reach > 0.08 ? Math.hypot(idealX - lookAtX, idealZ - lookAtZ) / reach : 1,
+          rays: horizontalRays, intended: { x: originalIdealX, z: originalIdealZ },
+          solved: { x: idealX, z: idealZ },
+        } : null; // Existing 3D boom, local terrain and floor guard still follow this X/Z solve.
         let resultX = idealX, resultY = idealY, resultZ = idealZ;
+        let adjustedLookAtX = lookAtX, adjustedLookAtZ = lookAtZ; // Returns an aim pivot shifted with the camera when collision centers the shoulder offset.
         const shoulderBoom = activeCameraMode === SHOULDER_SURF_MODE && !cutscenePreviewActive && !dialogueZoomActive(); // Preserves manual shoulder aim while retaining authored cinematic collision behavior.
+        const radialShoulder = shoulderBoom && (currentArea === 'interior' || _isBuildingArea(currentArea)) && !horizontalSqueezeEnabled; // Farmhouse and authored interiors share one collision distance for EVERY yaw direction.
+        if (!radialShoulder) _shoulderRadialSample = null; // Switching modes or leaving an interior must not carry a stale radial limit.
         let wallHitDistance = null; // Reported after the final floor solve for mobile diagnosis.
         if (_occlusionCameraMode !== activeCameraMode) {
           _seatedOcclusionDistance = null;
           _seatedOcclusionUpdatedAt = 0;
           _occlusionCameraMode = activeCameraMode;
         }
-        const obstacles = currentAreaOcclusionMeshes();
+        const obstacles = horizontalObstacles;
+        const cameraCollisionMinDistance = horizontalSqueezeEnabled ? 0.025 : SEATED_CAMERA_MIN_DISTANCE; // Never leave a tight room camera embedded solely to satisfy the seated boom's minimum.
         const dx = idealX - lookAtX, dy = idealY - lookAtY, dz = idealZ - lookAtZ;
         const dist = Math.hypot(dx, dy, dz);
         if (dist >= (shoulderBoom ? SEATED_CAMERA_MIN_DISTANCE : 0.5)) {
@@ -20395,22 +22341,27 @@
           let desiredSafeDist = dist;
           let directHitDistance = null;
           let chosenSideOffsetDeg = 0;
-          if (obstacles && obstacles.length) {
-            _cameraOcclusionRaycaster.set(
-              _cameraOcclusionOriginVec.set(lookAtX, lookAtY, lookAtZ),
-              _cameraOcclusionDirVec.set(dir.x, dir.y, dir.z),
-            );
-            // A chair can put the seated target much closer than 0.3 tiles to
-            // a wall. Use a short near plane there so the wall is not skipped;
-            // ordinary standing cameras retain the player-avoidance distance.
-            _cameraOcclusionRaycaster.near = activeCameraMode === 'seated' || shoulderBoom ? 0.02 : 0.3;
-            _cameraOcclusionRaycaster.far = dist;
-            // recursive:true — zone occlusion meshes are already individual
-            // tagged leaf meshes (harmless either way there), but the
-            // house/barn/furniture entries above are whole Groups.
-            const hits = _cameraOcclusionRaycaster.intersectObjects(obstacles, true);
-            if (hits.length) {
-              directHitDistance = hits[0].distance;
+          if (radialShoulder) {
+            const ring = shoulderRadialClearance(lookAtX, lookAtY, lookAtZ, idealX, idealY, idealZ, obstacles);
+            desiredSafeDist = ring.distance;
+            wallHitDistance = ring.hitDistance;
+          } else if (horizontalSqueezeEnabled || (obstacles && obstacles.length)) {
+            let meshDistance = Infinity;
+            if (obstacles?.length) {
+              _cameraOcclusionRaycaster.set(
+                _cameraOcclusionOriginVec.set(lookAtX, lookAtY, lookAtZ),
+                _cameraOcclusionDirVec.set(dir.x, dir.y, dir.z),
+              );
+              // A short ray start keeps nearby chairs and walls detectable.
+              _cameraOcclusionRaycaster.near = activeCameraMode === 'seated' || shoulderBoom || horizontalSqueezeEnabled ? 0.02 : 0.3;
+              _cameraOcclusionRaycaster.far = dist;
+              meshDistance = _cameraOcclusionRaycaster.intersectObjects(obstacles, true)[0]?.distance ?? Infinity;
+            }
+            const tileDistance = horizontalSqueezeEnabled
+              ? cameraTileCollisionDistance(lookAtX, lookAtY, lookAtZ, idealX, idealY, idealZ) : null;
+            const obstacleDistance = Math.min(meshDistance, tileDistance ?? Infinity);
+            if (Number.isFinite(obstacleDistance)) {
+              directHitDistance = obstacleDistance;
               wallHitDistance = directHitDistance;
               const interiorStanding = activeCameraMode !== 'seated' && _isBuildingArea(currentArea);
               if (activeCameraMode === 'seated' || interiorStanding || shoulderBoom) {
@@ -20426,8 +22377,8 @@
                 // leaving the camera embedded despite a correct ray hit.
                 const wallClearance = interiorStanding ? INTERIOR_CAMERA_WALL_CLEARANCE : SEATED_CAMERA_WALL_CLEARANCE;
                 desiredSafeDist = Math.min(dist, Math.max(
-                  SEATED_CAMERA_MIN_DISTANCE,
-                  hits[0].distance - wallClearance,
+                  cameraCollisionMinDistance,
+                  obstacleDistance - wallClearance,
                 ));
 
                 // If the wall leaves too little room to frame the seated
@@ -20451,8 +22402,13 @@
                     _cameraOcclusionRaycaster.near = 0.02;
                     _cameraOcclusionRaycaster.far = dist;
                     const candidateHits = _cameraOcclusionRaycaster.intersectObjects(obstacles, true);
-                    const candidateSafeDist = candidateHits.length
-                      ? Math.max(SEATED_CAMERA_MIN_DISTANCE, candidateHits[0].distance - wallClearance)
+                    const candidateTileDistance = horizontalSqueezeEnabled ? cameraTileCollisionDistance(
+                      lookAtX, lookAtY, lookAtZ,
+                      lookAtX + candidateDir.x * dist, lookAtY + candidateDir.y * dist, lookAtZ + candidateDir.z * dist,
+                    ) : null;
+                    const candidateDistance = Math.min(candidateHits[0]?.distance ?? Infinity, candidateTileDistance ?? Infinity);
+                    const candidateSafeDist = Number.isFinite(candidateDistance)
+                      ? Math.max(cameraCollisionMinDistance, candidateDistance - wallClearance)
                       : dist;
                     if (candidateSafeDist > best.safeDist) best = { dir: candidateDir, safeDist: candidateSafeDist, offsetDeg };
                     if (best.safeDist >= dist - 1e-4) break;
@@ -20462,7 +22418,7 @@
                   chosenSideOffsetDeg = best.offsetDeg;
                 }
               } else {
-                desiredSafeDist = Math.min(dist, Math.max(cutscenePreviewActive ? SEATED_CAMERA_MIN_DISTANCE : 3, hits[0].distance - 0.6));
+                desiredSafeDist = Math.min(dist, Math.max(cutscenePreviewActive ? SEATED_CAMERA_MIN_DISTANCE : 3, obstacleDistance - 0.6));
               }
             }
           }
@@ -20487,7 +22443,7 @@
               const alpha = 1 - Math.exp(-8 * dt);
               _seatedOcclusionDistance += (desiredSafeDist - _seatedOcclusionDistance) * alpha;
             }
-            safeDist = window.FormatUtils.clamp(_seatedOcclusionDistance, SEATED_CAMERA_MIN_DISTANCE, dist);
+            safeDist = window.FormatUtils.clamp(_seatedOcclusionDistance, cameraCollisionMinDistance, dist);
             _seatedCameraDebug = interiorBoom || shoulderBoom ? null : {
               idealDistance: dist,
               directHitDistance,
@@ -20508,13 +22464,13 @@
             // Side-sliding supplies seated clearance; lifting a billboard
             // avatar makes it edge-on to the camera and was responsible for
             // the wall-only frozen view in the Pixel Probe report. Interior
-            // booms slide straight in along their own sightline too: a lift
-            // tips the view steeply down, so the smallest aim change swept the
-            // reticle's hit point across the floor or ceiling.
+            // Indoor gameplay uses the SAME radial distance at every yaw:
+            // a real camera boom zoom, not an artificial overhead tilt or
+            // a direction-dependent push-in on individual wall hits.
             const lift = (activeCameraMode === 'seated' || interiorBoom || shoulderBoom || cutscenePreviewActive) ? 0 : shrink * dist * 0.5;
             resultX = lookAtX + dir.x * safeDist;
-            resultY = lookAtY + dir.y * safeDist + lift;
             resultZ = lookAtZ + dir.z * safeDist;
+            resultY = lookAtY + dir.y * safeDist + lift;
           }
         } else if (activeCameraMode !== 'seated') {
           _seatedOcclusionDistance = null;
@@ -20528,12 +22484,86 @@
           resultX = lookAtX + (resultX - lookAtX) * fraction;
           resultY = lookAtY + (resultY - lookAtY) * fraction;
           resultZ = lookAtZ + (resultZ - lookAtZ) * fraction;
+          const requestedSetback = Number(window.HobunjiShoulderCameraCharacterFraming?.minimumCollisionSetback?.()); // Uses the cached species scale rather than measuring the avatar each frame.
+          const requestedPlanarDistance = Math.hypot(dx, dz); // Original horizontal boom reach, used by the shoulder-offset taper.
+          const upwardPitchRad = dy < -1e-4 ? Math.atan2(-dy, Math.max(1e-6, requestedPlanarDistance)) : 0; // Positive only when the camera is below its look target.
+          const targetHeadroom = Math.max(0, lookAtY - targetFloorY - clearance); // Available vertical room beneath the look pivot before the camera reaches terrain.
+          const pitchSafeSetback = upwardPitchRad > 1e-4 ? Math.max(0, targetHeadroom / Math.tan(upwardPitchRad) - 0.002) : Infinity; // At steeper upward pitches, the boom must be allowed closer to the character.
+          const groundLimitedUpward = dy < -1e-4 && fraction < 1 - 1e-6; // Raised terrain may shorten the ray beyond the flat target-floor estimate.
+          const terrainSafeSetback = groundLimitedUpward ? Math.hypot(resultX - lookAtX, resultZ - lookAtZ) : Infinity; // Never undo a terrain-safe upward retraction.
+          const minimumSetback = Math.max(0, Math.min(requestedPlanarDistance,
+            Number.isFinite(requestedSetback) && requestedSetback > 0 ? requestedSetback : 0.8,
+            pitchSafeSetback, terrainSafeSetback)); // Keeps ordinary framing while permitting a floor-safe upward camera to tuck close behind the head.
+          const bodyLimited = Math.hypot(resultX - lookAtX, resultZ - lookAtZ) < minimumSetback; // Stops wall and terrain retraction only when the body-safe pitch envelope allows it.
+          if (bodyLimited && minimumSetback > 0) {
+            const factor = minimumSetback / Math.hypot(dx, dz); // Retains requested yaw and pitch until ground clearance requires a height adjustment.
+            resultX = lookAtX + dx * factor;
+            resultZ = lookAtZ + dz * factor;
+            resultY = Math.max(lookAtY + dy * factor, cameraSurfaceYAtWorld(resultX, resultZ) + clearance);
+          }
+          // Spread offset easing across the FULL collision zoom range instead of
+          // only the last few tenths of a tile. Preserve the sign: large
+          // positive offsets approach +0.35, negatives approach -0.35, and
+          // user-selected offsets in [-0.35, +0.35] remain entirely unchanged.
+          const solvedPlanarDistance = Math.hypot(resultX - lookAtX, resultZ - lookAtZ); // Collision-resolved horizontal reach, independent of yaw.
+          const offsetFadeStartTiles = requestedPlanarDistance; // Fade begins at the first camera-boom retraction.
+          const offsetFadeSpan = requestedPlanarDistance - minimumSetback; // Entire usable retraction range, with the previous species-scaled zoom cap.
+          const configuredOffsetH = Number(typeof s_shoulderSurfOffsetH_current === 'undefined' ? 0 : s_shoulderSurfOffsetH_current); // Existing manual shoulder-offset setting.
+          const liveOffsetH = Number.isFinite(configuredOffsetH) ? configuredOffsetH : 0; // Prevent malformed settings from introducing nonfinite camera coordinates.
+          const offsetEndH = Math.abs(liveOffsetH) > SHOULDER_COLLISION_OFFSET_MIN_ABS
+            ? Math.sign(liveOffsetH) * SHOULDER_COLLISION_OFFSET_MIN_ABS : liveOffsetH; // Preserve head clearance and offsets already within ±0.35.
+          const compression = offsetFadeSpan > 1e-4
+            ? window.FormatUtils.clamp((requestedPlanarDistance - solvedPlanarDistance) / offsetFadeSpan, 0, 1)
+            : 0; // Intentionally close uncollided booms cannot generate artificial offset movement.
+          const shoulderOffsetBlend = compression * compression * (3 - 2 * compression); // Spatial target: smooth across the FULL zoom range.
+          const offsetTime = performance.now();
+          if (_shoulderCollisionOffsetArea !== currentArea || !_shoulderCollisionOffsetAt) {
+            _shoulderCollisionOffsetBlend = 0; // First frame begins at the unmodified manual shoulder offset, even if a wall is already very close.
+            _shoulderCollisionOffsetAt = offsetTime;
+            _shoulderCollisionOffsetArea = currentArea;
+          }
+          const offsetDt = Math.max(0, Math.min(0.1, (offsetTime - _shoulderCollisionOffsetAt) / 1000));
+          _shoulderCollisionOffsetAt = offsetTime;
+          if (Math.abs(liveOffsetH) <= SHOULDER_COLLISION_OFFSET_MIN_ABS) {
+            _shoulderCollisionOffsetBlend = 0; // Keep small manual offsets EXACT, with no old collision correction left over.
+          } else {
+            // Unlike the collision BOOM, which must pull inward immediately to avoid clipping a wall,
+            // the shoulder shift may catch up over several frames. This prevents an instant ±0.8→±0.35 jump.
+            const follow = 1 - Math.exp(-12 * offsetDt);
+            _shoulderCollisionOffsetBlend += (shoulderOffsetBlend - _shoulderCollisionOffsetBlend) * follow;
+          }
+          const appliedShoulderOffsetH = liveOffsetH + (offsetEndH - liveOffsetH) * _shoulderCollisionOffsetBlend; // Signed manual offset is adjusted gradually, never beyond ±0.35.
+          const shoulderOffsetFactor = Math.abs(liveOffsetH) > 1e-6 ? appliedShoulderOffsetH / liveOffsetH : 1; // Fraction of the user's manual offset remaining for diagnostics.
+          const lateralShift = liveOffsetH - appliedShoulderOffsetH; // Correction always moves toward the corresponding signed side, never to zero.
+          if (Math.abs(lateralShift) > 1e-6 && requestedPlanarDistance > 1e-6) {
+            // Shift the camera AND aim pivot together, preserving pitch, yaw,
+            // the shared radial ring, and reticle/interaction-ray agreement.
+            adjustedLookAtX -= (dz / requestedPlanarDistance) * lateralShift;
+            adjustedLookAtZ += (dx / requestedPlanarDistance) * lateralShift;
+            resultX += adjustedLookAtX - lookAtX;
+            resultZ += adjustedLookAtZ - lookAtZ;
+            resultY = Math.max(resultY, cameraSurfaceYAtWorld(resultX, resultZ) + clearance); // Shifted camera still clears rendered terrain/snow/slush.
+          }
           _cameraBoomDebug = {
-            latestChange: 'Camera collision includes snow/slush caps and inclined edges; short-character pivots stay above cover while player ground is unchanged.',
+            latestChange: 'Upward pitch progressively lowers the body-safe boom setback so the camera can retract toward the head without flattening its vertical aim.',
+            minimumSetbackTiles: minimumSetback,
+            upwardPitchDeg: upwardPitchRad * 180 / Math.PI,
+            pitchSafeSetbackTiles: Number.isFinite(pitchSafeSetback) ? pitchSafeSetback : null,
+            groundLimitedUpward,
+            offsetFadeStartTiles, // Clearance threshold where shoulder recentering begins.
+            shoulderOffsetFactor, // Proportion of the input offset still visible after collision easing.
+            shoulderOffsetBlend, // Collision-distance target over the whole zoom range (0..1).
+            appliedShoulderOffsetBlend: _shoulderCollisionOffsetBlend, // Time-smoothed transition applied to the rendered camera.
+            manualShoulderOffsetTiles: liveOffsetH, // User's unmodified signed horizontal offset.
+            minimumShoulderOffsetTiles: offsetEndH, // Signed target of ±0.35, or the untouched small manual offset.
+            appliedShoulderOffsetTiles: appliedShoulderOffsetH, // Actual camera offset after collision response.
+            bodyLimited,
+            corridorReframe: radialShoulder && _seatedOcclusionDistance != null && _seatedOcclusionDistance < dist - 1e-4,
+            radialCamera: radialShoulder ? { distance: _shoulderRadialSample?.distance, rays: _shoulderRadialSample?.rays, hitDistance: _shoulderRadialSample?.hitDistance } : null,
             idealDistance: dist,
-            solvedDistance: Math.hypot(resultX - lookAtX, resultY - lookAtY, resultZ - lookAtZ),
+            solvedDistance: Math.hypot(resultX - adjustedLookAtX, resultY - lookAtY, resultZ - adjustedLookAtZ), // Report the actual camera-to-aim distance after recentering.
             requestedPitchDeg: Math.atan2(-dy, Math.hypot(dx, dz)) * 180 / Math.PI,
-            solvedPitchDeg: Math.atan2(lookAtY - resultY, Math.hypot(resultX - lookAtX, resultZ - lookAtZ)) * 180 / Math.PI,
+            solvedPitchDeg: Math.atan2(lookAtY - resultY, Math.hypot(resultX - adjustedLookAtX, resultZ - adjustedLookAtZ)) * 180 / Math.PI, // Match the renderer's real final look target.
             directHitDistance: wallHitDistance,
             groundLimited: fraction < 1,
             floorClearance: clearance,
@@ -20542,6 +22572,9 @@
           };
         } else {
           _cameraBoomDebug = null;
+          _shoulderCollisionOffsetBlend = 0; // Other camera modes and authored cutscenes never inherit gameplay-only offset easing.
+          _shoulderCollisionOffsetAt = 0;
+          _shoulderCollisionOffsetArea = null;
           // Floor guard — applies everywhere, not just zones (unlike the
           // mesh-obstacle pull-in above, which has nothing to raycast against
           // for the ground itself). A steep enough upward pitch (see the
@@ -20574,7 +22607,7 @@
             resultY = Math.max(resultY, cameraSurfaceYAtWorld(resultX, resultZ) + 0.01); // An authored target buried in cover still cannot leave the camera beneath it.
           }
         }
-        return { x: resultX, y: resultY, z: resultZ };
+        return { x: resultX, y: resultY, z: resultZ, lookAtX: adjustedLookAtX, lookAtZ: adjustedLookAtZ }; // Camera and reticle keep the same adjusted look target.
       }
 
       // How far under a tree canopy's own recorded influence radius the player
@@ -20590,7 +22623,7 @@
         const zones = _zoneScenes.get(currentArea)?.canopyZones;
         if (!zones || !zones.length) return 0;
         const modeCfg = cameraModeConfig(activeCameraMode);
-        const angle = THREE.MathUtils.degToRad((modeCfg.angleFromGroundDeg ?? 32.73) + cameraAngleOffsetDeg);
+        const angle = THREE.MathUtils.degToRad((modeCfg.angleFromGroundDeg ?? 32.73) + clampCameraPitchOffsetDeg(cameraAngleOffsetDeg, modeCfg.angleFromGroundDeg ?? 32.73));
         const distanceTiles = modeCfg.distanceTiles ?? 14;
         const sinAngle = Math.sin(angle);
         const CANOPY_CLEARANCE = 0.3;
@@ -20660,8 +22693,8 @@
           }
         }
         const baseDistance = (modeCfg.distanceTiles ?? 14) / effectiveZoomScale * cutsceneZoomMul;
-        const distance = dialogueZoomActive() ? baseDistance / dialogueZoomFactor() : baseDistance;
-        const angle = THREE.MathUtils.degToRad((modeCfg.angleFromGroundDeg ?? 32.73) + cameraAngleOffsetDeg);
+        let distance = dialogueZoomActive() ? baseDistance / dialogueZoomFactor() : baseDistance;
+        const angle = THREE.MathUtils.degToRad((modeCfg.angleFromGroundDeg ?? 32.73) + clampCameraPitchOffsetDeg(cameraAngleOffsetDeg, modeCfg.angleFromGroundDeg ?? 32.73));
         const azimuth = THREE.MathUtils.degToRad((modeCfg.azimuthDeg ?? 0) + cameraAzimuthOffsetDeg);
         const portraitAim = dialoguePortraitCameraAim(modeCfg, tx, tz, distance, angle);
         let lookY = portraitAim?.lookY ?? (camTargetY + (modeCfg.targetYOffsetTiles ?? 0));
@@ -20686,6 +22719,10 @@
           // camera position below that pivot could retain an upward sightline.
           if (!cutscenePreviewActive && !dialogueZoomActive()) lookY = Math.max(lookY, cameraSurfaceYAtWorld(lookAtX, lookAtZ) + SHOULDER_CAMERA_MIN_TARGET_HEIGHT);
         }
+        const surfaceView = window.HobunjiShoulderCameraCharacterFraming?.updateSurfaceView?.(currentArea, player.x / TILE, player.y / TILE,
+          activeCameraMode === SHOULDER_SURF_MODE && !portraitAim && !cutscenePreviewActive && !dialogueZoomActive() && !window.__mapEditorOrbitActive,
+          performance.now()); // Existing camera update owns the lift; the actual camera ray automatically targets revealed surface items.
+        if (surfaceView) { lookY += surfaceView.lift; distance *= surfaceView.distanceScale; }
         const cameraY = portraitAim?.cameraY ?? (lookY + Math.sin(angle) * distance);
         const groundDistance = Math.cos(angle) * distance;
         const idealX = lookAtX + Math.sin(azimuth) * groundDistance;
@@ -20697,8 +22734,8 @@
         // recompute doesn't fight it, while still keeping fov/aspect current.
         if (!window.__mapEditorOrbitActive) {
           camera.position.set(safe.x, safe.y, safe.z);
-          camera.lookAt(lookAtX, lookY, lookAtZ);
-          _lastCameraLookPoint.set(lookAtX, lookY, lookAtZ);
+          camera.lookAt(safe.lookAtX, lookY, safe.lookAtZ);
+          _lastCameraLookPoint.set(safe.lookAtX, lookY, safe.lookAtZ); // Interaction rays track the collision-adjusted camera aim.
         }
         // Very short ground-limited booms need a smaller near plane to keep
         // the nearby character visible; other modes retain the normal plane.
@@ -21337,6 +23374,7 @@
         THREE,
         camera,
         playerRoot: playerMesh,
+        getNpcName: id => scheduledNpcRecords.get(id)?.name || npcWalkers.find(walker => walker.rec?.id === id)?.rec?.name || id, // Gain popups resolve readable names even for offscreen NPCs.
         getActiveScene: window.GridTileAccessors.getActiveScene,
       });
       // Perception Mode (eagle-vision highlights, crop/livestock info lists,
@@ -21356,6 +23394,18 @@
               ...(_zoneTreasureObjects.get(zone)?.values() || []),
             ]
             : currentArea === 'farm' ? [...new Set(worldObjects.values())] : [];
+          const nearbyOreRocks = []; // Scene-attached diggable rock roots for the active Sense Mode neighborhood.
+          const indexedOreRocks = _zoneMineableRockMeshes.get(currentArea); // Reuses the outdoor, mine and cavern tile indices; no world-scene traversal.
+          if (indexedOreRocks?.size) {
+            const senseRadius = window.PerceptionMode?.RANGE_TILES || 14; // Mirrors Perception Mode's configured range.
+            const playerCol = Math.floor(player.x / TILE), playerRow = Math.floor(player.y / TILE); // Tile bounds for the nearby resource sweep.
+            for (let row = playerRow - senseRadius; row <= playerRow + senseRadius; row++) {
+              for (let col = playerCol - senseRadius; col <= playerCol + senseRadius; col++) {
+                const group = indexedOreRocks.get(`${col},${row}`);
+                if (group) nearbyOreRocks.push(group);
+              }
+            }
+          }
           const crops = [];
           if (currentArea === 'farm') {
             const cropMeshes = window.VegetationCropRendering?.cropMeshes || [];
@@ -21374,6 +23424,7 @@
             livestock: currentArea === 'farm' ? animalObjects : [],
             corpses: [...corpseObjects].filter(c => c.state === 'corpse' && c.areaId === currentArea && !c.corpseLooted),
             interactables,
+            oreRocks: nearbyOreRocks, // Kept separate from worldObjects because mineable terrain is scene-owned.
             crops,
           };
         },
@@ -21466,10 +23517,10 @@
       let strikeFired   = false;
       let chargeStageSfxFired = false; // Prevents duplicate contact audio within one held-action animation stage.
 
-      // True while the primary action input (key/click/button) is physically held
-      // down. Drives the multi-stage dig/fill charge below — releasing it, or
-      // retargeting a different tile, mid-charge cancels the whole thing.
+      // True while the active action input is physically held, whether it is
+      // Action 1, 2 or 3. Multi-stage trench charges cancel on release or retarget.
       let actionHeldDown = false;
+      let heldChargeInputId = null; // Physical action input that must release a multi-stage shovel/axe/pick charge.
       // Multi-stage charge in progress: digging a brand-new trench or filling an
       // existing one in. Each stage plays one tool swing (sized by digSpeed); the
       // action only actually happens once every stage completes uninterrupted.
@@ -21581,7 +23632,15 @@
       let combatSwingAimTargetOverride = null; // Optional finite world point used by fishing so a camera move cannot redirect the held throw away from the selected water tile.
       let combatSwingToolEndFlip = false; // Requests the same visible tip↔handle in-plane reversal previewed by the Attack Animation Editor.
       let fishingThrowSpinVisual = null; // Carries the shared thrown-weapon spin basis/revolutions while the harpoon slot owns a fishing throw pose.
-      const _toolMeshPoseMergeCache = { pose: undefined, styleNeutral: undefined, neutral: null, returnNeutral: null }; // Memoizes updateToolMesh's per-frame neutral/returnNeutral merge for the current swing (see the pose-driven branch below).
+      // Swing interpolation, per-style rest poses and pose / legacy-arc sampling
+      // are shared with every BanditCombat humanoid (bandits, ghouls, skeletons,
+      // ...): editing js/combat/shared-attack-pose.js changes the player and
+      // enemies together. Only WHERE the sampled channels are placed stays here.
+      const SharedAttackPose = window.SharedAttackPose;
+      const fourPhaseLerp = SharedAttackPose.fourPhaseLerp; // Also used by heldActionPoseAt for held-item actions.
+      const STYLE_NEUTRAL_POSE = SharedAttackPose.STYLE_NEUTRAL_POSE; // Each tool style's rest pose; also handed to BanditCombat.init.
+      const _toolPoseSample = SharedAttackPose.createSample(); // Reused every frame by updateToolMesh's SharedAttackPose sampling.
+      const _swingTimelineScratch = { totalS: 0, wf: 0, sf: 0, hf: 0 }; // Reused by triggerWeaponSwingVisual's SharedAttackPose.swingTimeline.
       // Affliction ids (see resource-system.js's AFFLICTIONS) this swing's
       // ability can actually inflict — set via opts.afflictionIds on
       // triggerWeaponSwingVisual/triggerWeaponHoldVisual, computed by each
@@ -21608,18 +23667,15 @@
         return Math.max(0.01, player.digSpeed || 1) * (window.SkillSystem?.actionSpeedMultiplier?.('farming') || 1);
       }
 
-      // Collapses the shovel's separate Dig/Fill action slots into one
-      // contextual input: whichever of the two the player has selected,
-      // resolve to whichever is actually valid for the targeted tile. Dig
-      // (including redigging a shallow trench) takes priority; fall back to
-      // fill only when dig isn't valid, i.e. an already-full trench — so the
-      // same input digs or fills depending on what's targeted, on desktop
-      // and mobile alike.
+      // Prefer the selected shovel action when it is valid: explicitly
+      // choosing Fill must fill even a partly silted trench (where Redig is
+      // also legal). Otherwise the other action is a contextual fallback,
+      // so Dig can fill a full-depth trench and Fill can dig untouched soil.
       function resolveDigFillAction(tool, action, reticle) {
         if (tool !== 'shovel' || (action !== 'dig' && action !== 'fill')) return action;
-        if (canUseAction(tool, 'dig', reticle.col, reticle.row)) return 'dig';
-        if (canUseAction(tool, 'fill', reticle.col, reticle.row)) return 'fill';
-        return action;
+        if (canUseAction(tool, action, reticle.col, reticle.row)) return action;
+        const fallbackAction = action === 'dig' ? 'fill' : 'dig'; // Only used when the chosen shovel operation is unavailable on this tile.
+        return canUseAction(tool, fallbackAction, reticle.col, reticle.row) ? fallbackAction : action;
       }
 
       // Whether starting this tool/action right now would kick off a multi-stage
@@ -21722,23 +23778,17 @@
         // auto-derived from SF in updateToolMesh, without needing any
         // per-ability changes in the combat-*.js files. Callers that already
         // reserved their own returnS (strikeFrac < 1) are left untouched.
-        const hasOwnReturn = strikeFrac < 0.999;
-        const returnTailS = hasOwnReturn ? 0 : Math.max(0.12, durationS * 0.35);
-        // Reserve an explicit post-strike hold (if this ability's config asked
-        // for one) on top of whatever windup/strike/return it already
-        // budgeted — additive, rather than carving it out of durationS, so
-        // the windup/strike/return real-world timings stay exactly as
-        // authored; the pause is just inserted between strike and return.
+        // The tail / hold / fraction math is SharedAttackPose.swingTimeline, shared with enemies so their swings last as long.
         const holdS = Math.max(0, opts.holdS || 0);
-        const totalS = durationS + returnTailS + holdS;
-        toolSwingDur = Math.max(0.05, totalS);
+        const timeline = SharedAttackPose.swingTimeline(_swingTimelineScratch, durationS, windupFrac, strikeFrac, holdS);
+        toolSwingDur = timeline.totalS;
         toolSwingT = toolSwingDur;
         strikeFired = false;
         pendingAction = null;
         combatSwingAnim = opts.anim || null;
         combatSwingSign = opts.dirSign || 1;
-        combatSwingWindupFrac = windupFrac * durationS / totalS;
-        combatSwingStrikeFrac = strikeFrac * durationS / totalS;
+        combatSwingWindupFrac = timeline.wf;
+        combatSwingStrikeFrac = timeline.sf;
         combatSwingPower = opts.power ?? 1;
         combatSwingPose = opts.pose || null;
         combatSwingHoldS = holdS;
@@ -21762,9 +23812,12 @@
         const holdEndFrac = combatSwingHoldS > 0 // Match updateToolMesh's explicit or proportional hold endpoint.
           ? Math.min(0.99, combatSwingStrikeFrac + combatSwingHoldS / toolSwingDur)
           : Math.min(0.99, combatSwingStrikeFrac + (1 - combatSwingStrikeFrac) * 0.3);
+        const gateFrac = Math.max(combatSwingStrikeFrac, (combatSwingStrikeFrac + holdEndFrac) / 2); // The next attack may start halfway through the Strike hold.
         return {
           remainingS: toolSwingT,
-          activeRemainingS: Math.max(0, toolSwingDur * holdEndFrac - elapsedS),
+          activeRemainingS: Math.max(0, toolSwingDur * gateFrac - elapsedS),
+          strikeRemainingS: Math.max(0, toolSwingDur * combatSwingStrikeFrac - elapsedS), // Attack inputs only queue once the Strike pose is reached.
+          holdEndRemainingS: Math.max(0, toolSwingDur * Math.max(combatSwingStrikeFrac, holdEndFrac) - elapsedS), // The release voice is mapped through the whole hold.
           windupRemainingS: Math.max(0, toolSwingDur * combatSwingWindupFrac - elapsedS),
           held: combatSwingHeld,
         };
@@ -21908,8 +23961,9 @@
         toolSwingT = 0;
       }
 
-      function cancelChargeAction() {
+      function cancelChargeAction(reason = 'interrupted') {
         if (!chargeAction) return;
+        debugLog(`[tool-charge] ${chargeAction.action} canceled (${reason}) @ c${chargeAction.col},r${chargeAction.row}`);
         chargeAction = null;
         toolSwingT = 0;
         chargeAnimOverride = null;
@@ -21956,9 +24010,9 @@
       function updateChargeAction() {
         if (!chargeAction) return;
         if (!chargeAction.finalStrikeCommitted) {
-          if (!actionHeldDown) { cancelChargeAction(); return; }
+          if (!actionHeldDown) { cancelChargeAction('input released'); return; }
           const reticle = getReticleTile();
-          if (reticle.col !== chargeAction.col || reticle.row !== chargeAction.row) { cancelChargeAction(); return; }
+          if (reticle.col !== chargeAction.col || reticle.row !== chargeAction.row) { cancelChargeAction('reticle moved'); return; }
         }
         if (toolSwingT > 0) return;
         chargeAction.stage++;
@@ -22087,6 +24141,7 @@
           ? window.HobunjiSpritePngSurface.makeMaterial(THREE, toolTextures[itemKey], itemKey, { side: THREE.DoubleSide })
           : new THREE.MeshBasicMaterial({ map: toolTextures[itemKey], transparent: true, alphaTest: 0.08, side: THREE.DoubleSide });
         const plane = new THREE.Mesh(geo, mat);
+        plane.userData.sharedToolGeometry = !!def?.modular; // Enemy teardown leaves cached modular geometry available to other holders.
         // The PNG's fixed -90° X basis makes it lie in the tool's XZ plane.
         // Tool End Flip is an in-plane 180° turn on the visible sprite, so
         // the business end actually swaps with the handle instead of merely
@@ -22105,6 +24160,7 @@
         // updateToolMesh's baseRotZ for why.
         g.userData.toolPlane = plane;
         _markPngPlane(g);
+        window.HobunjiWeaponSpriteAssemblies?.decorate(g, itemKey, def, { THREE, metalOptions: () => metalToolRecolorOptions(itemKey), masteryLevel: () => toolMasteryLevel(itemKey) }); // Shared optional layered PNG/flail visual; grip, impact, swing and enchantment authority stay on the original haft plane.
         return g;
       }
 
@@ -22180,6 +24236,20 @@
       // Per-item-key overrides for HELD_ITEM_PLANE_WIDTH — most icons read fine
       // at the default size; add entries here for outliers (e.g. tiny/huge glyphs).
       const ITEM_HELD_PLANE_SCALE = {};
+      const HELD_FLASK_SIZE_MULT = 1.25; // Throwing flasks read 25% larger in hand and in flight (projectiles reuse this plane).
+      const LARGE_HELD_ITEM_CATS = new Set(['furniture', 'building', 'blueprint', 'livestock']); // Item categories carried two-handed; everything else uses the small bottle stance.
+
+      function isThrowFlaskItem(item) {
+        if (!item?.key) return false;
+        const payload = window.AlchemySystem?.POTION_ITEMS?.[item.key] || window.AlchemySystem?.parseBrewedItemKey?.(item.key);
+        return window.AlchemySystem?.RECIPE_DEFS?.[payload?.recipeId]?.useMode === 'throw';
+      }
+
+      function isLargeHeldItem(item) {
+        if (!item) return false;
+        const def = ITEM_DEFS[item.key] || item;
+        return def.heldSize === 'large' || LARGE_HELD_ITEM_CATS.has(def.cat);
+      }
 
       const _itemIconTextures = {};
       function _getItemIconTexture(icon) {
@@ -22204,8 +24274,9 @@
         // The full item definition supplies procedural bottle art and tint data.
         const def = ITEM_DEFS[item.key] || item;
         window.ItemProcessing.normalizeAlcoholItemDef(def);
+        window.ObjectSpriteCatalog?.ensure?.(item.key, def); // Held sprite planes use the same newly authored art as Pack and action-arch icons.
         // Width starts square and gains the source sprite's aspect ratio after load.
-        const w = HELD_ITEM_PLANE_WIDTH * (ITEM_HELD_PLANE_SCALE[item.key] ?? 1);
+        const w = HELD_ITEM_PLANE_WIDTH * (ITEM_HELD_PLANE_SCALE[item.key] ?? 1) * (isThrowFlaskItem(item) ? HELD_FLASK_SIZE_MULT : 1);
         const geo = new THREE.PlaneGeometry(w, w);
         // Authored items start with their PNG, so a bottle never flashes or
         // remains as an emoji while the ingredient recolor resolves.
@@ -22261,12 +24332,8 @@
 
       function usesThrustHeldPose(item) {
         if (!item) return false;
-        // Definition is checked for both procedural potion identity and alcohol tags.
-        const def = ITEM_DEFS[item.key] || item;
-        return item.key.startsWith('potion_')
-          || !!window.AlchemySystem?.POTION_ITEMS?.[item.key]
-          || (def.tags || []).some(tag => String(tag).toLowerCase() === 'potion')
-          || window.ItemProcessing.isAlcoholItemDef(def);
+        // Small handheld items (potions, alcohol, crops, materials...) all share the liquor-bottle idle stance; only large items use the two-hand carry.
+        return !isLargeHeldItem(item);
       }
 
       // Child of playerMesh (not scene, unlike toolHolder) — it has no swing
@@ -22291,9 +24358,9 @@
       let _heldDrinkProgress = 0; // 0..1 forward progress through the authored drink animation.
       let _heldDrinkApply = null; // Used to apply the held-item effect at the authored drink strike.
       let _heldDrinkApplied = false; // Used to guarantee at most one commit callback per drink animation.
+      let _heldItemHandMode = null; // 'bottle' (one hand on the neck) or 'large' (both hands at the sides); read by getHeldItemHandTarget.
       let _heldThrowAimT = 0; // Used as 0=neutral, 1=held windup aim, 2=windup-to-strike throw playback.
       let _heldThrowAnimProgress = 0; // Used to resume confirmed throws from the indefinitely-held windup pose.
-      let _playerKurrayaTwitch = null; // Reactive-twitch state for the player's held Kurraya — see updateHeldItemHolder.
       // Full authored duration in seconds, used to convert dt into animation progress.
       let _heldDrinkAnimDuration = 0;
 
@@ -22310,11 +24377,173 @@
           x: channel('x'), y: channel('y'), z: channel('z'),
           pitch: channel('pitch'), yaw: channel('yaw'), roll: channel('roll'),
           bodyYaw: channel('bodyYaw'),
+          headRelative: animation.headRelative === true || neutral.headRelative === true,
         };
       }
 
+      // Consumed by procedural-hand-frame-driver.js: bag items have no toolHolder, so the
+      // hands follow this holder directly (neck grip for bottles, both side edges for large items).
+      function getHeldItemHandTarget() {
+        if (!_heldItemPlane || !heldItemHolder.visible || !_heldItemHandMode) return null;
+        const geo = _heldItemPlane.geometry?.parameters;
+        return {
+          holder: heldItemHolder,
+          plane: _heldItemPlane,
+          mode: _heldItemHandMode,
+          width: (geo?.width || HELD_ITEM_PLANE_WIDTH) * (_heldItemPlane.scale.x || 1),
+          height: (geo?.height || HELD_ITEM_PLANE_WIDTH) * (_heldItemPlane.scale.y || 1),
+          neckFraction: _heldItemKey && isThrowFlaskItem({ key: _heldItemKey }) ? 0.07 : 0.2, // Neck centre above the sprite middle as a fraction of its height: matches the authored throwingflask grip for the tall flask PNG, the bottle PNG otherwise.
+        };
+      }
+
+      const _headFrame = SharedAttackPose.createHeadFrame(THREE); // Mouth position + head rotation + head scale, refreshed each head-anchored frame.
+      const _headPlacePose = { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 }; // Reused authored offset handed to SharedAttackPose.placeAtMouth.
+      const _headApertureCache = new Map(); // `${itemKey}|${species}|${gender}` -> holder-space aperture, cleared whenever grip data changes.
+      window.HobunjiHandToolGrips?.subscribe?.(() => _headApertureCache.clear());
+      // The tool-holder-space aperture that mates with the portrait mouth (null when the tool defines none).
+      function playerToolAperture(itemKey, context = 'ranged') {
+        const identity = playerPoseIdentity();
+        const key = `${itemKey}|${context}|${identity.speciesId}|${identity.gender}`;
+        if (!_headApertureCache.has(key)) _headApertureCache.set(key, window.HobunjiHandToolGrips?.apertureHolderPointForTool?.(itemKey, context, identity) || null);
+        return _headApertureCache.get(key);
+      }
+      const _gripAnchorCache = new Map(); // `${itemKey}|${context}|${species}|${gender}` -> holder-space main-hand grip, cleared with the aperture cache.
+      window.HobunjiHandToolGrips?.subscribe?.(() => _gripAnchorCache.clear());
+      // Hand-aligned poses scale around the main-hand grip, so the hand stays put while the weapon grows or shrinks.
+      function anchorPlayerToolScaleAtGrip(scale, context) {
+        if (!(Math.abs((Number(scale) || 1) - 1) > 1e-9)) return;
+        const itemKey = equipmentSlots[activeTool] || equipmentSlots.weapon;
+        if (!itemKey) return;
+        const identity = playerPoseIdentity();
+        const key = `${itemKey}|${context}|${identity.speciesId}|${identity.gender}`;
+        if (!_gripAnchorCache.has(key)) _gripAnchorCache.set(key, window.HobunjiHandToolGrips?.primaryGripHolderPointForTool?.(itemKey, context, identity) || null);
+        SharedAttackPose.anchorScaleAtPoint(toolHolder, _gripAnchorCache.get(key), scale);
+      }
+      // Head-anchored placement for the weapon tool holder: the authored pose is an offset in the head's frame and the
+      // tool's aperture sits on the mouth (see SharedAttackPose.placeAtMouth). Angles are radians.
+      // A ranged weapon aims with its authored stance only when (1) RangedWeapons has a config for it and (2) its animStyle resolves to
+      // 'ranged'. Either can be missing if registration ran before this item's definition existed, and the game then silently shows the
+      // generic ranged stance for the whole session. While aiming, notice that, re-run the registrars, and say which condition it was.
+      let _rangedStanceCheckAt = 0;
+      const _rangedStanceReported = new Set();
+      function ensureRangedStanceReady(itemKey) {
+        if (!itemKey) return;
+        const now = performance.now();
+        if (now - _rangedStanceCheckAt < 1000) return; // One cheap lookup a second is plenty; this is a safety net, not a per-frame path.
+        _rangedStanceCheckAt = now;
+        const hasConfig = !!window.RangedWeapons?.config?.[itemKey];
+        const def = TOOL_ITEM_DEFS[itemKey];
+        const styleOk = !def || def.animStyle === 'ranged';
+        if (hasConfig && styleOk) return;
+        const archetypes = window.HobunjiRangedWeaponArchetypes;
+        if (!hasConfig) archetypes?.patchGeneratedDefinitions?.();
+        if (!styleOk) { archetypes?.patchGeneratedDefinitions?.(); window.HobunjiDualRoleRangedAnimStyle?.refresh?.(); }
+        const repaired = !!window.RangedWeapons?.config?.[itemKey] && (!def || def.animStyle === 'ranged');
+        const reason = `${!hasConfig ? 'no-ranged-config' : ''}${!hasConfig && !styleOk ? '+' : ''}${!styleOk ? 'anim-style-not-ranged' : ''}`;
+        const report = `${itemKey}:${reason}:${repaired ? 'repaired' : 'unrepaired'}`;
+        if (!_rangedStanceReported.has(report)) { // Once per distinct outcome, so a persistent failure does not flood the log.
+          _rangedStanceReported.add(report);
+          window.__farmLog?.(`[ranged-stance] ${itemKey} would have used the fallback ranged stance (${reason}); ${repaired ? 'repaired by re-running registration' : 'could not be repaired'}.`, 'warn', 'combat');
+        }
+        if (repaired) rebuildToolMeshes(); // The loaded/unloaded sprite variants depend on the same registration.
+      }
+      let _headAnchorFallbackReported = false;
+      function reportHeadAnchorFallback() { // A head-anchored pose whose head frame could not be resolved is drawn hand-relative: that is the fallback stance.
+        if (_headAnchorFallbackReported) return;
+        _headAnchorFallbackReported = true;
+        const rig = playerAvatarGroup?.userData?.neckRig;
+        window.__farmLog?.(`[ranged-stance] head-anchored pose fell back to the hand-relative stance: head frame unavailable (rig ${rig?.available ? 'ok' : 'missing'}, mouth pixel ${window.SharedAttackPose.mouthPixel(playerAvatarGroup) ? 'ok' : 'missing'}, skinned resolver ${window.PNGPlaneAvatar?.resolveSkinnedPixelWorldPosition ? 'ok' : 'missing'}).`, 'warn', 'combat');
+      }
+      let _toolAttachStamp = 0; // Bumped once per updateToolMesh.
+      const _toolAttachJob = { stamp: -1, scale: 1, aperture: null, pose: { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 } }; // The last head-anchored tool placement, replayed against the drawn head at render time.
+      function playerBlowgunReticlePoint() {
+        return window.RangedWeapons?.config?.[equipmentSlots.ranged]?.rangedType === 'blowgun'
+          ? currentPlayerPerspectiveTarget()?.point || null
+          : null; // Blowgun alone converges its mouth-anchored barrel toward the shared debug/shot reticle; Drink and other head attachments still follow the head normally.
+      }
+      function placePlayerToolAtMouth(x, y, z, pitchRad, yawRad, rollRad, scale) {
+        _headPlacePose.x = x; _headPlacePose.y = y; _headPlacePose.z = z;
+        _headPlacePose.pitch = THREE.MathUtils.radToDeg(pitchRad); _headPlacePose.yaw = THREE.MathUtils.radToDeg(yawRad); _headPlacePose.roll = THREE.MathUtils.radToDeg(rollRad);
+        const aperture = playerToolAperture(equipmentSlots.ranged);
+        SharedAttackPose.placeAtMouth(toolHolder, _headFrame, _headPlacePose, scale, aperture, null, playerBlowgunReticlePoint());
+        Object.assign(_toolAttachJob.pose, _headPlacePose);
+        _toolAttachJob.scale = scale; _toolAttachJob.aperture = aperture; _toolAttachJob.stamp = _toolAttachStamp;
+      }
+      let _heldAttachStamp = 0; // Bumped once per updateHeldItemHolder.
+      const _heldAttachJob = { stamp: -1, scale: 0.5, pose: { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 } }; // Same replay for the held drink bottle.
+      const _attachSaved = { toolPos: new THREE.Vector3(), toolQuat: new THREE.Quaternion(), toolScale: 1, heldPos: new THREE.Vector3(), heldQuat: new THREE.Quaternion(), heldScale: 1, tool: false, held: false };
+      function _restoreHeadAttachments() { // Restores gameplay-time transforms after the draw so logic never reads the render-time pose.
+        if (_attachSaved.tool) { toolHolder.position.copy(_attachSaved.toolPos); toolHolder.quaternion.copy(_attachSaved.toolQuat); toolHolder.scale.setScalar(_attachSaved.toolScale); _attachSaved.tool = false; }
+        if (_attachSaved.held) { heldItemHolder.position.copy(_attachSaved.heldPos); heldItemHolder.quaternion.copy(_attachSaved.heldQuat); heldItemHolder.scale.setScalar(_attachSaved.heldScale); _attachSaved.held = false; }
+      }
+      // After the composer's render-time head aim and neck limits, re-seat head-anchored holders on the head that is actually drawn.
+      SharedAttackPose.setCameraProvider(() => camera); // Edge-on avoidance judges the flat tool sprite against the live gameplay camera.
+      // The game draws several passes per frame (outlines, depth, held overlay) and each one reaches this hook with an identical head, so the
+      // placement is solved once per frame/camera and replayed onto the holders for the remaining passes.
+      const _attachCache = { valid: false, toolStamp: -1, heldStamp: -1, camera: null, toolActive: false, heldActive: false,
+        toolPos: new THREE.Vector3(), toolQuat: new THREE.Quaternion(), toolScale: 1, heldPos: new THREE.Vector3(), heldQuat: new THREE.Quaternion(), heldScale: 1 };
+      window.PlayerBodyTransformComposer?.addPostHeadAimHook?.((undo, _renderDebug, renderCamera) => {
+        const toolActive = _toolAttachJob.stamp === _toolAttachStamp && toolHolder.visible;
+        const heldActive = _heldAttachJob.stamp === _heldAttachStamp && heldItemHolder.visible && !!_heldItemPlane;
+        if (!toolActive && !heldActive) return;
+        const cache = _attachCache;
+        const hit = cache.valid && cache.toolStamp === _toolAttachStamp && cache.heldStamp === _heldAttachStamp && cache.camera === renderCamera
+          && cache.toolActive === toolActive && cache.heldActive === heldActive;
+        if (toolActive) { _attachSaved.toolPos.copy(toolHolder.position); _attachSaved.toolQuat.copy(toolHolder.quaternion); _attachSaved.toolScale = toolHolder.scale.x; _attachSaved.tool = true; }
+        if (heldActive) { _attachSaved.heldPos.copy(heldItemHolder.position); _attachSaved.heldQuat.copy(heldItemHolder.quaternion); _attachSaved.heldScale = heldItemHolder.scale.x; _attachSaved.held = true; }
+        if (hit) { // Later pass of the same frame: replay the solved placement.
+          if (toolActive) { toolHolder.position.copy(cache.toolPos); toolHolder.quaternion.copy(cache.toolQuat); toolHolder.scale.setScalar(cache.toolScale); }
+          if (heldActive) { heldItemHolder.position.copy(cache.heldPos); heldItemHolder.quaternion.copy(cache.heldQuat); heldItemHolder.scale.setScalar(cache.heldScale); }
+          undo.push(_restoreHeadAttachments);
+          return;
+        }
+        if (!SharedAttackPose.headFrame(_headFrame, playerAvatarGroup)) { _attachSaved.tool = false; _attachSaved.held = false; cache.valid = false; return; }
+        _headFrame.cameraPosition = renderCamera?.position || null; // The camera actually drawing this pass.
+        if (toolActive) {
+          SharedAttackPose.placeAtMouth(toolHolder, _headFrame, _toolAttachJob.pose, _toolAttachJob.scale, _toolAttachJob.aperture, null, playerBlowgunReticlePoint());
+          cache.toolPos.copy(toolHolder.position); cache.toolQuat.copy(toolHolder.quaternion); cache.toolScale = toolHolder.scale.x;
+        }
+        if (heldActive) {
+          SharedAttackPose.placeAtMouth(heldItemHolder, _headFrame, _heldAttachJob.pose, _heldAttachJob.scale, heldItemAperture(), playerMesh);
+          cache.heldPos.copy(heldItemHolder.position); cache.heldQuat.copy(heldItemHolder.quaternion); cache.heldScale = heldItemHolder.scale.x;
+        }
+        _headFrame.cameraPosition = null;
+        cache.valid = true; cache.toolStamp = _toolAttachStamp; cache.heldStamp = _heldAttachStamp; cache.camera = renderCamera; cache.toolActive = toolActive; cache.heldActive = heldActive;
+        undo.push(_restoreHeadAttachments);
+      });
+      const _heldAperture = new THREE.Vector3(); // Reused holder-space opening of the held bottle.
+      // The bottle's opening: the plane's top edge (the first opaque row of an upright held sprite) in holder space.
+      function heldItemAperture() {
+        if (!_heldItemPlane?.geometry?.parameters) return null;
+        _heldItemPlane.updateMatrix();
+        const height = (Number(_heldItemPlane.geometry.parameters.height) || HELD_ITEM_PLANE_WIDTH) * (_heldItemPlane.scale.y || 1);
+        return _heldAperture.set(0, height / 2, 0).applyMatrix4(_heldItemPlane.matrix);
+      }
       function applyHeldDrinkPose(animation, progress) {
         const pose = heldActionPoseAt(animation, progress);
+        playerMesh.rotation.y = playerFacing + THREE.MathUtils.degToRad(pose.bodyYaw); // Before the head frame reads the skinned head, so the mouth and rotation include this body turn.
+        if (_heldItemPlane) _heldItemPlane.rotation.x = Math.PI / 2;
+        if (pose.headRelative && SharedAttackPose.headFrame(_headFrame, playerAvatarGroup)) {
+          SharedAttackPose.placeAtMouth(heldItemHolder, _headFrame, pose, 0.5, heldItemAperture(), playerMesh); // Bottle opening mates with the mouth; rotation/scale come from the head.
+          Object.assign(_heldAttachJob.pose, { x: pose.x, y: pose.y, z: pose.z, pitch: pose.pitch, yaw: pose.yaw, roll: pose.roll });
+          _heldAttachJob.stamp = _heldAttachStamp; // Replayed against the drawn head by the composer's post-head-aim hook.
+        } else {
+          heldItemHolder.position.set(playerToolBaseX + pose.x, playerToolBaseY + pose.y, pose.z);
+          heldItemHolder.scale.setScalar(0.5);
+          _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(pose.yaw));
+          _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(pose.pitch));
+          _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(pose.roll));
+          heldItemHolder.quaternion.copy(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
+        }
+        _heldItemHandMode = 'bottle';
+      }
+
+      // Static small bag items use the same player/tool-base coordinate frame as the
+      // working Pick-Shovel tool rest. Drink remains separately mouth-relative.
+      function applyHeldSmallIdlePose() {
+        const pose = window.HeldActionAnimations?.heldItemSmall?.poses?.neutral; // Independently authored carry stance for jerky, bottles and other small items.
+        if (!pose) return false;
+        playerMesh.rotation.y = playerFacing + THREE.MathUtils.degToRad(Number(pose.bodyYaw) || 0);
         heldItemHolder.position.set(playerToolBaseX + pose.x, playerToolBaseY + pose.y, pose.z);
         heldItemHolder.scale.setScalar(0.5);
         _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(pose.yaw));
@@ -22322,7 +24551,8 @@
         _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(pose.roll));
         heldItemHolder.quaternion.copy(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
         if (_heldItemPlane) _heldItemPlane.rotation.x = Math.PI / 2;
-        playerMesh.rotation.y = playerFacing + THREE.MathUtils.degToRad(pose.bodyYaw);
+        _heldItemHandMode = 'bottle'; // The procedural right hand follows the item, never a stale weapon socket.
+        return true;
       }
 
       // Begins the shared drink-style windup animation on press. Plays forward
@@ -22386,6 +24616,9 @@
         sourceProbe.position.set(playerToolBaseX + neutralPose.x, playerToolBaseY + neutralPose.y, neutralPose.z);
         sourceProbe.scale.setScalar(0.5);
         sourceProbe.rotation.set(THREE.MathUtils.degToRad(neutralPose.pitch), THREE.MathUtils.degToRad(neutralPose.yaw), THREE.MathUtils.degToRad(neutralPose.roll), 'YXZ');
+        if (neutralPose.headRelative && SharedAttackPose.headFrame(_headFrame, playerAvatarGroup)) {
+          SharedAttackPose.placeAtMouth(sourceProbe, _headFrame, neutralPose, 0.5, heldItemAperture(), playerMesh); // Same mouth attach as the live held bottle.
+        }
         const sourceObject = _heldItemPlane && _heldItemKey === itemKey ? heldItemHolder : sourceProbe;
         sourceObject.updateWorldMatrix(true, false);
         const transform = { // Consumed by NpcDrinkInteraction without exposing either private holder object.
@@ -22415,7 +24648,7 @@
         getActiveTool: () => activeTool,
         getActiveScene: window.GridTileAccessors.getActiveScene,
         getDrinkAnimation: () => window.HeldActionAnimations?.drink,
-        getItemDef: itemKey => ITEM_DEFS[itemKey],
+        getItemDef: itemKey => window.FestivalSystem?.vesselDef?.(itemKey) || ITEM_DEFS[itemKey], // Temporary festival bowl/cup vessels have no inventory entry.
         poseAt: heldActionPoseAt,
         makeBottlePlane: makeHeldItemPlaneMesh,
         disposeBottlePlane: disposeHeldItemPlaneMesh,
@@ -22427,8 +24660,10 @@
       });
 
       function updateHeldItemHolder(dt = 0) {
+        _heldAttachStamp++;
+        const vessel = heldMode === 'item' ? window.FestivalSystem?.heldVessel?.() : null; // Display the festival bowl or keg cup as a genuine held sprite while item mode is selected.
         const item = window.MusicMinigame?.state?.instrumentItem
-          || getActiveInventoryItem(); // Performance reuses its equipped prop descriptor instead of allocating one every frame.
+          || (vessel || getActiveInventoryItem()); // Uses the existing held-item plane, hand sockets, and drink animation instead of a parallel pose system.
         if (_heldDrinkPhase && _heldItemPlane) {
           const animation = window.HeldActionAnimations.drink;
           const durationS = Math.max(0.1, Number(animation.durationS) || _heldDrinkAnimDuration || 0.95);
@@ -22490,20 +24725,31 @@
           // instead of a single flat billboard.
           _heldItemPlane = isKurraya ? buildKurrayaAssembly() : makeHeldItemPlaneMesh(item);
           _heldItemKey = item.key;
-          _playerKurrayaTwitch = newKurrayaTwitchState();
           if (_heldItemPlane) heldItemHolder.add(_heldItemPlane);
           window.__farmLog?.(`[held-item] ${item.key}: pose=${isKurraya ? 'instrument' : usesThrustHeldPose(item) ? 'thrust-idle' : 'chest'} sprite=${isKurraya ? 'toolsprite' : (ITEM_DEFS[item.key]?.spriteIcon || 'emoji')}`);
         }
         if (isKurraya) {
-          // Cradled across the chest at its authored rest tilt (see
-          // buildKurrayaAssembly) — the assembly itself carries that tilt
-          // and any note-reactive twitch (see triggerPlayerKurrayaTwitch,
-          // called from js/music-minigame.js on each 'sounded-note'
-          // relay); only position/scale belong to the outer holder.
-          heldItemHolder.position.set(playerToolBaseX * 0.4, playerItemHoldY - 0.05, HELD_ITEM_FORWARD_OFFSET);
-          heldItemHolder.rotation.set(0, 0, 0);
-          heldItemHolder.scale.setScalar(0.85);
-          updateKurrayaTwitch(_playerKurrayaTwitch, _heldItemPlane);
+          // The Attack Editor's Neutral/Windup/Strike pose drives the REAL held
+          // holder, not a decorative twitch on the crossed PNG planes. Hands
+          // already follow this holder, so grips and instrument now move together.
+          const pose = window.KurrayaInstrument?.playerHeldPose?.(); // One shared note clock is used by the tool, right hand, grip spans and leg sink.
+          if (pose) {
+            const identity = playerPoseIdentity(); // Species/height orbit is the same transform the Attack Editor previews.
+            const gripKey = `kurraya|melee|${identity.speciesId}|${identity.gender}`; // The shared hand-grip cache prevents a holder-space pivot allocation every frame.
+            if (!_gripAnchorCache.has(gripKey)) _gripAnchorCache.set(gripKey,
+              window.HobunjiHandToolGrips?.primaryGripHolderPointForTool?.('kurraya', 'melee', identity) || null);
+            window.KurrayaInstrument.applyPlayerHeldPose(heldItemHolder, pose, playerToolBaseX, playerToolBaseY, {
+              cx: 0, cz: 0, floorY: 0, baseY: playerToolBaseY,
+              speciesId: identity.speciesId, gender: identity.gender,
+              modelHeight: playerAvatarModelHeight, armLength: playerArmLength,
+              poseOrbitScale: playerPoseOrbitScale,
+            }, _gripAnchorCache.get(gripKey)); // Editor scales about the primary grip; not about the sprite centre.
+            playerMesh.rotation.y = playerFacing + THREE.MathUtils.degToRad(Number(pose.bodyYaw) || 0); // Body yaw is authored per note rather than inherited from a weapon stance.
+          }
+        } else if (isThrowFlaskItem(item) && window.HeldActionAnimations?.throwFlask) {
+          applyHeldDrinkPose(window.HeldActionAnimations.throwFlask, 0); // Idle flask rests in the authored thrown-weapon stance, the same Neutral its throw starts from.
+        } else if (usesThrustHeldPose(item) && window.HeldActionAnimations?.heldItemSmall?.poses?.neutral) {
+          applyHeldSmallIdlePose();
         } else if (usesThrustHeldPose(item)) {
           heldItemHolder.position.set(playerToolBaseX, playerToolBaseY, 0);
           heldItemHolder.rotation.set(THREE.MathUtils.degToRad(10.31), 0, 0);
@@ -22512,11 +24758,15 @@
           heldItemHolder.scale.setScalar(0.5);
           if (_heldItemPlane) _heldItemPlane.rotation.x = Math.PI / 2;
         } else {
-          heldItemHolder.position.set(0, playerItemHoldY, HELD_ITEM_FORWARD_OFFSET);
-          heldItemHolder.rotation.set(0, 0, 0);
+          const largePose = window.HeldActionAnimations?.heldItemLarge?.poses?.neutral || { x: 0.45, y: 0.19, z: 0.32, pitch: 0, yaw: 0, roll: 0 }; // Authored in the Attack Editor; same origin as the Drink pose.
+          heldItemHolder.position.set(playerToolBaseX + largePose.x, playerToolBaseY + largePose.y, largePose.z);
+          heldItemHolder.rotation.set(THREE.MathUtils.degToRad(largePose.pitch), THREE.MathUtils.degToRad(largePose.yaw), THREE.MathUtils.degToRad(largePose.roll), 'YXZ');
           heldItemHolder.scale.setScalar(1);
           if (_heldItemPlane) _heldItemPlane.rotation.x = 0;
+          _heldItemHandMode = 'large';
         }
+        if (isKurraya) _heldItemHandMode = null;
+        else if (usesThrustHeldPose(item)) _heldItemHandMode = 'bottle';
         heldItemHolder.visible = !!_heldItemPlane;
       }
 
@@ -22575,44 +24825,10 @@
         return style || 'thrust';
       }
 
-      // Four-phase neutral→windup→strike→hold→neutral interpolation, shared by
-      // every pose channel (lateral/forward offsets, pitch/yaw/bodyYaw angles) —
-      // mirrors the attack-animation editor's poseAt()/lerpPose() so game.js and
-      // the editor's authored pose JSON describe the exact same motion. The
-      // hold phase (sf→hf) dwells exactly at the strike value before easing
-      // back to neutral, so an impact reads as a clean hit instead of
-      // snapping straight into its recovery.
-      function fourPhaseLerp(progress, wf, sf, hf, windupV, strikeV, neutralV = 0, returnNeutralV = neutralV) {
-        if (progress <= wf) return neutralV + (windupV - neutralV) * (progress / wf);
-        if (progress <= sf) return windupV + (strikeV - windupV) * ((progress - wf) / (sf - wf));
-        if (progress <= hf) return strikeV;
-        return strikeV + (returnNeutralV - strikeV) * ((progress - hf) / (1.0 - hf));
-      }
-
-      function sequencedPoseLerp(progress, wf, sf, hf, windupV, strikeV, neutralV = 0, returnNeutralV = neutralV) {
-        if (combatSwingSequence === 'load') {
-          if (progress <= wf) return neutralV + (windupV - neutralV) * (progress / Math.max(0.0001, wf));
-          return windupV + (returnNeutralV - windupV) * ((progress - wf) / Math.max(0.0001, 1 - wf));
-        }
-        if (combatSwingSequence === 'fire') {
-          if (progress <= sf) return neutralV + (strikeV - neutralV) * (progress / Math.max(0.0001, sf));
-          if (progress <= hf) return strikeV;
-          return strikeV + (returnNeutralV - strikeV) * ((progress - hf) / Math.max(0.0001, 1 - hf));
-        }
-        return fourPhaseLerp(progress, wf, sf, hf, windupV, strikeV, neutralV, returnNeutralV);
-      }
-
-      // Each tool style's natural at-rest pose (degrees for angle channels) —
-      // must stay in sync with the attack-animation editor's STYLE_NEUTRAL_POSE
-      // (docs/tools/attack-animation-editor/index.html). Used as the fallback
-      // neutral for the pose-driven combat branch below when a step's own
-      // pose.neutral doesn't specify a channel.
-      const STYLE_NEUTRAL_POSE = {
-        thrust: { x: 0,    y: 0,    z: 0,    pitch: 10.31, yaw: 0,   roll: 0,   bodyYaw: 0,   scale: 1 },
-        sweep:  { x: 0,    y: 0,    z: 0.16, pitch: 0,     yaw: 0,   roll: 0,   bodyYaw: 0,   scale: 1 },
-        chop:   { x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, roll: -82, bodyYaw: 2,   scale: 1 },
-        ranged: { x: 0.23, y: 0.08, z: 0.14, pitch: 16,    yaw: 65,  roll: 11,  bodyYaw: -52, scale: 1.77 },
-      };
+      // fourPhaseLerp, STYLE_NEUTRAL_POSE and the pose / legacy-arc sampling now
+      // live in js/combat/shared-attack-pose.js (window.SharedAttackPose), shared
+      // with every BanditCombat humanoid -- see the declarations near
+      // combatSwingPose above.
 
       const _speciesPoseScaling = window.HobunjiSpeciesPoseScale; // X/Z weapon orbit + rigger-derived Y body-height mapping shared with the Attack Editor.
       const _toolPoseCentroidDebug = {
@@ -22637,7 +24853,9 @@
           gender: _playerData?.appearance?.gender || 'male',
         };
       }
-      function scaleToolWorldPointAroundPlayerCentroid(point) {
+      // poseYawRad: facing of the frame the authored x/z were built in (vθ, i.e. facing + body yaw), so per-axis
+      // species orbits scale the pose's own lateral/forward axes rather than world X/Z. Irrelevant for equal X/Z.
+      function scaleToolWorldPointAroundPlayerCentroid(point, poseYawRad = 0) {
         if (!point) return point;
         const cx = playerMesh.position.x;
         const cz = playerMesh.position.z;
@@ -22655,6 +24873,7 @@
             modelHeight: playerAvatarModelHeight,
             armLength: playerArmLength,
             poseOrbitScale: playerPoseOrbitScale,
+            yawRad: poseYawRad,
           });
         } else if (orbitScale !== 1) {
           // Compatibility fallback intentionally leaves Y alone; orbit settings never own vertical placement.
@@ -22700,9 +24919,9 @@
         };
       }
 
-      function orbitScaledRangedToolPointTowardReticle(point, reticleFrame = playerRangedReticleOrbitFrame()) {
+      function orbitScaledRangedToolPointTowardReticle(point, reticleFrame = playerRangedReticleOrbitFrame(), poseYawRad = 0) {
         if (!point) return point;
-        scaleToolWorldPointAroundPlayerCentroid(point);
+        scaleToolWorldPointAroundPlayerCentroid(point, poseYawRad);
         const pitch = -(Number(reticleFrame?.pitchRad) || 0); // Visual orbit uses the opposite X-axis sign: reticle-up must raise the authored weapon orbit, never lower it.
         const yaw = Number(reticleFrame?.yawRad) || 0; // Exact azimuth from body centroid to the shared reticle point.
         _toolPoseCentroidDebug.reticleOrbitPitchDeg = THREE.MathUtils.radToDeg(pitch);
@@ -22785,6 +25004,9 @@
         heldItemHolder.visible = false;
         if (!toolMeshMap[activeTool]) { toolHolder.visible = false; return; }
         toolHolder.visible = true;
+        toolHolder.userData.headRelativeBackPlane = null; // Every ordinary/melee frame clears the owner-only rear mask.
+        _toolAttachStamp++; // A head-anchored placement this frame re-stamps _toolAttachJob; an older stamp means the tool is no longer head-anchored.
+        if (activeTool === 'ranged') ensureRangedStanceReady(equipmentSlots.ranged); // Repairs (and reports) a ranged weapon that would otherwise fall back to the generic stance.
         // Never inherit a previous tool/weapon's authored neutral scale.
         // Pose-driven actions override this below from pose.neutral.scale.
         toolHolder.scale.setScalar(1);
@@ -22842,9 +25064,16 @@
         // timing is; otherwise fall back to the old proportional-to-
         // what's-left formula (dig/fill/refill, and any combat swing that
         // didn't set holdS).
-        const HF = (combatSwingAnim && combatSwingHoldS > 0)
-          ? Math.min(0.99, SF + combatSwingHoldS / toolSwingDur)
-          : Math.min(0.99, SF + (1 - SF) * 0.3);
+        const HF = SharedAttackPose.holdFrac(SF, combatSwingAnim ? combatSwingHoldS : 0, toolSwingDur); // Shared with enemies.
+        const swingWindupPitch = Number(combatSwingPose?.windup?.pitch); // Authored tool pitch endpoints determine the flail's hold-through direction.
+        const swingStrikePitch = Number(combatSwingPose?.strike?.pitch);
+        window.HobunjiWeaponSpriteAssemblies?.setAction(toolMeshMap[activeTool], {
+          attacking: activeTool === 'weapon' && toolSwingT > 0, progress,
+          movementPosition: playerMesh.position, // Character-world locomotion, not the swing-animated hand pivot; used for the hanging chain's lag.
+          windupFrac: WF, strikeFrac: SF, holdFrac: combatSwingSequenceHoldFrac ?? HF,
+          yawTravelDeg: window.HobunjiWeaponSpriteAssemblies?.flailYawTravel(combatSwingPose?.windup, combatSwingPose?.strike, combatSwingPower, combatSwingSign), // Match signed, power-scaled tool and body sweep travel.
+          pitchTravelDeg: Number.isFinite(swingWindupPitch) && Number.isFinite(swingStrikePitch) ? (swingStrikePitch - swingWindupPitch) * combatSwingPower : undefined, // Match SharedAttackPose's actual power-scaled pitch lerp.
+        }); // Late enough to pass real, eased weapon timing. Pre-render uses the final shaft pitch on this same frame.
 
         let posePlaneMirrorSign = null; // Pose-authored attacks can return to a different left/right Neutral than the one they started from.
         if (combatSwingAnim && combatSwingPose) {
@@ -22859,59 +25088,36 @@
           // un-mirrored or mirrored. power scales every channel's deviation
           // from its own neutral, for a heavier-telegraphed finisher,
           // without needing a dedicated bespoke formula per style.
-          const pose = combatSwingPose;
-          const styleNeutral = STYLE_NEUTRAL_POSE[anim] || STYLE_NEUTRAL_POSE.thrust;
-          // pose/styleNeutral are stable references for the whole windup/strike/
-          // return of a single swing (only reassigned at swing start/end), so
-          // the merge below is memoized on those two references instead of
-          // rebuilding both objects every frame of every attack.
-          let neutral, returnNeutral;
-          if (_toolMeshPoseMergeCache.pose === pose && _toolMeshPoseMergeCache.styleNeutral === styleNeutral) {
-            ({ neutral, returnNeutral } = _toolMeshPoseMergeCache);
-          } else {
-            neutral = { ...styleNeutral, ...(pose.neutral || {}) };
-            returnNeutral = { ...neutral, ...(pose.returnNeutral || {}) };
-            _toolMeshPoseMergeCache.pose = pose;
-            _toolMeshPoseMergeCache.styleNeutral = styleNeutral;
-            _toolMeshPoseMergeCache.neutral = neutral;
-            _toolMeshPoseMergeCache.returnNeutral = returnNeutral;
-          }
-          toolHolder.scale.setScalar(Number.isFinite(Number(neutral.scale)) ? Math.max(0.1, Number(neutral.scale)) : 1);
-          const sign = combatSwingSign;
-          const power = combatSwingPower;
+          // All channel math (merge over the style neutral, power, mirroring,
+          // load/fire sequencing, the midline-flip blend) is SharedAttackPose's,
+          // so enemies play the identical pose with the identical formula.
           const poseHoldFrac = combatSwingSequenceHoldFrac ?? HF; // Used to preserve authored ranged holds while melee keeps its derived hold.
-          const hasNeutralMirrorSequence = pose.neutralMirrorSign != null || pose.returnNeutralMirrorSign != null;
-          const startMirrorSign = pose.neutralMirrorSign === -1 ? -1 : 1;
-          const returnMirrorSign = pose.returnNeutralMirrorSign === -1 ? -1 : 1;
-          const scale = (ch, v) => neutral[ch] + ((v ?? neutral[ch]) - neutral[ch]) * power;
-          const chan = (ch, mirror = false) => {
-            const w = scale(ch, pose.windup?.[ch]) * (mirror ? sign : 1);
-            const s = scale(ch, pose.strike?.[ch]) * (mirror ? sign : 1);
-            const n = neutral[ch] * (mirror ? sign : 1);
-            const rn = returnNeutral[ch] * (mirror ? sign : 1);
-            return sequencedPoseLerp(progress, WF, SF, poseHoldFrac, w, s, n, rn);
-          };
+          const sampled = SharedAttackPose.samplePose(
+            _toolPoseSample, combatSwingPose, STYLE_NEUTRAL_POSE[anim] || STYLE_NEUTRAL_POSE.thrust,
+            progress, WF, SF, poseHoldFrac, combatSwingSign, combatSwingPower, combatSwingSequence,
+          );
+          toolHolder.scale.setScalar(sampled.scale);
+          window.WeaponStanceDropRuntime?.noteSwingSink(sampled.bodySink, sampled.bodyYawRad * 180 / Math.PI);
+          window.HobunjiDualWieldWeaponVisuals?.setCarriedSample(sampled); // The invisible idle-offhand tool peels the pose the holder carries right now (js/dual-wield-weapon-visuals.js). // Authored per-pose body sink (percent of height); js/weapon-stance-drop-runtime.js sinks the body and folds the knees to match.
 
           // The hand attachment itself is part of a true midline flip. Keep it
           // on the attack side through impact, then carry it smoothly across
           // during recovery. The flat sprite changes handedness at the midpoint
           // rather than scaling through zero and briefly disappearing.
-          const mirrorBlend = hasNeutralMirrorSequence
-            ? sequencedPoseLerp(progress, WF, SF, poseHoldFrac, sign, sign, startMirrorSign, returnMirrorSign)
-            : 1;
-          const handBaseX = playerToolBaseX * mirrorBlend;
-          posePlaneMirrorSign = hasNeutralMirrorSequence ? (mirrorBlend < 0 ? -1 : 1) : null;
+          const handBaseX = playerToolBaseX * sampled.mirrorBlend;
+          posePlaneMirrorSign = sampled.hasMirrorSequence ? (sampled.mirrorBlend < 0 ? -1 : 1) : null;
 
-          const x = chan('x', true);
-          const y = chan('y');
-          const z = chan('z');
-          const pitchRad   = THREE.MathUtils.degToRad(chan('pitch'));
-          const yawRad     = THREE.MathUtils.degToRad(chan('yaw', true));
-          const rollRad    = THREE.MathUtils.degToRad(chan('roll', true));
-          // Fishing holds this throw's windup indefinitely; its authored -152°
-          // body twist would leave the player facing away from the cast tile.
-          const bodyYawRad = activeTool === 'harpoon' && fishingThrowSpinVisual
-            ? 0 : THREE.MathUtils.degToRad(chan('bodyYaw', true)); // Combat throws retain their authored body turn.
+          const x = sampled.x;
+          const y = sampled.y;
+          const z = sampled.z;
+          const pitchRad   = sampled.pitchRad;
+          const yawRad     = sampled.yawRad;
+          const rollRad    = sampled.rollRad;
+          // Fishing holds this throw's windup indefinitely. The authored -152°
+          // body twist stays (the spear's frame is authored against it); only
+          // the legs counter-rotate below so the feet face the cast tile.
+          const fishingThrowHold = activeTool === 'harpoon' && !!fishingThrowSpinVisual;
+          const bodyYawRad = sampled.bodyYawRad;
 
           // Ranged throws/fire author motion relative to the reticle frame,
           // not the player's stale ground-facing frame. BodyYaw remains an
@@ -22924,8 +25130,11 @@
           const vRX =  Math.cos(vθ), vRZ = -Math.sin(vθ);
           const vFX =  Math.sin(vθ), vFZ =  Math.cos(vθ);
           playerMesh.rotation.y = vθ;
+          if (fishingThrowHold && playerLegs?.group) playerLegs.group.rotation.y = -bodyYawRad; // Feet keep facing aimBaseYaw (the cast tile) under the twisted torso.
           _qFac.setFromAxisAngle(_tUp, vθ);
           _qRangedAimPitch.setFromAxisAngle(_xAxis, -aimPitchRad);
+          const headAnchored = sampled.headRelative && SharedAttackPose.headFrame(_headFrame, playerAvatarGroup); // Head-anchored poses take rotation, position and scale from the head's mouth frame alone; the camera only drives the head.
+          if (sampled.headRelative && !headAnchored) reportHeadAnchorFallback();
           _qToolYaw.setFromAxisAngle(_tUp, yawRad);
           _qAnim.setFromAxisAngle(_xAxis, pitchRad);
           _qRoll.setFromAxisAngle(_zAxis, rollRad);
@@ -22940,8 +25149,13 @@
             playerMesh.position.y + playerToolBaseY + y,
             playerMesh.position.z + vRZ * (handBaseX + x) + vFZ * z
           );
-          if (reticleAligned) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame);
-          else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position);
+          if (sampled.headRelative) toolHolder.userData.headRelativeBackPlane = _playerAvatarBackMesh;
+          if (headAnchored) placePlayerToolAtMouth(sampled.x, sampled.y, sampled.z, pitchRad, yawRad, rollRad, sampled.scale);
+          else {
+            if (reticleAligned) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, vθ);
+            else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, vθ);
+            anchorPlayerToolScaleAtGrip(sampled.scale, activeTool === 'ranged' ? 'ranged' : 'melee'); // Weapon scale pivots on the main-hand grip, not the holder origin.
+          }
 
         } else if (anim === 'ranged') {
           const rangedIdlePose = window.RangedWeapons?.playerIdlePose?.(equipmentSlots.ranged); // Used to switch between the loaded fire-neutral and empty load-neutral stance.
@@ -22970,6 +25184,8 @@
           const vFX = Math.sin(toolVθ), vFZ = Math.cos(toolVθ);
           _qFac.setFromAxisAngle(_tUp, toolVθ);
           _qRangedAimPitch.setFromAxisAngle(_xAxis, -toolAimPitchRad);
+          const headAnchored = neutral.headRelative && SharedAttackPose.headFrame(_headFrame, playerAvatarGroup); // Same mouth-frame rule as the pose-driven branch above.
+          if (neutral.headRelative && !headAnchored) reportHeadAnchorFallback();
           _qToolYaw.setFromAxisAngle(_tUp, THREE.MathUtils.degToRad(neutral.yaw));
           _qAnim.setFromAxisAngle(_xAxis, THREE.MathUtils.degToRad(neutral.pitch));
           _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(neutral.roll));
@@ -22981,8 +25197,13 @@
             playerMesh.position.y + playerToolBaseY + neutral.y,
             playerMesh.position.z + vRZ * (playerToolBaseX + neutral.x) + vFZ * neutral.z
           );
-          if (rangedTracksAim) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame);
-          else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position);
+          if (neutral.headRelative) toolHolder.userData.headRelativeBackPlane = _playerAvatarBackMesh;
+          if (headAnchored) placePlayerToolAtMouth(neutral.x, neutral.y, neutral.z, THREE.MathUtils.degToRad(neutral.pitch), THREE.MathUtils.degToRad(neutral.yaw), THREE.MathUtils.degToRad(neutral.roll), neutral.scale);
+          else {
+            if (rangedTracksAim) orbitScaledRangedToolPointTowardReticle(toolHolder.position, reticleFrame, toolVθ);
+            else scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, toolVθ);
+            anchorPlayerToolScaleAtGrip(neutral.scale, 'ranged'); // Idle ranged scale (e.g. the 1.77 crossbow stance) pivots on the main-hand grip.
+          }
 
         } else if (anim === 'thrust') {
           // THRUST — non-overextending jab authored as a full pose (lateral
@@ -22995,17 +25216,19 @@
           // still arrives at the same +0.32 extension either way.
           // power scales reach/turn for an extra-telegraphed finisher (e.g. a
           // combo's final lunge) without needing its own bespoke anim branch.
+          // The jab arc itself (and its pitch resting at 10.31° rather than 0)
+          // is SharedAttackPose.sampleLegacyThrust, shared with enemy thrusts.
           const power       = combatSwingAnim ? combatSwingPower : 1;
-          const windupBack  = (combatSwingAnim ? -0.40 : -0.22) * power;
-          const jabOff      = fourPhaseLerp(progress, WF, SF, HF, windupBack, 0.32 * power);
-          const lateral     = fourPhaseLerp(progress, WF, SF, HF, 0, -0.23 * power);
-          // Pitch's neutral matches its own windup value (10.31°) rather than
-          // the other channels' implicit 0 — a thrust weapon rests at this
-          // held-up tilt, drops to a near-flat 1° at the strike, then eases
-          // back to the resting tilt instead of snapping flat.
-          const pitchRad    = fourPhaseLerp(progress, WF, SF, HF, THREE.MathUtils.degToRad(10.31), THREE.MathUtils.degToRad(1), THREE.MathUtils.degToRad(10.31));
-          const yawRad      = fourPhaseLerp(progress, WF, SF, HF, 0, THREE.MathUtils.degToRad(-45) * power);
-          const bodyYawRad  = fourPhaseLerp(progress, WF, SF, HF, THREE.MathUtils.degToRad(-45) * power, THREE.MathUtils.degToRad(46) * power);
+          const legacyThrust = SharedAttackPose.LEGACY_THRUST;
+          const thrustSample = SharedAttackPose.sampleLegacyThrust(
+            _toolPoseSample, progress, WF, SF, HF, power,
+            (combatSwingAnim ? legacyThrust.windupBackCombat : legacyThrust.windupBackTool) * power,
+          );
+          const jabOff      = thrustSample.z;
+          const lateral     = thrustSample.x;
+          const pitchRad    = thrustSample.pitchRad;
+          const yawRad      = thrustSample.yawRad;
+          const bodyYawRad  = thrustSample.bodyYawRad;
 
           const vθ  = θ + bodyYawRad;
           const vRX =  Math.cos(vθ), vRZ = -Math.sin(vθ);
@@ -23021,7 +25244,7 @@
             playerMesh.position.y + playerToolBaseY,
             playerMesh.position.z + vRZ * (playerToolBaseX + lateral) + vFZ * jabOff
           );
-          if (combatSwingAnim) scaleToolWorldPointAroundPlayerCentroid(toolHolder.position);
+          if (combatSwingAnim) scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, vθ);
 
         } else if (anim === 'chop') {
           // CHOP — full pose-driven swing (raise → slam → return), authored
@@ -23035,19 +25258,20 @@
           // plays this branch — see combat-charged-breaker.js) doesn't need
           // its own bespoke formula.
           const power   = combatSwingAnim ? combatSwingPower : 1;
-          const neutral = { x: 0.03,  y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: 2,   roll: -82 };
-          const windup  = { x: -0.18, y: 0.41, z: -0.15, pitch: -165, yaw: 13,  bodyYaw: -29, roll: -112 };
-          const strike  = { x: 0,     y: 0,    z: 0.12,  pitch: 13,   yaw: -28, bodyYaw: 29,  roll: -91 };
-          const scale = (ch, v) => neutral[ch] + (v - neutral[ch]) * power;
-          const chanLerp = ch => fourPhaseLerp(progress, WF, SF, HF, scale(ch, windup[ch]), scale(ch, strike[ch]), neutral[ch]);
+          // The raise/slam/return table is SharedAttackPose.LEGACY_CHOP_POSE
+          // (the same endpoints the Light/Heavy stance baker converts).
+          const chopSample = SharedAttackPose.samplePose(
+            _toolPoseSample, SharedAttackPose.LEGACY_CHOP_POSE, STYLE_NEUTRAL_POSE.chop,
+            progress, WF, SF, HF, 1, power, 'attack',
+          );
 
-          const x = chanLerp('x');
-          const y = chanLerp('y');
-          const z = chanLerp('z');
-          const pitchRad   = THREE.MathUtils.degToRad(chanLerp('pitch'));
-          const yawRad     = THREE.MathUtils.degToRad(chanLerp('yaw'));
-          const rollRad    = THREE.MathUtils.degToRad(chanLerp('roll'));
-          const bodyYawRad = THREE.MathUtils.degToRad(chanLerp('bodyYaw'));
+          const x = chopSample.x;
+          const y = chopSample.y;
+          const z = chopSample.z;
+          const pitchRad   = chopSample.pitchRad;
+          const yawRad     = chopSample.yawRad;
+          const rollRad    = chopSample.rollRad;
+          const bodyYawRad = chopSample.bodyYawRad;
 
           const vθ  = θ + bodyYawRad;
           const vRX =  Math.cos(vθ), vRZ = -Math.sin(vθ);
@@ -23064,7 +25288,7 @@
           const handY = playerMesh.position.y + playerToolBaseY + y;
           const handZ = playerMesh.position.z + vRZ * (playerToolBaseX + x) + vFZ * z;
           toolHolder.position.set(handX, handY, handZ);
-          if (combatSwingAnim) scaleToolWorldPointAroundPlayerCentroid(toolHolder.position);
+          if (combatSwingAnim) scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, vθ);
 
         } else if (anim === 'toss') {
           // TOSS — reverse hoe: lift the load on the windup, then heave it up
@@ -23172,7 +25396,7 @@
           // combatSwingSign; power (Cleave) scales the whole arc for a heavier finisher.
           const sweepSign = combatSwingAnim ? combatSwingSign : 1;
           const sweepPower = combatSwingAnim ? combatSwingPower : 1;
-          const WINDUP_ANGLE = -2.20 * sweepPower * sweepSign, STRIKE_ANGLE = 2.12 * sweepPower * sweepSign;
+          const WINDUP_ANGLE = SharedAttackPose.LEGACY_SWEEP.windupRad * sweepPower * sweepSign, STRIKE_ANGLE = SharedAttackPose.LEGACY_SWEEP.strikeRad * sweepPower * sweepSign;
           let sweepOff;
           if (progress <= WF) {
             sweepOff = WINDUP_ANGLE * (progress / WF);
@@ -23198,7 +25422,7 @@
             playerMesh.position.y + playerToolBaseY,
             playerMesh.position.z + vRZ * handX + vFZ * 0.16
           );
-          if (combatSwingAnim) scaleToolWorldPointAroundPlayerCentroid(toolHolder.position);
+          if (combatSwingAnim) scaleToolWorldPointAroundPlayerCentroid(toolHolder.position, vθ);
         }
 
         // Layer the sprite's own "spinning" twirl on top of whichever swing style is active —
@@ -23271,8 +25495,13 @@
               ? baseRotZ - progress * Math.PI * 2 * TOOL_SPIN_REVOLUTIONS
               : baseRotZ);
           }
-          // Backhand combat sweeps mirror the weapon sprite itself, not just the swing arc.
-          spinPlane.scale.x = (anim === 'sweep' && combatSwingAnim) ? (posePlaneMirrorSign ?? combatSwingSign) : 1;
+          // Backhand combat sweeps mirror the weapon sprite itself, not just the swing arc. Like the
+          // Attack Editor's "Flip Across Midline" this is a midline reflection of the whole tool, so it
+          // goes on the parent mesh (applied after the sweep's in-plane spin). Flipping the child plane
+          // instead mirrors the sprite across its own face, which leaves the blade pointing the Forehand way.
+          const mirrorSign = (anim === 'sweep' && combatSwingAnim) ? (posePlaneMirrorSign ?? combatSwingSign) : 1;
+          spinPlane.scale.x = 1;
+          if (spinMesh) spinMesh.scale.x = Math.abs(spinMesh.scale.x) * (mirrorSign < 0 ? -1 : 1); // Held-item grip scaling preserves this sign (hand-tool-grips applyScaleFromBase).
         }
 
         const activeChargeStage = chargeAction?.stages?.[chargeAction.stage]; // Supplies any stage-specific audio contact point without changing its visual strike endpoint.
@@ -23317,6 +25546,7 @@
 
       // ── Update player cube ────────────────────────────────────────
       function updatePlayerMesh(dt) {
+        window.BedLiePose?.update?.(dt); // The module positions the actor and its composer pose before this frame's avatar render sync.
         mineTorchLight.visible = !!window.TownMine?.floorFromMapId?.(currentArea);
         // Mount ride state now lives in js/mount-system.js (window.Mounts) —
         // shadowed locally so the rest of this function (posture/rotation
@@ -23336,6 +25566,9 @@
         // flips (see startClimb/updateClimb).
         const ruinStandY = window.DevRandomRuin?.getPlayerSupportY?.(); // Used by the Random Test Ruin to feed dynamic multi-level support into the canonical body, shadow, resource-ring, held-equipment, and shoulder-pet render path.
         const ordinaryStandY = player.onBranch ? player.branchSurfaceY
+          : player.onCliffBalcony ? player._cliffBalconyY
+          : player.onClimbSurface ? player.wallClimbY
+          : player._freeJump ? player.physicalFeetY // Jump is an independently grounded/airborne motion, not a scripted climb.
           : player.climbing ? player.climbSurfaceY
           : Number.isFinite(ruinStandY) ? ruinStandY
           : (_isZoneArea(currentArea) ? surfaceYAtWorld(currentArea, wx, wz) : tileSurfaceYInArea(tile, currentArea));
@@ -23369,9 +25602,12 @@
         // sink correctly instead of one fixed guess.
         let chairSeatSink = 0;
         if (sitInteraction && sitInteraction.phase !== 'out') {
-          const standingPosteriorY = playerAttachmentAnchorY('posterior');
+          const rigPosteriorY = Number(playerLegs?.standingPosteriorY); // The procedural-leg hip and the whole-body sink must refer to the same posterior height.
+          const standingPosteriorY = Number.isFinite(rigPosteriorY) ? rigPosteriorY : playerAttachmentAnchorY('posterior');
+          const playerRigScaleY = Number(playerMesh.scale?.y); // Player whole-rig species/age scale is applied above the leg-IK chain.
+          const scaledPosteriorY = standingPosteriorY * (Number.isFinite(playerRigScaleY) && playerRigScaleY > 0 ? playerRigScaleY : 1);
           chairSeatSink = standingPosteriorY != null
-            ? (Number(sitInteraction.seatWorldY) || 0) - standingPosteriorY
+            ? (Number(sitInteraction.seatWorldY) || 0) - scaledPosteriorY
             : -0.32; // fallback if the player's own posterior anchor isn't resolvable yet
         }
 
@@ -23463,6 +25699,7 @@
         } else if (sitInteraction && sitInteraction.phase !== 'out') {
           const chairFacing = -facingAngle + Math.PI / 2; // Logical chair direction remains fixed while the flat portrait avoids the camera deadzone.
           player.perpState ||= {};
+          window.PerpRotation.setMovementHint(player.perpState, null); // Seated: no live travel, so last movement/headtrack decide the corrective edge.
           playerFacing = window.PerpRotation.clampedRotation(player.perpState, playerFacing, chairFacing, playerCameraPerps(), 0.18);
           playerMesh.rotation.y = playerFacing;
           if (playerLegs?.group) playerLegs.group.rotation.y = chairFacing - playerFacing;
@@ -23486,6 +25723,9 @@
           // across whatever body yaw the clamp leaves.
           if (!player.perpState) player.perpState = {};
           const rawTargetRotY = -facingAngle + Math.PI / 2;
+          // Live travel direction (same 5px/s threshold as the walk bob below)
+          // outranks everything else when picking which dead-zone edge to use.
+          window.PerpRotation.setMovementHint(player.perpState, Math.hypot(player.vx, player.vy) > 5 ? Math.atan2(player.vx, player.vy) : null);
           const { effectiveTarget: pEffTarget, snapTo: pSnapTo } = window.PerpRotation.perpClamp(player.perpState, rawTargetRotY, playerCameraPerps());
           if (pSnapTo !== null) playerFacing = pEffTarget;
           else playerFacing += angleDiff(pEffTarget, playerFacing) * 0.18;
@@ -23501,7 +25741,7 @@
           // the clamped rotation just applied and the raw unclamped
           // equivalent, so the legs' WORLD rotation always tracks
           // facingAngle directly regardless of what the sprite is doing.
-          if (playerLegs?.group) playerLegs.group.rotation.y = rawTargetRotY - playerMesh.rotation.y;
+          if (playerLegs?.group) playerLegs.group.rotation.y = window.PlayerCrawl?.isActive?.() ? 0 : rawTargetRotY - playerMesh.rotation.y; // The crawl legs live in the rolled body's own frame.
         }
 
         // Bob animation when moving — amplitude ramps continuously from the
@@ -23548,6 +25788,7 @@
         // (see that module's own update()), which would fight the recorded
         // ragdoll pose instead of stepping aside for it.
         if (window.ImpactRagdollPlayback?.isActive()) window.ImpactRagdollPlayback.update(dt);
+        else if (window.PlayerCrawl?.isActive?.() && playerLegs) window.PlayerCrawl.applyLegs(playerLegs); // Downed crawl poses the legs itself (js/player-crawl.js).
         else playerLegs?.update(dt, speed / TILE, legsSuppressed, seatedPose, {
           combat: isPlayerInCombat() || player.lunging,
           allowSpeedRun: true,
@@ -23555,9 +25796,10 @@
           airborne: ordinaryLungeHopY > 0.03 || (Number.isFinite(player.lungeFlightWorldY) && player.lungeFlightWorldY > groundedTargetY + 0.03)
             || !!player._knockbackLedgeAir || !!player._knockbackLedgeFall
             || (player.climbing && player.climbSurfaceEndY < player.climbSurfaceStartY)
-            || (!player.climbing && !player.onBranch && playerMesh.position.y > groundedTargetY + 0.12),
+            || (!player.climbing && !player.onBranch && !player.onClimbSurface && playerMesh.position.y > groundedTargetY + 0.12),
           directionX: player.lungeDirX, directionZ: player.lungeDirY,
         });
+        window.TzatzulLiveVisuals?.alignCaptive?.(player, playerMesh); // Apply the authored humanoid talon pose after ordinary player animation.
       }
 
       // ── Update reticle ────────────────────────────────────────────
@@ -23570,6 +25812,15 @@
           reticleRingMesh.visible   = false;
           reticleWavyGroup.visible  = false;
           clearTargetHighlights();
+          return;
+        }
+        if (window.FarmworkUI?.isPlanning?.()) {
+          reticleCircleMesh.visible = reticleRingMesh.visible = reticleWavyGroup.visible = false;
+          clearTargetHighlights();
+          reticleMesh.visible = true;
+          reticleMesh.position.set(reticle.col + 0.5, window.FarmSurfaceSample.farmSurfaceYAtWorld(reticle.col + 0.5, reticle.row + 0.5) + 0.05, reticle.row + 0.5);
+          reticleMesh.material = window.FarmworkUI.canAddTile(reticle.col, reticle.row) ? reticleIntenseMat : reticleBlockedMat;
+          reticleMesh.scale.set(1, 1, 1);
           return;
         }
         const surfY   = tileSurfaceYInArea(tile, currentArea) + 0.01
@@ -24024,6 +26275,15 @@
         wildlifeDistanceInput.addEventListener('change', () => {
           window.WildlifeVisualLod.setWakeRadius(wildlifeDistanceInput.value);
           wildlifeDistanceInput.value = window.WildlifeVisualLod.wakeRadius();
+          if (wildlifeCombatDistanceInput) wildlifeCombatDistanceInput.value = window.WildlifeVisualLod.combatReleaseRadius(); // The fighting radius is floored by the calm radii.
+        });
+      }
+      const wildlifeCombatDistanceInput = document.getElementById('settingWildlifeCombatDistance'); // Separate distance at which fighting animals return to data.
+      if (wildlifeCombatDistanceInput) {
+        wildlifeCombatDistanceInput.value = window.WildlifeVisualLod.combatReleaseRadius();
+        wildlifeCombatDistanceInput.addEventListener('change', () => {
+          window.WildlifeVisualLod.setCombatReleaseRadius(wildlifeCombatDistanceInput.value);
+          wildlifeCombatDistanceInput.value = window.WildlifeVisualLod.combatReleaseRadius();
         });
       }
 
@@ -24203,7 +26463,7 @@
         isShoulderSurfEnabled: () => s_shoulderSurf,
         getActiveCameraMode: () => activeCameraMode,
         shoulderSurfMode: SHOULDER_SURF_MODE,
-        isUiBlockingPointerLock: () => !!(menuOpen || window.__mapEditorPanelOpen || window.FurniturePlacer?.isOpen?.() || window.__furniturePlacerPanelOpen || window._desktopSelectionArc?.entryMenuOpen?.()),
+        isUiBlockingPointerLock: () => !!(menuOpen || window.FarmworkUI?.isPanelOpen?.() || window.__mapEditorPanelOpen || window.FurniturePlacer?.isOpen?.() || window.__furniturePlacerPanelOpen || window._desktopSelectionArc?.entryMenuOpen?.()),
       });
       function cursorlessMouseAimRequested() { return window.ShoulderCamPointerLock.cursorlessMouseAimRequested(); }
       function requestShoulderSurfPointerLock() { window.ShoulderCamPointerLock.request(); }
@@ -24255,7 +26515,8 @@
         // which calls it exactly once per browser frame and keeps calling it
         // even if a given frame throws.
         const gameLoopTotalPerf = window.PerfProfiler?.begin('gameLoop total');
-        const dt = Math.min(0.04, (now - lastTime) / 1000);
+        const rawFrameDt = Math.min(0.04, (now - lastTime) / 1000);
+        const dt = window.GameFeel ? window.GameFeel.frameDt(rawFrameDt) : rawFrameDt; // Melee hit-stop briefly time-scales the simulation (js/game-feel.js).
         lastTime = now;
         gameFrameSerial++;
         window.FestivalSystem?.update?.();
@@ -24291,6 +26552,7 @@
         window.Music?.logAudioTickDiagnostics();
         window.PerfProfiler?.end(prePausePerf);
 
+        if (paused) window.PlayerDowned?.setGiveUpHeld?.(false); // The paused frame still runs: cancel surrender before wall-clock hold can complete after unpausing.
         if (!paused) {
           updateCalendar(dt);
           _layoutCheckAccumS += dt;
@@ -24334,7 +26596,10 @@
           if (companionSceneReady) {
             syncCompanionFromWhistle();
             updateCompanions(dt);
+            window.CompanionDowned?.update?.(dt); // Downed-companion timers/pose and deferred revive teleports (js/companion-downed.js).
           }
+          window.PlayerDowned?.update?.(dt); // Bleed-out timer and Health pin while the player is down (js/player-downed.js).
+          window.PlayerCrawl?.update?.(dt); // Lean/lowering channels and blend for the downed crawl (js/player-crawl.js).
           // Runs in every area so any phase of a mount transition is cleared
           // immediately on entering an interior. Mounts remain exterior-only.
           window.Mounts?.updateMountRide(dt);
@@ -24354,16 +26619,23 @@
               const hostilePerf = window.PerfProfiler?.begin('hostiles'); // Measures the complete current-area hostile AI and visual synchronization pass.
               updateHostiles(dt);
               window.PerfProfiler?.end(hostilePerf);
-              window.CreatureDeath.updateCorpses(dt);
+              tickCorpses(dt);
             } else if (_isBuildingArea(currentArea)) {
               // Ordinary building interiors still have no wild spawns; this
               // branch only keeps any authored interior hostile/corpse active.
               const hostilePerf = window.PerfProfiler?.begin('hostiles'); // Uses the same timing bucket for authored interior combatants.
               updateHostiles(dt);
               window.PerfProfiler?.end(hostilePerf);
-              window.CreatureDeath.updateCorpses(dt);
+              tickCorpses(dt);
             }
           }
+
+          // Dev AI-free testing must not freeze timed Puzzle Cave scores, exterior
+          // pressure plates, or the physical stone-gate opening animation.
+          // In normal play the WildlifeSpawn wrapper already calls the puzzle
+          // runtime once; this alternate path runs only while that wrapper is skipped.
+          if (window.DevTestingSwitchbox?.flags?.noNpcBehavior)
+            window.CaveSiteSystem?.tickPuzzleRuntime?.(dt);
 
           const miscGameplayPerf = window.PerfProfiler?.begin('misc gameplay'); // Dens/climbing/tent interactions and transition-spot checks below.
           window.ClimbSystem?.updateFallenNests?.(dt);
@@ -24394,7 +26666,7 @@
           // Water sim cadence (1/8 game-hour ticks + the farm/town area gate)
           // now lives in js/water-system.js's tickSimulation.
           window.WaterSystem.tickSimulation(dt, currentArea, {
-            gameHoursPerSecond: (NIGHT_HOUR - MORNING_HOUR) / DAY_LENGTH_SECONDS,
+            gameHoursPerSecond: window.CalendarSystem.getNaturalGameHoursPerSecond(),
             onFarmTick: tickWorldObjects,
             onTick: () => window.WeatherFX.spawnRipples(),
           });
@@ -24478,7 +26750,7 @@
           snapShoulderSurfAzimuth();
         }
         if (!paused) updateMobileAutoTargetCamera(dt); // Steer existing offsets before the normal camera pose/collision owner applies them.
-        updateCameraPosition();
+        if (!window.FestivalWheelDanceRuntime?.isActive?.()) updateCameraPosition(); // Paired choreography refreshes this same owner once after its final pose, avoiding a second camera-collision solve.
         // Refreshes the shared head/body/reticle aim point every frame
         // (rather than only on a mousemove/touch event) so it always
         // reflects the current camera — including a horizontal offset slide
@@ -24612,6 +26884,10 @@
         if (s_cloudForestFog) window.CloudForestFog?.update(dt);
         window.PerfProfiler?.end(meshUpdatePerf);
 
+        // Festival paired animation is a post-locomotion visual layer: both
+        // actual avatar roots are positioned together after NPC and player
+        // simulation, with no second requestAnimationFrame.
+        window.FestivalWheelDanceRuntime?.update?.(dt,paused,currentArea);
         // Simulation/state mutation for this frame is finished; anything that
         // needs fresh gameplay state but must run before Three.js traverses
         // the scene belongs at this checkpoint, not a separate RAF (see
@@ -24706,7 +26982,9 @@
           // otherwise come out fully crisp, reading as a cutout hole in the
           // haze around it. depthTest still applies, so this correctly
           // leaves outlines on anything nearer than the mist untouched.
-          if (s_cloudForestFog) {
+          // Skipped outside the Cloud Forest: with no mist attached it drew
+          // nothing but still cost a full scene traversal every frame.
+          if (s_cloudForestFog && window.CloudForestFog?.isActive?.()) {
             const rpMistPerf = window.PerfProfiler?.begin('render: cloud mist');
             camera.layers.set(5);
             renderer.render(activeScene, camera);
@@ -24853,6 +27131,7 @@
         calendar.day += 1;
         window.WeatherFX.chooseWeatherForDay();
         tickCropDay();
+        window.NpcFarmPlots?.onNewDay?.();
         // Breeding is ticked hourly (see updateCalendar/sleepInBed), not
         // here — by the time a day naturally rolls over, every one of its
         // waking hours has already been credited in real time.
@@ -24908,6 +27187,12 @@
         _saveWorldCalendar();
         return { ok: true, message: msg };
       }
+
+      window.BedLiePose?.init?.({
+        THREE, tileSize: () => TILE, player: () => player, playerRoot: () => playerMesh,
+        playerLegs: () => playerLegs, area: () => currentArea, sleep: sleepInBed,
+        showToast, isPaused: () => paused, getNpcWalkers: () => npcWalkers,
+      }); // Existing sleepInBed remains the sole authoritative day rollover; module owns presentation only.
 
       // Weather rolling (chooseWeatherForDay/updateRainState) now lives
       // in js/weather-fx.js — call via window.WeatherFX.*.
@@ -25074,12 +27359,18 @@
       function computeActionButtons() {
         const _cabStart = performance.now();
         try {
-          return computeActionButtonsImpl();
+          const buttons = computeActionButtonsImpl(); // Ripe crops claim the primary world-action slot even while food or a flask is held.
+          const harvestIndex = buttons.findIndex(button => button.action === 'harvest' && button.allowed); // Used to move only an actionable crop ahead of held-item defaults.
+          if (harvestIndex > 0) buttons.unshift(buttons.splice(harvestIndex, 1)[0]);
+          return buttons;
         } finally {
           window.PerfProfiler?.record('computeActionButtons', performance.now() - _cabStart);
         }
       }
       function computeActionButtonsImpl() {
+        const farmworkActions = window.FarmworkUI?.actionButtons?.();
+        if (farmworkActions) return farmworkActions;
+        if(window.FestivalWheelDanceRuntime?.isActive?.())return [window.FestivalSystem?.actionButton?.(),window.FestivalWheelDanceRuntime.cameraButton()].filter(Boolean); // Paired dance owns Stop and View before furniture/NPC targeting can replace them.
         if (window.SocialActionWheel?.isDancing?.()) return [
           { icon: '♫', label: 'Dancing', action: 'dance_active', style: 'primary', allowed: false },
           { icon: '↻', label: 'Spin', action: 'dance_spin', style: 'secondary', inputAction: 'action2', allowed: true },
@@ -25087,7 +27378,13 @@
         // Sitting overrides every other action — Stand is the only way out,
         // same tier as fishing/dialogue below.
         if (sitInteraction) {
-          return [{ icon: '🧍', label: 'Stand', action: 'obj_stand', style: 'primary', allowed: sitInteraction.phase === 'active' }];
+          const seatedActions = [{ icon: '🧍', label: 'Stand', action: 'obj_stand', style: 'primary', allowed: sitInteraction.phase === 'active', promptRoot:playerMesh }]; // Shared seated actions drive touch, keyboard, controller and floating prompts.
+          seatedActions.push({ icon: '⏳', label: 'Wait', action: 'calendar_wait', inputAction: 'action2', style: 'secondary', allowed: sitInteraction.phase === 'active' && !!window.CalendarSystem?.openTimePassage });
+          const prayerAction = window.TemplePrayerRestBlessings?.getPrayerAction?.(); // The blessing owner supplies the same eligible prayer used by its menu.
+          if (prayerAction) seatedActions.push(prayerAction);
+          const mealAction = sitInteraction.phase === 'active' ? window.FestivalSystem?.seatedMealAction?.() : null; // Eating becomes a real seated Action button next to Stand/Wait, with the bowl's n/10 badge.
+          if (mealAction) seatedActions.push({ ...mealAction,worldInteraction:true,promptRoot:playerMesh }); // Shows a floating Eat prompt by the seated character as well as the n/10 portion badge on the action arch.
+          return seatedActions;
         }
         // Fishing gets its own arc buttons instead of the harpoon's normal
         // "Fish" one (which would just call beginFishingCast() again and
@@ -25113,6 +27410,11 @@
         // itself — no action-bar buttons underneath it.
         if (window.MusicMinigame?.state?.active) return [];
 
+        // A carried Shattercask behaves as the active tool: its two authored
+        // actions replace the normal Action 1/2 slots on every input device.
+        const carriedShattercaskActions=window.Shattercasks?.actionButtons?.(); // Native arch and physical-slot resolver both consume these.
+        if(carriedShattercaskActions)return carriedShattercaskActions;
+
         // Reticle furniture placement owns Action 1/2 while armed. These
         // explicit entries are essential on touch: keyboard/controller can
         // invoke action1/action2 without visible DOM, while mobile can only
@@ -25128,27 +27430,43 @@
         if (furniturePlacementModeArmed()) {
           const placementReticle = getReticleTile(); // Shared tile used by preview, mobile Place, and physical Action 1.
           const placementSpec = furniturePlacementSpec();
-          const placementValid = !!placementSpec && (placementSpec.kind === 'processing'
-            ? canPlaceFurnitureAt(placementReticle.col, placementReticle.row, placementSpec.ignoreObject)
-            : canPlaceDecorativeFurnitureAt(placementReticle.col, placementReticle.row, placementSpec.ignoreId, placementSpec.key, placementSpec.rotYDeg));
+          const wallMode = window.FarmhouseRoomPlanner?.isArmed?.(); // A wall edit shares Action 1/2 and the reticle with ordinary furniture.
+          const placementValid = wallMode
+            ? window.FarmhouseRoomPlanner.canTarget(placementReticle.col, placementReticle.row)
+            : !!placementSpec && (placementSpec.kind === 'processing'
+              ? canPlaceFurnitureAt(placementReticle.col, placementReticle.row, placementSpec.ignoreObject)
+              : (() => {
+                const rect = placementSpec.key === 'rug' && !placementSpec.ignoreId ? rugRectangleAt(placementReticle.col, placementReticle.row) : null;
+                const dims = rect || placementSpec.dimensions || (placementSpec.key === 'rug' ? { widthTiles: 1, heightTiles: 1 } : null);
+                return (!rect || (rect.widthTiles <= 16 && rect.heightTiles <= 16))
+                  && canPlaceDecorativeFurnitureAt(rect?.col ?? placementReticle.col, rect?.row ?? placementReticle.row,
+                    placementSpec.ignoreId, placementSpec.key, placementSpec.rotYDeg, currentArea, dims);
+              })());
           return [
-            { icon: '✓', label: furnitureMoveArmedId ? 'Move Here' : 'Place', action: 'furniture_place_confirm', style: 'primary', allowed: placementValid },
+            { icon: '✓', label: wallMode ? (window.FarmhouseRoomPlanner.stage() === 'second corner' ? 'Second Corner' : 'Set Wall / Door') : rugFirstCorner ? 'Set Opposite Rug Corner' : furnitureMoveArmedId ? 'Move Here' : placementSpec?.key === 'rug' ? 'First Rug Corner' : 'Place', action: 'furniture_place_confirm', style: 'primary', allowed: placementValid },
             { icon: '✕', label: 'Cancel', action: 'furniture_place_cancel', style: 'secondary', allowed: true },
           ];
         }
 
+        const furnitureAim = getReticleTile(); // Directly aimed chairs and surface objects take priority over a merely nearby NPC.
+        const rubbleButtons = !farmEditMode ? window.Shattercasks?.contextButtons?.(furnitureAim) : null; // Aimed Shattercask blast rubble; exact reticle tile (sticky while in reach), like corpse loot.
+        if (rubbleButtons) return rubbleButtons;
+        const directFurniture = !farmEditMode && window.FurnitureTableSystem?.objectAt(currentArea, furnitureAim.col, furnitureAim.row);
+        const directFurnitureButtons = directFurniture?.getButtons?.() || [];
+        if (directFurnitureButtons.length) return directFurnitureButtons;
         const festivalButton = !farmEditMode ? window.FestivalSystem?.actionButton?.() : null; // Shared Action 1/2 dispatch supports touch, keyboard, and controllers.
+        if ((window.FestivalSystem?.dance?.targetNpcId || window.FestivalSystem?.pendingDance?.targetNpcId) && festivalButton) return [festivalButton]; // While in a paired dance, Leave remains Action 1 even when the partner is nearby.
         if (festivalButton && !nearbyNpcWalker && !_pendingSpotTransition) return [festivalButton];
 
         // NPC dialogue takes priority over tool use on touch controls and mirrors the primary-action keyboard path.
-        if (nearbyNpcWalker && !farmEditMode) {
+        if (nearbyNpcWalker && !farmEditMode && !isPlayerInCombat()) {
           // Slagothim caravan members are transient visitors: Talk + Trade only
           // (see js/slagothim-traders.js), no gifts/wardrobe/command wheel.
           if (window.SlagothimTraders?.isTraderWalker?.(nearbyNpcWalker)) {
             const tradeButton = window.SlagothimTraders.actionButtonFor(nearbyNpcWalker);
             return tradeButton ? [npcDialogueButton(), tradeButton] : [npcDialogueButton()];
           }
-          const btns = nearbyNpcWalker.isPorakanekiHunter ? [] : [npcDialogueButton()];
+          const btns = (nearbyNpcWalker.isTribeHunter || nearbyNpcWalker.isPorakanekiHunter) ? [] : [npcDialogueButton()];
           // Smithy is deliberately inserted directly after Talk so it is
           // always Action 2 when either Bronzeworks smith is being faced.
           if (isSmithyNpcInBronzeworks(nearbyNpcWalker)) btns.push(smithyButton());
@@ -25161,28 +27479,14 @@
           const giftOffer = window.NpcGifting?.getNpcGiftOfferAction?.(nearbyNpcWalker);
           if (giftOffer) btns.push(giftOffer);
           if (festivalButton) btns.push(festivalButton);
-          // Wardrobe: only reachable while actually standing in that NPC's
-          // own home interior (currentArea === 'map_i_' + homeId — the same
-          // area-id convention loadBuildingScene/_isBuildingArea use), so
-          // it reads as "go through their things at home" rather than a
-          // button that follows them everywhere.
-          if (nearbyNpcWalker.rec?.homeId && currentArea === 'map_i_' + nearbyNpcWalker.rec.homeId && window.NpcWardrobe) {
-            btns.push({
-              icon: '👗',
-              label: `${nearbyNpcWalker.rec.name || 'Their'}'s Wardrobe`,
-              action: 'npc_open_wardrobe',
-              style: 'secondary',
-              allowed: true,
-              worldInteraction: true,
-            });
-          }
           return btns;
         }
 
         // Interior: exit button near any door's exit threshold + interact button for interior world objects
         if (currentArea === 'interior') {
           const reticle  = getReticleTile();
-          const nearExit = _interiorExitTiles.has(reticle.col + ',' + reticle.row);
+          const nearExit = _interiorExitTiles.has(reticle.col + ',' + reticle.row)
+            || [[0, -1], [0, 1], [-1, 0], [1, 0]].some(([dc, dr]) => _interiorExitTiles.has((reticle.col + dc) + ',' + (reticle.row + dr))); // A floorless door must also be usable from its adjacent inside floor tile.
           const btns     = [];
           if (nearExit) btns.push({ icon: '🚪', label: 'Exit House', action: 'obj_exit_house', style: 'primary', allowed: true });
           // getInteriorInteractableAt, not getWorldObjectAt — worldObjects is
@@ -25199,7 +27503,7 @@
         if (currentArea === 'town' && _pendingSpotTransition) {
           const t = _pendingSpotTransition;
           const icon = t.target === 'building' ? '🚪' : '🏘';
-          const label = t.label || (t.target === 'building' ? 'Enter' : 'Leave Town');
+          const label = window.TownZoneBuildings.entranceLabel(t) || (t.target === 'building' ? 'Enter' : 'Leave Town'); // Use the Map Editor's placed-building name rather than a stale house-template label.
           return [{ icon, label, action: 'use_spot', style: 'primary', allowed: true }];
         }
 
@@ -25239,6 +27543,8 @@
           const bReticle = getReticleTile();
           const bInteractable = _buildingInteractables.get(currentArea + ',' + bReticle.col + ',' + bReticle.row);
           if (bInteractable) return bInteractable.getButtons();
+          const caveReagent = window.CaveSiteSystem?.objectAt?.(currentArea, bReticle.col, bReticle.row); // Reuses the interior reticle so walking across Duskcaps never harvests them.
+          if (caveReagent) return caveReagent.getButtons(bReticle);
           // A den's cavern is a boss-fight arena (see _isCavernBuildingArea) —
           // the weapon/tool combo buttons still need to populate the action
           // bar here, same as farm/zone (below), even though every other
@@ -25291,7 +27597,7 @@
             const consumeAction = window.HobunjiDrunkGameplayBridge?.getHeldItemAction?.();
             if (consumeAction) return [consumeAction];
             if (heldItem && ITEM_DEFS[heldItem.key]?.isCookedFood) return [{ icon: '🍲', label: `Eat ${ITEM_DEFS[heldItem.key].label}`, action: 'consume_food_item', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 }];
-            if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) return [{ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: !!window.MusicMinigame?.getEquippedInstrument?.() }]; // Playing requires the Instrument gear slot (bag copies must be transferred first).
+            if (heldItem && TOOL_ITEM_DEFS[heldItem.key]?.slots?.includes('instrument')) return [{ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: !!window.MusicMinigame?.getEquippedInstrument?.() }]; // Playing requires the Instrument gear slot (bag copies must be transferred first).
           }
           return [];
         }
@@ -25305,7 +27611,7 @@
           const label = t.label || (t.target === 'interior' ? 'Enter House' : t.target === 'town' ? 'Leave Farm' : 'Travel');
           const btnsSpot = [];
           btnsSpot.push({ icon, label, action: 'use_spot', style: 'primary', allowed: true });
-          const obj2 = getWorldObjectAt(reticle.col, reticle.row);
+          const obj2 = getAimedFarmInteractionObject(reticle.col, reticle.row);
           if (obj2) obj2.getButtons(reticle).forEach(b => btnsSpot.push(b));
           return btnsSpot;
         }
@@ -25317,6 +27623,16 @@
           const label = zoneNest.liveBirth ? 'Hold to Take Baby' : 'Hold to Take Egg';
           return [{ icon: zoneNest.liveBirth ? '🐾' : '🥚', label, action: 'nest_take', style: 'primary', allowed: true, worldInteraction: true, promptRoot: zoneNest.mesh || null }];
         }
+
+        // A standing honeyfuzzle hive stump under the reticle: one long hold
+        // (js/corpse-hold-loot.js owns the timer) takes its eggs and honey.
+        const aimedHive = _isZoneArea(currentArea) ? window.HoneyfuzzleHives?.getAimedHive(reticle.col, reticle.row) : null;
+        if (aimedHive) return [{ icon: '🍯', label: 'Hold to Harvest Hive', action: 'corpse_hold_loot', style: 'primary', allowed: true, worldInteraction: true, promptRoot: aimedHive.promptRoot }];
+
+        // A downed companion beside the player, or a Root Totem while one is
+        // down: same hold contract as hives (js/companion-downed.js).
+        const companionReviveButton = window.CompanionDowned?.getHoldButton?.(reticle.col, reticle.row);
+        if (companionReviveButton) return [companionReviveButton];
 
         // Bandit tents are runtime props rather than worldObjects, so expose
         // their context action explicitly. Pointer/keyboard holds still feed
@@ -25345,14 +27661,15 @@
 
         if (_isZoneArea(currentArea) && !player.climbing) {
           const climbTarget = window.ClimbSystem?.getClimbTarget?.();
-          if (climbTarget?.type === 'wall') {
+          if (climbTarget?.type === 'wall' || climbTarget?.type === 'cliffRoute') {
             // Cliff face: the prompt floats on the wall itself, straight
             // ahead at camera height (same placement the Random Test Ruin
             // interaction list uses), so it reads as a mark on the rock.
             const rideState = window.Mounts?.rideState ?? 'none';
             const mounted = rideState === 'mounted';
-            const wallAllowed = rideState === 'none' || mounted;
-            const dir = climbTarget.dir;
+            const manualCliff = climbTarget.type === 'cliffRoute'; // Show the new controlled-hop route only while dismounted.
+            const wallAllowed = manualCliff ? rideState === 'none' : rideState === 'none' || mounted;
+            const dir = climbTarget.dir || { x: 0, y: 0 };
             const startCol = Math.floor(player.x / TILE), startRow = Math.floor(player.y / TILE);
             const faceX = dir.x ? (startCol + (dir.x > 0 ? 1 : 0)) * TILE - dir.x * TILE * 0.12 : player.x;
             const faceY = dir.y ? (startRow + (dir.y > 0 ? 1 : 0)) * TILE - dir.y * TILE * 0.12 : player.y;
@@ -25360,11 +27677,11 @@
             const cameraY = camera?.position?.y;
             const promptY = Math.max(floorY + 0.9, Math.min(floorY + 2.4, Number.isFinite(cameraY) ? cameraY : floorY + 1.5));
             _climbPromptAnchor.position.set(faceX / TILE, promptY, faceY / TILE);
-            const wallLabel = climbTarget.descending
-              ? (mounted ? 'Leap Down' : 'Jump Down')
+            const wallLabel = manualCliff ? 'Climb Handholds'
+              : climbTarget.descending ? (mounted ? 'Leap Down' : 'Jump Down')
               : (mounted ? 'Leap Up' : 'Climb');
             btns.push({
-              icon: climbTarget.descending ? '🪂' : '🧗',
+              icon: climbTarget.descending && !manualCliff ? '🪂' : '🧗',
               label: wallAllowed ? wallLabel : 'Dismount to Climb',
               action: 'climb_branch', style: 'secondary', allowed: wallAllowed,
               worldInteraction: true, promptRoot: _climbPromptAnchor,
@@ -25394,7 +27711,7 @@
         // live in _buildingInteractables instead, same as building interiors.
         const obj = currentArea === 'town'
           ? _buildingInteractables.get('town,' + reticle.col + ',' + reticle.row) || getWorldObjectAt(reticle.col, reticle.row)
-          : getWorldObjectAt(reticle.col, reticle.row);
+          : getAimedFarmInteractionObject(reticle.col, reticle.row);
         if (obj) {
           const objBtns = obj.getButtons(reticle);
           objBtns.forEach(b => btns.push(b));
@@ -25411,7 +27728,7 @@
           btns.push({
             icon: tile.cropReady ? data.emoji : '🌱',
             label: tile.cropReady ? '✓ Harvest' : `${tile.crop} (${Math.floor(tile.cropAge)}d)`,
-            action: 'harvest', style: tile.cropReady ? 'harvest' : 'secondary',
+            action: 'harvest', inputAction: 'action1', style: tile.cropReady ? 'harvest' : 'secondary',
             allowed: tile.cropReady,
             worldInteraction: !!tile.cropReady,
             promptRoot: _worldInteractionPromptAnchor, // Keeps the floating harvest cue on the aimed crop tile.
@@ -25425,8 +27742,13 @@
             const [fallbackIcon] = actionLabels[action];
             const icon = attackActionIconHTML(activeTool, action, fallbackIcon);
             const allowed = canUseAction(activeTool, action, reticle.col, reticle.row);
+            const label = activeTool === 'shovel' && allowed && action === 'fill'
+              ? 'Hold to Fill'
+              : activeTool === 'shovel' && allowed && action === 'dig' && tile.type !== TileType.TRENCH
+                ? 'Hold to Dig'
+                : window.HudUpdate.contextualActionLabel(action, tile); // Action-bar label distinguishes held excavation from single-tap trench redigging.
             btns.push({
-              icon, label: window.HudUpdate.contextualActionLabel(action, tile),
+              icon, label,
               action, style: i === 0 ? 'primary' : 'secondary', allowed,
             });
           });
@@ -25443,7 +27765,7 @@
         const consumeAction = window.HobunjiDrunkGameplayBridge?.getHeldItemAction?.();
         if (!flaskActions.length && consumeAction) btns.unshift(consumeAction);
         else if (heldItem && ITEM_DEFS[heldItem.key]?.isCookedFood) btns.unshift({ icon: '🍲', label: `Eat ${ITEM_DEFS[heldItem.key].label}`, action: 'consume_food_item', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
-        else if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) btns.unshift({ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: !!window.MusicMinigame?.getEquippedInstrument?.() });
+        else if (heldItem && TOOL_ITEM_DEFS[heldItem.key]?.slots?.includes('instrument')) btns.unshift({ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: !!window.MusicMinigame?.getEquippedInstrument?.() });
         else if (heldItem && heldItem.key === 'campfireKitFurniture') btns.unshift({ icon: '🔥', label: 'Set Up Campfire', action: 'place_campfire_kit', style: 'primary', allowed: !!window.WildernessCampfire?.supportsArea?.(currentArea) && (inventory[heldItem.key] || 0) > 0 });
 
         // 2. Context: Plant button if selected item is a seed and tile can accept it
@@ -25508,7 +27830,7 @@
         // Was farm-only (world objects didn't exist elsewhere) — now
         // unconditional so a lootable corpse's identity in any area (zones
         // included) still invalidates the cache and rebuilds its button.
-        const obj = getWorldObjectAt(reticle.col, reticle.row);
+        const obj = getAimedFarmInteractionObject(reticle.col, reticle.row);
         const nearbyNpcKey = nearbyNpcWalker?.rec?.id || nearbyNpcWalker?.root?.uuid || 'none';
         const nearbyNpcActivityKey = nearbyNpcWalker?.currentScheduleTarget?.activity || 'none';
         const nearbyNpcShopKey = nearbyNpcWalker && isSmithyNpcInBronzeworks(nearbyNpcWalker) ? smithyAction()
@@ -25535,21 +27857,28 @@
           || button?.action === 'corpse_hold_loot'
           || button?.action === 'climb_branch'
           || button?.action?.startsWith('obj_');
-        const interactionButton = btns.find(isWorldInteraction) || null;
+        const archInteractionButton = btns.find(isWorldInteraction) || null;
+        // Prompt-only rows that own no arch slot (an intact Shattercask's
+        // Interact pickup — an arch button would replace the weapon slot that
+        // melee-detonates it). Merged here so this stays the one prompt owner.
+        const promptOnlyButtons = archInteractionButton ? null : (window.Shattercasks?.promptButtons?.() || null);
+        const promptButtons = promptOnlyButtons ? btns.concat(promptOnlyButtons) : btns;
+        const interactionButton = archInteractionButton || promptOnlyButtons?.[0] || null;
         if (interactionButton) {
           _worldInteractionPromptAnchor.position.set(
             reticle.col + 0.5,
-            activeSurfaceYAtWorld(reticle.col + 0.5, reticle.row + 0.5) + 0.55,
+            (interactionButton?.action?.startsWith('obj_balcony_') && player.onCliffBalcony
+              ? player._cliffBalconyY : activeSurfaceYAtWorld(reticle.col + 0.5, reticle.row + 0.5)) + 0.55,
             reticle.row + 0.5,
           );
         }
         const interactionRoot = interactionButton?.promptRoot
           || nearbyNpcWalker?.root
-          || obj?.promptRoot || obj?.root || obj?.group || obj?.mesh
+          || obj?.promptRoot || obj?.root || obj?.group || obj?.avatarRef?.group || obj?.mesh
           || (interactionButton ? _worldInteractionPromptAnchor : null);
         const promptActionIds = ['action1', 'action2', 'action3', 'interact'];
-        const promptInputs = btns.map((button, index) => { // Used by each floating row to render its rebound input and matching arch color independently.
-          const actionId = button.inputAction || (button.action === 'climb_branch' ? 'dodge' : (promptActionIds[index] || `action${index + 1}`)); // Context providers may bind a row to an exact physical arch input; otherwise preserve the ordinary inferred slot mapping.
+        const promptInputs = promptButtons.map((button, index) => { // Used by each floating row to render its rebound input and matching arch color independently.
+          const actionId = button.inputAction || (button.action === 'climb_branch' ? 'jump' : (promptActionIds[index] || `action${index + 1}`)); // Context providers may bind a row to an exact physical arch input; otherwise preserve the ordinary inferred slot mapping.
           const touchLabel = actionId === 'dodge' ? 'Dodge' : `Action ${index + 1}`; // Used when touch controls have no keyboard/controller glyph.
           return {
             actionId,
@@ -25558,7 +27887,7 @@
           };
         });
         window.WorldPopupText?.syncInteractionPrompts?.({
-          buttons: btns,
+          buttons: promptButtons,
           root: interactionRoot,
           enabled: !menuOpen && !dialogueOpen && !paused,
           scene: window.GridTileAccessors.getActiveScene(),
@@ -25568,7 +27897,7 @@
         });
         // Dynamic providers (including the asynchronously loaded consumable
         // bridge) can change the resolved arch without changing tile/item state.
-        const actionButtonKey = btns.map(button => `${button.action}:${button.allowed !== false ? 1 : 0}:${button.label}:${button.swigFraction || ''}`).join(',');
+        const actionButtonKey = btns.map(button => `${button.action}:${button.allowed !== false ? 1 : 0}:${button.label}:${button.swigFraction || ''}:${button.holdLabel || ''}`).join(',');
         // window.Fishing?.state?.phase (not just .active) must be in this key:
         // computeActionButtons() returns different button sets across the
         // cast/waiting/bite/active/caught sequence (empty until 'bite', the
@@ -25607,20 +27936,26 @@
           // unconditional textContent write queues childList mutations that wake
           // every action-arch MutationObserver (arch-button-labels, action-arch-icons...).
           const fishingCancel = !!window.Fishing?.state?.active; // Fishing owns Dodge regardless of nearby climb context.
-          const dodgeIcon = fishingCancel ? '🏳️' : climbBtn ? climbBtn.icon : '💨', dodgeLabel = fishingCancel ? 'Exit fishing' : climbBtn ? climbBtn.label : 'Dodge';
+          const dodgeIcon = fishingCancel ? '🏳️' : '💨', dodgeLabel = fishingCancel ? 'Exit fishing' : 'Dodge';
           if (icon && icon.textContent !== dodgeIcon) icon.textContent = dodgeIcon;
           if (label && label.textContent !== dodgeLabel) label.textContent = dodgeLabel;
+        }
+        if (jumpBtn) { // Jump/Climb owns the climb prompt now; Dodge always says Dodge.
+          const icon = jumpBtn.querySelector('.abt-icon'), label = jumpBtn.querySelector('.abt-label');
+          const jumpIcon = climbBtn ? climbBtn.icon : '🧗', jumpLabel = climbBtn ? climbBtn.label : 'Jump';
+          if (icon && icon.textContent !== jumpIcon) icon.textContent = jumpIcon;
+          if (label && label.textContent !== jumpLabel) label.textContent = jumpLabel;
         }
 
         if (!needsRebuild) return;
 
-        // Split tool actions from item-owned consume/plant/place/harvest actions;
+        // Split world/tool actions from item-owned consume/plant/place actions;
         // climb_branch is excluded from every arch slot below for the same
         // reason it's excluded from activeAction above — it still stays in
         // the full btns array so the 3D world-space prompt keeps working.
         const isItemButton = b => b.inputAction === 'itemAction1' || b.inputAction === 'itemAction2'
           || b.action === 'consume_held_item' || b.action === 'consume_food_item' || b.action === 'play_instrument' || b.action.startsWith('alchemy_flask_') || b.action.startsWith('plant_')
-          || b.action.startsWith('place_') || b.action.startsWith('spawn_') || b.action === 'harvest';
+          || b.action.startsWith('place_') || b.action.startsWith('spawn_');
         const toolBtns = nonClimbBtns.filter(b => !isItemButton(b));
         const itemBtns = nonClimbBtns.filter(isItemButton);
 
@@ -25674,7 +28009,7 @@
               // same story: it's pure traversal, not a tool swing, so a leftover
               // toolSwingT from whatever was equipped before walking up to a
               // cliff shouldn't be able to eat the tap either.
-              const isNavAction = act === npcDialogueAction() || act === smithyAction() || act === generalStoreAction() || act === carpenterAction() || act === 'npc_offer_alcohol_swig' || act === 'npc_offer_gift' || act === 'npc_open_wardrobe' || act === 'npc_slagothim_trade' || act === 'use_spot' || act === 'obj_exit_house' || act === 'climb' || act.startsWith('obj_') || act.startsWith('fish_') || act.startsWith('festival_');
+              const isNavAction = act === npcDialogueAction() || act === smithyAction() || act === generalStoreAction() || act === carpenterAction() || act === 'npc_offer_alcohol_swig' || act === 'npc_offer_gift' || act === 'npc_open_wardrobe' || act === 'npc_slagothim_trade' || act === 'use_spot' || act === 'obj_exit_house' || act === 'climb' || act === 'shattercask_collect' || act.startsWith('obj_') || act.startsWith('fish_') || act.startsWith('festival_');
               // Same reasoning again for every item-mode action (place_campfire_kit,
               // consume_food_item, plant_*, alchemy_flask_*, ...): none of them are
               // tool swings either, so a leftover toolSwingT from whatever tool was
@@ -25930,7 +28265,7 @@
           }
         }
 
-        if (heldMode === 'item') {
+        if (heldMode === 'item' && !sitInteraction) {
           // Item mode: all actions spread across all 5 arch positions
           // (climb_branch excluded — see nonClimbBtns above)
           applyAbt('btnAction1',    nonClimbBtns[0], btns.indexOf(nonClimbBtns[0]));
@@ -26013,10 +28348,12 @@
           `Action FX: particles=${actionParticles.length} tileFlashes=${actionTileEffects.length} slashTrails=${weaponTrailEffects.length}`,
           `Calendar: ${window.CalendarSystem.formatCalendarDate()} (raw day ${calendar.day}), ${window.FormatUtils.formatClock(window.CalendarSystem.getHour())}, ${calendar.weather}`,
           `Tool/action: ${window.FormatUtils.toolName(activeTool)} / ${window.FormatUtils.actionName(activeAction)}`,
+          `Weekly prayer: ${JSON.stringify(window.DevotionRestBuffs?.debugSnapshot?.() || { coreLoaded: !!window.TemplePrayerRestBlessings, reason: 'Prayer integration is not loaded.' })}`,
           `Flask aim/projectile: ${JSON.stringify(window.AlchemyFlasks?.diagnostics?.() || null)}`,
           `Voice render timing: ${JSON.stringify(window.AnimalVoiceIndependentPlayback?.debugSnapshot?.().chargeRendering || null)}`,
           `Mobile combat arch aim: ${JSON.stringify(window.__mobileArchCombatAimDebug?.snapshot?.() || { active: false })}`,
           `Mobile autotarget: ${JSON.stringify(window.__hobunjiFurnitureDebug?.meleeAttackAlignmentSnapshot?.() || { ready: false })}`,
+          `Wardrobe furniture: ${JSON.stringify(window.NpcFurnitureWardrobes?.debugSnapshot?.() || { ready: false })}`, // Copied from the in-game Debug Log on mobile; no console required.
           `Arena spawn: ${JSON.stringify(window.DevSpawner?.spawnSnapshot?.() || { ready: false })}`,
           `Player: x${player.x.toFixed(0)} y${player.y.toFixed(0)}`,
           `Player movement/status: ${JSON.stringify(playerMovementDebugSnapshot())}`,
@@ -26111,20 +28448,28 @@
                 if (obj) { worldObjects.set(col + ',' + row, obj); processingFurnitureObjects.add(obj); }
               }
             });
-            (_rl.decor || []).forEach(({ id, key, col, row, area, rotYDeg, ownerPieceId, localCol, localRow }) => {
+            (_rl.decor || []).forEach(({ id, key, col, row, area, rotYDeg, ownerPieceId, localCol, localRow, widthTiles, heightTiles, rugLayer, patternOverrides }) => {
               const def = DECORATIVE_FURNITURE_DEFS[key];
               if (!def) return;
               const decorArea = area || 'farm';
               const tgt = decorArea === 'interior' ? interiorScene : scene;
-              const r = makeDecorativeFurnitureMesh(col, row, key, tgt, decorArea, rotYDeg || 0);
+              const dimensions = key === 'rug' ? { widthTiles: Number.isInteger(widthTiles) && widthTiles > 0 && widthTiles <= 16 ? widthTiles : 2,
+                 heightTiles: Number.isInteger(heightTiles) && heightTiles > 0 && heightTiles <= 16 ? heightTiles : 2,
+                 rugLayer: Math.max(0, Math.min(32, Number(rugLayer) || 0)) } : null; // Prototype reset restores both rug size and stack layer.
+              const r = makeDecorativeFurnitureMesh(col, row, key, tgt, decorArea, rotYDeg || 0, dimensions);
               const owner = decorArea === 'interior' && !ownerPieceId ? furnitureOwnerFields(col, row) : {};
-              if (r) interiorFurnitureObjects.push({ id: id || 'decor_' + Math.random().toString(36).slice(2, 10), key, col, row,
-                mesh: r.mesh, light: r.light, sfxSource: r.sfxSource, area: decorArea, rotYDeg: rotYDeg || 0,
-                ownerPieceId: ownerPieceId || owner.ownerPieceId, localCol: Number.isFinite(localCol) ? localCol : owner.localCol,
-                localRow: Number.isFinite(localRow) ? localRow : owner.localRow });
-              if (r && decorArea === 'farm' && def.sit) {
-                const size = decorativeFurnitureSize(key, rotYDeg || 0);
-                registerSitWorldObject(key, col, row, size.fw, size.fd, rotYDeg || 0);
+              if (r) {
+                const restored = { id: id || 'decor_' + Math.random().toString(36).slice(2, 10), key, col, row,
+                  mesh: r.mesh, light: r.light, sfxSource: r.sfxSource, area: decorArea, rotYDeg: rotYDeg || 0,
+                  ownerPieceId: ownerPieceId || owner.ownerPieceId, localCol: Number.isFinite(localCol) ? localCol : owner.localCol,
+                  localRow: Number.isFinite(localRow) ? localRow : owner.localRow, ...(dimensions || {}), patternOverrides: patternOverrides || null };
+                interiorFurnitureObjects.push(restored);
+                window.FurnitureTableSystem?.registerPlacement(decorArea, restored, r.mesh, def);
+              } // Prototype reset must register every stacked rug under its stable id.
+              if (r && patternOverrides) window.FurniturePatternSurfaces?.applyOverrides?.(r.mesh, patternOverrides); // Do not discard the player's color choices on prototype reset.
+              if (r && decorArea === 'farm') {
+                const size = decorativeFurnitureSize(key, rotYDeg || 0, dimensions);
+                registerFarmDecorativeInteractable(key, col, row, size.fw, size.fd, rotYDeg || 0);
               }
               if (r) registerChairNpcStation(key, col, row, rotYDeg || 0, normalizeNpcArea(decorArea));
             });
@@ -26161,13 +28506,30 @@
       joystickZone.addEventListener('pointerup', window.VirtualJoystick.handleJoystickPointerUp);
       joystickZone.addEventListener('pointercancel', window.VirtualJoystick.handleJoystickPointerUp);
 
-      // Dodge button: a plain tap, dodging in the current facing direction.
-      // Always visible on touch (see #dodgeBtn in style.css);
-      // while fishing it dismisses the cast or catch view.
+      // Touch Dodge keeps its normal press-to-dodge behavior while standing.
+      // Downed uses this same physical button as a cancellable held input.
+      let downedDodgePointerId = null; // Tracks the single pointer allowed to own the voluntary-respawn hold.
+      function finishDownedDodgePointer(event) {
+        if (downedDodgePointerId === null || (event && event.pointerId !== downedDodgePointerId)) return;
+        downedDodgePointerId = null;
+        window.PlayerDowned?.setGiveUpHeld?.(false);
+      }
       dodgeBtn?.addEventListener('pointerdown', ev => {
         ev.preventDefault();
+        if (window.PlayerDowned?.isDowned?.()) {
+          if (downedDodgePointerId !== null) return; // A second finger cannot restart or steal an active hold.
+          downedDodgePointerId = ev.pointerId;
+          try { dodgeBtn.setPointerCapture?.(ev.pointerId); } catch (_) {}
+          window.PlayerDowned.setGiveUpHeld(true);
+          return;
+        }
         performContextAction();
       });
+      dodgeBtn?.addEventListener('pointerup', finishDownedDodgePointer);
+      dodgeBtn?.addEventListener('pointercancel', finishDownedDodgePointer);
+      dodgeBtn?.addEventListener('lostpointercapture', finishDownedDodgePointer);
+      window.addEventListener('blur', () => finishDownedDodgePointer());
+      document.addEventListener('visibilitychange', () => { if (document.hidden) finishDownedDodgePointer(); });
 
       // Weapon quick-switch button: a plain tap toggles in/out of the
       // weapon tool slot (see toggleQuickWeaponSwitch) — this is how you
@@ -26176,6 +28538,9 @@
         ev.preventDefault();
         toggleQuickWeaponSwitch();
       });
+
+      // Jump / Climb touch button (inner ring, beside Dodge).
+      jumpBtn?.addEventListener('pointerdown', ev => { ev.preventDefault(); performJumpAction(); });
 
       // Mobile mirror of the V key / D-pad down 'toggleMount' action —
       // .active is kept in sync with rideState in window.Mounts.updateMountRide.
@@ -26435,16 +28800,24 @@
         const buttons = computeActionButtons();
         return (action && buttons.find(b => b.action === action)) || buttons[slotIndex - 1] || null;
       }
-      function runActionButtonAtSlot(slotIndex) {
+      function runActionButtonAtSlot(slotIndex, inputActionId = `action${slotIndex}`) {
         const btn = actionButtonForPhysicalSlot(slotIndex);
         if (!btn || btn.allowed === false) return;
         activeAction = btn.action;
-        actionHeldDown = slotIndex === 1;
+        const startsCharge = wouldStartCharge(activeTool, activeAction); // Every physical action slot can own its displayed tool's held charge.
+        if (startsCharge) heldChargeInputId = inputActionId;
+        actionHeldDown = slotIndex === 1 || startsCharge;
         useActiveAction();
       }
       function runInteractAction() {
         // Interact is reserved for world targets such as doors, NPCs, and
         // furniture. Tool swings and every held-item action use action slots.
+        // Desktop E taps arrive here directly (not via runInputAction), so
+        // world claims (e.g. Shattercask pickup) must be offered first too.
+        if (dispatchWorldInputClaim('interact', 'press', 'interact-tap')) {
+          dispatchWorldInputClaim('interact', 'release', 'interact-tap');
+          return;
+        }
         const toolSet = new Set(Object.values(toolActions).flat());
         const isItemAction = action => action === 'consume_held_item' || action === 'consume_food_item' || action === 'play_instrument'
           || action === 'harvest'
@@ -26452,7 +28825,7 @@
           || /^(?:plant_|place_|spawn_)/.test(action);
         const btn = computeActionButtons().find(b => b.allowed !== false
           && !toolSet.has(b.action) && !isItemAction(b.action));
-        if (!btn) return;
+        if (!btn) { performJumpAction(); return; } // Pad A doubles as Jump/Climb when there is nothing to interact with.
         activeAction = btn.action;
         useActiveAction();
       }
@@ -26494,16 +28867,28 @@
       const furniturePlacementActionPresses = new Set(); // Owns controller/keyboard placement confirms through release so a last-item placement cannot leak a release into weapon input.
       const rangedAmmoAction2Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Shared keyboard/controller hold state for the ordinary ammo-selection arch.
       const potionAction3Press = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Tool Action 3 selector mirrors the normal held tool/item mode shift.
-      const toolSelectPress = { down: false, held: false, timer: null, lastScrollAt: 0 }; // Cross-input Tool Select tap/hold distinction.
+      const toolSelectPress = { down: false, held: false, timer: null, lastScrollAt: 0, contextPickup: false }; // Also pairs a Shattercask pickup with the matching Tool Select release, without recalling equipment.
       function potionSelectorAvailable(actionId) {
         return actionId === 'action3' && !window.WorldActionInputClaims?.hasClaim?.('action3')
           && heldMode === 'tool' && (activeTool === 'weapon' || activeTool === 'ranged')
           && computeActionButtons().some(button => button.action === 'potion_select' && button.allowed);
       }
       function runInputAction(actionId, phase = 'press') {
+        if (window.HobunjiOnboarding?.creatorSessionInfo?.()?.cosmeticsOnly) return; // The grooming modal owns inputs before any held tool selector can open.
+        if (actionId === 'dodge' && window.PlayerDowned?.isDowned?.()) {
+          window.PlayerDowned.setGiveUpHeld(phase === 'press'); // Keyboard and controller share the same downed hold, respecting remapped physical inputs.
+          return; // Never let a downed Dodge press reach travel, climb, placement, or an ordinary evade.
+        }
         if (actionId === 'perceptionMode') {
           if (phase === 'press') window.PerceptionMode?.toggle(); // No cooldown; the cost is half movement speed while active.
           return;
+        }
+        if (window.FarmworkUI?.isPlanning?.()) {
+          if (['action1', 'action2', 'action3'].includes(actionId)) { dispatchWorldInputClaim(actionId, phase, 'farmwork-tool'); return; }
+          if (actionId === 'dodge' || actionId === 'toolSelect') {
+            if (phase === 'press') window.FarmworkUI.setPlanning(false);
+            return;
+          }
         }
         if (actionId === 'dodge' && window.Fishing?.state?.active) {
           if (phase === 'press') performContextAction(); // Fishing cancel outranks placement, selectors and weapon handlers.
@@ -26524,12 +28909,26 @@
             if (!toolSelectPress.down) return;
             toolSelectPress.down = false;
             if (toolSelectPress.timer) { clearTimeout(toolSelectPress.timer); toolSelectPress.timer = null; }
+            if (toolSelectPress.contextPickup) {
+              toolSelectPress.contextPickup = false; // Pickup already consumed this whole physical press.
+              toolSelectPress.held = false;
+              return;
+            }
             if (toolSelectPress.held) window._desktopSelectionArc?.commit();
             else window._desktopSelectionArc?.recallLastTool?.();
             toolSelectPress.held = false;
             return;
           }
           if (toolSelectPress.down) return;
+          // The controller gameplay loop independently resolves physical buttons:
+          // it does NOT consult ControllerInput.frame.pressed deletion. Claim
+          // pickup here so the same release cannot recall/re-equip a tool.
+          if (window.Shattercasks?.toolArchAction?.() === 'pickup' && window.Shattercasks?.toolArchTap?.()) {
+            toolSelectPress.down = true;
+            toolSelectPress.held = false;
+            toolSelectPress.contextPickup = true;
+            return;
+          }
           toolSelectPress.down = true; toolSelectPress.held = false;
           toolSelectPress.timer = setTimeout(() => {
             if (!toolSelectPress.down) return;
@@ -26612,7 +29011,12 @@
         }
         if (phase === 'release') {
           if (flaskActionPresses.delete(actionId)) { window.AlchemyFlasks?.confirmThrow(); return; }
-          if (actionId === 'action1') actionHeldDown = false;
+          if (heldChargeInputId === actionId) {
+            heldChargeInputId = null;
+            actionHeldDown = false;
+          } else if (actionId === 'action1' && !heldChargeInputId) {
+            actionHeldDown = false;
+          }
           if (visibleWeaponContextPresses.delete(actionId)) return;
           const releaseSlot = weaponActionSlot(actionId);
           if (releaseSlot) { window.Combat.input.pressEnd(releaseSlot); return; }
@@ -26641,7 +29045,7 @@
         const visibleOverride = visibleActionOverrideForWeaponSlot(actionId); // Used so Loot/Harvest/other displayed context actions outrank the weapon normally bound to this slot.
         if (visibleOverride) {
           visibleWeaponContextPresses.add(actionId);
-          runActionButtonAtSlot(visibleOverride.slot);
+          runActionButtonAtSlot(visibleOverride.slot, actionId);
           return;
         }
         const weaponSlot = weaponActionSlot(actionId);
@@ -26665,7 +29069,9 @@
           return;
         }
         if (actionId === 'dodge') { performContextAction(); return; }
+        if (actionId === 'jump') { performJumpAction(); return; }
         if (actionId === 'toggleMount') { window.Mounts?.toggleMount(); return; }
+        if (actionId === 'lockOn') { toggleLockOn(); return; }
         if (actionId === 'swapTarget') {
           const aimAngle = controllerLookActive ? controllerLookAngle
             : (isDesktop && mouseLookActive) ? mouseLookAngle
@@ -26967,6 +29373,10 @@
       window.addEventListener('keydown', (event) => {
         if (window.__mapEditorGizmoActive) { event.preventDefault(); return; }
         const key = event.key.toLowerCase();
+        if (window.HobunjiOnboarding?.creatorSessionInfo?.()?.cosmeticsOnly) {
+          if (key === 'escape') { event.preventDefault(); window.HobunjiOnboarding.cancelCreator(); }
+          return; // Text/select navigation remains with the creator; gameplay/menu shortcuts cannot unpause it.
+        }
         if (window.Fishing?.state?.active) {
           if (key === 'escape') { event.preventDefault(); window.Fishing?.close(); return; }
           const fishingBoundAction = getActionForButton('desktop', event.code);
@@ -27003,15 +29413,9 @@
           menuOpen ? closeMenu() : openMenu();
           return;
         }
-        // M: wilderness map — closes if already open on the map tab (mirrors
-        // spDay's calendar-shortcut behavior), otherwise opens/switches to it.
-        if (key === 'm') {
-          event.preventDefault();
-          const onMapTab = document.querySelector('.mp-tab[data-mpanel="map"]')?.classList.contains('active');
-          if (menuOpen && onMapTab) closeMenu();
-          else openMenu('map');
-          return;
-        }
+        // M (map) and the other menu-tab hotkeys, F1/? (controls cheat sheet)
+        // and H (message log) now live in js/qol-hotkeys.js.
+        if (window.QolHotkeys?.handleKey(event)) return;
         if (menuOpen) return;
         if (key === 'z') {
           event.preventDefault();
@@ -27298,20 +29702,22 @@
       let cameraJoystickOriginX = 0, cameraJoystickOriginY = 0;
       let cameraJoystickX = 0, cameraJoystickY = 0; // -1..1 per axis, consumed once per frame in gameLoop
       function cameraDragAllowed() {
-        return !menuOpen && !farmEditMode && !furniturePlacementArmedKey && !furnitureMoveArmedId
+        // Reticle placement/movement uses Action 1/2; camera-look remains a separate input owner.
+        return !menuOpen && !window.FarmworkUI?.isPanelOpen?.()
+          && !window.FurniturePlacer?.isOpen?.() && !window.__furniturePlacerPanelOpen && !window.__mapEditorPanelOpen
+          && (!farmEditMode || furniturePlacementModeArmed()) // Farm Editor's paint brush yields to active furniture reticle placement.
           && !dialogueZoomActive() && !window.Fishing?.state?.active && !cutscenePreviewActive && !window.PixelProbe?.armed
           && !window.__mapEditorGizmoActive;
       }
       // Every other camera mode nudges a look-around offset on top of a fixed
-      // base framing. Yaw and downward pitch keep cameraRotateClampDeg (45° by
-      // default), while upward pitch can use cameraRotateUpClampDeg (85°). Seated
-      // players and the utility-wheel Character View still get genuine 360°
-      // horizontal orbit instead.
+      // base framing. cameraRotateClampDeg remains the limited-yaw setting for
+      // non-free modes; pitch independently reaches true vertical in either
+      // direction. Seated players and Character View retain 360° horizontal orbit.
       function freeRotateCameraActive() {
         return characterViewMode.enabled || cameraModeConfig(activeCameraMode).freeRotate === true;
       }
-      function clampCameraPitchOffsetDeg(value) {
-        return window.CameraLookClamp.clampPitchOffsetDeg(value, desktopControlsConfig());
+      function clampCameraPitchOffsetDeg(value, baseAngleDeg = Number(cameraModeConfig(activeCameraMode).angleFromGroundDeg ?? 32.73)) {
+        return window.CameraLookClamp.clampPitchOffsetDeg(value, desktopControlsConfig(), baseAngleDeg);
       }
       // Wraps into (-180, 180] instead of clamping, so repeated drag input
       // keeps spinning all the way around rather than pinning at an edge.
@@ -27400,8 +29806,9 @@
       if (isDesktop) {
         threeContainer.addEventListener('contextmenu', (e) => e.preventDefault());
         threeContainer.addEventListener('pointerdown', (e) => {
-          if (window.PixelProbe?.armed || menuOpen || farmEditMode || e.shiftKey || window.__mapEditorGizmoActive) return;
+          if (window.PixelProbe?.armed || menuOpen || (farmEditMode && !furniturePlacementModeArmed()) || e.shiftKey || window.__mapEditorGizmoActive) return;
           const mouseAction = getActionForButton('desktop', 'Mouse' + e.button);
+          if (mouseAction === 'lockOn') { e.preventDefault(); runInputAction('lockOn', 'press'); return; } // preventDefault also stops middle-click autoscroll.
           if ((window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.() || window.DevMapFurniture?.isActive?.()) && (mouseAction === 'action1' || mouseAction === 'action2')) {
             desktopWallFurnitureMousePresses.add(e.button);
             runInputAction(mouseAction, 'press');
@@ -27561,7 +29968,7 @@
           // from this handler) as well as ones opened by a held key like
           // 'c' below (which doesn't drag a mouse button, so nothing else
           // stops this handler from firing while it's up).
-          if (menuOpen || window._desktopSelectionArc?.entryMenuOpen?.() || window.FurniturePlacer?.isOpen?.() || window.__furniturePlacerPanelOpen) return;
+          if (menuOpen || window._desktopSelectionArc?.entryMenuOpen?.() || window.FurniturePlacer?.isOpen?.() || window.__furniturePlacerPanelOpen || window.FarmworkUI?.isPanelOpen?.()) return;
           if (e.shiftKey) _shiftDragged = true; // disqualifies a subsequent Shift-release from reading as an auto-target tap
           if (rangedAmmoAction2Press.held) window._desktopSelectionArc?.movePointer(e.clientX, e.clientY);
           // While the Pixel Probe is armed, mouse movement should only ever
@@ -27577,7 +29984,7 @@
           // this wrap into a full 360° orbit instead of the usual ±45° peek
           // clamp. Falls through to the raycast-based facing/aim below
           // otherwise, same as it always has.
-          if ((e.shiftKey || activeCameraMode === SHOULDER_SURF_MODE) && cameraDragAllowed()) {
+          if (activeCameraMode === SHOULDER_SURF_MODE && cameraDragAllowed()) { // Shift is Dodge now; it no longer rotates the camera.
             const cfg = desktopControlsConfig();
             const turnMultiplier = window.Combat?.postAttackTurnMultiplier?.(player) ?? 1; // Applies slowdown without ignoring any movementX/Y deltas.
             const degPerPx = (Number.isFinite(Number(cfg.cameraRotateDegPerPx)) ? Number(cfg.cameraRotateDegPerPx) : 0.15) * turnMultiplier;
@@ -27590,7 +29997,7 @@
             return;
           }
 
-          if (cameraDragPointerId !== null || e.shiftKey) return; // Shift+mouse movement is rotating the camera, not aiming
+          if (cameraDragPointerId !== null) return;
           const rect = threeContainer.getBoundingClientRect();
           _mouseNDC.x =  ((e.clientX - rect.left)  / rect.width)  * 2 - 1;
           _mouseNDC.y = -((e.clientY - rect.top)   / rect.height) * 2 + 1;
@@ -27623,13 +30030,15 @@
       // share the same target and mouse-look is never replaced by a captured
       // screen-position placement pointer.
       function furniturePlacementModeArmed() {
-        return !!(furniturePlacementArmedKey || furnitureMoveArmedId)
+        return !!(furniturePlacementArmedKey || furnitureMoveArmedId || window.FarmhouseRoomPlanner?.isArmed?.())
           && (currentArea === 'farm' || currentArea === 'interior');
       }
       function cancelFurniturePlacementMode(showMessage = false) {
         const wasArmed = furniturePlacementModeArmed(); // Used to avoid a misleading cancel toast when no placement session exists.
         furniturePlacementArmedKey = null;
         furnitureMoveArmedId = null;
+        rugFirstCorner = null; // Aborting midway through a rug never consumes its owned item.
+        window.FarmhouseRoomPlanner?.cancel?.(); // Cancel wall/corner/door editing alongside normal furniture placement.
         clearFurniturePlacementGhost();
         window.FurniturePlacer?.render();
         if (showMessage && wasArmed) showToast('Furniture placement cancelled.', true);
@@ -27638,6 +30047,23 @@
       }
       function commitFurniturePlacementAt(col, row) {
         if (!furniturePlacementModeArmed()) return false;
+        if (window.FarmhouseRoomPlanner?.isArmed?.()) {
+          const result = window.FarmhouseRoomPlanner.confirm(col, row); // First corner stays armed; second corner commits the full wall.
+          showToast(result.message, result.ok);
+          return result.ok;
+        }
+        const movingRug = furnitureMoveArmedId && interiorFurnitureObjects.find(obj => obj.id === furnitureMoveArmedId && obj.area === currentArea && obj.key === 'rug'); // A moved rug uses the same two-action reticle workflow as a fresh one.
+        const rugKey = movingRug ? 'rug' : getDecorativeFurnitureKeyByItemKey(furniturePlacementArmedKey);
+        if (rugKey === 'rug' && !rugFirstCorner) {
+          if (!canPlaceDecorativeFurnitureAt(col, row, null, 'rug', 0, currentArea, { widthTiles: 1, heightTiles: 1 })) {
+            showToast('Choose a clear first rug corner.', false);
+            return false;
+          }
+          rugFirstCorner = { col, row }; // Action 1 begins the two-corner rug placement without spending inventory.
+          showToast('First rug corner set. Aim at the opposite corner and press Action 1.', true);
+          refreshActionBar();
+          return true;
+        }
         showFurniturePlacementGhost(col, row);
         if (!furniturePlacementGhost) return false;
 
@@ -27645,26 +30071,34 @@
         if (furnitureMoveArmedId) {
           result = processingFurnitureById(furnitureMoveArmedId)
             ? moveProcessingFurniture(furnitureMoveArmedId, col, row)
-            : moveDecorativeFurniture(furnitureMoveArmedId, col, row);
+            : movingRug ? (() => {
+              const rect = rugRectangleAt(col, row); // Inclusive opposite corners replace rather than translate the saved rug footprint.
+              return rect.widthTiles > 16 || rect.heightTiles > 16 ? { ok: false, message: 'Woven rugs are limited to 16 × 16 tiles.' }
+                : moveDecorativeFurniture(furnitureMoveArmedId, rect.col, rect.row, { dimensions: rect });
+            })() : moveDecorativeFurniture(furnitureMoveArmedId, col, row);
           showToast(result.message, result.ok);
-          if (result.ok) furnitureMoveArmedId = null;
+          if (result.ok) { furnitureMoveArmedId = null; rugFirstCorner = null; }
         } else {
           const itemKey = furniturePlacementArmedKey;
           const decorKey = getDecorativeFurnitureKeyByItemKey(itemKey);
           const processingKey = currentArea === 'farm' ? getFurnitureKeyByItemKey(itemKey) : null;
-          result = decorKey
-            ? placeDecorativeFurniture(col, row, decorKey)
-            : processingKey
-              ? placeProcessingFurniture(col, row, processingKey)
+          const rugRect = decorKey === 'rug' ? rugRectangleAt(col, row) : null; // Only the second Action 1 resolves a rectangular rug.
+          result = rugRect && (rugRect.widthTiles > 16 || rugRect.heightTiles > 16)
+            ? { ok: false, message: 'Woven rugs are limited to 16 × 16 tiles.' }
+            : decorKey
+              ? placeDecorativeFurniture(rugRect?.col ?? col, rugRect?.row ?? row, decorKey, furniturePlacementSource, rugRect)
+              : processingKey
+              ? placeProcessingFurniture(col, row, processingKey, furniturePlacementSource)
               : { ok: false, message: 'Furniture not found.' };
           showToast(result.message, result.ok);
           window.__farmLog?.(`[furniture-placer] ${result.ok ? 'placed' : 'blocked'} ${decorKey || processingKey || itemKey} at ${currentArea} (${col},${row}): ${result.message}`, result.ok ? 'info' : 'warn');
-          if (result.ok && processingKey) {
+          if (result.ok) {
             window.HudUpdate.refreshItemScroll();
             window.FarmEditor.saveFarmLayout();
             saveMemberWorldData();
           }
-          if (result.ok && (inventory[itemKey] || 0) <= 0) furniturePlacementArmedKey = null;
+          if (result.ok) rugFirstCorner = null; // Each successfully placed rug starts a fresh two-corner interaction.
+          if (result.ok && furnitureStock(itemKey, furniturePlacementSource) <= 0) furniturePlacementArmedKey = null;
         }
         clearFurniturePlacementGhost();
         window.FurniturePlacer?.render();
@@ -27680,18 +30114,44 @@
       // mirroring window._devSpawner/_farmEditor above — no in-game UI path
       // to grant furniture items directly, so this exists for headless/
       // console testing rather than as a player-facing cheat.
+      window.HobunjiRigDump?.setGameSources({ // Full rig transform dump (js/rig-transform-dump.js): player body + tool holder and nearby hostiles, diffable against the Attack Animation Editor.
+        playerMesh: () => playerMesh,
+        toolHolder: () => toolHolder,
+        activeTool: () => activeTool,
+        equippedWeapon: () => equipmentSlots.weapon,
+        heldMode: () => heldMode,
+        hostiles: () => hostileObjects,
+        playerIdentity: () => ({ speciesId: _playerData?.appearance?.speciesId || _playerData?.appearance?.species || null, gender: _playerData?.appearance?.gender || null }),
+        // Debug-only: put the live player in another body / weapon so a rig dump can be compared against other previews. Not persisted unless the game saves afterwards.
+        async debugPlayerLoadout({ speciesId, gender, weaponKey } = {}) {
+          const appearance = _playerData?.appearance;
+          if (appearance && (speciesId || gender)) {
+            if (speciesId) appearance.speciesId = speciesId;
+            if (gender) appearance.gender = gender;
+            await refreshPlayerAvatar();
+          }
+          if (weaponKey) {
+            gearInventory.tools[weaponKey] = true;
+            window.EquipmentPanel.equipItem(weaponKey, 'weapon');
+            setActiveTool('weapon', { silent: true });
+          }
+          return { speciesId: appearance?.speciesId, gender: appearance?.gender, activeTool };
+        },
+      });
       window.__hobunjiFurnitureDebug = {
         give: (itemKey, n = 1) => { inventory[itemKey] = (inventory[itemKey] || 0) + n; },
         place: placeDecorativeFurniture,
         sit: beginSitInteraction,
         endSit: endSitInteraction,
         get sitState() { return sitInteraction; },
+        bedPose: () => ({ player: window.BedLiePose?.debug?.() || null, npcs: window.BedLiePose?.npcDebug?.(npcWalkers) || [] }), // On-device player/NPC sleeping posture, surface and x-ray status.
         get playerState() { return { x: player.x, y: player.y, angle: player.angle }; },
         get camState() { return { mode: activeCameraMode, azimuthOffsetDeg: cameraAzimuthOffsetDeg, position: { x: camera.position.x, y: camera.position.y, z: camera.position.z } }; },
         foliageFurniture: (mapId = currentArea) => window.FoliageFurnitureRuntime?.debugState(mapId) || [],
         worldObjectAt: getWorldObjectAt,
         farmWorldObjectAt: (col, row) => worldObjects.get(col + ',' + row),
         actionButtons: () => computeActionButtons(),
+        wardrobeSnapshot: () => window.NpcFurnitureWardrobes?.debugSnapshot?.() || null, // Existing in-game furniture debugging can inspect which real wardrobe bound the last interaction.
         npcStation: (id) => npcStationsById.get(id),
         npcStationCount: () => npcStationsById.size,
         npcTileWalkable: (area, c, r) => isNpcTileWalkable(area, c, r),
@@ -27714,7 +30174,11 @@
           return {
             armed: furniturePlacementModeArmed(),
             itemKey: furniturePlacementArmedKey,
+            source: furniturePlacementSource,
+            remaining: furnitureStock(furniturePlacementArmedKey, furniturePlacementSource),
             moveId: furnitureMoveArmedId,
+            rugFirstCorner: rugFirstCorner ? { ...rugFirstCorner } : null, // Mobile diagnostics expose both stages of rug placement.
+            rugs: interiorFurnitureObjects.filter(obj => obj.area === currentArea && obj.key === 'rug').map(obj => ({ id: obj.id, col: obj.col, row: obj.row, widthTiles: obj.widthTiles, heightTiles: obj.heightTiles, layer: obj.rugLayer || 0 })), // On-device layer/resize diagnostics.
             reticle: { col: furniturePlacementReticle.col, row: furniturePlacementReticle.row },
             ghost: furniturePlacementGhost ? { col: furniturePlacementGhost.col, row: furniturePlacementGhost.row, valid: !!furniturePlacementGhost.valid } : null,
           };
@@ -27724,10 +30188,11 @@
           return commitFurniturePlacementAt(furniturePlacementReticle.col, furniturePlacementReticle.row);
         },
         loadBuildingScene: (mapId) => loadBuildingScene(mapId),
+        enterBuilding: (mapId, col, row) => enterBuilding(mapId, col, row), // Headless QA: jump straight into an interior.
         buildingInteractableAt: (mapId, col, row) => _buildingInteractables.get(mapId + ',' + col + ',' + row),
         buildingInteractableCount: () => _buildingInteractables.size,
         renderFarmProcessors: () => window.FarmPanel.renderFarmProcessors(),
-        enterInterior: (pieceId) => enterInterior(pieceId),
+        enterInterior: (pieceId, featureId) => enterInterior(pieceId, featureId),
         exitInterior: () => exitInterior(),
         getCurrentArea: () => currentArea,
         interiorFurnitureObjects: () => interiorFurnitureObjects,
@@ -27747,6 +30212,8 @@
         get targetAimAngleDeg() { return targetAimAngle * 180 / Math.PI; },
         get mouseLookAngleDeg() { return mouseLookAngle * 180 / Math.PI; },
         get mouseLookActive() { return mouseLookActive; },
+        get lockOnActive() { return desktopLockOnActive; }, // Desktop/controller Lock-On state for headless checks.
+        toggleLockOn: () => toggleLockOn(),
         get cameraAngleOffsetDeg() { return cameraAngleOffsetDeg; },
         get characterViewMode() { return { ...window.HOBUNJI_CHARACTER_VIEW_STATUS }; },
         setCharacterViewMode: (enabled) => setCharacterViewMode(enabled, 'debug'),
@@ -27797,6 +30264,11 @@
             state: c.state,
             facingDeg: Math.round((c.facing || 0) * 180 / Math.PI),
             seesPlayer: enemyCanSeeTarget(c, player, c.def.aggroRangePx),
+            lineOfSightBlocker: c._enemyVisibilityLosDebug
+              ? { clear: !!c._enemyVisibilityLosDebug.clear, kind: c._enemyVisibilityLosDebug.kind, id: c._enemyVisibilityLosDebug.id || null } : null,
+            lastKnownPlayerTile: Number.isFinite(c._enemySearchLastKnownX) && Number.isFinite(c._enemySearchLastKnownY)
+              ? { x: Math.round(c._enemySearchLastKnownX / TILE), y: Math.round(c._enemySearchLastKnownY / TILE) } : null,
+            searchTimeRemainingS: Number.isFinite(c._enemySearchT) ? Math.max(0, c._enemySearchT) : null,
             attackBusy: enemyAttackBusy(c),
             turnRecoveryMultiplier: window.Combat?.postAttackTurnMultiplier?.(c) ?? 1,
           })),
@@ -27865,7 +30337,7 @@
         normalizeStationLabel,
         canAccessContent,
         setQuestStatus,
-        turnInTask: window.ProceduralTasks.turnInTask,
+        turnInTask: taskId => window.ProceduralTasks.turnInTask(taskId), // Resolve the latest commission adapter at click time rather than capturing a pre-patch fetch-only handler.
         showToast,
         openMenu,
         closeNpcDialogue,
@@ -27875,6 +30347,8 @@
       });
 
       window.PixelProbe?.init({
+        animalObjects,
+        hostileObjects,
         renderer,
         camera,
         playerMesh,
@@ -27920,6 +30394,9 @@
         isPlayerInCombat,
         MORNING_HOUR,
         getWorkspaceMaps: () => _workspaceMaps,
+        getWeatherExteriorArea: (area = currentArea) => _isBuildingArea(area)
+          ? (window.WildlifeSpawn?.denCavernZoneOf?.(area) || (area === currentArea ? farmPlayerSave?.area : '') || '')
+          : area, // Door entry preserves the current exterior through nested rooms; queried caves resolve their own parent region.
         _isZoneArea,
         _isBuildingArea,
         EXTERIOR_ZONES,
@@ -27932,6 +30409,9 @@
         clamp: window.FormatUtils.clamp,
         player,
         getCurrentArea: () => currentArea,
+        camera, // Camera orientation supplies the listener's right/up/forward axes; actual ear stays at the player.
+        worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE), // Audio occlusion/distance samples the same wilderness and interior heights as combat.
+        getActorWorldY: (actor) => window.Combat?.deps?.getActorWorldY?.(actor), // Reuses the live player/creature height resolver already injected into Combat.init below.
         _isBuildingArea,
         npcGridForArea,
         isRealMediaError: (...a) => window.Music?.isRealMediaError(...a),
@@ -28063,6 +30543,7 @@
         // offers (see combat-progression.js).
         currentWeaponDamageType,
         weaponDamageTypeForTool,
+        getWeaponDefinition: itemKey => TOOL_ITEM_DEFS[itemKey] || null, // Shape resolver reads equipment metadata without duplicating the item catalog.
         // Keys the loadout's per-weapon slot assignments (see
         // combat-loadout.js).
         currentWeaponKey,
@@ -28116,6 +30597,7 @@
         hostileObjects,
         npcWalkers, // Exposed to the ranged debug snapshot so friendly portrait hitboxes can be inspected without making them damage targets.
         getCurrentArea: () => currentArea,
+        getSightOccluders: enemySightOccluders,
         getActiveScene: window.GridTileAccessors.getActiveScene,
         // Same live render-height lookup Combat.init supplies for named
         // animal projectiles (see its own getActorWorldY) — a shooter or
@@ -28152,6 +30634,7 @@
           return tile ? tileSurfaceYInArea(tile, currentArea) : 0;
         },
         canOccupyAt,
+        creatureCanEnterTile, // NPC ranged/melee decisions use the same incline and cliff-step restrictions as live movement.
         damageCreature,
         damagePlayer,
         angleDiff,
@@ -28306,6 +30789,7 @@
         setActiveTool: (v) => { activeTool = v; },
         setLastActionMessage: (v) => { lastActionMessage = v; },
         getCameraMode: () => activeCameraMode,
+        getCameraBaseAngleDeg: () => Number(cameraModeConfig(activeCameraMode).angleFromGroundDeg ?? 32.73), // Kurraya applies the same absolute vertical pitch limits as ordinary camera input.
         setCameraMode: (v) => { if (v == null || v === (cameraConfig().defaultMode || 'default')) enterDefaultCameraMode(); else activeCameraMode = v; }, // Top-down is retired; restores that fall back to it land in Shoulder Cam.
         getCameraTarget: () => activeCameraTarget,
         setCameraTarget: (v) => { activeCameraTarget = v; },
@@ -28344,10 +30828,19 @@
 
       window.MusicMinigame?.init({
         refreshActionBar,
-        getEquippedInstrument: () => gearInventory?.tools?.[equipmentSlots.instrument] && ITEM_DEFS[equipmentSlots.instrument]?.isInstrument ? equipmentSlots.instrument : null,
+        getLastInputDevice: () => lastInputDevice,
+        getEquippedInstrument: () => gearInventory?.tools?.[equipmentSlots.instrument] && TOOL_ITEM_DEFS[equipmentSlots.instrument]?.slots?.includes('instrument') ? equipmentSlots.instrument : null,
         getCurrentArea: () => currentArea,
         listInstrumentPerformers,
         getNpcFootstepSampleUrl: npcFootstepSampleUrl,
+        // Recordings for the surface under the player, so Kurraya's beat uses real footsteps instead of the synth click.
+        getPlayerFootstepSampleUrls: () => {
+          if (!window.AudioSystem) return [];
+          const tile = window.AudioSystem.footstepTileAt(currentArea, player.x, player.y, window.GridTileAccessors.getActiveGrid());
+          const surfaceKey = window.AudioSystem.footstepSurfaceKey(currentArea, tile?.type ?? null);
+          const urls = window.AudioSystem.gameAudioConfig()?.footsteps?.surfaces?.[surfaceKey]?.urls || [];
+          return urls.map(url => { try { return new URL(url, document.baseURI).href; } catch { return url; } });
+        },
         showToast,
         // Frames the performance in third-person (see the "music" camera
         // mode in scratchbones-config.js) instead of leaving the default
@@ -28378,9 +30871,6 @@
         // the player's overlay iframe or an NPC's ambient performance iframe
         // — see updateHeldItemHolder (player) and the station-tool block
         // above (NPC) for what actually owns each twitch state.
-        triggerPlayerKurrayaTwitch: () => {
-          if (_heldItemPlane?.userData.kurrayaAssembly) triggerKurrayaTwitch(_playerKurrayaTwitch, _heldItemPlane);
-        },
         triggerNpcKurrayaTwitch: (npcId) => {
           const walker = npcId ? npcWalkers.find(w => w.rec?.id === npcId) : null;
           if (walker?.stationToolMesh?.userData.kurrayaAssembly) triggerKurrayaTwitch(walker.stationKurrayaTwitch, walker.stationToolMesh);
@@ -28388,6 +30878,8 @@
       });
 
       window.BanditCombat?.init({
+        isPaused: () => paused, // The commander-led army pauses its abstract planner with the game.
+        isGameStarted: () => window.__hobunjiGameStarted === true, // Prevent abstract marching while the title/creator owns the world.
         rnd,
         clamp: window.FormatUtils.clamp,
         debugLog,
@@ -28412,6 +30904,10 @@
         craftedToolItemKey,
         metalDmgMultiplier,
         damagePlayer,
+        // Bandit/tribe hits on other actors (chunk ecology fights). Without it
+        // damageBanditCombatTarget fell back to damagePlayer. Routed through
+        // Combat.deps so faction-rule wrappers see these hits too.
+        damageCreature: (...args) => (window.Combat?.deps?.damageCreature || damageCreature)(...args),
         inCone,
         sweptMove,
         canOccupyAt,
@@ -28583,6 +31079,7 @@
 
       window.PerpRotation?.init({
         angleDiff,
+        playerWorldPosition: () => playerMesh?.position || null, // 'player' tier of the dead-zone corrective-direction hierarchy.
       });
 
       window.GeneralStore?.init({
@@ -28692,16 +31189,23 @@
         isOutdoorArea: () => currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea),
       });
 
+      window.EmissiveLightOrbs?.installGameOverlay({ // Mask-eye glow circles drawn above the darkness/fog canvas every frame.
+        getProjection: () => window.WeatherFX.getProjection(),
+        getScene: () => window.GridTileAccessors.getActiveScene(),
+      });
+
       window.CloudForestFog?.init({
         THREE,
         player,
         TILE,
         getPlayerGroundY: _playerGroundY,
         getActiveScene: window.GridTileAccessors.getActiveScene,
+        getCurrentArea: () => currentArea,
         isCloudForestArea: () => !!EXTERIOR_ZONES[currentArea]?.cloudForest,
       });
 
       window.FarmPanel?.init({
+        cropData, applyItemSpriteIcon, // Shared crop identities and bag artwork for the farm map.
         LIVESTOCK_ITEM_KINDS,
         inventory,
         showToast,
@@ -28784,6 +31288,19 @@
         getNpcRecord: id => scheduledNpcRecords.get(id) || null,
         getCurrentArea: () => currentArea,
         normalizeNpcArea,
+        isCombatActive: isPlayerInCombat, // Shared combat gate for date followers and their contextual interactions.
+        getCombatThreats: area => { // Avoid enemy AI work or allocations unless a follower is actively choosing cover.
+          const threats = [];
+          for (const enemy of hostileObjects) if (enemy.health > 0 && enemy.areaId === area && !enemy._denHidden && !enemy.denDisplacedPrey && (enemy.state === 'chase' || enemy.state === 'searching') && Number.isFinite(enemy.x) && Number.isFinite(enemy.y)) {
+            threats.push({ x: enemy.x / TILE, z: enemy.y / TILE });
+          }
+          return threats;
+        },
+        isCoverOccluder: (area, c, r) => { // Walls, cliff/rock tiles and building footprints obstruct enemy sight; open water does not provide cover.
+          const tile = npcGridForArea(area)?.[r]?.[c];
+          return !!tile && (isSolid(tile.type) || window.GridTileAccessors.isTownBuildingCollisionTile(c, r, area)
+            || !!window.AreaFootprintBlockers?.blocksBox?.(area, c + 0.5, r + 0.5, 0.08, null));
+        },
         canHostNpc: area => area === 'farm' || area === 'interior' || area === 'town' || _isBuildingArea(area) || _isZoneArea(area),
         getPlayerTilePosition: () => ({ x: player.x / TILE, z: player.y / TILE }),
         isDialogueOpen: () => dialogueOpen,
@@ -28805,14 +31322,100 @@
         },
         saveMemberWorldData,
       });
+      window.NpcSeatRequest?.init?.({ // "Ask for seat" on the More wheel: the module owns the request; these are the game's narrow adapters.
+        getArea: () => currentArea,
+        getWalkers: () => npcWalkers,
+        getPlayerPosition: () => ({ x: player.x / TILE, z: player.y / TILE }),
+        isPlayerSeated: () => !!sitInteraction,
+        isBlocked: () => dialogueOpen || menuOpen || isPlayerInCombat() || sceneTransDir !== 0 || !!window.CombatTutorial?.active?.() || !!window.Fishing?.state?.active || !!window.MusicMinigame?.state?.active,
+        canSit: () => !window.FarmAnimals.isHarvesting() && (window.Mounts?.rideState ?? 'none') === 'none',
+        beginSitAtTarget: target => { // The NPC's own physical seat (key, tile, seat index, facing), the same transform the player's Sit action uses.
+          const def = DECORATIVE_FURNITURE_DEFS[target.furnitureKey];
+          return beginSitInteraction(target.furnitureKey, target.c, target.r, def?.fw || 1, def?.fd || 1, target.rotY || 0, target.seatIndex || 0);
+        },
+        toast: showToast,
+        now: () => performance.now(),
+      });
+      window.NpcFarmPlots?.init?.({
+        findWalker: npcId => findNpcWalker(npcId),
+        getCurrentArea: () => currentArea,
+        normalizeNpcArea,
+        cropData,
+        isRaining: () => !!calendar.isRaining,
+        surfaceY: (areaId, c, r) => npcSurfaceY(areaId, c, r),
+        getAreaScene: areaId => areaId === 'town' ? townScene : areaId === 'farm' ? scene : (_isZoneArea(areaId) ? (_zoneScenes.get(areaId)?.scene || null) : null),
+        buildCropMesh: (crop, growth, ready, c, r) => window.VegetationCropRendering?.buildStandaloneCropMesh?.(crop, growth, ready, c, r) || null,
+        saveMemberWorldData,
+        // The player's farm grid, for plots worked by the spouse and children (see FarmPlotEditor). The live farm tiles are
+        // edited directly — no tool-mastery or Farming XP goes to the player for an NPC's work.
+        farmTileInfo: (c, r) => {
+          const tile = grid[r]?.[c];
+          if (!tile) return null;
+          const free = !window.GridTileAccessors.isHouseFootprint(c, r) && !worldObjects.has(c + ',' + r) && !tile.dewPile;
+          const trench = tile.type === TileType.TRENCH;
+          return {
+            tilled: tile.type === TileType.TILLED || tile.type === TileType.RAISED, crop: tile.crop || '', ready: !!tile.cropReady,
+            dug: trench && (tile.depth ?? 1) >= 0.6, // Rain silts a trench shallower; below this it needs redigging.
+            canTill: free && [TileType.GRASS, TileType.WEEDS, TileType.TRENCH].includes(tile.type) && !tile.crop, // A field worker also repairs trenches mistakenly left on planting tiles.
+            canDig: free && !tile.crop && (trench ? (tile.depth ?? 1) < 1 : [TileType.GRASS, TileType.WEEDS, TileType.TILLED, TileType.RAISED].includes(tile.type)),
+          };
+        },
+        farmSeedStock: () => _loadWorldStorage(), // One world-storage snapshot per NPC plot scan; seed order is checked at work completion.
+        seedAvailable: crop => {
+          const seedKey = cropData[crop]?.seedKey;
+          return !!seedKey && (Number(_loadWorldStorage()?.[seedKey]) || 0) > 0;
+        },
+        applyFarmJob: (job, c, r, crop, plotId) => {
+          const tile = grid[r]?.[c];
+          if (!tile) return false;
+          // The persisted editor is authoritative, even when a worker has an older claim.
+          // In particular, a dig action may never excavate a tile assigned to a planting plot.
+          if (plotId) {
+            const assigned = window.FarmPlotEditor?.plots?.().find(p => p.tiles?.some(t => t[0] === c && t[1] === r));
+            if (!assigned || assigned.id !== plotId || assigned.kind !== (job === 'dig' ? 'dig' : 'till')) return false;
+          }
+          if (job === 'till') {
+            if (![TileType.GRASS, TileType.WEEDS, TileType.TRENCH].includes(tile.type) || tile.crop) return false;
+            tile.type = TileType.TILLED;
+            tile.depth = 0; tile.water = 0; // Clear residual trench depth and water when reclaiming a field.
+          } else if (job === 'dig') {
+            if (tile.crop || tile.type === TileType.ROCK) return false;
+            tile.type = TileType.TRENCH; tile.depth = 1; tile.water = 0; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
+          } else if (job === 'seed') {
+            const data = cropData[crop];
+            const store = _loadWorldStorage() || {};
+            if (!data || tile.crop || !(Number(store[data.seedKey]) > 0) || ![TileType.TILLED, TileType.RAISED].includes(tile.type)) return false;
+            store[data.seedKey] -= 1;
+            if (store[data.seedKey] <= 0) delete store[data.seedKey];
+            if (!_saveWorldStorage(store)) return false; // Never sow a seed that failed to debit Farm Storage.
+            tile.crop = crop; tile.cropAge = 0; tile.cropReady = false; tile.stress = '';
+          } else return false;
+          markTileDirty(c, r);
+          if (currentArea === 'farm') window.WaterSystem.recomputeWater(false);
+          window.FarmEditor.saveFarmLayout();
+          return true;
+        },
+      });
+      window.FarmPlotEditor?.init?.({ save: () => window.FarmEditor.saveFarmLayout(), cropLabel: crop => cropData[crop] ? `${cropData[crop].emoji || ''} ${cropData[crop].label || crop}`.trim() : crop });
       window.NpcCommandWheel?.init?.({
         getNearbyNpcWalker: () => nearbyNpcWalker,
+        isCombatActive: isPlayerInCombat,
         isDialogueOpen: () => dialogueOpen,
         isMenuOpen: () => menuOpen,
         isFarmEditMode: () => farmEditMode,
         openNpcDialogue: walker => openNpcDialogue(walker),
       });
       window.DoorstepVisits?.init?.({
+        getNpcSpawnDiagnostics: npcId => {
+          const rec = scheduledNpcRecords.get(npcId); // Reads the same database record used by ordinary NPC spawning.
+          const target = rec ? resolveNpcScheduleTarget(rec) : null; // Checks today's authoritative schedule without spawning anything.
+          return {
+            recordFound: !!rec,
+            spawnStage: npcSpawnDiagnostics.get(npcId)?.stage || 'No scheduled spawn recorded',
+            spawnError: npcSpawnDiagnostics.get(npcId)?.error || null,
+            scheduleTarget: target ? { area: target.area, c: target.c, r: target.r } : null,
+          };
+        },
         save: saveMemberWorldData,
         getPlayerTile: () => ({ c: player.x / TILE, r: player.y / TILE }), // Feet position in the same tile units as HousePieces door tiles.
       });
@@ -28859,7 +31462,7 @@
         resetPractice: (gapTiles = 2, practice) => { // Oddclaw stands at row 11.5; melee exercises start within reach.
           player.health = player.maxHealth; player.stamina = player.maxStamina; player.footing = player.maxFooting;
           player.afflictions = {}; player.exhaustion = { active: false, blackStamina: 100 };
-          player.prone = false; player.staggered = { active: false, endsAt: 0 };
+          player.prone = false; player._temporaryKnockdownProne = false; window.ResourceSystem?.clearTimedDebuff?.(player, 'knockdown'); player.staggered = { active: false, endsAt: 0 };
           player.knockbackT = 0; player.dodging = false; player.dodgeCooldownT = 0;
           player.x = (practice?.c ?? 10.5) * TILE; player.y = ((practice?.r ?? 11.5) + gapTiles) * TILE;
           player.vx = 0; player.vy = 0;
@@ -28990,7 +31593,7 @@
         getInventoryMax: () => window.InventoryStacks.MAX_TOTAL, // Past 99 an item spills into another bag box (js/inventory-stacks.js).
         getPorakanekiRewardPools: () => {
           const zone = EXTERIOR_ZONES[currentArea] || {}; // Uses live species overrides, including Puktuk and Voorg-Ass registration.
-          const species = [...new Set([...(zone.packSpecies || []), ...(zone.herbivoreSpecies || []), ...(zone.roamingHerdSpecies || []), ...(currentArea === 'map_southern_cloud_forest' ? ['drenkirra'] : [])])]; // Tree-nesting Drenkirra are native cloud-forest wildlife outside the den pools.
+          const species = [...new Set([...(zone.denSpecies || []), ...(zone.packSpecies || []), ...(zone.herbivoreSpecies || []), ...(zone.roamingHerdSpecies || []), ...(zone.roamingForagerSpecies || []), ...(currentArea === 'map_southern_cloud_forest' ? ['drenkirra'] : [])])]; // Includes den-only families, roaming foragers, and tree-nesting Drenkirra in native animal rewards.
           const livestockKinds = window.SCRATCHBONES_CONFIG?.game?.livestock?.itemKinds || {}; // Shared egg/baby inventory keys and domesticated species aliases.
           const animals = Object.entries(livestockKinds).filter(([key, kind]) => !key.endsWith('Crate') && species.some(wild => (window.CreatureGenetics?.SPECIES_ALIAS?.[wild] || wild) === kind)).map(([itemKey, kind]) => ({ itemKey, kind })); // Preserve the canonical genotype shape used by FarmAnimals.
           const fishZone = { map_northern_cliffs: 'northernCliffs', map_southern_cloud_forest: 'cloudForest', map_western_slope: 'westernSlope', map_eastern_mire: 'easternMire' }[currentArea]; // Mirrors authored wilderness fishing regions.
@@ -29014,24 +31617,73 @@
         saveMemberWorldData,
       });
 
+      window.FestivalWheelDanceRuntime?.init({
+        getPlayerModel: () => playerAvatarGroup,
+        getPlayerLegs: () => playerLegs,
+        shoulderOffsetH: () => s_shoulderSurfOffsetH_current, // Dance follow view shares the player's live horizontal shoulder setting.
+        refreshActions: refreshActionBar,
+        surfaceY: (x,z) => npcSurfaceY('town',x,z), // Existing terrain and walkable furniture supports remain the floor authority.
+        refreshCamera: updateCameraPosition,
+        captureCamera: () => ({azimuth:cameraAzimuthOffsetDeg,angle:cameraAngleOffsetDeg}),
+        restoreCamera: state => { if(state){cameraAzimuthOffsetDeg=state.azimuth;cameraAngleOffsetDeg=state.angle;} }, // Manual look input during the cinematic never leaks into the restored gameplay view.
+      });
+      const npcMealScreenPoint = new THREE.Vector3(); // Reused only on the gathering tick to skip off-camera meal presentation.
       window.FestivalSystem?.init({
+        refreshActions: refreshActionBar, // Invitation start/cancel refreshes only the action arch.
+        prepareDance: walker => {
+          if(sitInteraction)endSitInteraction();
+          window.NpcSharedMeals?.interrupt?.(walker.rec.id);
+          window.NpcDrinkInteraction?.stopAutonomous?.(walker);
+          window.FurnitureTableSystem?.setSeatTarget?.(walker.rec.id,null);
+        },
+        canStartDance: () => !sitInteraction,
+        canSeeNpc: walker => {
+          if (!walker?.root?.parent || walker.area !== currentArea || walker.root.visible === false || walker._npcLodFar) return false;
+          npcMealScreenPoint.copy(walker.root.position); npcMealScreenPoint.y += .5; npcMealScreenPoint.project(camera);
+          return Math.abs(npcMealScreenPoint.x)<=1.1 && Math.abs(npcMealScreenPoint.y)<=1.1 && npcMealScreenPoint.z>=-1 && npcMealScreenPoint.z<=1;
+        },
         inventory,
         getItemDefs: () => ITEM_DEFS,
         getNpcs: () => [...new Map([...scheduledNpcRecords.values(), ...npcWalkers.map(w => w.rec)].filter(Boolean).map(rec => [rec.id, rec])).values()],
         getWalkers: () => npcWalkers,
+        getPlayerMesh: () => playerMesh, // Passes the real player avatar root into authored pair animation without registering a clone.
         getTownMap: () => _rawExteriorMaps.get('map_hobunji_town'),
         getDecorSize: key => DECORATIVE_FURNITURE_DEFS[key],
         getArea: () => currentArea,
         getPlayerTile: () => ({ c: player.x / TILE, r: player.y / TILE }),
+        getAimPosition: () => { const aim = getReticleTile(); return {c:aim.probeX/TILE, r:aim.probeY/TILE}; }, // Fractional reticle probe selects one of the six nearby pots without a second targeter.
+        canStandAt: (area,c,r) => isNpcTileWalkable(area,c,r), // Full movement collision selects a clear standing spot if preferred gathering locales are full.
+        getHeldMealChoice: () => { const key = (manualHeldItem?.kind === 'bagItem' ? manualHeldItem.key : null) || (heldMode === 'item' ? getActiveInventoryItem()?.key : null); return key ? { key } : null; }, // The normal held-quality ordering in CookingSystem preserves Pack Hold's selected star tier.
+        socialPaused: () => paused || dialogueOpen || menuOpen || isPlayerInCombat(), // Wheel music/dancing is permitted; UI/combat pauses are not.
+        getActiveItemKey: () => getActiveInventoryItem()?.key || '', // Used only to cancel temporary festival bowls when the selection wheel changes.
+        getHeldMode: () => heldMode,
+        isPlayerSeated: () => !!sitInteraction && sitInteraction.phase === 'active', // Any ordinary chair can be used; explicit table links determine company.
+        getPlayerSeatedSeat: () => sitInteraction?.phase === 'active' ? sitInteraction : null, // Matches the player chair against nearby dining stations instead of every NPC in the feast locale.
+        cancelFestivalDrink: () => {
+          if(_heldItemKey!=='festival_bowl'&&_heldItemKey!=='festival_cup')return;
+          _heldDrinkPhase=null;_heldDrinkApply=null;_heldDrinkApplied=false; // Prevent a delayed bite after switching to a weapon or leaving the feast.
+          disposeHeldItemPlaneMesh(_heldItemPlane,heldItemHolder);
+          _heldItemPlane=null;_heldItemKey=null;heldItemHolder.visible=false;
+        },
+        equipFestivalBowl: () => { heldMode = 'item'; updateHeldItemHolder(0); refreshActionBar(); }, // Reuses actual held sprite/hand pose with no physical inventory entry.
+        playFestivalBowlDrink: onBite => {
+          if(!sitInteraction || sitInteraction.phase !== 'active' || heldMode !== 'item') return false;
+          updateHeldItemHolder(0);
+          if(!beginHeldDrinkAnimation('festival_bowl',onBite))return false;
+          continueHeldDrinkAnimation();
+          return true;
+        }, // Uses the authored Drink animation's strike event to expend exactly one portion.
         isBlocked: () => dialogueOpen || menuOpen || isPlayerInCombat() || sceneTransDir !== 0 || _layoutSwapInProgress || !!window.CombatTutorial?.active?.() || !!window.Fishing?.state?.active || !!window.MusicMinigame?.state?.active,
         isFestivalSuspended: () => !!window.WaterSystem?.isTownFloodEmergency?.(),
         save: saveMemberWorldData,
         toast: showToast,
         refresh: () => { window.HudUpdate.refreshItemScroll(); buildInventoryGrid(); window.EquipmentPanel?.buildPackClothingSection?.(); refreshActionBar(); },
         grantMask: id => {
-          if (!window.FestivalSystem.MASKS.some(mask => id === `festivalmask_${mask}`)) return false;
-          const piece = { category: 'hood', label: ITEM_DEFS[`cosmetic:${id}`]?.label || id.replace('festivalmask_', '') + ' Festival Mask', price: 20 }; // Canonical cosmetic ID and ordinary pack-clothing shape; no shop rotation required.
-          packClothing.push({ uid: `festival_${id}_${Date.now()}`, cosmeticId: id, slot: piece.category || 'hood', label: piece.label, baseLabel: piece.label,
+          const helmId = window.FestivalPotluckContest?.HELM_ID;
+          const isHelm = !!helmId && id === helmId;
+          if (!isHelm && !window.FestivalSystem.MASKS.some(mask => id === `festivalmask_${mask}`)) return false;
+          const piece = { category: isHelm ? 'hat' : 'mask', label: ITEM_DEFS[`cosmetic:${id}`]?.label || (isHelm ? 'Replica Helm of Bzabag' : id.replace('festivalmask_', '') + ' Festival Mask'), price: 20 }; // Only authored festival masks and the potluck prize enter the normal clothing pack.
+          packClothing.push({ uid: `festival_${id}_${Date.now()}`, cosmeticId: id, slot: piece.category || 'mask', label: piece.label, baseLabel: piece.label,
             colorA: { hex: '#ddaf64', h: 37, s: 55, v: 87 }, colorB: { hex: '#8072bd', h: 251, s: 40, v: 74 }, colorC: { hex: '#e7d8aa', h: 45, s: 26, v: 91 }, sprite: window.EquipmentPanel.clothingSpriteForCosmetic(id), sellPrice: Math.floor((piece.price || 0) * .4) });
           return true;
         },
@@ -29042,13 +31694,21 @@
         },
       });
 
+      window.InteriorDoorTiles?.init({
+        getCurrentArea: () => currentArea,
+        getNpcTiles: area => npcWalkers.filter(w => w.area === area && w.root).map(w => [w.root.position.x, w.root.position.z]),
+        getPlayerTile: () => [player.x / TILE, player.y / TILE],
+      });
+
       window.NpcWardrobe?.init({
-        getNpcRecordById: npcId => scheduledNpcRecords.get(npcId) || npcWalkers.find(walker => walker.rec?.id === npcId)?.rec || null, // Canonical record access lets wardrobe restore reach offscreen/deferred NPCs before a walker exists.
+        getNpcRecordById: npcId => scheduledNpcRecords.get(npcId) || npcWalkers.find(walker => walker.rec?.id === npcId)?.rec || window.RomanceFamily?.wardrobeRecordFor?.(npcId) || null, // Child wardrobe remains accessible while their live walker is away.
         getGearInventory: () => gearInventory,
         saveGearInventory,
         showToast,
         saveMemberWorldData,
         npcWalkers,
+        getCurrentArea: () => currentArea,
+        isWalkerAsleep: walker => walker?.currentScheduleTarget?.pose === 'lie' && walker.area === walker.currentScheduleTarget.area, // Bedtime: the NPC has reached its own bed room.
       });
 
       window.WhistleEquip?.init({
@@ -29077,6 +31737,7 @@
       });
 
       window.ShippingPanel?.init({
+        itemIconForKey, // Reuses Pack's category fallback for shipping and merchant presentations.
         inventory,
         ITEM_DEFS,
         BASE_PRICES,
@@ -29098,6 +31759,8 @@
         ORE_DEFS,
         METAL_DEFS,
         METAL_BAR_RECIPES,
+        METAL_BAR_ALTERNATES,
+
         metalOreItemKey,
         metalBarItemKey,
         recordHeldOres: oreKeys => window.TownMine?.recordHeldOres?.(oreKeys),
@@ -29113,7 +31776,7 @@
         getCurrentArea: () => currentArea,
         setCurrentArea: (v) => { currentArea = v; },
         getActiveScene: window.GridTileAccessors.getActiveScene,
-        playerMesh, playerGroundShadow, toolHolder, reticleMesh, reticleCircleMesh, reticleRingMesh, reticleWavyGroup,
+        playerMesh, playerGroundShadow, toolHolder, getHeldItemHandTarget, reticleMesh, reticleCircleMesh, reticleRingMesh, reticleWavyGroup,
         _isBuildingArea,
         setCurrentBuildingMapId: (v) => { _currentBuildingMapId = v; },
         startSceneTransition,
@@ -29144,6 +31807,7 @@
         makeCreatureEntity,
         hostileObjects, companionObjects,
         damageCreature,
+        damagePlayer, // Ruin environmental impacts use the canonical damage/knockback/death route.
         getActiveGrid: window.GridTileAccessors.getActiveGrid,
         tileSurfaceYInArea,
         markOutline: _markOutline,
@@ -29226,6 +31890,8 @@
       });
 
       window.DenNestSystem?.init({
+        CREATURE_DB,
+        buildFurnitureVisual,
         getCurrentArea: () => currentArea,
         setCurrentArea: (v) => { currentArea = v; },
         setCurrentBuildingMapId: (v) => { _currentBuildingMapId = v; },
@@ -29262,6 +31928,7 @@
       });
 
       window.HudUpdate.init({
+        itemIconForKey, // Keeps wheel previews and the desktop item pill consistent with Pack.
         getGrid: () => grid,
         getWorldObjectAt,
         equipmentSlots,
@@ -29328,7 +31995,24 @@
         cycleActiveInventoryItem,
       });
 
+      window.FarmhouseRoomPlanner?.init({
+        interiorCols: INTERIOR_COLS, interiorRows: INTERIOR_ROWS, // Fallback gap corridors cannot exceed the live indoor grid.
+        canEdit: () => currentArea === 'interior' && hasFarmPermission('placeFurniture'),
+        canHostDoor: (c, r) => !interiorFurnitureObjects.some(o =>
+          o.area === 'interior' && decorativeFurnitureClaimsInteriorCell(o, c, r)), // Attached chairs guard their actual positions.
+        canBlockCell: (c, r) => {
+          const occupiedByPlayer = Math.floor(player.x / TILE) === c && Math.floor(player.y / TILE) === r; // Never build a wall through the player.
+          const occupiedByFurniture = interiorFurnitureObjects.some(o =>
+            o.area === 'interior' && decorativeFurnitureClaimsInteriorCell(o, c, r));
+          return !occupiedByPlayer && !occupiedByFurniture; // Prevent new walls from trapping owned furniture or people.
+        },
+        rebuild: () => rebuildInteriorGeometry(),
+        save: () => { window.FarmEditor.saveFarmLayout(); saveMemberWorldData(); },
+        refresh: () => { window.FurniturePlacer?.render?.(); refreshActionBar(); },
+      }); // Uses the furniture editor's own controller-ready reticle and Action 1/2 ownership.
+
       window.FurniturePlacer?.init({
+        furnitureStock, consumeFurnitureStock, disposeDecorativeFurniture, closeMenu,
         getCurrentArea: () => currentArea,
         getDecorativeFurnitureDefs: () => DECORATIVE_FURNITURE_DEFS,
         getProcessingFurnitureDefs: () => PROCESSING_FURNITURE_DEFS,
@@ -29339,10 +32023,27 @@
         getArmedFurniturePlacementKey,
         armFurnitureMove,
         getArmedFurnitureMoveId,
+        setTableAttachment: setFurnitureTableAttachment,
+        placeTableAttachedChair,
         getPlacedFurniture: () => [
           ...interiorFurnitureObjects.filter(o => o.area === currentArea).map(o => ({ ...o, placementKind: 'decorative' })),
           ...(currentArea === 'farm' ? [...processingFurnitureObjects].map(o => ({ ...o, key: o.furnitureKey, area: 'farm', placementKind: 'processing' })) : []),
         ],
+        assignWardrobeOwner: (id, npcId) => {
+          const obj = interiorFurnitureObjects.find(entry => entry.id === id && entry.area === 'interior' && currentArea === 'interior'); // Modify the live instance, not the UI's display copy.
+          if (!obj || (obj.key !== 'wardrobe' && obj.key !== 'chest')) return { ok: false, message: 'Select a wardrobe or storage chest inside your house.' };
+          if (npcId && !window.NpcFurnitureWardrobes?.isFamilyOwner?.(npcId)) return { ok: false, message: 'That person is not currently in your family.' };
+          const priorOwner = obj.npcWardrobeFor; // Restores the original binding if persistent layout writing fails.
+          if (npcId) obj.npcWardrobeFor = String(npcId); else delete obj.npcWardrobeFor; // Every linked piece opens the same NPC-keyed wardrobe.
+          const saved = window.FarmEditor.saveFarmLayout(); // The existing farm layout serializes the metadata beside the furniture ID.
+          if (saved === false) {
+            if (priorOwner) obj.npcWardrobeFor = priorOwner; else delete obj.npcWardrobeFor;
+            return { ok: false, message: 'Wardrobe assignment could not be saved.' };
+          }
+          window.FurnitureTableSystem?.invalidateFocus?.();
+          refreshActionBar();
+          return { ok: true, message: npcId ? 'Assigned this furniture to ' + (window.NpcFurnitureWardrobes?.nameForOwner?.(npcId) || npcId) + '.' : 'Wardrobe assignment cleared.' };
+        },
         editFurniturePattern: id => {
           const obj = interiorFurnitureObjects.find(entry => entry.id === id && entry.area === currentArea); // Edits the authoritative placed record, including persistent per-instance scale.
           if (obj) window.FurniturePatternSurfaces?.editInstance?.(obj, overrides => {
@@ -29350,6 +32051,7 @@
             window.FarmEditor.saveFarmLayout();
           });
         },
+        setRugLayer,
         removeFurniture: id => processingFurnitureById(id) ? removeProcessingFurniture(id) : removeDecorativeFurniture(id),
         rotateFurniture: (id, degrees) => processingFurnitureById(id) ? rotateProcessingFurniture(id, degrees) : rotateDecorativeFurniture(id, degrees),
         showToast,
@@ -29383,6 +32085,7 @@
       });
 
       window.TownZoneBuildings?.init({
+        DECORATIVE_FURNITURE_DEFS, // Outdoor chairs, collision and grass use the same definitions as their rendered furniture.
         getTownZone: () => _townZone,
         debugLog,
         getTownScene: () => townScene,
@@ -29423,6 +32126,11 @@
       });
 
       window.WildlifeSpawn?.init({
+        companionObjects, // Tzatzuls hunt companions through the same target collection as wildlife.
+        worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE), // Flight hitboxes/carry height use the actual current terrain elevation.
+        getTzatzulCarryAnchor: actor => actor === player ? playerAttachmentAnchor('posterior')
+          : actor.isBandit ? null : creatureAttachmentAnchor(actor.creatureKey, 'saddle', actor.genotype), // Canonical authored animal saddle and player posterior coordinates.
+        save: saveMemberWorldData, // Nest eggs and delivered victims persist through the ordinary member save.
         corpseObjects, // Cave renewal removes cached corpse entities along with living residents.
         despawnCreature, // Den turnover must dispose removed residents through the same owner as ordinary despawns.
         TILE,
@@ -29461,6 +32169,8 @@
         player,
         calendar,
         damagePlayer, // Used by js/cave-site-system.js's one-shot cache traps (it captures this dependency bag).
+        enterBuilding, // Native async cavern loader + return-exit ownership for Tzatzul player abduction.
+        canPlayerOccupy, // Check the exterior safe return tile before committing a nest transition.
       });
 
       window.CavernGenerator?.init({
@@ -29468,15 +32178,56 @@
         DEN_MOTHER_DEFS,
       });
 
+      window.HoneyfuzzleHives?.init({
+        TILE, TileType, player, calendar, inventory, hostileObjects, rnd,
+        zoneLayouts: _zoneLayouts,
+        felledPersist: _zoneFelledTreePersist,
+        getCurrentArea: () => currentArea,
+        isZoneArea: _isZoneArea,
+        getGrid: () => window.GridTileAccessors.getActiveGrid(),
+        getVegetationGroup: (zoneId, col, row) => _zoneVegetationMeshes.get(zoneId)?.get(`${col},${row}`) || null,
+        isNightTime: () => window.Music?.isNightTime?.(),
+        getWorldId: _tothalWorldId,
+        makeCreatureEntity, moveCreatureToward, updateCreatureMesh, updateCreatureAnimFrame,
+        removeZoneVegetationVisual, buildInventoryGrid, refreshActionBar, saveMemberWorldData,
+        refreshItemScroll: () => window.HudUpdate.refreshItemScroll(),
+      });
+
       window.CorpseHoldLoot?.init({
         getActiveAction: () => activeAction,
         getActionHeldDown: () => actionHeldDown,
         getAimedHoldCorpse: () => {
+          if (window.PlayerDowned?.isDowned?.()) return null; // A downed player cannot loot, harvest or revive.
           const reticle = getReticleTile(); // Same aimed/sticky corpse lookup the Loot button uses.
           const obj = getCorpseObjectForAction('obj_loot_corpse', reticle.col, reticle.row);
-          return obj?.holdSeconds > 0 ? obj : null;
+          if (obj?.holdSeconds > 0) return obj;
+          return window.HoneyfuzzleHives?.getHoldTarget(reticle.col, reticle.row) || window.CompanionDowned?.getHoldTarget?.(reticle.col, reticle.row) || null; // Hive stumps and downed companions / Root Totems reuse the same hold contract.
         },
         showToast,
+      });
+
+      window.CompanionDowned?.init({
+        player, companionObjects, TILE, showToast,
+        getCurrentArea: () => currentArea,
+        updateCreatureMesh, updateCreatureAnimFrame,
+        canOccupyAt,
+        getRootTotems: () => (_isZoneArea(currentArea)
+          ? (_zoneLayouts.get(currentArea)?.rootTotems || [])
+          : currentArea === 'farm' ? [window.TownMine?.farmRootTotem?.(COLS, ROWS)].filter(Boolean) : []),
+      });
+      window.PlayerCrawl?.init({
+        TILE,
+        getBaseYaw: () => playerMesh.rotation.y,
+        getPlayerMesh: () => playerMesh,
+      });
+      window.PlayerDowned?.init({
+        player, showToast,
+        die: reason => respawnPlayer(reason),
+        forceRangedTool: () => {
+          if (!equipmentSlots.ranged) return false;
+          if (!(heldMode === 'tool' && activeTool === 'ranged')) setActiveTool('ranged', { silent: true });
+          return true;
+        },
       });
 
       window.CavernOreRocks.init({
@@ -29511,11 +32262,38 @@
         travelToFloor: floor => enterBuilding(window.TownMine.mapIdForFloor(floor)),
       });
 
+      window.TownMineDescent.init({
+        buildingScenes: _buildingScenes,
+        holeMeshes: _mineDescentHoleMeshes,
+        runStates: _mineFloorRunStates,
+        TileType,
+      });
+
+      // Blast cleanup in zones/mines and rubble rewards (js/shattercasks.js)
+      // need these game-owned helpers; Combat.deps exposes none of them.
+      window.Shattercasks?.init?.({
+        inventory,
+        removeZoneMineableRockVisual,
+        removeZoneVegetationVisual,
+        tryRevealMineDescent,
+        oreItemKey: metalOreItemKey,
+        itemLabel: key => ITEM_DEFS[key]?.label || key,
+      });
+
       window.ZonePlateauMesa?.init({
-        NORMAL_TOP, PLATEAU_UNIT, TileType, CARVED_TILE_TYPES,
+        NORMAL_TOP, PLATEAU_UNIT, TileType, CARVED_TILE_TYPES, isSolid,
+        tileSurfaceYInArea, // The renderer and navigation graph must agree on exact terrain Y, including ramps and raised tiles.
+        getCurrentArea: () => currentArea, // Keeps offscreen cliff supports out of the dungeon and other zones.
         resolveTileMat, displaceZoneGeometry,
         ROCK_MOUND_CELLS_PER_TILE,
         _zoneScenes, _zoneLayouts, _zoneMesaMeshGroups,
+      });
+
+      window.WildernessBedrock?.init({
+        NORMAL_TOP, PLATEAU_UNIT, TileType, DEPRESSION_TOP,
+        displaceZoneGeometry,
+        markTerrainEdgeId: _markTerrainEdgeId,
+        edgeCategory: _terrainCategoryFor(TileType.ROCK),
       });
 
       window.ZoneRegrowth?.init({
@@ -29532,7 +32310,7 @@
       window.PlayerVitals?.init({
         player, PLAYER_STAMINA_REGEN, PLAYER_HEALTH_REGEN, showToast,
         isPlayerInWater: () => isWaterSurfaceAt(player.x, player.y, window.GridTileAccessors.getActiveGrid()), // Burning extinguish follows permanent + visibly-wet dynamic water.
-        handlePlayerDeath: reason => respawnPlayer(reason),
+        handlePlayerDeath: reason => { if (!window.PlayerDowned?.interceptDeath?.(reason)) respawnPlayer(reason); }, // Bleeding/burning/poison ticks put the player down instead of killing them.
       });
 
       window.ItemProcessing?.init({
@@ -29640,9 +32418,47 @@
         getActiveGrid: window.GridTileAccessors.getActiveGrid,
         getActiveCols: window.GridTileAccessors.getActiveCols,
         getActiveRows: window.GridTileAccessors.getActiveRows,
+        creatureCanEnterTile,
       });
 
+      window.LungeTargeting?.init({ player, getHostiles: () => hostileObjects, getCurrentArea: () => currentArea });
+      // Read fresh input because player.inputX/Y are written after the
+      // on-branch early return. Shoulder cam uses the exact same
+      // camera-relative transform as ordinary ground movement. Shared by
+      // ClimbSystem (branches) and ClimbSurfaces (walls).
+      const climbMovementInput = () => {
+        const kb = getKeyboardVector();
+        const move = kb.active ? { x: kb.x, y: kb.y } : { x: input.x, y: input.y };
+        if (activeCameraMode !== SHOULDER_SURF_MODE || (!move.x && !move.y)) return move;
+        const aim = shoulderPerspectiveFacingAngle();
+        const sin = Math.sin(aim), cos = Math.cos(aim);
+        return {
+          x: -move.x * sin - move.y * cos,
+          y: move.x * cos - move.y * sin,
+        };
+      };
+
+      window.FallSystem?.init({ // Landing/edge/grip rules shared by climbing, ledges and cliff falls (js/fall-system.js).
+        PLATEAU_UNIT: typeof PLATEAU_UNIT === "number" ? PLATEAU_UNIT : 2.5,
+        enterProneIfDepleted: (entity, dirX, dirY) => {
+          if (!entity) return false;
+          const isPlayerEntity = entity === player;
+          const direction = hitDirectionRelativeToFacing(isPlayerEntity ? entity.angle : (entity.facing || 0), entity.x, entity.y, entity.x - (dirX || 0) * TILE, entity.y - (dirY || 0) * TILE);
+          enterProneIfFootingDepleted(entity, isPlayerEntity, direction);
+          return !!entity.prone;
+        },
+      });
       window.ClimbSystem?.init({
+        beginCliffDodgeEffects: () => { // Same stamina/i-frames/cooldown as a normal dodge, without the roll movement.
+          if (player.dodgeCooldownT > 0) return false;
+          if (window.ResourceSystem) window.ResourceSystem.spendStamina(player, DODGE_STAMINA_COST, 'dodge');
+          else player.stamina = Math.max(0, player.stamina - DODGE_STAMINA_COST);
+          player.dodgeCooldownT = DODGE_COOLDOWN_S;
+          player.invulnUntil = performance.now() + DODGE_IFRAME_MS;
+          window.CombatVocalizations?.playDodge?.(player);
+          window.CombatTutorial?.observe?.('dodge');
+          return true;
+        },
         _isZoneArea,
         getCurrentArea: () => currentArea,
         player,
@@ -29664,21 +32480,30 @@
         getPlayerAimRay: currentPlayerAimRay,
         getPlayerInteractionRay: currentPlayerInteractionRay,
         worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
-        // Read fresh input because player.inputX/Y are written after the
-        // on-branch early return. Shoulder cam uses the exact same
-        // camera-relative transform as ordinary ground movement.
-        getMovementInput: () => {
-          const kb = getKeyboardVector();
-          const move = kb.active ? { x: kb.x, y: kb.y } : { x: input.x, y: input.y };
-          if (activeCameraMode !== SHOULDER_SURF_MODE || (!move.x && !move.y)) return move;
-          const aim = shoulderPerspectiveFacingAngle();
-          const sin = Math.sin(aim), cos = Math.cos(aim);
-          return {
-            x: -move.x * sin - move.y * cos,
-            y: move.x * cos - move.y * sin,
-          };
-        },
+        getMovementInput: climbMovementInput,
+        getBaseMoveSpeedTiles: () => MOVE_SPEED / TILE, // Jump travel reuses normal walking distance per second, not a separate hard-coded pace.
+        canStartFreeJump: () => gameStarted && !paused && !dialogueOpen && !sitInteraction &&
+          !window.Fishing?.state?.active && !window.MusicMinigame?.state?.active &&
+          !window.BedLiePose?.isActive?.() && !window.FarmAnimals?.isHarvesting?.() &&
+          !window.PlayerSocialPoses?.active, // Actions/minigames that own the player must not secretly queue a jump.
+        canPlayerOccupy, // Normal grounded movement authority.
+        canPlayerOccupyAtHeight, // Jump uses native world collision at the physical foot height.
+        furnitureBlocksMovementAt, // Allows only finite-height cover to be jumped; otherwise retains normal furniture collision.
       });
+
+      // Climbable wall surfaces (js/climb-surfaces.js): attach on a forward dodge via
+      // ClimbSystem's world-climb provider, move along the wall until released.
+      window.ClimbSurfaces?.init({
+        player,
+        TILE,
+        getMovementInput: climbMovementInput,
+        getFeetY: () => player._freeJump?.feetY ?? window.DevRandomRuin?.getPlayerSupportY?.() ?? activeSurfaceYAtWorld(player.x / TILE, player.y / TILE),
+        canStandAt: (x, z, y) => !!window.DynamicSurfaces?.sampleSupport?.(x, z, { minY: y - 0.3, maxY: y + 0.3, pad: 0.02 }), // A mantle needs a registered walkable surface at the top.
+        setFacingAngle: (v) => { facingAngle = v; },
+        setTargetAimAngle: (v) => { targetAimAngle = v; },
+        setLastMoveAngle: (v) => { lastMoveAngle = v; },
+      });
+      window.ClimbSystem?.registerWorldClimbProvider?.(window.ClimbSurfaces?.worldClimbProvider);
 
       window.BanditCombatLog?.init({
         player,
@@ -29752,6 +32577,12 @@
       window.ArtifactCollection?.init({
         ITEM_DEFS, inventoryItems, inventory, tothalWorldId: _tothalWorldId,
         saveMemberWorldData, buildInventoryGrid, showToast,
+        getCurrentArea: () => currentArea, // Used to cancel checkpoint cutscenes when the player leaves town.
+        isExteriorArrival: area => area === 'farm' || _isZoneArea(area), // Town shops, homes and the temple never trigger an imperial gate inspection.
+        getTownGrid: () => townGrid, // Watchmen stage on actual walkable gate tiles.
+        isSolidTile: tile => isSolid(tile?.type), // Uses the same collision classifier as gameplay.
+        getPackClothing: () => packClothing, // Shares the live cursed-clothing array with EquipmentPanel.
+        buildPackClothingSection: () => window.EquipmentPanel?.buildPackClothingSection?.(), // Updates garments after custody transfer or return.
         showUnlockDialogue: () => {
           const walker = npcWalkers.find(w => w.rec?.id === 'garanki_gabu'); // Reuse the real NPC dialogue camera, portrait and input handling.
           if (walker) { closeMenu(); openNpcDialogue(walker); }
@@ -29769,6 +32600,8 @@
         showToast,
         esc: window.FormatUtils.esc,
         buildInventoryGrid,
+        getPackClothing: () => packClothing, // Garanki dispels curses on looted lich circlets that are still in the pack.
+        buildPackClothingSection: () => window.EquipmentPanel?.buildPackClothingSection?.(),
         buildEquipmentSlots: () => window.EquipmentPanel?.buildEquipmentSlots?.(),
         isDevMode: () => s_devMode,
       });
@@ -29786,7 +32619,20 @@
       });
 
       // Cave discovery/cache/trap state is saved with the world (js/cave-site-system.js).
-      window.CaveSiteSystem?.init?.({ save: saveMemberWorldData });
+      window.CaveSiteSystem?.init?.({
+        save: saveMemberWorldData,
+        // Reuse the wild-reagent lightweight inventory path instead of DevSpawner.grantLoot,
+        // which synchronously rebuilds the entire inventory grid on each cave mushroom pick.
+        grantReagent: (key, amount) => {
+          const oldCount = inventory[key] || 0; // Current stack count used to enforce the existing global stack cap.
+          const added = Math.max(0, Math.min(amount, window.InventoryStacks.MAX_TOTAL - oldCount)); // Actual accepted mushrooms reported to the cave action.
+          if (added > 0) {
+            inventory[key] = oldCount + added;
+            window.HudUpdate.refreshItemScroll();
+          }
+          return added;
+        },
+      });
 
       // Slagothim trade caravans (road travel, trading, notices, compass)
       // live in js/slagothim-traders.js.
@@ -29969,6 +32815,9 @@
       });
 
       window.FarmAnimals?.init({
+        getPlayerInteractionRay: currentPlayerInteractionRay, // Same camera/cursor ray rendered by Show Interaction Raycast.
+        getInteractionFrameTime: () => lastTime, // Stable rAF cache key used to share one livestock pick across input/UI queries.
+        getCurrentArea: () => currentArea, // Livestock ray picking is farm-only.
         COLS,
         ROWS,
         TILE,
@@ -30025,6 +32874,7 @@
         refreshItemScroll: window.HudUpdate.refreshItemScroll,
         refreshActionBar,
         saveMemberWorldData,
+        captureMemberWorldData,
         companionAiTypeForKind,
         creatureAttachmentAnchor,
         creaturePlaneGroundOffset,
@@ -30284,6 +33134,12 @@
         loadStorage: _loadWorldStorage, saveStorage: _saveWorldStorage, consumeInput: consumeProcessingInput,
         surfaceY: farmSurfaceYAtWorld, markOutline: _markOutline,
         saveFarmLayout: window.FarmEditor.saveFarmLayout, saveMemberWorldData });
+      // Honeyfuzzle House (1x1 egg/swarm slot on a FarmProduction entry) — js/honeyfuzzle-house.js.
+      window.GameFeel?.init({ getCamera: () => camera, getPlayer: () => player, TILE, getCurrentArea: () => currentArea, getPlayerWorldY: () => Number(playerMesh?.position?.y) || 0, isPlayerInCombat: () => isPlayerInCombat() }); // Camera shake, hit-stop, hurt flash and the ruin puzzle reveal shot live in js/game-feel.js.
+      window.HoneyfuzzleHouse?.init({ THREE, scene, getWorldId: _tothalWorldId, getCamera: () => camera, getCurrentArea: () => currentArea, inventory,
+        loadWorldLivestock: _loadWorldLivestock, saveWorldLivestock: _saveWorldLivestock, hasFarmPermission, showToast,
+        saveFarmLayout: window.FarmEditor.saveFarmLayout, saveMemberWorldData, surfaceY: farmSurfaceYAtWorld,
+        refreshInventory: () => { buildInventoryGrid(); refreshActionBar(); } });
       // Whole-farm structure layout editor now lives in js/farm-layout-editor.js.
       window.FarmLayoutEditor?.init({ getHousePieces: () => housePieces, getFarmBuildings: () => farmBuildings, hasFarmPermission, showToast, COLS, ROWS });
       try { initWorldObjects(); } catch(e) { console.error('initWorldObjects:', e); }
@@ -30315,6 +33171,8 @@
         // the world actually left off.
         const _savedCalendar = _loadWorldCalendar();
         if (_savedCalendar) Object.assign(calendar, _savedCalendar);
+        pendingOrders = window.WorldMetaStore?.loadPendingSupplyOrders?.(_tothalWorldId()) || []; // Load paid Supply Box orders before any normal-play save can replace them.
+        pendingOrdersWorldId = _tothalWorldId();
 
         // Fire-and-forget: the Tothal Shift at world start (or on any missed
         // year since last played) can take a few seconds across all four
@@ -30366,6 +33224,7 @@
         }
         const _worldLayout = window.FarmEditor.loadFarmLayout();
         if (_worldLayout) window.FarmEditor.applyFarmLayoutToGrid(_worldLayout, { refreshVisuals: true });
+        else window.FarmPlotEditor?.restore?.(null); // A world with no saved layout has no family plots either.
         window.FarmEditor.applyFarmLayoutObjects(_worldLayout);
         window.FarmProduction.load(_worldLayout?.productionBuildings || []); // repositions again if THIS world saved custom crate positions
         // Seed a starter bed in the farmhouse for a brand-new world — sleepInBed()
@@ -30386,9 +33245,11 @@
             const bedCol = HOUSE_STARTER_COL * 2 + 1, bedRow = HOUSE_STARTER_ROW * 2 + 1;
             const starterBed = makeDecorativeFurnitureMesh(bedCol, bedRow, 'basicBed', interiorScene, 'interior');
             if (starterBed) {
-              interiorFurnitureObjects.push({ id: 'decor_starter_bed', key: 'basicBed', col: bedCol, row: bedRow,
+              const starter = { id: 'decor_starter_bed', key: 'basicBed', col: bedCol, row: bedRow,
                 mesh: starterBed.mesh, light: starterBed.light, sfxSource: starterBed.sfxSource, area: 'interior', rotYDeg: 0,
-                ...furnitureOwnerFields(bedCol, bedRow) });
+                ...furnitureOwnerFields(bedCol, bedRow) }; // Preserve the original starter bed's fixed identity for NPC bed discovery.
+              interiorFurnitureObjects.push(starter);
+              window.FurnitureTableSystem?.registerPlacement('interior', starter, starterBed.mesh, DECORATIVE_FURNITURE_DEFS.basicBed);
               window.FarmEditor.saveFarmLayout();
             }
           } catch (e) { console.error('starter bed seed:', e); }
@@ -30408,11 +33269,10 @@
         Object.assign(inventory, playerData.isNewWorld
           ? { ...STARTING_INVENTORY }
           : { ...(playerData.nonGearInventory || {}) });
-        // Worlds saved before the Campfire Kit blueprint joined
-        // STARTING_INVENTORY never picked it up — backfill it for free,
-        // once, same as existing characters getting the crossbow/scatterbow
-        // slots below, so it's available without a carpenter trip either way.
-        if (!inventory.campfireKitFurnitureBlueprint) inventory.campfireKitFurnitureBlueprint = 1;
+        // Learned designs belong to this world's active member; starter designs are automatically known.
+        window.CraftingPanel?.restoreBlueprints?.(playerData.knownFurnitureBlueprints);
+        delete inventory.campfireKitFurnitureBlueprint; // Retire the old immortal starter paper now that Campfire Kit is automatically known.
+        window.FarmPanel?.ensureStarterFurnitureStorage?.();
         window.HobunjiDrunkGameplayBridge?.restoreBottleSwigs?.(playerData.alcoholBottleSwigs);
         window.HobunjiDrunkGameplayBridge?.restoreNpcAlcoholState?.(playerData.npcAlcoholState);
         window.NpcWardrobe?.restore?.(playerData.npcWardrobeState);
@@ -30420,6 +33280,7 @@
         window.NpcGifting?.restoreDiscoveredPrefs?.(playerData.npcDiscoveredGiftTraits);
         packClothing = [...(playerData.packClothing || [])];
         window.CookingSystem.restore(playerData.cookingState);
+        window.AnimalHides?.restore?.(playerData.isNewWorld ? null : playerData.animalHides, inventory); // Restore coat records only after the authoritative bag counts load.
         window.SkillSystem.restore(playerData);
         window.PerkSystem?.restore(playerData);
 
@@ -30429,6 +33290,7 @@
         questProgress = { ...(playerData.questProgress || {}) };
         window.DoorstepVisits?.restore?.(playerData.doorstepVisitState); // "Already told you" flags for farmhouse-door visitors (js/doorstep-visits.js).
         window.RomanceSystem?.restore?.(playerData.romanceState); // Dates, engagement, spouse and children (js/romance-system.js / romance-family.js).
+        window.NpcFarmPlots?.restore?.(playerData.npcFarmPlotState); // NPC-tended field/trench state (js/npc-farm-plots.js).
         window.ProceduralTasks.maybeRefreshRequestPostings(); // makes sure requests exist even before the first day rollover
 
         // Alchemy: discovered reagent effects, still-active buffs/debuffs, and
@@ -30439,12 +33301,14 @@
         window.ReagentPlants.restoreZoneReagentState(playerData.alchemyReagentState);
         window.WildBerries.restoreState(playerData.wildBerryState);
         window.WildTreasure.restoreState(playerData.zoneTreasureState);
+        window.CliffRouteNetwork?.restoreRewards?.(playerData.cliffBalconyRewards);
         restoreWildernessChunkState(playerData.wildernessChunkState);
         window.WildernessCampfire?.restore(playerData.wildernessCampfireState);
         restoreZoneFelledTreeState(playerData.felledTreeState);
         restoreZoneMinedRockState(playerData.minedRockState);
         window.TownMine?.restore?.(playerData.townMineState);
         window.SlagothimTraders?.restore?.(playerData.slagothimTradersState);
+        window.TzatzulNestEncounter?.restore?.(playerData.tzatzulNestState);
         window.CaveSiteSystem?.restore?.(playerData.caveSiteState);
         // Potion items just restored into `inventory` above have no ITEM_DEFS
         // entry yet this page load (ITEM_DEFS starts empty of them every
@@ -30467,7 +33331,7 @@
         // new slot is immediately testable without invalidating old saves.
         gearInventory.tools.crossbow ??= true;
         gearInventory.tools.scatterbow ??= true;
-        if (!gearInventory.clothing) gearInventory.clothing = { hat: null, hood: null, torso: null, overwear: null, pants: null };
+        if (!gearInventory.clothing) gearInventory.clothing = { hat: null, hood: null, mask: null, torso: null, overwear: null, pants: null };
         if (!gearInventory.charms)   gearInventory.charms   = [];
         if (!gearInventory.whistles || !gearInventory.whistles.length) {
           gearInventory.whistles = [{ id: 'whistle_bingo', creatureKey: 'dabinggi-hound', name: 'Bingo' }];
@@ -30715,8 +33579,8 @@
           for (const entity of entities.values()) {
             const c = entity.creature, kind = c && (window.CreatureGenetics.SPECIES_ALIAS[c.creatureKey] || c.creatureKey); // Shared alias matches normal animated texture playback.
             if (!c?.genotype || !window.CreatureGeneticsRender?.SPECIES?.[kind]) continue;
-            for (const frame of ['idle', ...(c.def.sprites.run || []).map((_, i) => 'run' + (i + 1))]) for (const blink of [false, true]) {
-              const key = `${kind}|${frame}|${window.CreatureGeneticsRender.genotypeSignature(kind, c.genotype)}|${blink ? 'b' : 'o'}`; // Same cache key as normal gameplay, no duplicate asset pipeline.
+            for (const frame of ['idle', ...(c.def.sprites.run || []).map((_, i) => 'run' + (i + 1))]) for (const blink of window.CreatureGeneticsRender.eyeStatesForKind(kind)) {
+              const key = `${kind}|${frame}|${window.CreatureGeneticsRender.genotypeSignature(kind, c.genotype)}|${window.CreatureGeneticsRender.eyeStateKey(blink)}`; // Same cache key as normal gameplay, no duplicate asset pipeline.
               const pin = {}; // A distinct temporary owner lets every preloaded frame stay resident.
               preloadPins.push(pin);
               _genotypeTextureResidency.retain(pin, key);
@@ -31095,6 +33959,7 @@
         // reading a payload the Director tool has already fully resolved
         // to world tile coordinates (see its "Preview in game" handler).
         const actorsById  = new Map((payload.actors || []).map(a => [a.id, a]));
+        let orbitResetCount = 0; // Counts only visited orbit paragraphs, so optional branches cannot make zoom/focus skip an increment.
         // Authored logical rotation remains separate from the rendered camera
         // deadzone. This is the single source of truth for every actor's
         // rotation from here on, kept in sync with the mesh only through
@@ -31350,8 +34215,20 @@
               const targetProvider = () => { center.set(0, 0, 0); for (const actor of subjects) center.add(actor.root.position); center.multiplyScalar(1 / Math.max(1, subjects.length)); center.y += .6; return center; };
               const offset = stage.cameraOffset || { x: 0, y: 5, z: 8 }; // Authored offset is relative to the followed midpoint.
               const positionProvider = () => position.copy(targetProvider()).add(offset);
-              window.CinematicCameraRuntime?.activate?.(area, { id: `cutscene_follow_${subjects.map(actor => actor.rec?.id || '').join('_')}`, shotKey: JSON.stringify([stage.followActorIds || [stage.actorId], offset]), positionProvider, targetProvider, fovDeg: stage.fovDeg || 55, blendSeconds: stage.blendSeconds ?? 1.25, dialogueFraming: false });
+              window.CinematicCameraRuntime?.activate?.(area, { id: `cutscene_follow_${subjects.map(actor => actor.rec?.id || '').join('_')}`, shotKey: JSON.stringify([stage.followActorIds || [stage.actorId], offset]), positionProvider, targetProvider, fovDeg: stage.fovDeg || 55, blendSeconds: stage.blendSeconds ?? 1.25, dialogueFraming: false, horizontalCameraCollision: stage.horizontalCameraCollision === true });
             }
+          } else if (stage.cameraMode === 'orbit') {
+            const subjectIds = stage.orbitActorIds || [stage.actorId || stage.speakerId, stage.targetActorId || stage.addressedActorId]; // Actor IDs are authored independently of the speaker.
+            const subjects = subjectIds.map(id => { const entity = entities.get(id); return entity && { id, ...entity, faceWorldPosition: entity.walker ? () => _npcFaceWorldPosition(entity.walker) : null }; }).filter(Boolean); // Orbit height modes follow real skinned face positions (including the stand-in player), not generic body-height estimates.
+            if (subjects.length === 2 && subjectIds[0] !== subjectIds[1]) { // Never orbit one actor twice if a Director pair is incomplete.
+              const paragraphNumber = orbitResetCount + 1; // Advance only when the required pair really exists.
+              const orbit = window.CinematicCameraRuntime?.createStageOrbitShot?.(stage, subjects, paragraphNumber); // Shared camera owner keeps game and Director focus/zoom/reset behavior identical.
+              if (orbit) {
+                orbitResetCount = paragraphNumber;
+                cinematicCameraReady = false;
+                window.CinematicCameraRuntime.activate(area, orbit, { reason: 'authored-cutscene-orbit' });
+              }
+            } else console.warn('[cutscene orbit] requires two spawned actors:', stage.id, subjectIds);
           } else if (stage.cameraMode === 'pov') {
             clearPovShot();
             const source = entities.get(stage.actorId || stage.speakerId); // View origin is the same face anchor used by dialogue and shoulder-style aiming.
@@ -31371,7 +34248,7 @@
               povShot = { source, visible: source.walker.avatarGroup.visible, targetProvider };
               source.walker.avatarGroup.visible = Number(stage.povBack) > 0 ? povShot.visible : false;
               cinematicCameraReady = false;
-              window.CinematicCameraRuntime?.activate?.(area, { id: `cutscene_pov_${stage.actorId || stage.speakerId}_${stage.targetActorId || stage.addressedActorId}_${stage.povBack || 0}_${stage.povSide || 0}_${stage.povHeight || 0}_${stage.fovDeg || 65}`, shotKey: JSON.stringify(stage.targetWorld || null), position: positionProvider(), target: targetProvider(), positionProvider, targetProvider, fovDeg: Number(stage.fovDeg) || 65, blendSeconds: stage.blendSeconds == null ? .35 : Math.max(0, Number(stage.blendSeconds) || 0) });
+              window.CinematicCameraRuntime?.activate?.(area, { id: `cutscene_pov_${stage.actorId || stage.speakerId}_${stage.targetActorId || stage.addressedActorId}_${stage.povBack || 0}_${stage.povSide || 0}_${stage.povHeight || 0}_${stage.fovDeg || 65}`, shotKey: JSON.stringify(stage.targetWorld || null), position: positionProvider(), target: targetProvider(), positionProvider, targetProvider, fovDeg: Number(stage.fovDeg) || 65, blendSeconds: stage.blendSeconds == null ? .35 : Math.max(0, Number(stage.blendSeconds) || 0), horizontalCameraCollision: stage.horizontalCameraCollision === true });
             }
           } else if (stage.cameraMode === 'npcRelative') {
             cinematicCameraReady = false;
@@ -31853,7 +34730,7 @@
         farmTourPoints: openingFarmTourPoints,
         run: (payload, options = {}) => runCutscenePreview(payload, { ...options, live: true }), // Plays Director-format payloads as real gameplay cinematics with cleanup/restoration.
         isActive: () => cutscenePreviewActive, // Gameplay HUD owners can check the director without allocating a debug snapshot.
-        debugSnapshot: () => ({ active: !!cutscenePreviewActive, currentArea, stageId: cutscenePreviewStageId, zoomPercent: cutscenePreviewZoomPercent, latestChange: 'Rescue now uses a temporary generated Cloud Forest mini-wilderness with the authored locale and full mini-map residency; cleaned up after playback. Fight uses the rescue wide shot; Spearhead enters from outside the prior view; moving humanoids animate legs; final player stance yaw obeys body/neck deadzones; tighter surveyor shots and rear chair with departure hiding; lower farm camera, moving two-character follow shot and facade view after both arrivals; intro wind-only audio.' }), // Mobile/debug-panel callers can inspect live cinematic ownership without a console.
+        debugSnapshot: () => ({ active: !!cutscenePreviewActive, currentArea, stageId: cutscenePreviewStageId, zoomPercent: cutscenePreviewZoomPercent, horizontalCameraSqueeze: _cameraHorizontalDebug, orbit: window.CinematicCameraRuntime?.activeCamera?.()?.orbitDebug || null, latestChange: 'Rescue now uses a temporary generated Cloud Forest mini-wilderness with the authored locale and full mini-map residency; cleaned up after playback. Fight uses the rescue wide shot; Spearhead enters from outside the prior view; moving humanoids animate legs; final player stance yaw obeys body/neck deadzones; tighter surveyor shots and rear chair with departure hiding; lower farm camera, moving two-character follow shot and facade view after both arrivals; intro wind-only audio.' }), // Mobile/debug-panel callers can inspect live cinematic ownership without a console.
       });
 
       if (window.__hobunjiCutscenePreview) {

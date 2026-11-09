@@ -107,6 +107,7 @@ const stanceContext = { // Runs owner-maintained state against its preexisting d
   localStorage: { getItem: () => null }, fetch: async () => { throw Error('offline fixture'); }, performance: { now: () => stanceNow },
   setTimeout: callback => stanceTimers.push(callback),
 };
+vm.runInNewContext(read('docs/js/combat/shared-attack-pose.js'), stanceContext); // Shared pose math the stance runtime delegates to.
 vm.runInNewContext(read('docs/js/weapon-tool-stances.js'), stanceContext);
 const stances = stanceContext.window.WeaponToolStances; // Public state owner with live combat hooks.
 const equipmentSlots = { weapon: 'axe', hoe: 'hoe' }; // Mutated to verify immediate, not cached, reads.
@@ -149,6 +150,7 @@ function replayHandSync(source, diagnostic) {
   const context = {
     syncing: false, global: { HobunjiHandGripModes: { currentModeKey: () => 'test' } },
     JSON: { stringify: value => { copies++; return JSON.stringify(value); }, parse: JSON.parse },
+    playerKurrayaActive: () => false, freeRightHandFor: () => null,
     currentToolKey: () => 'axe', currentGripContext: () => 'melee',
     toolGrips: { primaryGripForTool: () => primaryGrip, secondaryGripForTool: () => useSecondary ? secondaryGrip : null },
     toolSocketWorld: (_record, _holder, grip) => grip,

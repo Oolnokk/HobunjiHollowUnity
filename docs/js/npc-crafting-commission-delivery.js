@@ -53,6 +53,8 @@
   function grantFurnitureBlueprint(task) {
     const commission = task?.commission;
     if (commission?.type !== 'furniture' || !commission.blueprintKey || !taskDeps?.inventory) return;
+    const blueprint = window.CraftingPanel?.blueprintForItem?.(commission.blueprintKey); // Do not grant another physical copy of a lesson already learned.
+    if (blueprint && window.CraftingPanel.ownsBlueprint(blueprint)) return;
     const before = Math.max(0, finite(taskDeps.inventory[commission.blueprintKey], 0)); // Existing permanent blueprint ownership remains intact.
     taskDeps.inventory[commission.blueprintKey] = Math.max(1, before);
     taskDeps.buildInventoryGrid?.();
@@ -88,6 +90,7 @@
     const startedAt = finite(commission.startedAt, 0); // Acceptance timestamp excluding stockpiled garments.
     const pack = giftingDeps?.getPackClothing?.() || taskDeps?.getPackClothing?.() || [];
     return pack.find(item => {
+      if (item?.cursed) return false; // A cursed garment cannot be delivered; it would be refused after matching and leave the turn-in failing silently.
       const baseId = item?.baseCosmeticId || String(item?.cosmeticId || '').split('::crafted::')[0]; // Authored article identity despite unique crafted ids.
       if (baseId !== commission.articleId || String(item?.weaveMaterial || '') !== commission.material) return false;
       if (startedAt && finite(item?.craftedAt, 0) < startedAt) return false;
@@ -128,7 +131,7 @@
       lastError = 'NpcWardrobe.offerClothing unavailable during commission turn-in';
       return false;
     }
-    const verdict = offerClothing(commission.recipientId, item); // Delivers the commission as a real gift into the recipient's wardrobe.
+    const verdict = offerClothing(commission.recipientId, item, { commission: true }); // A validated commission enters the recipient's wardrobe regardless of unsolicited-gift style preferences.
     if (verdict?.accepted === false) {
       lastError = `recipient rejected matched garment: ${commission.recipientId}`;
       return false;
@@ -156,13 +159,28 @@
     return `${material} ${patterned}${commission.articleLabel} for ${commission.recipientName}. ${dyes}${isReady(task) ? ' — ready' : ''}`;
   }
 
+  function turnInPrompt(task) {
+    const commission = task?.commission; // Used by game.js to label crafting hand-ins without relying on the empty fetch-item array.
+    if (commission?.type === 'furniture') {
+      const name = commission.furnitureLabel || 'furniture';
+      return { text: `Did you finish the ${name} I asked you to make?`, label: `Here's your ${name}.` };
+    }
+    if (commission?.type === 'clothing') {
+      const article = commission.articleLabel || 'clothing';
+      const recipient = commission.recipientName || 'them';
+      return { text: `Did you finish the ${article} for ${recipient}?`, label: `Here's the ${article} for ${recipient}.` };
+    }
+    return null;
+  }
+
   function complete(taskId) {
     const state = taskDeps?.getQuestProgress?.()?.[taskId]; // Live accepted commission state before any rewards/consumption.
     const task = state?.progress;
     if (!task?.commission || state.status !== 'available' || !isReady(task)) return { ok: false, message: `The commission is not ready: ${requirementText(task)}` };
 
+    const quote = window.NpcCraftingCommissionGenerator?.rewardQuote?.(task); // Same reward values shown by the Quest Log, including repriced legacy jobs.
     const mastery = window.CraftingMasterySystem; // World-scoped Mote authority every successful crafting commission must use.
-    const moteReward = Math.max(1, Math.floor(finite(task.rewardMotes || task.commission.rewardMotes, 1)));
+    const moteReward = Math.max(1, Math.floor(finite(quote?.motes, task.rewardMotes || task.commission.rewardMotes || 1)));
     const masteryDebug = mastery?.debugSnapshot?.(); // Preflight world availability before touching the literal deliverable.
     if (!mastery?.awardMotes || !mastery?.saveState || !mastery?.getState || !masteryDebug?.worldId) {
       lastError = 'Crafting mastery world state unavailable during commission turn-in';
@@ -181,15 +199,18 @@
       return { ok: false, message: 'That crafted piece could not be turned in.' };
     }
 
-    const paidGold = Math.max(0, Math.round(finite(task.rewardGold, 0))); // Ordinary payment remains alongside crafting progression.
+    const paidGold = Math.max(0, Math.round(finite(quote?.gold, task.rewardGold))); // The quoted cost-plus-labor payment is credited only after physical delivery succeeds.
     taskDeps.inventory.gold = finite(taskDeps.inventory.gold, 0) + paidGold;
-    window.DialogueContent?.adjustNpcFavor?.(task.npcId, finite(task.rewardFriendship, 0), 'task_crafting_commission');
+    const favor = Math.max(0, finite(quote?.favor, task.rewardFriendship)); // Tasks pay Favor points; relationship-heart conversion happens downstream.
+    const appliedFavor = window.DialogueContent?.adjustNpcFavor?.(task.npcId, favor, 'task_crafting_commission');
+    const shownFavor = Math.round((Number.isFinite(appliedFavor) ? appliedFavor : favor) * 100) / 100; // Accurately reports positive-Favor multipliers when present.
     taskDeps.setQuestStatus(taskId, 'completed', {});
     taskDeps.buildInventoryGrid?.();
     taskDeps.saveMemberWorldData?.();
-    window.WorldPopupText?.queueReward?.('craft', `+${motes} Mote${motes === 1 ? '' : 's'} of Craft`); // Only announce after the literal delivery has committed.
-    taskDeps.showToast?.(`✅ Commission complete! +${paidGold}g, +${motes} Mote${motes === 1 ? '' : 's'} of Craft.`, true);
-    lastTurnIn = { taskId, motes, at: Date.now(), commission: clone(task.commission) };
+    window.WorldPopupText?.queueReward?.('masteryXp', `+${motes} Mote${motes === 1 ? '' : 's'} of Craft`); // Mastery is an actual supported centered reward-list category (unlike the old 'craft' key).
+    window.WorldPopupText?.queueReward?.('currency', `+${paidGold}g`); // The reward popup now includes the exact credited gold alongside Favor and Craft Motes.
+    taskDeps.showToast?.(`✅ Commission complete! +${paidGold}g, +${shownFavor} Favor, +${motes} Mote${motes === 1 ? '' : 's'} of Craft.`, true);
+    lastTurnIn = { taskId, gold: paidGold, favor: shownFavor, motes, at: Date.now(), commission: clone(task.commission) };
     return { ok: true, message: 'Commission turned in.' };
   }
 
@@ -202,6 +223,6 @@
 
   window.NpcCraftingCommissionDelivery = Object.freeze({
     version: VERSION, setDeps, acceptedPatch, onAccepted, isReady, matchingClothing,
-    colorMatches, furnitureReady, requirementText, complete, debugSnapshot,
+    colorMatches, furnitureReady, requirementText, turnInPrompt, complete, debugSnapshot,
   });
 })();

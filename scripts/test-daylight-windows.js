@@ -43,7 +43,7 @@ for (const [label, data] of [['crossbarWindow', crossbarPreset], ['wideWindow', 
 }
 
 const runtime = read('docs/js/daylight-window-runtime.js'); // Static source guards the integration strategy requested for interiors.
-assert.match(runtime, /const VERSION = 3/, 'daylight runtime version must include the coplanar mullion revision');
+assert.match(runtime, /const VERSION = [4-9][0-9]*/, 'daylight runtime version must include the coplanar mullion revision');
 assert.match(runtime, /const ROLE = 'daylightWindow'/, 'runtime must consume the generic daylight-window surface role');
 assert.doesNotMatch(runtime, /mullion[^\n]*z: 0\.045/, 'fallback window recipes must not reintroduce the old protruding mullion translation');
 assert.match(runtime, /function ensureWindowVisualRoot\(group\)/, 'daylight windows must establish one construction-time visual assembly boundary');
@@ -74,7 +74,7 @@ assert.match(farmPanelCore, /delete store\.crossbarWindowFurniture/, 'stale Cros
 assert.match(farmPanelCore, /wideWindowFurniture:[\s\S]*count: 2/, 'starter storage must grant two Wide Windows');
 assert.match(farmPanelCore, /cat: 'furniture'/, 'starter windows must register as ordinary inventory furniture items');
 assert.match(farmPanelCore, /const store = ensureStarterWindowsInFarmStorage\(\)/, 'Farm Storage render path must run the one-time starter grant');
-assert.match(farmPanelCore, /k !== STARTER_WINDOW_STORAGE_SENTINEL/, 'starter grant marker must never render as a storage item');
+assert.match(farmPanelCore, /!k\.startsWith\('__'\)/, 'starter grant marker must never render as a storage item');
 
 const farmPanelLoader = read('docs/js/farm-panel.js'); // Core cache-bust must move with the starter-storage behavior.
 assert.match(farmPanelLoader, /farm-panel-core\.js\?v=[A-Za-z0-9_-]+/, 'Farm Panel must load the player-window catalog revision');
@@ -544,7 +544,8 @@ assert.match(houseCore, /onHouseGeometryRebuilt/, 'house-piece movement must not
 
 const houseEntry = read('docs/js/house-pieces.js'); // Dynamic core loader needs a cache-busted URL for the new opening integration.
 assert.match(houseEntry, /house-pieces-core\.js\?v=[A-Za-z0-9_-]+/, 'house-pieces entrypoint must load the shared rendered-wall footprint');
-assert.match(houseCore, /entry\._exteriorRenderRect = _renderRectFor\(entry, exts\)/, 'the exact generated Highland footprint must be available before any window cut builds');
+assert.match(houseCore, /entry\._exteriorRenderRect = \{ col: entry\.col, row: entry\.row, w: entry\.w, h: entry\.h \}/, 'linked windows must target the actual exterior wall footprint, not a roof-only overhang');
+assert.match(houseCore, /const roofRect = _renderRectFor\(entry, exts\)/, 'only roof surfaces may use the joined render footprint');
 
 assert.match(wallPlacement, /ControllerInput\.subscribe\('wall-ornament-placement'/, 'wall preview may reuse the shared controller frame cadence without private gamepad polling');
 assert.match(wallPlacement, /sharedControllerFrame\(\)[\s\S]{0,180}updatePlayerReticlePreview\(\)/, 'shared controller cadence must update only the reticle preview and leave movement/look channels untouched');
@@ -553,7 +554,7 @@ assert.match(gameSource, /isPlayerReticlePlacementActive\?\.\(\)[\s\S]{0,260}run
 assert.doesNotMatch(gameSource, /if \(furniturePlacementArmedKey \|\| furnitureMoveArmedId\) return;/, 'reticle furniture placement must never freeze mouse camera rotation');
 assert.match(gameSource, /menuOpen \|\| window\._desktopSelectionArc\?\.entryMenuOpen\?\.\(\) \|\| window\.FurniturePlacer\?\.isOpen\?\.\(\)/, 'mouse camera motion must be disabled for the full lifetime of the click-required furniture selector');
 assert.match(gameSource, /isUiBlockingPointerLock: \(\) => [^\n]*FurniturePlacer\?\.isOpen\?\.\(\)/, 'Pointer Lock must not be reacquired while a click-required furniture menu is open');
-assert.match(fs.readFileSync(path.join(root, 'docs/js/shoulder-cam-pointer-lock.js'), 'utf8'), /if \(deps\.isUiBlockingPointerLock\?\.\(\)\) return;/, 'ShoulderCamPointerLock.request must honor the UI blocking hook');
+assert.match(fs.readFileSync(path.join(root, 'docs/js/shoulder-cam-pointer-lock.js'), 'utf8'), /deps\.isUiBlockingPointerLock\?\.\(\)\) return;/, 'ShoulderCamPointerLock.request must honor the UI blocking hook');
 assert.doesNotMatch(linkage, /function patchInteriorSceneBuilder\(api\)/, 'farmhouse openings must not depend on a global buildWallGroup monkey-patch or current-area timing');
 assert.match(gameSource, /const houseWindowOpenings = window\.HouseWindowLinkage\?\.getInteriorWallOpenings\?\.\(\) \|\| \[\]/, 'farmhouse interior rebuild must fetch window openings directly every time it rebuilds');
 assert.match(gameSource, /wallOpenings: houseWindowOpenings/, 'farmhouse brick generation must receive those openings even when the rebuild was triggered from outside');
@@ -582,13 +583,18 @@ assert.match(overlayScheduler, /setInterval\(updatePaneTint, PANE_TINT_MS\)/, 'p
 assert.doesNotMatch(overlayScheduler, /baseDraw|daylightDraw|drawLightingOverlay\s*=|WINDOW_REDRAW_MS/, 'scheduler must not alternate base-only and window-composited overlay frames');
 const cloudFog = read('docs/js/cloud-forest-fog.js'); // Shared compositor must keep enclosed rooms stable while local light masks reveal nearby sources.
 assert.match(cloudFog, /const darknessAlpha = enclosedDarknessOverlayAlpha\(currentArea\)/, 'enclosed interiors must retain the established darkness baseline');
-const enclosedBranchStart = cloudFog.indexOf('if (enclosed) {');
-const enclosedBranchEnd = cloudFog.indexOf('const { r, g, b, a } = getLightingState();', enclosedBranchStart);
+const enclosedBranchStart = cloudFog.indexOf('if (enclosed && !undergroundFog) {');
+const enclosedBranchEnd = cloudFog.indexOf('const { r, g, b, a } = undergroundFog ? UNDERGROUND_NIGHT_LIGHTING : getFullDayLighting();', enclosedBranchStart);
 const enclosedBranch = cloudFog.slice(enclosedBranchStart, enclosedBranchEnd);
-assert.match(enclosedBranch, /drawLanternMasksCompat\(1\)/, 'ordinary interiors and underground spaces must retain the stable positional carried-lantern reveal');
-assert.match(enclosedBranch, /drawFurnitureLightMasksCompat\(\)/, 'ordinary interiors and underground spaces must retain stable positional furniture-light reveals');
+assert.match(enclosedBranch, /drawLanternMasksCompat\(1\)/, 'ordinary interiors must retain the stable positional carried-lantern reveal');
+assert.match(enclosedBranch, /drawFurnitureLightMasksCompat\(\)/, 'ordinary interiors must retain stable positional furniture-light reveals');
 assert.doesNotMatch(enclosedBranch, /drawBlendedInteriorAtmosphere\(darknessAlpha, rect\)/, 'ordinary interiors must not use the whole-room smoothed atmosphere path that regressed farmhouse readability');
-assert.match(enclosedBranch, /if \(ordinaryBuildingInterior\(currentArea\)\) drawWindowLightMasks\(\)/, 'ordinary building interiors must keep daylight windows as positional light reveals; mines/dens stay window-free');
+assert.match(enclosedBranch, /if \(ordinaryBuildingInterior\(currentArea\) && !ruinTradition\) drawWindowLightMasks\(\)/, 'ordinary authored building interiors retain positional daylight-window reveals, but lich ruins remain independent of windows');
+const undergroundBranchStart = enclosedBranchEnd;
+const undergroundBranchEnd = cloudFog.indexOf('if (lightningAlpha > 0) {', undergroundBranchStart);
+const undergroundBranch = cloudFog.slice(undergroundBranchStart, undergroundBranchEnd);
+assert.match(undergroundBranch, /drawLanternMasksCompat\(undergroundFog \? 1 : currentOutdoorLanternActivation\(\), !undergroundFog\)/, 'underground spaces must retain the stable positional carried-lantern reveal');
+assert.match(undergroundBranch, /if \(!\(undergroundFog && activeRuinTradition\(\) === 'kanthic'\)\) drawFurnitureLightMasksCompat\(!undergroundFog\)/, 'underground spaces must retain positional furniture-light reveals except in pure-black Kanthic ruins');
 assert.doesNotMatch(cloudFog, /function sampleEnclosedAtmosphere|function drawBlendedInteriorAtmosphere/, 'the retired whole-room atmosphere blend must not linger as dead code');
 assert.match(gameIndex, /cloud-forest-fog\.js\?v=[A-Za-z0-9_-]+/, 'game index must cache-bust the unified lighting compositor');
 assert.match(gameIndex, /daylight-window-runtime\.js\?v=[A-Za-z0-9_-]+/, 'game index must cache-bust the canonical daylight-window visual hierarchy');

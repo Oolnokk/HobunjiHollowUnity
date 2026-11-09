@@ -43,11 +43,13 @@ const context = vm.createContext({
   s_shoulderSurfOffsetH_current: 0, s_shoulderSurfOffsetV_current: 0,
   applyAuthoredCinematicCamera: () => false,
   cameraModeConfig: () => mode, cameraContainerAspect: () => 1,
+  clampCameraPitchOffsetDeg: (value, baseAngleDeg = 9) => Math.max(-90 - baseAngleDeg, Math.min(90 - baseAngleDeg, Number(value) || 0)), // Mirrors the shared vertical clamp in this isolated startup harness.
   dialoguePortraitCameraAim: () => null, _lastCameraLookPoint: { set() {} },
   currentAreaOcclusionMeshes: () => [], performance: { now: () => 1000 },
   THREE: { MathUtils: { degToRad: n => n * Math.PI / 180 } },
   window: { FormatUtils: { clamp: (n, lo, hi) => Math.max(lo, Math.min(hi, n)) } },
 }); // Stubs rendering/input only; all terrain math and initialization remain production code.
+vm.runInContext(fs.readFileSync('docs/js/camera-tile-collision.js', 'utf8'), context); // Grid boom collision lives in its own module (window.CameraTileCollision).
 vm.runInContext(fs.readFileSync('docs/js/farm-surface-sample.js', 'utf8'), context, { filename: 'docs/js/farm-surface-sample.js' }); // farmSurfaceYAtWorld delegates here.
 context.window.FarmSurfaceSample.init({ getGrid: () => grid, tileSurfaceYInArea: (...args) => context.tileSurfaceYInArea(...args), TileType }); // Mirrors game.js's init beside TileType.
 assert.doesNotThrow(() => vm.runInContext(segments.map(segment => segment.source).join('\n'), context),
@@ -63,5 +65,7 @@ grid[0][0] = { type: TileType.GRASS };
 context.cameraAngleOffsetDeg = -85;
 context.updateCameraPosition();
 const pitch = Math.atan2(camera.target.y - camera.position.y, Math.hypot(camera.position.x - camera.target.x, camera.position.z - camera.target.z)) * 180 / Math.PI; // Confirms the startup fix retains the requested upward aim.
-assert.ok(Math.abs(pitch - 76) < 1e-7, 'short-character upward aim survives real terrain integration');
+assert.ok(Math.abs(pitch - 76) < 1e-5, 'ground clearance preserves steep upward aim by retracting the boom');
+assert.ok(Math.hypot(camera.position.x-camera.target.x,camera.position.z-camera.target.z) < .1, 'real terrain integration allows the camera to tuck close behind the head at steep upward pitch');
+assert.ok(camera.position.y >= .0375-1e-9, 'the capped startup camera remains above the real ground');
 console.log('Shoulder camera startup with real grass, raised, ramp, and upward-aim terrain functions passed.');

@@ -1,28 +1,133 @@
   const size=Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.previewPortraitCanvasSize)||200;
   const out=Object.assign(document.createElement('canvas'),{width:size,height:size});
   const ctx=out.getContext('2d',{alpha:true});ctx.imageSmoothingEnabled=false;
-  const xf=targetBodyLayerXform(),rect=portraitLayerRect(rawCanvas.width,R.body.height,xf,size,size);
+  const xf=targetGarmentLayerXform(),rect=portraitLayerRect(rawCanvas.width,R.body.height,xf,size,size);
   ctx.globalAlpha=opacity;
   ctx.drawImage(rawCanvas,rect.x,rect.y,rect.w,rect.h);
   ctx.globalAlpha=1;
-  await applyRuntimeCloudMask(out);
+  // The game no longer applies a destination-out cloud mask to portrait art.
+  // Its original mask image is consumed by the separate arm-cut pipeline only.
   return out;
 }
+function targetGarmentLayerXform(){
+  // portrait-utils._extractLayersFromParts assigns xformPreset:'B' to every
+  // wearable layer. That preset overrides spriteStyle AND the species torso
+  // transform in the live game's resolveXform, so use the same live preset here.
+  const runtimePreset=window.getPortraitXformPreset?.('B'); // Used to place fitted garments exactly where the game places their portrait layers.
+  if(!runtimePreset)throw new Error('Portrait transform preset B unavailable; cannot preview garment placement accurately.');
+  return normalizedLayerXform(runtimePreset);
+}
+function projectRuntimeFrontToFittingCanvas(source){
+  if(!source||!R.body)return null;
+  const canvas=Object.assign(document.createElement('canvas'),{width:R.body.width,height:R.body.height}); // Mirrors the game-rendered front texture into the editor's native fit coordinate space; never used as export art.
+  const ctx=canvas.getContext('2d',{alpha:true});
+  ctx.imageSmoothingEnabled=false;
+  const rect=portraitLayerRect(canvas.width,canvas.height,targetGarmentLayerXform(),source.width,source.height); // Same preset B projection as rawGarmentToRuntimeLayer, inverted.
+  if(!(rect.w>0&&rect.h>0))throw new Error('Cannot project the game portrait into a zero-size fitting frame.');
+  ctx.drawImage(source,-rect.x*canvas.width/rect.w,-rect.y*canvas.height/rect.h,
+    source.width*canvas.width/rect.w,source.height*canvas.height/rect.h);
+  return canvas;
+} // A shared 3D front-portrait texture prevents separate raw/tinted/head-depth compositions from drifting apart.
+function canonicalHeadReference(source){
+  if(!source||!R.body)return null;
+  const canvas=Object.assign(document.createElement('canvas'),{width:R.body.width,height:R.body.height});
+  const ctx=canvas.getContext('2d',{alpha:true});ctx.imageSmoothingEnabled=false;
+  const rect=portraitLayerRect(R.body.width,R.body.height,targetBodyLayerXform(),source.width,source.height);
+  ctx.drawImage(source,-rect.x*canvas.width/rect.w,-rect.y*canvas.height/rect.h,
+    source.width*canvas.width/rect.w,source.height*canvas.height/rect.h);
+  canvas._paths=[R.speciesCfg.get(E.species.value)?.[E.gender.value]?.headSprite||'head'];
+  canvas._canonical=true;
+  return canvas;
+} // Inverse-projects the game's tinted head + UR anatomy to the raw garment-coordinate fitting canvas.
 function flipCanvasX(source){
   const out=Object.assign(document.createElement('canvas'),{width:source.width,height:source.height});
   const ctx=out.getContext('2d',{alpha:true});
   ctx.translate(out.width,0);ctx.scale(-1,1);ctx.drawImage(source,0,0);
   return out;
 }
+function canonicalPreviewSlot(slot){
+  return({hood:'hood',hat:'hat',torso:'torsoCosmetic',overwear:'armCosmetic',pauldron:'pauldron'})[slot]||null;
+}
+function canonicalPreviewSourceLayers(garment,source,options){
+  const variant=`${E.sourceSpecies.value}_${E.sourceGender.value}`;
+  const metadata=options.variantLayers?.[variant]||options.layers||[];
+  const sprites=(source?._layers||[]).filter(layer=>!layer.path?.includes('behindImage'));
+  if(metadata.length!==sprites.length)throw new Error(`Game portrait metadata mismatch: ${garment.id} has ${metadata.length} source materials but the fit editor loaded ${sprites.length}. Cannot promise runtime parity.`);
+  return sprites.map((sprite,i)=>({sprite,meta:metadata[i]})); // The source catalog and portrait extractor iterate the same authored parts in insertion order.
+}
+function canonicalPreviewGarmentOption(garment,source,options,overrides,opacity,previewTag){
+  const sourceLayers=canonicalPreviewSourceLayers(garment,source,options);
+  const variant=`${E.species.value}_${E.gender.value}`;
+  const targetMetadata=options.variantLayers?.[variant]||sourceLayers.map(pair=>pair.meta); // New species variants use donor metadata until their exported config is installed.
+  if(targetMetadata.length!==sourceLayers.length)throw new Error(`Game portrait has ${targetMetadata.length} target layers but ${sourceLayers.length} donor layers for ${garment.id}.`);
+  const layers=sourceLayers.map(({sprite,meta},i)=>{
+    const target=targetMetadata[i];
+    if(target.pos!==meta.pos||target.paletteColorKey!==meta.paletteColorKey)
+      throw new Error(`Cannot align ${garment.id} material ${i} with the game's target layer order/role.`);
+    const key=`${target.url}#fit-${previewTag}-${i}`; // Keep exact original URL text for the game's hood/hat rear replacement rules.
+    const warped=warpGarment(fittedSourceCanvasForLayer(sprite),warpGridForMode(),R.body.width,R.body.height);
+    const canvas=document.createElement('canvas');canvas.width=warped.width;canvas.height=warped.height;
+    const ctx=canvas.getContext('2d',{alpha:true});ctx.globalAlpha=opacity;ctx.drawImage(warped,0,0);
+    canvas.naturalWidth=canvas.width;canvas.naturalHeight=canvas.height; // The portrait renderer reads natural dimensions from image sources.
+    overrides.set(key,canvas);
+    const result={...target,url:key};
+    const behindSprite=source?._layers?.find(item=>item.name===sprite.name+'.behindImage');
+    if(behindSprite){
+      const behindKey=`${target.behindUrl||meta.behindUrl||target.url}#fit-behind-${previewTag}-${i}`;
+      const rear=warpGarment(behindSprite.canvas,warpGridForMode(),R.body.width,R.body.height);
+      const rearCanvas=document.createElement('canvas');rearCanvas.width=rear.width;rearCanvas.height=rear.height;
+      const rearCtx=rearCanvas.getContext('2d',{alpha:true});rearCtx.globalAlpha=opacity;rearCtx.drawImage(rear,0,0);
+      rearCanvas.naturalWidth=rearCanvas.width;rearCanvas.naturalHeight=rearCanvas.height;
+      overrides.set(behindKey,rearCanvas);
+      result.behindUrl=behindKey; // Only explicit exported behindImage art is warped; generic game replacements remain unchanged.
+    }
+    return result;
+  });
+  return layers;
+}
+async function canonicalFittedGarmentPortrait(runtime){
+  const garment=garmentRecord(),slot=canonicalPreviewSlot(garment?.slot);
+  if(!slot||mode==='body'||routedPatchIsBody())return null;
+  const cosmetics=R.three.cosmetics;
+  const option=cosmetics?.optionCache?.get(garment.id)
+    ||[...(cosmetics?.optionCache?.values?.()||[])].find(entry=>entry?.id===garment.id);
+  if(!option)throw new Error(`Cannot find ${garment.id} in the game's loaded portrait options; runtime parity is unavailable.`);
+  const showFitted=E.showGarment.checked&&!!R.cloth;
+  const showAuthored=E.showAuthored.checked&&!!R.authoredTargetCloth;
+  if(!showFitted&&!showAuthored)return null;
+  const overrides=new Map(); // Per-build raster overrides, never entered into the game's shared image cache.
+  const previewTag=R.three.buildGeneration;
+  const fitted=showFitted?canonicalPreviewGarmentOption(garment,R.cloth,option,overrides,+E.opacity.value,previewTag):[];
+  const targetVariant=`${E.species.value}_${E.gender.value}`;
+  const authored=showAuthored?option.variantLayers?.[targetVariant]||[]:[];
+  if(showAuthored&&!authored.length)throw new Error(`No authored ${garment.id} target layers for the canonical runtime comparison.`);
+  const group={...option,onlyExactSpeciesVariant:true,
+    variantLayers:{...option.variantLayers,[targetVariant]:[...fitted,...authored]}};
+  const profile={...runtime.profile,[slot]:group}; // Game owns tint selection, front/back layer order, head overlap, and special rear image replacement.
+  const colorRng=window.NpcAvatarPreview?.seededRng?.(`clothing-fit-preview:${E.species.value}:${E.gender.value}:${garment.id}`);
+  window.ensurePortraitClothingPaletteColors?.(profile,colorRng); // Newly equipped garments get the same complete base/trim palette slots as regular NPC gear.
+  const size=runtime.front.width;
+  const front=Object.assign(document.createElement('canvas'),{width:size,height:size});
+  const back=Object.assign(document.createElement('canvas'),{width:size,height:size});
+  const options={seatId:'clothing-fit-runtime',forceEyesOpen:true,layerImageOverrides:overrides,
+    layerImageOverrideVersion:previewTag};
+  await window.NpcAvatarPreview.renderProfileToCanvas(front,profile,options);
+  await window.NpcAvatarPreview.renderProfileToCanvas(back,profile,{...options,portraitView:'behind'});
+  return{...runtime,profile,frontComposed:front,backComposed:back,canonicalGarmentPreview:true};
+}
 async function composeRuntimePortrait(){
   const runtime=await runtimePortraitSet();
+  if(R.cloth?._layers&&R.three?.cosmetics&&!R.patchWorkflow?.active){
+    const canonical=await canonicalFittedGarmentPortrait(runtime);
+    if(canonical)return canonical; // Both textures come from renderProfileToCanvas, the same portrait renderer as gameplay.
+  }
   const front=Object.assign(document.createElement('canvas'),{width:runtime.front.width,height:runtime.front.height});
   const back=Object.assign(document.createElement('canvas'),{width:runtime.back.width,height:runtime.back.height});
   const fctx=front.getContext('2d',{alpha:true}),bctx=back.getContext('2d',{alpha:true});
   fctx.drawImage(runtime.front,0,0);
 
   bctx.drawImage(runtime.back,0,0); // Canonical rear base body is always the backplane foundation.
-  if(routedPatchIsBody()&&mainClothSource()&&E.showBody.checked){
+  if(mode!=='body'&&routedPatchIsBody()&&mainClothSource()){ // Body visibility checkbox only affects the 2D editing canvas.
     const warpedPatch=currentWarp();
     const patchLayer=await renderRoutedBodyPatchOverlay(
       runtime.profile,warpedPatch,R.patchWorkflow.descriptor,back.width,back.height
@@ -30,20 +135,54 @@ async function composeRuntimePortrait(){
     if(patchLayer)bctx.drawImage(patchLayer,0,0); // Explicit backplane order: patch is in front of the torso/body, while the clothing block below still draws afterward and therefore remains in front of the patch.
   }
 
-  if(mainClothSource()&&!routedPatchIsBody()&&E.showGarment.checked){
-    const warped=currentWarp();
-    const layer=await rawGarmentToRuntimeLayer(warped,+E.opacity.value);
-    if(layer){
-      fctx.drawImage(layer,0,0);
-      bctx.drawImage(flipCanvasX(layer),0,0);
+  if(fitRegion()==='headwear'){
+    const drawHeadwear=async(cloth,opacity,warp)=>{
+      if(!cloth)return;
+      const back=cloth._back?(warp?currentWarp(cloth._back):cloth._back):null;
+      const front=cloth._front?(warp?currentWarp(cloth._front):cloth._front):null;
+      const behindView=cloth._behindView?(warp?currentWarp(cloth._behindView):cloth._behindView):null;
+      if(back){
+        const rearLayer=await rawGarmentToRuntimeLayer(back,opacity);
+        if(rearLayer){
+          fctx.drawImage(rearLayer,0,0);
+          if(!behindView)bctx.drawImage(flipCanvasX(rearLayer),0,0);
+        }
+        // Front view: hood rear cloth belongs behind the skull.
+        // Rear view: the game draws rear hood/hat art over the skull instead.
+        if(runtime.headOnlyFront)fctx.drawImage(runtime.headOnlyFront,0,0);
+      }
+      if(front){
+        const frontLayer=await rawGarmentToRuntimeLayer(front,opacity);
+        if(frontLayer){
+          fctx.drawImage(frontLayer,0,0);
+          // A hood with authored rear art displays only that piece from behind.
+          if(!behindView&&!(garmentRecord()?.slot==='hood'&&back))bctx.drawImage(flipCanvasX(frontLayer),0,0);
+        }
+      }
+      if(behindView){
+        const rearViewLayer=await rawGarmentToRuntimeLayer(behindView,opacity);
+        if(rearViewLayer)bctx.drawImage(flipCanvasX(rearViewLayer),0,0); // Cap below rear metal band, both above the behind-view skull.
+      }
+    };
+    if(E.showGarment.checked&&mode!=='body')await drawHeadwear(R.cloth,+E.opacity.value,true);
+    if(mode!=='body'&&E.showAuthored.checked)await drawHeadwear(R.authoredTargetCloth,+E.authoredOpacity.value,false);
+  }else{
+    if(mode!=='body'&&mainClothSource()&&!routedPatchIsBody()&&E.showGarment.checked){
+      const warped=currentWarp();
+      const layer=await rawGarmentToRuntimeLayer(warped,+E.opacity.value);
+      if(layer){fctx.drawImage(layer,0,0);bctx.drawImage(flipCanvasX(layer),0,0)}
     }
-  }
-  if(E.showAuthored.checked&&R.authoredTargetCloth){
-    const authored=await rawGarmentToRuntimeLayer(R.authoredTargetCloth,+E.authoredOpacity.value);
-    if(authored){
-      fctx.drawImage(authored,0,0);
-      bctx.drawImage(flipCanvasX(authored),0,0);
+    if(mode!=='body'&&E.showAuthored.checked&&R.authoredTargetCloth){
+      const authored=await rawGarmentToRuntimeLayer(R.authoredTargetCloth,+E.authoredOpacity.value);
+      if(authored){fctx.drawImage(authored,0,0);bctx.drawImage(flipCanvasX(authored),0,0)}
     }
+    // The game draws torso clothing/overwear before the head in front view,
+    // unlike the rear portrait (where clothing follows the head). Pauldrons
+    // are a later front layer and intentionally stay over the head.
+    const hasBodyGarment=(mode!=='body'&&mainClothSource()&&!routedPatchIsBody()&&E.showGarment.checked)||
+      (mode!=='body'&&E.showAuthored.checked&&R.authoredTargetCloth); // Only restore head depth when a garment was overlaid.
+    if(hasBodyGarment&&garmentRecord()?.slot!=='pauldron'&&runtime.headOnlyFront)
+      fctx.drawImage(runtime.headOnlyFront,0,0);
   }
   return{...runtime,frontComposed:front,backComposed:back};
 }
@@ -66,7 +205,7 @@ async function extendedRuntimeCanvas(){
   const out=Object.assign(document.createElement('canvas'),{width:normalSize,height:outHeight});
   const ctx=out.getContext('2d',{alpha:true});ctx.imageSmoothingEnabled=false;
   ctx.drawImage(raw,drawX,drawY,drawW,drawH);
-  await applyRuntimeCloudMask(out);
+  // Extended overlays must also remain uncut: the in-game cloud image is arm-only.
   return out;
 }
 function disposeObjectTree(root){

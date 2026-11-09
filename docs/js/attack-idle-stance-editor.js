@@ -1,12 +1,14 @@
 (() => {
   'use strict';
 
-  const CONFIG_URL = '../../config/combat/weapon-idle-stances.json?v=20261005dualidle1';
+  const CONFIG_URL = '../../config/combat/weapon-idle-stances.json?v=20261027hcarryjson1';
   const LOCAL_STORAGE_KEY = 'hobunji.weaponIdleStances.v1';
-  const STANCE_ORDER = ['tool', 'hoeTool', 'heavyWeapon', 'lightWeapon', 'dualWieldMain', 'dualWieldOffhand'];
+  const STANCE_ORDER = ['tool', 'hoeTool', 'topHeavyTool', 'longHaftedTool', 'heavyWeapon', 'lightWeapon', 'dualWieldMain', 'dualWieldOffhand'];
   const STANCE_LABELS = Object.freeze({
     tool: 'Tool / Shovel-style',
-    hoeTool: 'Hoe Tool',
+    hoeTool: 'Hoe Tool (unused — Top-heavy Tool replaced it)',
+    topHeavyTool: 'Top-heavy Tool (hoe / hatchet / fishing mace)',
+    longHaftedTool: 'Long-hafted Tool (fishing spear / pick-shovel)',
     heavyWeapon: 'Heavy Weapon',
     lightWeapon: 'Light Weapon',
     dualWieldMain: 'Dual Wield — Main hand',
@@ -28,13 +30,16 @@
     stances: Object.freeze({
       tool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: 0 }),
       hoeTool: Object.freeze({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, bodyYaw: 0, roll: -95 }),
+      topHeavyTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
+      longHaftedTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
       heavyWeapon: Object.freeze({ x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 }),
       lightWeapon: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }),
       dualWieldMain: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }),
-      dualWieldOffhand: Object.freeze({ x: 0.09, y: 0, z: -0.04, pitch: 37, yaw: 68, bodyYaw: -40, roll: 114 }),
+      dualWieldOffhand: Object.freeze({ x: 0.13, y: -0.04, z: 0.1, pitch: 40, yaw: 88, bodyYaw: -40, roll: -73 }),
     }),
   });
 
+  const PREVIOUS_TOP_HEAVY_TOOL_STANCE = Object.freeze({ x: -0.14, y: -0.07, z: -0.18, pitch: -22, yaw: -21, bodyYaw: -8, roll: -99 }); // Recognizes untouched pre-copy browser overrides.
   const PREVIOUS_LIGHT_WEAPON_STANCE = Object.freeze({ x: -0.09, y: -0.08, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 });
   const clone = value => JSON.parse(JSON.stringify(value));
   const numberOr = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -56,6 +61,11 @@
       Math.abs(numberOr(incomingLight[field.key]) - PREVIOUS_LIGHT_WEAPON_STANCE[field.key]) < 1e-9
     );
     if (wasPreviousDefault) out.stances.lightWeapon.y = 0; // Keep editor/runtime parity for exact old saved defaults without touching authored variants.
+    const incomingTopHeavy = raw?.stances?.topHeavyTool; // An older browser's unedited Top-heavy saved pose should inherit the new Pick-Shovel copy.
+    if (incomingTopHeavy && FIELD_DEFS.every(field =>
+      Math.abs(numberOr(incomingTopHeavy[field.key]) - PREVIOUS_TOP_HEAVY_TOOL_STANCE[field.key]) < 1e-9)) {
+      out.stances.topHeavyTool = { ...fallback.stances.topHeavyTool }; // Preserve any user-customized pose instead of overwriting it.
+    }
     out.stances.dualWieldOffhand.bodyYaw = out.stances.dualWieldMain.bodyYaw; // Body yaw is shared; only the offhand weapon transform is independently authored.
     return out;
   }
@@ -65,7 +75,7 @@
     else callback();
   }
 
-  whenReady(async () => {
+  whenReady(() => {
     const sidebar = document.getElementById('sidebar');
     if (!sidebar || document.getElementById('idleStanceCard')) return;
 
@@ -73,6 +83,11 @@
     let workingConfig = clone(FALLBACK_CONFIG);
     let selectedKey = 'lightWeapon';
     let editingNeutral = false;
+    let savedLocalOverride = null; // Kept so a later committed-config retry cannot overwrite the local user's chosen poses.
+    let lastAutoAppliedConfig = JSON.stringify(workingConfig); // Tracks only automatic loads; user edits remain untouched after delayed fetches.
+    let configRequest = null; // Coalesces concurrent editor config retries.
+    let configRetryTimer = null; // Retries a temporary failure without asking the user to reload the editor.
+    let configFailures = 0; // Backoff grows to a 30-second ceiling during network outages.
     const dualPairPreviewActive = () => window.HobunjiHandToolGrips?.getEditorIdlePreview?.() === true;
     let lastNeutralSignature = '';
 
@@ -107,6 +122,7 @@
       <div class="row" style="margin-top:6px">
         <button id="idleSaveOverrideBtn" class="secondary">💾 Save as Local Override</button>
         <button id="idleClearOverrideBtn" class="secondary">🗑 Clear Local Override</button>
+        <button id="idleReloadConfigBtn" class="secondary">↻ Retry Committed Config</button>
       </div>
       <div class="help" id="idleStanceStatus" style="margin-top:7px"></div>
       <div class="help" style="margin-top:7px">Use <b>Edit Selected in Neutral</b> to route the existing Neutral sliders and 3D gizmo into any idle preset, including <b>Dual Wield — Offhand</b>. <b>Mirror Main → Offhand</b> performs the same stance mirror as the editor's <b>Mirror Animation</b> operation—X/Yaw/Roll mirror, Y/Z/Pitch stay—but intentionally leaves Body Yaw unchanged and assigns the result to the other hand. The runtime also mirrors the hand-side anchor and grip direction. Afterward the offhand x/y/z and pitch/yaw/roll remain fully custom and saved explicitly. <b>Preview Dual Wield Pair</b> shows both saved poses together.</div>
@@ -227,9 +243,35 @@
       return true;
     }
 
+    // The saved stance belongs to the hidden source weapon, which sits a little off the visible offhand copy, so turning only
+    // the rotation would swing the copy around that point. Re-aim X/Y/Z so the copy turns in place; both rotation frames use
+    // the editor's YXZ order (yaw, pitch, roll).
+    let pivotOffsetCache = null;
+    function pivotCompensated(prev, next) {
+      const ctx = window.HobunjiAttackEditorToolContext;
+      if (!(editingNeutral && selectedKey === 'dualWieldOffhand') || !ctx?.offhandPivotPoseOffset || !ctx.THREE) return next;
+      const rotated = ['pitch', 'yaw', 'roll'].some(key => Math.abs(numberOr(next[key]) - numberOr(prev[key])) > 1e-9);
+      const moved = ['x', 'y', 'z'].some(key => Math.abs(numberOr(next[key]) - numberOr(prev[key])) > 0.0075); // Neutral's 0.01-step sliders hand back rounded X/Y/Z; that rounding is not a position edit.
+      if (!rotated || moved) return next; // Position edits (e.g. a gizmo drag, which already pivots on the copy) are left as authored.
+      if (!pivotOffsetCache || pivotOffsetCache.key !== ctx.toolKey) { // Constant for a given weapon sprite, so measure it once rather than mid-update.
+        const measured = ctx.offhandPivotPoseOffset();
+        pivotOffsetCache = measured ? { key: ctx.toolKey, ...measured } : null;
+      }
+      const offset = pivotOffsetCache;
+      if (!offset) return next;
+      const T = ctx.THREE;
+      const quat = pose => new T.Quaternion().setFromEuler(new T.Euler(
+        numberOr(pose.pitch) * Math.PI / 180, numberOr(pose.yaw) * Math.PI / 180, numberOr(pose.roll) * Math.PI / 180, 'YXZ'));
+      const before = new T.Vector3(offset.x, offset.y, offset.z).applyQuaternion(quat(prev));
+      const after = new T.Vector3(offset.x, offset.y, offset.z).applyQuaternion(quat(next));
+      return { ...next, x: numberOr(next.x) + before.x - after.x, y: numberOr(next.y) + before.y - after.y, z: numberOr(next.z) + before.z - after.z };
+    }
+
     function captureNeutralPose({ quiet = false } = {}) {
-      const pose = readNeutralPose();
+      let pose = readNeutralPose();
       if (!pose) return false;
+      const compensated = pivotCompensated(currentPose(), pose);
+      if (compensated !== pose) { pose = compensated; writeNeutralPose(pose); } // Neutral sliders show the re-aimed position too.
       workingConfig.stances[selectedKey] = normalizePose(pose, currentPose());
       syncFieldsFromPose();
       lastNeutralSignature = JSON.stringify(pose);
@@ -245,9 +287,28 @@
         : 'Edit Selected in Neutral';
     }
 
+    function dualToolActive() {
+      return window.HobunjiHandToolGrips?.isDualWieldWeapon?.(window.HobunjiAttackEditorToolContext?.toolKey || '') === true;
+    }
+
+    // Decides what the Neutral gizmo drags. Offhand: the visible offhand weapon itself (anchor on its side, main copy
+    // placed from its saved stance), not the hidden main-hand parent the attack copies follow. Everything else: one weapon.
+    function applyEditPreviewMode() {
+      pivotOffsetCache = null;
+      const offhand = editingNeutral && selectedKey === 'dualWieldOffhand';
+      const pair = offhand && dualToolActive();
+      window.HobunjiDualWieldWeaponVisuals?.setEditorOffhandAuthoring?.(pair);
+      if (pair) setDualPairPreview(true);
+      else window.HobunjiHandToolGrips?.setEditorSingleHandPreview?.(editingNeutral);
+      window.HobunjiDualWieldWeaponVisuals?.syncNow?.();
+      window.ProceduralHandFrameDriver?.syncNow?.();
+      window.HobunjiAttackEditorToolContext?.setOffhandAuthoringBase?.(offhand); // Last: it re-targets the gizmo, which needs the offhand copy to exist already.
+    }
+
     function stopEditingNeutral(message = '') {
-      if (editingNeutral) window.HobunjiHandToolGrips?.setEditorSingleHandPreview?.(false);
+      const wasEditing = editingNeutral;
       editingNeutral = false;
+      if (wasEditing) applyEditPreviewMode();
       updateEditButton();
       if (message) setStatus(message);
     }
@@ -284,7 +345,9 @@
 
     function saveLocalOverride() {
       try {
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(exportPayload()));
+        savedLocalOverride = exportPayload();
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(savedLocalOverride));
+        lastAutoAppliedConfig = JSON.stringify(workingConfig);
         setStatus('Saved Local Override. Reload the game on this origin to use it.');
       } catch (error) {
         setStatus(`Local Override save failed: ${error?.message || error}`);
@@ -293,7 +356,9 @@
 
     function clearLocalOverride() {
       try { localStorage.removeItem(LOCAL_STORAGE_KEY); } catch (_) {}
+      savedLocalOverride = null;
       workingConfig = clone(fileConfig);
+      lastAutoAppliedConfig = JSON.stringify(workingConfig);
       syncFieldsFromPose();
       if (editingNeutral) writeNeutralPose(currentPose());
       setStatus('Cleared Local Override and restored committed idle stances.');
@@ -304,7 +369,16 @@
       input.addEventListener('input', () => {
         const value = numberOr(input.value);
         if (selectedKey === 'dualWieldOffhand' && field.key === 'bodyYaw') return;
+        const previous = { ...currentPose() };
         currentPose()[field.key] = value;
+        const compensated = pivotCompensated(previous, currentPose());
+        if (compensated !== currentPose()) {
+          Object.assign(currentPose(), { x: compensated.x, y: compensated.y, z: compensated.z });
+          for (const key of ['x', 'y', 'z']) { // Show the re-aimed position on the stance sliders too.
+            $(`idle_${key}`).value = currentPose()[key];
+            $(`idle_${key}_val`).textContent = currentPose()[key].toFixed(2);
+          }
+        }
         if (selectedKey === 'dualWieldMain' && field.key === 'bodyYaw') workingConfig.stances.dualWieldOffhand.bodyYaw = value;
         $(`idle_${field.key}_val`).textContent = field.angle ? `${value.toFixed(0)}°` : value.toFixed(2);
         if (editingNeutral) writeNeutralPose(currentPose());
@@ -317,21 +391,35 @@
       syncFieldsFromPose();
       window.HobunjiDualWieldWeaponVisuals?.syncNow?.();
       updateEditButton();
-      if (editingNeutral) { setDualPairPreview(false); writeNeutralPose(currentPose()); }
+      if (editingNeutral) { writeNeutralPose(currentPose()); applyEditPreviewMode(); }
       setStatus(`${STANCE_LABELS[selectedKey]} selected.`);
     });
 
     $('idleEditNeutralBtn').addEventListener('click', () => {
-      if (dualPairPreviewActive()) setDualPairPreview(false); // Isolate the offhand copy while the existing Neutral gizmo authors its explicit transform.
+      if (dualPairPreviewActive()) setDualPairPreview(false); // Any earlier pair preview is rebuilt below for the mode actually being edited.
       editingNeutral = !editingNeutral;
-      window.HobunjiHandToolGrips?.setEditorSingleHandPreview?.(editingNeutral);
       updateEditButton();
       if (editingNeutral) {
-        if (writeNeutralPose(currentPose())) setStatus(`Neutral sliders + gizmo now edit ${STANCE_LABELS[selectedKey]}.`);
-        else stopEditingNeutral();
+        if (writeNeutralPose(currentPose())) {
+          applyEditPreviewMode();
+          setStatus(selectedKey === 'dualWieldOffhand' && dualToolActive()
+            ? 'Neutral sliders + gizmo now move the offhand weapon itself; the main-hand copy stays at its saved stance.'
+            : `Neutral sliders + gizmo now edit ${STANCE_LABELS[selectedKey]}.`);
+        } else stopEditingNeutral();
       } else {
+        applyEditPreviewMode();
         setStatus('Stopped routing Neutral edits into idle stances.');
       }
+    });
+
+    // Offhand authoring re-anchors the preview, so it must never leak into attack authoring: picking another action or
+    // opening a Windup/Strike pose ends it. (Neutral stays, since that is where the stance is edited.)
+    const leaveOffhandAuthoring = () => {
+      if (editingNeutral && selectedKey === 'dualWieldOffhand') stopEditingNeutral('Stopped idle stance editing: moved on to attack authoring.');
+    };
+    document.getElementById('actionSelect')?.addEventListener('change', leaveOffhandAuthoring);
+    document.querySelectorAll('[data-edit-phase]').forEach(button => {
+      button.addEventListener('click', () => { if (button.dataset.editPhase !== 'neutral') leaveOffhandAuthoring(); });
     });
 
     $('idleMirrorDualOffhandBtn').addEventListener('click', mirrorDualWieldMainToOffhand);
@@ -366,33 +454,74 @@
     }
     requestAnimationFrame(pollNeutralGizmoEdits);
 
+    // Apply the locally-authored stance immediately: remote JSON may be slow or unavailable.
     try {
-      const response = await fetch(CONFIG_URL, { cache: 'no-store' });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      fileConfig = normalizeConfig(await response.json(), FALLBACK_CONFIG);
-      workingConfig = clone(fileConfig);
-      setStatus('Loaded committed idle stance config.');
-    } catch (error) {
-      fileConfig = clone(FALLBACK_CONFIG);
-      workingConfig = clone(FALLBACK_CONFIG);
-      setStatus(`Using built-in idle stance defaults (${error?.message || error}).`);
-    }
-
-    try {
-      const localRaw = localStorage.getItem(LOCAL_STORAGE_KEY);
+      const localRaw = localStorage.getItem(LOCAL_STORAGE_KEY); // Cached override for this browser origin, separate from the committed JSON.
       if (localRaw) {
-        workingConfig = normalizeConfig(JSON.parse(localRaw), fileConfig);
-        setStatus('Loaded Local Override over the committed idle stance config.');
+        savedLocalOverride = JSON.parse(localRaw);
+        if (savedLocalOverride?.kind !== 'hobunji_weapon_idle_stances' || !savedLocalOverride.stances) throw new Error('schema mismatch');
+        workingConfig = normalizeConfig(savedLocalOverride, fileConfig);
+        setStatus('Loaded Local Override; checking committed stance config.');
       }
     } catch (error) {
+      savedLocalOverride = null;
       setStatus(`Ignored invalid Local Override: ${error?.message || error}`);
     }
+    lastAutoAppliedConfig = JSON.stringify(workingConfig);
+
+    function refreshCommittedConfig() {
+      if (configRequest) return configRequest;
+      if (configRetryTimer !== null) {
+        clearTimeout(configRetryTimer);
+        configRetryTimer = null;
+      }
+      configRequest = (async () => {
+        const controller = typeof AbortController === 'function' ? new AbortController() : null; // Stops a hung editor fetch from locking fallback stances forever.
+        const deadline = controller ? setTimeout(() => controller.abort(), 10000) : null; // Ten-second cap per request before backing off.
+        try {
+          const response = await fetch(CONFIG_URL, { cache: 'no-store', ...(controller ? { signal: controller.signal } : {}) });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const parsed = await response.json();
+          const complete = parsed?.kind === 'hobunji_weapon_idle_stances'
+            && parsed.stances && STANCE_ORDER.every(key => FIELD_DEFS.every(field =>
+              typeof parsed.stances[key]?.[field.key] === 'number' && Number.isFinite(parsed.stances[key][field.key]))); // Missing committed poses must retry, not silently fall back for this session.
+          if (!complete) throw new Error('incomplete stance config');
+          fileConfig = normalizeConfig(parsed, FALLBACK_CONFIG);
+          if (JSON.stringify(workingConfig) === lastAutoAppliedConfig) {
+            workingConfig = savedLocalOverride ? normalizeConfig(savedLocalOverride, fileConfig) : clone(fileConfig);
+            lastAutoAppliedConfig = JSON.stringify(workingConfig);
+            syncFieldsFromPose();
+            if (editingNeutral) writeNeutralPose(currentPose());
+          }
+          configFailures = 0;
+          setStatus(savedLocalOverride
+            ? 'Loaded committed stance config; Local Override retained.'
+            : 'Loaded committed stance config (existing unsaved edits preserved).');
+          return true;
+        } catch (error) {
+          configFailures += 1;
+          const retryMs = Math.min(30000, 1000 * (2 ** Math.min(configFailures - 1, 5))); // A persistent outage no longer locks the editor for a full session.
+          setStatus(`Using local/built-in stance defaults (${error?.message || error}); retrying in ${Math.round(retryMs / 1000)}s.`);
+          configRetryTimer = setTimeout(() => {
+            configRetryTimer = null;
+            void refreshCommittedConfig();
+          }, retryMs);
+          return false;
+        } finally {
+          if (deadline !== null) clearTimeout(deadline);
+        }
+      })().finally(() => { configRequest = null; });
+      return configRequest;
+    }
+
+    $('idleReloadConfigBtn').addEventListener('click', () => { void refreshCommittedConfig(); });
 
     syncFieldsFromPose();
     updateEditButton();
 
     window.AttackIdleStanceEditor = {
       getConfig: () => clone(exportPayload()),
+      reloadCommittedConfig: refreshCommittedConfig,
       getSelected: () => selectedKey,
       previewSelected: () => writeNeutralPose(currentPose()),
       captureSelected: () => captureNeutralPose(),
@@ -415,7 +544,11 @@
         updateEditButton();
         if (editingNeutral) writeNeutralPose(currentPose());
         setDualPairPreview(dualPairPreview);
-        if (editingNeutral) window.HobunjiHandToolGrips?.setEditorSingleHandPreview?.(true);
+        if (editingNeutral) applyEditPreviewMode();
+        else {
+          window.HobunjiDualWieldWeaponVisuals?.setEditorOffhandAuthoring?.(false);
+          window.HobunjiAttackEditorToolContext?.setOffhandAuthoringBase?.(false);
+        }
         setStatus(`History restored ${STANCE_LABELS[selectedKey]}.`);
         return true;
       },
@@ -425,5 +558,6 @@
         if (editingNeutral) writeNeutralPose(currentPose());
       },
     };
+    void refreshCommittedConfig();
   });
 })();

@@ -183,7 +183,8 @@
       "chimneys": [],
       "porches": [],
       "porchStairs": [],
-      "railings": []
+      "railings": [],
+      "tallEntryTunnels": []
     },
     "door": {
       "x": 13,
@@ -2867,10 +2868,10 @@
     "direction": "u",
     "lift": 0.04,
     "flipX": true,
-    "flipY": false,
+    "flipY": true,
     "flipZ": false,
     "shingleScaleX": 1.2,
-    "shingleScaleY": 1.2,
+    "shingleScaleY": 1,
     "shingleScaleZ": 2,
     "shingleRotX": -10,
     "shingleRotZ": 0,
@@ -2879,9 +2880,9 @@
     "secondLayerAcross": 0.25,
     "secondLayerLift": 0,
     "secondLayerOverhang": 1,
-    "secondLayerWallOriginReach": false,
+    "secondLayerWallOriginReach": true,
     "secondLayerShingleScaleX": 1.5,
-    "secondLayerShingleScaleY": 1.2,
+    "secondLayerShingleScaleY": 1.5,
     "secondLayerShingleScaleZ": 2,
     "secondLayerShingleRotX": 0,
     "secondLayerPeakRotateAway": false,
@@ -2940,5 +2941,467 @@
     "porchStairs": 0,
     "railings": 0,
     "generatedAt": "2026-06-20T13:42:17.000Z"
+  },
+  "surfaceGrowth": [
+    {
+      "kind": "roots",
+      "seed": "surface-2",
+      "style": "cornerFill",
+      "density": 0.45,
+      "count": 48,
+      "strandLimit": 80,
+      "perSurface": true,
+      "length": 12,
+      "radius": 0.2,
+      "offset": 0.008,
+      "curl": 1.4,
+      "color": "#24211d",
+      "texture": "assets/textures/wibbly_surface.png",
+      "target": "walls",
+      "targetIds": [],
+      "wallOnly": false,
+      "hangChance": 0,
+      "hangLength": 0,
+      "tunnelAsOpening": true,
+      "shrinkwrapFinal": true,
+      "inset": -0.25
+    },
+    {
+      "kind": "vines",
+      "seed": "temple-highland-shingle-weave",
+      "style": "wrap",
+      "density": 0.35,
+      "count": 40,
+      "strandLimit": 20,
+      "perSurface": true,
+      "length": 3.4,
+      "radius": 0.1,
+      "offset": 0.006,
+      "curl": 1.1,
+      "color": "#406040",
+      "texture": "assets/textures/carved_smooth.png",
+      "target": "all",
+      "targetIds": [],
+      "wallOnly": false,
+      "hangChance": 0,
+      "hangLength": 0,
+      "tunnelAsOpening": true,
+      "shrinkwrapFinal": true,
+      "inset": 0
+    },
+    {
+      "kind": "vines",
+      "seed": "surface-1",
+      "style": "wrap",
+      "density": 0.1,
+      "count": 28,
+      "strandLimit": 40,
+      "perSurface": true,
+      "length": 12,
+      "radius": 0.075,
+      "offset": 0.008,
+      "curl": 0.9,
+      "color": "#406040",
+      "texture": "assets/textures/carved_smooth.png",
+      "target": "walls",
+      "targetIds": [],
+      "wallOnly": false,
+      "hangChance": 0,
+      "hangLength": 0,
+      "tunnelAsOpening": true,
+      "shrinkwrapFinal": true,
+      "inset": 0
+    },
+    {
+      "kind": "roots",
+      "seed": "surface-9",
+      "style": "wrap",
+      "density": 0.4,
+      "count": 12,
+      "strandLimit": 12,
+      "perSurface": true,
+      "length": 30,
+      "radius": 0.175,
+      "offset": 0.008,
+      "curl": 2,
+      "color": "#24211d",
+      "texture": "assets/textures/wibbly_surface.png",
+      "target": "walls",
+      "targetIds": [],
+      "wallOnly": false,
+      "hangChance": 0,
+      "hangLength": 0,
+      "tunnelAsOpening": true,
+      "shrinkwrapFinal": true,
+      "inset": -0.1
+    }
+  ],
+  "wallFixtures": [
+    {
+      "id": "temple_east_window_potential",
+      "key": "crossbarWindow",
+      "faceId": 14,
+      "u": 0.2863266874518197,
+      "v": 0.5884987745250742,
+      "width": 0.82,
+      "height": 1.1,
+      "depth": 0.035,
+      "rotationDeg": 0,
+      "orientation": "flush",
+      "pattern": {
+        "slot": "stained-glass",
+        "mode": "glass",
+        "selector": "all",
+        "normal": [
+          0,
+          0,
+          1
+        ],
+        "patternId": "winding_roots",
+        "solid": false,
+        "scale": 1,
+        "palette": [
+          "#d9ffb3",
+          "#468c00",
+          "#ff8000"
+        ],
+        "engravingCoreOpacity": 0.85,
+        "opacity": 0.8,
+        "patterns": [
+          {
+            "motifScale": 1.11,
+            "motifRotationDeg": 0,
+            "tiling": true,
+            "invert": false,
+            "motifThinPx": 2,
+            "frameShape": "diamond",
+            "frameX": -9.412844473855543,
+            "frameY": 7.321108098615682,
+            "frameRotationDeg": 43,
+            "frameScale": 1.5694130284370735,
+            "meshScale": 1.86,
+            "meshRotationDeg": 0,
+            "overpassClearanceMultiplier": 3,
+            "repoPatternId": "winding_roots",
+            "motifUrl": "https://raw.githack.com/Oolnokk/HobunjiHollowUnity/43c50dfe61f6bed501329a9b317c334cfab31d55/docs/assets/patterns/motif_winding_roots.png"
+          },
+          {
+            "motifScale": 1,
+            "motifRotationDeg": 0,
+            "tiling": false,
+            "invert": false,
+            "motifThinPx": 3,
+            "frameShape": "square",
+            "frameX": 0,
+            "frameY": 0,
+            "frameRotationDeg": 0,
+            "frameScale": 1,
+            "meshScale": 3.2,
+            "meshRotationDeg": 0,
+            "overpassClearanceMultiplier": 3,
+            "repoPatternId": "blessed_blossom_potential",
+            "motifUrl": "https://raw.githack.com/Oolnokk/HobunjiHollowUnity/43c50dfe61f6bed501329a9b317c334cfab31d55/docs/assets/patterns/motif_blessed_blossom_potential.png"
+          }
+        ],
+        "overpassPatternId": "blessed_blossom_potential",
+        "layerTransforms": [
+          {
+            "tiling": true,
+            "scale": 1,
+            "rotationDeg": 0,
+            "offsetX": 0,
+            "offsetY": 0
+          },
+          {
+            "tiling": false,
+            "scale": 1.2,
+            "rotationDeg": 0,
+            "offsetX": -0.1,
+            "offsetY": 0
+          }
+        ],
+        "pattern": null
+      },
+      "interiorWindowId": "fwall_mv77lbuqd1er",
+      "sourceSurface": "crossbar_window_pane",
+      "side": "east",
+      "bodyOutset": 0
+    },
+    {
+      "id": "temple_east_window_windswept",
+      "key": "crossbarWindow",
+      "faceId": 14,
+      "u": 0.7295747095622925,
+      "v": 0.610964352346699,
+      "width": 0.8082558551104738,
+      "height": 1.0842456592945382,
+      "depth": 0.035,
+      "rotationDeg": 0,
+      "orientation": "flush",
+      "pattern": {
+        "slot": "stained-glass",
+        "mode": "glass",
+        "selector": "all",
+        "normal": [
+          0,
+          0,
+          1
+        ],
+        "patternId": "winding_roots",
+        "solid": false,
+        "scale": 1,
+        "palette": [
+          "#d9ffb3",
+          "#468c00",
+          "#ffffff"
+        ],
+        "engravingCoreOpacity": 0.85,
+        "opacity": 0.8,
+        "patterns": [
+          {
+            "motifScale": 1.11,
+            "motifRotationDeg": 0,
+            "tiling": true,
+            "invert": false,
+            "motifThinPx": 2,
+            "frameShape": "diamond",
+            "frameX": -9.412844473855543,
+            "frameY": 7.321108098615682,
+            "frameRotationDeg": 43,
+            "frameScale": 1.5694130284370735,
+            "meshScale": 1.86,
+            "meshRotationDeg": 0,
+            "overpassClearanceMultiplier": 3,
+            "repoPatternId": "winding_roots",
+            "motifUrl": "https://raw.githack.com/Oolnokk/HobunjiHollowUnity/43c50dfe61f6bed501329a9b317c334cfab31d55/docs/assets/patterns/motif_winding_roots.png"
+          },
+          {
+            "motifScale": 1,
+            "motifRotationDeg": 0,
+            "tiling": false,
+            "invert": false,
+            "motifThinPx": 3,
+            "frameShape": "square",
+            "frameX": 0,
+            "frameY": 0,
+            "frameRotationDeg": 0,
+            "frameScale": 1,
+            "meshScale": 3.2,
+            "meshRotationDeg": 0,
+            "overpassClearanceMultiplier": 3,
+            "repoPatternId": "blessed_blossom_windswept",
+            "motifUrl": "https://raw.githack.com/Oolnokk/HobunjiHollowUnity/43c50dfe61f6bed501329a9b317c334cfab31d55/docs/assets/patterns/motif_blessed_blossom_windswept.png"
+          }
+        ],
+        "overpassPatternId": "blessed_blossom_windswept",
+        "layerTransforms": [
+          {
+            "tiling": true,
+            "scale": 1,
+            "rotationDeg": 0,
+            "offsetX": 0,
+            "offsetY": 0
+          },
+          {
+            "tiling": false,
+            "scale": 1.2,
+            "rotationDeg": 0,
+            "offsetX": -0.1,
+            "offsetY": 0.1
+          }
+        ],
+        "pattern": null
+      },
+      "interiorWindowId": "fwall_mv77wqry70qh",
+      "sourceSurface": "crossbar_window_pane",
+      "side": "east",
+      "bodyOutset": 0
+    },
+    {
+      "id": "temple_west_window_rebirth",
+      "key": "crossbarWindow",
+      "faceId": 16,
+      "u": 0.28617338721249175,
+      "v": 0.608256740112092,
+      "width": 0.8141067504882812,
+      "height": 1.0920944213867188,
+      "depth": 0.035,
+      "rotationDeg": 0,
+      "orientation": "flush",
+      "pattern": {
+        "slot": "stained-glass",
+        "mode": "glass",
+        "selector": "all",
+        "normal": [
+          0,
+          0,
+          1
+        ],
+        "patternId": "winding_roots",
+        "solid": false,
+        "scale": 1,
+        "palette": [
+          "#d9ffb3",
+          "#468c00",
+          "#ffbf00"
+        ],
+        "engravingCoreOpacity": 0.85,
+        "opacity": 0.8,
+        "patterns": [
+          {
+            "motifScale": 1.11,
+            "motifRotationDeg": 0,
+            "tiling": true,
+            "invert": false,
+            "motifThinPx": 2,
+            "frameShape": "diamond",
+            "frameX": -9.412844473855543,
+            "frameY": 7.321108098615682,
+            "frameRotationDeg": 43,
+            "frameScale": 1.5694130284370735,
+            "meshScale": 1.86,
+            "meshRotationDeg": 0,
+            "overpassClearanceMultiplier": 3,
+            "repoPatternId": "winding_roots",
+            "motifUrl": "https://raw.githack.com/Oolnokk/HobunjiHollowUnity/43c50dfe61f6bed501329a9b317c334cfab31d55/docs/assets/patterns/motif_winding_roots.png"
+          },
+          {
+            "motifScale": 1,
+            "motifRotationDeg": 0,
+            "tiling": false,
+            "invert": false,
+            "motifThinPx": 3,
+            "frameShape": "square",
+            "frameX": 0,
+            "frameY": 0,
+            "frameRotationDeg": 0,
+            "frameScale": 1,
+            "meshScale": 3.2,
+            "meshRotationDeg": 0,
+            "overpassClearanceMultiplier": 3,
+            "repoPatternId": "blessed_blossom_rebirth",
+            "motifUrl": "https://raw.githack.com/Oolnokk/HobunjiHollowUnity/43c50dfe61f6bed501329a9b317c334cfab31d55/docs/assets/patterns/motif_blessed_blossom_rebirth.png"
+          }
+        ],
+        "overpassPatternId": "blessed_blossom_rebirth",
+        "layerTransforms": [
+          {
+            "tiling": true,
+            "scale": 1,
+            "rotationDeg": 0,
+            "offsetX": 0,
+            "offsetY": 0
+          },
+          {
+            "tiling": false,
+            "scale": 1.5,
+            "rotationDeg": 0,
+            "offsetX": -0.05,
+            "offsetY": 0.2
+          }
+        ],
+        "pattern": null
+      },
+      "interiorWindowId": "fwall_mv780vrmh7b9",
+      "sourceSurface": "crossbar_window_pane",
+      "side": "west",
+      "bodyOutset": 0
+    },
+    {
+      "id": "temple_west_window_balance",
+      "key": "crossbarWindow",
+      "faceId": 16,
+      "u": 0.7138266127875084,
+      "v": 0.608256740112092,
+      "width": 0.8141067504882812,
+      "height": 1.0920944213867188,
+      "depth": 0.035,
+      "rotationDeg": 0,
+      "orientation": "flush",
+      "pattern": {
+        "slot": "stained-glass",
+        "mode": "glass",
+        "selector": "all",
+        "normal": [
+          0,
+          0,
+          1
+        ],
+        "patternId": "winding_roots",
+        "solid": false,
+        "scale": 1,
+        "palette": [
+          "#d9ffb3",
+          "#468c00",
+          "#ffb3b3"
+        ],
+        "engravingCoreOpacity": 0.85,
+        "opacity": 0.8,
+        "patterns": [
+          {
+            "motifScale": 1.11,
+            "motifRotationDeg": 0,
+            "tiling": true,
+            "invert": false,
+            "motifThinPx": 2,
+            "frameShape": "diamond",
+            "frameX": -9.412844473855543,
+            "frameY": 7.321108098615682,
+            "frameRotationDeg": 43,
+            "frameScale": 1.5694130284370735,
+            "meshScale": 1.86,
+            "meshRotationDeg": 0,
+            "overpassClearanceMultiplier": 3,
+            "repoPatternId": "winding_roots",
+            "motifUrl": "https://raw.githack.com/Oolnokk/HobunjiHollowUnity/43c50dfe61f6bed501329a9b317c334cfab31d55/docs/assets/patterns/motif_winding_roots.png"
+          },
+          {
+            "motifScale": 1,
+            "motifRotationDeg": 0,
+            "tiling": false,
+            "invert": false,
+            "motifThinPx": 3,
+            "frameShape": "square",
+            "frameX": 0,
+            "frameY": 0,
+            "frameRotationDeg": 0,
+            "frameScale": 1,
+            "meshScale": 3.2,
+            "meshRotationDeg": 0,
+            "overpassClearanceMultiplier": 3,
+            "repoPatternId": "blessed_blossom_balance",
+            "motifUrl": "https://raw.githack.com/Oolnokk/HobunjiHollowUnity/43c50dfe61f6bed501329a9b317c334cfab31d55/docs/assets/patterns/motif_blessed_blossom_balance.png"
+          }
+        ],
+        "overpassPatternId": "blessed_blossom_balance",
+        "layerTransforms": [
+          {
+            "tiling": true,
+            "scale": 1,
+            "rotationDeg": 0,
+            "offsetX": 0,
+            "offsetY": 0
+          },
+          {
+            "tiling": false,
+            "scale": 1.5,
+            "rotationDeg": 0,
+            "offsetX": -0.1,
+            "offsetY": 0.1
+          }
+        ],
+        "pattern": null
+      },
+      "interiorWindowId": "fwall_mv786wv4mgxi",
+      "sourceSurface": "crossbar_window_pane",
+      "side": "west",
+      "bodyOutset": 0
+    }
+  ],
+  "logWall": {
+    "seed": "cabin-log-1",
+    "logDiameter": 0.34,
+    "trunkWonk": 0.18,
+    "courseGap": -0.03
   }
 }

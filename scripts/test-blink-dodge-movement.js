@@ -11,6 +11,7 @@ const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Used to guard the
 let nowMs = 0; // Used by the fake performance clock to deterministically cross the reversal-hop cooldown.
 let registeredAbility = null; // Filled by Combat.abilities.register and used to drive the real hold callbacks below.
 let movementSpeedFn = null; // Filled by Combat.setMovementSpeedMul and used to inspect the live speed buildup.
+const dodgeVoices = []; // Records the character passed to each successful Blink hop vocalization.
 const spendLog = []; // Used to confirm hop costs and quantized passive Blink drain independently.
 const player = { x: 0, y: 0, inputX: 0, inputY: 0, inputStrength: 0, stamina: 200, invulnUntil: 0, dodging: false }; // Shared fake player mutated by the Blink module.
 
@@ -34,6 +35,7 @@ const combat = {
 
 const windowStub = {
   Combat: combat,
+  CombatVocalizations: { playDodge: entity => dodgeVoices.push(entity) },
   CombatProgression: {
     getEffects: () => ({ afflictions: {}, stats: {} }),
   },
@@ -79,6 +81,7 @@ player.inputStrength = 1;
 registeredAbility.onHoldUpdate('hold1', 1 / 60);
 assert.equal(player.x, 82, 'fresh movement input performs exactly one forward hop');
 assert.equal(player.y, 0);
+assert.deepEqual(dodgeVoices, [player], 'one Blink hop produces one dodge vocal');
 assert.equal(spendLog.filter(entry => entry.reason === 'Blink Dodge hop').length, 1, 'initial movement spends exactly one hop cost');
 
 const firstFrameSpeed = movementSpeedFn(); // Used to verify buildup begins near normal locomotion rather than at the final boost.

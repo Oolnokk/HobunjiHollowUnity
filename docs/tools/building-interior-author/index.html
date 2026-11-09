@@ -53,8 +53,9 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 #qhelpPopover .qhelp-close{position:absolute;top:5px;right:9px;cursor:pointer;color:var(--muted);font-weight:800;font-size:13px}
 #qhelpPopover .qhelp-close:hover{color:var(--text)}
 </style>
-<script src="../../js/panel-ui.js"></script>
+<script src="../../js/panel-ui.js?v=20261107h64d192c"></script>
 <script src="../../js/map-live-preview.js?v=20260910a"></script>
+<script src="../../js/table-chair-placement.js?v=20261102chairreview3"></script>
 </head>
 <body>
 <div class="app" id="biaApp">
@@ -107,17 +108,24 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 
     <div class="section">
       <h2>3. Floor plan tools</h2>
+      <div id="canvasExitPickerRow" class="row hidden" style="margin:0 0 6px;align-items:center">
+        <label for="canvasExitSelect" class="hint" style="margin-right:4px">Exit to place</label>
+        <select id="canvasExitSelect" aria-label="Exit to place on the floor plan" style="flex:1;min-width:125px"><option value="">Select an exit below</option></select>
+      </div>
       <canvas id="gridCanvas" width="900" height="900"></canvas>
+      <div id="exitCanvasStatus" class="hint hidden" role="status" aria-live="polite" style="margin-top:5px;padding:6px;border:1px solid var(--line);border-radius:8px"></div>
       <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:6px">
         <button id="toolPaintFloor" class="active">Paint floor</button>
         <button id="toolEraseFloor">Erase floor</button>
         <button id="toolPaintCollider">Collider</button>
         <button id="toolEraseCollider">Erase collider</button>
+        <button id="toolPaintDoor">Door tile</button>
+        <button id="toolEraseDoor">Erase door</button>
         <button id="toolFurniture">Place furniture</button>
         <button id="toolSelect">Select</button>
         <button id="toolErase">Erase furn</button>
       </div>
-      <p class="hint" style="margin-top:6px">Paint floor footprint. Collider = invisible blocker (red). Exit/vendor zones below. Walls auto-generate with gaps at exit tile edges.</p>
+      <p class="hint" style="margin-top:6px">Paint floor footprint. Collider = invisible blocker (red). Door tile = an auto-rotated Wooden Door on a floor tile (it bridges the two unpainted tiles beside it, faces the lone painted neighbour at a dead end, faces north with none; NPCs open it by walking up, the player opens it by hand). Exit/vendor zones below. Paint exit markers on the unpainted tile immediately OUTSIDE the floor footprint. The exit retains its authored tile even without a visible floor slab, and the physical door sits on the boundary next to the painted floor. Erase floor under a single-neighbor exit to trim an unnecessary protrusion without moving the exit. Legacy exits painted on floor tiles remain supported.</p>
     </div>
 
     <div class="section">
@@ -148,6 +156,7 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
       <div class="row" style="flex-wrap:wrap;gap:5px">
         <button id="addExitBtn">+ New exit</button>
         <button id="toolPaintExit">Paint exit</button>
+        <button id="toolMoveExit" title="Click a tile to move the selected exit here, keeping its destination and identity">Move exit</button>
         <button id="toolEraseExit">Erase exit</button>
       </div>
       <div id="exitZoneList" style="margin-top:6px;display:flex;flex-direction:column;gap:5px"></div>
@@ -160,6 +169,17 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
           <div class="field"><label>Spawn col</label><input id="exitSpawnCol" type="number" min="0" value="0"></div>
           <div class="field"><label>Spawn row</label><input id="exitSpawnRow" type="number" min="0" value="0"></div>
         </div>
+        <div class="grid2" style="margin-top:4px">
+          <div class="field"><label><input id="exitGenerateDoor" type="checkbox"> Generate wooden door</label></div>
+          <div class="field"><label>Direction into this room</label><select id="exitDirection"><option value="">Automatic</option><option value="north">North ↑</option><option value="east">East →</option><option value="south">South ↓</option><option value="west">West ←</option></select></div>
+        </div>
+        <div class="hint">To place a doorway on the wall edge, use <b>Paint exit</b> (add) or <b>Move exit</b> (replace), then click a blank grid cell immediately outside the floor. The cell is saved as the exit position even without visible floor. Direction is inferred from the neighboring floor; choose it yourself at corners. Spawn col/row set where you arrive on the destination map.</div>
+        <div class="row" style="margin-top:5px;align-items:flex-end;flex-wrap:wrap;gap:6px">
+          <div class="field" style="margin:0"><label>Exit col</label><input id="exitTileCol" type="number" step="1" min="0" placeholder="col" style="width:65px"></div>
+          <div class="field" style="margin:0"><label>Exit row</label><input id="exitTileRow" type="number" step="1" min="0" placeholder="row" style="width:65px"></div>
+          <button id="moveExitToCoords" type="button" title="Move the selected exit to these map grid coordinates, even if that tile has no floor">Move to col, row</button>
+        </div>
+        <div class="hint" id="exitPlacementHelp">New interiors include an empty one-tile border for outside exits. Existing rooms need at least one blank grid cell beside their floor edge; enlarge the grid or erase an exit-only floor spur if necessary.</div>
         <div class="row" style="margin-top:4px">
           <button id="applyExitBtn">Apply</button>
           <button id="delExitBtn" class="danger">Delete</button>
@@ -256,6 +276,10 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
           <input id="nonCollidingFurniture" type="checkbox">
           Non-colliding
         </label>
+        <div class="field"><label>Belongs to table</label><select id="pTableId"><option value="">No table</option></select></div>
+        <div class="field"><label>Spatial chair placement</label><select id="pTableMode"><option value="">Independent</option><option value="orbit">Orbit around round table</option><option value="edge">Along flat table edge</option></select></div>
+        <div class="grid2"><div class="field"><label>Orbit angle (degrees)</label><input id="pTableAngle" type="number" min="0" max="360" step="1" value="0"></div><div class="field"><label>Distance from table edge</label><input id="pTableDistance" type="number" min="0" max="4" step="0.05" value="0.65"></div></div>
+        <div class="grid2"><div class="field"><label>Flat table side</label><select id="pTableSide"><option value="front">Front</option><option value="back">Back</option><option value="left">Left</option><option value="right">Right</option></select></div><div class="field"><label>Edge position (%)</label><input id="pTableAlong" type="number" min="0" max="100" step="1" value="50"></div></div>
         <div id="gridFurnSummary" class="hint" style="margin-top:5px">Grid footprint —</div>
         <div class="hint" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">Fine 3D transform. These values are residual offsets/scale on top of the grid placement.</div>
         <div class="grid3" style="margin-top:6px">
@@ -375,21 +399,38 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
 <script src="../../js/WallBuilder.js"></script>
-<script src="../../js/foliage-generator.js"></script>
+<script src="../../js/foliage-generator.js?v=20261031h87aa596"></script>
+<script src="../../config/natural-surface-materials.js?v=20261027h1fb8ced"></script>
+<script src="../../js/natural-surface-materials.js?v=20261027h1fb8ced"></script>
+<script src="../../js/surface-foliage-authoring.js?v=20261028temple-finish"></script>
 <script src="../../js/wood-cut-surfaces.js"></script>
 <script src="../../js/stacked-log-walls.js"></script>
 <script src="../../js/terrain-preview.js"></script>
-<script src="../../js/interior-scene-builder.js?v=20261015hb802584"></script>
+<script src="../../js/interior-scene-builder.js?v=20261027hfloorlesswalls1"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/interior-ceilings.js?v=20261015h5328b1c"></script>
+<script src="../../config/scratchbones-config.js"></script>
+<script src="../../js/portrait-utils.js?v=20261107h7418f3e"></script>
+<script src="../../js/motif-store.js?v=20261026templepatterns1"></script>
+<script src="../../js/pattern-library.js?v=20261026hPlayerDefaults5"></script>
+<script src="../../js/repo-pattern-library.js?v=20261030lichPatterns3"></script>
+<script src="../../js/pattern-authoring.js?v=20261104hPatternQuick1435a"></script>
+<script src="../../js/clothing-weaving-system.js?v=20261104hPatternQuick1435a"></script>
+<script src="../../js/furniture-pattern-surfaces.js?v=20261108h66ae7a9"></script>
 <script src="../../js/procedural-furniture.js"></script>
+<!-- Use the game\'s authored furniture meshes and live fallback upgrade for rug/pattern parity. -->
+<script>window.__hobunjiFurnitureConfigBase = "../../config/furniture-authored/";</script>
+<script src="../../js/authored-furniture-runtime.js?v=20261104hf23bb18"></script>
+<script src="../../js/runtime-frame-scheduler.js?v=20261027h13f3a6f"></script>
+<script src="../../js/furniture-vessel-runtime.js?v=20261106hlantern2"></script>
 <script src="../../js/interior-furniture-grid.js?v=20261012heb9cb96"></script>
+<script src="../../js/interior-door-tiles.js?v=20261102h292ab3a"></script>
 <!-- These sidecars require Three.js and the editor's furniture builders above.
      Static order avoids the old map-live-preview injection race and gives
      nested tool pages the same wall/window runtime as the game. -->
-<script src="../../js/wall-ornament-placement.js?v=20261015hd5cba5f"></script>
-<script src="../../js/daylight-window-runtime.js?v=20261013h3b89898"></script>
-<script src="../../js/building-interior-wall-ornament-editor.js?v=20261015hac55fd8"></script>
+<script src="../../js/wall-ornament-placement.js?v=20261027h8bf7bae"></script>
+<script src="../../js/daylight-window-runtime.js?v=20261027hglassB1"></script>
+<script src="../../js/building-interior-wall-ornament-editor.js?v=20261106hlantern5"></script>
 
 <script>
 (function () {
@@ -470,8 +511,11 @@ var CATALOG = [
   { key:'loomFurniture',          label:'Simple Loom',        modelFile:'loom_small.glb',                fw:1, fd:2, col:0x8a6a3a },
   { key:'nightstandFurniture',    label:'Nightstand',        modelFile:'nightstand.glb',                fw:1, fd:1, col:0x6b4a28 },
   { key:'rugFurniture',           label:'Woven Rug',         modelFile:'rug_woven_small.glb',           fw:2, fd:2, col:0x8a5a3a },
-  { key:'standingLampFurniture',  label:'Bronze Lamp',       modelFile:'standing_lamp_bronze.glb',      fw:1, fd:1, col:0xb87333 },
+  { key:'standingLampFurniture',  label:'Lantern Table',       modelFile:null,                            fw:1, fd:1, col:0xb87333 },
   { key:'stoolFurniture',         label:'Round Stool',       modelFile:'stool_round.glb',               fw:1, fd:1, col:0x7a5c3a },
+  { key:'servingTableFurniture', label:'Serving Table', fw:4, fd:1, col:0x926a43 },
+  { key:'servingPotFurniture', label:'Serving Pot', fw:1, fd:1, col:0x52433e },
+  { key:'bowlStackFurniture', label:'Stack of Bowls', fw:1, fd:1, col:0x906344 },
   { key:'tableLongFurniture',     label:'Long Table',        modelFile:'table_long.glb',                fw:4, fd:1, col:0x7a5c3a },
   { key:'tableRoundFurniture',    label:'Round Table',       modelFile:'table_round.glb',               fw:2, fd:2, col:0x7a5c3a },
   { key:'tableSmallFurniture',    label:'Small Table',       modelFile:'table_small.glb',               fw:1, fd:1, col:0x7a5c3a },
@@ -506,6 +550,11 @@ function furnLegacyVisual(f){
   return helper&&helper.legacyRecordFor?helper.legacyRecordFor(f):f;
 }
 function furnitureFitsFloor(f,col,row){
+  if(f&&f.tableAttachment){
+    var parent=activeFurniture().find(function(candidate){return candidate.id===f.tableId&&candidate.id!==f.id;});
+    if(parent&&/chair|bench|stool/i.test(f.itemKey||'')&&/table|desk|counter/i.test(parent.itemKey||'')
+      &&window.TableChairPlacement?.normalize?.(f.tableAttachment)?.mode===window.TableChairPlacement.modeForTable(parent.itemKey))return true;
+  } // Invalid/missing attachments retain an ordinary grid footprint.
   var info=furnGridInfo(f); // Used to validate the complete current grid footprint before placement, dragging, rotation, or scaling.
   for(var dc=0;dc<info.gridW;dc++) for(var dd=0;dd<info.gridD;dd++){
     var tc=col+dc,tr=row+dd;
@@ -519,9 +568,12 @@ function newId(){ return 'f' + Date.now().toString(36) + Math.random().toString(
 
 function makeBlank(){
   var cols=12, rows=10, floor=[];
-  for(var r=0;r<rows;r++) for(var c=0;c<cols;c++) floor.push([c,r]);
+  // Leave a one-tile empty border so a brand-new room can immediately
+  // author floorless exits on every wall without first carving away floor.
+  // Fill rectangle still allows a full-bleed room when explicitly chosen.
+  for(var r=1;r<rows-1;r++) for(var c=1;c<cols-1;c++) floor.push([c,r]);
   return { schema:'hobunji_building_interior.v1', id:'map_i_building_01', name:'Building Interior',
-           cols:cols, rows:rows, exits:[], colliders:[], vendorZones:[], floor:floor, furniture:[],
+           cols:cols, rows:rows, exits:[], colliders:[], doorTiles:[], vendorZones:[], floor:floor, furniture:[],
            entryPoints:[], layouts:[] };
 }
 
@@ -582,6 +634,10 @@ function activeFurniture(){
   return lay.furniture;
 }
 function setActiveFurniture(arr){
+  var kept=new Set(arr.map(function(f){return f.id;})); // Used to clear links to tables removed by erase, floor edits or Delete.
+  arr.forEach(function(f){
+    if(f.tableAttachment&&!kept.has(f.tableId)){delete f.tableAttachment;f.tableId='';}
+  });
   var lay=currentLayoutObj();
   if(lay) lay.furniture=arr; else state.interior.furniture=arr;
 }
@@ -597,6 +653,83 @@ function syncFloorFromSet(){
   });
 }
 function isFloor(c,r){ return state.floorSet.has(c+','+r); }
+function reportExitPlacement(message, isWarning){
+  var canvasStatus=$('exitCanvasStatus'); // Displays the result beside the grid, where mobile authors can see it without scrolling back to the Exit panel.
+  var controlsStatus=$('exitPlacementHelp'); // The same guidance is visible while entering exact exit coordinates.
+  controlsStatus.textContent=message;
+  canvasStatus.textContent=message;
+  canvasStatus.style.color=isWarning?'var(--warn)':'var(--ok)';
+  canvasStatus.classList.remove('hidden');
+}
+const EXIT_INWARD={north:[0,-1],south:[0,1],west:[-1,0],east:[1,0]}; // Doorway position is the exterior grid cell; the walkable transition is one inward step.
+function insideForDoorway(c,r,preferredDirection){
+  var candidates=Object.keys(EXIT_INWARD).map(function(direction){
+    var d=EXIT_INWARD[direction], col=c+d[0],row=r+d[1];
+    return {col:col,row:row,direction:direction};
+  }).filter(function(candidate){return isFloor(candidate.col,candidate.row);});
+  if(preferredDirection){
+    return candidates.filter(function(candidate){return candidate.direction===preferredDirection;})[0]||null;
+  }
+  return candidates.length===1?candidates[0]:null; // Ambiguous concave corners require an explicit inward direction.
+}
+function pairedOutsideForInside(exit,c,r){
+  return (exit.doorwayTiles||[]).filter(function(p){
+    var inward=EXIT_INWARD[exit.direction]; // Keep associations intact even while the floor tile itself is being erased.
+    if(inward) return p[0]+inward[0]===c&&p[1]+inward[1]===r;
+    var candidate=insideForDoorway(p[0],p[1],'');
+    return candidate ? candidate.col===c&&candidate.row===r : Math.abs(p[0]-c)+Math.abs(p[1]-r)===1;
+  });
+}
+
+// The same validator handles canvas painting and exact numeric coordinates.
+// An old exit's direction must not block moving it to a different wall:
+// when only one painted neighbor exists it establishes the new inward direction.
+function resolveExitPlacement(c,r,direction){
+  if(!Number.isInteger(c)||!Number.isInteger(r)||!inGrid(c,r)) return {error:'Exit is outside the map grid. Increase Columns/Rows first, then paint beyond the floor footprint.'};
+  if(isFloor(c,r)) return {direction:direction||'',onFloor:true}; // Preserve older authored in-floor exits and intentional stair landing triggers.
+  var candidates=Object.keys(EXIT_INWARD).map(function(side){
+    var d=EXIT_INWARD[side];
+    return {direction:side,col:c+d[0],row:r+d[1]};
+  }).filter(function(candidate){return isFloor(candidate.col,candidate.row);});
+  if(candidates.length===1) return {direction:candidates[0].direction,onFloor:false}; // The wall defines the normal, even if the exit previously faced another way.
+  if(!candidates.length) return {error:'Outside exit must touch one painted floor tile. Paint floor next to this blank cell (or enlarge the grid).'};
+  var selected=candidates.find(function(candidate){return candidate.direction===direction;});
+  if(selected) return {direction:selected.direction,onFloor:false};
+  return {error:'This blank corner touches multiple floor tiles. Choose its inward direction above, click Apply, and paint again.'};
+}
+function editExitAt(ez,c,r,replaceAll){
+  var chosenDirection=$('exitDirection').value||''; // Read the currently selected field, not a stale direction retained by the saved exit.
+  var placement=resolveExitPlacement(c,r,chosenDirection);
+  if(placement.error){reportExitPlacement('Cannot place exit at '+c+','+r+': '+placement.error,true);log(placement.error,'warn');return false;}
+  var isExistingTile=(ez.tiles||[]).some(function(p){return p[0]===c&&p[1]===r;});
+  if(!replaceAll&&!placement.onFloor&&!isExistingTile&&(ez.tiles||[]).some(function(p){
+    var old=!isFloor(p[0],p[1])?resolveExitPlacement(p[0],p[1],ez.direction||''):null;
+    return old&&!old.error&&old.direction!==placement.direction;
+  })){
+    log('One exit zone cannot face two different walls. Use Move exit to relocate this exit, or create a second exit for the other wall.','warn');
+    return false;
+  }
+  if(isExistingTile && (!replaceAll || ((ez.tiles||[]).length===1 && !(ez.doorwayTiles||[]).length)) && (placement.onFloor || placement.direction===ez.direction)) return false; // Dragging within one cell must not rebuild Three.js each pointermove.
+  var occupied=(state.interior.exits||[]).some(function(other){return other.id!==ez.id&&(other.tiles||[]).some(function(p){return p[0]===c&&p[1]===r;});});
+  if(occupied){log('Another exit already owns grid tile '+c+','+r+'. Select that exit or erase its marker first.','warn');return false;}
+  if(replaceAll){
+    ez.tiles=[[c,r]];
+    ez.doorwayTiles=[]; // A moved exit is always authored directly at its visible position, not through the old sidecar linkage.
+  }else{
+    if(!(ez.tiles||[]).some(function(p){return p[0]===c&&p[1]===r;})) (ez.tiles||(ez.tiles=[])).push([c,r]);
+    if(!placement.onFloor && (ez.doorwayTiles||[]).some(function(p){return p[0]===c&&p[1]===r;}))
+      ez.doorwayTiles=ez.doorwayTiles.filter(function(p){return p[0]!==c||p[1]!==r;}); // De-duplicate an old sidecar location.
+  }
+  if(!placement.onFloor){
+    ez.direction=placement.direction;
+    $('exitDirection').value=ez.direction;
+  }
+  $('exitTileCol').value=c; $('exitTileRow').value=r;
+  renderExitList();drawGrid();rebuild3D();refreshExport();
+  reportExitPlacement('Placed '+(ez.label||ez.id)+' at col '+c+', row '+r+(placement.onFloor?' (on floor).':' (outside floor — no floor tile added).')+' Export JSON or Download JSON to save.',false);
+  log((replaceAll?'Moved':'Painted')+' exit '+(ez.label||ez.id)+' at '+c+','+r+(placement.onFloor?' (floor tile).':' (outside floor; wall-aligned doorway).'));
+  return true;
+}
 
 // ─── Undo/redo ────────────────────────────────────────────────────────────────
 var HLIMIT=60, hist={undo:[],redo:[],pending:null};
@@ -633,10 +766,28 @@ function drawGrid(){
     gx.strokeStyle='#ff3333'; gx.lineWidth=1; gx.strokeRect(c*cw+0.5,r*ch+0.5,cw-1,ch-1);
   });
 
+  // Door tiles (brown, with a line toward the side the door faces)
+  InteriorDoorTiles.doorGroupsOf(state.interior,state.floorSet).forEach(function(group){
+    group.tiles.forEach(function(record){
+      var c=record.col,r=record.row, o=InteriorDoorTiles.recordOrientation(state.floorSet,group); // Shared with the in-game door builder.
+      gx.fillStyle='rgba(160,105,55,0.85)'; gx.fillRect(c*cw+1,r*ch+1,cw-2,ch-2);
+      var vx=o.facing==='west'?-1:o.facing==='east'?1:0, vy=o.facing==='north'?-1:o.facing==='south'?1:0, mx=(c+0.5)*cw, my=(r+0.5)*ch;
+      gx.strokeStyle='#2b1808'; gx.lineWidth=3; gx.beginPath();
+      gx.moveTo(mx-vy*cw*0.4,my+vx*ch*0.4); gx.lineTo(mx+vy*cw*0.4,my-vx*ch*0.4); gx.stroke(); // door leaf spans perpendicular to its facing
+      gx.strokeStyle='#ffe0a8'; gx.lineWidth=2; gx.beginPath(); gx.moveTo(mx,my); gx.lineTo(mx+vx*cw*0.35,my+vy*ch*0.35); gx.stroke();
+    });
+  });
+
   // Exit zones
   (state.interior.exits||[]).forEach(function(ez,zi){
     var isActive=ez.id===state.activeExitId;
-    (ez.tiles||[]).forEach(function(p){
+    // Show both the authored exit cells and any legacy exterior-door sidecar markers.
+    // Previously the presence of doorwayTiles hid *all* ordinary exit tiles, including freshly painted outside markers.
+    var visualMarkers=[...(ez.tiles||[]),...(ez.doorwayTiles||[])];
+    var seenMarkers=new Set();
+    visualMarkers.forEach(function(p){
+      if(seenMarkers.has(p[0]+','+p[1]))return;
+      seenMarkers.add(p[0]+','+p[1]);
       var c=p[0],r=p[1];
       gx.fillStyle=isActive?'rgba(255,148,15,0.82)':'rgba(210,125,12,0.52)';
       gx.fillRect(c*cw+1,r*ch+1,cw-2,ch-2);
@@ -679,20 +830,24 @@ function drawGrid(){
   // Furniture — from the currently-edited layout if one is selected (see
   // activeFurniture), otherwise the base room's own furniture.
   activeFurniture().forEach(function(f){
-    var cat=catOf(f.itemKey), info=furnGridInfo(f), sel=f.id===state.selectedId;
+    var cat=catOf(f.itemKey),info=furnGridInfo(f),sel=f.id===state.selectedId;
+    var childCenter=tableChildCenterOnGrid(f);
+    var left=childCenter ? childCenter.x-.35 : f.col;
+    var top=childCenter ? childCenter.z-.35 : f.row;
+    var w=childCenter ? .7 : info.gridW,d=childCenter ? .7 : info.gridD;
     gx.fillStyle=sel?'#76b8ff':catColHex(f.itemKey); gx.globalAlpha=sel?0.9:0.7;
-    gx.fillRect(f.col*cw+2,f.row*ch+2,info.gridW*cw-4,info.gridD*ch-4);
+    gx.fillRect(left*cw+2,top*ch+2,Math.max(3,w*cw-4),Math.max(3,d*ch-4));
     gx.globalAlpha=1;
     gx.strokeStyle=sel?'#fff':'rgba(255,255,255,.4)'; gx.lineWidth=sel?2:1;
-    gx.strokeRect(f.col*cw+2,f.row*ch+2,info.gridW*cw-4,info.gridD*ch-4);
+    gx.strokeRect(left*cw+2,top*ch+2,Math.max(3,w*cw-4),Math.max(3,d*ch-4));
     var fs=Math.max(7,Math.min(11,cw*0.3));
     gx.font='bold '+fs+'px system-ui'; gx.textAlign='center'; gx.textBaseline='middle';
     gx.fillStyle='#fff'; gx.globalAlpha=sel?1:0.8;
-    var rotMark=info.gridRot?' ↻'+info.gridRot:'';
-    gx.fillText(((cat.label||f.itemKey).slice(0,7)+rotMark),(f.col+info.gridW/2)*cw,(f.row+info.gridD/2)*ch);
+    var rotMark=childCenter?' ↳':(info.gridRot?' ↻'+info.gridRot:'');
+    gx.fillText(((cat.label||f.itemKey).slice(0,7)+rotMark),(left+w/2)*cw,(top+d/2)*ch);
     if(f.nonColliding||f.walkableElevation){
       gx.font='bold '+Math.max(7,Math.min(10,cw*0.24))+'px system-ui';
-      gx.fillText('NO COLLISION',(f.col+info.gridW/2)*cw,(f.row+info.gridD-0.2)*ch);
+      gx.fillText('NO COLLISION',(left+w/2)*cw,(top+d-0.2)*ch);
     }
     gx.globalAlpha=1;
   });
@@ -715,8 +870,26 @@ function gridCell(e){
            r:Math.floor((e.clientY-rect.top)/rect.height*state.interior.rows) };
 }
 function inGrid(c,r){ return c>=0&&r>=0&&c<state.interior.cols&&r<state.interior.rows; }
+function tableChildCenterOnGrid(f) {
+  if(!f?.tableAttachment || !f.tableId) return null;
+  var table=activeFurniture().find(function(parent){return parent.id===f.tableId&&parent!==f;});
+  var desc=window.TableChairPlacement?.normalize?.(f.tableAttachment);
+  if(!table||!desc||desc.mode!==window.TableChairPlacement.modeForTable(table.itemKey))return null;
+  var cat=catOf(table.itemKey),visual=furnLegacyVisual(table);
+  var sx=Math.max(1e-4,Math.abs(Number(visual.postSX??visual.postScale??1)));
+  var sz=Math.max(1e-4,Math.abs(Number(visual.postSZ??visual.postScale??1)));
+  var local=window.TableChairPlacement.localPosition(desc,cat.fw*sx,cat.fd*sz);
+  if(!local)return null;
+  var yaw=(Number(visual.rotY)||0)*Math.PI/180,cos=Math.cos(yaw),sin=Math.sin(yaw);
+  return {
+    x:table.col+cat.fw/2+(Number(visual.postX)||0)+cos*local.x+sin*local.z,
+    z:table.row+cat.fd/2+(Number(visual.postZ)||0)-sin*local.x+cos*local.z,
+  }; // Same center as 3D preview; this child has no independent grid footprint.
+}
 function furnitureOccupiesTile(f,c,r){
-  if(!f) return false;
+  if(!f)return false;
+  var childCenter=tableChildCenterOnGrid(f);
+  if(childCenter)return Math.floor(childCenter.x)===c&&Math.floor(childCenter.z)===r;
   var info=furnGridInfo(f);
   return c>=f.col&&c<f.col+info.gridW&&r>=f.row&&r<f.row+info.gridD;
 }
@@ -740,29 +913,55 @@ function furnAtPreferringSelected(c,r){
 
 function gridAction(e){
   var cr=gridCell(e), c=cr.c, r=cr.r;
-  if(!inGrid(c,r)) return;
+  if(!inGrid(c,r)){
+    if(state.tool==='paintExit'||state.tool==='moveExit') reportExitPlacement('Outside the map GRID. Expand Columns/Rows first to make an empty edge tile, then tap the blank cell.',true);
+    return;
+  }
   var key=c+','+r, tool=state.tool, interior=state.interior;
 
   if(tool==='paintFloor'){
-    if(!state.floorSet.has(key)){ state.floorSet.add(key); syncFloorFromSet(); drawGrid(); rebuild3D(); }
+    if(!state.floorSet.has(key)){ if((interior.exits||[]).some(function(e){return (e.doorwayTiles||[]).concat(e.tiles||[]).some(function(p){return p[0]===c&&p[1]===r;});})){log('Erase the exit marker before painting floor under an outside doorway.','warn');return;} state.floorSet.add(key); syncFloorFromSet(); drawGrid(); rebuild3D(); }
   }
   else if(tool==='eraseFloor'){
     if(state.floorSet.has(key)){
+      // Floorless exit coordinates are authoritative authoring markers.
+      // Removing their old protruding floor square must never move the exit.
+      // Physical doors align to the remaining boundary and the runtime gives
+      // the original outside cell logical walkability for its transition.
+      var exitAt=(interior.exits||[]).filter(function(e){return (e.tiles||[]).some(function(p){return p[0]===c&&p[1]===r;});});
+      if(exitAt.length){
+        var neighbors=Object.keys(EXIT_INWARD).map(function(direction){var d=EXIT_INWARD[direction];return {col:c+d[0],row:r+d[1],direction:direction};})
+          .filter(function(p){return isFloor(p.col,p.row);});
+        var trimSafe=exitAt.length===1 && neighbors.length===1
+          && !(interior.doorTiles||[]).some(function(p){return p[0]===c&&p[1]===r;})
+          && !(interior.entryPoints||[]).some(function(p){return p.col===c&&p.row===r;})
+          && !activeFurniture().some(function(f){return furnitureOccupiesTile(f,c,r);})
+          && !(exitAt[0].doorwayTiles||[]).length;
+        if(!trimSafe){log('Cannot trim this exit: its floor is still needed, its doorway is already separately anchored, or the remaining edge is ambiguous.','warn');return;}
+        var authoredExit=exitAt[0]; // Keep exit.tiles intact: the coordinates are the physical exit marker.
+        authoredExit.direction=neighbors[0].direction;
+        if(authoredExit.id===state.activeExitId)$('exitDirection').value=authoredExit.direction;
+        log('Removed unnecessary floor under '+key+'; the exit stays at '+key+' and faces the remaining floor.');
+      }
       state.floorSet.delete(key);
       setActiveFurniture(activeFurniture().filter(function(f){
+        if(tableChildCenterOnGrid(f))return true; // Removing an old origin tile must not delete a table-relative child.
         var info=furnGridInfo(f);
         for(var dc=0;dc<info.gridW;dc++) for(var dd=0;dd<info.gridD;dd++)
           if(f.col+dc===c&&f.row+dd===r) return false;
         return true;
       }));
-      (interior.exits||[]).forEach(function(ez){ ez.tiles=(ez.tiles||[]).filter(function(p){return p[0]!==c||p[1]!==r;}); });
+      interior.doorTiles=(interior.doorTiles||[]).filter(function(p){return p[0]!==c||p[1]!==r;});
+      // Exit markers are allowed off floor: erasing an exit-only knob must
+      // not silently delete its transition or move its authored coordinate.
+      // Keep exterior markers only when they remain on the unpainted side of
+      // the same physical boundary.
+      (interior.exits||[]).forEach(function(ez){
+        ez.doorwayTiles=(ez.doorwayTiles||[]).filter(function(p){return !(p[0]===c&&p[1]===r);});
+      });
       (interior.vendorZones||[]).forEach(function(vz){ vz.tiles=(vz.tiles||[]).filter(function(p){return p[0]!==c||p[1]!==r;}); });
       syncFloorFromSet(); drawGrid(); rebuild3D();
     }
-  }
-  else if(tool==='exit'){
-    if(!isFloor(c,r)){ log('Exit must be on a floor tile.','warn'); return; }
-    interior.exit={col:c,row:r}; drawGrid(); rebuild3D();
   }
   else if(tool==='placeEntry'){
     if(!state.activeEntryId){ log('Select (or create) an entry point first.','warn'); return; }
@@ -787,8 +986,13 @@ function gridAction(e){
     var f=furnAtPreferringSelected(c,r);
     if(f){
       selectFurn(f.id);
-      state.dragFurn=f;
-      state.dragOff={dc:c-f.col, dr:r-f.row};
+      if(tableChildCenterOnGrid(f)){
+        state.dragFurn=null; state.dragOff=null; // Attachment controls own this child's position, not grid dragging.
+        log('Use Spatial chair placement to reposition a table-attached chair.');
+      } else {
+        state.dragFurn=f;
+        state.dragOff={dc:c-f.col, dr:r-f.row};
+      }
     } else {
       selectFurn(null);
       state.dragFurn=null;
@@ -808,21 +1012,36 @@ function gridAction(e){
     interior.colliders=(interior.colliders||[]).filter(function(p){return p[0]!==c||p[1]!==r;});
     drawGrid(); rebuild3D();
   }
-  else if(tool==='paintExit'){
-    if(!state.activeExitId){log('Select an exit zone first.','warn');return;}
-    var ez=(interior.exits||[]).filter(function(e){return e.id===state.activeExitId;})[0];
-    if(!ez) return;
-    if(!isFloor(c,r)){log('Exit tiles must be on floor.','warn');return;}
-    if(!ez.tiles.some(function(p){return p[0]===c&&p[1]===r;})){
-      ez.tiles.push([c,r]); drawGrid(); rebuild3D();
-    }
+  else if(tool==='paintDoor'){
+    if(!state.floorSet.has(key)){ state.floorSet.add(key); syncFloorFromSet(); } // A door tile is always floor.
+    if(!interior.doorTiles) interior.doorTiles=[];
+    if(!interior.doorTiles.some(function(p){return p[0]===c&&p[1]===r;})){ interior.doorTiles.push([c,r]); drawGrid(); rebuild3D(); }
+  }
+  else if(tool==='eraseDoor'){
+    interior.doorTiles=(interior.doorTiles||[]).filter(function(p){return p[0]!==c||p[1]!==r;});
+    drawGrid(); rebuild3D();
+  }
+  else if(tool==='paintExit'||tool==='moveExit'){
+    if(tool==='paintExit' && !state.activeExitId && (interior.exits||[]).length===1) window.__biaSelExit(interior.exits[0].id); // A one-exit room should not silently reject Paint exit simply because its Edit row was never selected.
+    if(!state.activeExitId){reportExitPlacement('Select an exit from the list (or click + New exit) before placing it.',true);log('Select an exit from the list (or click + New exit) before placing it.','warn');return;}
+    var ez=(interior.exits||[]).find(function(x){return x.id===state.activeExitId;});
+    if(!ez)return;
+    editExitAt(ez,c,r,tool==='moveExit');
   }
   else if(tool==='eraseExit'){
     if(!state.activeExitId) return;
     var ez=(interior.exits||[]).filter(function(e){return e.id===state.activeExitId;})[0];
     if(!ez) return;
-    ez.tiles=ez.tiles.filter(function(p){return p[0]!==c||p[1]!==r;});
-    drawGrid(); rebuild3D();
+    var outside=(ez.doorwayTiles||[]).some(function(p){return p[0]===c&&p[1]===r;});
+    if(outside){
+      var linked=insideForDoorway(c,r,ez.direction||'');
+      ez.doorwayTiles=ez.doorwayTiles.filter(function(p){return p[0]!==c||p[1]!==r;});
+      if(linked&&!pairedOutsideForInside(ez,linked.col,linked.row).length) ez.tiles=(ez.tiles||[]).filter(function(p){return p[0]!==linked.col||p[1]!==linked.row;});
+    }else{
+      ez.tiles=(ez.tiles||[]).filter(function(p){return p[0]!==c||p[1]!==r;});
+      ez.doorwayTiles=(ez.doorwayTiles||[]).filter(function(p){var linked=insideForDoorway(p[0],p[1],ez.direction||'');return !(linked&&linked.col===c&&linked.row===r);});
+    }
+    drawGrid();rebuild3D();refreshExport();
   }
   else if(tool==='paintVendor'){
     if(!state.activeVendorId){log('Select a vendor zone first.','warn');return;}
@@ -932,7 +1151,7 @@ gc.addEventListener('pointermove',function(e){
     f.col=nc; f.row=nr;
     drawGrid();
   } else if(['paintFloor','eraseFloor','furniture','erase',
-             'paintCollider','eraseCollider','paintExit','eraseExit','paintVendor','eraseVendor'].indexOf(state.tool)>=0){
+             'paintCollider','eraseCollider','paintDoor','eraseDoor','paintExit','moveExit','eraseExit','paintVendor','eraseVendor'].indexOf(state.tool)>=0){
     gridAction(e);
   }
 });
@@ -946,13 +1165,23 @@ gc.addEventListener('pointerleave',function(){
 });
 
 // ─── Tools ────────────────────────────────────────────────────────────────────
-var TOOL_IDS={paintFloor:'toolPaintFloor',eraseFloor:'toolEraseFloor',paintCollider:'toolPaintCollider',eraseCollider:'toolEraseCollider',furniture:'toolFurniture',select:'toolSelect',erase:'toolErase',paintExit:'toolPaintExit',eraseExit:'toolEraseExit',paintVendor:'toolPaintVendor',eraseVendor:'toolEraseVendor',placeEntry:'toolPlaceEntry',gable:'toolGable'};
+var TOOL_IDS={paintFloor:'toolPaintFloor',eraseFloor:'toolEraseFloor',paintCollider:'toolPaintCollider',eraseCollider:'toolEraseCollider',paintDoor:'toolPaintDoor',eraseDoor:'toolEraseDoor',furniture:'toolFurniture',select:'toolSelect',erase:'toolErase',paintExit:'toolPaintExit',moveExit:'toolMoveExit',eraseExit:'toolEraseExit',paintVendor:'toolPaintVendor',eraseVendor:'toolEraseVendor',placeEntry:'toolPlaceEntry',gable:'toolGable'};
 function setTool(t){
   state.tool=t;
   Object.keys(TOOL_IDS).forEach(function(k){ $(TOOL_IDS[k]).classList.toggle('active',k===t); });
+  $('canvasExitPickerRow').classList.toggle('hidden',t!=='paintExit'&&t!=='moveExit');
+  if(t==='paintExit'||t==='moveExit'){
+    var exit=(state.interior.exits||[]).find(function(e){return e.id===state.activeExitId;});
+    reportExitPlacement(exit
+      ? (t==='moveExit'?'Move ':'Paint ')+'exit "'+(exit.label||exit.id)+'": tap a BLANK grid cell touching the room floor. Orange E markers show authored exit tiles, not floor.'
+      : 'Choose an exit with Edit or + New exit, then tap a BLANK grid cell touching the room floor. This tool does not require a painted floor tile.',!exit);
+  }else $('exitCanvasStatus').classList.add('hidden');
   log('Tool: '+t);
 }
-Object.keys(TOOL_IDS).forEach(function(k){ $(TOOL_IDS[k]).addEventListener('click',function(){ setTool(k); }); });
+Object.keys(TOOL_IDS).forEach(function(k){ $(TOOL_IDS[k]).addEventListener('click',function(){
+  setTool(k);
+  if(k==='paintExit'||k==='moveExit') gc.scrollIntoView({behavior:'smooth',block:'center'}); // The grid is above the Exit section; reveal it automatically on mobile after choosing an exit tool.
+}); });
 
 // ─── Catalog UI ───────────────────────────────────────────────────────────────
 function buildCatalogUI(){
@@ -1034,6 +1263,16 @@ function selectFurn(id){
     $('nonCollidingFurniture').disabled=!!f.walkableElevation;
     $('gridFurnSummary').textContent=info.gridW+'×'+info.gridD+' tiles · grid rotation '+info.gridRot+'°'+(f.walkableElevation?' · walkable elevation forces non-colliding':(f.nonColliding?' · non-colliding':' · collision on occupied tiles'));
     var defS=f.postScale!=null?f.postScale:1;
+    var tableSelect=$('pTableId'); // Same map-local instance ids consumed by the gameplay table registry.
+    tableSelect.replaceChildren(new Option('No table',''));
+    activeFurniture().filter(function(candidate){return candidate.id!==f.id&&/table|desk|counter/i.test(candidate.itemKey);}).forEach(function(table){tableSelect.add(new Option((catOf(table.itemKey).label||table.itemKey)+' ('+table.id+')',table.id));});
+    tableSelect.value=f.tableId||'';
+    var tablePlacement=window.TableChairPlacement?.normalize?.(f.tableAttachment)||null;
+    $('pTableMode').value=tablePlacement?.mode||'';
+    $('pTableAngle').value=tablePlacement?.angleDeg??0;
+    $('pTableDistance').value=tablePlacement?.distance??0.65;
+    $('pTableSide').value=tablePlacement?.side||'front';
+    $('pTableAlong').value=Math.round((tablePlacement?.along??0.5)*100);
     $('pRotY').value=f.rotY||0; $('pX').value=f.postX||0; $('pY').value=f.postY||0; $('pZ').value=f.postZ||0;
     $('pSX').value=f.postSX!=null?f.postSX:defS; $('pSY').value=f.postSY!=null?f.postSY:defS; $('pSZ').value=f.postSZ!=null?f.postSZ:defS;
     $('selStats').textContent='Selected: '+(cat.label||f.itemKey);
@@ -1077,7 +1316,28 @@ $('nonCollidingFurniture').addEventListener('change',function(){
 });
 $('applyPTBtn').addEventListener('click',function(){
   var f=activeFurniture().filter(function(x){return x.id===state.selectedId;})[0]; if(!f) return;
+  var tableId=$('pTableId').value, tableMode=$('pTableMode').value;
+  var tableAttachment=null; // Validated before pushUndo or changing the live authoring record.
+  if(tableMode&&tableId){
+    var table=activeFurniture().find(function(candidate){return candidate.id===tableId&&candidate.id!==f.id;});
+    if(!table||!/chair|bench|stool/i.test(f.itemKey||'')
+      ||!/table|desk|counter/i.test(table.itemKey||'')
+      ||tableMode!==window.TableChairPlacement?.modeForTable?.(table.itemKey)){
+      $('statusLine').textContent='Choose a compatible table and chair placement mode.';return;
+    }
+    if(!$('pTableDistance').value.trim()||(tableMode==='orbit'&&!$('pTableAngle').value.trim())
+      ||(tableMode==='edge'&&!$('pTableAlong').value.trim())){
+      $('statusLine').textContent='Enter a valid distance and position.';return;
+    }
+    var descriptor=tableMode==='orbit'
+      ? {mode:'orbit',angleDeg:Number($('pTableAngle').value),distance:Number($('pTableDistance').value)}
+      : {mode:'edge',side:$('pTableSide').value,along:Number($('pTableAlong').value)/100,distance:Number($('pTableDistance').value)};
+    tableAttachment=window.TableChairPlacement?.normalize?.(descriptor);
+    if(!tableAttachment){$('statusLine').textContent='Invalid table-relative chair placement settings.';return;}
+  }
   pushUndo();
+  f.tableId=tableId; // Legacy table membership remains valid without spatial attachment.
+  if(tableAttachment)f.tableAttachment=tableAttachment;else delete f.tableAttachment;
   f.rotY=+$('pRotY').value||0; f.postX=+$('pX').value||0; f.postY=+$('pY').value||0; f.postZ=+$('pZ').value||0;
   f.postSX=Math.max(0.05,+$('pSX').value||1); f.postSY=Math.max(0.05,+$('pSY').value||1); f.postSZ=Math.max(0.05,+$('pSZ').value||1);
   delete f.postScale;
@@ -1105,22 +1365,27 @@ $('applyGridBtn').addEventListener('click',function(){
     var kept=arr.filter(function(f){ var info=furnGridInfo(f); return f.col+info.gridW<=cols&&f.row+info.gridD<=rows; });
     arr.length=0; Array.prototype.push.apply(arr,kept);
   });
-  (state.interior.exits||[]).forEach(function(e){ e.tiles=(e.tiles||[]).filter(function(p){return p[0]<cols&&p[1]<rows;}); });
+  (state.interior.exits||[]).forEach(function(e){
+    e.tiles=(e.tiles||[]).filter(function(p){return p[0]>=0&&p[1]>=0&&p[0]<cols&&p[1]<rows;});
+    e.doorwayTiles=(e.doorwayTiles||[]).filter(function(p){return p[0]>=0&&p[1]>=0&&p[0]<cols&&p[1]<rows&&insideForDoorway(p[0],p[1],e.direction||'');});
+  });
   (state.interior.vendorZones||[]).forEach(function(v){ v.tiles=(v.tiles||[]).filter(function(p){return p[0]<cols&&p[1]<rows;}); });
   (state.interior.entryPoints||[]).forEach(function(ep){ if(ep.col>=cols||ep.row>=rows){ep.col=0;ep.row=0;} });
   state.interior.colliders=(state.interior.colliders||[]).filter(function(p){return p[0]<cols&&p[1]<rows;});
+  state.interior.doorTiles=(state.interior.doorTiles||[]).filter(function(p){return p[0]<cols&&p[1]<rows;});
   drawGrid(); rebuild3D(); log('Grid '+cols+'x'+rows);
 });
 $('fillRectBtn').addEventListener('click',function(){
   pushUndo();
   var cols=state.interior.cols, rows=state.interior.rows, floor=[];
   for(var r=0;r<rows;r++) for(var c=0;c<cols;c++) floor.push([c,r]);
-  state.interior.floor=floor; syncFloorSet(); drawGrid(); rebuild3D(); log('Filled rectangle.');
+  state.interior.floor=floor; syncFloorSet(); (state.interior.exits||[]).forEach(function(e){e.doorwayTiles=[];}); drawGrid(); rebuild3D(); log('Filled rectangle; exterior doorway anchors cleared because there is no outside edge.');
 });
 $('clearFloorBtn').addEventListener('click',function(){
   pushUndo(); state.interior.floor=[]; syncFloorSet();
   allFurnitureArrays().forEach(function(arr){ arr.length=0; });
-  (state.interior.exits||[]).forEach(function(e){e.tiles=[];});
+  state.interior.doorTiles=[];
+  (state.interior.exits||[]).forEach(function(e){e.tiles=[];e.doorwayTiles=[];});
   (state.interior.vendorZones||[]).forEach(function(v){v.tiles=[];});
   selectFurn(null); drawGrid(); rebuild3D(); log('Floor cleared.');
 });
@@ -1135,6 +1400,10 @@ $('clearFloorBtn').addEventListener('click',function(){
 function primaryEntranceExits(){ return (state.interior.exits||[]).filter(function(e){ return !(e.targetMap||'').trim(); }); }
 function renderExitList(){
   var el=$('exitZoneList'); el.innerHTML='';
+  var picker=$('canvasExitSelect'); // Nearby selector keeps multiple-exit authoring usable when the 2D grid and exit settings are far apart on mobile.
+  picker.replaceChildren(new Option('Select an exit',''));
+  (state.interior.exits||[]).forEach(function(ez){ picker.add(new Option(ez.label||ez.id,ez.id)); });
+  picker.value=(state.interior.exits||[]).some(function(e){return e.id===state.activeExitId;})?state.activeExitId:'';
   var primaries=primaryEntranceExits();
   if(primaries.length>1){
     var warn=document.createElement('div');
@@ -1153,6 +1422,11 @@ function renderExitList(){
     el.appendChild(div);
   });
 }
+$('canvasExitSelect').addEventListener('change',function(){
+  var toolBefore=state.tool; // Preserve Move exit when choosing the exit from beside the canvas.
+  if(this.value) window.__biaSelExit(this.value);
+  if(toolBefore==='moveExit') setTool('moveExit');
+});
 window.__biaSelExit=function(id){
   var ez=(state.interior.exits||[]).filter(function(e){return e.id===id;})[0]; if(!ez) return;
   state.activeExitId=id;
@@ -1161,12 +1435,17 @@ window.__biaSelExit=function(id){
   $('exitTargetMap').value=ez.targetMap||'';
   $('exitSpawnCol').value=ez.spawnCol||0;
   $('exitSpawnRow').value=ez.spawnRow||0;
+  $('exitGenerateDoor').checked=ez.generateDoor===true;
+  $('exitDirection').value=ez.direction||'';
+  var firstTile=(ez.doorwayTiles||[])[0]||(ez.tiles||[])[0];
+  $('exitTileCol').value=firstTile?firstTile[0]:'';
+  $('exitTileRow').value=firstTile?firstTile[1]:'';
   setTool('paintExit'); renderExitList(); drawGrid();
 };
 $('addExitBtn').addEventListener('click',function(){
   if(!state.interior.exits) state.interior.exits=[];
   var id='exit_'+Date.now().toString(36);
-  state.interior.exits.push({id:id,label:'Exit '+(state.interior.exits.length+1),tiles:[],targetMap:'',spawnCol:0,spawnRow:0});
+  state.interior.exits.push({id:id,label:'Exit '+(state.interior.exits.length+1),tiles:[],doorwayTiles:[],targetMap:'',spawnCol:0,spawnRow:0});
   window.__biaSelExit(id);
 });
 $('applyExitBtn').addEventListener('click',function(){
@@ -1177,12 +1456,33 @@ $('applyExitBtn').addEventListener('click',function(){
     var otherPrimaries=primaryEntranceExits().filter(function(e){return e.id!==ez.id;});
     if(otherPrimaries.length && !confirm('"'+otherPrimaries[0].label+'" already has a blank Target map (the front door). Only one exit should lead back outside — the game will have to guess which one you meant. Save "'+(ez.label||ez.id)+'" with a blank target too anyway?')) return;
   }
+  var nextDirection=$('exitDirection').value;
+  var outsidePositions=[...(ez.doorwayTiles||[]),...(ez.tiles||[]).filter(function(p){return !isFloor(p[0],p[1]);})];
+  if(nextDirection && outsidePositions.some(function(p){return !insideForDoorway(p[0],p[1],nextDirection);})){
+    log('Inward direction must point from every outside exit marker toward painted floor. Move the marker or select the correct wall direction.','warn');
+    return;
+  }
   pushUndo();
   ez.label=$('exitZoneLabel').value.trim()||ez.label;
   ez.targetMap=newTargetMap;
   ez.spawnCol=+$('exitSpawnCol').value||0;
   ez.spawnRow=+$('exitSpawnRow').value||0;
-  renderExitList(); refreshExport(); log('Exit zone updated.');
+  ez.generateDoor=$('exitGenerateDoor').checked;
+  ez.direction=nextDirection;
+  renderExitList(); drawGrid(); rebuild3D(); refreshExport(); log('Exit zone updated: door '+(ez.generateDoor?'on':'off')+', inward '+(ez.direction||'automatic')+'.');
+});
+$('moveExitToCoords').addEventListener('click',function(){
+  var ez=(state.interior.exits||[]).find(function(item){return item.id===state.activeExitId;});
+  if(!ez){log('Select or create an exit before moving it.','warn');return;}
+  var colText=$('exitTileCol').value.trim(),rowText=$('exitTileRow').value.trim();
+  if(!colText||!rowText){log('Enter both exit col and exit row.','warn');return;}
+  var col=Number(colText),row=Number(rowText);
+  if(!Number.isInteger(col)||!Number.isInteger(row)){log('Exit coordinates must be whole-number grid cells.','warn');return;}
+  // Validation comes first; invalid manual coordinates must not create a useless undo frame.
+  var check=resolveExitPlacement(col,row,$('exitDirection').value||ez.direction||'');
+  if(check.error){log(check.error,'warn');return;}
+  pushUndo();
+  editExitAt(ez,col,row,true);
 });
 $('delExitBtn').addEventListener('click',function(){
   if(!state.activeExitId) return; pushUndo();
@@ -1452,8 +1752,9 @@ function furnGroupFor(f){
     grp = new THREE.Group();
     grp.add(mesh);
   }
-  grp.userData = { furnId: f.id };
-  grp.traverse(function(o){ if(o.isMesh) o.userData = { furnId: f.id }; });
+  window.FurniturePatternSurfaces?.applyOverrides?.(grp,f.patternOverrides);
+  grp.userData = Object.assign(grp.userData||{}, { furnId: f.id });
+  grp.traverse(function(o){ if(o.isMesh) o.userData = Object.assign(o.userData||{}, { furnId: f.id }); });
   return grp;
 }
 
@@ -1480,7 +1781,7 @@ function rebuild3D(){
   floorSet.forEach(function(key){
     var p=key.split(','), c=+p[0], r=+p[1];
     var fl=new THREE.Mesh(new THREE.BoxGeometry(1,0.08,1),activeFloorMat);
-    fl.position.set(c+0.5,-0.04,r+0.5); previewGroup.add(fl);
+    fl.userData.surfaceFoliageRole="floors"; fl.position.set(c+0.5,-0.04,r+0.5); previewGroup.add(fl);
   });
 
   // Exit zone overlays
@@ -1508,6 +1809,25 @@ function rebuild3D(){
     m.position.set(p[0]+0.5,0.15,p[1]+0.5); previewGroup.add(m);
   });
 
+  // Shared grouping shows paired leaves and one outer frame in the editor too.
+  var doorMat3=new THREE.MeshLambertMaterial({color:0x9a6a37,transparent:true,opacity:0.8}); // Preview door wood.
+  InteriorDoorTiles.doorGroupsOf(interior,floorSet).forEach(function(record){
+    var o=InteriorDoorTiles.recordOrientation(floorSet,record),width=record.tiles.length; // Pair width and inward facing match gameplay.
+    var doorway=new THREE.Group(); // One frame enclosing either one or two leaves.
+    function addDoorPart(w,h,d,x,y){
+      var mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),doorMat3); // Lightweight editor proxy in doorway-local space.
+      mesh.position.set(x,y,0); doorway.add(mesh);
+    }
+    if(width===2){ addDoorPart(0.82,1.08,0.13,-0.41,0.54); addDoorPart(0.82,1.08,0.13,0.41,0.54); }
+    else addDoorPart(0.63,1.08,0.13,0,0.54);
+    addDoorPart(0.18,1.16,0.19,-(width-0.18)/2,0.58);
+    addDoorPart(0.18,1.16,0.19,(width-0.18)/2,0.58);
+    addDoorPart(width+0.02,0.23,0.2,0,1.18);
+    var placement=InteriorDoorTiles.doorPosition(record); // Same boundary-frame alignment as in gameplay.
+    doorway.position.set(placement.x,0,placement.z);
+    doorway.rotation.y=-o.rotationDeg*Math.PI/180; previewGroup.add(doorway);
+  });
+
   // Entry point markers (editor-only) — see the 2D grid's own "S1" pucks.
   var entryMat3=new THREE.MeshLambertMaterial({color:0x5adc8c,transparent:true,opacity:0.75});
   (interior.entryPoints||[]).forEach(function(ep){
@@ -1527,11 +1847,11 @@ function rebuild3D(){
   if(panels.length){
     try{
       var wallGroup=InteriorSceneBuilder.buildWallGroup(THREE, wb, panels, interior.wallStyle, {usePlaceholder:!wbReady,wallOpenings:windowOpenings,logWall:interior.logWall||{}});
-      wallGroup.userData.biaInteriorWallGroup=true; previewGroup.add(wallGroup);
+      wallGroup.userData.surfaceFoliageRole="walls";wallGroup.userData.biaInteriorWallGroup=true; previewGroup.add(wallGroup);
     } catch(e){
       log('Wall build error: '+e.message,'warn');
       var fallbackWallGroup=InteriorSceneBuilder.buildFallbackBoxWalls(THREE, panels, 0x8b7055);
-      fallbackWallGroup.userData.biaInteriorWallGroup=true; previewGroup.add(fallbackWallGroup);
+      fallbackWallGroup.userData.surfaceFoliageRole="walls";fallbackWallGroup.userData.biaInteriorWallGroup=true; previewGroup.add(fallbackWallGroup);
     }
   }
 
@@ -1541,9 +1861,12 @@ function rebuild3D(){
   if(window.InteriorCeilings){
     var previewWallH=Number(window.__hobunjiInteriorWallHeightOverride)||Number(interior.wallHeight)||WALL_H;
     var showCeiling=$('ceilingPreview').checked;
-    var ceilingPreviewGroup=InteriorCeilings.buildCeilingGroup(THREE,{floor:floorSet,wallHeight:previewWallH,ceiling:interior.ceiling,wallStyle:interior.wallStyle,texturesBasePath:'../../assets/',includeCeiling:showCeiling,preview:showCeiling,wallBuilder:wb,wallBuildOptions:{usePlaceholder:!wbReady,excludeQuads:InteriorSceneBuilder.openingExcludeQuads?InteriorSceneBuilder.openingExcludeQuads(windowOpenings):[]},logWall:interior.logWall||{}});
+    var needsGrowthCeiling=(interior.surfaceGrowth||[]).some(recipe=>recipe.target==='ceilings'); // Build hidden overhead surfaces when ceiling growth needs a real target.
+
+    var ceilingPreviewGroup=InteriorCeilings.buildCeilingGroup(THREE,{floor:floorSet,wallHeight:previewWallH,ceiling:interior.ceiling,wallStyle:interior.wallStyle,texturesBasePath:'../../assets/',includeCeiling:showCeiling||needsGrowthCeiling,preview:showCeiling,wallBuilder:wb,wallBuildOptions:{usePlaceholder:!wbReady,excludeQuads:InteriorSceneBuilder.openingExcludeQuads?InteriorSceneBuilder.openingExcludeQuads(windowOpenings):[]},logWall:interior.logWall||{}});
     // Gable ends are wall: let wall-ornament placement (windows) click onto them.
     ceilingPreviewGroup.children.forEach(function(child){ if(child.userData.interiorGable||child.userData.interiorGableBricks||child.userData.interiorGableLogs) child.userData.biaInteriorWallGroup=true; });
+    if(!showCeiling)ceilingPreviewGroup.traverse(function(mesh){if(mesh.userData.interiorCeilingSurface)mesh.visible=false;});
     previewGroup.add(ceilingPreviewGroup);
   }
 
@@ -1557,11 +1880,47 @@ function rebuild3D(){
     grp.position.set(cx,(visual.postY||0),cz);
     grp.rotation.y=(visual.rotY||0)*Math.PI/180;
     grp.scale.set(scX,scY,scZ);
+    grp.userData.surfaceFoliageId=f.id;
     furnMeshes[f.id]=grp;
     previewGroup.add(grp);
   });
+  // Resolve table-relative chairs only after every furniture root exists in this preview.
+  furniture.forEach(function(f){
+    if(!f.tableAttachment||!f.tableId)return;
+    var chair=furnMeshes[f.id],table=furnMeshes[f.tableId],parent=furniture.filter(function(candidate){return candidate.id===f.tableId;})[0];
+    if(!chair||!table||!parent)return;
+    var cat=catOf(parent.itemKey);
+    window.TableChairPlacement?.apply?.(chair,table,f.tableAttachment,{width:cat.fw||1,depth:cat.fd||1});
+  });
 
+  // Use the same unrendered rectangular wall planes used to author and clip openings.
+  // Brick outlines, stacked log courses and individual masonry pieces are never navigation edges.
+  if ((interior.surfaceGrowth||[]).some(recipe=>recipe.style==='cornerFill'||recipe.style==='wrap'||recipe.perSurface===true)) {
+    const guidePanels=InteriorSceneBuilder.applyWallOpenings(panels,windowOpenings);
+    const guideSources=[{ // Wall-panel triangles are grouped into detected surfaces together with the gable backings below.
+      vertices:guidePanels.flatMap(panel=>{
+        const v=InteriorSceneBuilder.panelCornersFor(THREE,panel).map(vertex=>vertex.toArray());
+        return [v[0],v[1],v[2],v[0],v[2],v[3]];
+      }),
+      role:'walls',id:'interior-wall-planes',label:'Interior architectural walls',
+      renderLift:['logs','log','stackedlogs','stacked-logs','','brick'].includes(interior.wallStyle||'')?.26:0
+    }];
+    // Every real gable backing is already a sheer plane, even when bricks/logs cover it.
+    // Keep it in the same navigation graph so roots can run up adjoining gable corners.
+    previewGroup.traverse(node=>{
+      if (!node.isMesh || !node.userData?.interiorGable || !node.geometry) return;
+      const faceCount=Math.floor((node.geometry.index?.count||node.geometry.attributes.position?.count||0)/3);
+      guideSources.push({sourceMesh:node,faceIndices:Array.from({length:faceCount},(_,i)=>i),
+        role:'walls',id:node.name,label:'Interior gable '+node.name,
+        renderLift:['logs','log','stackedlogs','stacked-logs','','brick'].includes(interior.wallStyle||'')?.26:0});
+    });
+    const foliage=window.FoliageGenerator.forThree(THREE);
+    foliage.replaceSemanticSurfaceGuides(previewGroup,foliage.recognizeArchitecturalSurfaceRegions(previewGroup,guideSources,{clipCoplanarOverlaps:true}));
+  }
+  var growthReport=window.FoliageGenerator.applySurfaceGrowth(previewGroup,interior.surfaceGrowth); // Rebuilt with the same architectural planes used by the editor.
+  if(growthReport)log(growthReport);
   scene3.add(previewGroup);
+  refreshAppearanceTargets();
   syncTC();
 
   // Orbit target = centroid
@@ -1754,6 +2113,7 @@ function afterLoad(){
   }
   if(!i.exits) i.exits=[];
   if(!i.colliders) i.colliders=[];
+  if(!i.doorTiles) i.doorTiles=[];
   if(!i.vendorZones) i.vendorZones=[];
   if(!i.entryPoints) i.entryPoints=[];
   if(!i.layouts) i.layouts=[];
@@ -1780,6 +2140,35 @@ function afterLoad(){
   syncFloorSet(); selectFurn(null); drawGrid(); rebuild3D(); refreshExport(); updateUR(); renderLib();
   renderExitList(); renderVendorList(); renderEntryList(); renderLayoutsPanel();
 }
+
+SurfaceFoliageAuthoring.mount($('biaLeftPanel'),{targets:[['walls','Walls + generated gables'],['floors','Floors'],['ceilings','Ceilings'],['selected','Selected furniture']],read:()=>state.interior.surfaceGrowth,selectedIds:()=>state.selectedId?[state.selectedId]:[],write:recipes=>{pushUndo();state.interior.surfaceGrowth=recipes;rebuild3D();refreshExport();return previewGroup.children.filter(child=>child.userData.surfaceFoliage).map(child=>child.userData.diagnostics).join(' ');},log});
+
+function refreshAppearanceTargets(){
+  var select=$('appearanceFurniture'); // Lists exact map instance IDs, including windows whose wall sidecar owns the visible mesh.
+  if(!select)return;
+  var previous=select.value;
+  select.replaceChildren();
+  activeFurniture().forEach(function(record){select.add(new Option((catOf(record.itemKey).label||record.itemKey)+' · '+record.id,record.id));});
+  if(activeFurniture().some(function(record){return record.id===previous;}))select.value=previous;
+}
+async function editFurnitureAppearance(){
+  try{
+    var id=$('appearanceFurniture').value,record=activeFurniture().find(function(item){return item.id===id;}); // Read current layout state at the time of editing.
+    if(!record){log('Choose furniture or a window first.','warn');return;}
+    await window.AuthoredFurniture?.load?.(furnKeyOf(record.itemKey));
+    var visual=furnMeshes[id];
+    scene3.traverse(function(node){if(node.userData?.biaWallOrnamentId===id&&node.userData?.meshById)visual=node;});
+    var opened=await window.FurniturePatternSurfaces.editInstance({key:furnKeyOf(record.itemKey),mesh:visual,patternOverrides:record.patternOverrides},function(overrides){
+      var current=activeFurniture().find(function(item){return item.id===id;}); // Modal saves cannot overwrite another layout's instances.
+      if(!current)return;
+      pushUndo();current.patternOverrides=JSON.parse(JSON.stringify(overrides));
+      window.FurniturePatternSurfaces.applyOverrides(furnMeshes[id],current.patternOverrides);
+      refreshExport();log('Saved pattern and colors for '+current.itemKey+'. Window colors also project into incoming light.');
+    });
+    if(!opened)log('This piece has no patterned or illuminated pane surfaces.','warn');
+  }catch(error){log('Appearance editor: '+error.message,'error');}
+}
+(function(){var section=document.createElement('section');section.className='section';section.innerHTML='<h2>Furniture patterns + window glass</h2><p class="hint">Preview and edit rug patterns, dyes, and illuminated window panes. Changes are saved per instance and per layout.</p><select id="appearanceFurniture" style="width:100%"></select><button id="editAppearanceBtn" type="button">Edit pattern / colors</button>'; $('biaRightPanel').prepend(section);$('editAppearanceBtn').onclick=editFurnitureAppearance;})();
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 loadLib();

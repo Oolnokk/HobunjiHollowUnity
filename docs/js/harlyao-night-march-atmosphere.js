@@ -9,6 +9,9 @@
   let installed = false;
   let priorDrawLightingOverlay = null;
   let cameraRight = null;
+  let cameraPosition = null; // Reused camera position for local-light depth checks.
+  let cameraForward = null; // Reused camera direction for local-light depth checks.
+  let lightToSource = null; // Reused camera-to-light vector; avoids allocations per source.
   let extraDraws = 0;
   let drawInstalls = 0;
 
@@ -69,6 +72,32 @@
     return Math.hypot(edge.x - center.x, edge.y - center.y);
   }
 
+  function lightMaskIntersectsViewport(center, screenRadius, x, y, z, worldRadius) {
+    if (!Number.isFinite(center?.x) || !Number.isFinite(center?.y) || !(screenRadius > 0) || !Number.isFinite(screenRadius)) return false;
+    if (!(worldRadius > 0) || !Number.isFinite(worldRadius)) return false;
+    if (!cameraPosition) cameraPosition = new window.THREE.Vector3();
+    if (!cameraForward) cameraForward = new window.THREE.Vector3();
+    if (!lightToSource) lightToSource = new window.THREE.Vector3();
+    const camera = lightingDeps.camera;
+    camera.getWorldPosition(cameraPosition);
+    camera.getWorldDirection(cameraForward);
+    lightToSource.set(x, y, z).sub(cameraPosition);
+    const depth = lightToSource.dot(cameraForward);
+    const near = Number.isFinite(camera.near) ? camera.near : 0;
+    const far = Number.isFinite(camera.far) ? camera.far : Infinity;
+    if (depth <= 0 || depth + worldRadius < near || depth - worldRadius > far) return false;
+    const rect = lightingDeps.getThreeRect?.();
+    const width = Number(rect?.width || lightingDeps.lctx?.canvas?.clientWidth || lightingDeps.lctx?.canvas?.width);
+    const height = Number(rect?.height || lightingDeps.lctx?.canvas?.clientHeight || lightingDeps.lctx?.canvas?.height);
+    return width > 0 && height > 0
+      && center.x + screenRadius >= 0 && center.x - screenRadius <= width
+      && center.y + screenRadius >= 0 && center.y - screenRadius <= height;
+  }
+
+  function outdoorVisibility(x, y, z, radiusTiles) {
+    return window.CloudForestFog?.outdoorLightVisibilityAt?.(x, y, z, radiusTiles) ?? 1; // The extra Harlyao darkness pass must honor the same world-space light fade as the base compositor.
+  }
+
   function drawLanternMasks() {
     const ctx = lightingDeps.lctx;
     const tuning = lanternTuning();
@@ -84,15 +113,16 @@
 
     ctx.globalCompositeOperation = 'destination-out';
     for (const carrier of carriers) {
+      const visibility = outdoorVisibility(carrier.x, carrier.y, carrier.z, tuning.radiusTiles); // A remote watch lantern cannot reappear over the newly darkened wilderness.
+      if (visibility <= 0) continue;
       const center = lightingDeps.worldToOverlay(carrier.x, carrier.y, carrier.z);
-      if (!center.visible) continue;
       const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, tuning.radiusTiles);
-      if (!(shineR > 0)) continue;
+      if (!lightMaskIntersectsViewport(center, shineR, carrier.x, carrier.y, carrier.z, tuning.radiusTiles)) continue;
       const clarityFrac = clamp01(tuning.clarityRadiusTiles / Math.max(0.000001, tuning.radiusTiles));
       const gradient = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
-      gradient.addColorStop(0, `rgba(0,0,0,${tuning.centerMaskAlpha})`);
-      gradient.addColorStop(clarityFrac, `rgba(0,0,0,${tuning.clarityMaskAlpha})`);
-      gradient.addColorStop(Math.min(1, clarityFrac + tuning.softTransitionFraction), `rgba(0,0,0,${tuning.softMaskAlpha})`);
+      gradient.addColorStop(0, `rgba(0,0,0,${tuning.centerMaskAlpha * visibility})`);
+      gradient.addColorStop(clarityFrac, `rgba(0,0,0,${tuning.clarityMaskAlpha * visibility})`);
+      gradient.addColorStop(Math.min(1, clarityFrac + tuning.softTransitionFraction), `rgba(0,0,0,${tuning.softMaskAlpha * visibility})`);
       gradient.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = gradient;
       ctx.beginPath();
@@ -106,17 +136,18 @@
     const ctx = lightingDeps.lctx;
     const visible = [];
     for (const light of (lightingDeps.getFurnitureLightSources?.() || [])) {
+      const visibility = outdoorVisibility(light.x, light.y, light.z, light.distance); // Shared fade applies again after the Harlyao-specific darkness multiplication.
+      if (visibility <= 0) continue;
       const center = lightingDeps.worldToOverlay(light.x, light.y, light.z);
-      if (!center.visible) continue;
       const shineR = lightScreenRadius(light.x, light.z, light.y, light.distance);
-      if (!(shineR > 0)) continue;
-      visible.push({ light, center, shineR });
+      if (!lightMaskIntersectsViewport(center, shineR, light.x, light.y, light.z, light.distance)) continue;
+      visible.push({ light, center, shineR, visibility }); // The same factor drives both masking and visible glow.
     }
 
     ctx.globalCompositeOperation = 'destination-out';
-    for (const { light, center, shineR } of visible) {
+    for (const { light, center, shineR, visibility } of visible) {
       const clarityFrac = Math.min(0.55, Math.max(0.18, 1.15 / light.distance));
-      const strength = Math.min(0.94, 0.58 + light.intensity * 0.22);
+      const strength = Math.min(0.94, 0.58 + light.intensity * 0.22) * visibility;
       const gradient = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
       gradient.addColorStop(0, `rgba(0,0,0,${strength})`);
       gradient.addColorStop(clarityFrac, `rgba(0,0,0,${strength * 0.78})`);
@@ -129,9 +160,9 @@
     }
 
     ctx.globalCompositeOperation = 'source-over';
-    for (const { light, center, shineR } of visible) {
+    for (const { light, center, shineR, visibility } of visible) {
       const glowR = shineR * 0.62;
-      const glowAlpha = Math.min(0.18, 0.055 + light.intensity * 0.055);
+      const glowAlpha = Math.min(0.18, 0.055 + light.intensity * 0.055) * visibility;
       const { r, g, b } = light.color;
       const glow = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, glowR);
       glow.addColorStop(0, `rgba(${r},${g},${b},${glowAlpha})`);

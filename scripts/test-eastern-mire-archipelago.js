@@ -1,0 +1,165 @@
+'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const assert = require('node:assert/strict');
+const Atlas = require('../docs/js/wilderness-archipelago.js');
+const Generator = require('../docs/js/wilderness-map-generator.js');
+
+const config = { ...Atlas.DEFAULTS, archipelagoEnabled:true };
+const first = Atlas.generate(100,100,'mire-atlas-fixed-seed',config);
+const again = Atlas.generate(100,100,'mire-atlas-fixed-seed',config);
+assert.deepEqual(Array.from(first.land), Array.from(again.land), 'shoreline must be reproducible from seed');
+assert.deepEqual(Array.from(first.elevation), Array.from(again.elevation), 'island elevations must be reproducible from seed');
+assert.equal(first.stats.islandCount,config.islandCount);
+assert(first.stats.skerries >= 4, 'small offshore satellite islands should survive placement');
+assert(first.stats.landFraction > 0.13 && first.stats.landFraction < 0.8,
+  'archipelago needs substantial open ocean as well as large playable islands');
+assert(first.stats.coastlineTiles > 100, 'islands need a substantial jagged coastline');
+const gateway=first.stats.entrance;
+assert.equal(gateway.side,'west');
+assert(first.land[gateway.row*100], 'western gateway must be on an island rather than open sea');
+assert(first.stats.peakTier >= 2, 'islands must have elevated interiors beyond their low beaches');
+
+const countComponents=(mask,w,h) => {
+  const seen=new Uint8Array(mask.length);
+  const groups=[];
+  for(let start=0;start<mask.length;start++){
+    if(!mask[start]||seen[start])continue;
+    const q=[start];seen[start]=1;
+    for(let i=0;i<q.length;i++){
+      const n=q[i],x=n%w,y=(n-x)/w;
+      for(const v of [x>0?n-1:-1,x<w-1?n+1:-1,y>0?n-w:-1,y<h-1?n+w:-1]){
+        if(v>=0&&mask[v]&&!seen[v]){seen[v]=1;q.push(v);}
+      }
+    }
+    groups.push(q.length);
+  }
+  return groups.sort((a,b)=>b-a);
+};
+const components=countComponents(first.land,100,100);
+assert(components.filter(n=>n>=12).length>=3,
+  'bird-eye view must show multiple separate land masses, not one continuous blob');
+let seaOnFarEdge=0;
+for(let row=0;row<100;row++)if(!first.land[row*100+99])seaOnFarEdge++;
+assert(seaOnFarEdge>70, 'outer eastern edge should be mostly ocean');
+
+const smaller=Atlas.generate(100,100,'mire-atlas-fixed-seed',{...config,islandSize:6});
+const larger=Atlas.generate(100,100,'mire-atlas-fixed-seed',{...config,islandSize:17});
+assert(larger.stats.landTiles>smaller.stats.landTiles+250,
+  'island-size setting must actually increase the size of the land masses');
+const smoother=Atlas.generate(100,100,'mire-atlas-fixed-seed',{...config,islandIrregularity:0,islandCoastDetail:0});
+let shoreChanges=0;
+for(let i=0;i<first.land.length;i++)if(first.land[i]!==smoother.land[i])shoreChanges++;
+assert(shoreChanges>100, 'coastline irregularity controls must meaningfully alter island silhouettes');
+const gradual=Atlas.generate(100,100,'mire-atlas-fixed-seed',{...config,islandSteepness:0.4});
+const sharp=Atlas.generate(100,100,'mire-atlas-fixed-seed',{...config,islandSteepness:2.5});
+const altitudeSum=z=>z.elevation.reduce((s,n)=>s+n,0);
+assert(altitudeSum(sharp)>altitudeSum(gradual)+100,
+  'slope steepness must noticeably change inland altitude');
+const low=Atlas.generate(100,100,'mire-atlas-fixed-seed',{...config,islandHeight:2});
+const high=Atlas.generate(100,100,'mire-atlas-fixed-seed',{...config,islandHeight:11});
+assert(low.stats.peakTier<=2);
+assert(high.stats.peakTier>low.stats.peakTier,'peak-height setting must change tallest island tiers');
+assert.deepEqual(Array.from(low.land),Array.from(high.land),
+  'height changes must not rearrange coastlines or relocate islands');
+
+// The requested 10–20 tiny islands must remain 10–20 *independent*
+// landmasses with actual 2–3-tier peaks, not just 20 seed points merged
+// into a couple of big islands or low flat sandbanks.
+const compactDefaults={
+  ...config,
+  islandSize:3.8,
+  islandSizeVariation:.22,
+  islandSteepness:1.55,
+  islandIrregularity:.58,
+  islandCoastDetail:.55,
+  islandSpacing:1.35,
+  islandClustering:.45,
+  islandSatellites:0,
+};
+for(const count of [10,15,20]){
+  for(const seed of ['mire-small-atlas','mire-small-coasts-2','mire-small-coasts-3']){
+    const tiny=Atlas.generate(100,100,seed,{...compactDefaults,islandCount:count,islandHeight:count===10?2:3});
+    assert.equal(tiny.stats.distinctLandmasses,count,
+      count+' tiny islands must become '+count+' separated landmasses, not merged outlines (seed '+seed+')');
+    assert.equal(tiny.stats.substantialLandmasses,count,
+      'every tiny island should have a meaningful dry interior');
+    assert.equal(tiny.stats.raisedLandmasses,count,
+      'every island should reach 2 or 3 elevation tiers, not just a few big ones');
+    assert.equal(tiny.stats.peakTier,count===10?2:3);
+    assert(tiny.stats.landFraction<.2,'tiny archipelago must be mostly continuous surrounding sea');
+    assert.equal(countComponents(tiny.land,100,100).length,count,
+      'count physical connected island components, not only initial centers');
+  }
+}
+const micro=Atlas.generate(100,100,'mire-small-absolute-radius',
+  {...compactDefaults,islandSize:2,islandCount:15,islandHeight:2});
+assert.equal(micro.stats.distinctLandmasses,15,
+  'smallest slider radius must not silently expand and merge island footprints');
+assert.equal(micro.stats.raisedLandmasses,15,
+  'smallest islands must still be allowed to reach the chosen 2-tier height');
+const tinyLab=fs.readFileSync(path.join(__dirname,'../docs/tools/wilderness-generation-lab/lab-features.js'),'utf8');
+assert(tinyLab.includes('15 Tiny Islands — 3 Tiers') &&
+  tinyLab.includes("value === 'tinyArchipelago'") &&
+  tinyLab.includes('islandSatellites:0'),
+  'the one-click micro-archipelago recipe must actually apply 15 islands, 3-tier peaks and no extras');
+
+const zone=Generator.zoneSettings('map_eastern_mire');
+assert.equal(zone.archipelagoEnabled,true, 'live Eastern Mire must use the same atlas mode');
+assert.equal(zone.entrySide,'west');
+assert.equal(Generator.defaultSettings().archipelagoEnabled,false,
+  'other wilderness zones must not silently turn into archipelagoes');
+const opts={...zone,width:62,height:62,trees:0,bushes:0,logs:0,forage:0,
+  fruitBushes:0,mushrooms:0,beehives:0,ore:0,boulders:0,treasure:0,
+  animalDens:0,prey:0,packPredators:0,ambushPredators:0,omnivores:0,
+  structures:0,caves:0,rootTotems:0,statues:0,pillars:0,
+  pathAnchors:1,ramps:9};
+const workspace=Generator.generateWorkspace('eastern_mire_archipelago_regression',opts);
+const root=workspace.maps.find(m=>!m.isSubmap);
+assert.equal(root.cols,124);
+assert.equal(root.rows,124);
+assert(workspace.archipelago && root.generatedFrom.archipelago,
+  'gameplay workspace and root map must preserve archipelago settings/stats');
+const tiles=Object.values(root.tiles);
+const sea=tiles.filter(t=>t.archipelagoSea);
+const land=tiles.filter(t=>!t.archipelagoSea);
+assert(sea.length>tiles.length*.2 && land.length>tiles.length*.1,
+  'gameplay export must contain actual connected seawater and walkable dry island tiles');
+assert(sea.every(t=>t.type==='stream' || t.type==='path'),
+  'ocean must export as water tiles (or real bridges), not cosmetic blue grass');
+assert(sea.every(t=>!t.generatedBorderEscarpment),
+  'ocean must not be replaced by the old full-ring boundary cliff wall');
+const entry=root.transitions.find(t=>t.id==='sp_generated_entry');
+assert(entry,'west coast transition must remain present');
+assert.equal(entry.col,0,'Mire entry should remain at the world-facing west border');
+const entryTile=root.tiles[entry.col+','+entry.row];
+assert(entryTile && entryTile.type==='path' && !entryTile.archipelagoSea,
+  'player must enter on dry land, not water');
+assert(workspace.plateauGroups.length>0,
+  'real terrain tier masks must export for raised island interiors');
+const tinyZoneWorkspace=Generator.generateWorkspace('eastern_mire_tiny_islands_export',{
+  ...opts, width:72,height:72, ...compactDefaults,
+  islandCount:15, islandSize:3.8,islandHeight:3,ramps:8,
+});
+const tinyRoot=tinyZoneWorkspace.maps.find(m=>!m.isSubmap);
+assert.equal(tinyZoneWorkspace.archipelago.distinctLandmasses,15,
+  'the full wilderness pipeline must use micro-island controls');
+assert.equal(tinyZoneWorkspace.archipelago.raisedLandmasses,15,
+  'real generated tiny islands must reach their 3-tier peaks');
+assert.equal(tinyZoneWorkspace.archipelago.peakTier,3);
+assert(tinyZoneWorkspace.plateauGroups.some(group=>group.elevation===3),
+  'micro-archipelago plateau tier 3 must survive actual Map Editor export');
+const tinyOcean=Object.values(tinyRoot.tiles).filter(tile=>tile.archipelagoSea);
+assert(tinyOcean.length>tinyRoot.cols*tinyRoot.rows*.72,
+  'the wilderness export must leave sea between the tiny islands');
+assert(tinyOcean.every(tile=>tile.type==='stream'||tile.type==='path'),
+  'tiny archipelago ocean tiles must remain water or traversable bridge records');
+const tinyEntry=tinyRoot.transitions.find(t=>t.id==='sp_generated_entry');
+assert(tinyEntry && tinyRoot.tiles[tinyEntry.col+','+tinyEntry.row]?.type==='path',
+  'the west-side micro-island gateway must remain a usable entrance');
+
+console.log('PASS Eastern Mire archipelago:', {
+  landFraction:first.stats.landFraction,components:components.length,shoreChanges,
+  peakTier:first.stats.peakTier,exportSea:sea.length,exportLand:land.length,
+  exportedPlateauGroups:workspace.plateauGroups.length
+});

@@ -33,12 +33,12 @@ async function renderRoutedBodyPatchOverlay(profile,rawPatchCanvas,descriptor,wi
     headUrl:null,headFallbackUrls:[],urLayers:[],bodyLayers:[isolatedLayer]
   };
   const isolatedProfile={...profile,fighter:isolatedFighter};
-  await withPreviewCloudMaskTransform(()=>window.NpcAvatarPreview.renderProfileToCanvas(
+  await window.NpcAvatarPreview.renderProfileToCanvas(
     overlay,isolatedProfile,{
       seatId:'clothing-fit-runtime-body-patch',portraitView:'behind',forceEyesOpen:true,
       omitHeadSpriteAndCosmetics:true
     }
-  )); // portrait-utils owns tinting, preset resolution, rear flip, breathing/body deformation, and mask placement; no transform is reconstructed here.
+  ); // portrait-utils owns tinting, preset resolution, rear flip, breathing/body deformation, and mask placement; no transform is reconstructed here.
   return overlay;
 }
 function bodyPatchImageForTintResolver(rawPatchCanvas,descriptor){
@@ -75,46 +75,7 @@ function portraitLayerRect(rawWidth,rawBaseHeight,xform,targetWidth=200,targetHe
   const cy=targetHeight/2-xform.ax*L;
   return{x:cx-w/2,y:cy-h/2,w,h,cx,cy};
 }
-function previewedCloudMaskXform(rawXform={}){
-  const baseXform=normalizedLayerXform(rawXform);
-  const preview=currentMaskTransform();
-  return{
-    ...baseXform,
-    sx:(Number(baseXform.sx)||1)*(Number(preview.scaleX)||1),
-    scaleX:(Number(baseXform.sx)||1)*(Number(preview.scaleX)||1),
-    sy:(Number(baseXform.sy)||1)*(Number(preview.scaleY)||1),
-    scaleY:(Number(baseXform.sy)||1)*(Number(preview.scaleY)||1),
-    // portrait-utils uses cy = centerY - ax*L, so subtracting preview Y makes
-    // positive slider values move the mask downward like the other Y controls.
-    ax:(Number(baseXform.ax)||0)-(Number(preview.translateY)||0),
-  };
-}
-async function withPreviewCloudMaskTransform(callback){
-  const original=window.applyPortraitOpacityMask;
-  if(typeof original!=='function')return callback();
-  const wrapped=function previewCloudMaskTransform(ctx,image,xform){
-    return original(ctx,image,previewedCloudMaskXform(xform||{}));
-  };
-  // Preserve the runtime marker because arm-cloud-mask checks it to avoid
-  // installing another canonical Y-scale wrapper around the temporary function.
-  if(original.__hobunjiCloudMaskYScaled)wrapped.__hobunjiCloudMaskYScaled=true;
-  window.applyPortraitOpacityMask=wrapped;
-  try{
-    return await callback();
-  }finally{
-    window.applyPortraitOpacityMask=original;
-  }
-}
-
-async function applyRuntimeCloudMask(canvas){
-  const cfg=R.speciesCfg.get(E.species.value)?.[E.gender.value];
-  const maskLayer=cfg?.portraitOpacityMaskLayer;
-  if(!maskLayer?.url||typeof window.applyPortraitOpacityMask!=='function')return canvas;
-  const image=await loadImage(assetUrl(maskLayer.url));
-  if(!image)return canvas;
-  const ctx=canvas.getContext('2d',{alpha:true});
-  window.applyPortraitOpacityMask(ctx,image,previewedCloudMaskXform(maskLayer.xform||{}));
-  return canvas;
-}
+// Cloud-mask preview values remain in saved fit JSON for compatibility, but
+// the game no longer applies this mask to the portrait raster.
 async function rawGarmentToRuntimeLayer(rawCanvas,opacity=1){
   if(!rawCanvas||!R.body)return null;

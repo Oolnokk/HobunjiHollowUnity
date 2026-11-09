@@ -109,6 +109,7 @@ async function testLoomInitialization() {
       equipmentDeps: { inventory: { wool: 10 } },
       injectStyles() {}, currentBlueprints: () => [{ baseCosmeticId: 'tunic', slot: 'torso' }],
       gearInventory: () => ({ clothingItems: [item] }), isCraftableCloth: () => true,
+      isReweavableClothComponent: () => false, // Isolated ordinary-tunic fixture still exposes the shared loom's new hybrid-cap predicate.
       ownedGlobalDyes: () => [dye], baseCosmeticId: () => 'tunic', articleLabel: () => 'Tunic',
       materialForReweaveItem: () => ({ id: 'light', itemKey: 'wool', label: 'Light Wool' }),
       dyeOptionHtml: () => '', patternLibraryEntries: () => [],
@@ -150,7 +151,9 @@ function testWaterCadence() {
   // WaterSystem.tickSimulation; game.js must still delegate to it every frame.
   const game = read('docs/game.js');
   assert(game.includes('window.WaterSystem.tickSimulation(dt, currentArea, {'), 'game loop delegates water cadence to WaterSystem.tickSimulation');
-  assert(game.includes('gameHoursPerSecond: (NIGHT_HOUR - MORNING_HOUR) / DAY_LENGTH_SECONDS'), 'game loop passes the authored game-hour rate');
+  const rateExpression = game.match(/gameHoursPerSecond:\s*([^,\n]+)/)?.[1]; // Evaluate the live call-site expression instead of pinning an old clock constant.
+  assert.equal(vm.runInNewContext(rateExpression, { window: { CalendarSystem: { getNaturalGameHoursPerSecond: () => 0.123 } } }), 0.123,
+    'game loop obtains the water rate from the calendar authority');
   let ticks = 0; // Represents water snapshots that would dirty and rebuild geometry.
   const windowStub = {};
   vm.runInNewContext(read('docs/js/water-system.js'), { window: windowStub, console, Math, Float32Array }, { filename: 'water-system.js' });

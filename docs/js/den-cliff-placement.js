@@ -177,11 +177,11 @@
         if (!compiled.embeddedKeys.has(`${dx},${dy}`) && Math.abs(tier(tile) - floorTier) > 0.05) return fail(`footprint ${dx},${dy} off the floor tier`);
       }
     }
-    // Walkable entry column from the entry tile out through the footprint's
+    // Walkable three-column swathe from the entry tile out through the footprint's
     // front row: plain floor only (cliff skirts and ramps export as rock/slope).
     for (const step of entryPath(compiled)) {
       const tile = tileAt(x + step.dx, y + step.dy);
-      if (!tile || (tile.cliffSkirt && !tile.waterfall) || tile.plateauRing || compiled.embeddedKeys.has(`${step.dx},${step.dy}`)) return fail(`entry column ${step.dx},${step.dy} not walkable`);
+      if (!tile || tile.water || tile.ramp || tile.occupiedBy || isBoundary(tile) || (tile.cliffSkirt && !tile.waterfall) || tile.plateauRing || compiled.embeddedKeys.has(`${step.dx},${step.dy}`)) return fail(`entry swathe ${step.dx},${step.dy} not walkable`);
     }
     for (const cell of compiled.embedded) {
       if (!probeMatches(tileAt, x + cell.dx, y + cell.dy, cell, floorTier)) return fail(`embedded ${cell.dx},${cell.dy} not ${cell.terrain}`);
@@ -201,8 +201,37 @@
     const { dx, dy } = compiled.mouth;
     if (dx < 0 || dx >= compiled.w || dy < 0 || dy >= compiled.h) return [];
     const cells = [];
-    for (let row = dy; row < compiled.h; row++) cells.push({ dx, dy: row });
+    for (let row = dy; row < compiled.h; row++) for (let col = Math.max(0, dx - 1); col <= Math.min(compiled.w - 1, dx + 1); col++) cells.push({ dx: col, dy: row }); // The center and both flanks must remain open.
     return cells;
+  }
+
+  // The Locale Editor's cave collider is authoritative for which grid tiles
+  // may be walked on. Return null for legacy/automatic cave collision so old
+  // den templates retain their original doorway exception.
+  function authoredWalkableTiles(den, locale) {
+    const cave = caveObject(locale); // The cave's authored footprint anchors every collider in this template.
+    if (!cave || !['custom', 'footprint', 'none'].includes(cave.collision?.mode)) return null;
+    const width = Math.max(1, Number(den?.w) || 1), height = Math.max(1, Number(den?.h) || 1); // Generated den footprint dimensions in final-grid tiles.
+    const scaleX = width / Math.max(.1, Number(cave.w) || 1), scaleY = height / Math.max(.1, Number(cave.h) || 1); // Converts Locale Editor source tile offsets to actual den-grid coordinates.
+    const originX = Number(den?.x) || 0, originY = Number(den?.y) || 0; // Top-left world-grid tile, shared with ZoneDenTotemFeatures collision.
+    const rects = []; // Authored blocking rectangles, including additional cave-entrance furniture colliders.
+    for (const object of locale.objects || []) {
+      const collision = object?.collision;
+      if (!collision || !['custom', 'footprint'].includes(collision.mode)) continue;
+      const custom = collision.mode === 'custom'; // Selects the editor's offset/size overrides instead of the visual footprint.
+      const x = originX + ((Number(object.col) || 0) - (Number(cave.col) || 0) + (custom ? Number(collision.colOffset) || 0 : 0)) * scaleX; // Collider's generated left edge.
+      const y = originY + ((Number(object.row) || 0) - (Number(cave.row) || 0) + (custom ? Number(collision.rowOffset) || 0 : 0)) * scaleY; // Collider's generated back edge.
+      const w = Math.max(.1, custom ? Number(collision.w) || Number(object.w) || 1 : Number(object.w) || 1) * scaleX; // Collider width on the generated grid.
+      const h = Math.max(.1, custom ? Number(collision.h) || Number(object.h) || 1 : Number(object.h) || 1) * scaleY; // Collider depth on the generated grid.
+      rects.push({ x, y, w, h });
+    }
+    const clear = new Set(); // Open cells consumed by initial wilderness rock overlays and subsequent den relocations.
+    for (let row = originY; row < originY + height; row++) {
+      for (let col = originX; col < originX + width; col++) {
+        if (!rects.some(rect => col >= rect.x && col < rect.x + rect.w && row >= rect.y && row < rect.y + rect.h)) clear.add(`${col},${row}`);
+      }
+    }
+    return clear;
   }
 
   // Every valid site for every template over a width×height grid. When two
@@ -227,5 +256,5 @@
     return sites;
   }
 
-  return { TEMPLATE_CATEGORY, isTemplate, caveObject, compileTemplate, evaluate, explain, findSites, entryPath };
+  return { TEMPLATE_CATEGORY, isTemplate, caveObject, compileTemplate, evaluate, explain, findSites, entryPath, authoredWalkableTiles };
 });

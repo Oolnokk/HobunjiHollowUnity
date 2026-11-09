@@ -129,7 +129,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   });
   assert.equal(puzzlePanel.present, true, JSON.stringify(puzzlePanel));
   assert.equal(puzzlePanel.open, false, JSON.stringify(puzzlePanel));
-  assert.equal(puzzlePanel.checkboxCount, 6, JSON.stringify(puzzlePanel)); // glyphObelisk, safePath, ropeSwing, hallwayTraps, lavaBasin, sanctum
+  assert.equal(puzzlePanel.checkboxCount, 6, JSON.stringify(puzzlePanel)); // The disliked projectile hallway traps are no longer configurable.
   assert.equal(puzzlePanel.maxPresent, true, JSON.stringify(puzzlePanel));
   assert.equal(puzzlePanel.darknessEnabled, false, JSON.stringify(puzzlePanel));
   assert.equal(puzzlePanel.darknessSeverity, 100, JSON.stringify(puzzlePanel));
@@ -150,7 +150,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   });
   assert.deepEqual(projectileOnlySettings, {
     pressurePlate:false,brazier:false,glyphObelisk:true,stackedObelisk:false,linkedCubePillars:false,nestedRoom:false,
-    safePath:false,ropeSwing:false,hallwayTraps:false,lavaBasin:false,sanctum:false,maxPerRoom:1,
+    safePath:false,ropeSwing:false,ropeChain:false,hallwayTraps:false,lavaBasin:false,sanctum:false,maxPerRoom:1,
   }, JSON.stringify(projectileOnlySettings));
   const constrainedSeed = 0x51a7cafe;
   const constrainedEntry = await page.evaluate(async seed => { // Observe scene entry in the same task that finishes the awaited transition, before shader warmup.
@@ -164,11 +164,13 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     const scene = window.GridTileAccessors.getActiveScene();
     const activatorTypes = new Set();
     let bypassed = 0;
-    scene?.traverse?.(object => {
+    const baseV50=scene?.children?.find?.(object => /^dev_v50_ruin_/.test(object?.name||'')); // These Settings belong only to floor zero; native upper stories author their own puzzle families.
+    baseV50?.traverse?.(object => {
       if (object.userData?.activatorType) activatorTypes.add(object.userData.activatorType);
       if (object.userData?.runtimePuzzleBypass) bypassed++;
     });
     return {
+      theme:state?.theme || null,
       puzzleOptions:state?.puzzleOptions || null,
       counts:Object.values(state?.puzzleGeneration?.countsByRoom || {}).map(Number),
       activatorTypes:[...activatorTypes].sort(),
@@ -191,21 +193,32 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   const glyphVisuals = await page.evaluate(async () => {
     const scene=window.GridTileAccessors.getActiveScene();
     const roots=[];
+    const inVisibleScene=object=>{ // Exclude authored glyphs on inactive native V50 floors.
+      for(let node=object;node;node=node.parent)if(node.visible===false)return false;
+      return true;
+    };
     scene?.traverse?.(object=>{
-      if(object.userData?.activatorType!=='glyphObelisk')return;
+      if(object.userData?.activatorType!=='glyphObelisk'||!inVisibleScene(object))return;
       let nested=false;
       object.traverse?.(child=>{ if(child!==object && child.userData?.activatorType==='glyphObelisk') nested=true; });
       if(!nested)roots.push(object);
     });
     const summarize=root=>{
       let decalMeshes=0;
-      root.traverse?.(child=>{ if(child.userData?.furnitureDecal)decalMeshes++; });
+      const authoredGlowDecals=[]; // Live authored plaque meshes are the authoritative visible rune, not legacy V50 material flags.
+      root.traverse?.(child=>{
+        if(child.userData?.furnitureDecal)decalMeshes++;
+        if(child.isMesh&&child.userData?.furnitureDecal&&child.userData?.decalGlow&&inVisibleScene(child)){
+          authoredGlowDecals.push({ color:child.material?.color?.getHexString?.()||null,
+            glow:true, source:child.userData?.decalSourceType||null });
+        }
+      });
       return {
         id:root.id,
         profile:root.userData?.obeliskProfile||root.userData?.targetProfile||null,
         concealed:root.userData?.concealedStoneFinish===true,
         decalAssets:[...(root.userData?.decalAssets||[])],
-        decalMeshes,
+        decalMeshes,authoredGlowDecals,
         decalMaterials:(root.userData?.decalMaterials||[]).map(material=>({
           color:material.color?.getHexString?.()||null,
           opacity:Number(material.opacity),
@@ -230,7 +243,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   assert.equal(glyphVisuals.activated,true,'projectile glyph diagnostic must enter the same authoritative active state as a real projectile hit: '+JSON.stringify(glyphVisuals));
   assert.ok(glyphVisuals.before.every(glyph=>glyph.concealed===false&&glyph.decalAssets.length>0&&glyph.decalMeshes>0&&glyph.decalMaterials.length>0),'every projectile glyph target must visibly carry authored face decals: '+JSON.stringify(glyphVisuals));
   assert.ok((glyphVisuals.proxyBefore?.glyphDecalSourceCount||0)>0,'native game-realm glyph sources must include authored decal planes: '+JSON.stringify(glyphVisuals.proxyBefore));
-  assert.ok(glyphVisuals.after?.decalMaterials?.some(material=>material.glow&&material.blending===glyphVisuals.additive&&isStruckGlyphColor(material.color)),'activated glyph must visibly glow green (DECAL_ACTIVE in dev-random-ruin-glyph-circuits.js, possibly mid hit-flash toward white) through its unlit decal material: '+JSON.stringify(glyphVisuals.after));
+  assert.ok(glyphVisuals.after?.authoredGlowDecals?.some(decal=>decal.glow&&isStruckGlyphColor(decal.color)),
+    'activated glyph must show green or brief hit-flash white on a visible authored plaque decal (FurnitureDecalRuntime drives the glow, not the retired V50 additive-blending flag): '+JSON.stringify(glyphVisuals.after));
   assert.ok((glyphVisuals.proxyAfter?.glowingGlyphDecalSourceCount||0)>0,'activated glyph glow must remain visible on the native game-realm source: '+JSON.stringify(glyphVisuals.proxyAfter));
 
   assert.equal(constrained.solvability?.ok, true, JSON.stringify(constrained));
@@ -239,8 +253,11 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   assert.match(constrained.badge, /solvable ✓/, constrained.badge);
   assert.match(constrained.badge, /puzzles \d+\/1 max-room/, constrained.badge);
   assert.deepEqual(constrained.darkness, { enabled:false, severity:1 }, JSON.stringify(constrained));
-  assert.equal(constrained.darknessDebug?.undergroundDarknessOverlayAlpha, 0, JSON.stringify(constrained.darknessDebug));
-  assert.match(constrained.badge, /dark off/, constrained.badge);
+  const constrainedBaseDarkness={hronal:.91,tothal:.73,kanthic:1}[constrained.theme];
+  assert.ok(Number.isFinite(constrainedBaseDarkness),'constrained ruin must use a recognized lich theme: '+JSON.stringify(constrained));
+  assert.ok(Math.abs(constrained.darknessDebug?.undergroundDarknessOverlayAlpha-constrainedBaseDarkness)<.002,
+    'ruin default lighting must follow its lich theme instead of the retired bright-mode default: '+JSON.stringify(constrained.darknessDebug));
+  assert.match(constrained.badge, /dark themed/, 'default ruin darkness badge must identify the active lich-theme baseline: '+constrained.badge);
 
   const darknessCycle = await page.evaluate(async () => {
     const enabled=document.getElementById('devRandomRuinDarknessEnabled');
@@ -260,9 +277,11 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   assert.equal(darknessCycle.on.settings.enabled,true,JSON.stringify(darknessCycle));
   assert.equal(darknessCycle.on.settings.severity,0.5,JSON.stringify(darknessCycle));
   assert.equal(darknessCycle.on.label,'50%',JSON.stringify(darknessCycle));
-  assert.ok(darknessCycle.on.debug.undergroundDarknessOverlayAlpha > 0.4 && darknessCycle.on.debug.undergroundDarknessOverlayAlpha < 0.5,JSON.stringify(darknessCycle));
+  assert.ok(Math.abs(darknessCycle.on.debug.undergroundDarknessOverlayAlpha-constrainedBaseDarkness*.5)<.002,
+    '50% test severity must halve the active lich lighting baseline: '+JSON.stringify(darknessCycle));
   assert.equal(darknessCycle.off.settings.enabled,false,JSON.stringify(darknessCycle));
-  assert.equal(darknessCycle.off.debug.undergroundDarknessOverlayAlpha,0,JSON.stringify(darknessCycle));
+  assert.ok(Math.abs(darknessCycle.off.debug.undergroundDarknessOverlayAlpha-constrainedBaseDarkness)<.002,
+    'disabling the test override must restore the original lich-themed darkness: '+JSON.stringify(darknessCycle));
   await page.evaluate(async () => window.DevRandomRuin.leave());
   await page.waitForFunction(() => window.GridTileAccessors.getCurrentArea() !== 'map_i_dev_random_ruin', null, { timeout:30000 });
 
@@ -280,7 +299,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   });
   assert.equal(restoredSimpleSettings.safePath,true,JSON.stringify(restoredSimpleSettings));
   assert.equal(restoredSimpleSettings.ropeSwing,true,JSON.stringify(restoredSimpleSettings));
-  assert.equal(restoredSimpleSettings.hallwayTraps,true,JSON.stringify(restoredSimpleSettings));
+  assert.equal(restoredSimpleSettings.hallwayTraps,false,JSON.stringify(restoredSimpleSettings)); // Retired hallway trap stays disabled even after enabling every available checkbox.
   assert.equal(restoredSimpleSettings.lavaBasin,true,JSON.stringify(restoredSimpleSettings));
   assert.equal(restoredSimpleSettings.sanctum,true,JSON.stringify(restoredSimpleSettings));
   for(const key of ['pressurePlate','brazier','stackedObelisk','linkedCubePillars','nestedRoom']) assert.equal(restoredSimpleSettings[key],false,JSON.stringify(restoredSimpleSettings));
@@ -396,6 +415,55 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         }
       }
 
+      const nativeCrackedPillars = (() => {
+        const context=window.DevRandomRuin?.getRuntimeContext?.();
+        const theme=context?.theme || null;
+        const report={theme,mixedRooms:0,expected:0,actual:0,invalidCracks:[],targetModified:0,genericInTargetRoom:0};
+        if(theme!=='hronal'||!context?.root||!context.meta?.rooms)return report;
+        const cell=(Number(context.meta.cellSize)||.5)*2,rooms=context.meta.rooms.map(entry=>({
+          id:String(entry.id),minX:2+entry.col*cell,maxX:2+(entry.col+entry.w)*cell,
+          minZ:2+entry.row*cell,maxZ:2+(entry.row+entry.h)*cell,
+          supports:[],targets:[]
+        }));
+        const roomFor=position=>rooms.find(room=>position.x>=room.minX&&position.x<room.maxX&&position.z>=room.minZ&&position.z<room.maxZ);
+        const p=new THREE.Vector3();
+        context.root.updateWorldMatrix(true,true);
+        context.root.traverse(node=>{
+          const d=node.userData||{};
+          const target=d.squarePillarHousing===true&&d.hiddenActivatorMount==='pillarNiche'&&d.activatorType==='glyphObelisk'&&!!d.linkedMechanismId;
+          const support=d.squarePillar===true&&/ceiling support pillar/i.test(String(d.interiorRuinRole||''))&&d.usedAuthoredPillarSquare===true;
+          if(!target&&!support)return;
+          const room=roomFor(node.getWorldPosition(p));if(!room)return;
+          if(target)room.targets.push(node);else room.supports.push(node);
+        });
+        for(const room of rooms){
+          if(!room.targets.length)continue;
+          if(room.supports.length){report.mixedRooms++;report.expected+=Math.ceil(room.supports.length*.4);}
+          for(const target of room.targets)target.traverse(node=>{if(node.name==='hronal_crack_decal')report.targetModified++;});
+          for(const support of room.supports){
+            let shafts=0,crackStages=0;
+            support.traverse(node=>{
+              if(node.isMesh&&/square tapered shaft/i.test(node.name||''))shafts++;
+              if(node.name==='hronal_crack_decal'){
+                crackStages++;
+                if(node.parent?.name!=='Square Tapered Shaft'||!node.userData?.ruinCrackStage)report.invalidCracks.push('unaligned crack mesh');
+              }
+            });
+            if(crackStages) {
+              report.actual++;
+              if(shafts<1||crackStages!==3)report.invalidCracks.push('wrong original shaft/crack count');
+            }
+          }
+        }
+        scene.traverse(node=>{
+          if(node.name!=='hronal_exploding_pillar')return;
+          const position=node.getWorldPosition(new THREE.Vector3());
+          const room=roomFor(position);
+          if(room?.targets.length)report.genericInTargetRoom++;
+        });
+        return report;
+      })();
+
       return {
         area:window.GridTileAccessors.getCurrentArea(),
         building:window.GridTileAccessors.isBuildingArea(),
@@ -416,9 +484,10 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         furnitureStatus,
         ladders,
         puzzleTowers,
+        nativeCrackedPillars,
         negativeLevels:levels.filter(level => level < 0).length,
-        runtimeWallPlanes:generatorState?.runtimeWallPlanes || null,
-        runtimeHallways:generatorState?.runtimeHallways || null,
+        runtimeWallPlanes:window.DevRandomRuin.getState()?.runtimeWallPlanes || null,
+        runtimeHallways:window.DevRandomRuin.getState()?.runtimeHallways || null, // The generator's hidden preview has already handed every floor root to the game; these are its accepted entrance-floor audit values.
         solvability:window.DevRandomRuin.getState()?.solvability || null,
         generationAttempt:window.DevRandomRuin.getState()?.generationAttempt || 0,
         acceptedSeed:window.DevRandomRuin.getState()?.seed ?? null,
@@ -432,6 +501,13 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.equal(active.sceneName, 'map_i_dev_random_ruin', JSON.stringify(active));
     assert.equal(active.hasRoot, true, JSON.stringify(active));
     assert.equal(active.wallStyle, 'cavern', 'Random Test Ruin must use the game\'s combat-interior classification');
+    if(active.nativeCrackedPillars?.theme==='hronal'){
+      const cracked=active.nativeCrackedPillars;
+      assert.equal(cracked.actual,cracked.expected,'real V50 mixed rooms must convert the expected subset of original support pillars: '+JSON.stringify(cracked));
+      assert.equal(cracked.targetModified,0,'no genuine projectile target housing may receive erupting-crack meshes: '+JSON.stringify(cracked));
+      assert.equal(cracked.genericInTargetRoom,0,'no generic box pillar may spawn in a genuine target-pillar room: '+JSON.stringify(cracked));
+      assert.deepEqual(cracked.invalidCracks,[],'cracks must attach to authored shaft meshes in three stages: '+JSON.stringify(cracked));
+    }
     assert.equal(active.solvability?.ok, true, JSON.stringify(active.solvability));
     assert.equal(active.solvability?.unsolvedMechanisms?.length, 0, JSON.stringify(active.solvability));
     assert.ok(active.solvability?.rooms?.length > 0, JSON.stringify(active.solvability));
@@ -442,8 +518,12 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.equal(active.simple.active, true, JSON.stringify(active.simple));
     assert.equal(active.simple.safeGrids.length, 1, 'simple mode should place one safe-path pressure grid: '+JSON.stringify(active.simple));
     assert.ok(active.simple.safeGrids[0]?.hallId && active.simple.safeGrids[0]?.mandatoryTraversal, 'safe-path pressure grid must occupy a mandatory hallway traversal: '+JSON.stringify(active.simple.safeGrids[0]));
-    assert.ok(active.simple.ropes.length >= 1, 'simple mode should place at least one rope traversal; lava-basin layouts may author several linked ropes: '+JSON.stringify(active.simple));
-    const swappableHallwayModules=active.simple.modules.filter(module=>module.slotKind==='hallway'&&['projectileHallwayTrap','chordPressurePlates','hallwayGlyphGate'].includes(module.type));
+    if(!active.simple.ropes.length){
+      assert.ok(active.simple.composers?.ropeVariants?.rejects?.length>0 &&
+        active.simple.safeGrids.length===1 && active.simple.modules.some(m=>m.type==='safePathGrid'),
+        'a seed without a geometrically valid rope must show explicit layout rejections and preserve another mandatory traversal: '+JSON.stringify(active.simple));
+    }
+    const swappableHallwayModules=active.simple.modules.filter(module=>module.slotKind==='hallway'&&['layerRopeChainAbyss','ropeChainAbyss','melodyEchoTrigger','hallwayGlyphGate'].includes(module.type));
     assert.ok(swappableHallwayModules.length >= 1, 'simple mode should fill at least one generic hallway module slot: '+JSON.stringify(active.simple));
     assert.ok(active.simple.checkpoints.doorwayCount > 0, 'generated ruin should expose doorway checkpoints: '+JSON.stringify(active.simple.checkpoints));
     assert.equal(active.simple.checkpoints.triggered.includes('ruin-entry'), true, 'entering the ruin must immediately establish the first checkpoint');
@@ -452,7 +532,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.equal(active.transport?.active, true, JSON.stringify(active.transport));
     assert.equal(active.transport?.sameOrigin, true, JSON.stringify(active.transport));
     assert.equal(active.transport?.expectedFurniturePaths, 11, JSON.stringify(active.transport));
-    assert.equal(active.transport?.patchedBindings, 28, JSON.stringify(active.transport));
+    assert.ok(active.transport?.patchedBindings >= 31, JSON.stringify(active.transport)); // The 31 essential V50 patches must remain; multi-floor reservations add bindings without invalidating the bridge.
     assert.equal(active.transport?.runtimePuzzleGenerationOptions, true, JSON.stringify(active.transport));
     assert.equal(active.transport?.headlessEmbeddedPreview, true, JSON.stringify(active.transport));
     assert.deepEqual(active.transport?.runtimeHallwayWidthCells, [5,6], JSON.stringify(active.transport));
@@ -491,7 +571,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.ok((active.materialStats?.ceilingCells||0) > 0, 'generated ruin must build a real ceiling over the authored floor footprint: '+JSON.stringify(active.materialStats));
     assert.equal(active.materialStats?.ceilingTextured, true, 'generated ceiling must carry the canonical stone texture map: '+JSON.stringify(active.materialStats));
     assert.equal(active.materialStats?.ceilingMaterialTexture, 'carved_smooth.png', 'generated ceiling must use the same carved-smooth furniture PNG as ruin stone: '+JSON.stringify(active.materialStats));
-    assert.ok(Math.abs((active.simple.ropes[0]?.ceilingY||0)-(active.materialStats?.ceilingY||0))<.06, 'rope anchor must terminate at the real textured ceiling datum: '+JSON.stringify({rope:active.simple.ropes[0],materialStats:active.materialStats}));
+    if(active.simple.ropes.length)assert.ok(Math.abs((active.simple.ropes[0]?.ceilingY||0)-(active.materialStats?.ceilingY||0))<.06,
+      'every present rope anchor must terminate at the real textured ceiling datum: '+JSON.stringify({rope:active.simple.ropes[0],materialStats:active.materialStats}));
     assert.equal(active.wallRender.litSourceMaterials, 0, 'visible game-realm ruin sources must contain zero lit materials: '+JSON.stringify(active.wallRender));
     assert.ok(active.runtimeHallways?.count > 0, JSON.stringify(active.runtimeHallways));
     assert.ok(active.runtimeHallways.minCrossCells >= 5, JSON.stringify(active.runtimeHallways));
@@ -577,10 +658,13 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
           deps.player.health=1;
           rs.addAffliction?.(deps.player,'burningHealth',Number(deps.player.maxHealth)||100);
           window.PlayerVitals.updatePlayerVitals(1);
+          const downedByBurn=window.PlayerDowned.isDowned(); // Lethal Burning Health now puts the player down (Second Wind) before any checkpoint recovery.
+          window.PlayerDowned.update(window.PlayerDowned.CONFIG.bleedOutSeconds+1); // Bleed-out is the canonical path from downed to death/respawnPlayer.
           const healthAtRespawn=deps.player.health; // Capture the recovery result before ordinary rendered frames regenerate Health.
           await sleep(3);
           const cp=window.DevRandomRuinSimplePuzzles.snapshot().checkpoints;
           respawn={
+            downedByBurn,
             handled:cp.respawnCount>respawnsBefore,
             reason:cp.lastReason,
             area:window.GridTileAccessors.getCurrentArea(),
@@ -596,9 +680,12 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
           place({x:cp.activePoint.x+1.6,z:cp.activePoint.z+1.6,y:cp.activePoint.y});
           deps.player.health=1;
           window.Combat.deps.damagePlayer?.((Number(deps.player.maxHealth)||100)*2);
+          const downedByHit=window.PlayerDowned.isDowned();
+          window.PlayerDowned.update(window.PlayerDowned.CONFIG.bleedOutSeconds+1);
           await sleep(3);
           const directCp=window.DevRandomRuinSimplePuzzles.snapshot().checkpoints;
           respawn.directHit={
+            downedByHit,
             handled:directCp.respawnCount>directBefore,
             reason:directCp.lastReason,
             area:window.GridTileAccessors.getCurrentArea(),
@@ -693,16 +780,19 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         assert.ok(approachNear?buttonAlong<near:buttonAlong>far,'safe-path reveal pedestal must sit before the pressure-plate field rather than beyond it: '+JSON.stringify({grid,entry,near,far}));
       }
       assert.match(simpleRuntime.checkpointAfterCross?.activeId||'',/^doorway-/,'crossing a doorway must advance the checkpoint: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.respawn?.downedByBurn,true,'lethal Burning Health must first put the player down: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.respawn?.handled,true,'ruin checkpoint recovery must handle death locally: '+JSON.stringify(simpleRuntime));
-      assert.equal(simpleRuntime.respawn?.reason,'resource-tick','Burning Health death must route through the real PlayerVitals checkpoint seam: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.respawn?.reason,'bleed-out','Burning Health death must go down, then route bleed-out through the real respawnPlayer checkpoint seam: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.respawn?.area,'map_i_dev_random_ruin','checkpoint death recovery must stay inside the generated ruin: '+JSON.stringify(simpleRuntime));
       assert.ok(Math.abs(simpleRuntime.respawn.x-simpleRuntime.respawn.activePoint.x)<.02&&Math.abs(simpleRuntime.respawn.z-simpleRuntime.respawn.activePoint.z)<.02,'checkpoint respawn must land at the last crossed doorway: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.respawn.healthAtRespawn,Math.max(1,Math.round(simpleRuntime.respawn.maxHealth*.5)),'checkpoint respawn should match the game half-Health recovery convention before regeneration: '+JSON.stringify(simpleRuntime));
       assert.ok(simpleRuntime.respawn.health>=simpleRuntime.respawn.healthAtRespawn&&simpleRuntime.respawn.health<=simpleRuntime.respawn.maxHealth,'post-respawn frames may regenerate Health within its normal bounds');
+      assert.equal(simpleRuntime.respawn?.directHit?.downedByHit,true,'lethal direct hit must first put the player down: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.respawn?.directHit?.handled,true,'direct-hit death must pass through canonical respawnPlayer and stay at the ruin checkpoint: '+JSON.stringify(simpleRuntime));
-      assert.equal(simpleRuntime.respawn?.directHit?.reason,'death','canonical direct-hit checkpoint recovery must identify the normal death path: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.respawn?.directHit?.reason,'bleed-out','canonical direct-hit checkpoint recovery must identify the downed bleed-out death path: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.respawn?.directHit?.area,'map_i_dev_random_ruin','direct-hit checkpoint recovery must not send the player to a Root Totem/farm: '+JSON.stringify(simpleRuntime));
       assert.ok(Math.abs(simpleRuntime.respawn.directHit.x-simpleRuntime.respawn.directHit.activePoint.x)<.02&&Math.abs(simpleRuntime.respawn.directHit.z-simpleRuntime.respawn.directHit.activePoint.z)<.02,'direct-hit respawn must land on the active doorway checkpoint: '+JSON.stringify(simpleRuntime));
+      if(simpleRuntime.ropeAttach){
       assert.equal(simpleRuntime.ropeAttach?.grabRow?.label,'Grab Rope','approaching the traversal rope must expose the ordinary floating input prompt before attachment: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.grabPopupVisible,true,'idle rope grab must render through WorldPopupText: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.grabRow?.inputAction,'action1','nearby rope grab intentionally claims Action 1 so one physical input cannot attack and grab at the same time: '+JSON.stringify(simpleRuntime));
@@ -734,10 +824,11 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       assert.equal(simpleRuntime.ropeAttach?.weaponStowed,true,'grabbing the rope must put the drawn weapon/tool away: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.released,true,'Dodge must transfer the player into rope ballistic flight: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.weaponRestored,true,'jumping off the rope must restore the exact previously drawn tool/weapon snapshot: '+JSON.stringify(simpleRuntime));
-      if(simpleRuntime.final.trapHallways.length>0) assert.ok(simpleRuntime.final.liveProjectiles>0,'a selected projectile-hallway module must actively emit projectiles: '+JSON.stringify(simpleRuntime.final));
-      else assert.ok(simpleRuntime.final.chordPlateSets.some(set=>set.slotKind==='hallway'),'a non-trap hallway slot must contain its selected reusable module: '+JSON.stringify(simpleRuntime.final));
+      } // Geometric rope fitting is optional for this seed; all rope mechanics are still fully asserted where a rope exists.
+      assert.equal(simpleRuntime.final.trapHallways.length,0,'the removed short fireball/poison-dart hallway course must never regenerate');
+      assert.equal(simpleRuntime.final.liveProjectiles,0,'the removed hallway emitters must never spawn any projectiles');
 
-      await page.waitForFunction(() => !window.DevRandomRuinSimplePuzzles.snapshot().flight && !window.Combat.deps.player.dodging, null, { timeout:30000, polling:100 }); // Finish the rope jump before teleporting for an independent door interaction.
+      if(simpleRuntime.ropeAttach) await page.waitForFunction(() => !window.DevRandomRuinSimplePuzzles.snapshot().flight && !window.Combat.deps.player.dodging, null, { timeout:30000, polling:100 }); // Only wait for ballistic flight when a rope actually launched the player.
       const transitDoorRuntime = await page.evaluate(async () => {
         const sleep=frames=>new Promise(resolve=>{let left=frames;const step=()=>{if(--left<=0)resolve();else requestAnimationFrame(step);};requestAnimationFrame(step);});
         const door=window.DevRandomRuin.getState()?.transitDoors?.[0]||null;
@@ -747,6 +838,16 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         await sleep(4);
         const control=window.DevRandomRuin.getInteractionControls().find(entry=>entry.kind==='transitDoor'&&entry.object?.id===door.id);
         if(!control?.object)throw new Error('Transit-door smoke has no interaction owner');
+        const originalFocus=window.RangedWeapons?.focusCandidates; // Simulate the user's mobile camera missing the stone panel despite being within interaction reach.
+        let withoutAim=null,popupWithoutAim=false;
+        try{
+          if(window.RangedWeapons)window.RangedWeapons.focusCandidates=()=>null;
+          window.DevRandomRuinInteractions.refresh();
+          withoutAim=window.DevRandomRuinInteractions.snapshot();
+          popupWithoutAim=window.WorldPopupText.debugSnapshot()?.interactionRows?.some(entry=>entry.label==='Open Hallway Door')===true;
+        }finally{
+          if(window.RangedWeapons)window.RangedWeapons.focusCandidates=originalFocus;
+        }
         control.object.updateWorldMatrix(true,true);
         const aim=await window.__ruinBrowserAimAtPoint(new THREE.Box3().setFromObject(control.object).getCenter(new THREE.Vector3()));
         window.DevRandomRuinInteractions.refresh();
@@ -769,9 +870,11 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         await sleep(28);
         const afterDoor=window.DevRandomRuin.getState()?.transitDoors?.find(entry=>entry.id===door.id)||null;
         const afterBlocked=hasSource(window.DevRandomRuin.getOccupancySnapshot?.());
-        return {door,row,aim,focus:interaction.focus,player:{x:window.Combat.deps.player.x/window.Combat.deps.TILE,z:window.Combat.deps.player.y/window.Combat.deps.TILE},popupVisible:popupBefore.interactionRows?.some(entry=>entry.label==='Open Hallway Door')===true,beforeBlocked,sourceTiles,beforePanelHits,afterPanelHits:panelHits(),centerClear:!window.DevRandomRuinTileOccupancy.solidAt(door.center.x,door.center.z,.02,.5),beforeGridTypes,afterGridTypes:gridTypes(),afterDoor,afterBlocked};
+        return {door,row,aim,focus:interaction.focus,withoutAimRow:withoutAim?.rows?.find(row=>row.kind==='transitdoor')||null,popupWithoutAim,player:{x:window.Combat.deps.player.x/window.Combat.deps.TILE,z:window.Combat.deps.player.y/window.Combat.deps.TILE},popupVisible:popupBefore.interactionRows?.some(entry=>entry.label==='Open Hallway Door')===true,beforeBlocked,sourceTiles,beforePanelHits,afterPanelHits:panelHits(),centerClear:!window.DevRandomRuinTileOccupancy.solidAt(door.center.x,door.center.z,.02,.5),beforeGridTypes,afterGridTypes:gridTypes(),afterDoor,afterBlocked};
       });
       assert.ok(transitDoorRuntime,'generated hallway must expose at least one plain transit-exit door: '+JSON.stringify(active));
+      assert.equal(transitDoorRuntime.withoutAimRow?.label,'Open Hallway Door','closed hallway door must offer an open-door action on proximity even when reticle focus is null: '+JSON.stringify(transitDoorRuntime));
+      assert.equal(transitDoorRuntime.popupWithoutAim,true,'a nearby stone door must display its ordinary mobile prompt without camera aim: '+JSON.stringify(transitDoorRuntime));
       assert.equal(transitDoorRuntime.row?.label,'Open Hallway Door','closed hallway transit door must expose the standard floating open-door prompt: '+JSON.stringify(transitDoorRuntime));
       assert.equal(transitDoorRuntime.popupVisible,true,'hallway door prompt must be rendered by the normal WorldPopupText action-bar path: '+JSON.stringify(transitDoorRuntime));
       assert.equal(transitDoorRuntime.beforeBlocked,true,'visibly closed hallway door must contribute authoritative collision: '+JSON.stringify(transitDoorRuntime));

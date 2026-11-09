@@ -79,31 +79,108 @@
       patterns: ['bodystripes', 'spectacles'],
       eyes: { open: 'assets/creaturesprites/drenkirra_eye.png', blink: 'assets/creaturesprites/drenkirra_blink.png' },
     },
-    // Uumkao'ii has one static sprite (no run1/run2 art — see CREATURE_DB's
-    // sprites.run reusing the idle frame), and its two regions are always
-    // both present (see makeDefaultGenotype's uumkaoii branch: fur/plates
-    // are permanent copies:2 layers with no `enabled` roll at all, unlike
-    // gar-wolf/dabinggi-hound's optional pattern layers) — composeFrame's
-    // enabled-gate below treats a layer with no `enabled` field as always-on
-    // for exactly this reason. singleFrame tells patternUrl to skip the
-    // _idle/_run1/_run2 suffix these two overlay files don't have.
+    // Uumkao'ii now owns three locomotion frames and a permanent shell over a recolorable base.
+    // Old saved fur/plates genotypes are adapted without rewriting their save files.
     uumkaoii: {
       prefix: 'uum',
-      singleFrame: true,
+      fullBaseRecolor: true,
       base: {
-        idle: "assets/creaturesprites/uumkao'ii.png",
-        run1: "assets/creaturesprites/uumkao'ii.png",
-        run2: "assets/creaturesprites/uumkao'ii.png",
+        idle: "assets/creaturesprites/uumkao'ii_idle.png",
+        run1: "assets/creaturesprites/uumkao'ii_run1.png",
+        run2: "assets/creaturesprites/uumkao'ii_run2.png",
       },
-      patterns: ['fur', 'plates'],
+      patterns: ['shell'],
+      eyes: { open: "assets/creaturesprites/uumkao'ii_eye.png", blink: "assets/creaturesprites/uumkao'ii_blink.png" },
+    },
+    nelk: {
+      prefix: 'nelk',
+      fullBaseRecolor: true,
+      patternAssetRoot: 'assets/creaturesprites',
+      comboPatterns: { brushtail: { when: 'cape', sprite: 'brushtail-caped' } }, // The uploaded file's exact spelling is -caped, not -cape.
+      base: {
+        idle: 'assets/creaturesprites/nelk_idle.png',
+        run1: 'assets/creaturesprites/nelk_run1.png',
+        run2: 'assets/creaturesprites/nelk_run2.png',
+      },
+      patterns: ['brushtail', 'cape', 'spectacles'],
+      eyes: { mode: 'cycle', variants: ['A','B','C','D'].map(id => `assets/creaturesprites/nelk_eye-${id}.png`),
+        skinRecolorKey: { hex: '#A3C89F', hueTolerance: 20, minSaturationRatio: 0.45, minValue: 0.12 },
+        skinColorPattern: 'spectacles' }, // Mint skin follows expressed spectacles, falling back to the base coat; iris and outlines remain untouched.
+    },
+    honeyfuzzle: {
+      prefix: 'honeyfuzzle',
+      singleFrame: true, // Tail/spectacles PNGs have no idle/run suffix and align with each 478x399 fly pose.
+      fullBaseRecolor: true, // Chatheads use the same primary coat gene as the shader-driven in-world swarm.
+      baseShadeReferenceHex: '#9FB28E', // Measured native honeyfuzzle body pixel (159,178,142); static previews use this tint reference.
+      base: {
+        idle: 'assets/creaturesprites/honeyfuzzle_fly1.png',
+        run1: 'assets/creaturesprites/honeyfuzzle_fly2.png',
+        run2: 'assets/creaturesprites/honeyfuzzle_fly3.png',
+      },
+      patterns: ['tailfeathers', 'spectacles'],
+      underlayPatterns: ['tailfeathers'], // The anatomical tail is always visible BELOW the body, even with no expressed allele.
+      eyes: { open: 'assets/creaturesprites/honeyfuzzle_eyes.png', blink: 'assets/creaturesprites/honeyfuzzle_eyes.png' }, // Reuse the authored eyes for all portrait frames without inventing a blink asset.
+    },
+    nazgraku: {
+      prefix: 'nzg',
+      fullBaseRecolor: true,
+      base: {
+        idle: 'assets/creaturesprites/nazgraku_idle.png',
+        run1: 'assets/creaturesprites/nazgraku_run1.png',
+        run2: 'assets/creaturesprites/nazgraku_run2.png',
+      },
+      patterns: ['spectacles'],
+      eyes: { open: 'assets/creaturesprites/nazgraku_eye.png', blink: 'assets/creaturesprites/nazgraku_blink.png' },
+      // Future rider-hand rein attachment: nazgraku-mounted_reinwhisker-grippable.png
+      // and ...-stable.png. For now use the NORMAL whiskered idle/run portraits on mounts.
     },
   };
 
-  function patternUrl(kind, patternId, frame) {
+  function patternUrl(kind, patternId, frame, genotype = null) {
     const spec = SPECIES[kind];
     if (!spec) return null;
-    if (spec.singleFrame) return `assets/creaturesprites/patterns/${spec.prefix}_${patternId}.png`;
-    return `assets/creaturesprites/patterns/${spec.prefix}_${patternId}_${frame}.png`;
+    const combo = spec.comboPatterns?.[patternId]; // Selects the visual asset only; breeding still inherits two independent patterns.
+    const other = genotype?.[combo?.when]; // An expressed cape substitutes Nelk's tail art, without replacing the cape itself.
+    const assetId = combo && other?.enabled !== false && other?.copies > 0
+      ? combo.sprite : patternId;
+    const root = spec.patternAssetRoot || 'assets/creaturesprites/patterns';
+    if (spec.singleFrame) return `${root}/${spec.prefix}_${assetId}.png`;
+    return `${root}/${spec.prefix}_${assetId}_${frame}.png`;
+  }
+
+  function effectiveGenotype(kind, genotype) {
+    if (kind !== 'uumkaoii' || !genotype || (genotype.base && genotype.shell)) return genotype;
+    // Old saves stored permanent fur/plates. Translate their colors into base/shell at read time.
+    return { ...genotype,
+      base: genotype.base || genotype.fur,
+      shell: genotype.shell || (genotype.plates && { ...genotype.plates, copies: 2, enabled: true }),
+    };
+  }
+  function eyeStateKey(state) {
+    return typeof state === 'string' && /^[A-D]$/.test(state) ? 'eye-' + state : (state ? 'b' : 'o');
+  }
+  function eyeStatesForKind(kind) {
+    return SPECIES[kind]?.eyes?.mode === 'cycle' ? ['A','B','C','D'] : [false, true];
+  }
+  // These are renderer-only anatomical defaults, not extra allele slots. A later
+  // authored beard2/beard3 (registered in spec.patterns and inherited genetics)
+  // suppresses beard1 only when its allele is actually expressed and drawable.
+  function visibleDefaultCoatPatterns(spec, genotype) {
+    return (spec.defaultCoatPatterns || []).filter(defaultPattern => {
+      const replacement = spec.patterns.some(id => {
+        if (id === defaultPattern.id || !id.startsWith(defaultPattern.family)) return false;
+        const allele = genotype?.[id]; // A carrier or unexpressed beard must not hide the ordinary beard.
+        return allele?.enabled !== false && allele?.copies > 0 && !!allele?.color;
+      });
+      return !replacement;
+    });
+  }
+
+  function eyeSkinTintColor(kind, genotype, baseColor) {
+    const patternId = SPECIES[kind]?.eyes?.skinColorPattern; // Optional pattern whose visible pigmentation covers the skin surrounding an eye.
+    const layer = patternId ? genotype?.[patternId] : null; // Reads the same expressed allele used by pattern-layer compositing.
+    return layer?.enabled !== false && layer?.copies > 0 && layer?.color
+      ? layer.color : baseColor; // Disabled, unexpressed, missing-color, and carrier-only patterns retain the base coat tint.
   }
 
   function makeCanvas(w, h) {
@@ -208,13 +285,19 @@
       const keyHsv = colorFill.rgbToHsv(...keyRgb);
       const tolerance = Number.isFinite(sourceKey.hueTolerance) ? sourceKey.hueTolerance : 20;
       const minSaturation = Math.max(0.04, keyHsv.s * (Number.isFinite(sourceKey.minSaturationRatio) ? sourceKey.minSaturationRatio : 0.45));
+      const minValue = Number.isFinite(sourceKey.minValue) ? Math.max(0, Math.min(1, sourceKey.minValue)) : 0; // Species-specific outline protection for dark pixels whose noisy hue resembles the coat.
       for (let i = 0; i < px.length; i += 4) {
         if (!px[i + 3]) continue;
         const hsv = colorFill.rgbToHsv(px[i], px[i + 1], px[i + 2]);
-        matches[i >> 2] = hsv.s >= minSaturation && colorFill.hueDistance(hsv.h, keyHsv.h) <= tolerance ? 1 : 0;
+        matches[i >> 2] = hsv.v >= minValue && hsv.s >= minSaturation && colorFill.hueDistance(hsv.h, keyHsv.h) <= tolerance ? 1 : 0;
       }
     }
     return i => matches[i >> 2] === 1;
+  }
+
+  // Shared keyed shade-fill for animal coats and matching attached PNG surfaces.
+  function recolorKeyedPixels(px, targetRgb, sourceKey, sourceReferenceHex = null, debugLabel = null) {
+    recolorPixels(px, targetRgb, sourceKeyPredicate(px, sourceKey), sourceReferenceHex, debugLabel);
   }
 
   async function recoloredBase(url, color, mask, allowUnmasked = false, sourceReferenceHex = null, kind = '', sourceKey = null) {
@@ -228,12 +311,14 @@
       const c = makeCanvas(img.naturalWidth, img.naturalHeight), ctx = c.getContext('2d', { willReadFrequently: true });
       ctx.drawImage(img, 0, 0);
       const data = ctx.getImageData(0, 0, c.width, c.height), px = data.data;
-      recolorPixels(
+      const debugLabel = kind ? `animal-base:${kind}${!maskMatches && sourceKey ? ':hex-target' : ''}` : 'animal-base'; // Shared diagnostics identify both keyed and masked fills.
+      if (!maskMatches && sourceKey) recolorKeyedPixels(px, hexToRgb(color), sourceKey, sourceReferenceHex, debugLabel);
+      else recolorPixels(
         px,
         hexToRgb(color),
-        maskMatches ? (i) => mask.data[i / 4] : sourceKey ? sourceKeyPredicate(px, sourceKey) : null,
+        maskMatches ? (i) => mask.data[i / 4] : null,
         sourceReferenceHex,
-        kind ? `animal-base:${kind}${!maskMatches && sourceKey ? ':hex-target' : ''}` : 'animal-base',
+        debugLabel,
       );
       ctx.putImageData(data, 0, 0);
       return c;
@@ -311,6 +396,8 @@
         regionId,
         paint.dyeId || '',
         paint.dyeHex || '',
+        paint.overpassDyeId || '',
+        paint.overpassDyeHex || '',
         paint.patternLibraryId || '',
         paint.repoPatternId || paint.pattern?.repoPatternId || '',
         Math.max(7, Math.min(14, Number(paint.patternScale) || 7)).toFixed(3),
@@ -355,7 +442,7 @@
     const rawPatterns = Array.isArray(paint.patterns) ? paint.patterns.slice(0, 2) : [
       paint.pattern || (paint.patternLibraryId ? window.PatternLibrary?.getById?.(paint.patternLibraryId) : null),
     ]; // Current Color Pools UI writes only the legacy primary slot; a future unlock can populate patterns[1] without changing rendering.
-    const animalPatternScale = Math.max(7, Math.min(14, Number(paint.patternScale) || 7)); // Both slots intentionally share the same animal-use scale and ink color.
+    const animalPatternScale = Math.max(7, Math.min(14, Number(paint.patternScale) || 7)); // Both slots share a usage scale but may have separate ink dyes.
     const debugBase = { patternCount: rawPatterns.filter(Boolean).length, patternScale: animalPatternScale, dyeHex, status: 'pending' };
     try {
       const patterns = [];
@@ -366,7 +453,11 @@
         if (repoPatternId && !(pattern.motifDataUrl || pattern.motifUrl || pattern.customMotifId)) {
           pattern = await window.RepoPatternLibrary?.getById?.(repoPatternId) || pattern;
         }
-        if (pattern) patterns.push({ ...pattern, usageScaleMultiplier: animalPatternScale }); // Purpose-specific render field remains transient and identical for both slots.
+        if (pattern) {
+          const secondaryInk = paint.overpassDyeHex || window.DyeSystem?.getById?.(paint.overpassDyeId)?.hex;
+          patterns.push({ ...pattern, usageScaleMultiplier: animalPatternScale,
+            ...(patterns.length === 1 && /^#[0-9a-f]{6}$/i.test(secondaryInk || '') ? { inkColorHex: secondaryInk } : {}) }); // Only slot 2 receives the independent dye.
+        }
         if (patterns.length >= 2) break;
       }
       const compositor = window.ClothingWeavingSystem?.applyPatternStackToTintedImage
@@ -410,9 +501,9 @@
   // where in spec.patterns a given species happens to draw "spectacles" —
   // dabinggi-hound's stripes layer draws after its own spectacles, for
   // instance) so the eyes always render above any spectacles pattern,
-  // never the other way around. Untinted raw art, same convention as the
-  // NPC portrait pipeline's "untinted_regions" overlays — these are
-  // already fully painted eye sprites, not a recolor target.
+  // never the other way around. Eyes are normally untinted like NPC
+  // untinted_regions; Nelk's eye sprite has mint skin and therefore opts
+  // into keyed skin-only recoloring while retaining its painted iris.
   let composeTail = Promise.resolve(); // One native-resolution compositor at a time bounds overlapping pixel arrays and temporary canvases.
   let composePending = 0, composeActive = 0; // Mobile checkpoint diagnostics distinguish queued requests from actual allocation work.
   async function composeFrame(kind, frame, genotype, blinkShut = false) {
@@ -433,6 +524,7 @@
     const t0 = performance.now();
     lastPatternPaintDebug = { kind, frame, layers: {} }; // Reset per composite so Character Studio status reflects this exact preview frame.
     const spec = SPECIES[kind];
+    genotype = effectiveGenotype(kind, genotype); // Supports permanent-shell rendering on old saves.
     if (!spec) {
       window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): no SPECIES config for "${kind}" — returning null (creature falls back to its plain sprite)`, 'wildlife');
       return null;
@@ -460,6 +552,25 @@
     const tBase = performance.now();
     const bw = baseSource.naturalWidth || baseSource.width, bh = baseSource.naturalHeight || baseSource.height;
     const c = makeCanvas(bw, bh), ctx = c.getContext('2d');
+    const drawnPatterns = []; // Shared diagnostics include anatomical underlays as well as ordinary optional overlays.
+    for (const patternId of spec.underlayPatterns || []) {
+      const layer = genotype?.[patternId]; // Expressed tail genes use their second tint; otherwise this permanent anatomical region uses the primary coat.
+      const expressed = layer?.enabled !== false && Number(layer?.copies) > 0 && !!layer?.color;
+      const underlayColor = expressed ? layer.color : (baseColor || spec.baseShadeReferenceHex || null);
+      const url = patternUrl(kind, patternId, frame, genotype);
+      try {
+        const underlay = underlayColor ? await recoloredPattern(url, underlayColor) : await loadImage(url);
+        const painted = await applyColorPoolPaint(underlay, genotype, patternId, null,
+          `animal:${kind}:${frame}:${patternId}:${underlayColor || 'native'}`).catch(error => {
+          window.__farmLog?.(`[genotype-render] underlay paint for "${patternId}" failed: ${error.message}`, 'warn');
+          return null;
+        });
+        ctx.drawImage(painted || underlay, 0, 0, c.width, c.height);
+        drawnPatterns.push(patternId + (expressed ? '' : '(default)'));
+      } catch (error) {
+        window.__farmLog?.(`[genotype-render] underlay "${patternId}" failed to load (${url}): ${error.message}`, 'warn');
+      }
+    }
     ctx.drawImage(baseSource, 0, 0);
     try {
       const paintedBase = await applyColorPoolPaint(baseSource, genotype, 'base', fullBaseRecolor ? null : mask, `animal:${kind}:${frame}:base:${baseColor || 'native'}`);
@@ -467,15 +578,15 @@
     } catch (error) {
       window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): Color Pools base paint failed — skipped: ${error.message}`, 'warn');
     }
-    const drawnPatterns = [];
     for (const patternId of spec.patterns) {
+      if (spec.underlayPatterns?.includes(patternId)) continue; // The always-visible tail is already beneath the base, never drawn twice.
       const layer = genotype?.[patternId];
       // A layer with no `enabled` field at all (uumkaoii's permanent
       // fur/plates regions — see makeDefaultGenotype) is always on; only an
       // EXPLICIT `enabled: false` (gar-wolf/dabinggi-hound's optional
       // pattern roll) turns a layer off.
       if (layer?.enabled === false || !(layer?.copies > 0) || !layer?.color) continue;
-      const url = patternUrl(kind, patternId, frame);
+      const url = patternUrl(kind, patternId, frame, genotype);
       try {
         // Drenkirra bodystripes invert only their own two color roles: the
         // body uses their pattern color above and these stripes use the
@@ -495,10 +606,27 @@
         window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): pattern "${patternId}" failed to load/recolor (${url}) — skipped: ${e.message}`, 'warn');
       }
     }
-    if (spec.eyes) {
-      const eyeUrl = blinkShut ? spec.eyes.blink : spec.eyes.open;
+    for (const defaultPattern of visibleDefaultCoatPatterns(spec, genotype)) {
+      const url = patternUrl(kind, defaultPattern.id, frame, genotype); // Uses the already-uploaded idle/run1/run2 beard sprites.
       try {
-        const eyeImg = await loadImage(eyeUrl);
+        const coatColor = baseColor || spec.baseShadeReferenceHex || '#99BF99'; // Reuses the base-coat allele; never invents a secondary beard color.
+        const recolored = await recoloredPattern(url, coatColor);
+        ctx.drawImage(recolored, 0, 0, c.width, c.height);
+        drawnPatterns.push(defaultPattern.id + '(default)'); // Debug only; it is not added to genotype traits or breeding.
+      } catch (error) {
+        window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): default coat pattern "${defaultPattern.id}" missing (${url}): ${error.message}`, 'warn');
+      }
+    }
+    const eyeSkinColor = eyeSkinTintColor(kind, genotype, baseColor); // Nelk spectacles color overrides its base coat only when the pattern is expressed.
+    if (spec.eyes) {
+      const eyeUrl = spec.eyes.mode === 'cycle'
+        ? spec.eyes.variants[Math.max(0, Math.min(3, 'ABCD'.indexOf(typeof blinkShut === 'string' ? blinkShut : 'A')))]
+        : (blinkShut ? spec.eyes.blink : spec.eyes.open); // Shared boolean blinks and four-way chameleon eyes use one compositing pipeline.
+      try {
+        const eyeSkinKey = spec.eyes.skinRecolorKey; // Recolors only mint skin pixels, not iris or black linework.
+        const eyeImg = eyeSkinKey && eyeSkinColor
+          ? await recoloredBase(eyeUrl, eyeSkinColor, null, false, null, `${kind}-eye`, eyeSkinKey)
+          : await loadImage(eyeUrl);
         ctx.drawImage(eyeImg, 0, 0, c.width, c.height);
       } catch (e) {
         window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): eye overlay failed to load (${eyeUrl}) — skipped: ${e.message}`, 'warn');
@@ -511,7 +639,7 @@
     // covers the base sprite's network load + recolor pixel pass, patternMs
     // covers every enabled pattern layer's load+recolor combined.
     const baseFillMode = !baseColor ? 'none' : fullBaseRecolor ? 'full-sprite' : mask ? 'mask' : sourceKey ? 'source-key' : 'missing-mask'; // Included in the in-game farm log so mobile builds can verify which recolor path actually ran.
-    window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): base=${baseColor || '(none)'} baseFill=${baseFillMode} sourceRef=${spec.baseShadeReferenceHex || 'auto'} patterns=[${drawnPatterns.join(',') || 'none'}] bodystripesSwap=${bodyStripesColorSwap} timing: masksMs=${(tMasks - t0).toFixed(0)} baseMs=${(tBase - tMasks).toFixed(0)} patternMs=${(tEnd - tBase).toFixed(0)} totalMs=${(tEnd - t0).toFixed(0)}`, 'wildlife');
+    window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): base=${baseColor || '(none)'} baseFill=${baseFillMode} sourceRef=${spec.baseShadeReferenceHex || 'auto'} patterns=[${drawnPatterns.join(',') || 'none'}] bodystripesSwap=${bodyStripesColorSwap} eyeSkinTint=${!!(spec.eyes?.skinRecolorKey && eyeSkinColor)} eyeSkinColor=${eyeSkinColor || '(none)'} timing: masksMs=${(tMasks - t0).toFixed(0)} baseMs=${(tBase - tMasks).toFixed(0)} patternMs=${(tEnd - tBase).toFixed(0)} totalMs=${(tEnd - t0).toFixed(0)}`, 'wildlife');
     return c;
   }
 
@@ -533,16 +661,21 @@
       const spec = SPECIES[kind];
       if (!spec) continue;
       urls.push(spec.base.idle, spec.base.run1, spec.base.run2);
-      for (const patternId of spec.patterns) {
+      const prewarmIds = [...spec.patterns, ...(spec.defaultCoatPatterns || []).map(p => p.id)]; // The default beard is prefetched for all three frames without becoming genetic.
+      for (const patternId of prewarmIds) {
         urls.push(patternUrl(kind, patternId, 'idle'), patternUrl(kind, patternId, 'run1'), patternUrl(kind, patternId, 'run2'));
+        if (spec.comboPatterns?.[patternId]) for (const frame of ['idle', 'run1', 'run2']) {
+          urls.push(`${spec.patternAssetRoot || 'assets/creaturesprites/patterns'}/${spec.prefix}_${spec.comboPatterns[patternId].sprite}_${frame}.png`);
+        }
       }
-      if (spec.eyes) urls.push(spec.eyes.open, spec.eyes.blink);
+      if (spec.eyes) urls.push(...(spec.eyes.variants || [spec.eyes.open, spec.eyes.blink]));
     }
     await Promise.all(urls.filter(Boolean).map(u => loadImage(u).catch(() => null)));
     window.__farmLog?.(`[genotype-render] prewarm(${targets.join(',')}): masks + ${urls.length} sprite URLs cached in ${(performance.now() - t0).toFixed(0)}ms`, 'wildlife');
   }
 
   function genotypeSignature(kind, genotype) {
+    genotype = effectiveGenotype(kind, genotype); // Legacy Uumkao'ii genes still get a correct stable cache signature.
     const spec = SPECIES[kind];
     if (!spec) return 'none';
     const parts = [genotype?.base?.color || ''];
@@ -555,7 +688,7 @@
     return parts.join('|');
   }
 
-  window.CreatureGeneticsRender = { composeFrame, genotypeSignature, colorPoolPaintSignature, getLastPatternPaintDebug, prewarm, SPECIES, recolorPixels, hexToRgb, memorySnapshot: () => ({ recolorEntries: _recolorCache.size, recolorEstimatedBytes: recolorBytes, recolorBudgetBytes: RECOLOR_CACHE_BYTES, composePending, composeActive }) };
+  window.CreatureGeneticsRender = { composeFrame, genotypeSignature, colorPoolPaintSignature, getLastPatternPaintDebug, prewarm, patternUrl, eyeStateKey, eyeStatesForKind, eyeSkinTintColor, SPECIES, recolorPixels, recolorKeyedPixels, hexToRgb, memorySnapshot: () => ({ recolorEntries: _recolorCache.size, recolorEstimatedBytes: recolorBytes, recolorBudgetBytes: RECOLOR_CACHE_BYTES, composePending, composeActive }) };
 
   window.HobunjiCacheAudit?.register('CreatureGeneticsRender.imageCache', () => _imageCache.size);
   window.HobunjiCacheAudit?.register('CreatureGeneticsRender.recolorCache', () => _recolorCache.size);
@@ -569,7 +702,7 @@
   'use strict';
 
   const STORAGE_KEY = window.AnimalHeadRigRuntime?.STORAGE_KEY || 'hobunji_animal_head_rigs_v1'; // Shared with the rig painter so a browser preview can override the committed species rig.
-  const ANIMAL_HEAD_RIGS = Object.freeze({"dabinggi-hound":{"enabled":true,"coordinateSpace":"sprite-normalized-top-left","pivot":{"x":0.2578125,"y":0.4107142857142857},"weightMap":{"width":128,"height":56,"encoding":"rle-u9","unsetValue":256,"data":[665,256,3,255,10,256,1,0,108,256,11,255,5,256,7,0,102,256,15,255,3,256,9,0,99,256,18,255,1,256,11,0,97,256,19,255,1,256,11,0,96,256,20,255,12,0,94,256,22,255,12,0,93,256,23,255,12,0,91,256,25,255,12,0,90,256,26,255,12,0,90,256,26,255,12,0,89,256,28,255,12,0,88,256,28,255,12,0,87,256,29,255,12,0,87,256,29,255,12,0,87,256,29,255,12,0,87,256,29,255,12,0,87,256,29,255,12,0,87,256,29,255,12,0,87,256,29,255,14,0,84,256,29,255,15,0,84,256,29,255,16,0,83,256,26,255,1,256,18,0,83,256,25,255,20,0,82,256,25,255,21,0,82,256,24,255,22,0,82,256,23,255,23,0,82,256,22,255,23,0,83,256,22,255,22,0,84,256,21,255,22,0,85,256,21,255,21,0,86,256,21,255,21,0,86,256,20,255,22,0,86,256,18,255,2,256,21,0,88,256,16,255,3,256,21,0,89,256,7,255,2,256,4,255,5,256,21,0,107,256,21,0,107,256,21,0,107,256,21,0,107,256,21,0,108,256,20,0,108,256,21,0,107,256,21,0,107,256,21,0,108,256,20,0,108,256,20,0,108,256,21,0,107,256,21,0,108,256,19,0,109,256,19,0,110,256,18,0,84,256]},"minDeg":-30,"maxDeg":30,"restDeg":0,"turnSpeedDeg":120,"meshResolution":48},"gar-wolf":{"enabled":true,"coordinateSpace":"sprite-normalized-top-left","pivot":{"x":0.328125,"y":0.4375},"weightMap":{"width":128,"height":56,"encoding":"rle-u9","unsetValue":256,"data":[657,256,4,255,122,256,9,255,118,256,13,255,114,256,15,255,112,256,17,255,108,256,24,255,102,256,28,255,95,256,35,255,91,256,39,255,89,256,40,255,88,256,41,255,87,256,41,255,87,256,42,255,86,256,42,255,86,256,42,255,86,256,42,255,86,256,42,255,86,256,42,255,86,256,42,255,86,256,41,255,87,256,40,255,88,256,40,255,88,256,40,255,88,256,40,255,88,256,40,255,88,256,39,255,89,256,38,255,90,256,36,255,92,256,35,255,93,256,34,255,94,256,33,255,95,256,31,255,102,256,15,255,1,256,7,255,108,256,12,255,3,256,2,255,111,256,12,255,117,256,11,255,118,256,9,255,120,256,7,255,123,256,3,255,1648,256]},"minDeg":-30,"maxDeg":30,"restDeg":0,"turnSpeedDeg":120,"meshResolution":48},"drenkirra":{"enabled":true,"coordinateSpace":"sprite-normalized-top-left","pivot":{"x":0.4375,"y":0.5123456790123457},"weightMap":{"width":128,"height":81,"encoding":"rle-u9","unsetValue":256,"data":[2976,256,6,255,120,256,11,255,116,256,19,255,108,256,22,255,105,256,24,255,103,256,25,255,103,256,26,255,101,256,29,255,99,256,29,255,98,256,31,255,97,256,31,255,96,256,33,255,94,256,34,255,93,256,35,255,92,256,36,255,91,256,36,255,92,256,36,255,91,256,37,255,91,256,37,255,91,256,37,255,91,256,37,255,90,256,38,255,90,256,37,255,91,256,37,255,92,256,36,255,92,256,36,255,92,256,33,255,2,0,93,256,33,255,3,0,93,256,32,255,4,0,92,256,32,255,5,0,92,256,25,255,1,0,3,255,8,0,92,256,25,255,11,0,92,256,25,255,12,0,92,256,15,255,1,0,7,255,13,0,93,256,12,255,3,0,6,255,15,0,94,256,8,255,6,0,5,255,15,0,97,256,3,255,9,0,3,255,16,0,99,256,29,0,98,256,31,0,96,256,32,0,95,256,33,0,94,256,35,0,93,256,35,0,92,256,37,0,91,256,37,0,91,256,37,0,91,256,37,0,90,256,38,0,91,256,37,0,91,256,37,0,91,256,36,0,92,256,35,0,93,256,25,0,1,256,8,0,95,256,23,0,105,256,23,0,105,256,24,0,105,256,23,0,105,256,23,0,78,256]},"minDeg":-30,"maxDeg":30,"restDeg":0,"turnSpeedDeg":120,"meshResolution":48},"grehlr":{"enabled":true,"coordinateSpace":"sprite-normalized-top-left","pivot":{"x":0.421875,"y":0.6510416666666666},"weightMap":{"width":128,"height":96,"encoding":"rle-u9","unsetValue":256,"data":[21,256,107,0,20,256,108,0,18,256,110,0,17,256,111,0,16,256,112,0,15,256,113,0,15,256,113,0,14,256,114,0,13,256,115,0,12,256,116,0,11,256,117,0,10,256,118,0,9,256,119,0,8,256,120,0,7,256,121,0,6,256,122,0,6,256,122,0,5,256,123,0,4,256,124,0,4,256,124,0,3,256,125,0,2,256,126,0,1,256,283,0,20,64,106,0,3,64,18,128,8,64,98,0,2,64,3,128,16,191,8,128,3,64,95,0,2,64,2,128,3,191,14,128,8,191,3,128,2,64,93,0,2,64,2,128,2,191,3,128,12,191,8,128,3,191,2,128,2,64,91,0,2,64,2,128,2,191,2,128,3,191,10,255,8,191,3,128,2,191,2,128,1,64,91,0,1,64,2,128,2,191,2,128,2,191,19,255,3,191,2,128,2,191,1,128,1,64,88,0,4,64,1,128,2,191,2,128,2,191,22,255,2,191,2,128,1,191,1,128,1,64,86,0,3,64,4,128,1,191,2,128,2,191,24,255,2,191,1,128,1,191,1,128,1,64,85,0,2,64,3,128,4,191,1,128,2,191,26,255,1,191,1,128,1,191,1,128,1,64,84,0,2,64,2,128,3,191,4,128,1,191,27,255,1,191,1,128,1,191,1,128,1,64,84,0,1,64,2,128,2,191,3,128,4,191,27,255,1,191,1,128,1,191,1,128,1,64,83,0,2,64,1,128,2,191,2,128,3,191,30,255,1,191,1,128,1,191,1,128,1,64,83,0,1,64,2,128,1,191,2,128,2,191,32,255,1,191,1,128,1,191,1,128,1,64,83,0,1,64,1,128,2,191,1,128,2,191,33,255,1,191,1,128,1,191,1,128,1,64,83,0,1,64,1,128,1,191,2,128,1,191,34,255,1,191,1,128,1,191,1,128,1,64,82,0,2,64,1,128,1,191,1,128,2,191,34,255,1,191,1,128,1,191,1,128,1,64,82,0,1,64,2,128,1,191,1,128,1,191,34,255,2,191,1,128,1,191,1,128,1,64,82,0,1,64,1,128,2,191,1,128,1,191,34,255,1,191,2,128,1,191,1,128,1,64,81,0,2,64,1,128,1,191,2,128,1,191,34,255,1,191,1,128,2,191,1,128,1,64,78,0,4,64,2,128,1,191,1,128,2,191,34,255,1,191,1,128,1,191,2,128,1,64,75,0,4,64,4,128,2,191,1,128,1,191,35,255,1,191,1,128,1,191,1,128,2,64,74,0,2,64,4,128,4,191,2,128,1,191,35,255,1,191,1,128,1,191,1,128,1,64,74,0,2,64,2,128,4,191,4,128,2,191,34,255,2,191,1,128,1,191,1,128,1,64,73,0,2,64,2,128,2,191,4,128,4,191,35,255,1,191,2,128,1,191,1,128,1,64,72,0,2,64,2,128,2,191,2,128,4,191,37,255,2,191,1,128,2,191,1,128,1,64,72,0,1,64,2,128,2,191,2,128,2,191,39,255,2,191,2,128,1,191,2,128,1,64,71,0,2,64,1,128,2,191,2,128,2,191,39,255,2,191,2,128,2,191,1,128,2,64,70,0,2,64,2,128,1,191,2,128,2,191,40,255,1,191,2,128,2,191,2,128,1,64,71,0,1,64,2,128,2,191,1,128,2,191,41,255,1,191,1,128,2,191,2,128,2,64,71,0,1,64,1,128,2,191,2,128,1,191,41,255,2,191,1,128,1,191,2,128,2,64,72,0,2,128,1,191,2,128,2,191,41,255,1,191,2,128,1,191,1,128,2,64,73,0,1,128,2,191,1,128,2,191,41,255,2,191,1,128,2,191,1,128,1,64,74,0,1,128,1,191,2,128,1,191,41,255,2,191,2,128,1,191,2,128,1,64,74,0,2,191,1,128,2,191,38,255,4,191,2,128,2,191,1,128,2,64,74,0,1,191,2,128,1,191,38,255,2,191,4,128,2,191,2,128,1,64,75,0,1,191,1,128,2,191,39,255,1,191,1,128,4,191,2,128,2,64,75,0,2,128,1,191,40,255,1,191,1,128,1,191,4,128,2,64,76,0,1,128,2,191,40,255,1,191,1,128,3,191,3,128,4,64,73,0,1,128,1,191,45,255,3,191,4,128,2,64,72,0,1,128,1,191,47,255,4,191,2,128,4,64,69,0,1,128,1,191,50,255,2,191,4,128,3,64,67,0,2,191,51,255,4,191,3,128,3,64,65,0,1,191,55,255,3,191,3,128,2,64,64,0,1,191,57,255,3,191,2,128,2,64,63,0,1,191,59,255,2,191,3,128,63,0,1,191,60,255,3,191,64,0,1,191,62,255,1,191,64,0,1,191,62,255,2,191,63,0,1,191,63,255,2,191,62,0,1,191,64,255,2,191,61,0,1,191,65,255,1,191,61,0,1,191,65,255,2,191,60,0,1,191,66,255,1,191,2,128,58,0,1,191,66,255,2,191,59,0,1,191,67,255,1,191,1,128,58,0,2,191,66,255,1,191,2,128,57,0,1,128,1,191,66,255,2,191,1,128,1,64,56,0,1,128,1,191,67,255,1,191,1,128,1,64,56,0,1,128,2,191,66,255,1,191,1,128,1,64,56,0,2,128,1,191,66,255,1,191,1,128,1,64,56,0,1,191,1,128,1,191,29,255,1,191,36,255,1,191,1,128,1,64,56,0,1,191,1,128,2,191,27,255,2,191,1,128,35,255,1,191,1,128,1,64,56,0,1,191,2,128,1,191,27,255,1,191,2,128,1,191,34,255,1,191,1,128,1,64,56,0,2,191,1,128,2,191,26,255,1,191,1,128,3,191,32,255,2,191,1,128,1,64,56,0,1,128,1,191,2,128,2,191,25,255,1,191,1,128,1,191,1,128,3,191,30,255,1,191,2,128,1,64,56,0,1,128,2,191,2,128,2,191,24,255,1,191,1,128,1,191,3,128,5,191,26,255,1,191,1,128,2,64,56,0,2,128,2,191,2,128,2,191,23,255,1,191,1,128,1,191,1,128,1,64,5,128,2,191,24,255,2,191,1,128,1,64,57,0,1,64,2,128,2,191,2,128,5,191,1,255,1,191,17,255,1,191,1,128,1,191,1,128,5,64,2,128,2,191,22,255,2,191,2,128,1,64,57,0,2,64,2,128,2,191,5,128,3,191,16,255,2,191,1,128,1,191,1,128,1,64,3,0,2,64,2,128,2,191,20,255,2,191,2,128,2,64,58,0,2,64,2,128,5,191,3,128,2,191,15,255,1,191,2,128,1,191,1,128,1,64,4,0,2,64,2,128,2,191,17,255,3,191,2,128,2,64,60,0,2,64,5,128,3,191,2,128,2,191,13,255,2,191,1,128,2,191,1,128,1,64,5,0,2,64,2,128,2,191,15,255,2,191,3,128,2,64,59,0]},"minDeg":-30,"maxDeg":30,"restDeg":0,"turnSpeedDeg":120,"meshResolution":48}}); // Exact painter exports supplied for the four authored species.
+  const ANIMAL_HEAD_RIGS = Object.freeze({"dabinggi-hound":{"enabled":true,"coordinateSpace":"sprite-normalized-top-left","pivot":{"x":0.2578125,"y":0.4107142857142857},"weightMap":{"width":128,"height":56,"encoding":"rle-u9","unsetValue":256,"data":[665,256,3,255,10,256,1,0,108,256,11,255,5,256,7,0,102,256,15,255,3,256,9,0,99,256,18,255,1,256,11,0,97,256,19,255,1,256,11,0,96,256,20,255,12,0,94,256,22,255,12,0,93,256,23,255,12,0,91,256,25,255,12,0,90,256,26,255,12,0,90,256,26,255,12,0,89,256,28,255,12,0,88,256,28,255,12,0,87,256,29,255,12,0,87,256,29,255,12,0,87,256,29,255,12,0,87,256,29,255,12,0,87,256,29,255,12,0,87,256,29,255,12,0,87,256,29,255,14,0,84,256,29,255,15,0,84,256,29,255,16,0,83,256,26,255,1,256,18,0,83,256,25,255,20,0,82,256,25,255,21,0,82,256,24,255,22,0,82,256,23,255,23,0,82,256,22,255,23,0,83,256,22,255,22,0,84,256,21,255,22,0,85,256,21,255,21,0,86,256,21,255,21,0,86,256,20,255,22,0,86,256,18,255,2,256,21,0,88,256,16,255,3,256,21,0,89,256,7,255,2,256,4,255,5,256,21,0,107,256,21,0,107,256,21,0,107,256,21,0,107,256,21,0,108,256,20,0,108,256,21,0,107,256,21,0,107,256,21,0,108,256,20,0,108,256,20,0,108,256,21,0,107,256,21,0,108,256,19,0,109,256,19,0,110,256,18,0,84,256]},"minDeg":-30,"maxDeg":30,"restDeg":0,"turnSpeedDeg":120,"meshResolution":48},"gar-wolf":{"enabled":true,"coordinateSpace":"sprite-normalized-top-left","pivot":{"x":0.328125,"y":0.4375},"weightMap":{"width":128,"height":56,"encoding":"rle-u9","unsetValue":256,"data":[657,256,4,255,122,256,9,255,118,256,13,255,114,256,15,255,112,256,17,255,108,256,24,255,102,256,28,255,95,256,35,255,91,256,39,255,89,256,40,255,88,256,41,255,87,256,41,255,87,256,42,255,86,256,42,255,86,256,42,255,86,256,42,255,86,256,42,255,86,256,42,255,86,256,42,255,86,256,41,255,87,256,40,255,88,256,40,255,88,256,40,255,88,256,40,255,88,256,40,255,88,256,39,255,89,256,38,255,90,256,36,255,92,256,35,255,93,256,34,255,94,256,33,255,95,256,31,255,102,256,15,255,1,256,7,255,108,256,12,255,3,256,2,255,111,256,12,255,117,256,11,255,118,256,9,255,120,256,7,255,123,256,3,255,1648,256]},"minDeg":-30,"maxDeg":30,"restDeg":0,"turnSpeedDeg":120,"meshResolution":48},"drenkirra":{"enabled":true,"coordinateSpace":"sprite-normalized-top-left","pivot":{"x":0.4375,"y":0.5123456790123457},"weightMap":{"width":128,"height":81,"encoding":"rle-u9","unsetValue":256,"data":[2976,256,6,255,120,256,11,255,116,256,19,255,108,256,22,255,105,256,24,255,103,256,25,255,103,256,26,255,101,256,29,255,99,256,29,255,98,256,31,255,97,256,31,255,96,256,33,255,94,256,34,255,93,256,35,255,92,256,36,255,91,256,36,255,92,256,36,255,91,256,37,255,91,256,37,255,91,256,37,255,91,256,37,255,90,256,38,255,90,256,37,255,91,256,37,255,92,256,36,255,92,256,36,255,92,256,33,255,2,0,93,256,33,255,3,0,93,256,32,255,4,0,92,256,32,255,5,0,92,256,25,255,1,0,3,255,8,0,92,256,25,255,11,0,92,256,25,255,12,0,92,256,15,255,1,0,7,255,13,0,93,256,12,255,3,0,6,255,15,0,94,256,8,255,6,0,5,255,15,0,97,256,3,255,9,0,3,255,16,0,99,256,29,0,98,256,31,0,96,256,32,0,95,256,33,0,94,256,35,0,93,256,35,0,92,256,37,0,91,256,37,0,91,256,37,0,91,256,37,0,90,256,38,0,91,256,37,0,91,256,37,0,91,256,36,0,92,256,35,0,93,256,25,0,1,256,8,0,95,256,23,0,105,256,23,0,105,256,24,0,105,256,23,0,105,256,23,0,78,256]},"minDeg":-30,"maxDeg":30,"restDeg":0,"turnSpeedDeg":120,"meshResolution":48},"grehlr":{"enabled":true,"coordinateSpace":"sprite-normalized-top-left","pivot":{"x":0.421875,"y":0.6510416666666666},"weightMap":{"width":128,"height":96,"encoding":"rle-u9","unsetValue":256,"data":[21,256,107,0,20,256,108,0,18,256,110,0,17,256,111,0,16,256,112,0,15,256,113,0,15,256,113,0,14,256,114,0,13,256,115,0,12,256,116,0,11,256,117,0,10,256,118,0,9,256,119,0,8,256,120,0,7,256,121,0,6,256,122,0,6,256,122,0,5,256,123,0,4,256,124,0,4,256,124,0,3,256,125,0,2,256,126,0,1,256,283,0,20,64,106,0,3,64,18,128,8,64,98,0,2,64,3,128,16,191,8,128,3,64,95,0,2,64,2,128,3,191,14,128,8,191,3,128,2,64,93,0,2,64,2,128,2,191,3,128,12,191,8,128,3,191,2,128,2,64,91,0,2,64,2,128,2,191,2,128,3,191,10,255,8,191,3,128,2,191,2,128,1,64,91,0,1,64,2,128,2,191,2,128,2,191,19,255,3,191,2,128,2,191,1,128,1,64,88,0,4,64,1,128,2,191,2,128,2,191,22,255,2,191,2,128,1,191,1,128,1,64,86,0,3,64,4,128,1,191,2,128,2,191,24,255,2,191,1,128,1,191,1,128,1,64,85,0,2,64,3,128,4,191,1,128,2,191,26,255,1,191,1,128,1,191,1,128,1,64,84,0,2,64,2,128,3,191,4,128,1,191,27,255,1,191,1,128,1,191,1,128,1,64,84,0,1,64,2,128,2,191,3,128,4,191,27,255,1,191,1,128,1,191,1,128,1,64,83,0,2,64,1,128,2,191,2,128,3,191,30,255,1,191,1,128,1,191,1,128,1,64,83,0,1,64,2,128,1,191,2,128,2,191,32,255,1,191,1,128,1,191,1,128,1,64,83,0,1,64,1,128,2,191,1,128,2,191,33,255,1,191,1,128,1,191,1,128,1,64,83,0,1,64,1,128,1,191,2,128,1,191,34,255,1,191,1,128,1,191,1,128,1,64,82,0,2,64,1,128,1,191,1,128,2,191,34,255,1,191,1,128,1,191,1,128,1,64,82,0,1,64,2,128,1,191,1,128,1,191,34,255,2,191,1,128,1,191,1,128,1,64,82,0,1,64,1,128,2,191,1,128,1,191,34,255,1,191,2,128,1,191,1,128,1,64,81,0,2,64,1,128,1,191,2,128,1,191,34,255,1,191,1,128,2,191,1,128,1,64,78,0,4,64,2,128,1,191,1,128,2,191,34,255,1,191,1,128,1,191,2,128,1,64,75,0,4,64,4,128,2,191,1,128,1,191,35,255,1,191,1,128,1,191,1,128,2,64,74,0,2,64,4,128,4,191,2,128,1,191,35,255,1,191,1,128,1,191,1,128,1,64,74,0,2,64,2,128,4,191,4,128,2,191,34,255,2,191,1,128,1,191,1,128,1,64,73,0,2,64,2,128,2,191,4,128,4,191,35,255,1,191,2,128,1,191,1,128,1,64,72,0,2,64,2,128,2,191,2,128,4,191,37,255,2,191,1,128,2,191,1,128,1,64,72,0,1,64,2,128,2,191,2,128,2,191,39,255,2,191,2,128,1,191,2,128,1,64,71,0,2,64,1,128,2,191,2,128,2,191,39,255,2,191,2,128,2,191,1,128,2,64,70,0,2,64,2,128,1,191,2,128,2,191,40,255,1,191,2,128,2,191,2,128,1,64,71,0,1,64,2,128,2,191,1,128,2,191,41,255,1,191,1,128,2,191,2,128,2,64,71,0,1,64,1,128,2,191,2,128,1,191,41,255,2,191,1,128,1,191,2,128,2,64,72,0,2,128,1,191,2,128,2,191,41,255,1,191,2,128,1,191,1,128,2,64,73,0,1,128,2,191,1,128,2,191,41,255,2,191,1,128,2,191,1,128,1,64,74,0,1,128,1,191,2,128,1,191,41,255,2,191,2,128,1,191,2,128,1,64,74,0,2,191,1,128,2,191,38,255,4,191,2,128,2,191,1,128,2,64,74,0,1,191,2,128,1,191,38,255,2,191,4,128,2,191,2,128,1,64,75,0,1,191,1,128,2,191,39,255,1,191,1,128,4,191,2,128,2,64,75,0,2,128,1,191,40,255,1,191,1,128,1,191,4,128,2,64,76,0,1,128,2,191,40,255,1,191,1,128,3,191,3,128,4,64,73,0,1,128,1,191,45,255,3,191,4,128,2,64,72,0,1,128,1,191,47,255,4,191,2,128,4,64,69,0,1,128,1,191,50,255,2,191,4,128,3,64,67,0,2,191,51,255,4,191,3,128,3,64,65,0,1,191,55,255,3,191,3,128,2,64,64,0,1,191,57,255,3,191,2,128,2,64,63,0,1,191,59,255,2,191,3,128,63,0,1,191,60,255,3,191,64,0,1,191,62,255,1,191,64,0,1,191,62,255,2,191,63,0,1,191,63,255,2,191,62,0,1,191,64,255,2,191,61,0,1,191,65,255,1,191,61,0,1,191,65,255,2,191,60,0,1,191,66,255,1,191,2,128,58,0,1,191,66,255,2,191,59,0,1,191,67,255,1,191,1,128,58,0,2,191,66,255,1,191,2,128,57,0,1,128,1,191,66,255,2,191,1,128,1,64,56,0,1,128,1,191,67,255,1,191,1,128,1,64,56,0,1,128,2,191,66,255,1,191,1,128,1,64,56,0,2,128,1,191,66,255,1,191,1,128,1,64,56,0,1,191,1,128,1,191,29,255,1,191,36,255,1,191,1,128,1,64,56,0,1,191,1,128,2,191,27,255,2,191,1,128,35,255,1,191,1,128,1,64,56,0,1,191,2,128,1,191,27,255,1,191,2,128,1,191,34,255,1,191,1,128,1,64,56,0,2,191,1,128,2,191,26,255,1,191,1,128,3,191,32,255,2,191,1,128,1,64,56,0,1,128,1,191,2,128,2,191,25,255,1,191,1,128,1,191,1,128,3,191,30,255,1,191,2,128,1,64,56,0,1,128,2,191,2,128,2,191,24,255,1,191,1,128,1,191,3,128,5,191,26,255,1,191,1,128,2,64,56,0,2,128,2,191,2,128,2,191,23,255,1,191,1,128,1,191,1,128,1,64,5,128,2,191,24,255,2,191,1,128,1,64,57,0,1,64,2,128,2,191,2,128,5,191,1,255,1,191,17,255,1,191,1,128,1,191,1,128,5,64,2,128,2,191,22,255,2,191,2,128,1,64,57,0,2,64,2,128,2,191,5,128,3,191,16,255,2,191,1,128,1,191,1,128,1,64,3,0,2,64,2,128,2,191,20,255,2,191,2,128,2,64,58,0,2,64,2,128,5,191,3,128,2,191,15,255,1,191,2,128,1,191,1,128,1,64,4,0,2,64,2,128,2,191,17,255,3,191,2,128,2,64,60,0,2,64,5,128,3,191,2,128,2,191,13,255,2,191,1,128,2,191,1,128,1,64,5,0,2,64,2,128,2,191,15,255,2,191,3,128,2,64,59,0]},"minDeg":-30,"maxDeg":30,"restDeg":0,"turnSpeedDeg":120,"meshResolution":48},"nazgraku":{"enabled":true,"coordinateSpace":"sprite-normalized-top-left","pivot":{"x":0.421875,"y":0.42592592592592593},"weightMap":{"width":128,"height":54,"encoding":"rle-u9","unsetValue":256,"data":[34,256,33,255,94,256,35,255,92,256,36,255,91,256,37,255,90,256,39,255,88,256,40,255,87,256,41,255,87,256,41,255,86,256,42,255,86,256,42,255,85,256,43,255,85,256,42,255,86,256,42,255,86,256,42,255,86,256,41,255,86,256,42,255,86,256,41,255,87,256,40,255,88,256,39,255,88,256,39,255,89,256,39,255,89,256,38,255,90,256,36,255,92,256,35,255,93,256,34,255,94,256,33,255,95,256,32,255,97,256,30,255,98,256,30,255,98,256,29,255,100,256,27,255,102,256,25,255,103,256,24,255,105,256,22,255,107,256,20,255,110,256,17,255,113,256,13,255,117,256,8,255,2133,256]},"minDeg":-30,"maxDeg":30,"restDeg":0,"turnSpeedDeg":120,"meshResolution":48,"compressibilityMap":{"width":128,"height":54,"encoding":"rle-u9","unsetValue":256,"data":[1476,256,10,0,109,256,22,0,103,256,27,0,100,256,30,0,96,256,33,0,94,256,35,0,92,256,3,0,4,256,30,0,90,256,2,0,5,256,32,0,89,256,1,0,5,256,34,0,93,256,35,0,93,256,36,0,91,256,37,0,91,256,38,0,89,256,39,0,89,256,40,0,88,256,40,0,88,256,40,0,87,256,41,0,87,256,41,0,87,256,42,0,78,256,1,0,7,256,42,0,86,256,42,0,86,256,42,0,86,256,41,0,66,256,3,0,18,256,41,0,65,256,8,0,15,256,40,0,63,256,12,0,13,256,40,0,62,256,13,0,13,256,39,0,62,256,15,0,13,256,38,0,61,256,16,0,13,256,38,0,61,256,16,0,14,256,36,0,61,256,17,0,14,256,36,0,61,256,17,0,14,256,35,0,61,256,19,0,11,256,36,0,62,256,20,0,7,256,38,0,63,256,64,0,64,256,63,0,65,256,62,0,66,256,61,0,67,256,59,0,69,256,56,0,72,256,31,0,3,256,9,0,5,256,4,0,76,256,31,0,74,256]},"stretchabilityMap":{"width":128,"height":54,"encoding":"rle-u9","unsetValue":256,"data":[4002,256,2,0,123,256,5,0,122,256,7,0,120,256,9,0,118,256,12,0,115,256,14,0,113,256,17,0,110,256,21,0,107,256,21,0,107,256,22,0,105,256,24,0,104,256,24,0,104,256,25,0,103,256,26,0,102,256,27,0,101,256,29,0,99,256,30,0,98,256,31,0,97,256,31,0,97,256,30,0,99,256,29,0,99,256,28,0,101,256,27,0,75,256]}},"nelk":{"enabled":true,"coordinateSpace":"sprite-normalized-top-left","pivot":{"x":0.3137449623414376,"y":0.4315545387068126},"weightMap":{"width":128,"height":84,"encoding":"rle-u9","unsetValue":256,"data":[160,256,1,255,126,256,2,255,125,256,3,255,124,256,4,255,124,256,5,255,116,256,13,255,113,256,16,255,110,256,20,255,107,256,20,255,10,256,2,69,95,256,20,255,12,256,2,69,94,256,19,255,109,256,19,255,108,256,20,255,108,256,20,255,107,256,21,255,107,256,20,255,1,252,1,254,105,256,21,255,2,254,105,256,20,255,4,254,104,256,20,255,5,254,103,256,20,255,7,254,101,256,20,255,8,254,100,256,20,255,8,254,100,256,21,255,7,254,100,256,21,255,1,252,6,254,100,256,22,255,2,253,1,251,2,249,1,247,99,256,25,255,1,249,1,247,2,244,99,256,30,255,97,256,32,255,95,256,34,255,94,256,35,255,93,256,34,255,93,256,32,255,96,256,31,255,97,256,29,255,98,256,29,255,98,256,29,255,98,256,29,255,99,256,29,255,99,256,28,255,99,256,29,255,99,256,28,255,99,256,28,255,100,256,27,255,101,256,27,255,101,256,27,255,102,256,27,255,101,256,27,255,101,256,28,255,101,256,27,255,101,256,27,255,102,256,26,255,102,256,25,255,103,256,25,255,103,256,24,255,104,256,23,255,105,256,11,255,1,256,11,255,105,256,11,255,2,256,9,255,106,256,11,255,2,256,9,255,106,256,11,255,1,256,11,255,105,256,10,255,2,256,11,255,106,256,9,255,1,256,13,255,105,256,9,255,1,256,13,255,107,256,6,255,2,256,13,255,115,256,13,255,115,256,12,255,116,256,13,255,115,256,13,255,115,256,12,255,116,256,12,255,117,256,11,255,117,256,10,255,120,256,7,255,123,256,2,255,1383,256]},"minDeg":-30,"maxDeg":30,"restDeg":0,"turnSpeedDeg":120,"meshResolution":48,"compressibilityMap":{"width":128,"height":84,"encoding":"rle-u9","unsetValue":256,"data":[4289,256,1,0,99,256,1,136,3,0,24,256,1,0,98,256,1,136,6,0,22,256,1,0,97,256,1,136,8,0,117,256,1,186,1,136,10,0,116,256,1,136,1,99,10,0,115,256,1,186,1,53,12,0,112,256,1,186,1,53,1,39,1,20,12,0,8,256,2,0,101,256,1,136,1,53,1,28,1,20,13,0,8,256,1,0,101,256,1,219,1,108,1,39,1,15,15,0,6,256,1,0,102,256,1,183,1,140,1,20,16,0,104,256,2,245,1,237,1,221,1,210,1,191,1,163,1,125,16,0,2,256,2,0,99,256,2,250,3,242,1,213,1,186,1,183,1,156,19,0,99,256,2,250,2,246,1,237,1,232,1,229,1,203,2,183,1,1,16,0,101,256,2,251,1,246,1,242,1,238,1,231,1,229,2,202,1,183,1,1,16,0,1,256,2,0,4,256,2,0,91,256,2,252,1,248,1,246,1,240,2,237,1,229,1,216,1,202,1,183,2,1,23,0,92,256,2,252,2,248,1,242,2,237,1,229,1,227,1,202,1,183,2,1,24,0,91,256,1,252,1,250,1,248,2,246,1,242,1,236,1,227,1,216,1,202,1,156,2,1,24,0,91,256,1,251,1,250,1,248,2,246,1,245,1,235,1,227,1,202,1,156,1,120,2,1,24,0,92,256,1,246,1,248,2,246,1,245,1,235,1,216,2,156,1,70,1,1,25,0,92,256,2,242,1,237,1,236,1,235,1,202,1,156,2,120,2,1,24,0,92,256,1,245,1,242,1,232,1,231,1,236,1,235,3,120,1,37,1,1,25,0,91,256,1,229,1,245,1,237,1,224,2,229,1,183,1,120,2,70,1,1,25,0,92,256,1,229,1,208,1,202,1,194,1,191,1,163,1,124,2,70,2,1,25,0,93,256,1,191,1,148,1,140,1,134,1,83,1,6,3,1,26,0,93,256,1,172,1,148,1,140,1,97,1,89,1,11,3,1,27,0,91,256,1,168,1,141,2,97,1,39,1,28,1,20,1,2,3,1,26,0,92,256,1,141,3,39,1,20,1,15,1,3,3,1,25,0,93,256,1,99,1,53,1,39,1,28,1,20,1,11,1,4,4,1,24,0,93,256,1,136,1,72,1,53,1,28,1,20,1,15,1,8,4,1,24,0,93,256,1,186,1,136,1,53,1,39,1,20,1,15,1,8,4,1,24,0,94,256,1,186,1,72,2,39,1,28,1,15,1,4,3,1,24,0,95,256,1,136,1,72,2,39,1,15,1,11,1,2,1,1,24,0,96,256,1,136,2,99,1,72,1,53,1,20,1,15,1,3,1,1,23,0,96,256,3,136,2,99,1,72,1,53,1,20,1,6,22,0,97,256,1,186,2,136,1,99,3,72,1,53,22,0,98,256,2,186,1,136,1,99,4,72,22,0,98,256,3,186,1,136,4,72,21,0,99,256,4,186,1,99,2,72,22,0,100,256,4,186,1,99,10,0,1,256,12,0,100,256,2,186,12,0,3,256,13,0,100,256,11,0,6,256,12,0,106,256,2,0,8,256,13,0,99,256,3,0,14,256,12,0,100,256,3,0,13,256,13,0,100,256,1,0,14,256,13,0,115,256,13,0,115,256,13,0,115,256,12,0,117,256,11,0,118,256,9,0,74,256]},"stretchabilityMap":{"width":128,"height":84,"encoding":"rle-u9","unsetValue":256,"data":[3753,256,1,53,1,72,1,99,124,256,1,28,3,39,1,53,122,256,3,11,2,15,4,0,117,256,1,20,1,6,1,8,1,6,8,0,116,256,1,6,1,2,1,8,9,0,104,256,1,186,11,256,1,1,12,0,103,256,1,186,1,136,9,256,1,1,14,0,102,256,2,186,1,136,7,256,1,1,16,0,101,256,2,186,2,136,2,99,1,39,1,8,1,6,1,1,18,0,100,256,4,186,1,99,1,72,1,39,1,8,1,4,1,1,18,0,100,256,4,186,2,99,1,28,1,6,1,3,20,0,99,256,3,186,1,136,2,99,1,20,1,8,1,4,21,0,99,256,2,186,2,136,1,28,1,20,1,8,21,0,101,256,1,186,1,136,1,72,1,20,1,8,22,0,101,256,1,186,1,136,1,53,1,20,21,0,101,256,1,186,1,99,1,72,1,53,1,20,1,6,18,0,102,256,1,136,1,99,1,53,2,39,1,20,1,4,1,1,18,0,101,256,2,136,1,53,1,39,1,20,1,11,4,1,17,0,100,256,2,136,1,53,1,28,2,8,1,2,4,1,16,0,100,256,3,136,1,15,1,4,1,3,7,1,14,0,101,256,2,136,1,11,2,3,8,1,13,0,96,256,1,0,5,256,1,136,1,39,1,6,1,2,9,1,13,0,96,256,1,0,5,256,1,53,1,15,1,3,10,1,13,0,95,256,2,0,5,256,1,28,1,11,1,2,9,1,15,0,94,256,2,0,4,256,1,136,1,28,1,6,10,1,15,0,94,256,2,0,4,256,1,72,1,15,1,4,9,1,16,0,94,256,3,0,3,256,1,39,1,15,1,8,8,1,16,0,95,256,3,0,2,256,1,0,1,28,1,8,1,6,1,3,7,1,16,0,96,256,3,0,1,256,2,0,1,15,1,6,1,3,6,1,16,0,97,256,6,0,1,15,1,8,7,1,16,0,98,256,4,0,1,20,1,15,1,6,8,1,16,0,98,256,3,0,1,39,1,15,1,8,8,1,16,0,99,256,1,0,1,99,1,28,1,15,1,11,9,1,15,0,99,256,1,0,1,136,1,39,1,20,1,11,1,4,8,1,15,0,99,256,1,0,2,136,1,20,1,15,1,11,1,3,2,2,5,1,14,0,99,256,2,0,2,136,1,72,1,20,1,15,1,8,1,4,1,3,5,1,14,0,99,256,2,0,3,136,3,39,1,15,2,6,1,2,1,1,1,2,14,0,100,256,2,0,3,136,1,99,1,72,1,53,1,39,1,15,1,11,1,4,1,3,1,6,1,4,12,0,101,256,2,0,4,136,1,99,2,72,1,28,1,20,1,11,1,8,2,11,11,0,103,256,1,0,4,136,3,99,1,28,2,20,2,28,12,0,103,256,1,0,5,136,2,99,1,39,1,28,2,39,1,20,12,0,104,256,1,0,1,186,5,136,1,53,1,39,2,53,1,72,12,0,105,256,6,186,1,136,1,99,2,72,13,0,111,256,1,186,2,99,15,0,111,256,18,0,111,256,18,0,111,256,17,0,111,256,17,0,111,256,17,0,111,256,18,0,110,256,18,0,110,256,19,0,110,256,18,0,111,256,17,0,111,256,17,0,81,256]}}}); // Runtime head-rig data, including Nelk's committed paint maps.
   const HEAD_RIG_VARIANT_ALIASES = Object.freeze({
     'gar-wolf-alpha': 'gar-wolf',
     'gar-wolf-den-mother': 'gar-wolf',

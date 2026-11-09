@@ -43,7 +43,8 @@ assert.equal(window.NpcGifting.isItemGiftable(held), true, 'another copy of the 
 
 const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Executes the production manual-hold accessors without booting WebGL.
 const holdSource = gameSource.slice(gameSource.indexOf('      let manualHeldItem = null;'), gameSource.indexOf('      function clampInventoryStack(')); // Bounded production block containing hold state/accessors.
-const context = { window, packClothing: pack, inventory: {}, ITEM_DEFS: {}, refreshActionBar() {}, showToast() {}, getActiveInventoryItem: () => null }; // Runtime dependencies of the accessor block.
+const toasts = []; // Player-facing refusals from the production hold accessor.
+const context = { window, packClothing: pack, inventory: {}, ITEM_DEFS: {}, refreshActionBar() {}, showToast: message => { toasts.push(message); }, getActiveInventoryItem: () => null }; // Runtime dependencies of the accessor block.
 vm.createContext(context);
 vm.runInContext(holdSource, context);
 vm.runInContext("setManualHeldItem({ kind: 'clothing', uid: 'gear-hat' })", context);
@@ -60,4 +61,22 @@ assert.equal(accepted, 1);
 assert.equal(saved, 1);
 assert.deepEqual(pack, []);
 assert.equal(gear.clothing.hat, gearItem, 'pack gifting preserves worn gear');
+// A cursed garment (looted lich circlet / Maskbound mask) can be neither held for gifting nor handed to an NPC.
+const cursedItem = { uid: 'cursed-circlet', cosmeticId: 'lich_circlet', label: 'Cursed Circlet', slot: 'hat', cursed: { kind: 'circlet', dispelBy: 'garanki', originalLabel: 'Circlet' } };
+pack.push(cursedItem); context.packClothing.push(cursedItem);
+const cursedHeld = { kind: 'clothing', instance: cursedItem };
+assert.equal(window.NpcGifting.isItemGiftable(cursedHeld), false, 'cursed pack clothing is not giftable');
+toasts.length = 0;
+vm.runInContext("setManualHeldItem({ kind: 'clothing', uid: 'cursed-circlet' })", context);
+assert.equal(vm.runInContext('getManualHeldItem()', context), null, 'cursed clothing cannot be held for gifting');
+assert.match(toasts[0] || '', /cursed/i, 'the refusal says why');
+held = cursedHeld;
+assert.equal(window.NpcGifting.getNpcGiftOfferAction(npc), null, 'no gift action is offered for cursed clothing');
+const acceptedBefore = accepted, savedBefore = saved;
+assert.equal(window.NpcGifting.offerGift(npc), false, 'a direct gift attempt is refused');
+assert.equal(accepted, acceptedBefore, 'a cursed gift never reaches the NPC wardrobe');
+assert.equal(saved, savedBefore);
+assert(pack.includes(cursedItem), 'the cursed garment stays in the pack');
+delete cursedItem.cursed; // Once Garanki lifts the curse it is an ordinary pack garment again.
+assert.equal(window.NpcGifting.isItemGiftable(cursedHeld), true, 'a dispelled garment is giftable');
 console.log('Permanent gear hold/gift protection passed.');

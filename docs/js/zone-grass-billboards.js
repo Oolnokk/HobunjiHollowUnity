@@ -147,6 +147,67 @@
     return group;
   }
 
+  // Mini-cliff caps use the very same grass blade geometry, wind shader and
+  // Settings > Grass visibility flag as ordinary wilderness floor grass.
+  // Points are sampled against the actual asymmetric cap outline so none
+  // can float in the air beside an overhanging, slanted ledge.
+  function buildMiniCliffGrassBillboards(scene, network) {
+    const material = deps?.getGrassBillboardMat?.();
+    const shelves = (network?.balconies || []).filter(s => s.base?.footprint?.length);
+    if (!scene || !material || !shelves.length || !deps.grassBladeGeo) return null;
+    const counts = shelves.map(s => Math.max(7, Math.min(36, Math.round(s.width * s.depth * 7)))); // Density follows actual ledge area.
+    const mesh = new THREE.InstancedMesh(deps.grassBladeGeo, material, counts.reduce((a, b) => a + b, 0) * 2);
+    mesh.frustumCulled = false; // One inexpensive draw across disjoint elevated caps; never cull by the shared origin.
+    mesh.userData.isBillboard = true;
+    mesh.userData.isWildernessGrassChunk = true;
+    mesh.userData.skipOcclusionFade = true;
+    const dummy = new THREE.Object3D();
+    let index = 0;
+    for (let n = 0; n < shelves.length; n++) {
+      const shelf = shelves[n];
+      const seed = ((Math.imul(Math.floor(shelf.x * 100), 31337)
+        ^ Math.imul(Math.floor(shelf.z * 100), 1009) ^ 0x91e10da5) >>> 0); // Stable per mini-cliff, independent of generation order.
+      const rand = deps.mbRng(seed);
+      for (let b = 0; b < counts[n]; b++) {
+        let spot = null;
+        for (let attempt = 0; attempt < 14; attempt++) {
+          const u = (rand() - 0.5) * shelf.width * 0.92;
+          const v = (rand() - 0.5) * shelf.depth * 0.88;
+          const x = shelf.x + shelf.tangent.x * u + shelf.normal.x * v;
+          const z = shelf.z + shelf.tangent.z * u + shelf.normal.z * v;
+          if (!window.CliffRouteNetwork?.shelfContains?.(shelf, x, z)) continue;
+          if (Math.hypot(x - shelf.x, z - shelf.z) < 0.36) continue; // Keep the visible reward cluster/rock clear.
+          spot = { x, z };
+          break;
+        }
+        if (!spot) continue;
+        const width = 0.16 + rand() * 0.10;
+        const height = 0.22 + rand() * 0.14;
+        const yaw = rand() * Math.PI;
+        dummy.position.set(spot.x, shelf.y + 0.016, spot.z); // Stand on elevated grass, not the lower grid tile.
+        dummy.scale.set(width, height, 1);
+        for (const turn of [0, Math.PI / 2]) {
+          dummy.rotation.set(0, yaw + turn, 0);
+          dummy.updateMatrix();
+          mesh.setMatrixAt(index++, dummy.matrix);
+        }
+      }
+    }
+    if (!index) return null;
+    mesh.count = index;
+    mesh.instanceMatrix.needsUpdate = true;
+    const group = new THREE.Group();
+    group.name = network.area + '-mini-cliff-grass';
+    group.visible = deps.getGrassEnabled(); // Honors the same settings toggle as the rest of the zone.
+    group.userData.isBillboard = true;
+    group.userData.isWildernessGrassChunkGroup = true; // Same cover/seasonal occlusion category as normal wilderness tufts.
+    group.userData.miniCliffGrassGroup = true; // Used by the ordinary grass setting change handler below.
+    group.add(mesh);
+    scene.add(group);
+    window.__farmLog?.(`[wilderness] mini-cliff grass: ${shelves.length} caps, ${index} billboard planes`, 'info');
+    return group;
+  }
+
   // Rich foliage patches (see workspace.foliagePatches' `rich` flag —
   // the dense copse clusters the wildlife schedule AI's herbivores graze
   // in and predators patrol near) get their own tightly-packed, tall
@@ -232,9 +293,22 @@
     return group;
   }
 
+  // The ordinary setting updates existing wilderness grass meshes after the
+  // checkbox changes. Mirror that visibility state for the separate elevated
+  // cap group, without retaining old zone scenes or introducing a frame loop.
+  if (typeof document !== 'undefined') document.addEventListener('change', () => {
+    queueMicrotask(() => {
+      const scene = window.GridTileAccessors?.getActiveScene?.();
+      scene?.traverse?.(node => {
+        if (node.userData?.miniCliffGrassGroup) node.visible = !!deps?.getGrassEnabled?.();
+      });
+    });
+  });
+
   window.ZoneGrassBillboards = {
     init,
     buildZoneGrassBillboards,
+    buildMiniCliffGrassBillboards,
     buildRichFoliageBillboards,
   };
 })();
@@ -300,33 +374,42 @@
     proto.__hobunjiPathSurfaceTagPatched = true;
   }
 
-  function isTownBillboardMesh(obj) {
-    return !!(obj?.isInstancedMesh && obj.userData?.isBillboard === true && obj.count > 0);
+  function projectTownGrassMatrix(target) {
+    target.decompose(pos, quat, scale);
+    pos.y += sampleTownHeight(pos.x, pos.z);
+    target.compose(pos, quat, scale);
   }
 
   function elevateBillboardMesh(mesh) {
-    if (!isTownBillboardMesh(mesh)) return 0;
+    if (!mesh?.isInstancedMesh || mesh.userData?.isBillboard !== true) return 0;
     const requiredLength = mesh.instanceMatrix?.array?.length || 0;
     if (!requiredLength) return 0;
-    if (!mesh.userData.hobunjiTownSubtleBaseMatrices || mesh.userData.hobunjiTownSubtleBaseMatrices.length !== requiredLength) {
-      mesh.userData.hobunjiTownSubtleBaseMatrices = new Float32Array(mesh.instanceMatrix.array);
+    // A single pre-filter source prevents height refreshes from resurrecting
+    // compacted grass or accumulating elevation on repeated rebuilds.
+    if (!mesh.userData.hobunjiBillboardSourceMatrices || mesh.userData.hobunjiBillboardSourceMatrices.length !== requiredLength) {
+      mesh.userData.hobunjiBillboardSourceMatrices = new Float32Array(mesh.instanceMatrix.array);
+      mesh.userData.hobunjiBillboardSourceCount = mesh.count;
     }
-    const base = mesh.userData.hobunjiTownSubtleBaseMatrices;
-    let moved = 0;
-    for (let i = 0; i < mesh.count; i++) {
+    mesh.userData.hobunjiBillboardProjectMatrix = projectTownGrassMatrix;
+    const filter = window.BuildingGrassSuppression;
+    if (filter) {
+      const stats = filter.filterBillboardMesh(mesh, filter.authoredBuildingFootprintKeys(townDeps?.getTownZone?.(), 'town'), 'hobunjiTownBuildingGrass');
+      mesh.userData.hobunjiTownSubtleElevated = true;
+      return stats.visible;
+    }
+    const base = mesh.userData.hobunjiBillboardSourceMatrices;
+    const count = mesh.userData.hobunjiBillboardSourceCount;
+    for (let i = 0; i < count; i++) {
       matrix.fromArray(base, i * 16);
-      matrix.decompose(pos, quat, scale);
-      const lift = sampleTownHeight(pos.x, pos.z);
-      pos.y += lift;
-      matrix.compose(pos, quat, scale);
+      projectTownGrassMatrix(matrix);
       mesh.setMatrixAt(i, matrix);
-      if (Math.abs(lift) > 1e-7) moved++;
     }
+    mesh.count = count;
     mesh.instanceMatrix.needsUpdate = true;
     mesh.computeBoundingBox?.();
     mesh.computeBoundingSphere?.();
     mesh.userData.hobunjiTownSubtleElevated = true;
-    return moved;
+    return count;
   }
 
   function isPathSurfaceGroup(obj) {
@@ -571,6 +654,7 @@
   function patchTownZoneBuildings() {
     const api = window.TownZoneBuildings;
     if (!api || api.__hobunjiExactSubtleFollowersPatched) return;
+    townDeps = api.grassContext?.() || townDeps;
     const originalInit = api.init;
     const originalSpawn = api.spawnTownBuildings;
     if (typeof originalInit !== 'function' || typeof originalSpawn !== 'function') return;

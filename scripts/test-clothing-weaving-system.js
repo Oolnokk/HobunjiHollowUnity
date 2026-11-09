@@ -31,7 +31,7 @@ const shopCatalog = [
 const classList = () => ({ add() {}, remove() {}, toggle() {}, contains() { return false; } });
 const documentListeners = new Map();
 const documentStub = {
-  currentScript: { src: 'https://raw.githack.com/Oolnokk/HobunjiHollowUnity/testsha/docs/js/clothing-weaving-system.js?v=test' },
+  currentScript: { src: 'https://raw.githack.com/Oolnokk/HobunjiHollowUnity/testsha/docs/js/clothing-weaving-system.js?v=20261031he412c8f' },
   documentElement: { dataset: {} },
   body: { appendChild() {}, dataset: {} },
   head: { appendChild() {} },
@@ -214,6 +214,24 @@ const wovenKeyB = api.__test.wovenIconVisualKey({
   weaving: { pattern: { meshScale: 2, motifDataUrl: 'data:image/png;base64,AA==' } },
 });
 assert.notEqual(wovenKeyA, wovenKeyB, 'inventory woven-icon cache key changes when the applied pattern changes');
+
+const banditPatternBase = {
+  cosmeticId: 'rugged_poncho',
+  colorA: { hex: '#654321' },
+  colorC: { hex: '#bada55' },
+}; // Simulates a bandit pattern snapshot once it has become an individually owned Gear article.
+const forcedMotifA = { ...banditPatternBase, weaving: { forcedOverpassPattern: { repoPatternId: 'glyphA', frameScale: .55 }, forcedOverpassRoles: ['wrap'] } };
+const forcedMotifB = { ...banditPatternBase, weaving: { forcedOverpassPattern: { repoPatternId: 'glyphB', frameScale: .55 }, forcedOverpassRoles: ['wrap'] } };
+const forcedRoleB = { ...banditPatternBase, weaving: { forcedOverpassPattern: { repoPatternId: 'glyphA', frameScale: .55 }, forcedOverpassRoles: ['base'] } };
+assert.notEqual(api.__test.wovenIconVisualKey(forcedMotifA), api.__test.wovenIconVisualKey(forcedMotifB),
+  'different looted bandit glyphs cannot accidentally share a Gear icon cache entry');
+assert.notEqual(api.__test.wovenIconVisualKey(forcedMotifA), api.__test.wovenIconVisualKey(forcedRoleB),
+  'changing the forced pattern surface also invalidates the Gear icon');
+assert.deepEqual(api.__test.weavingPatternsForRole(forcedMotifA.weaving, 'wrap').map(pattern => pattern.repoPatternId),
+  ['glyphA'], 'a looted forced overpass participates in the same renderer pattern lookup as loom weaving');
+assert.equal(api.__test.weavingPatternsForRole(forcedMotifA.weaving, 'base').length, 0,
+  'a wrap-only bandit pattern does not incorrectly color the poncho base layer');
+
 const ten = api.armorStats(10);
 assert(Math.abs(ten.damageTakenMul - 0.75) < 1e-12);
 assert(Math.abs(ten.footingTakenMul - 0.65) < 1e-12);
@@ -595,8 +613,30 @@ assert.match(source, /window\.setTimeout\(attempt, 0\)/, 'session rebuild is def
 assert.match(source, /const startupFinished = window\.__hobunjiGameStarted === true[\s\S]*?liveWoven && initialPortraitPrepared && startupFinished[\s\S]*?equipmentDeps\.refreshPlayerAvatar\(\)/, 'post-load rebuild waits for live woven Gear, the initial gear-to-profile pass, and fully completed game startup before refreshing');
 assert.match(indexSource, /combat-config-loader\.js\?v=[A-Za-z0-9_-]+/, 'index cache-busts the loader that owns the authored clothing trim runtime URL');
 assert.match(combatLoaderSource, /clothing-weaving-system\.js\?v=[A-Za-z0-9_-]+/, 'combat loader cache-busts the authored clothing trim runtime itself');
-assert.match(portraitSource, /renderOptions\?\.imageForTint[\s\S]*?: _imageForTint/, 'portrait rendering accepts a per-render tint resolver with the canonical tint path as fallback');
-assert.match(portraitSource, /drawPortraitLayerWarped\(ctx, img, resolveXform\(layer\)[\s\S]*?layer\.url, imageForTint\)/, 'breathing overwear layers use the same render-local tint resolver during WorldPortraitLife refreshes');
+assert.match(portraitSource, /renderOptions\?\.imageForTint[\s\S]*?:layerImageOverrides[\s\S]*?:_imageForTint/, 'portrait rendering preserves the canonical tint fallback while allowing per-render fitted image overrides');
+// Execute the shared breathing-layer draw rather than pinning local variable names.
+{
+  const calls = [];
+  const resolver = () => {};
+  const probe = vm.createContext({
+    withPixelDyeLayer: (entry, draw) => draw(entry.image, entry.tint, 'selected-source'),
+    drawPortraitLayerWarped: (...args) => calls.push(args),
+    drawPortraitLayer: (...args) => calls.push(args),
+    resolveXform: layer => layer, ctx: {}, breathingComposer: {}, staticDeform: null,
+    speciesId: 'mao-ao', gender: 'male', nowMs: 1, breathingPhaseOffset: 0, seatId: null,
+    imageForTint: resolver,
+  });
+  const begin = portraitSource.indexOf('  const drawBreathingLayers =');
+  const end = portraitSource.indexOf('// Neck-rig construction', begin);
+  vm.runInContext(portraitSource.slice(begin, end) + '\nthis.draw = drawBreathingLayers;', probe);
+  probe.draw([{ layer: {}, image: {}, tint: {} }]);
+  assert.strictEqual(calls[0][12], resolver, 'breathing layers retain the render-local weaving tint resolver');
+  assert.equal(calls[0][11], 'selected-source');
+  probe.breathingComposer = null;
+  probe.draw([{ layer: {}, image: {}, tint: {} }]);
+  assert.strictEqual(calls[1][5], resolver, 'static layers retain the same render-local resolver');
+}
+
 
 const colorFillWindow = { SCRATCHBONES_CONFIG: { game: { portrait: { tinting: {} } } } }; // Isolated runtime used to prove sample-mask and paint-mask shading behavior.
 const colorFillContext = vm.createContext({ window: colorFillWindow, console });
@@ -909,7 +949,7 @@ assert.equal(api.__test.directTrimAuthoredOutlinePixel(255, 29), false, 'solid n
   assert.equal(filtered[1 * width + 3], 1, 'trim compositor preserves the interior black separation line away from the garment outline');
 }
 assert.match(source, /const directMaskPass = exactDirectMaskPass\(active\)[\s\S]*?const pad = patternWorkPad\(directMaskPass\)/, 'production compositor routes exact masks through the zero-padding helper');
-assert.match(source, /const off = patternCellOffset\(cellLabels\[p\], directMaskPass\)/, 'production sampling routes exact masks through zero per-cell offset');
+assert.match(source, /const off = patternCellOffset\(cellLabels\[p\], directMaskPass(?: \|\| anchored)?\)/, 'production sampling routes exact masks through zero per-cell offset');
 assert.match(source, /patternGarmentPixelEligible\(shadeSourceData\[i \+ 3\], maxChannel, directMaskPass\)/, 'production trim eligibility uses alpha-only direct-mask semantics instead of the generic darkness gate');
 assert.match(source, /directTrimOutlineSurfacePixelEligible\(shadeSourceData\[i \+ 3\], maxChannel\)/, 'production direct trim builds a stricter solid non-near-black surface specifically for generated outline geometry');
 assert.match(source, /directTrimAuthoredOutlinePixel\(shadeSourceData\[i \+ 3\], maxChannel\)/, 'production direct trim identifies the sprite existing dark\/anti-aliased border separately from trim fill');
@@ -926,9 +966,9 @@ assert.match(source, /renderClothingLayers\(id, \{/, 'woven icon cache is popula
 assert.match(source, /function reweaveFromLoom\(/, 'loom mutates a selected Gear garment through the dedicated reweave path');
 assert.match(source, /Math\.ceil\(fullCost \/ 2\)/, 'reweaving charges half the authored craft cost while keeping integer wool stacks');
 assert.match(source, /Reweave —/, 'loom operation selector exposes permanent Gear garments as reweave targets');
-assert.match(equipmentPanelSource, /compositeIncludesFinalDyes = !!window\.ClothingWeavingSystem\?\.hasWovenPattern\?\.\(item\)/, 'EquipmentPanel recognizes woven composites as already fully dyed');
+assert.match(equipmentPanelSource, /compositeIncludesFinalDyes = [^;]*?window\.ClothingWeavingSystem\?\.hasWovenPattern\?\.\(item\)/, 'EquipmentPanel recognizes woven composites as already fully dyed');
 assert.match(equipmentPanelSource, /hasSecondaryDyeForItem/, 'inventory redye asks the shared cosmetic-palette resolver whether a real Trim channel exists');
-assert.match(source, /const hasSecondary = \(\) => layersUseSecondaryDye\(state\.layers\)/, 'loom Trim controls follow authored palette-B usage instead of the broad hood/overwear slot');
+assert.match(source, /const hasSecondary = \(\) => !reweaveItem\?\.furTrimColorName && layersUseSecondaryDye\(state\.layers\)/, 'loom Trim controls follow authored palette-B usage instead of the broad hood/overwear slot');
 assert.match(source, /for \(const \{ role, key \} of patternRoles\(\)\)/, 'loom pattern controls deduplicate multiple raster sprites that share one logical cloth role');
 assert.match(equipmentPanelSource, /if \(!compositeIncludesFinalDyes\) tintClothingIcon/, 'woven icon pixels are not washed out by the legacy single-color tint pass');
 assert.match(inventoryUiSource, /attributeFilter:\['src'\]/, 'Pack inventory observes the async icon src completion once instead of polling or compositing every frame');

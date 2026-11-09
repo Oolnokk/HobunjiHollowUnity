@@ -109,10 +109,12 @@
   }
 
   function socketMatchesAppliedPose(socket, poseState) {
-    if (!socket || !poseState?.appliedPos || !poseState?.appliedQuat) return false;
-    const positionError = socket.position.distanceToSquared(poseState.appliedPos); // Distinguishes an untouched dance pose from a fresh ordinary-driver socket write.
-    const quaternionDot = Math.abs(socket.quaternion.dot(poseState.appliedQuat)); // Quaternion sign is irrelevant, so compare absolute dot product.
-    return positionError <= 1e-12 && (1 - quaternionDot) <= 1e-10;
+    if (!socket || !poseState?.appliedPos) return false;
+    // Position only: the ordinary hand driver rewrites position every update,
+    // while ProceduralHandForearmAlignment re-rotates the danced socket after
+    // this sentinel. Comparing rotation too made the next (outline) pass take
+    // the lifted socket as a new baseline and add the punch a second time.
+    return socket.position.distanceToSquared(poseState.appliedPos) <= 1e-12;
   }
 
   function baselineForSide(entry, side, socket) {
@@ -126,7 +128,6 @@
       basePos: socket.position.clone(), // Ordinary hand-driver position used as the source for every dance reapplication until that driver changes it.
       baseQuat: socket.quaternion.clone(), // Ordinary hand-driver rotation paired with basePos.
       appliedPos: null,
-      appliedQuat: null,
     };
     entry.handPoseState[side] = next;
     state.handBaseRefreshes++;
@@ -136,8 +137,6 @@
   function rememberAppliedPose(socket, poseState) {
     if (!poseState.appliedPos) poseState.appliedPos = socket.position.clone();
     else poseState.appliedPos.copy(socket.position);
-    if (!poseState.appliedQuat) poseState.appliedQuat = socket.quaternion.clone();
-    else poseState.appliedQuat.copy(socket.quaternion);
   }
 
   function lateHandPose(entry, target) {

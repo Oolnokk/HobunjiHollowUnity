@@ -14,9 +14,12 @@ on:
       - 'docs/js/camera-look-clamp.js'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   smoke:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
@@ -146,8 +149,9 @@ jobs:
                 persistedToggle: localStorage.getItem('hobunjiDevRandomRuinWallPlanes'),
                 ladderNodes: (() => {
                   const root = window.GridTileAccessors.getActiveScene()?.children?.find?.(o => /^dev_v50_ruin_/.test(o?.name || ''));
+                  const roots = [root, ...(window.DevRandomRuinHitPuzzles?.getNativeRoots?.() || [])].filter(Boolean); // The ordinary ladder provider now scans all physically mounted V50 stories.
                   const rows = [];
-                  root?.traverse?.(o => {
+                  for(const source of roots)source.traverse?.(o => {
                     if (o.userData?.generatedAccessType === 'stoneLadder') {
                       const meshChildren = (o.children || []).filter(c => c.isMesh);
                       rows.push({
@@ -167,9 +171,10 @@ jobs:
                 const scene = window.GridTileAccessors.getActiveScene();
                 const camera = window.__ruinSmokeRenderedCamera;
                 const walls = [];
-                scene.traverse(object => {
+                const sourceRoot = scene.children.find(object => /^dev_v50_ruin_/.test(object?.name || '')); // Match the same authoritative entrance-floor root used by DevRandomRuinWallPlanes.snapshot().
+                sourceRoot?.traverse(object => {
                   if (object.userData?.ruinInteriorWall === true && object.isMesh) walls.push(object);
-                });
+                }); // Upper V50 floors are separately mounted scene roots; their additional walls must not inflate this single-root parity check.
                 if (!renderer || !scene || !camera || !walls.length) {
                   return { changedPixels:0, totalDelta:0, wallCount:walls.length, width:0, height:0 };
                 }

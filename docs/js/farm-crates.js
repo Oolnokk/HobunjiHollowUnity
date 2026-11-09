@@ -50,6 +50,11 @@
     installShippingLifecycle();
   }
 
+  // Sale value of one unit, or undefined if the box won't take it; shares ShippingPanel's rule (crop table, then the item's own sellPrice).
+  function shipPrice(key) {
+    return window.ShippingPanel?.getShipPrice?.(key) ?? deps.BASE_PRICES[key];
+  }
+
   function currentCalendarDay() {
     const life = lifecycleCfg();
     return Math.max(Number(life.minCalendarDay), Math.floor(Number(deps?.calendar?.day) || Number(life.minCalendarDay)));
@@ -109,9 +114,12 @@
         const qty = Math.max(0, Math.min(Number(pending) || 0, Number(bin[key]) || 0));
         delete pendingSaleCounts[key];
         if (qty < 1) continue;
+        const hideSale = window.AnimalHides?.isHide?.(key) ? window.AnimalHides.consume(key, qty, 'shipping', shipPrice(key) || 1, bin[key], null, { eligibleCount: qty }) : null; // The actual deposited coats determine the sale price.
+        if (hideSale && !hideSale.ok) continue;
         bin[key] -= qty;
         sold += qty;
-        earned += window.TownMine?.applySaleBonus?.(qty * (deps.BASE_PRICES[key] || 0)) ?? qty * (deps.BASE_PRICES[key] || 0); // Town Value sale bonus.
+        const subtotal = hideSale ? hideSale.total : qty * (shipPrice(key) || 0);
+        earned += window.TownMine?.applySaleBonus?.(subtotal) ?? subtotal; // Town Value sale bonus after individual valuation.
         soldParts.push((deps.itemIconForKey(key) || key) + '×' + qty);
       }
       if (sold < 1) return { sold: 0, earned: 0 };
@@ -284,13 +292,10 @@
         btn.type = 'button';
         btn.dataset[ui.moveButtonDataKey] = '1';
         btn.textContent = ui.moveButtonText;
-        btn.addEventListener('click', () => {
-          const existingCancel = document.getElementById(ui.cancelButtonId);
-          if (existingCancel && !existingCancel.hidden && !shippingMoveArmed) existingCancel.click();
-          shippingMoveArmed = true;
-          syncShippingMoveUi();
-        });
-        row.appendChild(btn);
+        btn.addEventListener('click', () => window.FarmLayoutEditor?.open?.(shippingBoxInstance.id));
+        const editRow = document.createElement('div'); // Shipping relocation belongs to customization; its status stays with Buildings.
+        editRow.className = ui.rowClass; editRow.textContent = object.label; editRow.appendChild(btn);
+        (document.getElementById('farmBuildingCustomizationList') || row).appendChild(editRow);
       }
       const firstPlan = [...list.children].find(child => child.textContent?.trim?.().startsWith(ui.planPrefix));
       list.insertBefore(row, firstPlan || null);
@@ -435,11 +440,12 @@
       moveTo,
       refreshVisual() { syncVisualTransform(occupiedLift()); },
       getPendingSaleTotal: pendingSaleTotal,
+      getPendingSaleCountFor: key => Math.max(0, Number(pendingSaleCounts[key]) || 0), // Shipping preview matches the actual midnight-eligible withdrawal order.
       getMidnightCutoffDay: () => lastObservedDay,
       getButtons() {
         const item = deps.getActiveInventoryItem();
         const btns = [];
-        if (item && deps.BASE_PRICES[item.key] !== undefined) {
+        if (item && shipPrice(item.key) !== undefined) {
           const count = deps.inventory[item.key] || 0;
           btns.push({
             icon: item.icon,
@@ -462,9 +468,12 @@
       onAction(action) {
         if (action === actions.deposit) {
           const item = deps.getActiveInventoryItem();
-          if (!item || deps.BASE_PRICES[item.key] === undefined) return { ok: false, message: labels.cannotDeposit };
+          if (!item || shipPrice(item.key) === undefined) return { ok: false, message: labels.cannotDeposit };
           const qty = deps.inventory[item.key] || 0;
           if (qty < 1) return { ok: false, message: messages.noItemPrefix + item.label + messages.noItemSuffix };
+          const originalCount = deps.inventory[item.key]; // Used to transfer exact coat metadata before the bag count changes.
+          const hideMove = window.AnimalHides?.isHide?.(item.key) ? window.AnimalHides.transfer(item.key, 1, 'pack', 'shipping', originalCount, shipPrice(item.key)) : null;
+          if (hideMove && !hideMove.ok) return { ok: false, message: 'This hide is no longer available.' };
           deps.inventory[item.key]--;
           deps.clampInventoryStack(item.key);
           bin[item.key] = (bin[item.key] || 0) + 1;
@@ -481,9 +490,12 @@
       getContents() { return bin; },
       getTotalItems() { return totalItems(); },
       depositItem(key, qty) {
-        if (deps.BASE_PRICES[key] === undefined) return 0;
+        if (shipPrice(key) === undefined) return 0;
         const moved = Math.max(0, Math.min(qty, deps.inventory[key] || 0));
         if (moved < 1) return 0;
+        const originalCount = deps.inventory[key]; // Source count must include the units being moved for legacy/untracked hide handling.
+        const hideMove = window.AnimalHides?.isHide?.(key) ? window.AnimalHides.transfer(key, moved, 'pack', 'shipping', originalCount, shipPrice(key)) : null;
+        if (hideMove && !hideMove.ok) return 0;
         deps.inventory[key] -= moved;
         bin[key] = (bin[key] || 0) + moved;
         syncVisualTransform(Number(object.lidLiftWhenOccupied));
@@ -497,9 +509,12 @@
         // side (inventory[key] to the bag ceiling) after already removing the full
         // qty from bin used to vanish the overflow: it left the box, but the
         // pack stack was already at/near its cap, so it never arrived there.
-        const room = Math.max(0, window.InventoryStacks.MAX_TOTAL - (deps.inventory[key] || 0)); // Past 99 the pack shows another stack (js/inventory-stacks.js).
+        const room = Math.max(0, window.InventoryStacks.MAX_TOTAL - (deps.inventory[key] || 0)); // Past 999 the pack shows another stack (js/inventory-stacks.js).
         const moved = Math.max(0, Math.min(qty, bin[key] || 0, room));
         if (moved < 1) return 0;
+        const originalCount = bin[key]; // The Shipping Box owns the source counts until the return succeeds.
+        const hideMove = window.AnimalHides?.isHide?.(key) ? window.AnimalHides.transfer(key, moved, 'shipping', 'pack', originalCount, shipPrice(key), { pendingFirst: pendingSaleCounts[key] || 0 }) : null;
+        if (hideMove && !hideMove.ok) return 0;
         bin[key] -= moved;
         if ((pendingSaleCounts[key] || 0) > 0) {
           pendingSaleCounts[key] = Math.max(0, pendingSaleCounts[key] - moved);
@@ -516,6 +531,7 @@
       reset() {
         Object.keys(bin).forEach(key => { bin[key] = 0; });
         clearPendingSales();
+        window.AnimalHides?.clearShipping?.(); // Reset the transit records whenever the in-memory Shipping Box resets.
         lastObservedDay = currentCalendarDay();
         syncVisualTransform();
       },
@@ -563,7 +579,8 @@
           const cost = item.price * qty;
           if ((Number(deps.inventory.gold) || 0) < cost) return { ok: false, message: 'Not enough gold. Need ' + cost + 'g.' };
           deps.inventory.gold -= cost;
-          deps.getPendingOrders().push({ key, qty, arrivalDay: deps.calendar.day + 1, item });
+          const orderId = 'supply_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10); // Durable receipt identity prevents duplicate deliveries after reload.
+          deps.getPendingOrders().push({ id: orderId, key, qty, arrivalDay: deps.calendar.day + 1, item });
           qtys[key] = 0;
           return { ok: true, message: 'Ordered ' + qty + '× ' + item.name + ' for ' + cost + 'g. Arrives tomorrow.' };
         }

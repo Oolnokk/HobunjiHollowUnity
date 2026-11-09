@@ -26,6 +26,7 @@
 
   const rawLoadFromFolder = localSave.loadFromFolder.bind(localSave); // Core load retained so the wrapper can sanitize messaging and add a cross-tab lock.
   const rawSyncNow = localSave.syncNow.bind(localSave); // Core sync retained so explicit/manual flushes can share the cross-tab lock.
+  const rawSyncSnapshot = localSave.syncSnapshot?.bind(localSave); // Pinned manual/campfire/restore snapshots need the same cross-tab serialization as Settings Save.
 
   function withFolderLock(operation) {
     if (!navigator?.locks?.request) return Promise.resolve().then(operation);
@@ -41,6 +42,7 @@
   });
 
   localSave.syncNow = async (options = {}) => withFolderLock(() => rawSyncNow(options));
+  if (rawSyncSnapshot) localSave.syncSnapshot = async (snapshot, options = {}) => withFolderLock(() => rawSyncSnapshot(snapshot, options));
 
   function esc(value) {
     return String(value ?? '')
@@ -238,6 +240,15 @@
       return startupMode;
     })();
     return startupPromise;
+  }
+
+  function markFolderAlreadyApplied(reason = 'applied') {
+    try {
+      // A transient mirror disappears on reload. Startup must read its durable
+      // folder again instead of trusting the stale native browser copy.
+      if (window.HobunjiStorageQuota?.hasStagedValues?.()) sessionStorage.removeItem(PRIMARY_SKIP_ONCE_KEY);
+      else sessionStorage.setItem(PRIMARY_SKIP_ONCE_KEY, reason);
+    } catch {}
   }
 
   async function establishPrimaryFolder(mode) {
@@ -569,7 +580,8 @@
       }
       lastUiAction = 'settings-load-folder';
       if (result.changed) {
-        try { sessionStorage.setItem(PRIMARY_SKIP_ONCE_KEY, 'folder-loaded-in-settings'); } catch {}
+        markFolderAlreadyApplied('folder-loaded-in-settings');
+        window.HobunjiSessionPersistenceStartupGuard?.suppressExitFlush?.('settings-folder-load'); // The departing runtime still contains the old inventory.
         location.reload();
         return;
       }
@@ -647,9 +659,7 @@
     prepareBeforeOnboarding,
     establishPrimaryFolder,
     refreshUi: scheduleUiRefresh,
-    markFolderAlreadyApplied() {
-      try { sessionStorage.setItem(PRIMARY_SKIP_ONCE_KEY, 'applied'); } catch {}
-    },
+    markFolderAlreadyApplied,
   };
 
   window.__hobunjiFolderSavePrimaryDebug = {

@@ -6,6 +6,7 @@
   const DEFAULT_EXCEPTION_SURFACE_THRESHOLD = 0.01; // Used by inversion to decide when local surface height needs exception geometry.
   const DEFAULT_EXCEPTION_DEPTH_THRESHOLD = 0.04; // Used by inversion when color depth differs despite a near-identical surface height.
   const DEFAULT_EXCEPTION_COVERAGE_THRESHOLD = 0.04; // Used by inversion when opacity differs despite a near-identical surface height.
+  const DEFAULT_WATER_DEPTH_ALPHA_THRESHOLD = 0.12; // Shared fallback for material rendering and mesh diagnostics.
   const TEXTURE_SCROLL_U = 0.012; // Used by the shared shader to drift the tiled PNG sideways.
   const TEXTURE_SCROLL_V = 0.035; // Used by the shared shader to move the tiled PNG along world Z.
   const stats = Object.create(null); // Used by the in-game Debug panel and mobile bug reports.
@@ -375,12 +376,19 @@
     const fallbackPixel = new Uint8Array([172, 190, 184, 255]);
     const fallbackTexture = new THREE.DataTexture(fallbackPixel, 1, 1, THREE.RGBAFormat);
     fallbackTexture.needsUpdate = true;
+    const composerThreshold = typeof window !== 'undefined'
+      ? window.SurfaceOcclusionComposer?.WATER_DEPTH_ALPHA_THRESHOLD
+      : null; // Shared with every other x-ray surface consumer when the composer is loaded.
+    const depthAlphaThreshold = Math.max(0, Math.min(1,
+      Number(composerThreshold) || DEFAULT_WATER_DEPTH_ALPHA_THRESHOLD)); // Faint water fringe remains visible but does not become a full-strength depth occluder.
     const uniforms = {
       uTime: { value: 0 },
       uWaterTexture: { value: fallbackTexture },
       uDeepColor: { value: new THREE.Color(options.deepColor ?? 0x14658e) },
       uShallowColor: { value: new THREE.Color(options.shallowColor ?? 0x75d5df) },
       uOpacity: { value: Math.max(0, Math.min(1, options.opacity ?? 0.8)) },
+      uHobunjiSurfaceOcclusionDepthOnly: { value: 0 },
+      uHobunjiSurfaceOcclusionDepthAlphaThreshold: { value: depthAlphaThreshold },
     };
     const material = new THREE.ShaderMaterial({
       name: 'merged_textured_water_material',
@@ -407,6 +415,8 @@
         uniform vec3 uDeepColor;
         uniform vec3 uShallowColor;
         uniform float uOpacity;
+        uniform float uHobunjiSurfaceOcclusionDepthOnly;
+        uniform float uHobunjiSurfaceOcclusionDepthAlphaThreshold;
         varying vec2 vUv;
         varying float vDepth;
         varying float vCoverage;
@@ -422,11 +432,19 @@
             * (sin((vUv.x + vUv.y) * 28.0 - uTime * 2.0) * 0.5 + 0.5);
           surfaceColor += flowSheen;
           float alpha = uOpacity * mix(0.075, 1.0, smoothstep(0.0, 1.0, vCoverage));
+          // Transparent color rendering remains unchanged. During the
+          // compositor's colorless depth replay, discard fragments whose
+          // authored water alpha is below the shared visibility threshold so
+          // broad merged planes cannot turn nearly invisible fringe into a
+          // full-strength depth occluder.
+          if (uHobunjiSurfaceOcclusionDepthOnly > 0.5
+              && alpha < uHobunjiSurfaceOcclusionDepthAlphaThreshold) discard;
           gl_FragColor = vec4(surfaceColor, alpha);
         }
       `,
       transparent: true,
-      depthWrite: false,
+      depthTest: true, // Floodwater physically behind raised grass MUST fail the opaque ground depth test.
+      depthWrite: false, // Keep translucent water over objects that are genuinely below the surface.
       side: THREE.FrontSide,
     });
 
@@ -483,6 +501,9 @@
         ? options.textureTileSize
         : DEFAULT_TEXTURE_TILE_SIZE,
       textureScrollUvPerSecond: [TEXTURE_SCROLL_U, TEXTURE_SCROLL_V],
+      depthAlphaThreshold: Number.isFinite(material?.uniforms?.uHobunjiSurfaceOcclusionDepthAlphaThreshold?.value)
+        ? material.uniforms.uHobunjiSurfaceOcclusionDepthAlphaThreshold.value
+        : DEFAULT_WATER_DEPTH_ALPHA_THRESHOLD,
     };
     const logCount = `${data.representation}/${data.baselineRectangles || 0}/${data.exceptionCount || 0}/${data.maskedCellCount || 0}`; // Used to suppress unchanged representation logs.
     if (lastLoggedCounts.get(statKey) !== logCount) {
@@ -508,6 +529,7 @@
     DEFAULT_EXCEPTION_COVERAGE_THRESHOLD,
     TEXTURE_SCROLL_U,
     TEXTURE_SCROLL_V,
+    WATER_DEPTH_ALPHA_THRESHOLD: DEFAULT_WATER_DEPTH_ALPHA_THRESHOLD,
     buildSurfaceData,
     buildMapWidePlaneSurfaceData,
     buildInvertedSurfaceData,

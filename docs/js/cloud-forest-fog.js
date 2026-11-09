@@ -39,6 +39,15 @@
   // Settings-tab slider can change these without touching the defaults.
   const layerLive = LAYER_CONFIG.map(cfg => ({ radiusTiles: cfg.defaultRadiusTiles, opacity: cfg.defaultOpacity }));
   const ATMOSPHERE_CONFIG_PATH = './config/atmosphere-lighting.json';
+  // Mines, animal dens and the Kanthic ruin borrow the Cloud Forest's
+  // midnight look instead of a flat near-black overlay: the skydome's deepest
+  // night stop for the overlay, plus near-black fog and mist that swallow the
+  // distance while nearby things stay readable.
+  const UNDERGROUND_NIGHT_LIGHTING = Object.freeze({ r: 5, g: 8, b: 23, a: 0.80 });
+  const KANTHIC_STANDARD_DARKNESS_ALPHA = 0.95; // Kanthic uses the same unified mist/night darkness pass at higher opacity, never a second vignette.
+  const UNDERGROUND_FOG_DENSITY = 0.055; // Same as map_southern_cloud_forest's fogDensity.
+  let ruinMistFade = 1; // 1 = normal mist, 0 = suppressed while standing in a ruin shaft.
+  let undergroundFogOverride = null; // { scene, fog, background } restored when the player leaves.
   const GLOBAL_DARKNESS_DELTA = 0.09; // Added to the previous mine/den/interior darkness levels and scaled by lunar phase for outdoor night darkness.
   const DEFAULT_TUNING = Object.freeze({
     cloudForest: Object.freeze({
@@ -274,9 +283,8 @@
     return { ...base, a: clamp01(base.a + currentLunarDarknessAddition()) };
   }
 
-  function updateFogLighting(activeScene) {
+  function updateFogLighting(activeScene, light = getFullDayLighting()) {
     if (!fogDayColor || !fogTimeColor || !fogResultColor) return;
-    const light = getFullDayLighting();
     fogTimeColor.setRGB(clamp01(light.r / 255), clamp01(light.g / 255), clamp01(light.b / 255));
 
     const cloudTuning = tuning.cloudForest;
@@ -303,32 +311,61 @@
     }
   }
 
+  // Swaps in dark fog on an underground scene (which has none of its own
+  // tuned for this) and puts the original back once the player leaves it.
+  function syncUndergroundFog(scene) {
+    if (undergroundFogOverride?.scene === scene) return;
+    if (undergroundFogOverride) {
+      const { scene: prior, fog, background } = undergroundFogOverride;
+      prior.fog = fog;
+      prior.background = background;
+      undergroundFogOverride = null;
+    }
+    if (!scene) return;
+    undergroundFogOverride = { scene, fog: scene.fog, background: scene.background };
+    scene.fog = new deps.THREE.FogExp2(0x000000, UNDERGROUND_FOG_DENSITY);
+    if (scene.background?.isColor) scene.background = scene.background.clone();
+  }
+
   function update(dt) {
     if (!deps || !group) return;
-    const active = deps.isCloudForestArea();
+    const cloudForest = deps.isCloudForestArea();
+    const underground = !cloudForest && isUndergroundFogArea(deps.getCurrentArea?.());
+    const active = cloudForest || underground;
     const activeScene = active ? deps.getActiveScene() : null;
     if (activeScene !== attachedScene) {
       attachedScene?.remove(group);
       activeScene?.add(group);
       attachedScene = activeScene;
     }
+    syncUndergroundFog(underground ? activeScene : null);
     group.visible = active;
     if (!active) return;
 
-    const skyRoot = namedInScene(activeScene, 'hobunji_dynamic_skydome');
-    if (skyRoot) skyRoot.visible = false;
-    updateFogLighting(activeScene);
+    if (cloudForest) {
+      const skyRoot = namedInScene(activeScene, 'hobunji_dynamic_skydome');
+      if (skyRoot) skyRoot.visible = false;
+      updateFogLighting(activeScene);
+    } else {
+      updateFogLighting(activeScene, UNDERGROUND_NIGHT_LIGHTING);
+    }
 
     const px = deps.player.x / deps.TILE;
     const pz = deps.player.y / deps.TILE;
     const groundY = deps.getPlayerGroundY();
     const t = performance.now() / 1000;
+    // The mist is three short tubes that follow the player's feet. Inside a ruin's tall shaft that
+    // means a dark band hovering around the player that snaps up and down with every jump or
+    // fall (and is sliced by platforms), so it fades out while the player is in the shaft room.
+    const inRuinShaft = !cloudForest && deps.getCurrentArea?.() === 'map_i_dev_random_ruin' && window.DevRandomRuin?.isPlayerInShaft?.() === true;
+    ruinMistFade += ((inRuinShaft ? 0 : 1) - ruinMistFade) * Math.min(1, dt * 4);
+    if (ruinMistFade < 0.01) ruinMistFade = inRuinShaft ? 0 : ruinMistFade;
 
     for (let i = 0; i < layers.length; i++) {
       const { mesh, material, config } = layers[i];
       const live = layerLive[i];
       // Used to skip both draw submission and animation work for a disabled mist layer.
-      const opacity = clamp01(live.opacity);
+      const opacity = clamp01(live.opacity) * ruinMistFade;
       material.opacity = opacity;
       mesh.visible = opacity > 0;
       if (!mesh.visible) continue;
@@ -344,7 +381,8 @@
 
   const MINE_DARKNESS_OVERLAY_ALPHA = 0.99; // Raised from 0.90 so untouched mine-screen edges retain only about one percent of the rendered image.
   const DEN_DARKNESS_OVERLAY_ALPHA = clamp01(0.82 + GLOBAL_DARKNESS_DELTA); // Applies the mine's +0.09 darkness change to the previous den level.
-  const INTERIOR_DARKNESS_OVERLAY_ALPHA = clamp01(0.28 + GLOBAL_DARKNESS_DELTA); // Applies the same +0.09 darkness change to ordinary enclosed interiors.
+  const INTERIOR_DARKNESS_OVERLAY_ALPHA = 0.80; // Unlit building areas retain twenty percent of their image; windows and lamps reveal local pools.
+  const INTERIOR_LIGHT_RADIUS_MULTIPLIER = 2.5; // Extends the room-light transition so illumination eases into base darkness over more floor space.
 
   let skyPolicyDeps = null;
   function isCloudForestMap(area) { return area === 'map_southern_cloud_forest' || area === 'map_opening_cloud_forest'; } // The temporary rescue map shares the biome's sky and mist policy.
@@ -374,7 +412,9 @@
       const testSettings = window.DevRandomRuin?.getDarknessSettings?.(); // Random Test Ruin defaults bright for inspection while retaining an explicit den-darkness preview control.
       const rawSeverity = Number(testSettings?.severity);
       const severity = Number.isFinite(rawSeverity) ? clamp01(rawSeverity) : 1;
-      return testSettings?.enabled === true ? DEN_DARKNESS_OVERLAY_ALPHA * severity : 0;
+      const tradition = window.DevRandomRuinLichThemes?.activeTheme?.() || window.DevRandomRuin?.getRuntimeContext?.()?.theme; // The lich's seeded tradition also owns darkness; no dev-only bright default in live ruins.
+      const base = tradition === 'kanthic' ? 1 : tradition === 'hronal' ? .91 : tradition === 'tothal' ? .73 : DEN_DARKNESS_OVERLAY_ALPHA;
+      return testSettings?.enabled === true ? base * severity : base;
     }
     if (isMineArea(area)) return MINE_DARKNESS_OVERLAY_ALPHA;
     if (isDenArea(area)) return DEN_DARKNESS_OVERLAY_ALPHA;
@@ -385,6 +425,16 @@
     if (isMineArea(area)) return 'mine';
     if (isDenArea(area)) return 'den';
     return 'interior';
+  }
+
+  function activeRuinTradition() {
+    return window.DevRandomRuinLichThemes?.activeTheme?.() || window.DevRandomRuin?.getRuntimeContext?.()?.theme || null;
+  }
+
+  function isUndergroundFogArea(area) {
+    const id = String(area || '').toLowerCase();
+    if (id === 'map_i_dev_random_ruin') return activeRuinTradition() === 'kanthic';
+    return isMineArea(id) || isDenArea(id);
   }
 
   function isUndergroundLanternArea(area) {
@@ -439,10 +489,34 @@
   // state as the skydome and now also applies the skydome's ambient-darkness
   // lantern activation curve to outdoor player/watch lantern masks.
   let lightingDeps = null;
+  const LIGHTING_OVERLAY_MIN_INTERVAL_MS = 1000 / 60; // Camera rotation and moving lights need frame-rate projection, not 10 Hz screen-space steps.
   let lastUnifiedLightingDraw = 0;
-  const lightCamRight = new window.THREE.Vector3();
+  let lastUnifiedLightingArea = null; // Forces a new darkness frame as soon as the player area changes.
+  let lastUnifiedLightingScene = null; // Detects activation of a farmhouse scene even if its area identifier has not switched yet.
+  let lastInteriorDarknessDraw = null; // Mobile diagnostics of the shared compositor's actual enclosed base fill.
+  const lightCamRight = new window.THREE.Vector3(); // Reused camera-right axis for stable screen-space light radii.
+  const lightCamUp = new window.THREE.Vector3(); // Reused camera-up axis for camera-independent farmhouse light projection.
+  const lightCameraPosition = new window.THREE.Vector3(); // Reused camera position for off-screen source depth checks.
+  const lightViewDirection = new window.THREE.Vector3(); // Reused camera forward direction for off-screen source depth checks.
+  const lightToSource = new window.THREE.Vector3(); // Reused camera-to-source vector; no per-light allocations.
+  const lightPlayerPosition = new window.THREE.Vector3(); // Reused player-depth plane origin for farmhouse light projection.
   const ambientWindowScratch = new window.THREE.Vector3(); // Reused for window world positions so the mask pass allocates nothing per source.
-  const windowMaskStats = { sources: 0, drawn: 0, glows: 0, daylight: 0 }; // Mobile QA readout for the daylight-window mask pass.
+  const windowMaskStats = { sources: 0, drawn: 0, glows: 0, colorAuras: 0, daylight: 0 }; // Mobile QA readout for the daylight-window mask pass.
+  const OUTDOOR_LIGHT_VISIBILITY_MARGIN_TILES = 8; // Keeps a fire or lantern fully visible a short way beyond its physical illumination radius.
+  const OUTDOOR_LIGHT_FADE_TILES = 6; // Smoothly retires distant outdoor glows instead of leaving sharp popping light spots on wilderness horizons.
+  const outdoorLightStats = { considered: 0, drawn: 0, fading: 0, culled: 0 }; // Displayed by the existing mobile Pixel Probe to verify wilderness source culling.
+
+  function outdoorLightVisibility(x, y, z, radiusTiles) {
+    if (!lightingDeps?.player || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return 0;
+    const playerX = finiteOr(lightingDeps.player.x, 0) / lightingDeps.TILE; // World-space player coordinates are in tiles, the same units as local lights.
+    const playerY = finiteOr(lightingDeps.getPlayerWorldY?.(), 0); // Vertical separation matters for wilderness cliffs and multi-level walkways.
+    const playerZ = finiteOr(lightingDeps.player.y, 0) / lightingDeps.TILE;
+    const sourceDistance = Math.hypot(x - playerX, y - playerY, z - playerZ); // Used to limit overlay light visibility independently of its projection onto the camera.
+    const fadeStart = Math.max(0, finiteOr(radiusTiles, 0)) + OUTDOOR_LIGHT_VISIBILITY_MARGIN_TILES; // Full brightness near a light's authored reach.
+    if (sourceDistance <= fadeStart) return 1;
+    if (sourceDistance >= fadeStart + OUTDOOR_LIGHT_FADE_TILES) return 0;
+    return 1 - smoothstep01((sourceDistance - fadeStart) / OUTDOOR_LIGHT_FADE_TILES);
+  }
 
   function lightScreenRadius(x, z, y, tiles) {
     lightCamRight.setFromMatrixColumn(lightingDeps.camera.matrixWorld, 0);
@@ -453,6 +527,55 @@
       z + lightCamRight.z * tiles,
     );
     return Math.hypot(e.x - c.x, e.y - c.y);
+  }
+
+  function projectInteriorLightMask(x, y, z, tiles, context, rangeTiles = tiles) {
+    let projectedX = x, projectedY = y, projectedZ = z, projectedRadius = tiles;
+    const activeScene = lightingDeps.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.();
+    if (activeScene?.userData?.hobunjiPlayerFarmhouseInterior === true) {
+      const camera = lightingDeps.camera;
+      camera.getWorldDirection(lightViewDirection);
+      const player = lightingDeps.player;
+      const playerX = finiteOr(player?.x, 0) / lightingDeps.TILE;
+      const playerY = finiteOr(lightingDeps.getPlayerWorldY?.(), 0);
+      const playerZ = finiteOr(player?.y, 0) / lightingDeps.TILE;
+      lightPlayerPosition.set(playerX, playerY, playerZ);
+      lightToSource.set(x, y, z).sub(lightPlayerPosition);
+      lightCamRight.setFromMatrixColumn(camera.matrixWorld, 0);
+      lightCamUp.setFromMatrixColumn(camera.matrixWorld, 1);
+      const distanceSquared = lightToSource.x * lightToSource.x + lightToSource.y * lightToSource.y + lightToSource.z * lightToSource.z;
+      if (distanceSquared > rangeTiles * rangeTiles) return null; // The visual mask radius and the fixture's actual influence range are separate.
+      const lateralX = lightToSource.dot(lightCamRight);
+      const lateralY = lightToSource.dot(lightCamUp);
+      projectedX = playerX + lightCamRight.x * lateralX + lightCamUp.x * lateralY;
+      projectedY = playerY + lightCamRight.y * lateralX + lightCamUp.y * lateralY;
+      projectedZ = playerZ + lightCamRight.z * lateralX + lightCamUp.z * lateralY;
+    }
+    const center = lightingDeps.worldToOverlay(projectedX, projectedY, projectedZ);
+    const radius = lightScreenRadius(projectedX, projectedZ, projectedY, projectedRadius);
+    if (!lightMaskIntersectsViewport(center, radius, context, projectedX, projectedY, projectedZ, projectedRadius)) return null;
+    return { center, radius, x: projectedX, y: projectedY, z: projectedZ };
+  }
+
+  function lightMaskIntersectsViewport(center, radius, context, x, y, z, worldRadius) {
+    if (!Number.isFinite(center?.x) || !Number.isFinite(center?.y) || !(radius > 0) || !Number.isFinite(radius)) return false;
+    if (!(worldRadius > 0) || !Number.isFinite(worldRadius)) return false;
+    const camera = lightingDeps.camera;
+    camera.getWorldPosition(lightCameraPosition);
+    camera.getWorldDirection(lightViewDirection);
+    lightToSource.set(x, y, z).sub(lightCameraPosition);
+    const depth = lightToSource.dot(lightViewDirection);
+    const near = Number.isFinite(camera.near) ? camera.near : 0;
+    const far = Number.isFinite(camera.far) ? camera.far : Infinity;
+    // Keep a light while its world-space influence sphere overlaps the camera depth range.
+    // The projected center can leave the near/far clip range before the soft edge leaves view.
+    if (depth <= 0 || depth + worldRadius < near || depth - worldRadius > far) return false;
+    const rect = lightingDeps.getThreeRect?.();
+    const width = Number(rect?.width || context?.canvas?.clientWidth || context?.canvas?.width);
+    const height = Number(rect?.height || context?.canvas?.clientHeight || context?.canvas?.height);
+    return width > 0 && height > 0
+      && center.x + radius >= 0 && center.x - radius <= width
+      && center.y + radius >= 0 && center.y - radius <= height;
   }
 
   function currentOutdoorLanternActivation() {
@@ -488,13 +611,18 @@
   function drawLanternMasksCompat(activation = 1, preserveOutdoorWeatherTint = false) {
     const lanternStrength = clamp01(activation); // Scales all player/watch mask alphas while the ambient-light threshold fades lanterns on or off.
     if (lanternStrength <= 0) return;
+    const currentArea = lightingDeps.getCurrentArea(); // Use the same carried-lantern gradient in every room; Tothal alone suppresses it.
+    const ruinTradition = currentArea === 'map_i_dev_random_ruin' ? (window.DevRandomRuinLichThemes?.activeTheme?.() || window.DevRandomRuin?.getRuntimeContext?.()?.theme) : null;
+    if (ruinTradition === 'tothal') return; // Even an equipped lantern cannot lift Tothal's blue overcast.
+    const ruinLanternScale = 1; // Kanthic uses the ordinary full-radius, soft-edged lantern rather than a separate circular vignette.
     const ctx = lightingDeps.lctx;
-    const carriers = [{
+    const activeScene = lightingDeps.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.(); // The player farmhouse's special base-light rule uses its active scene identity.
+    const farmhouseSceneActive = activeScene?.userData?.hobunjiPlayerFarmhouseInterior === true; // Unlike mines, the farmhouse has no permanently lit player torch.
+    const carriers = farmhouseSceneActive ? [] : [{ // Other areas preserve their legacy always-on carried lantern; farmhouse relies on real furniture/window light sources.
       x: lightingDeps.player.x / lightingDeps.TILE,
       y: lightingDeps.getPlayerWorldY() + 0.5,
       z: lightingDeps.player.y / lightingDeps.TILE,
     }];
-    const currentArea = lightingDeps.getCurrentArea();
     for (const walker of lightingDeps.npcWalkers) {
       if (walker.area === currentArea && walker.rec?.tags?.includes('watch')) {
         carriers.push({ x: walker.root.position.x, y: walker.root.position.y + 0.5, z: walker.root.position.z });
@@ -502,42 +630,53 @@
     }
     ctx.globalCompositeOperation = 'destination-out';
     const lanternTuning = tuning.lantern;
+    const softInterior = enclosedLightingArea(currentArea); // Every enclosed room uses the eased edge, including mines and dens.
+    const outdoors = !softInterior; // Outdoor player/watch lanterns obey the wilderness visibility fade; enclosed rooms retain their existing behavior.
+    const linearInterior = ordinaryBuildingInterior(currentArea); // Only ordinary buildings expand their physical light radius.
     for (const carrier of carriers) {
+      const visibility = outdoors ? outdoorLightVisibility(carrier.x, carrier.y, carrier.z, lanternTuning.radiusTiles) : 1; // Ignore far-away watch lanterns; carried player light stays nearby.
+      if (visibility <= 0) continue;
       const center = lightingDeps.worldToOverlay(carrier.x, carrier.y, carrier.z);
-      if (!center.visible) continue;
-      const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, lanternTuning.radiusTiles);
-      if (!(shineR > 0)) continue;
+      const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, lanternTuning.radiusTiles * ruinLanternScale * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1));
+      if (!lightMaskIntersectsViewport(center, shineR, ctx, carrier.x, carrier.y, carrier.z, lanternTuning.radiusTiles * ruinLanternScale * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1))) continue;
       const clarityFrac = clamp01(lanternTuning.clarityRadiusTiles / Math.max(0.000001, lanternTuning.radiusTiles));
       const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
-      grad.addColorStop(0, `rgba(0,0,0,${lanternTuning.centerMaskAlpha * lanternStrength})`);
-      grad.addColorStop(clarityFrac, `rgba(0,0,0,${lanternTuning.clarityMaskAlpha * lanternStrength})`);
-      grad.addColorStop(
-        Math.min(1, clarityFrac + lanternTuning.softTransitionFraction),
-        `rgba(0,0,0,${lanternTuning.softMaskAlpha * lanternStrength})`,
-      );
+      const transmission = interiorLightTransmission(carrier.x, carrier.z);
+      if (transmission <= 0.005) continue;
+      const effectiveStrength = lanternStrength * transmission * visibility; // Fade the actual darkness reveal, not just the decorative warm halo.
+      grad.addColorStop(0, `rgba(0,0,0,${lanternTuning.centerMaskAlpha * effectiveStrength})`);
+      if (softInterior) {
+        addInteriorFalloffStops(grad, lanternTuning.centerMaskAlpha * effectiveStrength);
+      } else {
+        grad.addColorStop(clarityFrac, `rgba(0,0,0,${lanternTuning.clarityMaskAlpha * effectiveStrength})`);
+        grad.addColorStop(
+          Math.min(1, clarityFrac + lanternTuning.softTransitionFraction),
+          `rgba(0,0,0,${lanternTuning.softMaskAlpha * effectiveStrength})`,
+        );
+      }
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
-      ctx.fill();
+      const shadows = ruinShadowPolygons(carrier, lanternTuning.radiusTiles * ruinLanternScale * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1)); // Carried light throws stone shadows like a wall torch (was an undefined name that aborted every dark-area overlay frame).
+      withRuinShadowClip(ctx,shadows,()=>{ctx.beginPath();ctx.arc(center.x,center.y,shineR,0,Math.PI*2);ctx.fill();});
     }
 
     const weatherTint = preserveOutdoorWeatherTint ? currentOutdoorWeatherTintState() : null; // Used below to put back weather color without restoring the darkness the lantern just removed.
     if (weatherTint) {
       ctx.globalCompositeOperation = 'multiply';
       for (const carrier of carriers) {
+        const visibility = outdoors ? outdoorLightVisibility(carrier.x, carrier.y, carrier.z, lanternTuning.radiusTiles) : 1; // Weather tint follows the same faded visibility as the matching darkness cutout.
+        if (visibility <= 0) continue;
         const center = lightingDeps.worldToOverlay(carrier.x, carrier.y, carrier.z);
-        if (!center.visible) continue;
-        const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, lanternTuning.radiusTiles);
-        if (!(shineR > 0)) continue;
+        const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, lanternTuning.radiusTiles * ruinLanternScale);
+        if (!lightMaskIntersectsViewport(center, shineR, ctx, carrier.x, carrier.y, carrier.z, lanternTuning.radiusTiles * ruinLanternScale)) continue;
         const clarityFrac = clamp01(lanternTuning.clarityRadiusTiles / Math.max(0.000001, lanternTuning.radiusTiles));
         const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
         addWeatherTintStops(
           grad,
           weatherTint,
-          lanternTuning.centerMaskAlpha * lanternStrength,
-          lanternTuning.clarityMaskAlpha * lanternStrength,
-          lanternTuning.softMaskAlpha * lanternStrength,
+          lanternTuning.centerMaskAlpha * lanternStrength * visibility,
+          lanternTuning.clarityMaskAlpha * lanternStrength * visibility,
+          lanternTuning.softMaskAlpha * lanternStrength * visibility,
           clarityFrac,
           lanternTuning.softTransitionFraction,
         );
@@ -550,38 +689,66 @@
     ctx.globalCompositeOperation = 'source-over';
   }
 
+  function ruinShadowPolygons(light,radiusTiles) {
+    if(lightingDeps?.getCurrentArea?.()!=='map_i_dev_random_ruin')return [];
+    const scene=lightingDeps.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.();
+    return window.RuinLightOcclusion?.projectedShadows?.({
+      scene,source:light,radiusTiles,THREE:window.THREE,
+      project:(x,y,z)=>lightingDeps.worldToOverlay(x,y,z),
+      now:performance.now(),
+    }) || []; // Shared 3D blocker bounds shadow the fake light pools without enabling real-time renderer shadows.
+  }
+  function withRuinShadowClip(ctx,polygons,draw) {
+    const shadows=window.RuinLightOcclusion;
+    return shadows?.withClip ? shadows.withClip(ctx,polygons,draw) : draw();
+  }
   function drawFurnitureLightMasksCompat(preserveOutdoorWeatherTint = false) {
     const ctx = lightingDeps.lctx;
     const visible = [];
+    const currentArea = lightingDeps.getCurrentArea();
+    const softInterior = enclosedLightingArea(currentArea); // All enclosed spaces fade softly into their own darkness.
+    const outdoors = !softInterior; // Only world-exterior furniture masks get limited by player-to-source distance.
+    const linearInterior = ordinaryBuildingInterior(currentArea); // Only ordinary buildings expand the physical light radius.
     for (const light of lightingDeps.getFurnitureLightSources()) {
-      const center = lightingDeps.worldToOverlay(light.x, light.y, light.z);
-      if (!center.visible) continue;
-      const shineR = lightScreenRadius(light.x, light.z, light.y, light.distance);
-      if (!(shineR > 0)) continue;
-      visible.push({ light, center, shineR });
+      const visibility = outdoors ? outdoorLightVisibility(light.x, light.y, light.z, light.distance) : 1; // Bound remote campfire/torch glows by their actual world positions.
+      if (outdoors) {
+        outdoorLightStats.considered++;
+        if (visibility <= 0) outdoorLightStats.culled++;
+        else if (visibility < 1) outdoorLightStats.fading++;
+      }
+      if (visibility <= 0) continue;
+      const transmission = interiorLightTransmission(light.x, light.z);
+      if (transmission <= 0.005) continue;
+      const projected = projectInteriorLightMask(light.x, light.y, light.z, light.distance * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1), ctx);
+      if (!projected) continue;
+      visible.push({ light, center: projected.center, shineR: projected.radius, transmission, visibility,
+        shadows:ruinShadowPolygons(light,light.distance * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1)) }); // Reuse one fade factor across light reveal, weather tint and colored glow.
+      if (outdoors) outdoorLightStats.drawn++;
     }
 
     ctx.globalCompositeOperation = 'destination-out';
-    for (const { light, center, shineR } of visible) {
+    for (const { light, center, shineR, transmission, visibility, shadows } of visible) {
       const clarityFrac = Math.min(0.55, Math.max(0.18, 1.15 / light.distance));
-      const strength = Math.min(0.94, 0.58 + light.intensity * 0.22);
+      const strength = Math.min(0.94, 0.58 + light.intensity * 0.22) * transmission * visibility;
       const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
       grad.addColorStop(0, `rgba(0,0,0,${strength})`);
-      grad.addColorStop(clarityFrac, `rgba(0,0,0,${strength * 0.78})`);
-      grad.addColorStop(Math.min(1, clarityFrac + 0.3), `rgba(0,0,0,${strength * 0.22})`);
+      if (softInterior) {
+        addInteriorFalloffStops(grad, strength);
+      } else {
+        grad.addColorStop(clarityFrac, `rgba(0,0,0,${strength * 0.78})`);
+        grad.addColorStop(Math.min(1, clarityFrac + 0.3), `rgba(0,0,0,${strength * 0.22})`);
+      }
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
-      ctx.fill();
+      withRuinShadowClip(ctx,shadows,()=>{ctx.beginPath();ctx.arc(center.x,center.y,shineR,0,Math.PI*2);ctx.fill();});
     }
 
     const weatherTint = preserveOutdoorWeatherTint ? currentOutdoorWeatherTintState() : null; // Used below so static outdoor lights preserve the same weather coloration as carried/watch lanterns.
     if (weatherTint) {
       ctx.globalCompositeOperation = 'multiply';
-      for (const { light, center, shineR } of visible) {
+      for (const { light, center, shineR, transmission, visibility, shadows } of visible) {
         const clarityFrac = Math.min(0.55, Math.max(0.18, 1.15 / light.distance));
-        const strength = Math.min(0.94, 0.58 + light.intensity * 0.22);
+        const strength = Math.min(0.94, 0.58 + light.intensity * 0.22) * transmission * visibility;
         const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
         addWeatherTintStops(
           grad,
@@ -593,30 +760,182 @@
           0.3,
         );
         ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
-        ctx.fill();
+        withRuinShadowClip(ctx,shadows,()=>{ctx.beginPath();ctx.arc(center.x,center.y,shineR,0,Math.PI*2);ctx.fill();});
       }
     }
 
     ctx.globalCompositeOperation = 'source-over';
-    for (const { light, center, shineR } of visible) {
-      const glowR = shineR * 0.62;
-      const glowAlpha = Math.min(0.18, 0.055 + light.intensity * 0.055);
+    for (const { light, center, shineR, transmission, visibility, shadows } of visible) {
+      const glowR = shineR * (linearInterior ? 1 : 0.62);
+      const glowAlpha = Math.min(0.18, 0.055 + light.intensity * 0.055) * transmission * visibility; // Distant sources cannot leave a glowing dot after the reveal fades.
       const { r, g, b } = light.color;
       const glow = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, glowR);
       glow.addColorStop(0, `rgba(${r},${g},${b},${glowAlpha})`);
-      glow.addColorStop(0.4, `rgba(${r},${g},${b},${glowAlpha * 0.45})`);
+      if (softInterior) {
+        glow.addColorStop(0.36, `rgba(${r},${g},${b},${glowAlpha * 0.82})`);
+        glow.addColorStop(0.72, `rgba(${r},${g},${b},${glowAlpha * 0.32})`);
+      } else glow.addColorStop(0.4, `rgba(${r},${g},${b},${glowAlpha * 0.45})`);
       glow.addColorStop(1, `rgba(${r},${g},${b},0)`);
       ctx.fillStyle = glow;
-      ctx.beginPath();
-      ctx.arc(center.x, center.y, glowR, 0, Math.PI * 2);
-      ctx.fill();
+      withRuinShadowClip(ctx,shadows,()=>{ctx.beginPath();ctx.arc(center.x,center.y,glowR,0,Math.PI*2);ctx.fill();});
     }
   }
 
+  const EMPTY_LIGHT_LIST = Object.freeze([]);
+  const ruinFireMaskStats={sources:0,lit:0,projected:0,drawn:0}; // Mobile Pixel Probe verifies an ignited brazier actually contributes to the visible darkness overlay.
+  function drawRuinTraditionLightMasks(lights = window.DevRandomRuinLichThemes?.lightSources?.() || []) { // Existing Hronal/Tothal sources and Kanthic fixture sources share one compositing path.
+    ruinFireMaskStats.sources=lights.length;
+    ruinFireMaskStats.lit=lights.filter(light=>light.active!==false).length;
+    ruinFireMaskStats.projected=0;ruinFireMaskStats.drawn=0;
+    if (!lights.length) return;
+    const ctx = lightingDeps.lctx;
+    const visible = []; // Kept for the second coloured-glow pass, so project each source just once.
+    for (const light of lights) {
+      if (light.active === false) continue; // Optional Kanthic shaft braziers cannot reveal anything until the player ignites them.
+      const playerY = Number(lightingDeps.getPlayerWorldY?.()); // Prevent a tall shaft's upper-story fire from illuminating unrelated floors below.
+      const floorTolerance = Number.isFinite(light.floorTolerance) ? light.floorTolerance : 10; // Per-room lights stay on their own story.
+      if (Number.isFinite(light.floorY) && Number.isFinite(playerY) && Math.abs(light.floorY - playerY) > floorTolerance) continue;
+      const transmission = interiorLightTransmission(light.x, light.z);
+      if (transmission <= 0.005) continue;
+      const center = lightingDeps.worldToOverlay(light.x, light.y, light.z);
+      const radius = lightScreenRadius(light.x, light.z, light.y, light.radius);
+      if (!lightMaskIntersectsViewport(center, radius, ctx, light.x, light.y, light.z, light.radius)) continue;
+      visible.push({light,center,radius,transmission,shadows:ruinShadowPolygons(light,light.radius)});
+    }
+    ruinFireMaskStats.projected=visible.length; // Distinguishes source state from sources actually in the camera viewport.
+    ctx.globalCompositeOperation = 'destination-out';
+    for (const {light,center,radius,transmission,shadows} of visible) {
+      const strength = light.strength * transmission;
+      const grad = ctx.createRadialGradient(center.x,center.y,0,center.x,center.y,radius);
+      grad.addColorStop(0,'rgba(0,0,0,'+strength+')');
+      if (enclosedLightingArea(lightingDeps.getCurrentArea())) addInteriorFalloffStops(grad,strength);
+      else grad.addColorStop(.42,'rgba(0,0,0,'+(strength*.42)+')');
+      grad.addColorStop(1,'rgba(0,0,0,0)'); // Special-ruin light now shares the enclosed-room eased edge.
+      ctx.fillStyle=grad;
+      withRuinShadowClip(ctx,shadows,()=>{ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();});
+      ruinFireMaskStats.drawn++; // A destination-out mask was actually submitted this frame.
+    }
+    ctx.globalCompositeOperation='source-over';
+    for (const {light,center,radius,transmission,shadows} of visible) {
+      const [r,g,b]=light.color;
+      const grad=ctx.createRadialGradient(center.x,center.y,0,center.x,center.y,radius);
+      const glowStrength = .18 * transmission;
+      grad.addColorStop(0,'rgba('+r+','+g+','+b+','+glowStrength+')');
+      if (enclosedLightingArea(lightingDeps.getCurrentArea())) {
+        grad.addColorStop(.36,'rgba('+r+','+g+','+b+','+(glowStrength*.82)+')');
+        grad.addColorStop(.72,'rgba('+r+','+g+','+b+','+(glowStrength*.32)+')');
+      } else grad.addColorStop(.35,'rgba('+r+','+g+','+b+','+(.065*transmission)+')');
+      grad.addColorStop(1,'rgba('+r+','+g+','+b+',0)');
+      ctx.fillStyle=grad;
+      withRuinShadowClip(ctx,shadows,()=>{ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();});
+    }
+  }
+
+
+  const ruinGlowProjection = new window.THREE.Vector3(); // Reused world-space center for engraved glow surfaces, avoiding allocation in the 60 Hz compositor.
+  const ruinGlowStats = { found:0,drawn:0,scans:0 }; // Mobile darkness diagnostics can confirm that glyph masks were discovered and actually painted.
+  let ruinGlowScene = null,ruinGlowNextScan = 0,ruinGlowMeshes = []; // Cache only the active scene's glowing pattern meshes; re-check lazy async atlases periodically.
+  function drawRuinPatternGlowMasks(scene, now) {
+    if (!scene?.traverse) return;
+    if (ruinGlowScene !== scene || now >= ruinGlowNextScan) {
+      ruinGlowScene = scene;ruinGlowNextScan = now + 1600;
+      ruinGlowMeshes = []; // Filter by the real additive pass, not decorative base stone or procedural wall labels.
+      scene.traverse(node => {
+        if ((node.name === 'engraving-glyph-glow' || node.userData?.ruinLadderRuneGlow) && node.isMesh) ruinGlowMeshes.push(node); // Rune strips remain legible under Kanthic's near-black darkness.
+      });
+      ruinGlowStats.scans++;ruinGlowStats.found=ruinGlowMeshes.length;
+    }
+    const ctx = lightingDeps.lctx, playerY = Number(lightingDeps.getPlayerWorldY?.()); // Keep vertical shaft floors isolated while exposing glowing carvings.
+    ruinGlowStats.drawn = 0;
+    ctx.globalCompositeOperation = 'destination-out';
+    for (const mesh of ruinGlowMeshes) {
+      if (ruinGlowStats.drawn >= 80 || !mesh.material?.visible || !(mesh.material.opacity > .001)) continue; // Bound the mobile overlay cost in engraving-dense dungeons.
+      let visible=true; // Hidden overhead wings and removed groups must not punch unexplained holes in darkness.
+      for (let parent=mesh;parent && parent!==scene;parent=parent.parent) {
+        if (parent.visible === false) {visible=false;break;}
+      }
+      if (!visible) continue;
+      mesh.updateWorldMatrix?.(true,false);
+      if (!mesh.geometry?.boundingSphere) mesh.geometry?.computeBoundingSphere?.();
+      const sphere=mesh.geometry?.boundingSphere;
+      if (sphere) ruinGlowProjection.copy(sphere.center).applyMatrix4(mesh.matrixWorld);
+      else mesh.getWorldPosition?.(ruinGlowProjection);
+      if (!Number.isFinite(ruinGlowProjection.x) || !Number.isFinite(ruinGlowProjection.y) || !Number.isFinite(ruinGlowProjection.z)
+        || Number.isFinite(playerY) && Math.abs(ruinGlowProjection.y - playerY) > 11) continue;
+      const scale=mesh.matrixWorld?.getMaxScaleOnAxis?.() || 1; // Sphere bounds are local geometry units, including stretched masonry patches.
+      const radiusTiles=Math.min(5,Math.max(.8,(sphere?.radius||1)*scale)); // Cover the engraving's face, but never illuminate an entire corridor from one glyph.
+      const center=lightingDeps.worldToOverlay(ruinGlowProjection.x,ruinGlowProjection.y,ruinGlowProjection.z);
+      const radius=lightScreenRadius(ruinGlowProjection.x,ruinGlowProjection.z,ruinGlowProjection.y,radiusTiles);
+      if (!(radius > 0) || !lightMaskIntersectsViewport(center,radius,ctx,ruinGlowProjection.x,ruinGlowProjection.y,ruinGlowProjection.z,radiusTiles)) continue;
+      const gradient=ctx.createRadialGradient(center.x,center.y,0,center.x,center.y,radius);
+      gradient.addColorStop(0,'rgba(0,0,0,.98)');
+      gradient.addColorStop(.58,'rgba(0,0,0,.96)');
+      gradient.addColorStop(.83,'rgba(0,0,0,.70)');
+      gradient.addColorStop(1,'rgba(0,0,0,0)'); // Erase only nearby overlay darkness: glyph pixels remain depth-tested by the original Three.js pass.
+      ctx.fillStyle=gradient;ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();
+      ruinGlowStats.drawn++;
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
   function ordinaryBuildingInterior(area) {
-    return area === 'interior' || !!lightingDeps?._isBuildingArea?.(area); // Mines/dens deliberately keep their existing local lantern masks only.
+    const activeScene = lightingDeps?.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.();
+    return !isUndergroundLanternArea(area) && (area === 'interior' || !!lightingDeps?._isBuildingArea?.(area) || activeScene?.userData?.hobunjiPlayerFarmhouseInterior === true); // Scene identity remains authoritative while the area id catches up.
+  }
+
+  function enclosedLightingArea(area) {
+    return ordinaryBuildingInterior(area) || isMineArea(area) || isDenArea(area)
+      || (isNoSkyArea(area) && !isCloudForestMap(area));
+  }
+
+  // One lighting draw asks for transmission once per light (lanterns, furniture, ruin lights, window
+  // panes), and the door blockers cannot change in the middle of a draw, so the list is read once per
+  // draw. Outside a draw (tests, diagnostics) every call reads it fresh.
+  let lightingDrawActive = false;
+  let drawBlockers = null, drawBlockersArea = null, drawBlockersScene = null;
+  function lightBlockersForDraw(area, scene) {
+    const read = () => window.InteriorDoorTiles?.getLightBlockers?.(area, scene) || NO_LIGHT_BLOCKERS;
+    if (!lightingDrawActive) return read();
+    if (drawBlockers === null || drawBlockersArea !== area || drawBlockersScene !== scene) {
+      drawBlockers = read(); drawBlockersArea = area; drawBlockersScene = scene;
+    }
+    return drawBlockers;
+  }
+  const NO_LIGHT_BLOCKERS = Object.freeze([]);
+
+  function interiorLightTransmission(sourceX, sourceZ) {
+    const currentArea = lightingDeps?.getCurrentArea?.();
+    const activeScene = lightingDeps?.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.();
+    if (!enclosedLightingArea(currentArea)) return 1;
+    const player = lightingDeps.player;
+    const fromX = finiteOr(player?.x, 0) / lightingDeps.TILE;
+    const fromZ = finiteOr(player?.y, 0) / lightingDeps.TILE;
+    const dx = sourceX - fromX, dz = sourceZ - fromZ;
+    const lengthSquared = dx * dx + dz * dz;
+    if (lengthSquared < 0.000001) return 1;
+    const doors = lightBlockersForDraw(currentArea, activeScene);
+    let transmission = 1;
+    for (const door of doors) {
+        const progress = clamp01(door.openProgress);
+        if (progress >= 0.999) continue;
+        const nx = finiteOr(door.normalX, 0), nz = finiteOr(door.normalZ, 0);
+        const denominator = dx * nx + dz * nz;
+        if (Math.abs(denominator) < 0.000001) continue;
+        const t = ((door.x - fromX) * nx + (door.z - fromZ) * nz) / denominator;
+        if (t <= 0.001 || t >= 0.999) continue;
+        const hitX = fromX + dx * t, hitZ = fromZ + dz * t;
+        const tangentX = -nz, tangentZ = nx;
+        const lateral = Math.abs((hitX - door.x) * tangentX + (hitZ - door.z) * tangentZ);
+        if (lateral > Math.max(0.5, finiteOr(door.halfWidth, 0.5)) + 0.12) continue;
+      transmission *= progress; // The same eased progress that swings the slab smoothly restores light as the door opens.
+      if (transmission <= 0.005) return 0;
+    }
+    return clamp01(transmission);
+  }
+
+  function addInteriorFalloffStops(gradient, strength) {
+    gradient.addColorStop(0.36, `rgba(0,0,0,${strength * 0.82})`);
+    gradient.addColorStop(0.72, `rgba(0,0,0,${strength * 0.32})`);
   }
 
   // Daylight windows reveal the stable enclosed darkness locally, exactly like
@@ -626,16 +945,50 @@
   const WINDOW_PANE_GLOW_RADIUS = 0.55; // World units; about the authored pane's half-diagonal.
   const WINDOW_PANE_GLOW_STRENGTH = 0.85;
 
-  function drawWindowRevealCircle(ctx, center, radius, strength, clarity) {
+  function drawWindowRevealCircle(ctx, center, radius, strength, clarity, linear = false) {
     const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, radius);
     grad.addColorStop(0, `rgba(0,0,0,${strength})`);
-    grad.addColorStop(clarity, `rgba(0,0,0,${strength * 0.7})`);
-    grad.addColorStop(Math.min(1, clarity + 0.35), `rgba(0,0,0,${strength * 0.2})`);
+    if (linear) {
+      addInteriorFalloffStops(grad, strength);
+    } else {
+      grad.addColorStop(clarity, `rgba(0,0,0,${strength * 0.7})`);
+      grad.addColorStop(Math.min(1, clarity + 0.35), `rgba(0,0,0,${strength * 0.2})`);
+    }
     grad.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
     ctx.fill();
+  }
+
+  const STAINED_GLASS_AURA_ALPHA = 0.2; // Used only by diffuse window-color washes; keeps normal daylight and lamp masks dominant.
+  const STAINED_GLASS_AURA_SPREAD = 1.18; // Broad overlapping colors deliberately never reproduce a window motif or floor footprint.
+
+  function drawStainedGlassAura(ctx, source, center, radius, daylightStrength) {
+    const palette = source.projectionPalette; // Existing glass-pattern dyes supply the colors without rasterizing or projecting its exact design.
+    const tint = source.glassTint; // Solid tinted windows have no authored pattern palette.
+    const colors = Array.isArray(palette) && palette.length ? palette : tint?.getHexString ? [`#${tint.getHexString()}`] : []; // Fallback uses Three.Color only for solid colored glass.
+    const amount = Math.min(0.25, STAINED_GLASS_AURA_ALPHA * daylightStrength / Math.sqrt(Math.max(1, colors.length))); // Each color remains subtle as multiple windows overlap.
+    if (!(radius > 0) || !(amount > 0)) return false;
+    let drawn = false;
+    for (let i = 0; i < Math.min(3, colors.length); i++) {
+      const hex = colors[i]; // Authoring normalizes palettes to #rrggbb; reject missing/invalid colors rather than tinting clear windows.
+      if (typeof hex !== 'string' || !/^#[a-f0-9]{6}$/i.test(hex)) continue;
+      const rgb = parseInt(hex.slice(1), 16); // One dye becomes the center hue of a very broad, feathered daylight variation.
+      const red = rgb >> 16 & 255, green = rgb >> 8 & 255, blue = rgb & 255;
+      const offsetX = (i - (colors.length - 1) * 0.5) * radius * 0.23; // Closely spaced centers blend glass dyes rather than preserving their shapes.
+      const offsetY = (i % 2 ? 0.12 : -0.12) * radius;
+      const x = center.x + offsetX, y = center.y + offsetY;
+      const spread = radius * STAINED_GLASS_AURA_SPREAD;
+      const gradient = ctx.createRadialGradient(x, y, 0, x, y, spread);
+      gradient.addColorStop(0, `rgba(${red},${green},${blue},${amount})`);
+      gradient.addColorStop(0.45, `rgba(${red},${green},${blue},${amount * 0.42})`);
+      gradient.addColorStop(1, `rgba(${red},${green},${blue},0)`);
+      ctx.fillStyle = gradient;
+      ctx.beginPath(); ctx.arc(x, y, spread, 0, Math.PI * 2); ctx.fill();
+      drawn = true;
+    }
+    return drawn;
   }
 
   function drawWindowLightMasks() {
@@ -646,6 +999,7 @@
     windowMaskStats.sources = sources.length;
     windowMaskStats.drawn = 0;
     windowMaskStats.glows = 0;
+    windowMaskStats.colorAuras = 0;
     if (!sources.length) { windowMaskStats.daylight = 0; return; }
     const outdoor = getFullDayLighting(); // Same day/night + lunar state the windows' pane tint uses, without its debug-state round trip.
     const daylight = clamp01(1 - clamp01(outdoor.a)); // Outdoor overlay darkness alpha: night windows admit little light.
@@ -654,49 +1008,87 @@
     ctx.globalCompositeOperation = 'destination-out';
     for (const source of sources) {
       source.mesh?.getWorldPosition?.(ambientWindowScratch);
-      const center = lightingDeps.worldToOverlay(ambientWindowScratch.x, ambientWindowScratch.y, ambientWindowScratch.z);
-      if (!center.visible) continue;
-      const glowR = lightScreenRadius(ambientWindowScratch.x, ambientWindowScratch.z, ambientWindowScratch.y, WINDOW_PANE_GLOW_RADIUS);
-      if (glowR > 0) {
-        drawWindowRevealCircle(ctx, center, glowR, WINDOW_PANE_GLOW_STRENGTH, 0.55); // Pane glow: day and night, no spread.
+      const transmission = interiorLightTransmission(ambientWindowScratch.x, ambientWindowScratch.z);
+      if (transmission <= 0.005) continue;
+      const paneRange = Math.max(WINDOW_PANE_GLOW_RADIUS, finiteOr(source.radiusTiles, 2.8) * INTERIOR_LIGHT_RADIUS_MULTIPLIER); // Keep the small pane glow visible throughout the window's actual room-light range, including at night.
+      const pane = projectInteriorLightMask(ambientWindowScratch.x, ambientWindowScratch.y, ambientWindowScratch.z, WINDOW_PANE_GLOW_RADIUS, ctx, paneRange);
+      if (pane) {
+        drawWindowRevealCircle(ctx, pane.center, pane.radius, WINDOW_PANE_GLOW_STRENGTH * transmission, 0.55); // Pane glow: day and night, no spread.
         windowMaskStats.glows += 1;
       }
       if (daylight <= 0.02) continue;
       const radiusTiles = Math.max(0.25, finiteOr(source.radiusTiles, 2.8));
-      const shineR = lightScreenRadius(ambientWindowScratch.x, ambientWindowScratch.z, ambientWindowScratch.y, radiusTiles);
-      const strength = Math.min(0.9, clamp01(source.strength) * daylight * 0.85);
-      if (!(shineR > 0) || !(strength > 0)) continue;
-      drawWindowRevealCircle(ctx, center, shineR, strength, 0.35); // Daylight pool spreading into the room.
+      const projected = projectInteriorLightMask(ambientWindowScratch.x, ambientWindowScratch.y, ambientWindowScratch.z, radiusTiles * INTERIOR_LIGHT_RADIUS_MULTIPLIER, ctx);
+      const strength = Math.min(0.9, clamp01(source.strength) * daylight * 0.85) * transmission;
+      if (!(strength > 0) || !projected) continue;
+      drawWindowRevealCircle(ctx, projected.center, projected.radius, strength, 0.35, true); // Daylight pool spreading into the room.
       windowMaskStats.drawn += 1;
+    }
+    ctx.globalCompositeOperation = 'screen'; // Add only soft color to the shared fake-daylight mask; never draw an exact textured floor projection.
+    if (daylight > 0.02) for (const source of sources) {
+      if (!source.projectionPalette?.length && !source.glassTint) continue; // Plain daylight windows keep their existing neutral illumination.
+      source.mesh?.getWorldPosition?.(ambientWindowScratch);
+      const transmission = interiorLightTransmission(ambientWindowScratch.x, ambientWindowScratch.z);
+      if (transmission <= 0.005) continue;
+      const radiusTiles = Math.max(0.25, finiteOr(source.radiusTiles, 2.8));
+      const projected = projectInteriorLightMask(ambientWindowScratch.x, ambientWindowScratch.y, ambientWindowScratch.z, radiusTiles * INTERIOR_LIGHT_RADIUS_MULTIPLIER, ctx);
+      if (!projected) continue;
+      const strength = Math.min(0.9, clamp01(source.strength) * daylight * 0.85) * transmission;
+      if (drawStainedGlassAura(ctx, source, projected.center, projected.radius, strength)) windowMaskStats.colorAuras++;
     }
     ctx.globalCompositeOperation = 'source-over';
   }
 
   function drawUnifiedLightingOverlay() {
+    lightingDrawActive = true; drawBlockers = null; // Door blockers are read once per draw (see lightBlockersForDraw).
+    try { drawUnifiedLightingOverlayPass(); } finally { lightingDrawActive = false; drawBlockers = null; }
+  }
+
+  function drawUnifiedLightingOverlayPass() {
     if (!lightingDeps?.lctx) return;
     const now = performance.now();
     const lightningAlpha = lightingDeps.getLightningAlpha();
     const sceneTransAlpha = lightingDeps.getSceneTransAlpha();
-    if (now - lastUnifiedLightingDraw < 100 && lightningAlpha <= 0 && sceneTransAlpha <= 0) return;
+    const currentArea = lightingDeps.getCurrentArea(); // Selects room darkness and detects transitions that must bypass the normal redraw throttle.
+    const activeScene = lightingDeps.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.() || null; // The rendered scene is authoritative if the area-id update trails a transition.
+    const farmhouseSceneActive = activeScene?.userData?.hobunjiPlayerFarmhouseInterior === true; // Keeps the farmhouse dark even during a temporarily stale outdoor area id.
+    if (now - lastUnifiedLightingDraw < LIGHTING_OVERLAY_MIN_INTERVAL_MS && lightningAlpha <= 0 && sceneTransAlpha <= 0
+        && currentArea === lastUnifiedLightingArea && activeScene === lastUnifiedLightingScene) return;
     lastUnifiedLightingDraw = now;
+    lastUnifiedLightingArea = currentArea;
+    lastUnifiedLightingScene = activeScene;
 
     const ctx = lightingDeps.lctx;
+    ctx.globalAlpha = 1; // The darkness fill must not inherit opacity changes from another canvas consumer.
     const surface = window.WeatherFX?.ensurePresentationSurface?.({ reason: 'unified-lighting-draw' }); // Keeps the authoritative replacement lighting pass on the same repaired CSS/backing dimensions as WebGL.
     const rect = surface?.rect || lightingDeps.getThreeRect();
     ctx.clearRect(0, 0, rect.width, rect.height);
-    const currentArea = lightingDeps.getCurrentArea();
-    const enclosed = currentArea === 'interior'
+    outdoorLightStats.considered = outdoorLightStats.drawn = outdoorLightStats.fading = outdoorLightStats.culled = 0; // Count only lights in the latest frame for mobile debugging.
+    const enclosed = farmhouseSceneActive || currentArea === 'interior'
       || lightingDeps._isBuildingArea(currentArea)
       || (isNoSkyArea(currentArea) && !isCloudForestMap(currentArea));
 
-    if (enclosed) {
-      const darknessAlpha = enclosedDarknessOverlayAlpha(currentArea); // Enclosed spaces keep one stable darkness base; local masks reveal light without whole-room brightness churn.
+    // Fog-darkened underground areas fall through to the outdoor overlay below
+    // with a fixed midnight state, but only while the mist is really showing
+    // (the Cloud Forest Mist setting can turn it off), else they keep the
+    // flat darkness.
+    const undergroundFog = !farmhouseSceneActive && isUndergroundFogArea(currentArea) && !!(group?.visible && attachedScene);
+    if (enclosed && !undergroundFog) {
+      const darknessAlpha = enclosedDarknessOverlayAlpha(currentArea); // Existing mine/den/room darkness policy, preserved for every area.
+      const effectiveDarknessAlpha = farmhouseSceneActive ? INTERIOR_DARKNESS_OVERLAY_ALPHA : darknessAlpha; // The farmhouse uses 80% base darkness regardless of a lagging outdoor area id.
+      lastInteriorDarknessDraw = { area: currentArea, farmhouseSceneActive, alpha: effectiveDarknessAlpha, at: now }; // Mobile diagnostics reflect the painted base, not a hypothetical calculation.
       ctx.globalCompositeOperation = 'source-over';
-      ctx.fillStyle = `rgba(0,0,0,${darknessAlpha})`;
+      const ruinTradition = currentArea === 'map_i_dev_random_ruin' ? (window.DevRandomRuinLichThemes?.activeTheme?.() || window.DevRandomRuin?.getRuntimeContext?.()?.theme) : null;
+      ctx.fillStyle = ruinTradition === 'tothal' ? 'rgba(6,18,44,'+effectiveDarknessAlpha+')' : ruinTradition === 'hronal' ? 'rgba(20,7,2,'+effectiveDarknessAlpha+')' : 'rgba(0,0,0,'+effectiveDarknessAlpha+')';
       ctx.fillRect(0, 0, rect.width, rect.height);
       drawLanternMasksCompat(1);
-      drawFurnitureLightMasksCompat();
-      if (ordinaryBuildingInterior(currentArea)) drawWindowLightMasks();
+      if (ruinTradition !== 'kanthic' && ruinTradition !== 'tothal') drawFurnitureLightMasksCompat(); // The pure-black Kanthic room and cold Tothal room have no generic warm furniture pools.
+      if (ruinTradition === 'hronal' || ruinTradition === 'tothal') drawRuinTraditionLightMasks();
+      if (ruinTradition === 'kanthic') drawRuinTraditionLightMasks(window.RuinMultifloorV50Style?.lightSources?.() || []); // Only dedicated Kanthic fire fixtures lift the blackness.
+      if (ruinTradition) drawRuinTraditionLightMasks(window.RuinLayerPlayable?.roomLights?.() || []); // A solved puzzle room fills with light.
+      if (ruinTradition) drawRuinTraditionLightMasks(window.SkeeriRuins?.eyeLights?.() || EMPTY_LIGHT_LIST); // Planebent Skeeri eyes pierce the dark.
+      if (ruinTradition) drawRuinPatternGlowMasks(activeScene,now); // An emissive wall engraving is legible without a carried lantern.
+      if (ordinaryBuildingInterior(currentArea) && !ruinTradition) drawWindowLightMasks();
       if (sceneTransAlpha > 0) {
         ctx.globalCompositeOperation = 'source-over';
         ctx.fillStyle = `rgba(0,0,0,${sceneTransAlpha})`;
@@ -705,15 +1097,21 @@
       return;
     }
 
-    const { r, g, b, a } = getFullDayLighting();
-    ctx.globalCompositeOperation = a < 0.09 ? 'screen' : 'multiply';
-    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${a})`;
+    lastInteriorDarknessDraw = null; // Never report an interior base fill after returning outside.
+    const { r, g, b, a } = undergroundFog ? UNDERGROUND_NIGHT_LIGHTING : getFullDayLighting();
+    const darknessAlpha = undergroundFog && activeRuinTradition() === 'kanthic' ? Math.max(a, KANTHIC_STANDARD_DARKNESS_ALPHA) : a; // Stronger ordinary ambient darkness replaces the old hard circular cutout.
+    ctx.globalCompositeOperation = darknessAlpha < 0.09 ? 'screen' : 'multiply';
+    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${darknessAlpha})`;
     ctx.fillRect(0, 0, rect.width, rect.height);
     ctx.globalCompositeOperation = 'source-over';
 
     // Outdoor carried/watch lanterns still clear darkness, but preserve a configurable amount of the active weather tint.
-    drawLanternMasksCompat(currentOutdoorLanternActivation(), true);
-    drawFurnitureLightMasksCompat(true);
+    drawLanternMasksCompat(undergroundFog ? 1 : currentOutdoorLanternActivation(), !undergroundFog);
+    if (!(undergroundFog && activeRuinTradition() === 'kanthic')) drawFurnitureLightMasksCompat(!undergroundFog); // The pure-black Kanthic room has no generic warm furniture pools.
+    if (undergroundFog && activeRuinTradition() === 'kanthic') drawRuinTraditionLightMasks(window.RuinMultifloorV50Style?.lightSources?.() || []);
+    if (currentArea === 'map_i_dev_random_ruin') drawRuinTraditionLightMasks(window.RuinLayerPlayable?.roomLights?.() || []); // Solved rooms are lit in the fog path too.
+    if (currentArea === 'map_i_dev_random_ruin') drawRuinTraditionLightMasks(window.SkeeriRuins?.eyeLights?.() || EMPTY_LIGHT_LIST);
+    if (currentArea === 'map_i_dev_random_ruin') drawRuinPatternGlowMasks(activeScene,now); // The fog and enclosed paths must agree about engraved emission.
 
     if (lightningAlpha > 0) {
       ctx.fillStyle = `rgba(220,240,255,${lightningAlpha * 0.45})`;
@@ -752,27 +1150,46 @@
     update,
     setLayerRadius,
     setLayerOpacity,
+    getKanthicLanternRadiusTiles:()=>tuning.lantern.radiusTiles, // Compatibility API: Kanthic now uses the normal smooth lantern radius.
     refreshLightingOverlay: () => { lastUnifiedLightingDraw = -Infinity; window.WeatherFX?.drawLightingOverlay?.(); }, // Lets dev-only lighting controls redraw immediately without owning a second lighting path.
+    outdoorLightVisibilityAt: (x, y, z, radiusTiles = 0) => {
+      const area = lightingDeps?.getCurrentArea?.(); // Reuses the compositor's actual current area instead of asking separate glow owners to guess indoor status.
+      const scene = lightingDeps?.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.(); // Farmhouse transitions may temporarily report the old outdoor area.
+      if (!lightingDeps || enclosedLightingArea(area) || scene?.userData?.hobunjiPlayerFarmhouseInterior === true) return 1;
+      return outdoorLightVisibility(x, y, z, radiusTiles); // Shared fade policy for spectral glows, Harlyao's second darkness pass and emissive orbs.
+    },
     // Called by the Settings tab's Cloud Forest Fog toggle. update() itself
     // is simply not called at all while disabled (see game.js's per-frame
     // call site), which freezes the mist mid-animation rather than hiding
     // it — this force-hides the group immediately so turning the toggle off
     // is instant. Re-enabling needs no counterpart: the very next update()
     // call sets group.visible from isCloudForestArea() itself.
-    setEnabled: (enabled) => { if (!enabled && group) group.visible = false; },
+    setEnabled: (enabled) => { if (!enabled && group) { group.visible = false; syncUndergroundFog(null); } },
+    // True only while the mist group is attached and showing, so game.js can
+    // skip its layer-5 mist redraw (a full extra scene render) everywhere else.
+    isActive: () => !!(group?.visible && attachedScene),
     getDebugState: () => {
       const debugScene = skyPolicyDeps?.getActiveScene?.(); // Used below to expose the actual runtime player-lantern light state for mobile QA.
       const debugArea = skyPolicyDeps?.getCurrentArea?.() ?? null; // Used below to show which underground-area rule is currently active.
       return {
         active: !!deps?.isCloudForestArea?.(),
+        undergroundFog: isUndergroundFogArea(debugArea) && !!(group?.visible && attachedScene),
         area: debugArea,
         fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
         skydomeSuppressed: !!isNoSkyArea(debugArea),
         undergroundLanternArea: isUndergroundLanternArea(debugArea),
+        latestChange: 'Shaft ladder glyphs and sense outlines; ruin torches cast screen-space shadows from solid stone and props.',
+        ruinLightOcclusion: window.RuinLightOcclusion?.debugSnapshot?.() || null, // Mobile debug readout counts scanned casters, firelight evaluations and clipped shadow projections.
+        ruinEngravingGlowMasks: { ...ruinGlowStats }, // Mobile-visible proof that glowing wall patterns survive the darkness overlay.
+        kanthicFirelight: { ...ruinFireMaskStats, ...(window.RuinMultifloorV50Style?.lightDebug?.()||{}) }, // Both emitted/visible mask counts and actual ignited brazier counts are readable without devtools.
+        interiorLightRadiusMultiplier: INTERIOR_LIGHT_RADIUS_MULTIPLIER,
+        interiorLightFalloff: 'ease-out',
         undergroundDarknessKind: enclosedDarknessKind(debugArea),
         undergroundDarknessOverlayAlpha: enclosedDarknessOverlayAlpha(debugArea),
+        lastInteriorDarknessDraw: lastInteriorDarknessDraw ? { ...lastInteriorDarknessDraw } : null, // Mobile QA shows whether a base mask was drawn for the active farmhouse.
         playerLanternVisible: !!debugScene?.getObjectByName?.('mine_player_torch')?.visible,
         outdoorLanternActivation: currentOutdoorLanternActivation(),
+        outdoorLightVisibility: { ...outdoorLightStats, marginTiles: OUTDOOR_LIGHT_VISIBILITY_MARGIN_TILES, fadeTiles: OUTDOOR_LIGHT_FADE_TILES }, // Pixel Probe exposes how many wilderness lights were actually suppressed.
         outdoorWeatherTintRetention: currentOutdoorWeatherTintState()?.alpha ?? 0,
         renderingMode: 'original-skydome-visibility-only',
         lightingAuthority: window.WeatherFX?.__singleFullDayLightingAuthority ? 'full-day-shared' : 'legacy',

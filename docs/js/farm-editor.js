@@ -39,6 +39,7 @@
   // plain property would eagerly evaluate the still-undeclared `const`
   // the moment this init() object literal is built and throw.
   let deps = null;
+  let _restoringLayoutObjects = false; // Held across the full room/furniture/barn restoration transaction, never across worlds.
   function init(injectedDeps) {
     deps = injectedDeps;
     _bindListeners();
@@ -60,7 +61,10 @@
     const btn   = document.getElementById('farmEditBtn');
     if (panel) panel.style.display = next ? 'flex' : 'none';
     if (btn)   btn.classList.toggle('fed-open', next);
-    if (next) deps.showToast('Farm editor active — click tiles to paint.', true);
+    if (next) {
+      window.FarmPlotEditor?.render?.(); // Refresh the spouse/child worker list after marriage, child growth, or save restoration.
+      deps.showToast('Farm editor active — click tiles to paint.', true);
+    }
   }
 
   function farmEditorSetBrush(type, value) {
@@ -83,6 +87,9 @@
     const farmEditBrush = deps.getFarmEditBrush();
 
     if (farmEditBrushType === 'terrain') {
+      // Tilled / trench strokes build family plot groups (js/farm-plot-editor.js). Painting into a plot that already has
+      // someone assigned only designates the tile — they till or dig it themselves instead of it becoming tilled at once.
+      if (window.FarmPlotEditor?.onTerrainPaint?.(col, row, farmEditBrush) === 'designate') { saveFarmLayout(); return; }
       const typeMap = {
         grass: deps.TileType.GRASS, weeds: deps.TileType.WEEDS, rock: deps.TileType.ROCK,
         shrub: deps.TileType.SHRUB, tilled: deps.TileType.TILLED, raised: deps.TileType.RAISED, trench: deps.TileType.TRENCH
@@ -127,6 +134,7 @@
       }
       tile.type = deps.TileType.GRASS; tile.crop = deps.CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
       if (tile.dewPile) { tile.dewPile = null; window.DewVats.removeMesh(col, row); }
+      window.FarmPlotEditor?.onTerrainPaint?.(col, row, 'grass');
       deps.markTileDirty(col, row); window.WaterSystem.recomputeWater(false); saveFarmLayout();
     }
   }
@@ -242,67 +250,80 @@
     }
     localStorage.removeItem(linkedWindowBackupKey()); // Prior saved window plus no live record and no wall placement is the intentional-removal signal.
   }
-  function saveFarmLayout() {
-    try {
-      const previousLayout = parseStoredJson(farmLayoutKey()); // Needed before rebuilding the object graph so unknown future decor can survive this save intact.
-      const grid = deps.getGrid();
-      const shippingBoxObject = deps.getShippingBoxObject();
-      const supplyBoxObject = deps.getSupplyBoxObject();
-      const layout = { version: 3, tiles: [], objects: {}, furniture: [], decor: [], productionBuildings: window.FarmProduction?.serialize?.() || previousLayout?.productionBuildings || [] };
-      if (shippingBoxObject) layout.objects.sellCrate = [shippingBoxObject.col, shippingBoxObject.row];
-      if (supplyBoxObject)   layout.objects.supplyBox = [supplyBoxObject.col, supplyBoxObject.row];
-      for (let r = 0; r < deps.ROWS; r++) {
-        for (let c = 0; c < deps.COLS; c++) {
-          const t = grid[r][c];
-          const def = deps.createDayOneTile(c, r);
-          if (t.type !== def.type || (t.crop && t.crop !== deps.CropType.NONE) || t.dewPile) {
-            layout.tiles.push({ c, r, type: t.type, depth: t.type === deps.TileType.TRENCH && Number.isFinite(t.depth) ? window.FormatUtils.clamp(t.depth, 0, 1) : 0, crop: t.crop || '', dewPile: t.dewPile || '',
-              cropAge: t.crop && t.crop !== deps.CropType.NONE ? t.cropAge : undefined,
-              cropReady: t.crop && t.crop !== deps.CropType.NONE ? !!t.cropReady : undefined, fertilized: !!t.fertilized });
-          }
+  function captureFarmLayout(previousLayout = parseStoredJson(farmLayoutKey())) {
+    const grid = deps.getGrid();
+    const shippingBoxObject = deps.getShippingBoxObject();
+    const supplyBoxObject = deps.getSupplyBoxObject();
+    const layout = { version: 3, tiles: [], objects: {}, furniture: [], decor: [], productionBuildings: window.FarmProduction?.serialize?.() || previousLayout?.productionBuildings || [] };
+    layout.farmhousePartitions = window.FarmhouseRoomPlanner?.serialize?.() || previousLayout?.farmhousePartitions || null; // Saved per world, including custom walls and moved join doors.
+    const farmPlots = window.FarmPlotEditor?.serialize?.() ?? previousLayout?.farmPlots;
+    if (farmPlots?.length) layout.farmPlots = farmPlots; // Persist assigned family plot groups alongside normal layout.
+    if (shippingBoxObject) layout.objects.sellCrate = [shippingBoxObject.col, shippingBoxObject.row];
+    if (supplyBoxObject)   layout.objects.supplyBox = [supplyBoxObject.col, supplyBoxObject.row];
+    for (let r = 0; r < deps.ROWS; r++) {
+      for (let c = 0; c < deps.COLS; c++) {
+        const t = grid[r][c];
+        const def = deps.createDayOneTile(c, r);
+        if (t.type !== def.type || (t.crop && t.crop !== deps.CropType.NONE) || t.dewPile) {
+          layout.tiles.push({ c, r, type: t.type, depth: t.type === deps.TileType.TRENCH && Number.isFinite(t.depth) ? window.FormatUtils.clamp(t.depth, 0, 1) : 0, crop: t.crop || '', dewPile: t.dewPile || '',
+            cropAge: t.crop && t.crop !== deps.CropType.NONE ? t.cropAge : undefined,
+            cropReady: t.crop && t.crop !== deps.CropType.NONE ? !!t.cropReady : undefined, fertilized: !!t.fertilized });
         }
       }
-      deps.processingFurnitureObjects.forEach(obj => {
-        const job = obj.getJob && obj.getJob();
-        layout.furniture.push({ key: obj.furnitureKey, col: obj.col, row: obj.row, rotYDeg: obj.rotYDeg || 0, ...(job ? { job } : {}) });
-      });
-      deps.interiorFurnitureObjects.forEach(obj => {
-        if (obj.derivedLinkedWindow) return; // Opposite-side farmhouse windows are runtime derivatives; only the inventory-backed primary belongs in the authoritative decor save.
-        layout.decor.push({ id: obj.id, key: obj.key, col: obj.col, row: obj.row, area: obj.area,
-          patternOverrides: obj.patternOverrides || null, rotYDeg: obj.rotYDeg || 0, ownerPieceId: obj.ownerPieceId || null,
-          localCol: Number.isFinite(obj.localCol) ? obj.localCol : null,
-          localRow: Number.isFinite(obj.localRow) ? obj.localRow : null,
-          wallPlacement: window.WallOrnamentPlacement?.getPlayerPlacement?.(obj.id) || null }); // Primary wall-space link is sufficient to deterministically regenerate the opposite-side peer after rebuild.
-      });
-      // Movable buildings — every house piece (starter + built/foundation
-      // deeds) and every barn (foundation or built). Added as extra fields
-      // on the same version-3 shape rather than bumping the version, so
-      // older saves without these fields still load fine.
-      const housePieces = deps.getHousePieces();
-      if (housePieces.length) {
-        layout.housePieces = housePieces.map(p => ({
-          id: p.id, pieceKey: p.pieceKey, col: p.col, row: p.row, w: p.w, h: p.h, stage: p.stage, roofAxis: p.roofAxis || null,
-          features: (p.features || []).map(f => ({ id: f.id, type: f.type, lx: f.lx, ly: f.ly, side: f.side, edgeSlot: f.edgeSlot, autoGenerated: !!f.autoGenerated })),
-        }));
-      }
-      // Manual entrances/chimneys removed or displaced by a piece's own
-      // wall, recovered rather than deleted (see house-pieces.js's
-      // architectural features) — independent of any one piece's
-      // position, so saved at the top level, not per piece.
-      const fixtureInventory = window.HousePieces.getFixtureInventory();
-      if (fixtureInventory.length) layout.architecturalInventory = fixtureInventory;
-      const farmBuildings = deps.getFarmBuildings();
-      if (farmBuildings.length) {
-        layout.buildings = farmBuildings.map(b => ({ id: b.id, kind: b.kind, tier: b.tier, col: b.col, row: b.row, w: b.w, h: b.h, stage: b.stage, ...(b.troughs ? { troughs: b.troughs } : {}) }));
-      }
-      // Preserve map-editor-authored travel data through in-game saves
-      const worldRoutes = deps.getWorldRoutes(), worldNpcPaths = deps.getWorldNpcPaths(), worldTransitions = deps.getWorldTransitions();
-      if (worldRoutes.length)      layout.routes      = worldRoutes;
-      if (worldNpcPaths.length)    layout.npcPaths    = worldNpcPaths; // legacy compatibility
-      if (worldTransitions.length) layout.transitions = worldTransitions;
-      preserveUnknownDecorRecords(layout, previousLayout); // Never erase serialized decor merely because this build does not know how to instantiate it.
+    }
+    deps.processingFurnitureObjects.forEach(obj => {
+      const job = obj.getJob && obj.getJob();
+      layout.furniture.push({ key: obj.furnitureKey, col: obj.col, row: obj.row, rotYDeg: obj.rotYDeg || 0, ...(job ? { job } : {}) });
+    });
+    deps.interiorFurnitureObjects.forEach(obj => {
+      if (obj.derivedLinkedWindow) return; // Opposite-side farmhouse windows are runtime derivatives; only the inventory-backed primary belongs in the authoritative decor save.
+      layout.decor.push({ id: obj.id, key: obj.key, col: obj.col, row: obj.row, area: obj.area,
+        tableId: obj.tableId || null, tableAttachment: obj.tableAttachment || null, npcStationId: obj.npcStationId || null, surfaceItems: obj.surfaceItems || null, serviceId: obj.serviceId || null,
+        npcWardrobeFor: obj.npcWardrobeFor || null, // Shared NPC inventory owner of this exact placed chest/wardrobe; duplicates intentionally use one character ID.
+        patternOverrides: obj.patternOverrides || null, rotYDeg: obj.rotYDeg || 0, ownerPieceId: obj.ownerPieceId || null,
+        widthTiles: obj.key === 'rug' && Number.isInteger(obj.widthTiles) ? obj.widthTiles : null,
+        heightTiles: obj.key === 'rug' && Number.isInteger(obj.heightTiles) ? obj.heightTiles : null, // Per-instance woven-rug dimensions are kept across world reloads.
+        rugLayer: obj.key === 'rug' ? Math.max(0, Math.min(32, Number(obj.rugLayer) || 0)) : null, // Rug stack layer survives reloads independently of its size.
+        localCol: Number.isFinite(obj.localCol) ? obj.localCol : null,
+        localRow: Number.isFinite(obj.localRow) ? obj.localRow : null,
+        wallPlacement: window.WallOrnamentPlacement?.getPlayerPlacement?.(obj.id) || null }); // Primary wall-space link is sufficient to deterministically regenerate the opposite-side peer after rebuild.
+    });
+    // Movable buildings — every house piece (starter + built/foundation
+    // deeds) and every barn (foundation or built). Added as extra fields
+    // on the same version-3 shape rather than bumping the version, so
+    // older saves without these fields still load fine.
+    const housePieces = deps.getHousePieces();
+    if (housePieces.length) {
+      layout.housePieces = housePieces.map(p => ({
+        id: p.id, pieceKey: p.pieceKey, col: p.col, row: p.row, w: p.w, h: p.h, stage: p.stage, roofAxis: p.roofAxis || null,
+        features: (p.features || []).map(f => ({ id: f.id, type: f.type, lx: f.lx, ly: f.ly, side: f.side, edgeSlot: f.edgeSlot, interiorShift: Math.max(-1, Math.min(1, Math.trunc(Number(f.interiorShift) || 0))), autoGenerated: !!f.autoGenerated })), // Per-feature interior-only alignment survives room movement and save/load.
+      }));
+    }
+    // Manual entrances/chimneys removed or displaced by a piece's own
+    // wall, recovered rather than deleted (see house-pieces.js's
+    // architectural features) — independent of any one piece's
+    // position, so saved at the top level, not per piece.
+    const fixtureInventory = window.HousePieces.getFixtureInventory();
+    if (fixtureInventory.length) layout.architecturalInventory = fixtureInventory;
+    const farmBuildings = deps.getFarmBuildings();
+    if (farmBuildings.length) {
+      layout.buildings = farmBuildings.map(b => ({ id: b.id, kind: b.kind, tier: b.tier, col: b.col, row: b.row, w: b.w, h: b.h, stage: b.stage, ...(b.troughs ? { troughs: b.troughs } : {}) }));
+    }
+    // Preserve map-editor-authored travel data through in-game saves
+    const worldRoutes = deps.getWorldRoutes(), worldNpcPaths = deps.getWorldNpcPaths(), worldTransitions = deps.getWorldTransitions();
+    if (worldRoutes.length)      layout.routes      = worldRoutes;
+    if (worldNpcPaths.length)    layout.npcPaths    = worldNpcPaths; // legacy compatibility
+    if (worldTransitions.length) layout.transitions = worldTransitions;
+    preserveUnknownDecorRecords(layout, previousLayout); // Never erase serialized decor merely because this build does not know how to instantiate it.
+    return layout;
+  }
+
+  function saveFarmLayout() {
+    try {
+      const previousLayout = parseStoredJson(farmLayoutKey()); // Shared capture preserves unknown decor before the optional browser backups are written.
+      const layout = captureFarmLayout(previousLayout); // The same serializer supplies direct folder saves without writing browser storage.
       localStorage.setItem(farmLayoutKey(), JSON.stringify(layout));
-      writeLinkedWindowBackup(layout, previousLayout); // Window-aware builds maintain a second recovery copy that older branches do not know to overwrite.
+      writeLinkedWindowBackup(layout, previousLayout);
       return true;
     } catch (error) {
       console.error('saveFarmLayout:', error);
@@ -326,6 +347,7 @@
 
   function applyFarmLayoutToGrid(layout, { refreshVisuals = false } = {}) {
     if (!layout || layout.version !== 3) return;
+    window.FarmPlotEditor?.restore?.(layout.farmPlots);
     const grid = deps.getGrid();
     (layout.tiles || []).forEach(({ c, r, type, depth, crop, dewPile, cropAge, cropReady, fertilized }) => {
       if (grid[r]?.[c]) {
@@ -392,162 +414,251 @@
   }
 
   function applyFarmLayoutObjects(layout) {
-    if (!layout || layout.version !== 3) return;
-    // Repair extension-owned furniture definitions before saved decor is
-    // filtered. This keeps cloud/local farm-layout restores independent of
-    // whichever init wrapper happened to register daylight windows first.
-    window.DaylightWindowRuntime?.registerDecorDefs?.(deps.DECORATIVE_FURNITURE_DEFS);
-    if (layout.objects?.sellCrate) {
-      const [c, r] = layout.objects.sellCrate;
-      const shippingBoxObject = deps.getShippingBoxObject();
-      if (shippingBoxObject && (shippingBoxObject.col !== c || shippingBoxObject.row !== r)) {
-        deps.worldObjects.delete(shippingBoxObject.col + ',' + shippingBoxObject.row);
-        shippingBoxObject.reset && shippingBoxObject.reset();
-        const nc = window.FarmCrates.makeSellCrate(c, r); deps.setShippingBoxObject(nc); deps.worldObjects.set(c + ',' + r, nc);
-      }
+    if (!layout || layout.version !== 3) {
+      window.FarmhouseRoomPlanner?.restore?.(null); // Fresh worlds must not inherit the previous world's custom partitions.
+      deps.rebuildInteriorGeometry?.(); // initWorldObjects may have rendered the prior world's walls during a scene switch.
+      return;
     }
-    if (layout.objects?.supplyBox) {
-      const [c, r] = layout.objects.supplyBox;
-      const supplyBoxObject = deps.getSupplyBoxObject();
-      if (supplyBoxObject && (supplyBoxObject.col !== c || supplyBoxObject.row !== r)) {
-        deps.worldObjects.delete(supplyBoxObject.col + ',' + supplyBoxObject.row);
-        supplyBoxObject.reset && supplyBoxObject.reset();
-        const nb = window.FarmCrates.makeSupplyBox(c, r); deps.setSupplyBoxObject(nb); deps.worldObjects.set(c + ',' + r, nb);
-      }
-    }
-    (layout.furniture || []).forEach(({ key, col, row, job, rotYDeg }) => {
-      // Guarded per-entry: one malformed saved processing station must not
-      // throw and abort the rest of this restore (decor, house pieces,
-      // barns, dew-pile meshes all run after this loop in the same call).
-      try {
-        if (deps.PROCESSING_FURNITURE_DEFS[key] && deps.canPlaceFurnitureAt(col, row)) {
-          const obj = deps.makeProcessingFurniture(col, row, key, job, rotYDeg || 0);
-          if (obj) { deps.worldObjects.set(col + ',' + row, obj); deps.processingFurnitureObjects.add(obj); }
+    _restoringLayoutObjects = true;
+    let complete = false; // Only a fully restored house can safely migrate formerly occupied wall tiles.
+    try {
+      // Repair extension-owned furniture definitions before saved decor is
+      // filtered. This keeps cloud/local farm-layout restores independent of
+      // whichever init wrapper happened to register daylight windows first.
+      window.DaylightWindowRuntime?.registerDecorDefs?.(deps.DECORATIVE_FURNITURE_DEFS);
+      if (layout.objects?.sellCrate) {
+        const [c, r] = layout.objects.sellCrate;
+        const shippingBoxObject = deps.getShippingBoxObject();
+        if (shippingBoxObject && (shippingBoxObject.col !== c || shippingBoxObject.row !== r)) {
+          deps.worldObjects.delete(shippingBoxObject.col + ',' + shippingBoxObject.row);
+          shippingBoxObject.reset && shippingBoxObject.reset();
+          const nc = window.FarmCrates.makeSellCrate(c, r); deps.setShippingBoxObject(nc); deps.worldObjects.set(c + ',' + r, nc);
         }
-      } catch (err) {
-        console.error('[farm-editor] failed to restore processing furniture', { key, col, row }, err);
       }
-    });
-    (layout.decor || []).forEach(({ id, key, col, row, area, rotYDeg, ownerPieceId, localCol, localRow, derivedLinkedWindow, wallPlacement, patternOverrides }) => {
-      try {
-        if (derivedLinkedWindow) return; // One development build serialized peers directly; ignore those transitional duplicate records and regenerate from the primary instead.
-        const def = deps.DECORATIVE_FURNITURE_DEFS[key];
-        if (!def) return;
-        const decorArea = area || 'farm';
-        const targetScene = decorArea === 'interior' ? deps.getInteriorScene() : deps.getScene();
-        const result = deps.makeDecorativeFurnitureMesh(col, row, key, targetScene, decorArea, rotYDeg || 0);
-        const owner = decorArea === 'interior' && !ownerPieceId ? deps.furnitureOwnerFields(col, row) : {};
-        let restoredObject = null; // Stable object reference lets the embedded wall backup be rehydrated before linked-window peer restoration runs.
-        if (result) {
-          restoredObject = { id: id || 'decor_' + Math.random().toString(36).slice(2, 10), key, col, row,
-            mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: decorArea, rotYDeg: rotYDeg || 0,
-            ownerPieceId: ownerPieceId || owner.ownerPieceId, localCol: Number.isFinite(localCol) ? localCol : owner.localCol,
-            localRow: Number.isFinite(localRow) ? localRow : owner.localRow };
-          restoredObject.patternOverrides = patternOverrides || null;
-          window.FurniturePatternSurfaces?.applyOverrides?.(restoredObject.mesh, patternOverrides);
-          deps.interiorFurnitureObjects.push(restoredObject);
-          if (wallPlacement) {
-            const pendingWallRestore = window.WallOrnamentPlacement?.setPlayerPlacement?.(restoredObject.id, wallPlacement, { notify: false, apply: true }); // Restores both transform and houseWindowLink without firing pair sync before house pieces finish loading.
-            pendingWallRestore?.catch?.(err => console.error('[farm-editor] failed to restore wall placement', { id: restoredObject.id, key }, err));
+      if (layout.objects?.supplyBox) {
+        const [c, r] = layout.objects.supplyBox;
+        const supplyBoxObject = deps.getSupplyBoxObject();
+        if (supplyBoxObject && (supplyBoxObject.col !== c || supplyBoxObject.row !== r)) {
+          deps.worldObjects.delete(supplyBoxObject.col + ',' + supplyBoxObject.row);
+          supplyBoxObject.reset && supplyBoxObject.reset();
+          const nb = window.FarmCrates.makeSupplyBox(c, r); deps.setSupplyBoxObject(nb); deps.worldObjects.set(c + ',' + r, nb);
+        }
+      }
+      window.FarmhouseRoomPlanner?.restore?.(layout.farmhousePartitions); // Older saves default to no manual subdivisions.
+      (layout.furniture || []).forEach(({ key, col, row, job, rotYDeg }) => {
+        // Guarded per-entry: one malformed saved processing station must not
+        // throw and abort the rest of this restore (decor, house pieces,
+        // barns, dew-pile meshes all run after this loop in the same call).
+        try {
+          if (deps.PROCESSING_FURNITURE_DEFS[key] && deps.canPlaceFurnitureAt(col, row)) {
+            const obj = deps.makeProcessingFurniture(col, row, key, job, rotYDeg || 0);
+            if (obj) { deps.worldObjects.set(col + ',' + row, obj); deps.processingFurnitureObjects.add(obj); }
           }
+        } catch (err) {
+          console.error('[farm-editor] failed to restore processing furniture', { key, col, row }, err);
         }
-        if (result && decorArea === 'farm' && def.sit) {
-          const size = deps.decorativeFurnitureSize(key, rotYDeg || 0);
-          deps.registerSitWorldObject(key, col, row, size.fw, size.fd, rotYDeg || 0);
+      });
+      (layout.decor || []).forEach(({ id, key, col, row, area, rotYDeg, ownerPieceId, localCol, localRow, derivedLinkedWindow, wallPlacement, patternOverrides, tableId, tableAttachment, npcStationId, surfaceItems, serviceId, npcWardrobeFor, widthTiles, heightTiles, rugLayer }) => {
+        try {
+          if (derivedLinkedWindow) return; // One development build serialized peers directly; ignore those transitional duplicate records and regenerate from the primary instead.
+          const def = deps.DECORATIVE_FURNITURE_DEFS[key];
+          if (!def) return;
+          const decorArea = area || 'farm';
+          const targetScene = decorArea === 'interior' ? deps.getInteriorScene() : deps.getScene();
+          const dimensions = key === 'rug' ? { widthTiles: Number.isInteger(widthTiles) ? widthTiles : 2, heightTiles: Number.isInteger(heightTiles) ? heightTiles : 2,
+             rugLayer: Math.max(0, Math.min(32, Number(rugLayer) || 0)) } : null; // Older rug saves keep their authored default.
+          const result = deps.makeDecorativeFurnitureMesh(col, row, key, targetScene, decorArea, rotYDeg || 0, dimensions);
+          const owner = decorArea === 'interior' && !ownerPieceId ? deps.furnitureOwnerFields(col, row) : {};
+          let restoredObject = null; // Stable object reference lets the embedded wall backup be rehydrated before linked-window peer restoration runs.
+          if (result) {
+            restoredObject = { id: id || 'decor_' + Math.random().toString(36).slice(2, 10), key, col, row,
+              mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: decorArea, rotYDeg: rotYDeg || 0,
+              ownerPieceId: ownerPieceId || owner.ownerPieceId, localCol: Number.isFinite(localCol) ? localCol : owner.localCol,
+              localRow: Number.isFinite(localRow) ? localRow : owner.localRow, ...(dimensions || {}) };
+            restoredObject.tableId = tableId || ''; restoredObject.tableAttachment = window.TableChairPlacement?.normalize?.(tableAttachment) || null; restoredObject.npcStationId = npcStationId || null; restoredObject.surfaceItems = surfaceItems || null; restoredObject.serviceId = serviceId || '';
+            if ((key === 'wardrobe' || key === 'chest') && npcWardrobeFor) restoredObject.npcWardrobeFor = String(npcWardrobeFor); // Restores family wardrobe links before furniture registration.
+            restoredObject.patternOverrides = patternOverrides || null;
+            window.FurniturePatternSurfaces?.applyOverrides?.(restoredObject.mesh, patternOverrides);
+            deps.interiorFurnitureObjects.push(restoredObject);
+            // Publish the parent record before registration can move any chairs already restored.
+            window.FurnitureTableSystem?.registerPlacement(decorArea, restoredObject, restoredObject.mesh, def);
+            if (wallPlacement) {
+              const pendingWallRestore = window.WallOrnamentPlacement?.setPlayerPlacement?.(restoredObject.id, wallPlacement, { notify: false, apply: true }); // Restores both transform and houseWindowLink without firing pair sync before house pieces finish loading.
+              pendingWallRestore?.catch?.(err => console.error('[farm-editor] failed to restore wall placement', { id: restoredObject.id, key }, err));
+            }
+          }
+          if (result && decorArea === 'farm' && def.sit) {
+            const size = deps.decorativeFurnitureSize(key, rotYDeg || 0);
+            deps.registerSitWorldObject(key, col, row, size.fw, size.fd, rotYDeg || 0);
+          }
+          if (restoredObject) {
+            // Attached chairs navigate from the rendered center, including when the saved transform already matches.
+            const position = restoredObject.tableAttachment ? restoredObject.mesh.position : null;
+            restoredObject.npcStationId = deps.registerChairNpcStation(key,
+              position?.x ?? restoredObject.col, position?.z ?? restoredObject.row,
+              restoredObject.rotYDeg || 0, deps.normalizeNpcArea(decorArea), null, null,
+              restoredObject.id, restoredObject.npcStationId);
+          }
+        } catch (err) {
+          console.error('[farm-editor] failed to restore decorative furniture', { key, col, row, area }, err);
         }
-        if (result) deps.registerChairNpcStation(key, col, row, rotYDeg || 0, deps.normalizeNpcArea(decorArea));
-      } catch (err) {
-        console.error('[farm-editor] failed to restore decorative furniture', { key, col, row, area }, err);
-      }
-    });
-    // House pieces — initWorldObjects() already seeded the starter piece at
-    // its hard default position before this runs. A modern save's own
-    // housePieces array may have moved the starter (a legacy "Move
-    // Building" save carried forward) and/or built additional deed
-    // pieces; an old pre-modular-house save only ever has the legacy
-    // houseCol/houseRow fields, which just repositions the starter with
-    // nothing else to restore.
-    const housePieces = deps.getHousePieces();
-    let starterEntry = housePieces.find(p => p.id === 'house_starter');
-    if (Array.isArray(layout.housePieces) && layout.housePieces.length) {
-      const savedStarter = layout.housePieces.find(p => p.id === 'house_starter');
-      const housePieceCatalog = deps.getHousePieceCatalog();
-      if (savedStarter) {
-        // Restore the saved records themselves instead of reseeding a
-        // default starter pair and skipping pieceKey:'starter'. The old
-        // path restored the main room but silently reset a rearranged
-        // starter annex to its default position on every reload.
+      });
+      // House pieces — initWorldObjects() already seeded the starter piece at
+      // its hard default position before this runs. A modern save's own
+      // housePieces array may have moved the starter (a legacy "Move
+      // Building" save carried forward) and/or built additional deed
+      // pieces; an old pre-modular-house save only ever has the legacy
+      // houseCol/houseRow fields, which just repositions the starter with
+      // nothing else to restore.
+      const housePieces = deps.getHousePieces();
+      let starterEntry = housePieces.find(p => p.id === 'house_starter');
+      if (Array.isArray(layout.housePieces) && layout.housePieces.length) {
+        const savedStarter = layout.housePieces.find(p => p.id === 'house_starter');
+        const housePieceCatalog = deps.getHousePieceCatalog();
+        if (savedStarter) {
+          // Restore the saved records themselves instead of reseeding a
+          // default starter pair and skipping pieceKey:'starter'. The old
+          // path restored the main room but silently reset a rearranged
+          // starter annex to its default position on every reload.
+          window.HousePieces.clearAll();
+          layout.housePieces.forEach(saved => {
+            const def = saved.pieceKey === 'starter' ? housePieceCatalog.starter : housePieceCatalog[saved.pieceKey];
+            if (!def || !saved.id) return;
+            const entry = {
+              id: saved.id, pieceKey: saved.pieceKey, col: saved.col, row: saved.row,
+              w: saved.w || def.w, h: saved.h || def.h, stage: saved.stage || 'foundation',
+              roofAxis: saved.roofAxis || null,
+              features: Array.isArray(saved.features) ? saved.features.map(f => ({ ...f })) : [],
+            };
+            housePieces.push(entry);
+            window.HousePieces.spawnEntry(entry);
+          });
+          starterEntry = housePieces.find(p => p.id === 'house_starter');
+        } else {
+          // Transitional saves with deeds but no explicit main-room record.
+          layout.housePieces.forEach(saved => {
+            if (saved.pieceKey === 'starter' || !housePieceCatalog[saved.pieceKey] || housePieces.some(p => p.id === saved.id)) return;
+            const def = housePieceCatalog[saved.pieceKey];
+            const entry = { id: saved.id, pieceKey: saved.pieceKey, col: saved.col, row: saved.row,
+              w: saved.w || def.w, h: saved.h || def.h, stage: saved.stage || 'foundation',
+              roofAxis: saved.roofAxis || null, features: saved.features || [] };
+            housePieces.push(entry);
+            window.HousePieces.spawnEntry(entry);
+          });
+        }
+      } else if (Number.isFinite(layout.houseCol) && Number.isFinite(layout.houseRow) && starterEntry
+                 && (layout.houseCol !== starterEntry.col || layout.houseRow !== starterEntry.row)) {
         window.HousePieces.clearAll();
-        layout.housePieces.forEach(saved => {
-          const def = saved.pieceKey === 'starter' ? housePieceCatalog.starter : housePieceCatalog[saved.pieceKey];
-          if (!def || !saved.id) return;
-          const entry = {
-            id: saved.id, pieceKey: saved.pieceKey, col: saved.col, row: saved.row,
-            w: saved.w || def.w, h: saved.h || def.h, stage: saved.stage || 'foundation',
-            roofAxis: saved.roofAxis || null,
-            features: Array.isArray(saved.features) ? saved.features.map(f => ({ ...f })) : [],
-          };
-          housePieces.push(entry);
-          window.HousePieces.spawnEntry(entry);
-        });
-        starterEntry = housePieces.find(p => p.id === 'house_starter');
-      } else {
-        // Transitional saves with deeds but no explicit main-room record.
-        layout.housePieces.forEach(saved => {
-          if (saved.pieceKey === 'starter' || !housePieceCatalog[saved.pieceKey] || housePieces.some(p => p.id === saved.id)) return;
-          const def = housePieceCatalog[saved.pieceKey];
-          const entry = { id: saved.id, pieceKey: saved.pieceKey, col: saved.col, row: saved.row,
-            w: saved.w || def.w, h: saved.h || def.h, stage: saved.stage || 'foundation',
-            roofAxis: saved.roofAxis || null, features: saved.features || [] };
-          housePieces.push(entry);
-          window.HousePieces.spawnEntry(entry);
-        });
+        window.HousePieces.seedStarter(layout.houseCol, layout.houseRow);
       }
-    } else if (Number.isFinite(layout.houseCol) && Number.isFinite(layout.houseRow) && starterEntry
-               && (layout.houseCol !== starterEntry.col || layout.houseRow !== starterEntry.row)) {
-      window.HousePieces.clearAll();
-      window.HousePieces.seedStarter(layout.houseCol, layout.houseRow);
+      // Manual entrances/chimneys recovered by removal or a wall junction —
+      // independent of any one piece's position, so restored unconditionally
+      // here rather than inside either branch above.
+      window.HousePieces.loadFixtureInventory(layout.architecturalInventory);
+      // Re-derive global furniture coordinates from the room-local values
+      // only after every room has been restored. This is deliberately a
+      // no-op transform: it repairs old/global coordinates while keeping
+      // the saved local placement unchanged.
+      housePieces.filter(p => p.stage === 'built').forEach(piece => {
+        const rect = { col: piece.col, row: piece.row, w: piece.w, h: piece.h };
+        deps.transformFurnitureWithHousePiece(piece.id, rect, rect, false);
+      });
+      deps.rebuildInteriorGeometry();
+      const farmBuildings = deps.getFarmBuildings();
+      const barnTiers = deps.getBarnTiers();
+      (layout.buildings || []).forEach(saved => {
+        try {
+          if (saved.kind !== 'barn' || !barnTiers[saved.tier]) return;
+          if (farmBuildings.some(b => b.id === saved.id)) return;
+          const entry = { id: saved.id, kind: 'barn', tier: saved.tier, col: saved.col, row: saved.row, w: saved.w || window.FarmBuildings.FOOTPRINT_W, h: saved.h || window.FarmBuildings.FOOTPRINT_D, stage: saved.stage || 'foundation', ...(Array.isArray(saved.troughs) ? { troughs: saved.troughs } : {}) };
+          farmBuildings.push(entry);
+          window.FarmBuildings.spawnEntry(entry);
+        } catch (err) {
+          console.error('[farm-editor] failed to restore barn', saved, err);
+        }
+      });
+      // Tile data (grid[r][c].dewPile) is restored by applyFarmLayoutToGrid,
+      // which always runs first (see the two call sites) — this just builds
+      // the meshes for whatever dew piles are already sitting in the grid,
+      // same two-phase split as furniture (data now, objects/meshes here).
+      window.DewVats.rebuildMeshesFromGrid();
+      complete = true;
+    } finally {
+      _restoringLayoutObjects = false;
+      if (complete) {
+        const recovered = deps.reconcileInteriorFurniture?.() || []; // One migration pass after every saved room and furnishing exists.
+        if (recovered.some(entry => entry.action === 'moved' || entry.action === 'stored')) {
+          saveFarmLayout(); // Persist the corrected furniture together with all restored barns and house features.
+        }
+      }
     }
-    // Manual entrances/chimneys recovered by removal or a wall junction —
-    // independent of any one piece's position, so restored unconditionally
-    // here rather than inside either branch above.
-    window.HousePieces.loadFixtureInventory(layout.architecturalInventory);
-    // Re-derive global furniture coordinates from the room-local values
-    // only after every room has been restored. This is deliberately a
-    // no-op transform: it repairs old/global coordinates while keeping
-    // the saved local placement unchanged.
-    housePieces.filter(p => p.stage === 'built').forEach(piece => {
-      const rect = { col: piece.col, row: piece.row, w: piece.w, h: piece.h };
-      deps.transformFurnitureWithHousePiece(piece.id, rect, rect, false);
-    });
-    deps.rebuildInteriorGeometry();
-    const farmBuildings = deps.getFarmBuildings();
-    const barnTiers = deps.getBarnTiers();
-    (layout.buildings || []).forEach(saved => {
-      try {
-        if (saved.kind !== 'barn' || !barnTiers[saved.tier]) return;
-        if (farmBuildings.some(b => b.id === saved.id)) return;
-        const entry = { id: saved.id, kind: 'barn', tier: saved.tier, col: saved.col, row: saved.row, w: saved.w || window.FarmBuildings.FOOTPRINT_W, h: saved.h || window.FarmBuildings.FOOTPRINT_D, stage: saved.stage || 'foundation', ...(Array.isArray(saved.troughs) ? { troughs: saved.troughs } : {}) };
-        farmBuildings.push(entry);
-        window.FarmBuildings.spawnEntry(entry);
-      } catch (err) {
-        console.error('[farm-editor] failed to restore barn', saved, err);
-      }
-    });
-    // Tile data (grid[r][c].dewPile) is restored by applyFarmLayoutToGrid,
-    // which always runs first (see the two call sites) — this just builds
-    // the meshes for whatever dew piles are already sitting in the grid,
-    // same two-phase split as furniture (data now, objects/meshes here).
-    window.DewVats.rebuildMeshesFromGrid();
+  }
+
+  // Normal-play Farmwork works on plot designations, never on the dev Farm Editor's terrain brush.
+  // Keep the geometry/permission adapters here where the grid and screen-ray mapping already exist.
+  function farmworkTileAccess() {
+    if (!deps) return null;
+    const editable = deps.getCurrentArea() === 'farm' && deps.isFarmOwner() && !deps.getFarmEditMode(); // Gameplay workers may modify only their owned farm.
+    const valid = (c, r) => Number.isInteger(c) && Number.isInteger(r) && c >= 0 && r >= 0 && c < deps.COLS && r < deps.ROWS;
+    const blockedTiles = new Set([deps.TileType.ROCK, deps.TileType.SHRUB, deps.TileType.WATER]); // Shared for all map buttons within this Farmwork render, avoiding per-tile allocations.
+    return {
+      editable, cols: deps.COLS, rows: deps.ROWS, scene: deps.getScene(),
+      aimTile: () => deps.getReticleTile?.(),
+      refreshActions: () => deps.refreshActionBar?.(),
+      canDesignate: (c, r, kind) => {
+        if (!editable || (kind !== 'till' && kind !== 'dig') || !valid(c, r) || deps.isHouseFootprint(c, r)) return false;
+        const tile = deps.getGrid()?.[r]?.[c]; // Reject permanent obstructions instead of promising an NPC impossible work.
+        return !!tile && !blockedTiles.has(tile.type);
+      },
+      screenTile: (x, y) => {
+        const tile = deps._screenToFarmTile(x, y); // Same world-pointer projection as the developer editor, not a second raycaster.
+        return tile && valid(tile.col, tile.row) ? tile : null;
+      },
+      centerTile: () => {
+        const rect = deps.threeContainer.getBoundingClientRect(); // Screen-visible center supplies an intuitive initial controller grid view.
+        return deps._screenToFarmTile(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      },
+      showToast: (message, good) => deps.showToast(message, good),
+      suspendMouseCameraForUi: () => deps.suspendMouseCameraForUi?.(),
+      resumeMouseCameraAfterUi: () => deps.resumeMouseCameraAfterUi?.(),
+    };
   }
 
   // ── Farm editor pointer handlers ──────────────────────────────
   let _editorPainting = false;
   function _bindListeners() {
+    // Capture before ordinary world-action handlers so Farmwork paint never plants, attacks, or selects a tile for free.
+    deps.threeContainer.addEventListener('pointerdown', e => {
+      if (!window.FarmworkUI?.isOpen?.()) return;
+      // Touch keeps the native look joystick; locked mouse actions use the same gameplay reticle as the arch/controller.
+      if (window.FarmworkUI.isPlanning?.() && (e.pointerType === 'touch' || document.pointerLockElement === deps.threeContainer)) return;
+      if (e.pointerType === 'mouse' && !['action1', 'action2'].includes(deps.getMouseAction?.(e.button))) return;
+      if (window.FarmworkUI.startWorldPointer(e.pointerId, e.clientX, e.clientY, e.pointerType === 'mouse' ? deps.getMouseAction?.(e.button) : 'action1')) {
+        e.preventDefault(); e.stopImmediatePropagation();
+      }
+    }, true);
+    deps.threeContainer.addEventListener('pointermove', e => {
+      if (!window.FarmworkUI?.isOpen?.()) return;
+      if (window.FarmworkUI.dragTile(e.pointerId, e.clientX, e.clientY)) {
+        e.preventDefault(); e.stopImmediatePropagation();
+      }
+    }, true);
+    const finishFarmworkGesture = e => {
+      if (window.FarmworkUI?.endWorldPointer?.(e.pointerId)) {
+        e.preventDefault(); e.stopImmediatePropagation(); // Avoid normal Action 1 on release after a designation stroke.
+      }
+    }; // Shared pointerup/cancel owner for touch, stylus and mouse.
+    window.addEventListener('pointerup', finishFarmworkGesture, true);
+    window.addEventListener('pointercancel', finishFarmworkGesture, true);
+    deps.threeContainer.addEventListener('click', e => {
+      if (!window.FarmworkUI?.isPanelOpen?.()) return;
+      e.preventDefault(); e.stopImmediatePropagation(); // Block click fallthrough on a plot tile gesture, including invalid destinations.
+    }, true);
     deps.threeContainer.addEventListener('pointerdown', (e) => {
       if (deps.getArmedFurniturePlacementKey() || deps.getArmedFurnitureMoveId() || !deps.getFarmEditMode() || deps.getCurrentArea() !== 'farm') return;
       e.stopPropagation();
       _editorPainting = true;
+      window.FarmPlotEditor?.beginStroke?.();
       const t = deps._screenToFarmTile(e.clientX, e.clientY);
       if (t) applyFarmEditBrush(t.col, t.row);
     });
@@ -557,7 +668,7 @@
       const t = deps._screenToFarmTile(e.clientX, e.clientY);
       if (t) applyFarmEditBrush(t.col, t.row);
     });
-    window.addEventListener('pointerup', () => { _editorPainting = false; });
+    window.addEventListener('pointerup', () => { _editorPainting = false; window.FarmPlotEditor?.endStroke?.(); });
 
     // Expose farm editor to the HTML panel buttons
     window._farmEditor = {
@@ -573,8 +684,9 @@
 
   window.FarmEditor = {
     init,
-    toggleFarmEditMode, farmEditorSetBrush, applyFarmEditBrush,
-    farmLayoutKey, saveFarmLayout, loadFarmLayout, applyFarmLayoutToGrid,
+    toggleFarmEditMode, farmEditorSetBrush, applyFarmEditBrush, farmworkTileAccess,
+    farmLayoutKey, captureFarmLayout, saveFarmLayout, loadFarmLayout, applyFarmLayoutToGrid,
     cleanupLegacyFarmEntranceRoad, applyFarmLayoutObjects,
+    isRestoringLayout: () => _restoringLayoutObjects, // Prevent intermediate house-piece rebuilds from moving furniture during load.
   };
 })();

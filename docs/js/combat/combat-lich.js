@@ -21,10 +21,11 @@
   const ENTRANCED_COMMAND_COUNTDOWN_MS = 3000; // Three one-second 3→2→1 beats during which Entranced neither damages nor naturally recovers.
   const ENTRANCED_COMMAND_GRACE_MS = ENTRANCED_COMMAND_ANNOUNCE_MS + ENTRANCED_COMMAND_COUNTDOWN_MS; // Full immunity/freeze interval around every initial or changed command.
   const ENTRANCED_COMMAND_MIN_HOLD_MS = 10000; // Minimum time a command stays in force after its grace window ends.
-  const PUDDLE_RADIUS_TILES = 0.82; // Kanthic misses make a gameplay hazard this far from the visual puddle center.
-  const PUDDLE_LIFETIME_S = 9; // Short arena-readable lifetime before gasoline fades/disposes.
-  const PUDDLE_TICK_S = 0.35; // Entranced buildup cadence while an actor remains inside gasoline.
-  const PUDDLE_ENTRANCED_PER_TICK = 3.4; // Repeated buildup per puddle tick; latest puddle owner becomes the referential lich.
+  const PUDDLE_RADIUS_TILES = 1.05; // Visible spell-plasm radius; a growing number of temporary patches takes away safe fighting space.
+  const PUDDLE_LIFETIME_S = 12; // Boss-plasm remains long enough to shape movement, then disappears automatically.
+  const PUDDLE_MAX_ACTIVE = 12; // Hard visual and collision budget, shared across all Kanthic liches in an area.
+  const PUDDLE_SINK_SECONDS = 2.8; // Matches static dungeon plasm's sustained-contact fatal immersion window.
+  const PUDDLE_PULL_TILES_S = 0.72; // Matches static dungeon plasm's inward drift; still escapable with ordinary movement.
   const SUMMON_CAP = 3; // Per-lich live Minion cap prevents an unattended arena test from growing forever.
   const LUNGE_RING_REFERENCE_OUTER_RADIUS = 0.46; // Reference size of the familiar lunge-trail ground circle; used only so the Entranced owner marker can be authored explicitly at 2× diameter.
   const LUNGE_RING_REFERENCE_THICKNESS = 0.14; // Reference lunge-trail line width; Entranced doubles this independently from diameter.
@@ -47,8 +48,8 @@
   const HRONAL_LAVA_VISUAL_S = 0.62; // Short lava flare remains after damage resolution so the eruption reads clearly.
   const HRONAL_LAVA_FOUNTAIN_HEIGHT_MULT = 3.4; // Central eruption jet rises several AOE radii before collapsing with the lava flash.
   const WESTERN_SLOPE_SNOW_DEPTH_REFERENCE = 0.22; // Mirrors EnvironmentSurfaceMicroPlateau.SURFACE_DEPTH so Kanthic petroleum can deliberately read as the same raised-surface family.
-  const PETROLEUM_SURFACE_DEPTH = WESTERN_SLOPE_SNOW_DEPTH_REFERENCE / 4; // Requested one-quarter snow height: a very shallow black petroleum skin instead of a tall puddle blob.
-  const PETROLEUM_OPACITY = 0.70; // Requested fixed petroleum surface opacity.
+  const PETROLEUM_SURFACE_DEPTH = WESTERN_SLOPE_SNOW_DEPTH_REFERENCE; // Spell plasm uses the same raised thickness as static ruin plasm.
+  const PETROLEUM_OPACITY = 0.88; // Same translucent purple-black oil finish as static ruin plasm.
   const PETROLEUM_TEXTURE_PATH = 'assets/textures/canvas.png'; // Exact canvas texture used by the Western Slope snow surface.
   const TYPE_ORDER = Object.freeze(['tothal', 'hronal', 'kanthic']); // Stable order used by the dev-spawner buttons and diagnostics.
   const HUE_VARIANTS = Object.freeze(['pure', 'muted', 'dusty', 'dark_muted']); // Existing authored dye variants combined with each tradition's hue families.
@@ -80,8 +81,7 @@
       castCooldownS: 2.15, preferredMinTiles: 3.1, preferredMaxTiles: 5.8,
       projectile: Object.freeze({
         speedPxS: 980, gravityWorldS2: 28, maxAgeS: 2.2, radiusWorld: 0.18,
-        damage: 3, knockbackPxS: 70, footingDamageMultiplier: 0.15,
-        entrancedHealth: 18,
+        damage: 0, knockbackPxS: 0, footingDamageMultiplier: 0, // A Kanthic strike only changes the terrain; its puddle handles all danger.
       }),
     }),
   });
@@ -89,6 +89,7 @@
   let deps = null; // BanditCombat's injected gameplay dependencies captured by the init wrapper and used by all lich simulation.
   const projectiles = new Set(); // Live Tothal/Kanthic spell projectiles updated from the normal RangedWeapons gameplay tick.
   const puddles = new Set(); // Live Kanthic petroleum hazards updated/disposed alongside custom projectiles.
+  const puddleTouchedActors = new Set(); // Keeps only actors with active immersion; allows cheap idle cleanup.
   const eruptions = new Set();
   let petroleumSurfaceGeometry = null; // Shared low micro-plateau mesh reused by every Kanthic petroleum impact.
   let petroleumSurfaceMaterial = null; // Shared black 70%-opacity canvas-textured material reused by every petroleum impact.
@@ -141,12 +142,39 @@
     return pool[Math.floor(random() * pool.length)] || chromatic[0];
   }
 
+  // A pattern color from the tradition's own dye family (the family its robes are rolled from), different from this lich's robe dye, as a hex.
+  function patternColorFor(type, robeDyeId) {
+    const def = typeDef(type);
+    const pool = [];
+    for (const variant of HUE_VARIANTS) for (const hue of def.hues) pool.push(`dye:CLOTH:${variant}_${hue}`);
+    for (const neutral of def.neutralDyes || []) pool.push(neutral);
+    const catalog = window.ScratchbonesAccount?.getDyeCatalog?.() || window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || [];
+    const options = pool.filter(id => id !== robeDyeId && /^#[0-9a-f]{6}$/i.test(catalog.find(dye => dye.id === id)?.hex || ''));
+    const chosen = options[Math.floor(random() * options.length)];
+    return catalog.find(dye => dye.id === chosen)?.hex || null;
+  }
+
+  function rollOrdinaryLichName() {
+    const generate = window.SCRATCHBONES_NAME_GENERATOR?.generateHarlyaoName; // Shared culture generator, loaded before gameplay spawns.
+    if (typeof generate !== 'function') return null; // Isolated editor/test harnesses may omit culture scripts.
+    const occupied = new Set([...(deps?.hostileObjects || [])]
+      .filter(actor => actor?.isHarlyaoLich && Number(actor.health) > 0)
+      .map(actor => String(actor.lichGivenName || actor.name || '').split(/\s+/)[0].toLowerCase())); // Given names remain unique even when the visible label includes a surname.
+    let fallback = null; // Last valid culturally generated name, used if a deterministic test RNG repeats a single value.
+    for (let attempt = 0; attempt < 24; attempt++) {
+      const name = generate(random); // Use GameRandom, the same RNG as the lich's robe/appearance.
+      if (!occupied.has(name.toLowerCase())) return name;
+      fallback = name;
+    }
+    return fallback;
+  }
+
   function rosterFor(type, gender = null) {
     const def = typeDef(type); // Lich type provides display name while cosmetics stay identical across traditions.
     const chosenGender = gender === 'female' ? 'female' : gender === 'male' ? 'male' : (random() < 0.5 ? 'male' : 'female'); // Used by the Engh-sho-inherited Harlyao Skeleton hood/bodywrap variants.
     const dyeId = rollDye(def.id); // One roll is deliberately reused for BOTH hood and bodywrap.
     return {
-      name: def.label,
+      name: rollOrdinaryLichName() || def.label, // Named guardians bypass this roster; ordinary Harlyao get a personal name.
       appearance: { speciesId: 'harlyao-skeleton', gender: chosenGender, cosmetics: {} },
       equippedCosmetics: [HOOD_ID, BODYWRAP_ID],
       cosmeticSlots: { [HOOD_ID]: 'hood', [BODYWRAP_ID]: 'overwear' },
@@ -260,11 +288,12 @@
     const socketQuaternion = hierarchyWorldQuaternion(holder, scratch.socketQuaternion); // Current Light Weapon pose orientation without mirrored-matrix decomposition.
     if (!socketQuaternion) return false;
     const grips = window.HobunjiHandToolGrips; // Existing authored grip metadata keeps the invisible reference weapon's hand placement identical to a real held copy.
-    const grip = grips?.authoredPrimaryGripForTool?.(LICH_CAST_WEAPON_KEY, 'melee') || {};
+    const gripToolKey = entity._specialWeaponKey || LICH_CAST_WEAPON_KEY; // Azgarlu's hands follow his actual warhammer grip, not the ordinary lich's invisible casting tool.
+    const grip = grips?.authoredPrimaryGripForTool?.(gripToolKey, 'melee') || {};
     const gripPosition = grip.position || {}; // Authored point on the reference weapon where the right hand belongs.
     const gripRotation = grip.rotationDeg || {}; // Authored grip orientation on the reference weapon.
-    const gripScale = Number(grips?.toolScaleForTool?.(LICH_CAST_WEAPON_KEY)) || 1;
-    const gripTarget = grips?.itemPointToHolder?.(LICH_CAST_WEAPON_KEY, gripPosition, 'melee', { speciesId: rig.speciesId, gender: rig.gender })
+    const gripScale = Number(grips?.toolScaleForTool?.(gripToolKey)) || 1;
+    const gripTarget = grips?.itemPointToHolder?.(gripToolKey, gripPosition, 'melee', { speciesId: rig.speciesId, gender: rig.gender })
       || { x: (Number(gripPosition.x) || 0) * gripScale, y: (Number(gripPosition.y) || 0) * gripScale, z: (Number(gripPosition.z) || 0) * gripScale }; // Height scaling pivots on the grip, so the hand target is the same as a real held copy's.
     socketPosition.add(scratch.gripOffset.set(gripTarget.x, gripTarget.y, gripTarget.z).applyQuaternion(socketQuaternion));
     socketQuaternion.multiply(scratch.gripQuaternion.setFromEuler(scratch.gripEuler.set(
@@ -288,9 +317,18 @@
     const x = Number(options.x); // World X supplied by the Testing Arena spawner.
     const y = Number(options.y); // World Z-plane coordinate supplied by the Testing Arena spawner.
     if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-    const roster = rosterFor(def.id, options.gender); // Forced skeleton+raggedhood+bodywrap roster passed through the normal portrait builder.
+    const special = options.special === true ? window.SpecialHarlyaoLiches?.defFor?.(def.id) : null; // Boss-only identity; ordinary liches keep their original random cosmetics.
+    const roster = options.roster || (special ? window.SpecialHarlyaoLiches.specialRoster(def.id) : rosterFor(def.id, options.gender)); // Fixed named-boss wardrobe uses the existing portrait pipeline.
+    if (!options.roster && !special) { // Ordinary liches wear their tradition's glyph (same planar family as the named lich) with a random frame and a same-family color, kept on the roster for loot.
+      const patterns = window.SpecialHarlyaoLiches?.ordinaryLichPatterns?.(def.id, random, patternColorFor(def.id, roster.lichDyeId));
+      if (patterns) roster.clothingPatterns = patterns;
+    }
     const tier = Math.max(0, Math.min(3, Math.round(Number(options.tier) || 0))); // Existing dev tier selector remains meaningful for lich base stats.
     const areaId = currentLichArea(); // Spawn area; every spell/summon below follows its owner's area.
+    const generatedGivenName = !special && !options.roster && !options.nameOverride && /^[A-Z][a-z]{4,11}$/.test(roster.name || '') ? roster.name : null; // One Harlyao given name; custom rosters and authored liches retain their original identities.
+    const surnameGenerator = window.SCRATCHBONES_NAME_GENERATOR?.generateHarlyaoSurname; // Use the same Harlyao family-name rules as seeded culture identities.
+    const generatedSurname = generatedGivenName && typeof surnameGenerator === 'function' ? surnameGenerator(random, generatedGivenName) : null; // Ordinary liches have one given name and a distinct surname.
+    const lichDisplayName = special?.name || options.nameOverride || (generatedSurname ? `${generatedGivenName} ${generatedSurname}` : roster.name || def.label); // Overhead label is first + last name; authored bosses keep their titled epithets.
     const entity = await window.BanditCombat.makeEntity({
       ...cfg,
       speciesWeights: { 'harlyao-skeleton': 1 },
@@ -299,23 +337,33 @@
       zoneId: areaId,
       rosterOverride: roster,
       enemyClass: CLASS_ID,
-      nameOverride: def.label,
+      nameOverride: lichDisplayName, // Ordinary liches use two Harlyao words; authored guardians and explicit editor names stay unchanged.
+      avatarRigScale: options.avatarRigScale || (special ? window.SpecialHarlyaoLiches?.rigScaleFor?.(def.id) : null), // Exact 20/30% dimensions relative to the existing skeleton defaults, unless a Workshop rule overrides them.
       defOverride: {
-        weaponKey: LICH_CAST_WEAPON_KEY, // Existing Light Weapon classification/attack pose source; its visible mesh is stripped immediately after construction.
+        weaponKey: special?.weapon || LICH_CAST_WEAPON_KEY, // Azgarlu wields a visible warhammer; baseline liches keep invisible Light Weapon casting.
         rangedWeaponKey: null,
         aggroRangePx: (deps.TILE || 64) * 11,
         leashRangePx: (deps.TILE || 64) * 14,
         moveSpeed: 104 + tier * 4,
         chaseSpeed: 142 + tier * 5,
+        ...(options.defOverride || {}),
       },
       extra: {
         homeX: x, homeY: y, state: 'chase',
         isHarlyaoLich: true, lichType: def.id, lichDyeId: roster.lichDyeId,
+        ...(special ? {enemyLoadoutKind:window.SpecialHarlyaoLiches?.kindFor?.(def.id)} : {}), // Workshop rules target the named variant instead of the ordinary tradition.
         ...(options.extra || {}),
       },
     });
     if (!entity) return null;
-    prepareEmptyCastWeapon(entity);
+    if (generatedGivenName) entity.lichGivenName = generatedGivenName; // The unadorned Harlyao first name is used for future uniqueness checks and diagnostics.
+    if (generatedSurname) entity.lichSurname = generatedSurname; // Family name is separate from personal identity and available to debug/HUD integrations.
+    if (special?.weapon) {
+      entity._specialWeaponKey = special.weapon; // The warhammer remains in its existing animated holder for melee combat.
+      entity._specialWarhammerGlyph = special.glyph; // The boss's entropy pattern identifier for metadata and debugging.
+      entity._specialWarhammerEnchanted = true; // Explicit magical weapon identity, separate from generic ranged spells.
+    } else prepareEmptyCastWeapon(entity);
+    if (special) window.SpecialHarlyaoLiches?.init?.(entity, def.id, deps);
     entity._lichCastAnimIndex = 0; // Cycles existing poke-combo steps so repeated spell casts do not all use one identical hand motion.
     entity._lichBaseGroundLift = Number(entity.groundLift ?? entity.halfHeight) || Number(entity.avatarRef?.modelHeight) * 0.5 || 0.45; // Original floor-to-center baseline restored while prone/dead.
     entity._lichHoverClockS = random() * HOVER_BOB_PERIOD_S; // Per-entity phase offset keeps groups of liches from bobbing in lockstep.
@@ -472,7 +520,12 @@
     if (def.id === 'hronal') {
       const windupS = Math.max(0, Number(castTiming?.windupS) || 0.16); // Exact staged attack timing captured by beginLichCast.
       const strikeS = Math.max(0, Number(castTiming?.strikeS) || 0.10); // Paired with windup so the warning lasts exactly four attack phases.
-      return !!makeEruptingEarth(lich, target, 4 * (windupS + strikeS));
+      if(lich.specialLichId==='azgarlu') {
+        const pillars=window.DevRandomRuinLichThemes?.spawnBossPillar?.(lich,target)||0; // The named boss summons preset-footprint exploding pillars instead of ordinary Hronal earth spells.
+        if(pillars>0){lastEvent='azgarlu:pillar-cast';return true;}
+        return false; // An unavailable landing footprint never becomes the old Hronal spell, in the dungeon OR Testing Arena.
+      }
+      return !!makeEruptingEarth(lich, target, 4 * (windupS + strikeS)); // Ordinary Hronal liches are unchanged.
     }
     const velocity = ballisticVelocity(lich, target, def.projectile); // Kanthic remains ballistic; Tothal uses this only as its initial heading before homing takes over.
     const mesh = makeSpellVisual(def.id); // Per-type procedural spell visual avoids adding un-authored sprite assets.
@@ -539,7 +592,12 @@
     const power = projectilePower(projectile); // Tothal damage/knockback/Footing pressure/frost all decay with its shrinking lifetime; Kanthic remains full-strength.
     const hitX = projectile.prevX + (projectile.x - projectile.prevX) * t; // Pixel X impact origin passed to canonical knockback/damage.
     const hitY = projectile.prevY + (projectile.y - projectile.prevY) * t; // Pixel Z-plane impact origin passed to canonical knockback/damage.
-    const options = { tag: 'blunt', ranged: true, footingDamageMultiplier: (p.footingDamageMultiplier || 0) * power, afflictionBonuses: {}, attacker: projectile.owner || null }; // Canonical damage path still owns knockback/stagger/prone transitions.
+    if(projectile.type==='kanthic'){
+      makeGasolinePuddle(projectile.owner,hitX,hitY); // All direct hits only leave plasm: no forced movement, slowing, knockback or immediate damage.
+      lastEvent='plasm:direct-impact';
+      return;
+    }
+    const options = { tag: 'blunt', ranged: true, footingDamageMultiplier: (p.footingDamageMultiplier || 0) * power, afflictionBonuses: {}, attacker: projectile.owner || null }; // Canonical damage path still owns Tothal knockback/stagger/prone transitions.
     const damage = (p.damage || 0) * power;
     const knockback = (p.knockbackPxS || 0) * power;
     if (actor === deps.player) deps.damagePlayer?.(damage, hitX, hitY, knockback, options);
@@ -547,9 +605,6 @@
     const RS = window.ResourceSystem; // Central affliction authority for fixed lich payload buildup.
     if (projectile.type === 'tothal') {
       RS?.addAffliction?.(actor, 'frostbittenStamina', (p.frostbittenStamina || 0) * power);
-    } else {
-      addGooSlow(actor);
-      applyEntranced(actor, projectile.owner, p.entrancedHealth);
     }
     lastEvent = `hit:${projectile.type}:${actor.id || actor.name || 'player'}:power=${power.toFixed(2)}`;
   }
@@ -921,7 +976,7 @@
         if (typeof window.getShadeFillCanvas === 'function' && loaded.image && THREE.CanvasTexture) {
           const canvas = window.getShadeFillCanvas(loaded.image, 'kanthic-petroleum|canvas.png|black', {
             mode: 'shadeFill',
-            rgb: [18, 18, 18], // Near-black preserves canvas.png luminance/grain; literal 0 would mathematically flatten every tinted pixel.
+            rgb: [37, 28, 52], // Match the static ruin plasm palette while preserving source texture grain.
             options: window.getPortraitTintingConfig?.() || {},
           });
           if (canvas) {
@@ -936,7 +991,7 @@
       finalTexture.generateMipmaps = false;
       finalTexture.needsUpdate = true;
       petroleumSurfaceMaterial.map = finalTexture;
-      petroleumSurfaceMaterial.color.set(shadeFilled ? 0xffffff : 0x000000); // Raw fallback is multiplied black; shade-filled texture already carries the requested black tint.
+      petroleumSurfaceMaterial.color.set(shadeFilled ? 0xffffff : 0x251c34); // Raw fallback uses the identical color as static Kanthic patches.
       petroleumSurfaceMaterial.needsUpdate = true;
     }, undefined, () => {});
   }
@@ -944,7 +999,7 @@
   function petroleumMaterial() {
     if (petroleumSurfaceMaterial || typeof THREE === 'undefined') return petroleumSurfaceMaterial;
     petroleumSurfaceMaterial = new THREE.MeshBasicMaterial({
-      color: 0x000000,
+      color: 0x251c34,
       transparent: true,
       opacity: PETROLEUM_OPACITY,
       depthWrite: false,
@@ -954,7 +1009,7 @@
       polygonOffset: true,
       polygonOffsetFactor: -1,
       polygonOffsetUnits: -1,
-    }); // Black semi-transparent textured skin; no amber/violet magical sheen remains.
+    }); // Purple-black translucent skin matches the static ruin plasm; no separate effect overlay is needed.
     loadPetroleumTexture();
     return petroleumSurfaceMaterial;
   }
@@ -962,32 +1017,59 @@
   function disposePetroleumPuddle(puddle) {
     if (!puddle) return;
     puddles.delete(puddle);
+    puddle.ruinPlasm?.dispose();
     puddle.group?.parent?.remove?.(puddle.group); // Shared geometry/material stay cached for the next impact instead of being disposed per puddle.
   }
 
   function makeGasolinePuddle(owner, xPx, yPx) {
-    if (!isArena() || !owner?.scene || typeof THREE === 'undefined') return null;
+    if (!isArena() || !owner?.scene || typeof THREE === 'undefined' || !Number.isFinite(xPx) || !Number.isFinite(yPx)) return null;
+    const areaId=owner.areaId||currentLichArea()||ARENA_ID; // Area ownership prevents damage/visuals leaking across arena and ruins.
+    const tile=deps.TILE||64,worldX=xPx/tile,worldZ=yPx/tile; // Used by the ruin floor/footprint test before allocating a mesh.
+    if(areaId==='map_i_dev_random_ruin'){
+      if(!window.DevRandomRuin?.getRuntimeContext?.()?.floorSet?.has(Math.floor(worldX)+','+Math.floor(worldZ)))return null; // No floating oil in void tiles.
+      if(window.DevRandomRuinLichThemes?.isProtectedPlasmAt?.(worldX,worldZ))return null; // Never deposit on an entrance or checkpoint.
+    }
+    const ruinGroundY=areaId==='map_i_dev_random_ruin' ? window.DevRandomRuin?.getGroundSupportYAt?.(worldX,worldZ) : null; // Uses actual support for sunken ruin floors.
+    const groundY=Number.isFinite(ruinGroundY) ? ruinGroundY : groundYAt(owner,xPx,yPx);
+    for(const existing of puddles){
+      if(existing.areaId!==areaId||Math.abs(existing.groundY-groundY)>.01)continue;
+      if(!existing.ruinPlasm?.contains?.(worldX,worldZ,groundY)&&Math.hypot(existing.x-xPx,existing.y-yPx)>PUDDLE_RADIUS_TILES*(deps.TILE||64)*.55)continue;
+      existing.ageS=0; // Nearby follow-up impacts refresh a patch instead of stacking draw calls on the same space.
+      lastEvent='plasm:refresh';
+      return existing;
+    }
+    if(areaId==='map_i_dev_random_ruin'&&window.DevRandomRuinTileOccupancy?.solidAt?.(worldX,worldZ,.27,groundY+.35))return null; // A wall impact cannot deposit hidden plasm inside a solid.
+    const ruinPlasm=areaId==='map_i_dev_random_ruin'
+      ? window.DevRandomRuinLichThemes?.createSpellPlasm?.(worldX,worldZ) : null;
+    if(areaId==='map_i_dev_random_ruin'&&window.DevRandomRuinLichThemes?.createSpellPlasm){
+      if(!ruinPlasm)return null;
+      if(puddles.size>=PUDDLE_MAX_ACTIVE)disposePetroleumPuddle(puddles.values().next().value);
+      const puddle={owner,areaId,x:xPx,y:yPx,groundY,ageS:0,
+        radiusPx:PUDDLE_RADIUS_TILES*tile,ruinPlasm};
+      puddles.add(puddle);totalPuddles++;lastEvent='plasm:deposited';
+      return puddle;
+    }
     const geometry = buildPetroleumSurfaceGeometry();
     const material = petroleumMaterial();
     if (!geometry || !material) return null;
-    const group = new THREE.Group(); // Runtime/API name remains compatible, but the visual is now explicitly petroleum.
-    group.name = 'kanthic_petroleum_surface';
+    if(puddles.size>=PUDDLE_MAX_ACTIVE)disposePetroleumPuddle(puddles.values().next().value); // Evict only after a valid new deposit.
+    const group = new THREE.Group(); // Keep the legacy public API name for the Testing Arena's existing controls.
+    group.name = 'kanthic_plasm_surface';
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.name = 'kanthic_petroleum_micro_plateau';
-    mesh.rotation.y = random() * Math.PI * 2; // Shared irregular geometry is rotated per impact so repeated puddles do not visibly stamp the same edge.
+    mesh.name = 'kanthic_plasm_spell_patch';
+    mesh.rotation.y = random() * Math.PI * 2;
     mesh.scale.set(PUDDLE_RADIUS_TILES, 1, PUDDLE_RADIUS_TILES);
     mesh.renderOrder = 3;
     group.add(mesh);
-    const groundY = groundYAt(owner, xPx, yPx); // The shallow cap is rooted on the actual arena surface just like Western Slope snow roots on authored terrain height.
-    group.position.set(xPx / deps.TILE, groundY, yPx / deps.TILE); // Polygon offset handles z-fighting, so the cap's actual top stays exactly PETROLEUM_SURFACE_DEPTH above ground.
+    group.position.set(worldX,groundY,worldZ);
     owner.scene.add(group);
     const puddle = {
-      owner, x: xPx, y: yPx, group, mesh,
-      ageS: 0, tickS: 0, radiusPx: PUDDLE_RADIUS_TILES * deps.TILE,
-    }; // Gameplay radius stays unchanged; only presentation becomes the low black textured petroleum surface.
+      owner, areaId, x:xPx, y:yPx, group, mesh, groundY,
+      ageS:0, radiusPx:PUDDLE_RADIUS_TILES*(deps.TILE||64),
+    }; // Stable, shared mesh+material. Only its twelve-second lifetime changes, not its footprint.
     puddles.add(puddle);
-    totalPuddles += 1;
-    lastEvent = `petroleum:${owner.id || owner.name}`;
+    totalPuddles++;
+    lastEvent = 'plasm:deposited';
     return puddle;
   }
 
@@ -1492,22 +1574,78 @@
     }
   }
 
+  function clearPuddleSink(actor) {
+    if(!actor?._kanthicPuddleSink)return;
+    delete actor._kanthicPuddleSink;
+    puddleTouchedActors.delete(actor);
+    if(actor===deps?.player&&currentLichArea()==='map_i_dev_random_ruin'){
+      const floorY=window.DevRandomRuin?.getPlayerGroundSupportY?.(); // Original physical support restores the player's render after leaving plasm.
+      if(Number.isFinite(floorY))window.DevRandomRuin?.syncPlayerPresentationHeight?.(floorY);
+    }
+  }
+
   function updatePuddles(dt) {
-    for (const puddle of [...puddles]) {
-      puddle.ageS += dt;
-      if (!isArena() || !isLiveActor(puddle.owner) || puddle.ageS >= PUDDLE_LIFETIME_S) {
-        disposePetroleumPuddle(puddle);
+    for(const puddle of [...puddles]){
+      puddle.ageS+=dt;
+      if(!isArena()||!isLiveActor(puddle.owner)||puddle.areaId!==currentLichArea()||puddle.ageS>=PUDDLE_LIFETIME_S)disposePetroleumPuddle(puddle);
+    }
+    if(!puddles.size){
+      for(const actor of puddleTouchedActors)clearPuddleSink(actor);
+      return; // No per-frame whole-hostile scan when no plasm exists.
+    }
+    const tile=deps?.TILE||64,area=currentLichArea();
+    const inRuin=area==='map_i_dev_random_ruin'; // Authored ruin uses its actual floor and collision footprint for pull checks.
+    const floorSet=inRuin?window.DevRandomRuin?.getRuntimeContext?.()?.floorSet:null;
+    for(const actor of [deps?.player,...(deps?.hostileObjects||[])]){
+      if(!isLiveActor(actor)||actor.isHarlyaoLich||actor.enemyClass===CLASS_ID){
+        clearPuddleSink(actor);
         continue;
       }
-      const fade = puddle.ageS > PUDDLE_LIFETIME_S - 2 ? Math.max(0, (PUDDLE_LIFETIME_S - puddle.ageS) / 2) : 1; // Last two seconds visibly evaporate instead of popping.
-      if (puddle.mesh) puddle.mesh.visible = fade > 0.01; // Shared 70%-opacity material cannot be faded per instance without affecting every puddle; gameplay lifetime remains unchanged.
-      puddle.tickS += dt;
-      if (puddle.tickS < PUDDLE_TICK_S) continue;
-      puddle.tickS %= PUDDLE_TICK_S;
-      for (const actor of [deps.player, ...(deps.hostileObjects || [])]) {
-        if (!isLiveActor(actor) || actor === puddle.owner) continue;
-        const dist = Math.hypot(actor.x - puddle.x, actor.y - puddle.y); // Flat arena-ground radius check intentionally ignores portrait height.
-        if (dist <= puddle.radiusPx) applyEntranced(actor, puddle.owner, PUDDLE_ENTRANCED_PER_TICK);
+      if(inRuin&&actor===deps.player&&(
+        window.DevRandomRuinSimplePuzzles?.ownsPlayerMotion?.()||
+        window.DevRandomRuinLichThemes?.isProtectedPlasmAt?.(actor.x/tile,actor.y/tile)||
+        window.DevRandomRuinLichThemes?.isPlasmAt?.(actor.x/tile,actor.y/tile))){
+        clearPuddleSink(actor);
+        continue; // Ropes/checkpoints are safe; static plasm owns immersion on overlapping patches.
+      }
+      let nearest=null,nearestDist=Infinity;
+      for(const puddle of puddles){
+        if(puddle.owner===actor||puddle.areaId!==(actor.areaId||area))continue;
+        if(puddle.ruinPlasm)continue; // Tile composer owns these patches; never run a second immersion clock.
+        const dist=Math.hypot(actor.x-puddle.x,actor.y-puddle.y);
+        if(dist>puddle.radiusPx||dist>=nearestDist||actor.climbing||actor.onRope||actor._onRope)continue;
+        const support=inRuin
+          ? (actor===deps.player
+            ? (window.DevRandomRuin?.getPlayerGroundSupportY?.()??deps.playerMesh?.position?.y)
+            : window.DevRandomRuin?.getGroundSupportYAt?.(actor.x/tile,actor.y/tile))
+          : groundYAt(actor,actor.x,actor.y); // Never use the sinking presentation as the floor's true height.
+        if(Number.isFinite(support)&&Math.abs(support-puddle.groundY)>PETROLEUM_SURFACE_DEPTH+.15)continue;
+        nearest=puddle;nearestDist=dist;
+      }
+      if(!nearest){clearPuddleSink(actor);continue;}
+      const state=actor._kanthicPuddleSink||(actor._kanthicPuddleSink={elapsed:0});
+      puddleTouchedActors.add(actor);
+      state.elapsed=Math.min(PUDDLE_SINK_SECONDS,state.elapsed+dt); // Overlaps never speed up immersion.
+      const dx=nearest.x-actor.x,dy=nearest.y-actor.y,dist=Math.hypot(dx,dy);
+      const pullPx=Math.min(dist,PUDDLE_PULL_TILES_S*tile*dt*(1+state.elapsed/PUDDLE_SINK_SECONDS));
+      if(dist>.001&&pullPx>0){
+        const nx=actor.x+dx/dist*pullPx,ny=actor.y+dy/dist*pullPx;
+        const x=nx/tile,z=ny/tile;
+        const onFloor=!inRuin||!!floorSet?.has(Math.floor(x)+','+Math.floor(z));
+        const solid=inRuin&&!!window.DevRandomRuinTileOccupancy?.solidAt?.(x,z,.27,nearest.groundY+.35);
+        if(onFloor&&!solid){actor.x=nx;actor.y=ny;} // Do not pull actors through walls, doors or missing tiles.
+      }
+      if(actor===deps.player&&inRuin){
+        const height=Math.max(.9,Number(deps.playerMesh?.userData?.portraitModelHeight)||1.8);
+        window.DevRandomRuin?.syncPlayerPresentationHeight?.(nearest.groundY-state.elapsed/PUDDLE_SINK_SECONDS*height);
+      }
+      if(state.elapsed>=PUDDLE_SINK_SECONDS){
+        clearPuddleSink(actor);
+        const lethal=Math.max(10000,Number(actor.health)||0);
+        const opts={tag:'kanthic-plasm',ranged:false,attacker:nearest.owner,afflictionBonuses:{}};
+        if(actor===deps.player)deps.damagePlayer?.(lethal,nearest.x,nearest.y,0,opts);
+        else deps.damageCreature?.(actor,lethal,nearest.x,nearest.y,0,{...opts,friendlyFire:true});
+        lastEvent='plasm:immersion';
       }
     }
   }
@@ -1654,6 +1792,7 @@
   }
 
   function beginLichCast(lich, target, ability) {
+    if (window.EnemyLoadoutRules?.ruleFor('lich:'+lich.lichType)?.specialAttacks?.[ability] === false) return false;
     if (!lich || lich._banditAction || !isLiveActor(lich)) return false;
     const step = lichCastStep(lich, ability); // Existing Light Weapon attack timing/pose metadata used verbatim for the casting motion.
     const windupS = Number(step.windupS) || 0.16; // Captured once so Hronal's ground warning can be exactly 4× this cast's combined active timing.
@@ -1662,11 +1801,14 @@
     const targetY = Number(target?.y); // Target Z-plane coordinate sampled only to face the cast before its authored Windup begins.
     if (Number.isFinite(targetX) && Number.isFinite(targetY)) lich.facing = Math.atan2(targetY - lich.y, targetX - lich.x);
     lich.telegraphState = 'windup';
+    // The authored pose the player's combo plays for this same step (power already applied), so casts swing like it.
+    const stepPose = window.Combat?.comboStepPose?.(LICH_CAST_COMBO_ID, step) || null;
     lich._banditSwingAnim = step.anim || 'thrust';
-    lich._banditSwingPose = step.pose || null;
+    lich._banditSwingPose = stepPose || step.pose || null;
     lich._banditSwingDirSign = step.dirSign || 1;
-    lich._banditSwingPower = Number(step.power) || 1;
+    lich._banditSwingPower = stepPose ? 1 : (Number(step.power) || 1);
     lich._banditSwingPoseScale = 1;
+    lich._banditSwingWindupCurve = null;
     lich._lichCastingAbility = ability; // Mobile diagnostics distinguish projectile and summon gestures while the shared staged action is active.
     const onStrike = () => {
       lich.telegraphState = 'strike';
@@ -1699,13 +1841,18 @@
   function updateLichAI(lich, dt, target, distToTarget) {
     if (!isArena() || !isLiveActor(lich)) return { aimAngle: lich.facing || 0, moving: false, handled: true };
     target = target && Number(target.health) > 0 ? target : deps.player; // Shared hostile loop normally passes player; fallback keeps arena-spawned liches deterministic.
-    if (!isLiveActor(target)) return { aimAngle: lich.facing || 0, moving: false, handled: true };
+    if (!isLiveActor(target)) {
+      window.SpecialHarlyaoLiches?.handleAI?.(lich, dt, null, deps, lich.facing || 0, Infinity); // Cancel Nanahi's tracked icicle emitter when no living opponent remains.
+      return { aimAngle: lich.facing || 0, moving: false, handled: true };
+    }
     const def = typeDef(lich.lichType); // Tradition tuning supplies preferred combat ring and cast cadence.
     const dx = target.x - lich.x; // Horizontal vector to target used for facing/movement.
     const dy = target.y - lich.y; // Z-plane vector to target used for facing/movement.
     const dist = Number.isFinite(distToTarget) ? distToTarget : Math.hypot(dx, dy); // Current distance in pixels for tactical thresholds.
     const aimAngle = Math.atan2(dy, dx); // Body facing returned to the shared hostile loop.
-    updateCommand(lich, target, dist);
+    // Kanthic fights now deny space with plasm, never commanding the player's direction.
+    const specialDecision = window.SpecialHarlyaoLiches?.handleAI?.(lich, dt, target, deps, aimAngle, dist); // Boss-exclusive phases are layered on top of the existing lich AI.
+    if (specialDecision) return specialDecision;
 
     lich._lichPrimaryCooldownS = Math.max(0, (lich._lichPrimaryCooldownS || 0) - dt);
     lich._lichSummonCooldownS = Math.max(0, (lich._lichSummonCooldownS || 0) - dt);
@@ -1748,7 +1895,10 @@
     const baseGroundLift = Number(lich._lichBaseGroundLift) || Number(lich.halfHeight) || Number(lich.avatarRef?.modelHeight) * 0.5 || 0.45; // Grounded baseline remains the collision/simulation origin.
     const legs = lich.avatarRef?.legs; // Existing two-bone procedural leg handle attached by BanditCombat's humanoid portrait builder.
     const hovering = isArena() && isLiveActor(lich) && !lich.prone; // Knockdown explicitly brings a lich back to ground instead of ragdolling in midair.
-    legs?.setHoverMode?.(hovering);
+    const hoverTarget = hovering ? (lich.isSpecialLich && Number(lich._specialHoverTarget) === 0 ? 0 : 1) : 0; // Nanahi's kneel can ground her; Azgarlu's melee never switches off hovering.
+    const oldBlend = Number.isFinite(lich._specialHoverBlend) ? lich._specialHoverBlend : hoverTarget; // Lerp state is per-entity, independent of other liches.
+    lich._specialHoverBlend = lich.isSpecialLich ? oldBlend + (hoverTarget - oldBlend) * Math.min(1, Math.max(0, dt) * 3.2) : hoverTarget;
+    legs?.setHoverMode?.(hovering && lich._specialHoverBlend > .45);
     if (!hovering) {
       lich.groundLift = baseGroundLift;
       lich._lichHoverOffsetWorld = 0;
@@ -1759,40 +1909,66 @@
     const hoverHeight = Math.max(HOVER_HEIGHT_MIN_WORLD, modelHeight * HOVER_HEIGHT_MODEL_FRACTION); // Main static separation above ordinary ground-following minions.
     const bobAmplitude = modelHeight * HOVER_BOB_MODEL_FRACTION; // Gentle secondary float, deliberately much smaller than the main lift.
     const bob = Math.sin((lich._lichHoverClockS / HOVER_BOB_PERIOD_S) * Math.PI * 2) * bobAmplitude;
-    lich._lichHoverOffsetWorld = hoverHeight + bob;
-    lich.groundLift = baseGroundLift + lich._lichHoverOffsetWorld; // Existing creature renderer applies this presentation lift without changing X/Z AI/collision.
+    const aerialOffset = lich.specialLichId==='azgarlu' ? (Number(lich._specialHoverOffsetWorld)||0) : 0; // Azgarlu's current lunge/dodge altitude composes with, rather than replaces, natural lich bobbing.
+    lich._lichHoverOffsetWorld = (hoverHeight + aerialOffset + bob) * lich._specialHoverBlend;
+    const kneel = lich.lichType === 'tothal' && lich.isSpecialLich ? Math.max(0, Math.min(1, Number(lich._specialKneelBlend) || 0)) : 0; // Nanahi's head/torso descends toward the sanctum floor during the deadly barrage.
+    const crouch = modelHeight * .20 * kneel; // Visual-only crouch; combat collision and damage hitbox retain their normal authoritative size.
+    lich.groundLift = baseGroundLift + lich._lichHoverOffsetWorld - crouch; // Existing creature renderer applies this lift without changing X/Z simulation.
+    if (kneel > .12 && legs?.getRestStance && legs?.applyWorldFootTargets && window.THREE?.Vector3) {
+      const stance = legs.getRestStance(); // Actual per-species knee/ankle rig, not an independent fake limb mesh.
+      const root = legs.group; // Pose solver owns these same thigh/calf bones for normal walking and pants.
+      if (root?.localToWorld && stance.left && stance.right) {
+        root.updateWorldMatrix?.(true,false);
+        const foot = (side, forward) => {
+          const a = stance[side].ankle; // Use current feet as anchors; one kneels back while the other braces forward.
+          return root.localToWorld(new THREE.Vector3(a.x, a.y + crouch, a.z + forward * modelHeight * kneel));
+        };
+        legs.applyWorldFootTargets({left:foot('left',-.19),right:foot('right',.15)}); // Real two-bone IK folds the legs into an asymmetric knee-down braced stance.
+      }
+    }
   }
 
   function updateRuntime(dt) {
     if (!(dt > 0)) return;
     if (!isArena()) {
+      window.DevRandomRuinLichThemes?.clearArenaBossPillars?.(); // Arena summons cannot outlive a map switch.
+      window.SpecialHarlyaoLiches?.clear?.(); // Dispose charge remnants when leaving the arena or dungeon.
       for (const projectile of [...projectiles]) disposeProjectile(projectile); // Custom spell objects never survive a Testing Arena transition.
       for (const erupt of [...eruptions]) disposeHronalEruption(erupt); // Overlapping Erupting Earth warnings/lava are arena-local scene state.
       for (const puddle of [...puddles]) disposePetroleumPuddle(puddle); // Petroleum hazards are arena-local scene state.
       if (deps?.player) {
         clearGooSlowNow(deps.player);
         clearEntrancedNow(deps.player);
+        clearPuddleSink(deps.player); // No immersion state survives a zone transition.
       }
       for (const actor of deps?.hostileObjects || []) {
         if (actor?.enemyClass === CLASS_ID || actor?.isHarlyaoLich) updateLichHoverPresentation(actor, dt); // Leaving the arena restores the grounded baseline and disables dangling hover.
         clearGooSlowNow(actor);
         clearEntrancedNow(actor);
+        clearPuddleSink(actor);
       }
+      for(const actor of puddleTouchedActors)clearPuddleSink(actor); // Includes actors removed from the live hostile set.
       updateCommandBanner();
       updateEntrancerMarker(dt);
       return;
     }
+    if(currentLichArea()==='map_dev_arena')window.DevRandomRuinLichThemes?.updateArenaBossPillars?.(dt); // Test Arena uses the same pillar rise, pulses and explosion as a real Hronal ruin.
+    else window.DevRandomRuinLichThemes?.clearArenaBossPillars?.(); // No phantom arena columns when gameplay continues inside a generated ruin.
+    window.SpecialHarlyaoLiches?.updateEffects?.(dt); // Bound charged-plasm particle work to one tick per frame.
     updateProjectiles(dt);
     updateEruptions(dt);
     updatePuddles(dt);
     if (deps?.player) {
       clearExpiredSlow(deps.player);
-      updateEntrancedTarget(deps.player, dt);
+      if(deps.player._entrancedCommandState)clearEntrancedNow(deps.player); // Clear legacy control on a hot reload rather than extending it.
     }
     for (const actor of deps?.hostileObjects || []) {
-      if (actor?.enemyClass === CLASS_ID || actor?.isHarlyaoLich) updateLichHoverPresentation(actor, dt); // Hover remains updated even if prone logic bypasses the lich AI for this frame.
+      if (actor?.enemyClass === CLASS_ID || actor?.isHarlyaoLich) {
+        window.SpecialHarlyaoLiches?.tick?.(actor, dt); // Boss-only animated poses and material drips update before hover presentation.
+        updateLichHoverPresentation(actor, dt);
+      }
       clearExpiredSlow(actor);
-      updateEntrancedTarget(actor, dt);
+      if(actor._entrancedCommandState)clearEntrancedNow(actor); // No new movement commands are issued by lich attacks.
     }
     updateCommandBanner();
     updateEntrancerMarker(dt);
@@ -1820,7 +1996,11 @@
       const baseToolMeshUpdate = BanditCombat.updateToolMesh.bind(BanditCombat); // Preserves EnemyWeaponStances/player-parity Light Weapon pose preparation before hand placement.
       BanditCombat.updateToolMesh = function harlyaoLichToolMesh(entity, ...args) {
         const result = baseToolMeshUpdate(entity, ...args);
-        if (entity?.enemyClass === CLASS_ID || entity?.isHarlyaoLich) syncLichCastHand(entity); // Right hand follows the invisible weapon object through the existing attack animation.
+        if(entity?.specialLichId==='azgarlu' && (entity._banditAction || entity._banditToolTail)) {
+          const holder=entity._banditToolHolder; // The real warhammer holder already owns the shared authored swing angles.
+          if(holder?.rotateX)holder.rotateX(Number(entity._banditAimPitch)||0); // Tilt the actual held weapon up/down during windup, strike and Hold.
+        }
+        if (entity?.enemyClass === CLASS_ID || entity?.isHarlyaoLich) syncLichCastHand(entity); // Right hand follows the currently equipped weapon's pitched grip.
         return result;
       };
     }
@@ -1853,12 +2033,13 @@
     const grace = entrancedGraceDisplay(playerCommandState);
     return {
       classId: CLASS_ID, arenaOnly: ARENA_ID, wrappersInstalled,
-      activeLiches: liches.map(lich => ({ id: lich.id, type: lich.lichType, dye: lich.lichDyeId, resolvedDyes: lich.avatarRef?.resolvedRosterDyes || null, command: lich._lichCommand, casting: lich._lichCastingAbility || null, hovering: !!lich.avatarRef?.legs?.isHoverMode?.(), hoverOffset: Number(lich._lichHoverOffsetWorld) || 0, handRig: !!handRigForLich(lich), emptyLightWeapon: !!lich._lichCastWeaponSocket, primaryCd: lich._lichPrimaryCooldownS, summonCd: lich._lichSummonCooldownS, summons: [...(lich._lichSummons || [])].filter(isLiveActor).length })),
+      activeLiches: liches.map(lich => ({ id: lich.id, name: lich.name, givenName: lich.lichGivenName || null, surname: lich.lichSurname || null, type: lich.lichType, dye: lich.lichDyeId, resolvedDyes: lich.avatarRef?.resolvedRosterDyes || null, command: lich._lichCommand, casting: lich._lichCastingAbility || null, hovering: !!lich.avatarRef?.legs?.isHoverMode?.(), hoverOffset: Number(lich._lichHoverOffsetWorld) || 0, aerialOffset: Number(lich._specialHoverOffsetWorld)||0, comboStep: Number(lich._specialComboStep)||0, comboLeftMs: Math.max(0,(Number(lich._specialComboUntilMs)||0)-performance.now()), strikeHoldLeftMs: Math.max(0,(Number(lich._specialStrikeHoldUntilMs)||0)-performance.now()), specialMode: lich._specialMode||null, dodging: !!lich.dodging, lunging: !!lich._specialLunge, handRig: !!handRigForLich(lich), emptyLightWeapon: !!lich._lichCastWeaponSocket, primaryCd: lich._lichPrimaryCooldownS, summonCd: lich._lichSummonCooldownS, summons: [...(lich._lichSummons || [])].filter(isLiveActor).length })),
+      specialLiches: window.SpecialHarlyaoLiches?.snapshot?.() || null, // Mobile debug source for named-boss effects and current stage.
       projectiles: projectiles.size,
       tothalFogOrbs: [...projectiles].filter(projectile => projectile.type === 'tothal').length,
       eruptions: eruptions.size,
       hronalStoneInstances: [...eruptions].reduce((sum, erupt) => sum + (erupt.particles?.length || 0), 0), // On-demand diagnostic proves the bounded instanced stone load across overlapping warnings.
-      puddles: puddles.size, totalPuddles, totalSummons,
+      puddles: puddles.size, puddleLimit:PUDDLE_MAX_ACTIVE, puddleLifetimeS:PUDDLE_LIFETIME_S, playerPlasmSinkPct:Math.round(100*(deps?.player?._kanthicPuddleSink?.elapsed||0)/PUDDLE_SINK_SECONDS), totalPuddles, totalSummons,
       playerEntranced, playerCommand: playerCommandState?.source?._lichCommand || null,
       playerEntrancerId: playerCommandState?.source?.id || null,
       playerCommandGrace: grace ? { phase: grace.phase, countdown: grace.countdown, remainingMs: Math.max(0, playerCommandState.graceUntil - performance.now()) } : null,
@@ -1876,14 +2057,18 @@
     allowArea: areaId => { if (areaId) allowedAreas.add(String(areaId)); }, // Opt another area in (e.g. the Random Test Ruin's boss sanctum).
     disallowArea: areaId => { if (areaId && areaId !== ARENA_ID) allowedAreas.delete(String(areaId)); },
     installWrappers, makeEntity, rosterFor, rollDye,
+    lichCastStep, updateLichHoverPresentation, prepareEmptyCastWeapon, LICH_CAST_WEAPON_KEY, // Also used by unarmed shadow-wind Wyrm-witches (ghoul-special-variants.js). // Shared animation/presentation authority for isolated loadout previews.
     updateLichAI, applyEntranced, addGooSlow, clearExpiredSlow, makeGasolinePuddle, makeEruptingEarth,
     debugSnapshot,
     formatDebug() {
       const d = debugSnapshot(); // Compact status line intended for Pixel Probe/mobile-copyable diagnostics.
       const hover = d.activeLiches.filter(lich => lich.hovering).map(lich => `${lich.id || lich.type}:${lich.hoverOffset.toFixed?.(2) || lich.hoverOffset}`).join(',') || '-'; // Compact mobile-readable proof that active liches are using airborne presentation.
+      const special = d.specialLiches ? (' special=' + d.specialLiches.event + '/p' + d.specialLiches.plasmPatches + '/d' + d.specialLiches.drips) : ''; // Appends boss state to the existing Pixel Probe line.
+      const azgarlu = d.activeLiches.filter(lich => lich.type==='hronal' && lich.specialMode).map(lich => `${lich.specialMode}/step${lich.comboStep}/combo${Math.ceil(lich.comboLeftMs)}ms/hold${Math.ceil(lich.strikeHoldLeftMs)}ms/alt${lich.aerialOffset.toFixed(2)}${lich.dodging?'/dodge':''}${lich.lunging?'/lunge':''}`).join(',') || '-'; // Mobile Pixel Probe exposes attack-combo retention and active air flight without DevTools.
+      const names = d.activeLiches.map(lich => lich.name || lich.type).join(',') || '-'; // Mobile debug exposes the generated, player-facing identity of every active lich.
       const hands = d.activeLiches.map(lich => `${lich.id || lich.type}:${lich.handRig ? 'hands' : 'NO-HANDS'}`).join(',') || '-'; // Exposes the exact rig-attachment failure class without requiring desktop devtools.
       const dyes = d.activeLiches.map(lich => `${lich.id || lich.type}:${Object.entries(lich.resolvedDyes || {}).map(([slot, rec]) => `${slot}=${rec?.dyeId || '?'}`).join('+') || 'NO-DYES'}`).join(',') || '-'; // Confirms world-raster dye reconciliation independently from loot metadata.
-      return `Harlyao Liches: live=${d.activeLiches.length} hover=${hover} hands=${hands} dyes=${dyes} projectiles=${d.projectiles}/fog=${d.tothalFogOrbs} earth=${d.eruptions} puddles=${d.puddles} summons=${d.totalSummons} entranced=${d.playerEntranced.toFixed?.(1) || d.playerEntranced} command=${d.playerCommand || '-'} grace=${d.playerCommandGrace ? (d.playerCommandGrace.countdown || d.playerCommandGrace.phase) : '-'} move=${d.playerEntrancedManeuver || '-'} appliers=${d.liveEntrancedApplicators} controller=${d.playerEntrancerId || '-'} marker=${d.entrancerMarker?.ringVisible ? 'ring' : '-'}+${d.entrancerMarker?.auraVisible ? `aura:${d.entrancerMarker.auraCommand || '?'}` : '-'} edge=${d.entrancerMarker?.behindCamera ? 'behind' : '-'} goo=${d.playerGooSlow?.stacks || 0} last=${d.lastEvent}`;
+      return `Harlyao Liches: live=${d.activeLiches.length} names=${names} hover=${hover} hands=${hands} dyes=${dyes} projectiles=${d.projectiles}/fog=${d.tothalFogOrbs} earth=${d.eruptions} plasm=${d.puddles}/${d.puddleLimit} sink=${d.playerPlasmSinkPct}% summons=${d.totalSummons} goo=${d.playerGooSlow?.stacks || 0} azgarlu=${azgarlu} last=${d.lastEvent}${special}`;
     },
   };
   window.__lichDebug = { snapshot: debugSnapshot }; // Console-independent API also consumed by the existing mobile debug surfaces/tests.

@@ -146,6 +146,7 @@
         if (!alreadyNaturalRock && !materials.includes(rockMaterial)) return;
         const wasNaturalRock = alreadyNaturalRock;
         naturalizeRockRoot(object);
+        if (object.userData?.farmLooseRockMound && !object.userData?.oreRockSurfaceMapped) window.OreRockTextures?.fitRockMesh?.(object, `farm:${object.position.x},${object.position.z}`); // Fit after naturalization once; subsequent farm updates must not reallocate every existing mound.
         if (!wasNaturalRock) stats.farmRockMeshesStyled++;
         changed++;
       });

@@ -9,6 +9,7 @@ let now = 1000; // Deterministic performance clock used for enemy iframe asserti
 let activeThreat = null; // Current player windup returned to the enemy dodge controller.
 let originalInitDeps = null; // Confirms the BanditCombat initialization wrapper preserves dependencies.
 let observedMoveSpeed = null; // Captures the weight-adjusted speed seen inside the original enemy AI.
+const dodgeVoices = []; // Captures successful enemy dodge vocal triggers.
 let staminaSpent = 0; // Captures the real shared ResourceSystem dodge cost.
 
 const player = { x: 0, y: 0, angle: 0, health: 100 }; // Player attacker used by threat cone calculations.
@@ -58,7 +59,7 @@ const ResourceSystem = {
   spendStamina(_entity, amount) { staminaSpent += amount; return { spent: amount, excess: 0 }; },
 };
 
-const windowStub = { BanditCombat, ClothingWeavingSystem, Combat, ResourceSystem };
+const windowStub = { BanditCombat, ClothingWeavingSystem, Combat, ResourceSystem, CombatVocalizations: { playDodge: entity => dodgeVoices.push(entity) } };
 const context = vm.createContext({ window: windowStub, performance: { now: () => now }, Date, Math, console });
 vm.runInContext(fs.readFileSync('docs/js/combat/combat-enemy-dodge.js', 'utf8'), context, { filename: 'combat-enemy-dodge.js' });
 
@@ -99,6 +100,7 @@ assert.equal(originalInitDeps, deps, 'enemy dodge wrapper preserves BanditCombat
   const start = windowStub.BanditCombat.updateCombatAI(enemy, 0.016, player, 70); // First frame commits the rank-based reaction.
   assert.equal(start.moving, true);
   assert.equal(enemy.dodging, true);
+  assert.deepEqual(dodgeVoices, [enemy], 'successful enemy dodge vocalizes exactly once');
   assert.equal(staminaSpent, 18, 'enemy dodge spends the configured shared Stamina cost');
   assert(Math.abs(enemy.dodgeT - 0.17) < 1e-12, 'six weight units reduce enemy dodge duration/travel to 85%');
   assert.equal(enemy.invulnUntil, now + 340, 'enemy iframe duration uses the same 85% outfit efficacy');
@@ -109,6 +111,7 @@ assert.equal(originalInitDeps, deps, 'enemy dodge wrapper preserves BanditCombat
   assert(Math.abs(enemy.y - before.y) > 9.9, 'enemy dodge performs real swept movement');
 
   while (enemy.dodging) windowStub.BanditCombat.updateCombatAI(enemy, 0.1, player, 70);
+  assert.equal(dodgeVoices.length, 1, 'continued enemy dodge movement does not repeat its utterance');
   assert.equal(enemy.avatarRef.group.rotation.z, 0, 'roll presentation resets exactly when dodge movement ends');
   activeThreat = null;
   enemy._enemyDodgeCooldownT = 0;

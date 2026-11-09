@@ -28,6 +28,8 @@
     'dabinggi-hound': '🐕',
     grehlr: '🐈',
     drenkirra: '🦎',
+    moot: '🐾', // Displayed on the Nursery baby list for Moot offspring.
+    pingdort: '🐦', // Fertile wild flock eggs hatch in the existing nursery and barn facilities.
   };
   const SPECIES_LABELS = {
     uumkaoii: "Uumkao'ii",
@@ -35,6 +37,8 @@
     'dabinggi-hound': 'Dabinggi Hound',
     grehlr: 'Grehlr',
     drenkirra: 'Drenkirra',
+    moot: 'Moot', // Keeps the Ranch starter's juvenile name consistent with its adult creature label.
+    pingdort: 'Pingdort', // Shares inherited Stable size and coat lineage.
   };
 
   let animalDeps = null; // Captures FarmAnimals' existing injected save/world/permission seam.
@@ -497,8 +501,8 @@
 
     const speciesDef = animalDeps?.CREATURE_DB?.[entry.kind] || {};
     const configuredWidths = window.SCRATCHBONES_CONFIG?.game?.livestock?.animalWidths || {};
-    const adultWidth = entry.kind === 'uumkaoii' ? 1.275 : (Number(configuredWidths[entry.kind]) || 1.7);
-    const spriteAspect = Number(speciesDef.spriteAspect) || (600 / 1375);
+    const adultWidth = entry.kind === 'uumkaoii' ? 1.275 * (600 / 1375) / (451 / 641) : (Number(configuredWidths[entry.kind]) || 1.7); // Match Uumkao'ii's standing adult width after source-aspect correction.
+    const spriteAspect = Number(speciesDef.spriteAspect) || (entry.kind === 'uumkaoii' ? 451 / 641 : 600 / 1375);
     const sizeScale = window.CreatureGenetics?.creatureSizeScale?.(entry.kind, entry.genotype) || { x: 1, y: 1 };
     const modelWidth = adultWidth * BABY_SCALE;
     const modelHeight = adultWidth * spriteAspect * BABY_SCALE;
@@ -741,6 +745,8 @@
     const section = document.createElement('div');
     section.id = 'livestockNurserySection';
     section.setAttribute('data-ctrl-group', '');
+    section.setAttribute('data-ctrl-subtab', '');
+    section.setAttribute('aria-label', 'Nursery Babies');
     section.style.cssText = 'border:1px solid var(--border,#4b443a);border-radius:8px;padding:7px 8px;margin:0 0 8px;background:rgba(255,220,160,.055);';
     section.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px;">
       <strong><button type="button" class="livestock-nursery-toggle" data-ctrl-group-open aria-expanded="${farmBabyInventoryCollapsed ? 'false' : 'true'}" style="border:0;background:transparent;color:inherit;padding:0;text-align:left;font:inherit;font-weight:800;cursor:pointer;">${farmBabyInventoryCollapsed ? '▸' : '▾'} 🍼 Nursery · ${babyList.length} babies</button></strong>
@@ -842,6 +848,16 @@
       toggleFarmInventory();
     });
     section.appendChild(gridToggle);
+    let adults = container.querySelector('#livestockNurseryAdults'); // Reuse the adult section across repeat decoration instead of nesting wrappers.
+    if (!adults) {
+      adults = document.createElement('div');
+      adults.id = 'livestockNurseryAdults';
+      adults.setAttribute('data-ctrl-subtab', '');
+      adults.setAttribute('aria-label', 'Adult Livestock');
+      while (container.firstChild) adults.appendChild(container.firstChild);
+      container.appendChild(adults);
+    }
+    container.setAttribute('data-ctrl-group', '');
     container.prepend(section);
   }
 
@@ -903,19 +919,8 @@
 
   function decoratePanelNow() {
     if (panelDecorating || typeof document === 'undefined') return;
-    // installPanelObserver watches the WHOLE document.body subtree for any
-    // mutation at all, so this fires on essentially every HUD/UI update in
-    // the game, not just ones inside the Farm panel. Both #farmLivestockList
-    // and #farmBuildingsList only exist inside the Farm tab's .mp-pane,
-    // which -- like every other menu pane in this game -- stays mounted in
-    // the DOM while closed rather than being removed, so without this check
-    // decoratePanelNow() ran its full rebuild (including a real,
-    // uncached save-blob parse via currentLivestock()) on every one of those
-    // mutations for as long as the game was open, regardless of whether the
-    // player had the Farm tab open at all. Found via direct call-frequency
-    // instrumentation: thousands of calls even while sitting completely idle
-    // away from any menu. classList checks here are cheap (no forced
-    // layout), unlike a getBoundingClientRect()/getComputedStyle() check.
+    // Farm panes stay mounted while closed. Explicit render hooks may queue
+    // decoration in the background; defer the rebuild until the Farm is open.
     const menuOpen = document.getElementById('menuPanel')?.classList.contains('open');
     const farmPaneActive = document.getElementById('mpFarm')?.classList.contains('active');
     if (!menuOpen || !farmPaneActive) return;
@@ -943,18 +948,21 @@
   function installPanelObserver() {
     if (panelObserver || typeof MutationObserver === 'undefined' || !document.body) return;
     panelObserver = new MutationObserver(records => {
+      const lists = '#farmLivestockList, #farmBuildingsList'; // Only the core Farm lists and their replacements invalidate decoration.
       const relevant = records.some(record => {
-        if (record.target?.closest?.('[data-nursery-incubation]')) return false;
-        if (record.target?.closest?.('.nursery-grid-disclosure')) return false; // Header label updates belong to the grid and must not rebuild their own section.
-        const changed = [...record.addedNodes, ...record.removedNodes]; // The grid owns its inline incubation controls; their updates must not recreate the Nursery.
-        return changed.some(node => !node.matches?.('[data-nursery-incubation]'));
+        // Grid selection, async portraits, paging and select-stepper wrapping
+        // own their DOM. Recreating it here loses focus and incubation choice.
+        if (record.target?.closest?.('#livestockNurserySection')) return false;
+        const changed = [...record.addedNodes, ...record.removedNodes]; // Includes detached list replacements as well as new rows.
+        if (record.target?.closest?.(lists)) {
+          return changed.some(node => !node.matches?.('#livestockNurserySection'));
+        }
+        return changed.some(node => node.matches?.(lists) || node.querySelector?.(lists));
       });
       if (relevant) queuePanelDecoration();
     });
-    // #farmLivestockList/#farmBuildingsList only ever exist inside #menuPanel
-    // (see decoratePanelNow's comment), so watching document.body's entire
-    // subtree meant any HUD/UI mutation anywhere queued this check for no
-    // reason, even with the menu fully closed.
+    // Keep ancestor replacement detection, but unrelated menu updates must
+    // never rebuild the Nursery while the player is navigating its actions.
     panelObserver.observe(document.getElementById('menuPanel') || document.body, { childList: true, subtree: true });
     queuePanelDecoration();
   }
@@ -987,7 +995,7 @@
     const babyRecords = records.filter(isBaby); // Reused for the snapshot's baby list/count.
     const adultRecords = records.filter(entry => !isBaby(entry)); // Reused for the snapshot's adult count.
     return {
-      mostRecentChange: 'Nursery is a controller focus nest: A enters baby details; B returns to that baby, then exits the Nursery.',
+      mostRecentChange: 'Nursery navigation preserves focus and incubation destination during grid, stepper and unrelated menu updates.',
       nursery: nursery && { id: nursery.id, col: nursery.col, row: nursery.row, w: nursery.w, h: nursery.h, tier: nursery.tier },
       currentArea: currentArea(),
       babies: babyRecords.map(entry => ({ id: entry.id, name: entry.name, kind: entry.kind, size: entry.genotype?.sizeClass })),
@@ -997,6 +1005,7 @@
       adultCapacity: adultCapacity(),
       overCapacityBy: Math.max(0, adultRecords.length - adultCapacity()),
       farmMenu: farmMenuDebugSnapshot(records),
+      babyArrival: window.AnimalBabyArrival?.debugSnapshot?.() || null, // Nursery Debug copies active/queued naming dialogs on mobile.
       visibleLimit: NURSERY_VISIBLE_LIMIT,
       visibleIds: [...swarmVisibleIds],
       babyScale: BABY_SCALE,
@@ -1066,6 +1075,18 @@
         animalDeps.saveWorldLivestock?.(list);
       }
       ensureNurseryBuilding();
+      if (entry) window.AnimalBabyArrival?.requestName?.(entry, {
+        scope: 'nursery',
+        commit: name => {
+          const records = currentLivestock(); // Re-read the world-scoped Nursery state before changing a name.
+          const target = records.find(record => record.id === entry.id); // No edits to stale records after world switches.
+          if (!target) return false;
+          target.name = name;
+          animalDeps?.saveWorldLivestock?.(records);
+          return true;
+        },
+        refresh: () => { window.FarmPanel?.render?.(); queuePanelDecoration(); },
+      });
       queuePanelDecoration();
       return { ...result, entry, message: `${entry?.name || 'The baby'} moved into the Nursery and will stay a baby until you choose Grow Up.` };
     };
@@ -1148,7 +1169,24 @@
           entry.assignedVatId = null;
           changed = true;
         }
-        if (changed) animalDeps.saveWorldLivestock?.(list);
+        if (changed) {
+          animalDeps.saveWorldLivestock?.(list);
+          for (const baby of list) {
+            if (before.has(baby.id) || !isBaby(baby)) continue;
+            window.AnimalBabyArrival?.requestName?.(baby, {
+              scope: 'nursery',
+              commit: name => {
+                const records = currentLivestock(); // Fresh world records, not the gestation tick's temporary array.
+                const target = records.find(record => record.id === baby.id); // Newborn must still exist when named.
+                if (!target) return false;
+                target.name = name;
+                animalDeps?.saveWorldLivestock?.(records);
+                return true;
+              },
+              refresh: () => { window.FarmPanel?.render?.(); queuePanelDecoration(); },
+            });
+          }
+        }
         queuePanelDecoration();
       }
     };

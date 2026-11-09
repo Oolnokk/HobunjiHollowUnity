@@ -52,7 +52,7 @@
     nest_stolen: { match: e => e.type === 'nest_stolen' },
   };
   const LOSS_RULES = {
-    barbarian_killed: e => e.type === 'creature_killed' && e.isBarbarian,
+    barbarian_killed: e => e.type === 'creature_killed' && e.isBarbarian && !e.selfDefense, // Defending yourself from hostile barbarians is no loss.
     nest_stolen: e => e.type === 'nest_stolen',
   };
 
@@ -68,6 +68,7 @@
       date: null, // { npcId, mode: 'follow'|'wait', startHour, endHour, waitSpot, likeCounts, likeLastHour, romanceGained, startedRawDay }
       dateCounts: {}, // npcId → completed dates
       lastDateRawDay: {}, // npcId → raw day of the most recent date
+      lastDatedNpcId: null, // Last person the player actually started a date with; persists independently of the active date.
       engagement: null, // { npcId, proposedRawDay, weddingFromRawDay }
       spouse: null, // { npcId, marriedRawDay, marriedHourStamp }
       family: null, // owned by js/romance-family.js
@@ -119,7 +120,8 @@
   function toast(message, good = true) { deps?.showToast?.(message, good); }
   function say(walker, text, accepted = true) {
     if (!walker || !text) return;
-    if (window.AmbientDialogue?.showAlcoholOfferResponse) window.AmbientDialogue.showAlcoholOfferResponse(walker, { text, line: text, accepted, reason: 'romance' });
+    const response = window.AmbientDialogue?.showSocialResponse || window.AmbientDialogue?.showAlcoholOfferResponse; // Shared directed chathead speech for invitations and ongoing date commands.
+    if (response) response(walker, { text, line: text, accepted, reason: 'romance' });
     else toast(`${walker.rec?.name || 'They'}: ${text}`, accepted);
   }
   function showRomancePopup(npcId, amount) {
@@ -191,7 +193,7 @@
     if (!npcId) return false;
     const check = askEligibility(npcId);
     if (!check.ok) {
-      if (check.line) converse(walker, [{ text: check.line }]);
+      if (check.line) say(walker, check.line, false);
       return false;
     }
     const hours = num(cfg().dateDurationHours, 4);
@@ -204,6 +206,7 @@
   }
 
   function startDate(npcId) {
+    window.NpcFollowing?.clearRetreat?.(npcId); // New dates must not inherit a previous companion's hiding place.
     const start = hourStamp();
     state.date = {
       npcId,
@@ -217,6 +220,8 @@
       startedRawDay: rawDay(),
     };
     state.lastDateRawDay[npcId] = rawDay();
+    state.lastDatedNpcId = npcId; // The latest date replaces the prior partner even if it ends early.
+    say(findWalker(npcId), "I'd love to. Let's go together!");
     toast(`💕 You're on a date with ${npcName(npcId)} for ${num(cfg().dateDurationHours, 4)} hours.`, true);
     persist();
     return true;
@@ -227,6 +232,7 @@
     if (!date || (mode !== 'follow' && mode !== 'wait')) return false;
     const walker = findWalker(date.npcId);
     date.mode = mode;
+    window.NpcFollowing?.clearRetreat?.(date.npcId); // Follow/Wait transitions cancel stale cover commitments.
     if (mode === 'wait') {
       const pos = walker?.root?.position;
       date.waitSpot = walker && pos ? { area: walker.area, c: Math.floor(pos.x), r: Math.floor(pos.z) } : null;
@@ -255,6 +261,7 @@
     if (!date) return;
     const walker = findWalker(date.npcId);
     if (walker) walker.catchup = 1;
+    window.NpcFollowing?.clearRetreat?.(date.npcId); // Date expiry/dismissal releases the old refuge.
     if (reason === 'expired') {
       const nearby = walker && walker.area === currentNpcArea() && distanceToPlayerTiles(walker) <= num(cfg().likeAwareRadiusTiles, 14) * 1.5;
       if (date.mode === 'wait' && !nearby) applyLoss(date.npcId, 'date_abandoned');
@@ -463,6 +470,25 @@
     persist();
   }
 
+  function getLastDatedNpcId() {
+    if (state.date?.npcId) return state.date.npcId;
+    if (state.lastDatedNpcId) return state.lastDatedNpcId;
+    // Legacy saves only have day-level history: recover the latest if it is unambiguous.
+    const latest = Object.entries(state.lastDateRawDay || {}).filter(([id, day]) => id && Number.isFinite(Number(day))).sort((a, b) => Number(b[1]) - Number(a[1]));
+    return latest.length && (!latest[1] || Number(latest[0][1]) > Number(latest[1][1])) ? latest[0][0] : null;
+  }
+
+  function spouseDialogueFor(npcId) {
+    if (!npcId || state.spouse?.npcId !== npcId) return null;
+    const dialogue = cfg().spouse?.dialogue || {}; // Configured dialogue layer, consulted only for the actual player spouse.
+    const authored = dialogue.byNpc?.[npcId] || {}; // Individual NPC's affectionate language wins over the shared default.
+    const nickname = window.CharacterNicknames?.forRelationship?.(playerAppearance().name, 'affectionate', playerAppearance().gender)
+      || String(authored.nickname || dialogue.nickname || 'love').trim(); // New short-y form; legacy endearments remain a fallback if the nickname module is unavailable.
+    const greetings = Array.isArray(authored.greetings) && authored.greetings.length
+      ? authored.greetings : (Array.isArray(dialogue.greetings) ? dialogue.greetings : []); // Spouse-only greeting pool for event-time selection.
+    return { nickname, greetings };
+  }
+
   // ── Spouse routine ────────────────────────────────────────────────────
   function hashInt(text) {
     let h = 2166136261;
@@ -502,12 +528,33 @@
     const bed = beds.find(obj => obj.key === 'doubleBed') || beds[0];
     if (!bed) return null;
     const spot = nearestWalkable('interior', bed.col, bed.row, 2);
-    return spot ? { area: 'interior', c: spot.c, r: spot.r, rotY: bed.rotYDeg || 0, bed } : null;
+    return spot ? {
+      area: 'interior', c: spot.c, r: spot.r, rotY: bed.rotYDeg || 0, bed,
+      pose: 'lie', furnitureId: bed.id || '', bedCol: bed.col, bedRow: bed.row, bedCenter: true,
+    } : null; // Navigate to a walkable tile, then place the sleeping rig over the referenced bed's center.
   }
   function seatStations() {
     const find = window.NpcScheduling?.findStationsByRole;
     if (!find) return [];
     return [...find('sit', { area: 'interior' }), ...find('sit', { area: 'farm' })];
+  }
+
+  // Single source of truth for town visits, also consumed by farm-plot workers so marriage
+  // never suppresses the Ginju's real field work on an authorized town afternoon.
+  function spouseTownVisitNow(npcId) {
+    if (!npcId || state.spouse?.npcId !== npcId || state.date?.npcId === npcId) return false;
+    if (window.RomanceFamily?.spouseHoldingEgg?.()) return false;
+    const scfg = cfg().spouse || {};
+    const sleep = scfg.sleepHours || { start: 22, end: 7 };
+    const hour = clockHour();
+    if (inHourWindow(hour, num(sleep.start, 22), num(sleep.end, 7))) return false;
+    const town = scfg.townVisitsByNpc?.[npcId] || scfg.townAfternoon || { start: 12, end: 17, daysOfWeekMod: 3 };
+    const weekdays = Array.isArray(town.weekdays) ? town.weekdays : null;
+    const mod = Math.max(1, Math.floor(num(town.daysOfWeekMod, 3)));
+    const visitDay = weekdays?.length
+      ? weekdays.includes(window.CalendarSystem?.currentWeekdayName?.())
+      : (rawDay() + hashInt(npcId)) % mod === 0;
+    return visitDay && inHourWindow(hour, num(town.start, 12), num(town.end, 17));
   }
 
   // Spouse target: sleep in the farmhouse bed, sit in chairs, potter around
@@ -522,11 +569,11 @@
     const sleep = scfg.sleepHours || { start: 22, end: 7 };
     if (inHourWindow(hour, num(sleep.start, 22), num(sleep.end, 7))) {
       const bed = bedSpot();
-      if (bed) return { area: bed.area, c: bed.c, r: bed.r, rotY: bed.rotY, activity: 'sleeping', stationId: 'spouse_bed' };
+      if (bed) return { ...bed, activity: 'sleeping', stationId: 'spouse_bed' };
     }
-    const town = scfg.townAfternoon || { start: 12, end: 17, daysOfWeekMod: 3 };
-    const mod = Math.max(1, Math.floor(num(town.daysOfWeekMod, 3)));
-    if (inHourWindow(hour, num(town.start, 12), num(town.end, 17)) && (rawDay() + hashInt(rec.id)) % mod === 0) return null; // Back in town on their old schedule.
+    if (spouseTownVisitNow(rec.id)) return null; // Resume this NPC's authored town agenda.
+    const chore = window.NpcFarmPlots?.targetFor?.(rec, { familyOnly: true }); // Existing authored town visits win; on farm days assigned plots take priority over idle time.
+    if (chore) return chore;
     const blockMinutes = Math.max(15, num(scfg.seatBlockMinutes, 90));
     const block = Math.floor(hourStamp() * 60 / blockMinutes);
     const roll = hashInt(`${rec.id}:${block}`);
@@ -558,21 +605,7 @@
     const date = state.date;
     if (!date || rec.id !== date.npcId) return null;
     if (date.mode === 'wait' && date.waitSpot) return { ...date.waitSpot, activity: 'waiting for you' };
-    const walker = findWalker(rec.id);
-    const player = playerTilePos();
-    const area = currentNpcArea();
-    if (!player || !area || !deps?.canHostNpc?.(area)) return walker ? { area: walker.area, c: Math.floor(walker.root.position.x), r: Math.floor(walker.root.position.z), activity: 'waiting for you' } : null;
-    const pc = Math.floor(player.x), pr = Math.floor(player.z);
-    if (!walker || walker.area !== area) return { area, c: pc, r: pr, activity: 'following you' };
-    const pos = walker.root.position;
-    const dx = pos.x - player.x, dz = pos.z - player.z;
-    const dist = Math.hypot(dx, dz);
-    const follow = num(cfg().followDistanceTiles, 1.7);
-    if (dist <= follow + 0.45) return { area, c: Math.floor(pos.x), r: Math.floor(pos.z), activity: 'following you' };
-    const tx = player.x + dx / dist * follow, tz = player.z + dz / dist * follow;
-    const tc = Math.floor(tx), tr = Math.floor(tz);
-    const walkable = window.NpcPathfinding?.isNpcTileWalkable?.(area, tc, tr) !== false;
-    return walkable ? { area, c: tc, r: tr, activity: 'following you' } : { area, c: pc, r: pr, activity: 'following you' };
+    return window.NpcFollowing.target(rec,date,num(cfg().followDistanceTiles,1.7));
   }
 
   function scheduleOverride(rec) {
@@ -636,6 +669,7 @@
     return JSON.parse(JSON.stringify({ ...state, family: window.RomanceFamily?.serialize?.() ?? state.family ?? null }));
   }
   function restore(saved) {
+    window.NpcFollowing?.clear?.();
     const base = defaultState();
     state = saved && typeof saved === 'object' ? { ...base, ...saved, dateCounts: { ...(saved.dateCounts || {}) }, lastDateRawDay: { ...(saved.lastDateRawDay || {}) } } : base;
     if (state.date && !Number.isFinite(Number(state.date.endHour))) state.date = null;
@@ -649,6 +683,7 @@
   // ── Wiring ────────────────────────────────────────────────────────────
   function init(injected) {
     deps = injected || {};
+    window.NpcFollowing?.init({...deps,findWalker}); // Dates and ordinary companions share one follow/wait/seat resolver.
     window.DialogueContent?.registerActionHandler?.('romance', handleDialogueAction);
     window.NpcScheduling?.registerTargetOverride?.('romance', scheduleOverride);
     window.HobunjiActivityEvents?.on?.(onActivity);
@@ -662,10 +697,12 @@
     return {
       date: state.date ? { ...state.date, hoursLeft: Math.round(dateHoursLeft() * 100) / 100 } : null,
       dateCounts: { ...state.dateCounts },
+      lastDatedNpcId: getLastDatedNpcId(), // Mobile diagnostic: last romantic form of address follows this NPC after the date.
       engagement: state.engagement ? { ...state.engagement } : null,
       spouse: state.spouse ? { ...state.spouse } : null,
       family: window.RomanceFamily?.snapshot?.() || null,
       debug: { ...debug },
+      followerSafety: window.NpcFollowing?.snapshot?.() || null, // Mobile-friendly combat cover and follower diagnostics.
     };
   }
 
@@ -692,6 +729,9 @@
     engage,
     completeWedding,
     getSpouse: () => state.spouse ? { ...state.spouse } : null,
+    getLastDatedNpcId, // Single source of truth for former-partner forms of address, including restored saves.
+    spouseDialogueFor, // Event-time read: no mutation of saved NPC nicknames or their authored dialogue.
+    spouseTownVisitNow, // Farmwork and town scheduling agree on the same visit window.
     getEngagement: () => state.engagement ? { ...state.engagement } : null,
     // Shared helpers for js/romance-family.js
     helpers: {

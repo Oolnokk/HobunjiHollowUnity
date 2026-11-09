@@ -1,4 +1,4 @@
-// Shared one-voice-per-character arbitration for dialogue and combat vocals.
+// Per-character voice arbitration for dialogue and combat; only release grunts may share a channel.
 (() => {
   'use strict';
 
@@ -10,8 +10,8 @@
     pain: 2,
     active: 3,
   });
-  const objectSlots = new WeakMap(); // Anonymous runtime entities retain identity without preventing garbage collection.
-  const stableSlots = new Map(); // NPC/player IDs let dialogue records and combat entities resolve to the same voice slot.
+  const objectSlots = new WeakMap(); // Per-entity arrays of claims retain anonymous identity without blocking garbage collection.
+  const stableSlots = new Map(); // NPC/player IDs resolve dialogue and combat to the same list of claims.
   const activeClaims = new Set(); // Small debug/reset surface; claims remove themselves on release/preemption.
   let serial = 0;
 
@@ -48,7 +48,11 @@
     if (!claim || claim.released) return false;
     claim.released = true;
     activeClaims.delete(claim);
-    if (getSlot(claim.key) === claim) setSlot(claim.key, null);
+    const claims = getSlot(claim.key) || []; // A completed overlapping grunt must not release its still-playing siblings.
+    if (claims.includes(claim)) {
+      const remaining = claims.filter(active => active !== claim);
+      setSlot(claim.key, remaining.length ? remaining : null);
+    }
     return true;
   }
 
@@ -56,9 +60,14 @@
     const key = keyFor(subject);
     if (key == null) return null;
     const priority = Number.isFinite(Number(options.priority)) ? Number(options.priority) : 0;
-    const current = getSlot(key);
-    if (current && !current.released && current.priority > priority) return null;
+    const currentClaims = getSlot(key) || []; // All sounds still owned by this character, including overlapping release grunts.
+    if (currentClaims.some(current => !current.released && current.priority > priority)) return null;
 
+    const preserveGroup = options.preserveGroup || options.overlapGroup || null; // Attack windups and new releases preserve existing release-grunt tails.
+    const retained = preserveGroup
+      ? currentClaims.filter(current => !current.released && current.overlapGroup === preserveGroup && current.priority === priority)
+      : [];
+    const replaced = currentClaims.filter(current => !current.released && !retained.includes(current));
     const fadeOutS = Math.max(0, Number(options.fadeOutS ?? DEFAULT_FADE_OUT_S) || 0);
     const claim = {
       id: ++serial,
@@ -66,19 +75,20 @@
       subject,
       kind: String(options.kind || 'voice'),
       priority,
+      overlapGroup: options.overlapGroup || null, // Only explicitly grouped vocals may remain concurrently active.
       fadeOutS,
-      handoffDelayS: current && !current.released ? fadeOutS : 0,
+      handoffDelayS: replaced.length ? fadeOutS : 0,
       stop: null,
       released: false,
       preempted: false,
     };
-    setSlot(key, claim);
+    setSlot(key, [...retained, claim]);
     activeClaims.add(claim);
 
-    if (current && !current.released) {
-      current.preempted = true;
-      activeClaims.delete(current);
-      try { current.stop?.(fadeOutS, { reason: 'preempted', by: claim }); } catch (_) {}
+    for (const previous of replaced) {
+      previous.preempted = true;
+      activeClaims.delete(previous);
+      try { previous.stop?.(fadeOutS, { reason: 'preempted', by: claim }); } catch (_) {}
     }
     return claim;
   }
@@ -86,7 +96,7 @@
   function bindStop(claim, stop) {
     if (!claim || typeof stop !== 'function') return false;
     claim.stop = stop;
-    if (claim.released || claim.preempted || getSlot(claim.key) !== claim) {
+    if (claim.released || claim.preempted || !(getSlot(claim.key) || []).includes(claim)) {
       try { stop(claim.fadeOutS, { reason: 'late-bind-preempted' }); } catch (_) {}
       return false;
     }
@@ -94,19 +104,25 @@
   }
 
   function stop(subjectOrClaim, fadeOutS = DEFAULT_FADE_OUT_S) {
-    const claim = subjectOrClaim?.key && Object.prototype.hasOwnProperty.call(subjectOrClaim, 'priority')
-      ? subjectOrClaim
-      : getSlot(keyFor(subjectOrClaim));
-    if (!claim || claim.released) return false;
-    claim.preempted = true;
-    activeClaims.delete(claim);
-    if (getSlot(claim.key) === claim) setSlot(claim.key, null);
-    try { claim.stop?.(Math.max(0, Number(fadeOutS) || 0), { reason: 'stopped' }); } catch (_) {}
-    return true;
+    const isClaim = subjectOrClaim?.key && Object.prototype.hasOwnProperty.call(subjectOrClaim, 'priority');
+    const claims = isClaim ? [subjectOrClaim] : [...(getSlot(keyFor(subjectOrClaim)) || [])]; // Despawn/reset stops every overlapping voice, not just the newest.
+    let stopped = false;
+    for (const claim of claims) {
+      const active = getSlot(claim.key) || [];
+      if (claim.released || !active.includes(claim)) continue;
+      claim.preempted = true;
+      activeClaims.delete(claim);
+      const remaining = active.filter(other => other !== claim);
+      setSlot(claim.key, remaining.length ? remaining : null);
+      try { claim.stop?.(Math.max(0, Number(fadeOutS) || 0), { reason: 'stopped' }); } catch (_) {}
+      stopped = true;
+    }
+    return stopped;
   }
 
   function current(subject) {
-    const claim = getSlot(keyFor(subject));
+    const claims = getSlot(keyFor(subject)) || [];
+    const claim = claims[claims.length - 1]; // The newest vocal remains the public-facing owner while older releases finish.
     if (!claim || claim.released) return null;
     return {
       id: claim.id,
@@ -123,6 +139,7 @@
       priority: claim.priority,
       key: typeof claim.key === 'string' ? claim.key : '(runtime-object)',
       preempted: claim.preempted,
+      overlapGroup: claim.overlapGroup,
     }));
   }
 

@@ -31,33 +31,37 @@
       }),
       colors: Object.freeze({
         health: '#55d76f',
-        stamina: '#67b7ff',
-        footing: '#d9a441',
+        stamina: '#d9a441',
+        footing: '#67b7ff',
         exhausted: '#050608',
         outline: '#000000',
         target: '#ff2020'
       }),
       afflictionColors: Object.freeze({
         woundedStamina: '#ff9b2f',
-        bleedingHealth: '#cf1e2e',
-        congealedHealth: '#c98d41',
-        infectedStamina: '#284f2a',
-        windedStamina: '#90949c',
-        bruisedHealth: '#4c42a9',
-        shatteredStamina: '#8c4ad9',
-        poisonedHealth: '#37651c',
-        burningHealth: '#ff5a1f',
-        frostbittenStamina: '#7edcff',
-        entrancedHealth: '#b746d9',
-        shamblingFooting: '#736f5f',
-        drunkenFooting: '#000000',
+        bleedingHealth: '#d11832',
+        woundedHealth: '#8b3f64',
+        scentMarkedHealth: '#7dbb69',
+        congealedHealth: '#344aa8',
+        rentHealth: '#32b4e5', // Reserved maximum Health until sacred ground, distinct from temporary Congealed Health.
+        infectedStamina: '#7ea12f',
+        windedStamina: '#4f63d9',
+        bruisedHealth: '#5840c8',
+        corrodedHealth: '#c8cf2a',
+        shatteredStamina: '#a66cff',
+        poisonedHealth: '#17a44b',
+        burningHealth: '#ff6a00',
+        frostbittenStamina: '#89ecff',
+        entrancedHealth: '#20c7d9',
+        shamblingFooting: '#8d6e59',
+        drunkenFooting: '#b66a2f',
         drunkenHealth: '#ff4f9a',
         kindlingHealth: '#ffb347',
-        furiousStamina: '#ff2f2f',
-        moralizedStamina: '#ffe066',
-        resoluteFooting: '#c0c8ff',
-        resoluteHealth: '#9fb4ff',
-        mirroredHealth: '#d8f4ff'
+        furiousStamina: '#ec2de8',
+        moralizedStamina: '#ffe15a',
+        resoluteFooting: '#f1d27a',
+        resoluteHealth: '#8fd0ff',
+        mirroredHealth: '#d9f0ff'
       }),
       neon: Object.freeze({
         minSourceSaturation: 0.12,
@@ -287,11 +291,19 @@
   const quat = new THREE.Quaternion();
   const scale = new THREE.Vector3();
 
+  // Sampled once per grass instance on every town grass refilter and per actor
+  // per frame by the town elevation bridges, so the "has any heights" check is
+  // memoized by object identity instead of re-allocating Object.keys() over
+  // every town tile on each call.
+  let nonEmptyVisualHeights = null;
   function visualHeightMap() {
-    const live = capturedDeps?.getTownZone?.();
     const cached = root.__hobunjiTownElevationMap;
-    if (cached?.visualHeights && Object.keys(cached.visualHeights).length) return cached;
-    return live;
+    const heights = cached?.visualHeights;
+    if (heights && (heights === nonEmptyVisualHeights || Object.keys(heights).length)) {
+      nonEmptyVisualHeights = heights;
+      return cached;
+    }
+    return capturedDeps?.getTownZone?.();
   }
 
   function sampleHeight(map, x, z) {

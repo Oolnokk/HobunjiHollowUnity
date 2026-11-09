@@ -12,6 +12,7 @@
   const GENERATED_KIND_TO_FURNITURE = Object.freeze({ stump: 'chairstump', fallenLog: 'benchlog' });
   const recordsByMapId = new Map();
   const objectsByMapId = new Map();
+  const externalRecordsByMapId = new Map(); // Tracks camp-owned sitting logs separately so their actions and collision disappear on camp teardown.
   const spawnStatesByMapId = new Map();
   let deps = null;
 
@@ -164,14 +165,45 @@
     return object;
   }
 
+  function registerExternalInstance(mapId, record, data, instance = null) {
+    if (!mapId || !record?.id || !Array.isArray(data?.seatAnchors) || !data.seatAnchors.length) return null;
+    unregisterExternalInstance(mapId, record.id);
+    let entries = externalRecordsByMapId.get(mapId); // Per-zone ownership registry for camps using normal wilderness seat interactions.
+    if (!entries) { entries = new Map(); externalRecordsByMapId.set(mapId, entries); }
+    const object = registerInteraction(mapId, record, data, instance); // Reuses the same Sit buttons and shared deps.sit placement as naturally fallen logs.
+    entries.set(String(record.id), { record, object });
+    return object;
+  }
+
+  function unregisterExternalInstance(mapId, recordId) {
+    const entries = externalRecordsByMapId.get(mapId);
+    const entry = entries?.get(String(recordId));
+    if (!entry) return false;
+    const registry = objectsByMapId.get(mapId);
+    const record = entry.record; // Original seat footprint, including rotated 1x2 log tiles.
+    for (let dz = 0; dz < Math.ceil(record.footprintD); dz++) {
+      for (let dx = 0; dx < Math.ceil(record.footprintW); dx++) {
+        const key = `${Math.floor(record.col) + dx},${Math.floor(record.row) + dz}`; // Avoids erasing a newer interaction that replaced this entry.
+        if (registry?.get(key) === entry.object) registry.delete(key);
+      }
+    }
+    entries.delete(String(recordId));
+    if (!entries.size) externalRecordsByMapId.delete(mapId);
+    return true;
+  }
+
   function objectAt(mapId, col, row) {
     return objectsByMapId.get(mapId)?.get(`${Math.floor(col)},${Math.floor(row)}`) || null;
   }
 
   function blocksPoint(mapId, x, z) {
-    return recordsForMap(mapId).some(record =>
-      x >= record.col && x < record.col + record.footprintW
-      && z >= record.row && z < record.row + record.footprintD);
+    const overlaps = record => x >= record.col && x < record.col + record.footprintW
+      && z >= record.row && z < record.row + record.footprintD; // Same collision footprint for natural logs and externally registered camp benches.
+    if (recordsForMap(mapId).some(overlaps)) return true;
+    for (const entry of externalRecordsByMapId.get(mapId)?.values() || []) {
+      if (overlaps(entry.record)) return true; // Avoids allocating another record array on every movement collision query.
+    }
+    return false;
   }
 
   async function spawnForMap(mapId) {
@@ -189,12 +221,16 @@
       const tracked = deps.zoneDecorFurnitureGroups?.get?.(mapId) || [];
       if (!deps.zoneDecorFurnitureGroups?.has?.(mapId)) deps.zoneDecorFurnitureGroups?.set?.(mapId, tracked);
       for (const record of records) {
+        if (state.cancelled) break; // The zone was evicted or rebuilt while an earlier record was loading.
         try {
           const { instance, data } = await root.FoliageFurnitureRenderer.buildInstance(record, zoneData, deps);
-          if (spawnStatesByMapId.get(mapId) !== state || deps.zoneScenes?.get?.(mapId)?.scene !== scene) break;
+          // Reads the scene from the state, not from a captured variable: this loop can sit on a slow or failing
+          // generator for a long time, and a captured scene would keep an evicted zone alive for all of it.
+          const liveScene = state.scene;
+          if (state.cancelled || !liveScene || spawnStatesByMapId.get(mapId) !== state || deps.zoneScenes?.get?.(mapId)?.scene !== liveScene) break;
           deps.markOutline?.(instance);
           deps.markFurnitureEdgeId?.(instance);
-          scene.add(instance);
+          liveScene.add(instance);
           tracked.push(instance);
           built.push(instance);
           state.instances.set(record.id, instance);
@@ -217,9 +253,12 @@
   }
 
   function disposeMap(mapId) {
+    const spawning = spawnStatesByMapId.get(mapId);
+    if (spawning) { spawning.cancelled = true; spawning.scene = null; } // Stops a spawn loop that is still awaiting a record and releases the scene it was filling.
     spawnStatesByMapId.delete(mapId);
     recordsByMapId.delete(mapId);
     objectsByMapId.delete(mapId);
+    externalRecordsByMapId.delete(mapId);
   }
 
   function debugState(mapId = '') {
@@ -253,6 +292,8 @@
     annotateWorkspace,
     recordsForMap,
     makeZoneSitObject,
+    registerExternalInstance,
+    unregisterExternalInstance,
     objectAt,
     blocksPoint,
     spawnForMap,

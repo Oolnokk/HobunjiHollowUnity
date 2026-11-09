@@ -103,7 +103,12 @@ canvas{display:block;width:100%;height:100%}
   .compactGrid{grid-template-columns:1fr}
 }
 </style>
-<script src="../../js/panel-ui.js"></script>
+<script src="../../js/panel-ui.js?v=20261107h64d192c"></script>
+<script src="../../config/weapon-sprite-assemblies.js?v=20261104hb8bce75"></script>
+<script src="../../js/color-fill.js?v=20260923colorfill7"></script>
+<script src="../../js/tool-metal-recolor.js?v=20261030rigall5"></script>
+<script src="../../js/weapon-layer-effects.js?v=20261101hachutuwle2"></script>
+<script src="../../js/weapon-sprite-assemblies.js?v=20261104hb8bce75"></script>
 <!-- Three.js r128 ESM — matches the version used by the main game (docs/index.html) -->
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.128.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.128.0/examples/jsm/"}}</script>
 </head>
@@ -134,11 +139,15 @@ canvas{display:block;width:100%;height:100%}
         </select>
       </div>
     </div>
+    <label class="fieldRow"><input type="checkbox" id="headRelative" style="width:auto">Head relative</label>
+    <div class="help">Use the visible head as the XYZ origin. Offsets bypass arm/orbit scaling; ranged aim pivots at the head.</div>
     <div class="field"><label>Preview held sprite / weapon</label><select id="toolSpriteSelect"></select></div>
     <div class="compactGrid">
       <div class="field"><label>Preview species</label><select id="avatarSpecies"></select></div>
       <div class="field"><label>Preview gender</label><select id="avatarGender"></select></div>
     </div>
+    <div class="field"><button type="button" id="toggleLegBones" class="secondary" aria-pressed="false">🦴 Show leg bones</button>
+      <div class="help">Draws hip → knee → ankle for each leg. Under a body sink the legs separate into a front and a back leg; the leg on the side away from the body yaw's turn leads.</div></div>
     <div class="help">The selected Action owns the animation being edited. The sprite selector is only a visual preview choice for actions that can be performed with more than one weapon. Species/gender changes only the preview transform and never rewrite authored pose values.</div>
 
     <details class="advancedDetails">
@@ -266,6 +275,17 @@ canvas{display:block;width:100%;height:100%}
       <textarea id="transformDumpView" readonly style="margin-top:6px"></textarea>
       <button id="copyTransformDumpBtn" class="secondary" style="margin-top:6px">Copy transforms</button>
     </details>
+    <details class="advancedDetails">
+      <summary>Full rig dump (root-relative) + game compare</summary>
+      <div class="help" style="margin-bottom:6px">Every node (body, hands, feet, tool holder) as local, root-relative and world values, in a floor-anchored unscaled frame that matches the game's pose frame. Paste the JSON from the game's "Dump full rig (root-relative)" button to diff the hands and weapon anchor-by-anchor.</div>
+      <button id="fullRigDumpBtn" class="secondary">🦴 Dump full rig</button>
+      <button id="copyFullRigDumpBtn" class="secondary">Copy</button>
+      <textarea id="fullRigDumpView" readonly style="margin-top:6px"></textarea>
+      <label for="gameRigDumpInput" style="margin-top:6px;display:block">Compare with game dump (paste text or JSON)</label>
+      <textarea id="gameRigDumpInput" placeholder="Paste the game rig dump here"></textarea>
+      <button id="compareRigDumpBtn" class="secondary" style="margin-top:6px">Compare</button>
+      <textarea id="rigDumpDiffView" readonly style="margin-top:6px"></textarea>
+    </details>
   </div>
 </aside>
 <div id="viewport">
@@ -283,23 +303,36 @@ canvas{display:block;width:100%;height:100%}
 </div>
 </div>
 <script src="../../js/local-db-overrides.js?v=20261013ha525e98"></script>
-<script src="../../config/scratchbones-config.js?v=20261016h5fbd77a"></script>
-<script src="../../config/attachment-rig-profiles.js?v=20261002h6d814a9"></script>
+<script src="../../config/scratchbones-config.js?v=20261107lowblast1"></script>
+<script src="../../config/attachment-rig-profiles.js?v=20261025hd81e6fa"></script>
 <script src="../../config/character-rig-scale-defaults.js?v=20261010hd4b4796"></script>
-<script src="../../js/character-rig-scale.js?v=20261007h0c4d7d9"></script>
+<script src="../../js/character-rig-scale.js?v=20261031hb701fa8"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
-<script src="../../js/portrait-utils.js?v=20261016h340e25a"></script>
+<script src="../../js/portrait-utils.js?v=20261107h7418f3e"></script>
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
-<script src="../../js/png-plane-avatar.js?v=20261011h5faa803"></script>
-<script src="../../js/species-pose-scaling.js?v=20260920height2"></script>
+<script src="../../js/png-plane-avatar.js?v=20261105h9ba2b7a"></script>
+<script src="../../js/species-pose-scaling.js?v=20261031h0c1ffcd"></script>
 <script src="../../js/character-dimensions.js?v=20261007he86e7d1"></script>
+<!-- Feet + pants for the preview: the SAME procedural leg handle and pants garment the game uses, so body sink bends the real legs. -->
+<script src="../../js/leg-bones.js?v=20261013hb53d07e"></script>
+<script src="../../js/procedural-leg-animation.js?v=20261031h99e235f"></script>
+<script src="../../config/pants-rigs.js?v=20261015h74422e2"></script>
+<script src="../../js/pants-rig-core.js?v=20261022omgurkuMerge1"></script>
+<script src="../../js/pants-garment-renderer.js?v=20261031hd62e30c"></script>
 <!-- Shared local-transform dump utility (window.HobunjiTransformDump) — also
      loaded by the game's Pixel Probe, so this editor's preview dump and an
      in-game character dump use the exact same code/format. -->
-<script src="../../js/transform-dump-utils.js?v=20260820a"></script>
-<script src="../../js/held-action-animations.js?v=20261016h32b7a0b"></script>
+<script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
+<script src="../../js/rig-transform-dump.js?v=20261029rigdump1"></script>
+<script src="../../js/held-action-animations.js?v=20261107instrNeutral2"></script>
+<script src="../../js/kurraya-instrument.js?v=20261107instrNeutral2"></script>
+<!-- Shared attack-pose math (window.SharedAttackPose): the SAME timeline, rest poses and mirroring rule the game plays for the player and every enemy. -->
+<script src="../../config/portrait-mouth-points.js?v=20261025mouth1"></script>
+<script src="../../js/attack-editor-mouth-point.js?v=20261025mouth1"></script>
+<script src="../../js/combat/shared-attack-pose.js?v=20261030h12f55f4"></script>
 <script src="../../js/combat/melee-pose-spacing.js?v=20260920spacing2"></script>
+<script src="../../js/combat/attack-pose-templates.js?v=20261017a"></script>
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -368,6 +401,8 @@ rig.add(toolBase);
 // symmetric (it's the real scanned right-arm edge, not -w/2), so a midline flip
 // has to negate it too — see flipBtn.onclick below for why.
 let baseAttachX = 0;
+let offhandAuthoringBase = false; // While authoring the Dual Wield offhand idle stance, the hand anchor sits on the offhand side so the gizmo moves the visible offhand weapon itself.
+const toolBaseSideX = () => ((toolMirrored !== offhandAuthoringBase) ? -baseAttachX : baseAttachX);
 let toolMirrored = false;
 const anchorDot = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), new THREE.MeshBasicMaterial({ color: 0x6aa7ff }));
 toolBase.add(anchorDot);
@@ -377,11 +412,30 @@ function avatarCfg() { return window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlane
 // live player avatar (worldModelWidth), not the design-tool default of 1.
 const MODEL_W = avatarCfg().worldModelWidth ?? 0.9;
 let currentArmLength = 0.558; // Anatomical reach remains visible for diagnostics and old-config fallback only.
-let currentPoseOrbitScale = 1; // Explicit species+gender weapon-distance multiplier, independently authored below.
+let currentPoseOrbitScale = 1; // Explicit species+gender weapon-distance multiplier (a number, or per-axis { x, y, z }), independently authored below.
 let currentPoseCentroidY = MODEL_W * 0.5; // Floor-relative visual/body centroid copied from PNGPlaneAvatar metadata after each rebuild.
 let currentAvatarModelHeight = MODEL_W; // Portrait-scaled model height; paired with CharacterRigScale.y for true body-height pose mapping.
 let currentSpeciesId = 'mao-ao'; // Visible debug identity for the currently previewed avatar.
 let currentGender = 'male'; // Visible debug identity for the currently previewed avatar.
+const editorHeadFrame = window.SharedAttackPose.createHeadFrame(THREE); // Mouth position + head rotation + head scale of the previewed avatar (head-anchored actions).
+const editorApertureScratch = new THREE.Vector3();
+// The main-hand grip in holder space: hand-aligned poses scale around it (head-aligned ones around the aperture).
+function editorToolGrip() {
+  const grips = window.HobunjiHandToolGrips;
+  return grips?.primaryGripHolderPointForTool?.(currentToolKey, grips.currentGripContext?.(), { speciesId: currentSpeciesId, gender: currentGender }) || null;
+}
+// The tool's mating point in holder space: its authored aperture, else (held bottles have no tool entry) the sprite's top edge.
+function editorToolAperture() {
+  if (currentToolKey === 'flute') return null; // The runtime flute's trimmed plane already has its open end at the mouth-relative holder origin.
+  const grips = window.HobunjiHandToolGrips;
+  const authored = grips?.apertureHolderPointForTool?.(currentToolKey, grips.currentGripContext?.(), { speciesId: currentSpeciesId, gender: currentGender });
+  if (authored) return authored;
+  const plane = toolPlaneMesh?.userData?.toolPlane;
+  const height = Number(plane?.geometry?.parameters?.height);
+  if (!(height > 0)) return null;
+  plane.updateMatrix(); toolPlaneMesh.updateMatrix();
+  return editorApertureScratch.set(0, height / 2, 0).applyMatrix4(plane.matrix).applyMatrix4(toolPlaneMesh.matrix);
+}
 const poseOrbitScratch = new THREE.Vector3(); // Reused by forward/inverse centroid transforms so playback does not allocate every frame.
 const poseWorldDebugScratch = new THREE.Vector3(); // Reused when recording final world position for visible diagnostics.
 let lastAuthoredPose = { x: 0, y: 0, z: 0 }; // Debug copy of the Mao'ao-authored holder-local translation currently previewed.
@@ -550,8 +604,10 @@ function applyPreviewNeckWeights() {
 function refreshPreviewDebug() {
   setDebug([
     'Hobunji Attack Animation Editor',
-    'Latest: neck deformation weights the complete rectangular PNG plane, including transparent gaps and detached cosmetics.',
+    'Latest: flail Hold uses momentum, gravity and actual rope length; paused scrubbing replays the swing.',
+    (() => { const physics = window.HobunjiWeaponSpriteAssemblies?.debugSnapshot().find(entry => entry.physics)?.physics; return physics ? `Flail physics: ${physics.model} · lever ${physics.length.toFixed(3)} · angular velocity [${physics.angularVelocity.map(value => value.toFixed(2)).join(', ')}] rad/s · gravity ${physics.gravity}` : 'Flail physics: select a flail preview to inspect'; })(),
     `Neck preview: ${Math.round(neckPreviewStrength * 100)}% strength · ${(neckPreviewRadiusFrac * 100).toFixed(1)}% radius · ${neckWeightSummary}`,
+    `Animation origin: ${$('headRelative').checked ? 'head' : 'hand'}`,
     `Head vertex overlay: ${$('showHeadSkinVertices').checked ? `${headSkinVertexCount} unique weighted vertices shown` : 'hidden'}`,
     (() => { const h = window.HobunjiSpeciesPoseScale?.heightMetrics?.(currentSpeciesId, currentGender, currentAvatarModelHeight); return `Pose Y height: ×${(h?.heightRatio ?? 1).toFixed(5)} vs Mao'ao male · portraitH=${currentAvatarModelHeight.toFixed(4)} · rigY=×${(h?.rigScaleY ?? 1).toFixed(4)}`; })(),
     `Centroid used for X/Z orbit (rig local): (0, ${currentPoseCentroidY.toFixed(4)}, 0)`,
@@ -580,6 +636,42 @@ $('showHeadSkinVertices').addEventListener('change', () => {
 });
 syncNeckPreviewControls();
 
+// Feet and pants, built exactly as the game builds the player's (js/procedural-leg-animation.js + js/pants-garment-renderer.js).
+function disposePreviewLegs() {
+  if (!editorLegs) return;
+  try { editorLegs.dispose(); } catch (error) { logDebug('Preview legs dispose failed: ' + error.message); }
+  editorLegs = null;
+}
+async function attachPreviewLegs({ speciesId, gender, profile, frontCanvas, w, h, size }) {
+  disposePreviewLegs();
+  editorLegs = window.ProceduralLegAnimation?.attach?.(THREE, characterBodyScaleRoot, {
+    speciesId, gender, bodyColors: profile?.bodyColors, modelWidth: w, modelHeight: h,
+    handAttachY: avatarModel.userData?.handAttachY, name: 'editor_preview', profile, portraitSize: size,
+  }) || null;
+  if (!editorLegs) { logDebug(`Preview legs unavailable for ${speciesId}/${gender}`); return; }
+  const Pants = window.PantsGarmentRenderer;
+  if (Pants && Pants.hasRigFor(speciesId, gender)) {
+    try {
+      const pants = Pants.attachToLegs(THREE, editorLegs, {
+        avatarGroup: avatarModel, speciesId, gender, name: 'editor_preview', garmentId: 'pants_basic',
+        appearance: Pants.appearanceFromBodyColors(profile?.bodyColors),
+        imageUrl: new URL('../../assets/cosmetics/clothes/legs/pants_basic.png', location.href).href, // The renderer's default `./assets/...` is relative to this page, not docs/.
+        overlayMask: await Pants.buildOverlayMask(frontCanvas, profile),
+      });
+      logDebug(pants ? 'Preview pants attached' : 'Preview pants could not be built for this avatar');
+    } catch (error) { logDebug('Preview pants failed: ' + error.message); }
+  }
+  editorLegs.update(0, 0, false, null, {});
+}
+
+$('toggleLegBones').addEventListener('click', () => {
+  const next = !window.ProceduralLegAnimation?.showBones;
+  window.ProceduralLegAnimation?.setShowBones(next);
+  $('toggleLegBones').setAttribute('aria-pressed', String(next));
+  $('toggleLegBones').textContent = next ? '🦴 Hide leg bones' : '🦴 Show leg bones';
+  editorLegs?.update(0, 0, false, null, {}); // Guides are shown/hidden when the chain is re-solved.
+});
+
 async function rebuildAvatar(speciesId, gender) {
   await window.HobunjiSpeciesPoseScale?.ready; // Ensures repo/local species+gender orbit data is loaded before the preview avatar caches it.
   await ensureCosmetics();
@@ -596,6 +688,7 @@ async function rebuildAvatar(speciesId, gender) {
   const backCanvas = document.createElement('canvas');
   backCanvas.width = size; backCanvas.height = size;
   await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind' });
+  disposePreviewLegs();
   if (avatarModel) {
     disposeHeadSkinVertexOverlay();
     characterBodyScaleRoot.remove(avatarModel);
@@ -613,9 +706,12 @@ async function rebuildAvatar(speciesId, gender) {
   const cachedArmLength = Number(avatarModel.userData?.armLength);
   currentArmLength = Number.isFinite(cachedArmLength) && cachedArmLength > 0 ? cachedArmLength : 0.558;
   const cachedPoseOrbitScale = Number(avatarModel.userData?.poseOrbitScale);
-  currentPoseOrbitScale = Number.isFinite(cachedPoseOrbitScale) && cachedPoseOrbitScale > 0
-    ? cachedPoseOrbitScale
-    : (window.HobunjiSpeciesPoseScale?.resolveScale?.(speciesId, gender, currentArmLength) ?? 1);
+  const cachedPoseOrbitAxes = window.HobunjiSpeciesPoseScale?.axesFromValue?.(avatarModel.userData?.poseOrbitAxes); // Per-axis { x, y, z }; the editor's rig space IS the pose frame, so no facing yaw is needed.
+  currentPoseOrbitScale = cachedPoseOrbitAxes
+    ? cachedPoseOrbitAxes
+    : (Number.isFinite(cachedPoseOrbitScale) && cachedPoseOrbitScale > 0
+      ? cachedPoseOrbitScale
+      : (window.HobunjiSpeciesPoseScale?.resolveScale?.(speciesId, gender, currentArmLength) ?? 1));
   const cachedCentroidY = Number(avatarModel.userData?.poseCentroidY); // Includes the portrait assembly's internal vertical offset.
   currentPoseCentroidY = Number.isFinite(cachedCentroidY) ? cachedCentroidY : h * (Number(avatarModel.userData?.portraitVerticalPlacementRatio) || 0.5);
   if (avatarModel.userData.handAttachX == null || avatarModel.userData.handAttachY == null) {
@@ -639,8 +735,13 @@ async function rebuildAvatar(speciesId, gender) {
   // other than 1 -- it never lines up with the shoulder.
   baseAttachX *= characterBodyScaleRoot.scale.x;
   baseAttachY *= characterBodyScaleRoot.scale.y;
-  toolBase.position.set(toolMirrored ? -baseAttachX : baseAttachX, baseAttachY, 0);
-  logDebug(`Avatar rebuilt: ${speciesId}/${gender} (prism ${w.toFixed(2)}x${h.toFixed(2)}, orbit ×${currentPoseOrbitScale.toFixed(5)}, arm ${currentArmLength.toFixed(3)}, centroidY ${currentPoseCentroidY.toFixed(3)}, base at ${toolBase.position.x.toFixed(2)}/${baseAttachY.toFixed(2)}${toolMirrored ? ', mirrored' : ''})`);
+  toolBase.position.set(toolBaseSideX(), baseAttachY, 0);
+  toolBaseRestY = baseAttachY;
+  characterBodyScaleRoot.position.y += appliedWorldSink; // A rebuild (Undo/Redo, species change) can happen while the body is sunk: un-apply it so the standing baseline is not the sunk height.
+  appliedWorldSink = 0;
+  characterBodyScaleRoot.userData.sinkBaseY = characterBodyScaleRoot.position.y;
+  await attachPreviewLegs({ speciesId, gender, profile, frontCanvas, w, h, size });
+  logDebug(`Avatar rebuilt: ${speciesId}/${gender} (prism ${w.toFixed(2)}x${h.toFixed(2)}, orbit ×${(() => { const a = window.HobunjiSpeciesPoseScale?.axesForPose?.(currentPoseOrbitScale, currentArmLength) || { x: currentPoseOrbitScale, y: 1, z: currentPoseOrbitScale }; return a.x === a.z && a.y === 1 ? a.x.toFixed(5) : `${a.x.toFixed(5)}/${a.y.toFixed(5)}/${a.z.toFixed(5)} (x/y/z)`; })()}, arm ${currentArmLength.toFixed(3)}, centroidY ${currentPoseCentroidY.toFixed(3)}, base at ${toolBase.position.x.toFixed(2)}/${baseAttachY.toFixed(2)}${toolMirrored ? ', mirrored' : ''})`);
   refreshPreviewDebug();
 }
 
@@ -688,11 +789,115 @@ toolBase.add(toolHolder);
 const transformControls = new TransformControls(camera, renderer.domElement);
 scene.add(transformControls);
 let gizmoMode = 'off'; // 'off' | 'translate' | 'rotate'
+let gizmoTargetMode = 'tool'; // Gizmo can edit the tool, a virtual Nut/Bridge endpoint, or the avatar-local right hand.
 let editPhase = 'windup'; // Single source of truth for pose tabs, sliders, and TransformControls.
 
 transformControls.addEventListener('dragging-changed', e => { controls.enabled = !e.value; });
+// The 3D gizmo drives a proxy rather than the holder, so it can (1) sit on the weapon you actually SEE and (2) use the
+// frame each channel is authored in. The saved pose belongs to the holder (the hidden source weapon), but what is drawn
+// may sit a little away from it: the dual-wield copies are offset along their plane normal, and the held visual carries
+// the grip placement offset. Pivoting on the holder would make a rotation swing the visible weapon around a point that
+// is not on it. Translation is in character-root space (the rig frame the x/y/z channels are authored in); rotation is
+// in the tool's own space. Each drag is converted back onto the holder, whose x/y/z/pitch/yaw/roll feed the pose panel.
+const gizmoProxy = new THREE.Object3D();
+toolBase.add(gizmoProxy);
+const freeHandGizmo = new THREE.Object3D(); // Tracks the selected keyframe's right-hand position independently of the instrument.
+freeHandGizmo.name = 'attack_editor_free_right_hand';
+const gripAxisMarkers = { // The authored Nut/Bridge sockets live beside the real Kurraya geometry and render through its two opaque sprite planes.
+  start: new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 8), new THREE.MeshBasicMaterial({ color: 0x22d3ee, depthTest: false, depthWrite: false })),
+  end: new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 8), new THREE.MeshBasicMaterial({ color: 0xf59e0b, depthTest: false, depthWrite: false })),
+};
+const gripAxisLine = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x8b5cf6, depthTest: false, depthWrite: false })); // Draw after the instrument's crossed PNG planes so the guide cannot disappear behind them.
+for (const node of [...Object.values(gripAxisMarkers), gripAxisLine]) node.renderOrder = 10000;
+toolHolder.add(gripAxisMarkers.start, gripAxisMarkers.end, gripAxisLine);
+function syncGripAxisMarkers() {
+  const grips = window.HobunjiHandToolGrips;
+  const axis = grips?.customGripAxisForTool?.(currentToolKey);
+  const visible = axis?.enabled === true;
+  for (const [key, node] of Object.entries(gripAxisMarkers)) {
+    node.visible = visible;
+    if (!visible) continue;
+    const p = grips.itemPointToHolder(currentToolKey, axis[key], grips.currentGripContext?.(), { speciesId: currentSpeciesId, gender: currentGender });
+    node.position.set(p.x, p.y, p.z);
+  }
+  gripAxisLine.visible = visible;
+  if (visible) gripAxisLine.geometry.setFromPoints([gripAxisMarkers.start.position, gripAxisMarkers.end.position]); // Visual marker for the line used by the sampling code.
+}
+function syncFreeHandGizmo() {
+  if (freeHandGizmo.parent !== avatarModel && avatarModel) avatarModel.add(freeHandGizmo); // Avatar-local XYZ travels with the character, never with the instrument.
+  const rightHand = anim.poses?.[editPhase]?.rightHand || {};
+  freeHandGizmo.position.set(Number(rightHand.x) || 0, Number(rightHand.y) || 0, Number(rightHand.z) || 0);
+  freeHandGizmo.rotation.set(THREE.MathUtils.degToRad(Number(rightHand.pitch) || 0), THREE.MathUtils.degToRad(Number(rightHand.yaw) || 0), THREE.MathUtils.degToRad(Number(rightHand.roll) || 0), 'YXZ');
+}
+transformControls.setSpace('local'); // The proxy supplies the orientation: rig frame to translate, tool frame to rotate.
+const proxyPivotOffset = new THREE.Vector3(); // Visible weapon's origin in the holder's own local frame (constant while the pose rotates).
+const proxyScratch = new THREE.Vector3();
+const headGizmoScratch = new THREE.Vector3(); // Reused to invert head-origin translations during gizmo edits.
+const editorGizmoQuat = new THREE.Quaternion(); // Reused holder world rotation while inverting a head-anchored gizmo edit.
+const editorGizmoScale = new THREE.Vector3(); // Reused holder world scale while inverting a head-anchored gizmo edit.
+const IDENTITY_QUATERNION = new THREE.Quaternion();
+function gizmoPivotVisual() {
+  const dual = window.HobunjiDualWieldWeaponVisuals;
+  return (offhandAuthoringBase ? dual?.editorOffhandCopy?.() : null) || dual?.editorMainCopy?.() || toolPlaneMesh || null;
+}
+function proxyPivotWorldOffset(quaternion, out = proxyScratch) {
+  return out.copy(proxyPivotOffset).multiply(toolHolder.scale).applyQuaternion(quaternion);
+}
+function syncGizmoProxy() {
+  const visual = gizmoPivotVisual();
+  proxyPivotOffset.set(0, 0, 0);
+  if (visual) {
+    toolHolder.updateWorldMatrix(true, false);
+    visual.updateWorldMatrix(true, false);
+    proxyPivotOffset.copy(toolHolder.worldToLocal(visual.getWorldPosition(proxyScratch)));
+  }
+  gizmoProxy.quaternion.copy(gizmoMode === 'rotate' ? toolHolder.quaternion : IDENTITY_QUATERNION);
+  gizmoProxy.position.copy(toolHolder.position).add(proxyPivotWorldOffset(toolHolder.quaternion));
+  gizmoProxy.updateMatrixWorld(true);
+}
+const gizmoTarget = () => gizmoTargetMode === 'rightHand' ? freeHandGizmo
+  : gripAxisMarkers[gizmoTargetMode] || gizmoProxy;
+function refreshGizmoTarget() {
+  syncGripAxisMarkers(); // Keep both points aligned after tool change, species scale, or numeric grip edits.
+  if (gizmoMode === 'off') return;
+  if (gizmoTargetMode === 'rightHand') syncFreeHandGizmo();
+  else if (!gripAxisMarkers[gizmoTargetMode]) syncGizmoProxy();
+  transformControls.attach(gizmoTarget());
+}
+
 transformControls.addEventListener('objectChange', () => {
+  if (transformControls.object === freeHandGizmo) {
+    const right = anim.poses[editPhase].rightHand ||= { enabled: true };
+    right.enabled = true;
+    right.x = freeHandGizmo.position.x; right.y = freeHandGizmo.position.y; right.z = freeHandGizmo.position.z;
+    const e = new THREE.Euler().setFromQuaternion(freeHandGizmo.quaternion, 'YXZ');
+    right.pitch = THREE.MathUtils.radToDeg(e.x); right.yaw = THREE.MathUtils.radToDeg(e.y); right.roll = THREE.MathUtils.radToDeg(e.z);
+    syncPosePanelFromState(editPhase); refreshJsonView();
+    window.ProceduralHandFrameDriver?.syncNow?.();
+    return;
+  }
+  const axisKey = Object.keys(gripAxisMarkers).find(key => transformControls.object === gripAxisMarkers[key]);
+  if (axisKey) {
+    const grips = window.HobunjiHandToolGrips;
+    const point = grips.holderPointToItem(currentToolKey, gripAxisMarkers[axisKey].position, grips.currentGripContext?.(), { speciesId: currentSpeciesId, gender: currentGender });
+    grips.mutate(data => { data.tools[currentToolKey].customGripAxis[axisKey] = point; }); // Persist drag directly to the same grip profile as the numeric fields.
+    syncGripAxisMarkers(); refreshJsonView();
+    return;
+  }
+  if (transformControls.object === gizmoProxy) {
+    if (gizmoMode === 'rotate') toolHolder.quaternion.copy(gizmoProxy.quaternion); // Translation keeps the tool's own rotation.
+    toolHolder.position.copy(gizmoProxy.position).sub(proxyPivotWorldOffset(toolHolder.quaternion));
+  }
   const p = anim.poses[editPhase];
+  if (anim.headRelative && SharedAttackPose.headFrame(editorHeadFrame, avatarModel)) {
+    toolHolder.updateWorldMatrix(true, false);
+    toolHolder.getWorldPosition(headGizmoScratch); toolHolder.getWorldQuaternion(editorGizmoQuat); toolHolder.getWorldScale(editorGizmoScale);
+    SharedAttackPose.poseFromHolderWorld(p, editorHeadFrame, headGizmoScratch, editorGizmoQuat, editorGizmoScale.x, editorToolAperture()); // Head-anchored poses are offsets in the head's frame from the aperture/mouth connection.
+    syncPosePanelFromState(editPhase);
+    refreshJsonView();
+    return;
+  }
+  SharedAttackPose.anchorScaleAtPoint(toolHolder, editorToolGrip(), 2 - toolHolder.scale.x); // Undo the grip-pivot shift (exact inverse: same shift with the sign flipped) before reading the authored origin.
   poseOrbitScratch.set(
     toolBase.position.x + toolHolder.position.x,
     toolBase.position.y + toolHolder.position.y,
@@ -704,9 +909,10 @@ transformControls.addEventListener('objectChange', () => {
     modelHeight: currentAvatarModelHeight,
     armLength: currentArmLength, poseOrbitScale: currentPoseOrbitScale,
   }); // Exact inverse: horizontal orbit and vertical rigger-height mapping are independent.
-  p.x = poseOrbitScratch.x - toolBase.position.x;
-  p.y = poseOrbitScratch.y - toolBase.position.y;
-  p.z = poseOrbitScratch.z - toolBase.position.z;
+  poseOrbitScratch.sub(toolBase.position);
+  p.x = poseOrbitScratch.x;
+  p.y = poseOrbitScratch.y;
+  p.z = poseOrbitScratch.z;
   const e = new THREE.Euler().setFromQuaternion(toolHolder.quaternion, 'YXZ'); // Inverse of qYaw*qPitch*qRoll.
   p.pitch = THREE.MathUtils.radToDeg(e.x);
   p.yaw = THREE.MathUtils.radToDeg(e.y);
@@ -715,13 +921,14 @@ transformControls.addEventListener('objectChange', () => {
   refreshJsonView();
 });
 
-function setGizmoMode(mode) {
+function setGizmoMode(mode, target = 'tool') {
   gizmoMode = mode;
+  gizmoTargetMode = target; // Existing toolbar returns to tool; Nut/Bridge and Free Hand buttons deliberately select a different target.
   if (mode === 'off') {
     transformControls.detach();
   } else {
     focusPreviewOnPhase(editPhase); // The visible frame and edited pose can no longer diverge.
-    transformControls.attach(toolHolder);
+    refreshGizmoTarget();
     transformControls.setMode(mode);
   }
   $('gizmoOffBtn').classList.toggle('active', mode === 'off');
@@ -731,6 +938,15 @@ function setGizmoMode(mode) {
 $('gizmoOffBtn').onclick = () => setGizmoMode('off');
 $('gizmoMoveBtn').onclick = () => setGizmoMode('translate');
 $('gizmoRotateBtn').onclick = () => setGizmoMode('rotate');
+window.HobunjiAttackEditorGripAxis = { // Hand-grip panel's mobile-friendly 3D point buttons reuse the normal TransformControls.
+  select(point) { if (!gripAxisMarkers[point]) return; setGizmoMode('translate', point); logDebug(`Move ${point === 'start' ? 'Nut' : 'Bridge'} marker to author the custom grip axis.`); },
+  refresh: syncGripAxisMarkers,
+  debug: () => ({ // Mobile-readable preview truth, separate from the saved grip profile.
+    toolKey: currentToolKey, visible: gripAxisMarkers.start.visible && gripAxisMarkers.end.visible && gripAxisLine.visible,
+    nut: { x: gripAxisMarkers.start.position.x, y: gripAxisMarkers.start.position.y, z: gripAxisMarkers.start.position.z },
+    bridge: { x: gripAxisMarkers.end.position.x, y: gripAxisMarkers.end.position.y, z: gripAxisMarkers.end.position.z },
+  }),
+};
 
 // ── Weapon mesh: a real PNG sprite plane, same convention as game.js's
 // makeToolPlaneMesh (TOOL_MODEL_WIDTH, flat-in-XZ rotation, sweep tools get an
@@ -738,6 +954,9 @@ $('gizmoRotateBtn').onclick = () => setGizmoMode('rotate');
 // shape, and it's obvious which end is the tool's business end.
 const TOOL_MODEL_WIDTH = 0.5;
 const TOOL_SPRITE_DEFS = {
+  grappleFlail: { label: 'Grapple-Flail (rope sweep)', sprite: '../../assets/toolsprites/grapple-flail_handle.png', animStyle: 'sweep', usesWeaponStanceBasis: true },
+  hachutuTorchFlail: { label: 'Hachutu Torch-Flail (sweep)', sprite: '../../assets/toolsprites/hachutu_torch-flail_handle.png', animStyle: 'sweep', usesWeaponStanceBasis: true },
+  hachutuTorchStaff: { label: 'Hachutu Torch-Staff (B\'shuakauitl melee sweep)', sprite: '../../assets/toolsprites/hachutu_torch-staff.png', animStyle: 'sweep', usesWeaponStanceBasis: true },
   hatchet:      { label: 'Hatchet (sweep)',       sprite: '../../assets/toolsprites/axe_hatchet.png',          animStyle: 'sweep',  usesWeaponStanceBasis: true },
   throwingflask:{ label: 'Throwing Flask (hatchet throw)', sprite: '../../assets/objectsprites/throwing_flask.png', animStyle: 'chop', usesWeaponStanceBasis: true },
   pickshovel:   { label: 'Pick-Shovel (thrust)',  sprite: '../../assets/toolsprites/shovel_pickshovel.png',    animStyle: 'thrust', usesWeaponStanceBasis: true },
@@ -750,6 +969,12 @@ const TOOL_SPRITE_DEFS = {
   dagger:       { label: 'Dagger (thrust)',       sprite: '../../assets/toolsprites/dagger.png',               animStyle: 'thrust', usesWeaponStanceBasis: true },
   kylie:        { label: 'Kylie (sweep)',         sprite: '../../assets/toolsprites/kylie.png',                animStyle: 'sweep',  usesWeaponStanceBasis: true },
   warCleaver:   { label: 'War-Cleaver (sweep)',   sprite: '../../assets/toolsprites/war-cleaver.png',          animStyle: 'sweep',  usesWeaponStanceBasis: true },
+  warhammer:    { label: 'Warhammer / Harlyao Warhammer (sweep)', sprite: '../../assets/toolsprites/warhammer.png',         animStyle: 'sweep', usesWeaponStanceBasis: true },
+  workhammer:   { label: 'Work Hammer (sweep)',    sprite: '../../assets/toolsprites/work_hammer.png',        animStyle: 'sweep', usesWeaponStanceBasis: true },
+  harlyaoLongsword: { label: 'Harlyao Longsword (sweep)', sprite: '../../assets/toolsprites/harlyao_longsword.png', animStyle: 'sweep', usesWeaponStanceBasis: true },
+  harlyaoBroadsword: { label: 'Harlyao Broadsword (sweep)', sprite: '../../assets/toolsprites/harlyao_broadsword.png', animStyle: 'sweep', usesWeaponStanceBasis: true },
+  flute:        { label: 'Flute (mouth-held, play note)', sprite: '../../assets/toolsprites/flute.png', animStyle: 'ranged' },
+  kurraya:      { label: 'Kurraya (two-plane, pluck note)', sprite: '../../assets/toolsprites/kurraya_front.png', animStyle: 'thrust' },
   bottle:       { label: 'Wine bottle (drink)',    sprite: '../../assets/objectsprites/bottle_wine.png',       animStyle: 'drink', scale: 0.5, flip: true },
   crossbow:     { label: 'Crossbow (unloaded)',    sprite: '../../assets/toolsprites/ranged_crossbow.png',      animStyle: 'ranged' },
   crossbowLoaded:{ label: 'Crossbow (loaded)',     sprite: '../../assets/toolsprites/ranged_crossbow_loaded.png',animStyle: 'ranged' },
@@ -771,6 +996,41 @@ function buildToolPlaneMesh(toolKey) {
     if (!def) { resolve(null); return; }
     toolTexLoader.load(def.sprite, tex => {
       tex.magFilter = tex.minFilter = THREE.NearestFilter;
+      // Preserve the same two-plane Kurraya and alpha-trimmed, mouthpiece-first
+      // flute visuals as their gameplay mounts; ordinary combat sprites follow below.
+      if (toolKey === 'kurraya') {
+        const topTexture = toolTexLoader.load('../../assets/toolsprites/kurraya_top.png');
+        topTexture.magFilter = topTexture.minFilter = THREE.NearestFilter;
+        const assembly = window.KurrayaInstrument?.buildAssembly?.({
+          THREE, frontTexture: tex, topTexture, toolModelWidth: TOOL_MODEL_WIDTH,
+        });
+        if (assembly) { resolve(assembly); return; }
+        logDebug('Kurraya editor assembly unavailable; check the shared instrument module.');
+      }
+      if (toolKey === 'flute') {
+        try {
+          const canvas = window.KurrayaInstrument.prepareFluteCanvas(tex.image);
+          const map = new THREE.CanvasTexture(canvas);
+          map.magFilter = map.minFilter = THREE.NearestFilter;
+          const worldHeight = 0.76; // Must equal the gameplay mouth-mounted flute's length.
+          const plane = new THREE.Mesh(
+            new THREE.PlaneGeometry(worldHeight * canvas.width / canvas.height, worldHeight),
+            new THREE.MeshBasicMaterial({ map, transparent:true, alphaTest:0.05, side:THREE.DoubleSide })
+          );
+          plane.rotation.x = Math.PI / 2; // Tube's open end stays at the holder origin, like the live mount.
+          plane.position.z = -worldHeight / 2;
+          const assembly = new THREE.Group();
+          assembly.name = 'flute_mouth_mount_preview';
+          assembly.add(plane);
+          tex.dispose();
+          resolve(assembly);
+          return;
+        } catch (error) {
+          logDebug('Flute preview trim failed: ' + error.message);
+          resolve(null);
+          return;
+        }
+      }
       const imgW = tex.image.width || 1, imgH = tex.image.height || 1;
       const planeW = TOOL_MODEL_WIDTH * (def.scale ?? 1);
       const planeH = planeW * (imgH / imgW);
@@ -784,6 +1044,7 @@ function buildToolPlaneMesh(toolKey) {
       g.rotation.z = 0; // Parent stays identity-oriented; pose rotation remains owned by toolHolder.
       g.userData.toolEndFlipBase = def.flip === true;
       g.userData.toolPlane = plane; // Lets applyPoseToRig derive the sprite basis from the previewed animation style, exactly like game.js.
+      window.HobunjiWeaponSpriteAssemblies?.decorate(g, toolKey, def, { THREE }); // Matching gameplay layered/chain visual; haft remains the authored pose authority.
       // Mirror the sprite itself (not just its position/rotation) when the
       // pose has been flipped across the midline, so asymmetric tools (e.g.
       // an axe head) stay on the correct side instead of appearing reversed.
@@ -798,11 +1059,12 @@ async function setToolSprite(toolKey) {
   const g = await buildToolPlaneMesh(toolKey);
   if (requestId !== toolSpriteRequestId) { if (g) disposeToolPlaneMesh(g); return; }
   window.HobunjiDualWieldWeaponVisuals?.teardown?.();
-  if (toolPlaneMesh) { toolHolder.remove(toolPlaneMesh); disposeToolPlaneMesh(toolPlaneMesh); }
+  if (toolPlaneMesh) { window.HobunjiWeaponSpriteAssemblies?.drop(toolPlaneMesh); toolHolder.remove(toolPlaneMesh); disposeToolPlaneMesh(toolPlaneMesh); }
   toolPlaneMesh = g;
   currentToolKey = toolKey;
   if (g) { toolHolder.add(g); logDebug(`Weapon sprite set: ${toolKey}`); }
   window.HobunjiHandToolGrips?.editorToolChanged?.();
+  syncGripAxisMarkers(); // An async tool-sprite replacement must not leave the previous tool's hidden/visible guide cached until playback resumes.
 }
 $('toolSpriteSelect').innerHTML = Object.entries(TOOL_SPRITE_DEFS).map(([k, d]) => `<option value="${k}">${d.label}</option>`).join('');
 $('toolSpriteSelect').addEventListener('change', () => {
@@ -827,12 +1089,13 @@ function defaultPose(x, y, z, pitch, yaw, bodyYaw = 0, roll = 0) { return { x, y
 // its own neutral (e.g. a fresh New Attack, or loading an older export that
 // predates neutral being authorable) — matches what updateToolMesh() in
 // game.js shows when the tool isn't mid-swing.
+// The game's own rest poses (js/combat/shared-attack-pose.js), copied so the editor can edit them
+// freely; 'drink' is editor-only (held-item action previews).
+const SharedAttackPose = window.SharedAttackPose;
+SharedAttackPose.setToolEdgeOnDeadzone(0); // Authoring shows exact poses; the edge-on deadzone is gameplay-only.
 const STYLE_NEUTRAL_POSE = {
-  thrust: { ...defaultPose(0, 0, 0, 10.31, 0, 0), scale: 1 },
-  sweep:  { ...defaultPose(0, 0, 0.16, 0, 0, 0), scale: 1 },
-  chop:   { ...defaultPose(0.03, 0.37, -0.01, -155, -79, 2, -82), scale: 1 },
+  ...Object.fromEntries(Object.entries(SharedAttackPose.STYLE_NEUTRAL_POSE).map(([style, pose]) => [style, { ...pose }])),
   drink:  { ...defaultPose(0, 0, 0, 10.31, 0, 0), scale: 1 },
-  ranged: { ...defaultPose(0.23, 0.08, 0.14, 16, 65, -52, 11), scale: 1.77 },
 };
 function neutralPoseFor(style) { return STYLE_NEUTRAL_POSE[style] || { ...defaultPose(0, 0, 0, 0, 0, 0), scale: 1 }; }
 
@@ -844,6 +1107,7 @@ let anim = {
   strikeFrac: 0.55,
   holdFrac: 0.68,
   durationS: 0.5,
+  headRelative: false, // Selected animation's reference frame, persisted through import/export and history.
   toolEndFlip: false,
   spinBasisDeg: 0,
   spinRevolutions: 0,
@@ -903,6 +1167,19 @@ window.HobunjiAttackEditorPoseState = Object.freeze({
 const ELBOW_SIDES = ['left', 'right'];
 const ELBOW_AXES = ['x', 'y', 'z'];
 
+// Body sink (% of total height) is optional pose data: a Windup/Strike without one inherits the Neutral's, and an unauthored Neutral rests at
+// the weapon-stance idle sink (SharedAttackPose.idleBodySinkPct), exactly what the game's baked swing does.
+function sinkPctForPhase(phase) {
+  const own = anim.poses?.[phase]?.bodySink;
+  if (own != null && Number.isFinite(Number(own))) return Math.max(0, Math.min(SharedAttackPose.MAX_BODY_SINK_PCT, Number(own)));
+  return phase === 'neutral' ? SharedAttackPose.idleBodySinkPct() : sinkPctForPhase('neutral');
+}
+function sinkPctForPose(pose) {
+  if (pose && Number.isFinite(Number(pose.bodySink))) return Math.max(0, Math.min(SharedAttackPose.MAX_BODY_SINK_PCT, Number(pose.bodySink)));
+  const phase = Object.keys(anim.poses || {}).find(key => anim.poses[key] === pose);
+  return phase ? sinkPctForPhase(phase) : sinkPctForPhase('neutral');
+}
+
 const FIELD_DEFS = [
   { key: 'x', label: 'Tool X position (side)', min: -1, max: 1, step: 0.01, angle: false },
   { key: 'y', label: 'Tool Y position (height)', min: -1, max: 1, step: 0.01, angle: false },
@@ -911,6 +1188,7 @@ const FIELD_DEFS = [
   { key: 'yaw', label: 'Tool Y rotation°', min: -180, max: 180, step: 1, angle: true },
   { key: 'roll', label: 'Tool Z rotation°', min: -180, max: 180, step: 1, angle: true },
   { key: 'bodyYaw', label: 'Character Y rotation°', min: -180, max: 180, step: 1, angle: true },
+  { key: 'bodySink', label: 'Body sink (% of total height)', min: 0, max: 25, step: 0.5, angle: false, percent: true },
   { key: 'scale', label: 'Tool scale (uniform)', min: 0.1, max: 3, step: 0.01, angle: false, neutralOnly: true },
 ];
 
@@ -928,6 +1206,21 @@ function elbowControlPoint(phase, side) {
 
 function elbowInputId(side, axis) {
   return `poseElbow_${side}_${axis}`;
+}
+function elbowSliderId(side, axis) {
+  return `${elbowInputId(side, axis)}_slider`; // The elbow's range and number fields edit the same authored per-pose channel.
+}
+
+function syncPoseCoordinatePair(slider, numberInput, value, min, max, blankWhenUnset = false) {
+  const finite = Number.isFinite(value) ? value : 0; // An unkeyed elbow displays a neutral slider without creating a keyframe.
+  if (slider) {
+    slider.min = String(Math.min(min, Math.floor(finite))); // Keep gizmo-authored out-of-range points representable.
+    slider.max = String(Math.max(max, Math.ceil(finite)));
+    slider.value = String(finite);
+  }
+  if (numberInput && document.activeElement !== numberInput) {
+    numberInput.value = blankWhenUnset && value === null ? '' : String(finite); // Blank elbows remain explicitly unauthored until touched.
+  }
 }
 
 function readElbowInputs(side) {
@@ -949,6 +1242,44 @@ function writeElbowPoseValue(phase, side, point) {
   return true;
 }
 
+const FREE_RIGHT_HAND_CHANNELS = ['x', 'y', 'z', 'pitch', 'yaw', 'roll']; // Avatar-local hand socket independent of tool motion.
+function captureFreeRightHandFromGrip(phase) {
+  const grips = window.HobunjiHandToolGrips;
+  if (!avatarModel || !grips) return false;
+  applyPoseToRig(anim.poses[phase]);
+  toolHolder.updateWorldMatrix(true, false);
+  avatarModel.updateWorldMatrix(true, false);
+  const grip = grips.primaryGripForTool(currentToolKey, grips.currentGripContext?.(), { speciesId: currentSpeciesId, gender: currentGender });
+  if (!grip?.position) return false;
+  const p = toolHolder.localToWorld(new THREE.Vector3(grip.position.x, grip.position.y, grip.position.z));
+  avatarModel.worldToLocal(p); // Capture the real current grip as avatar-local coordinates so detaching doesn't teleport the fingers.
+  const right = anim.poses[phase].rightHand ||= {};
+  const holderQ = toolHolder.getWorldQuaternion(new THREE.Quaternion()); // Initial free-hand wrist rotation should match the currently grasped instrument.
+  const gripRotation = grip.rotationDeg || {};
+  holderQ.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(
+    THREE.MathUtils.degToRad(Number(gripRotation.pitch) || 0),
+    THREE.MathUtils.degToRad(Number(gripRotation.yaw) || 0),
+    THREE.MathUtils.degToRad(Number(gripRotation.roll) || 0), 'YXZ')));
+  const localQ = avatarModel.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(holderQ);
+  const angles = new THREE.Euler().setFromQuaternion(localQ, 'YXZ');
+  Object.assign(right, {
+    enabled: true, x: p.x, y: p.y, z: p.z,
+    pitch: THREE.MathUtils.radToDeg(angles.x), yaw: THREE.MathUtils.radToDeg(angles.y), roll: THREE.MathUtils.radToDeg(angles.z),
+  });
+  refreshJsonView();
+  return true;
+}
+function enableFreeRightHandForPhase(phase) {
+  const right = anim.poses[phase].rightHand ||= {}; // Keeps the authored transformation if the artist temporarily unticks Free mode.
+  if (!right.enabled && !FREE_RIGHT_HAND_CHANNELS.some(key => Number(right[key]) !== 0)) {
+    captureFreeRightHandFromGrip(phase); // Toggling via either checkbox or a gizmo button begins on the instrument, not at the origin.
+  }
+  right.enabled = true;
+  return right;
+}
+window.HobunjiAttackEditorRightHand = {
+  currentPose() { return window.HobunjiHandToolGrips?.sampleFreeRightHand?.(anim.poses, anim, previewT, anim.sequence) || null; },
+};
 function renderActivePosePanel() {
   const panel = $('activePosePanel');
   const fields = poseFieldDefs(editPhase);
@@ -956,7 +1287,7 @@ function renderActivePosePanel() {
     <div class="field" data-elbow-pose-side="${side}">
       <label>${side === 'left' ? 'Left' : 'Right'} elbow position (shoulder-relative)</label>
       <div class="row" style="gap:7px;align-items:center;flex-wrap:wrap">
-        ${ELBOW_AXES.map(axis => `<label class="fieldRow" style="margin:0;min-width:88px">${axis.toUpperCase()} <input id="${elbowInputId(side, axis)}" type="number" step="0.01" placeholder="unset" style="width:72px"></label>`).join('')}
+        ${ELBOW_AXES.map(axis => `<div class="field" style="flex:1 1 180px;min-width:0"><label>${axis.toUpperCase()}</label><div class="fieldRow" style="gap:7px"><input id="${elbowSliderId(side, axis)}" type="range" min="-2" max="2" step="0.005" aria-label="${side} elbow ${axis} slider" style="flex:1;min-width:0"><input id="${elbowInputId(side, axis)}" type="number" step="0.005" placeholder="unset" aria-label="${side} elbow ${axis} coordinate" style="width:77px;flex:0 0 77px"></div></div>`).join('')}
         <button type="button" class="secondary" id="poseElbowMidpoint_${side}">Set halfway shoulder↔hand</button>
       </div>
     </div>`).join('');
@@ -969,13 +1300,29 @@ function renderActivePosePanel() {
       </div>
     </div>`).join('') + `
       <div class="help" style="margin-top:8px">Elbows are ordinary ${editPhase[0].toUpperCase() + editPhase.slice(1)} pose values. Blank means no elbow keyframe. The halfway buttons sample the current shoulder/hand once and write coordinates; gameplay never recalculates a midpoint.</div>
-      ${elbowRows}`;
+      <label class="fieldRow" style="cursor:pointer;margin:8px 0 2px"><input id="poseShowArmBones" type="checkbox" style="width:auto;margin-right:6px">Show arm bones</label>
+      <div class="help">Draws shoulder <b style="color:#22c55e">● green</b> → elbow <b style="color:#f97316">● orange</b> → hand socket <b style="color:#22d3ee">● cyan</b> joined by bars. The orange sphere is the elbow as currently interpolated at the previewed time, so it matches the inputs above when the preview sits on this pose. The blue spheres are the hand anchor and weapon grip, not the arm.</div>
+      ${elbowRows}
+      <div class="hr"></div>
+      <div class="poseGroupHead"><span class="dot" style="background:#e879f9"></span>Right hand · independent animation</div>
+      <label class="fieldRow" style="cursor:pointer"><input id="poseFreeRightHandEnabled" type="checkbox" style="width:auto;margin-right:6px">Free right hand (not attached to instrument)</label>
+      <div class="help">When enabled, right-hand XYZ and rotation are relative to the <b>character's body</b>, not the moving tool. Transitions blend between the normal grip and this independent pose. Useful for plucking/strumming while the left hand holds the instrument.</div>
+      <div id="poseFreeRightHandFields">
+        <div class="compactGrid">
+          ${FREE_RIGHT_HAND_CHANNELS.map(axis => `<div class="field"><label>Hand ${axis.toUpperCase()}${['pitch','yaw','roll'].includes(axis) ? ' (°)' : ''}</label><div class="fieldRow" style="gap:7px"><input type="range" id="poseFreeRightHand_${axis}_slider" min="${['pitch','yaw','roll'].includes(axis) ? -180 : -2}" max="${['pitch','yaw','roll'].includes(axis) ? 180 : 2}" step="${['pitch','yaw','roll'].includes(axis) ? 1 : 0.005}" aria-label="Free right hand ${axis} slider" style="flex:1;min-width:0"><input type="number" step="${['pitch','yaw','roll'].includes(axis) ? 1 : 0.005}" id="poseFreeRightHand_${axis}" aria-label="Free right hand ${axis} coordinate" style="width:82px;flex:0 0 82px"></div></div>`).join('')}
+        </div>
+        <div class="row">
+          <button type="button" class="secondary" id="poseCaptureRightGrip">Use current grip</button>
+          <button type="button" class="secondary" id="poseMoveRightHand">⊹ Move hand in 3D</button>
+          <button type="button" class="secondary" id="poseRotateRightHand">↻ Rotate hand in 3D</button>
+        </div>
+      </div>`;
   for (const f of fields) {
     const el = $(`pose_${f.key}`);
     el.addEventListener('input', () => {
       const v = Number(el.value);
       anim.poses[editPhase][f.key] = v;
-      $(`pose_${f.key}_val`).textContent = f.angle ? `${v.toFixed(0)}°` : v.toFixed(2);
+      $(`pose_${f.key}_val`).textContent = f.angle ? `${v.toFixed(0)}°` : f.percent ? `${v.toFixed(1)}%` : v.toFixed(2);
       focusPreviewOnPhase(editPhase);
       applyPoseToRig(anim.poses[editPhase]);
       refreshJsonView();
@@ -983,12 +1330,25 @@ function renderActivePosePanel() {
   }
   for (const side of ELBOW_SIDES) {
     for (const axis of ELBOW_AXES) {
-      $(elbowInputId(side, axis))?.addEventListener('input', () => {
+      const numberInput = $(elbowInputId(side, axis)); // Precision control and slider write into the same authored elbow coordinate.
+      const slider = $(elbowSliderId(side, axis)); // Touch-friendly control without a separate pose model.
+      const commitElbow = () => {
         writeElbowPoseValue(editPhase, side, readElbowInputs(side));
         focusPreviewOnPhase(editPhase);
         applyPoseToRig(anim.poses[editPhase]);
         window.ProceduralHandFrameDriver?.syncNow?.();
         refreshJsonView();
+      };
+      numberInput?.addEventListener('input', () => {
+        const raw = numberInput.value.trim();
+        if (raw !== '' && !Number.isFinite(Number(raw))) return; // A half-typed negative/decimal must not overwrite a valid elbow keyframe.
+        if (raw !== '') syncPoseCoordinatePair(slider, numberInput, Number(raw), -2, 2);
+        commitElbow(); // Clearing a numeric elbow may un-author it; the slider never silently recreates it.
+      });
+      numberInput?.addEventListener('blur', () => syncPosePanelFromState(editPhase)); // Reconcile precision values with the paired slider once mobile input finishes.
+      slider?.addEventListener('input', () => {
+        numberInput.value = String(Number(slider.value)); // Sliding an unset elbow explicitly authors its first keyframe.
+        commitElbow();
       });
     }
     $(`poseElbowMidpoint_${side}`)?.addEventListener('click', () => {
@@ -1005,22 +1365,77 @@ function renderActivePosePanel() {
       logDebug(`Authored ${editPhase} ${side} elbow halfway between the currently displayed shoulder and hand.`);
     });
   }
+  const freeSwitch = $('poseFreeRightHandEnabled');
+  freeSwitch.addEventListener('change', () => {
+    const right = anim.poses[editPhase].rightHand ||= {};
+    if (freeSwitch.checked) enableFreeRightHandForPhase(editPhase);
+    else right.enabled = false;
+    syncPosePanelFromState(editPhase); window.ProceduralHandFrameDriver?.syncNow?.(); refreshJsonView();
+  });
+  for (const channel of FREE_RIGHT_HAND_CHANNELS) {
+    const numeric = $('poseFreeRightHand_' + channel); // Precision input pairs with its touch-friendly slider.
+    const slider = $('poseFreeRightHand_' + channel + '_slider'); // Both controls persist to the selected phase's rightHand object.
+    const angle = ['pitch','yaw','roll'].includes(channel);
+    const limit = angle ? 360 : 5; // Guard against accidental mobile inputs moving a hand far outside the avatar.
+    const applyFreeChannel = (raw, fromSlider = false) => {
+      if (String(raw).trim() === '') return; // Allow partially edited number fields without corrupting their pose.
+      const value = Number(raw);
+      if (!Number.isFinite(value)) return;
+      const bounded = Math.max(-limit, Math.min(limit, value));
+      const right = anim.poses[editPhase].rightHand ||= {};
+      right[channel] = bounded;
+      syncPoseCoordinatePair(slider, fromSlider ? numeric : null, bounded, angle ? -180 : -2, angle ? 180 : 2);
+      focusPreviewOnPhase(editPhase);
+      window.ProceduralHandFrameDriver?.syncNow?.(); refreshJsonView();
+    };
+    numeric?.addEventListener('input', () => applyFreeChannel(numeric.value));
+    numeric?.addEventListener('blur', () => syncPosePanelFromState(editPhase)); // Reflect clamped/mobile-entered numbers after editing without disturbing focus.
+    slider?.addEventListener('input', () => applyFreeChannel(slider.value, true));
+  }
+  $('poseCaptureRightGrip').onclick = () => {
+    focusPreviewOnPhase(editPhase);
+    if (captureFreeRightHandFromGrip(editPhase)) {
+      syncPosePanelFromState(editPhase); window.ProceduralHandFrameDriver?.syncNow?.();
+    }
+  };
+  $('poseMoveRightHand').onclick = () => {
+    enableFreeRightHandForPhase(editPhase);
+    syncPosePanelFromState(editPhase); setGizmoMode('translate', 'rightHand');
+  };
+  $('poseRotateRightHand').onclick = () => {
+    enableFreeRightHandForPhase(editPhase);
+    syncPosePanelFromState(editPhase); setGizmoMode('rotate', 'rightHand');
+  };
+  const armBones = $('poseShowArmBones');
+  if (armBones) {
+    armBones.checked = window.HobunjiAttackEditorHandShoulderControls?.showPaperArmGuide === true;
+    armBones.addEventListener('change', () => window.HobunjiAttackEditorHandShoulderControls?.setShowPaperArmGuide?.(armBones.checked));
+  }
   syncPosePanelFromState(editPhase);
 }
 
 function syncPosePanelFromState(phase = editPhase) {
   if (phase !== editPhase || !$('activePosePanel')) return;
   for (const f of poseFieldDefs(editPhase)) {
-    const v = safeNum(anim.poses[editPhase][f.key], f.key === 'scale' ? 1 : 0);
+    const v = f.key === 'bodySink' ? sinkPctForPhase(editPhase) : safeNum(anim.poses[editPhase][f.key], f.key === 'scale' ? 1 : 0); // An unauthored sink shows the value it inherits.
     $(`pose_${f.key}`).value = v;
-    $(`pose_${f.key}_val`).textContent = f.angle ? `${v.toFixed(0)}°` : v.toFixed(2);
+    $(`pose_${f.key}_val`).textContent = f.angle ? `${v.toFixed(0)}°` : f.percent ? `${v.toFixed(1)}%` : v.toFixed(2);
+  }
+  const freeHand = anim.poses[editPhase].rightHand || {};
+  const enabled = $('poseFreeRightHandEnabled');
+  if (enabled) enabled.checked = freeHand.enabled === true;
+  const freeFields = $('poseFreeRightHandFields');
+  if (freeFields) freeFields.style.display = freeHand.enabled === true ? '' : 'none';
+  for (const channel of FREE_RIGHT_HAND_CHANNELS) {
+    const angle = ['pitch','yaw','roll'].includes(channel);
+    syncPoseCoordinatePair($('poseFreeRightHand_' + channel + '_slider'), $('poseFreeRightHand_' + channel),
+      Number(freeHand[channel]) || 0, angle ? -180 : -2, angle ? 180 : 2);
   }
   for (const side of ELBOW_SIDES) {
     const point = elbowControlPoint(editPhase, side);
     for (const axis of ELBOW_AXES) {
-      const input = $(elbowInputId(side, axis));
-      if (!input || document.activeElement === input) continue;
-      input.value = point && Number.isFinite(Number(point[axis])) ? String(Number(point[axis])) : '';
+      const value = point && Number.isFinite(Number(point[axis])) ? Number(point[axis]) : null;
+      syncPoseCoordinatePair($(elbowSliderId(side, axis)), $(elbowInputId(side, axis)), value, -2, 2, true);
     }
   }
 }
@@ -1087,8 +1502,10 @@ $('durationS').addEventListener('input', () => {
 // makes the combined transform a true x-mirror (verified algebraically: world
 // x flips sign, world z is preserved).
 function flipPose(p) {
-  const flipped = defaultPose(-p.x, p.y, p.z, p.pitch, -p.yaw, -p.bodyYaw, -(p.roll || 0));
+  const mirrored = SharedAttackPose.MIRRORED_POSE_KEYS; // Same left/right-handed channels the game negates for Backhand.
+  const flipped = defaultPose(mirrored.x ? -p.x : p.x, mirrored.y ? -p.y : p.y, mirrored.z ? -p.z : p.z, mirrored.pitch ? -p.pitch : p.pitch, mirrored.yaw ? -p.yaw : p.yaw, mirrored.bodyYaw ? -p.bodyYaw : p.bodyYaw, mirrored.roll ? -(p.roll || 0) : (p.roll || 0));
   if (p.scale != null) flipped.scale = p.scale;
+  if (p.bodySink != null) flipped.bodySink = p.bodySink; // Sinking is symmetric about the midline; Backhand never mirrors it.
   if (p.shoulderAim) flipped.shoulderAim = { ...p.shoulderAim };
   if (p.secondaryGrip) flipped.secondaryGrip = { ...p.secondaryGrip };
   if (p.dualWield != null) flipped.dualWield = typeof p.dualWield === 'object' ? { ...p.dualWield } : p.dualWield;
@@ -1102,7 +1519,14 @@ function flipPose(p) {
   }
   return flipped;
 }
+$('headRelative').onchange = () => {
+  anim.headRelative = $('headRelative').checked;
+  for (const pose of Object.values(anim.poses)) pose.headRelative = anim.headRelative;
+  refreshJsonView();
+  logDebug(`Animation origin: ${anim.headRelative ? 'head (arm scaling bypassed)' : 'hand'}`);
+};
 function syncToolEndFlipUi() {
+  $('headRelative').checked = anim.headRelative === true;
   const btn = $('toolEndFlipBtn');
   if (!btn) return;
   btn.textContent = `↕ Tool End Flip: ${anim.toolEndFlip ? 'On' : 'Off'}`;
@@ -1122,7 +1546,7 @@ $('flipBtn').onclick = () => {
   anim.poses.strike = flipPose(anim.poses.strike);
   window.HobunjiAttackEditorHandShoulderControls?.loadFromAnimationObject?.({ poses: anim.poses });
   toolMirrored = !toolMirrored;
-  toolBase.position.x = toolMirrored ? -baseAttachX : baseAttachX;
+  toolBase.position.x = toolBaseSideX();
   if (toolPlaneMesh) toolPlaneMesh.scale.x = toolMirrored ? -1 : 1;
   syncPosePanelFromState('neutral');
   syncPosePanelFromState('windup');
@@ -1144,6 +1568,12 @@ $('resetPosesBtn').onclick = () => {
 // read directly off updateToolMesh's radian constants, converted to degrees.
 // Hold (idle) poses are each style's progress=0 values; windup/strike are each
 // style's WF/SF (0.16/0.28) keyframe extremes.
+// Attack templates the game also plays (js/combat/attack-pose-templates.js); edit poses there.
+function sharedAttackPoses(templateId) {
+  const poses = window.AttackPoseTemplates?.poseFor?.(templateId);
+  if (!poses) throw new Error(`Missing shared attack pose template ${templateId}`);
+  return poses;
+}
 const TOOL_PRESETS = [
   ...(window.HeldActionAnimations?.drink ? [{
     id: 'drink', label: 'Bottle — Drink', style: 'drink', toolKey: 'bottle', still: false,
@@ -1170,16 +1600,14 @@ const TOOL_PRESETS = [
     windup: defaultPose(0, 0, 0.16, 0, 0, 0), strike: defaultPose(0, 0, 0.16, 0, 0, 0),
     windupFrac: 0.16, strikeFrac: 0.28 },
   { id: 'hatchet_swing', label: 'Hatchet — Swing (sweep)', style: 'sweep', toolKey: 'hatchet', still: false,
-    neutral: { ...neutralPoseFor('sweep'), secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
-    windup: { ...defaultPose(0, 0, 0.16, 0, 0, -126.05), secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } }, strike: { ...defaultPose(0, 0, 0.16, 0, 0, 121.49), secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
+    ...sharedAttackPoses('hatchet_swing'), // Shared with the game: js/combat/attack-pose-templates.js
     windupFrac: 0.16, strikeFrac: 0.28 },
 
   { id: 'pickshovel_idle', label: 'Pick-Shovel — Idle (still)', style: 'thrust', toolKey: 'pickshovel', still: true,
     windup: defaultPose(0, 0, 0, 10.31, 0, 0), strike: defaultPose(0, 0, 0, 10.31, 0, 0),
     windupFrac: 0.16, strikeFrac: 0.28 },
   { id: 'pickshovel_swing', label: 'Pick-Shovel — Swing (thrust)', style: 'thrust', toolKey: 'pickshovel', still: false,
-    neutral: { ...neutralPoseFor('thrust'), secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
-    windup: { ...defaultPose(0, 0, -0.22, 10.31, 0, -45), secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } }, strike: { ...defaultPose(-0.23, 0, 0.32, 1, -45, 46), secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
+    ...sharedAttackPoses('pickshovel_swing'), // Shared with the game: js/combat/attack-pose-templates.js
     windupFrac: 0.16, strikeFrac: 0.28 },
 
   { id: 'bronzehoe_idle', label: 'Bronze Hoe — Idle (still)', style: 'chop', toolKey: 'bronzehoe', still: true,
@@ -1195,16 +1623,14 @@ const TOOL_PRESETS = [
     windup: defaultPose(0, 0, 0.16, 0, 0, 0), strike: defaultPose(0, 0, 0.16, 0, 0, 0),
     windupFrac: 0.16, strikeFrac: 0.28 },
   { id: 'fishingspear_swing', label: 'Fishing Spear — Swing (sweep)', style: 'sweep', toolKey: 'fishingspear', still: false,
-    neutral: { ...neutralPoseFor('sweep'), secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
-    windup: { ...defaultPose(0, 0, 0.16, 0, 0, -126.05), secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } }, strike: { ...defaultPose(0, 0, 0.16, 0, 0, 121.49), secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
+    ...sharedAttackPoses('fishingspear_swing'), // Shared with the game: js/combat/attack-pose-templates.js
     windupFrac: 0.16, strikeFrac: 0.28 },
 
   { id: 'fishingmace_idle', label: 'Fishing Mace — Idle (still)', style: 'sweep', toolKey: 'fishingmace', still: true,
     windup: defaultPose(0, 0, 0.16, 0, 0, 0), strike: defaultPose(0, 0, 0.16, 0, 0, 0),
     windupFrac: 0.16, strikeFrac: 0.28 },
   { id: 'fishingmace_swing', label: 'Fishing Mace — Swing (sweep, spins in-game)', style: 'sweep', toolKey: 'fishingmace', still: false,
-    neutral: { ...neutralPoseFor('sweep'), secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
-    windup: { ...defaultPose(0, 0, 0.16, 0, 0, -126.05), secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } }, strike: { ...defaultPose(0, 0, 0.16, 0, 0, 121.49), secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
+    ...sharedAttackPoses('fishingmace_swing'), // Shared with the game: js/combat/attack-pose-templates.js
     windupFrac: 0.16, strikeFrac: 0.28 },
   { id: 'crossbow_load', label: 'Crossbow — Load', name: 'Crossbow Load', style: 'ranged', sequence: 'attack', toolKey: 'crossbow', still: false,
     neutral: { ...defaultPose(0, 0.12, 0.18, -8, 0, 0, 0), scale: 1.77 }, windup: defaultPose(0, -0.17, 0.09, 77, 0, -10, 0), strike: defaultPose(0, 0.18, 0.08, -11, 0, 7, 0), windupFrac: 0.55, strikeFrac: 0.56, holdFrac: 0.692, durationS: 1.04 },
@@ -1220,21 +1646,62 @@ const TOOL_PRESETS = [
 // Keep the two weapon-slot stance cards sourced from the same committed JSON
 // the live WeaponToolStances runtime reads. The literals above are only the
 // local-file/fetch-failure fallback, matching that runtime module's pattern.
-fetch('../../config/combat/weapon-idle-stances.json')
-  .then(response => response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`)))
-  .then(config => {
-    for (const [presetId, stanceId] of [['heavy_weapon_idle', 'heavyWeapon'], ['light_weapon_idle', 'lightWeapon']]) {
+const WEAPON_IDLE_POSE_FIELDS = ['x', 'y', 'z', 'pitch', 'yaw', 'bodyYaw', 'roll']; // Channels that distinguish a saved stance from a placeholder or user edit.
+let weaponIdlePresetRetryCount = 0; // Diagnostic retry count for transient stance fetch failures.
+let weaponIdlePresetRetryTimer = null; // One editor-owned recovery timer, separate from the idle-stance sidebar.
+function sameWeaponIdlePose(actual, expected) {
+  return WEAPON_IDLE_POSE_FIELDS.every(key => Number(actual?.[key]) === Number(expected?.[key]));
+}
+async function loadWeaponIdlePresets() {
+  const controller = typeof AbortController === 'function' ? new AbortController() : null; // Prevent a stalled request from occupying the entire editing session.
+  const deadline = controller ? setTimeout(() => controller.abort(), 10000) : null; // Retry after a ten-second hung request.
+  try {
+    const response = await fetch('../../config/combat/weapon-idle-stances.json', {
+      cache: 'no-store', ...(controller ? { signal: controller.signal } : {}),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const config = await response.json();
+    const pairs = [['heavy_weapon_idle', 'heavyWeapon'], ['light_weapon_idle', 'lightWeapon']]; // The still-action templates sourced from the authored JSON.
+    if (config?.kind !== 'hobunji_weapon_idle_stances' || !pairs.every(([, key]) =>
+      WEAPON_IDLE_POSE_FIELDS.every(field => typeof config.stances?.[key]?.[field] === 'number' &&
+        Number.isFinite(config.stances[key][field])))) throw new Error('incomplete stance config');
+    for (const [presetId, stanceId] of pairs) {
       const preset = TOOL_PRESETS.find(entry => entry.id === presetId);
-      const pose = config?.stances?.[stanceId];
-      if (!preset || !pose) continue;
+      const pose = config.stances[stanceId];
+      if (!preset) continue;
+      // Refresh the preview already on screen only if every phase still matches the old placeholder.
+      // An authored slider/gizmo edit takes priority over an asynchronous configuration response.
+      const previewUnedited = currentAction()?.templateId === presetId
+        && ['neutral', 'windup', 'strike'].every(phase => sameWeaponIdlePose(anim.poses[phase], preset[phase]));
       preset.neutral = { ...pose };
       preset.windup = { ...pose };
       preset.strike = { ...pose };
+      if (previewUnedited) {
+        for (const phase of ['neutral', 'windup', 'strike']) {
+          anim.poses[phase] = { ...anim.poses[phase], ...pose };
+          syncPosePanelFromState(phase);
+        }
+        refreshJsonView();
+        refreshPreviewDebug();
+      }
     }
+    weaponIdlePresetRetryCount = 0;
     logDebug('Loaded Heavy/Light weapon stances from weapon-idle-stances.json');
-  })
-  .catch(error => logDebug(`Weapon stance config fetch failed (${error.message}) — using bundled fallbacks.`));
+  } catch (error) {
+    weaponIdlePresetRetryCount += 1;
+    const retryMs = Math.min(30000, 1000 * (2 ** Math.min(weaponIdlePresetRetryCount - 1, 5))); // Recover without reloading the editor.
+    logDebug(`Weapon idle preset fetch failed (${error?.message || error}); retrying in ${Math.round(retryMs / 1000)}s.`);
+    weaponIdlePresetRetryTimer = setTimeout(() => {
+      weaponIdlePresetRetryTimer = null;
+      void loadWeaponIdlePresets();
+    }, retryMs);
+  } finally {
+    if (deadline !== null) clearTimeout(deadline);
+  }
+}
+void loadWeaponIdlePresets();
 function applyPreset(preset) {
+  if (gizmoMode !== 'off') setGizmoMode('off'); // Switching Actions cannot leave the previous instrument's endpoint/hand gizmo attached.
   if (preset.name) {
     anim.name = preset.name;
     $('animName').value = anim.name;
@@ -1245,7 +1712,7 @@ function applyPreset(preset) {
   // The selected Action owns hand-follow and elbow pose fields too. Reload the
   // hand adapter every time so state from the previously selected Action cannot leak.
   window.HobunjiAttackEditorHandShoulderControls?.loadFromAnimationObject?.({ poses: anim.poses });
-  window.HobunjiHandToolGrips?.loadEditorAnimationGrip?.({ sequence: preset.sequence || 'attack', style: preset.style, still: preset.still, poses: anim.poses }); // Switching Actions reloads 2H/Dual state instead of leaking the prior Action's mode.
+  window.HobunjiHandToolGrips?.loadEditorAnimationGrip?.({ actionId: currentActionId, toolKey: preset.toolKey, sequence: preset.sequence || 'attack', style: preset.style, still: preset.still, poses: anim.poses }); // Switching Actions reloads 2H/Dual state instead of leaking the prior Action's mode.
   anim.windupFrac = preset.windupFrac;
   anim.strikeFrac = preset.strikeFrac;
   // Presets predate holdFrac, so derive it the same way game.js's HF auto-
@@ -1257,7 +1724,15 @@ function applyPreset(preset) {
     $('durationS').value = anim.durationS;
   }
   anim.style = preset.style;
+  const gripContextSelect = $('handGripContextSelect'); // Loaded blowgun previews must use its ranged grip, never its melee calibration.
+  const gripContext = anim.style === 'ranged' ? 'ranged' : 'melee'; // Action style selects the matching authored grip family.
+  if (gripContextSelect && gripContextSelect.value !== gripContext) {
+    gripContextSelect.value = gripContext;
+    gripContextSelect.dispatchEvent(new Event('change', { bubbles: true }));
+  }
   anim.sequence = preset.sequence || 'attack';
+  anim.headRelative = preset.headRelative === true || preset.neutral?.headRelative === true;
+  for (const pose of Object.values(anim.poses)) pose.headRelative = anim.headRelative;
   anim.toolEndFlip = preset.toolEndFlip === true;
   anim.spinBasisDeg = safeNum(preset.spinBasisDeg, 0);
   anim.spinRevolutions = Math.max(0, safeNum(preset.spinRevolutions, 0));
@@ -1282,6 +1757,9 @@ function applyPreset(preset) {
     $('toolSpriteSelect').value = preset.toolKey;
     setToolSprite(preset.toolKey).catch(e => logDebug('Tool sprite swap failed: ' + e.message));
   }
+  const gripModeEditor = window.HobunjiAttackEditorHandGripMode; // Keep the Kurraya's authored palm orientation when changing Action, after choosing its tool sprite.
+  if (preset.gripMode) gripModeEditor?.loadFromAnimationObject?.(preset);
+  else gripModeEditor?.syncForTool?.(); // Non-Kurraya actions must not inherit the previous instrument's manual grip mode.
   if (preset.still) {
     playing = false;
     // True idle is t=0 (poseAt's neutral pose), not a frozen mid-swing
@@ -1299,43 +1777,52 @@ function applyPreset(preset) {
   logDebug(`Loaded preset: ${preset.label}`);
 }
 // ── Playback / auto-lerp preview ─────────────────────────────────────────
-function lerpPose(a, b, k) {
-  return defaultPose(
-    a.x + (b.x - a.x) * k,
-    a.y + (b.y - a.y) * k,
-    a.z + (b.z - a.z) * k,
-    a.pitch + (b.pitch - a.pitch) * k,
-    a.yaw + (b.yaw - a.yaw) * k,
-    a.bodyYaw + (b.bodyYaw - a.bodyYaw) * k,
-    (a.roll || 0) + ((b.roll || 0) - (a.roll || 0)) * k
-  );
-}
+// Channel values come from SharedAttackPose.sequencedPoseLerp -- the exact timeline the game samples for
+// the player and every enemy -- so what plays here is what plays in game. Only the phase labels and the
+// hold-phase pose object (which keeps its hand-grip/elbow fields) are editor-side.
 function poseAt(t) {
+  const result = poseChannelsAt(t);
+  result.pose.bodySink = SharedAttackPose.sequencedPoseLerp(anim.sequence, t, anim.windupFrac, anim.strikeFrac, anim.holdFrac, sinkPctForPhase('windup'), sinkPctForPhase('strike'), sinkPctForPhase('neutral'), sinkPctForPhase('neutral')); // Same easing as every other channel, so the legs fold across the whole swing.
+  return result;
+}
+function poseChannelsAt(t) {
   const wf = anim.windupFrac, sf = anim.strikeFrac, hf = anim.holdFrac;
-  const neutral = anim.poses.neutral;
-  if (anim.sequence === 'load') {
-    if (t <= wf) return { pose: lerpPose(neutral, anim.poses.windup, t / Math.max(0.0001, wf)), phase: 'load windup' };
-    return { pose: lerpPose(anim.poses.windup, neutral, (t - wf) / Math.max(0.0001, 1 - wf)), phase: 'load return' };
+  const { neutral, windup, strike } = anim.poses;
+  const phase = anim.sequence === 'load' ? (t <= wf ? 'load windup' : 'load return')
+    : anim.sequence === 'fire' ? (t <= sf ? 'fire' : (t <= hf ? 'recoil hold' : 'fire return'))
+    : (t <= wf ? 'windup' : (t <= sf ? 'strike' : (t <= hf ? 'hold' : 'return')));
+  if (phase === 'hold' || phase === 'recoil hold') return { pose: { ...strike }, phase };
+  // A 0% windup has always shown the windup pose at t = 0 here; keep that authoring behavior.
+  if (anim.sequence !== 'load' && anim.sequence !== 'fire' && wf <= 0 && t <= 0) return { pose: defaultPose(windup.x || 0, windup.y || 0, windup.z || 0, windup.pitch || 0, windup.yaw || 0, windup.bodyYaw || 0, windup.roll || 0), phase };
+  const channel = key => SharedAttackPose.sequencedPoseLerp(anim.sequence, t, wf, sf, hf, windup[key] || 0, strike[key] || 0, neutral[key] || 0, neutral[key] || 0);
+  const k = SharedAttackPose.POSE_KEYS;
+  return { pose: defaultPose(channel(k[0]), channel(k[1]), channel(k[2]), channel(k[3]), channel(k[4]), channel(k[5]), channel(k[6])), phase };
+}
+// Sinks the whole previewed body (portrait, hands, tool base) by `pct` of its total height. The leg handle raises its group by the same amount so
+// the soles stay on the floor and folds the two-bone legs at full length (knees bend); update(0) re-skins the pants onto the bent legs.
+let toolBaseRestY = 0; // toolBase's un-sunk Y, recorded by rebuildAvatar.
+let editorLegs = null; // ProceduralLegAnimation handle (feet + pants) under characterBodyScaleRoot.
+let appliedBodySinkPct = 0;
+let appliedWorldSink = 0; // World distance the body root is currently lowered by (so a rebuild can restore the standing baseline).
+function applyBodySink(pct, bodyYawDeg = 0) {
+  const sinkUnits = Math.max(0, pct) / 100 * currentAvatarModelHeight; // Body-root-local units, like the leg handle's own.
+  let applied = sinkUnits;
+  if (editorLegs) {
+    editorLegs.setStanceYawDeg(bodyYawDeg); // The leg on the side away from the turn leads and swings about its hip so its foot points forward.
+    editorLegs.setStanceDrop(sinkUnits, true);
+    editorLegs.update(0, 0, false, null, {}); // dt 0: no gait, but re-solves the chain and re-skins the pants.
+    applied = editorLegs.getStanceDrop();
   }
-  if (anim.sequence === 'fire') {
-    if (t <= sf) return { pose: lerpPose(neutral, anim.poses.strike, t / Math.max(0.0001, sf)), phase: 'fire' };
-    if (t <= hf) return { pose: { ...anim.poses.strike }, phase: 'recoil hold' };
-    return { pose: lerpPose(anim.poses.strike, neutral, (t - hf) / Math.max(0.0001, 1 - hf)), phase: 'fire return' };
-  }
-  if (t <= wf) {
-    const k = wf > 0 ? t / wf : 1;
-    return { pose: lerpPose(neutral, anim.poses.windup, k), phase: 'windup' };
-  } else if (t <= sf) {
-    const k = (sf - wf) > 0 ? (t - wf) / (sf - wf) : 1;
-    return { pose: lerpPose(anim.poses.windup, anim.poses.strike, k), phase: 'strike' };
-  } else if (t <= hf) {
-    return { pose: { ...anim.poses.strike }, phase: 'hold' };
-  } else {
-    const k = (1 - hf) > 0 ? (t - hf) / (1 - hf) : 1;
-    return { pose: lerpPose(anim.poses.strike, neutral, k), phase: 'return' };
-  }
+  appliedBodySinkPct = currentAvatarModelHeight > 0 ? applied / currentAvatarModelHeight * 100 : 0;
+  const worldSink = applied * characterBodyScaleRoot.scale.y;
+  appliedWorldSink = worldSink;
+  characterBodyScaleRoot.position.y = (characterBodyScaleRoot.userData.sinkBaseY || 0) - worldSink;
+  toolBase.position.y = toolBaseRestY - worldSink; // toolBase is a sibling of the body root, so it is lowered by the same world distance.
 }
 function applyPoseToRig(pose) {
+  syncGripAxisMarkers(); // Keep Nut/Bridge markers visible while previewing, scrubbing and switching instruments, even with the gizmo off.
+  window.HobunjiDualWieldWeaponVisuals?.setCarriedPose(pose); // The invisible idle-offhand tool peels the pose the holder carries right now.
+  applyBodySink(handCalibrationPresentationActive ? 0 : sinkPctForPose(pose), pose.bodyYaw);
   // Body rotation (rig) is applied first/separately from the tool's own local pose —
   // toolBase/toolHolder are children of rig, so this automatically carries the tool
   // along with the body, same as game.js's playerMesh.rotation.y for sweep swings.
@@ -1378,6 +1865,15 @@ function applyPoseToRig(pose) {
   lastAuthoredPose.x = Number(pose.x) || 0; lastAuthoredPose.y = Number(pose.y) || 0; lastAuthoredPose.z = Number(pose.z) || 0;
   poseOrbitScratch.set(toolBase.position.x + lastAuthoredPose.x, toolBase.position.y + lastAuthoredPose.y, toolBase.position.z + lastAuthoredPose.z); // Existing pre-arm-length finished point.
   lastRawRigPose.x = poseOrbitScratch.x; lastRawRigPose.y = poseOrbitScratch.y; lastRawRigPose.z = poseOrbitScratch.z;
+  if (anim.headRelative && SharedAttackPose.headFrame(editorHeadFrame, avatarModel)) {
+    // Head-anchored: the tool's aperture mates with the species mouth point; the head alone supplies rotation and scale.
+    SharedAttackPose.placeAtMouth(toolHolder, editorHeadFrame, pose, safeNum(anim.poses.neutral.scale, 1), editorToolAperture(), toolBase);
+    toolHolder.updateWorldMatrix?.(true, false);
+    toolHolder.getWorldPosition(poseWorldDebugScratch);
+    lastScaledWorldPose.x = poseWorldDebugScratch.x; lastScaledWorldPose.y = poseWorldDebugScratch.y; lastScaledWorldPose.z = poseWorldDebugScratch.z;
+    lastScaledRigPose.x = toolBase.position.x + toolHolder.position.x; lastScaledRigPose.y = toolBase.position.y + toolHolder.position.y; lastScaledRigPose.z = toolBase.position.z + toolHolder.position.z;
+    return;
+  }
   window.HobunjiSpeciesPoseScale?.transformPosePoint?.(poseOrbitScratch, {
     cx: 0, cz: 0, floorY: 0, baseY: toolBase.position.y,
     speciesId: currentSpeciesId, gender: currentGender,
@@ -1396,6 +1892,7 @@ function applyPoseToRig(pose) {
   const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(pose.yaw));
   const qRoll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), THREE.MathUtils.degToRad(pose.roll || 0));
   toolHolder.quaternion.copy(qYaw).multiply(qPitch).multiply(qRoll);
+  SharedAttackPose.anchorScaleAtPoint(toolHolder, editorToolGrip(), toolHolder.scale.x); // Weapon scale pivots on the main-hand grip so the hand never slides.
 }
 
 // ── Unified gameplay Action registry + practical effects ─────────────────
@@ -1426,7 +1923,12 @@ const ACTION_DEFS = [
 
   { id: 'crossbow_load', group: 'Non-attack held actions', label: 'Crossbow — Load', statsPath: ['rangedWeapons','crossbow'], templateId: 'crossbow_load', practical: false },
   { id: 'scatterbow_load', group: 'Non-attack held actions', label: 'Scatterbow — Load', statsPath: ['rangedWeapons','scatterbow'], templateId: 'scatterbow_load', practical: false },
+  { id: 'blowgun_ready', group: 'Non-attack held actions', label: "B'shuakauitl — Loaded", heldAnimationKey: 'blowgunReady', practical: false, toolKey: 'bshuakauitl' },
+  { id: 'flute_play_note', group: 'Musical instrument actions', label: 'Flute — Play Note', heldAnimationKey: 'flutePlayNote', practical: false, toolKey: 'flute' },
+  { id: 'kurraya_play_note', group: 'Musical instrument actions', label: 'Kurraya — Play Note', heldAnimationKey: 'kurrayaPlayNote', practical: false, toolKey: 'kurraya' },
+  { id: 'held_item_small', group: 'Non-attack held actions', label: 'Small Held Item — Idle (Pick-Shovel basis)', heldAnimationKey: 'heldItemSmall', practical: false, toolKey: 'bottle' },
   { id: 'drink', group: 'Non-attack held actions', label: 'Drink', heldAnimationKey: 'drink', practical: false, toolKey: 'bottle' },
+  { id: 'held_item_large', group: 'Non-attack held actions', label: 'Large Held Item — Idle (two-hand)', heldAnimationKey: 'heldItemLarge', practical: false, toolKey: 'bottle' },
   { id: 'heavy_idle', group: 'Non-attack held actions', label: 'Heavy Weapon — Idle', templateId: 'heavy_weapon_idle', practical: false },
   { id: 'light_idle', group: 'Non-attack held actions', label: 'Light Weapon — Idle', templateId: 'light_weapon_idle', practical: false },
 ];
@@ -1470,6 +1972,7 @@ function clonePoseData(pose = {}) {
     secondaryGrip: pose.secondaryGrip ? { ...pose.secondaryGrip } : pose.secondaryGrip,
     dualWield: pose.dualWield && typeof pose.dualWield === 'object' ? { ...pose.dualWield } : pose.dualWield,
     elbows: pose.elbows ? Object.fromEntries(Object.entries(pose.elbows).map(([side, point]) => [side, point ? { ...point } : point])) : pose.elbows,
+    rightHand: pose.rightHand ? { ...pose.rightHand } : pose.rightHand, // Free-hand animation keyframes must not share mutable state between actions.
   };
 }
 function cloneAnimationTemplate(source = {}) {
@@ -1489,7 +1992,7 @@ function templateForAction(action) {
       ...held,
       sequence: held.sequence || 'attack',
       toolKey: action.toolKey,
-      still: false,
+      still: held.still === true,
     });
   }
   const preset = TOOL_PRESETS.find(entry => entry.id === action.templateId);
@@ -1497,7 +2000,7 @@ function templateForAction(action) {
 }
 function setMirroredPreview(mirrored) {
   toolMirrored = !!mirrored;
-  toolBase.position.x = toolMirrored ? -baseAttachX : baseAttachX;
+  toolBase.position.x = toolBaseSideX();
   if (toolPlaneMesh) toolPlaneMesh.scale.x = toolMirrored ? -1 : 1;
 }
 function actionUsesMeleeSpacing(action) {
@@ -1609,7 +2112,9 @@ function applySelectedAction({ play = true } = {}) {
   $('animName').value = action.label;
   anim.name = action.label;
   $('animStyle').value = anim.style;
-  $('actionSourceHelp').textContent = action.practical === false
+  $('actionSourceHelp').textContent = action.group === 'Musical instrument actions'
+    ? 'Playing one sounded note is this instrument’s action. Its animation has no hitbox, damage, knockback or combat stamina cost. Flute and Kurraya are authored separately.'
+    : action.practical === false
     ? 'Non-attack action: animation remains fully editable; practical attack effect is fixed at zero.'
     : 'Gameplay attack: animation and practical effect below are both scoped to this selected action.';
   renderStatFields();
@@ -1832,7 +2337,7 @@ function selectEditPhase(phase, { focus = true } = {}) {
     applyPoseToRig(anim.poses[phase]);
   }
   if (gizmoMode !== 'off') {
-    transformControls.attach(toolHolder);
+    refreshGizmoTarget();
     transformControls.setMode(gizmoMode);
   }
 }
@@ -1850,6 +2355,30 @@ window.HobunjiAttackEditorToolContext = Object.freeze({
   get toolHolder() { return toolHolder; },
   get bodyRoot() { return rig; }, // Dual Wield mirrors the offhand anchor in this already-body-yawed frame without changing bodyYaw itself.
   get toolPlaneMesh() { return toolPlaneMesh; },
+  // Offhand idle authoring: where the visible offhand copy's origin sits relative to the saved (hidden source) pose,
+  // in the pose's own un-rotated units. Rotation sliders use it to turn the weapon you see in place.
+  offhandPivotPoseOffset() {
+    const copy = window.HobunjiDualWieldWeaponVisuals?.editorOffhandCopy?.();
+    if (!offhandAuthoringBase || !copy) return null;
+    toolBase.updateWorldMatrix(true, false); toolHolder.updateWorldMatrix(true, false); copy.updateWorldMatrix(true, false);
+    const toPosePoint = world => {
+      const point = toolBase.worldToLocal(world).add(toolBase.position);
+      window.HobunjiSpeciesPoseScale?.untransformPosePoint?.(point, {
+        cx: 0, cz: 0, floorY: 0, baseY: toolBase.position.y,
+        speciesId: currentSpeciesId, gender: currentGender,
+        modelHeight: currentAvatarModelHeight,
+        armLength: currentArmLength, poseOrbitScale: currentPoseOrbitScale,
+      }); // Same inverse the drag handler uses, so slider and gizmo edits agree.
+      return point;
+    };
+    const copyPoint = toPosePoint(copy.getWorldPosition(new THREE.Vector3()));
+    const holderPoint = toPosePoint(toolHolder.getWorldPosition(new THREE.Vector3()));
+    const offset = copyPoint.sub(holderPoint).applyQuaternion(toolHolder.quaternion.clone().invert());
+    return { x: offset.x, y: offset.y, z: offset.z };
+  },
+  get gizmoTarget() { return gizmoTarget(); }, // What the 3D gizmo is attached to: a proxy on the visible weapon (see above), never the hidden holder.
+  get transformControls() { return transformControls; },
+  setOffhandAuthoringBase(active) { offhandAuthoringBase = !!active; toolBase.position.x = toolBaseSideX(); toolBase.updateMatrixWorld?.(true); refreshGizmoTarget(); },
   get toolKey() { return currentToolKey; },
   focusNeutral() {
     selectEditPhase('neutral');
@@ -1890,14 +2419,16 @@ function refreshJsonView() {
 function exportAnimObject() {
   const exported = {
     version: 1,
-    kind: anim.style === 'drink' ? 'hobunji_held_action_animation' : 'hobunji_attack_animation',
+    kind: currentAction().practical === false ? 'hobunji_held_action_animation' : 'hobunji_attack_animation',
     name: anim.name,
+    actionId: currentActionId, // Used to identify this instrument on export without guessing from its animation name.
     style: anim.style,
     sequence: anim.sequence,
     windupFrac: anim.windupFrac,
     strikeFrac: anim.strikeFrac,
     holdFrac: anim.holdFrac,
     durationS: anim.durationS,
+    headRelative: anim.headRelative === true,
     toolEndFlip: anim.toolEndFlip === true,
     poses: { neutral: { ...anim.poses.neutral }, windup: { ...anim.poses.windup }, strike: { ...anim.poses.strike } },
   };
@@ -1908,6 +2439,9 @@ function exportAnimObject() {
   if (typeof anim.projectileSpin === 'boolean') exported.projectileSpin = anim.projectileSpin;
   if (anim.projectileLockAlignment) exported.projectileLockAlignment = true;
   if (anim.projectileBasisDeg) exported.projectileBasisDeg = Number(anim.projectileBasisDeg) || 0;
+  const gripMode = window.HobunjiAttackEditorHandGripMode?.selectedMode; // The visible hand orientation is part of a faithful copied/downloaded animation export.
+  if (gripMode) exported.gripMode = gripMode;
+  window.HobunjiHandToolGrips?.decorateEditorAnimationGrip?.(exported); // Synchronize the grip panel's per-phase 2H and Dual Wield values before export/Undo, not only when the JSON textarea was patched.
   return window.HobunjiAttackEditorHandShoulderControls?.decorateAnimationObject?.(exported) || exported;
 }
 $('exportBtn').onclick = () => {
@@ -1935,6 +2469,39 @@ $('copyTransformDumpBtn').onclick = async () => {
   try { await navigator.clipboard.writeText($('transformDumpView').value); logDebug('Copied preview transform dump'); }
   catch { logDebug('Clipboard copy failed'); }
 };
+// Full rig dump: one capture in the pose frame (floor origin, rig yaw), reporting the body subtree and weapon holder root-relative.
+function captureEditorRig() {
+  const api = window.HobunjiRigDump;
+  if (!api) return null;
+  const frame = api.makeFrame(rig, { x: 0, y: 0, z: 0 }, rig.rotation.y);
+  const firstToolMesh = api.firstMesh(toolHolder); // The weapon plane, not the grip-marker sphere.
+  return api.capture({
+    label: 'editor preview', species: currentSpeciesId, gender: currentGender,
+    context: { tool: currentToolKey, phase: editPhase, bodyRigScale: { x: characterBodyScaleRoot.scale.x, y: characterBodyScaleRoot.scale.y }, toolMirrored },
+    frame, trees: [{ label: 'rig', root: rig }],
+    anchors: { 'tool.holder': toolHolder, 'tool.visual': firstToolMesh, portrait: avatarModel },
+  });
+}
+$('fullRigDumpBtn').onclick = () => {
+  const dump = captureEditorRig();
+  if (!dump) { logDebug('Full rig dump unavailable (HobunjiRigDump not loaded)'); return; }
+  $('fullRigDumpView').value = `${window.HobunjiRigDump.formatText(dump)}\n\n--- JSON ---\n${JSON.stringify([dump])}`;
+  logDebug(`Dumped full rig (${dump.trees[0].entries.length} nodes, ${Object.keys(dump.anchors).length} anchors)`);
+};
+$('copyFullRigDumpBtn').onclick = async () => {
+  try { await navigator.clipboard.writeText($('fullRigDumpView').value); logDebug('Copied full rig dump'); }
+  catch { logDebug('Clipboard copy failed'); }
+};
+$('compareRigDumpBtn').onclick = () => {
+  const api = window.HobunjiRigDump, text = $('gameRigDumpInput').value;
+  const jsonStart = text.search(/\[\s*\{\s*"schema"/);
+  if (!api || jsonStart < 0) { $('rigDumpDiffView').value = 'Paste the game dump including its JSON block.'; return; }
+  try {
+    const games = JSON.parse(text.slice(jsonStart));
+    const mine = captureEditorRig();
+    $('rigDumpDiffView').value = games.map(game => api.formatDiff(api.diff(mine, game))).join('\n\n');
+  } catch (error) { $('rigDumpDiffView').value = `Could not parse the game dump JSON: ${error.message}`; }
+};
 $('loadBtn').onclick = () => $('loadFile').click();
 $('loadFile').onchange = async () => {
   const file = $('loadFile').files?.[0];
@@ -1943,8 +2510,7 @@ $('loadFile').onchange = async () => {
   try {
     const data = JSON.parse(await file.text());
     loadAnimObject(data);
-    window.HobunjiAttackEditorHandGripMode?.loadFromAnimationObject?.(data);
-    logDebug(`Loaded ${file.name}`);
+    logDebug(`Loaded ${file.name}`); // The common load path restores free hand, elbow, grip and palm mode once.
   } catch (e) {
     logDebug(`Load failed: ${e.message}`);
   } finally {
@@ -1970,6 +2536,7 @@ function loadAnimObject(data) {
   // than silently growing a pause into a previously-authored animation.
   anim.holdFrac = safeNum(data.holdFrac, anim.strikeFrac);
   anim.durationS = safeNum(data.durationS, anim.durationS);
+  anim.headRelative = (data.headRelative ?? data.poses?.neutral?.headRelative) === true;
   anim.toolEndFlip = data.toolEndFlip === true;
   anim.spinBasisDeg = safeNum(data.spinBasisDeg, safeNum(actionSource?.spinBasisDeg, 0));
   anim.spinRevolutions = Math.max(0, safeNum(data.spinRevolutions, safeNum(actionSource?.spinRevolutions, 0)));
@@ -1988,9 +2555,24 @@ function loadAnimObject(data) {
   anim.poses.windup = defaultPose(safeNum(w.x, 0), safeNum(w.y, 0), safeNum(w.z, 0), safeNum(w.pitch, 0), safeNum(w.yaw, 0), safeNum(w.bodyYaw, 0), safeNum(w.roll, 0));
   anim.poses.strike = defaultPose(safeNum(s.x, 0), safeNum(s.y, 0), safeNum(s.z, 0), safeNum(s.pitch, 0), safeNum(s.yaw, 0), safeNum(s.bodyYaw, 0), safeNum(s.roll, 0));
   for (const [phase, raw] of [['neutral', n], ['windup', w], ['strike', s]]) {
+    anim.poses[phase].headRelative = anim.headRelative;
+    if (raw?.bodySink != null && Number.isFinite(Number(raw.bodySink))) anim.poses[phase].bodySink = Math.max(0, Math.min(SharedAttackPose.MAX_BODY_SINK_PCT, Number(raw.bodySink)));
     if (raw?.shoulderAim && typeof raw.shoulderAim === 'object') anim.poses[phase].shoulderAim = { ...raw.shoulderAim };
     if (raw?.secondaryGrip && typeof raw.secondaryGrip === 'object') anim.poses[phase].secondaryGrip = { ...raw.secondaryGrip };
     if (raw?.dualWield != null) anim.poses[phase].dualWield = typeof raw.dualWield === 'object' ? { ...raw.dualWield } : raw.dualWield;
+    if (raw?.rightHand && typeof raw.rightHand === 'object') {
+      const rightHand = { enabled: raw.rightHand.enabled === true }; // Preserve authored free-hand poses through import, history restore and mobile refresh.
+      for (const channel of FREE_RIGHT_HAND_CHANNELS) {
+        if (raw.rightHand[channel] == null) continue; // Missing angles must remain omitted, not converted to misleading explicit zeroes.
+        const value = Number(raw.rightHand[channel]);
+        if (Number.isFinite(value)) rightHand[channel] = Math.max(channel === 'pitch' || channel === 'yaw' || channel === 'roll' ? -360 : -5,
+          Math.min(channel === 'pitch' || channel === 'yaw' || channel === 'roll' ? 360 : 5, value));
+      }
+      anim.poses[phase].rightHand = rightHand;
+    }
+    if (raw?.offhandIdle && typeof raw.offhandIdle === 'object') {
+      anim.poses[phase].offhandIdle = { ...raw.offhandIdle, ...(raw.offhandIdle.pose && typeof raw.offhandIdle.pose === 'object' ? { pose: { ...raw.offhandIdle.pose } } : {}) }; // Restore the grip editor's optional offhand idle data too.
+    }
     if (raw?.elbows && typeof raw.elbows === 'object') {
       const elbows = Object.fromEntries(ATTACK_POSE_SIDES
         .map(side => [side, normalizedPoseElbow(raw.elbows?.[side])])
@@ -2002,7 +2584,8 @@ function loadAnimObject(data) {
   // Restore them on every load path (file import, Undo/Redo, programmatic restore),
   // not only the file-input handler.
   window.HobunjiAttackEditorHandShoulderControls?.loadFromAnimationObject?.(data);
-  window.HobunjiHandToolGrips?.loadEditorAnimationGrip?.({ sequence: anim.sequence, style: anim.style, poses: anim.poses });
+  window.HobunjiHandToolGrips?.loadEditorAnimationGrip?.({ actionId: currentActionId, toolKey: currentAction().toolKey, sequence: anim.sequence, style: anim.style, poses: anim.poses });
+  window.HobunjiAttackEditorHandGripMode?.loadFromAnimationObject?.(data); // Undo/Redo and programmatic import also restore the authored palm orientation.
   $('animName').value = action.label;
   $('animStyle').value = anim.style;
   $('playbackSequence').value = anim.sequence;
@@ -2114,6 +2697,19 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
+let lastFlailPreviewT = -1; // Detect timeline seeks for deterministic physics reconstruction.
+document.addEventListener('input', () => { lastFlailPreviewT = -1; }); // Parameter edits also invalidate a paused physical preview.
+function updatePreviewFlail(sampleT, sampleDt) {
+  window.HobunjiWeaponSpriteAssemblies?.setAction(toolPlaneMesh, {
+    attacking: sampleT > 0.001 && sampleT < 0.999, progress: sampleT,
+    movementPosition: rig.position, // Preview character stays stationary unless authoring moves the rig; animation itself cannot tilt the hanging chain.
+    windupFrac: anim.windupFrac, strikeFrac: anim.strikeFrac, holdFrac: anim.holdFrac,
+    yawTravelDeg: window.HobunjiWeaponSpriteAssemblies?.flailYawTravel(anim.poses?.windup, anim.poses?.strike), // Authored travel remains available in mobile diagnostics.
+    pitchTravelDeg: (Number(anim.poses?.strike?.pitch) || 0) - (Number(anim.poses?.windup?.pitch) || 0),
+  }); // Shared runtime keeps gravity through windup, straightens during strike, and releases physical momentum during Hold.
+  window.HobunjiWeaponSpriteAssemblies?.tick(sampleDt); // No gameplay scheduler runs in the standalone ESM preview.
+}
+
 let lastFrameTime = performance.now();
 function animate() {
   requestAnimationFrame(animate);
@@ -2127,11 +2723,25 @@ function animate() {
   }
   const { pose, phase } = poseAt(previewT);
   applyPoseToRig(pose);
+  if (transformControls.object === gizmoProxy && !transformControls.dragging) syncGizmoProxy(); // Follows slider/Neutral edits and the visuals; during a drag the proxy is the input.
   updateHeadSkinVertexOverlay();
   $('phasePill').textContent = `phase: ${phase} (${Math.round(previewT * 100)}%)`;
   updateTimelineMarker(previewT);
   controls.update();
-  renderer.render(scene, camera);
+  const flailPreviewChanged = previewT !== lastFlailPreviewT; // Paused scrubbing reconstructs momentum from the complete preceding swing.
+  if (!playing && flailPreviewChanged) {
+    applyPoseToRig(poseAt(0).pose);
+    updatePreviewFlail(0, 0);
+    const replaySteps = Math.ceil(previewT * Math.max(0.05, anim.durationS) * 120); // Same physical timeline at 120 Hz, including direct seeks into Hold.
+    for (let step = 1; step <= replaySteps; step++) { // Only replay on a changed scrub position, never continuously while paused.
+      const sampleT = previewT * step / replaySteps; // Normalized replay time supplies both pose and connector input.
+      applyPoseToRig(poseAt(sampleT).pose);
+      updatePreviewFlail(sampleT, Math.max(0.05, anim.durationS) * previewT / replaySteps);
+    }
+    refreshPreviewDebug(); // Existing mobile debug panel shows the reconstructed physical state.
+  } else updatePreviewFlail(previewT, playing ? dt : 0);
+  lastFlailPreviewT = previewT;
+  renderer.render(scene, camera); // Head-anchored and hand-anchored tools now share the normal preview draw.
 }
 animate();
 

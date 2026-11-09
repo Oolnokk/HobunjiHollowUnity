@@ -100,16 +100,72 @@
       sleepHours: { start: 22, end: 7 },
       townAfternoon: { start: 12, end: 17, daysOfWeekMod: 3 }, // Visits town (their old schedule) on roughly every third day's afternoon.
       farmWanderRadiusTiles: 6,
+      // Per-NPC overrides use weekday names; otherwise resume original town agenda every third afternoon.
+      townVisitsByNpc: {},
       seatBlockMinutes: 90, // How long the spouse sticks with one chair before picking another.
+      dialogue: { // Marriage-specific greetings and forms of address; only the player's spouse uses these.
+        nickname: 'love', // Fallback form of address used by dialogue and proximity greetings for an unlisted spouse.
+        greetings: [
+          'There you are, {targetName}. I was hoping to see you.',
+          'Welcome back, {targetName}. How has your day been?',
+          'Good {dayPart}, {targetName}. It is nice having you close.',
+        ],
+        byNpc: { // Individual voices override the fallback without changing the NPC's authored pre-marriage lines.
+          tooth_hatayap: { nickname: 'my heart', greetings: [
+            'There you are, {targetName}. I was just thinking of you.',
+            'Come sit with me when you can, {targetName}. The day can wait.',
+          ] },
+          aliri_ginju: { nickname: 'dear', greetings: [
+            'Oh, {targetName}! Come see how things are growing.',
+            'Welcome home, {targetName}. There is always room for you beside me.',
+          ] },
+          nashka_khibu: { nickname: 'trouble', greetings: [
+            'You again, {targetName}? Good. I was hoping.',
+            'Hey, {targetName}. Come find me when you have a moment.',
+          ] },
+          sloomi: { nickname: 'sweetheart', greetings: [
+            'Oh! {targetName}. I am glad you are here.',
+            'Hi, {targetName}. I still smile every time I see you.',
+          ] },
+          namui_u_hakaru: { nickname: 'my heart', greetings: [
+            'There you are, {targetName}! I was beginning to miss you.',
+            'Come close, {targetName}. I have stories to tell you.',
+          ] },
+          oddclaw_unumanuk: { nickname: 'treasure', greetings: [
+            'Ah, {targetName}! I have been saving a story for you.',
+            'There you are, {targetName}. Always good to see my favorite face.',
+          ] },
+          foroji_funji: { nickname: 'honey', greetings: [
+            'Welcome home, {targetName}. Shall we make something good to eat?',
+            'Hello, {targetName}. I kept a place for you at the table.',
+          ] },
+          jubmir: { nickname: 'dear heart', greetings: [
+            'Hey, {targetName}. The day feels better with you here.',
+            'Come on over, {targetName}. I am always glad to see you.',
+          ] },
+          takua_ao_hakaru: { nickname: 'love', greetings: [
+            'Hey, {targetName}. I can spare a moment for you.',
+            'Back again, {targetName}? Good. Stay a while.',
+          ] },
+        },
+      },
     },
 
     // ── Family ───────────────────────────────────────────────────────────
     family: {
+      maxChildrenPerMarriage: 1, // Intended to become two later; this is today's one-child cap.
+      dreamPostponeDays: { soon: 1, time: 14, month: DAYS_PER_MONTH }, // Earliest new dream by in-game day.
+      childTown: {
+        startHour: 11, endHour: 16, visitPercent: 65, // Seeded daily roll; mornings/evenings remain at home.
+        peerMeetPercent: 85, friendNpcIds: ['gantami_ginju'],
+        stationRoles: ['play', 'socialize', 'sit', 'freeTime'],
+        wanderRadiusTiles: 3,
+      },
       announceAfterDays: 3 * DAYS_PER_MONTH,
       birthAfterDays: 6 * DAYS_PER_MONTH,
       basketDays: 1 * DAYS_PER_MONTH,
       toddlingDays: 5 * DAYS_PER_MONTH, // Toddling Footing eases 99 → 0 over this span after leaving the basket.
-      independentAfterDays: 12 * DAYS_PER_MONTH, // Age (from birth) at which children walk normally and leave the house.
+      independentAfterDays: 6 * DAYS_PER_MONTH, // Basket month + five toddler months, then village-child phase.
       eggLayingSpecies: ['kenkari'],
       // Child proportions per growth phase, fed to PNGPlaneAvatar.childScaleFor
       // as the record's childBodyScale / childHeadScale: `body` scales the whole

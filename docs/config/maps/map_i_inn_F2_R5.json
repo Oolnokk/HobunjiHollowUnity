@@ -157,10 +157,6 @@
     [
       12,
       9
-    ],
-    [
-      9,
-      5
     ]
   ],
   "exits": [
@@ -175,7 +171,9 @@
       ],
       "targetMap": "map_i_inn_F2",
       "spawnCol": 10,
-      "spawnRow": 9
+      "spawnRow": 9,
+      "direction": "south",
+      "generateDoor": true
     }
   ],
   "colliders": [],

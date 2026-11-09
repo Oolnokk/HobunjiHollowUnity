@@ -87,9 +87,10 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 #qhelpPopover .qhelp-close{position:absolute;top:5px;right:9px;cursor:pointer;color:#9fb4cf;font-weight:800;font-size:13px}
 #qhelpPopover .qhelp-close:hover{color:#edf5ff}
 </style>
-<script src="../../js/panel-ui.js"></script>
-<script src="../../js/furniture-puzzle-properties.js?v=20260922perpiece1"></script>
-<script src="../../js/map-live-preview.js?v=20260909a"></script>
+<script src="../../js/panel-ui.js?v=20261107h64d192c"></script>
+<script src="../../js/furniture-puzzle-properties.js?v=20261103hb35528e"></script>
+<script src="../../js/table-chair-placement.js?v=20261102chairreview3"></script>
+<script src="../../js/map-live-preview.js?v=20261029maskSlots2"></script>
 </head>
 <body>
 <div id="shell">
@@ -375,17 +376,24 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
               <button class="ok" id="applyLayoutBtn">Apply</button>
               <button class="bad" id="delLayoutBtn">Delete layout</button>
             </div>
-            <div style="margin-top:12px;border-top:1px solid #596;padding-top:8px">
-              <b>Festival props &amp; activity areas</b>
-              <p class="muted">Pick any decor prop to edit its activity, placeholder dressing, and location. Changes belong only to this layout; normal JSON export/import and undo preserve them.</p>
+          </div>
+          <div style="margin-top:12px;border-top:1px solid #596;padding-top:8px">
+              <b>Furniture &amp; locale properties</b>
+              <p class="muted">Pick furniture to assign its table, edit locale links, or adjust optional activity and dressing settings. Changes belong to the selected base map or alternate layout; normal JSON export/import and undo preserve them.</p>
               <select id="festivalPropSelect"></select>
+              <label>Belongs to table (optional furniture id)</label><input id="propTableId" placeholder="table instance id, or blank">
+              <label>Choose a table in this map</label><select id="propTableChoice"><option value="">No table</option></select>
+              <label>Spatial chair placement</label><select id="propTableMode"><option value="">Independent placement</option><option value="orbit">Orbit around round table</option><option value="edge">Along a flat table edge</option></select>
+              <div class="g2"><div><label>Orbit angle (degrees)</label><input id="propTableAngle" type="number" min="0" max="360" step="1" value="0"></div><div><label>Distance from table edge</label><input id="propTableDistance" type="number" min="0" max="4" step="0.05" value="0.65"></div></div>
+              <div class="g2"><div><label>Flat table side</label><select id="propTableSide"><option value="front">Front</option><option value="back">Back</option><option value="left">Left</option><option value="right">Right</option></select></div><div><label>Edge position (%)</label><input id="propTableAlong" type="number" min="0" max="100" step="1" value="50"></div></div>
+              <small>Chair/table links are map-local and work without a festival. Locale child parts use their local ids.</small>
               <label>Activity</label><select id="festivalPropType"></select>
               <label>Label</label><input id="festivalPropLabel">
               <div class="row"><div><label>Column</label><input id="festivalPropCol" type="number" step="1"></div><div><label>Row</label><input id="festivalPropRow" type="number" step="1"></div><div><label>Reach (tiles)</label><input id="festivalPropRadius" type="number" min="1" max="8" step="0.25" value="2.5"></div></div>
               <label>Placeholder dressing</label><select id="festivalPropDressing"><option value="">None</option><option>blossoms</option><option>gifts</option><option>masks</option><option>sweets</option><option>feast</option><option>ancestors</option><option>bunting</option></select>
               <label>Accent</label><input id="festivalPropColor" type="color" value="#caa45c">
               <button class="ok" id="festivalPropApply">Apply prop settings</button>
-            </div>
+              <details><summary>Locale chair/table links</summary><div id="localeTableLinks"></div></details>
           </div>
         </div>
 
@@ -439,7 +447,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
      below so the Materials tab's 3D preview matches the live game's recolor exactly
      (see loadTerrainTileTexture in game.js). No THREE dependency of its own. -->
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
-<script src="../../js/portrait-utils.js?v=20261016h340e25a"></script>
+<script src="../../js/portrait-utils.js?v=20261107h7418f3e"></script>
 <script src="../../js/local-db-overrides.js"></script>
 <script src="../../js/repo-picker.js"></script>
 <script src="../../js/interior-furniture-grid.js?v=20261012heb9cb96"></script>
@@ -452,12 +460,18 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 <script src="../../js/foliage-generator.js"></script>
 <script src="../../js/wood-cut-surfaces.js"></script>
 <script src="../../js/stacked-log-walls.js"></script>
-<script src="../../js/surface-stretch-uv-furniture.js?v=20261016h4fe902d"></script>
-<script src="../../js/HousePieceGen.js"></script>
+<script src="../../js/surface-stretch-uv-furniture.js?v=20261031h5856d5a"></script>
+<script src="../../js/house-wall-fixtures.js?v=20261027h412254d"></script>
+<script src="../../js/HousePieceGen.js?v=20261027h2377f08"></script>
 <script src="../../js/terrain-preview.js"></script>
+<script>window.__hobunjiFurnitureConfigBase = "../../config/furniture-authored/"; window.__hobunjiFurnitureAssetBase = "../../assets/";</script>
+<script src="../../js/authored-furniture-runtime.js?v=20261104hf23bb18"></script>
+<script src="../../js/furniture-table-system.js?v=20261104familylocks1"></script>
 <script src="../../js/procedural-furniture.js"></script>
-<script src="../../js/festival-calendar.js?v=20261008festivals1"></script>
-<script src="../../js/festival-props.js?v=20261008festivals1"></script>
+<script src="../../js/runtime-frame-scheduler.js?v=organic-surfaces-1"></script>
+<script src="../../js/furniture-vessel-runtime.js?v=20261106hlantern2"></script>
+<script src="../../js/festival-calendar.js?v=20261020he3496ca"></script>
+<script src="../../js/festival-props.js?v=20261022hb972a07"></script>
 <script>
 (() => {
 'use strict';
@@ -558,6 +572,9 @@ const PROCESSORS = {
 };
 
 const DECOR = {
+  festivalStage:{icon:'🎵',label:'Festival Bandstand Stage',fw:2,fd:2,area:'any'},
+  festivalDanceFloor:{icon:'💃',label:'Festival Dance Floor',fw:2,fd:2,area:'any'},
+  festivalArch:{icon:'🎏',label:'Festival Road Arch',fw:1,fd:1,area:'any'},
   basicBed:{icon:'🛏️',label:'Single Bed',fw:1,fd:2,area:'interior'}, doubleBed:{icon:'🛏️',label:'Double Bed',fw:2,fd:2,area:'interior'},
   bedroll:{icon:'🛌',label:'Bedroll',fw:1,fd:1,area:'interior'}, bench:{icon:'🪑',label:'Short Bench',fw:2,fd:1,area:'interior'},
   bookshelf:{icon:'📚',label:'Bookshelf',fw:2,fd:1,area:'interior'}, bucket:{icon:'🪣',label:'Tin Bucket',fw:1,fd:1,area:'any'},
@@ -567,7 +584,8 @@ const DECOR = {
   desk:{icon:'✍️',label:'Writing Desk',fw:2,fd:1,area:'interior'}, dresser:{icon:'🗄️',label:'Low Dresser',fw:2,fd:1,area:'interior'},
   hearth:{icon:'🔥',label:'Hearth Fireplace',fw:2,fd:1,area:'interior'}, loom:{icon:'🧶',label:'Simple Loom',fw:1,fd:2,area:'interior'},
   nightstand:{icon:'🕯️',label:'Nightstand',fw:1,fd:1,area:'interior'}, rug:{icon:'🧶',label:'Woven Rug',fw:2,fd:2,area:'interior'},
-  standingLamp:{icon:'💡',label:'Standing Lamp',fw:1,fd:1,area:'interior'}, stool:{icon:'🪑',label:'Round Stool',fw:1,fd:1,area:'any'},
+  standingLamp:{icon:'🏮',label:'Lantern Table',fw:1,fd:1,area:'interior'}, stool:{icon:'🪑',label:'Round Stool',fw:1,fd:1,area:'any'},
+  servingTable:{icon:'🍲',label:'Serving Table',fw:4,fd:1,area:'any'}, servingPot:{icon:'🍲',label:'Serving Pot',fw:1,fd:1,area:'any'}, bowlStack:{icon:'🥣',label:'Stack of Bowls',fw:1,fd:1,area:'any'},
   tableLong:{icon:'🍽️',label:'Long Table',fw:4,fd:1,area:'interior'}, tableRound:{icon:'🍽️',label:'Round Table',fw:2,fd:2,area:'interior'},
   tableSmall:{icon:'🍽️',label:'Small Table',fw:1,fd:1,area:'interior'}, wardrobe:{icon:'🚪',label:'Tall Wardrobe',fw:2,fd:1,area:'interior'},
   washTub:{icon:'🛁',label:'Copper Wash Tub',fw:1,fd:1,area:'any'},
@@ -578,6 +596,10 @@ const DECOR = {
   mineLadder:{icon:'🪜',label:'Mine Ladder',fw:1,fd:1,area:'interior'}, campfire:{icon:'🔥',label:'Campfire',fw:1,fd:1,area:'any'},
   feedGrinder:{icon:'⚙️',label:'Feed Grinder',fw:1,fd:1,area:'interior'}, trough:{icon:'🪣',label:'Feed Trough',fw:1,fd:1,area:'interior'},
   generalStoreSign:{icon:'🪧',label:'General Store Sign',fw:1,fd:1,area:'any'}, innSign:{icon:'🪧',label:'Inn Sign',fw:1,fd:1,area:'any'},
+  burdenPlinth:{icon:'⚖️',label:'Burden Plinth',fw:1,fd:1,area:'interior',puzzle:{
+    role:'activator',behavior:'burdenPlate',channel:'A',completionChannel:'B',
+    requiredBurdenKind:'shattercask',payloadSurfaceId:'burden_plinth_lower:surface:2'
+  }},
   door:{icon:'🚪',label:'Interior Door',fw:1,fd:1,area:'interior',puzzle:{role:'mechanism',behavior:'toggle',directInteraction:true,blocksMovement:true}}
 };
 
@@ -619,6 +641,7 @@ function makeMap(name, category, cols, rows) {
     decor: [],        // { key, col, row }
     routes: [],       // { id, label, nodes: [[c,r],...] }
     rivers: [],       // { id, label, kind:'river'|'stream', nodes: [[c,r],...], width, seed, paintTiles }
+    farmPlots: [],    // { id, label, kind:'till'|'dig', tiles:[[c,r],...], crop, tillers[], seeders[], harvesters[], diggers[] } — NPC-tended farmland, see js/npc-farm-plots.js
     npcPaths: [],     // legacy compatibility only: { id, label, npcId, nodes: [[c,r],...] }
     transitions: [],  // { id, label, col, row, targetMapId, targetSpotId }
     npcStations: [], // { id, label, col, row, rotY, pose, toolKey, toolIntervalSec, toolAnimStyle }
@@ -656,6 +679,8 @@ function buildingInteriorToWorkspaceMap(mapData, entry = {}) {
       label: exit.label || exit.id,
       targetMapId: exit.targetMap || '',
       spawnCol: Number.isFinite(exit.spawnCol) ? exit.spawnCol : 0,
+      generateDoor: exit.generateDoor === true,
+      direction: exit.direction || '',
       spawnRow: Number.isFinite(exit.spawnRow) ? exit.spawnRow : 0
     }))
   );
@@ -716,6 +741,8 @@ function buildBuildingInteriorMapV1(m) {
     if (!Number.isFinite(t.col) || !Number.isFinite(t.row)) return;
     const exitId = t.exitId || (typeof t.id === 'string' && t.id.includes('_') ? t.id.replace(/_\d+_\d+$/, '') : t.id) || uid('exit');
     const ex = baseExitsById.get(exitId) || generated.get(exitId) || { id: exitId, label: t.label || 'Exit', tiles: [], targetMap: '', spawnCol: 0, spawnRow: 0 };
+    if (typeof t.generateDoor === 'boolean') ex.generateDoor = t.generateDoor;
+    if (typeof t.direction === 'string') ex.direction = t.direction;
     ex.label = t.label || ex.label || exitId;
     ex.targetMap = t.targetMapId || ex.targetMap || '';
     ex.spawnCol = Number.isFinite(t.spawnCol) ? t.spawnCol : (Number.isFinite(ex.spawnCol) ? ex.spawnCol : 0);
@@ -751,7 +778,7 @@ function buildBuildingInteriorMapV1(m) {
 const _baselines = new Map();
 function _snapMap(m) {
   return JSON.parse(JSON.stringify({
-    tiles: m.tiles, visualHeights: m.visualHeights, routes: m.routes, rivers: m.rivers, buildings: m.buildings,
+    tiles: m.tiles, visualHeights: m.visualHeights, routes: m.routes, rivers: m.rivers, farmPlots: m.farmPlots, buildings: m.buildings,
     transitions: m.transitions, npcStations: m.npcStations,
     cols: m.cols, rows: m.rows
   }));
@@ -780,7 +807,7 @@ function computeMapDiff(m) {
   if (Object.keys(tileGroups).length) diff.tiles = tileGroups;
 
   // Entity arrays
-  for (const key of ['routes', 'rivers', 'buildings', 'transitions', 'npcStations']) {
+  for (const key of ['routes', 'rivers', 'farmPlots', 'buildings', 'transitions', 'npcStations']) {
     const curr = m[key] || [], prev = base[key] || [];
     const prevMap = new Map(prev.map(x => [x.id, x]));
     const currMap = new Map(curr.map(x => [x.id, x]));
@@ -1100,6 +1127,7 @@ function loadWorkspace() {
           m.visualHeights = normalizeVisualHeights(m.visualHeights, m.cols, m.rows);
           m.routes = Array.isArray(m.routes) ? m.routes : (Array.isArray(m.npcPaths) ? m.npcPaths.map(p => ({ id:p.id, label:p.label, nodes:p.nodes||[] })) : []);
           m.rivers = Array.isArray(m.rivers) ? m.rivers : [];
+          m.farmPlots = Array.isArray(m.farmPlots) ? m.farmPlots : [];
           m.npcPaths = Array.isArray(m.npcPaths) ? m.npcPaths : [];
           m.transitions = Array.isArray(m.transitions) ? m.transitions : [];
           m.npcStations = Array.isArray(m.npcStations) ? m.npcStations : [];
@@ -1588,7 +1616,7 @@ function doorWorldFromBuilding(b, m) {
 
 // Create (or update, if already linked) the transition spot that represents
 // a building's door, tagged with buildingId so it tracks the building when
-// it's moved or rotated. Preserves an existing spot's label/targetMapId.
+// it's moved, rotated, or renamed. The destination remains unchanged.
 function syncBuildingSpot(b, m) {
   const door = doorWorldFromBuilding(b, m);
   if (!door) return;
@@ -1599,6 +1627,7 @@ function syncBuildingSpot(b, m) {
     m.transitions.push(t);
   } else {
     t.col = door.col; t.row = door.row;
+    t.label = 'Enter ' + (b.label || 'Building'); // Keep the entrance prompt synchronized when the placed building is renamed.
   }
 }
 
@@ -1882,13 +1911,35 @@ function loadFestivalPropFields() {
   const record = selectedFestivalProp(); // Same authored object the 2D/3D gizmos move.
   if (!record) return;
   $('festivalPropType').innerHTML = '<option value="">No activity</option>' + Object.entries(window.FestivalCalendar.activityLabels).map(([id, label]) => `<option value="${id}">${label}</option>`).join('');
+  $('propTableId').value = record.tableId || '';
+  const tableOptions = $('propTableChoice'); // Native mobile selector avoids typing raw furniture ids.
+  tableOptions.replaceChildren(new Option('No table', ''));
+  activeDecor(activeMap()).filter(candidate => candidate.id !== record.id
+    && /table|desk|counter/i.test(candidate.key)).forEach(table =>
+      tableOptions.add(new Option((DECOR[table.key]?.label || table.key) + ' (' + table.id + ')', table.id)));
+  tableOptions.value = [...tableOptions.options].some(option => option.value === record.tableId) ? record.tableId : '';
+  const tablePlacement=window.TableChairPlacement?.normalize?.(record.tableAttachment)||null;
+  $('propTableMode').value=tablePlacement?.mode||'';
+  $('propTableAngle').value=tablePlacement?.angleDeg??0;
+  $('propTableDistance').value=tablePlacement?.distance??0.65;
+  $('propTableSide').value=tablePlacement?.side||'front';
+  $('propTableAlong').value=Math.round((tablePlacement?.along??0.5)*100);
   $('festivalPropType').value = record.activity?.type || '';
   $('festivalPropLabel').value = record.activity?.label || '';
   $('festivalPropCol').value = record.col; $('festivalPropRow').value = record.row;
   $('festivalPropRadius').value = record.activity?.radius || 2.5;
   $('festivalPropDressing').value = record.festivalDecoration || '';
   $('festivalPropColor').value = record.festivalColor || '#caa45c';
+  const links = $('localeTableLinks'), parts = (record.locale || record.festivalLocale)?.parts || []; // Edits the saved local child, so moves/rotations preserve the relationship.
+  links.replaceChildren();
+  for (const part of parts.filter(part => /chair|bench|stool/i.test(part.key))) {
+    const label = document.createElement('label'), input = document.createElement('input'); // Native fields remain usable on mobile without a canvas selection tool.
+    label.textContent = part.id || part.key; input.value = part.tableId || ''; input.placeholder = 'local table id';
+    input.addEventListener('change', () => { part.tableId = input.value.trim(); saveWorkspace(); schedule3DRebuild(); });
+    label.append(input); links.append(label);
+  }
 }
+$('propTableChoice').addEventListener('change', () => { $('propTableId').value = $('propTableChoice').value; });
 function renderFestivalPropsPanel(force = false) {
   const select = $('festivalPropSelect'); // Panel exists in both exterior and interior map-editor workspaces.
   if (!select || !window.FestivalCalendar) return;
@@ -2423,6 +2474,7 @@ function renderPalette() {
       ${isFarmLinked2 ? `<button class="sec" id="fillFarmBtn" style="flex:1" title="Fill only the game farm area (${GAME.farm.cols}×${GAME.farm.rows}) with the active tile">Fill farm</button>` : ''}
       <button class="bad" id="clearTilesBtn" style="flex:1" title="Remove all painted tiles from this map">Clear tiles</button>
     </div>`;
+    if (m.category === 'exterior') html += plotPanelHtml(m);
   } else if (mode === 'crop') {
     if (m.category !== 'exterior') html = '<p class="muted">Crops are exterior-only.</p>';
     else html = Object.keys(CROPS).map(c =>
@@ -2605,6 +2657,7 @@ function renderPalette() {
     $('vhStrength').addEventListener('change', e => { brush.visualHeightStrength = clamp(Number(e.target.value) || 0, -TerrainPreview.VISUAL_HEIGHT_MAX, TerrainPreview.VISUAL_HEIGHT_MAX); updateBrushPill(); });
     $('vhRadius').addEventListener('change', e => { brush.visualHeightRadius = clamp(Math.floor(Number(e.target.value) || 0), 0, 20); updateBrushPill(); });
   }
+  if (mode === 'tile' && m.category === 'exterior') bindPlotPanel(box, m);
   box.querySelectorAll('button[data-pal]').forEach(b => b.addEventListener('click', () => {
     brush[b.dataset.pal] = b.dataset.val;
     renderPalette(); updateBrushPill();
@@ -2622,6 +2675,7 @@ function renderPalette() {
     const t = set.includes(brush.tile) ? brush.tile : set[0];
     pushUndo();
     for (let r = 0; r < fm.rows; r++) for (let c = 0; c < fm.cols; c++) setTileType(fm, `${c},${r}`, t);
+    if (!PLOT_KIND_FOR_TILE[t]) fm.farmPlots = []; // Filling over everything drops the plots with their tiles.
     draw(); refreshPreview(); saveWorkspace(); setStatus(`Filled ${fm.cols}×${fm.rows} with ${t}.`);
   });
   const fillFarmBtn2 = box.querySelector('#fillFarmBtn');
@@ -2639,6 +2693,7 @@ function renderPalette() {
     pushUndo();
     const fm = activeMap();
     Object.keys(fm.tiles).forEach(k => { if (!isPlateauLocked(fm, k)) delete fm.tiles[k]; });
+    fm.farmPlots = []; activePlotId = null;
     draw(); refreshPreview(); saveWorkspace(); setStatus('Tiles cleared.');
   });
   // Route palette wiring
@@ -3349,6 +3404,120 @@ function draw() {
 }
 
 // ── Edit application ──────────────────────────────────────────────────────────
+
+// ── Farm plot groups ─────────────────────────────────────────────────────────
+// Painting Tilled or Trench tiles builds a plot group: a stroke that starts on an existing plot of the same kind
+// extends it, otherwise it starts a new one. A plot with no workers behaves exactly like plain painted tiles; once
+// a lineup of NPCs is assigned, the game (js/npc-farm-plots.js) leaves those tiles as grass and the NPCs till, seed,
+// harvest or dig them on their schedule. Lineups are ordered: the first NPC does the job, the rest are backups
+// for when they are following the player, on a date, or married to the player.
+let activePlotId = null;
+let _plotStroke = null; // The plot the current drag is extending.
+const PLOT_KIND_FOR_TILE = { tilled: 'till', trench: 'dig' };
+function plotAt(m, c, r, kind) {
+  return (m.farmPlots || []).find(p => (!kind || p.kind === kind) && p.tiles.some(t => t[0] === c && t[1] === r)) || null;
+}
+function removeTileFromPlots(m, c, r) {
+  let changed = false;
+  for (const p of m.farmPlots || []) {
+    const n = p.tiles.length;
+    p.tiles = p.tiles.filter(t => !(t[0] === c && t[1] === r));
+    if (p.tiles.length !== n) changed = true;
+  }
+  if (changed) m.farmPlots = m.farmPlots.filter(p => p.tiles.length);
+  if (changed && !(m.farmPlots || []).some(p => p.id === activePlotId)) activePlotId = null;
+  return changed;
+}
+function paintFarmPlotTile(m, c, r, tileType) {
+  m.farmPlots = m.farmPlots || [];
+  const kind = PLOT_KIND_FOR_TILE[tileType];
+  if (!kind) { if (removeTileFromPlots(m, c, r)) renderPalette(); return; }
+  if (!_plotStroke) {
+    _plotStroke = plotAt(m, c, r, kind);
+    if (!_plotStroke) {
+      const n = m.farmPlots.filter(p => p.kind === kind).length + 1;
+      _plotStroke = { id: uid('plot'), label: `${kind === 'till' ? 'Field' : 'Trench'} ${n}`, kind, tiles: [], crop: '', tillers: [], seeders: [], harvesters: [], diggers: [] };
+      m.farmPlots.push(_plotStroke);
+    }
+    activePlotId = _plotStroke.id;
+    renderPalette();
+  }
+  const other = plotAt(m, c, r);
+  if (other && other !== _plotStroke) removeTileFromPlots(m, c, r); // A tile belongs to one plot.
+  if (!_plotStroke.tiles.some(t => t[0] === c && t[1] === r)) { _plotStroke.tiles.push([c, r]); renderPlotCounts(); }
+}
+function renderPlotCounts() {
+  document.querySelectorAll('[data-plotcount]').forEach(el => {
+    const p = (activeMap().farmPlots || []).find(x => x.id === el.dataset.plotcount);
+    if (p) el.textContent = `${p.tiles.length} tiles`;
+  });
+}
+let npcChoiceList = null; // [{id,name}] for lineup autocomplete, fetched once from the NPC database.
+async function loadNpcChoices() {
+  if (npcChoiceList) return npcChoiceList;
+  npcChoiceList = [];
+  try {
+    const db = await (await fetch('../../config/npcs/hobunji-starter-npc-database.json')).json();
+    npcChoiceList = (db.npcs || []).map(n => ({ id: n.id, name: n.name || n.id }));
+    if (mode === 'tile') renderPalette();
+  } catch (_) { /* free-text ids still work */ }
+  return npcChoiceList;
+}
+const PLOT_LINEUPS = {
+  till: [['tillers', 'Keeps it tilled'], ['seeders', 'Seeds it'], ['harvesters', 'Harvests it']],
+  dig: [['diggers', 'Keeps it dug']],
+};
+function plotPanelHtml(m) {
+  const plots = m.farmPlots || [];
+  if (!plots.length && !['tilled', 'trench'].includes(brush.tile)) return '';
+  loadNpcChoices();
+  let html = `<div style="margin-top:10px"><label>Farm plots (NPC-tended)</label>`;
+  html += plots.map(p => `<div class="item ${p.id === activePlotId ? 'sel' : ''}" data-plotsel="${p.id}">
+      <div class="item-name">${p.kind === 'till' ? '🌱' : '🕳️'} ${p.label.replace(/</g, '&lt;')}</div>
+      <div class="item-meta"><span data-plotcount="${p.id}">${p.tiles.length} tiles</span> · ${(p.kind === 'till' ? ['tillers', 'seeders', 'harvesters'].some(role => (p[role] || []).length > 0) : (p.diggers || []).length > 0) ? 'assigned' : 'unassigned (plain tiles)'}
+      <button class="bad" data-plotdel="${p.id}" style="float:right;padding:1px 7px;font-size:10px">✕</button></div></div>`).join('') || '<p class="muted">Paint Tilled or Trench tiles to start a plot.</p>';
+  const ap = plots.find(p => p.id === activePlotId);
+  if (ap) {
+    html += `<datalist id="plotNpcList">${(npcChoiceList || []).map(n => `<option value="${n.id}">${String(n.name).replace(/</g, '&lt;')}</option>`).join('')}</datalist>
+      <div class="g2" style="margin-top:6px"><div><label>Label</label><input id="plotLabelIn" value="${ap.label.replace(/"/g, '&quot;')}"></div>
+      ${ap.kind === 'till' ? `<div><label>Crop to seed</label><select id="plotCropIn"><option value="">(none)</option>${Object.keys(CROPS).map(cr => `<option value="${cr}" ${ap.crop === cr ? 'selected' : ''}>${CROPS[cr]} ${cr}</option>`).join('')}</select></div>` : '<div></div>'}</div>`;
+    for (const [field, title] of PLOT_LINEUPS[ap.kind]) {
+      html += `<div style="margin-top:6px"><label>${title} — NPC ids, first does the work, rest are backups</label>
+        <input data-plotlineup="${field}" list="plotNpcList" placeholder="e.g. aliri_ginju, foroji_funji" value="${(ap[field] || []).join(', ').replace(/"/g, '&quot;')}"></div>`;
+    }
+    const hours = Array.isArray(ap.hours) && ap.hours.length === 2 ? ap.hours : [8, 16];
+    html += `<div class="g2" style="margin-top:6px"><div><label>Farming from (hour)</label><input id="plotHourFrom" type="number" min="0" max="24" step="0.5" value="${hours[0]}"></div>
+      <div><label>Until (hour)</label><input id="plotHourTo" type="number" min="0" max="24" step="0.5" value="${hours[1]}"></div></div>`;
+    html += '<p class="muted" style="margin-top:5px">Drag a Tilled/Trench stroke starting on this plot to extend it. With no one assigned the tiles are ordinary farmland; with a lineup they start as grass and the NPCs do the work during their scheduled farming hours.</p>';
+  }
+  return html + '</div>';
+}
+function bindPlotPanel(box, m) {
+  box.querySelectorAll('[data-plotsel]').forEach(el => el.addEventListener('click', e => {
+    if (e.target.closest('[data-plotdel]')) return;
+    activePlotId = el.dataset.plotsel; renderPalette();
+  }));
+  box.querySelectorAll('[data-plotdel]').forEach(el => el.addEventListener('click', e => {
+    e.stopPropagation(); pushUndo();
+    m.farmPlots = (m.farmPlots || []).filter(p => p.id !== el.dataset.plotdel);
+    if (activePlotId === el.dataset.plotdel) activePlotId = null;
+    renderPalette(); saveWorkspace();
+  }));
+  const ap = (m.farmPlots || []).find(p => p.id === activePlotId);
+  if (!ap) return;
+  const label = box.querySelector('#plotLabelIn');
+  if (label) label.addEventListener('change', () => { ap.label = label.value.trim() || ap.label; renderPalette(); saveWorkspace(); });
+  const crop = box.querySelector('#plotCropIn');
+  if (crop) crop.addEventListener('change', () => { ap.crop = crop.value; saveWorkspace(); });
+  const hourFrom = box.querySelector('#plotHourFrom'), hourTo = box.querySelector('#plotHourTo');
+  const saveHours = () => { ap.hours = [Math.max(0, Math.min(24, Number(hourFrom.value) || 0)), Math.max(0, Math.min(24, Number(hourTo.value) || 0))]; saveWorkspace(); };
+  if (hourFrom && hourTo) { hourFrom.addEventListener('change', saveHours); hourTo.addEventListener('change', saveHours); }
+  box.querySelectorAll('[data-plotlineup]').forEach(input => input.addEventListener('change', () => {
+    ap[input.dataset.plotlineup] = input.value.split(',').map(x => x.trim()).filter(Boolean);
+    renderPalette(); saveWorkspace();
+  }));
+}
+
 function applyAt(tile) {
   const m = activeMap();
   const { x: c, y: r } = tile;
@@ -3368,6 +3537,7 @@ function applyAt(tile) {
     const t = set.includes(brush.tile) ? brush.tile : set[0];
     const existing = m.tiles[key];
     if (!existing || existing.type !== t) setTileType(m, key, t);
+    if (m.category === 'exterior') paintFarmPlotTile(m, c, r, t); // Tilled / trench strokes build NPC-tended plot groups; any other tile leaves its plot.
   } else if (mode === 'crop' && m.category === 'exterior') {
     if (isPlateauLocked(m, key)) return;
     if (!m.tiles[key]) m.tiles[key] = { type: 'tilled', crop: '' };
@@ -3567,6 +3737,7 @@ function applyAt(tile) {
       did = true;
     }
     else if (m.tiles[key]) { delete m.tiles[key]; did = true; }
+    if (removeTileFromPlots(m, c, r)) { did = true; renderPalette(); }
     Object.keys(m.objects).forEach(k => { const [oc,or] = m.objects[k]; if (oc===c && or===r) { delete m.objects[k]; did = true; } });
     const fi = m.furniture.findIndex(f => f.col===c && f.row===r);
     if (fi >= 0) { if (m.furniture[fi].id === selectedPlacement?.id) selectedPlacement = null; m.furniture.splice(fi,1); did = true; }
@@ -3714,6 +3885,7 @@ canvas.addEventListener('pointerdown', e => {
     }
   }
   pushUndo();
+  _plotStroke = null; // A new stroke starts a plot (or extends the one under the first tile).
   if (PAINT_MODES.includes(mode) || (mode === 'station' && _stationPaintMode)) { painting = true; applyAt({ x: Math.floor(w.x), y: Math.floor(w.y) }); }
   else if (TAP_MODES.includes(mode)) applyAt({ x: Math.floor(w.x), y: Math.floor(w.y) });
 });
@@ -3785,6 +3957,7 @@ function endPtr(e) {
   if (_spotDrag)      { saveWorkspace(); refreshPreview(); _spotDrag = null; }
   if (_stationDrag)   { saveWorkspace(); refreshPreview(); _stationDrag = null; }
   if (_bldgDrag) { saveWorkspace(); renderBuildingPanel(); _bldgDrag = null; }
+  if (painting && _plotStroke) { saveWorkspace(); renderPalette(); } _plotStroke = null;
   drag = false; painting = false; pinchStart = null;
 }
 canvas.addEventListener('pointerup', endPtr);
@@ -3817,6 +3990,11 @@ function deleteSelectedPlacement() {
     const decorArr = activeDecor(m);
     const idx = decorArr.findIndex(d => d.id === selectedPlacement.id);
     if (idx >= 0) { decorArr.splice(idx, 1); setStatus('Decor deleted.'); }
+  }
+  // A removed table must not leave children with an invisible, collision-free ghost parent.
+  for (const child of activeDecor(m)) if (child.tableId === selectedPlacement.id) {
+    child.tableId = '';
+    delete child.tableAttachment;
   }
   selectedPlacement = null;
   draw(); refreshPreview(); saveWorkspace();
@@ -4302,6 +4480,8 @@ function spawnPreviewPlacements(group, merged) {
     mesh.userData.placementRef = ref;
     mesh.userData.placementBase = { x: cx, y: baseY, z: cz };
     group.add(mesh);
+    const previewRecord = { ...record, key, area: 'preview:' + map.id, mesh }; // Avoid mutating the authoring record when applying parent-relative geometry.
+    window.FurnitureTableSystem?.registerPlacement('preview:'+map.id, previewRecord, mesh, info); // Preview-only area never registers gameplay NPC stations.
     three3d.placementMeshes.set(`${kind}:${record.id}`, mesh);
   };
   for (const record of map.furniture || []) add('furniture', record);
@@ -4719,6 +4899,7 @@ function importAny(obj) {
     m.routes = Array.isArray(obj.routes) ? obj.routes : (Array.isArray(obj.npcPaths) ? obj.npcPaths.map(p => ({ id:p.id, label:p.label, nodes:p.nodes||[] })) : []);
       m.npcPaths = Array.isArray(obj.npcPaths) ? obj.npcPaths : [];
     m.rivers = Array.isArray(obj.rivers) ? obj.rivers : [];
+    m.farmPlots = Array.isArray(obj.farmPlots) ? obj.farmPlots : [];
     m.transitions = Array.isArray(obj.transitions) ? obj.transitions : [];
     m.buildings = Array.isArray(obj.buildings) ? obj.buildings : [];
     m.npcStations = Array.isArray(obj.npcStations) ? obj.npcStations : [];
@@ -4746,6 +4927,7 @@ function importAny(obj) {
       m.routes = Array.isArray(src.routes) ? src.routes : (Array.isArray(src.npcPaths) ? src.npcPaths.map(p => ({ id:p.id, label:p.label, nodes:p.nodes||[] })) : []);
       m.npcPaths = Array.isArray(src.npcPaths) ? src.npcPaths : [];
       m.rivers = Array.isArray(src.rivers) ? src.rivers : [];
+      m.farmPlots = Array.isArray(src.farmPlots) ? src.farmPlots : [];
       m.transitions = Array.isArray(src.transitions) ? src.transitions : [];
       m.buildings = Array.isArray(src.buildings) ? src.buildings : [];
       m.npcStations = Array.isArray(src.npcStations) ? src.npcStations : [];
@@ -5139,6 +5321,29 @@ $('festivalPropApply').addEventListener('click', () => {
   const type = $('festivalPropType').value;
   if (type) record.activity = { ...(record.activity || {}), type, label: $('festivalPropLabel').value.trim() || window.FestivalCalendar.activityLabels[type], radius: Math.max(1, Math.min(8, Number($('festivalPropRadius').value) || 2.5)) };
   else delete record.activity;
+  const tableId = $('propTableId').value.trim();
+  const tableMode = $('propTableMode').value;
+  let tableAttachment = null; // Keep the original authoring record intact when validation fails.
+  if(tableMode && tableId) {
+    const table = activeDecor(activeMap()).find(candidate => candidate.id === tableId && candidate.id !== record.id);
+    if(!/chair|bench|stool/i.test(record.key || '') || !table
+      || !/table|desk|counter/i.test(table.key || '')
+      || tableMode !== window.TableChairPlacement?.modeForTable?.(table.key)) {
+      setStatus('Choose a valid table and use its matching chair placement mode.'); return;
+    }
+    if(!$('propTableDistance').value.trim()
+      || (tableMode === 'orbit' && !$('propTableAngle').value.trim())
+      || (tableMode === 'edge' && !$('propTableAlong').value.trim())) {
+      setStatus('Enter an angle/edge position and distance.'); return;
+    }
+    const descriptor=tableMode==='orbit'
+      ? {mode:'orbit',angleDeg:Number($('propTableAngle').value),distance:Number($('propTableDistance').value)}
+      : {mode:'edge',side:$('propTableSide').value,along:Number($('propTableAlong').value)/100,distance:Number($('propTableDistance').value)};
+    tableAttachment=window.TableChairPlacement?.normalize?.(descriptor);
+    if(!tableAttachment){setStatus('The table-relative chair placement settings are invalid.');return;}
+  }
+  record.tableId = tableId; // Existing table membership is still valid without spatial placement.
+  if(tableAttachment) record.tableAttachment=tableAttachment; else delete record.tableAttachment;
   record.festivalDecoration = $('festivalPropDressing').value;
   record.festivalColor = $('festivalPropColor').value;
   renderFestivalPropsPanel(true); draw(); refreshPreview(); saveWorkspace(); schedule3DRebuild();

@@ -126,6 +126,7 @@
   }
 
   function enforceGeneratedKasaDyes() {
+    if (window.HobunjiOnboarding?.creatorSessionInfo?.()?.cosmeticsOnly) return; // Existing clothing/dyes are outside a grooming session.
     if (kasaPolicyBusy) return;
     let overlay = creatorOverlay();
     if (!overlay) {
@@ -262,6 +263,7 @@
 
   async function installStarterWeapon(model) {
     if (!model?.parent || model !== life.model) return;
+    if (window.HobunjiOnboarding?.creatorSessionInfo?.()?.cosmeticsOnly) return; // Grooming does not hand out or preview a new starter weapon.
     if (window.HobunjiOnboarding?.creatorSessionInfo?.()?.child) return; // Dream children are not handed a starter hatchet.
     const THREE = window.THREE;
     const avatarGroup = model.parent;
@@ -283,7 +285,7 @@
     toolHolder.position.set(Number(pose.x) || 0, Number(pose.y) || 0, Number(pose.z) || 0);
     const poseScale = window.HobunjiSpeciesPoseScale; // Shared X/Z orbit and authored-Y height mapping used by gameplay/editor.
     const armLength = Number(model.userData?.armLength); // Anatomical reach remains only a legacy orbit fallback.
-    const poseOrbitScale = Number(model.userData?.poseOrbitScale);
+    const poseOrbitScale = model.userData?.poseOrbitAxes ?? Number(model.userData?.poseOrbitScale); // Per-axis { x, y, z } when the species authored one; this preview point is already in the pose frame.
     const identity = { speciesId: model.userData?.speciesId || life.speciesId, gender: model.userData?.gender || life.gender || 'male' }; // Used below to select the same species/gender vertical proportions as runtime.
     const finalPoint = new THREE.Vector3(toolBase.position.x + toolHolder.position.x, toolBase.position.y + toolHolder.position.y, toolBase.position.z + toolHolder.position.z);
     if (poseScale?.transformPosePoint) {
@@ -436,7 +438,7 @@
     // In-game creator sessions (HobunjiOnboarding.openCreator) re-arm the
     // living preview for the life of the session only.
     document.addEventListener('hobunji-creator-session', event => {
-      if (event.detail?.phase === 'close') { setTimeout(teardown, 500); return; }
+      if (event.detail?.phase === 'close') { setTimeout(() => { if (!window.HobunjiOnboarding?.creatorSessionInfo?.()) teardown(); }, 500); return; }
       if (event.detail?.phase !== 'open') return;
       const wasActive = active;
       active = true;

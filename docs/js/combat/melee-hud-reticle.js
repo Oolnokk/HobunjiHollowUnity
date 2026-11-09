@@ -194,6 +194,7 @@
       halfConeRad = THREE.MathUtils.degToRad(flurryData.HALF_CONE_DEG ?? 25);
     }
 
+    halfConeRad = Math.min(Math.PI, halfConeRad * (1 + (stats.coneWidthMul || 0))); // Readiness uses the same AoE width perk as the live strike; reach remains unchanged.
     const attackRangePx = Math.max(0, rangePx);
     const reachPx = Math.max(attackRangePx, lungePx);
     return {
@@ -359,6 +360,7 @@
     refresh,
     dispose,
     snapshot,
+    slotColors: Object.freeze([...SLOT_COLORS]), // Canonical action palette shared with color-coded scroll bindings.
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });

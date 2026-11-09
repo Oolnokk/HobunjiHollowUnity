@@ -15,7 +15,8 @@
 (function () {
   'use strict';
 
-  const CONFIG_BASE = 'config/furniture-authored/';
+  const CONFIG_BASE = window.__hobunjiFurnitureConfigBase || 'config/furniture-authored/'; // Editor previews resolve the same repository assets from their own document root.
+  let surfaceBuildAncestors = []; // Scoped synchronous construction context survives existing two-argument furniture/VFX wrappers.
   const _cache = new Map(); // furnitureKey -> Promise<data|null>, .__value set once resolved
 
   // Synchronous accessor for already-resolved data — callers that build
@@ -43,18 +44,21 @@
   // mesh's authored (rest-pose) local matrix — applyWarp/resetWarp recompose
   // from this every frame instead of mutating position/rotation/scale in
   // place, so repeated warp playback never drifts from the authored pose.
-  function buildGroup(data, baseColor) {
+  function buildGroup(data, baseColor, ancestors = surfaceBuildAncestors) {
     const group = new THREE.Group();
     if (!data || !Array.isArray(data.parts)) return group;
+    if (ancestors.includes(data.key) || ancestors.length >= 8) return group; // Reject recursive furniture containment without affecting unrelated placements.
+    group.userData.surfaceAncestry = [...ancestors, data.key]; // Passed to nested authored furniture builds, including asynchronous loads.
     group.name = `authored_furniture_${data.key || 'unknown'}`;
     group.userData.authoredFurnitureKey = data.key || null; // Used by Pixel Probe/runtime diagnostics to identify authored furniture instances.
+    group.userData.authoredFurnitureData = data; // Recognized-surface definitions drive live payload attachment anchors.
     if (data.puzzle) window.FurniturePuzzleProperties?.applyToObject3D?.(group, data.puzzle, data.key); // Authored activators/mechanisms carry the same metadata into gameplay that the editors wire per instance.
     const meshById = new Map();
     const partById = new Map(); // Used by timeline liquid geometry, linked-container warps, and stomp anchors.
     for (const part of data.parts) partById.set(part.id, part);
     for (const part of data.parts) {
       const mesh = window.ProceduralFurniture.buildPartMesh(part, baseColor);
-      if (part.kind === 'liquidSurface') {
+      if (part.kind === 'liquidSurface'&&!part.rockShape?.enabled) {
         const liquidGeometry = _liquidSurfaceGeometry(part, partById, Number(part.liquidLevel) || 0);
         if (liquidGeometry) { mesh.geometry?.dispose?.(); mesh.geometry = liquidGeometry; }
         _setLiquidMaterial(mesh, part, {
@@ -64,6 +68,7 @@
           fillOpacity: part.substanceFillOpacity,
         });
       }
+      window.FurnitureSurfacePngRuntime?.applyToPart?.(mesh, data, part); // Only v2 opted-in per-face PNGs; unchanged furniture retains its original material pipeline.
       mesh.name = `authored_${data.key || 'furniture'}_${part.name || part.id}`;
       mesh.userData.authoredPartId = part.id;
       mesh.userData.authoredPart = part;
@@ -73,10 +78,68 @@
     }
     group.userData.meshById = meshById;
     group.userData.partById = partById;
+    if(data.parts.some(part=>part.rockShape?.enabled)&&window.ProceduralFurniture.applyRockContacts){
+      const refreshRockContacts=()=>{group.userData.rockContactReport=window.ProceduralFurniture.applyRockContacts(meshById,data.parts);}; // Recompute the authored contact interfaces without modifying cached furniture definitions.
+      for(const part of data.parts)if(part.kind==='glb')meshById.get(part.id).userData.onRockSourceReady=refreshRockContacts;
+      refreshRockContacts();
+    }
+    if ((data.surfaceGrowth || []).some(recipe => (recipe.kind === 'iceStalagmites' || recipe.kind === 'stoneStalagmites'))) {
+      for (const part of data.parts) if (part.kind === 'glb') {
+        const driver = meshById.get(part.id); // GLB parts begin as invisible placeholder geometry; only actual loaded children can anchor ice.
+        if (!driver) continue;
+        const previousReady = driver.userData.onRockSourceReady; // Preserve the pre-existing rock-joint completion callback.
+        driver.userData.onRockSourceReady = () => {
+          previousReady?.();
+          if (driver.parent !== group) return; // A removed/replaced model must not regenerate a stale furniture instance.
+          window.FoliageGenerator?.applySurfaceGrowth(group, data.surfaceGrowth); // Re-sample all real lower meshes once each GLB finishes loading.
+        };
+      }
+    }
     group.userData.authoredParticleEmitters = (data.particleEmitters || []).map(record => JSON.parse(JSON.stringify(record))); // FurniturePuzzleRuntime scales these between OFF/ON emission states.
     group.userData.timelineLiquidStates = new Map(); // Used by the live stomp anchor to follow the animated surface level.
     setItemPlacements(group, data, data.itemPlacements || []);
+    // Gameplay shares the named, detected authoring surfaces (IDs + face memberships).
+    // A carved chair/table must not use incidental triangles from its render mesh as navigation seams.
+    if ((data.surfaceGrowth || []).some(recipe=>recipe.style==='cornerFill'||recipe.style==='wrap')) {
+      window.FoliageGenerator?.replaceSemanticSurfaceGuides(group,(data.recognizedSurfaces||[]).map(surface=>({
+        sourceMesh:meshById.get(surface.partId),faceIndices:surface.faceIndices,
+        role:'furniture',id:surface.id,partId:surface.partId,label:surface.label||surface.recognizedType
+      })));
+    }
+    window.FoliageGenerator?.applySurfaceGrowth(group, data.surfaceGrowth);
+    setRuntimeValues(group, { [data.runtimeVariants?.valueKey]: data.runtimeVariants?.defaultValue });
     return group;
+  }
+
+
+  function createSurfaceAnchor(group, surfaceId, normalOffset = .012) {
+    if (!group || !window.THREE || !surfaceId) return null;
+    const surfaces = group.userData.authoredFurnitureData?.recognizedSurfaces || [];
+    const surface = surfaces.find(entry => entry.id === String(surfaceId));
+    const partMesh = surface && group.userData.meshById?.get?.(surface.partId);
+    if (!surface || !partMesh || !Array.isArray(surface.localCentroid)
+      || !Array.isArray(surface.localNormal) || !Array.isArray(surface.basisU)) return null;
+    const anchors = group.userData.payloadAttachmentAnchors ||= new Map();
+    const existing = anchors.get(String(surfaceId));
+    if (existing?.parent === partMesh) return existing;
+    existing?.parent?.remove?.(existing);
+    const center = new THREE.Vector3().fromArray(surface.localCentroid);
+    const normal = new THREE.Vector3().fromArray(surface.localNormal).normalize();
+    const u = new THREE.Vector3().fromArray(surface.basisU).normalize();
+    const z = new THREE.Vector3().crossVectors(u, normal).normalize(); // Right-handed local frame: payload Y points out of the recognized face.
+    if (z.lengthSq() < .5 || normal.lengthSq() < .5) return null;
+    const anchor = new THREE.Group();
+    anchor.name = 'payload_attachment_' + String(surfaceId).replace(/[^a-z0-9_-]/gi,'_');
+    anchor.position.copy(center).addScaledVector(normal, Math.max(0, Number(normalOffset) || 0));
+    anchor.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(u, normal, z));
+    anchor.scale.set(
+      1 / Math.max(.001, Math.abs(partMesh.scale.x)),
+      1 / Math.max(.001, Math.abs(partMesh.scale.y)),
+      1 / Math.max(.001, Math.abs(partMesh.scale.z))); // Follow the surface position/orientation without inheriting the host part's animated compression.
+    anchor.userData.payloadAttachmentSurfaceId = String(surfaceId);
+    partMesh.add(anchor); // A child of the detected part, so animated mechanisms carry the inserted burden with the surface.
+    anchors.set(String(surfaceId), anchor);
+    return anchor;
   }
 
   // Furniture Author's recognizedSurfaces + itemPlacements are the authority
@@ -85,19 +148,19 @@
     const previous = group.userData.authoredItemPlacements; // Disposed only on donation/rebuild, never per frame.
     if (previous) {
       group.remove(previous);
-      previous.traverse(node => { node.geometry?.dispose?.(); node.material?.map?.dispose?.(); node.material?.dispose?.(); });
+      previous.traverse(node => { node.geometry?.dispose?.(); if (node.userData?.isSurfaceItemSprite) node.material?.map?.dispose?.(); node.material?.dispose?.(); });
     }
     const layer = new THREE.Group(); // Separate from authored parts so displays cannot alter their collision geometry.
     layer.name = 'authored_surface_items';
     group.userData.authoredItemPlacements = layer;
     group.add(layer);
     for (const record of records || []) {
-      if (!record.itemKey || record.visible === false) continue;
+      if ((!record.itemKey && !record.furnitureKey) || record.visible === false) continue;
       const surface = data.recognizedSurfaces?.find(entry => entry.id === record.surfaceId); // Same part-local face frame exported by Furniture Author.
       let partMesh = group.userData.meshById?.get?.(surface?.partId);
       if (!partMesh && surface) group.traverse(node => { if (node.userData?.authoredPartId === surface.partId) partMesh = node; });
       const png = window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit; // Shared appearance/CORS-safe canvas pipeline.
-      if (!surface || !partMesh || !png) continue;
+      if (!surface || !partMesh || (!record.furnitureKey && !png)) continue;
       group.updateWorldMatrix(true, true);
       const relative = new THREE.Matrix4().copy(group.matrixWorld).invert().multiply(partMesh.matrixWorld); // Resolve fallback-upgraded child parts into furniture-root space.
       const center = new THREE.Vector3().fromArray(surface.localCentroid).applyMatrix4(relative);
@@ -107,8 +170,14 @@
       const holder = new THREE.Group(); // Keeps normal/u/v placement separate from the item plane's alpha-bottom grounding.
       holder.position.copy(center).addScaledVector(u, Number(record.position?.u) || 0).addScaledVector(v, Number(record.position?.v) || 0).addScaledVector(normal, Number(record.position?.normal) || 0);
       const scale = Math.max(.001, Number(record.scale) || .25); // Authored sprite height in furniture-local units.
+      holder.userData.surfacePlacement = record; // Direct world actions target the actual attached object, not an activity radius.
       holder.scale.setScalar(scale);
       holder.rotation.set((record.rotation?.x || 0) * Math.PI / 180, (record.rotation?.y || 0) * Math.PI / 180, (record.rotation?.z || 0) * Math.PI / 180);
+      if (record.furnitureKey) {
+        layer.add(holder);
+        addFurniturePlacement(holder, record, group.userData.surfaceAncestry || [], () => group.userData.authoredItemPlacements === layer);
+        continue;
+      }
       const canvas = document.createElement('canvas'); // Icon placeholder remains readable until an authored imageUrl is supplied.
       canvas.width = canvas.height = 256;
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -154,6 +223,27 @@
       }
     }
     return layer;
+  }
+
+  function addFurniturePlacement(holder, record, ancestors = [], isCurrent = () => true) {
+    const key = String(record.furnitureKey || ''); // Same authored furniture key used by ordinary placed furniture and editor exports.
+    if (!key || ancestors.includes(key) || ancestors.length >= 8) return Promise.resolve(null);
+    return load(key).then(data => {
+      if (!data || !isCurrent()) return null;
+      let child;
+      const previousAncestors = surfaceBuildAncestors;
+      surfaceBuildAncestors = ancestors; // load(key) has completed, so canonical construction is synchronous even through legacy VFX wrappers.
+      try {
+        child = window.FurnitureVesselRuntime?.installed
+          ? window.ProceduralFurniture.buildFurnitureGroup(key, record.color ?? 0x8b6540)
+          : buildGroup(data, record.color ?? 0x8b6540);
+      } finally { surfaceBuildAncestors = previousAncestors; }
+      child.userData.surfaceFurnitureKey = key;
+      if (record.liquidColor) child.traverse(node => { if (node.userData?.authoredPart?.kind === 'liquidSurface') node.material?.color?.set?.(record.liquidColor); });
+      holder.add(child);
+      window.FurnitureTableSystem?.refreshServices?.();
+      return child;
+    }).catch(error => { window.__farmLog?.(`[furniture surface] ${key}: ${error.message}`, 'warn'); return null; });
   }
 
   const _clamp01 = (value) => Math.max(0, Math.min(1, Number(value) || 0));
@@ -483,7 +573,7 @@
     for (const track of timeline?.warpTracks || []) warpOverrides.set(track.warpId, sampleTimelineTrack(track, p));
     for (const track of timeline?.liquidTracks || []) {
       const part = group.userData.partById?.get(track.partId), mesh = group.userData.meshById?.get(track.partId);
-      if (!part || !mesh) continue;
+      if (!part || !mesh || part.rockShape?.enabled) continue; // A converted stone keeps its rocky geometry/finish while the existing rigid and processing animations still move its owner.
       const value = sampleTimelineTrack(track, p);
       if (track.useSubstanceColor) value.substanceColor = substance;
       if (track.colorFromSubstance) value.color = substance;
@@ -538,6 +628,58 @@
     return { position: Object.assign({}, anchor.position), rotationDeg: Object.assign({}, anchor.rotationDeg) };
   }
 
+  // Seat collision is measured against the upholstered/wooden SEAT, not the whole furniture tile.
+  // A half-tile reach made calves extend through a chair instead of bending at its front edge.
+  function seatedKneeReach(data) {
+    const seat = (data?.parts || []).find(part => /seat|cushion/i.test(part.name || '') && Number(part.transform?.sz) > 0);
+    const seatDepth = Number(seat?.transform?.sz) || 0.45; // Forward span used only by the seated procedural-leg solver.
+    return Math.max(0.035, Math.min(0.13, seatDepth * 0.24));
+  }
+
+  // Bed surfaces are authored as horizontal boxes. Prefer the largest fabric surface:
+  // double-bed headboards can be wide enough to pass the old size filter but are not mattresses.
+  // The resulting local height is transformed by the placed bed root, including its live Y scale.
+  function sleepSurfacePart(data) {
+    const horizontal = (data?.parts || []).filter(part => part.kind === 'box' && Number.isFinite(Number(part.transform?.y))
+      && Number(part.transform?.sx) >= 0.4 && Number(part.transform?.sz) >= 0.4);
+    if (!horizontal.length) return null;
+    const fabric = horizontal.filter(part => part.materialRole === 'fabric');
+    const candidates = fabric.length ? fabric : horizontal;
+    return candidates.reduce((best, part) => {
+      const area = Math.abs(Number(part.transform.sx) * Number(part.transform.sz));
+      return !best || area > best.area ? { part, area } : best;
+    }, null)?.part || null;
+  }
+
+  function sleepSurfaceHeight(data) {
+    const mattress = sleepSurfacePart(data);
+    return mattress
+      ? Number(mattress.transform.y) + Math.max(0, Number(mattress.transform.sy) || 0) / 2
+      : 0.12;
+  }
+
+  // Authored furniture can declare named runtime values and per-value part visibility.
+  // State belongs to each instance, never to the cached canonical furniture recipe.
+  function setRuntimeValues(group, values = {}) {
+    const data = group?.userData?.authoredFurnitureData;
+    const spec = data?.runtimeVariants;
+    if (!spec?.valueKey || !Array.isArray(spec.states)) return null;
+    const previous = group.userData.authoredRuntimeValues || {};
+    const update = values && typeof values === 'object' ? values : { [spec.valueKey]: values };
+    const next = { ...previous, ...update };
+    const value = next[spec.valueKey] ?? spec.defaultValue;
+    const state = spec.states.find(entry => String(entry.value) === String(value))
+      || spec.states.find(entry => String(entry.value) === String(spec.defaultValue));
+    if (!state) return null;
+    const hidden = new Set((state.hiddenPartIds || []).map(String));
+    for (const [id, mesh] of group.userData.meshById || []) {
+      mesh.visible = !hidden.has(String(id));
+    }
+    group.userData.authoredRuntimeValues = { ...next, [spec.valueKey]: state.value };
+    group.userData.authoredRuntimeVariant = state.label || String(state.value);
+    return state;
+  }
+
   function seatCount(data) {
     return data && Array.isArray(data.seatAnchors) ? data.seatAnchors.length : 0;
   }
@@ -546,9 +688,15 @@
     load,
     peek,
     buildGroup,
+    setRuntimeValues,
     setItemPlacements,
+    addFurniturePlacement,
+    createSurfaceAnchor,
     seatAnchorFor,
     seatCount,
+    seatedKneeReach,
+    sleepSurfaceHeight,
+    sleepSurfacePart,
     applyWarp,
     resetWarp,
     stompWarpMotion,

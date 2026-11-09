@@ -5,9 +5,9 @@
 (() => {
   'use strict';
 
-  if (Number(window.DaylightWindowRuntime?.version) >= 3) return;
+  if (Number(window.DaylightWindowRuntime?.version) >= 5) return;
 
-  const VERSION = 3; // v3 keeps mullions coplanar with the authored frame while preserving the shared construction-time visual root.
+  const VERSION = 5; // v5 removes obsolete floor-projection buffers and delegates blended glass colors to the shared daylight compositor.
   const ROLE = 'daylightWindow'; // Recognized-surface role authored by Furniture + Avatar Author.
   const PREVIEW_TINT = '#dce9f4'; // Neutral daylight shown by authored presets before runtime weather/time tinting.
   const DEFAULT_RADIUS_TILES = 2.8; // Used when an older authored daylight surface has no explicit radius.
@@ -182,6 +182,8 @@
       partMesh.add(pane);
       const descriptor = {
         mesh: pane,
+        width, height,
+        glassTint: /^#[0-9a-f]{6}$/i.test(surface.daylightColor||'') ? new THREE.Color(surface.daylightColor) : null,
         surfaceId: surface.id || null,
         furnitureKey: data?.key || data?.id || null,
         radiusTiles: Math.max(0.25, finite(surface.daylightRadiusTiles, DEFAULT_RADIUS_TILES)),
@@ -210,6 +212,7 @@
       if (!root?.isScene) { registeredSources.delete(source); continue; }
       if (activeScene && root !== activeScene) continue;
       if (!source.mesh.visible || !source.mesh.parent) continue;
+      let ancestor=source.mesh,hidden=false;while(ancestor){if(ancestor.visible===false){hidden=true;break;}ancestor=ancestor.parent;}if(hidden)continue; // Hidden editor placeholders must not duplicate the visible window's projected light.
       output.push(source);
     }
     return output;
@@ -227,7 +230,7 @@
     if (peak > 0.0001 && peak < PANE_MIN_PEAK) tint.multiplyScalar(PANE_MIN_PEAK / peak); // Night keeps the sky's hue but stays a visible moonlit glow.
     for (const source of registeredSources) {
       const material = source.mesh?.material; // Each pane owns a material so opacity/debug can vary independently later.
-      if (material?.color) material.color.copy(tint); // color is a uniform; needsUpdate would only force a needless program re-check every tick.
+      if (material?.color) { material.color.copy(tint); if(source.glassTint)material.color.multiply(source.glassTint); } // color is a uniform; needsUpdate would only force a needless program re-check every tick.
       for (const pattern of source.patternMeshes || []) pattern.material?.color?.copy?.(tint); // Stained glass shares the same outdoor tint/aperture rather than a second lighting source.
     }
   }

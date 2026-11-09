@@ -15,22 +15,26 @@
     new URL('attachment-rig-latest-authored-snapshot-core.js?v=20261012h02be7fe', base).href,
     new URL('character-rig-maoao-authored-20260905.js?v=20260905b', base).href,
     new URL('mammakhbuur-species-runtime.js?v=20261004mammakhhair1', base).href,
-    new URL('nuhongan-species-runtime.js?v=20261006h4e1c09a', base).href,
+    new URL('nuhongan-species-runtime.js?v=20261017h6e503fa', base).href,
     new URL('harlyao-species-runtime.js?v=20260909a', base).href,
-    new URL('skeleton-species-runtime.js?v=20261010skelbridge1', base).href,
+    new URL('omgurku-connector-rig.js?v=20261022pantsFallback1', base).href,
+    new URL('omgurku-species-runtime.js?v=20261028h1e29db1', base).href,
+    new URL('skeleton-species-runtime.js?v=20261027guardian1', base).href,
     new URL('harlyao-skeleton-species-runtime.js?v=20261010h93464d4', base).href,
-    new URL('mao-ao-skeleton-species-runtime.js?v=20261010maoskel1', base).href,
+    new URL('mao-ao-skeleton-species-runtime.js?v=20261101maoskelrear1', base).href,
+    new URL('maskbound-guardian-species-runtime.js?v=20261101maskrear1', base).href,
     new URL('porakaneki-species-runtime.js?v=20260924poracolor2&rearHead=1', base).href,
-    new URL('character-rig-scale.js?v=20261007h0c4d7d9', base).href,
-    new URL('character-rig-scale-avatar-runtime.js?v=20261007hde9f0b3', base).href,
+    new URL('character-rig-scale.js?v=20261031hb701fa8', base).href,
+    new URL('character-rig-scale-avatar-runtime.js?v=20261031hbf28f8b', base).href,
     new URL('maoao-arm-tint-runtime.js?v=20260907a', base).href,
-    new URL('shoulder-camera-character-framing.js?v=20261007h7c82f53', base).href,
+    new URL('shoulder-camera-character-framing.js?v=20261024h224e340', base).href,
     new URL('shoulder-camera-reset-button.js?v=20261007h767d135', base).href,
     new URL('character-rig-pixel-probe-runtime.js?v=20260905a', base).href,
     new URL('character-scale-comparison-host-bridge.js?v=20260904j', base).href,
-    new URL('character-scale-comparison.js?v=20260904k', base).href,
+    new URL('character-scale-comparison.js?v=20261019he4a5599', base).href,
     new URL('character-scale-comparison-body-input-guard.js?v=20260905b', base).href,
     new URL('character-scale-comparison-presentation.js?v=20260905b', base).href,
+    new URL('animation-author-rig-gameplay-appearance.js?v=20261017a', base).href,
   ];
   const loadSequentially = list => list.reduce((promise, src) => promise.then(() => new Promise((resolve, reject) => { // Preserves dependency ordering for dynamically bootstrapped tool/runtime pages.
     const script = document.createElement('script'); // Used to load one bootstrap dependency at a time.
@@ -40,8 +44,11 @@
     document.head.appendChild(script);
   })), Promise.resolve());
   if (document.readyState === 'loading' && document.currentScript) {
+    window.HobunjiLatestAuthoredRigReady = Promise.resolve();
     for (const src of urls) document.write(`<script src="${src}"><\/script>`);
   } else {
-    loadSequentially(urls).catch(error => console.warn('[attachment-rig-bootstrap]', error));
+    const ready = loadSequentially(urls);
+    window.HobunjiLatestAuthoredRigReady = ready;
+    ready.catch(error => console.warn('[attachment-rig-bootstrap]', error));
   }
 })();

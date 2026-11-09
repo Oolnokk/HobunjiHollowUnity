@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1,viewport-fit=cover">
+<title>Kurraya · Melody Puzzle</title>
+<style>
+@font-face {
+  font-family: KhymeryyanRoman;
+  src: url('../hud/KhymeryyanRomanLetters+Numbers.otf.ttf') format('truetype');
+  font-display: swap;
+}
+:root { color-scheme: dark; background: transparent }
+* { box-sizing: border-box }
+body {
+  margin: 0; color: #f3e6c8; background: transparent;
+  font: clamp(13px, 2.8vmin, 22px)/1.35 KhymeryyanRoman, monospace;
+  text-shadow: 0 2px 5px #000, 0 0 6px #000;
+}
+button {
+  font: inherit; color: inherit; text-shadow: inherit; cursor: pointer;
+  border: 0; background: transparent; padding: 0; touch-action: manipulation;
+}
+button:focus-visible { outline: 2px solid #f3e6c8; outline-offset: 2px }
+.notes {
+  position: fixed; bottom: max(3dvh, env(safe-area-inset-bottom)); left: 50%;
+  transform: translateX(-50%); width: min(96vw, 146dvh);
+  display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 1vmin;
+}
+.note {
+  min-width: 0; min-height: 44px; display: grid; justify-items: center; align-content: center; gap: .5dvh;
+}
+.glyph { width: clamp(19px, 7vmin, 58px); height: clamp(19px, 7vmin, 58px); object-fit: contain; filter: drop-shadow(0 0 .45vmin #fff) drop-shadow(0 2px 3px #000) }
+.note small { font-size: clamp(10px, 2.4vmin, 17px); white-space: nowrap }
+.note:active .glyph, .note.flash .glyph { filter: brightness(1.55) drop-shadow(0 0 .7vmin #fff) drop-shadow(0 0 5px #f5ce81) }
+.readout {
+  position: fixed; bottom: max(21dvh, calc(env(safe-area-inset-bottom) + 67px));
+  left: 50%; transform: translateX(-50%); width: 90vw; text-align: center; pointer-events: none;
+}
+#echoReplay { pointer-events: auto; min-height: 44px; text-decoration: underline }
+#echoReplay:disabled { opacity: .55 }
+.book {
+  position: fixed; left: max(3vw, env(safe-area-inset-left)); top: max(3dvh, env(safe-area-inset-top));
+  width: min(53vw, 76dvh);
+}
+#bookToggle { min-height: 44px }
+#songList { max-height: 43dvh; overflow: auto; padding: 1dvh 2vmin; background: rgba(18, 14, 10, .48) }
+#songList div { padding-block: .6dvh }
+.song-notes { display: flex; flex-wrap: wrap; gap: .5vmin }
+.song-notes .glyph { width: clamp(13px, 3.6vmin, 28px); height: clamp(13px, 3.6vmin, 28px) }
+#diagnostics { position: fixed; right: 3vw; top: 16dvh; max-width: 45vw; background: #16110dcc }
+#debug { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 32dvh; overflow: auto; font-size: clamp(10px, 2vmin, 15px) }
+</style>
+</head>
+<body>
+<div id="notes" class="notes" aria-label="Eight single notes"></div>
+<div class="readout">
+  <div id="result" role="status" aria-live="polite"></div>
+  <button type="button" id="echoReplay" hidden>Hear sequence again</button>
+</div>
+<section class="book" aria-label="Songbook">
+  <button type="button" id="bookToggle" aria-expanded="false" aria-controls="songList">Songbook <span id="bookHint"></span></button>
+  <div id="songList" hidden></div>
+</section>
+<details id="diagnostics" hidden><summary>Diagnostics</summary><div id="debug"></div></details>
+<script src="../../js/kurraya-puzzle.js?v=20261107fluteMonophonic1"></script>
+<script>
+(function () {
+  'use strict';
+  const music = window.KurrayaPuzzle;
+  const notesEl = document.getElementById('notes');
+  const resultEl = document.getElementById('result');
+  const songListEl = document.getElementById('songList');
+  const bookToggle = document.getElementById('bookToggle'); // Tap or activate via the device-specific songbook shortcut.
+  const bookHint = document.getElementById('bookHint');
+  const debugEl = document.getElementById('debug');
+  const params = new URLSearchParams(location.search); // Optional diagnostics and equipped instrument from the host.
+  const diagnostics = document.getElementById('diagnostics');
+  diagnostics.hidden = params.get('debugMusic') !== '1';
+  const isFlute = params.get('instrument') === 'flute'; // Uses the instrument equipped by the host, not an unrelated Kurraya sample preference.
+  const tuning = music.settings(); // Keep the example and response in the same key throughout a session.
+  const sampler = isFlute
+    ? music.createSampler('../audio/music/instruments/sfx_flute_note.m4a',{useCustomSample:false,fallback:'midi',sampleName:'Bundled flute note'})
+    : music.createSampler('../audio/music/instruments/sfx_kurraya_pluck.m4a'); // Flute sample is optional; MIDI synth takes over if absent.
+  const echoReplay = document.getElementById('echoReplay');
+  let echoChallenge = null; // Active ruin echo and its attempted note index; ordinary song recognition is suspended while it exists.
+  let echoGeneration = 0; // Cancels delayed playback when replaying or closing, preventing stale notes from changing the next attempt.
+
+  let history = []; // Recent note indices used for sequence recognition without timing constraints.
+  let lastMatched = ''; // Last recognized melody, visible in diagnostics for mobile testing.
+  let playbackSerial = 0; // Drops audio for older pending presses if a newer press wins the load race.
+  const post = payload => { try { parent.postMessage(Object.assign({source:'hobunji-music-minigame'},payload),'*'); } catch (_) {} };
+  let inputDevice = ''; // Avoid rebuilding labels on each controller edge.
+  function setInputDevice(device, controllerLabels, controllerBookLabel) {
+    if (inputDevice === device) return;
+    inputDevice = device;
+    Array.from(notesEl.children).forEach((button,index) => {
+      button.lastElementChild.textContent = device === 'controller' ? controllerLabels[index] :
+        device === 'desktop' ? music.NOTE_CODES[index].slice(3) : 'Tap';
+    });
+    bookHint.textContent = device === 'controller' ? '(' + controllerBookLabel + ')' :
+      device === 'desktop' ? '(B)' : '';
+  }
+  function toggleSongbook() {
+    songListEl.hidden = !songListEl.hidden;
+    bookToggle.setAttribute('aria-expanded',String(!songListEl.hidden));
+  }
+  bookToggle.addEventListener('click',toggleSongbook);
+  window.addEventListener('pointerdown',event => setInputDevice(event.pointerType === 'touch' ? 'touch' : 'desktop'),true);
+
+  function glyph(index, decorative = false) {
+    const image = document.createElement('img'); // Reuse the exact numbered HUD glyphs for notes and transcriptions.
+    image.className = 'glyph';
+    image.src = '../hud/scratchbone' + (index + 1) + '.png';
+    image.alt = decorative ? '' : String(index + 1);
+    image.draggable = false;
+    return image;
+  }
+  function refreshSongs() {
+    songListEl.replaceChildren();
+    for (const song of music.listSongs()) {
+      const line = document.createElement('div'); // One title and glyph sequence per authored melody.
+      line.textContent = song.title;
+      const sequence = document.createElement('span');
+      sequence.className = 'song-notes';
+      for (const index of song.notes) sequence.appendChild(glyph(index));
+      line.appendChild(sequence);
+      songListEl.appendChild(line);
+    }
+  }
+  function render() {
+    if (diagnostics.hidden) return;
+    debugEl.textContent = 'lastSong=' + (lastMatched || 'none') + '\nnotes=' + JSON.stringify(history) +
+      '\nsampler=' + JSON.stringify(sampler.diagnostics);
+  }
+  function delay(ms) { return new Promise(resolve => setTimeout(resolve,ms)); }
+  async function replayEcho(passive = false) {
+    const challenge = echoChallenge;
+    if (!challenge) return false;
+    const generation = ++echoGeneration;
+    challenge.progress = 0;
+    challenge.phase = 'playing';
+    echoReplay.disabled = !passive; // Keep the manual gesture button usable if browsers block the automatic attempt.
+    resultEl.textContent = 'Listen carefully to ' + challenge.notes.length + ' notes…';
+    try {
+      const ready = await Promise.race([
+        sampler.ready().then(() => true),
+        delay(passive ? 850 : 1800).then(() => false)
+      ]); // Autoplay-blocked AudioContext.resume() may never settle until a new gesture; never deadlock replay.
+      if (challenge !== echoChallenge || generation !== echoGeneration) return false;
+      if (!ready) {
+        challenge.phase = 'retry';
+        resultEl.textContent = 'Tap Hear sequence, or press a note button, to start/retry the melody.';
+        return false;
+      }
+      await delay(300);
+      for (const note of challenge.notes) {
+        if (challenge !== echoChallenge || generation !== echoGeneration) return false;
+        await sampler.play(music.pitchFor(note,tuning)); // The same configured eight-note tuning is used for both examples and player input.
+        await delay(510);
+        if (challenge !== echoChallenge || generation !== echoGeneration) return false; // An older replay must never stop the newer replay's voice.
+        if (!isFlute) sampler.stop(); // Flute example notes ring until the following note interrupts them; the last note can finish naturally.
+        await delay(110);
+      }
+      if (challenge !== echoChallenge || generation !== echoGeneration) return false;
+      challenge.phase = 'input';
+      resultEl.textContent = 'Your turn: repeat ' + challenge.notes.length + ' notes by ear.';
+      return true;
+    } catch (error) {
+      if (generation === echoGeneration && challenge === echoChallenge) {
+        challenge.phase = 'retry';
+        resultEl.textContent = 'Tap Hear sequence to enable audio: ' + (error.message || error);
+      }
+      return false;
+    } finally {
+      if (generation === echoGeneration && challenge === echoChallenge) echoReplay.disabled = false;
+      render();
+    }
+  }
+  function startEchoChallenge(id, notes) {
+    if (!id || !Array.isArray(notes) || notes.length < 3 || notes.length > 12 ||
+        !notes.every(note => Number.isInteger(note) && note >= 0 && note < music.NOTE_CODES.length)) return false;
+    ++echoGeneration; sampler.stop();
+    history = [];
+    echoChallenge = {id:String(id),notes:notes.slice(),phase:'retry',progress:0,mistakes:0};
+    echoReplay.hidden = false;
+    echoReplay.textContent = 'Hear sequence again';
+    resultEl.textContent = 'Press Hear sequence (or any note key/button) to listen, then copy the melody by ear.';
+    // Try autoplay once; if mobile Web Audio is suspended, the short timeout leaves the manual replay button and controller/keyboard restart fully usable.
+    replayEcho(true);
+    render();
+    return true;
+  }
+  echoReplay.addEventListener('click',() => replayEcho(false)); // An explicit gesture unlocks mobile Web Audio; keyboard and touch remain accessible.
+  function playNote(index) {
+    if (!Number.isInteger(index) || index < 0 || index >= music.NOTE_CODES.length) return false;
+    if (echoChallenge && echoChallenge.phase === 'retry') {
+      replayEcho(); // Controller and keyboard users can request the audio without needing a touchscreen tap.
+      return true;
+    }
+    if (echoChallenge && echoChallenge.phase !== 'input') return false; // Never count notes accidentally struck while the example is sounding.
+    const serial = ++playbackSerial;
+    const button = notesEl.children[index];
+    button?.classList.add('flash');
+    setTimeout(() => button?.classList.remove('flash'),110);
+    const midi = music.pitchFor(index,tuning);
+    if (!echoChallenge) post({type:'puzzle-note',noteIndex:index}); // Send physical player note events immediately, regardless of audio loading or songbook recognition.
+    sampler.play(midi).then(played => {
+      if (!played || serial !== playbackSerial) return; // A stale note never triggers a phantom instrument twitch.
+      post({type:'sounded-note',performer:'lead',noteIndex:index,midi:midi});
+    }).catch(error => {
+      if (serial !== playbackSerial) return;
+      resultEl.textContent = 'Audio unavailable: ' + error.message; render();
+    });
+    history.push(index);
+    if (history.length > 32) history.shift();
+    if (echoChallenge) {
+      const challenge = echoChallenge;
+      if (index === challenge.notes[challenge.progress]) {
+        challenge.progress++;
+        if (challenge.progress === challenge.notes.length) {
+          challenge.phase = 'solved';
+          resultEl.textContent = '♪ You matched the melody!';
+          post({type:'puzzle-echo-result',id:challenge.id,solved:true,progress:challenge.progress,mistakes:challenge.mistakes});
+        } else resultEl.textContent = 'Correct so far: ' + challenge.progress + ' / ' + challenge.notes.length;
+      } else {
+        challenge.mistakes++;
+        challenge.progress = 0;
+        challenge.phase = 'retry';
+        resultEl.textContent = 'That was not the melody. Hear it again, then retry.';
+        post({type:'puzzle-echo-result',id:challenge.id,solved:false,progress:0,mistakes:challenge.mistakes});
+      }
+      render();
+      return true;
+    }
+    const song = music.matchSuffix(history);
+    if (song) {
+      lastMatched = song.title;
+      resultEl.textContent = '♪ Recognized: ' + song.title;
+      post({type:'puzzle-song-recognized',song:{id:song.id,title:song.title,notes:song.notes.slice()},scale:tuning.scale,tonicMidi:tuning.tonicMidi});
+      history = []; // Clears only after a successful melody, allowing the next song to start immediately.
+    } else {
+      resultEl.textContent = '';
+    }
+    render();
+    return true;
+  }
+  for (let i=0;i<music.NOTE_CODES.length;i++) {
+    const button = document.createElement('button'); // Touch and pointer play the same note as the matching shortcut.
+    button.type='button';button.className='note';
+    button.setAttribute('aria-label','Note '+(i+1));
+    button.appendChild(glyph(i,true));
+    button.appendChild(document.createElement('small'));
+    button.addEventListener('pointerdown',event=>{
+      if (event.button !== 0) return;
+      event.preventDefault();
+      playNote(i);
+    });
+    button.addEventListener('click',event=>{ if (event.detail === 0) playNote(i); }); // Keep keyboard and assistive activation.
+    notesEl.appendChild(button);
+  }
+  setInputDevice('desktop');
+  window.addEventListener('keydown',event=>{
+    setInputDevice('desktop');
+    if (event.code === 'Escape') { event.preventDefault();post({type:'exit-requested'});return; }
+    if (event.repeat || event.ctrlKey || event.altKey || event.metaKey) return;
+    const index=music.NOTE_CODES.indexOf(event.code);
+    if (index<0 && event.code !== 'KeyB') return;
+    event.preventDefault();
+    if (index<0) toggleSongbook();
+    else playNote(index);
+  },true);
+  window.addEventListener('hobunji-kurraya-puzzle-songs-changed',refreshSongs);
+  window.addEventListener('error',event=>{resultEl.textContent='Puzzle error: '+event.message;render();});
+  window.HobunjiPuzzleInstrument={playNote,startEchoChallenge,setInputDevice,toggleSongbook,
+    getState:()=>({history:history.slice(),lastMatched:lastMatched,echo:echoChallenge?{id:echoChallenge.id,phase:echoChallenge.phase,progress:echoChallenge.progress,length:echoChallenge.notes.length,mistakes:echoChallenge.mistakes}:null,sampler:sampler.diagnostics,...tuning})};
+  refreshSongs();render();
+  post({type:'puzzle-ready'});
+})();
+</script>
+</body>
+</html>

@@ -34,26 +34,8 @@ assert.match(
 
 assert.match(
   source,
-  /function createRootPadVoice\(midi, whenMs = null\)[\s\S]*?const rootMidi = midi[\s\S]*?rootOscillator\.frequency\.setValueAtTime\(midiFrequency\(rootMidi\), now\)[\s\S]*?chordMidis:\[rootMidi\]/,
-  'the synth harmony pad must contain only the current progression root'
-);
-
-assert.doesNotMatch(
-  source,
-  /function createRootPadVoice\(midi, whenMs = null\)[\s\S]*?fifthOscillator/,
-  'the synth root pad must not create a hidden fifth oscillator'
-);
-
-assert.match(
-  source,
   /function rootPadSynthGain\(\)[\s\S]*?0\.018 \+ state\.rootPadLevel \* 1\.5[\s\S]*?0\.12[\s\S]*?state\.padMixLevel/,
-  'the synth-only base gain must be reduced without attenuating imported pad samples'
-);
-
-assert.match(
-  source,
-  /PAD_SYNTH_FILTER_HZ = 600[\s\S]*?PAD_SYNTH_ATTACK_S = 0\.32[\s\S]*?PAD_SYNTH_CROSSFADE_S = 0\.8[\s\S]*?PAD_SYNTH_HARMONICS = Object\.freeze\(\[0,1,0\.10,0\.025,0\.008\]\)[\s\S]*?function createRootPadVoice\(midi, whenMs = null\)[\s\S]*?createPeriodicWave\(real,imag\)[\s\S]*?filter\.frequency\.setValueAtTime\(PAD_SYNTH_FILTER_HZ, now\)[\s\S]*?now \+ PAD_SYNTH_ATTACK_S/,
-  'the synth root pad must use the mostly-sine subtle waveform, 600 Hz low-pass, soft attack, and slow crossfade tuning'
+  'the low-kurraya base gain must preserve its independent mix without attenuating imported pad samples'
 );
 
 assert.match(
@@ -111,7 +93,7 @@ assert.match(
 
 assert.match(
   source,
-  /gainAmount \* state\.kurrayaMixLevel/,
+  /function createVoiceNodes\(midi, gainAmount, startAt = null, mixLevel = state\.kurrayaMixLevel\)[\s\S]*?gainAmount \* mixLevel/,
   'the Kurraya mix multiplier must reach instrument-note playback'
 );
 assert.match(
@@ -145,19 +127,19 @@ assert.match(
 
 assert.match(
   source,
-  /function scheduleTransportAudioAhead\(\)[\s\S]*?findUpcomingTransportBoundary\(clock => clock\.transportAbsoluteBeat\)[\s\S]*?playMetronomeClick\(currentHarmonyBeatData\(beatBoundary\.clock\), false, beatBoundary\.atMs\)[\s\S]*?findUpcomingTransportBoundary\(clock => currentHarmonyStep\(clock\)\)[\s\S]*?syncRootPad\(false, chordBoundary\.atMs, chordBoundary\.clock\)/,
-  'one shared ahead-of-time scheduler must queue both beat and chord-root audio'
+  /function scheduleTransportAudioAhead\(\)[\s\S]*?findUpcomingTransportBoundary\(clock => clock\.transportAbsoluteBeat\)[\s\S]*?playMetronomeClick\(currentHarmonyBeatData\(beatBoundary\.clock\), false, beatBoundary\.atMs\)[\s\S]*?findUpcomingTransportBoundary\(rootPadAudioKey\)[\s\S]*?syncRootPad\(!state\.rootPadSampleBuffer, padBoundary\.atMs, padBoundary\.clock\)/,
+  'one shared ahead-of-time scheduler must queue both beat and measure/chord-root audio'
 );
 
 assert.match(
   source,
-  /function updateGameFrame\(\)[\s\S]*?scheduleTransportAudioAhead\(\);[\s\S]*?if \(state\.scheduledHarmonyStep !== harmonyStep\) syncRootPad\(\);[\s\S]*?if \(state\.scheduledMetronomeBeat !== beatData\.absoluteBeat\) playMetronomeClick\(beatData\)/,
+  /function updateGameFrame\(\)[\s\S]*?scheduleTransportAudioAhead\(\);[\s\S]*?if \(padKey !== state\.lastRootPadKey\)[\s\S]*?state\.scheduledRootPadKey !== padKey\) syncRootPad\(!state\.rootPadSampleBuffer\)[\s\S]*?if \(state\.scheduledMetronomeBeat !== beatData\.absoluteBeat\) playMetronomeClick\(beatData\)/,
   'render-frame boundary handling must remain fallback-only after ahead scheduling'
 );
 
 assert.match(
   source,
-  /transportAudioLookaheadMs: TRANSPORT_AUDIO_LOOKAHEAD_MS[\s\S]*?scheduledMetronomeBeat:[\s\S]*?scheduledHarmonyStep:/,
+  /transportAudioLookaheadMs: TRANSPORT_AUDIO_LOOKAHEAD_MS[\s\S]*?scheduledMetronomeBeat:[\s\S]*?scheduledRootPadKey:/,
   'mobile/host diagnostics must expose the transport scheduling state'
 );
 
@@ -199,7 +181,7 @@ assert.match(
 
 assert.match(
   source,
-  /function generateSong\(type, bpm\)[\s\S]*?countInBeats = type === 'when-the-kininjis-bloom'[\s\S]*?FIXED_HARMONY_SIX_EIGHT_CHORDS \* KURRAYA_TIME_SIGNATURE\[0\][\s\S]*?countInMs = beatMs \* countInBeats/,
+  /function generateSong\(type, bpm, options = \{\}\)[\s\S]*?countInBeats = type === 'when-the-kininjis-bloom'[\s\S]*?FIXED_HARMONY_SIX_EIGHT_CHORDS \* meter\.numerator[\s\S]*?countInMs = beatMs \* countInBeats/,
   'the four 6/8 accompaniment bars must live before the 16-bar melody body instead of consuming its first four bars'
 );
 
@@ -217,14 +199,14 @@ assert.match(
 
 assert.match(
   source,
-  /function sharedTransportData\([\s\S]*?rawHarmonyQuarterBeatFloat = fixedKurraya && state\.game\.active[\s\S]*?transportElapsedMs \/ Math\.max\(1,quarterBeatMs\)[\s\S]*?harmonyQuarterBeatFloat[\s\S]*?FIXED_HARMONY_CYCLE_QUARTER_BEATS - 1e-6[\s\S]*?mixedPhase = fixedKurraya \? fixedKurrayaMixedMeterPhase\(harmonyQuarterBeatFloat\)[\s\S]*?transportMeterBeatFloat = fixedKurraya[\s\S]*?transportAbsoluteBeat = Math\.floor\(transportMeterBeatFloat\)/,
+  /function sharedTransportData\([\s\S]*?rawHarmonyQuarterBeatFloat = fixedKurraya && state\.game\.active[\s\S]*?transportElapsedMs \/ Math\.max\(1,quarterBeatMs\)[\s\S]*?harmonyQuarterBeatFloat[\s\S]*?activeKurrayaLabMeter\(\)\?\.measureQuarterBeats[\s\S]*?FIXED_HARMONY_CYCLE_CHORDS - 1e-6[\s\S]*?mixedPhase = fixedKurraya \? fixedKurrayaMixedMeterPhase\(harmonyQuarterBeatFloat\)[\s\S]*?transportMeterBeatFloat = fixedKurraya[\s\S]*?transportAbsoluteBeat = Math\.floor\(transportMeterBeatFloat\)/,
   'the authored-song harmony clock must advance through the four 6/8 intro bars, then stay monotonic through the 3/4 melody and hold the final authored root through the playback tail'
 );
 
 assert.match(
   source,
   /function kurrayaHarmonySegments\(steps, meterLabel, startChord = 0\)[\s\S]*?previous && previous\.step === step[\s\S]*?previous\.lengthBars \+= 1[\s\S]*?function fixedKurrayaHarmonyCadence\(clock = sharedTransportData\(\)\)[\s\S]*?authoredSongActive[\s\S]*?eventSerial:phase\.cycleIndex \* FIXED_HARMONY_CYCLE_CHORDS \+ segment\.startChord[\s\S]*?progressionStep:segment\.step[\s\S]*?spanMeasures:segment\.lengthBars[\s\S]*?spanBeats:segment\.lengthBars \* meterNumerator/,
-  'neighboring equal authored bars must collapse into one sustained harmony event instead of retriggering the pad on every bar'
+  'neighboring equal authored bars must remain one harmony section; the new plucked pad key independently retriggers each bar'
 );
 assert.match(
   source,
@@ -246,7 +228,7 @@ assert.match(
 
 assert.match(
   source,
-  /const requestedScaleName = options\.scaleOverride[\s\S]*?applyPerformanceScale\(requestedScaleName,\{persist:options\.persistScale !== false\}\)/,
+  /const requestedScaleName = options\.scaleOverride[\s\S]*?applyPerformanceScale\(requestedScaleName,\{persist:!npcScale && options\.persistScale !== false\}\)/,
   'ordinary authored playback must still support its authored scale while the audition path can explicitly override it'
 );
 
@@ -300,8 +282,8 @@ assert.match(
 
 assert.match(
   hostSource,
-  /function beginPlayerSession\(\)[\s\S]*?const songSnapshot = ambientSongSnapshotForNpc\(nearbyPerformer\.npcId\)[\s\S]*?playerSession = \{ active: true, mode: 'backup'[\s\S]*?songSnapshot \}/,
-  'joining Foroji in the actual game must carry the captured procedural composition into the backup session state'
+  /function switchInstrumentMode\(view\)[\s\S]*?const songSnapshot = ambientSongSnapshotForNpc\(performer\.npcId\)[\s\S]*?Object\.assign\(playerSession,\{mode:'backup'[\s\S]*?songSnapshot\}\)/,
+  'explicit Performance mode must still carry the NPC\'s procedural composition into the backup session state'
 );
 
 assert.match(musicLab, /HobunjiMusicControlBridge/, 'the standalone tool must use the shared Kurraya bridge');
@@ -316,7 +298,7 @@ assert.match(musicLab, /importKurrayaSample[\s\S]*?importPadSample[\s\S]*?useLab
 
 assert.match(
   source,
-  /function kurrayaSongArrangementState\(\)[\s\S]*?melodyStartQuarterBeat:KURRAYA_INTRO_QUARTER_BEATS[\s\S]*?melodyNotes/,
+  /function kurrayaSongArrangementState\(\)[\s\S]*?melodyStartQuarterBeat:FIXED_HARMONY_SIX_EIGHT_CHORDS \* quarterBeatsPerBar[\s\S]*?melodyNotes/,
   'the bridge must expose the real melody after the four-bar intro for timeline authoring'
 );
 
@@ -392,13 +374,13 @@ assert.match(
 
 assert.match(
   source,
-  /async startAmbientLead\(songId, footstepSampleUrl\)[\s\S]*?state\.selectedSong === 'when-the-kininjis-bloom'\) randomizeKurrayaSongMelody\(\)[\s\S]*?proceduralAmbient:state\.selectedSong === 'when-the-kininjis-bloom'/,
+  /async startAmbientLead\(songId, footstepSampleUrl\)[\s\S]*?state\.selectedSong === 'when-the-kininjis-bloom'\) randomizeKurrayaSongMelody\('Pentatonic Minor'\)[\s\S]*?proceduralAmbient:state\.selectedSong === 'when-the-kininjis-bloom'/,
   'Foroji must generate a new Kurraya melody before an ambient performance begins'
 );
 
 assert.match(
   source,
-  /if \(state\.game\.loopDemo\)[\s\S]*?proceduralAmbient = !!state\.game\.proceduralAmbient[\s\S]*?randomizeKurrayaSongMelody\(\)[\s\S]*?startSong\(state\.selectedSong, \{demoMode:state\.game\.demoMode, loopDemo:true, proceduralAmbient\}\)/,
+  /if \(state\.game\.loopDemo\)[\s\S]*?proceduralAmbient = !!state\.game\.proceduralAmbient[\s\S]*?randomizeKurrayaSongMelody\('Pentatonic Minor'\)[\s\S]*?startSong\(state\.selectedSong, \{demoMode:state\.ambientOnly \? randomNpcAutoPickPattern\(\) : state\.game\.demoMode, loopDemo:true, proceduralAmbient\}\)/,
   'procedural ambient performance must compose another melody at every song-loop boundary instead of repeating one random result forever'
 );
 

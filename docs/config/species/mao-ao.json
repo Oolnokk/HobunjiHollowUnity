@@ -26,6 +26,7 @@
       "appearance::Mao-ao_M::mao-ao_long_ponytail",
       "appearance::Mao-ao_M::mao-ao_splayedknot_medium",
       "appearance::Mao-ao_M::mao-ao_wildbeard",
+      "appearance::Mao-ao_M::mao-ao_grandbeard",
       "appearance::Mao-ao_M::mao-ao_braid-L",
       "appearance::Mao-ao_M::mao-ao_braid-R",
       "appearance::Mao-ao_M::mao-ao_braidcluster-R",
@@ -37,8 +38,10 @@
       "tankan_tunic",
       "bandolier1",
       "tankan_bodywrap",
+      "fine_bodywrap",
       "rugged_poncho",
-      "fine_poncho"
+      "fine_poncho",
+      "hachutu_binding_mask_ii"
     ],
     "cosmeticWeights": {
       "hat": {
@@ -507,6 +510,7 @@
       "tankan_tunic",
       "bandolier1",
       "tankan_bodywrap",
+      "fine_bodywrap",
       "rugged_poncho",
       "fine_poncho"
     ],

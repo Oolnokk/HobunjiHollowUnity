@@ -136,10 +136,11 @@
     return { x: numberOr(station?.c, 0) + 0.5, z: numberOr(station?.r, 0) + 0.5 };
   }
 
-  function isOccupied(station, snapshots) {
+  function isOccupied(station, snapshots, selfId = '') {
     const stationId = station?.stationId || station?.id;
     if (!stationId) return false;
-    return snapshots.some(entry => entry.snap?.currentScheduleTarget?.stationId === stationId);
+    if (snapshots.some(entry => entry.snap?.currentScheduleTarget?.stationId === stationId)) return true;
+    return !!selfId && window.FurnitureTableSystem?.isSeatTaken?.(station.area, station, selfId) === true; // The player's chair (and any other live reservation) is taken too.
   }
 
   function targetIsSeat(target) {
@@ -282,7 +283,7 @@
     if (candidates.length < 2) return result;
 
     const snapshots = debugNpcSnapshots(request.area || result.target.area, rec.id);
-    const free = candidates.filter(station => !isOccupied(station, snapshots));
+    const free = candidates.filter(station => !isOccupied(station, snapshots, rec.id));
     if (free.length) candidates = free;
     if (!candidates.length) return result;
 

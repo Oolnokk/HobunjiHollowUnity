@@ -24,7 +24,7 @@
   const MIN_SCALE = 0.1;
   const MAX_SCALE = 4;
   const MAX_OFFSET_FRACTION = 0.5; // Clamp for headOffsetY and the composed age-hunch amount, as a fraction of model height.
-  const MAX_AGE_HUNCH_FRACTION = 0.15; // A fully "aged" (age = 1) NPC's head lowers by up to 15% of their own model height, on top of any authored headOffsetY.
+  const MAX_AGE_HUNCH_FRACTION = 0.25; // A fully "aged" (age = 1) character's head lowers by up to 25% of their own model height, on top of any authored headOffsetY: js/character-spine.js stoops the whole upper body by most of that (the spine bone) and the head bone carries the rest.
   const EPSILON = 1e-9;
 
   const finite = (value, fallback = 1) => {
@@ -259,7 +259,8 @@
 
     const offsetNumber = Number(overrides.offsetY);
     const baseOffset = Number.isFinite(offsetNumber) ? offsetNumber : resolved.offsetY;
-    applyHeadYOffset(target, clampOffset(baseOffset) + ageHunchFraction(ageFraction), modelHeight);
+    const spineShare = rig.splineNodes ? window.HobunjiCharacterSpine?.profileFor?.(ageFraction)?.shoulderDrop || 0 : 0; // The spline already lowers the head by this much (the head bones sit on its last node); only the rest comes from the head bone.
+    applyHeadYOffset(target, clampOffset(baseOffset) + ageHunchFraction(ageFraction) + spineShare, modelHeight);
     return true;
   }
 
@@ -310,6 +311,29 @@
       target.updateMatrix?.();
     }
     return true;
+  }
+
+  // The one floor-relative node that owns a character's whole visual rig
+  // (portrait + feet + hands). The player's hand parent IS that node
+  // (playerMesh). NPC walkers keep their hands under a lean pivot below it, so
+  // they flag the real owner with userData.hobunjiCharacterRigScaleRoot and
+  // hand attachment scales that — otherwise only the hands (not the body and
+  // feet they belong to) received the species scale.
+  function rigScaleRootFor(node) {
+    for (let current = node; current; current = current.parent) {
+      if (current.userData?.hobunjiCharacterRigScaleRoot === true) return current;
+    }
+    return node || null;
+  }
+
+  // True when an ancestor already carries this character's species body scale
+  // (hostiles scale their whole center-anchored group), so the hand parent
+  // must inherit it instead of being scaled a second time.
+  function rigScaleInheritedFor(node) {
+    for (let current = node; current; current = current.parent) {
+      if (current.userData?.hobunjiCharacterRigScaleInherited === true) return true;
+    }
+    return false;
   }
 
   // Authored part axes act in the floor-parent frame before joint rotations.
@@ -368,6 +392,8 @@
     applyToParent,
     applyHeadCompensation,
     clearFromParent,
+    rigScaleRootFor,
+    rigScaleInheritedFor,
     installProfileDefaults,
     installPartScaleAxes,
   });
@@ -386,7 +412,7 @@
       // parent by this point, so the head-compensation lookup inside
       // applyToParent finds it. Age comes from the NPC's authored aging block
       // (see ageFor) so this reapplication keeps the build-time hunch.
-      applyToParent(parent, options.speciesId || options.profile?.speciesId || options.profile?.species, options.gender || options.profile?.gender, null, ageFor(options));
+      if (!rigScaleInheritedFor(parent)) applyToParent(rigScaleRootFor(parent), options.speciesId || options.profile?.speciesId || options.profile?.species, options.gender || options.profile?.gender, null, ageFor(options));
       return base(THREE, parent, options);
     };
     Object.assign(wrapped, base);

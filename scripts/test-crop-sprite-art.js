@@ -15,8 +15,19 @@ const loaderSource = source('docs/js/combat/combat-config-loader.js'); // Used t
 const cropRenderingSource = source('docs/js/vegetation-crop-rendering.js'); // Used to pin the existing foliage/placeholder crop ownership that must remain untouched.
 const gameSource = source('docs/game.js'); // Used to verify source-colored crop PNGs bypass the shared recolor pipeline in both inventory and held-item rendering.
 
-assert.match(cropRenderingSource, /const FOLIAGE_CROPS = new Set\(\['needlegrain', 'heftroot'\]\);/,
-  'needlegrain and heftroot remain owned by the foliage renderer lifecycle');
+const foliageFamiliesMatch = cropRenderingSource.match(/const FOLIAGE_CROPS = new Set\(\[([^\]]+)\]\);/); // Reads the actual foliage family list rather than freezing it to two crop IDs.
+assert.ok(foliageFamiliesMatch, 'crop foliage renderer exposes its foliage-crop family set');
+const foliageFamilies = [...foliageFamiliesMatch[1].matchAll(/'([^']+)'/g)].map(match => match[1]); // Parsed family IDs let this test permit future foliage crops.
+for (const family of ['needlegrain', 'heftroot', 'blackMustard', 'greenMustard']) {
+  assert.ok(foliageFamilies.includes(family), `${family} remains owned by the foliage renderer lifecycle`);
+}
+for (const billboardCrop of ['garlink', 'ongyums']) {
+  assert.ok(!foliageFamilies.includes(billboardCrop), `${billboardCrop} remains in the separate authored PNG cluster pipeline`);
+}
+assert.match(cropRenderingSource, /assets\/leaves\/small_leaf\.png/, 'outer mushtard leaves reuse existing lobed source PNG');
+assert.match(cropRenderingSource, /assets\/leaves\/speartip_leaf\.png/, 'inner mushtard leaves reuse existing pointed source PNG');
+assert.match(cropRenderingSource, /new THREE\.InstancedMesh\(/, 'mushtard leaf cards are batched for mobile rendering');
+assert.match(cropRenderingSource, /group\.userData\.hobunjiMustardLeafCount/, 'mushtard rosettes expose debug leaf counts');
 assert.match(cropRenderingSource, /Simple colored cube \(all other crops\)/,
   'non-foliage crops still expose the generic placeholder path that crop-sprite-art upgrades or tags');
 assert.match(cropArtSource, /garlink:\s*Object\.freeze\(\{ spriteIcon: 'garlink_bunch\.png', worldMode: 'billboard', ingredientColor: 0xD1D1CB \}\)/,
@@ -83,6 +94,48 @@ let secondSceneTraversals = 0; // Confirms each independently rendered scene own
 renderer.render({ traverse() { secondSceneTraversals++; } }, camera);
 assert.equal(secondSceneTraversals, 1, 'a second scene receives its own immediate discovery scan');
 
+
+class FakeColor { // Three.js-style color getter/setter used to check that the renderer preserves mixed pigment every frame.
+  constructor(hex) { this.hex = hex; }
+  getHex() { return this.hex; }
+  setHex(hex) { this.hex = hex; return this; }
+}
+class FakeMaterial { // Minimal Lambert/Basic material interface used by the authored billboard bridge.
+  constructor(opts = {}) { this.color = new FakeColor(opts.color ?? 0xffffff); this.isMeshLambertMaterial = false; }
+  dispose() {}
+}
+class FakeLambertMaterial extends FakeMaterial { constructor(opts) { super(opts); this.isMeshLambertMaterial = true; } }
+class FakeMesh { // World crop cube and subsequently converted PNG planes share this minimal object API.
+  constructor(geometry, material) {
+    this.geometry = geometry; this.material = material; this.userData = {}; this.children = [];
+    this.isMesh = true; this.parent = null; this.position = { x: .5, y: 0, z: .5, set(x, y, z) { this.x = x; this.y = y; this.z = z; } };
+    this.scale = { x: .7, y: .7, z: .7, setScalar(v) { this.x = v; this.y = v; this.z = v; } };
+    this.quaternion = { identity() {}, copy() {} };
+  }
+  add(child) { child.parent = this; this.children.push(child); }
+}
+sandboxWindow.THREE = {
+  WebGLRenderer: FakeWebGlRenderer, Mesh: FakeMesh, MeshLambertMaterial: FakeLambertMaterial, MeshBasicMaterial: FakeMaterial,
+  BufferGeometry: class {}, PlaneGeometry: class { constructor(width, height) { this.width = width; this.height = height; } },
+  TextureLoader: class { load(path, ready) { const texture = { image: { width: 24, height: 32 } }; ready(texture); return texture; } },
+  DoubleSide: 2,
+};
+const coloredCube = new FakeMesh(
+  { type: 'BoxGeometry', parameters: { width: 1, height: 1, depth: 1 }, dispose() {} },
+  new FakeLambertMaterial({ color: 0xb6a0c9 }),
+); // Imported garlink cube has an arbitrary hybrid color absent from the legacy fixed-color palette.
+coloredCube.parent = {};
+coloredCube.userData.hobunjiCropBaseKey = 'garlink'; // New farm renderer supplies species identity directly.
+coloredCube.userData.hobunjiCropVarietyColor = 0xb6a0c9; // Exact inherited RGB must be visible on the authored PNG cluster.
+fakeNowMs += 250;
+const cultivarScene = { traverse(callback) { callback(coloredCube); } };
+renderer.render(cultivarScene, camera);
+assert.equal(coloredCube.children.length, 3, 'hybrid garlink still becomes the three-plant authored PNG cluster');
+assert.equal(coloredCube.userData.hobunjiCropSpriteKey, 'garlink', 'hybrid retains species art after conversion');
+for (const plant of coloredCube.children) assert.equal(plant.material.color.getHex(), 0xb6a0c9, 'authored hybrid PNG is tinted to its inherited mixed color');
+renderer.render(cultivarScene, camera);
+for (const plant of coloredCube.children) assert.equal(plant.material.color.getHex(), 0xb6a0c9, 'render updates never reset a hybrid plant to native color');
+
 const fakeDefs = {
   needlegrain: { icon: '🌾' },
   heftroot: { icon: '🟡' },
@@ -112,6 +165,6 @@ assert.equal(artApi.getDebug().patchedEntries, 4, 'all four selectable crop entr
 assert.equal(artApi.getDebug().clusterCount, 3, 'world crop cluster diagnostics report three members');
 assert.equal(artApi.getDebug().clusterPlantScale, 0.25, 'world crop cluster diagnostics report the requested reduced scale');
 assert.equal(artApi.getDebug().discoveryScanIntervalMs, 250, 'crop diagnostics report the time-based discovery interval');
-assert.equal(artApi.getDebug().discoveryScanCount, 3, 'crop diagnostics expose the actual number of throttled scene traversals');
+assert.equal(artApi.getDebug().discoveryScanCount, 4, 'crop diagnostics include the extra hybrid-cultivar scene scan');
 assert.match(artApi.getDebug().lastChange, /time-throttled per scene/, 'crop diagnostics summarize the latest performance correction');
 console.log('authored crop sprite art tests passed');

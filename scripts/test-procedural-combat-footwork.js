@@ -55,9 +55,9 @@ source = source.replace('  window.ProceduralLegAnimation = {', `
   makeBoneGuide = makeJointGuide = function () { return new THREE.Group(); };
   window.ProceduralLegAnimation = {`);
 vm.runInNewContext(source, context);
-function rig(height = 1) {
+function rig(height = 1, gaitProfile = null) {
   const parent = new Group(); // Moves independently from the captured world-space foot contacts.
-  const legs = context.window.ProceduralLegAnimation.attach(THREE, parent, { speciesId: 'test', modelHeight: height }); // Exercises the shipped attach entry point.
+  const legs = context.window.ProceduralLegAnimation.attach(THREE, parent, { speciesId: 'test', modelHeight: height, gaitProfile }); // Exercises the shipped attach entry point.
   return { parent, legs };
 }
 function tick(legs, speed, motion, count = 180) {
@@ -131,6 +131,30 @@ for (const height of [0.5, 1, 2]) {
     assert.strictEqual(bounded.legs.getStandingPoseDebug().motionMode, 'airborne', 'airborne lunges still use dangling legs');
   }
 }
+const lurch = rig(1, { style: 'maskbound-lurch', dragSide: 'left', cadence: 0.78, stance: 0.69, dragLift: 0.1, lurchDegrees: 16 }); // Isolated puppet gait over the same shared foot and bone solver.
+const maxLift = { left: 0, right: 0 }; // Accumulates lifted-foot height to prove a true dragging foot rather than ordinary run pacing.
+for (let i = 0; i < 240; i++) {
+  lurch.legs.update(1 / 60, 2, false, undefined, { combat: true });
+  const pose = lurch.legs.getStandingPoseDebug();
+  maxLift.left = Math.max(maxLift.left, pose.left.targetY - pose.left.contactY);
+  maxLift.right = Math.max(maxLift.right, pose.right.targetY - pose.right.contactY);
+}
+const lurchDebug = lurch.legs.getStandingPoseDebug(); // Existing mobile debug snapshot must identify the creature-only style and phase.
+assert.equal(lurchDebug.motionMode, 'maskbound-lurch');
+assert.equal(lurchDebug.gait.style, 'maskbound-lurch');
+assert.equal(lurchDebug.gait.dragSide, 'left');
+assert(maxLift.right > maxLift.left * 1.4, 'supporting foot lifts much higher than the scraping foot');
+assert(lurch.legs.getRunLean() > 0.05, 'wooden puppet visually lurches forward even at ordinary walking speed');
+assert(lurchDebug.gait.runBlend < 0.25, 'combat movement does not switch into normal humanoid sprinting');
+lurch.legs.update(1 / 60, 0, false);
+assert.equal(lurch.legs.getStandingPoseDebug().motionMode, 'idle', 'lurch stops without vibrating in place');
+assert.equal(lurch.legs.getRunLean(), 0, 'torso snaps back to neutral on stopping');
+lurch.legs.beginLunge(1, 0);
+lurch.legs.update(1 / 60, 2, false, undefined, { lunging: true });
+assert.equal(lurch.legs.getStandingPoseDebug().motionMode, 'lunge', 'attack lunges override the puppet walk');
+lurch.legs.update(1 / 60, 2, true);
+assert.equal(lurch.legs.getStandingPoseDebug().motionMode, 'suppressed', 'death/knockdown suppresses puppet walk');
+
 lunge.legs.update(NaN, Infinity, false);
 assert.strictEqual(lunge.legs.getStandingPoseDebug().motionMode, 'idle');
 assert.strictEqual(lunge.legs.getStandingPoseDebug().gait.strideLength, 0);

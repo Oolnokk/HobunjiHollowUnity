@@ -76,7 +76,7 @@
     4: '#c687ff',
     5: '#ffb454'
   };
-  const oreKinds = ['stone', 'copper', 'tin', 'lead', 'silver', 'gold', 'arsenic']; // Stone plus game.js ORE_DEFS. 'lead'/'arsenic' replaced the non-existent 'iron'/'crystal' in place so seeded picks stay stable.
+  const oreKinds = ['stone', 'copper', 'tinCopper', 'mushistonite', 'tin', 'lead', 'silver', 'gold', 'arsenic']; // Stone and distinct ore-stage minerals; the shared renderer uses normal stone outside colored veins.
 
   // Ported from WildernessMapGeneratorV4412: named terrain presets and boundary
   // cliff modes. Only used when a caller explicitly opts in via overrides (see
@@ -149,6 +149,11 @@
       boundaryMode: 'legacyFullRing',
       boundaryModeLabel: 'Legacy full boundary cliff ring',
       boundaryCliffBoost: 0,
+      archipelagoEnabled: false, // Opt-in island chain; other zones retain their exact old generator.
+      islandCount: 11, islandSize: 11.5, islandSizeVariation: 0.52,
+      islandHeight: 6, islandSteepness: 1.1, islandIrregularity: 0.72,
+      islandCoastDetail: 0.65, islandSpacing: 1.05,
+      islandClustering: 0.65, islandSatellites: 15,
       stepCurve: 'northernCliffs',
       stepCurveLabel: 'Northern Cliffs',
       plateaus: 76,
@@ -158,6 +163,7 @@
       // resolvedMaxTier and choosePlateauBlobTargetArea.
       lowProfilePlateaus: false,
       plateauAreaMul: 1,
+      plateauSteepness: 1, // Cliff-specific terrain-tier multiplier; neutral unless overridden by a cliff zone.
       // See widenRampLineAtTightCorners — continuous 3-tile-wide ramps
       // instead of the default mostly-1-tile-with-occasional-2-tile-shoulder.
       wideRamps: false,
@@ -168,6 +174,7 @@
       plateauPonds: 8,
       plateauStreams: 10,
       rivers: 2,
+      riverOutlet: 'none', // Optional named boundary destination used by the late river painter; other biomes keep random river exits.
       pathAnchors: 4,
       // See findPath's randomBias term — multiplier on how strongly the A*
       // path search prefers meandering over a straight line to its target.
@@ -176,7 +183,7 @@
       // down from the default "wide enough to clear the border escarpment
       // cleanly" footprint, for a zone that wants a thin entrance instead.
       entryGateWidthMul: 1,
-      animalDens: 5,
+      animalDens: 8, // ~200x200 zones had room to spare at 5; cliff-backed sites are tried first, free-standing dens only fill the shortfall.
       // Permanent respawn checkpoints spread one-per-quadrant across the
       // zone (see placeRootTotems) so a death anywhere in the zone always
       // has a reasonably close totem to fall back to.
@@ -364,6 +371,7 @@
       preselectedEntrySide: null,
       boundaryHeightScan: null,
       distantBoundaryLandscapes: [],
+      archipelago: null,
       width: settings.width,
       height: settings.height,
       sourceWidth: settings.width,
@@ -568,6 +576,67 @@
       return { x, y };
     }
     return null;
+  }
+
+  // Eastern Mire's water-and-islands layout is shared by the browser Lab
+  // and the live Tothal Shift; no cosmetic-only island rendering shortcut.
+  function archipelagoGeneratorApi() {
+    if (typeof require === 'function') {
+      try { return require('./wilderness-archipelago.js'); } catch (_) {}
+    }
+    if (typeof window !== 'undefined') return window.WildernessArchipelago;
+    if (typeof globalThis !== 'undefined') return globalThis.WildernessArchipelago;
+    return null;
+  }
+
+  function generateArchipelagoTerrain() {
+    const generator = archipelagoGeneratorApi();
+    if (!generator?.generate) throw new Error('WildernessArchipelago was not loaded before wilderness-map-generator.js');
+    const result = generator.generate(settings.width, settings.height, settings.seed, settings);
+    for (const tile of allTiles()) {
+      const index = tile.y * settings.width + tile.x;
+      const land = result.land[index] === 1;
+      const tier = land ? result.elevation[index] : 0;
+      tile.terrain = land ? (tier > 0 ? 'plateau' : 'grass') : 'stream';
+      tile.water = !land;
+      tile.elevation = tier;
+      tile.height = tier;
+      tile.archipelagoSea = !land;
+      tile.archipelagoIslandId = land ? result.islandIndex[index] : null;
+      tile.archipelagoShoreDistance = land ? result.shoreDistance[index] : null;
+      tile.generatedPlateauBlobId = land && tier > 0 ? 'archipelago_island_' + tile.archipelagoIslandId : null;
+      tile.plateauGroupId = null;
+      tile.plateauRing = false;
+      tile.plateauInterior = false;
+    }
+    map.archipelago = result.stats;
+    logDebug('Eastern Mire archipelago: ' + result.stats.islandCount
+      + ' major islands, ' + result.stats.skerries + ' skerries; '
+      + result.stats.landTiles + ' land, ' + result.stats.waterTiles
+      + ' sea, ' + result.stats.coastlineTiles
+      + ' coastline tiles, peak tier ' + result.stats.peakTier);
+  }
+
+  // Only the cliff-biome terrain is exaggerated; Cloud Forest's shallow terraces and Eastern Mire's islands retain their authored profiles.
+  function applyCliffPlateauSteepness() {
+    const multiplier = Number(settings.plateauSteepness); // Applied to tier elevations after height scanning but before borders, climbing routes and ramps are generated.
+    if (settings.preset !== 'cliffs' || !Number.isFinite(multiplier) || multiplier <= 1) return;
+    const originalMaxTier = settings.maxTier; // Logged for reproducible seed/terrain comparisons.
+    const raisedMaxTier = clamp(Math.round(originalMaxTier * multiplier), 1, MAX_VERTICAL_TIER); // Later boundary/ramp generation must use the new true tier ceiling.
+    let tallerTiles = 0; // Counts actual elevated tiles changed by the remapping.
+    for (const tile of allTiles()) {
+      if (Number.isFinite(tile.canyonOriginalElevation) && tile.canyonOriginalElevation > 0)
+        tile.canyonOriginalElevation = clamp(Math.round(tile.canyonOriginalElevation * multiplier), 1, raisedMaxTier);
+      if (tile.elevation <= 0) continue;
+      const raisedTier = clamp(Math.round(tile.elevation * multiplier), 1, raisedMaxTier); // One consistent mapping keeps same-tier plateau tops flat and neighboring heights ordered.
+      if (raisedTier === tile.elevation) continue;
+      tile.elevation = raisedTier;
+      tile.height = raisedTier;
+      tallerTiles++;
+    }
+    settings.maxTier = raisedMaxTier;
+    map.plateauSteepnessReport = { multiplier, tallerTiles, originalMaxTier, raisedMaxTier }; // Included in exported workspace for mobile generation diagnostics.
+    logDebug(`cliff plateau steepness x${multiplier}: lifted ${tallerTiles} tiles, max tier ${originalMaxTier} -> ${raisedMaxTier}`);
   }
 
   function generatePlateaus() {
@@ -1694,6 +1763,195 @@
     return changedWaterTiles;
   }
 
+
+  // Reconciles generated water after every terrain-height pass. River centerlines are
+  // directed from the higher endpoint to the lower one, then their banks inherit the
+  // nearest centerline grade; pond basins receive one shared floor tier.
+  function stabilizeGeneratedHydrology() {
+    const report = {
+      riverPathsProcessed: 0,
+      riverCenterlineTiles: 0,
+      riverTilesLowered: 0,
+      riverTilesRaised: 0,
+      riverUpHillSteps: 0,
+      pondBodiesProcessed: 0,
+      pondBodiesFlattened: 0,
+      pondTilesFlattened: 0,
+      pondUnevenBodies: 0,
+      pondUnevenBodiesBefore: 0,
+      pondMaxElevationSpreadBefore: 0,
+      pondMaxElevationSpreadAfter: 0
+    }; // Returned with the generated workspace so terrain regressions can be checked without devtools.
+    const riverGradeSeeds = new Map(); // Centerline tile key -> solved river-bed elevation.
+    const riverProfiles = []; // Ordered centerline profiles used to recheck downhill flow after river crossings are reconciled.
+
+    for (const river of map.rivers || []) {
+      const pathTiles = []; // In-bounds water tiles sampled from this river's authored path.
+      let lastKey = '';
+      const pointScale = Math.max(1, Math.round(Number(settings.generationScale) || 1)); // Matches scaleGeneratedRivers/scaleMapPoint before the exported node resolves to a duplicated source tile.
+      for (const point of river.points || []) {
+        const scaledX = Math.round(Number(point.x) * pointScale); // Exact final-grid column used by the exported river node.
+        const scaledY = Math.round(Number(point.y) * pointScale); // Exact final-grid row used by the exported river node.
+        const x = Math.floor(scaledX / pointScale); // Source tile whose scaled block contains that exported node.
+        const y = Math.floor(scaledY / pointScale);
+        if (!inBounds(x, y)) continue;
+        const tile = tileAt(x, y); // Sample the same source tile that the exported scaled node will occupy.
+        if (!tile || !tile.water) continue; // A river may pass through pond/stream water; that shared water tile is part of the same downhill profile.
+        const key = tileKey(x, y); // Prevents sub-tile path wobble from duplicating a centerline sample.
+        if (key === lastKey) continue;
+        pathTiles.push(tile);
+        lastKey = key;
+      }
+      if (pathTiles.length < 2) continue;
+
+      if (pathTiles[pathTiles.length - 1].elevation > pathTiles[0].elevation) {
+        pathTiles.reverse();
+        river.points = (river.points || []).slice().reverse();
+        if (Array.isArray(river.widthSamples)) river.widthSamples.reverse();
+        const oldFromBorder = river.fromBorder; // Preserves border labels when the watercourse direction is reversed.
+        river.fromBorder = river.toBorder;
+        river.toBorder = oldFromBorder;
+      }
+
+      const profile = { tiles: pathTiles, grades: [] }; // One monotonic elevation sample for each centerline tile.
+      let previousHeight = Number(pathTiles[0].elevation) || 0;
+      for (const tile of pathTiles) {
+        const key = tileKey(tile.x, tile.y); // Shared junctions use the lower of the intersecting river grades.
+        const sharedGrade = riverGradeSeeds.get(key);
+        const targetHeight = Math.max(0, Math.min(
+          previousHeight,
+          Number(tile.elevation) || 0,
+          sharedGrade === undefined ? Infinity : sharedGrade
+        ));
+        profile.grades.push(targetHeight);
+        riverGradeSeeds.set(key, targetHeight);
+        previousHeight = targetHeight;
+      }
+      riverProfiles.push(profile);
+      report.riverPathsProcessed++;
+      report.riverCenterlineTiles += pathTiles.length;
+      river.flowDirection = 'higher-to-lower';
+      river.carving = true;
+    }
+
+    // A junction can lower a later river's shared tile. Propagate that lower
+    // elevation downstream through every intersecting path until all paths agree.
+    const profilePassLimit = Math.max(2, riverProfiles.length + Number(settings.maxTier) + 2); // Allows a grade change to propagate across every river junction, not only one tier's worth of passes.
+    for (let pass = 0; pass < profilePassLimit; pass++) {
+      let changed = false;
+      for (const profile of riverProfiles) {
+        for (let i = 0; i < profile.tiles.length; i++) {
+          const tile = profile.tiles[i]; // Current ordered sample in this river profile.
+          const key = tileKey(tile.x, tile.y);
+          const sharedGrade = riverGradeSeeds.get(key);
+          const previousGrade = i > 0 ? profile.grades[i - 1] : Infinity;
+          const targetHeight = Math.max(0, Math.min(profile.grades[i], previousGrade, sharedGrade));
+          if (targetHeight < profile.grades[i]) {
+            profile.grades[i] = targetHeight;
+            changed = true;
+          }
+          if (targetHeight < sharedGrade) {
+            riverGradeSeeds.set(key, targetHeight);
+            changed = true;
+          }
+        }
+      }
+      if (!changed) break;
+    }
+
+    for (const profile of riverProfiles) {
+      for (let i = 1; i < profile.grades.length; i++) {
+        if (profile.grades[i] > profile.grades[i - 1]) report.riverUpHillSteps++;
+      }
+    }
+
+    // Multi-source flood fill spreads each centerline grade across its river width
+    // without allowing a high bank or adjacent plateau to lift the channel.
+    const riverGradeByTile = new Map(riverGradeSeeds); // Starts with all authored centerline grades before filling channel shoulders.
+    const riverQueue = []; // Breadth-first work queue for river tiles not directly sampled by the centerline.
+    for (const key of riverGradeSeeds.keys()) {
+      const [x, y] = key.split(',').map(Number);
+      riverQueue.push({ x, y, height: riverGradeSeeds.get(key) });
+    }
+    for (let head = 0; head < riverQueue.length; head++) {
+      const current = riverQueue[head]; // Nearest solved centerline sample for the current water tile.
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const x = current.x + dx;
+        const y = current.y + dy;
+        if (!inBounds(x, y)) continue;
+        const neighbor = tileAt(x, y); // Candidate bankward tile in the same connected river channel.
+        if (!neighbor || !neighbor.water) continue; // Connected river, stream, and pond water share the same local flow grade.
+        const key = tileKey(x, y);
+        if (riverGradeByTile.has(key)) continue;
+        const neighborHeight = Math.max(0, Number(neighbor.elevation) || 0); // Existing low channel pockets must never be raised to match a higher centerline.
+        const propagatedHeight = Math.min(current.height, neighborHeight);
+        riverGradeByTile.set(key, propagatedHeight);
+        riverQueue.push({ x, y, height: propagatedHeight });
+      }
+    }
+    for (const [key, targetHeight] of riverGradeByTile) {
+      const [x, y] = key.split(',').map(Number);
+      const tile = tileAt(x, y); // River tile receiving its nearest centerline's solved elevation.
+      if (!tile || !tile.water) continue; // Also grades centerline samples that meet an existing stream or pond.
+      const originalHeight = Math.max(0, Number(tile.elevation) || 0); // Preserve any naturally lower channel pocket.
+      if (originalHeight > targetHeight) report.riverTilesLowered++;
+      if (originalHeight < targetHeight) report.riverTilesRaised++;
+      const solvedHeight = Math.min(originalHeight, targetHeight); // Hydrology may only carve downward, never create a raised underwater tile.
+      tile.elevation = solvedHeight;
+      tile.height = solvedHeight;
+    }
+
+    const isPondFloorTile = tile => !!tile && tile.water && !tile.canyonRiver
+      && (tile.terrain === 'pond' || tile.plateauPond); // Includes the still-water part of a plateau pond when a stream joins it.
+    const visitedPondTiles = new Set(); // Ensures each connected lake/pond basin is levelled exactly once.
+    for (const start of allTiles()) {
+      if (!isPondFloorTile(start)) continue;
+      const startKey = tileKey(start.x, start.y);
+      if (visitedPondTiles.has(startKey)) continue;
+      const component = []; // All connected water tiles that make up this lake/pond basin.
+      const queue = [start];
+      visitedPondTiles.add(startKey);
+      for (let head = 0; head < queue.length; head++) {
+        const current = queue[head];
+        component.push(current);
+        for (const neighbor of cardinalNeighbors(current.x, current.y)) {
+          if (!isPondFloorTile(neighbor)) continue;
+          const key = tileKey(neighbor.x, neighbor.y);
+          if (visitedPondTiles.has(key)) continue;
+          visitedPondTiles.add(key);
+          queue.push(neighbor);
+        }
+      }
+      const basinElevations = component.map(tile => Number(tile.elevation) || 0); // Snapshot before mutation so the report records the actual terrain defect.
+      const basinFloor = Math.max(0, basinElevations.reduce((lowest, height) => Math.min(lowest, height), Infinity)); // Lowest existing basin tile determines the common waterbed tier.
+      const basinCeiling = basinElevations.reduce((highest, height) => Math.max(highest, height), -Infinity);
+      const basinSpreadBefore = basinCeiling - basinFloor; // Measured before lowering the submerged high spots.
+      report.pondMaxElevationSpreadBefore = Math.max(report.pondMaxElevationSpreadBefore, basinSpreadBefore);
+      if (basinSpreadBefore > 0) report.pondUnevenBodiesBefore++;
+      let bodyChanged = false;
+      for (const tile of component) {
+        if (tile.elevation !== basinFloor) {
+          tile.elevation = basinFloor;
+          tile.height = basinFloor;
+          report.pondTilesFlattened++;
+          bodyChanged = true;
+        }
+      }
+      report.pondBodiesProcessed++;
+      if (bodyChanged) report.pondBodiesFlattened++;
+      const basinSpreadAfter = component.reduce((spread, tile) => Math.max(spread, tile.elevation - basinFloor), 0);
+      report.pondMaxElevationSpreadAfter = Math.max(report.pondMaxElevationSpreadAfter, basinSpreadAfter);
+      if (basinSpreadAfter > 0) report.pondUnevenBodies++;
+    }
+
+    logDebug('gravity hydrology: graded ' + report.riverPathsProcessed + ' river paths (' + report.riverCenterlineTiles
+      + ' centerline tiles; ' + report.riverTilesLowered + ' river tiles lowered; ' + report.riverUpHillSteps
+      + ' uphill steps remain), levelled ' + report.pondBodiesFlattened + '/' + report.pondBodiesProcessed
+      + ' pond basins (' + report.pondTilesFlattened + ' tiles lowered; ' + report.pondUnevenBodies + ' uneven basins remain)');
+    map.hydrologyReport = report;
+    return report;
+  }
+
   function syncTileHeights() {
     for (const tile of allTiles()) {
       tile.height = tile.elevation;
@@ -2588,10 +2846,10 @@
     ];
 
     for (const tile of allTiles()) {
-      if (!tile || tile.ramp || tile.distantBoundaryLandscape) continue;
+      if (!tile || tile.ramp || tile.distantBoundaryLandscape || tile.archipelagoSea) continue;
       for (const dir of dirs) {
         const neighbor = tileAt(tile.x + dir.x, tile.y + dir.y);
-        if (!neighbor || neighbor.ramp || neighbor.distantBoundaryLandscape) continue;
+        if (!neighbor || neighbor.ramp || neighbor.distantBoundaryLandscape || neighbor.archipelagoSea) continue;
         const diff = tileHeight(neighbor) - tileHeight(tile);
         if (diff < 0.75) continue;
         const before = tile.cliffSkirt;
@@ -2610,7 +2868,7 @@
         : [{ x: 0, y: 1 }, { x: 0, y: -1 }];
       for (const side of sideDirs) {
         const skirt = tileAt(tile.x + side.x, tile.y + side.y);
-        if (!skirt || skirt.ramp || skirt.water || skirt.distantBoundaryLandscape) continue;
+        if (!skirt || skirt.ramp || skirt.water || skirt.distantBoundaryLandscape || skirt.archipelagoSea) continue;
         const before = skirt.cliffSkirt;
         markCliffSkirtTile(skirt, 'ramp', tile, Math.abs(tileHeight(tile) - tileHeight(skirt)));
         skirt.rampSkirt = true;
@@ -3036,6 +3294,7 @@
         if (!tile) continue;
         if (clearBorderEscarpmentTile(tile, replacementHeight, 'borderEntryGate')) cleared++;
         tile.water = false;
+        tile.archipelagoSea = false; // Entrance approach is dry shoreline terrain.
         tile.terrain = replacementHeight > 0 ? 'plateau' : 'grass';
         tile.elevation = Math.round(replacementHeight);
         tile.height = replacementHeight;
@@ -5980,10 +6239,16 @@
   // column (entry tile down to the front row) as ordinary ground, so the
   // entry is reachable on foot instead of buried in the den's rock overlay.
   function denEntryWalkableKeys(object) {
-    const keys = new Set();
+    const keys = new Set(); // Legacy entrance swathe when no authored collider replaces the den's automatic shell.
+    if (object?.type !== 'animalDen') return keys;
+    const template = object.entranceTemplateId
+      ? (settings.locales || []).find(locale => locale.id === object.entranceTemplateId)
+      : null; // Only cliff-fitted dens carry an authored entrance template; generic free-standing dens retain their legacy rock doorway.
+    const authored = denCliffPlacementApi()?.authoredWalkableTiles?.(object, template); // Use the exact authored custom collider instead of repainting its cleared flanks as rock.
+    if (authored) return authored;
     const mouth = object?.mouthAnchor;
-    if (object?.type !== 'animalDen' || !object.entryInside || !mouth) return keys;
-    for (let y = mouth.y; y < object.y + (object.h || 1); y++) keys.add(`${mouth.x},${y}`);
+    if (!object.entryInside || !mouth) return keys;
+    for (let y = mouth.y; y < object.y + (object.h || 1); y++) for (let x = Math.max(object.x, mouth.x - 1); x <= Math.min(object.x + (object.w || 1) - 1, mouth.x + 1); x++) keys.add(`${x},${y}`); // Center path plus both flanking columns match den template placement.
     return keys;
   }
 
@@ -6002,7 +6267,7 @@
           const key = `${x},${y}`;
           const current = overlays.get(key);
           const priority = overlayType === 'rock' ? 3 : overlayType === 'shrub' ? 2 : 1;
-          if (!current || priority > current.priority) overlays.set(key, { type: overlayType, objectId: object.id, objectType: object.type, priority });
+          if (!current || priority > current.priority) overlays.set(key, { type: overlayType, objectId: object.id, objectType: object.type, oreKind: object.type === 'diggableRockOre' ? (object.oreKind || 'stone') : null, priority });
         }
       }
     }
@@ -6068,6 +6333,8 @@
       if (tile.borderEscarpmentSide) output.borderEscarpmentSide = tile.borderEscarpmentSide;
       if (tile.borderEscarpmentHeightBonus != null) output.borderEscarpmentHeightBonus = tile.borderEscarpmentHeightBonus;
     }
+    if (tile.archipelagoSea) output.archipelagoSea = true;
+    if (tile.archipelagoIslandId != null) output.archipelagoIslandId = tile.archipelagoIslandId;
     if (tile.distantBoundaryLandscape) {
       output.distantBoundaryLandscape = true;
       if (tile.distantBoundaryLandscapeSide) output.distantBoundaryLandscapeSide = tile.distantBoundaryLandscapeSide;
@@ -6089,6 +6356,7 @@
     if (overlay?.objectId) {
       output.generatedObjectId = overlay.objectId;
       output.generatedObjectType = overlay.objectType;
+      if (overlay.objectType === 'diggableRockOre') output.generatedObjectOreKind = overlay.oreKind; // Preserve mineral identity for game.js's resource-rock textures and ore drops.
     }
     return hobunjiCleanTileRecord(output);
   }
@@ -6108,6 +6376,7 @@
     if (overlay?.objectId) {
       output.generatedObjectId = overlay.objectId;
       output.generatedObjectType = overlay.objectType;
+      if (overlay.objectType === 'diggableRockOre') output.generatedObjectOreKind = overlay.oreKind; // Preserve mineral identity for game.js's resource-rock textures and ore drops.
     }
     return hobunjiCleanTileRecord(output);
   }
@@ -6233,7 +6502,9 @@
         width: Math.max(1, Math.round(river.widthTilesAverage || river.widthTiles || 3)),
         seed: hashSeed(`${map.seed}_${river.id || index}`),
         paintTiles: false,
-        widthTilesAverage: river.widthTilesAverage || river.widthTiles || 3
+        widthTilesAverage: river.widthTilesAverage || river.widthTiles || 3,
+        flowDirection: river.flowDirection || 'higher-to-lower',
+        ...(river.outletZoneId ? { outletZoneId: river.outletZoneId, outletSide: river.toBorder } : {}) // Retains non-traversable downstream geography in exported river metadata.
       };
     }).filter(river => river.nodes.length >= 2);
   }
@@ -6344,6 +6615,7 @@
       boundaryMode: map.boundaryMode || settings.boundaryMode,
       boundaryModeLabel: map.boundaryModeLabel || settings.boundaryModeLabel,
       boundaryCliffBoost: Number.isFinite(map.boundaryCliffBoost) ? map.boundaryCliffBoost : settings.boundaryCliffBoost,
+      plateauSteepness: Number(settings.plateauSteepness) || 1, // Mirrors the generation recipe in exported root-map metadata.
       stepCurve: map.stepCurve || settings.stepCurve,
       stepCurveLabel: map.stepCurveLabel || settings.stepCurveLabel,
       greatBasinHorseshoe: !!map.greatBasinHorseshoe,
@@ -6355,6 +6627,7 @@
       boundaryHeightScan: map.boundaryHeightScan || null,
       distantBoundaryLandscapes: map.distantBoundaryLandscapes || [],
       greatBasinEntry: map.greatBasinEntry || null,
+      archipelago: map.archipelago || null,
       note: `Flattened from WildernessMapGeneratorV44 after ${map.generationScale || 1}x tile-density expansion. Unsupported generated object types are encoded as supported editor tile types plus generatedObject metadata. Every non-empty plateau paint group is retained so generated elevation ownership survives export exactly.`
     };
 
@@ -6502,6 +6775,7 @@
       boundaryMode: map.boundaryMode || settings.boundaryMode,
       boundaryModeLabel: map.boundaryModeLabel || settings.boundaryModeLabel,
       boundaryCliffBoost: Number.isFinite(map.boundaryCliffBoost) ? map.boundaryCliffBoost : settings.boundaryCliffBoost,
+      plateauSteepness: Number(settings.plateauSteepness) || 1, // Mirrors the generation recipe in exported root-map metadata.
       stepCurve: map.stepCurve || settings.stepCurve,
       stepCurveLabel: map.stepCurveLabel || settings.stepCurveLabel,
       greatBasinHorseshoe: !!map.greatBasinHorseshoe,
@@ -6522,7 +6796,7 @@
       routeStyle: 'Stardew/Pokemon-like wilderness: sparse visible roads, clustered messy Giant\'s-Causeway-like plateau fields, manual-style reserved cliff rings, wraparound ramps with shared plateau contact tiles, boundary plateau modes generated after playable terrain height scanning, cave mouths in cliff faces, wild animal dens, and invisible navigation corridors for full walkable-tile reachability',
       cameraLocked: true,
       visibilityRule: 'plateaus are generated as clustered manual-paint-style causeway cells rather than global shelves; each footprint owns its reserved outer ring and inset submap top',
-      riverWidthRule: usesDramaticPlateauPreset() ? 'dramatic preset rivers are late-painted over finished terrain with no erosion carving; height breaks become waterfall tiles' : 'big canyon rivers vary along their length; each sampled width is usually 4-8 tiles and carves river beds down through raised plateau fields',
+      riverWidthRule: usesDramaticPlateauPreset() ? 'dramatic preset rivers are painted over finished terrain, then graded from higher to lower terrain; downhill tier breaks become waterfall tiles' : 'big canyon rivers vary along their length; each sampled width is usually 4-8 tiles and carves river beds down through raised plateau fields',
       pathingRule: 'visible paths are sparse. invisiblePaths reserve natural walkable corridors for players, NPCs, and animal escape routing without drawing extra beaten roads.',
       tileDensityRule: `Generated at source size ${map.sourceWidth || map.width}x${map.sourceHeight || map.height}, then expanded by ${map.generationScale || 1}x so every source tile becomes ${(map.generationScale || 1) * (map.generationScale || 1)} exported tiles. At scale 2, every originally walkable source tile becomes four walkable exported tiles.`,
       presetRule: `${map.presetLabel || settings.presetLabel || 'Custom'} preset. Cliffs forces a south entry and dramatic packed-bleacher plateau tiers using the ${(map.stepCurveLabel || settings.stepCurveLabel || 'Northern Cliffs')} step curve. Nearby plateaus share parent aprons, and jagged east-west variation may dip or spike without dropping below southern support terrain. A plateau-component scanner detects low child plateau bodies and raises whole components instead of row tiles; boundary mode ${(map.boundaryModeLabel || settings.boundaryModeLabel)} uses a post-playable height scan before generating the world edge. Great Basin forces a north entry, uses a linear south-to-north height lerp as the base basin floor, then late in terrain generation extends higher-tier spoon sides along the east/west boundaries before raising the post-boundary road to the highest walkable plateau it directly connects to.`,
@@ -6533,7 +6807,7 @@
         height: 'render/traversal height. Normal tiles equal elevation; ramp tiles are fractional lerps.',
         ramp: 'designated slope tiles connecting significant tier jumps. rampProgress 0..1 lerps from rampFromTier to rampToTier.',
         pond: 'irregular water blob',
-        river: usesDramaticPlateauPreset() ? 'late-painted border-crossing water with widthSamples; preserves plateau elevations and relies on waterfall tiles at tier breaks' : 'border-crossing canyon water with widthSamples; widths usually vary between 4 and 8 tiles and carve broad channels through plateau fields',
+        river: usesDramaticPlateauPreset() ? 'late-painted border-crossing water with widthSamples; channel beds are graded downhill after terrain shaping, with waterfall tiles at tier breaks' : 'border-crossing canyon water with widthSamples; widths usually vary between 4 and 8 tiles and carve broad channels through plateau fields',
         cliffSkirt: 'reserved tile outline at the base/sides of plateaus and ramps. Normal objects cannot be placed here.',
         caveOpening: 'black cave mouth embedded into a cliff-skirt tile with rarity superscript',
         secretCaveOpening: 'hidden cave opening embedded into a remote cliff-skirt tile with rarity superscript',
@@ -6635,7 +6909,7 @@
   // combination each zone renders with; everything else is the tool's own
   // default (see defaultSettings).
   const ZONE_CONFIG = {
-    map_northern_cliffs: { entrySide: 'south', preset: 'cliffs', boundaryMode: 'followMapHeight', boundaryCliffBoost: 5 },
+    map_northern_cliffs: { entrySide: 'south', preset: 'cliffs', boundaryMode: 'followMapHeight', boundaryCliffBoost: 5, plateauSteepness: 1.75, riverOutlet: 'southeastToMire' }, // Water leaves via the southeast rim toward the Eastern Mire, not the southern entry canyon.
     // trees/bushes well above the shared default (130/75) — this zone is
     // meant to read as an actual dense rainforest, not a scattering of
     // copses, now that FoliageGenerator gives it real full-size trees (with
@@ -6681,9 +6955,24 @@
       // The region's southern road out of the playable world (see
       // chooseTradeExit) — Slagothim caravans enter and leave by it.
       tradeExitSide: 'south',
+      // The dense canopy leaves little clear ground for stumps (the base 7 often placed 0-4): ask for
+      // more so the rainforest reliably has honeyfuzzle hives like every other zone.
+      beehives: 30,
     },
-    map_western_slope: { entrySide: 'east', preset: 'cliffs', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0 },
-    map_eastern_mire: { entrySide: 'west', preset: 'greatBasin', boundaryMode: 'followMapHeight', boundaryCliffBoost: 2 },
+    map_western_slope: { entrySide: 'east', preset: 'cliffs', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0, beehives: 0, plateauSteepness: 1.75 }, // Honeyfuzzle hive stumps (and their swarms) live everywhere except here.
+    map_eastern_mire: {
+      entrySide: 'west', preset: 'custom', boundaryMode: 'entrySideDistantLandscape',
+      boundaryCliffBoost: 0, entryGateWidthMul: 0.4,
+      archipelagoEnabled: true,
+      islandCount: 11, islandSize: 11.5, islandSizeVariation: 0.52,
+      islandHeight: 6, islandSteepness: 1.1, islandIrregularity: 0.72,
+      islandCoastDetail: 0.65, islandSpacing: 1.05,
+      islandClustering: 0.65, islandSatellites: 15,
+      plateaus: 0, maxTier: 6, ramps: 28,
+      ponds: 0, plateauPonds: 0, plateauStreams: 0, rivers: 0,
+      pathAnchors: 3, structures: 3, caves: 3, animalDens: 2,
+      rootTotems: 2, statues: 4, pillars: 12
+    },
   };
 
   // ---------------------------------------------------------------------
@@ -6952,6 +7241,7 @@
 
     map.entry = scaleEntryPoint(map.entry, scale, originalWidth, originalHeight);
     if (map.tradeExit) map.tradeExit = scaleEntryPoint(map.tradeExit, scale, originalWidth, originalHeight);
+    if (map.waterwayOutlet) map.waterwayOutlet = { ...map.waterwayOutlet, x: newWidth - 1, y: map.waterwayOutlet.y * scale }; // Carries the geographic river mouth to the doubled exported map edge.
     map.objects = (map.objects || []).map(object => scaleGeneratedObject(object, scale));
     rebuildObjectCache();
     for (const tile of allTiles()) tile.occupiedBy = null;
@@ -7751,10 +8041,17 @@
       return { rivers: 0, tiles: 0 };
     }
 
+    const hasMireOutlet = settings.riverOutlet === 'southeastToMire'; // Only Northern Cliffs redirects its waterways; other dramatic biomes retain random borders.
+    const outletRow = hasMireOutlet ? clamp(Math.round(settings.height * 0.8), 2, settings.height - 3) : null; // South-eastern latitude of the future Mire drainage connection.
+    const outletEnd = hasMireOutlet ? { x: settings.width + 1, y: outletRow, side: 'east' } : null; // Shared off-map mouth; no player transition is authored.
+    const confluence = hasMireOutlet ? { x: clamp(Math.round(settings.width * 0.76), 2, settings.width - 4), y: outletRow } : null; // Brings separate waterways together before their common exit.
+
     let paintedTiles = 0;
     for (let i = 0; i < settings.rivers; i++) {
-      const start = borderPoint('random', 1);
-      const end = borderPoint(oppositeOrDifferentSide(start.side), 1);
+      const start = hasMireOutlet
+        ? (i % 2 === 0 ? borderPoint('north', 1) : { x: -2, y: randInt(2, Math.max(3, Math.floor(settings.height * 0.48))), side: 'west' })
+        : borderPoint('random', 1); // Northern and northwestern headwaters cannot discharge through the southern entry canyon.
+      const end = outletEnd || borderPoint(oppositeOrDifferentSide(start.side), 1); // Shared southeast outlet or the original per-river random border.
       const baseWidth = choosePaintedRiverBaseWidth();
       const changeEvery = randInt(8, 15);
       const widthSalt = randInt(1, 999999);
@@ -7764,13 +8061,15 @@
       let y = start.y;
       const maxSteps = (settings.width + settings.height) * 5;
       let wobble = randFloat(-0.85, 0.85);
+      let approachingConfluence = hasMireOutlet; // The river heads for a common junction before turning east through the outlet.
 
       for (let step = 0; step < maxSteps; step++) {
         const currentWidth = riverWidthForStep(baseWidth, step, changeEvery, widthSalt);
         points.push({ x: Number(x.toFixed(2)), y: Number(y.toFixed(2)), widthTiles: currentWidth });
         widthSamples.push(currentWidth);
-        const dx = end.x - x;
-        const dy = end.y - y;
+        const target = approachingConfluence ? confluence : end; // Active waypoint used by the existing meandering river stepper.
+        const dx = target.x - x;
+        const dy = target.y - y;
         const dist = Math.max(0.001, Math.hypot(dx, dy));
         const nx = dx / dist;
         const ny = dy / dist;
@@ -7785,7 +8084,13 @@
         if (inBounds(tx, ty)) {
           paintedTiles += markWater(tx, ty, 'river', currentWidth, { carveRiverBed: false }) || 0;
         }
-        if (dist < 1.35 && !inBounds(tx, ty)) break;
+        if (approachingConfluence && dist < 1.35) {
+          x = confluence.x;
+          y = confluence.y;
+          approachingConfluence = false; // After the junction, the same river continues to the east edge.
+          paintedTiles += markWater(x, y, 'river', currentWidth, { carveRiverBed: false }) || 0;
+        }
+        if (!approachingConfluence && dist < 1.35 && !inBounds(tx, ty)) break;
         if (step > 8 && !inBounds(tx, ty)) {
           const leftNorth = tx < -2 || ty < -2;
           const leftSouthEast = tx > settings.width + 1 || ty > settings.height + 1;
@@ -7806,11 +8111,40 @@
         maximumWidthTiles: widthMax,
         widthSamples,
         points,
+        ...(hasMireOutlet ? { outletZoneId: 'map_eastern_mire' } : {}), // Geographic receiver only; does not create a world exit or traversal trigger.
         paintedLate: true,
-        carving: false
+        carving: true,
+        flowDirection: 'higher-to-lower'
       });
-      logDebug(`late painted river ${i + 1}: ${start.side} border to ${end.side} border, widths ${widthMin}-${widthMax}, avg ${widthAverage.toFixed(2)}, no erosion carving`);
+      logDebug(`late painted river ${i + 1}: ${start.side} border to ${end.side} border, widths ${widthMin}-${widthMax}, avg ${widthAverage.toFixed(2)}, bed graded after terrain shaping`);
     }
+
+    if (hasMireOutlet) {
+      // Finish a shared channel all the way through the eastern boundary escarpment.
+      // This is a river mouth, not a second road gate or a playable world transition.
+      const channelWidth = 5; // Width of the common eastbound drainage reach, matching the normal dramatic river brush.
+      const mouthStartX = Math.max(confluence.x, settings.width - borderEscarpmentMaxDepth() - 3); // Inland edge of the boundary cut that keeps the water visibly connected to the map edge.
+      for (let x = confluence.x; x < settings.width; x += 0.75) {
+        paintedTiles += markWater(x, outletRow, 'river', channelWidth, { carveRiverBed: false }) || 0;
+      }
+      let clearedEscarpment = 0; // Number of high boundary tiles removed from the visible watercourse, reported for mobile debugging.
+      for (let y = Math.max(0, outletRow - channelWidth); y <= Math.min(settings.height - 1, outletRow + channelWidth); y++) {
+        for (let x = mouthStartX; x < settings.width; x++) {
+          const tile = tileAt(x, y); // Only existing river-water tiles are permitted through the rim; adjacent cliff banks remain intact.
+          if (!tile || !tile.water || tile.terrain !== 'river') continue;
+          if (clearBorderEscarpmentTile(tile, null, 'riverOutlet')) clearedEscarpment++;
+          tile.elevation = 0;
+          tile.height = 0;
+          tile.generatedPlateauBlobId = null;
+          tile.plateauGroupId = null;
+          tile.plateauRing = false;
+          tile.plateauInterior = false;
+        }
+      }
+      map.waterwayOutlet = { id: 'northern_cliffs_southeast_mire', side: 'east', x: settings.width - 1, y: outletRow, destinationZoneId: 'map_eastern_mire', traversable: false }; // Exported geographic marker for future zone continuity, not a player exit.
+      logDebug(`southeast Mire water outlet: east rim at ${map.waterwayOutlet.x},${outletRow}; ${settings.rivers} feeder rivers; ${clearedEscarpment} boundary cliffs opened; no traversal`);
+    }
+
     logDebug(`late painted rivers: ${settings.rivers} rivers painted over finished tiers, ${paintedTiles} new river tiles; waterfalls are assigned by cliff-skirt height breaks`);
     return { rivers: settings.rivers, tiles: paintedTiles };
   }
@@ -8016,39 +8350,17 @@
     if (!tileCanReceiveLocalNorthwardRaise(tile)) return null;
     let best = null;
 
-    // A 1-row scanner still reads the row immediately south, but only through nearby support,
-    // not through a whole-column "highest so far" memory. This keeps the northward climb readable
-    // without turning every column into a wall from the first high tile it ever saw.
+    // The scanner reads nearby raised land only; watercourses keep their own gravity-graded bed.
     for (let dx = -1; dx <= 1; dx++) {
       const south = tileAt(tile.x + dx, tile.y + 1);
       const southHeight = northwardRowScannerSourceHeight(south);
       if (southHeight === null) continue;
-      if (tile.water) {
-        // Water follows its own course first, then may borrow adjacent terrain height at crossings.
-        if (south.water || south.plateauStream || south.waterfall || tileIsRaisedScannerTerrain(south)) {
-          best = considerScannerSupport(best, { height: southHeight }, south.water ? 'south-water' : 'south-terrain-crossing');
-        }
-      } else if (tileIsRaisedScannerTerrain(tile) || tile.path || tile.invisiblePath || tile.denRoute) {
-        // Raised terrain only inherits from raised terrain or route support, never from a visual boundary wall.
+      if (tileIsRaisedScannerTerrain(tile) || tile.path || tile.invisiblePath || tile.denRoute) {
         if (tileIsRaisedScannerTerrain(south) || south.path || south.invisiblePath || south.denRoute) {
           best = considerScannerSupport(best, { height: southHeight }, 'south-local-terrain');
         }
       }
     }
-
-    if (tile.water) {
-      // Let rivers/streams climb when they physically cross a plateau face. This is intentionally local:
-      // a nearby plateau can raise a water tile into a waterfall, but it cannot lift the whole row.
-      for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
-        const neighbor = tileAt(tile.x + dx, tile.y + dy);
-        if (!neighbor || neighbor.water || neighbor.borderEscarpment || neighbor.ramp || neighbor.navRamp) continue;
-        if (!tileIsRaisedScannerTerrain(neighbor) && !neighbor.path && !neighbor.invisiblePath) continue;
-        const neighborHeight = northwardRowScannerSourceHeight(neighbor);
-        if (neighborHeight === null) continue;
-        best = considerScannerSupport(best, { height: neighborHeight }, 'local-waterfall-crossing');
-      }
-    }
-
     return best;
   }
 
@@ -8112,9 +8424,9 @@
   }
 
   function northwardRowScannerSourceHeight(tile) {
-    if (!northwardRowScannerTouchesTile(tile)) return null;
-    // Cliff skirts are side faces. Water is allowed through because rivers/streams need to climb locally instead of route around plateaus.
-    if (tile.cliffSkirt && !tile.water) return null;
+    if (!tile || tile.water || !northwardRowScannerTouchesTile(tile)) return null;
+    // Water is solved by hydrology, never used as a height source for adjacent terrain.
+    if (tile.cliffSkirt) return null;
     return tileHeight(tile);
   }
 
@@ -8362,11 +8674,10 @@
   }
 
   function tileCanReceiveLocalNorthwardRaise(tile) {
-    if (!northwardRowScannerTouchesTile(tile)) return false;
-    if (tile.cliffSkirt && !tile.water) return false;
-    if (tile.dramaticShelfApron && !tile.water) return false;
-    // Do not convert whole lowland rows into plateaus. Only existing raised terrain, explicit routes, and water can climb.
-    return tile.water || tileIsRaisedScannerTerrain(tile) || tile.path || tile.invisiblePath || tile.denRoute;
+    if (!tile || tile.water || !northwardRowScannerTouchesTile(tile)) return false;
+    if (tile.cliffSkirt || tile.dramaticShelfApron) return false;
+    // Lowlands stay low, and rivers/ponds are graded separately after terrain shaping.
+    return tileIsRaisedScannerTerrain(tile) || tile.path || tile.invisiblePath || tile.denRoute;
   }
 
   function tileIsRaisedScannerTerrain(tile) {
@@ -8412,39 +8723,58 @@
       boundaryModeLabel: boundaryModeConfig.label,
       stepCurve: stepCurveConfig.id,
       stepCurveLabel: stepCurveConfig.label,
-      maxTier: resolvedMaxTier,
+      maxTier: merged.archipelagoEnabled ? clamp(Number(merged.islandHeight) || 6, 1, 20) : resolvedMaxTier,
       generationScale: GENERATION_TILE_SCALE
     };
     rng = makeRng(settings.seed);
     sightBlockerKeyCache = null;
     initMap();
-    generatePlateaus();
-    applyManualPlateauPaintingRules();
-    generatePonds();
-    generateRivers();
-    generatePlateauHydrology();
-    applyManualPlateauPaintingRules(); // refresh painting after canyon cuts
-    syncTileHeights();
-    enforceNorthwardRowScanner(); // post-playable plateau height scanner
-    applyManualPlateauPaintingRules(); // refresh painting after playable scanner
-    syncTileHeights();
-    enforceNorthwardRowScanner(); // boundary-feedback plateau height scanner
-    syncTileHeights();
-    applyGreatInclineMountainsideProfile();
-    applyGreatBasinHorseshoeProfile(); // Great Basin linear height lerp
-    syncTileHeights();
-    map.preselectedEntrySide = resolveGenerationEntrySide();
-    generateBorderEscarpments();
-    generateRamps();
-    applyGreatBasinBoundarySideExtensions(); // late boundary side shelves
-    syncTileHeights();
-    generateCliffSkirts();
-    chooseEntry();
-    chooseTradeExit();
-    if (usesGreatBasinPreset()) generateCliffSkirts(); // refresh after Great Basin entry road
-    generateLatePaintedRivers();
-    generateCliffSkirts(); // refresh after late-painted rivers
-    applyManualPlateauPaintingRules(); // refresh after late-painted rivers
+    if (settings.archipelagoEnabled) {
+      generateArchipelagoTerrain();
+      applyManualPlateauPaintingRules();
+      map.preselectedEntrySide = settings.entrySide === 'random' ? 'west' : settings.entrySide;
+      syncTileHeights();
+      generateRamps();
+      generateCliffSkirts(); // Open sea is exempt from plateau waterfalls.
+      chooseEntry();
+      chooseTradeExit();
+      generateCliffSkirts();
+      applyManualPlateauPaintingRules();
+    } else {
+      initMap();
+      generatePlateaus();
+      applyManualPlateauPaintingRules();
+      generatePonds();
+      generateRivers();
+      generatePlateauHydrology();
+      applyManualPlateauPaintingRules(); // refresh painting after canyon cuts
+      syncTileHeights();
+      enforceNorthwardRowScanner(); // post-playable plateau height scanner
+      applyManualPlateauPaintingRules(); // refresh painting after playable scanner
+      syncTileHeights();
+      enforceNorthwardRowScanner(); // boundary-feedback plateau height scanner
+      syncTileHeights();
+      applyGreatInclineMountainsideProfile();
+      applyGreatBasinHorseshoeProfile(); // Great Basin linear height lerp
+      syncTileHeights();
+      applyCliffPlateauSteepness(); // Taller plateau transitions are real terrain, so every later ramp, boundary, and climbing route sees them.
+      map.preselectedEntrySide = resolveGenerationEntrySide();
+      generateBorderEscarpments();
+      generateRamps();
+      applyGreatBasinBoundarySideExtensions(); // late boundary side shelves
+      syncTileHeights();
+      generateCliffSkirts();
+      chooseEntry();
+      chooseTradeExit();
+      if (usesGreatBasinPreset()) generateCliffSkirts(); // refresh after Great Basin entry road
+      generateLatePaintedRivers();
+      generateCliffSkirts(); // refresh after late-painted rivers
+      applyManualPlateauPaintingRules(); // refresh after late-painted rivers
+    }
+    if (!settings.archipelagoEnabled) {
+      stabilizeGeneratedHydrology();
+      applyManualPlateauPaintingRules(); // Terrain-dependent placement sees the final graded river and pond floors.
+    }
     stampLocales(); // hand-authored locales get first pick of open ground
     placeStructures();
     placeCaves();
@@ -8463,9 +8793,13 @@
     scaleGeneratedTileDensity(settings.generationScale);
     buildAnimalActivity();
     const workspace = buildHobunjiMapExport();
+    if (map.archipelago) workspace.archipelago = clonePlain(map.archipelago);
     workspace.entry = map.entry ? { col: map.entry.x, row: map.entry.y, side: map.entry.side } : null;
     workspace.tradeExit = map.tradeExit ? { col: map.tradeExit.x, row: map.tradeExit.y, side: map.tradeExit.side } : null;
     workspace.warnings = map.warnings.slice();
+    workspace.plateauSteepnessReport = map.plateauSteepnessReport || null; // Small optional debug record, readable in downloaded wilderness lab exports.
+    workspace.hydrologyReport = map.hydrologyReport || null; // Mobile-friendly regression summary for final river/pond grading.
+    workspace.waterwayOutlet = map.waterwayOutlet ? clonePlain(map.waterwayOutlet) : null; // Inspectable southeast drainage marker; no transition is registered.
     // Stumps/logs are generated in the normal object pass but rendered at
     // runtime from authored furniture definitions. Export their exact final
     // placements directly so the game never has to infer them from generic

@@ -8,7 +8,7 @@
 
   const CLASS_ID = 'minion'; // Semantic enemyClass written onto every Minion entity.
   const DEFAULT_WEAPON_SHAPES = Object.freeze(['daggerSword', 'fishingspear', 'hatchet', 'harlyaoLongsword', 'harlyaoBroadsword', 'warhammer']); // Default Harlyao Skeleton Minion melee pool.
-  const OVERWEAR_OPTIONS = Object.freeze([null, 'tankan_bodywrap', 'rugged_poncho']); // Equal-choice overwear pool; null intentionally allows unclothed skeletons.
+  const OVERWEAR_OPTIONS = Object.freeze([null, 'tankan_bodywrap', 'rugged_poncho']); // Equal-choice upper-body pool; pants are supplied by the shared hostile avatar builder.
   const BANDOLIER_CHANCE = 0.5; // Independent torso roll creates six common silhouettes with the three overwear states.
   const HARLYAO_ARMOR_METAL_KEYS = Object.freeze(['nativeCopper', 'lowTinBronze', 'tinBronze', 'highTinBronze', 'arsenicalBronze', 'leadedBronze']); // Ordered smith alloys used to map Town Value onto skeleton armor quality.
   const SHAMBLING_FOOTING_FRACTION = 0.70; // Permanent Footing reservation applied after ResourceSystem initializes the entity; only the remaining 30% is ordinarily usable.
@@ -49,9 +49,9 @@
     return Array.isArray(eligible) && eligible.length ? eligible[eligible.length - 1] : HARLYAO_ARMOR_METAL_KEYS[0];
   }
 
-  function rollRoster(speciesId, name = 'Minion') {
+  function rollRoster(speciesId, name = 'Minion', options = {}) {
     const genders = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species?.[speciesId]?.genders; // Species bridge registers the authored genders (Mao'ao Skeleton is male-only).
-    const gender = Array.isArray(genders) && genders.length === 1 ? genders[0] : (rng() < 0.5 ? 'male' : 'female');
+    const gender = options.gender || (Array.isArray(genders) && genders.length === 1 ? genders[0] : (rng() < 0.5 ? 'male' : 'female')); // Ghost marchers retain their authored male body while sharing skeleton equipment.
     const equippedCosmetics = []; // Explicit list bypasses BanditCombat's hood/facewrap/headband guarantee.
     const cosmeticSlots = {}; // Needed by portrait rendering, loot conversion, and outfit-weight profiling.
     const appliedDyes = {}; // Tint-slot keyed map consumed by NpcAvatarPreview.
@@ -67,7 +67,7 @@
       appliedDyes.TORSO = weightedPick();
     }
     const metalArmorItems = []; // These same maximum-temper records feed the portrait and corpse loot.
-    if (speciesId === 'harlyao-skeleton') {
+    if ((options.equipmentSpeciesId || speciesId) === 'harlyao-skeleton') {
       const metalKey = harlyaoArmorMetalKey(); // Both articles share the town-scaled alloy so a skeleton's armor reads as one coherent set.
       for (const id of ['rounded_pauldron', 'tangedcirclet']) {
         const item = window.MetalArmorSystem?.makeCraftedItem?.(id, metalKey); // Shared smith article factory supplies weight and alloy metadata.
@@ -107,17 +107,46 @@
       cols: options.cols,
       rows: options.rows,
       rosterOverride: roster,
-      enemyClass: CLASS_ID,
+      enemyClass: options.enemyClass || CLASS_ID,
+      avatarRigScale: options.avatarRigScale || null, // Caller-authored puppet proportions travel through BanditCombat before collision sizes are computed.
       defOverride: { ...(options.defOverride || {}), rangedWeaponKey: null },
-      extra: { ...(options.extra || {}), enemyClass: CLASS_ID, isMinion: true },
+      extra: { ...(options.extra || {}), enemyClass: options.enemyClass || CLASS_ID, isMinion: true },
     });
     if (!entity) return null;
 
-    const shamblingAmount = (Number(entity.maxFooting) || 0) * SHAMBLING_FOOTING_FRACTION; // Exactly 70% of this Minion's spawned Footing is permanently reserved.
-    resources.setImmutableAffliction(entity, 'shamblingFooting', shamblingAmount);
-    resources.enforceCaps?.(entity); // Initial full Footing immediately clamps to its 30% usable ceiling.
-    entity.shamblingFootingFraction = SHAMBLING_FOOTING_FRACTION; // Debug/readability marker for future Minion diagnostics.
+    const shamblingFraction = Number.isFinite(Number(options.shamblingFootingFraction)) ? Math.max(0, Math.min(1, Number(options.shamblingFootingFraction))) : SHAMBLING_FOOTING_FRACTION; // Custom puppet troops bypass Minion's Harlyao-only shamble.
+    const shamblingAmount = (Number(entity.maxFooting) || 0) * shamblingFraction; // Reserve permanent footing only when the troop requests it.
+    if (shamblingAmount > 0) resources.setImmutableAffliction(entity, 'shamblingFooting', shamblingAmount);
+    resources.enforceCaps?.(entity); // Respect a canonical per-entity resource cap after any immutable affliction.
+    entity.shamblingFootingFraction = shamblingFraction; // Mobile/debug-readable troop value.
     return entity;
+  }
+
+  async function makeDemolitionist(options = {}) {
+    if (options.ruinEncounter !== true) {
+      window.__farmLog?.('[minion] Harlyao Demolitionist spawn rejected outside an explicitly authored ruin encounter.', 'info', 'combat');
+      return null; // Bomb carriers are a ruin-challenge archetype, never a mine or wilderness replacement for ordinary Minions.
+    }
+    const name = options.name || 'Harlyao Demolitionist'; // Display name used by the hostile nameplate and corpse record.
+    const roster = options.roster || rollRoster('harlyao-skeleton', name, { gender:options.gender }); // The Demolitionist keeps the existing Harlyao Skeleton wardrobe, dye and armor pipeline.
+    if (roster?.appearance?.speciesId !== 'harlyao-skeleton') return null; // Do not let a caller silently turn this Harlyao-only class into another species.
+    const fuseSeconds = Number(options.witchBombFuseSeconds);
+    return makeEntity({
+      ...options,
+      speciesId:'harlyao-skeleton',
+      name,
+      roster,
+      enemyClass:'harlyao-demolitionist',
+      defOverride:{ ...(options.defOverride || {}), weaponKey:null, rangedWeaponKey:null }, // Both hands belong to the physical Witch-bomb; no invisible backup weapon competes for the grip.
+      extra:{
+        ...(options.extra || {}),
+        enemyClass:'harlyao-demolitionist',
+        enemyLoadoutKind:'harlyao-demolitionist',
+        isHarlyaoDemolitionist:true,
+        carriesHronalWitchBomb:true, // BanditCombat creates the physical sphere and publishes its two-hand attachment target.
+        ...(Number.isFinite(fuseSeconds) && fuseSeconds > 0 ? { witchBombFuseSeconds:fuseSeconds } : {}),
+      },
+    });
   }
 
   window.MinionCombat = Object.freeze({
@@ -131,5 +160,6 @@
     dyeWeights: DYE_WEIGHTS,
     rollRoster,
     makeEntity,
+    makeDemolitionist, // Explicit ruin-only Harlyao archetype; future challenge composers call this rather than changing ordinary Minion spawns.
   });
 })();

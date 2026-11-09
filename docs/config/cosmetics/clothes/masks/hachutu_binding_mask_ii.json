@@ -1,0 +1,181 @@
+{
+  "slot": "mask",
+  "tintSlot": "MASK",
+  "material": "wood",
+  "tags": [
+    "material:wood",
+    "hides-facial-hair"
+  ],
+  "specialHeadwearRules": false,
+  "onlyExactSpeciesVariant": true,
+  "meta": {
+    "name": "Hachutu Binding Mask (II)"
+  },
+  "palette": {
+    "layers": {
+      "base": "A"
+    }
+  },
+  "parts": {},
+  "speciesVariants": {
+    "mao-ao_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/masks/bindingmask_2_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base",
+              "pixelDye": {
+                "sourceHex": "#7F00FF",
+                "paletteColorKey": "C",
+                "defaultHex": "#7F00FF",
+                "defaultHexPool": [
+                  "#8A2BFF",
+                  "#5B5BFF",
+                  "#1FB7FF",
+                  "#19E6C3",
+                  "#3DFF6B",
+                  "#C8FF2B",
+                  "#FFC531",
+                  "#FF5FA8"
+                ],
+                "glow": {
+                  "blur": 3,
+                  "radius": 0.65,
+                  "intensity": 3.5
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "maskbound-guardian_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/masks/bindingmask_2_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base",
+              "pixelDye": {
+                "sourceHex": "#7F00FF",
+                "paletteColorKey": "C",
+                "defaultHex": "#7F00FF",
+                "defaultHexPool": [
+                  "#8A2BFF",
+                  "#5B5BFF",
+                  "#1FB7FF",
+                  "#19E6C3",
+                  "#3DFF6B",
+                  "#C8FF2B",
+                  "#FFC531",
+                  "#FF5FA8"
+                ],
+                "glow": {
+                  "blur": 3,
+                  "radius": 0.65,
+                  "intensity": 3.5
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "mashtzarr_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/masks/bindingmask_2_mashtz_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base",
+              "pixelDye": {
+                "sourceHex": "#7F00FF",
+                "paletteColorKey": "C",
+                "defaultHex": "#7F00FF",
+                "defaultHexPool": [
+                  "#8A2BFF",
+                  "#5B5BFF",
+                  "#1FB7FF",
+                  "#19E6C3",
+                  "#3DFF6B",
+                  "#C8FF2B",
+                  "#FFC531",
+                  "#FF5FA8"
+                ],
+                "glow": {
+                  "blur": 3,
+                  "radius": 0.65,
+                  "intensity": 3.5
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "proceduralPatterns": {
+    "enabled": true,
+    "patternIdPrefix": "hachutu_glyph",
+    "layers": 2,
+    "frameScaleMin": 0.25,
+    "frameScaleMax": 1,
+    "frameTranslateFraction": 0.08,
+    "inkColors": [
+      "#8A2BFF",
+      "#5B5BFF",
+      "#1FB7FF",
+      "#19E6C3",
+      "#3DFF6B",
+      "#C8FF2B",
+      "#FFC531",
+      "#FF5FA8"
+    ]
+  }
+}

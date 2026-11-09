@@ -69,9 +69,12 @@
     const underscored = normalized.replace(/-/g, '_');
     const desiredGender = String(gender || 'male').toLowerCase();
     const fighterGender = f => f.gender ?? (f.id === 'M' ? 'male' : f.id === 'F' ? 'female' : null);
-    return fighters.find(f =>
+    const exact = fighters.find(f =>
       (f.speciesId === normalized || f.speciesId === underscored) && fighterGender(f) === desiredGender
-    ) || null;
+    );
+    if (exact) return exact;
+    const genders = window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species?.[normalized]?.genders; // Single-gender NPC species cannot render an unsupported saved gender.
+    return genders?.length === 1 ? fighters.find(f => (f.speciesId === normalized || f.speciesId === underscored) && fighterGender(f) === genders[0]) || null : null;
   }
 
   function randomProfile(seedText, options = {}) {
@@ -179,6 +182,15 @@
     return !available.length || available.includes(authored) ? authored : fallback;
   }
 
+  // An exorcised mask (a Maskbound's mask after a priest frees the soul bound inside) keeps its look but its eyes no longer glow.
+  function stripExorcisedMaskGlow(profile) {
+    const descriptors = profile?.bodyColors?.__hobunjiWovenClothing;
+    if (!Array.isArray(descriptors) || !descriptors.some(descriptor => descriptor?.slot === 'mask' && descriptor.exorcised === true)) return profile;
+    if (!profile.mask?.layers?.length) return profile;
+    profile.mask = { ...profile.mask, layers: profile.mask.layers.map(layer => layer?.pixelDye ? { ...layer, pixelDye: { ...layer.pixelDye, glow: null } } : layer) };
+    return profile;
+  }
+
   function buildProfileFromNpcExport(npc) {
     const cosmetics = cosmeticsCache;
     if (!cosmetics || !npc?.appearance) return null;
@@ -196,6 +208,7 @@
       gender: appearance.gender,
     });
     if (!profile) return null;
+    profile.pixelDyeSeed = npc.pixelDyeSeed || profileSeed; // Stable per character (NPCs/player) unless the record supplies its own (hostiles roll a fresh one per spawn).
     if (npc.id || Object.hasOwn(npc, 'restingExpression')) {
       profile.restingExpression = restingExpressionForRecord(npc);
       profile.portraitSeatId = npc.id || npc.name || 'npc';
@@ -249,10 +262,22 @@
         ?? equippedIds.find(id => optionCache?.get(id)?.slot === category)
         ?? null;
       const resolvedId = resolveVariantId(category, equippedId);
-      profile[key] = (resolvedId && optionCache?.has(resolvedId)) ? optionCache.get(resolvedId) : (noneOpt || { id: 'none', tintSlot: null, layers: [] });
+      profile[key] = (resolvedId && isAllowedSavedCosmetic(category, resolvedId) && optionCache?.has(resolvedId)) ? optionCache.get(resolvedId) : (noneOpt || { id: 'none', tintSlot: null, layers: [] });
     };
     applyEquip('hat', 'hat', hatOptions?.[0]);
     applyEquip('hood', 'hood', hoodOptions?.[0]);
+    applyEquip('mask', 'mask', cosmetics.maskOptions?.[0]);
+    stripExorcisedMaskGlow(profile); // The worn item's descriptor (with its exorcised flag) is already in bodyColors at this point.
+    // Masks that declare procedural patterns (the Hachutu mask) get a generated, per-wearer glyph pattern stack unless the wearer's
+    // record opts out (maskPatterns:false) or already carries authored mask weaving. Players use their own gear weaving.
+    if (npc.id !== 'player' && npc.maskPatterns !== false && window.ProceduralMaskPatterns?.enabled && profile.mask?.id) {
+      const marker = '__hobunjiWovenClothing';
+      const existing = Array.isArray(profile.bodyColors?.[marker]) ? profile.bodyColors[marker] : [];
+      if (!existing.some(descriptor => descriptor?.slot === 'mask' && descriptor.weaving)) { // An exorcised-mask descriptor carries only a flag (no weaving) and must not suppress the generated glyph pattern.
+        const descriptor = window.ProceduralMaskPatterns.descriptorFor(profile.mask.id, profile.pixelDyeSeed || profileSeed, { scale: npc.maskPatternScale || null });
+        if (descriptor) profile.bodyColors = { ...(profile.bodyColors || {}), [marker]: [...existing, descriptor] };
+      }
+    }
     applyEquip('pauldron', 'pauldron', { id: 'none', label: 'No Pauldrons', tintSlot: null, layers: [] });
     applyEquip('torso', 'torsoCosmetic', torsoPortraitOptions?.[0]);
     applyEquip('overwear', 'armCosmetic', armPortraitOptions?.[0]);

@@ -25,7 +25,17 @@ const ability = {category:'offensiveHold',onTap(){tapCount++;if(throwsOnEnd)thro
 const context = {window:{Combat:{loadout:{getSlot:()=> 'test'},abilities:{get:()=>ability},isStaggered:()=>false,deps:{player:{},requestMeleeAttackAlignment(callback){alignment={runAttack:callback,cancel(){canceledAlignment=true;}};return alignment;}},update(){}},matchMedia:()=>({matches:false}),addEventListener(){},dispatchEvent(){}},document:{readyState:'loading',addEventListener(){}},performance:{now:()=>clock},requestAnimationFrame:fn=>fn(),CustomEvent:function(){},localStorage:{setItem(){}},console}; // Minimal browser input surface.
 vm.runInNewContext(inputSource,context);
 const input=context.window.Combat.input; // Public input API used by mobile and desktop.
-function hold(slot=1){input.pressStart(slot);clock+=200;input.update(0.2);}
+assert.equal(input.HOLD_THRESHOLD_S, 0.24, 'the attack hold threshold is 50% longer than 0.16 seconds');
+input.pressStart(1);
+clock += 239;
+input.update(0.239);
+assert.equal(input.getState(1).holding, false, '239 ms must still be tap-eligible');
+clock += 1;
+input.update(0.001);
+assert.equal(input.getState(1).holding, true, '240 ms must arm the held attack');
+input.cancelPress(1);
+assert.equal(holdActive, false, 'the boundary-test hold cleans up on cancellation');
+function hold(slot=1){input.pressStart(slot);clock+=Math.ceil(input.HOLD_THRESHOLD_S*1000)+10;input.update(input.HOLD_THRESHOLD_S+0.01);}
 hold();assert(holdActive);input.cancelPress(1);assert(!holdActive,'holster/cancel releases ability windup');assert(!input.getState(1).down);
 hold();throwsOnEnd=true;assert.throws(()=>input.pressEnd(1),/release failed/);assert(!input.getState(1).down,'throwing hold release cannot keep a slot down');assert(!holdActive);
 input.pressStart(1);assert.throws(()=>input.pressEnd(1),/tap failed/);assert(!input.getState(1).down,'throwing tap cannot lock the next press');
@@ -72,6 +82,7 @@ assert.equal(tapCount,beforeQueued);
 assert.equal(input.queueSnapshot().length,1);
 gruntDelay=0; input.update(0.01); input.update(0.01);
 assert.equal(tapCount,beforeQueued+1,'queued tap fires exactly once after the grunt duration');
+
 gruntDelay=1; hold(); input.pressEnd(1);
 assert(!holdActive,'held windup waits for the grunt gate');
 assert(input.getState(1).releaseQueued,'early release is remembered while waiting');
@@ -99,3 +110,16 @@ assert.equal(tapCount,tapsBeforeSwitch,'a buffered attack that outlived any swin
 gruntDelay=1; input.fireTap(1); gruntDelay=0; input.update(0.01);
 assert.equal(tapCount,tapsBeforeSwitch+1,'ordinary buffered taps still fire');
 console.log('grunt-duration input queue checks passed');
+
+let queueOpen = false; // Before the current attack's Strike pose, presses are ignored rather than buffered.
+context.window.CombatVocalizations = {attackStartDelayS:()=>gruntDelay, attackQueueOpen:()=>queueOpen};
+const tapsBeforeWindow = tapCount;
+gruntDelay=1; input.fireTap(1);
+assert.equal(input.queueSnapshot().length,0,'press before the Strike pose is ignored');
+gruntDelay=0; input.update(0.01); input.update(0.01);
+assert.equal(tapCount,tapsBeforeWindow,'ignored press never fires later');
+gruntDelay=1; queueOpen=true; input.fireTap(1);
+assert.equal(input.queueSnapshot().length,1,'press after the Strike pose queues');
+gruntDelay=0; input.update(0.01); input.update(0.01);
+assert.equal(tapCount,tapsBeforeWindow+1,'queued press fires at the hold midpoint');
+console.log('attack inputs queue only after the Strike pose: ok');

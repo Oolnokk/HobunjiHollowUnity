@@ -12,6 +12,7 @@
   let directUseQueued = false; // Used to coalesce Inventory detail mutations into one direct-use render pass.
   let lastDirectUse = null; // Used by mobile-safe diagnostics to report the most recent Inventory action attempt.
   let lastDirectUseUi = null; // Used by diagnostics to explain why a direct-use button did or did not resolve.
+  let clickedDetailKey = null; // Tracks the actual Pack slot clicked so the item-detail action does not scan every owned item after each DOM mutation.
 
   const state = {
     manualKey: null, // Used to remember which off-arch bag item currently owns the held-item override.
@@ -145,6 +146,11 @@
     return finishClear({ clearManual: true, restorePriorMode: false, reason });
   }
 
+  function clearExhaustedBagHold(key) {
+    if (!key || rawManualBagKey() !== key || liveManualBagKey()) return false;
+    return finishClear({ clearManual: true, restorePriorMode: false, reason: 'consumed-last-copy' }); // Cleans the actual manual slot and restores wheel state after any final consumable.
+  }
+
   function captureItemDeps(injected = {}) {
     if (!injected?.inventory) return;
     itemDeps = { ...itemDeps, ...injected }; // Merged because CookingSystem/FarmCrates expose complementary item helpers.
@@ -176,9 +182,14 @@
     const def = canonicalDef(key);
     if (!def) return null;
 
+    const blueprint = window.CraftingPanel?.blueprintForItem?.(key); // Furniture recipe items share the bag's existing permanent-unlock Read action.
+    if (blueprint) {
+      const learned = !!window.CraftingPanel.ownsBlueprint(blueprint); // Leaves duplicate lessons intact for storage or sale.
+      return { key, kind: 'furnitureBlueprint', verb: learned ? 'Already learned' : 'Read', icon: '📜', itemLabel: def.label || key, allowed: !learned && !blueprint.moteOnly && !blueprint.masteryUnlockId };
+    }
     if (def.masteryUnlock) {
       const lesson = def.masteryUnlock; // Use the same unlock owner as the mastery spend boundary.
-      const learned = !!window.CombatProgression?.hasEffectUnlock?.(lesson.type, lesson.rank, lesson.effectId); // Reading is permanent and retains the item.
+      const learned = !!window.CombatProgression?.hasEffectUnlock?.(lesson.type, lesson.rank, lesson.effectId); // The learned bonus persists, but reading consumes one copy.
       return { key, kind: 'masteryUnlock', verb: learned ? 'Already learned' : 'Read', icon: def.icon, itemLabel: def.label || key, allowed: !learned };
     }
     if (def.combatManualAbilityId) {
@@ -235,7 +246,15 @@
     refreshDeps?.buildInventoryGrid?.();
     refreshDeps?.refreshActionBar?.();
     refreshDeps?.saveMemberWorldData?.();
-    if (!(Number((refreshDeps?.inventory || equipmentDeps?.inventory)?.[key]) > 0)) equipmentDeps?.clearInventoryDetail?.();
+    const remaining = Math.max(0, Number((refreshDeps?.inventory || equipmentDeps?.inventory)?.[key]) || 0); // Remaining stack count used to synchronize the selected blueprint detail after reading.
+    if (!remaining) equipmentDeps?.clearInventoryDetail?.();
+    else if (window.CraftingPanel?.blueprintForItem?.(key)) {
+      const detailName = document.getElementById('iiName'); // Live Pack detail currently selected when a blueprint is read.
+      const itemLabel = canonicalDef(key)?.label; // Canonical name without the displayed quantity suffix.
+      if (detailName && itemLabel && normalizeDetailLabel(detailName.textContent).replace(/\s+×\s*\d+$/, '') === normalizeDetailLabel(itemLabel)) {
+        detailName.textContent = `${itemLabel} ×${remaining}`; // Avoid displaying the old stack size until the next selection.
+      }
+    }
     scheduleDirectUseUi();
   }
 
@@ -248,7 +267,9 @@
 
     let result = null; // Used to normalize the various existing item-owner return shapes into one Inventory action result.
     let ownerHandlesFeedback = false; // TechniqueScrolls already owns its read toast/refresh path, so do not duplicate it here.
-    if (action.kind === 'masteryUnlock') {
+    if (action.kind === 'furnitureBlueprint') {
+      result = window.CraftingPanel?.readBlueprint?.(key);
+    } else if (action.kind === 'masteryUnlock') {
       ownerHandlesFeedback = true;
       result = { ok: !!window.CombatProgression?.readMasteryItem?.(key), message: '' };
     } else if (action.kind === 'combatManual') {
@@ -274,7 +295,13 @@
     const ok = !!result?.ok;
     if (!ownerHandlesFeedback) itemDeps?.showToast?.(result?.message || (ok ? `${action.verb} ${action.itemLabel}.` : `Could not ${action.verb.toLowerCase()} that item.`), ok);
     if (ok && !ownerHandlesFeedback) refreshAfterInventoryUse(key);
-    else scheduleDirectUseUi();
+    else {
+      if (ok && !(Number((itemDeps?.inventory || equipmentDeps?.inventory)?.[key]) > 0)) {
+        equipmentDeps?.clearInventoryDetail?.(); // An exhausted manuscript/scroll must not leave its old detail panel selected.
+        clearExhaustedBagHold(key);
+      }
+      scheduleDirectUseUi();
+    }
     lastDirectUse = { key, kind: action.kind, verb: action.verb, ok, message: result?.message || null, at: Date.now() };
     return ok;
   }
@@ -289,14 +316,37 @@
     const actionsEl = document.getElementById('iiActions');
     const detailEl = document.getElementById('iiDetail');
     if (!nameEl || !actionsEl || !detailEl || detailEl.style?.display === 'none') return null;
-    const detailName = normalizeDetailLabel(nameEl.textContent);
+    if (detailEl.dataset?.itemKind === 'clothing' || document.getElementById('mpInventory')?.classList?.contains?.('inv-mode-gear')) return null; // Direct bag-use never appears on clothing or permanent gear.
+    const detailName = normalizeDetailLabel(nameEl.textContent).replace(/\s+×\s*\d+$/, ''); // Pack displays "Tablet ×2" while metadata stores "Tablet".
     if (!detailName) return null;
+
+    // The selected Pack slot is the item identity. Looking it up by name through
+    // every owned stack on each observed DOM change can stall large inventories.
+    const selected = document.querySelector?.('#invGrid .inv-item-box.selected[data-key]:not(.pack-clothing-tile)');
+    const selectedKey = detailEl.dataset?.itemKey || selected?.dataset?.key || clickedDetailKey; // Bind direct use to displayed preview, never a stale selected stack.
+    if (selectedKey) {
+      const action = inventoryUseAction(selectedKey); // Exactly one canonical metadata lookup for the selected item.
+      const def = canonicalDef(selectedKey);
+      const matchesName = [def?.label, itemDeps?.inventoryItems?.find?.(entry => entry?.key === selectedKey)?.label]
+        .filter(Boolean).some(label => normalizeDetailLabel(label) === detailName);
+      if (!action || !def || !matchesName) {
+        lastDirectUseUi = { detailName, resolvedKey: null, reason: matchesName ? 'not-direct-usable' : 'stale-selection', selectedKey, at: Date.now() };
+        return null; // A stale right-panel label must never activate the newly clicked item's Read action.
+      }
+      lastDirectUseUi = { detailName, resolvedKey: selectedKey, kind: action.kind, reason: 'selected-slot', at: Date.now() };
+      return { key: selectedKey, action, actionsEl };
+    }
+
+    // Programmatically displayed detail panels have no clicked slot. Preserve
+    // their existing label matching, but never use it over an explicit key.
     const inventory = itemDeps?.inventory || equipmentDeps?.inventory || {};
     const candidates = Object.keys(inventory).filter(key => Number(inventory[key]) > 0).map(key => {
-      const action = inventoryUseAction(key);
       const def = canonicalDef(key);
-      return action && def ? { key, action, names: [def.label, itemDeps?.inventoryItems?.find?.(item => item?.key === key)?.label].filter(Boolean).map(normalizeDetailLabel) } : null;
-    }).filter(Boolean).filter(candidate => candidate.names.includes(detailName));
+      if (!def || ![def.label, itemDeps?.inventoryItems?.find?.(item => item?.key === key)?.label]
+        .filter(Boolean).some(label => normalizeDetailLabel(label) === detailName)) return null;
+      const action = inventoryUseAction(key); // Only classify matching names; don't inspect every item family in the bag.
+      return action ? { key, action } : null;
+    }).filter(Boolean);
     if (candidates.length !== 1) {
       lastDirectUseUi = { detailName, resolvedKey: null, reason: candidates.length ? 'ambiguous-label' : 'not-direct-usable', candidates: candidates.map(candidate => candidate.key), at: Date.now() };
       return null;
@@ -317,12 +367,21 @@
     const { key, action } = resolved;
     const button = existing || document.createElement('button'); // Used as the one shared direct-action control beside Sell/Hold/Transfer actions.
     button.id = 'inventoryDirectUseBtn';
-    button.className = 'ii-btn inventory-direct-use';
-    button.dataset.itemKey = key;
-    button.disabled = action.allowed === false;
-    button.textContent = `${action.icon || '✦'} ${action.verb}`;
-    button.title = `${action.verb} ${action.itemLabel} directly from Inventory`;
-    button.onclick = () => useInventoryItem(key);
+    if (button.className !== 'ii-btn inventory-direct-use') button.className = 'ii-btn inventory-direct-use'; // Avoid self-triggering the Inventory MutationObserver.
+    const changedKey = button.dataset.itemKey !== key; // Rebinding after changing the selected Pack slot never preserves a stale Read target.
+    if (changedKey) button.dataset.itemKey = key;
+    if (button.disabled !== (action.allowed === false)) button.disabled = action.allowed === false;
+    const buttonLabel = `${action.icon || '✦'} ${action.verb}`; // Used to skip redundant child mutations that would schedule another render.
+    // GenericHudIcons may replace the authored emoji with a fallback/image.
+    // Compare the requested label, not that decorated text: controller section
+    // reconciliation otherwise restores the emoji and starts a microtask loop.
+    if (button.dataset.directUseLabel !== buttonLabel) {
+      button.textContent = buttonLabel;
+      button.dataset.directUseLabel = buttonLabel;
+    }
+    const tooltip = `${action.verb} ${action.itemLabel} directly from Inventory`; // Used only when the readable action text changes.
+    if (button.title !== tooltip) button.title = tooltip;
+    if (!existing || changedKey) button.onclick = () => useInventoryItem(key);
     if (!existing) actionsEl?.prepend?.(button);
   }
 
@@ -339,8 +398,16 @@
     if (directUseObserver || typeof document?.getElementById !== 'function') return;
     const root = document.getElementById('mpInventory');
     if (!root) return;
+    root.addEventListener?.('click', event => {
+      const slot = event.target?.closest?.('#invGrid .inv-item-box[data-key]:not(.pack-clothing-tile)'); // Capture before game.js updates selection in the bubble phase.
+      if (slot) clickedDetailKey = slot.dataset.key || null;
+      else if (event.target?.closest?.('.inv-cat, #invTabPack, #invTabGear, .pack-clothing-tile')) clickedDetailKey = null;
+    }, true);
     if (typeof MutationObserver === 'function') {
-      directUseObserver = new MutationObserver(scheduleDirectUseUi); // Existing inventory renderers stay authoritative; this only decorates their final action row.
+      directUseObserver = new MutationObserver(records => {
+        // Our own Read button is a decoration, not a request to refresh it again.
+        if (records.some(record => !(record.target?.closest?.('#inventoryDirectUseBtn')))) scheduleDirectUseUi();
+      });
       directUseObserver.observe(root, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['class', 'style'] });
     } else directUseObserver = { observe() {} };
     scheduleDirectUseUi();
@@ -504,6 +571,7 @@
     sync: syncFromManualHold,
     clear: () => finishClear({ clearManual: true, restorePriorMode: false, reason: 'api-clear' }),
     releaseForNormalSelection,
+    clearExhaustedBagHold,
     getInventoryUseAction: inventoryUseAction,
     useInventoryItem,
     refreshInventoryUseButton: scheduleDirectUseUi,

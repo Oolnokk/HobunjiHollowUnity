@@ -373,7 +373,9 @@
 
     const maxStamina = Number.isFinite(creature.maxStamina) ? creature.maxStamina : (creature.def.maxStamina || 0); // Used to convert the 90% immediate stamina cost into points.
     const staminaCost = maxStamina * tuning.SELF_STAMINA_DRAIN_FRACTION; // Used as the post-attack stamina spend through the shared resource rules.
-    window.ResourceSystem?.spendStamina?.(creature, staminaCost, 'grehlr burrow exhaustion');
+    if (creature._furiousSpecial?.id !== 'grehlrBurrow') {
+      window.ResourceSystem?.spendStamina?.(creature, staminaCost, 'grehlr burrow exhaustion'); // Ordinary Burrow retains its severe self-exhaustion penalty.
+    } // Furious Burrow already paid its complete attack commitment from Furious Stamina; only the authored Footing penalty remains.
   }
 
   function resolveBite(creature, state, deps) {
@@ -395,6 +397,7 @@
       const damageOptions = { tag: damageTag, afflictionBonuses, attacker: creature }; // Used to route affliction and damage-type footing behavior through existing combat code.
 
       if (state.targetKind === 'player') deps.damagePlayer?.(damage, sourceX, sourceY, tuning.KNOCKBACK_PX_S, damageOptions);
+      else if (creature.isCompanion && window.CompanionOffense) window.CompanionOffense.damageCreature(deps.damageCreature, creature, target, damage, sourceX, sourceY, tuning.KNOCKBACK_PX_S, damageOptions);
       else deps.damageCreature?.(target, damage, sourceX, sourceY, tuning.KNOCKBACK_PX_S, damageOptions);
       state.damageAttempted = true;
       deps.playCreatureClawHit?.(creature);
@@ -566,7 +569,7 @@
     }
   }
 
-  attacks.register('grehlrBurrow', { start, update, cancel });
+  attacks.register('grehlrBurrow', { start, update, cancel, ownsApproach: true }); // The underground pursuit is this attack's approach; never prepend a visible lunge.
 
   // Compatibility: Grehlr CREATURE_DB defaults still say pounce until the
   // asynchronous authored creature config arrives. Route only those two
@@ -578,7 +581,13 @@
     return originalStart(creature, resolvedId, context);
   };
 
-  window.HobunjiGrehlrBurrow = { applyConfig, tuning }; // Used by debug/editor integrations and the compatibility loader's already-loaded check.
+  function applyForagingDivePose(creature, progress) {
+    const eased = easeOutCubic(progress); // Shares the first Grehlr burrow animation and allows a straight reverse instead of emergence.
+    setDivePose(creature, eased);
+    creature.scaleY = 1 - (1 - tuning.HIDDEN_SCALE_Y) * eased;
+  }
+
+  window.HobunjiGrehlrBurrow = { applyConfig, tuning, applyForagingDivePose }; // Used by debug/editor integrations and the compatibility loader's already-loaded check.
 
   const initialConfig = window.__attackValuesConfig?.creatureAttacks?.grehlrBurrow; // Used when authored combat config finished loading before this module executed.
   if (initialConfig) applyConfig(initialConfig);

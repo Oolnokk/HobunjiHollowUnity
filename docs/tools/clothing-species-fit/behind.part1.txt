@@ -40,7 +40,7 @@ function buildUi(){
   section.id='behindSpritePatchSection';
   section.innerHTML=`
     <h2>Patch setup → main workflow</h2>
-    <div class="small">Build rear-view artwork from existing front sprites. Clothing remains Mao-ao → target through the 6×6 fit. Body patching follows the currently selected species/gender directly: its torso/arm source updates with species, the positioned corrective PNG stays in that body sprite's native pixel space, and avatar assembly supplies the canonical body tint/transform.</div>
+    <div class="small">Build rear-view artwork from existing front sprites. Clothing uses the selected starting sprite species/gender → target through the 6×6 fit. Body patching follows the currently selected species/gender directly: its torso/arm source updates with species, the positioned corrective PNG stays in that body sprite's native pixel space, and avatar assembly supplies the canonical body tint/transform.</div>
     <div class="field"><label for="behindPatchKind">Source type</label><select id="behindPatchKind"><option value="clothing">Selected clothing piece</option><option value="body">Body sprite</option></select></div>
     <div class="row"><label class="small"><input id="behindPatchRoute" type="checkbox" checked> route selected patch into main workflow</label></div>
     <div class="field"><label for="behindPatchSource">Existing source layer</label><select id="behindPatchSource"></select></div>
@@ -69,7 +69,7 @@ function buildUi(){
 
   ui={
     section,
-    kind:section.querySelector('#behindPatchKind'), // Switches between the selected garment's exact image layers and Mao-ao body layers.
+    kind:section.querySelector('#behindPatchKind'), // Switches between selected garment source layers and target-species body layers.
     route:section.querySelector('#behindPatchRoute'), // When checked, the selected clothing/body composite becomes the main editor's deformable source.
     source:section.querySelector('#behindPatchSource'), // Chooses the exact repository raster to patch.
     file:section.querySelector('#behindPatchFile'), // Loads/replaces one transparent corrective PNG locally; source loading is allowed to finish independently.

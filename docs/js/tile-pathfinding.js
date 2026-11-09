@@ -146,5 +146,6 @@
     };
   }
 
-  window.TilePathfinding = { findPath, boxAround };
+  // Shared with the footprint-aware NPC A* so both planners use the same efficient priority queue.
+  window.TilePathfinding = { findPath, boxAround, MinHeap };
 })();

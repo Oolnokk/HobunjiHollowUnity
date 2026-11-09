@@ -1,0 +1,87 @@
+{
+  "schema": "hobunji_furniture_surface_author.v58",
+  "id": "stone_age_stone_arch",
+  "pieceId": "stone_age_stone_arch",
+  "name": "Three-Stone Portal",
+  "equivalentTo": "stone_arch",
+  "notes": "Stone Age equivalent of stone_arch. Same placement footprint; unworked megaliths without plinths, collars, moulding, capitals or carved decoration.",
+  "tileBase": {
+    "visible": true,
+    "tileSize": 1,
+    "footprintW": 2,
+    "footprintD": 1,
+    "y": 0,
+    "gridOpacity": 0.55
+  },
+  "parts": [
+    {
+      "id": "stone_arch_left_upright",
+      "name": "Left Upright",
+      "kind": "legSquare",
+      "transform": {
+        "x": -0.65,
+        "y": 0.79,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.36,
+        "sy": 1.58,
+        "sz": 0.5
+      },
+      "color": "#777970",
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "wonkiness": 0.025,
+      "topScaleX": 0.84,
+      "topScaleZ": 0.9,
+      "topSkewX": 0.035
+    },
+    {
+      "id": "stone_arch_right_upright",
+      "name": "Right Upright",
+      "kind": "legSquare",
+      "transform": {
+        "x": 0.65,
+        "y": 0.79,
+        "z": 0.025,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.39,
+        "sy": 1.58,
+        "sz": 0.52
+      },
+      "color": "#777970",
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "wonkiness": 0.025,
+      "topScaleX": 0.84,
+      "topScaleZ": 0.9,
+      "topSkewX": 0.035
+    },
+    {
+      "id": "stone_arch_single_lintel",
+      "name": "Single Lintel",
+      "kind": "legSquare",
+      "transform": {
+        "x": 0,
+        "y": 1.695,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 1.78,
+        "sy": 0.23,
+        "sz": 0.6
+      },
+      "color": "#777970",
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "wonkiness": 0.025,
+      "topScaleX": 0.84,
+      "topScaleZ": 0.9,
+      "topSkewX": 0.035
+    }
+  ]
+}

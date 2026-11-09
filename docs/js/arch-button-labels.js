@@ -20,6 +20,7 @@
   }); // Maps the five rendered action buttons to their configurable physical action slots.
   const FIXED_BINDING_ACTION_BY_BUTTON_ID = Object.freeze({
     dodgeBtn: 'dodge',
+    jumpBtn: 'jump',
     btnWeaponSwitch: 'weaponSwitch',
     toolBtn: 'toolSelect',
     itemBtn: 'itemSelect',
@@ -30,6 +31,7 @@
   }); // Maps permanent arch controls to the same semantic actions exposed in Settings.
   const FIXED_MEANING_BY_BUTTON_ID = Object.freeze({
     dodgeBtn: 'DODGE',
+    jumpBtn: 'JUMP',
     btnWeaponSwitch: 'SWAP',
     toolBtn: 'TOOLS',
     itemBtn: 'ITEMS',
@@ -46,6 +48,7 @@
   ]); // Prevents centered meaning text from being added to combat attacks; their existing combat icon treatment stays untouched.
   const DECORATED_SELECTOR = [
     '#dodgeBtn',
+    '#jumpBtn',
     '#toolSelect button',
     '#actionStack button',
     '#btnAmmoSelect',
@@ -188,11 +191,13 @@
 
   function compactControllerBinding(code) {
     if (!code) return '';
+    const sharedLabel = window.InputBindings?.buttonLabel?.(code); // Uses the same Xbox 360 labels as prompts and Settings, shortened only to fit the arch badge.
+    if (sharedLabel) return sharedLabel.replace(/^D-pad /, 'D').replace(/ Click$/, '').replace(/\s+/g, '').toUpperCase();
     const labels = {
       Button0: 'A', Button1: 'B', Button2: 'X', Button3: 'Y',
-      Button4: 'LB', Button5: 'RB', Button8: 'VIEW', Button9: 'MENU',
-      Button10: 'L3', Button11: 'R3', Button12: 'D↑', Button13: 'D↓',
-      Button14: 'D←', Button15: 'D→', LeftTrigger: 'LT', RightTrigger: 'RT',
+      Button4: 'LB', Button5: 'RB', Button6: 'LT', Button7: 'RT', Button8: 'BACK', Button9: 'START',
+      Button10: 'LS', Button11: 'RS', Button12: 'D↑', Button13: 'D↓',
+      Button14: 'D←', Button15: 'D→', Button16: 'GUIDE', LeftTrigger: 'LT', RightTrigger: 'RT',
       RightStickLeft: 'RS←', RightStickRight: 'RS→', RightStickUp: 'RS↑', RightStickDown: 'RS↓',
     }; // Standard Gamepad labels keep configured controller bindings readable in a subscript-sized marker.
     return labels[code] || String(code).replace(/^Button/, 'B').toUpperCase();
@@ -256,6 +261,7 @@
 
   function meaningForButton(button) {
     if (!button || isAttackButton(button)) return '';
+    if(button.id==='toolBtn'&&window.Shattercasks?.toolArchAction?.()==='pickup')return window.Shattercasks?.heldBurdenInfo?.()?'STOW':'PICK UP';
     const fixed = FIXED_MEANING_BY_BUTTON_ID[button.id];
     if (fixed) return fixed;
     if (!button.closest?.('#actionStack')) return '';

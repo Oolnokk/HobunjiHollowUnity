@@ -18,7 +18,7 @@ assert(source.includes("window.RuntimeFrameScheduler.register(AMBIENT_SCHEDULER_
 assert(source.includes('setEnabled(AMBIENT_SCHEDULER_ID, false)'), 'the tick must disable itself once no ambient records remain');
 assert(source.includes('setEnabled(AMBIENT_SCHEDULER_ID, true)'), 'attaching a new ambient emitter must enable the subscriber');
 
-function buildContext() {
+function buildContext(withScheduler = true) {
   const registered = new Map();
   const setEnabledCalls = [];
   const visuals = [];
@@ -37,10 +37,11 @@ function buildContext() {
     setTimeout() {}, // The module's one-shot late-init retries are irrelevant to this ambient-VFX-only test.
   };
   context.window = context;
-  context.RuntimeFrameScheduler = {
+  const scheduler = { // Actual in-game scheduler API; optional to emulate the standalone Interior Editor.
     register(id, fn, options) { registered.set(id, { fn, options }); },
     setEnabled(id, enabled) { setEnabledCalls.push({ id, enabled }); const r = registered.get(id); if (r) r.options.enabled = enabled; },
   };
+  if (withScheduler) context.RuntimeFrameScheduler = scheduler;
   context.THREE = { TextureLoader: function () { return { load() {} }; }, RepeatWrapping: 1, SRGBColorSpace: 1 };
   context.ProceduralFurniture = {
     CATALOG: {},
@@ -59,7 +60,7 @@ function buildContext() {
 
   vm.createContext(context);
   vm.runInContext(source, context, { filename: 'interior-fire-floor-runtime.js' });
-  return { context, registered, setEnabledCalls, visuals };
+  return { context, registered, setEnabledCalls, visuals, scheduler };
 }
 
 const { context, registered, setEnabledCalls, visuals } = buildContext();
@@ -116,4 +117,15 @@ assert.equal(visuals[0].disposed, true, 'losing its scene parent after having be
 assert.equal(entry.options.enabled, false, 'the subscriber disables itself once no ambient records remain');
 assert.equal(setEnabledCalls.filter(c => c.id === 'interior-ambient-vfx').length >= 2, true, 'setEnabled toggled at least once on and once off across the lifecycle');
 
-console.log('interior ambient fire VFX scheduler migration passed');
+// The stand-alone interior editor may load furniture before the game scheduler.
+// It must still boot, author floor/furniture and attach later when a scheduler appears.
+const standalone = buildContext(false);
+assert.equal(standalone.context.InteriorFireFloorRuntime.installed, true, 'standalone editor boots without a frame scheduler');
+assert.equal(standalone.registered.size, 0, 'no attempt to register against an absent scheduler');
+standalone.context.ProceduralFurniture.buildFurnitureGroup('campfire', 0x6d3e20);
+assert.equal(standalone.visuals.length, 1, 'editor can build fire furniture without a scheduler');
+standalone.context.RuntimeFrameScheduler = standalone.scheduler;
+standalone.context.ProceduralFurniture.buildFurnitureGroup('campfire', 0x6d3e20);
+assert(standalone.registered.has('interior-ambient-vfx'), 'later scheduler is registered when a new visual needs animation');
+assert.equal(standalone.registered.get('interior-ambient-vfx').options.enabled, true, 'late-registered scheduler starts the existing emitters');
+console.log('interior ambient fire VFX scheduler migration and scheduler-free editor startup passed');

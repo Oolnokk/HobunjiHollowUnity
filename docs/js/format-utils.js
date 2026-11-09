@@ -24,7 +24,7 @@
   // creates any world structures.
   (function loadEntryTunnelDoorFurniture() {
     if (typeof document === 'undefined') return;
-    const src = 'js/entry-tunnel-door-furniture.js?v=20260907b'; // Used by this one-time parser-synchronous companion loader.
+    const src = 'js/entry-tunnel-door-furniture.js?v=20261028entrancewood1'; // Used by this one-time parser-synchronous companion loader.
     if (window.EntryTunnelDoorFurniture || document.querySelector('script[data-entry-tunnel-door-furniture]')) return;
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-entry-tunnel-door-furniture="1"><\/script>`);
@@ -65,7 +65,7 @@
   // idempotent and the bridge deliberately tolerates a repeated handoff.
   (function loadStableAnimalFeatureBridge() {
     if (typeof document === 'undefined') return;
-    const src = 'js/livestock-nursery-install-bridge.js?v=20261016h0975406';
+    const src = 'js/livestock-nursery-install-bridge.js?v=20261107flyers2';
     if (document.querySelector('script[data-stable-animal-feature-bridge]')) return;
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-stable-animal-feature-bridge="1"><\/script>`);
@@ -84,7 +84,7 @@
   // reaches direct procedural stumps and V27-authored fallen logs/stumps.
   (function loadLogWallExtension() {
     if (typeof document === 'undefined') return;
-    const extensionSrc = 'js/log-wall-extension.js?v=20261014logwall1'; // Base generated/baked log-cabin wall runtime authority.
+    const extensionSrc = 'js/log-wall-extension.js?v=20261023h81e6928'; // Base generated/baked log-cabin wall runtime authority.
     const woodSrc = 'js/wood-cut-surfaces.js?v=20261014woodcaps1'; // Shared wavy_surface.png bark + log.png end-cap repair across walls/stumps/logs.
     const materialsSrc = 'js/log-wall-materials.js?v=20261014logwallmat2'; // One-material PNG atlas bridge layered over generated log geometry.
     const hasExtension = !!window.LogWallExtension || !!document.querySelector('script[data-log-wall-extension]'); // Existing base bridge state used to avoid duplicate script insertion.
@@ -131,7 +131,7 @@
   // a house/interior actually asks it to build, after normal game boot.
   (function loadStackedLogWalls() {
     if (typeof document === 'undefined') return;
-    const src = 'js/stacked-log-walls.js?v=20261015hc9982b1'; // Shared exact-span architecture renderer for exterior/interior log walls.
+    const src = 'js/stacked-log-walls.js?v=20261023hbaf9a0b'; // Shared exact-span architecture renderer for exterior/interior log walls.
     if (window.StackedLogWalls || document.querySelector('script[data-stacked-log-walls]')) return;
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-stacked-log-walls="1"><\/script>`);

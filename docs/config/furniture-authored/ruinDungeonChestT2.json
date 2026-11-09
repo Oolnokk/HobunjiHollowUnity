@@ -2,7 +2,7 @@
   "schema": "hobunji_furniture_authored_runtime.v1",
   "key": "ruinDungeonChestT2",
   "id": "ruinDungeonChestT2",
-  "name": "Iron-bound Dungeon Chest",
+  "name": "Bronze-bound Dungeon Chest",
   "sourceSchema": "hobunji_furniture_surface_author.v58",
   "notes": "Tier 2 dungeon chest (loot pool dungeonChest_tier2). Lid, Lid Band and Lock swing open about the back edge of the body (hinge added by the chest runtime).",
   "footprint": {

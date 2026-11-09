@@ -1,4 +1,4 @@
-// Territorial wildlife behavior for Grehlr and Drenkirra families.
+// Territorial wildlife behavior for Grehlr, Drenkirra and Honeyfuzzle (hive defense) families.
 (() => {
   'use strict';
 
@@ -11,7 +11,7 @@
     WARNING_UTTERANCE_MIN_S: 1.15,
     WARNING_UTTERANCE_MAX_S: 2.1,
   });
-  const DEFAULT_SPECIES = Object.freeze(['grehlr', 'grehlr-den-mother', 'drenkirra', 'drenkirra-den-mother']); // Used until attack-values.json supplies the authored territorial species list.
+  const DEFAULT_SPECIES = Object.freeze(['grehlr', 'grehlr-den-mother', 'drenkirra', 'drenkirra-den-mother', 'honeyfuzzle']); // Used until attack-values.json supplies the authored territorial species list.
   const tuning = { ...DEFAULTS }; // Used by every territorial phase and refreshed from authored config.
   let territorialSpecies = new Set(DEFAULT_SPECIES); // Used to identify wild actors whose player encounter is warning-first instead of predator/prey aggro.
   let deps = null; // Captured from WildlifeSpawn.init and used by the per-frame territorial pre-pass.
@@ -94,6 +94,7 @@
   }
 
   function utterWarning(creature) {
+    if (creature?.creatureKey === 'honeyfuzzle') return; // Swarm threat is conveyed by HoneyfuzzleAudio's live buzz/pitch, never an utterance.
     if (!window.AnimalVocalizations?.warning?.(creature, 'territorial-boundary')) {
       window.AudioSystem?.playCreatureBark?.(creature);
     }
@@ -179,6 +180,13 @@
       if (siblingState.phase === 'fight') continue; // already fighting (or already woken this same broadcast)
       beginFight(sibling, siblingState, player, `nest under attack (${creature.creatureKey} engaged)`, true);
     }
+  }
+
+  function provoke(creature, target, reason = 'provoked') {
+    if (!deps || !target || !isTerritorial(creature) || creature.health <= 0) return false;
+    const state = ensureState(creature); // Night hive theft skips the warning phase but reuses the territorial combat rules.
+    beginFight(creature, state, target, reason);
+    return true;
   }
 
   function beginDisengage(creature, state) {
@@ -410,7 +418,7 @@
   }
 
   window.HobunjiTerritorialWildlife = {
-    applyConfig,
+    applyConfig, provoke,
     tuning,
     get species() { return [...territorialSpecies]; },
     get patchedApi() { return patchedApi; },

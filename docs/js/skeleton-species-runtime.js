@@ -67,7 +67,7 @@
         npcOnly: true,
         playerSelectable: false,
         editorPreviewSelectable: true, // Character Studio may author/preview this NPC-only species without making it legal for player creation.
-        bodyColorCustomization: false, // Character Studio hides editable body-color controls for the authored skeleton PNG body.
+        bodyColorCustomization: !!config.variableBodyColors, // Maskbound wooden skeletons may use authored troop palettes; bone skeletons remain fixed.
         fixedBodyColorHex: EXTREMITY_COLOR, // Procedural hands/feet and editor diagnostics use the same fixed bone color.
       };
       status.appearanceConfigInstalled = true;
@@ -216,7 +216,7 @@
       const wrapped = function buildProfileWithSkeletonFixedColor(exportData) {
         const profile = baseBuildProfile.apply(this, arguments); // Preserve the canonical profile builder and only clamp its final body descriptor for this species.
         if (profile && normalizeSpecies(exportData?.appearance?.speciesId) === SPECIES_ID) {
-          profile.bodyColors = { ...(profile.bodyColors || {}), ...fixedBodyColors() }; // Clamp only skeletal body A/B/C; preserve CLOTH/HOOD/TORSO and palette sub-slots already applied from the NPC's dye metadata.
+          if (!config.variableBodyColors) profile.bodyColors = { ...(profile.bodyColors || {}), ...fixedBodyColors() }; // Normal skeletons stay bone-colored; opt-in puppet troops retain their explicit A/B/C wood shades.
           status.profileColorCorrections += 1;
         }
         return profile;

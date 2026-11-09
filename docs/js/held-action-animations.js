@@ -8,6 +8,7 @@
     version: 1,
     kind: 'hobunji_held_action_animation',
     name: 'Drink',
+    headRelative: true, // Head-anchored: x/y/z are the held bottle's opening (aperture) measured from the species mouth point, in the head's frame; the head supplies rotation and scale.
     style: 'drink',
     durationS: 0.95,
     windupFrac: 0.38,
@@ -15,10 +16,29 @@
     holdFrac: 0.78,
     poses: {
       // Neutral is an idle endpoint: Pitch + Roll aim to the shoulder.
-      neutral: { x: 0, y: 0, z: -0.05, pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0, shoulderAim: { grip: true, palmNormal: true } },
+      neutral: { headRelative: true, x: -0.45, y: -0.42, z: 0.061, pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0, shoulderAim: { grip: true, palmNormal: true } },
       // Active endpoints deliberately retain Roll-only shoulder alignment.
-      windup: { x: 0.32, y: 0.21, z: 0.1, pitch: -114, yaw: 18, roll: -8, bodyYaw: 0, shoulderAim: { grip: false, palmNormal: true } },
-      strike: { x: 0.4, y: 0.4, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0, shoulderAim: { grip: false, palmNormal: true } },
+      windup: { headRelative: true, x: -0.144, y: -0.087, z: 0.056, pitch: -114, yaw: 18, roll: -8, bodyYaw: 0, shoulderAim: { grip: false, palmNormal: true } },
+      strike: { headRelative: true, x: -0.09, y: 0, z: 0.115, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0, shoulderAim: { grip: false, palmNormal: true } },
+    },
+  };
+
+
+  // Ordinary small bag items are carried in this own tool-base pose (NOT a
+  // head/mouth-relative Drink pose). Starts as a copy of the functioning
+  // Pick-Shovel long-hafted Tool Neutral and can be tuned independently.
+  const smallHeldNeutral = Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, roll: -96, bodyYaw: -8, shoulderAim: { grip: true, palmNormal: true } }); // Source for all three editor still frames, independent of the long-hafted tool config.
+  const heldItemSmall = {
+    version: 1,
+    kind: 'hobunji_held_action_animation',
+    name: 'Small Held Item — Idle',
+    style: 'thrust',
+    still: true,
+    durationS: 0.95, windupFrac: 0.16, strikeFrac: 0.28,
+    poses: {
+      neutral: { ...smallHeldNeutral },
+      windup: { ...smallHeldNeutral },
+      strike: { ...smallHeldNeutral },
     },
   };
 
@@ -42,7 +62,7 @@
     projectileSpin: true,
     poses: {
       neutral: {
-        x: 0.03, y: 0.37, z: -0.01, pitch: -155, yaw: -79, bodyYaw: 2, roll: -82,
+        x: -0.04, y: 0.29, z: -0.1, pitch: 47, yaw: 107, bodyYaw: -55, roll: 88, // Authored thrown-weapon idle stance (Spin Throw); also the held flask's idle.
         shoulderAim: { grip: true, palmNormal: true },
         secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 },
         dualWield: { enabled: true },
@@ -77,7 +97,7 @@
     projectileLockAlignment: true,
     projectileBasisDeg: -90, // Corrects only the launched spear PNG a quarter-turn clockwise; held spin/end-flip authoring stays unchanged.
     poses: {
-      neutral: { ...weaponThrowSpin.poses.neutral, shoulderAim: { ...weaponThrowSpin.poses.neutral.shoulderAim }, secondaryGrip: { ...weaponThrowSpin.poses.neutral.secondaryGrip } },
+      neutral: { ...weaponThrowSpin.poses.neutral, x: -0.12, y: 0.2, z: 0, pitch: -10, yaw: 167, bodyYaw: -62, roll: 75, shoulderAim: { ...weaponThrowSpin.poses.neutral.shoulderAim }, secondaryGrip: { ...weaponThrowSpin.poses.neutral.secondaryGrip } },
       windup: { ...weaponThrowSpin.poses.windup, shoulderAim: { ...weaponThrowSpin.poses.windup.shoulderAim }, secondaryGrip: { ...weaponThrowSpin.poses.windup.secondaryGrip } },
       strike: { ...weaponThrowSpin.poses.strike, shoulderAim: { ...weaponThrowSpin.poses.strike.shoulderAim }, secondaryGrip: { ...weaponThrowSpin.poses.strike.secondaryGrip } },
     },
@@ -103,7 +123,164 @@
     },
   };
 
-  window.HeldActionAnimations = Object.freeze({ drink, throwFlask, weaponThrowSpin, weaponThrowSpearSpin, counterShield });
+  // Still two-handed carry for large inventory items (furniture, livestock, buildings...).
+  // Same origin as Drink (hand anchor + pose offset): x lifts the item back to body centre,
+  // y matches the old chest height, z pushes it farther out from the chest than the old 0.1.
+  // Both hands grip the item's left and right edges. Small handheld items use Drink's neutral.
+  const heldItemLarge = {
+    version: 1,
+    kind: 'hobunji_held_action_animation',
+    name: 'Large Held Item (two-hand)',
+    style: 'drink',
+    durationS: 0.95,
+    windupFrac: 0.38,
+    strikeFrac: 0.62,
+    holdFrac: 0.78,
+    poses: {
+      neutral: { x: 0.45, y: 0.19, z: 0.32, pitch: 0, yaw: 0, roll: 0, bodyYaw: 0, shoulderAim: { grip: true, palmNormal: true }, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 } },
+      windup: { x: 0.45, y: 0.19, z: 0.32, pitch: 0, yaw: 0, roll: 0, bodyYaw: 0, shoulderAim: { grip: true, palmNormal: true }, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 } },
+      strike: { x: 0.45, y: 0.19, z: 0.32, pitch: 0, yaw: 0, roll: 0, bodyYaw: 0, shoulderAim: { grip: true, palmNormal: true }, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 } },
+    },
+  };
+
+  const blowgunReady = {
+    "version": 1,
+    "kind": "hobunji_attack_animation",
+    "name": "B'shuakauitl — Loaded",
+    "style": "ranged",
+    "sequence": "attack",
+    "windupFrac": 0.38,
+    "strikeFrac": 0.62,
+    "holdFrac": 0.78,
+    "durationS": 0.95,
+    "headRelative": true, // Head-anchored: x/y/z are the B'shuakauitl's aperture (mouthpiece end) measured from the species mouth point, in the head's frame; 0 seats the mouthpiece exactly on the mouth.
+    "toolEndFlip": false,
+    // The mouth anchors the aperture AND the barrel direction. -180° pitch aims the shaft out from the face; no independent yaw offsets the shot from the head.
+    "poses": {
+      "neutral": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "pitch": -180,
+        "yaw": 0,
+        "roll": 4,
+        "bodyYaw": 0,
+        "scale": 1.3,
+        "headRelative": true,
+        "shoulderAim": {
+          "grip": false,
+          "palmNormal": true
+        },
+        "secondaryGrip": {
+          "enabled": false,
+          "percent": 50,
+          "primaryPercent": 50
+        },
+        "dualWield": {
+          "enabled": false
+        }
+      },
+      "windup": {
+        "headRelative": true,
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "pitch": -180,
+        "yaw": 0,
+        "roll": 0,
+        "bodyYaw": 0,
+        "shoulderAim": {
+          "grip": false,
+          "palmNormal": true
+        },
+        "scale": 1.3,
+        "secondaryGrip": {
+          "enabled": false,
+          "percent": 50,
+          "primaryPercent": 50
+        },
+        "dualWield": {
+          "enabled": false
+        }
+      },
+      "strike": {
+        "headRelative": true,
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "pitch": -180,
+        "yaw": 0,
+        "roll": 4,
+        "bodyYaw": 0,
+        "shoulderAim": {
+          "grip": false,
+          "palmNormal": true
+        },
+        "scale": 1.3,
+        "secondaryGrip": {
+          "enabled": false,
+          "percent": 50,
+          "primaryPercent": 50
+        },
+        "dualWield": {
+          "enabled": false
+        }
+      }
+    },
+    "gripMode": "palm-parallel"
+  }; // Authored loaded/fire animation; independent from Drink.
+  // The two instruments are non-damaging gameplay actions. Each real sounded
+  // note runs its own Neutral → Windup → Note → Return path, including rapid
+  // retriggers; both the editor and KurrayaInstrument sample these same poses.
+  const fluteNeutralNotePose = { // Exact user-authored Neutral; reused independently for the note's three edit phases.
+    headRelative: true,
+    x: 0.01, y: 0, z: 0, pitch: -108, yaw: 0, bodyYaw: 0, roll: 4,
+    scale: 1.3, bodySink: 0,
+    shoulderAim: { grip: true, palmNormal: false },
+    secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 },
+    dualWield: { enabled: false },
+    elbows: { right: { x: 0, y: -0.15, z: 0.1 } },
+  };
+  const copyFluteNotePose = () => JSON.parse(JSON.stringify(fluteNeutralNotePose)); // Each editable phase owns its own grip and elbow objects.
+  const FLUTE_STRIKE_BODY_SINK_PCT = 10; // Strike-only, editor-adjustable percent of height; player leg/body composer applies it live.
+  const flutePlayNote = {
+    version: 1, kind: 'hobunji_held_action_animation', name: 'Flute — Play Note',
+    style: 'ranged', sequence: 'attack', headRelative: true,
+    durationS: 0.32, windupFrac: 0.18, strikeFrac: 0.34, holdFrac: 0.62,
+    gripMode: 'palm-parallel',
+    poses: {
+      neutral: copyFluteNotePose(),
+      windup: copyFluteNotePose(), // Identical to Neutral: no unwanted lift or pipe rotation.
+      strike: { ...copyFluteNotePose(), bodySink: FLUTE_STRIKE_BODY_SINK_PCT }, // Only the body's downward bend distinguishes the sounded note.
+    },
+  };
+  const kurrayaSharedNotePose = { // Note phases share a position and grip relationship; roll, elbows, hand height and body sink are authored separately.
+    x: 0.27, y: 0.08, z: 0.03, pitch: 0, yaw: 0, bodyYaw: 0,
+    headRelative: false,
+    shoulderAim: { grip: false, palmNormal: false },
+    secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 },
+    dualWield: { enabled: false },
+    elbows: { left: { x: 0.155, y: -0.195, z: 0 } },
+    rightHand: { enabled: true, x: -0.13, y: 0.07, z: 0.085, roll: 52 },
+  };
+  const copyKurrayaNotePose = () => JSON.parse(JSON.stringify(kurrayaSharedNotePose)); // Each editable phase has independent nested hand, elbow and grip fields.
+  const kurrayaPlayNote = {
+    version: 1, kind: 'hobunji_held_action_animation', name: 'Kurraya — Play Note',
+    actionId: 'kurraya_play_note', style: 'thrust', sequence: 'attack',
+    durationS: 0.32, windupFrac: 0.18, strikeFrac: 0.34, holdFrac: 0.62,
+    headRelative: false, toolEndFlip: false, gripMode: 'palm-parallel',
+    poses: {
+      neutral: { ...copyKurrayaNotePose(), roll: 7, scale: 0.85, bodySink: 0 }, // Latest authored rest posture; Windup deliberately rolls a further -2°.
+      windup: { ...copyKurrayaNotePose(), roll: 5 },
+      strike: {
+        ...copyKurrayaNotePose(), roll: 11,
+        elbows: { left: { x: 0.155, y: -0.15, z: 0.02 }, right: { x: -0.17, y: -0.28, z: 0.11 } },
+        rightHand: { enabled: true, x: -0.13, y: 0.1, z: 0.085, roll: 52 },
+        bodySink: 3, // Same body/leg stance sink channel used by the flute, but much subtler.
+      },
+    },
+  };
+  window.HeldActionAnimations = Object.freeze({ blowgunReady, drink, heldItemSmall, heldItemLarge, throwFlask, weaponThrowSpin, weaponThrowSpearSpin, counterShield, flutePlayNote, kurrayaPlayNote });
 
   // Shared direct-hand bootstrap. There are no arm bones, IK, reach clamps, or
   // rotating arm sprites. Shoulder coordinates are either manually authored in
@@ -115,6 +292,7 @@
     ? new URL(configuredDocsBase, location.href)
     : (selfUrl && selfUrl.protocol !== 'blob:' ? new URL('../', selfUrl) : new URL('./', location.href));
   const isAttackEditor = /\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname);
+  const isEnemyLoadoutEditor = /\/tools\/enemy-loadout-editor\/(?:index\.html)?$/.test(location.pathname);
   const isAnimationAuthor = /\/tools\/animation-author\/(?:index\.html)?$/.test(location.pathname);
 
   // The Attack Animation Editor consumes this shared object directly through
@@ -124,7 +302,7 @@
     // The Attack Animation Editor now reads HeldActionAnimations directly through
     // its unified Action registry. Do not inject options, synthesize DOM events,
     // or maintain a second editor state bridge here.
-  } else if (!isAnimationAuthor) {
+  } else if (!isAnimationAuthor && !isEnemyLoadoutEditor) {
     // Counter Shield's combat module predates the shared held-action library and
     // still owns a private fallback BLOCK_POSE. Once all synchronous combat scripts
     // have registered their abilities, wrap only Counter Shield's hold callbacks and
@@ -187,48 +365,52 @@
     new URL('config/hand-shoulder-points.js?v=20260818b', docsBase).href,
     new URL('config/hand-shoulder-pose-profiles.js?v=20260920localhinge1', docsBase).href,
     new URL('js/procedural-hand-foot-material-roles.js?v=20260821e', docsBase).href,
-    new URL('js/hand-tool-grips.js?v=20261015hb5dafdf', docsBase).href,
-    new URL('js/hand-tool-grip-authored-overrides.js?v=20261007h0531ae6', docsBase).href, // Must follow hand-tool-grips.js: migrates authored spear/bshuakauitl grips onto its live data.
-    new URL('js/dual-wield-weapon-visuals.js?v=20261006hc088ca4', docsBase).href,
+    new URL('js/hand-tool-grips.js?v=20261107kurrayaGripOptIn1', docsBase).href,
+    new URL('js/hand-tool-grip-authored-overrides.js?v=20261022hbc21c80', docsBase).href, // Must follow hand-tool-grips.js: migrates authored spear/bshuakauitl grips onto its live data.
+    new URL('js/dual-wield-weapon-visuals.js?v=20261031h84160bf', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20261005h2e47f31', docsBase).href,
-    new URL('js/hand-shoulder-pose-runtime.js?v=20260920elbow5', docsBase).href,
+    new URL('js/hand-shoulder-pose-runtime.js?v=20261107instrNeutral2', docsBase).href,
     new URL('js/portrait-arm-cloud-mask.js?v=20261005h2d40d1a', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan.js?v=20260818c', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan-species.js?v=20260818a', docsBase).href,
-    new URL('js/procedural-hand-attachments.js?v=20261015h893bb39', docsBase).href,
-    new URL('js/procedural-hand-outline-parity.js?v=20261016h5318a2d', docsBase).href,
-    new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261012hbe78166', docsBase).href,
-    new URL('js/procedural-hand-scale-free-world.js?v=20261002h4b75465', docsBase).href,
-    new URL('js/procedural-hand-shoulder-aim.js?v=20260924perf1', docsBase).href,
-    new URL('js/procedural-hand-frame-driver.js?v=20261013ha534393', docsBase).href,
+    new URL('js/procedural-hand-attachments.js?v=20261019h0cfa905', docsBase).href,
+    new URL('js/procedural-hand-outline-parity.js?v=20261101handmatrix3', docsBase).href,
+    new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261102maoskelrear1', docsBase).href,
+    new URL('js/procedural-hand-scale-free-world.js?v=20261017h3921033', docsBase).href,
+    new URL('js/procedural-hand-shoulder-aim.js?v=20261107instrHand1', docsBase).href,
+    new URL('js/procedural-hand-frame-driver.js?v=20261107instrNeutral2', docsBase).href,
   ];
   if (isAttackEditor) {
     // The editor starts its first avatar rebuild immediately after these parser-time
     // scripts. Repair the shared NpcAvatarPreview dependency before any hand/editor
     // adapters run so a missed/cached helper request cannot strand the preview.
-    handScripts.push(new URL('js/attack-editor-npc-preview-guard.js?v=20261010h4d24e08', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-npc-preview-guard.js?v=20261031hdec6834', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-configurator.js?v=20260919handreview1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-inverse-configurator.js?v=20260919handreview1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-mirror-toggle.js?v=20260817a', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-grip-mode.js?v=20261005hce195f1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-direct-attachments.js?v=20261001c0bd7bbe', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-hand-shoulder-controls.js?v=20260920posecore1', docsBase).href);
-    handScripts.push(new URL('js/attack-editor-idle-hand-parity.js?v=20260920localhinge1', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-hand-shoulder-controls.js?v=20261025h6a95a6d', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-idle-hand-parity.js?v=20261019h611c43d', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-state-coherence.js?v=20260919handreview1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-history.js?v=20260919history1', docsBase).href); // Loaded last so Undo/Redo can snapshot every hand/grip extension plus the core module once it initializes.
-  } else if (!isAnimationAuthor) {
+  } else if (!isAnimationAuthor && !isEnemyLoadoutEditor) {
     handScripts.push(new URL('js/procedural-hand-grip-runtime.js?v=20260918throwcharge3', docsBase).href);
     handScripts.push(new URL('js/weapon-idle-body-yaw-runtime.js?v=20260915perf1', docsBase).href);
+    handScripts.push(new URL('js/weapon-stance-drop-runtime.js?v=20261107instrNeutral1', docsBase).href);
     handScripts.push(new URL('js/crossbow-strike-audio-trim.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/weapon-png-scale.js?v=20260902c', docsBase).href);
-    handScripts.push(new URL('js/hand-pixel-probe-diagnostics.js?v=20261016ha981d6f', docsBase).href);
+    handScripts.push(new URL('js/hand-pixel-probe-diagnostics.js?v=20261101handdrift2', docsBase).href);
   }
 
   function loadSequentially(urls) {
     return urls.reduce((promise, src) => promise.then(() => new Promise((resolve, reject) => {
       const script = document.createElement('script');
       script.src = src;
-      script.onload = resolve;
+      script.onload = () => {
+        const nested = /\/attachment-rig-latest-authored-snapshot\.js(?:[?#]|$)/.test(src) ? window.HobunjiLatestAuthoredRigReady : null;
+        Promise.resolve(nested).then(resolve, reject); // Dynamic tools must wait for species/mount wrappers before the hand driver wraps PNGPlaneAvatar.
+      };
       script.onerror = () => reject(new Error(`Failed to load ${src}`));
       document.head.appendChild(script);
     })), Promise.resolve());

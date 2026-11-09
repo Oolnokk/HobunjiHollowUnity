@@ -5,7 +5,7 @@
   // training is rendered here directly instead of post-processing whatever
   // markup the core renderer happened to create. During ordinary index.html
   // parsing this keeps the core synchronous, just like the former single file.
-  const CORE_SRC = 'js/farm-panel-core.js?v=20261016h683c518';
+  const CORE_SRC = 'js/farm-panel-core.js?v=20261031layoutCursor1';
 
   const MAX_OUT_OF_STORAGE_STABLE_ANIMALS = 8; // Caps the Stable roster kept accessible outside indefinite stowage.
   let stableDeps = null; // Holds the live Stable save and UI dependencies.
@@ -34,8 +34,8 @@
     return window.StableAnimalTownFamiliarity || null;
   }
 
-  function stableMaxLevel() {
-    const value = Number(progression()?.maxLevel ?? refinements()?.maxLevel);
+  function stableMaxLevel(entry) {
+    const value = Number((entry && progression()?.maxLevelForEntry?.(entry)) || progression()?.maxLevel || refinements()?.maxLevel);
     return Number.isFinite(value) && value > 0 ? Math.floor(value) : 10;
   }
 
@@ -46,6 +46,8 @@
     grehlr: '🦨',
     drenkirra: '🪿',
     puktuk: '🐑',
+    honeyfuzzle: '🐝',
+    pingdort: '🐦', // Wild eggs hatch into small shoulder pets or medium/large companions.
   };
 
   const STABLE_ROLE_META = {
@@ -113,7 +115,7 @@
     progression()?.normalizeEntry?.(entry);
     petRapport()?.normalizeEntry?.(entry); // Pet Rapport lives on the same stable entry and is normalized before either UI/debug reads it.
     refinements()?.ensureStableCaps?.();
-    const max = stableMaxLevel();
+    const max = stableMaxLevel(entry);
     entry.level = Math.max(0, Math.min(max, Math.floor(Number(entry.level) || 0)));
     if (entry.level >= max) entry.stableXp = 0;
     return entry;
@@ -199,6 +201,7 @@
     const points = availablePoints(entry);
     const button = document.createElement('button');
     button.className = 'settings-small-btn stable-perk-btn';
+    button.setAttribute('data-key', def.id);
     button.style.cssText = 'white-space:normal;text-align:left;min-height:54px;line-height:1.25;';
     button.disabled = entry.lifeStage === 'baby' || points <= 0 || rank >= def.maxRank;
     button.textContent = `${def.name} ${rank}/${def.maxRank}\n${def.desc}`;
@@ -232,7 +235,7 @@
       lifeStage: entry.lifeStage,
       role,
       level: entry.level,
-      maxLevel: stableMaxLevel(),
+      maxLevel: stableMaxLevel(entry),
       xp: entry.stableXp || 0,
       petRapport: rapportApi?.getPetRapport?.(entry) ?? null,
       petRapportHearts: rapportApi?.getPetHearts?.(entry) ?? null,
@@ -240,6 +243,8 @@
       availablePoints: availablePoints(entry),
       perks: { ...(entry.animalPerks || {}) },
       perkIds: perkDefsForEntry(entry).map(def => def.id),
+      tactics: role === 'companion' ? refinements()?.tacticsForEntry?.(entry) || null : null,
+      liveTactics: role === 'companion' ? refinements()?.debugEntry?.(entry)?.liveTactics || null : null,
       combatModifiers: role === 'companion' ? refinements()?.companionCombatModifiers?.(entry) || null : null,
     };
   }
@@ -247,6 +252,9 @@
   function stableAgeSection(title, note, options = {}) {
     const section = document.createElement('div'); // Used as the native Stable age-group container.
     section.className = 'stable-age-section';
+    section.id = 'stableAge' + String(title).replace(/[^a-zA-Z]/g, '');
+    section.setAttribute('data-ctrl-subtab', '');
+    section.setAttribute('aria-label', title);
     const heading = options.onToggle ? document.createElement('button') : makeText('div', title); // Used as a collapse control only for inventories that opt in.
     heading.className = options.onToggle ? 'settings-section-title stable-inventory-toggle' : 'settings-section-title';
     if (options.onToggle) {
@@ -254,6 +262,7 @@
       heading.style.cssText = 'display:block;width:100%;text-align:left;border:0;background:transparent;color:inherit;padding:0;cursor:pointer;';
       heading.textContent = `${options.collapsed ? '▸' : '▾'} ${title}`;
       heading.setAttribute('aria-expanded', options.collapsed ? 'false' : 'true');
+      heading.setAttribute('data-ctrl-group-open', '');
       heading.addEventListener('click', options.onToggle);
     }
     section.appendChild(heading);
@@ -363,10 +372,13 @@
 
   function buildStablePerkTree(entry) {
     const api = progression();
-    const max = stableMaxLevel();
+    const max = stableMaxLevel(entry);
     const role = stableRole(entry);
     const panel = document.createElement('div');
     panel.className = 'stable-entry-perk-tree';
+    panel.id = 'stableTrainingDetail_' + encodeURIComponent(String(entry.id));
+    panel.setAttribute('data-ctrl-detail-panel', '');
+    panel.setAttribute('aria-label', `${entry.name || speciesLabel(entry)} training perks`);
     panel.style.cssText = 'flex:1 0 100%;width:100%;box-sizing:border-box;margin-top:7px;padding:9px;border-top:1px solid rgba(255,255,255,.13);display:flex;flex-direction:column;gap:7px;cursor:default;';
     panel.addEventListener('click', event => event.stopPropagation());
 
@@ -384,6 +396,7 @@
       const defs = perkDefsForEntry(entry);
       const genericDefs = defs.filter(def => !String(def.id).startsWith('species_'));
       const speciesDefs = defs.filter(def => String(def.id).startsWith('species_'));
+      if (role === 'companion') refinements()?.appendTacticalLoadout?.(panel, entry);
       appendPerkSection(panel, role === 'mount' ? 'Mount Training' : role === 'shoulderPet' ? 'Shoulder Pet Training' : 'General Companion Training', entry, genericDefs);
       if (role === 'companion') appendPerkSection(panel, `${speciesLabel(entry)} Combat`, entry, speciesDefs);
       if (!defs.length) panel.appendChild(makeText('div', 'No training perks are registered for this animal.', 'font-size:11px;opacity:.75;'));
@@ -443,7 +456,7 @@
       const isActive = !baby && !entry.stowed && entry.id === activeStableIdForRole(role);
       const isExpanded = expandedStableId === entry.id;
       const points = availablePoints(entry);
-      const max = stableMaxLevel();
+      const max = stableMaxLevel(entry);
       const row = document.createElement('div');
       row.className = 'farm-row livestock-trait-row stable-training-row';
       row.dataset.stableTrainingId = entry.id;
@@ -483,6 +496,19 @@
         expandedStableId = isExpanded ? null : entry.id;
         renderStablePanelNative();
       });
+      const trainingButton = document.createElement('button'); // Exposes the row's perk disclosure to controller, keyboard and touch navigation.
+      trainingButton.className = 'settings-small-btn stable-training-toggle';
+      trainingButton.id = 'stableTrainingToggle_' + encodeURIComponent(String(entry.id));
+      trainingButton.textContent = isExpanded ? 'Hide Training / Perks' : `Training / Perks${points > 0 ? ` · ${points}` : ''}`;
+      trainingButton.setAttribute('aria-expanded', String(isExpanded));
+      trainingButton.setAttribute('aria-controls', 'stableTrainingDetail_' + encodeURIComponent(String(entry.id)));
+      trainingButton.setAttribute('data-ctrl-detail', 'stableTrainingDetail_' + encodeURIComponent(String(entry.id)));
+      trainingButton.addEventListener('click', event => {
+        event.stopPropagation();
+        expandedStableId = isExpanded ? null : entry.id;
+        renderStablePanelNative();
+      });
+      row.appendChild(trainingButton);
       const stowButton = document.createElement('button'); // Moves this animal between the accessible roster and indefinite Stable storage.
       stowButton.className = 'settings-small-btn stable-stow-btn';
       stowButton.textContent = entry.stowed ? 'Take Out' : 'Stow';
@@ -558,7 +584,7 @@
     panel.stableTrainingDebug = () => {
       const stable = stableDeps?.getStable?.() || []; // Used to expose age counts alongside per-animal Stable diagnostics.
       return {
-        mostRecentChange: 'Stable animals can be stowed indefinitely; eight remain outside storage, and the Baby inventory collapses by default.',
+        mostRecentChange: 'Companions train to level 30. Training / Perks includes saved per-ability frequency, effect focus, and combat tempo.',
         expandedStableId,
         maxLevel: stableMaxLevel(),
         babyCount: stable.filter(stableIsBaby).length,

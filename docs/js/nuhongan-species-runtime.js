@@ -105,11 +105,8 @@
     const poseScale = window.HobunjiSpeciesPoseScale; // Weapon pose system does not currently walk parentSpecies, so register the donor values explicitly.
     if (!poseScale?.resolveScale || !poseScale?.setScale) return false;
     for (const gender of GENDERS) {
-      const donorScale = poseScale.resolveScale(DONOR, gender);
-      if (Number.isFinite(Number(donorScale)) && Number(donorScale) > 0) {
-        poseScale.setScale(ID, gender, donorScale);
-        status.poseOrbitScale[gender] = donorScale;
-      }
+      const donorScale = poseScale.resolveAuthored?.(DONOR, gender) ?? poseScale.resolveScale(DONOR, gender); // Copies per-axis { x, y, z } entries intact, not just their X.
+      if (poseScale.setScale(ID, gender, donorScale)) status.poseOrbitScale[gender] = donorScale;
     }
     return Object.keys(status.poseOrbitScale).length > 0;
   }

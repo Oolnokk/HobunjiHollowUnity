@@ -61,7 +61,7 @@
     renderHookInstalled: false,
     priorGamepad: new Map(),
     debug: {
-      lastChange: 'Instrument gear slot; Action 2 spins; NPCs use their preferred dance.',
+      lastChange: 'Larger 20px social-wheel labels with unclipped mobile placement.',
       lastOpenSource: null,
       lastAction: null,
       controllerOpenBinding: null,
@@ -545,6 +545,7 @@
     if (state.renderHookInstalled || !THREE.WebGLRenderer) return;
     const proto = THREE.WebGLRenderer.prototype;
     const originalRender = proto.render;
+    if (typeof originalRender !== 'function') return; // Standalone previews may use Three's instance render method before the game installs its shared prototype hook.
     if (originalRender.__socialActionWheelRenderHook) {
       state.renderHookInstalled = true;
       return;
@@ -630,12 +631,12 @@
     style.textContent = `
 #socialActionOverlay{position:fixed;inset:0;z-index:12050;background:rgba(0,0,0,.28);display:none;touch-action:none;user-select:none}
 #socialActionOverlay.open{display:block}
-#socialActionWheel{position:absolute;left:50%;top:50%;width:min(${Number(cfg.wheelRadiusPx)*2}px,82vmin);height:min(${Number(cfg.wheelRadiusPx)*2}px,82vmin);transform:translate(-50%,-50%);border-radius:50%;overflow:hidden;background:rgba(8,15,20,.91);box-shadow:0 0 0 2px rgba(255,255,255,.24),0 18px 70px rgba(0,0,0,.68)}
+#socialActionWheel{position:absolute;left:50%;top:50%;width:min(${Number(cfg.wheelRadiusPx)*2}px,88vmin);height:min(${Number(cfg.wheelRadiusPx)*2}px,88vmin);transform:translate(-50%,-50%);border-radius:50%;overflow:visible;background:rgba(8,15,20,.91);box-shadow:0 0 0 2px rgba(255,255,255,.24),0 18px 70px rgba(0,0,0,.68)}
 .socialActionSector{position:absolute;inset:0;border:0;padding:0;background:rgba(255,255,255,.045);pointer-events:none}
 .socialActionSector.active{background:rgba(255,231,135,.28)}
-.socialActionSector .socialActionLabel{position:absolute;left:50%;top:50%;width:112px;transform:translate(-50%,-50%);text-align:center;color:#fff;font:700 12px/1.12 "Pixelify Sans",system-ui,sans-serif;text-shadow:0 2px 4px #000}
-.socialActionSector .socialActionIcon{display:block;font-size:26px;line-height:1;margin-bottom:5px}
-#socialActionWheelCenter{position:absolute;left:50%;top:50%;width:34%;height:34%;transform:translate(-50%,-50%);border-radius:50%;display:grid;place-items:center;text-align:center;padding:12px;box-sizing:border-box;background:rgba(4,8,11,.96);box-shadow:0 0 0 2px rgba(255,255,255,.20);color:#fff;font:700 13px/1.2 "Pixelify Sans",system-ui,sans-serif;pointer-events:none}
+#socialActionWheel .socialActionLabel{position:absolute;left:50%;top:50%;width:126px;transform:translate(-50%,-50%);text-align:center;color:#fff;font:700 20px/1.15 "Pixelify Sans",system-ui,sans-serif;text-shadow:0 2px 4px #000;pointer-events:none;z-index:1}
+#socialActionWheel .socialActionIcon{display:block;font-size:30px;line-height:1;margin-bottom:5px}
+#socialActionWheelCenter{position:absolute;left:50%;top:50%;width:28%;height:28%;transform:translate(-50%,-50%);border-radius:50%;display:grid;place-items:center;z-index:2;text-align:center;padding:8px;box-sizing:border-box;background:rgba(4,8,11,.96);box-shadow:0 0 0 2px rgba(255,255,255,.20);color:#fff;font:700 19px/1.2 "Pixelify Sans",system-ui,sans-serif;pointer-events:none}
 #socialActionWheelDebug{position:fixed;left:50%;top:calc(50% + min(${Number(cfg.wheelRadiusPx)}px,41vmin) + 14px);transform:translateX(-50%);max-width:min(92vw,520px);padding:6px 9px;border-radius:8px;background:rgba(0,0,0,.72);color:#d7e9ff;font:11px/1.25 "DM Mono",monospace;pointer-events:none}
 #btnSocialActions{position:absolute}
 #btnSocialActions .abt-icon{font-size:1.25em}
@@ -657,7 +658,6 @@ ${outerRules}
     wheel.setAttribute('role', 'menu');
     wheel.setAttribute('aria-label', 'Social actions');
 
-    const radius = Math.min(Number(cfg.wheelRadiusPx) || DEFAULTS.wheelRadiusPx, 190);
     ACTIONS.forEach((action, index) => {
       const sector = document.createElement('button');
       sector.type = 'button';
@@ -670,10 +670,10 @@ ${outerRules}
       const angle = -Math.PI / 2 + index * step;
       const label = document.createElement('span');
       label.className = 'socialActionLabel';
-      label.style.transform = `translate(-50%,-50%) translate(${Math.cos(angle) * radius * 0.62}px,${Math.sin(angle) * radius * 0.62}px)`;
-      label.innerHTML = `<span class="socialActionIcon">${action.icon}</span>${action.label}`;
-      sector.appendChild(label);
-      wheel.appendChild(sector);
+      label.style.left = `${50+Math.cos(angle)*36}%`; // Percentage anchors follow the actual mobile wheel diameter.
+      label.style.top = `${50+Math.sin(angle)*36}%`;
+      label.innerHTML = `<span class="socialActionIcon">${action.icon}</span>${action.label.replace(' · ', '<br>')}`;
+      wheel.append(sector,label); // Labels sit above the clipped wedges so enlarged text is never cut along a diagonal.
     });
 
     centerLabel = document.createElement('div');

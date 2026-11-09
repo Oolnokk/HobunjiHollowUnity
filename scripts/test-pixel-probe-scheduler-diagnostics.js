@@ -167,3 +167,13 @@ assert.equal(runSleep(undefined), null, 'animal-sleep diagnostics omit themselve
 }
 
 console.log('pixel probe frame-scheduler diagnostics passed');
+
+// Execute the report owner with live-shaped dance/pathing snapshots; no console is needed.
+{
+  const dance={latestChange:'Scoped clothing depth and camera views',active:false,lastStartFailure:{code:'hands-not-ready',actor:'player'}}; // Failed starts must remain reportable after cleanup.
+  const pathing={pathSearches:2,blockedMoves:3}; // Existing counters are copied only on request.
+  const context={window:{RuntimeFrameScheduler:{getDebug:()=>({entries:[]})},FestivalWheelDanceRuntime:{diagnostics:()=>dance},NpcPathfinding:{debugSnapshot:()=>pathing}}};
+  vm.runInNewContext(match[0]+'; result=_pixelProbeSchedulerLines();',context);
+  assert.deepEqual(JSON.parse(context.result.find(line=>line.startsWith('Paired dance: ')).slice(14)),dance);
+  assert.deepEqual(JSON.parse(context.result.find(line=>line.startsWith('NPC pathfinding: ')).slice(17)),pathing);
+}

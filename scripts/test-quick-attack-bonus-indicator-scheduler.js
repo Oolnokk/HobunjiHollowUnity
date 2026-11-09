@@ -23,6 +23,7 @@ const offscreenX = new Set(); // Anchor x positions the stub frustum reports as 
 
 function buildContext() {
   const registered = new Map();
+  const clock = { now: 1000 }; // Controls hit and animation timestamps for impact lifecycle checks.
   const context = {
     console, Math, Number, String, Object, Array, Set, WeakMap, JSON, URLSearchParams,
     window: null,
@@ -37,7 +38,7 @@ function buildContext() {
       },
       body: null,
     },
-    performance: { now: () => 1000 },
+    performance: { now: () => clock.now },
     location: { search: '' },
     THREE: {
       Vector3: class Vector3 { set() { return this; } copy(v) { this.x = v?.x; return this; } applyQuaternion() { return this; } addScaledVector() { return this; } },
@@ -47,13 +48,13 @@ function buildContext() {
       Sprite: class Sprite {
         constructor(material) {
           this.material = material;
-          this.scale = { set() {} };
+          this.scale = { set(x, y) { this.x = x; this.y = y; } };
           this.position = { copy() {}, lerp() {} };
           this.userData = {};
           this.parent = null;
         }
       },
-      SpriteMaterial: class SpriteMaterial { constructor(opts) { Object.assign(this, opts); this.color = { setRGB() {} }; } },
+      SpriteMaterial: class SpriteMaterial { constructor(opts) { Object.assign(this, opts); this.color = { setRGB(...rgb) { this.rgb = rgb; }, setHex(hex) { this.hex = hex; } }; } },
       CanvasTexture: class CanvasTexture {},
       TextureLoader: class TextureLoader { load() {} },
       LinearFilter: 1,
@@ -78,11 +79,12 @@ function buildContext() {
   context.WorldPopupText = { avatarCentroidWorld: () => ({ x: 0, y: 1, z: 0 }) };
 
   vm.createContext(context);
+  vm.runInContext(fs.readFileSync('docs/js/combat/combat-attack-events.js', 'utf8'), context);
   vm.runInContext(source, context, { filename: 'quick-attack-bonus-indicator.js' });
-  return { context, registered };
+  return { context, registered, clock };
 }
 
-const { context, registered } = buildContext();
+const { context, registered, clock } = buildContext();
 
 const entry = registered.get('quick-attack-bonus-indicator');
 assert(entry, 'registers with the scheduler under a stable id');
@@ -92,7 +94,7 @@ assert.equal(entry.options.owner, 'QuickAttackBonusIndicator');
 // The scheduled callback still drives the full readiness/reticle pipeline.
 const scheduledFrame = entry.fn;
 const deps = context.Combat.deps; // Mutated dependency fixture.
-const scene = { isScene: true, add() {} }; // One live scene every test hostile is shown in.
+const scene = { isScene: true, children: new Set(), add(sprite) { this.children.add(sprite); sprite.parent = this; }, remove(sprite) { this.children.delete(sprite); sprite.parent = null; } }; // Track attached layers through pooling and pop cleanup.
 function hostile(id, x, extra = {}) {
   return {
     id, x, y: 0, health: 10, areaId: 'test',
@@ -122,6 +124,31 @@ assert.deepEqual([...snap.visibleTargetIds], ['near', 'behind-player', 'far'], '
 assert.equal(meleeHitCalls, 0, 'the opportunity cue never consults the Quick Attack reach/aim collider');
 assert.equal(context.QuickAttackBonusIndicator.getReadyState().target, near, 'diagnostics focus the nearest cued hostile');
 
+// A second script load must not replace the owner of already-attached cues.
+const originalIndicator = context.QuickAttackBonusIndicator; // Retain the owner whose sights are currently in the scene.
+vm.runInContext(source, context, { filename: 'quick-attack-bonus-indicator-reload.js' });
+assert.equal(context.QuickAttackBonusIndicator, originalIndicator, 'repeated loads retain the existing cue owner');
+assert.equal(registered.get('quick-attack-bonus-indicator').fn, scheduledFrame, 'repeated loads retain the existing cleanup callback');
+near.health = 0;
+scheduledFrame({ timestamp: 1018 });
+assert.deepEqual([...context.QuickAttackBonusIndicator.snapshot().visibleTargetIds], ['behind-player', 'far'], 'one death removes only that NPC cue and preserves surviving targets');
+assert.equal(scene.children.size, 10, 'one death detaches all five of its layers');
+for (const target of [near, far, behindPlayer]) target.health = 0;
+registered.get('quick-attack-bonus-indicator').fn({ timestamp: 1020 });
+assert.equal(context.QuickAttackBonusIndicator.snapshot().visibleCount, 0, 'ordinary deaths clear every readiness cue');
+assert.equal(scene.children.size, 0, 'ordinary deaths detach the main sprite and every glow, including after a repeated load');
+for (const target of [near, far, behindPlayer]) target.health = 10;
+scheduledFrame({ timestamp: 1024 });
+assert.equal(scene.children.size, 15, 'pooled cues return with exactly five layers per living target');
+deps.hostileObjects = [far, behindPlayer];
+scheduledFrame({ timestamp: 1026 });
+assert.equal(scene.children.size, 10, 'removing a living target from the active collection also removes all its cue layers');
+assert.equal(context.QuickAttackBonusIndicator.snapshot().visibleTargetIds.includes('near'), false, 'removed targets are no longer retained by the indicator');
+deps.hostileObjects = [near, far, behindPlayer];
+scheduledFrame({ timestamp: 1028 });
+assert.equal(scene.children.size, 15, 'returning targets reuse pooled layers without leaving duplicates');
+assert.doesNotMatch(fs.readFileSync('docs/js/input-settings-panel.js', 'utf8'), /['"]js\/combat\/quick-attack-bonus-indicator\.js(?:\?[^'"]*)?['"]/, 'Settings must not reload the parser-owned indicator');
+
 // Per-target conditions: only hostiles whose own condition is met are cued.
 context.Combat.getQuickAttackConditions = (_, target) => ({ behind: target !== near });
 scheduledFrame({ timestamp: 1032 });
@@ -136,6 +163,18 @@ offscreenX.add(999);
 deps.hostileObjects = [near, offscreen];
 scheduledFrame({ timestamp: 1048 });
 assert.deepEqual([...context.QuickAttackBonusIndicator.snapshot().visibleTargetIds], ['near'], 'hostiles outside the camera view get no reticle');
+
+// Elevation: only hostiles at the player's terrain level are cued; a ledge above or a shelf below is not.
+const ledge = hostile('ledge', 96);
+ledge.avatarRef.group.id = 'ledge';
+const rampFoot = hostile('ramp-foot', 128);
+rampFoot.avatarRef.group.id = 'ramp-foot';
+deps.worldSurfaceY = (x) => (x === 96 ? 2.5 : (x === 128 ? 0.6 : 0)); // One plateau tier up for the ledge; a gentle ramp rise for the other.
+deps.hostileObjects = [near, ledge, rampFoot];
+scheduledFrame({ timestamp: 1052 });
+assert.deepEqual([...context.QuickAttackBonusIndicator.snapshot().visibleTargetIds], ['near', 'ramp-foot'], 'a hostile a full tier above gets no reticle, but one on the same slope still does');
+delete deps.worldSurfaceY;
+deps.hostileObjects = [near];
 
 // Hidden avatars (or hidden ancestors) are not in view.
 near.avatarRef.group.visible = false;
@@ -191,6 +230,51 @@ assert.equal(context.QuickAttackBonusIndicator.getReadyState().ready, false, 'di
 deps.isDialogueOpen = () => false;
 scheduledFrame({ timestamp: 1144 });
 assert.equal(context.QuickAttackBonusIndicator.snapshot().visible, true, 'cue recovers after suppression ends');
+
+// Use the real event bus: only an authoritative bonus proc can pop a cue.
+context.ResourceRings = { AFFLICTION_COLORS: { bleeding: 0xe02030, venom: 0x40cc20 } }; // Matches the runtime's packed-hex palette.
+context.CombatProgression = { getEffects: () => ({ quickBonusAfflictions: { bleeding: 1, venom: 1 } }) };
+deps.currentWeaponKey = () => 'test-weapon';
+clock.now = 2000;
+scheduledFrame({ timestamp: clock.now });
+const glowLayers = [...scene.children].filter(sprite => sprite.name.includes('_glow_')); // Inspect actual material colors and animation rather than source text.
+assert.equal(glowLayers[0].material.color.hex, 0xe02030, 'first readiness glow uses the canonical affliction color');
+assert.equal(glowLayers[1].material.color.hex, 0x40cc20, 'second readiness glow uses the next applied affliction color');
+assert.ok(glowLayers[0].material.opacity > 0.5, 'readiness glow is visibly brighter');
+const event = { attackCategory: 'quickAttack', target: near, quickConditionalBonus: true, quickBonusEffectProc: false, afflictionBonuses: { venom: 1 } }; // A condition alone is insufficient during cooldown.
+context.CombatAttackEvents.hit(event);
+assert.equal(context.QuickAttackBonusIndicator.snapshot().poppingTargetIds.length, 0, 'condition without a proc never bursts');
+context.CombatAttackEvents.hit({ ...event, attackCategory: 'combo', quickBonusEffectProc: true });
+assert.equal(context.QuickAttackBonusIndicator.snapshot().poppingTargetIds.length, 0, 'other attack categories never burst');
+context.CombatAttackEvents.hit({ ...event, quickBonusEffectProc: true });
+assert.deepEqual([...context.QuickAttackBonusIndicator.snapshot().poppingTargetIds], ['near'], 'confirmed quick bonus starts its impact');
+assert.equal(glowLayers[0].material.color.hex, 0x40cc20, 'impact layers use the actual hit afflictions');
+assert.equal(glowLayers[0].material.opacity, 1, 'impact flashes brightly on the hit frame');
+const initialPopSize = glowLayers[0].scale.x; // Later frames must expand beyond the initial inward snap.
+near.health = 0;
+context.Combat.quickAttackData.bonusEffectCooldownRemaining = () => 2;
+clock.now += 120;
+scheduledFrame({ timestamp: clock.now });
+assert.equal(context.QuickAttackBonusIndicator.snapshot().visible, true, 'killing blow and cooldown preserve the burst');
+assert.ok(glowLayers[0].scale.x > initialPopSize * 2, 'impact expands dramatically');
+assert.ok(glowLayers[0].material.opacity < 1, 'impact fades as it expands');
+vm.runInContext(source, context, { filename: 'quick-attack-bonus-indicator-impact-reload.js' });
+assert.equal(context.QuickAttackBonusIndicator, originalIndicator, 'reloading during a killing-blow burst retains its cleanup owner');
+assert.equal(registered.get('quick-attack-bonus-indicator').fn, scheduledFrame, 'reloading during a burst cannot replace its animation callback');
+assert.equal(scene.children.size, 5, 'a killing-blow burst retains only its original five layers');
+clock.now += 400;
+scheduledFrame({ timestamp: clock.now });
+assert.equal(context.QuickAttackBonusIndicator.snapshot().visible, false, 'expired burst releases all layers');
+assert.equal(scene.children.size, 0, 'expired layers detach from the scene');
+near.health = 10;
+context.Combat.quickAttackData.bonusEffectCooldownRemaining = () => 0;
+scheduledFrame({ timestamp: ++clock.now });
+assert.equal(context.QuickAttackBonusIndicator.snapshot().poppingTargetIds.length, 0, 'pooled sights reset impact state');
+context.CombatAttackEvents.hit({ ...event, quickBonusEffectProc: true });
+deps.isDialogueOpen = () => true;
+scheduledFrame({ timestamp: ++clock.now });
+assert.equal(context.QuickAttackBonusIndicator.snapshot().visible, false, 'dialogue immediately suppresses an active impact');
+deps.isDialogueOpen = () => false;
 
 // A throwing readiness/render pass must still detach the reticle and record
 // its own error snapshot, exactly like the old try/catch inside frame().

@@ -274,3 +274,46 @@
     background: rgba(8, 18, 13, 0.44) !important;
   }
 }
+
+/* Gameplay overlays may inject styles after the theme loads (or set inline
+   font shorthands). Override only font-family so their authored sizes, weights,
+   spacing and semantic colors remain intact. Preserve distinct script faces,
+   emoji imagery and monospace diagnostic readouts outside these selectors. */
+:is(
+  #townProposalReader,
+  #romanceFamilyOverlay,
+  #townMineLadderPanel,
+  #slagothimTradePanel,
+  #companionDownedHud,
+  #playerDownedHud > div,
+  #hobunjiCloudSavePanel,
+  #hobunjiCloudSaveLauncher,
+  #proceduralDancePanel,
+  #hobunjiFullscreenFeedback,
+  #hobunjiAutosavePausedBadge,
+  #cutscenePreviewBanner,
+  .cp-overlay,
+  .pa-overlay,
+  .loomcraft-overlay
+) {
+  font-family: var(--gameplay-font-family) !important;
+}
+
+/* These descendants explicitly replace their parent's font with Georgia,
+   Pixelify Sans or system-ui. An overlay-root rule alone cannot fix them. */
+:is(
+  #townProposalReader .proposal-paper,
+  #townProposalReader h2,
+  #townProposalReader details,
+  #animalBabyArrivalOverlay input,
+  #animalBabyArrivalOverlay button,
+  #npcCommandWheel .socialActionLabel,
+  #npcCommandWheelCenter,
+  #socialActionWheel .socialActionLabel,
+  #socialActionWheelCenter,
+  .hobunji-cooking-panel h2,
+  .cooking-recipe-head h3,
+  #cutscenePreviewBanner button
+) {
+  font-family: var(--gameplay-font-family) !important;
+}

@@ -25,11 +25,18 @@ class MeshBasicMaterial {
 }
 const THREE = { Texture, TextureLoader, Mesh, Group, PlaneGeometry: Geometry, MeshBasicMaterial };
 const source = fs.readFileSync('docs/js/png-plane-avatar.js', 'utf8');
+const materialStart = source.indexOf('  function makeSpriteMaterial('); // Include the real shared/fallback material factory in the isolated animal builder fixture.
+const materialEnd = source.indexOf('  // Compatibility alias', materialStart);
 const start = source.indexOf('  const animalSourceTextures'), end = source.indexOf('  function hasUsablePortraitRig', start);
-const context = { window: {}, cfg: () => ({}) };
-vm.runInNewContext(source.slice(start, end) + '\nthis.build = buildAnimalPlaneAvatarModel;', context);
+assert(materialStart >= 0 && materialEnd > materialStart, 'the avatar material factory is available');
+const context = { window: {}, cfg: () => ({ alphaTest: 0.001, maskAlphaTest: 0.35 }) }; // Standalone fallback retains the correct depth-occlusion threshold.
+vm.runInNewContext('const spritePngSurface = window.HobunjiSpritePngSurface;\n' +
+  source.slice(materialStart, materialEnd) + '\n' + source.slice(start, end) +
+  '\nthis.build = buildAnimalPlaneAvatarModel;', context);
 const herd = Array.from({ length: 24 }, () => context.build(THREE, 'herd.png'));
 assert.equal(loads, 1, '24 adults share one native-resolution source image (the back card mirrors it in-shader)');
+assert.equal(herd[0].frontPlane.material.alphaTest, 0.35, 'animal silhouettes must discard almost-transparent pixels');
+assert.equal(herd[0].backPlane.material.alphaTest, 0.35, 'back-face masks must match front-face masks');
 const backMaterial = herd[0].backPlane.material;
 assert.equal(backMaterial.map, herd[0].frontPlane.material.map, 'the back card binds the front texture instead of a second mirrored upload');
 assert.equal(typeof backMaterial.onBeforeCompile, 'function', 'the back material mirrors UVs in its own shader');

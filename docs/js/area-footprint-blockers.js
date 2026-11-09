@@ -53,7 +53,19 @@
     return null;
   }
 
+  // Debug: ids of every enabled provider that blocks this box (blocksBox only says yes/no).
+  function explain(area, x, z, half = 0, worldY = null) {
+    const ids = [];
+    for (const [id, provider] of providers) {
+      if (provider.area != null && provider.area !== area) continue;
+      if (provider.enabled && !provider.enabled()) continue;
+      if (provider.blocksBox(x, z, Math.max(0, Number(half) || 0), Number.isFinite(worldY) ? worldY : null)) ids.push(id);
+    }
+    return ids;
+  }
+
   window.AreaFootprintBlockers = Object.freeze({
+    explain,
     register,
     remove,
     registerSurface,

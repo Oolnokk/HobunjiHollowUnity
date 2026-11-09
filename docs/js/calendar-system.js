@@ -58,6 +58,9 @@
   let _timeScaleInstalled = false; // Used by installNaturalTimeScale() to avoid redefining calendar.time01 on repeated init calls.
   let _timePassageUi = null; // Populated by buildTimePassageUi(); reused by both Sleep and seated Wait.
   let _timePassageKind = null; // 'sleep'|'wait'; used by shared modal copy/confirm text and sleep-only resource restoration.
+  let _passageRunning = false; // Keeps cancellation from releasing the clock/input lock during the iris transition.
+  let _passageCancelled = false; // Stops the hourly loop before its next clock write.
+  let _passageElapsedHours = 0; // Reports the actual elapsed duration after early cancellation.
   let _selectedPassageHours = 1; // Used by duration controls and the live target-date preview.
   let _timePassageLock = null; // CharacterActionLocks handle held while the open modal/transition owns player input.
   let _passagePreviewTimer = 0; // Interval id used to keep the modal's current-time line live while open.
@@ -272,14 +275,22 @@
           && window.__hobunjiGameStarted === true
           && delta > 0
           && delta <= MAX_NATURAL_TIME_WRITE;
-        const passageOwnsClock = !!_timePassageKind && !!_timePassageUi
-          && (_timePassageUi.backdrop.classList.contains('open') || _timePassageUi.iris.style.display === 'block'); // Used to freeze drift while choosing/transitioning without blocking explicit rollover writes.
         value = isNaturalFrameWrite
-          ? (passageOwnsClock ? value : value + delta * NATURAL_TIME_WRITE_SCALE * devTimeSpeed)
+          ? value + delta * naturalClockScale()
           : numeric;
       },
     });
     _timeScaleInstalled = true;
+  }
+
+  function naturalClockScale() {
+    const passageOwnsClock = !!_timePassageKind && !!_timePassageUi
+      && (_timePassageUi.backdrop.classList.contains('open') || _timePassageUi.iris.style.display === 'block'); // Shared by natural calendar writes and clock-driven simulation rates.
+    return passageOwnsClock ? 0 : NATURAL_TIME_WRITE_SCALE * devTimeSpeed;
+  }
+
+  function getNaturalGameHoursPerSecond() {
+    return (getHour(1) - getHour(0)) / BASE_DAY_LENGTH_SECONDS * naturalClockScale();
   }
 
   function setTime01Raw(value) {
@@ -388,6 +399,7 @@
         .time-passage-backdrop{position:fixed;inset:0;z-index:2147483646;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(7,8,10,.42);font-family:"KhymeryyanRomanLetters+Numbers","DM Mono",ui-monospace,monospace;color:#f4efe4;text-shadow:0 2px 4px rgba(0,0,0,.9)}
         .time-passage-backdrop.open{display:flex}
         .time-passage-backdrop.transitioning{pointer-events:none;background:transparent}
+        .time-passage-backdrop.transitioning #timePassageCancel{pointer-events:auto}
         .time-passage-panel{width:min(620px,94vw);max-height:88vh;overflow:visible;border:0;border-radius:0;background:transparent;box-shadow:none;padding:0;transform:scale(.75);transform-origin:center center}
         .time-passage-title{font-size:clamp(24px,5vw,38px);line-height:1;margin:0 0 14px;text-align:center;font-weight:400}
         .time-passage-dates{display:grid;grid-template-columns:1fr auto 1fr;align-items:stretch;gap:10px;min-height:72px}
@@ -485,7 +497,7 @@
     });
     _timePassageUi.backdrop.addEventListener('keydown', event => {
       event.stopPropagation();
-      if (event.key === 'Escape' && !_timePassageUi.backdrop.classList.contains('transitioning')) { event.preventDefault(); closeTimePassageMenu(); }
+      if (event.key === 'Escape') { event.preventDefault(); closeTimePassageMenu(); }
     });
   }
 
@@ -505,6 +517,7 @@
   }
 
   function openTimePassage(kind = 'wait') {
+    if (_passageRunning) return false;
     buildTimePassageUi();
     if (!_timePassageUi?.backdrop) return false;
     _timePassageKind = kind === 'sleep' ? 'sleep' : 'wait';
@@ -524,6 +537,7 @@
 
   function closeTimePassageMenu(options = {}) {
     if (!_timePassageUi) return;
+    if (_passageRunning) { _passageCancelled = true; return; }
     _timePassageUi.backdrop.classList.remove('open', 'transitioning');
     clearInterval(_passagePreviewTimer);
     _passagePreviewTimer = 0;
@@ -557,8 +571,20 @@
     _timePassageUi.hours.textContent = `${remainingHours} ${remainingHours === 1 ? 'hour' : 'hours'}`;
   }
 
+  function beginTimePassageRun() {
+    if (!_timePassageKind || !_timePassageUi || _passageRunning) return false;
+    _passageRunning = true;
+    _passageCancelled = false;
+    _passageElapsedHours = 0;
+    return true;
+  }
+
+  function finishTimePassageRun() {
+    _passageRunning = false;
+  }
+
   async function confirmTimePassage() {
-    if (!_timePassageKind || !_timePassageUi) return;
+    if (!beginTimePassageRun()) return;
     const kind = _timePassageKind; // Captured because the shared modal state is cleared after transition completion.
     const hours = _selectedPassageHours; // Captured so the selected duration cannot change during the iris transition.
     _timePassageUi.confirm.disabled = true;
@@ -568,17 +594,18 @@
     try {
       await runIrisTransition(async () => {
         await advanceBySelectedHours(hours, remaining => renderTimePassageTick(remaining));
-        if (kind === 'sleep') restorePlayerAfterSleep();
+        if (kind === 'sleep' && _passageElapsedHours > 0) restorePlayerAfterSleep();
         persistCalendarSnapshot();
         window.WeatherFX?.updateRainState?.();
         window.dispatchEvent(new CustomEvent('hobunji-time-passage', {
-          detail: { kind, hours, day: deps.calendar.day, time01: deps.calendar.time01 },
+          detail: { kind, hours: _passageElapsedHours, cancelled: _passageCancelled, day: deps.calendar.day, time01: deps.calendar.time01 },
         }));
       });
-      debugLog(`${kind} advanced ${hours}h -> ${formatCalendarDateTimeFull()}`);
+      debugLog(`${kind} advanced ${_passageElapsedHours}h -> ${formatCalendarDateTimeFull()}`);
     } catch (error) {
       debugLog(`${kind} failed: ${error?.message || error}`, 'error');
     } finally {
+      finishTimePassageRun();
       _timePassageUi.confirm.disabled = false;
       closeTimePassageMenu({ keepLock: true, keepKind: true });
       _timePassageKind = null;
@@ -592,8 +619,11 @@
     let tickDurationMs = TIME_PASSAGE_FIRST_TICK_MS; // Current visual hold duration; multiplied by 0.8 after every displayed hour.
     onHourTick?.(totalHours); // Shows the starting time and complete remaining count for the full first one-second tick.
     for (let elapsed = 1; elapsed <= totalHours; elapsed++) {
+      if (_passageCancelled) break;
       await delayMs(tickDurationMs);
+      if (_passageCancelled) break;
       await advanceOnePassageHour();
+      _passageElapsedHours = elapsed;
       const remainingHours = totalHours - elapsed; // Used as the direct countdown value instead of an elapsed/total fraction.
       onHourTick?.(remainingHours);
       tickDurationMs *= TIME_PASSAGE_TICK_DECAY;
@@ -677,7 +707,7 @@
         const override = window.WeatherFX?.getDebugWeatherOwner?.() === 'dev-companion' ? window.WeatherFX.getDebugWeather() : null;
         return {
           summary: `${formatClockTime()} · ${band || '?'} · ${currentWeekdayName()} · ${currentSeason()?.name || '?'} · ${deps.calendar.weather}${override ? ' (forced)' : ''}`,
-          rows: [['Clock speed', `${devTimeSpeed}× normal (calendar only; reload resets to 1×)`]],
+          rows: [['Clock speed', `${devTimeSpeed}× normal (clock and water; reload resets to 1×)`]],
           note: _devAdvanceBusy ? 'Advancing time…' : 'Skips run the real hour-by-hour time passage (crops, schedules, day rollover).',
           actions: [
             ...[0, 0.25, 0.5, 1, 2, 5, 10, 30, 60].map(speed => ({ id: 'speed', label: speed === 0 ? 'Paused' : `${speed}×`, args: { speed }, active: devTimeSpeed === speed, group: 'Clock speed' })),
@@ -1046,6 +1076,9 @@
       naturalClockScale: NATURAL_TIME_WRITE_SCALE, devTimeSpeed,
       modalKind: _timePassageKind,
       selectedHours: _selectedPassageHours,
+      passageRunning: _passageRunning, passageCancelled: _passageCancelled, elapsedHours: _passageElapsedHours,
+      naturalGameHoursPerSecond: getNaturalGameHoursPerSecond(), // Mobile time diagnostics expose the exact rate consumed by water simulation.
+      latestChange: 'Natural calendar and water simulation share clock speed and Sleep/Wait clock locks.',
       preview: deps ? formatCalendarDateTimeFull(target.day, target.time01) : null,
       seatedWaitReady: isSeatedReady(),
       sleepTargetReady: !!findSleepActionButton(),
@@ -1074,6 +1107,7 @@
     init,
     isInitialized,
     getHour,
+    getNaturalGameHoursPerSecond,
     dayOfYear,
     yearNumber, // Civil year cycle (1-based, rolls on Firstrise 1); drives the AoT era number.
     tothalCycle, // Monthly 1-based Tothal generation cycle used by every wilderness reshuffle.
@@ -1102,6 +1136,10 @@
     nextCivilYearStartDay,
     previewAfterHours,
     openTimePassage,
+    beginTimePassageRun,
+    finishTimePassageRun,
+    isTimePassageCancelled: () => _passageCancelled,
+    recordTimePassageHour: elapsed => { _passageElapsedHours = Math.max(0, Number(elapsed) || 0); }, // Review-aware passage shares this owner's cancellation, clock lock and diagnostics.
     devAdvanceHours,
     copyTimeDebug,
     timeDebugSnapshot,

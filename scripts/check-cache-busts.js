@@ -54,9 +54,17 @@ function escapeRegExp(text) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-// `foo.js?v=…` but not `other-foo.js?v=…`.
-function refPattern(base) {
-  return new RegExp(`(?<![A-Za-z0-9_.-])${escapeRegExp(base)}\\?v=([A-Za-z0-9_-]+)`, 'g');
+// Every way a script URL carries its token. Each pattern captures (prefix)(token)
+// so a bump can swap the token without touching the rest of the match.
+//   `foo.js?v=…` (but not `other-foo.js?v=…`)
+//   `parserOrderedScript('foo.js', 'key', '…')` — js/sprite-recolor.js builds the
+//   URL at runtime, so the literal `foo.js?v=` form never appears for those files.
+function refPatterns(base) {
+  const name = escapeRegExp(base);
+  return [
+    new RegExp(`((?<![A-Za-z0-9_.-])${name}\\?v=)([A-Za-z0-9_-]+)`, 'g'),
+    new RegExp(`(parserOrderedScript\\(\\s*'${name}'\\s*,\\s*'[^']*'\\s*,\\s*')([A-Za-z0-9_-]+)(?=')`, 'g'),
+  ];
 }
 
 function findStale() {
@@ -78,11 +86,13 @@ function findStale() {
   for (const changedFile of changed) {
     const base = path.basename(changedFile);
     if (EDITOR_ONLY.has(base)) continue;
-    const pattern = refPattern(base);
+    const patterns = refPatterns(base);
 
     const refs = [];
     for (const { file, text } of sources) {
-      for (const match of text.matchAll(pattern)) refs.push({ file, url: match[0], token: match[1] });
+      for (const pattern of patterns) {
+        for (const match of text.matchAll(pattern)) refs.push({ file, url: match[0], token: match[2] });
+      }
     }
 
     if (!refs.length) { unversioned.push(changedFile); continue; }
@@ -105,15 +115,18 @@ function bump(stale) {
   for (const { changedFile, refs } of stale) {
     const base = path.basename(changedFile);
     const token = freshToken(changedFile);
-    const pattern = refPattern(base);
+    const patterns = refPatterns(base);
     // Tests are only rewritten where they pin a token docs/ actually ships, so
     // fixture URLs with placeholder tokens (e.g. `?v=test`) are left alone.
     const shippedTokens = new Set(refs.map(ref => ref.token));
     for (const file of docsFiles.concat(testFiles)) {
       const isTest = !file.startsWith('docs' + path.sep);
       const text = fs.readFileSync(file, 'utf8');
-      const next = text.replace(pattern, (match, oldToken) =>
-        isTest && !shippedTokens.has(oldToken) ? match : `${base}?v=${token}`);
+      let next = text;
+      for (const pattern of patterns) {
+        next = next.replace(pattern, (match, prefix, oldToken) =>
+          isTest && !shippedTokens.has(oldToken) ? match : `${prefix}${token}`);
+      }
       if (next !== text) fs.writeFileSync(file, next);
     }
     console.log(`  bumped ${changedFile} -> ?v=${token}`);

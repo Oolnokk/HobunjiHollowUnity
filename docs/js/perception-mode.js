@@ -12,7 +12,8 @@
 //     drawn by WorldPopupText.syncInfoLists in the loot-list style but on
 //     the opposite side;
 //   • the player (and their mount) moves at half speed (speedMultiplier()).
-// Range is limited (RANGE_TILES); there is no cooldown.
+// Ordinary objects use RANGE_TILES. Cave/camp landmarks and cliff-door/herb
+// landmarks have independent discovery ranges; there is no cooldown.
 //
 // Wired from game.js with one init(deps) call; game.js calls renderOverlay()
 // from renderWorldPasses and update() from gameLoop. Sources are read through
@@ -21,7 +22,8 @@
   'use strict';
 
   const LAYER = 25; // Unused elsewhere (see the layer list in outline-render-performance.js / held-object-render-order.js).
-  const RANGE_TILES = 14; // Highlight radius around the player.
+  const RANGE_TILES = 14; // Highlight radius for ordinary actors and interactables.
+  const LANDMARK_RANGE_TILES = Object.freeze({ caves: 24, camps: 24, cliffDoors: 12, herbClusters: 12 }); // Distinct radii used by collectTargets for discoverable wilderness features.
   const INFO_RANGE_TILES = 6; // Info lists only for close objects, so a full farm doesn't drown in text.
   const MAX_INFO_LISTS = 10;
   const REFRESH_MS = 150; // Target re-collection cadence; the render pass itself runs every frame.
@@ -33,6 +35,9 @@
     neutral: '#ffd43a',
     interact: '#3dff6e',
     friendly: '#ffffff',
+    landmark: '#6ab69e', // Bronze verdigris: shared perception silhouette for caves, camps, cliff doors, and mini-cliff herbs.
+    farmSelected: '#35dcff', // Farmwork uses the same mask/glow with its own color language.
+    farmAssignable: '#b58aff',
   });
   const INFO_COLORS = Object.freeze({
     title: '#FFB86C', // Matches WorldPopupText's interaction object color.
@@ -111,7 +116,8 @@
   }
 
   function sourceMap(material) {
-    return material?.map || material?.uniforms?.map?.value || material?.uniforms?.tMap?.value || material?.uniforms?.uMap?.value || null;
+    return material?.map || material?.uniforms?.map?.value || material?.uniforms?.tMap?.value || material?.uniforms?.uMap?.value
+      || material?.uniforms?.uGrassTex?.value || null; // ReagentPlants' leaf silhouettes are custom grass shaders; preserve their texture alpha in the glow.
   }
 
   function maskMaterialFor(source, category, skinned) {
@@ -154,7 +160,8 @@
   // ── Classification ───────────────────────────────────────────────────
   function creatureCategory(c) {
     if (c.isCompanion) return 'friendly';
-    if (c.isPorakanekiHunter) return c._porakanekiPlannerControlled === true ? 'neutral' : 'hostile';
+    if (c.isDenMother) return 'hostile'; // A guarding Den-Mother stays a threat even when its base species is prey.
+    if (c.isTribeHunter || c.isPorakanekiHunter) return c._porakanekiPlannerControlled === true ? 'neutral' : 'hostile';
     if (c.isBandit || c.banditCompanion) return 'hostile';
     const territorial = c._territorialBehavior?.phase;
     if (territorial === 'warning' || territorial === 'fight') return 'hostile';
@@ -171,34 +178,72 @@
     const player = deps.getPlayerTile?.();
     if (!scene || !player) return [];
     const out = [];
+    if (window.FarmworkUI?.isOpen?.()) {
+      for (const { root, category } of window.FarmworkUI.glowTargets()) {
+        if (root && sceneOf(root) === scene) out.push({ root, category, meshes: meshesOf(root, now) });
+      }
+      return out;
+    }
     const seenRoots = new Set();
     const rejected = { noRoot: 0, offScene: 0, outOfRange: 0 }; // Diagnostics only (debugSnapshot).
-    const consider = (root, category, extra) => {
+    const consider = (root, category, extra, rangeTiles = RANGE_TILES, anchor = null) => {
       if (!root) { rejected.noRoot++; return; }
       if (seenRoots.has(root)) return;
       if (sceneOf(root) !== scene) { rejected.offScene++; return; }
-      const p = worldPos(root);
+      const p = Number.isFinite(anchor?.x) && Number.isFinite(anchor?.z) ? anchor : worldPos(root); // Camp sites use their actual center rather than each individual tent's position.
       const dist = Math.hypot(p.x - player.x, p.z - player.z);
-      if (dist > RANGE_TILES) { rejected.outOfRange++; return; }
+      if (dist > rangeTiles) { rejected.outOfRange++; return; }
       seenRoots.add(root);
       out.push({ root, category, dist, ...extra });
     };
+
+    // Scene-owned landmark roots are authoritative: no guesswork from terrain proximity,
+    // and no lingering glow for retired cave facades, claimed herbs or unloaded camps.
+    const denEntrances = scene.children?.find(root => root.name === 'animalDenEntrances'); // Direct scene child in ZoneDenTotemFeatures: avoid a full-scene traversal every 150 ms.
+    const landmarkSources = { // Each owner supplies only mounted, meaningful feature geometry.
+      caves: (denEntrances?.children || []).filter(root => root.userData?.denCaveEntrance || root.userData?.localeCave),
+      camps: [
+        ...(window.BanditCamps?.senseTargets?.(scene) || []),
+        ...(window.PorakanekiCamps?.senseTargets?.(scene) || []),
+        ...(window.OmgurkuCamps?.senseTargets?.(scene) || []),
+      ],
+      cliffDoors: window.PuzzleCaveEntrances?.senseTargets?.(scene) || [],
+      herbClusters: window.CliffRouteNetwork?.senseTargets?.(scene) || [],
+    };
+    lastStats.landmarkSources = Object.fromEntries(Object.entries(landmarkSources).map(([kind, roots]) => [kind, roots.length])); // Mobile diagnostics for each source, before distance filtering.
+    for (const [kind, roots] of Object.entries(landmarkSources)) for (const entry of roots) {
+      const root = entry?.root || entry; // Camps supply a mesh plus its shared site center; caves, doors and herbs supply just a mesh.
+      consider(root, 'landmark', undefined, LANDMARK_RANGE_TILES[kind], entry?.anchor); // Landmarks take priority over any overlapping generic interactable.
+    }
 
     const sources = deps.getSources();
     const count = list => (list ? (list.size ?? list.length ?? 0) : 0);
     lastStats.sources = Object.fromEntries(Object.entries(sources).map(([key, list]) => [key, count(list)]));
     lastStats.rejected = rejected;
     for (const c of sources.companions || []) if (isAliveCreature(c)) consider(rootOf(c), 'friendly');
-    for (const c of sources.creatures || []) if (isAliveCreature(c)) consider(rootOf(c), creatureCategory(c));
+    for (const c of sources.creatures || []) if (isAliveCreature(c)) consider(rootOf(c), creatureCategory(c), { creature: c }, Number(c.senseRangeTiles) || RANGE_TILES); // Ruin bombers roost far above the player; they publish a longer reveal radius.
     for (const walker of sources.npcs || []) consider(walker?.root || rootOf(walker), 'friendly');
     for (const animal of sources.livestock || []) consider(rootOf(animal), 'friendly', { livestockId: animal.livestockId || null });
     for (const c of sources.corpses || []) consider(rootOf(c), 'interact');
+    for (const root of sources.oreRocks || []) consider(root, 'interact'); // Indexed wild, mine and cavern ore mounds near the player.
     for (const obj of sources.interactables || []) {
       if (!obj || obj.type === 'animal' || obj.livestockId) continue;
       const root = rootOf(obj);
       if (!root || horizontalSize(root) > MAX_INTERACTABLE_SIZE_TILES) continue;
       consider(root, 'interact');
     }
+    // Independent scene owners expose small, live targets without forcing game.js
+    // to copy their registries or traversing the whole cave every 150 ms.
+    const specialSources = { // Provider counts are visible in debugSnapshot for mobile diagnosis.
+      oreRocks: window.CavernOreRocks?.senseTargets?.(scene) || [],
+      shattercasks: window.Shattercasks?.senseTargets?.(scene) || [],
+      nests: window.DenNestSystem?.senseTargets?.(scene) || [],
+      hives: window.HoneyfuzzleHives?.senseTargets?.(scene) || [],
+      caveFeatures: window.CaveSiteSystem?.senseTargets?.(scene) || [],
+      shaftLadders: [ ...(window.RuinReachingObelisks?.senseTargets?.(scene) || []), ...(window.ShaftHub?.senseTargets?.(scene) || []) ], // Both moving obelisks and fixed buttresses show only their real V50 ladder meshes.
+    };
+    lastStats.specialSources = Object.fromEntries(Object.entries(specialSources).map(([name, roots]) => [name, roots.length]));
+    for (const roots of Object.values(specialSources)) for (const root of roots) consider(root, 'interact');
     for (const crop of sources.crops || []) {
       consider(crop.root, crop.tile?.cropReady ? 'interact' : 'friendly', { crop });
     }
@@ -268,13 +313,22 @@
   function refreshInfoLists() {
     const popup = window.WorldPopupText;
     if (!popup?.syncInfoLists) return;
+    const showEnemyNames = window.Spyglass?.isLookingCloser?.() === true; // Spyglass close-look reuses the same nearby info-list presentation.
+    const enemies = showEnemyNames
+      ? targets.filter(t => t.category === 'hostile' && t.creature)
+        .sort((a, b) => a.dist - b.dist).slice(0, MAX_INFO_LISTS)
+      : [];
     const near = targets
       .filter(t => t.dist <= INFO_RANGE_TILES && (t.crop || t.livestockId))
       .sort((a, b) => a.dist - b.dist)
-      .slice(0, MAX_INFO_LISTS);
+      .slice(0, Math.max(0, MAX_INFO_LISTS - enemies.length));
     const ids = near.filter(t => t.livestockId).map(t => t.livestockId);
     const statuses = ids.length ? (window.FarmAnimals?.livestockStatus?.(ids) || new Map()) : new Map();
-    const entries = [];
+    const entries = enemies.map((target, index) => {
+      const creature = target.creature;
+      const name = String(creature.name || creature.def?.label || creature.def?.name || creature.speciesLabel || creature.species || creature.kind || 'Hostile').trim();
+      return { key: 'spyglass-enemy:' + (target.root.uuid || target.root.name || index), root: target.root, rows: [[{ text: name, color: INFO_COLORS.title }]] };
+    });
     for (const t of near) {
       if (t.crop) {
         const rows = cropRows(t.crop);
@@ -333,7 +387,7 @@
   // outlines off), so post-processing never smears the highlight.
   function renderOverlay(renderer, scene, camera) {
     lastStats.rendered = 0;
-    if (!active || !targets.length || !renderer || !scene || !camera) return;
+    if ((!active && !window.FarmworkUI?.isOpen?.()) || !targets.length || !renderer || !scene || !camera) return;
     lastRenderer = renderer;
     ensurePost();
     const T = THREE();
@@ -433,6 +487,7 @@
 
   function setActive(next) {
     next = !!next;
+    if (next && window.FarmworkUI?.isOpen?.()) window.FarmworkUI.close(); // The two world overlays are mutually exclusive.
     if (next === active) return active;
     active = next;
     ensureOverlayEl()?.classList.toggle('active', active);
@@ -454,14 +509,16 @@
   function toggle() { return setActive(!active); }
 
   function update(now = performance.now()) {
-    if (!active || !deps) return;
+    const farmwork = window.FarmworkUI?.isOpen?.();
+    if (farmwork) window.FarmworkUI.updateVisuals(now);
+    if ((!active && !farmwork) || !deps) { if (targets.length) targets = []; return; }
     if (now - lastRefreshAt >= REFRESH_MS) {
       lastRefreshAt = now;
       targets = collectTargets(now);
       lastStats.targets = targets.length;
       lastStats.meshes = targets.reduce((n, t) => n + (t.meshes?.length || 0), 0);
     }
-    if (now - lastInfoAt >= INFO_REFRESH_MS) {
+    if (!farmwork && now - lastInfoAt >= INFO_REFRESH_MS) {
       lastInfoAt = now;
       refreshInfoLists();
     }
@@ -483,9 +540,11 @@
     renderOverlay,
     COLORS,
     RANGE_TILES,
+    LANDMARK_RANGE_TILES,
     debugSnapshot: () => ({
       active,
       ...lastStats,
+      landmarkRanges: LANDMARK_RANGE_TILES, // Inspect effective cave/camp/door/herb ranges from the mobile debug companion.
       byCategory: targets.reduce((acc, t) => { acc[t.category] = (acc[t.category] || 0) + 1; return acc; }, {}),
     }),
     // Dev/test only: reads back the last silhouette mask and counts covered texels by colour.

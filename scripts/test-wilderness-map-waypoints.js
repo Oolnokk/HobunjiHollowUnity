@@ -58,6 +58,31 @@ assert.deepEqual(
 );
 assert.match(toasts.at(-1), /Compass waypoint: Animal Den/);
 
+const beforeStartupRead = saveMeta; // Complete folder-restored payload that early calendar reads must leave intact.
+currentYear = 1;
+assert.equal(context.WildernessMap.getCompassWaypoint(), null, 'unhydrated calendar hides a later-cycle waypoint');
+assert.deepEqual(JSON.parse(JSON.stringify(context.WildernessMap.getDiscoveredThreats())), {}, 'unhydrated calendar hides later-cycle cave discoveries');
+assert.equal(saveMeta, beforeStartupRead, 'startup map and compass reads must not overwrite the restored folder save');
+currentYear = 7;
+assert(context.WildernessMap.getDiscoveredThreats()[den.threatKey], 'restoring the saved calendar recovers explored cave markers');
+assert.equal(context.WildernessMap.getCompassWaypoint().threatKey, den.threatKey, 'restoring the saved calendar recovers the selected cave waypoint');
+
+// A fresh device has no module caches: replay the same folder metadata there.
+const secondDevice = { ...context, window: null }; // Independent JS realm uses the same serialized save, with fresh map caches.
+secondDevice.window = secondDevice;
+vm.createContext(secondDevice);
+vm.runInContext(fs.readFileSync(sourcePath, 'utf8'), secondDevice, { filename: sourcePath });
+secondDevice.WildernessMap.init({
+  _zoneLayouts: new Map(), tothalWorldId: () => 'world-1', currentTothalYear: () => currentYear,
+});
+currentYear = 1;
+assert.equal(secondDevice.WildernessMap.getCompassWaypoint(), null);
+secondDevice.WildernessMap.getDiscoveredThreats();
+assert.equal(saveMeta, beforeStartupRead, 'cold device polling must preserve the complete transferred save');
+currentYear = 7;
+assert(secondDevice.WildernessMap.getDiscoveredThreats()[den.threatKey], 'cold device restores discoveries without a terrain cache');
+assert.equal(secondDevice.WildernessMap.getCompassWaypoint().threatKey, den.threatKey);
+
 context.WildernessMap.forgetDiscoveredThreat('different-threat');
 assert(context.WildernessMap.getCompassWaypoint(), 'clearing a different threat must preserve the selected waypoint');
 context.WildernessMap.forgetDiscoveredThreat(den.threatKey);
@@ -83,6 +108,11 @@ assert(context.WildernessMap.getCompassWaypoint(), 'permanent authored-location 
 context.WildernessMap.rememberDiscoveredThreat(den.threatKey, { ...den, kind: 'den' });
 currentYear = 8;
 assert.deepEqual(JSON.parse(JSON.stringify(context.WildernessMap.getDiscoveredThreats())), {}, 'a new Tothal year should expire old den/camp discoveries');
+context.WildernessMap.setWaypoint({ ...den, year: 8 });
+currentYear = 9;
+assert.equal(context.WildernessMap.getCompassWaypoint(), null, 'a genuine later Tothal cycle must still hide an obsolete cave waypoint');
+context.WildernessMap.rememberDiscoveredThreat('new-cave', { kind: 'den', zoneId: 'zone-a', col: 2, row: 3 });
+assert(!JSON.parse(saveMeta).worlds[0].discoveredThreats.markers[den.threatKey], 'a real discovery in a new cycle replaces obsolete markers');
 
 const index = fs.readFileSync(path.join(__dirname, '..', 'docs', 'index.html'), 'utf8');
 const game = fs.readFileSync(path.join(__dirname, '..', 'docs', 'game.js'), 'utf8');

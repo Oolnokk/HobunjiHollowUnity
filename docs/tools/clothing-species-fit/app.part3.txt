@@ -1,18 +1,35 @@
-    for(const image of images)x.drawImage(image,0,0); // Flattens every authored layer of this exact species+gender variant.
-    canvas._paths=layers.map(x=>x.path);return canvas;
+    for(let index=0;index<layers.length;index++){
+      const layer=layers[index],image=images[index];
+      x.drawImage(image,0,0); // Only the preview is composited; exports retain each authored layer.
+      const layerCanvas=Object.assign(document.createElement('canvas'),{width,height});
+      layerCanvas.getContext('2d',{alpha:true}).drawImage(image,0,0);
+      exportedLayers.push({name:layer.path.join('.').replace(/^parts\./,''),path:layer.path,url:layer.url,role:layer.role,view:inferPatchView(layer.path,layer.url),canvas:layerCanvas});
+    }
+    canvas._layers=exportedLayers; // One source raster per cosmetic config leaf, with the source URL retained in the manifest.
+    canvas._paths=layers.map(layer=>layer.url);return canvas;
   })();
   R.garmentCanvases.set(key,p);return p;
 }
-async function buildGarmentCanvas(id,gender,width,height){
-  const canvas=await buildVariantGarmentCanvas(id,'mao-ao',gender,width,height);
-  if(!canvas)throw new Error('Selected garment has no Mao-ao source for this gender.');
+async function buildGarmentCanvas(id,species,gender,width,height){
+  const canvas=await buildVariantGarmentCanvas(id,species,gender,width,height);
+  if(!canvas)log(`No ${species} ${gender} ${fitRegion()==='headwear'?'headwear':'clothing'} art for ${id}; choose another starting sprite.`);
   return canvas;
 }
-
-function targetKey(species,gender){return`${species}_${gender}`} // One recorded transform and local-offset set per species+gender.
+function targetKey(species,gender){
+  const oldKey=`${fitRegion()==='headwear'?'headwear::':''}${species}_${gender}`;
+  const source=E.sourceSpecies.value||'mao-ao',sourceGender=E.sourceGender.value||gender;
+  return source==='mao-ao'&&sourceGender===gender?oldKey:`from::${source}_${sourceGender}::${oldKey}`;
+} // Existing Mao-ao same-gender fits retain their saved keys; different source rasters never silently inherit another fit.
 function ensureTargetData(species,gender){
   const key=targetKey(species,gender);
   if(!A.baseTransforms[key])A.baseTransforms[key]=defaultTransform();
+  const transform=A.baseTransforms[key]; // Validates persisted calibration before preview or export uses it.
+  const invalidScales=['scaleX','scaleY'].filter(axis=>!Number.isFinite(Number(transform[axis]))||Number(transform[axis])<=0);
+  if(invalidScales.length){
+    for(const axis of invalidScales)transform[axis]=1;
+    R.logs.unshift(`[${new Date().toLocaleTimeString()}] Recovered invalid base ${invalidScales.join('/')} for ${key}; local grid offsets preserved.`);
+    R.logs=R.logs.slice(0,40); // Surface an automatic repair inside mobile diagnostics without recursive redraws.
+  }
   if(!A.localOffsets[key]||A.localOffsets[key].length!==SOURCE_GRID.length)A.localOffsets[key]=zeroOffsets();
   return key;
 }
@@ -34,13 +51,26 @@ function syncMaskTransformControls(){
     slider.value=String(value);number.value=String(value);
   }
 }
-function transformedSourceGrid(){
-  const tr=currentTransform(),w=Math.max(1,E.stage.width||234),h=Math.max(1,E.stage.height||173);
+function transformedGridForTransform(tr,w,h){
+  const width=Math.max(1,w),height=Math.max(1,h); // Shared stage dimensions for live and imported base grids.
   return SOURCE_GRID.map(p=>{
-    const px=(p.x-.5)*w*tr.scaleX+w*.5+tr.translateX;
-    const py=(p.y-.5)*h*tr.scaleY+h*.5+tr.translateY;
-    return{x:px/w,y:py/h};
-  }); // Global scale/translation is applied first.
+    const px=(p.x-.5)*width*tr.scaleX+width*.5+tr.translateX;
+    const py=(p.y-.5)*height*tr.scaleY+height*.5+tr.translateY;
+    return{x:px/width,y:py/height};
+  }); // Applies base transform in the original portrait's pixel coordinate frame.
+}
+function transformedSourceGrid(){
+  return transformedGridForTransform(currentTransform(),E.stage.width||234,E.stage.height||173);
+}
+function repairedImportedFitState(imported,width,height){
+  const transform={...imported.transform}; // A usable, repaired global transform for the incoming report.
+  const repairedAxes=['scaleX','scaleY'].filter(axis=>Number(transform[axis])<=0); // Axes that flattened or inverted the saved fitting grid.
+  const previousBase=transformedGridForTransform(imported.transform,width,height); // The grid used when the diagnostic points were recorded.
+  for(const axis of repairedAxes)transform[axis]=1;
+  const offsets=imported.points.map((point,i)=>({
+    x:point.x-previousBase[i].x,y:point.y-previousBase[i].y
+  })); // Preserve every authored local correction; only the degenerate base axis is repaired.
+  return{transform,offsets,repairedAxes};
 }
 function targetGrid(){
   const baseGrid=transformedSourceGrid(),offsets=currentOffsets();
@@ -137,8 +167,8 @@ function drawBilinearCell(targetCtx,source,sTL,sTR,sBL,sBR,dTL,dTR,dBL,dBR,subdi
   }
 }
 function warpExtendedOverlay(source,targetNorm,outWidth,normalOutHeight){
-  if(!source||!R.maoBody)return null;
-  const sourceNormalHeight=R.maoBody.height;
+  if(!source||!R.sourceBody)return null;
+  const sourceNormalHeight=R.sourceBody.height;
   const sourceWidth=source.width;
   const sourceHeight=source.height;
 

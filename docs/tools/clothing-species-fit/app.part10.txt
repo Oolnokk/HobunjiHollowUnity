@@ -15,13 +15,20 @@ function refreshDebug(){
     `subdivisions per cell: ${CELL_SUBDIVISIONS}x${CELL_SUBDIVISIONS}`,
     `micro triangles: ${MICRO_TRIANGLE_COUNT}`,
     `mode: ${mode}`,
-    `target grid: ${targetKey(E.species.value,E.gender.value)}`,
+    `fit region: ${fitRegion()}`, // Included in pasted diagnostics so body/headwear calibrations cannot be confused.
+    `target grid: ${fitRegion()==='headwear'?'headwear::':''}${E.species.value}_${E.gender.value}`, // Keep diagnostics parsing compatible with the original source-neutral target label.
+    `source species: ${E.sourceSpecies.value}`,
+    `source gender: ${E.sourceGender.value}`,
+    `saved fit key: ${targetKey(E.species.value,E.gender.value)}`,
     `base transform: ${JSON.stringify(currentTransform())}`,
     `local offset points: ${currentOffsets().length}`,
     `garment: ${garmentRecord()?.id||'(none)'}`,
     `stage: ${E.stage.width}x${E.stage.height}`,
     `body sources: ${(R.body?._paths||[]).join(' | ')}`,
+    `head reference sources: ${(R.headReference?._paths||[]).join(' | ')}`,
     `garment sources: ${(R.cloth?._paths||[]).join(' | ')}`,
+    `authored source layers: ${(R.cloth?._layers||[]).map(l=>`${l.name} [${l.view}] ${l.url}`).join(' | ')||'(none)'}`,
+    `headwear source layers: ${fitRegion()==='headwear'?[`under-skull=${!!R.cloth?._back}`,`front=${!!R.cloth?._front}`,`rear-view=${!!R.cloth?._behindView}`].join(' '):'(not active)'}`,
     `main workflow source: ${R.patchWorkflow.active?'PATCHED '+(R.patchWorkflow.descriptor?.label||R.patchWorkflow.descriptor?.sourceUrl||'source'):'repository garment'}`,
     `main workflow route semantics: ${routedPatchIsBody()?'selected-species body patch → Base Transform + 6×6 fit → isolated canonical body layer → rear base body → clothing':routedPatchIsClothing()?'clothing source + patch → Base Transform + 6×6 fit → garment plane':'repository garment'}`,
     `main workflow body tint slot: ${routedPatchIsBody()?routedBodyTintSlot(R.patchWorkflow.descriptor):'(n/a)'}`,
@@ -34,6 +41,12 @@ function refreshDebug(){
     `extended warped: ${R.extendedWarped?`${R.extendedWarped.width}x${R.extendedWarped.height}`:'(none)'}`,
     `3D runtime docs: ${R.three.runtimeDocsBase||'(not loaded yet)'}`,
     `3D runtime rig: ${R.three.rigRoot?.name||'(not built yet)'}`,
+    `3D renderer status: ${E.threeStatus.textContent}`, // Distinguish canonical game clothing raster from manually routed patch previews on mobile.
+    `game garment xform: preset B ${JSON.stringify(window.getPortraitXformPreset?.('B')||'(runtime loading)')}`,
+    `2D portrait mode: ${E.match3D.checked?'game matched':'raw art'}`,
+    `2D and 3D shared front texture: ${!!R.three.matchedFront2D?.canvas&&R.three.matchedFront2D.buildGeneration===R.three.buildGeneration&&R.three.matchedFront2D.assetGeneration===R.assetGeneration?'current':'pending or unavailable'}`,
+    `2D preview note: ${E.match3DStatus.textContent}`,
+    `2D scope: inverse-projected game front texture when matched; raw 6x6 sprite pixels and PNG exports remain untouched`,
     `cloud mask: ${R.speciesCfg.get(E.species.value)?.[E.gender.value]?.portraitOpacityMaskLayer?.url||'(none)'}`,
     `cloud mask preview: ${JSON.stringify(currentMaskTransform())}`,
     `cloud mask scope: not applied in game (arm-cut source only)`,
@@ -92,15 +105,22 @@ function resetTarget(){
 function resetBaseTransform(){
   pushUndo();A.baseTransforms[targetKey(E.species.value,E.gender.value)]=defaultTransform();saveState();syncTransformControls();render();log('Reset recorded base scale and translation.');
 }
-function setTransformField(field,value){
-  const n=Number(value);if(!Number.isFinite(n))return;
-  currentTransform()[field]=n;saveState();syncTransformControls();render();
+function setTransformField(field,value,control){
+  if(String(value).trim()==='')return false; // Editing an empty mobile number field must not collapse the sprite to zero width.
+  const n=Number(value);
+  if(!Number.isFinite(n))return false;
+  const min=String(control?.min??'').trim(),max=String(control?.max??'').trim(); // Follow the actual paired control bounds.
+  if((min&&n<Number(min))||(max&&n>Number(max)))return false;
+  if((field==='scaleX'||field==='scaleY')&&n<=0)return false;
+  currentTransform()[field]=n;saveState();syncTransformControls();render();return true;
 }
 function wireTransformPair(slider,number,field){
   slider.addEventListener('pointerdown',()=>pushUndo(),{passive:true});
   number.addEventListener('focus',()=>pushUndo(),{passive:true});
-  slider.addEventListener('input',()=>setTransformField(field,slider.value));
-  number.addEventListener('input',()=>setTransformField(field,number.value));
+  slider.addEventListener('input',()=>setTransformField(field,slider.value,slider));
+  number.addEventListener('input',()=>setTransformField(field,number.value,number));
+  number.addEventListener('change',()=>syncTransformControls());
+  number.addEventListener('blur',()=>syncTransformControls()); // Mobile number fields may blur without a change event.
 }
 function resetMaskTransform(){
   pushUndo();
@@ -123,9 +143,9 @@ function wireMaskPair(slider,number,field){
 }
 
 function exportGrids(){
-  const payload={version:3,gridSize:GRID_SIZE,exportedAt:new Date().toISOString(),repoBase:base(),baseTransforms:A.baseTransforms,localOffsets:A.localOffsets,maskPreviewTransforms:A.maskPreviewTransforms};
+  const payload={version:4,gridSize:GRID_SIZE,exportedAt:new Date().toISOString(),repoBase:base(),baseTransforms:A.baseTransforms,localOffsets:A.localOffsets,maskPreviewTransforms:A.maskPreviewTransforms};
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');
-  a.href=url;a.download='hobunji_6x6_species_clothing_transforms.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  a.href=url;a.download='hobunji_6x6_species_clothing_headwear_transforms.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
 function parseDiagnostics(text){

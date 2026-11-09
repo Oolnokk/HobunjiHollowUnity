@@ -42,11 +42,11 @@
       : `<button class="shop-buy-btn" ${dataAttr}>Buy</button>`;
   }
 
-  // Blueprints are never consumed by building (see CraftingPanel's
-  // ownsBlueprint) and sell for 0g, so a second copy is wasted gold.
+  // Physical copies are read once; learned designs remain available without
+  // carrying paper. Block purchases for either a held copy or a learned design.
   function ownsBlueprint(bp) {
     if ((Number(deps.inventory[bp?.key]) || 0) > 0) return true;
-    return !!(bp?.masteryUnlockId && window.CraftingMasterySystem?.hasUnlock?.(bp.masteryUnlockId));
+    return !!window.CraftingPanel?.ownsBlueprint?.(bp) || !!(bp?.masteryUnlockId && window.CraftingMasterySystem?.hasUnlock?.(bp.masteryUnlockId));
   }
 
   function _barnAdditions() {
@@ -201,17 +201,20 @@
     list.appendChild(bpHdr);
 
     deps.FURNITURE_BLUEPRINT_CATALOG.filter(bp => !bp.moteOnly && !bp.masteryUnlockId && window.ConditionRegistry.entryEligible(bp, world)).forEach(bp => {
-      const owned = ownsBlueprint(bp);
+      const learned = !!window.CraftingPanel?.ownsBlueprint?.(bp); // Permanent character/world lesson shown separately from a physical blueprint in the Pack.
+      const inPack = (Number(deps.inventory[bp.key]) || 0) > 0; // Purchased but unread lessons remain visible as an actionable Pack item.
+      const owned = learned || inPack;
+      const lessonHint = learned ? 'Learned permanently.' : inPack ? 'In Pack — select and Read to learn.' : 'Buy, then Read from your Pack to learn.';
       const row = document.createElement('div');
       row.className = 'shop-row';
       row.innerHTML = `
         <div class="sh-icon">${bp.icon}</div>
         <div class="sh-info">
           <div class="sh-name">${deps.esc(bp.name)} Blueprint</div>
-          <div class="sh-desc">Build with ${deps.esc(window.CraftingPanel.furnitureCostDescription(bp))} in the Crafting tab.${owned ? ' Already owned — reusable.' : ''}</div>
+          <div class="sh-desc">Build with ${deps.esc(window.CraftingPanel.furnitureCostDescription(bp))} in the Crafting tab. ${deps.esc(lessonHint)}</div>
           <div class="sh-price">${bp.price}g</div>
         </div>
-        <button class="shop-buy-btn" data-bp="${bp.key}" ${owned ? 'disabled' : ''}>${owned ? 'Owned' : 'Buy'}</button>
+        <button class="shop-buy-btn" data-bp="${bp.key}" ${owned ? 'disabled' : ''}>${learned ? 'Learned' : inPack ? 'In Pack' : 'Buy'}</button>
       `;
       if (!owned) row.querySelector('[data-bp]')?.addEventListener('click', () => buyFurnitureBlueprint(bp.key));
       list.appendChild(row);

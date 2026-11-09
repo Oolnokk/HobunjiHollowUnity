@@ -73,6 +73,8 @@ context.window.window = context.window;
 vm.runInNewContext(growthConfigSource, context, { filename: 'animal-growth-config.js' });
 vm.runInNewContext(growthSource, context, { filename: 'animal-growth.js' });
 
+const namingRequests = []; // Baby arrivals offered by the shared name dialog, captured without a browser DOM.
+context.window.AnimalBabyArrival = { requestName(entry, options) { namingRequests.push({ entry, options }); } };
 context.window.FarmAnimals.init(deps);
 context.window.FarmPanel.init(deps);
 assert.ok(deps.ITEM_DEFS.growthTonic, 'Growth Tonic registers as a normal inventory item');
@@ -80,6 +82,11 @@ assert.ok(deps.ITEM_DEFS.growthTonic, 'Growth Tonic registers as a normal invent
 const added = context.window.FarmAnimals.addToStable('unused');
 assert.equal(added.entry.lifeStage, 'baby', 'new Stable creatures start as babies');
 assert.equal(activeMountId, null, 'a newly stabled baby cannot remain auto-equipped as a mount');
+assert.equal(namingRequests.length, 1, 'adding a Stable baby immediately queues its naming dialog');
+assert.equal(namingRequests[0].options.scope, 'stable');
+assert.equal(namingRequests[0].options.commit('Bubbi'), true, 'confirming a Stable name saves to the character');
+assert.equal(added.entry.name, 'Bubbi');
+assert.equal(saveStableCount > 0, true, 'naming persisted through existing Stable save');
 
 const grown = context.window.AnimalGrowth.growStableBaby(added.entry.id, { equip: true });
 assert.equal(grown.ok, true, 'Stable baby grows when a tonic is owned');

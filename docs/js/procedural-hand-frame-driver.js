@@ -130,12 +130,34 @@
     return inAttackEditor() && global.HobunjiAttackEditorHandCalibrationMode?.active === true; // Dedicated editor tab bypasses every animation/tool/shoulder-derived hand transform.
   }
 
+  function playerFluteTarget(record) {
+    if (inAttackEditor() || !gameDeps?.playerMesh || record?.rig?.parent !== gameDeps.playerMesh) return null;
+    return global.KurrayaInstrument?.fluteHandTarget?.() || null; // Match the actual mouth-mounted flute rather than a stale weapon-slot holder.
+  }
+
+  function playerKurrayaActive(record) {
+    return !inAttackEditor() && !!gameDeps?.playerMesh
+      && record?.rig?.parent === gameDeps.playerMesh
+      && global.KurrayaInstrument?.activePlayerInstrument?.() === 'kurraya'; // Only the player can release their right hand to pluck; no diagnostic allocations per frame.
+  }
+  function playerKurrayaTarget(record) {
+    if (inAttackEditor() || !gameDeps?.playerMesh || record?.rig?.parent !== gameDeps.playerMesh) return null;
+    return global.KurrayaInstrument?.playerKurrayaHandTarget?.() || null; // Authored Neutral can grip a visible bag Kurraya before music starts.
+  }
+  function freeRightHandFor(record, toolKey) {
+    if (inAttackEditor()) return global.HobunjiAttackEditorRightHand?.currentPose?.() || null;
+    return toolKey === 'kurraya' && playerKurrayaActive(record)
+      ? global.KurrayaInstrument?.playerRightHandPose?.() || null : null; // Live sounded-note clock is player-only.
+  }
   function currentToolKey(record = null) {
     const ownedKey = record?.avatarRoot?.userData?.proceduralHandToolKey; // Hostile/NPC avatar roots can name their own held item without leaking through the player-singleton stance state.
     if (ownedKey) return toolGrips.toolKeyFor(ownedKey);
     if (inAttackEditor()) {
       return toolGrips.toolKeyFor(document.getElementById('toolSpriteSelect')?.value || '');
     }
+    const flute = playerFluteTarget(record); // Live instrument playback owns the player's hand grip while a note is sounding.
+    if (flute) return toolGrips.toolKeyFor(flute.toolKey);
+    if (playerKurrayaActive(record) || playerKurrayaTarget(record)) return 'kurraya'; // Playing OR simply carrying Kurraya uses its own editor-authored grips, not the previous weapon.
     const snapshot = global.WeaponToolStances?.getRuntimeState?.() || global.WeaponToolStances?.debugSnapshot?.() || null;
     return toolGrips.toolKeyFor(snapshot?.itemKey || snapshot?.shape || '');
   }
@@ -143,6 +165,9 @@
   function currentGripContext(record = null) {
     const ownedContext = record?.avatarRoot?.userData?.proceduralHandGripContext; // Hostile tool owners explicitly select melee/ranged instead of inheriting the player's active slot.
     if (ownedContext === 'ranged' || ownedContext === 'melee') return ownedContext;
+    const flute = playerFluteTarget(record); // The supplied flute hand calibration is the Ranged grip, not Melee.
+    if (flute) return flute.gripContext;
+    if (playerKurrayaActive(record) || playerKurrayaTarget(record)) return 'melee'; // Same nut-to-bridge grip frame while carried or performed.
     if (typeof toolGrips.currentGripContext === 'function') return toolGrips.currentGripContext();
     if (inAttackEditor()) return document.getElementById('handGripContextSelect')?.value === 'ranged' ? 'ranged' : 'melee';
     const snapshot = global.WeaponToolStances?.getRuntimeState?.() || global.WeaponToolStances?.debugSnapshot?.() || null;
@@ -153,8 +178,35 @@
     if (inAttackEditor()) return findEditorToolHolder(record);
     const ownedHolder = record?.avatarRoot?.userData?.proceduralHandToolHolder; // Shared humanoid hostiles publish the exact animated holder their final-render hands must follow.
     if (ownedHolder?.parent) return ownedHolder;
-    if (gameDeps?.playerMesh && record.rig?.parent === gameDeps.playerMesh) return gameDeps.toolHolder || null;
+    const flute = playerFluteTarget(record); // Actual holder comes from the mouth mount and follows head-relative pose changes.
+    if (flute) return flute.holder;
+    const kurrayaTarget = playerKurrayaTarget(record); // The actual held assembly is the tool-space grip authority, including authored Neutral.
+    if (playerKurrayaActive(record) || kurrayaTarget) {
+      return kurrayaTarget?.holder || null; // While the music prop loads, do not borrow a hidden last-weapon holder.
+    }
+    if (gameDeps?.playerMesh && record.rig?.parent === gameDeps.playerMesh) {
+      if (global.KurrayaInstrument?.fluteDiagnostics?.().active) return null; // The flute is loading: keep hands idle rather than grabbing the last weapon.
+      return gameDeps.toolHolder || null;
+    }
     return null;
+  }
+
+  // Bag items (potions, flasks, large carried objects) live on game.js's heldItemHolder, not
+  // toolHolder, so the player's hands used to fall back to free-hand idle while holding them.
+  function heldItemTarget(record) {
+    if (inAttackEditor()) return null;
+    if (playerKurrayaActive(record) || global.KurrayaInstrument?.fluteDiagnostics?.().active && record?.rig?.parent === gameDeps?.playerMesh) return null; // A music session owns both hands before generic held bags/burdens can take them.
+    const authoredHostileItem = record?.avatarRoot?.userData?.proceduralHeldItemTarget; // Enemy-carried physical Burdens use the same authored two-hand grip as player carryables.
+    if (authoredHostileItem?.holder?.parent) return authoredHostileItem;
+    if (record?.avatarRoot?.userData?.proceduralHandToolHolder) return null;
+    const npcTarget = global.NpcDrinkInteraction?.heldItemTarget?.(record.rig?.parent); // Meals and ambient bottles share the existing world-space held-item grip solve.
+    if (npcTarget) return npcTarget;
+    if (!gameDeps?.playerMesh || record.rig?.parent !== gameDeps.playerMesh) return null;
+    const carried = window.Shattercasks?.heldHandTarget?.();
+    if (carried?.holder?.parent) return carried;
+    if (gameDeps.toolHolder?.visible) return null;
+    const target = gameDeps.getHeldItemHandTarget?.();
+    return target?.holder?.visible ? target : null;
   }
 
   function modelKeyForRecord(record) {
@@ -166,6 +218,10 @@
   }
 
   function modelCalibrationForRecord(record) {
+    if (!inAttackEditor() && hands.modelCalibrationForSpecies) {
+      return hands.modelCalibrationForSpecies(record.speciesId, record.gender,
+        Number(record.avatarRoot?.userData?.portraitModelHeight) || .9);
+    }
     const modelKey = modelKeyForRecord(record); // Single authoritative editor/runtime model identity used for both rendered GLB and calibration.
     const raw = profiles.normalizeHandTransform?.(profiles.data?.models?.[modelKey]?.handFromTool)
       || profiles.data?.models?.[modelKey]?.handFromTool
@@ -260,6 +316,7 @@
   function visualGripBasisDelta(record, toolHolder) {
     const Quaternion = toolHolder.quaternion.constructor;
     const identity = new Quaternion();
+    if (toolHolder.name === 'player_flute_mouth_mount') return { quaternion: identity, source: 'flute-mouth-mount', angleDeg: 0 }; // Never apply a still-equipped sweep weapon's basis correction to the flute's exact ranged grip.
     const plane = findToolVisualPlane(toolHolder);
     if (!plane?.rotation) return { quaternion: identity, source: 'none', angleDeg: 0 };
 
@@ -416,6 +473,22 @@
     };
   }
 
+  // Gameplay states (e.g. the downed crawl) can take over one free hand by
+  // registering `HobunjiFreeHandPose.providers`: each provider(parent, side,
+  // modelHeight, record) returns a fallback-shaped { position:{x,y,z}, rotationDeg } or
+  // null. A claimed hand ignores held-item secondary/dual-wield grips so the
+  // pose is never fought over; the other hand is untouched.
+  function freeHandOverride(record, side, modelHeight) {
+    const providers = global.HobunjiFreeHandPose?.providers;
+    if (!providers?.size) return null;
+    const parent = record.rig?.parent;
+    for (const provider of providers.values()) {
+      const pose = provider(parent, side, modelHeight, record);
+      if (pose) return pose;
+    }
+    return null;
+  }
+
   function updateFallbackMotion(record, nowMs = performance.now()) {
     const state = ensureFallbackState(record);
     const sample = record.rig?.parent?.getWorldPosition?.(state.samplePosition) || null; // Includes NPC ancestor movement even when the hand parent itself stays local.
@@ -440,8 +513,9 @@
     const cadenceHz = state.speed > 0.035 ? Math.max(0.55, Math.min(3.2, state.speed * 0.62 / fullStride)) : 0;
     if (cadenceHz > 0 && elapsed > 0) state.phase = (state.phase + elapsed * cadenceHz * Math.PI * 2) % (Math.PI * 2);
     state.mode = state.gaitStrength > 0.04 ? 'walk' : 'idle';
-    state.poses.left = fallbackPose(state, 'left', nowMs);
-    state.poses.right = fallbackPose(state, 'right', nowMs);
+    state.poses.left = freeHandOverride(record, 'left', state.modelHeight) || fallbackPose(state, 'left', nowMs);
+    state.poses.right = freeHandOverride(record, 'right', state.modelHeight) || fallbackPose(state, 'right', nowMs);
+    state.overridden = { left: state.poses.left?.overridden === true, right: state.poses.right?.overridden === true };
     return state;
   }
 
@@ -491,6 +565,81 @@
     };
   }
 
+  const HELD_LARGE_EDGE_MARGIN = 0.02; // Large items are gripped just outside their left/right edges.
+
+  // Hands follow the held-item holder directly. Bottle: right hand on the neck (+Z of the
+  // holder because the plane is laid flat end-for-end). Large: right/left hands on either side.
+  // Runs for each hand every frame, so the vectors/quaternions it builds are reused (the sockets it hands
+  // on are clones, so nothing retains them) and the fixed hand rotations are composed once per record.
+  const HELD_ITEM_HAND_ROTATIONS = Object.freeze({
+    bottle: { pitch: 90, yaw: -90, roll: 0 },
+    right: { pitch: 0, yaw: -90, roll: 0 },
+    left: { pitch: 0, yaw: 90, roll: 0 },
+  });
+  function heldItemScratch(record) {
+    if (!record.heldItemScratch) {
+      const THREE = record.THREE;
+      record.heldItemScratch = {
+        holderQuat: new THREE.Quaternion(),
+        position: new THREE.Vector3(),
+        quaternion: new THREE.Quaternion(),
+        rotations: Object.fromEntries(Object.entries(HELD_ITEM_HAND_ROTATIONS).map(([name, rotation]) => [name, quaternionFromDeg(record, rotation)])),
+      };
+    }
+    return record.heldItemScratch;
+  }
+
+  function syncRigToHeldItem(record, target) {
+    const holder = target.holder;
+    holder.updateWorldMatrix(true, false);
+    const scratch = heldItemScratch(record);
+    const holderQuat = hierarchyWorldQuaternion(record, holder, scratch.holderQuat);
+    const modelCalibration = modelCalibrationForRecord(record);
+    const place = (side, x, y, z, rotationName) => {
+      const position = holder.localToWorld(scratch.position.set(x, y, z));
+      const quaternion = scratch.quaternion.copy(holderQuat).multiply(scratch.rotations[rotationName]);
+      if (target.mode === 'authored-world') {
+        // Local XYZ grip rotation comes AFTER the shared canonical left/right
+        // hand orientation, matching the Furniture Editor's actual GLB preview.
+        // This runs per hand per frame: reuse scratch instead of allocating
+        // extra Euler/Quaternion objects during ordinary movement.
+        const r = target.handTargets?.[side]?.rotation || {};
+        scratch.authoredEuler ||= new record.THREE.Euler(0,0,0,'XYZ');
+        scratch.authoredQuaternion ||= new record.THREE.Quaternion();
+        scratch.authoredEuler.set(
+          (Number(r.x)||0)*Math.PI/180,
+          (Number(r.y)||0)*Math.PI/180,
+          (Number(r.z)||0)*Math.PI/180, 'XYZ');
+        quaternion.multiply(scratch.authoredQuaternion.setFromEuler(scratch.authoredEuler));
+      }
+      const socket = handSocketAfterGripMode(record, { position, quaternion, visualBasis: null });
+      record.rig.placeHandWorld?.(side, socket.position, socket.quaternion, modelCalibration);
+    };
+    const owners = ensureFallbackState(record).owners;
+    if (target.mode === 'authored-world') {
+      for (const side of ['right', 'left']) {
+        const p = target.handTargets?.[side] || {};
+        place(side, Number(p.x)||0, Number(p.y)||0, Number(p.z)||0, side);
+        owners[side]='authored-world-'+side;
+      }
+      record.secondaryActive=true;
+    } else if (target.mode === 'large') {
+      const edge = target.width / 2 + HELD_LARGE_EDGE_MARGIN;
+      place('right', edge, 0, 0, 'right');
+      place('left', -edge, 0, 0, 'left');
+      owners.right = 'held-item-two-hand-right';
+      owners.left = 'held-item-two-hand-left';
+      record.secondaryActive = true;
+    } else {
+      place('right', 0, 0, target.height * (Number(target.neckFraction) || 0.2), 'bottle');
+      applyFallbackSide(record, 'left');
+      owners.right = 'held-item-bottle-neck';
+      record.secondaryActive = false;
+    }
+    record.lastToolKey = null;
+    record.lastVisualGripBasis = null;
+  }
+
   function syncRigToTool(record, toolHolder, diagnostic = false) {
     if (!record?.rig || !toolHolder?.parent || syncing) return null;
     if (!toolHolder.visible) {
@@ -505,7 +654,10 @@
     try {
       const toolKey = currentToolKey(record);
       const gripContext = currentGripContext(record);
-      const scaleIdentity = { speciesId: record.speciesId, gender: record.gender }; // Used by grip targets so they expand with the same calculated-height weapon scale as the visible item.
+      const scaleIdentity = { speciesId: record.speciesId, gender: record.gender, rigScaleY: Number(record.avatarRoot?.userData?.proceduralHandRigScaleY) || null }; // Authored per-enemy body height (Maskbound troops), so grip targets match the resized weapon. Used by grip targets so they expand with the same calculated-height weapon scale as the visible item.
+      if (playerKurrayaActive(record)) {
+        scaleIdentity.animationGripState = global.KurrayaInstrument?.playerGripAnimationState?.() || null; // Kurraya notes, not the last weapon swing, own 2H span interpolation.
+      }
       if (record.avatarRoot?.userData?.proceduralHandToolHolder) {
         scaleIdentity.animationGripState = record.avatarRoot.userData.proceduralHandAnimationGrip ?? null; // Each NPC’s own animation gates both ranges; idle NPCs stay 1H.
       }
@@ -514,6 +666,17 @@
       const primarySocket = toolSocketWorld(record, toolHolder, primaryGrip); // Raw fixed 1H target remains the canonical weapon-grip reference before optional Dual Wield remapping.
       record.rig.placePaperHandGuideWorld?.(primarySocket.position, primarySocket.quaternion);
       let primary = handSocketAfterGripMode(record, primarySocket); // Preserve the ordinary raw-socket contract for 1H/2H and diagnostics.
+      const freeHand = freeRightHandFor(record, toolKey); // A free note keyframe is avatar-local instead of attached to the instrument mesh.
+      if (freeHand && freeHand.influence > 0.0001 && record.avatarRoot?.localToWorld) {
+        const avatar = record.avatarRoot; // Editor 3D gizmos and capture use avatarModel-local XYZ, NOT the rig's parent. Avatar roots have a vertical portrait offset: using rig.parent here displaced every authored live hand.
+        const handPosition = new record.THREE.Vector3(Number(freeHand.x)||0, Number(freeHand.y)||0, Number(freeHand.z)||0);
+        avatar.localToWorld(handPosition);
+        const handRotation = hierarchyWorldQuaternion(record, avatar, new record.THREE.Quaternion())
+          .multiply(quaternionFromDeg(record, { pitch: freeHand.pitch, yaw: freeHand.yaw, roll: freeHand.roll }));
+        const weight = Math.max(0, Math.min(1, freeHand.influence));
+        primary.position.lerp(handPosition, weight); // Smoothly releases/grabs the normal grip at animation boundaries.
+        primary.quaternion.slerp(handRotation, weight);
+      }
       if (dualWield) {
         const dualPrimarySocket = global.HobunjiDualWieldWeaponVisuals?.transformSocketForHand?.(record, 'right', primarySocket) || primarySocket;
         primary = handSocketAfterGripMode(record, dualPrimarySocket); // Dual Wield alone remaps the same canonical grip onto the lagged main-hand weapon copy.
@@ -521,12 +684,18 @@
       const modelCalibration = modelCalibrationForRecord(record);
       record.rig.placeHandWorld?.('right', primary.position, primary.quaternion, modelCalibration);
       const owners = ensureFallbackState(record).owners;
-      owners.right = 'primary-grip'; // Ordinary attachment ownership always wins over locomotion fallback.
+      owners.right = freeHand?.influence > 0.0001 ? 'avatar-local-free-right-hand' : 'primary-grip'; // Mobile-visible ownership exposes independent pluck mode.
       if (dualWield) owners.right = 'dual-wield-main-grip'; // Dual Wield refines that ownership to the lagged duplicate weapon.
 
       let secondaryGrip = null;
-      if (dualWield) {
-        const offhandBaseSocket = toolSocketWorld(record, toolHolder, primaryGrip); // Both duplicated weapons use the same authored 1H grip frame.
+      const leftOverridden = ensureFallbackState(record).overridden?.left === true; // A gameplay pose owns the off hand: it neither mirrors a dual-wield weapon nor takes a two-hand grip.
+      if (leftOverridden) {
+        applyFallbackSide(record, 'left');
+        record.secondaryActive = false;
+        ensureFallbackState(record).owners.left = 'gameplay-pose';
+      } else if (dualWield) {
+        const offhandGrip = toolGrips.offhandPrimaryGripForTool?.(toolKey, gripContext, scaleIdentity) || primaryGrip; // Same authored 1H grip point, minus the main hand's palm-side offset: the offhand holds its copy from the other side.
+        const offhandBaseSocket = toolSocketWorld(record, toolHolder, offhandGrip);
         const offhandSocket = global.HobunjiDualWieldWeaponVisuals?.transformSocketForHand?.(record, 'left', offhandBaseSocket) || offhandBaseSocket;
         const secondary = handSocketAfterGripMode(record, offhandSocket);
         record.rig.placeHandWorld?.('left', secondary.position, secondary.quaternion, modelCalibration, dualWield.influence);
@@ -540,8 +709,21 @@
           record.secondaryActive = true;
           ensureFallbackState(record).owners.left = 'secondary-grip';
         } else {
-          applyFallbackSide(record, 'left');
-          record.secondaryActive = false;
+          // Not 2H and not Dual Wield: the free hand holds an INVISIBLE copy of the weapon at an authored offhand pose (default: the dual-wield
+          // offhand stance) instead of falling back to the locomotion idle, which reads wrong once the legs bend. Enemies read it from their own animation grip.
+          const offhandIdle = toolGrips.offhandIdleStateForTool?.(toolKey, gripContext, scaleIdentity);
+          const offhandBaseSocket = offhandIdle ? toolSocketWorld(record, toolHolder, toolGrips.offhandPrimaryGripForTool?.(toolKey, gripContext, scaleIdentity) || primaryGrip) : null;
+          const offhandSocket = offhandBaseSocket ? global.HobunjiDualWieldWeaponVisuals?.transformSocketForHand?.(record, 'left', offhandBaseSocket) : null;
+          if (offhandSocket && offhandSocket !== offhandBaseSocket && offhandSocket.dualWield) {
+            applyFallbackSide(record, 'left'); // The fallback is the other end of the blend: the invisible tool takes over as its weight rises.
+            const idleHand = handSocketAfterGripMode(record, offhandSocket);
+            record.rig.placeHandWorld?.('left', idleHand.position, idleHand.quaternion, modelCalibration, offhandIdle.blend);
+            record.secondaryActive = true;
+            ensureFallbackState(record).owners.left = 'offhand-idle-pose';
+          } else {
+            applyFallbackSide(record, 'left');
+            record.secondaryActive = false;
+          }
         }
       }
       record.lastToolKey = toolKey || null;
@@ -628,11 +810,14 @@
       if (frameId != null) record._lastRenderedFrameId = frameId; // Lets updateManagedRigs skip rigs nobody is drawing.
       if (frameId != null && record._lastHandSyncFrameId === frameId) return;
       record._lastHandSyncFrameId = frameId;
+      if (record.rig.applyOwnedPose?.()) return; // A paired action retains its hand contacts through the final render-time sync too.
       if (inHandCalibrationMode()) {
         syncCalibrationWorkspace(record); // Render-time authority stays on the neutral calibration frame while this tab is active.
       } else {
-        const holder = currentToolHolder(record);
-        if (holder) syncRigToTool(record, holder);
+        const heldItem = heldItemTarget(record);
+        const holder = heldItem ? null : currentToolHolder(record);
+        if (heldItem) syncRigToHeldItem(record, heldItem);
+        else if (holder) syncRigToTool(record, holder);
         else applyFallbackBoth(record);
       }
     };
@@ -673,11 +858,14 @@
       }
       record._poseSyncSkipped = false;
       updateFallbackMotion(record);
+      if (record.rig.applyOwnedPose?.()) continue; // Explicit pose ownership precedes held-tool and idle fallback writers.
       if (inHandCalibrationMode()) {
         syncCalibrationWorkspace(record);
       } else {
-        const holder = currentToolHolder(record);
-        if (holder) syncRigToTool(record, holder);
+        const heldItem = heldItemTarget(record);
+        const holder = heldItem ? null : currentToolHolder(record);
+        if (heldItem) syncRigToHeldItem(record, heldItem);
+        else if (holder) syncRigToTool(record, holder);
         else applyFallbackBoth(record);
       }
     }
@@ -712,6 +900,7 @@
       const results = [];
       for (const record of managed) {
         updateFallbackMotion(record);
+        if(record.rig.applyOwnedPose?.()){results.push({poseOwned:true});continue;} // Async shoulder/profile refreshes obey the same action owner as normal frames.
         if (inHandCalibrationMode()) {
           results.push(syncCalibrationWorkspace(record, true));
         } else {

@@ -36,7 +36,7 @@ cache.clear(); assert.equal(cache.pixelBytes, 0);
 for (let i = 0; i < 30; i++) cache.set(i, Promise.resolve());
 assert.equal(cache.size, 8, 'pending requests are bounded by count');
 
-const loaderA = source.indexOf('function loadImg('), loaderB = source.indexOf('// ── CSS filter helpers', loaderA);
+const loaderA = source.indexOf('function portraitRepositoryUrlCandidates('), loaderB = source.indexOf('// ── CSS filter helpers', loaderA);
 vm.runInNewContext(source.slice(loaderA, loaderB) + '\nthis.load = loadImg;', context);
 const shadeA = source.indexOf('const _SHADE_FILL_CACHE'), shadeB = source.indexOf('function _imageForTint', shadeA);
 vm.runInNewContext(source.slice(shadeA, shadeB) + '\nthis.tint = getShadeFillCanvas; this.shade = _SHADE_FILL_CACHE;', context);

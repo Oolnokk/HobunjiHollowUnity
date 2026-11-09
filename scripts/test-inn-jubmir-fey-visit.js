@@ -23,7 +23,13 @@ const reachable = (map, start) => {
 const hallReachable = reachable(hall, [3, 8]); // Starts at the ground-floor stairs' actual destination.
 for (const door of hall.exits) {
   const destination = readMap(door.targetMap); // Loads the real target of every upstairs exit.
-  for (const tile of door.tiles) assert(hallReachable.has(tile.join(',')), `${door.id} is connected to stairs`);
+  for (const [c,r] of door.tiles) {
+    // The exit's authored coordinate may be a floorless wall marker; its one
+    // inward neighbor must still connect to the hall's main walkable area.
+    const inward = { north:[0,-1],south:[0,1],east:[1,0],west:[-1,0] }[door.direction];
+    const approach = inward && [c+inward[0],r+inward[1]];
+    assert(hallReachable.has(`${c},${r}`) || (approach && hallReachable.has(approach.join(','))),`${door.id} is connected to stairs`);
+  }
   assert(onFloor(destination, door.spawnCol, door.spawnRow), `${door.id} lands on floor`);
   assert(!destination.exits.some(exit => exit.tiles.some(([c, r]) => c === door.spawnCol && r === door.spawnRow)), 'arrival avoids immediate exit retrigger');
   if (door.targetMap === 'map_i_inn') continue;
@@ -50,6 +56,7 @@ const profile = { characterId: 'farmer', worldId: 'world', isWorldOwner: true };
 const storage = new Map(); // Persists between VM reloads to test interruption/reload behavior.
 let hour = 10; // Absolute world hour advances across a day boundary below.
 let panel; // Captures the visible companion panel registered by the shipping story module.
+let storyTarget; // Captures the scheduling override used by recurring visitor arrivals.
 let provider; // Captures the actual registered DoorstepVisits provider.
 let playback = 'complete'; // Controls the shared runner's final-line/skip/failure outcomes.
 let lastScene; // Records the live scene passed to the runner.
@@ -59,6 +66,7 @@ const context = {
     __hobunjiPlayerProfile: profile, __hobunjiGameStarted: true,
     DevCompanion: { registerStateProvider() {}, registerPanel: value => { panel = value; } },
     CalendarSystem: { isInitialized: () => true, previewAfterHours: () => ({ day: Math.floor(hour / 24) + 1, time01: hour % 24 }), getHour: value => value },
+    NpcScheduling: { registerTargetOverride: (id, callback) => { storyTarget = callback; }, resolveNpcStationTarget: () => null },
     DoorstepVisits: { registerProvider: value => { provider = value; }, markDone() {}, dismissVisit() { dismissed++; } },
     LocalDBOverrides: { loadDatabase: async () => db },
     AuthoredCutsceneRuntime: { farmTourPoints: () => ({ entry: {}, porch: {}, guide: {}, playerPorch: {} }), run: async (scene, options) => {
@@ -89,11 +97,19 @@ storage.set(api.stateKey(profile), 'complete');
   assert.equal(provider.next(), null, 'not eligible before twelve hours');
   vm.runInNewContext(source, context);
   api = context.window.OpeningStoryCutscene;
+  const visitor = { id: 'jubmir', visitorPresence: { entrance: { mapId: 'map_hobunji_town', c: 30, r: 48 } } }; // Absent trader fixture.
+  assert.equal(storyTarget(visitor, { hasExistingWalker: false }), null);
   hour = 22;
+  assert.equal(storyTarget(visitor, { hasExistingWalker: false }).visitorArrival, true);
+  assert.equal(storyTarget(visitor, { hasExistingWalker: true }).visitorArrival, false);
+  assert.equal(storyTarget({ id: 'hreesh' }, { hasExistingWalker: false }), null);
   assert.equal(provider.next().npcId, 'jubmir', 'eligible exactly twelve hours after completion, including reload');
-  context.window.DoorstepVisits.debugSnapshot = () => ({ providers: ['jubmir_great_fey'], currentArea: 'farm', lastSpawnAttempt: { key: 'jubmir_great_fey', reason: 'Source NPC is unavailable.' } });
+  context.window.DoorstepVisits.debugSnapshot = () => ({ schedulingReady: false, providers: ['jubmir_great_fey'], currentArea: 'farm' });
   context.window.DoorstepVisits.sourceWalker = () => null;
   context.window.DoorstepVisits.exitDoorCandidates = () => [];
+  assert.match(panel.render().summary, /NPC scheduling connection/);
+  assert.equal(panel.render().rows.find(row => row[0] === 'Doorstep NPC scheduling connected')[1], 'No');
+  context.window.DoorstepVisits.debugSnapshot = () => ({ schedulingReady: true, providers: ['jubmir_great_fey'], currentArea: 'farm', lastSpawnAttempt: { key: 'jubmir_great_fey', reason: 'Source NPC is unavailable.' } });
   assert.match(panel.render().summary, /source NPC is unavailable/);
   assert.match(panel.render().rows.find(row => row[0] === 'Last spawn attempt')[1], /Source NPC is unavailable/);
   context.window.DoorstepVisits.sourceWalker = () => ({});
@@ -116,8 +132,29 @@ storage.set(api.stateKey(profile), 'complete');
   assert(await api.playJubmirFeyVisit());
   assert.equal(lastScene.mapId, 'map_i_inn_F2_jubmir');
   assert(lastScene.actors.find(actor => actor.npcId === 'jubmir').npcRecord.id === 'jubmir');
+  const playerSpot = lastScene.actors.find(actor => actor.isPlayer); // Confirms the cinematic does not begin beyond ordinary dialogue range.
+  const jubmirSpot = lastScene.actors.find(actor => actor.npcId === 'jubmir'); // Partner stands on the adjacent walkable tile.
+  assert.equal(Math.hypot(playerSpot.worldC - jubmirSpot.worldC, playerSpot.worldR - jubmirSpot.worldR), 1);
+  const roomFloor = readMap('map_i_inn_F2_jubmir'); // Room geometry and furniture are the shipping authoring source.
+  for (const actor of [playerSpot, jubmirSpot]) {
+    assert(onFloor(roomFloor, actor.worldC, actor.worldR), 'dialogue actor stands on room floor');
+    assert(!roomFloor.furniture.some(item => item.col === actor.worldC && item.row === actor.worldR), 'dialogue actor starts clear of furniture');
+  }
+  const orbitParagraphs = lastScene.stages.filter(stage => stage.cameraMode === 'orbit'); // Both opening and guidance paragraphs receive independent orbit resets.
+  assert(orbitParagraphs.length > 30);
+  assert(orbitParagraphs.every(stage => stage.orbitActorIds.join(',') === 'player,jubmir'
+    && stage.orbitAlternateFocus === true && stage.orbitZoomStepPercent === 5
+    && stage.orbitInitialZoomPercent === 131.25 && stage.orbitHeightMode === 'oppositeFaceArc' && stage.orbitDistanceTiles === 1.85
+    && stage.orbitInstantCut === true && stage.orbitBlendSeconds === 1
+    && stage.horizontalCameraCollision === true
+    && stage.orbitDirection === 'clockwise' && stage.orbitDirectionSwitchEvery === 2
+    && stage.orbitDirectionalStartOffsetDeg === 30),
+    'all Jubmir paragraphs use instant cuts, CW/CW/CCW/CCW with matching 30 degree lead-ins, and preserve the optional smooth blend');
+  assert(orbitParagraphs.some(stage => stage.id === 'fey_why'), 'optional answer also follows the orbit progression');
+  assert(orbitParagraphs.some(stage => stage.id === 'fey_final'), 'final spoken paragraph keeps the orbit');
   assert.equal(provider.next(), null, 'completed scene never queues another visit');
   assert.equal(dismissed, 1);
+  assert.equal(storyTarget(visitor, { hasExistingWalker: true }), null, 'completion restores trading schedule');
   assert.match(panel.render().summary, /conversation is complete/);
   const byId = new Map(lastScene.stages.map(stage => [stage.id, stage])); // Walks both actual choice branches through the final dialogue.
   for (const option of byId.get('fey_question').options) {

@@ -26,10 +26,24 @@ const SLOW = new Set([
   'test-cloud-forest-trade-exit.js',
 ]);
 
-// Need Playwright + a served docs/ folder; run by the smoke-dev-random-ruin-* workflows.
+// Need Playwright; run by their dedicated browser workflow steps.
 const BROWSER = new Set([
+  'test-ruin-construction-browser.js', // Playwright runs after Chromium installation in the ruin smoke workflow.
+  'test-v50-native-playthrough-browser.js', // Seed-replayable V50 dungeon autoplayer runs only after Playwright/Chromium installation in its dedicated workflow.
   'test-dev-random-ruin-browser.js',
   'test-dev-random-ruin-collision-browser.js',
+  'test-controller-ui-modal-pin.js',
+  'test-farmwork-controller-browser.js', // Real-browser Farmwork controller and stepper test.
+  'test-controller-mastery-inventory-browser.js', // Runs in the existing Chromium workflow step.
+  'test-interior-editor-exit-browser.js', // Runs after Chromium installation in regression-suite.yml.
+  'test-modular-editor-ui-browser.js', // Real touch controls and same-browser Kylie draft recovery after Chromium is installed.
+  'test-root-mechanism-runtime-browser.js', // Actual V50/root growth and gameplay collision browser regression.
+  'test-stone-age-multiroom-browser.js', // Real THREE stone/UV floor, V50 cell masking and native layer preservation.
+  'test-root-snare-author-browser.js', // Real THREE hidden wall node and procedural NPC preview regression.
+  'test-surface-foliage-styles-browser.js', // Real THREE and shared editor growth-style browser smoke.
+  'test-omgurku-gameplay-browser.js', // Full game NPC spawn/transfer/despawn coverage.
+  'test-omgurku-calibration-browser.js', // Runs in the existing browser workflow step.
+  'test-omgurku-tribe-browser.js', // Full game Omgurku-vs-Porakaneki hostile fight and camp placement.
 ]);
 
 // Tests that fail on main and are skipped until fixed. Keep this empty: a

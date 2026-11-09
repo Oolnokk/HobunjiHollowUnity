@@ -75,8 +75,8 @@ const vm = require('node:vm');
   };
 
   const folderStatus = {
-    state: 'ready',
-    folderName: 'Test Primary Save',
+    state: 'not-configured',
+    folderName: null,
     autoSyncArmed: false,
     lastError: null,
     lastAction: 'ready',
@@ -263,6 +263,8 @@ const vm = require('node:vm');
   // Folder-first autosync can arm before gameplay hydration. It must not serialize transient
   // loader/default state even though the folder's own 1-second change poll is already active.
   folderStatus.autoSyncArmed = true;
+  folderStatus.state = 'ready';
+  folderStatus.folderName = 'Test Primary Save';
   window.__hobunjiGameStarted = false;
   const preHydrationCandidate = structuredClone(folderPrimarySnapshot);
   preHydrationCandidate.meta.worlds[0].members.char_a.nonGearInventory.turnip = 6;

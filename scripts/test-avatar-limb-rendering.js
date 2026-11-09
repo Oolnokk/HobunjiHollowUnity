@@ -9,9 +9,17 @@ class Matrix4 {
   constructor() { this.elements = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]; }
   copy(other) { this.elements = other.elements.slice(); return this; }
   clone() { return new Matrix4().copy(this); }
+  multiplyMatrices(parent, local) { // Full column-major composition covers body rotations, mirrored axes and nonuniform species scales.
+    const p = parent.elements, l = local.elements; // Parent and child matrices stay unchanged while this receives their product.
+    const out = Array(16).fill(0); // Final composed transform for each late-visible hand primitive.
+    for (let column = 0; column < 4; column++) for (let row = 0; row < 4; row++)
+      for (let axis = 0; axis < 4; axis++) out[column * 4 + row] += p[axis * 4 + row] * l[column * 4 + axis];
+    this.elements = out;
+    return this;
+  }
 }
 function mesh(name) {
-  return { name, isMesh: true, userData: {}, matrixWorld: new Matrix4(), layers: { enable() {} }, traverse(fn) { fn(this); } };
+  return { name, isMesh: true, userData: {}, matrixWorld: new Matrix4(), layers: { mask: 1, enable(layer) { this.mask |= 1 << layer; } }, traverse(fn) { fn(this); } };
 }
 function group(children) {
   return { children, getObjectByName(name) { return children.find(child => child.name === name) || null; }, traverse(fn) { children.forEach(child => child.traverse(fn)); } };
@@ -34,7 +42,8 @@ function draw(child, scene, camera, material) {
 }
 
 const hand = mesh('left_hand_visual'); // A real hand draw captured by the parity adapter.
-const hands = loadParity('hand', { group: group([hand]), getDebug: () => ({}), dispose() {} }); // Exercises the production attach wrapper.
+const hands = loadParity('hand', { group: group([hand]), getDebug: () => ({}), dispose() {} });
+assert(hand.layers.mask & (1 << 1), 'procedural hand is registered for the shell outline layer'); // Exercises the production attach wrapper.
 const camera = { isPerspectiveCamera: true, matrixWorldInverse: new Matrix4() }; // Looking down negative Z.
 const shell = { isShaderMaterial: true, side: 1, uniforms: { uThickness: { value: 0.006 } } }; // Shared outline material also used by other world meshes.
 function handThickness(depth) {
@@ -46,6 +55,73 @@ function handThickness(depth) {
   assert.equal(shell.uniforms.uThickness.value, 0.006, 'shared outline thickness is restored');
   return result;
 }
+// The player pose composer can bake a body transform after scene traversal,
+// and the hand socket can move again before HeldObjectRenderOrder draws it.
+const bakedBody = { matrixWorld: new Matrix4(), updateMatrix() { throw Error('do not rebuild composed body'); } }; // Baked render-time body pose is the authoritative parent.
+bakedBody.matrixWorld.elements[13] = 0.2;
+const stagedHandRoot = group([]); // Normal hand group inherits the existing parent-world matrix.
+stagedHandRoot.parent = bakedBody;
+stagedHandRoot.matrix = new Matrix4();
+stagedHandRoot.matrixWorld = new Matrix4();
+stagedHandRoot.updateMatrix = () => {};
+stagedHandRoot.matrix.elements[13] = 0.01;
+const stagedSocket = group([]); // Late hand driver writes the socket, not the GLB mesh matrix directly.
+stagedSocket.name = 'left_hand_socket';
+stagedSocket.parent = stagedHandRoot;
+stagedSocket.matrix = new Matrix4();
+stagedSocket.matrixWorld = new Matrix4();
+stagedSocket.updateMatrix = () => {};
+stagedSocket.matrix.elements[13] = 0.05;
+stagedHandRoot.children.push(stagedSocket);
+const detachedHand = mesh('mesh_0_1'); // Simulates a visible GLB primitive retaining an old, floating render transform.
+detachedHand.parent = stagedSocket;
+detachedHand.matrix = new Matrix4();
+detachedHand.updateMatrix = () => {};
+detachedHand.matrix.elements[13] = 0.03;
+detachedHand.matrixWorld.elements[13] = 0.9;
+stagedSocket.children.push(detachedHand);
+stagedSocket.traverse = fn => { fn(stagedSocket); stagedSocket.children.forEach(child => child.traverse(fn)); };
+const handRig = { group: stagedHandRoot, getDebug: () => ({}), dispose() {} }; // Same public hand-attachment surface as the game.
+const staged = loadParity('hand', handRig);
+assert.equal(staged.window.HobunjiHandOutlineParity.refreshHeldMatrices([detachedHand]), 1, 'the held renderer can refresh hand matrices before calculating scissor bounds');
+assert(Math.abs(detachedHand.matrixWorld.elements[13] - 0.29) < 1e-9, 'pre-scissor refresh reanchors a floating hand before overlay clipping');
+draw(detachedHand, {}, camera, { colorWrite: true })();
+assert(Math.abs(detachedHand.matrixWorld.elements[13] - 0.29) < 1e-9, 'visible hand is reanchored to its live socket, not its stale mesh world matrix');
+assert.equal(bakedBody.matrixWorld.elements[13], 0.2, 'the temporary player-body world transform is never recomputed');
+assert.equal(handRig.getDebug().visualMatrixResyncs, 1, 'mobile hand diagnostics report an actual repaired matrix');
+detachedHand.matrixWorld.elements[13] = 0.85; // Outline passes may rewrite the world matrix after the visible frame.
+const restoreStaged = draw(detachedHand, { overrideMaterial: shell }, camera, shell);
+assert(Math.abs(detachedHand.matrixWorld.elements[13] - 0.29) < 1e-9, 'outline draws reuse the last corrected hand world matrix');
+restoreStaged();
+assert.equal(detachedHand.matrixWorld.elements[13], 0.85, 'the pre-outline matrix is restored without compounding transforms');
+assert.equal(staged.window.HobunjiHandOutlineParity.getDebug().visualMatrixResyncs, 1);
+
+// Nonuniform Nuhongan-like body scale and mirrored handedness must be composed
+// through the socket chain, not applied by rewriting authored hand coordinates.
+bakedBody.matrixWorld.elements[0] = -0.68;
+bakedBody.matrixWorld.elements[5] = 0.6375;
+bakedBody.matrixWorld.elements[10] = 0.68;
+bakedBody.matrixWorld.elements[12] = 10;
+bakedBody.matrixWorld.elements[14] = 4;
+stagedSocket.matrix.elements[12] = -0.38;
+stagedSocket.matrix.elements[13] = 0.224;
+detachedHand.matrix.elements[12] = 0.4;
+detachedHand.matrix.elements[13] = 0.15;
+draw(detachedHand, {}, camera, { colorWrite: true })();
+const expectedX = 10 - 0.68 * (-0.38 + 0.4); // Mirrored/scaled X offset, with no assumptions about portrait facing.
+const expectedY = 0.2 + 0.6375 * (0.01 + 0.224 + 0.15); // Nonuniform body Y scale keeps the hand relative to its shoulder.
+assert(Math.abs(detachedHand.matrixWorld.elements[12] - expectedX) < 1e-9, 'mirrored hand position composes through the current rig');
+assert(Math.abs(detachedHand.matrixWorld.elements[13] - expectedY) < 1e-9, 'species height scale is inherited once, not bypassed or doubled');
+assert.equal(bakedBody.matrixWorld.elements[12], 10, 'render-time body position is retained unchanged');
+assert.equal(bakedBody.matrixWorld.elements[5], 0.6375, 'render-time body scale is retained unchanged');
+assert(handRig.getDebug().visualMatrixResyncs >= 2, 'a second stale color draw is detected');
+assert.match(read('docs/js/hand-pixel-probe-diagnostics.js'), /maxOriginDrift=/, 'the on-device Pixel Probe exposes the measured hand drift');
+const overlaySource = read('docs/js/held-object-render-order.js'); // Production overlay must refresh hands before projecting their screen-space bounds.
+assert.match(overlaySource, /refreshHeldMatrices\?\.\(held\)[\s\S]*const visibleHeld = filterOffscreenReplayMeshes\(camera, held\)/, 'held renderer refreshes hand matrices before camera culling');
+assert.match(overlaySource, /refreshHeldMatrices\?\.\(shellCandidates\)[\s\S]*const xrayMeshes = filterOffscreenReplayMeshes\(camera, shellCandidates\)/, 'shell renderer refreshes hand matrices before camera culling');
+
+
+
 assert.equal(handThickness(5), 0.012, 'reference distance preserves existing hand thickness');
 assert.equal(handThickness(10), 0.006, 'doubling distance halves hand outline width');
 assert.equal(handThickness(20), 0.003, 'farther hands continue shrinking');
@@ -62,6 +138,7 @@ const root = group([fallback]); // Stable leg root survives async foot replaceme
 const rig = { group: root, dispose() {} }; // The owner's returned handle.
 const feet = loadParity('feet', rig); // Enrolls the fallback immediately.
 assert(feet.registered.has(fallback));
+assert(fallback.layers.mask & (1 << 1), 'fallback foot remains in the shell outline pass');
 draw(fallback, {}, camera, { colorWrite: true })();
 const finishFootShell = draw(fallback, { overrideMaterial: shell }, camera, shell); // Compare against the actual foot hook, including shared-uniform restoration.
 const footThickness = shell.uniforms.uThickness.value; // Baseline produced by the shipped foot renderer.
@@ -75,6 +152,12 @@ const finalFoot = mesh('left_foot'); // Simulates a model that finishes loading 
 root.children.splice(0, 1, finalFoot);
 assert(feet.window.HobunjiFeetOutlineParity.refreshRig(root));
 assert(feet.registered.has(finalFoot), 'late final GLB receives water registration');
+assert(finalFoot.layers.mask & (1 << 1), 'late replacement GLB receives shell outline layer');
+const intentionalNoShell = mesh('right_foot'); // Existing author noOutline flag must retain priority over forced fallback shell registration.
+intentionalNoShell.userData.noOutline = true;
+root.children.push(intentionalNoShell);
+assert(feet.window.HobunjiFeetOutlineParity.refreshRig(root), 'right-foot opt-out is rescanned');
+assert.equal(intentionalNoShell.layers.mask & (1 << 1), 0, 'explicit noOutline is never overridden by the climb fix');
 finalFoot.matrixWorld.elements[12] = 7;
 draw(finalFoot, {}, camera, { colorWrite: true })();
 finalFoot.matrixWorld.elements[12] = 100;

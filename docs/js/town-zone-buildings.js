@@ -110,6 +110,13 @@
 
   // ── Town building detection ──────────────────────────────────────
   // Reads explicit building entries from the town layout (placed by map editor).
+  function entranceLabel(transition, building) {
+    if (transition?.target !== 'building' && transition?.target !== 'interior') return transition?.label || '';
+    const placed = building || (deps?.getTownZone?.()?.buildings || []).find(b => b.id === transition.buildingId || transition.id === 'bldg_entrance_' + b.id); // The placed building label is the Map Editor's name, independent of its house-piece template.
+    const name = String(placed?.label || placed?.name || '').trim(); // Used by door prompts and auto-generated entrances.
+    return name ? 'Enter ' + name : (transition.label || 'Enter');
+  }
+
   function detectTownBuildings() {
     const buildings = deps.getTownZone()?.buildings || [];
     deps.debugLog('_detectTownBuildings: ' + buildings.length + ' placed buildings');
@@ -175,6 +182,7 @@
       mesh.traverse(o => { if (o.geometry) o.geometry.dispose(); });
     }
     _townDecorFurnitureGroups = [];
+    window.FurnitureTableSystem?.clearArea('town');
     if (!townScene || !townMap) return;
     // Dev Companion map-furniture overlay (js/dev-map-furniture.js) merges in
     // dev-placed/moved/removed pieces; the authored lists pass through otherwise.
@@ -202,6 +210,17 @@
       window.FestivalProps?.decorate(result.mesh, d);
       const y = deps.NORMAL_TOP + _tileVisualHeight(townMap, d.col, d.row);
       applyPlacementTransform(result.mesh, d, y);
+      // Map Editor keeps the source wall contact in wallAttachment; normalOffset
+      // moves the sign/banner BODY, while its authored support grows back to
+      // that contact when the zone rebuilds after loading a save.
+      if(d.wallAttachment && window.WallOrnamentPlacement?.loadAttachment){
+        Promise.resolve(window.WallOrnamentPlacement.loadAttachment(d.key,
+          deps.DECORATIVE_FURNITURE_DEFS?.[d.key] || {}))
+          .then(meta=>{if(meta&&result.mesh.parent)
+            window.WallOrnamentPlacement?.stretchWallSupport?.(
+              result.mesh,meta,d.wallAttachment,d.key);})
+          .catch(error=>deps.debugLog('Mounted wall support: '+String(error?.message||error),'warn'));
+      }
       if (result.light) {
         result.light.position.x += d.postX || 0;
         result.light.position.y += y + (d.postY || 0);
@@ -217,6 +236,7 @@
         sfxOffsetX: result.sfxSource ? result.sfxSource.x - result.mesh.position.x : 0,
         sfxOffsetZ: result.sfxSource ? result.sfxSource.z - result.mesh.position.z : 0,
       };
+      window.FurnitureTableSystem?.registerPlacement('town', d, result.mesh, deps.DECORATIVE_FURNITURE_DEFS?.[d.key] || {});
       _townDecorFurnitureGroups.push(result.mesh);
     }
     for (const f of furnitureDefs) {
@@ -236,6 +256,7 @@
       const sfxSource = window.Music?.registerFurnitureSfxSource('map_hobunji_town', f.col + 0.5 + (f.postX || 0), f.row + 0.5 + (f.postZ || 0), window.Music?.resolveFurnitureSfx(def));
       group.userData.mapEditorAux = { sfxSource: sfxSource || null, sfxOffsetX: sfxSource ? sfxSource.x - group.position.x : 0, sfxOffsetZ: sfxSource ? sfxSource.z - group.position.z : 0 };
     }
+    window.BuildingGrassSuppression?.refreshTown?.(); // Registered furniture and locale roots now contribute their full clearing footprints.
     deps.debugLog(`spawnTownDecorFurniture: built ${decorDefs.length} decor + ${furnitureDefs.length} furniture props`);
   }
 
@@ -354,16 +375,24 @@
           }
           deps.debugLog(`Building entrance ${bldg.id}: corrected (${oldCol},${oldRow}) -> (${eCol},${eRow})`);
         }
+        if (linkedEntry) linkedEntry.label = entranceLabel(linkedEntry, bldg); // Refresh stale labels even if the authored door never moved.
         // Skip auto-entrance if workspace already defined a building transition within the rotated footprint
-        const hasWorkspaceEntry = worldTownTransitions.some(t =>
+        const workspaceEntry = worldTownTransitions.find(t =>
           t.target === 'building' &&
           Number.isFinite(t.col) && Number.isFinite(t.row) &&
           t.col >= wBMinC && t.col <= wBMaxC &&
           t.row >= wBMinR && t.row <= wBMaxR);
-        const hasAnyEntryAtDoor = worldTownTransitions.some(t => Number.isFinite(t.col) && Number.isFinite(t.row) && t.col === eCol && t.row === eRow);
-        if (!hasWorkspaceEntry && !hasAnyEntryAtDoor && !worldTownTransitions.find(t => t.id === eid)) {
+        const doorEntry = worldTownTransitions.find(t => Number.isFinite(t.col) && Number.isFinite(t.row) && t.col === eCol && t.row === eRow); // Legacy maps may not have stored a buildingId on their entrance.
+        const namedEntry = linkedEntry || workspaceEntry || doorEntry; // Bind a matched doorway to its placed building for future prompt refreshes.
+        if (namedEntry && (namedEntry.target === 'building' || namedEntry.target === 'interior')) {
+          namedEntry.buildingId = bldg.id;
+          namedEntry.label = entranceLabel(namedEntry, bldg);
+        }
+        const hasAnyEntryAtDoor = !!doorEntry;
+        if (!workspaceEntry && !hasAnyEntryAtDoor && !worldTownTransitions.find(t => t.id === eid)) {
           worldTownTransitions.push({
-            id: eid, area: 'town', col: eCol, row: eRow,
+            id: eid, area: 'town', col: eCol, row: eRow, buildingId: bldg.id,
+            label: entranceLabel({ target: 'interior' }, bldg),
             target: 'interior',
             targetCol: Math.floor(deps.INTERIOR_COLS / 2), targetRow: deps.INTERIOR_ROWS - 2,
           });
@@ -558,11 +587,23 @@
       if (!result) continue;
       const y = deps.NORMAL_TOP + (d.elevTier || 0) * deps.PLATEAU_UNIT;
       applyPlacementTransform(result.mesh, d, y);
+      // Map Editor keeps the source wall contact in wallAttachment; normalOffset
+      // moves the sign/banner BODY, while its authored support grows back to
+      // that contact when the zone rebuilds after loading a save.
+      if(d.wallAttachment && window.WallOrnamentPlacement?.loadAttachment){
+        Promise.resolve(window.WallOrnamentPlacement.loadAttachment(d.key,
+          deps.DECORATIVE_FURNITURE_DEFS?.[d.key] || {}))
+          .then(meta=>{if(meta&&result.mesh.parent)
+            window.WallOrnamentPlacement?.stretchWallSupport?.(
+              result.mesh,meta,d.wallAttachment,d.key);})
+          .catch(error=>deps.debugLog('Mounted wall support: '+String(error?.message||error),'warn'));
+      }
       if (result.light) {
         result.light.position.x += d.postX || 0;
         result.light.position.y += y + (d.postY || 0);
         result.light.position.z += d.postZ || 0;
       }
+      window.FurnitureTableSystem?.registerPlacement(mapId, d, result.mesh, deps.DECORATIVE_FURNITURE_DEFS?.[d.key] || {});
       result.mesh.userData.mapEditorRef = { mapId, kind: 'decor', id: d.id || null, key: d.key, col: d.col, row: d.row,
         postX: d.postX || 0, postY: d.postY || 0, postZ: d.postZ || 0, rotY: d.rotY || 0,
         postSX: d.postSX ?? d.postScale ?? 1, postSY: d.postSY ?? d.postScale ?? 1, postSZ: d.postSZ ?? d.postScale ?? 1 };
@@ -593,12 +634,15 @@
       const sfxSource = window.Music?.registerFurnitureSfxSource(mapId, f.col + 0.5 + (f.postX || 0), f.row + 0.5 + (f.postZ || 0), window.Music?.resolveFurnitureSfx(def));
       group.userData.mapEditorAux = { sfxSource: sfxSource || null, sfxOffsetX: sfxSource ? sfxSource.x - group.position.x : 0, sfxOffsetZ: sfxSource ? sfxSource.z - group.position.z : 0 };
     }
+    window.BuildingGrassSuppression?.refreshArea?.(mapId, scene, zoneData);
     deps.debugLog(`_spawnZoneDecorFurniture(${mapId}): built ${decorDefs.length} decor + ${furnitureDefs.length} furniture props`);
   }
 
   window.TownZoneBuildings = {
+    grassContext: () => deps, // Late-loaded grass suppression can recover the already-initialized scene/map adapters.
     init,
     detectTownBuildings,
+    entranceLabel,
     loadHousePieceFaceTexture,
     spawnTownBuildings,
     spawnTownDecorFurniture,

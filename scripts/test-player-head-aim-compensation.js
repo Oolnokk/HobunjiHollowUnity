@@ -43,16 +43,20 @@ const context = { THREE: { Vector3: V, Quaternion: Q, MathUtils: { radToDeg: v =
   headAimEnabled: false, headAimSource: null, currentPlayerNeckJoint: () => neck }; // Supplies only IO/state; all aim math below is production code.
 vm.createContext(context);
 vm.runInContext(source.slice(source.indexOf('  function hierarchyWorldQuaternion('), source.indexOf('  function quaternionEulerDegrees(')), context);
+vm.runInContext(source.slice(source.indexOf('  function applyPlayerNeckYawLimit('), source.indexOf('  function setHeadAimTarget(')), context);
+context.window = { PerpRotation: { clampedNeckYaw() { throw new Error('Fishing gaze must bypass the camera-facing clamp'); } } }; // Detects late render overrides that previously turned fishing heads away.
 vm.runInContext(source.slice(source.indexOf('  function setHeadAimTarget('), source.indexOf('  // Diagnostics only.')), context);
 for (let i = 0; i < 8; i++) {
   const yaw = i*Math.PI/4; // Every compass heading must preserve aim under a thirty-degree lean and additional roll.
   root.quaternion = eulerQ(Math.PI/6,yaw,0.12);
   parent.quaternion = eulerQ(0,0.15,0);
   for (const water of [false,true]) {
+    root.quaternion = eulerQ(Math.PI/6,yaw + (water ? -152*Math.PI/180 : 0),0.12); // Reproduces fishing's authored backward torso twist.
     const point = new V(Math.sin(yaw)*8,water ? 0.35 : 2.1,Math.cos(yaw)*8); // Fishing looks down at the selected water surface.
     assert(context.setHeadAimTarget(point,water ? 'fishing-water' : 'interaction-ray'));
     const before = neck.rotation.clone(), undo = [], debug = {}; // Captures gameplay pose before temporary render compensation.
     context.applyPlayerHeadAim(undo,debug);
+    if (water) { context.applyPlayerNeckYawLimit(debug, {}); assert.equal(debug.neckYaw.waterTargetLocked, true); }
     const worldQ = new Q().multiply(root.quaternion).multiply(parent.quaternion).multiply(eulerQ(neck.rotation.x,neck.rotation.y,neck.rotation.z)); // Actual displayed head orientation.
     const actual = new V(0,0,1).applyQuaternion(worldQ);
     const expected = new V().copy(point).sub(neck.getWorldPosition(new V())); // Desired ray from the neck after body lean/translation.

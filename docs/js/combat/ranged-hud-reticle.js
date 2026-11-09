@@ -15,10 +15,12 @@
   // standard black-to-red CSS filter chain used only while a shot would hit.
   const FILTER_WHITE = 'brightness(0) invert(1)';
   const FILTER_RED = 'brightness(0) saturate(100%) invert(21%) sepia(89%) saturate(6510%) hue-rotate(357deg) brightness(94%) contrast(119%)';
+  const FILTER_ORANGE = 'brightness(0) saturate(100%) invert(63%) sepia(87%) saturate(1351%) hue-rotate(348deg) brightness(104%) contrast(104%)';
 
   let reticleEl = null;
   let lastVisible = false;
   let lastWouldHit = false;
+  let lastWouldHitShattercask = false;
 
   function equippedRangedKey() {
     return window.RangedWeapons?.equippedRangedKey?.() || null;
@@ -90,8 +92,11 @@
     const display = visible ? 'block' : 'none'; // Compare the live node so replacement roots retain the original refresh behavior.
     if (image.style.display !== display) image.style.display = display;
     const wouldHit = visible && !!window.RangedWeapons?.wouldHitHostile?.();
-    if (wouldHit !== lastWouldHit) image.style.filter = wouldHit ? FILTER_RED : FILTER_WHITE;
+    const wouldHitShattercask = visible && !wouldHit && !!window.RangedWeapons?.wouldHitShattercask?.();
+    if (wouldHit !== lastWouldHit || wouldHitShattercask !== lastWouldHitShattercask)
+      image.style.filter = wouldHit ? FILTER_RED : wouldHitShattercask ? FILTER_ORANGE : FILTER_WHITE;
     lastWouldHit = wouldHit;
+    lastWouldHitShattercask = wouldHitShattercask;
     lastVisible = visible;
     return visible;
   }
@@ -116,6 +121,7 @@
     reticleEl = null;
     lastVisible = false;
     lastWouldHit = false;
+    lastWouldHitShattercask = false;
   }
 
   window.RangedHudReticle = {
@@ -127,6 +133,7 @@
       drawn: rangedWeaponDrawn(),
       visible: lastVisible,
       wouldHit: lastWouldHit,
+      wouldHitShattercask: lastWouldHitShattercask,
       screenSpace: true,
       scaleFactor: RETICLE_SCALE,
       opacity: RETICLE_OPACITY,

@@ -13,7 +13,9 @@
   const STINK_OIL_COLOR = 0x8A9A3D; // Used for spray particles; matches ITEM_DEFS.grehlrStinkOil.spriteColor.
   const DEFAULTS = Object.freeze({ // Used when authored attack config is unavailable or incomplete.
     SELECTION_CHANCE: 0.4,
-    MAX_SELECTION_RANGE_TILES: 2.25,
+    MAX_SELECTION_RANGE_TILES: 4.5, // Trigger from beyond the spray cone so the selected special actually lunges.
+    LUNGE_MAX_TILES: 2.8, // Committed travel distance before the Grehlr must turn and spray on a miss.
+    LUNGE_SPEED_TILES_S: 5.5, // Self-contained forward charge; unaffected by chase movement.
     FLIP_S: 0.10,
     SPRAY_S: 0.16,
     RECOVER_S: 0.18,
@@ -73,7 +75,7 @@
   }
 
   function targetIsUsable(creature, target) {
-    if (!target || !Number.isFinite(target.x) || !Number.isFinite(target.y)) return false;
+    if (!target || target === creature || target._downed || !Number.isFinite(target.x) || !Number.isFinite(target.y)) return false;
     if (Number.isFinite(target.health) && target.health <= 0) return false;
     if (isBurrowProtected(target)) return false;
     if (target.areaId != null && creature.areaId != null && target.areaId !== creature.areaId) return false;
@@ -172,9 +174,9 @@
 
   function gatherTargets(creature, deps) {
     const targets = []; // Used to let the short cone affect every valid opposing actor it actually catches.
-    if (creature.isCompanion) {
+    if (creature.isCompanion && !creature.banditCompanion) {
       for (const hostile of deps.hostileObjects || []) {
-        if (targetIsUsable(creature, hostile)) targets.push(hostile);
+        if (hostile.def?.hostile !== false && targetIsUsable(creature, hostile)) targets.push(hostile);
       }
       return targets;
     }
@@ -186,16 +188,17 @@
       // ground position — never a legitimate independent target for this
       // cone (see combat-drenkirra-pellet.js's gatherTargets for the same
       // exclusion and reasoning).
-      if (companion.stableRole === 'shoulderPet') continue;
+      if (companion.banditCompanion || companion.stableRole === 'shoulderPet') continue;
       if (targetIsUsable(creature, companion)) targets.push(companion);
     }
     return targets;
   }
 
-  function applyWindedStamina(target) {
+  function applyWindedStamina(target, creature) {
     const resourceSystem = window.ResourceSystem; // Used to apply the live affliction that replaced the older Choked Stamina name.
     if (!resourceSystem?.AFFLICTIONS?.windedStamina) return 0;
-    const amount = resourceSystem.addAffliction?.(target, 'windedStamina', tuning.CHOKED_STAMINA_AMOUNT) || 0;
+    const multiplier = window.CompanionOffense?.getModifiers?.(creature, target)?.affliction ?? 1; // Direct status moves share training, Whistle, Sicced and tactical buildup scaling.
+    const amount = resourceSystem.addAffliction?.(target, 'windedStamina', tuning.CHOKED_STAMINA_AMOUNT * multiplier) || 0;
     resourceSystem.enforceCaps?.(target);
     return amount;
   }
@@ -209,7 +212,7 @@
     for (const target of gatherTargets(creature, deps)) {
       if (!deps.inCone(creature.x, creature.y, state.sprayAngle, target.x, target.y, rangePx, halfConeRad)) continue;
       state.hitCount += 1;
-      state.windedApplied += applyWindedStamina(target);
+      state.windedApplied += applyWindedStamina(target, creature);
     }
     updateDebug(creature, state, true);
   }
@@ -232,11 +235,13 @@
     const now = performance.now(); // Used to enforce the 4 Hz DOM update ceiling unless a hit/result just resolved.
     if (!force && now - lastDebugAt < DEBUG_STEP_MS) return;
     lastDebugAt = now;
-    const phaseDuration = state.stage === 'flip' ? tuning.FLIP_S : state.stage === 'spray' ? tuning.SPRAY_S : tuning.RECOVER_S;
-    const remaining = Math.max(0, phaseDuration - state.t);
+    const phaseDuration = state.stage === 'lunge'
+      ? Math.max(0, state.lungeMaxDistancePx - state.lungeTraveledPx) / Math.max(1, state.lungeSpeedPxS)
+      : state.stage === 'flip' ? tuning.FLIP_S : state.stage === 'spray' ? tuning.SPRAY_S : tuning.RECOVER_S;
+    const remaining = Math.max(0, state.stage === 'lunge' ? phaseDuration : phaseDuration - state.t);
     const status = state.hitCount > 0 ? `Winded Stamina +${state.windedApplied || 0}` : 'no cone hit';
     const actorKind = creature?.isCompanion ? (isMediumCompanionGrehlr(creature) ? 'medium companion' : 'companion') : 'wild';
-    const text = `Grehlr Stink: ${state.stage}\nremaining ${remaining.toFixed(2)}s | particles ${state.particles.length}\nhits ${state.hitCount || 0} | ${status}\n${actorKind} | range ${tuning.RANGE_TILES.toFixed(2)} tiles\nburrow protected ${isBurrowProtected(creature) ? 'YES' : 'no'} | color #8A9A3D`;
+    const text = `Grehlr Stink: ${state.stage}\nremaining ${remaining.toFixed(2)}s | particles ${state.particles.length}\nhits ${state.hitCount || 0} | ${status}\n${actorKind} | range ${tuning.RANGE_TILES.toFixed(2)} tiles\nlunge ${((state.lungeTraveledPx || 0) / Math.max(1, window.Combat?.deps?.TILE || 1)).toFixed(2)} tiles | stop ${state.lungeStopReason || 'pending'}\nburrow protected ${isBurrowProtected(creature) ? 'YES' : 'no'} | color #8A9A3D`;
     if (text === lastDebugText) return;
     const element = ensureDebugElement();
     if (!element) return;
@@ -249,12 +254,19 @@
     const targetAngle = targetIsUsable(creature, target)
       ? Math.atan2(target.y - creature.y, target.x - creature.x)
       : (creature.facing || 0);
-    state.stage = 'flip';
+    state.stage = 'lunge'; // Attack selection immediately hands movement to this attack, not the chase AI.
     state.t = 0;
     state.target = target;
     state.targetKind = targetKindFor(creature, target, deps);
-    state.startFacing = Number.isFinite(creature.facing) ? creature.facing : targetAngle;
-    state.sprayAngle = targetAngle;
+    window.Combat.animalAttacks.beginConeLunge(creature, state, context, deps, {
+      rangePx: tuning.RANGE_TILES * deps.TILE, // The real spray cone decides where the Grehlr stops.
+      halfConeRad: tuning.HALF_CONE_DEG * Math.PI / 180,
+      maxDistancePx: tuning.LUNGE_MAX_TILES * deps.TILE,
+      speedPxS: creature.isCompanion ? Math.max(tuning.LUNGE_SPEED_TILES_S, tuning.LUNGE_MAX_TILES / (window.Combat?.animalAttacks?.companionLungeTuning?.durationS || 0.12)) * deps.TILE : tuning.LUNGE_SPEED_TILES_S * deps.TILE, // Companion special uses a weapon-speed approach; wild spray retains its authored charge.
+      targets: gatherTargets(creature, deps),
+    });
+    state.startFacing = state.lungeAngle;
+    state.sprayAngle = state.lungeAngle; // A single committed direction is used by movement and the rear emitter.
     state.flippedFacing = normalizeAngle(targetAngle + Math.PI);
     state.particles = [];
     state.particleCarry = 0;
@@ -267,6 +279,18 @@
   function stinkUpdate(creature, state, dt, deps) {
     state.t += dt;
     updateParticles(state, dt);
+
+    if (state.stage === 'lunge') {
+      const stopReason = window.Combat.animalAttacks.advanceConeLunge(creature, state, dt, deps); // Always proceeds to flip/spray, even after a miss or obstruction.
+      if (!stopReason) { updateDebug(creature, state); return true; }
+      state.lungeStopReason = stopReason; // Exposed to the on-screen wildlife debug card.
+      state.stage = 'flip';
+      state.t = 0;
+      state.startFacing = creature.facing;
+      state.flippedFacing = normalizeAngle(state.sprayAngle + Math.PI);
+      updateDebug(creature, state, true);
+      return true;
+    }
 
     if (state.stage === 'flip') {
       const progress = clamp01(state.t / Math.max(0.001, tuning.FLIP_S));
@@ -309,6 +333,8 @@
   }
 
   function stinkCancel(creature, state) {
+    creature.vx = 0;
+    creature.vy = 0;
     clearParticles(state);
     if (Number.isFinite(state?.sprayAngle)) creature.facing = state.sprayAngle;
   }
@@ -316,11 +342,12 @@
   function attackTriggerRangePx(creature, fallbackRangePx, tileSize) {
     if (!isGrehlr(creature) || !tileSize) return fallbackRangePx;
     if (creature.isCompanion && !isMediumCompanionGrehlr(creature)) return fallbackRangePx;
-    // Decide between spray and burrow where either move can actually be selected.
+    // The attack can be chosen beyond spray reach; its own charge closes the gap.
     return Math.min(fallbackRangePx, tuning.MAX_SELECTION_RANGE_TILES * tileSize);
   }
 
   function shouldUseStink(creature, attackId, context, deps) {
+    if (window.StableAnimalTrainingRefinements?.tacticsForEntry && creature._companionTacticLastMove === attackId && creature.isCompanion && !creature.banditCompanion) return false; // Explicit loadout choices bypass the legacy random Burrow-to-Spray substitution.
     if (!isGrehlr(creature) || (attackId !== 'pounce' && attackId !== 'grehlrBurrow')) return false;
     if (creature.isCompanion && !isMediumCompanionGrehlr(creature)) return false; // Medium animal companions share the wild Grehlr stink selector; other companion sizes keep their normal behavior.
     const target = context?.target;
@@ -405,10 +432,12 @@
 
   attacks.register('grehlrStink', {
     label: 'Stink Spray',
+    ownsApproach: true, // The stink move begins with its own collision-aware charge before the backward spray.
     start: stinkStart,
     update: stinkUpdate,
     cancel: stinkCancel,
-    isStriking: state => state?.stage === 'spray',
+    isStriking: state => state?.stage === 'lunge' || state?.stage === 'spray',
+    isWindingUp: state => state?.stage === 'flip',
   });
 
   const previousStart = attacks.start.bind(attacks); // Used to mix Stink Spray into both authored Burrow IDs and stale Grehlr pounce IDs.

@@ -21,7 +21,7 @@ vm.createContext(context);
 vm.runInContext(stackedSource, context, { filename: 'stacked-log-walls.js' });
 const api = context.StackedLogWalls;
 assert(api, 'StackedLogWalls publishes its shared runtime API');
-assert.equal(api.DEFAULTS.barkColor, '#372f18', 'stacked architecture default bark color matches the approved dark-olive swatch');
+assert.equal(api.DEFAULTS.barkColor, '#6e5e30', 'stacked architecture default bark keeps the approved dark-olive hue, lifted so the painterly filter does not flatten it');
 
 const triangle = [[0, 0, 0], [4, 0, 0], [2, 2, 0], [2, 2, 0]];
 assert.equal(api.horizontalSpanAtY(triangle, 0.5).length, 3, 'gable course at y=.5 shortens from 4 to 3 world units');

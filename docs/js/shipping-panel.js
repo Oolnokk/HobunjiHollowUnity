@@ -70,8 +70,20 @@
     return isBoxSide(side) ? (getShippingBoxContents()[key] || 0) : (deps.inventory[key] || 0);
   }
 
+  // Single authority for "what is this worth in the Shipping Box": the crop
+  // price table first, then the item's own sellPrice. Fish, meat, hides and
+  // processed goods (jerky, smoked/dried food, wine...) only carry the latter,
+  // and the box used to reject everything missing from BASE_PRICES.
+  function getShipPrice(key) {
+    if (!deps) return undefined;
+    const base = deps.BASE_PRICES[key];
+    if (base !== undefined) return base;
+    const sell = Number(deps.ITEM_DEFS?.[key]?.sellPrice);
+    return Number.isFinite(sell) && sell > 0 ? sell : undefined;
+  }
+
   function canShipKey(key) {
-    return !!deps && deps.BASE_PRICES[key] !== undefined;
+    return getShipPrice(key) !== undefined;
   }
 
   function selectShippingItem(side, key) {
@@ -139,7 +151,7 @@
       slot.className = 'ship-slot' + (shippingSelected.side === side && shippingSelected.key === key ? ' selected' : '') + (blocked ? ' blocked' : '');
       slot.dataset.side = side;
       slot.dataset.key = key;
-      slot.innerHTML = `<span class="ship-slot-icon">${def.icon}</span><span class="ship-slot-count">×${count}</span>${isBoxSide(side) ? `<span class="ship-slot-pending">${panel.boxBadge}</span>` : ''}`;
+      slot.innerHTML = `<span class="ship-slot-icon">${deps.itemIconForKey?.(key) || def.icon || panel.iconFallback}</span><span class="ship-slot-count">×${count}</span>${isBoxSide(side) ? `<span class="ship-slot-pending">${panel.boxBadge}</span>` : ''}`;
       slot.addEventListener('click', () => selectShippingItem(side, key));
       grid.appendChild(slot);
     });
@@ -174,15 +186,22 @@
     const blocked = key && !isBoxSide(shippingSelected.side) && !canShipKey(key);
     const direction = !key ? panel.directionEmpty : (!isBoxSide(shippingSelected.side) ? panel.directionToBox : panel.directionToBag);
 
-    setText('shipPreviewIcon', def ? def.icon : panel.iconFallback);
+    setText('shipPreviewIcon', def ? (deps.itemIconForKey?.(key) || def.icon || panel.iconFallback) : panel.iconFallback);
     setText('shipPreviewName', def ? `${def.label} ×${count}` : panel.text.selectItem);
     setText('shipDirection', blocked ? panel.blockedLabel : direction);
     setText('shipAmount', String(shippingAmount));
     setText('shipLeftFooter', !isBoxSide(shippingSelected.side) && def ? `${def.label} ×${count}` : panel.text.selectPackItem);
     setText('shipRightFooter', isBoxSide(shippingSelected.side) && def ? `${def.label} ×${count}` : panel.text.rightFooter);
-    setText('shipDetailIcon', def ? def.icon : panel.iconFallback);
+    setText('shipDetailIcon', def ? (deps.itemIconForKey?.(key) || def.icon || panel.iconFallback) : panel.iconFallback);
     setText('shipDetailName', def ? def.label : panel.text.detailName);
-    setText('shipDetailValue', def && canShipKey(key) ? `${saleValue(deps.BASE_PRICES[key])}${panel.text.valueEachSuffix}` : (def ? panel.text.notSellable : panel.emptyValue));
+    const hideScope = isBoxSide(shippingSelected.side) ? 'shipping' : 'pack'; // Quote the actual origin inventory when the user previews a transfer.
+    const hidePrice = def && count > 0 && window.AnimalHides?.isHide?.(key)
+      ? window.AnimalHides.quote(key, shippingAmount, hideScope, getShipPrice(key), count, null,
+        { pendingFirst: hideScope === 'shipping' ? shippingBoxObject?.getPendingSaleCountFor?.(key) || 0 : 0 })
+      : null; // Quoting the selected units reflects rare coats and respects midnight cutoff order.
+    setText('shipDetailValue', hidePrice?.ok
+      ? `${saleValue(hidePrice.total)}g for ${shippingAmount} selected (mixed coat values)`
+      : (def && canShipKey(key) ? `${saleValue(getShipPrice(key))}${panel.text.valueEachSuffix}` : (def ? panel.text.notSellable : panel.emptyValue)));
     setText('shipDetailDesc', def ? `${def.desc}${blocked ? panel.text.blockedSuffix : ''}` : panel.text.detailEmpty);
     const tags = document.getElementById('shipDetailTags');
     if (tags) tags.innerHTML = def
@@ -270,25 +289,29 @@
     const fallbackIcon = panelCfg().iconFallback;
     return Object.keys(deps.ITEM_DEFS).flatMap(key => {
       const count = Math.max(0, Number(deps.inventory[key]) || 0);
-      const price = Number(deps.BASE_PRICES[key]);
+      const price = Number(getShipPrice(key));
       const def = deps.ITEM_DEFS[key];
       if (count < 1 || !Number.isFinite(price) || price < 0 || !def) return [];
-      return [{ key, count, price: saleValue(price), icon: def.icon || fallbackIcon, label: def.label || key, desc: def.desc || '', cat: def.cat || '' }];
+      const hideQuote = window.AnimalHides?.isHide?.(key) ? window.AnimalHides.quote(key, count, 'pack', price, count) : null; // Shows a real mixed-hide sale total rather than count × one arbitrary price.
+      const lowestHide = hideQuote?.ok ? window.AnimalHides.quote(key, 1, 'pack', price, count) : null;
+      return [{ key, count, price: saleValue(lowestHide?.ok ? lowestHide.total : price), totalPrice: hideQuote?.ok ? saleValue(hideQuote.total) : undefined, icon: deps.itemIconForKey?.(key) || def.icon || fallbackIcon, label: def.label || key, desc: def.desc || '', cat: def.cat || '' }];
     });
   }
 
   function sellInventoryAtStore(key, quantity = 1) {
-    if (!deps || deps.BASE_PRICES[key] === undefined) return { moved: 0, earned: 0 };
+    if (!deps || getShipPrice(key) === undefined) return { moved: 0, earned: 0 };
     const available = Math.max(0, Number(deps.inventory[key]) || 0);
     const requested = quantity === storeCfg().stackQuantityToken ? available : Math.max(1, Math.floor(Number(quantity) || 1));
     const moved = Math.min(available, requested);
     if (moved < 1) return { moved: 0, earned: 0 };
-    const price = Math.max(0, Number(deps.BASE_PRICES[key]) || 0);
+    const price = Math.max(0, Number(getShipPrice(key)) || 0);
     // Sells the player's worst-quality stock first so a stray sale can't
     // quietly liquidate a prize-quality unit, and prices each consumed
     // quality tier separately so star quality is actually worth something.
-    const consumed = window.CookingSystem?.consumeQualityByPolicy?.(key, moved, 'lowest');
-    const earned = saleValue(consumed
+    const hideSale = window.AnimalHides?.isHide?.(key) ? window.AnimalHides.consume(key, moved, 'pack', price, available) : null; // Individual rarity prices are already final: do not apply a second star multiplier.
+    if (hideSale && !hideSale.ok) return { moved: 0, earned: 0 };
+    const consumed = hideSale ? null : window.CookingSystem?.consumeQualityByPolicy?.(key, moved, 'lowest');
+    const earned = saleValue(hideSale ? hideSale.total : consumed
       ? consumed.groups.reduce((sum, group) => sum + Math.round(group.amount * price * window.CookingSystem.valueMultiplierForStars(group.stars)), 0)
       : moved * price);
     if (!consumed) {
@@ -317,6 +340,7 @@
       selectedSide: shippingSelected.side,
       selectedKey: shippingSelected.key,
       selectedAmount: shippingAmount,
+      animalHides: window.AnimalHides?.getDebug?.() || null, // Mobile-copyable hide provenance and transfer counters.
       boxPosition: box ? { col: box.col, row: box.row, width: box.w, height: box.h } : null,
     };
   }
@@ -364,6 +388,9 @@
       releasePointerLock();
       try { dialog?.focus({ preventScroll: true }); } catch (_) { dialog?.focus(); }
     });
+    // The window is a role=dialog inside a root toggled via `hidden`; claim controller focus now so the pad drives it (and not the world) from the first frame.
+    const dialogNow = document.getElementById('shippingStandaloneWindow');
+    if (dialogNow) window.ControllerUI?.focusPanel?.(dialogNow);
     return true;
   }
 
@@ -389,7 +416,7 @@
           </div>
           <div class="shipping-window-actions">
             <button type="button" class="shipping-window-btn" id="shippingWindowDebug" aria-expanded="false">${panel.debugButton}</button>
-            <button type="button" class="shipping-window-btn" id="shippingWindowClose" aria-label="${panel.closeAriaLabel}">${panel.closeGlyph}</button>
+            <button type="button" class="shipping-window-btn" id="shippingWindowClose" data-ctrl-cancel aria-label="${panel.closeAriaLabel}">${panel.closeGlyph}</button>
           </div>
         </header>
         <div id="shippingStandaloneBody"></div>
@@ -447,6 +474,8 @@
     isOpen: () => standaloneOpen,
     getDebugState,
     getSellableInventory,
+    getShipPrice,
+    canShipKey,
     sellInventoryAtStore,
     getConfig: config,
   };

@@ -272,27 +272,27 @@ testNowMs = 0;
 ResourceSystem.spendStamina(actionPunishmentEntity, 1, 'action-punishment recovery test');
 testNowMs = 500;
 assert.equal(ResourceSystem.getPunishedActionElapsedMs(actionPunishmentEntity, 'staminaSpend'), 500, 'transient punished-action timing follows the current runtime clock');
-assert.equal(ResourceSystem.getAfflictionRecoveryMultiplier(actionPunishmentEntity, 'woundedStamina', false), 1.25, 'Wounded Stamina keeps normal Stamina-affliction recovery during the post-spend grace window');
-assert.equal(ResourceSystem.getAfflictionRecoveryMultiplier(actionPunishmentEntity, 'windedStamina', false), 1.25, 'Winded Stamina never receives the action-avoidance acceleration');
+assert.equal(ResourceSystem.getAfflictionRecoveryMultiplier(actionPunishmentEntity, 'woundedStamina', false), 0.3125, 'Wounded Stamina keeps normal Stamina-affliction recovery during the post-spend grace window');
+assert.equal(ResourceSystem.getAfflictionRecoveryMultiplier(actionPunishmentEntity, 'windedStamina', false), 1, 'Winded Stamina never receives the action-avoidance acceleration');
 testNowMs = 1000;
-assert.equal(ResourceSystem.getAfflictionRecoveryMultiplier(actionPunishmentEntity, 'woundedStamina', false), 5, 'Wounded Stamina gets 4x action-avoidance recovery after the grace window');
-assert.equal(ResourceSystem.getAfflictionRecoveryMultiplier(actionPunishmentEntity, 'infectedStamina', false), 5, 'Infected Stamina shares the action-punishing recovery rule');
-assert.equal(ResourceSystem.getAfflictionRecoveryMultiplier(actionPunishmentEntity, 'shatteredStamina', false), 5, 'Shattered Stamina shares the action-punishing recovery rule');
+assert.equal(ResourceSystem.getAfflictionRecoveryMultiplier(actionPunishmentEntity, 'woundedStamina', false), 1.25, 'Wounded Stamina gets 4x action-avoidance recovery after the grace window');
+assert.equal(ResourceSystem.getAfflictionRecoveryMultiplier(actionPunishmentEntity, 'infectedStamina', false), 1.25, 'Infected Stamina shares the action-punishing recovery rule');
+assert.equal(ResourceSystem.getAfflictionRecoveryMultiplier(actionPunishmentEntity, 'shatteredStamina', false), 1.25, 'Shattered Stamina shares the action-punishing recovery rule');
 const beforeAvoidanceTick = Object.fromEntries(['woundedStamina', 'infectedStamina', 'shatteredStamina', 'windedStamina'].map(id => [id, ResourceSystem.getAffliction(actionPunishmentEntity, id)]));
 ResourceSystem.tick(actionPunishmentEntity, 0.25);
 const woundedAvoidanceRecovery = beforeAvoidanceTick.woundedStamina - ResourceSystem.getAffliction(actionPunishmentEntity, 'woundedStamina');
 const windedNormalRecovery = beforeAvoidanceTick.windedStamina - ResourceSystem.getAffliction(actionPunishmentEntity, 'windedStamina');
-assert.ok(woundedAvoidanceRecovery >= windedNormalRecovery * 3.5, 'avoiding Stamina spend materially accelerates the punished affliction compared with ordinary Stamina-affliction recovery');
+assert.ok(woundedAvoidanceRecovery > windedNormalRecovery, 'avoiding Stamina spend remains faster than Winded despite fourfold-slower baseline brittle recovery');
 testNowMs = 1100;
 ResourceSystem.spendStamina(actionPunishmentEntity, 1, 'reset action-punishment recovery');
-assert.equal(ResourceSystem.getAfflictionRecoveryMultiplier(actionPunishmentEntity, 'woundedStamina', false), 1.25, 'spending Stamina immediately resets the accelerated Wounded-Stamina recovery');
+assert.equal(ResourceSystem.getAfflictionRecoveryMultiplier(actionPunishmentEntity, 'woundedStamina', false), 0.3125, 'spending Stamina immediately resets the accelerated Wounded-Stamina recovery');
 actionPunishmentEntity.prone = true;
 testNowMs = 1150;
 ResourceSystem.spendStamina(actionPunishmentEntity, 1, 'ineffectual prone input regression');
 assert.equal(ResourceSystem.getPunishedActionElapsedMs(actionPunishmentEntity, 'staminaSpend'), 0, 'prone input may still reach a Stamina-spend path without changing the recovery policy');
-assert.equal(ResourceSystem.getAfflictionRecoveryMultiplier(actionPunishmentEntity, 'woundedStamina', false), 5, 'prone forces accelerated action-punishment recovery even when input just refreshed the punished-action clock');
+assert.equal(ResourceSystem.getAfflictionRecoveryMultiplier(actionPunishmentEntity, 'woundedStamina', false), 1.25, 'prone forces accelerated action-punishment recovery even when input just refreshed the punished-action clock');
 actionPunishmentEntity.prone = false;
-assert.equal(ResourceSystem.getAfflictionRecoveryMultiplier(actionPunishmentEntity, 'woundedStamina', false), 1.25, 'leaving prone restores the normal post-spend grace window');
+assert.equal(ResourceSystem.getAfflictionRecoveryMultiplier(actionPunishmentEntity, 'woundedStamina', false), 0.3125, 'leaving prone restores the normal post-spend grace window');
 testNowMs = 0;
 
 for (const id of Object.keys(ResourceSystem.AFFLICTIONS)) {
@@ -301,5 +301,27 @@ for (const id of Object.keys(ResourceSystem.AFFLICTIONS)) {
 for (const [id, configured] of Object.entries(HOBUNJI_CONFIG.resourceRings.afflictionColors)) {
   assert.equal(ResourceRings.AFFLICTION_COLORS[id], Number.parseInt(configured.slice(1), 16), `${id} uses its configured color`);
 }
-assert.equal(ResourceRings.neonizeColor(ResourceRings.AFFLICTION_COLORS.windedStamina), ResourceRings.AFFLICTION_COLORS.windedStamina, 'gray winded color remains gray');
+assert.equal(ResourceRings.AFFLICTION_COLORS.windedStamina, 0x4f63d9, 'Winded Stamina uses its new indigo-blue affliction color');
+assert.equal(HOBUNJI_CONFIG.resourceRings.colors.stamina, '#d9a441', 'Stamina ring uses gold');
+assert.equal(HOBUNJI_CONFIG.resourceRings.colors.footing, '#67b7ff', 'Footing ring uses light blue');
+assert.equal(ResourceRings.parseCssColor(HOBUNJI_CONFIG.resourceRings.colors.stamina), 0xd9a441, 'Stamina shared ring color parses correctly');
+assert.equal(ResourceRings.parseCssColor(HOBUNJI_CONFIG.resourceRings.colors.footing), 0x67b7ff, 'Footing shared ring color parses correctly');
+const makeAttackPowerTarget = () => ({
+  health: 100, maxHealth: 100, stamina: 100, maxStamina: 100,
+  footing: 100, maxFooting: 100, exhaustion: { active: false, blackStamina: 100 },
+  afflictions: Object.fromEntries(Object.keys(ResourceSystem.AFFLICTIONS).map(id => [id, 0])),
+}); // Fresh matched targets for proving Attack Power, not Health damage, owns on-hit affliction buildup.
+const weakDartTarget = makeAttackPowerTarget(); // Two Health damage must still apply the full 18-power blowgun status.
+const heavyHitTarget = makeAttackPowerTarget(); // Thirty Health damage with the same Attack Power must apply the same status.
+ResourceSystem.initEntity(weakDartTarget);
+ResourceSystem.initEntity(heavyHitTarget);
+ResourceSystem.applyDamage(weakDartTarget, 2, { attackPower: 18, afflictionBonuses: { poisonedHealth: 0.5 } });
+ResourceSystem.applyDamage(heavyHitTarget, 30, { attackPower: 18, afflictionBonuses: { poisonedHealth: 0.5 } });
+assert.equal(weakDartTarget.health, 98, 'weak darts retain weak direct damage');
+assert.equal(heavyHitTarget.health, 70, 'heavy hits retain their independent direct damage');
+assert.equal(ResourceSystem.getAffliction(weakDartTarget, 'poisonedHealth'), 9, '18 Attack Power contributes nine poison buildup at a 0.5 status coefficient');
+assert.equal(ResourceSystem.getAffliction(heavyHitTarget, 'poisonedHealth'), 9, 'larger Health hits do not amplify the same Attack Power status');
+assert.equal(ResourceSystem.attackPowerForAttack({ attackPower: -12 }), 0, 'attack power clamps invalid negative mod data');
+assert.equal(ResourceSystem.attackPowerForAttack({ attackPower: Number.POSITIVE_INFINITY }), 12, 'nonfinite attack power falls back safely');
+
 console.log('resource ring visibility and affliction color checks passed');

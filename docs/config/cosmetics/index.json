@@ -115,6 +115,10 @@
       "path": "./appearance/mao-ao/wildbeard.json"
     },
     {
+      "id": "appearance::Mao-ao_M::mao-ao_grandbeard",
+      "path": "./appearance/mao-ao/grandbeard.json"
+    },
+    {
       "id": "appearance::Mao-ao_M::mao-ao_forwardtuft_long",
       "path": "./appearance/mao-ao/forwardtuft_long.json"
     },
@@ -191,6 +195,10 @@
       "path": "./appearance/tletingan/wildbeard.json"
     },
     {
+      "id": "appearance::Tletingan_M::tl_grandbeard",
+      "path": "./appearance/tletingan/grandbeard.json"
+    },
+    {
       "id": "appearance::Tletingan_F::tl_forwardtuft_long",
       "path": "./appearance/tletingan/forwardtuft_long.json"
     },
@@ -231,6 +239,10 @@
       "path": "./appearance/kenkari/wildbeard.json"
     },
     {
+      "id": "appearance::Kenkari_M::kenk_grandbeard",
+      "path": "./appearance/kenkari/grandbeard.json"
+    },
+    {
       "id": "appearance::Kenkari_M::kenk_splayedknot_high_m",
       "path": "./appearance/kenkari/splayedknot_high_m.json"
     },
@@ -269,6 +281,10 @@
     {
       "id": "tankan_bodywrap",
       "path": "./clothes/overwear/tankan_bodywrap.json"
+    },
+    {
+      "id": "fine_bodywrap",
+      "path": "./clothes/overwear/fine_bodywrap.json"
     },
     {
       "id": "appearance::Mao-ao_M::mao-ao_braid-L",
@@ -423,8 +439,16 @@
       "path": "./appearance/mashtzarr-m/wildbeard.json"
     },
     {
+      "id": "appearance::Mashtzarr_M::mashtz_grandbeard",
+      "path": "./appearance/mashtzarr-m/grandbeard.json"
+    },
+    {
       "id": "tangedcirclet",
       "path": "./clothes/hat/tangedcirclet.json"
+    },
+    {
+      "id": "hachutu_binding_mask_ii",
+      "path": "./clothes/masks/hachutu_binding_mask_ii.json"
     },
     {
       "id": "festivalmask_gar-wolf",
@@ -441,6 +465,22 @@
     {
       "id": "festivalmask_voorg-ass",
       "path": "./clothes/masks/festivalmask_voorg-ass.json"
+    },
+    {
+      "id": "replica_bzabag_helm",
+      "path": "./clothes/hat/replica_bzabag_helm.json"
+    },
+    {
+      "id": "fur_hood",
+      "path": "./fur_hood.json"
+    },
+    {
+      "id": "simple_hood",
+      "path": "./simple_hood.json"
+    },
+    {
+      "id": "fur_lined_hood",
+      "path": "./fur_lined_hood.json"
     }
   ]
 }

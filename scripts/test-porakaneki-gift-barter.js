@@ -46,6 +46,16 @@ const gifting = windowStub.NpcGifting; // Wrapped public API used by the game's 
 const rapport = windowStub.NpcRapport; // Existing daily/rollover authority.
 const hunterA = { rec: { id: 'hunter_a', species: 'porakaneki' }, isPorakanekiHunter: true }; // Two unrelated camps must share one gift quota.
 const hunterB = { rec: { id: 'hunter_b', species: 'porakaneki' }, isPorakanekiHunter: true };
+assert.equal(gifting.getNpcGiftOfferAction(hunterA), null, 'missing position authority must never enable a remote Porakaneki gift');
+assert.equal(gifting.offerGift(hunterA), false, 'uninitialized world targeting cannot consume the gift');
+windowStub.FurnitureTableSystem = { npcDistance: () => 2.1 }; // Production world-position authority: both named chief and procedural hunter are outside the two-tile reach.
+assert.equal(gifting.getNpcGiftOfferAction(hunterA), null, 'distant hunter cannot advertise a gift action');
+assert.equal(gifting.getNpcGiftOfferAction({ rec: chief }), null, 'distant chief uses the same proximity rule');
+assert.equal(gifting.offerGift(hunterA), false, 'a stale distant gift press is rejected without spending an item');
+assert.equal(inventory.gift, 30);
+assert.equal(rapport.canGiftToday(chief.id), true, 'out-of-reach presses cannot consume the shared daily quota');
+windowStub.FurnitureTableSystem.npcDistance = () => 2; // Exactly two tiles is a valid local gift, even for the chief.
+assert(gifting.getNpcGiftOfferAction({ rec: chief }), 'named chief is giftable at the same two-tile boundary');
 assert(gifting.getNpcGiftOfferAction(hunterA));
 assert(gifting.offerGift(hunterA));
 assert.equal(relation(chief.id).favor, 1);
@@ -94,7 +104,7 @@ for (const rank of [1, 2, 3]) {
   if (rank === 3) assert.notEqual(genotype.sizeClass, 'medium');
 }
 const dual = windowStub.CreatureGenetics.makeRareGiftGenotype('uumkaoii', 2); // Dual-color wildlife has two rare colors rather than invented pattern genes.
-assert(dual.fur && dual.plates);
+assert(dual.base && dual.shell && dual.shell.enabled, 'Uumkao\'ii rare gifts must retain base + mandatory shell');
 
 day++;
 roll = 0.99;

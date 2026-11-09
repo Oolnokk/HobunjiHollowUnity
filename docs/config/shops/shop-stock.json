@@ -18,7 +18,7 @@
         {
           "key": "workhammer_nativeCopper",
           "icon": "🔨",
-          "name": "Native Copper Work Hammer",
+          "name": "Copper Work Hammer",
           "desc": "A simple two-handed blunt hammer. Equip it as a pick or weapon; owning it unlocks smithing this shape in better metals.",
           "price": 45,
           "givesTool": "workhammer_nativeCopper",
@@ -163,6 +163,14 @@
             "category": "overwear",
             "usesB": true,
             "price": 80,
+            "conditions": {}
+          },
+          {
+            "id": "simple_hood",
+            "label": "Simple Hood",
+            "category": "hood",
+            "usesB": false,
+            "price": 40,
             "conditions": {}
           },
           {
@@ -431,9 +439,9 @@
       ]
     },
     "garankiEnchanting": {
-      "label": "Garanki Gabu's Artifacts & Enchanting",
+      "label": "Garanki Gabu's Artifacts, Custody & Enchanting",
       "menuId": "garankiEnchanter",
-      "accessLabel": "Artifacts & Enchanting",
+      "accessLabel": "Artifacts, Custody & Enchanting",
       "dialogueAccess": {
         "sellerIds": [
           "garanki_gabu"

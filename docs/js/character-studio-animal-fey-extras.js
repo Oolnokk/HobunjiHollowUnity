@@ -33,13 +33,18 @@
     'dabinggi-hound': ['mitts', 'spectacles', 'stripes'],
     grehlr: ['mitts', 'spectacles', 'coloredstripe'],
     drenkirra: ['bodystripes', 'spectacles'],
+    uumkaoii: ['shell'],
+    nelk: ['brushtail', 'cape', 'spectacles'],
+    nazgraku: ['spectacles'],
   });
   const ANIMAL_META = Object.freeze({
     grehlr: { prefix: 'grehlr', base: 'grehlr_idle.png', eyes: 'grehlr_eye.png' },
     drenkirra: { prefix: 'drnk', base: 'drenkirra_idle.png', eyes: 'drenkirra_eye.png' },
     'gar-wolf': { prefix: 'gw', base: 'gar-wolf_idle.png', eyes: 'gar-wolf_eye.png' },
     'dabinggi-hound': { prefix: 'dh', base: 'dabinggi-hound_idle.png', eyes: 'dabinggi-hound_eye.png' },
-    uumkaoii: { prefix: 'uum', base: "uumkao'ii.png", singleFrame: true },
+    uumkaoii: { prefix: 'uum', base: "uumkao'ii_idle.png" },
+    nelk: { prefix: 'nelk', base: 'nelk_idle.png', eyes: 'nelk_eye-A.png' },
+    nazgraku: { prefix: 'nzg', base: 'nazgraku_idle.png', eyes: 'nazgraku_eye.png' },
   });
 
   function parseAppearance() {
@@ -71,13 +76,17 @@
   }
 
   function colorLayersFor(kind) {
-    return kind === 'uumkaoii' ? ['fur', 'plates'] : ['base', ...patternIdsFor(kind)];
+    return ['base', ...patternIdsFor(kind)]; // Shared base/pattern model now includes Uumkao'ii's mandatory shell.
   }
 
   function genotypeWithOverrides(appearance) {
     const kind = activeKind(appearance);
     const genotype = clone(appearance.creatureGenotype || appearance.genotype || {});
-    const overrides = appearance.creatureColorOverrides || {};
+    const overrides = { ...(appearance.creatureColorOverrides || {}) }; // Legacy Uumkao'ii exact-hex overrides map to the new anatomical region keys.
+    if (kind === 'uumkaoii') {
+      if (!overrides.base && overrides.fur) overrides.base = overrides.fur;
+      if (!overrides.shell && overrides.plates) overrides.shell = overrides.plates;
+    }
     for (const layerId of colorLayersFor(kind)) {
       const color = normalizeHex(overrides[layerId]);
       if (!color) continue;
@@ -203,7 +212,7 @@
     if (live) return live;
     const fallback = ANIMAL_META[kind];
     if (!fallback) return null;
-    return { prefix: fallback.prefix, singleFrame: !!fallback.singleFrame, base: { idle: `assets/creaturesprites/${fallback.base}` }, patterns: kind === 'uumkaoii' ? ['fur', 'plates'] : patternIdsFor(kind), ...(fallback.eyes ? { eyes: { open: `assets/creaturesprites/${fallback.eyes}` } } : {}) };
+    return { prefix: fallback.prefix, singleFrame: !!fallback.singleFrame, base: { idle: `assets/creaturesprites/${fallback.base}` }, patterns: patternIdsFor(kind), ...(fallback.eyes ? { eyes: { open: `assets/creaturesprites/${fallback.eyes}` } } : {}) };
   }
   function patternUrl(kind, patternId) {
     const meta = speciesMeta(kind);
@@ -244,7 +253,8 @@
     const renderer = window.CreatureGeneticsRender;
     if (typeof renderer?.composeFrame !== 'function') throw new Error('CreatureGeneticsRender.composeFrame unavailable.');
     const genotype = genotypeWithOverrides(appearance); // Keeps Fey/custom exact RGB overrides while preserving colorPoolPaint, including repo pattern + normalized animal scale.
-    const output = await renderer.composeFrame(kind, 'idle', genotype, false); // Single authoritative animal compositor: shared pattern tint, repo surface paint, eyes, and runtime layer order.
+    const eyeState = window.CharacterStudioAnimalAppearance?.getPreviewEyeState?.(kind) ?? false; // Shares four-way eye picker with the base Character Studio preview.
+    const output = await renderer.composeFrame(kind, 'idle', genotype, eyeState); // Single authoritative animal compositor: shared pattern tint, repo surface paint, eyes, and runtime layer order.
     if (!output) throw new Error(`Canonical animal renderer returned no ${kind} frame.`);
     window.CharacterStudioAnimalAppearance?.refreshSurfacePatternStatuses?.(); // Surface row now reflects the exact composeFrame result even though Fey extras owns the outer preview wrapper.
     window.CharacterStudioAnimalAppearance?.noteCanonicalRender?.(kind, null);

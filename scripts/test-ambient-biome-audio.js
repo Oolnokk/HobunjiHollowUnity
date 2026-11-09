@@ -11,6 +11,10 @@ const source = fs.readFileSync(SOURCE_PATH, 'utf8');
 
 const loaderSource = fs.readFileSync(path.join(ROOT, 'docs/js/input-settings-panel.js'), 'utf8');
 assert.match(loaderSource, /'js\/ambient-biome-audio\.js\?v=[A-Za-z0-9_-]+'/, 'input settings bootstrap should load the ambience helper after game initialization');
+const caveFile = path.join(ROOT, 'docs/assets/audio/sfx/bgs/bgs_cave.m4a'); // Mine/den cave bed is AAC and stays a separate layer from weather.
+assert.equal(fs.existsSync(caveFile), true, 'new cave recording should exist');
+assert.equal(fs.readFileSync(caveFile).subarray(4, 8).toString('ascii'), 'ftyp', 'cave recording should have MP4/AAC container');
+
 for (const fileName of ['bgs_nightbugs1.ogg', 'bgs_cloudforest.ogg', 'bgs_cloudforest_night.ogg', 'bgs_river.ogg']) {
   const oggPath = path.join(ROOT, 'docs/assets/audio/sfx/bgs', fileName);
   assert.equal(fs.existsSync(oggPath), true, `${fileName} should exist`);
@@ -192,6 +196,35 @@ api.updateNow();
 snapshot = api.debugSnapshot();
 assert.equal(target(snapshot, 'nightbugs'), 0, 'rain should suppress wildlife ambience like the existing BGS mixer');
 assert.ok(target(snapshot, 'river') > 0, 'river proximity ambience should remain audible during rain');
+
+// Cave ambience is a sixth, independent loop; weather remains owned by the indoor Music mixer.
+const weatherBed = { rainTarget: 0.5, lowpassHz: 3200 }; // Fake weather state verifies no cave ambience routine writes to weather.
+for (const caveId of [
+  'map_i_town_mine_safe',
+  'map_i_town_mine_f_11',
+  'map_i_den_map_southern_cloud_forest_0',
+  'map_i_den_map_northern_cliffs_3',
+  'map_i_den_banubu',
+]) {
+  state.area = caveId;
+  api.updateNow();
+  snapshot = api.debugSnapshot();
+  assert.equal(target(snapshot, 'cave'), 0.38, `${caveId}: cave bed should be audible`);
+  assert.equal(target(snapshot, 'nightbugs'), 0, `${caveId}: exterior nightbugs stay outside`);
+  assert.deepEqual(weatherBed, { rainTarget: 0.5, lowpassHz: 3200 }, 'cave mixer leaves muffled weather unchanged');
+}
+assert.equal(FakeAudio.instances.filter(audio => audio.src.endsWith('bgs_cave.m4a')).length, 1, 'reuse one persistent cave recording across cave transitions');
+state.area = 'map_western_slope';
+api.updateNow();
+assert.equal(target(api.debugSnapshot(), 'cave'), 0, 'Western Slope outside a cave has no cave loop');
+state.area = 'town';
+api.updateNow();
+assert.equal(target(api.debugSnapshot(), 'cave'), 0, 'Town surface has no cave loop');
+state.area = 'map_i_town_mine_f_2';
+config.enabled = false;
+api.updateNow();
+assert.equal(target(api.debugSnapshot(), 'cave'), 0, 'audio mute must silence cave ambience');
+config.enabled = true;
 
 api.dispose();
 assert.equal(config.bgs.birdsVolume, 0.25, 'dispose should restore the original bird volume');

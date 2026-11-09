@@ -26,29 +26,102 @@
     return STATE_PREFIX + ':' + worldId;
   }
 
-  function readProgress(profile) {
+  // World-scoped story progress travels in hobunjiSaveMeta through all normal
+  // folder/cloud/quick-save snapshots. Legacy browser flags are import-only.
+  const SAVE_META_KEY = 'hobunjiSaveMeta';
+  let cachedWorldId = null;
+  let cachedStory = null;
+
+  function legacyValue(key) {
+    try { return localStorage.getItem(key); } catch (_) { return null; }
+  }
+
+  function worldMeta(profile) {
+    const id = String(profile?.worldId || '');
     try {
-      const progress = localStorage.getItem(stateKey(profile)); // Reads the world's shared completion flag before considering the previous character-scoped format.
-      if (progress) return progress;
-      const legacyKey = STATE_PREFIX + ':' + profile.characterId + ':' + profile.worldId; // Preserves completed openings recorded by the previous version for this world's owner.
-      if (localStorage.getItem(legacyKey) === 'complete') {
-        writeProgress(profile, 'complete');
-        return 'complete';
-      }
-      return '';
-    } catch (_) {
-      return '';
+      const meta = JSON.parse(localStorage.getItem(SAVE_META_KEY) || 'null');
+      return { meta, world: (meta?.worlds || []).find(w => String(w.id) === id) || null };
+    } catch (_) { return { meta: null, world: null }; }
+  }
+
+  function storedStory(profile) {
+    const id = String(profile?.worldId || '');
+    if (!id) return null;
+    if (cachedWorldId === id) return cachedStory; // No massive save JSON parse on repeated story checks.
+    const { meta, world } = worldMeta(profile);
+    if (!world) return null;
+    if (world.openingStory && typeof world.openingStory === 'object') {
+      cachedWorldId = id;
+      cachedStory = { ...world.openingStory };
+      return cachedStory;
     }
+    const oldOpening = legacyValue(stateKey(profile));
+    const oldCharacter = legacyValue(STATE_PREFIX + ':' + profile.characterId + ':' + id);
+    const oldTour = legacyValue(stateKey(profile) + ':farm-tour') === 'complete';
+    const oldFey = legacyValue(stateKey(profile) + ':jubmir-fey') === 'complete';
+    const rawHours = legacyValue(stateKey(profile) + ':farm-tour:completed-hours');
+    // Day-two+ worlds must already have finished the mandatory introduction,
+    // including a world downloaded via DriveSync without its browser-only keys.
+    const advanced = Math.max(Number(world.lastDay) || 1, Number(world.calendar?.day) || 1) > 1;
+    const complete = oldOpening === 'complete' || oldCharacter === 'complete' || oldTour || advanced;
+    const story = {
+      opening: complete ? 'complete' : oldOpening === 'pending' ? 'pending' : '',
+      farmTourComplete: oldTour || advanced,
+      farmTourCompletedAtHours: rawHours != null && rawHours.trim() !== '' && Number.isFinite(Number(rawHours)) ? Number(rawHours) : null,
+      jubmirFeyComplete: oldFey,
+    };
+    cachedWorldId = id;
+    cachedStory = story;
+    if (complete || oldOpening || oldFey) {
+      world.openingStory = story;
+      try { localStorage.setItem(SAVE_META_KEY, JSON.stringify(meta)); }
+      catch (error) { status.lastError = error?.message || String(error); }
+    }
+    return story;
+  }
+
+  function changeStory(profile, fields) {
+    const id = String(profile?.worldId || '');
+    const prior = storedStory(profile) || {};
+    const { meta, world } = worldMeta(profile); // Always mutate the freshest full world record.
+    if (world) {
+      world.openingStory = { ...(world.openingStory || prior), ...fields };
+      try {
+        localStorage.setItem(SAVE_META_KEY, JSON.stringify(meta));
+        cachedWorldId = id;
+        cachedStory = { ...world.openingStory };
+        return true;
+      } catch (error) { status.lastError = error?.message || String(error); }
+    }
+    // Compatibility with preview/test environments where no world save exists.
+    cachedWorldId = id;
+    cachedStory = { ...prior, ...fields };
+    try {
+      if (Object.prototype.hasOwnProperty.call(fields, 'opening')) localStorage.setItem(stateKey(profile), fields.opening || '');
+      if (fields.farmTourComplete === true) localStorage.setItem(stateKey(profile) + ':farm-tour', 'complete');
+      if (Number.isFinite(fields.farmTourCompletedAtHours)) localStorage.setItem(stateKey(profile) + ':farm-tour:completed-hours', String(fields.farmTourCompletedAtHours));
+      if (fields.jubmirFeyComplete === true) localStorage.setItem(stateKey(profile) + ':jubmir-fey', 'complete');
+    } catch (_) { /* The portable world save remains the authority. */ }
+    return false;
+  }
+
+  function readProgress(profile) {
+    const saved = storedStory(profile);
+    if (saved) return saved.opening || '';
+    const progress = legacyValue(stateKey(profile));
+    if (progress) return progress;
+    const legacyComplete = legacyValue(STATE_PREFIX + ':' + profile?.characterId + ':' + profile?.worldId) === 'complete';
+    if (legacyComplete) {
+      // Carry old per-character completion into the current world-scoped key
+      // when a legacy session does not yet expose its portable world record.
+      changeStory(profile, { opening: 'complete' });
+      return 'complete';
+    }
+    return '';
   }
 
   function writeProgress(profile, value) {
-    try {
-      localStorage.setItem(stateKey(profile), String(value || ''));
-      return true;
-    } catch (error) {
-      status.lastError = error?.message || String(error);
-      return false;
-    }
+    return changeStory(profile, { opening: String(value || '') });
   }
 
   function log(message, level = 'info') {
@@ -292,7 +365,11 @@
   }
 
   function tourComplete(profile) {
-    try { return localStorage.getItem(tourKey(profile)) === 'complete'; } catch (_) { return false; }
+    const saved = storedStory(profile);
+    // Portable data wins when it explicitly records a decision. A partial
+    // in-memory fallback in older worlds must not hide a completed legacy tour.
+    if (saved?.farmTourComplete != null) return saved.farmTourComplete === true;
+    return legacyValue(tourKey(profile)) === 'complete';
   }
 
   function gameHours() {
@@ -306,17 +383,23 @@
   function rememberFarmTourTime(profile) {
     const hours = gameHours(); // Recorded at the final farm-tour Continue, rather than when the tour starts.
     if (hours === null) return;
-    const key = tourKey(profile) + ':completed-hours'; // World-scoped timestamp accompanies the existing farm-tour flag.
-    const stored = localStorage.getItem(key); // Repairs malformed timestamps as well as missing legacy data.
-    if (stored === null || stored.trim() === '' || !Number.isFinite(Number(stored))) localStorage.setItem(key, String(hours));
+    if (Number.isFinite(storedStory(profile)?.farmTourCompletedAtHours)) return;
+    // In a legacy/no-portable-world session, preserve the stored completion
+    // time rather than restarting Jubmir's 12-hour countdown after a reload.
+    const legacyRaw = legacyValue(tourKey(profile) + ':completed-hours');
+    if (legacyRaw != null && legacyRaw.trim() !== '' && Number.isFinite(Number(legacyRaw))) return;
+    changeStory(profile, { farmTourCompletedAtHours: hours }); // Portable world-scoped farm-tour timestamp.
   }
 
   function feyVisitState(profile = window.__hobunjiPlayerProfile) {
     const now = gameHours(); // Used for eligibility and mobile diagnostics, never wall-clock time.
-    const raw = localStorage.getItem(tourKey(profile) + ':completed-hours'); // Missing legacy timestamps must not coerce to zero.
-    const completedAt = raw === null || raw.trim() === '' ? NaN : Number(raw); // Rejects malformed persisted timestamps.
+    const saved = storedStory(profile);
+    const raw = saved?.farmTourCompletedAtHours !== undefined
+      ? saved.farmTourCompletedAtHours : legacyValue(tourKey(profile) + ':completed-hours');
+    const completedAt = raw === null || raw === '' || raw === undefined ? NaN : Number(raw);
     return {
-      completed: localStorage.getItem(stateKey(profile) + ':jubmir-fey') === 'complete',
+      completed: saved ? saved.jubmirFeyComplete === true : legacyValue(stateKey(profile) + ':jubmir-fey') === 'complete',
+      completedAtHours: Number.isFinite(saved?.jubmirFeyCompletedAtHours) ? saved.jubmirFeyCompletedAtHours : null,
       farmTourCompletedAtHours: Number.isFinite(completedAt) ? completedAt : null,
       hoursUntilVisit: now !== null && Number.isFinite(completedAt) ? Math.max(0, completedAt + FEY_VISIT_DELAY_HOURS - now) : null,
       latestChange: 'Six inn rooms; Jubmir visits 12 game hours after the farm tour and discusses trade and the Great Fey in his room.',
@@ -378,12 +461,21 @@
       "My point in saying this is that there is more than one way to skin a turg-rat. Finding ways to make the journey to Hobunji Hollow more worthwhile would be just as helpful as removing the obstacles that make it difficult.",
       "Father Hunundi has been asking around the village for ideas on how to do that. I would seek him out when you have time.",
     ];
-    const talk = (id, text) => ({ id, type: 'talk', speakerId: 'jubmir', addressedActorId: 'player', text, next: '__next__' }); // Every line uses the canonical NPC speaker and faces the player.
+    const talk = (id, text) => ({ // Every spoken paragraph resets the shared two-person orbit, including whichever optional answer the player hears.
+      id, type: 'talk', speakerId: 'jubmir', addressedActorId: 'player', text, next: '__next__',
+      cameraMode: 'orbit', orbitActorIds: ['player', 'jubmir'], orbitAlternateFocus: true,
+      orbitInitialZoomPercent: 131.25, orbitZoomStepPercent: 5, // First paragraph is exactly 20% closer in boom distance than the former 105% zoom shot.
+      orbitHeightMode: 'oppositeFaceArc', // Tilt endpoints to the player's/Jubmir's real face heights, and look toward the antipodal point.
+      orbitDistanceTiles: 1.85, orbitSpeedDegPerSec: 6, orbitBlendSeconds: 1, // Keep the former smooth reset available in the Director.
+      orbitInstantCut: true, // Jubmir's paragraphs hard-cut between camera positions rather than blending.
+      horizontalCameraCollision: true, // Only this inn-room conversation opts into the wall/furniture horizontal sweep.
+      orbitDirection: 'clockwise', orbitDirectionSwitchEvery: 2, orbitDirectionalStartOffsetDeg: 30, // Jubmir CW, player CW, Jubmir CCW, player CCW; repeat.
+    });
     return {
-      version: 6, title: 'Jubmir — The Great Fey', mapId: 'map_i_inn_F2_jubmir',
+      version: 6, title: 'Jubmir — The Great Fey', mapId: 'map_i_inn_F2_jubmir', // Dialogue partners occupy adjacent, furniture-free floor tiles.
       actors: [
         { id: 'player', name: profile?.nickname || 'Farmer', isPlayer: true, worldC: 9, worldR: 8, rotation: 90, pose: 'standing' },
-        npcActor(records, { id: 'jubmir', name: 'Jubmir', npcId: 'jubmir', worldC: 11, worldR: 8, rotation: 270, pose: 'standing' }),
+        npcActor(records, { id: 'jubmir', name: 'Jubmir', npcId: 'jubmir', worldC: 10, worldR: 8, rotation: 270, pose: 'standing' }),
       ],
       stages: [
         { id: 'fey_fade_in', type: 'fade', direction: 'in', duration: 0.6, next: '__next__' },
@@ -412,7 +504,7 @@
         onDialogueContinue(stage) { if (stage.id === 'fey_final') finalContinued = true; },
       });
       if (!finalContinued) { status.phase = 'jubmir-fey-interrupted'; return false; }
-      localStorage.setItem(stateKey(profile) + ':jubmir-fey', 'complete');
+      changeStory(profile, { jubmirFeyComplete: true, jubmirFeyCompletedAtHours: gameHours() }); // Used by Garanki's following-day Guild invitation.
       window.DoorstepVisits?.markDone(FEY_VISIT_KEY);
       window.DoorstepVisits?.dismissVisit(FEY_VISIT_KEY);
       status.phase = 'jubmir-fey-complete';
@@ -425,6 +517,23 @@
       return false;
     } finally { status.running = false; }
   }
+
+  // Story appointments take precedence over Jubmir's recurring trading days.
+  window.NpcScheduling?.registerTargetOverride(FEY_VISIT_KEY, (rec, context) => {
+    if (rec?.id !== 'jubmir') return null;
+    const profile = window.__hobunjiPlayerProfile; // Scope the appointment to the story owner's world.
+    if (profile?.isWorldOwner !== true || !tourComplete(profile)) return null;
+    const state = feyVisitState(profile); // Keep him present during playback too, until successful completion.
+    if (state.completed || state.hoursUntilVisit !== 0) return null;
+    const entrance = rec.visitorPresence?.entrance; // Reuse the authored arrival location and existing async spawn guard.
+    if (!entrance || !Number.isFinite(entrance.c) || !Number.isFinite(entrance.r)) return null;
+    if (context.hasExistingWalker) {
+      const room = window.NpcScheduling.resolveNpcStationTarget('station_inn_jubmir_bed'); // Wait in his authored room when its station is loaded.
+      if (room) return room;
+    }
+    return { area: entrance.mapId || entrance.area, c: entrance.c, r: entrance.r,
+      label: entrance.label, activity: 'Jubmir story appointment', visitorArrival: !context.hasExistingWalker };
+  });
 
   window.DoorstepVisits?.registerProvider({
     id: FEY_VISIT_KEY, priority: 80,
@@ -482,7 +591,7 @@
         onDialogueContinue(stage) {
           if (stage.id === 'farm_tour_final') {
             rememberFarmTourTime(profile);
-            localStorage.setItem(tourKey(profile), 'complete');
+            changeStory(profile, { farmTourComplete: true });
           }
         },
       });
@@ -495,6 +604,14 @@
       return false;
     } finally { status.running = false; }
   }
+
+  // Dev/test URL flags: ?skipRescue=1 skips the Gar-wolf rescue, ?skipMeeting=1
+  // skips the Hunundi meeting. Skipping the meeting still marks the opening complete.
+  function urlFlag(name) {
+    try { return new URLSearchParams(window.location?.search || '').get(name) === '1'; } catch (_) { return false; }
+  }
+  const skipRescueRequested = () => urlFlag('skipRescue');
+  const skipMeetingRequested = () => urlFlag('skipMeeting');
 
   async function play(profile, options = {}) {
     if (status.running) return false;
@@ -529,7 +646,14 @@
       status.phase = 'rescue';
       status.lastScene = rescue.title;
       let rescueReady = false; // Once onReady completes, the scene has crossed the reveal boundary and must never be silently replayed after a later runtime error.
-      let rescueComplete = false; // The setup loop exits only after the live rescue runner finishes normally.
+      let rescueComplete = skipRescueRequested(); // ?skipRescue=1 (dev/test) goes straight to the Hunundi meeting; the opening still completes normally.
+      if (rescueComplete) {
+        log('skipping the rescue scene (?skipRescue=1)');
+        await runtime.preloadOpeningMeeting?.(meeting);
+        introduction?.setProgress(100);
+        resolveAssetsReady();
+        await loadingPages;
+      }
       while (!rescueComplete) {
         status.setupAttempts += 1;
         try {
@@ -554,7 +678,14 @@
       status.phase = 'hunundi-room';
       status.lastScene = meeting.title;
       let finalDialogueContinued = false; // Scene cleanup alone must not complete an opening that skipped its final dialogue.
-      await runtime.run(meeting, {
+      if (skipMeetingRequested()) {
+        log('skipping the Hunundi meeting (?skipMeeting=1)');
+        finalDialogueContinued = true;
+        status.pending = false;
+        status.completed = true;
+        if (!options.replay) writeProgress(profile, 'complete');
+        clearBootCover();
+      } else await runtime.run(meeting, {
         keepFadeOnFinish: false,
         onDialogueContinue(stage) {
           if (stage.id !== 'meeting_hunundi_final') return;
@@ -610,13 +741,16 @@
     buildJubmirFeyScene, nextFeyVisit, playJubmirFeyVisit,
     play: (profile = window.__hobunjiPlayerProfile) => play(profile, { replay: true }),
     debugSnapshot: () => ({ ...status, farmTourComplete: tourComplete(window.__hobunjiPlayerProfile), wildernessUnlocked: canEnterWilderness(), jubmirFey: feyVisitState() }),
-    stateKey,
+    stateKey, readProgress,
+    getStory: (profile = window.__hobunjiPlayerProfile) => storedStory(profile) || {}, // The Guild reads the same portable story record as Jubmir.
+    updateStory: changeStory, // Reuses the single world-meta writer for additional story phases.
     tourKey, needsTempleArrival, canEnterWilderness, onFarmEntered, buildFarmTourScene,
   });
   function storyVisitPanel() {
     const profile = window.__hobunjiPlayerProfile; // Supplies owner eligibility for the companion's read-only story panel.
     const story = window.OpeningStoryCutscene.debugSnapshot(); // Reuses the same progress and countdown sent to companion diagnostics.
     const doorstep = window.DoorstepVisits?.debugSnapshot?.(); // Adds visitor runtime readiness and the most recent spawn failure.
+    const hreesh = window.DoorstepVisits?.sourceDiagnostics?.('hreesh'); // Live source/build status plus retained Hreesh-specific spawn failure.
     const fey = story.jubmirFey; // Shared persisted countdown/completion, with no timer writes from rendering.
     const registered = doorstep?.providers?.includes(FEY_VISIT_KEY); // Detects a missed provider registration without changing the queue.
     let reason = 'Ready — exit the farmhouse to request the visit.'; // Human-readable eligibility summary shown above the raw progress rows.
@@ -632,6 +766,7 @@
     else if (!registered) reason = 'Jubmir’s story visit provider is not registered.';
     else if (doorstep.activeVisitKey === FEY_VISIT_KEY) reason = 'Jubmir’s story visitor is active at the farmhouse.';
     else if (doorstep.activeVisitKey) reason = 'Another doorstep visitor is active: ' + doorstep.activeVisitKey;
+    else if (!doorstep.schedulingReady) reason = 'Doorstep visits are waiting for the NPC scheduling connection.';
     else if (!window.DoorstepVisits.sourceWalker('jubmir')) reason = 'Jubmir’s source NPC is unavailable; the visitor cannot be cloned.';
     return {
       summary: reason,
@@ -645,13 +780,28 @@
         ['Story running', story.running ? 'Yes' : 'No'],
         ['Story visit provider registered', registered ? 'Yes' : 'No'],
         ['Current area', doorstep?.currentArea || 'Unavailable'],
+        ['Doorstep NPC scheduling connected', doorstep?.schedulingReady ? 'Yes' : 'No'],
         ['Active visit', doorstep?.activeVisitKey || 'None'],
         ['Registered visit providers', doorstep?.providers?.join(', ') || 'None'],
         ['Jubmir source NPC available', window.DoorstepVisits?.sourceWalker?.('jubmir') ? 'Yes' : 'No'],
         ['Farmhouse entrances', doorstep ? window.DoorstepVisits.exitDoorCandidates().length : 'Unavailable'],
+        ['Farmhouse exit requests', doorstep?.exitCount ?? 'Unavailable'],
+        ['Last observed area', doorstep?.lastObservedArea || 'None'],
+        ['Last exit trigger', doorstep?.lastExitAttempt?.trigger || 'None this session'],
+        ['Last exit result', doorstep?.lastExitAttempt?.result || 'None this session'],
+        ['Last exit provider results', doorstep?.lastExitAttempt ? JSON.stringify(doorstep.lastExitAttempt.providers) : 'None this session'],
         ['Last spawn attempt', doorstep?.lastSpawnAttempt ? `${doorstep.lastSpawnAttempt.key || 'Unknown'}: ${doorstep.lastSpawnAttempt.reason}` : 'None this session'],
+        ['Hreesh requested NPC id', hreesh?.npcId || 'Unavailable'],
+        ['Hreesh database record loaded', hreesh?.recordFound == null ? 'Unavailable' : hreesh.recordFound ? 'Yes' : 'No'],
+        ['Hreesh live source / area', hreesh?.sourceAvailable ? `Yes / ${hreesh.sourceArea || 'Unknown'}` : 'No'],
+        ['Hreesh cloneable root', hreesh?.rootCloneAvailable ? 'Yes' : 'No'],
+        ['Hreesh scheduled spawn stage', hreesh?.spawnStage || 'Unavailable'],
+        ['Hreesh avatar build error', hreesh?.spawnError || 'None recorded'],
+        ['Hreesh current schedule target', hreesh?.scheduleTarget ? JSON.stringify(hreesh.scheduleTarget) : 'None resolved'],
+        ['Hreesh last visit attempt', hreesh?.lastAttempt ? `${hreesh.lastAttempt.key}: ${hreesh.lastAttempt.reason}` : 'None this session'],
+        ['Live NPC walker count', hreesh?.walkerCount ?? 'Unavailable'],
         ['Last story error', story.lastError || 'None'],
-        ['Latest change', 'Added visible opening-story progress, Jubmir countdown and doorstep spawn diagnostics.'],
+        ['Latest change', 'Visitor cloning bypasses circular live hand-rig metadata and remaps cloned skeletons to their own bones; original NPC rigs stay untouched.'],
       ],
       note: 'Read-only diagnostics. After the countdown reaches zero, enter and exit the farmhouse. The visit stays pending until the inn conversation finishes. Last spawn attempt describes a past attempt, not necessarily the current blocker.',
     };

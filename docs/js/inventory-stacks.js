@@ -5,16 +5,16 @@
   // item key; STACK_SIZE is only how many units one inventory box shows —
   // anything past it spills into another box of the same item instead of
   // being refused or discarded. MAX_TOTAL is a sanity ceiling per item
-  // (101 full stacks) so a runaway grant can't grow a count without bound.
+  // (10 full stacks plus one partial stack) so a runaway grant can't grow a count without bound.
   // Loaded before every module that grants items (see index.html).
-  const STACK_SIZE = 99;
+  const STACK_SIZE = 999; // Used by Pack and clothing to partition saved inventory totals into visible slots.
   const MAX_TOTAL = 9999;
 
   function clampTotal(value) {
     return Math.max(0, Math.min(MAX_TOTAL, Number(value) || 0));
   }
 
-  // Splits a total into per-box counts: 250 -> [99, 99, 52].
+  // Splits a total into per-box counts: 2500 -> [999, 999, 502].
   function stackCounts(total) {
     const count = Math.max(0, Math.floor(Number(total) || 0));
     const out = [];
@@ -31,7 +31,8 @@
 
   function variants(key, total, qualityTracked = false) {
     const lineages = window.LivestockItemGenotypePersistence?.groupsFor?.(key, total); // Saved lineage groups take precedence over ordinary quality buckets.
-    const groups = lineages || (qualityTracked ? window.CookingSystem?.availableQualityEntries?.(key).map(entry => ({ ...entry, variant: `stars:${entry.stars}` })) : null); // Queries happen on menu rebuild, never in the frame loop.
+    const hides = !lineages && window.AnimalHides?.groupsFor?.(key, total); // Hide stacks keep one real source coat, rarity and price per variant.
+    const groups = lineages || hides || (qualityTracked ? window.CookingSystem?.availableQualityEntries?.(key).map(entry => ({ ...entry, variant: `stars:${entry.stars}` })) : null); // Queries happen on menu rebuild, never in the frame loop.
     return (groups || [{ count: total, variant: 'plain' }]).flatMap(group => stackCounts(group.count).map((count, index) => ({ ...group, key, count, stackId: `${key}|${group.variant}|${index}` })));
   }
 
@@ -71,5 +72,5 @@
     });
   }
 
-  window.InventoryStacks = Object.freeze({ STACK_SIZE, MAX_TOTAL, clampTotal, stackCounts, genotypeKey, variants, headIcon, applyHeadIcon, getDebug: () => ({ ...iconDebug, cachedHeads: headCache.size }) });
+  window.InventoryStacks = Object.freeze({ STACK_SIZE, MAX_TOTAL, clampTotal, stackCounts, genotypeKey, variants, headIcon, applyHeadIcon, getDebug: () => ({ ...iconDebug, stackSize: STACK_SIZE, maxTotal: MAX_TOTAL, cachedHeads: headCache.size }) });
 })();

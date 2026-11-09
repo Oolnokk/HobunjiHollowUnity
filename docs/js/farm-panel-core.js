@@ -41,7 +41,7 @@
         icon: entry.icon,
         label: entry.label,
         cat: 'furniture',
-        sellPrice: 0,
+        sellPrice: key === 'wideWindowFurniture' ? 24 : 16, // Spare window fixtures can be sold without affecting installed windows.
         desc: entry.desc,
       };
     }
@@ -67,6 +67,11 @@
       changed = true;
     } else if (!hadStarterGrant && !store[WINDOW_PERSISTENCE_REPAIR_SENTINEL]) {
       store[WINDOW_PERSISTENCE_REPAIR_SENTINEL] = 1; // Fresh worlds should not receive a later compensation batch just for opening storage twice.
+      changed = true;
+    }
+    if (!store.__starterGroomingKitGrantedV1) {
+      store.groomingKitFurniture = Math.max(0, Number(store.groomingKitFurniture) || 0) + 1;
+      store.__starterGroomingKitGrantedV1 = 1;
       changed = true;
     }
     if (changed) deps._saveWorldStorage(store);
@@ -118,10 +123,16 @@
     };
   }
 
+  function showFarmMap() {
+    if (!window.ControllerUI?.showSection?.('mpFarm', 'farmSectionLayout')) document.getElementById('farmGlanceCanvas')?.scrollIntoView?.({ block: 'nearest' });
+  }
+
   function renderFarmHeader() {
     const input = document.getElementById('farmNameInput');
     const saveBtn = document.getElementById('farmNameSaveBtn');
     const ownerSpan = document.getElementById('farmOwnerName');
+    const display = document.getElementById('farmNameDisplay'); // Persistent identity without an editable control in the navigation path.
+    if (display) display.textContent = deps.getFarmName();
     const owner = deps.isFarmOwner();
     if (input) { input.value = deps.getFarmName(); input.disabled = !owner; }
     if (saveBtn) {
@@ -177,6 +188,18 @@
     const FARM_GLANCE_TILE_COLORS = _tileColors();
     canvas.width = deps.COLS * FARM_GLANCE_PX;
     canvas.height = deps.ROWS * FARM_GLANCE_PX;
+    canvas.dataset.iconMarkers = '1';
+    const markers = document.getElementById('farmGlanceMarkers') || document.createElement('div'); // Independent DOM icons reuse the inventory renderers without tainting the map canvas.
+    markers.id = 'farmGlanceMarkers';
+    markers.replaceChildren();
+    if (!markers.parentElement) canvas.parentElement.appendChild(markers);
+    const marker = (col, row, label, icon) => {
+      const element = document.createElement('span'); // Non-focusable map annotations never add navigation stops.
+      element.className = 'farm-map-icon'; element.title = label; element.setAttribute('aria-label', label);
+      element.style.left = `${(col + 0.5) / deps.COLS * 100}%`;
+      element.style.top = `${(row + 0.5) / deps.ROWS * 100}%`;
+      element.textContent = icon; markers.appendChild(element); return element;
+    };
     const ctx = canvas.getContext('2d');
     const PX = FARM_GLANCE_PX;
     const grid = deps.getGrid();
@@ -186,8 +209,11 @@
         ctx.fillStyle = tile ? (FARM_GLANCE_TILE_COLORS[tile.type] || '#3c6e3f') : '#1a1a1a';
         ctx.fillRect(c * PX, r * PX, PX, PX);
         if (tile?.crop) {
-          ctx.fillStyle = tile.cropReady ? '#f9e28a' : '#8fd66b';
-          ctx.fillRect(c * PX + 2, r * PX + 2, PX - 4, PX - 4);
+          const key = deps.cropData?.[tile.crop]?.cropKey || tile.crop; // Harvest item identity drives the same icon as the bag.
+          const def = deps.ITEM_DEFS[key] || {}; // Missing/modded crops retain a readable fallback.
+          const icon = marker(c, r, `${def.label || key}${tile.cropReady ? ' (ready)' : ' (growing)'}`, def.icon || '🌱'); // Crop status remains visible around its item artwork.
+          icon.classList.add(tile.cropReady ? 'crop-ready' : 'crop-growing');
+          deps.applyItemSpriteIcon?.(icon, def, key);
         }
         if (deps.isHouseFootprint(c, r)) {
           ctx.fillStyle = 'rgba(120,90,60,0.9)';
@@ -219,12 +245,12 @@
         : WORLD_OBJECT_TYPE_COLORS[obj.type] || WORLD_OBJECT_TYPE_COLORS.default;
       ctx.fillRect(c * PX, r * PX, PX, PX);
     });
-    // Livestock
+    // Shared chatheads preserve each animal's authored framing and genotype.
     deps.animalObjects.forEach(a => {
-      ctx.fillStyle = '#ffd27a';
-      ctx.beginPath();
-      ctx.arc(a.col * PX + PX / 2, a.row * PX + PX / 2, PX * 0.35, 0, Math.PI * 2);
-      ctx.fill();
+      const kind = a.animalKey || a.kind; // Live farm animals store their species under animalKey.
+      const icon = marker(a.col, a.row, a.name || kind || 'Animal', '🐾'); // Placeholder remains available if portrait assets fail.
+      icon.classList.add('farm-map-animal');
+      window.InventoryStacks?.applyHeadIcon(icon, kind, a.genotype);
     });
 
     const legend = document.getElementById('farmGridLegend');
@@ -256,26 +282,21 @@
         const row = Math.floor((e.clientY - rect.top) * (canvas.height / rect.height) / PX);
         if (window.FarmProduction?.hasPlacement()) {
           const productionResult = window.FarmProduction.placeAt(col, row); // Uses this same map-click owner for multi-tile production buildings.
-          deps.showToast(productionResult.message, productionResult.ok); renderFarmPanel(); return;
+          deps.showToast(productionResult.message, productionResult.ok); window.FarmPanel.render(); return;
         }
         const mode = _farmPlacementMode;
         const result = mode.type === 'move' ? window.FarmBuildings.move(mode.buildingId, col, row)
           : window.FarmBuildings.placePlan(mode.tier, col, row);
         deps.showToast(result.message, result.ok);
         if (result.ok) _farmPlacementMode = null;
-        renderFarmPanel();
+        window.FarmPanel.render(); // Reapply barn/incubator/shipping decorators after rebuilding both farm pages.
       });
     }
     canvas.style.cursor = (_farmPlacementMode || window.FarmProduction?.hasPlacement()) ? 'crosshair' : '';
   }
 
-  // "Buildings" section of the Farm tab: one consolidated "House" row
-  // (every piece counts as a single entry here — see openHouseLayoutModal
-  // for per-piece move/place/build/demolish) plus every barn with a Move
-  // button (owner/alterFarm-gated), plus any owned-but-unplaced barn plans
-  // with a Place button. All arm _farmPlacementMode and wait for a click
-  // on the glance canvas above (see renderFarmGridGlance()'s click
-  // handler).
+  // Status and management stay on Buildings. Rename/materials and editing
+  // actions live on Customize Farm; owned plans open the map for placement.
   function renderFarmBuildings() {
     const list = document.getElementById('farmBuildingsList');
     const note = document.getElementById('farmBuildingsNote');
@@ -284,17 +305,19 @@
     const canAlter = deps.hasFarmPermission('alterFarm');
     const BARN_TIERS = deps.getBarnTiers();
     list.innerHTML = '';
+    const customization = document.getElementById('farmBuildingCustomizationList') || list; // Existing editor actions have a dedicated page; management stays in Buildings.
+    if (customization !== list) customization.replaceChildren();
 
     if (note) {
       note.textContent = !canAlter ? "Only the farm's owner (or a granted farmhand) can move or build here."
         : _farmPlacementMode
           ? (_farmPlacementMode.type === 'move' ? 'Click a tile on the map above to move it there.'
             : `Click a tile above to place the ${BARN_TIERS[_farmPlacementMode.tier].label} foundation.`)
-          : 'Place or move buildings on the map. Little and medium barns connect as rooms when their edges touch. Open House Layout to edit your house.';
+          : 'Check and manage buildings here. Rename, materials and construction are on Customize Farm.';
     }
     if (cancelBtn) {
-      cancelBtn.hidden = !_farmPlacementMode;
-      cancelBtn.onclick = () => { _farmPlacementMode = null; renderFarmBuildings(); };
+      cancelBtn.hidden = !_farmPlacementMode && !window.FarmProduction?.hasPlacement();
+      cancelBtn.onclick = () => { _farmPlacementMode = null; window.FarmProduction?.cancelPlacement(); window.FarmPanel.render(); };
     }
 
     const addRow = (label, w, h, onMove) => {
@@ -302,16 +325,17 @@
       row.className = 'farm-row';
       row.innerHTML = `<span class="farm-row-name">${deps.esc(label)}</span><span class="farm-note">${w}×${h}</span>`;
       if (canAlter && onMove) {
+        const editRow = row.cloneNode(true); // Preserve a plain status row for everyday inspection.
         const btn = document.createElement('button');
         btn.className = 'settings-small-btn';
         btn.textContent = 'Move';
         btn.addEventListener('click', onMove);
-        row.appendChild(btn);
+        editRow.appendChild(btn); customization.appendChild(editRow);
       }
       list.appendChild(row);
     };
 
-    window.FarmLayoutEditor?.renderLauncher?.(list); // Whole-farm structure layout (house, barns, production buildings, shipping box).
+    window.FarmLayoutEditor?.renderLauncher?.(customization); // Whole-farm structure layout (house, barns, production buildings, shipping box).
 
     const pieces = deps.getHousePieces();
     if (pieces.length) {
@@ -327,14 +351,15 @@
       btn.className = 'settings-small-btn';
       btn.textContent = 'Edit Layout';
       btn.addEventListener('click', () => openHouseLayoutModal());
-      row.appendChild(btn);
+      const editRow = row.cloneNode(true); // Keep house status on Buildings while its editor lives on Customize Farm.
+      editRow.appendChild(btn); customization.appendChild(editRow);
       list.appendChild(row);
     }
 
     deps.getFarmBuildings().filter(b => b.kind === 'barn').forEach(b => {
       const tier = BARN_TIERS[b.tier];
       addRow(`🏚 ${tier.label}${b.stage === 'foundation' ? ' (foundation)' : ''}`, b.w, b.h,
-        () => { window.FarmProduction?.cancelPlacement(); _farmPlacementMode = { type: 'move', buildingId: b.id }; renderFarmBuildings(); });
+        () => window.FarmLayoutEditor?.open?.('farm_barn_' + b.id));
     });
 
     if (canAlter) {
@@ -347,12 +372,12 @@
         const btn = document.createElement('button');
         btn.className = 'settings-small-btn';
         btn.textContent = 'Place';
-        btn.addEventListener('click', () => { window.FarmProduction?.cancelPlacement(); _farmPlacementMode = { type: 'place', tier }; renderFarmBuildings(); });
+        btn.addEventListener('click', () => { window.FarmProduction?.cancelPlacement(); _farmPlacementMode = { type: 'place', tier }; window.FarmPanel.render(); showFarmMap(); });
         row.appendChild(btn);
-        list.appendChild(row);
+        customization.appendChild(row);
       });
     }
-    window.FarmProduction?.renderRows(list);
+    window.FarmProduction?.renderRows(list, customization);
   }
 
   // ── House Layout editor ─────────────────────────────────────────────
@@ -362,7 +387,7 @@
   // locked (no orbit/rotate) top-down orthographic camera over the live
   // farm scene, and you MOVE a piece by dragging it directly in that
   // viewport instead of arming a mode and clicking a separate flat 2D map.
-  // Actions with no natural drag gesture (select/build/demolish/rotate a
+  // Actions with no natural drag gesture (select/build/rotate a
   // piece, place a new owned deed) live in the side panel instead.
   let _houseLayoutSelectedId = null;         // piece id whose actions show in the side panel
   let _houseLayoutPlacementMode = null;      // { type: 'placeHouseDeed', pieceKey } — armed by a Deeds Place button, consumed by the next plain (non-drag) tap
@@ -372,6 +397,9 @@
   let _layoutAdapter = null; // Barn-specific data/actions use the same house modal, renderer, and pointer handlers.
   const HOUSE_LAYOUT_MARGIN = 2;
   function _layoutPieces() { return _layoutAdapter ? _layoutAdapter.getPieces() : deps.getHousePieces(); }
+  const _layoutCursor = { active: false, col: 0, row: 0, carry: null, direction: '', nextMove: 0, confirmDown: false, cancelDown: false }; // Shared by farm/house/barn top-down controller editing; pointer handling remains independent.
+  const LAYOUT_CURSOR_INITIAL_REPEAT = 380; // Matching ControllerUI's first held-direction repeat.
+  const LAYOUT_CURSOR_REPEAT = 140; // Matching ControllerUI's subsequent tile steps.
 
   function openHouseLayoutModal(adapter = null) {
     const modal = document.getElementById('houseLayoutModal');
@@ -379,6 +407,7 @@
     closeHouseLayoutModal();
     _layoutAdapter = adapter;
     _houseLayoutSelectedId = adapter?.selectedId || null;
+    _setLayoutCursorActive(false); // The previous editor must not leave its cursor/carry state behind.
     const title = adapter?.title || 'House Layout'; // Shared header reflects the currently edited building.
     modal.querySelector('.house-layout-title').textContent = title;
     const listTitle = modal.querySelector('.house-layout-side > .house-layout-section-title'); // Adapters name their own piece list (rooms, structures).
@@ -424,6 +453,7 @@
     _houseLayoutPlacementMode = null;
     _houseLayoutFeatureMode = null;
     _layoutCancelPointer?.();
+    _setLayoutCursorActive(false);
     _houseLayoutDrag = null;
     _houseLayoutSelectedId = null;
     _layoutAdapter = null;
@@ -479,6 +509,12 @@
     );
     selectBox.visible = false;
     overlayScene.add(selectBox);
+    const cursorBox = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(0.96, 0.08, 0.96)),
+      new THREE.LineBasicMaterial({ color: 0x64e7ff, depthTest: false })
+    ); // A one-ground-tile outline, independent of the selected building's bounding box.
+    cursorBox.visible = false;
+    overlayScene.add(cursorBox);
 
     // House pieces render with plain MeshLambertMaterial (see HousePieceGen.js)
     // and no emissive boost — the same "reads as a solid black blob under
@@ -494,7 +530,7 @@
     // observes it and gameplay lighting/mood is untouched.
     const fillLight = new THREE.AmbientLight(0xffffff, 1.1);
 
-    _houseLayout3d = { renderer, camera, overlayScene, ghostMesh, selectBox, fillLight };
+    _houseLayout3d = { renderer, camera, overlayScene, ghostMesh, selectBox, cursorBox, fillLight };
     return _houseLayout3d;
   }
   // Sizes the renderer to the viewport container's actual CSS size and
@@ -525,7 +561,9 @@
     const ctx3d = _ensureHouseLayout3d();
     if (!ctx3d) return;
     _resizeAndFrameHouseLayout3d();
-    const { renderer, camera, overlayScene, selectBox, fillLight } = ctx3d;
+    const { renderer, camera, overlayScene, selectBox, cursorBox, fillLight } = ctx3d;
+    cursorBox.visible = _layoutCursor.active;
+    if (_layoutCursor.active) cursorBox.position.set(_layoutCursor.col + 0.5, 1.9, _layoutCursor.row + 0.5);
     const selected = _layoutPieces().find(p => p.id === _houseLayoutSelectedId);
     if (selected) {
       selectBox.visible = true;
@@ -634,6 +672,171 @@
     return null;
   }
 
+  function _setLayoutCursorActive(active) {
+    const enabled = !!active; // Only the open layout editor may own directional controller input.
+    _layoutCursor.active = enabled;
+    _layoutCursor.carry = null;
+    _layoutCursor.direction = '';
+    _layoutCursor.nextMove = 0;
+    _hideGhost();
+    const button = document.getElementById('houseLayoutCursorToggle'); // The same action is available to touch/keyboard as well as the controller.
+    if (button) {
+      button.textContent = enabled ? 'Tile Cursor Active · B to exit' : 'Use Tile Cursor (A)';
+      button.setAttribute('aria-pressed', String(enabled));
+    }
+    if (!enabled) { _layoutCursor.confirmDown = false; _layoutCursor.cancelDown = false; }
+    _renderHouseLayoutHint();
+  }
+
+  function _startLayoutCursor() {
+    if (_layoutCursor.active) { _setLayoutCursorActive(false); return; }
+    const bounds = _houseLayoutViewBounds(); // Start over the selected piece, or the center of this particular layout's visible area.
+    const piece = _layoutPieces().find(p => p.id === _houseLayoutSelectedId) || _layoutPieces()[0];
+    const targetCol = piece ? piece.col + Math.floor(piece.w / 2) : Math.floor(bounds.col + bounds.w / 2);
+    const targetRow = piece ? piece.row + Math.floor(piece.h / 2) : Math.floor(bounds.row + bounds.h / 2);
+    _layoutCursor.col = Math.max(0, Math.min(deps.COLS - 1, targetCol));
+    _layoutCursor.row = Math.max(0, Math.min(deps.ROWS - 1, targetRow));
+    _setLayoutCursorActive(true);
+    _layoutCursor.confirmDown = true; // The opening A press must be released before A can pick up a room.
+    _layoutCursor.cancelDown = false;
+  }
+
+  function _commitHouseLayoutMove(drag) {
+    let result;
+    if (_layoutAdapter) result = _layoutAdapter.move(drag.entry, drag.candidateCol, drag.candidateRow);
+    else if (drag.isWholeHouse) {
+      const dCol = drag.candidateCol - drag.entry.col, dRow = drag.candidateRow - drag.entry.row;
+      const starter = _layoutPieces().find(p => p.id === 'house_starter'); // Same anchor translation used for pointer and controller movement.
+      result = starter ? deps.moveHouse(starter.col + dCol, starter.row + dRow) : { ok: false, message: 'House not found.' };
+    } else result = deps.movePiece(drag.entry.id, drag.candidateCol, drag.candidateRow);
+    deps.showToast(result.message, result.ok);
+    renderHouseLayoutModal();
+    renderFarmBuildings();
+  }
+
+  function _applyHouseLayoutTile(world) {
+    if (_layoutAdapter && _houseLayoutPlacementMode) {
+      if (!deps.hasFarmPermission('alterFarm')) return;
+      const result = _layoutAdapter.place(world, _houseLayoutPlacementMode); // Existing structure-placement rules handle tap and controller equally.
+      deps.showToast(result.message, result.ok);
+      if (result.ok) {
+        _houseLayoutPlacementMode = null;
+        _houseLayoutSelectedId = result.addition?.id || _houseLayoutSelectedId;
+      }
+      renderHouseLayoutModal();
+      renderFarmBuildings();
+      return;
+    }
+    if (_houseLayoutPlacementMode?.type === 'placeHouseDeed') {
+      if (!deps.hasFarmPermission('alterFarm')) return;
+      const result = deps.placeHouseDeed(_houseLayoutPlacementMode.pieceKey, Math.floor(world.x), Math.floor(world.z));
+      deps.showToast(result.message, result.ok);
+      if (result.ok) _houseLayoutPlacementMode = null;
+      renderHouseLayoutModal();
+      renderFarmBuildings();
+      return;
+    }
+    if (_houseLayoutFeatureMode) {
+      if (!deps.hasFarmPermission('alterFarm')) return;
+      const col = Math.floor(world.x), row = Math.floor(world.z);
+      const result = _houseLayoutFeatureMode === 'remove'
+        ? deps.removeHouseFeatureAt(col, row)
+        : deps.placeHouseFeature(col, row, world.x, world.z, _houseLayoutFeatureMode);
+      deps.showToast(result.message, result.ok);
+      renderHouseLayoutModal();
+      return;
+    }
+    const piece = _housePieceAt(world.x, world.z);
+    _houseLayoutSelectedId = piece ? piece.id : null;
+    renderHouseLayoutModal();
+  }
+
+  function _stepLayoutCursor(dx, dy) {
+    const col = Math.max(0, Math.min(deps.COLS - 1, _layoutCursor.col + dx)); // Snap to authored farm grid, never fractional world space.
+    const row = Math.max(0, Math.min(deps.ROWS - 1, _layoutCursor.row + dy));
+    if (col === _layoutCursor.col && row === _layoutCursor.row) return;
+    _layoutCursor.col = col;
+    _layoutCursor.row = row;
+    if (_layoutCursor.carry) {
+      const drag = _layoutCursor.carry; // Preserve grab offset so picking up near a corner does not jump the structure.
+      drag.candidateCol = col - drag.grabDX;
+      drag.candidateRow = row - drag.grabDZ;
+      _updateGhost(drag);
+    }
+  }
+
+  function _confirmLayoutCursor() {
+    const world = { x: _layoutCursor.col + 0.5, z: _layoutCursor.row + 0.5 }; // Reuses the exact tap tile for selection, features and deed placement.
+    if (_layoutCursor.carry) {
+      const drag = _layoutCursor.carry;
+      _layoutCursor.carry = null;
+      _hideGhost();
+      _commitHouseLayoutMove(drag);
+      return;
+    }
+    if (_houseLayoutPlacementMode || _houseLayoutFeatureMode) { _applyHouseLayoutTile(world); return; }
+    const piece = _housePieceAt(world.x, world.z);
+    if (piece && piece.id === _houseLayoutSelectedId && deps.hasFarmPermission('alterFarm') && (!_layoutAdapter || _layoutAdapter.canDrag(piece))) {
+      _layoutCursor.carry = {
+        entry: piece, moved: true,
+        grabDX: _layoutCursor.col - piece.col, grabDZ: _layoutCursor.row - piece.row,
+        candidateCol: piece.col, candidateRow: piece.row,
+        isWholeHouse: !_layoutAdapter && piece.id === 'house_starter',
+      }; // A on an already selected building picks it up; A again drops using the existing move authority.
+      _updateGhost(_layoutCursor.carry);
+      _renderHouseLayoutHint();
+      return;
+    }
+    _applyHouseLayoutTile(world);
+  }
+
+  function _cancelLayoutCursor() {
+    if (_layoutCursor.carry) {
+      _layoutCursor.carry = null;
+      _hideGhost();
+    } else if (_houseLayoutPlacementMode || _houseLayoutFeatureMode) {
+      _houseLayoutPlacementMode = null;
+      _houseLayoutFeatureMode = null;
+      renderHouseLayoutModal();
+    } else _setLayoutCursorActive(false); // B hands focus back to the normal menu navigator without closing the editor.
+    _renderHouseLayoutHint();
+  }
+
+  function _handleLayoutControllerFrame(frame, actionDown) {
+    if (!_layoutCursor.active || !frame.focused || !frame.pad || window.ControllerUI?.activePanel?.() !== document.getElementById('houseLayoutModal')) return false;
+    const digitalX = Number(actionDown('uiRight')) - Number(actionDown('uiLeft')); // Live remapped D-pad bindings take precedence over left stick.
+    const digitalY = Number(actionDown('uiDown')) - Number(actionDown('uiUp'));
+    const dx = digitalX || (Math.abs(frame.move.x) >= 0.5 ? Math.sign(frame.move.x) : 0);
+    const dy = digitalY || (Math.abs(frame.move.y) >= 0.5 ? Math.sign(frame.move.y) : 0);
+    const direction = dx + ',' + dy; // Held directions repeat by one tile; changes take effect immediately.
+    if (dx || dy) {
+      if (direction !== _layoutCursor.direction || frame.now >= _layoutCursor.nextMove) {
+        _stepLayoutCursor(dx, dy);
+        _layoutCursor.nextMove = frame.now + (direction !== _layoutCursor.direction ? LAYOUT_CURSOR_INITIAL_REPEAT : LAYOUT_CURSOR_REPEAT);
+      }
+    }
+    _layoutCursor.direction = (dx || dy) ? direction : '';
+    const confirm = actionDown('uiConfirm');
+    const cancel = actionDown('uiCancel');
+    if (confirm && !_layoutCursor.confirmDown) _confirmLayoutCursor();
+    if (cancel && !_layoutCursor.cancelDown) _cancelLayoutCursor();
+    _layoutCursor.confirmDown = confirm;
+    _layoutCursor.cancelDown = cancel;
+    return true; // Suppresses ControllerUI's spatial navigation/Confirm/Back only while the cursor owns the viewport.
+  }
+
+  function _handleLayoutCursorKey(event) {
+    if (!_layoutCursor.active || document.getElementById('houseLayoutModal')?.classList.contains('open') !== true) return false;
+    if (event.key === 'Tab') { _setLayoutCursorActive(false); return false; } // Keyboard users can move back to ordinary sidebar navigation.
+    if (event.repeat && (event.key === 'Enter' || event.key === ' ')) return true;
+    const steps = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }; // Keyboard parity for debugging without a physical gamepad.
+    if (steps[event.key]) _stepLayoutCursor(...steps[event.key]);
+    else if (event.key === 'Enter' || event.key === ' ') _confirmLayoutCursor();
+    else if (event.key === 'Escape') _cancelLayoutCursor();
+    else return false;
+    return true;
+  }
+
   function _bindHouseLayoutPointer() {
     const canvas = document.getElementById('houseLayout3dCanvas');
     if (!canvas || canvas.dataset.pointerBound) return;
@@ -647,6 +850,7 @@
 
     canvas.addEventListener('pointerdown', (e) => {
       if (ptrId !== null) return;
+      if (_layoutCursor.active) _setLayoutCursorActive(false); // Direct touch/mouse input retakes the viewport without leaving a virtual cursor overlay.
       ptrId = e.pointerId; startX = e.clientX; startY = e.clientY;
       try { canvas.setPointerCapture(e.pointerId); } catch (_e) { /* degrade gracefully */ }
       if (_houseLayoutPlacementMode || _houseLayoutFeatureMode || !deps.hasFarmPermission('alterFarm')) return;
@@ -682,69 +886,9 @@
       ptrId = null;
       const drag = _houseLayoutDrag; _houseLayoutDrag = null;
       _hideGhost();
-      if (drag && drag.moved) {
-        let result;
-        if (_layoutAdapter) {
-          result = _layoutAdapter.move(drag.entry, drag.candidateCol, drag.candidateRow);
-        } else if (drag.isWholeHouse) {
-          // drag.candidateCol/Row track whichever starter-tagged piece was
-          // actually grabbed (main room or annex) — moveHouse always wants
-          // the MAIN room's new position, so translate by the same delta
-          // _updateGhost already uses for the preview, not the raw grabbed
-          // piece's own candidate position.
-          const dCol = drag.candidateCol - drag.entry.col, dRow = drag.candidateRow - drag.entry.row;
-          const starter = _layoutPieces().find(p => p.id === 'house_starter');
-          result = starter ? deps.moveHouse(starter.col + dCol, starter.row + dRow) : { ok: false, message: 'House not found.' };
-        } else {
-          result = deps.movePiece(drag.entry.id, drag.candidateCol, drag.candidateRow);
-        }
-        deps.showToast(result.message, result.ok);
-        renderHouseLayoutModal();
-        renderFarmBuildings(); // keep the main list's room-count note in sync
-        return;
-      }
-      // A plain tap (no meaningful drag): commit an armed deed placement or
-      // architecture-feature action, or select whatever piece (if any) sits
-      // under the tap.
+      if (drag && drag.moved) { _commitHouseLayoutMove(drag); return; }
       const world = _screenToWorldXZ(e.clientX, e.clientY);
-      if (!world) return;
-      if (_layoutAdapter && _houseLayoutPlacementMode) {
-        if (!deps.hasFarmPermission('alterFarm')) return;
-        const result = _layoutAdapter.place(world, _houseLayoutPlacementMode); // Uses existing plan-consumption and placement validation.
-        deps.showToast(result.message, result.ok);
-        if (result.ok) {
-          _houseLayoutPlacementMode = null;
-          _houseLayoutSelectedId = result.addition?.id || _houseLayoutSelectedId;
-        }
-        renderHouseLayoutModal();
-        renderFarmBuildings();
-        return;
-      }
-      if (_houseLayoutPlacementMode?.type === 'placeHouseDeed') {
-        if (!deps.hasFarmPermission('alterFarm')) return;
-        const result = deps.placeHouseDeed(_houseLayoutPlacementMode.pieceKey, Math.floor(world.x), Math.floor(world.z));
-        deps.showToast(result.message, result.ok);
-        if (result.ok) _houseLayoutPlacementMode = null;
-        renderHouseLayoutModal();
-        renderFarmBuildings();
-        return;
-      }
-      if (_houseLayoutFeatureMode) {
-        if (!deps.hasFarmPermission('alterFarm')) return;
-        const col = Math.floor(world.x), row = Math.floor(world.z);
-        const result = _houseLayoutFeatureMode === 'remove'
-          ? deps.removeHouseFeatureAt(col, row)
-          : deps.placeHouseFeature(col, row, world.x, world.z, _houseLayoutFeatureMode);
-        deps.showToast(result.message, result.ok);
-        // Stays armed on success too — placing/removing several fixtures in
-        // a row shouldn't need re-toggling the mode each time; only a
-        // failure or the explicit toggle button clears it.
-        renderHouseLayoutModal();
-        return;
-      }
-      const piece = _housePieceAt(world.x, world.z);
-      _houseLayoutSelectedId = piece ? piece.id : null;
-      renderHouseLayoutModal();
+      if (world) _applyHouseLayoutTile(world); // Mouse/touch and cursor share placement validation and selections.
     });
 
     canvas.addEventListener('pointercancel', (e) => {
@@ -761,6 +905,7 @@
     if (!hint) return;
     if (_layoutAdapter) {
       hint.textContent = !deps.hasFarmPermission('alterFarm') ? (_layoutAdapter.noPermissionHint || "Only the farm's owner (or a granted farmhand) can edit the barn.") : _layoutAdapter.getHint(_houseLayoutPlacementMode);
+      if (_layoutCursor.active) hint.textContent += _layoutCursor.carry ? ' · Move with stick/D-pad · A drop · B cancel move' : ' · Stick/D-pad: tile · A select/pick up/place · B back';
       return;
     }
     const HOUSE_PIECE_CATALOG = deps.getHousePieceCatalog();
@@ -773,6 +918,7 @@
       : _houseLayoutPlacementMode ? `Tap where the ${HOUSE_PIECE_CATALOG[_houseLayoutPlacementMode.pieceKey]?.label || 'piece'} should go.`
       : _houseLayoutFeatureMode ? featureHints[_houseLayoutFeatureMode]
       : 'Drag a room to move it. Tap a room to select it and see its options.';
+    if (_layoutCursor.active) hint.textContent += _layoutCursor.carry ? ' · Move with stick/D-pad · A drop · B cancel move' : ' · Stick/D-pad: tile · A select/pick up/place · B back';
   }
 
   function _renderHouseLayoutPieceList() {
@@ -812,7 +958,6 @@
     };
     if (entry.stage === 'foundation') {
       mk('Build', () => afterAction(deps.buildHousePiece(entry.id)));
-      mk('Demolish', () => { _houseLayoutSelectedId = null; afterAction(deps.demolishHousePiece(entry.id)); });
       return;
     }
     // Roof rotation is separate from footprint rotation (Rotate 90° below):
@@ -834,16 +979,8 @@
       note.textContent = 'This room anchors the house — drag it (or any attached room) to move the whole house together.';
       wrap.appendChild(note);
     } else {
-      // Every other piece — including the starter annex — can be moved and
-      // rotated independently, as long as it stays touching some other
-      // piece afterward (movePiece/rotatePiece both enforce that). Only
-      // non-starter (bought) pieces can be demolished; the starter annex is
-      // part of the free starting house and can't be removed, just
-      // repositioned.
+      // The remaining rooms can be moved/rotated while staying connected to the house.
       mk('Rotate 90°', () => afterAction(deps.rotateHousePiece(entry.id)));
-      if (entry.pieceKey !== 'starter') {
-        mk('Demolish', () => { _houseLayoutSelectedId = null; afterAction(deps.demolishHousePiece(entry.id)); });
-      }
     }
   }
 
@@ -922,6 +1059,11 @@
   function renderHouseLayoutModal() {
     _layoutAdapter?.refresh?.(); // Barn pieces/view bounds are refreshed on edits, not allocated every render frame.
     _bindHouseLayoutPointer();
+    const cursorToggle = document.getElementById('houseLayoutCursorToggle'); // One persistent controller entry action, not recreated with the sidebar.
+    if (cursorToggle && !cursorToggle.dataset.bound) {
+      cursorToggle.dataset.bound = '1';
+      cursorToggle.addEventListener('click', _startLayoutCursor);
+    }
     _renderHouseLayoutHint();
     _renderHouseLayoutPieceList();
     if (_layoutAdapter) {
@@ -1177,28 +1319,36 @@
       const extra = document.createElement('div');
       extra.className = 'farm-row-extra';
       if (canManage) {
-        const housingSelect = document.createElement('select');
-        housingSelect.className = 'settings-select farm-barn-select';
-        housingSelect.title = 'Assign to a barn to bring it out onto the farm — unassigned livestock stay in stasis (hidden, cooldown paused).';
-        const stasisOpt = document.createElement('option');
-        stasisOpt.value = ''; stasisOpt.textContent = '🚫 Stasis (no barn)';
-        housingSelect.appendChild(stasisOpt);
-        farmBuildings.filter(b => b.kind === 'barn' && b.stage === 'built').forEach(b => {
-          const tier = BARN_TIERS[b.tier];
-          const occupants = livestock.filter(l => l.barnId === b.id).length;
-          const opt = document.createElement('option');
-          opt.value = b.id;
-          opt.textContent = `${tier.label} (${occupants}/${tier.slots})`;
-          opt.disabled = occupants >= tier.slots && entry.barnId !== b.id;
-          housingSelect.appendChild(opt);
-        });
-        housingSelect.value = entry.barnId || '';
-        housingSelect.addEventListener('change', () => {
-          const result = housingSelect.value ? window.FarmAnimals.assignToBarn(entry.id, housingSelect.value) : window.FarmAnimals.unassignFromBarn(entry.id);
-          deps.showToast(result.message, result.ok);
-          renderFarmLivestock(); renderFarmGridGlance();
-        });
-        extra.appendChild(housingSelect);
+        const houseOnly = window.SCRATCHBONES_CONFIG?.game?.livestock?.housing?.[entry.kind]; // Honeyfuzzle swarms live in their own house, never a barn.
+        if (houseOnly) {
+          const houseNote = document.createElement('span');
+          houseNote.className = 'farm-note';
+          houseNote.textContent = '🍯 Lives in its Honeyfuzzle House — manage it from the house on the farm map.';
+          extra.appendChild(houseNote);
+        } else {
+          const housingSelect = document.createElement('select');
+          housingSelect.className = 'settings-select farm-barn-select';
+          housingSelect.title = 'Assign to a barn to bring it out onto the farm — unassigned livestock stay in stasis (hidden, cooldown paused).';
+          const stasisOpt = document.createElement('option');
+          stasisOpt.value = ''; stasisOpt.textContent = '🚫 Stasis (no barn)';
+          housingSelect.appendChild(stasisOpt);
+          farmBuildings.filter(b => b.kind === 'barn' && b.stage === 'built').forEach(b => {
+            const tier = BARN_TIERS[b.tier];
+            const occupants = livestock.filter(l => l.barnId === b.id).length;
+            const opt = document.createElement('option');
+            opt.value = b.id;
+            opt.textContent = `${tier.label} (${occupants}/${tier.slots})`;
+            opt.disabled = occupants >= tier.slots && entry.barnId !== b.id;
+            housingSelect.appendChild(opt);
+          });
+          housingSelect.value = entry.barnId || '';
+          housingSelect.addEventListener('change', () => {
+            const result = housingSelect.value ? window.FarmAnimals.assignToBarn(entry.id, housingSelect.value) : window.FarmAnimals.unassignFromBarn(entry.id);
+            deps.showToast(result.message, result.ok);
+            renderFarmLivestock(); renderFarmGridGlance();
+          });
+          extra.appendChild(housingSelect);
+        }
         if (entry.resourceReady) {
           const readyBadge = document.createElement('span');
           readyBadge.className = 'farm-note';
@@ -1410,13 +1560,27 @@
   function _stableEntryFromLivestock(entry) {
     return {
       id: 'stable_' + Math.random().toString(36).slice(2, 10), kind: entry.kind, name: entry.name,
+      lifeStage: entry.lifeStage === 'baby' ? 'baby' : 'adult', // Farm-to-Stable transfers must preserve Nursery babies rather than silently aging them.
       genotype: entry.genotype, aiType: deps.companionAiTypeForKind(entry.kind), level: 0, stabledAt: Date.now(),
+      ...(entry.swarmColor ? { swarmColor: entry.swarmColor } : {}), // A honeyfuzzle swarm keeps its color as a companion.
     };
   }
   function _addToOwnStable(stabledEntry) {
     deps.getStable().push(stabledEntry);
-    deps._autoAssignStableRole(stabledEntry);
+    const isBaby = stabledEntry.lifeStage === 'baby'; // Transferred baby companions cannot be equipped until grown.
+    if (!isBaby) deps._autoAssignStableRole(stabledEntry);
     deps.saveStable();
+    if (isBaby) window.AnimalBabyArrival?.requestName?.(stabledEntry, {
+      scope: 'stable',
+      commit: name => {
+        const entry = deps.getStable()?.find(animal => animal.id === stabledEntry.id); // Character-scoped live Stable record may have been reloaded.
+        if (!entry) return false;
+        entry.name = name;
+        deps.saveStable();
+        return true;
+      },
+      refresh: () => window.FarmPanel?.renderStablePanel?.(),
+    });
   }
 
   function moveLivestockToStable(id) {
@@ -1524,7 +1688,7 @@
     }
     const boxList = document.getElementById('farmStorageBoxList');
     if (boxList) {
-      const keys = Object.keys(store).filter(k => k !== STARTER_WINDOW_STORAGE_SENTINEL && (store[k] || 0) > 0);
+      const keys = Object.keys(store).filter(k => !k.startsWith('__') && (store[k] || 0) > 0);
       boxList.innerHTML = keys.length ? '' : '<div class="farm-note">Storage is empty.</div>';
       keys.forEach(k => {
         const def = deps.ITEM_DEFS[k] || { icon: '📦', label: k };
@@ -1532,6 +1696,13 @@
         row.className = 'farm-storage-row';
         row.innerHTML = `<span class="farm-row-icon">${def.icon}</span><span class="farm-row-value">${deps.esc(def.label)} ×${store[k]}</span><button class="settings-small-btn">Take</button>`;
         row.querySelector('button').addEventListener('click', () => withdrawFromFarmStorage(k, 1));
+        if (window.FurniturePlacer?.canPlaceFromStorage?.(k)) {
+          const placeButton = document.createElement('button'); // Starts ordinary reticle placement directly from shared farm stock.
+          placeButton.className = 'settings-small-btn';
+          placeButton.textContent = 'Place';
+          placeButton.addEventListener('click', () => window.FurniturePlacer.placeFromStorage(k));
+          row.appendChild(placeButton);
+        }
         boxList.appendChild(row);
       });
     }
@@ -1619,7 +1790,7 @@
     }
   }
 
-  const STABLE_KIND_ICONS = { 'dabinggi-hound': '🐕', 'gar-wolf': '🐺', uumkaoii: '🦆', grehlr: '🦨', drenkirra: '🪿' };
+  const STABLE_KIND_ICONS = { 'dabinggi-hound': '🐕', 'gar-wolf': '🐺', uumkaoii: '🦆', grehlr: '🦨', drenkirra: '🪿', honeyfuzzle: '🐝' };
 
   // Which of the stable's 3 equip slots a given stable-entry role occupies,
   // and the icon/label its row button shows — see stableEntryRole.
@@ -1702,19 +1873,24 @@
   }
 
   window.FarmPanel = {
+    ensureStarterFurnitureStorage: ensureStarterWindowsInFarmStorage,
     init,
     render: renderFarmPanel,
+    showMap: showFarmMap,
     renderStablePanel,
     renderFarmProcessors,
     activeStableIdForRole,
     openLayoutEditor: openHouseLayoutModal,
     closeLayoutEditor: closeHouseLayoutModal,
+    handleLayoutControllerFrame: _handleLayoutControllerFrame, // ControllerUI delegates remapped input while the tile cursor is active.
+    handleLayoutCursorKey: _handleLayoutCursorKey, // Keyboard-accessible cursor and Escape handling use the same state machine.
     refreshLayoutEditor: () => { if (document.getElementById('houseLayoutModal')?.classList.contains('open')) renderHouseLayoutModal(); },
     layoutEditorDebug: () => ({
-      mostRecentChange: 'House and barn layouts share one live 3D viewport, selection, drag preview, and responsive controls.',
+      mostRecentChange: 'Farm, house and barn layout editors share a controller tile cursor with pick-up/drop and placement, retaining touch drag support.',
       editor: _layoutAdapter?.kind || 'house', selectedId: _houseLayoutSelectedId,
       open: !!document.getElementById('houseLayoutModal')?.classList.contains('open'),
       placing: _houseLayoutPlacementMode, draggingId: _houseLayoutDrag?.entry?.id || null,
+      cursor: { active: _layoutCursor.active, col: _layoutCursor.col, row: _layoutCursor.row, carryingId: _layoutCursor.carry?.entry?.id || null }, // Mobile-visible diagnostics.
     }),
     cancelBarnPlacement: () => { _farmPlacementMode = null; },
   };

@@ -1,0 +1,149 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "witchBombCeilingTube",
+  "name": "Witch-bomb Ceiling Tube",
+  "footprint": {
+    "w": 1,
+    "d": 1
+  },
+  "notes": "Ceiling tube mechanism. Wire an independent activator to this mechanism's witchBombDispenser puzzle channel. Each successful activation releases one live-fuse Hronal Witch-bomb and remains locked until that Burden explodes or is lost.",
+  "parts": [
+    {
+      "id": "witch_bomb_tube_mount",
+      "kind": "cylinder",
+      "name": "Tube mounting collar",
+      "color": "#4f4a41",
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialLighting": "unlit",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6,
+      "wonkiness": 0.008,
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.52,
+        "sy": 0.12,
+        "sz": 0.52
+      },
+      "segments": 12
+    },
+    {
+      "id": "witch_bomb_tube_body",
+      "kind": "cylinder",
+      "name": "Bronze stone delivery tube",
+      "color": "#544d43",
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialLighting": "unlit",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6,
+      "wonkiness": 0.008,
+      "transform": {
+        "x": 0,
+        "y": -0.39,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.31,
+        "sy": 0.72,
+        "sz": 0.31
+      },
+      "segments": 12
+    },
+    {
+      "id": "witch_bomb_tube_lip",
+      "kind": "cylinder",
+      "name": "Tube outlet lip",
+      "color": "#766047",
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialLighting": "unlit",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6,
+      "wonkiness": 0.008,
+      "transform": {
+        "x": 0,
+        "y": -0.78,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.39,
+        "sy": 0.08,
+        "sz": 0.39
+      },
+      "segments": 12
+    }
+  ],
+  "bombTubeExit": {
+    "x": 0,
+    "y": -0.88,
+    "z": 0
+  },
+  "puzzle": {
+    "version": 3,
+    "role": "mechanism",
+    "behavior": "witchBombDispenser",
+    "channel": "A",
+    "completionChannel": "B",
+    "startsActive": false,
+    "bombFuseSeconds": 10,
+    "motion": {
+      "durationSeconds": 0.3,
+      "reversalSeconds": 0.3,
+      "collisionOpenProgress": 1,
+      "off": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "emission": {
+          "color": "#000000",
+          "intensity": 0,
+          "particleRateScale": 0,
+          "opacity": 1
+        }
+      },
+      "on": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "emission": {
+          "color": "#000000",
+          "intensity": 0,
+          "particleRateScale": 0,
+          "opacity": 1
+        }
+      }
+    }
+  }
+}

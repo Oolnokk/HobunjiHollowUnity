@@ -10,6 +10,7 @@
   const SIDE_ROTATION_DEG = Object.freeze({ south: 0, west: 90, north: 180, east: 270 }); // Mirrors HousePieceGen's entry-tunnel orientation map.
   const PLACEMENT = Object.freeze({ x: 0.5, y: 0, z: 0.5 }); // Used to center the authored 1x1 door inside each entry-tunnel tile.
   const CARDINAL_SIDES = new Set(Object.keys(SIDE_ROTATION_DEG)); // Used to reject non-wall extensionFace metadata while resolving authored tunnel direction.
+  const pendingMaterialDoors = new Set(); // Briefly holds doors attached before the shared entrance finish becomes available.
 
   function ensureUserData(object) {
     if (!object) return null;
@@ -169,6 +170,25 @@
     return findDoors(target)[0] || null;
   }
 
+  function applySharedDoorMaterial(door) {
+    const finish = window.HobunjiPorchSurfaceMaterial; // Single material owner for porch, fence, frame and door meshes.
+    if (!finish?.applyToDoorGroup) {
+      pendingMaterialDoors.add(door);
+      return false;
+    }
+    finish.applyToDoorGroup(door);
+    pendingMaterialDoors.delete(door);
+    return true;
+  }
+
+  function restylePendingDoors() {
+    let restyled = 0;
+    for (const door of pendingMaterialDoors) {
+      if (applySharedDoorMaterial(door)) restyled++;
+    }
+    return restyled;
+  }
+
   function attachResolvedPlacement(target, authoredData, placement) {
     const existing = findDoor(target, placement.key); // Used to make async/cached attachment idempotent per authored tunnel tile.
     if (existing) return existing;
@@ -185,6 +205,7 @@
       return null;
     }
 
+    applySharedDoorMaterial(door); // Uses exactly the finish already assigned to the porch and frame, even for asynchronously loaded doors.
     door.name = placement.name || DOOR_OBJECT_NAME;
     door.position.set(Number(placement.x), Number(placement.y), Number(placement.z));
     door.rotation.y = -(Number(placement.rotationDeg) || 0) * Math.PI / 180;
@@ -332,6 +353,8 @@
       tile: data.entryTunnelDoorTile || door?.userData?.entryTunnelTile || null,
       position: door ? { x: door.position.x, y: door.position.y, z: door.position.z } : null,
       rotationYDeg: door ? door.rotation.y * 180 / Math.PI : null,
+      sharedWoodMaterial: door?.userData?.entranceWoodMaterial || null,
+      waitingForWoodMaterial: pendingMaterialDoors.size,
       doors: doors.map(item => ({
         tile: item.userData?.entryTunnelTile || null,
         localTile: item.userData?.entryTunnelLocalTile || null,
@@ -349,6 +372,7 @@
     attach,
     attachAuthoredPieceDoors,
     authoredPlacements,
+    restylePendingDoors,
     debugInfo,
     install,
   });

@@ -37,7 +37,7 @@ assert.doesNotMatch(bridge, /obj_open_shipping|obj_deposit/, 'Shipping Box does 
 assert.match(shippingPanel, /id="shippingStandaloneWindow" role="dialog" aria-modal="true"/, 'Shipping Box standalone window is a semantic modal dialog');
 assert.match(nav, /SEMANTIC_PANEL_SELECTOR\s*=\s*'\[role="dialog"\]\[aria-modal="true"\]'/, 'controller navigator auto-discovers semantic modal dialogs');
 assert.match(nav, /NAV_SELECTOR[\s\S]*'button'/, 'ordinary buttons are controller navigation targets');
-assert.match(nav, /function activate\(\)[\s\S]*currentTarget\.click\(\)/, 'controller confirm activates the focused Shipping Box control through its normal click path');
+// The shipped navigator's Confirm-to-click behavior, including its viewport guard, is exercised by test-controller-nested-groups.js.\n// Shipping Box has only native buttons, verified below, and therefore uses that same generic dispatch path.
 
 // Item selection and transfer controls are native buttons. The dynamic slot
 // click selects an item; the authored stepper/transfer buttons are therefore

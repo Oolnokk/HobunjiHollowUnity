@@ -266,7 +266,7 @@
         <div class="sh-info">
           <div class="sh-name">${deps.esc(item.label)}</div>
           <div class="sh-desc">${deps.esc(item.desc || store.defaultDescription)}</div>
-          <div class="sh-price">${item.count} ${store.inPackText} · ${item.price}${store.eachText} · ${item.count * item.price}${store.stackValueText}</div>
+          <div class="sh-price">${item.count} ${store.inPackText} · ${item.price}${store.eachText} · ${item.totalPrice ?? item.count * item.price}${store.stackValueText}</div>
         </div>
         <div class="gs-sell-actions">
           <button class="shop-buy-btn gs-sell-one" type="button">${store.sellOneLabel}</button>
@@ -329,7 +329,13 @@
       row.querySelector('.gs-cloth-buy')?.addEventListener('click', () => {
         if ((deps.inventory.gold || 0) < item.price) { deps.showToast('Not enough ganang.', false); return; }
         deps.inventory.gold = (deps.inventory.gold || 0) - item.price;
-        deps.getPackClothing().push({ ...item });
+        const ownedClothing = deps.getPackClothing(); // Purchases are literal articles; the store's daily listing ID is not an instance ID.
+        let purchasedUid; // Used to make repeated buys of one day's listing individually selectable and sellable.
+        let purchaseSerial = 0; // Ensures a collision can never loop forever when time/random sources repeat.
+        do {
+          purchasedUid = item.uid + '_' + Date.now().toString(36) + '_' + (++purchaseSerial).toString(36) + '_' + Math.random().toString(36).slice(2, 10);
+        } while (ownedClothing.some(article => article?.uid === purchasedUid));
+        ownedClothing.push({ ...item, uid: purchasedUid });
         deps.showToast('Bought ' + item.label + '!', true);
         renderGeneralStorePage(); deps.buildInventoryGrid(); deps.buildPackClothingSection();
         deps.saveMemberWorldData();
@@ -361,7 +367,7 @@
   function debugSnapshot() {
     const state = activeShopState();
     return {
-      mostRecentChange: 'The General Store sells a Native Copper Work Hammer as character gear; acquiring it unlocks its smithy shape.',
+      mostRecentChange: 'The General Store sells a Copper Work Hammer as character gear; acquiring it unlocks its smithy shape.',
       poolId: state.poolId,
       label: state.shop.label,
       mapId: currentMapId(),
@@ -377,5 +383,5 @@
 // to load ShippingBoxConfig, then the separate world adapter, before game boot.
 if (document.readyState === 'loading') {
   if (!window.ShippingBoxConfig) document.write('<script src="js/shipping-box-config.js?v=20261008h2a8f7cd"></scr' + 'ipt>');
-  if (!window.__shippingBoxWorldInstalled) document.write('<script src="js/shipping-box-world.js?v=20260902shipping6"></scr' + 'ipt>');
+  if (!window.__shippingBoxWorldInstalled) document.write('<script src="js/shipping-box-world.js?v=20261105h93373ec"></scr' + 'ipt>');
 }

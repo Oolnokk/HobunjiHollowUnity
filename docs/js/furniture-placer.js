@@ -21,6 +21,36 @@
     deps = injectedDeps;
   }
 
+  function canPlaceFromStorage(itemKey) {
+    if (!deps?.hasFarmPermission('storage') || !deps.hasFarmPermission('placeFurniture')) return false;
+    const area = deps.getCurrentArea(); // Storage can only place in the farm or farmhouse currently occupied by this player.
+    if (area !== 'farm' && area !== 'interior') return false;
+    const defs = deps.getDecorativeFurnitureDefs(); // Include extension-registered windows through the ordinary furniture registry.
+    window.DaylightWindowRuntime?.registerDecorDefs?.(defs);
+    const entry = Object.entries(defs).find(([, def]) => def.itemKey === itemKey); // Resolve only actual registered player furniture.
+    if (entry) {
+      const [key, def] = entry; // Wall/window restrictions match the normal selector.
+      return !def.fixture && !def.customPlace && !def.playerFurnitureDisabled
+        && (area === 'farm' || def.area === 'any' || def.area === area)
+        && (area !== 'interior' || !window.HouseWindowLinkage?.isWindowKey?.(key));
+    }
+    return area === 'farm' && Object.values(deps.getProcessingFurnitureDefs()).some(def => def.itemKey === itemKey);
+  }
+
+  async function placeFromStorage(itemKey) {
+    if (!canPlaceFromStorage(itemKey) || !(deps.furnitureStock(itemKey, 'storage') > 0)) return false;
+    deps.closeMenu();
+    const defs = deps.getDecorativeFurnitureDefs(); // Wall furniture keeps its authored wall-slot preview and validation.
+    const key = Object.keys(defs).find(key => defs[key].itemKey === itemKey);
+    if (key && window.WallOrnamentPlacement?.isWallOrnamentKey?.(key, defs[key])) {
+      return window.WallOrnamentPlacement.armNewPlayerFurniture(itemKey, 'storage');
+    }
+    window.WallOrnamentPlacement?.finishPlayerAdjustment?.();
+    deps.armFurniturePlacement(itemKey, 'storage');
+    deps.showToast('Aim and press Action 1 to place from farm storage. Action 2 cancels.', true);
+    return true;
+  }
+
   function _ownedPlaceableHere() {
     const area = deps.getCurrentArea();
     if (area !== 'farm' && area !== 'interior') return [];
@@ -57,6 +87,9 @@
   }
 
   function refreshVisibility() {
+    if (window.FarmworkUI?.isOpen?.() && !window.FarmworkUI.canOpen()) {
+      window.FarmworkUI.close(); // Shared farm/house/zone refresh closes a stale Farmwork panel after travel or marriage reset.
+    }
     const btn = document.getElementById('furniturePlacerBtn');
     if (!btn || !deps) return;
     const area = deps.getCurrentArea();
@@ -69,9 +102,10 @@
     btn.classList.toggle('fp-shifted', devSlotOccupied);
     if (!show && _open) close();
     if (!show) {
-      if (deps.getArmedFurniturePlacementKey() || deps.getArmedFurnitureMoveId()) {
+      if (deps.getArmedFurniturePlacementKey() || deps.getArmedFurnitureMoveId() || window.FarmhouseRoomPlanner?.isArmed?.()) {
         deps.armFurniturePlacement(null);
         deps.armFurnitureMove(null);
+        window.FarmhouseRoomPlanner?.cancel?.(); // Leaving the farmhouse disarms its wall editor too.
       }
       window.WallOrnamentPlacement?.finishPlayerAdjustment?.(); // Reticle-only wall placement also cancels if the player leaves a valid furniture area.
     }
@@ -104,6 +138,7 @@
     if (!keepArmed) {
       deps.armFurniturePlacement(null);
       deps.armFurnitureMove(null);
+      window.FarmhouseRoomPlanner?.cancel?.(); // Explicitly closing the menu cancels an unfinished wall.
     }
     deps.resumeMouseCameraAfterUi?.();
     return true;
@@ -121,14 +156,124 @@
     const placed = deps.getPlacedFurniture().filter(obj => !obj?.derivedLinkedWindow); // Synthetic interior window copies are display-only and never get Move/Remove controls.
     const armed = deps.getArmedFurniturePlacementKey();
     const moveArmedId = deps.getArmedFurnitureMoveId();
-    if (hint) {
+    const roomPlanner = deps.getCurrentArea() === 'interior' ? window.FarmhouseRoomPlanner : null; // Farmhouse layout editing shares this furniture screen and reticle.
+    if (hint && roomPlanner?.isArmed?.()) {
+      hint.textContent = roomPlanner.stage() === 'second corner'
+        ? 'First corner set. Aim at the opposite wall corner and press Action 1 (Action 2 cancels).'
+        : 'Aim at an interior ground tile, then press Action 1 to confirm. Action 2 cancels.';
+    } else if (hint) {
       hint.textContent = moveArmedId
-        ? 'Tap a clear tile to move the selected furniture there.'
+        ? 'Aim and press Action 1 to move furniture; rugs use two opposite corners to resize.'
         : (owned.length || placed.length)
           ? 'Choose furniture once, aim with the reticle, and press Action 1. Windows are placed only outside and snap to fixed 2-tile wall slots.'
           : "You don't own or have any furniture placed here yet.";
     }
     list.innerHTML = '';
+    if (roomPlanner) {
+      const heading = document.createElement('div'); // Dedicated structural controls are not inventory consumables.
+      heading.className = 'house-layout-section-title';
+      heading.textContent = 'Walls & Room Doors';
+      list.appendChild(heading);
+      const wallRow = document.createElement('div');
+      wallRow.className = 'farm-row';
+      const wallLabel = document.createElement('span');
+      wallLabel.className = 'farm-row-name'; wallLabel.textContent = 'Subdivide room';
+      wallRow.appendChild(wallLabel);
+      const wallButton = document.createElement('button');
+      wallButton.className = 'settings-small-btn';
+      wallButton.textContent = 'Place Wall';
+      wallButton.onclick = () => {
+        deps.armFurniturePlacement(null); deps.armFurnitureMove(null);
+        if (roomPlanner.armWall()) close({ keepArmed: true });
+        else deps.showToast('You cannot edit farmhouse walls here.', false);
+      };
+      wallRow.appendChild(wallButton);
+      list.appendChild(wallRow);
+      roomPlanner.segments().forEach(segment => {
+        const row = document.createElement('div'); // Stable ID is preserved when a built room moves.
+        row.className = 'farm-row';
+        const name = document.createElement('span');
+        name.className = 'farm-row-name';
+        name.textContent = segment.builtIn ? 'Between house sections' : 'Room partition';
+        const location = document.createElement('span');
+        location.className = 'farm-note';
+        location.textContent = 'Door: ' + segment.door.c + ', ' + segment.door.r;
+        row.append(name, location);
+        const move = document.createElement('button');
+        move.className = 'settings-small-btn';
+        move.textContent = 'Move Door';
+        move.setAttribute('aria-label', 'Move room door at ' + location.textContent);
+        move.onclick = () => {
+          deps.armFurniturePlacement(null); deps.armFurnitureMove(null);
+          if (roomPlanner.armDoor(segment.id)) close({ keepArmed: true });
+          else deps.showToast('Cannot edit that doorway.', false);
+        };
+        row.appendChild(move);
+        if (!segment.builtIn) {
+          const remove = document.createElement('button');
+          remove.className = 'settings-small-btn';
+          remove.textContent = 'Remove Wall';
+          remove.onclick = () => {
+            const result = roomPlanner.removeWall(segment.id);
+            deps.showToast(result.message, result.ok);
+            render();
+          };
+          row.appendChild(remove);
+        }
+        list.appendChild(row);
+      });
+      const debug = document.createElement('button'); // Visible diagnostic for players without desktop developer tools.
+      debug.className = 'settings-small-btn';
+      debug.textContent = 'Show Wall Debug';
+      debug.onclick = () => {
+        const output = document.getElementById('farmhouseRoomDebug') || document.createElement('pre');
+        output.id = 'farmhouseRoomDebug';
+        output.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;font-size:11px';
+        output.textContent = JSON.stringify({ ...roomPlanner.debug(), furnitureRecovery: window.__farmhouseFurnitureRecovery || [] }, null, 2);
+        if (!output.parentElement) list.insertBefore(output, debug.nextSibling);
+        else output.hidden = !output.hidden;
+      };
+      list.appendChild(debug);
+    }
+    if (['farm', 'interior'].includes(deps.getCurrentArea())) {
+      const fixtures = window.HousePieces?.getInteriorShiftableFeatures?.() || [];
+      if (fixtures.length) {
+        const heading = document.createElement('div');
+        heading.className = 'house-layout-section-title';
+        heading.textContent = 'House Fixtures · Interior Alignment';
+        list.appendChild(heading);
+        const note = document.createElement('div'); // Explains the one-sided adjustment before the player chooses a fixture.
+        note.className = 'farm-note';
+        note.textContent = 'These controls move only the inside doorway or fireplace. The outside fixture stays in place.';
+        note.style.cssText = 'padding:0 8px 6px;white-space:normal;line-height:1.35';
+        list.appendChild(note);
+        fixtures.forEach(feature => {
+          const row = document.createElement('div');
+          row.className = 'farm-row';
+          const label = document.createElement('span');
+          label.className = 'farm-row-name';
+          label.textContent = feature.label + (feature.autoGenerated ? ' (Automatic)' : '');
+          row.appendChild(label);
+          const state = document.createElement('span'); // Makes the current interior-only offset visible without opening another editor.
+          state.className = 'farm-note';
+          state.textContent = feature.interiorShift < 0 ? 'Shifted left' : feature.interiorShift > 0 ? 'Shifted right' : 'Centered';
+          row.appendChild(state);
+          for (const [direction, text] of [[-1, '← Shift Interior'], [1, 'Shift Interior →']]) {
+            const button = document.createElement('button');
+            button.className = 'settings-small-btn';
+            button.textContent = text;
+            button.setAttribute('aria-label', text + ' for ' + feature.label.toLowerCase());
+            button.addEventListener('click', () => {
+              const result = window.HousePieces.shiftInteriorFeature(feature.pieceId, feature.featureId, direction);
+              deps.showToast(result.message, result.ok);
+              render();
+            });
+            row.appendChild(button);
+          }
+          list.appendChild(row);
+        });
+      }
+    }
     owned.forEach(def => {
       const count = deps.inventory[def.itemKey] || 0;
       const isArmed = armed === def.itemKey;
@@ -161,7 +306,73 @@
         close({ keepArmed: true });
       });
       row.appendChild(btn);
-      list.appendChild(row);
+      const tablesForNewChair = placed.filter(candidate =>
+        candidate.placementKind === 'decorative' && /table|desk|counter/i.test(candidate.key)
+        && candidate.area === 'interior'); // Direct children need only a parent table, never their own free tile.
+      if (def.sit && deps.getCurrentArea() === 'interior' && tablesForNewChair.length) {
+        const attachButton = document.createElement('button');
+        attachButton.className = 'settings-small-btn';
+        attachButton.textContent = 'Place at Table';
+        attachButton.setAttribute('aria-label', 'Place ' + def.name + ' directly at a table');
+        row.appendChild(attachButton);
+        const panel = document.createElement('div');
+        panel.className = 'farm-row';
+        panel.hidden = true;
+        panel.style.cssText = 'flex-wrap:wrap;gap:6px;padding-left:12px';
+        const tableChoice = document.createElement('select');
+        tableChoice.className = 'settings-small-btn';
+        tableChoice.setAttribute('aria-label', 'Parent table for new ' + def.name);
+        for (const table of tablesForNewChair) tableChoice.add(new Option(
+          (deps.getDecorativeFurnitureDefs()[table.key]?.name || table.key) + ' (' + table.id + ')', table.id));
+        const position = document.createElement('input');
+        position.type = 'number'; position.step = '1'; position.min = '0';
+        position.className = 'settings-small-btn'; position.style.width = '5em';
+        const side = document.createElement('select');
+        side.className = 'settings-small-btn'; side.setAttribute('aria-label', 'Flat table side');
+        for (const name of ['front', 'back', 'left', 'right']) side.add(new Option(name, name));
+        const distance = document.createElement('input');
+        distance.type = 'number'; distance.step = '.05'; distance.min = '0'; distance.max = '4';
+        distance.value = '.65'; distance.style.width = '5em'; distance.className = 'settings-small-btn';
+        distance.setAttribute('aria-label', 'Distance from table edge in tiles');
+        const confirm = document.createElement('button');
+        confirm.className = 'settings-small-btn'; confirm.textContent = 'Attach New Chair';
+        function updateForm() {
+          const selected = tablesForNewChair.find(table => table.id === tableChoice.value);
+          const orbit = window.TableChairPlacement?.modeForTable?.(selected?.key) === 'orbit';
+          position.max = orbit ? '359' : '100';
+          position.value = orbit ? '0' : '50';
+          position.setAttribute('aria-label', orbit ? 'Orbit angle in degrees' : 'Position along table edge in percent');
+          position.title = position.getAttribute('aria-label');
+          side.hidden = orbit;
+        }
+        tableChoice.addEventListener('change', updateForm);
+        updateForm();
+        confirm.addEventListener('click', () => {
+          const table = tablesForNewChair.find(entry => entry.id === tableChoice.value);
+          const placement = Number(position.value), clearance = Number(distance.value);
+          const mode = window.TableChairPlacement?.modeForTable?.(table?.key);
+          if (!table || !position.value.trim() || !distance.value.trim()
+            || !Number.isFinite(placement) || !Number.isFinite(clearance)
+            || clearance < 0 || clearance > 4 || placement < 0
+            || placement > (mode === 'orbit' ? 359 : 100)) {
+            deps.showToast('Enter a valid table position and clearance.', false); return;
+          }
+          const descriptor = {
+            tableId: table.id, mode, distance: clearance,
+            ...(mode === 'orbit' ? { angleDeg: placement } : { side: side.value, along: placement / 100 }),
+          };
+          const result = deps.placeTableAttachedChair(def.itemKey, descriptor);
+          deps.showToast(result.message, result.ok);
+          if (result.ok) render();
+        });
+        panel.append(tableChoice, position, side, distance, confirm);
+        attachButton.addEventListener('click', () => { panel.hidden = !panel.hidden; panel.style.display = panel.hidden ? 'none' : 'flex'; });
+        panel.style.display = 'none';
+        list.appendChild(row);
+        list.appendChild(panel);
+      } else {
+        list.appendChild(row);
+      }
     });
     if (placed.length) {
       const title = document.createElement('div');
@@ -180,11 +391,154 @@
       const isMoveArmed = !wallMounted && moveArmedId === obj.id;
       const row = document.createElement('div');
       row.className = 'farm-row' + (isMoveArmed ? ' selected' : '');
-      const locationLabel = wallMounted ? 'Wall mounted' : `${obj.col}, ${obj.row}`; // Keeps the list meaningful after a wall gizmo moves the visual away from the source tile center.
+      const locationLabel = wallMounted ? 'Wall mounted' : (obj.tableAttachment ? 'Attached to table' : `${obj.col}, ${obj.row}`); // Keeps the list meaningful after a wall gizmo moves the visual away from the source tile center.
       row.innerHTML = `<span class="farm-row-icon">${def.icon}</span><span class="farm-row-name">${deps.esc(def.name)}</span><span class="farm-note">${locationLabel}</span>`;
+      let attachmentControls = null; // Placed after this chair's row, not before the preceding furniture's controls.
+      if (obj.placementKind === 'decorative' && def.sit && obj.area === 'interior') {
+        const tables = placed.filter(candidate =>
+          candidate.id !== obj.id && candidate.placementKind === 'decorative'
+          && /table|desk|counter/i.test(candidate.key)
+          && (!obj.ownerPieceId || !candidate.ownerPieceId || obj.ownerPieceId === candidate.ownerPieceId));
+        const controls = document.createElement('div');
+        controls.className = 'farm-row';
+        controls.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;padding-left:12px';
+        const parent = document.createElement('select');
+        parent.className = 'settings-small-btn';
+        parent.setAttribute('aria-label', 'Table to attach ' + def.name + ' to');
+        parent.add(new Option('Free-standing (no table)', ''));
+        tables.forEach(table => parent.add(new Option(
+          (deps.getDecorativeFurnitureDefs()[table.key]?.name || table.key) + ' (' + table.id + ')', table.id)));
+        if (obj.tableId && !tables.some(table => table.id === obj.tableId)) parent.add(new Option('Unavailable table (' + obj.tableId + ')', obj.tableId));
+        parent.value = obj.tableId || '';
+        const mode = document.createElement('select');
+        mode.className = 'settings-small-btn';
+        mode.add(new Option('Orbit', 'orbit'));
+        mode.add(new Option('Table edge', 'edge'));
+        mode.disabled = true; // Table geometry chooses between an orbit and a flat-sided placement.
+        const value = document.createElement('input');
+        value.className = 'settings-small-btn';
+        value.type = 'number';
+        value.min = '0'; value.step = '1';
+        const side = document.createElement('select');
+        side.className = 'settings-small-btn';
+        side.setAttribute('aria-label', 'Table side');
+        ['front', 'back', 'left', 'right'].forEach(name => side.add(new Option(name, name)));
+        side.value = obj.tableAttachment?.side || 'front';
+        const distance = document.createElement('input');
+        distance.className = 'settings-small-btn';
+        distance.type = 'number'; distance.min = '0'; distance.max = '4'; distance.step = '.05';
+        distance.value = obj.tableAttachment?.distance ?? .65;
+        distance.setAttribute('aria-label', 'Distance from table edge, in tiles');
+        distance.style.width = '5em';
+        const apply = document.createElement('button');
+        apply.className = 'settings-small-btn';
+        apply.textContent = obj.tableAttachment ? 'Update attachment' : 'Apply table placement';
+        function syncShape(useCurrentValues = false) {
+          const table = tables.find(entry => entry.id === parent.value);
+          mode.value = window.TableChairPlacement?.modeForTable?.(table?.key) || 'edge';
+          value.max = mode.value === 'orbit' ? '359' : '100';
+          value.setAttribute('aria-label', mode.value === 'orbit' ? 'Orbit angle in degrees' : 'Position along table edge, percent');
+          value.title = value.getAttribute('aria-label');
+          side.disabled = mode.value === 'orbit' || !parent.value;
+          value.disabled = !parent.value;
+          distance.disabled = !parent.value;
+          mode.disabled = true;
+          if (!useCurrentValues) value.value = mode.value === 'orbit' ? '0' : '50';
+        }
+        syncShape(true);
+        value.value = mode.value === 'orbit'
+          ? (obj.tableAttachment?.mode === 'orbit' ? obj.tableAttachment.angleDeg : 0)
+          : Math.round((obj.tableAttachment?.mode === 'edge' ? obj.tableAttachment.along : .5) * 100);
+        parent.addEventListener('change', () => syncShape(false));
+        apply.addEventListener('click', () => {
+          if (parent.value && (!value.value.trim() || !distance.value.trim()
+            || !Number.isFinite(Number(value.value)) || !Number.isFinite(Number(distance.value)))) {
+            deps.showToast('Enter a valid angle/edge position and distance.', false);
+            return;
+          }
+          const descriptor = parent.value ? {
+            tableId: parent.value, mode: mode.value,
+            ...(mode.value === 'orbit'
+              ? { angleDeg: Number(value.value) }
+              : { side: side.value, along: Number(value.value) / 100 }),
+            distance: Number(distance.value),
+          } : null;
+          const result = deps.setTableAttachment(obj.id, descriptor);
+          deps.showToast(result.message, result.ok);
+          render();
+        });
+        controls.append(parent, mode, value, side, distance, apply);
+        attachmentControls = controls;
+      }
+      if (obj.area === 'interior' && (obj.key === 'wardrobe' || obj.key === 'chest')) {
+        const owners = window.NpcFurnitureWardrobes?.familyOwners?.() || []; // Live spouse/child roster drives this instance's owner selector.
+        const selectorLabel = document.createElement('label'); // Controller-friendly name ties the select to the specific furniture row.
+        selectorLabel.className = 'farm-note';
+        selectorLabel.textContent = 'Wardrobe for ';
+        const select = document.createElement('select'); // One placed access point; it never creates a second clothing inventory.
+        select.className = 'settings-small-btn';
+        select.setAttribute('aria-label', def.name + ' at ' + locationLabel + ': wardrobe owner');
+        const options = [{ id: '', label: 'Unassigned' }, ...owners.map(owner => ({ id: owner.id, label: owner.role + ': ' + owner.name }))];
+        if (obj.npcWardrobeFor && !owners.some(owner => owner.id === obj.npcWardrobeFor)) {
+          options.push({ id: obj.npcWardrobeFor, label: 'Unavailable: ' + obj.npcWardrobeFor }); // Keep an old assignment visible instead of silently discarding it after a family change.
+        }
+        for (const option of options) {
+          const element = document.createElement('option'); // A native select remains usable with touch, keyboard and controller navigation.
+          element.value = option.id;
+          element.textContent = option.label;
+          select.appendChild(element);
+        }
+        select.value = obj.npcWardrobeFor || '';
+        select.addEventListener('change', () => {
+          const result = deps.assignWardrobeOwner?.(obj.id, select.value) || { ok: false, message: 'Wardrobe assignment is unavailable.' };
+          deps.showToast(result.message, result.ok);
+          if (!result.ok) select.value = obj.npcWardrobeFor || '';
+          else render(); // Refresh changed owner names while retaining every other furniture control.
+        });
+        selectorLabel.appendChild(select);
+        row.appendChild(selectorLabel);
+      }
+      if (obj.key === 'rug') {
+        const layerLabel = document.createElement('label'); // Each placed rug owns its independently saved overlap stack height.
+        layerLabel.className = 'farm-note';
+        layerLabel.textContent = 'Layer ';
+        const layerInput = document.createElement('input'); // Touch/keyboard-friendly layer count editor, bounded to prevent runaway floating carpets.
+        layerInput.type = 'number'; layerInput.min = '0'; layerInput.max = '32'; layerInput.step = '1';
+        layerInput.value = String(Math.max(0, Math.min(32, Number(obj.rugLayer) || 0)));
+        layerInput.style.width = '3.7em';
+        layerInput.setAttribute('aria-label', 'Woven rug layer count at ' + locationLabel);
+        layerInput.addEventListener('change', () => {
+          const level = Number(layerInput.value); // Validation at the control boundary mirrors the authoritative setter.
+          const result = deps.setRugLayer?.(obj.id, level) || { ok: false, message: 'Rug layering unavailable.' };
+          deps.showToast(result.message, result.ok);
+          render();
+        });
+        layerLabel.appendChild(layerInput);
+        row.appendChild(layerLabel);
+      }
+      if (obj.area === 'farm' && window.HouseWindowLinkage?.isWindowKey?.(obj.key) && !obj.derivedLinkedWindow) {
+        const alignment = document.createElement('span');
+        alignment.className = 'farm-note';
+        alignment.textContent = 'Interior only';
+        row.appendChild(alignment);
+        for (const [direction, label] of [[-1, '← Shift Interior'], [1, 'Shift Interior →']]) {
+          const shiftButton = document.createElement('button');
+          shiftButton.className = 'settings-small-btn';
+          shiftButton.textContent = label;
+          shiftButton.setAttribute('aria-label', label + ' for window interior of ' + def.name);
+          shiftButton.addEventListener('click', async () => {
+            const result = await window.HouseWindowLinkage.shiftInteriorWindow(obj.id, direction);
+            deps.showToast(result.message, result.ok);
+            render();
+          });
+          row.appendChild(shiftButton);
+        }
+      }
       if (obj.key === 'rug' || obj.key === 'hangingBanner' || window.HouseWindowLinkage?.isWindowKey?.(obj.key)) {
         const patternBtn = document.createElement('button'); // Ordinary ownership/permission checks from this panel govern pattern edits too.
-        patternBtn.textContent = 'Pattern'; patternBtn.onclick = () => deps.editFurniturePattern?.(obj.id);
+        patternBtn.className = 'settings-small-btn'; patternBtn.textContent = 'Color / Pattern';
+        patternBtn.setAttribute('aria-label', 'Choose colors and pattern for ' + def.name);
+        patternBtn.onclick = () => deps.editFurniturePattern?.(obj.id);
         row.appendChild(patternBtn);
       }
       if (wallCapable) {
@@ -205,6 +559,8 @@
         const moveBtn = document.createElement('button');
         moveBtn.className = 'settings-small-btn';
         moveBtn.textContent = isMoveArmed ? 'Cancel' : 'Move';
+        moveBtn.disabled = !!obj.tableAttachment; // A child chair is moved through its table controls.
+        moveBtn.title = obj.tableAttachment ? 'Detach this chair before moving it alone' : '';
         moveBtn.addEventListener('click', () => {
           if (isMoveArmed) { deps.armFurnitureMove(null); render(); return; }
           deps.armFurnitureMove(obj.id);
@@ -214,6 +570,8 @@
         const rotateBtn = document.createElement('button');
         rotateBtn.className = 'settings-small-btn';
         rotateBtn.textContent = 'Rotate 45°';
+        rotateBtn.disabled = !!obj.tableAttachment; // Facing is always derived from the table centroid.
+        rotateBtn.title = obj.tableAttachment ? 'Detach this chair before rotating it' : '';
         rotateBtn.addEventListener('click', () => {
           const result = deps.rotateFurniture(obj.id, 45);
           deps.showToast(result.message, result.ok);
@@ -232,7 +590,30 @@
       });
       row.appendChild(removeBtn);
       list.appendChild(row);
+      if (attachmentControls) list.appendChild(attachmentControls);
     });
+
+    const attached = placed.filter(obj => obj.tableAttachment);
+    if (attached.length) {
+      const debugButton = document.createElement('button');
+      debugButton.className = 'settings-small-btn';
+      debugButton.textContent = 'Show Table Chair Debug';
+      const output = document.createElement('pre');
+      output.hidden = true;
+      output.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere;max-height:220px;overflow:auto;font-size:11px';
+      debugButton.addEventListener('click', () => {
+        output.hidden = !output.hidden;
+        if (!output.hidden) output.textContent = JSON.stringify(attached.map(obj => ({
+          chairId: obj.id, key: obj.key, tableId: obj.tableId,
+          parentExists: placed.some(parent => parent.id === obj.tableId),
+          attachment: obj.tableAttachment, npcStationId: obj.npcStationId,
+          center: { x: obj.mesh?.position.x, z: obj.mesh?.position.z },
+          rotationDegrees: obj.rotYDeg, ownerPieceId: obj.ownerPieceId,
+        })), null, 2);
+      });
+      list.append(debugButton, output); // On-screen diagnostics also work on mobile without a console.
+    }
+
   }
 
   if (typeof document !== 'undefined' && document.addEventListener) {
@@ -243,5 +624,5 @@
     });
   }
 
-  window.FurniturePlacer = { init, open, close, toggle, canOpen, refreshVisibility, render, isOpen: () => _open };
+  window.FurniturePlacer = { canPlaceFromStorage, placeFromStorage, init, open, close, toggle, canOpen, refreshVisibility, render, isOpen: () => _open };
 })();

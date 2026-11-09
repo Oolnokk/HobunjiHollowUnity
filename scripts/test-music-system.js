@@ -15,7 +15,7 @@ const title = source('docs/js/title-screen-runtime.js');
 const formatUtils = source('docs/js/format-utils.js');
 const game = source('docs/game.js');
 const fishing = source('docs/js/fishing-minigame.js'); // Verifies the successful-catch path fires the semantic gameplay music cue.
-const loadingScreen = source('docs/js/loading-screen-runtime.js'); // Verifies mine destination context is visible on the shared loading overlay.
+const loadingScreen = source('docs/js/loading-screen-runtime.js'); // Other authored loading context remains separate from mine titles.
 const config = source('docs/config/scratchbones-config.js');
 const index = source('docs/index.html');
 const nightbugsPath = path.join(__dirname, '../docs/assets/audio/sfx/bgs/bgs_nightbugs1.mp3'); // Points the asset-presence check at the normalized runtime recording.
@@ -42,18 +42,20 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
 // Run the scheduler and its ended callback: tutorials must keep one combat
 // transport through dialogue, idle practice, and rewards, then hand music back.
 {
-  const live = { combat: false, tutorial: false, exclusive: false, plays: 0, pauses: 0, resumes: 0 }; // Mutable inputs and transport observations for scheduler transitions.
+  const live = { combat: false, tutorial: false, exclusive: false, plays: 0, pauses: 0, resumes: 0, clock: 1000 }; // Mutable inputs and transport observations for scheduler transitions.
   const ambient = { ended: false }; // Existing exploration track retained beneath training music.
   const state = { area: 'arena', currentBgm: ambient, mode: 'bgm', nextAt: 0, blockUntil: 0, combatOverrideActive: false }; // Scheduler slots shared with the executed production function.
   const context = { // Narrow audio boundary: scheduler decisions and callbacks remain production code.
     window: { AudioSystem: { gameAudioConfig: () => ({ combatBgm: [{ url: 'combat.m4a' }] }) }, CombatTutorial: { active: () => live.tutorial } },
     deps: { getCurrentArea: () => 'arena', isPlayerInCombat: () => live.combat },
-    quietLoading: false, _startupBgm: null, _ambientCueState: state, _audioCueIndexes: new Map(),
-    performance: { now: () => 1000 },
+    quietLoading: false, _startupBgm: null, _ambientCueState: state,
+    _cuePlaybackStats: { requested: 0, started: 0, completed: 0, failed: 0, lastError: '', lastPhaseExit: '' }, // Production cue counters observed by the scheduler helpers.
+    _audioCueIndexes: new Map(),
+    performance: { now: () => live.clock },
     areaBgmIncludesTrack: () => true, areaCueIncludesTrack: () => true,
     ambientMusicOwnsSoundtrack: () => live.exclusive,
     audioDebug() {}, audioTrace() {}, audioTraceEnabled: () => false,
-    isAudioEntryEligible: () => true, audioUrlFailed: () => false,
+    isAudioEntryEligible: () => true, audioUrlFailed: () => false, festivalSilencesAmbient: () => false, ruinVaultSilencesAmbient: () => false, ruinShaftSilencesAmbient: () => false, // No generated ruin in the isolated scheduler fixtures.
     musicFadeConfig: () => ({ songFadeInMs: 0, songFadeOutMs: 0 }),
     pauseAmbientForCombat() { live.pauses++; },
     restoreAmbientSchedulerAfterCombat() {},
@@ -87,6 +89,9 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
   assert.equal(state.currentCombatBgm, trainingTrack, 'ending a lesson during real combat keeps combat music');
   live.combat = false;
   context.updateAmbientCues();
+  assert.equal(state.currentCombatBgm, trainingTrack, 'a momentary gap between opponents holds the combat track instead of fading out and back in');
+  live.clock += 3001; // Past the hold: a genuine end of combat releases the music.
+  context.updateAmbientCues();
   assert.equal(state.currentCombatBgm, null, 'ending training outside combat releases its music');
   assert.equal(live.resumes, 1, 'normal ambient music resumes after training');
   trainingTrack.listeners.ended();
@@ -98,7 +103,215 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
   delete context.window.CombatTutorial;
   context.updateAmbientCues();
   assert.equal(state.combatOverrideActive, false, 'music works before the tutorial module loads');
+  // Entering an automatic shaft must silence every transport, even one left over from combat.
+  state.currentBgm = {src:'exploration.ogg'};
+  state.currentCue = {src:'regional-cue.ogg'};
+  state.currentCombatBgm = {src:'combat.ogg'};
+  context.ruinShaftSilencesAmbient = () => true;
+  context.updateAmbientCues();
+  assert.equal(state.currentBgm, null, 'shaft rhythm fades the exploration song');
+  assert.equal(state.currentCue, null, 'shaft rhythm fades ambient motifs');
+  assert.equal(state.currentCombatBgm, null, 'shaft rhythm fades combat songs');
+  assert.equal(state.combatOverrideActive, false, 'shaft suppresses soundtrack overrides');
 }
+{
+  const state = {area:'map_i_dev_random_ruin',active:false,unlocked:false}; // Separates shaft occupancy from a Great Door that is still locked.
+  const context = {window:{
+    DevRandomRuin:{getShaftNetworkState:()=>({obelisk:{active:state.active}})},
+    DevRandomRuinSanctum:{isGreatDoorUnlocked:()=>state.unlocked},
+  }};
+  const start=music.indexOf('  function ruinVaultSilencesAmbient('),end=music.indexOf('  function isAudioEntryEligible(');
+  vm.runInNewContext(music.slice(start,end),context);
+  assert.equal(context.ruinShaftSilencesAmbient(state.area),false,'locked ruin outside the shaft keeps music');
+  state.active=true;
+  assert.equal(context.ruinShaftSilencesAmbient(state.area),true,'entering an automatic shaft silences music');
+  assert.equal(context.ruinVaultSilencesAmbient(state.area),false,'shaft suppression does not pretend the vault is open');
+  state.active=false;
+  assert.equal(context.ruinShaftSilencesAmbient(state.area),false,'leaving the shaft lets the scheduler resume');
+  state.unlocked=true;
+  assert.equal(context.ruinVaultSilencesAmbient(state.area),true,'Great Door retains its separate soundtrack ownership');
+  assert.equal(context.ruinShaftSilencesAmbient('farm'),false,'the shaft never silences another area');
+}
+
+// Verify the authored music cycle: complete song -> 120 seconds of separate cues -> next song.
+{
+  const live = { now: 1000, area: 'town', starts: [], cuesAvailable: true, bgmAvailable: true, nextSong: 0 }; // Deterministic stage clock, transport log, and simulated authoring availability.
+  const state = { area: 'town', indexId: 'general', mode: 'bgm', nextAt: 0, blockUntil: 0, currentBgm: null, currentCue: null, currentCombatBgm: null, combatOverrideActive: false, cuePhaseEndsAt: 0, lastCueId: '' }; // The scheduler's production stage ownership fields.
+  const config = { enabled: true, bgmVolume: 0.48, ambientCueMinDelaySec: 5, ambientCueMaxDelaySec: 5, ambientCuePhaseDurationSec: 120 }; // Fixed cue gaps make the clock checks reproducible.
+  const context = {
+    window: { AudioSystem: { gameAudioConfig: () => config } },
+    deps: { getCurrentArea: () => live.area, isPlayerInCombat: () => false },
+    performance: { now: () => live.now },
+    quietLoading: false, _startupBgm: null, _ambientCueState: state,
+    _cuePlaybackStats: { requested: 0, started: 0, completed: 0, failed: 0, lastError: '', lastPhaseExit: '' }, // Production cue counters observed by the scheduler helpers.
+    _audioCueIndexes: new Map([['general', { __basePath: 'cues/general/', ambient_cues: [{ id: 'to1', file: 'to1.ogg', volume: 0.7 }, { id: 'to2', file: 'to2.ogg', volume: 0.7 }] }]]),
+    _dailyBgmPlayed: new Set(),
+    audioDebug() {}, audioTrace() {}, audioTraceEnabled: () => false,
+    areaBgmIncludesTrack: () => true, areaCueIncludesTrack: () => true,
+    resolveAreaAudioIndex: () => 'general', // Shared cue library across farm and town.
+    isAudioEntryEligible: () => live.cuesAvailable, audioUrlFailed: () => false, festivalSilencesAmbient: () => false, ruinVaultSilencesAmbient: () => false, ruinShaftSilencesAmbient: () => false, // No generated ruin in the isolated scheduler fixtures.
+    musicFadeConfig: () => ({ cueFadeMs: 280, songFadeInMs: 2200, songFadeOutMs: 2600 }),
+    ambientMusicOwnsSoundtrack: () => false,
+    resolveAreaBgm: () => live.bgmAvailable ? { url: 'song-' + (++live.nextSong) + '.ogg', loop: true } : null, // Even a mistakenly looping ordinary BGM must advance the sequential cycle.
+    retireMusicTrack(audio) { audio.retired = true; audio.ended = true; audio.paused = true; },
+    playMusicTrack(url, _volume, _fadeIn, _fadeOut, options = {}) {
+      assert.equal(!!state.currentBgm && !state.currentBgm.ended && url.startsWith('cues/'), false, 'a cue cannot begin over a BGM');
+      assert.equal(!!state.currentCue && !state.currentCue.ended && url.startsWith('song-'), false, 'a BGM cannot begin over a cue');
+      live.starts.push(url);
+      return { src: url, loop: options.loop === true, ended: false, paused: false, listeners: {},
+        addEventListener(event, callback) { this.listeners[event] = callback; },
+        _watchForStall(_ms, callback) { this.stall = callback; } };
+    },
+    requestGameAudioPlay() { return Promise.resolve(); },
+    markAudioUrlFailed() {}, isRealMediaError: () => true,
+  };
+  const sourceStart = music.indexOf('  function scheduleNextCueDelay()'); // Includes the production cue-window helpers and scheduler.
+  const sourceEnd = music.indexOf('  function setLoopingBgs('); // Excludes unrelated weather/background layer code.
+  vm.runInNewContext(music.slice(sourceStart, sourceEnd), context);
+  context.updateAmbientCues();
+  const firstSong = state.currentBgm; // Actual song transport being held until its complete-ended event.
+  assert.equal(firstSong.src, 'song-1.ogg', 'stage A chooses the eligible full song');
+  assert.equal(firstSong.loop, false, 'ordinary BGM cannot loop indefinitely and starve cue stage B');
+  live.now = 139000;
+  context.updateAmbientCues();
+  assert.equal(state.currentBgm, firstSong, 'stage A never cuts its song to start cues early');
+  assert.equal(state.currentCue, null, 'no ambient cues overlap a full song');
+  firstSong.listeners.ended();
+  assert.equal(state.currentBgm, null, 'completed BGM vacates its transport slot');
+  assert.equal(state.mode, 'cue_wait', 'stage B begins after the song finishes');
+  assert.equal(state.cuePhaseEndsAt, 259000, 'cue stage spans precisely two minutes');
+  context.updateAmbientCues();
+  const firstCue = state.currentCue; // First standalone regional motif within the two-minute stage.
+  assert.ok(firstCue && firstCue.src.startsWith('cues/general/'), 'stage B launches its first cue without playing a song');
+  assert.equal(state.currentBgm, null, 'regional cues have exclusive use of ambient music');
+  live.now = 142000;
+  firstCue.listeners.ended();
+  assert.equal(state.mode, 'cue_wait', 'one cue ending does not end the entire cue stage');
+  assert.equal(state.nextAt, 147000, 'the existing random cue interval separates cues');
+  live.area = 'farm'; // Crossing between areas sharing general cues must not restart the soundtrack cycle.
+  context.updateAmbientCues();
+  assert.equal(state.area, 'farm', 'the cue stage follows a move to an area with the same library');
+  assert.equal(state.mode, 'cue_wait', 'the quiet gap remains inside stage B after travel');
+  assert.equal(state.cuePhaseEndsAt, 259000, 'the shared-area transition preserves the original cue deadline');
+  live.now = 146000;
+  context.updateAmbientCues();
+  assert.equal(state.currentCue, null, 'stage B honors the quiet gap between motifs');
+  live.now = 147000;
+  context.updateAmbientCues();
+  const secondCue = state.currentCue; // Second motif proves the stage plays a series, not one cue.
+  assert.ok(secondCue, 'another cue starts during the same two-minute stage');
+  assert.notEqual(secondCue.src, firstCue.src, 'alternatives prevent identical consecutive motifs');
+  secondCue.listeners.ended();
+  live.now = 258900;
+  context.updateAmbientCues();
+  const lastCue = state.currentCue; // The stage deadline must never cut an already-playing cue short.
+  assert.ok(lastCue, 'a cue may begin just before the two-minute deadline');
+  live.now = 259500;
+  context.updateAmbientCues();
+  assert.equal(state.currentCue, lastCue, 'cue playback continues past the stage deadline');
+  assert.equal(state.currentBgm, null, 'the next song cannot start while the final cue plays');
+  live.now = 261000;
+  lastCue.listeners.ended();
+  assert.equal(state.mode, 'bgm', 'stage B finishes after the last complete cue');
+  context.updateAmbientCues();
+  assert.equal(state.currentBgm.src, 'song-2.ogg', 'stage C repeats with a newly chosen full song');
+  assert.equal(state.currentCue, null, 'the new song never plays over a cue');
+  assert.equal(state.cuePhaseEndsAt, 0, 'the next cycle clears the previous cue deadline');
+
+  // A missing BGM pool still leaves the regional cue fallback available.
+  state.currentBgm.listeners.ended();
+  live.cuesAvailable = false;
+  context.updateAmbientCues();
+  assert.equal(state.mode, 'bgm', 'an empty cue pool cannot strand the soundtrack in silence');
+  assert.equal(state.currentCue, null, 'ineligible cues are never played');
+  live.now += 5000;
+  context.updateAmbientCues();
+  assert.equal(state.currentBgm.src, 'song-3.ogg', 'song selection resumes after the empty-pool retry gap');
+  live.bgmAvailable = false;
+  state.currentBgm.listeners.ended();
+  context.updateAmbientCues();
+  assert.equal(state.mode, 'bgm', 'the empty cue library safely returns to the song-selection stage');
+}
+
+// Northern Cliffs must resolve its authored cue library even when a generated
+// wilderness zone has no audioIndex metadata (the actual reported repeat bug).
+{
+  const northern = JSON.parse(source('docs/assets/audio/music/cues/northern_cliffs/index.json'));
+  assert.equal(northern.id, 'northern_cliffs', 'the Northern Cliffs cue file declares the expected index id');
+  assert.equal(northern.ambient_cues.length, 14, 'the Northern Cliffs index has all fourteen regional motifs');
+  for (const cue of northern.ambient_cues) {
+    assert.ok(fs.existsSync(path.join(__dirname, '../docs/assets/audio/music/cues/northern_cliffs', cue.file)), 'the authored Northern Cliffs asset exists: ' + cue.file);
+  }
+  assert.match(config, /"map_northern_cliffs": \[\s*\{ "url": "assets\/audio\/music\/bgm\/bgm_what_the_winds_carry\.mp3"/,
+    'the actual Northern Cliffs fallback track is the one being exercised');
+
+  const zoneContext = {
+    _mapAudioIndexes: new Map(),
+    deps: {
+      _isZoneArea: area => area === 'map_northern_cliffs' || area === 'map_western_slope',
+      EXTERIOR_ZONES: { map_northern_cliffs: {}, map_western_slope: {} },
+      getWorkspaceMaps: () => [],
+    },
+  };
+  const resolveSource = music.slice(music.indexOf('  function resolveAreaAudioIndex('), music.indexOf('  function resetAmbientCueTimer('));
+  vm.runInNewContext(resolveSource, zoneContext);
+  const northernId = zoneContext.resolveAreaAudioIndex('map_northern_cliffs');
+  assert.equal(northernId, 'northern_cliffs', 'Northern Cliffs maps directly to its motifs without zone metadata');
+  assert.equal(zoneContext.resolveAreaAudioIndex('map_western_slope'), northernId, 'Western Slope shares the northern cue library');
+
+  const live = { now: 1000, plays: [] };
+  const state = { area: 'map_northern_cliffs', indexId: northernId, mode: 'bgm', nextAt: 0, blockUntil: 0, currentBgm: null, currentCue: null, currentCombatBgm: null, combatOverrideActive: false, cuePhaseEndsAt: 0, lastCueId: '' };
+  northern.__basePath = 'assets/audio/music/cues/northern_cliffs/';
+  const context = {
+    window: { AudioSystem: { gameAudioConfig: () => ({ enabled: true, bgmVolume: 0.48, ambientCuePhaseDurationSec: 120, ambientCueMinDelaySec: 20, ambientCueMaxDelaySec: 45 }) } },
+    deps: { getCurrentArea: () => 'map_northern_cliffs', isPlayerInCombat: () => false },
+    performance: { now: () => live.now }, quietLoading: false, _startupBgm: null, _ambientCueState: state,
+    _cuePlaybackStats: { requested: 0, started: 0, completed: 0, failed: 0, lastError: '', lastPhaseExit: '' }, // Production cue counters observed by the scheduler helpers.
+    _audioCueIndexes: new Map([['northern_cliffs', northern]]),
+    _lyreDucked: false, _gameplayCueDuckOwners: new Set(), _dailyBgmPlayed: new Set(),
+    audioDebug() {}, audioTrace() {}, audioTraceEnabled: () => false,
+    areaBgmIncludesTrack: () => true, areaCueIncludesTrack: () => true,
+    isAudioEntryEligible: () => true, audioUrlFailed: () => false, festivalSilencesAmbient: () => false, ruinVaultSilencesAmbient: () => false, ruinShaftSilencesAmbient: () => false, // No generated ruin in the isolated scheduler fixtures.
+    musicFadeConfig: () => ({ cueFadeMs: 280, songFadeInMs: 2200, songFadeOutMs: 2600 }),
+    ambientMusicOwnsSoundtrack: () => false,
+    resolveAreaBgm: () => ({ url: 'assets/audio/music/bgm/bgm_what_the_winds_carry.mp3' }),
+    retireMusicTrack(sound) { sound.ended = true; },
+    playMusicTrack(url, _volume, _fadeIn, _fadeOut, options) {
+      live.plays.push({ url, loop: !!options?.loop });
+      return { src: url, ended: false, listeners: {},
+        addEventListener(event, callback) { this.listeners[event] = callback; },
+        _watchForStall() {} };
+    },
+    requestGameAudioPlay() { return Promise.resolve(); },
+  };
+  const schedulerSource = music.slice(music.indexOf('  function scheduleNextCueDelay()'), music.indexOf('  function setLoopingBgs('));
+  vm.runInNewContext(schedulerSource, context);
+  context.updateAmbientCues();
+  const northernBgm = state.currentBgm;
+  assert.equal(northernBgm.src, 'assets/audio/music/bgm/bgm_what_the_winds_carry.mp3', 'the configured Northern Cliffs song starts stage A');
+  assert.equal(live.plays[0].loop, false, 'the Northern Cliffs song must not be placed in a native playback loop');
+  northernBgm.listeners.ended();
+  assert.equal(state.mode, 'cue_wait', 'the completed Northern Cliffs song enters the cue stage');
+  assert.equal(state.cuePhaseEndsAt, 121000, 'Northern Cliffs begins its own two-minute cue stage');
+  context.updateAmbientCues();
+  assert.match(state.currentCue.src, /assets\/audio\/music\/cues\/northern_cliffs\/mas\d+\.ogg$/,
+    'Northern Cliffs actually plays one of its fourteen regional cue files, not another BGM');
+  assert.equal(state.currentBgm, null, 'no Northern Cliffs BGM plays under a regional motif');
+}
+
+// Combat suspends the cue-stage clock as well as the time between cues.
+{
+  const state = { nextAt: 90000, cuePhaseEndsAt: 180000, combatSchedulerPausedAt: 30000 }; // Simulated in-progress stage before combat.
+  const context = { _ambientCueState: state, performance: { now: () => 60000 } };
+  const start = music.indexOf('  function restoreAmbientSchedulerAfterCombat()');
+  const end = music.indexOf('  function resumeMusicSlotAfterCombat(', start);
+  vm.runInNewContext(music.slice(start, end), context);
+  context.restoreAmbientSchedulerAfterCombat();
+  assert.equal(state.nextAt, 120000, 'combat extends the pending interval instead of consuming it');
+  assert.equal(state.cuePhaseEndsAt, 210000, 'combat extends the two-minute cue deadline');
+  assert.equal(state.combatSchedulerPausedAt, 0, 'the combat clock is cleared on restoration');
+}
+
 
 assert.match(music, /const log = deps\?\.debugLog \|\| window\.__farmLog/, 'pre-init audio unlock logging cannot dereference null Music deps');
 assert.equal((music.match(/snd\.play\(\)/g) || []).length, 1,
@@ -223,13 +436,13 @@ assert.match(game, /getTimeOfDay: \(\) => window\.Fishing\?\.timeOfDay\?\.\(\),[
   'music condition evaluation receives the shared calendar condition values');
 assert.match(config, /"bgsFadeMs": 1600/,
   'background-loop fading remains authored in audio config');
-assert.match(config, /"combatBgm": \[\s*\{ "url": "assets\/audio\/music\/bgm\/bgm_pure_focus\.m4a", "loop": true, "gaplessLoop": \{ "sourceSampleRate": 44100, "encoderDelaySamples": 2048, "paddingSamples": 631, "contentSamples": 5667209 \} \}\s*\]/,
-  'Pure Focus is the sole combat track and carries its AAC priming/padding metadata for sample-accurate looping');
+assert.match(config, /"combatBgm": \[\s*\{ "url": "assets\/audio\/music\/bgm\/bgm_pure_focus\.m4a", "loop": true, "gaplessLoop": \{ "sourceSampleRate": 44100, "encoderDelaySamples": 2048, "paddingSamples": 631, "contentSamples": 5667209 \}, "excludeConditions": \{ "maps": \["map_i_dev_random_ruin"\] \} \},\s*\{ "url": "assets\/audio\/music\/bgm\/bgm_just_beyond_the_torchlight\.ogg", "loop": true, "conditions": \{ "maps": \["map_i_dev_random_ruin"\] \} \}\s*\]/,
+  'Pure Focus is the ordinary combat track (with its AAC priming/padding metadata); generated ruins use Just Beyond the Torchlight instead');
 assert.doesNotMatch(config, /"combatBgm": \[[\s\S]*?bgm_skirmish\.m4a[\s\S]*?\n        \],/,
   'Skirmish is not eligible for combat playback');
 
-assert.match(config, /"gameplayCues": \{[\s\S]*?"fishCaught": \{ "url": "assets\/audio\/music\/cues\/gameplaycues\/gpq_fish_caught\.m4a", "volume": 1 \}[\s\S]*?"progressDeeper": \{ "url": "assets\/audio\/music\/cues\/gameplaycues\/gpq_progress_deeper\.m4a", "volume": 1 \}/,
-  'semantic catch and mine-progress cues resolve to the authored gameplay-cue files');
+assert.match(config, /"gameplayCues": \{[\s\S]*?"fishCaught": \{ "url": "assets\/audio\/music\/cues\/gameplaycues\/gpq_fish_caught\.m4a", "volume": 1, "duckBackground": true, "duckOutMs": 90, "duckInMs": 260 \}[\s\S]*?"progressDeeper": \{ "url": "assets\/audio\/music\/cues\/gameplaycues\/gpq_progress_deeper\.m4a", "volume": 1 \}/,
+  'semantic catch and mine-progress cues resolve to the authored gameplay-cue files, with the catch sting temporarily ducking background music');
 assert.ok(skirmishSmpb, 'Skirmish M4A must retain iTunSMPB gapless metadata');
 assert.equal(skirmishSourceSampleRate, 48000,
   'configured Skirmish source sample rate matches the M4A mp4a sample entry');
@@ -260,10 +473,12 @@ assert.match(config, /"map_southern_cloud_forest": \[[\s\S]*?"url": "assets\/aud
   'The Undergrowth mirrors the Western Slope night-only exclusive-soundtrack pattern in the Cloud Forest');
 assert.match(fishing, /playGameplayCue\?\.\('fishCaught'\)/,
   'a committed successful catch fires the authored catch gameplay cue');
-assert.match(game, /const mineDescentFloor = t\.mineDynamicDescent && proceduralMineTarget[\s\S]*?enterBuilding\([^\n]*mineDescentFloor \? `Floor \${mineDescentFloor}` : ''\)[\s\S]*?if \(mineDescentFloor\)[\s\S]*?playGameplayCue\?\.\('progressDeeper'\)/,
-  'only a discovered mine-hole transition supplies the destination floor heading and fires the progress-deeper gameplay cue');
-assert.match(game, /function enterBuilding\(mapId, defaultCol, defaultRow, targetSpotId = '', loadingContextText = ''\)[\s\S]*?LoadingScreenRuntime\?\.show\(loadingContextText \? \{ reason: loadingMineFloor \? 'mine-floor-load' : 'map-change', contextText: loadingContextText \} : undefined\)/,
-  'ordinary mine loads keep the lore loading screen but cannot invent a Floor N heading without hole-descent context');
+assert.match(game, /if \(t\.mineDynamicDescent && proceduralMineTarget\) \{\s*window\.LocationArrival\.mineDescent\(t\.targetMapId\)/,
+  'only discovered mine holes request the coordinated post-load title and cue');
+assert.doesNotMatch(game, /playGameplayCue\?\.\('progressDeeper'\)/,
+  'the transition cannot play progressDeeper while the loader is still visible');
+assert.match(game, /LoadingScreenRuntime\?\.show\(loadingMineFloor \? \{ reason: 'mine-floor-load' \} : undefined\)/,
+  'mine loading shows progress without a floor-number loading caption');
 assert.match(loadingScreen, /id="hlsContext"[\s\S]*?contextText = typeof options === 'string' \? '' : \(options\?\.contextText \|\| ''\)/,
   'the loading screen renders caller-supplied destination context separately from rotating Compendium tips');
 assert.match(config, /"nightbugsVolume": 0\.34/,
@@ -283,7 +498,9 @@ assert.match(index, /audio-track-gain-settings\.js\?v=[A-Za-z0-9_.-]+/,
 assert.match(index, /town-mine\.js\?v=[A-Za-z0-9_.-]+/,
   'the browser cache key loads the Ghoul soundtrack combat exemption');
 assert.match(index, /loading-screen-runtime\.js\?v=[A-Za-z0-9_-]+/,
-  'the browser cache key loads destination-floor context on mine loading screens');
+  'the browser cache key loads the loader completion notification API');
+assert.match(index, /location-arrival\.js\?v=[A-Za-z0-9_-]+/,
+  'the location arrival module loads before gameplay');
 assert.match(index, /fishing-minigame\.js\?v=[A-Za-z0-9_-]+/,
   'the browser cache key loads the successful-catch music cue hook');
 assert.match(index, /"game\.js\?v=\d{8}[A-Za-z0-9_-]+"/,
@@ -310,4 +527,29 @@ assert.ok(fs.statSync(fishCaughtCuePath).size > 1000,
 assert.ok(fs.statSync(progressDeeperCuePath).size > 1000,
   'progress-deeper gameplay cue must be present and nonempty');
 
+// After each cue the gap is one of a few authored delays, shorter ones likelier.
+{
+  const state = { nextAt: 0 };
+  const choices = [{ sec: 0, weight: 5 }, { sec: 4, weight: 4 }, { sec: 8, weight: 3 }, { sec: 12, weight: 2 }, { sec: 16, weight: 1 }];
+  let roll = 0;
+  const context = {
+    window: { AudioSystem: { gameAudioConfig: () => ({ ambientCueDelayChoicesSec: choices, ambientCueMinDelaySec: 20, ambientCueMaxDelaySec: 45 }) } },
+    performance: { now: () => 1000 }, _ambientCueState: state,
+    Math: Object.create(Math, { random: { value: () => roll } }),
+  };
+  const delaySource = music.slice(music.indexOf('  function scheduleNextCueDelay()'), music.indexOf('  function beginAmbientCuePhase('));
+  vm.runInNewContext(delaySource, context);
+  const pickAt = r => { roll = r; context.scheduleNextCueDelay(); return (state.nextAt - 1000) / 1000; };
+  assert.equal(pickAt(0), 0, 'lowest roll picks the zero-second gap');
+  assert.equal(pickAt(5 / 15 - 1e-9), 0, 'zero seconds owns the largest weight band');
+  assert.equal(pickAt(5 / 15), 4, 'next band is four seconds');
+  assert.equal(pickAt(14 / 15), 16, 'top band is the rare sixteen-second gap');
+  const counts = new Map();
+  for (let i = 0; i < 15; i++) { const sec = pickAt((i + 0.5) / 15); counts.set(sec, (counts.get(sec) || 0) + 1); }
+  assert.deepEqual([...counts], [[0, 5], [4, 4], [8, 3], [12, 2], [16, 1]], 'shorter gaps are proportionally more likely');
+  context.window.AudioSystem.gameAudioConfig = () => ({ ambientCueMinDelaySec: 7, ambientCueMaxDelaySec: 7 });
+  assert.equal(pickAt(0.5), 7, 'without a choice list the legacy min/max range still applies');
+}
+
 console.log('music system tests passed');
+

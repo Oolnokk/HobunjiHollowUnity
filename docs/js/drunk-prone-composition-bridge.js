@@ -194,14 +194,16 @@
 
       if (String(options.name || '').toLowerCase() !== 'player' || typeof handle.update !== 'function') return handle;
       const previousUpdate = handle.update.bind(handle);
-      const runLeanQuaternion = new THREEArg.Quaternion(); // Reused to lean along the leg rig's logical facing rather than the billboard direction.
+      const runLeanQuaternion = new THREEArg.Quaternion(); // Reused to lean along actual world movement independently of portrait and weapon yaw.
       handle.update = function proneAwarePlayerLegUpdate(dt, speedWorldUnitsPerSecond, suppressed, seatedPose, motion) {
         const player = window.Combat?.deps?.player;
         const effectiveSuppressed = !!suppressed || !!player?.prone;
         const result = previousUpdate(dt, speedWorldUnitsPerSecond, effectiveSuppressed, seatedPose, motion);
         const pitch = Number(handle.getRunLean?.()) || 0; // Reads the gait's own blend without recomputing movement state.
         if (pitch && !effectiveSuppressed && !seatedPose) composer.setChannel(RUN_CHANNEL, {
-          priority: 100, mode: 'additive', quaternion: setForwardLeanQuaternion(runLeanQuaternion, pitch, Number(handle.group?.rotation?.y) || 0),
+          priority: 100, mode: 'additive', space: 'world',
+          excludeExternalProviders: ['equippedTool', 'heldItem'], // Scene-level weapons/tools and player-nested bag items (including Kurraya) ignore movement lean.
+          quaternion: setForwardLeanQuaternion(runLeanQuaternion, pitch, Math.atan2(Number(player?.vx) || 0, Number(player?.vy) || 0)),
         });
         else composer.clearChannel(RUN_CHANNEL);
         return result;
@@ -271,8 +273,10 @@
       if (loss > 0) visualRoot.quaternion.copy(state.driverRoot.quaternion);
       if (runLean) {
         const headingYaw = Math.PI / 2 - (Number(entity.facing) || 0) - (Number(entity.def?.aimAngleOffset) || 0); // Same world heading convention as game.js's creature facing resolver.
-        setForwardLeanQuaternion(state.runLeanQuaternion, runLean, headingYaw - (Number(state.avatarRoot.rotation.y) || 0));
+        const localHeading = headingYaw - (Number(state.avatarRoot.rotation.y) || 0); // Facing-relative forward axis shared by torso lean and head counter-rotation.
+        setForwardLeanQuaternion(state.runLeanQuaternion, runLean, localHeading);
         visualRoot.quaternion.multiply(state.runLeanQuaternion);
+        window.NpcMovementHeadTarget?.applyHostileRunPitch?.(entity.avatarRef, runLean, localHeading, undo); // Counter-pitch only the head skins for this draw; existing combat head yaw remains untouched.
       }
       undo.push(() => {
         if (previousRotation && visualRoot.rotation?.copy) visualRoot.rotation.copy(previousRotation);
@@ -343,10 +347,13 @@
 
   window.HobunjiDrunkProneCompositionBridge = Object.freeze({
     banditFootingLoss,
+    prepareBanditSwayForRender, // Isolated authoring renderers use the same low-Footing/run/head composition seam.
     installLegBoneDebugCheckbox,
     getDebug() {
       const player = window.Combat?.deps?.player;
       return {
+        lastChange: 'Movement-only NPC forward gaze and render-time enemy neck counter-pitch preserve level sightlines',
+        runLeanSpace: 'world-movement',
         playerProne: !!player?.prone,
         footing: Number(player?.footing) || 0,
         maxFooting: Number(player?.maxFooting) || 0,

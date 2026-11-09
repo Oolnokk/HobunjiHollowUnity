@@ -139,6 +139,7 @@
     const material = materialCfg();
     const promise = new Promise((resolve, reject) => {
       new THREE.TextureLoader().load(material.textureBasePath + filename, texture => {
+        window.CreatureTextureCache?.capFurnitureTexture?.(texture); // Scaled once at load (crate_side.png is 1378x1378).
         texture.wrapS = texture.wrapT = configuredWrap();
         texture.center.set(Number(material.center[0]), Number(material.center[1]));
         texture.repeat.set(Number(material.repeat[0]), Number(material.repeat[1]));

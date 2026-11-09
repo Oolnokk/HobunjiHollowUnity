@@ -19,7 +19,7 @@ function cameraContext(invert = false, free = true) {
     lastMobileArchCombatAimEvent: null, invalidateMobileArchAimPerspectiveCache() {},
     cameraDragAllowed: () => true, desktopControlsConfig: () => ({ cameraRotateClampDeg: 45 }),
     freeRotateCameraActive: () => free, wrapAzimuthDeg: v => ((v + 180) % 360 + 360) % 360 - 180,
-    clampCameraPitchOffsetDeg: v => Math.max(-85, Math.min(45, v)),
+    clampCameraPitchOffsetDeg: v => Math.max(-99, Math.min(81, v)),
     window: { FormatUtils: { clamp: (v, a, b) => Math.max(a, Math.min(b, v)) }, Combat: { postAttackTurnMultiplier: () => 0.6 } },
   };
   ctx.cameraFacingAngleRad = () => -ctx.cameraAzimuthOffsetDeg * Math.PI / 180;
@@ -101,14 +101,15 @@ assert.equal(alignmentCancels, 1, 'pending alignment is canceled without startin
 assert.equal(holdContext.slots[1].releaseQueued, false, 'canceled pending alignment cannot release later');
 
 const breakerSource = fs.readFileSync('docs/js/combat/combat-charged-breaker.js', 'utf8'); // Real charge cleanup function under test.
-let visualCancels = 0, glowClears = 0; // Counts cleanup paths that must run instead of strike resolution.
-const breakerContext = {startedAt:1,debugState:{active:true},FURIOUS_PROGRESS_OWNER:'charge',clearGlow(){glowClears++;},window:{Combat:{setWindupProgressTransform(owner,value){assert.equal(value,null);},deps:{cancelWeaponSwingHold(){visualCancels++;}}}}}; // Minimal Charged Breaker ownership dependencies.
+let visualCancels = 0, glowClears = 0, regenUnlocks = 0; // Counts the once-only cleanup paths that must run instead of strike resolution.
+const breakerContext = {startedAt:1,debugState:{active:true},FURIOUS_PROGRESS_OWNER:'charge',clearGlow(){glowClears++;},setHoldStaminaRegenBlocked(blocked){assert.equal(blocked,false);regenUnlocks++;},window:{Combat:{setWindupProgressTransform(owner,value){assert.equal(value,null);},deps:{cancelWeaponSwingHold(){visualCancels++;}}}}}; // Minimal Charged Breaker ownership dependencies.
 vm.createContext(breakerContext);
 vm.runInContext(breakerSource.slice(breakerSource.indexOf('    function onHoldCancel('), breakerSource.indexOf('    function onHoldEnd(')), breakerContext);
 breakerContext.onHoldCancel();
 breakerContext.onHoldCancel();
 assert.equal(visualCancels, 1, 'charge cancellation cleans up exactly once');
 assert.equal(glowClears, 1, 'charge cancellation clears its glow');
+assert.equal(regenUnlocks, 1, 'charge cancellation releases its Stamina regeneration lock exactly once');
 assert.equal(breakerContext.startedAt, -1, 'charge cancellation stops the hold clock');
 assert.equal(breakerContext.debugState.active, false, 'mobile diagnostics stop reporting an active charge');
 console.log('Executed mobile aim and held-attack cancellation checks passed.');

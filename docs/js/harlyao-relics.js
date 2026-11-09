@@ -23,7 +23,7 @@
   const SHAPES = Object.freeze({
     longsword: Object.freeze({
       label: 'Harlyao Longsword', sprite: 'assets/toolsprites/harlyao_longsword.png', icon: '🗡️',
-      animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'heavy',
+      animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light',
     }),
     warhammer: Object.freeze({
       label: 'Harlyao Warhammer', sprite: 'assets/toolsprites/warhammer.png', icon: '🔨',
@@ -31,7 +31,7 @@
     }),
     broadsword: Object.freeze({
       label: 'Harlyao Broadsword', sprite: 'assets/toolsprites/harlyao_broadsword.png', icon: '🗡️',
-      animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'heavy',
+      animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light',
     }),
   });
 
@@ -54,6 +54,7 @@
 
   function init(injectedDeps) {
     deps = injectedDeps;
+    window.HachutuRelics?.init?.(injectedDeps); // Share the exact gear/inventory save seam with the dev-only Hachutu weapon drop.
   }
 
   const ES = () => window.EnchantmentSystem;
@@ -72,15 +73,33 @@
   }
 
   // ── Bound-relic key codec ────────────────────────────────────────
-  // harlyaoBound_<shape>_<uid>_B<base-base>_F<slot.id-slot.id>
+  // harlyaoBound_<shape>_<uid>_B<base-base>_F<slot.id-slot.id>[_V<alignment>.<colorAlignment>.<dye>.<effect>]
+  // The optional V suffix carries a looted weapon's particle choice as indices into the enchantment VFX vocabulary (alignment/colorAlignment index
+  // into EnchantmentSystem.PLANES, then the dye and effect index within that alignment), so unbinding keeps its random color and effect.
+  function visualVocabulary() {
+    return { planes: window.EnchantmentSystem?.PLANES || [], alignments: window.WeaponEnchantmentVFX?.ALIGNMENTS || {} };
+  }
+  function encodeVisual(visual) {
+    const { planes, alignments } = visualVocabulary();
+    const a = planes.indexOf(visual?.alignment), c = planes.indexOf(visual?.colorAlignment);
+    const dye = alignments[visual?.colorAlignment]?.dyeIds?.indexOf(visual?.dyeId);
+    const effect = alignments[visual?.alignment]?.effects?.findIndex(entry => entry.id === visual?.effectId);
+    return a >= 0 && c >= 0 && dye >= 0 && effect >= 0 ? `_V${a}.${c}.${dye}.${effect}` : '';
+  }
+  function decodeVisual(a, c, dye, effect) {
+    const { planes, alignments } = visualVocabulary();
+    const alignment = planes[Number(a)], colorAlignment = planes[Number(c)];
+    const dyeId = alignments[colorAlignment]?.dyeIds?.[Number(dye)], effectId = alignments[alignment]?.effects?.[Number(effect)]?.id;
+    return dyeId && effectId ? { alignment, colorAlignment, dyeId, effectId } : null;
+  }
   function encodeBoundKey(relic) {
     const base = (relic.enchantments?.base || []).join('-');
     const flourishes = Object.entries(relic.enchantments?.flourishes || {}).map(([slot, id]) => `${slot}.${id}`).join('-');
-    return `${BOUND_PREFIX}${relic.shape}_${relic.uid}_B${base}_F${flourishes}`;
+    return `${BOUND_PREFIX}${relic.shape}_${relic.uid}_B${base}_F${flourishes}${relic.visual ? encodeVisual(relic.visual) : ''}`;
   }
 
   function decodeBoundKey(key) {
-    const match = /^harlyaoBound_([a-z]+)_([a-z0-9]+)_B([A-Za-z-]*)_F([A-Za-z0-9.-]*)$/.exec(String(key || ''));
+    const match = /^harlyaoBound_([a-z]+)_([a-z0-9]+)_B([A-Za-z-]*)_F([A-Za-z0-9.-]*)(?:_V(\d+)\.(\d+)\.(\d+)\.(\d+))?$/.exec(String(key || ''));
     if (!match || !SHAPES[match[1]]) return null;
     const flourishes = {};
     for (const pair of match[4] ? match[4].split('-') : []) {
@@ -89,7 +108,8 @@
     }
     const raw = { base: match[3] ? match[3].split('-') : [], flourishes };
     const enchantments = ES()?.cleanWeaponState ? ES().cleanWeaponState(raw) : raw;
-    return { shape: match[1], uid: match[2], enchantments };
+    const visual = match[5] != null ? decodeVisual(match[5], match[6], match[7], match[8]) : null;
+    return { shape: match[1], uid: match[2], enchantments, ...(visual ? { visual } : {}) };
   }
 
   function isBoundKey(key) {
@@ -150,7 +170,7 @@
       icon: shape.icon,
       label: `Bound ${shape.label}`,
       cat: 'material',
-      sellPrice: 0,
+      sellPrice: 90 + 30 * enchantmentCount(relic.enchantments), // Recovered bound relics can be sold without paying to unbind them.
       spriteIcon: '../toolsprites/' + shape.sprite.split('/').pop(), // applyItemSpriteIcon resolves under assets/objectsprites/.
       tags: ['Harlyao', 'Relic', 'Bound'],
       desc: `An ancient ${shape.label.replace('Harlyao ', '').toLowerCase()} still bound to its long-dead Harlyao owner — it cannot be wielded. Garanki Gabu can unbind it (${unbindPrice(relic.enchantments)}g). Enchantments: ${lines.join('; ') || 'none'}.`,
@@ -209,6 +229,7 @@
         dmgType: shape.dmgType,
         weaponIdleClass: shape.weaponIdleClass,
         shapeKey: record.shape === 'warhammer' ? 'warhammer' : record.shape === 'longsword' ? 'harlyaoLongsword' : 'harlyaoBroadsword',
+        metalKey: 'tinBronze', // Uses the shared mastery-driven bronze/verdigris renderer after unbinding.
         harlyaoRelic: true,
         itemKey: toolKey,
       };
@@ -220,6 +241,7 @@
   // Called once gearInventory is loaded (game.js hobunjiPlayerReady), before
   // equipment slots render, so a relic equipped last session is a known tool.
   function restore() {
+    window.HachutuRelics?.restore?.(); // Hachutu duplicate torch definitions must exist before the loadout panel is rebuilt.
     const g = gear();
     if (!g) return 0;
     if (!g.harlyaoRelics || typeof g.harlyaoRelics !== 'object' || Array.isArray(g.harlyaoRelics)) g.harlyaoRelics = {};
@@ -240,10 +262,39 @@
   }
 
   function requireService(id) {
+    if (window.DelversGuild && !window.DelversGuild.isMember()) {
+      deps?.showToast?.("Join the Delver's Guild before requesting Garanki's artifact services.", false);
+      return false;
+    }
+    if ((id === 'base' || id === 'flourish') && window.DelversGuild && !window.DelversGuild.canEnchant()) {
+      deps?.showToast?.('Creating new enchantments is forbidden. Earn Garanki\'s trust and discuss it privately in his tent.', false);
+      return false;
+    }
     if (window.ArtifactCollection?.unlocked?.(id) === true) return true;
     const milestone = window.ArtifactCollection?.UNLOCKS?.find(entry => entry.id === id); // Same thresholds as collection UI/dialogue.
     deps?.showToast?.(`Donate ${milestone?.count || 1} different artifact${milestone?.count > 1 ? 's' : ''} to Garanki to unlock ${milestone?.label || 'this service'}.`, false);
     return false;
+  }
+
+  // ── Cursed articles (looted lich circlets) ─────────────────────────────────────────────────────────────────────────────────────────────
+  const DISPEL_PRICE = 150; // Garanki's fee to lift a lich circlet's curse; same service gate as unbinding.
+  function cursedCircletsInPack() {
+    return (deps?.getPackClothing?.() || []).filter(item => item?.cursed?.dispelBy === 'garanki');
+  }
+  function dispelCurse(uid) {
+    if (!requireService('unbind')) return { ok: false, reason: 'collection' };
+    const item = cursedCircletsInPack().find(entry => entry.uid === uid);
+    if (!item) return { ok: false, reason: 'not-owned' };
+    if (!spendGold(DISPEL_PRICE)) return { ok: false, reason: 'gold' };
+    const originalLabel = item.cursed.originalLabel || item.label; // Restores the pre-curse name; the article itself, pattern and all, is untouched.
+    if (window.EquipmentPanel?.dispelCurse) window.EquipmentPanel.dispelCurse(item);
+    else { item.label = originalLabel; delete item.cursed; }
+    deps.showToast?.(`Garanki dispels the curse. The ${item.label} can be worn now.`, true);
+    deps.saveMemberWorldData?.();
+    deps.buildPackClothingSection?.();
+    deps.buildInventoryGrid?.();
+    render();
+    return { ok: true };
   }
 
   function unbind(boundKey) {
@@ -258,8 +309,15 @@
     delete deps.inventory[boundKey];
     if (!g.harlyaoRelics || typeof g.harlyaoRelics !== 'object') g.harlyaoRelics = {};
     g.harlyaoRelics[toolKey] = { shape: relic.shape, uid: relic.uid, originalEnchantments: relic.enchantments, unboundAt: Date.now() };
+    if (relic.visual) { // A looted enemy weapon keeps its random particle color/effect (WeaponEnchantmentVFX validates the choice on use).
+      if (!g.weaponEnchantmentVisuals || typeof g.weaponEnchantmentVisuals !== 'object') g.weaponEnchantmentVisuals = {};
+      g.weaponEnchantmentVisuals[toolKey] = { ...relic.visual };
+    }
     if (!g.tools) g.tools = {};
     g.tools[toolKey] = true;
+    if (!g.toolMastery) g.toolMastery = {};
+    g.toolMastery[toolKey] = { xp: 0 }; // Unbinding releases the former owner's affinity and clears mastery-driven verdigris.
+    delete g.toolPlating?.[toolKey];
     registerRelicTool(toolKey, g.harlyaoRelics[toolKey]);
     const es = ES();
     if (es) {
@@ -273,7 +331,7 @@
     deps.saveMemberWorldData?.();
     deps.buildInventoryGrid?.();
     deps.buildEquipmentSlots?.();
-    deps.showToast?.(`Garanki unbinds the ${SHAPES[relic.shape].label}. It's yours now${learned.length ? ` — and he has learned ${learned.join(', ')}` : ''}.`, true);
+    deps.showToast?.(`Garanki unbinds the ${SHAPES[relic.shape].label}. Its verdigris clears and its Mastery returns to 0${learned.length ? ` — and he has learned ${learned.join(', ')}` : ''}.`, true);
     render();
     return { ok: true, toolKey, learned, price };
   }
@@ -409,6 +467,7 @@
     const es = ES();
     const defs = es?.DEFINITIONS || {};
 
+    window.TownMagicCheckpoint?.renderCustody?.(list, { heading, note, row, button, esc }); // Confiscated items stay visible first on small screens; Garanki owns the legal registration UI.
     window.ArtifactCollection?.render?.(list, { heading, note, row, button });
     // Bound relics
     list.appendChild(heading('Bound Harlyao relics'));
@@ -420,11 +479,21 @@
       const shape = SHAPES[relic.shape];
       list.appendChild(row(shape.icon, esc(`Bound ${shape.label}`),
         esc(describeEnchantments(relic.enchantments).join(' · ') || 'No enchantments'),
-        [button(`Unbind (${price}g)`, () => unbind(relic.key), !window.ArtifactCollection?.unlocked?.('unbind') || (deps.inventory.gold || 0) < price)]));
+        [button(`Unbind (${price}g)`, () => unbind(relic.key), !window.ArtifactCollection?.unlocked?.('unbind') || (window.DelversGuild && !window.DelversGuild.isMember()) || (deps.inventory.gold || 0) < price)]));
+    }
+
+    // Cursed lich circlets
+    list.appendChild(heading('Cursed circlets'));
+    const cursed = cursedCircletsInPack();
+    if (!cursed.length) list.appendChild(note('Bring Garanki a circlet looted from a lich. It carries a curse that keeps it from being worn until he dispels it.'));
+    for (const item of cursed) {
+      list.appendChild(row('👑', esc(item.label), esc('Cursed. A lich’s old claim keeps it from being worn.'),
+        [button(`Dispel (${DISPEL_PRICE}g)`, () => dispelCurse(item.uid), !window.ArtifactCollection?.unlocked?.('unbind') || (window.DelversGuild && !window.DelversGuild.isMember()) || (deps.inventory.gold || 0) < DISPEL_PRICE)]));
     }
 
     // Enchant a weapon
     list.appendChild(heading('Enchant a weapon'));
+    if (window.DelversGuild && !window.DelversGuild.canEnchant()) list.appendChild(note('New enchanting is illegal. Bring Garanki four distinct artifacts and speak with him privately at his tent to earn his trust.'));
     const weapons = ownedWeaponKeys();
     if (!weapons.length) { list.appendChild(note('You own no weapons.')); return; }
     const equipped = window.Combat?.deps?.currentWeaponKey?.();
@@ -443,8 +512,8 @@
       const options = [{ value: '', label: '— choose a learned Base enchantment —' }]
         .concat(unlocked.base.filter(id => id === current || !state.base.includes(id)).map(id => ({ value: id, label: `${defs[id].icon || ''} ${defs[id].displayName} · ${defs[id].alignment}` })));
       const pick = select(options, current);
-      const controls = [pick, button(`Apply (${TUNING.APPLY_BASE_PRICE}g)`, () => pick.value && applyBase(selectedWeaponKey, i, pick.value), !window.ArtifactCollection?.unlocked?.('base') || !unlocked.base.length)];
-      if (current) controls.push(button(`Remove (${TUNING.REMOVE_PRICE}g)`, () => clearSlot(selectedWeaponKey, 'base', i), !window.ArtifactCollection?.unlocked?.('remove')));
+      const controls = [pick, button(`Apply (${TUNING.APPLY_BASE_PRICE}g)`, () => pick.value && applyBase(selectedWeaponKey, i, pick.value), !window.ArtifactCollection?.unlocked?.('base') || (window.DelversGuild && !window.DelversGuild.canEnchant()) || !unlocked.base.length)];
+      if (current) controls.push(button(`Remove (${TUNING.REMOVE_PRICE}g)`, () => clearSlot(selectedWeaponKey, 'base', i), !window.ArtifactCollection?.unlocked?.('remove') || (window.DelversGuild && !window.DelversGuild.isMember())));
       list.appendChild(row('✦', `Base Enchantment ${i + 1}`,
         esc(current ? `${defs[current].displayName} (${defs[current].alignment}) — ${defs[current].description}` : 'Empty. Applies to every qualifying hit.'), controls));
     }
@@ -455,8 +524,8 @@
         .concat(unlocked.flourish.filter(entry => entry.slotId === slotId).map(entry => ({ value: entry.id, label: `${defs[entry.id].icon || ''} ${defs[entry.id].displayName} · ${defs[entry.id].alignment}` })));
       const pick = select(options, current);
       const any = options.length > 1;
-      const controls = [pick, button(`Apply (${TUNING.APPLY_FLOURISH_PRICE}g)`, () => pick.value && applyFlourish(selectedWeaponKey, slotId, pick.value), !window.ArtifactCollection?.unlocked?.('flourish') || !any)];
-      if (current) controls.push(button(`Remove (${TUNING.REMOVE_PRICE}g)`, () => clearSlot(selectedWeaponKey, 'flourish', slotId), !window.ArtifactCollection?.unlocked?.('remove')));
+      const controls = [pick, button(`Apply (${TUNING.APPLY_FLOURISH_PRICE}g)`, () => pick.value && applyFlourish(selectedWeaponKey, slotId, pick.value), !window.ArtifactCollection?.unlocked?.('flourish') || (window.DelversGuild && !window.DelversGuild.canEnchant()) || !any)];
+      if (current) controls.push(button(`Remove (${TUNING.REMOVE_PRICE}g)`, () => clearSlot(selectedWeaponKey, 'flourish', slotId), !window.ArtifactCollection?.unlocked?.('remove') || (window.DelversGuild && !window.DelversGuild.isMember())));
       list.appendChild(row('❋', `${esc(flourishTriggerLabel(slotId, selectedWeaponKey))} Flourish`,
         esc(current ? `${defs[current].displayName} (${defs[current].alignment}) — ${defs[current].description}` : any ? 'Empty.' : `Garanki has not learned any Flourish for ${slotId.toUpperCase()} yet.`), controls));
     }
@@ -475,6 +544,7 @@
     return {
       bound: boundRelicsInInventory().map(entry => ({ key: entry.key, shape: entry.shape, enchantments: entry.enchantments, price: unbindPrice(entry.enchantments) })),
       unbound: Object.keys(gear()?.harlyaoRelics || {}),
+      latestChange: 'Unbinding clears verdigris and resets Mastery to 0; bronze relics then age with their new owner.',
       unlocks: ES()?.unlockedOptions?.() || null,
       collection: window.ArtifactCollection?.debugSnapshot?.() || null,
     };
@@ -495,6 +565,9 @@
     init,
     render,
     restore,
+    dispelCurse,
+    cursedCircletsInPack,
+    DISPEL_PRICE,
     makeRelic,
     rollEnchantments,
     encodeBoundKey,

@@ -429,7 +429,7 @@
       const definition = defs[key];
       inventoryItems.push({
         key,
-        icon: definition.icon || '□',
+        icon: itemDeps.itemIconForKey?.(key) || definition.icon || '📦',
         label: String(definition.label || key).toUpperCase(),
         max: 99,
       });

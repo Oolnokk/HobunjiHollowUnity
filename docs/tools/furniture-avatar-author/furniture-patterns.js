@@ -12,6 +12,7 @@
     <label>Pattern tile size <input id="fpScale" type="number" min="0.05" max="20" step="0.05" value="1"></label>
     <label>Base dye <input id="fpBase" type="color" value="#b7a185"></label>
     <label>Pattern dye <input id="fpDye" type="color" value="#315b67"></label>
+    <label>Overpass dye <input id="fpOverpassDye" type="color" value="#315b67"></label>
     <label>Engraving core opacity <input id="fpCoreOpacity" type="number" min="0" max="1" step="0.05" value="0.85"></label>
     <fieldset id="fpPieceScaleBox"><legend>Pattern scale override</legend>
       <p>Overrides the tile size of every pattern on the selected piece, including random ruin engravings. Leave blank to use each slot's own size. The Dev Companion's ruin surface list can override it again.</p>
@@ -32,6 +33,8 @@
     <pre id="fpDebug" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>`;
   document.getElementById('surfaceEditor')?.parentElement?.appendChild(panel);
   const input = id => document.getElementById(id); // Every handler reads current values, rather than stale selected records.
+
+  const placement = api.placementControls(panel,input('fpBase'),input('fpDye'),input('fpOverpassDye')); // Same dye and layer placement controls as placed furniture.
 
   function target() {
     const surface = selectedSurface(); // Canonical recognized surface selection takes precedence over piece selection.
@@ -55,7 +58,7 @@
     const groupedSquareSides = squarePillarSideGroup(part, surface); // Used by square pillar shafts so selecting any long side authors all four vertical sides together.
     const slot = groupedSquareSides ? `${part.id}:surface:sides` : currentRecord()?.slot || surface?.id || input('fpSlot').value || 'surface';
     const record = api.normalize({ ...currentRecord(), slot, mode: input('fpMode').value, opacity: input('fpMode').value === 'glass' ? .8 : input('fpMode').value === 'engraving' ? .5 : 1,
-      engravingCoreOpacity: input('fpCoreOpacity').value || .85, random: input('fpRandom').checked, scale: input('fpScale').value, palette: [input('fpBase').value, input('fpDye').value],
+      engravingCoreOpacity: input('fpCoreOpacity').value || .85, random: input('fpRandom').checked, scale: input('fpScale').value, palette: [input('fpBase').value, input('fpDye').value, input('fpOverpassDye').value],
       ...(surface && !groupedSquareSides ? { normal: surface.localNormal.toArray(), localCentroid: surface.localCentroid.toArray(), dimensions: [part.transform.sx,part.transform.sy,part.transform.sz] } : {}) });
     if (groupedSquareSides) {
       record.selector = 'sides'; // The shared renderer continuously unwraps rectangular side faces around the full pillar perimeter.
@@ -64,7 +67,7 @@
       record.selector = surface.recognizedType === 'upward top' ? 'top' : surface.recognizedType === 'underside' ? 'bottom' : 'sides'; // Curved recognized groups wrap their entire cap/side instead of clipping to one averaged normal.
       delete record.normal; delete record.localCentroid; delete record.dimensions;
     }
-    return record;
+    return placement.read(record);
   }
   function commit(record) {
     const { part } = target(); // Part metadata is already serialized by every author/runtime export path.
@@ -93,7 +96,9 @@
       input('fpCoreOpacity').value = record.engravingCoreOpacity ?? .85;
       input('fpScale').value = record.scale; input('fpRandom').checked = !!record.random;
       input('fpBase').value = record.palette?.[0] || '#b7a185'; input('fpDye').value = record.palette?.[1] || '#315b67';
+      input('fpOverpassDye').value = record.palette?.[2] || record.palette?.[1] || '#315b67';
     }
+    placement.refresh(record || {});
     input('fpDebug').textContent = JSON.stringify({ selectedPart: target().part?.id || null, selectedSurface: target().surface?.id || null, patterns: api.debug(root) }, null, 2);
   }
   function mountFurniturePreview(container, partId, record) {
@@ -133,7 +138,7 @@
         if(disposed)return;
         const request=++generation; // Ignore asynchronous work from a superseded draft.
         clearDraft();
-        for(const node of selected){const previous=new Set(node.children);api.applyPart(node,{...part,patternSurfaces:[{...record,patternId:null,pattern}]});for(const child of node.children)if(!previous.has(child))overlays.push(child);}
+        for(const node of selected){const previous=new Set(node.children);api.applyPart(node,{...part,patternSurfaces:[{...record,patternId:null,pattern,patterns:[pattern,...(record.patterns || []).slice(1)]}]});for(const child of node.children)if(!previous.has(child))overlays.push(child);}
         previewScene.updateMatrixWorld(true);
         for(const overlay of overlays)overlay.onBeforeRender?.(); // Resolve world-scale atlas sizing before waiting for pixels.
         const pending=[...overlays]; // Async edits cannot change this generation's readiness/error checks.
@@ -161,7 +166,7 @@
           get: id => window.RepoPatternLibrary.getCachedEditableById(id) || window.PatternLibrary?.getById?.(id) },
         mountPreview: container => mountFurniturePreview(container,partId,record),
         previewHint: 'Drag to rotate. Pinch or scroll to zoom. Draft changes appear on the selected surface.',
-        onSave: async (pattern, id) => commit({ ...record, patternId: id || null, pattern: await api.editablePattern({pattern}) }) });
+        onSave: async (pattern, id) => {const snapshot=await api.editablePattern({pattern});commit({ ...record, patternId: id || null, pattern:snapshot, patterns:[snapshot,...(record.patterns || []).slice(1)] });} });
     } catch (error) { log(`Furniture patterns: ${error.message}`, 'error'); }
   }
   async function exportPattern(kind) {
@@ -200,4 +205,5 @@
   input('fpCarpet').onclick=addCarpet; input('fpBanner').onclick=loadBannerPreset;
   window.FurniturePatternAuthor = { refresh, loadBannerPreset };
   rebuildFurnitureMeshes();
+  Promise.resolve(window.RepoPatternLibrary?.load?.()).then(refresh).catch(error=>log(`Furniture pattern library: ${error.message}`,'warn')); // Populate overpasses on a cold editor load.
 })();

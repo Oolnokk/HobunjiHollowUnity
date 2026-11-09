@@ -22,7 +22,7 @@
     if (embeddedRuntime) {
       try {
         const request = new XMLHttpRequest(); // Used only by the hidden dev generator so the API bytes cannot be starved behind the live game's startup asset queue.
-        request.open('GET', 'debrisifier-v50-api.js?v=20261002ruin-materials', false);
+        request.open('GET', 'debrisifier-v50-api.js?v=20261105soloPush2', false);
         request.send(null);
         const ok = (request.status >= 200 && request.status < 300) || (request.status === 0 && !!request.responseText);
         if (!ok) throw new Error(`V50 dev API HTTP ${request.status}`);
@@ -37,7 +37,7 @@
       return;
     }
     const api = document.createElement('script'); // Standalone editor usage keeps the ordinary external-script loader.
-    api.src = 'debrisifier-v50-api.js?v=20261002ruin-materials';
+    api.src = 'debrisifier-v50-api.js?v=20261105soloNative1';
     api.onerror = () => fail('V50 dev API did not load.');
     document.head.appendChild(api);
   }
@@ -53,7 +53,7 @@
     const treeNeedle = "const REPO_TREE_URL='https://api.github.com/repos/Oolnokk/HobunjiHollowUnity/git/trees/main?recursive=1';";
     const treeReplacement = `const REPO_TREE_URL='${EMBEDDED_TREE}';`;
     const rawNeedle = "function rawTextureUrl(path){return REPO_RAW_ROOT+String(path||'').replace(/^\\/+/, '');}";
-    const rawReplacement = "function rawTextureUrl(path){const clean=String(path||'').replace(/^\\/+/, '');const fromDocsRoot=clean.startsWith('docs/')?clean.slice(5):clean;return new URL('../../'+fromDocsRoot,location.href).href;}";
+    const rawReplacement = "function rawTextureUrl(path){const clean=String(path||'').replace(/^\\/+/, '');const fromDocsRoot=clean.startsWith('docs/')?clean.slice(5):clean;const resolved=new URL('../../'+fromDocsRoot,location.href);const attempt=new URLSearchParams(location.search).get('assetAttempt');if(attempt)resolved.searchParams.set('assetAttempt',attempt);return resolved.href;}";
     const brickNeedle = 'new THREE.GLTFLoader().load(REPO_RAW_ROOT+WALL_BRICK_GLB_PATH,gltf=>';
     const brickReplacement = 'new THREE.GLTFLoader().load(rawTextureUrl(WALL_BRICK_GLB_PATH),gltf=>';
     const decalNeedle = 'const texture=loader.load(REPO_RAW_ROOT+path,loaded=>';
@@ -65,13 +65,17 @@
     const previewLoopNeedle = 'renderPreview();';
     const previewLoopReplacement = 'if(!window.__debrisEmbeddedRuntime)renderPreview();'; // Direct tool preview remains unchanged; the hidden generator never starts an iframe RAF/render loop.
 
-    // The original preview's 3–4 half-cell hallways were authored for orbit-view
-    // inspection, not the game's collision radius. Runtime-only V50 generation
-    // uses 5–6 cells, which become 5–6 world units after the game's 2× X/Z scale.
+    // The preview's narrow hallways cannot fit the player. Keep runtime widths at
+    // 5–6 cells. Reserved native V50 floors preserve their proven mechanism footprint;
+    // unreserved floors compact only the hallways not needed by traversal puzzles.
+    const hallSignatureNeedle = 'function pickInteriorHallRect(rng,axis,cols,rows){';
+    const hallSignatureReplacement = 'function pickInteriorHallRect(rng,axis,cols,rows,hallIndex){';
+    const hallCallNeedle = 'pickInteriorHallRect(rng,axis,128,128)';
+    const hallCallReplacement = 'pickInteriorHallRect(rng,axis,128,128,hallIndex)';
     const hallNeedle = 'const width=randomIntInclusive(rng,3,4),length=randomIntInclusive(rng,5,8);';
-    const hallReplacement = 'const width=randomIntInclusive(rng,5,6),length=randomIntInclusive(rng,5,8);';
+    const hallReplacement = 'const width=randomIntInclusive(rng,5,6),puzzleSlots=window.__devRuinPuzzleOptions?.safePath===false?2:3,keepLong=!!window.__devRuinLayoutReservation||hallIndex<=puzzleSlots,length=keepLong?randomIntInclusive(rng,5,8):randomIntInclusive(rng,2,4);'; // puzzleSlots counts long hallways available to the safe-path composer and two other hallway modules.
     const escapeHallNeedle = 'hallWidth=randomIntInclusive(rng,3,4),hallLen=10+rooms.length*3;';
-    const escapeHallReplacement = 'hallWidth=randomIntInclusive(rng,5,6),hallLen=10+rooms.length*3;';
+    const escapeHallReplacement = 'hallWidth=randomIntInclusive(rng,5,6),hallLen=window.__devRuinLayoutReservation?10+rooms.length*3:6;'; // Native V50 reserved puzzles retain their authored topology; standalone fallbacks start compact.
     const focusDoorNeedle = 'footprintWidth:cs*3,footprintDepth:cs,doorwayId:`${chosen.door.from}->${chosen.door.to}`,side:chosen.side';
     const focusDoorReplacement = 'footprintWidth:cs*Math.max(3,Number(chosen.door.widthCells)||3),footprintDepth:cs,doorwayId:`${chosen.door.from}->${chosen.door.to}`,side:chosen.side';
     const hallDoorNeedle = 'footprintWidth:network.cellSize*3,footprintDepth:network.cellSize,doorwayId:`${door.from}->${door.to}`';
@@ -104,7 +108,7 @@ function runtimeChooseMechanismActivatorType(rng,forcedType=null,linkedCubeDoor=
     const glyphGlowNeedle = "function setDecalMaterialsProgress(materials,progress){for(const mat of materials||[]){mat.color.set(progress>.001?mat.userData.activeColor||'#66aaff':mat.userData.baseColor||'#d7c4a4');}}";
     const glyphGlowReplacement = "function setDecalMaterialsProgress(materials,progress){const active=progress>.001;for(const mat of materials||[]){mat.color.set(active?(mat.userData.activeColor||'#66aaff'):(mat.userData.baseColor||'#ffffff'));mat.opacity=active?1:.82;mat.transparent=true;mat.depthWrite=false;mat.blending=active?THREE.AdditiveBlending:THREE.NormalBlending;mat.userData.devRuinGlyphGlow=active;mat.needsUpdate=true;}}";
     const pressureFallbackNeedle = "if(type==='pressurePlate'&&puzzleRoom){const puzzlePillarSlots=interiorSupportPillarSlots(puzzleRoom,network,plateauData,bridgeCorridors,true);pushPuzzle=pressurePuzzleLayout(puzzleRoom,anchorX,anchorZ,rotY,network,rng,plateauData,{pillarSlots:puzzlePillarSlots,bridgeCorridors});if(pushPuzzle){x=pushPuzzle.plate.x;z=pushPuzzle.plate.z;y=interiorFloorHeightAtWorld(x,z,network,plateauData);for(const point of pushPuzzle.reservedPoints||[])pushPuzzleReservedPoints.push({roomId:puzzleRoom.id,x:point.x,z:point.z,clearance:Math.max(pushPuzzle.pillarClearance||.7,pushPuzzle.pushUnit*.95)});for(let pathIndex=1;pathIndex<(pushPuzzle.path||[]).length;pathIndex++){const a=pushPuzzle.path[pathIndex-1],b=pushPuzzle.path[pathIndex];pushPuzzleReservedSegments.push({roomId:puzzleRoom.id,ax:a.x,az:a.z,bx:b.x,bz:b.z,clearance:Math.max(pushPuzzle.pillarClearance||.7,pushPuzzle.pushUnit*.95)});}}}";
-    const pressureFallbackReplacement = "if(type==='pressurePlate'&&puzzleRoom){const puzzlePillarSlots=interiorSupportPillarSlots(puzzleRoom,network,plateauData,bridgeCorridors,true);pushPuzzle=pressurePuzzleLayout(puzzleRoom,anchorX,anchorZ,rotY,network,rng,plateauData,{pillarSlots:puzzlePillarSlots,bridgeCorridors});if(pushPuzzle){x=pushPuzzle.plate.x;z=pushPuzzle.plate.z;y=interiorFloorHeightAtWorld(x,z,network,plateauData);for(const point of pushPuzzle.reservedPoints||[])pushPuzzleReservedPoints.push({roomId:puzzleRoom.id,x:point.x,z:point.z,clearance:Math.max(pushPuzzle.pillarClearance||.7,pushPuzzle.pushUnit*.95)});for(let pathIndex=1;pathIndex<(pushPuzzle.path||[]).length;pathIndex++){const a=pushPuzzle.path[pathIndex-1],b=pushPuzzle.path[pathIndex];pushPuzzleReservedSegments.push({roomId:puzzleRoom.id,ax:a.x,az:a.z,bx:b.x,bz:b.z,clearance:Math.max(pushPuzzle.pillarClearance||.7,pushPuzzle.pushUnit*.95)});}}if(!pushPuzzle){const fallbackType=runtimeChoosePressureFallbackType(rng,linkedCubeDoor);return fallbackType?addMechanismActivatorFor(mechanismId,anchorX,anchorZ,rotY,floorY,placementHint,forcedPosition,puzzleRoom,fallbackType):runtimePuzzleBypass(mechRoot);}}";
+    const pressureFallbackReplacement = "if(type==='pressurePlate'&&puzzleRoom){const puzzlePillarSlots=window.__devRuinSingleRoomLab?[]:interiorSupportPillarSlots(puzzleRoom,network,plateauData,bridgeCorridors,true);pushPuzzle=pressurePuzzleLayout(puzzleRoom,anchorX,anchorZ,rotY,network,rng,plateauData,{pillarSlots:puzzlePillarSlots,bridgeCorridors});if(pushPuzzle){x=pushPuzzle.plate.x;z=pushPuzzle.plate.z;y=interiorFloorHeightAtWorld(x,z,network,plateauData);for(const point of pushPuzzle.reservedPoints||[])pushPuzzleReservedPoints.push({roomId:puzzleRoom.id,x:point.x,z:point.z,clearance:Math.max(pushPuzzle.pillarClearance||.7,pushPuzzle.pushUnit*.95)});for(let pathIndex=1;pathIndex<(pushPuzzle.path||[]).length;pathIndex++){const a=pushPuzzle.path[pathIndex-1],b=pushPuzzle.path[pathIndex];pushPuzzleReservedSegments.push({roomId:puzzleRoom.id,ax:a.x,az:a.z,bx:b.x,bz:b.z,clearance:Math.max(pushPuzzle.pillarClearance||.7,pushPuzzle.pushUnit*.95)});}}if(!pushPuzzle){const fallbackType=runtimeChoosePressureFallbackType(rng,linkedCubeDoor);return fallbackType?addMechanismActivatorFor(mechanismId,anchorX,anchorZ,rotY,floorY,placementHint,forcedPosition,puzzleRoom,fallbackType):runtimePuzzleBypass(mechRoot);}}";
     const pressureReservedSpaceNeedle = "pressurePuzzleLayout(puzzleRoom,anchorX,anchorZ,rotY,network,rng,plateauData,{pillarSlots:puzzlePillarSlots,bridgeCorridors})";
     const pressureReservedSpaceReplacement = "pressurePuzzleLayout(puzzleRoom,anchorX,anchorZ,rotY,network,rng,plateauData,{pillarSlots:puzzlePillarSlots,bridgeCorridors,extraObstacles:pushPuzzleReservedPoints.filter(point=>point.roomId===puzzleRoom.id).map(point=>({x:point.x,z:point.z,kind:'reservedPuzzleSpace',clearance:point.clearance}))})";
     const doorwayFlankReservedNeedle = "for(const [x,z] of pairs){const yaw=d.axis==='x'?Math.PI/2:0,floorY=interiorFloorHeightAtWorld(x,z,network,plateauData),pillar=await createInteriorFurnitureVisual(shortAsset,material,x,z,{targetHeight:wallHeight*.42,role:'doorway flank pillar',floorSink:INTERIOR_DECOR_FLOOR_SINK,yaw,floorY});";
@@ -120,7 +124,42 @@ function runtimeChooseMechanismActivatorType(rng,forcedType=null,linkedCubeDoor=
     const elevatorSocketCallNeedle = "const elevatorSocket=createElevatorWellSocket(material,daisWidth,daisDepth,rise+.07);";
     const elevatorSocketCallReplacement = "const socketExit=path?.[1]?{dx:Math.sign(path[1].x-source.x),dz:Math.sign(path[1].z-source.z)}:null,elevatorSocket=createElevatorWellSocket(material,daisWidth,daisDepth,rise+.07,socketExit);";
 
+    // Test the union before committing either a room or its hallway. V50
+    // normalizes its unbounded coordinates afterward, retaining two margin
+    // cells on every edge; the planner's allocation therefore bounds that union.
+    const allocationHelper = `function runtimeInteriorAllocationFits(rooms,hallways,room,hall){
+  const allocation=window.__devRuinLayoutReservation;
+  if(!allocation)return true;
+  const rects=[...rooms,...hallways,room,...(hall?[hall]:[])];
+  const cols=Math.max(...rects.map(r=>r.col+r.w))-Math.min(...rects.map(r=>r.col))+4;
+  const rows=Math.max(...rects.map(r=>r.row+r.h))-Math.min(...rects.map(r=>r.row))+4;
+  const scale=INTERIOR_CELL_SIZE*allocation.tileScale;
+  return cols*scale<=allocation.w&&rows*scale<=allocation.d;
+}
+`;
+    const nativeLabNeedle = "  if(tallAsset){\n    for(const room of network.rooms){";
+    const nativeLabReplacement = "  if(window.__devRuinSingleRoomLab&&window.__devRuinSingleRoomNativePuzzle){\n    const kind=window.__devRuinSingleRoomNativePuzzle; // DEV-only lab calls the original V50 mechanism factories, never a procedural stand-in.\n    if(!['brazier','glyphObelisk','stackedObelisk','linkedCubePillars','pressurePlate'].includes(kind)||network.rooms.length!==1)\n      throw new Error('Unknown single-room native V50 fixture '+kind);\n    const room=network.rooms[0],b=rectWorldBounds(room,network),side=network.entrance?.side||'west';\n    const eastWest=side==='west'||side==='east',cx=(b.minX+b.maxX)*.5,cz=(b.minZ+b.maxZ)*.5;\n    const x=eastWest?(side==='west'?b.maxX-1.9:b.minX+1.9):cx;\n    const z=eastWest?cz:(side==='north'?b.maxZ-1.9:b.minZ+1.9);\n    const yaw=eastWest?Math.PI/2:0,floorY=interiorFloorHeightAtWorld(x,z,network,plateauData);\n    const arch=createStoneArchFrame(material,2.2,2.35,.24);\n    arch.position.set(x,floorY,z);arch.rotation.y=yaw;arch.userData.interiorRuinRole='one-room native goal frame';shell.add(arch);\n    const door=createVerticalStoneDoor(material,1.76,1.9,.22),id='single_room_native_v50_goal';\n    door.position.set(x,floorY+2.35,z);door.rotation.y=yaw;door.userData.mechanismId=id;\n    door.userData.doorwayId='single-room-native-goal';shell.add(door);mechanismRootById.set(id,door);\n    movingParts.push({id,type:'verticalStoneDoor',anchor:{x,y:floorY+2.35,z},rotationY:yaw,\n      height:1.9,minScale:.06,maxScale:1,doorwayId:'single-room-native-goal',labOnly:true});\n    const actual=addMechanismActivatorFor(id,x,z,yaw,floorY,'side',null,room,kind);\n    if(actual!==kind)throw new Error('V50 one-room '+kind+' fixture was not authored: '+actual); // Push-block mode accepts only a real routed V50 pressure-block with a physical movable cube.\n    objects.push({id,kind:'movingDoor',key:'stone_door',label:'Native V50 Puzzle Goal',col:0,row:0,w:2,h:1,rot:Math.round(yaw/DEG),\n      previewRuin:{movingPart:true,labOnly:true,noLoot:true,activatorType:kind,linkedMechanismId:id}});\n    window.__devRuinSingleRoomNativeCreated={kind,mechanismId:id,roomId:room.id,requiresPushBlock:kind==='pressurePlate'}; // Mobile diagnostics confirm the concrete V50 family.\n  }\n  if(tallAsset){\n    for(const room of network.rooms){"; // DEV-only native puzzle fixture uses original V50 meshes and activators.
+    const nativeMetaNeedle = 'movingParts,movingPartAnimation:';
+    const nativeMetaReplacement = 'movingParts,singleRoomNative:window.__devRuinSingleRoomNativeCreated||null,movingPartAnimation:';
     const patches = [
+      ['native allocation helper', 'function generateInteriorRoomNetwork(', allocationHelper+'function generateInteriorRoomNetwork('],
+      ['native first-room allocation', '  rooms.push(first);degrees.set(first.id,0);', "  if(!runtimeInteriorAllocationFits([],[],first,null))throw new Error('First V50 room exceeds its floor allocation');\n  rooms.push(first);degrees.set(first.id,0);"],
+      ['native attachment allocation', '          if(!interiorRectClear(floorSet,hall)||!interiorRectClear(floorSet,room))continue;', '          if(!runtimeInteriorAllocationFits(rooms,hallways,room,hall)||!interiorRectClear(floorSet,hall)||!interiorRectClear(floorSet,room))continue;'],
+      ['native escape allocation', '      if(!interiorRectClear(floorSet,hall)||!interiorRectClear(floorSet,room))throw new Error(', '      if(!runtimeInteriorAllocationFits(rooms,hallways,room,hall)||!interiorRectClear(floorSet,hall)||!interiorRectClear(floorSet,room))throw new Error('],
+      // The immutable generator is shared with gameplay; only the root author's explicit option allows one room.
+      ['vast single-room preview', 'function interiorRoomPreset(profileKind,rng,forcedLabel=null){', "function interiorRoomPreset(profileKind,rng,forcedLabel=null){if(window.__devRuinSingleRoom===true&&window.__devRuinSingleRoomPreset)forcedLabel=window.__devRuinSingleRoomPreset;"],
+      ['single-room preview range', 'function interiorRoomRange(){', 'function interiorRoomRange(){if(window.__devRuinSingleRoom===true)return{min:1,max:1};'],
+      ['single-room preview network', 'Math.round(Number(roomRange.min)||3),2,12)', 'Math.round(Number(roomRange.min)||3),window.__devRuinSingleRoom===true?1:2,12)'],
+      ['flat puzzle lab floor', 'plateauData=generateInteriorPlateauPlan(network,rng,density)', 'plateauData=window.__devRuinSingleRoomLab?{levelByCell:Object.fromEntries([...network.floorSet].map(key=>[key,0])),regions:[],focuses:[],stepHeight:INTERIOR_PLATEAU_STEP_HEIGHT,coreTreasureFocusId:null,singleCoreTreasure:false}:generateInteriorPlateauPlan(network,rng,density)'],
+      ['one-room native V50 puzzle fixture', nativeLabNeedle, nativeLabReplacement],
+      ['single-room native V50 diagnostics metadata', nativeMetaNeedle, nativeMetaReplacement],
+      ['one-room spatial model without phantom pillars',
+        'pillarSlots=interiorSupportPillarSlots(room,network,plateauData,bridgeCorridors,true),pillarClear=',
+        'pillarSlots=window.__devRuinSingleRoomLab?[]:interiorSupportPillarSlots(room,network,plateauData,bridgeCorridors,true),pillarClear='],
+      ['isolated torch route without prerequisite obelisk',
+        'const gate=addTorchRoutePrerequisiteGate(room,route,nestedId);',
+        'const gate=window.__devRuinSingleRoomLab?null:addTorchRoutePrerequisiteGate(room,route,nestedId);'],
+      ['clear solo chamber support pillars', 'if(tallAsset){\n    for(const room of network.rooms){', 'if(tallAsset&&!window.__devRuinSingleRoomLab){\n    for(const room of network.rooms){'], // The chosen standalone puzzle owns the chamber's usable floor; ordinary V50 rooms retain their full support network. // Only explicit dev labs skip V50 core-treasure scenery; ordinary ruins are byte-for-byte unchanged.
       ['repository-tree binding', treeNeedle, treeReplacement],
       ['raw-asset URL helper', rawNeedle, rawReplacement],
       ['Roughbrick loader', brickNeedle, brickReplacement],
@@ -128,7 +167,9 @@ function runtimeChooseMechanismActivatorType(rng,forcedType=null,linkedCubeDoor=
       ['headless embedded renderer', rendererNeedle, rendererReplacement],
       ['disable embedded preview RAF', previewLoopNeedle, previewLoopReplacement],
       ['skip standalone editor startup in embedded gameplay runtime', selfTestNeedle, selfTestReplacement],
-      ['hallway width', hallNeedle, hallReplacement],
+      ['hallway length helper argument', hallSignatureNeedle, hallSignatureReplacement],
+      ['hallway length attachment index', hallCallNeedle, hallCallReplacement],
+      ['hallway width and compact length', hallNeedle, hallReplacement],
       ['escape hallway width', escapeHallNeedle, escapeHallReplacement],
       ['focus doorway width', focusDoorNeedle, focusDoorReplacement],
       ['hallway doorway width', hallDoorNeedle, hallDoorReplacement],
@@ -165,6 +206,9 @@ function runtimeChooseMechanismActivatorType(rng,forcedType=null,linkedCubeDoor=
       expectedFurniturePaths: EMBEDDED_FURNITURE_COUNT,
       patchedBindings: patches.length,
       runtimeHallwayWidthCells: [5, 6],
+      runtimeCompactHallwayLengthCells: [2, 4], // Mobile diagnostics: ordinary V50 links are shorter; the first puzzle slots retain [5, 6].
+      runtimePuzzleHallwayLengthCells: [5, 8],
+      runtimeNativeHallwayLengthCells: [5, 8], // Reserved native floors retain their existing solver-tested layouts.
       runtimeDoorwayUsesAuthoredWidth: true,
       runtimePuzzleGenerationOptions: true,
       headlessEmbeddedPreview: true,

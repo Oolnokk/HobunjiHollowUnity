@@ -11,9 +11,8 @@
 // screen at once -- and only the player's current area's walkers pay it.
 //
 // Each recompose is a full portrait composite plus a texture upload, so NPC
-// refreshes also scale with distance from the player: full rate nearby,
-// a slower rate at mid range, and none beyond farTiles (where a few-pixel
-// sprite's breathing/blinking can't be seen; it resumes on approach).
+// refreshes stop beyond one tile, and at most one NPC composite may be in
+// flight at once. The player's refresh has its own independent slot.
 //
 // game.js calls init(deps) once and tickNpc/tickPlayer from its frame loop.
 (() => {
@@ -24,6 +23,7 @@
   let deps = null;
   let playerLifeT = 0;
   let playerLifePending = false;
+  let npcLifePending = false; // Serializes nearby NPC composites so crowded festival stations cannot launch a batch together.
   let playerCombatFrown = false; // Tracks whether the player's world portrait should use the temporary combat frown expression.
   let playerCombatExpressionVersion = 0; // Incremented whenever combat expression intent changes so an older async breathing render cannot upload over the new face.
   let playerCombatExpressionApplied = false; // True only after the current player avatar's live texture actually contains the combat frown.
@@ -37,7 +37,7 @@
     getOverlayOnlyPoints: () => null,
     getAnimData: () => null,
   });
-  const stats = { npcRefreshes: 0, npcDistanceSkips: 0, playerRefreshes: 0, playerCombatExpressionChanges: 0, playerCombatCacheBuilds: 0, playerCombatCacheApplies: 0 };
+  const stats = { npcRefreshes: 0, npcDistanceSkips: 0, npcBudgetSkips: 0, playerRefreshes: 0, playerCombatExpressionChanges: 0, playerCombatCacheBuilds: 0, playerCombatCacheApplies: 0 }; // Existing on-demand snapshot includes crowd throttling without per-frame logging.
 
   function init(injectedDeps) { deps = injectedDeps; }
 
@@ -46,9 +46,9 @@
     const num = (value, fallback) => (Number.isFinite(Number(value)) ? Number(value) : fallback);
     return {
       enabled: cfg.enabled !== false,
-      intervalS: num(cfg.intervalS, 0.16),
-      nearTiles: num(cfg.nearTiles, 12), // Full-rate refresh radius around the player.
-      farTiles: num(cfg.farTiles, 24), // No refresh beyond this; resumes once the player is closer.
+      intervalS: Math.max(0.016, num(cfg.intervalS, 0.16)),
+      nearTiles: Math.min(1, Math.max(0, num(cfg.nearTiles, 1))), // Legacy overrides may reduce the radius, but never animate a crowd beyond one tile.
+      farTiles: Math.min(1, Math.max(0, num(cfg.farTiles, 1))), // Hard one-tile cap also applies to old 12/24-tile overrides.
       midIntervalMul: num(cfg.midIntervalMul, 3), // Interval multiplier between nearTiles and farTiles.
     };
   }
@@ -62,12 +62,13 @@
     let interval = cfg.intervalS;
     const pos = walker.root?.position;
     const playerTile = deps.getPlayerTile();
-    if (pos && playerTile) {
-      const distance = Math.hypot(pos.x - playerTile.x, pos.z - playerTile.y);
-      if (distance > cfg.farTiles) { stats.npcDistanceSkips++; return; }
-      if (distance > cfg.nearTiles) interval *= cfg.midIntervalMul;
-    }
+    if (!pos || !playerTile || !Number.isFinite(pos.x) || !Number.isFinite(pos.z)
+        || !Number.isFinite(playerTile.x) || !Number.isFinite(playerTile.y)) return;
+    const distanceSquared = (pos.x - playerTile.x) ** 2 + (pos.z - playerTile.y) ** 2; // Radius check avoids a square root for every distant walker every frame.
+    if (distanceSquared > cfg.farTiles ** 2) { stats.npcDistanceSkips++; return; }
+    if (distanceSquared > cfg.nearTiles ** 2) interval *= cfg.midIntervalMul;
     if (walker._portraitLifeT < interval) return;
+    if (npcLifePending) { stats.npcBudgetSkips++; return; }
     walker._portraitLifeT = 0;
 
     const composer = window.portraitBreathingComposer;
@@ -83,12 +84,15 @@
     }
     if (!Number.isFinite(walker._portraitLifePhaseOffsetMs)) walker._portraitLifePhaseOffsetMs = deps.rnd() * 4000; // Desyncs breathing between simultaneous NPCs.
     walker._portraitLifePending = true;
+    npcLifePending = true;
     stats.npcRefreshes++;
-    window.NpcAvatarPreview.renderProfileToCanvas(walker.avatarFrontCanvas, walker.profile, {
-      breathingComposer: composer, seatId, breathingPhaseOffsetMs: walker._portraitLifePhaseOffsetMs,
-    }).then(() => {
-      window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(walker.avatarGroup, walker.avatarFrontCanvas);
-    }).catch(() => {}).finally(() => { walker._portraitLifePending = false; });
+    try {
+      window.NpcAvatarPreview.renderProfileToCanvas(walker.avatarFrontCanvas, walker.profile, {
+        breathingComposer: composer, seatId, breathingPhaseOffsetMs: walker._portraitLifePhaseOffsetMs,
+      }).then(() => {
+        window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(walker.avatarGroup, walker.avatarFrontCanvas);
+      }).catch(() => {}).finally(() => { walker._portraitLifePending = false; npcLifePending = false; });
+    } catch (_) { walker._portraitLifePending = false; npcLifePending = false; }
   }
 
   function copyPortraitCanvas(target, source) {
@@ -100,7 +104,7 @@
   }
 
   function applyCachedPlayerCombatFrown(avatar) {
-    if (!playerCombatFrown || !avatar || avatar.generation !== playerCombatFrownCacheGeneration || !playerCombatFrownCache) return false;
+    if (!playerCombatFrown || !avatar || avatar.group?.userData?.maskboundHeadHidden || avatar.generation !== playerCombatFrownCacheGeneration || !playerCombatFrownCache) return false;
     if (!copyPortraitCanvas(avatar.frontCanvas, playerCombatFrownCache)) return false;
     if (!window.PNGPlaneAvatar?.refreshSinglePlaneAvatarModel?.(avatar.group, avatar.frontCanvas)) return false;
     playerCombatExpressionApplied = true;
@@ -143,7 +147,7 @@
     const cfg = config();
     if (!deps) return;
     const avatar = deps.getPlayerAvatar();
-    if (!avatar.group?.userData?.frontTexture || !avatar.frontCanvas || !avatar.profile) return;
+    if (!avatar.group?.userData?.frontTexture || avatar.group?.userData?.maskboundHeadHidden || !avatar.frontCanvas || !avatar.profile) return;
     ensurePlayerCombatFrownCache(avatar); // Warm the current outfit/species frown before combat so the first dodge/lunge ghost can carry it synchronously.
     if (!cfg.enabled || playerLifePending) return;
     playerLifeT += dt;
@@ -159,7 +163,7 @@
       breathingComposer: composer, seatId: 'player',
     }).then(() => {
       const current = deps.getPlayerAvatar();
-      if (generation !== current.generation || expressionVersion !== playerCombatExpressionVersion) return; // Stale neutral/frown canvas must never upload after combat state has flipped.
+      if (generation !== current.generation || expressionVersion !== playerCombatExpressionVersion || current.group?.userData?.maskboundHeadHidden) return; // Stale neutral/frown canvas must never upload after combat state has flipped.
       window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(current.group, current.frontCanvas);
       if (playerCombatFrown) playerCombatExpressionApplied = true; // This completed render used the live composer, whose player seat is frowning during combat.
     }).catch(() => {}).finally(() => { playerLifePending = false; });
@@ -205,7 +209,7 @@
       ...(playerCombatFrown ? { breathingComposer: COMBAT_FROWN_COMPOSER, seatId: 'player-combat-frown-cache' } : {}),
     }).then(() => {
       const current = deps?.getPlayerAvatar?.();
-      if (!current || current.generation !== generation || expressionVersion !== playerCombatExpressionVersion) return;
+      if (!current || current.group?.userData?.maskboundHeadHidden || current.generation !== generation || expressionVersion !== playerCombatExpressionVersion) return;
       if (!copyPortraitCanvas(current.frontCanvas, scratch)) return;
       window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(current.group, current.frontCanvas);
       if (playerCombatFrown) playerCombatExpressionApplied = true;
@@ -218,7 +222,8 @@
     tickNpc,
     tickPlayer,
     setPlayerCombatExpression,
+    getPlayerAvatar: () => deps?.getPlayerAvatar?.() || null, // Canonical live player portrait/profile for composite grapples; no clone of game.js state.
     isPlayerCombatExpressionApplied: () => !playerCombatFrown || playerCombatExpressionApplied,
-    snapshot: () => ({ ...stats, playerCombatFrown, playerCombatExpressionVersion, playerCombatExpressionApplied, playerCombatFrownCacheGeneration, playerCombatFrownCacheReady: !!playerCombatFrownCache, config: config() }),
+    snapshot: () => ({ ...stats, npcLifePending, playerCombatFrown, playerCombatExpressionVersion, playerCombatExpressionApplied, playerCombatFrownCacheGeneration, playerCombatFrownCacheReady: !!playerCombatFrownCache, config: config() }),
   };
 })();

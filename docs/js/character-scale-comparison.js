@@ -137,7 +137,27 @@
       const compatible = candidates.filter(item => canonicalSpecies(item.appearance.speciesId) === target.species);
       const pool = exact.length ? exact : compatible;
       const picked = pool.find(item => !isChild(item.npc)) || pool[0] || null;
-      return { ...target, npc: picked?.npc || null };
+      if (picked) return { ...target, npc: picked.npc };
+      // Nuhongan share Tletingan appearance, but must keep their own editable scale.
+      const donor = target.species === 'nuhongan'
+        ? candidates.find(item => normalizeSpecies(item.appearance.speciesId) === 'tletingan' && !isChild(item.npc))
+        : null; // Supplies an adult, same-gender preview without creating a world NPC.
+      if (!donor) return { ...target, npc: null };
+      const npc = clone(donor.npc); // Isolates preview identity and appearance from the authored NPC database.
+      npc.id = `full_scale_${target.species}_${target.gender}_preview`;
+      npc.name = `${prettySpecies(target.species)} ${target.gender} comparison`;
+      npc.species = target.species;
+      npc.gender = target.gender;
+      npc.appearance = { ...npcAppearance(donor.npc), speciesId: target.species, gender: target.gender };
+      npc.avatarEditor ||= {};
+      npc.avatarEditor.rawExport ||= {};
+      npc.avatarEditor.rawExport.appearance = clone(npc.appearance);
+      for (const profileKey of ['profile', 'avatarProfile', 'npcProfile']) {
+        const profile = npc.avatarEditor.rawExport[profileKey]; // Retargets nested Character Studio exports while retaining donor cosmetics and equipment.
+        if (profile?.appearance) Object.assign(profile.appearance, { speciesId: target.species, gender: target.gender });
+        if (profile?.visuals?.appearance) Object.assign(profile.visuals.appearance, { speciesId: target.species, gender: target.gender });
+      }
+      return { ...target, npc };
     });
   }
 
@@ -754,6 +774,12 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       get active() { return active; },
       get selectedKey() { return selected?.key || null; },
       get previewCount() { return entries.length; },
+      debugSnapshot: () => ({
+        active,
+        building,
+        lineup: entries.map(entry => entry.key),
+        latestChange: 'Nuhongan male/female use preview-only Tletingan representatives; Mashtzarr retain their own male/female NPCs and scales.',
+      }),
     });
     return true;
   }

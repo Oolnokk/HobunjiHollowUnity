@@ -210,10 +210,9 @@
     if (!saved) return null;
     // Temporary camps and dens move when the Tothal Shift rebuilds the
     // wilderness. Never point the compass at an obsolete previous-year tile.
-    if (saved.source === 'threat' && saved.year !== deps.currentTothalYear()) {
-      _saveWaypoint(null);
-      return null;
-    }
+    // Startup compass reads can precede calendar restoration. Hide mismatched
+    // cycles without deleting the saved target; explicit cleanup owns deletion.
+    if (saved.source === 'threat' && saved.year !== deps.currentTothalYear()) return null;
     return saved;
   }
 
@@ -240,10 +239,9 @@
     _threatDiscoveryCache = saved?.year === year && saved.markers && typeof saved.markers === 'object'
       ? { ...saved.markers }
       : {};
-    if (record && saved && saved.year !== year) {
-      record.world.discoveredThreats = { year, markers: {} };
-      try { localStorage.setItem('hobunjiSaveMeta', JSON.stringify(record.meta)); } catch {}
-    }
+    // Reading during the default Day-1 calendar must not erase a later cycle's
+    // folder-restored discoveries. The cycle-keyed cache reloads after hydration;
+    // a real new discovery replaces obsolete records through the write path.
     return _threatDiscoveryCache;
   }
 
@@ -397,7 +395,7 @@
     const layout = zoneId ? deps._zoneLayouts.get(zoneId) : null;
     if (!layout) {
       ctx.fillStyle = 'rgba(255,255,255,0.4)';
-      ctx.font = '13px system-ui';
+      ctx.font = '13px ' + getComputedStyle(document.body).fontFamily; // Canvas text uses the same typeface as the live gameplay UI.
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('Not yet explored', w / 2, h / 2);
       return;

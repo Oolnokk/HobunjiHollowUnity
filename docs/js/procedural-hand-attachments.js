@@ -906,7 +906,10 @@
       refreshModelProfile();
     });
 
+    let poseOwner=null, poseProvider=null; // Scoped procedural actions share the normal hand driver and its render-time synchronization.
     const api = {
+      setPoseProvider(owner, provider) { if(provider || poseOwner===owner){poseOwner=provider?owner:null;poseProvider=provider||null;} },
+      applyOwnedPose() { if(!poseProvider)return false;poseProvider(api);return true; },
       group: root,
       parent,
       avatarRoot: options.avatarRoot || null,
@@ -942,6 +945,7 @@
           speciesId,
           gender,
           mode: 'direct-tool-attachments',
+          poseOwner,
           noArmIK: true,
           authoredGlbOriginPreserved: true,
           modelKey: state.modelKey,
@@ -981,8 +985,27 @@
     return api;
   }
 
+  // Same GLB handFromTool calibration used by ProceduralHandFrameDriver.
+  // Share it with authoring tools so the hand's native GLB origin/rotation is
+  // identical in the preview and runtime, including asymmetric/mirrored hands.
+  function modelCalibrationForSpecies(speciesId, gender, modelHeight) {
+    const modelKey = profiles.modelKeyForSpecies?.(speciesId);
+    const raw = profiles.normalizeHandTransform?.(profiles.data?.models?.[modelKey]?.handFromTool)
+      || profiles.data?.models?.[modelKey]?.handFromTool || {};
+    const p = raw.position || {}, r = raw.rotationDeg || {}, q = raw.rotationQuaternion || null;
+    const modelScale = Number(profiles.data?.models?.[modelKey]?.scale) || 1;
+    const speciesScale = Number(profiles.speciesScaleFor?.(speciesId, gender)) || 1;
+    const unit = (Number(modelHeight) || .9) * (Number(profiles.data?.handHeightFraction) || .12) * modelScale * speciesScale;
+    return {
+      modelKey, position:{x:(Number(p.x)||0)*unit,y:(Number(p.y)||0)*unit,z:(Number(p.z)||0)*unit},
+      rotationDeg:{pitch:Number(r.pitch)||0,yaw:Number(r.yaw)||0,roll:Number(r.roll)||0},
+      rotationQuaternion:q && [q.x,q.y,q.z,q.w].every(v=>Number.isFinite(Number(v)))
+        ?{x:Number(q.x),y:Number(q.y),z:Number(q.z),w:Number(q.w)}:null,
+    };
+  }
   const publicApi = {
     attach,
+    modelCalibrationForSpecies,
     installGameRuntime(injectedDeps) { gameDeps = injectedDeps || null; },
     get gameDeps() { return gameDeps; },
     setShowGripGuides(value) {

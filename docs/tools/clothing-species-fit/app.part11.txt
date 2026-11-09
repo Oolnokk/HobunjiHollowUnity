@@ -1,16 +1,21 @@
 
   const targetKeyText=readLine('target grid');
-  const identity=targetKeyText.match(/^(.+)_(male|female)$/);
+  const region=readLine('fit region')==='headwear'||targetKeyText.startsWith('headwear::')?'headwear':'body';
+  const identity=targetKeyText.replace(/^headwear::/,'').match(/^(.+)_(male|female)$/);
   if(!identity)throw new Error('Could not read the target species and gender from “target grid”.');
   const [,species,gender]=identity;
+  const sourceSpecies=readLine('source species')||'mao-ao',sourceGender=readLine('source gender')||gender; // Old pasted reports implicitly used same-gender Mao-ao art.
   const garment=readLine('garment');
   if(!garment||garment==='(none)')throw new Error('The pasted report does not identify a garment.');
 
   let transform;
   try{transform=JSON.parse(readLine('base transform'))}catch{throw new Error('Could not parse the base transform JSON.');}
   for(const key of ['scaleX','scaleY','translateX','translateY']){
-    if(!Number.isFinite(Number(transform?.[key])))throw new Error(`The base transform is missing a valid ${key}.`);
+    if(transform?.[key]==null||String(transform[key]).trim()===''||!Number.isFinite(Number(transform[key])))
+      throw new Error(`The base transform is missing a valid ${key}.`);
+    transform[key]=Number(transform[key]); // Normalize numeric JSON strings before pixel-space translation math.
   }
+  // Nonpositive scales are repaired on import, using the original scale to recover local offsets.
 
   const section=text.split('source→target points:')[1]?.split('recent log:')[0];
   if(!section)throw new Error('The report is missing its source→target point list.');
@@ -32,7 +37,10 @@
   let maskTransform=null;
   const maskLine=readLine('cloud mask preview');
   if(maskLine){try{maskTransform=JSON.parse(maskLine)}catch{}}
-  return{species,gender,garment,transform,points,maskTransform};
+  const stageMatch=readLine('stage').match(/^(\d+)x(\d+)$/); // Original raster dimensions for reconstructing local offsets from translated points.
+  const stage=stageMatch&&Number(stageMatch[1])>0&&Number(stageMatch[2])>0
+    ?{width:Number(stageMatch[1]),height:Number(stageMatch[2])}:null; // Older reports without stage data fall back to the active raster.
+  return{region,species,gender,sourceSpecies,sourceGender,garment,transform,points,maskTransform,stage};
 }
 
 async function importPastedDiagnostics(){
@@ -40,22 +48,31 @@ async function importPastedDiagnostics(){
     const imported=parseDiagnostics(E.diagnosticsInput.value);
     if(!R.speciesCfg.size||!R.garments.length)throw new Error('Wait for repository data to finish loading, then import the pasted report.');
     if(![...E.species.options].some(option=>option.value===imported.species))throw new Error(`Target species “${imported.species}” is not available in the loaded repository.`);
-    if(![...E.garment.options].some(option=>option.value===imported.garment))throw new Error(`Garment “${imported.garment}” is not available in the loaded repository.`);
-
+    if(![...E.sourceSpecies.options].some(option=>option.value===imported.sourceSpecies))
+      throw new Error(`Starting sprite species “${imported.sourceSpecies}” is not in the loaded repository.`);
+    if(!['male','female'].includes(imported.sourceGender))throw new Error('Invalid starting sprite gender.');
+    E.fitRegion.value=imported.region;
+    E.gender.value=imported.gender;E.species.value=imported.species;
+    E.sourceSpecies.value=imported.sourceSpecies;E.sourceGender.value=imported.sourceGender;
+    rebuildGarmentSelector();
+    if(![...E.garment.options].some(option=>option.value===imported.garment))
+      throw new Error(`Garment “${imported.garment}” has no ${imported.sourceSpecies} ${imported.sourceGender} source artwork in ${imported.region} mode.`);
     pushUndo();
-    E.gender.value=imported.gender;E.species.value=imported.species;E.garment.value=imported.garment;
-    R.body=null;R.maoBody=null;R.cloth=null;R.authoredTargetCloth=null; // Prevent a failed reload from exporting the previously selected sprite.
+    R.three.portraitCache.clear();
+    E.garment.value=imported.garment;
+    R.body=null;R.sourceBody=null;R.cloth=null;R.headReference=null;R.authoredTargetCloth=null; // Prevent a failed reload from exporting the previously selected sprite.
     await refreshAssets();
     if(!R.body||!R.cloth)throw new Error('Could not load the selected body and source garment; check repository access and try again.');
 
     const key=ensureTargetData(imported.species,imported.gender);
-    A.baseTransforms[key]={...imported.transform};
-    const baseGrid=transformedSourceGrid();
-    A.localOffsets[key]=imported.points.map((point,index)=>({x:point.x-baseGrid[index].x,y:point.y-baseGrid[index].y}));
+    const fit=repairedImportedFitState(imported,imported.stage?.width||E.stage.width,imported.stage?.height||E.stage.height); // Rebuilds local corrections relative to the original, possibly collapsed base.
+    A.baseTransforms[key]=fit.transform;
+    A.localOffsets[key]=fit.offsets;
     if(imported.maskTransform&&['scaleX','scaleY','translateY'].every(name=>Number.isFinite(Number(imported.maskTransform[name]))))
       A.maskPreviewTransforms[key]={...imported.maskTransform};
     mode='fit';saveState();syncTransformControls();syncMaskTransformControls();render();syncHistory();
-    log(`Imported pasted fit for ${imported.garment} → ${imported.species} ${imported.gender}. Export fitted clothing PNG when ready.`);
+    log(`Imported pasted fit for ${imported.garment}, ${imported.sourceSpecies} ${imported.sourceGender} → ${imported.species} ${imported.gender}.`);
+    if(fit.repairedAxes.length)log(`Recovered collapsed imported ${fit.repairedAxes.join('/')} for ${key} (base scale now 1); kept all 36 local fit offsets.`);
   }catch(error){log('ERROR '+error.message);status('Pasted fit not imported: '+error.message)}
 }
 
@@ -63,7 +80,7 @@ async function importGrids(file){
   const v=JSON.parse(await file.text());
   if(v.gridSize!==GRID_SIZE)throw new Error('This file is not a 6×6 species-grid export.');
   pushUndo();
-  if(v.version===3||v.version===2){
+  if(v.version===4||v.version===3||v.version===2){
     A.baseTransforms=v.baseTransforms||{};A.localOffsets=v.localOffsets||{};A.maskPreviewTransforms=v.maskPreviewTransforms||{};
   }else if(v.version===1&&v.targetGrids){
     A.baseTransforms={};A.localOffsets={};A.maskPreviewTransforms={};
@@ -122,8 +139,9 @@ function inferPatchView(path,url){
 }
 function behindPatchCatalog(){
   const gender=E.gender.value,targetSpecies=E.species.value;
+  const sourceSpecies=E.sourceSpecies.value,sourceGender=E.sourceGender.value; // Tracks the authored garment source independent of the target.
   const items=[]; // Exact source layers available to the behind-sprite patch author.
-  const garment=garmentRecord();
+  const garment=fitRegion()==='body'?garmentRecord():null;
   if(garment){
-    const sourceVariant=garment.cfg?.speciesVariants?.[`mao-ao_${gender}`]||null;
+    const sourceVariant=garment.cfg?.speciesVariants?.[`${sourceSpecies}_${sourceGender}`]||null;
     const targetVariant=garment.cfg?.speciesVariants?.[`${targetSpecies}_${gender}`]||null;

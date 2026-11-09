@@ -46,9 +46,17 @@ const start = portrait.indexOf('  let imgMap;\n');
 const end = portrait.indexOf('  // Load mouth expression', start);
 const image = {}; // Donor image identity must be registered under the requested primary URL for composition.
 const cache = new Map();
-const loader = {neededUrls: new Set(['future-head']), IMG_CACHE: cache, Image: class {}, headUrl:'future-head', resolvedFighter: {headFallbackUrls:['mashtz-head']}, fighter:{}, console, loadImg: async url => {if(url==='future-head') throw Error('404'); return image;}};
+const loader = {neededUrls: new Set(['future-head']), layerImageOverrides:null, IMG_CACHE: cache, Image: class {}, headUrl:'future-head', resolvedFighter: {headFallbackUrls:['mashtz-head']}, fighter:{}, console, loadImg: async url => {if(url==='future-head') throw Error('404'); return image;}}; // No per-render override: verify ordinary NPC fallback unchanged.
 vm.runInNewContext('(async () => {' + portrait.slice(start,end) + '\nreturn imgMap;})()',loader).then(images => {
   assert.equal(images.get('future-head'), image);
   assert.equal(cache.get('future-head'), image);
   console.log('Mammakhbuur rigs, authored scales, no-front-hair policy, and head assets passed.');
+}).then(async()=>{
+  // Fit-only material canvases must override a single render without polluting the global image cache.
+  const overrideImage={preview:true},overrideCache=new Map();
+  const overrideFixture={...loader,layerImageOverrides:new Map([['future-head',overrideImage]]),
+    IMG_CACHE:overrideCache,loadImg:async()=>{throw Error('Temporary fitting art must not request an image or fallback.');}};
+  const results=await vm.runInNewContext('(async () => {' + portrait.slice(start,end) + '\nreturn imgMap;})()',overrideFixture);
+  assert.equal(results.get('future-head'),overrideImage,'runtime portrait uses the transient material canvas');
+  assert.equal(overrideCache.size,0,'fit preview images never enter global IMG_CACHE');
 }).catch(error => {console.error(error);process.exitCode=1;});

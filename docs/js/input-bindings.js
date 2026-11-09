@@ -25,6 +25,7 @@
     action7: null,
     action8: null,
     swapTarget: null,
+    lockOn: 'Button3', // Y / Triangle: Zelda-style lock-on toggle (free in the gameplay context).
     toggleMount: 'Button10',
     perceptionMode: 'Button14', // D-pad left: free in gameplay context (menu uiLeft / music scale-prev share it in their own contexts).
     weaponSwitch: 'Button11',
@@ -57,6 +58,7 @@
     musicBank3: 'Button4',
     musicBank4: 'Button5',
     musicPause: 'Button9',
+    musicModeToggle: 'Button11', // RS click switches between the two player instrument modes.
     musicScalePrev: 'Button14',
     musicScaleNext: 'Button15',
     socialWheel: 'Button15',
@@ -66,6 +68,7 @@
     { id: 'itemSelect', label: 'Item Select', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.itemSelect, devices: ['controller'], context: 'selection' },
     { id: 'socialWheel', label: 'Social Actions', desktop: 'Shift+KeyQ', controller: CANONICAL_CONTROLLER_DEFAULTS.socialWheel, context: 'selection' },
     { id: 'toggleMount', label: 'Call/Dismiss Mount', desktop: 'KeyV', controller: CANONICAL_CONTROLLER_DEFAULTS.toggleMount },
+    { id: 'lockOn', label: 'Lock On (target nearest enemy)', desktop: 'Mouse1', controller: CANONICAL_CONTROLLER_DEFAULTS.lockOn },
     { id: 'uiOpenMenu', label: 'Menu: Open / Close', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.uiOpenMenu, devices: ['controller'], context: 'menu' },
     { id: 'uiConfirm', label: 'Menu: Confirm', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.uiConfirm, devices: ['controller'], context: 'menu' },
     { id: 'uiCancel', label: 'Menu: Cancel / Back', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.uiCancel, devices: ['controller'], context: 'menu' },
@@ -83,6 +86,7 @@
     { id: 'musicBank2', label: 'Music: Bank 2', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicBank2, devices: ['controller'], context: 'music' },
     { id: 'musicBank3', label: 'Music: Bank 3', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicBank3, devices: ['controller'], context: 'music' },
     { id: 'musicBank4', label: 'Music: Bank 4', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicBank4, devices: ['controller'], context: 'music' },
+    { id: 'musicModeToggle', label: 'Music: Switch Instrument Mode', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicModeToggle, devices: ['controller'], context: 'music' },
     { id: 'musicPause', label: 'Music: Pause', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicPause, devices: ['controller'], context: 'music' },
     { id: 'musicScalePrev', label: 'Music: Previous Scale', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicScalePrev, devices: ['controller'], context: 'music' },
     { id: 'musicScaleNext', label: 'Music: Next Scale', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicScaleNext, devices: ['controller'], context: 'music' },
@@ -120,6 +124,10 @@
       }
     }
     if (!INPUT_DEFAULTS.controller) INPUT_DEFAULTS.controller = {}; // Used as the generated controller-default map consumed by load/reset code.
+    if (INPUT_DEFAULTS.desktop && !Object.prototype.hasOwnProperty.call(INPUT_DEFAULTS.desktop, 'lockOn')) {
+      const taken = Object.values(INPUT_DEFAULTS.desktop);
+      if (!taken.includes('Mouse1')) INPUT_DEFAULTS.desktop.lockOn = 'Mouse1'; // Added after the authored config's desktop map was built; never steal a button another action already uses.
+    }
     if (useCanonicalControllerLayout) Object.assign(INPUT_DEFAULTS.controller, CANONICAL_CONTROLLER_DEFAULTS);
     if (Array.isArray(INPUT_DEFAULTS.modeShifts)) {
       const kept = removeLegacyControllerModeShift(INPUT_DEFAULTS.modeShifts); // Used to migrate the old LB+right-stick tool/item selector out of shipped defaults in place.
@@ -138,6 +146,11 @@
     try {
       const saved = JSON.parse(localStorage.getItem(INPUT_DEFAULTS.storageKey) || 'null');
       const controller = { ...INPUT_DEFAULTS.controller, ...(saved?.controller || {}) }; // Used as the live controller map after adding controller actions introduced after an older save was written.
+      // A pre-existing music remap keeps its button when the mode switch is added to an older save.
+      if (saved?.controller && !Object.prototype.hasOwnProperty.call(saved.controller, 'musicModeToggle') &&
+          Object.entries(saved.controller).some(([action, code]) => code === controller.musicModeToggle && actionContext(action) === 'music')) {
+        controller.musicModeToggle = null;
+      }
       return {
         desktop: { ...INPUT_DEFAULTS.desktop, ...(saved?.desktop || {}) },
         controller,
@@ -240,6 +253,7 @@
   function resolveActionForButton(device, button, heldShift = null) {
     if (heldShift?.bindings?.[button]) return heldShift.bindings[button];
     const bindings = getCurrentBindings()?.[device] || {}; // Uses the live map so game.js never needs to know how contextual controller actions are authored.
+    if (bindings.toolSelect === button && window.Shattercasks?.toolArchAction?.() === 'pickup') return 'toolSelect'; // Contextual pickup is dispatched by gameplay; ordinary selectors remain owned by ControllerSelectionUI.
     return Object.keys(bindings).find(actionId => bindings[actionId] === button && actionContext(actionId) === 'gameplay') || null;
   }
 
@@ -290,13 +304,17 @@
     const chordParts = String(code).split('+').map(part => part.trim()).filter(Boolean);
     if (chordParts.length > 1) {
       const key = chordParts.pop();
-      return `${chordParts.join(' + ')} + ${buttonLabel(key)}`;
+      return `${chordParts.map(buttonLabel).join(' + ')} + ${buttonLabel(key)}`;
     }
     const labels = {
+      Button0: 'A', Button1: 'B', Button2: 'X', Button3: 'Y',
+      Button4: 'LB', Button5: 'RB', Button6: 'LT', Button7: 'RT',
+      Button8: 'Back', Button9: 'Start', Button10: 'LS Click', Button11: 'RS Click',
+      Button12: 'D-pad ↑', Button13: 'D-pad ↓', Button14: 'D-pad ←', Button15: 'D-pad →', Button16: 'Guide',
       LeftTrigger: 'LT', RightTrigger: 'RT', RightStickLeft: 'RS ←', RightStickRight: 'RS →', RightStickUp: 'RS ↑', RightStickDown: 'RS ↓', WheelUp: 'Wheel ↑', WheelDown: 'Wheel ↓',
       Mouse0: 'Left Click', Mouse1: 'Middle Click', Mouse2: 'Right Click', Mouse3: 'Mouse 4', Mouse4: 'Mouse 5',
     };
-    return labels[code] || String(code).replace(/^Key/, '').replace(/^Digit/, '').replace(/^Button/, 'Pad ');
+    return labels[code] || String(code).replace(/^Key/, '').replace(/^Digit/, '').replace(/^Button/, 'Button ');
   }
 
 

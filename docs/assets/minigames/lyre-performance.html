@@ -1127,13 +1127,13 @@
 
         <section class="card" id="rhythmSampleCard">
           <h3>Rhythm & root samples</h3>
-          <p class="help-text">These are independent of the main instrument sample. A metronome sample replaces the synth click; a root-pad sample replaces the synth pad while <strong>Harmony Root Pad</strong> is on.</p>
+          <p class="help-text">These are independent of the main instrument sample. A metronome sample replaces the synth click; a root-pad sample replaces the low kurraya chord while <strong>Harmony Root Pad</strong> is on.</p>
           <input id="metronomeSampleFile" type="file" accept="audio/*" hidden>
           <input id="rootPadSampleFile" type="file" accept="audio/*" hidden>
           <div class="form-grid">
             <div class="field"><label>Metronome sample</label><div id="metronomeSampleStatus" class="help-text">Synth click fallback</div></div>
             <div class="field"><label for="rootPadSampleRoot">Pad sample recorded root</label><select id="rootPadSampleRoot"></select></div>
-            <div class="field"><label>Root pad sample</label><div id="rootPadSampleStatus" class="help-text">Synth root-pad fallback</div></div>
+            <div class="field"><label>Root pad sample</label><div id="rootPadSampleStatus" class="help-text">Low kurraya fifth chord</div></div>
           </div>
           <div class="control-row"><label for="metronomeSampleLevel">Metronome Sample Level</label><input id="metronomeSampleLevel" type="range" min="0" max="100" step="1" value="55"><output id="metronomeSampleLevelOut">55%</output></div>
           <div class="action-row"><button class="wide-btn" id="importMetronomeSampleBtn">Import stomp / click</button><button class="wide-btn" id="previewMetronomeSampleBtn">Preview</button><button class="wide-btn danger" id="clearMetronomeSampleBtn">Clear</button></div>
@@ -1175,7 +1175,7 @@
     <div class="modal-body help-text">
       <p><strong>Locked input layout:</strong> development now uses <em>5 Banks · Auto Pick</em> exclusively. Open, LT, LB, RT, and RB remain five ascending groups of four notes, while the left stick latches the automatic arpeggio or tremolo behavior.</p>
       <p><strong>Visual presets:</strong> <em>Falling Strings</em> preserves the existing twenty-lane presentation. <em>20-Note Timing Rings</em> keeps every playable note visible at once in five widely separated four-note islands: LT upper-left, LB lower-left, Open center, RT upper-right, and RB lower-right. Inside every island, X/A/B/Y use the same left/bottom/right/top diamond as the face buttons. The <em>Prompts</em> dropdown chooses how many beats ahead solid timing rings appear; each ring contracts onto its fixed note circle, which lights and pulses during the playable window.</p>
-      <p><strong>Hidden harmony:</strong> one shared transport drives the falling melody notes, visual/auditory metronome, automatic-pick grid, and chord changes. Free play uses the selected hidden progression. Public-domain songs replace it with their own silent chord timeline, which changes the notes chosen by arpeggios without adding backing audio. The optional root pad remains the only sustained harmony sound.</p>
+      <p><strong>Hidden harmony:</strong> one shared transport drives the falling melody notes, visual/auditory metronome, automatic-pick grid, and chord changes. Free play uses the selected hidden progression. Public-domain songs replace it with their own silent chord timeline, which changes the notes chosen by arpeggios without adding backing audio. The optional low kurraya chord adds a plucked root and scale-safe fifth.</p>
       <p><strong>Automatic Pick:</strong> flick the left stick toward a direction to select a mode; it stays selected after the stick returns to center. The Auto Pick selector is a four-way cross; Up, Right, Down, and Left can each be assigned independently from the LS Slots library, including Single Note. The fast arpeggio uses a forward–reverse roll. Each new slow-arpeggio melody input alternates between a forward roll and a reverse roll. Every face-button press sounds its melody note immediately at the player's real tap time, then automatically fills every remaining subdivision before the next shared beat even if the button is released immediately. Base-rate mode therefore produces two total attacks when tapped within the first eighth-note slot of a beat; half-duration mode produces four, three, two, or one total attacks depending on how many sixteenth-note slots have already passed. Another musical input interrupts the remainder.</p>
       <p><strong>Fretted Pluck:</strong> select a left-stick picking direction, then press X, A, B, or Y as the melody note. Both arpeggio and tremolo attack immediately at the exact tap time and begin their beat-filling sequence without a hold-confirmation delay. Holding continues the same subdivision grid across later beats. Releasing finishes only the remaining slots before the next beat boundary. For arpeggio, the current four-string chord shape first replaces its nearest chord tone with the melody note when needed. Octaves are chosen only afterward: forward rolls rise compactly from the melody, reverse rolls fall compactly from it, and the fast forward–reverse roll rebuilds each half around the melody. Only the initial human tap is a gameplay input; every generated arpeggio or tremolo continuation is strictly auditory and cannot score, miss, increment the input counter, or flash a gameplay target.</p>
       <p><strong>Visual presets:</strong> <em>Falling Strings</em> keeps the original 20-lane display. <em>20-Note Timing Rings</em> shows all twenty playable notes grouped into five face-button diamonds. <em>Lyre View</em> collapses the lanes down to four visible strings and moves the bank prompt into each falling note as an O / LT / LB / RT / RB glyph.</p>
@@ -1342,16 +1342,14 @@
   function harmonyPatternLabel(name) { return HARMONY_PATTERN_ADJECTIVES[name] || name; }
   const NOTE_GLYPHS = ['X','A','B','Y'];
   const ROMAN_DEGREES = ['I','II','III','IV','V','VI','VII'];
-  const STRUM_NOTE_DELAY_MS = 22; // Spaces the six virtual strings during right-stick chord sweeps.
+  const STRUM_NOTE_DELAY_MS = 9; // Close-spaced string attacks imitate a fast classical-guitar brush.
+  const FLUTE_NOTE_DURATION_S = 4.5; // Solo flute sustains one long breath until the next note interrupts it.
+  const AUTO_PICK_COMPAT_VOICES = 8; // Eight primed mobile media channels keep successive automatic plucks from stealing the same sample tail.
   const PULSE_LOOKAHEAD_MS = 90; // Fires automatic pluck-continuation timers this much early so the precise Web Audio start() call (not the jitter-prone JS timer) governs exactly when each pulse actually sounds.
   const TRANSPORT_AUDIO_LOOKAHEAD_MS = PULSE_LOOKAHEAD_MS; // Keeps the metronome/footstep and chord-root pad on the same ahead-of-time audio grid as automatic Kurraya notes.
   const HARMONY_REGISTER_OFFSET = -12; // Keeps left-stick arpeggios and right-stick chord strums one octave below direct notes.
-  const PAD_ROOT_REGISTER_OFFSET = -12; // Anchors the harmony pad one octave below tonic: in C3 this is F2 → G2 → E2 → A2.
-  const PAD_SYNTH_FILTER_HZ = 600; // Keeps the root pad behind the Kurraya instead of reading as a bright second instrument.
-  const PAD_SYNTH_FILTER_Q = 0.22; // Gentle resonance avoids a noticeable resonant peak around the low-pass cutoff.
-  const PAD_SYNTH_ATTACK_S = 0.32; // Slow enough to bloom under the pluck while still becoming audible within a short chord.
+  const PAD_ROOT_REGISTER_OFFSET = -24; // Places the accompaniment two octaves below the melody tonic, using the regular sampler's full pitch shift.
   const PAD_SYNTH_CROSSFADE_S = 0.8; // Lets adjacent roots melt into each other instead of making the pad announce every chord change.
-  const PAD_SYNTH_HARMONICS = Object.freeze([0,1,0.10,0.025,0.008]); // Mostly sine: tiny upper harmonics preserve audibility on small speakers without adding a separate octave/fifth voice.
   const NOTE_COLORS = ['#7be6d7','#f8b368','#ff95ac','#b49bff'];
   const GROUP_COLORS_BY_OFFSET = {0:'#67e3d3',4:'#ffb86c',8:'#ff92a9',12:'#b39cff',16:'#92efbb'}; // Used by the five color groups so each bank has one consistent hue across the Lyre and hosted controls.
   const NOTE_INPUT_GLYPHS_BY_LAYOUT = { mobile:['1','2','3','4'], keyboard:['1','2','3','4'], controller:['X','A','B','Y'] }; // Used by the falling Lyre prompts so they show direct note inputs rather than shift glyphs. Keyboard shows ordinal numbers, not the literal bound key, since which physical key plays note 1-4 is player-rebindable (see js/music-minigame.js) — a fixed A/S/D/F glyph would go stale the moment a key is remapped.
@@ -1412,13 +1410,34 @@
     'tremolo-16':{label:'Rapid Tremolo · sixteenths',short:'TREM 16',ringLabel:'TREM<br>16',kind:'tremolo',division:4,tremStyle:'steady',category:'Tremolo',tradition:'Mandolin / guitar',description:'Even repeated melody attacks four times per beat.'},
     'tremolo-triplet':{label:'Triplet Tremolo',short:'TREM 3',ringLabel:'TREM<br>3',kind:'tremolo',division:3,tremStyle:'steady',category:'Tremolo',tradition:'Mandolin dance music',description:'Three repeated melody attacks per beat.'},
     'tremolo-burst-16':{label:'Three-Stroke Tremolo Burst',short:'3+REST',ringLabel:'3 +<br>REST',kind:'tremolo',division:4,tremStyle:'burst',category:'Tremolo',tradition:'Orchestral / rock gesture',description:'Three rapid melody attacks followed by one subdivision of space.'},
+    'strum-down-4':{label:'Steady Downstrokes',short:'DOWN',ringLabel:'DOWN',kind:'strum',division:1,strumStyle:'down',category:'Strum',tradition:'Folk',description:'Melody first, then one downstroke each beat.'},
+    'strum-alternating-8':{label:'Alternating Down–Up',short:'DOWN UP',ringLabel:'D / U',kind:'strum',division:2,strumStyle:'alternating',category:'Strum',tradition:'Folk / pop',description:'Melody first, then alternating eighth-note downstrokes and upstrokes.'},
+    'strum-pop-8':{label:'Down–Down–Up–Up–Down–Up',short:'POP',ringLabel:'POP',kind:'strum',division:2,strumStyle:'pop',category:'Strum',tradition:'Folk / pop',description:'A four-beat syncopated strum with two deliberate gaps.'},
     'strum-reggae-8':{label:'Reggae Offbeat Skank',short:'SKANK',ringLabel:'SKANK',kind:'strum',division:2,strumStyle:'reggae',category:'Strum',tradition:'Jamaican reggae',description:'A short melody-top chord on each offbeat.'},
     'strum-bossa-16':{label:'Bossa Nova Syncopation',short:'BOSSA',ringLabel:'BOSSA',kind:'strum',division:4,strumStyle:'bossa',category:'Strum',tradition:'Brazilian bossa nova',description:'A two-beat syncopated melody-top chord pattern.'},
     'strum-rasgueado-16':{label:'Rasgueado Burst',short:'RASG',ringLabel:'RASG',kind:'strum',division:4,strumStyle:'rasgueado',category:'Strum',tradition:'Andalusian flamenco',description:'A rapid down–down–up finger-strum burst after the melody.'},
     'strum-waltz':{label:'Waltz Down–Up–Up',short:'WALTZ',ringLabel:'WALTZ',kind:'strum',division:1,strumStyle:'waltz',category:'Strum',tradition:'European ballroom',description:'A three-beat melody-led down–up–up cycle.'},
     'strum-bluegrass-8':{label:'Bluegrass Boom–Chuck',short:'BOOM CHK',ringLabel:'BOOM<br>CHK',kind:'strum',division:2,strumStyle:'bluegrass',category:'Strum',tradition:'Appalachian bluegrass',description:'Alternates a low-plus-melody boom with a crisp melody-top chord.'}
   };
+  const KURRAYA_LAB_PATTERN_CHOICES = Object.freeze([
+    {id:'direct',label:'Single Note',category:'Melody',description:'Only the written melody sounds; no automatic notes are added.'},
+    {id:'arp-forward-8',label:'Rise',category:'Arpeggio',description:'A broken chord climbs through the bar, expanding or compressing to its length.'},
+    {id:'arp-reverse-8',label:'Fall',category:'Arpeggio',description:'A broken chord descends through the bar and follows its accents.'},
+    {id:'arp-forward-reverse-16',label:'Wave',category:'Arpeggio',description:'The chord rises and falls once per bar, however many beats the bar contains.'},
+    {id:'arp-alternating-8',label:'Alternate',category:'Arpeggio',description:'Successive melody notes exchange upward and downward broken-chord directions.'},
+    {id:'arp-alberti-16',label:'Weave',category:'Arpeggio',description:'Low, high, and inner voices interleave, with emphasis at each beat group.'},
+    {id:'tremolo-8',label:'Pulse',category:'Rhythm',description:'Repeated melody notes articulate the beat groups at a lighter, even subdivision.'},
+    {id:'strum-alternating-8',label:'Chord Strokes',category:'Rhythm',description:'Chord attacks follow the main accents while quieter notes connect the groups.'}
+  ]); // Music Lab broad sound shapes only; existing gameplay pattern identifiers and saved four-way slots remain compatible.
+  const KURRAYA_LAB_METERS = Object.freeze([
+    {id:'original',label:'Original · 6/8 intro → 3/4 melody'},
+    ...['2/4','3/4','4/4','5/4','6/8','7/8','9/8','12/8'].map(id=>({id,label:id}))
+  ]); // Standalone audition alternatives, never silently replacing gameplay's authored mixed meter.
   const FRETTED_PLUCK_MODES = AUTO_PICK_PATTERN_LIBRARY; // Compatibility alias used by the existing automatic-pick scheduler and preview system.
+  const NPC_AUTO_PICK_PATTERNS = Object.keys(AUTO_PICK_PATTERN_LIBRARY).filter(id => ['arp','strum'].includes(AUTO_PICK_PATTERN_LIBRARY[id].kind)); // NPC performance selection only; player loadouts still offer Single Note and every tremolo.
+  function randomNpcAutoPickPattern() {
+    return NPC_AUTO_PICK_PATTERNS[Math.floor(Math.random() * NPC_AUTO_PICK_PATTERNS.length)] || 'arp-forward-8';
+  }
   const DEFAULT_AUTO_PICK_SLOTS = ['direct','arp-forward-reverse-16','tremolo-16','strum-reggae-8']; // Up, Right, Down, Left defaults for the four-way slottable Auto Pick cross.
   // Hobunji's own authored songbook — replaces the earlier public-domain
   // placeholder tunes with the one real song, transcribed from Foroji's
@@ -1446,6 +1465,7 @@
     }
   };
 
+  const HOSTED_FLUTE_PERFORMANCE = /(?:[?&])instrument=flute(?:&|$)/.test(window.location?.search || ''); // The game's instrument slot selects the performance timbre without changing chords, controls or song scheduling.
   const state = {
     audioContext:null,
     audioPromise:null,
@@ -1456,7 +1476,7 @@
     outputRms:0, // Updated each animation frame to prove whether Web Audio is generating signal.
     outputPeak:0, // Holds the latest analyser peak for the mobile diagnostics.
     buffer:null,
-    sampleName:'Fallback pluck',
+    sampleName:HOSTED_FLUTE_PERFORMANCE ? 'MIDI flute fallback' : 'Fallback pluck',
     sampleRootMidi:60,
     sampleImported:false,
     samplePeakDb:0,
@@ -1468,7 +1488,7 @@
     compatibilityBuildPromise:null, // Prevents duplicate full-buffer WAV conversions while compatibility output is being prepared.
     playbackEngine:'webaudio', // Web Audio becomes playable immediately after decode/normalization and is the normal low-latency path.
     tonicMidi:48,
-    scaleName:'Major',
+    scaleName:'Pentatonic Minor',
     playMode:'pedal',
     voice:'Clean',
     attack:0.006,
@@ -1476,7 +1496,7 @@
     masterVolume:0.78,
     kurrayaMixLevel:1, // Relative instrument layer mix used by both Web Audio and compatibility Kurraya note playback.
     metronomeMixLevel:1, // Relative metronome layer mix; the overworld footstep metronome reads this through the host bridge too.
-    padMixLevel:1, // Relative harmony-pad layer mix applied after either synth-pad or imported-pad source gain.
+    padMixLevel:1, // Relative harmony-pad layer mix applied after either low-kurraya or imported-pad source gain.
     strumThreshold:0.52, // Vertical right-stick magnitude required to create a strum stroke.
     arpeggioIndex:0, // Current hidden-chord slot selected by left-stick angle.
     leftArpeggioZone:-1, // Active left-stick sector; -1 means centered and lets the next sector trigger.
@@ -1495,6 +1515,8 @@
     pluckGeneration:0, // Invalidates older pluck timers whenever the stick mode or fret changes.
     pluckStep:0, // Advances through the current chord-melody fingerpicking pattern.
     pluckNextPulseAt:0, // Holds the absolute performance-time target for the next beat-corrected automatic pluck.
+    pluckLegatoHandoffs:0, // Counts seamless melody/held-fret changes in the mobile instrument debug display.
+    autoPickCompatChannelIndex:0, // Rotates prepared mobile sample channels across note and strum attacks to preserve polyphonic tails.
     autoReleaseTail:null, // Keeps every tapped automatic pattern alive through the current beat boundary after release.
     nextSlowArpDirection:'forward', // Alternates the base-rate arpeggio between forward and reverse rolls on successive melody inputs.
     lastPluckTapErrorMs:null, // Exposes the latest immediate melody attack's signed offset from its nearest intended beat.
@@ -1519,7 +1541,8 @@
     harmonyStartTime:nowMs(),
     lastHarmonyStep:-1,
     lastMetronomeBeat:-1,
-    scheduledHarmonyStep:null, // Future harmony step already queued on the Web Audio clock; prevents render frames from double-triggering the root pad at the boundary.
+    scheduledRootPadKey:null, // Upcoming chord/measure root already queued on Web Audio; avoids duplicate plucks when the render frame reaches its boundary.
+    lastRootPadKey:null, // Most recent chord/measure root processed by the render frame, separate from the look-ahead key.
     scheduledMetronomeBeat:null, // Future transport beat already queued on the Web Audio clock; keeps footsteps/clicks sample-aligned with Kurraya note scheduling.
     freePlayCapoCue:null, // Holds the currently falling curved capo cue for the next hidden free-play chord.
     freePlayCapoTargetStep:-1, // Identifies which progression step the current capo is predicting so landing flashes occur only at the correct boundary. // Prevents the visual metronome from retriggering more than once per beat.
@@ -1531,8 +1554,8 @@
     ambientMetronomeBuffer:null, // Ambient (no-human-input) NPC performance only — the tile-footstep sample the musician is standing on (see startAmbientLead), overriding metronomeSampleBuffer for as long as this session runs. Never persisted.
     labMetronomeBuffers:[], // Temporary Music Lab footstep set; rotates real recorded steps without persisting or duplicating the overworld's own surface-footstep metronome.
     labMetronomeNames:[], // Visible/debug names corresponding to labMetronomeBuffers; cleared when the standalone lab unloads.
-    rootPadEnabled:true, // Enabled by default; uses the synth root pad unless an imported pad sample is available.
-    rootPadLevel:0.02, // User-facing synth pad mix level; internally remapped so low roots remain audible.
+    rootPadEnabled:true, // Enabled by default; uses low kurraya plucks unless an imported pad sample is available.
+    rootPadLevel:0.02, // User-facing low-chord mix level; internally remapped so low roots remain audible.
     rootPadSampleBuffer:null, // Optional imported looping pad source used instead of the synth oscillators.
     rootPadSampleName:'', // Display name for the imported root-pad source.
     rootPadSampleRootMidi:48, // Recorded pitch of the imported pad, used to transpose it to the current chord root.
@@ -1542,7 +1565,7 @@
     rootPadRootSource:'default', // 'detected', 'manual', 'cached', or 'default' explains why rootPadSampleRootMidi currently has its value.
     rootPadSampleLevel:0.34, // Independent gain for the imported root-pad sample.
     pendingRootPadSampleRecord:null, // Holds cached pad PCM until Web Audio has been created.
-    rootPadVoices:[], // Holds the currently crossfading oscillator layers used by the harmony root pad.
+    rootPadVoices:[], // Holds the currently fading sampled chord voices used by the harmony root pad.
     rootPadRootMidi:null, // Tracks the pad pitch so it only rebuilds when the hidden chord root changes.
     layoutPreset:'five-bank-auto', // V21 locks all development and song input to the five-bank automatic-picking layout.
     visualPreset:'lyre-view', // Selects only the presentation: legacy falling strings or fixed shrinking timing rings.
@@ -1554,6 +1577,7 @@
     fourGroupShiftCounter:0, // Monotonic press counter used to distinguish RT→LT from LT→RT.
     noteSources:Array.from({length:4},() => new Set()), // Tracks the four face-button notes independently of the selected melody bank.
     voices:new Map(),
+    fluteVoice:null, // The sole sounding flute note, reused by direct playing, arpeggios and strums.
     previewCounter:0,
     inputCount:0, // Counts physical/touch note presses before any asynchronous audio work.
     auditoryPulseCount:0, // Counts automatic continuation attacks that are deliberately audio-only and never treated as gameplay input.
@@ -1573,9 +1597,12 @@
     customSongs:{}, // Persistent user-authored songs keyed by custom:<id>; loaded separately from sampler settings.
     midiStudio:{parsed:null,project:null,fileName:'',status:'idle',lastError:''}, // Holds the in-memory MIDI parser/editor state without serializing the raw file.
     selectedSong:'when-the-kininjis-bloom',
+    songAuditionPattern:'direct', // Lab-only successful-preview picking style, separate from the player's four saved auto-pick slots.
+    songAuditionMeter:'original', // Lab-only meter choice; original mixed 6/8→3/4 remains the default for gameplay.
     gameplaySelection:'freeplay', // V86: the song selector doubles as the Free Play/song mode switch.
     bpm:104,
     hitWindow:170,
+    ambientOnly:false, // Hidden NPC performances never consume keyboard/controller input or interrupt their generated song.
     game:{active:false,startTime:0,pausedAt:0,pauseAccum:0,events:[],score:0,combo:0,hits:0,attempts:0,total:0,travelMs:3000,endAt:0,songType:null,beatMs:0,quarterBeatMs:0,timeSignature:[4,4],beatGrouping:[4],countInBeats:4,countInMs:0,totalSongBeats:0,demoActive:false,demoMode:null,demoNextSlowArpDirection:'forward',backupAccompaniment:false}, // Song notes, metronome, harmony, auto-pick, and successful-preview playback all read this shared beat transport.
     log:[]
   };
@@ -1674,7 +1701,7 @@
             log('Audio state changed', state.audioContext.state);
           });
           createFallbackBuffer();
-          if (state.pendingCachedSample) hydrateCachedSampleRecord(state.pendingCachedSample, 'startup cache');
+          if (!HOSTED_FLUTE_PERFORMANCE && state.pendingCachedSample) hydrateCachedSampleRecord(state.pendingCachedSample, 'startup cache');
           if (state.pendingMetronomeSampleRecord) hydrateAuxiliarySampleRecord(state.pendingMetronomeSampleRecord, 'metronome');
           if (state.pendingRootPadSampleRecord) hydrateAuxiliarySampleRecord(state.pendingRootPadSampleRecord, 'rootPad');
           log('Audio context created', `${state.audioContext.sampleRate} Hz`);
@@ -1698,7 +1725,7 @@
   function createFallbackBuffer() {
     if (!state.audioContext) return;
     const sampleRate = state.audioContext.sampleRate;
-    const duration = 1.55;
+    const duration = HOSTED_FLUTE_PERFORMANCE ? FLUTE_NOTE_DURATION_S + 0.1 : 1.55; // Provides a long breath and loopable middle for the flute.
     const length = Math.floor(sampleRate * duration);
     const buffer = state.audioContext.createBuffer(1, length, sampleRate);
     const data = buffer.getChannelData(0);
@@ -1708,14 +1735,23 @@
       const time = i / sampleRate;
       noiseState = (1664525 * noiseState + 1013904223) >>> 0;
       const noise = (noiseState / 0xffffffff) * 2 - 1;
-      const attack = Math.min(1, time / 0.006);
-      const envelope = attack * Math.exp(-3.15 * time);
-      const body = Math.sin(2*Math.PI*frequency*time) + 0.46*Math.sin(2*Math.PI*frequency*2.01*time+0.22) + 0.2*Math.sin(2*Math.PI*frequency*3.02*time+0.7) + 0.09*Math.sin(2*Math.PI*frequency*5.04*time);
-      data[i] = Math.tanh((body * 0.34 + noise * Math.exp(-50*time) * 0.22) * envelope * 1.4);
+      if (HOSTED_FLUTE_PERFORMANCE) {
+        // Breath-like C4 flute fallback; its stable middle can loop for any transposed pitch.
+        const attack = Math.min(1, time / 0.055);
+        const release = Math.min(1, Math.max(0, duration - time) / 0.23);
+        const phase = 2 * Math.PI * frequency * time + 0.018 * Math.sin(2 * Math.PI * 5.2 * time);
+        const body = 0.56 * Math.sin(phase) + 0.13 * Math.sin(2 * phase) + 0.035 * Math.sin(3 * phase);
+        data[i] = (body + 0.012 * noise) * attack * release * (0.94 - 0.1 * time / duration);
+      } else {
+        const attack = Math.min(1, time / 0.006);
+        const envelope = attack * Math.exp(-3.15 * time);
+        const body = Math.sin(2*Math.PI*frequency*time) + 0.46*Math.sin(2*Math.PI*frequency*2.01*time+0.22) + 0.2*Math.sin(2*Math.PI*frequency*3.02*time+0.7) + 0.09*Math.sin(2*Math.PI*frequency*5.04*time);
+        data[i] = Math.tanh((body * 0.34 + noise * Math.exp(-50*time) * 0.22) * envelope * 1.4);
+      }
     }
     state.buffer = buffer;
     invalidatePitchCache('fallback restored');
-    state.sampleName = 'Fallback pluck';
+    state.sampleName = HOSTED_FLUTE_PERFORMANCE ? 'MIDI flute fallback' : 'Fallback pluck';
     state.sampleRootMidi = 60;
     state.sampleImported = false;
     clearGestureMediaChannels();
@@ -1726,7 +1762,9 @@
     state.monoStrategy = 'generated mono';
     state.samplePeakDb = -0.8;
     state.sampleNormalizationGain = 1;
-    state.markers = {trimStart:0,loopIn:0.36,loopOut:1.03,trimEnd:1.45};
+    state.markers = HOSTED_FLUTE_PERFORMANCE
+      ? {trimStart:0,loopIn:0.45,loopOut:1.6,trimEnd:duration - 0.02}
+      : {trimStart:0,loopIn:0.36,loopOut:1.03,trimEnd:1.45};
     syncMarkerSlidersFromState();
     updateSampleUI();
     drawWaveform();
@@ -1781,7 +1819,10 @@
   }
 
   function automaticPluckLabel(mode = state.pluckInputMode) {
-    return automaticPatternDefinition(mode).label;
+    const labChoice = state.game?.labAdaptiveAutoPick
+      ? KURRAYA_LAB_PATTERN_CHOICES.find(choice => choice.id === mode)
+      : null; // Only the Music Lab's session preview needs its neutral figure name; saved gameplay labels stay untouched.
+    return labChoice?.label || automaticPatternDefinition(mode).label;
   }
 
   function fourWayIndex(x, y) {
@@ -1839,8 +1880,8 @@
   }
 
 
-  function scalePitchClasses() {
-    const scale = SCALES[state.scaleName] || SCALES.Major;
+  function scalePitchClasses(scaleName = state.scaleName) {
+    const scale = SCALES[scaleName] || SCALES['Pentatonic Minor'];
     const classes = [];
     for (const offset of scale) {
       if (offset >= 12) continue;
@@ -1887,8 +1928,38 @@
     return kurrayaSixEightMeterCache || (kurrayaSixEightMeterCache = timeSignatureData(KURRAYA_TIME_SIGNATURE,KURRAYA_BEAT_GROUPING));
   }
 
+  function kurrayaLabMeterData(mode) {
+    if (!KURRAYA_LAB_METERS.some(entry => entry.id === mode && mode !== 'original')) return null;
+    const [numerator,denominator] = mode.split('/').map(Number); // The Lab picker uses "7/8" ids; the generic meter helper accepts numeric [7,8] pairs.
+    return timeSignatureData([numerator,denominator]);
+  }
+
+  function activeKurrayaLabMeter() {
+    const mode = state.game.active && state.game.labMeterOverride; // Only a Lab audition uses the override while playing; free play and NPCs stay unchanged.
+    return kurrayaLabMeterData(mode);
+  }
+
   function fixedKurrayaMixedMeterPhase(performanceQuarterBeatFloat = 0) {
     const quarterBeat = Math.max(0,Number(performanceQuarterBeatFloat) || 0);
+    const labMeter = activeKurrayaLabMeter();
+    if (labMeter) {
+      const barQuarterBeats = labMeter.measureQuarterBeats; // Every one of the twenty authored harmony bars now occupies one selected meter.
+      const cycleQuarterBeats = FIXED_HARMONY_CYCLE_CHORDS * barQuarterBeats;
+      const cycleIndex = Math.floor(quarterBeat / cycleQuarterBeats);
+      const cycleQuarterBeat = modulo(quarterBeat,cycleQuarterBeats);
+      const chordWithinCycle = Math.min(FIXED_HARMONY_CYCLE_CHORDS - 1,Math.floor(cycleQuarterBeat / barQuarterBeats));
+      const chordStartQuarterBeat = chordWithinCycle * barQuarterBeats;
+      const quarterBeatIntoChord = Math.max(0,cycleQuarterBeat - chordStartQuarterBeat);
+      const meterBeatsBeforeChord = chordWithinCycle * labMeter.numerator;
+      const absoluteStartMeterBeat = cycleIndex * FIXED_HARMONY_CYCLE_CHORDS * labMeter.numerator + meterBeatsBeforeChord;
+      const meterBeatIntoChord = quarterBeatIntoChord / labMeter.quarterUnitsPerBeat;
+      return {
+        cycleIndex,cycleQuarterBeat,chordWithinCycle,absoluteChord:cycleIndex * FIXED_HARMONY_CYCLE_CHORDS + chordWithinCycle,
+        sixEight:false,meter:labMeter,chordStartQuarterBeat,quarterBeatIntoChord,meterBeatIntoChord,
+        absoluteStartMeterBeat,performanceMeterBeatFloat:absoluteStartMeterBeat + meterBeatIntoChord,
+        labMeterOverride:true,chordQuarterBeats:barQuarterBeats
+      };
+    }
     const cycleIndex = Math.floor(quarterBeat / FIXED_HARMONY_CYCLE_QUARTER_BEATS);
     const cycleQuarterBeat = modulo(quarterBeat,FIXED_HARMONY_CYCLE_QUARTER_BEATS);
     const chordWithinCycle = Math.min(FIXED_HARMONY_CYCLE_CHORDS - 1,Math.floor(cycleQuarterBeat / FIXED_HARMONY_CHORD_QUARTER_BEATS));
@@ -2039,9 +2110,9 @@
     }));
   }
 
-  function composeRandomKurrayaMelody() {
+  function composeRandomKurrayaMelody(scaleName) {
     const arrangement = activeKurrayaSongArrangement(); // Uses the same F/G/E/A/C bar painting as playback, so structural melody tones respond to the actual current harmony.
-    const scaleSemitones = scalePitchClasses().slice();
+    const scaleSemitones = scalePitchClasses(scaleName);
     const candidates = Array.from({length:Math.min(14,scaleSemitones.length * 2)},(_,degree) => degree);
     const chordByStep = new Map(KURRAYA_AUTHORING_STEPS.map((step,stepIndex) => [stepIndex,{...step,stepIndex}]));
     const rhythmA = randomKurrayaChoice(RANDOM_KURRAYA_MELODY_RHYTHMS);
@@ -2090,8 +2161,8 @@
     return normalizeKurrayaMelodyNotes(generated); // Enforces exactly 48 quarter-beats before either Foroji or the Music Lab is allowed to play it.
   }
 
-  function randomizeKurrayaSongMelody() {
-    state.kurrayaSongMelodyNotes = composeRandomKurrayaMelody(); // Shared authoring/runtime entry point: one generator feeds the standalone lab and Foroji's ambient performance.
+  function randomizeKurrayaSongMelody(scaleName) {
+    state.kurrayaSongMelodyNotes = composeRandomKurrayaMelody(scaleName); // Shared authoring/runtime entry point: one generator feeds the standalone lab and Foroji's ambient performance.
     return state.kurrayaSongMelodyNotes.map(note => note.slice());
   }
 
@@ -2143,7 +2214,7 @@
     const bpm = activeClockBpm();
     const quarterBeatMs = 60000 / bpm;
     const fixedKurraya = usesFixedKurrayaHarmony();
-    const initialMeter = fixedKurraya ? kurrayaSixEightMeter() : activeSongMeter(0);
+    const initialMeter = fixedKurraya ? (activeKurrayaLabMeter() || kurrayaSixEightMeter()) : activeSongMeter(0);
     const transportElapsedMs = state.game.active ? gameClockElapsedMs(referenceNowMs) : Math.max(0, referenceNowMs - state.harmonyStartTime);
     const initialBeatMs = quarterBeatMs * initialMeter.quarterUnitsPerBeat;
     const countInBeats = state.game.active ? Math.max(0,Math.round(state.game.countInBeats || initialMeter.numerator)) : 0;
@@ -2155,7 +2226,7 @@
       ? transportElapsedMs / Math.max(1,quarterBeatMs)
       : performanceBeatFloat; // During the authored song, harmony advances through the four 6/8 intro bars while melody performance time remains parked at zero.
     const harmonyQuarterBeatFloat = fixedKurraya && state.game.active
-      ? Math.min(rawHarmonyQuarterBeatFloat,FIXED_HARMONY_CYCLE_QUARTER_BEATS - 1e-6)
+      ? Math.min(rawHarmonyQuarterBeatFloat,(activeKurrayaLabMeter()?.measureQuarterBeats || FIXED_HARMONY_CHORD_QUARTER_BEATS) * FIXED_HARMONY_CYCLE_CHORDS - 1e-6)
       : rawHarmonyQuarterBeatFloat; // Holds the final authored root through the song's short post-melody tail instead of wrapping before playback actually stops.
     const mixedPhase = fixedKurraya ? fixedKurrayaMixedMeterPhase(harmonyQuarterBeatFloat) : null;
     const meter = fixedKurraya ? mixedPhase.meter : activeSongMeter(performanceBeatFloat);
@@ -2215,9 +2286,10 @@
       const sectionBar = inIntro ? phase.chordWithinCycle : phase.chordWithinCycle - FIXED_HARMONY_SIX_EIGHT_CHORDS;
       const segments = inIntro ? arrangement.introSegments : arrangement.bodySegments;
       const segment = segments.find(candidate => sectionBar >= candidate.startBar && sectionBar < candidate.startBar + candidate.lengthBars) || segments[segments.length - 1];
-      const sectionMeterBeatOffset = inIntro ? 0 : FIXED_HARMONY_SIX_EIGHT_CHORDS * KURRAYA_TIME_SIGNATURE[0]; // Body meter-beat positions begin after the 24 eighth-note intro clicks.
-      const meterNumerator = inIntro ? KURRAYA_TIME_SIGNATURE[0] : KURRAYA_THREE_FOUR_TIME_SIGNATURE[0];
-      const absoluteStartMeterBeat = phase.cycleIndex * FIXED_HARMONY_METER_BEATS_PER_CYCLE + sectionMeterBeatOffset + segment.startBar * meterNumerator;
+      const meterNumerator = phase.labMeterOverride ? phase.meter.numerator : inIntro ? KURRAYA_TIME_SIGNATURE[0] : KURRAYA_THREE_FOUR_TIME_SIGNATURE[0];
+      const sectionMeterBeatOffset = inIntro ? 0 : FIXED_HARMONY_SIX_EIGHT_CHORDS * (phase.labMeterOverride ? meterNumerator : KURRAYA_TIME_SIGNATURE[0]);
+      const cycleMeterBeats = phase.labMeterOverride ? FIXED_HARMONY_CYCLE_CHORDS * meterNumerator : FIXED_HARMONY_METER_BEATS_PER_CYCLE;
+      const absoluteStartMeterBeat = phase.cycleIndex * cycleMeterBeats + sectionMeterBeatOffset + segment.startBar * meterNumerator;
       return {
         eventSerial:phase.cycleIndex * FIXED_HARMONY_CYCLE_CHORDS + segment.startChord, // Stays unchanged across every bar covered by one long section so the pad is not retriggered mid-sustain.
         progressionStep:segment.step,
@@ -2228,7 +2300,7 @@
         spanBeats:segment.lengthBars * meterNumerator,
         absoluteStartMeasure:segment.startChord,
         absoluteStartMeterBeat,
-        spanQuarterBeats:segment.lengthBars * FIXED_HARMONY_CHORD_QUARTER_BEATS,
+        spanQuarterBeats:segment.lengthBars * (phase.chordQuarterBeats || FIXED_HARMONY_CHORD_QUARTER_BEATS),
         meter:phase.meter,
         arrangementSegment:{...segment}
       };
@@ -2243,7 +2315,7 @@
       spanBeats:phase.meter.numerator,
       absoluteStartMeasure:phase.absoluteChord,
       absoluteStartMeterBeat:phase.absoluteStartMeterBeat,
-      spanQuarterBeats:FIXED_HARMONY_CHORD_QUARTER_BEATS,
+      spanQuarterBeats:phase.chordQuarterBeats || FIXED_HARMONY_CHORD_QUARTER_BEATS,
       meter:phase.meter
     };
   }
@@ -2255,6 +2327,15 @@
     const progression = HARMONY_PATTERNS[state.harmonyPattern] || HARMONY_PATTERNS[FIXED_HARMONY_PATTERN_ID];
     const stepDuration = (60000 / clock.bpm) * state.harmonyChordBeats;
     return Math.floor(clock.performanceElapsedMs / Math.max(1, stepDuration)) % progression.length;
+  }
+
+  function rootPadAudioKey(clock = sharedTransportData()) {
+    const chordStep = currentHarmonyStep(clock);
+    if (state.rootPadSampleBuffer) return `chord:${chordStep}`; // A sustained imported pad only changes when its chord changes.
+    const measure = clock.mixedPhase
+      ? clock.mixedPhase.absoluteChord
+      : Math.floor(clock.performanceMeterBeatFloat / Math.max(1, clock.meter.numerator)); // Regular Kurraya plucks reattack at *every* measure, including repeated-root bars.
+    return `pluck:${measure}:${chordStep}`; // Also handles chords changing within a measure in custom songs.
   }
 
   function currentHarmonyData(clock = sharedTransportData()) {
@@ -2274,12 +2355,13 @@
     const rootDegree = ((progressionDegree % scale.length) + scale.length) % scale.length;
     const fixedRootSemitones = fixedCadence ? fixedStep.rootSemitones : songSegment?.rootSemitones != null ? songSegment.rootSemitones : fixedStep?.rootSemitones;
     const fixedQuality = fixedCadence ? fixedStep.quality : songSegment?.quality || fixedStep?.quality || null;
-    const stacked = fixedRootSemitones != null && (fixedQuality === 'major' || fixedQuality === 'minor')
+    const authoredStack = fixedRootSemitones != null && (fixedQuality === 'major' || fixedQuality === 'minor')
       ? [Number(fixedRootSemitones), Number(fixedRootSemitones) + (fixedQuality === 'minor' ? 3 : 4), Number(fixedRootSemitones) + 7]
       : [0,2,4].map(stack => {
           const degree = rootDegree + stack;
           return scale[degree % scale.length] + Math.floor(degree / scale.length) * 12;
         });
+    const stacked = authoredStack.map(offset => scaleSafeMidi(state.tonicMidi + offset) - state.tonicMidi); // Keeps authored harmony as close as possible while every accompaniment tone obeys the selected scale.
     const bankOffsets = [stacked[0]-12, stacked[1]-12, stacked[2]-12, stacked[0], stacked[1], stacked[2], stacked[0]+12, stacked[1]+12];
     const rootPitchClass = (state.tonicMidi + stacked[0]) % 12;
     const third = stacked[1] - stacked[0];
@@ -2376,13 +2458,27 @@
     return state.tonicMidi + scaleDegreeOffset(noteIndex + modeOffset);
   }
 
+  function scaleSafeMidi(midi) {
+    const scale = scalePitchClasses(); // Used to fit accompaniment pitches to the same scale as playable melody notes.
+    let best = Math.round(midi); // Tracks the nearest permitted pitch; lower notes win equal-distance ties.
+    let distance = Infinity; // Compares scale degrees in the neighboring octaves, including negative registers.
+    const octave = Math.floor((midi - state.tonicMidi) / 12); // Centers the search on the requested register.
+    for (let shift = -1; shift <= 1; shift++) {
+      for (const degree of scale) {
+        const candidate = state.tonicMidi + (octave + shift) * 12 + degree; // Candidate used only by this nearest-scale search.
+        if (Math.abs(candidate - midi) < distance) { best = candidate; distance = Math.abs(candidate - midi); }
+      }
+    }
+    return best;
+  }
+
   function arpeggioMidi(index = state.arpeggioIndex) {
     const bank = currentHarmonyData().bankOffsets; // Harmony remains independent of the melody-bank shoulder selection.
     return state.tonicMidi + bank[clamp(Math.round(index), 0, 7)] + HARMONY_REGISTER_OFFSET;
   }
 
-  function chordStrumMidis() {
-    const bank = currentHarmonyData().bankOffsets; // Captures the chord at the instant the stick crosses the strum threshold.
+  function chordStrumMidis(clock = sharedTransportData()) {
+    const bank = currentHarmonyData(clock).bankOffsets; // Lets ahead-of-time plucks use the chord sounding at their actual pulse timestamp.
     return bank.slice(0, 6).map(offset => state.tonicMidi + offset + HARMONY_REGISTER_OFFSET);
   }
 
@@ -2413,8 +2509,8 @@
     return Math.min(directDistance, 12 - directDistance);
   }
 
-  function alteredChordPitchClasses(melodyMidi) {
-    const harmony = currentHarmonyData();
+  function alteredChordPitchClasses(melodyMidi, clock = sharedTransportData()) {
+    const harmony = currentHarmonyData(clock);
     const melodyPitchClass = pitchClass(melodyMidi); // Anchors the altered chord before any octave or roll ordering is chosen.
     const triadPitchClasses = harmony.bankOffsets.slice(0,3).map(offset => pitchClass(state.tonicMidi + offset)); // Reads the current chord's root, third, and fifth independently of register.
     const [rootPitchClass,thirdPitchClass,fifthPitchClass] = triadPitchClasses;
@@ -2470,8 +2566,8 @@
     return referenceMidi + upwardDistance;
   }
 
-  function voiceAlteredChordFromMelody(melodyMidi,direction = 'up') {
-    const alteredChord = alteredChordPitchClasses(melodyMidi); // Supplies the octave-agnostic chord that every roll must voice.
+  function voiceAlteredChordFromMelody(melodyMidi,direction = 'up',clock = sharedTransportData()) {
+    const alteredChord = alteredChordPitchClasses(melodyMidi,clock); // Supplies the octave-agnostic chord that every roll must voice.
     let bestVoicing = null;
     let bestScore = Infinity;
     uniquePermutations(alteredChord.remainingPitchClasses).forEach(order => {
@@ -2496,9 +2592,9 @@
     return {alteredChord,midis:[melodyMidi,...(bestVoicing || [])]};
   }
 
-  function smartArpeggioMidis(fretMidi,direction = 'forward') {
+  function smartArpeggioMidis(fretMidi,direction = 'forward',clock = sharedTransportData()) {
     const rollDirection = direction === 'reverse' ? 'down' : 'up'; // Forward rises away from the melody; reverse falls away from it.
-    return voiceAlteredChordFromMelody(fretMidi,rollDirection).midis;
+    return voiceAlteredChordFromMelody(fretMidi,rollDirection,clock).midis;
   }
 
 
@@ -2510,8 +2606,8 @@
     return fret.slowRollDirection;
   }
 
-  function melodyTopStrumMidis(fretMidi, voicing = 'full') {
-    const lowerChord = chordStrumMidis().map(midi => {
+  function melodyTopStrumMidis(fretMidi, voicing = 'full', clock = sharedTransportData()) {
+    const lowerChord = chordStrumMidis(clock).map(midi => {
       let voiced = midi;
       while (voiced >= fretMidi) voiced -= 12; // Every accompaniment string stays below the melody by construction.
       return voiced;
@@ -2520,19 +2616,61 @@
     return [...lowerVoices,fretMidi]; // The held melody is always the highest note in every automatic strum.
   }
 
-  function automaticPatternSteps(fretMidi, fret, mode = state.pluckInputMode) {
+  function automaticPatternSteps(fretMidi, fret, mode = state.pluckInputMode, clock = null) {
     const definition = automaticPatternDefinition(mode);
     const noteStep = (midi, velocity = 1) => ({type:'note',midi,velocity});
     const restStep = () => ({type:'rest'});
     const strumStep = (direction = 'down', velocity = .82, gate = .42, voicing = 'full') => ({type:'strum',direction,velocity,gate,voicing});
     const boomStep = (velocity = .82, gate = .55) => ({type:'boom',velocity,gate});
-    if (definition.kind === 'direct') return {steps:[noteStep(fretMidi)],label:'single note'};
+    if (definition.kind === 'direct') return {steps:[noteStep(fretMidi)],label:'single note'}; // Single Note never generates a bar-long repetition, regardless of Lab meter.
+    if (state.game.labAdaptiveAutoPick && KURRAYA_LAB_PATTERN_CHOICES.some(choice => choice.id === mode)) {
+      const harmonyClock = clock || sharedTransportData(); // Lab figures follow the sounding meter instead of a fixed number of notes per pattern.
+      const meter = harmonyClock.meter;
+      const barSlots = Math.max(2,Math.round(meter.measureQuarterBeats * 2)); // One eighth-note step each: e.g. 3/4 = 6, 5/4 = 10, 7/8 = 7.
+      const accentSlots = new Set(meter.groupStarts.map(beat => Math.round(beat * meter.quarterUnitsPerBeat * 2))); // Starts of 3+3 or 2+2+3 groups.
+      const rising = definition.kind === 'arp' && mode !== 'arp-reverse-8' ? smartArpeggioMidis(fretMidi,'forward',harmonyClock) : null;
+      const falling = mode === 'arp-reverse-8' || mode === 'arp-alternating-8' ? smartArpeggioMidis(fretMidi,'reverse',harmonyClock) : null; // Never compute unused chord permutations for simple pulses and strokes.
+      const direction = definition.arpStyle === 'alternating' ? assignSlowArpDirection(fret) : 'forward'; // A new melody changes the direction, not the bar clock.
+      const roll = direction === 'reverse' ? falling : rising;
+      const lower = mode === 'arp-alberti-16'
+        ? melodyTopStrumMidis(fretMidi,'full',harmonyClock).slice(0,-1).sort((a,b) => a - b)
+        : []; // The low/high weave is the only choice that needs a second chord voicing.
+      const low = lower[0] ?? fretMidi - 12;
+      const inner = lower[Math.floor((lower.length - 1) / 2)] ?? fretMidi - 7;
+      const high = lower.at(-1) ?? fretMidi - 3;
+      const steps = Array.from({length:barSlots},(_,slot) => {
+        const groupStart = accentSlots.has(slot);
+        const velocity = slot === 0 ? 1 : groupStart ? .98 : slot % 2 === 0 ? .82 : .7; // Audible meter accents without changing note timing.
+        const progress = slot / Math.max(1,barSlots - 1);
+        if (mode === 'tremolo-8') return noteStep(fretMidi,velocity);
+        if (mode === 'strum-alternating-8') {
+          if (slot === 0) return noteStep(fretMidi,velocity);
+          if (groupStart || (meter.denominator === 4 && slot % 2 === 0)) {
+            return strumStep(slot % 2 ? 'up' : 'down',velocity,.45); // Simple meters get strokes on each quarter; compound meters follow their grouped accents.
+          }
+          return slot % 2 === 0 ? noteStep(fretMidi,.64) : restStep();
+        }
+        if (mode === 'arp-forward-8') return noteStep(rising[Math.round(progress * (rising.length - 1))],velocity);
+        if (mode === 'arp-reverse-8') return noteStep(falling[Math.round(progress * (falling.length - 1))],velocity);
+        if (mode === 'arp-forward-reverse-16') {
+          const wave = progress < .5 ? progress * 2 : (1 - progress) * 2;
+          return noteStep(rising[Math.round(wave * (rising.length - 1))],velocity);
+        }
+        if (mode === 'arp-alternating-8') return noteStep(roll[Math.floor(progress * roll.length) % roll.length],velocity);
+        const weave = [fretMidi,low,high,inner,high,low]; // Pitch contour, not a particular fixed-meter historical figure.
+        return noteStep(weave[slot % weave.length],velocity);
+      });
+      return {steps,label:KURRAYA_LAB_PATTERN_CHOICES.find(choice=>choice.id===mode)?.label.toLowerCase() || 'adaptive figure'};
+    }
     if (definition.kind === 'tremolo') {
       if (definition.tremStyle === 'burst') return {steps:[noteStep(fretMidi),noteStep(fretMidi,.94),noteStep(fretMidi,.9),restStep()],label:'three-stroke tremolo burst'};
       return {steps:[noteStep(fretMidi)],label:definition.division === 3 ? 'triplet tremolo' : `${definition.division === 4 ? 'rapid' : 'measured'} tremolo`};
     }
     if (definition.kind === 'strum') {
       const patterns = {
+        down:[noteStep(fretMidi),strumStep('down')],
+        alternating:[noteStep(fretMidi),strumStep('up'),strumStep('down'),strumStep('up')],
+        pop:[noteStep(fretMidi),restStep(),strumStep('down'),strumStep('up'),restStep(),strumStep('up'),strumStep('down'),strumStep('up')],
         reggae:[noteStep(fretMidi),strumStep('down',.72,.26)],
         bossa:[noteStep(fretMidi),restStep(),strumStep('down',.72,.48),strumStep('up',.66,.38),restStep(),strumStep('down',.76,.48),restStep(),strumStep('up',.68,.38)],
         rasgueado:[noteStep(fretMidi),strumStep('down',.78,.3),strumStep('down',.74,.3),strumStep('up',.82,.34)],
@@ -2541,9 +2679,10 @@
       };
       return {steps:patterns[definition.strumStyle] || patterns.reggae,label:definition.label.toLowerCase()};
     }
-    const ascending = smartArpeggioMidis(fretMidi,'forward');
-    const descending = smartArpeggioMidis(fretMidi,'reverse');
-    const lower = melodyTopStrumMidis(fretMidi,'full').slice(0,-1).sort((a,b) => a - b);
+    const harmonyClock = clock || sharedTransportData(); // One snapshot ensures every voice in this roll belongs to the same scheduled chord.
+    const ascending = smartArpeggioMidis(fretMidi,'forward',harmonyClock);
+    const descending = smartArpeggioMidis(fretMidi,'reverse',harmonyClock);
+    const lower = melodyTopStrumMidis(fretMidi,'full',harmonyClock).slice(0,-1).sort((a,b) => a - b);
     const low = lower[0] ?? fretMidi - 12;
     const mid = lower[Math.floor((lower.length - 1) / 2)] ?? fretMidi - 7;
     const high = lower.at(-1) ?? fretMidi - 3;
@@ -2601,6 +2740,24 @@
     return true;
   }
 
+  function nextAutomaticSubdivisionAt(referenceAt = nowMs()) {
+    const interval = pluckIntervalMs(state.pluckInputMode); // Uses the same quarter-BPM subdivision grid as scheduled automatic plucks.
+    if (!(interval > 0)) return referenceAt;
+    const sampledAt = nowMs(); // Projects the shared harmony transport onto the input timestamp rather than restarting its phase.
+    const elapsedAtReference = sharedTransportData(sampledAt).performanceElapsedMs + (referenceAt - sampledAt);
+    const remainder = ((elapsedAtReference % interval) + interval) % interval;
+    return referenceAt + (remainder < 2 ? interval : interval - remainder);
+  }
+
+  function armAutomaticPulseAt(targetAt, generation = state.pluckGeneration) {
+    clearTimeout(state.pluckTimer);
+    state.pluckNextPulseAt = targetAt;
+    state.pluckTimer = setTimeout(() => {
+      state.pluckTimer = null;
+      void playFrettedPluckPulse(generation);
+    }, automaticPulseTimerDelay(targetAt)); // A silent tail cleanup remains armed until its actual beat boundary.
+  }
+
   function beginAutoReleaseTail(fret,sourceId) {
     if (!fret || !state.pluckInputMode) return false;
     const releasedAt = nowMs();
@@ -2608,10 +2765,9 @@
     const stopAt = Math.max(initialBeatStopAt,nextSharedBeatAt(releasedAt)); // A tap always gets its original beat fill; a longer hold finishes the beat in which it was released.
     state.autoReleaseTail = {fret,sourceId,releasedAt,stopAt};
     if (!state.pluckTimer || state.pluckNextPulseAt >= stopAt - 2) {
-      clearTimeout(state.pluckTimer);
-      state.pluckNextPulseAt = stopAt;
-      const generation = state.pluckGeneration;
-      state.pluckTimer = setTimeout(() => { state.pluckTimer = null; void playFrettedPluckPulse(generation); },Math.max(0,stopAt - nowMs()));
+      const nextSubdivisionAt = nextAutomaticSubdivisionAt(releasedAt); // A temporarily missing timer must not turn the whole remaining beat into silence.
+      const nextTarget = Math.min(nextSubdivisionAt,stopAt);
+      armAutomaticPulseAt(nextTarget);
     }
     refs.transportStatus.innerHTML = `<strong>${automaticPluckLabel()} beat fill:</strong> ${midiName(noteMidi(fret.noteIndex,fret.modeOffset))} will play every remaining subdivision before the next shared beat.`;
     log('Auto-pick beat fill armed',`${midiName(noteMidi(fret.noteIndex,fret.modeOffset))} · ${Math.round(stopAt - releasedAt)} ms remaining`);
@@ -2637,7 +2793,7 @@
     state.pluckStep = gridStep; // Keeps roll voices aligned to the shared subdivision that will actually sound next.
     state.pluckNextPulseAt = nextTarget;
     clearTimeout(state.pluckTimer);
-    state.pluckTimer = setTimeout(() => { state.pluckTimer = null; void playFrettedPluckPulse(generation); }, Math.max(0,nextTarget - nowMs() - PULSE_LOOKAHEAD_MS));
+    state.pluckTimer = setTimeout(() => { state.pluckTimer = null; void playFrettedPluckPulse(generation); }, automaticPulseTimerDelay(nextTarget));
     const remainingBeforeBeat = Math.max(0,division - gridStep);
     return {delay:Math.max(0,nextTarget - currentTime),nextStep:gridStep,beatAnchorAt:timing.beatAnchorAt,beatStopAt:fret.beatStopAt,remainingBeforeBeat,totalTapAttacks:1 + remainingBeforeBeat};
   }
@@ -2699,21 +2855,23 @@
       state.scheduledMetronomeBeat = beatBoundary.value;
     }
     if (!state.rootPadEnabled) return;
-    const chordBoundary = findUpcomingTransportBoundary(clock => currentHarmonyStep(clock));
-    if (chordBoundary && state.scheduledHarmonyStep !== chordBoundary.value) {
-      syncRootPad(false, chordBoundary.atMs, chordBoundary.clock);
-      state.scheduledHarmonyStep = chordBoundary.value;
+    const padBoundary = findUpcomingTransportBoundary(rootPadAudioKey);
+    if (padBoundary && state.scheduledRootPadKey !== padBoundary.value) {
+      if (syncRootPad(!state.rootPadSampleBuffer, padBoundary.atMs, padBoundary.clock)) {
+        state.scheduledRootPadKey = padBoundary.value; // Only mark a root queued after an audible voice was actually started/retained.
+      }
     }
   }
 
   function restartCssAnimation(element, className) {
-    if (!element) return;
+    if (state.ambientOnly || !element) return;
     element.classList.remove(className);
     void element.offsetWidth;
     element.classList.add(className);
   }
 
   function updateHarmonyVisual(popChord = false, pulseBeat = false) {
+    if (state.ambientOnly) return; // Hidden NPC playback has no visual harmony panel.
     if (!refs.chordDegree) return;
     const harmony = currentHarmonyData();
     const beat = currentHarmonyBeatData();
@@ -2802,7 +2960,7 @@
 
   function rootPadTargetMidi(clock = sharedTransportData()) {
     const harmony = currentHarmonyData(clock);
-    return state.tonicMidi + harmony.rootOffset + PAD_ROOT_REGISTER_OFFSET; // C3 tonic resolves to F2/G2/E2/A2 for IV–V–iii–vi.
+    return state.tonicMidi + harmony.rootOffset + PAD_ROOT_REGISTER_OFFSET; // C3 tonic resolves to F1/G1/E1/A1 for IV–V–iii–vi.
   }
 
   function padProgressionRootMidis(tonicMidi = state.tonicMidi) {
@@ -2813,6 +2971,9 @@
     const definition = getSongDefinition('when-the-kininjis-bloom'); // Supplies the active authored/generated melody so the standalone Music Lab draws exactly what Play will audition.
     const arrangement = activeKurrayaSongArrangement();
     const tonicPitchClass = ((state.tonicMidi % 12) + 12) % 12;
+    const auditionMeter = kurrayaLabMeterData(state.songAuditionMeter);
+    const quarterBeatsPerBar = auditionMeter?.measureQuarterBeats || FIXED_HARMONY_CHORD_QUARTER_BEATS;
+    const auditionNoteScale = quarterBeatsPerBar / FIXED_HARMONY_CHORD_QUARTER_BEATS; // Display reinterprets note timing without altering saved 48-quarter-beat melody drafts.
     let melodyBeat = 0;
     const melodyNotes = (definition?.notes || []).map(([degree,duration],index) => {
       const noteDuration = Math.max(0.03125,Number(duration) || 0.25);
@@ -2821,9 +2982,10 @@
         degree:Number(degree) || 0,
         midi:state.tonicMidi + scaleDegreeOffset(Number(degree) || 0),
         noteName:midiName(state.tonicMidi + scaleDegreeOffset(Number(degree) || 0)),
-        startQuarterBeat:KURRAYA_INTRO_QUARTER_BEATS + melodyBeat,
-        melodyQuarterBeat:melodyBeat,
-        durationQuarterBeats:noteDuration
+        startQuarterBeat:FIXED_HARMONY_SIX_EIGHT_CHORDS * quarterBeatsPerBar + melodyBeat * auditionNoteScale,
+        melodyQuarterBeat:melodyBeat * auditionNoteScale,
+        durationQuarterBeats:noteDuration * auditionNoteScale,
+        authoredDurationQuarterBeats:noteDuration // Keeps exported and locally saved song drafts in the original quarter-note durations.
       };
       melodyBeat += noteDuration;
       return note;
@@ -2845,10 +3007,11 @@
       totalBars:FIXED_HARMONY_CYCLE_CHORDS,
       introBars:FIXED_HARMONY_SIX_EIGHT_CHORDS,
       bodyBars:FIXED_HARMONY_THREE_FOUR_CHORDS,
-      quarterBeatsPerBar:FIXED_HARMONY_CHORD_QUARTER_BEATS,
-      totalQuarterBeats:FIXED_HARMONY_CYCLE_QUARTER_BEATS,
-      melodyStartQuarterBeat:KURRAYA_INTRO_QUARTER_BEATS,
-      melodyQuarterBeats:melodyBeat,
+      quarterBeatsPerBar,
+      totalQuarterBeats:FIXED_HARMONY_CYCLE_CHORDS * quarterBeatsPerBar,
+      melodyStartQuarterBeat:FIXED_HARMONY_SIX_EIGHT_CHORDS * quarterBeatsPerBar,
+      melodyQuarterBeats:melodyBeat * auditionNoteScale,
+      auditionMeterLabel:auditionMeter?.label || null,
       introSteps:arrangement.introSteps.slice(),
       bodySteps:arrangement.bodySteps.slice(),
       segments:[
@@ -2862,7 +3025,7 @@
 
   function rootPadSynthGain() {
     if (state.rootPadLevel <= 0 || state.padMixLevel <= 0) return 0;
-    return clamp(0.018 + state.rootPadLevel * 1.5, 0.018, 0.12) * state.padMixLevel; // Bakes the subtle ~20%-of-lead feel into only the synth pad, leaving imported-pad mix behavior untouched.
+    return clamp(0.018 + state.rootPadLevel * 1.5, 0.018, 0.12) * state.padMixLevel; // Bakes the subtle ~20%-of-lead feel into only the low kurraya chord, leaving imported-pad mix behavior untouched.
   }
 
   function fadeOutRootPadVoice(voice, fadeSeconds = PAD_SYNTH_CROSSFADE_S, whenMs = null) {
@@ -2891,32 +3054,40 @@
     state.rootPadRootMidi = null;
   }
 
+  function lowKurrayaChordMidis(midi = rootPadTargetMidi()) {
+    const root = scaleSafeMidi(midi); // Low root used by the sampled accompaniment and its mobile diagnostics.
+    return [root, scaleSafeMidi(root + 7)]; // Prefer a perfect fifth, with the nearest scale tone when that fifth is unavailable.
+  }
+
   function createRootPadVoice(midi, whenMs = null) {
-    const context = state.audioContext;
-    if (!context || context.state !== 'running' || !state.master) return null;
-    const now = audioStartTimeFor(context, whenMs);
-    const rootMidi = midi; // The pad carries only the authored progression root; harmonic partials below shape timbre rather than adding separate chord voices.
-    const rootOscillator = context.createOscillator();
-    const filter = context.createBiquadFilter();
-    const gain = context.createGain();
-    const real = new Float32Array(PAD_SYNTH_HARMONICS.length); // Zero cosine coefficients keep the custom waveform phase-equivalent to a sine-family oscillator.
-    const imag = new Float32Array(PAD_SYNTH_HARMONICS); // Fundamental dominates; tiny 2nd/3rd/4th harmonics keep low roots audible on phone speakers.
-    rootOscillator.setPeriodicWave(context.createPeriodicWave(real,imag));
-    rootOscillator.frequency.setValueAtTime(midiFrequency(rootMidi), now);
-    rootOscillator.detune.setValueAtTime(0, now);
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(PAD_SYNTH_FILTER_HZ, now);
-    filter.Q.setValueAtTime(PAD_SYNTH_FILTER_Q, now);
-    const synthPadGain = rootPadSynthGain(); // Resolves the subtle synth-only base level and the user's independent Music Lab pad multiplier.
-    if (synthPadGain <= 0) gain.gain.setValueAtTime(0, now);
-    else {
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, synthPadGain), now + PAD_SYNTH_ATTACK_S); // Blooms behind the pluck instead of presenting as an obvious synth attack.
-    }
-    rootOscillator.connect(filter).connect(gain).connect(state.master);
-    rootOscillator.start(now);
-    const voice = {midi, chordMidis:[rootMidi], oscillators:[rootOscillator], filter, gain, stopping:false, active:true, kind:'synth'};
-    rootOscillator.onended = () => { voice.active = false; };
+    const context = state.audioContext; // Uses the ordinary sampler clock and pitch/trim pipeline, including out-of-bank low notes.
+    if (!context || context.state !== 'running' || !state.master || !state.buffer) return null;
+    const now = audioStartTimeFor(context, whenMs); // Shared start for both strings of the low chord.
+    const gain = context.createGain(); // Applies the independent accompaniment mix without changing the lead mix.
+    const filter = context.createBiquadFilter(); // Common passthrough node retained for the existing voice fade/cleanup owner.
+    filter.type = 'allpass';
+    filter.connect(gain).connect(state.master);
+    gain.gain.setValueAtTime(rootPadSynthGain(), now);
+    const chordMidis = lowKurrayaChordMidis(midi); // Actual scale-safe power-chord pitches shown in Music Lab.
+    const notes = chordMidis.map(pitch => createVoiceNodes(pitch, 0.72 / Math.sqrt(chordMidis.length), now, 1)); // Same kurraya sound, independent of the lead mix slider.
+    const voice = {midi, chordMidis, oscillators:notes.map(note => note.source), filter, gain, stopping:false, active:true, kind:'kurraya'}; // Tracked by the existing harmony voice lifecycle.
+    let remaining = notes.length; // Natural endings must not cause the per-frame recovery path to repeatedly pluck the chord.
+    notes.forEach(note => {
+      note.gain.disconnect();
+      note.gain.connect(filter);
+      const duration = Math.max(0.025, (note.markers.trimEnd - note.markers.trimStart) / Math.max(0.01, note.source.playbackRate.value)); // Preserve the normal pluck duration after pitch shifting.
+      note.gain.gain.setTargetAtTime(0.0001, now + Math.max(state.attack + 0.02, duration - Math.min(0.2, state.release)), Math.max(0.01, state.release / 4));
+      note.source.start(now, note.markers.trimStart);
+      note.source.stop(now + duration + 0.04);
+      note.source.onended = () => {
+        try { note.source.disconnect(); note.filter.disconnect(); note.gain.disconnect(); } catch {}
+        if (--remaining === 0) {
+          voice.active = false;
+          try { filter.disconnect(); gain.disconnect(); } catch {}
+          state.rootPadVoices = state.rootPadVoices.filter(candidate => candidate !== voice);
+        }
+      };
+    });
     state.rootPadVoices.push(voice);
     return voice;
   }
@@ -2957,14 +3128,14 @@
   }
 
   function syncRootPad(force = false, whenMs = null, clock = null) {
-    if (!state.rootPadEnabled || state.paused || document.hidden) {
+    if (HOSTED_FLUTE_PERFORMANCE || !state.rootPadEnabled || state.paused || document.hidden) { // A solo flute cannot also play a pad chord.
       if (state.rootPadVoices.length) stopRootPad(0.35);
-      return;
+      return false;
     }
-    if (!state.audioContext || state.audioContext.state !== 'running' || !state.master) return;
+    if (!state.audioContext || state.audioContext.state !== 'running' || !state.master) return false;
     const targetClock = clock || sharedTransportData(Number.isFinite(whenMs) ? whenMs + 0.25 : nowMs());
     const targetMidi = rootPadTargetMidi(targetClock);
-    const desiredKind = state.rootPadSampleBuffer ? 'sample' : 'synth';
+    const desiredKind = state.rootPadSampleBuffer ? 'sample' : 'kurraya';
     const liveVoices = state.rootPadVoices.filter(voice => !voice.stopping && voice.active !== false);
     if (!force && state.rootPadRootMidi === targetMidi && liveVoices.some(voice => voice.kind === desiredKind)) {
       const now = audioStartTimeFor(state.audioContext, whenMs);
@@ -2974,16 +3145,19 @@
         if (targetGain <= 0) voice.gain.gain.setValueAtTime(0, now);
         else voice.gain.gain.setTargetAtTime(Math.max(0.0002, targetGain), now, 0.12);
       });
-      return;
+      if (!Number.isFinite(whenMs)) state.lastRootPadKey = rootPadAudioKey(targetClock); // An immediate manual sync already supplied this root; the next render frame must not play it again.
+      return true;
     }
     state.rootPadVoices.slice().forEach(voice => fadeOutRootPadVoice(voice, PAD_SYNTH_CROSSFADE_S, whenMs));
     state.rootPadRootMidi = targetMidi;
     const voice = desiredKind === 'sample' ? createRootPadSampleVoice(targetMidi, whenMs) : createRootPadVoice(targetMidi, whenMs);
     if (!voice) {
       state.rootPadRootMidi = null; // Lets the next frame self-heal instead of thinking a dead pad is already running.
-      return;
+      return false;
     }
+    if (!Number.isFinite(whenMs)) state.lastRootPadKey = rootPadAudioKey(targetClock); // Audio lookahead keeps its separate future key until the predicted boundary actually arrives.
     log('Harmony root pad changed', `root ${midiName(targetMidi)} · ${desiredKind} · ${desiredKind === 'sample' ? Math.round(state.rootPadSampleLevel * 100) : Math.round(state.rootPadLevel * 100)}%`);
+    return true;
   }
 
   function bankFooterMarkup(mode) {
@@ -3237,6 +3411,7 @@
   }
 
   function updateArpeggioUI() {
+    if (state.ambientOnly) return;
     if (!refs.arpRing) return;
     if (isDualArpLayout()) {
       renderStickRing(refs.arpRing, 'dual-left', DUAL_ARP_LABELS.left.map(label => ({label})), state.arpeggioIndex);
@@ -3317,7 +3492,7 @@
     };
   }
 
-  function createVoiceNodes(midi, gainAmount, startAt = null) {
+  function createVoiceNodes(midi, gainAmount, startAt = null, mixLevel = state.kurrayaMixLevel) {
     const context = state.audioContext;
     if (!context || !state.buffer) throw new Error('Sampler audio is not ready.');
     const source = context.createBufferSource();
@@ -3336,7 +3511,7 @@
     if (state.voice === 'Hollow') { filter.type = 'bandpass'; filter.frequency.value = 760; filter.Q.value = 0.75; }
     source.connect(filter).connect(gain).connect(state.master);
     const startTime = Number.isFinite(startAt) ? Math.max(startAt, context.currentTime) : context.currentTime;
-    const targetGain = gainAmount * state.kurrayaMixLevel; // Converts the Music Lab's relative Kurraya mix into this note's final pre-master attack level.
+    const targetGain = gainAmount * mixLevel; // Converts the Music Lab's relative Kurraya mix into this note's final pre-master attack level.
     if (targetGain <= 0) gain.gain.setValueAtTime(0, startTime);
     else {
       gain.gain.setValueAtTime(0.0001, startTime);
@@ -3384,7 +3559,7 @@
   }
 
   function canUseCompatibilitySampler() {
-    return state.sampleImported && state.playbackEngine === 'compat' && Boolean(state.sampleObjectUrl);
+    return !HOSTED_FLUTE_PERFORMANCE && state.sampleImported && state.playbackEngine === 'compat' && Boolean(state.sampleObjectUrl); // The flute needs Web Audio for sample-accurate monophony.
   }
 
   function mediaPlaybackRate(midi) {
@@ -3500,6 +3675,7 @@
   function stopVoice(voice, release = state.release) {
     if (!voice || voice.released) return;
     voice.released = true;
+    if (HOSTED_FLUTE_PERFORMANCE && state.fluteVoice === voice) state.fluteVoice = null; // Pause/clear frees the single-voice slot.
     if (voice.kind === 'gesture-media') {
       clearTimeout(voice.stopTimer);
       clearInterval(voice.loopTimer);
@@ -3561,7 +3737,7 @@
   }
 
   function registerVoice(voiceKey, voice) {
-    if (!voice) return;
+    if (!voice || voice.released) return; // A flute attack may be superseded while an earlier async caller is still awaiting audio; do not resurrect the silent old voice.
     if (!Number.isFinite(voice.sequence)) voice.sequence = ++state.voiceSequence;
     const group = state.voices.get(voiceKey) || [];
     group.push(voice); // Pedal sustain deliberately retains older attacks, even when pitch and physical source are identical.
@@ -3592,10 +3768,27 @@
 
   function clearRingingVoices(reason = 'manual') {
     const count = activeVoiceCount();
+    if (HOSTED_FLUTE_PERFORMANCE && state.fluteVoice) stopVoice(state.fluteVoice,0.025); // Also stop a just-scheduled flute note not yet registered by its awaiting caller.
     for (const voices of state.voices.values()) voices.forEach(voice => stopVoice(voice, Math.max(0.04, state.release)));
     state.voices.clear();
     refs.transportStatus.innerHTML = `<strong>Cleared.</strong> Fading ${count} ringing sample voice${count === 1 ? '' : 's'}.`;
     log('Ringing voices cleared', `${reason} · ${count} voice${count === 1 ? '' : 's'}`);
+  }
+
+  function interruptFluteVoice(nextStartAt) {
+    const previous = state.fluteVoice; // Shared note owner across direct input, Auto Pick, manual strums and previews.
+    if (!previous || previous.released) return;
+    const now = state.audioContext.currentTime;
+    const endAt = Math.max(now,nextStartAt); // The old note stops at the new audio-clock attack, not at the early JS callback.
+    const fadeAt = Math.max(now,endAt - 0.008);
+    try {
+      previous.gain.gain.cancelScheduledValues(fadeAt);
+      previous.gain.gain.setValueAtTime(Math.max(0.0001,previous.gain.gain.value),fadeAt);
+      previous.gain.gain.linearRampToValueAtTime(0.0001,endAt);
+      previous.source.stop(endAt);
+    } catch (error) { log('Flute interruption warning',error.message); }
+    previous.released = true;
+    if (previous.voiceKey) removeVoiceFromGroup(previous.voiceKey,previous); // Debug voice count reflects one flute note, never stacked tails.
   }
 
   async function startSamplerVoice(midi, voiceKey, gainAmount = 0.72, whenMs = null) {
@@ -3605,16 +3798,33 @@
     const startAt = audioStartTimeFor(context, whenMs);
     const voice = createVoiceNodes(midi, gainAmount, startAt);
     voice.sequence = ++state.voiceSequence;
+    voice.voiceKey = voiceKey; // Registry identity for removing a note when a new flute pitch interrupts it.
     const markers = voice.markers;
     const {source, gain} = voice;
     const rate = Math.max(0.01, source.playbackRate.value);
     try {
-      const outputDuration = Math.max(0.025, (markers.trimEnd - markers.trimStart) / rate);
-      const releaseStart = startAt + Math.max(state.attack + 0.02, outputDuration - Math.min(0.2, state.release));
-      gain.gain.setTargetAtTime(0.0001, releaseStart, Math.max(0.01, state.release / 4));
-      source.start(startAt, markers.trimStart);
+      const outputDuration = HOSTED_FLUTE_PERFORMANCE ? FLUTE_NOTE_DURATION_S : Math.max(0.025, (markers.trimEnd - markers.trimStart) / rate);
+      const releaseStart = HOSTED_FLUTE_PERFORMANCE
+        ? startAt + outputDuration - 0.16
+        : startAt + Math.max(state.attack + 0.02, outputDuration - Math.min(0.2, state.release));
+      if (HOSTED_FLUTE_PERFORMANCE) {
+        const loopStart = Math.max(0,Number(markers.loopIn) || 0);
+        const loopEnd = Math.min(source.buffer.duration,Number(markers.loopOut) || 0);
+        if (loopEnd - loopStart > 0.06) {
+          source.loop = true; source.loopStart = loopStart; source.loopEnd = loopEnd; // Sustains the middle of the recorded or synthesized tone at any transposed pitch.
+        }
+      }
+      gain.gain.setTargetAtTime(0.0001,releaseStart,HOSTED_FLUTE_PERFORMANCE ? 0.04 : Math.max(0.01,state.release / 4));
+      source.start(startAt,markers.trimStart);
       source.stop(startAt + outputDuration + 0.04);
-      source.onended = () => removeVoiceFromGroup(voiceKey, voice);
+      if (HOSTED_FLUTE_PERFORMANCE) {
+        interruptFluteVoice(startAt);
+        state.fluteVoice = voice;
+      }
+      source.onended = () => {
+        if (state.fluteVoice === voice) state.fluteVoice = null;
+        removeVoiceFromGroup(voiceKey,voice);
+      };
       return voice;
     } catch (error) {
       try { source.disconnect(); } catch {}
@@ -3645,13 +3855,14 @@
 
   function backupPlayerInputBlocked(sourceId = 'player input') {
     const source = String(sourceId || '');
+    if (state.ambientOnly && !source.startsWith('demo-')) return true;
     if (!state.game.backupAccompaniment || state.backupPlayerEquipped !== false || source.startsWith('demo-')) return false;
     feedback('Kurraya stowed','#ffc45f');
     return true;
   }
 
   function interruptSuccessfulPreviewForPlayer(sourceId = 'player input') {
-    if (!state.game.demoActive || String(sourceId).startsWith('demo-')) return false;
+    if (state.ambientOnly || !state.game.demoActive || String(sourceId).startsWith('demo-')) return false;
     if (state.game.backupAccompaniment) return false; // Backup freeplay is deliberately allowed over the lead character's successful preview run.
     stopSong('Successful preview interrupted by player input.');
     log('Successful preview interrupted',String(sourceId));
@@ -3672,7 +3883,7 @@
         refs.transportStatus.innerHTML = '<strong>Paused.</strong> Press Start to resume, or choose Free Play.';
         return;
       }
-      if (state.playMode === 'pluck') {
+      if (!HOSTED_FLUTE_PERFORMANCE && state.playMode === 'pluck') { // Flute replacement is handled by the shared precise single-voice interrupter; do not pre-fade and overlap breaths.
         const previous = state.voices.get(voiceKey);
         if (previous) previous.forEach(voice => stopVoice(voice, 0.04));
         state.voices.delete(voiceKey);
@@ -3707,6 +3918,7 @@
       const strumId = ++state.previewCounter;
       const gainAmount = clamp(0.34 + velocity * 0.16, 0.38, 0.54); // Keeps six overlapping sample voices below clipping.
       const touchPoolPrefix = sourceId.includes('touch right stick') ? 'touch-right-strum' : null;
+      const strumAt = nowMs(); // Same timing anchor for all six strings; Web Audio schedules each tiny offset precisely.
       state.inputCount += 1;
       state.lastInput = `${direction} chord strum · ${harmony.degreeNumber}/${harmony.romanNumeral} from ${sourceId}`;
       log('Chord strum input received', state.lastInput);
@@ -3723,7 +3935,7 @@
             if (canUseCompatibilitySampler()) {
               const channelKey = touchPoolPrefix ? `${touchPoolPrefix}-${stringIndex}` : null;
               voice = channelKey ? startGestureMediaVoice(midi, voiceKey, gainAmount, channelKey) : startMediaVoice(midi, voiceKey, gainAmount);
-            } else voice = await startSamplerVoice(midi, voiceKey, gainAmount);
+            } else voice = await startSamplerVoice(midi, voiceKey, gainAmount, strumAt + delay);
             if (!voice) return;
             registerVoice(voiceKey, voice);
           } catch (error) {
@@ -3794,6 +4006,26 @@
     }
   }
 
+  function primeAutomaticMediaChannels() {
+    if (!canUseCompatibilitySampler()) return;
+    for (let index = 0; index < AUTO_PICK_COMPAT_VOICES; index++) {
+      const channelKey = `touch-left-fretted-pluck-${index}`; // Prepared voice used by the next rotating compatibility-mode attack.
+      const channel = state.gestureMediaChannels.get(channelKey);
+      if (!channel || channel.sourceUrl !== state.sampleObjectUrl || channel.media.paused) primeGestureMediaChannel(channelKey); // Never rewind an already sounding channel while another melody key is pressed.
+    }
+  }
+
+  function nextAutomaticMediaChannel() {
+    const channelIndex = state.autoPickCompatChannelIndex++ % AUTO_PICK_COMPAT_VOICES; // Each attack advances independently of melody or pattern changes.
+    return `touch-left-fretted-pluck-${channelIndex}`;
+  }
+
+  function automaticPulseTimerDelay(targetAt) {
+    const silentTailEnd = state.autoReleaseTail && targetAt >= state.autoReleaseTail.stopAt - 2; // A cleanup cannot run early, or a last-moment legato press would restart the roll.
+    const lookahead = canUseCompatibilitySampler() || silentTailEnd ? 0 : PULSE_LOOKAHEAD_MS;
+    return Math.max(0,targetAt - nowMs() - lookahead); // HTMLAudio starts on the subdivision; Web Audio plucks start precisely on their scheduled time.
+  }
+
   function pluckIntervalMs(mode) {
     const definition = FRETTED_PLUCK_MODES[mode];
     const bpm = clamp(state.game.active ? state.bpm : state.harmonyBpm, 40, 240);
@@ -3843,31 +4075,46 @@
     }
     const definition = automaticPatternDefinition();
     const fretMidi = noteMidi(fret.noteIndex, fret.modeOffset);
-    const pattern = automaticPatternSteps(fretMidi,fret,state.pluckInputMode);
+    const pulseClock = sharedTransportData(pulseTarget); // Use the harmony that will sound at the scheduled subdivision, not the previous chord from audio look-ahead.
+    const pattern = automaticPatternSteps(fretMidi,fret,state.pluckInputMode,pulseClock);
     const patternIndex = state.pluckStep % pattern.steps.length;
     const step = pattern.steps[patternIndex];
     state.pluckStep += 1;
     fret.autoPulseCount = (fret.autoPulseCount || 0) + 1;
     const voiceKey = `fretted-pluck:${generation}:${++state.previewCounter}`;
+    // Arm the next pulse before awaiting sample setup: slow mobile audio must not break the beat grid.
+    const interval = pluckIntervalMs(state.pluckInputMode);
+    if (generation === state.pluckGeneration && interval > 0) {
+      let nextTarget = pulseTarget + interval;
+      while (nextTarget <= nowMs() + 2) {
+        nextTarget += interval;
+        state.pluckStep += 1; // Skips inaudible late pulses instead of letting asynchronous audio drift away from the beat grid.
+      }
+      if (state.autoReleaseTail && nextTarget >= state.autoReleaseTail.stopAt - 2) nextTarget = state.autoReleaseTail.stopAt; // Silent cleanup at the boundary, unless another melody arrives before it.
+      state.pluckNextPulseAt = nextTarget;
+      state.pluckTimer = setTimeout(() => { state.pluckTimer = null; void playFrettedPluckPulse(generation); }, automaticPulseTimerDelay(nextTarget));
+    }
     try {
       if (!state.paused) {
         const interval = Math.max(1,pluckIntervalMs(state.pluckInputMode));
         const gateVoice = voice => {
-          if (voice && Number(step?.gate) > 0) setTimeout(() => stopVoice(voice,.035),Math.max(24,interval * Number(step.gate)));
+          if (!HOSTED_FLUTE_PERFORMANCE && voice && Number(step?.gate) > 0) setTimeout(() => stopVoice(voice,.035),Math.max(24,interval * Number(step.gate))); // A flute holds until a new pitch rather than a pluck's short gate.
           return voice;
         };
         if (step?.type === 'note') {
-          const voice = gateVoice(await playAuditoryOnlyMidi(step.midi,voiceKey,0.78 * (step.velocity || 1),'touch-left-fretted-pluck',true,pulseTarget));
+          const gestureChannel = canUseCompatibilitySampler() ? nextAutomaticMediaChannel() : null; // A fresh prepared voice leaves the previous pluck ringing.
+          const voice = gateVoice(await playAuditoryOnlyMidi(step.midi,voiceKey,0.78 * (step.velocity || 1),gestureChannel,true,pulseTarget));
           if (voice) refs.transportStatus.innerHTML = `<strong>${automaticPluckLabel()} · ${pattern.label}:</strong> ${patternIndex === 0 ? 'auditory melody return' : 'auditory chord voice'} ${midiName(step.midi)} · automatic continuation only · ${currentHarmonyData().chordName}`;
         } else if (step?.type === 'strum' || step?.type === 'boom') {
-          const voicing = step.type === 'boom' ? melodyTopStrumMidis(fretMidi,'boom') : melodyTopStrumMidis(fretMidi,step.voicing || 'full');
+          const voicing = step.type === 'boom' ? melodyTopStrumMidis(fretMidi,'boom',pulseClock) : melodyTopStrumMidis(fretMidi,step.voicing || 'full',pulseClock);
           const ordered = step.direction === 'up' ? voicing.slice().reverse() : voicing;
           ordered.forEach((midi,stringIndex) => {
-            const stringDelay = stringIndex * Math.max(10,Math.round(STRUM_NOTE_DELAY_MS * .72));
+            const stringDelay = stringIndex * STRUM_NOTE_DELAY_MS; // Matches the fast sweep used for manual chords and previews.
             const stringWhenMs = pulseTarget + stringDelay;
             setTimeout(async () => {
               if (generation !== state.pluckGeneration || state.paused) return;
-              const voice = await playAuditoryOnlyMidi(midi,`${voiceKey}:${stringIndex}`,0.42 * (step.velocity || 1),null,true,stringWhenMs);
+              const gestureChannel = canUseCompatibilitySampler() ? nextAutomaticMediaChannel() : null;
+              const voice = await playAuditoryOnlyMidi(midi,`${voiceKey}:${stringIndex}`,0.42 * (step.velocity || 1),gestureChannel,true,stringWhenMs);
               gateVoice(voice);
             },stringDelay);
           });
@@ -3878,17 +4125,6 @@
       }
     } catch (error) {
       log('Audio-only automatic pulse failed', `${error.name}: ${error.message}`);
-    }
-    const interval = pluckIntervalMs(state.pluckInputMode);
-    if (generation === state.pluckGeneration && interval > 0) {
-      let nextTarget = pulseTarget + interval;
-      while (nextTarget <= nowMs() + 2) {
-        nextTarget += interval;
-        state.pluckStep += 1; // Skips inaudible late pulses instead of letting asynchronous audio drift away from the beat grid.
-      }
-      if (state.autoReleaseTail && nextTarget >= state.autoReleaseTail.stopAt - 2) nextTarget = state.autoReleaseTail.stopAt; // Schedules a silent cleanup at the boundary instead of adding an unwanted downbeat attack.
-      state.pluckNextPulseAt = nextTarget;
-      state.pluckTimer = setTimeout(() => { state.pluckTimer = null; void playFrettedPluckPulse(generation); }, Math.max(0,nextTarget - nowMs() - PULSE_LOOKAHEAD_MS));
     }
   }
 
@@ -3926,9 +4162,27 @@
       state.lastInput = `${automaticPluckLabel(mode)} armed without melody from ${source}`;
       return;
     }
-    primeGestureMediaChannel('touch-left-fretted-pluck');
+    primeAutomaticMediaChannels(); // A latched melody played with media fallback requires pre-authorized, independently ringing voices.
     const scheduled = scheduleFrettedPluckContinuation(generation,fret);
     refs.transportStatus.innerHTML = `<strong>${automaticPluckLabel(mode)}${isLatchedAutoBankLayout() ? ' latched' : ' engaged'}.</strong> The immediate melody attack is followed by ${scheduled?.remainingBeforeBeat ?? 0} remaining subdivision${scheduled?.remainingBeforeBeat === 1 ? '' : 's'} before the next beat.`;
+  }
+
+  function retainFrettedPluckPulse(reason = 'melody change') {
+    // A sounding figure already owns the subdivision clock; a new melody changes its voicing, not its phase.
+    const pendingPulse = state.pluckNextPulseAt > 0 && (state.pluckTimer || state.pluckNextPulseAt >= nowMs() - PULSE_LOOKAHEAD_MS);
+    if (!state.pluckInputMode || !pendingPulse) return false;
+    const resumedTail = Boolean(state.autoReleaseTail); // Converts a pending silent beat-boundary cleanup back into a sounding pulse.
+    state.autoReleaseTail = null;
+    if (resumedTail && state.pluckTimer) {
+      const interval = pluckIntervalMs(state.pluckInputMode); // Detects a stranded silent cleanup timer rather than creating another roll.
+      const nextSubdivisionAt = nextAutomaticSubdivisionAt();
+      if (interval > 0 && state.pluckNextPulseAt - nextSubdivisionAt > 2) {
+        armAutomaticPulseAt(nextSubdivisionAt); // Rejoin the transport at its next subdivision while retaining the existing step index.
+      }
+    }
+    state.pluckLegatoHandoffs += 1;
+    log('Auto-pick legato handoff',`${reason} · step ${state.pluckStep} · ${resumedTail ? 'release tail resumed' : 'roll continues'}`);
+    return true;
   }
 
   function restartActiveFrettedPluck() {
@@ -3960,6 +4214,7 @@
   }
 
   function flashTarget(noteIndex, modeOffset = currentModeOffset()) {
+    if (state.ambientOnly) return;
     const lane = laneIndexFor(noteIndex,modeOffset);
     if (state.visualPreset === 'timing-rings') {
       const fixedTarget = $(`[data-timing-lane="${lane}"]`,refs.timingNoteField);
@@ -4045,7 +4300,7 @@
     if (isDown) {
       if (backupPlayerInputBlocked(sourceId)) return;
       interruptSuccessfulPreviewForPlayer(sourceId);
-      interruptAutoReleaseTail(`bank ${control.toUpperCase()} from ${sourceId}`);
+      if (!usesAutomaticPluckInput()) interruptAutoReleaseTail(`bank ${control.toUpperCase()} from ${sourceId}`); // A bank shift alone does not silence an ongoing roll; the next fret supplies the new pitch.
     }
     if (isDualArpLayout()) return;
     if (isFourGroupAutoLayout()) {
@@ -4102,7 +4357,11 @@
       return;
     }
     if (isDown) {
-      interruptAutoReleaseTail(`new melody ${NOTE_GLYPHS[noteIndex]} from ${sourceId}`);
+      if (state.frettedSources.has(sourceId)) { // Ignore held-key repeats and duplicate pointer-downs without retriggering the melody.
+        log('Duplicate automatic-note press ignored',sourceId);
+        if (button) button.classList.add('held');
+        return;
+      }
       state.triggerGestures.forEach(gesture => { gesture.usedAsHold = true; });
       const modeOffsetSnapshot = currentModeOffset();
       const pressedAt = nowMs();
@@ -4113,8 +4372,9 @@
       state.frettedSources.set(sourceId,fret);
       state.lastInput = `${isFrettedPluckLayout() ? 'fret' : 'auto-pick melody'} ${NOTE_GLYPHS[noteIndex]} ${midiName(noteMidi(noteIndex,modeOffsetSnapshot))} from ${sourceId}`;
       if (state.pluckInputMode) {
+        primeAutomaticMediaChannels(); // The human note press authorizes the entire mobile polyphony pool.
         void playImmediateAutomaticMelody(fret,sourceId); // The real press is heard and scored now; only the continuation is quantized.
-        restartActiveFrettedPluck();
+        if (!retainFrettedPluckPulse(`new melody ${NOTE_GLYPHS[noteIndex]} from ${sourceId}`)) restartActiveFrettedPluck();
       } else if (isLatchedAutoBankLayout()) void triggerNote(noteIndex, sourceId, modeOffsetSnapshot); // Centered stick preserves the ordinary one-shot five-bank behavior.
     } else {
       const releasedFret = state.frettedSources.get(sourceId);
@@ -4130,8 +4390,9 @@
       if (isLatchedAutoBankLayout()) releaseNote(noteIndex, sourceId); // Stops a centered direct note when the sampler is in sustain mode.
       state.noteSources[noteIndex].delete(sourceId);
       state.frettedSources.delete(sourceId);
-      if (currentFretData() && state.pluckInputMode) restartActiveFrettedPluck();
-      else if (!currentFretData()) {
+      if (currentFretData() && state.pluckInputMode && wasActiveFret) {
+        if (!retainFrettedPluckPulse(`return to held melody from ${sourceId}`)) restartActiveFrettedPluck();
+      } else if (!currentFretData()) {
         const tailStarted = wasActiveFret && beginAutoReleaseTail(releasedFret,sourceId);
         if (!tailStarted) {
           clearTimeout(state.pluckTimer);
@@ -4197,7 +4458,7 @@
     state.scaleName = SCALE_NAMES[index];
     refs.scaleSelect.value = state.scaleName;
     state.lastHarmonyStep = -1;
-    state.scheduledHarmonyStep = null;
+    state.scheduledRootPadKey = null; state.lastRootPadKey = null;
     updateHUD();
     updatePitchLabels();
     updateArpeggioUI();
@@ -4451,7 +4712,7 @@
     $('#resetHarmonyClockBtn').addEventListener('click', () => {
       state.harmonyStartTime = nowMs();
       state.lastHarmonyStep = -1;
-      state.scheduledHarmonyStep = null;
+      state.scheduledRootPadKey = null; state.lastRootPadKey = null;
       state.lastMetronomeBeat = -1;
       state.scheduledMetronomeBeat = null;
       updateArpeggioUI();
@@ -4467,6 +4728,7 @@
     const bankKeyMap = new Map([['ArrowUp','lt'],['ArrowRight','rt'],['ArrowLeft','lb'],['ArrowDown','rb']]); // Plain arrows select the five color-group banks around Open.
     const autoPickSectorMap = new Map([['ArrowUp',0],['ArrowRight',1],['ArrowDown',2],['ArrowLeft',3]]); // Shift+Arrow selects one of the four slottable Auto Pick modes.
     window.addEventListener('keydown', event => {
+      if (state.ambientOnly) return;
       const hostedLayout = window.__hobunjiHostedInputLayout; // Prevents hidden iframe keyboard bindings from leaking into Mobile or Controller layout.
       if (hostedLayout && hostedLayout !== 'keyboard') return;
       if (event.repeat || event.target?.matches?.('input,select,textarea')) return;
@@ -4550,6 +4812,11 @@
   }
 
   function pollGamepad() {
+    if (state.ambientOnly) {
+      // Keep the existing loop ready for a later visible session without mutating hidden status labels every frame.
+      requestAnimationFrame(pollGamepad);
+      return;
+    }
     const pads = navigator.getGamepads?.() || [];
     let gamepad = state.gamepadIndex != null ? pads[state.gamepadIndex] : null;
     if (!gamepad) {
@@ -4908,7 +5175,7 @@
 
   function schedulePersistImportedSample(delay = 650) {
     clearTimeout(state.samplePersistTimer);
-    if (!state.sampleImported) return;
+    if (!state.sampleImported || HOSTED_FLUTE_PERFORMANCE) return; // A gameplay flute recording must never replace the Music Lab's saved Kurraya sample.
     state.samplePersistTimer = setTimeout(() => scheduleIdleTask(() => persistCurrentSampleToIndexedDB(), 900), delay);
   }
 
@@ -4956,6 +5223,7 @@
   }
 
   async function restoreLastSampleFromIndexedDB() {
+    if (HOSTED_FLUTE_PERFORMANCE) { state.sampleCacheStatus = 'flute-isolated'; return; } // A cached Kurraya pluck must not override the flute's own fallback or later flute recording.
     state.sampleCacheStatus = 'loading';
     try {
       const record = await readLastCachedSample();
@@ -5372,7 +5640,7 @@
 
   function updateAuxiliarySampleUI() {
     if (refs.metronomeSampleStatus) refs.metronomeSampleStatus.textContent = state.metronomeSampleBuffer || state.pendingMetronomeSampleRecord ? (state.metronomeSampleName || state.pendingMetronomeSampleRecord?.name || 'Cached stomp/click') : 'Synth click fallback';
-    if (refs.rootPadSampleStatus) refs.rootPadSampleStatus.textContent = state.rootPadSampleBuffer || state.pendingRootPadSampleRecord ? (state.rootPadSampleName || state.pendingRootPadSampleRecord?.name || 'Cached root pad') : 'Synth root-pad fallback';
+    if (refs.rootPadSampleStatus) refs.rootPadSampleStatus.textContent = state.rootPadSampleBuffer || state.pendingRootPadSampleRecord ? (state.rootPadSampleName || state.pendingRootPadSampleRecord?.name || 'Cached root pad') : 'Low kurraya fifth chord';
     if (refs.rootPadSampleRoot) refs.rootPadSampleRoot.value = String(state.rootPadSampleRootMidi);
     if (refs.metronomeSampleLevel) refs.metronomeSampleLevel.value = String(Math.round(state.metronomeSampleLevel * 100));
     if (refs.metronomeSampleLevelOut) refs.metronomeSampleLevelOut.textContent = `${Math.round(state.metronomeSampleLevel * 100)}%`;
@@ -5488,7 +5756,7 @@
     $('#clearRootPadSampleBtn')?.addEventListener('click', async () => {
       stopRootPad(0.2); state.rootPadSampleBuffer = null; state.rootPadSampleName = ''; state.rootPadDetectedMidi = null; state.rootPadDetectedFrequency = 0; state.rootPadDetectedConfidence = 0; state.rootPadRootSource = 'default'; state.pendingRootPadSampleRecord = null;
       try { await deleteAuxiliaryCachedSample('rootPad'); } catch {}
-      updateAuxiliarySampleUI(); if (state.rootPadEnabled) syncRootPad(true); saveSettings(); toast('Synth root pad restored');
+      updateAuxiliarySampleUI(); if (state.rootPadEnabled) syncRootPad(true); saveSettings(); toast('Low kurraya chord restored');
     });
     refs.metronomeSampleLevel?.addEventListener('input', event => { state.metronomeSampleLevel = clamp(Number(event.target.value) / 100, 0, 1); updateAuxiliarySampleUI(); saveSettings(); });
     refs.rootPadSampleLevel?.addEventListener('input', event => { state.rootPadSampleLevel = clamp(Number(event.target.value) / 100, 0, 1); updateAuxiliarySampleUI(); if (state.rootPadEnabled && state.rootPadSampleBuffer) syncRootPad(); saveSettings(); });
@@ -5516,7 +5784,7 @@
     invalidatePitchCache('tonic changed');
     schedulePitchCacheBuild();
     state.lastHarmonyStep = -1;
-    state.scheduledHarmonyStep = null;
+    state.scheduledRootPadKey = null; state.lastRootPadKey = null;
     updateHUD();
     updatePitchLabels();
     syncRootPad(true);
@@ -5525,14 +5793,14 @@
   }
 
   function applyPerformanceScale(scaleName, {persist = true} = {}) {
-    const nextScaleName = SCALES[scaleName] ? scaleName : 'Major'; // Used to remap all melody degrees while the fixed IV–V–iii–vi chord voicings remain unchanged.
+    const nextScaleName = SCALES[scaleName] ? scaleName : 'Pentatonic Minor'; // Used to remap all melody degrees while the fixed IV–V–iii–vi chord voicings remain unchanged.
     interruptAutoReleaseTail('note set selected in sampler');
     state.scaleName = nextScaleName;
     if (refs.scaleSelect) refs.scaleSelect.value = nextScaleName;
     invalidatePitchCache('note set changed');
     schedulePitchCacheBuild();
     state.lastHarmonyStep = -1;
-    state.scheduledHarmonyStep = null;
+    state.scheduledRootPadKey = null; state.lastRootPadKey = null;
     updateHUD();
     updatePitchLabels();
     syncRootPad(true);
@@ -5548,13 +5816,13 @@
     refs.tonicSelect.addEventListener('change', () => applyPerformanceTonic(refs.tonicSelect.value));
     refs.scaleSelect.addEventListener('change', () => applyPerformanceScale(refs.scaleSelect.value));
     refs.harmonyProgression.addEventListener('change', () => { state.harmonyPattern = refs.harmonyProgression.value; state.harmonyStartTime = nowMs(); state.lastHarmonyStep = -1;
-      state.scheduledHarmonyStep = null; state.lastMetronomeBeat = -1;
+      state.scheduledRootPadKey = null; state.lastRootPadKey = null; state.lastMetronomeBeat = -1;
       state.scheduledMetronomeBeat = null; updatePitchLabels(); updateHarmonyVisual(true, true); syncRootPad(true); saveSettings(); log('Hidden progression changed', state.harmonyPattern); });
     refs.harmonyBpm.addEventListener('change', () => { state.harmonyBpm = clamp(Number(refs.harmonyBpm.value) || 96, 40, 240); refs.harmonyBpm.value = String(state.harmonyBpm); state.harmonyStartTime = nowMs(); state.lastHarmonyStep = -1;
-      state.scheduledHarmonyStep = null; state.lastMetronomeBeat = -1;
+      state.scheduledRootPadKey = null; state.lastRootPadKey = null; state.lastMetronomeBeat = -1;
       state.scheduledMetronomeBeat = null; updateHarmonyVisual(true, true); saveSettings(); });
     refs.harmonyChordBeats.addEventListener('change', () => { state.harmonyChordBeats = Number(refs.harmonyChordBeats.value) || 8; state.harmonyStartTime = nowMs(); state.lastHarmonyStep = -1;
-      state.scheduledHarmonyStep = null; state.lastMetronomeBeat = -1;
+      state.scheduledRootPadKey = null; state.lastRootPadKey = null; state.lastMetronomeBeat = -1;
       state.scheduledMetronomeBeat = null; updateHarmonyVisual(true, true); saveSettings(); });
     refs.auditoryMetronome.addEventListener('change', async () => {
       state.auditoryMetronome = refs.auditoryMetronome.value === 'on';
@@ -5695,7 +5963,7 @@
       state.tonicMidi = (currentRaw || lowerRegisterRaw)
         ? clamp(Number(state.tonicMidi) || 48, 24, 60)
         : clamp((Number(saved.tonicMidi) || 60) - 12, 24, 60); // V11 already contains the lowered register; only genuinely older settings migrate down once.
-      if (!SCALES[state.scaleName]) state.scaleName = 'Major';
+      if (!SCALES[state.scaleName]) state.scaleName = 'Pentatonic Minor';
       if (!HARMONY_PATTERNS[state.harmonyPattern]) state.harmonyPattern = FIXED_HARMONY_PATTERN_ID;
       state.harmonyBpm = clamp(Number(state.harmonyBpm) || 96, 40, 240);
       if (![2,4,8,16].includes(Number(state.harmonyChordBeats))) state.harmonyChordBeats = 8;
@@ -5750,13 +6018,16 @@
     refs.harmonyBpm.value = String(state.harmonyBpm);
     refs.harmonyChordBeats.value = String(state.harmonyChordBeats);
     refs.auditoryMetronome.value = state.auditoryMetronome ? 'on' : 'off';
-    refs.rootPadEnabled.value = state.rootPadEnabled ? 'on' : 'off';
+    refs.rootPadEnabled.value = HOSTED_FLUTE_PERFORMANCE ? 'off' : (state.rootPadEnabled ? 'on' : 'off');
+    refs.rootPadEnabled.disabled = HOSTED_FLUTE_PERFORMANCE; // No second instrument voice is available for a harmony pad.
+    refs.rootPadEnabled.title = HOSTED_FLUTE_PERFORMANCE ? 'Flute is monophonic: harmony pad disabled.' : '';
     refs.rootPadLevelSlider.value = String(Math.round(state.rootPadLevel * 100));
     refs.rootPadLevelOut.textContent = `${Math.round(state.rootPadLevel * 100)}%`;
     refs.playMode.value = state.playMode;
     refs.voiceSelect.value = state.voice;
     refs.strumSensitivity.value = String(state.strumThreshold);
-    refs.playbackEngine.value = state.playbackEngine;
+    refs.playbackEngine.value = HOSTED_FLUTE_PERFORMANCE ? 'webaudio' : state.playbackEngine;
+    refs.playbackEngine.disabled = HOSTED_FLUTE_PERFORMANCE; // Compatibility media cannot schedule overlapping strum cutoffs accurately.
     refs.pitchCacheMode.value = state.pitchCacheMode;
     $('#attackSlider').value = String(Math.round(state.attack * 1000));
     $('#attackOut').textContent = `${Math.round(state.attack * 1000)} ms`;
@@ -6581,13 +6852,15 @@
     return {noteIndex:rounded - modeOffset,modeOffset};
   }
 
-  function generateSong(type, bpm) {
+  function generateSong(type, bpm, options = {}) {
     const melodyDefinition = getSongDefinition(type);
-    const meter = timeSignatureData(melodyDefinition?.timeSignature || [4,4],melodyDefinition?.beatGrouping);
+    const labMeter = type === 'when-the-kininjis-bloom' ? kurrayaLabMeterData(options.labMeterOverride) : null;
+    const meter = labMeter || timeSignatureData(melodyDefinition?.timeSignature || [4,4],melodyDefinition?.beatGrouping);
+    const melodyDurationScale = labMeter ? meter.measureQuarterBeats / FIXED_HARMONY_CHORD_QUARTER_BEATS : 1; // Fits all sixteen melody bars to the experimental denominator and numerator.
     const quarterBeatMs = 60000 / bpm; // MIDI note positions and saved chord lengths remain quarter-note based.
     const beatMs = quarterBeatMs * meter.quarterUnitsPerBeat; // Metronome, count-in, prompt horizon, and Auto Pick follow the selected denominator beat.
     const countInBeats = type === 'when-the-kininjis-bloom'
-      ? FIXED_HARMONY_SIX_EIGHT_CHORDS * KURRAYA_TIME_SIGNATURE[0]
+      ? FIXED_HARMONY_SIX_EIGHT_CHORDS * meter.numerator
       : meter.numerator; // Kininjis reserves four full 6/8 accompaniment bars before its 16-bar 3/4 melody body; other songs keep the ordinary one-measure count-in.
     const countInMs = beatMs * countInBeats;
     const events = [];
@@ -6620,7 +6893,7 @@
           events.push({time:countInMs + quarterBeatMs * note.beat,noteIndex:input.noteIndex,modeOffset:input.modeOffset,inputType:'button',state:'pending',element:null});
         }
         time = countInMs + quarterBeatMs * Math.max(0,...melody.notes.map(note => note.beat + Math.max(.0625,note.duration || .25)));
-      } else melody.notes.forEach(([degree,duration]) => addDegree(degree,duration));
+      } else melody.notes.forEach(([degree,duration]) => addDegree(degree,duration * melodyDurationScale));
     } else {
       const offsets = currentModeOffsets(); // Keeps the etude within the selected preset's lane count.
       const pattern = Array.from({length:24}, (_, index) => [index % 4, offsets[(index * 3 + Math.floor(index / 4)) % offsets.length]]);
@@ -6650,46 +6923,50 @@
     const fret = {noteIndex:event.noteIndex,modeOffset:event.modeOffset,slowRollDirection:state.game.demoNextSlowArpDirection};
     const pattern = automaticPatternSteps(melodyMidi,fret,mode);
     if (automaticPatternDefinition(mode).arpStyle === 'alternating') state.game.demoNextSlowArpDirection = fret.slowRollDirection === 'forward' ? 'reverse' : 'forward';
-    return {melodyMidi,steps:pattern.steps,label:pattern.label};
+    return {melodyMidi,fret,steps:pattern.steps,label:pattern.label}; // Keep the preview's chosen alternating-roll direction while letting later pulses follow new chords.
   }
 
   function scheduleSuccessfulPreviewContinuation(event,eventIndex) {
     const mode = state.game.demoMode;
     const definition = FRETTED_PLUCK_MODES[mode];
-    if (!definition || event.inputType === 'strum') return;
+    if (!definition || definition.kind === 'direct' || event.inputType === 'strum') return; // Single Note never acquires an automatic tail.
     const beatMs = Math.max(1,state.game.quarterBeatMs || state.game.beatMs); // Keep preview arpeggio note values unchanged under the 6/8 eighth-note metronome.
-    const interval = beatMs / Math.max(1,definition.division);
+    const division = state.game.labAdaptiveAutoPick ? 2 : definition.division; // Lab-only figures run on one eighth-note grid and reshape to each selected meter.
+    const interval = beatMs / Math.max(1,division);
     const performanceAt = Math.max(0,event.time - state.game.countInMs);
-    const beatAnchor = Math.round(performanceAt / beatMs) * beatMs;
-    let gridStep = Math.max(1,Math.floor((performanceAt - beatAnchor + 1.5) / interval) + 1);
-    let nextPerformanceAt = beatAnchor + interval * gridStep;
-    while (nextPerformanceAt <= performanceAt + 2) {
-      gridStep += 1;
-      nextPerformanceAt = beatAnchor + interval * gridStep;
-    }
+    // Use one song-wide pulse phase so the figure does not restart with each new preview melody.
+    let gridStep = Math.max(1,Math.floor((performanceAt + 2) / interval) + 1);
+    let nextPerformanceAt = interval * gridStep;
     const nextEvent = state.game.events.slice(eventIndex + 1).find(candidate => candidate.state === 'pending');
-    const beatBoundaryAt = state.game.countInMs + beatAnchor + beatMs;
-    const stopAt = Math.min(beatBoundaryAt,nextEvent?.time ?? Infinity);
+    const stopAt = Math.min(state.game.endAt,nextEvent?.time ?? Infinity); // A phrase continues to the next melody (or song end), not just the next beat.
     const pattern = demoAutomaticPattern(event,mode);
     const generation = state.demoGeneration;
     while (state.game.countInMs + nextPerformanceAt < stopAt - 2) {
       const targetGameTime = state.game.countInMs + nextPerformanceAt;
-      const patternIndex = gridStep % pattern.steps.length;
-      const step = pattern.steps[patternIndex];
+      const pulseStep = gridStep; // Immutable song-wide subdivision index for this queued callback.
       const timer = setTimeout(() => {
         state.demoTimers.delete(timer);
         if (!state.game.active || !state.game.demoActive || generation !== state.demoGeneration || state.paused) return;
-        const voiceKey = `demo-auto:${generation}:${eventIndex}:${gridStep}:${++state.previewCounter}`;
-        if (step?.type === 'note') void playAuditoryOnlyMidi(step.midi,voiceKey,0.76 * (step.velocity || 1));
+        const scheduledAt = nowMs() + targetGameTime - gameTime(); // Project this note's authored beat onto the audio clock, even if its timer callback was late.
+        const pulseClock = sharedTransportData(scheduledAt); // Match the harmony and meter at the scheduled attack, not whatever chord happens to sound on callback arrival.
+        const voicedPattern = automaticPatternSteps(pattern.melodyMidi,pattern.fret,mode,pulseClock); // Revoice each subdivision from its scheduled harmony without resetting alternating direction.
+        const step = voicedPattern.steps[pulseStep % voicedPattern.steps.length];
+        const voiceKey = `demo-auto:${generation}:${eventIndex}:${pulseStep}:${++state.previewCounter}`;
+        if (step?.type === 'note') void playAuditoryOnlyMidi(step.midi,voiceKey,0.76 * (step.velocity || 1),null,true,scheduledAt);
         else if (step?.type === 'strum' || step?.type === 'boom') {
-          const voicing = step.type === 'boom' ? melodyTopStrumMidis(pattern.melodyMidi,'boom') : melodyTopStrumMidis(pattern.melodyMidi,step.voicing || 'full');
+          const voicing = step.type === 'boom'
+            ? melodyTopStrumMidis(pattern.melodyMidi,'boom',pulseClock)
+            : melodyTopStrumMidis(pattern.melodyMidi,step.voicing || 'full',pulseClock);
           const ordered = step.direction === 'up' ? voicing.slice().reverse() : voicing;
-          ordered.forEach((midi,stringIndex) => setTimeout(() => void playAuditoryOnlyMidi(midi,`${voiceKey}:${stringIndex}`,0.4 * (step.velocity || 1)),stringIndex * 14));
+          ordered.forEach((midi,stringIndex) => setTimeout(() => {
+            if (!state.game.active || !state.game.demoActive || generation !== state.demoGeneration || state.paused) return; // Stopping a demo cancels delayed chord strings too.
+            void playAuditoryOnlyMidi(midi,`${voiceKey}:${stringIndex}`,0.4 * (step.velocity || 1),null,true,scheduledAt + stringIndex * STRUM_NOTE_DELAY_MS);
+          },stringIndex * STRUM_NOTE_DELAY_MS));
         }
       },Math.max(0,targetGameTime - gameTime()));
       state.demoTimers.add(timer);
       gridStep += 1;
-      nextPerformanceAt = beatAnchor + interval * gridStep;
+      nextPerformanceAt = interval * gridStep;
     }
   }
 
@@ -6700,7 +6977,7 @@
     if (event.inputType === 'strum') {
       const midi = arpeggioMidi(event.noteIndex);
       void playAuditoryOnlyMidi(midi,`demo-strum:${state.demoGeneration}:${eventIndex}:${++state.previewCounter}`,0.82,null,false);
-      restartCssAnimation(refs.arpPad,'played');
+      if (!state.ambientOnly) restartCssAnimation(refs.arpPad,'played');
     } else {
       const midi = noteMidi(event.noteIndex,event.modeOffset);
       void playAuditoryOnlyMidi(midi,`demo-melody:${state.demoGeneration}:${eventIndex}:${++state.previewCounter}`,0.86,null,false);
@@ -6739,26 +7016,30 @@
     state.selectedSong = type;
     state.gameplaySelection = type; // V86: a started song is now the active selector mode.
     const melody = getSongDefinition(type);
-    const requestedScaleName = options.scaleOverride && SCALES[options.scaleOverride] ? options.scaleOverride : melody?.scaleName; // Used by the scale-audition tool to override the authored Major melody mapping without changing ordinary song starts.
+    const npcScale = type === 'when-the-kininjis-bloom' && (options.proceduralAmbient || options.backupAccompaniment)
+      ? 'Pentatonic Minor' : null; // Keep the generated lead in the same scale when the player joins it.
+    const requestedScaleName = options.scaleOverride && SCALES[options.scaleOverride] ? options.scaleOverride : npcScale || melody?.scaleName; // Used by the scale-audition tool to override the authored Major melody mapping without changing ordinary song starts.
     if (requestedScaleName && state.scaleName !== requestedScaleName) {
-      applyPerformanceScale(requestedScaleName,{persist:options.persistScale !== false});
+      applyPerformanceScale(requestedScaleName,{persist:!npcScale && options.persistScale !== false});
       if (!options.scaleOverride) toast(`${melody.title} switched the note set to ${requestedScaleName}`, 2400);
     }
     state.bpm = clamp(Number($('#bpmInput').value) || melody?.defaultBpm || melody?.bpm || 104, 45, 300);
     state.hitWindow = Number($('#difficultySelect').value) || 170;
-    const song = generateSong(type, state.bpm);
+    const song = generateSong(type, state.bpm, options);
     clearNoteElements();
-    state.game = {active:true,startTime:nowMs(),pausedAt:0,pauseAccum:0,events:song.events,score:0,combo:0,hits:0,attempts:0,total:song.events.length,travelMs:3000,endAt:song.endAt,songType:type,beatMs:song.beatMs,quarterBeatMs:song.quarterBeatMs,timeSignature:song.timeSignature,beatGrouping:song.beatGrouping,countInBeats:song.countInBeats,countInMs:song.countInMs,totalSongBeats:song.totalSongBeats,demoActive:!!demoMode,demoMode,demoNextSlowArpDirection:'forward',backupAccompaniment:!!options.backupAccompaniment,loopDemo:!!options.loopDemo,proceduralAmbient:!!options.proceduralAmbient};
+    state.game = {active:true,startTime:nowMs(),pausedAt:0,pauseAccum:0,events:song.events,score:0,combo:0,hits:0,attempts:0,total:song.events.length,travelMs:3000,endAt:song.endAt,songType:type,beatMs:song.beatMs,quarterBeatMs:song.quarterBeatMs,timeSignature:song.timeSignature,beatGrouping:song.beatGrouping,countInBeats:song.countInBeats,countInMs:song.countInMs,totalSongBeats:song.totalSongBeats,demoActive:!!demoMode,demoMode,demoNextSlowArpDirection:'forward',labMeterOverride:options.labMeterOverride || null,labAdaptiveAutoPick:options.labAdaptiveAutoPick === true,backupAccompaniment:!!options.backupAccompaniment,loopDemo:!!options.loopDemo,proceduralAmbient:!!options.proceduralAmbient};
     document.body.classList.toggle('backup-accompaniment',!!state.game.backupAccompaniment);
     state.visibilityPauseStarted = 0;
     state.lastHarmonyStep = -1;
-    state.scheduledHarmonyStep = null;
+    state.scheduledRootPadKey = null; state.lastRootPadKey = null;
     state.lastMetronomeBeat = -1;
     state.scheduledMetronomeBeat = null;
     state.paused = false;
     updateHUD();
     closeAllModals();
-    const introStatus = type === 'when-the-kininjis-bloom' ? '4-bar 6/8 accompaniment intro → 16-bar 3/4 melody' : `${song.countInBeats}-beat shared count-in`; // Makes the authored pre-melody harmony offset visible without requiring Mobile Debug.
+    const introStatus = type === 'when-the-kininjis-bloom'
+      ? options.labMeterOverride ? `4-bar ${options.labMeterOverride} intro → 16-bar ${options.labMeterOverride} melody (experimental re-metering)` : '4-bar 6/8 accompaniment intro → 16-bar 3/4 melody'
+      : `${song.countInBeats}-beat shared count-in`; // Makes the authored pre-melody harmony offset visible without requiring Mobile Debug.
     refs.transportStatus.innerHTML = `<strong>${demoMode ? 'Successful preview' : songTitle(type)}</strong> · ${songTitle(type)} · ${state.bpm} quarter-BPM · ${song.timeSignature[0]}/${song.timeSignature[1]} · ${introStatus}${song.beatGrouping.length>1 ? ` · accents ${song.beatGrouping.join('+')}` : ''}${demoMode ? ` · ${automaticPluckLabel(demoMode)} selected` : ''}${melody?.chords ? ' · silent song chords active' : ''}`;
     log(demoMode ? 'Successful preview started' : 'Song started', `${songTitle(type)}, ${state.bpm} quarter-BPM, ${song.timeSignature[0]}/${song.timeSignature[1]}, ±${state.hitWindow} ms${demoMode ? `, ${automaticPluckLabel(demoMode)}` : ''}`);
   }
@@ -6788,7 +7069,7 @@
     state.visibilityPauseStarted = 0;
     state.harmonyStartTime = nowMs();
     state.lastHarmonyStep = -1;
-    state.scheduledHarmonyStep = null;
+    state.scheduledRootPadKey = null; state.lastRootPadKey = null;
     state.lastMetronomeBeat = -1;
     state.scheduledMetronomeBeat = null;
     clearNoteElements();
@@ -6833,7 +7114,7 @@
       } else if (!state.game.active && state.gameplaySelection === 'freeplay') {
         state.harmonyStartTime = nowMs(); // Starting Free Play from pause begins a fresh shared beat/harmony clock.
         state.lastHarmonyStep = -1;
-        state.scheduledHarmonyStep = null;
+        state.scheduledRootPadKey = null; state.lastRootPadKey = null;
         state.lastMetronomeBeat = -1;
         state.scheduledMetronomeBeat = null;
         updateFreePlayStatus('Free Play.');
@@ -6992,7 +7273,7 @@
       event.targetElement.classList.add('hit');
       setTimeout(() => event.targetElement?.classList.remove('hit'),280);
     }
-    setTimeout(() => event.element?.remove(), 440);
+    if (event.element) setTimeout(() => event.element?.remove(), 440);
     state.game.hits++;
     state.game.combo++;
     let points = 500;
@@ -7007,6 +7288,7 @@
   }
 
   function feedback(text, color) {
+    if (state.ambientOnly) return;
     refs.feedback.textContent = text;
     refs.feedback.style.color = color;
     refs.feedback.classList.remove('show');
@@ -7022,6 +7304,7 @@
     }
     scheduleTransportAudioAhead(); // Queues predictable beat/chord audio before the render frame reaches the boundary, matching automatic-note look-ahead.
     const harmonyStep = currentHarmonyStep();
+    const padKey = rootPadAudioKey(); // Checks both measure and chord without forcing a new root sample on every render.
     const beatData = currentHarmonyBeatData();
     const chordChanged = harmonyStep !== state.lastHarmonyStep;
     const beatChanged = beatData.absoluteBeat !== state.lastMetronomeBeat;
@@ -7029,23 +7312,25 @@
       if (!state.game.active) landFreePlayCapoCue(harmonyStep); // Contact flash occurs on the exact frame the hidden progression advances.
       state.lastHarmonyStep = harmonyStep;
       updateArpeggioUI();
-      if (usesAutomaticPluckInput() && state.pluckInputMode && currentFretData()) restartActiveFrettedPluck();
-      if (state.scheduledHarmonyStep !== harmonyStep) syncRootPad(); // Fallback only: the normal path was already scheduled on the AudioContext clock.
+      // The next scheduled pulse already rebuilds its voicing from the arriving harmony; keep its phase intact.
     }
-    else if (state.rootPadEnabled && state.audioContext?.state === 'running' && !state.rootPadVoices.some(voice => !voice.stopping && voice.active !== false)) {
-      syncRootPad(true); // Self-heals a pad voice that ended or failed without waiting for the next chord boundary.
+    if (padKey !== state.lastRootPadKey) {
+      state.lastRootPadKey = padKey;
+      if (state.rootPadEnabled && state.scheduledRootPadKey !== padKey) syncRootPad(!state.rootPadSampleBuffer); // Startup/stall fallback when the look-ahead did not schedule the new bar.
+    } else if (state.rootPadEnabled && (state.rootPadSampleBuffer || state.rootPadRootMidi == null) && state.audioContext?.state === 'running' && !state.rootPadVoices.some(voice => !voice.stopping && voice.active !== false)) {
+      syncRootPad(true); // Restores a failed/ended imported pad or an uninitialized pluck without endlessly retriggering ordinary short plucks mid-bar.
     }
     if (beatChanged) {
       state.lastMetronomeBeat = beatData.absoluteBeat;
       if (state.scheduledMetronomeBeat !== beatData.absoluteBeat) playMetronomeClick(beatData); // Fallback for startup or a stall longer than the look-ahead horizon.
     }
     if (chordChanged || beatChanged) updateHarmonyVisual(chordChanged, beatChanged);
-    updateFreePlayCapoCue(); // Free-play chord guidance runs continuously even though there are no song-note events to spawn.
+    if (!state.ambientOnly) updateFreePlayCapoCue(); // Free-play chord guidance is only visible in the player's instrument UI.
     if (state.game.active && !state.paused) {
       const time = gameTime();
-      const stageHeight = refs.stage.clientHeight;
+      const stageHeight = state.ambientOnly ? 0 : refs.stage.clientHeight; // Audio-only NPC frames never force layout of the hidden rhythm stage.
       const hitY = state.visualPreset === 'lyre-view' ? stageHeight * 0.82 : stageHeight * 0.86;
-      if (state.visualPreset === 'timing-rings') $$('.timing-note.ready',refs.timingNoteField).forEach(target => target.classList.remove('ready'));
+      if (!state.ambientOnly && state.visualPreset === 'timing-rings') $$('.timing-note.ready',refs.timingNoteField).forEach(target => target.classList.remove('ready'));
       for (let eventIndex = 0; eventIndex < state.game.events.length; eventIndex++) {
         const event = state.game.events[eventIndex];
         const until = event.time - time;
@@ -7055,6 +7340,11 @@
         // trigger to the same hitWindow used for miss detection below lets a badly-late note fall
         // through to the ordinary miss path instead of sounding out of time.
         if (state.game.demoActive && event.state === 'pending' && !event.demoTriggered && time >= event.time - 8 && time - event.time <= state.hitWindow) performSuccessfulPreviewEvent(event,eventIndex);
+        if (state.ambientOnly) {
+          // Keep the same late-note cutoff and looping transport without creating, moving, or measuring invisible prompts.
+          if (event.state === 'pending' && time - event.time > state.hitWindow) { event.state = 'miss'; state.game.combo = 0; }
+          continue;
+        }
         const timingRingHorizonMs = Math.max(1,state.game.beatMs || (60000 / clamp(state.bpm,45,220))) * state.timingPromptBeats; // User-selected beat horizon for Timing Rings prompts.
         const cueLeadMs = state.visualPreset === 'timing-rings' && event.inputType !== 'strum' ? timingRingHorizonMs : state.game.travelMs + 250;
         if (event.state === 'pending' && until <= cueLeadMs && !event.element) createNoteElement(event);
@@ -7107,8 +7397,8 @@
         // host keeps it selected.
         if (state.game.loopDemo) {
           const proceduralAmbient = !!state.game.proceduralAmbient; // Ambient Foroji performances request a fresh composition each cycle; ordinary successful-preview loops can still repeat deterministically.
-          if (proceduralAmbient && state.selectedSong === 'when-the-kininjis-bloom') randomizeKurrayaSongMelody();
-          startSong(state.selectedSong, {demoMode:state.game.demoMode, loopDemo:true, proceduralAmbient});
+          if (proceduralAmbient && state.selectedSong === 'when-the-kininjis-bloom') randomizeKurrayaSongMelody('Pentatonic Minor');
+          startSong(state.selectedSong, {demoMode:state.ambientOnly ? randomNpcAutoPickPattern() : state.game.demoMode, loopDemo:true, proceduralAmbient});
           updateDebugState();
           requestAnimationFrame(updateGameFrame);
           return;
@@ -7142,6 +7432,7 @@
   }
 
   function updateHUD() {
+    if (state.ambientOnly) return;
     refs.scaleHud.textContent = `${state.scaleName} · ${midiName(state.tonicMidi)}`;
     refs.scoreHud.textContent = state.game.score.toLocaleString();
     refs.comboHud.textContent = state.game.combo;
@@ -7193,7 +7484,7 @@
   }
 
   function updateDebugState() {
-    if (!refs.debugState) return;
+    if (state.ambientOnly || !refs.debugState) return; // The ambient bridge exposes state on demand; there is no visible debug panel to refresh.
     updateOutputMeter();
     const gamepad = state.gamepadIndex != null ? navigator.getGamepads?.()[state.gamepadIndex] : null;
     const marker = state.markers;
@@ -7202,10 +7493,12 @@
       `Buffer: ${state.buffer ? `${state.buffer.duration.toFixed(3)}s / ${state.buffer.numberOfChannels}ch / ${state.buffer.sampleRate}Hz` : 'none'} | imported output ${state.playbackEngine} | cache ${state.sampleCacheStatus}`,
       `Pitch cache: ${state.pitchCacheStatus} | ${state.pitchCacheReadyCount}/${state.pitchCacheTargetCount} prepared | mode ${state.pitchCacheMode}`,
       `Sample: ${state.sampleName} | ${state.sampleImported ? 'imported' : 'fallback'} | root ${midiName(state.sampleRootMidi)} | mode ${state.playMode}`,
+      `Flute: ${HOSTED_FLUTE_PERFORMANCE ? (state.fluteVoice && !state.fluteVoice.released ? midiName(state.fluteVoice.midi) + ' sounding' : 'silent') + ' | one voice / ' + FLUTE_NOTE_DURATION_S + 's breath' : 'not equipped'} | fast strum ${STRUM_NOTE_DELAY_MS} ms/string`, // Existing on-screen Mobile Debug reports the actual single flute voice without devtools.
       `Import: ${state.sourceChannels} source ch → ${state.monoStrategy} | corr ${state.stereoCorrelation.toFixed(2)} | gain ×${state.sampleNormalizationGain.toFixed(2)} | peak ${state.samplePeakDb.toFixed(1)} dBFS`,
       `Markers: ${marker.trimStart.toFixed(3)} > ${marker.loopIn.toFixed(3)} ⇄ ${marker.loopOut.toFixed(3)} > ${marker.trimEnd.toFixed(3)}`,
       `Note set: ${state.scaleName} ${midiName(state.tonicMidi)} | locked layout ${state.layoutPreset} | visual ${state.visualPreset}${state.visualPreset === 'timing-rings' ? ` (${state.timingPromptBeats} beats ahead)` : ''} | melody bank ${modeLabelFromOffset(currentModeOffset())} (notes ${currentModeOffset() + 1}–${currentModeOffset() + 4})${usesAutomaticPluckInput() && currentFretData() ? ` | held melody ${midiName(noteMidi(currentFretData().noteIndex,currentFretData().modeOffset))}` : ''}${state.autoReleaseTail ? ` | beat fill until boundary ${midiName(noteMidi(state.autoReleaseTail.fret.noteIndex,state.autoReleaseTail.fret.modeOffset))}` : ''}`,
-      `Harmony: ${currentHarmonyData().source === 'song' ? `${songTitle(state.game.songType)} silent chords` : state.harmonyPattern} | step ${currentHarmonyStep() + 1}${activeSongChordTimeline() ? `/${activeSongChordTimeline().length}` : `/${(HARMONY_PATTERNS[state.harmonyPattern] || []).length}`} degree ${currentHarmonyData().degreeNumber} (${currentHarmonyData().romanNumeral}) · ${currentHarmonyData().chordName} | ${currentHarmonyBeatData().inCountIn ? 'intro ' : 'beat '}${currentHarmonyBeatData().beatInChord + 1}/${currentHarmonyBeatData().beatsPerChord} | shared ${activeClockBpm()} quarter-BPM ${sharedTransportData().meter.label} clock${sharedTransportData().meter.grouping.length>1 ? ` (${sharedTransportData().meter.grouping.join('+')})` : ''} | click ${state.auditoryMetronome ? (state.metronomeSampleBuffer ? 'sample' : 'synth') : 'off'} | root pad ${state.rootPadEnabled ? `${midiName(rootPadTargetMidi())} ${state.rootPadSampleBuffer ? 'sample' : 'synth'} @ ${Math.round((state.rootPadSampleBuffer ? state.rootPadSampleLevel : state.rootPadLevel) * 100)}%` : 'off'}`,
+      `Harmony: ${currentHarmonyData().source === 'song' ? `${songTitle(state.game.songType)} silent chords` : state.harmonyPattern} | step ${currentHarmonyStep() + 1}${activeSongChordTimeline() ? `/${activeSongChordTimeline().length}` : `/${(HARMONY_PATTERNS[state.harmonyPattern] || []).length}`} degree ${currentHarmonyData().degreeNumber} (${currentHarmonyData().romanNumeral}) · ${currentHarmonyData().chordName} | ${currentHarmonyBeatData().inCountIn ? 'intro ' : 'beat '}${currentHarmonyBeatData().beatInChord + 1}/${currentHarmonyBeatData().beatsPerChord} | shared ${activeClockBpm()} quarter-BPM ${sharedTransportData().meter.label} clock${sharedTransportData().meter.grouping.length>1 ? ` (${sharedTransportData().meter.grouping.join('+')})` : ''} | click ${state.auditoryMetronome ? (state.metronomeSampleBuffer ? 'sample' : 'synth') : 'off'} | root pad ${state.rootPadEnabled && !HOSTED_FLUTE_PERFORMANCE ? `${midiName(rootPadTargetMidi())} ${state.rootPadSampleBuffer ? 'sample' : 'kurraya'} @ ${Math.round((state.rootPadSampleBuffer ? state.rootPadSampleLevel : state.rootPadLevel) * 100)}%` : 'off'}`,
+      `Auto-pick phase: ${state.pluckNextPulseAt ? `${Math.round(state.pluckNextPulseAt - nowMs())} ms to next pulse` : 'idle'} | legato handoffs ${state.pluckLegatoHandoffs} | release tail ${state.autoReleaseTail ? 'active' : 'none'}`,
       `Arpeggio: ${isDualArpLayout() ? `L ${DUAL_ARP_LABELS.left[state.arpeggioIndex]} ${midiName(dualArpeggioMidi('left',state.arpeggioIndex))} | R ${DUAL_ARP_LABELS.right[state.rightArpeggioIndex]} ${midiName(dualArpeggioMidi('right',state.rightArpeggioIndex))}` : usesAutomaticPluckInput() ? `${automaticPluckLabel()} | step ${state.pluckStep}${currentFretData() ? ` | ${automaticPatternSteps(noteMidi(currentFretData().noteIndex,currentFretData().modeOffset),currentFretData(),state.pluckInputMode).label} | ${automaticPatternDefinition().kind}` : ''}` : `slot ${state.arpeggioIndex + 1} → ${midiName(arpeggioMidi())} | fixed register −1 oct`} | LS ${state.leftStick.map(value => value.toFixed(2)).join(', ')} | RS ${state.rightStick.map(value => value.toFixed(2)).join(', ')} | gesture channels ${state.gestureMediaChannels.size}`,
       `Four-way LS: selected ${['UP','RIGHT','DOWN','LEFT'][state.leftStickSector] || 'UP'} ${automaticPatternDefinition().short} | slots ${normalizeAutoPickSlots().map((id,index) => `${['U','R','D','L'][index]}:${automaticPatternDefinition(id).short}`).join(' · ')}`,
       `Held notes/automatic melodies: ${state.noteSources.map((set,index) => set.size ? index+1 : null).filter(Boolean).join(', ') || 'none'} | auto-pick sources ${state.frettedSources.size} | mode sources ${state.modeSources.size} | ordered shifts ${state.fourGroupShiftSources.size} | trigger gestures ${state.triggerGestures.size} | active voice groups ${state.voices.size} / voices ${activeVoiceCount()}`,
@@ -7306,23 +7599,23 @@
       metronome:state.metronomeMixLevel,
       pad:state.padMixLevel,
       audioContextState:state.audioContext?.state || 'uninitialized', // Exposed to the Music Lab diagnostics so mobile audio-wake failures are visible without devtools.
-      padSynthGain:rootPadSynthGain(), // Exposed to verify that a nonzero authored synth-pad gain reaches the preview/runtime path.
-      padSynthFrequency:midiFrequency(rootPadTargetMidi()), // Exposed to show the exact low-root frequency being synthesized for the current progression step.
-      padSynthTimbre:'mostly-sine', // Visible Music Lab confirmation that the subtle harmonic custom wave, not the old triangle, is active.
-      padSynthFilterHz:PAD_SYNTH_FILTER_HZ,
-      padSynthAttackMs:Math.round(PAD_SYNTH_ATTACK_S * 1000),
+      padSynthGain:rootPadSynthGain(), // Exposed to verify that a nonzero low-chord gain reaches the preview/runtime path.
+      padSynthFrequency:midiFrequency(rootPadTargetMidi()), // Exposed to show the exact low-root sampled root frequency for the current progression step.
+      padSynthTimbre:'low kurraya pluck', // Visible Music Lab confirmation of the active accompaniment source.
+      padSynthFilterHz:state.voice === 'Dark' ? 1800 : null,
+      padSynthAttackMs:Math.round(state.attack * 1000),
       padSynthCrossfadeMs:Math.round(PAD_SYNTH_CROSSFADE_S * 1000),
       kurrayaSampleName:state.sampleName || 'Fallback pluck',
       kurrayaSampleImported:!!state.sampleImported,
-      padSampleName:state.rootPadSampleBuffer || state.pendingRootPadSampleRecord ? (state.rootPadSampleName || state.pendingRootPadSampleRecord?.name || 'Imported pad') : 'Synth root pad',
+      padSampleName:state.rootPadSampleBuffer || state.pendingRootPadSampleRecord ? (state.rootPadSampleName || state.pendingRootPadSampleRecord?.name || 'Imported pad') : 'Low kurraya fifth chord',
       padSampleImported:!!(state.rootPadSampleBuffer || state.pendingRootPadSampleRecord),
       padSampleRootMidi:state.rootPadSampleRootMidi,
       padDetectedMidi:state.rootPadDetectedMidi,
       padDetectedFrequency:state.rootPadDetectedFrequency,
       padDetectedConfidence:state.rootPadDetectedConfidence,
       padRootSource:state.rootPadRootSource,
-      padChordMidis:[rootPadTargetMidi()],
-      padChordNames:[midiName(rootPadTargetMidi())],
+      padChordMidis:state.rootPadSampleBuffer ? [rootPadTargetMidi()] : lowKurrayaChordMidis(),
+      padChordNames:(state.rootPadSampleBuffer ? [rootPadTargetMidi()] : lowKurrayaChordMidis()).map(midiName),
       padProgressionRootMidis:padProgressionRootMidis(),
       padProgressionRootNames:padProgressionRootMidis().map(midiName),
       metronomeSource:state.labMetronomeBuffers.length ? 'game-footsteps' : state.ambientMetronomeBuffer ? 'ambient-footstep' : state.metronomeSampleBuffer ? 'imported-sample' : 'synth-click',
@@ -7412,6 +7705,11 @@
       saveSettings();
       return musicLabMixState();
     },
+    async useGameplayFootstepMetronome(urls) {
+      await loadLabMetronomeFootsteps(urls);
+      state.auditoryMetronome = true;
+      return musicLabMixState();
+    },
     async useLabFootstepMetronome(urls) {
       return loadLabMetronomeFootsteps(urls);
     },
@@ -7471,7 +7769,7 @@
       state.kurrayaSongIntroSteps = normalizeKurrayaArrangementSteps(arrangement.introSteps,FIXED_HARMONY_SIX_EIGHT_CHORDS,KURRAYA_DEFAULT_INTRO_STEPS); // Applies Music Lab paint edits without mutating the songbook definition or saved gameplay settings.
       state.kurrayaSongBodySteps = normalizeKurrayaArrangementSteps(arrangement.bodySteps,FIXED_HARMONY_THREE_FOUR_CHORDS,KURRAYA_DEFAULT_BODY_STEPS); // Adjacent equal bars are grouped into sustained long sections by fixedKurrayaHarmonyCadence().
       state.lastHarmonyStep = -1;
-      state.scheduledHarmonyStep = null;
+      state.scheduledRootPadKey = null; state.lastRootPadKey = null;
       updateHarmonyVisual(true,true);
       if (state.rootPadEnabled) syncRootPad(true);
       return this.scaleAuditionState();
@@ -7495,17 +7793,40 @@
       state.kurrayaSongIntroSteps = KURRAYA_DEFAULT_INTRO_STEPS.slice();
       state.kurrayaSongBodySteps = KURRAYA_DEFAULT_BODY_STEPS.slice();
       state.lastHarmonyStep = -1;
-      state.scheduledHarmonyStep = null;
+      state.scheduledRootPadKey = null; state.lastRootPadKey = null;
       updateHarmonyVisual(true,true);
       if (state.rootPadEnabled) syncRootPad(true);
       return this.scaleAuditionState();
     },
+    autoPickAuditionState() {
+      return {
+        selectedMode:state.songAuditionPattern,
+        selectedMeter:state.songAuditionMeter,
+        patterns:KURRAYA_LAB_PATTERN_CHOICES.map(choice => ({
+          ...choice,kind:AUTO_PICK_PATTERN_LIBRARY[choice.id].kind,division:choice.id === 'direct' ? 1 : 2
+        })), // A curated set of broad, meter-adaptive shapes built from existing gameplay instruments; no genre labels.
+        meters:KURRAYA_LAB_METERS.map(entry=>({...entry}))
+      };
+    },
+    setAutoPickAuditionPattern(mode) {
+      if (!KURRAYA_LAB_PATTERN_CHOICES.some(choice => choice.id === mode)) throw new RangeError('Unknown Music Lab figure.');
+      if (state.game.active) stopSong('Audition picking pattern changed.');
+      state.songAuditionPattern = mode;
+      return this.autoPickAuditionState();
+    },
+    setSongAuditionMeter(mode) {
+      if (!KURRAYA_LAB_METERS.some(entry => entry.id === mode)) throw new RangeError('Unknown audition time signature.');
+      if (state.game.active) stopSong('Audition time signature changed.');
+      state.songAuditionMeter = mode;
+      return this.autoPickAuditionState();
+    },
     async startSongAudition(scaleName = state.scaleName, tonicMidi = state.tonicMidi) {
       await ensureAudio();
       applyPerformanceTonic(tonicMidi,{persist:false});
-      const auditionScaleName = applyPerformanceScale(scaleName,{persist:false}); // Used as an explicit startSong override so authored playback cannot silently snap the tool back to Major.
+      const auditionScaleName = applyPerformanceScale(scaleName,{persist:false}); // An audition never persists a different scale to gameplay.
       state.selectedSong = 'when-the-kininjis-bloom';
-      startSong(state.selectedSong,{demoMode:'direct',scaleOverride:auditionScaleName,persistScale:false});
+      const labMeterOverride = state.songAuditionMeter === 'original' ? null : state.songAuditionMeter;
+      startSong(state.selectedSong,{demoMode:state.songAuditionPattern,labMeterOverride,labAdaptiveAutoPick:true,scaleOverride:auditionScaleName,persistScale:false});
       return this.scaleAuditionState();
     },
     stopSongAudition() {
@@ -7556,7 +7877,7 @@
     resetHarmony() {
       state.harmonyStartTime = nowMs();
       state.lastHarmonyStep = -1;
-      state.scheduledHarmonyStep = null;
+      state.scheduledRootPadKey = null; state.lastRootPadKey = null;
       state.lastMetronomeBeat = -1;
       state.scheduledMetronomeBeat = null;
       updateArpeggioUI();
@@ -7568,6 +7889,14 @@
     leftStick(x, y, sourceId = 'host-left-stick') {
       void ensureAudio().catch(() => {});
       setArpeggioFromStick(clamp(Number(x) || 0, -1, 1), clamp(Number(y) || 0, -1, 1), String(sourceId));
+      return true;
+    },
+    setAutoPickSlot(sector, mode) {
+      if (!Number.isInteger(sector) || sector < 0 || sector > 3 || !AUTO_PICK_PATTERN_LIBRARY[mode]) return false;
+      normalizeAutoPickSlots();
+      state.autoPickSlots[sector] = mode;
+      setLeftStickSector(sector, 'host-pattern-selector');
+      saveSettings();
       return true;
     },
     setAutoPickMode(sector, sourceId = 'host-auto-pick-cross') {
@@ -7639,7 +7968,7 @@
       if (refs.harmonyProgression) refs.harmonyProgression.value = requested;
       state.harmonyStartTime = nowMs();
       state.lastHarmonyStep = -1;
-      state.scheduledHarmonyStep = null;
+      state.scheduledRootPadKey = null; state.lastRootPadKey = null;
       state.lastMetronomeBeat = -1;
       state.scheduledMetronomeBeat = null;
       updatePitchLabels();
@@ -7688,10 +8017,12 @@
     // songId lets a host join the player into whatever a nearby NPC is
     // already leading rather than always falling back to state.selectedSong.
     async startBackupPreviewSong(songId) {
+      state.ambientOnly = false;
       await ensureAudio();
       if (songId && getSongDefinition(songId)) state.selectedSong = songId;
       state.backupPlayerEquipped = state.backupPlayerEquipped !== false;
-      const mode = AUTO_PICK_PATTERN_LIBRARY[state.pluckInputMode] ? state.pluckInputMode : 'direct';
+      const mode = randomNpcAutoPickPattern(); // Backup preview is still the leading NPC's accompaniment; player note inputs retain their own chosen pattern.
+      state.rootPadEnabled = true; // Keep the NPC's bar-root accompaniment active when its hidden frame is replaced by this visible one.
       startSong(state.selectedSong,{demoMode:mode,backupAccompaniment:true});
       document.body.classList.add('backup-accompaniment');
       const menu = this.gameplayMenuState();
@@ -7709,7 +8040,12 @@
     // startSong/the endAt handler below — for as long as an NPC is parked
     // at their station. Host tears the whole iframe down to actually stop
     // it (see js/music-minigame.js), same as every other close path.
+    ambientPerformanceState() {
+      return {npcOnly:!!state.ambientOnly,playing:!!state.game.active,generated:!!state.game.proceduralAmbient,pattern:state.game.demoMode,inputCount:state.inputCount,rootPadEnabled:!!state.rootPadEnabled,rootPadKey:rootPadAudioKey(),rootPadPitch:state.rootPadRootMidi,rootPadVoices:state.rootPadVoices.filter(voice => !voice.stopping && voice.active !== false).length};
+    },
     async startAmbientLead(songId, footstepSampleUrl) {
+      state.ambientOnly = true; // Set before audio loading so held overworld controls cannot hijack an initializing NPC performance.
+      releaseAllInputs();
       await ensureAudio();
       if (songId && getSongDefinition(songId)) state.selectedSong = songId;
       state.ambientMetronomeBuffer = null;
@@ -7720,8 +8056,9 @@
           state.ambientMetronomeBuffer = await state.audioContext.decodeAudioData(arrayBuffer);
         } catch (error) { log('Ambient footstep metronome sample failed to load', error?.message || error); }
       }
-      const mode = AUTO_PICK_PATTERN_LIBRARY[state.pluckInputMode] ? state.pluckInputMode : 'direct';
-      if (state.selectedSong === 'when-the-kininjis-bloom') randomizeKurrayaSongMelody(); // Foroji begins with a new composition instead of the authored practice melody.
+      const mode = randomNpcAutoPickPattern(); // NPCs never inherit a player's Single Note/tremolo preference.
+      state.rootPadEnabled = true; // An ambient musician always plays the automatic bar-root accompaniment; does not persist over player settings.
+      if (state.selectedSong === 'when-the-kininjis-bloom') randomizeKurrayaSongMelody('Pentatonic Minor'); // Foroji begins with a new composition instead of the authored practice melody.
       startSong(state.selectedSong,{demoMode:mode,loopDemo:true,proceduralAmbient:state.selectedSong === 'when-the-kininjis-bloom'});
       return { started:!!state.game.active, title:songTitle(state.selectedSong), proceduralAmbient:!!state.game.proceduralAmbient };
     },
@@ -7783,7 +8120,7 @@
         paused: !!state.paused,
         transportAudioLookaheadMs: TRANSPORT_AUDIO_LOOKAHEAD_MS,
         scheduledMetronomeBeat: state.scheduledMetronomeBeat,
-        scheduledHarmonyStep: state.scheduledHarmonyStep,
+        scheduledRootPadKey: state.scheduledRootPadKey,
         transportAbsoluteBeat: sharedTransportData().transportAbsoluteBeat,
         transportHarmonyStep: currentHarmonyStep(),
       };

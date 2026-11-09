@@ -31,4 +31,26 @@ const laterActive = owner.request(player, { kind: 'active', priority: owner.prio
 assert.deepEqual(fades[2], ['active', owner.defaultFadeOutS], 'same-priority active vocals replace one another cleanly');
 owner.release(laterActive);
 assert.equal(owner.current(player), null, 'released voice must free the character slot');
+// Only release-grunt claims can coexist; their windup and actor teardown still respect priority.
+const releaseStops = [];
+const releaseA = owner.request(player, { kind: 'active', priority: owner.priorities.active, overlapGroup: 'release-grunt' });
+owner.bindStop(releaseA, () => releaseStops.push('a'));
+const releaseB = owner.request(player, { kind: 'active', priority: owner.priorities.active, overlapGroup: 'release-grunt' });
+owner.bindStop(releaseB, () => releaseStops.push('b'));
+assert.deepEqual(releaseStops, [], 'a new release must not interrupt a previous release');
+assert.equal(owner.debugSnapshot().filter(claim => claim.overlapGroup === 'release-grunt').length, 2);
+assert.equal(owner.request(player, { kind: 'pain', priority: owner.priorities.pain }), null, 'pain is suppressed while any release plays');
+const windup = owner.request(player, { kind: 'active', priority: owner.priorities.active, preserveGroup: 'release-grunt' });
+owner.bindStop(windup, () => releaseStops.push('windup'));
+assert.deepEqual(releaseStops, [], 'next attack windup must leave prior releases playing');
+const releaseC = owner.request(player, { kind: 'active', priority: owner.priorities.active, overlapGroup: 'release-grunt' });
+owner.bindStop(releaseC, () => releaseStops.push('c'));
+assert.deepEqual(releaseStops, ['windup'], 'release preempts the intermediate charge, not previous release grunts');
+owner.release(releaseA);
+assert.equal(owner.debugSnapshot().filter(claim => claim.overlapGroup === 'release-grunt').length, 2, 'finishing the oldest grunt leaves newer releases owned');
+assert.equal(owner.current(player).id, releaseC.id);
+assert.equal(owner.stop(player), true);
+assert.deepEqual(releaseStops, ['windup', 'b', 'c'], 'stopping a character stops all overlapping release grunts');
+assert.equal(owner.current(player), null);
+assert.equal(owner.debugSnapshot().filter(claim => claim.overlapGroup === 'release-grunt').length, 0);
 console.log('character voice owner: ok');

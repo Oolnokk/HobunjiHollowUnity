@@ -95,6 +95,7 @@ assert.strictEqual(tunnel.children[0].position.z, 7.5);
 assert(Math.abs(tunnel.children[0].rotation.y + Math.PI / 2) < 1e-9);
 assert.strictEqual(windowStub.EntryTunnelDoorFurniture.debugInfo(tunnel).attached, true);
 assert.strictEqual(windowStub.EntryTunnelDoorFurniture.debugInfo(tunnel).count, 1);
+assert.strictEqual(windowStub.EntryTunnelDoorFurniture.debugInfo(tunnel).waitingForWoodMaterial, 1, 'pre-style door is queued without disrupting placement');
 
 const mineExpectedDoors = tunnelTileCount(mineEntrancePiece); // Used to prove every baked mine-entrance tunnel tile receives a real authored door.
 assert(mineExpectedDoors > 0, 'The real mine entrance fixture must contain authored entry-tunnel tiles for this regression test');
@@ -114,6 +115,17 @@ assert.strictEqual(pieceCalls.length, 2);
 assert.strictEqual(houseDebug.expectedCount, houseExpectedDoors);
 assert.strictEqual(houseDebug.count, houseExpectedDoors, 'Every authored town-house entry-tunnel tile should receive door furniture');
 
+const styledDoors = []; // Tracks early generated and authored doors converted after the shared finish loads.
+windowStub.HobunjiPorchSurfaceMaterial = { applyToDoorGroup(door) {
+  door.userData.entranceWoodMaterial = 'assets/textures/carved_smooth.png';
+  styledDoors.push(door);
+} }; // Browser module late-load stub; replaces only visible materials, not placement.
+const beforeRestyle = 1 + mineExpectedDoors + houseExpectedDoors; // All doors created before the shared finish became ready.
+assert.strictEqual(windowStub.EntryTunnelDoorFurniture.restylePendingDoors(), beforeRestyle);
+assert.strictEqual(styledDoors.length, beforeRestyle, 'every waiting door, including authored building doors, receives one finish');
+assert.strictEqual(windowStub.EntryTunnelDoorFurniture.restylePendingDoors(), 0, 'the queue drains after material is assigned');
+assert.strictEqual(windowStub.EntryTunnelDoorFurniture.debugInfo(tunnel).sharedWoodMaterial, 'assets/textures/carved_smooth.png');
+assert.strictEqual(windowStub.EntryTunnelDoorFurniture.debugInfo(tunnel).waitingForWoodMaterial, 0);
 const secondInstall = windowStub.EntryTunnelDoorFurniture.install(); // Used to prove re-installation does not double-wrap either generator path.
 assert.strictEqual(secondInstall, true);
 const tunnel2 = windowStub.HousePieceGen.buildEntryTunnelGroup({}, 1, 2, 'north', {}); // Used to verify another cardinal orientation after idempotent install.
@@ -123,5 +135,6 @@ assert(Math.abs(tunnel2.children[0].rotation.y + Math.PI) < 1e-9);
 const mineGroup2 = windowStub.HousePieceGen.buildGroupFromPiece({}, mineEntrancePiece, 15, -1, { rotationDeg: 180 });
 assert.strictEqual(pieceCalls.length, 3, 'A second install must not nest another authored-piece wrapper');
 assert.strictEqual(windowStub.EntryTunnelDoorFurniture.debugInfo(mineGroup2).count, mineExpectedDoors);
+assert.strictEqual(styledDoors.length, beforeRestyle + 1 + mineExpectedDoors, 'doors attached after style initialization receive the shared finish immediately');
 
 console.log('entry-tunnel door furniture integration: ok');

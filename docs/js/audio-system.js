@@ -12,6 +12,7 @@
   const activeSfx = new Set(); // Intro audio cleanup stops one-shots and pooled voices already in flight.
   let introductionMix = null; // Single owner restores audio settings after success/cancellation.
   const objectSfxPreloads = new Map(); // Retains eagerly loaded tool cues for low-latency clones in playObjectSfx.
+  let metronomeSfxVoice = null; // Only the melody metronome owns this transient voice; ordinary mining pick SFX remain untouched.
   const combatSfxPreloads = new Map(); // URL -> bounded ready-element pool used so rapid combat cues cannot queue indefinitely.
   const animalVoicePreloads = new Map(); // Keeps species calls decoded/ready before a semantic vocal intent fires.
   const footstepAudioPools = new Map(); // URL -> reusable preloaded native-audio voices used by every recorded footstep.
@@ -24,12 +25,28 @@
   let lastFootstepPlayErrorKey = null; // Suppresses repeated identical footstep failure lines in the in-game debug log.
   let lastObjectSfxKeyDebug = null; // Reported by Pixel Probe to diagnose cue lookup/preload timing on mobile.
   let lastCombatSfxDebug = null; // Reported by Pixel Probe to verify swing index, damage type, and impact size on mobile.
+  let lastCombatSpatialDebug = null; // Retains source distance/elevation/gain for the mobile-copyable combat audio report.
+  const combatDecodedByUrl = new Map(); // Cache shares decoded one-shot weapons, impacts and blocks without allocating a new media source per hit.
+  const combatDecodeQueue = []; // Bounded preloads prevent large simultaneous decode spikes during wilderness startup.
+  const activePositionalCombat = new Set(); // Stops positional Web Audio sources when the introduction takes sole ownership of the soundscape.
+  const activeDirectionalRoutes = new Set(); // Retains HRTF routes only for the duration of their active audio source.
+  let lastDirectionalRouteUpdateMs = 0; // Limits updates for moving combatants and camera turns to around 12 Hz.
+  let directionalRouteSchedulerInstalled = false; // Guards against installing more than one frame update.
+  let combatDecodeInFlight = 0; // Limits startup decoding to two cues at once.
+  let combatPositionalContext = null; // Dedicated one-shot context isolates camera-relative HRTF listener coordinates from music/weather graphs.
+  let combatSpatialBackend = 'native-fallback'; // Exposed in mobile diagnostics to distinguish true HRTF from a degraded output path.
+  let combatSpatialFallbacks = 0; // Counts unavoidable unpositioned plays before decode or on Web Audio-incompatible browsers.
+  let combatSpatialStarts = 0; // Counts actual Web Audio directional weapon/impact playback.
+  let combatSpatialLastError = null; // Readable decoder/graph failure without a console.
   let lastFootstepSfxDebug = null; // Exposed by footstepSfxDebugSnapshot and mirrored into the in-game debug log on surface changes.
   let lastFootstepDebugSurface = null; // Prevents the mobile-readable debug log from receiving one line for every individual footfall.
   function init(injectedDeps) {
     deps = injectedDeps;
+    installCombatGestureUnlock(); // Warm audio unlock happens on a trusted gesture, before the next wilderness attack.
+    installCombatDirectionalUpdates(); // Turn the camera mid-grunt without leaving an enemy pinned to an old ear.
     preloadConfiguredObjectSfx();
     preloadConfiguredCombatSfx();
+    preloadSpecialCombatSfx(); // Drenkirra projectile sounds are authored separately from the shared combat manifest.
     preloadAnimalVoices();
     preloadConfiguredFootstepSfx();
     installFootstepAudioUnlock();
@@ -404,10 +421,25 @@
   // applied as a native volume multiplier after measurement. The native
   // volume ceiling is exposed in diagnostics if an unusually quiet source
   // would require >1.0 after the normal footstep/master attenuation.
-  function playRecordedFootstepClip(snd, url, surfaceKey, volume, gainMul = 1, heavy = false) {
-    trackActiveSfx(snd);
+  function playRecordedFootstepClip(snd, url, surfaceKey, volume, gainMul = 1, heavy = false, spatial = null) {
     const adjustedVolume = Math.max(0, volume * Math.max(0, Number(gainMul) || 0) * (heavy ? 1.15 : 1));
     const nativeVolume = Math.min(1, adjustedVolume);
+    if (spatial?.position3d) {
+      prepareCombatPositionalClip(url, true); // Urgent hostile footsteps take decode priority over background preloads.
+      resumeCombatPositionalContext();
+      const rendered = playDecodedCombatSfx({ url, gainBoost: 1 }, nativeVolume, snd.playbackRate, spatial);
+      if (rendered) {
+        footstepPlayRequestCount++; footstepPlayStartedCount++; // Maintain the existing mobile cadence diagnostics.
+        if (lastFootstepSfxDebug?.surfaceKey === surfaceKey) {
+          lastFootstepSfxDebug.playState = 'spatial-hrtf';
+          lastFootstepSfxDebug.requestedLinearVolume = adjustedVolume;
+          lastFootstepSfxDebug.nativeVolume = 0; // This cue rendered via a buffer, not its reserved native pool voice.
+        }
+        return;
+      }
+      combatSpatialFallbacks++; // Native recorded footstep until the decoded HRTF clip becomes available.
+    }
+    trackActiveSfx(snd);
     snd.volume = nativeVolume;
     if (lastFootstepSfxDebug?.surfaceKey === surfaceKey) {
       lastFootstepSfxDebug.nativeVolume = nativeVolume;
@@ -428,7 +460,7 @@
   // lowpass was intentionally dropped from this path because reliable dry
   // playback matters more than an optional filter on devices where the
   // MediaElementSource destination has already proven unreliable.
-  function playFootstepSurface(surfaceKey, footstepCfg, volume, pan, heavy = false) {
+  function playFootstepSurface(surfaceKey, footstepCfg, volume, pan, heavy = false, spatial = null) {
     // A non-finite volume (NaN/Infinity — e.g. from a caller's distance
     // falloff math going through a NaN position) throws a hard
     // Uncaught TypeError the instant it's assigned to <audio>.volume,
@@ -451,7 +483,7 @@
         lastFootstepSfxDebug.normalizationTargetDbfs = surfaceKey === 'hard' ? HARD_FOOTSTEP_TARGET_DBFS : null;
         lastFootstepSfxDebug.sourcePeakDbfs = normalization?.sourcePeakDbfs ?? null;
       }
-      playRecordedFootstepClip(snd, url, surfaceKey, finalVolume, normalizationGain, heavy);
+      playRecordedFootstepClip(snd, url, surfaceKey, finalVolume, normalizationGain, heavy, spatial);
       return;
     }
 
@@ -467,12 +499,17 @@
     const baseFreq = Math.max(20, Number(base.freq) * pitchMul);
     const variance = Math.max(0, Number(base.freqVarianceHz) || 15);
 
-    const panNode = typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
+    const panNode = !spatial && typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
+    const spatialInput = spatial?.position3d ? ctx.createGain() : null; // Both synthesized noise and oscillator steps share one listener-relative HRTF route.
+    const spatialRoute = spatialInput ? connectCombatSpatialDry(ctx, spatialInput, spatial) : null;
     if (panNode) {
       panNode.pan.value = Math.max(-1, Math.min(1, pan));
       panNode.connect(ctx.destination);
     }
-    const outNode = panNode || ctx.destination;
+    const outNode = spatialInput || panNode || ctx.destination;
+    if (spatialInput) setTimeout(() => {
+      try { spatialInput.disconnect(); spatialRoute?.dispose?.(); } catch (_) {}
+    }, Math.ceil(durationS * 1000) + 40); // Detached when the short procedural footfall is complete.
 
     if (noiseMix < 1) {
       const osc = ctx.createOscillator();
@@ -558,10 +595,11 @@
     const baseVolume = Math.max(0, Math.min(1, Number(footstepCfg.volume) || 0.65));
     const volume = baseVolume * Math.max(0, Number(audioCfg.sfxVolume ?? 1))
       * Math.max(0, volumeScale) * Math.max(0, Number(FOOTSTEP_BASE.volume) || 0.26);
-    playFootstepSurface(surfaceKey, footstepCfg, volume, pan, heavy);
+    const spatial = opts.source && opts.source !== deps.player ? combatAudioSpatial(opts.source, { earshotTiles: 9 }) : null; // NPC/hostile footfalls come from their real location.
+    playFootstepSurface(surfaceKey, footstepCfg, volume, spatial?.panX ?? pan, heavy, spatial);
 
     if (surfaceKey !== 'water' && surfaceKey !== 'snow') {
-      playFootstepSurface('water', footstepCfg, volume * wetFraction * FOOTSTEP_WATER_BLEND_MAX, pan, heavy);
+      playFootstepSurface('water', footstepCfg, volume * wetFraction * FOOTSTEP_WATER_BLEND_MAX, spatial?.panX ?? pan, heavy, spatial);
     }
   }
 
@@ -602,6 +640,291 @@
 
   function combatSfxConfig() { return gameAudioConfig().combatSfx || {}; }
 
+  // One AudioContext for all short recorded combat cues. Source buffers are
+  // cached, but every attack gets its own independent panner/gain graph.
+  function ensureCombatPositionalContext() {
+    if (combatPositionalContext && combatPositionalContext.state !== 'closed') return combatPositionalContext;
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return null;
+    try { combatPositionalContext = new AudioCtx(); }
+    catch (error) { combatSpatialLastError = String(error?.message || error); return null; }
+    return combatPositionalContext;
+  }
+
+  let combatGestureUnlockInstalled = false; // Ensures one set of trusted input handlers even if the game reinits the AudioSystem.
+  function installCombatGestureUnlock() {
+    if (combatGestureUnlockInstalled || typeof window.addEventListener !== 'function') return;
+    combatGestureUnlockInstalled = true;
+    const unlock = () => resumeCombatPositionalContext();
+    for (const event of ['pointerdown', 'touchstart', 'keydown']) {
+      window.addEventListener(event, unlock, { capture: true, passive: true });
+    }
+  }
+
+  function resumeCombatPositionalContext() {
+    const ctx = combatPositionalContext;
+    if (ctx && (ctx.state === 'suspended' || ctx.state === 'interrupted')) {
+      try { ctx.resume?.().catch?.(error => { combatSpatialLastError = String(error?.message || error); }); }
+      catch (error) { combatSpatialLastError = String(error?.message || error); }
+    }
+  }
+
+  // Decodes never wait on a sound event: if an asset is still preparing, the
+  // existing native cue starts immediately instead of playing late/off-beat.
+  function pumpCombatDecodeQueue() {
+    while (combatDecodeInFlight < 2 && combatDecodeQueue.length) {
+      const entry = combatDecodeQueue.shift();
+      const ctx = ensureCombatPositionalContext();
+      if (!ctx || typeof fetch !== 'function' || typeof ctx.decodeAudioData !== 'function') {
+        entry.state = 'unsupported';
+        continue;
+      }
+      combatDecodeInFlight++;
+      entry.state = 'loading';
+      entry.attempts = (entry.attempts || 0) + 1;
+      Promise.resolve().then(() => fetch(entry.url))
+        .then(response => { if (!response.ok) throw new Error('combat audio HTTP ' + response.status); return response.arrayBuffer(); })
+        .then(bytes => ctx.decodeAudioData(bytes))
+        .then(buffer => {
+          if (!buffer?.duration) throw new Error('combat audio decoded an empty clip');
+          entry.buffer = buffer; entry.state = 'ready';
+          if (entry.url === combatSfxConfig().soursapSplat?.url) prepareSoursapIndependentClip(entry); // Render the splat's independent -12 st / 80% tempo waveform once, ahead of the first impact.
+          if (entry.url === combatSfxConfig().quickAttackBonusSlash?.url) prepareComboFinisherSlashClips(entry); // Pre-render the two pitch-shifted, triple-speed finisher cues before an impact.
+        })
+        .catch(error => {
+          entry.state = 'failed';
+          entry.nextRetryAt = Date.now() + Math.min(60000, 4000 * Math.pow(2, Math.min(4, entry.attempts - 1)));
+          combatSpatialLastError = `${entry.url}: ${error?.message || error}`;
+        })
+        .finally(() => { combatDecodeInFlight--; pumpCombatDecodeQueue(); });
+    }
+  }
+
+  function prepareCombatPositionalClip(url, priority = false) {
+    if (!url) return;
+    let entry = combatDecodedByUrl.get(url);
+    if (entry?.state === 'ready' || entry?.state === 'loading') return;
+    if (entry?.state === 'failed' && Date.now() < (entry.nextRetryAt || 0)) return; // Transient network failures can retry later without a request storm.
+    if (!entry) {
+      entry = { url, buffer: null, state: 'queued', attempts: 0, nextRetryAt: 0 }; // Shared entry survives bounded cooldown retries.
+      combatDecodedByUrl.set(url, entry);
+    } else if (entry.state !== 'queued') entry.state = 'queued'; // Retry a previously failed or unsupported decode when the browser can play it.
+    const queuedAt = combatDecodeQueue.indexOf(entry);
+    if (queuedAt >= 0) combatDecodeQueue.splice(queuedAt, 1); // A newly requested attack should not wait behind unrelated background preloads.
+    if (priority) combatDecodeQueue.unshift(entry);
+    else combatDecodeQueue.push(entry);
+    pumpCombatDecodeQueue();
+  }
+
+  let soursapRenderedSource = null; // The decoded splat source associated with our independently shifted, time-stretched cached recording.
+  let soursapRenderedClip = null; // Reuses the shared animal-voice WSOLA renderer, avoiding main-thread DSP at each fruit impact.
+  let soursapRenderPending = null; // Ensures multiple exploding fruits do not start duplicate render jobs.
+  function prepareSoursapIndependentClip(entry) {
+    if (!entry?.buffer || !combatPositionalContext) return;
+    const renderer = window.AnimalVoiceIndependentPlayback?.renderDecodedIndependentBuffer; // Already-used pitch/tempo-independent WSOLA implementation.
+    if (typeof renderer !== 'function') return;
+    if (soursapRenderedSource !== entry.buffer) {
+      soursapRenderedSource = entry.buffer;
+      soursapRenderedClip = null;
+      soursapRenderPending = null;
+    }
+    if (soursapRenderedClip || soursapRenderPending) return;
+    soursapRenderPending = renderer(entry.buffer, combatPositionalContext, {
+      tempo: 0.8, pitchSemitones: -12, trimSilence: false, tailPadS: 0, edgeFadeS: 0,
+    }).then(rendered => {
+      if (soursapRenderedSource === entry.buffer) soursapRenderedClip = rendered;
+    }).catch(error => {
+      combatSpatialLastError = 'soursap independent-pitch rendering: ' + (error?.message || error);
+    }).finally(() => { soursapRenderPending = null; });
+  }
+
+  const COMBO_FINISHER_SLASH_TEMPO = 3; // Both finisher cues play in one-third the original duration.
+  const COMBO_FINISHER_SLASH_VOLUME = 0.8; // Relative to the existing anime-slash cue and the global SFX mixer.
+  const COMBO_FINISHER_SLASH_PITCHES = [-5, -6]; // First and second consecutive cues, in semitones.
+  let comboFinisherSlashSource = null; // Tracks the decoded original to invalidate both independently processed clips when the asset changes.
+  let comboFinisherSlashClips = null; // Ready-to-schedule audio; reused across impacts to avoid combat-time DSP.
+  let comboFinisherSlashPending = null; // Prevents duplicate render jobs while the two pitch variants prepare.
+  let comboFinisherSlashRetryTimer = null; // A queued startup retry while the independently loaded WSOLA module initializes.
+  let comboFinisherSlashRetryCount = 0; // Bounded retries let the first combat finisher use the processed sound whenever startup finishes normally.
+  function prepareComboFinisherSlashClips(entry) {
+    if (!entry?.buffer || !combatPositionalContext) return;
+    if (comboFinisherSlashSource !== entry.buffer) {
+      comboFinisherSlashSource = entry.buffer;
+      comboFinisherSlashClips = null;
+      comboFinisherSlashPending = null;
+      comboFinisherSlashRetryCount = 0;
+    }
+    if (comboFinisherSlashClips || comboFinisherSlashPending) return;
+    const renderer = window.AnimalVoiceIndependentPlayback?.renderDecodedIndependentBuffer; // The existing WSOLA pipeline changes tempo independently of pitch.
+    if (typeof renderer !== 'function') {
+      if (!comboFinisherSlashRetryTimer && comboFinisherSlashRetryCount < 40) {
+        comboFinisherSlashRetryCount++; // The vocal playback script loads asynchronously, sometimes after this audio clip has decoded.
+        comboFinisherSlashRetryTimer = setTimeout(() => {
+          comboFinisherSlashRetryTimer = null;
+          if (combatDecodedByUrl.get(entry.url)?.buffer === entry.buffer) prepareComboFinisherSlashClips(entry);
+        }, 250);
+      }
+      return;
+    }
+    const pending = Promise.all(COMBO_FINISHER_SLASH_PITCHES.map(pitchSemitones =>
+      renderer(entry.buffer, combatPositionalContext, {
+        tempo: COMBO_FINISHER_SLASH_TEMPO, pitchSemitones, trimSilence: false, tailPadS: 0, edgeFadeS: 0,
+      }))); // Cache both full-length source waveforms compressed to one-third duration, each with its own lowered pitch.
+    comboFinisherSlashPending = pending;
+    pending.then(clips => {
+      if (comboFinisherSlashSource === entry.buffer) comboFinisherSlashClips = clips;
+    }).catch(error => {
+      combatSpatialLastError = 'combo finisher slash render: ' + (error?.message || error);
+    }).finally(() => {
+      if (comboFinisherSlashPending === pending) comboFinisherSlashPending = null;
+    });
+  }
+
+  function preloadSpecialCombatSfx() {
+    const pelletCues = window.HobunjiDrenkirraPellet?.sfx || {};
+    for (const cfg of Object.values(pelletCues)) if (cfg?.url) prepareCombatPositionalClip(cfg.url);
+    for (const key of ['soursapSplat', 'quickAttackBonusSlash']) {
+      const cfg = combatSfxConfig()[key]; // Decode the new impact cues ahead of contact, preserving real-time combat timing.
+      if (cfg?.url) prepareCombatPositionalClip(cfg.url);
+    }
+  }
+
+  function updateCombatDirectionalRoutes(frame = {}) {
+    const now = Number.isFinite(frame.timestamp) ? frame.timestamp : performance.now();
+    if (now - lastDirectionalRouteUpdateMs < 80) return;
+    lastDirectionalRouteUpdateMs = now;
+    for (const route of activeDirectionalRoutes) {
+      const pos = acousticPosition3D(route.actor); // Sample the current player and emitting actor, not their starting positions.
+      if (!pos) continue;
+      if (route.backend === 'hrtf') {
+        const { positionX, positionY, positionZ } = route.node;
+        if (positionX && positionY && positionZ) {
+          for (const [param, value] of [[positionX, pos.x], [positionY, pos.y], [positionZ, pos.z]]) {
+            if (typeof param.setTargetAtTime === 'function') param.setTargetAtTime(value, route.ctx.currentTime, 0.025);
+            else param.value = value;
+          }
+        } else route.node.setPosition?.(pos.x, pos.y, pos.z);
+      } else if (route.backend === 'stereo-fallback') {
+        const pan = Math.max(-1, Math.min(1, pos.x / Math.max(1, Math.hypot(pos.x, pos.z) * 0.6)));
+        if (typeof route.node.pan?.setTargetAtTime === 'function') route.node.pan.setTargetAtTime(pan, route.ctx.currentTime, 0.025);
+        else if (route.node.pan) route.node.pan.value = pan;
+      }
+      const followed = route.followGain;
+      if (followed?.param && followed.initialGain > 0 && followed.earshotPx > 0) {
+        const actorArea = route.actor?.areaId || route.actor?.area || null;
+        const sameArea = !actorArea || actorArea === deps?.getCurrentArea?.();
+        const distance = animalVoiceAcousticDistancePx(route.actor); // Re-evaluate true horizontal+vertical separation, not merely pan.
+        const nextGain = sameArea ? Math.pow(Math.max(0, 1 - distance / followed.earshotPx), 1.5) : 0;
+        const value = Math.max(0, Math.min(4, followed.base * nextGain / followed.initialGain)); // Isolated attenuation avoids undoing charge-stop fades.
+        if (typeof followed.param.setTargetAtTime === 'function') followed.param.setTargetAtTime(value, route.ctx.currentTime, 0.025);
+        else followed.param.value = value;
+      }
+    }
+  }
+
+  function installCombatDirectionalUpdates() {
+    if (directionalRouteSchedulerInstalled || !window.RuntimeFrameScheduler?.register) return;
+    window.RuntimeFrameScheduler.register('combat-spatial-listener', updateCombatDirectionalRoutes, {
+      phase: 'post-game', owner: 'AudioSystem', description: 'Update active HRTF combat emitters at player-relative coordinates.',
+    });
+    directionalRouteSchedulerInstalled = true;
+  }
+
+  // Use a listener fixed at (0,0,0), facing -Z, in listener-local
+  // coordinates. The caller rotates each world-space emitter into the
+  // active camera's right/up/back basis, preserving left/right, rear/front
+  // and vertical (including below the player) without moving the ear to
+  // the actual third-person camera's distant position.
+  function connectCombatSpatialDry(ctx, input, spatial) {
+    const pos = spatial?.position3d;
+    if (pos && typeof ctx.createPanner === 'function') {
+      try {
+        const panner = ctx.createPanner();
+        panner.panningModel = 'HRTF';
+        panner.distanceModel = 'inverse';
+        panner.rolloffFactor = 0; // Shared combatAudioSpatial already owns the actual 3D gain falloff.
+        panner.refDistance = 1;
+        panner.maxDistance = 10000;
+        if (panner.positionX && panner.positionY && panner.positionZ) {
+          panner.positionX.value = pos.x; panner.positionY.value = pos.y; panner.positionZ.value = pos.z;
+        } else panner.setPosition(pos.x, pos.y, pos.z);
+        input.connect(panner); panner.connect(ctx.destination);
+        const route = { node: panner, backend: 'hrtf', actor: spatial.sourceActor, followGain: spatial.followGain || null, ctx,
+          dispose() { activeDirectionalRoutes.delete(route); try { panner.disconnect(); } catch (_) {} },
+        }; // One live route per active attack/voice, disposed when playback ends.
+        if (spatial.sourceActor) activeDirectionalRoutes.add(route);
+        return route;
+      } catch (error) { combatSpatialLastError = String(error?.message || error); }
+    }
+    const stereo = typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
+    if (stereo) {
+      stereo.pan.value = Math.max(-1, Math.min(1, Number(spatial?.panX) || 0));
+      input.connect(stereo); stereo.connect(ctx.destination);
+      const route = { node: stereo, backend: 'stereo-fallback', actor: spatial?.sourceActor, followGain: spatial?.followGain || null, ctx,
+        dispose() { activeDirectionalRoutes.delete(route); try { stereo.disconnect(); } catch (_) {} },
+      };
+      if (spatial?.sourceActor) activeDirectionalRoutes.add(route);
+      return route;
+    }
+    input.connect(ctx.destination);
+    return { node: null, backend: 'mono-fallback', dispose() {} };
+  }
+
+  function playDecodedCombatSfx(cfgEntry, volume, rate, spatial, bufferOverride = null, startAt = null) {
+    const entry = combatDecodedByUrl.get(cfgEntry.url);
+    const ctx = combatPositionalContext;
+    const playbackBuffer = bufferOverride || entry?.buffer; // Only independently rendered splats replace a clip; all other combat SFX use their cached original.
+    if (!playbackBuffer || ctx?.state !== 'running') return null;
+    let source = null, gain = null, lowpass = null, route = null, wet = null; // A mobile AudioContext can interrupt between graph setup and start; unwind partial graphs before native fallback.
+    try {
+      source = ctx.createBufferSource();
+      gain = ctx.createGain();
+      lowpass = typeof ctx.createBiquadFilter === 'function' && spatial.gain < 0.92 ? ctx.createBiquadFilter() : null; // Distant attacks lose direct treble without silencing their echoes.
+      source.buffer = playbackBuffer; source.playbackRate.value = rate;
+      gain.gain.value = Math.max(0, volume * Math.max(1, Number(cfgEntry.gainBoost) || 1));
+      source.connect(gain);
+      if (lowpass) {
+        lowpass.type = 'lowpass';
+        lowpass.frequency.value = 3500 + 16500 * Math.pow(spatial.gain, 0.7);
+        gain.connect(lowpass);
+      }
+      route = connectCombatSpatialDry(ctx, lowpass || gain, { ...spatial,
+        followGain: { param: gain.gain, initialGain: spatial.gain, base: gain.gain.value, earshotPx: spatial.earshotPx },
+      }); // One-shot volume also updates if a lunge crosses a major elevation/earshot boundary while playing.
+      wet = window.EnvironmentalReverb?.connectWetNode?.(ctx, gain, { volume: 1, extraWet: spatial.extraWetBoost, area: spatial.areaId || null }) || null;
+      const handle = {
+        pause() { try { source.stop(); } catch (_) {} cleanup(); },
+        get paused() { return finished; },
+        get ended() { return finished; },
+      }; // Minimal native-compatible lifecycle for active-SFX cleanup; bandage loops never use this path.
+      let finished = false;
+      function cleanup() {
+        if (finished) return;
+        finished = true; activePositionalCombat.delete(handle);
+        try { source.disconnect(); } catch (_) {}
+        try { gain.disconnect(); } catch (_) {}
+        try { lowpass?.disconnect(); } catch (_) {}
+        try { route.dispose?.(); } catch (_) {}
+        try { wet?.send?.disconnect?.(); } catch (_) {}
+      }
+      source.onended = cleanup;
+      source.start(Number.isFinite(startAt) ? Math.max(ctx.currentTime, startAt) : 0); // Optional sample-accurate scheduling keeps two finisher slashes strictly consecutive.
+      activePositionalCombat.add(handle);
+      combatSpatialBackend = route.backend;
+      combatSpatialStarts++;
+      return handle;
+    } catch (error) {
+      combatSpatialLastError = String(error?.message || error);
+      try { source?.stop?.(); } catch (_) {} // Source creation/start can fail after native context suspension.
+      try { source?.disconnect?.(); } catch (_) {}
+      try { gain?.disconnect?.(); } catch (_) {}
+      try { lowpass?.disconnect?.(); } catch (_) {}
+      try { route?.dispose?.(); } catch (_) {} // Avoid retaining the actor and PannerNode in the live-update set after a failed start.
+      try { wet?.send?.disconnect?.(); } catch (_) {}
+      return null; // The caller performs the immediate mobile-compatible native fallback.
+    }
+  }
+
   const COMBAT_SFX_POOL_SIZE = 2;
   const COMBAT_SFX_MAX_START_DELAY_MS = 140;
 
@@ -619,6 +942,19 @@
         pool.push(snd);
       }
       combatSfxPreloads.set(cfgEntry.url, pool);
+      if (typeof window.AudioContext === 'function' || typeof window.webkitAudioContext === 'function') {
+        prepareCombatPositionalClip(cfgEntry.url); // Decode common weapon cues ahead of their first attack.
+      }
+    }
+    // Non-preloaded ranged loading/fire and animal claw cues need the same
+    // directional readiness as the preloaded swings/hits. Exclude the
+    // player-owned bandage loops: those retain their stop/restart semantics.
+    if (typeof window.AudioContext === 'function' || typeof window.webkitAudioContext === 'function') {
+      for (const [key, cfgEntry] of Object.entries(combatSfxConfig())) {
+        if (!cfgEntry?.url || key.startsWith('bandage')) continue;
+        prepareCombatPositionalClip(cfgEntry.url);
+        for (const species of Object.values(cfgEntry.species || {})) if (species?.url) prepareCombatPositionalClip(species.url);
+      }
     }
   }
 
@@ -663,17 +999,25 @@
   // One-shot combat SFX player (weapon swing/impact, block, bark, claw hit) —
   // simpler than playFootstepSfx since these always have a real audio
   // file staged (no procedural WebAudio fallback needed).
-  function playOneShotSfx(cfgEntry, volumeScale = 1, pitch = 1) {
+  function playOneShotSfx(cfgEntry, volumeScale = 1, pitch = 1, spatial = null) {
     const audioCfg = gameAudioConfig();
     if (audioCfg.enabled === false || !cfgEntry?.url) return null;
     if (combatSfxConfig().enabled === false) return null;
     const volume = Math.max(0, Math.min(1, Number(cfgEntry.volume) || 0.8))
       * Math.max(0, Number(audioCfg.sfxVolume ?? 1)) * Math.max(0, volumeScale);
     if (volume <= 0.002) return null;
+    const pitchVariance = Number(cfgEntry.pitchVarianceMul) || 0;
+    const rate = Math.max(0.3, (Number(pitch) || 1) * (1 + (Math.random() * 2 - 1) * pitchVariance));
+    if (spatial?.position3d) {
+      prepareCombatPositionalClip(cfgEntry.url, true); // Prioritize sounds actually needed in combat above the low-priority warmup queue.
+      resumeCombatPositionalContext();
+      const rendered = playDecodedCombatSfx(cfgEntry, volume, rate, spatial);
+      if (rendered) return rendered;
+      combatSpatialFallbacks++; combatSpatialBackend = 'native-fallback'; // Never delay an attack while a clip loads/unlocks.
+    }
     const snd = acquireCombatSfxAudio(cfgEntry.url) || new Audio(cfgEntry.url);
     trackActiveSfx(snd);
-    const pitchVariance = Number(cfgEntry.pitchVarianceMul) || 0;
-    snd.playbackRate = Math.max(0.3, pitch * (1 + (Math.random() * 2 - 1) * pitchVariance));
+    snd.playbackRate = rate;
     if (snd._combatRequestedAt != null && !(Number(cfgEntry.gainBoost) > 1)) playPooledCombatSfx(snd, volume);
     else playSfxAudioElement(snd, volume, Number(cfgEntry.gainBoost) || 1);
     return snd;
@@ -730,29 +1074,46 @@
   // playHeavyFilteredClip uses for a heavy landing thud, minus the
   // lowpass. Falls back to plain .volume (clamped to 1) if Web Audio
   // is unavailable or gainBoost isn't set.
-  function playSfxAudioElement(snd, volume, gainBoost) {
-    if (!(gainBoost > 1)) {
+  function playSfxAudioElement(snd, volume, gainBoost, lowpassHz = 0) {
+    const filtered = Number.isFinite(lowpassHz) && lowpassHz > 0; // Only specifically authored occluded SFX (such as indoor thunder) use a low-pass.
+    if (!(gainBoost > 1) && !filtered) {
       snd.volume = Math.min(1, volume);
       snd.play().catch(() => {});
       return;
     }
+    let source = null; // Allows sound effects to fall back to direct output when the optional filter graph fails halfway through.
+    let ctx = null; // Holds the shared audio context for the direct-output recovery path below.
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) throw new Error('no AudioContext');
-      const ctx = window._footstepAudioCtx || (window._footstepAudioCtx = new AudioCtx());
+      ctx = window._footstepAudioCtx || (window._footstepAudioCtx = new AudioCtx());
       if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-      const source = ctx.createMediaElementSource(snd);
-      const gain = ctx.createGain();
+      if (filtered && ctx.state !== 'running') {
+        snd.volume = Math.min(1, volume); // Avoid sending the weather one-shot into a silent context on restricted mobile browsers.
+        snd.play().catch(() => {});
+        return;
+      }
+      source = ctx.createMediaElementSource(snd); // One source per one-shot; other object SFX remain on their existing transport.
+      const gain = ctx.createGain(); // Applies the original loudness/boost after optional low-pass filtering.
       gain.gain.value = Math.max(0, volume * gainBoost);
-      source.connect(gain).connect(ctx.destination);
+      if (filtered) {
+        const filter = ctx.createBiquadFilter(); // Muffles thunder without affecting unrelated game audio.
+        filter.type = 'lowpass';
+        filter.frequency.value = lowpassHz;
+        filter.Q.value = 0.65;
+        source.connect(filter).connect(gain).connect(ctx.destination);
+      } else {
+        source.connect(gain).connect(ctx.destination);
+      }
       snd.play().catch(() => {});
     } catch (e) {
+      if (source && ctx) try { source.connect(ctx.destination); } catch (_) {} // A failed optional DSP graph must not swallow weather SFX.
       snd.volume = Math.min(1, volume);
       snd.play().catch(() => {});
     }
   }
 
-  function playObjectSfx(cfgEntry, volumeScale = 1, pitch = 1) {
+  function playObjectSfx(cfgEntry, volumeScale = 1, pitch = 1, metronomeLimitSeconds = null) {
     const audioCfg = gameAudioConfig();
     if (audioCfg.enabled === false || !cfgEntry) return;
     if (objectSfxConfig().enabled === false) return;
@@ -770,6 +1131,29 @@
     const pitchVariance = Number(cfgEntry.pitchVarianceMul) || 0;
     const rate = Math.max(0.3, pitch * (Number(cfgEntry.pitch) || 1) * (1 + (Math.random() * 2 - 1) * pitchVariance));
     const snd = createObjectSfxAudio(url);
+    if (Number.isFinite(metronomeLimitSeconds) && metronomeLimitSeconds > 0) {
+      const metronomeDebug = lastObjectSfxKeyDebug; // Pixel Probe reports actual media start/error rather than only a successful key lookup.
+      if (metronomeDebug?.metronome) {
+        metronomeDebug.playbackState='requested';
+        snd.addEventListener?.('playing',()=>{metronomeDebug.playbackState='playing';});
+        snd.addEventListener?.('error',()=>{metronomeDebug.playbackState='error';},{once:true});
+      }
+      if (metronomeSfxVoice) {
+        metronomeSfxVoice.pause?.();
+        activeSfx.delete(metronomeSfxVoice); // A delayed 1.85-second pick tail may not mask the next quarter-note tick.
+      }
+      metronomeSfxVoice = snd;
+      const release = () => {
+        if (metronomeSfxVoice === snd) metronomeSfxVoice = null;
+        snd.pause?.();
+        activeSfx.delete(snd); // A short metronome transient must not leak into the introduction's one-shot registry.
+      };
+      snd.addEventListener?.('timeupdate', () => {
+        if (Number(snd.currentTime) >= metronomeLimitSeconds) release();
+      });
+      snd.addEventListener?.('ended', release, {once:true});
+      snd.addEventListener?.('error', release, {once:true});
+    }
     snd.playbackRate = rate;
     if ('preservesPitch' in snd) snd.preservesPitch = false; // Pitched object cues (including musical ruin plates and lowered cave-collapse sounds) must actually change pitch instead of browser pitch-correction keeping every playback at the source note.
     if ('webkitPreservesPitch' in snd) snd.webkitPreservesPitch = false;
@@ -784,10 +1168,42 @@
         if ('preservesPitch' in fallback) fallback.preservesPitch = false;
         if ('webkitPreservesPitch' in fallback) fallback.webkitPreservesPitch = false;
         if ('mozPreservesPitch' in fallback) fallback.mozPreservesPitch = false;
-        playSfxAudioElement(fallback, volume, gainBoost);
+        playSfxAudioElement(fallback, volume, gainBoost, Number(cfgEntry.lowpassHz) || 0);
       }, { once: true });
     }
-    playSfxAudioElement(snd, volume, gainBoost);
+    playSfxAudioElement(snd, volume, gainBoost, Number(cfgEntry.lowpassHz) || 0);
+  }
+
+  function playObjectSfxKeyIndependentPitch(key, pitch = 1, volumeScale = 1) {
+    const cfgEntry = objectSfxConfig()[key]; // The same configured stone recording and mixer as ordinary object SFX.
+    const audioCfg = gameAudioConfig();
+    if (!cfgEntry || audioCfg.enabled === false || objectSfxConfig().enabled === false) return false;
+    const volume = Math.max(0, Math.min(1, Number(cfgEntry.volume) || 0.8))
+      * Math.max(0, Number(audioCfg.sfxVolume ?? 1)) * Math.max(0, Number(volumeScale) || 0);
+    if (volume <= 0.002) return false;
+    const rate = Math.max(0.3, (Number.isFinite(Number(pitch)) ? Number(pitch) : 1) * (Number(cfgEntry.pitch) || 1));
+    const semitones = Math.round(12 * Math.log2(rate) * 2) / 2; // Half-semitone bins reuse the independent-render cache across similarly sized stone pieces.
+    const player = window.AnimalVoiceIndependentPlayback; // Reuses the game's WSOLA pitch/tempo-independent renderer; no bespoke audio engine.
+    let handle = null; // Non-null means the pitch-only renderer accepted this particular stone cue.
+    if (Math.abs(semitones) >= 0.05 && cfgEntry.url && !deps?.audioUrlFailed?.(cfgEntry.url) && typeof player?.playIndependent === 'function') {
+      try {
+        handle = player.playIndependent(cfgEntry.url, {
+          tempo: 1, pitchSemitones: semitones, volume: Math.min(1, volume * Math.max(1, Number(cfgEntry.gainBoost) || 1)),
+          trimSilence: false, tailPadS: 0, edgeFadeS: 0, extraWetBase: 0,
+          preserveDurationOnFallback: true, // If Web Audio is locked/unavailable, never translate size into faster/slower stone travel.
+        });
+      } catch (_) { handle = null; }
+    }
+    if (!handle) playObjectSfxKey(key, volumeScale, 1); // Neutral recording is preferable to changing duration on an unsupported device.
+    const preloaded = cfgEntry.url ? objectSfxPreloads.get(cfgEntry.url) : null;
+    lastObjectSfxKeyDebug = {
+      key, found: true, url: cfgEntry.url || null, preloaded: !!preloaded,
+      readyState: preloaded?.readyState ?? null,
+      requestedPitch: rate, pitchSemitones: semitones, tempo: 1,
+      pitchMode: handle ? (handle.independentPitch ? 'independent' : 'neutral-native-fallback') : 'neutral',
+      atMs: Math.round(performance.now()),
+    }; // Pixel Probe reports size pitch separately from real-time duration on mobile.
+    return true;
   }
 
   function playGeneratedStoneKchunk(volume = 1) {
@@ -820,6 +1236,20 @@
     if (cfgEntry?.generatedStoneKchunk && gameAudioConfig().enabled !== false && objectSfxConfig().enabled !== false && Number(gameAudioConfig().sfxVolume ?? 1) > 0) playGeneratedStoneKchunk(Math.max(0,Number(gameAudioConfig().sfxVolume ?? 1))*Math.max(0,Number(cfgEntry.volume ?? .8))*volumeScale);
   }
 
+  function playObjectSfxKeyMetronome(volumeScale = 1) {
+    const cfgEntry = objectSfxConfig().pick; // The actual preloaded sfx_pick.mp3 recording, shared with normal mining.
+    const audioCfg = gameAudioConfig();
+    if (!cfgEntry?.url || audioCfg.enabled === false || objectSfxConfig().enabled === false ||
+      Number(audioCfg.sfxVolume ?? 1) <= 0) return false;
+    const preloaded = objectSfxPreloads.get(cfgEntry.url);
+    lastObjectSfxKeyDebug = {
+      key:'pick',found:true,url:cfgEntry.url,preloaded:!!preloaded,readyState:preloaded?.readyState ?? null,
+      metronome:true,maxDurationSec:.36,oneVoice:true,atMs:Math.round(performance.now()),
+    }; // Pixel Probe distinguishes the short metronome transient from an ordinary full-length mining strike.
+    playObjectSfx(cfgEntry,volumeScale,1,.36); // Preserve the original pitch/impact, silence the 1.85-second tail after the click.
+    return true;
+  }
+
   // AlchemyFlasks emits semantic events and never imports AudioSystem. This
   // adapter is the only place that resolves those placeholders to ordinary
   // object-SFX keys, so adding real recordings later is a config-only change.
@@ -845,16 +1275,13 @@
     };
   }
 
-  // Distance falloff for a creature-originated combat sound (bark/claw
-  // hit), mirroring tickCreatureFootsteps — inaudible past earshot.
+  // Creature combat cues share the same three-dimensional earshot as NPC
+  // vocalizations. A cliff's vertical separation must count as distance.
   function playCreatureSfxAt(c, cfgEntry, pitch) {
-    if (!cfgEntry || c.areaId !== deps.getCurrentArea()) return;
-    const distToPlayer = Math.hypot(c.x - deps.player.x, c.y - deps.player.y);
-    if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
-    // Linear, not squared — squared falloff made anything past ~30% of
-    // earshot drop to near-silence, which was most of the usable range.
-    const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
-    playOneShotSfx(cfgEntry, falloff, pitch);
+    if (!cfgEntry || !c || c.areaId !== deps?.getCurrentArea?.()) return;
+    const spatial = combatAudioSpatial(c, { earshotTiles: 9 });
+    if (spatial.gain <= 0.002) return;
+    playOneShotSfx(cfgEntry, spatial.gain, pitch, spatial);
   }
 
   // Species-keyed pitch lets every creature reuse the same bark asset
@@ -863,6 +1290,7 @@
   // plain gar-wolf's neutral pitch. Future creatures/attacks can add
   // their own url+species entry without touching this function.
   function playCreatureBark(c) {
+    if (c?.creatureKey === 'honeyfuzzle') return; // Block legacy warning/growl fallback: the positional hive buzz is its only voice.
     const cfg = combatSfxConfig().creatureBark;
     const speciesCfg = cfg?.species?.[c.creatureKey];
     playCreatureSfxAt(c, speciesCfg?.url ? { ...cfg, ...speciesCfg } : cfg, Number(speciesCfg?.pitch) || 1);
@@ -878,7 +1306,7 @@
   });
 
   function animalVoiceSpeciesKey(c) {
-    const raw = String(c?.creatureKey || c?.speciesKey || c?.species || c?.def?.key || '').toLowerCase();
+    const raw = String(c?.creatureKey || c?.animalKey || c?.speciesKey || c?.species || c?.def?.key || '').toLowerCase();
     if (raw.includes('dabinggi')) return 'dabinggi-hound';
     if (raw.includes('gar-wolf')) return 'gar-wolf';
     if (raw.includes('grehlr')) return 'grehlr';
@@ -896,8 +1324,10 @@
   }
 
   function animalVoicePool(c, opts) {
-    const authored = opts.allowedClips ?? window.AnimalVocalizations?.profileForDebug?.(c)?.[opts.meaning || 'chatter']?.allowedClips; // Semantic requests supply their authored clips; direct calls use the same profile authority.
-    return Array.isArray(authored) ? authored : ANIMAL_VOICE_POOLS[animalVoiceSpeciesKey(c)];
+    if (Array.isArray(opts.allowedClips)) return opts.allowedClips; // An explicitly empty list is an intentional silence request.
+    const authored = window.AnimalVocalizations?.profileForDebug?.(c)?.[opts.meaning || 'chatter']?.allowedClips; // Semantic requests and direct calls share authored profile selection.
+    if (Array.isArray(authored) && authored.length) return authored;
+    return ANIMAL_VOICE_POOLS[animalVoiceSpeciesKey(c)]; // Empty/default authored profiles must not mask existing legacy species recordings.
   }
 
   function preloadAnimalVoices() {
@@ -936,26 +1366,88 @@
   // detail, still originate the sound from the right direction, and sound
   // farther away/more echoey the farther it actually is."
   //
-  // panX reuses tickCreatureFootsteps' plain-world-X-difference convention
-  // (see FOOTSTEP_PAN_RANGE_PX above) rather than rotating into the
-  // player's facing direction — this game's camera doesn't track player
-  // facing tightly enough for a facing-relative pan to read as more
-  // correct, and every other panned sound in this file already uses raw
-  // world X.
+  // All combat sources use the camera-relative basis rather than a fixed world-X pan.
+  // Front/back and height remain available even while the orbiting camera turns.
+  // Read the same rendered terrain/actor height used by ranged combat.
+  // The caller supplies world Y (Three.js units); map x/y remain pixels.
+  function audioActorWorldY(actor) {
+    if (!actor || !deps) return null;
+    const explicitY = actor.avatarRef?.group?.position?.y ?? actor.root?.position?.y;
+    if (typeof explicitY === 'number' && Number.isFinite(explicitY)) return explicitY;
+    const sampled = deps.getActorWorldY?.(actor);
+    if (typeof sampled === 'number' && Number.isFinite(sampled)) return sampled;
+    if (!Number.isFinite(actor.x) || !Number.isFinite(actor.y)) return null;
+    const surface = deps.worldSurfaceY?.(actor.x, actor.y);
+    return typeof surface === 'number' && Number.isFinite(surface) ? surface : null;
+  }
+
+  function acousticPosition3D(c) {
+    if (!deps?.player || !Number.isFinite(c?.x) || !Number.isFinite(c?.y)) return null;
+    const tileSize = Math.max(1, deps.TILE || 64); // World Y already uses tile-sized world units.
+    const dx = (c.x - deps.player.x) / tileSize; // Source displacement on world X.
+    const dy = (audioActorWorldY(c) ?? 0) - (audioActorWorldY(deps.player) ?? 0); // Real height difference, negative for the bottom of a ravine.
+    const dz = (c.y - deps.player.y) / tileSize; // Source displacement on world Z (gameplay's second coordinate is named y).
+    const camera = deps.camera;
+    camera?.updateMatrixWorld?.();
+    const m = camera?.matrixWorld?.elements;
+    if (m && m.length >= 16 && [m[0],m[1],m[2],m[4],m[5],m[6],m[8],m[9],m[10]].every(Number.isFinite)) {
+      return {
+        x: dx*m[0] + dy*m[1] + dz*m[2], // Camera right, independent of character facing and third-person camera offset.
+        y: dx*m[4] + dy*m[5] + dz*m[6], // Camera up, retaining vertical origin information.
+        z: dx*m[8] + dy*m[9] + dz*m[10], // Camera rear; negative Z is in front of the listener.
+      };
+    }
+    return { x: dx, y: dy, z: dz }; // Stable world-axis fallback for tests/editor previews without a Three.js camera.
+  }
+
+  function acousticVerticalSeparationPx(c) {
+    const sourceY = audioActorWorldY(c);
+    const listenerY = audioActorWorldY(deps?.player);
+    return sourceY == null || listenerY == null ? 0 : Math.abs(sourceY - listenerY) * deps.TILE;
+  }
+
   function animalVoiceAcousticDistancePx(c, opts = {}) {
-    const overridePx = Number(opts?.acousticDistancePx); // Used by fixed world emitters such as Banubu's cave entrance when elevation must contribute to loudness.
+    const overridePx = Number(opts?.acousticDistancePx); // Authored emitters (Banubu) already supply a complete elevation-aware distance.
     if (Number.isFinite(overridePx) && overridePx >= 0) return overridePx;
     if (!deps?.player || !Number.isFinite(c?.x) || !Number.isFinite(c?.y)) return 0;
-    return Math.hypot(c.x - deps.player.x, c.y - deps.player.y);
+    return Math.hypot(c.x - deps.player.x, c.y - deps.player.y, acousticVerticalSeparationPx(c));
   }
 
   function creatureAudioSpatial(c, opts = {}) {
-    if (!deps?.player || !Number.isFinite(c?.x) || !Number.isFinite(c?.y)) return { panX: 0, extraWetBoost: 0, distance: 0 };
-    const distance = animalVoiceAcousticDistancePx(c, opts); // Feeds elevation-aware distance into attenuation/reverb while keeping stereo origin tied to the source's real X position.
-    const panX = Math.max(-1, Math.min(1, (c.x - deps.player.x) / Math.max(1, ANIMAL_VOICE_PAN_RANGE_PX)));
+    if (!deps?.player || !Number.isFinite(c?.x) || !Number.isFinite(c?.y)) return { panX: 0, extraWetBoost: 0, distance: 0, verticalDistancePx: 0 };
+    const distance = animalVoiceAcousticDistancePx(c, opts); // True 3D distance makes the bottom of a ravine sound below/far away, not beside the listener.
+    const position3d = acousticPosition3D(c);
+    const panX = position3d ? Math.max(-1, Math.min(1, position3d.x / Math.max(1, Math.hypot(position3d.x, position3d.z) * 0.6))) : 0; // Stereo fallback follows the camera, not fixed world X.
     const chunkPx = (window.WildernessChunks?.constants?.CHUNK_TILES || 16) * deps.TILE;
     const wetT = Math.max(0, Math.min(1, distance / Math.max(1, chunkPx)));
-    return { panX, extraWetBoost: wetT * ANIMAL_VOICE_DISTANT_EXTRA_WET_MAX, distance };
+    return { panX, position3d, sourceActor: c, extraWetBoost: wetT * ANIMAL_VOICE_DISTANT_EXTRA_WET_MAX, distance,
+      verticalDistancePx: acousticVerticalSeparationPx(c) };
+  }
+
+  // Weapon/impact cues and humanoid grunts must share the same source-based
+  // distance curve. Expose gain separately: native combat SFX cannot reliably
+  // use MediaElementSource panners on all supported mobile browsers.
+  function combatAudioSpatial(c, opts = {}) {
+    const spatial = creatureAudioSpatial(c, opts);
+    const earshotTiles = Math.max(1, Number(opts.earshotTiles) || 12); // Voices can carry farther than short weapon impacts.
+    const rangePx = Math.max(1, (deps?.TILE || 64) * earshotTiles);
+    const power = Math.max(1, Number(opts.power) || 1.5); // More depth contrast than a flat linear volume ramp.
+    const validPosition = Number.isFinite(c?.x) && Number.isFinite(c?.y);
+    const otherArea = (c?.areaId || c?.area) && c.areaId !== deps?.getCurrentArea?.() && c.area !== deps?.getCurrentArea?.();
+    const gain = otherArea ? 0 : validPosition ? Math.pow(Math.max(0, 1 - spatial.distance / rangePx), power) : 1;
+    const result = { ...spatial, gain, earshotPx: rangePx, areaId: c?.areaId || c?.area || deps?.getCurrentArea?.() };
+    if (validPosition) {
+      lastCombatSpatialDebug = {
+        source: c?.id || c?.npcId || c?.name || c?.creatureKey || 'world impact',
+        area: c?.areaId || c?.area || null,
+        horizontalTiles: Math.hypot(c.x - deps.player.x, c.y - deps.player.y) / (deps.TILE || 64),
+        verticalTiles: spatial.verticalDistancePx / (deps.TILE || 64),
+        distanceTiles: spatial.distance / (deps.TILE || 64),
+        gain: Number(gain.toFixed(3)),
+        panX: Number(spatial.panX.toFixed(3)), position3d: spatial.position3d, // Verifies left/right and vertical origin directly on mobile.
+      };
+    }
+    return result;
   }
 
   // A zone that was just entered is still doing its own expensive
@@ -984,6 +1476,7 @@
   // means and when each utterance is due; AudioSystem resolves the asset,
   // distance mix, tempo/pitch playback, and browser Audio lifecycle.
   function playAnimalVoiceUtterance(c, opts = {}) {
+    if (animalVoiceSpeciesKey(c) === 'honeyfuzzle') return false; // Direct callers also cannot trigger honeyfuzzle utterances; buzzing is handled separately.
     const pool = animalVoicePool(c, opts); // Authored species must pass the native preparation gate before independent tempo/pitch playback can start.
     if (!pool?.length || !deps || c?.areaId !== deps.getCurrentArea()) return false;
     const audioCfg = gameAudioConfig();
@@ -1032,7 +1525,8 @@
   function playCreatureTreasureAlert(c) {
     const cfg = combatSfxConfig().creatureBark;
     if (!cfg || !deps || c?.areaId !== deps.getCurrentArea()) return;
-    const distance = Math.hypot(c.x - deps.player.x, c.y - deps.player.y);
+    const spatial = combatAudioSpatial(c, { earshotTiles: 12 }); // Alerts share the caller's 3D origin, including ravine elevation and camera direction.
+    const distance = spatial.distance;
     const earshot = deps.TILE * 12;
     if (distance > earshot) return;
     const speciesCfg = cfg.species?.[c.creatureKey] || {};
@@ -1043,7 +1537,7 @@
       volume: Math.min(1, (Number(cfg.volume) || 0.8) * 1.15),
       gainBoost: Math.max(1.8, Number(cfg.gainBoost) || 1),
     };
-    playOneShotSfx(alertCfg, falloff, Number(speciesCfg.pitch) || 1);
+    playOneShotSfx(alertCfg, falloff, Number(speciesCfg.pitch) || 1, spatial);
   }
 
   function playCreatureClawHit(c) {
@@ -1061,13 +1555,15 @@
 
   // Combo steps are zero-based and map exactly to swing files 1/2/3.
   // Every other melee attack deliberately chooses one of the three anew.
-  function playWeaponSlashSfx(pitch, comboStep) {
+  function playWeaponSlashSfx(pitch, comboStep, attacker = null) {
     const step = Number.isInteger(comboStep) && comboStep >= 0 && comboStep < 3
       ? comboStep : Math.floor(Math.random() * 3);
     const key = `weaponSwing${step + 1}`;
     const cfgEntry = combatSfxConfig()[key];
-    recordCombatSfx(key, cfgEntry, { comboStep: Number.isInteger(comboStep) ? comboStep : null });
-    playOneShotSfx(cfgEntry, 1, pitch);
+    const spatial = attacker && attacker !== deps?.player ? combatAudioSpatial(attacker, { earshotTiles: 9 }) : null;
+    if (spatial && spatial.gain <= 0.002) return;
+    recordCombatSfx(key, cfgEntry, { comboStep: Number.isInteger(comboStep) ? comboStep : null, gain: spatial?.gain ?? 1 });
+    playOneShotSfx(cfgEntry, spatial?.gain ?? 1, pitch, spatial);
   }
 
   // Sized impact sound for any WEAPON hit landing (player Combo/Quick Attack/
@@ -1090,38 +1586,134 @@
     const key = `weaponHit${family}${normalizedSize[0].toUpperCase()}${normalizedSize.slice(1)}`;
     const cfgEntry = combatSfxConfig()[key];
     if (!cfgEntry) return;
-    const distToPlayer = Math.hypot(x - deps.player.x, y - deps.player.y);
-    if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
-    const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
+    const spatial = combatAudioSpatial({ x, y, areaId }, { earshotTiles: 9 });
+    if (spatial.gain <= 0.002) return;
+    const falloff = spatial.gain;
     recordCombatSfx(key, cfgEntry, { tag: family.toLowerCase(), size: normalizedSize });
-    playOneShotSfx(cfgEntry, falloff, pitch);
+    playOneShotSfx(cfgEntry, falloff, pitch, spatial);
+  }
+
+  function playQuickAttackBonusSfx(x, y, areaId) {
+    if (areaId !== deps?.getCurrentArea?.()) return;
+    const cfgEntry = combatSfxConfig().quickAttackBonusSlash; // One semantic anime-slash cue for player and all NPC conditional quick hits.
+    if (!cfgEntry) return;
+    const spatial = combatAudioSpatial({ x, y, areaId }, { earshotTiles: 9 });
+    if (spatial.gain <= 0.002) return;
+    recordCombatSfx('quickAttackBonusSlash', cfgEntry, { conditional: true });
+    playOneShotSfx(cfgEntry, spatial.gain, 1, spatial);
+  }
+
+  function playComboFinisherBonusSfx(x, y, areaId) {
+    if (areaId !== deps?.getCurrentArea?.()) return;
+    const audioCfg = gameAudioConfig(); // Matches Quick Attack's global and combat-SFX mute switches.
+    if (audioCfg.enabled === false || combatSfxConfig().enabled === false) return;
+    const cfgEntry = combatSfxConfig().quickAttackBonusSlash; // Same authored anime-slash file, separate finisher treatment.
+    if (!cfgEntry?.url) return;
+    const spatial = combatAudioSpatial({ x, y, areaId }, { earshotTiles: 9 }); // Identical earshot/panning to an ordinary Quick Attack bonus.
+    if (spatial.gain <= 0.002) return;
+    const configuredVolume = Number(cfgEntry.volume); // Respect an explicitly muted slash asset as well as ordinary authored levels.
+    const baseVolume = Number.isFinite(configuredVolume) ? Math.max(0, Math.min(1, configuredVolume)) : 0.8; // Matches the existing default for absent SFX volume.
+    const configuredSfxVolume = Number(audioCfg.sfxVolume ?? 1); // Runtime master SFX mix, validated before multiplying the positional gain.
+    const volume = baseVolume * (Number.isFinite(configuredSfxVolume) ? Math.max(0, configuredSfxVolume) : 1)
+      * spatial.gain * COMBO_FINISHER_SLASH_VOLUME; // Both hits use 80% of the normal slash volume, preserving distance attenuation.
+    if (volume <= 0.002) return;
+    const entry = combatDecodedByUrl.get(cfgEntry.url); // Reads the shared preload cache, not a second fetch/decode pipeline.
+    if (entry?.buffer) prepareComboFinisherSlashClips(entry);
+    else prepareCombatPositionalClip(cfgEntry.url, true);
+    resumeCombatPositionalContext();
+    const clips = comboFinisherSlashSource === entry?.buffer ? comboFinisherSlashClips : null; // No stale render may play after the underlying asset changes.
+    const ctx = combatPositionalContext; // Sample-accurate start times are available only when the Web Audio route is running.
+    if (ctx?.state === 'running' && clips?.length === 2 && clips.every(clip => clip?.buffer && clip.durationS > 0)) {
+      const startAt = ctx.currentTime + 0.005; // Short scheduling lead prevents audible gaps on mobile.
+      const first = playDecodedCombatSfx(cfgEntry, volume, clips[0].playbackRate, spatial, clips[0].buffer, startAt);
+      const second = first && playDecodedCombatSfx(cfgEntry, volume, clips[1].playbackRate, spatial, clips[1].buffer, startAt + clips[0].durationS); // Second starts exactly as the first finishes.
+      if (first && second) {
+        recordCombatSfx('comboFinisherDoubleSlash', cfgEntry, { tempo: COMBO_FINISHER_SLASH_TEMPO, semitones: COMBO_FINISHER_SLASH_PITCHES, volumeScale: COMBO_FINISHER_SLASH_VOLUME, backend: 'independent-WSOLA' });
+        return;
+      }
+      first?.pause?.();
+      second?.pause?.();
+    }
+    if (typeof Audio !== 'function') return;
+    // Native HTML audio cannot transpose independently of tempo. Prefer the specified one-third duration with its
+    // original pitch when pitch preservation is supported; otherwise keep the requested lower notes without
+    // inadvertently producing a high-pitched slash. The decoded WSOLA path above satisfies both specifications.
+    const nativePitchModes = []; // Debug keeps the audible pitch/speed mode for each part of the native sequence.
+    const nativePlaybackRates = []; // Distinguishes exact 3x tempo from lower-pitch but slower playback.
+    const playNativePart = index => {
+      if (gameAudioConfig().enabled === false || combatSfxConfig().enabled === false) return;
+      const snd = trackActiveSfx(new Audio(cfgEntry.url)); // New element per part avoids pool reuse cutting a previous attack short.
+      const preservesPitch = ['preservesPitch', 'webkitPreservesPitch', 'mozPreservesPitch'].some(key => key in snd); // Modern mobile media elements expose at least one supported pitch-preservation flag.
+      const rate = preservesPitch ? COMBO_FINISHER_SLASH_TEMPO : Math.pow(2, COMBO_FINISHER_SLASH_PITCHES[index] / 12); // Without preservation, prioritize lowered pitch over an incorrectly raised one.
+      if ('preservesPitch' in snd) snd.preservesPitch = true;
+      if ('webkitPreservesPitch' in snd) snd.webkitPreservesPitch = true;
+      if ('mozPreservesPitch' in snd) snd.mozPreservesPitch = true;
+      snd.playbackRate = rate;
+      nativePitchModes.push(preservesPitch ? 'original-pitch-fast' : 'lower-pitch-slow'); // Used by debug to distinguish the two unavoidable limitations.
+      nativePlaybackRates.push(rate); // Effective native rate is visible alongside the requested pitch/tempo.
+      if (index === 0) snd.addEventListener?.('ended', () => playNativePart(1), { once: true }); // True end-to-start sequencing, not two overlapping play() calls.
+      playSfxAudioElement(snd, volume, Number(cfgEntry.gainBoost) || 1);
+    };
+    recordCombatSfx('comboFinisherDoubleSlash', cfgEntry, { requestedTempo: COMBO_FINISHER_SLASH_TEMPO, requestedSemitones: COMBO_FINISHER_SLASH_PITCHES, volumeScale: COMBO_FINISHER_SLASH_VOLUME, backend: 'native-limited-fallback', actualPitchModes: nativePitchModes, actualPlaybackRates: nativePlaybackRates });
+    playNativePart(0);
+  }
+
+  function playSoursapBurstSfx(x, y, areaId) {
+    if (areaId !== deps?.getCurrentArea?.() || gameAudioConfig().enabled === false || combatSfxConfig().enabled === false) return;
+    const cfgEntry = combatSfxConfig().soursapSplat; // Exactly the Drenkirra pellet recording, but separately transposed and slowed.
+    if (!cfgEntry) return;
+    const spatial = combatAudioSpatial({ x, y, areaId }, { earshotTiles: 9 });
+    if (spatial.gain <= 0.002) return;
+    const entry = combatDecodedByUrl.get(cfgEntry.url); // The shared positional decode pipeline is reused, not another audio loader.
+    if (entry?.buffer) prepareSoursapIndependentClip(entry);
+    const rendered = soursapRenderedSource === entry?.buffer && soursapRenderedClip; // Only play the processed buffer associated with the current decoded asset.
+    const pitchRatio = Math.pow(2, -12 / 12); // One octave lower, independent of clip duration.
+    const tempoRatio = 0.8; // Independently lengthens the recorded splat by 25%.
+    if (rendered?.buffer) {
+      const volume = Math.max(0, Math.min(1, Number(cfgEntry.volume) || 0.8))
+        * Math.max(0, Number(gameAudioConfig().sfxVolume ?? 1)) * spatial.gain;
+      if (playDecodedCombatSfx(cfgEntry, volume, rendered.playbackRate, spatial, rendered.buffer)) {
+        recordCombatSfx('soursapSplat', cfgEntry, { semitones: -12, tempo: tempoRatio, backend: 'independent-WSOLA' });
+        return;
+      }
+    }
+    const approximateRate = Math.sqrt(pitchRatio * tempoRatio); // Native playback couples pitch and time: compromise between the two requested axes until WSOLA is ready.
+    recordCombatSfx('soursapSplat', cfgEntry, { requestedSemitones: -12, requestedTempo: tempoRatio, backend: 'coupled-native-fallback', actualPlaybackRate: approximateRate });
+    playOneShotSfx(cfgEntry, spatial.gain, approximateRate, spatial); // Never slow to 40% tempo by multiplying both independent rates.
   }
 
   function playCounterShieldBlockSfx(x, y, areaId) {
     if (areaId !== deps.getCurrentArea()) return;
     const cfgEntry = combatSfxConfig().counterShieldBlock;
     if (!cfgEntry) return;
-    const distToPlayer = Math.hypot(x - deps.player.x, y - deps.player.y);
-    if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
-    const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
+    const spatial = combatAudioSpatial({ x, y, areaId }, { earshotTiles: 9 });
+    if (spatial.gain <= 0.002) return;
+    const falloff = spatial.gain;
     recordCombatSfx('counterShieldBlock', cfgEntry, { block: true });
-    playOneShotSfx(cfgEntry, falloff);
+    playOneShotSfx(cfgEntry, falloff, undefined, spatial);
   }
 
-  function playRangedImpactSfx(x, y, areaId) {
+  function playRangedImpactSfx(x, y, areaId, pitch = 1) {
     if (areaId !== deps.getCurrentArea()) return;
     const cfgEntry = combatSfxConfig().rangedImpact;
     if (!cfgEntry) return;
-    const distToPlayer = Math.hypot(x - deps.player.x, y - deps.player.y);
-    if (distToPlayer > FOOTSTEP_EARSHOT_PX) return;
-    const falloff = Math.max(0, 1 - distToPlayer / FOOTSTEP_EARSHOT_PX);
-    recordCombatSfx('rangedImpact', cfgEntry, { rangedImpact: true });
-    playOneShotSfx(cfgEntry, falloff);
+    const spatial = combatAudioSpatial({ x, y, areaId }, { earshotTiles: 9 });
+    if (spatial.gain <= 0.002) return;
+    const falloff = spatial.gain;
+    recordCombatSfx('rangedImpact', cfgEntry, { rangedImpact: true, pitch });
+    playOneShotSfx(cfgEntry, falloff, pitch, spatial);
   }
 
   function combatSfxDebugSnapshot() {
     return {
       last: lastCombatSfxDebug ? { ...lastCombatSfxDebug } : null,
+      spatial: lastCombatSpatialDebug ? { ...lastCombatSpatialDebug } : null, // Mobile diagnostics compare horizontal vs ravine depth.
+      backend: combatSpatialBackend, spatialStarts: combatSpatialStarts, nativeFallbacks: combatSpatialFallbacks, activeRoutes: activeDirectionalRoutes.size, // Mobile reports live HRTF routes to diagnose cleanup.
+      decoded: [...combatDecodedByUrl.values()].filter(v => v.state === 'ready').length,
+      decoding: combatDecodeInFlight, queued: combatDecodeQueue.length,
+      decodeFailures: [...combatDecodedByUrl.values()].filter(v => v.state === 'failed').length,
+      specialCombatDecoded: Object.values(window.HobunjiDrenkirraPellet?.sfx || {}).filter(v => combatDecodedByUrl.get(v.url)?.state === 'ready').length,
+      spatialError: combatSpatialLastError,
       maxStartDelayMs: COMBAT_SFX_MAX_START_DELAY_MS,
       preloads: [...combatSfxPreloads.entries()].flatMap(([url, pool]) => pool.map(snd => ({
         key: snd.dataset.combatSfxKey || '?', url, poolIndex: Number(snd.dataset.combatPoolIndex) || 0,
@@ -1173,9 +1765,11 @@
     config.enabled = false;
     const resumeMusic = window.Music?.beginQuietLoading?.(); // The existing mixer owns both native and gapless-buffer music transports.
     window.HobunjiAmbientBgs?.silence?.();
+    window.HoneyfuzzleAudio?.silence?.(); // Introduction narration owns the soundscape exclusively.
     window.EnvironmentalReverb?.stopAll?.();
     for (const audio of activeSfx) audio.pause?.();
     activeSfx.clear();
+    for (const source of [...activePositionalCombat]) source.pause(); // Intro wind must replace in-flight 3D weapon and impact tails too.
     window.AnimalVoiceIndependentPlayback?.stopAll?.();
     const context = window._footstepAudioCtx; // Pause synthesized/recorded Web Audio tails without routing the wind through the suspended context.
     const resumeContext = context?.state === 'running';
@@ -1203,7 +1797,7 @@
           else Promise.resolve(playRequest).catch(error => { lastError = String(error); });
         } catch (error) { lastError = String(error); }
       },
-      finish() { if (finished) return; finished = true; if (!windStarted) resolveStarted?.(false); wind?.pause(); if (hadEnabled) config.enabled = enabled; else delete config.enabled; resumeMusic?.(); if (resumeContext) context.resume?.().catch?.(() => {}); window.HobunjiAmbientBgs?.updateNow?.(); if (introductionMix === session) introductionMix = null; },
+      finish() { if (finished) return; finished = true; if (!windStarted) resolveStarted?.(false); wind?.pause(); if (hadEnabled) config.enabled = enabled; else delete config.enabled; resumeMusic?.(); if (resumeContext) context.resume?.().catch?.(() => {}); window.HobunjiAmbientBgs?.updateNow?.(); window.HoneyfuzzleAudio?.updateNow?.(); if (introductionMix === session) introductionMix = null; },
       debug: () => ({ wind: wind?.src, playing: !!wind && !wind.paused, windStarted, lastError, latestChange: 'Introduction mutes gameplay sound/music, starts the violent wind loop, and exposes its real playing event so narration can wait for audible wind.' }),
     };
     introductionMix = session;
@@ -1230,16 +1824,23 @@
     objectSfxConfig,
     playObjectSfx,
     playObjectSfxKey,
+    playObjectSfxKeyMetronome,
+    playObjectSfxKeyIndependentPitch,
     objectSfxDebugSnapshot,
     playCreatureSfxAt,
     playCreatureBark,
     hasAnimalVoice,
     creatureAudioSpatial,
+    combatAudioSpatial,
+    connectCombatSpatialDry, // Shared camera-relative HRTF path reused by vocal DSP and weapon cues.
     playAnimalVoiceUtterance,
     playCreatureTreasureAlert,
     playCreatureClawHit,
     playWeaponSlashSfx,
     playWeaponHitSfx,
+    playQuickAttackBonusSfx,
+    playComboFinisherBonusSfx,
+    playSoursapBurstSfx,
     playCounterShieldBlockSfx,
     playRangedImpactSfx,
     combatSfxDebugSnapshot,

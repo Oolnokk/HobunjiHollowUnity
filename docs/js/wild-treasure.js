@@ -42,6 +42,18 @@
     return keys;
   }
 
+  // Reuses the buried-chest metal picker for dungeon loot, returning the
+  // canonical smithing inventory keys rather than a wilderness-only bundle.
+  function rollTreasureMetalBarLoot() {
+    if (!deps?.metalBarItemKey || !deps.VERDIGRIS_METAL_KEYS?.length) return {};
+    const loot = {}; // Inventory-keyed bar counts passed into the shared dungeon chest loot roller.
+    for (const metalKey of _rollTreasureMetalKeys()) {
+      const barKey = deps.metalBarItemKey(metalKey); // Resolves the exact smithing/crafting inventory item for this metal.
+      if (barKey) loot[barKey] = (loot[barKey] || 0) + 1;
+    }
+    return loot;
+  }
+
   // Looks up one named entry from the treasureChest loot pool (docs/
   // config/loot/loot-pools.json) by id — used instead of game.js's
   // rollLootPool's generic itemKey-roll path since a chest's bundle
@@ -146,7 +158,8 @@
     const targetCount = 1 + Math.floor((zi.cols * zi.rows) / 3200); // rare — usually 1-2 per zone
     const rng = deps._mbRng(deps._seedFromString(mapId + ':treasure:' + weekIndex()));
     const blockedTerrainTiles = _treasureBlockedTerrainTiles(zi); // Used to keep the shared flat-empty picker from selecting non-diggable roads or waterways.
-    const avoid = [...(deps._zoneReagentPersist.get(mapId)?.placements || []), ...(deps._zoneBerryPersist.get(mapId)?.placements || []), ...blockedTerrainTiles];
+    const storyVaultSite = window.RuinSites?.storyVaultSite?.(mapId); // Keep weekly diggable treasure off the world-persistent Harlyao vault's one hidden tile.
+    const avoid = [...(deps._zoneReagentPersist.get(mapId)?.placements || []), ...(deps._zoneBerryPersist.get(mapId)?.placements || []), ...blockedTerrainTiles, ...(storyVaultSite ? [storyVaultSite] : [])];
     const spots = deps.findZoneFlatEmptyTiles(mapId, targetCount, rng, avoid);
     const holeChance = Number(window.RuinSites?.treasureHoleChance?.()) || 0; // Rare: the "treasure" is the roof of a buried ruin (js/ruin-sites.js).
     const holeRng = deps._mbRng(deps._seedFromString(mapId + ':treasure-ruin-hole:' + weekIndex())); // Separate stream so loot rolls stay identical to before.
@@ -190,7 +203,7 @@
   function _treasureChestMaterial(color) {
     const material = new THREE.MeshLambertMaterial({ color });
     if (typeof THREE.TextureLoader !== 'function') return material;
-    if (!treasureChestTexture) treasureChestTexture = new THREE.TextureLoader().load(TREASURE_CHEST_TEXTURE_PATH);
+    if (!treasureChestTexture) treasureChestTexture = new THREE.TextureLoader().load(TREASURE_CHEST_TEXTURE_PATH, window.CreatureTextureCache?.capFurnitureTexture); // Scaled once at load (source is 1378x1378).
     material.map = treasureChestTexture;
     material.needsUpdate = true;
     return material;
@@ -229,7 +242,8 @@
   // over undisturbed ground, and re-burying it (filling the trench back
   // in before opening) hides the option again.
   function _makeTreasureChestObject(mapId, col, row, placement, mesh) {
-    return {
+    let completingPick = false; // Ephemeral success-only reentry flag; never saved on the persistent placement or restored to bypass a lock.
+    const chestObject = { // The success callback re-enters the live decorated action so discovery rewards still fire.
       id: 'treasurechest_' + mapId + '_' + col + '_' + row, type: 'treasure_chest',
       col, row, mesh,
       label: '🗝️ Buried Chest',
@@ -244,6 +258,35 @@
         if (action !== 'obj_open_treasure_chest') return { ok: false, message: 'Unknown action.' };
         const tile = deps._zoneScenes.get(mapId)?.grid[row]?.[col];
         if (tile?.type !== deps.TileType.TRENCH) return { ok: false, message: "It's still buried — dig a trench here to reach it." };
+        if (placement.found) return { ok: false, message: 'Already opened.' }; // Reject stale interaction buttons after the treasure is claimed.
+        if (!completingPick) {
+          const valid = () => !placement.found && deps.getCurrentArea() === mapId
+            && deps._zoneTreasurePersist.get(mapId)?.placements?.includes(placement)
+            && deps._zoneTreasureObjects.get(mapId)?.get(col + ',' + row) === chestObject
+            && deps._zoneScenes.get(mapId)?.grid[row]?.[col]?.type === deps.TileType.TRENCH; // A replaced or weekly-rescattered chest cannot pay an obsolete victory.
+          const started = window.ChestLockpicking?.open?.({
+            id: chestObject.id, title: 'Buried Chest', tier: 1, valid,
+            onSuccess: () => {
+              let result; // The decorated action remains the only loot and rare-weapon reward authority.
+              try {
+                completingPick = true; // Only this synchronous success reentry skips the minigame.
+                result = chestObject.onAction('obj_open_treasure_chest'); // Runs WeaponDiscoveryRewards after the normal treasure loot.
+              } finally { completingPick = false; }
+              if (result?.message) deps.showToast?.(result.message, result.ok === true);
+              if (result?.ok) {
+                // The world dispatcher saw an asynchronous false result, so it
+                // never saved this successful chest. Persist the live inventory now.
+                const saved = window.HobunjiRuntimeSave?.flushNow?.({ reason: 'buried-chest-lockpicked' })
+                  ?? (typeof deps.saveMemberWorldData === 'function' ? (deps.saveMemberWorldData(), { ok: true }) : null);
+                if (!saved || saved.ok === false || saved.captured === false)
+                  deps.showToast?.('Chest opened, but the save was not confirmed. Check Save Diagnostics.', false);
+              }
+            },
+          });
+          // A pending minigame is NOT an opened chest. Keep result.ok false so
+          // WeaponDiscoveryRewards cannot roll a weapon before a successful pick.
+          return { ok: false, message: started ? '' : 'Lockpicking unavailable.', deferMemberSave: true };
+        }
         const { loot } = placement;
         const parts = [];
         for (const metalKey of loot.metalKeys) {
@@ -289,6 +332,7 @@
         return { ok: true, message: 'Opened the chest: ' + parts.join(', ') };
       },
     };
+    return chestObject;
   }
 
   function _clearZoneTreasureMeshes(mapId) {
@@ -484,9 +528,32 @@
     }
   }
 
+  // Ordinary chest openings retain their richer bundle format. Mixed corpse
+  // tables need inventory stacks, so adapt that exact generator output here
+  // rather than independently approximating its metal/dye/manual chances.
+  function rollTreasureLootAsItems(context = {}) {
+    if (!deps?.getLootPools || typeof deps.rnd !== 'function') return null; // A partially initialized dungeon-test / pre-bootstrap wilderness adapter falls back to LootRolling's original flat entries.
+    const bundle = _rollTreasureLootBundle();
+    const gained = {}; // Individual quantity stacks consumed by LootRolling and corpse containers.
+    const add = (key, amount = 1) => {
+      if (typeof key !== 'string' || !key || !(Number(amount) > 0)) return;
+      gained[key] = (gained[key] || 0) + Number(amount);
+    };
+    for (const metal of bundle.metalKeys || []) add(deps?.metalBarItemKey?.(metal)); // Smithing bars use canonical inventory keys, never raw metal-type IDs.
+    for (const key of bundle.dyeItemKeys || []) add(key);
+    add('gold', bundle.gold);
+    for (const key of [bundle.potionKey, bundle.recipeItemKey, bundle.combatManualKey]) add(key);
+    // Clothing needs its complete dyed item record, not a fabricated inventory
+    // key. Callers that can store garments supply the optional out-array.
+    if (bundle.clothing && Array.isArray(context.clothingDrops)) context.clothingDrops.push(bundle.clothing);
+    return gained;
+  }
+
   window.WildTreasure = {
     init,
     weekIndex,
+    rollTreasureLootAsItems,
+    rollTreasureMetalBarLoot,
     ensureZone,
     syncZoneInteractivity,
     nearestBuriedPixelPos,

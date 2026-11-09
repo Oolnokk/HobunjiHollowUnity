@@ -96,19 +96,23 @@
   }
 
   function _openToolArc() {
+    window.Spyglass?.endAim?.('tool arch opened');
     _clearArc(); _arcOpen = 'tool';
     if (_itemBtn) _itemBtn.style.visibility = 'hidden';
     _arcBd = document.createElement('div');
     _arcBd.className = 'arc-backdrop';
     document.body.appendChild(_arcBd);
     const activeTool = deps.getActiveTool();
-    const n = deps.WHEEL_SLOTS.length, step = (ARC_S - ARC_E) / (n - 1);
-    deps.WHEEL_SLOTS.forEach((slot, i) => {
+    const backBurden=window.Shattercasks?.backCarriedInfo?.(); // Adds one virtual entry without modifying saved equipment slots.
+    const slots=backBurden?[...deps.WHEEL_SLOTS,'backBurden']:deps.WHEEL_SLOTS;
+    const n=slots.length,step=n>1?(ARC_S-ARC_E)/(n-1):0;
+    slots.forEach((slot, i) => {
       const deg = ARC_S - i * step;
-      const eq = deps.equipmentSlots[slot], def = eq ? deps.TOOL_ITEM_DEFS[eq] : null;
+      const isBack=slot==='backBurden';
+      const eq = !isBack?deps.equipmentSlots[slot]:null, def = eq ? deps.TOOL_ITEM_DEFS[eq] : null;
       const fallbackIcon = {shovel:'⛏️',hoe:'🪓',weapon:'🗡️',axe:'🪓',pick:'⛏️',harpoon:'🎣'}[slot] || '🔧';
-      const icon  = deps.toolSelectIconHTML(def, fallbackIcon, '1.4em');
-      const label = {shovel:'Shovel',hoe:'Hoe',weapon:'Weapon',axe:'Axe',pick:'Pick',harpoon:'Harpoon'}[slot] || slot;
+      const icon  = isBack?'🎒':deps.toolSelectIconHTML(def, fallbackIcon, '1.4em');
+      const label = isBack?backBurden.displayName:({shovel:'Shovel',hoe:'Hoe',weapon:'Weapon',axe:'Axe',pick:'Pick',harpoon:'Harpoon'}[slot] || slot);
       const el = _mkSlot(deg, icon, label, activeTool === slot ? 'arc-active' : '');
       _arcSlots.push({ angle: deg, el, data: slot });
       if (activeTool === slot) _arcActive = i;
@@ -131,6 +135,7 @@
   // placed wilderness campfire or the farm, quick-selecting a Campfire Kit
   // without scrolling the item wheel, or orbiting around the stationary player.
   function _openUtilitiesArc() {
+    window.Spyglass?.endAim?.('utility arch opened'); // Keep the optical mask out of the utility selector while browsing it.
     // A placed campfire now persists indefinitely, including outside its
     // own zone (see wilderness-campfire.js's header comment) — serialize()
     // is the "does one exist, and where" query for that; isHere() only
@@ -147,10 +152,19 @@
         onSelect: () => deps.setCharacterViewMode(!deps.characterViewMode.enabled),
       },
       {
+        id: 'spyglass', icon: '🔭', label: window.Spyglass?.isEquipped?.() ? 'Put Away Spyglass' : 'Spyglass',
+        active: window.Spyglass?.isEquipped?.() === true,
+        onSelect: () => window.Spyglass?.equip?.(), // Select the utility; Action 2 toggles the lens and holding Action 1 looks closer.
+      },
+      {
         id: 'furniture-placement', icon: '🪑', label: furniturePlacementAvailable ? 'Furniture Placement' : 'Furniture Placement Unavailable',
         disabled: !furniturePlacementAvailable,
         onSelect: () => window.FurniturePlacer?.open?.(),
       },
+      ...(window.FarmworkUI?.canOpen?.() ? [{
+        id: 'farmwork', icon: '🌱', label: 'Farmwork',
+        onSelect: () => window.FarmworkUI?.open?.(), // Marriage and current-area gating live with the normal-play panel.
+      }] : []),
       {
         id: 'return-camp', icon: '🏕️', label: campfire ? 'Return to Camp' : 'No Camp Set Up',
         disabled: !campfire,
@@ -160,6 +174,7 @@
             // Already in the right zone — just reposition onto the tile.
             const result = window.WildernessCampfire.returnToCampfire();
             deps.showToast(result.message, result.ok);
+            if (result.ok) window.CompanionDowned?.reviveAll?.({ reason: 'return-camp', teleport: true }); // Teleporting to camp revives a downed companion beside you.
             deps.refreshActionBar();
           } else {
             // A different zone (or the farm/town/a building) — travel there
@@ -168,6 +183,7 @@
             // (same fire-and-forget async-inside-startSceneTransition
             // pattern performTravel's own 'zone' case uses for an
             // ordinary authored zone transition).
+            window.CompanionDowned?.reviveAll?.({ reason: 'return-camp', teleport: 'deferred' }); // The destination scene respawns the companion standing; a deferred teleport covers the in-place case.
             if (window.TownMine?.floorFromMapId?.(campfire.mapId)) {
               window.WildernessCampfire?.requestReturnToCampfire?.();
               deps.startSceneTransition(() => deps.enterBuilding(campfire.mapId));
@@ -185,7 +201,10 @@
       {
         id: 'return-farm', icon: '🏡', label: deps.getCurrentArea() === 'farm' ? 'Already on Farm' : 'Return to Farm',
         disabled: deps.getCurrentArea() === 'farm',
-        onSelect: () => deps.startSceneTransition(() => deps.performTravel({ target: 'farm', targetCol: 17, targetRow: 0 })),
+        onSelect: () => {
+          window.CompanionDowned?.reviveAll?.({ reason: 'return-farm', teleport: 'deferred' }); // Teleporting to the farm revives a downed companion beside you.
+          deps.startSceneTransition(() => deps.performTravel({ target: 'farm', targetCol: 17, targetRow: 0 }));
+        },
       },
     ]);
   }
@@ -223,6 +242,7 @@
   }
 
   function _selectHeldInventoryKey(itemKey) {
+    window.Spyglass?.stow?.('held item selected');
     const index = deps.getInventoryStackItems().findIndex(item => item.key === itemKey);
     if (index < 0) return;
     deps.setActiveItemIndex(index);
@@ -343,6 +363,7 @@
   }
 
   function _openItemArc() {
+    window.Spyglass?.endAim?.('item arch opened');
     _clearArc(); _arcOpen = 'item';
     deps.toolBtn.style.visibility = 'hidden';
     _arcBd = document.createElement('div');
@@ -391,9 +412,14 @@
     if (_iScrollT) { clearInterval(_iScrollT); _iScrollT = null; }
     if (!_arcOpen) return;
     const slot = _arcSlots[_arcActive];
+    const selectedSpyglass = _arcOpen === 'entries:utilities' && slot?.data?.id === 'spyglass'; // Used to restore cursorless camera look only after the utility backdrop is gone.
+    if (slot && slot.data?.id !== 'spyglass') window.Spyglass?.stow?.('other utility or equipment selected');
     if (_arcOpen === 'tool' && slot) {
-      deps.setHeldMode('tool'); deps.setLastHeldFarmTool(slot.data);
-      deps.setActiveTool(slot.data); // calls refreshActionBar internally
+      if(slot.data==='backBurden')window.Shattercasks?.takeFromBack?.();
+      else {
+        deps.setHeldMode('tool'); deps.setLastHeldFarmTool(slot.data);
+        deps.setActiveTool(slot.data); // calls refreshActionBar internally
+      }
     } else if (_arcOpen === 'item' && slot?.data.type === 'item') {
       deps.setHeldMode('item');
       deps.setActiveItemIndex(slot.data.index);
@@ -407,18 +433,27 @@
       }
     }
     _clearArc();
+    if (selectedSpyglass && window.Spyglass?.isEquipped?.()) window.ShoulderCamPointerLock?.request?.(); // The arch has closed, so its UI-blocking backdrop no longer rejects pointer lock.
   }
 
   function _bindListeners() {
     _itemBtn = document.getElementById('itemBtn');
     window._desktopSelectionArc = {
-      openTool() { if (_arcOpen !== 'tool') _openToolArc(); },
+      openTool() {
+        // Tool Select is claimed outright by the faced Shattercask, even for
+        // a held/long controller press. Do not open the selector over Pick Up.
+        if(window.Shattercasks?.toolArchAction?.()==='pickup'){
+          window.Shattercasks.toolArchTap();return;
+        }
+        if (_arcOpen !== 'tool') _openToolArc();
+      },
       openItem() { if (_arcOpen !== 'item') _openItemArc(); },
       openAmmo() { if (_arcOpen !== 'entries:ammo') _openAmmoArc(); },
       openPotions() { _openPotionRoot(); },
       openUtilities() { if (_arcOpen !== 'entries:utilities') _openUtilitiesArc(); },
       openEntries(mode, entries, options = {}) { _openEntries(mode, entries, options.radius || _outerR()); },
       recallLastTool() {
+        window.Spyglass?.stow?.('tool recalled');
         const fallback = deps.WHEEL_SLOTS.find(slot => deps.equipmentSlots[slot]) || deps.WHEEL_SLOTS[0]; // Deleted/invalid remembered references degrade safely.
         const lastHeldFarmTool = deps.getLastHeldFarmTool();
         const recalled = deps.WHEEL_SLOTS.includes(lastHeldFarmTool) && deps.equipmentSlots[lastHeldFarmTool] ? lastHeldFarmTool : fallback;
@@ -428,20 +463,20 @@
         return recalled;
       },
       scrollTool(dir) {
+        window.Spyglass?.stow?.('tool selected');
         if (_arcOpen !== 'tool') _openToolArc();
-        const activeTool = deps.getActiveTool();
-        const idx = deps.WHEEL_SLOTS.indexOf(activeTool);
-        const next = (idx + dir + deps.WHEEL_SLOTS.length) % deps.WHEEL_SLOTS.length;
-        deps.setHeldMode('tool');
-        deps.setLastHeldFarmTool(deps.WHEEL_SLOTS[next]);
-        deps.setActiveTool(deps.WHEEL_SLOTS[next]);
-        _arcSlots.forEach((s, i) => {
-          const active = s.data === deps.getActiveTool();
-          s.el.classList.toggle('arc-active', active);
-          if (active) _arcActive = i;
-        });
+        const idx=_arcActive>=0?_arcActive:_arcSlots.findIndex(s=>s.data===deps.getActiveTool());
+        const next=(idx+dir+_arcSlots.length)%_arcSlots.length;
+        const chosen=_arcSlots[next]?.data;
+        if(chosen!=='backBurden'){
+          deps.setHeldMode('tool');
+          deps.setLastHeldFarmTool(chosen);
+          deps.setActiveTool(chosen);
+        }
+        _setActive(next); // Back-carried Burdens are taken into the hands only when the selector commits.
       },
       scrollItem(dir) {
+        window.Spyglass?.stow?.('item selected');
         if (_arcOpen !== 'item') _openItemArc();
         deps.setHeldMode('item');
         deps.cycleActiveInventoryItem(dir);
@@ -505,10 +540,11 @@
       else if (_arcOpen?.startsWith('entries:potion-items-')) _openPotionItems(_arcOpen.slice('entries:potion-items-'.length));
     }); // Refresh the open hierarchy only when its thresholded context changes.
 
-    let _tPtId = null, _tHeld = false, _tTimer = null, _tDx = 0, _tDy = 0, _tMoved = false;
+    let _tPtId = null, _tHeld = false, _tTimer = null, _tDx = 0, _tDy = 0, _tMoved = false, _tShatterPickup = false;
     deps.toolBtn.addEventListener('pointerdown', ev => {
       if (_tPtId !== null) return;
       _tPtId = ev.pointerId; _tHeld = false; _tMoved = false;
+      _tShatterPickup = window.Shattercasks?.toolArchAction?.()==='pickup';
       _tDx = ev.clientX; _tDy = ev.clientY;
       // See handleJoystickPointerDown's comment: an uncaught throw here
       // (possible for a touch starting before the browser considers the
@@ -516,7 +552,7 @@
       // leave _tPtId stuck non-null, permanently blocking this button via
       // the pointerdown guard above.
       try { deps.toolBtn.setPointerCapture(ev.pointerId); } catch (err) { /* degrade gracefully */ }
-      _tTimer = setTimeout(() => { _tHeld = true; _openToolArc(); }, 350);
+      if(!_tShatterPickup)_tTimer = setTimeout(() => { _tHeld = true; _openToolArc(); }, 350);
       ev.preventDefault();
     });
     deps.toolBtn.addEventListener('pointermove', ev => {
@@ -528,22 +564,26 @@
       if (ev.pointerId !== _tPtId) return;
       _tPtId = null;
       if (_tTimer) { clearTimeout(_tTimer); _tTimer = null; }
-      if (_arcOpen === 'tool') _arcUp();
+      if (_tShatterPickup){
+        window.Shattercasks?.toolArchTap?.();
+      }else if (_arcOpen === 'tool') _arcUp();
       else if (!_tHeld && !_tMoved) {
         // A Tool Select tap recalls the last valid held tool — unless a
         // tool is already out, in which case the same tap now dequips
         // instead (replacing the removed dedicated put-away button; see
         // its matching case in itemBtn's own pointerup below).
-        if (deps.getHeldMode() === 'tool') deps.putAwayHeldEquipment();
-        else window._desktopSelectionArc.recallLastTool();
+        if (!window.Shattercasks?.toolArchTap?.()) {
+          if (deps.getHeldMode() === 'tool') deps.putAwayHeldEquipment();
+          else window._desktopSelectionArc.recallLastTool();
+        }
       }
-      _tHeld = false; _tMoved = false;
+      _tHeld = false; _tMoved = false; _tShatterPickup = false;
     });
     deps.toolBtn.addEventListener('pointercancel', ev => {
       if (ev.pointerId !== _tPtId) return;
       _tPtId = null;
       if (_tTimer) { clearTimeout(_tTimer); _tTimer = null; }
-      _clearArc(); _tHeld = false; _tMoved = false;
+      _clearArc(); _tHeld = false; _tMoved = false; _tShatterPickup = false;
     });
 
     if (_itemBtn) {
@@ -568,6 +608,7 @@
         if (_iTimer) { clearTimeout(_iTimer); _iTimer = null; }
         if (_arcOpen === 'item') _arcUp();
         else if (!_iHeld && !_iMoved) {
+          window.Spyglass?.stow?.('item selector tapped');
           if (deps.getHeldMode() === 'item') {
             // An item is already selected — the same tap now dequips
             // instead (replacing the removed dedicated put-away button;
@@ -631,5 +672,9 @@
 
   window.ActionArcUI = {
     init: (injectedDeps) => { init(injectedDeps); _bindListeners(); },
+    // Allow nearby world objects to expose contextual Tool Select behavior
+    // without retaining or mutating the selector's private equipment state.
+    heldMode: () => deps?.getHeldMode?.() ?? null,
+    stowForCarry: () => deps?.putAwayHeldEquipment?.(),
   };
 })();

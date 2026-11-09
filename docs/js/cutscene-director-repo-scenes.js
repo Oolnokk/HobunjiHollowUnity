@@ -13,7 +13,7 @@
     Object.freeze({ id: 'wedding', label: 'Marriage — Life Temple Wedding', weddingScene: true, authoringSpouseId: 'aliri_ginju' }),
   ]); // Used by the injected selector and the public debug surface so the Director always loads shipping scene builders instead of copied JSON.
   const REQUIRED_STORY_BUILDERS = Object.freeze(REPO_SCENES.map(scene => scene.builder).filter(Boolean)); // Used by story-module readiness checks so every visible selector entry is guaranteed callable.
-  const STORY_SCRIPT_URL = new URL('../../js/opening-story-cutscene.js?v=20261016h1e402f4', location.href).href; // Used to load the same authored builders the live opening sequence calls.
+  const STORY_SCRIPT_URL = new URL('../../js/opening-story-cutscene.js?v=20261029hguild2', location.href).href; // Used to load the same authored builders the live opening sequence calls.
   const NPC_DB_URL = new URL('../../config/npcs/hobunji-starter-npc-database.json', location.href).href; // Used to supply canonical NPC records to those builders.
   const DIRECTOR_STORAGE_KEY = 'hobunjiCutsceneDirector.v1'; // Used by reload-based imports that still pass through the Director's startup normalizeProject path.
   const PENDING_WILDERNESS_KEY = 'hobunjiCutsceneDirector.repoWilderness.v1'; // Used after fallback reload to restore a procedural-wilderness scene with the Director's existing wilderness controls.
@@ -131,7 +131,7 @@
       return { entry, scene: window.BanubuCutsceneAuthoring.build(tree, npc, await response.json()) };
     }
     if (entry.weddingScene) {
-      if (!window.RomanceWedding) await loadScriptOnce(new URL('../../js/romance-wedding.js?v=20261007wedding1', location.href).href);
+      if (!window.RomanceWedding) await loadScriptOnce(new URL('../../js/romance-wedding.js?v=20261027hbreath8', location.href).href);
       const records = await loadNpcRecords();
       return { entry, scene: window.RomanceWedding.buildWeddingScene(records, authoringProfile(), { spouseId: entry.authoringSpouseId }) }; // Same builder the live ceremony plays; in game it runs on the temple's Wedding layout.
     }

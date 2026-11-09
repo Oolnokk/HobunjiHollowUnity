@@ -11,12 +11,19 @@ const loader = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'combat'
 const hostileObjects = []; // Live-array stand-in used by the adapter's mobile/headless debug snapshot.
 const BanditCombat = {
   updateCombatAI(entity, dt, targetPlayer) {
-    const desired = Math.atan2(targetPlayer.y - entity.y, targetPlayer.x - entity.x);
+    if (entity._banditAction && entity._banditLunging) return { aimAngle: entity.facing, moving: true }; // Simulate the underlying swing preserving its already locked yaw.
+    const factionTarget = entity._chunkCombatTarget;
+    const target = factionTarget?.health > 0 && (!factionTarget.areaId || !entity.areaId || factionTarget.areaId === entity.areaId) ? factionTarget : targetPlayer;
+    const desired = Math.atan2(target.y - entity.y, target.x - entity.x);
     // Model the current problematic behavior: the underlying AI snaps facing
     // and lunge direction straight at its target before returning aimAngle.
     entity.facing = desired;
     entity._banditLungeDirX = Math.cos(desired);
     entity._banditLungeDirY = Math.sin(desired);
+    if (entity._simulateBeginSwing) {
+      entity._banditAction = { name: 'newly-started-swing' }; // Simulates the staged attack being created on this same AI update.
+      entity._banditLunging = true; // The lunge must remain consistent with its attack cone from the first frame.
+    }
     return { aimAngle: desired, moving: true };
   },
 };
@@ -64,6 +71,36 @@ const smallTurn = {
 const smallAngle = 0.3;
 BanditCombat.updateCombatAI(smallTurn, 0.1, { x: Math.cos(smallAngle) * 10, y: Math.sin(smallAngle) * 10 }, 10);
 assert(Math.abs(smallTurn.facing - smallAngle) < 1e-9, 'turns smaller than the frame cap should finish exactly without overshoot');
+
+// The ecology AI has picked an NPC in front, despite the player standing behind.
+const factionOpponent = { id: 'rival', health: 20, areaId: 'zone', x: 10, y: 0 };
+const factionFighter = { id: 'fighter', x: 0, y: 0, areaId: 'zone', facing: 0, _chunkCombatTarget: factionOpponent };
+const wrongWayPlayer = { id: 'player', x: -10, y: 0 };
+const factionResult = BanditCombat.updateCombatAI(factionFighter, 0.1, wrongWayPlayer, 10);
+assert(Math.abs(factionFighter.facing) < 1e-9, 'faction fighting must face the committed NPC, not the player behind');
+assert.equal(factionFighter._targetFacingDebug.targetId, 'rival', 'mobile facing debug identifies the true opponent');
+assert.equal(factionFighter._targetFacingDebug.factionTarget, true);
+assert(Math.abs(factionResult.aimAngle) < 1e-9);
+factionOpponent.areaId = 'other-zone';
+BanditCombat.updateCombatAI(factionFighter, 0.1, wrongWayPlayer, 10);
+assert(Math.abs(factionFighter.facing - 0.6) < 1e-9, 'invalid cross-area NPC targets fall back to ordinary player targeting');
+
+const newSwing = { id: 'new-swing', x: 0, y: 0, facing: 0, _simulateBeginSwing: true };
+const newSwingResult = BanditCombat.updateCombatAI(newSwing, 0.1, wrongWayPlayer, 10);
+assert(Math.abs(Math.abs(newSwing.facing) - Math.PI) < 1e-9, 'a newly created swing must not be turned after its initial target lock');
+assert(Math.abs(newSwing._banditLungeDirX + 1) < 1e-9, 'new attack lunge X keeps its committed direction on the start frame');
+assert(Math.abs(newSwing._banditLungeDirY) < 1e-9, 'new attack lunge Y keeps its committed direction on the start frame');
+assert.equal(newSwing._targetFacingDebug.attackLocked, true);
+assert.equal(newSwingResult.aimAngle, newSwing.facing);
+
+const committedSwing = { id: 'mid-swing', x: 0, y: 0, facing: 0.4,
+  _banditAction: {}, _banditLunging: true, _banditLungeDirX: Math.cos(0.4), _banditLungeDirY: Math.sin(0.4) };
+const swingResult = BanditCombat.updateCombatAI(committedSwing, 0.1, wrongWayPlayer, 10);
+assert(Math.abs(committedSwing.facing - 0.4) < 1e-9, 'ongoing melee strike keeps its committed facing');
+assert(Math.abs(committedSwing._banditLungeDirX - Math.cos(0.4)) < 1e-9, 'ongoing lunge keeps its original X direction');
+assert(Math.abs(committedSwing._banditLungeDirY - Math.sin(0.4)) < 1e-9, 'ongoing lunge keeps its original Y direction');
+assert.equal(committedSwing._targetFacingDebug.attackLocked, true);
+assert(Math.abs(swingResult.aimAngle - 0.4) < 1e-9);
 
 const ranged = {
   id: 'ranged', name: 'Ranged', isBandit: true,

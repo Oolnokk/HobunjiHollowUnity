@@ -14,11 +14,83 @@
   let inventoryUiLoadStarted = false;
   // This guard keeps the capture-phase selection reset from being registered twice.
   let inventorySelectionBridgeInstalled = false;
-  const CLOTHING_SLOTS = ['hat', 'hood', 'pauldron', 'torso', 'overwear', 'pants']; // Used anywhere gear clothing must be normalized or rendered by slot; pauldrons persist independently from torso/overwear.
+  const CLOTHING_SLOTS = ['hat', 'hood', 'mask', 'pauldron', 'torso', 'overwear', 'pants']; // Used anywhere gear clothing must be normalized or rendered by slot; pauldrons persist independently from torso/overwear.
   const clothingIconTintUrlCache = new Map(); // Used to reuse SpriteRecolor output instead of re-encoding the same dyed icon every panel rebuild.
+
+  const toolIconFrames = new Map(); // Reuses one opaque-pixel scan and square thumbnail per resolved metal/pattern source.
+  const toolIconDebug = { ready: 0, failed: 0, lastFrame: null, latestChange: 'Tool icons trim transparent margins and square from the bottom edge.' }; // Readable through EquipmentPanel on mobile.
+
+  function squareToolIcon(source, options = {}) {
+    const image = options.flute ? (window.KurrayaInstrument?.prepareFluteCanvas?.(source) || source) : source; // Nonmetal flute art uses the same matte-free pixels as its world mesh.
+    const width = image.width; // Source dimensions bound the alpha scan.
+    const height = image.height; // Source dimensions bound the alpha scan.
+    const canvas = document.createElement('canvas'); // Reads the already loaded sprite without changing held/world art.
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d'); // Used only once for each cached sprite source.
+    context.drawImage(image, 0, 0);
+    const pixels = context.getImageData(0, 0, width, height).data; // Alpha bytes identify the visible frame.
+    let left = width, right = -1, top = height, bottom = -1; // Inclusive bounds of all nontransparent pixels.
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        if (!pixels[(y * width + x) * 4 + 3]) continue;
+        left = Math.min(left, x); right = Math.max(right, x);
+        top = Math.min(top, y); bottom = Math.max(bottom, y);
+      }
+    }
+    if (right < left) throw new Error('Tool sprite contains no opaque pixels');
+    const side = right - left + 1; // Opaque width determines the square; tall sprites crop above its bottom edge.
+    const visibleHeight = Math.min(side, bottom - top + 1); // Short sprites receive transparent padding above.
+    const output = document.createElement('canvas'); // A small square limits retained thumbnail memory.
+    output.width = output.height = 128;
+    const outputContext = output.getContext('2d'); // Draws an undistorted crop anchored to the opaque bottom edge.
+    if (options.flute) {
+      const inkWidth = right - left + 1, inkHeight = bottom - top + 1; // Keep the entire slender flute, unlike a bottom-cropped melee-weapon thumbnail.
+      const scale = 112 / Math.max(inkWidth, inkHeight); // Leave eight transparent pixels around the long instrument on every side.
+      const drawWidth = inkWidth * scale, drawHeight = inkHeight * scale;
+      outputContext.drawImage(canvas, left, top, inkWidth, inkHeight, (128-drawWidth)/2, (128-drawHeight)/2, drawWidth, drawHeight);
+      return output.toDataURL('image/png');
+    }
+    outputContext.drawImage(canvas, left, bottom - visibleHeight + 1, side, visibleHeight,
+      0, (side - visibleHeight) * 128 / side, 128, visibleHeight * 128 / side);
+    toolIconDebug.lastFrame = { left, top, right, bottom, side };
+    return output.toDataURL('image/png');
+  }
+
+  function renderToolIcon(parent, def) {
+    const isFlute = def?.sprite === 'assets/toolsprites/flute.png'; // Routes only this slender, matte-backed PNG through the special full-height icon renderer.
+    const source = isFlute ? def.sprite : (deps.metalToolImgSrc?.(def) || def?.sprite); // Metal tools keep their authored finish.
+    const image = document.createElement('img'); // Preserves existing inventory sizing and accessibility.
+    image.className = 'ies-sprite'; image.alt = def.label;
+    image.crossOrigin = 'anonymous';
+    parent.appendChild(image);
+    if (!source) { image.replaceWith(document.createTextNode(def.icon || '🔧')); return; }
+    let pending = toolIconFrames.get(source); // Shares in-flight work across equipped and owned-tool cells.
+    if (!pending) {
+      pending = new Promise(resolve => {
+        const loader = new Image(); // Separate loader prevents thumbnail src updates from retriggering the scan.
+        loader.crossOrigin = 'anonymous';
+        loader.onload = () => {
+          try { const url = squareToolIcon(loader,{flute:isFlute}); toolIconDebug.ready++; resolve(url); }
+          catch (error) { toolIconDebug.failed++; window.__farmLog?.(`[inventory-icon] ${def.label}: ${error.message}`, 'warn'); resolve(source); }
+        };
+        loader.onerror = () => { toolIconDebug.failed++; resolve(null); };
+        loader.src = source;
+      });
+      toolIconFrames.set(source, pending);
+      if (toolIconFrames.size > 128) toolIconFrames.delete(toolIconFrames.keys().next().value);
+    }
+    pending.then(url => {
+      if (url) image.src = url;
+      else image.replaceWith(document.createTextNode(def.icon || '🔧'));
+    });
+  }
 
   function init(injectedDeps) {
     deps = injectedDeps;
+    registerFluteDefinition();
+    // Existing characters receive the same starter instrument after their saved character data is loaded.
+    document?.addEventListener?.('hobunjiPlayerReady', () => ensureStarterFlute());
     window.DevCompanion?.registerCheatPanel?.({
       id: 'tool-mastery', title: 'Tool mastery', order: 31,
       render: () => ({ actions: Object.keys(deps.getGearInventory()?.tools || {})
@@ -34,6 +106,33 @@
     });
     installInventorySelectionBridge();
     loadInventoryUi();
+  }
+
+  function registerFluteDefinition() {
+    if (!deps?.TOOL_ITEM_DEFS) return false;
+    deps.TOOL_ITEM_DEFS.flute ||= {
+      label:'Flute', icon:'🎶', sprite:'assets/toolsprites/flute.png', slots:['instrument'],
+      isInstrument:true, heldAnimationKey:'flutePlayNote', // The note action now owns its own head-relative pose, rather than borrowing the loaded blowgun.
+      description:'A simple mouth-played flute. Its eight notes can echo melodies heard in ancient ruins.',
+    }; // The canonical item registry drives equipment/ownership and the existing tool sprite renderer.
+    return true;
+  }
+
+  function ensureStarterFlute() {
+    const gear = deps?.getGearInventory?.(); // Current character-owned gear, never a global once-per-browser entitlement.
+    if (!gear || !registerFluteDefinition()) return false;
+    if (gear.starterFluteGranted) return false; // Never reassign after the player deliberately unequips or replaces it.
+    gear.tools ||= {};
+    gear.tools.flute = true;
+    gear.starterFluteGranted = true;
+    deps.saveGearInventory?.();
+    if (!deps.equipmentSlots?.instrument) {
+      deps.equipmentSlots.instrument = 'flute';
+      deps.saveEquipmentSlots?.();
+    }
+    deps.rebuildToolMeshes?.(); // A migrated flute becomes available to the live held-tool renderer, not just the Inventory UI.
+    window.__farmLog?.('[starter-flute] granted once to current character; instrument=' + deps.equipmentSlots?.instrument,'input');
+    return true;
   }
 
   function installInventorySelectionBridge() {
@@ -89,7 +188,7 @@
     inventoryUiLoadStarted = true;
     // Versioned source is loaded here so Pack presentation can be decoupled without editing game.js or index.html.
     const script = document.createElement('script');
-    script.src = 'js/inventory-ui.js?v=20261016h45ed908';
+    script.src = 'js/inventory-ui.js?v=20261108attackpower1';
     script.async = false;
     script.onload = () => window.InventoryUI?.init?.(inventoryUiDeps());
     script.onerror = () => {
@@ -205,6 +304,74 @@
     return changed;
   }
 
+  // Only provenance differs between copies of the same physical garment. Keep all dyes,
+  // quality, patterns, material, pricing, Temper and unknown future attributes in the comparison.
+  const CLOTHING_STACK_IGNORED_FIELDS = new Set(['uid', 'craftedAt']); // Used solely by visual stack grouping, never by item storage.
+
+  function clothingStackSignature(item) {
+    if (!item || typeof item !== 'object') return null;
+    const sortedValue = (value) => { // Stable nested ordering allows old/new saves with different property insertion order to stack.
+      if (Array.isArray(value)) return value.map(sortedValue);
+      if (value && typeof value === 'object') {
+        const ordered = {}; // Used only to produce a deterministic display fingerprint.
+        for (const key of Object.keys(value).sort()) ordered[key] = sortedValue(value[key]);
+        return ordered;
+      }
+      return value;
+    };
+    const properties = {}; // A display-only view of this article: no item IDs or timestamps are modified.
+    for (const key of Object.keys(item).sort()) {
+      if (CLOTHING_STACK_IGNORED_FIELDS.has(key)) continue;
+      let value = item[key]; // Used to normalize generated cosmetic IDs for otherwise identical loom/smith copies.
+      if (key === 'cosmeticId' && typeof value === 'string' && typeof item.baseCosmeticId === 'string'
+          && (value.startsWith(item.baseCosmeticId + '#loom:') || value.startsWith(item.baseCosmeticId + '#smith:'))) {
+        value = item.baseCosmeticId;
+      }
+      properties[key] = sortedValue(value);
+    }
+    return JSON.stringify(properties);
+  }
+
+  function groupClothingForDisplay(items) {
+    const groups = []; // Ordered by first appearance, so stacks don't jump around as quantities change.
+    const bySignature = new Map(); // Used only for the current render; every saved item remains individual.
+    const maxPerTile = Math.max(1, Math.floor(Number(window.InventoryStacks?.STACK_SIZE) || 999)); // Reuses normal Pack's limit of 999 per box.
+    for (const item of (items || [])) {
+      if (!item || typeof item !== 'object') continue;
+      const signature = clothingStackSignature(item); // The complete gameplay/appearance data (apart from provenance) determines identity.
+      let group = bySignature.get(signature);
+      if (!group || group.count >= maxPerTile) {
+        group = { item, count: 0, uids: [] }; // Representative receives actions; all underlying records remain available.
+        bySignature.set(signature, group);
+        groups.push(group);
+      }
+      group.count++;
+      group.uids.push(item.uid);
+    }
+    return groups;
+  }
+
+  function ensureUniquePackClothingUids(items) {
+    const seen = new Set(); // Protects single-item actions and manually held references in legacy saves with repeated shop UIDs.
+    let changed = false; // Caller persists the repaired list only once when needed.
+    let nextId = 0; // Additional monotonic component ensures uniqueness even when two random/time values collide.
+    for (const item of (items || [])) {
+      if (!item || typeof item !== 'object') continue;
+      if (typeof item.uid === 'string' && item.uid && !seen.has(item.uid)) {
+        seen.add(item.uid);
+        continue;
+      }
+      let replacement; // Only duplicate or missing IDs are reassigned; the first copy keeps any held reference.
+      do {
+        replacement = 'citem_fixed_' + Date.now().toString(36) + '_' + (++nextId).toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+      } while (seen.has(replacement));
+      item.uid = replacement;
+      seen.add(replacement);
+      changed = true;
+    }
+    return changed;
+  }
+
   function packClothingQualityStars(item) {
     return normalizedClothingQualityStars(item?.qualityStars); // Only Pack clothing exposes star quality as an inventory-item property.
   }
@@ -229,7 +396,7 @@
       uid: item.uid || 'gcloth_' + Math.random().toString(36).slice(2, 10),
       cosmeticId: item.cosmeticId,
       baseCosmeticId: item.baseCosmeticId || null,
-      slot: item.slot,
+      slot: window.isPortraitMaskCosmeticId?.(item.cosmeticId) ? 'mask' : item.slot,
       label: item.label,
       baseLabel: clothingArticleLabel(item),
       description: item.description || null,
@@ -246,6 +413,8 @@
       weaveMaterial: item.weaveMaterial || null,
       weightUnits: Number.isFinite(Number(item.weightUnits)) ? Number(item.weightUnits) : null,
       weaving: item.weaving || null,
+      furTrimColorName: item.furTrimColorName || null, // Preserve only the named genotype-base fur color when a lined hood moves from Pack to Gear.
+      furHood: item.furHood ? JSON.parse(JSON.stringify(item.furHood)) : null, // The exact physical hide survives Pack → Gear and subsequent save/load cycles.
       craftedAt: item.craftedAt || null,
       // Smith-crafted metal clothing carries its own material/use-history state;
       // unlike cloth dyes these fields belong to the literal article.
@@ -255,6 +424,7 @@
       smithTreatment: item.smithTreatment || null,
       physicalMassKg: Number.isFinite(Number(item.physicalMassKg)) ? Number(item.physicalMassKg) : null,
       dyeable: item.dyeable === false ? false : undefined,
+      exorcised: item.exorcised === true ? true : undefined, // A freed mask stays quiet once it moves into gear.
     };
     window.MetalArmorSystem?.normalizeItem?.(entry);
     ensureArticleDyeIds(entry);
@@ -299,12 +469,32 @@
     return addedDyeCount;
   }
 
+  // A patterned or decorated garment is a physical collectible, not just another dye swatch of its base clothing.
+  // Plain dyed copies still intentionally merge and teach the owned garment additional dye colors.
+  function hasIndividualClothingPattern(item) {
+    if (item?.furTrimColorName) return true; // Each naturally trimmed garment remains a distinct physical article across Pack → Gear.
+    if (item?.furHood) return true; // A crafted hide is always a unique physical garment even with no optional dyed weaving.
+    const weaving = item?.weaving; // Reads saved visual state without relying on when the renderer initializes.
+    if (!weaving || typeof weaving !== 'object') return false;
+    if (weaving.forcedOverpassPattern || weaving.pattern || weaving.patternLibraryId || weaving.trim?.enabled) return true;
+    if (Array.isArray(weaving.patterns) && weaving.patterns.some(Boolean)) return true;
+    return Object.values(weaving.layers || {}).some(layer =>
+      !!(layer?.pattern || layer?.patternLibraryId || (Array.isArray(layer?.patterns) && layer.patterns.some(Boolean))));
+  }
+
+  function clothingGearCollectionKey(item) {
+    const cosmeticId = item?.cosmeticId; // The original cosmetic type remains the grouping key for unpatterned dyes.
+    if (!cosmeticId) return null;
+    return hasIndividualClothingPattern(item) && item.uid
+      ? 'woven:' + item.uid : 'cosmetic:' + cosmeticId; // Bandit pattern frames are individual collectibles across saves and equip swaps.
+  }
+
   function normalizeGearClothingItems(gearInventory) {
     if (!gearInventory || !Array.isArray(gearInventory.clothingItems)) return false;
     let changed = false; // Used to persist legacy duplicate cleanup only when the save actually changes.
     const sourceItems = gearInventory.clothingItems.filter(Boolean); // Used as the migration input before duplicate articles are collapsed.
-    const groupsByCosmeticId = new Map(); // Used to group dye variants of the same authored clothing article.
-    const wornUidByCosmeticId = new Map(); // Used to preserve whichever dyed copy is currently visible during migration.
+    const groupsByCollectionKey = new Map(); // Groups plain dye variants together while preserving individually patterned garments.
+    const wornUidByCollectionKey = new Map(); // Keeps each retained article's equipped copy when migrating saves.
 
     for (const item of sourceItems) {
       if (migrateGearClothingQuality(item)) changed = true;
@@ -315,37 +505,40 @@
         changed = true;
       }
       if (ensureArticleDyeIds(item)) changed = true;
-      if (!item?.cosmeticId) continue;
-      if (!groupsByCosmeticId.has(item.cosmeticId)) groupsByCosmeticId.set(item.cosmeticId, []);
-      groupsByCosmeticId.get(item.cosmeticId).push(item);
+      const collectionKey = clothingGearCollectionKey(item); // Each woven article has an individual key, plain dye variants share theirs.
+      if (!collectionKey) continue;
+      if (!groupsByCollectionKey.has(collectionKey)) groupsByCollectionKey.set(collectionKey, []);
+      groupsByCollectionKey.get(collectionKey).push(item);
     }
     for (const slot of CLOTHING_SLOTS) {
       const worn = gearInventory.clothing?.[slot]; // Used to choose the visible copy as canonical when an old save has duplicates.
-      if (worn?.cosmeticId && worn?.uid) wornUidByCosmeticId.set(worn.cosmeticId, worn.uid);
+      const collectionKey = clothingGearCollectionKey(worn); // Matches the saved equipped article's physical weave identity.
+      if (collectionKey && worn?.uid) wornUidByCollectionKey.set(collectionKey, worn.uid);
     }
 
-    const canonicalByCosmeticId = new Map(); // Used to map every duplicate article to its single retained gear entry.
-    for (const [cosmeticId, variants] of groupsByCosmeticId) {
-      const wornUid = wornUidByCosmeticId.get(cosmeticId); // Used to avoid changing the player's currently visible dye during migration.
+    const canonicalByCollectionKey = new Map(); // Maps ordinary duplicates without collapsing patterned pieces.
+    for (const [collectionKey, variants] of groupsByCollectionKey) {
+      const wornUid = wornUidByCollectionKey.get(collectionKey); // Used to avoid changing the player's currently visible dye during migration.
       const canonical = variants.find(item => item.uid === wornUid) || variants[0]; // Used as the one retained owned-clothing record.
       for (const variant of variants) {
         if (variant === canonical) continue;
         if (mergeArticleDyes(canonical, variant) > 0) changed = true;
       }
-      canonicalByCosmeticId.set(cosmeticId, canonical);
+      canonicalByCollectionKey.set(collectionKey, canonical);
       if (variants.length > 1) changed = true;
     }
 
-    const normalizedItems = []; // Used to preserve original ordering while emitting only one item per cosmeticId.
-    const emittedCosmeticIds = new Set(); // Used to suppress duplicate dye variants in the Owned Clothing row.
+    const normalizedItems = []; // Preserves ordering with one item per collection identity.
+    const emittedCollectionKeys = new Set(); // One tile per plain article or individually patterned piece.
     for (const item of sourceItems) {
-      if (!item?.cosmeticId) {
+      const collectionKey = clothingGearCollectionKey(item); // Uses the same key as transfer and collection migration.
+      if (!collectionKey) {
         normalizedItems.push(item);
         continue;
       }
-      if (emittedCosmeticIds.has(item.cosmeticId)) continue;
-      emittedCosmeticIds.add(item.cosmeticId);
-      normalizedItems.push(canonicalByCosmeticId.get(item.cosmeticId) || item);
+      if (emittedCollectionKeys.has(collectionKey)) continue;
+      emittedCollectionKeys.add(collectionKey);
+      normalizedItems.push(canonicalByCollectionKey.get(collectionKey) || item);
     }
     const listChanged = normalizedItems.length !== gearInventory.clothingItems.length || normalizedItems.some((item, index) => gearInventory.clothingItems[index] !== item); // Used to avoid replacing the array when no migration is needed.
     if (listChanged) {
@@ -356,7 +549,8 @@
     for (const slot of CLOTHING_SLOTS) {
       const worn = gearInventory.clothing?.[slot]; // Used to reconnect equipped slots to their retained canonical clothing record.
       if (!worn?.cosmeticId) continue;
-      const canonical = canonicalByCosmeticId.get(worn.cosmeticId); // Used to keep slot and collection references on the same retained article.
+      const canonical = (worn.uid && gearInventory.clothingItems.find(item => item?.uid === worn.uid))
+        || canonicalByCollectionKey.get(clothingGearCollectionKey(worn)); // Prefer exact UID when a legacy worn snapshot lacks its article's weaving metadata.
       if (canonical && gearInventory.clothing[slot] !== canonical) {
         gearInventory.clothing[slot] = canonical;
         changed = true;
@@ -368,6 +562,7 @@
   function clothingTintKeysForSlot(slot) {
     if (slot === 'hat') return ['HAT'];
     if (slot === 'hood') return ['HOOD', 'HOOD_B'];
+    if (slot === 'mask') return ['MASK', 'MASK_B'];
     if (slot === 'pauldron') return ['PAULDRON'];
     if (slot === 'torso') return ['TORSO'];
     if (slot === 'overwear') return ['CLOTH', 'CLOTH_B'];
@@ -460,7 +655,7 @@
     const resolveIcon = window.ClothingWeavingSystem?.iconSpriteForCosmetic;
     if (typeof resolveIcon !== 'function' || !iconEl) return;
     const renderToken = Math.random().toString(36).slice(2, 8);
-    const compositeIncludesFinalDyes = !!window.ClothingWeavingSystem?.hasWovenPattern?.(item); // Woven icon sprites already contain per-layer dyes + motif pixels; running the legacy single-color tint afterward would erase the visible weave.
+    const compositeIncludesFinalDyes = !!item?.furHood || !!item?.furTrimColorName || !!window.ClothingWeavingSystem?.hasWovenPattern?.(item) || !!window.ClothingWeavingSystem?.isReweavableClothComponent?.(item); // Hybrid icon already contains final cap dye and faceguard finish. // Woven icon sprites already contain per-layer dyes + motif pixels; running the legacy single-color tint afterward would erase the visible weave.
     iconEl.dataset.clothingIconToken = renderToken;
     resolveIcon(item, fallbackSprite).then(sprite => {
       if (!sprite || sprite === fallbackSprite) return;
@@ -537,12 +732,22 @@
     if (!gearInventory) return false;
     let changed = false; // Used to make legacy clothing migration save itself exactly when needed.
     if (!gearInventory.clothing) {
-      gearInventory.clothing = { hat: null, hood: null, pauldron: null, torso: null, overwear: null, pants: null };
+      gearInventory.clothing = { hat: null, hood: null, mask: null, pauldron: null, torso: null, overwear: null, pants: null };
       changed = true;
     }
     if (!Array.isArray(gearInventory.clothingItems)) {
       gearInventory.clothingItems = [];
       changed = true;
+    }
+    const isMask = item => window.isPortraitMaskCosmeticId?.(item?.cosmeticId);
+    for (const item of gearInventory.clothingItems) if (isMask(item) && item.slot !== 'mask') {item.slot='mask';changed=true;}
+    if (isMask(gearInventory.clothing.hood)) {
+      const mask = gearInventory.clothing.hood;
+      mask.slot='mask';
+      if (!gearInventory.clothing.mask) gearInventory.clothing.mask=mask;
+      else if (!gearInventory.clothingItems.some(item=>item.uid===mask.uid)) gearInventory.clothingItems.push(mask);
+      gearInventory.clothing.hood=null;
+      changed=true;
     }
     if (ensureStarterPants(gearInventory)) changed = true;
     for (const slot of CLOTHING_SLOTS) {
@@ -574,14 +779,33 @@
     return changed;
   }
 
+  function cursedMessage(item) {
+    if (item?.cursed?.dispelBy === 'garanki') return 'Cursed: it cannot be worn until Garanki Gabu dispels the curse.';
+    if (item?.cursed?.kind === 'mask') return 'Cursed: someone’s soul is bound inside this mask. It cannot be worn until a priest frees it; a mage cannot.';
+    return 'Cursed: it cannot be worn until the curse is lifted.';
+  }
+  // Single owner of lifting a curse (Garanki's circlet dispel today, Father Hunundi's exorcism of masks later). A freed mask is flagged
+  // `exorcised`, which silences its glowing eyes for whoever wears it; a dispelled circlet carries nothing that could emit fire (lich flames
+  // come only from the lich's own hidden headband).
+  function dispelCurse(item) {
+    if (!item?.cursed) return false;
+    const kind = item.cursed.kind;
+    item.label = item.cursed.originalLabel || item.label;
+    delete item.cursed;
+    if (kind === 'mask') item.exorcised = true;
+    return true;
+  }
+
   function transferClothingToGear(uid) {
     const packClothing = deps.getPackClothing();
     const idx = packClothing.findIndex(c => c.uid === uid);
     if (idx < 0) return;
+    if (packClothing[idx]?.cursed) { deps.showToast(cursedMessage(packClothing[idx]), false); return; } // A cursed article never reaches gear, so it can never be equipped.
     const item = makeClothingGearEntry(packClothing[idx]);
     ensureGearClothingCollection();
     const gearInventory = deps.getGearInventory();
-    const existingItem = item.cosmeticId ? gearInventory.clothingItems.find(c => c?.cosmeticId === item.cosmeticId) : null; // Used to collapse a newly acquired dye variant into an already-owned article.
+    const collectionKey = clothingGearCollectionKey(item); // Distinguishes woven loot from plain garments with the same authored cosmetic.
+    const existingItem = collectionKey ? gearInventory.clothingItems.find(c => clothingGearCollectionKey(c) === collectionKey) : null; // Plain dye variants still merge into one owned article.
     let equippedItem = item; // Used so duplicate transfers equip the retained canonical article rather than a second copy.
     let learnedDyeCount = 0; // Used to tell the player whether the duplicate taught this article any new shades.
     if (existingItem) {
@@ -687,33 +911,52 @@
     }
   }
 
-  function selectPackClothingItem(uid) {
+  function selectPackClothingItem(uid, previewOnly = false) {
     const packClothing = deps.getPackClothing();
     const item = packClothing.find(c => c.uid === uid);
     if (!item) return;
+    const displayGroup = groupClothingForDisplay(packClothing).find(group => group.uids.includes(uid)); // Detail quantity reflects the same stack selected in the grid.
+    const stackCount = displayGroup?.count || 1; // Used for quantity labeling without changing single-item action targets.
     const starText = packClothingStarText(item); // Used to keep quality visible while this garment is still a Pack/inventory item.
     const salePrice = packClothingSalePrice(item); // Used by both the displayed value and the actual sale transaction.
-    deps.clearInvSelection();
+    if (!previewOnly) deps.clearInvSelection(); // Controller highlight inspects clothing without clearing the active selected stack.
     const emptyEl  = document.getElementById('iiEmpty');
     const detailEl = document.getElementById('iiDetail');
     if (emptyEl)  emptyEl.style.display  = 'none';
     if (detailEl) detailEl.style.display  = '';
     const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
+    if (detailEl) { delete detailEl.dataset.itemKey; detailEl.dataset.itemKind = 'clothing'; } // Clothing previews never inherit bag-item actions.
     setInventoryDetailClothingIcon(item);
-    set('iiName',  starText ? (starText + ' ' + item.label) : item.label);
+    set('iiQuality', starText || '');
+    set('iiName',  (starText ? starText + ' ' : '') + item.label + (stackCount > 1 ? ' ×' + stackCount : ''));
     set('iiPrice', salePrice ? salePrice + 'g' : '');
     set('iiTags',  starText ? ('Quality ' + starText) : '');
-    set('iiDesc',  [item.description, 'Transfer to gear to wear it (permanent). Can sell while in pack.'].filter(Boolean).join(' '));
+    set('iiDesc',  [item.description, stackCount > 1 ? 'Stack of ' + stackCount + ' identical articles. Actions affect one piece at a time.' : '', item.cursed ? cursedMessage(item) : 'Transfer to gear to wear it (permanent). Can sell while in pack.'].filter(Boolean).join(' '));
     const actEl = document.getElementById('iiActions');
     if (actEl) {
       actEl.innerHTML = '';
       const mkBtn = (label, cls, fn) => {
         const b = document.createElement('button'); b.className = 'ii-btn' + (cls ? ' ' + cls : ''); b.textContent = label; b.onclick = fn; actEl.appendChild(b);
       };
-      mkBtn('Transfer to Gear (permanent)', 'equip', () => transferClothingToGear(uid));
+      if (item.cursed) {
+        mkBtn('Cursed — cannot be worn', 'secondary', () => deps.showToast(cursedMessage(item), false));
+        actEl.lastChild.disabled = true;
+      } else {
+        mkBtn('Transfer to Gear (permanent)', 'equip', () => transferClothingToGear(uid));
+        const spouseWardrobe = window.NpcWardrobe?.getActiveSpouseWardrobeTarget?.(); // Only a currently open, assigned spouse wardrobe exposes this direct Pack action.
+        if (spouseWardrobe) mkBtn(`Move to ${spouseWardrobe.name}'s Wardrobe`, 'equip', () => transferPackClothingToNpcWardrobe(spouseWardrobe.npcId, uid));
+      }
       if (salePrice > 0) {
         mkBtn('Sell (' + salePrice + 'g)', 'sell', () => {
-          deps.setPackClothing(deps.getPackClothing().filter(c => c.uid !== uid));
+          const owned = deps.getPackClothing(); // Read the current saved articles, not a stale detail-panel snapshot.
+          const saleIndex = owned.findIndex(c => c?.uid === uid); // A sale removes one physical garment even in an unmigrated duplicate-ID save.
+          if (saleIndex < 0) return;
+          const remaining = owned.slice(); // Preserve the pack's setter contract while keeping all other articles.
+          remaining.splice(saleIndex, 1);
+          deps.setPackClothing(remaining);
+          if (deps.getManualHeldItem?.()?.kind === 'clothing' && deps.getManualHeldItem().uid === uid) {
+            deps.setManualHeldItem?.(null); // Never leave the handheld/gift target pointing at a garment just sold.
+          }
           deps.inventory.gold = (deps.inventory.gold || 0) + salePrice;
           deps.showToast('Sold ' + item.label + ' for ' + salePrice + 'g', true);
           buildPackClothingSection(); deps.buildInventoryGrid(); deps.clearInventoryDetail();
@@ -736,6 +979,7 @@
     const gearInventory = deps.getGearInventory();
     const item = gearInventory.clothingItems.find(c => c.uid === uid);
     if (!item) return;
+    if (item.cursed) { deps.showToast(cursedMessage(item), false); return; } // Defends old saves or other routes that put a cursed piece in gear.
     gearInventory.clothing[item.slot] = item;
     deps.saveGearInventory();
     deps.refreshPlayerAvatar();
@@ -758,7 +1002,8 @@
     const gearInventory = deps.getGearInventory();
     const isWorn = gearInventory?.clothing?.[slot]?.uid === item.uid;
     const metalArmorDetail = window.MetalArmorSystem?.detailText?.(item) || ''; // Mobile-visible material/Temper/weight diagnostics for any smith-crafted metal clothing.
-    set('iiDesc',  [item.description, metalArmorDetail, isWorn ? 'Currently worn. Select another collected piece below to swap.' : 'Collected clothing in gear. Equip it to wear it.'].filter(Boolean).join(' '));
+    const weaveDetail = hasIndividualClothingPattern(item) ? 'Patterned garment — its unique woven design is saved with this article.' : ''; // Mobile-visible confirmation for inspected bandit loot.
+    set('iiDesc',  [item.description, metalArmorDetail, weaveDetail, isWorn ? 'Currently worn. Select another collected piece below to swap.' : 'Collected clothing in gear. Equip it to wear it.'].filter(Boolean).join(' '));
     const actEl = document.getElementById('iiActions');
     if (actEl) {
       actEl.innerHTML = '';
@@ -813,6 +1058,10 @@
     }
     window.DyeSystem.ensureCollection();
     ensureArticleDyeIds(item);
+    const weaving = window.ClothingWeavingSystem;
+    if (await weaving?.hasPixelDyeForItem?.(item)) {
+      return weaving.openExtendedRedyePanel(item); // Reuse the existing persisted colorC dye editor.
+    }
     const panel = document.getElementById('dyePanel');
     const titleEl = document.getElementById('dyePanelTitle');
     const subslotsEl = document.getElementById('dyePanelSubslots');
@@ -943,12 +1192,14 @@
     const sec = document.getElementById('invPackClothing');
     if (!sec) return;
     const packClothing = deps.getPackClothing();
+    if (ensureUniquePackClothingUids(packClothing)) deps.saveMemberWorldData?.(); // One-time save migration prevents one sale from deleting same-UID copies.
     if (!packClothing.length) {
       sec.innerHTML = '<div class="inv-pcloth-empty">No clothing in pack.</div>';
       return;
     }
     sec.innerHTML = '';
-    packClothing.forEach(item => {
+    for (const group of groupClothingForDisplay(packClothing)) {
+      const item = group.item; // One tile per identical group; the backing inventory still contains every article.
       const btn = document.createElement('button');
       btn.className = 'inv-pcloth-item';
       btn.setAttribute('data-ctrl-detail', 'invInfo');
@@ -959,14 +1210,22 @@
       const starText = packClothingStarText(item); // Used to expose woven quality directly in the Pack clothing list.
       name.textContent = starText ? (starText + ' ' + item.label) : item.label;
       btn.appendChild(name);
+      if (group.count > 1) {
+        const badge = document.createElement('span'); // Cloned by InventoryUI into the visible Pack grid tile.
+        badge.className = 'iib-count ipc-stack-count';
+        badge.textContent = '×' + group.count;
+        badge.style.top = '3px'; // Avoid overlapping the grid's bottom-aligned CLOTHING category caption.
+        badge.style.bottom = 'auto';
+        btn.appendChild(badge);
+      }
       btn.addEventListener('click', () => selectPackClothingItem(item.uid));
       sec.appendChild(btn);
-    });
+    }
   }
 
   // Build the equipment slots panel inside #invEquipSection
   function buildEquipmentSlots() {
-    const sec = document.getElementById('invEquipSection');
+    const sec = document.getElementById('invEquipSection'); // Rendering must never grant gear or write a save; migration happens at character load.
     if (!sec) return;
     sec.innerHTML = '';
     const gearInventory = deps.getGearInventory();
@@ -992,9 +1251,7 @@
       cell.tabIndex = 0;
       cell.setAttribute('data-key', slot); // Restores the same tool slot after its card rebuilds.
       if (def) {
-        const img = document.createElement('img');
-        img.src = deps.metalToolImgSrc(def); img.className = 'ies-sprite'; img.alt = def.label;
-        cell.appendChild(img);
+        renderToolIcon(cell, def);
         const unBtn = document.createElement('button');
         unBtn.className = 'ies-unequip'; unBtn.textContent = '✕'; unBtn.title = 'Unassign ' + def.label;
         unBtn.addEventListener('click', (e) => { e.stopPropagation(); unequipItem(slot); });
@@ -1032,9 +1289,7 @@
         cell.setAttribute('data-ctrl-detail', 'invInfo');
         cell.tabIndex = 0;
         cell.setAttribute('data-item-key', key);
-        const img = document.createElement('img');
-        img.src = deps.metalToolImgSrc(def); img.className = 'ies-sprite'; img.alt = def.label;
-        cell.appendChild(img);
+        renderToolIcon(cell, def);
         const lbl = document.createElement('span');
         lbl.className = 'ies-label';
         lbl.textContent = def.label.split(' ')[0] + ' Lv' + deps.toolMasteryLevel(key);
@@ -1140,8 +1395,44 @@
     window.TrinketSystem?.renderEquipmentSection?.(sec); // Attunement-budget trinkets (js/trinket-system.js).
   }
 
+  function getPackClothingForWardrobe() {
+    return (deps?.getPackClothing?.() || []).filter(Boolean).map(item => ({
+      uid: item.uid, label: item.label || item.cosmeticId || 'Clothing', cursed: !!item.cursed,
+    })); // Only the small display fields cross into the wardrobe panel; the inventory remains owned here.
+  }
+
+  function transferPackClothingToNpcWardrobe(npcId, uid) {
+    const target = window.NpcWardrobe?.getActiveSpouseWardrobeTarget?.();
+    if (!target || target.npcId !== npcId) return false;
+    const pack = deps?.getPackClothing?.();
+    const index = pack?.findIndex(item => item?.uid === uid) ?? -1;
+    const item = index >= 0 ? pack[index] : null;
+    if (!item || item.cursed || !window.NpcWardrobe?.storePackItem?.(npcId, item)) return false;
+    pack.splice(index, 1);
+    if (deps.getManualHeldItem?.()?.kind === 'clothing' && deps.getManualHeldItem().uid === uid) deps.setManualHeldItem?.(null);
+    deps.saveMemberWorldData?.(); // One save commits the Pack removal and spouse wardrobe addition together.
+    deps.showToast?.(`${item.label || 'Clothing'} moved to ${target.name}'s Wardrobe.`, true);
+    buildPackClothingSection(); deps.buildInventoryGrid?.(); deps.clearInventoryDetail?.();
+    window.NpcWardrobe?.refreshOpenPanel?.();
+    return true;
+  }
+
+  // Read-only bridge for the Loadout's 3D viewport. The equipment panel
+  // already owns the complete map, including meshes that are currently holstered.
+  function getEquippedWeaponPreviewPlane(itemKey) {
+    const mesh = deps?.toolMeshMap?.weapon; // Same cached weapon mesh used by the real player, even when another slot is active.
+    return mesh?.userData?.itemKey === itemKey ? mesh.userData.toolPlane || null : null;
+  }
+
   window.EquipmentPanel = {
     init,
+    ensureStarterFlute,
+    dispelCurse,
+    getEquippedWeaponPreviewPlane,
+    refreshPlayerAvatar: () => deps?.refreshPlayerAvatar?.(), // Dev Companion uses the game's existing complete in-place portrait/rig rebuild.
+    devWornClothing: () => deps?.getGearInventory?.()?.clothing || null, // Appearance inspector edits only visual fields on the actual currently equipped gear objects.
+    squareToolIcon,
+    getIconDebug: () => ({ ...toolIconDebug, cached: toolIconFrames.size }),
     setEquipmentSlot,
     equipItem,
     unequipItem,
@@ -1150,6 +1441,15 @@
     clothingSpriteForCosmetic,
     ensureGearClothingCollection,
     buildPackClothingSection,
+    getPackClothingForWardrobe,
+    transferPackClothingToNpcWardrobe,
+    previewPackClothingItem: uid => selectPackClothingItem(uid, true), // Clothing detail-only path used by controller focus.
     buildEquipmentSlots,
+    getClothingStackDebug: () => { // Compact diagnostic usable on mobile without developer tools.
+      const items = deps?.getPackClothing?.() || []; // Current saved pack entries are the authority.
+      const groups = groupClothingForDisplay(items); // Reports only display counts, not private UID metadata.
+      return { articles: items.length, visibleTiles: groups.length, stackedTiles: groups.filter(g => g.count > 1).length };
+    },
+    __test: { clothingStackSignature, groupClothingForDisplay, ensureUniquePackClothingUids, hasIndividualClothingPattern, clothingGearCollectionKey },
   };
 })();

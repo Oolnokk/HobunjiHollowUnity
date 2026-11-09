@@ -231,7 +231,7 @@
       // attack choice, and damage continue to use the existing bandit/tool
       // systems; the weapon-only shapes deliberately receive no damage bonus.
       weaponShapePool: [
-        'hatchet', 'fishingmace', 'fishingspear', 'pickshovel',
+        'workhammer', 'hatchet', 'fishingmace', 'fishingspear', 'pickshovel',
         'bshuakauitl', 'daggerSword', 'plainsSword', 'dagger', 'kylie', 'warCleaver'
       ],
     },

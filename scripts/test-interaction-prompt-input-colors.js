@@ -13,7 +13,7 @@ const style = read('docs/style.css'); // Used to verify the touch dodge button s
 assert(slotColors.includes("dodge: '#A78BFA'"), 'dodge has a distinct electric-violet input color');
 assert(slotColors.includes('inputColors: INPUT_COLORS'), 'semantic prompt colors are exposed by the action arch');
 assert(style.includes('var(--dodge-input-color, #A78BFA)'), 'the touch dodge arch uses the shared dodge color');
-assert(game.includes("button.action === 'climb_branch' ? 'dodge'"), 'climb prompts identify the actual dodge input');
+assert(game.includes("button.action === 'climb_branch' ? 'jump'"), 'climb prompts identify the actual jump input');
 assert(game.includes('promptInputs,'), 'world prompt synchronization receives structured input hints');
 assert(popup.includes('makeInteractionPlane'), 'interaction rows use segmented canvas rendering');
 assert(popup.includes('INTERACTION_VERB_COLOR'), 'interaction verbs have a dedicated uncoded emphasis color');

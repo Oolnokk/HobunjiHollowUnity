@@ -14,7 +14,7 @@ function rectangle(prop) {
   const def = defs[prop.key]; // The same unrotated center and post-scale as TownZoneBuildings.
   assert(def, `unknown furniture ${prop.key}`);
   const c = prop.col + def.fw / 2 + (prop.postX || 0), r = prop.row + def.fd / 2 + (prop.postZ || 0);
-  const w = def.fw * (prop.postSX ?? prop.postScale ?? 1), d = def.fd * (prop.postSZ ?? prop.postScale ?? 1);
+  const w = (['bandstand','dance'].includes(prop.festivalLocale?.kind) ? prop.festivalLocale.width : def.fw) * (prop.postSX ?? prop.postScale ?? 1), d = (['bandstand','dance'].includes(prop.festivalLocale?.kind) ? prop.festivalLocale.depth : def.fd) * (prop.postSZ ?? prop.postScale ?? 1);
   const yaw = (prop.rotY || 0) * Math.PI / 180;
   const halfW = (Math.abs(Math.cos(yaw)) * w + Math.abs(Math.sin(yaw)) * d) / 2;
   const halfD = (Math.abs(Math.sin(yaw)) * w + Math.abs(Math.cos(yaw)) * d) / 2;
@@ -31,7 +31,7 @@ for (const layout of town.layouts) {
     assert(!props.slice(0, index).some(other => overlaps(rect, rectangle(other))), `${prop.id} overlaps another prop`);
     for (let row = Math.floor(rect[1]); row < Math.ceil(rect[3]); row++) for (let col = Math.floor(rect[0]); col < Math.ceil(rect[2]); col++) {
       const tile = town.tiles[`${col},${row}`];
-      assert(!['path', 'stream', 'river', 'trench', 'tilled'].includes(tile?.type), `${prop.id} obstructs ${tile?.type} at ${col},${row}`);
+      assert(prop.festivalRoadArch || !['path', 'stream', 'river', 'trench', 'tilled'].includes(tile?.type), `${prop.id} obstructs ${tile?.type} at ${col},${row}`); // Tall arches explicitly span unobstructed roads.
     }
     for (const exit of town.transitions) {
       const dx = Math.max(rect[0] - exit.col - .5, 0, exit.col + .5 - rect[2]);
@@ -48,18 +48,38 @@ for (const layout of town.layouts) {
     assert(!occupied.has(key), `${station.id} shares another guest's spot`); occupied.add(key);
   }
 }
+// Validate every expanded chair/table and destination, not only the locale roots.
+const geometryWindow = {};
+const geometryContext = vm.createContext({window:geometryWindow,console});
+vm.runInContext(source('festival-calendar'),geometryContext);
+vm.runInContext(source('map-layout-system'),geometryContext);
+const festivalMap = geometryWindow.MapLayoutSystem.getEffectiveMapData(town,{dateOrdinal:120});
+for (const prop of festivalMap.decor.filter(p=>p.festivalLocaleParent)) {
+  const rect=rectangle(prop);
+  assert(!buildings.some(b=>overlaps(rect,b)),`${prop.id} inside building`);
+  for(let r=Math.floor(rect[1]);r<Math.ceil(rect[3]);r++)for(let c=Math.floor(rect[0]);c<Math.ceil(rect[2]);c++)
+    assert(!['path','stream','river','trench'].includes(town.tiles[`${c},${r}`]?.type),`${prop.id} on path/water ${c},${r}`);
+  assert(Math.hypot((rect[0]+rect[2])/2-31.5,(rect[1]+rect[3])/2-31.5)<19,`${prop.id} too far from square`);
+}
+for(const st of festivalMap.npcStations.filter(s=>s.festivalLocaleParent)) {
+  assert(!['path','stream','river','trench'].includes(town.tiles[`${Math.floor(st.col)},${Math.floor(st.row)}`]?.type),`${st.id} stands on path/water`);
+  assert(!buildings.some(b=>overlaps([st.col+.2,st.row+.2,st.col+.8,st.row+.8],b)),`${st.id} inside building`);
+}
 // Editor copy-on-write, JSON export, and switching back to the untouched base.
 const editorContext = vm.createContext({});
 const start = editor.indexOf('let editingLayoutId =');
 const end = editor.indexOf('// Every decor array', start);
 vm.runInContext(editor.slice(start, end), editorContext);
 editorContext.map = structuredClone(town);
-vm.runInContext(`editingLayoutId = map.layouts[0].id; activeDecor(map)[2].col = 31; activeStations(map)[0].col = 29;`, editorContext);
-assert.equal(editorContext.map.layouts[0].decor[2].col, 31);
+const welcomeId = town.layouts[0].decor.find(prop => prop.activity?.type === 'welcome')?.id;
+assert(welcomeId, 'first festival must provide a welcome activity');
+editorContext.welcomeId = welcomeId;
+vm.runInContext(`editingLayoutId = map.layouts[0].id; activeDecor(map).find(prop => prop.id === welcomeId).col = 31; activeStations(map)[0].col = 29;`, editorContext);
+assert.equal(editorContext.map.layouts[0].decor.find(prop => prop.id === welcomeId).col, 31);
 assert.deepEqual(editorContext.map.npcStations, town.npcStations);
 assert.deepEqual(editorContext.map.decor, town.decor);
 editorContext.exported = JSON.parse(JSON.stringify(editorContext.map));
-assert.equal(editorContext.exported.layouts[0].decor[2].activity.type, 'welcome');
+assert.equal(editorContext.exported.layouts[0].decor.find(prop => prop.id === welcomeId).activity.type, 'welcome');
 vm.runInContext(`editingLayoutId = null; setActiveStations(map, [{ id: 'newBase', col: 1, row: 1 }]);`, editorContext);
 assert.equal(editorContext.map.layouts[0].npcStations[0].col, 29);
 // Map-owned station replacement removes expired festival roles, preserving stations owned by other areas/tools.
@@ -101,6 +121,18 @@ assert(scheduling.resolveNpcStationTarget('other'));
   await context.refreshTownCalendarLayout(); assert.equal(context._layoutSwapInProgress, false, 'failure releases swap lock');
   await context.refreshTownCalendarLayout();
   assert.equal(context._townZone.activeLayoutId, 'default'); assert.strictEqual(context.townScene.actors, actors);
-  assert.equal(builds, 2); assert.equal(transitions, 3); assert.equal(context._workspaceDefinition.maps[0].decor.length, 2);
+  assert.equal(builds, 2); assert.equal(transitions, 3); assert.equal(context._workspaceDefinition.maps[0].decor.length, town.decor.length, 'calendar layout cycling must preserve base decorations without respawning retired floating signs');
   console.log('Festival spacing, open exits, editor round-trip, station cleanup, and live layout lifecycle passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
+
+const dressingWindow = {}; // Festival dressings use the house-furniture JSON/PNG builder, rather than a separate texture atlas.
+vm.runInNewContext(source('festival-props'), {window:dressingWindow});
+for (const key of Object.values(dressingWindow.FestivalProps.dressingKeys)) {
+  const data = JSON.parse(fs.readFileSync(`docs/config/furniture-authored/${key}.json`, 'utf8')); // Real editor-importable records back every live decoration.
+  assert.equal(data.key, key);
+  assert(data.parts.length > 0);
+  for (const part of data.parts) {
+    assert(part.materialTexture, `${key}/${part.id} has a PNG surface`);
+    assert(fs.existsSync(`docs/assets/textures/${part.materialTexture}`));
+  }
+}

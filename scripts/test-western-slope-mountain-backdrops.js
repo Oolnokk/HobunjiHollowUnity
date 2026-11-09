@@ -5,41 +5,106 @@ const fs = require('fs');
 const vm = require('vm');
 
 const source = fs.readFileSync('docs/js/western-slope-mountain-backdrops.js', 'utf8'); // Production backdrop module exercised by the THREE shim below.
-const environmentBootstrap = fs.readFileSync('docs/js/environment-surface-runtime.js', 'utf8'); // Existing environment compatibility slot must load the backdrop module before game boot.
-const author = fs.readFileSync('docs/tools/background-scenery-author/index.html', 'utf8'); // Background author must synchronously load the mountain integration before its first map resolve.
-const mountainAuthor = fs.readFileSync('docs/tools/background-scenery-author/mountain-backdrop-author.js', 'utf8'); // Additive tool integration exposes real PNGs and transform controls.
+const snowSurfaceSource = fs.readFileSync('docs/js/environment-surface-micro-plateau.js', 'utf8'); // Canonical snow material owner shared by each decorative cap.
+const environmentBootstrap = fs.readFileSync('docs/js/environment-surface-runtime.js', 'utf8'); // Loads the production backdrop module before game boot.
+const author = fs.readFileSync('docs/tools/background-scenery-author/index.html', 'utf8'); // The author preview must load the same runtime module.
+const mountainAuthor = fs.readFileSync('docs/tools/background-scenery-author/mountain-backdrop-author.js', 'utf8'); // Existing author controls retain their transform API.
 
-assert.match(environmentBootstrap, /western-slope-mountain-backdrops\.js\?v=[A-Za-z0-9_-]+/, 'environment bootstrap must load the Western Slope mountain module');
+assert.match(environmentBootstrap, /western-slope-mountain-backdrops\.js\?v=[A-Za-z0-9_-]+/, 'environment bootstrap must load the Western Slope scenery module');
 assert.match(source, /const WESTERN_SLOPE_ID = 'map_western_slope'/, 'module must remain scoped to Western Slope');
-assert.match(source, /MIN_WIDTH_MULTIPLIER = 2\.75/, 'every layer must stay wider than the wilderness footprint');
-assert.match(source, /WEST_LAYER_GAP_MULTIPLIER = 0\.85/, 'deep backdrop spacing must remain explicit and map-scaled');
-assert.match(source, /AUTHOR_STORAGE_KEY = 'hobunjiWesternSlopeMountainBackdrops\.v1'/, 'runtime and author tool must share the same local transform override key');
-assert.match(author, /western-slope-mountain-backdrops\.js\?v=[A-Za-z0-9_-]+/, 'Background Scenery Author must load the runtime transform contract before authoring');
-assert.match(author, /mountain-backdrop-author\.js\?v=[A-Za-z0-9_-]+/, 'Background Scenery Author must load its mountain UI/preview bridge');
-assert.match(mountainAuthor, /Mountain backdrop layers/, 'author bridge must expose mountain transform controls');
-assert.match(mountainAuthor, /mountainPosX/, 'author bridge must expose position controls');
-assert.match(mountainAuthor, /mountainRotY/, 'author bridge must expose rotation controls');
-assert.match(mountainAuthor, /mountainScaleZ/, 'author bridge must expose scale controls');
-assert.match(mountainAuthor, /assetBase:\s*'\.\.\/\.\.\/'/, '3D author preview must resolve the real repository PNGs from the tool directory');
-assert.match(mountainAuthor, /Frame mountains/, 'author bridge must provide a camera fit for the gargantuan westward stack');
+assert.match(source, /const ROCKS_PER_LAYER = 8/, 'each former PNG layer must become exactly eight rocks');
+assert.match(source, /const RIDGE_LENGTH_MAP_MULTIPLIER = 2/, 'each complete rock ridge must span twice the map north-south edge');
+assert.match(source, /const SNOW_CAP_HEIGHT_FRACTION = 2 \/ 3/, 'snow must cover the upper two-thirds of each rock');
+assert.match(source, /farm-cliff-planar-stretch/, 'snow cap UVs must use the same planar stretch-to-fit method as farm cliffs');
+assert.match(source, /ensureSnowCapMipmaps/, 'faraway caps need a dedicated minification fix without altering ground snow');
+assert.match(source, /snowMesh\.onBeforeRender=\(\)=>ensureSnowCapMipmaps\(record\)/, 'snow mipmaps must be installed when the async ground texture finishes loading');
+assert.match(source, /new T\.LineSegments/, 'the stone/snow boundary must retain a visible outline');
+assert.match(snowSurfaceSource, /getSnowMaterial: \(\) => material\('snow'\)/, 'rock caps must reuse the canonical Western Slope snow material');
+assert.match(snowSurfaceSource, /bindSnowTexture\(target\)/, 'cap material clones must receive the asynchronously loaded snow texture');
+assert.match(snowSurfaceSource, /unbindSnowTexture\(target\)/, 'disposed cap clones must unregister from the snow texture loader');
+assert.match(source, /decorativeRockRidges:true/, 'replacement scenery must identify itself as decorative ridges');
+assert.match(source, /visualOnly:true/, 'replacement scenery must be visual only');
+assert.doesNotMatch(source, /diggableRockOre|mineableRocksByTile|oreKey/, 'backdrop rocks must never register as mineable resources');
+assert.match(source, /WEST_LAYER_GAP_MULTIPLIER = 0\.85/, 'deep scenery spacing must remain explicit and map-scaled');
+assert.match(source, /WEST_STACK_SHIFT_MULTIPLIER = 0\.25/, 'the complete default stack must retain its westward shift');
+assert.match(source, /AUTHOR_STORAGE_KEY = 'hobunjiWesternSlopeMountainBackdrops\.v2'/, 'approved defaults must supersede stale v1 browser-local transforms');
+assert.match(author, /western-slope-mountain-backdrops\.js\?v=[A-Za-z0-9_-]+/, 'Background Scenery Author must load the replacement module');
+assert.match(mountainAuthor, /Western Slope rock ridges/, 'author bridge must identify the replacement scenery');
+const terrainGeometryScript = author.indexOf('../../js/terrain-geometry.js?'); // The standalone author page needs the same mine-rock geometry builder as gameplay.
+const oreTexturesScript = author.indexOf('../../js/ore-rock-textures.js?'); // The preview uses the live mine-rock material and UV treatment.
+const backdropScript = author.indexOf('../../js/western-slope-mountain-backdrops.js?'); // Runtime must load only after both mine-rock dependencies.
+assert(terrainGeometryScript >= 0 && terrainGeometryScript < backdropScript, 'author page must load terrain geometry before the rock-ridge runtime');
+assert(oreTexturesScript >= 0 && oreTexturesScript < backdropScript, 'author page must load mine-rock textures before the rock-ridge runtime');
+const authorAssetBase = author.indexOf("window.OreRockTexturesAssetBase='../../';"); // The shared mine texture is rooted at docs/ in the standalone nested tool.
+assert(authorAssetBase >= 0 && authorAssetBase < oreTexturesScript, 'author page must configure the texture base before loading mine-rock materials');
+assert.match(author, /ore-rock-textures\.js\?v=[A-Za-z0-9_-]+/, 'author page must load the versioned shared mine-texture module');
+const liveCacheVersion = environmentBootstrap.match(/western-slope-mountain-backdrops\.js\?v=([A-Za-z0-9_-]+)/)?.[1]; // Game and author must load the same cache-busted renderer.
+const authorCacheVersion = author.match(/western-slope-mountain-backdrops\.js\?v=([A-Za-z0-9_-]+)/)?.[1];
+assert.equal(liveCacheVersion, authorCacheVersion, 'author preview and game must share the same updated mountain-backdrop module');
+assert.equal(liveCacheVersion, '20261107depthSnow1', 'new distant-mountain fixes must bypass old mobile browser caches');
+assert.match(mountainAuthor, /8 decorative mine rocks/, 'author bridge must no longer present the PNG as the live scenery');
+assert.match(mountainAuthor, /mountainPosX/, 'author bridge must retain position controls');
+assert.match(mountainAuthor, /mountainRotY/, 'author bridge must retain rotation controls');
+assert.match(mountainAuthor, /mountainScaleZ/, 'author bridge must retain scale controls');
+assert.match(mountainAuthor, /mountainScaleZ" type="text" inputmode="decimal"/, 'Z scale must use a decimal-friendly text field, not a mobile number input that sanitizes intermediate dots');
 
-// Execute the author field formatter: unset coordinates must display resolved defaults,
-// so editing rotation cannot accidentally snap all three positions to zero.
-const inputs = Object.fromEntries(['x', 'y', 'z'].map(id => [id, { dataset: {} }])); // Fake number inputs consumed by the production formatter.
-const formatterSource = mountainAuthor.slice(mountainAuthor.indexOf('  function displayVector('), mountainAuthor.indexOf('  function syncUi(')); // Only this pure UI formatter needs a DOM shim.
-const formatterContext = { $: id => inputs[id] }; // Supplies the formatter's element lookup.
+// Execute the author field formatter: unset coordinates must display resolved defaults.
+const inputs = Object.fromEntries(['x', 'y', 'z'].map(id => [id, { dataset: {} }]));
+const formatterSource = mountainAuthor.slice(mountainAuthor.indexOf('  function writeTransformValue('), mountainAuthor.indexOf('  function syncUi('));
+const formatterContext = { $: id => inputs[id], document: { activeElement: null } };
 vm.createContext(formatterContext);
 vm.runInContext(formatterSource, formatterContext);
 formatterContext.displayVector(['x','y','z'], [null,null,null], [-194,160,100], [0,0,0]);
-assert.deepEqual(Object.values(inputs).map(input => input.value), [-194,160,100], 'automatic coordinates must retain resolved positions');
+assert.deepEqual(Object.values(inputs).map(input => input.value), ['-194','160','100'], 'automatic coordinates must retain resolved positions');
 formatterContext.displayVector(['x','y','z'], [0,-4,12], [-194,160,100], [0,0,0]);
-assert.deepEqual(Object.values(inputs).map(input => input.value), [0,-4,12], 'explicit zero and negative positions must survive');
+assert.deepEqual(Object.values(inputs).map(input => input.value), ['0','-4','12'], 'explicit zero and negative positions must survive');
+formatterContext.document.activeElement = inputs.z;
+inputs.z.value = '1.'; // Simulates the exact mobile edit state that used to turn 1.5 into 15.
+formatterContext.displayVector(['x','y','z'], [8,9,10], [8,9,10], [0,0,0]);
+assert.equal(inputs.z.value, '1.', 'a concurrent scenery preview refresh must not erase the focused input decimal point');
+assert.equal(inputs.x.value, '8', 'unfocused fields must continue updating normally');
+formatterContext.document.activeElement = null;
+formatterContext.displayVector(['x','y','z'], [8,9,1.5], [8,9,1.5], [0,0,0]);
+assert.equal(inputs.z.value, '1.5', 'after blur the committed decimal is displayed as entered');
+
+// The author displays base-relative offsets and updates only the axis actually edited.
+const positionInputs = Object.fromEntries(['pX','pY','pZ'].map(id => [id, { dataset: {} }]));
+const positionFormatSource = formatterSource;
+const positionFormatContext = { $: id => positionInputs[id], document: { activeElement: null } };
+vm.createContext(positionFormatContext);
+vm.runInContext(positionFormatSource, positionFormatContext);
+positionFormatContext.displayPositionOffsets(['pX','pY','pZ'], [null,null,null], { defaultPosition: [-74,160,100] });
+assert.deepEqual(Object.values(positionInputs).map(input => input.value), ['0','0','0'], 'automatic position fields must present as zero offsets');
+positionFormatContext.displayPositionOffsets(['pX','pY','pZ'], [-65,165,99], { defaultPosition: [-74,160,100] });
+assert.deepEqual(Object.values(positionInputs).map(input => input.value), ['9','5','-1'], 'offset fields must subtract the automatic map-dependent origin');
+positionFormatContext.document.activeElement = positionInputs.pZ;
+positionInputs.pZ.value = '-0.';
+positionFormatContext.displayPositionOffsets(['pX','pY','pZ'], [-65,165,100], { defaultPosition: [-74,160,100] });
+assert.equal(positionInputs.pZ.value, '-0.', 'focused position offset may contain an incomplete signed decimal during rebuild');
+
+const transformEditSource = mountainAuthor.slice(mountainAuthor.indexOf('  const TRANSFORM_FIELDS ='), mountainAuthor.indexOf('  function commitControls('));
+const transformEditContext = {};
+vm.createContext(transformEditContext);
+vm.runInContext(transformEditSource, transformEditContext);
+const editableLayer = { transform: { position: [null,null,null], rotationDeg: [0,0,0], scale: [1,1,1] } };
+assert(transformEditContext.editTransformAxis(editableLayer, 'mountainPosY', '10', [-74,160,100]));
+assert.deepEqual(editableLayer.transform.position, [null,170,null], 'editing Y offset must preserve X and Z automatic positions');
+assert(!transformEditContext.editTransformAxis(editableLayer, 'mountainScaleZ', '1.'), 'trailing decimal point is an incomplete input, not a rounded whole number');
+assert.deepEqual(editableLayer.transform.scale, [1,1,1], 'an incomplete decimal must not commit a transient scale');
+assert(transformEditContext.editTransformAxis(editableLayer, 'mountainScaleZ', '1.5'));
+assert.deepEqual(editableLayer.transform.scale, [1,1,1.5], 'editing length must not change thickness or height');
+assert(transformEditContext.editTransformAxis(editableLayer, 'mountainScaleZ', '0.05'));
+assert.deepEqual(editableLayer.transform.scale, [1,1,0.05], 'small positive scale decimals must be accepted');
+assert(transformEditContext.editTransformAxis(editableLayer, 'mountainScaleZ', '1,25'));
+assert.deepEqual(editableLayer.transform.scale, [1,1,1.25], 'locale decimal commas must be accepted by the mobile keyboard');
+assert(!transformEditContext.editTransformAxis(editableLayer, 'mountainScaleZ', '-.'), 'unfinished signed decimal must not mutate the scale');
+assert(!transformEditContext.editTransformAxis(editableLayer, 'mountainScaleY', '-2'), 'negative height scale must be rejected');
+assert.deepEqual(editableLayer.transform.scale, [1,1,1.25], 'rejected input cannot mutate scale');
+assert(transformEditContext.editTransformAxis(editableLayer, 'mountainPosY', '', [-74,160,100]));
+assert.deepEqual(editableLayer.transform.position, [null,null,null], 'clearing the edited axis restores automatic positioning');
 
 function transformSlot(defaults = { x: 0, y: 0, z: 0 }) {
-  return {
-    ...defaults,
-    set(x, y, z) { this.x = x; this.y = y; this.z = z; },
-  };
+  return { ...defaults, set(x, y, z) { this.x = x; this.y = y; this.z = z; } };
 }
 class Node3D {
   constructor() {
@@ -70,47 +135,95 @@ class Node3D {
   }
 }
 class Group extends Node3D {}
-class PlaneGeometry {
-  constructor(width, height) { this.width = width; this.height = height; this.disposed = false; }
+class FakeBufferAttribute {
+  constructor(array, itemSize) { this.array = array; this.itemSize = itemSize; this.count = array.length / itemSize; }
+  getX(index) { return this.array[index * this.itemSize]; }
+  getY(index) { return this.array[index * this.itemSize + 1] ?? 0; }
+  getZ(index) { return this.array[index * this.itemSize + 2] ?? 0; }
+  setXY(index, x, y) { this.array[index * this.itemSize] = x; this.array[index * this.itemSize + 1] = y; }
+}
+class FakeGeometry {
+  constructor(seed) { this.seed = seed; this.disposed = false; this.attributes = {}; this.index = null; this.userData = {}; }
+  setAttribute(name, attribute) { this.attributes[name] = attribute; return this; }
+  getAttribute(name) { return this.attributes[name] || null; }
+  setIndex(index) { this.index = index; return this; }
+  computeVertexNormals() { return this; }
+  computeBoundingSphere() { return this; }
   dispose() { this.disposed = true; }
 }
-class MeshBasicMaterial {
-  constructor(options) { Object.assign(this, options); this.userData = {}; this.toneMapped = true; this.disposed = false; }
+class FakeMaterial {
+  constructor(options = {}) { Object.assign(this, { depthTest: true, depthWrite: true, fog: true }, options); this.userData = {}; this.disposed = false; }
+  clone() { const cloned = new this.constructor(this); cloned.userData = { ...this.userData }; return cloned; }
   dispose() { this.disposed = true; }
 }
+class MeshStandardMaterial extends FakeMaterial {}
+class MeshBasicMaterial extends FakeMaterial {}
+class LineBasicMaterial extends FakeMaterial {}
 class Mesh extends Node3D {
   constructor(geometry, material) { super(); this.geometry = geometry; this.material = material; this.isMesh = true; }
 }
-
-const imageSizes = {
-  'assets/backdrops/bd_mountains_1.png': [1200, 500],
-  'assets/backdrops/bd_mountains_2.png': [900, 650],
-  'assets/backdrops/bd_mountains_3.png': [1400, 700],
-}; // Deliberately different aspect ratios prove all layers share one source-pixel scale instead of one forced plane size.
-class TextureLoader {
-  load(url, onLoad, _onProgress, onError) {
-    const size = imageSizes[url];
-    if (!size) { onError(new Error(`missing ${url}`)); return; }
-    queueMicrotask(() => onLoad({
-      image: { width: size[0], height: size[1] },
-      userData: {},
-      disposed: false,
-      dispose() { this.disposed = true; },
-    }));
-  }
+class LineSegments extends Node3D {
+  constructor(geometry, material) { super(); this.geometry = geometry; this.material = material; this.isLineSegments = true; }
 }
 
+const sharedMineMaterial = new MeshStandardMaterial({ color: 0xffffff, roughness: 0.94, map: { shared: true } });
+const sharedSnowMaterial = new MeshBasicMaterial({ color: 0xffffff, map: { sharedSnow: true }, depthTest: true, depthWrite: true, fog: true });
+const snowMaterialBindings = new Set(); // Verifies the cap clone remains synchronized without changing the ground material.
+const sourceGeometries = [];
+const unusedGrassGeometries = [];
+let geometryCalls = 0;
+let fitCalls = 0;
+const THREE = {
+  Group, Mesh, LineSegments, MeshStandardMaterial, MeshBasicMaterial, LineBasicMaterial,
+  DoubleSide: 2, // The distant rock/snow faces render from both camera directions.
+  LinearFilter: 1006, // Used by the backdrop-only snow-texture clone.
+  LinearMipmapLinearFilter: 1008, // Filters distant snow without touching canonical ground snow.
+  BufferGeometry: FakeGeometry,
+  BufferAttribute: FakeBufferAttribute,
+  Float32BufferAttribute: FakeBufferAttribute,
+  MathUtils: { degToRad: degrees => degrees * Math.PI / 180 },
+};
 const localStorageData = new Map();
 const localStorage = {
   getItem(key) { return localStorageData.has(key) ? localStorageData.get(key) : null; },
   setItem(key, value) { localStorageData.set(key, String(value)); },
   removeItem(key) { localStorageData.delete(key); },
 };
-const THREE = {
-  Group, PlaneGeometry, MeshBasicMaterial, Mesh, TextureLoader, FrontSide: 'front',
-  MathUtils: { degToRad: degrees => degrees * Math.PI / 180 },
+const window = {
+  THREE,
+  localStorage,
+  EnvironmentSurfaceMicroPlateau: {
+    getSnowMaterial: () => sharedSnowMaterial,
+    bindSnowTexture: material => { material.map = sharedSnowMaterial.map; snowMaterialBindings.add(material); return true; },
+    unbindSnowTexture: material => snowMaterialBindings.delete(material),
+    debugSnapshot: () => ({ textureState: 'shade-filled-white-canvas-png' }),
+  },
+  TerrainGeometry: {
+    buildRockTileGeo(col, row) {
+      geometryCalls++;
+      const geometry = new FakeGeometry(col + row);
+      geometry.setAttribute('position', new FakeBufferAttribute(new Float32Array([
+        -0.5,0,-0.5,  0,1,0,  0.5,0,-0.5,  0.5,0,0.5,  -0.5,0,0.5,
+      ]), 3));
+      geometry.setAttribute('uv', new FakeBufferAttribute(new Float32Array([0,0, 0.5,0.5, 1,0, 1,1, 0,1]), 2));
+      geometry.setIndex(new FakeBufferAttribute(new Uint16Array([0,1,2, 2,1,3, 3,1,4, 4,1,0]), 1));
+      sourceGeometries.push(geometry);
+      const grassGeo = new FakeGeometry(-1); unusedGrassGeometries.push(grassGeo);
+      return { stoneGeo: geometry, grassGeo, heightTiles: 0.55 };
+    },
+  },
+  OreRockTextures: {
+    materialFor(_three, key) {
+      assert.equal(key, 'stone', 'scenery must reuse the mine-rock stone appearance, not create ore nodes');
+      return sharedMineMaterial;
+    },
+    fitRockMesh(mesh) {
+      fitCalls++;
+      mesh.userData.mineRockUvsApplied = true;
+      return true;
+    },
+  },
 };
-const window = { THREE, localStorage };
 window.BorderTerrain = {
   buildZoneBorderTerrain(scene, cols, rows, mapId) {
     scene.borderBuilds = (scene.borderBuilds || 0) + 1;
@@ -121,49 +234,217 @@ window.WildernessChunks = {
   destroyZone(mapId) { this.lastDestroyed = mapId; return true; },
 };
 
-vm.runInNewContext(source, {
-  window,
-  console,
-  queueMicrotask,
-  Promise,
-  Map,
-  WeakSet,
-  Object,
-  Math,
-  Number,
-  Array,
-  String,
-  Error,
-});
+const snowResampleCalls = []; // Captures the backdrop-only resize needed for the shipped 250x250 snow canvas.
+const snowDocument = { createElement(tag) {
+  assert.equal(tag, 'canvas', 'only a temporary snow-resampling canvas should be allocated');
+  const canvas = { width: 0, height: 0, getContext(type) {
+    assert.equal(type, '2d');
+    return { imageSmoothingEnabled: false, drawImage(image, x, y, width, height) {
+      snowResampleCalls.push({ image, width, height, x, y }); // Records that the source image is resampled rather than modified.
+    } };
+  } };
+  return canvas;
+} }; // Minimal off-screen canvas shim to verify the WebGL1 power-of-two fallback.
+vm.runInNewContext(source, { window, document: snowDocument, console, Promise, Map, WeakSet, Object, Math, Number, Array, String, Error });
 
 (async () => {
   const api = window.WesternSlopeMountainBackdrops;
   assert(api?.installed, 'public backdrop API missing');
 
+  const approvedLayers = [
+    {layer:1,asset:'assets/backdrops/bd_mountains_1.png',visible:true,transform:{position:[-134,140,100],rotationDeg:[0,0,0],scale:[2.25,0.5,3]}},
+    {layer:2,asset:'assets/backdrops/bd_mountains_2.png',visible:true,transform:{position:[-159,188,175],rotationDeg:[0,0,0],scale:[3,0.6,3]}},
+    {layer:3,asset:'assets/backdrops/bd_mountains_3.png',visible:false,transform:{position:[null,null,null],rotationDeg:[0,0,0],scale:[1,1,1]}},
+  ]; // Approved Western Slope mountainBackdrops layers from the uploaded scenery export; guards gameplay and editor defaults.
+  const defaults = api.defaultAuthorConfig(); // Runtime source of truth: editor resets and untouched game sessions use these layers.
+  assert.equal(defaults.enabled,true,'Western Slope mountain stack remains enabled');
+  assert.deepEqual(defaults.layers,approvedLayers,'committed default layers must reproduce the complete approved export');
+  assert.deepEqual(api.normalizeAuthorConfig({}).layers,approvedLayers,'normalization of absent map settings must keep the committed preset');
+  assert.deepEqual(api.normalizeAuthorConfig(null).layers,approvedLayers,'fresh game sessions must not fall back to the old three-visible preset');
+  defaults.layers[0].transform.position[0]=999; // Verify the editor can freely mutate an export without rewriting the shared preset.
+  assert.equal(api.defaultAuthorConfig().layers[0].transform.position[0],-134,'new default config requests must get independently cloned vectors');
+  localStorageData.set('hobunjiWesternSlopeMountainBackdrops.v1',JSON.stringify({layers:[
+    {visible:true,transform:{position:[999,999,999],rotationDeg:[0,0,0],scale:[1,1,1]}},
+    {},{visible:true}
+  ]})); // Old browser-local author preferences must not override the newly approved game default.
+  assert.deepEqual(api.readAuthorConfig().layers,approvedLayers,'old v1 browser storage must not show the obsolete third mountain or old transforms');
+  const partial = api.normalizeAuthorConfig({layers:[{}, {transform:{position:[null,null,null]}},{}]});
+  assert.deepEqual(partial.layers[0],approvedLayers[0],'missing layer values must inherit the approved first ridge');
+  assert.equal(partial.layers[2].visible,false,'missing third-layer visibility must inherit the approved hidden state');
+  const automaticLayer2=api.resolveLayoutFromSizes(null,200,200,partial)[1]; // Deliberate null still means procedural placement, not the committed authored coordinates.
+  assert.equal(automaticLayer2.position[2],500,'explicit null Z on layer 2 must restore procedural staggering');
+
   const unrelatedScene = new Group();
   window.BorderTerrain.buildZoneBorderTerrain(unrelatedScene, 200, 200, 'map_cloud_forest');
-  await Promise.resolve();
-  await Promise.resolve();
-  assert.equal(unrelatedScene.children.length, 0, 'non-Western wilderness must not receive mountain planes');
+  assert.equal(unrelatedScene.children.length, 0, 'non-Western wilderness must not receive the decorative rocks');
 
   const scene = new Group();
   window.BorderTerrain.buildZoneBorderTerrain(scene, 200, 200, 'map_western_slope');
   await api.attach(scene, 200, 200, 'map_western_slope');
 
   const root = scene.getObjectByName('WesternSlopeMountainBackdrops');
-  assert(root, 'Western Slope backdrop root missing');
-  assert.equal(root.children.length, 3, 'exactly three authored mountain layers must be present');
-  assert.deepEqual(root.children.map(mesh => mesh.position.x), [-24, -194, -364], 'layers must progress far west from the Western Slope edge');
-  assert(root.children.every(mesh => Math.abs(mesh.rotation.y - Math.PI / 2) < 1e-9), 'planes must face east toward the playable wilderness');
-  assert(root.children.every(mesh => mesh.geometry.width >= 550 && mesh.geometry.height >= 320), 'all mountain layers must be gargantuan relative to a 200x200 wilderness');
+  assert(root, 'Western Slope scenery root missing');
+  assert.equal(root.children.length, 3, 'the three original PNG layers must remain three separately authorable ridges');
+  assert.deepEqual(root.children.map(group => group.position.x), [-134, -159, -414], 'authored X positions must be used for layers 1/2, with procedural X on hidden layer 3');
+  assert.deepEqual(root.children.map(group => group.position.z), [100, 175, 100], 'authored Z positions replace the old automatic stagger on layers 1/2');
+  assert.deepEqual(root.children.map(group => group.visible), [true, true, false], 'the uploaded scenery must render only layers 1 and 2 by default');
+  assert.deepEqual(root.children.map(group => group.userData.authoredScale), [[2.25,0.5,3],[3,0.6,3],[1,1,1]], 'the approved per-layer scales must be used in-game');
+  assert(root.children.every(group => Math.abs(group.rotation.y) < 1e-9), 'mine-rock rows must stay upright instead of inheriting the old PNG plane rotation');
+  const migratedOldConfig = api.normalizeAuthorConfig({ layers: [{ transform: { rotationDeg: [0, 90, 0] } }] });
+  assert.deepEqual(migratedOldConfig.layers[0].transform.rotationDeg, [0, 0, 0], 'saved PNG-facing defaults must migrate to the upright rock-row orientation');
+  assert.deepEqual(root.children.map(group => group.children.length), [8,8,0], 'gameplay must omit the eight hidden layer-3 rocks entirely, not merely make them invisible');
+  assert.equal(geometryCalls, 16, 'only the two visible ridges should allocate mine-rock geometry');
+  assert.equal(fitCalls, 16, 'every built stone base must retain the normal mine-rock surface treatment');
+  assert.equal(root.children.reduce((sum, group) => sum + group.children.length, 0), 16, 'the default runtime must build only 16 visible rocks');
+  assert.equal(api.getDebugState().builtDecorativeRocks, 16, 'mobile debug snapshot must expose the actual default built-rock count');
+  assert.deepEqual(api.getDebugState().lastLayout.map(l => l.rocks), [8,8,0], 'layout debug must identify the omitted third ridge');
+  assert(sourceGeometries.every(geometry => geometry.disposed), 'source mine-rock geometries must be disposed after the snow/stone split');
+  assert(unusedGrassGeometries.every(geometry => !geometry.disposed), 'the unused grass half must retain its shared-attribute lifecycle');
 
-  const pixelScales = root.children.map((mesh, index) => {
-    const sourceWidth = imageSizes[`assets/backdrops/bd_mountains_${index + 1}.png`][0];
-    return mesh.geometry.width / sourceWidth;
+  const expectedWidths = [768, 576, 896];
+  const allParts = root.children.flatMap(group => group.children.flatMap(rock => rock.children));
+  root.children.forEach((group, index) => {
+    assert(Math.abs(group.userData.baseWorldWidth - expectedWidths[index]) < 1e-9, 'each rock row must preserve its former PNG reference width');
+    assert(group.userData.visualOnly && group.userData.snowCapped, 'each ridge must be marked visual-only and snow-capped');
+    const expectedLength=index<2?1200:400; // Approved Z scale 3 triples each visible ridge's 400-unit baseline; hidden layer 3 remains unscaled.
+    assert(Math.abs(group.userData.worldNorthSouthLength - expectedLength) < 1e-8, 'each authored ridge length must apply its per-layer Z scale');
+    assert(Math.abs(group.userData.ridgeLocalDepth * group.scale.z - expectedLength) < 1e-8, 'parent-group scaling must compose with the uploaded Z scale');
+    if(index===2){
+      assert.equal(group.children.length, 0, 'the omitted third ridge must allocate no scene-rock geometry');
+      return;
+    }
+    assert.equal(group.children.length, 8, 'ridge scaling must not increase the eight-rock count');
+    assert(group.children.every(rock => rock instanceof Group && rock.children.length === 3), 'each rock assembly must contain stone, snow and a boundary line');
+    const stoneMaterials = new Set(group.children.map(rock => rock.children[0].material));
+    assert.equal(stoneMaterials.size, 1, 'each ridge must share one owned stone material');
+    for (const rock of group.children) {
+      const [stone, snow, boundary] = rock.children;
+      assert.equal(rock.userData.snowCoverageHeightFraction, 2 / 3, 'snow must cover the upper two-thirds of the original rock bounds');
+      assert(stone.geometry instanceof FakeGeometry && snow.geometry instanceof FakeGeometry, 'split stone/snow surfaces must use generated buffer geometry');
+      assert(stone.userData.visualOnly && snow.userData.visualOnly, 'both surfaces must remain decorative-only');
+      assert(stone.userData.mineRockUvsApplied, 'stone bases must retain the mine-rock texture treatment');
+      assert.notEqual(snow.material, sharedSnowMaterial, 'distant snow caps must clone the canonical material instead of changing ground snow rendering');
+      assert.equal(snow.material.map, sharedSnowMaterial.map, 'snow cap clones must reuse the exact shared snow texture');
+      assert(boundary.isLineSegments && boundary.userData.westernSlopeSnowBoundary, 'each cap must have its own stone/snow outline');
+      assert(typeof boundary.raycast === 'function' && boundary.raycast() === undefined, 'snow boundary lines must not intercept targeting');
+      const stonePositions = stone.geometry.getAttribute('position'), snowPositions = snow.geometry.getAttribute('position');
+      const cutY = rock.userData.snowLineLocalY;
+      for (let v = 0; v < stonePositions.count; v++) assert(stonePositions.getY(v) <= cutY + 1e-6, 'stone geometry must stop at the snow boundary');
+      for (let v = 0; v < snowPositions.count; v++) assert(snowPositions.getY(v) >= cutY - 1e-6, 'snow geometry must contain only the upper cap');
+      const uv = snow.geometry.getAttribute('uv');
+      assert(Math.min(...Array.from({ length: uv.count }, (_, v) => uv.getX(v))) < 1e-6, 'farm-cliff stretch U must begin at zero');
+      assert(Math.max(...Array.from({ length: uv.count }, (_, v) => uv.getX(v))) > 0.999, 'farm-cliff stretch U must fill the cap width');
+      assert(Math.min(...Array.from({ length: uv.count }, (_, v) => uv.getY(v))) < 1e-6, 'farm-cliff stretch V must begin at zero');
+      assert(Math.max(...Array.from({ length: uv.count }, (_, v) => uv.getY(v))) > 0.999, 'farm-cliff stretch V must fill the cap height');
+      const linePositions = boundary.geometry.getAttribute('position');
+      assert(linePositions.count >= 4, 'the snow outline must include multiple boundary segments');
+      assert(Array.from({ length: linePositions.count }, (_, v) => linePositions.getY(v)).every(y => Math.abs(y - cutY - 0.00015) < 1e-6), 'the outline must sit just above the geometric stone/snow seam');
+      for (const part of rock.children) assert(typeof part.raycast === 'function' && part.raycast() === undefined, 'decorative rock parts must never receive pointer raycasts');
+    }
   });
-  assert(pixelScales.every(value => Math.abs(value - pixelScales[0]) < 1e-10), 'all mountain PNGs must use the exact same world-units-per-pixel scale');
-  assert.deepEqual(root.children.map(mesh => mesh.renderOrder), [-101, -102, -103], 'farthest transparent layer must render before nearer layers');
-  assert(root.children.every(mesh => mesh.material.depthWrite === false && mesh.material.fog === false), 'background planes must not write depth or inherit near-ground fog');
+
+  const firstMaterial = root.children[0].children[0].children[0].material;
+  const skySource = fs.readFileSync('docs/js/sky-dome.js', 'utf8'); // Compare the real sky depth policy with the replacement rock material.
+  const skyContext = { window: {}, console };
+  vm.runInNewContext(skySource.replace('  installClockHook(); installWeatherHook(); installRainHook();',
+    '  window.testSkyDepth = { setSkyLayerDepth, CLOUD_DEPTH_NDC, CELESTIAL_DEPTH_NDC };'), skyContext);
+  const skyDepth = skyContext.window.testSkyDepth;
+  assert.equal(firstMaterial.fog, false, 'distant rock ridges must not inherit near-ground fog');
+  assert.equal(firstMaterial.depthWrite, true, 'opaque ridge rocks must write depth to occlude overlapping stone and snow faces');
+  assert.equal(firstMaterial.side, THREE.DoubleSide, 'ridges must show the back of their open mine-rock heightfields');
+  assert.equal(firstMaterial.depthTest, true, 'foreground terrain must continue to occlude distant rocks');
+  const backgroundShader = { uniforms: {}, vertexShader: 'void main(){ gl_Position = vec4(1.0); }' };
+  firstMaterial.onBeforeCompile(backgroundShader);
+  const backgroundMax = backgroundShader.uniforms.uBackgroundMaxDepth.value;
+  const backgroundNear = backgroundShader.uniforms.uBackgroundNearDepth.value; // Beginning of the distant-rock depth band.
+  const falloff = backgroundShader.uniforms.uBackgroundDepthFalloff.value; // Simulated eye-space compression scale.
+  const depthFor = (distance, originalDepth = 1.2, bias = 0) => Math.min(originalDepth,
+    backgroundNear + (backgroundMax - backgroundNear) * distance / (distance + falloff) - bias); // Matches the GLSL depth transform.
+  assert.match(backgroundShader.vertexShader, /max\(0\.0, -mvPosition\.z\)/, 'the new shader must use actual camera-relative rock distance');
+  assert.match(backgroundShader.vertexShader, /mix\(uBackgroundNearDepth, uBackgroundMaxDepth, backgroundBlend\)/);
+  assert.match(backgroundShader.vertexShader, /min\(gl_Position\.z, gl_Position\.w \* backgroundDepth\)/);
+  assert.equal(backgroundMax, 1 - 5 * (2 / 65535), 'rock ridges must retain the prior sky-depth ordering');
+  assert.equal(backgroundNear, 1 - 12 * (2 / 65535), 'distant ridges must keep multiple depth slots while leaving near terrain in front');
+  assert.equal(falloff, 240, 'distant ridge depth compression scale must remain deterministic');
+  assert.equal(backgroundShader.uniforms.uSnowBoundaryDepthBias.value, 0, 'stone must not receive the seam-only depth bias');
+  assert.equal(depthFor(140, 0.8), 0.8, 'nearer naturally projected geometry must retain its unmodified foreground depth');
+  const projectedTerrainDepth = distance => (200 + 0.1) / (200 - 0.1) - (2 * 200 * 0.1) / ((200 - 0.1) * distance); // Conservative game-camera near/far projection used to protect foreground terrain.
+  for (const terrainDistance of [75, 100, 125, 145, 150]) {
+    assert(projectedTerrainDepth(terrainDistance) < depthFor(170),
+      'mountain depth must remain behind terrain at ' + terrainDistance + 'u; a too-wide background band makes ridges show through cliffs');
+  }
+  const rockDistances = [110, 140, 200, 350, 650, 1200]; // Samples cover visible peaks and those beyond the 200-unit far clip.
+  const rockDepths = rockDistances.map(distance => depthFor(distance));
+  assert(rockDepths.every((depth, index) => index === 0 || rockDepths[index - 1] < depth),
+    'the backdrop may not flatten different distant peaks to the same depth');
+  for (const bits of [16, 24]) {
+    const depthSlots = rockDepths.map(depth => Math.round((Math.fround(depth) * 0.5 + 0.5) * (2 ** bits - 1)));
+    if (bits === 16) {
+      const widelySeparated = [0, 2, 3, 4].map(index => depthSlots[index]); // 16-bit GPUs have only seven reserved ridge slots; distant adjacent faces can share one slot.
+      assert.equal(new Set(widelySeparated).size, widelySeparated.length, '16-bit buffers must distinguish the main ridge distance bands');
+    } else assert.equal(new Set(depthSlots).size, rockDistances.length, '24-bit buffers must distinguish every sampled overlapping peak');
+  }
+  assert(allParts.every(part => part.frustumCulled === false), 'far-plane CPU culling must not discard depth-clamped rock parts');
+  const snowShader = { uniforms: {}, vertexShader: 'void main(){ gl_Position = vec4(1.0); }' };
+  const capMaterial = root.children[0].children[0].children[1].material;
+  assert.equal(capMaterial.depthWrite, true, 'snow caps must depth-occlude nearer faces of other rocks');
+  assert.equal(capMaterial.side, THREE.DoubleSide, 'snow caps must have the same two-sided culling policy as stone');
+  capMaterial.onBeforeCompile(snowShader);
+  assert.match(snowShader.vertexShader, /uBackgroundNearDepth/, 'snow cap clones must preserve the same distance-based depth ordering as stone');
+  const outlineShader = { uniforms: {}, vertexShader: 'void main(){ gl_Position = vec4(1.0); }' }; // Validates the seam-specific depth bias against the shared geometry.
+  const outlineMaterial = root.children[0].children[0].children[2].material;
+  outlineMaterial.onBeforeCompile(outlineShader);
+  const seamBias = outlineShader.uniforms.uSnowBoundaryDepthBias.value; // The visible snow edge receives a small forward depth offset.
+  assert.equal(seamBias, 2 * (2 / 65535), 'the outline must sit two 16-bit depth slots ahead of its coplanar surface');
+  assert(depthFor(200, 1.2, seamBias) < depthFor(200), 'the snow seam must remain visibly in front of its supporting rock');
+  assert.equal(outlineMaterial.depthWrite, false, 'the depth-biased outline must not cut holes in neighboring scenery');
+  assert.equal(sharedSnowMaterial.onBeforeCompile, undefined, 'ground snow must retain its original terrain depth shader');
+  for (const depth of [...skyDepth.CLOUD_DEPTH_NDC, skyDepth.CELESTIAL_DEPTH_NDC]) {
+    const skyMaterial = { userData: {} }; // Isolates each real sky layer's shader state.
+    const skyShader = { uniforms: {}, vertexShader: 'void main(){ gl_Position = vec4(1.0); }' };
+    skyDepth.setSkyLayerDepth(skyMaterial, depth);
+    skyMaterial.onBeforeCompile(skyShader);
+    assert.match(skyShader.vertexShader, /gl_Position.z = gl_Position.w \* uSkyLayerDepth/);
+    assert.equal(skyShader.uniforms.uSkyLayerDepth.value, depth);
+    assert(backgroundMax < depth && depth < 1, 'sky masks must remain behind rocks but inside the far plane');
+    for (const originalDepth of [0.9, 0.99999, 1.2]) {
+      assert(depthFor(400, originalDepth) < depth, 'near, distant, and beyond-far rocks must pass sky masks');
+      assert(0.8 < depthFor(400, originalDepth), 'immediate foreground terrain must still occlude every rock ridge');
+    }
+  }
+  assert(skyDepth.CLOUD_DEPTH_NDC.every((depth, index, depths) => index === 0 || depths[index - 1] < depth), 'cloud masks must retain their near-to-far order');
+  assert(skyDepth.CLOUD_DEPTH_NDC.every(depth => depth < skyDepth.CELESTIAL_DEPTH_NDC), 'cloud masks must continue to occlude the sun and moon');
+  for (const bits of [16, 24]) {
+    const maxDepth = 2 ** bits - 1;
+    const encodedDepths = [backgroundMax, ...skyDepth.CLOUD_DEPTH_NDC, skyDepth.CELESTIAL_DEPTH_NDC]
+      .map(depth => (Math.fround(depth) * 0.5 + 0.5) * maxDepth);
+    const depthSlots = encodedDepths.map(depth => Math.round(depth));
+    if (bits === 16) assert(encodedDepths.every(depth => Math.abs(depth - Math.round(depth)) < 0.25),
+      '16-bit depth values must stay away from rounding boundaries');
+    assert(depthSlots.every((slot, index) => index === 0 || depthSlots[index - 1] < slot),
+      'background, cloud masks, and celestial PNGs must occupy distinct ordered depth slots');
+  }
+
+  const snowyRock = root.children[0].children[0].children[1]; // Render-time mipmap hook is exercised without a browser or WebGL context.
+  const sourceSnowTexture = { image: { width: 250, height: 250 }, clone() {
+    return { image: this.image, disposed: false, dispose() { this.disposed = true; } };
+  } }; // Mimics a late-loaded power-of-two shade-filled canvas texture.
+  sharedSnowMaterial.map = sourceSnowTexture;
+  snowyRock.onBeforeRender();
+  const mipmappedSnow = snowyRock.material.map; // Dedicated texture exists solely for the distant cap.
+  assert.notEqual(mipmappedSnow, sourceSnowTexture, 'background snow may not mutate the ground-snow texture');
+  assert.equal(mipmappedSnow.minFilter, THREE.LinearMipmapLinearFilter, 'distant caps must use trilinear minification');
+  assert.deepEqual([mipmappedSnow.image.width, mipmappedSnow.image.height], [256,256], 'the shipped 250px canvas must become a power-of-two backdrop-only copy');
+  assert.equal(sourceSnowTexture.image.width, 250, 'the canonical snow image dimensions must remain unchanged');
+  assert.equal(snowResampleCalls.length, 1, 'lazy mipmapping must resample the snow texture just once');
+  assert.deepEqual([snowResampleCalls[0].width, snowResampleCalls[0].height], [256,256], 'the resampler must draw at the full power-of-two size');
+  assert.equal(mipmappedSnow.generateMipmaps, true, 'distant caps must generate mipmaps to prevent texture shimmer');
+  assert.equal(mipmappedSnow.needsUpdate, true, 'clone must upload its new sampler settings');
+  assert.equal(sharedSnowMaterial.map, sourceSnowTexture, 'canonical ground snow must keep its original texture unchanged');
+  snowyRock.onBeforeRender();
+  assert.equal(snowyRock.material.map, mipmappedSnow, 'rendering another frame must reuse the existing mipmapped texture');
+  assert.equal(api.getDebugState().snowTextureMipmapped, true, 'mobile debug should report whether a cap mipmap was created');
+  assert.equal(api.getDebugState().snowTextureState, 'mipmapped-background-snow-pow2', 'debug status must disclose the power-of-two mobile fallback');
 
   const authored = api.readAuthorConfig();
   authored.layers[0].transform.position = [-40, 180, 95];
@@ -172,33 +453,78 @@ vm.runInNewContext(source, {
   authored.layers[1].visible = false;
   api.saveAuthorConfig(authored);
   api.applyAuthorConfigToGroup(root, 200, 200, api.readAuthorConfig());
-  assert.deepEqual([root.children[0].position.x, root.children[0].position.y, root.children[0].position.z], [-40, 180, 95], 'editor-authored position must reach the live plane');
-  assert(Math.abs(root.children[0].rotation.y - (82 * Math.PI / 180)) < 1e-9, 'editor-authored Y rotation must reach the live plane');
-  assert.deepEqual([root.children[0].scale.x, root.children[0].scale.y, root.children[0].scale.z], [1.2, 0.85, 1], 'editor-authored scale must reach the live plane');
-  assert.equal(root.children[1].visible, false, 'per-layer visibility must be authorable');
+  assert.equal(root.children[0].position.x, -40, 'authored X is the actual ridge X');
+  assert.equal(root.children[0].position.z, 95, 'authored Z is the actual ridge Z');
+  assert(Math.abs(root.children[0].position.y - (180 + (0.85 - 1) * root.children[0].userData.baseWorldHeight * 0.5)) < 1e-8,
+    'Y scaling compensates the center pivot so the base remains at its original authored elevation');
+  assert(Math.abs(root.children[0].rotation.y - (82 * Math.PI / 180)) < 1e-9, 'editor-authored Y rotation must reach the complete ridge');
+  assert.equal(root.children[0].scale.x, 1.2, 'editor-authored X scale must reach the complete ridge');
+  assert.equal(root.children[0].userData.worldWidth, root.children[0].userData.baseWorldWidth / 8 * 1.2,
+    'X thickness must be measured across one rock, not mislabeled as Z ridge length');
+  assert.equal(root.children[0].scale.y, 0.85, 'editor-authored Y scale must reach the complete ridge');
+  assert(Math.abs(root.children[0].scale.z - root.children[0].userData.ridgeLengthScale) < 1e-9, 'automatic ridge-length normalization must compose with author Z scale');
+  assert.equal(root.children[1].visible, false, 'per-layer visibility must remain authorable');
+
+  const revealThird = api.readAuthorConfig(); // Runtime overrides may reveal a previously omitted layer without rebuilding the zone.
+  revealThird.layers[2].visible = true;
+  api.applyAuthorConfigToGroup(root, 200, 200, revealThird);
+  assert.equal(root.children[2].visible, true, 'revealed third ridge must be visible');
+  assert.equal(root.children[2].children.length, 8, 'revealing the omitted layer must materialize its eight rocks on demand');
+  assert.equal(geometryCalls, 24, 'revealing the hidden ridge must allocate precisely eight additional rocks');
+  assert.equal(fitCalls, 24, 'newly materialized stone geometry must get the same mine-rock UV treatment');
+  assert.equal(api.getDebugState().builtDecorativeRocks, 24, 'live debug must update the actual built-rock count after reveal');
+  allParts.push(...root.children[2].children.flatMap(rock => rock.children)); // Include newly allocated geometry in the existing lifecycle/disposal checks below.
+  api.applyAuthorConfigToGroup(root, 200, 200, revealThird);
+  assert.equal(geometryCalls, 24, 'reapplying a visible layer must not duplicate previously materialized geometry');
+  const hideAgain = api.readAuthorConfig();
+  api.applyAuthorConfigToGroup(root, 200, 200, hideAgain);
+  assert.equal(root.children[2].visible, false, 'hiding a revealed ridge must immediately stop rendering it');
 
   window.BorderTerrain.buildZoneBorderTerrain(scene, 200, 200, 'map_western_slope');
-  await Promise.resolve();
-  await Promise.resolve();
-  assert.equal(scene.children.filter(child => child.name === 'WesternSlopeMountainBackdrops').length, 1, 'repeated zone-border builds must not duplicate mountain stacks');
+  assert.equal(scene.children.filter(child => child.name === 'WesternSlopeMountainBackdrops').length, 1, 'repeated zone-border builds must not duplicate the rock ridges');
 
-  const geometries = root.children.map(mesh => mesh.geometry);
-  const materials = root.children.map(mesh => mesh.material);
-  const textures = root.children.map(mesh => mesh.material.map);
-  assert.equal(window.WildernessChunks.destroyZone('map_western_slope'), true, 'wrapped destroyZone must preserve original return value');
-  assert(!scene.getObjectByName('WesternSlopeMountainBackdrops'), 'destroyZone must detach backdrop root');
-  assert(geometries.every(geometry => geometry.disposed), 'destroyZone must dispose backdrop geometry');
-  assert(materials.every(material => material.disposed), 'destroyZone must dispose backdrop materials');
-  assert(textures.every(texture => texture.disposed), 'destroyZone must dispose loaded PNG textures');
+  const geometries = allParts.map(part => part.geometry);
+  const ridgeMaterials = [...new Set(allParts.map(part => part.material).filter(material => material !== sharedSnowMaterial))];
+  assert.equal(window.WildernessChunks.destroyZone('map_western_slope'), true, 'wrapped destroyZone must preserve its original return value');
+  assert(!scene.getObjectByName('WesternSlopeMountainBackdrops'), 'destroyZone must detach the decorative scenery');
+  assert(geometries.every(geometry => geometry.disposed), 'destroyZone must dispose all stone, snow and seam geometries');
+  assert(ridgeMaterials.every(material => material.disposed), 'destroyZone must dispose every ridge-owned stone and outline material');
+  assert.equal(sharedMineMaterial.disposed, false, 'destroyZone must not dispose the shared mine material');
+  assert.equal(sharedSnowMaterial.disposed, false, 'destroyZone must not dispose the shared environment snow material');
+  assert.equal(mipmappedSnow.disposed, true, 'destroyZone must dispose the backdrop-owned mipmapped snow texture');
+  assert.equal(sourceSnowTexture.disposed, undefined, 'destroyZone must never dispose the source ground-snow texture');
+  assert.equal(snowMaterialBindings.size, 0, 'destroyZone must unbind disposed cap clones from the asynchronous snow texture loader');
+  assert.equal(geometries.length, 72, 'all three drawable geometries per rock must be accounted for during cleanup');
 
   const debug = window.__westernSlopeMountainBackdropsDebug();
-  assert.equal(debug.active, false, 'mobile debug snapshot must report disposed scene as inactive');
-  assert.equal(debug.completedBuilds, 1, 'debug snapshot must count the completed stack');
+  assert.equal(debug.active, false, 'debug snapshot must report disposed scenery as inactive');
+  assert.equal(debug.completedBuilds, 1, 'debug snapshot must count the completed ridge stack');
   assert.equal(debug.disposedBuilds, 1, 'debug snapshot must count lifecycle cleanup');
-  assert.equal(debug.lastLayout.length, 3, 'debug snapshot must expose all authored layer transforms');
+  assert.equal(debug.lastLayout.length, 3, 'debug snapshot must expose all three authorable ridges');
+  assert.equal(debug.rocksPerLayer, 8, 'debug snapshot must expose the eight-rock layer contract');
+  assert.equal(debug.totalDecorativeRocks, 24, 'debug snapshot must expose the total decorative rock count');
+  assert.equal(debug.snowCapsBuilt, 24, 'debug snapshot must report every completed snow cap');
+  assert.equal(debug.snowBoundaryLinesBuilt, 24, 'debug snapshot must report every stone/snow outline');
+  assert.equal(debug.snowCapHeightFraction, 2 / 3, 'debug snapshot must expose the snow coverage setting');
+  assert.equal(debug.visualOnly, true, 'debug snapshot must make the non-interactive scenery status explicit');
+  assert.equal(debug.builtDecorativeRocks, 0, 'detached runtime scenery must report zero currently allocated rocks');
   assert.deepEqual(debug.lastLayout[0].position, [-40, 180, 95], 'debug snapshot must expose the author-edited transform');
+  assert.equal(debug.lastLayout[0].worldNorthSouthLength, 400, 'debug layout must report the complete doubled ridge length');
 
-  console.log('Western Slope mountain backdrop checks passed.');
+  const editorScene = new Group(); // The standalone scenery tool explicitly retains hidden geometry for immediate visibility toggles.
+  await api.attach(editorScene, 200, 200, 'map_western_slope', { config: api.defaultAuthorConfig(), buildHiddenLayers: true });
+  const editorRoot = editorScene.getObjectByName('WesternSlopeMountainBackdrops');
+  assert.deepEqual(editorRoot.children.map(group => group.children.length), [8,8,8], 'scenery author must keep all three layers immediately editable');
+  assert.deepEqual(editorRoot.children.map(group => group.visible), [true,true,false], 'author preview must still hide layer 3 by default');
+  const editorReveal = api.defaultAuthorConfig();
+  editorReveal.layers[2].visible = true;
+  api.applyAuthorConfigToGroup(editorRoot, 200, 200, editorReveal);
+  assert.equal(editorRoot.children[2].visible, true, 'author visibility checkbox must reveal an already-built hidden ridge');
+  assert.equal(api.getDebugState().builtDecorativeRocks, 24, 'editor debug must report all three built layers');
+  api.detach();
+  assert(!editorScene.getObjectByName('WesternSlopeMountainBackdrops'), 'editor scene cleanup must release the hidden-geometry preview');
+
+  console.log('Western Slope mine-rock ridge checks passed.');
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;

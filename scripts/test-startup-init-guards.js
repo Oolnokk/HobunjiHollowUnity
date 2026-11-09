@@ -35,6 +35,18 @@ assert.equal(bridgedTimeDebug.initialized, false, 'civil-midnight bridge must pr
 assert.equal(bridgedTimeDebug.representedWeekday, null, 'civil-midnight bridge must not re-enter weekday formatting before init');
 assert.equal(bridgedTimeDebug.representedDate, null, 'civil-midnight bridge must not invent a represented date before init');
 
+const music = runModule('docs/js/music-system.js', {
+  document: { addEventListener() {} },
+  window: { addEventListener() {} },
+});
+assert.equal(music.window.Music.isNightTime(), undefined, 'a pre-init snapshot can fall back to the calendar');
+music.window.__hobunjiGameStarted = true;
+let musicHour = 6; // Mutable clock lets the same initialized predicate exercise both phases.
+music.window.Music.init({ getHour: () => musicHour });
+assert.equal(music.window.Music.isNightTime(), true, 'initialized soundtrack uses its own night schedule');
+musicHour = 12;
+assert.equal(music.window.Music.isNightTime(), false, 'initialized soundtrack recognizes midday');
+
 const procedural = runModule('docs/js/procedural-tasks.js');
 const preInitCompassTargets = procedural.window.ProceduralTasks.allCompassTargets();
 assert.equal(preInitCompassTargets.active.length, 0, 'pre-init procedural task compass scan should expose no active targets');

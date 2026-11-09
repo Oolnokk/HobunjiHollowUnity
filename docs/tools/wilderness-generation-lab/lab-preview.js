@@ -157,7 +157,8 @@
     const cacheKey = `${mapId}|${key}`; // Per-map cache preserves map-specific stretch/fill overrides.
     const existing = terrainMaterials.get(cacheKey);
     if (existing) return existing;
-    const color = TERRAIN_DEFAULT_COLORS[key] ?? 0x888888; // Game/map-editor fallback when no texture override exists.
+    const ocean = !!currentWorkspace?.archipelago && (key === 'stream' || key === 'river'); // Waterway geometry is shared, but the island-scale preview needs open-sea coloring.
+    const color = ocean ? 0x2b7195 : (TERRAIN_DEFAULT_COLORS[key] ?? 0x888888); // Blue seas make natural island silhouettes legible from orbit.
     const material = key === 'cliff'
       ? new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide })
       : new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide });
@@ -165,7 +166,7 @@
     material.userData = { ...material.userData, terrainKey: key, __labBaseTerrain: true };
     terrainMaterials.set(cacheKey, material);
 
-    const override = mapMaterialOverride(mapId, key); // Texture/fill settings mirror terrain-materials.json.
+    const override = ocean ? null : mapMaterialOverride(mapId, key); // Show real open water blue in the Lab rather than reusing muddy inland streambed textures.
     if (override?.texture) {
       new THREE.TextureLoader().load(`../../assets/textures/${override.texture}`, loaded => {
         try {
@@ -580,7 +581,8 @@
     const sx = width / currentMerged.cols; // Pixels per generated column.
     const sy = height / currentMerged.rows; // Pixels per generated row.
     for (const tile of currentMerged.tiles.values()) {
-      const baseColor = TERRAIN_DEFAULT_COLORS[tile.type] ?? 0x888888; // Terrain-type base before elevation brightening.
+      const baseColor = currentWorkspace?.archipelago && (tile.type === 'stream' || tile.type === 'river')
+        ? 0x236f9c : (TERRAIN_DEFAULT_COLORS[tile.type] ?? 0x888888); // Ocean blue only in island-mode overhead previews.
       const color = new THREE.Color(baseColor);
       color.offsetHSL(0, 0, Math.min(0.22, Math.max(0, tile.elevTier || 0) * 0.018));
       if (tile.type === 'ramp') color.offsetHSL(0.06, -0.08, Math.min(0.30, (tile.rampElevation || 0) * 0.025));

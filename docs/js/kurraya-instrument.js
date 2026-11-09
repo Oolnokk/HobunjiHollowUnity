@@ -21,10 +21,12 @@
     deps = injectedDeps;
     installHostedSampleHook();
     installMinimalPerformanceUiHook();
+    installFluteUpdater(); // The shared world-render hook drives the mouth attachment only while a flute session exists.
   }
 
   const KURRAYA_TOP_ASSET = { path: 'assets/toolsprites/kurraya_top.png', width: 318, height: 247 };
   const KURRAYA_AUDIO_ASSET = { path: 'assets/audio/music/instruments/sfx_kurraya_pluck.m4a', filename: 'sfx_kurraya_pluck.m4a' }; // Bundled pluck fed into hosted Kurraya samplers unless the user explicitly chose a custom Kurraya source in Music Lab.
+  const FLUTE_AUDIO_ASSET = { path: 'assets/audio/music/instruments/sfx_flute_note.m4a', filename: 'sfx_flute_note.m4a' }; // Optional authored flute recording; performance uses its MIDI-pitched flute fallback until this file exists.
   const KURRAYA_CUSTOM_SAMPLE_KEY = 'hobunji.kurrayaCustomSample.v1'; // Read by hosted-sample startup so an explicitly imported Music Lab Kurraya SFX survives into gameplay.
   const KURRAYA_MUSIC_FRAME_SRC = 'assets/minigames/lyre-performance.html'; // Identifies both the player's visible performance iframe and ambient NPC performance iframes.
   const KURRAYA_MINIMAL_PERFORMANCE_UI = true; // Temporary presentation flag used to leave only notes, Auto Pick/arpeggio selection, and scale selection visible during player performances.
@@ -47,7 +49,7 @@
   const KURRAYA_SAMPLE_GATED_BRIDGE_METHODS = [ // Sound-producing/control methods queued behind sample readiness so no fallback-pluck note leaks through first.
     'noteDown', 'noteUp', 'bankDown', 'bankUp', 'tap',
     'leftStick', 'setAutoPickMode', 'rightStick', 'releaseLeftStick', 'releaseRightStick',
-    'resetHarmony', 'setHarmonyPattern', 'startGameplaySong', 'startBackupPreviewSong',
+    'useGameplayFootstepMetronome', 'resetHarmony', 'setHarmonyPattern', 'startGameplaySong', 'startBackupPreviewSong',
     'startAmbientLead', 'stopBackupPreview', 'enterJamMode',
   ];
   // The front plane's own geometry/scale already comes from the caller's
@@ -75,6 +77,9 @@
   function isKurrayaMusicFrame(frame) {
     const src = frame?.getAttribute?.('src') || ''; // Used to ignore unrelated iframes and the player's about:blank teardown load.
     return src.includes(KURRAYA_MUSIC_FRAME_SRC);
+  }
+  function isFluteMusicFrame(frame) {
+    return /(?:[?&])instrument=flute(?:&|$)/.test(frame?.getAttribute?.('src') || ''); // Host and iframe agree on the selected instrument without changing shared performance controls.
   }
 
   function setMinimalElementHidden(element, hidden) {
@@ -120,7 +125,7 @@
   function applyMinimalPerformanceUi() {
     if (!KURRAYA_MINIMAL_PERFORMANCE_UI || typeof document === 'undefined') return;
     const overlay = document.getElementById('musicMinigameOverlay'); // Supplies the authoritative open/closed state for the player's visible Kurraya performance.
-    const performanceOpen = Boolean(overlay?.classList.contains('open')); // Gates suppression so normal page chrome is restored immediately after the performance closes.
+    const performanceOpen = Boolean(overlay?.classList.contains('open') && overlay.dataset.instrumentMode === 'performance'); // Only legacy performance hides its iframe; puzzle mode must keep its notes visible.
     const playerFrame = document.getElementById('musicMinigameFrame'); // Keeps the music engine alive and focusable while hiding its lyre/chart presentation surface.
     setMinimalFrameHidden(playerFrame, performanceOpen);
     for (const selector of KURRAYA_MINIMAL_UI_HIDDEN_SELECTORS) {
@@ -150,7 +155,7 @@
     // refresh too, for no reason. #musicMinigameOverlay is always present from
     // load, so it's a safe, always-available narrower root.
     const watchRoot = document.getElementById('musicMinigameOverlay') || document.documentElement;
-    observer.observe(watchRoot, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+    observer.observe(watchRoot, { subtree: true, childList: true, attributes: true, attributeFilter: ['class','data-instrument-mode'] });
     queueMinimalPerformanceUiRefresh();
   }
 
@@ -189,18 +194,28 @@
     return () => { try { delete input.files; } catch {} };
   }
 
-  async function importBundledSampleIntoFrame(frame, bridge) {
+  async function importBundledSampleIntoFrame(frame, bridge, audioAsset = KURRAYA_AUDIO_ASSET) {
     const frameDocument = frame.contentDocument; // Used to drive the minigame's existing hidden audio-file input and read its diagnostics.
     const frameWindow = frame.contentWindow; // Supplies realm-correct File/DataTransfer constructors for Android and other stricter browsers.
     const readout = frameDocument?.getElementById('analysisReadout'); // Existing Mobile Debug/readout is the source of truth for import and root-analysis completion.
     const input = frameDocument?.getElementById('audioFile'); // Existing sampler import input owns decode, normalization, pitch analysis, markers, caching, and error handling.
     if (!frameDocument || !frameWindow || !bridge || !readout || !input) throw new Error('hosted sampler controls were not available');
 
+    const isFlute = audioAsset === FLUTE_AUDIO_ASSET; // Flute performances never read the Kurraya Music Lab's saved custom pluck.
+    let fluteResponse = null; // Resolve an absent optional flute file before attempting an autoplay-restricted AudioContext.resume().
+    if (isFlute) {
+      fluteResponse = await fetch(audioAsset.path);
+      if (fluteResponse.status === 404) {
+        sampleLog('flute recording not yet bundled; using MIDI flute fallback');
+        return; // The first real note gesture will wake audio; a suspended iframe load must not block the fallback.
+      }
+      if (!fluteResponse.ok) throw new Error(`sample fetch returned HTTP ${fluteResponse.status}`);
+    }
     try { await bridge.wakeAudio?.(); } catch {}
     let customSample = null; // Holds the Music Lab's explicit replacement preference; unrelated sampler imports do not opt into gameplay.
-    try { customSample = JSON.parse(localStorage.getItem(KURRAYA_CUSTOM_SAMPLE_KEY) || 'null'); } catch {}
-    const preferredName = String(customSample?.name || KURRAYA_AUDIO_ASSET.filename); // Used to accept either the explicitly chosen custom source or the normal bundled source from IndexedDB.
-    const restored = await waitForAnalysisText(
+    if (!isFlute) try { customSample = JSON.parse(localStorage.getItem(KURRAYA_CUSTOM_SAMPLE_KEY) || 'null'); } catch {}
+    const preferredName = String(customSample?.name || KURRAYA_AUDIO_ASSET.filename); // Kurraya restores its saved source; flute skips the cache check and chooses its own audio asset.
+    const restored = isFlute ? false : await waitForAnalysisText(
       readout,
       text => text.includes(`Restored ${preferredName}`),
       customSample ? KURRAYA_CUSTOM_SAMPLE_RESTORE_WAIT_MS : KURRAYA_SAMPLE_RESTORE_WAIT_MS
@@ -214,14 +229,14 @@
       sampleLog(`custom Kurraya sample ${preferredName} was not restorable; reverting to bundled source`, 'warn');
     }
 
-    const response = await fetch(KURRAYA_AUDIO_ASSET.path); // Loads the repo-authored source once when neither the preferred custom sample nor bundled sample was restored.
+    const response = fluteResponse || await fetch(audioAsset.path); // Flute preflight reuses its response; Kurraya retains the existing wake-then-fetch order.
     if (!response.ok) throw new Error(`sample fetch returned HTTP ${response.status}`);
     const blob = await response.blob(); // Preserves the M4A bytes while allowing the existing file-import handler to decode them normally.
-    const file = new frameWindow.File([blob], KURRAYA_AUDIO_ASSET.filename, { type: blob.type || 'audio/mp4' }); // Makes the repo asset indistinguishable from a user-selected sample to the existing sampler pipeline.
+    const file = new frameWindow.File([blob], audioAsset.filename, { type: blob.type || 'audio/mp4' }); // Makes the repo asset indistinguishable from a user-selected sample to the existing sampler pipeline.
     const cleanupInputFiles = assignFileToInput(input, file, frameWindow); // Removes only the fallback synthetic FileList shim when one was needed.
     const importReady = waitForAnalysisText( // Starts listening before dispatch so very fast decoders cannot race past the readiness check.
       readout,
-      text => text.startsWith(`Ready: ${KURRAYA_AUDIO_ASSET.filename}`) || text.startsWith('Import failed:'),
+      text => text.startsWith(`Ready: ${audioAsset.filename}`) || text.startsWith('Import failed:'),
       KURRAYA_SAMPLE_IMPORT_TIMEOUT_MS
     );
     input.dispatchEvent(new frameWindow.Event('change', { bubbles: true }));
@@ -235,15 +250,16 @@
       text => text.startsWith('Analyzed '),
       KURRAYA_SAMPLE_ANALYSIS_WAIT_MS
     );
-    sampleLog(`loaded ${KURRAYA_AUDIO_ASSET.filename} through the existing sampler`);
+    sampleLog(`loaded ${audioAsset.filename} through the existing sampler`);
   }
 
   function gateHostedMusicBridge(frame) {
     let bridge = null; // Filled from the same-origin minigame window and then wrapped before target-phase iframe load listeners can start playback.
     try { bridge = frame.contentWindow?.HobunjiMusicControlBridge || null; } catch {}
     if (!bridge || bridge.__kurrayaBundledSampleGate) return;
-    const sampleReady = importBundledSampleIntoFrame(frame, bridge).catch(error => { // Shared promise preserves bridge call order and falls back gracefully if this browser cannot decode the M4A.
-      sampleLog(`could not load ${KURRAYA_AUDIO_ASSET.filename}: ${error?.message || error}; using sampler fallback`, 'warn');
+    const audioAsset = isFluteMusicFrame(frame) ? FLUTE_AUDIO_ASSET : KURRAYA_AUDIO_ASSET; // An equipped flute must never import the Kurraya sample into its performance iframe.
+    const sampleReady = importBundledSampleIntoFrame(frame, bridge, audioAsset).catch(error => { // Shared promise preserves bridge call order and falls back gracefully if this browser cannot decode the M4A.
+      sampleLog(`could not load ${audioAsset.filename}: ${error?.message || error}; using sampler fallback`, 'warn');
     });
     Object.defineProperty(bridge, '__kurrayaBundledSampleGate', { configurable: true, value: sampleReady });
 
@@ -279,26 +295,28 @@
   // props and the player's held-item holder each have their own existing
   // hand-attachment convention); only the parts' relative geometry to each
   // other is authored here.
-  function buildAssembly() {
-    const THREE = deps.THREE;
-    const frontTex = deps.toolTextures.kurraya;
-    if (!frontTex) return null;
-    const def = deps.getKurrayaDef?.();
-    const frontW = deps.TOOL_MODEL_WIDTH * 0.92, frontH = frontW * ((def?._imgH || 663) / (def?._imgW || 320));
+  function buildAssembly(preview = null) {
+    const THREE = preview?.THREE || deps?.THREE; // Editor injects the same plane builder's dependencies; gameplay still uses init(deps).
+    const frontTex = preview?.frontTexture || deps?.toolTextures?.kurraya; // The two-plane asset is never replaced by a generic one-plane stand-in.
+    if (!THREE || !frontTex) return null;
+    const def = deps?.getKurrayaDef?.();
+    const width = preview?.frontTexture?.image?.width || def?._imgW || 320; // Front image dimensions size the preview like runtime.
+    const height = preview?.frontTexture?.image?.height || def?._imgH || 663;
+    const frontW = (preview?.toolModelWidth || deps?.TOOL_MODEL_WIDTH || 0.5) * 0.92, frontH = frontW * (height / width);
     const group = new THREE.Group();
     group.name = 'kurraya_assembly';
     const frontGeo = new THREE.PlaneGeometry(frontW, frontH);
     const frontMat = new THREE.MeshBasicMaterial({ map: frontTex, transparent: true, alphaTest: 0.05, side: THREE.DoubleSide });
     const front = new THREE.Mesh(frontGeo, frontMat);
-    front.renderOrder = deps.heldObjectRenderOrder;
+    front.renderOrder = preview?.renderOrder ?? deps?.heldObjectRenderOrder;
     group.add(front);
 
     const topAspect = KURRAYA_TOP_ASSET.height / KURRAYA_TOP_ASSET.width;
     const topW = frontW * KURRAYA_TOP_PART.scaleRelativeToFront;
     const topGeo = new THREE.PlaneGeometry(topW, topW * topAspect);
-    const topMat = new THREE.MeshBasicMaterial({ map: kurrayaTopTexture(), transparent: true, alphaTest: 0.05, side: THREE.DoubleSide });
+    const topMat = new THREE.MeshBasicMaterial({ map: preview?.topTexture || kurrayaTopTexture(), transparent: true, alphaTest: 0.05, side: THREE.DoubleSide });
     const top = new THREE.Mesh(topGeo, topMat);
-    top.renderOrder = deps.heldObjectRenderOrder;
+    top.renderOrder = preview?.renderOrder ?? deps?.heldObjectRenderOrder;
     // The reference mockup builds front/top as siblings with their OWN
     // individual 0.46 mesh scale, while position lives in their shared
     // parent's un-scaled local space — so top.position is already an
@@ -322,38 +340,340 @@
     return group;
   }
 
-  // One twitch-state record per performer (the player, or a given NPC) —
-  // see triggerTwitch/updateTwitch below.
-  function newTwitchState() { return { active: false, axis: KURRAYA_TWITCH_AXIS, base: 0, amplitude: 0.04, startedAt: 0, durationMs: 0, phase: 0, frequency: 16 }; }
+  // The editor and runtime use the identical easing path. Only the neutral
+  // scale is fixed across a note; all other authored channels can animate.
+  function notePoseAt(note, progress) {
+    const phases = note?.poses;
+    if (!phases?.neutral || !phases?.windup || !phases?.strike) return null;
+    const t = Math.max(0, Math.min(1, Number(progress) || 0)); // Progress is clamped for overlapping or delayed sound events.
+    const sample = (key) => {
+      const n = Number(phases.neutral[key]) || 0, w = Number(phases.windup[key]) || 0, s = Number(phases.strike[key]) || 0;
+      if (window.SharedAttackPose?.sequencedPoseLerp) return window.SharedAttackPose.sequencedPoseLerp(note.sequence || 'attack',t,note.windupFrac,note.strikeFrac,note.holdFrac,w,s,n,n);
+      // Test/older-client fallback follows the same endpoint order.
+      const wf = note.windupFrac, sf = note.strikeFrac, hf = note.holdFrac;
+      const blend = (x,y,p) => x + (y-x)*Math.max(0,Math.min(1,p));
+      return t <= wf ? blend(n,w,t/Math.max(wf,1e-6)) : t <= sf ? blend(w,s,(t-wf)/Math.max(sf-wf,1e-6)) : t <= hf ? s : blend(s,n,(t-hf)/Math.max(1-hf,1e-6));
+    };
+    return {
+      x:sample('x'),y:sample('y'),z:sample('z'),
+      pitch:sample('pitch'),yaw:sample('yaw'),roll:sample('roll'),bodyYaw:sample('bodyYaw'),
+      bodySink:sample('bodySink'), // Same phase easing as the editor; the player's existing leg/body composer consumes this.
+      scale:Number(phases.neutral.scale)||1,headRelative:note.headRelative===true,
+    };
+  }
 
+  // One twitch-state record per performer (player or NPC). Existing callbacks
+  // still drive it on each sounded Kurraya note, but the response is now authored.
+  function newTwitchState() { return { active:false,axis:KURRAYA_TWITCH_AXIS,base:0,amplitude:0.04,startedAt:0,durationMs:0,phase:0,frequency:16,basePosition:null,baseRotation:null }; }
+  function restoreNoteTransform(twitchState,group) {
+    if(twitchState.basePosition && group.position) Object.assign(group.position,twitchState.basePosition);
+    if(twitchState.baseRotation) Object.assign(group.rotation,twitchState.baseRotation);
+  }
   function triggerTwitch(twitchState, group) {
     if (!group?.userData.kurrayaAssembly) return;
-    const axis = twitchState.axis;
-    if (twitchState.active) group.rotation[axis] = twitchState.base; // Every retrigger first returns to the exact rest angle, matching restoreKurrayaGameplayTwitch.
-    else twitchState.base = KURRAYA_REST_ROTATION[axis];
-    twitchState.active = true;
-    twitchState.amplitude = Math.min(0.22, (Number(twitchState.amplitude) || 0.04) + 0.06 + Math.random() * 0.025);
-    twitchState.startedAt = performance.now();
-    twitchState.durationMs = 270 + Math.random() * 120;
-    twitchState.phase = Math.random() * Math.PI * 2;
-    twitchState.frequency = 16 + Math.random() * 8;
-  }
-
-  function updateTwitch(twitchState, group) {
-    if (!twitchState.active || !group?.userData.kurrayaAssembly) return;
-    const now = performance.now();
-    const elapsed = now - twitchState.startedAt;
-    const axis = twitchState.axis;
-    if (elapsed >= twitchState.durationMs) {
-      group.rotation[axis] = twitchState.base;
-      twitchState.active = false;
+    const note=window.HeldActionAnimations?.kurrayaPlayNote; // Runtime owns this action's live source, not a duplicated hard-coded motion.
+    if(note) {
+      if(twitchState.active) restoreNoteTransform(twitchState,group); // Rapid notes restart from the resting hold without accumulating drift.
+      twitchState.basePosition={x:group.position.x,y:group.position.y,z:group.position.z};
+      twitchState.baseRotation={x:group.rotation.x,y:group.rotation.y,z:group.rotation.z};
+      twitchState.active=true;
+      twitchState.startedAt=performance.now();
+      twitchState.durationMs=Math.max(50,(Number(note.durationS)||0.32)*1000);
       return;
     }
-    const progress = elapsed / twitchState.durationMs;
-    const envelope = Math.pow(1 - progress, 1.35);
-    const offset = Math.sin((elapsed / 1000) * twitchState.frequency + twitchState.phase) * twitchState.amplitude * envelope;
-    group.rotation[axis] = twitchState.base + offset;
+    const axis=twitchState.axis; // Compatible fallback for pages not yet loading the new held-animation asset.
+    if(twitchState.active)group.rotation[axis]=twitchState.base;
+    else twitchState.base=KURRAYA_REST_ROTATION[axis];
+    twitchState.active=true;
+    twitchState.amplitude=Math.min(0.22,(Number(twitchState.amplitude)||0.04)+0.06+Math.random()*0.025);
+    twitchState.startedAt=performance.now();
+    twitchState.durationMs=270+Math.random()*120;
+    twitchState.phase=Math.random()*Math.PI*2;
+    twitchState.frequency=16+Math.random()*8;
+  }
+  function updateTwitch(twitchState,group) {
+    if(!twitchState.active||!group?.userData.kurrayaAssembly)return;
+    const elapsed=performance.now()-twitchState.startedAt;
+    const note=window.HeldActionAnimations?.kurrayaPlayNote;
+    if(note && twitchState.baseRotation) {
+      if(elapsed>=twitchState.durationMs){
+        restoreNoteTransform(twitchState,group);
+        twitchState.active=false;
+        return;
+      }
+      const pose=notePoseAt(note,elapsed/twitchState.durationMs);
+      const rest=note.poses.neutral;
+      for(const axis of ['x','y','z']){
+        const delta=pose[axis]-(Number(rest[axis])||0);
+        group.position[axis]=twitchState.basePosition[axis]+(Math.abs(delta)<1e-9?0:delta); // Exactly preserve resting position when all keyframes agree; avoid interpolated roundoff drift.
+      }
+      const deg=Math.PI/180;
+      for(const [axis,channel] of [['x','pitch'],['y','yaw'],['z','roll']]){
+        const delta=pose[channel]-(Number(rest[channel])||0);
+        group.rotation[axis]=twitchState.baseRotation[axis]+(Math.abs(delta)<1e-9?0:delta*deg); // Shared authored rotation can remain static while only plucking fingers move.
+      }
+      return;
+    }
+    const axis=twitchState.axis;
+    if(elapsed>=twitchState.durationMs){group.rotation[axis]=twitchState.base;twitchState.active=false;return;}
+    const progress=elapsed/twitchState.durationMs;
+    const envelope=Math.pow(1-progress,1.35);
+    group.rotation[axis]=twitchState.base+Math.sin((elapsed/1000)*twitchState.frequency+twitchState.phase)*twitchState.amplitude*envelope;
   }
 
-  window.KurrayaInstrument = { init, buildAssembly, newTwitchState, triggerTwitch, updateTwitch };
+  const playerKurrayaNote = { active: false, startedAt: null, noteCount: 0, heldAssembly: null, nextResolveAtMs: 0 }; // Player-only note clock and hand assembly reference, resolved exclusively from the player's avatar subtree.
+  function beginPlayerKurraya() {
+    window.WeaponStanceDropRuntime?.endInstrumentNote?.(); // A fresh performance starts from a standing idle, not the previous flute/Kurraya body sink.
+    playerKurrayaNote.active = true; playerKurrayaNote.startedAt = null;
+    playerKurrayaNote.heldAssembly = null;
+    playerKurrayaNote.nextResolveAtMs = 0; // Allow an immediate first scan for the already-equipped instrument.
+  }
+  function playPlayerKurrayaNote() {
+    if (!playerKurrayaNote.active) return false;
+    playerKurrayaNote.startedAt = performance.now(); // Reset hand keyframes on each sounded player note.
+    window.WeaponStanceDropRuntime?.beginInstrumentNote?.('kurraya'); // Share the exact sound timestamp for the authored 3% Strike leg/body bend.
+    playerKurrayaNote.noteCount++;
+    return true;
+  }
+  function endPlayerKurraya() {
+    window.WeaponStanceDropRuntime?.endInstrumentNote?.(); // Restore the player body when the Kurraya minigame closes, even if the note was interrupted.
+    playerKurrayaNote.active = false; playerKurrayaNote.startedAt = null;
+    playerKurrayaNote.heldAssembly = null; playerKurrayaNote.nextResolveAtMs = 0;
+  }
+  function playerKurrayaHandTarget() {
+    // The held instrument's Neutral stance belongs to the editor even before
+    // performance starts. Only a visible assembly in the player's OWN body may
+    // claim the hands; never borrow a hidden bag prop or an NPC's Kurraya.
+    if ((!playerKurrayaNote.heldAssembly?.parent || !playerKurrayaNote.heldAssembly.parent.visible)
+        && performance.now() >= playerKurrayaNote.nextResolveAtMs) {
+      playerKurrayaNote.nextResolveAtMs = performance.now() + 500; // Avoid traversing the portrait subtree every render frame on slow mobile devices.
+      const player = window.Combat?.deps?.playerMesh || window.PlayerBodyTransformComposer?.getPlayerMesh?.();
+      player?.traverse?.(node => {
+        if (!playerKurrayaNote.heldAssembly?.parent && node?.userData?.kurrayaAssembly && node.parent) {
+          playerKurrayaNote.heldAssembly = node; // Existing held Kurraya can be gripped at Neutral before a note is sounded.
+        }
+      });
+    }
+    const assembly = playerKurrayaNote.heldAssembly;
+    if (!assembly?.parent || assembly.parent.visible === false) return null;
+    return { holder: assembly.parent, toolKey: 'kurraya', gripContext: 'melee' }; // Neutral remains gripped when merely carrying the instrument; active notes still own independent plucking.
+  }
+  function playerNoteProgress() {
+    const note = window.HeldActionAnimations?.kurrayaPlayNote;
+    if (!playerKurrayaNote.active || !note || playerKurrayaNote.startedAt === null) return 0;
+    const duration = Math.max(50, (Number(note.durationS) || 0.32) * 1000);
+    const elapsed = performance.now() - playerKurrayaNote.startedAt;
+    return elapsed >= 0 && elapsed < duration ? elapsed / duration : 0; // At rest or after the tail returns to Neutral.
+  }
+  function playerHeldPose() {
+    const action = window.HeldActionAnimations?.kurrayaPlayNote; // The Attack Editor's saved action is the only source of held-instrument poses.
+    if (!action?.poses?.neutral) return null;
+    return playerKurrayaNote.active && playerKurrayaNote.startedAt !== null
+      ? notePoseAt(action, playerNoteProgress())
+      : action.poses.neutral; // Both a carried instrument and the pauses between notes show the authored Neutral stance.
+  }
+
+  function applyPlayerHeldPose(holder, pose, baseX, baseY, speciesPose = null, grip = null) {
+    if (!holder?.position?.set || !holder?.rotation?.set || !holder?.scale?.setScalar || !pose) return false;
+    const value = key => Number.isFinite(Number(pose[key])) ? Number(pose[key]) : 0; // All editor channels stay finite before reaching a Three.js transform.
+    holder.position.set((Number(baseX) || 0) + value('x'), (Number(baseY) || 0) + value('y'), value('z'));
+    if (speciesPose) window.HobunjiSpeciesPoseScale?.transformPosePoint?.(holder.position, speciesPose); // Same authored species/height/orbit mapping as the editor preview.
+    const deg = Math.PI / 180;
+    holder.rotation.set(value('pitch') * deg, value('yaw') * deg, value('roll') * deg, 'YXZ'); // Yaw × Pitch × Roll, identical to the editor's qYaw*qPitch*qRoll.
+    const scale = Number(pose.scale);
+    const effectiveScale = Number.isFinite(scale) && scale > 0 ? scale : 1; // Neutral owns instrument size throughout a note.
+    holder.scale.setScalar(effectiveScale);
+    window.SharedAttackPose?.anchorScaleAtPoint?.(holder, grip, effectiveScale); // Editor pivots scaled instruments on this same authored main-hand grip.
+    return true;
+  }
+
+  function playerRightHandPose() {
+    if (!playerKurrayaNote.active) return null;
+    const note = window.HeldActionAnimations?.kurrayaPlayNote;
+    return window.HobunjiHandToolGrips?.sampleFreeRightHand?.(note?.poses, note, playerNoteProgress(), note?.sequence) || null;
+  }
+  function playerGripAnimationState() {
+    if (!playerKurrayaNote.active) return null;
+    const note = window.HeldActionAnimations?.kurrayaPlayNote;
+    return window.HobunjiHandToolGrips?.animationGripAt?.(playerNoteProgress(), note, note?.poses, note?.sequence, 'kurraya') || null; // Real note timeline drives 2H percentages, not the previous weapon swing.
+  }
+  const fluteState = {active:false,root:null,texture:null,frame:null,loads:0,failures:0,lastError:'',noteStartedAt:null,noteCount:0}; // Persistent, mobile-readable flute mount state.
+  let fluteUpdaterInstalled = false; // Prevents repeat init() calls from accumulating per-frame callbacks.
+  function installFluteUpdater() {
+    if (fluteUpdaterInstalled || typeof window.DynamicSurfaces?.addBeforeRenderClient !== 'function') return;
+    window.DynamicSurfaces.addBeforeRenderClient(updateFlute);
+    fluteUpdaterInstalled = true;
+  }
+  function prepareFluteCanvas(source) {
+    const canvas = document.createElement('canvas');
+    const originalWidth = source.naturalWidth || source.width;
+    const originalHeight = source.naturalHeight || source.height;
+    canvas.width = originalWidth; canvas.height = originalHeight;
+    const ctx = canvas.getContext('2d',{willReadFrequently:true});
+    ctx.drawImage(source,0,0);
+    const sourcePixels = ctx.getImageData(0,0,originalWidth,originalHeight);
+    const rgba = sourcePixels.data;
+    // Old PNG exports sometimes bake an opaque black/white matte into otherwise transparent art.
+    // Remove only matte-coloured areas connected to an image edge, preserving the flute's dark outlines and interior holes.
+    const pixelsCount = originalWidth * originalHeight; // Opaque PNG black/white padding is flood-cleared only where it touches an image edge.
+    const before = rgba.slice(); // Keep original edge pixels for a one-pixel black stroke recovery around the painted flute.
+    const visited = new Uint8Array(pixelsCount); // Each background shade is scanned once, not one flood per perimeter pixel.
+    const queue = new Int32Array(pixelsCount); // Fixed storage prevents allocations in the large image flood.
+    for (let kind=1;kind<=2;kind++) {
+      let head=0,tail=0; // Current dark/white edge-connected matte region.
+      function enqueue(index) {
+        if(visited[index]===kind)return;
+        const offset=index*4;
+        if(rgba[offset+3]<230)return;
+        const r=rgba[offset],g=rgba[offset+1],b=rgba[offset+2];
+        const isMatte=kind===1 ? Math.max(r,g,b)<28 : Math.min(r,g,b)>232;
+        if(!isMatte)return;
+        visited[index]=kind;
+        queue[tail++]=index;
+        rgba[offset+3]=0;
+      }
+      for(let x=0;x<originalWidth;x++){enqueue(x);enqueue((originalHeight-1)*originalWidth+x);}
+      for(let y=1;y+1<originalHeight;y++){enqueue(y*originalWidth);enqueue(y*originalWidth+originalWidth-1);}
+      while(head<tail){
+        const cell=queue[head++],x=cell%originalWidth,y=(cell-x)/originalWidth;
+        if(x>0)enqueue(cell-1);
+        if(x+1<originalWidth)enqueue(cell+1);
+        if(y>0)enqueue(cell-originalWidth);
+        if(y+1<originalHeight)enqueue(cell+originalWidth);
+      }
+    }
+    // Preserve a fine, dark sprite outline adjacent to painted flute pixels even when the uploaded image used a solid black background.
+    for(let y=1;y+1<originalHeight;y++)for(let x=1;x+1<originalWidth;x++){
+      const i=y*originalWidth+x,offset=i*4;
+      if(visited[i]!==1||rgba[offset+3]!==0)continue;
+      for(const n of [i-1,i+1,i-originalWidth,i+originalWidth]){
+        const p=n*4;
+        if(before[p+3]>20&&Math.max(before[p],before[p+1],before[p+2])>45&&Math.min(before[p],before[p+1],before[p+2])<210){
+          rgba[offset+3]=before[offset+3];break;
+        }
+      }
+    }
+    ctx.putImageData(sourcePixels,0,0);
+    let left = originalWidth, right = -1, top = originalHeight, bottom = -1; // Tight bounds of opaque pixels, used to preserve the PNG's actual proportions.
+    for (let y=0;y<originalHeight;y++) for(let x=0;x<originalWidth;x++){
+      if(rgba[(y*originalWidth+x)*4+3]<16)continue;
+      left=Math.min(left,x); right=Math.max(right,x); top=Math.min(top,y); bottom=Math.max(bottom,y);
+    }
+    if(right<left)throw new Error('Flute sprite is transparent');
+    const width=right-left+1,height=bottom-top+1; // Opaque aspect controls plane width while a consistent 0.76-world-unit tube length sets visual scale.
+    const trimmed=document.createElement('canvas');
+    trimmed.width=width;trimmed.height=height;
+    trimmed.getContext('2d').drawImage(canvas,left,top,width,height,0,0,width,height); // Draw the corrected alpha canvas, NOT the original opaque PNG.
+    return trimmed; // Shared alpha-trimmed image for both live mouth sprite and permanent inventory icon.
+  }
+  function ensureFluteMount() {
+    const THREE = deps?.THREE;
+    if (!THREE || !window.SharedAttackPose?.createHeadFrame) return false;
+    if (fluteState.root) return true;
+    const root = new THREE.Group();
+    root.name = 'player_flute_mouth_mount';
+    const frame = window.SharedAttackPose.createHeadFrame(THREE); // Shared blowgun head-attachment scratch, reused every frame.
+    fluteState.root = root;
+    fluteState.frame = frame;
+    const loader = deps.toolTexLoader || new THREE.TextureLoader();
+    loader.setCrossOrigin?.('anonymous'); // Canvas alpha reads and WebGL uploads must stay origin-clean even under CDN/GitHack redirects.
+    loader.load('assets/toolsprites/flute.png', texture => {
+      // The authored PNG has substantial transparent padding; trim it once so the physical tube stays visible at the intended scale.
+      try {
+        const trimmed=prepareFluteCanvas(texture.image);
+        const width=trimmed.width,height=trimmed.height; // Texture plane proportions match the opaque flute art, not its matte border.
+        const spriteSurface=window.HobunjiSpritePngSurface; // The same PNG-plane texture/material authority used by portraits and held tools.
+        const map=spriteSurface?.makeCanvasTexture
+          ? spriteSurface.makeCanvasTexture(THREE,trimmed,'player_flute_sprite')
+          : new THREE.CanvasTexture(trimmed);
+        const worldHeight=.76;
+        const material=spriteSurface?.makeMaterial
+          ? spriteSurface.makeMaterial(THREE,map,'player_flute_sprite',{side:THREE.DoubleSide})
+          : new THREE.MeshBasicMaterial({map,transparent:true,alphaTest:.05,side:THREE.DoubleSide}); // Compatibility only if portrait-utils is unavailable.
+        const mesh=new THREE.Mesh(new THREE.PlaneGeometry(worldHeight*width/height,worldHeight),material);
+        mesh.rotation.x=Math.PI/2; // The image's top/open mouthpiece points along the +Z aperture axis used by blowgunReady.
+        mesh.position.z=-worldHeight/2; // Place that aperture at the holder origin; the body extends outward along -Z.
+        mesh.renderOrder=deps.heldObjectRenderOrder;
+        root.add(mesh);
+        fluteState.texture=map;
+        fluteState.loads++;
+        texture.dispose?.();
+      }catch(error){
+        fluteState.failures++;
+        fluteState.lastError=String(error.message||error);
+        window.__farmLog?.('[flute] sprite mount failed: '+fluteState.lastError,'warn');
+      }
+    },undefined,error=>{
+      fluteState.failures++;
+      fluteState.lastError=String(error?.message||'flute sprite load failed');
+      window.__farmLog?.('[flute] '+fluteState.lastError,'warn');
+    });
+    return true;
+  }
+  function beginFlute() {
+    installFluteUpdater();
+    fluteState.active=true;
+    fluteState.noteStartedAt=null;
+    window.WeaponStanceDropRuntime?.endInstrumentNote?.(); // A new performance cannot inherit an old note's body sink.
+    ensureFluteMount();
+    updateFlute();
+  }
+  function playFluteNote() {
+    if(!fluteState.active)return false;
+    fluteState.noteStartedAt=performance.now(); // Each genuine sounded note restarts the mouth/hand animation, not the overlapping audio.
+    window.WeaponStanceDropRuntime?.beginInstrumentNote?.('flute'); // Uses the same authored pose to sink body and fold legs on the sounded note.
+    fluteState.noteCount++;
+    updateFlute();
+    return true;
+  }
+  function endFlute() {
+    fluteState.active=false;
+    fluteState.noteStartedAt=null;
+    window.WeaponStanceDropRuntime?.endInstrumentNote?.(); // Release the leg/body sink immediately when the session closes.
+    if(fluteState.root)fluteState.root.visible=false; // The cached geometry can be reused without fetching the sprite for every note.
+  }
+  function updateFlute() {
+    if(!fluteState.active||!fluteState.root)return;
+    const avatar=window.Combat?.deps?.playerMesh || window.PlayerBodyTransformComposer?.getPlayerMesh?.(); // Live skinned player with the authored head/mouth rig.
+    if(!avatar?.parent||!fluteState.root.children.length)return;
+    if(fluteState.root.parent!==avatar.parent)avatar.parent.add(fluteState.root); // Follows the player between farm/town/ruin scenes without an orphaned prop.
+    const note=window.HeldActionAnimations?.flutePlayNote; // Own authored note action; blowgun pose remains a legacy fallback only.
+    const elapsed=fluteState.noteStartedAt===null ? Infinity : performance.now()-fluteState.noteStartedAt;
+    if(note && elapsed >= (Number(note.durationS)||0.32)*1000) fluteState.noteStartedAt=null;
+    const pose=note
+      ? (fluteState.noteStartedAt===null ? note.poses.neutral : notePoseAt(note,elapsed/((Number(note.durationS)||0.32)*1000)))
+      : window.HeldActionAnimations?.blowgunReady?.poses?.strike;
+    if(!pose||!window.SharedAttackPose?.headFrame?.(fluteState.frame,avatar)){
+      fluteState.root.visible=false;
+      return;
+    }
+    window.SharedAttackPose.placeAtMouth(fluteState.root,fluteState.frame,pose,Number(pose.scale)||1,null);
+    fluteState.root.visible=true;
+  }
+  function playerInstrumentProgress(key) {
+    if (key === 'kurraya') return playerNoteProgress(); // Right-hand, grip and elbow timelines must share the same sounded-note clock.
+    if (key !== 'flute' || !fluteState.active || fluteState.noteStartedAt === null) return 0;
+    const durationMs = Math.max(50, (Number(window.HeldActionAnimations?.flutePlayNote?.durationS) || 0.32) * 1000);
+    const elapsedMs = performance.now() - fluteState.noteStartedAt;
+    return elapsedMs >= 0 && elapsedMs < durationMs ? elapsedMs / durationMs : 0;
+  }
+
+  function fluteHandTarget() {
+    if (!fluteState.active) return null;
+    updateFlute(); // Hand-frame sampling must see the same current mouth-anchored matrix as the rendered flute.
+    return fluteState.root?.visible && fluteState.root?.parent
+      ? { holder: fluteState.root, toolKey: 'flute', gripContext: 'ranged' }
+      : null; // Do not attach invisible hands while its sprite/portrait is loading or the performance is closed.
+  }
+  function fluteDiagnostics() {
+    return {active:fluteState.active,mounted:!!fluteState.root?.parent,visible:!!fluteState.root?.visible,ready:!!fluteState.root?.children.length,loads:fluteState.loads,failures:fluteState.failures,noteCount:fluteState.noteCount,noteActive:fluteState.noteStartedAt!==null,error:fluteState.lastError};
+  }
+
+  window.KurrayaInstrument = { init, buildAssembly, newTwitchState, triggerTwitch, updateTwitch,
+    beginPlayerKurraya, playPlayerKurrayaNote, endPlayerKurraya, playerHeldPose, applyPlayerHeldPose, playerRightHandPose, playerGripAnimationState, playerKurrayaHandTarget,
+    beginFlute, playFluteNote, endFlute, fluteHandTarget, notePoseAt, fluteDiagnostics, prepareFluteCanvas,
+    activePlayerInstrument: () => fluteState.active ? 'flute' : playerKurrayaNote.active ? 'kurraya' : null, // Allocation-free neutral-stance owner for the pre-render body composer.
+    playerInstrumentProgress, // Shared progress for instrument elbow/shoulder poses and the two authored note actions.
+    kurrayaHandDiagnostics: () => ({ active: playerKurrayaNote.active, noteCount: playerKurrayaNote.noteCount, notePlaying: playerKurrayaNote.startedAt !== null && performance.now() - playerKurrayaNote.startedAt < Math.max(50,(Number(window.HeldActionAnimations?.kurrayaPlayNote?.durationS)||0.32)*1000) }),
+  };
 })();

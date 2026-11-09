@@ -182,6 +182,15 @@
       const j = Math.floor(rng() * (i + 1));
       const tmp = candidates[i]; candidates[i] = candidates[j]; candidates[j] = tmp;
     }
+    // Optional positional preference ranks viable sites by closeness; it never
+    // overrides blocked terrain, entry buffers, rival camps or stream chunks.
+    const preferred = opts.preferredPoint; // A requesting camp may nominate the map edge it should occupy.
+    if (preferred && Number.isFinite(Number(preferred.col)) && Number.isFinite(Number(preferred.row))) {
+      const targetX = Number(preferred.col) - w * 0.5; // Candidate rectangle origin nearest the desired world-space center.
+      const targetY = Number(preferred.row) - h * 0.5; // Same distance calculation for the row axis.
+      candidates.sort((a, b) => ((a.x - targetX) ** 2 + (a.y - targetY) ** 2)
+        - ((b.x - targetX) ** 2 + (b.y - targetY) ** 2));
+    }
     for (const c of candidates) {
       if (touchesAvoidedChunk(c.x, c.y)) continue;
       if (minDistFromEntry > 0 && zone.entry) {
@@ -353,7 +362,7 @@
 // later zone adapters wrap its generator methods without bypassing it.
 if (typeof document !== 'undefined' && document.currentScript) {
   const localeTerrainSrc = new URL('locale-terrain-placement.js', document.currentScript.src).href; // Shared fixed-locale terrain matcher used by the game and Wilderness Lab.
-  const cloudRuntimeSrc = new URL('cloud-forest-runtime.js', document.currentScript.src).href;
+  const cloudRuntimeSrc = new URL('cloud-forest-runtime.js?v=20261108karst1', document.currentScript.src).href;
   const entryCorridorSrc = new URL('wilderness-entry-corridor.js', document.currentScript.src).href;
   document.write('<script src="' + localeTerrainSrc + '"></' + 'script><script src="' + cloudRuntimeSrc + '"></' + 'script><script src="' + entryCorridorSrc + '"></' + 'script>');
 }

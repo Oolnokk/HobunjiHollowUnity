@@ -14,23 +14,99 @@
   if (!window.Combat) { console.error('combat-animal-attacks.js requires combat-core.js to load first'); return; }
 
   const ATTACKS = {};
+  const COMPANION_LUNGE_MAX_TILES = 2.6; // Shared attack engagement budget used by game.js and the named-attack dispatcher.
+  const COMPANION_LUNGE_DURATION_S = 0.12; // Combat-burst duration, matching Guard Charge and Voorg-Ass Rear Kick.
+
+  function companionEngagementRangePx(creature, tilePx) {
+    const attackReach = Number(creature?.def?.attackRangePx); // Baseline reach before adding one committed burst.
+    return Number.isFinite(attackReach) && attackReach > 0 && Number.isFinite(tilePx) && tilePx > 0
+      ? attackReach + tilePx * COMPANION_LUNGE_MAX_TILES : attackReach;
+  }
 
   function register(id, def) { ATTACKS[id] = def; }
+
+  function mostExpensiveCompanionSpecial(c, ctx) {
+    const deps = window.Combat.deps; // Shared combat context owns the local player and species attack costs.
+    if (!c?.isCompanion || c.banditCompanion || c.stableRole !== 'companion' || !deps?.player || (c.master || deps.player) !== deps.player) return null; // Legacy companions missing a master still belong to the local player.
+    const enabledIds = window.StableAnimalTrainingRefinements?.enabledSpecialAttackIds?.(c) || c.def?.attacks || []; // Stable tactics exclude deliberately disabled special attacks.
+    const tempo = window.StableAnimalTrainingRefinements?.combatTempo?.(c); // Matches the ordinary companion attack's tempo-adjusted base cost.
+    const costTax = Math.max(0, Number(window.ResourceSystem?.timedDebuffModifier?.(c, 'staminaCost') ?? 1)); // Includes Taxed just as spendStamina does.
+    const genericCost = Math.max(0, Number(c.def?.attackStaminaCost) || 0) * (tempo?.stamina || 1);
+    let best = null; // The most expensive registered special is the automatic Furious attack.
+    for (const id of enabledIds) {
+      const def = ATTACKS[id];
+      if (!def || id === 'guardCharge') continue;
+      const extra = Math.max(0, Number(def.additionalStaminaCost?.(c, ctx, deps)) || 0);
+      const cost = Math.round((genericCost + extra) * costTax * 10) / 10;
+      if (cost > 0 && (!best || cost > best.cost)) best = { id, cost };
+    }
+    return best;
+  }
+
+  function startFuriousSpecial(c, ctx) {
+    if (!ctx?.target || c?._animalAttack || !window.ResourceSystem?.removeAffliction) return false;
+    const special = mostExpensiveCompanionSpecial(c, ctx); // No species special means Furious Stamina waits rather than forcing Guard Charge.
+    if (!special) return false;
+    const available = window.ResourceSystem.getAffliction?.(c, 'furiousStamina') ?? c.afflictions?.furiousStamina ?? 0;
+    if (available + 0.0001 < special.cost) return false;
+    const now = performance.now(); // Snapshots a real-time signature cooldown that normally uses performance.now rather than attackCooldownT.
+    const cooldownBefore = Math.max(0, Number(c.attackCooldownT) || 0);
+    const hadRearKickCooldown = Object.hasOwn(c, '_voorgRearKickCooldownUntil');
+    const rearKickRemainingMs = Math.max(0, (Number(c._voorgRearKickCooldownUntil) || 0) - now);
+    if (!start(c, special.id, { ...ctx, furiousSpecial: true })) return false;
+    window.StableAnimalTrainingRefinements?.prepareFuriousSpecial?.(c, special.id); // The forced move uses its existing Stable damage/affliction focus.
+    const paid = window.ResourceSystem.removeAffliction(c, 'furiousStamina', special.cost); // Consume ONLY Furious; ordinary/black Stamina and Moralized are untouched.
+    if (paid + 0.0001 < special.cost) { cancel(c); return false; }
+    c._furiousSpecial = { id: special.id, cost: paid, cooldownBefore, hadRearKickCooldown, rearKickRemainingMs };
+    c._lastFuriousSpecial = { id: special.id, cost: paid, speedMultiplier: 2, state: 'active' }; // Mobile-readable combat diagnostic survives after the move ends.
+    window.__farmLog?.('[furious-companion] ' + (c.id || c.creatureKey || 'animal') + ' triggered ' + special.id + ' at 2x for ' + paid + ' Furious Stamina', 'combat');
+    return true;
+  }
+
+  function finishFuriousSpecial(c) {
+    const special = c?._furiousSpecial;
+    if (!special) return;
+    c.attackCooldownT = special.cooldownBefore; // Resume the exact ordinary cooldown remaining before the interrupt.
+    if (special.hadRearKickCooldown) c._voorgRearKickCooldownUntil = performance.now() + special.rearKickRemainingMs; // Pause the independently timestamped Rear Kick cooldown too.
+    else delete c._voorgRearKickCooldownUntil; // An auto-triggered Rear Kick must not silently start a new ordinary special cooldown.
+    c._lastFuriousSpecial = { ...c._lastFuriousSpecial, state: 'finished', remainingCooldownS: c.attackCooldownT };
+    c._furiousSpecial = null;
+  }
 
   // ctx: { target } — the creature/player object this attack was aimed at
   // when triggered (player for a hostile, nearest hostile for a companion).
   function start(c, id, ctx) {
     const def = ATTACKS[id];
-    if (!def) return false;
+    if (!def || !c || c._animalAttack || (Number.isFinite(c.health) && c.health <= 0)) return false; // A second request must never overwrite an already committed attack or reanimate a defeated companion.
     const deps = window.Combat.deps;
     // game.js pays each species' generic attackStaminaCost immediately before
     // calling start(). Named attacks can top that payment up here without
     // making the generic bite/Guard Charge share their larger specialty cost.
     const additionalStaminaCost = Math.max(0, Number(def.additionalStaminaCost?.(c, ctx, deps)) || 0);
-    if (additionalStaminaCost > 0) window.ResourceSystem?.spendStamina(c, additionalStaminaCost, def.label || id);
+    if (additionalStaminaCost > 0 && !ctx?.furiousSpecial) {
+      const taxed = Number(window.ResourceSystem?.timedDebuffModifier?.(c, 'staminaCost') ?? 1); // Taxed increases the real cost of the special top-up.
+      const required = additionalStaminaCost * (Number.isFinite(taxed) && taxed >= 0 ? taxed : 1);
+      if (c.isCompanion && !c.banditCompanion && Number.isFinite(c.stamina) && c.stamina + 0.0001 < required) return false; // Only player pets use the bite fallback; wild animals keep their authored exhaustion behavior.
+      window.ResourceSystem?.spendStamina(c, additionalStaminaCost, def.label || id); // Furious interrupts already paid for the whole special.
+    }
     const state = {};
-    def.start(c, state, ctx, deps);
-    c._animalAttack = { id, def, state };
+    const target = ctx?.target; // Original companion decision remains locked during the opening charge.
+    const reach = Number(c.def?.attackRangePx) || 0; // Ordinary attack reach controls where the opening charge stops.
+    const distance = target && Number.isFinite(target.x) && Number.isFinite(target.y)
+      ? Math.hypot(target.x - c.x, target.y - c.y) : 0; // Only eligible targets outside melee reach need the burst.
+    let approach = null;
+    if (c.isCompanion && !def.ownsApproach && reach > 0 && distance > reach && distance <= companionEngagementRangePx(c, deps.TILE)) { // A named move with its own charge, leap, burrow or attachment approach must not lunge twice.
+      approach = {}; // Separate shared-lunge state never leaks into a signature attack's own state machine.
+      beginConeLunge(c, approach, ctx, deps, {
+        targets: [target], rangePx: reach, halfConeRad: Math.PI / 3, // Only the committed forward attack cone stops the charge; targets behind it must not trigger phantom contact.
+        maxDistancePx: deps.TILE * COMPANION_LUNGE_MAX_TILES,
+        speedPxS: deps.TILE * COMPANION_LUNGE_MAX_TILES / COMPANION_LUNGE_DURATION_S,
+      });
+      window.__farmLog?.('[companion-lunge] ' + (c.id || c.creatureKey || 'animal') + ' charging for ' + id, 'wildlife');
+    } else {
+      def.start(c, state, ctx, deps);
+    }
+    c._animalAttack = { id, def, state, approach, ctx };
     deps?.requestThreatGrowl?.(c, `attack:${id}`);
     return true;
   }
@@ -38,12 +114,28 @@
   function update(c, dt) {
     const aa = c._animalAttack;
     if (!aa) return false;
-    const busy = aa.def.update(c, aa.state, dt, window.Combat.deps);
-    if (!busy) {
-      c._animalAttack = null;
-      c.scaleY = 1;
+    dt *= c._furiousSpecial ? 2 : 1; // All stages, including opening lunges and recovery, run at double speed during the funded special.
+    if (aa.approach) {
+      const reason = advanceConeLunge(c, aa.approach, dt, window.Combat.deps); // Uses the same collision substeps as every other animal attack lunge.
+      if (!reason) return true;
+      window.__farmLog?.('[companion-lunge] ' + (c.id || c.creatureKey || 'animal') + ' stopped: ' + reason + ' after ' + (aa.approach.lungeTraveledPx / Math.max(1, window.Combat.deps.TILE)).toFixed(2) + ' tiles', 'wildlife');
+      aa.approach = null;
+      aa.def.start(c, aa.state, aa.ctx, window.Combat.deps); // One committed original attack, without paying its Stamina/cooldown twice.
+      return true;
     }
+    const busy = aa.def.update(c, aa.state, dt, window.Combat.deps);
+    if (!busy) endAttackPresentation(c);
     return busy;
+  }
+
+  // Every way an attack ends (finished, hit landed, cancelled) puts the body back
+  // on the ground at full height. A leap that lands its hit mid-arc otherwise
+  // left the creature drawn (and colliding) in mid-air until its next leap.
+  function endAttackPresentation(c) {
+    finishFuriousSpecial(c); // Complete and cancel both restore the pre-interrupt cooldown clocks.
+    c._animalAttack = null;
+    c.scaleY = 1;
+    c._banditLungeHopCurrent = 0;
   }
 
   function isBusy(c) { return !!c._animalAttack; }
@@ -53,23 +145,89 @@
   // is its committed/strike window; Pounce's is the whole leap.
   function isStriking(c) {
     const aa = c?._animalAttack;
-    return !!(aa?.def?.isStriking?.(aa.state, c));
+    return !aa?.approach && !!(aa?.def?.isStriking?.(aa.state, c));
   }
 
   function isWindingUp(c) {
     const aa = c?._animalAttack; // Named attacks declare preparation windows without leaking private stage names to Quick Attacks.
-    return !!(aa?.def?.isWindingUp?.(aa.state, c));
+    return !aa?.approach && !!(aa?.def?.isWindingUp?.(aa.state, c));
   }
 
   function cancel(c) {
     const aa = c._animalAttack;
     if (!aa) return;
-    if (aa.def.cancel) aa.def.cancel(c, aa.state, window.Combat.deps);
-    c._animalAttack = null;
-    c.scaleY = 1;
+    if (aa.approach) { c.vx = 0; c.vy = 0; } // Cancel an unstarted signature attack without calling its stage-specific cleanup.
+    else if (aa.def.cancel) aa.def.cancel(c, aa.state, window.Combat.deps);
+    endAttackPresentation(c);
   }
 
-  window.Combat.animalAttacks = { register, start, update, isBusy, isStriking, isWindingUp, cancel };
+  // A selected named attack owns this forward charge until its own cone sees a
+  // target, its travel budget expires, or terrain stops it. No AI re-selection.
+  function beginConeLunge(c, state, context, deps, options) {
+    const target = context?.target; // Original decision target supplies the committed bearing.
+    state.lungeAngle = target && Number.isFinite(target.x) && Number.isFinite(target.y)
+      ? Math.atan2(target.y - c.y, target.x - c.x) : (Number(c.facing) || 0);
+    state.lungeTargets = options.targets || (target ? [target] : []); // Eligible actors sampled against the moving cone.
+    state.lungeRangePx = Math.max(0, Number(options.rangePx) || 0); // Cone reach used only for stopping the charge.
+    state.lungeHalfConeRad = Math.max(0, Number(options.halfConeRad) || 0); // Cone width shared with the eventual special.
+    state.lungeMaxDistancePx = Math.max(0, Number(options.maxDistancePx) || 0); // Finite movement budget after commitment.
+    state.lungeSpeedPxS = Math.max(1, Number(options.speedPxS) || 1); // Movement rate independent of the normal chase AI.
+    state.lungeCollideRadiusPx = Math.max(0, Number(options.collideRadiusPx) || (deps.TILE || 32) * 0.32);
+    state.lungeTraveledPx = 0; // Integrates the actual traversed distance, not target distance.
+    state.lungeDetect = options.detect || null; // Optional 3D-specific collision test supplied by the named attack.
+    c.facing = state.lungeAngle;
+    c.vx = 0;
+    c.vy = 0;
+  }
+
+  function coneLungeContact(c, state, deps) {
+    for (const target of state.lungeTargets) {
+      if (!target || !Number.isFinite(target.x) || !Number.isFinite(target.y)
+          || target._downed || (Number.isFinite(target.health) && target.health <= 0)
+          || (target.areaId != null && c.areaId != null && target.areaId !== c.areaId)) continue;
+      if (state.lungeDetect) {
+        if (state.lungeDetect(c, target, state, deps)) return target;
+      } else if (deps.inCone?.(c.x, c.y, state.lungeAngle, target.x, target.y, state.lungeRangePx, state.lungeHalfConeRad)) {
+        return target;
+      } else if (!deps.inCone) {
+        const dx = target.x - c.x, dy = target.y - c.y; // Fallback for lightweight tests without engine collision helpers.
+        const delta = Math.atan2(Math.sin(Math.atan2(dy, dx) - state.lungeAngle), Math.cos(Math.atan2(dy, dx) - state.lungeAngle));
+        if (Math.hypot(dx, dy) <= state.lungeRangePx && Math.abs(delta) <= state.lungeHalfConeRad) return target;
+      }
+    }
+    return null;
+  }
+
+  function advanceConeLunge(c, state, dt, deps) {
+    const initialContact = coneLungeContact(c, state, deps); // Detect a target already within the actual attack cone.
+    if (initialContact) { state.lungeContact = initialContact; return 'target'; }
+    let remaining = Math.min(Math.max(0, Number(dt) || 0), 0.2) * state.lungeSpeedPxS;
+    remaining = Math.min(remaining, Math.max(0, state.lungeMaxDistancePx - state.lungeTraveledPx));
+    const maxStep = Math.max(1, (deps.TILE || 32) * 0.2); // Substeps prevent skipping thin targets or running through walls on slow frames.
+    while (remaining > 0.0001) {
+      const step = Math.min(remaining, maxStep);
+      const nx = c.x + Math.cos(state.lungeAngle) * step;
+      const ny = c.y + Math.sin(state.lungeAngle) * step;
+      if (deps.canOccupyAt && !deps.canOccupyAt(nx, ny, state.lungeCollideRadiusPx)) return 'blocked';
+      c.x = nx;
+      c.y = ny;
+      state.lungeTraveledPx += step;
+      remaining -= step;
+      deps.tickCreatureFootsteps?.(c, step);
+      const contact = coneLungeContact(c, state, deps);
+      if (contact) { state.lungeContact = contact; return 'target'; }
+    }
+    return state.lungeTraveledPx + 0.0001 >= state.lungeMaxDistancePx ? 'range' : null;
+  }
+
+  window.Combat.animalAttacks = {
+    register, start, update, isBusy, isStriking, isWindingUp, cancel,
+    mostExpensiveCompanionSpecial, startFuriousSpecial,
+    furiousDebug: c => ({ active: !!c?._furiousSpecial, threshold: mostExpensiveCompanionSpecial(c, { target: c })?.cost ?? null, last: c?._lastFuriousSpecial || null }),
+    beginConeLunge, advanceConeLunge, leapConeDetect, advanceLeap,
+    companionEngagementRangePx,
+    companionLungeTuning: Object.freeze({ maxTiles: COMPANION_LUNGE_MAX_TILES, durationS: COMPANION_LUNGE_DURATION_S }), // Mobile-accessible inspection of shared engagement timing.
+  };
 
   // ── Pounce ──────────────────────────────────────────────────────────
   //
@@ -110,7 +268,7 @@
   // one they were chasing).
   function gatherTargets(c, deps) {
     const out = [];
-    if (c.isCompanion) {
+    if (c.isCompanion && !c.banditCompanion) {
       for (const h of deps.hostileObjects) {
         if (h.health > 0 && h.areaId === c.areaId) out.push({ isPlayer: false, ref: h });
       }
@@ -125,7 +283,7 @@
         // ground position — never a legitimate independent target for a
         // leap/charge cone (see combat-drenkirra-pellet.js's gatherTargets
         // for the same exclusion and reasoning).
-        if (comp.stableRole === 'shoulderPet') continue;
+        if (comp.stableRole === 'shoulderPet' || (c.banditCompanion && comp.banditCompanion)) continue; // Enemy pets can strike player companions, never their allied Beastmaster pets.
         if (comp.health > 0 && comp.areaId === c.areaId) out.push({ isPlayer: false, ref: comp });
       }
     }
@@ -156,12 +314,47 @@
       0,
       c.def.lungeHeightUnits ?? 1,
     ) || { distancePx: baseLungeDistancePx, hopUnits: 0, pitch: state.aimPitch };
-    state.maxDistancePx = Math.max(0, state.lungeProfile.distancePx);
-    state.traveledPx = 0;
-    state.collideRadiusPx = deps.TILE * 0.32;
+    // The leap itself is the shared sub-stepped cone lunge (also Rear Kick's), committed now so its bearing is the
+    // trigger-time bearing; it only starts moving once the crouch ends.
+    beginConeLunge(c, state, ctx, deps, {
+      targets: state.targets.map(target => target.ref),
+      rangePx: state.rangePx,
+      halfConeRad: state.halfConeRad,
+      maxDistancePx: Math.max(0, state.lungeProfile.distancePx),
+      speedPxS: c.isCompanion ? Math.max(POUNCE_LEAP_SPEED_PX_S, state.lungeProfile.distancePx / COMPANION_LUNGE_DURATION_S) : POUNCE_LEAP_SPEED_PX_S, // Keep wild pounce pacing; companion pounces leap at weapon-attack speed.
+      collideRadiusPx: deps.TILE * 0.32,
+      detect: leapConeDetect(),
+    });
     c.facing = state.angle;
     c.scaleY = 1;
     c._banditLungeHopCurrent = 0; // Shared creature renderer slot for the pounce's vertical arc.
+    state.airborne = true; // Even a level-target pounce leaves the ground and collides like every aerial attack.
+  }
+
+  // The pounce's pitched pie-prism collider (Combat.meleeHit) as a cone-lunge
+  // contact test; null falls back to advanceConeLunge's flat cone check.
+  function leapConeDetect() {
+    if (!window.Combat?.meleeHit) return null;
+    return (c, target, state) => window.Combat.meleeHit(c, target, {
+      rangePx: state.lungeRangePx,
+      halfConeRad: state.lungeHalfConeRad,
+      yaw: state.lungeAngle,
+      pitch: state.aimPitch || 0,
+    });
+  }
+
+  // One frame of a committed leap: sub-stepped travel (dt capped, so a frame
+  // hitch can't carry it through a thin wall or past its target), the hop arc
+  // from the distance actually covered, and the lunge trail. Returns
+  // advanceConeLunge's stop reason ('target' | 'blocked' | 'range' | null).
+  function advanceLeap(c, state, dt, deps, afflictionBonuses) {
+    const traveledBefore = state.lungeTraveledPx;
+    const stopReason = advanceConeLunge(c, state, dt, deps);
+    const leapProgress = state.lungeMaxDistancePx > 0.001 ? Math.min(1, state.lungeTraveledPx / state.lungeMaxDistancePx) : 1;
+    c._banditLungeHopCurrent = (state.lungeProfile?.hopUnits || 0) * Math.sin(leapProgress * Math.PI);
+    const movedPx = state.lungeTraveledPx - traveledBefore;
+    if (movedPx > 0) deps.tickCreatureLungeTrail?.(c, movedPx, afflictionBonuses);
+    return stopReason;
   }
 
   function pounceUpdate(c, state, dt, deps) {
@@ -194,43 +387,29 @@
     }
 
     // stage === 'leap'
-    const dirX = Math.cos(state.angle), dirY = Math.sin(state.angle);
-    const remainingPx = Math.max(0, state.maxDistancePx - state.traveledPx);
-    if (remainingPx <= 0.001) { c._banditLungeHopCurrent = 0; return false; }
-    const stepPx = Math.min(POUNCE_LEAP_SPEED_PX_S * dt, remainingPx);
-    const nx = c.x + dirX * stepPx, ny = c.y + dirY * stepPx;
-    if (!deps.canOccupyAt(nx, ny, state.collideRadiusPx)) { c._banditLungeHopCurrent = 0; return false; } // collided; stop in place
-
-    c.x = nx;
-    c.y = ny;
-    state.traveledPx += stepPx;
-    const leapProgress = state.maxDistancePx > 0.001 ? state.traveledPx / state.maxDistancePx : 1;
-    c._banditLungeHopCurrent = (state.lungeProfile.hopUnits || 0) * Math.sin(Math.min(1, leapProgress) * Math.PI);
-    deps.tickCreatureFootsteps?.(c, stepPx);
-
     const dmgTag = c.def.attackTag || 'sharp';
     const afflictionBonuses = window.ResourceSystem?.afflictionBonusesForTag(dmgTag);
-    deps.tickCreatureLungeTrail?.(c, stepPx, afflictionBonuses);
-
-    for (const target of state.targets) {
-      const ref = target.ref;
-      if (ref.health <= 0) continue;
-      const hit = window.Combat?.meleeHit
-        ? window.Combat.meleeHit(c, ref, {
-            rangePx: state.rangePx,
-            halfConeRad: state.halfConeRad,
-            yaw: state.angle,
-            pitch: state.aimPitch,
-          })
-        : deps.inCone(c.x, c.y, state.angle, ref.x, ref.y, state.rangePx, state.halfConeRad);
-      if (!hit) continue;
-      if (target.isPlayer) deps.damagePlayer(state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses, attacker: c });
-      else if (window.CompanionOffense) window.CompanionOffense.damageCreature(deps.damageCreature, c, ref, state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses, attacker: c }); // Whistle/Sicced empowerment for player companions; wild attackers pass through unchanged.
-      else deps.damageCreature(ref, state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
-      deps.playCreatureClawHit?.(c);
-      return false; // hit landed; stop in place
+    const stopReason = advanceLeap(c, state, dt, deps, afflictionBonuses);
+    if (!stopReason) return true;
+    if (stopReason === 'blocked') {
+      window.KnockbackCollisionImpact?.resolveAerialLunge?.(c, state,
+        { kind: 'stone', label: 'Pounce into terrain' }, deps.TILE, {
+          dealHealthDamage: (entity, amount) => {
+            const before = Math.max(0, Number(entity.health) || 0);
+            deps.damageCreature?.(entity, amount, entity.x, entity.y, 0,
+              { tag: 'blunt', environmentalImpact: true, attacker: entity });
+            return { applied: Math.max(0, before - Math.max(0, Number(entity.health) || 0)), lethal: entity.health <= 0 };
+          },
+        }); // Shares the rock/resource collision rules, including a lethal creature-to-corpse transition.
     }
-    return true;
+    const ref = stopReason === 'target' ? state.lungeContact : null; // The first living target the moving cone caught.
+    if (!ref) return false; // Ran out of travel or hit terrain: stop in place.
+    const isPlayer = state.targets.some(target => target.isPlayer && target.ref === ref);
+    if (isPlayer) deps.damagePlayer(state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses, attacker: c });
+    else if (window.CompanionOffense) window.CompanionOffense.damageCreature(deps.damageCreature, c, ref, state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses, attacker: c }); // Whistle/Sicced empowerment for player companions; wild attackers pass through unchanged.
+    else deps.damageCreature(ref, state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
+    deps.playCreatureClawHit?.(c);
+    return false; // hit landed; stop in place (update() lowers the hop)
   }
 
   function pounceCancel(c) {
@@ -240,6 +419,7 @@
 
   register('pounce', {
     label: 'Pounce',
+    ownsApproach: true, // Its existing crouch-to-leap sequence already commits to a single attack lunge.
     start: pounceStart,
     update: pounceUpdate,
     cancel: pounceCancel,
@@ -259,7 +439,9 @@
     const directAngle = Math.atan2(ctx.target.y - c.y, ctx.target.x - c.x);
     const master = c.master || deps.player;
     const awayFromMasterAngle = Math.atan2(c.y - master.y, c.x - master.x);
-    state.angle = Math.atan2(
+    const targetDistancePx = Math.hypot(ctx.target.x - c.x, ctx.target.y - c.y); // Checks whether an extended-range companion charge should commit directly toward its enemy.
+    const extendingCharge = c.isCompanion && targetDistancePx > (Number(c.def.attackRangePx) || 0); // Preserves the old master-defensive blend for attacks already within melee reach.
+    state.angle = extendingCharge ? directAngle : Math.atan2(
       Math.sin(directAngle) * GUARD_CHARGE_TARGET_ANGLE_WEIGHT + Math.sin(awayFromMasterAngle) * GUARD_CHARGE_AWAY_FROM_MASTER_WEIGHT,
       Math.cos(directAngle) * GUARD_CHARGE_TARGET_ANGLE_WEIGHT + Math.cos(awayFromMasterAngle) * GUARD_CHARGE_AWAY_FROM_MASTER_WEIGHT,
     );
@@ -267,51 +449,43 @@
     const halfSize = (c.visualModelWidth || c.def.modelWidth || 2) * deps.TILE / 2;
     const pounceReachPx = halfSize + halfSize * 2 * 1.5;
     state.distancePx = pounceReachPx / 3;
-    state.traveledPx = 0;
-    state.speedPxS = state.distancePx / GUARD_CHARGE_DURATION_S;
     state.rangePx = c.def.attackRangePx;
+    if (extendingCharge) {
+      state.distancePx = Math.min(COMPANION_LUNGE_MAX_TILES * deps.TILE, Math.max(state.distancePx, targetDistancePx - state.rangePx + deps.TILE * 0.08)); // Extend the ONE native charge, not a second generic approach.
+    }
     state.halfConeRad = c.def.attackHalfConeRad;
-    state.collideRadiusPx = deps.TILE * 0.32;
     state.targets = gatherTargets(c, deps);
+    // The same sub-stepped cone lunge as Pounce, on the blended guard bearing rather than straight at the target.
+    beginConeLunge(c, state, ctx, deps, {
+      targets: state.targets.map(target => target.ref),
+      rangePx: state.rangePx,
+      halfConeRad: state.halfConeRad,
+      maxDistancePx: state.distancePx,
+      speedPxS: state.distancePx / GUARD_CHARGE_DURATION_S,
+      collideRadiusPx: deps.TILE * 0.32,
+      detect: leapConeDetect(),
+    });
+    state.lungeAngle = state.angle;
     c.facing = state.angle;
   }
 
   function guardChargeUpdate(c, state, dt, deps) {
     state.t += dt;
-    const dirX = Math.cos(state.angle), dirY = Math.sin(state.angle);
-    const stepPx = Math.min(state.speedPxS * dt, state.distancePx - state.traveledPx);
-    if (stepPx > 0) {
-      const nx = c.x + dirX * stepPx, ny = c.y + dirY * stepPx;
-      if (!deps.canOccupyAt(nx, ny, state.collideRadiusPx)) return false;
-      c.x = nx;
-      c.y = ny;
-      state.traveledPx += stepPx;
-    }
-
-    for (const target of state.targets) {
-      const ref = target.ref;
-      if (ref.health <= 0) continue;
-      const hit = window.Combat?.meleeHit
-        ? window.Combat.meleeHit(c, ref, {
-            rangePx: state.rangePx,
-            halfConeRad: state.halfConeRad,
-            yaw: state.angle,
-            pitch: state.aimPitch,
-          })
-        : deps.inCone(c.x, c.y, state.angle, ref.x, ref.y, state.rangePx, state.halfConeRad);
-      if (!hit) continue;
-      const dmgTag = c.def.attackTag || 'blunt';
-      const afflictionBonuses = window.ResourceSystem?.afflictionBonusesForTag(dmgTag);
-      if (target.isPlayer) deps.damagePlayer(0, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
-      else if (window.CompanionOffense) window.CompanionOffense.damageCreature(deps.damageCreature, c, ref, 0, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses }); // Scales the charge's affliction buildup for player companions.
-      else deps.damageCreature(ref, 0, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
-      deps.playCreatureClawHit?.(c);
-      return false;
-    }
-    return state.traveledPx < state.distancePx;
+    const stopReason = advanceConeLunge(c, state, dt, deps);
+    if (!stopReason) return true;
+    const ref = stopReason === 'target' ? state.lungeContact : null;
+    if (!ref) return false; // Covered its distance or hit terrain.
+    const dmgTag = c.def.attackTag || 'blunt';
+    const afflictionBonuses = window.ResourceSystem?.afflictionBonusesForTag(dmgTag);
+    const isPlayer = state.targets.some(target => target.isPlayer && target.ref === ref);
+    if (isPlayer) deps.damagePlayer(0, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
+    else if (window.CompanionOffense) window.CompanionOffense.damageCreature(deps.damageCreature, c, ref, 0, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses }); // Scales the charge's affliction buildup for player companions.
+    else deps.damageCreature(ref, 0, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
+    deps.playCreatureClawHit?.(c);
+    return false;
   }
 
-  register('guardCharge', { start: guardChargeStart, update: guardChargeUpdate });
+  register('guardCharge', { start: guardChargeStart, update: guardChargeUpdate, ownsApproach: true }); // This move already performs its own 0.12-second collision-aware charge.
 
   window.Combat.animalAttacks.applyConfig = function (cfg) {
     if (!cfg) return;
@@ -325,6 +499,7 @@
       if (p.STAMINA_COST_MAX_FRACTION != null) POUNCE_STAMINA_COST_MAX_FRACTION = Math.max(0, Number(p.STAMINA_COST_MAX_FRACTION) || 0);
       if (p.STAMINA_COST_MIN != null) POUNCE_STAMINA_COST_MIN = Math.max(0, Number(p.STAMINA_COST_MIN) || 0);
     }
+    window.Combat.attach?.applyConfig?.(cfg); // Attach attacks (Swarm) read their own sections of the same creatureAttacks block.
     const g = cfg.guardCharge;
     if (g) {
       if (g.DURATION_S != null) GUARD_CHARGE_DURATION_S = g.DURATION_S;

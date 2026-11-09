@@ -47,6 +47,7 @@
   const MELEE_LEAP_START_PITCH_RAD = THREE.MathUtils.degToRad(12);
   const activeMeleeTrails = []; // Transient pitched ribbons aged by updateMeleeTrails().
   const activeMeleeColliderDebug = new Map(); // Recent real pie-prism volumes drawn by Show Hitboxes.
+  let meleeProbePoint = null, meleeRayPoint = null, meleeProbeRay = null, meleeColliderScratch = null; // Lazy reuse: headless tests need only THREE.MathUtils.
   let lastMelee3DResult = null; // Mobile-readable record of the latest 3D collider decision.
 
   function signedAngleDelta(target, current) {
@@ -231,29 +232,20 @@
     };
   }
 
-  function boxSamplePoints(box, origin) {
-    const center = box.getCenter(new THREE.Vector3());
-    const closest = box.clampPoint(origin, new THREE.Vector3());
-    const points = [closest];
-    // A 3×3×3 volume grid catches cone/face intersections that corners alone
-    // miss, while the exact center ray test in meleeHit keeps reticle alignment exact.
-    for (const x of [box.min.x, center.x, box.max.x]) {
-      for (const y of [box.min.y, center.y, box.max.y]) {
-        for (const z of [box.min.z, center.z, box.max.z]) points.push(new THREE.Vector3(x, y, z));
-      }
-    }
-    return points;
-  }
 
   function meleeSolutionForOptions(attacker, opts = {}) {
     const hasExplicitAngles = opts.yaw != null || opts.pitch != null;
     const explicitDirection = finiteDirection(opts.direction)
       || (hasExplicitAngles ? directionFromAngles(opts.yaw ?? attacker?.facing ?? attacker?.angle ?? 0, opts.pitch ?? 0) : null);
     if (!explicitDirection) return meleeAimSolution(attacker, null, attacker?.facing ?? attacker?.angle ?? 0, 0);
+    // An explicitly aimed cone does not need to compute (and then discard) a second aim direction.
+    const attackerHitbox = combatActorHitbox(attacker);
+    const origin = attackerHitbox?.center?.clone?.() || new THREE.Vector3(
+      (Number(attacker?.x) || 0) / (deps?.TILE || 64), 0.5, (Number(attacker?.y) || 0) / (deps?.TILE || 64)
+    );
     return {
-      ...meleeAimSolution(attacker, null, opts.yaw, opts.pitch),
-      direction: explicitDirection,
-      yaw: Math.atan2(explicitDirection.z, explicitDirection.x),
+      attacker, target: null, attackerHitbox, targetHitbox: null, origin, targetPoint: null,
+      direction: explicitDirection, yaw: Math.atan2(explicitDirection.z, explicitDirection.x),
       pitch: Math.asin(THREE.MathUtils.clamp(explicitDirection.y, -1, 1)),
     };
   }
@@ -261,25 +253,31 @@
   // The melee collider is a vertically extruded pie piece. Its pointed
   // vertical edge is centered on the attacker's portrait volume, while its
   // whole sector rises/falls with pitch instead of narrowing to a 3D cone tip.
-  function meleeColliderVolume(attacker, opts = {}, solutionOverride = null) {
+  function meleeColliderVolume(attacker, opts = {}, solutionOverride = null, reuse = null) {
     const solution = solutionOverride || meleeSolutionForOptions(attacker, opts);
     const rangeWorld = Math.max(0, Number(opts.rangePx) || 0) / (deps?.TILE || 64);
     const pitch = THREE.MathUtils.clamp(solution.pitch, -MAX_MELEE_AIM_PITCH_RAD, MAX_MELEE_AIM_PITCH_RAD);
-    const attackerSize = solution.attackerHitbox?.box?.getSize?.(new THREE.Vector3());
-    const authoredHeight = Math.max(0.35, Number(attackerSize?.y) || 0.7);
+    const box = solution.attackerHitbox?.box;
+    const authoredHeight = Math.max(0.35, Number(box ? (box.max.y - box.min.y) : 0) || 0.7);
     const heightWorld = Math.max(0.2, Number(opts.heightWorld) || authoredHeight);
-    return {
-      actor: attacker,
-      origin: solution.origin.clone(),
-      direction: solution.direction.clone(),
-      yaw: solution.yaw,
-      pitch,
-      rangeWorld,
-      horizontalRangeWorld: rangeWorld * Math.cos(pitch),
-      verticalRiseWorld: rangeWorld * Math.sin(pitch),
-      halfConeRad: Math.max(0, Number(opts.halfConeRad) || 0),
-      halfHeightWorld: heightWorld / 2,
-    };
+    const collider = reuse || {};
+    collider.actor = attacker;
+    if (reuse) {
+      // Support the tiny Vector3 shims used in headless tests as well as THREE.Vector3.
+      collider.origin.x = solution.origin.x; collider.origin.y = solution.origin.y; collider.origin.z = solution.origin.z;
+      collider.direction.x = solution.direction.x; collider.direction.y = solution.direction.y; collider.direction.z = solution.direction.z;
+    } else {
+      collider.origin = solution.origin.clone(); // Persistent debug wireframes must own their snapshots.
+      collider.direction = solution.direction.clone();
+    }
+    collider.yaw = solution.yaw;
+    collider.pitch = pitch;
+    collider.rangeWorld = rangeWorld;
+    collider.horizontalRangeWorld = rangeWorld * Math.cos(pitch);
+    collider.verticalRiseWorld = rangeWorld * Math.sin(pitch);
+    collider.halfConeRad = Math.max(0, Number(opts.halfConeRad) || 0);
+    collider.halfHeightWorld = heightWorld / 2;
+    return collider;
   }
 
   function rememberMeleeColliderDebug(collider) {
@@ -291,11 +289,14 @@
     });
   }
 
-  function debugMeleeColliders() {
-    const now = Date.now();
+  function pruneMeleeColliderDebug(now = Date.now()) {
     for (const [actor, collider] of activeMeleeColliderDebug) {
       if (collider.expiresAt < now) activeMeleeColliderDebug.delete(actor);
     }
+  }
+
+  function debugMeleeColliders() {
+    pruneMeleeColliderDebug();
     return Array.from(activeMeleeColliderDebug.values());
   }
 
@@ -344,7 +345,9 @@
   // extruded pie piece described above.
   function meleeHit(attacker, target, opts = {}) {
     const solution = meleeSolutionForOptions(attacker, opts);
-    const collider = meleeColliderVolume(attacker, opts, solution);
+    // Repeated lunge hit probes need no persistent collider snapshots, unlike a visible strike.
+    if (opts.debug === false && !meleeColliderScratch) meleeColliderScratch = { origin: new THREE.Vector3(), direction: new THREE.Vector3() };
+    const collider = meleeColliderVolume(attacker, opts, solution, opts.debug === false ? meleeColliderScratch : null);
     if (opts.debug !== false) rememberMeleeColliderDebug(collider);
     const targetHitbox = combatActorHitbox(target);
     const rangePx = Math.max(0, Number(opts.rangePx) || 0);
@@ -380,15 +383,38 @@
     let bestVerticalOffsetWorld = Infinity;
     // The centered reticle ray remains an exact contract: a direct Box3
     // intersection inside weapon length also lies on the pie piece centerline.
-    const directPoint = new THREE.Ray(collider.origin, collider.direction)
-      .intersectBox(targetHitbox.box, new THREE.Vector3());
+    if (!meleeProbeRay) {
+      meleeProbeRay = new THREE.Ray();
+      meleeRayPoint = new THREE.Vector3();
+      meleeProbePoint = new THREE.Vector3();
+    }
+    meleeProbeRay.origin.copy(collider.origin);
+    meleeProbeRay.direction.copy(collider.direction);
+    const directPoint = meleeProbeRay.intersectBox(targetHitbox.box, meleeRayPoint);
     if (directPoint) {
       bestDistanceWorld = directPoint.distanceTo(collider.origin);
       bestAngleRad = 0;
       bestVerticalOffsetWorld = 0;
       hit = bestDistanceWorld <= collider.rangeWorld;
     }
-    for (const point of boxSamplePoints(targetHitbox.box, collider.origin)) {
+    const hitbox = targetHitbox.box;
+    const min = hitbox.min, max = hitbox.max;
+    const centerX = (min.x + max.x) * 0.5;
+    const sampleCenterY = (min.y + max.y) * 0.5;
+    const centerZ = (min.z + max.z) * 0.5;
+    // First test the closest point, then the exact same 3×3×3 grid as before.
+    // Reuse one vector instead of allocating 28 vectors and four nested arrays per probe.
+    for (let index = -1; index < 27; index++) {
+      if (index === -1) hitbox.clampPoint(collider.origin, meleeProbePoint);
+      else {
+        const ix = Math.floor(index / 9), iy = Math.floor((index % 9) / 3), iz = index % 3;
+        meleeProbePoint.set(
+          ix === 0 ? min.x : ix === 1 ? centerX : max.x,
+          iy === 0 ? min.y : iy === 1 ? sampleCenterY : max.y,
+          iz === 0 ? min.z : iz === 1 ? centerZ : max.z
+        );
+      }
+      const point = meleeProbePoint;
       const dx = point.x - collider.origin.x;
       const dz = point.z - collider.origin.z;
       const horizontalDistance = Math.hypot(dx, dz);
@@ -523,40 +549,53 @@
       const next = Number(transform(transformed));
       if (Number.isFinite(next)) transformed = next;
     }
-    const t = THREE.MathUtils.clamp(transformed, 0, 1);
+    return windupCurve(transformed, slowdown);
+  }
+
+  // The bare curve, without the player's held-action transforms above. Enemies
+  // and other actors that play the same held windup use this, so a transform the
+  // player's own held ability installs never speeds up anyone else's pose.
+  function windupCurve(rawProgress, slowdown = 0) {
+    const t = THREE.MathUtils.clamp(Number(rawProgress) || 0, 0, 1);
     const s = Math.max(0, Number(slowdown) || 0);
     if (s <= 1e-6) return t;
     return Math.log1p(s * t) / Math.log1p(s);
   }
 
-  // Writes a tapered ribbon in a plane tilted to the attack's pitch. At zero
-  // pitch this is the familiar horizontal sweep; aiming up rotates the whole
-  // sweep plane upward instead of merely raising a flat ground arc.
+  // An attack's actual collider is an elevated pie-prism, not a flat sweep
+  // plane. Its outer edge is an XZ yaw arc with a constant pitch-dependent Y
+  // rise; every angle on that arc reaches the same real horizontal distance.
+  // Keep the existing two-vertex swipe strips, but give them vertical depth
+  // and a slight radial lean, so the luminous swipe reads as a 3D curved band
+  // across the *outer face* of the real hit volume rather than a 2D decal.
   function writeMeleeTrailRibbon(positionAttr, opts = {}) {
     const samples = Math.max(2, Math.floor(Number(opts.samples) || 16));
-    const origin = opts.origin?.isVector3 ? opts.origin : new THREE.Vector3();
+    const origin = opts.origin || { x: 0, y: 0, z: 0 };
     const direction = finiteDirection(opts.direction) || directionFromAngles(opts.yaw, opts.pitch);
-    const worldUp = new THREE.Vector3(0, 1, 0);
-    const side = new THREE.Vector3().crossVectors(direction, worldUp);
-    if (side.lengthSq() < 1e-6) side.set(0, 0, 1);
-    else side.normalize();
-    const planeUp = new THREE.Vector3().crossVectors(side, direction).normalize();
+    const yaw = Math.atan2(direction.z, direction.x); // Used by the exact same yaw-sector coordinates as meleeColliderPoint().
+    const pitch = Math.asin(THREE.MathUtils.clamp(direction.y, -1, 1)); // Used to match the collider's angled rise without skewing its width.
     const rangeTiles = Math.max(0, Number(opts.rangeTiles) || 0);
-    const halfConeRad = Math.max(0, Number(opts.halfConeRad) || 0);
-    const halfThickness = Math.max(0.001, Number(opts.halfThickness) || 0.06);
-    const archUnits = Math.max(0, Number(opts.archUnits) || 0.22);
+    const halfConeRad = THREE.MathUtils.clamp(Number(opts.halfConeRad) || 0, 0, Math.PI);
+    const halfThickness = Math.max(0, Number(opts.halfThickness) || 0.06);
+    const halfHeightWorld = Math.max(0.01, Number(opts.halfHeightWorld) || 0.35); // Real actor half-height for NPCs, conservative player fallback for the shared game swipe.
+    const archUnits = Math.max(0, Number(opts.archUnits) || 0.22); // Subtle upward curvature constrained inside the hit volume.
+    const horizontalRange = rangeTiles * Math.cos(pitch);
+    const verticalRise = rangeTiles * Math.sin(pitch);
     for (let sample = 0; sample <= samples; sample++) {
       const u = sample / samples;
-      const sweepAngle = -halfConeRad + 2 * halfConeRad * u;
-      const radial = direction.clone().applyAxisAngle(planeUp, sweepAngle);
+      const angle = yaw - halfConeRad + 2 * halfConeRad * u;
       const taper = Math.sin(u * Math.PI);
-      const half = halfThickness * (0.25 + 0.75 * taper);
-      const arch = planeUp.clone().multiplyScalar(archUnits * taper);
-      const inner = origin.clone().addScaledVector(radial, Math.max(0, rangeTiles - half)).add(arch);
-      const outer = origin.clone().addScaledVector(radial, rangeTiles + half).add(arch);
+      const inset = Math.min(rangeTiles, halfThickness * taper); // Never extend beyond the actual hit radius.
+      const innerRange = rangeTiles - inset;
+      const outerX = origin.x + Math.cos(angle) * horizontalRange;
+      const outerZ = origin.z + Math.sin(angle) * horizontalRange;
+      const innerX = origin.x + Math.cos(angle) * innerRange * Math.cos(pitch);
+      const innerZ = origin.z + Math.sin(angle) * innerRange * Math.cos(pitch);
+      const vertical = halfHeightWorld * taper;
+      const lift = Math.min(archUnits, halfHeightWorld * 0.2) * taper; // Still below the collider's top at the widest point.
       const vi = sample * 2;
-      positionAttr.setXYZ(vi, inner.x, inner.y, inner.z);
-      positionAttr.setXYZ(vi + 1, outer.x, outer.y, outer.z);
+      positionAttr.setXYZ(vi, outerX, origin.y + verticalRise - vertical + lift, outerZ);
+      positionAttr.setXYZ(vi + 1, innerX, origin.y + innerRange * Math.sin(pitch) + vertical, innerZ);
     }
     positionAttr.needsUpdate = true;
   }
@@ -564,9 +603,12 @@
   function spawnMeleeTrail(opts = {}) {
     const actor = opts.actor;
     const target = opts.target || null;
-    const solution = meleeAimSolution(actor, target, opts.yaw ?? actor?.facing ?? actor?.angle ?? 0, opts.pitch ?? 0);
+    const solution = target && opts.yaw == null && opts.pitch == null && !opts.direction
+      ? meleeAimSolution(actor, target, actor?.facing ?? actor?.angle ?? 0, 0)
+      : meleeSolutionForOptions(actor, opts); // Explicit attack bearing/pitch must match the real damage cone, not auto-aim at a nearby target.
     const collider = meleeColliderVolume(actor, opts, solution); // Reused by Show Hitboxes so trail and damage volume share an origin.
-    rememberMeleeColliderDebug(collider);
+    if (opts.debug !== false) rememberMeleeColliderDebug(collider);
+    if (opts.debugOnly) return null; // A multi-colored enemy trail uses several visual lanes but one full-cone hitbox.
     const samples = 16;
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array((samples + 1) * 2 * 3), 3));
@@ -580,6 +622,7 @@
       samples, origin: solution.origin, direction: solution.direction,
       rangeTiles: Math.max(0, Number(opts.rangePx) || 0) / (deps?.TILE || 64),
       halfConeRad: opts.halfConeRad,
+      halfHeightWorld: collider.halfHeightWorld, // NPC swipe follows its own portrait-height collider.
       halfThickness: opts.halfThickness,
       archUnits: opts.archUnits,
     });
@@ -689,7 +732,7 @@
   function fireStagedStrike(action) {
     if (action.strikeFired) return;
     action.strikeFired = true;
-    if (!action.data?.silentSfx) deps?.playWeaponSlashSfx?.(action.data?.sfxPitch, action.data?.comboStep);
+    if (!action.data?.silentSfx) deps?.playWeaponSlashSfx?.(action.data?.sfxPitch, action.data?.comboStep, action.data?.attacker || deps?.player); // NPC swings inherit their attacker's 3D audio origin.
     if (action.onStrike) action.onStrike(action);
   }
 
@@ -716,6 +759,8 @@
 
   function update(dt) {
     updateMeleeTrails(dt);
+    // Expire strong actor keys even when Show Hitboxes is disabled or its snapshot is never read.
+    if (activeMeleeColliderDebug.size) pruneMeleeColliderDebug();
     if (activeStaged.size === 0) return; // Common case (no attack in progress) skips the defensive copy below entirely.
     for (const action of Array.from(activeStaged)) updateStagedAction(action, dt);
   }
@@ -790,6 +835,7 @@
     meleeLungeProfile,
     setWindupProgressTransform,
     windupPoseProgress,
+    windupCurve,
     writeMeleeTrailRibbon,
     spawnMeleeTrail,
     isStaggered,
@@ -808,9 +854,10 @@
   };
   window.__melee3DDebug = {
     get lastResult() { return lastMelee3DResult; },
+    get retainedColliderCount() { return activeMeleeColliderDebug.size; }, // Passive diagnostic; does not prune the map while measuring cleanup.
     get activeTrails() { return activeMeleeTrails.map(trail => ({ actor: trail.actor, age: trail.age, pitchDeg: trail.pitchDeg })); },
     snapshot: () => ({
-      latestChange: 'Melee cones and trails use portrait Box3 volumes; angled lunges use attacker-specific height budgets for distance and leap arcs.',
+      latestChange: 'Melee swipes now follow the true pitched outer face of their 3D hit cones, with curved vertical bands instead of flat ribbons.',
       lastResult: lastMelee3DResult,
       activeTrailCount: activeMeleeTrails.length,
       activeColliders: debugMeleeColliders().map(collider => ({
@@ -1016,8 +1063,14 @@
     const lost = round1(before - (Number(entity.health) || 0));
 
     if (opts.afflictionBonuses) {
+      const attackPower = RS.attackPowerForAttack?.(opts) ?? 12; // Drunken Health conversion cannot make status effects damage-scaled again.
       for (const [id, mul] of Object.entries(opts.afflictionBonuses)) {
-        if (RS.AFFLICTIONS[id] && mul > 0) RS.addAffliction(entity, id, finalDamage * mul);
+        if (RS.AFFLICTIONS[id] && mul > 0) RS.addAffliction(entity, id, attackPower * mul);
+      }
+    }
+    if (opts.fixedAfflictionBuildup) {
+      for (const [id, value] of Object.entries(opts.fixedAfflictionBuildup)) {
+        if (RS.AFFLICTIONS[id] && Number.isFinite(value) && value > 0) RS.addAffliction(entity, id, value); // Preserve authored fixed on-hit effects through Drunken Health's specialized damage path.
       }
     }
     enforceDrunkenCaps(entity);
@@ -1050,8 +1103,10 @@
     const result = original.tick(entity, dt, opts);
     const recovery = Math.max(0, Number(dt) || 0) * DRUNK_RECOVERY_PER_SEC;
     if (recovery > 0) {
-      removeDrunk(entity, DRUNK_FOOTING_ID, recovery);
-      removeDrunk(entity, DRUNK_HEALTH_ID, recovery);
+      RS.recoverAfflictionNaturally(entity, DRUNK_FOOTING_ID,
+        recovery * RS.getAfflictionNaturalRecoveryScale(DRUNK_FOOTING_ID));
+      RS.recoverAfflictionNaturally(entity, DRUNK_HEALTH_ID,
+        recovery * RS.getAfflictionNaturalRecoveryScale(DRUNK_HEALTH_ID));
     }
     enforceDrunkenCaps(entity);
     return result;
@@ -1562,6 +1617,16 @@
 
   window.HobunjiAlcohol = {
     profileForItem(key) { return alcoholProfileForDef(itemDefs()?.[key]); },
+    profileForDef(def) { return alcoholProfileForDef(def); }, // Same strength table for temporary drinks that are not inventory items (the Gorkunash keg cup).
+    // One swig of a drink that has no inventory entry: identical drunkenness/health/blackout math to a bottled swig.
+    drinkDef(def, stars = 3, key = def?.key || 'virtual') {
+      const player = window.Combat?.deps?.player, profile = alcoholProfileForDef(def);
+      if (!player || !profile) return { ok: false, message: "No alcoholic drink to consume." };
+      const safeStars = Math.max(1, Math.min(5, Math.round(Number(stars) || 3)));
+      const result = RS.addDrunkenness(player, profile.footing, profile.health * (HEALTH_QUALITY_MULTIPLIERS[safeStars] || 1), { source: key, label: def?.label || key, stars: safeStars });
+      lastDrink = { key, label: def?.label || key, footingAdded: result.footingAdded, healthAdded: result.healthAdded, deficitPercent: result.deficitPercent, at: performance.now() };
+      return { ok: true, profile, result, message: `${def?.icon || "🍺"} Drank a swig of ${def?.label || key}.${result.blackout ? ` Blackout: ${Math.round(result.deficitPercent)}% deficit.` : ""}` };
+    },
     blackoutMinutesForDeficit(deficitPercent) {
       return Math.max(BLACKOUT_MIN_SKIP_MINUTES,
         Math.round(Math.max(1, Number(deficitPercent) || 0) * BLACKOUT_MINUTES_PER_PERCENT));

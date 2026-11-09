@@ -148,7 +148,7 @@
   function cavernNestBase(nest) {
     const x = finite(nest?.col) + finite(nest?.w, 2) * 0.5;
     const z = finite(nest?.row) + finite(nest?.h, 2) * 0.5;
-    const explicitY = Number(nest?.floorY);
+    const explicitY = Number.isFinite(nest?.floorY) ? nest.floorY : NaN; // Missing/null legacy floor values use the same active-floor fallback as the nest owner.
     const surface = denDeps?.activeSurfaceYAtWorld?.(x, z);
     return { x, y: Number.isFinite(explicitY) ? explicitY : (Number.isFinite(Number(surface)) ? Number(surface) : 0), z };
   }
@@ -300,6 +300,12 @@
 
   function ensureCavernNestFurniture(nest, scene) {
     if (!nest || !scene || !encounter || !window.AuthoredFurniture) return;
+    if (nest.mesh?.parent === scene && nest.mesh.userData?.denNestFurniture) {
+      nest.mesh.userData.denLocaleFurniture = true;
+      applyNestFurnitureTransform(nest.mesh, nest);
+      lastFurnitureUpgrade = 'cavern:shared-nest';
+      return;
+    }
     let state = cavernFurnitureState.get(nest);
     if (state?.scene === scene && state.group?.parent === scene) {
       applyNestFurnitureTransform(state.group, nest);
@@ -312,16 +318,23 @@
     const key = nest.nestFurnitureKey || encounter.nest?.furnitureKey || 'nest';
     Promise.resolve(window.AuthoredFurniture.load?.(key)).then(data => {
       if (cavernFurnitureState.get(nest) !== state || state.scene !== scene) return;
+      if (nest.mesh?.parent === scene && nest.mesh.userData?.denNestFurniture) {
+        state.building = false;
+        state.group = nest.mesh;
+        ensureCavernNestFurniture(nest, scene);
+        return;
+      }
       if (!data) {
         state.building = false;
         return;
       }
-      removeLegacyCavernMarker(scene, nest);
       const group = window.AuthoredFurniture.buildGroup(data, 0xc9a227);
+      removeLegacyCavernMarker(scene, nest);
       group.name = `den_locale_furniture_${key}`;
       group.userData.denLocaleFurniture = true;
       group.userData.denLocaleId = locale?.id || LOCALE_ID;
       scene.add(group);
+      nest.mesh = group;
       state.group = group;
       state.building = false;
       applyNestFurnitureTransform(group, nest);

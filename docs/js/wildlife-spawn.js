@@ -39,6 +39,7 @@
         ...existing,
         label: 'Puktuk',
         hostile: false,
+        diet: 'herbivore', // Puktuk digs for underground food; Nelk hunts Puktuk, not vice versa.
         defaultSizeClass: 'medium',
         modelWidth: 2.1,
         spriteAspect: 0.43636,
@@ -60,14 +61,21 @@
         legacyDrenkirraRemoved++;
       }
     }
+    if (Array.isArray(herbivores) && !herbivores.includes('puktuk')) herbivores.push('puktuk'); // Defensive diggers occupy grazer ecology rather than predator patrols.
     const packs = westernZone
       ? (Array.isArray(westernZone.packSpecies) ? westernZone.packSpecies : (westernZone.packSpecies = []))
       : null;
-    if (Array.isArray(packs) && !packs.includes('puktuk')) packs.push('puktuk');
+    if (Array.isArray(packs)) {
+      for (let i = packs.length - 1; i >= 0; i--) if (packs[i] === 'puktuk') packs.splice(i, 1); // Migrates any old pack config idempotently.
+      if (creatureDb?.nelk && !packs.includes('nelk')) packs.push('nelk');
+    }
     const denSpecies = westernZone
       ? (Array.isArray(westernZone.denSpecies) ? westernZone.denSpecies : (westernZone.denSpecies = []))
       : null;
-    if (Array.isArray(denSpecies) && !denSpecies.includes('puktuk')) denSpecies.push('puktuk');
+    if (Array.isArray(denSpecies)) {
+      if (!denSpecies.includes('puktuk')) denSpecies.push('puktuk');
+      if (creatureDb?.nelk && !denSpecies.includes('nelk')) denSpecies.push('nelk');
+    }
 
     const denMotherDefs = injectedDeps?.DEN_MOTHER_DEFS;
     if (denMotherDefs) {
@@ -79,9 +87,11 @@
       };
     }
 
+    if (denMotherDefs && creatureDb?.nelk && !denMotherDefs.nelk) denMotherDefs.nelk = { creatureKey: 'nelk', nestItemKey: null }; // Explicit den species participates in cavern ecology without inventing collectible eggs.
     const ready = !!creatureDb?.puktuk
       && Array.isArray(denSpecies) && denSpecies.includes('puktuk')
-      && Array.isArray(packs) && packs.includes('puktuk');
+      && Array.isArray(herbivores) && herbivores.includes('puktuk')
+      && (!creatureDb?.nelk || (packs?.includes('nelk') && denSpecies.includes('nelk')));
     window.__farmLog?.(`[puktuk] WildlifeSpawn.init fallback: ready=${ready ? 1 : 0} legacyDrenkirraRemoved=${legacyDrenkirraRemoved} dens=[${Array.isArray(denSpecies) ? denSpecies.join(',') : 'missing'}] packs=[${Array.isArray(packs) ? packs.join(',') : 'missing'}] herbivores=[${Array.isArray(herbivores) ? herbivores.join(',') : 'missing'}]`, ready ? 'wildlife' : 'warn');
     return ready;
   }
@@ -102,7 +112,7 @@
       return false;
     }
     const creatureDb = injectedDeps?.CREATURE_DB;
-    registration.ensureCreatureDefs(creatureDb);
+    registration.ensureCreatureDefs(creatureDb, injectedDeps?.TILE);
     const rendererSpecies = window.CreatureGeneticsRender?.SPECIES;
     if (rendererSpecies && !rendererSpecies[registration.KIND]) registration.ensureRendererSpecies(rendererSpecies);
     const herds = registration.ensureNorthernCliffsHerds(injectedDeps);
@@ -114,6 +124,16 @@
   function init(injectedDeps) {
     ensurePuktukRuntimeRegistration(injectedDeps);
     ensureVoorgAssRuntimeRegistration(injectedDeps);
+    window.MootRegistration?.register?.(injectedDeps); // Independent Northern Cliffs grazing groups and usable Ranch starter; no den insertion.
+    window.TzatzulRegistration?.register?.(injectedDeps); // Species registration is synchronous, like Voorg-Ass; actual nesting is separate.
+    window.SkeeriRuins?.register?.(injectedDeps); // The shared wildlife creature factory also recognizes ruin-only Skeeri species.
+    window.PingdortRegistration?.register?.(injectedDeps); // Native Pingdort sprites, fertile eggs, farm livestock and companion sizes.
+    window.TzatzulLiveVisuals?.init?.(injectedDeps);
+    window.TzatzulRegistration?.registerPeck?.(); // Ensure the authored hatchling attack exists after Combat initialization.
+    window.TzatzulFlightRuntime?.init?.(injectedDeps); // Shared wildlife population and movement owner.
+    window.SkeeriRuins?.init?.(injectedDeps); // No extra RAF: the existing wildlife tick owns Skeeri flight.
+    window.PingdortFlocks?.init?.(injectedDeps); // Native wild flock and companion attack owners use the shared combat/world clock.
+    window.TzatzulNestEncounter?.init?.(injectedDeps); // Indoor boss encounter uses the same hostile roster and wildlife tick. // The canonical wildlife update tick will own bird-rig promotion, animation and disposal.
     deps = injectedDeps;
     installDenTurnoverDeathHook();
   }
@@ -164,7 +184,15 @@
   // 'fleeing-low-health' once it's hurt enough, even if it was already
   // below threshold before this hit.
   function applyWildlifeSkirmishDamage(attacker, target, amount) {
-    const factionTarget = target?.isBandit === true || target?.isPorakanekiHunter === true || target?.banditCompanion === true;
+    if (target?.isNpcWalker) return window.WildlifeFoodWeb?.npcWalkerStrike?.(attacker, target) || false; // Named scheduling walkers lack Combat Health; defend/scare without inflicting fabricated damage.
+    // Player-owned animal companions are real hostile targets of predator bites, not wildlife sparring prey.
+    if (target?.isCompanion && !target.banditCompanion) {
+      deps.damageCreature(target, Math.max(0, amount), attacker.x, attacker.y, deps.HOSTILE_BITE_KNOCKBACK_PX_S, {
+        tag: attacker.def?.attackTag || 'sharp', attacker,
+      });
+      return;
+    }
+    const factionTarget = target?.isBandit === true || target?.isTribeHunter === true || target?.isPorakanekiHunter === true || target?.banditCompanion === true;
     if (factionTarget) {
       // Predator-vs-humanoid encounters are real observed combat, not the
       // abstract non-lethal wildlife sparring model. They can kill either
@@ -180,10 +208,12 @@
     }
     const floor = target.maxHealth * WILDLIFE_HP_FLOOR_FRACTION;
     const clamped = Math.max(0, Math.min(amount, target.health - floor));
-    if (clamped > 0) deps.damageCreature(target, clamped, attacker.x, attacker.y, deps.HOSTILE_BITE_KNOCKBACK_PX_S, { tag: attacker.def?.attackTag || 'sharp' });
+    if (clamped > 0) deps.damageCreature(target, clamped, attacker.x, attacker.y, deps.HOSTILE_BITE_KNOCKBACK_PX_S, { tag: attacker.def?.attackTag || 'sharp', attacker, wildlifeSkirmishFloor: floor }); // Scent damage obeys the existing nonlethal wildlife floor.
     if (target.health > 0 && target.health / target.maxHealth <= WILDLIFE_FLEE_HP_THRESHOLD) {
       target.state = 'fleeing-low-health';
       target.targetCreature = null;
+    } else {
+      window.WildlifeFoodWeb?.onSkirmishHit?.(attacker, target); // A Puktuk fights its Nelk hunter back unless genuinely wounded enough to flee.
     }
   }
 
@@ -311,10 +341,9 @@
       const world = (meta?.worlds || []).find(entry => entry.id === identity.worldId);
       const saved = world?.denTurnover;
       if (!saved || Number(saved.year) !== identity.year || !Array.isArray(saved.records)) {
-        if (world?.denTurnover) {
-          delete world.denTurnover;
-          localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
-        }
+        // A startup/debug read can precede restoration of the saved calendar.
+        // Ignore other cycles in memory without deleting their saved entrance
+        // coordinates and genotypes. Real ecology writes replace obsolete state.
         return;
       }
       for (const record of saved.records) {
@@ -502,11 +531,14 @@
   // footprint, under the arch: that column, entry tile to front row, stays
   // walkable ground instead of den rock.
   function denEntryColumnKeys(den) {
+    const locale = den?.entranceTemplateId ? window.ZoneDenTotemFeatures?.denEntranceLocaleFor?.(den) : null; // A free-standing legacy den uses its original doorway even though it borrows the shared cave visual.
+    const authored = window.DenCliffPlacement?.authoredWalkableTiles?.(den, locale); // Reopening a cave must not restore rock over its Locale Editor-cleared side columns.
+    if (authored) return authored;
     const keys = new Set();
     const mouth = den?.mouthAnchor;
     const bottom = Number(den?.y) + Math.max(1, Number(den?.h) || 1);
     if (!mouth || !(Number(mouth.y) < bottom)) return keys;
-    for (let row = Number(mouth.y); row < bottom; row++) keys.add(`${Number(mouth.x)},${row}`);
+    for (let row = Number(mouth.y); row < bottom; row++) for (let col = Math.max(Number(den.x), Number(mouth.x) - 1); col <= Math.min(Number(den.x) + Math.max(1, Number(den.w) || 1) - 1, Number(mouth.x) + 1); col++) keys.add(`${col},${row}`); // Center route and flanking columns match DenCliffPlacement.entryPath.
     return keys;
   }
 
@@ -583,7 +615,7 @@
       blockers.push({ x, y, w:Math.max(1, Number(site.w)||1), h:Math.max(1, Number(site.h)||1), margin });
     };
     for (const rec of (window.BanditCamps?.campInstances?.get?.(zoneId) || [])) add(rec?.instance?.site, 3);
-    for (const site of (window.PorakanekiCamps?.occupiedSites?.(zoneId) || [])) add(site, 3);
+    for (const site of (window.TribeCamps?.occupiedSites?.(zoneId) || window.PorakanekiCamps?.occupiedSites?.(zoneId) || [])) add(site, 3);
     const campfire = window.WildernessCampfire?.serialize?.();
     if (campfire?.mapId === zoneId) add({ x:Math.floor(Number(campfire.x)), y:Math.floor(Number(campfire.z)), w:1, h:1 }, 4);
     return blockers;
@@ -601,6 +633,8 @@
     if (Math.hypot(x - Number(oldDen.x), y - Number(oldDen.y)) < DEN_RELOCATION_MIN_DISTANCE_TILES) return false;
     if (activeZone && deps.player && Math.hypot((x + w * .5) - deps.player.x / deps.TILE, (y + h * .5) - deps.player.y / deps.TILE) < DEN_RELOCATION_PLAYER_CLEARANCE_TILES) return false;
     const candidate = { x, y, w, h: h + 1 };
+    const cliffRoutes = window.CliffRouteNetwork; // A relocated cave must also clear the existing climbable cliff mesh.
+    if (cliffRoutes?.overlapsClimb(cliffRoutes.forArea(zoneId), { x: x - 0.75, y: y - 0.75, w: w + 1.5, h: h + 2.5 })) return false;
     for (const other of (layout.caveAnchors || layout.dens || [])) { // caveAnchors: every cave (js/cave-site-system.js), not just the animal dens this tick sees.
       if (!other || String(other.id) === String(den.id)) continue;
       if (rectsOverlap(candidate, { x:Number(other.x), y:Number(other.y), w:Math.max(1,Number(other.w)||1), h:Math.max(1,Number(other.h)||1)+1 }, 4)) return false;
@@ -893,6 +927,7 @@
     const layout = deps.zoneLayouts.get(zoneId);
     const anchors = layout?.caveAnchors || layout?.dens; // Restore every cave even while wildlife temporarily filters non-animal anchors.
     if (!anchors?.length) return;
+    const discoveries = window.WildernessMap?.getDiscoveredThreats?.() || {}; // Surviving entered-cave records repair missing/stale markers once per zone restore.
     for (const record of denTurnoverByKey.values()) {
       if (record.zoneId !== zoneId) continue;
       const den = anchors.find(candidate => String(candidate.id) === String(record.denId));
@@ -914,6 +949,15 @@
       delete den._collapseEscapeVisual;
       syncSceneDenTransition(zoneId, den, cavernMapId, ensureDenTransition(layout, den, cavernMapId, record.transition));
       syncDenVisual(zoneId, den);
+      if (record.enteredCivilDay != null && record.name) {
+        const discoveryKey = `den:${record.denKey}`; // Matches physical-entry and companion-perception marker identities.
+        const col = Number(den.mouthAnchor?.x ?? den.x) + 0.5; // Recovered marker uses the restored entrance, including relocations.
+        const row = Number(den.mouthAnchor?.y ?? den.y) + 0.5; // Map coordinates share the entrance's tile-center convention.
+        const marker = discoveries[discoveryKey]; // Existing marker avoids redundant metadata writes on repeated restore.
+        if (!marker || marker.kind !== 'den' || marker.zoneId !== zoneId || marker.col !== col || marker.row !== row || marker.label !== record.name) {
+          window.WildernessMap?.rememberDiscoveredThreat?.(discoveryKey, { kind:'den', zoneId, denKey:record.denKey, col, row, label:record.name });
+        }
+      }
     }
   }
 
@@ -1118,6 +1162,7 @@
     for (const key of denEverSpawned) if (key.startsWith(prefix)) denEverSpawned.delete(key);
     for (const key of pendingDenRespawn) if (key.startsWith(prefix)) pendingDenRespawn.delete(key);
     for (const key of [...denLastKnownAlive.keys()]) if (key.startsWith(prefix)) denLastKnownAlive.delete(key);
+    _denSpeciesAllocationCache.delete(zoneId);
     // Terrain regen also reshuffles which tiles have a shadewood tree with a
     // climbable branch — old nest-tree bookkeeping keyed by col,row would
     // otherwise wrongly apply to whatever unrelated tree ends up there now.
@@ -1214,14 +1259,14 @@
     return visuals.length;
   }
 
-  function spawnRoamingHerd(zoneId, herdIndex, herdKey) {
+  function spawnRoamingHerd(zoneId, herdIndex, herdKey, speciesOverride = null, totalSlotsOverride = null) {
     const zdef = deps.EXTERIOR_ZONES?.[zoneId];
     const pool = zdef?.roamingHerdSpecies || [];
-    if (!pool.length) return 0;
-    const speciesKey = pool[Math.floor(deps.rnd() * pool.length)];
-    const herdCount = Math.max(1, Math.floor(Number(zdef.roamingHerdCount) || 1));
+    if (!pool.length && !speciesOverride) return 0; // Explicit Moot/Nazgraku forager slots need not depend on an unrelated herd pool.
+    const speciesKey = speciesOverride || pool[Math.floor(deps.rnd() * pool.length)]; // Explicit species for each independent surface-forager slot.
+    const herdCount = Math.max(1, Math.floor(Number(totalSlotsOverride ?? zdef.roamingHerdCount) || 1));
     const anchor = roamingHerdAnchor(zoneId, herdIndex, herdCount);
-    const count = ROAMING_HERD_SIZE_MIN + Math.floor(deps.rnd() * (ROAMING_HERD_SIZE_MAX - ROAMING_HERD_SIZE_MIN + 1));
+    const count = speciesOverride ? (3 + Math.floor(deps.rnd() * 3)) : (ROAMING_HERD_SIZE_MIN + Math.floor(deps.rnd() * (ROAMING_HERD_SIZE_MAX - ROAMING_HERD_SIZE_MIN + 1))); // Moots and Nazgraku use small groups, not Voorg-ass-sized herds.
     const zoneData = deps.zoneLayouts.get(zoneId);
     const waterTile = nearestWaterTile(zoneData, anchor.x, anchor.y);
     const motherIndex = speciesKey === VOORG_ASS_SPECIES ? Math.floor(deps.rnd() * count) : -1; // Exactly one Herd-Mother per Voorg-Ass herd.
@@ -1273,43 +1318,112 @@
     }
 
     if (spawned > 0) {
-      window.__farmLog?.(`[voorg-ass] spawned roaming herd key=${herdKey} size=${spawned} mother=${motherIndex >= 0 ? 1 : 0} babies=${motherBabyCount} anchor=(${Math.round(anchor.x / deps.TILE)},${Math.round(anchor.y / deps.TILE)})`, 'wildlife');
+      window.__farmLog?.(`[${speciesKey}] spawned roaming herd key=${herdKey} size=${spawned} mother=${motherIndex >= 0 ? 1 : 0} babies=${motherBabyCount} anchor=(${Math.round(anchor.x / deps.TILE)},${Math.round(anchor.y / deps.TILE)})`, 'wildlife');
       if (zoneId === deps.getCurrentArea() && speciesKey === VOORG_ASS_SPECIES) deps.showToast('A large Voorg-Ass herd is roaming the cliffs.', false);
     }
     return spawned;
   }
 
   function ensureCurrentZoneRoamingHerds() {
-    const zoneId = deps.getCurrentArea();
+    const zoneId = deps.getCurrentArea(); // Used to keep exterior roaming populations tied to the active zone.
     const zdef = deps.EXTERIOR_ZONES?.[zoneId];
-    if (!Array.isArray(zdef?.roamingHerdSpecies) || !zdef.roamingHerdSpecies.length) return;
-    const herdCount = Math.max(1, Math.floor(Number(zdef.roamingHerdCount) || 1));
-    for (let index = 0; index < herdCount; index++) {
-      const key = roamingHerdKeyFor(zoneId, index);
-      const alive = isRoamingHerdAlive(key);
-      if (alive) { roamingHerdLastKnownAlive.set(key, true); continue; }
-
+    if (!zdef) return;
+    const normalSpecies = zdef.roamingHerdSpecies || []; // Existing Voorg-Ass slots remain unchanged.
+    const normalCount = normalSpecies.length ? Math.max(1, Math.floor(Number(zdef.roamingHerdCount) || 1)) : 0;
+    const foragers = Array.isArray(zdef.roamingForagerSpecies) ? zdef.roamingForagerSpecies : []; // Separate authored slots so Nazgraku never crowds out Voorg-Ass.
+    const foragerCount = foragers.length ? Math.max(1, Math.floor(Number(zdef.roamingForagerCount) || 1)) : 0;
+    const totalSlots = normalCount + foragerCount;
+    function ensureSlot(key, index, species = null) {
+      const alive = isRoamingHerdAlive(key); // Existing day-scoped dead-herd handling applies equally to food gatherers.
+      if (alive) { roamingHerdLastKnownAlive.set(key, true); return; }
       if (!roamingHerdEverSpawned.has(key)) {
         roamingHerdEverSpawned.add(key);
         roamingHerdLastKnownAlive.set(key, false);
-        spawnRoamingHerd(zoneId, index, key);
-        continue;
+        spawnRoamingHerd(zoneId, index, key, species, totalSlots);
+        return;
       }
       if (roamingHerdLastKnownAlive.get(key) !== false) {
         roamingHerdLastKnownAlive.set(key, false);
         pendingRoamingHerdRespawn.add(key);
-        continue;
+        return;
       }
-      if (pendingRoamingHerdRespawn.has(key)) continue;
-      spawnRoamingHerd(zoneId, index, key);
+      if (pendingRoamingHerdRespawn.has(key)) return;
+      spawnRoamingHerd(zoneId, index, key, species, totalSlots);
+    }
+    for (let index = 0; index < normalCount; index++) ensureSlot(roamingHerdKeyFor(zoneId, index), index);
+    for (let index = 0; index < foragerCount; index++) {
+      const kind = foragers[index % foragers.length]; // Future species can use the same authored extra-slot system.
+      ensureSlot(`${zoneId}:roaming-forager:${kind}:${index}`, normalCount + index, kind);
     }
   }
 
+  // Tie-break priority when a zone's dens don't divide evenly between its
+  // denSpecies (missing = 1): leftover dens go to higher values first, so
+  // Nazgraku end up at most one den behind the other species.
+  const DEN_SPECIES_WEIGHTS = Object.freeze({ nazgraku: 0.8 });
+  const _denSpeciesAllocationCache = new Map(); // zoneId -> { signature, byDenId }
+
+  // Splits a zone's dens across its denSpecies pool as evenly as possible
+  // (counts differ by at most one), so every species gets at least one den
+  // whenever there are enough dens. Which den gets which species is a seeded
+  // shuffle, stable per zone (den ids survive relocation) and shared with
+  // CavernGenerator through denSpeciesFor.
+  function denSpeciesAllocation(zoneId, pool) {
+    const dens = deps.zoneLayouts?.get(zoneId)?.dens || [];
+    const denIds = dens.map(den => String(den.id)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    if (!denIds.length) return null;
+    const signature = `${pool.join(',')}|${denIds.join(',')}`;
+    const cached = _denSpeciesAllocationCache.get(zoneId);
+    if (cached?.signature === signature) return cached.byDenId;
+    const base = Math.floor(denIds.length / pool.length);
+    const counts = pool.map(() => base);
+    const byPriority = pool.map((kind, i) => i).sort((a, b) => ((Number(DEN_SPECIES_WEIGHTS[pool[b]]) || 1) - (Number(DEN_SPECIES_WEIGHTS[pool[a]]) || 1)) || a - b);
+    for (let i = 0; i < denIds.length - base * pool.length; i++) counts[byPriority[i]]++;
+    const slots = [];
+    pool.forEach((kind, i) => { for (let n = 0; n < counts[i]; n++) slots.push(kind); });
+    const rng = window.WildernessMapGenerator.makeRng(`${zoneId}_denspecies_balance_${denIds.join(',')}`);
+    for (let i = slots.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [slots[i], slots[j]] = [slots[j], slots[i]];
+    }
+    const byDenId = new Map(denIds.map((id, i) => [id, slots[i] || null]));
+    _denSpeciesAllocationCache.set(zoneId, { signature, byDenId });
+    return byDenId;
+  }
+
   function denSpeciesFor(zoneId, cavernMapId) {
-    const pool = deps.EXTERIOR_ZONES[zoneId]?.denSpecies || [];
+    const pool = [...new Set(deps.EXTERIOR_ZONES[zoneId]?.denSpecies || [])];
     if (!pool.length) return null;
-    const rng = window.WildernessMapGenerator.makeRng(cavernMapId + '_denspecies'); // One stable exact species identity per den, shared by exterior and cavern generation.
+    const idPrefix = `map_i_den_${zoneId}_`; // denCavernMapId's shape; zoneId is known here, so the den id suffix parses cleanly.
+    const denId = _denCavernDenIdOf.get(cavernMapId) ?? (String(cavernMapId).startsWith(idPrefix) ? String(cavernMapId).slice(idPrefix.length) : null);
+    const allocated = denId != null ? denSpeciesAllocation(zoneId, pool)?.get(String(denId)) : null;
+    if (allocated) return allocated;
+    const rng = window.WildernessMapGenerator.makeRng(cavernMapId + '_denspecies'); // Fallback for a den not in the zone layout: one stable roll per den.
     return pool[Math.floor(rng() * pool.length)] || null;
+  }
+
+  // Per-den status for the active (or given) zone: species, turnover stage,
+  // and how many live pack members are registered. Read by the AI snapshot.
+  function denCensus(zoneId = deps.getCurrentArea()) {
+    const dens = deps.zoneLayouts?.get(zoneId)?.dens || [];
+    const aliveByKey = new Map();
+    for (const c of deps.hostileObjects) {
+      if (!c.denKey || c.health <= 0) continue;
+      aliveByKey.set(c.denKey, (aliveByKey.get(c.denKey) || 0) + 1);
+    }
+    return dens.map(den => {
+      const denKey = denKeyFor(zoneId, den);
+      const cavernMapId = denCavernMapId(zoneId, den.id);
+      return {
+        denId: String(den.id), denKey,
+        col: Number(den.x), row: Number(den.y),
+        species: denSpeciesFor(zoneId, cavernMapId) || null,
+        stage: den.collapsed ? 'collapsed' : (den.turnoverStage || 'active'),
+        alive: aliveByKey.get(denKey) || 0,
+        everSpawned: denEverSpawned.has(denKey),
+        pendingRespawn: pendingDenRespawn.has(denKey),
+      };
+    });
   }
 
   function spawnPackAtDen(zoneId, den, denKey) {
@@ -1333,12 +1447,14 @@
     // vary per spawn cycle — only the pack-vs-herd identity itself is
     // pinned to the den.
     const speciesKey = explicitSpeciesKey || pool[Math.floor(deps.rnd() * pool.length)];
-    const speciesIsHerbivore = useHerd || !!zdef?.herbivoreSpecies?.includes(speciesKey); // Explicit den pools can still contain a species authored as part of the zone's herbivore ecology.
+    const speciesIsHerbivore = useHerd || !!zdef?.herbivoreSpecies?.includes(speciesKey)
+      || deps.CREATURE_DB[speciesKey]?.diet === 'herbivore'; // Den-only foragers retain their species' prey role instead of becoming predators.
     // Every same-family member of this pack (e.g. gar-wolf + alpha, or
     // the whole uumkaoii-wild herd) shares one rolled-once "family"
     // genotype — see getOrMakeDenGenotype.
     const denFamily = denGenotypeFamily(speciesKey);
     const denGenotype = denFamily ? getOrMakeDenGenotype(cavernMapId, denFamily) : null;
+    const wildPackGenotype = speciesKey === 'nelk' && denGenotype ? { ...denGenotype, sizeClass: 'large' } : denGenotype; // Wild Nelk adults are Large; shared family genetics for nests and owned animals are unchanged.
     // den.x/den.y are the footprint's top-left tile (see workspace.animalDens
     // in wilderness-map-generator.js) — spawn/home anchor is the footprint center.
     const homeX = (den.x + (den.w || 1) * 0.5) * deps.TILE, homeY = (den.y + (den.h || 1) * 0.5) * deps.TILE;
@@ -1377,7 +1493,7 @@
         memberHomeX = homeX + Math.cos(spreadAngle) * spreadDist;
         memberHomeY = homeY + Math.sin(spreadAngle) * spreadDist;
       }
-      const opts = { streamVisuals: true, homeX: memberHomeX, homeY: memberHomeY, denEntranceX, denEntranceY, state: 'idle', denKey, genotype: denGenotype, wildlifeRole: speciesIsHerbivore ? 'prey' : 'predator' }; // Explicit ecology role avoids guessing from hostility/diet overlays later.
+      const opts = { streamVisuals: true, homeX: memberHomeX, homeY: memberHomeY, denEntranceX, denEntranceY, state: 'idle', denKey, genotype: wildPackGenotype, wildlifeRole: speciesIsHerbivore ? 'prey' : 'predator' }; // Explicit ecology role avoids guessing from hostility/diet overlays later.
       assignWildlifeStation(opts, zoneData, memberHomeX, memberHomeY, speciesIsHerbivore);
       const creature = deps.makeCreatureEntity(speciesKey, x, y, opts);
       if (creature) { deps.hostileObjects.add(creature); spawned++; }
@@ -1695,6 +1811,11 @@
     const currentArea = deps.getCurrentArea();
     if (currentArea !== lastTurnoverArea) { lastTurnoverArea = currentArea; processDueCaves(); }
     if (deps.getCutscenePreviewActive()) return;
+    window.TzatzulLiveVisuals?.tick?.(dt, currentArea);
+    window.SkeeriRuins?.update?.(dt); // Advances only mounted ruin Skeeri; ordinary zones remain untouched.
+    window.PingdortFlocks?.update?.(dt); // Wild Pingdorts use the existing updateHostileSpawning step.
+    window.TzatzulFlightRuntime?.update?.(dt); // Reuses the same tick, not an additional RAF or scan.
+    window.TzatzulNestEncounter?.update?.(dt); // Only the active authored nest cave is evaluated; no second RAF. // Actual dev-spawned Tzatzul get their authored body/wing rig in the existing update loop, even outside wilderness zones.
     denCheckTimer -= dt;
     if (denCheckTimer > 0) return;
     denCheckTimer = DEN_CHECK_INTERVAL_S;
@@ -1704,6 +1825,9 @@
     ensureCurrentZoneDenPacks();
     ensureCurrentZoneRoamingHerds();
     ensureCurrentZoneNestTrees();
+    window.TzatzulFlightRuntime?.ensureZone?.(currentArea); // Cliff birds spawn only where elevated natural ledge geometry exists.
+    window.PingdortFlocks?.ensureZone?.(currentArea); // Exactly three birds per fertile nest in Cloud Forest and Eastern Mire.
+    window.HoneyfuzzleHives?.ensureCurrentZone(); // Swarms come out of their hive stumps by day (js/honeyfuzzle-hives.js).
     window.BanditCamps.ensureCurrentZoneCamps();
     if (_zoneEntryAnimalLogPending === currentArea) {
       _zoneEntryAnimalLogPending = null;
@@ -1753,6 +1877,7 @@
     denCavernMapId,
     denCavernZoneOf: (mapId) => _denCavernZoneOf.get(mapId),
     denSpeciesFor,
+    denCensus,
     denKeyForCavern,
     denGenotypeFamily,
     getOrMakeDenGenotype,
@@ -1802,6 +1927,7 @@
       pendingDenRespawn.clear();
       pendingNestTreeRespawn.clear();
       pendingRoamingHerdRespawn.clear();
+      window.TzatzulFlightRuntime?.onDayAdvance?.(); // Failed/dead roosts turn over on the normal in-game day.
       processDueCaves(); // 06:00 raw-day rollover never advances the civil-midnight cave countdown.
     },
   };

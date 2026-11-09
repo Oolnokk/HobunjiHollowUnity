@@ -1,9 +1,8 @@
-(() => {
+(function createNaturalSurfaceMaterials(THREE, installGlobals, sourceAssetBase) {
   'use strict';
 
-  const THREE = window.THREE;
   if (!THREE) return;
-  if (window.NaturalSurfaceMaterials?.installed) return;
+  if (installGlobals && window.NaturalSurfaceMaterials?.installed) return window.NaturalSurfaceMaterials;
 
   const DEFAULTS = {
     texture: 'assets/textures/carved_smooth.png',
@@ -16,6 +15,7 @@
   };
 
   const config = window.NaturalSurfaceMaterialConfig || DEFAULTS;
+  const assetBase = sourceAssetBase || (typeof document !== 'undefined' && document.currentScript?.src ? new URL('../', document.currentScript.src).href : null); // Resolve repository PNGs consistently from nested editor URLs.
   const materialCache = new Map();
   const textureCache = new Map();
   const appliedCounts = { trunks: 0, vines: 0, rocks: 0, cliffs: 0 };
@@ -42,7 +42,12 @@
     return tex;
   }
 
+  function resolveTexturePath(path) {
+    return assetBase && /^assets\//.test(path) ? new URL(path, assetBase).href : path;
+  }
+
   function loadBaseTexture(path, wrapMode = 'clamp') {
+    path = resolveTexturePath(path);
     const cacheKey = `${path}|${wrapMode}`;
     let tex = textureCache.get(cacheKey);
     if (tex) return tex;
@@ -110,6 +115,7 @@
   }
 
   function loadBodySpriteTintTexture(path, tint, wrapMode = 'clamp') {
+    path = resolveTexturePath(path);
     const cacheKey = `${path}|${wrapMode}|body-sprite-tint|${String(tint).toLowerCase()}`;
     let tex = textureCache.get(cacheKey);
     if (tex) return tex;
@@ -383,8 +389,8 @@
     return true;
   }
 
-  function textureForSurface(surface, wrapMode = 'clamp', resolvedTint = null) {
-    const surfaceCfg = cfgFor(surface);
+  function textureForSurface(surface, wrapMode = 'clamp', resolvedTint = null, overrides = null) {
+    const surfaceCfg = Object.assign(cfgFor(surface), overrides || {}); // Per-mesh overrides never mutate the shared Shadewood definitions.
     const tint = resolvedTint || surfaceCfg.tint;
     return shouldUseBodySpriteTint(surfaceCfg, tint)
       ? loadBodySpriteTintTexture(texturePath(surfaceCfg), tint, wrapMode)
@@ -401,9 +407,9 @@
     else console.debug(message);
   }
 
-  function naturalizeMesh(mesh, surface, mappingOverride = null) {
-    if (!mesh?.isMesh || !mesh.geometry || mesh.userData?.naturalSurface === surface) return mesh;
-    const surfaceCfg = cfgFor(surface);
+  function naturalizeMesh(mesh, surface, mappingOverride = null, overrides = null) {
+    if (!mesh?.isMesh || !mesh.geometry || (!overrides && mesh.userData?.naturalSurface === surface)) return mesh;
+    const surfaceCfg = Object.assign(cfgFor(surface), overrides || {});
     if (surfaceCfg.enabled === false) return mesh;
     const sourceMaterial = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
     const mapping = mappingOverride || surfaceCfg.mapping;
@@ -411,7 +417,7 @@
     prepareUv(mesh.geometry, mapping);
     const tint = resolveTint(surfaceCfg, sourceMaterial);
     const bakeTint = shouldUseBodySpriteTint(surfaceCfg, tint); // The PNG is recolored by the exact body-sprite canvas path, so the Three material stays white.
-    const tex = textureForSurface(surface, 'clamp', tint);
+    const tex = textureForSurface(surface, 'clamp', tint, overrides);
     mesh.material = basicMaterial(surface, sourceMaterial, tex, bakeTint ? '#ffffff' : tint);
     mesh.userData = Object.assign({}, mesh.userData, { naturalSurface: surface });
     noteApplied(surface);
@@ -467,6 +473,8 @@
     const specs = {
       buildJungleTreeMesh: true,
       buildCrownedPineMesh: false,
+      buildDeadTreeMesh: false,
+      buildDeadBushMesh: false,
       buildShadewoodMesh: false,
       buildShrubMesh: false,
       buildWildernessBushMesh: false,
@@ -612,15 +620,29 @@
     } catch (_) {}
   }
 
-  installGlobal('FoliageGenerator', wrapFoliage);
-  installGlobal('ZoneTerrainFeatures', wrapTerrainFeatures);
-  installGlobal('ZonePlateauMesa', wrapPlateauMesa);
-  installGlobal('BorderTerrain', wrapBorderTerrain);
+  if (installGlobals) {
+    installGlobal('FoliageGenerator', wrapFoliage);
+    installGlobal('ZoneTerrainFeatures', wrapTerrainFeatures);
+    installGlobal('ZonePlateauMesa', wrapPlateauMesa);
+    installGlobal('BorderTerrain', wrapBorderTerrain);
+  }
 
-  window.NaturalSurfaceMaterials = {
+  const runtimeInstances = new WeakMap(); // Keep textures and materials isolated by Three.js runtime in mixed-version editors.
+  const api = { // Shared material authority for this runtime; only the default instance installs game hooks.
     installed: true,
+    forThree(runtime) {
+      if (runtime === THREE) return api;
+      if (!runtimeInstances.has(runtime)) runtimeInstances.set(runtime, createNaturalSurfaceMaterials(runtime, false, assetBase));
+      return runtimeInstances.get(runtime);
+    },
     config,
     naturalizeMesh,
+    naturalizeMaterialSlot, // Lets non-mesa builders (js/wilderness-bedrock.js) fetch the exact cliff-slot material through a proxy mesh.
+    surfaceDefaults(surface, sourceHex) {
+      const surfaceCfg = cfgFor(surface); // Authoring defaults use the same texture and source-color treatment as ordinary Shadewood.
+      const path = texturePath(surfaceCfg), prefix = assetBase ? new URL('assets/', assetBase).href : null; // Some editor bridges absolutize config paths; save repository defaults portably.
+      return { texture: prefix && path.startsWith(prefix) ? 'assets/' + path.slice(prefix.length) : path, color: resolveTint(surfaceCfg, { color: new THREE.Color(sourceHex) }) };
+    },
     snapshot() {
       return {
         texture: config.texture || DEFAULTS.texture,
@@ -633,4 +655,6 @@
       };
     },
   };
-})();
+  if (installGlobals) window.NaturalSurfaceMaterials = api;
+  return api;
+})(window.THREE, true);

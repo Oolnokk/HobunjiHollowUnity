@@ -128,10 +128,12 @@
     if (!root?.traverse || now - lastSemanticScanAt < SEMANTIC_RESCAN_MS) return;
     lastSemanticScanAt = now;
     const discoveredLadders = []; // Used to replace the live ladder list after each throttled V50 hierarchy rescan.
-    root.traverse(object => {
-      if (object.userData?.generatedAccessType === 'stoneLadder') discoveredLadders.push(object);
-    });
-    ladders = discoveredLadders;
+    const scanLadders=object=>{if(object.userData?.generatedAccessType==='stoneLadder')discoveredLadders.push(object);};
+    root.traverse(scanLadders);
+    for(const native of window.DevRandomRuinHitPuzzles?.getNativeRoots?.()||[]){
+      if(native&&native!==root&&native.parent)native.traverse?.(scanLadders); // These are real V50 ladder meshes on detached upper stories, not duplicate proxy geometry.
+    }
+    ladders=discoveredLadders;
     ladders.forEach(tagLadder);
   }
 
@@ -175,8 +177,9 @@
     for (const ladder of ladders) {
       const pos = worldPosition(ladder);
       if (!pos) continue;
-      const dist = (pos.x - player.x) ** 2 + (pos.z - player.z) ** 2;
-      if (dist <= bestDist) { bestDist = dist; best = { ladder, distance:Math.sqrt(dist) }; }
+      const reach=window.DevRandomRuinHitPuzzles?.distanceToWorldObject?.(ladder);
+      const dist=Number.isFinite(reach)?reach**2:(pos.x-player.x)**2+(pos.z-player.z)**2;
+      if (dist <= bestDist) { bestDist = dist; best = { ladder, distance:Math.sqrt(dist) }; } // Never select a ladder on a different story because its X/Z matches.
     }
     return best;
   }
@@ -201,7 +204,7 @@
         const z = origin.z + axis.z * offset * sign + lateral.z * side;
         const support = DS.sampleSupport?.(x, z, { minY:expectedBottom - .65, maxY:expectedTop + .65, pad:.02 });
         if (!support || !Number.isFinite(Number(support.y))) continue;
-        const blocker = DS.blockerAt?.(x, z, { radius:.18, actorHeight:1.25 }) || null;
+        const blocker = DS.blockerAt?.(x, z, { radius:.18, actorHeight:1.25, y:Number(support.y) }) || null; // Landings test blockers at their own physical elevation, not the player's current story.
         candidates.push({ x, z, y:Number(support.y), supportId:support.id || null, blocked:!!blocker, blockerId:blocker?.id || null, offset, sign });
       }
     }
@@ -218,7 +221,7 @@
         const a = i / 16 * Math.PI * 2, x = pos.x + Math.cos(a) * radius, z = pos.z + Math.sin(a) * radius;
         const support = DS.sampleSupport?.(x, z, { minY:landing.y - .2, maxY:landing.y + .2, pad:.02 });
         if (!support || Math.abs(Number(support.y) - landing.y) > .15) continue;
-        if (DS.blockerAt?.(x, z, { radius:.18, actorHeight:1.25 })) continue;
+        if (DS.blockerAt?.(x, z, { radius:.18, actorHeight:1.25, y:Number(support.y) })) continue; // The upper landing can be free even while a different floor has a stone blocker at the same X/Z.
         const d = (x - landing.x) ** 2 + (z - landing.z) ** 2;
         if (!best || d < best.d) best = { x, z, y:Number(support.y), supportId:support.id || null, blocked:false, offset:radius, sign:landing.sign, d };
       }
@@ -253,8 +256,12 @@
       deps.showToast?.('The ladder endpoints could not be resolved.', false);
       return false;
     }
-    const currentSupport = DS.sampleSupport?.(deps.player.x / deps.TILE, deps.player.y / deps.TILE, { minY:-8, maxY:12, pad:.02 });
-    const currentY = Number.isFinite(Number(currentSupport?.y)) ? Number(currentSupport.y) : Number(deps.playerMesh?.position?.y) || 0;
+    const physicalY=window.DevRandomRuin?.getPlayerGroundSupportY?.();
+    const currentSupport=typeof physicalY==='number'&&Number.isFinite(physicalY)
+      ?null:DS.sampleSupport?.(deps.player.x / deps.TILE, deps.player.y / deps.TILE, { minY:-8, maxY:24, pad:.02 });
+    const currentY=typeof physicalY==='number'&&Number.isFinite(physicalY)?physicalY
+      :Number.isFinite(Number(currentSupport?.y))&&currentSupport?.y!=null?Number(currentSupport.y)
+        :Number(deps.playerMesh?.position?.y)||0; // Never choose the highest overlapping floor under the player's X/Z.
     const midpoint = (endpoints.top.y + endpoints.bottom.y) * .5;
     const target = currentY >= midpoint ? endpoints.bottom : endpoints.top;
     const deltaY=Math.abs(target.y-currentY);
@@ -310,6 +317,15 @@
       for (let index = 0; index < controls.length; index++) {
         const control = controls[index];
         if (!control || (typeof control.onPress !== 'function' && typeof control.onHoldStart !== 'function')) continue;
+        // Floor-local controls on stacked 2D layers must not show up through
+        // an upper deck or trigger a different story's brazier from below.
+        // Older V50 controls have no floorY and retain their legacy range.
+        if(Number.isFinite(Number(control.floorY))&&control.floorY!==null&&control.floorY!==undefined){
+          const physicalY=window.DevRandomRuin?.getPlayerGroundSupportY?.(); // Floor checks use real supported feet, not the landing/sinking animation's presentation Y.
+          const presentedY=window.DevRandomRuin?.getPlayerSupportY?.();
+          const supportY=typeof physicalY==='number'&&Number.isFinite(physicalY)?physicalY:presentedY;
+          if(!Number.isFinite(supportY)||Math.abs(supportY-Number(control.floorY))>.9)continue;
+        }
         const kind = String(control.kind || 'interactive').toLowerCase();
         // Glyphs and ignition props are intentionally hit-driven. Never leak
         // the generator's DEV toggle into the ordinary interaction list.
@@ -350,13 +366,14 @@
   // Rows that are not aim targets: a swinging rope is caught by proximity,
   // riding controls follow the player, and the exit is a spot, not an object.
   const AMBIENT_KINDS = new Set(['ropegrab', 'roperelease', 'ropebrake', 'exit']);
+  const PROXIMITY_DOOR_KINDS = new Set(['transitdoor', 'v50nativetransitdoor']); // Both ordinary and upper-story hallway doors must offer an action from either side, even without reticle focus.
   const promptAnchor = new THREE.Object3D(); // One plain anchor (no scale/rotation) so the list sits at camera height beside what is aimed at, never at an object's pivot (door pivots sit at the top of the frame).
   promptAnchor.name = 'dev_ruin_interaction_prompt_anchor';
   let focusDebug = null;
 
   // Ledge climbing: parity with the game's cliff climb (same scripted hop
-  // animation), for ruin ledges too tall to step onto (0.42u step limit) but
-  // within reach — e.g. a lowered V50 dais still stands ~1.5u proud.
+  // animation), but only for obstacles above an easy ordinary jump.
+  // The step-height floor remains configurable; PlayerJump owns the jump-height cutoff.
   const LEDGE_MIN_RISE = .44;
   const LEDGE_MAX_RISE = 1.75;
   const LEDGE_REACH = 1.35; // How far ahead of the player the ledge edge may be.
@@ -375,9 +392,11 @@
     const player = playerWorldPosition();
     const facing = Number(deps?.player?.angle);
     if (!player || deps?.player?.climbing) return null;
-    const baseY = Number(window.DevRandomRuin?.getPlayerSupportY?.());
-    const floorY = Number.isFinite(baseY) ? baseY : player.y;
-    const maxRise = Math.max(cfg('climb.ledgeMaxRise', LEDGE_MAX_RISE), Number(window.DevRandomRuinRopeRewards?.lavaClimbRise?.(player)) || 0); // Wading in basin lava: the rim is always climbable (no teleport out).
+    const physicalY = window.DevRandomRuin?.getPlayerGroundSupportY?.(); // Climb vs jump must use supported feet, not the ruin's smoothed presentation height.
+    const presentedY = window.DevRandomRuin?.getPlayerSupportY?.();
+    const floorY = Number.isFinite(physicalY) ? physicalY : Number.isFinite(presentedY) ? presentedY : player.y;
+    const minClimbRise = Math.max(cfg('climb.ledgeMinRise', LEDGE_MIN_RISE), window.PlayerJump?.easyJumpRise ?? 0); // Low standable objects belong to free jumping, not the ruin mantle animation.
+    const maxRise = Math.max(cfg('climb.ledgeMaxRise', LEDGE_MAX_RISE), Number(window.DevRandomRuinRopeRewards?.lavaClimbRise?.({ x:player.x, y:floorY, z:player.z })) || 0); // Lava escape must use the same physical floor height as climb targeting.
     let best = null;
     for (let i = 0; i < 16; i++) {
       const angle = i * Math.PI / 8, dx = Math.cos(angle), dz = Math.sin(angle);
@@ -387,7 +406,7 @@
         const support = DS.sampleSupport?.(x, z, { minY:floorY - 8, maxY:floorY + maxRise + .05, pad:.02 });
         const rise = Number(support?.y) - floorY;
         if (!(rise > .2)) { if (!openAt(x, z, .05) && t > .3) break; continue; } // Solid wall before any ledge: nothing to climb here.
-        if (rise < cfg('climb.ledgeMinRise', LEDGE_MIN_RISE) || rise > maxRise) break; // A step (walkable) or a wall too tall to climb.
+        if (rise <= minClimbRise || rise > maxRise) break; // Easy jumps stay jumps; taller reachable ledges still use the mantle.
         if (window.DevRandomRuinSimplePuzzles?.isNoClimbSurface?.(support.id)) break; // Rope platforms/balconies/vaults: reached only by rope.
         if (/^devruin-mech-/.test(String(support.id || ''))) break; // Puzzle machinery (a raised dais the glyphs bring down, bridges, stairs) moves only through its puzzle.
         const land = { x:x + dx * .45, z:z + dz * .45 };
@@ -448,7 +467,9 @@
   // interaction ray picks one aimed object; only its actions are listed.
   function focusRows(rows) {
     const ambient = rows.filter(row => AMBIENT_KINDS.has(row.kind));
-    const aimed = rows.filter(row => !AMBIENT_KINDS.has(row.kind));
+    const nearbyDoor = rows.filter(row => PROXIMITY_DOOR_KINDS.has(row.kind))
+      .sort((a, b) => a.distance - b.distance)[0] || null; // Only one nearby door may claim Action 1; never choose a door on another story (providerRows already filters floorY).
+    const aimed = rows.filter(row => !AMBIENT_KINDS.has(row.kind) && !PROXIMITY_DOOR_KINDS.has(row.kind));
     const owners = [...new Set(aimed.map(row => row.owner).filter(Boolean))];
     const candidates = owners.map(owner => ({ type:'devRuinInteraction', id:owner.uuid || owner.id, data:owner, box:ownerBox(owner) })).filter(candidate => candidate.box);
     let focus = candidates.length ? window.RangedWeapons?.focusCandidates?.(candidates, 6) || null : null;
@@ -469,8 +490,9 @@
     focusDebug = { candidates:candidates.length, focused:focusedOwner?.name || null, point:focus?.point ? { x:+focus.point.x.toFixed(2), y:+focus.point.y.toFixed(2), z:+focus.point.z.toFixed(2) } : null, hasRay:!!hasRay };
     if (focusedOwner) window.DebugHitboxes?.noteInteractionFocus?.(focus);
     const chosen = focusedOwner ? aimed.filter(row => row.owner === focusedOwner) : [];
-    placePromptAnchor(focusedOwner, focus?.point || null, chosen.length ? chosen : ambient);
-    return [...chosen, ...ambient];
+    const available = nearbyDoor ? [nearbyDoor, ...chosen, ...ambient] : [...chosen, ...ambient]; // Closed hallway doors do not depend on camera alignment; puzzle-gated stone doors are still handled by their puzzle state.
+    placePromptAnchor(focusedOwner || nearbyDoor?.owner, focus?.point || null, available);
+    return available;
   }
 
   function placePromptAnchor(owner, aimPoint, rows) {
@@ -505,7 +527,11 @@
         touchIcon:'🪜',
         owner:ladderHit.ladder,
         distance:ladderHit.distance,
-        onPress:() => climbLadder(ladderHit.ladder),
+        onPress:()=>{
+          const reach=window.DevRandomRuinHitPuzzles?.distanceToWorldObject?.(ladderHit.ladder);
+          if(Number.isFinite(reach)&&reach>LADDER_RANGE)return false; // A cached mobile/controller prompt cannot climb another story after the player moves.
+          return climbLadder(ladderHit.ladder);
+        },
         seenAt:now,
         source:'semantic-ladder',
       });

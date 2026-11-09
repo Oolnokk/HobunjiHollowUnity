@@ -3,8 +3,9 @@
 // movement system.
 //
 // Porches are derived from House Piece Author extension geometry. Furniture
-// uses a THREE.Box3 calculated from the complete rendered object and is enabled
-// per placed instance with `walkableElevation: true` in the map JSON.
+// uses a THREE.Box3 calculated from the rendered object (or explicitly marked
+// authored support parts) and is enabled per placed instance with
+// `walkableElevation: true` in the map JSON.
 //
 // The player receives the support lift through the existing
 // PlayerBodyTransformComposer channel. Other systems can use
@@ -148,7 +149,12 @@
     if (!object || !window.THREE?.Box3) return null;
     try {
       object.updateWorldMatrix?.(true, true);
-      const box = new THREE.Box3().setFromObject(object); // Full rendered geometry is intentionally the collider source.
+      const supportParts = [...(object.userData?.meshById?.values?.() || [])].filter(mesh => mesh.userData?.authoredPart?.walkableElevation === true); // Authored stage platform excludes its taller decorative rail/posts from standing height.
+      const box = new THREE.Box3().setFromObject(object); // Complete rendered geometry remains the default for existing furniture.
+      if (supportParts.length) {
+        box.makeEmpty();
+        for (const mesh of supportParts) box.expandByObject(mesh);
+      }
       if (box.isEmpty()) return null;
       const baseY = finite(box.min.y, NaN);
       const topY = finite(box.max.y, NaN);

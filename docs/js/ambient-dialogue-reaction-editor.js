@@ -9,7 +9,6 @@
     ['trained', 'Well trained / direct greeting'],
     ['familiar', 'Some training'],
     ['wary', 'Untrained / wary'],
-    ['recognition', 'One-time recognition conversation'],
   ]); // Drives the repeated animal-role authoring controls.
   const SIZE_REACTION_TIERS = Object.freeze([
     ['sizeTwoLarger', 'Two sizes larger', 'Small species bred Large: the biggest-species reaction.'],
@@ -42,11 +41,17 @@
     return String(value || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
   }
   function reactionLineText(value) { return Array.isArray(value) ? value.join('\n') : ''; }
+  function stripLegacyRecognition(config) {
+    for (const profile of Object.values(config?.profiles || {})) {
+      if (profile?.animal) delete profile.animal.recognition; // Old imports may contain retired one-time recognition copy; never export or recreate it.
+    }
+    return config;
+  }
   function safeId(value) {
     return String(value || '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
   }
   function defaultProfileId() {
-    const configured = String(reactionState.config?.defaultProfile || ''); // Current inheritance profile is preferred when it still exists.
+    const configured = String(reactionState.config?.defaultProfile || ''); // This personality is assigned only to NPCs without an explicit profile.
     if (configured && reactionState.config?.profiles?.[configured]) return configured;
     return Object.keys(reactionState.config?.profiles || {})[0] || 'neighborly';
   }
@@ -97,7 +102,7 @@
   }
 
   function poolEditor(path, label, value, help = '') {
-    return `<label class="field"><b>${esc(label)}</b><textarea class="compactText" data-reaction-path="${esc(path)}" placeholder="One line per row · blank inherits default profile">${esc(reactionLineText(value))}</textarea>${help ? `<span class="muted">${esc(help)}</span>` : ''}</label>`;
+    return `<label class="field"><b>${esc(label)}</b><textarea class="compactText" data-reaction-path="${esc(path)}" placeholder="One line per row · blank = no reaction">${esc(reactionLineText(value))}</textarea>${help ? `<span class="muted">${esc(help)}</span>` : ''}</label>`;
   }
   function animalTierEditor(profile, tier, label) {
     return `<details class="card"><summary><b>${esc(label)}</b></summary><div class="grid" style="margin-top:10px">${ROLES.map(([role, roleLabel]) => poolEditor(`animal|${tier}|${role}`, roleLabel, profile.animal?.[tier]?.[role])).join('')}</div></details>`;
@@ -145,17 +150,17 @@
       return renderReactionProfile();
     }
     const profile = ensureProfileShape(selected.profile); // Missing optional pools are materialized only when the profile is edited/rendered.
-    const isDefault = selected.id === defaultProfileId(); // Default personality cannot be deleted because blank sub-pools inherit from it.
+    const isDefault = selected.id === defaultProfileId(); // The fallback personality for unassigned NPCs cannot be deleted.
     const profileOptions = profileEntries().map(({ id, profile: item }) => `<option value="${esc(id)}"${id === defaultProfileId() ? ' selected' : ''}>${esc(item?.label || id)} (${esc(id)})</option>`).join('');
 
     $('editor').innerHTML = `<div class="card">
       <div class="row"><h2>NPC Reaction Personalities</h2><span class="pill">${esc(selected.id)}</span><span class="spacer"></span><button id="newReactionProfile" class="subtle">+ New personality</button><button id="deleteReactionProfile" class="subtle"${isDefault ? ' disabled' : ''}>Delete</button></div>
-      <div class="muted">These pools replace hardcoded NPC pet/mount copy and the old separate silliness-reactions file. Placeholders for animal lines: <code>{animalName}</code>, <code>{species}</code>. Blank pools inherit from the default personality.</div>
+      <div class="muted">These pools replace hardcoded NPC pet/mount copy and the old separate silliness-reactions file. Placeholders for animal lines: <code>{animalName}</code>, <code>{species}</code>. Blank reaction fields are silent. The default personality applies only to NPCs with no explicit assignment.</div>
       <div class="grid" style="margin-top:10px"><label class="field">Personality name<input id="reactionProfileLabel" value="${esc(profile.label || selected.id)}"></label><label class="field">Default personality<select id="reactionDefaultProfile">${profileOptions}</select></label></div>
     </div>
     ${assignmentEditor()}
     <div class="card"><h3>Animal reactions</h3><div class="muted">Recognized is used for ordinary ambient greetings once this NPC knows the individual animal. The other tiers are role-specific.</div>${poolEditor('animal|recognized', 'Recognized animal greetings', profile.animal.recognized, 'Applies to mounts, companions, and shoulder pets after recognition.')}</div>
-    <div class="card"><h3>Rare size reactions</h3><div class="muted">These override ordinary ambient pet copy when a bred Size differs from the species default. Recognition conversations keep their own lines. Blank pools inherit from the default personality.</div><div class="grid" style="margin-top:10px">${SIZE_REACTION_TIERS.map(([tier, label, help]) => poolEditor(`animal|${tier}`, label, profile.animal?.[tier], help)).join('')}</div></div>
+    <div class="card"><h3>Rare size reactions</h3><div class="muted">These override ordinary ambient pet copy when a bred Size differs from the species default. Leave an unwanted size reaction blank to keep the NPC silent for that case.</div><div class="grid" style="margin-top:10px">${SIZE_REACTION_TIERS.map(([tier, label, help]) => poolEditor(`animal|${tier}`, label, profile.animal?.[tier], help)).join('')}</div></div>
     ${ANIMAL_TIERS.map(([tier, label]) => animalTierEditor(profile, tier, label)).join('')}
     ${SOCIAL_CATEGORIES.map(([category, label]) => socialEditor(profile, category, label)).join('')}`;
 
@@ -224,6 +229,7 @@
 
   function downloadReactionConfig() {
     if (!reactionState.config) return;
+    stripLegacyRecognition(reactionState.config); // Sanitize every profile before exporting, even ones not opened in this editor session.
     const blob = new Blob([JSON.stringify(reactionState.config, null, 2) + '\n'], { type: 'application/json' }); // Exported profile JSON is ready to replace the repository config verbatim.
     const link = document.createElement('a'); // Temporary download anchor follows the base editor's existing export pattern.
     link.href = URL.createObjectURL(blob);
@@ -258,7 +264,7 @@
         const parsed = JSON.parse(await fileInput.files[0].text()); // Imported profile document replaces only editor reaction state after minimal shape validation.
         if (!parsed?.profiles || !Object.keys(parsed.profiles).length) throw new Error('No reaction profiles found.');
         parsed.assignments ||= {};
-        reactionState.config = parsed;
+        reactionState.config = stripLegacyRecognition(parsed);
         reactionState.selectedProfile = parsed.profiles[reactionState.selectedProfile] ? reactionState.selectedProfile : defaultProfileId();
         reactionState.error = null;
         reactionState.loading = false;
@@ -279,7 +285,7 @@
       const config = await response.json(); // Parsed profile config is isolated from the base ambient-dialogue state object.
       if (!config?.profiles || !Object.keys(config.profiles).length) throw new Error('No reaction profiles found.');
       config.assignments ||= {};
-      reactionState.config = config;
+      reactionState.config = stripLegacyRecognition(config);
       reactionState.selectedProfile = config.defaultProfile && config.profiles[config.defaultProfile] ? config.defaultProfile : Object.keys(config.profiles)[0];
       reactionState.error = null;
     } catch (error) {

@@ -140,6 +140,16 @@
       if (heightTiles != null) break;
     }
     if (heightTiles == null) return null;
+    const halfTileX=positive(data.projectileCoverHalfXTiles); // Explicit thin walls need an oriented world-axis box, not an over-wide circular cover approximation.
+    const halfTileZ=positive(data.projectileCoverHalfZTiles);
+    if(halfTileX!=null&&halfTileZ!=null){
+      return {
+        heightTiles,halfTileX,halfTileZ,
+        kind:data.projectileCoverKind||data.kind||data.type||'object',
+        key:data.furnitureKey||data.objectType||node.name||'(semantic cover)',
+        source:'explicit-aabb-metadata',
+      };
+    }
     let radiusTiles = null;
     for (const field of EXPLICIT_RADIUS_FIELDS) {
       radiusTiles = positive(data[field]);
@@ -217,7 +227,7 @@
     // other candidate gets a real, finite top so a shot arcing above it
     // (e.g. toward a player up a tree) is free to clear it instead of
     // being blocked by an object nowhere near that height.
-    const bottomY = transform.y;
+    const bottomY = transform.y + finite(node.userData?.projectileCoverBottomOffsetTiles) * Math.abs(transform.sy);
     const topY = heightWorld === Infinity ? Infinity : bottomY + heightWorld;
     if (semantic.halfTileX != null || semantic.halfTileZ != null) {
       return {
@@ -296,10 +306,10 @@
     lastRebuildMs = Number((performance.now() - startedAt).toFixed(2));
   }
 
-  function ensureCandidates() {
-    if (!deps || !options.enabled || !options.projectiles) return false;
+  function ensureCandidates(forSight = false) {
+    if (!deps || (!forSight && (!options.enabled || !options.projectiles))) return false;
     const combat = !!deps.isCombatActive?.();
-    if (!combat) {
+    if (!forSight && !combat) {
       cachedCombat = false;
       return false;
     }
@@ -419,8 +429,8 @@
     return vertical ? vertical.enter : null;
   }
 
-  function segmentHit(start, end, radiusWorld = 0) {
-    if (!deps || !ensureCandidates()) return null;
+  function segmentHit(start, end, radiusWorld = 0, forSight = false) {
+    if (!deps || !ensureCandidates(forSight)) return null;
     const startedAt = performance.now();
     const projectileRadius = Math.max(0, finite(radiusWorld));
     const nearby = querySegmentCandidates(start, end, projectileRadius);
@@ -461,6 +471,23 @@
     };
   }
 
+  // Read-only walking/jumping cover query. It intentionally uses the same
+  // authored/procedural furniture bounds as projectiles, even when combat is
+  // inactive or projectile collision is disabled by the player's settings.
+  function movementCoverNear(x, z, radius = 0.2) {
+    if (!deps || !Number.isFinite(x) || !Number.isFinite(z)) return [];
+    if (deps.getActiveScene?.() !== cachedScene) rebuild();
+    return querySegmentCandidates({ x, z }, { x, z }, Math.max(0, radius))
+      .filter(candidate => {
+        if (candidate.node?.visible === false || !candidate.node?.parent) return false;
+        if (candidate.shape === 'aabb') {
+          return Math.abs(candidate.x - x) <= candidate.halfX + radius
+            && Math.abs(candidate.z - z) <= candidate.halfZ + radius;
+        }
+        return Math.hypot(candidate.x - x, candidate.z - z) <= candidate.radius + radius;
+      });
+  }
+
   function debugVolumes(x, z, radius = 8) {
     if (!deps || !options.enabled || !options.projectiles) return [];
     const scene = deps.getActiveScene?.(); // Debugging can inspect cover outside combat without enabling gameplay collision.
@@ -497,8 +524,10 @@
     setOptions,
     invalidate,
     segmentHit,
+    segmentSightHit: (start, end, radiusWorld = 0) => segmentHit(start, end, radiusWorld, true), // NPC perception must retain semantic cover even when projectile collision is disabled or combat has not started.
     debugSnapshot,
     debugVolumes,
+    movementCoverNear, // Reuses the exact cover heights for ordinary jump clearance and landings.
     constants: { SPATIAL_CELL_TILES, TREE_HALF_TILE, HEAD_CACHE_MS },
   };
 })();

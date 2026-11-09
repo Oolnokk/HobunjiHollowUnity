@@ -16,7 +16,12 @@
   const ghostRoots = new WeakMap();
   const glowProviders = new Map();
   const textureCacheBySource = new WeakMap();
+  const textureUsers = new WeakMap(); // Counts cloned materials that currently share each generated spectral texture.
+  const textureCacheEntries = new WeakMap(); // Lets retiring actors evict unused generated textures without touching shared source art.
   const cameraRight = THREE ? new THREE.Vector3() : null;
+  const cameraPosition = THREE ? new THREE.Vector3() : null; // Reused camera position for ghost-glow depth checks.
+  const cameraForward = THREE ? new THREE.Vector3() : null; // Reused camera direction for ghost-glow depth checks.
+  const lightToSource = THREE ? new THREE.Vector3() : null; // Reused camera-to-light vector; avoids allocations per glow.
 
   let lightingDeps = null;
   let lastGlowDrawAt = 0;
@@ -78,6 +83,7 @@
       texture.needsUpdate = true;
       texture.userData = { ...(sourceTexture.userData || {}), hobunjiGhostifyOwned: true };
       byColor.set(cacheKey, texture);
+      textureCacheEntries.set(texture, { byColor, cacheKey });
       return texture;
     } catch (error) {
       window.__farmLog?.(`[ghostify] texture fill fallback: ${error.message}`, 'warn', 'visual');
@@ -88,10 +94,13 @@
   function cloneGhostMaterial(source, options) {
     if (!source?.clone) return source;
     const material = source.clone();
+    material.onBeforeCompile = source.onBeforeCompile; // Preserve garment overlay masks and depth-bias uniforms when the army turns spectral.
+    material.customProgramCacheKey = source.customProgramCacheKey;
     const color = normalizedColor(options.color);
     const ghostTexture = source.map ? recoloredTexture(source.map, options.color) : null;
     if (ghostTexture) {
       material.map = ghostTexture;
+      textureUsers.set(ghostTexture, (textureUsers.get(ghostTexture) || 0) + 1);
       material.color?.set?.(0xffffff);
     } else {
       material.color?.copy?.(color);
@@ -138,14 +147,28 @@
     return handle;
   }
 
-  function restore(root) {
+  function restore(root, options = {}) {
     if (!root?.traverse) return false;
     let restored = false;
     root.traverse(object => {
       const original = originalMaterials.get(object);
       if (!original) return;
       const ghosts = generatedMaterials.get(object) || [];
-      for (const material of ghosts) material?.dispose?.();
+      for (const material of ghosts) {
+        const texture = material?.map; // Generated maps may be shared between several independently ghostified roots.
+        if (textureCacheEntries.has(texture)) {
+          const remaining = Math.max(0, (textureUsers.get(texture) || 0) - 1); // Only the last user can release its GPU texture.
+          textureUsers.set(texture, remaining);
+          if (options.disposeTextures === true && remaining === 0) {
+            const entry = textureCacheEntries.get(texture); // Remove the dead map so later rematerialization creates a fresh usable texture.
+            entry.byColor.delete(entry.cacheKey);
+            textureCacheEntries.delete(texture);
+            textureUsers.delete(texture);
+            texture.dispose?.();
+          }
+        }
+        material?.dispose?.();
+      }
       object.material = original;
       originalMaterials.delete(object);
       generatedMaterials.delete(object);
@@ -177,12 +200,33 @@
     if (!lightingDeps?.camera || !lightingDeps?.worldToOverlay || !cameraRight) return 0;
     cameraRight.setFromMatrixColumn(lightingDeps.camera.matrixWorld, 0);
     const center = lightingDeps.worldToOverlay(light.x, light.y, light.z);
+    if (!Number.isFinite(center?.x) || !Number.isFinite(center?.y)) return 0;
     const edge = lightingDeps.worldToOverlay(
       light.x + cameraRight.x * radiusTiles,
       light.y + cameraRight.y * radiusTiles,
       light.z + cameraRight.z * radiusTiles,
     );
-    return center?.visible ? Math.hypot(edge.x - center.x, edge.y - center.y) : 0;
+    return Math.hypot(edge.x - center.x, edge.y - center.y);
+  }
+
+  function lightMaskIntersectsViewport(center, screenRadius, light) {
+    const worldRadius = Number(light.radiusTiles);
+    if (!Number.isFinite(center?.x) || !Number.isFinite(center?.y) || !(screenRadius > 0) || !Number.isFinite(screenRadius)) return false;
+    if (!(worldRadius > 0) || !Number.isFinite(worldRadius)) return false;
+    const camera = lightingDeps.camera;
+    camera.getWorldPosition(cameraPosition);
+    camera.getWorldDirection(cameraForward);
+    lightToSource.set(light.x, light.y, light.z).sub(cameraPosition);
+    const depth = lightToSource.dot(cameraForward);
+    const near = Number.isFinite(camera.near) ? camera.near : 0;
+    const far = Number.isFinite(camera.far) ? camera.far : Infinity;
+    if (depth <= 0 || depth + worldRadius < near || depth - worldRadius > far) return false;
+    const rect = lightingDeps.getThreeRect?.();
+    const width = Number(rect?.width || lightingDeps.lctx?.canvas?.clientWidth || lightingDeps.lctx?.canvas?.width);
+    const height = Number(rect?.height || lightingDeps.lctx?.canvas?.clientHeight || lightingDeps.lctx?.canvas?.height);
+    return width > 0 && height > 0
+      && center.x + screenRadius >= 0 && center.x - screenRadius <= width
+      && center.y + screenRadius >= 0 && center.y - screenRadius <= height;
   }
 
   function drawGlowOverlay() {
@@ -198,17 +242,19 @@
     const ctx = lightingDeps.lctx;
     const projected = [];
     for (const light of lights) {
+      const visibility = light.keepVisibleAtDistance === true ? 1
+        : (window.CloudForestFog?.outdoorLightVisibilityAt?.(light.x, light.y, light.z, Number(light.radiusTiles)) ?? 1); // Ordinary ghost halos fade like other outdoor lights; explicitly authored directional beacons are exempt.
+      if (visibility <= 0) continue;
       const center = lightingDeps.worldToOverlay(light.x, light.y, light.z);
-      if (!center?.visible) continue;
       const radius = lightScreenRadius(light, Number(light.radiusTiles));
-      if (!(radius > 0)) continue;
-      projected.push({ light, center, radius });
+      if (!lightMaskIntersectsViewport(center, radius, light)) continue;
+      projected.push({ light, center, radius, visibility }); // Retain one distance factor for the darkness and glow passes.
     }
 
     ctx.save();
     ctx.globalCompositeOperation = 'destination-out';
-    for (const { light, center, radius } of projected) {
-      const intensity = clamp(Number(light.intensity ?? 0.75), 0, 1);
+    for (const { light, center, radius, visibility } of projected) {
+      const intensity = clamp(Number(light.intensity ?? 0.75) * visibility, 0, 1);
       const gradient = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, radius);
       gradient.addColorStop(0, `rgba(0,0,0,${0.62 * intensity})`);
       gradient.addColorStop(0.35, `rgba(0,0,0,${0.36 * intensity})`);
@@ -220,12 +266,12 @@
     }
 
     ctx.globalCompositeOperation = 'screen';
-    for (const { light, center, radius } of projected) {
+    for (const { light, center, radius, visibility } of projected) {
       const color = normalizedColor(light.color || DEFAULT_COLOR);
       const r = Math.round(color.r * 255);
       const g = Math.round(color.g * 255);
       const b = Math.round(color.b * 255);
-      const intensity = clamp(Number(light.intensity ?? 0.75), 0, 1);
+      const intensity = clamp(Number(light.intensity ?? 0.75) * visibility, 0, 1);
       const gradient = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, radius * 0.9);
       gradient.addColorStop(0, `rgba(${r},${g},${b},${0.16 * intensity})`);
       gradient.addColorStop(0.45, `rgba(${r},${g},${b},${0.07 * intensity})`);

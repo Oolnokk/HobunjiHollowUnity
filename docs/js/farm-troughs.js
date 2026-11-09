@@ -114,7 +114,7 @@
 
   function _sleepModelMetrics(kind, genotype) {
     const widthByKind = window.SCRATCHBONES_CONFIG?.game?.livestock?.animalWidths || {};
-    const modelWidth = kind === 'uumkaoii' ? 1.275 : (Number(widthByKind[kind]) || 1.7);
+    const modelWidth = kind === 'uumkaoii' ? 1.275 * (600 / 1375) / (451 / 641) : (Number(widthByKind[kind]) || 1.7); // Match standing Uumkao'ii dimensions instead of making sleeping animals taller.
     const modelHeight = kind === 'uumkaoii' ? modelWidth * (451 / 641) : modelWidth * (600 / 1375);
     const sizeScale = window.CreatureGenetics?.creatureSizeScale?.(kind, genotype) || { x: 1, y: 1 };
     const authoredGroundOffset = window.CreatureGenetics?.creatureGroundOffset?.(kind, genotype);
@@ -396,8 +396,8 @@
 (() => {
   'use strict';
   if (window.LivestockNursery) return;
-  const nurserySrc = 'js/livestock-nursery.js?v=20261016h443470a';
-  const bridgeSrc = 'js/livestock-nursery-install-bridge.js?v=20261016h0975406';
+  const nurserySrc = 'js/livestock-nursery.js?v=20261107flyers2';
+  const bridgeSrc = 'js/livestock-nursery-install-bridge.js?v=20261107flyers2';
 
   if (document.readyState === 'loading') {
     document.write(`<script src="${nurserySrc}"><\/script>`);

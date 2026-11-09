@@ -265,6 +265,18 @@
     'mashtzarr::male': [-0.3080816783597182, 0.8820611278141346, 0],
     'mashtzarr::female': [-0.21765356423931137, 0.29498687183448, 0],
   });
+  const LEGACY_POSTERIOR_FLOORS = Object.freeze({
+    'tletingan::male': 24.829594593937666,
+    'engh-sho::male': 40.46344209891254,
+    'mao-ao::male': 37.31351872723915,
+    'mao-ao::female': 40.198007305794635,
+    'kenkari::male': 13.133738099540614,
+    'kenkari::female': 18.49675435046502,
+    'tletingan::female': 21.62644067848934,
+    'mashtzarr::male': 28.18802021075617,
+    'mashtzarr::female': 29.459673223780613,
+    'engh-sho::female': 41.16182006615896,
+  }); // Exact stock floor-relative posterior values superseded by the 20%-below-portrait preview calibration.
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
   const sameNumber = (a, b, epsilon = 1e-9) => Number.isFinite(Number(a)) && Number.isFinite(Number(b)) && Math.abs(Number(a) - Number(b)) <= epsilon;
   const samePosition = (position, tuple) => !!position && tuple.every((value, index) => sameNumber(position[['x','y','z'][index]], value));
@@ -299,6 +311,10 @@
       if (matchesAny(right, fingerprints.right)) stale.push(`${key}.rightHandShoulder`);
       if (matchesAny(perch, fingerprints.perch)) stale.push(`${key}.shoulderPerch`);
     }
+    for (const [key, legacyFloor] of Object.entries(LEGACY_POSTERIOR_FLOORS)) {
+      const current = Number(live?.characters?.[key]?.posteriorRule?.heightPercentFromFloor);
+      if (sameNumber(current, legacyFloor)) stale.push(`${key}.posterior`);
+    }
     return stale;
   }
 
@@ -320,6 +336,12 @@
       if (perchStale && canonical.anchors?.shoulderPerch) profile.anchors.shoulderPerch = clone(canonical.anchors.shoulderPerch);
       if ((leftStale || rightStale) && canonical.handShoulderRule) profile.handShoulderRule = clone(canonical.handShoulderRule);
       if (perchStale && canonical.shoulderPerchRule) profile.shoulderPerchRule = clone(canonical.shoulderPerchRule);
+    }
+    for (const [key, legacyFloor] of Object.entries(LEGACY_POSTERIOR_FLOORS)) {
+      const profile = output.characters[key];
+      const canonical = masterCharacters[key];
+      if (!profile || !canonical || !sameNumber(profile.posteriorRule?.heightPercentFromFloor, legacyFloor)) continue;
+      profile.posteriorRule = clone(canonical.posteriorRule);
     }
     return output;
   }

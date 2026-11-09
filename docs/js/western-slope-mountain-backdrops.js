@@ -1,45 +1,68 @@
 (() => {
   'use strict';
 
-  const WESTERN_SLOPE_ID = 'map_western_slope'; // Used to scope the stack and author overrides to Western Slope.
-  const GROUP_NAME = 'WesternSlopeMountainBackdrops'; // Used for scene duplicate detection and editor lookup.
-  const AUTHOR_STORAGE_KEY = 'hobunjiWesternSlopeMountainBackdrops.v1'; // Used by the background author and live runtime on the same browser.
-  const ASSET_URLS = Object.freeze(['assets/backdrops/bd_mountains_1.png','assets/backdrops/bd_mountains_2.png','assets/backdrops/bd_mountains_3.png']); // Near-to-far authored PNGs.
-  const MIN_WIDTH_MULTIPLIER = 2.75; // Used to keep every layer wider than the wilderness.
-  const MIN_HEIGHT_MULTIPLIER = 1.6; // Used to keep every layer taller than the wilderness.
-  const WEST_EDGE_OFFSET_MULTIPLIER = 0.12; // Used for the near layer's offset beyond the west edge.
-  const WEST_LAYER_GAP_MULTIPLIER = 0.85; // Used for equal deep spacing between layers.
+  const WESTERN_SLOPE_ID = 'map_western_slope'; // Used to scope the rock ridges and author overrides to Western Slope.
+  const BACKGROUND_MAX_DEPTH_NDC = 1 - 5 * (2 / 65535); // Keep the ridges in front of cloud masks by at least one 16-bit depth step.
+  const BACKGROUND_NEAR_DEPTH_NDC = 1 - 12 * (2 / 65535); // Reserve seven distant depth steps while preserving foreground terrain occlusion out to ~155u.
+  const BACKGROUND_DEPTH_FALLOFF = 240; // Virtual eye-space distance scale keeps separate peaks ordered beyond the 200-unit camera far clip.
+  const SNOW_BOUNDARY_DEPTH_BIAS_NDC = 2 * (2 / 65535); // Two depth steps keep the fine snow/stone seam visible without surface z-fighting.
+  const SNOW_TEXTURE_URL = (() => { try { return new URL('../assets/textures/canvas.png', document.currentScript?.src || window.location?.href).href; } catch (_) { return 'assets/textures/canvas.png'; } })(); // Same authored canvas PNG as Western Slope ground snow, resolved for game and nested author-tool pages.
+  const RIDGE_LENGTH_MAP_MULTIPLIER = 2; // Each complete eight-rock ridge spans exactly twice the map's north-south edge.
+  const SNOW_CAP_HEIGHT_FRACTION = 2 / 3; // Snow covers the upper two-thirds of every rock's own vertical bounds.
+  const SNOW_BOUNDARY_LIFT = 0.00015; // Tiny local lift keeps the cap outline visible without changing either surface's geometry.
+  const GROUP_NAME = 'WesternSlopeMountainBackdrops'; // Kept stable for scene duplicate detection and editor lookup.
+  const AUTHOR_STORAGE_KEY = 'hobunjiWesternSlopeMountainBackdrops.v2'; // The uploaded November 2026 defaults supersede obsolete v1 browser overrides; subsequent author edits persist under v2.
+  const ASSET_URLS = Object.freeze(['assets/backdrops/bd_mountains_1.png','assets/backdrops/bd_mountains_2.png','assets/backdrops/bd_mountains_3.png']); // Original layer dimensions preserve the authored scenery footprint.
+  const SOURCE_SIZES = Object.freeze([{width:1200,height:500},{width:900,height:650},{width:1400,height:700}]); // Original PNG dimensions keep each replacement ridge's overall span.
+  const ROCKS_PER_LAYER = 8; // Each former mountain PNG becomes one row of eight decorative mine-style rocks.
+  const DEFAULT_RIDGE_SETTINGS = Object.freeze([
+    {visible:true, position:[-134,140,100], rotationDeg:[0,0,0], scale:[2.25,0.5,3]},
+    {visible:true, position:[-159,188,175], rotationDeg:[0,0,0], scale:[3,0.6,3]},
+    {visible:false,position:[null,null,null], rotationDeg:[0,0,0], scale:[1,1,1]},
+  ]); // Exact layer visibility/transforms from the approved map_western_slope.background-scenery.json export; shared by gameplay and the scenery author.
+  const ROCK_SEED_BASE = 1731; // Used to create deterministic but visibly different rock silhouettes.
+  const ROCK_HEIGHT_FRACTION = 0.72; // Typical peak height in the generated one-tile mine-rock geometry.
+  const ignoreRaycast = () => {}; // Decorative rocks must never intercept tool targeting or pointer queries.
+  const MIN_WIDTH_MULTIPLIER = 2.75; // Used to keep every scenery layer wider than the wilderness.
+  const MIN_HEIGHT_MULTIPLIER = 1.6; // Used to preserve the former mountain PNGs' tall vertical coverage.
+  const WEST_EDGE_OFFSET_MULTIPLIER = 0.12; // Used for the nearest ridge's offset beyond the west edge.
+  const WEST_STACK_SHIFT_MULTIPLIER = 0.25; // Used to move the complete default ridge stack west by a quarter map span.
+  const WEST_LAYER_GAP_MULTIPLIER = 0.85; // Used for equal deep spacing between ridges.
   const MIN_WEST_EDGE_OFFSET = 24; // Used so small/test maps still clear border terrain.
   const patchedBorderApis = new WeakSet(); // Used to wrap each BorderTerrain API once.
   const patchedChunkApis = new WeakSet(); // Used to wrap each WildernessChunks API once.
-  const activeByMap = new Map(); // Used to own one async backdrop record per map lifecycle.
-  const stats = { borderHookInstalls:0, chunkHookInstalls:0, buildRequests:0, completedBuilds:0, disposedBuilds:0, failedTextures:0, failedBuilds:0, lastError:null, lastLayout:null }; // Mobile/debug counters.
+  const activeByMap = new Map(); // Owns one scenery record per map lifecycle.
+  const stats = { borderHookInstalls:0, chunkHookInstalls:0, buildRequests:0, completedBuilds:0, disposedBuilds:0, failedTextures:0, failedBuilds:0, snowCapsBuilt:0, snowBoundaryLinesBuilt:0, snowTextureState:'not-requested', lastError:null, lastLayout:null }; // Mobile/debug counters include per-rock snow coverage and texture state.
 
   function log(message, level='info') {
-    const text=`[western-slope-backdrops] ${message}`;
+    const text='[western-slope-backdrops] '+message;
     if(typeof window.__farmLog==='function') window.__farmLog(text,level,'world');
     else if(level==='warn'||level==='error') console.warn(text);
     else console.debug?.(text);
   }
   function finiteOr(value,fallback=null){ if(value==null||value==='')return fallback;const n=Number(value);return Number.isFinite(n)?n:fallback; }
   function vector(raw,fallback,{positive=false,allowNull=false}={}) {
-    const src=Array.isArray(raw)?raw:[];
-    return fallback.map((fb,i)=>{if(allowNull&&(src[i]==null||src[i]===''))return fb;const v=finiteOr(src[i],fb);return positive&&!(v>0)?fb:v;});
+    const src=Array.isArray(raw)?raw:null;
+    return fallback.map((fb,i)=>{if(allowNull&&src&&i<src.length&&(src[i]==null||src[i]===''))return null;const v=finiteOr(src?.[i],fb);return positive&&!(v>0)?fb:v;});
   }
   function defaultAuthorConfig(){
-    return {schema:'hobunji_western_slope_mountain_backdrops.v1',enabled:true,layers:ASSET_URLS.map((asset,i)=>({layer:i+1,asset,visible:true,transform:{position:[null,null,null],rotationDeg:[0,90,0],scale:[1,1,1]}}))};
-  }
-  function normalizeAuthorConfig(raw){
-    const src=raw&&typeof raw==='object'?raw:{}, layers=Array.isArray(src.layers)?src.layers:[];
-    return {schema:'hobunji_western_slope_mountain_backdrops.v1',enabled:src.enabled!==false,layers:ASSET_URLS.map((asset,i)=>{
-      const layer=layers[i]&&typeof layers[i]==='object'?layers[i]:{}, t=layer.transform&&typeof layer.transform==='object'?layer.transform:{};
-      return {layer:i+1,asset,visible:layer.visible!==false,transform:{position:vector(t.position,[null,null,null],{allowNull:true}),rotationDeg:vector(t.rotationDeg,[0,90,0]),scale:vector(t.scale,[1,1,1],{positive:true})}};
+    return {schema:'hobunji_western_slope_mountain_backdrops.v1',enabled:true,layers:ASSET_URLS.map((asset,i)=>{
+      const settings=DEFAULT_RIDGE_SETTINGS[i]; // Each layer's approved preset is copied so editor changes never mutate the game's defaults.
+      return {layer:i+1,asset,visible:settings.visible,transform:{position:[...settings.position],rotationDeg:[...settings.rotationDeg],scale:[...settings.scale]}};
     })};
   }
-  function readAuthorConfig(){try{const raw=window.localStorage?.getItem?.(AUTHOR_STORAGE_KEY);return normalizeAuthorConfig(raw?JSON.parse(raw):null);}catch(error){log(`author override read failed: ${error?.message||error}`,'warn');return defaultAuthorConfig();}}
-  function saveAuthorConfig(config){const normalized=normalizeAuthorConfig(config);try{window.localStorage?.setItem?.(AUTHOR_STORAGE_KEY,JSON.stringify(normalized));}catch(error){log(`author override save failed: ${error?.message||error}`,'warn');}return normalized;}
+  function normalizeAuthorConfig(raw){
+    const src=raw&&typeof raw==='object'?raw:{}, layers=Array.isArray(src.layers)?src.layers:[], defaults=defaultAuthorConfig();
+    return {schema:'hobunji_western_slope_mountain_backdrops.v1',enabled:src.enabled!==false,layers:ASSET_URLS.map((asset,i)=>{
+      const layer=layers[i]&&typeof layers[i]==='object'?layers[i]:{}, t=layer.transform&&typeof layer.transform==='object'?layer.transform:{}, fallback=defaults.layers[i];
+      const rotationDeg=vector(t.rotationDeg,fallback.transform.rotationDeg); // New rock rows already stand upright; no PNG-facing rotation is needed.
+      if(rotationDeg[0]===0&&rotationDeg[1]===90&&rotationDeg[2]===0)rotationDeg[1]=0; // Migrate the old untouched PNG default so saved author settings do not turn rocks sideways.
+      return {layer:i+1,asset,visible:layer.visible==null?fallback.visible:layer.visible!==false,transform:{position:vector(t.position,fallback.transform.position,{allowNull:true}),rotationDeg,scale:vector(t.scale,fallback.transform.scale,{positive:true})}};
+    })};
+  }
+  function readAuthorConfig(){try{const raw=window.localStorage?.getItem?.(AUTHOR_STORAGE_KEY);return normalizeAuthorConfig(raw?JSON.parse(raw):null);}catch(error){log('author override read failed: '+(error?.message||error),'warn');return defaultAuthorConfig();}}
+  function saveAuthorConfig(config){const normalized=normalizeAuthorConfig(config);try{window.localStorage?.setItem?.(AUTHOR_STORAGE_KEY,JSON.stringify(normalized));}catch(error){log('author override save failed: '+(error?.message||error),'warn');}return normalized;}
   function clearAuthorConfig(){try{window.localStorage?.removeItem?.(AUTHOR_STORAGE_KEY);}catch(_){}return defaultAuthorConfig();}
-  function imageSize(texture){const image=texture?.image||{};return{width:Math.max(1,Number(image.naturalWidth||image.videoWidth||image.width)||1),height:Math.max(1,Number(image.naturalHeight||image.videoHeight||image.height)||1)};}
   function sourceSize(size){return{width:Math.max(1,Number(size?.width)||1),height:Math.max(1,Number(size?.height)||1)};}
   function sharedScale(sizes,span){
     const minW=span*MIN_WIDTH_MULTIPLIER,minH=span*MIN_HEIGHT_MULTIPLIER;let scale=0;
@@ -47,89 +70,397 @@
     return Math.max(scale,.001);
   }
   function resolveLayoutFromSizes(rawSizes,cols,rows,config=null){
-    const sizes=ASSET_URLS.map((_,i)=>sourceSize(rawSizes?.[i])), span=Math.max(1,Number(cols)||0,Number(rows)||0), pixelScale=sharedScale(sizes,span);
-    const edge=Math.max(MIN_WEST_EDGE_OFFSET,span*WEST_EDGE_OFFSET_MULTIPLIER),gap=span*WEST_LAYER_GAP_MULTIPLIER,zCenter=Math.max(0,Number(rows)||0)*.5;
+    const sizes=ASSET_URLS.map((_,i)=>sourceSize(rawSizes?.[i]||SOURCE_SIZES[i])),span=Math.max(1,Number(cols)||0,Number(rows)||0),pixelScale=sharedScale(sizes,span);
+    const edge=Math.max(MIN_WEST_EDGE_OFFSET,span*WEST_EDGE_OFFSET_MULTIPLIER),gap=span*WEST_LAYER_GAP_MULTIPLIER,mapLength=Math.max(1,Number(rows)||span),targetLength=mapLength*RIDGE_LENGTH_MAP_MULTIPLIER,zCenter=mapLength*.5;
     const authored=normalizeAuthorConfig(config||readAuthorConfig());
     return sizes.map((s,i)=>{
-      const width=s.width*pixelScale,height=s.height*pixelScale, layer=authored.layers[i];
-      const defaultPos=[-edge-gap*i,height*.5,zCenter], defaultRot=[0,90,0], defaultScale=[1,1,1];
+      const width=s.width*pixelScale,height=s.height*pixelScale,layer=authored.layers[i],lengthScale=targetLength/Math.max(1e-5,width);
+      const staggerOffset=i===1?targetLength:0; // The second ridge shifts by one complete doubled mountain length.
+      const defaultPos=[-edge-span*WEST_STACK_SHIFT_MULTIPLIER-gap*i,height*.5,zCenter+staggerOffset],defaultRot=[0,0,0],defaultScale=[1,1,1];
       const position=defaultPos.map((v,a)=>finiteOr(layer?.transform?.position?.[a],v));
       const rotationDeg=defaultRot.map((v,a)=>finiteOr(layer?.transform?.rotationDeg?.[a],v));
       const scale=defaultScale.map((v,a)=>{const n=finiteOr(layer?.transform?.scale?.[a],v);return n>0?n:v;});
-      return {index:i,layer:i+1,asset:ASSET_URLS[i],visible:authored.enabled!==false&&layer?.visible!==false,sourceWidth:s.width,sourceHeight:s.height,unitsPerPixel:pixelScale,width,height,position,rotationDeg,scale,x:position[0],y:position[1],z:position[2]};
+      return {index:i,layer:i+1,asset:ASSET_URLS[i],visible:authored.enabled!==false&&layer?.visible!==false,sourceWidth:s.width,sourceHeight:s.height,unitsPerPixel:pixelScale,width,height,targetLength,lengthScale,defaultPosition:defaultPos,position,rotationDeg,scale,x:position[0],y:position[1],z:position[2]};
     });
   }
-  function layoutFromTextures(textures,cols,rows,config){return resolveLayoutFromSizes(textures.map(imageSize),cols,rows,config);}
-  function applyLayer(mesh,layer){
-    if(!mesh||!layer)return;const T=window.THREE;
-    mesh.visible=layer.visible!==false;mesh.position.set(...layer.position);
-    mesh.rotation.set(T.MathUtils.degToRad(layer.rotationDeg[0]),T.MathUtils.degToRad(layer.rotationDeg[1]),T.MathUtils.degToRad(layer.rotationDeg[2]));
-    mesh.scale.set(...layer.scale);
-    Object.assign(mesh.userData,{sourcePixelScale:layer.unitsPerPixel,sourceWidth:layer.sourceWidth,sourceHeight:layer.sourceHeight,baseWorldWidth:layer.width,baseWorldHeight:layer.height,worldWidth:layer.width*layer.scale[0],worldHeight:layer.height*layer.scale[1],authoredPosition:[...layer.position],authoredRotationDeg:[...layer.rotationDeg],authoredScale:[...layer.scale]});
+  function applyLayer(group,layer){
+    if(!group||!layer)return;
+    const T=window.THREE;
+    group.visible=layer.visible!==false;
+    // Keep the base of the ridge fixed as Y scale changes; the authored Y offset remains a pure vertical translation.
+    group.position.set(layer.position[0],layer.position[1]+(layer.scale[1]-1)*layer.height*.5,layer.position[2]);
+    group.rotation.set(T.MathUtils.degToRad(layer.rotationDeg[0]),T.MathUtils.degToRad(layer.rotationDeg[1]),T.MathUtils.degToRad(layer.rotationDeg[2]));
+    const ridgeLocalDepth=Math.max(1e-5,Number(group.userData?.ridgeLocalDepth)||layer.width),lengthScale=layer.targetLength/ridgeLocalDepth;
+    group.scale.set(layer.scale[0],layer.scale[1],lengthScale*layer.scale[2]);
+    Object.assign(group.userData,{sourcePixelScale:layer.unitsPerPixel,sourceWidth:layer.sourceWidth,sourceHeight:layer.sourceHeight,baseWorldWidth:layer.width,baseWorldHeight:layer.height,targetWorldLength:layer.targetLength,ridgeLocalDepth,ridgeLengthScale:lengthScale,worldWidth:(layer.width/ROCKS_PER_LAYER)*layer.scale[0],worldNorthSouthLength:layer.targetLength*layer.scale[2],worldHeight:layer.height*layer.scale[1],authoredPosition:[...layer.position],authoredRotationDeg:[...layer.rotationDeg],authoredScale:[...layer.scale],decorativeRockCount:ROCKS_PER_LAYER,snowCapped:true,visualOnly:true});
   }
   function applyAuthorConfigToGroup(group,cols,rows,config=null){
-    if(!group)return[];const normalized=normalizeAuthorConfig(config||readAuthorConfig());
-    const sizes=ASSET_URLS.map((_,i)=>{const mesh=group.children?.find?.(c=>Number(c?.userData?.layer)===i+1);return{width:mesh?.userData?.sourceWidth||1,height:mesh?.userData?.sourceHeight||1};});
-    const layout=resolveLayoutFromSizes(sizes,cols,rows,normalized);group.visible=normalized.enabled!==false;Object.assign(group.userData,{authorConfig:normalized});
-    for(const layer of layout)applyLayer(group.children?.find?.(c=>Number(c?.userData?.layer)===layer.layer),layer);
-    stats.lastLayout=layout.map(l=>({layer:l.layer,asset:l.asset,visible:l.visible,sourceWidth:l.sourceWidth,sourceHeight:l.sourceHeight,position:[...l.position],rotationDeg:[...l.rotationDeg],scale:[...l.scale],width:l.width,height:l.height,worldWidth:l.width*l.scale[0],worldHeight:l.height*l.scale[1],unitsPerPixel:l.unitsPerPixel}));
+    if(!group)return[];
+    const normalized=normalizeAuthorConfig(config||readAuthorConfig());
+    const sizes=ASSET_URLS.map((_,i)=>{const layerGroup=group.children?.find?.(c=>Number(c?.userData?.layer)===i+1);return{width:layerGroup?.userData?.sourceWidth||SOURCE_SIZES[i].width,height:layerGroup?.userData?.sourceHeight||SOURCE_SIZES[i].height};});
+    const layout=resolveLayoutFromSizes(sizes,cols,rows,normalized);group.visible=normalized.enabled!==false;Object.assign(group.userData,{authorConfig:normalized,decorativeRockRidges:true,rocksPerLayer:ROCKS_PER_LAYER});
+    for(const layer of layout){
+      const layerGroup=group.children?.find?.(c=>Number(c?.userData?.layer)===layer.layer);
+      const record=activeByMap.get(WESTERN_SLOPE_ID); // An omitted runtime ridge can still be materialized if a later author config enables it.
+      if(layer.visible&&layerGroup&&!layerGroup.children.length&&record?.root===group){
+        addRockRidge(layer,layerGroup,record,record.snowMaterial,record.snowBoundaryMaterial);
+      }
+      applyLayer(layerGroup,layer);
+    }
+    stats.lastLayout=layout.map(l=>{const layerGroup=group.children?.find?.(c=>Number(c?.userData?.layer)===l.layer),actualLengthScale=layerGroup?.userData?.ridgeLengthScale??l.lengthScale;return{layer:l.layer,asset:l.asset,visible:l.visible,sourceWidth:l.sourceWidth,sourceHeight:l.sourceHeight,position:[...l.position],defaultPosition:[...l.defaultPosition],rotationDeg:[...l.rotationDeg],scale:[...l.scale],width:l.width,height:l.height,worldWidth:(l.width/ROCKS_PER_LAYER)*l.scale[0],worldNorthSouthLength:l.targetLength*l.scale[2],worldHeight:l.height*l.scale[1],targetLength:l.targetLength,ridgeLocalDepth:layerGroup?.userData?.ridgeLocalDepth??null,lengthScale:actualLengthScale,unitsPerPixel:l.unitsPerPixel,rocks:layerGroup?.children?.length??0,snowCapped:true};});
     return layout;
   }
 
   function disposeRecord(record){
-    if(!record||record.disposed)return false;record.disposed=true;record.cancelled=true;if(record.root?.parent)record.root.parent.remove(record.root);
+    if(!record||record.disposed)return false;
+    record.disposed=true;record.cancelled=true;
+    if(record.root?.parent)record.root.parent.remove(record.root);
     if(Array.isArray(record.scene?.items)){const i=record.scene.items.indexOf(record.root);if(i>=0)record.scene.items.splice(i,1);}
-    for(const mesh of record.meshes||[]){mesh.geometry?.dispose?.();const mats=Array.isArray(mesh.material)?mesh.material:[mesh.material];for(const m of mats)m?.dispose?.();}
-    for(const texture of record.textures||[])texture?.dispose?.();if(activeByMap.get(record.mapId)===record)activeByMap.delete(record.mapId);stats.disposedBuilds++;return true;
+    for(const mesh of record.meshes||[])mesh.geometry?.dispose?.();
+    if(record.snowMaterialBinding)window.EnvironmentSurfaceMicroPlateau?.unbindSnowTexture?.(record.snowMaterialBinding);
+    for(const material of record.materials||[])material?.dispose?.(); // Ridge-owned material instances are local; their texture maps remain shared.
+    for(const texture of record.textures||[])texture?.dispose?.();
+    if(activeByMap.get(record.mapId)===record)activeByMap.delete(record.mapId);
+    stats.disposedBuilds++;
+    return true;
   }
   function detach(mapId=WESTERN_SLOPE_ID){return disposeRecord(activeByMap.get(mapId));}
-  function assetUrl(asset,base=''){if(!base||/^(?:https?:|data:|blob:|\/)/i.test(asset))return asset;return String(base).replace(/\/?$/,'/')+String(asset).replace(/^\/+/,'');}
-  function loadTexture(url,record){
-    return new Promise((resolve,reject)=>{const T=window.THREE;if(!T?.TextureLoader){reject(new Error('THREE.TextureLoader unavailable'));return;}
-      new T.TextureLoader().load(url,texture=>{texture.userData=Object.assign({},texture.userData,{westernSlopeMountainBackdropAsset:url});texture.needsUpdate=true;if(record?.cancelled){texture.dispose?.();resolve(texture);return;}record.textures.push(texture);resolve(texture);},undefined,error=>{stats.failedTextures++;reject(error||new Error(`failed to load ${url}`));});
-    });
+  function keepInFrontOfSky(material,{snowBoundary=false}={}){
+    // A flat far-depth clamp makes every peak behind the 200-unit camera clip
+    // fight for the same pixels. Compress eye-space distance into a reserved
+    // background depth band, preserving nearer/farther rock ordering.
+    material.userData ||= {};
+    material.userData.backgroundMaxDepthNdc=BACKGROUND_MAX_DEPTH_NDC;
+    material.userData.backgroundNearDepthNdc=BACKGROUND_NEAR_DEPTH_NDC;
+    material.userData.backgroundDepthFalloff=BACKGROUND_DEPTH_FALLOFF;
+    material.onBeforeCompile=shader=>{
+      shader.uniforms.uBackgroundMaxDepth={value:BACKGROUND_MAX_DEPTH_NDC};
+      shader.uniforms.uBackgroundNearDepth={value:BACKGROUND_NEAR_DEPTH_NDC};
+      shader.uniforms.uBackgroundDepthFalloff={value:BACKGROUND_DEPTH_FALLOFF};
+      shader.uniforms.uSnowBoundaryDepthBias={value:snowBoundary?SNOW_BOUNDARY_DEPTH_BIAS_NDC:0};
+      shader.vertexShader=[
+        'uniform float uBackgroundMaxDepth;',
+        'uniform float uBackgroundNearDepth;',
+        'uniform float uBackgroundDepthFalloff;',
+        'uniform float uSnowBoundaryDepthBias;',
+        ''
+      ].join('\n')+shader.vertexShader.replace(/}\s*$/, [
+        'float backgroundDistance = max(0.0, -mvPosition.z);',
+        'float backgroundBlend = backgroundDistance / (backgroundDistance + uBackgroundDepthFalloff);',
+        'float backgroundDepth = mix(uBackgroundNearDepth, uBackgroundMaxDepth, backgroundBlend) - uSnowBoundaryDepthBias;',
+        'gl_Position.z = min(gl_Position.z, gl_Position.w * backgroundDepth);',
+        '}'
+      ].join('\n'));
+    };
+    material.customProgramCacheKey=()=>snowBoundary?'hobunji-background-layer-depth-v2-seam':'hobunji-background-layer-depth-v2';
   }
-  function materialFor(texture){const T=window.THREE,m=new T.MeshBasicMaterial({map:texture,transparent:true,alphaTest:.01,depthTest:true,depthWrite:false,side:T.FrontSide,fog:false});if('toneMapped'in m)m.toneMapped=false;m.userData=Object.assign({},m.userData,{westernSlopeMountainBackdrop:true});return m;}
+  function createBackdropMaterial(record){
+    const T=window.THREE;
+    const mineMaterial=window.OreRockTextures?.materialFor?.(T,'stone',{});
+    const material=mineMaterial?.clone?.()||new T.MeshStandardMaterial({map:mineMaterial?.map||null,color:mineMaterial?.color||0x635544,roughness:mineMaterial?.roughness??0.94});
+    material.userData=Object.assign({},material.userData,{westernSlopeMineRockBackdrop:true,visualOnly:true});
+    delete material.userData.sharedOreRockMaterial;
+    material.depthTest=true;
+    material.depthWrite=true; // Opaque rock faces must occlude each other and the snow caps regardless of render order.
+    material.side=T.DoubleSide; // Mine mounds are open terrain heightfields; distant views see both sides of their faces.
+    material.fog=false;
+    keepInFrontOfSky(material);
+    record.materials.push(material);
+    return material;
+  }
+  function appendUniqueVertex(output,vertex){
+    const last=output[output.length-1];
+    if(!last||Math.abs(last.x-vertex.x)>1e-6||Math.abs(last.y-vertex.y)>1e-6||Math.abs(last.z-vertex.z)>1e-6)output.push(vertex);
+  }
+  function interpolateAtHeight(a,b,height){
+    const t=Math.max(0,Math.min(1,(height-a.y)/(b.y-a.y)));
+    return{x:a.x+(b.x-a.x)*t,y:height,z:a.z+(b.z-a.z)*t,u:a.u+(b.u-a.u)*t,v:a.v+(b.v-a.v)*t};
+  }
+  function clipPolygonAtHeight(vertices,height,keepAbove){
+    const clipped=[];
+    for(let i=0;i<vertices.length;i++){
+      const a=vertices[i],b=vertices[(i+1)%vertices.length];
+      const insideA=keepAbove?a.y>=height:a.y<=height,insideB=keepAbove?b.y>=height:b.y<=height;
+      if(insideA)appendUniqueVertex(clipped,a);
+      if(insideA!==insideB)appendUniqueVertex(clipped,interpolateAtHeight(a,b,height));
+    }
+    if(clipped.length>1){
+      const first=clipped[0],last=clipped[clipped.length-1];
+      if(Math.abs(first.x-last.x)<1e-6&&Math.abs(first.y-last.y)<1e-6&&Math.abs(first.z-last.z)<1e-6)clipped.pop();
+    }
+    return clipped;
+  }
+  function appendPolygonTriangles(polygon,positions,uvs){
+    for(let i=1;i<polygon.length-1;i++)for(const vertex of [polygon[0],polygon[i],polygon[i+1]]){
+      positions.push(vertex.x,vertex.y,vertex.z);uvs.push(vertex.u,vertex.v);
+    }
+  }
+  function makeSplitGeometry(positions,uvs,label){
+    if(positions.length<9)return null;
+    const T=window.THREE,geometry=new T.BufferGeometry();
+    geometry.setAttribute('position',new T.Float32BufferAttribute(positions,3));
+    geometry.setAttribute('uv',new T.Float32BufferAttribute(uvs,2));
+    geometry.computeVertexNormals?.();
+    geometry.userData=Object.assign({},geometry.userData,{westernSlopeSnowCapSplit:label});
+    return geometry;
+  }
+  function stretchSnowCapUv(geometry){
+    const T=window.THREE,pos=geometry?.getAttribute?.('position');if(!pos)return false;
+    let minX=Infinity,minY=Infinity,minZ=Infinity,maxX=-Infinity,maxY=-Infinity,maxZ=-Infinity;
+    for(let i=0;i<pos.count;i++){
+      const x=pos.getX(i),y=pos.getY(i),z=pos.getZ(i);
+      minX=Math.min(minX,x);minY=Math.min(minY,y);minZ=Math.min(minZ,z);
+      maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);maxZ=Math.max(maxZ,z);
+    }
+    const useX=(maxX-minX)>=(maxZ-minZ),span=Math.max(1e-5,useX?maxX-minX:maxZ-minZ),height=Math.max(1e-5,maxY-minY),uvs=new Float32Array(pos.count*2);
+    for(let i=0;i<pos.count;i++){
+      uvs[i*2]=(useX?pos.getX(i)-minX:pos.getZ(i)-minZ)/span;
+      uvs[i*2+1]=(pos.getY(i)-minY)/height;
+    }
+    geometry.setAttribute('uv',new T.BufferAttribute(uvs,2));
+    geometry.userData=Object.assign({},geometry.userData,{naturalSurfaceUvMapping:'planar-stretch',westernSlopeSnowCapStretch:'farm-cliff-planar-stretch'});
+    return true;
+  }
+  function splitRockGeometryAtSnowLine(sourceGeometry){
+    const pos=sourceGeometry?.getAttribute?.('position');if(!pos)throw new Error('mine-rock position attribute missing');
+    const uv=sourceGeometry.getAttribute?.('uv'),index=sourceGeometry.index,triangleCount=index?index.count:pos.count;
+    const getIndex=i=>index?(index.getX?index.getX(i):index.array[i]):i;
+    let minY=Infinity,maxY=-Infinity;
+    for(let i=0;i<triangleCount;i++){const y=pos.getY(getIndex(i));minY=Math.min(minY,y);maxY=Math.max(maxY,y);}
+    const height=maxY-minY;if(!(height>1e-5))throw new Error('mine-rock height is too small for a snow cap');
+    const cutY=minY+height*(1-SNOW_CAP_HEIGHT_FRACTION);
+    const stonePositions=[],stoneUvs=[],snowPositions=[],snowUvs=[],outlinePositions=[],seenSegments=new Set();
+    const vertexAt=i=>({x:pos.getX(i),y:pos.getY(i),z:pos.getZ(i),u:uv?.getX?.(i)||0,v:uv?.getY?.(i)||0});
+    const pointKey=p=>`${Math.round(p.x*100000)},${Math.round(p.y*100000)},${Math.round(p.z*100000)}`;
+    for(let offset=0;offset+2<triangleCount;offset+=3){
+      const triangle=[vertexAt(getIndex(offset)),vertexAt(getIndex(offset+1)),vertexAt(getIndex(offset+2))];
+      appendPolygonTriangles(clipPolygonAtHeight(triangle,cutY,false),stonePositions,stoneUvs);
+      appendPolygonTriangles(clipPolygonAtHeight(triangle,cutY,true),snowPositions,snowUvs);
+      const crossings=[];
+      for(let edge=0;edge<3;edge++){
+        const a=triangle[edge],b=triangle[(edge+1)%3];
+        if((a.y<cutY&&b.y>=cutY)||(b.y<cutY&&a.y>=cutY))appendUniqueVertex(crossings,interpolateAtHeight(a,b,cutY));
+        else if(Math.abs(a.y-cutY)<1e-6&&Math.abs(b.y-cutY)<1e-6){
+          appendUniqueVertex(crossings,a);appendUniqueVertex(crossings,b);
+        }
+      }
+      if(crossings.length===2){
+        const key=[pointKey(crossings[0]),pointKey(crossings[1])].sort().join('|');
+        if(!seenSegments.has(key)){
+          seenSegments.add(key);
+          for(const point of crossings)outlinePositions.push(point.x,point.y+SNOW_BOUNDARY_LIFT,point.z);
+        }
+      }
+    }
+    const stoneGeo=makeSplitGeometry(stonePositions,stoneUvs,'stone-base'),snowGeo=makeSplitGeometry(snowPositions,snowUvs,'snow-cap');
+    if(!stoneGeo||!snowGeo){
+      stoneGeo?.dispose?.();snowGeo?.dispose?.();
+      throw new Error('mine-rock split did not produce both stone base and snow cap');
+    }
+    stretchSnowCapUv(snowGeo);
+    return{stoneGeo,snowGeo,outlinePositions,cutY,minY,maxY};
+  }
+  function createSnowCapMaterial(record){
+    const T=window.THREE,surface=window.EnvironmentSurfaceMicroPlateau,shared=surface?.getSnowMaterial?.();
+    if(shared?.clone){
+      const material=shared.clone(); // Each distant cap gets its own depth-clamped material; the shared ground snow must retain its normal terrain shader.
+      material.userData=Object.assign({},material.userData,{westernSlopeSnowCapMaterial:true,visualOnly:true});
+      material.depthTest=true;material.depthWrite=true;material.side=T.DoubleSide; // Snow must share opaque depth and face-culling policy with its stone base.
+      surface.bindSnowTexture?.(material); // The cap clone follows the canonical snow texture if the asynchronous canvas load has not finished yet.
+      keepInFrontOfSky(material);
+      record.materials.push(material);
+      stats.snowTextureState=surface.debugSnapshot?.().textureState||'shared-environment-snow';
+      record.snowMaterialBinding=material;
+      return material;
+    }
+    const material=new T.MeshBasicMaterial({color:0xffffff,map:null,side:T.DoubleSide,transparent:false,opacity:1,depthTest:true,depthWrite:true,fog:true});
+    material.userData=Object.assign({},material.userData,{westernSlopeSnowCapMaterial:true,visualOnly:true});
+    keepInFrontOfSky(material);record.materials.push(material);
+    if(typeof T.TextureLoader==='function'){
+      try{
+        const texture=new T.TextureLoader().load(SNOW_TEXTURE_URL,loaded=>{
+          let finalTexture=loaded;
+          try{
+            const tinted=window.getShadeFillCanvas?.(loaded?.image,'western-slope-snow-cap|canvas.png|white',{
+              mode:'shadeFill',rgb:[255,255,255],options:window.getPortraitTintingConfig?.()||{}
+            });
+            if(tinted)finalTexture=new T.CanvasTexture(tinted);
+          }catch(_){}
+          finalTexture.wrapS=finalTexture.wrapT=T.RepeatWrapping;
+          finalTexture.minFilter=T.LinearFilter;finalTexture.magFilter=T.LinearFilter;
+          finalTexture.generateMipmaps=false;finalTexture.needsUpdate=true;
+          material.map=finalTexture;material.needsUpdate=true;
+          if(finalTexture!==loaded)record.textures.push(finalTexture);
+          stats.snowTextureState='loaded';
+        },undefined,error=>{
+          stats.snowTextureState='load-failed:'+String(error?.message||'unknown');
+          stats.failedTextures++;log('snow-cap texture failed: '+stats.snowTextureState,'warn');
+        });
+        record.textures.push(texture);stats.snowTextureState='loading';
+      }catch(error){
+        stats.snowTextureState='load-failed:'+String(error?.message||error);
+        stats.failedTextures++;log('snow-cap texture failed: '+stats.snowTextureState,'warn');
+      }
+    }
+    return material;
+  }
+  function ensureSnowCapMipmaps(record){
+    // Ground snow deliberately uses linear filtering without mipmaps, but those
+    // high-frequency pixels shimmer when compressed onto faraway mountains.
+    // Clone the already-tinted image only after the asynchronous loader has
+    // populated it, leaving the canonical ground texture untouched.
+    if(record.disposed||!record.snowMaterial)return false;
+    const T=window.THREE,sharedSnow=window.EnvironmentSurfaceMicroPlateau?.getSnowMaterial?.(); // Existing ground-snow source; never mutate its sampler settings.
+    const source=record.snowMaterialBinding?sharedSnow?.map:record.snowMaterial.map; // Tracks delayed snow-texture loads and the standalone fallback.
+    if(!source||source===record.snowTextureSource||source===record.snowBackdropTexture||typeof source.clone!=='function'||!T.LinearMipmapLinearFilter)return false;
+    const width=Number(source.image?.naturalWidth||source.image?.width),height=Number(source.image?.naturalHeight||source.image?.height); // Dimensions determine whether WebGL1 needs a power-of-two backdrop copy.
+    if(!(width>0&&height>0&&Number.isInteger(width)&&Number.isInteger(height)))return false;
+    const isPowerOfTwo=value=>(value&(value-1))===0; // Guards mipmap compatibility on mobile/WebGL1 without altering the source texture.
+    let image=source.image; // The mountain-only texture may use a resized canvas while ground snow retains its 250x250 image.
+    if(!isPowerOfTwo(width)||!isPowerOfTwo(height)){
+      const canvas=typeof document!=='undefined'?document.createElement?.('canvas'):null; // Resizes only the distant cap's sampler image for WebGL1 compatibility.
+      if(!canvas)return false;
+      canvas.width=2**Math.ceil(Math.log2(width));canvas.height=2**Math.ceil(Math.log2(height));
+      const context=canvas.getContext?.('2d');
+      if(!context)return false;
+      context.imageSmoothingEnabled=true;
+      context.drawImage(source.image,0,0,canvas.width,canvas.height);
+      image=canvas;
+    }
+    const texture=source.clone(); // Backdrop-owned texture shares the tint but not the sampler or mipmap state.
+    if(image!==source.image)texture.image=image;
+    texture.minFilter=T.LinearMipmapLinearFilter;
+    texture.magFilter=T.LinearFilter;
+    texture.generateMipmaps=true;
+    texture.needsUpdate=true;
+    if(record.snowBackdropTexture)record.snowBackdropTexture.dispose?.();
+    record.snowBackdropTexture=texture;
+    record.snowTextureSource=source;
+    record.textures.push(texture);
+    record.snowMaterial.map=texture;
+    record.snowMaterial.needsUpdate=true;
+    stats.snowTextureState=image===source.image?'mipmapped-background-snow':'mipmapped-background-snow-pow2';
+    return true;
+  }
+  function createSnowBoundaryMaterial(record){
+    const T=window.THREE,material=new T.LineBasicMaterial({color:0x514b42,transparent:false,opacity:1,depthTest:true,depthWrite:false,fog:false});
+    material.userData=Object.assign({},material.userData,{westernSlopeSnowBoundary:true,visualOnly:true});
+    keepInFrontOfSky(material,{snowBoundary:true});record.materials.push(material);return material;
+  }
+  function addRockRidge(layer,layerGroup,record,snowMaterial,boundaryMaterial){
+    const T=window.THREE,geometryApi=window.TerrainGeometry;
+    if(typeof geometryApi?.buildRockTileGeo!=='function')throw new Error('TerrainGeometry.buildRockTileGeo unavailable');
+    const stoneMaterial=createBackdropMaterial(record),cellWidth=layer.width/ROCKS_PER_LAYER,heightScale=layer.height/ROCK_HEIGHT_FRACTION;
+    for(let i=0;i<ROCKS_PER_LAYER;i++){
+      const seedCol=ROCK_SEED_BASE+layer.index*101+i*17,seedRow=ROCK_SEED_BASE*3+layer.index*67+i*29;
+      const built=geometryApi.buildRockTileGeo(seedCol,seedRow),sourceGeometry=built?.stoneGeo;
+      if(!sourceGeometry)throw new Error('mine-rock geometry missing for ridge '+layer.layer+', rock '+(i+1));
+      const split=splitRockGeometryAtSnowLine(sourceGeometry);sourceGeometry.dispose?.();
+      const rock=new T.Group(),stoneMesh=new T.Mesh(split.stoneGeo,stoneMaterial),snowMesh=new T.Mesh(split.snowGeo,snowMaterial);
+      snowMesh.onBeforeRender=()=>ensureSnowCapMipmaps(record); // Lazy one-time mipmap creation also handles an asynchronously loaded canonical texture.
+      const variation=(Math.sin((i+1)*(layer.layer+2)*1.73)+1)*.5;
+      const stagger=((i*7+layer.layer*3)%5-2)*cellWidth*.035;
+      const heightJitter=((i*5+layer.layer)%3-1)*layer.height*.008;
+      const rockName=GROUP_NAME+'_Layer'+layer.layer+'_Rock'+(i+1);
+      rock.name=rockName;rock.position.set(stagger,-layer.height*.5+heightJitter,-layer.width*.5+cellWidth*(i+.5));
+      const rotationY=((i*11+layer.layer*7)%7-3)*.055;
+      rock.rotation.y=rotationY;
+      rock.scale.set(cellWidth*(.74+variation*.12),heightScale*(.84+variation*.24),cellWidth*(1.08+variation*.04));
+      const sourcePosition=sourceGeometry.getAttribute('position'),sourceIndex=sourceGeometry.index,vertexCount=sourceIndex?sourceIndex.count:sourcePosition.count;
+      for(let vertex=0;vertex<vertexCount;vertex++){
+        const vertexIndex=sourceIndex?(sourceIndex.getX?sourceIndex.getX(vertex):sourceIndex.array[vertex]):vertex;
+        const localX=sourcePosition.getX(vertexIndex)*rock.scale.x,localZ=sourcePosition.getZ(vertexIndex)*rock.scale.z;
+        const rotatedZ=rock.position.z-Math.sin(rotationY)*localX+Math.cos(rotationY)*localZ;
+        layerGroup.userData.ridgeMinZ=Math.min(Number(layerGroup.userData.ridgeMinZ??Infinity),rotatedZ);
+        layerGroup.userData.ridgeMaxZ=Math.max(Number(layerGroup.userData.ridgeMaxZ??-Infinity),rotatedZ);
+      }
+      layerGroup.userData.ridgeLocalDepth=layerGroup.userData.ridgeMaxZ-layerGroup.userData.ridgeMinZ;
+      rock.userData={backgroundScenery:true,skipOcclusionFade:true,westernSlopeMineRockBackdrop:true,westernSlopeSnowCapped:true,visualOnly:true,layer:layer.layer,rockIndex:i+1,snowLineLocalY:split.cutY,snowCoverageHeightFraction:SNOW_CAP_HEIGHT_FRACTION};
+      for(const [mesh,suffix] of [[stoneMesh,'_Stone'],[snowMesh,'_Snow']]){
+        mesh.name=rockName+suffix;mesh.castShadow=false;mesh.receiveShadow=false;mesh.raycast=ignoreRaycast;
+        mesh.frustumCulled=false;mesh.renderOrder=-101-layer.index+(suffix==='_Snow' ? 0.01 : 0);
+        mesh.userData={backgroundScenery:true,skipOcclusionFade:true,westernSlopeMineRockBackdrop:true,visualOnly:true,layer:layer.layer,rockIndex:i+1,surfacePart:suffix.slice(1).toLowerCase()};
+        rock.add(mesh);record.meshes.push(mesh);
+      }
+      window.OreRockTextures?.fitRockMesh?.(stoneMesh);
+      if(T.LineSegments&&split.outlinePositions.length){
+        const lineGeometry=new T.BufferGeometry();
+        lineGeometry.setAttribute('position',new T.Float32BufferAttribute(split.outlinePositions,3));
+        lineGeometry.computeBoundingSphere?.();
+        const line=new T.LineSegments(lineGeometry,boundaryMaterial);
+        line.name=rockName+'_SnowBoundary';line.raycast=ignoreRaycast;line.frustumCulled=false;
+        line.renderOrder=-100.8-layer.index;
+        line.userData={backgroundScenery:true,skipOcclusionFade:true,westernSlopeSnowBoundary:true,visualOnly:true,layer:layer.layer,rockIndex:i+1};
+        rock.add(line);record.meshes.push(line);stats.snowBoundaryLinesBuilt++;
+      }
+      layerGroup.add(rock);stats.snowCapsBuilt++;
+    }
+  }
   function attach(scene,cols,rows,mapId=WESTERN_SLOPE_ID,options=null){
     if(mapId!==WESTERN_SLOPE_ID||!scene)return Promise.resolve(null);
     const config=normalizeAuthorConfig(options?.config||readAuthorConfig()),existing=scene.getObjectByName?.(GROUP_NAME)||(scene.children||[]).find(c=>c?.name===GROUP_NAME);
     if(existing){applyAuthorConfigToGroup(existing,cols,rows,config);return Promise.resolve(existing);}
-    const previous=activeByMap.get(mapId);if(previous?.scene===scene&&!previous.cancelled)return previous.promise||Promise.resolve(previous.root||null);if(previous)disposeRecord(previous);
-    const record={mapId,scene,root:null,meshes:[],textures:[],cancelled:false,disposed:false,promise:null}; // Async owner used to prevent stale loads from attaching after scene teardown.
+    const previous=activeByMap.get(mapId);
+    if(previous?.scene===scene&&!previous.cancelled)return previous.promise||Promise.resolve(previous.root||null);
+    if(previous)disposeRecord(previous);
+    const record={mapId,scene,root:null,meshes:[],materials:[],textures:[],snowMaterial:null,snowBoundaryMaterial:null,cancelled:false,disposed:false,promise:null}; // Owns geometry and cloned materials for one map's decorative ridges.
     activeByMap.set(mapId,record);stats.buildRequests++;
-    const urls=ASSET_URLS.map(a=>assetUrl(a,options?.assetBase||''));
-    record.promise=Promise.all(urls.map(url=>loadTexture(url,record))).then(textures=>{
-      if(record.cancelled||activeByMap.get(mapId)!==record){for(const t of textures)t?.dispose?.();return null;}
-      const T=window.THREE,layout=layoutFromTextures(textures,cols,rows,config),root=new T.Group();root.name=GROUP_NAME;root.visible=config.enabled!==false;
-      Object.assign(root.userData,{backgroundScenery:true,skipOcclusionFade:true,westernSlopeMountainBackdrops:true,mapId,sharedWorldUnitsPerPixel:layout[0]?.unitsPerPixel||0,authorConfig:config});
-      for(const layer of layout){const mesh=new T.Mesh(new T.PlaneGeometry(layer.width,layer.height),materialFor(textures[layer.index]));mesh.name=`${GROUP_NAME}_Layer${layer.layer}`;mesh.renderOrder=-101-layer.index;mesh.castShadow=false;mesh.receiveShadow=false;mesh.frustumCulled=true;Object.assign(mesh.userData,{backgroundScenery:true,skipOcclusionFade:true,westernSlopeMountainBackdrop:true,layer:layer.layer,sourceAsset:layer.asset,sourceWidth:layer.sourceWidth,sourceHeight:layer.sourceHeight});applyLayer(mesh,layer);root.add(mesh);record.meshes.push(mesh);}
-      record.root=root;scene.add(root);if(Array.isArray(scene.items)&&!scene.items.includes(root))scene.items.push(root);stats.completedBuilds++;applyAuthorConfigToGroup(root,cols,rows,config);
-      log(`attached 3 mountain layers to ${mapId}; west X=${layout.map(l=>l.position[0].toFixed(1)).join(', ')}; shared scale=${(layout[0]?.unitsPerPixel||0).toFixed(4)} world units/pixel`);return root;
-    }).catch(error=>{stats.lastError=error?.message||String(error);stats.failedBuilds++;log(`build failed: ${stats.lastError}`,'warn');disposeRecord(record);return null;});
-    return record.promise;
+    try{
+      const T=window.THREE,layout=resolveLayoutFromSizes(SOURCE_SIZES,cols,rows,config),root=new T.Group(),snowMaterial=createSnowCapMaterial(record),snowBoundaryMaterial=createSnowBoundaryMaterial(record);
+      record.snowMaterial=snowMaterial;record.snowBoundaryMaterial=snowBoundaryMaterial; // Reused if an initially omitted layer is enabled later without rebuilding the zone.
+      root.name=GROUP_NAME;
+      root.visible=config.enabled!==false;
+      Object.assign(root.userData,{backgroundScenery:true,skipOcclusionFade:true,westernSlopeMountainBackdrops:true,decorativeRockRidges:true,snowCappedRockRidges:true,visualOnly:true,mapId,rocksPerLayer:ROCKS_PER_LAYER,authorConfig:config});
+      for(const layer of layout){
+        const layerGroup=new T.Group();
+        layerGroup.name=GROUP_NAME+'_Layer'+layer.layer;
+        Object.assign(layerGroup.userData,{layer:layer.layer,sourceWidth:layer.sourceWidth,sourceHeight:layer.sourceHeight,decorativeRockRidge:true,visualOnly:true});
+        applyLayer(layerGroup,layer);
+        if(layer.visible||options?.buildHiddenLayers===true) addRockRidge(layer,layerGroup,record,snowMaterial,snowBoundaryMaterial); // Gameplay skips invisible rocks entirely; the author preview can keep them ready for live visibility toggles.
+        root.add(layerGroup);
+      }
+      record.root=root;
+      scene.add(root);
+      if(Array.isArray(scene.items)&&!scene.items.includes(root))scene.items.push(root);
+      stats.completedBuilds++;
+      applyAuthorConfigToGroup(root,cols,rows,config);
+      const builtRockCount=root.children.reduce((total,layerGroup)=>total+layerGroup.children.length,0); // Log the number actually built, excluding omitted runtime layers.
+      log('attached '+layout.filter(l=>l.visible).length+' visible Western Slope snow-capped rock ridges ('+builtRockCount+' built rocks, '+(Math.max(1,Number(rows)||1)*RIDGE_LENGTH_MAP_MULTIPLIER).toFixed(1)+'u baseline north-south length each); west X='+layout.filter(l=>l.visible).map(l=>l.position[0].toFixed(1)).join(', '));
+      record.promise=Promise.resolve(root);
+    }catch(error){
+      stats.lastError=error?.message||String(error);
+      stats.failedBuilds++;
+      log('build failed: '+stats.lastError,'warn');
+      disposeRecord(record);
+    }
+    return record.promise||Promise.resolve(null);
   }
 
   function patchBorder(api){
-    if(!api||patchedBorderApis.has(api)||typeof api.buildZoneBorderTerrain!=='function')return api;const original=api.buildZoneBorderTerrain;
+    if(!api||patchedBorderApis.has(api)||typeof api.buildZoneBorderTerrain!=='function')return api;
+    const original=api.buildZoneBorderTerrain;
     api.buildZoneBorderTerrain=function(scene,cols,rows,mapId,...rest){const result=original.call(this,scene,cols,rows,mapId,...rest);if(mapId===WESTERN_SLOPE_ID)attach(scene,cols,rows,mapId);return result;};
     patchedBorderApis.add(api);stats.borderHookInstalls++;return api;
   }
   function patchChunks(api){
-    if(!api||patchedChunkApis.has(api)||typeof api.destroyZone!=='function')return api;const original=api.destroyZone;
+    if(!api||patchedChunkApis.has(api)||typeof api.destroyZone!=='function')return api;
+    const original=api.destroyZone;
     api.destroyZone=function(mapId,...rest){if(mapId===WESTERN_SLOPE_ID)detach(mapId);return original.call(this,mapId,...rest);};
     patchedChunkApis.add(api);stats.chunkHookInstalls++;return api;
   }
   function deferred(name,patcher){
     const d=Object.getOwnPropertyDescriptor(window,name);
     if(d?.get&&d?.set){const get=d.get,set=d.set;Object.defineProperty(window,name,{configurable:true,enumerable:d.enumerable!==false,get(){return get.call(window);},set(value){set.call(window,value);patcher(get.call(window));}});patcher(get.call(window));return;}
-    const existing=window[name];if(existing){patcher(existing);return;}let pending=null;Object.defineProperty(window,name,{configurable:true,enumerable:true,get(){return pending;},set(value){pending=patcher(value);}});
+    const existing=window[name];if(existing){patcher(existing);return;}
+    let pending=null;
+    Object.defineProperty(window,name,{configurable:true,enumerable:true,get(){return pending;},set(value){pending=patcher(value);}});
   }
   function debug(){
     const active=activeByMap.get(WESTERN_SLOPE_ID);
-    return {installed:true,mapId:WESTERN_SLOPE_ID,groupName:GROUP_NAME,authorStorageKey:AUTHOR_STORAGE_KEY,assetUrls:[...ASSET_URLS],active:!!active&&!active.cancelled,attached:!!active?.root?.parent,loading:!!active&&!active.root&&!active.cancelled,sceneChildren:active?.scene?.children?.length??null,...stats,lastLayout:stats.lastLayout?stats.lastLayout.map(l=>({...l,position:[...l.position],rotationDeg:[...l.rotationDeg],scale:[...l.scale]})):null};
+    return {installed:true,distantBackgroundsInFrontOfSky:true,backgroundMaxDepthNdc:BACKGROUND_MAX_DEPTH_NDC,backgroundNearDepthNdc:BACKGROUND_NEAR_DEPTH_NDC,backgroundDepthFalloff:BACKGROUND_DEPTH_FALLOFF,snowBoundaryDepthBiasNdc:SNOW_BOUNDARY_DEPTH_BIAS_NDC,mapId:WESTERN_SLOPE_ID,groupName:GROUP_NAME,authorStorageKey:AUTHOR_STORAGE_KEY,assetUrls:[...ASSET_URLS],rocksPerLayer:ROCKS_PER_LAYER,totalDecorativeRocks:ROCKS_PER_LAYER*ASSET_URLS.length,builtDecorativeRocks:active?.root?.children?.reduce((total,l)=>total+l.children.length,0)??0,ridgeLengthMapMultiplier:RIDGE_LENGTH_MAP_MULTIPLIER,snowCapHeightFraction:SNOW_CAP_HEIGHT_FRACTION,visualOnly:true,snowTextureMipmapped:!!active?.snowBackdropTexture,active:!!active&&!active.cancelled,attached:!!active?.root?.parent,loading:!!active&&!active.root&&!active.cancelled,sceneChildren:active?.scene?.children?.length??null,...stats,lastLayout:stats.lastLayout?stats.lastLayout.map(l=>({...l,position:[...l.position],rotationDeg:[...l.rotationDeg],scale:[...l.scale]})):null};
   }
 
-  window.WesternSlopeMountainBackdrops=Object.freeze({installed:true,attach,detach,getDebugState:debug,defaultAuthorConfig,normalizeAuthorConfig,readAuthorConfig,saveAuthorConfig,clearAuthorConfig,resolveLayoutFromSizes,applyAuthorConfigToGroup,constants:Object.freeze({WESTERN_SLOPE_ID,GROUP_NAME,AUTHOR_STORAGE_KEY,ASSET_URLS,MIN_WIDTH_MULTIPLIER,MIN_HEIGHT_MULTIPLIER,WEST_EDGE_OFFSET_MULTIPLIER,WEST_LAYER_GAP_MULTIPLIER})});
+  window.WesternSlopeMountainBackdrops=Object.freeze({installed:true,attach,detach,getDebugState:debug,defaultAuthorConfig,normalizeAuthorConfig,readAuthorConfig,saveAuthorConfig,clearAuthorConfig,resolveLayoutFromSizes,applyAuthorConfigToGroup,constants:Object.freeze({WESTERN_SLOPE_ID,GROUP_NAME,AUTHOR_STORAGE_KEY,ASSET_URLS,ROCKS_PER_LAYER,MIN_WIDTH_MULTIPLIER,MIN_HEIGHT_MULTIPLIER,WEST_EDGE_OFFSET_MULTIPLIER,WEST_LAYER_GAP_MULTIPLIER,WEST_STACK_SHIFT_MULTIPLIER,RIDGE_LENGTH_MAP_MULTIPLIER,SNOW_CAP_HEIGHT_FRACTION})});
   window.__westernSlopeMountainBackdropsDebug=debug;
   deferred('BorderTerrain',patchBorder);
   deferred('WildernessChunks',patchChunks);

@@ -24,6 +24,7 @@
 
   const SESSION_KEY = 'hobunjiDevCompanionSession.v1';
   const CHANNEL_PREFIX = 'hobunji-dev-companion-v1:';
+  const DISCOVERY_CHANNEL = 'hobunji-dev-companion-discovery-v1'; // Finds other game tabs without exposing their command channels.
   const COMPANION_PATH = 'tools/dev-companion/index.html';
   const HEARTBEAT_TIMEOUT_MS = 4000; // Companion heartbeats every 1s; missing four in a row counts as closed.
   const STATE_INTERVAL_MS = 500;
@@ -280,6 +281,37 @@
     url.searchParams.set('session', sessionId);
     if (tab) url.hash = tab;
     return url.href;
+  }
+
+  // A separate, read-only discovery channel makes other same-origin builds
+  // visible to an orphaned companion. Only the companion's explicit Switch
+  // action can navigate it to a different session; discovery never does.
+  let discoveryChannel = null; // Listens for companion discovery scans until this game page exits.
+  if (typeof BroadcastChannel === 'function') {
+    try {
+      discoveryChannel = new BroadcastChannel(DISCOVERY_CHANNEL);
+      discoveryChannel.onmessage = event => {
+        const request = event.data;
+        if (request?.protocol !== 1 || request.type !== 'find-games' ||
+            typeof request.requestId !== 'string' || !request.requestId ||
+            request.requestId.length > 100) return;
+        try {
+          discoveryChannel.postMessage({
+            protocol: 1,
+            type: 'game-available',
+            requestId: request.requestId,
+            session: sessionId,
+            pageLoadId,
+            bootedAt,
+            title: document.title,
+            gameHref: location.href,
+            companionHref: companionUrl(),
+            sentAt: Date.now(),
+          });
+        } catch (_) {}
+      };
+      window.addEventListener('pagehide', () => discoveryChannel?.close());
+    } catch (_) { discoveryChannel = null; }
   }
 
   function windowName() {

@@ -177,10 +177,6 @@
     [
       7,
       7
-    ],
-    [
-      11,
-      5
     ]
   ],
   "exits": [
@@ -195,7 +191,9 @@
       ],
       "targetMap": "map_i_temple_basement",
       "spawnCol": 11,
-      "spawnRow": 6
+      "spawnRow": 6,
+      "direction": "south",
+      "generateDoor": true
     }
   ],
   "colliders": [],

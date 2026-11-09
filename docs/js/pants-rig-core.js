@@ -46,6 +46,69 @@
     }));
   }
 
+  // Whole-spline edits preserve the shape, including pixel-space rotation on wide PNGs.
+  function transformSpline(points, transform = {}, imageSize = {}) {
+    if (!validateFivePointSpline(points)) throw new TypeError('Expected five normalized spline points.');
+    const center = centroid(points); // Shared pivot for scale and rotation.
+    const width = Math.max(1, Number(imageSize.width) || 1), height = Math.max(1, Number(imageSize.height) || 1); // Native PNG aspect ratio.
+    const dx = Number(transform.dx ?? 0), dy = Number(transform.dy ?? 0); // Whole-shape translation requested by the toolbar.
+    const sx = Number(transform.scaleX ?? 1), sy = Number(transform.scaleY ?? 1); // Independent width and height controls.
+    const angle = Number(transform.rotateDeg ?? 0) * Math.PI / 180; // Clockwise in image coordinates.
+    if (![dx, dy, sx, sy, angle, width, height].every(Number.isFinite) || sx <= 0 || sy <= 0)
+      throw new TypeError('Spline transform must contain finite, positive scales.');
+    const cos = Math.cos(angle), sin = Math.sin(angle); // Reused by all five nodes.
+    const next = points.map(point => {
+      const x = (point.x - center.x) * width * sx, y = (point.y - center.y) * height * sy; // Pixel-space displacement from the pivot.
+      return { x: center.x + (x * cos - y * sin) / width, y: center.y + (x * sin + y * cos) / height };
+    });
+    const minX = Math.min(...next.map(p => p.x)), maxX = Math.max(...next.map(p => p.x)); // Group bounds prevent point-by-point clipping.
+    const minY = Math.min(...next.map(p => p.y)), maxY = Math.max(...next.map(p => p.y)); // Vertical group bounds.
+    if (maxX - minX > 1 || maxY - minY > 1) throw new RangeError('Spline would exceed the image; use a smaller transform.');
+    const safeX = Math.max(-minX, Math.min(1 - maxX, dx)), safeY = Math.max(-minY, Math.min(1 - maxY, dy)); // Shift the whole shape inside the PNG.
+    return next.map(point => ({ x: clamp(point.x + safeX), y: clamp(point.y + safeY) }));
+  }
+
+  // Project along a pixel-space arrow, using grid traversal so thin opaque pixels cannot be skipped.
+  function shrinkwrapSplineToAlpha(points, image, degrees, threshold = 128) {
+    if (!validateFivePointSpline(points)) throw new TypeError('Expected five normalized spline points.');
+    const width = Number(image?.width), height = Number(image?.height), data = image?.data; // Read once from the clean artwork, without editor guides.
+    const angle = Number(degrees) * Math.PI / 180; // Zero points right, ninety points down.
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1
+      || !data || data.length < width * height * 4 || !Number.isFinite(angle))
+      throw new TypeError('Readable image pixels and a finite shrinkwrap direction are required.');
+    const alpha = Math.max(1, Math.min(255, Number(threshold) || 128)); // Same half-coverage rule as the Pants Rig Author.
+    let hits = 0; // Report misses explicitly rather than inventing a neighbouring hit.
+    const projected = points.map(point => {
+      const ox = Math.min(width - 1e-7, point.x * width), oy = Math.min(height - 1e-7, point.y * height); // Ray origin remains on the requested line.
+      let x = Math.floor(ox), y = Math.floor(oy); // Current alpha-grid cell.
+      if (data[(y * width + x) * 4 + 3] >= alpha) { hits++; return { x: point.x, y: point.y }; } // Already on solid artwork: never move against the chosen arrow.
+      const vx = Math.cos(angle), vy = Math.sin(angle); // Unit forward direction in native pixel space.
+      const stepX = Math.abs(vx) < 1e-12 ? 0 : Math.sign(vx), stepY = Math.abs(vy) < 1e-12 ? 0 : Math.sign(vy); // Avoid cardinal-angle numerical drift.
+      const deltaX = stepX ? Math.abs(1 / vx) : Infinity, deltaY = stepY ? Math.abs(1 / vy) : Infinity; // Distance between successive grid crossings.
+      let crossX = stepX ? ((stepX > 0 ? x + 1 - ox : ox - x) / Math.abs(vx)) : Infinity; // Next vertical boundary.
+      let crossY = stepY ? ((stepY > 0 ? y + 1 - oy : oy - y) / Math.abs(vy)) : Infinity; // Next horizontal boundary.
+      let distance = 0; // Entry distance of the currently inspected cell.
+      for (let count = 0; count <= width + height + 2; count++) {
+        const inImage = x >= 0 && x < width && y >= 0 && y < height; // A miss stops at the image boundary.
+        const opaque = inImage && data[(y * width + x) * 4 + 3] >= alpha; // Only solid source pixels qualify.
+        if (opaque) {
+          const span = Math.max(0, Math.min(crossX, crossY) - distance); // Stay inside even a very short diagonal cell crossing.
+          const landing = distance + Math.min(1e-7, span / 2); // Keep the selected point inside the hit pixel.
+          hits++;
+          return { x: clamp((ox + vx * landing) / width), y: clamp((oy + vy * landing) / height) };
+        }
+        if (!inImage) break;
+        distance = Math.min(crossX, crossY);
+        const crossBoth = Math.abs(crossX - crossY) < 1e-10; // A corner enters the diagonal cell, not a zero-area neighbour.
+        const advanceX = crossBoth || crossX < crossY, advanceY = crossBoth || crossY < crossX; // Decide before mutating either crossing.
+        if (advanceX) { x += stepX; crossX += deltaX; }
+        if (advanceY) { y += stepY; crossY += deltaY; }
+      }
+      return { x: point.x, y: point.y };
+    });
+    return { points: projected, hits, misses: points.length - hits };
+  }
+
   function buildLegOpeningFitControls(garment, thickness = 1) {
     const pantsBelt = normalizeSpline(garment?.pantsBeltSpline);
     const leftSource = normalizeSpline(garment?.legOpenings?.left);
@@ -882,6 +945,8 @@
     validateFivePointSpline,
     centroid,
     scaleSplineAroundCentroid,
+    transformSpline,
+    shrinkwrapSplineToAlpha,
     buildLegOpeningFitControls,
     inverseDistanceDisplacement,
     warpRgbaNearest,

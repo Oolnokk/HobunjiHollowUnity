@@ -132,7 +132,7 @@
         icon: '🍃',
         label: `${label} Tea Blend`,
         cat: 'processed',
-        sellPrice: 0,
+        sellPrice: 18,
         tags: ['Processed', 'Tea Blend', 'Banubu'],
         desc: `A ${strength.toLowerCase()} three-herb blend carrying ${label}. Three Tea Blends and White Milk make Nine Leaf Tea.`,
         cookingCategories: [BLEND_CATEGORY],

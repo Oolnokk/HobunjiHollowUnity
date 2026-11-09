@@ -94,56 +94,118 @@
     const plan = cave.currentPlan; // Interior-only details come from the same generated plan used by actual cave mechanics.
     return `<div style="padding:8px 10px;margin-bottom:8px;border:1px solid rgba(196,151,84,.3);border-radius:6px;font-size:12px">
       <div style="font-weight:600">Cave Geometry</div>
+      <div>Ordinary caves: <b>${cave.caveCount}</b> · independent Puzzle Caves: <b>${cave.puzzleCaveCount||0}</b> (cliff ${cave.outdoorPuzzleCaveCount||0}, behind rock ${cave.rockPuzzleCaveCount||0})</div>
       <div>${deps.esc(cave.latestChange)}</div>
       ${plan ? `<div>Solid rim: ${plan.outerRimTileCount} tiles · wall height: ${plan.wallHeightScale}× · embedded ruin tunnel: ${plan.ruinEntrance ? 'yes' : 'none'}</div>` : ''}
     </div>`;
+  }
+
+  function renderTzatzulCensus() {
+    const flight = window.TzatzulFlightRuntime?.debugSnapshot?.(); // Existing flight owner supplies everything this mobile panel reports.
+    if (!flight) return '';
+    const spires = window.TzatzulCliffSites?.snapshot?.(); // Real cave-spire geometry and generation errors for mobile.
+    const wings = window.TzatzulLiveVisuals?.snapshot?.(); // Actual wing mesh load/pose state, not an assumed successful render.
+    const nest = window.TzatzulNestEncounter?.debugSnapshot?.(); // Real miniboss counters, available without DevTools.
+    const arena = window.TzatzulNestInterior?.debugSnapshot?.(); // Displays actual wall and spike geometry counts.
+    const area = deps?.getCurrentArea?.();
+    const inhabitants = (flight.birds || []).filter(bird => bird.area === area);
+    const fmt = value => deps.esc(String(value ?? 'none'));
+    const live = inhabitants.map(bird =>
+      '<div>' + fmt(bird.id) + ' · ' + fmt(bird.phase) + ' · ' + fmt(bird.pose)
+      + (bird.target ? ' · target ' + fmt(bird.target) : '')
+      + (bird.nestMinutesLeft != null ? ' · emerges in ' + fmt(bird.nestMinutesLeft) + ' game min' : '') + '</div>').join('');
+    return '<div style="padding:8px 10px;margin-bottom:8px;border:1px solid rgba(145,179,222,.3);border-radius:6px;font-size:12px">'
+      + '<div style="font-weight:600">Tzatzul flight / cliff roosts</div>'
+      + '<div>Living: <b>' + flight.active + '</b> · launched: ' + flight.flights
+      + ' · swoops: ' + flight.swoops + ' · hits/misses: ' + flight.hits + '/' + flight.misses + '</div>'
+      + '<div>Scout legs: ' + (flight.scouts || 0) + ' · nest stays: ' + (flight.nestStays || 0)
+      + ' · flee drops: ' + (flight.fleeDrops || 0) + '</div>'
+      + '<div>Live wing rigs: ' + (wings?.liveRigs ?? 0) + ' · failed loads: ' + (wings?.loadFailures ?? 0) + '</div>'
+      + '<div>Inaccessible nest spires: ' + (flight.roosts?.find(record => record.area === area)?.count || 0) + '</div>'
+      + '<div>Nest arenas: ' + (arena?.arenas?.length || 0) + ' · rock perches: ' + (arena?.rockMeshes || 0)
+      + ' · stone spike layers: ' + (arena?.spikeMeshes || 0) + '</div>'
+      + '<div>Nest dives: ' + (nest?.dives || 0) + ' · wall hits: ' + (nest?.wallHits || 0)
+      + ' · sharp spike hits: ' + (nest?.spikeHits || 0) + ' · stored remains: ' + (nest?.deposited || 0)
+      + ' · overflow meals: ' + (nest?.overflowMeals || 0) + '</div>'
+      + (nest?.lastImpact ? '<div>Last collision: ' + fmt(nest.lastImpact.kind)
+        + ' · unused dive: ' + fmt((nest.lastImpact.deficitTiles || 0).toFixed(2)) + ' tiles</div>' : '')
+      + (nest?.encounters || []).filter(encounter => encounter.mapId === area)
+        .map(encounter => '<div>Mother HP: ' + fmt(encounter.motherHealth)
+          + ' · hatchlings: ' + fmt(encounter.hatchlingsAlive)
+          + ' · eggs: ' + fmt(encounter.eggs) + ' · remains: ' + fmt(encounter.victims)
+          + ' · ' + fmt(encounter.phase) + '</div>').join('')
+      + (spires?.lastError ? '<div style="color:#f3b98c">Spire: ' + fmt(spires.lastError) + '</div>' : '')
+      + (live || '<div style="opacity:.72">No adult Tzatzul encountered here yet.</div>')
+      + (wings?.lastError ? '<div style="color:#f3b98c">Rig: ' + fmt(wings.lastError) + '</div>' : '')
+      + '</div>';
+  }
+
+  function renderPingdortCensus() {
+    const area = deps?.getCurrentArea?.();
+    if (!window.PingdortRegistration?.ZONES?.includes(area)) return '';
+    const status = window.PingdortFlocks?.debugSnapshot?.(); // Native live roster and per-egg clutch states, not guessed biome populations.
+    const record = status?.habitats?.find(item => item.area === area);
+    const network = window.CliffRouteNetwork?.forArea?.(area);
+    const karst = area === 'map_southern_cloud_forest'
+      ? window.CloudForestRuntimeV2?.lastKarstReport : null; // Last-generated map report is labelled explicitly because older saves may differ.
+    const fmt = value => deps.esc(String(value ?? 'unknown'));
+    const liveNests = record?.nests || [];
+    const nestRows = liveNests.map(nest =>
+      '<div>' + fmt(nest.id) + ' · minicliff Y ' + fmt(nest.y)
+      + ' · eggs ' + fmt(nest.remaining) + ' · living flock '
+      + fmt(nest.flockLoaded ? Math.max(0, 3 - (nest.deadSlots?.length || 0)) : 'streamed out')
+      + ' · losses today ' + fmt(nest.deadSlots?.length || 0) + '</div>').join('');
+    return '<div style="padding:8px 10px;margin-bottom:8px;border:1px solid rgba(177,184,143,.35);border-radius:6px;font-size:12px">'
+      + '<div style="font-weight:600">Pingdort nests / cliff wildlife</div>'
+      + '<div>Live birds: <b>' + fmt(record?.liveBirds || 0) + '</b> · nest sites: '
+      + fmt(liveNests.length) + ' · minicliffs: ' + fmt(network?.balconies?.length || 0)
+      + ' · climb routes valid: ' + fmt(network?.verification?.ok ?? 'not built') + '</div>'
+      + '<div>Eggs collected: ' + fmt(status?.eggsCollected || 0)
+      + ' · flock deaths: ' + fmt(status?.flockDeaths || 0)
+      + ' · shelf checks without a network: ' + fmt(status?.missingShelves || 0) + '</div>'
+      + (karst ? '<div>Last Cloud Forest generation: ' + fmt(karst.towers)
+        + ' limestone pillars in ' + fmt(karst.clusters) + ' clusters (seed '
+        + fmt(karst.seed) + ')</div>' : '')
+      + (nestRows || '<div style="opacity:.72">No current minicliff nests. Check that this zone has finished generating its cliff routes.</div>')
+      + '</div>';
   }
 
   function renderWildlifeDebugPanel() {
     syncWildlifeTabVisibility();
     const container = document.getElementById('wildlifeDenList');
     if (!container) return;
-    const censusHtml = renderDenNestCensus() + renderDenTurnoverCensus() + renderRoamingHerdCensus() + renderCaveGeometryCensus();
+    const censusHtml = renderDenNestCensus() + renderDenTurnoverCensus() + renderRoamingHerdCensus() + renderCaveGeometryCensus() + renderTzatzulCensus() + renderPingdortCensus();
     if (!window.WildlifeSpawn.getDenGenotypes().size) {
       container.innerHTML = censusHtml + '<div style="opacity:.6;padding:8px 0">No den-family genotypes generated yet this session. Roaming herds are reported separately above because they do not belong to caverns.</div>';
       return;
     }
     const swatch = (hex, size) => `<span style="display:inline-block;width:${size}px;height:${size}px;border-radius:3px;background:${deps.esc(hex)};vertical-align:middle;margin-right:4px;border:1px solid rgba(255,255,255,.3)"></span>`;
     const rows = [];
-    // Keys are now `${cavernMapId}|${family}` (see getOrMakeDenGenotype)
-    // since one den can independently hold a gar-wolf-family genotype
-    // and a uumkaoii-family genotype at once — split that back apart to
-    // display each family with its own shape (base+patterns vs
-    // fur+plates) instead of assuming every entry is gar-wolf-shaped.
-    for (const [key, genotype] of window.WildlifeSpawn.getDenGenotypes()) {
+    // Den family genotypes use one base+patterns format; Uumkao'ii's old
+    // fur/plates records are normalized read-only before this mobile panel.
+    for (const [key, storedGenotype] of window.WildlifeSpawn.getDenGenotypes()) {
       const sepIdx = key.lastIndexOf('|');
       const cavernMapId = sepIdx >= 0 ? key.slice(0, sepIdx) : key;
       const family = sepIdx >= 0 ? key.slice(sepIdx + 1) : 'gar-wolf';
       const zoneId = window.WildlifeSpawn.denCavernZoneOf(cavernMapId) || '(unknown zone)';
       const den = deps._zoneLayouts.get(zoneId)?.dens?.find(d => window.WildlifeSpawn.denCavernMapId(zoneId, d.id) === cavernMapId);
       const denLabel = den ? den.id : cavernMapId.replace(`map_i_den_${zoneId}_`, '');
-      let bodyHtml;
-      if (family === 'uumkaoii') {
-        const furColor = genotype.fur?.color, platesColor = genotype.plates?.color;
-        bodyHtml = `<div style="margin-top:3px">Fur: ${furColor ? swatch(furColor, 13) + deps.esc(window.CreatureGenetics.paletteName(furColor)) : '(none)'}</div>
-          <div style="margin-top:2px">Plates: ${platesColor ? swatch(platesColor, 13) + deps.esc(window.CreatureGenetics.paletteName(platesColor)) : '(none)'}</div>`;
-      } else {
-        const patternIds = window.CreatureGenetics.PATTERN_DEFS[family] || [];
-        const baseColor = genotype.base?.color;
-        const baseHtml = baseColor ? `${swatch(baseColor, 13)}${deps.esc(window.CreatureGenetics.paletteName(baseColor))}` : '(no base)';
-        const patternHtml = patternIds.map(id => {
-          const layer = genotype[id];
-          const on = layer?.enabled && layer.copies > 0;
-          return `<span style="opacity:${on ? 1 : 0.35}">${on ? swatch(layer.color, 10) : ''}${deps.esc(id)}</span>`;
-        }).join(' &middot; ');
-        bodyHtml = `<div style="margin-top:3px">Base: ${baseHtml}</div>
+      const genotype = window.CreatureGenetics.normalizeLegacyGenotype?.(family, storedGenotype) || storedGenotype; // Old dens retain original genes without mutation.
+      const patternIds = window.CreatureGenetics.PATTERN_DEFS[family] || [];
+      const baseColor = genotype?.base?.color;
+      const baseHtml = baseColor ? `${swatch(baseColor, 13)}${deps.esc(window.CreatureGenetics.paletteName(baseColor))}` : '(no base)';
+      const patternHtml = patternIds.map(id => {
+        const layer = genotype?.[id];
+        const on = layer?.enabled !== false && layer?.copies > 0;
+        return `<span style="opacity:${on ? 1 : 0.35}">${on ? swatch(layer.color, 10) : ''}${deps.esc(id)}</span>`;
+      }).join(' &middot; ');
+      const bodyHtml = `<div style="margin-top:3px">Base: ${baseHtml}</div>
           <div style="margin-top:2px">Patterns: ${patternHtml || '(none)'}</div>`;
-      }
       // Which live creatures are currently using this exact genotype
       // object, if any are spawned right now — confirms the whole pack
       // (and its Den-Mother) really do share one roll.
       const aliveKinds = new Set();
-      for (const c of deps.hostileObjects) if (c.genotype === genotype) aliveKinds.add(c.creatureKey);
+      for (const c of deps.hostileObjects) if (c.genotype === storedGenotype) aliveKinds.add(c.creatureKey);
       const teleportBtn = den
         ? `<button class="settings-small-btn wildlife-den-teleport-btn" data-zone="${deps.esc(zoneId)}" data-den="${deps.esc(den.id)}" style="font-size:10px;padding:2px 8px">Teleport</button>`
         : '';

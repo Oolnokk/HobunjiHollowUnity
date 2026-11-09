@@ -18,7 +18,7 @@ const releasedHolds = []; // Captures partial-pose release options passed into t
 let cancelledHolds = 0; // Confirms lost releases cancel the held ranged animation, not only the archetype input state.
 
 const toolDefs = {
-  kylie_copper: { label: 'Copper Kylie', sprite: 'assets/toolsprites/kylie.png', slots: ['weapon'], animStyle: 'sweep', shapeKey: 'kylie' },
+  kylie_copper: { label: 'Copper Kylie', sprite: 'assets/toolsprites/kylie.png', slots: ['weapon'], animStyle: 'sweep', shapeKey: 'kylie', dmgType: 'blunt' },
   bshuakauitl_copper: { label: "Copper B'shuakauitl", sprite: "assets/toolsprites/b'shuakauitl.png", slots: ['weapon'], animStyle: 'sweep', shapeKey: 'bshuakauitl' },
   dagger_copper: {
     label: 'Copper Dagger', sprite: 'assets/toolsprites/dagger.png', slots: ['weapon'], animStyle: 'thrust', shapeKey: 'dagger',
@@ -30,6 +30,7 @@ const toolDefs = {
     rangedProjectileMaxEmbedded: 2,
     rangedProjectileFadeS: 0.4,
   },
+  fishingspear: { label: 'Fishing Spear', sprite: 'assets/toolsprites/harpoon_fishingspear.png', slots: ['weapon'], animStyle: 'thrust', dmgType: 'sharp' }, // Legacy Fishing Spear is the exact item key mine ghouls equip as a ranged weapon.
   fishingspear_copper: { label: 'Copper Fishing Spear', sprite: 'assets/toolsprites/harpoon_fishingspear.png', slots: ['weapon'], animStyle: 'sweep', shapeKey: 'fishingspear' },
   hatchet_copper: { label: 'Copper Hatchet', sprite: 'assets/toolsprites/axe_hatchet.png', slots: ['weapon'], animStyle: 'sweep', shapeKey: 'hatchet' },
   daggerSword_copper: { label: 'Copper Dagger-Sword', sprite: 'assets/toolsprites/dagger-sword.png', slots: ['weapon'], animStyle: 'thrust', shapeKey: 'daggerSword', rangedType: 'thrown' },
@@ -71,7 +72,7 @@ const windowObject = {
         strike: { x: -0.57, y: 0.33, z: 0.17, pitch: -25, yaw: -65, bodyYaw: 63, roll: -88, shoulderAim: { grip: true, palmNormal: false } },
       },
     },
-    drink: { poses: { strike: { x: 0.4, y: 0.4, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0 } } },
+    drink: { headRelative: true, poses: { strike: { headRelative: true, x: -0.05, y: 0, z: 0.22, pitch: -180, yaw: 21, roll: 4, bodyYaw: 0 } } },
   },
   Combat: {
     deps: {
@@ -128,6 +129,10 @@ const context = {
   setInterval: callback => { intervalCallbacks.push(callback); return intervalCallbacks.length; },
   clearInterval: () => {},
 };
+const heldDefaults = { window: {} }; // Run the actual authored definitions before their optional bootstrap dependencies.
+const heldDefaultsSource = fs.readFileSync(path.resolve(__dirname, '../docs/js/held-action-animations.js'), 'utf8'); // Reads the production uploaded-pose copy.
+vm.runInNewContext(heldDefaultsSource.slice(0, heldDefaultsSource.indexOf('  // Shared direct-hand bootstrap.')) + '\n})();', heldDefaults);
+windowObject.HeldActionAnimations.blowgunReady = heldDefaults.window.HeldActionAnimations.blowgunReady;
 vm.createContext(context);
 
 for (const relative of [
@@ -294,11 +299,16 @@ for (const key of ['dagger_copper', 'hatchet_copper', 'kylie_copper']) {
   assert.strictEqual(windowObject.RangedWeapons.config[key]?.projectileSpinSource, 'fishingMace', `${key} should reuse the fishing-mace projectile spin rate.`);
   assert.strictEqual(windowObject.RangedWeapons.config[key]?.projectileSprite, toolDefs[key].sprite, `${key} projectile should use its actual weapon sprite.`);
 }
+assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.dmgType, 'blunt', 'Thrown config must carry the weapon\'s melee damage type so its hit sound matches the melee hit.');
+assert.strictEqual(windowObject.RangedWeapons.config.dagger_copper.dmgType, 'sharp', 'Thrown weapons without a blunt melee type default to the sharp hit family.');
+assert.match(rangedWeaponsSource, /rangedType === 'thrown'\) \{[^}]*playWeaponHitSfx\?\.\(p\.def\.dmgType/, 'Thrown projectile impacts must play the melee weapon-hit sound, not the arrow-hit cue.');
 assert.strictEqual(windowObject.RangedWeapons.config.dagger_copper.heldSpin, true, 'Dagger must use the same held Spin Throw twirl as hatchet/Kylie.');
 assert.strictEqual(windowObject.RangedWeapons.config.dagger_copper.heldSpinBasisDeg, 0, 'Dagger held spin must use the generic zero-degree spin basis, not the spear offset.');
 assert.strictEqual(windowObject.RangedWeapons.config.dagger_copper.heldSpinRevolutions, 2.5, 'Dagger must share the generic 2.5-revolution held throw.');
 assert.match(rangedArchetypeSource, /const projectileSpins = animation\?\.projectileSpin !== false[\s\S]*projectileVisualStyle: projectileSpins \? 'spinningWeapon' : 'weapon'[\s\S]*projectileSpinSource: projectileSpins \? 'fishingMace' : null/, 'Generic thrown projectile spin must be driven by the shared Spin Throw animation contract rather than a fragile weapon-name allowlist.');
 assert.doesNotMatch(rangedArchetypeSource, /PROJECTILE_SPINNING_THROWN_SHAPES/, 'Thrown projectile spin must not depend on a separate shape allowlist; fishing spear opts out through its dedicated animation.');
+assert.strictEqual(windowObject.RangedWeapons.config.fishingspear?.rangedType, 'thrown', 'Mine ghouls must be able to throw the legacy Fishing Spear item, not merely hold it.');
+assert.strictEqual(windowObject.RangedWeapons.config.fishingspear?.projectileSprite, toolDefs.fishingspear.sprite, 'Mine spear uses the actual projectile sprite and authored throw animation.');
 assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper.toolEndFlip, true, 'Fishing spear throw must retain the visible tip-to-handle end flip while using its offset spin.');
 assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper.projectileVisualStyle, 'weapon', 'Fishing spear must freeze the sampled held alignment after release instead of tumbling in flight.');
 assert.strictEqual(windowObject.RangedWeapons.config.fishingspear_copper.projectileSpinSource, null, 'Fishing spear projectile must not receive the generic local-Z tumble.');
@@ -353,11 +363,37 @@ assert.strictEqual(windowObject.RangedWeapons.config.daggerSword_copper, undefin
 assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.rangedType, 'thrown');
 assert.strictEqual(windowObject.RangedWeapons.config.bshuakauitl_copper.rangedType, 'blowgun');
 assert.strictEqual(windowObject.RangedWeapons.config.bshuakauitl_copper.damage, 2, 'Blowgun should use deliberately tiny raw damage.');
-assert.strictEqual(windowObject.RangedWeapons.config.bshuakauitl_copper.basicAfflictionScale, 40, 'Blowgun should heavily amplify mastery affliction buildup.');
+assert.strictEqual(windowObject.RangedWeapons.config.bshuakauitl_copper.basicAfflictionScale, 10, 'Blowgun afflictions now scale from independent Attack Power, not two raw damage.');
 assert.strictEqual(windowObject.RangedWeapons.config.bshuakauitl_copper.firePose.neutral.pitch, -180, 'Blowgun stance should copy Drink strike pitch.');
+const blowgunRest = windowObject.RangedWeapons.config.bshuakauitl_copper.loadPose.neutral; // Unloaded stance is the same thrust rest a shovel idles in outside the weapon slot.
+for (const [channel, expected] of Object.entries({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0 })) assert.strictEqual(blowgunRest[channel], expected, `Blowgun unloaded neutral ${channel} should match the shovel's thrust rest.`);
+assert.strictEqual(blowgunRest.headRelative, undefined, 'The unloaded rest is hand-relative like a shovel, not head-relative.');
 
 const kylieChoices = windowObject.RangedWeapons.basicAmmoEffectsFor('kylie_copper').map(effect => effect.id);
 assert.deepStrictEqual(kylieChoices, ['congealedHealth', 'windedStamina', 'bruisedHealth', 'shatteredStamina', 'knockback'], 'Kylie ranged mastery should expose only blunt-family buildup plus knockback, preserving source ordering.');
+for (const phase of ['neutral', 'windup', 'strike']) {
+  const pose = windowObject.RangedWeapons.config.bshuakauitl_copper.firePose[phase]; // Loaded idle and firing phases must use their own authored head-relative endpoints.
+  assert.equal(pose.headRelative, true);
+  for (const key of ['x', 'y', 'z', 'pitch', 'yaw', 'roll', 'bodyYaw']) assert.equal(pose[key], windowObject.HeldActionAnimations.blowgunReady.poses[phase][key]);
+}
+for (const phase of ['neutral', 'windup', 'strike']) for (const axis of ['x', 'y', 'z']) assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.firePose[phase][axis], 0, `the mouthpiece (aperture) sits exactly on the mouth: ${phase}.${axis}`);
+assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.firePose.windup.yaw, 0);
+for (const phase of ['neutral', 'windup', 'strike']) {
+  const pose = windowObject.RangedWeapons.config.bshuakauitl_copper.firePose[phase]; // Assert the whole loaded/fire timeline shares the head-directed barrel axis.
+  assert.equal(pose.pitch, -180, `Blowgun ${phase} reverses its +Z mouthpiece-end axis to point away from the head`);
+  assert.equal(pose.yaw, 0, `Blowgun ${phase} must not aim sideways independently of head rotation`);
+  assert.equal(pose.bodyYaw, 0, `Blowgun ${phase} must not turn the body to compensate for misaligned barrel yaw`);
+}
+assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.fireDurationS, 0.475, 'B\'shuakauitl has twice the firing animation speed while keeping its 0.95s authored source untouched.');
+assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.fireAtFrac, 0.62, 'Blowgun release stays at its authored strike, not ahead of the held pose.');
+assert.ok(Math.abs(windowObject.RangedWeapons.config.bshuakauitl_copper.fireDurationS * windowObject.RangedWeapons.config.bshuakauitl_copper.fireAtFrac - 0.2945) < 1e-9, 'Trigger-to-shot latency must be halved from 0.589s.');
+assert.equal(windowObject.RangedWeapons.config.bshuakauitl_copper.fireWindupFrac, 0.38);
+equippedRanged = 'bshuakauitl_copper';
+const blowgunDebug = windowObject.HobunjiRangedWeaponArchetypes.debugSnapshot(); // Verifies the same effective delay is exposed to mobile debugging.
+assert.strictEqual(blowgunDebug.blowgunFireSpeedMultiplier, 2);
+assert.ok(Math.abs(blowgunDebug.blowgunFireTiming.triggerToShotS - 0.2945) < 1e-9, 'mobile debug must show the actual active trigger-to-shot delay');
+assert.equal(blowgunDebug.blowgunFireTiming.reloadDurationS, 1.04, 'loading speed stays unchanged');
+equippedRanged = 'kylie_copper'; // Restore the baseline equipped item for the remaining mastery and thrown-weapon tests.
 const blowgunChoices = windowObject.RangedWeapons.basicAmmoEffectsFor('bshuakauitl_copper').map(effect => effect.id);
 assert.deepStrictEqual(blowgunChoices, afflictionIds, 'Blowgun ranged mastery should expose the full affliction set.');
 assert.strictEqual(windowObject.RangedWeapons.setBasicEffect('kylie_copper', 1, 'bleedingHealth'), false, 'Kylie should reject sharp-style Bleeding Health mastery.');
@@ -368,13 +404,13 @@ assert.deepStrictEqual(baseEffectSelections.map(entry => entry.effectId), ['brui
 // The closure-private ranged payload builder still sees the original effect objects.
 // While a Blowgun is equipped, their afflictionId getter emits a projectile-carried
 // alias. ResourceSystem resolves that alias at impact and multiplies the normal 0.15
-// amount by 40 without increasing the dart's raw damage.
+// amount by 10 from the dart's independent 18 Attack Power without increasing Health damage.
 equippedRanged = 'bshuakauitl_copper';
 const poisonAlias = baseBasicEffects.find(effect => effect.id === 'poisonedHealth').afflictionId;
-assert.match(poisonAlias, /^__ranged_blowgun_40x_poisonedHealth$/);
-windowObject.ResourceSystem.addAffliction({}, poisonAlias, 0.3); // 2 raw damage × the ranged system's normal 0.15 mastery multiplier.
+assert.match(poisonAlias, /^__ranged_blowgun_10x_poisonedHealth$/);
+windowObject.ResourceSystem.addAffliction({}, poisonAlias, 2.7); // 18 Attack Power × the ranged system's normal 0.15 mastery coefficient.
 assert.strictEqual(addedAfflictions.at(-1).id, 'poisonedHealth');
-assert.strictEqual(addedAfflictions.at(-1).amount, 12, 'A 2-damage Blowgun dart should build 12 affliction per selected mastery rank (effective 6.0x).');
+assert.strictEqual(addedAfflictions.at(-1).amount, 27, 'A low-damage Blowgun dart builds 27 affliction from 18 Attack Power per chosen mastery rank.');
 
 equippedRanged = 'kylie_copper';
 assert.strictEqual(baseBasicEffects.find(effect => effect.id === 'bruisedHealth').afflictionId, 'bruisedHealth', 'Kylie should use normal ranged buildup multipliers rather than Blowgun scaling aliases.');
@@ -468,3 +504,22 @@ assert.strictEqual(windowObject.HobunjiRangedWeaponArchetypes.ownsThrownInput(),
 mockPlayerAction = null;
 windowObject.RangedWeapons.update(0.016);
 assert.strictEqual(windowObject.HobunjiRangedWeaponArchetypes.activeThrownChargeItemKey(), null, 'a released press must not start a windup on Neutral.');
+
+
+// Missing user-authored animation must NOT fall back to Drink's angled pose.
+// Run last because rebuilding ranged definitions changes the test's mock loaded states.
+{
+  const original = windowObject.HeldActionAnimations.blowgunReady; // Restored below for any subsequent shared test initialization.
+  windowObject.HeldActionAnimations.blowgunReady = null;
+  windowObject.HobunjiRangedWeaponArchetypes.patchGeneratedDefinitions();
+  const fallback = windowObject.RangedWeapons.config.bshuakauitl_copper.firePose; // Direct generated-weapon test, not a copy of the default constant.
+  for (const phase of ['neutral', 'windup', 'strike']) {
+    assert.strictEqual(fallback[phase].yaw, 0, `missing blowgun animation must never restore Drink's off-axis ${phase} yaw`);
+    assert.strictEqual(fallback[phase].pitch, -180, `missing blowgun animation ${phase} keeps its fixed mouthpiece-end reversal`);
+    assert.strictEqual(fallback[phase].headRelative, true, `missing blowgun animation ${phase} remains anchored to the mouth`);
+  }
+  assert.strictEqual(windowObject.HobunjiRangedWeaponArchetypes.debugSnapshot().blowgunStanceSource, 'blowgun-head-forward-fallback');
+  windowObject.HeldActionAnimations.blowgunReady = original;
+  windowObject.HobunjiRangedWeaponArchetypes.patchGeneratedDefinitions();
+  assert.strictEqual(windowObject.HobunjiRangedWeaponArchetypes.debugSnapshot().blowgunStanceSource, 'blowgun-authored-mouth-to-reticle');
+}

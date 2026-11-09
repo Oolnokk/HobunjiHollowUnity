@@ -10,6 +10,29 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
+  let knownBlueprints = new Set(); // Permanent furniture lessons for the active character in this world.
+
+  function restoreBlueprints(keys) {
+    knownBlueprints = new Set(Array.isArray(keys) ? keys.filter(key => typeof key === 'string') : []);
+  }
+
+  function serializeBlueprints() { return [...knownBlueprints]; }
+
+  function blueprintForItem(key) {
+    return deps?.FURNITURE_BLUEPRINT_CATALOG?.find(bp => bp.key === key) || null;
+  }
+
+  function readBlueprint(key) {
+    const bp = blueprintForItem(key); // Only ordinary registered recipe items can grant a lesson.
+    if (!bp || bp.moteOnly || bp.masteryUnlockId || !(Number(deps.inventory[key]) > 0)) return { ok: false, message: 'That blueprint cannot be read.' };
+    if (ownsBlueprint(bp)) return { ok: false, message: 'You already know this blueprint.' };
+    knownBlueprints.add(key);
+    deps.inventory[key]--;
+    deps.clampInventoryStack(key);
+    deps.saveMemberWorldData();
+    return { ok: true, message: `Learned ${bp.name}!` };
+  }
+
   let craftingActiveCategory = 'all';
 
   function ownedWoodCount() {
@@ -32,26 +55,42 @@
     deps.recordHeldOres(heldOreKeys);
   }
 
-  function visibleMetalRecipes() {
-    syncHeldOreDiscoveries();
-    return Object.entries(deps.METAL_BAR_RECIPES).filter(([, ingredients]) =>
-      Object.keys(ingredients).every(oreKey => deps.hasDiscoveredOre(oreKey)));
+  function ingredientItemKey(key) {
+    return key.startsWith('bar_') ? key : deps.metalOreItemKey(key); // Alloying consumes native copper bars; direct smelting consumes ore.
   }
 
-  function craftMetalBar(metalKey) {
-    const ingredients = deps.METAL_BAR_RECIPES[metalKey]; // Used to validate and consume the same authored quantities shown in the row.
+  function ingredientLabel(key) {
+    if (!key.startsWith('bar_')) return deps.ORE_DEFS[key]?.label || key;
+    const metalLabel = deps.METAL_DEFS[key.slice(4)]?.label; // Bar name fallback when an old save has no registered item definition.
+    return deps.ITEM_DEFS?.[key]?.label || (metalLabel ? metalLabel + ' Bar' : key);
+  }
+
+  function visibleMetalRecipes() {
+    const registered = deps?.METAL_DEFS || {}; // Rejects unregistered material keys without tying crafting permissions to Town Value.
+    const direct = Object.entries(deps?.METAL_BAR_RECIPES || {})
+      .filter(([metalKey, ingredients]) => registered[metalKey] && ingredients && typeof ingredients === 'object')
+      .map(([metalKey, ingredients]) => [metalKey, ingredients, 'ore']); // Every known bar can be smelted as soon as its ore is found.
+    const alternates = Object.entries(deps?.METAL_BAR_ALTERNATES || {}).flatMap(([metalKey, variants]) =>
+      registered[metalKey] && Array.isArray(variants) ? variants.flatMap((ingredients, index) =>
+        ingredients && typeof ingredients === 'object' ? [[metalKey, ingredients, 'alloy-' + index]] : []) : []); // Cassiterite/copper alloying is equally available from the outset.
+    return direct.concat(alternates);
+  }
+
+  function craftMetalBar(metalKey, recipeVariant = 'ore') {
+    const ingredients = visibleMetalRecipes().find(([key,,variant]) => key === metalKey && variant === recipeVariant)?.[1]; // Validate the actual authored recipe and live inventory, not Town Value.
     const metal = deps.METAL_DEFS[metalKey];
     if (!ingredients || !metal) return;
+    const barKey = deps.metalBarItemKey(metalKey); // Output remains the existing smithing/foundry bar ID.
+    if ((deps.inventory[barKey] || 0) >= window.InventoryStacks.MAX_TOTAL) { deps.showToast('No room for another bar.', false); return; }
     for (const [oreKey, amount] of Object.entries(ingredients)) {
-      const itemKey = deps.metalOreItemKey(oreKey); // Used to keep ore consumption aligned with mine reward inventory keys.
-      if ((deps.inventory[itemKey] || 0) < amount) { deps.showToast(`Not enough ${deps.ORE_DEFS[oreKey].label}.`, false); return; }
+      const itemKey = ingredientItemKey(oreKey); // Supports either raw ore or native-copper bars.
+      if ((deps.inventory[itemKey] || 0) < amount) { deps.showToast(`Not enough ${ingredientLabel(oreKey)}.`, false); return; }
     }
     for (const [oreKey, amount] of Object.entries(ingredients)) {
-      const itemKey = deps.metalOreItemKey(oreKey);
+      const itemKey = ingredientItemKey(oreKey);
       deps.inventory[itemKey] -= amount;
       deps.clampInventoryStack(itemKey);
     }
-    const barKey = deps.metalBarItemKey(metalKey); // Used as the existing smithing, plating, and ladder material key.
     deps.inventory[barKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[barKey] || 0) + 1);
     deps.showToast(`Crafted 1 ${metal.label} Bar!`, true);
     renderCraftingPanel();
@@ -71,7 +110,7 @@
 
   function ownsBlueprint(bp) {
     if (bp?.masteryUnlockId) return !!window.CraftingMasterySystem?.hasUnlock?.(bp.masteryUnlockId);
-    return !bp?.moteOnly && (deps.inventory[bp?.key] || 0) > 0; // Mastery ownership is world-scoped; legacy shop blueprint items cannot bypass it.
+    return !!bp && !bp.moteOnly && (bp.alwaysKnown || knownBlueprints.has(bp.key)); // Mastery ownership is world-scoped; legacy shop blueprint items cannot bypass it.
   }
 
   // Every UI and build check reads these same authored material rows. Wood
@@ -103,7 +142,7 @@
       && (deps.inventory[bp.furnitureKey] || 0) < window.InventoryStacks.MAX_TOTAL;
   }
 
-  // Reusable blueprints are never consumed. Validate every ingredient before
+  // Learned designs remain known after their recipe item is consumed. Validate every ingredient before
   // spending any stock, including a stale UI click after inventory changes.
   function craftFurnitureFromBlueprint(blueprintKey) {
     const bp = deps.FURNITURE_BLUEPRINT_CATALOG.find(b => b.key === blueprintKey); // Resolves only registered recipes.
@@ -148,7 +187,8 @@
 
   function debugSnapshot() {
     return {
-      latestChange: 'Furniture uses authored wood, stone, wool and metal costs; Advanced Loom requires its 8-mote mastery unlock.',
+      latestChange: 'Metal bar recipes and alloy variants require their ingredients, not Town Value; advanced metal loot restrictions are unchanged.',
+      knownBlueprints: serializeBlueprints(),
       recipes: (deps?.FURNITURE_BLUEPRINT_CATALOG || []).map(bp => ({
         key: bp.key, owned: ownsBlueprint(bp), canBuild: canBuildFurniture(bp), ingredients: furnitureIngredients(bp),
       })),
@@ -168,29 +208,29 @@
       const empty = document.createElement('div');
       empty.className = 'ii-empty';
       empty.textContent = craftingActiveCategory === 'metallurgy'
-        ? 'No metal recipes discovered — hold a kind of ore to reveal recipes that use it.'
+        ? 'No registered metal recipes available.'
         : 'No blueprints or discovered recipes in this category yet.';
       list.appendChild(empty);
       return;
     }
-    metalRecipes.forEach(([metalKey, ingredients]) => {
+    metalRecipes.forEach(([metalKey, ingredients, recipeVariant]) => {
       const metal = deps.METAL_DEFS[metalKey];
       const ingredientRows = Object.entries(ingredients).map(([oreKey, amount]) => {
-        const have = deps.inventory[deps.metalOreItemKey(oreKey)] || 0; // Used in the mobile-readable affordability description.
-        return `${amount} ${deps.ORE_DEFS[oreKey].label} (have ${have})`;
+        const have = deps.inventory[ingredientItemKey(oreKey)] || 0; // Actual ore or metal-bar stack, whichever this recipe requires.
+        return `${amount} ${ingredientLabel(oreKey)} (have ${have})`;
       });
-      const canCraft = Object.entries(ingredients).every(([oreKey, amount]) => (deps.inventory[deps.metalOreItemKey(oreKey)] || 0) >= amount);
+      const canCraft = Object.entries(ingredients).every(([oreKey, amount]) => (deps.inventory[ingredientItemKey(oreKey)] || 0) >= amount) && (deps.inventory[deps.metalBarItemKey(metalKey)] || 0) < window.InventoryStacks.MAX_TOTAL;
       const row = document.createElement('div');
       row.className = 'shop-row';
       row.innerHTML = `
         <div class="sh-icon">🔶</div>
         <div class="sh-info">
-          <div class="sh-name">${deps.esc(metal.label)} Bar</div>
+          <div class="sh-name">${deps.esc(metal.label)} Bar${recipeVariant.startsWith("alloy") ? " — Alloying" : ""}</div>
           <div class="sh-desc">${ingredientRows.map(deps.esc).join(' + ')} → 1 bar</div>
         </div>
         <button class="shop-buy-btn" data-metal-recipe="${metalKey}" ${canCraft ? '' : 'disabled'}>Craft</button>
       `;
-      row.querySelector('[data-metal-recipe]')?.addEventListener('click', () => craftMetalBar(metalKey));
+      row.querySelector('[data-metal-recipe]')?.addEventListener('click', () => craftMetalBar(metalKey, recipeVariant));
       list.appendChild(row);
     });
     owned.forEach(bp => {
@@ -210,7 +250,7 @@
     });
   }
 
-  window.CraftingPanel = { init, render: renderCraftingPanel, craftMetalBar, visibleMetalRecipes, craftFurnitureFromBlueprint, furnitureCostDescription, debugSnapshot };
+  window.CraftingPanel = { ownsBlueprint, blueprintForItem, readBlueprint, restoreBlueprints, serializeBlueprints, init, render: renderCraftingPanel, craftMetalBar, visibleMetalRecipes, craftFurnitureFromBlueprint, furnitureCostDescription, debugSnapshot };
 })();
 
 // Crafting mastery + NPC crafting commissions live next to the CraftingPanel
@@ -224,9 +264,9 @@
     ['js/crafting-mastery-system.js?v=20261005craft2', () => Number(window.CraftingMasterySystem?.version) >= 2],
     ['js/advanced-loom-system.js?v=20261005loom1', () => Number(window.AdvancedLoomSystem?.version) >= 1],
     ['js/dye-trait-labels.js?v=20261005craft1', () => Number(window.DyeTraitLabels?.version) >= 1],
-    ['js/npc-crafting-commission-generator.js?v=20261015h872ebd0', () => Number(window.NpcCraftingCommissionGenerator?.version) >= 2],
-    ['js/npc-crafting-commission-delivery.js?v=20261005craft2', () => Number(window.NpcCraftingCommissionDelivery?.version) >= 2],
-    ['js/npc-crafting-commissions.js?v=20261005craft2', () => Number(window.NpcCraftingCommissions?.version) >= 2],
+    ['js/npc-crafting-commission-generator.js?v=20261022h2d5dcb6', () => Number(window.NpcCraftingCommissionGenerator?.version) >= 2],
+    ['js/npc-crafting-commission-delivery.js?v=20261105commissionaccept1', () => Number(window.NpcCraftingCommissionDelivery?.version) >= 2],
+    ['js/npc-crafting-commissions.js?v=20261022hae47de3', () => Number(window.NpcCraftingCommissions?.version) >= 2],
   ]; // Local progression/commission modules loaded immediately after CraftingPanel publishes its API. Cache ownership is refreshed by the repo checker.
 
   function loadModule(src, alreadyLoaded) {

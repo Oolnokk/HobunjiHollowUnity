@@ -91,7 +91,7 @@
     ? new URL('environmental-reverb.js?v=20261002hadfec51', MODULE_BASE_SRC).href
     : null;
   const PLAYBACK_MODULE_SRC = MODULE_BASE_SRC
-    ? new URL('animal-voice-independent-playback.js?v=20261015h4f643fb', MODULE_BASE_SRC).href
+    ? new URL('animal-voice-independent-playback.js?v=20261107stoneDuration1', MODULE_BASE_SRC).href
     : null;
 
   function requestEnvironmentalReverbModule() {
@@ -299,6 +299,7 @@
   }
 
   function request(c, requestedKind, opts = {}) {
+    if (speciesProfileKey(c) === 'honeyfuzzle') { debug.suppressed++; return false; } // Honeyfuzzles use uninterrupted spatial buzzing, not voice utterances.
     if (!deps || !c || c.health <= 0 || !hasVoice(c)) return false;
     const kind = requestedKind === 'discovery' ? 'warning' : requestedKind;
     const priority = PRIORITY[kind];
@@ -390,7 +391,9 @@
   }
 
   function tickCreature(c, dt, opts = {}) {
-    if (!deps || !c || c.health <= 0 || !hasVoice(c)) return;
+    if (speciesProfileKey(c) === 'honeyfuzzle') return; // Skip even scheduled chatter/pulse work for pure-buzz swarms.
+    if (c && c.health <= 0) { if (tracked.has(c)) releaseCreature(c); return; } // Safety net: a creature that died through any path still drops out of the strong tracking set (previously only debugSnapshot pruned it).
+    if (!deps || !c || !hasVoice(c)) return;
     const state = stateFor(c);
     const step = Math.max(0, Number(dt) || 0);
     state.pulseRemainingS = Math.max(0, state.pulseRemainingS - step);
@@ -412,6 +415,14 @@
     request(c, 'chatter');
     const chatter = profileFor(c).chatter;
     state.nextChatterS = randomRange(chatter.cooldownMinS, chatter.cooldownMaxS);
+  }
+
+  function releaseCreature(c) {
+    if (!c) return false;
+    const hadState = states.has(c);
+    states.delete(c);
+    const wasTracked = tracked.delete(c);
+    return hadState || wasTracked;
   }
 
   function dialogueLinesFor(c) {
@@ -456,6 +467,8 @@
   window.AnimalVocalizations = {
     init,
     tickCreature,
+    releaseCreature,
+    trackedCount: () => tracked.size, // Regression hook: the strong tracking set must not outlive a creature's despawn/death.
     companionDiscovery,
     threatGrowl,
     warning,

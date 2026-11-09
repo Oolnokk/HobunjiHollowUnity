@@ -140,7 +140,7 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
   .dyePanel{margin-left:0}
 }
 </style>
-<script src="../../js/panel-ui.js"></script>
+<script src="../../js/panel-ui.js?v=20261107h64d192c"></script>
 </head>
 <body>
 <div id="app">
@@ -296,7 +296,8 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
               <div><label>Romanceable (can date)</label><select id="romanceable"><option>false</option><option>true</option></select></div>
             </div>
             <div style="margin-top:8px"><label>Tags</label><input id="npcTags"></div>
-            <div style="margin-top:8px"><label>Bio / notes</label><textarea id="npcBio"></textarea></div>
+            <div style="margin-top:8px"><label>Character summary (not spoken)</label><textarea id="npcBio"></textarea></div>
+            <div style="margin-top:8px"><label>Backstory / lore (not spoken)</label><textarea id="npcLoreBackground"></textarea></div>
           </div>
         </section>
         <section id="social" class="tabPanel">
@@ -379,24 +380,24 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
 </div>
 
 <script src="../../js/local-db-overrides.js"></script>
-<script src="../../config/scratchbones-config.js?v=20261016h5fbd77a"></script>
-<script src="../../config/colors/config.js?v=20260930h1b2e2e2"></script>
+<script src="../../config/scratchbones-config.js?v=20261107lowblast1"></script>
+<script src="../../config/colors/config.js?v=20261026h7f369c3"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/tool-metal-recolor.js?v=20261015hd172faa"></script>
-<script src="../../js/metal-armor-system.js?v=20261008h99621ca"></script>
-<script src="../../js/sprite-recolor.js?v=20261014ha6a3081" data-character-studio-sprite-recolor="1"></script>
-<script src="../../js/repo-pattern-library.js?v=npcappearance1" data-character-studio-repo-pattern-library="1"></script>
-<script src="../../js/clothing-weaving-system.js?v=20261015h5975e5b" data-character-studio-weaving-compositor="1"></script>
-<script src="../../js/repo-picker.js?v=20260924overpassgap1"></script>
+<script src="../../js/metal-armor-system.js?v=20261104hPatternQuick1435a"></script>
+<script src="../../js/sprite-recolor.js?v=20261027h649a218" data-character-studio-sprite-recolor="1"></script>
+<script src="../../js/repo-pattern-library.js?v=20261030lichPatterns3" data-character-studio-repo-pattern-library="1"></script>
+<script src="../../js/clothing-weaving-system.js?v=20261104hPatternQuick1435a" data-character-studio-weaving-compositor="1"></script>
+<script src="../../js/repo-picker.js?v=20261104nelkRig2"></script>
 <script src="../../config/npcs/clothing-patterns.js?v=npcappearance1"></script>
-<script src="../../js/npc-wardrobe.js?v=20261015hf7b2927"></script>
-<script src="../../js/portrait-utils.js?v=20261016h340e25a"></script>
+<script src="../../js/npc-wardrobe.js?v=20261107devvisual2"></script>
+<script src="../../js/portrait-utils.js?v=20261107h7418f3e"></script>
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
 <script src="../../js/skeleton-species-runtime.js?v=20261010skelbridge1"></script>
 <script src="../../js/harlyao-skeleton-species-runtime.js?v=20261010h93464d4"></script>
 <script src="../../js/mao-ao-skeleton-species-runtime.js?v=20261010maoskel1"></script>
-<script src="../../js/png-plane-avatar.js?v=20261011h5faa803"></script>
+<script src="../../js/png-plane-avatar.js?v=20261105h9ba2b7a"></script>
 <script src="../../js/avatar-preview-scene.js"></script>
 <script>
 (() => {
@@ -909,7 +910,7 @@ function buildPreviewProfile(appearance) {
   const cosmetics = _cosmetics;
   if (!cosmetics || !window.getPortraitFighters || !window.randomProfileSeeded) return null;
   const { optionCache, hairFrontOptions, hairBackOptions, hairSideOptions, hairSideLOptions, eyesOptions,
-          upperFaceOptions, facialHairOptions, hatOptions, hoodOptions, torsoPortraitOptions, armPortraitOptions,
+          upperFaceOptions, facialHairOptions, hatOptions, hoodOptions, maskOptions, torsoPortraitOptions, armPortraitOptions,
           bodyColorRangesByGender, allowedCosmeticsByFighter, cosmeticWeightsByFighter,
           forcedCosmeticsByFighter, conditionalCosmeticsByFighter,
           mandatoryCosmeticSlotsByFighter, exclusiveCosmeticsByFighter } = cosmetics;
@@ -996,6 +997,7 @@ function buildPreviewProfile(appearance) {
   };
   applyEquip('hat', 'hat', hatOptions[0]);
   applyEquip('hood', 'hood', hoodOptions[0]);
+  applyEquip('mask', 'mask', maskOptions[0]);
   applyEquip('pauldron', 'pauldron', none);
   applyEquip('torso', 'torsoCosmetic', torsoPortraitOptions[0]);
   applyEquip('overwear', 'armCosmetic', armPortraitOptions[0]);
@@ -1440,6 +1442,7 @@ function renderCollections() {
   const CLOTHING_SLOTS = [
     { key: 'hat',      label: 'Hat',      category: 'hat',      tintKeys: ['HAT',   'HAT_B',   'HAT_C'] },
     { key: 'hood',     label: 'Hood',     category: 'hood',     tintKeys: ['HOOD',  'HOOD_B',  'HOOD_C'] },
+    { key: 'mask',     label: 'Mask',     category: 'mask',     tintKeys: ['MASK', 'MASK_B', 'MASK_C'] },
     { key: 'pauldron', label: 'Pauldrons', category: 'pauldron', tintKeys: ['PAULDRON'] },
     { key: 'torso',    label: 'Torso',    category: 'torso',    tintKeys: ['TORSO', 'TORSO_B', 'TORSO_C'] },
     { key: 'overwear', label: 'Overwear', category: 'overwear', tintKeys: ['CLOTH', 'CLOTH_B', 'CLOTH_C'] },
@@ -1684,7 +1687,10 @@ async function renderNpcAppearanceControls() {
       const selected = stack[index]?.repoPatternId || ''; // Retains the selected repository pattern across panel rebuilds.
       return `<div><label>${label}</label><select data-npc-pattern-slot="${esc(item.slot)}" data-pattern-index="${index}" data-pattern-role="${esc(role)}"><option value="">None</option>${patterns.map(pattern => `<option value="${esc(pattern.id)}"${pattern.id === selected ? ' selected' : ''}>${esc(pattern.name)}</option>`).join('')}${stack[index] && !patterns.some(pattern => pattern.id === selected) ? `<option value="__custom" selected>${esc(selected || 'Imported pattern')} (preserved)</option>` : ''}</select>${transformControls(item, role, index, stack[index])}</div>`;
     };
-    return `<div style="margin-top:8px"><span class="sectionTag">${esc(role === '__default' ? 'Cloth' : role)}</span><div class="grid2">${select(0, 'Pattern')}${select(1, 'Overpass pattern')}</div></div>`;
+    const overpassHex = stack[1]?.inkColorHex || '';
+    const overpassDye = dyes.find(dye => dye.hex?.toLowerCase() === overpassHex.toLowerCase())?.id || (overpassHex ? '__saved' : '');
+    const inkOptions = dyes.map(dye => `<option value="${esc(dye.id)}"${dye.id === overpassDye ? ' selected' : ''}>${esc(dye.label || dye.name || dye.id)}</option>`).join('');
+    return `<div style="margin-top:8px"><span class="sectionTag">${esc(role === '__default' ? 'Cloth' : role)}</span><div class="grid2">${select(0, 'Pattern')}${select(1, 'Overpass pattern')}</div>${stack[1] ? `<label>Overpass ink</label><select data-npc-overpass-ink="${esc(item.slot)}" data-pattern-role="${esc(role)}"><option value="">Same as pattern dye</option>${inkOptions}${overpassDye === '__saved' ? `<option value="__saved" selected>Saved custom ink (${esc(overpassHex)})</option>` : ''}</select>` : ''}</div>`;
     }).join('');
     const colorId = typeof item.colorC === 'string' ? item.colorC : item.colorC?.dyeId || ''; // Accepts legacy string dyes and full clothing-item color references.
     const label = StudioAccount.getShopCatalog().find(entry => entry.id === item.cosmeticId)?.label || item.cosmeticId; // Names the exact garment being edited.
@@ -1729,11 +1735,28 @@ async function renderNpcAppearanceControls() {
     const entry = patterns.find(pattern => pattern.id === el.value); // Supplies a portable motif path for saved data.
     const pattern = entry ? window.RepoPatternLibrary.getCachedById(entry.id) : null; // Materializes an authored snapshot so first portrait bakes need no asynchronous lookup.
     if (pattern && entry.motifPng) pattern.motifUrl = entry.motifPng;
+    if (index === 1 && pattern && stack[index]?.inkColorHex) pattern.inkColorHex = stack[index].inkColorHex; // Switching overpass art keeps its independent garment ink.
     stack[index] = pattern;
     const role = el.dataset.patternRole; // Limits this edit to the displayed cloth/trim layer.
     storeClothPattern(item, effective, role, index, stack);
     renderNpcAppearanceControls().catch(error => log('NPC appearance controls failed: ' + error.message, 'error')); invalidatePreview();
     setStatus('Clothing pattern changed — use Apply to NPC');
+  });
+  $('npcPatternControls').querySelectorAll('[data-npc-overpass-ink]').forEach(el => el.onchange = () => {
+    const slot = el.dataset.npcOverpassInk, role = el.dataset.patternRole;
+    const item = window.NpcWardrobe.wornClothingItemsForRecord(workingNpcRecord(), false).find(entry => entry.slot === slot);
+    if (!item) return;
+    const effective = items.find(entry => entry.slot === slot);
+    const stack = [...window.ClothingWeavingSystem.patternStackForLayer(effective?.weaving, role)];
+    if (!stack[1]) return;
+    const color = dyes.find(dye => dye.id === el.value)?.hex || null;
+    if (el.value !== '__saved') {
+      stack[1] = { ...stack[1] };
+      if (color) stack[1].inkColorHex = color;
+      else delete stack[1].inkColorHex; // Default inherits the garment's Dye C without a duplicate color channel.
+    }
+    storeClothPattern(item, effective, role, 1, stack);
+    invalidatePreview(); setStatus('Overpass ink changed — use Apply to NPC');
   });
   $('npcPatternControls').querySelectorAll('[data-npc-pattern-transform-slot]').forEach(el => el.onchange = () => {
     const slot = el.dataset.npcPatternTransformSlot; // Placement belongs to this garment only.
@@ -2029,6 +2052,7 @@ function fillFields(n) {
   $('canMarry').value = String(!!n.relationship?.canMarry);
   $('npcTags').value = (n.tags || []).join(', ');
   $('npcBio').value = n.bio || '';
+  $('npcLoreBackground').value = n.loreBackground || ''; // Used to edit historical notes independently of spoken dialogue and the short character profile.
   $('maxHearts').value = n.relationship?.maxHearts ?? 10;
   $('baseDisposition').value = n.relationship?.baseDisposition ?? 0;
   $('decayRule').value = n.relationship?.decayRule || 'unknown';
@@ -2091,6 +2115,7 @@ function read() {
   n.relationship.speciesStartingDisposition = parse('speciesDispositionJson', []);
   n.relationship.friendshipUnlocks = parse('friendUnlocksJson', []);
   n.bio = $('npcBio').value;
+  n.loreBackground = $('npcLoreBackground').value; // Used by export/override saves so moved NPC backstories remain editable.
   n.tags = split($('npcTags').value);
   n.appearance = parse('appearanceJson', n.appearance || {});
   n.equippedCosmetics = parse('cosmeticsJson', n.equippedCosmetics || []);
@@ -2294,7 +2319,7 @@ document.querySelectorAll('.tabBtn').forEach(b => b.onclick = () => {
 });
 
 ['npcId','npcName','homeId','npcSpecies','npcGender','npcAge','npcRole','romanceable','canBefriend','canMarry',
- 'npcTags','npcBio','maxHearts','baseDisposition','decayRule','speciesDispositionJson','friendUnlocksJson',
+ 'npcTags','npcBio','npcLoreBackground','maxHearts','baseDisposition','decayRule','speciesDispositionJson','friendUnlocksJson',
  'appearanceJson','cosmeticsJson','dyesJson','avatarRawJson','lovedGifts','likedGifts','neutralGifts',
  'dislikedGifts','hatedGifts','giftCategoriesJson','dialogueJson','worldJson'
 ].forEach(id => { const el = $(id); if (el) el.addEventListener('input', read); });

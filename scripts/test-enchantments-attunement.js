@@ -392,7 +392,7 @@ const unmarked = CO.getModifiers(companion, makeEntity());
 assert.equal(unmarked.damage, 1.3, '25. Whistle alone off the Sicced target');
 const scaled = CO.scaleHit(companion, a, 10, { afflictionBonuses: { bleedingHealth: 1 } });
 assert.ok(Math.abs(scaled.amount - 10 * both.damage) < 1e-9);
-assert.ok(Math.abs(scaled.opts.afflictionBonuses.bleedingHealth - both.affliction) < 1e-9, '25. affliction buildup scaled through the shared hit path');
+assert.ok(Math.abs(scaled.amount * scaled.opts.afflictionBonuses.bleedingHealth - 10 * both.affliction) < 1e-9, '25. affliction buildup scaled through the shared hit path');
 assert.equal(CO.getModifiers(makeEntity({ isCompanion: false }), a).damage, 1, 'wild attackers are never empowered');
 
 // ── 22-24: Attunement ─────────────────────────────────────────────
@@ -515,8 +515,18 @@ assert.ok(ITEM_DEFS[boundKey]?.harlyaoBoundRelic, 'bound relic item def rebuilds
 assert.equal(ES.isBaseUnlocked('burning'), false, 'nothing learned before unbinding');
 const price = HR.unbindPrice(relic.enchantments);
 assert.equal(price, HR.TUNING.UNBIND_BASE_PRICE + 4 * HR.TUNING.UNBIND_PRICE_PER_ENCHANTMENT);
+load('docs/js/tool-mastery.js');
+context.ToolMastery.init({ getGearInventory: () => gear, TOOL_ITEM_DEFS });
+const relicToolKey = 'harlyaoRelic_longsword_abc123'; // Used to seed former-owner affinity before the actual unbinding action.
+gear.toolMastery = { [relicToolKey]: { xp: 300 }, sword: { xp: 150 } };
+gear.toolPlating = { [relicToolKey]: { mode: 'pattern', pattern: {} } };
 const res = HR.unbind(boundKey);
 assert.equal(res.ok, true);
+assert.equal(res.toolKey, relicToolKey);
+assert.equal(context.ToolMastery.toolMasteryLevel(res.toolKey), 0, 'unbinding resets former-owner mastery');
+assert.equal(gear.toolMastery.sword.xp, 150, 'unbinding preserves other weapon mastery');
+assert.equal(gear.toolPlating[res.toolKey], undefined, 'unbinding clears stale verdigris patterns');
+assert.equal(TOOL_ITEM_DEFS[res.toolKey].metalKey, 'tinBronze', 'unbound relics use the normal mastery-driven bronze recolor pipeline');
 assert.equal(inventory[boundKey], undefined, 'bound stack consumed');
 assert.equal(inventory.gold, 10000 - price, 'Garanki charged his fee');
 assert.equal(gear.tools[res.toolKey], true, 'unbound relic is now a gear weapon');

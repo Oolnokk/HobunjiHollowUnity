@@ -158,7 +158,7 @@ async function main() {
   assert.equal(context.DenLocaleRuntime.debugSnapshot().wildlifeDepsReady, true, 'wrapped init captures the live hostile collection');
 
   const cavernScene = scene();
-  const cavernNest = { col: 10, row: 20, w: 2, h: 2, remaining: 3 };
+  const cavernNest = { col: 10, row: 20, w: 2, h: 2, remaining: 3, floorY: null }; // A legacy null floor must use the actual cave surface, not numeric zero.
   const cavernRoot = group(`nest_${currentArea}:egg:1_egg`);
   cavernRoot.position.set(11.1, 2.30, 21.1); // legacy layout: 0.30 world-unit lift over floor Y=2
   cavernRoot.scale.set(1.5, 2.0, 2.5);
@@ -276,6 +276,46 @@ async function main() {
   const debug = context.DenLocaleRuntime.debugSnapshot();
   assert.equal(debug.wildlifeInstalled, true, 'debug confirms WildlifeSpawn bridge installed');
   assert.equal(debug.lastMotherApplied.areaId, 'map_i_test_den', 'debug records actual transformed Den-Mother');
+
+  let resolveNestLoad; // Releases an old in-flight authored fetch after the direct furniture owner has repaired the scene.
+  const pendingNestLoad = new Promise(resolve => { resolveNestLoad = resolve; }); // Models a slow cold-cache nest asset request.
+  context.AuthoredFurniture.load = () => pendingNestLoad;
+  currentArea = 'map_i_race_den';
+  const raceNest = { col: 4, row: 7, w: 2, h: 2, remaining: 0 }; // Even empty nests must not acquire duplicate furniture.
+  const raceScene = scene(); // Cached cave scene awaiting its authored replacement.
+  denNests.set(currentArea, raceNest);
+  buildingScenes.set(currentArea, { scene: raceScene });
+  context.DenLocaleRuntime.syncCurrentDen();
+  const directMesh = group('shared_direct_nest'); // Ordinary nest sync repairs the scene before the older fetch resolves.
+  directMesh.userData.denNestFurniture = true;
+  raceScene.add(directMesh);
+  raceNest.mesh = directMesh;
+  resolveNestLoad({ key: 'nest' });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(raceScene.children.length, 1, 'a late locale asset load cannot add a duplicate over an already-repaired nest');
+  assert.equal(raceNest.mesh, directMesh, 'the direct furniture owner retains its mesh reference');
+  context.DenLocaleRuntime.syncCurrentDen();
+  assert.equal(raceScene.children.length, 1, 'later frames reuse the single adopted mesh');
+
+  currentArea = 'map_i_failed_nest_build';
+  const failedNest = { col: 4, row: 7, w: 2, h: 2, remaining: 1 }; // An unavailable authored builder must not destroy the old visible objective.
+  const failedScene = scene(); // Starts with the exact legacy box recognised by the adapter.
+  const fallbackMarker = group('legacy_marker'); // Retained until replacement geometry has actually been built.
+  fallbackMarker.isMesh = true;
+  fallbackMarker.geometry = { parameters: { width: 2, height: .12, depth: 2 } };
+  fallbackMarker.material = { color: { getHex: () => 0x3a2a1a } };
+  fallbackMarker.position.set(5, .02, 8);
+  failedScene.add(fallbackMarker);
+  denNests.set(currentArea, failedNest);
+  buildingScenes.set(currentArea, { scene: failedScene });
+  context.AuthoredFurniture.load = async () => ({ key: 'nest' });
+  context.AuthoredFurniture.buildGroup = () => { throw new Error('intentional geometry failure'); };
+  context.DenLocaleRuntime.syncCurrentDen();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(fallbackMarker.parent, failedScene, 'failed authored construction leaves the visible fallback in place');
+  assert.equal(failedNest.remaining, 1, 'failed construction preserves the collectible clutch');
 
   console.log('Den locale load-order, frame isolation, Den-Mother transform, cavern clutch, branch clutch, and falling authored branch-nest behavior passed.');
 }

@@ -194,31 +194,34 @@
     return { ok: true, fallbackOnly: false };
   }
 
-  async function flushRuntimeOrStop() {
+  async function flushRuntimeOrStop({ folder = false } = {}) {
     const runtime = window.HobunjiRuntimeSave; // Canonical live-game flush bridge installed before gameplay modules initialize.
     if (!runtime?.flushNow) return { ok: false, error: 'The live save bridge is unavailable; quitting was stopped to avoid copying stale save data.' };
-    const result = runtime.flushNow({ reason: 'quit-to-save-selection' });
+    const result = folder && typeof runtime.captureSnapshot === 'function'
+      ? runtime.captureSnapshot({ reason: 'quit-to-save-selection' })
+      : runtime.flushNow({ reason: 'quit-to-save-selection' });
     if (!result?.ok || !result.captured) {
       return {
         ok: false,
         error: result?.error || 'The current gameplay state could not be written to the browser save.',
       };
     }
-    return { ok: true };
+    return { ok: true, snapshot: result.snapshot || null };
   }
 
-  async function flushFolderOrStop() {
+  async function flushFolderOrStop(snapshot = null) {
     const save = localSave();
     if (!save || !save.getStatus().folderName) return { ok: true, fallbackOnly: true };
 
-    let status = await save.syncNow();
+    const commit = options => snapshot && save.syncSnapshot ? save.syncSnapshot(snapshot, options) : save.syncNow(options); // Forced retries reuse the same captured live snapshot.
+    let status = await commit({});
     if (status.dataLossRisk) {
       const overwrite = confirm(
         `Warning: this browser save ${status.dataLossRisk}.\n\n` +
         'Overwrite the Primary Save Folder anyway?'
       );
       if (!overwrite) return { ok: false, cancelled: true };
-      status = await save.syncNow({ force: true });
+      status = await commit({ force: true });
     }
     const primarySaved = ['saved-primary-recovery-error', 'autosaved-primary-recovery-error'].includes(status.lastAction); // These actions are set only after the canonical folder write succeeds.
     if (status.lastError && !primarySaved) return { ok: false, error: status.lastError };
@@ -242,7 +245,7 @@
       }
 
       setBusy(button, true, 'Saving Game…');
-      const runtimeSaved = await flushRuntimeOrStop();
+      const runtimeSaved = await flushRuntimeOrStop({ folder: !folderReady.fallbackOnly });
       if (!runtimeSaved.ok) {
         lastError = runtimeSaved.error;
         alert('The current game was not safely saved, so the game was not quit:\n' + lastError);
@@ -251,7 +254,7 @@
 
       if (!folderReady.fallbackOnly) {
         setBusy(button, true, 'Saving Folder…');
-        const folderSaved = await flushFolderOrStop();
+        const folderSaved = await flushFolderOrStop(runtimeSaved.snapshot);
         if (!folderSaved.ok) {
           if (folderSaved.cancelled) {
             alert('The Primary Save Folder was not overwritten, so the game was not quit.');

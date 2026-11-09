@@ -5,10 +5,13 @@
 
   if (window.MetalArmorSystem) return;
 
-  const VERSION = 3;
+  const VERSION = 4;
   const CRAFT_ID_MARKER = '#smith:';
   const DEFAULT_CRAFT_BAR_COST = 3;
   const DEFAULT_CRAFT_LABOR_GOLD = 15;
+  const HELM_BLUEPRINT_ID = 'replica_bzabag_helm'; // The prize and smith copies share a single cosmetic identity with separate cloth/metal layers.
+  const HELM_WOOL_VARIANTS = Object.freeze({ light: Object.freeze({ key: 'lightWool', label: 'Light Wool', weightUnits: 0.60 }), heavy: Object.freeze({ key: 'puktukWool', label: 'Heavy Wool', weightUnits: 1.50 }) }); // Same material keys/weight multipliers used by ClothingWeavingSystem.
+  const HELM_WOOL_COST = 2; // Both smith-crafted helmet variants need two units of their respective wool.
   const TREATMENT_BAR_COST = 1;
   const TREATMENT_LABOR_GOLD = 8;
   const TEMPER_XP_THRESHOLDS = Object.freeze([40, 90, 150, 220, 300]); // Mirrors ordinary tool/weapon Mastery pacing; Temper itself never changes combat stats.
@@ -30,7 +33,7 @@
   });
 
   const METAL_VISUAL_FALLBACKS = Object.freeze({
-    nativeCopper: Object.freeze({ label: 'Native Copper', hex: '#B87333', verdigrisHex: '#3FAF9F', tier: 1 }),
+    nativeCopper: Object.freeze({ label: 'Copper', hex: '#B87333', verdigrisHex: '#3FAF9F', tier: 1 }),
     lowTinBronze: Object.freeze({ label: 'Low-Tin Bronze', hex: '#B66A2E', verdigrisHex: '#4EAA86', tier: 2 }),
     tinBronze: Object.freeze({ label: 'Tin Bronze', hex: '#CD7F32', verdigrisHex: '#57B38B', tier: 3 }),
     highTinBronze: Object.freeze({ label: 'High-Tin Bronze', hex: '#BAA06A', verdigrisHex: '#78BFA5', tier: 4 }),
@@ -70,11 +73,25 @@
         'rakakoan::male': 'assets/cosmetics/clothes/pauldrons/rounded_pauldron_kenk_m.png',
         'rakakoan::female': 'assets/cosmetics/clothes/pauldrons/rounded_pauldron_kenk_f.png',
         'harlyao-skeleton::male': 'assets/cosmetics/clothes/pauldrons/rounded_pauldron_engh_m.png',
+        'harlyao::male': 'assets/cosmetics/clothes/pauldrons/rounded_pauldron_engh_m.png',
+        'harlyao::female': 'assets/cosmetics/clothes/pauldrons/rounded_pauldron_engh_f.png',
         'harlyao-skeleton::female': 'assets/cosmetics/clothes/pauldrons/rounded_pauldron_engh_f.png',
         'engh-sho::male': 'assets/cosmetics/clothes/pauldrons/rounded_pauldron_engh_m.png',
         'engh-sho::female': 'assets/cosmetics/clothes/pauldrons/rounded_pauldron_engh_f.png',
         'mashtzarr::male': 'assets/cosmetics/clothes/pauldrons/rounded_pauldron_mashtz_m.png',
         'mashtzarr::female': 'assets/cosmetics/clothes/pauldrons/rounded_pauldron_mashtz_f.png',
+      }),
+    }),
+    replica_bzabag_helm: Object.freeze({
+      id: HELM_BLUEPRINT_ID, label: 'Replica Helm of Bzabag', slot: 'hat', icon: '🪖',
+      referenceSteelMassKg: 0.70, // Faceguard metal only; the independent cap weight is added by the wool variant.
+      craftBarCost: DEFAULT_CRAFT_BAR_COST, craftLaborGold: DEFAULT_CRAFT_LABOR_GOLD,
+      woolOptions: Object.freeze(['light', 'heavy']), woolCost: HELM_WOOL_COST,
+      allowDuplicates: true, strictAppearance: true,
+      clothLayerRoles: Object.freeze(['base']), metalLayerRoles: Object.freeze(['trim']),
+      sourceHex: '#4F6F6C', hueToleranceDeg: 35, saturationTolerance: 0.22, // Sampled from the actual faceguard PNG. Excludes the separate black ink outlines from metal and verdigris masks.
+      spriteByAppearance: Object.freeze({
+        'mao-ao::male': "assets/cosmetics/clothes/hat/replica_bzabag's_helm-faceguard_m.png",
       }),
     }),
     tangedcirclet: Object.freeze({
@@ -156,7 +173,7 @@
 
   function isMetalArmor(item) {
     if (!item || !blueprintForItem(item)) return false;
-    return item.materialKind === 'metal' || item.smithMaterial?.kind === 'metal' || isLegacySmithMetalItem(item);
+    return baseCosmeticId(item) === HELM_BLUEPRINT_ID || item.materialKind === 'metal' || item.smithMaterial?.kind === 'metal' || isLegacySmithMetalItem(item); // Legacy festival prizes were generic cosmetics; recognize and hydrate them too.
   }
 
   function temperXp(itemOrState) {
@@ -183,12 +200,14 @@
     return Math.round(raw / OXIDATION_CACHE_STEP) * OXIDATION_CACHE_STEP;
   }
 
-  function weightForBlueprintMetal(blueprintId, metalKey) {
+  function weightForBlueprintMetal(blueprintId, metalKey, weaveMaterial = 'light') {
     const blueprint = blueprintForId(blueprintId);
     if (!blueprint) return { blueprintId, metalKey, densityGcm3: 0, massKg: 0, weightUnits: 0 };
     const density = Number(DENSITY_G_CM3[metalKey] || DENSITY_G_CM3.nativeCopper);
     const referenceMass = Number(blueprint.referenceSteelMassKg) || 0;
-    const massKg = referenceMass * (density / REFERENCE_STEEL_DENSITY_G_CM3);
+    const metalMassKg = referenceMass * (density / REFERENCE_STEEL_DENSITY_G_CM3); // Only the helm's faceguard is alloy; the textile cap has independent weight.
+    const woolWeightUnits = blueprint.woolOptions ? (HELM_WOOL_VARIANTS[weaveMaterial] || HELM_WOOL_VARIANTS.light).weightUnits : 0;
+    const massKg = metalMassKg + woolWeightUnits * KG_PER_WEIGHT_UNIT;
     const weightUnits = massKg / KG_PER_WEIGHT_UNIT;
     return {
       blueprintId,
@@ -200,7 +219,7 @@
   }
 
   function weightForItem(item) {
-    return weightForBlueprintMetal(baseCosmeticId(item), item?.metalKey || 'nativeCopper');
+    return weightForBlueprintMetal(baseCosmeticId(item), item?.metalKey || 'nativeCopper', item?.weaveMaterial || 'light');
   }
 
   function spriteForBlueprintAppearance(blueprintId, appearance) {
@@ -209,6 +228,7 @@
     const speciesId = normalizeSpecies(appearance?.speciesId || appearance?.species);
     const gender = normalizeGender(appearance?.gender);
     const sprites = blueprint.spriteByAppearance || {};
+    if (blueprint.strictAppearance) return sprites[`${speciesId}::${gender}`] || null; // Never borrow male Mao'ao artwork for unsupported helm appearances.
     return sprites[`${speciesId}::${gender}`]
       || sprites[`mao-ao::${gender}`]
       || sprites['mao-ao::male']
@@ -304,17 +324,24 @@
     if (item.baseCosmeticId !== blueprint.id) { item.baseCosmeticId = blueprint.id; changed = true; }
     if (item.slot !== blueprint.slot) { item.slot = blueprint.slot; changed = true; }
     if (item.materialKind !== 'metal') { item.materialKind = 'metal'; changed = true; }
-    if (!item.metalKey || !DENSITY_G_CM3[item.metalKey]) { item.metalKey = 'nativeCopper'; changed = true; }
+    if (!item.metalKey || !DENSITY_G_CM3[item.metalKey]) { item.metalKey = blueprint.woolOptions ? treasureEligibleMetalKey() : 'nativeCopper'; changed = true; }
+    if (blueprint.woolOptions && !HELM_WOOL_VARIANTS[item.weaveMaterial]) { item.weaveMaterial = 'light'; changed = true; }
     const normalizedXp = temperXp(item);
     if (Number(item.temperXp) !== normalizedXp) { item.temperXp = normalizedXp; changed = true; }
     const weight = weightForItem(item);
     if (Number(item.weightUnits) !== weight.weightUnits) { item.weightUnits = weight.weightUnits; changed = true; }
     if (Number(item.physicalMassKg) !== weight.massKg) { item.physicalMassKg = weight.massKg; changed = true; }
-    if (item.dyeable !== false) { item.dyeable = false; changed = true; }
-    if (item.colorA != null) { item.colorA = null; changed = true; }
-    if (item.colorB != null) { item.colorB = null; changed = true; }
-    if (item.colorC != null) { item.colorC = null; changed = true; }
-    if (!Array.isArray(item.articleDyeIds) || item.articleDyeIds.length) { item.articleDyeIds = []; changed = true; }
+    if (blueprint.woolOptions) {
+      if (item.dyeable !== true) { item.dyeable = true; changed = true; }
+      if (!item.colorA) { item.colorA = { hex: '#ded8c8', label: 'Natural Wool' }; changed = true; } // Cloth-cap tint retained through gear, loom, and portrait serialization.
+      if (!Array.isArray(item.articleDyeIds)) { item.articleDyeIds = []; changed = true; }
+    } else {
+      if (item.dyeable !== false) { item.dyeable = false; changed = true; }
+      if (item.colorA != null) { item.colorA = null; changed = true; }
+      if (item.colorB != null) { item.colorB = null; changed = true; }
+      if (item.colorC != null) { item.colorC = null; changed = true; }
+      if (!Array.isArray(item.articleDyeIds) || item.articleDyeIds.length) { item.articleDyeIds = []; changed = true; }
+    }
     if (item.baseLabel !== blueprint.label) { item.baseLabel = blueprint.label; changed = true; }
     return changed;
   }
@@ -345,6 +372,7 @@
     if (!active) return `Live verdigris: ${Math.round(verdigrisFraction(itemOrState) * 100)}%`;
     if (active.mode === 'cosmetic') return `Plated: ${metalDef(active.metalKey)?.label || active.metalKey}`;
     if (active.mode === 'pattern') return 'Authored verdigris-removal pattern';
+    if (active.mode === 'painted') return `${metalDef(active.metalKey || 'silver')?.label || 'Silver'}-plated, painted with a guardian pattern`;
     if (active.mode === 'resistant') return 'Verdigris-resistant coat';
     return 'Smith-treated';
   }
@@ -369,7 +397,7 @@
       }
       patternHash = hash.toString(16);
     }
-    return `${active.mode || 'unknown'}:${active.metalKey || ''}:${active.patternLibraryId || ''}:${patternHash}`;
+    return `${active.mode || 'unknown'}:${active.metalKey || ''}:${active.patternLibraryId || ''}:${active.paintHex || ''}:${patternHash}`;
   }
 
   function visualOptions(itemOrState) {
@@ -390,6 +418,20 @@
     }
     if (active?.mode === 'resistant') {
       return { ...sourceOptions, targetHex: baseMetal.hex, verdigrisHex: null, oxidationAmount: 0 };
+    }
+    if (active?.mode === 'painted') {
+      // Guardian plating: silver metal PAINTED with an authored pattern. The recolorer's "bare metal" motif pixels take the paint color and
+      // the rest takes the plating metal, so the painted motif can be re-dyed (paintHex) without ever re-authoring it.
+      const authoredPattern = active.pattern || window.PatternLibrary?.getById?.(active.patternLibraryId) || null;
+      const plating = metalDef(active.metalKey || 'silver');
+      if (authoredPattern) {
+        const motifUrl = authoredPattern.motifUrl;
+        const resolvedPattern = motifUrl && !/^(?:[a-z]+:|\/\/)/i.test(motifUrl) && window.resolvePortraitAssetUrl
+          ? { ...authoredPattern, motifUrl: window.resolvePortraitAssetUrl(motifUrl.replace(/^\.?\/?assets\//, '')) }
+          : authoredPattern;
+        return { ...sourceOptions, targetHex: active.paintHex || plating.hex, verdigrisHex: plating.hex, oxidationAmount: 1, authoredPattern: resolvedPattern };
+      }
+      return { ...sourceOptions, targetHex: plating.hex, verdigrisHex: null, oxidationAmount: 0 };
     }
     if (active?.mode === 'pattern') {
       const authoredPattern = active.pattern || window.PatternLibrary?.getById?.(active.patternLibraryId) || null;
@@ -438,11 +480,16 @@
     });
   }
 
+  function isMetalPortraitLayer(layer, state) {
+    if (!state?.blueprintId || !layer) return false;
+    return layer.materialKind !== 'cloth'; // Explicit hybrid cloth remains in the normal dye/reweaving pipeline; other metal armor remains unchanged.
+  }
+
   async function preparePortraitLayers(layers, state) {
     if (!Array.isArray(layers) || !layers.length || !state?.blueprintId) return layers || [];
     const normalizedState = state;
     return Promise.all(layers.map(async layer => {
-      if (!layer?.url) return layer;
+      if (!layer?.url || !isMetalPortraitLayer(layer, normalizedState)) return layer;
       const url = await processedLayerUrl(layer.url, normalizedState);
       return url === layer.url ? layer : { ...layer, url };
     }));
@@ -462,7 +509,7 @@
     return true;
   }
 
-  function refreshVisuals() {
+  function refreshVisuals({ rerenderSmith = true } = {}) {
     processedLayerUrlPromises.clear();
     visualRefreshes++;
     try {
@@ -473,7 +520,7 @@
     }
     deps?.buildEquipmentSlots?.();
     deps?.buildInventoryGrid?.();
-    deps?.rerenderSmith?.();
+    if (rerenderSmith) deps?.rerenderSmith?.(); // Keep active arrow-button/controller focus during rapid instance placement tweaks.
   }
 
   function awardExperience(amount, reason = 'experience', options = {}) {
@@ -532,11 +579,23 @@
     return Math.max(0, Number(deps?.inventory?.[key]) || 0);
   }
 
-  function makeCraftedItem(blueprintId, metalKey) {
+  function consumeSmithyWool(wool, amount) {
+    if (!wool) return true;
+    if (inventoryCount(wool.key) < amount) return false;
+    const consumeQuality = window.CookingSystem?.consumeQualityByPolicy; // Smithy and loom must debit the same quality-star inventory buckets.
+    if (typeof consumeQuality === 'function') {
+      return !!consumeQuality.call(window.CookingSystem, wool.key, amount, 'lowest'); // Protects the highest-quality wool, matching other automatic crafting.
+    }
+    deps.inventory[wool.key] = inventoryCount(wool.key) - amount; // Bootstrap fallback when CookingSystem has not loaded.
+    deps.clampInventoryStack?.(wool.key);
+    return true;
+  }
+
+  function makeCraftedItem(blueprintId, metalKey, weaveMaterial = 'light') {
     const blueprint = blueprintForId(blueprintId);
     if (!blueprint) return null;
     const metal = metalDef(metalKey);
-    const weight = weightForBlueprintMetal(blueprintId, metalKey);
+    const weight = weightForBlueprintMetal(blueprintId, metalKey, weaveMaterial);
     const uid = `gcloth_smith_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     return {
       uid,
@@ -554,7 +613,8 @@
       smithTreatment: null,
       weightUnits: weight.weightUnits,
       physicalMassKg: weight.massKg,
-      dyeable: false,
+      dyeable: !!blueprint.woolOptions,
+      ...(blueprint.woolOptions ? { weaveMaterial, colorA: { hex: '#ded8c8', label: 'Natural Wool' } } : {}), // Cap dye belongs to the garment, never to its faceguard alloy.
       articleDyeIds: [],
       craftedAt: Date.now(),
     };
@@ -576,19 +636,25 @@
     return known;
   }
 
-  function craft(blueprintId, metalKey) {
+  function craft(blueprintId, metalKey, weaveMaterial = 'light') {
     const blueprint = blueprintForId(blueprintId);
     if (!deps || !blueprint || !deps.VERDIGRIS_METAL_KEYS?.includes(metalKey)) return false;
     if (!learnBlueprints().includes(blueprintId)) {
       deps.showToast?.(`Acquire ${blueprint.label} as loot to learn how to smith them.`, false);
       return false;
     }
-    if (ownedForBlueprintMetal(blueprintId, metalKey)) {
+    if (blueprint.woolOptions && !HELM_WOOL_VARIANTS[weaveMaterial]) return false;
+    if (!blueprint.allowDuplicates && ownedForBlueprintMetal(blueprintId, metalKey)) {
       deps.showToast?.(`You already own ${metalDef(metalKey).label} ${blueprint.label}.`, false);
       return false;
     }
     const barCost = Number(blueprint.craftBarCost) || DEFAULT_CRAFT_BAR_COST;
     const laborGold = Number(blueprint.craftLaborGold) || DEFAULT_CRAFT_LABOR_GOLD;
+    const wool = blueprint.woolOptions ? HELM_WOOL_VARIANTS[weaveMaterial] : null; // One exact wool choice distinguishes each smith-only helm recipe.
+    if (wool && inventoryCount(wool.key) < blueprint.woolCost) {
+      deps.showToast?.(`Need ${blueprint.woolCost} ${wool.label}.`, false);
+      return false;
+    }
     const metal = metalDef(metalKey);
     const barKey = deps.metalBarItemKey?.(metalKey);
     if (!barKey || inventoryCount(barKey) < barCost) {
@@ -603,16 +669,20 @@
     if (!gear) return false;
     if (!gear.clothing || typeof gear.clothing !== 'object') gear.clothing = {};
     if (!Array.isArray(gear.clothingItems)) gear.clothingItems = [];
+    if (wool && !consumeSmithyWool(wool, blueprint.woolCost)) {
+      deps.showToast?.(`Could not consume ${blueprint.woolCost} ${wool.label}.`, false);
+      return false; // Do not charge metal or labor when tracked wool consumption fails.
+    }
     deps.inventory[barKey] = inventoryCount(barKey) - barCost;
     deps.clampInventoryStack?.(barKey);
     deps.inventory.gold = inventoryCount('gold') - laborGold;
-    const item = makeCraftedItem(blueprintId, metalKey);
+    const item = makeCraftedItem(blueprintId, metalKey, weaveMaterial);
     gear.clothingItems.push(item);
     gear.clothing[blueprint.slot] = item;
     deps.saveGearInventory?.();
     deps.saveMemberWorldData?.();
     refreshVisuals();
-    deps.showToast?.(`Smithed ${metal.label} ${blueprint.label} and equipped it.`, true);
+    deps.showToast?.(`Smithed ${metal.label} ${blueprint.label}${wool ? ' (' + wool.label + ')' : ''} and equipped it.`, true);
     return true;
   }
 
@@ -627,11 +697,11 @@
     if (barKey) deps.inventory[barKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (Number(deps.inventory[barKey]) || 0) + TREATMENT_BAR_COST);
   }
 
-  function commitTreatment(item, nextTreatment, toastText) {
+  function commitTreatment(item, nextTreatment, toastText, options = {}) {
     item.smithTreatment = nextTreatment ? clone(nextTreatment) : null;
     deps.saveGearInventory?.();
     deps.saveMemberWorldData?.();
-    refreshVisuals();
+    refreshVisuals(options);
     if (toastText) deps.showToast?.(toastText, true);
     return true;
   }
@@ -642,6 +712,10 @@
       return false;
     }
     const active = treatment(item);
+    if (active?.mode === 'painted') {
+      deps?.showToast?.('Guardian plating is painted on and cannot be reworked at the smithy.', false);
+      return false;
+    }
     if (choice === 'clear') {
       if (!active) { deps.showToast?.('No metal-armor treatment to clear.', false); return false; }
       refundTreatmentBar(item, active);
@@ -676,6 +750,10 @@
   }
 
   async function openVerdigrisPatternEditor(item) {
+    if (treatment(item)?.mode === 'painted') {
+      deps?.showToast?.('Guardian plating is painted on and cannot be re-patterned.', false);
+      return false;
+    }
     if (!canTreat(item)) {
       deps?.showToast?.('Temper 5 is required to author a verdigris-removal pattern.', false);
       return false;
@@ -743,6 +821,32 @@
     ].join('');
   }
 
+  function treasureEligibleMetalKey() {
+    const metalKeys = (deps?.VERDIGRIS_METAL_KEYS || Object.keys(DENSITY_G_CM3)).filter(key => DENSITY_G_CM3[key]);
+    const townValue = window.TownMine?.getTownValue?.(); // Uses the same town-value eligibility gate as wilderness treasure and fishing chests.
+    const eligible = window.TownMine?.filterMetalKeysForTownValue?.(metalKeys, townValue) || metalKeys.slice(0, 1); // Without town progression loaded, never award a high-tier alloy that treasure chests would prohibit.
+    const keys = eligible.filter(key => DENSITY_G_CM3[key]);
+    if (!keys.length) return 'nativeCopper';
+    const index = Math.min(keys.length - 1, Math.floor(Math.pow(Math.random(), 2.2) * keys.length)); // Same low-tier-biased distribution as chest metal bars.
+    return keys[index];
+  }
+
+  function prepareFestivalHelmPrize() {
+    const gear = deps?.getGearInventory?.();
+    const owned = [...(deps?.getPackClothing?.() || []), ...(gear?.clothingItems || []), ...Object.values(gear?.clothing || {})]; // Festival prizes can be held in Pack, owned Gear, or a directly equipped slot after a save migration.
+    const prize = owned.find(item => baseCosmeticId(item) === HELM_BLUEPRINT_ID && !item.metalKey)
+      || owned.find(item => baseCosmeticId(item) === HELM_BLUEPRINT_ID); // An already-upgraded prize still counts as successfully prepared.
+    if (!prize) return false;
+    const changed = normalizeItem(prize); // Roll chest-eligible starting metal only for an uninitialized reward, once per physical article.
+    learnBlueprints([prize]);
+    if (changed) {
+      deps?.saveGearInventory?.();
+      deps?.saveMemberWorldData?.();
+      refreshVisuals();
+    }
+    return true;
+  }
+
   function renderSmithySection(list) {
     if (!list || !deps) return false;
     const blueprints = Object.values(ARMOR_BLUEPRINTS);
@@ -762,26 +866,29 @@
       const barCost = Number(blueprint.craftBarCost) || DEFAULT_CRAFT_BAR_COST;
       const laborGold = Number(blueprint.craftLaborGold) || DEFAULT_CRAFT_LABOR_GOLD;
 
+      for (const woolId of (blueprint.woolOptions || [null])) {
+      const wool = woolId ? HELM_WOOL_VARIANTS[woolId] : null; // Each alloy offers both independently weighted wool-cap recipes.
       for (const metalKey of (deps.VERDIGRIS_METAL_KEYS || [])) {
         const metal = metalDef(metalKey);
         const barKey = deps.metalBarItemKey(metalKey);
         const ownedBars = inventoryCount(barKey);
-        const affordable = ownedBars >= barCost && inventoryCount('gold') >= laborGold; // Mirrors craft()'s own checks so the button never offers an impossible recipe.
-        const alreadyOwned = !!ownedForBlueprintMetal(blueprint.id, metalKey);
-        const weight = weightForBlueprintMetal(blueprint.id, metalKey);
+        const affordable = ownedBars >= barCost && inventoryCount('gold') >= laborGold && (!wool || inventoryCount(wool.key) >= blueprint.woolCost); // Mirrors craft()'s own checks so the button never offers an impossible recipe.
+        const alreadyOwned = !blueprint.allowDuplicates && !!ownedForBlueprintMetal(blueprint.id, metalKey);
+        const weight = weightForBlueprintMetal(blueprint.id, metalKey, woolId || 'light');
         const row = document.createElement('div');
         row.className = 'shop-row mc-metal-armor-craft-row';
         row.innerHTML = `
           <div class="sh-icon">${blueprint.icon || '🛡'}</div>
           <div class="sh-info">
-            <div class="sh-name">${deps.esc(metal.label)} ${deps.esc(blueprint.label)}</div>
+            <div class="sh-name">${deps.esc(metal.label)} ${deps.esc(blueprint.label)}${wool ? " — " + wool.label : ""}</div>
             <div class="sh-desc">Approx. mass ~${weight.massKg.toFixed(2)} kg · ${weight.weightUnits.toFixed(2)} outfit-weight units · bars owned: ${ownedBars}${alreadyOwned ? ' — already smithed' : ''}</div>
-            <div class="sh-price">${barCost} bars + ${laborGold}g</div>
+            <div class="sh-price">${barCost} bars${wool ? " + " + blueprint.woolCost + " " + wool.label + " (" + inventoryCount(wool.key) + " owned)" : ""} + ${laborGold}g</div>
           </div>
           <button class="shop-buy-btn" data-metal-armor-blueprint="${blueprint.id}" data-metal-armor-metal="${metalKey}" ${!unlocked || alreadyOwned || !affordable ? 'disabled' : ''}>${!unlocked ? 'Locked' : alreadyOwned ? 'Owned' : 'Smith'}</button>
         `;
-        row.querySelector('[data-metal-armor-blueprint]')?.addEventListener('click', () => craft(blueprint.id, metalKey));
+        row.querySelector('[data-metal-armor-blueprint]')?.addEventListener('click', () => craft(blueprint.id, metalKey, woolId || 'light'));
         list.appendChild(row);
+      }
       }
     }
 
@@ -819,6 +926,20 @@
         if (choice === 'pattern') openVerdigrisPatternEditor(item);
         else applyTreatment(item, choice);
       });
+      if (treatment(item)?.mode === 'pattern') {
+        window.PatternQuickControls?.mount(row.querySelector('.sh-info') || row, {
+          title: 'Armor pattern placement',
+          getPattern: () => {
+            const active = treatment(item);
+            return active?.mode === 'pattern' ? (active.pattern || window.PatternLibrary?.getById?.(active.patternLibraryId) || null) : null;
+          },
+          onChange: pattern => {
+            const active = treatment(item);
+            if (active?.mode !== 'pattern') return;
+            commitTreatment(item, { ...active, pattern: clone(pattern) }, null, { rerenderSmith: false }); // Keeps the paid treatment and library provenance, editing only this armor's placement.
+          },
+        });
+      }
       list.appendChild(row);
     }
     return true;
@@ -836,6 +957,7 @@
       processedVisualCacheSize: processedLayerUrlPromises.size,
       portraitAssetResolverReady: typeof window.resolvePortraitAssetUrl === 'function', // Pixel Probe exposes whether metal source art can resolve through the portrait asset root.
       portraitResolution: Object.fromEntries(portraitResolutionDebug),
+      hybridHelmRules: { id: HELM_BLUEPRINT_ID, woolCost: HELM_WOOL_COST, woolVariants: HELM_WOOL_VARIANTS, townEligibleMetal: (deps?.VERDIGRIS_METAL_KEYS || []).filter(key => DENSITY_G_CM3[key] && (window.TownMine?.filterMetalKeysForTownValue?.(deps.VERDIGRIS_METAL_KEYS, window.TownMine?.getTownValue?.()) || deps.VERDIGRIS_METAL_KEYS).includes(key)) }, // Pixel Probe/mobile debugging reveals smith recipes and chest-eligible alloys.
       worn: worn.map(item => ({
         uid: item.uid,
         blueprintId: baseCosmeticId(item),
@@ -881,8 +1003,11 @@
     const gear = deps?.getGearInventory?.();
     let changed = false;
     for (const item of (gear?.clothingItems || [])) if (normalizeItem(item)) changed = true;
+    let packChanged = false; // Festival prizes can enter the world-scoped pack before any equipment interaction.
+    for (const item of (deps?.getPackClothing?.() || [])) if (normalizeItem(item)) packChanged = true;
     for (const item of Object.values(gear?.clothing || {})) if (normalizeItem(item)) changed = true;
     if (changed) deps?.saveGearInventory?.();
+    if (packChanged) deps?.saveMemberWorldData?.();
     return true;
   }
 
@@ -911,6 +1036,7 @@
     spriteForBlueprintAppearance,
     portraitStateForItem,
     portraitStateForGroup,
+    isMetalPortraitLayer,
     reportResolvedPortraitGroup,
     defaultPortraitState,
     metalArmorDescriptors,
@@ -925,6 +1051,8 @@
     ownedForBlueprintMetal,
     detailText,
     makeCraftedItem,
+    treasureEligibleMetalKey,
+    prepareFestivalHelmPrize,
     learnBlueprints,
     renderSmithySection,
     debugSnapshot,

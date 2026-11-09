@@ -68,56 +68,6 @@
     };
   }
 
-  function isWesternSlopeBlizzardActive() {
-    return Boolean(
-      deps
-      && deps.getCurrentArea?.() === WESTERN_SLOPE_ID
-      && deps.isOutdoorArea?.()
-      && deps.calendar?.isRaining
-    );
-  }
-
-  function installBlizzardAudioRouting() {
-    const music = window.Music;
-    if (!music || music.__westernSlopeBlizzardAudioRoutingInstalled) return;
-    if (typeof music.updateRainAudio !== 'function' || typeof music.updateExteriorBgs !== 'function') return;
-
-    const priorUpdateRainAudio = music.updateRainAudio;
-    const priorUpdateExteriorBgs = music.updateExteriorBgs;
-
-    music.updateRainAudio = function (...args) {
-      if (!isWesternSlopeBlizzardActive()) return priorUpdateRainAudio.apply(this, args);
-
-      // Reuse the rain audio mixer's own fade/stop path by presenting this one
-      // precipitation case as dry. This fades gentle/mid/heavy rain to zero
-      // without reaching into music-system.js's private looping-BGS registry.
-      const priorRaining = deps.calendar.isRaining;
-      deps.calendar.isRaining = false;
-      try {
-        return priorUpdateRainAudio.apply(this, args);
-      } finally {
-        deps.calendar.isRaining = priorRaining;
-      }
-    };
-
-    music.updateExteriorBgs = function (...args) {
-      if (!isWesternSlopeBlizzardActive()) return priorUpdateExteriorBgs.apply(this, args);
-
-      // The ordinary exterior mixer already owns the real wind recordings and
-      // smooth BGS fades. Feed it full weather strength so blizzard wind sits
-      // at the same storm-scale mix level used by rain instead of a quiet bed.
-      const priorRainStrength = deps.calendar.rainStrength;
-      deps.calendar.rainStrength = BLIZZARD_AUDIO_RAIN_STRENGTH;
-      try {
-        return priorUpdateExteriorBgs.apply(this, args);
-      } finally {
-        deps.calendar.rainStrength = priorRainStrength;
-      }
-    };
-
-    music.__westernSlopeBlizzardAudioRoutingInstalled = true;
-  }
-
   function createRainSourceTexture() {
     const THREE = deps.THREE;
     cameraForward = new THREE.Vector3(0, 0, -1);
@@ -297,7 +247,6 @@
       // Scene transitions should never rebuild the precipitation pool. Refreshing
       // deps is sufficient and avoids orphaning the old layer meshes if init is
       // accidentally reached again while entering/leaving an interior.
-      installBlizzardAudioRouting();
       return;
     }
     const THREE = deps.THREE;
@@ -309,7 +258,6 @@
     group.name = 'world_rain_planes';
     group.userData.isBillboard = true;
     ensureLayerCount(3);
-    installBlizzardAudioRouting();
   }
 
   function advanceTexture(layer, dt, speedMultiplier) {
@@ -568,7 +516,8 @@
       layerCount: layers.filter(layer => layer.mesh.visible).length,
       blizzardPreset: { ...BLIZZARD_PRESET },
       activeContent: blizzardActive ? 'blizzard' : 'rain',
-      blizzardAudioRouting: Boolean(window.Music?.__westernSlopeBlizzardAudioRoutingInstalled),
+      blizzardAudioRouting: typeof window.Music?.weatherRegionForArea === 'function',
+      blizzardAudioOwner: 'Music',
       blizzardAudioRainStrength: BLIZZARD_AUDIO_RAIN_STRENGTH,
       settings: getSettings(),
       renderer: deps?.renderer?.info?.render ? { ...deps.renderer.info.render } : null,
@@ -582,10 +531,10 @@
 // rain-planes.js is already parser-blocking in index.html immediately before game boot, so this
 // synchronous include keeps that ordering without adding another bootstrap path to the huge game.js.
 if (!window.HobunjiSkyDome) {
-  if (document.readyState === 'loading') document.write('<script src="js/sky-dome.js?v=20260923a"></scr' + 'ipt>');
+  if (document.readyState === 'loading') document.write('<script src="js/sky-dome.js?v=20261026h0a42e0d"></scr' + 'ipt>');
   else {
     const skyScript = document.createElement('script'); // Used only as a late-load fallback outside the normal parser boot path.
-    skyScript.src = 'js/sky-dome.js?v=20260923a';
+    skyScript.src = 'js/sky-dome.js?v=20261026h0a42e0d';
     skyScript.async = false;
     document.head.appendChild(skyScript);
   }
@@ -630,10 +579,10 @@ if (window.HobunjiSkyDome && window.RainPlanes) {
 // blocking avoids another game.js integration point while still giving snow/slush the
 // live scene, current-area, season, and outdoor-state getters it needs.
 if (!window.EnvironmentSurfaceRuntime) {
-  if (document.readyState === 'loading') document.write('<script src="js/environment-surface-runtime.js?v=20261004hefbf13b"></scr' + 'ipt>');
+  if (document.readyState === 'loading') document.write('<script src="js/environment-surface-runtime.js?v=20261107depthSnow1"></scr' + 'ipt>');
   else {
     const surfaceScript = document.createElement('script'); // Late-load fallback used only when rain-planes.js is evaluated after initial parsing.
-    surfaceScript.src = 'js/environment-surface-runtime.js?v=20261004hefbf13b';
+    surfaceScript.src = 'js/environment-surface-runtime.js?v=20261107depthSnow1';
     surfaceScript.async = false;
     document.head.appendChild(surfaceScript);
   }

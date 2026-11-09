@@ -73,6 +73,9 @@
       section.appendChild(element('p', 'Unlock a weapon with a modular shaft and a head to begin.'));
       return;
     }
+    if (!deps.VERDIGRIS_METAL_KEYS?.length) {
+      section.appendChild(element('p', 'No forgeable metal tiers are configured.')); return; // No metal means the preview and price cannot be resolved.
+    }
     if (!available.shafts.includes(selection.shaft)) selection.shaft = available.shafts[0];
     const allowedHeads = available.heads.filter(head => !global.ModularWeapons.isDisallowed(selection.shaft, head)); // Shared pair restrictions apply to the menu and purchase validation.
     if (!allowedHeads.includes(selection.head)) selection.head = allowedHeads[0] || '';
@@ -88,7 +91,7 @@
     const item = global.ModularWeapons.itemKey(selection.shaft, selection.head, selection.metal); // Preview and purchase refer to the same saved key.
     global.ToolMetalRecolor.getRecoloredCanvas(item, { targetHex: deps.METAL_DEFS[selection.metal].hex }).then(canvas => {
       if (serial === previewSerial && image.isConnected) image.src = canvas.toDataURL('image/png');
-    }).catch(error => { if (image.isConnected) { image.alt = error.message; deps.showToast(error.message, false); } });
+    }).catch(error => { if (serial === previewSerial && image.isConnected) { image.alt = error.message; deps.showToast(error.message, false); } }); // Ignore an outdated preview failure.
     const donor = config.shafts[selection.shaft].sourceShape; // Explain the donor rules before spending resources.
     const handMode = global.HobunjiHandToolGrips?.weaponHandModeForTool?.(donor) || 'two-hand'; // Shared runtime handedness.
     section.appendChild(element('p', `${handMode} · ${config.heads[selection.head].dmgType} · Attacks: ${deps.TOOL_ITEM_DEFS[item].animStyle} · Grip, scale and idle stance follow ${config.shafts[selection.shaft].label}.`));

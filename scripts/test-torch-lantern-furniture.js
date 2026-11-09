@@ -1,0 +1,57 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const root = path.resolve(__dirname, '..');
+const read = file => fs.readFileSync(path.join(root, file), 'utf8');
+const lamp = JSON.parse(read('docs/config/furniture-authored/standingLamp.json'));
+const torch = JSON.parse(read('docs/config/furniture-authored/wallTorch.json'));
+const candleTable = JSON.parse(read('docs/config/furniture-authored/candleTable.json'));
+const sourceLamp = JSON.parse(read('docs/assets/models/furniture/data/standing_lamp_bronze.json'));
+const lampParts = new Map(lamp.parts.map(part => [part.id, part]));
+const torchParts = new Map(torch.parts.map(part => [part.id, part]));
+assert.equal(lamp.key, 'standingLamp', 'legacy furniture key remains stable for saves and toggle-light behavior');
+assert.ok(lampParts.has('lantern_table_top'), 'replacement has a table top');
+assert.ok(lampParts.has('lantern_table_leg_4'), 'replacement has four table legs');
+assert.ok(lampParts.has('lantern_glass'), 'table carries amber lantern glass');
+assert.ok(lampParts.has('lantern_top_hood'), 'lantern has a bronze hood');
+assert.equal(lampParts.get('lantern_glass').surfaceOpacity, .62, 'lantern glass remains translucent');
+const tableTop = lampParts.get('lantern_table_top').transform; // Table geometry must not shrink with its accessory.
+assert.equal(tableTop.y, .62, 'lantern table remains at its existing authored height');
+assert.equal(tableTop.sy, .09, 'lantern tabletop thickness stays unchanged');
+const lanternParts = lamp.parts.filter(part => !part.name.startsWith('Lantern Table ')); // Accessory bounding dimensions, including the candle/flame.
+const baseBottom = lampParts.get('lantern_base').transform.y - lampParts.get('lantern_base').transform.sy / 2;
+const lanternTop = Math.max(...lanternParts.map(part => part.transform.y + part.transform.sy / 2));
+const lanternWidth = Math.max(...lanternParts.map(part => Math.abs(part.transform.x) + part.transform.sx / 2)) * 2;
+const saucerWidth = candleTable.parts.find(part => part.name === 'Candle Table Disc').transform.sx;
+assert.ok(lanternTop - baseBottom >= .28 && lanternTop - baseBottom <= .32, 'mini-lantern height remains close to candle plus flame');
+assert.ok(lanternWidth >= saucerWidth && lanternWidth <= saucerWidth * 1.2, 'lantern width stays just above candle saucer');
+const glass = lampParts.get('lantern_glass').transform; // Glass must enclose both the wax and the permanent flame.
+const candle = lampParts.get('lantern_candle')?.transform;
+const flame = lampParts.get('lantern_flame')?.transform;
+assert.ok(candle && flame, 'lantern physically contains wax and a flame');
+assert.ok(candle.y - candle.sy / 2 >= glass.y - glass.sy / 2 - .01, 'wax begins inside the glass');
+assert.ok(flame.y - flame.sy / 2 >= candle.y + candle.sy / 2 - .005, 'flame sits on the wax');
+assert.ok(flame.y + flame.sy / 2 < glass.y + glass.sy / 2, 'flame fits inside the lantern glass');
+assert.equal(lampParts.get('lantern_flame').materialLighting, 'unlit', 'flame remains visible even when no particle tick is active');
+const emitter = lamp.particleEmitters.find(part => part.id === 'lantern_candle_fire'); // Particle anchoring follows the wax after height adjustments.
+assert.equal(emitter?.attachedPartId, 'lantern_candle', 'ambient flame stays parented to the candle');
+assert.equal(emitter?.type, 'fire', 'existing ambient fire effect powers the lantern');
+assert.ok(read('docs/js/interior-fire-floor-runtime.js').includes("'candleTable', 'standingLamp', 'hearth'"), 'lantern shares the existing furniture fire scheduler');
+assert.ok(!lamp.parts.some(part => /lampshade|fabric shade/i.test(part.name)), 'old lampshade parts are gone');
+assert.equal(sourceLamp.lightSource.enabled, true, 'existing toggle-light and furniture-light metadata is retained');
+assert.ok(torchParts.get('wall_torch_shaft').transform.rz < -15, 'wall torch shaft visibly leans like a Minecraft wall torch');
+assert.equal(torchParts.get('wall_torch_flame').kind, 'cylinder', 'torch flame is tapered rather than spherical');
+assert.ok(torchParts.has('wall_torch_flame_inner'), 'torch has a bright inner flame');
+assert.equal(torch.wallOrnament.attachmentSurfaceId, 'wall_torch_plate:surface:4', 'wall attachment contract remains stable');
+assert.ok(torch.recognizedSurfaces[0].bounds.maxU > torch.recognizedSurfaces[0].bounds.minU, 'mounting surface bounds remain valid');
+const procedural = read('docs/js/procedural-furniture.js');
+const fallback = procedural.match(/CATALOG\.standingLamp = \[[\s\S]*?\n  \];/)?.[0] || '';
+assert.ok(fallback.includes("box(0, .62, 0") && fallback.includes("cyl(0, .869, 0"), 'procedural fallback uses the miniature authored lantern');
+assert.ok(fallback.includes("cyl(0, .748, 0") && fallback.includes("cyl(0, .814, 0"), 'fallback already contains the inner candle and flame');
+assert.ok(!fallback.includes('roundLeg(0, 0, 1.3'), 'old standing lamp fallback is removed');
+assert.match(read('docs/tools/map-editor/index.html'), /standingLamp:\{icon:'🏮',label:'Lantern Table'/, 'Map Editor labels the legacy key Lantern Table');
+assert.match(read('docs/tools/building-interior-author/index.html'), /key:'standingLampFurniture',\s+label:'Lantern Table',\s+modelFile:null/, 'interior author previews the authored/procedural Lantern Table');
+assert.ok(!read('docs/tools/locale-editor/locale-preview3d.js').includes("standingLamp: 'furniture/standing_lamp_bronze.glb'"), 'locale preview no longer loads the old lampshade GLB');
+assert.match(read('docs/index.html'), /procedural-furniture\.js\?v=[A-Za-z0-9_-]+/, 'game procedural furniture loader has a cache-bust token');
+console.log('Torch and Lantern Table furniture regressions passed.');

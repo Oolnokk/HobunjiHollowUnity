@@ -6,6 +6,7 @@
   let decorateQueued = false; // Coalesces mutation bursts into one presentation pass.
   let menuReadabilityObserver = null; // Re-applies menu readability rules after dynamic menu content/state changes.
   let menuReadabilityQueued = false; // Coalesces menu mutation/click refreshes into one computed-style pass.
+  let lastControllerPackPreview = null; // Exposed by debugSnapshot() to diagnose controller Pack highlighting on mobile.
 
   const STYLE_ID = 'inventoryUiPolishStyles'; // Prevents duplicate injected styles across repeated init calls.
   const DEBUG_BUTTON_ID = 'inventoryUiDebugButton'; // Stable id for the in-menu layout-debug control.
@@ -140,6 +141,10 @@
       #mpInventory .gear-owned-section .inv-equip-row { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--inv-gap); min-height:0; }
       #mpInventory .gear-owned-section .inv-equip-slot { min-height:calc(3.1 * var(--inv-row)); }
       #mpInventory .gear-owned-section .inv-equip-empty { padding:6px; border:1px dashed #ffffff18; border-radius:var(--inv-radius); color:var(--muted); font-size:var(--inv-font-xs); }
+      /* Attunement cards belong to the owned-gear scroller, not extra rows of the outer two-column workspace. */
+      #mpInventory .gear-owned-trinkets .trinket-inventory-list { display:flex; flex-direction:column; min-width:0; gap:var(--inv-gap); }
+      #mpInventory .gear-owned-trinkets .trinket-inventory-row { flex:0 0 auto; width:100%; height:auto; box-sizing:border-box; flex-wrap:wrap; }
+      #mpInventory .gear-owned-trinkets .trinket-inventory-row > .ii-btn { flex:0 0 auto; margin-left:auto; max-width:100%; white-space:normal; }
 
       #mpInventory .inv-equip-slot { border-color:#ffffff24; background:linear-gradient(#ffffff10,#ffffff07); box-shadow:inset 0 1px #ffffff09,0 1px 3px #0003; transition:transform 80ms ease,background 100ms ease,border-color 100ms ease,box-shadow 100ms ease,opacity 100ms ease; }
       #mpInventory .inv-equip-slot[role='button']:hover { transform:translateY(-1px); border-color:#ffffff4f; background:linear-gradient(#ffffff1b,#ffffff0c); }
@@ -186,7 +191,21 @@
       if (meaningful) scheduleDecorate();
     });
     inventoryObserver.observe(pane, { childList:true, subtree:true, attributes:true, attributeFilter:['src'] }); // Async clothing composites finish by changing <img src>; observe only that attribute so Pack clones refresh once without polling/per-frame work.
+    pane.addEventListener('hobunji-controller-focus', previewControllerPackItem); // The pad's focus event previews Pack items without entering their actions.
     pane.addEventListener('click', scheduleDecorate, true);
+    pane.addEventListener('click', event => {
+      const categoryButton = event.target.closest?.('.inv-cat'); // Keeps the chosen filter in view when gamepad bumpers or touch move along the wider category row.
+      categoryButton?.scrollIntoView?.({ block:'nearest', inline:'nearest', behavior:'auto' });
+    }, true);
+  }
+
+  function previewControllerPackItem(event) {
+    const pane = document.getElementById('mpInventory'); // Limits previews to the currently visible Pack page.
+    if (!pane?.classList.contains('active') || pane.classList.contains('inv-mode-gear')) return;
+    const tile = event.target?.closest?.('#invGrid .inv-item-box:not(.empty)'); // Includes normal item stacks and integrated Pack clothing.
+    if (!tile || !pane.contains(tile) || tile.disabled || tile.style.display === 'none') return;
+    lastControllerPackPreview = { key: tile.dataset.key || null, stackId: tile.dataset.stackId || null, clothing: tile.classList.contains('pack-clothing-tile') }; // Read-only preview identity for in-game diagnostics.
+    if (tile.classList.contains('pack-clothing-tile')) window.EquipmentPanel?.previewPackClothingItem?.(tile.dataset.key); // Ordinary stacks preview in game.js using their exact variant; clothing uses its own detail renderer without a click.
   }
 
   function installMenuReadability() {
@@ -346,7 +365,7 @@
     const sourceButtons = [...source.querySelectorAll('.inv-pcloth-item')];
     const fingerprint = sourceButtons.map((button) => {
       const img = button.querySelector('img');
-      return `${button.textContent.trim()}|${img?.getAttribute('src') || ''}`;
+      return `${button.getAttribute('data-key') || ''}|${button.textContent.trim()}|${img?.getAttribute('src') || ''}`; // Item UID prevents visually identical clothing from retaining an old action target.
     }).join('||');
     const existing = [...grid.querySelectorAll('.pack-clothing-tile')];
     const needsRebuild = grid.dataset.packClothingFingerprint !== fingerprint || existing.length !== sourceButtons.length;
@@ -364,7 +383,9 @@
         tile.title = sourceButton.textContent.trim() || 'Clothing';
         [...sourceButton.children].forEach((child) => tile.appendChild(child.cloneNode(true)));
         tile.addEventListener('click', () => {
-          sourceButton.click();
+          const liveSourceButton = [...source.querySelectorAll('.inv-pcloth-item')].find(button => button.getAttribute('data-key') === tile.dataset.key); // Rebinds to the current renderer after any inventory rebuild.
+          if (!liveSourceButton) return; // Clothing may have been consumed or moved since the last decoration frame.
+          liveSourceButton.click();
           document.querySelectorAll('#invGrid .pack-clothing-tile.selected').forEach((other) => other.classList.remove('selected'));
           tile.classList.add('selected');
         });
@@ -374,9 +395,13 @@
       grid.dataset.packClothingFingerprint = fingerprint;
     }
 
-    const activeCategory = document.querySelector('#mpInventory .inv-cat.active')?.dataset.cat || 'all';
-    const visible = activeCategory === 'all';
-    grid.querySelectorAll('.pack-clothing-tile').forEach((tile) => { tile.style.display = visible ? '' : 'none'; });
+    const activeCategory = document.querySelector('#mpInventory .inv-cat.active')?.dataset.cat || 'all'; // Pack clothing belongs to All and the dedicated Clothing tab.
+    const showClothing = activeCategory === 'all' || activeCategory === 'clothing'; // Regular game.js stack filtering stays unchanged for clothing, which has no ITEM_DEFS entry.
+    const searchQuery = window.InventorySearch?.query || ''; // Clothing tiles now honor the same pack search as ordinary stacks.
+    grid.querySelectorAll('.pack-clothing-tile').forEach((tile) => {
+      const matchesSearch = !searchQuery || (window.InventorySearch?.matches?.(tile.dataset.key, { label:tile.title }) ?? (tile.title + ' ' + tile.dataset.key).toLowerCase().includes(searchQuery)); // Uses exactly the ordinary Pack search normalization (including accents).
+      tile.style.display = showClothing && matchesSearch ? '' : 'none';
+    });
     // decorate() (this function's ultimate caller) reruns on every childList change
     // inside the pane. Unlike classList.toggle(), .remove()/.add() re-serialize and
     // re-set the class attribute even when the token being removed/added is
@@ -384,8 +409,9 @@
     // class on the very same elements every single pass was a real per-frame
     // attribute-mutation cost for no actual state change.
     const reservedEmpty = [...grid.querySelectorAll('.inventory-clothing-reserved-empty')];
-    const emptySlots = visible ? [...grid.querySelectorAll('.inv-item-box.empty')] : [];
-    const nextReservedEmpty = emptySlots.slice(Math.max(0, emptySlots.length - sourceButtons.length));
+    const emptySlots = showClothing ? [...grid.querySelectorAll('.inv-item-box.empty')] : []; // Reclaims only slots occupied by currently visible clothing.
+    const visibleClothingCount = [...grid.querySelectorAll('.pack-clothing-tile')].filter(tile => tile.style.display !== 'none').length; // Keeps search-filtered clothing from reserving phantom slots.
+    const nextReservedEmpty = emptySlots.slice(Math.max(0, emptySlots.length - visibleClothingCount));
     for (const empty of reservedEmpty) if (!nextReservedEmpty.includes(empty)) empty.classList.remove('inventory-clothing-reserved-empty');
     for (const empty of nextReservedEmpty) if (!empty.classList.contains('inventory-clothing-reserved-empty')) empty.classList.add('inventory-clothing-reserved-empty');
   }
@@ -422,9 +448,11 @@
     const ownedToolRow = ownedToolHeader.nextElementSibling;
     const clothingRow = clothingHeader.nextElementSibling;
     const ownedClothingRow = ownedClothingHeader.nextElementSibling;
+    const trinketGroup = directChild(section, 'gear-owned-trinkets'); // Moves the existing trinket renderer into the same scrollable owned-gear inventory.
     if (!toolRow || !ownedToolRow || !clothingRow || !ownedClothingRow) return;
 
     const used = new Set([toolHeader, toolRow, ownedToolHeader, ownedToolRow, clothingHeader, clothingRow, ownedClothingHeader, ownedClothingRow]);
+    if (trinketGroup) used.add(trinketGroup);
     const leftovers = children.filter((node) => !used.has(node)); // Preserves any future/third-party gear rows instead of dropping them.
 
     const loadout = document.createElement('div'); // Four-column current-loadout block requested by the UI design.
@@ -461,6 +489,7 @@
     ownedClothingHeader.textContent = 'Owned Clothing';
     ownedClothingGroup.append(ownedClothingHeader, ownedClothingRow);
     ownedSection.append(ownedToolsGroup, ownedClothingGroup);
+    if (trinketGroup) ownedSection.appendChild(trinketGroup);
 
     section.replaceChildren(loadout, ownedSection, ...leftovers);
     renderToolStats(toolStats);
@@ -539,6 +568,17 @@
         ? combatDeps.weaponDamageTypeForTool(itemKey)
         : def?.dmgType;
       if (parsed.slot === 'weapon' && damageType) addStatChip(chips, titleCase(String(damageType)));
+      if (parsed.slot === 'weapon' && itemKey && window.WeaponShapeStats) {
+        const stats = window.WeaponShapeStats.forKey(itemKey, def || combatDeps?.getWeaponDefinition?.(itemKey)); // Same stat math as the combat runtime and the Foundry.
+        for (const [label, value] of [['Power', stats.power], ['Speed', stats.speed], ['Stamina eff.', stats.efficiency], ['Range', stats.range]]) {
+          addStatChip(chips, `${label} ×${value.toFixed(2)}`);
+        }
+        addStatChip(chips, `Attack Power ${stats.attackPower.toFixed(0)} (afflictions)`); // Absolute offensive status potency differs from the existing Health-damage multiplier.
+      }
+      if (parsed.slot === 'ranged' && itemKey) {
+        const rangedAttackPower = window.RangedWeapons?.config?.[itemKey]?.attackPower ?? window.WeaponShapeStats?.forKey?.(itemKey, def)?.attackPower; // Ranged mode uses its authored projectile potency, not the equipped melee weapon.
+        if (Number.isFinite(Number(rangedAttackPower))) addStatChip(chips, `Attack Power ${Number(rangedAttackPower).toFixed(0)} (afflictions)`);
+      }
 
       if (!chips.children.length) addStatChip(chips, 'Current tool data');
       item.appendChild(chips);
@@ -875,7 +915,11 @@
       gearLoadoutColumns: document.querySelectorAll('#invEquipSection .gear-loadout-grid > .gear-loadout-column').length,
       equippedToolSlots: document.querySelectorAll('#invEquipSection .gear-tool-slots .inv-equip-slot.occupied').length,
       ownedGearTiles: document.querySelectorAll('#invEquipSection .gear-owned-section .inv-equip-slot').length,
+      trinketTiles: document.querySelectorAll('#invEquipSection .gear-owned-trinkets .trinket-inventory-row').length,
+      trinketsWithinOwnedGear: !!document.querySelector('#invEquipSection > .gear-owned-section .gear-owned-trinkets'),
+      orphanTrinketGroups: document.querySelectorAll('#invEquipSection > .gear-owned-trinkets').length,
       infoHasDescription: !!document.getElementById('iiDesc')?.textContent?.trim(),
+      lastControllerPackPreview, // Reports the most recently highlighted Pack stack/clothing for in-game diagnostics.
       selectedToolMasteryBar: masteryPanel && !masteryPanel.hidden ? masteryPanel.dataset.toolKey || true : false,
       masteryDataAccess: {
         toolDefs: !!combatDeps?.TOOL_ITEM_DEFS,

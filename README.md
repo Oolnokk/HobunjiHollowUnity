@@ -43,6 +43,18 @@ The game is `docs/index.html` (+ `docs/game.js`, `docs/onboarding.js`). All tool
 
 Serve this repository as static files and load portrait scripts from `docs/js/` so the runtime can fetch configs from `docs/config/` and image assets from `docs/assets/`.
 
+## Rendering: ground x-ray and translucent water (regression contract)
+Shell outlines for registered held/foot x-ray objects inherit the same ground-visibility exception: they can show through classified walkable ground, while walls, furniture, rocks, snow and water remain occluders. The shell replay restores the ordinary depth buffer before later outline passes.
+
+
+Use the shared [Surface Occlusion Composer](docs/js/surface-occlusion-composer.js) for surface categories and effect policy. Held-object and shell-outline replay are the first consumers; hats, portrait planes, chatheads and other x-ray effects should migrate to it rather than define new per-effect exceptions.
+
+Read [Held-object/water depth compositing](docs/architecture/held-object-water-depth-compositing.md) before changing the game renderer, water/slush materials, terrain depth, PNG-plane hands/weapons/feet or outline passes. **The ordering is essential:** draw held objects against reconstructed solid depth, restore base grass/path depth **without color**, then tint submerged held pixels with foreground water/slush, then restore water/slush depth without color. Restoring grass depth *after* tint previously caused ragged teal floodwater to appear through elevated opaque grass despite otherwise-correct water and terrain materials. The architecture note includes the two confirmed Pixel Probe examples, diagnostics and a regression checklist; `scripts/test-town-render-hotpaths.js` enforces the stage order and the shared surface rules.
+
+## Wilderness bedrock: no see-through holes
+
+`docs/js/wilderness-bedrock.js` (`window.WildernessBedrock`, called from `buildZoneScene` right after the plateau mesas) adds one persistent, one-draw-call cliff-material mesh under each wilderness zone. Plateau mesas, the route apron and carved water beds are top-only heightfields streamed in 16x16 chunks, so anything they don't cover used to show the scene background: hairline cracks between cliff-face quads, the empty column under a river/stream/waterfall bed where it drops to a lower tier (behind the water sheet), and unstreamed chunks seen through water, which is a map-level mesh. The bedrock is a stepped heightfield (one cell per tile, the 3x3-neighbourhood minimum ground height minus 0.9, so it never reaches a real surface) with risers wherever neighbours differ, plus a backing wall on the shared edge behind every water cell that sits above a lower neighbour. It uses the plateau's cliff-slot material (repeating world-UV carved PNG, slightly darkened, `polygonOffset` so coplanar real surfaces always win). To check for holes, render a zone with a magenta `scene.background`, no fog and a steep camera, and count magenta pixels (wait for `WildernessChunks.snapshot()` to report an empty queue first, or unloaded chunks read as holes). `scripts/test-wilderness-bedrock.js` covers the geometry invariants.
+
 ## Camera: Shoulder Cam is the default
 
 The over-the-shoulder camera (`Settings → Camera → Shoulder Cam`, `docs/game.js`'s
@@ -172,12 +184,37 @@ Town Value (raised by extending the mine ladder, `docs/js/town-mine.js`) now pay
 - **Carpentry tiers.** Larger barn plans, incubator additions and Medium/Large processor plans need Town Value 1/2 at Dzibim's (`minTownValue` in `config/shops/shop-stock.json` and `config/farm-specializations.js`). Farm presets still grant any tier.
 - **Sale prices** rise +3% per Town Value, capped at +30% (`TownMine.salePriceMultiplier`/`applySaleBonus`). This covers the shipping box, store sales, and livestock and Nursery sales.
 
+## Downed companion, downed player (Second Wind), companion resilience perks
+
+- `docs/js/companion-downed.js` (`window.CompanionDowned`): a player companion at 0 Health is *downed*, not killed (`transitionCreatureToDeath` asks `tryDown` first). It rises on its own after 60 s (Quick Rally perk: up to 50% sooner) beside its master, or by a held Interact on it (shared `corpse_hold_loot` hold contract; base 4 s). The owner dying and respawning, Return to Camp / Return to Farm, or a held Interact on a Root Totem (base 3 s; only offered while a companion is down) revives it and brings it to the owner. State is keyed by Stable id so it survives area changes.
+- `docs/js/player-downed.js` (`window.PlayerDowned`): lethal combat damage and bleeding/burning/poison ticks put the player down for 30 s instead of respawning. While down: crawl at 30% speed, ranged weapon only (`useActiveAction`, `performDodge`, `Combat.input` are gated), hits taken cost 2 s of timer, and a kill by the player or their companion within 8 s of its last hit gives Second Wind (half Health). A ranged hit while down focuses the companion on that enemy. Drowning/hazard/scripted deaths still call `respawnPlayer` directly.
+- `docs/js/player-crawl.js` (`window.PlayerCrawl`): the downed player's procedural **left-side lean crawl**. A player-only composer channel (`crawl`) sets the body's absolute yaw so the head points along the crawl heading and rolls the body 68° onto its left flank; the equipped tool only gets a translation-only world channel (`crawl-weapon`), so neck and weapon aim stay on the camera. The left hand is claimed through `HobunjiFreeHandPose` (read by `procedural-hand-frame-driver.js`; the right hand keeps the weapon) and runs a reach -> grab -> pull cycle built on the Overhead Punch dance arm (two resting arm lengths of reach, sin^0.45 snap, ~20 degree tilt at full extension; the hand stays planted while the body slides toward it), the legs are posed with `applyRecordedLegPose` (top leg tucks and kicks, bottom leg trails). Speed follows the arm pull (one stride per cycle); inputs more than 55° off the reach axis cannot be crawled, so the body pivots first (a 180° input is a u-turn).
+- Recorded ragdoll/prone leg poses are avatar-local, so channels flagged `absoluteLegs` (the `ragdoll` channel) tilt only the body: the composer keeps the leg group's orientation and applies just the summed translation. Before this the legs were rotated twice and the feet hung ~0.7 above the ground.
+- `docs/js/stable-companion-resilience.js` (`window.CompanionResilience`) owns the offense/defense/revival/Guardian Fury perks appended to the companion training tree and every number they produce. Held-revive perks multiply: Heel to Master (owner only) x Rallying Presence (anyone) = 0.5 x 0.5 = 75% shorter at max.
+
+## Honeyfuzzle swarms, hive stumps and the Honeyfuzzle House
+
+Honeyfuzzles are hummingbird-like swarms: one creature entity drawn as an instanced flock with the new fly1/2/3 sprites softly blended together at staggered wing phases. Each bird's tailfeathers always layer underneath the body (primary pigment unless an expressed tailfeathers allele provides secondary color), with optional spectacles drawn above. They are always Medium (companions), live in hollow hive stumps in the wild (one long hold gives 1-3 fertile eggs and honey, then the stump collapses) and, on the farm, in a 1x1 Honeyfuzzle House bought from the carpenter instead of a barn or incubator. See [docs/architecture/honeyfuzzle.md](docs/architecture/honeyfuzzle.md).
+
 ## Dev Companion window
 
 Settings → **Dev Companion Window** (or `window.DevCompanion.open()`) opens
 `docs/tools/dev-companion/` as a second window tied to that one play session
 (a per-tab session id carried on a BroadcastChannel; it reconnects across the
-game tab's reloads and ignores other tabs).
+game tab's reloads and ignores other tabs). A separate read-only discovery
+channel supports **Find Games**: it lists other same-origin game tabs and the
+build URL each is running, including commit-pinned GitHack builds. Switching
+is **always manual** — even if just one game is found, the companion stays on
+its current session and URL until you press **Switch**. The selected game
+supplies the exact companion URL and session ID; the companion navigates to
+that build when switching. Disconnected companions can still use Find Games.
+Only game builds with discovery support, on the same browser origin/storage
+partition, can be found; ordinary websites cannot enumerate arbitrary tabs.
+On loading a selected session, the companion also adopts its popup window name
+so the game's launcher can reuse it when browser window-group rules allow it.
+If two game tabs share the same cloned sessionStorage ID, discovery marks the
+session as ambiguous and disables Switch to avoid sending commands to both tabs;
+open the intended game in a fresh tab and scan again.
 
 It is laid out around context: the header always shows who/where/when you are
 and what's active (conversation, Map Edit session, paused autosave) with
@@ -228,6 +265,26 @@ Extending it (`js/dev-companion-bridge.js`): `registerPanel({ id, title,
 when, render, onAction })` adds a context panel to **Now** with no companion
 changes; `registerCommand`, `registerStateProvider` and `trace` are the lower
 level hooks the built-in tabs use.
+
+## Quality-of-life layer: volume, hotkeys, message log, pack search
+
+- **Audio mix** (`js/audio-mix.js`, Settings → Audio): Master / Music /
+  Effects sliders and *Mute in Background*. Loaded before every other audio
+  module: it gives each `AudioContext` an effects → master bus (so existing
+  `connect(ctx.destination)` calls land on Effects) and wraps
+  `HTMLMediaElement.volume` (the getter still returns the requested value).
+  Music code routes to `HobunjiAudioMix.musicDestination(ctx)` and tags its
+  elements with `markMusic`.
+- **Keyboard** (`js/qol-hotkeys.js`, called from game.js's keydown handler):
+  menu tabs on I/K/M/N/P/J/L/O (press again to close; a key bound to a
+  gameplay action in Settings → Input wins), F1 or `?` for a controls cheat
+  sheet built from the live bindings, H for the Message Log, F2 to save a
+  PNG screenshot of the 3D view.
+- **Message log** (`js/toast-notifications.js`): `showToast` /
+  `showZoneBanner` moved out of game.js and keep the last 80 messages, with
+  repeated identical toasts collapsed into one row.
+- **Pack search** (`js/inventory-search.js`): a search box beside the
+  inventory category tabs narrows the grid by item name.
 
 ## Future plans: multiplayer
 
@@ -283,6 +340,13 @@ will need addressing.
   (`DewVats.setExternalWorker`) at 2× yield.
 - Saved per character per world as `member.romanceState`. Executable coverage:
   `scripts/test-romance-dating.js`.
+
+### Family roadmap and hybrid schedules
+
+- An adoption dream now offers a direct decision before opening child creation. You may accept, or postpone until a later farmhouse sleep after **1, 14, or 28 in-game days**; the chosen earliest day persists through saves. Biological pregnancy and eggs are unchanged.
+- One child per marriage remains the present cap (`romance.family.maxChildrenPerMarriage`). The cap is data-driven for eventual siblings, but changing it alone does not add sibling dialogue or authored household interactions.
+- Once children finish toddlerhood, they become tagged villagers, form a social friendship with **Gantami Ginju**, and may visit town between 11:00 and 16:00 on a stable roll of 65% of days. They react to live village-child locations, prefer their listed friends, or use valid public stations; they stay at the farm when no safe town spot exists. Vat work has priority.
+- Spouses continue their existing authored NPC agenda during town visits (normally noon–17:00 every third day), returning to the farm routine for the other hours. `romance.spouse.townVisitsByNpc` permits authoring visits by weekday/time per spouse. Neither spouse nor child schedule has player-facing controls yet.
 
 ## Child proportions
 

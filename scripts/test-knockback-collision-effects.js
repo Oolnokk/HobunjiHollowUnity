@@ -84,8 +84,8 @@ assert(indexSource.indexOf('js/combat/burning-affliction-vfx.js') > indexSource.
 
 assert.match(resourceSource, /burningHealth:\s*\{[\s\S]{0,300}resource:\s*"health"[\s\S]{0,300}tags:\s*\["fire", "physical"\]/,
   'Burning Health is a first-class Health affliction tagged as fire damage');
-assert.match(resourceSource, /function resolveBurningTick[\s\S]{0,450}removeAffliction\(entity, "burningHealth", amount\)[\s\S]{0,220}applyHealthAfflictionDamage\(entity, amount\)/,
-  'Burning consumes its own already-applied buildup through the shared lethal Health-affliction damage path');
+assert.match(resourceSource, /function resolveBurningTick[\s\S]{0,450}removeAffliction\(entity, "burningHealth", amount\)[\s\S]{0,220}applyHealthAfflictionDamage\(entity, amount, ['"]burningHealth['"]\)/,
+  'Burning consumes its buildup through the lethal Health-affliction path while tagging its fatal cause');
 assert.match(playerVitalsSource, /isPlayerInWater\?\.\(\)[\s\S]{0,120}extinguishInWater/,
   'player vitals clears Burning immediately when the player enters water');
 assert.match(gameSource, /function isWaterSurfaceAt[\s\S]{0,650}WATERWAY_TYPES\.has\(tile\.type\)[\s\S]{0,220}Number\(tile\.water\)[\s\S]{0,120}>= 0\.003/,
@@ -105,8 +105,10 @@ assert.match(editorSource, /id="bladedHazard" type="checkbox"/,
   'furniture author exposes the requested Bladed Hazard checkbox');
 assert.match(editorSource, /id="fireHazard" type="checkbox"/,
   'furniture author exposes the requested Fire Hazard checkbox');
-assert.match(editorSource, /bladedHazard:!!state\.bladedHazard,fireHazard:!!state\.fireHazard/,
-  'hazard flags persist in exported authored-furniture JSON');
+assert(editorSource.includes('bladedHazard:!!state.bladedHazard||autoStoneBlade,stoneStalagmiteAutoBlade:autoStoneBlade,fireHazard:!!state.fireHazard,'),
+  'explicit and automatically generated blade hazard flags persist independently in furniture export');
+assert(editorSource.includes('state.bladedHazard=!!data.bladedHazard&&!data.stoneStalagmiteAutoBlade'),
+  'furniture imports preserve manually authored blade hazards without retaining derived stone sharpness');
 assert.match(editorSource, /state\.fireHazard=!!data\.fireHazard/,
   'furniture author imports the explicit Fire Hazard flag');
 assert.doesNotMatch(editorSource, /state\.fireHazard=!!\(data\.fireHazard\|\|/,
