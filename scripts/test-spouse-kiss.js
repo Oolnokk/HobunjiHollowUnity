@@ -424,7 +424,7 @@ sceneWalker.avatarGroup.userData.portraitModelHeight=2;partnerLegs.modelHeight=2
 assert.equal(visual.start(sceneWalker,()=>contacts++),true);
 assert.equal(visual.diagnostics().session.height.shorterPosteriorGrip,true,'shorter live player should hop');
 for(let i=0;i<13;i++)renderFrame({deltaMs:80});
-assert.ok(avatarRoot.position.y > .01,'shorter player's actual character and feet rise toward the spouse posterior');
+assert.ok(avatarRoot.position.y > .01,"shorter player's actual character and feet rise toward the spouse posterior");
 assert.equal(npcRoot.position.y,0,'the taller NPC continues to stand on the floor');
 assert.equal(visual.stop('short-player-hop-cancel'),true);
 assert.equal(channels.size,0,'cancel removes the player leap composer channel');
