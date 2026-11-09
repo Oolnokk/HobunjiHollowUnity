@@ -13,7 +13,8 @@
 //     the opposite side;
 //   • the player (and their mount) moves at half speed (speedMultiplier()).
 // Ordinary objects use RANGE_TILES. Cave/camp landmarks and cliff-door/herb
-// landmarks have independent discovery ranges; there is no cooldown.
+// landmarks have independent discovery ranges; active Perception food and
+// alchemy buffs multiply each radius without changing its base. There is no cooldown.
 //
 // Wired from game.js with one init(deps) call; game.js calls renderOverlay()
 // from renderWorldPasses and update() from gameLoop. Sources are read through
@@ -63,6 +64,20 @@
 
   // ── Helpers ──────────────────────────────────────────────────────────
   const THREE = () => deps?.THREE || window.THREE;
+
+  function rangeMultiplier() {
+    const rawFoodStacks = Number(window.CookingSystem?.getFoodEffectStacks?.('perception')); // Active Perception food (including registered external providers) expands Sense Mode ranges.
+    const foodStacks = Number.isFinite(rawFoodStacks) ? Math.max(0, rawFoodStacks) : 0; // Keep missing or malformed food data at the unbuffed baseline.
+    const foodMultiplier = 1 + Math.min(0.5, foodStacks * 0.02); // Match Perception food's existing +2% per stack, +50% cap used by SkillSystem.
+    const rawAlchemyMultiplier = Number(window.AlchemySystem?.getPerceptionMultiplier?.()); // Existing Perception potion magnitude also expands Sense Mode.
+    const alchemyMultiplier = Number.isFinite(rawAlchemyMultiplier) ? Math.max(1, rawAlchemyMultiplier) : 1; // An absent/invalid buff must not shorten detection.
+    return foodMultiplier * alchemyMultiplier;
+  }
+
+  function effectiveRangeTiles(baseRangeTiles) {
+    const base = Number(baseRangeTiles); // A shared conversion keeps special creature and landmark base radii intact.
+    return Number.isFinite(base) ? Math.max(0, base) * rangeMultiplier() : 0;
+  }
 
   function rootOf(obj) {
     if (!obj) return null;
@@ -184,6 +199,7 @@
       }
       return out;
     }
+    const senseRangeMultiplier = rangeMultiplier(); // Capture active food/potion strength once per 150-ms target scan; all categories use the same bonus.
     const seenRoots = new Set();
     const rejected = { noRoot: 0, offScene: 0, outOfRange: 0 }; // Diagnostics only (debugSnapshot).
     const consider = (root, category, extra, rangeTiles = RANGE_TILES, anchor = null) => {
@@ -192,7 +208,7 @@
       if (sceneOf(root) !== scene) { rejected.offScene++; return; }
       const p = Number.isFinite(anchor?.x) && Number.isFinite(anchor?.z) ? anchor : worldPos(root); // Camp sites use their actual center rather than each individual tent's position.
       const dist = Math.hypot(p.x - player.x, p.z - player.z);
-      if (dist > rangeTiles) { rejected.outOfRange++; return; }
+      if (dist > rangeTiles * senseRangeMultiplier) { rejected.outOfRange++; return; }
       seenRoots.add(root);
       out.push({ root, category, dist, ...extra });
     };
@@ -541,10 +557,15 @@
     COLORS,
     RANGE_TILES,
     LANDMARK_RANGE_TILES,
+    rangeMultiplier,
+    effectiveRangeTiles,
     debugSnapshot: () => ({
       active,
       ...lastStats,
-      landmarkRanges: LANDMARK_RANGE_TILES, // Inspect effective cave/camp/door/herb ranges from the mobile debug companion.
+      landmarkRanges: LANDMARK_RANGE_TILES, // Unbuffed base radii remain available for mobile debugging.
+      rangeMultiplier: rangeMultiplier(), // Current food/potion multiplier is visible without browser devtools.
+      ordinaryRangeTiles: effectiveRangeTiles(RANGE_TILES), // Current regular silhouette reveal radius in tiles.
+      effectiveLandmarkRanges: Object.fromEntries(Object.entries(LANDMARK_RANGE_TILES).map(([kind, radius]) => [kind, effectiveRangeTiles(radius)])), // Current per-landmark radii in tiles.
       byCategory: targets.reduce((acc, t) => { acc[t.category] = (acc[t.category] || 0) + 1; return acc; }, {}),
     }),
     // Dev/test only: reads back the last silhouette mask and counts covered texels by colour.
