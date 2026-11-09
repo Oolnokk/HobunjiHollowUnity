@@ -24,6 +24,8 @@ jobs:
           node-version: '22'
       - name: Validate the browser smoke script
         run: node --check scripts/smoke-animation-author-scene-url.js
+      - name: Assert the live player and spouse rigs both animate
+        run: node scripts/test-spouse-kiss.js
       - name: Install real Chromium
         run: |
           npm install --no-save --package-lock=false playwright@1.55.1 three@0.128.0
