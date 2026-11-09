@@ -271,8 +271,8 @@
       drawLines('shaft-canvas'); drawLines('head-canvas');
       const match = api.matchingMounts(shaft, head), values = api.settings(shaftKey, headKey); // Auto-match and pair-local corrections.
       const canvas = byId('preview'), ctx = canvas.getContext('2d');
-      if (match.length) {
-        const composed = await api.compose(shaftKey, headKey, '../../'); // Same bitmap the real game uses.
+      if (match.length && !api.isDisallowed(shaftKey,headKey)) {
+        const composed = await api.compose(shaftKey, headKey, '../../'); // Never invent a rigid weapon preview for two incompatible flail owners.
         if (ticket !== serial) return;
         canvas.width = composed.width; canvas.height = composed.height;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -300,7 +300,7 @@
         full.width=450;full.height=1204;
         const fullContext=full.getContext('2d');fullContext.clearRect(0,0,450,1204);
         fullContext.drawImage(shaftImage,0,0,450,1204);full.dataset.rigKind='incompatible';
-        byId('flail-preview-status').textContent='Incompatible combination · choose another head, haft, or compatible rope mount.';
+        byId('flail-preview-status').textContent='Not forgeable · the head/haft mounts, flail recipe ownership or explicit exclusion prevent this assembly.';
         bridgeView = null;
         canvas.width = 450; canvas.height = 1204; // Incompatible pairs render the donor only.
         ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(shaftImage, 0, 0, 450, 1204);
