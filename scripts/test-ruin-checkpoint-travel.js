@@ -23,6 +23,7 @@ for(const key of ['RuinMultifloorV50Style','RuinV50NativeFloors','PersistentGrou
 let lightRefreshes=0,ignitions=0; // Confirms activation is a state transition, not repeated every frame.
 const destinations=[];
 let location={x:24,z:12,y:0}; // Actor world position used by proximity and teleport tests.
+let currentScene=null; // The active generated ruin scene distinguishes live white checkpoints from disposed/foreign ones.
 globalThis.RuinMultifloorV50Style={chooseHubBrazierCell:()=>[10,10]};
 globalThis.RuinV50NativeFloors={nativeRoom:()=>({x:60,z:10,w:8,d:8})}; // Native rooms can sit on fractional raised V50 plateaus.
 globalThis.PersistentGroundFire={attachCampfireFlame:(_anchor,opts)=>{
@@ -30,11 +31,13 @@ globalThis.PersistentGroundFire={attachCampfireFlame:(_anchor,opts)=>{
   assert.equal(opts.colorB,'#d9edff');return {update(){},dispose(){}};
 }};
 globalThis.ProceduralFurniture={makePartMaterial:()=>new Material()};
-globalThis.DevRandomRuin={setPlayerWorldPoint:at=>{location={...at};destinations.push({...at});return true;}};
+globalThis.DevRandomRuin={setPlayerWorldPoint:at=>{location={...at};destinations.push({...at});return true;},
+  getRuntimeContext:()=>({scene:currentScene})};
 globalThis.CloudForestFog={refreshLightingOverlay:()=>lightRefreshes++};
 globalThis.RuinInteractionAudio={igniteTorch:()=>ignitions++};
 function spawn(withNative=false){
   const scene=new Node(),controls=[]; // The actual ruin interaction list is injected, not replaced.
+  currentScene=scene;
   const ruin={controls,seed:77,spawn:{x:2,z:3},shaftGrids:new Map([
     ['wing',{grid:{xToCol:n=>Math.floor(n),zToRow:n=>Math.floor(n),yToLevel:n=>n,inBounds:()=>true,canStand:()=>true},contains:()=>true}]
   ])};
@@ -43,8 +46,8 @@ function spawn(withNative=false){
   if(withNative)ruin.nativeV50Runtime={records:[{floor:0,floorY:0,
     analysis:{stages:[{}]},place:{},supportYAt:()=>7.5}]}; // Raises the native floor independently of its story datum.
   const plan={floors:[{floor:0,y:0,wings:[
-    {id:'east',rooms:[{x:20,z:10,w:8,d:8}]},
-    {id:'west',rooms:[{x:40,z:10,w:8,d:8}]}
+    {id:'east',side:'E',rooms:[{x:20,z:10,w:8,d:8}]},
+    {id:'west',side:'W',rooms:[{x:40,z:10,w:8,d:8}]}
   ]}]};
   const hub={grid:{colToX:n=>n,rowToZ:n=>n,levelToY:n=>n}};
   const notifications=[];
@@ -64,11 +67,13 @@ try{
   assert.equal(shaft.inputAction,'action1');
   assert(small.every(c=>c.inputAction==='action1'));
   assert.equal(action2.available(),true,'Action 2 only appears on an already lit wing');
+  assert.equal(Travel.isActive(),true,'the current ruin owns the white checkpoints');
   assert.equal(Travel.lightSources().length,3,'the universal shaft and both small white braziers emit cached lighting records');
   action2.onPress();
   assert.deepEqual(destinations.at(-1),{x:2,z:3,y:0},'before shaft ignition, lit wing Action 2 returns to the entrance');
   location={x:10.5,z:10.5,y:0};owner.tick();
   assert.deepEqual(owner.serializeProgress(),{shaftLit:true,activeCheckpoint:'shaft'});
+  assert.deepEqual(Travel.activeRespawnPoint(),{x:10.5,z:10.5,y:0},'lit shaft is the initial respawn');
   assert.equal(ignitions,1,'shaft ignites automatically once');
   assert.equal(writes.length,1,'shaft ignition persists once, not per frame');
   location={x:21.5,z:11.5,y:0};owner.tick();
@@ -76,9 +81,10 @@ try{
   const east=owner.getState().checkpoints.find(x=>x.id==='wing:east');
   assert.equal(east.lit,true);
   assert.equal(ignitions,2,'small checkpoints ignite automatically when approached');
-  location={x:41.5,z:11.5,y:0};owner.tick();
+  location={x:46.5,z:11.5,y:0};owner.tick(); // West wing's white checkpoint belongs on the entry (right) bank.
   const state=owner.getState();
   assert.equal(state.activeCheckpoint,'wing:west');
+  assert.deepEqual(Travel.activeRespawnPoint(),{x:46.5,z:11.5,y:0},'white wing fire wins over legacy rope-bank checkpoints');
   assert.equal(state.checkpoints.find(c=>c.id==='wing:east').lit,false,'replaced checkpoints extinguish');
   assert.equal(state.checkpoints.find(c=>c.id==='shaft').lit,true,'shaft never extinguishes');
   assert.equal(writes.length,3,'checkpoint changes persist only on transitions');
@@ -86,7 +92,7 @@ try{
   location={x:10.5,z:10.5,y:0};owner.tick();
   assert.equal(owner.getState().activeCheckpoint,'wing:west','approaching shaft cannot overwrite discovered checkpoint');
   clock+=100;shaft.onHoldStart();clock+=100;shaft.onHoldEnd();
-  assert.deepEqual(destinations.at(-1),{x:41.5,z:11.5,y:0},'Action 1 tap on shaft returns to the current checkpoint');
+  assert.deepEqual(destinations.at(-1),{x:46.5,z:11.5,y:0},'Action 1 tap on shaft returns to the current checkpoint');
   clock+=100;small[1].onHoldStart();clock+=600;small[1].onHoldEnd();
   assert.deepEqual(destinations.at(-1),{x:10.5,z:10.5,y:0},'Action 1 hold on small brazier returns to shaft');
   clock+=100;shaft.onHoldStart();clock+=700;shaft.onHoldEnd({canceled:true});
@@ -99,10 +105,12 @@ try{
   assert.equal(Travel.snapshotValid({version:1,seed:77},77),true);
   assert.equal(Travel.snapshotValid({version:1,seed:78},77),false,'a different ruin seed cannot adopt checkpoints');
   owner.dispose();assert.equal(Travel.lightSources().length,0,'teardown leaves no global lighting references');
+  assert.equal(Travel.isActive(),false,'the disposed ruin relinquishes checkpoint authority');
   location={x:2,z:3,y:0};
   const restored=spawn();
   assert(restored.owner.restore({version:1,seed:77,...saved}),'world-save snapshot restores');
   assert.equal(restored.owner.getState().activeCheckpoint,'wing:west');
+  assert.deepEqual(Travel.activeRespawnPoint(),{x:46.5,z:11.5,y:0},'restored white checkpoint controls the next respawn');
   assert(restored.owner.getState().checkpoints.find(c=>c.id==='wing:west').lit);
   assert(restored.owner.getState().checkpoints.find(c=>c.id==='shaft').lit);
   assert.equal(restored.writes.length,0,'restoring a world save does not cause another write');

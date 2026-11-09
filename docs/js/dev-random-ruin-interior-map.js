@@ -1127,7 +1127,7 @@
           size:cfg('generation.size','medium'),density:cfg('generation.density',62),
           roomMin:singleVestibule?1:cfg('generation.roomMin',3),
           roomMax:singleVestibule?1:cfg('generation.roomMax',6),singleRoom:singleVestibule,singleRoomLab:singleRoomTrial, // Avoid a default core moat or raised treasure display conflicting with the one selected challenge.
-          ...(soloChoice?.mode==='mechanism'||nativeSoloType==='brazier'?{roomPreset:'veryLarge'}:singleRoomTrial&&(['statueDefense','ropeChain','findBlocks'].includes(soloChoice.kind)||nativeSoloType)?{roomPreset:['statueDefense','nativePushBlock','findBlocks'].includes(soloChoice.kind)?'veryLarge':nativeSoloType==='glyphObelisk'?'medium':'large'}:{}), // The torch run and standalone mechanisms need a clear chamber.
+          ...(soloChoice?.mode==='mechanism'||nativeSoloType==='brazier'?{roomPreset:'veryLarge'}:singleRoomTrial&&(['statueDefense','ropeChain','findBlocks'].includes(soloChoice.kind)||nativeSoloType)?{roomPreset:['statueDefense','ropeChain','nativePushBlock','findBlocks'].includes(soloChoice.kind)?'veryLarge':nativeSoloType==='glyphObelisk'?'medium':'large'}:{}), // The torch run and standalone mechanisms need a clear chamber.
           puzzles:singleVestibule?{
              ...Object.fromEntries(Object.keys(puzzleOptions).map(key=>[key,false])),
              ...(nativeSoloType?{[nativeSoloType]:true,maxPerRoom:1,...(nativeSoloType==='brazier'?{stackedObelisk:true}:{})}:{})

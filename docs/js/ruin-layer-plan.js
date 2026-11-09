@@ -2,11 +2,12 @@
 // Shared geometry coordinates; each floor owns its own independent network.
 // Nothing renders or teleports here. Runtime geometry/puzzles must consume this plan.
 (function(root,factory) {
-  const api=factory();
+  const api=factory(root);
   if(typeof module==='object'&&module.exports)module.exports=api;
   else root.RuinLayerPlan=api;
-})(typeof self!=='undefined'?self:globalThis,function(){
+})(typeof self!=='undefined'?self:globalThis,function(root){
   'use strict';
+  const ropeGeometry=()=>root.RuinRopeGeometry||(typeof require==='function'?require('./ruin-rope-geometry.js'):null); // Browser loads RopeCore after this module: resolve only when composing.
   const DIRS=Object.freeze([
     {side:'N',dx:0,dz:-1},{side:'E',dx:1,dz:0},
     {side:'S',dx:0,dz:1},{side:'W',dx:-1,dz:0},
@@ -168,16 +169,23 @@
           const findBlocks=!isGoal&&!tutorial&&roll<.18&&prevKind!=='findBlocks'&&rooms.filter(r=>r.challenge==='findBlocks').length<2; // Needs a full 18x18 footprint.
           const defence=!isGoal&&!tutorial&&!findBlocks&&roll<.3&&prevKind!=='statueDefense'&&prevKind!=='findBlocks'; // Authored enemy pillars also need 18x18.
           const large=defence||findBlocks;
-          const rw=large?18:(dir.dx?integer(rng,11,19):integer(rng,9,15));
-          const rd=large?18:(dir.dz?integer(rng,11,19):integer(rng,9,15));
+          let rw=large?18:(dir.dx?integer(rng,11,19):integer(rng,9,15));
+          let rd=large?18:(dir.dz?integer(rng,11,19):integer(rng,9,15));
           const gap=integer(rng,3,6); // Short walk between consecutive puzzle rooms; no empty approach needs the old 7–15 cells.
-          const offset=integer(rng,-2,2),depth=Math.floor((dir.dx?rw:rd)/2); // Small lateral bends retain variety without stretching the empty corridor.
-          const rx=previous.x+dir.dx*(gap+depth+1)+lateral.dx*offset;
-          const rz=previous.z+dir.dz*(gap+depth+1)+lateral.dz*offset;
+          const offset=integer(rng,-2,2); // Lateral hallway variation stays independent of rope room sizing.
           const id=`${wingId}-room${stage}`;
-          const smallPool=puzzles.filter(kind=>kind!==prevKind); // All six everyday puzzle families: plate, glyph pillars, rail targets, melody, fire and rope.
+          const smallPool=puzzles.filter(kind=>kind!==prevKind); // The authored small-puzzle families share one selectable pool.
           const challenge=isGoal?null:findBlocks?'findBlocks':defence?'statueDefense'
             :tutorial?'pressurePlate':smallPool[integer(rng,0,smallPool.length-1)];
+          if(challenge==='ropeChain'){
+            const math=ropeGeometry();
+            if(!math)throw new Error('Ruin rope geometry must load before building puzzle rooms.');
+            const dimensions=math.dimensions(dir.side); // Reserve the full unbuffed flight footprint before any floors and walls are built.
+            rw=dimensions.w;rd=dimensions.d;
+          }
+          const depth=Math.floor((dir.dx?rw:rd)/2);
+          const rx=previous.x+dir.dx*(gap+depth+1)+lateral.dx*offset;
+          const rz=previous.z+dir.dz*(gap+depth+1)+lateral.dz*offset;
           const plinthTrial=id===trialRoomId;
           const area=plinthTrial?rect(rx+dir.dx*(9-depth),rz+dir.dz*(9-depth),18,18):rect(rx,rz,rw,rd); // Keep the planned approach gap while reserving room for the authored spawners.
           const room={id,kind:isGoal?'brazier-chamber':'challenge-room',...area,y,wingId,
