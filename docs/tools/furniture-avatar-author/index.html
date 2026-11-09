@@ -2384,7 +2384,8 @@ function importStatueFurniturePiece(payload) {
   const part=normalizePart({...source,id:uid('statue'),preserveMaterials:true,statueBaked:true}); // Never reuse the exported ID: identical imported statues are independent furniture pieces.
   state.parts.push(part);setEditorMode('parts');rebuildAll();selectObject('part',part.id,{force:true});frameFurniture();queueUndoHistory('import statue piece');
   const msg='Added '+part.name+' as one independent furniture piece. Its frozen NPC and weapon use embedded stone materials.';
-  $('statuePieceImportStatus').textContent=msg;log(msg,'ok');
+  $('statuePieceImportStatus').textContent=msg;$('statuePieceFileInput')?.closest('details')?.setAttribute('open',''); // Make the import result visible even if the section was collapsed.
+  log(msg,'ok');
   return {id:part.id,name:part.name};
 }
 function addPart(kind,overrides={}) { const part=pushPart(kind,overrides);buildPartMesh(part);if(part.materialTexture){applyEntrySurfaceDefaults({materialRules:{roleTextures:{[part.materialRole||'wood']:part.materialTexture},mapping:'stretch'}},[part]);buildPartMesh(part);}rebuildItemPreviews();selectObject('part',part.id);updateStats();updateLists();log(`Added ${part.name}`); }
