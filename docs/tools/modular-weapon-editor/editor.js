@@ -424,6 +424,8 @@
   };
   function drawIdentity() {
     const shaft = chosenShaft(), head = chosenHead(); // All fields operate on the selected independent part, not a pair override.
+    for (const option of byId('shaft').options) if (data.shafts[option.value]) option.textContent = data.shafts[option.value].label; // Edited labels are visible immediately in every dropdown.
+    for (const option of byId('head').options) if (data.heads[option.value]) option.textContent = data.heads[option.value].label;
     for (const [id, value] of [
       ['shaft-part-label', shaft.label], ['shaft-name-affix', shaft.nameAffix || shaft.label],
       ['head-part-label', head.label], ['head-name-prefix', head.weaponNames?.prefix || head.label],
