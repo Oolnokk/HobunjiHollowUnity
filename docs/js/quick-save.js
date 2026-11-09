@@ -364,6 +364,24 @@
     previewWorld.calendar.time01 = (15 - cal.getHour(0)) / (cal.getHour(1) - cal.getHour(0)); // Begins at 15:00 using the calendar's own represented hours.
     previewWorld.lastDay = day; // Avoid treating every skipped day as a pending overnight rollover.
     previewWorld.lastSeason = cal.seasonForDay(day)?.name || previewWorld.lastSeason;
+    const previewFestival = previewWorld.members?.[ids.characterId]?.festivals; // Only the disposable preview loses earlier claims so every festival activity can be retested.
+    const eventKey = year + ':' + festival.id;
+    if (previewFestival) {
+      if (previewFestival.claims) delete previewFestival.claims[eventKey];
+      if (previewFestival.potluckContests) {
+        delete previewFestival.potluckContests[eventKey];
+        for (const [key, contest] of Object.entries(previewFestival.potluckContests)) {
+          if (key !== eventKey && contest) contest.favorAwarded = true; // Don't pay old contests merely because the test jumped forward.
+        }
+      }
+      for (const ledger of ['festivalFunEarned', 'festivalFunPaid', 'festivalMealPortions']) {
+        for (const key of Object.keys(previewFestival[ledger] || {})) {
+          if (key.startsWith(eventKey + ':')) delete previewFestival[ledger][key];
+        }
+      }
+      previewFestival.festivalFun = {}; // Old unpaid Fun belongs to the original timeline, not this test.
+      previewFestival.funDay = year * 336 + cal.dayOfYear(day) - 1;
+    }
     preview.id = 'festival-test-preview-' + Date.now().toString(36);
     preview.label = 'Festival test: ' + festival.name;
     preview.pinned = true;
