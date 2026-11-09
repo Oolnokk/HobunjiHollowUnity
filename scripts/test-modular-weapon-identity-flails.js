@@ -101,8 +101,8 @@ const editorHtml = fs.readFileSync('docs/tools/modular-weapon-editor/index.html'
 for (const id of ['head-part-label','head-name-prefix','head-name-suffix','head-tool-slots','shaft-tool-worthy',
   'shaft-name-affix','shaft-name-position','head-flail-assembly','shaft-flail-assembly','head-rope-x','head-rope-y'])
   assert(editorHtml.includes('id="' + id + '"'), 'The editable modular part field must exist: ' + id);
-const gameToken = gameHtml.match(/config\\/modular-weapons\\.js\\?v=([^"']+)/)?.[1];
-const editorToken = editorHtml.match(/config\\/modular-weapons\\.js\\?v=([^"']+)/)?.[1];
+const gameToken = gameHtml.split('config/modular-weapons.js?v=')[1]?.split('"')[0];
+const editorToken = editorHtml.split('config/modular-weapons.js?v=')[1]?.split('"')[0];
 assert.equal(editorToken, gameToken, 'Game and editor must share the same committed modular catalog version');
 const runtimeSource = fs.readFileSync('docs/js/modular-weapons.js', 'utf8');
 assert(runtimeSource.includes('if (flail) paintHaft();'),
