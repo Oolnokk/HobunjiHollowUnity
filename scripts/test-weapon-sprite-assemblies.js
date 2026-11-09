@@ -126,6 +126,9 @@ api.tintRopePixels(unchangedWhite, '#FFFFFF');
 assert.deepEqual(Array.from(unchangedWhite),Array.from(originalRopePixels),'default white rope retains the source image');
 
 assert.equal(source.includes('tintedRopeTextures = new WeakMap()'),true,'recolored rope variants are cached per source image');
+assert.match(source, /const ROPE_TINT_CACHE_LIMIT = 12/, 'large recolored rope canvases must have a finite cache budget');
+assert.match(source, /while \(variants\.size > ROPE_TINT_CACHE_LIMIT\)/, 'discard old full-resolution tint templates after too many color edits');
+assert.match(source, /stale\?\.dispose\?\.\(\)/, 'evicted canvas texture templates are disposed while rendered clones remain independent');
 assert.match(source, /ropeTintMethod = tintedSource === sourceTexture/, 'the actual textured rope reports whether the shared color fill succeeded');
 assert.match(source, /ropeTint: s\.chain\?\.userData/, 'mobile diagnostics expose the real rope tint path');
 assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.head.layers[2].vfx.type, 'fire');
