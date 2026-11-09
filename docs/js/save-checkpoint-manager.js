@@ -539,7 +539,7 @@
 
   function festivalCheckpointBlocked() {
     const phase = window.HobunjiQuickSave?.festivalStatus?.().phase; // A disposable festival must never replace manual/campfire/recovery checkpoints.
-    return !!phase && phase !== 'idle' && phase !== 'restored';
+    return !!phase && phase !== 'idle'; // Restored but uncommitted worlds must not overwrite recovery history.
   }
 
   async function saveManual({ reason = 'menu-manual-save', force = false } = {}) {
