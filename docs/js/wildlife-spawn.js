@@ -1442,7 +1442,8 @@
       const exempt = kind === 'tzatzul' || kind.startsWith('skeeri');
       const family = window.CreatureGenetics?.SPECIES_ALIAS?.[kind] || kind;
       const mother = mothers[kind];
-      const guardianKey = mother?.creatureKey || (kind === 'voorg-ass' ? 'voorg-ass-herd-mother' : otherOffspring[kind] || exempt ? kind : null);
+      const guardianKey = mother?.creatureKey || (kind === 'voorg-ass' ? 'voorg-ass-herd-mother'
+        : ((otherOffspring[kind] || exempt) ? kind : null)); // Herd-Mothers are a separate live creature; nest/hive guardians use their own species.
       const itemKey = otherOffspring[kind] || mother?.nestItemKey || null;
       const registered = !!deps?.CREATURE_DB?.[kind];
       const guardianRegistered = exempt ? true : !!(guardianKey && deps?.CREATURE_DB?.[guardianKey]);
