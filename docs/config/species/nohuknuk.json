@@ -1,0 +1,19 @@
+{
+  "speciesId": "nohuknuk",
+  "label": "Old Man Nohuknuk",
+  "parentSpecies": "engh-sho",
+  "npcOnly": true,
+  "playerSelectable": false,
+  "genders": [
+    "male"
+  ],
+  "inheritanceNotes": {
+    "portraitFallback": "engh-sho",
+    "transformSpecies": "nohuknuk",
+    "bodyColorSpecies": "engh-sho",
+    "assembly": "bipedal-monster",
+    "visualBody": "assets/creaturesprites/old_man_nohuknuk.png",
+    "extremities": "primate GLB hands and feet; NPC-specific colors and textures in npc species-overrides"
+  },
+  "male": {}
+}
