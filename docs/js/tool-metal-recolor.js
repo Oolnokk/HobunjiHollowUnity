@@ -873,7 +873,9 @@
         resolve(img);
       };
       img.onerror = () => {
-        _imgCache.delete(spritePath);
+        // Clear-cache may have installed a newer load for this sprite while the
+        // old image request was still pending; only evict our own failed promise.
+        if (_imgCache.get(spritePath) === promise) _imgCache.delete(spritePath);
         const error = new Error(`Failed to load tool sprite: ${spritePath}`);
         debugError(opts, 'image load failed', { spritePath, message: error.message });
         reject(error);
