@@ -4,14 +4,13 @@
   // One player-owned portable campfire may exist at a time. It can be placed
   // in a wilderness zone or on a procedural Town Mine floor, persists as
   // world-member state across map changes and game sessions, and silently
-  // replaces the previous campfire when a new kit is used. Same-year Tothal
-  // reconstruction is only an in-memory replay of the already-saved terrain,
+  // replaces the previous campfire whenever another is set up for free.
+  // Same-year Tothal reconstruction only replays the saved terrain,
   // so it must not delete the restored camp. A genuine new-year Tothal Shift
   // still clears a wilderness camp because the terrain under its coordinates
   // has actually changed. Mine-floor camps are also cleared by mine death.
   // Reuses the authored campfire furniture + its existing
   // Save/Cook/Brew/Return-to-Camp interactions.
-  const KIT_ITEM_KEY = 'campfireKitFurniture';
   const DEBUG_HISTORY_LIMIT = 24; // Caps the in-module persistence trace exposed by getDebugState().
 
   let deps = null;
@@ -148,10 +147,13 @@
   function place(col, row) {
     const area = deps.getCurrentArea();
     if (!supportsArea(area)) return { ok: false, message: 'You can only set up a campfire in the wilderness or on a mine floor.' };
+    if (!Number.isInteger(col) || !Number.isInteger(row)) return { ok: false, message: 'Choose a valid tile to set up your campfire.' };
     const wx = col + 0.5;
     const wz = row + 0.5;
+    const height = Number(deps.surfaceYAt(wx, wz)); // Protects saved camp coordinates if the destination terrain has no valid surface.
+    if (!Number.isFinite(height)) return { ok: false, message: 'Cannot set up a campfire without solid ground.' };
     removeVisual(); // Placing one new fire destroys the old visual globally before replacing its persistent record.
-    state = { mapId: area, x: wx, y: deps.surfaceYAt(wx, wz), z: wz, ry: deps.getFacingAngle() };
+    state = { mapId: area, x: wx, y: height, z: wz, ry: deps.getFacingAngle() };
     returnPending = false;
     recordDebug('place');
     ensureVisualForCurrentArea();
@@ -159,15 +161,22 @@
     return { ok: true, message: '🔥 Campfire set up. You can save, cook, mix potions, and return here.' };
   }
 
+  // Existing saved kits and held-item actions still work, but never require or
+  // consume an inventory item now that setting up camp is free.
   function placeFromKit(col, row) {
-    const area = deps.getCurrentArea();
-    if (!supportsArea(area)) return { ok: false, message: 'You can only set up a campfire in the wilderness or on a mine floor.' };
-    if ((deps.inventory[KIT_ITEM_KEY] || 0) < 1) return { ok: false, message: 'No Campfire Kit to use.' };
-    deps.inventory[KIT_ITEM_KEY] -= 1;
-    deps.clampInventoryStack?.(KIT_ITEM_KEY);
-    deps.buildInventoryGrid?.();
-    deps.refreshItemScroll?.();
     return place(col, row);
+  }
+
+  // The utilities wheel sets up camp on the player's own walkable tile, so it
+  // needs neither a held kit nor the item-only action-bar placement workflow.
+  function placeAtPlayer() {
+    const player = deps?.getPlayer?.(); // Supplies the player's feet position for the utility-wheel camp setup.
+    const tileSize = Number(deps?.TILE); // Converts the position into the tile coordinates expected by place().
+    if (!player || !Number.isFinite(player.x) || !Number.isFinite(player.y)
+      || !Number.isFinite(tileSize) || tileSize <= 0) {
+      return { ok: false, message: 'Cannot find a safe place for your campfire right now.' };
+    }
+    return place(Math.floor(player.x / tileSize), Math.floor(player.y / tileSize));
   }
 
   function clear(reason = 'explicit') {
@@ -327,7 +336,7 @@
   }
 
   window.WildernessCampfire = {
-    init, supportsArea, place, placeFromKit, clear, clearIfZone, clearMineCampfireOnDeath,
+    init, supportsArea, place, placeFromKit, placeAtPlayer, clear, clearIfZone, clearMineCampfireOnDeath,
     relocateForGeneratedMineFloor, updateVfx, onZoneEntered, isHere, distanceToPlayerTiles,
     getNearbyActions, returnToCampfire, requestReturnToCampfire, doSave, doCook, doBrew,
     serialize, restore, ensureLoaded, getDebugState, releaseVisualIfZone,
