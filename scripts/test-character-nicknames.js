@@ -11,6 +11,8 @@ const read = file => fs.readFileSync(path.join(__dirname, '..', file), 'utf8'); 
 const player = { nickname: 'Benjamin', appearance: { gender: 'male', speciesId: 'mao-ao' } }; // Test profile for all address paths.
 const W = { SCRATCHBONES_CONFIG: { game: { socialRelationships: { relationships: [
   { type: 'friend', members: ['pahu', 'leaf'] }, { type: 'partner', members: ['gorobi', 'gikali'] },
+  { type: 'friend', members: ['namui_u_hakaru', 'father_hunundi_hodu'] }, // Tests preservation of the Father's title when a friend greets him.
+  { type: 'friend', members: ['other_friend', 'teacup_unumanuk'] }, // Tests Eldress honorifics without changing the existing game graph.
 ] } } }, CalendarSystem: { timeDebugSnapshot: () => ({ rawDay: 12 }), getHour: () => 10 } }; // Shared stubs for NPC social graph and romance calendar.
 W.__hobunjiPlayerProfile = player; // The live romance module reads the same profile as dialogue.
 const ctx = vm.createContext({ window: W, document: { getElementById: () => null }, console,
@@ -46,7 +48,7 @@ vm.runInContext(read('docs/js/dialogue-content.js').replace(
   '  window.DialogueContent = {', '  window.DialogueContent = { testTokens: _resolveTokens,'
 ), ctx);
 vm.runInContext(read('docs/js/ambient-dialogue.js').replace(
-  '  window.AmbientDialogue = api;', '  api._test = { playerNicknameFor, playerGreetingPolicy, conditionedPlayerNicknameFor }; window.AmbientDialogue = api;'
+  '  window.AmbientDialogue = api;', '  api._test = { playerNicknameFor, playerGreetingPolicy, conditionedPlayerNicknameFor, resolveDialogueNicknameTokens }; window.AmbientDialogue = api;'
 ), ctx);
 const romance = W.RomanceSystem; // Existing authoritative save and date owner.
 const dialogue = W.DialogueContent; // Authored dialogue token resolution.
@@ -59,7 +61,10 @@ const other = { rec: { id: 'other_npc', name: 'Leaf', phrasePools: [] } }; // Or
 dialogue.getNpcDlgState('friend_npc').favor = 2;
 dialogue.getNpcDlgState('other_npc').favor = 1;
 assert.equal(dialogue.testTokens('{{playerLocalNickname}}', friend.rec), 'Ben');
+assert.equal(dialogue.testTokens('{{playerNickname}} / {{playerName}}', friend.rec), 'Ben / Benjamin', 'friend named in a dialogue tree uses a short nickname without changing the full-name token');
+assert.equal(ambient._test.resolveDialogueNicknameTokens('{{playerNickname}} / {{playerName}}', friend.rec, friend), 'Ben / Benjamin', 'ambient dialogue token resolution matches normal conversations');
 assert.equal(dialogue.testTokens('{{playerLocalNickname}}', other.rec), 'Benjamin');
+assert.equal(dialogue.testTokens('{{playerNickname}}', other.rec), 'Benjamin', 'acquaintances still use the full configured name');
 assert.equal(ambient._test.playerNicknameFor(friend), 'Ben');
 assert.equal(ambient._test.playerNicknameFor(other), 'Benjamin');
 assert.equal(ambient.resolveTargetName({ rec: { id: 'pahu' } }, { id: 'leaf', name: 'Leaf' }), 'Leaf');
@@ -68,6 +73,9 @@ assert.equal(ambient.resolveTargetName({ rec: { id: 'pahu' } }, { id: 'leaf', na
 assert.equal(ambient.resolveTargetName({ rec: { id: 'pahu' } }, { id: 'leaf', name: 'Sloomi', gender: 'female' }), 'Sloo', 'NPC friend uses the target female gender');
 assert.equal(ambient.resolveTargetName({ rec: { id: 'gorobi' } }, { id: 'gikali', name: 'Sloomi', rec: { appearance: { gender: 'female' } } }), 'Sloomy', 'NPC partner uses the target record gender');
 assert.equal(ambient.resolveTargetName({ rec: { id: 'gorobi' } }, { id: 'gikali', name: 'Leaf', gender: 'male' }), 'Leafy', 'one-syllable NPC partner names get y');
+assert.equal(ambient.resolveTargetName({ rec: { id: 'namui_u_hakaru' } }, { id: 'father_hunundi_hodu', name: 'Father Hunundi Hodu', gender: 'male' }), 'Father', 'NPC friends must not turn Father into Fath');
+assert.equal(ambient.resolveTargetName({ rec: { id: 'other_friend' } }, { id: 'teacup_unumanuk', name: 'Eldress Teacup', gender: 'female' }), 'Eldress', 'NPC friends must not turn Eldress into El');
+assert.equal(ambient.resolveTargetName({ rec: { id: 'namui_u_hakaru' } }, { id: 'father_hunundi_hodu', name: 'Pahu', gender: 'male' }), 'Pah', 'non-titled names still shorten normally');
 romance.restore({ lastDateRawDay: { date_npc: 8 } }); // Legacy world save with only unambiguous day-level history.
 assert.equal(romance.getLastDatedNpcId(), 'date_npc');
 assert.equal(dialogue.testTokens('{{playerLocalNickname}}', dateNpc.rec), 'Beny');
@@ -84,14 +92,20 @@ for (const [name, gender, friendName, intimateName] of [
   player.nickname = name;
   player.appearance.gender = gender;
   assert.equal(dialogue.testTokens('{{playerLocalNickname}}', friend.rec), friendName, name + ' friend conversation');
+  assert.equal(dialogue.testTokens('{{playerNickname}}', friend.rec), friendName, name + ' friend generic token');
+  assert.equal(ambient._test.resolveDialogueNicknameTokens('{{playerNickname}}', friend.rec, friend), friendName, name + ' friend ambient generic token');
   assert.equal(ambient._test.playerNicknameFor(friend), friendName, name + ' friend ambient greeting');
   assert.equal(dialogue.testTokens('{{playerLocalNickname}}', dateNpc.rec), intimateName, name + ' former date conversation');
+  assert.equal(dialogue.testTokens('{{playerNickname}}', dateNpc.rec), intimateName, name + ' former date generic token');
+  assert.equal(ambient._test.resolveDialogueNicknameTokens('{{playerNickname}}', dateNpc.rec, dateNpc), intimateName, name + ' former date ambient generic token');
   assert.equal(ambient._test.playerNicknameFor(dateNpc), intimateName, name + ' former date ambient greeting');
 }
 player.nickname = 'Benjamin';
 player.appearance.gender = 'male'; // Restore the original player for the wedding assertions.
 romance.completeWedding('other_npc');
 assert.equal(dialogue.testTokens('{{playerLocalNickname}}', other.rec), 'Beny', 'spouse overrides the friend/low-Favor rule');
+assert.equal(dialogue.testTokens('{{playerNickname}}', other.rec), 'Beny', 'generic nickname token follows married spouse');
+assert.equal(ambient._test.resolveDialogueNicknameTokens('{{playerNickname}}', other.rec, other), 'Beny', 'ambient generic nickname follows married spouse');
 assert.equal(ambient._test.playerNicknameFor(other), 'Beny');
 assert.equal(romance.getLastDatedNpcId(), 'date_npc', 'marriage does not erase the last dated partner');
 assert.equal(dialogue.testTokens('{{playerName}}', other.rec), 'Benjamin', 'canonical full name stays available');
