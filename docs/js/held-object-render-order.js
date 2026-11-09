@@ -140,6 +140,7 @@
   let lastShellOffscreenFiltered = 0; // Rigid offscreen shell meshes skipped before their depth passes.
   let lastBaseElevationGroups = 0; // Distinct visible actor heights that needed the last held depth rebuild.
   let lastShellElevationGroups = 0; // Distinct visible actor heights that needed the last shell-depth rebuild.
+  let shellSceneTraversalsAvoided = 0; // Cumulative redundant full-scene walks avoided by one snapshot per shell replay.
   let groupScissorCount = 0; // Elevation-group passes assigned their own tighter depth-replay screen rectangle.
   let missingStencilFootReplaySkipCount = 0; // Safety fallback for auxiliary/offscreen targets that cannot carry the two-bit mask.
   let lastBaseStencilBits = 0; // STENCIL_BITS of the framebuffer bound for the most recent real world pass.
@@ -748,9 +749,9 @@
     material.alphaTest = Math.max(Number(material.alphaTest), maskCutoff);
   }
 
-  function prepareNonGroundDepthMaterials(scene) {
+  function prepareNonGroundDepthMaterials(scene, visibleCandidates = null) {
     const states = new Map();
-    scene.traverseVisible((object) => {
+    const processCandidate = (object) => {
       const isMesh = !!object?.isMesh;
       const isCelestialSprite = !!object?.isSprite && object.userData?.hobunjiNoOutline === true; // Used here to suppress only the sky-dome sun/moon sprites during this colorless replay.
       if (!isMesh && !isCelestialSprite) return;
@@ -769,7 +770,12 @@
         if (isMesh && (forceCutoutDepth || forceCoverDepth || Number(material.alphaTest || 0) > 0)) material.depthWrite = true;
         if (forceCutoutDepth) useSpriteOcclusionCutout(object, material);
       });
-    });
+    };
+    // The shell pass supplies a snapshot of its already-visible renderables;
+    // other callers keep the original live traversal as a conservative fallback.
+    if (visibleCandidates) {
+      for (const object of visibleCandidates) processCandidate(object);
+    } else scene.traverseVisible(processCandidate);
     return states;
   }
 
@@ -1526,14 +1532,31 @@
       && !!material.uniforms?.uThickness;
   }
 
-  function hideNonXrayShellMeshes(scene, xraySet) {
+  function hideNonXrayShellMeshes(scene, xraySet, visibleShellMeshes = null) {
     const states = new Map();
-    scene.traverseVisible((object) => {
+    const hideCandidate = object => {
       if (!object?.isMesh || !hasLayer(object, SHELL_LAYER) || xraySet.has(object)) return;
       states.set(object, object.visible);
       object.visible = false;
-    });
+    };
+    if (visibleShellMeshes) {
+      for (const object of visibleShellMeshes) hideCandidate(object);
+    } else scene.traverseVisible(hideCandidate);
     return states;
+  }
+
+  function collectShellReplayCandidates(scene) {
+    // One synchronous traversal serves the shell mask and *all* depth rebuilds
+    // in this replay. Never persist it between frames: moving/hidden/newly-added
+    // actors must be reconsidered for each render.
+    const depth = []; // Visible mesh/sun/moon candidates for the colorless occluder passes.
+    const shell = []; // Visible shell-layer meshes for per-elevation shell masking.
+    scene.traverseVisible(object => {
+      const isMesh = !!object?.isMesh;
+      if (isMesh || (object?.isSprite && object.userData?.hobunjiNoOutline === true)) depth.push(object);
+      if (isMesh && hasLayer(object, SHELL_LAYER)) shell.push(object);
+    });
+    return { depth, shell };
   }
 
   // Replays shell outlines for the same meshes that receive the selective
@@ -1590,6 +1613,8 @@
       scene.background = null;
       scene.autoUpdate = false;
       if (shadowMap) shadowMap.autoUpdate = false;
+      const replayCandidates = collectShellReplayCandidates(scene); // Snapshot after scissor culling; reused while the synchronous replay only changes temporary visibility.
+      shellSceneTraversalsAvoided += groups.length * 2; // Former full-tree walks: one depth + one shell mask per group, plus final depth, replaced by this one walk.
 
       // Use the same actor-elevation groups and ground-fragment filter as the
       // visible tool/hand/foot replay. The shell cannot become visible through
@@ -1601,7 +1626,7 @@
         depthWasCleared = true;
         scene.overrideMaterial = null;
         camera.layers.mask = MASK_ALL;
-        const depthStates = prepareNonGroundDepthMaterials(scene);
+        const depthStates = prepareNonGroundDepthMaterials(scene, replayCandidates.depth);
         for (const mesh of xrayMeshes) {
           forEachMaterial(mesh.material, material => {
             saveMaterialState(depthStates, material);
@@ -1618,7 +1643,7 @@
         }
 
         const groupSet = new Set(group.meshes);
-        const shellVisibility = hideNonXrayShellMeshes(scene, groupSet);
+        const shellVisibility = hideNonXrayShellMeshes(scene, groupSet, replayCandidates.shell);
         try {
           scene.overrideMaterial = oldOverride;
           camera.layers.mask = SHELL_MASK;
@@ -1643,7 +1668,7 @@
           scene.overrideMaterial = null;
           camera.layers.mask = MASK_ALL;
           renderer.clearDepth();
-          const restoreStates = prepareNonGroundDepthMaterials(scene);
+          const restoreStates = prepareNonGroundDepthMaterials(scene, replayCandidates.depth);
           for (const mesh of xrayMeshes) {
             forEachMaterial(mesh.material, material => {
               saveMaterialState(restoreStates, material);
@@ -1802,6 +1827,7 @@
       shellOffscreenFiltered: lastShellOffscreenFiltered,
       baseElevationGroups: lastBaseElevationGroups,
       shellElevationGroups: lastShellElevationGroups,
+      shellSceneTraversalsAvoided,
       groupScissors: groupScissorCount,
       lastReplayScissorCoverage: Number(lastReplayScissorCoverage.toFixed(4)),
       replayCullEnabled,
@@ -1827,7 +1853,7 @@
     const signature = JSON.stringify(state);
     if (signature !== lastDebugSignature) {
       lastDebugSignature = signature;
-      const message = `[held-xray] enabled=${state.enabled} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes} interior=${state.interiorFloorMeshes} farmhouse=${state.farmhouseFloorMeshes}) footWater=${state.waterOccludedMeshes}/${state.waterReplayMeshes}/${state.waterReplays} stencil=${state.stencilBits} stencilSkips=${state.missingStencilFootReplaySkips} base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} shellXray=${state.shellXrayPasses}/${state.shellXrayMeshes} repairs=${state.invariantRepairs} scissor=${state.scissoredReplays}/${state.fullscreenReplays} reasons=${state.lastHeldFullscreenReason}/${state.lastShellFullscreenReason} coverage=${state.lastReplayScissorCoverage} offscreen=${state.baseOffscreenFiltered}/${state.baseReplayCandidates} shellOffscreen=${state.shellOffscreenFiltered}/${state.shellReplayCandidates} groups=${state.baseElevationGroups}/${state.shellElevationGroups} groupScissors=${state.groupScissors} elevationGroups=${state.elevationReplayGroups} unknownElevation=${state.unknownElevationMeshes} elevationShaders=${state.elevationShaderMaterials}/${state.elevationShaderFallbacks}`;
+      const message = `[held-xray] enabled=${state.enabled} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes} interior=${state.interiorFloorMeshes} farmhouse=${state.farmhouseFloorMeshes}) footWater=${state.waterOccludedMeshes}/${state.waterReplayMeshes}/${state.waterReplays} stencil=${state.stencilBits} stencilSkips=${state.missingStencilFootReplaySkips} base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} shellXray=${state.shellXrayPasses}/${state.shellXrayMeshes} repairs=${state.invariantRepairs} scissor=${state.scissoredReplays}/${state.fullscreenReplays} reasons=${state.lastHeldFullscreenReason}/${state.lastShellFullscreenReason} coverage=${state.lastReplayScissorCoverage} offscreen=${state.baseOffscreenFiltered}/${state.baseReplayCandidates} shellOffscreen=${state.shellOffscreenFiltered}/${state.shellReplayCandidates} groups=${state.baseElevationGroups}/${state.shellElevationGroups} shellWalksAvoided=${state.shellSceneTraversalsAvoided} groupScissors=${state.groupScissors} elevationGroups=${state.elevationReplayGroups} unknownElevation=${state.unknownElevationMeshes} elevationShaders=${state.elevationShaderMaterials}/${state.elevationShaderFallbacks}`;
       if (typeof window.__farmLog === 'function') window.__farmLog(message, 'render');
       else console.debug(message);
     }
