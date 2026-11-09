@@ -247,22 +247,53 @@
       ? (positive * firstValue + step * positive * (positive-1) / 2) / possibilities : 0,
       min,max,step };
   }
-  function lootPoolItem(key, poolId, pools = G.LootRolling?.getLootPools?.()) {
+  function lootPoolItem(key, poolId, pools = G.LootRolling?.getLootPools?.(), context = {}, ancestry = []) {
     const pool = pools?.[poolId];
     if (!pool) return null;
-    // Mixed and mastery tables delegate to other pools; absence of a direct
-    // entry is not a zero drop chance. Preserve unknown until ancestors are resolved.
-    if (pool.kind === 'mixed' || pool.mastery)
-      return {key,poolId,probability:null,eligible:null,entries:[],
-        model:'delegated source pools or mastery rules must be resolved before an item probability can be claimed'};
-    const entries = (pool.entries || []);
+    if (ancestry.includes(poolId) || ancestry.length >= 8)
+      return {key,poolId,probability:null,eligible:null,model:'cyclic or over-deep mixed loot dependency'};
+    if (pool.mastery)
+      return {key,poolId,probability:null,eligible:null,model:'mastery scroll rank, type and effect generation require a separate conditional distribution'};
+    if (pool.kind === 'mixed') {
+      const candidates = (pool.sourcePools || []).filter(source => source && source.poolId !== poolId
+        && !ancestry.includes(source.poolId) && Number(source.weight)>0 && pools[source.poolId]);
+      const rolls = Math.max(0,Math.min(10,Math.floor(Number(pool.rolls) || 1))); // Mirrors LootRolling mixed roll cap.
+      if (!candidates.length) return {key,poolId,probability:null,eligible:null,
+        model:'no active mixed source pools have been registered'};
+      const branches = candidates.map(source => ({
+        sourceId:source.poolId,weight:Number(source.weight),
+        result:lootPoolItem(key,source.poolId,pools,context,[...ancestry,poolId]),
+      })); // Inspect each delegate with exactly the same recursion guard.
+      const known = branches.every(branch => branch.result && branch.result.probability != null
+        && branch.result.expectedQuantity != null);
+      const mass = branches.reduce((total,branch)=>total+branch.weight,0);
+      const perDraw = known ? branches.reduce((total,branch)=>total+
+        branch.weight*branch.result.probability,0)/mass : null;
+      const expectedPerDraw = known ? branches.reduce((total,branch)=>total+
+        branch.weight*branch.result.expectedQuantity,0)/mass : null;
+      return {key,poolId,probability:perDraw===null?null:atLeastOne(perDraw,rolls),
+        expectedQuantity:expectedPerDraw===null?null:expectedPerDraw*rolls,
+        eligible:perDraw===null?null:perDraw>0,rolls,sourceBranches:branches,
+        model:'weighted mixture with independent source selection for each draw; unknown delegated conditions stay unknown'};
+    }
+    if (poolId === 'treasureChest' && G.WildTreasure?.rollTreasureLootAsItems)
+      return {key,poolId,probability:null,eligible:null,
+        model:'live WildTreasure generator supersedes this flat fallback table; specialized contents need their own source model'};
+    let entries = (pool.entries || []);
+    if (pool.kind === 'exclusive' && poolId === 'puzzleCave') {
+      const definitions = context.trinketDefinitions || G.TrinketSystem?.DEFINITIONS;
+      if (!definitions) return {key,poolId,probability:null,eligible:null,
+        model:'specialized trinket catalog unavailable; cannot price unopened puzzle reward'};
+      const desired = Number.isFinite(Number(context.rewardTier)) && Number(context.rewardTier) >= 1
+        ? Math.max(1,Math.min(5,Math.floor(Number(context.rewardTier)))) : null;
+      entries = entries.filter(entry => (desired===null || entry.tier == null || Number(entry.tier)===desired)
+        && !!definitions[String(entry.itemKey||'').replace(/^trinket_/,'')]);
+    }
     const matches = entries.filter(entry => entry?.itemKey === key);
     const conditional = entry => ['conditions','excludeConditions'].some(field =>
       Object.values(entry[field] || {}).some(value =>
         Array.isArray(value) ? value.length > 0 : value != null && (typeof value !== 'object' || Object.keys(value).length > 0)));
     if (pool.kind === 'exclusive') {
-      if (poolId === 'puzzleCave') return {key,poolId,probability:null,eligible:null,
-        model:'puzzle cave rewards require the current rewardTier and the loaded trinket catalog; omit neither filter'};
       if (entries.some(conditional)) return {key,poolId,probability:null,eligible:null,
         model:'exclusive weighted pool has unresolved world conditions'};
       const totalWeight = entries.reduce((sum,entry)=>sum + Math.max(0,Number(entry.weight ?? 1)||0),0);
