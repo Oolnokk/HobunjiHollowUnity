@@ -263,7 +263,7 @@
     const readyFamilies = FAMILIES.filter(name => cropData?.[name]); // Every caravan draws exactly four distinct installed crop families.
     const familyPickChance = readyFamilies.length ? Math.min(TRADE_OFFER_LIMIT, readyFamilies.length) / readyFamilies.length : 0;
     const regionPickChance = 1 / Math.max(1, REGIONS.length - 1); // Only the five non-native regions are exported by Slagothim traders.
-    const pureImport = !!parsed && !parsed.colorHex && /^([1-5])\\1{5}$/.test(parsed.code);
+    const pureImport = !!parsed && !parsed.colorHex && /^([1-5])\1{5}$/.test(parsed.code);
     const breedingChoices = parsed ? Math.max(1, [...parsed.code].filter(gene => gene !== parsed.code[0]).length + (parsed.colorHex ? 2 : 0)) : 0;
     const seedMakerDays = Object.values(window.FARM_SPECIALIZATIONS_CONFIG?.buildings || {})
       .find(def => def?.family === 'seedMaker')?.daysPerInput; // Authoritative processing time, not a copied constant.
