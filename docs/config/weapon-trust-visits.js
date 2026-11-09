@@ -199,6 +199,27 @@
         ],
       },
       {
+        id: 'pahu_grapple_flail',
+        npcId: 'pahu',
+        shapeKey: 'grappleFlail',
+        giftMetalKey: 'nativeCopper',
+        dialogueTreeId: 'weapon_trust_gift_grapple_flail',
+        dialogueLabel: "Trust Gift — Pahu's Grapple-Flail",
+        dialogueLines: [
+          "Ahoy, <lad/lass>, good to see you.\nWanted to talk to you about somethin that been on moy moind.",
+          "Oy don't know if ye noticed, but me and moy sweet Leaf arr gettin quoite old. Soon Leaf'll be gone, and though oym sure oy'll have a few yearrs left boy moy lonesome after that, toime just moves so fast, it does.",
+          "Don't remember if oy told you this, yet, but loyk most of moy fellow Rakako'ans, oy spent moy youth on the hoygh seas. And loike a fair portion of them, oy was one of them Rakako'ans keepin' ohp one of our oldest traditions. The one that in truth defoines us. Rakako'an tradition demands we wearr the patch so long as we keep to the code. But oy was one of them young kenkarri livin in the way of he who wrote it. Oy was a poyrate.",
+          "Though moy days of poyracy are so very long behoynd me, for whatever reason oy still held on to me most trusty arrm from those days this whole toym. The one that beat a fairr amount of beligerant merchants within an inch of death, and a small few royght to it, --- though purely boy accident oy assurre you.",
+          "Moy Grapple Flail.",
+          "Ain't no good in moy hands, hasn't been forr most of moy loife to be honest. And trohst me, that's a long toime.\nThough in your hands, oym sure it will. She's almost as old as oy am, but trust me, she'll always be devastatin' in a foight.",
+          "Oy'll tell ya, <lad/lass>, ye've been growin' on me quoyt a bit. Ye've got wind behoind yerr back, gettin' ohp, doin' somethin. Remoinds me of meself.",
+          "To be honest oy was certain oy'd be dead beforre she'd foind herself in someone else's talons. Know that me givin herr to you willin'ly, that means alot.",
+          // The shared prefix and species-dependent suffix stay in one spoken sentence.
+          // Only players who are not Rakako'an hear the extra affirmation first.
+          "{{playerSpeciesIf:rakakoan||Ya know, <lad/lass>, bein' a Rakako'an ain't really about where yer from, its about who you are. Yerr values. What's in yer heart.\\n\\n}}Keep impressin' me and oy moight let you in on{{playerSpeciesIf:rakakoan| somethin' useful you may have forrgot about.| a well kept Rakako'an secret. One that'll knock you on yerr arse. Heh heh.}}"
+        ],
+      },
+      {
         id: 'dzibim_warcleaver',
         npcId: 'dzibim_khibu',
         shapeKey: 'warCleaver',
