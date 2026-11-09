@@ -468,16 +468,22 @@ It uses their transparent, unlit, camera-facing presentation in the game,
 Tool Hub and Attack Animation Editor. The large ruin rope brush tip is
 omitted because the grapple head already occupies the endpoint.
 
-The original handle-relative settings are preserved: `lengthPx: 160`,
-`scaleY: 3.75`, `radiusPx: 2.5`, `scaleX: 5.25`. Consequently the
-visible rope remains `160 × 3.75 = 600` original-handle pixels long and
-`2 × 2.5 × 5.25 = 26.25` original-handle pixels wide. The 152 × 2164 PNG has transparent padding, so the runtime scans its
+The original cylinder calibration was `lengthPx: 160`, `radiusPx: 2.5`,
+`scaleY: 3.75`, `scaleX: 5.25`. The approved Tool Hub export now changes
+**only the rope dimensions** to `lengthPx: 225`, `radiusPx: 6.25`, retaining
+`scaleY: 3.75` and `scaleX: 5.25`. The result is `225 × 3.75 = 843.75`
+original-handle pixels long and `2 × 6.25 × 5.25 = 65.625` pixels wide. The 152 × 2164 PNG has transparent padding, so the runtime scans its
 visible alpha bounds once per cached image and crops the texture UVs to
 that visible region before scaling. `ropeSpriteSizing` derives the
 height and width from the **visible** pixel aspect ratio instead of the
 padded source canvas, keeping both ends attached and matching the
-previous diameter without changing the artist's pendulum or anchor settings. The grip/head contacts, swing solver and hit behavior
-remain unchanged. Each flail owns its texture clone.
+new diameter without changing the user's authored pendulum, contact or attack logic.
+The rope also restores the previous warm-brown `#6B4728` midtone. Rather
+than multiplying an already-dark sprite by brown and nearly blackening it,
+the renderer recolors the PNG in memory around its average solid-pixel
+luminance, retaining the source art's lighter windings, inked shadows and
+unchanged alpha. Recoloring is cached per sprite and tint, so multiple
+characters reuse it. Each flail owns a cloned texture for safe disposal.
 
 Run `node scripts/test-weapon-sprite-assemblies.js` and
 `node scripts/test-flail-rope-picker-scale.js` for regression coverage.
