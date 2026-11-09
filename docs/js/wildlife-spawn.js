@@ -1914,6 +1914,30 @@
     };
   }
 
+  function ecologyCensus(zoneId = deps?.getCurrentArea?.()) {
+    const layout = deps?.zoneLayouts?.get?.(zoneId);
+    if (!layout) return {zoneId,known:false,reason:'wilderness zone has not generated an animal den layout'};
+    const dens = denCensus(zoneId);
+    const bySpecies = {};
+    for (const den of dens) {
+      const kind = den.species || 'unassigned';
+      const row = bySpecies[kind] ||= {total:0,available:0,aliveDenResidents:0};
+      row.total++;
+      if (den.stage !== 'collapsed') row.available++;
+      row.aliveDenResidents += den.alive;
+    }
+    const config = deps.EXTERIOR_ZONES?.[zoneId] || {};
+    const herdSpecies = [...new Set(config.roamingHerdSpecies || [])];
+    const herdSlots = Math.max(0,Math.floor(Number(config.roamingHerdCount)||0));
+    const herdSpeciesChance = herdSpecies.length ? Object.fromEntries(herdSpecies.map(key=>[key,1/herdSpecies.length])) : {};
+    return {zoneId,known:true,animalDens:dens.length,bySpecies,
+      denSpeciesChance:Object.fromEntries(Object.entries(bySpecies).map(([kind,row])=>[kind,dens.length?row.total/dens.length:null])),
+      roamingHerdSlots:herdSlots,roamingSpeciesChancePerSlot:herdSpeciesChance,
+      nestTreeTarget:Math.max(1,Math.min(NEST_TREE_MAX_PER_ZONE,dens.length || NEST_TREE_MAX_PER_ZONE)),
+      certainty:'real generated den roster; surface-herd species odds conditioned on each spawn slot',
+      caution:'Wildlife population alive right now is not the same as world-wide encounter or capture success'};
+  }
+
   window.WildlifeSpawn = {
     init,
     applyWildlifeSkirmishDamage,
@@ -1924,6 +1948,7 @@
     denResidentSpeciesFor,
     nestingSpeciesAudit,
     denCensus,
+    ecologyCensus,
     denKeyForCavern,
     denGenotypeFamily,
     getOrMakeDenGenotype,
