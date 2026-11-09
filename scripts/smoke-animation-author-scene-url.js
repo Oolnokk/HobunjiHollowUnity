@@ -122,6 +122,11 @@ async function main() {
         return api.fullBodyDiagnostics();
       };
       const neutralMouths = api.__testRealMouths(); // Grounded neutral frame before kiss.
+      if (neutralMouths.length !== 2 || neutralMouths.some(actor => !actor.pixel || !actor.world ||
+          !(actor.mouthHeight > 0))) {
+        throw Error('B\'shuakauitl skinned mouth points are missing from the authored NPCs: ' +
+          JSON.stringify(neutralMouths));
+      }
       const early = seek(.37);
       const earlyInitiator = early.find(actor => actor.name === 'Pahu');
       const earlyTall = early.find(actor => actor.name === 'Leaf');
@@ -159,6 +164,12 @@ async function main() {
       scrubber.value = '0';
       scrubber.dispatchEvent(new Event('input', { bubbles: true })); // Reset to the intended kiss opening before testing walking gait.
       const project = api.exportProject();
+      const leafClip = project.actors.find(actor => actor.source?.id === 'leaf'); // Lateral-root regression: neck/lip alignment must not make the whole spouse sidestep.
+      if (!leafClip?.keyframes?.length || leafClip.keyframes.some(key =>
+          Math.abs(Number(key.transform?.position?.x) || 0) > .001)) {
+        throw Error('Leaf sidesteps sideways instead of kneeling and kissing: ' +
+          JSON.stringify(leafClip?.keyframes?.map(key => ({ time: key.time, x: key.transform?.position?.x }))));
+      }
       const initialPair = api.kissPairDiagnostics?.(); // Ensures initiator/partner anatomy does not silently swap when applying a new preset.
       const initialBodies = api.fullBodyDiagnostics?.() || [];
       if (initialBodies.length !== 2 || initialBodies.some(body => !body.feet)) {
