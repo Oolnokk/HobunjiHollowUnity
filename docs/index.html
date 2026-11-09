@@ -482,7 +482,7 @@
   <script src="js/honeyfuzzle-house.js?v=20261026honeyEggGenes3"></script> <!-- Honeyfuzzle House: 1x1 egg/swarm slot on a FarmProduction entry; hooked by farm-production.js, initialised by game.js. -->
   <script src="js/farm-layout-editor.js?v=20261016a"></script>
   <script src="js/world-meta-store.js?v=20261109provenance1"></script>
-  <script src="js/farm-animals.js?v=20261109provenance1"></script>
+  <script src="js/farm-animals.js?v=20261109provenance3"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
        via init(), and reads window.FarmAnimals at call time (already
@@ -822,7 +822,7 @@
        so load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.FarmPanel.init(...)
        during its own setup. -->
-  <script src="js/farm-panel.js?v=20261109provenance2"></script>
+  <script src="js/farm-panel.js?v=20261109provenance3"></script>
   <!-- Tasks tab (window.TasksPanel), Supplies tab (window.SupplyPage),
        whistle-equip row (window.WhistleEquip), and the Wildlife/genotype
        debug panel (window.WildlifeDebugPanel) — all read
