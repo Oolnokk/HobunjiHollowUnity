@@ -140,6 +140,35 @@ api.replace(oldDraft);
 assert.equal(api.getConfig().heads['fishing-mace'].label, 'Barb-flanged Mace Head');
 assert.equal(api.getConfig().shafts['fishing-mace'].label, 'Bored Wrapped Handle');
 
+// Source-art transforms and independently movable rig regions must all point to ONE actual connector.
+const rigged = plain(window.MODULAR_WEAPON_CONFIG); // Use a new editable draft, leaving committed mount geometry untouched.
+const riggedShaft = rigged.shafts['fishing-mace'];
+riggedShaft.mounts.push({ type:'rope',start:{x:210,y:900},end:{x:210,y:600} });
+riggedShaft.attachmentRigTransform={scaleX:1,scaleY:1,x:15,y:25};
+riggedShaft.shaftArtTransform={enabled:true,scaleX:2,scaleY:2,x:0,y:0};
+riggedShaft.bores=[{id:'bore-1',offsetX:0,offsetY:0,rx:10,ry:10,outline:3,rim:5,warp:1.5,
+  shade:.65,rotation:0,lightX:-.6,lightY:-.8,enabled:true}];
+api.replace(rigged);
+const shaftWithRig = api.getConfig().shafts['fishing-mace'];
+const flexibleHead = api.getConfig().heads['grapple-flail'];
+const realRope = api.flailRecipe('fishing-mace','grapple-flail');
+const [relativeBore] = api.resolvedBores(shaftWithRig, flexibleHead);
+const sourceGuide = api.flailGuide('fishing-mace','grapple-flail');
+const renderedBore = api.duplicatePoint(relativeBore,api.shaftArtTransform(shaftWithRig));
+const renderedGuide = api.duplicatePoint(sourceGuide.start,api.shaftArtTransform(shaftWithRig));
+assert.deepEqual(plain(realRope.flail.haftAnchor), {x:225,y:925},
+  'rig translations move the runtime rope from the original shaft point');
+assert.deepEqual(plain(renderedBore),plain(realRope.flail.haftAnchor),
+  'shaft-art scaling cannot detach the bored hole from its physical rope point');
+assert.deepEqual(plain(renderedGuide),plain(realRope.flail.haftAnchor),
+  'the visible connector guide and runtime contact remain coincident');
+assert.equal(realRope.flail.chain.mountLengthPx,300,
+  'only the connector reach inherits the rig transform, not the head scale');
+assert.equal(realRope.flail.head.scale,1);
+assert.equal(realRope.flail.chain.radiusPx,original.flail.chain.radiusPx);
+assert.equal(api.resolvedBores(shaftWithRig,api.getConfig().heads.warhammer).length,0);
+api.replace(plain(window.MODULAR_WEAPON_CONFIG)); // Do not leak this temporary authoring draft into later assertions.
+
 // Existing brush helper applies live bores to fresh source pixels without accumulating damage.
 const pixels = new Uint8ClampedArray(32*32*4); // Representative opaque wooden material tests shade and transparency together.
 for(let i=0;i<32*32;i++){ pixels[i*4]=170;pixels[i*4+1]=150;pixels[i*4+2]=125;pixels[i*4+3]=255; }
