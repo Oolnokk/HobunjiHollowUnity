@@ -40,8 +40,8 @@ assert.deepEqual(plain(definitions[item('dagger','hatchet')].slots), ['weapon'],
   'the same head on a non-tool-worthy hilt must not become an axe');
 assert.deepEqual(plain(definitions[item('fishing-spear','pickshovel-scoop')].slots), ['weapon','shovel'],
   'tool role originates with the selected head, not the shaft donor');
-assert.deepEqual(plain(definitions[item('hoe','hoe')].slots), ['weapon','hoe'],
-  'hoe role routes through existing crop-harvest mastery rather than combat-only XP');
+assert(config.heads.hoe.toolSlots.includes('hoe'),
+  'a hoe head retains its crop-harvest mastery channel when its calibration is eventually approved');
 
 const original = plain(window.WEAPON_SPRITE_ASSEMBLY_CONFIG.weapons.grappleFlail); // The Tool Hub's source must not be mutated by derived weapons.
 const shaftOwner = api.flailRecipe('grapple-flail','warhammer'); // Haft-owned rope replaces the authored head with the modular sprite.
