@@ -12,6 +12,7 @@ const CG=require('../docs/js/cell-grid-3d.js');
 const Corridors=require('../docs/js/ruin-shaft-corridor.js');
 const Playable=require('../docs/js/ruin-layer-playable.js');
 const Challenges=require('../docs/js/ruin-layer-challenges.js');
+globalThis.PuzzleCaveMelody=require('../docs/js/puzzle-cave-melody.js'); // Real beat clock used by native story melody challenges.
 
 class Group{
   constructor(){this.children=[];this.parent=null;this.userData={};
@@ -78,6 +79,16 @@ function metadata(){
     'normal single-floor V50 callers retain the original takePreviewRoots behavior');
 }
 
+function solveTimedStage(stage){
+  let elapsed=0;
+  stage.session.step(0,true);
+  for(const note of stage.song.notes){
+    const time=(note.startTick+.1)*stage.song.secondsPerTick; // Exercise the real active-note window and one-shot solve callback.
+    stage.session.step(Math.max(0,time-elapsed),true);
+    elapsed=time;
+    assert(stage.session.note(note.index),'native melody must accept a correctly timed note');
+  }
+}
 const meta=metadata(),analysis=Native.analyze(meta);
 assert(analysis.ok&&analysis.stages.length===3&&analysis.gates.length===3,
   'independent V50 room graphs are recognized by their actual parent/doorway metadata');
@@ -250,7 +261,7 @@ try{
         authoredSolved.add(stage.nativeMechanism.id);
         native.tick(.05);
       }else if(stage.kind==='pressurePlate')for(let i=0;i<17;i++)native.tick(.05);
-      else if(stage.kind==='melodyEcho')stage.onMelodyResult({id:stage.id,solved:true});
+      else if(stage.kind==='timedMelody')solveTimedStage(stage);
       else if(stage.kind==='dungeonFire'){native.tick(.05);assert(stage.fireRecord.onBurn());}
       else for(let i=0;i<stage.targetCount;i++){native.tick(.05);stage.simulateHit(i);}
       assert.equal(state.solved,before+1,'only native puzzle completion opens this particular stage gate');
@@ -268,9 +279,8 @@ try{
   assert.deepEqual(ruin.shaftLayerRuntime.calls.at(-1),{total:2,lit:2},
     'original Harlyao Great Door sees native and authored braziers as one completion graph');
   music.state.echoChallenge={id:'native-cleanup-probe'};
-  native.records[0].challenges.push({id:'native-cleanup-probe',kind:'melodyEcho'}); // A mid-session reroll must close exactly the native floor's flute puzzle.
   native.dispose();
-  assert.equal(music.closed,1,'native floor teardown closes its own active melody session');
+  assert.equal(music.closed,0,'native floor teardown must not close the player-owned instrument');
   assert.equal(registered.length,0);
   assert.equal(ruin.controls.length,0);
   assert(cleared.length===2,'both native stories release their own independent surface and voxel scope');
