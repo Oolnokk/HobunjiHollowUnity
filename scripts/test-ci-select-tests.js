@@ -70,3 +70,43 @@ test('cache-bust-only HTML changes do not force global runtime coverage', () => 
 test('manual and main events always choose the full suite', () => {
   assert(Object.values(selectTests('ruin', ['docs/js/dev-random-ruin-hit-puzzles.js'], { full: true }).selected).every(Boolean));
 });
+
+test('setup flags distinguish Node/Three checks from Chromium browser checks', () => {
+  const noBrowser = selectTests('regression', ['scripts/verify-dungeon-fire-three.js']);
+  assert.equal(noBrowser.selected.fire, true);
+  assert.equal(noBrowser.output.needs_deps, true);
+  assert.equal(noBrowser.output.needs_browser, false);
+  const nothing = selectTests('regression', ['scripts/test-unrelated-utility.js']);
+  assert.equal(Object.values(nothing.selected).some(Boolean), false);
+  assert.equal(nothing.output.needs_deps, false);
+  assert.equal(nothing.output.needs_browser, false);
+  assert.equal(selectTests('ruin', ['docs/js/root-snare-player-tear.js']).output.needs_browser, true);
+});
+
+test('the ruin workflow triggers for all shared ruin, shaft, snare and collision modules', () => {
+  const workflow = fs.readFileSync(path.resolve(__dirname, '../.github/workflows/smoke-dev-random-ruin-full.yml'), 'utf8');
+  for (const scope of ['push:', 'pull_request:']) {
+    const block = workflow.split('  ' + scope)[1]?.split('\n  ')[0] || '';
+    assert(block.includes("paths:"), 'missing ' + scope + ' path filter');
+    for (const pattern of [
+      'docs/js/dev-random-ruin-*.js', 'docs/js/ruin-*.js', 'docs/js/shaft-*.js',
+      'docs/js/root-snare-*.js', 'docs/js/puzzle-cave-*.js',
+      'docs/js/dungeon-fire-*.js', 'docs/js/cell-grid-3d.js',
+    ]) assert(block.includes("'" + pattern + "'"), scope + ' ignores ' + pattern);
+  }
+});
+
+test('every conditional browser step is matched by a selector output', () => {
+  const specs = [
+    ['regression', '.github/workflows/regression-suite.yml'],
+    ['ruin', '.github/workflows/smoke-dev-random-ruin-full.yml'],
+  ];
+  for (const [suite, filename] of specs) {
+    const text = fs.readFileSync(path.resolve(__dirname, '..', filename), 'utf8');
+    assert(text.includes('--suite=' + suite));
+    const allowed = new Set([...Object.keys(selectTests(suite, [], { full: true }).output)]);
+    const guarded = [...text.matchAll(/if:\s+steps\.select\.outputs\.([a-z_]+)\s*==\s*'true'/g)];
+    assert(guarded.length >= 8, suite + ' must guard expensive checks');
+    for (const match of guarded) assert(allowed.has(match[1]), suite + ' has an unknown output: ' + match[1]);
+  }
+});
