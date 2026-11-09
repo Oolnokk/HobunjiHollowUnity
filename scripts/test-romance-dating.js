@@ -478,4 +478,24 @@ W.RomanceSystem.restore(saved);
 assert.equal(W.RomanceSystem.getSpouse()?.npcId, 'tooth_hatayap');
 assert.equal(W.RomanceFamily.snapshot().children[0]?.name, 'Pip', 'children survive a save/load');
 
+// The vat job belongs to the spouse who accepted it, never whoever is married next.
+const loadedFamily = W.RomanceFamily._test.getFamily(); // Saves from before the owner field must migrate safely.
+const spouseState = W.RomanceSystem._test.getState(); // Change marriage identity only in this isolated regression scenario.
+const originalSpouse = spouseState.spouse; // Restore the wedding state after testing handoff.
+const releasedVats = []; // Captures removal of the former spouse's external worker entry.
+W.DewVats = {
+  listSqueezingVats: () => [{ id: 'spouse_vat' }],
+  setExternalWorker(vat, worker) { if (!worker) releasedVats.push(vat); return true; },
+};
+loadedFamily.spouseVatId = 'spouse_vat';
+loadedFamily.spouseVatWorkerId = null;
+W.RomanceFamily.tick();
+assert.equal(loadedFamily.spouseVatWorkerId, 'tooth_hatayap', 'legacy spouse vat jobs acquire their saved spouse as owner');
+spouseState.spouse = { npcId: 'different_spouse', marriedRawDay: clock.rawDay };
+W.RomanceFamily.tick();
+assert.equal(loadedFamily.spouseVatId, null, 'remarriage drops a former spouse’s vat job');
+assert.deepEqual(releasedVats, ['spouse_vat'], 'old external vat worker is explicitly released');
+spouseState.spouse = originalSpouse;
+delete W.DewVats;
+
 console.log('romance dating/marriage/family tests passed');
