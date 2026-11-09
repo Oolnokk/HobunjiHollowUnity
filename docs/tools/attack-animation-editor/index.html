@@ -2763,11 +2763,12 @@ async function bakeStatuePiece({poseKey='neutral',includeWeapon=true,name='Carve
   if(includeWeapon&&assembly&&!assembly.loaded)throw Error('The weapon assembly is still loading its connector/head/layers. Export only when the whole weapon is visible.');
   const stone=await statueSourceReady;
   if(!stone)throw Error('The carved_smooth.png stone texture could not load.');
-  const previousPlaying=playing,previousT=previewT;
+  const previousPlaying=playing,previousT=previewT,previousPhase=editPhase; // Restores the source editor after capture.
   const exportGroup=new THREE.Group(),textures=new Map(); // One shared carved canvas per source sprite.
   let meshCount=0,weaponCount=0,skinnedCount=0;
   try{
     playing=false; // Prevent an animated frame from changing the pose during export.
+    selectEditPhase(poseKey); // Existing hand/shoulder controls follow the active keyframe; do not capture stale phase hands.
     const sample=phasePreviewT(poseKey);
     previewT=sample; $('scrub').value=sample; updateTimelineMarker(sample);
     applyPoseToRig(anim.poses[poseKey]);
@@ -2825,6 +2826,7 @@ async function bakeStatuePiece({poseKey='neutral',includeWeapon=true,name='Carve
     }
     for(const texture of textures.values())texture.dispose();
     previewT=previousT;playing=previousPlaying;
+    selectEditPhase(previousPhase,{focus:false});
     $('scrub').value=previousT;
     updateTimelineMarker(previousT);
     try{applyPoseToRig(poseAt(previousT).pose);}catch(error){logDebug('Restoring preview after statue export failed: '+error.message);}
