@@ -2903,12 +2903,13 @@
         barrelAging: 'aging', vaseAging: 'aging',
       };
 
-      function addProcessedOutputs(outputs, inputStars, methodId, yieldMultiplier = 1) {
+      function addProcessedOutputs(outputs, inputStars, methodId, yieldMultiplier = 1, fixedFamilyQuality = false) { // Family vat workers preserve their own usefulness stars at completion.
         const methodClass = PROCESSING_METHOD_CLASSES[methodId] || 'quick';
         // Output quality evolves from the input's actual quality rather than
         // being rerolled from scratch — see the processing-quality-resolution
         // design in SkillSystem.rollProcessingQuality.
-        const outputStars = window.SkillSystem?.rollProcessingQuality?.(inputStars, methodClass) ?? inputStars;
+        const outputStars = fixedFamilyQuality ? Math.max(1, Math.min(5, Math.round(Number(inputStars) || 1)))
+          : (window.SkillSystem?.rollProcessingQuality?.(inputStars, methodClass) ?? inputStars); // Only manual/livestock jobs receive the player's processing-quality modifiers.
         // Efficient Processing (Farming perk): a modest chance for one extra
         // unit of each output from the same batch without consuming another
         // ingredient — capped well below Bountiful Harvest's rate since
@@ -2973,7 +2974,7 @@
           if (job?.kind !== 'timed') return;
           const finished = job;
           job = null;
-          const outputStars = addProcessedOutputs(finished.outputs, finished.inputStars, def.method, finished.yieldMultiplier);
+          const outputStars = addProcessedOutputs(finished.outputs, finished.inputStars, def.method, finished.yieldMultiplier, finished.source === 'family');
           window.FarmAnimals?.clearVatWorkerPose?.(obj.id);
           window.FarmEditor.saveFarmLayout();
           saveMemberWorldData();
