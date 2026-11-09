@@ -191,54 +191,39 @@ function testChallengeHandoff() {
   win.MusicMinigame.close();
 }
 
-function testDemonstrationTimerLifecycle() {
-  const source=read('docs/js/dev-random-ruin-simple-puzzles.js'); // Exercise the shipped playback functions, not a reimplementation.
-  const begin=source.indexOf('  function cancelEchoPlayback(set) {');
-  const end=source.indexOf('  function completeEchoSet(set) {',begin);
-  assert(begin>=0&&end>begin,'the ruin retains cancellable physical pressure-plate playback');
-  const jobs=new Map(),played=[]; // A deterministic clock tracks both audio and genuinely pending note callbacks.
-  let nextId=0; // Allocates unique timer IDs for repeated presses in this isolated harness.
-  const schedule=(callback,delay)=>{const id=++nextId;jobs.set(id,{callback,delay});return id;};
-  const cancel=id=>jobs.delete(id);
-  const state={chordPlateSets:[]}; // The active ruin holds the single test trigger.
-  const set={notes:[0,3,7],solved:false,playbackTimers:[]}; // Tests immediate plus two delayed notes.
-  state.chordPlateSets.push(set);
-  const win={KurrayaPuzzle:{settings:()=>({scale:'Pentatonic Minor',tonicMidi:60})}};
-  const actual=new Function('window','setTimeout','clearTimeout','playKurrayaPlateNote','inRuin','state',
-    source.slice(begin,end)+'\nreturn {cancelEchoPlayback,replayEchoSet};')(
-    win,schedule,cancel,note=>played.push(note),()=>true,state);
-  const advance=()=>{
-    const entry=[...jobs].sort((a,b)=>a[1].delay-b[1].delay)[0]; // Executes the next scheduled note at its authored offset.
-    assert(entry,'a queued demonstration note must exist');
-    jobs.delete(entry[0]);entry[1].callback();
-  };
-  actual.replayEchoSet(set);
-  assert.deepEqual(played,[0],'stepping on the plate sounds the first note immediately');
-  assert.equal(set.playbackTimers.length,2);
-  advance();
-  assert.deepEqual(played,[0,3]);
-  assert.equal(set.playbackTimers.length,1,'played callbacks are removed from pending diagnostics');
-  advance();
-  assert.deepEqual(played,[0,3,7]);
-  assert.equal(set.playbackTimers.length,0,'finished phrase leaves no phantom pending notes');
-  actual.replayEchoSet(set);
-  assert.equal(jobs.size,2);
-  actual.cancelEchoPlayback(set);
-  assert.equal(jobs.size,0,'leaving or rebuilding the ruin can cancel every remaining note');
-  assert.equal(set.playbackTimers.length,0);
-}
-
-function testUnrestrictedMelodySuffix() {
-  const {matchSuffix}=require('../docs/js/kurraya-puzzle.js');
-  const target={notes:[0,1,0,7]}; // The production song matcher handles overlapping partial starts.
-  const recent=[]; // Tracks the latest notes irrespective of time, plate position, or prior wrong notes.
-  const matches=[];
-  [2,3,0,1,0,1,0,7,4,0,1,0,7].forEach((note,index)=>{
-    recent.push(note);
-    if(recent.length>target.notes.length)recent.shift();
-    if(matchSuffix(recent,[target]))matches.push(index);
-  });
-  assert.deepEqual(matches,[7,12],'wrong notes must not require a retry or suppress subsequent matches');
+function testTimedRuinMelodyWiring(){
+  const ruin=read('docs/js/dev-random-ruin-simple-puzzles.js'); // Exercise the shipped V50 room/hallway/compound puzzle implementation.
+  const layered=read('docs/js/ruin-layer-challenges.js');
+  const blocks=read('docs/js/dev-ruin-find-blocks.js');
+  const plan=read('docs/js/ruin-layer-plan.js');
+  assert.match(ruin,/set\.session=composer\.createSession\(song/,'each random-ruin melody uses the shared timed judge');
+  assert.match(ruin,/set\.session\?\.step\(dt,down\)/,'the physical plate owns the timed note clock');
+  assert.match(ruin,/set\.session\?\.note\(note\)/,'input is judged by timing, pitch and plate occupancy');
+  assert.doesNotMatch(ruin,/replayEchoSet|matchSuffix\?\.\(set\.heardNotes/,'the sample demo and untimed suffix matcher must not return');
+  assert.match(layered,/installTimedSession\(composer,song\)/,'layered ruins use the same cave melody judge');
+  assert.doesNotMatch(layered,/onMelodyResult=/,'an echo-result message must not bypass the timed score');
+  assert.match(blocks,/kind:variant==='melody'\?'timedMelody'/,'Find the Blocks pillar has a timed melody');
+  assert.match(blocks,/'movingTargets'\?'ceilingRailTargets':'timedMelody'/,'Find the Blocks ceiling net has a timed melody');
+  assert.match(plan,/PLAYABLE_PUZZLES=.*'timedMelody'/,'wing generator selects timed melodies exclusively');
+  assert.doesNotMatch(ruin,/beginPlayerSession\?\.\(\{echoChallenge:challenge\}\)/,
+    'none of the timed plates forcibly opens the instrument overlay');
+  const composer=require('../docs/js/puzzle-cave-melody.js'); // Verify the actual shared timing rules used by all generated ruins.
+  const song=composer.generate('ruin-timed-smoke',{difficulty:2});
+  let solved=0;
+  const session=composer.createSession(song,{onSolved:()=>solved++});
+  assert.equal(session.note(song.notes[0].index),false,'off-plate input is ignored');
+  session.step(0,true);
+  assert.equal(session.note((song.notes[0].index+1)%8),false,'wrong notes fail');
+  session.step(0,false);
+  session.step(0,true);
+  let elapsed=0;
+  for(const note of song.notes){
+    const time=(note.startTick+.1)*song.secondsPerTick; // Each onset is within the illuminated window.
+    session.step(Math.max(0,time-elapsed),true);
+    elapsed=time;
+    assert.equal(session.note(note.index),true,'correct timed note is accepted');
+  }
+  assert.equal(solved,1,'only the complete timed melody solves');
 }
 
 (async()=>{
@@ -247,17 +232,6 @@ function testUnrestrictedMelodySuffix() {
   await testMidiFallback();
   await testIframeEchoInput();
   testChallengeHandoff();
-  testDemonstrationTimerLifecycle();
-  testUnrestrictedMelodySuffix();
-  const ruin=read('docs/js/dev-random-ruin-simple-puzzles.js');
-  assert.match(ruin,/melodyEchoTrigger/);
-  assert.match(ruin,/window\.addEventListener\('hobunji-kurraya-puzzle-note'/);
-  assert.match(ruin,/replayEchoSet\(set\)/,'stepping onto the pressure plate replays the phrase');
-  assert.match(ruin,/KurrayaPuzzle\?\.matchSuffix\?\.\(set\.heardNotes/,'notes are matched as an uninterrupted sliding suffix');
-  assert.doesNotMatch(ruin,/beginPlayerSession\?\.\(\{echoChallenge:challenge\}\)/,'a plate no longer forcibly opens the instrument overlay');
-  const complete=ruin.slice(ruin.indexOf('  function completeEchoSet('),ruin.indexOf("  window.addEventListener('hobunji-kurraya-puzzle-note'"));
-  assert.match(complete,/if \(!set \|\| set\.solved\) return/,'a complete melody activates the mechanism once');
-  assert.match(complete,/playStoneUnlockKchunk\(\)/);
-  assert.doesNotMatch(complete,/showToast|retry/i,'the mechanism communicates success without text');
-  console.log('starter flute + passive ocarina melody tests passed');
+  testTimedRuinMelodyWiring();
+  console.log('starter flute + timed ruin melody tests passed');
 })().catch(error=>{console.error(error);process.exitCode=1;});
