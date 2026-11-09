@@ -27,7 +27,7 @@ and the head's `weaponNames: { prefix, suffix }`. The head provides
   Mace Head**. The imported authoring affix produces **Copper Looped Fishing Mace**.
 - The Harlyao Longsword unlocks a **Tall Crescent Hilt** and a
   **Harlyao-style Long-blade**. The imported affixes produce
-  **Copper Crescent-hilted Long- Hilted Slicer**.
+  **Copper Crescent-hilted Long-Hilted Slicer**.
 These are the uploaded naming values only: geometry, sockets, pair overrides,
 brush strokes and sprite paths were deliberately not imported. The author's
 head `weaponNames.prefix` and `weaponNames.suffix` values were swapped during
