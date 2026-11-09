@@ -27,7 +27,7 @@ function fakeThree() {
   return {
     DoubleSide: 2, DynamicDrawUsage: 35048,
     Group: class extends Obj {},
-    PlaneGeometry: class { constructor() { this.attrs = {}; this.disposed = false; } setAttribute(name, attr) { this.attrs[name] = attr; } getAttribute(name) { return this.attrs[name]; } dispose() { this.disposed = true; } },
+    PlaneGeometry: class { constructor() { this.attrs = {}; this.disposed = false; } translate() { return this; } setAttribute(name, attr) { this.attrs[name] = attr; } getAttribute(name) { return this.attrs[name]; } dispose() { this.disposed = true; } },
     InstancedBufferAttribute: class { constructor(array) { this.array = array; this.needsUpdate = false; } },
     MeshBasicMaterial: class { constructor(options) { Object.assign(this, options); this.userData = {}; this.disposed = false; } dispose() { this.disposed = true; } },
     CanvasTexture: class {},
@@ -110,12 +110,15 @@ function fakeThree() {
   assert(avatar.sideSwarms[0].position.z < 0 && avatar.sideSwarms[1].position.z > 0, 'parallel planes are offset along +/-Z');
   assert.equal(avatar.frontPlane.children.length, 3, 'all three planes follow one creature-root pivot');
   assert.equal(avatar.renderedMemberCount, 5, 'five birds instead of nine for this small custom swarm');
-  const shader = { uniforms: {}, vertexShader: '#include <common>\n#include <uv_vertex>', fragmentShader: '#include <common>\n#include <map_fragment>' }; // Verifies actual shader composition, not merely uniforms.
+  const shader = { uniforms: {}, vertexShader: '#include <common>\n#include <uv_vertex>\n#include <begin_vertex>', fragmentShader: '#include <common>\n#include <map_fragment>' }; // Verifies actual shader composition, not merely uniforms.
   avatar.swarm.material.onBeforeCompile(shader);
   assert(shader.fragmentShader.includes('vec4 composed = overlayHoneyfuzzle( body, tail )'), 'tail blends beneath the body');
   assert(shader.fragmentShader.includes('composed = overlayHoneyfuzzle( spectacles, composed )'), 'optional spectacles render above all body pixels');
   assert(shader.fragmentShader.includes('weights /= weights.x + weights.y + weights.z'), 'all three fly poses have normalized weights');
-  assert(shader.vertexShader.includes('vUv.xy /= vec2(3.0, 2.0)'), '3x2 atlas UV coordinates are used');
+  assert(shader.vertexShader.includes('vSweep = ') && shader.vertexShader.includes('abs( 2.0 * cyc - 1.0 )'), 'pedal sweep reverses direction via a triangle wave');
+  assert(shader.vertexShader.includes('vec2( 546.0, 252.0 )'), 'padded, trimmed 3x2 atlas UV mapping is used');
+  assert(shader.vertexShader.includes('hfDart') && shader.vertexShader.includes('transformed.x = cr * flip'), 'bird motion is evaluated in the vertex shader');
+  assert.equal(S.ATLAS_W, 546); assert.equal(S.ATLAS_H, 252);
   assert(shader.fragmentShader.includes('vec2( 0.0, 0.5 )'), 'tail and fly sprite sample different atlas rows');
   assert(shader.fragmentShader.includes('vec4 eyes = mapTexelToLinear') && shader.fragmentShader.includes('overlayHoneyfuzzle( eyes, composed )'), 'authored eyes draw on top of the patterns');
   assert.equal(S.EYE_URL, 'assets/creaturesprites/honeyfuzzle_eyes.png', 'original uploaded eye asset is reused');
@@ -125,36 +128,30 @@ function fakeThree() {
   const frameAttr = avatar.swarm.geometry.getAttribute('aFrame');
   assert.deepEqual(Array.from(frameAttr.array), Array.from({ length: avatar.swarm.count }, (_, i) => i % 3), 'wing phase stays fixed per member');
   assert.equal(new Set(Array.from(frameAttr.array)).size, 3, 'all three phases occur across the swarm');
-  const m = avatar.swarm.instanceMatrix.array;
-  assert(Array.from(m).every(Number.isFinite), 'instance matrices are finite');
-  assert.equal(m[15], 1);
-  // Smooth time advances without changing aFrame buffers or reallocating texture data.
-  const poseBefore = Array.from(avatar.swarm.instanceMatrix.array); // Confirms low-frequency posing avoids redundant per-frame writes.
-  avatar.swarm.instanceMatrix.needsUpdate = false;
+  const u0 = avatar.swarm.material.userData.honeyfuzzle;
+  assert.equal(avatar.swarm.geometry.getAttribute('aMotionA').array.length, avatar.swarm.count * 4);
+  assert.equal(avatar.swarm.geometry.getAttribute('aMotionB').array.length, avatar.swarm.count * 4);
+  assert(Array.from(avatar.swarm.geometry.getAttribute('aMotionA').array).every(Number.isFinite), 'per-bird motion attributes are finite');
+  assert.equal(avatar.swarm.instanceMatrix.array[15], 1, 'instance matrices stay identity; motion is on the GPU');
+  assert.equal(u0.uTime.value, 1);
   avatar.update(0, 1050, 0.016, 150);
-  assert.equal(avatar.swarm.instanceMatrix.needsUpdate, false, 'under 125 ms only shader wing phase advances');
-  assert.deepEqual(Array.from(avatar.swarm.instanceMatrix.array), poseBefore, 'bird matrices stay unchanged on intermediate frames');
-  avatar.update(0, 1190, 0.016, 150);
-  assert.equal(avatar.swarm.instanceMatrix.needsUpdate, true, 'later tick refreshes all three planes');
+  assert(Math.abs(u0.uTime.value - 1.05) < 1e-9, 'time uniform advances every frame, no 8 Hz stepping');
   const outerDepth = avatar.sideSwarms[1].position.z; // Unattached distance is the reference for all three swarm layers.
-  avatar.swarm.instanceMatrix.needsUpdate = false;
-  avatar.update(0, 1230, 0.1, 150, 0.71); // Full contraction occurs before the next 8 Hz pose-matrix refresh.
+  avatar.update(0, 1230, 0.1, 150, 0.71);
   assert(Math.abs(avatar.sideSwarms[0].position.z + outerDepth * 0.71) < 1e-8, 'rear plane contracts in local -Z');
   assert(Math.abs(avatar.sideSwarms[1].position.z - outerDepth * 0.71) < 1e-8, 'front plane contracts in local +Z');
-  assert.equal(avatar.swarm.instanceMatrix.needsUpdate, false, 'depth spacing still animates on an intermediate frame');
   avatar.update(0, 1400, 0.016, 150, 0.71);
-  assert(Math.abs(avatar.swarm.instanceMatrix.array[14] - (-1.5 * 0.003 * 0.71)) < 1e-6,
-    'per-bird Z offsets contract along with the layer spacing');
+  assert(Math.abs(u0.uZStep.value - 0.003 * 0.71) < 1e-6, 'per-bird Z offsets contract along with the layer spacing');
   avatar.update(0, 1430, 0.1, 150, 1);
   assert(avatar.sideSwarms[1].position.z > outerDepth * 0.71 && avatar.sideSwarms[1].position.z < outerDepth,
     'detachment smoothly expands the layer spacing instead of snapping');
   avatar.update(0, 1570, 0.2, 150, 1);
   assert(Math.abs(avatar.sideSwarms[1].position.z - outerDepth) < 1e-8, 'unattached Z spacing returns to its original value');
   frameAttr.needsUpdate = false;
-  const firstPhase = avatar.swarm.material.userData.honeyfuzzle.uWingPhase.value;
+  const firstPhase = avatar.swarm.material.userData.honeyfuzzle.uWingT.value;
   avatar.update(0, 1001, 0.016, 150);
   assert.equal(frameAttr.needsUpdate, false);
-  assert.notEqual(avatar.swarm.material.userData.honeyfuzzle.uWingPhase.value, firstPhase);
+  assert.notEqual(avatar.swarm.material.userData.honeyfuzzle.uWingT.value, firstPhase);
   avatar.update(0, 1000 + S.WING_TICK_MS, 0.016, 150);
   assert.equal(frameAttr.needsUpdate, false);
   // Body color: uncolored swarms keep the authored mint; a colored one gets its own uniforms and can be recolored.
@@ -175,12 +172,14 @@ function fakeThree() {
   assert.equal(tinted.centerMemberCount, 8); assert.equal(tinted.sideMemberCount, 3);
   assert.equal(tinted.renderedMemberCount, 14, 'default swarm now draws 14 birds instead of 24');
   assert.equal(typeof S.debugSnapshot, 'function');
+  assert(S.PEDAL_RATES.every(r => Number.isInteger(r * S.FLUTTER_HZ / 4 * S.WING_T_WRAP)), 'pedal clocks wrap seamlessly');
+  assert(S.FLUTTER_HZ * Math.max(...S.PEDAL_RATES) < 15 && S.PEDAL_TURNS === 2, 'fastest pedal stays below the 30 FPS Nyquist limit');
   assert(S.FLUTTER_HZ > 0 && S.FLUTTER_HZ < 15, 'opacity variation avoids aliasing at 30 FPS');
-  const beforeWrap = avatar.swarm.material.userData.honeyfuzzle.uWingPhase.value;
+  const beforeWrap = avatar.swarm.material.userData.honeyfuzzle.uWingT.value;
   avatar.update(0, 86400000 + 100, 0.016, 150);
-  assert(Number.isFinite(avatar.swarm.material.userData.honeyfuzzle.uWingPhase.value)
-    && avatar.swarm.material.userData.honeyfuzzle.uWingPhase.value < Math.PI * 2,
-    'phase remains bounded after a full day of continuous game runtime');
+  assert(Number.isFinite(avatar.swarm.material.userData.honeyfuzzle.uWingT.value)
+    && avatar.swarm.material.userData.honeyfuzzle.uWingT.value < S.WING_T_WRAP,
+    'wing clock remains bounded after a full day of continuous game runtime');
   const actor = { id: 'linked_swarm', swarmColor: '#aabbcc',
     genotype: { tailfeathers: { enabled: true, copies: 1, color: '#332211' },
       spectacles: { enabled: true, copies: 1, color: '#889900' } } }; // Exercises the real game factory's color-only constructor followed by actor collection registration.
@@ -194,6 +193,7 @@ function fakeThree() {
   assert.equal(S.DEFAULT_MEMBER_COUNT, tinted.memberCount, 'default swarm size');
   avatar.dispose();
   assert.equal(avatar.swarm.geometry.disposed, true);
+  assert(avatar.sideSwarms.every(side => side.geometry.disposed), 'every layer geometry is released');
   assert.doesNotThrow(() => avatar.dispose());
 }
 

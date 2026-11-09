@@ -1208,6 +1208,7 @@ body[data-animation-author-mode="rig"] #maaViewportBadge { max-width:calc(100% -
 <script src="../../js/animal-chathead-frame.js?v=20261029h17359fc"></script>
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
 <script src="../../js/spouse-kiss-motion.js?v=20261108kiss5"></script>
+<script src="rig-preview-species.js?v=20261109rig1"></script>
 
 <script>
 (() => {
@@ -1527,6 +1528,9 @@ async function loadRepositoryRuntime(settings) {
   if (!window.LegBones || !window.ProceduralLegAnimation) throw new Error('The shoulder-rig feet preview runtime did not initialize.');
   if (!window.ProceduralHandFrameDriver) throw new Error('The idle-hand preview runtime did not initialize.');
   if (!window.CreatureGeneticsRender) throw new Error('creature-genetics-render.js did not expose window.CreatureGeneticsRender.');
+  const newRigSpeciesCount = window.HobunjiRigPreviewSpecies?.install(window.CreatureGeneticsRender.SPECIES,
+    path => cdnUrl(settings.docsRoot + path)) || 0; // Adds tool-only species with images pinned to the selected repository revision.
+  log('Rig preview species registry added ' + newRigSpeciesCount + ' newer animals and variants.');
   $('creatureModeBtn').disabled = false;
   if (!window.renderProfile || !window.loadPortraitCosmetics) throw new Error('portrait-utils.js did not expose the expected renderer functions.');
 
@@ -1671,12 +1675,12 @@ function creatureBestiaryRecord(kind = state.creature.kind) {
 }
 
 function creatureDisplayLabel(kind = state.creature.kind) {
-  return creatureBestiaryRecord(kind)?.label || titleCasePattern(kind);
+  return creatureBestiaryRecord(kind)?.label || window.HobunjiRigPreviewSpecies?.labelFor(kind) || titleCasePattern(kind);
 }
 
 function defaultCreatureGenotype(kind) {
   const spec = creatureSpeciesConfig(kind);
-  const defaults = CREATURE_DEFAULTS[kind] || { base: '#808080', patterns: {} };
+  const defaults = CREATURE_DEFAULTS[kind] || window.HobunjiRigPreviewSpecies?.genotypeDefaults(kind) || { base: '#808080', patterns: {} };
   const genotype = { base: { color: normalizeHexColor(defaults.base) } };
   for (const patternId of spec?.patterns || []) {
     genotype[patternId] = {
@@ -4416,7 +4420,9 @@ function refreshAnimationCreatureFrames() {
   const select = $('maaCreatureFrame');
   if (!select) return;
   select.innerHTML = frames.map(frame => `<option value="${escapeHtml(frame)}">${escapeHtml(frame)}</option>`).join('');
-  if (frames.includes('idle')) select.value = 'idle';
+  const preferredFrame = animationAuthor.mode === 'rig' ? window.HobunjiRigPreviewSpecies?.defaultFrame(kind) : null; // Flyers open on the perched body in the rig editor, not their flight art.
+  if (preferredFrame && frames.includes(preferredFrame)) select.value = preferredFrame;
+  else if (frames.includes('idle')) select.value = 'idle';
 }
 
 function renderAnimationNpcLibrary() {
@@ -4902,8 +4908,11 @@ async function addCreatureAnimationActor(kind, frame = 'idle', options = {}) {
     const genotype = normalizeCreatureGenotype(kind, options.genotype || state.creature.profiles?.[kind] || defaultCreatureGenotype(kind));
     const canvas = await window.CreatureGeneticsRender.composeFrame(kind, frame, clone(genotype));
     const bestiary = state.creature.bestiary?.creatures?.find(record => record?.id === kind) || null;
-    const modelWidth = Number(bestiary?.modelWidth) > 0 ? Number(bestiary.modelWidth) : 2.1;
-    const spriteAspect = Number(bestiary?.spriteAspect) > 0 ? Number(bestiary.spriteAspect) : (canvas.height / Math.max(1, canvas.width));
+    const newRigInfo = window.HobunjiRigPreviewSpecies?.speciesInfo(kind); // Native gameplay widths/aspects for new wildlife not in the older bestiary JSON.
+    const modelWidth = Number(bestiary?.modelWidth) > 0 ? Number(bestiary.modelWidth)
+      : Number(newRigInfo?.modelWidth) > 0 ? Number(newRigInfo.modelWidth) : 2.1;
+    const spriteAspect = Number(bestiary?.spriteAspect) > 0 ? Number(bestiary.spriteAspect)
+      : Number(newRigInfo?.spriteAspect) > 0 ? Number(newRigInfo.spriteAspect) : (canvas.height / Math.max(1, canvas.width));
     const animal = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(state.three.THREE, canvas.toDataURL('image/png'), {
       modelWidth,
       modelHeight: modelWidth * spriteAspect,
@@ -7438,7 +7447,16 @@ function rigAnchorFieldMarkup(actor, anchorName) {
         return `<div class="maaField"><label>${axis.toUpperCase()}</label><input type="number" step="${step}" value="${Number(snap[kind][axis]).toFixed(kind === 'rotationDeg' ? 2 : 3)}" data-maa-rig-kind="${kind}" data-maa-rig-axis="${axis}"${derivedAxis ? ` readonly aria-readonly="true" title="${title}"` : ''}></div>`;
       }).join('')}</div>
     </div>`).join('');
-  if (!resolved) return fields;
+  const shoulderPetSizeField = actor.source.type === 'npc' && anchorName === 'shoulderPerch'
+    ? `<div class="maaRigStatus" style="margin-top:9px">
+         <b>Shoulder pet size · species/gender</b>
+         <div class="maaField" style="margin-top:8px">
+           <label for="maaShoulderPetScale">Grip scale multiplier (×)</label>
+           <input id="maaShoulderPetScale" type="number" min="0.05" max="4" step="0.05" value="${Number(snap.scale.x).toFixed(3)}">
+         </div>
+         This uniformly scales a shoulder pet attached to this character species/gender. Final pet size = the animal's authored Small size × this grip scale. At 1×, existing pets are unchanged.
+       </div>` : '';
+  if (!resolved) return fields + shoulderPetSizeField;
   const calculatedY = resolved.metrics.avatarHeight * resolved.rule.heightPercentFromFloor / 100;
   return `${fields}
     <div class="maaRigStatus" style="margin-top:9px">
@@ -7519,6 +7537,18 @@ function renderAttachmentRigInspector() {
     else group.rotation[axis] = degToRad(value);
     handleAnimationTransformChanged('rig coordinate numeric edit', 'rigAnchor');
   }));
+  $('maaShoulderPetScale')?.addEventListener('change', event => {
+    const multiplier = Number(event.currentTarget.value); // Uniform scale applied by the character shoulderPerch group to the already Small-scaled pet.
+    const shoulder = actor.rigAnchors?.shoulderPerch;
+    if (!shoulder) return;
+    if (!Number.isFinite(multiplier) || multiplier < 0.05 || multiplier > 4) {
+      event.currentTarget.value = shoulder.scale.x.toFixed(3);
+      setStatus('Shoulder pet grip scale must be between 0.05× and 4×.', 'warn');
+      return;
+    }
+    shoulder.scale.setScalar(multiplier); // Scale X/Y/Z together to preserve anatomy and attachment orientation.
+    handleAnimationTransformChanged('shoulder pet grip scale', 'rigAnchor');
+  });
   $('maaPosteriorHeightPercentOffset')?.addEventListener('input', event => {
     const profile = attachmentRigProfileForActor(actor);
     const resolved = ensureCharacterPosteriorRule(actor, profile);
@@ -7630,6 +7660,8 @@ syncAnimationTransformFields = function() {
     previewOffset = clampPosteriorHeightPercentOffset(group.position.y / posteriorMetrics.avatarHeight * 100);
   }
   const snap = transformSnapshot(group);
+  const scaleInput = $('maaShoulderPetScale'); // Keeps the numeric shoulder size multiplier synchronized after changing actors and rig pivots.
+  if (scaleInput && document.activeElement !== scaleInput) scaleInput.value = Number(snap.scale.x).toFixed(3);
   document.querySelectorAll('[data-maa-rig-kind]').forEach(input => {
     const kind = input.dataset.maaRigKind;
     input.value = Number(snap[kind][input.dataset.maaRigAxis]).toFixed(kind === 'rotationDeg' ? 2 : 3);
@@ -7692,6 +7724,7 @@ setAnimationAuthorMode = async function(mode) {
   animationAuthor.modeRoots.rig.visible = true;
   document.body.dataset.animationAuthorMode = 'rig';
   animationAuthor.editTarget = 'rigAnchor';
+  refreshAnimationCreatureFrames(); // Restores the perched default when entering Rig Coordinates from another authoring mode.
   for (const actor of animationAuthor.actors) { applyAttachmentRigProfileToActor(actor); updateRigAnchorVisibility(actor); }
   updateAnimationSelectionBox();
   attachAnimationGizmo();
@@ -11859,7 +11892,15 @@ function installApprovedRigLibraryV1524(target, { replaceAll = true } = {}) {
   } else {
     target.characters ||= {};
     target.creatures ||= {};
-    for (const [key, profile] of Object.entries(approved.characters)) target.characters[key] = profile;
+    for (const [key, profile] of Object.entries(approved.characters)) {
+      const authoredScale = target.characters[key]?.anchors?.shoulderPerch?.scale; // Preserve a saved character-specific pet multiplier while migrating older approved coordinates.
+      if (authoredScale && ['x', 'y', 'z'].every(axis => Number.isFinite(Number(authoredScale[axis])) && Number(authoredScale[axis]) > 0)) {
+        profile.anchors.shoulderPerch.scale = {
+          x: Number(authoredScale.x), y: Number(authoredScale.y), z: Number(authoredScale.z),
+        }; // Only the scale survives default replacement; obsolete positions and rotations still migrate as before.
+      }
+      target.characters[key] = profile;
+    }
     for (const [kind, profile] of Object.entries(approved.creatures)) target.creatures[kind] = profile;
   }
   return target;
