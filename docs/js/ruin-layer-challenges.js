@@ -153,8 +153,7 @@
     const fire=options.dungeonFire||root.DungeonFire; // Reuse real ranged-weapon ignition + projectile contact/heat checks.
     const events=options.events||root; // Reuses the standard hobunji-ruin-melody-result event, not a new music input bridge.
     let linkDisposers=[]; // Disposers are returned by the existing modular target hit registry.
-    let melodyListener=null; // Removed on the same lifecycle as this authored chamber's other resources.
-    let timedNoteListener=null; // A timed exterior-door challenge listens to real player notes, never the ruin's echo-result messages.
+    let timedNoteListener=null; // Every ruin/cave melody consumes only the player's real, plate-gated note events.
     let fireTargetId=null; // Registered only when the correct ruin's projectile runtime is live; removed on teardown.
     let fireControl=null; // This chamber removes its fire-source interaction when disposed, including on partial mounts.
     let ropeChain=null; // Native V50 rope controller owns all rope physics and checkpoint updates after registration.
@@ -182,6 +181,31 @@
       onSolved(rec);
       return true;
     };
+    function installTimedSession(composer,song){
+      rec.scoreComposer=composer; // Both cave and ruin melodies share the same tempo, judge, glow and debug state.
+      rec.song=song;
+      rec.notes=song.notes.map(note=>note.index); // Kept for mobile diagnostics and older authored module consumers.
+      rec.session=composer.createSession(song,{
+        onBeat:beat=>root.RuinInteractionAudio?.metronomeTick?.(beat),
+        onSolved:()=>complete(), // The instrument remains equipped; only the owning mechanism unlocks.
+        onChanged:snapshot=>{
+          if(snapshot.mistakes>(rec.melodyState?.mistakes||0)){
+            rec.flashRemaining=.4;
+            rec.flashGlyphIndex=snapshot.activeIndex>=0?snapshot.activeIndex:
+              Math.min(song.notes.length-1,rec.melodyState?.progress||0);
+          }
+          rec.melodyState=snapshot;
+          if(rec.flashRemaining>0)for(let i=0;i<(rec.glyphs||[]).length;i++)
+            if(i===rec.flashGlyphIndex)composer.advanceGlyphGlow?.(rec.glyphs[i],{rejected:true,dt:0});
+        }
+      });
+      timedNoteListener=event=>{
+        const area=options.area||options.mapId; // A different map, inactive floor or unoccupied plate cannot feed this score.
+        if(rec.disposed||rec.solved||!isActive()||(area&&event?.detail?.area!==area))return;
+        rec.session.note(event?.detail?.noteIndex);
+      };
+      events?.addEventListener?.('hobunji-kurraya-puzzle-note',timedNoteListener);
+    }
     // V50 square pillar (docs/tools/debris-ifier createPillarNicheShortObeliskActivator envelope): 0.78 x 1.75 with base, collar,
     // shaft, collar and capital. With `opening` the shaft is a hollow housing open on that side, so a glyph target sits in a niche.
     const squarePillar=(name,x,py0,z,opening=null)=>{
@@ -387,11 +411,11 @@
       // The generated score's beat clock advances only while the player stays on the large plate.
       const composer=options.puzzleCaveMelody||root.PuzzleCaveMelody; // One generator/judge for both exterior and interior puzzle cave doors.
       if(!composer?.generate||!composer?.createSession)throw new Error('PuzzleCaveMelody is not installed.');
-      rec.scoreComposer=composer; // The shared frame-tick callback runs outside this challenge branch and reads the same injected song/glow adapter.
       const song=composer.generate(id,options.songOptions||{}); // The cave's stable ID fixes the tune and reward tier on reload.
       const plate=body('puzzle-cave-music-plate-'+id,
         new THREE.CylinderGeometry(1.18,1.18,.15,32),plateMat,cx,y+.08,cz-1.6);
-      rec.plate=plate;rec.song=song;rec.attempts=0;rec.lastDown=false;
+      rec.plate=plate;rec.attempts=0;rec.lastDown=false;
+      rec.melodyPlate={x:cx,z:cz-1.6,radius:1.18}; // Cave melody uses the large circular bronze plate.
       const plateSignal=root.FurniturePatternSurfaces?.attachStoneSignal?.(plate,{width:.32,height:.32,idleColor:'#e5aa55',activeColor:'#65ffaf'});
       rec.plateSignal=plateSignal; // Both the musical session and an external result use the same glyph state.
       rec.plateArt=root.PuzzleCavePlateArt?.decorate?.(THREE,plate,{
@@ -408,28 +432,7 @@
         rec.doorRise=Math.min(1,(rec.doorRise||0)+Math.max(0,Number(dt)||0)/.85);
         gate.position.y=baseY+3.6*rec.doorRise;
       };
-      rec.session=composer.createSession(song,{
-        onBeat:beat=>root.RuinInteractionAudio?.metronomeTick?.(beat), // Same authoritative quarter-note pick track as the outdoor cave plate.
-        onSolved:()=>{
-          plateSignal?.setActive(true); // Stone stays carved_smooth while the glyph illuminates.
-          complete(); // The player chose to play their instrument; never seize or dismiss it.
-        },
-        onChanged:snapshot=>{
-          if(snapshot.mistakes>(rec.melodyState?.mistakes||0)){
-            rec.flashRemaining=.4;
-            rec.flashGlyphIndex=snapshot.activeIndex>=0?snapshot.activeIndex:
-              Math.min(rec.song.notes.length-1,rec.melodyState?.progress||0); // Incorrect input flashes its own glyph red, including during rests.
-          }
-          rec.melodyState=snapshot; // The frame loop smoothly mixes white/yellow, but preserves instant green/red response.
-          if(rec.flashRemaining>0)for(let i=0;i<rec.glyphs.length;i++)
-            if(i===rec.flashGlyphIndex)composer.advanceGlyphGlow?.(rec.glyphs[i],{rejected:true,dt:0});
-        },
-      });
-      timedNoteListener=event=>{
-        if(rec.disposed||rec.solved||!isActive()||options.area&&event?.detail?.area!==options.area)return;
-        rec.session.note(event?.detail?.noteIndex);
-      };
-      events?.addEventListener?.('hobunji-kurraya-puzzle-note',timedNoteListener);
+      installTimedSession(composer,song);
     }else if(kind==='melodyEcho'){
       // Read the inscription and play the ordinary equipped instrument; the plate never opens or claims input.
       const plate=body('ruin-melody-trigger-'+id,
@@ -446,7 +449,11 @@
       rec.plateSignal=root.FurniturePatternSurfaces?.attachStoneSignal?.(visiblePlate,{
         width:.54,height:.54,idleColor:'#82d8b7',activeColor:'#ffe18a',
       }); // Only the melody plate's glyph changes on completion; the carved stone remains neutral.
-      rec.notes=melodyFor(id);
+      const composer=options.puzzleCaveMelody||root.PuzzleCaveMelody; // Legacy echo placements now use the timed-score generator and judge.
+      if(!composer?.generate||!composer?.createSession)throw new Error('PuzzleCaveMelody is not installed.');
+      const song=composer.generate(id,options.songOptions||{});
+      rec.notes=song.notes.map(note=>note.index);
+      rec.melodyPlate={x:cx,z:cz,radius:.72}; // Preserve the native square trigger's original footprint.
       rec.lastDown=false;rec.attempts=0;
       rec.heardNotes=[];rec.glyphs=[]; // Rolling player-note history and owned fallback art for native challenge diagnostics.
       rec.inscription=root.RuinMelodyGlyphDecal?.create?.({
@@ -474,25 +481,9 @@
           decal.userData.devRuinScratchboneMelodyNote=number;rec.glyphs.push(decal);
         }
       }
-      rec.onMelodyResult=detail=>{
-        if(rec.disposed||rec.solved||detail?.id!==id)return;
-        if(detail.solved===true){
-          rec.plateSignal?.setActive(true); // Both authored and fallback plates keep their PNG stone.
-          complete();
-        }
-      };
-      melodyListener=event=>{
-        const detail=event?.detail,playerY=getPlayerY?.(); // Only ordinary player notes from this map and floor may advance the phrase.
-        if(rec.disposed||rec.solved||!isActive()||!Number.isFinite(playerY)||Math.abs(playerY-y)>=.75)return;
-        if((options.area||options.mapId)&&detail?.area!==(options.area||options.mapId))return;
-        const note=detail?.noteIndex;
-        if(!Number.isInteger(note)||note<0||note>=8)return;
-        rec.heardNotes.push(note);
-        if(rec.heardNotes.length>rec.notes.length)rec.heardNotes.shift();
-        if(rec.heardNotes.length===rec.notes.length&&rec.notes.every((n,i)=>n===rec.heardNotes[i]))
-          rec.onMelodyResult({id,solved:true});
-      };
-      events?.addEventListener?.('hobunji-kurraya-puzzle-note',melodyListener);
+      if(rec.inscription)rec.glyphs=rec.inscription.group.children.filter(node=>
+        node.userData?.melodyNoteIndex!==undefined); // Exact note order, with the same fixed-size glow planes as the timed cave.
+      installTimedSession(composer,song);
     }else if(kind==='glyphObelisk'){
       // The old pillar hall: a field of stone pillars, most of them plain. Three hide a
       // glyph target in a niche on one face (a different face each, so you must walk
@@ -741,12 +732,13 @@
         }
         if(rec.sconces.every(sconce=>sconce.lit))complete();
       }
-      if(kind==='timedMelody'){
+      if(kind==='timedMelody'||kind==='melodyEcho'){
+        const plate=rec.melodyPlate; // The cave and every former echo use their own existing plate footprint.
         const down=!rec.solved&&isActive()&&player&&Number.isFinite(currentY)&&Math.abs(currentY-y)<.75
-          &&Math.hypot(player.x-cx,player.z-(cz-1.6))<=1.18;
-        rec.session.step(dt,down);
+          &&Math.hypot(player.x-plate.x,player.z-plate.z)<=plate.radius;
+        rec.session.step(dt,down); // Only an occupied plate advances the timed score; wrong or late notes reset an attempt.
         rec.flashRemaining=Math.max(0,(rec.flashRemaining||0)-Math.max(0,Number(dt)||0));
-        const glowState=rec.session.snapshot(); // Shared beat clock controls current score note, rests and accepted-note feedback.
+        const glowState=rec.session.snapshot();
         for(let i=0;i<rec.glyphs.length;i++){
           const glyph=rec.glyphs[i],rejected=rec.flashRemaining>0&&i===rec.flashGlyphIndex;
           if(rec.scoreComposer?.advanceGlyphGlow)rec.scoreComposer.advanceGlyphGlow(glyph,{
@@ -754,21 +746,12 @@
           });
           else glyph.material?.color?.setHex?.(rejected?0xff6666:i<glowState.progress?0x80ffbb:
             i===glowState.activeIndex?0xffec64:0xeaf5ff);
-        } // The ink planes and the two halo planes NEVER change scale; only their color and alpha interpolate.
+          if(!rec.inscription&&!rec.scorePanel)glyph.visible=!!down; // Standalone fallback glyphs lack a shared group.
+        }
         rec.inscription?.setVisible?.(down);
         if(rec.scorePanel)rec.scorePanel.visible=!!down;
         if(down&&!rec.lastDown)rec.attempts++;
-        root.RuinInteractionAudio?.watchPlate?.(rec.plate,!!down); // The stone plate clicks on press and release; the note clue only appears when occupied.
-        // The plate only reveals the score; equipping/playing the instrument is the player's choice.
-        rec.lastDown=!!down;
-      }
-      if(kind==='melodyEcho'){
-        const down=!rec.solved&&isActive()&&player&&Number.isFinite(currentY)&&Math.abs(currentY-y)<.75
-          &&Math.abs(player.x-cx)<.58&&Math.abs(player.z-cz)<.58;
-        if(down&&!rec.lastDown)rec.attempts++;
-        root.RuinInteractionAudio?.watchPlate?.(rec.plate,!!down); // Echo plates use the same edge-triggered physical stone click as outdoor plates.
-        rec.inscription?.setVisible?.(down);
-        for(const glyph of rec.glyphs)glyph.visible=!!down;
+        root.RuinInteractionAudio?.watchPlate?.(rec.plate,!!down);
         rec.lastDown=!!down;
       }
       if(kind==='ceilingRailTargets'&&!rec.solved){
@@ -839,7 +822,6 @@
       rec.removeFootprintGate?.(); // Release the real player/NPC occupancy blocker before this scene is reused.
       if(rec.colliderId)(options.DynamicSurfaces||root.DynamicSurfaces)?.remove?.(rec.colliderId); // One owner for both collision removal and room teardown.
       if(ropeChain)bus?.removeExternalRopeChain?.(ropeChain);
-      if(melodyListener)events?.removeEventListener?.('hobunji-kurraya-puzzle-note',melodyListener);
       rec.inscription?.dispose?.();
       if(timedNoteListener)events?.removeEventListener?.('hobunji-kurraya-puzzle-note',timedNoteListener);
       rec.plateArt?.dispose?.(); // Retire async Tankan lettering without affecting the player's own instrument session.
