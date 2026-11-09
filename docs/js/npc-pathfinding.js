@@ -120,11 +120,14 @@
     if (!deps || ![fromX, fromZ, toX, toZ].every(Number.isFinite)) return false;
     const dist = Math.hypot(toX - fromX, toZ - fromZ);
     const configuredStep = Number(deps.npcMovementConfig().beelineSampleStepTiles);
+    const collisionRadius = npcCollisionRadiusTiles(); // Reused by every sweep sample rather than rereading NPC settings per position.
     const step = Number.isFinite(stepTiles) && stepTiles > 0
       ? stepTiles
-      : Math.min(Number.isFinite(configuredStep) && configuredStep > 0 ? configuredStep : 0.25, Math.max(0.08, npcCollisionRadiusTiles() * 0.75));
+      : Math.min(Number.isFinite(configuredStep) && configuredStep > 0 ? configuredStep : 0.25, Math.max(0.08, collisionRadius * 0.75));
     const samples = Math.max(1, Math.ceil(dist / step));
     const ignoredEndTile = ignoreFurnitureTile || (ignoreFurnitureAtEnd ? { c: Math.floor(toX), r: Math.floor(toZ) } : null); // Explicit seat tiles stay stable across small per-frame steps; path edges may derive theirs from the edge endpoint.
+    const firstProbeOptions = { ignoreFurniture: true, ignoreFurnitureTile: ignoredEndTile }; // Start-point furniture is ignored only for the first sweep sample.
+    const nextProbeOptions = { ignoreFurnitureTile: ignoredEndTile }; // Shared immutable-in-sweep options avoid object allocation for every sub-step.
     const zoneGrid = deps.isZoneArea?.(area) ? deps.npcGridForArea(area) : null; // Used for same-elevation swept checks, not just horizontal occupancy.
     let lastTile = zoneGrid?.[Math.floor(fromZ)]?.[Math.floor(fromX)] || null;
     for (let i = 0; i <= samples; i++) {
@@ -137,7 +140,7 @@
       if (currentTile) lastTile = currentTile;
       const clear = structuralOnly
         ? isNpcPositionStructurallyWalkable(area, x, z)
-        : isNpcPositionWalkable(area, x, z, npcCollisionRadiusTiles(), { ignoreFurniture: i === 0, ignoreFurnitureTile: ignoredEndTile });
+        : isNpcPositionWalkable(area, x, z, collisionRadius, i === 0 ? firstProbeOptions : nextProbeOptions);
       if (!clear) return false;
     }
     return true;
@@ -210,6 +213,7 @@
     const targetKey = key(targetC, targetR);
     const startKey = key(startC, startR);
     const centerClearCache = new Map(); // Reuses footprint/furniture checks while A* revisits neighboring tiles.
+    const edgeClearCache = new Map(); // Symmetric, normal center-to-center swept edges only; lives for this synchronous A* search.
     const centerClear = (c, r) => {
       const k = key(c, r);
       if (centerClearCache.has(k)) return centerClearCache.get(k);
@@ -270,9 +274,22 @@
         const edgeFromX = firstEdge ? fromX : cur.c + 0.5; // Used only for this edge's swept collision validation.
         const edgeFromZ = firstEdge ? fromZ : cur.r + 0.5; // Used only for this edge's swept collision validation.
         const escapingEdge = cur.escaping || (firstEdge && !startFullyClear); // Legacy structural-overlap saves retain their existing first-edge recovery.
-        const edgeClear = escapingEdge
-          ? canNpcEscapeExistingOverlap(area, edgeFromX, edgeFromZ, nc + 0.5, nr + 0.5, { startStructuralClear, ignoreFurnitureAtEnd: targetStep })
-          : canNpcTraverse(area, edgeFromX, edgeFromZ, nc + 0.5, nr + 0.5, { ignoreFurnitureAtEnd: targetStep });
+        // A* visits normal edges in both directions; the center probes already
+        // guarantee both endpoints are clear. Never reuse special first/escape/
+        // occupied-seat edges, whose endpoint rules are direction-dependent.
+        const reusableEdge = !firstEdge && !escapingEdge && !targetStep && nextClear;
+        const edgeKey = reusableEdge ? (cur.key < nk ? cur.key + '>' + nk : nk + '>' + cur.key) : null; // Undirected key shared by both center-to-center directions.
+        let edgeClear;
+        if (edgeKey !== null && edgeClearCache.has(edgeKey)) {
+          edgeClear = edgeClearCache.get(edgeKey);
+          debugStats.pathEdgeCacheHits = (debugStats.pathEdgeCacheHits || 0) + 1;
+        } else {
+          edgeClear = escapingEdge
+            ? canNpcEscapeExistingOverlap(area, edgeFromX, edgeFromZ, nc + 0.5, nr + 0.5, { startStructuralClear, ignoreFurnitureAtEnd: targetStep })
+            : canNpcTraverse(area, edgeFromX, edgeFromZ, nc + 0.5, nr + 0.5, { ignoreFurnitureAtEnd: targetStep });
+          if (edgeKey !== null) edgeClearCache.set(edgeKey, edgeClear);
+          debugStats.pathEdgeSweeps = (debugStats.pathEdgeSweeps || 0) + 1;
+        }
         if (!edgeClear) continue;
         if (dc !== 0 && dr !== 0 && !escapingEdge) {
           // Prevent a diagonal body from squeezing between two blocked
