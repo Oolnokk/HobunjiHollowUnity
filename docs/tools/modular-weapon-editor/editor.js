@@ -358,7 +358,9 @@
   function editLineNumbers() {
     const area = byId('attach-controls'); // Precise fallback when drag placement is difficult on a phone.
     area.replaceChildren();
-    for (const [label, line] of [['Head', chosenHead().mount], ['Haft', chosenShaft().mounts[mountIndex]]]) {
+    const lines = api.isFlailHead(chosenHead()) ? [['Haft', chosenShaft().mounts[mountIndex]]]
+      : [['Head', chosenHead().mount], ['Haft', chosenShaft().mounts[mountIndex]]]; // No editable modular head mounting line for a flail.
+    for (const [label, line] of lines) {
       const group = document.createElement('div'), title = document.createElement('span'); // One length per selected arrow.
       group.className = 'line-length-field'; title.className = 'line-length-label';
       title.textContent = label + ' arrow length'; group.appendChild(title);
@@ -671,7 +673,9 @@
     byId('allow-shaft').disabled = shaft.sourceShape === 'bgungku'; // This special uploaded shaft has no gameplay donor definition.
     byId('allow-head').checked = head.editorOnly !== true && head.craftDisabled !== true;
     byId('allow-head').disabled = head.craftDisabled === true; // Shipped retired heads cannot be re-enabled through this editor.
-    byId('head-construction-note').textContent = head.mountNote || ''; // Authoring notes for shovel scoop, transverse hoe, and pick head.
+    byId('head-construction-note').textContent = api.isFlailHead(head)
+      ? 'Flail head attachment is from Complex Tool Visuals. The head arrow in this modular editor is ignored for runtime, forging and preview.'
+      : (head.mountNote || ''); // Authoring notes for shovel scoop, transverse hoe, and pick head.
     const accepted = compatible(), needed = shaft.flailAssembly || head.flailAssembly || head.mount.type === 'flail' ? 'rope (or legacy eye/tang)' : head.mount.type === 'blade' ? 'tang' : 'eye';
     byId('part-readiness').textContent = !accepted
       ? 'Incompatible: add a ' + needed + ' line to this haft or choose another head.'
@@ -764,6 +768,9 @@
       drawLines(id);
     }
     element.addEventListener('pointerdown', event => {
+      if (id === 'head-canvas' && api.isFlailHead(chosenHead())) {
+        msg('Flail head contact belongs to Complex Tool Visuals; its modular mounting arrows are ignored.'); return;
+      }
       if (drawing || boreDrag || !event.isPrimary) return;
       if (id === 'shaft-canvas' && boreMoveEnabled && selectedBore()) {
         event.preventDefault();
