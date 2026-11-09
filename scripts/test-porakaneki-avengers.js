@@ -318,10 +318,18 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   hour = 12;
 
   // Near the player, riders materialize mounted, tougher and faster.
-  const home = pora.debugSnapshot().zones[zoneId].camps.find(camp => camp.avengers);
-  const rider = home.hunters.find(hunter => hunter.role === 'avenger');
-  currentArea = zoneId;
-  combatDeps.player.x = rider.x * combatDeps.TILE; combatDeps.player.y = rider.y * combatDeps.TILE;
+  // Long-running stochastic off-screen battles may leave the first Avenger dead.
+  // Materialization must be tested on a *living* rider, not a valid slain body
+  // that the production planner rightly refuses to spawn.
+  const liveRiderSite = ZONES.map(mapId => ({ // Uses the first surviving rider across all generated camps.
+    mapId,
+    camp: pora.debugSnapshot().zones[mapId].camps.find(camp => camp.avengers),
+  })).flatMap(entry => (entry.camp?.hunters || []).filter(hunter => hunter.role === 'avenger' && hunter.activity !== 'slain')
+    .map(rider => ({ mapId: entry.mapId, rider }))).at(0);
+  assert(liveRiderSite, 'at least one living Avenger remains to test native materialization');
+  currentArea = liveRiderSite.mapId;
+  combatDeps.player.x = liveRiderSite.rider.x * combatDeps.TILE;
+  combatDeps.player.y = liveRiderSite.rider.y * combatDeps.TILE;
   tick(0.21); await flush();
   const riderBuild = builds.find(build => build.opts.extra.isTribeAvenger);
   assert(riderBuild, 'a nearby Avenger materializes through BanditCombat');
