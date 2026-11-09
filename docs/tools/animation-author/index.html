@@ -13991,6 +13991,19 @@ function kissTrackV1546(who, solution) {
 
 function applyKissPresetV1546() {
   if (animationAuthor.mode !== 'multi') return false;
+  // First establish both complete models in the exact standing, unbowed
+  // frame. A previously edited/loaded kiss may leave the portrait and leg
+  // groups at different phases, which corrupts the first mouth measurement.
+  // This is the same neutral reset used by the full-character author, not
+  // a second guessed mouth-height formula.
+  setAnimationTime(0, { pause: true });
+  const previousPreset = animationAuthor.multiPreset; // Restored immediately after neutralizing all existing pose owners.
+  try {
+    animationAuthor.multiPreset = null;
+    syncMultiAvatarFullBodiesV1548(0);
+  } finally {
+    animationAuthor.multiPreset = previousPreset;
+  }
   const { leader, partner, solution } = kissPairHeightV1546();
   if (!leader || !partner) { setStatus('Kiss needs two NPC/character actors in the Multi-Avatar scene.', 'warn'); return false; }
   if (!solution?.contactPossible) {
