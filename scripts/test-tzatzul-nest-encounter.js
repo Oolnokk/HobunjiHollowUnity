@@ -43,8 +43,10 @@ const W = {
 const ctx={window:W,Math,Date,Set,Map,console};
 vm.runInNewContext(fs.readFileSync('docs/js/combat/knockback-collision-impact.js','utf8'),ctx);
 vm.runInNewContext(fs.readFileSync('docs/js/tzatzul-nest-encounter.js','utf8'),ctx);
+const caveScene = { add(){}, remove(){} }; // Authoritative interior scene for all nest actors.
 const deps = {
   TILE:64,player,hostileObjects:actors,getCurrentArea:()=>id,
+  buildingScenes:new Map([[id,{scene:caveScene,grid:[],cols:27,rows:27}]]),
   makeCreatureEntity:(kind,x,y,opts)=>({
     creatureKey:kind,x,y,areaId:id,health:120,maxHealth:120,
     def:{attackDamage:24},...opts
@@ -54,6 +56,7 @@ W.TzatzulNestEncounter.init(deps);
 const room = W.TzatzulNestEncounter.ensure(id);
 assert(room,'actual authored cave must spawn a nest encounter');
 assert.equal(actors.size,3,'one mother plus two living hatchling adds');
+assert([...actors].every(a=>a.scene===caveScene&&a.areaId===id),'mother and clutch spawn in the loaded cave scene');
 assert.equal(room.mother.maxHealth,420,'mother has miniboss Health');
 assert(W.TzatzulNestEncounter.owns(room.mother),'mother owns flight rather than ground movement');
 assert(room.hatchlings.every(child=>child.tzatzulIdentity.tintHex===room.mother.tzatzulIdentity.tintHex),
