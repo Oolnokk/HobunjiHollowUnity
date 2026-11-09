@@ -593,7 +593,7 @@
 addEventListener('load', () => {
   if (!document.querySelector('script[data-quick-potion-arc-ui]')) {
     const presentation = document.createElement('script'); // Shared visual/radius/animation treatment for toggled selector arches.
-    presentation.src = 'js/quick-potion-arc-ui.js?v=20260821a';
+    presentation.src = 'js/quick-potion-arc-ui.js?v=20261109idleStyles1';
     presentation.dataset.quickPotionArcUi = '1';
     presentation.async = false;
     document.head.appendChild(presentation);
