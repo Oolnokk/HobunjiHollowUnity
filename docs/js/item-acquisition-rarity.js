@@ -127,6 +127,26 @@
       proposedSellPrice };
   }
 
+
+  function importedSpice(key, {townValue = G.TownMine?.getTownValue?.() ?? 1, caravanEligible = true} = {}) {
+    const spiceKeys = G.SlagothimTraders?.IMPORTED_SPICES || ['cloudSaffron','starpepper','nightCardamom']; // Loader fallback mirrors the authored trade pool; live trader stock always takes precedence.
+    if (!spiceKeys.includes(key)) return null;
+    const count = spiceKeys.length; // Shuffled stock selects one or two distinct imported spices with equal probability.
+    const selection = count ? (Math.min(1,count)/count + Math.min(2,count)/count)/2 : null;
+    const daily = typeof G.SlagothimTraders?.dailySpawnChance === 'function'
+      ? G.SlagothimTraders.dailySpawnChance(townValue)
+      : caravanSeed({townValue}).dailyCaravanChance;
+    const eligibility = caravanEligible === true ? daily : caravanEligible === false ? 0 : null;
+    const odds = chain([
+      {label:'Daily Slagothim caravan arrival roll',probability:eligibility},
+      {label:'Chosen among one or two imported spice types',probability:selection},
+    ]);
+    return {key,kind:'imported-spice',...odds,spiceTypes:count,stockChancePerCaravan:selection,
+      specificSpiceChancePerDay:odds.probability,meanQuantityPerListing:2, // Trader picks a uniform 1..3 units.
+      factor:rarityFactor(odds.probability),
+      model:'conditional on the caravan spawn roll and two-tier spice stock draw; road access, active caravan cap and purchase are separate conditions'};
+  }
+
   // Native crops and ordinary ingredients have a neutral rarity factor until a real
   // acquisition source is known. These factors describe supply, not item quality.
   const CULTIVAR_KEY = /^cv_(needlegrain|heftroot|garlink|ongyums|redberries|blueberries|yellowberries|whiteberries|blackberries|blackMustard|greenMustard)_([0-5]{6})(?:_([0-9a-f]{6}))?(Seeds)?$/;
@@ -176,6 +196,8 @@
     if (!key || seen.has(key) || seen.size >= 10) return { factor:1, known:false, sources:[] };
     const crop = cultivarRarity(key);
     if (crop) return { factor:crop.factor, known:crop.origin === 'slagothim-import', sources:[crop] };
+    const spice = importedSpice(key);
+    if (spice?.factor) return {factor:spice.factor,known:spice.probability !== null,sources:[spice]};
     const fish = fishRarity(key);
     if (fish) return { factor:fish.factor, known:true, sources:[fish] };
     const localDefs = defs || boundItemDefs || G.ITEM_DEFS || {};
@@ -395,6 +417,10 @@
         proposedSellPrice:cultivarSellPrice(key,context.nativeSellPrice ?? def.rarityBaseSellPrice ?? null),
         note:cultivar.model };
     }
+    const spice = importedSpice(key,{townValue:context.townValue ?? G.TownMine?.getTownValue?.() ?? 1,
+      caravanEligible:context.caravanEligible ?? true});
+    if (spice) return {...spice,actualSellPrice:Number.isFinite(Number(def.sellPrice)) ? Number(def.sellPrice) : null,
+      note:spice.model};
     const offspring = context.zoneId ? liveDenOffspring(key,{zoneId:context.zoneId}) : null;
     if (offspring) return {key,kind:'offspring',acquisition:offspring,note:offspring.model};
     const fish = fishRarity(key);
@@ -416,8 +442,8 @@
         : context.stages ? null : 'Unquantified source; no automatic rarity price or contest premium.' };
   }
   return Object.freeze({ chain, atLeastOne, expected, tierLayout, ruinChest, caravanSeed, inheritance, source,
-    bindItemDefs, rarityFactor, cultivarRarity, cultivarSellPrice, foodRarity, artifactChest, lootPoolItem, denOffspring, liveDenOffspring, fishCatch, fishRarity, ruinArtifactOpportunity, item,
-    debugSnapshot: key => key ? item(key) : { supported:['cultivar','artifact-chest','ruin-chest','loot-pool','den-offspring','live-den-offspring','fish-catch','generated-ruin','food-ancestry','inheritance'],
+    bindItemDefs, rarityFactor, cultivarRarity, cultivarSellPrice, importedSpice, foodRarity, artifactChest, lootPoolItem, denOffspring, liveDenOffspring, fishCatch, fishRarity, ruinArtifactOpportunity, item,
+    debugSnapshot: key => key ? item(key) : { supported:['cultivar','artifact-chest','ruin-chest','loot-pool','den-offspring','live-den-offspring','imported-spice','fish-catch','generated-ruin','food-ancestry','inheritance'],
       priceMode:'cultivar-integrated; other categories retain their authored value', noSilentFallback:true } });
 
 });
