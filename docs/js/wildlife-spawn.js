@@ -1930,7 +1930,10 @@
     const herdSpecies = [...new Set(config.roamingHerdSpecies || [])];
     const herdSlots = Math.max(0,Math.floor(Number(config.roamingHerdCount)||0));
     const herdSpeciesChance = herdSpecies.length ? Object.fromEntries(herdSpecies.map(key=>[key,1/herdSpecies.length])) : {};
+    const mapTiles = Number(layout.cols)*Number(layout.rows); // Per generated-zone tile density, not a per-encounter probability.
     return {zoneId,known:true,animalDens:dens.length,bySpecies,
+      mapTiles:Number.isFinite(mapTiles) && mapTiles > 0 ? mapTiles : null,
+      densPerMapTile:Number.isFinite(mapTiles) && mapTiles > 0 ? dens.length/mapTiles : null,
       denSpeciesChance:Object.fromEntries(Object.entries(bySpecies).map(([kind,row])=>[kind,dens.length?row.total/dens.length:null])),
       roamingHerdSlots:herdSlots,roamingSpeciesChancePerSlot:herdSpeciesChance,
       nestTreeTarget:Math.max(1,Math.min(NEST_TREE_MAX_PER_ZONE,dens.length || NEST_TREE_MAX_PER_ZONE)),
