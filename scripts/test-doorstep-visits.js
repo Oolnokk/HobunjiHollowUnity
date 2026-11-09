@@ -317,7 +317,7 @@ for (const campsFirst of [false, true]) {
   ctx.run('docs/js/weapon-trust-visits.js');
   const world = installWorld(ctx, { npcIds: ['jubmir', 'kzubug'] });
   const gear = { tools: {} };
-  ctx.window.MetalCraftShop = { init(deps) { this.deps = deps; } };
+  ctx.window.MetalCraftShop = { init() {} };
   ctx.window.MetalCraftShop.init({
     UNLOCKED_TOOL_SHAPES: ['hatchet', 'bshuakauitl', 'plainsSword'],
     craftedToolItemKey: (shape, metal) => `${shape}_${metal}`,
@@ -603,7 +603,7 @@ for (const [speciesId, gender] of [['rakakoan', 'male'], ['kenkari', 'female']])
   ctx.window.DialogueContent.getNpcDlgState = () => ({ favor: 0, memory });
   ctx.window.DialogueContent.recordNpcMemory = (_npcId, event) => memory.push({ event });
   ctx.window.DialogueContent.deps.getPlayerData = () => ({ appearance: { speciesId, gender } });
-  ctx.window.MetalCraftShop = { init() {} };
+  ctx.window.MetalCraftShop = { init(deps) { this.deps = deps; } };
   ctx.run('docs/config/weapon-trust-visits.js');
   const gift = ctx.window.WEAPON_TRUST_VISIT_CONFIG.gifts.find(entry => entry.npcId === 'pahu'); // Uses the authored Pahu text and production shape key.
   assert(gift, 'Pahu must be a real trust-gift provider');
