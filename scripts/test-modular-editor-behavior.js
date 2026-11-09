@@ -250,6 +250,7 @@ const uiHandlers = new Function('env', 'let recipeSel = -1, mountIndex = 0;\n'
   + 'const chosenShaft = () => env.state.shaft; const chosenHead = () => env.api.getConfig().heads.dagger;\n'
   + 'const api = env.api; const save = () => env.state.edits++;\n'
   + 'const render = () => env.state.renders++;\n'
+  + 'const openWorkspace = section => { env.state.opened = section; };\n'
   + 'const syncRecipeControls = () => {}; const drawBridgeOverlay = () => {};\n'
   + 'const window = { ModularWeaponRecipeProvenance: env.audit, confirm: msg => { env.state.prompts.push(msg); return false; } };\n'
   + editor.slice(elementsStart, elementsEnd)
@@ -267,6 +268,8 @@ assert(controls['assembly-haft-recipe-count'].textContent.includes('18 recipe pl
 controls['assembly-mount-elements'].children[1].children[1].onclick();
 assert.equal(uiHandlers.selection(), 1, 'Selecting a mount row picks the matching editor line');
 assert.equal(uiState.renders, 1, 'Selecting a mount refreshes the existing line controls');
+assert.equal(uiState.opened, 'mount-editor-workflow',
+  'Selecting an element in a collapsed workspace expands its real edit controls');
 controls['assembly-mount-elements'].children[1].children[2].onclick();
 assert.equal(uiState.shaft.mounts.length, 2,
   'Declining the whole-haft mount-deletion confirmation preserves authored geometry');
