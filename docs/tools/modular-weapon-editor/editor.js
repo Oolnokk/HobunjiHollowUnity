@@ -204,7 +204,7 @@
       }
     }
       const guide = api.flailGuide(byId('shaft').value, byId('head').value);
-      if (guide?.explicitMount) { // Dashed connector guide shares the source sprite's transform, and marks both physical ends.
+      if (id === 'shaft-canvas' && guide?.explicitMount) { // The connector line belongs on shaft art only; the flail head ignores its modular arrow.
         ctx.save(); ctx.strokeStyle = '#f4c6ff'; ctx.fillStyle = '#f4c6ff'; ctx.lineWidth = 2.5;
         ctx.setLineDash([8, 5]); ctx.beginPath(); ctx.moveTo(guide.start.x, guide.start.y);
         ctx.lineTo(guide.end.x, guide.end.y); ctx.stroke(); ctx.setLineDash([]);
@@ -619,7 +619,8 @@
     byId('head-rope-x').value = authoredHead?.anchor?.x ?? '';
     byId('head-rope-y').value = authoredHead?.anchor?.y ?? '';
     byId('head-rope-x').disabled = byId('head-rope-y').disabled = true; // Attachment is read-only here: edit its exact point only in Complex Tool Visuals.
-    byId('head-rope-scale').value = head.flailHeadScale || 1;
+    byId('head-rope-scale').value = head.flailAssembly ? (authoredHead?.scale || 1) : (head.flailHeadScale || 1);
+    byId('head-rope-scale').disabled = !!head.flailAssembly; // Head-owned flails inherit the author's scaling and attachment settings entirely.
     const toolSlots = shaft.toolWorthy ? (head.toolSlots || []).join(', ') || 'no utility roles on this head' : 'weapon only: haft not tool-worthy';
     byId('identity-preview').textContent = 'Example forged name: ' + api.weaponName(byId('shaft').value, byId('head').value, 'Copper')
       + ' · Slots: weapon' + (shaft.toolWorthy && head.toolSlots?.length ? ', ' + head.toolSlots.join(', ') : '')
