@@ -7,6 +7,7 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync('docs/js/weapon-sprite-assemblies.js', 'utf8'); // Evaluated in a DOM shim to exercise the real asset-anchor helpers.
 const registry = fs.readFileSync('docs/config/weapon-sprite-assemblies.js', 'utf8'); // Shared committed artist recipe, loaded before the reusable runtime.
+const sharedColorFill = fs.readFileSync('docs/js/color-fill.js', 'utf8'); // Same canonical shade-fill implementation used by Gar-wolf recoloring.
 const game = fs.readFileSync('docs/game.js', 'utf8'); // Confirms that all gameplay tool planes acquire the same decorator.
 const editor = fs.readFileSync('docs/tools/attack-animation-editor/index.html', 'utf8'); // Confirms the standalone preview uses the same visual logic.
 const html = fs.readFileSync('docs/index.html', 'utf8'); // Confirms the game loads the assembly before its main script.
@@ -61,6 +62,7 @@ const document = {
 };
 const scheduler = { register(id, callback, options) { this.id = id; this.callback = callback; this.options = options; } }; // Records the real module's pre-render registration.
 const window = { RuntimeFrameScheduler: scheduler }; // Minimal host, no gameplay side effects.
+vm.runInNewContext(sharedColorFill, { window }); // Load the real canonical animal/NPC color fill, not a simulated recolor helper.
 vm.runInNewContext(registry, { window }); // The source of truth now comes from the shared editor + gameplay configuration.
 vm.runInNewContext(source, {
   window, document, URL, setTimeout: () => {}, performance: { now: () => 100 },
@@ -103,14 +105,26 @@ assert(Math.abs(sizes.diameterPx - 65.625) < 1e-10,'original 65.625-pixel thickn
 assert(Math.abs(sizes.widthScale * (152 / 2164) * 3.75 - 65.625 * (.5 / 450)) < 1e-10,'billboard width compensates for uniform Y scaling');
 assert(Math.abs(sizes.length * 3.75 - 843.75 * (.5 / 450)) < 1e-10,'sprite height reaches the same grapple contact');
 assert(!source.includes('new THREE.CylinderGeometry'),'the generated cylinder was removed');
-const ropePixels = Uint8ClampedArray.from([60,55,45,255, 120,110,90,255, 240,210,180,0]); // Two shaded rope pixels plus one transparent padded pixel.
-const originalAlpha = [ropePixels[3],ropePixels[7],ropePixels[11]]; // Tinting may change RGB but never the PNG alpha.
-api.tintRopePixels(ropePixels, '#6B4728');
-assert.deepEqual([ropePixels[3],ropePixels[7],ropePixels[11]],originalAlpha,'opaque silhouette and transparent padding survive recoloring');
-assert(ropePixels[0] < ropePixels[4] && ropePixels[1] < ropePixels[5],'original dark and light bands retain their shading order');
-assert(Math.abs((ropePixels[0]+ropePixels[4])/2 - 107) <= 1,'brown midtone red matches the previous material');
-assert(Math.abs((ropePixels[1]+ropePixels[5])/2 - 71) <= 1,'brown midtone green matches the previous material');
-assert(Math.abs((ropePixels[2]+ropePixels[6])/2 - 40) <= 1,'brown midtone blue matches the previous material');
+const ropePixels = Uint8ClampedArray.from([
+  12, 10, 8, 255, // Near-black winding must stay appropriately dark.
+  60, 55, 45, 255, // Authored darker rope section.
+  120, 110, 90, 255, // Authored brighter rope section.
+  250, 250, 250, 255, // Near-white decorative highlight must be left alone by the canonical fill.
+  240, 210, 180, 0, // Transparent margin is not eligible for recoloring.
+]); // Full opaque spectrum ensures direct parity with the shared Gar-wolf shade-fill routine.
+const originalRopePixels = Uint8ClampedArray.from(ropePixels); // Independent original used to validate alpha, bright highlights and relative shading.
+const expectedAnimalFill = Uint8ClampedArray.from(ropePixels); // Applies the real shared algorithm to the same source pixels.
+window.ColorFill.shadeFillPixels(expectedAnimalFill, [107, 71, 40], { debugLabel: 'animal-parity-expected' });
+assert.equal(api.tintRopePixels(ropePixels, '#6B4728'),ropePixels,'the rope fill must update its supplied pixels in place');
+assert.deepEqual(Array.from(ropePixels),Array.from(expectedAnimalFill),'Grapple-Flail recoloring must be byte-for-byte identical to the shared animal shade-fill algorithm');
+assert.deepEqual([3,7,11,15,19].map(i=>ropePixels[i]),[3,7,11,15,19].map(i=>originalRopePixels[i]),'the inherited animal fill retains all alpha values');
+assert.deepEqual(Array.from(ropePixels.slice(12,16)),Array.from(originalRopePixels.slice(12,16)),'near-white artwork is excluded from animal shade-fill');
+assert(ropePixels[0] < ropePixels[4] && ropePixels[4] < ropePixels[8],'dark outlines and intermediate shading retain their authored brightness order');
+assert.equal(window.ColorFill.debugSnapshot().lastShadeFill.label,'weapon-rope:#6B4728','mobile diagnostics label the shared shade-fill pass');
+const unchangedWhite = Uint8ClampedArray.from(originalRopePixels); // White is the original art/no-recolor option, not a brown paint.
+api.tintRopePixels(unchangedWhite, '#FFFFFF');
+assert.deepEqual(Array.from(unchangedWhite),Array.from(originalRopePixels),'default white rope retains the source image');
+
 assert.equal(source.includes('tintedRopeTextures = new WeakMap()'),true,'recolored rope variants are cached per source image');
 assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.head.layers[2].vfx.type, 'fire');
 assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.head.layers[2].targetHex.toUpperCase(), '#E7DDC9');
