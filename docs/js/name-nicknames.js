@@ -18,38 +18,32 @@
     return /y/i.test(letter) && index > 0 && !VOWEL.test(name[index + 1] || '');
   }
 
-  function firstSyllable(name) {
-    const word = givenName(name); // First given word only; never shorten a family name as if it were a syllable.
+  function firstSyllable(name, gender = 'female') {
+    const word = givenName(name); // Given name to shorten; the unchanged full name remains available elsewhere.
     if (!word) return '';
-    const firstVowel = [...word].findIndex((_, index) => isVowel(word, index)); // First nucleus controls the boundary, not raw character count.
+    const firstVowel = [...word].findIndex((_, index) => isVowel(word, index)); // First spoken vowel nucleus shared by all gender rules.
     if (firstVowel < 0) return word;
 
     let nucleusEnd = firstVowel + 1; // Exclusive end of the first vowel nucleus.
     if (isVowel(word, nucleusEnd) && DIPHTHONGS.has(word.slice(firstVowel, nucleusEnd + 1).toLowerCase())) nucleusEnd++;
-    let nextVowel = nucleusEnd; // Beginning of the next distinct syllable nucleus.
+    let nextVowel = nucleusEnd; // First vowel in a subsequent syllable, if one exists.
     while (nextVowel < word.length && !isVowel(word, nextVowel)) {
       if (/['\u2019]/.test(word[nextVowel])) return word.slice(0, nextVowel) || word;
       nextVowel++;
     }
-    if (nextVowel >= word.length) return word; // A monosyllabic name is not abbreviated.
-    if (nextVowel === nucleusEnd) return word.slice(0, nucleusEnd); // Vowel hiatus without an intervening consonant.
+    if (nextVowel >= word.length) return word; // One-syllable names stay whole as friend nicknames.
+    if (nextVowel === nucleusEnd || gender !== 'male') return word.slice(0, nucleusEnd); // Feminine friend nickname drops the next consonant.
 
-    const consonants = word.slice(nucleusEnd, nextVowel); // Intervocalic consonants to distribute between the first two syllables.
-    let keep = Math.max(0, consonants.length - 1); // A single consonant begins the next syllable; in clusters the earlier ones close the first.
-    if (/^ng$/i.test(consonants)) keep = 2; // Keep the nasal digraph together: Slangoro -> Slang, not Slan.
-    if (/^(?:ch|sh|th|ph|kh|wh|gh|rh)$/i.test(consonants)) keep = 0; // Onset digraphs belong together to the next syllable.
-    if (firstVowel === 0 && /^[hlmnr]$/i.test(consonants)) keep = 1; // Initial-vowel names such as Alexander/Elizabeth begin Al/El, not A/E.
-    return word.slice(0, nucleusEnd + keep) || word;
+    const consonants = word.slice(nucleusEnd, nextVowel); // Consonants between the first two vowel nuclei.
+    const firstConsonant = /^(?:ng|ch|sh|th|ph|kh|wh|gh|rh)/i.exec(consonants)?.[0] || consonants[0]; // Keep digraphs intact, otherwise one consonant.
+    return word.slice(0, nucleusEnd + firstConsonant.length); // Masculine friend nickname retains the next consonant.
   }
 
-  function forRelationship(name, relation = 'other') {
-    const full = givenName(name); // Stable fallback for non-friends and single-syllable names.
+  function forRelationship(name, relation = 'other', gender = 'female') {
+    const full = givenName(name); // Neutral acquaintances retain their unchanged given name.
     if (relation !== 'friend' && relation !== 'affectionate') return full;
-    const short = firstSyllable(full); // Shared friend and affectionate stem.
-    if (relation !== 'affectionate' || short === full || /y$/i.test(short)) return short;
-    // A short vowel + single final consonant takes the familiar English doubled spelling: Ben -> Benny.
-    const doubles = /[aeiou][bdfgkmnptsz]$/i.test(short) && !/[aeiou][aeiou][bdfgkmnptsz]$/i.test(short);
-    return short + (doubles ? short.slice(-1) : '') + 'y';
+    const short = firstSyllable(full, relation === 'affectionate' ? 'male' : gender); // Spouse/date always retains the next consonant, even for females.
+    return relation === 'affectionate' && short ? short + 'y' : short; // Adds y even when the original has only one syllable.
   }
 
   function isAffectionateSpeaker(npcId) {
@@ -61,10 +55,11 @@
   function addressPlayer(name, speakerId, options = {}) {
     const full = String(name || '').trim(); // Preserve the player's chosen full name for neutral acquaintances.
     if (!full) return '';
-    if (isAffectionateSpeaker(speakerId)) return forRelationship(full, 'affectionate');
+    const gender = options.gender || window.__hobunjiPlayerProfile?.appearance?.gender || 'female'; // Target player's gender, never the speaker's.
+    if (isAffectionateSpeaker(speakerId)) return forRelationship(full, 'affectionate', gender);
     const custom = String(options.customNickname || '').trim(); // Authored per-NPC nicknames outrank automatic friend shortening.
     if (custom && custom !== full) return custom;
-    return Number(options.favor) >= FRIEND_HEARTS ? forRelationship(full, 'friend') : full;
+    return Number(options.favor) >= FRIEND_HEARTS ? forRelationship(full, 'friend', gender) : full;
   }
 
   function npcBond(speakerId, targetId) {
@@ -76,10 +71,10 @@
     return null;
   }
 
-  function preview(name, speakerId, favor = 0) {
-    return { givenName: givenName(name), firstSyllable: firstSyllable(name),
-      friend: forRelationship(name, 'friend'), affectionate: forRelationship(name, 'affectionate'),
-      address: addressPlayer(name, speakerId, { favor }), spouseId: window.RomanceSystem?.getSpouse?.()?.npcId || null,
+  function preview(name, speakerId, favor = 0, gender = 'female') {
+    return { givenName: givenName(name), gender, firstSyllable: firstSyllable(name, gender),
+      friend: forRelationship(name, 'friend', gender), affectionate: forRelationship(name, 'affectionate', gender),
+      address: addressPlayer(name, speakerId, { favor, gender }), spouseId: window.RomanceSystem?.getSpouse?.()?.npcId || null,
       lastDatedId: window.RomanceSystem?.getLastDatedNpcId?.() || null, friendHeartsThreshold: FRIEND_HEARTS };
   }
 
