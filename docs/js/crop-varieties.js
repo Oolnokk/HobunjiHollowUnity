@@ -252,6 +252,28 @@
     });
     return family ? NATIVE_COLORS[family] : null; // Same ripe pigment used by native planted/harvested vegetables.
   }
+  function breedingOutcomeChance(firstKey, secondKey, targetKey) {
+    const family = produceFamily(firstKey); // The seed maker only accepts harvested parents of the same crop family.
+    if (!family || family !== produceFamily(secondKey)) return 0;
+    const first = genesFor(firstKey), second = genesFor(secondKey), target = genesFor(targetKey); // Uses the breeder's exact two-allele parent genomes.
+    if (!first || !second || !target || target.family !== family) return 0;
+    const pigment = mixHex(colorOf(firstKey), colorOf(secondKey)).toString(16).padStart(6, '0'); // Pigment never mutates; it is the exact midpoint of two parent colors.
+    const nativeFallback = firstKey === family && secondKey === family && targetKey === family;
+    if (!nativeFallback && target.colorHex !== pigment) return 0;
+    const inherited = [
+      [first.genes[0], first.genes[1]], [second.genes[0], second.genes[1]],
+      [first.genes[2], first.genes[3]], [second.genes[2], second.genes[3]],
+      [first.genes[4], first.genes[5]], [second.genes[4], second.genes[5]],
+    ]; // Mirrors six independent 50:50 parent-pick calls in breed().
+    const probabilities = inherited.map((alleles,index) => (Number(alleles[0] === target.genes[index]) + Number(alleles[1] === target.genes[index])) / 2);
+    const ordinary = probabilities.reduce((product,p) => product * p,1); // No-mutation probability for the exact six-digit child genotype.
+    const mutation = probabilities.reduce((sum,_,locus) => sum +
+      probabilities.reduce((product,p,index) => product * (index === locus ? 1 : p),1),0)
+      / (6 * REGIONS.length); // 1/6 locus × 1/REGIONS.length allele; mutation can coincidentally restore a gene.
+    const chance = (1 - BREED_MUTATION_CHANCE) * ordinary + BREED_MUTATION_CHANCE * mutation;
+    return nativeFallback ? (target.genes === '000000' ? chance : 0)
+      : Math.max(0, Math.min(1, chance));
+  }
   function rarityProfile(key) {
     const id = String(key || ''); // Current produce or seed item key, including inherited pigment suffixes.
     const parsed = fromItemKey(id); // Saved gene codes use the same parser as real crop planting and breeding.
@@ -282,6 +304,6 @@
     const a = produceFamily(firstKey), b = produceFamily(secondKey); // Incompatible crop species cannot mix.
     return a && a === b ? mixHex(colorOf(firstKey), colorOf(secondKey)) : null;
   }
-  window.CropVarieties = Object.freeze({ REGIONS, FAMILIES, attach, ensure, hydrate, registered, refreshBrushes, offers, produceFamily, breed, rarityProfile, details, colorOf, seedColorOf, blendedColor,
+  window.CropVarieties = Object.freeze({ REGIONS, FAMILIES, attach, ensure, hydrate, registered, refreshBrushes, offers, produceFamily, breed, breedingOutcomeChance, rarityProfile, details, colorOf, seedColorOf, blendedColor,
     get lastChange() { return lastChange; } }); // Exposed for mobile production diagnostics and regression tests.
 })();
