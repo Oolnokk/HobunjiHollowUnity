@@ -2782,9 +2782,9 @@ async function bakeStatuePiece({poseKey='neutral',includeWeapon=true,name='Carve
     editorLegs?.update?.(0,0,true,null,{});
     await new Promise(resolve=>requestAnimationFrame(resolve)); // Let existing hand/weapon frame owners settle before freezing the rig.
     if(previewT!==sample)throw Error('The editor pose changed during the statue capture.');
-    applyPoseToRig(anim.poses[poseKey]); // Reassert the exact authored phase after the frame owner synchronizes the grips.
-    window.HobunjiWeaponSpriteAssemblies?.setAction?.(toolPlaneMesh,{attacking:false,progress:0,movementPosition:rig.position});
-    window.HobunjiWeaponSpriteAssemblies?.tick?.(0);
+    replayPreviewFlail(sample); // Existing deterministic swing reconstruction fixes chain/head at the authored phase, not an idle droop.
+    applyPoseToRig(anim.poses[poseKey]); // Reassert the exact authored phase after the hand/weapon frame owner synchronizes.
+    updatePreviewFlail(sample,0); // Reanchor the rope after the exact keyframe without advancing simulated time.
     rig.updateMatrixWorld(true);
     const capture=(root,weapon=false)=>{
       root?.traverse(node=>{
@@ -2837,7 +2837,7 @@ async function bakeStatuePiece({poseKey='neutral',includeWeapon=true,name='Carve
     selectEditPhase(previousPhase,{focus:false});
     $('scrub').value=previousT;
     updateTimelineMarker(previousT);
-    try{applyPoseToRig(poseAt(previousT).pose);}catch(error){logDebug('Restoring preview after statue export failed: '+error.message);}
+    try{replayPreviewFlail(previousT);applyPoseToRig(poseAt(previousT).pose);}catch(error){logDebug('Restoring preview after statue export failed: '+error.message);}
   }
 }
 window.HobunjiStatuePoseSource=Object.freeze({
@@ -2880,6 +2880,16 @@ function updatePreviewFlail(sampleT, sampleDt) {
   }); // Shared runtime keeps gravity through windup, straightens during strike, and releases physical momentum during Hold.
   window.HobunjiWeaponSpriteAssemblies?.tick(sampleDt); // No gameplay scheduler runs in the standalone ESM preview.
 }
+function replayPreviewFlail(targetT) {
+  applyPoseToRig(poseAt(0).pose);
+  updatePreviewFlail(0,0);
+  const steps=Math.ceil(targetT*Math.max(.05,anim.durationS)*120); // The same 120Hz deterministic replay as the existing paused-scrub preview.
+  for(let step=1;step<=steps;step++){
+    const t=targetT*step/steps;
+    applyPoseToRig(poseAt(t).pose);
+    updatePreviewFlail(t,Math.max(.05,anim.durationS)*targetT/steps);
+  }
+}
 
 let lastFrameTime = performance.now();
 function animate() {
@@ -2901,14 +2911,7 @@ function animate() {
   controls.update();
   const flailPreviewChanged = previewT !== lastFlailPreviewT; // Paused scrubbing reconstructs momentum from the complete preceding swing.
   if (!playing && flailPreviewChanged) {
-    applyPoseToRig(poseAt(0).pose);
-    updatePreviewFlail(0, 0);
-    const replaySteps = Math.ceil(previewT * Math.max(0.05, anim.durationS) * 120); // Same physical timeline at 120 Hz, including direct seeks into Hold.
-    for (let step = 1; step <= replaySteps; step++) { // Only replay on a changed scrub position, never continuously while paused.
-      const sampleT = previewT * step / replaySteps; // Normalized replay time supplies both pose and connector input.
-      applyPoseToRig(poseAt(sampleT).pose);
-      updatePreviewFlail(sampleT, Math.max(0.05, anim.durationS) * previewT / replaySteps);
-    }
+    replayPreviewFlail(previewT); // Same shared reconstruction used by the Statue Author; no duplicated flail solver.
     refreshPreviewDebug(); // Existing mobile debug panel shows the reconstructed physical state.
   } else updatePreviewFlail(previewT, playing ? dt : 0);
   lastFlailPreviewT = previewT;
