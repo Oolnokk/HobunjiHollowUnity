@@ -203,6 +203,12 @@ async function check(){
   const wildBirds=[...hostileObjects].filter(a=>a.creatureKey==='pingdort');
   assert.equal(wildBirds.length,3,'one nearby nest supports one three-bird hunting flock');
   assert(wildBirds.every(a=>a.genotype?.base?.color==='#aaaaaa'),'individual coats are genotype-driven');
+  const homeNest=w.PingdortFlocks.nestRecords(area)[0]; // The nest's inherited bloodline is authoritative for all three birds.
+  assert(wildBirds.every(bird=>JSON.stringify(bird.genotype)===JSON.stringify(homeNest.genotype)),
+    'every home-point guardian has the exact fertile-egg genotype, including Size');
+  const savedLineage=[...storage.entries()].find(([key])=>key.startsWith('pingdort:family:unit:map_southern_cloud_forest:'));
+  assert(savedLineage&&JSON.stringify(JSON.parse(savedLineage[1]))===JSON.stringify(homeNest.genotype),
+    'the family genotype survives a streamed nest rebuild and page reload');
   assert(wildBirds.every(a=>a.branchSurfaceY>=12.5),'all roosting birds remain above their raised shelf, not buried in terrain');
   const nest=w.PingdortFlocks.debugSnapshot().habitats[0].nests[0];
   assert.equal(nest.y,12.5,'nest visuals and egg records use the physical minicliff elevation');
