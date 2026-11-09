@@ -34,7 +34,7 @@
   }
 
   localSave.loadFromFolder = async (...args) => {
-    const guarded = festivalTestSaveGuard(); // A manual import must not replace the disposable test state while its reward journal is active.
+    const guarded = festivalTestLoadGuard(); // Importing over an unfinished restore would discard journaled rewards.
     if (guarded) return guarded;
     return withFolderLock(async () => {
     const result = await rawLoadFromFolder(...args);
@@ -44,6 +44,12 @@
     return result;
     });
   };
+
+  function festivalTestLoadGuard() {
+    const phase = window.HobunjiQuickSave?.festivalStatus?.().phase; // Any unfinished festival recovery must remain authoritative until finalized.
+    if (!phase || phase === 'idle') return null;
+    return { ...localSave.getStatus(), ok: false, lastError: 'Finish Festival Test restoration before importing from the primary folder.', message: 'Restore the original world before loading another save.' };
+  }
 
   function festivalTestSaveGuard() {
     const phase = window.HobunjiQuickSave?.festivalStatus?.().phase; // Prevent explicit folder saves from persisting an isolated festival preview.
