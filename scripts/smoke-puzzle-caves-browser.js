@@ -136,11 +136,12 @@ async function main(){
         if(music.glyphs.length!==music.song.notes.length||
           !(music.inscription?.group.visible||music.scorePanel?.visible))
           throw Error('The full glowing Scratchbone clue did not appear on the fixed wall while standing on the plate');
-        if(!music.inscription||!music.inscription.diagnostics().vertical)
+        const scoreDiagnostics=music.inscription?.diagnostics(); // The cave gate scores two freestanding pillars, each with one upright note column.
+        if(scoreDiagnostics?.kind!=='pillarPair'||scoreDiagnostics.columns.length!==2||!scoreDiagnostics.columns.every(column=>column?.vertical))
           throw Error('The production melody decal system failed to mount the score on an upright stone face');
-        const fittedWidth=music.inscription.diagnostics().width*music.inscription.group.scale.x;
-        if(fittedWidth>(room.w-4.78)/2-.25)
-          throw Error('The generated score overhangs the rough cave wall flank and may clip out of the rock');
+        for(const post of scoreDiagnostics.posts)
+          if(post.x<room.x+.5||post.x>room.x+room.w-.5)
+            throw Error('A score pillar sits outside the cave room and may clip out of the rock');
         let elapsed=0;
         for(let index=0;index<music.song.notes.length;index++){
           const note=music.song.notes[index],target=(note.startTick+.10)*music.song.secondsPerTick;
