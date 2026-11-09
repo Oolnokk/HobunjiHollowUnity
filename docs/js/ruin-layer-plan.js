@@ -46,7 +46,7 @@
       tier,
     };
   }
-  const PLAYABLE_PUZZLES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain','statueDefense','findBlocks']); // Shared by composer and acceptance proof.
+  const PLAYABLE_PUZZLES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','timedMelody','dungeonFire','ropeChain','statueDefense','findBlocks']); // Shared by composer and acceptance proof.
   const RANGED_PUZZLES=Object.freeze(['glyphObelisk','ceilingRailTargets']); // Every wing includes at least one actual ranged stage.
   const DEFAULTS=Object.freeze({
     spacing:64, // World cells between invisible multi-floor anchor slots; normal rooms fit between them.
