@@ -1,7 +1,7 @@
 'use strict';
 // Playwright drives the ACTUAL generated multi-story V50 floor records.
 // This is an instrumented solvability test: it performs authored control
-// callbacks, registered projectile-hit callbacks and menu note-result events,
+// callbacks, registered projectile-hit callbacks and player-note events,
 // while checking planar floor routes and physical CellGrid3D gate voxels.
 // It does not pretend to test weapon aim, the flute performance UI or real-time
 // manual climbing. Those need separate controller-level browser playthroughs.
@@ -268,12 +268,27 @@ module.exports=async function runNativeV50Playthrough(page){
         if(!stage.fireLinked||!stage.fireRecord?.isActive?.())fail('native fire-ice challenge did not register a real reactive target',record,stage);
         stage.fireRecord.onBurn(); // Tests production fire target completion; weapon fire-stream collision is verified by separate DungeonFire suites.
         steps.push({floor:record.floor,stage:stage.id,event:'registered-fire-contact-callback'});
-      }else if(stage.kind==='melodyEcho'){
-        const music=window.MusicMinigame;
-        if(!Array.isArray(stage.notes)||stage.notes.length<3)fail('authored Scratchbone echo has no sequence',record,stage);
-        window.dispatchEvent(new CustomEvent('hobunji-ruin-melody-result',{detail:{id:stage.id,solved:true}})); // Explicitly a completed-phrase event injection, NOT proof of actual flute input.
-        steps.push({floor:record.floor,stage:stage.id,event:'simulated-completed-melody-event',notes:stage.notes.slice()});
-        music?.close?.();
+      }else if(stage.kind==='timedMelody'){
+        const song=stage.song,session=stage.session; // The live authored score, not an obsolete completion-event shortcut.
+        if(!song?.notes?.length||!session?.snapshot||!session?.note)
+          fail('authored timed Scratchbone score is missing its judge',record,stage);
+        await advance(1); // Occupy the physical plate and start the shared metronome.
+        if(!session.snapshot().standing)
+          fail('physical melody plate did not arm its timed judge',record,stage,{plate:stage.melodyPlate});
+        for(let index=0;index<song.notes.length;index++){
+          const note=song.notes[index],target=(note.startTick+.3)*song.secondsPerTick;
+          const frames=Math.max(0,Math.ceil((target-session.snapshot().elapsed)/.05)); // Use actual stage ticks; never force a solved flag.
+          if(frames)await advance(frames);
+          const before=session.snapshot();
+          if(before.activeIndex!==index)
+            fail('timed Scratchbone note window was missed',record,stage,{index,before,note});
+          window.dispatchEvent(new CustomEvent('hobunji-kurraya-puzzle-note',{
+            detail:{area:'map_i_dev_random_ruin',noteIndex:note.index}
+          })); // The real ordinary-instrument event bridge, guarded by map, current floor and plate occupancy.
+          if(session.snapshot().progress!==index+1)
+            fail('correctly timed instrument note was rejected',record,stage,{index,note,after:session.snapshot()});
+        }
+        steps.push({floor:record.floor,stage:stage.id,event:'real-timed-melody-judge',bpm:song.bpm,notes:song.notes.length});
       }else if(stage.kind==='ropeChain'){
         if(!stage.ropeLinked)fail('V50 rope physics never registered',record,stage);
         await put(stage.ropeSpec.exit,record,stage);
