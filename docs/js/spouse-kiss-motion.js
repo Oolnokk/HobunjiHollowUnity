@@ -34,7 +34,11 @@
     const hipHeight = clamp(finite(options.tallerHipHeightWorld, tall * .28), .001, tallMouth); // Ground-to-posterior height from the real leg handle.
     const legLength = Math.max(.001, finite(options.tallerLegLengthWorld, hipHeight)); // Anatomical leg length controls actual stance limits.
     const kneeLimit = Math.min(legLength * KNEEL_LEG_FRACTION, tall * MAX_SINK_PCT / 100);
-    const requestedDrop = Math.max(0, tallMouth - shortMouth);
+    const mouthDrop = Math.max(0, tallMouth - shortMouth); // Full difference between the two skinned B'shuakauitl lip landmarks.
+    const authoredMouthHeights = Number.isFinite(Number(options.firstMouthHeightWorld)) &&
+      Number.isFinite(Number(options.secondMouthHeightWorld)); // Only real lip landmarks authorize the head-reach allowance.
+    const headReachWorld = authoredMouthHeights ? Math.min(short * .18, mouthDrop * .4) : 0; // Let the real neck bones close a modest remainder so the tall spouse needn't bow excessively.
+    const requestedDrop = Math.max(0, mouthDrop - headReachWorld);
     let kneeDrop = Math.min(requestedDrop, kneeLimit); // Ordinary couples keep the existing grounded kneel.
     const torsoLength = Math.max(.001, tallMouth - hipHeight);
     const maxBow = MAX_BOW_DEG * Math.PI / 180;
@@ -91,7 +95,8 @@
     const remainingGap = Math.max(0, requestedDrop - kneeDrop - bowDrop - shorterJumpWorld);
     return {
       taller, firstHeight: first, secondHeight: second,
-      firstMouthHeightWorld: firstMouth, secondMouthHeightWorld: secondMouth, // Expose the actual lip heights in preview/debug.
+      firstMouthHeightWorld: firstMouth, secondMouthHeightWorld: secondMouth,
+      headReachWorld, mouthDropWorld: mouthDrop, // Height solver leaves this bounded remainder to the shared skinned-head contact solver.
       mouthHeightRatio: MOUTH_HEIGHT_FRACTION,
       tallerSinkWorld: kneeDrop, tallerSinkPct: kneeDrop / tall * 100,
       shorterSinkPct: 0, tallerBowDeg: bowRad * 180 / Math.PI,
@@ -543,6 +548,7 @@
     const contactGap = Math.min(dist, height.shorterPosteriorGrip
       ? Math.min(normalGap, Math.max(.006, jumpGap)) : normalGap); // Only a mounted posterior contact approaches closer than the normal collision-safe kiss.
     const approach = Math.max(0, dist - contactGap); // Move only the spouse, so player collider and camera stay stable.
+    const boundedBowRetreat = Math.min(height.tallerBowForwardWorld, Math.max(.04, shortAnatomy.legLengthWorld * .25)); // Preserve close enough shoulders for a real two-arm hold while bowing.
     const approachX = dist > .0001 ? (playerPoint.x - npcPoint.x) * approach / dist : 0;
     const approachZ = dist > .0001 ? (playerPoint.z - npcPoint.z) * approach / dist : 0;
     // A bow swings the mouth forward. The taller body needs room to retreat
@@ -606,7 +612,7 @@
       approachX, approachZ, height, lock, onContact, touched: false, elapsed: 0,
       // Tall torso bows forward around the posterior. The partner's feet retreat by
       // the head's horizontal reach so the two mouths remain in the same contact spot.
-      bowRetreatWorld: height.tallerBowForwardWorld,
+      bowRetreatWorld: boundedBowRetreat, // Do not withdraw the recipient's whole torso beyond the initiating arms' reach.
       headingPlayer: Math.atan2(npcPoint.x - playerPoint.x, npcPoint.z - playerPoint.z),
       headingNpc: Math.atan2(playerPoint.x - npcPoint.x, playerPoint.z - npcPoint.z),
     };
