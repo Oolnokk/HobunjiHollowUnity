@@ -46,13 +46,14 @@ for (const [x, y] of [[1, 1], [3, 1], [2, 2], [4, 3], [3, 4], [5, 4]]) {
   pixels[(y * 6 + x) * 4 + 3] = 255;
 }
 let imageDrawn = null; // The fake canvas stores the last requested image to exercise its alpha scan.
+let imageDraws = 0; // Count source-image copies so the opaque rope artwork is scanned only once per actor-shared image.
 const document = {
   currentScript: { src: 'https://example.test/js/weapon-sprite-assemblies.js' },
   createElement: type => {
     assert.equal(type, 'canvas');
     return {
       getContext: () => ({
-        drawImage(image) { imageDrawn = image; },
+        drawImage(image) { imageDrawn = image; imageDraws++; },
         getImageData() { return { data: imageDrawn.pixels }; },
       }),
     };
@@ -72,6 +73,12 @@ const first = api.opaqueAt(image, 'top'); // Highest nontransparent row, horizon
 const last = api.opaqueAt(image, 'bottom'); // Lowest nontransparent row, horizontal center of the opaque pixels.
 assert.equal(first.x, 2); assert.equal(first.y, 1);
 assert.equal(last.x, 4); assert.equal(last.y, 4);
+const beforeRopeScan = imageDraws; // Transparent padding is present around the fake rope's 1..5 x and 1..4 y alpha bounds.
+const visibleRope = JSON.parse(JSON.stringify(api.ropeOpaqueBounds(image)));
+assert.deepEqual(visibleRope,{minX:1,minY:1,maxX:5,maxY:4},'visible alpha bounds exclude transparent padding at both rope ends');
+assert.equal(imageDraws,beforeRopeScan+1,'first rope inspection scans the PNG');
+api.ropeOpaqueBounds(image);
+assert.equal(imageDraws,beforeRopeScan+1,'subsequent flails reuse cached sprite bounds without scanning again');
 assert.equal(api.anchor(image, { x: 5, y: 2 }, 'top').x, 5); // Explicit artist coordinates override edge detection.
 assert.equal(api.anchor(image, { x: -100, y: 99 }, 'top').y, 5); // Out-of-bounds authored anchors clamp safely.
 assert.equal(api.definitionFor('plain', { spriteLayers: [{ sprite: 'assets/toolsprites/example.png' }] }).layers.length, 1);
@@ -83,7 +90,11 @@ assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.head.scale, 2.5);
 assert.equal(api.definitionFor('grappleFlail', {}).flail.chain.scaleX, 5.25);
 assert.equal(api.definitionFor('grappleFlail', {}).flail.chain.scaleY, 3.75);
 assert.equal(api.definitionFor('grappleFlail', {}).flail.chain.sprite,'assets/objectsprites/rope_long.png');
-const sizes = api.ropeSpriteSizing(api.definitionFor('grappleFlail', {}).flail.chain, .5 / 450, 152 / 2164); // Exact game unit size and PNG aspect.
+const sizes = api.ropeSpriteSizing(api.definitionFor('grappleFlail', {}).flail.chain, .5 / 450, 152 / 2164); // Nominal game units; actual rendering uses the cropped visible aspect.
+const visibleAspect = (visibleRope.maxX-visibleRope.minX+1)/(visibleRope.maxY-visibleRope.minY+1); // Compare a trimmed PNG's art extent, not its padded canvas.
+const visibleSizing = api.ropeSpriteSizing(api.definitionFor('grappleFlail', {}).flail.chain, .5 / 450, visibleAspect);
+assert(Math.abs(visibleSizing.widthScale * visibleAspect * 3.75 - 26.25 * (.5 / 450)) < 1e-10,'trimmed rope keeps original world thickness');
+assert(Math.abs(visibleSizing.length * 3.75 - 600 * (.5 / 450)) < 1e-10,'trimmed rope keeps both physical endpoints');
 assert(Math.abs(sizes.lengthPx - 600) < 1e-10,'original 600-pixel chain reach survives the art swap');
 assert(Math.abs(sizes.diameterPx - 26.25) < 1e-10,'original 26.25-pixel thickness survives the art swap');
 assert(Math.abs(sizes.widthScale * (152 / 2164) * 3.75 - 26.25 * (.5 / 450)) < 1e-10,'billboard width compensates for uniform Y scaling');
