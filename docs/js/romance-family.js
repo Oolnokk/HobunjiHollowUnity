@@ -48,14 +48,16 @@
     const spouse = R?.getSpouse?.();
     if (spouse?.npcId === workerId) {
       if (fam.spouseUsefulness?.npcId !== workerId) fam.spouseUsefulness = { npcId: workerId, level: Math.max(1, num(usefulnessCfg().adultStartLevel, 2)), xp: 0 }; // One saved stat per spouse.
+      if (!(num(fam.spouseUsefulness.level, 0) >= 1)) fam.spouseUsefulness.level = Math.max(1, num(usefulnessCfg().adultStartLevel, 2)); // Repair malformed/legacy ranks before awarding work XP.
+      if (!(num(fam.spouseUsefulness.xp, -1) >= 0)) fam.spouseUsefulness.xp = 0;
       return { record: fam.spouseUsefulness, stage: 'adult', multiplier: num(usefulnessCfg().intelligenceXpMultiplier?.adult, 1) };
     }
     const child = fam.children.find(entry => entry.id === workerId);
     if (!child) return null;
     const phase = phaseOf(child);
     if (phase === 'basket') return null;
-    if (!Number.isFinite(Number(child.usefulnessLevel))) child.usefulnessLevel = Math.max(1, num(usefulnessCfg().youngStartLevel, 1));
-    if (!Number.isFinite(Number(child.usefulnessXp))) child.usefulnessXp = 0;
+    if (!(num(child.usefulnessLevel, 0) >= 1)) child.usefulnessLevel = Math.max(1, num(usefulnessCfg().youngStartLevel, 1));
+    if (!(num(child.usefulnessXp, -1) >= 0)) child.usefulnessXp = 0;
     return { record: child, stage: phase, multiplier: num(usefulnessCfg().intelligenceXpMultiplier?.[phase], phase === 'toddler' ? 0.25 : 0.5) };
   }
   function usefulnessInfo(workerId) {
@@ -498,7 +500,7 @@
   function onNewDay() {
     const spouse = R.getSpouse();
     const workers = fam.children.filter(child => child.vatId && phaseOf(child) !== 'basket').map(child => ({ id: child.id, name: child.name, vatId: child.vatId }));
-    if (spouse?.npcId && fam.spouseVatId) workers.push({ id: spouse.npcId, name: H.npcName(spouse.npcId), vatId: fam.spouseVatId });
+    if (spouse?.npcId && fam.spouseVatId && !spouseHoldingEgg()) workers.push({ id: spouse.npcId, name: H.npcName(spouse.npcId), vatId: fam.spouseVatId }); // An egg-tending spouse rests rather than squeezing.
     for (const worker of workers) {
       const status = window.DewVats?.squeezePileWithExternalWorker?.(worker.vatId);
       if (status === 'started') {
@@ -772,6 +774,8 @@
   }
   function serialize() { return JSON.parse(JSON.stringify(fam)); }
   function restore(saved) {
+    closeUi(); // A naming/dream dialog belongs to the former character/world, not the one being loaded.
+    window.DewVats?.clearFamilyWorkers?.(); // Remove stale assignments before rehydrating the newly loaded family's vats.
     fam = saved && typeof saved === 'object'
       ? { ...defaultFamily(), ...saved, children: Array.isArray(saved.children) ? saved.children.map(child => ({ ...child })) : [] }
       : defaultFamily();
