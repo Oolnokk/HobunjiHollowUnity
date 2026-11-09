@@ -467,7 +467,7 @@
         remainingSites:measured?(row?.remaining ?? 0):null,
         chancePerRandomGeneratedReagent:measured && census.generatedTotal>0 ? (row?.generated || 0)/census.generatedTotal : null,
         chancePerRandomRemainingReagent:measured && census.remainingTotal>0 ? (row?.remaining || 0)/census.remainingTotal : null,
-        zoneTileDensity:census?.generatedPlantsPerMapTile ?? null,
+        zoneTileDensity:measured ? census.generatedPlantsPerMapTile ?? null : null, // A stale daily scatter is history, not today's abundance.
         certainty:measured?'exact persisted current-day habitat placements':'eligible habitat known; no current-day generated sample'};
     }
     const config = G.SCRATCHBONES_CONFIG?.game || {};
@@ -488,8 +488,10 @@
       const census = G.RuinSites?.sourceCensus?.(zoneId);
       return {key,sourceKind:'ruin-artifact',zoneId,
         observedRegisteredCliffSites:census?.registeredCliffSites ?? null,
+        observedUnspentCliffSites:census?.unspentCliffSites ?? null,
         observedThemes:census?.byTheme || null,knownGuardianTiers:census?.byTier || null,
         themeSharePerRegisteredSite:census?.themeSharePerRegisteredSite || null,
+        themeSharePerUnspentSite:census?.themeSharePerUnspentSite || null,
         buriedHoleChancePerTreasureLocation:census?.buriedHoleChancePerTreasureLocation ?? null,
         certainty:'registered ruin traditions and conditional chest odds are separate; boss tier first-entry assignment remains unknown'};
     }
