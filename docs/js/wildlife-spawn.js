@@ -1934,6 +1934,18 @@
     const herdSlots = Math.max(0,Math.floor(Number(config.roamingHerdCount)||0));
     const herdSpeciesChance = {};
     for (const species of herdSpecies) herdSpeciesChance[species] = (herdSpeciesChance[species]||0) + 1/herdSpecies.length;
+    const treeSelection = _nestTreeSelectionCache.get(zoneId); // Actual Drenkirra branch decisions; don't force eligibleNestBranches and accidentally change stream-time nest placement.
+    const treeNestSites = treeSelection ? {known:true,selected:treeSelection.length,
+      alive:treeSelection.filter(tree=>isNestTreeAlive(nestTreeKeyFor(zoneId,tree))).length} : {known:false,selected:null,alive:null};
+    const pingdort = window.PingdortFlocks?.debugSnapshot?.()?.habitats?.find(h=>h.area===zoneId);
+    const pingdortNests = pingdort ? {known:true,sites:pingdort.nests?.length || 0,
+      remainingEggs:(pingdort.nests || []).reduce((sum,n)=>sum+Math.max(0,Number(n.remaining)||0),0)} : {known:false,sites:null,remainingEggs:null};
+    const roost = window.TzatzulCliffSites?.snapshot?.()?.areas?.find(a=>a.area===zoneId);
+    const tzatzulRoosts = roost ? {known:true,sites:roost.count} : {known:false,sites:null};
+    const hiveData = zoneId === deps.getCurrentArea?.() ? window.HoneyfuzzleHives?.census?.() : null;
+    const honeyfuzzleHives = hiveData?.zoneId === zoneId ? {known:true,sites:hiveData.hives.length,
+      standing:hiveData.hives.filter(h=>h.standing).length} : {known:false,sites:null,standing:null};
+    const surfaceNestSources = {drenkirraTreeNests:treeNestSites,pingdortNests,tzatzulRoosts,honeyfuzzleHives}; // Different nest owners publish independent real counts; unloaded types remain unknown.
     const mapTiles = Number(layout.cols)*Number(layout.rows); // Per generated-zone tile density, not a per-encounter probability.
     return {zoneId,known:true,animalDens:dens.length,bySpecies,
       mapTiles:Number.isFinite(mapTiles) && mapTiles > 0 ? mapTiles : null,
@@ -1941,6 +1953,7 @@
       denSpeciesChance:Object.fromEntries(Object.entries(bySpecies).map(([kind,row])=>[kind,dens.length?row.total/dens.length:null])),
       roamingHerdSlots:herdSlots,roamingSpeciesChancePerSlot:herdSpeciesChance,
       nestTreeTarget:Math.max(1,Math.min(NEST_TREE_MAX_PER_ZONE,dens.length || NEST_TREE_MAX_PER_ZONE)),
+      surfaceNestSources,
       certainty:'real generated den roster; surface-herd species odds conditioned on each spawn slot',
       caution:'Wildlife population alive right now is not the same as world-wide encounter or capture success'};
   }
