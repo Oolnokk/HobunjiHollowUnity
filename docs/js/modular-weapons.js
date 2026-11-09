@@ -372,7 +372,7 @@
     if (head.flailAssembly) {
       const mount = matchingMounts(shaft, head)[0]; // Head-owned rope begins at the selected haft's matching socket, not its original weapon.
       if (!mount) return null;
-      recipe.flail.haftAnchor = { ...mount.start };
+      recipe.flail.haftAnchor = shaft.flailHaftAnchor || { ...mount.start }; // Optional shaft-local contact is edited beside the fitting arrow.
     } else {
       recipe.flail.haftAnchor = shaft.flailHaftAnchor || recipe.flail.haftAnchor; // Haft-owned rope retains the original authored point unless explicitly overridden.
       recipe.flail.head = {
@@ -418,7 +418,7 @@
         };
         head.toolSlots = [...new Set((Array.isArray(raw.toolSlots) ? raw.toolSlots : head.toolSlots || [])
           .filter(slot => UTILITY_SLOTS.has(slot)))]; // Whitelist real tool slots so malformed JSON cannot create arbitrary equipment types.
-        head.flailAssembly = flailTemplate(raw.flailAssembly) ? raw.flailAssembly : (head.flailAssembly || null);
+        if (Object.hasOwn(raw, 'flailAssembly')) head.flailAssembly = flailTemplate(raw.flailAssembly) ? raw.flailAssembly : null; // Clearing an authored rope link must work.
         if (raw.flailHeadAnchor) head.flailHeadAnchor = point(raw.flailHeadAnchor);
         head.flailHeadScale = finite(raw.flailHeadScale, head.flailHeadScale || 1, 0.05, 8);
       }
@@ -431,7 +431,7 @@
         shaft.namePosition = raw.namePosition;
         shaft.nameAffix = partText(raw.nameAffix, shaft.nameAffix || shaft.label);
         shaft.toolWorthy = raw.toolWorthy === true;
-        shaft.flailAssembly = flailTemplate(raw.flailAssembly) ? raw.flailAssembly : (shaft.flailAssembly || null);
+        if (Object.hasOwn(raw, 'flailAssembly')) shaft.flailAssembly = flailTemplate(raw.flailAssembly) ? raw.flailAssembly : null; // Unlinking restores ordinary rigid assembly.
         if (raw.flailHaftAnchor) shaft.flailHaftAnchor = point(raw.flailHaftAnchor);
       }
       shaft.rigRegions = cleanRigRegions(raw.rigRegions || shaft.rigRegions); // Region selections are validated and persist in exported drafts.
