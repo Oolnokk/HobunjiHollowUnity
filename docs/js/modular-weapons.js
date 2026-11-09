@@ -403,15 +403,20 @@
     if (typeof id !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(id)) return null;
     return global.WEAPON_SPRITE_ASSEMBLY_CONFIG && !flailTemplate(id) ? null : id; // Preserve saved assembly IDs when their optional visual registry has not loaded yet.
   }
-  function cleanBores(raw) {
+  function cleanBores(raw, previousAnchor = null) {
     if (!Array.isArray(raw)) return [];
     const ids = new Set(); // Stable bore identities drive selection, undo and regenerated previews without mixing one aperture with another.
     return raw.slice(0, 12).flatMap((item, index) => {
       if (!item || typeof item !== 'object') return [];
       const id = /^[a-z0-9_-]{1,40}$/i.test(String(item.id || '')) ? String(item.id) : 'bore-' + (index + 1);
       if (ids.has(id)) return []; ids.add(id);
-      return [{ id, offsetX: finite(item.offsetX, 0, -450, 450),
-        offsetY: finite(item.offsetY, 0, -1204, 1204),
+      const oldX = Number(item.x), oldY = Number(item.y); // Historical drafts stored absolute hole centers instead of connector-relative offsets.
+      const offsetX = Number.isFinite(item.offsetX) ? item.offsetX
+        : (Number.isFinite(oldX) && previousAnchor ? oldX - previousAnchor.x : 0);
+      const offsetY = Number.isFinite(item.offsetY) ? item.offsetY
+        : (Number.isFinite(oldY) && previousAnchor ? oldY - previousAnchor.y : 0);
+      return [{ id, offsetX: finite(offsetX, 0, -450, 450),
+        offsetY: finite(offsetY, 0, -1204, 1204),
         rx: finite(item.rx, 10, 2, 160), ry: finite(item.ry, 10, 2, 160), // Defaults are 20px width/height, not 20px radii.
         rotation: finite(item.rotation, 0, -360, 360),
         rim: finite(item.rim, 5, 0.5, 24), outline: finite(item.outline, 3, 1, 12),
@@ -531,7 +536,6 @@
         if (Object.hasOwn(raw, 'flailAssembly')) shaft.flailAssembly = cleanFlailReference(raw.flailAssembly); // Unlinking restores ordinary rigid assembly.
         if (raw.flailHaftAnchor) shaft.flailHaftAnchor = point(raw.flailHaftAnchor);
       }
-      shaft.bores = cleanBores(Object.hasOwn(raw, 'bores') ? raw.bores : shaft.bores); // Optional whole-haft, non-destructive apertures survive browser draft/import/export.
       shaft.rigRegions = cleanRigRegions(raw.rigRegions || shaft.rigRegions); // Region selections are validated and persist in exported drafts.
       shaft.shaftArtTransform = { ...duplicateTransform(raw.shaftArtTransform || shaft.shaftArtTransform),
         enabled: (raw.shaftArtTransform || shaft.shaftArtTransform)?.enabled === true }; // Explicit opt-in, neutral for old saves.
@@ -543,6 +547,9 @@
       }
       shaft.mounts = (Array.isArray(raw.mounts) && raw.mounts.length ? raw.mounts : shaft.mounts)
         .slice(0, shaft.maxAttachments || 8).map((mount, index) => line(mount, 'shaft', shaft.mounts[Math.min(index, shaft.mounts.length - 1)]));
+      const flailHead = Object.values(next.heads).find(head => head.flailAssembly); // Anchor for migrating OLD absolute bore centers without moving the saved drilled hole.
+      shaft.bores = cleanBores(Object.hasOwn(raw, 'bores') ? raw.bores : shaft.bores,
+        authoredFlailAnchor(shaft, flailHead)); // New bores store offsets; historical center points are translated exactly once.
       const shipped = shaft.overrides; // Keep committed explicit pair exclusions when older imports omit them.
       shaft.overrides = {};
       for (const [head, pair] of Object.entries(raw.overrides || {})) if (Object.hasOwn(next.heads, head)) {
