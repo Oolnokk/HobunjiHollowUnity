@@ -173,6 +173,13 @@
     record.ref.updateHeadYaw?.(yawDeg, dt);
   }
 
+  function syncNeck(root, dt = 1 / 60) {
+    const record = [...active].find(entry => entry.root === root); // Reuses the NPC's actual creature head rig in standalone author previews.
+    if (!record) return false;
+    syncCreatureNeck(record, Math.max(0, finite(dt, 1 / 60)));
+    return true;
+  }
+
   function updateFacing(record, camera) {
     const walker = matchingWalker(record);
     const perp = global.PerpRotation;
@@ -381,7 +388,7 @@
   }
   global.HobunjiBipedalMonsterAssembler = Object.freeze({
     type: TYPE, install, normalizeConfig, configForOptions, materialForSpecies,
-    headRigFor, diagnostics, defaultNohuknuk: DEFAULT_NOHUKNUK,
+    headRigFor, syncNeck, diagnostics, defaultNohuknuk: DEFAULT_NOHUKNUK,
   });
   install();
   installProfileBridge();
