@@ -1602,6 +1602,7 @@
     let scissorActive = false;
     let depthWasCleared = false;
     let replayCulled = null; // Renderables outside the scissor, hidden for every pass below (including the final depth restore, which is scissored too).
+    let replayCandidates = null; // Shared between the replay loop and finally's depth restore; assigned after optional culling.
 
     internalReplay = true;
     try {
@@ -1629,7 +1630,7 @@
       scene.background = null;
       scene.autoUpdate = false;
       if (shadowMap) shadowMap.autoUpdate = false;
-      const replayCandidates = collectShellReplayCandidates(scene); // Snapshot after scissor culling; reused while the synchronous replay only changes temporary visibility.
+      replayCandidates = collectShellReplayCandidates(scene); // Snapshot after scissor culling; reused while the synchronous replay only changes temporary visibility.
       shellSceneTraversalsAvoided += groups.length * 2; // Former full-tree walks: one depth + one shell mask per group, plus final depth, replaced by this one walk.
 
       // Use the same actor-elevation groups and ground-fragment filter as the
