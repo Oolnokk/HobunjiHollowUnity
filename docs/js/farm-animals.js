@@ -808,7 +808,7 @@
       const line = lines.length ? lines[Math.floor(deps.rnd() * lines.length)] : '...';
       const opened = deps.openLivestockDialogue?.(animal, rec, [line]); // Only a successfully started livestock conversation triggers curiosity.
       if (opened) window.HobunjiEmojiReactions?.trigger?.(animal.avatarRef?.group, 'curious', { height: animal.modelHeight });
-      return { ok: !!opened };
+      return { ok: true }; // Preserve the preexisting contextual action result contract.
     }
     if (action === 'obj_alchemy_' + animal.id) return administerBreedingPotion(animal.livestockId, deps.getHeldItemKey?.());
     if (action === 'obj_pet_' + animal.id) {
