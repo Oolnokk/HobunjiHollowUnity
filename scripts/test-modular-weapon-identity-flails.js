@@ -59,17 +59,27 @@ assert.equal(api.attachmentRig(config.shafts['grapple-flail'],config.heads.warha
 assert.equal(shaftOwner.flail.head.layers.length, 1);
 assert.equal(shaftOwner.flail.head.layers[0].sprite, config.heads.warhammer.sprite);
 assert.equal(shaftOwner.flail.head.anchorLayer, 'modular-head');
-assert.equal(shaftOwner.flail.head.anchor.x, config.heads.warhammer.mount.start.x);
+assert.deepEqual(plain(shaftOwner.flail.head.anchor), plain(original.flail.head.anchor),
+  'haft-owned flail keeps the contact from the Complex Tool Visuals author, ignoring modular head.mount');
+assert.equal(shaftOwner.flail.head.anchorSpace, original.flail.head.anchorSpace);
 assert.equal(shaftOwner.sprite, config.shafts['grapple-flail'].sprite);
 const headOwner = api.flailRecipe('fishing-mace', 'grapple-flail'); // Head-owned rope reattaches original multilayer head to a different shaft.
 assert(headOwner?.flail);
 assert.equal(headOwner.flail.head.layers.length, original.flail.head.layers.length,
   'a multi-layer flexible head retains its full authored back/front render ordering');
-assert.equal(headOwner.flail.haftAnchor.x, config.shafts['fishing-mace'].mounts[0].start.x);
-assert.equal(headOwner.flail.haftAnchor.y, config.shafts['fishing-mace'].mounts[0].start.y);
+assert.deepEqual(plain(headOwner.flail.haftAnchor), plain(original.flail.haftAnchor),
+  'head-owned flail uses the original authoring attachment, not a modular head or haft tang/eye arrow');
+assert.deepEqual(plain(headOwner.flail.head.anchor), plain(original.flail.head.anchor),
+  'original multi-sprite head contact is never replaced by a modular head arrow');
 assert.equal(headOwner.sprite, config.shafts['fishing-mace'].sprite);
 assert.equal(headOwner.flail.chain.mountLengthPx, undefined,
   'older flails without an authored rope line preserve their original chain length');
+assert.deepEqual(plain(api.matchingMounts(config.shafts['fishing-mace'],config.heads['grapple-flail'])[0].start),
+  plain(original.flail.haftAnchor), 'flail fitting uses a virtual author-owned rope mount even when no physical rope line exists');
+assert.equal(api.flailGuide('fishing-mace','grapple-flail').explicitMount,false);
+assert.equal(api.flailGuide('grapple-flail','warhammer').explicitMount,true);
+assert.equal(api.flailGuide('grapple-flail','warhammer').length,843.75,
+  'the visible guide ends at the same connector reach as the 3D rope');
 assert.deepEqual(plain(window.WEAPON_SPRITE_ASSEMBLY_CONFIG.weapons.grappleFlail), original,
   'derived modular flails never overwrite the Tool Hub source recipe');
 assert.equal(api.isDisallowed('grapple-flail', 'grapple-flail'), true,
@@ -94,6 +104,8 @@ editable.shafts.dagger.namePosition = 'suffix';
 editable.shafts.dagger.nameAffix = 'on a dagger grip';
 editable.shafts.dagger.toolWorthy = true;
 editable.shafts['grapple-flail'].flailAssembly = null;
+editable.heads['grapple-flail'].mount = { type:'weight',start:{x:77,y:81},end:{x:77,y:31} };
+editable.heads['grapple-flail'].flailHeadAnchor = {x:400,y:1000}; // Legacy modular fields must have NO effect on the author's head attachment.
 editable.shafts['fishing-mace'].bores = [
   {id:'bore-1',x:225,y:602,rx:12,ry:16,rotation:20,rim:5,warp:2,shade:0.75,lightX:-.6,lightY:-.8,enabled:true}
 ];
@@ -101,6 +113,19 @@ api.replace(editable);
 assert.equal(api.weaponName('dagger','warhammer','Copper'), 'Copper Hammer End on a dagger grip');
 assert.deepEqual(plain(api.getConfig().heads.warhammer.toolSlots), ['axe']);
 assert.equal(api.getConfig().shafts['fishing-mace'].bores[0].rx, 12, 'bore geometry survives the shared editor draft validator');
+assert.deepEqual(plain(api.flailRecipe('fishing-mace','grapple-flail').flail.head.anchor),
+  plain(original.flail.head.anchor), 'modular arrow edits and old flailHeadAnchor values cannot move the authored flail head');
+assert.deepEqual(plain(api.flailRecipe('fishing-mace','grapple-flail').flail.haftAnchor),
+  plain(original.flail.haftAnchor), 'modular head arrow edits cannot move the rope attachment');
+assert.deepEqual(plain(api.resolvedBores(api.getConfig().shafts['fishing-mace'],api.getConfig().heads['grapple-flail'])
+  .map(({x,y})=>({x,y}))), [{x:225,y:602}], 'old absolute bore centers migrate to connector-relative offsets without moving');
+assert.equal(api.resolvedBores(api.getConfig().shafts['fishing-mace'],api.getConfig().heads.warhammer).length,0,
+  'switching away from a flail head completely removes shaft bores from preview and gameplay');
+assert.equal(api.cleanBores([{id:'fresh'}])[0].offsetX,0);
+assert.equal(api.cleanBores([{id:'fresh'}])[0].offsetY,0);
+assert.equal(api.cleanBores([{id:'fresh'}])[0].rx*2,20,'new bores are 20 pixels wide, not 40');
+assert.equal(api.cleanBores([{id:'fresh'}])[0].ry*2,20,'new bores are 20 pixels tall, not 40');
+assert.equal(api.cleanBores([{id:'fresh'}])[0].outline,3,'interior ink is automatically generated');
 assert.deepEqual(plain(api.getConfig().shafts['fishing-mace'].mounts), originalMounts, 'bore and name edits do not modify original mounting geometry');
 assert.equal(api.getConfig().shafts['grapple-flail'].flailAssembly, null,
   'author can remove an existing rope reference and return to rigid weapon behavior');
@@ -118,7 +143,7 @@ assert.equal(api.getConfig().shafts['fishing-mace'].label, 'Bored Wrapped Handle
 // Existing brush helper applies live bores to fresh source pixels without accumulating damage.
 const pixels = new Uint8ClampedArray(32*32*4); // Representative opaque wooden material tests shade and transparency together.
 for(let i=0;i<32*32;i++){ pixels[i*4]=170;pixels[i*4+1]=150;pixels[i*4+2]=125;pixels[i*4+3]=255; }
-const bore={id:'b',x:12,y:12,rx:5,ry:5,rotation:0,rim:3,warp:1.5,shade:.8,lightX:-.6,lightY:-.8,enabled:true};
+const bore={id:'b',x:12,y:12,rx:5,ry:5,rotation:0,rim:3,outline:3,warp:1.5,shade:.8,lightX:-.6,lightY:-.8,enabled:true};
 const fill=window.ModularWeaponBridgeFill; // Same pixel helper used by the existing manual bridge/smudge processing.
 const cut=fill.borePixels(pixels,32,32,[bore]); // First position drills a transparent center with shaded nearby wood.
 const moved=fill.borePixels(pixels,32,32,[{...bore,x:22,y:22}]); // Recalculate from original; previous hole must be fully recovered.
@@ -127,13 +152,14 @@ assert.equal(alpha(cut,12,12),0);
 assert.equal(alpha(moved,12,12),255,'moving a bore does not leave a permanent old cutout');
 assert.equal(alpha(moved,22,22),0);
 assert.equal(alpha(pixels,12,12),255,'source sprite remains pristine');
-assert(cut[(12*32+18)*4]<pixels[(12*32+18)*4], 'rim darkening follows existing material colors');
+assert.equal(cut[(12*32+18)*4],0,'interior border draws the same opaque black ink as the shaft/head outline author');
+assert.equal(alpha(cut,18,12),255,'the black interior outline stays ON the material; the bore center remains transparent');
 assert.equal(cut[0],pixels[0], 'distant unmodified pixel is preserved');
 const gameHtml = fs.readFileSync('docs/index.html', 'utf8'); // Check the runtime and modular authoring tool use the same cache-revisioned catalog.
 const editorHtml = fs.readFileSync('docs/tools/modular-weapon-editor/index.html', 'utf8');
 for (const id of ['head-part-label','head-name-prefix','head-name-suffix','head-tool-slots','shaft-tool-worthy',
   'shaft-name-affix','shaft-name-position','head-flail-assembly','shaft-flail-assembly','head-rope-x','head-rope-y',
-  'bore-add','bore-remove','bore-drag','bore-list','flail-preview','mount-kind'])
+  'bore-add','bore-remove','bore-drag','bore-list','bore-outline','flail-preview','mount-kind'])
   assert(editorHtml.includes('id="' + id + '"'), 'The editable modular part field must exist: ' + id);
 const gameToken = gameHtml.split('config/modular-weapons.js?v=')[1]?.split('"')[0];
 const editorToken = editorHtml.split('config/modular-weapons.js?v=')[1]?.split('"')[0];
