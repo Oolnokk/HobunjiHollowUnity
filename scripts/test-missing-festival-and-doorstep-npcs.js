@@ -195,6 +195,43 @@ function testWildernessHomeRoutes() {
   assert.equal(win.NpcPathfinding.findNpcAreaLink('town', 'map_i_swamp_house_leaf')?.toArea, 'map_eastern_mire');
 }
 
+function testUnloadedWildernessTravel() {
+  const game = read('docs/game.js'); // Uses the exact walker update branch that handles missing offscreen zone grids.
+  const start = game.indexOf('              if (_isZoneArea(this.area) && !npcGridForArea(this.area)) {');
+  const end = game.indexOf('              if (!this._exitSpot) {', start);
+  assert(start >= 0 && end > start, 'unloaded zone transfers are handled before ordinary tile pathfinding');
+  const code = game.slice(start, end); // Evaluates the production branch using a minimal real walker interface.
+  const advance = new Function(
+    'targetArea', '_isZoneArea', 'npcGridForArea', 'findNpcAreaLink', 'target',
+    code + '\nreturn false;'
+  );
+  const hops = []; // Captures offscreen walker transfers.
+  const walker = {
+    area: 'map_eastern_mire', _exitSpot: {c: 1, r: 20}, _entrySpot: {c: 58, r: 25}, _exitToArea: 'town',
+    transferToArea(area, spawn) {hops.push({area, spawn}); this.area = area;},
+  };
+  const zone = area => area === 'map_eastern_mire';
+  const nextHop = () => ({toArea: 'town', spawn: {c: 58, r: 25}});
+  advance.call(walker, 'map_i_inn', zone, () => null, nextHop, {area: 'map_i_inn', c: 3, r: 11});
+  assert.deepEqual(hops, [{area: 'town', spawn: {c: 58, r: 25}}], 'an unloaded Mire scene advances its NPC toward the town gate');
+  assert.equal(walker._exitSpot, null, 'old local paths are discarded after the virtual offscreen hop');
+  walker.area = 'map_eastern_mire';
+  advance.call(walker, 'map_i_inn', zone, () => [[{type: 'grass'}]], nextHop, {area: 'map_i_inn', c: 3, r: 11});
+  assert.equal(hops.length, 1, 'loaded wilderness keeps normal physical walking rather than using a virtual hop');
+}
+
+function testDoorstepProxiesExcludedFromFestivalRoster() {
+  const game = read('docs/game.js'); // Extracts the festival NPC roster source owned by game initialization.
+  const line = game.split('\n').find(value => value.includes('getNpcs: () => [...new Map('));
+  assert(line, 'festival NPC registration reads the authoritative scheduled roster');
+  const expression = line.slice(line.indexOf('getNpcs:') + 'getNpcs:'.length).split(', // Festival')[0]; // Retains the shipped arrow expression.
+  const getNpcs = new Function('scheduledNpcRecords', 'npcWalkers', 'return (' + expression + ');')(
+    new Map([['pahu', {id: 'pahu', homeId: 'little_swamp_house'}]]),
+    [{rec: {id: 'doorstep_visit:pahu', homeId: 'little_swamp_house'}, _doorstepVisitor: true}],
+  );
+  assert.deepEqual(getNpcs().map(rec => rec.id), ['pahu'], 'temporary visit clones are not separate festival guests');
+}
+
 function testAuthoredHomeAndTrust() {
   const records = JSON.parse(read('docs/config/npcs/hobunji-starter-npc-database.json')).npcs; // Actual authored household/agenda records.
   const home = JSON.parse(read('docs/config/maps/map_i_swamp_house_leaf.json')); // Actual shared bedroom used at night.
@@ -220,8 +257,10 @@ function testAuthoredHomeAndTrust() {
 (async function run() {
   testAuthoredHomeAndTrust();
   testWildernessHomeRoutes();
+  testUnloadedWildernessTravel();
+  testDoorstepProxiesExcludedFromFestivalRoster();
   await testGameAvatarRecovery();
   await testFestivalRecovery();
   await testDoorstepRecovery();
-  console.log('Event NPC recovery: household, trust gate, wilderness house routes, missing festival guests, concurrent avatar builds and doorstep retry passed.');
+  console.log('Event NPC recovery: household, trust gate, wilderness house routes, unloaded-scene travel, unique festival residents, concurrent avatar builds and doorstep retry passed.');
 })().catch(error => {console.error(error); process.exitCode = 1;});
