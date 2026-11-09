@@ -18,6 +18,7 @@ const furniture = { particleEmitters: [] };
 const player = { x: 0, y: 0, vx: 0, vy: 0 };
 let area = 'map_i_town_mine_f_005';
 let persistCount = 0;
+let surfaceHeight = 0.2; // Mutable test surface for checking that failed placements leave the saved camp unchanged.
 let tothalYear = 7; // Used to distinguish a same-year boot replay from a genuine new-year shift.
 const inventory = { campfireKitFurniture: 3 };
 const saveMeta = { worlds: [{ id: 'world_test', lastTothalYear: 7 }] }; // Used by campfire clearIfZone() to classify Tothal rebuilds.
@@ -46,7 +47,7 @@ camp.init({
   getActiveScene: () => scene,
   getPlayer: () => player,
   getFacingAngle: () => 0.75,
-  surfaceYAt: () => 0.2,
+  surfaceYAt: () => surfaceHeight,
   TILE: 16,
   AuthoredFurniture: {
     load: async () => furniture,
@@ -80,9 +81,47 @@ assert.equal(camp.serialize().x, 9.5, 'free setup snaps to the player tile, not 
 assert.equal(camp.serialize().z, 10.5, 'free setup uses the player row');
 assert.equal(JSON.stringify(inventory), freeSetupInventory, 'free setup consumes no items or currency');
 assert.equal(persistCount, beforeFreeSetupPersist + 1, 'free setup saves the replacement camp');
+const campBeforeMissingGround = camp.serialize(); // Compared against rejected placement so the previously saved camp is never erased.
+surfaceHeight = NaN;
+assert.equal(camp.placeAtPlayer().ok, false, 'campfire setup rejects tiles with no finite ground height');
+assert.deepEqual(camp.serialize(), campBeforeMissingGround, 'missing ground cannot overwrite an established camp');
+surfaceHeight = 0.2;
+
+// Exercise the utilities-wheel entry itself, not just its text/regex contract.
+const utilityStart = arcUi.indexOf('  function _openUtilitiesArc() {');
+const utilityEnd = arcUi.indexOf('  function _openEntries(', utilityStart);
+assert.ok(utilityStart >= 0 && utilityEnd > utilityStart, 'utilities wheel function is available for an isolated integration check');
+let utilityEntries = []; // Receives the real wheel entries so the setup callback can be invoked.
+let actionRefreshes = 0; // Confirms successful utility setup refreshes the action bar.
+const utilityContext = {
+  window: { WildernessCampfire: camp, Spyglass: { endAim() {} }, FurniturePlacer: { canOpen: () => false } },
+  deps: {
+    getCurrentArea: () => area,
+    characterViewMode: { enabled: false },
+    setCharacterViewMode() {},
+    showToast() {},
+    refreshActionBar() { actionRefreshes++; },
+  },
+  _openEntries: (kind, entries) => {
+    assert.equal(kind, 'utilities');
+    utilityEntries = entries;
+  },
+};
+vm.createContext(utilityContext);
+vm.runInContext(arcUi.slice(utilityStart, utilityEnd), utilityContext);
+utilityContext._openUtilitiesArc();
+const freeCampEntry = utilityEntries.find(entry => entry.id === 'set-up-camp'); // Uses the exact action inserted into the real utility wheel.
+assert.ok(freeCampEntry && !freeCampEntry.disabled, 'free setup is enabled even with no Campfire Kits');
+const previousSetupPersistCount = persistCount;
+freeCampEntry.onSelect();
+assert.equal(persistCount, previousSetupPersistCount + 1, 'wheel callback places a persistent campfire');
+assert.equal(actionRefreshes, 1, 'wheel callback updates the visible action bar');
+assert.equal(JSON.stringify(inventory), freeSetupInventory, 'wheel callback does not consume currency or resources');
 const savedMineCamp = camp.serialize();
 
 area = 'farm';
+utilityContext._openUtilitiesArc();
+assert.equal(utilityEntries.find(entry => entry.id === 'set-up-camp').disabled, true, 'wheel disables free setup on the farm');
 assert.equal(camp.placeAtPlayer().ok, false, 'free setup is unavailable on the farm');
 assert.deepEqual(camp.serialize(), savedMineCamp, 'invalid area cannot replace a saved camp');
 camp.updateVfx(0.016);
