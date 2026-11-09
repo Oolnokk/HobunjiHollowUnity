@@ -566,6 +566,28 @@
     const totalRadius = Math.max(1, Math.round((outlineWidth | 0) * 5 * outlineRasterScale(width, height)));
     const inwardRadius = centered ? Math.floor(totalRadius / 2) : 0; // Authored motifs split the old radius across their contour.
     const outwardRadius = centered ? totalRadius - inwardRadius : totalRadius; // Procedural verdigris remains outward-only.
+    // Densely speckled oxidation puts a boundary beside almost every pixel.
+    // The old early-exit neighborhood check wins in this case: avoid allocating
+    // the full-distance raster when most searches terminate after 1-2 neighbors.
+    if (boundaryPixels * 3 >= width * height) {
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+        const p = y * width + x;
+        if (!metalMask[p]) continue;
+        const radius = oxidationMask[p] ? inwardRadius : outwardRadius;
+        if (radius <= 0) continue;
+        let nearBoundary = false;
+        for (let oy = -radius; oy <= radius && !nearBoundary; oy++) {
+          for (let ox = -radius; ox <= radius; ox++) {
+            if (Math.hypot(ox, oy) > radius + 0.01) continue;
+            const nx = x + ox, ny = y + oy;
+            if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+            if (boundary[ny * width + nx]) { nearBoundary = true; break; }
+          }
+        }
+        if (nearBoundary) outline[p] = 1;
+      }
+      return outline;
+    }
     const maxLength = Math.max(width, height); // Buffer capacity for both axis passes.
     const sites = new Int32Array(maxLength); // Active nearest-boundary parabola positions.
     const breaks = new Float64Array(maxLength + 1); // Positions where the closest parabola changes.
