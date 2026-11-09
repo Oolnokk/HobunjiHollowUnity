@@ -287,9 +287,15 @@
   function isFlailHead(head) {
     return !!(head?.flailAssembly || head?.mount?.type === 'flail'); // Flail-head identity, not a normal shaft-owned flexible weapon with a rigid head.
   }
+  function inverseShaftArtPoint(shaft, point) {
+    const art = shaftArtTransform(shaft);
+    if (!art.enabled) return { ...point };
+    return { x: (point.x - 225 - art.x) / art.scaleX + 225,
+      y: (point.y - 602 - art.y) / art.scaleY + 602 }; // Drilled image coordinates must invert the paint transform to land on the EXACT rendered connector.
+  }
   function authoredFlailAnchor(shaft, head) {
-    const rope = shaft?.mounts?.find(mount => mount.type === 'rope'); // Explicit source-art suspension point always wins.
-    if (rope) return { ...rope.start };
+    const rope = shaftMounts(shaft).find(mount => mount.type === 'rope'); // Unlike head fitting arrows, rope mounts inherit the selected rig/region transform.
+    if (rope) return inverseShaftArtPoint(shaft, rope.start);
     const authored = flailTemplate(head?.flailAssembly || shaft?.flailAssembly)?.flail?.haftAnchor; // Tool Hub owns the attachment for old flails.
     const fallback = shaft?.flailHaftAnchor || authored;
     return fallback && Number.isFinite(fallback.x) && Number.isFinite(fallback.y) ? { ...fallback } : null;
@@ -299,13 +305,12 @@
     if (!shaft || !head || (!!shaft.flailAssembly && !!head.flailAssembly)) return null; // Both flail owners show connector guides; drilling remains flail-HEAD-only.
     const template = flailTemplate(head.flailAssembly || shaft.flailAssembly);
     if (!template) return null;
-    const rope = shaft.mounts?.find(mount => mount.type === 'rope');
-    const start = authoredFlailAnchor(shaft, head); // Exactly the same source-art anchor used by the runtime and the bore compositor.
+    const rope = shaftMounts(shaft).find(mount => mount.type === 'rope');
+    const start = authoredFlailAnchor(shaft, head); // Exactly the same shaft-art point used by the runtime and the bore compositor.
     if (!start) return null;
-    const length = rope ? Math.hypot(rope.end.x - rope.start.x, rope.end.y - rope.start.y)
-      : (Number(template.flail.chain.lengthPx) || 160) * (Number(template.flail.chain.scaleY ?? template.flail.chain.scale) || 1);
-    const dx = rope ? rope.end.x - rope.start.x : 0, dy = rope ? rope.end.y - rope.start.y : length;
-    return { start, end: { x: start.x + dx, y: start.y + dy }, length,
+    const end = rope ? inverseShaftArtPoint(shaft, rope.end) : { x: start.x, y: start.y +
+      (Number(template.flail.chain.lengthPx) || 160) * (Number(template.flail.chain.scaleY ?? template.flail.chain.scale) || 1) };
+    return { start, end, length: Math.hypot(end.x - start.x, end.y - start.y),
       explicitMount: !!rope, recipeId: head.flailAssembly || shaft.flailAssembly };
   }
   function matchingMounts(shaft, head) {
