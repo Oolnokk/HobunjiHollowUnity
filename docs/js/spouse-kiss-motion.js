@@ -264,8 +264,8 @@
     const torsoScale = targetRig.parent.getWorldScale(geometry.torsoScale || (geometry.torsoScale = new THREE.Vector3()));
     const torsoLength = Math.max(.01, finite(targetRig.avatarRoot?.userData?.portraitModelHeight, 1) *
       Math.abs(torsoScale.y) * .38); // Upper-shoulder-to-chest fallback, never the pelvis or legs.
-    targetRig.parent.getWorldQuaternion(torsoQuaternion);
-    torsoVector.set(0, -torsoLength, 0).applyQuaternion(torsoQuaternion); // Down the actual bowed torso, not always down world Y.
+    (targetRig.avatarRoot || targetRig.parent).getWorldQuaternion(torsoQuaternion);
+    torsoVector.set(0, -torsoLength, 0).applyQuaternion(torsoQuaternion); // Follow the bent recipient portrait, not the upright floor-relative hand parent.
     for (const side of ['left', 'right']) {
       const other = side === 'left' ? 'right' : 'left'; // Face-to-face actors put opposite anatomical hands at the visible shoulders.
       const data = geometry[side] || (geometry[side] = {
