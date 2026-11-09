@@ -422,8 +422,45 @@
     byId('assembly-status').textContent = 'Removed ' + removed.length
       + ' legacy bulk placements. Other authored work is preserved. Use Undo to restore them.';
   };
+  function drawIdentity() {
+    const shaft = chosenShaft(), head = chosenHead(); // All fields operate on the selected independent part, not a pair override.
+    for (const [id, value] of [
+      ['shaft-part-label', shaft.label], ['shaft-name-affix', shaft.nameAffix || shaft.label],
+      ['head-part-label', head.label], ['head-name-prefix', head.weaponNames?.prefix || head.label],
+      ['head-name-suffix', head.weaponNames?.suffix || head.label],
+      ['head-tool-slots', (head.toolSlots || []).join(', ')],
+    ]) byId(id).value = value || '';
+    byId('shaft-name-position').value = shaft.namePosition === 'suffix' ? 'suffix' : 'prefix';
+    byId('shaft-tool-worthy').checked = shaft.toolWorthy === true;
+    const available = Object.entries(window.WEAPON_SPRITE_ASSEMBLY_CONFIG?.weapons || {})
+      .filter(([, entry]) => entry?.flail).map(([id, entry]) => ({ id, label: entry.label || id })); // Only actual approved multi-sprite flail recipes appear.
+    for (const [id, choice] of [['head-flail-assembly', head.flailAssembly], ['shaft-flail-assembly', shaft.flailAssembly]]) {
+      const select = byId(id); select.replaceChildren(new Option('No rope/chain', ''));
+      for (const entry of available) select.add(new Option(entry.label, entry.id));
+      select.value = choice || '';
+    }
+    const sourcePoint = api.matchingMounts(shaft, head)[0]?.start || shaft.mounts[0]?.start || { x: 225, y: 602 };
+    byId('shaft-rope-x').value = shaft.flailHaftAnchor?.x ?? '';
+    byId('shaft-rope-y').value = shaft.flailHaftAnchor?.y ?? '';
+    byId('shaft-rope-x').placeholder = String(Math.round(sourcePoint.x)) + ' (socket)';
+    byId('shaft-rope-y').placeholder = String(Math.round(sourcePoint.y)) + ' (socket)';
+    byId('head-rope-x').value = head.flailHeadAnchor?.x ?? head.mount.start.x;
+    byId('head-rope-y').value = head.flailHeadAnchor?.y ?? head.mount.start.y;
+    byId('head-rope-scale').value = head.flailHeadScale || 1;
+    const toolSlots = shaft.toolWorthy ? (head.toolSlots || []).join(', ') || 'no utility roles on this head' : 'weapon only: haft not tool-worthy';
+    byId('identity-preview').textContent = 'Example forged name: ' + api.weaponName(byId('shaft').value, byId('head').value, 'Copper')
+      + ' · Slots: weapon' + (shaft.toolWorthy && head.toolSlots?.length ? ', ' + head.toolSlots.join(', ') : '')
+      + ' · ' + toolSlots;
+    const both = !!(shaft.flailAssembly && head.flailAssembly);
+    byId('identity-flail-status').textContent = both
+      ? 'Both parts currently own a rope. This combination cannot be forged: select only one rope owner.'
+      : (shaft.flailAssembly || head.flailAssembly)
+        ? (api.flailRecipe(byId('shaft').value, byId('head').value) ? 'Flexible head: rendered separately using existing flail pendulum and connector.' : 'Selected flail recipe could not be resolved.')
+        : 'Rigid combination: the usual baked modular head and bridge geometry applies.';
+  }
   function render() {
     const shaft = chosenShaft(), head = chosenHead(), headKey = byId('head').value; // Active authoring context.
+    drawIdentity(); // Name/slot/rope diagnostics remain accessible on mobile without developer tools.
     const pairKey = byId('shaft').value + '|' + headKey;
     if (pairKey !== pendingKey) { pendingStrokes = []; recipeSel = -1; pendingKey = pairKey; syncBridgeControls(); } // Never carry a recipe selection to another head.
     mountIndex = Math.min(mountIndex, shaft.mounts.length - 1);
@@ -592,6 +629,48 @@
     render(); msg('Compatible combination: ' + data.shafts[selected.shaft].label + ' / ' + data.heads[selected.head].label);
   };
   byId('shaft').onchange = () => { mountIndex = 0; activeRegionId=null;regionSelecting=false;regionDraft=null;render(); };
+  for (const [id, owner, field] of [
+    ['shaft-part-label', 'shaft', 'label'], ['shaft-name-affix', 'shaft', 'nameAffix'],
+    ['head-part-label', 'head', 'label'], ['head-name-prefix', 'head', 'prefix'],
+    ['head-name-suffix', 'head', 'suffix'],
+  ]) byId(id).onchange = () => {
+    const value = byId(id).value.trim().replace(/\\s+/g, ' ').slice(0, 96);
+    if (!value) { drawIdentity(); msg('Part names and weapon grammatical forms cannot be empty.'); return; }
+    const target = owner === 'shaft' ? chosenShaft() : chosenHead();
+    if (field === 'prefix' || field === 'suffix') (target.weaponNames ||= {})[field] = value;
+    else target[field] = value;
+    save();
+  };
+  byId('shaft-name-position').onchange = () => { chosenShaft().namePosition = byId('shaft-name-position').value; save(); };
+  byId('shaft-tool-worthy').onchange = () => { chosenShaft().toolWorthy = byId('shaft-tool-worthy').checked; save(); };
+  byId('head-tool-slots').onchange = () => {
+    chosenHead().toolSlots = [...new Set(byId('head-tool-slots').value.split(',').map(slot => slot.trim().toLowerCase()).filter(Boolean))];
+    save(); // ModularWeapons.replace() whitelists known noncombat slots before saving.
+  };
+  for (const [id,owner] of [['shaft-flail-assembly','shaft'],['head-flail-assembly','head']]) byId(id).onchange = () => {
+    (owner === 'shaft' ? chosenShaft() : chosenHead()).flailAssembly = byId(id).value || null;
+    save();
+  };
+  for (const [axis, id] of [['x','shaft-rope-x'],['y','shaft-rope-y']]) byId(id).onchange = () => {
+    const shaft = chosenShaft(), x = byId('shaft-rope-x').value.trim(), y = byId('shaft-rope-y').value.trim();
+    if (!x && !y) delete shaft.flailHaftAnchor; // Blank coordinates restore the matching authored socket.
+    else {
+      const source = api.matchingMounts(shaft, chosenHead())[0]?.start || shaft.mounts[0]?.start || { x: 225, y: 602 };
+      shaft.flailHaftAnchor = { x: x ? Number(x) : source.x, y: y ? Number(y) : source.y };
+    }
+    save();
+  };
+  for (const id of ['head-rope-x','head-rope-y']) byId(id).onchange = () => {
+    const head = chosenHead(); // Head contact point is in the head PNG's original pixel frame.
+    const x = Number(byId('head-rope-x').value), y = Number(byId('head-rope-y').value);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) { drawIdentity(); return; }
+    head.flailHeadAnchor = { x, y }; save();
+  };
+  byId('head-rope-scale').onchange = () => {
+    const value = Number(byId('head-rope-scale').value);
+    if (!Number.isFinite(value) || value < 0.05 || value > 8) { drawIdentity(); return; }
+    chosenHead().flailHeadScale = value; save();
+  };
   byId('duplicate-shaft').onclick = () => {
     const from = byId('shaft').value, source = chosenShaft(); // Copy ALL source mount lines, pair overrides and optional living-shaft fire.
     const id = prompt('New shaft key (letters/numbers, e.g. myTorchShaft):', from + 'Copy');
