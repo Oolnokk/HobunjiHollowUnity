@@ -90,16 +90,28 @@ assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.head.scale, 2.5);
 assert.equal(api.definitionFor('grappleFlail', {}).flail.chain.scaleX, 5.25);
 assert.equal(api.definitionFor('grappleFlail', {}).flail.chain.scaleY, 3.75);
 assert.equal(api.definitionFor('grappleFlail', {}).flail.chain.sprite,'assets/objectsprites/rope_long.png');
+assert.equal(api.definitionFor('grappleFlail', {}).flail.chain.lengthPx,225,'apply the new exported grip-to-head rope length');
+assert.equal(api.definitionFor('grappleFlail', {}).flail.chain.radiusPx,6.25,'apply the new exported rope radius');
+assert.equal(api.definitionFor('grappleFlail', {}).flail.chain.color,'#6B4728','restore the original flail rope brown');
 const sizes = api.ropeSpriteSizing(api.definitionFor('grappleFlail', {}).flail.chain, .5 / 450, 152 / 2164); // Nominal game units; actual rendering uses the cropped visible aspect.
 const visibleAspect = (visibleRope.maxX-visibleRope.minX+1)/(visibleRope.maxY-visibleRope.minY+1); // Compare a trimmed PNG's art extent, not its padded canvas.
 const visibleSizing = api.ropeSpriteSizing(api.definitionFor('grappleFlail', {}).flail.chain, .5 / 450, visibleAspect);
-assert(Math.abs(visibleSizing.widthScale * visibleAspect * 3.75 - 26.25 * (.5 / 450)) < 1e-10,'trimmed rope keeps original world thickness');
-assert(Math.abs(visibleSizing.length * 3.75 - 600 * (.5 / 450)) < 1e-10,'trimmed rope keeps both physical endpoints');
-assert(Math.abs(sizes.lengthPx - 600) < 1e-10,'original 600-pixel chain reach survives the art swap');
-assert(Math.abs(sizes.diameterPx - 26.25) < 1e-10,'original 26.25-pixel thickness survives the art swap');
-assert(Math.abs(sizes.widthScale * (152 / 2164) * 3.75 - 26.25 * (.5 / 450)) < 1e-10,'billboard width compensates for uniform Y scaling');
-assert(Math.abs(sizes.length * 3.75 - 600 * (.5 / 450)) < 1e-10,'sprite height reaches the same grapple contact');
+assert(Math.abs(visibleSizing.widthScale * visibleAspect * 3.75 - 65.625 * (.5 / 450)) < 1e-10,'trimmed rope keeps original world thickness');
+assert(Math.abs(visibleSizing.length * 3.75 - 843.75 * (.5 / 450)) < 1e-10,'trimmed rope keeps both physical endpoints');
+assert(Math.abs(sizes.lengthPx - 843.75) < 1e-10,'original 843.75-pixel chain reach survives the art swap');
+assert(Math.abs(sizes.diameterPx - 65.625) < 1e-10,'original 65.625-pixel thickness survives the art swap');
+assert(Math.abs(sizes.widthScale * (152 / 2164) * 3.75 - 65.625 * (.5 / 450)) < 1e-10,'billboard width compensates for uniform Y scaling');
+assert(Math.abs(sizes.length * 3.75 - 843.75 * (.5 / 450)) < 1e-10,'sprite height reaches the same grapple contact');
 assert(!source.includes('new THREE.CylinderGeometry'),'the generated cylinder was removed');
+const ropePixels = Uint8ClampedArray.from([60,55,45,255, 120,110,90,255, 240,210,180,0]); // Two shaded rope pixels plus one transparent padded pixel.
+const originalAlpha = [ropePixels[3],ropePixels[7],ropePixels[11]]; // Tinting may change RGB but never the PNG alpha.
+api.tintRopePixels(ropePixels, '#6B4728');
+assert.deepEqual([ropePixels[3],ropePixels[7],ropePixels[11]],originalAlpha,'opaque silhouette and transparent padding survive recoloring');
+assert(ropePixels[0] < ropePixels[4] && ropePixels[1] < ropePixels[5],'original dark and light bands retain their shading order');
+assert(Math.abs((ropePixels[0]+ropePixels[4])/2 - 107) <= 1,'brown midtone red matches the previous material');
+assert(Math.abs((ropePixels[1]+ropePixels[5])/2 - 71) <= 1,'brown midtone green matches the previous material');
+assert(Math.abs((ropePixels[2]+ropePixels[6])/2 - 40) <= 1,'brown midtone blue matches the previous material');
+assert.equal(source.includes('tintedRopeTextures = new WeakMap()'),true,'recolored rope variants are cached per source image');
 assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.head.layers[2].vfx.type, 'fire');
 assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.head.layers[2].targetHex.toUpperCase(), '#E7DDC9');
 assert.match(source, /enchantmentTargets/, 'the assembly exposes head-only enchantment masks');
