@@ -620,4 +620,18 @@ assert.equal(farm.offspringProvenanceFor(newborn.id).parents[1].id,'father',
 assert.equal(farm.offspringProvenanceFor('mother'),null,
   'legacy animals without recorded parents never gain a fabricated ancestry');
 
+const farmPanelText=fs.readFileSync('docs/js/farm-panel-core.js','utf8');
+const farmPanelLoaderText=fs.readFileSync('docs/js/farm-panel.js','utf8');
+const browserIndex=fs.readFileSync('docs/index.html','utf8');
+assert(farmPanelText.includes('cropGenealogy:') && farmPanelText.includes('lastChildRoutes:'),
+  'existing mobile Farm layout Debug report includes canonical saved cultivar ancestry');
+assert(farmPanelText.includes('livestockBirths:') && farmPanelText.includes('offspringProvenance'),
+  'existing Farm layout Debug report includes bounded real newborn provenance');
+assert(farmPanelLoaderText.includes('farm-panel-core.js?v='),
+  'farm panel loader selects the new genealogy-capable core version');
+assert(browserIndex.includes('js/farm-panel.js?v='),
+  'farm panel bootstrap is cache refreshed so its child loader can update');
+for(const item of ['world-meta-store','crop-varieties','farm-animals','reagent-plants','wildlife-spawn','ruin-sites','shipping-panel'])
+  assert(browserIndex.includes('js/'+item+'.js?v='),'browser loads each source and genealogical module with a cache version');
+
 console.log('Item acquisition rarity tests passed.');
