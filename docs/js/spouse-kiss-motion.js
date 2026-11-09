@@ -423,6 +423,48 @@
       firstHeadMove: firstTravel * blend, secondHeadMove: secondTravel * blend };
   }
 
+  function isWithinRig(node, root) {
+    for (let child = node; child; child = child.parent) if (child === root) return true;
+    return false;
+  }
+
+  function livePlayerPortrait(player) {
+    // Festival dance receives the player portrait separately from the body/legs
+    // root. The compositor returns only that OUTER root, whose userData is not
+    // the character's skinned head/hand rig.
+    const direct = window.WorldPortraitLife?.getPlayerAvatar?.()?.group;
+    if (direct?.userData?.neckRig?.available && isWithinRig(direct, player)) return direct;
+    let result = null; // Active player portrait used for all paired grips, lips and torso motion.
+    player?.traverse?.(model => {
+      if (!model?.userData?.neckRig?.available || !model.userData?.proceduralHandRig) return;
+      if (!result || (model.visible !== false && result.visible === false)) result = model;
+    });
+    return result || (player?.userData?.neckRig?.available ? player : null);
+  }
+
+  function poseLivePlayer(session, drop, bow, lift, retreat) {
+    const body = session.player; // Festival-style live pose ownership replaces the render-only composer delta.
+    const rest = session.originalPlayerPosition;
+    body.position.x = rest.x - Math.sin(session.headingPlayer) * retreat;
+    body.position.y = rest.y + lift;
+    body.position.z = rest.z - Math.cos(session.headingPlayer) * retreat;
+    const progress = samplePose(session.elapsed).blend;
+    body.rotation.y = session.originalPlayerYaw +
+      Math.atan2(Math.sin(session.headingPlayer - session.originalPlayerYaw),
+        Math.cos(session.headingPlayer - session.originalPlayerYaw)) * progress;
+    const torso = session.playerModel;
+    if (torso !== body) {
+      torso.position.y = session.originalPlayerModelY - drop;
+      torso.rotation.x = session.originalPlayerModelPitch + bow;
+    }
+    const hands = session.playerHands;
+    if (hands?.group && session.originalPlayerHands && !isWithinRig(hands.group, torso)) {
+      hands.group.position.y = session.originalPlayerHands.y - drop;
+      hands.group.rotation.x = session.originalPlayerHands.pitch + bow;
+    }
+    body.updateWorldMatrix?.(true, true); // Rebuild actual shoulder positions after kneeling, not a static hand-parent frame.
+  }
+
   function actorHeight(model, legs, root) {
     const local = Math.max(.05, finite(model?.userData?.portraitModelHeight, finite(legs?.modelHeight, 1))); // Render metadata includes species and gender proportions.
     const THREE = window.THREE;
@@ -456,6 +498,18 @@
       window.PlayerBodyTransformComposer?.clearChannel?.(SOURCE);
       window.PlayerBodyTransformComposer?.clearChannel?.(SOURCE + '-retreat');
       old.playerHands?.setPoseProvider?.(SOURCE, null);
+      if (old.player?.parent === old.playerParent && old.originalPlayerPosition) {
+        Object.assign(old.player.position, old.originalPlayerPosition); // Restore from festival-style temporary root hop/retreat.
+        old.player.rotation.y = old.originalPlayerYaw;
+      }
+      if (old.playerModel && old.playerModel !== old.player) {
+        old.playerModel.position.y = old.originalPlayerModelY;
+        old.playerModel.rotation.x = old.originalPlayerModelPitch;
+      }
+      if (old.originalPlayerHands && old.playerHands?.group) {
+        old.playerHands.group.position.y = old.originalPlayerHands.y;
+        old.playerHands.group.rotation.x = old.originalPlayerHands.pitch;
+      }
       old.playerHands?.useIdlePose?.(); // Restores held-tool/idle ownership instead of leaving wrists glued to the spouse's shoulders.
       old.playerLegs?.setExternalFootTargets?.(null); // Release externally planted posterior feet on cancel, spouse switch, or completion.
       old.npcLegs?.setExternalFootTargets?.(null);
@@ -511,7 +565,17 @@
     }
     const npcRigRoot = walker.root.getObjectByName?.('npc_character_rig_root');
     if (!npcRigRoot) { lastError = 'spouse-body-rig-not-ready'; return false; }
-    const firstHeight = actorHeight(player, playerLegs, player);
+    const playerModel = livePlayerPortrait(player); // Same character that FestivalWheelDanceRuntime captures through getPlayerModel().
+    const playerHands = playerModel?.userData?.proceduralHandRig || null;
+    const npcHands = walker.avatarGroup?.userData?.proceduralHandRig || null;
+    const playerNeck = playerModel?.userData?.neckRig?.neckJoint || null;
+    const npcNeck = walker.avatarGroup?.userData?.neckRig?.neckJoint || null;
+    if (!playerModel || !playerHands?.setPoseProvider || !playerHands?.placeHandWorld ||
+        !npcHands?.shoulderPositionLocal || !playerNeck || !npcNeck) {
+      lastError = 'paired-player-portrait-hands-or-neck-not-ready';
+      return false; // Never start a kiss where the actual player stands frozen.
+    }
+    const firstHeight = actorHeight(playerModel, playerLegs, player);
     const secondHeight = actorHeight(walker.avatarGroup, npcLegs, walker.root);
     const playerAnatomy = anatomyWorld(playerLegs, firstHeight);
     const npcAnatomy = anatomyWorld(npcLegs, secondHeight);
@@ -519,7 +583,7 @@
     const tallAnatomy = isPlayerTaller ? playerAnatomy : npcAnatomy;
     const shortAnatomy = isPlayerTaller ? npcAnatomy : playerAnatomy; // Small partner's real hip height and leg length decide whether a supported jump is feasible.
     const height = solveHeights(firstHeight, secondHeight, {
-      firstMouthHeightWorld: mouthHeightWorld(player, playerPoint) || undefined, // Use the actual player mouth height, not a generic sprite ratio.
+      firstMouthHeightWorld: mouthHeightWorld(playerModel, playerPoint) || undefined, // Use the actual player mouth height, not a generic sprite ratio.
       secondMouthHeightWorld: mouthHeightWorld(walker.avatarGroup, npcPoint) || undefined, // Spouse species-specific lip height.
       tallerLegLengthWorld: tallAnatomy.legLengthWorld,
       tallerHipHeightWorld: tallAnatomy.hipHeightWorld,
@@ -561,28 +625,29 @@
     if (height.taller === 'second' && height.tallerBowDeg > 1 && !npcTiltPivot?.rotation) {
       lastError = 'spouse-bow-rig-not-ready'; return false;
     }
-    const playerNeck = player.userData?.neckRig?.neckJoint || null;
-    const npcNeck = walker.avatarGroup?.userData?.neckRig?.neckJoint || null;
     const lock = window.CharacterActionLocks?.acquire?.({
       owner: SOURCE, reason: 'Kissing spouse', timeoutMs: 20000, // The world lock outlives low-FPS playback; normal cleanup releases it in 2.4 simulation seconds.
       participants: [
-        { id: 'player', channels: ['movement', 'tools', 'facing', 'head'] }, // A pose lock bypasses PlayerBodyTransformComposer; keep its kiss channel active.
+        { id: 'player', channels: ['movement', 'tools', 'pose', 'facing', 'head'] }, // Festival dance pose ownership suppresses idle/combat overrides of the paired body pose.
         { id: window.NpcCharacterState?.participantId?.(walker.rec.id) || 'npc:' + walker.rec.id,
           channels: ['movement', 'tools', 'actions', 'pose', 'facing', 'head'] },
       ],
     });
-    const playerHands = player.userData?.proceduralHandRig || null; // The initiator is always the player in this spouse command.
-    const npcHands = walker.avatarGroup?.userData?.proceduralHandRig || null; // Real species/gender shoulder anchors on the spouse.
     const originalPlayerKneeLimit = playerLegs.setStanceDropLimitFraction?.(KNEEL_LEG_FRACTION) ?? .55;
     const originalNpcKneeLimit = npcLegs.setStanceDropLimitFraction?.(KNEEL_LEG_FRACTION) ?? .55;
     active = {
-      walker, player, playerLegs, npcLegs, npcRigRoot, npcSink, composer,
+      walker, player, playerModel, playerLegs, npcLegs, npcRigRoot, npcSink, composer,
+      playerParent: player.parent, // A rebuild or scene switch invalidates this exact paired character.
+      originalPlayerPosition: { x: player.position.x, y: player.position.y, z: player.position.z }, // Festival-style root staging restores this on exit.
+      originalPlayerYaw: player.rotation.y, // Turn the live player to face the partner during the action.
+      originalPlayerModelY: playerModel.position.y, originalPlayerModelPitch: playerModel.rotation.x, // Preserve the skinned torso's neutral transform.
+      originalPlayerHands: playerHands.group ? { y: playerHands.group.position.y, pitch: playerHands.group.rotation.x } : null, // GLB hands may live outside the portrait pivot.
       npcTiltPivot, originalNpcTiltX: npcTiltPivot?.rotation?.x,
       originalPlayerKneeLimit, originalNpcKneeLimit,
       playerAnatomy, npcAnatomy,
       playerHands, npcHands, shoulderScratch: {}, footScratch: {}, mouthScratch: {}, // Scratch for moving shoulder, posterior and head anchor solutions.
       lastLipContact: null, // Verified only after the final composed bodies and neck pivots reach the same frame.
-      requireLipContact: !!(window.SharedAttackPose?.headFrame && playerNeck && npcNeck), // Stub rigs without skinned pixels retain legacy pose-only unit-test behavior.
+      requireLipContact: !!window.SharedAttackPose?.headFrame, // Real rigs are required at start, even when isolated tests omit the pixel helper.
       lastHandContact: null, // Mobile diagnostics expose reach and timing without requiring DevTools.
       playerNeck, npcNeck,
       originalPlayerNeck: playerNeck?.quaternion?.clone?.() || null,
@@ -608,7 +673,7 @@
           session.playerHands, session.npcHands, session.elapsed,
           session.height.taller === 'second', session.shoulderScratch,
         );
-        session.lastLipContact = syncMouthContact(session.player, session.walker.avatarGroup,
+        session.lastLipContact = syncMouthContact(session.playerModel, session.walker.avatarGroup,
           session.elapsed, session.mouthScratch); // Skinned lips follow the already-lowered/bowed bodies each rendered frame.
       }); // Render-time ownership keeps real GLB hand contact attached through final-frame sync.
     }
@@ -622,7 +687,10 @@
   function update(context = {}) {
     const session = active;
     if (!session) return;
-    if (!session.player?.parent || session.walker?.root?.parent !== session.npcParent ||
+    if (!session.player?.parent || session.player.parent !== session.playerParent ||
+        livePlayerPortrait(session.player) !== session.playerModel ||
+        session.playerModel?.userData?.proceduralHandRig !== session.playerHands ||
+        session.walker?.root?.parent !== session.npcParent ||
         session.composer?.getPlayerMesh?.() !== session.player ||
         session.walker.legs !== session.npcLegs ||
         (window.__hobunjiPlayerProfile?.characterId || null) !== session.characterId ||
@@ -644,13 +712,11 @@
 
     session.playerLegs.setStanceDrop(playerLocalKnee, true);
     const playerDrop = session.playerLegs.getStanceDrop?.() || 0;
-    session.composer.setChannel(SOURCE, {
-      priority: 200, absoluteYaw: session.headingPlayer,
-      mode: 'override', translationMode: 'override',
-      absoluteLegs: true, // The torso bows independently; grounded knees/feet remain in their existing world orientation.
-      translation: { x: 0, y: -playerDrop + (playerIsTaller ? 0 : shorterJump), z: 0 }, // Shorter player hops without translating gameplay collision.
-      rotation: { pitch: playerIsTaller ? session.height.tallerBowDeg * Math.PI / 180 * kneeBlend : .025 * pose.blend },
-    });
+    const playerBow = playerIsTaller ? session.height.tallerBowDeg * Math.PI / 180 * kneeBlend : .025 * pose.blend;
+    const playerRetreat = playerIsTaller && !session.height.shorterPosteriorGrip
+      ? session.bowRetreatWorld * kneeBlend : 0; // The actual actor moves rather than a temporary renderer-only copy.
+    poseLivePlayer(session, playerDrop, playerBow, playerIsTaller ? 0 : shorterJump, playerRetreat);
+    session.playerLegs.pants?.update?.(); // Real knees and pants inherit the matching torso pose.
     const npcDrop = window.ActorBodySink.apply(session.npcSink, npcPct, 0, true);
     if (session.npcTiltPivot?.rotation && Number.isFinite(session.originalNpcTiltX)) {
       session.npcTiltPivot.rotation.x = session.originalNpcTiltX +
@@ -660,14 +726,7 @@
     session.walker.root.position.y = session.originalNpcPosition.y + (playerIsTaller ? shorterJump : 0); // NPC jumps only if they are the shorter partner.
     session.walker.root.position.x = session.originalNpcPosition.x + session.approachX * pose.blend - Math.sin(session.headingNpc) * npcForward * kneeBlend;
     session.walker.root.position.z = session.originalNpcPosition.z + session.approachZ * pose.blend - Math.cos(session.headingNpc) * npcForward * kneeBlend;
-    if (playerIsTaller && !session.height.shorterPosteriorGrip) {
-      session.composer.setChannel(SOURCE + '-retreat', {
-        space: 'world', priority: 200, translation: {
-          x: -Math.sin(session.headingPlayer) * session.bowRetreatWorld * pose.blend,
-          y: 0, z: -Math.cos(session.headingPlayer) * session.bowRetreatWorld * pose.blend,
-        },
-      }); // Player visuals retreat while real movement/collision remain locked.
-    }
+    // No compositor retreat channel: the player pose lock intentionally excludes render-only contributions.
     const actualKneeWorld = playerIsTaller ? playerDrop * session.playerAnatomy.worldScale
       : npcDrop * session.npcAnatomy.worldScale;
     const expectedKneeWorld = kneeWorld;
@@ -689,11 +748,14 @@
     if (session.height.shorterPosteriorGrip) {
       const shortLegs = playerIsTaller ? session.npcLegs : session.playerLegs; // Feet that must straddle the taller posterior rather than step on the ground.
       const tallLegs = playerIsTaller ? session.playerLegs : session.npcLegs;
-      session.footScratch.composerLift = !playerIsTaller; // Player leg transforms move only during the compositor render; NPCs have physically translated roots.
+      session.footScratch.composerLift = false; // Festival-style live hop translates the real shorter-root and its leg group.
       const footTargets = posteriorStraddleFootTargets(window.THREE, tallLegs, shortLegs, session.height, jumpBlend, session.footScratch);
       shortLegs.setExternalFootTargets?.(footTargets, { allowDeepFold: true }); // Two real legs bend onto the taller partner's individual left/right pelvis landmarks.
       if (footTargets) shortLegs.applyWorldFootTargets?.(footTargets, null, false, true);
     }
+    session.playerHands?.applyOwnedPose?.(); // Immediately drive the real GLB sockets, as festival dance drives both hand pairs.
+    session.lastLipContact = syncMouthContact(session.playerModel, session.walker.avatarGroup,
+      session.elapsed, session.mouthScratch); // Contact callback must not depend on a later hand-frame render hook.
     if (!session.touched && pose.touch &&
         (!session.requireLipContact || session.lastLipContact?.contact)) {
       session.touched = true;
@@ -714,11 +776,16 @@
   }
 
   function diagnostics() {
-    return { version: 2, active: !!active, lastError, lastResult,
+    return { version: 3, active: !!active, lastError, lastResult,
       session: active ? { npcId: active.walker?.rec?.id, elapsedS: active.elapsed, touched: active.touched,
         height: { ...active.height }, jumpBlend: sampleJumpBlend(active.elapsed),
         feetAnchored: !!(active.playerLegs?.hasExternalFootTargets?.() || active.npcLegs?.hasExternalFootTargets?.()),
-        hands: active.lastHandContact || null, lips: active.lastLipContact || null } : null };
+        hands: active.lastHandContact || null, lips: active.lastLipContact || null,
+        playerPortrait: active.playerModel?.name || null, // Mobile proof the actual player portrait (not the outer group) received the action.
+        playerPoseLocked: !!window.CharacterActionLocks?.isLocked?.('player', 'pose'),
+        playerTorsoBowDeg: (active.playerModel.rotation.x - active.originalPlayerModelPitch) * 180 / Math.PI,
+        playerKneeDrop: active.playerLegs?.getStanceDrop?.() || 0,
+        playerHandRigReady: !!active.playerHands?.group } : null };
   }
 
   window.SpouseKissMotion = Object.freeze({
