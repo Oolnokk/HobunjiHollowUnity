@@ -1,6 +1,9 @@
 name: Animation Author URL scene browser smoke
 
 on:
+  push:
+    branches:
+      - feature/spouse-kiss-height-adaptive # Exercise branch head even when concurrent main updates make the PR merge ref temporarily conflicted.
   pull_request:
     paths:
       - 'docs/tools/animation-author/index.html'
