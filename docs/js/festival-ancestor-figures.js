@@ -59,6 +59,19 @@
     output.dataset && (output.dataset.ancestorStonePixels=String(painted));
     return output;
   }
+  function poseFor(record,index) {
+    const authored = record?.ancestorPose || record?.statuePose || {}; // Authored historical NPC exports may freeze any of the supported transforms.
+    const defaultPose = poses[index] || poses[0];
+    const clamp = (field,lower,upper) => {
+      const value = Number(authored[field]);
+      return Number.isFinite(value) ? Math.max(lower,Math.min(upper,value)) : defaultPose[field];
+    };
+    return {
+      x:clamp('x',-.42,.42),z:clamp('z',-.42,.42),
+      scale:clamp('scale',.09,.4),tilt:clamp('tilt',-.45,.45),
+      head:clamp('head',-.5,.5),handRise:clamp('handRise',-.2,.4)
+    }; // Bounded, serializable statue pose values never mutate the source NPC or turn into an animation loop.
+  }
   function staticPose(model,pose,parts) {
     model.position.set(pose.x,.53,pose.z);
     model.scale.setScalar(pose.scale);
@@ -116,7 +129,7 @@
       const records=historicalRecords(record);
       for(let i=0;i<Math.min(LIMIT,records.length);i++) {
         try {
-          const figure=await buildFigure(window.THREE,records[i],poses[i],i,stone);
+          const figure=await buildFigure(window.THREE,records[i],poseFor(records[i],i),i,stone);
           if(group.userData.festivalDisposed) {
             figure.parts.hands?.dispose?.(); figure.parts.legs?.dispose?.();
             window.PNGPlaneAvatar?.disposeAvatarModel?.(figure.model);
@@ -152,6 +165,6 @@
     });
   }
   function diagnostics(){return {activeShrines:active.size,statues:[...active].reduce((n,e)=>n+e.figures.length,0),ready:[...active].filter(e=>e.ready).length,lastError,texture:'carved_smooth.png',cellsPerAxis:CELL_COUNT};}
-  window.FestivalAncestorFigures={decorate,dispose,carvedCanvas,historicalRecords,diagnostics};
+  window.FestivalAncestorFigures={decorate,dispose,carvedCanvas,historicalRecords,poseFor,diagnostics};
   window.__tzizkhanashAncestorFiguresDebug=diagnostics; // Copyable mobile diagnostics; no console required.
 })();
