@@ -280,4 +280,48 @@ assert.equal(spiceHighTown.factor,spiceZeroTown.factor,
   'historical festival scores use baseline spice acquisition difficulty, not the character’s current Town Value');
 if(oldTownMine===undefined)delete globalThis.TownMine;else globalThis.TownMine=oldTownMine;
 
+
+const mixSources={
+  sourceA:{entries:[{itemKey:'rare',chance:.5,min:1,max:1}]},
+  sourceB:{entries:[{itemKey:'common',chance:1,min:1,max:1}]},
+  weighted:{kind:'mixed',rolls:2,sourcePools:[{poolId:'sourceA',weight:1},{poolId:'sourceB',weight:3}]},
+  gated:{entries:[{itemKey:'rare',chance:.5,min:1,max:1,conditions:{weather:['rain']}}]},
+  unsafeMix:{kind:'mixed',rolls:2,sourcePools:[{poolId:'sourceA',weight:1},{poolId:'gated',weight:1}]},
+  nested:{kind:'mixed',rolls:1,sourcePools:[{poolId:'weighted',weight:1}]},
+  cycleA:{kind:'mixed',rolls:1,sourcePools:[{poolId:'cycleB',weight:1}]},
+  cycleB:{kind:'mixed',rolls:1,sourcePools:[{poolId:'cycleA',weight:1}]},
+};
+assert.equal(rarity.lootPoolItem('rare','weighted',mixSources).probability,1-Math.pow(1-.125,2),
+  'independent weighted mixed draws combine over two rolls without summing chances');
+assert.equal(rarity.lootPoolItem('rare','weighted',mixSources).expectedQuantity,.25,
+  'two draws × 1/4 source weight × 1/2 item chance gives one-quarter expected item');
+assert.equal(rarity.lootPoolItem('rare','unsafeMix',mixSources).probability,null,
+  'any unresolved child condition leaves the entire mixed chance unknown');
+assert.equal(rarity.lootPoolItem('rare','nested',mixSources).probability,1-Math.pow(1-.125,2),
+  'nested mixed source recursion retains the same underlying per-roll result');
+assert.equal(rarity.lootPoolItem('rare','cycleA',mixSources).probability,null,
+  'cyclic edited mixed pools cannot recurse forever or invent a drop probability');
+const authoredPuzzle={
+  kind:'exclusive',entries:[
+    {itemKey:'trinket_unstableBalance',weight:1,tier:1},
+    {itemKey:'trinket_ironAnchor',weight:1,tier:1},
+    {itemKey:'trinket_leadKnuckles',weight:1,tier:2},
+  ],
+};
+const triDefs={unstableBalance:{},ironAnchor:{},leadKnuckles:{}};
+assert.equal(rarity.lootPoolItem('trinket_unstableBalance','puzzleCave',{puzzleCave:authoredPuzzle},
+  {rewardTier:1,trinketDefinitions:triDefs}).probability,.5,
+  'tier-one puzzle cave rewards pick one of the two eligible loaded trinkets');
+assert.equal(rarity.lootPoolItem('trinket_unstableBalance','puzzleCave',{puzzleCave:authoredPuzzle},
+  {rewardTier:2,trinketDefinitions:triDefs}).probability,0,
+  'puzzle caves of another reward tier cannot award the selected trinket');
+assert.equal(rarity.lootPoolItem('trinket_unstableBalance','puzzleCave',{puzzleCave:authoredPuzzle},
+  {trinketDefinitions:triDefs}).probability,1/3,
+  'mixed cave source without explicit reward tier chooses among all loaded trinkets');
+const mixedPuzzle={...mixSources,puzzleCave:authoredPuzzle,
+  mixed:{kind:'mixed',rolls:2,sourcePools:[{poolId:'sourceA',weight:1},{poolId:'puzzleCave',weight:1}]}};
+assert.equal(rarity.lootPoolItem('trinket_unstableBalance','mixed',mixedPuzzle,
+  {trinketDefinitions:triDefs}).probability,1-Math.pow(1-1/6,2),
+  'a tierless nested puzzle source contributes its correctly weighted trinket chance');
+
 console.log('Item acquisition rarity tests passed.');
