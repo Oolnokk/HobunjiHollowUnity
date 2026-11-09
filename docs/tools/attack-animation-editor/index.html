@@ -461,7 +461,7 @@ function ensureCosmetics() {
 }
 let statueNpcExport = null; // Optional source NPC portrait record, used by the Statue Author without altering ordinary attack editing.
 function buildDefaultAvatarExport(speciesId, gender) {
-  if (statueNpcExport) return statueNpcExport; // Character Studio appearance, clothing, hair and age remain authoritative for statue captures.
+  if (statueNpcExport?.appearance?.speciesId===speciesId && statueNpcExport?.appearance?.gender===gender) return statueNpcExport; // Character Studio appearance remains authoritative until the preview species/gender changes.
   return {
     schema: 'npc_avatar_editor_export.v1',
     source: 'attack-animation-editor default',
@@ -771,11 +771,13 @@ function populateGenderSelect(speciesId, preferred) {
 $('avatarSpecies').innerHTML = SPECIES_LIST.map(s => `<option value="${s.id}">${s.label}</option>`).join('');
 populateGenderSelect(SPECIES_LIST[0].id, 'male');
 $('avatarSpecies').addEventListener('change', () => {
+  statueNpcExport=null; // A deliberate preview species change discards the previously imported NPC identity.
   const speciesId = $('avatarSpecies').value;
   populateGenderSelect(speciesId, $('avatarGender').value);
   rebuildAvatar(speciesId, $('avatarGender').value).catch(e => logDebug('Avatar rebuild failed: ' + e.message));
 });
 $('avatarGender').addEventListener('change', () => {
+  statueNpcExport=null; // Never export a new gender using a stale imported NPC record.
   rebuildAvatar($('avatarSpecies').value, $('avatarGender').value).catch(e => logDebug('Avatar rebuild failed: ' + e.message));
 });
 
