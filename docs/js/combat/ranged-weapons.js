@@ -1476,10 +1476,14 @@
     return 1 - (beyondPx / tailPx) * (1 - RANGE_FALLOFF_MIN_FRACTION);
   }
 
-  function playProjectileImpactSfx(p, segmentT = 1) {
+  function playProjectileImpactSfx(p, segmentT = 1, hitCover = false) {
     const t = Math.max(0, Math.min(1, Number(segmentT) || 0));
     const x = p.prevX + (p.x - p.prevX) * t;
     const y = p.prevY + (p.y - p.prevY) * t;
+    if (hitCover && p.def?.rangedType === 'thrown' && p.def?.dmgType === 'sharp') {
+      window.AudioSystem?.playObjectSfxKey?.('chop'); // Sharp blades striking cover use the existing wood-chop cue, not a weapon/block impact.
+      return;
+    }
     if (p.def?.rangedType === 'thrown') {
       // Thrown weapons reuse the melee impact family (sharp/blunt) of the same weapon instead of the arrow-hit cue.
       window.AudioSystem?.playWeaponHitSfx?.(p.def.dmgType, x, y, p.areaId, undefined, 'medium');
@@ -1508,7 +1512,7 @@
       const fireLimit = Math.min(segmentLimit, coverHit?.t ?? segmentLimit, shatterHit?.t ?? segmentLimit, nearest?.interval.enter ?? segmentLimit);
       window.DungeonFire?.contactProjectile?.(p, start, end, fireLimit, projectileRadius); // Fire-reactive mechanisms obey the same swept, occlusion-capped projectile path.
       if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter) && (!shatterHit || coverHit.t <= shatterHit.t)) {
-        playProjectileImpactSfx(p, coverHit.t);
+        playProjectileImpactSfx(p, coverHit.t, true);
         return { kind: 'cover', t: coverHit.t, coverHit };
       }
       if (shatterHit && (!nearest || shatterHit.t <= nearest.interval.enter)) {
@@ -1542,7 +1546,7 @@
     const fireLimit = Math.min(segmentLimit, coverHit?.t ?? segmentLimit, shatterHit?.t ?? segmentLimit, nearest?.interval.enter ?? segmentLimit);
     window.DungeonFire?.contactProjectile?.(p, start, end, fireLimit, projectileRadius); // Enemy-held Dungeon Fire remains visual-only; the module rejects non-player projectiles.
     if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter) && (!shatterHit || coverHit.t <= shatterHit.t)) {
-      playProjectileImpactSfx(p, coverHit.t);
+      playProjectileImpactSfx(p, coverHit.t, true);
       return { kind: 'cover', t: coverHit.t, coverHit };
     }
     if (shatterHit && (!nearest || shatterHit.t <= nearest.interval.enter)) {
@@ -1682,7 +1686,7 @@
           y: THREE.MathUtils.lerp(p.prevWorldY, p.worldY, fraction),
           z: THREE.MathUtils.lerp(p.prevY, p.y, fraction) / deps.TILE,
         };
-        if (hit?.kind !== 'cover') playProjectileImpactSfx(p, terrainImpact.t);
+        if (hit?.kind !== 'cover') playProjectileImpactSfx(p, terrainImpact.t, true);
         if (!embedProjectile(p, terrainImpact)) disposeProjectile(p);
         continue;
       }
