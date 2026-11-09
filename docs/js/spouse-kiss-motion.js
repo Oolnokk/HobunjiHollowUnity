@@ -433,7 +433,8 @@
     // root. The compositor returns only that OUTER root, whose userData is not
     // the character's skinned head/hand rig.
     const direct = window.WorldPortraitLife?.getPlayerAvatar?.()?.group;
-    if (direct?.userData?.neckRig?.available && isWithinRig(direct, player)) return direct;
+    if (direct?.userData?.neckRig?.available && direct.userData?.proceduralHandRig &&
+        isWithinRig(direct, player)) return direct; // Require both live festival-style pose owners, not a half-loaded portrait.
     let result = null; // Active player portrait used for all paired grips, lips and torso motion.
     player?.traverse?.(model => {
       if (!model?.userData?.neckRig?.available || !model.userData?.proceduralHandRig) return;
