@@ -254,7 +254,11 @@
         habitat:window.AlchemySystem?.REAGENT_DEFS?.[key]?.habitat || null,
         shareOfGenerated:entries.length?matching.length/entries.length:null}];
     }));
+    const scene = deps?._zoneScenes?.get?.(mapId);
+    const zoneTiles = Number(scene?.cols) * Number(scene?.rows); // Generated tile footprint; not a claim that every tile supports each reagent habitat.
     return {zoneId:mapId,known:true,isCurrentDay:today,day:record.day,
+      generatedMapTiles:Number.isFinite(zoneTiles) && zoneTiles > 0 ? zoneTiles : null,
+      generatedPlantsPerMapTile:Number.isFinite(zoneTiles) && zoneTiles > 0 ? entries.length/zoneTiles : null,
       generatedTotal:entries.length,remainingTotal:entries.filter(e=>!e.harvested).length,
       bySpecies,certainty:today?'exact current-day recorded habitat placements':'historical scatter only: current day requires regeneration',
       caution:'Habitat-specific opportunities; no assumption that every wilderness tile can grow every reagent'};
