@@ -37,14 +37,22 @@ const ordinaryShell = { isMesh: true, layers: { mask: 1 << 1 }, material: { colo
 const skySprite = { isSprite: true, layers: { mask: 1 }, material: star, visible: true, userData: { hobunjiNoOutline: true } };
 const hiddenShell = { isMesh: true, layers: { mask: 1 << 1 }, material: {}, visible: false };
 let sceneWalks = 0; // Counts expensive traversals to verify multi-elevation replay reuses one enumeration.
+const holder = { visible: true, children: [ordinaryShell] }; // Parent visibility can change in an onBeforeRender hook between grouped passes.
 const scene = {
+  visible: true,
+  children: [xrayShell, holder, skySprite, hiddenShell],
   traverseVisible(callback) {
     sceneWalks++;
-    for (const object of [xrayShell, ordinaryShell, skySprite, hiddenShell]) {
-      if (object.visible) callback(object);
+    function visit(node) {
+      if (node.visible === false) return;
+      callback(node);
+      for (const child of node.children || []) visit(child);
     }
+    visit(this);
   },
 };
+for (const child of scene.children) child.parent = scene;
+ordinaryShell.parent = holder;
 
 const candidates = helpers.collectShellReplayCandidates(scene);
 assert.equal(sceneWalks, 1, 'collect visible candidates exactly once');
@@ -73,6 +81,33 @@ for (const [material, before] of fallbackStates) Object.assign(material, before)
 const fallbackHidden = helpers.hideNonXrayShellMeshes(scene, new Set([xrayShell]));
 assert.equal(sceneWalks, 3, 'uncached shell callers still traverse live scene visibility');
 for (const [mesh, wasVisible] of fallbackHidden) mesh.visible = wasVisible;
+
+// A rendering hook can hide an entire actor group after the snapshot. The
+// cached candidate list must then behave like a fresh traverseVisible, without
+// writing to invisible actors' shared materials or hiding their shell planes.
+holder.visible = false;
+const hiddenByParent = helpers.prepareNonGroundDepthMaterials(scene, candidates.depth);
+assert.equal(hiddenByParent.has(ordinaryShell.material), false,
+  'hidden ancestor excludes stale depth candidates from material mutation');
+const maskedUnderHiddenParent = helpers.hideNonXrayShellMeshes(scene, new Set([xrayShell]), candidates.shell);
+assert.equal(maskedUnderHiddenParent.has(ordinaryShell), false,
+  'hidden ancestor excludes stale shell candidates from per-group masking');
+assert.equal(ordinaryShell.visible, true, 'hidden parent does not mutate child visible flag');
+for (const [material, before] of hiddenByParent) Object.assign(material, before);
+holder.visible = true;
+
+// Changes to the individual mesh and removal from the scene must also be
+// considered live between depth passes.
+ordinaryShell.visible = false;
+const hiddenSelf = helpers.prepareNonGroundDepthMaterials(scene, candidates.depth);
+assert.equal(hiddenSelf.has(ordinaryShell.material), false, 'hidden mesh is skipped');
+for (const [material, before] of hiddenSelf) Object.assign(material, before);
+ordinaryShell.visible = true;
+ordinaryShell.parent = null;
+const detached = helpers.hideNonXrayShellMeshes(scene, new Set([xrayShell]), candidates.shell);
+assert.equal(detached.has(ordinaryShell), false, 'detached mesh is skipped');
+ordinaryShell.parent = holder;
+assert.equal(sceneWalks, 3, 'visibility validation does not require any extra scene traversals');
 
 const replay = section('  function replayShellOutlineXray(', '  function wrappedRender(');
 assert.match(replay, /const replayCandidates = collectShellReplayCandidates\(scene\)/,
