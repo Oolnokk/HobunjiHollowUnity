@@ -17,6 +17,10 @@
   let effectiveCache = null; // Reused by activity and NPC queries until the raw map or resolved layout changes.
   let residentCache = []; // Refreshed at most once every two seconds as NPC records finish loading.
   let residentCacheAt = -Infinity; // Millisecond stamp for the resident cache.
+  let lastMissingGuestCheckAt = -Infinity; // Throttles festival guest recovery to once every three seconds.
+  const guestRecoveryInFlight = new Set(); // Limits concurrent festival avatar builds on slower/mobile devices.
+  let guestRecoveryCursor = 0; // Rotates through missing residents so repeatedly failing actors cannot starve later guests.
+  const MAX_PARALLEL_GUEST_RECOVERIES = 3; // Matches the existing initial NPC spawn worker concurrency.
   const costumeState = new WeakMap(); // Each walker redraws only when its event costume changes.
   let lastCostumeTick = -Infinity; // Rare costume refreshes share the existing game-loop tick.
   let lastSipSave = -Infinity; // Throttles world saves caused by NPCs sipping from the keg.
@@ -707,6 +711,23 @@
     else if(dance)window.SocialActionWheel?.stopDance?.('festival-ended');
     dance=null;
   }
+  function recoverMissingFestivalGuests(now) {
+    if (!deps?.ensureNpcWalker || !festivalHours() || deps?.isFestivalSuspended?.()) return;
+    if (now - lastMissingGuestCheckAt < 3000) return;
+    lastMissingGuestCheckAt = now;
+    const present = new Set((deps.getWalkers?.() || []).filter(walker => !walker._doorstepVisitor).map(walker => walker.rec?.id)); // Existing source walkers never need rebuilding.
+    const roster = residents(); // Uses the hydrated resident list without reloading portraits for visitors.
+    for (let step = 0; step < roster.length && guestRecoveryInFlight.size < MAX_PARALLEL_GUEST_RECOVERIES; step++) {
+      const rec = roster[(guestRecoveryCursor + step) % roster.length];
+      const absence = window.NpcScheduling?.getVisitorPresence?.(rec); // Current absence, rather than existence of any contextual attendance rule.
+      if (rec.visitorPresence || (absence && !absence.active) || present.has(rec.id) || guestRecoveryInFlight.has(rec.id)) continue;
+      guestRecoveryInFlight.add(rec.id);
+      Promise.resolve(deps.ensureNpcWalker(rec.id)).catch(error => {
+        window.__farmLog?.(`[festival] guest ${rec.id} recovery failed: ${String(error?.message || error)}`, 'warn', 'npc');
+      }).finally(() => guestRecoveryInFlight.delete(rec.id));
+    }
+    guestRecoveryCursor = roster.length ? (guestRecoveryCursor + MAX_PARALLEL_GUEST_RECOVERIES) % roster.length : 0;
+  }
   function update() {
     const now = performance.now(); // Called by gameLoop; no independent animation loop.
     settleFestivalFun();
@@ -734,6 +755,7 @@
     watchStage();
     window.NpcSharedMeals?.update?.(); // Existing low-frequency gathering tick owns meal decisions; no extra frame loop.
     window.FestivalLocaleActivities?.update?.(); // Same 200ms tick drives other festivals; schedule reads stay cached.
+    recoverMissingFestivalGuests(now); // New or previously unavailable residents must still attend every gathering.
     const playing = window.SocialActionWheel?.isDancing?.() || window.MusicMinigame?.state?.active; // Both established social paths remain free to start anywhere.
     if (festival()?.id === 'gorkunash' && festivalHours() && deps?.getArea?.() === 'town' && playing && !deps?.socialPaused?.() && !document.hidden) {
       socialParticipationS += elapsed;
@@ -818,7 +840,7 @@
       remembrance, musicParticipation, localeActivities:window.FestivalLocaleActivities?.diagnostics?.(),
       festivalDialogue:window.FestivalDialogue?.diagnostics?.(),sharedMeals:window.NpcSharedMeals?.diagnostics?.(),
       gatheringActive:festivalHours(),gatheringHours:gatheringHoursLabel(),shopsClosed:!deps?.isFestivalSuspended?.() && festivalHours(),
-      latestChange:'Shops pause only during active festival hours and resume their normal schedules afterward.' };
+      latestChange:'Missing resident walkers are recovered for festivals; ordinary schedules and visitor absence windows remain intact.' };
   }
   // The combat loader installs the alcohol bridge asynchronously, so registration is retried until it exists.
   let cupProviderRegistered = false;
@@ -844,6 +866,8 @@
   function init(injected) {
     deps = injected;
     residentCacheAt = -Infinity;
+    lastMissingGuestCheckAt = -Infinity;
+    guestRecoveryInFlight.clear(); guestRecoveryCursor = 0; // A new world starts with an empty, fairly rotated recovery queue.
     window.FestivalDialogue?.init?.({ getTownMap: deps.getTownMap });
     window.FestivalPotluckContest?.registerRewardVisit?.(deps,()=>{
       recoverPotluckEntries(); // Farmhouse exits recover overdue donations even after the feast has closed.

@@ -676,10 +676,23 @@
           : { col: t.targetCol ?? 0, row: t.targetRow ?? 0 };
         links.push({ toArea: t.targetMapId, exit: { c: t.col, r: t.row }, spawn: { c: spawn.col, r: spawn.row } });
       } else if (t.target === 'exit_building') {
-        const townSpot = deps.npcTransitionPool('town').find(x => x.target === 'building' && x.targetMapId === area);
-        const spawn = townSpot ? { c: townSpot.col, r: townSpot.row } : { c: t.targetCol ?? 0, r: t.targetRow ?? 0 };
-        links.push({ toArea: 'town', exit: { c: t.col, r: t.row }, spawn });
-      } else if (t.target && t.target !== 'zone' && Number.isFinite(t.targetCol) && Number.isFinite(t.targetRow)) {
+        // A wilderness home, tent, or den must exit into its actual exterior,
+        // not town's nonexistent (0,0) fallback. This also preserves the
+        // existing town-facing exits for ordinary shops and family rooms.
+        let entrance = null; // First matching exterior door identifies the area and physical spawn position.
+        for (const outside of deps.npcExteriorAreas?.() || ['town', 'farm']) {
+          const spot = deps.npcTransitionPool(outside).find(x => x.target === 'building' && x.targetMapId === area);
+          if (spot) { entrance = { area: outside, spot }; break; }
+        }
+        const spawn = entrance ? { c: entrance.spot.col, r: entrance.spot.row }
+          : { c: t.targetCol ?? 0, r: t.targetRow ?? 0 };
+        links.push({ toArea: entrance?.area || 'town', exit: { c: t.col, r: t.row }, spawn });
+      } else if (t.target === 'zone' && t.targetMapId) {
+        const entry = deps.npcZoneEntryPoint?.(t.targetMapId); // Town-to-wilderness trips use the same landing tile as the player.
+        if (entry && Number.isFinite(entry.c) && Number.isFinite(entry.r)) {
+          links.push({ toArea: t.targetMapId, exit: { c: t.col, r: t.row }, spawn: { c: entry.c, r: entry.r } });
+        }
+      } else if (t.target && Number.isFinite(t.targetCol) && Number.isFinite(t.targetRow)) {
         links.push({ toArea: t.target, exit: { c: t.col, r: t.row }, spawn: { c: t.targetCol, r: t.targetRow } });
       }
     }
@@ -711,7 +724,7 @@
       ...debugStats,
       cliffRoutes: { ...cliffDebug },
       collisionRadiusTiles: npcCollisionRadiusTiles(),
-      latestChange: 'Wilderness NPC paths read zone terrain, preserve walkable skipFloor mesa lids, reject map-boundary cliffs and revalidate deferred zone entry spawns.',
+      latestChange: 'NPC area graph uses real wilderness transitions and exits wilderness buildings through their actual exterior, not town (0,0).',
     };
   }
 
