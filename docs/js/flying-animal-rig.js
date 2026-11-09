@@ -255,17 +255,24 @@
     const gripping = new THREE.Mesh(new THREE.PlaneGeometry(perched.geometry.parameters.width, 1), perched.material);
     gripping.visible = false;
     pitch.add(gripping);
-    const eyeMaterial = images.eyes && images.blink ? material('eyes', { depthWrite: false }) : null; // Optional for other flying species and the existing author preview.
+    const eyeMaterial = images.eyes && images.blink ? material('eyes', { depthWrite: false, side: THREE.FrontSide }) : null; // Optional for other flying species and the existing author preview.
     const eyeOpenTexture = eyeMaterial?.map || null; // The authored eye pixels share the full 1617x1000 body canvas.
     const eyeShutTexture = eyeMaterial ? png.makeCanvasTexture(THREE, images.blink, 'flying-animal-eyes-blink') : null; // The same mesh blinks without rebuilding geometry.
+    const rearEyeMaterial = eyeMaterial ? png.makeMaterial(THREE, eyeOpenTexture, 'flying-animal-eyes-rear', { depthWrite: false, side: THREE.BackSide }) : null; // Reuse the original PNG and blink texture on the far side, without making a second eye canvas.
     const eyeFlying = eyeMaterial ? new THREE.Mesh(flying.geometry, eyeMaterial) : null; // Each eye plane reuses its body's mesh geometry.
     const eyePerched = eyeMaterial ? new THREE.Mesh(perched.geometry, eyeMaterial) : null;
     const eyeGripping = eyeMaterial ? new THREE.Mesh(gripping.geometry, eyeMaterial) : null;
-    for (const eye of [eyeFlying, eyePerched, eyeGripping]) {
+    const rearEyeFlying = rearEyeMaterial ? new THREE.Mesh(flying.geometry, rearEyeMaterial) : null; // Rear-facing eye art shares the authored flying UVs.
+    const rearEyePerched = rearEyeMaterial ? new THREE.Mesh(perched.geometry, rearEyeMaterial) : null; // Both faces inherit the live seven-point shoulder deformation.
+    const rearEyeGripping = rearEyeMaterial ? new THREE.Mesh(gripping.geometry, rearEyeMaterial) : null; // Capturing a victim must not hide the eyes seen from below/behind.
+    for (const [eye, side] of [
+      [eyeFlying, 1], [eyePerched, 1], [eyeGripping, 1],
+      [rearEyeFlying, -1], [rearEyePerched, -1], [rearEyeGripping, -1],
+    ]) {
       if (!eye) continue;
-      eye.position.z = .004; // A tiny camera-facing offset prevents the eye PNG from z-fighting the body.
+      eye.position.z = side * .004; // Independent near/far layers prevent body depth from hiding the eyes on the reverse side.
       eye.visible = false;
-      eye.userData.flyingAnimalEyeOverlay = true; // The mother's palette must never multiply the eye texture.
+      eye.userData.flyingAnimalEyeOverlay = true; // The mother's palette must never multiply either eye texture.
       pitch.add(eye);
     }
     function glowOverlay(key, geometry) {
@@ -375,11 +382,12 @@
       if (patternFlying) patternFlying.visible = !grounded && !carrying;
       if (patternPerched) patternPerched.visible = grounded || carrying; // No separate talon-grip markings: it shares the perched silhouette.
       if (eyeMaterial) {
-        eyeFlying.visible = !grounded && !carrying;
-        eyePerched.visible = grounded;
-        eyeGripping.visible = !grounded && carrying;
+        eyeFlying.visible = rearEyeFlying.visible = !grounded && !carrying;
+        eyePerched.visible = rearEyePerched.visible = grounded;
+        eyeGripping.visible = rearEyeGripping.visible = !grounded && carrying;
         const eyeTexture = blinkShut ? eyeShutTexture : eyeOpenTexture; // Reuse CreatureBlink's individual timer instead of creating a second blink clock.
         if (eyeMaterial.map !== eyeTexture) { eyeMaterial.map = eyeTexture; eyeMaterial.needsUpdate = true; }
+        if (rearEyeMaterial.map !== eyeTexture) { rearEyeMaterial.map = eyeTexture; rearEyeMaterial.needsUpdate = true; }
       }
       camera.getWorldPosition(view);
       root.worldToLocal(view);
@@ -402,7 +410,8 @@
       if (eyeMaterial) {
         eyeOpenTexture.dispose();
         eyeShutTexture.dispose();
-        eyeMaterial.dispose(); // Eye meshes share the body geometries; do not dispose those a second time.
+        eyeMaterial.dispose();
+        rearEyeMaterial.dispose(); // Six eye meshes share body geometries and two textures; neither is disposed a second time.
       }
       for (const overlay of [glowFlying, glowPerched, patternFlying, patternPerched]) {
         if (!overlay) continue;
