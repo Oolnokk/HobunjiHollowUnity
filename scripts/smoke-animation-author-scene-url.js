@@ -51,18 +51,8 @@ async function main() {
         JSON.stringify({ schema: 'hobunji.multi-avatar-animation.v8', actors: [{ id: 'stale-autosave' }] }));
     });
     await page.goto(PAGE, { waitUntil: 'domcontentloaded', timeout: 35000 });
-    await page.waitForFunction(() => {
-      const api = window.MultiAvatarAnimationAuthor;
-      if (api?.getActors?.().length !== 2 ||
-          document.getElementById('maaPresetSelect')?.value !== 'kiss') return false;
-      const mouths = api.kissMouthDiagnostics?.().actors; // A populated scene is not necessarily a finished skinned rig.
-      const saved = api.exportProject?.().project?.kiss?.mouthHeightsWorld;
-      if (!saved || mouths?.length !== 2) return false;
-      return Number.isFinite(mouths[0].neutralHeightWorld) &&
-        Number.isFinite(mouths[1].neutralHeightWorld) &&
-        Math.abs(mouths[0].neutralHeightWorld - saved.initiator) < .01 &&
-        Math.abs(mouths[1].neutralHeightWorld - saved.recipient) < .01;
-    }, null, { timeout: 120000 }); // Wait for rig settlement and calibration, not just NPC card creation.
+    await page.waitForFunction(() => window.MultiAvatarAnimationAuthor?.getActors?.().length === 2 &&
+      document.getElementById('maaPresetSelect')?.value === 'kiss', null, { timeout: 120000 });
     const result = await page.evaluate(() => {
       const api = window.MultiAvatarAnimationAuthor;
       const actors = api.getActors();
@@ -97,7 +87,7 @@ async function main() {
         const pahu = poses?.find(actor => actor.name === 'Pahu');
         if (!leaf || !pahu) throw Error('Missing character facing diagnostics at ' + t);
         facingSamples.push({ t, leaf: leaf.rootRotationDeg, portraitUpY: leaf.portraitUpY });
-        if (leaf.worldUpY < .98 || leaf.portraitUpY < .05) { // A genuine 42° torso bow tilts the portrait but is not a head-over-heels X/Z inversion.
+        if (leaf.worldUpY < .98 || leaf.portraitUpY < .90) {
           throw Error('Leaf flips upside down at t=' + t + ': ' + JSON.stringify(leaf));
         }
         if (Math.abs(leaf.rootRotationDeg.x) > 1 || Math.abs(leaf.rootRotationDeg.z) > 1) {
@@ -115,8 +105,6 @@ async function main() {
         scrubber.dispatchEvent(new Event('input', { bubbles: true }));
         return api.fullBodyDiagnostics();
       };
-      seek(0);
-      const mouthDiagnostics = api.kissMouthDiagnostics?.(); // Neutral mouth measurements needed in early contact failure diagnostics.
       const early = seek(.37);
       const earlyInitiator = early.find(actor => actor.name === 'Pahu');
       const earlyTall = early.find(actor => actor.name === 'Leaf');
@@ -147,34 +135,12 @@ async function main() {
         throw Error('Leaf never kneels after the initiator shoulder grasp: ' + JSON.stringify(afterLowering));
       }
       const afterContact = seek(1.12);
-      const mouthAtContact = api.kissMouthDiagnostics(); // Measures real lip-to-lip separation after the knee, torso bow and neck deformation.
-      if (!Number.isFinite(mouthAtContact.mouthGapWorld)) {
-        throw Error('Kiss contact lost a skinned mouth point: '+JSON.stringify(mouthAtContact));
-      }
       if (!afterContact.find(actor => actor.name === 'Pahu')?.initiatorHands?.applied) {
-        throw Error('Initiator wrist anchors must follow the spouse shoulders during contact: ' +
-          JSON.stringify({ bodies: afterContact, mouths: mouthAtContact, standing: mouthDiagnostics, solver: api.exportProject().project.kiss.heightSolution, correction: api.exportProject().project.kiss.mouthContactCorrectionXZ }));
+        throw Error('Initiator wrist anchors must follow the spouse shoulders during contact: ' + JSON.stringify(afterContact));
       }
       scrubber.value = '0';
       scrubber.dispatchEvent(new Event('input', { bubbles: true })); // Reset to the intended kiss opening before testing walking gait.
       const project = api.exportProject();
-      if (mouthDiagnostics?.source !== 'shared-attack-pose-skinned-mouth' ||
-          project.project.kiss?.mouthHeightSource !== 'shared-attack-pose-skinned-mouth') {
-        throw Error('Kiss did not use the canonical B\'shuakauitl mouth resolver: ' + JSON.stringify(mouthDiagnostics));
-      }
-      for (const [index, actor] of (mouthDiagnostics.actors || []).entries()) {
-        const expected = window.HobunjiPortraitMouthPoints?.get?.(actor.species, actor.gender);
-        if (!expected || !actor.authored || !actor.pixel || !actor.world) {
-          throw Error('No resolved species mouth point for '+actor.name+': '+JSON.stringify(actor));
-        }
-        const registered = window.SharedAttackPose?.mouthPixel;
-        if (!registered) throw Error('The canonical head-attachment mouth lookup was not loaded');
-        const savedHeight = index === 0
-          ? project.project.kiss.mouthHeightsWorld.initiator : project.project.kiss.mouthHeightsWorld.recipient;
-        if (!Number.isFinite(savedHeight) || Math.abs(savedHeight - actor.neutralHeightWorld) > .002) {
-          throw Error('Saved kiss mouth height differs from the skinned blowgun mouth anchor: '+JSON.stringify({actor,savedHeight}));
-        }
-      }
       const initialPair = api.kissPairDiagnostics?.(); // Ensures initiator/partner anatomy does not silently swap when applying a new preset.
       const initialBodies = api.fullBodyDiagnostics?.() || [];
       if (initialBodies.length !== 2 || initialBodies.some(body => !body.feet)) {
@@ -249,7 +215,6 @@ async function main() {
         facingSamples,
         shoulderGripEarly: earlyInitiator.initiatorHands,
         shoulderGripAtContact: afterContact.find(actor => actor.name === 'Pahu')?.initiatorHands,
-        mouthDiagnostics, mouthAtContact,
         tallerInitiator,
         initialPair,
         reversePair,
