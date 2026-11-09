@@ -88,7 +88,7 @@
       const chosen = api.feastDishDetails(feastInspectIndex);
       const describeEffects = effects => Object.entries(effects || {}).filter(([,amount])=>Number(amount)>0)
         .map(([effect,amount])=>window.CookingSystem?.formatEffectStrength?.(effect,amount) || `${effect} (+${amount})`);
-      html = '<p class="festival-note">Contest points are for judging; the actual eating buffs depend on the ingredients’ star quality and processing. The strongest dish in the competition may not give you the skill benefits you need today.</p>';
+      html = '<p class="festival-note">Contest points multiply ingredient star quality, processing depth and any known source rarity. The actual eating buffs still depend on quality and processing. The strongest dish in the competition may not give you the skill benefits you need today.</p>';
       html += `<h3>Compare dishes · day ${api.contestStandings()?.day || 1} of 7</h3><div class="festival-dish-picker">${dishes.map((meal,index)=>
         button(`${index+1}. ${meal.label} · ${meal.id==='reserved'?'Not yet entered':meal.score+' points'}\n${describeEffects(meal.foodEffects).slice(0,3).join(', ') || 'No food buffs recorded'}`,
           'inspect-pot', meal.id==='reserved', `data-pot-index="${index}" aria-pressed="${index===feastInspectIndex}"`)
@@ -101,7 +101,10 @@
         html += '<h4>Ingredient quality and contribution</h4><ul class="festival-ingredient-list">';
         html += chosen.ingredientDetails.map(item=>{
           const contribution=describeEffects(item.effects).join(', ') || 'No cooking buff';
-          return `<li><strong>${esc(item.icon)} ${esc(item.label)}</strong> · ${'★'.repeat(item.stars)}${'☆'.repeat(5-item.stars)} · ${item.stars} × ${item.multiplier} = <strong>${item.points} points</strong><small>${esc(contribution)}</small></li>`;
+          const rarity=Number(item.rarityMultiplier) || 1; // Inspector shows the same rarity factor actually used for scoring, not the rounded combined multiplier.
+          const math=rarity===1 ? `${item.stars} × ${item.processingMultiplier ?? item.multiplier}`
+            : `${item.stars} × ${item.processingMultiplier} processing × ${rarity.toFixed(2)} rarity`;
+          return `<li><strong>${esc(item.icon)} ${esc(item.label)}</strong> · ${'★'.repeat(item.stars)}${'☆'.repeat(5-item.stars)} · ${esc(math)} = <strong>${item.points} points</strong><small>${esc(contribution)}</small></li>`;
         }).join('') || '<li>Original ingredient details were not recorded for this older dish.</li>';
         html += '</ul><h4>Effects when eaten</h4><div class="festival-dish-total">';
         html += describeEffects(chosen.foodEffects).map(value=>`<div>${esc(value)}</div>`).join('') || 'No recorded food buffs';
@@ -112,7 +115,7 @@
     } else if (type === 'potluck' || type === 'offering') {
       const done = api.claimed(type);
       html = `<p>${type === 'potluck' && f.id==='gorkunash'
-        ? 'Enter one cooked dish in the seven-day potluck competition. Every ingredient contributes its own star level; processed ingredients earn twice their source ingredient score per processing step. Rivals have fixed quality ceilings. The seventh serving pot is yours for the rest of the festival. After the festival, Hreesh visits the winning cook with the Replica Helm of Bzabag. Your normal 10× friendly gift Favor still applies.'
+        ? 'Enter one cooked dish in the seven-day potluck competition. Every ingredient contributes its own star level; processed ingredients earn twice their source ingredient score per processing step, and known source rarity multiplies that result. Rivals have fixed quality ceilings. The seventh serving pot is yours for the rest of the festival. After the festival, Hreesh visits the winning cook with the Replica Helm of Bzabag. Your normal 10× friendly gift Favor still applies.'
         : type==='potluck'?'Give one cooked meal to the feast.':'Give one item. Its 1–5 star quality becomes your chosen blessing’s level, lasting 336 days.'}</p>`;
       if(type==='potluck'&&f.id==='gorkunash') {
         const bowl=api.festivalBowl();
