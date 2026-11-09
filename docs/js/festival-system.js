@@ -516,10 +516,13 @@
   function acknowledgeAnimalRelease(id) {
     const index=state.animalReleases?.findIndex?.(row=>row.id===id) ?? -1;
     if(index<0)return false;
-    state.animalReleases.splice(index,1);
-    deps?.save?.(); // The next ordinary member save includes delivered release IDs.
+    const [record]=state.animalReleases.splice(index,1);
+    try {
+      if (deps?.save?.() === false) { state.animalReleases.splice(index,0,record); return false; }
+    } catch(error) { state.animalReleases.splice(index,0,record); return false; } // Failed persistence must never claim the animal was permanently delivered.
     return true;
   }
+  function hasPendingAnimalReleases() { return !!state.animalReleases?.length; } // Lightweight gate checked by the ordinary wildlife tick, without cloning the whole queue.
   function giftMultiplier() { return festival()?.id === 'mountaindawn' ? 2 : 1; }
   function blessingMultiplier(stat) {
     if (!window.CalendarSystem?.isInitialized?.()) return 1;
@@ -1105,7 +1108,7 @@
     const quest = { isAvailable: () => eventKey() === duelEvent, id: `festival_duel_${year()}`, title: 'Hachutukara — Laugh at Fear', transient: true, practice: arena, steps: [{ id: 'fearless', title: 'Friendly duel', text: 'Stand calmly against Oddclaw. Land three ordinary hits while he spars back. Our borrowed weapons cannot cost you your belongings, and we restore your resources when you finish or leave.', check: 'hit', count: 3, hostile: true, goal: 'Land three hits on Oddclaw', weapon: 'hatchet' }], onComplete: () => { if (eventKey() === duelEvent && !claimed('duel')) { mark('duel'); giveFavor('spearhead_unumanuk', FESTIVAL_MAX_FAVOR, 'duel'); giveFavor('oddclaw_unumanuk', FESTIVAL_MAX_FAVOR, 'duel'); commit('Fear faced! +' + FESTIVAL_MAX_FAVOR + ' Favor with Spearhead and Oddclaw.'); } } };
     return window.CombatTutorial.start(quest, walker);
   });
-  window.FestivalSystem = { init, festival, year, claims, claimed, residents, favorHearts, qualityChoices, offeringPreview, pendingAnimalReleases, acknowledgeAnimalRelease, registerActivity, perform, actionButton, npcRewardAction, receiveNpcReward, nearestActivity, activityProps, atProp, update, cancelDance, giftMultiplier, blessingMultiplier, serialize, restore, diagnostics, MASKS, STORY,
+  window.FestivalSystem = { init, festival, year, claims, claimed, residents, favorHearts, qualityChoices, offeringPreview, pendingAnimalReleases, hasPendingAnimalReleases, acknowledgeAnimalRelease, registerActivity, perform, actionButton, npcRewardAction, receiveNpcReward, nearestActivity, activityProps, atProp, update, cancelDance, giftMultiplier, blessingMultiplier, serialize, restore, diagnostics, MASKS, STORY,
     socialOptionsFor, festivalHours, gatheringHoursLabel, shopsClosedFor, silencesTownMusic, musicPlaying, feastMenu, feastDishDetails, contestStandings, festivalBowl, festivalCup, heldVessel, vesselDef, takeOrRefillCup, takeFestivalBowl, fillFestivalBowl, eatFestivalBowl, currentFullness, addFestivalFun, askFestivalDance, festivalFoodStacks,
     discardFestivalBowl, potIndexAtAim, seatedMealAction, toggleSeatedMeal, isDiningSeat,get pendingDance() { return pendingDance; }, get dance() { return dance; }, getNpcs: () => deps?.getNpcs?.() || [] };
 })();
