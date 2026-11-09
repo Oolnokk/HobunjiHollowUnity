@@ -65,6 +65,21 @@ assert.equal(member.npcRelationships.pahu.memory.length, 1, 'unrelated dialogue 
 assert.deepEqual(member.packClothing.map(item => item.cosmeticId), ['ordinary_hat', 'festivalmask_grehlr']);
 assert.equal(member.festivals.claims['1154:hachutukara'].mask, true, 'festival claims persist with rewards');
 
+const gearPrizeBaseline = fixture();
+gearPrizeBaseline.meta.characters = [{ id: 'farmer', gearInventory: { clothingItems: [], knownMetalArmorBlueprints: [] } }];
+const gearPrizeTest = clone(gearPrizeBaseline);
+gearPrizeTest.meta.characters[0].gearInventory.clothingItems.push({
+  uid: 'gcloth_prize1', cosmeticId: 'replica_bzabag_helm', slot: 'hat', metalKey: 'nativeCopper',
+});
+const helmSession = { ...session, journal: { favor: {}, items: [], masks: ['replica_bzabag_helm'] } };
+context.mergeFestivalRewards(gearPrizeBaseline, gearPrizeTest, helmSession);
+assert.equal(gearPrizeBaseline.meta.worlds[0].members.farmer.packClothing.at(-1).cosmeticId,
+  'replica_bzabag_helm', 'Gorkunash prize granted in Gear is kept in restored Pack');
+assert.equal(gearPrizeBaseline.meta.worlds[0].members.farmer.packClothing.at(-1).metalKey,
+  'nativeCopper', 'Gorkunash prize keeps its rolled metal');
+assert.ok(gearPrizeBaseline.meta.characters[0].gearInventory.knownMetalArmorBlueprints.includes('replica_bzabag_helm'),
+  'carrying the helm also retains its smith unlock');
+
 const withoutRewards = clone(baseline); // Checkbox OFF means no call to the merge function.
 assert.equal(JSON.stringify(withoutRewards), originalJson, 'unchecked reward option restores exactly');
 const beforeMissing = clone(baseline);
@@ -73,6 +88,7 @@ assert.throws(() => context.mergeFestivalRewards(beforeMissing, tested,
 
 const blessed = clone(baseline);
 const blessedTest = clone(tested);
+blessedTest.meta.worlds[0].calendar.day = 130; // Buff was active for ten days of the disposable festival timeline.
 blessedTest.meta.worlds[0].members.farmer.festivals.claims['1154:tzizkhanash'] = { offering: true };
 blessedTest.meta.worlds[0].members.farmer.festivals.blessing = {
   stat: 'speed', level: 3, expiresDay: 1154 * 336 + 260,
@@ -81,7 +97,7 @@ context.mergeFestivalRewards(blessed, blessedTest, {
   ...session, eventKey: '1154:tzizkhanash', targetDay: 120, journal: { favor: {}, items: [], masks: [] },
 });
 assert.equal(blessed.meta.worlds[0].members.farmer.festivals.blessing.expiresDay,
-  1154 * 336 + 250, 'ancestor blessing keeps its remaining duration relative to restored date');
+  1154 * 336 + 240, 'ancestor blessing must lose the ten elapsed festival test days');
 
 const companion = read('docs/tools/dev-companion/dev-companion.js');
 assert.match(companion, /action\.checkbox/);
@@ -91,5 +107,10 @@ assert.match(source, /if \(session\.keepRewards\)/, 'unchecked test must use the
 assert.match(read('docs/js/folder-save-primary.js'), /function festivalTestSaveGuard\(/, 'primary folder must be protected');
 assert.match(read('docs/js/festival-system.js'), /recordFestivalFavor/, 'Favor should be journaled from actual festival grants');
 assert.match(read('docs/js/festival-system.js'), /recordFestivalItem/, 'items should be journaled from actual festival grants');
+assert.match(read('docs/js/festival-system.js'), /function settleTestRewards\(/, 'pending Fun settles at opt-in test exit');
+assert.match(read('docs/js/festival-potluck-contest.js'), /recordFestivalMask\?\.\(HELM_ID\)/,
+  'post-Gorkunash helm prize is journaled by its actual doorstep reward handler');
+assert.match(read('docs/js/folder-save-primary.js'), /startupMode = 'festival-test-browser'/,
+  'normal refresh cannot pull the primary folder over the active sandbox');
 
 console.log('test-dev-festival-rewards: ok');
