@@ -130,7 +130,7 @@ const snap = PM.debugSnapshot();
 assert.deepStrictEqual(JSON.parse(JSON.stringify(snap.byCategory)), { hostile: 5, neutral: 2, friendly: 4, interact: 10 },
   'hostiles including Den-Mother red; harmless animals yellow; creatures/crops white; live scene-owned interactables green; far/off-scene/dead/oversized excluded');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(snap.specialSources)),
-  { oreRocks: 4, shattercasks: 1, nests: 1, hives: 1, caveFeatures: 3 },
+  { oreRocks: 4, shattercasks: 1, nests: 1, hives: 1, caveFeatures: 3, shaftLadders: 0 },
   'mobile Sense Mode diagnostics show registered providers before range/scene filtering');
 assert.equal(snap.sources.oreRocks, 1, 'outdoor/mine ore rock roots flow through the game-owned source list');
 assert(snap.rejected.offScene >= 1 && snap.rejected.outOfRange >= 1, 'stale cave roots and out-of-range rocks are rejected');
