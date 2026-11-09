@@ -395,18 +395,18 @@
     const secondTravel = Math.min(baselineGap - firstTravel, secondLimit);
     firstTravel += Math.min(Math.max(0, baselineGap - firstTravel - secondTravel),
       Math.max(0, firstLimit - firstTravel)); // Use unused reach of the other head before giving up on contact.
-    const moveJoint = (joint, travel, worldPoint) => {
+    const moveJoint = (joint, travel, direction, worldPoint) => {
       if (!(travel > 0)) return;
       joint.getWorldPosition(worldPoint);
       joint.parent.updateWorldMatrix?.(true, false);
-      worldPoint.addScaledVector(data.delta, travel / baselineGap * blend);
+      worldPoint.addScaledVector(data.delta, direction * travel / baselineGap * blend);
       data.localPoint.copy(worldPoint);
       joint.parent.worldToLocal(data.localPoint); // Convert the world lip gap through its true bowed/scaled neck parent.
       joint.position.copy(data.localPoint); // The body, shoulders, posterior, feet, and exported actor root remain unmoved.
       joint.updateWorldMatrix?.(true, true);
     };
-    moveJoint(firstJoint, firstTravel, data.firstWorld);
-    moveJoint(secondJoint, -secondTravel, data.secondWorld);
+    moveJoint(firstJoint, firstTravel, 1, data.firstWorld);
+    moveJoint(secondJoint, secondTravel, -1, data.secondWorld);
     first.updateWorldMatrix?.(true, true);
     second.updateWorldMatrix?.(true, true);
     if (!pose.headFrame(data.firstFrame, first) || !pose.headFrame(data.secondFrame, second)) {
@@ -418,10 +418,18 @@
     return { contact: blend > .99 && distance < .025, distance, baselineGap, blend,
       debugHead: { first: { bone: [firstJoint.position.x, firstJoint.position.y, firstJoint.position.z],
         rest: [data.firstRest.x, data.firstRest.y, data.firstRest.z], world: [firstBoneWorld.x, firstBoneWorld.y, firstBoneWorld.z],
-        skeletonHasBone: !!first.userData?.neckRig?.skinnedPlane?.skeleton?.bones?.includes(firstJoint) },
+        skeletonHasBone: !!first.userData?.neckRig?.skinnedPlane?.skeleton?.bones?.includes(firstJoint),
+        skin: { neckY: first.userData?.neckRig?.neckLocal?.y,
+          blendHeight: first.userData?.neckRig?.skinnedPlane?.geometry?.userData?.blendHeight,
+          pixels: pose.mouthPixel?.(first), canvasHeight: first.userData?.sourceCanvas?.height,
+          modelHeight: first.userData?.portraitModelHeight } },
         second: { bone: [secondJoint.position.x, secondJoint.position.y, secondJoint.position.z],
         rest: [data.secondRest.x, data.secondRest.y, data.secondRest.z], world: [secondBoneWorld.x, secondBoneWorld.y, secondBoneWorld.z],
-        skeletonHasBone: !!second.userData?.neckRig?.skinnedPlane?.skeleton?.bones?.includes(secondJoint) } },
+        skeletonHasBone: !!second.userData?.neckRig?.skinnedPlane?.skeleton?.bones?.includes(secondJoint),
+        skin: { neckY: second.userData?.neckRig?.neckLocal?.y,
+          blendHeight: second.userData?.neckRig?.skinnedPlane?.geometry?.userData?.blendHeight,
+          pixels: pose.mouthPixel?.(second), canvasHeight: second.userData?.sourceCanvas?.height,
+          modelHeight: second.userData?.portraitModelHeight } } },
       reachLimited: firstTravel + secondTravel < baselineGap - .025,
       firstHeadMove: firstTravel * blend, secondHeadMove: secondTravel * blend };
   }
