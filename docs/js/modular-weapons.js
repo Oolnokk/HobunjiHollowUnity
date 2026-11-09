@@ -369,8 +369,10 @@
     recipe.sprite = shaft.sprite; // Base plane remains the selected modular haft, keeping its grip, idle stance and dimensions.
     recipe.layers = []; // No extra rigid head or legacy base overlays: the hanging head is the only head rendered.
     delete recipe.base; // A donor's special fuel VFX must not attach to an unrelated modular haft.
+    if (shaft.fireAssembly) recipe.base = global.WEAPON_SPRITE_ASSEMBLY_CONFIG?.weapons?.[shaft.fireAssembly]?.base || undefined; // Preserve a living shaft's own authored flames (Torch-Staff) while changing only its head.
     if (head.flailAssembly) {
-      const mount = matchingMounts(shaft, head)[0]; // Head-owned rope begins at the selected haft's matching socket, not its original weapon.
+      const required = head.mount?.type === 'blade' ? 'tang' : 'eye'; // The rope must attach to original haft art coordinates, not to head-only rig transforms.
+      const mount = shaft.mounts?.find(candidate => candidate.type === required); // Matching socket chosen by the modular fitting rule.
       if (!mount) return null;
       recipe.flail.haftAnchor = shaft.flailHaftAnchor || { ...mount.start }; // Optional shaft-local contact is edited beside the fitting arrow.
     } else {
@@ -654,7 +656,7 @@
     const pieces = flail ? [] : [...new Set(expandOps(settings(shaftKey, headKey).bridges?.strokes || []).filter(op => op.junction).map(op => op.junction))];
     const junctionsReady = Promise.all(pieces.map(name => loadImage(junctionPath(name), base).then(image => [name, image],
       () => { global.console?.warn?.('Modular weapon junction piece missing:', name); return [name, null]; })));
-    const task = Promise.all([loadImage(shaft.sprite, base), loadImage(head.sprite, base), junctionsReady]).then(([shaftImage, headImage, junctionList]) => {
+    const task = Promise.all([loadImage(shaft.sprite, base), flail ? Promise.resolve(null) : loadImage(head.sprite, base), junctionsReady]).then(([shaftImage, headImage, junctionList]) => {
       const values = settings(shaftKey, headKey); // Resolved authoring values are shared by bounds calculation and drawing.
       const frame = flail ? { left: 0, top: 0, width: 450, height: 1204 }
         : compositionFrame(shaft, head, visibleBounds(headImage), values,
