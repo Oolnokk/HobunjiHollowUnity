@@ -448,7 +448,7 @@
   function actionButton() {
     if (dance||pendingDance||remembrance) return { icon: '■', label: remembrance?'Stop remembering':pendingDance?'Cancel invitation':'Stop dancing', action: 'festival_stop_dance', allowed: true, style: 'secondary' };
     if (festival()?.id === 'gorkunash') return null; // Schedules and ordinary objects provide the event; there is no event/activity input.
-    const prop = nearestActivity(); // Activity remains tied to the prop when moved in the editor.
+    const prop = festival()?.id === 'tzizkhanash' ? activityProps().find(p=>p.activity.type !== 'remembrance' && atProp(p)) : nearestActivity(); // Offering remains directly usable even when remembrance radii overlap.
     if (festival()?.id === 'tzizkhanash' && prop?.activity?.type === 'remembrance') return null; // Standing at the shrine automatically joins the observance.
     if (prop?.festivalLocale && ['dance','story','duel','music','remembrance'].includes(prop.activity.type)
         && (!festivalHours() || (['story','duel'].includes(prop.activity.type) && Number(window.CalendarSystem?.getHour?.()) >= 22))) return null;
@@ -745,7 +745,7 @@
       }
     } else socialParticipationS = 0;
     // The village observes remembrance without the player. A passerby may join without a menu or action button.
-    if (!remembrance && festival()?.id === 'tzizkhanash' && festivalHours() && deps?.getArea?.() === 'town'
+    if (!remembrance && !claimed('remembrance') && festival()?.id === 'tzizkhanash' && festivalHours() && deps?.getArea?.() === 'town'
         && !deps?.isFestivalSuspended?.() && !deps?.isBlocked?.() && !dance && !pendingDance && !window.SocialActionWheel?.isDancing?.()) {
       const shrine = activityProps().find(p=>p.activity?.type === 'remembrance' && atProp(p));
       if(shrine) remembrance={event:eventKey(),propId:shrine.id,elapsed:0}; // Keep the existing twelve-second participation and annual reward.
