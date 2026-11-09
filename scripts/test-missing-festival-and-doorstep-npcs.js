@@ -159,6 +159,28 @@ async function testFestivalRecovery() {
   recover(11000);
   await settle();
   assert.deepEqual(requested.slice(4).sort(), ['pahu', 'leaf', 'father_hunundi_hodu'].sort(), 'inactive presence rules must not hide a genuine resident forever');
+
+  const pending = []; // Holds slow avatar builds open across successive festival ticks.
+  const limited = []; // Records every new avatar build request to verify the mobile concurrency ceiling.
+  const crowd = Array.from({length: 8}, (_, index) => ({id: 'guest_' + index})); // More residents than allowed simultaneous builds.
+  const crowdedDeps = {
+    getWalkers: () => [], isFestivalSuspended: () => false,
+    ensureNpcWalker(id) {limited.push(id); return new Promise(resolve => pending.push(resolve));},
+  };
+  const crowded = new Function(
+    'deps', 'residents', 'festivalHours', 'window', 'Promise',
+    'let lastMissingGuestCheckAt = -Infinity;\\nlet guestRecoveryCursor = 0;\\n' +
+    'const guestRecoveryInFlight = new Set();\\nconst MAX_PARALLEL_GUEST_RECOVERIES = 3;\\n' +
+    festivalSource.slice(start, end) + '\\nreturn recoverMissingFestivalGuests;'
+  )(crowdedDeps, () => crowd, () => true, {NpcScheduling: {getVisitorPresence: () => null}}, Promise);
+  crowded(4000);
+  assert.equal(limited.length, 3, 'festival recovery must start at most three slow avatar builds');
+  crowded(7500);
+  assert.equal(limited.length, 3, 'outstanding builds stay bounded across festival updates');
+  pending[0](true);
+  await settle();
+  crowded(11000);
+  assert.equal(limited.length, 4, 'once a build frees capacity, a different waiting resident gets a turn');
 }
 
 function testWildernessHomeRoutes() {
