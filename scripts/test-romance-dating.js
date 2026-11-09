@@ -420,11 +420,14 @@ player.area = oldArea;
 
 // Deferred naming uses the real birth/arrival day, even across a long save/reload delay.
 const actualBirthDay = clock.rawDay - 35; // A child named 35 days late is already a toddler.
+const furnitureCountBeforeLateNaming = interior.length; // Delayed naming must not needlessly displace house furniture for a baby basket.
 const lateNamed = W.RomanceFamily.createChild({
   name: 'Late arrival', speciesId: 'engh-sho', gender: 'female',
   bodyColors: mixed, origin: 'birth', otherParentId: 'tooth_hatayap', bornRawDay: actualBirthDay,
 });
 assert.equal(lateNamed.bornRawDay, actualBirthDay, 'the naming date never overwrites a saved birthday');
+assert.equal(lateNamed.basketId, null, 'a child already old enough to toddle does not receive a baby basket');
+assert.equal(interior.length, furnitureCountBeforeLateNaming, 'delayed naming does not move or remove farmhouse furniture');
 assert.equal(fam.phaseOf(lateNamed), 'toddler', 'growth is based on birth, not delayed naming');
 W.RomanceFamily.restore(W.RomanceFamily.serialize());
 assert.equal(W.RomanceFamily.snapshot().children.find(c => c.id === lateNamed.id)?.ageDays, 35,
