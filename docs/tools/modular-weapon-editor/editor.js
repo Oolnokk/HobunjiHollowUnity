@@ -210,12 +210,13 @@
       }
     }
       const guide = api.flailGuide(byId('shaft').value, byId('head').value);
-      if (id === 'shaft-canvas' && guide?.explicitMount) { // The connector line belongs on shaft art only; the flail head ignores its modular arrow.
-        ctx.save(); ctx.strokeStyle = '#f4c6ff'; ctx.fillStyle = '#f4c6ff'; ctx.lineWidth = 2.5;
-        ctx.setLineDash([8, 5]); ctx.beginPath(); ctx.moveTo(guide.start.x, guide.start.y);
+      if (id === 'shaft-canvas' && guide) { // Both explicit mounts and older author-owned flails need a visible connector line.
+        ctx.save(); ctx.strokeStyle = '#f4c6ff'; ctx.fillStyle = '#f4c6ff'; ctx.lineWidth = 3;
+        ctx.setLineDash(guide.explicitMount ? [8, 5] : [3, 8]); // Short dashes distinguish an inherited Tool Hub length from an editable rope mount.
+        ctx.beginPath(); ctx.moveTo(guide.start.x, guide.start.y);
         ctx.lineTo(guide.end.x, guide.end.y); ctx.stroke(); ctx.setLineDash([]);
-        ctx.beginPath(); ctx.arc(guide.start.x,guide.start.y,7,0,Math.PI*2); ctx.stroke();
-        ctx.beginPath(); ctx.arc(guide.end.x,guide.end.y,5,0,Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(guide.start.x,guide.start.y,8,0,Math.PI*2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(guide.end.x,guide.end.y,6,0,Math.PI*2); ctx.fill();
         ctx.restore();
       }
     ctx.restore(); // Guide follows the SHAFT ART in the same coordinate frame as the connector bore.
