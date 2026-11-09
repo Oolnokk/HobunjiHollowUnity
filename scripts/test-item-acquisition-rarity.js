@@ -239,4 +239,45 @@ const traderCode=fs.readFileSync('docs/js/slagothim-traders.js','utf8');
 assert(traderCode.includes('const IMPORTED_SPICES') && traderCode.includes('shuffled(rng, IMPORTED_SPICES)'),
   'stock listing and rarity analysis share one authoritative spice roster');
 
+
+const noHeartCycle = rarity.farmBreeding({averageParentHearts:0,gestationDays:3,heartMax:5,baseMutationChance:.05});
+assert.equal(noHeartCycle.speedMultiplier,.6,'zero-heart farm pair proceeds at 0.6× gestation speed');
+assert.equal(noHeartCycle.remainingWakingDays,5,'three gestation days at 0.6× takes five waking days');
+assert.equal(noHeartCycle.mutationChance,.05,'unhappy pair retains the base mutation chance');
+const happyCycle = rarity.farmBreeding({averageParentHearts:5,gestationDays:3,heartMax:5,baseMutationChance:.05});
+assert.equal(happyCycle.speedMultiplier,1.5,'five-heart pair progresses at 1.5× speed');
+assert.equal(happyCycle.remainingWakingDays,2,'three authored days finish in two at five hearts');
+assert(Math.abs(happyCycle.mutationChance-.15)<1e-12,'happy pair has threefold mutation chance');
+assert.equal(happyCycle.remainingWakingHours,32,'waking-hour progress uses FarmAnimals hourly scale');
+assert.equal(rarity.farmBreeding({averageParentHearts:6,gestationDays:3,heartMax:5}),null,'invalid heart values are rejected');
+assert(rarity.farmBreeding({averageParentHearts:null,gestationDays:3,heartMax:5}).remainingWakingDays===null,
+  'unknown parent happiness does not turn into a made-up gestation duration');
+assert(happyCycle.possibleOutcome.includes('not one inventory'),'farm breeding creates world livestock, not an inventory egg or baby item');
+const oldFarmAnimals=globalThis.FarmAnimals,oldScratchbones=globalThis.SCRATCHBONES_CONFIG,oldGenetics=globalThis.CreatureGenetics;
+globalThis.FarmAnimals={GESTATION_DAYS:3,GESTATION_HOURS_PER_DAY:16,HEART_MAX:5};
+globalThis.SCRATCHBONES_CONFIG={game:{livestock:{itemKinds:{nelkBaby:'nelk'}}}};
+globalThis.CreatureGenetics={MUTATION_CHANCE:.05};
+const breedingRoute=rarity.acquisitionSources('nelkBaby',{hasBreedingPair:true,averageParentHearts:4,shopStock:{},lootPools:{}});
+assert(breedingRoute.some(entry=>entry.kind==='breeding' && entry.probability===null),
+  'valid pair completion time is described without assigning a false item-drop probability');
+assert(breedingRoute.find(entry=>entry.kind==='breeding').detail.possibleOutcome.includes('not one inventory'),
+  'breeding source explicitly explains it produces a livestock record');
+if(oldFarmAnimals === undefined)delete globalThis.FarmAnimals;else globalThis.FarmAnimals=oldFarmAnimals;
+if(oldScratchbones === undefined)delete globalThis.SCRATCHBONES_CONFIG;else globalThis.SCRATCHBONES_CONFIG=oldScratchbones;
+if(oldGenetics === undefined)delete globalThis.CreatureGenetics;else globalThis.CreatureGenetics=oldGenetics;
+const orePools={mineRare:{entries:[{itemKey:'ore_gold',min:1,max:1,chance:.001}]},
+  chestRare:{entries:[{itemKey:'rareTrinket',min:1,max:1,chance:.001}]}};
+assert.equal(rarity.sellPrice('ore_gold',7,{itemDefs:{ore_gold:{cat:'material',sellPrice:7}},lootPools:orePools,shopStock:{}}),7,
+  'gold/bronze lore floors cannot be overwritten by loot rarity');
+assert.equal(rarity.sellPrice('rareTrinket',200,{itemDefs:{rareTrinket:{cat:'gear',tags:['Trinket']}},lootPools:orePools,shopStock:{}}),200,
+  'trinket-specific authored gear progression is protected');
+const oldTownMine=globalThis.TownMine;
+globalThis.TownMine={getTownValue:()=>0};
+const spiceZeroTown=rarity.foodRarity('cloudSaffron',{});
+globalThis.TownMine={getTownValue:()=>8};
+const spiceHighTown=rarity.foodRarity('cloudSaffron',{});
+assert.equal(spiceHighTown.factor,spiceZeroTown.factor,
+  'historical festival scores use baseline spice acquisition difficulty, not the character’s current Town Value');
+if(oldTownMine===undefined)delete globalThis.TownMine;else globalThis.TownMine=oldTownMine;
+
 console.log('Item acquisition rarity tests passed.');
