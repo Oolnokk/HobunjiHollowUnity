@@ -456,8 +456,9 @@ assert.equal(forageCensus.bySpecies.frostcapMoss.remaining,1,'only one frostcap 
 assert.equal(forageCensus.generatedMapTiles,400,'the generated zone has a measured area denominator');
 assert(Math.abs(forageCensus.generatedPlantsPerMapTile-3/400)<1e-12,
   'tile density uses the real map area, not a guessed global spawn frequency');
+let savedRuinState=null;
 const ruinHost={window:{THREE:{},RuinSiteLocales:{CATEGORY:'ruin_entrance',hashString:()=>5},
-  AuthoredFurniture:{load:()=>null}},localStorage:{getItem:()=>null,setItem:()=>{}}};
+  AuthoredFurniture:{load:()=>null}},localStorage:{getItem:()=>savedRuinState,setItem:(_key,value)=>{savedRuinState=String(value);}}};
 vm.runInNewContext(fs.readFileSync('docs/js/ruin-sites.js','utf8'),ruinHost);
 const ruins=ruinHost.window.RuinSites;
 const testSites=['test_gate_a','test_gate_b'].map(localeId=>({localeId,category:'ruin_entrance',
@@ -470,6 +471,14 @@ assert.equal(ruinsCensus.byTier.undetermined,2,'unvisited ruin guardian tiers ca
 assert.equal(Object.values(ruinsCensus.byTheme).reduce((a,b)=>a+b,0),2,
   'each actually registered ruin belongs to exactly one deterministic tradition');
 assert.equal(ruinsCensus.buriedHoleChancePerTreasureLocation,.06,'buried-ruin odds remain conditional on a treasure location');
+savedRuinState=JSON.stringify({default:{cycle:1,entrances:{},holes:{
+  'hole:map_northern_cliffs:6,7':{zoneId:sourceZone,state:'open',col:6,row:7}},
+  bossSites:{[ruinsCensus.sites[0].theme]:ruinsCensus.sites[0].id}}});
+const resolvedRuinCensus=ruins.sourceCensus(sourceZone);
+assert.equal(resolvedRuinCensus.byTier.lich,1,'actual first guardian owner is the sole known lich-tier ruin of its tradition');
+assert.equal(resolvedRuinCensus.byTier.hole,1,'the other registered site is a middle-tier ruin after guardian assignment');
+assert.equal(resolvedRuinCensus.openBuriedHoles,1,'world-persisted open burrow is counted separately from cliff entrances');
+assert.equal(resolvedRuinCensus.holes[0].zoneId,sourceZone,'buried hole keeps its zone-specific event source');
 const wildlifeHost={window:{WildernessMapGenerator:{makeRng:()=>()=>.25}}};
 vm.runInNewContext(fs.readFileSync('docs/js/wildlife-spawn.js','utf8'),wildlifeHost);
 const wildlife=wildlifeHost.window.WildlifeSpawn;
@@ -485,6 +494,17 @@ assert.equal(ecology.bySpecies.nelk.total,1,'balanced den allocation gives one N
 assert.equal(ecology.bySpecies.puktuk.total,1,'balanced den allocation gives one Puktuk den');
 assert.equal(ecology.roamingSpeciesChancePerSlot.moot,.5,'surface-herd selection is equal-weight between two configured species');
 assert.equal(ecology.roamingHerdSlots,4,'encounter denominator uses configured herd slot count');
+wildlife.init({zoneLayouts:new Map([[sourceZone,{cols:20,rows:20,
+  dens:[{id:'den1',x:1,y:1},{id:'den2',x:5,y:5},
+    {id:'human',x:7,y:7,isAnimalDen:false,caveSite:{inhabitant:'bandit_cave'}}]}]]),
+  EXTERIOR_ZONES:{[sourceZone]:{...wildlifeConfig,roamingHerdSpecies:['voorg-ass','voorg-ass','moot']}},
+  hostileObjects:new Set(),getCurrentArea:()=>sourceZone});
+const weightedEcology=wildlife.ecologyCensus(sourceZone);
+assert.equal(weightedEcology.animalDens,2,'human-inhabited caves are not misclassified as wildlife offspring sources');
+assert(Math.abs(weightedEcology.roamingSpeciesChancePerSlot['voorg-ass']-2/3)<1e-12,
+  'repeated herd-pool species entries retain their actual twice-as-large occurrence weight');
+assert(Math.abs(weightedEcology.roamingSpeciesChancePerSlot.moot-1/3)<1e-12,
+  'remaining herd species share the inverse of their authored pool representation');
 const priorSources={AlchemySystem:globalThis.AlchemySystem,ReagentPlants:globalThis.ReagentPlants,
   RuinSites:globalThis.RuinSites,WildlifeSpawn:globalThis.WildlifeSpawn,
   SCRATCHBONES_CONFIG:globalThis.SCRATCHBONES_CONFIG};
@@ -511,6 +531,12 @@ assert.equal(across.totals.availableReagents.total,2,'actual unharvested reagent
 assert.equal(across.ruins.registeredCliffSites,2,'ruin counts come from the registered site owner');
 assert.equal(rarity.item('frostcapMoss',{itemDefs:{frostcapMoss:{}},zoneId:sourceZone}).observedHabitat.remainingSites,1,
   'mobile item diagnostics surface the measured reagent opportunity count');
+reagents.init({_zoneReagentPersist:new Map([[sourceZone,currentReagentState]]),
+  _zoneScenes:new Map([[sourceZone,{cols:20,rows:20}]]),calendar:{day:11}});
+assert.equal(rarity.itemSourceFrequency('frostcapMoss').remainingSites,null,
+  'yesterday’s historical scatter does not masquerade as current-day ingredient availability');
+assert.equal(rarity.wildernessSourceCensus({zoneIds:[sourceZone]}).totals.availableReagents.total,null,
+  'stale current-day reagent opportunities remain unknown, not an invented zero');
 for(const [key,value] of Object.entries(priorSources)){
   if(value===undefined)delete globalThis[key];else globalThis[key]=value;
 }
