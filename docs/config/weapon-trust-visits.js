@@ -216,7 +216,7 @@
           "To be honest oy was certain oy'd be dead beforre she'd foind herself in someone else's talons. Know that me givin herr to you willin'ly, that means alot.",
           // The shared prefix and species-dependent suffix stay in one spoken sentence.
           // Only players who are not Rakako'an hear the extra affirmation first.
-          "{{playerSpeciesIf:rakakoan||Ya know, <lad/lass>, bein' a Rakako'an ain't really about where yer from, its about who you are. Yerr values. What's in yer heart.\\n\\n}}Keep impressin' me and oy moight let you in on{{playerSpeciesIf:rakakoan| somethin' useful you may have forrgot about.| a well kept Rakako'an secret. One that'll knock you on yerr arse. Heh heh.}}"
+          "{{playerSpeciesIf:rakakoan||Ya know, <lad/lass>, bein' a Rakako'an ain't really about where yer from, its about who you are. Yerr values. What's in yer heart.\n\n}}Keep impressin' me and oy moight let you in on{{playerSpeciesIf:rakakoan| somethin' useful you may have forrgot about.| a well kept Rakako'an secret. One that'll knock you on yerr arse. Heh heh.}}"
         ],
       },
       {
