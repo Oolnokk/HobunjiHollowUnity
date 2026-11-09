@@ -143,6 +143,11 @@ assert.strictEqual(reusedSpacing, reusableMovementPoint, 'collision avoidance wr
 assert.equal(reusedSpacing.x, originalSpacing.x, 'in-place avoidance preserves the ordered collision x result');
 assert.equal(reusedSpacing.y, originalSpacing.y, 'in-place avoidance preserves the ordered collision y result');
 assert.deepEqual(inputPoint, { x: 100, y: 0 }, 'avoiding a source point must not mutate the actor/input coordinates');
+
+const aliasedSpacingPoint = { x: 100, y: 0 }; // Models the queue-ring path, which deliberately uses one object for input and output.
+assert.strictEqual(spaceContext.adjust(self, aliasedSpacingPoint, aliasedSpacingPoint), aliasedSpacingPoint);
+assert.equal(aliasedSpacingPoint.x, originalSpacing.x, 'aliased avoidance retains the original ordered x displacement');
+assert.equal(aliasedSpacingPoint.y, originalSpacing.y, 'aliased avoidance retains the original ordered y displacement');
 const ringStart = banditSource.indexOf('  function banditRingPoint(');
 const ringEnd = banditSource.indexOf('  // Bandits frequently request', ringStart);
 assert(ringStart > 0 && ringEnd > ringStart, 'the enemy queue-ring helper is found');
