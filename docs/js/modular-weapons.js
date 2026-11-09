@@ -296,7 +296,7 @@
   }
   function flailGuide(shaftKey, headKey) {
     const shaft = config.shafts[shaftKey], head = config.heads[headKey];
-    if (!shaft || !head || !isFlailHead(head) || (!!shaft.flailAssembly && !!head.flailAssembly)) return null;
+    if (!shaft || !head || (!!shaft.flailAssembly && !!head.flailAssembly)) return null; // Both flail owners show connector guides; drilling remains flail-HEAD-only.
     const template = flailTemplate(head.flailAssembly || shaft.flailAssembly);
     if (!template) return null;
     const rope = shaft.mounts?.find(mount => mount.type === 'rope');
@@ -421,7 +421,8 @@
     });
   }
   function resolvedBores(shaft, head) {
-    if (!shaft?.bores?.length || !isFlailHead(head)) return []; // No physical bore on a normal rigid head or a shaft-only flail.
+    if (!shaft?.bores?.length || !isFlailHead(head) || (!!shaft.flailAssembly && !!head.flailAssembly)
+      || !flailTemplate(head?.flailAssembly || shaft?.flailAssembly)) return []; // No bore without a valid selected flail head and its actual authoring recipe.
     const anchor = authoredFlailAnchor(shaft, head);
     if (!anchor) return []; // Never drill at a guessed point when the connector isn't attached.
     return shaft.bores.filter(bore => bore.enabled !== false).map(bore => ({
@@ -645,18 +646,23 @@
       f: 602 + layout.y - 602 * layout.scaleY,
     }; // Parent attachment primitive transform; shaft image and shaft VFX are intentionally siblings, not children.
     if (!head) return { kind: 'attachmentRig', parent, children: [], shaftOutsideRig: true }; // Operation/junction-only callers need the parent, without a fitted head.
+    if (shaft?.flailAssembly || head?.flailAssembly) {
+      const ropes = (shaft.mounts || []).map((mount,index)=>({mount,index})).filter(entry=>entry.mount.type==='rope');
+      const anchor = authoredFlailAnchor(shaft,head); // No use of head.mount or headTransform for a flexible head.
+      const authored = flailTemplate(head.flailAssembly || shaft.flailAssembly)?.flail?.chain;
+      const length = (Number(authored?.lengthPx)||160)*(Number(authored?.scaleY??authored?.scale)||1);
+      const guides = ropes.length ? ropes : anchor
+        ? [{mount:{type:'rope',start:anchor,end:{x:anchor.x,y:anchor.y+length}},index:-1}] : [];
+      return { kind:'flailSuspensionRig',parent,shaftOutsideRig:true,
+        children:guides.map(({mount,index})=>({
+          kind:'rope',index,type:'rope',children:[],localMount:mount,
+          worldMount:{type:'rope',start:rigPoint(shaft,mount.start),end:rigPoint(shaft,mount.end)}
+        })) }; // The Tool Hub attachment replaces ANY modular-head mount, even for old flails without a rope line.
+    }
     const required = head?.mount?.type === 'blade' ? 'tang' : head?.mount?.type === 'weight' ? 'eye' : '';
     const compatible = (shaft?.mounts || []).map((mount, index) => ({ mount, index }))
       .filter(entry => entry.mount.type === required);
     const selected = compatible.length ? compatible : (shaft?.mounts || []).filter(mount => mount.type !== 'rope').slice(0, 1).map((mount, index) => ({ mount, index }));
-    if (shaft?.flailAssembly || head?.flailAssembly) {
-      const rope = (shaft.mounts || []).map((mount,index)=>({mount,index})).filter(entry=>entry.mount.type==='rope');
-      return { kind:'flailSuspensionRig',parent,shaftOutsideRig:true,
-        children:(rope.length?rope:selected).map(({mount,index})=>({
-          kind:'rope',index,type:mount.type,children:[],localMount:mount,
-          worldMount:{type:mount.type,start:rigPoint(shaft,mount.start),end:rigPoint(shaft,mount.end)}
-        })) }; // Rope lines are never passed through headTransform; no head stretching even in debug/editor.
-    }
     const children = selected.map(({ mount, index }) => {
       const region = regionAt(shaft,{x:(mount.start.x+mount.end.x)/2,y:(mount.start.y+mount.end.y)/2});
       const regionMatrix=regionAffine(region); // Mount and fitted primitive are descendants of this local area.
