@@ -82,6 +82,13 @@ assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.chain.scaleY, 0.25
 assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.head.scale, 2.5);
 assert.equal(api.definitionFor('grappleFlail', {}).flail.chain.scaleX, 5.25);
 assert.equal(api.definitionFor('grappleFlail', {}).flail.chain.scaleY, 3.75);
+assert.equal(api.definitionFor('grappleFlail', {}).flail.chain.sprite,'assets/objectsprites/rope_long.png');
+const sizes = api.ropeSpriteSizing(api.definitionFor('grappleFlail', {}).flail.chain, .5 / 450, 152 / 2164); // Exact game unit size and PNG aspect.
+assert(Math.abs(sizes.lengthPx - 600) < 1e-10,'original 600-pixel chain reach survives the art swap');
+assert(Math.abs(sizes.diameterPx - 26.25) < 1e-10,'original 26.25-pixel thickness survives the art swap');
+assert(Math.abs(sizes.widthScale * (152 / 2164) * 3.75 - 26.25 * (.5 / 450)) < 1e-10,'billboard width compensates for uniform Y scaling');
+assert(Math.abs(sizes.length * 3.75 - 600 * (.5 / 450)) < 1e-10,'sprite height reaches the same grapple contact');
+assert(!source.includes('new THREE.CylinderGeometry'),'the generated cylinder was removed');
 assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.head.layers[2].vfx.type, 'fire');
 assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.head.layers[2].targetHex.toUpperCase(), '#E7DDC9');
 assert.match(source, /enchantmentTargets/, 'the assembly exposes head-only enchantment masks');
