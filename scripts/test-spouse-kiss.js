@@ -382,7 +382,8 @@ assert.ok(playerHandRig.appliedFrames > 0, 'the actual player hand rig receives 
 assert.ok(playerPortrait.rotation.x > 0, 'shorter player leans toward the kiss on the real portrait, not an empty body group');
 assert.ok(sceneWalker.avatarGroup.rotation.x > 0, 'taller torso bends at the waist');
 assert.ok(partnerLegs.sink <= partnerLegs.standingPosteriorY * .95, 'actual knee cap is never exceeded');
-assert.ok(npcRoot.position.z > .8, 'taller partner retreats to allow space for a deep bow');
+assert.ok(npcRoot.position.z > 0 && npcRoot.position.z < .8,
+  'taller partner approaches the player but stays on its own side as the bow gives the heads space');
 assert.equal(activeTokens.size, 1);
 assert.equal(visual.stop('dodge'), true);
 assert.equal(playerPortrait.rotation.x, 0, 'cancel resets the actual player portrait pose');
