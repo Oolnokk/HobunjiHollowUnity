@@ -263,7 +263,7 @@
   async function loadAuthoredProfiles() {
     if (typeof fetch !== 'function') return;
     try {
-      const response = await fetch('config/dialogue/ambient-dialogue.json');
+      const response = await fetch('config/dialogue/ambient-dialogue.json?v=20261109voiceimport37'); // Revisioned authored voices prevent cached pre-import animal calls on mobile.
       if (!response.ok) return;
       const config = await response.json();
       setAuthoredProfiles(config?.animalVocalizations || {});
