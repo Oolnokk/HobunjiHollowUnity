@@ -71,9 +71,9 @@
     }
     return cleaned;
   }
-  function syncProvenanceWorld() {
+  function syncProvenanceWorld(forceReload = false) {
     const id = activeWorldId();
-    if (id === provenanceWorldId) return;
+    if (!forceReload && id === provenanceWorldId) return;
     provenanceWorldId = id;
     lastBreeding = null;
     provenanceLedger = id ? normalizedProvenance(window.WorldMetaStore?.loadCropProvenance?.(id)) : {version:1,records:{}}; // World switching never reuses another world’s family tree.
@@ -210,7 +210,7 @@
   function attach(deps = {}) {
     if (deps.cropData && deps.cropData !== cropData) { known.clear(); variants.clear(); lastBreeding = null; } // World/replay rebinding clears stale genetics diagnostics as well as variant caches.
     worldIdGetter = deps.getWorldId || worldIdGetter; // World identity is supplied by the same owner as livestock and storage when available.
-    syncProvenanceWorld(); // Load saved parent paths before any hydrated crossbreed is repriced.
+    syncProvenanceWorld(true); // Reload the canonical world ledger after folder/cloud restore even when the world ID stays unchanged.
     cropData = deps.cropData || cropData;
     itemDefs = deps.ITEM_DEFS || itemDefs;
     window.ItemAcquisitionRarity?.bindItemDefs?.(itemDefs); // Mobile rarity diagnostics use the same live definitions as game inventory and shops.
