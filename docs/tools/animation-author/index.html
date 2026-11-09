@@ -14257,6 +14257,9 @@ async function installAnimationUrlSceneV1547(scene) {
     $('maaProjectName').value = scene.name;
   }
   setAnimationTime(Math.min(scene.time, animationAuthor.duration), { pause: true });
+  if (scene.preset === 'kiss') {
+    animationAuthor.kissUrlMouthRevalidationV1552 = { frames: 150 }; // Portrait/hand profile attachment can finish after the URL scene is first built.
+  }
   renderAnimationModeChrome();
   renderAllAnimationUi();
   frameAllAnimationActors('angle'); // The angled author camera keeps both flat two-sided portrait planes readable.
@@ -14540,6 +14543,39 @@ tickAnimationAuthor = function(dt) {
   try { result = beforeMultiTickV1548(dt); }
   finally { fullBodyTickActiveV1548 = false; }
   if (animationAuthor.mode === 'multi') syncMultiAvatarFullBodiesV1548(animationAuthor.currentTime, dt); // The body tick runs exactly once after timeline evaluation.
+  // One-time URL scene recovery if asynchronous species/head profile setup
+  // subsequently changes the B'shuakauitl mouth coordinate in world space.
+  // Never overwrite an edited/playing timeline or repeat the rebuild.
+  const pending = animationAuthor.kissUrlMouthRevalidationV1552; // Only explicit just-opened URL scenes opt into late profile revalidation.
+  if (pending) {
+    pending.frames--;
+    if (animationAuthor.mode !== 'multi' || animationAuthor.multiPreset !== 'kiss' ||
+        animationAuthor.actors.length !== 2 || animationAuthor.playing || pending.frames <= 0) {
+      animationAuthor.kissUrlMouthRevalidationV1552 = null;
+    } else if (pending.frames % 8 === 0) {
+      const expected = animationAuthor.kissHeightSolutionV1546; // Stored mouth heights from the originally built clip.
+      const fresh = kissPairHeightV1546().solution; // Recheck only after the latest asynchronous portrait rig settled.
+      const drift = expected && fresh
+        ? Math.max(Math.abs(expected.firstMouthHeightWorld - fresh.firstMouthHeightWorld),
+          Math.abs(expected.secondMouthHeightWorld - fresh.secondMouthHeightWorld))
+        : 0; // A changed skinned mouth coordinate, not mere viewport camera motion, triggers recalibration.
+      if (drift > .01 && fresh?.contactPossible) {
+        animationAuthor.kissUrlMouthRevalidationV1552 = null; // Clear before invoking the preset to prevent recursion.
+        const oldTime = animationAuthor.currentTime; // Preserve an explicit ?t=1.12 share URL when recalculating keyframes.
+        const oldSelection = animationAuthor.selectedActorId; // Restore whichever participant the author was inspecting.
+        const leader = configuredKissPairV1550().leader;
+        if (leader) {
+          selectAnimationActor(leader.id);
+          if (applyKissPresetV1546()) {
+            setAnimationTime(oldTime, { pause: true });
+            if (oldSelection && actorById(oldSelection)) selectAnimationActor(oldSelection);
+            log('Refreshed URL kiss after species mouth rig settled; true lip heights changed ' +
+              drift.toFixed(3) + ' world units.');
+          }
+        }
+      }
+    }
+  }
   return result;
 };
 
