@@ -317,7 +317,14 @@ W.__hobunjiPlayerProfile.appearance.speciesId = 'engh-sho';
 clock.hour = 12;
 W.RomanceFamily.tick();
 const plan = W.RomanceFamily.snapshot().pregnancy;
-assert.equal(plan.dueRawDay - plan.announceRawDay, 84, 'announcement at 3 months, birth at 6 months');
+assert.equal(plan.dueRawDay - plan.announceRawDay, 28, 'pregnancy lasts one 28-day month');
+assert.equal(plan.dueRawDay - W.RomanceSystem.getSpouse().marriedRawDay, 112, 'first child is due four months after the wedding');
+assert.equal(W.RomanceFamily.usefulnessInfo('tooth_hatayap').level, 2, 'spouse starts at usefulness rank two');
+assert.equal(W.RomanceFamily.usefulnessInfo('tooth_hatayap').intelligenceMultiplier, 1, 'adult intelligence grants full XP');
+const realWorkRandom = Math.random;
+Math.random = () => 0.5;
+assert.equal(W.RomanceFamily.rollWorkQuality('tooth_hatayap'), 2, 'spouse default harvest quality is two stars');
+Math.random = realWorkRandom;
 const mixed = fam.mixedColors({ A: { h: 0, s: 0, v: 0 }, B: { h: 0, s: 0, v: 0 }, C: { h: 0, s: 0, v: 0 } }, { A: { h: 200, s: 0, v: 0 }, B: { h: 200, s: 0, v: 0 }, C: { h: 200, s: 0, v: 0 } });
 for (const channel of ['A', 'B', 'C']) assert.ok(Math.abs(mixed[channel].h) <= 6 || Math.abs(mixed[channel].h - 200) <= 6, 'mixed babies take each color from one parent');
 
@@ -326,12 +333,16 @@ assert.equal(child.basketId, 'basket1', 'newborns get a baby basket in the house
 assert.ok(W.SCRATCHBONES_CONFIG.game.socialRelationships.relationships.some(link =>
   link.type === 'friend' && link.members.includes(child.id) && link.members.includes('gantami_ginju')), 'family child joins Gantami friendship network');
 assert.equal(fam.phaseOf(child), 'basket');
+assert.equal(W.RomanceFamily.usefulnessInfo(child.id), null, 'newborns cannot work or earn XP');
 assert.equal(fam.childTarget(child).activity, 'napping in the basket');
 let childRec = fam.childRecord(child);
 assert.equal(childRec.role, 'child', 'family children use the shared child marker (PNGPlaneAvatar.isChildAvatar)');
 assert.ok(childRec.childHeadScale > childRec.childBodyScale, 'babies: the head shrinks less than the body');
 clock.rawDay += 28;
 assert.equal(fam.phaseOf(child), 'toddler');
+assert.equal(W.RomanceFamily.usefulnessInfo(child.id).intelligenceMultiplier, 0.25, 'toddlers gain one-quarter XP');
+assert.equal(W.RomanceFamily.rollWorkQuality(child.id), 1, 'untrained toddlers produce one-star goods');
+assert.equal(W.RomanceFamily.awardWork(child.id, 'till').xp, 1.5, 'toddler work trains the one shared stat at quarter rate');
 assert.equal(fam.toddlingFooting(child), 99, 'Toddling Footing starts at 99');
 clock.rawDay += 70;
 assert.equal(fam.toddlingFooting(child), 50, 'Toddling Footing eases toward 0 over 5 months');
@@ -339,6 +350,8 @@ W.RomanceFamily.tick();
 assert.ok(!interior.some(o => o.id === 'basket1'), 'the basket is removed once the baby starts toddling');
 clock.rawDay += 70;
 assert.equal(fam.phaseOf(child), 'child');
+assert.equal(W.RomanceFamily.usefulnessInfo(child.id).intelligenceMultiplier, 0.5, 'children gain half XP without a level reset');
+assert.equal(W.RomanceFamily.awardWork(child.id, 'till').xp, 4.5, 'work gained as a toddler carries into childhood');
 childRec = fam.childRecord(child);
 assert.equal(childRec.childBodyScale, undefined, 'grown children use the shared config child proportions, like Gantami');
 assert.equal(fam.toddlingFooting(child), 0);
@@ -358,7 +371,20 @@ assert.equal(fam.childTarget(child).area, 'farm', 'vat assignments prevent unsup
 child.vatId = null;
 townRules.visitPercent = 0; // Restore farm behavior for the rest of the test.
 
-const priorPlan = fam.getFamily().pregnancy; // Save the old biological plan while exercising adoption deferrals.
+const previousPregnancy = fam.getFamily().pregnancy;
+previousPregnancy.born = true;
+previousPregnancy.awaitingChild = true; // Pending naming must block a new plan even after older siblings exist.
+W.RomanceFamily.tick();
+assert.equal(fam.getFamily().pregnancy, previousPregnancy, 'pending child naming prevents duplicate pregnancies');
+previousPregnancy.awaitingChild = false;
+W.RomanceFamily.tick();
+const siblingPlan = W.RomanceFamily.snapshot().pregnancy;
+assert.equal(siblingPlan.dueRawDay, child.bornRawDay + 168, 'siblings are scheduled six months apart');
+assert.equal(siblingPlan.dueRawDay - siblingPlan.announceRawDay, 28, 'later pregnancies also last one month');
+const savedFamily = W.RomanceFamily.serialize();
+W.RomanceFamily.restore(savedFamily);
+assert.equal(W.RomanceFamily.snapshot().children[0].usefulness.level, 1, 'child usefulness survives a save/restore cycle');
+const priorPlan = fam.getFamily().pregnancy; // Save the later biological plan while exercising adoption deferrals.
 const dream = { spouseId: 'tooth_hatayap', kind: 'adoption', dueRawDay: clock.rawDay, announced: true, born: false };
 fam.getFamily().pregnancy = dream;
 const oldArea = player.area;
