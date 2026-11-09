@@ -16,6 +16,7 @@
   }
   function decorate(root, record) {
     const THREE = window.THREE; // Same renderer used by game and editor preview.
+    if (record.festivalWeatherFire) { root.userData ||= {}; root.userData.festivalWeatherFire = true; } // Identifies only festival outdoor fires for rain suppression.
     const dressing = record.festivalDecoration || structureDressings[record.key]; // Standalone structural furniture also participates in festival setup/disposal without event-only metadata.
     if (!THREE || (!dressing && !record.activity)) return;
     const group = new THREE.Group(); // Owned by the prop; rebuilding/disposal follows its normal lifecycle.
@@ -36,6 +37,7 @@
         if (!data || group.userData.festivalDisposed) return;
         const visual = window.AuthoredFurniture.buildGroup(data, color); // Uses permanent furniture's PNG/stretch material and geometry pipeline.
         group.add(visual);
+         if (dressing === 'ancestors') void window.FestivalAncestorFigures?.decorate?.(group,record,visual); // Swap old primitives only after a real NPC statue successfully bakes.
         window.FurnitureTableSystem?.refreshServices?.();
       }; // Only dressing assemblies are appended; structural furniture already comes through the normal furniture builder.
       const data = window.AuthoredFurniture?.peek?.(furnitureKey); // Avoids asynchronous work when preload has completed.
@@ -78,6 +80,7 @@
     root.add(group);
   }
   function dispose(root) {
+    window.FestivalAncestorFigures?.dispose?.(root); // Cancel pending statue bakes and clean up owned NPC rigs.
     const materials = new Set(), textures = new Set(), geometries = new Set(); // Prevents duplicate disposal when structural roots also contain a dressing/sign group.
     root?.traverse?.(object => {
       if (!object.userData?.festivalStructure && object.name !== 'festival-dressing') return;

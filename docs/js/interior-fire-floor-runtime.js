@@ -15,12 +15,20 @@
     return;
   }
 
-  const AMBIENT_FIRE_KEYS = new Set(['campfire', 'bonfire', 'candleTable', 'standingLamp', 'hearth']); // Used to limit always-on VFX to intentional flame-bearing furniture.
+  const AMBIENT_FIRE_KEYS = new Set(['campfire', 'bonfire', 'candleTable', 'candleCluster', 'standingLamp', 'hearth']); // Used to limit always-on VFX to intentional flame-bearing furniture.
   const AMBIENT_UNATTACHED_TTL_MS = 5000; // Used to discard preview groups that were built but never added to a scene.
   const FIRE_FURNITURE_DEFS = Object.freeze({ // Used to register real placeable decorative furniture definitions before game init.
     campfireFurniture: Object.freeze({
       name: 'Campfire', icon: '🔥', fw: 1, fd: 1, procKey: 'campfire', color: 0x6d3e20,
       desc: 'A compact stone-ring campfire using the authored campfire furniture preset.',
+    }),
+    candleCluster: Object.freeze({
+      name: 'Candle Cluster', icon: '🕯️', fw: 1, fd: 1, procKey: 'candleCluster', color: 0xb08d57,
+      desc: 'Sixteen candles, tallest at the center, from the candle-table wax and tray.',
+    }), // Authored Map Editor decorative key as distinct from placeable furniture item.
+    candleClusterFurniture: Object.freeze({
+      name: 'Candle Cluster', icon: '🕯️', fw: 1, fd: 1, procKey: 'candleCluster', color: 0xb08d57,
+      desc: 'A bundled 1×1 arrangement of sixteen candles, tallest in the center, made from the candle-table candle.',
     }),
     bonfireFurniture: Object.freeze({
       name: 'Bonfire', icon: '🔥', fw: 2, fd: 2, procKey: 'bonfire', color: 0x6d3e20,
@@ -44,6 +52,7 @@
   let lastFloorMaterialCount = 0; // Included in debug output so a map can prove its floor meshes were found.
   let lastFloorStretchMeshCount = 0; // Included in debug output so mobile tests can verify one-PNG floor UV stretching actually reached the scene meshes.
   let lastFloorError = null; // Captures the most recent per-map floor config/texture failure without requiring devtools.
+  let suppressedFestivalFlames = 0; // Exposed to mobile diagnostics when rain extinguishes outdoor festival fire.
   let lastAmbientKey = null; // Captures the most recently attached ambient-fire furniture key for diagnostics.
   let registeredDefinitions = false; // Reports whether the real campfire/bonfire decorative definitions reached game deps.
 
@@ -52,6 +61,7 @@
   // the authored visual immediately (or upgrades it when the JSON cache resolves).
   if (!Object.prototype.hasOwnProperty.call(furniture.CATALOG || {}, 'campfire')) furniture.CATALOG.campfire = [];
   if (!Object.prototype.hasOwnProperty.call(furniture.CATALOG || {}, 'bonfire')) furniture.CATALOG.bonfire = [];
+  if (!Object.prototype.hasOwnProperty.call(furniture.CATALOG || {}, 'candleCluster')) furniture.CATALOG.candleCluster = []; // Legal during authored PNG load; FurnitureVesselRuntime upgrades this placeholder.
 
   function deepCloneJson(value) {
     return value == null ? value : JSON.parse(JSON.stringify(value)); // Used only for JSON-shaped authored furniture data.
@@ -147,6 +157,7 @@
   function ambientTick({ timestamp: now }) {
     const dt = Math.min(0.05, Math.max(0, ambientLastNow ? (now - ambientLastNow) / 1000 : 1 / 60)); // Used to keep particle motion stable after tab stalls.
     ambientLastNow = now;
+    suppressedFestivalFlames = 0;
     for (const record of [...ambientRecords]) {
       const attached = !!record.group?.parent; // Used to begin playback only after the caller actually places the furniture in a scene.
       if (attached) record.wasAttached = true;
@@ -154,7 +165,17 @@
         if (record.wasAttached || now - record.createdAt > AMBIENT_UNATTACHED_TTL_MS) disposeAmbientRecord(record);
         continue;
       }
-      for (const visual of record.visuals) visual?.update?.(dt, true);
+      // The festival marker is on the placed decor root; actual authored emitter groups may be descendants.
+      let weatherOwner = record.group;
+      while (weatherOwner && !weatherOwner.userData?.festivalWeatherFire) weatherOwner = weatherOwner.parent;
+      const extinguished = !!weatherOwner && window.WeatherFX?.isRaining?.() === true; // The real rain-window state, including developer weather overrides.
+      if (extinguished) suppressedFestivalFlames += 1;
+      if (weatherOwner?.userData?.mapEditorAux?.light) {
+        const light = weatherOwner.userData.mapEditorAux.light; // Restore the authored intensity instead of inventing a different brightness after rain.
+        if (!Number.isFinite(weatherOwner.userData.festivalFireLightIntensity)) weatherOwner.userData.festivalFireLightIntensity = light.intensity;
+        light.intensity = extinguished ? 0 : weatherOwner.userData.festivalFireLightIntensity;
+      }
+      for (const visual of record.visuals) visual?.update?.(dt, !extinguished);
     }
     if (!ambientRecords.size) {
       ambientLastNow = 0;
@@ -192,6 +213,73 @@
     return emitters.every(emitter => !emitter?.attachedPartId || !!meshById?.get?.(emitter.attachedPartId));
   }
 
+  function instanceCandleClusterBodies(group, parts) {
+    // The authored source remains separate/editable in Furniture Author, but gameplay batches matching
+    // wax/tin geometries into a handful of static instanced draws instead of 32 draws per 1x1 cluster.
+    if (!THREE.InstancedMesh || !group?.userData?.meshById || group.userData.hobunjiCandleClusterInstanced) return false;
+    const buckets = new Map(); // Each tint family keeps the actual PNG material from the authored candle-table part.
+    for (const part of parts || []) {
+      if (!/^cluster_(wax|socket)_\d+$/.test(part.id || '')) continue;
+      const mesh = group.userData.meshById.get(part.id);
+      if (!mesh?.isMesh || !mesh.geometry || !mesh.material || Array.isArray(mesh.material) || mesh.parent !== group) return false;
+      const key = part.id.startsWith('cluster_wax_') ? 'wax:'+(part.materialFillColor || part.color || '') : 'socket';
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(mesh);
+    }
+    if (!buckets.size) return false;
+    const batches = []; // Instance meshes are retained by group disposal; invisible source meshes remain as map/editor part anchors.
+    for (const [kind,meshes] of buckets) {
+      const first = meshes[0], batch = new THREE.InstancedMesh(first.geometry, first.material, meshes.length);
+      batch.name='festival_candle_cluster_'+kind.replace(':','_');
+      batch.userData.hobunjiCandleClusterBatch=true;
+      for (let index=0;index<meshes.length;index++) {
+        meshes[index].updateMatrix?.();
+        batch.setMatrixAt(index,meshes[index].matrix);
+      }
+      batch.instanceMatrix.needsUpdate=true;
+      group.add(batch);
+      batches.push(batch);
+    }
+    for (const meshes of buckets.values()) for (const mesh of meshes) mesh.visible=false;
+    group.userData.hobunjiCandleClusterInstanced=batches.length; // Copyable Pixel Probe clue: usually four static draws per cluster.
+    return true;
+  }
+
+  function makeCandleClusterFlames(group, emitters, parts) {
+    // One Points draw for sixteen candle tips: per-candle authored particle emitters in the Furniture Editor
+    // still describe the arrangement, but runtime must not add sixteen draw calls for each of 25 town clusters.
+    const sources = new Map((parts || []).map(part => [part.id, part]));
+    const tips = emitters.map((emitter, i) => {
+      const part = sources.get(emitter.attachedPartId);
+      if (!part?.transform) return null;
+      const t = part.transform;
+      return {x:Number(t.x)||0,y:(Number(t.y)||0)+(Number(t.sy)||0)*.5+.02,z:Number(t.z)||0,phase:i*2.39996};
+    }).filter(Boolean); // Every flame follows its candle's authored footprint and height.
+    if (!tips.length) return null;
+    const count=tips.length*3, positions=new Float32Array(count*3), colors=new Float32Array(count*3);
+    const geometry=new THREE.BufferGeometry(), position=new THREE.BufferAttribute(positions,3), color=new THREE.BufferAttribute(colors,3);
+    geometry.setAttribute('position',position); geometry.setAttribute('color',color);
+    const material=new THREE.PointsMaterial({size:.047,vertexColors:true,transparent:true,opacity:.9,depthWrite:false,sizeAttenuation:true});
+    const points=new THREE.Points(geometry,material);points.name='festival_cluster_candle_flames';points.frustumCulled=false;
+    points.visible=false;group.add(points);
+    let phase=0; // Each update advances all 48 tiny flame particles without allocating Three.js objects.
+    return {
+      update(dt,lit) {
+        phase+=Math.max(0,Number(dt)||0);
+        for(let i=0;i<tips.length;i++)for(let n=0;n<3;n++) {
+          const tip=tips[i], k=(i*3+n)*3, offset=phase*(1.6+n*.2)+tip.phase+n*2;
+          positions[k]=tip.x+Math.sin(offset)*.008;
+          positions[k+1]=tip.y+n*.023+Math.sin(offset*1.3)*.01;
+          positions[k+2]=tip.z+Math.cos(offset)*.008;
+          colors[k]=1;colors[k+1]=n===2?.22:.65+Math.sin(offset)*.1;colors[k+2]=n===2?.04:.09;
+        }
+        position.needsUpdate=true;color.needsUpdate=true;
+        points.visible=!!lit; // Rain extinguishes every tip immediately; clear weather reignites automatically.
+      },
+      dispose(){group.remove(points);geometry.dispose();material.dispose();}
+    };
+  }
+
   function attachAmbientEmitters(group, data, key) {
     if (!group || !AMBIENT_FIRE_KEYS.has(key) || !Array.isArray(data?.particleEmitters) || !authored.createEmitterVisual) return group;
     if (ambientRecordByGroup.has(group)) return group;
@@ -202,7 +290,10 @@
       group.userData.hobunjiAmbientFurnitureVfxPendingKey = key; // Used by the authored-upgrade callback to retry only after attachedPartId meshes exist.
       return group;
     }
-    const visuals = emitters.map(emitter => authored.createEmitterVisual(group, emitter)).filter(Boolean); // Used by the shared ambient RAF below.
+    if (key === 'candleCluster') instanceCandleClusterBodies(group, data.parts); // Optimization is limited to these static authored candle parts.
+    const visuals = key === 'candleCluster'
+      ? [makeCandleClusterFlames(group, emitters, data.parts)].filter(Boolean)
+      : emitters.map(emitter => authored.createEmitterVisual(group, emitter)).filter(Boolean); // Batched candle tips keep draw calls proportional to clusters, not total candles.
     if (!visuals.length) return group;
     const record = { group, visuals, key, createdAt: performance.now(), wasAttached: false }; // Stored until the furniture is removed from its scene.
     ambientRecords.add(record);
@@ -249,7 +340,7 @@
     const itemDefs = injectedDeps?.ITEM_DEFS; // Used to make the new furniture keys readable/placeable anywhere a furniture inventory item is granted.
     if (itemDefs) {
       for (const [itemKey, definition] of Object.entries(FIRE_FURNITURE_DEFS)) {
-        if (itemDefs[itemKey]) continue;
+        if (!itemKey.endsWith('Furniture') || itemDefs[itemKey]) continue; // Decor-only candleCluster is not a duplicate inventory item.
         itemDefs[itemKey] = {
           icon: definition.icon,
           label: definition.name,
@@ -478,6 +569,7 @@
       bonfireCatalog: Object.prototype.hasOwnProperty.call(furniture.CATALOG || {}, 'bonfire'),
       bonfireReady: !!bonfireData,
       ambientGroups: ambientRecords.size,
+      suppressedFestivalFlames,
       ambientVisuals: [...ambientRecords].reduce((sum, record) => sum + record.visuals.length, 0),
       lastAmbientKey,
       floorBuilderWrapped: !!window.InteriorSceneBuilder?.buildFloorMaterial?.__hobunjiFloorStyleWrapped,

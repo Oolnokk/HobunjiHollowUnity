@@ -19,7 +19,7 @@ assert.equal(loom.moteOnly, true, 'actual decorative catalog preserves moteOnly'
 assert.equal(loom.masteryUnlockId, 'advancedLoomBlueprint', 'actual catalog preserves world mastery id');
 assert.ok(bp('loomFurniture') && !bp('loomFurniture').moteOnly, 'simple loom stays ordinarily purchasable');
 assert.equal(bp('groomingKitFurniture').alwaysKnown, true, 'grooming station needs no learned blueprint');
-assert.equal(bp('campfireKitFurniture').alwaysKnown, true, 'campfire remains available after removing the starter paper');
+assert.equal(bp('campfireKitFurniture'), undefined, 'free campfire setup removes the obsolete paid kit blueprint from crafting and the carpenter');
 
 const materials = {
   stone: { label: 'Stone', sellPrice: 3 },

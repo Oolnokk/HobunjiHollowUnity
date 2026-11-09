@@ -69,6 +69,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     localStorage.setItem('hobunjiOpeningStory.v1:ruin-browser-world', 'complete');
     localStorage.setItem('hobunjiOpeningStory.v1:ruin-browser-world:farm-tour', 'complete');
     localStorage.setItem('hobunjiDevMode', '1');
+    localStorage.setItem('hobunjiRuinDebugBadge', '1'); // This smoke test asserts the opt-in badge; enable it explicitly.
+    localStorage.setItem('hobunjiRuinDebugBadge', '1'); // This browser test asserts the optional on-screen ruin diagnostics.
     localStorage.removeItem('hobunjiDevRandomRuinWallPlanes');
     localStorage.removeItem('hobunji.devRandomRuinDarkness.v1');
     localStorage.removeItem('hobunji.devRandomRuinPuzzleOptions.v2');

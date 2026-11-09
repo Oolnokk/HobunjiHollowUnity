@@ -85,6 +85,8 @@
   }
 
   function resume(reason = 'manual') {
+    const phase = window.HobunjiQuickSave?.festivalStatus?.().phase; // Festival Test must not permit an automatic folder sync before the original snapshot is restored.
+    if (phase && phase !== 'idle') return getState(); // Only finalization may clear the festival marker and then resume normal autosaving.
     if (!isPaused()) return getState();
     state = null;
     writeState();

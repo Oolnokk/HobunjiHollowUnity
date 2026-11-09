@@ -9,6 +9,9 @@ const render = fs.readFileSync('docs/tools/multi-sprite-weapon-editor/preview-re
 const picker = fs.readFileSync('docs/tools/multi-sprite-weapon-editor/pick-on-sprite.js','utf8'); // The same pixel selection widget used by Tool Hub.
 const app = fs.readFileSync('docs/tools/multi-sprite-weapon-editor/app.js','utf8'); // Source integration sanity checks.
 const runtime = fs.readFileSync('docs/js/weapon-sprite-assemblies.js','utf8'); // Real game rope/scale adapter.
+assert(runtime.includes('flail_ruin_rope_sprite'),'flail assembly uses the ruin art plane');
+assert(runtime.includes('mesh.onBeforeRender'),'the rope faces the current camera');
+assert(!runtime.includes('new THREE.CylinderGeometry'),'the old generated rope cylinder is gone');
 const game = fs.readFileSync('docs/game.js','utf8'); // Grapple-Flail weapon inventory and sprite registration.
 const index = fs.readFileSync('docs/tools/multi-sprite-weapon-editor/index.html','utf8'); // Correct script order and picker controls.
 for (const source of [config,render,picker,app,runtime]) new Function(source);
@@ -20,13 +23,13 @@ assert.match(index,/id="pickCanvas"/);
 assert.match(app,/function writeCoordinate/);
 assert.match(app,/HobunjiSpritePointPicker\?\.create/);
 assert.match(runtime,/makeRope\(THREE, f\.chain, unit, order \+ 0\.01, ropeTexture\)/);
-assert.match(runtime,/plane\.getWorldScale\(q\.scale\)/,'final visible haft scale must be inherited');
+assert.match(runtime,/plane\.matrixWorld\.decompose\(q\.decomposePos, q\.baseQ, q\.scale\)/,'final visible haft scale must be inherited from the baked world matrix');
 assert.match(runtime,/state\.chain\.scale\.set\(/);
 assert.match(runtime,/connectorAxisScale\(flail\.chain, 'scaleX'\)/);
 assert.match(runtime,/connectorAxisScale\(flail\.chain, 'scaleY'\)/);
 assert.match(runtime,/state\.headRoot\.scale\.setScalar\(localHandleScale \* headScale\)/);
 assert.match(runtime,/headSpec\.anchorSpace === 'composite'/);
-assert.match(runtime,/assets\/textures\/wavy_surface\.png/);
+assert.match(runtime,/assets\/objectsprites\/rope_long\.png/);
 assert.match(game,/grappleFlail: \{ label: 'Grapple-Flail'/);
 assert.match(game,/ITEM_DEFS\.grappleFlail/);
 
@@ -61,13 +64,19 @@ assert.deepEqual(Object.keys(registry),['hachutuTorchFlail','hachutuTorchStaff',
 assert.equal(registry.hachutuTorchStaff.flail, undefined, 'a complex tool may have effects without a flail assembly');
 assert.deepEqual(Array.from(registry.grappleFlail.flail.head.layers,l=>l.id),['back','front']);
 assert.equal(registry.grappleFlail.flail.chain.type,'rope');
+assert.equal(registry.grappleFlail.flail.chain.sprite,'assets/objectsprites/rope_long.png');
+assert.equal(registry.grappleFlail.flail.chain.color,'#6B4728');
+assert.equal(registry.grappleFlail.flail.chain.lengthPx,225);
+assert.equal(registry.grappleFlail.flail.chain.radiusPx,6.25);
+assert.equal(registry.grappleFlail.flail.chain.lengthPx * registry.grappleFlail.flail.chain.scaleY,843.75);
+assert.equal(2 * registry.grappleFlail.flail.chain.radiusPx * registry.grappleFlail.flail.chain.scaleX,65.625);
 assert.equal(registry.grappleFlail.flail.head.anchorSpace,'composite');
 const lookup=path=>art[String(path||'').split('/').pop()]||null;
 const preview=window.HobunjiMultiSpritePreviewRenderer;
 const a=preview.modelFor(registry.grappleFlail,lookup,0,0);
 assert(a.rope && a.headOrigin && a.headPosition);
-assert.equal(a.rope.length,160);
-assert.equal(a.headPosition.y-a.pivot.y,600,'Grapple-Flail rope length is 160 handle pixels × 3.75 after proportional torch shortening');
+assert.equal(a.rope.length,225);
+assert.equal(a.headPosition.y-a.pivot.y,843.75,'Grapple-Flail rope uses the exported 225 handle pixels × 3.75');
 assert.equal(a.chainScaleX,5.25);
 assert.equal(a.chainScaleY,3.75);
 assert.equal(registry.hachutuTorchFlail.flail.chain.scaleX,0.35);
@@ -82,7 +91,7 @@ assert(full.minY*fit.zoom+fit.y>=0 && full.maxY*fit.zoom+fit.y<=240);
 const scaled=JSON.parse(JSON.stringify(registry.grappleFlail));
 scaled.flail.chain.scaleX=1;scaled.flail.chain.scaleY=2;scaled.flail.head.scale=.5;
 const b=preview.modelFor(scaled,lookup,0,0);
-assert.equal(b.headPosition.y-b.pivot.y,320,'chain scale changes rope length without changing head scale');
+assert.equal(b.headPosition.y-b.pivot.y,450,'chain scale changes rope length without changing head scale');
 assert.equal(b.headScale,.5);
 const wider=JSON.parse(JSON.stringify(scaled)); // Width-only changes must not change the hanging endpoint.
 wider.flail.chain.scaleX=8;

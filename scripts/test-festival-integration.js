@@ -10,6 +10,10 @@ const source = name => fs.readFileSync(`docs/js/${name}.js`, 'utf8');
 const defsStart = game.indexOf('const DECORATIVE_FURNITURE_DEFS =');
 const defsEnd = game.indexOf('\n      };', defsStart) + '\n      };'.length;
 const defs = vm.runInNewContext(`${game.slice(defsStart, defsEnd)}; DECORATIVE_FURNITURE_DEFS;`); // Real furniture footprints; changing a model definition updates this check.
+const weatherFurniture = source('interior-fire-floor-runtime'); // The normal boot registers new fire-furniture keys after game.js declares its initial literal.
+assert(weatherFurniture.includes("candleCluster: Object.freeze({"), 'candle-cluster decorative definition must be registered by the real furniture runtime');
+assert(weatherFurniture.includes('fw: 1, fd: 1, procKey: \'candleCluster\''), 'new candle cluster uses the real authored 1×1 furniture footprint');
+defs.candleCluster = {fw:1,fd:1,walkable:false}; // Mirrors the registered late-bound festival furniture definition in geometry-only tests.
 function rectangle(prop) {
   const def = defs[prop.key]; // The same unrotated center and post-scale as TownZoneBuildings.
   assert(def, `unknown furniture ${prop.key}`);

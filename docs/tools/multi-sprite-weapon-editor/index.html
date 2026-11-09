@@ -58,13 +58,13 @@ h3{font-size:13px;margin:5px 0}
 <script src="../../js/portrait-utils.js?v=20261107h7418f3e"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/tool-metal-recolor.js?v=20261015hd172faa"></script>
-<script src="../../config/weapon-sprite-assemblies.js?v=20261109grappleidle1"></script>
+<script src="../../config/weapon-sprite-assemblies.js?v=20261109ropebrown3"></script>
 <script src="../../js/weapon-layer-effects.js?v=20261101hachutuwle2"></script>
 <script src="../../js/combat/shared-attack-pose.js?v=20261030preview3d1"></script>
-<script src="../../js/weapon-sprite-assemblies.js?v=20261109grappleidle1"></script>
+<script src="../../js/weapon-sprite-assemblies.js?v=20261109animalshade7"></script>
 <script src="preview-renderer.js?v=20261030torchstaffgeometry3"></script>
 <script src="pick-on-sprite.js?v=20261030pixelpick1"></script>
-<script defer src="app.js?v=20261109hce62214"></script>
+<script defer src="app.js?v=20261109ropebrown3"></script>
 </head>
 <body>
 <main>
@@ -128,7 +128,7 @@ h3{font-size:13px;margin:5px 0}
 <div class="panel">
 <h2>Rigid haft and chain</h2>
 <label for="baseSprite">Haft PNG (existing weapon's base sprite)</label><input list="repoSprites" id="baseSprite" placeholder="assets/toolsprites/hachutu_torch-flail_handle.png">
-<label for="connectorType">Connector type</label><select id="connectorType"><option value="chain">Chain sprite</option><option value="rope">Generated rope (root-totem material)</option></select>
+<label for="connectorType">Connector type</label><select id="connectorType"><option value="chain">Chain sprite</option><option value="rope">Ruin rope sprite (camera-facing)</option></select>
 <div id="chainSpriteRow"><label for="chainSprite">Chain PNG</label><input list="repoSprites" id="chainSprite" placeholder="assets/toolsprites/hachutu_torch-flail_chain.png"></div>
 <div id="ropeFields" class="grid3" hidden><div><label for="ropeLength">Rope length (haft px)</label><input id="ropeLength" type="number" min="2" max="2048" step="1"></div><div><label for="ropeRadius">Rope radius (haft px)</label><input id="ropeRadius" type="number" min=".25" max="30" step=".25"></div><div><label for="ropeColor">Rope tint</label><input id="ropeColor" value="#6B4728"></div></div>
 <div class="grid2">

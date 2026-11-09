@@ -33,16 +33,38 @@
     return navigator.locks.request(LOCK_NAME, { mode: 'exclusive' }, operation);
   }
 
-  localSave.loadFromFolder = async (...args) => withFolderLock(async () => {
+  localSave.loadFromFolder = async (...args) => {
+    const guarded = festivalTestLoadGuard(); // Importing over an unfinished restore would discard journaled rewards.
+    if (guarded) return guarded;
+    return withFolderLock(async () => {
     const result = await rawLoadFromFolder(...args);
     if (result && typeof result.message === 'string') {
       result.message = result.message.replace(/\s*Reload the page to apply it\.?\s*$/i, '');
     }
     return result;
-  });
+    });
+  };
 
-  localSave.syncNow = async (options = {}) => withFolderLock(() => rawSyncNow(options));
-  if (rawSyncSnapshot) localSave.syncSnapshot = async (snapshot, options = {}) => withFolderLock(() => rawSyncSnapshot(snapshot, options));
+  function festivalTestLoadGuard() {
+    const phase = window.HobunjiQuickSave?.festivalStatus?.().phase; // Any unfinished festival recovery must remain authoritative until finalized.
+    if (!phase || phase === 'idle') return null;
+    return { ...localSave.getStatus(), ok: false, lastError: 'Finish Festival Test restoration before importing from the primary folder.', message: 'Restore the original world before loading another save.' };
+  }
+
+  function festivalTestSaveGuard() {
+    const phase = window.HobunjiQuickSave?.festivalStatus?.().phase; // Prevent explicit folder saves from persisting an isolated festival preview.
+    if (!phase || phase === 'idle' || phase === 'restored') return null;
+    return { ...localSave.getStatus(), ok: false, lastError: 'Exit Festival Test before saving to the primary folder.', message: 'Festival Test is isolated; restore your original world before saving.' };
+  }
+
+  localSave.syncNow = async (options = {}) => {
+    const guarded = festivalTestSaveGuard();
+    return guarded || withFolderLock(() => rawSyncNow(options));
+  };
+  if (rawSyncSnapshot) localSave.syncSnapshot = async (snapshot, options = {}) => {
+    const guarded = festivalTestSaveGuard();
+    return guarded || withFolderLock(() => rawSyncSnapshot(snapshot, options));
+  };
 
   function esc(value) {
     return String(value ?? '')
@@ -210,6 +232,17 @@
         }
       } catch (error) {
         lastUiError = String(error?.message || error);
+      }
+
+      // A normal refresh during Festival Test must keep the disposable
+      // browser snapshot. Reloading the Primary Save Folder here would replace
+      // it with the original world while the test session stayed active.
+      const festivalSession = window.HobunjiQuickSave?.festivalStatus?.();
+      if (festivalSession && festivalSession.phase !== 'idle') {
+        window.HobunjiAutosavePause?.pause?.('festival-test');
+        window.HobunjiQuickSave?.resumeFestivalAutoPlay?.();
+        startupMode = 'festival-test-browser';
+        return startupMode;
       }
 
       const status = await waitForCoreStatus();

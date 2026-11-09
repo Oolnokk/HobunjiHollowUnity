@@ -25,7 +25,7 @@ window.CookingSystem = {
   consumeQuality: (key, stars, count) => { if (!(buckets[key]?.[stars] >= count) || !(inventory[key] >= count)) return false; buckets[key][stars] -= count; inventory[key] -= count; return true; },
 };
 window.AlchemySystem = { RECIPE_DEFS: { healing: { id: 'healing', useMode: 'drink', traits: { drive: 'restore' } } }, ensureRecipeItemDef: (id, tier) => { const key = `${id}_${tier}`; defs[key] = { label: 'Potent healing' }; return key; } }; // Existing potion definition/grant contract.
-load(context, 'festival-potluck-contest'); load(context, 'festival-system');
+load(context, 'festival-potluck-contest'); load(context, 'festival-offering-ritual'); load(context, 'festival-system');
 let heldChoice=null; // The ordinary held-item selection drives direct meal contribution.
 window.CookingSystem.peekLowestQuality=key=>key==='meal'?3:undefined;
 const mealServices=new Map(); // Captures providers while the separate table-system regression exercises real targeting.
@@ -109,13 +109,21 @@ assert.equal(buckets.meal[1], 1, 'unselected tier survives');
 // Offerings validate choice before consumption, persist exact quality, and expire after one full year.
 prop = visit('tzizkhanash', 'offering');
 assert(!api.qualityChoices('offering').some(entry => ['gold', 'forbidden'].includes(entry.key)));
-assert.equal(perform(prop, { key: 'keepsake', stars: 5, stat: 'madeup' }).ok, false);
+assert.equal(perform(prop, { key: 'keepsake', stars: 0, stat: 'madeup' }).ok, false);
 assert.equal(inventory.keepsake, 2);
-assert.equal(perform(prop, { key: 'keepsake', stars: 5, stat: 'speed' }).ok, true);
-assert.equal(inventory.keepsake, 1); assert.equal(api.blessingMultiplier('speed'), 1.1);
-const blessingSave = api.serialize(); api.restore(blessingSave); assert.equal(api.blessingMultiplier('speed'), 1.1);
-year++; civilDay--; assert.equal(api.blessingMultiplier('speed'), 1.1);
-civilDay++; assert.equal(api.blessingMultiplier('speed'), 1);
+const shrinePreview=api.offeringPreview('keepsake',5);
+assert.equal(shrinePreview.stat,'goodwill','a sentimental keepsake defines the blessing, not the button used');
+assert.equal(shrinePreview.level,3,'ordinary five-star keepsake gets no unmeasured scarcity bonus');
+assert.equal(perform(prop, { key:'keepsake',stars:5,stat:'speed' }).ok,true,
+  'an obsolete client-supplied stat cannot override the item-derived blessing');
+assert.equal(inventory.keepsake,1);
+assert.equal(api.blessingMultiplier('goodwill'),1.15);
+assert.equal(api.blessingMultiplier('speed'),1);
+const blessingSave=api.serialize();
+assert.equal(blessingSave.blessing.sourceItem,'keepsake');
+api.restore(blessingSave); assert.equal(api.blessingMultiplier('goodwill'),1.15);
+year++;civilDay--;assert.equal(api.blessingMultiplier('goodwill'),1.15);
+civilDay++;assert.equal(api.blessingMultiplier('goodwill'),1);
 api.restore({ blessing: { stat: 'speed', level: 'broken', expiresDay: Infinity } }); assert.equal(api.blessingMultiplier('speed'), 1);
 // Masks stay a render copy; sweeets/masks cannot be farmed by repeating the menu.
 prop = visit('hachutukara', 'masks');

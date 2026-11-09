@@ -2708,7 +2708,9 @@
       }
       const FURNITURE_BLUEPRINT_CATALOG = [
         ...PROCESSING_FURNITURE_CATALOG.map(item => ({ item, category: 'processing' })),
-        ...DECORATIVE_FURNITURE_CATALOG.map(item => ({ item, category: item.key === 'alchemyTableFurniture' ? 'processing' : 'decorative' })), // Cauldrons craft under Processing, while the placed piece uses decorative furniture placement.
+        ...DECORATIVE_FURNITURE_CATALOG
+          .filter(item => item.key !== 'campfireKitFurniture') // Free utility setup replaces the obsolete paid kit recipe; keep the legacy item definition for existing saves.
+          .map(item => ({ item, category: item.key === 'alchemyTableFurniture' ? 'processing' : 'decorative' })), // Cauldrons craft under Processing, while the placed piece uses decorative furniture placement.
       ].map(({ item, category }) => ({
         key: blueprintItemKey(item.key),
         furnitureKey: item.key,
