@@ -363,25 +363,13 @@
   }
 
   function tintRopePixels(rgba, hex) {
-    const color = /^#[0-9a-f]{6}$/i.test(String(hex)) ? hex.slice(1) : ''; // Only valid hex can recolor the original alpha-preserving sprite.
-    if (!color || color.toUpperCase() === 'FFFFFF') return rgba;
-    const target = [0, 2, 4].map(i => parseInt(color.slice(i, i + 2), 16)); // Old brown material color, used as the midtone target rather than a darkening multiplier.
-    const luminance = i => rgba[i] * .2126 + rgba[i + 1] * .7152 + rgba[i + 2] * .0722; // Reuse the PNG's painted shadows and highlights.
-    let weightedLight = 0, weight = 0; // Reference brightness from solid rope pixels excludes transparent antialias fringes.
-    for (let i = 0; i < rgba.length; i += 4) {
-      if (rgba[i + 3] < 128) continue;
-      const alpha = rgba[i + 3] / 255;
-      weightedLight += luminance(i) * alpha;
-      weight += alpha;
-    }
-    if (!weight) return rgba;
-    const baseline = Math.max(1, weightedLight / weight); // Average original artwork now maps onto the old #6B4728 midtone.
-    for (let i = 0; i < rgba.length; i += 4) {
-      if (!rgba[i + 3]) continue;
-      const shading = luminance(i) / baseline;
-      for (let channel = 0; channel < 3; channel++) rgba[i + channel] = Math.min(255, Math.round(target[channel] * shading));
-    }
-    return rgba; // Alpha and the rope's inked structure remain untouched.
+    const color = String(hex || '').toUpperCase(); // Validated authored target for the same ColorFill shade-fill used by Gar-wolf coats.
+    if (!/^#[0-9A-F]{6}$/.test(color) || color === '#FFFFFF') return rgba;
+    const fill = global.ColorFill?.shadeFillPixels; // Canonical animal/NPC shade-fill, not a second flail-only recolor algorithm.
+    if (typeof fill !== 'function') throw new Error('ColorFill.shadeFillPixels unavailable for flail rope');
+    const rgb = [1, 3, 5].map(index => parseInt(color.slice(index, index + 2), 16)); // Original warm-brown target channels for the shared fill.
+    fill(rgba, rgb, { debugLabel: 'weapon-rope:' + color }); // Auto-reference uses original PNG's brightest eligible region, as with unmasked animal patterns.
+    return rgba; // ColorFill preserves alpha, near-white details and the native dark windings.
   }
 
   function tintedRopeTexture(THREE, sourceTexture, hex) {
