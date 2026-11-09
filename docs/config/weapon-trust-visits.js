@@ -204,6 +204,7 @@
         shapeKey: 'grappleFlail',
         giftMetalKey: 'tinBronze', // The original flail Pahu kept from his pirate days is this unique tin-bronze weapon.
         giftItemKey: 'grappleFlail', // Give his actual authored relic; the smith will make separately generated metal variants afterward.
+        smithVariantsFromGift: true, // Register Grapple-Flail as a smithable shape using the original's held-weapon definition.
         dialogueTreeId: 'weapon_trust_gift_grapple_flail',
         dialogueLabel: "Trust Gift — Pahu's Grapple-Flail",
         dialogueLines: [
