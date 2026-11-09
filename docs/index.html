@@ -71,7 +71,7 @@
   <script src="js/loot-rolling.js?v=20261105puzzleCaves1"></script>
   <!-- Seed planting/crop harvesting, extracted out of game.js. Must load
        before game.js, which calls window.CropPlanting.init(...). -->
-  <script src="js/item-acquisition-rarity.js?v=20261109rarity7"></script> <!-- Acquisition odds, crop value premiums, and festival ingredient-source rarity. -->
+  <script src="js/item-acquisition-rarity.js?v=20261109rarity8"></script> <!-- Acquisition odds, crop value premiums, and festival ingredient-source rarity. -->
   <script src="js/crop-varieties.js?v=20261109rarityaudit4"></script>
   <script src="js/crop-planting.js?v=20261107h5b0aac4"></script>
   <!-- Wilderness den teleport + Den-Mother nest hold-to-take interaction,
@@ -462,7 +462,7 @@
        deps injected via init(), so load order relative to the other
        systems above doesn't matter; must load before game.js, which
        calls window.WildBerries.init(...) during its own setup. -->
-  <script src="js/wild-berries.js?v=20261102hcade202"></script>
+  <script src="js/wild-berries.js?v=20261109rarity8"></script>
   <!-- Buried wilderness treasure (window.WildTreasure) — self-contained
        aside from deps injected via init(), and reads window.AlchemySystem/
        window.DyeSystem at roll time (both already global by then), so
