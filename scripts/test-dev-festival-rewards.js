@@ -80,6 +80,26 @@ assert.equal(gearPrizeBaseline.meta.worlds[0].members.farmer.packClothing.at(-1)
 assert.ok(gearPrizeBaseline.meta.characters[0].gearInventory.knownMetalArmorBlueprints.includes('replica_bzabag_helm'),
   'carrying the helm also retains its smith unlock');
 
+const repeatMaskOriginal = fixture();
+repeatMaskOriginal.meta.worlds[0].members.farmer.packClothing.push({
+  uid: 'old-mask', cosmeticId: 'festivalmask_grehlr', slot: 'mask',
+});
+const repeatMaskTest = clone(repeatMaskOriginal);
+repeatMaskTest.meta.worlds[0].members.farmer.packClothing.push({
+  uid: 'new-mask', cosmeticId: 'festivalmask_grehlr', slot: 'mask',
+});
+context.mergeFestivalRewards(repeatMaskOriginal, repeatMaskTest,
+  { ...session, journal: { favor: {}, items: [], masks: ['festivalmask_grehlr'] } });
+assert.equal(repeatMaskOriginal.meta.worlds[0].members.farmer.packClothing.length, 2,
+  'a second annual mask prize must not be discarded because one was already owned');
+assert.equal(repeatMaskOriginal.meta.worlds[0].members.farmer.packClothing.at(-1).uid, 'new-mask');
+
+const overflowing = fixture();
+overflowing.meta.worlds[0].members.farmer.nonGearInventory.festivalSweet = 998;
+assert.throws(() => context.mergeFestivalRewards(overflowing, tested,
+  { ...session, journal: { favor: {}, items: [{ key: 'festivalSweet', count: 2, stars: 5 }], masks: [] } }),
+  /stack limit/, 'festival reward transfers must fail rather than overflow a stack');
+
 const withoutRewards = clone(baseline); // Checkbox OFF means no call to the merge function.
 assert.equal(JSON.stringify(withoutRewards), originalJson, 'unchecked reward option restores exactly');
 const beforeMissing = clone(baseline);
@@ -112,5 +132,11 @@ assert.match(read('docs/js/festival-potluck-contest.js'), /recordFestivalMask\?\
   'post-Gorkunash helm prize is journaled by its actual doorstep reward handler');
 assert.match(read('docs/js/folder-save-primary.js'), /startupMode = 'festival-test-browser'/,
   'normal refresh cannot pull the primary folder over the active sandbox');
+assert.match(read('docs/js/netlify-cloud-save.js'), /function festivalCloudWriteBlocked\(/,
+  'Netlify sync must not upload temporary festival worlds');
+assert.match(read('docs/js/save-checkpoint-manager.js'), /function festivalCheckpointBlocked\(/,
+  'manual and recovery checkpoints must not overwrite canonical saves during a test');
+assert.match(read('docs/js/folder-save-primary.js'), /const guarded = festivalTestSaveGuard\(\)/,
+  'manual folder imports must not replace the sandbox unexpectedly');
 
 console.log('test-dev-festival-rewards: ok');
