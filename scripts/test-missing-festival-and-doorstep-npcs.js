@@ -140,7 +140,9 @@ async function testFestivalRecovery() {
   };
   const recover = new Function(
     'deps', 'residents', 'festivalHours', 'window', 'Promise',
-    'let lastMissingGuestCheckAt = -Infinity;\n' + festivalSource.slice(start, end) +
+    'let lastMissingGuestCheckAt = -Infinity;\nlet guestRecoveryCursor = 0;\n' +
+    'const guestRecoveryInFlight = new Set();\nconst MAX_PARALLEL_GUEST_RECOVERIES = 3;\n' +
+    festivalSource.slice(start, end) +
     '\nreturn recoverMissingFestivalGuests;'
   )(deps, () => residents, () => true, {NpcScheduling: scheduling, __farmLog() {}}, Promise);
   recover(4000);
@@ -155,7 +157,7 @@ async function testFestivalRecovery() {
   contextAbsent.delete('father_hunundi_hodu'); // An authored presence provider exists but its absence no longer applies.
   recover(11000);
   await Promise.resolve();
-  assert.deepEqual(requested.slice(4), ['pahu', 'leaf', 'father_hunundi_hodu'], 'inactive presence rules must not hide a genuine resident forever');
+  assert.deepEqual(requested.slice(4).sort(), ['pahu', 'leaf', 'father_hunundi_hodu'].sort(), 'inactive presence rules must not hide a genuine resident forever');
 }
 
 function testWildernessHomeRoutes() {
