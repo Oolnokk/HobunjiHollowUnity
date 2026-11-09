@@ -55,7 +55,7 @@
   async function loadUtteranceIndex() {
     if (utteranceIndex) return utteranceIndex;
     if (libraryPromise) return libraryPromise;
-    libraryPromise = fetch(UTTERANCE_INDEX_URL)
+    libraryPromise = fetch(`${UTTERANCE_INDEX_URL}?v=20261109voiceindex37`) // Refresh new OGG inventory even if the mobile browser cached an older manifest.
       .then(response => {
         if (!response.ok) throw new Error(`Utterance index fetch ${response.status}`);
         return response.json();
