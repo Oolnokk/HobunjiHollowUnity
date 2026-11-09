@@ -190,6 +190,15 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   assert.ok(constrained.counts.every(count => count <= 1), JSON.stringify(constrained));
   assert.ok(constrained.activatorTypes.every(type => type === 'glyphObelisk' || type === 'alwaysLitTorch' || type === 'projectile'), JSON.stringify(constrained)); // 'projectile' = authored ruinGlyphTarget plaques mounted over glyph decals.
 
+  // A glyph-only option permits zero placed glyph rooms for a particular ordinary-layout seed.
+  // Test the authored glyph decals against a forced *native V50* room instead of assuming that the random floor contains one.
+  const glyphLab=await page.evaluate(async seed=>window.DevRandomRuin.generate(seed,{
+    singleRoomTrial:true,puzzleType:'nativeGlyphObelisk',
+  }),constrainedSeed);
+  assert.equal(glyphLab,true,'forced native V50 glyph room must generate for the projectile decal test');
+  await page.waitForFunction(()=>window.DevRandomRuinHitPuzzles?.snapshot?.()?.glyphs?.total>0,
+    null,{timeout:90000,polling:100});
+
   const glyphVisuals = await page.evaluate(async () => {
     const scene=window.GridTileAccessors.getActiveScene();
     const roots=[];
@@ -523,7 +532,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         active.simple.safeGrids.length===1 && active.simple.modules.some(m=>m.type==='safePathGrid'),
         'a seed without a geometrically valid rope must show explicit layout rejections and preserve another mandatory traversal: '+JSON.stringify(active.simple));
     }
-    const swappableHallwayModules=active.simple.modules.filter(module=>module.slotKind==='hallway'&&['layerRopeChainAbyss','ropeChainAbyss','melodyEchoTrigger','hallwayGlyphGate'].includes(module.type));
+    const swappableHallwayModules=active.simple.modules.filter(module=>module.slotKind==='hallway'&&['layerRopeChainAbyss','ropeChainAbyss','timedMelodyTrigger','hallwayGlyphGate'].includes(module.type));
     assert.ok(swappableHallwayModules.length >= 1, 'simple mode should fill at least one generic hallway module slot: '+JSON.stringify(active.simple));
     assert.ok(active.simple.checkpoints.doorwayCount > 0, 'generated ruin should expose doorway checkpoints: '+JSON.stringify(active.simple.checkpoints));
     assert.equal(active.simple.checkpoints.triggered.includes('ruin-entry'), true, 'entering the ruin must immediately establish the first checkpoint');

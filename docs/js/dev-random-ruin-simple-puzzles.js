@@ -414,7 +414,7 @@
     for (const composer of composers) { try { composer.clear?.(); } catch (error) { console.warn('[Random Test Ruin] composer clear failed', error); } }
     state.singleRoomChallenge?.dispose?.(); // Release all projectile hooks, rope mounts, flute listeners and statue encounter state before disposing the room.
     restoreRopeEquipment();
-    for (const set of state.chordPlateSets) cancelEchoPlayback(set); // Stop scheduled demonstration notes on reroll/exit without closing the player's ordinary instrument.
+    for (const set of state.chordPlateSets) set.inscription?.dispose?.(); // Every timed inscription retires with its room; no player instrument session is owned here.
     for (const entity of state.spawnedMinions) disposeSpawnedMinion(entity); // Session/reroll ownership matches ordinary camp teardown; no sarcophagus enemy can leak into the next generated ruin.
     state.spawnedMinions.clear();
     for (const id of state.surfaceIds) DS.remove?.(id);
@@ -1158,6 +1158,11 @@
 
   function buildChordPlateSet(context, rng, slot, usedHallways = null) {
     if(!slot)return null;
+    const composer=window.PuzzleCaveMelody; // All room, hallway and compound melody plates use the exterior score's timed judge.
+    if(!composer?.generate||!composer?.createSession){
+      window.__farmLog?.('[Random Test Ruin] Timed melody module is unavailable.','warn');
+      return null; // Never silently fall back to the untimed note-matching variant.
+    }
     const isHallway=slot.kind==='hallway';
     const owner=slot.owner;
     const id=String(owner?.id||('slot-'+state.chordPlateSets.length));
@@ -1230,9 +1235,8 @@
       }); // Glowing glyph replaces all per-interaction stone recoloring.
       plates.push({index:i,x:p.x,z:p.z,y:Number(support.y),mesh,material,signal,down:false,played:false,pressCount:0});
     }
-    const noteCount=4+(rng()>.7?1:0); // Short, variable-length phrase: four or five notes chosen from the same eight buttons as the normal puzzle instrument.
-    const noteSlots=window.KurrayaPuzzle?.NOTE_CODES.length ?? 8; // Match the instrument range in game and the standalone ruin preview.
-    const melody=Array.from({length:noteCount},()=>Math.min(noteSlots-1,Math.max(0,Math.floor(rng()*noteSlots))));
+    const song=composer.generate('ruin:'+String(state.buildSeed)+':'+id,{difficulty:2}); // Stable per-seed rhythm, rather than a random untimed 4-note suffix.
+    const melody=song.notes.map(note=>note.index); // The existing Scratchbone decal displays the actual beat-ordered score.
     const inscription=window.RuinMelodyGlyphDecal?.create?.({
       root,plate:plates[0],notes:melody,surfaceRoot:context.scene,seed:melody.reduce((sum,n)=>sum*8+n,0),
       bounds:slot.bounds||roomBounds(context.meta,owner),
@@ -1245,10 +1249,29 @@
         materialFillEnabled:true,materialFillColor:'#c2b39b',materialFillMode:'always',
       }),
     }); // Visible stone faces reveal the generated phrase only while its trigger is occupied.
-    const set={id,slotKind:isHallway?'hallway':'room',root,plates,notes:melody,inscription,heardNotes:[],playbackTimers:[],attempts:0,mistakes:0,solved:false,solveCount:0,onComplete:typeof slot.onComplete==='function'?slot.onComplete:null}; // Each set listens to the player's rolling note history independently of its pressure-plate playback.
+    const glyphs=inscription?.group?.children?.filter(node=>node.userData?.melodyNoteIndex!==undefined)||[]; // Ordered ink planes drive the same white/yellow/green/red glows as cave scores.
+    const set={id,slotKind:isHallway?'hallway':'room',root,plates,notes:melody,song,inscription,glyphs,
+      session:null,melodyState:null,heardNotes:[],attempts:0,mistakes:0,solved:false,solveCount:0,
+      flashRemaining:0,flashGlyphIndex:-1,onComplete:typeof slot.onComplete==='function'?slot.onComplete:null}; // Native room ownership and completion callback remain unchanged.
+    set.session=composer.createSession(song,{
+      onBeat:beat=>window.RuinInteractionAudio?.metronomeTick?.(beat),
+      onSolved:()=>completeEchoSet(set),
+      onChanged:snapshot=>{
+        if(snapshot.mistakes>set.mistakes){
+          set.flashRemaining=.4;
+          set.flashGlyphIndex=snapshot.activeIndex>=0?snapshot.activeIndex:
+            Math.min(song.notes.length-1,set.melodyState?.progress||0);
+        }
+        set.melodyState=snapshot;
+        set.mistakes=snapshot.mistakes;
+        set.heardNotes=melody.slice(0,snapshot.progress); // Mobile diagnostics show only notes accepted in the current timed cycle.
+        if(set.flashRemaining>0&&set.glyphs[set.flashGlyphIndex])
+          composer.advanceGlyphGlow?.(set.glyphs[set.flashGlyphIndex],{rejected:true,dt:0});
+      }
+    });
     state.chordPlateSets.push(set); // Retain the established composer reference while replacing its internal musical challenge.
     if(isHallway)usedHallways?.add?.(owner.id);
-    recordModulePlacement('melodyEchoTrigger',set.slotKind,id,{triggerCount:1,noteCount,hasGlyphDecal:!!inscription});
+    recordModulePlacement('timedMelodyTrigger',set.slotKind,id,{triggerCount:1,noteCount:melody.length,bpm:song.bpm,hasGlyphDecal:!!inscription});
     return set;
   }
 
@@ -2378,42 +2401,12 @@
     }
   }
 
-  function cancelEchoPlayback(set) {
-    for (const timer of set.playbackTimers) clearTimeout(timer);
-    set.playbackTimers.length=0; // A new step or ruin teardown cannot leave delayed example notes sounding.
-  }
-
-  function replayEchoSet(set) {
-    cancelEchoPlayback(set);
-    const tuning=window.KurrayaPuzzle?.settings?.(); // Capture one tuning for the entire phrase, even if the Music Lab settings change during playback.
-    set.notes.forEach((note,index)=>{
-      if (index===0) playKurrayaPlateNote(note,tuning); // The first note sounds on contact with the plate.
-      else {
-        const timer=setTimeout(()=>{
-          const pendingIndex=set.playbackTimers.indexOf(timer);
-          if(pendingIndex>=0)set.playbackTimers.splice(pendingIndex,1); // A played note is no longer pending in mobile diagnostics.
-          if (state && inRuin() && !set.solved && state.chordPlateSets.includes(set)) playKurrayaPlateNote(note,tuning);
-        },index*620);
-        set.playbackTimers.push(timer);
-      }
-    });
-  }
-
   function completeEchoSet(set) {
     if (!set || set.solved) return;
     set.solved = true; set.solveCount++;
-    cancelEchoPlayback(set);
     for (const plate of set.plates) plate.signal?.setActive(true); // The carved PNG remains the same stone tint after solving.
     playStoneUnlockKchunk(); // Success is communicated by the physical mechanism, not a text notification.
     try { set.onComplete?.(set); } catch (error) { console.warn('[Random Test Ruin] melody completion failed',error); }
-  }
-
-  function syncEchoInscription(set) {
-    if (!set.inscription || set.inscription.matchesNotes(set.notes)) return;
-    if (set.inscription.setNotes(set.notes)) {
-      set.heardNotes.length=0; // Changing the authored phrase never inherits a partial attempt against the previous melody.
-      cancelEchoPlayback(set);
-    }
   }
 
   window.addEventListener('hobunji-kurraya-puzzle-note', event => {
@@ -2421,33 +2414,34 @@
     const note=event.detail?.noteIndex; // Only player-entered single notes may advance a ruin melody; the plate's automatic example never emits them.
     if (!Number.isInteger(note) || note<0 || note>=(window.KurrayaPuzzle?.NOTE_CODES?.length ?? 8)) return;
     for (const set of state.chordPlateSets) {
-      if (set.solved) continue;
-      syncEchoInscription(set);
-      set.heardNotes.push(note);
-      if (set.heardNotes.length>set.notes.length) set.heardNotes.shift(); // A sliding suffix accepts the phrase anywhere in an uninterrupted stream of note events.
-      if (window.KurrayaPuzzle?.matchSuffix?.(set.heardNotes,[{notes:set.notes}])) completeEchoSet(set);
+      if(!set.solved)set.session?.note(note); // The shared judge rejects off-plate, early, late and incorrect notes.
     }
   });
 
-  function updateChordPlateSets() {
+  function updateChordPlateSets(dt) {
     const player=playerWorld();
-    if(!player)return;
     for(const set of state.chordPlateSets){
-      syncEchoInscription(set); // Live authoring/generator updates can replace the inscription without rebuilding the room.
-      for(const plate of set.plates){
-        const down=Math.abs(player.x-plate.x)<=.39&&Math.abs(player.z-plate.z)<=.39&&Math.abs(player.y-plate.y)<.75;
-        plate.mesh.position.y=plate.y+.03-(down?.035:0);
-        if(down&&!plate.down&&!set.solved){
-          plate.pressCount++;
-          set.attempts++;
-          plate.signal?.setActive('pressed');
-          replayEchoSet(set); // Stepping onto the plate plays the sample; leaving and returning plays it again without resetting note recognition.
-        }
-        if (!set.solved && !down) plate.signal?.setActive(false);
-        plate.down=down;
-        window.RuinInteractionAudio?.watchPlate?.(plate.mesh,down); // The real chord plate press/release drives the shared stone activator sound.
-        set.inscription?.setVisible?.(down);
+      const plate=set.plates[0];
+      const down=!!player&&Math.abs(player.x-plate.x)<=.39&&Math.abs(player.z-plate.z)<=.39
+        &&Math.abs(player.y-plate.y)<.75;
+      plate.mesh.position.y=plate.y+.03-(down?.035:0);
+      if(down&&!plate.down&&!set.solved){
+        plate.pressCount++;
+        set.attempts++;
+        plate.signal?.setActive('pressed'); // The plate reveals its score and metronome, never an audible demonstration.
       }
+      if(!set.solved&&!down)plate.signal?.setActive(false);
+      plate.down=down;
+      window.RuinInteractionAudio?.watchPlate?.(plate.mesh,down);
+      set.session?.step(dt,down); // Every note window and missed beat comes from the real-time timed score.
+      const snapshot=set.session?.snapshot();
+      set.flashRemaining=Math.max(0,set.flashRemaining-Math.max(0,Number(dt)||0));
+      for(let i=0;i<set.glyphs.length;i++)
+        window.PuzzleCaveMelody?.advanceGlyphGlow?.(set.glyphs[i],{
+          current:i===snapshot?.activeIndex,accepted:i<(snapshot?.progress||0),
+          rejected:set.flashRemaining>0&&i===set.flashGlyphIndex,dt,
+        }); // Keep glyph size fixed: only the soft white/yellow/green/red halo changes.
+      set.inscription?.setVisible?.(down);
     }
   }
 
@@ -2561,7 +2555,8 @@
 
   function update() {
     const now=performance.now();
-    const dt=Math.max(0,Math.min(.05,(now-lastFrameMs)/1000));
+    const melodyDt=Math.max(0,(now-lastFrameMs)/1000); // Real elapsed seconds keep beats synchronized on slow mobile frames.
+    const dt=Math.min(.05,melodyDt);
     lastFrameMs=now;
 
     if(!inRuin()){
@@ -2573,7 +2568,7 @@
     if(!state||state.root!==context.root)buildForContext(context);
 
     updateSafeGrids(now);
-    updateChordPlateSets();
+    updateChordPlateSets(melodyDt);
     updateCyclingElevators(dt);
     updateLockDoors(dt);
     updateSarcophagusModules(dt);
@@ -2683,7 +2678,7 @@
       flight:state.flight?clonePoint(state.flight):null,
       ropeEquipment:{holstered:state.ropeEquipmentHolsterCount,restored:state.ropeEquipmentRestoreCount,currentlyStowed:!!state.ropeHeldToolSnapshot},
       trapHallways:state.trapHallways.map(trap=>({id:trap.id,axis:trap.axis,stations:trap.stations.length})),
-      chordPlateSets:state.chordPlateSets.map(set=>({id:set.id,slotKind:set.slotKind,kind:'melodyEcho',notes:set.notes.slice(),inscription:set.inscription?.diagnostics?.()||null,heardNotes:set.heardNotes.slice(),pendingDemoNotes:set.playbackTimers.length,attempts:set.attempts,mistakes:set.mistakes,solved:set.solved,solveCount:set.solveCount,pressCounts:set.plates.map(plate=>plate.pressCount)})),
+      chordPlateSets:state.chordPlateSets.map(set=>({id:set.id,slotKind:set.slotKind,kind:'timedMelody',notes:set.notes.slice(),bpm:set.song.bpm,activeGlyph:set.melodyState?.activeIndex??-1,progress:set.melodyState?.progress||0,inscription:set.inscription?.diagnostics?.()||null,heardNotes:set.heardNotes.slice(),attempts:set.attempts,mistakes:set.mistakes,solved:set.solved,solveCount:set.solveCount,pressCounts:set.plates.map(plate=>plate.pressCount)})),
       lockDoors:state.lockDoors.map(door=>({id:door.id,roomId:door.roomId,open:door.targetOpen,progress:+door.progress.toFixed(3),generatedMechanismId:door.generatedMechanismId||null,reusesGeneratedDoor:!!door.generatedMechanismId})),
       canopies:state.canopies.map(canopy=>({id:canopy.id,roomId:canopy.roomId,roofY:+canopy.roofY.toFixed(3),width:+canopy.width.toFixed(3),depth:+canopy.depth.toFixed(3),occludesTarget:canopy.occludesTarget})),
       ceilingGlyphs:state.ceilingGlyphs.map(glyph=>({id:glyph.id,roomId:glyph.roomId,active:glyph.active,hitCount:glyph.hitCount,ceilingMountGap:+glyph.visual.attachmentGap(glyph.ceilingY).toFixed(3),mountConnected:glyph.visual.attachmentGap(glyph.ceilingY)<=0})),

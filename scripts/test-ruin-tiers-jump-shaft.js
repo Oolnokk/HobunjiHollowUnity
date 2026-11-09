@@ -80,7 +80,7 @@ for (const [tier, spec] of Object.entries(SPEC)) {
   }
   assert.ok(!seen.hronal.has('dungeonFire') && !seen.kanthic.has('dungeonFire'), 'fire and ice puzzles only appear in Tothal ruins');
   assert.ok(seen.tothal.has('dungeonFire'), 'Tothal ruins do get fire and ice');
-  for (const theme of Object.keys(seen)) for (const kind of ['pressurePlate', 'glyphObelisk', 'ceilingRailTargets', 'melodyEcho', 'ropeChain', 'findBlocks'])
+  for (const theme of Object.keys(seen)) for (const kind of ['pressurePlate', 'glyphObelisk', 'ceilingRailTargets', 'timedMelody', 'ropeChain', 'findBlocks'])
     assert.ok(seen[theme].has(kind), `${theme} ruins can now roll ${kind} in any room`);
 }
 console.log('ruin tiers + jump shaft: ok');

@@ -92,7 +92,7 @@ function test(seed,size=24){
     },
     RuinLayerChallenges:{
       compose(options){
-        if(options.id.endsWith('-pillar-unlock')&&options.kind==='melodyEcho'){
+        if(options.id.endsWith('-pillar-unlock')&&options.kind==='timedMelody'){
           assert.equal(options.mapId,'map_i_dev_random_ruin','manual notes stay scoped to the owning ruin');
           assert.equal(options.melodySurfaces?.length,2,'pillar notes can use either upright stone face');
           const plateX=options.room.x+options.room.w/2,plateZ=options.room.z+options.room.d/2; // The note faces must point back toward this authored plate.
@@ -151,7 +151,7 @@ function test(seed,size=24){
     assert.equal(net,undefined,'Non-fire net variant must not expose a fake burn target');
     const netUnlock=subpuzzles.find(challenge=>challenge.id.endsWith('-net-challenge'));
     assert(netUnlock,'The ceiling net must be linked to a real reusable subpuzzle');
-    assert.equal(netUnlock.kind,room.netVariant==='glyphs'?'glyphObelisk':room.netVariant==='movingTargets'?'ceilingRailTargets':'melodyEcho');
+    assert.equal(netUnlock.kind,room.netVariant==='glyphs'?'glyphObelisk':room.netVariant==='movingTargets'?'ceilingRailTargets':'timedMelody');
     netUnlock.solve();
   }
   const ice=fireTargets.find(item=>item.id.endsWith('-ice'));
@@ -173,7 +173,7 @@ function test(seed,size=24){
   if(room.variant==='melody'||room.variant==='ceilingRail'){
     const pillarUnlock=subpuzzles.find(challenge=>challenge.id.endsWith('-pillar-unlock'));
     assert(pillarUnlock,'Tall pillar must use a real native melody or moving-target challenge');
-    assert.equal(pillarUnlock.kind,room.variant==='melody'?'melodyEcho':'ceilingRailTargets');
+    assert.equal(pillarUnlock.kind,room.variant==='melody'?'timedMelody':'ceilingRailTargets');
     pillarUnlock.solve();for(let i=0;i<100;i++)room.tick(.05);
     assert(room.snapshot().pillarHeight<.1,'Solving the native pillar challenge sinks the stone');
   }else if(room.variant==='projectiles'){
