@@ -33,12 +33,14 @@
       || String(url || '').split('/').pop().toLowerCase();
   }
   function clone(value) { return JSON.parse(JSON.stringify(value)); }
-  function animalOverride(id) { return ensureAnimalOverride(id); }
+  function animalOverride(id) { return ensureAnimalOverride(voiceSpeciesKey(id)); } // Keep all size variants on one canonical species voice profile.
   function defaultOverride() {
     state.config.animalVocalizations ||= {};
     return state.config.animalVocalizations.default || (state.config.animalVocalizations.default = {});
   }
   function voiceSpeciesKey(id) {
+    const normalized = String(id || '').toLowerCase(); // Fixed Skeeri sizes share the Small Skeeri's sound selection and pitch-multiplier controls.
+    if (/^skeeri-(?:small|medium|large)$/.test(normalized)) return 'skeeri-small';
     if (typeof voiceKey === 'function') return voiceKey(id);
     const raw = String(id || '').toLowerCase();
     if (raw.includes('dabinggi')) return 'dabinggi-hound';
@@ -129,7 +131,7 @@
   }
   function effectiveCall(id, kind) {
     const common = state.config?.animalVocalizations?.default?.[kind] || {};
-    const own = state.config?.animalVocalizations?.[id]?.[kind] || {};
+    const own = state.config?.animalVocalizations?.[voiceSpeciesKey(id)]?.[kind] || {}; // Variant size shares its canonical species' authored response.
     const base = DEFAULT_CALLS[kind];
     const utterances = Array.isArray(own.utterances)
       ? own.utterances
@@ -295,7 +297,7 @@
     const entries = libraryEntries();
     const size = speciesSizePitch(animal) || { ...DEFAULT_SIZE_PITCH_MULTIPLIERS }; // Values rendered and edited only for this selected species.
     const treasure = state.config.companionTreasureLines?.[animal.id] || [];
-    const discovery = state.config.animalVocalizations?.[animal.id]?.discoveryText || {};
+    const discovery = state.config.animalVocalizations?.[voiceSpeciesKey(animal.id)]?.discoveryText || {};
     const defaultSize = ['small', 'medium', 'large'].includes(animal.defaultSizeClass) ? animal.defaultSizeClass : 'medium';
 
     editor.innerHTML = `<div class="card">
@@ -303,7 +305,7 @@
       <div class="muted">Simple voice model: response chooses an indexed recording → global recording base speed/pitch → exact utterance tempo/pitch → this species' size pitch multiplier. The library comes from <code>assets/audio/sfx/utterances/index.json</code>.</div>
       <!-- Global size pitch · shared by every species (legacy source-test phrase; controls below are now species-local). -->
       <div class="subhead">Size pitch · this species</div>
-      <div class="muted">Each size gets its own multiplier. 1.00× leaves pitch unchanged.</div>
+      <div class="muted">All sizes use this species' same recorded calls, shifted in pitch by size. 1.00× leaves pitch unchanged. Medium and Large Skeeri inherit Small Skeeri's sound assignments.</div>
       <div class="grid">
         <label class="field">Small ×<input type="number" step=".01" min=".5" max="2" data-species-size="small" value="${esc(size.small)}"></label>
         <label class="field">Medium ×<input type="number" step=".01" min=".5" max="2" data-species-size="medium" value="${esc(size.medium)}"></label>
