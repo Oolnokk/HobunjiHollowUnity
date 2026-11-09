@@ -22,6 +22,10 @@
       name: 'Campfire', icon: '🔥', fw: 1, fd: 1, procKey: 'campfire', color: 0x6d3e20,
       desc: 'A compact stone-ring campfire using the authored campfire furniture preset.',
     }),
+    candleCluster: Object.freeze({
+      name: 'Candle Cluster', icon: '🕯️', fw: 1, fd: 1, procKey: 'candleCluster', color: 0xb08d57,
+      desc: 'Sixteen candles, tallest at the center, from the candle-table wax and tray.',
+    }), // Authored Map Editor decorative key as distinct from placeable furniture item.
     candleClusterFurniture: Object.freeze({
       name: 'Candle Cluster', icon: '🕯️', fw: 1, fd: 1, procKey: 'candleCluster', color: 0xb08d57,
       desc: 'A bundled 1×1 arrangement of sixteen candles, tallest in the center, made from the candle-table candle.',
@@ -57,6 +61,7 @@
   // the authored visual immediately (or upgrades it when the JSON cache resolves).
   if (!Object.prototype.hasOwnProperty.call(furniture.CATALOG || {}, 'campfire')) furniture.CATALOG.campfire = [];
   if (!Object.prototype.hasOwnProperty.call(furniture.CATALOG || {}, 'bonfire')) furniture.CATALOG.bonfire = [];
+  if (!Object.prototype.hasOwnProperty.call(furniture.CATALOG || {}, 'candleCluster')) furniture.CATALOG.candleCluster = []; // Legal during authored PNG load; FurnitureVesselRuntime upgrades this placeholder.
 
   function deepCloneJson(value) {
     return value == null ? value : JSON.parse(JSON.stringify(value)); // Used only for JSON-shaped authored furniture data.
