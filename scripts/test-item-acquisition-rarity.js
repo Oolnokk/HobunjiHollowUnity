@@ -49,10 +49,10 @@ assert.equal(rarity.artifactChest('harlyaoRare',1,'harlyao',catalog).probability
 assert.equal(rarity.artifactChest('harlyaoRare',2,'harlyao',catalog).probability,1-Math.pow(3/4,2),'tier and weight model matches exact draw probability');
 assert.equal(rarity.artifactChest('harlyaoRare',2,'hachutu',catalog).probability,0,'cultures do not cross-contaminate');
 assert.equal(rarity.artifactChest('harlyaoCommon',1,'harlyao',catalog).probability,1,'only eligible artifact always draws');
-const pools={sample:{entries:[{id:'one',itemKey:'thing',chance:.1,conditions:{}},{id:'two',itemKey:'thing',chance:.2,conditions:{}}]},conditional:{entries:[{itemKey:'thing',chance:.1,conditions:{seasons:['winter']}}]}};
+const pools={sample:{entries:[{id:'one',itemKey:'thing',min:1,max:1,chance:.1,conditions:{}},{id:'two',itemKey:'thing',min:1,max:1,chance:.2,conditions:{}}]},conditional:{entries:[{itemKey:'thing',min:1,max:1,chance:.1,conditions:{seasons:['winter']}}]}};
 assert(Math.abs(rarity.lootPoolItem('thing','sample',pools).probability-.28)<1e-12,'independent table entry odds combine via union');
 assert.equal(rarity.lootPoolItem('thing','conditional',pools).probability,null,'world condition needs eligibility context');
-const zoneDen=rarity.denOffspring({species:'nelk',denSpecies:['puktuk','nelk'],denCount:5,clutchMin:1,clutchMax:3});
+const zoneDen=rarity.denOffspring({species:'nelk',denSpecies:['puktuk','nelk'],denCount:5,clutchMin:1,clutchMax:3,nestChance:1});
 assert.equal(zoneDen.speciesDenCount,2,'extra den assigned to first species by authored tie-break');
 assert.equal(zoneDen.probability,.4);
 assert.equal(zoneDen.expectedOffspring,4);
@@ -99,5 +99,48 @@ assert.equal(crops.lastBreeding.offspring,childHeftroot.id,'last breeding report
 assert.equal(crops.lastBreeding.parentA,importedHeftroot.id);
 assert.equal(crops.lastBreeding.parentB,'heftroot');
 assert(crops.lastBreeding.genotypeChance > 0 && crops.lastBreeding.genotypeChance <= 1,'exact parental chance is calculated');
+
+assert.equal(rarity.source({stages:[{label:'known',probability:.5}]}).proposedSellPrice,null,'missing base price never becomes an invented one-ganang price');
+assert.equal(rarity.atLeastOne(.5,null),null,'missing opportunity count cannot become zero');
+assert.equal(rarity.expected(.5,null),null,'missing expectation opportunities stay unknown');
+assert.equal(rarity.chain([{label:'invalid',probability:1.5}]).probability,null,'out of range probability is unknown, not clamped to certainty');
+assert.equal(rarity.chain([{label:'invalid',probability:-.5}]).probability,null,'negative probability is unknown, not zero');
+assert.equal(rarity.inheritance({parentA:'000000',parentB:'000000',target:'000000',mutationChance:1.2}),null,'invalid mutation probability cannot produce false offspring odds');
+assert.equal(rarity.inheritance({parentA:'000000',parentB:'000000',target:'000000',alleleCount:3}),null,'canonical crop breeder has exactly six loci');
+assert.equal(rarity.caravanSeed({townValue:2,targetFamily:'heftroot',targetRegion:0}).probability,0,'native seeds cannot be offered as imported stock');
+assert.equal(rarity.caravanSeed({townValue:2,targetFamily:'heftroot',targetRegion:2,caravanEligible:false}).probability,0,'known caravan route restriction is zero, not unknown');
+assert.equal(rarity.denOffspring({species:'nelk',denSpecies:['puktuk','nelk'],clutchMin:1,clutchMax:3}).expectedOffspring,null,'unknown den count is not zero dens');
+assert.equal(rarity.denOffspring({species:'nelk',denSpecies:['puktuk','nelk'],denCount:5,clutchMin:1,clutchMax:3}).probability,null,'unknown nest viability cannot be assumed certain');
+assert.equal(rarity.ruinChest({tier:'hole',chestsPerRoom:-1,chestChance:1,lootChance:.5}).expectedItems,null,'invalid chest opportunities are unknown');
+const quantityPools={
+  zero:{entries:[{id:'nothing',itemKey:'zero',min:0,max:0,chance:1}]},
+  variable:{entries:[{id:'random amount',itemKey:'drop',min:0,max:3,chance:.2}]},
+  stepped:{entries:[{id:'stepped',itemKey:'material',min:0,max:4,step:2,chance:1}]},
+  mixed:{kind:'mixed',rolls:1,sourcePools:[{poolId:'variable',weight:1}]},
+  exclusive:{kind:'exclusive',entries:[{itemKey:'rare',weight:1},{itemKey:'common',weight:3}]},
+};
+assert.equal(rarity.lootPoolItem('zero','zero',quantityPools).probability,0,'100% table selection with zero quantity is not a drop');
+assert(Math.abs(rarity.lootPoolItem('drop','variable',quantityPools).probability-.15)<1e-12,'min 0 max 3 yields 75% positive chance');
+assert(Math.abs(rarity.lootPoolItem('drop','variable',quantityPools).expectedQuantity-.3)<1e-12,'expected drop count includes zero rolls');
+assert.equal(rarity.lootPoolItem('material','stepped',quantityPools).probability,2/3,'step quantization includes zero outcome');
+assert.equal(rarity.lootPoolItem('rare','exclusive',quantityPools).probability,.25,'exclusive tables draw one item by configured weight');
+assert.equal(rarity.lootPoolItem('drop','mixed',quantityPools).probability,null,'nested source pool probability must never be claimed as impossible');
+assert.equal(rarity.scoreCooked,undefined,'rarity module does not duplicate the festival judging owner');
+assert.equal(contest.scoreCooked({festivalContestScore:5.75},2,foodDefs),5.75,'saved cooked rarity fractions must not be truncated');
+assert.equal(contest.ingredientPoints('cv_heftroot_333333',4,foodDefs,1.1),4.4,'archived source multiplier overrides changed current rarity');
+assert.equal(contest.scoreIngredients([{key:'cv_heftroot_333333',stars:4,rarityMultiplier:1.1}],foodDefs),4.4,'frozen contest multiplier controls judgement');
+assert.equal(contest.ingredientBreakdown([{key:'cv_heftroot_333333',stars:4,rarityMultiplier:1.1}],foodDefs)[0].points,4.4,'inspector uses the same archived source multiplier');
+const fishHost={window:{}};
+vm.runInNewContext(fs.readFileSync('docs/js/fish-catalog.js','utf8'),fishHost);
+const actualFish=fishHost.window.FishCatalog.entries;
+const tawny=rarity.fishRarity('gurumahi_tawny',actualFish);
+assert.equal(tawny.availableSeasons.length,3,'actual fish seasonal strings parse into three localized seasons');
+assert.equal(tawny.availableSeasons.includes('Coldmuck'),false,'winter/Coldmuck restrictions are preserved');
+assert.equal(rarity.fishCatch('gurumahi_tawny',{zone:'town',season:'Coldmuck',timeOfDay:'day',entries:actualFish}).probability,0,'seasonal exclusion matches the real fishing pool');
+assert(rarity.fishCatch('rockscale_ironvein',{zone:'westernSlope',season:'Coldmuck',timeOfDay:'day',entries:actualFish}).probability>0,'Western Slope uses northern-cliffs fish entries');
+assert.equal(rarity.fishCatch('gurumahi_tawny',{zone:'town',season:'Deadgrass',timeOfDay:'day',allowAmphibious:false,entries:actualFish}).probability,0,'dry-land casting excludes amphibious fish');
+assert.equal(rarity.fishCatch('gurumahi_tawny',{zone:'town',season:'Deadgrass',timeOfDay:'day',allowAmphibious:true,entries:actualFish}).probability>0,true,'water casting can select amphibious fish');
+assert.equal(rarity.item('cv_heftroot_333333Seeds',{itemDefs:nativeDefs}).proposedSellPrice,nativeDefs.cv_heftroot_333333Seeds.sellPrice,'diagnostic price never compounds its already adjusted sale price');
+assert.equal(rarity.item('cv_heftroot_333333Seeds',{itemDefs:nativeDefs}).actualSellPrice,nativeDefs.cv_heftroot_333333Seeds.sellPrice,'diagnostic report shows actual configured resale');
 
 console.log('Item acquisition rarity tests passed.');
