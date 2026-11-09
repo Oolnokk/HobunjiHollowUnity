@@ -192,4 +192,51 @@ assert(indexSource.includes('js/shipping-panel.js?v='),'browser cache refresh re
 crops.attach({cropData:{...nativeCrop},ITEM_DEFS:{...nativeDefs},inventory:{},inventoryItems:[]});
 assert.equal(crops.lastBreeding,null,'switching worlds clears previous-world parent/offspring debug state');
 
+
+const spice = rarity.importedSpice('cloudSaffron',{townValue:1});
+assert(Math.abs(spice.stockChancePerCaravan-.5)<1e-12,'one or two spices from three gives one-half listing probability');
+assert(Math.abs(spice.probability-.075)<1e-12,'Slagothim spice opportunity accounts for 15% daily arrival');
+assert.equal(spice.meanQuantityPerListing,2,'stock roll yields 1–3 spices, averaging two');
+assert(Math.abs(rarity.importedSpice('starpepper',{townValue:4}).specificSpiceChancePerDay-.165)<1e-12,'Town Value changes the daily spice frequency');
+assert.equal(rarity.importedSpice('not-a-spice'),null,'other items are not mislabeled imported seasonings');
+assert(rarity.foodRarity('cloudSaffron',{cloudSaffron:{}}).factor>1,'imported seasonings affect raw Gorkunash ingredients');
+assert(rarity.foodRarity('spicedFood',{spicedFood:{ingredientKeys:['cloudSaffron']}}).factor>1,'processed seasonings pass scarcity through cooked ancestry');
+const sourcePools = {
+  bandit_rare:{entries:[{itemKey:'rareLoot',min:1,max:1,chance:.02,conditions:{}}]},
+  bandit_common:{entries:[{itemKey:'commonLoot',min:1,max:1,chance:1,conditions:{}}]},
+  bandit_conditional:{entries:[{itemKey:'conditionalLoot',min:1,max:1,chance:.02,conditions:{seasons:['Coldmuck']}}]}
+};
+const priceDefs={rareLoot:{cat:'material',sellPrice:100},commonLoot:{cat:'material',sellPrice:100},
+  conditionalLoot:{cat:'material',sellPrice:100}, cloudSaffron:{cat:'spice',sellPrice:100},
+  cookedRare:{cat:'processed',sellPrice:100,ingredientKeys:['rareLoot']},
+  rareBaby:{cat:'livestock',sellPrice:100},
+  rePriced:{cat:'food',rarityBaseSellPrice:100,sellPrice:135},
+  scarceShopItem:{cat:'material',sellPrice:100}};
+const q={itemDefs:priceDefs,lootPools:sourcePools,shopStock:{}};
+assert.equal(rarity.priceQuote('rareLoot',100,q).price,135,'very rare conditional loot receives at most 35% authorized uplift');
+assert.equal(rarity.sellPrice('rareLoot',100,q),135,'shipping uses the same one-pass appraisal');
+assert.equal(rarity.sellPrice('commonLoot',100,q),100,'guaranteed corpse loot retains authored price');
+assert.equal(rarity.sellPrice('conditionalLoot',100,q),100,'unresolved seasonal loot cannot gain a fabricated premium');
+assert.equal(rarity.sellPrice('noSource',100,q),100,'unsourced valuables retain their economy baseline');
+assert(rarity.sellPrice('cloudSaffron',100,q)>100,'imported spice availability can influence shipping sale price');
+assert.equal(rarity.sellPrice('cookedRare',100,q),100,'processed recipes do not receive a second premium on top of their input prices');
+assert.equal(rarity.sellPrice('rareBaby',100,q),100,'livestock inherited genotype/breeding pricing is protected');
+assert.equal(rarity.sellPrice('rePriced',135,q),135,'existing rarity-priced items never get a second uplift');
+assert.equal(rarity.sellPrice('rareLoot',100,{...q,shopStock:{generalStore:{goods:[{gives:{rareLoot:1},price:130}]}}}),100,
+  'authored staple shop route prevents unearned corpse rarity premium');
+assert.equal(rarity.shopListings('rareLoot',{generalStore:{goods:[{gives:{rareLoot:1},price:130}]}})[0].price,130,
+  'regular shop listings use real authored item quantities and purchase prices');
+assert(rarity.acquisitionSources('rareLoot',q).some(entry=>entry.sourceId==='bandit_rare'),'direct item pool indexed for diagnostics');
+assert(rarity.item('noSource',{...q}).appraisal.reason.includes('no comparable'),'unsourced item reports why it is unchanged');
+assert.equal(rarity.item('cloudSaffron',{...q}).kind,'imported-spice','daily Slagothim spice stock is a first-class acquisition source');
+assert.equal(rarity.lootPoolIdsForItem('rareLoot',sourcePools).length,1,'one corpse pool source indexed for its item');
+assert.equal(rarity.lootPoolIdsForItem('none',sourcePools).length,0,'unknown loot item has no spurious indexes');
+assert.equal(rarity.lootPoolIdsForItem('rareLoot',{different:{entries:[]}}).length,0,'source index is invalidated on pool map reload');
+assert.equal(rarity.priceQuote('rareLoot',null,q).price,null,'missing base price does not turn into a fabricated ganang value');
+const shippingTradeCode=fs.readFileSync('docs/js/shipping-panel.js','utf8');
+assert(shippingTradeCode.includes('ItemAcquisitionRarity?.sellPrice?.(key,authored'), 'shipping uses one source-aware price accessor');
+const traderCode=fs.readFileSync('docs/js/slagothim-traders.js','utf8');
+assert(traderCode.includes('const IMPORTED_SPICES') && traderCode.includes('shuffled(rng, IMPORTED_SPICES)'),
+  'stock listing and rarity analysis share one authoritative spice roster');
+
 console.log('Item acquisition rarity tests passed.');
