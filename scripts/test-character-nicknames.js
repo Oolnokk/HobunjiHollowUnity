@@ -12,6 +12,7 @@ const player = { nickname: 'Benjamin', appearance: { gender: 'male', speciesId: 
 const W = { SCRATCHBONES_CONFIG: { game: { socialRelationships: { relationships: [
   { type: 'friend', members: ['pahu', 'leaf'] }, { type: 'partner', members: ['gorobi', 'gikali'] },
 ] } } }, CalendarSystem: { timeDebugSnapshot: () => ({ rawDay: 12 }), getHour: () => 10 } }; // Shared stubs for NPC social graph and romance calendar.
+W.__hobunjiPlayerProfile = player; // The live romance module reads the same profile as dialogue.
 const ctx = vm.createContext({ window: W, document: { getElementById: () => null }, console,
   Date, Math, JSON, Map, Set, WeakMap, Promise, setInterval: () => 1, clearInterval() {},
   fetch: async () => ({ ok: false }) });
