@@ -2728,6 +2728,7 @@ function freezeStatueGeometry(mesh) {
     mesh.skeleton?.update();
     const positions=geometry.getAttribute('position'),point=new THREE.Vector3();
     for(let i=0;i<positions.count;i++){
+      point.fromBufferAttribute(mesh.geometry.getAttribute('position'),i); // r128 boneTransform requires the ORIGINAL vertex coordinate as input.
       mesh.boneTransform(i,point);
       positions.setXYZ(i,point.x,point.y,point.z);
     }
