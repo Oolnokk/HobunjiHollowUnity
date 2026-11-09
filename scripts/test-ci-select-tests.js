@@ -86,7 +86,7 @@ test('setup flags distinguish Node/Three checks from Chromium browser checks', (
 test('the ruin workflow triggers for all shared ruin, shaft, snare and collision modules', () => {
   const workflow = fs.readFileSync(path.resolve(__dirname, '../.github/workflows/smoke-dev-random-ruin-full.yml'), 'utf8');
   for (const scope of ['push:', 'pull_request:']) {
-    const block = workflow.split('  ' + scope)[1]?.split('\n  ')[0] || '';
+    const block = workflow.split('\n  ' + scope + '\n')[1]?.split(/\n  (?:push|pull_request|workflow_dispatch):/)[0] || '';
     assert(block.includes("paths:"), 'missing ' + scope + ' path filter');
     for (const pattern of [
       'docs/js/dev-random-ruin-*.js', 'docs/js/ruin-*.js', 'docs/js/shaft-*.js',
