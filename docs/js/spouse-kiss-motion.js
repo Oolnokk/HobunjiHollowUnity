@@ -444,6 +444,8 @@
       }
       if (old.npcNeck && old.originalNpcNeck) old.npcNeck.quaternion.copy(old.originalNpcNeck);
       if (old.playerNeck && old.originalPlayerNeck) old.playerNeck.quaternion.copy(old.originalPlayerNeck);
+      if (old.playerNeck?.position && old.originalPlayerNeckPosition) old.playerNeck.position.copy(old.originalPlayerNeckPosition); // Remove residual lips-to-lips reach on exit.
+      if (old.npcNeck?.position && old.originalNpcNeckPosition) old.npcNeck.position.copy(old.originalNpcNeckPosition);
     } finally {
       old.lock?.release?.();
       window.WorldActionInputClaims?.clearClaims?.(SOURCE);
