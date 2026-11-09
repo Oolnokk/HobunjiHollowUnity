@@ -295,7 +295,12 @@
     }
 
     const entries = libraryEntries();
-    const size = speciesSizePitch(animal) || { ...DEFAULT_SIZE_PITCH_MULTIPLIERS }; // Values rendered and edited only for this selected species.
+    const globalPitch = globalSizePitch(); // Legacy size-based pitch offsets also seed new per-species multiplier edits.
+    const size = speciesSizePitch(animal) || { // Display the real effective pitch, not neutral values that would reset all three sizes on first edit.
+      small: Math.pow(2, globalPitch.small / 12),
+      medium: Math.pow(2, globalPitch.medium / 12),
+      large: Math.pow(2, globalPitch.large / 12),
+    };
     const treasure = state.config.companionTreasureLines?.[animal.id] || [];
     const discovery = state.config.animalVocalizations?.[voiceSpeciesKey(animal.id)]?.discoveryText || {};
     const defaultSize = ['small', 'medium', 'large'].includes(animal.defaultSizeClass) ? animal.defaultSizeClass : 'medium';
@@ -327,7 +332,7 @@
       input.oninput = () => {
         const speciesId = voiceSpeciesKey(animal.id); // Used to save aliases such as wild variants into the runtime's canonical voice profile.
         const own = animalOverride(speciesId); // Stores the three size values beside this species' chatter/warning/growl authoring.
-        own.sizePitchMultipliers ||= { ...DEFAULT_SIZE_PITCH_MULTIPLIERS };
+        own.sizePitchMultipliers ||= { ...size }; // Preserve the other two currently audible size pitches when editing the first multiplier.
         own.sizePitchMultipliers[input.dataset.speciesSize] = clamp(finite(input.value, 1), 0.5, 2);
         mark();
       };
