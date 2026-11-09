@@ -89,7 +89,7 @@ function brief(errors){return errors.slice(-10).join('\n').slice(0,2500);}
     });
     await furniture.waitForFunction(()=>/Added .* as one independent furniture piece|Import failed/.test(
       document.querySelector('#statuePieceImportStatus')?.textContent||''),null,{timeout:35000});
-    const imported=await furniture.locator('#statuePieceImportStatus').innerText();
+    const imported=await furniture.locator('#statuePieceImportStatus').textContent(); // The part panel may still be collapsed when the file-change handler fires.
     assert.match(imported,/Added .* as one independent furniture piece/,brief(furnitureErrors));
     console.log('Statue Author real browser: static skinned NPC, stone weapon, GLB export, and furniture piece import passed. '+status);
   }finally{
