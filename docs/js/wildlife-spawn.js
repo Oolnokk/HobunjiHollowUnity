@@ -1324,10 +1324,51 @@
     return spawned;
   }
 
+  const deliveredFestivalReleaseIds=new Set(); // Same-session duplicate defense when a save acknowledgement fails and is retried.
+  let lastFestivalRelease=null; // Mobile wildlife debugging can report the actual recipient creature and its new biome.
+  function deliverFestivalAnimalReleases(zoneId) {
+    const authority=window.FestivalSystem;
+    if(!authority?.hasPendingAnimalReleases?.()||!deps?.makeCreatureEntity||!deps?.hostileObjects?.add
+       ||!deps.zoneLayouts?.has?.(zoneId)||!deps.EXTERIOR_ZONES?.[zoneId])return 0;
+    const itemKinds=window.SCRATCHBONES_CONFIG?.game?.livestock?.itemKinds || {}; // The same hatchable/baby item registry used by farm adoption.
+    const pending=authority.pendingAnimalReleases();
+    let completed=0;
+    for(const offer of pending.slice(0,4)) {
+      if(!offer?.id||!offer.key||itemKinds[offer.key]!==offer.species)continue;
+      if(deliveredFestivalReleaseIds.has(offer.id)){authority.acknowledgeAnimalRelease?.(offer.id);continue;}
+      const native=Object.entries(deps.EXTERIOR_ZONES).filter(([,area])=>
+        ['denSpecies','packSpecies','herbivoreSpecies','roamingHerdSpecies','roamingForagerSpecies'].some(field=>
+          Array.isArray(area?.[field])&&area[field].includes(offer.species))).map(([id])=>id);
+      if(offer.species===window.PingdortRegistration?.KIND)for(const id of window.PingdortRegistration.ZONES||[])
+        if(!native.includes(id))native.push(id); // Flying Pingdort habitat does not rely on the ground-herd roster.
+      if(native.length&&!native.includes(zoneId))continue; // A Puktuk returns to its Western Slope rather than appearing in town.
+      if(!deps.CREATURE_DB?.[offer.species])continue;
+      const hash=[...offer.id].reduce((n,ch)=>(n*33+ch.charCodeAt(0))>>>0,5381);
+      const anchor=roamingHerdAnchor(zoneId,hash%7,7); // Existing generated safe forage anchors, never a guessed town tile.
+      const genotype=window.CreatureGenetics?.makeDefaultGenotype?.(offer.species)||null;
+      if(genotype)genotype.sizeClass='small'; // Real creature-genetics small-size rig keeps a freed baby visibly juvenile.
+      const creature=deps.makeCreatureEntity(offer.species,anchor.x,anchor.y,{
+        genotype,streamVisuals:true,wildlifeRole:'prey',homeX:anchor.x,homeY:anchor.y,
+        wanderRadiusPx:deps.TILE*6,festivalReleased:true,festivalReleaseId:offer.id,
+      }); // Normal wildlife AI, combat, pathfinding and cleanup own the animal after liberation.
+      if(!creature)continue;
+      creature.festivalReleased=true;
+      creature.festivalReleaseId=offer.id;
+      deps.hostileObjects.add(creature);
+      deliveredFestivalReleaseIds.add(offer.id);
+      authority.acknowledgeAnimalRelease?.(offer.id);
+      lastFestivalRelease={id:offer.id,item:offer.key,species:offer.species,zoneId};
+      completed++;
+      window.__farmLog?.('[festival] Released '+offer.species+' alive into '+zoneId,'wildlife');
+    }
+    return completed;
+  }
+
   function ensureCurrentZoneRoamingHerds() {
     const zoneId = deps.getCurrentArea(); // Used to keep exterior roaming populations tied to the active zone.
     const zdef = deps.EXTERIOR_ZONES?.[zoneId];
     if (!zdef) return;
+    deliverFestivalAnimalReleases(zoneId); // Existing exterior wildlife tick is the only delivery clock; town/festival props never spawn animals.
     const normalSpecies = zdef.roamingHerdSpecies || []; // Existing Voorg-Ass slots remain unchanged.
     const normalCount = normalSpecies.length ? Math.max(1, Math.floor(Number(zdef.roamingHerdCount) || 1)) : 0;
     const foragers = Array.isArray(zdef.roamingForagerSpecies) ? zdef.roamingForagerSpecies : []; // Separate authored slots so Nazgraku never crowds out Voorg-Ass.
@@ -1878,6 +1919,8 @@
     denCavernZoneOf: (mapId) => _denCavernZoneOf.get(mapId),
     denSpeciesFor,
     denCensus,
+    deliverFestivalAnimalReleases, // Read-only test can invoke delivery directly with a generated zone.
+    get lastFestivalRelease() { return lastFestivalRelease && {...lastFestivalRelease}; },
     denKeyForCavern,
     denGenotypeFamily,
     getOrMakeDenGenotype,
