@@ -101,7 +101,10 @@
         html += '<h4>Ingredient quality and contribution</h4><ul class="festival-ingredient-list">';
         html += chosen.ingredientDetails.map(item=>{
           const contribution=describeEffects(item.effects).join(', ') || 'No cooking buff';
-          return `<li><strong>${esc(item.icon)} ${esc(item.label)}</strong> · ${'★'.repeat(item.stars)}${'☆'.repeat(5-item.stars)} · ${item.stars} × ${item.multiplier} = <strong>${item.points} points</strong><small>${esc(contribution)}</small></li>`;
+          const rare = item.rarityMultiplier > 1.0005
+            ? ' · source rarity +' + Math.round((item.rarityMultiplier - 1) * 100) + '%' : ''; // The inspector shows where the same scored source-bonus went.
+          const provenance = item.raritySource ? item.raritySource + (item.rarityCertainty && item.rarityCertainty !== 'authored' ? ' (' + item.rarityCertainty + ')' : '') : ''; // Flags conditional and proxy estimates to phone players.
+          return `<li><strong>${esc(item.icon)} ${esc(item.label)}</strong> · ${'★'.repeat(item.stars)}${'☆'.repeat(5-item.stars)} · ${item.stars} × ${item.multiplier}${esc(rare)} = <strong>${item.points} points</strong><small>${esc(contribution)}${provenance ? ' · ' + esc(provenance) : ''}</small></li>`;
         }).join('') || '<li>Original ingredient details were not recorded for this older dish.</li>';
         html += '</ul><h4>Effects when eaten</h4><div class="festival-dish-total">';
         html += describeEffects(chosen.foodEffects).map(value=>`<div>${esc(value)}</div>`).join('') || 'No recorded food buffs';
