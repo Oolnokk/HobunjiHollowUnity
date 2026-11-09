@@ -1,0 +1,95 @@
+#!/usr/bin/env node
+'use strict';
+
+// Regression tests for Festival Test's opt-in reward merge. The actual
+// snapshot-merge functions run unchanged from the shipped quick-save module.
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+
+const root = path.resolve(__dirname, '..');
+const read = file => fs.readFileSync(path.join(root, file), 'utf8'); // Loads shipped code, not a rewritten test implementation.
+const source = read('docs/js/quick-save.js');
+const start = source.indexOf('  function festivalMember(');
+const end = source.indexOf('  async function startFestivalTest()', start);
+assert.ok(start > 0 && end > start, 'festival reward merge must remain within the quick-save module');
+
+const context = vm.createContext({ window: { CalendarSystem: {
+  aotYearNumber: () => 1154,
+  dayOfYear: day => day,
+} } });
+vm.runInContext(source.slice(start, end), context, { filename: 'quick-save-festival-extract.js' });
+const clone = value => JSON.parse(JSON.stringify(value)); // Makes explicit the immutable baseline/derived-copy contract.
+
+function fixture() {
+  return { meta: { worlds: [{ id: 'world1', calendar: { day: 110, time01: 0.3 }, lastDay: 110,
+    members: { farmer: {
+      nonGearInventory: { gold: 200, festivalSweet: 1 },
+      npcRelationships: { pahu: { favor: 10, memory: [{ event: 'old', day: 100 }] } },
+      cookingState: { qualityBuckets: { festivalSweet: { 3: 1 } } },
+      packClothing: [{ cosmeticId: 'ordinary_hat' }],
+      festivals: { claims: {} },
+    } },
+  }] }, farmLayouts: {} };
+}
+
+const baseline = fixture();
+const tested = clone(baseline);
+const after = tested.meta.worlds[0].members.farmer;
+after.nonGearInventory.gold = 9999; // Not a festival reward; must NOT leak.
+after.nonGearInventory.festivalSweet = 0; // Consumed ingredients must NOT leak.
+after.npcRelationships.pahu.favor = 999;
+after.npcRelationships.leaf = { favor: 200 };
+after.packClothing.push({ cosmeticId: 'festivalmask_grehlr' }, { cosmeticId: 'ordinary_new_hat' });
+after.festivals.claims['1154:hachutukara'] = { mask: true, sweets: true };
+
+const session = {
+  characterId: 'farmer', worldId: 'world1', eventKey: '1154:hachutukara', targetDay: 120,
+  journal: { favor: { pahu: 5 }, items: [{ key: 'festivalSweet', count: 2, stars: 5 }],
+    masks: ['festivalmask_grehlr'] },
+};
+const originalJson = JSON.stringify(baseline);
+const restored = clone(baseline);
+context.mergeFestivalRewards(restored, tested, session);
+assert.equal(JSON.stringify(baseline), originalJson, 'pinned original snapshot must remain unchanged');
+const member = restored.meta.worlds[0].members.farmer;
+assert.equal(restored.meta.worlds[0].calendar.day, 110, 'date must be restored');
+assert.equal(restored.meta.worlds[0].lastDay, 110, 'rollover pointer must be restored');
+assert.equal(member.nonGearInventory.gold, 200, 'unrelated inventory must not transfer');
+assert.equal(member.nonGearInventory.festivalSweet, 3, 'only two specifically granted sweets transfer');
+assert.equal(member.cookingState.qualityBuckets.festivalSweet[5], 2, 'grant quality tier transfers');
+assert.equal(member.npcRelationships.pahu.favor, 15, 'only journaled festival Favor transfers');
+assert.equal(member.npcRelationships.leaf, undefined, 'unrelated NPC changes are discarded');
+assert.equal(member.npcRelationships.pahu.memory.length, 1, 'unrelated dialogue memories are discarded');
+assert.deepEqual(member.packClothing.map(item => item.cosmeticId), ['ordinary_hat', 'festivalmask_grehlr']);
+assert.equal(member.festivals.claims['1154:hachutukara'].mask, true, 'festival claims persist with rewards');
+
+const withoutRewards = clone(baseline); // Checkbox OFF means no call to the merge function.
+assert.equal(JSON.stringify(withoutRewards), originalJson, 'unchecked reward option restores exactly');
+const beforeMissing = clone(baseline);
+assert.throws(() => context.mergeFestivalRewards(beforeMissing, tested,
+  { ...session, characterId: 'different' }), /does not match/, 'different characters cannot receive rewards');
+
+const blessed = clone(baseline);
+const blessedTest = clone(tested);
+blessedTest.meta.worlds[0].members.farmer.festivals.claims['1154:tzizkhanash'] = { offering: true };
+blessedTest.meta.worlds[0].members.farmer.festivals.blessing = {
+  stat: 'speed', level: 3, expiresDay: 1154 * 336 + 260,
+};
+context.mergeFestivalRewards(blessed, blessedTest, {
+  ...session, eventKey: '1154:tzizkhanash', targetDay: 120, journal: { favor: {}, items: [], masks: [] },
+});
+assert.equal(blessed.meta.worlds[0].members.farmer.festivals.blessing.expiresDay,
+  1154 * 336 + 250, 'ancestor blessing keeps its remaining duration relative to restored date');
+
+const companion = read('docs/tools/dev-companion/dev-companion.js');
+assert.match(companion, /action\.checkbox/);
+assert.match(companion, /checked: input\.checked/);
+assert.match(source, /keepRewards: saved\.keepRewards === true/, 'reward carry must default to OFF');
+assert.match(source, /if \(session\.keepRewards\)/, 'unchecked test must use the unmodified restore snapshot');
+assert.match(read('docs/js/folder-save-primary.js'), /function festivalTestSaveGuard\(/, 'primary folder must be protected');
+assert.match(read('docs/js/festival-system.js'), /recordFestivalFavor/, 'Favor should be journaled from actual festival grants');
+assert.match(read('docs/js/festival-system.js'), /recordFestivalItem/, 'items should be journaled from actual festival grants');
+
+console.log('test-dev-festival-rewards: ok');
