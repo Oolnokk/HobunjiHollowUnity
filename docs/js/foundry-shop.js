@@ -94,7 +94,13 @@
     }).catch(error => { if (serial === previewSerial && image.isConnected) { image.alt = error.message; deps.showToast(error.message, false); } }); // Ignore an outdated preview failure.
     const donor = config.shafts[selection.shaft].sourceShape; // Explain the donor rules before spending resources.
     const handMode = global.HobunjiHandToolGrips?.weaponHandModeForTool?.(donor) || 'two-hand'; // Shared runtime handedness.
-    section.appendChild(element('p', `${handMode} · ${config.heads[selection.head].dmgType} · Attacks: ${deps.TOOL_ITEM_DEFS[item].animStyle} · Grip, scale and idle stance follow ${config.shafts[selection.shaft].label}.`));
+    const definition = deps.TOOL_ITEM_DEFS[item]; // Registered combined head/haft abilities, including canonical equipment slots and mastery policies.
+    section.appendChild(element('p', definition.label)); // The actual forged name is authored grammatically, never as "head / shaft".
+    section.appendChild(element('p', `${handMode} · ${config.heads[selection.head].dmgType} · Attacks: ${definition.animStyle} · Slots: ${definition.slots.join(', ')} · Grip and idle stance follow ${config.shafts[selection.shaft].label}.`));
+    if (definition.slots.some(slot => slot !== 'weapon'))
+      section.appendChild(element('p', 'This head supplies utility abilities on a tool-worthy haft. Each tool slot uses its existing action-specific Mastery XP source and amount.'));
+    if (definition.weaponAssembly?.flail)
+      section.appendChild(element('p', 'Flexible rope/chain: attached to the haft and head with live swinging physics. The still image previews the haft; the head is rendered separately while equipped.'));
     const cost = config.craftCost; // Authored new-weapon cost.
     const owned = !!deps.getGearInventory()?.tools?.[item]; // One owned weapon per part/material combination, matching normal smithing.
     const button = element('button', owned ? 'Already forged' : `Forge — ${cost.gold} bronze + ${cost.bars} bars + ${cost.wood} wood`, 'shop-buy-btn'); // Final purchase action.
@@ -103,7 +109,7 @@
     section.appendChild(button);
     const debug = element('details', ''); // Console-free mobile diagnostics, opened only on demand.
     debug.appendChild(element('summary', 'Weapon assembly diagnostics'));
-    debug.appendChild(element('pre', JSON.stringify({ ...global.ModularWeapons.diagnostics(item), handMode, settings: global.ModularWeapons.settings(selection.shaft, selection.head) }, null, 2)));
+    debug.appendChild(element('pre', JSON.stringify({ ...global.ModularWeapons.diagnostics(item), slots: definition.slots, handMode, flail: definition.weaponAssembly?.flail || null, settings: global.ModularWeapons.settings(selection.shaft, selection.head) }, null, 2)));
     section.appendChild(debug);
   }
   global.FoundryShop = { init: value => { deps = value; }, render, craft, choices };
