@@ -298,6 +298,19 @@ api._test.applyJob(familyHarvest, { ...ripeJob, npcId: 'kid1' });
 assert.equal(workAwards.length, 1, 'a stale harvest never awards duplicate XP');
 assert.ok(api._test.jobsFor(familyHarvest, 'kid1').every(job => job.job !== 'harvest'), 'ripe harvest cannot be repeated');
 
+// Switching a worker to vat duty must cancel a partially completed plot job immediately.
+api.registerFarmPlots([{ id: 'family_interrupted', kind: 'till', tiles: [[70, 70]], workers: ['kid1'], crop: 'needlegrain', hours: [8, 17] }]);
+const interruptedTile = farmTile(70, 70); interruptedTile.type = 'grass'; interruptedTile.crop = '';
+assert.ok(api.targetFor(rec('kid1'), { familyOnly: true }), 'child receives a plot claim before switching roles');
+assert.ok(api.snapshot().claims.some(claim => claim.npc === 'kid1'), 'in-progress child plot job is tracked');
+const awardsBeforeVat = workAwards.length;
+win.RomanceFamily.isAssignedToVat = id => id === 'kid1';
+for (let i = 0; i < 25; i++) tick();
+assert.equal(api.snapshot().claims.some(claim => claim.npc === 'kid1'), false, 'vat assignment cancels the old plot claim');
+assert.equal(interruptedTile.type, 'grass', 'the abandoned crop plot is not tilled in the background');
+assert.equal(workAwards.length, awardsBeforeVat, 'a cancelled plot task grants no usefulness XP');
+win.RomanceFamily.isAssignedToVat = () => false;
+
 
 // The player's farm editor must release assignments immediately when painting over a group.
 context.document = { getElementById: () => null };
