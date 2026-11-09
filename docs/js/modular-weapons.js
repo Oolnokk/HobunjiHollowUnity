@@ -360,6 +360,10 @@
     const template = global.WEAPON_SPRITE_ASSEMBLY_CONFIG?.weapons?.[id]; // Multi-sprite Tool Hub is the sole rope/chain and animation authoring authority.
     return template?.flail?.chain && template.flail.head ? template : null;
   }
+  function cleanFlailReference(id) {
+    if (typeof id !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(id)) return null;
+    return global.WEAPON_SPRITE_ASSEMBLY_CONFIG && !flailTemplate(id) ? null : id; // Preserve saved assembly IDs when their optional visual registry has not loaded yet.
+  }
   function flailRecipe(shaftKey, headKey) {
     const shaft = config.shafts[shaftKey], head = config.heads[headKey]; // Both stable part IDs are looked up without guessing from their names.
     if (!shaft || !head || (!!shaft.flailAssembly && !!head.flailAssembly)) return null;
@@ -420,7 +424,7 @@
         };
         head.toolSlots = [...new Set((Array.isArray(raw.toolSlots) ? raw.toolSlots : head.toolSlots || [])
           .filter(slot => UTILITY_SLOTS.has(slot)))]; // Whitelist real tool slots so malformed JSON cannot create arbitrary equipment types.
-        if (Object.hasOwn(raw, 'flailAssembly')) head.flailAssembly = flailTemplate(raw.flailAssembly) ? raw.flailAssembly : null; // Clearing an authored rope link must work.
+        if (Object.hasOwn(raw, 'flailAssembly')) head.flailAssembly = cleanFlailReference(raw.flailAssembly); // Clearing an authored rope link must work.
         if (raw.flailHeadAnchor) head.flailHeadAnchor = point(raw.flailHeadAnchor);
         head.flailHeadScale = finite(raw.flailHeadScale, head.flailHeadScale || 1, 0.05, 8);
       }
@@ -433,7 +437,7 @@
         shaft.namePosition = raw.namePosition;
         shaft.nameAffix = partText(raw.nameAffix, shaft.nameAffix || shaft.label);
         shaft.toolWorthy = raw.toolWorthy === true;
-        if (Object.hasOwn(raw, 'flailAssembly')) shaft.flailAssembly = flailTemplate(raw.flailAssembly) ? raw.flailAssembly : null; // Unlinking restores ordinary rigid assembly.
+        if (Object.hasOwn(raw, 'flailAssembly')) shaft.flailAssembly = cleanFlailReference(raw.flailAssembly); // Unlinking restores ordinary rigid assembly.
         if (raw.flailHaftAnchor) shaft.flailHaftAnchor = point(raw.flailHaftAnchor);
       }
       shaft.rigRegions = cleanRigRegions(raw.rigRegions || shaft.rigRegions); // Region selections are validated and persist in exported drafts.
