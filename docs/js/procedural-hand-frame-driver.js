@@ -22,6 +22,7 @@
   const FALLBACK_TELEPORT_SPEED = 24; // Scene units/second above which movement is treated as a snap, not a gait sample.
   let gameDeps = hands.gameDeps || null;
   let syncing = false;
+  const handSyncPerf = { nonSweepSearchesAvoided: 0, visualPlaneSearches: 0, sharedSocketUses: 0 }; // Read by on-demand mobile hand diagnostics; updated only during real hand synchronization.
 
   function normalizeKey(value) {
     return String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
@@ -292,10 +293,12 @@
   }
 
   function hierarchyWorldQuaternion(record, node, target = new record.THREE.Quaternion()) {
-    const chain = []; // Used below to compose node-local rotations without decomposing mirrored matrixWorld values.
+    const chain = record._handHierarchyChain || (record._handHierarchyChain = []); // Reused for each hand's ancestor walk, avoiding one array allocation per weapon/hand sync.
+    chain.length = 0;
     for (let cursor = node; cursor?.isObject3D; cursor = cursor.parent) chain.push(cursor);
     target.identity();
     for (let i = chain.length - 1; i >= 0; i -= 1) target.multiply(chain[i].quaternion);
+    chain.length = 0; // Release references to scene nodes between frames.
     return target.normalize();
   }
 
@@ -316,30 +319,36 @@
   function visualGripBasisDelta(record, toolHolder) {
     const Quaternion = toolHolder.quaternion.constructor;
     const identity = new Quaternion();
-    if (toolHolder.name === 'player_flute_mouth_mount') return { quaternion: identity, source: 'flute-mouth-mount', angleDeg: 0 }; // Never apply a still-equipped sweep weapon's basis correction to the flute's exact ranged grip.
+    if (toolHolder.name === 'player_flute_mouth_mount') return { quaternion: identity, source: 'flute-mouth-mount', angleDeg: 0 }; // Never apply the previous weapon's sweep correction to the flute.
+
+    // The sweep is the ONLY stance that rotates the visual plane's grip basis.
+    // Decide that before traversing the weapon hierarchy: ordinary held tools,
+    // ranged weapons and non-sweep attacks are the common case in large fights.
+    const editor = inAttackEditor(); // Switches between the editor's authored rotation and the gameplay baked correction.
+    const snapshot = editor ? null : (global.WeaponToolStances?.getRuntimeState?.() || global.WeaponToolStances?.debugSnapshot?.() || null); // Read once for this socket computation.
+    const isSweep = editor
+      ? String(document.getElementById('animStyle')?.value || '').toLowerCase() === 'sweep'
+      : snapshot?.activeSlot === 'weapon'
+        && (snapshot?.combatAnim === 'sweep' || (!snapshot?.combatAnim && snapshot?.sourceAnimStyle === 'sweep'));
+    if (!isSweep) {
+      handSyncPerf.nonSweepSearchesAvoided++;
+      return { quaternion: identity, source: 'none', angleDeg: 0 };
+    }
+
+    handSyncPerf.visualPlaneSearches++;
     const plane = findToolVisualPlane(toolHolder);
     if (!plane?.rotation) return { quaternion: identity, source: 'none', angleDeg: 0 };
 
     const currentEuler = plane.rotation.clone();
     const neutralEuler = plane.rotation.clone();
-    let source = 'none';
-
-    if (inAttackEditor()) {
-      const style = String(document.getElementById('animStyle')?.value || '').toLowerCase();
-      if (style !== 'sweep') return { quaternion: identity, source, angleDeg: 0 };
-      // In the editor Neutral is z=0; applyPoseToRig writes the animated sweep
-      // basis directly onto this child plane as z=-90°..0°.
+    let source;
+    if (editor) {
+      // In the editor Neutral is z=0; the animated sweep basis is z=-90°..0°.
       neutralEuler.z = 0;
       source = 'editor-sweep-plane';
     } else {
-      const snapshot = global.WeaponToolStances?.getRuntimeState?.() || global.WeaponToolStances?.debugSnapshot?.() || null;
-      const isSweep = snapshot?.activeSlot === 'weapon'
-        && (snapshot?.combatAnim === 'sweep' || (!snapshot?.combatAnim && snapshot?.sourceAnimStyle === 'sweep'));
-      if (!isSweep) return { quaternion: identity, source, angleDeg: 0 };
-
-      // weapon-tool-stances temporarily adds this compensation during
-      // updateMatrixWorld and then restores plane.rotation.z. Reconstruct the
-      // rendered current basis here; Neutral is always the +90° compensation.
+      // WeaponToolStances adds this rotation only while drawing the weapon;
+      // rebuild that rendered basis without changing the tool's local pose.
       const currentCompDeg = Number(snapshot?.sweepPlaneNeutralCompensationDeg);
       currentEuler.z += record.THREE.MathUtils.degToRad(Number.isFinite(currentCompDeg) ? currentCompDeg : 0);
       neutralEuler.z += Math.PI / 2;
@@ -369,7 +378,7 @@
   // WeaponToolStances.lastHolderMatrixWorld() hands back the matrixWorld
   // actually baked this frame so hands read the same transform the tool
   // rendered with, without calling a recomputing accessor on toolHolder.
-  function toolSocketWorld(record, toolHolder, gripFrame = null) {
+  function toolSocketWorld(record, toolHolder, gripFrame = null, sharedVisualBasis = null) {
     const Vector3 = toolHolder.position.constructor;
     const Quaternion = toolHolder.quaternion.constructor;
     const ownedHolder = record?.avatarRoot?.userData?.proceduralHandToolHolder; // Hostile/NPC records publish their own scene-root holder; only the player's holder is owned by WeaponToolStances' singleton baked-matrix cache.
@@ -381,7 +390,8 @@
       ? global.WeaponToolStances?.lastHolderMatrixWorld?.()
       : null;
 
-    const visualBasis = visualGripBasisDelta(record, toolHolder);
+    const visualBasis = sharedVisualBasis || visualGripBasisDelta(record, toolHolder);
+    if (sharedVisualBasis) handSyncPerf.sharedSocketUses++; // Counts sockets using the per-sync basis instead of repeating the hierarchy search.
     let position;
     // Used as the scale-free world orientation of the tool socket. The special
     // baked WeaponToolStances matrix is PLAYER-ONLY: hostile/NPC holders are
@@ -663,7 +673,8 @@
       }
       const dualWield = toolGrips.dualWieldStateForTool?.(toolKey, gripContext, scaleIdentity) || null;
       const primaryGrip = toolGrips.primaryGripForTool(toolKey, gripContext, scaleIdentity);
-      const primarySocket = toolSocketWorld(record, toolHolder, primaryGrip); // Raw fixed 1H target remains the canonical weapon-grip reference before optional Dual Wield remapping.
+      const visualBasis = visualGripBasisDelta(record, toolHolder); // The holder and its visual basis are stable throughout this synchronous multi-hand solve.
+      const primarySocket = toolSocketWorld(record, toolHolder, primaryGrip, visualBasis); // Raw fixed 1H target remains the canonical weapon-grip reference before optional Dual Wield remapping.
       record.rig.placePaperHandGuideWorld?.(primarySocket.position, primarySocket.quaternion);
       let primary = handSocketAfterGripMode(record, primarySocket); // Preserve the ordinary raw-socket contract for 1H/2H and diagnostics.
       const freeHand = freeRightHandFor(record, toolKey); // A free note keyframe is avatar-local instead of attached to the instrument mesh.
@@ -695,7 +706,7 @@
         ensureFallbackState(record).owners.left = 'gameplay-pose';
       } else if (dualWield) {
         const offhandGrip = toolGrips.offhandPrimaryGripForTool?.(toolKey, gripContext, scaleIdentity) || primaryGrip; // Same authored 1H grip point, minus the main hand's palm-side offset: the offhand holds its copy from the other side.
-        const offhandBaseSocket = toolSocketWorld(record, toolHolder, offhandGrip);
+        const offhandBaseSocket = toolSocketWorld(record, toolHolder, offhandGrip, visualBasis);
         const offhandSocket = global.HobunjiDualWieldWeaponVisuals?.transformSocketForHand?.(record, 'left', offhandBaseSocket) || offhandBaseSocket;
         const secondary = handSocketAfterGripMode(record, offhandSocket);
         record.rig.placeHandWorld?.('left', secondary.position, secondary.quaternion, modelCalibration, dualWield.influence);
@@ -704,7 +715,7 @@
       } else {
         secondaryGrip = toolGrips.secondaryGripForTool(toolKey, gripContext, scaleIdentity);
         if (secondaryGrip) {
-          const secondary = handSocketAfterGripMode(record, toolSocketWorld(record, toolHolder, secondaryGrip));
+          const secondary = handSocketAfterGripMode(record, toolSocketWorld(record, toolHolder, secondaryGrip, visualBasis));
           record.rig.placeHandWorld?.('left', secondary.position, secondary.quaternion, modelCalibration, secondaryGrip.influence);
           record.secondaryActive = true;
           ensureFallbackState(record).owners.left = 'secondary-grip';
@@ -712,7 +723,7 @@
           // Not 2H and not Dual Wield: the free hand holds an INVISIBLE copy of the weapon at an authored offhand pose (default: the dual-wield
           // offhand stance) instead of falling back to the locomotion idle, which reads wrong once the legs bend. Enemies read it from their own animation grip.
           const offhandIdle = toolGrips.offhandIdleStateForTool?.(toolKey, gripContext, scaleIdentity);
-          const offhandBaseSocket = offhandIdle ? toolSocketWorld(record, toolHolder, toolGrips.offhandPrimaryGripForTool?.(toolKey, gripContext, scaleIdentity) || primaryGrip) : null;
+          const offhandBaseSocket = offhandIdle ? toolSocketWorld(record, toolHolder, toolGrips.offhandPrimaryGripForTool?.(toolKey, gripContext, scaleIdentity) || primaryGrip, visualBasis) : null;
           const offhandSocket = offhandBaseSocket ? global.HobunjiDualWieldWeaponVisuals?.transformSocketForHand?.(record, 'left', offhandBaseSocket) : null;
           if (offhandSocket && offhandSocket !== offhandBaseSocket && offhandSocket.dualWield) {
             applyFallbackSide(record, 'left'); // The fallback is the other end of the blend: the invisible tool takes over as its weight rises.
@@ -914,6 +925,7 @@
       }
       return results;
     },
+    getPerfStats() { return { ...handSyncPerf }; }, // Read only by diagnostic panels; zero snapshot allocations during normal frames.
     getDebug() {
       return [...managed].map(record => ({
         speciesId: record.speciesId,
