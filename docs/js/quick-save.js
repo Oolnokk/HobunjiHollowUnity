@@ -141,7 +141,8 @@
       const ids = activeIds();
       if (!ids.characterId || !ids.worldId) throw new Error('No active farmer/world.');
 
-      deps.flushAll?.(); // Writes live member state, farm layout, and the exact calendar into the browser save first.
+      const flushed = deps.flushAll?.(); // Writes live member state, farm layout, and the exact calendar into the browser save first.
+      if (flushed?.ok === false) throw new Error('Could not capture live save state: ' + (flushed.error || 'flush failed'));
       const snapshotApi = window.HobunjiSaveSnapshot;
       if (!snapshotApi?.capture) throw new Error('Save snapshot system is unavailable.');
       const snapshot = snapshotApi.capture({ strict: true });
@@ -428,6 +429,29 @@
     return result;
   }
 
+  function resumeFestivalAutoPlay() {
+    const session = festivalTestSession();
+    if (!session) return false;
+    requestAutoPlay({ characterId: session.characterId, worldId: session.worldId, reason: 'festival-test-refresh' });
+    return true;
+  }
+
+  async function recoverFestivalTest() {
+    const session = festivalTestSession();
+    if (!session) return { ok: false, error: 'No festival restore is pending.' };
+    if (session.phase === 'active') return exitFestivalTest();
+    const previous = { ...session }; // Recovery restores the last phase if scheduling a reload fails.
+    const slotId = session.phase === 'returning' && session.returnSlotId ? session.returnSlotId : session.baseSlotId;
+    const restoreSlot = await getSlot(slotId);
+    if (!restoreSlot?.snapshot) return { ok: false, error: 'Original festival restore snapshot missing. Use the pinned Quick Save recovery point.' };
+    session.returnSlotId = slotId;
+    session.phase = 'recovering';
+    writeFestivalSession(session);
+    const result = await quickLoad(slotId, { pauseAutosave: true });
+    if (!result.ok) writeFestivalSession(previous);
+    return result;
+  }
+
   async function restartFestivalTest() {
     const session = festivalTestSession();
     if (!session || session.phase !== 'active') return { ok: false, error: 'There is no running festival test.' };
@@ -450,7 +474,8 @@
     try {
       const returnSlot = JSON.parse(JSON.stringify(baseline)); // Never modify the pinned original restore point.
       if (session.keepRewards) {
-        deps.flushAll?.();
+        const flushed = deps.flushAll?.();
+        if (flushed?.ok === false) throw new Error('Cannot collect test rewards: ' + (flushed.error || 'save flush failed'));
         const tested = window.HobunjiSaveSnapshot.capture({ strict: true });
         mergeFestivalRewards(returnSlot.snapshot, tested, session);
       }
@@ -472,7 +497,7 @@
 
   async function finishFestivalReturn(ids) {
     const session = festivalTestSession();
-    if (!session || session.phase !== 'restored' || session.characterId !== ids.characterId || session.worldId !== ids.worldId) return;
+    if (!session || session.phase !== 'restored' || session.characterId !== ids.characterId || session.worldId !== ids.worldId) return false;
     writeSession(FESTIVAL_TEST_KEY, null);
     // The pinned original quick save remains available as a manual recovery
     // point; remove only generated previews and already-applied return slots.
@@ -480,6 +505,7 @@
       if (id) try { await deleteSlot(id); } catch (_) {}
     }
     if (!session.wasPaused) window.HobunjiAutosavePause?.resume?.('festival-test-restored');
+    return true;
   }
 
   // ── Quick load ──────────────────────────────────────────────────────
@@ -540,7 +566,7 @@
       if (festivalSession?.previewSlotId === slot.id && festivalSession.phase === 'starting') {
         festivalSession.phase = 'active';
         writeFestivalSession(festivalSession);
-      } else if (festivalSession?.returnSlotId === slot.id && festivalSession.phase === 'returning') {
+      } else if (festivalSession?.returnSlotId === slot.id && ['returning', 'recovering'].includes(festivalSession.phase)) {
         festivalSession.phase = 'restored';
         writeFestivalSession(festivalSession);
       }
@@ -697,6 +723,9 @@
               { id: 'restart', label: 'Restart festival test', group: 'Festival', confirm: 'Discard this test attempt and restart the festival from its opening?' },
               { id: 'exit', label: 'Exit & restore original world', group: 'Festival', confirm: 'Restore the original world? Only journaled festival rewards are kept if the checkbox is enabled.' },
             ] : []),
+            ...(!running && status.phase !== 'idle' ? [
+              { id: 'recover', label: 'Finish/repair festival restore', group: 'Festival', confirm: 'Restore your original pre-test world if this festival load was interrupted?' },
+            ] : []),
           ],
           note: running
             ? 'The normal world remains in a pinned Quick Save. Autosaves are paused; do not use Manual Save during a test. Rewards are opt-in.'
@@ -713,6 +742,7 @@
         if (action === 'keep-rewards') return setFestivalPrefs({ keepRewards: args.checked === true });
         if (action === 'exit') return exitFestivalTest();
         if (action === 'restart') return restartFestivalTest();
+        if (action === 'recover') return recoverFestivalTest();
         if (action === 'start') {
           if (!document.getElementById('settingDevMode')?.checked) return { ok: false, error: 'Enable Dev Mode before starting a festival test.' };
           return startFestivalTest();
@@ -779,6 +809,7 @@
     recordFestivalFavor: (npcId, amount) => recordFestivalReward('favor', { npcId, amount }),
     recordFestivalItem: (key, count, stars) => recordFestivalReward('item', { key, count, stars }),
     recordFestivalMask: id => recordFestivalReward('mask', { id }),
+    resumeFestivalAutoPlay,
     _slotSummary: slotSummary,
   };
 })();
