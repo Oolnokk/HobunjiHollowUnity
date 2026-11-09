@@ -2,10 +2,10 @@
 // Shared geometry coordinates; each floor owns its own independent network.
 // Nothing renders or teleports here. Runtime geometry/puzzles must consume this plan.
 (function(root,factory) {
-  const api=factory();
+  const api=factory(root);
   if(typeof module==='object'&&module.exports)module.exports=api;
   else root.RuinLayerPlan=api;
-})(typeof self!=='undefined'?self:globalThis,function(){
+})(typeof self!=='undefined'?self:globalThis,function(root){
   'use strict';
   const DIRS=Object.freeze([
     {side:'N',dx:0,dz:-1},{side:'E',dx:1,dz:0},
@@ -179,7 +179,16 @@
           const challenge=isGoal?null:findBlocks?'findBlocks':defence?'statueDefense'
             :tutorial?'pressurePlate':smallPool[integer(rng,0,smallPool.length-1)];
           const plinthTrial=id===trialRoomId;
-          const area=plinthTrial?rect(rx+dir.dx*(9-depth),rz+dir.dz*(9-depth),18,18):rect(rx,rz,rw,rd); // Keep the planned approach gap while reserving room for the authored spawners.
+          const baseline=challenge==='ropeChain'&&!plinthTrial
+             ?(root.RuinRopeBaseline||(typeof require==='function'?require('./ruin-rope-baseline.js'):null))?.profile?.():null; // Only rope rooms grow; all other procedural puzzle footprints stay unchanged.
+           const originalAlong=dir.dx?rw:rd,originalAcross=dir.dx?rd:rw;
+           const along=baseline?Math.max(originalAlong,baseline.roomLength):originalAlong;
+           const across=baseline?Math.max(originalAcross,baseline.roomWidth):originalAcross;
+           const finalW=dir.dx?along:across,finalD=dir.dx?across:along;
+           const shiftedX=rx+dir.dx*Math.ceil((along-originalAlong)/2);
+           const shiftedZ=rz+dir.dz*Math.ceil((along-originalAlong)/2);
+           const area=plinthTrial?rect(rx+dir.dx*(9-depth),rz+dir.dz*(9-depth),18,18)
+             :rect(shiftedX,shiftedZ,finalW,finalD); // Enlarging the room outward preserves its incoming doorway and corridor gap.
           const room={id,kind:isGoal?'brazier-chamber':'challenge-room',...area,y,wingId,
             challenge:plinthTrial?'statueDefense':challenge};
           nodes.push(room);rooms.push(room);
@@ -190,12 +199,12 @@
             x:dir.dx>0?area.x:dir.dx<0?area.x+area.w-1:Math.floor(area.x+area.w/2),
             z:dir.dz>0?area.z:dir.dz<0?area.z+area.d-1:Math.floor(area.z+area.d/2)
           };
-          const along=dir.dx?'x':'z';
+          const corridorAxis=dir.dx?'x':'z';
           const approach={x:door.x-dir.dx,z:door.z-dir.dz};
           const bend=dir.dx!==0?{x:previous.x,z:approach.z}:{x:approach.x,z:previous.z}; // Preserve signed coordinates in west/north doglegs.
           const pieces=[];
           if((previous.x!==bend.x)||(previous.z!==bend.z))pieces.push(segment(previous,bend,o.corridorWidth,dir.dx?'z':'x')); // Lateral dogleg.
-          if((bend.x!==approach.x)||(bend.z!==approach.z))pieces.push(segment(bend,approach,o.corridorWidth,along)); // Radial length varies to fit rooms.
+          if((bend.x!==approach.x)||(bend.z!==approach.z))pieces.push(segment(bend,approach,o.corridorWidth,corridorAxis)); // Radial length varies to fit rooms.
           // Straight corridor if there was no lateral drift.
           if(!pieces.length)pieces.push(segment(previous,approach,o.corridorWidth,along));
           const hall={id:`${wingId}-hall${stage}`,floor,y,from:stage===1?`shaft-f${floor}`:nodes[stage-2].id,to:id,rects:pieces,
