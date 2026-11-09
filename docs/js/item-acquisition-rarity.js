@@ -434,11 +434,17 @@
       const den = G.WildlifeSpawn?.ecologyCensus?.(id) || {known:false};
       const reagent = G.ReagentPlants?.sourceCensus?.(id) || {known:false};
       const berries = G.WildBerries?.census?.(id) || {known:false};
+      const nests = den?.known ? den.surfaceNestSources : null; // Only real selected/loaded nest records count, never the biome's theoretical maximum.
       return {zoneId:id,den,reagent,berries,generated:{
         dens:den.known ? den.animalDens : null,
         foragePlants:reagent.known ? reagent.generatedTotal : null,
         currentForagePlants:reagent.known && reagent.isCurrentDay ? reagent.remainingTotal : null,
-        remainingBerries:berries.known && Array.isArray(berries.berries) ? berries.berries.length : null}};
+        remainingBerries:berries.known && Array.isArray(berries.berries) ? berries.berries.length : null,
+        treeNests:nests?.drenkirraTreeNests?.known ? nests.drenkirraTreeNests.selected : null,
+        pingdortNests:nests?.pingdortNests?.known ? nests.pingdortNests.sites : null,
+        pingdortEggs:nests?.pingdortNests?.known ? nests.pingdortNests.remainingEggs : null,
+        tzatzulRoosts:nests?.tzatzulRoosts?.known ? nests.tzatzulRoosts.sites : null,
+        honeyfuzzleHives:nests?.honeyfuzzleHives?.known ? nests.honeyfuzzleHives.standing : null}};
     });
     const sumKnown = fn => {
       const values = zones.map(fn).filter(x=>x!=null && Number.isFinite(x));
@@ -447,7 +453,12 @@
     return {zoneId,observedZoneCount:zones.length,ruins:G.RuinSites?.sourceCensus?.(zoneId) || null,
       totals:{dens:sumKnown(z=>z.generated.dens),reagentSites:sumKnown(z=>z.generated.foragePlants),
         availableReagents:sumKnown(z=>z.generated.currentForagePlants),
-        availableBerries:sumKnown(z=>z.generated.remainingBerries)},
+        availableBerries:sumKnown(z=>z.generated.remainingBerries),
+        treeNests:sumKnown(z=>z.generated.treeNests),
+        pingdortNests:sumKnown(z=>z.generated.pingdortNests),
+        pingdortEggs:sumKnown(z=>z.generated.pingdortEggs),
+        tzatzulRoosts:sumKnown(z=>z.generated.tzatzulRoosts),
+        honeyfuzzleHives:sumKnown(z=>z.generated.honeyfuzzleHives)},
       zones,certainty:'actual generated site/den/plant rosters; not the chance of encountering them on a random player journey'};
   }
   function itemSourceFrequency(key, {zoneId = null} = {}) {
@@ -469,6 +480,26 @@
         chancePerRandomRemainingReagent:measured && census.remainingTotal>0 ? (row?.remaining || 0)/census.remainingTotal : null,
         zoneTileDensity:measured ? census.generatedPlantsPerMapTile ?? null : null, // A stale daily scatter is history, not today's abundance.
         certainty:measured?'exact persisted current-day habitat placements':'eligible habitat known; no current-day generated sample'};
+    }
+    if (zoneId != null) {
+      const ecology = G.WildlifeSpawn?.ecologyCensus?.(zoneId);
+      const nestSources = ecology?.surfaceNestSources;
+      if (key === G.PingdortRegistration?.FERTILE_EGG) {
+        const nest = nestSources?.pingdortNests;
+        return {key,sourceKind:'pingdort-minicliff-nest',zoneId,
+          known:!!nest?.known,observedNests:nest?.known?nest.sites:null,
+          currentlyRemainingEggs:nest?.known?nest.remainingEggs:null,
+          perSuccessfulEggTake:1,
+          certainty:nest?.known?'actual selected reachable minicliff nest clutch':'unloaded nest shelves; availability unknown'};
+      }
+      if (key === G.HoneyfuzzleHives?.EGG_ITEM) {
+        const hives = nestSources?.honeyfuzzleHives;
+        return {key,sourceKind:'honeyfuzzle-hive',zoneId,
+          known:!!hives?.known,observedHives:hives?.known?hives.sites:null,
+          standingHives:hives?.known?hives.standing:null,
+          eggYieldPerSuccessfulHarvest:{min:G.HoneyfuzzleHives.EGG_MIN,max:G.HoneyfuzzleHives.EGG_MAX},
+          certainty:hives?.known?'actual uncollapsed hive stumps with authored egg yield':'unloaded or distant hive zone; availability unknown'};
+      }
     }
     const config = G.SCRATCHBONES_CONFIG?.game || {};
     const mothers = Object.entries(config.wildlife?.denMothers || {}).filter(([,def])=>def.nestItemKey===key);
@@ -516,6 +547,10 @@
     if (reagent?.sourceKind==='habitat-reagent') sources.push({kind:'foraging-reagent',sourceId:reagent.zoneId,
       label:'Habitat-specific reagent plant',probability:reagent.chancePerRandomRemainingReagent,
       expectedQuantity:reagent.remainingSites,certainty:reagent.certainty,detail:reagent});
+    if (reagent?.sourceKind==='pingdort-minicliff-nest' || reagent?.sourceKind==='honeyfuzzle-hive')
+      sources.push({kind:'surface-nest',sourceId:reagent.zoneId,label:reagent.sourceKind,
+        probability:null,expectedQuantity:reagent.currentlyRemainingEggs ?? reagent.standingHives ?? null,
+        certainty:reagent.certainty,detail:reagent}); // Nest access/harvest is not an independent universal spawn roll.
 
     const fish = fishRarity(key);
     if (fish) {
