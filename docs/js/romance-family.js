@@ -29,11 +29,12 @@
   let doorstepRegistered = false;
   let frameRegistered = false;
   let uiOverlay = null;
+  let pendingBabyPromptScheduled = false; // Prevents the lifecycle tick from racing an already queued birth/naming overlay.
   let registeredSocialGraph = null; // Previously linked social graph, used to detect world changes.
   let registeredChildFriends = ''; // Signature of world-specific NPC friendship links, avoids work each tick.
 
   function defaultFamily() {
-    return { pregnancy: null, children: [], pendingAdoption: null, spouseUsefulness: null, spouseVatId: null };
+    return { pregnancy: null, children: [], pendingAdoption: null, pendingBaby: null, spouseUsefulness: null, spouseVatId: null };
   }
   const cfg = () => H?.cfg?.()?.family || {};
   const num = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -109,7 +110,7 @@
     const existingChildren = fam.children.filter(child => child.otherParentId === spouse.npcId); // Existing children count toward a per-marriage limit.
     const childLimit = Math.floor(num(cfg().maxChildrenPerMarriage, 0));
     if (childLimit > 0 && existingChildren.length >= childLimit) return null;
-    if (fam.pendingAdoption || (fam.pregnancy?.spouseId === spouse.npcId && (!fam.pregnancy.born || fam.pregnancy.awaitingChild))) return fam.pregnancy;
+    if (fam.pendingAdoption || fam.pendingBaby || (fam.pregnancy?.spouseId === spouse.npcId && (!fam.pregnancy.born || fam.pregnancy.awaitingChild))) return fam.pregnancy;
     const firstWeddingDay = num(spouse.marriedRawDay, H.rawDay());
     const latestBirth = existingChildren.length ? Math.max(...existingChildren.map(child => num(child.bornRawDay, 0))) : null;
     const firstDue = firstWeddingDay + num(cfg().birthAfterDays, 112);
@@ -219,6 +220,7 @@
     p.born = true;
     p.awaitingChild = true; // Prevents creating a new pregnancy while the birth naming UI is unresolved.
     const baby = babyFromParents(p.kind);
+    fam.pendingBaby = { ...baby, origin: p.kind.endsWith('egg') ? 'egg' : 'birth', otherParentId: p.spouseId }; // Save-safe pending newborn, resumed after reload.
     const message = {
       spouse_egg: 'The egg hatched in the night!',
       player_egg: 'Your egg hatched in the night!',
@@ -226,9 +228,11 @@
       player_live: 'You unexpectedly gave birth in the night!',
     }[p.kind];
     H.persist();
+    pendingBabyPromptScheduled = true;
     setTimeout(() => {
+      pendingBabyPromptScheduled = false;
       H.toast(`👶 ${message}`, true);
-      openNamingPrompt(baby, name => createChild({ ...baby, name, origin: p.kind.endsWith('egg') ? 'egg' : 'birth', otherParentId: p.spouseId }));
+      if (fam.pendingBaby && !uiOverlay) promptPendingBaby();
     }, 900);
   }
 
@@ -257,8 +261,10 @@
         const pending = fam.pendingAdoption;
         if (!pending) return true;
         fam.pendingAdoption = null;
+        fam.pendingBaby = { ...pending, origin: 'adopted', otherParentId: pending.spouseId }; // Doorstep completion persists until naming succeeds.
         H.persist();
-        setTimeout(() => openNamingPrompt(pending, name => createChild({ ...pending, name, origin: 'adopted', otherParentId: pending.spouseId })), 300);
+        pendingBabyPromptScheduled = true;
+        setTimeout(() => { pendingBabyPromptScheduled = false; if (fam.pendingBaby && !uiOverlay) promptPendingBaby(); }, 300);
         return true;
       },
     });
@@ -437,7 +443,9 @@
       H.toast(`🌱 ${child.name} is walking steadily now and will head outside to play.`, true);
       H.persist();
     }
-    if (!walker) return;
+    if (child.vatId && !vatObject(child)) { window.DewVats?.setExternalWorker?.(child.vatId, null); child.vatId = null; H.persist(); }
+    if (child.vatId && phase !== 'basket') window.DewVats?.setExternalWorker?.(child.vatId, { id: child.id, name: child.name, efficacy: num(cfg().vatEfficacyMultiplier, 2), familyWorker: true });
+    if (!walker) return; // Offscreen children still keep their vat jobs registered above.
     if (walker.rec) walker.rec.ambientGreetings = phase === 'child';
     // Proportions are baked when the avatar is built (PNGPlaneAvatar child
     // scale + the rig scaler's head compensation), so a child who grows into
@@ -458,8 +466,6 @@
       walker._toddleTumbleUntil = 0;
       if (walker.catchup !== 1 && phase === 'child') walker.catchup = 1;
     }
-    if (child.vatId && !vatObject(child)) { child.vatId = null; H.persist(); }
-    if (child.vatId) window.DewVats?.setExternalWorker?.(child.vatId, { id: child.id, name: child.name, efficacy: num(cfg().vatEfficacyMultiplier, 2), familyWorker: true });
   }
 
   // Toddler wobble / tumble presentation (visual only; per-frame but bounded
@@ -575,6 +581,16 @@
   }
 
   // ── UI: dream picker + naming ─────────────────────────────────────────
+  function promptPendingBaby() {
+    const baby = fam.pendingBaby;
+    if (!baby || uiOverlay) return false;
+    openNamingPrompt(baby, name => {
+      if (fam.pendingBaby !== baby) return;
+      fam.pendingBaby = null;
+      createChild({ ...baby, name }); // Saved child record supersedes pending naming.
+    });
+    return true;
+  }
   function injectStyles() {
     if (document.getElementById('romanceFamilyStyles')) return;
     const style = document.createElement('style');
@@ -735,6 +751,7 @@
     lastRawDay = day;
     ensurePlan();
     maybeAnnounce();
+    if (fam.pendingBaby && !pendingBabyPromptScheduled && !uiOverlay && !deps().isDialogueOpen?.()) promptPendingBaby();
     syncChildFriendships();
     for (const child of fam.children) updateChild(child);
     if (R.getSpouse()?.npcId && fam.spouseVatId) {
@@ -758,9 +775,14 @@
     fam = saved && typeof saved === 'object'
       ? { ...defaultFamily(), ...saved, children: Array.isArray(saved.children) ? saved.children.map(child => ({ ...child })) : [] }
       : defaultFamily();
-    // Save migration: shorten an existing unannounced or announced 3-month gestation to one month.
+    // Save migration: shorten an existing three-month gestation to one month. A pre-migration
+    // save interrupted during newborn naming can retry delivery on the next farmhouse sleep.
     const plan = fam.pregnancy;
     if (plan && !plan.born && num(plan.dueRawDay, 0) - num(plan.announceRawDay, 0) === 84) plan.dueRawDay = plan.announceRawDay + 28;
+    if (plan?.born && !fam.pendingBaby && !fam.pendingAdoption && !fam.children.some(child => child.otherParentId === plan.spouseId)) {
+      plan.born = false; plan.awaitingChild = false;
+    }
+    pendingBabyPromptScheduled = false;
     clearAnnounceTimers();
     lastRawDay = null;
     syncChildFriendships();
@@ -770,6 +792,7 @@
     return {
       pregnancy: fam.pregnancy ? { ...fam.pregnancy } : null,
       pendingAdoption: !!fam.pendingAdoption,
+      pendingBaby: !!fam.pendingBaby, // Mobile diagnostics reveal a naming prompt waiting to resume after reload.
       spouseUsefulness: R?.getSpouse?.()?.npcId ? usefulnessInfo(R.getSpouse().npcId) : null,
       children: fam.children.map(child => ({ id: child.id, name: child.name, speciesId: child.speciesId, gender: child.gender, origin: child.origin, ageDays: ageDays(child), phase: phaseOf(child), toddlingFooting: toddlingFooting(child), vatId: child.vatId, usefulness: usefulnessInfo(child.id), spawned: !!walkerFor(child) })), 
     };
