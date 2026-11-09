@@ -12,6 +12,7 @@
   const states = new WeakMap(); // One attachment state per held visual; no global weapon pose is shared between actors.
   const alphaBounds = new WeakMap(); // Transparent-pixel anchor scans are cached by the loaded image.
   const ropeSpriteBounds = new WeakMap(); // Original ruin rope alpha extents are scanned once per decoded image; every flail shares the result.
+  const tintedRopeTextures = new WeakMap(); // Retains one recolored canvas texture per source image and tint, shared across all equipped flails.
   const PIXEL_ALPHA = 128; // Treat only the solid half of an antialiased edge as the opaque connection tip.
   const MAX_DT = 0.08; // Prevent tab-resume and loading stalls from launching the head sideways.
   const MOTION_LAG = 0.065; // Converts haft travel velocity to idle trailing angle.
@@ -361,6 +362,58 @@
     return bounds;
   }
 
+  function tintRopePixels(rgba, hex) {
+    const color = /^#[0-9a-f]{6}$/i.test(String(hex)) ? hex.slice(1) : ''; // Only valid hex can recolor the original alpha-preserving sprite.
+    if (!color || color.toUpperCase() === 'FFFFFF') return rgba;
+    const target = [0, 2, 4].map(i => parseInt(color.slice(i, i + 2), 16)); // Old brown material color, used as the midtone target rather than a darkening multiplier.
+    const luminance = i => rgba[i] * .2126 + rgba[i + 1] * .7152 + rgba[i + 2] * .0722; // Reuse the PNG's painted shadows and highlights.
+    let weightedLight = 0, weight = 0; // Reference brightness from solid rope pixels excludes transparent antialias fringes.
+    for (let i = 0; i < rgba.length; i += 4) {
+      if (rgba[i + 3] < 128) continue;
+      const alpha = rgba[i + 3] / 255;
+      weightedLight += luminance(i) * alpha;
+      weight += alpha;
+    }
+    if (!weight) return rgba;
+    const baseline = Math.max(1, weightedLight / weight); // Average original artwork now maps onto the old #6B4728 midtone.
+    for (let i = 0; i < rgba.length; i += 4) {
+      if (!rgba[i + 3]) continue;
+      const shading = luminance(i) / baseline;
+      for (let channel = 0; channel < 3; channel++) rgba[i + channel] = Math.min(255, Math.round(target[channel] * shading));
+    }
+    return rgba; // Alpha and the rope's inked structure remain untouched.
+  }
+
+  function tintedRopeTexture(THREE, sourceTexture, hex) {
+    const image = sourceTexture?.image; // Original, still-white-material ruin PNG; never recolor the shared texture in place.
+    const color = /^#[0-9a-f]{6}$/i.test(String(hex)) ? hex.toUpperCase() : '#FFFFFF';
+    if (!image || color === '#FFFFFF') return sourceTexture;
+    let variants = tintedRopeTextures.get(image);
+    if (!variants) { variants = new Map(); tintedRopeTextures.set(image, variants); }
+    if (variants.has(color)) return variants.get(color);
+    try {
+      const canvas = document.createElement('canvas'); // Paint once per image/tint; weapon instances only clone the result.
+      canvas.width = image.naturalWidth || image.width;
+      canvas.height = image.naturalHeight || image.height;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) throw new Error('Canvas 2D context unavailable');
+      ctx.drawImage(image, 0, 0);
+      const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      tintRopePixels(pixels.data, color);
+      ctx.putImageData(pixels, 0, 0);
+      const recolored = new THREE.CanvasTexture(canvas); // Preserves the full PNG and its alpha; makeRope applies the same visible-alpha crop.
+      recolored.encoding = THREE.sRGBEncoding;
+      recolored.generateMipmaps = false;
+      recolored.minFilter = recolored.magFilter = THREE.LinearFilter;
+      recolored.needsUpdate = true;
+      variants.set(color, recolored);
+      return recolored;
+    } catch (error) {
+      report('Ruin rope recolor unavailable: ' + (error?.message || error)); // Existing mobile log explains missing color without blocking the weapon.
+      return sourceTexture;
+    }
+  }
+
   function makeRope(THREE, spec, unit, renderOrder, sourceTexture) {
     const image = sourceTexture?.image; // The full ruin sprite supplies the physical camera-facing strip.
     const width = image?.naturalWidth || image?.width, height = image?.naturalHeight || image?.height;
@@ -369,7 +422,7 @@
     const visibleWidth = opaque.maxX - opaque.minX + 1, visibleHeight = opaque.maxY - opaque.minY + 1;
     const aspect = visibleWidth / visibleHeight; // Keep the opaque silhouette rather than the 152 × 2164 canvas dimensions.
     const sizing = ropeSpriteSizing(spec, unit, aspect); // Same final visible reach and diameter as the former generated cylinder.
-    const map = sourceTexture.clone(); // Per-weapon ownership permits clean disposal without modifying other rope textures.
+    const map = tintedRopeTexture(THREE, sourceTexture, spec.color).clone(); // Cached midtone recolor preserves the ruin PNG's original shading, not a near-black color multiplication.
     map.offset.set(opaque.minX / width, 1 - (opaque.maxY + 1) / height); // Plane UVs have bottom-left origin, whereas ImageData rows begin at the top.
     map.repeat.set(visibleWidth / width, visibleHeight / height); // No tiling: one full opaque rope from grip to head.
     map.wrapS = map.wrapT = THREE.ClampToEdgeWrapping;
@@ -377,7 +430,7 @@
     map.minFilter = map.magFilter = THREE.LinearFilter; // Match the ruin rope's original full-resolution TextureLoader filtering.
     map.needsUpdate = true;
     const material = new THREE.MeshBasicMaterial({
-      map, color: spec.color || '#FFFFFF', side: THREE.DoubleSide,
+      map, color: '#FFFFFF', side: THREE.DoubleSide, // Pixel colors are already adjusted; do not multiply the whole shaded PNG again.
       transparent: true, alphaTest: 0.035, depthWrite: false, toneMapped: false,
     }); // Same unlit, transparent, double-sided rendering as DungeonRopeArt.
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(aspect, 1), material);
@@ -707,7 +760,7 @@
 
   global.HobunjiWeaponSpriteAssemblies = {
     definitions: DEF, decorate, setAction, tick, drop, debugSnapshot, enchantmentTargets, dualWieldEnchantmentTargets,
-    opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, // Pure sizing and phase helpers have regression tests.
+    opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, // Pure sizing and phase helpers have regression tests.
   };
   global.HobunjiCacheAudit?.register('weapon assemblies (active or awaiting cleanup)', () => records.size);
   if (global.RuntimeFrameScheduler?.register) {
