@@ -361,7 +361,7 @@
     const preview = JSON.parse(JSON.stringify(baseline)); // Used only for the temporary festival-world boot.
     const previewWorld = preview.snapshot.meta.worlds.find(w => String(w.id) === ids.worldId);
     previewWorld.calendar.day = day;
-    previewWorld.calendar.time01 = (15 - 6) / (22 - 6); // Begins at the gathering's 15:00 opening time.
+    previewWorld.calendar.time01 = (15 - cal.getHour(0)) / (cal.getHour(1) - cal.getHour(0)); // Begins at 15:00 using the calendar's own represented hours.
     previewWorld.lastDay = day; // Avoid treating every skipped day as a pending overnight rollover.
     previewWorld.lastSeason = cal.seasonForDay(day)?.name || previewWorld.lastSeason;
     preview.id = 'festival-test-preview-' + Date.now().toString(36);
@@ -446,6 +446,11 @@
   // of the canonical save until you resume autosave yourself.
   async function quickLoad(id = 'latest', { pauseAutosave = true, reload = true } = {}) {
     try {
+      const festivalSession = festivalTestSession(); // Ordinary quick-load actions must not silently abandon an isolated festival test.
+      if (festivalSession && ['starting', 'active', 'returning'].includes(festivalSession.phase)
+        && id !== festivalSession.previewSlotId && id !== festivalSession.returnSlotId) {
+        throw new Error('Exit Festival Test before loading another save.');
+      }
       let slot = null;
       if (!id || id === 'latest') {
         const ids = activeIds();
@@ -641,8 +646,8 @@
           summary: running ? 'Testing ' + (festival?.name || '') : status.phase === 'idle' ? 'Safe festival preview' : status.phase,
           rows: running ? [['Rewards recorded', String(status.rewardCount)], ['Original quick save', status.restoreSlotId]] : [],
           actions: [
-            { id: 'select', label: 'Festival', group: 'Festival', value: prefs.festivalId,
-              options: (window.FestivalCalendar?.festivals || []).map(f => ({ value: f.id, label: f.name })) },
+            ...(status.phase === 'idle' ? [{ id: 'select', label: 'Festival', group: 'Festival', value: prefs.festivalId,
+              options: (window.FestivalCalendar?.festivals || []).map(f => ({ value: f.id, label: f.name })) }] : []),
             { id: 'keep-rewards', label: 'Keep earned festival rewards when exiting', group: 'Festival',
               checkbox: true, checked: status.phase === 'idle' ? prefs.keepRewards : status.keepRewards },
             ...(!running && status.phase === 'idle' ? [{ id: 'start', label: 'Start festival test', group: 'Festival' }] : []),
