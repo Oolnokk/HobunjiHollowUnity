@@ -35,14 +35,18 @@
   function nativeSpeciesFor(mapId) {
     const zoneId = window.WildlifeSpawn.denCavernZoneOf(mapId);
     const zoneDef = deps.EXTERIOR_ZONES[zoneId];
-    const exactDenSpecies = window.WildlifeSpawn.denSpeciesFor(zoneId, mapId); // Same per-den deterministic authored species used by exterior den guards.
+    const exactResident = window.WildlifeSpawn.denResidentSpeciesFor?.(zoneId, mapId); // Entrance-home species is authoritative even in legacy multi-species pools.
+    if (exactResident) return { zoneId, nativeSpecies: [exactResident] };
+    // Standalone editor/test fallback (and old saves before WildlifeSpawn.init):
+    // choose one deterministic family, never a mixed-species cavern.
+    const exactDenSpecies = window.WildlifeSpawn.denSpeciesFor(zoneId, mapId);
+    if (exactDenSpecies) return { zoneId, nativeSpecies: [exactDenSpecies] };
     const packSpecies = zoneDef?.packSpecies || [];
     const herbivoreSpecies = zoneDef?.herbivoreSpecies || [];
-    if (exactDenSpecies) return { zoneId, nativeSpecies: [exactDenSpecies] };
-    const hasPack = packSpecies.length, hasHerd = herbivoreSpecies.length;
     const rng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng(mapId + '_denpop') : Math.random;
-    const useHerd = hasHerd && (!hasPack || rng() < 0.5);
-    return { zoneId, nativeSpecies: useHerd ? herbivoreSpecies : packSpecies };
+    const useHerd = herbivoreSpecies.length && (!packSpecies.length || rng() < 0.5);
+    const pool = useHerd ? herbivoreSpecies : packSpecies;
+    return { zoneId, nativeSpecies: pool.length ? [pool[Math.floor(rng() * pool.length)]] : [] };
   }
 
   // generateCavernFloor's SDF carve is real work (not the cheap blob-growth
@@ -636,6 +640,7 @@
       disconnectedFloorTilesRemoved,
       mesh: { ...mesh, caveBiome: caveBiomeForMapId(mapId), caveGrowthSeed: mapId }, // Town mine and Western Slope never request growth.
       oreRocks, creatureSpawns,
+      denResidentSpecies: nativeSpecies[0] || null, // Mobile diagnostics and the scene builder can check the nest against the entrance identity.
       nestCol, nestRow,
       denMotherDefeated: denCleared, nestState: turnover?.clutch || null,
       denMotherKind: pickDenMotherKind(mapId),
