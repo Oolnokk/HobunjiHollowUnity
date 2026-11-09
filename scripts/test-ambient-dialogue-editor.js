@@ -29,11 +29,11 @@ assert(editor.includes('ambient-dialogue.json'), 'editor imports/exports shared 
 assert(editor.includes('animal-voice-independent-playback.js'), 'animal editor loads fixed voice playback helper');
 assert.doesNotMatch(editor, /tempoMin|tempoMax|pitchMinSemitones|pitchMaxSemitones|tempoContour|pitchContourSemitones|frequency analysis|normalization/i, 'base editor no longer contains dead modulation UI');
 
-const uploadedOggNames = fs.readdirSync(path.join(root, 'docs/assets/audio/sfx/utterances')).filter(name => /\\.ogg$/i.test(name)).sort(); // Manifest must include every supported uploaded utterance, including future uploads.
+const uploadedOggNames = fs.readdirSync(path.join(root, 'docs/assets/audio/sfx/utterances')).filter(name => /\.ogg$/i.test(name)).sort(); // Manifest must include every supported uploaded utterance, including future uploads.
 assert.deepEqual(utteranceIndex.clips.map(entry => entry.file).sort(), uploadedOggNames, 'utterance index exposes every uploaded .ogg sound');
 assert.equal(new Set(utteranceIndex.clips.map(entry => entry.file)).size, uploadedOggNames.length, 'utterance library has no duplicate filenames');
 for (const species of ['moot', 'pingdort', 'tzatzul', 'tzatzul-hatchling', 'skeeri-small', 'skeeri-medium', 'skeeri-large', 'honeyfuzzle']) assert(editor.includes(`id:'${species}'`), `new creature appears in animal editor: ${species}`);
-assert.match(simpleVoiceEditor, /animal\\.id === 'honeyfuzzle'/, 'buzz-only Honeyfuzzle does not offer nonfunctional utterance assignments');
+assert.match(simpleVoiceEditor, /animal\.id === 'honeyfuzzle'/, 'buzz-only Honeyfuzzle does not offer nonfunctional utterance assignments');
 assert.match(simpleVoiceEditor, /UTTERANCE_INDEX_URL = '\.\.\/\.\.\/assets\/audio\/sfx\/utterances\/index\.json'/, 'Animals tab reads the manifest rather than a hardcoded species pool');
 assert.doesNotMatch(simpleVoiceEditor, /VOICE_CLIPS\[/, 'simple editor no longer depends on hardcoded voice pools');
 assert.match(simpleVoiceEditor, /Simple voice model:/, 'Animals tab uses simple fixed voice model');
