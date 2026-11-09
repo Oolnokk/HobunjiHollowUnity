@@ -1481,7 +1481,7 @@
     const x = p.prevX + (p.x - p.prevX) * t;
     const y = p.prevY + (p.y - p.prevY) * t;
     if (hitCover && p.def?.rangedType === 'thrown' && p.def?.dmgType === 'sharp') {
-      window.AudioSystem?.playObjectSfxKey?.('chop'); // Sharp blades striking cover use the existing wood-chop cue, not a weapon/block impact.
+      window.AudioSystem?.playThrownCoverChopSfx?.(x, y, p.areaId); // Sharp thrown blades striking cover use the wood-chop recording with world-space falloff.
       return;
     }
     if (p.def?.rangedType === 'thrown') {
