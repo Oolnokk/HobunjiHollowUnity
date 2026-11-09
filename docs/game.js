@@ -10525,6 +10525,8 @@
       const scheduledNpcRecords = new Map(); // Used to respawn recurring visitors at their authored entrance on later visits.
       const npcSpawnDiagnostics = new Map(); // Retains scheduled-avatar build outcomes for mobile doorstep diagnostics.
       const visitorSpawnPending = new Set(); // Used to prevent duplicate asynchronous visitor avatar builds.
+      const npcSpawnPromises = new Map(); // Shared in-flight avatar builds prevent overlapping startup, retry and event recovery spawns.
+      const npcRecoveryRetryAfter = new Map(); // Throttles repeated recovery requests when an NPC's station or avatar cannot yet load.
       window._npcWalkers = window.NpcPathfinding?.trackWalkerArray?.(npcWalkers) || npcWalkers; // Pushed walkers get collision-aware movement (js/npc-pathfinding.js).
       const PLAYER_ACTION_LOCK_ID = 'player'; // Used by shared interaction locks at player movement/tool/action chokepoints.
       // dialogueOpen/_dialogueWalker are read/written both here (camera/
@@ -12687,7 +12689,9 @@
             if (window.NpcScheduling.hasPresenceSchedule(rec)) visitorSpawnPending.add(rec.id);
             npcSpawnDiagnostics.set(rec.id, { stage: 'Building avatar', error: null });
             try {
-              const w = await makeNpcWalker(rec, target); // Records null returns separately from asset/build exceptions.
+              const build = makeNpcWalker(rec, target); // Reused by event recovery while this startup worker owns the avatar build.
+              npcSpawnPromises.set(rec.id, build);
+              const w = await build; // Records null returns separately from asset/build exceptions.
               if (w) npcWalkers.push(w);
               npcSpawnDiagnostics.set(rec.id, { stage: w ? 'Walker created' : 'Avatar build returned no walker', error: null });
             }
@@ -12695,7 +12699,7 @@
               npcSpawnDiagnostics.set(rec.id, { stage: 'Avatar build failed', error: String(e?.message || e) });
               console.warn('NPC walker failed for schedule', rec?.id, e);
             }
-            finally { if (window.NpcScheduling.hasPresenceSchedule(rec)) visitorSpawnPending.delete(rec.id); }
+            finally { npcSpawnPromises.delete(rec.id); if (window.NpcScheduling.hasPresenceSchedule(rec)) visitorSpawnPending.delete(rec.id); }
           }
         };
         await Promise.all(Array.from({ length: Math.min(NPC_SPAWN_CONCURRENCY, spawnable.length) }, spawnWorker));
@@ -12726,7 +12730,7 @@
         setTimeout(async () => {
           const stillDeferred = [];
           for (const rec of records) {
-            if (npcWalkers.some(walker => walker.rec?.id === rec.id) || visitorSpawnPending.has(rec.id)) continue;
+            if (npcWalkers.some(walker => walker.rec?.id === rec.id) || npcSpawnPromises.has(rec.id) || visitorSpawnPending.has(rec.id)) continue;
             const target = resolveNpcScheduleTarget(rec);
             if (!target) {
               npcSpawnDiagnostics.set(rec.id, { stage: attempt + 1 >= MAX_ATTEMPTS ? 'No schedule target; retries exhausted' : 'Waiting for schedule target', error: null });
@@ -12735,7 +12739,9 @@
             if (window.NpcScheduling.hasPresenceSchedule(rec)) visitorSpawnPending.add(rec.id);
             npcSpawnDiagnostics.set(rec.id, { stage: 'Building avatar on retry', error: null });
             try {
-              const w = await makeNpcWalker(rec, target); // Keeps retry outcomes visible alongside initial spawn results.
+              const build = makeNpcWalker(rec, target); // Deferred bootstrap and event recovery share this in-flight promise.
+              npcSpawnPromises.set(rec.id, build);
+              const w = await build; // Keeps retry outcomes visible alongside initial spawn results.
               if (w) { npcWalkers.push(w); console.log(`[NPC] ${rec.id} spawned on retry ${attempt + 1}`); }
               npcSpawnDiagnostics.set(rec.id, { stage: w ? 'Walker created on retry' : 'Avatar retry returned no walker', error: null });
             }
@@ -12743,12 +12749,58 @@
               npcSpawnDiagnostics.set(rec.id, { stage: 'Avatar retry failed', error: String(e?.message || e) });
               console.warn('NPC walker failed for schedule (retry)', rec?.id, e);
             }
-            finally { if (window.NpcScheduling.hasPresenceSchedule(rec)) visitorSpawnPending.delete(rec.id); }
+            finally { npcSpawnPromises.delete(rec.id); if (window.NpcScheduling.hasPresenceSchedule(rec)) visitorSpawnPending.delete(rec.id); }
           }
           if (!stillDeferred.length) return;
           if (attempt + 1 < MAX_ATTEMPTS) _retrySpawnDeferredNpcs(stillDeferred, attempt + 1);
           else console.warn('[NPC] Gave up waiting for a schedule target after retries:', stillDeferred.map(r => r.id));
         }, 1000);
+      }
+
+      // A missing festival guest or doorstep visitor can be rebuilt from the
+      // authoritative NPC record after the initial 30-second station warm-up.
+      // This uses the same avatar factory and schedule resolver as startup;
+      // no dummy walkers, duplicate actors or forced changes to ordinary routines.
+      async function ensureScheduledNpcWalker(npcId) {
+        const id = String(npcId || ''); // Identifies the scheduled record requested by a festival or doorstep event.
+        if (!id) return false;
+        if (npcWalkers.some(walker => !walker._doorstepVisitor && walker.rec?.id === id)) return true;
+        const pending = npcSpawnPromises.get(id); // Allows callers to wait for an existing startup/retry build.
+        if (pending) return !!(await pending);
+        const rec = scheduledNpcRecords.get(id); // Uses the exact live, composed NPC data already used at world load.
+        if (!rec || rec.dead || rec.deceased) return false;
+        const now = performance.now(); // Prevents repeated failed station/avatar retries on the festival polling cadence.
+        if (now < (npcRecoveryRetryAfter.get(id) || 0)) return false;
+        const target = resolveNpcScheduleTarget(rec); // Event overrides take precedence over the ordinary agenda.
+        if (!target) {
+          npcRecoveryRetryAfter.set(id, now + 2000);
+          npcSpawnDiagnostics.set(id, { stage: 'Recovery waiting for schedule target', error: null });
+          return false;
+        }
+        const build = makeNpcWalker(rec, target); // One awaited avatar construction, shared with other recovery requests.
+        npcSpawnPromises.set(id, build);
+        if (window.NpcScheduling.hasPresenceSchedule(rec)) visitorSpawnPending.add(id);
+        npcSpawnDiagnostics.set(id, { stage: 'Building avatar for event recovery', error: null });
+        try {
+          const walker = await build;
+          if (!walker) {
+            npcRecoveryRetryAfter.set(id, performance.now() + 5000);
+            npcSpawnDiagnostics.set(id, { stage: 'Event recovery returned no walker', error: null });
+            return false;
+          }
+          if (!npcWalkers.some(other => !other._doorstepVisitor && other.rec?.id === id)) npcWalkers.push(walker);
+          npcRecoveryRetryAfter.delete(id);
+          npcSpawnDiagnostics.set(id, { stage: 'Walker recovered for event', error: null });
+          return true;
+        } catch (error) {
+          npcRecoveryRetryAfter.set(id, performance.now() + 5000);
+          npcSpawnDiagnostics.set(id, { stage: 'Event recovery avatar failed', error: String(error?.message || error) });
+          window.__farmLog?.(`[NPC] Could not recover ${id}: ${String(error?.message || error)}`, 'warn', 'npc');
+          return false;
+        } finally {
+          npcSpawnPromises.delete(id);
+          if (window.NpcScheduling.hasPresenceSchedule(rec)) visitorSpawnPending.delete(id);
+        }
       }
 
       // NPC scheduling (resolveNpcScheduleTarget, the station registry, and
@@ -31424,6 +31476,7 @@
         openNpcDialogue: walker => openNpcDialogue(walker),
       });
       window.DoorstepVisits?.init?.({
+        ensureNpcWalker: ensureScheduledNpcWalker, // Rebuilds an absent source NPC before retrying the same farmhouse visit.
         getNpcSpawnDiagnostics: npcId => {
           const rec = scheduledNpcRecords.get(npcId); // Reads the same database record used by ordinary NPC spawning.
           const target = rec ? resolveNpcScheduleTarget(rec) : null; // Checks today's authoritative schedule without spawning anything.
@@ -31664,6 +31717,7 @@
         getItemDefs: () => ITEM_DEFS,
         getNpcs: () => [...new Map([...scheduledNpcRecords.values(), ...npcWalkers.map(w => w.rec)].filter(Boolean).map(rec => [rec.id, rec])).values()],
         getWalkers: () => npcWalkers,
+        ensureNpcWalker: ensureScheduledNpcWalker, // Festival guests whose initial avatar failed can be recovered after station warm-up.
         getPlayerMesh: () => playerMesh, // Passes the real player avatar root into authored pair animation without registering a clone.
         getTownMap: () => _rawExteriorMaps.get('map_hobunji_town'),
         getDecorSize: key => DECORATIVE_FURNITURE_DEFS[key],
