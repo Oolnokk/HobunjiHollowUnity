@@ -168,6 +168,10 @@
         npc.bipedalMonsterRig = hybrid;
         npc.appearance.bipedalMonsterRig = hybrid;
         npc.appearance.avatarType = 'bipedal-monster';
+        const furColor = hybrid.materials?.body?.color; // Only this NPC's model uses its author-specified fur tint.
+        if (/^#[0-9a-f]{6}$/i.test(String(furColor || ''))) {
+          npc.appearance.bodyColors = { ...(npc.appearance.bodyColors || {}), A: { hex: furColor } };
+        }
         delete npc.appearance.creatureKind;
         delete npc.appearance.animalKind;
         delete npc.appearance.chatheadCreatureKind;
