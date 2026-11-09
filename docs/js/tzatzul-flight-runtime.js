@@ -372,22 +372,31 @@
       const fraction = index / count;
       return surface(start.x + (end.x - start.x) * fraction, start.y + (end.y - start.y) * fraction);
     }); // Bounded single planning pass, never a per-frame scene traversal.
-    return { samples, count, horizontalTiles, clearance: Math.max(TERRAIN_CLEARANCE_WORLD, half.y + .65) };
+    const clearance = Math.max(TERRAIN_CLEARANCE_WORLD, half.y + .65); // Full body clearance over cliff tops.
+    const heightDeltaPerStep = 1.8 * horizontalTiles / count; // Maximum rise/fall per sampled half-tile: visual flight does not snap at cliff edges.
+    function smoothTerrainHeight(values) {
+      const envelope = values.slice(); // Local planning array; the render tick interpolates it without sampling or allocating.
+      for (let i = 1; i <= count; i++) envelope[i] = Math.max(envelope[i], envelope[i - 1] - heightDeltaPerStep);
+      for (let i = count - 1; i >= 0; i--) envelope[i] = Math.max(envelope[i], envelope[i + 1] - heightDeltaPerStep);
+      return envelope;
+    }
+    const level = smoothTerrainHeight(samples.map(height => height + clearance)); // Anticipate upcoming rock, then descend smoothly after passing it.
+    const dive = smoothTerrainHeight(samples.map((height, i) => {
+      const remainingTiles = (count - i) * horizontalTiles / count;
+      return height + clearance * Math.min(1, remainingTiles / 1.2);
+    })); // Only a clear final approach can descend into prey: near-wall prey are never attacked through stone.
+    return { samples, count, horizontalTiles, clearance, level, dive, heightDeltaPerStep };
   }
   function flightHeightAt(leg, fraction) {
     const t = Math.max(0, Math.min(1, fraction));
     const linear = leg.from.worldY + (leg.to.worldY - leg.from.worldY) * t;
     const profile = leg.terrain;
     if (!profile) return linear; // Indoor boss uses native cave obstruction collisions.
-    const index = Math.min(profile.count, Math.floor(t * profile.count));
-    const ahead = Math.max(1, Math.ceil(2.5 * profile.count / Math.max(1, profile.horizontalTiles)));
-    let highest = -Infinity;
-    for (let sample = Math.max(0, index - 1); sample <= Math.min(profile.count, index + ahead); sample++) {
-      highest = Math.max(highest, profile.samples[sample]); // Climb BEFORE reaching a plateau wall.
-    }
-    const remainingTiles = (1 - t) * profile.horizontalTiles;
-    const descent = leg.mode === 'swoop' ? Math.min(1, remainingTiles / 1.2) : 1;
-    return Math.max(linear, highest + profile.clearance * descent); // Last strike can descend to actual ground-level prey.
+    const scaled = t * profile.count, index = Math.min(profile.count, Math.floor(scaled));
+    const next = Math.min(profile.count, index + 1);
+    const heights = leg.mode === 'swoop' ? profile.dive : profile.level; // Bounded preplanned heights avoid per-frame terrain scans.
+    const terrainHeight = heights[index] + (heights[next] - heights[index]) * (scaled - index);
+    return Math.max(linear, terrainHeight); // No sudden plateau-edge teleport, and the bird stays clear of the rock body.
   }
   function startLeg(bird, endpoint, phase, target = null) {
     const state = bird._tzFlight, perch = window.PerchSupport;

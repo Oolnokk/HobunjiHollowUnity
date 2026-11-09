@@ -108,6 +108,11 @@ deps.worldSurfaceY = (x, y) => x >= 1400 && x <= 1750 ? 9 : 0;
 const plateauLeg = { from:{x:1100,y:900,worldY:4},to:{x:2050,y:900,worldY:4},mode:'search' };
 plateauLeg.terrain = w.TzatzulFlightRuntime.__test.terrainFlightProfile(plateauLeg.from,plateauLeg.to,{y:.5});
 assert(plateauLeg.terrain.samples.some(height=>height===9),'planner samples high terrain between endpoints');
+const safeHeights = plateauLeg.terrain.level;
+for(let i=1;i<safeHeights.length;i++) {
+  assert(Math.abs(safeHeights[i]-safeHeights[i-1])<=plateauLeg.terrain.heightDeltaPerStep+1e-6,
+    'cliff clearance climbs and descends continuously rather than snapping to a future plateau top');
+}
 assert(w.TzatzulFlightRuntime.__test.flightHeightAt(plateauLeg,.45)>9.5,'flight body clears the high plateau');
 assert(w.TzatzulFlightRuntime.__test.flightHeightAt({...plateauLeg,mode:'swoop'},.45)>9,'dives also clear plateau walls');
 assert.equal(w.TzatzulFlightRuntime.__test.flightHeightAt({...plateauLeg,mode:'swoop'},1),4,'a body dive still reaches a clear ground-level target');
