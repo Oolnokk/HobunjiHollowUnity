@@ -314,6 +314,87 @@
       gripY: sampledShoulders ? gripY / sampledShoulders : null }; // Hand targets must descend with the taller torso.
   }
 
+  function mouthHeightWorld(model, floorPoint, THREE = window.THREE) {
+    const pose = window.SharedAttackPose; // Reuse the game's B'shuakauitl per-species mouth coordinate resolver.
+    if (!THREE?.Vector3 || !pose?.createHeadFrame || !pose?.headFrame || !model || !floorPoint) return null;
+    const frame = pose.createHeadFrame(THREE); // Measured once at preflight rather than allocating in the frame loop.
+    model.updateWorldMatrix?.(true, true);
+    if (!pose.headFrame(frame, model)) return null;
+    const height = frame.position.y - floorPoint.y;
+    return Number.isFinite(height) && height > .001 ? height : null;
+  }
+
+  function syncMouthContact(first, second, seconds, scratch = null) {
+    const data = scratch || {}; // Reuse original joint positions and live mouth frames across animation ticks and timeline scrubs.
+    if (data.firstJoint?.position && data.firstRest) data.firstJoint.position.copy(data.firstRest);
+    if (data.secondJoint?.position && data.secondRest) data.secondJoint.position.copy(data.secondRest);
+    const THREE = data.THREE || window.THREE;
+    const pose = window.SharedAttackPose; // Same skinned-pixel landmarks used to align B'shuakauitl to the mouth.
+    const firstJoint = first?.userData?.neckRig?.neckJoint;
+    const secondJoint = second?.userData?.neckRig?.neckJoint;
+    if (!first || !second || !THREE?.Vector3 || !pose?.createHeadFrame || !pose?.headFrame ||
+        !firstJoint?.parent || !secondJoint?.parent) {
+      return { contact: false, distance: null, reason: 'authored-mouth-rigs-not-ready' };
+    }
+    if (data.firstJoint !== firstJoint || data.secondJoint !== secondJoint) {
+      data.firstJoint = firstJoint;
+      data.secondJoint = secondJoint;
+      data.firstRest = firstJoint.position.clone(); // Captured neutral head attachment, never a cumulative neck translation.
+      data.secondRest = secondJoint.position.clone();
+      data.firstFrame = pose.createHeadFrame(THREE);
+      data.secondFrame = pose.createHeadFrame(THREE);
+      data.firstWorld = new THREE.Vector3();
+      data.secondWorld = new THREE.Vector3();
+      data.localPoint = new THREE.Vector3();
+      data.delta = new THREE.Vector3();
+      data.firstScale = new THREE.Vector3();
+      data.secondScale = new THREE.Vector3();
+    }
+    const time = clamp(finite(seconds), 0, DURATION_S);
+    const blend = ease((time - .82) / .20) * ease((2.04 - time) / .52); // Only heads make the final approach after the knees have settled.
+    first.updateWorldMatrix?.(true, true);
+    second.updateWorldMatrix?.(true, true);
+    if (!pose.headFrame(data.firstFrame, first) || !pose.headFrame(data.secondFrame, second)) {
+      return { contact: false, distance: null, reason: 'authored-mouth-pixels-unavailable' };
+    }
+    data.delta.subVectors(data.secondFrame.position, data.firstFrame.position);
+    const baselineGap = data.delta.length();
+    if (baselineGap <= 1e-7 || blend <= 0) return {
+      contact: baselineGap < .025 && blend > 0, distance: baselineGap, baselineGap, blend,
+    };
+    const firstHeight = Math.max(.01, finite(first.userData?.portraitModelHeight, 1) *
+      Math.abs(first.getWorldScale(data.firstScale).y));
+    const secondHeight = Math.max(.01, finite(second.userData?.portraitModelHeight, 1) *
+      Math.abs(second.getWorldScale(data.secondScale).y));
+    const firstLimit = firstHeight * .32; // Anatomical reach budget; no actor-root sidestep, teleport or unbounded floating head.
+    const secondLimit = secondHeight * .32; // Tall heads may contribute more to the final remaining gap.
+    let firstTravel = Math.min(baselineGap * .5, firstLimit);
+    const secondTravel = Math.min(baselineGap - firstTravel, secondLimit);
+    firstTravel += Math.min(Math.max(0, baselineGap - firstTravel - secondTravel),
+      Math.max(0, firstLimit - firstTravel)); // Use unused reach of the other head before giving up on contact.
+    const moveJoint = (joint, travel, worldPoint) => {
+      if (!(travel > 0)) return;
+      joint.getWorldPosition(worldPoint);
+      joint.parent.updateWorldMatrix?.(true, false);
+      worldPoint.addScaledVector(data.delta, travel / baselineGap * blend);
+      data.localPoint.copy(worldPoint);
+      joint.parent.worldToLocal(data.localPoint); // Convert the world lip gap through its true bowed/scaled neck parent.
+      joint.position.copy(data.localPoint); // The body, shoulders, posterior, feet, and exported actor root remain unmoved.
+      joint.updateWorldMatrix?.(true, true);
+    };
+    moveJoint(firstJoint, firstTravel, data.firstWorld);
+    moveJoint(secondJoint, -secondTravel, data.secondWorld);
+    first.updateWorldMatrix?.(true, true);
+    second.updateWorldMatrix?.(true, true);
+    if (!pose.headFrame(data.firstFrame, first) || !pose.headFrame(data.secondFrame, second)) {
+      return { contact: false, distance: null, reason: 'lip-reprojection-failed' };
+    }
+    const distance = data.firstFrame.position.distanceTo(data.secondFrame.position);
+    return { contact: blend > .99 && distance < .025, distance, baselineGap, blend,
+      reachLimited: firstTravel + secondTravel < baselineGap - .025,
+      firstHeadMove: firstTravel * blend, secondHeadMove: secondTravel * blend };
+  }
+
   function actorHeight(model, legs, root) {
     const local = Math.max(.05, finite(model?.userData?.portraitModelHeight, finite(legs?.modelHeight, 1))); // Render metadata includes species and gender proportions.
     const THREE = window.THREE;
@@ -408,6 +489,8 @@
     const tallAnatomy = isPlayerTaller ? playerAnatomy : npcAnatomy;
     const shortAnatomy = isPlayerTaller ? npcAnatomy : playerAnatomy; // Small partner's real hip height and leg length decide whether a supported jump is feasible.
     const height = solveHeights(firstHeight, secondHeight, {
+      firstMouthHeightWorld: mouthHeightWorld(player, playerPoint) || undefined, // Use the actual player mouth height, not a generic sprite ratio.
+      secondMouthHeightWorld: mouthHeightWorld(walker.avatarGroup, npcPoint) || undefined, // Spouse species-specific lip height.
       tallerLegLengthWorld: tallAnatomy.legLengthWorld,
       tallerHipHeightWorld: tallAnatomy.hipHeightWorld,
       shorterLegLengthWorld: shortAnatomy.legLengthWorld,
@@ -466,11 +549,15 @@
       npcTiltPivot, originalNpcTiltX: npcTiltPivot?.rotation?.x,
       originalPlayerKneeLimit, originalNpcKneeLimit,
       playerAnatomy, npcAnatomy,
-      playerHands, npcHands, shoulderScratch: {}, footScratch: {}, // Cached world targets for posterior-supported foot IK during short-partner jumps.
+      playerHands, npcHands, shoulderScratch: {}, footScratch: {}, mouthScratch: {}, // Scratch for moving shoulder, posterior and head anchor solutions.
+      lastLipContact: null, // Verified only after the final composed bodies and neck pivots reach the same frame.
+      requireLipContact: !!(window.SharedAttackPose?.headFrame && playerNeck && npcNeck), // Stub rigs without skinned pixels retain legacy pose-only unit-test behavior.
       lastHandContact: null, // Mobile diagnostics expose reach and timing without requiring DevTools.
       playerNeck, npcNeck,
       originalPlayerNeck: playerNeck?.quaternion?.clone?.() || null,
       originalNpcNeck: npcNeck?.quaternion?.clone?.() || null,
+      originalPlayerNeckPosition: playerNeck?.position?.clone?.() || null, // Restore original head offsets on cancellation.
+      originalNpcNeckPosition: npcNeck?.position?.clone?.() || null,
       originalNpcYaw: walker.root.rotation.y,
       npcParent: walker.root.parent, // Prevents scene transfers from restoring an obsolete local world position.
       characterId: window.__hobunjiPlayerProfile?.characterId || null, // Prevents a delayed contact from buffing the next selected character.
@@ -490,6 +577,8 @@
           session.playerHands, session.npcHands, session.elapsed,
           session.height.taller === 'second', session.shoulderScratch,
         );
+        session.lastLipContact = syncMouthContact(session.player, session.walker.avatarGroup,
+          session.elapsed, session.mouthScratch); // Skinned lips follow the already-lowered/bowed bodies each rendered frame.
       }); // Render-time ownership keeps real GLB hand contact attached through final-frame sync.
     }
     lastError = null;
@@ -574,7 +663,8 @@
       shortLegs.setExternalFootTargets?.(footTargets, { allowDeepFold: true }); // Two real legs bend onto the taller partner's individual left/right pelvis landmarks.
       if (footTargets) shortLegs.applyWorldFootTargets?.(footTargets, null, false, true);
     }
-    if (!session.touched && pose.touch) {
+    if (!session.touched && pose.touch &&
+        (!session.requireLipContact || session.lastLipContact?.contact)) {
       session.touched = true;
       try { session.onContact?.(); }
       catch (error) { lastError = 'contact-callback: ' + (error?.message || error); }
@@ -597,7 +687,7 @@
       session: active ? { npcId: active.walker?.rec?.id, elapsedS: active.elapsed, touched: active.touched,
         height: { ...active.height }, jumpBlend: sampleJumpBlend(active.elapsed),
         feetAnchored: !!(active.playerLegs?.hasExternalFootTargets?.() || active.npcLegs?.hasExternalFootTargets?.()),
-        hands: active.lastHandContact || null } : null };
+        hands: active.lastHandContact || null, lips: active.lastLipContact || null } : null };
   }
 
   window.SpouseKissMotion = Object.freeze({
@@ -605,7 +695,7 @@
     solveHeights, samplePose, sampleJumpBlend, posteriorStraddleFootTargets,
     sampleKneelBlend, sampleInitiatorHandReach,
     resolveShoulderGripWorld, shoulderGripWorld, applyInitiatorShoulderHands,
-    actorHeight, anatomyWorld, init, start, stop: clearMotion,
+    mouthHeightWorld, syncMouthContact, actorHeight, anatomyWorld, init, start, stop: clearMotion,
     isPartner: walker => !!active && active.walker === walker,
     diagnostics,
   });
