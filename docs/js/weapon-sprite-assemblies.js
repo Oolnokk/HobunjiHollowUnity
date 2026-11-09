@@ -343,6 +343,7 @@
     const map = sourceTexture.clone(); // Per-weapon ownership permits clean disposal without modifying other rope textures.
     map.wrapS = map.wrapT = THREE.ClampToEdgeWrapping;
     map.encoding = THREE.sRGBEncoding;
+    map.minFilter = map.magFilter = THREE.LinearFilter; // Match the ruin rope's original full-resolution TextureLoader filtering.
     map.needsUpdate = true;
     const material = new THREE.MeshBasicMaterial({
       map, color: spec.color || '#FFFFFF', side: THREE.DoubleSide,
@@ -366,10 +367,11 @@
     const right = new THREE.Vector3(); // Horizontal basis for the camera-facing rope PNG.
     const up = new THREE.Vector3(0, 1, 0); // The carrier's local Y remains the taut suspension axis.
     const basis = new THREE.Matrix4(); // Reused to orient the plane without allocations per frame.
+    const inverseWorld = new THREE.Matrix4(); // Uses the rendered carrier matrix directly, avoiding a holder-pose recomputation during onBeforeRender.
     mesh.onBeforeRender = (_renderer, _scene, camera) => {
       if (!camera?.getWorldPosition) return;
       camera.getWorldPosition(cameraPosition);
-      group.worldToLocal(cameraPosition); // Match the ruin rope's camera-facing presentation in local coordinates.
+      cameraPosition.applyMatrix4(inverseWorld.copy(group.matrixWorld).invert()); // Match the ruin rope billboard without recomputing the game's baked tool-holder pose.
       normal.set(cameraPosition.x, 0, cameraPosition.z);
       if (normal.lengthSq() < 1e-8) normal.set(0, 0, 1);
       normal.normalize();
