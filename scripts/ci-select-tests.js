@@ -114,6 +114,8 @@ function selectTests(suite, changedFiles, options = {}) {
   if (suite === 'regression') {
     output.needs_browser = active.some(id => CHROMIUM.has(id));
     output.needs_deps = active.length > 0;
+  } else {
+    output.needs_browser = active.length > 0;
   }
   return { suite, files, full, tags: [...tags].sort(), selected, output, reasons };
 }
