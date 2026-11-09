@@ -13881,7 +13881,15 @@ function kissActorMouthHeightV1552(actor) {
   const scratch = actor.kissMouthScratchV1552 || (actor.kissMouthScratchV1552 = {
     THREE: state.three.THREE,
   }); // Reused mouth frame and world vectors to avoid allocations during inspector readouts.
-  const rest = actor.multiAvatarBodyRestV1548; // Recover neutral standing torso from the full-body kiss preview, if already applied.
+  // At frame zero the fully posed author already has a neutral, grounded
+  // torso. Sampling its live skinned mouth directly is more accurate than
+  // round-tripping through a saved pre-rig model transform, which can refer
+  // to an earlier renderer state before its skinned neck was installed.
+  if (Math.abs(animationAuthor.currentTime) < .00001 &&
+      (actor.previewAnatomyV1548?.appliedWorldDrop || 0) < .00001) {
+    return solver.mouthHeightWorld(model, root, scratch);
+  }
+  const rest = actor.multiAvatarBodyRestV1548; // Nonzero timeline times still require a neutral-standing sample.
   const neck = actor.neckRig?.neckJoint; // The active neck joint is restored immediately after neutral mouth measurement.
   const originalY = model.position.y; // Prevent mouth sampling from changing the actual preview or exported keyframes.
   const originalPitch = model.rotation.x; // A previously scrubbed bow must not distort neutral mouth height.
