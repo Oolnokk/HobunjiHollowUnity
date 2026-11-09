@@ -47,13 +47,23 @@
     return true;
   }
 
-  function isNpcPositionStructurallyWalkable(area, x, z, radius = npcCollisionRadiusTiles()) {
+  function isNpcPositionStructurallyWalkable(area, x, z, radius = npcCollisionRadiusTiles(), tileCache = null) {
     if (!deps || !Number.isFinite(x) || !Number.isFinite(z)) return false;
     const minC = Math.floor(x - radius), maxC = Math.floor(x + radius - 1e-6);
     const minR = Math.floor(z - radius), maxR = Math.floor(z + radius - 1e-6);
     for (let r = minR; r <= maxR; r++) {
       for (let c = minC; c <= maxC; c++) {
-        if (!isNpcTileStructurallyWalkable(area, c, r)) return false;
+        if (tileCache) {
+          const key = c + ',' + r; // Cache key is scoped to one synchronous A* search in a single area.
+          if (tileCache.has(key)) {
+            debugStats.pathStructuralTileCacheHits = (debugStats.pathStructuralTileCacheHits || 0) + 1;
+            if (!tileCache.get(key)) return false;
+          } else {
+            const clear = isNpcTileStructurallyWalkable(area, c, r); // Terrain and building-footprint collision are stable during one path search.
+            tileCache.set(key, clear);
+            if (!clear) return false;
+          }
+        } else if (!isNpcTileStructurallyWalkable(area, c, r)) return false;
       }
     }
     // Exact sub-tile providers include authored interior/ruin walls, closed
@@ -62,8 +72,8 @@
     return true;
   }
 
-  function isNpcPositionWalkable(area, x, z, radius = npcCollisionRadiusTiles(), { ignoreFurniture = false, ignoreFurnitureTile = null } = {}) {
-    if (!isNpcPositionStructurallyWalkable(area, x, z, radius)) return false;
+  function isNpcPositionWalkable(area, x, z, radius = npcCollisionRadiusTiles(), { ignoreFurniture = false, ignoreFurnitureTile = null, structuralTileCache = null } = {}) {
+    if (!isNpcPositionStructurallyWalkable(area, x, z, radius, structuralTileCache)) return false;
     if (ignoreFurniture) return true;
     const d = radius * 0.82; // Sample spacing for walls of furniture surrounding the body.
     const buildingGrid = deps.isBuildingArea(area) ? deps.npcGridForArea(area) : null; // Shared by all nine samples rather than looking up the scene/grid each time.
@@ -116,6 +126,7 @@
     ignoreFurnitureTile = null,
     structuralOnly = false,
     stepTiles = null,
+    structuralTileCache = null,
   } = {}) {
     if (!deps || ![fromX, fromZ, toX, toZ].every(Number.isFinite)) return false;
     const dist = Math.hypot(toX - fromX, toZ - fromZ);
@@ -126,8 +137,8 @@
       : Math.min(Number.isFinite(configuredStep) && configuredStep > 0 ? configuredStep : 0.25, Math.max(0.08, collisionRadius * 0.75));
     const samples = Math.max(1, Math.ceil(dist / step));
     const ignoredEndTile = ignoreFurnitureTile || (ignoreFurnitureAtEnd ? { c: Math.floor(toX), r: Math.floor(toZ) } : null); // Explicit seat tiles stay stable across small per-frame steps; path edges may derive theirs from the edge endpoint.
-    const firstProbeOptions = { ignoreFurniture: true, ignoreFurnitureTile: ignoredEndTile }; // Start-point furniture is ignored only for the first sweep sample.
-    const nextProbeOptions = { ignoreFurnitureTile: ignoredEndTile }; // Shared immutable-in-sweep options avoid object allocation for every sub-step.
+    const firstProbeOptions = { ignoreFurniture: true, ignoreFurnitureTile: ignoredEndTile, structuralTileCache }; // Start-point furniture is ignored only for the first sweep sample.
+    const nextProbeOptions = { ignoreFurnitureTile: ignoredEndTile, structuralTileCache }; // Shared immutable-in-sweep options avoid object allocation for every sub-step.
     const zoneGrid = deps.isZoneArea?.(area) ? deps.npcGridForArea(area) : null; // Used for same-elevation swept checks, not just horizontal occupancy.
     let lastTile = zoneGrid?.[Math.floor(fromZ)]?.[Math.floor(fromX)] || null;
     for (let i = 0; i <= samples; i++) {
@@ -139,7 +150,7 @@
           Math.abs((currentTile.elevTier || 0) - (lastTile.elevTier || 0)) > 0) return false;
       if (currentTile) lastTile = currentTile;
       const clear = structuralOnly
-        ? isNpcPositionStructurallyWalkable(area, x, z)
+        ? isNpcPositionStructurallyWalkable(area, x, z, collisionRadius, structuralTileCache)
         : isNpcPositionWalkable(area, x, z, collisionRadius, i === 0 ? firstProbeOptions : nextProbeOptions);
       if (!clear) return false;
     }
@@ -162,6 +173,7 @@
     ignoreFurnitureAtEnd = false,
     ignoreFurnitureTile = null,
     stepTiles = null,
+    structuralTileCache = null,
   } = {}) {
     if (!deps || ![fromX, fromZ, toX, toZ].every(Number.isFinite)) return false;
     const dist = Math.hypot(toX - fromX, toZ - fromZ);
@@ -175,10 +187,10 @@
     for (let i = 1; i <= samples; i++) {
       const t = i / samples;
       const x = fromX + (toX - fromX) * t, z = fromZ + (toZ - fromZ) * t;
-      const structuralClear = isNpcPositionStructurallyWalkable(area, x, z);
+      const structuralClear = isNpcPositionStructurallyWalkable(area, x, z, npcCollisionRadiusTiles(), structuralTileCache);
       if (!startStructuralClear && !reachedClearSpace && !structuralClear) continue;
       if (!structuralClear) return false;
-      const fullyClear = isNpcPositionWalkable(area, x, z, npcCollisionRadiusTiles(), { ignoreFurnitureTile: ignoredEndTile });
+      const fullyClear = isNpcPositionWalkable(area, x, z, npcCollisionRadiusTiles(), { ignoreFurnitureTile: ignoredEndTile, structuralTileCache });
       if (!reachedClearSpace) {
         if (!fullyClear) {
           if (startStructuralClear) continue; // Still leaving the same furniture footprint.
@@ -213,13 +225,15 @@
     const targetKey = key(targetC, targetR);
     const startKey = key(startC, startR);
     const centerClearCache = new Map(); // Reuses footprint/furniture checks while A* revisits neighboring tiles.
+    const structuralTileCache = new Map(); // Shares exact structural tile results across all centers and swept path edges within this one search.
+    const normalCenterOptions = { structuralTileCache }; // Reused by normal tile-center probes without changing furniture rules.
     const edgeClearCache = new Map(); // Symmetric, normal center-to-center swept edges only; lives for this synchronous A* search.
     const centerClear = (c, r) => {
       const k = key(c, r);
       if (centerClearCache.has(k)) return centerClearCache.get(k);
       const clear = allowOccupiedTarget && c === targetC && r === targetR
-        ? isNpcPositionStructurallyWalkable(area, c + 0.5, r + 0.5)
-        : isNpcPositionWalkable(area, c + 0.5, r + 0.5);
+        ? isNpcPositionStructurallyWalkable(area, c + 0.5, r + 0.5, npcCollisionRadiusTiles(), structuralTileCache)
+        : isNpcPositionWalkable(area, c + 0.5, r + 0.5, npcCollisionRadiusTiles(), normalCenterOptions);
       centerClearCache.set(k, clear);
       return clear;
     };
@@ -234,8 +248,8 @@
       for (let i = 1; i < open.length; i++) if (open[i].f < open[best].f) best = i;
       return open.splice(best, 1)[0];
     };
-    const startStructuralClear = isNpcPositionStructurallyWalkable(area, fromX, fromZ); // Checked once per search, not once per neighbor of the first node.
-    const startFullyClear = startStructuralClear && isNpcPositionWalkable(area, fromX, fromZ); // Chooses the seated/legacy-overlap escape rule for the first edge.
+    const startStructuralClear = isNpcPositionStructurallyWalkable(area, fromX, fromZ, npcCollisionRadiusTiles(), structuralTileCache); // Checked once per search, not once per neighbor of the first node.
+    const startFullyClear = startStructuralClear && isNpcPositionWalkable(area, fromX, fromZ, npcCollisionRadiusTiles(), normalCenterOptions); // Chooses the seated/legacy-overlap escape rule for the first edge.
     addOpen({ c: startC, r: startR, key: startKey, f: heuristic(startC, startR), escaping:startStructuralClear&&!startFullyClear }); // Only a furniture-overlapping origin may keep walking through its contiguous blocked prefix.
 
     const gScore = new Map([[startKey, 0]]);
@@ -268,7 +282,7 @@
         const nk = key(nc, nr);
         if (closed.has(nk)) continue;
         const nextClear=centerClear(nc,nr); // Cached body-footprint probe reused when deciding whether the bed-exit prefix has ended.
-        if(!nextClear && (!cur.escaping || Math.max(Math.abs(nc-startC),Math.abs(nr-startR))>3 || !isNpcPositionStructurallyWalkable(area,nc+.5,nr+.5)))continue; // Bounded exit from multi-tile beds; never tunnel through a structural wall or re-enter furniture after clear floor.
+        if(!nextClear && (!cur.escaping || Math.max(Math.abs(nc-startC),Math.abs(nr-startR))>3 || !isNpcPositionStructurallyWalkable(area,nc+.5,nr+.5,npcCollisionRadiusTiles(),structuralTileCache)))continue; // Bounded exit from multi-tile beds; never tunnel through a structural wall or re-enter furniture after clear floor.
         const targetStep = allowOccupiedTarget && nc === targetC && nr === targetR;
         const firstEdge = cur.key === startKey; // The first hop must originate at the NPC's real sub-tile position, not an assumed tile center.
         const edgeFromX = firstEdge ? fromX : cur.c + 0.5; // Used only for this edge's swept collision validation.
@@ -285,8 +299,8 @@
           debugStats.pathEdgeCacheHits = (debugStats.pathEdgeCacheHits || 0) + 1;
         } else {
           edgeClear = escapingEdge
-            ? canNpcEscapeExistingOverlap(area, edgeFromX, edgeFromZ, nc + 0.5, nr + 0.5, { startStructuralClear, ignoreFurnitureAtEnd: targetStep })
-            : canNpcTraverse(area, edgeFromX, edgeFromZ, nc + 0.5, nr + 0.5, { ignoreFurnitureAtEnd: targetStep });
+            ? canNpcEscapeExistingOverlap(area, edgeFromX, edgeFromZ, nc + 0.5, nr + 0.5, { startStructuralClear, ignoreFurnitureAtEnd: targetStep, structuralTileCache })
+            : canNpcTraverse(area, edgeFromX, edgeFromZ, nc + 0.5, nr + 0.5, { ignoreFurnitureAtEnd: targetStep, structuralTileCache });
           if (edgeKey !== null) edgeClearCache.set(edgeKey, edgeClear);
           debugStats.pathEdgeSweeps = (debugStats.pathEdgeSweeps || 0) + 1;
         }
