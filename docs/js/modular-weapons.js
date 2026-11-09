@@ -416,8 +416,9 @@
     const ropeMount = shaft.mounts?.find(candidate => candidate.type === 'rope'); // Start = physical top contact; arrow span = desired suspended length.
     if (ropeMount) {
       recipe.flail.haftAnchor = { ...ropeMount.start };
+      const transformed = shaftMounts(shaft).find(mount => mount.type === 'rope'); // The visible authored arrow, including optional rig/region transforms, determines suspension reach.
       recipe.flail.chain.mountLengthPx = Math.max(2, Math.min(2048, Math.hypot(
-        ropeMount.end.x - ropeMount.start.x, ropeMount.end.y - ropeMount.start.y))); // The rope/chain alone adopts this length. Head scale and diameter stay authored.
+        transformed.end.x - transformed.start.x, transformed.end.y - transformed.start.y))); // The rope/chain alone adopts this length. Head scale and diameter stay authored.
     }
     if (head.flailAssembly) {
       const required = head.mount?.type === 'blade' ? 'tang' : 'eye';
@@ -431,6 +432,10 @@
         scale: Number.isFinite(head.flailHeadScale) ? head.flailHeadScale : 1,
         layers: [{ id: 'modular-head', sprite: head.sprite, material: 'metal' }],
       }; // Head artwork and its rope contact are authored on the modular head; physics/rope settings come from the shaft's Tool Hub recipe.
+    }
+    const shaftArt = shaftArtTransform(shaft); // A moved/scaled shaft PNG moves its physical rope contact with it, not the separate attachment rig.
+    if (shaftArt.enabled && Number.isFinite(recipe.flail.haftAnchor?.x) && Number.isFinite(recipe.flail.haftAnchor?.y)) {
+      recipe.flail.haftAnchor = duplicatePoint(recipe.flail.haftAnchor, shaftArt);
     }
     return recipe;
   }
@@ -540,6 +545,7 @@
   function isDisallowed(shaft, head) {
     return !Object.hasOwn(config.shafts, shaft) || !Object.hasOwn(config.heads, head) ||
       config.heads[head].craftDisabled === true || // Retired heads still render on saved gear, but cannot form new forgeable pairs.
+      (config.heads[head].mount?.type === 'flail' && !config.heads[head].flailAssembly && !config.shafts[shaft].flailAssembly) || // A flexible-only head must not silently become a baked rigid head.
       (!!config.shafts[shaft].flailAssembly && !!config.heads[head].flailAssembly) || // One rope owner per final weapon; no nested/double flails.
       (!!config.shafts[shaft].flailAssembly && !flailTemplate(config.shafts[shaft].flailAssembly)) ||
       (!!config.heads[head].flailAssembly && !flailTemplate(config.heads[head].flailAssembly)) ||
