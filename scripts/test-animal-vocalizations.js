@@ -37,7 +37,8 @@ assert.match(playback, /capturePreparedAnimalElement/, 'AudioSystem still owns r
 assert.match(playback, /wsolaStretch/, 'constant renderer retains only minimum independent tempo/pitch compensation');
 assert.match(playback, /ensureContext\(\);[\s\S]{0,120}installGestureUnlock\(\)/, 'animal voice AudioContext is constructed before the first gesture handler runs');
 
-assert.equal(utteranceIndex.clips.length, 22, 'utterance manifest exposes all 22 uploaded sounds');
+const uploadedOggFiles = fs.readdirSync(path.join(root, 'docs/assets/audio/sfx/utterances')).filter(file => /\.ogg$/i.test(file)).sort(); // Checks the actual shipped OGG folder, not a stale fixed count.
+assert.deepEqual(utteranceIndex.clips.map(entry => entry.file).sort(), uploadedOggFiles, 'utterance manifest indexes all uploaded OGG recordings');
 const indexedNames = new Set(utteranceIndex.clips.map(entry => entry.file));
 for (const entry of utteranceIndex.clips) {
   assert.match(entry.file, /\.ogg$/i, `${entry.file} is an OGG utterance`);
@@ -98,6 +99,11 @@ window.AnimalVocalizations.setAuthoredProfiles({
       'sfx_clicky_howl-bark.ogg': { tempo: 1.1, pitchSemitones: 0.5 },
     },
   },
+  'skeeri-small': { // One canonical authored pool drives every ruin Skeeri size.
+    chatter: { allowedClips: ['sfx_hoot-squeak.ogg'] },
+    warning: { allowedClips: ['sfx_hoot-yap.ogg'] },
+    growl: { allowedClips: ['sfx_scream_chirp.ogg'] },
+  },
   'gar-wolf': {
     // Deliberately bogus legacy species tuning: profileFor must ignore it now.
     clipTuning: {
@@ -130,6 +136,18 @@ window.AnimalVocalizations.setAuthoredProfiles({
   },
 });
 
+const skeeriKeys = ['skeeri-small', 'skeeri-medium', 'skeeri-large']; // Three fixed runtime species IDs share one authored voice family.
+for (const [index, key] of skeeriKeys.entries()) {
+  const skeeri = creature('skeeri-' + index, key, 'medium'); // Deliberately wrong genotype verifies the fixed size ID wins.
+  const profileBySize = window.AnimalVocalizations.profileForDebug(skeeri);
+  assert.deepEqual(Array.from(profileBySize.chatter.allowedClips), ['sfx_hoot-squeak.ogg'], key + ' inherits Small Skeeri chatter');
+  assert.deepEqual(Array.from(profileBySize.warning.allowedClips), ['sfx_hoot-yap.ogg'], key + ' inherits Small Skeeri warning');
+  assert.deepEqual(Array.from(profileBySize.growl.allowedClips), ['sfx_scream_chirp.ogg'], key + ' inherits Small Skeeri growl');
+  assert.equal(window.AnimalVocalizations.companionDiscovery(skeeri, 'animal-den'), true);
+  const call = rendered.find(entry => entry.id === 'skeeri-' + index); // Observe the real sequence passed into the audio renderer.
+  assert.equal(call.sizePitchSemitones, [3, 0, -4][index], key + ' uses its own size-class pitch');
+  assert.deepEqual(Array.from(call.allowedClips), ['sfx_hoot-yap.ogg'], key + ' plays its shared warning selection');
+}
 const profile = window.AnimalVocalizations.profileForDebug(creature('profile'));
 assert.deepEqual(Array.from(profile.warning.utterances, u => ({ ...u })), [
   { tempo: 1.05, pitchSemitones: 1 },
