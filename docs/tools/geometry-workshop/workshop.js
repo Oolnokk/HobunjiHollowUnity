@@ -185,12 +185,15 @@
       before.vertices.toLocaleString() + ' → ' + after.vertices.toLocaleString() + ' vertices; ' +
       after.meshes + ' mesh(es), ' + after.materialSlots + ' material slots.';
     const safe = Core.preservedMaterials(original, candidate);
+    const processingRequested = $('remesh').checked || Number($('reduction').value) > 0;
+    const meaningfulResult = !processingRequested || result.details.length > 0; // No-op/unsupported outputs must not be labeled optimized exports.
     $('materials').textContent = (safe ? '✓ Materials and group assignments preserved. ' : '⚠ Material assignments changed — export disabled. ') +
       $('materials').textContent;
     for (const note of result.warnings) log(note, false);
-    candidateMatchesControls = safe; // Export approval belongs to this completed preview, not a previously rendered one.
-    $('export').disabled = !safe;
+    candidateMatchesControls = safe && meaningfulResult; // Export approval belongs to this completed preview and applied processing.
+    $('export').disabled = !candidateMatchesControls;
     if (!safe) log('Material preservation validation failed', true);
+    else if (!meaningfulResult) log('No processable geometry was changed; export disabled. Check diagnostics or reduce protection.', true);
     else log('Preview built. Actual triangle reduction: ' + percent + '%.');
   }
   async function updatePreview() {

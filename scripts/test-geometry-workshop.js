@@ -103,6 +103,7 @@ function twoMaterialMesh(){
   assert.match(uiSource,/function releaseOriginal\(/, 'imported models need GPU cleanup on reload');
   assert.match(uiSource,/candidateMatchesControls = false/, 'pending or failed updates must invalidate export');
   assert.match(uiSource,/function invalidatePreview\(/, 'editing controls must prevent export of stale mesh');
+  assert.match(uiSource,/const meaningfulResult = !processingRequested \|\| result\.details\.length > 0/, 'unsupported/no-op results must not claim to be optimized exports');
   assert.match(uiSource,/Uint8Array\.from\(new Uint8Array\(bytes\)\)\.buffer/, 'captured game GLBs need a local-realm ArrayBuffer');
   for (const file of ['core.js', 'workshop.js']) {
     execFileSync(process.execPath, ['--check', path.resolve(__dirname,'../docs/tools/geometry-workshop/',file)], { stdio: 'pipe' });
