@@ -407,7 +407,8 @@
     // direct-collection heart bonus in farm-animals.js's collectResource.
     const workingAnimalsRank = window.PerkSystem?.rank('farming', 'workingAnimals') || 0; // 0-3
     let stars = baseStars;
-    if (workingAnimalsRank > 0) {
+    if (worker.external && worker.familyWorker) stars = window.RomanceFamily?.rollWorkQuality?.(worker.id) ?? baseStars;
+    else if (workingAnimalsRank > 0) {
       const hearts = Number.isFinite(worker.heartLevel) ? worker.heartLevel : (window.FarmAnimals?.HEART_DEFAULT ?? 2);
       const heartMax = window.FarmAnimals?.HEART_MAX ?? 5;
       const heartStars = Math.round((hearts - 2.5) / (heartMax / 2) * (workingAnimalsRank / 3));
