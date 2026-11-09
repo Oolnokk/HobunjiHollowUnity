@@ -30,12 +30,21 @@
     return notes;
   }
   const TARGET_COLORS=Object.freeze({idle:0xff9e42,hit:0x55e886,stone:0x777267});
+  function ropeBaseline(){
+    return root.RuinRopeBaseline||(typeof require==='function'?require('./ruin-rope-baseline.js'):null);
+  }
+  function ropeSeed(id,room,seed=0){
+    let state=(Number(seed)>>>0)||2166136261; // Seeded per ruin, floor and room; stable across save/load.
+    for(const ch of [id,room.x,room.z,room.w,room.d].join(':'))
+      state=Math.imul(state^ch.charCodeAt(0),16777619)>>>0;
+    return ()=>{state=(state+0x6d2b79f5)>>>0;let t=state;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return((t^(t>>>14))>>>0)/4294967296;};
+  }
   function ropePitForRoom(room,side){
     if(!room||!['N','E','S','W'].includes(side))return null;
     const alongX=side==='E'||side==='W';
     const length=alongX?room.w:room.d;
-    if(length<11)return null; // Three supported cells on either bank and at least five cells of actual abyss.
-    const bank=3; // Physical ground left before/after the void, measured from the chamber's full exterior walls.
+    const bank=ropeBaseline()?.profile?.().bank??3; // A backwards swing and rider collision radius determine bank width.
+    if(length<bank*2+5)return null; // At least five actual abyss cells between the supported banks.
     const bounds={
       minX:room.x+(alongX?bank:0),maxX:room.x+room.w-(alongX?bank:0),
       minZ:room.z+(alongX?0:bank),maxZ:room.z+room.d-(alongX?0:bank),
@@ -295,15 +304,21 @@
       const finish=alongX?(positive?pit.maxX:pit.minX):(positive?pit.maxZ:pit.minZ);
       const entry={x:alongX?start+from*.8:centerX,z:alongX?centerZ:start+from*.8,y};
       const exit={x:alongX?finish+to*.8:centerX,z:alongX?centerZ:finish+to*.8,y};
-      const count=Math.max(3,Math.min(8,Math.ceil((pitLength-1)/2.25)+1));
-      const anchors=Array.from({length:count},(_,i)=>{
-        const t=.5+(pitLength-1)*i/(count-1); // Spread across the entire abyss, keeping a small margin at either bank.
-        const along=start+(positive?1:-1)*t;
-        return {x:alongX?along:centerX,z:alongX?centerZ:along,y:y+3.35};
-      });
+      const profile=ropeBaseline().profile(); // Unmodified RopeCore values drive room size and neighbor catch limits.
+      const anchors=ropeBaseline().ropeLayout(pit,side,ropeSeed(id,room,options.seed))
+        .map(anchor=>({...anchor,y:y+profile.anchorHeight}));
+      const count=anchors.length;
       for(const anchor of anchors){
         const mount=authored('ruinRopeMount',anchor.x,anchor.y-2.965,anchor.z); // The existing Rope Furniture mount's top anchor sits exactly on the actual physics rope pivot.
         if(mount)mount.userData.ruinLabRopeFixture=true;
+      }
+      for(const anchor of anchors){
+        const across=alongX?anchor.z-centerZ:anchor.x-centerX;
+        if(Math.abs(across)<.25)continue;
+        const crossbar=body('ruin-rope-crossbar-'+id,
+          new THREE.BoxGeometry(alongX?.5:Math.abs(across)+.5,.3,alongX?Math.abs(across)+.5:.5),
+          stone,alongX?anchor.x:centerX+across/2,y+3.4,alongX?centerZ+across/2:anchor.z);
+        crossbar.userData.devRuinCeilingBeam=true; // Offset mounts are physically joined to the centre spine.
       }
       const beam=body('ruin-abyss-ceiling-beam-'+id,
         new THREE.BoxGeometry(alongX?pitLength+1:0.5,.3,alongX?.5:pitLength+1),
@@ -321,9 +336,11 @@
         sheet.rotation.x=-Math.PI/2;sheet.userData.devRuinAbyssHazard=options.theme;
       }
       rec.pit=pit;rec.ropesRequested=count;
+      rec.ropePhysics={landingReach:profile.landingReach,maxNeighborDistance:profile.maxNeighborDistance,
+        width:profile.roomWidth,length:profile.roomLength}; // Visible in browser test and mobile diagnostics.
       rec.ropeSpec={id,roomId:id,bounds:pit,entry,exit,floorY:y,anchors,
         yaw:Math.atan2(side==='S'?1:side==='N'?-1:0,side==='E'?1:side==='W'?-1:0),
-        length:2.43, maxLength:2.55,parent:group};
+        length:profile.length,maxLength:profile.maxLength,parent:group};
     }else if(kind==='dungeonFire'){
       // The standard DungeonFire runtime owns shot ignition and plume-to-ice
       // collision. The room merely authors a source brazier, a heat target,
