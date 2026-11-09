@@ -584,7 +584,8 @@
   function itemPrice(key, markup = TUNING.PRICE_MARKUP) {
     const def = deps?.ITEM_DEFS?.[key];
     const base = num(deps?.BASE_PRICES?.[key], num(def?.sellPrice, 4));
-    return Math.max(5, Math.ceil(Math.max(1, base) * markup));
+    const rarityBase = window.ItemAcquisitionRarity?.sellPrice?.(key, base, { defs:deps?.ITEM_DEFS }) ?? base; // The trader's regular markup starts from the same source-aware economy value used by Shipping.
+    return Math.max(5, Math.ceil(Math.max(1, rarityBase) * markup));
   }
   function itemEntry(key, qty, price, extra = {}) {
     const def = deps?.ITEM_DEFS?.[key] || {};
