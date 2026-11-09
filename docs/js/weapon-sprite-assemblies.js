@@ -257,10 +257,14 @@
       if (state.dead) return;
       const headTextures = await Promise.all(f.head.layers.map(layer => textureFor(THREE, layer.sprite)));
       if (state.dead) return;
-      const ropePixels = Math.max(2, Math.min(2048, Number(f.chain.lengthPx) || 160));
-      const chainImg = isRope ? { width: 1, height: ropePixels + 1 } : chainTex.image; // Virtual raster frame puts rope endpoints at the geometric cylinder ends.
+      const authoredRopeScale = connectorAxisScale(f.chain, 'scaleY'); // Width and head scale are never inferred from a mount line.
+      const requestedLength = Number(f.chain.mountLengthPx); // Present only on a modular rope mount, never an ordinary authored flail.
+      const ropePixels = Math.max(2, Math.min(2048,
+        isRope && Number.isFinite(requestedLength) && requestedLength > 0
+          ? requestedLength / authoredRopeScale : Number(f.chain.lengthPx) || 160));
+      const chainImg = isRope ? { width: 1, height: ropePixels + 1 } : chainTex.image; // Only the virtual rope endpoint span changes.
       const chain = isRope
-        ? makeRope(THREE, f.chain, unit, order + 0.01, ropeTexture)
+        ? makeRope(THREE, { ...f.chain, lengthPx: ropePixels }, unit, order + 0.01, ropeTexture)
         : buildPlane(THREE, chainImg, chainTex, unit, order + 0.01);
       if (!isRope) effects?.registerLayer(state, chain, f.chain, chainImg); // Chain shares verdigris/plating; generated natural rope keeps its authored bark-brown surface.
       const headRoot = new THREE.Group();
@@ -574,7 +578,14 @@
     const attachmentScale = Math.max(0.00001, Math.abs(q.scale.x)); // Authoritative world-space handle pixel scale, not a fixed weapon baseline.
     const localHandleScale = attachmentScale / Math.max(0.00001, Math.abs(q.rootScale.x)); // Compensates for extra scale applied to the handle plane itself.
     const chainScaleX = connectorAxisScale(flail.chain, 'scaleX'); // Chain width or generated-rope radius relative to the final rendered handle.
-    const chainScaleY = connectorAxisScale(flail.chain, 'scaleY'); // Connector length relative to the handle, independent of width.
+    let chainScaleY = connectorAxisScale(flail.chain, 'scaleY'); // Reach uses Y only; head size and connector width stay independently authored.
+    const mountLength = Number(flail.chain.mountLengthPx); // Rope-mount line length, expressed in unchanged source-haft pixels.
+    if (!state.chain.userData?.hobunjiRuinRopeSprite && Number.isFinite(mountLength) && mountLength > 0) {
+      const spanX = (state.chainBottom.x - state.chainTop.x) * chainScaleX;
+      const spanY = Math.abs(state.chainBottom.y - state.chainTop.y);
+      if (spanY > 1e-5) chainScaleY = Math.sqrt(Math.max(1e-8, mountLength * mountLength - spanX * spanX)) / spanY;
+      // Original raster chain may be diagonal: preserve its X width/offset and solve only Y stretch for the desired span.
+    }
     const headScale = relativePartScale(flail.head); // Head size is still independently handle-relative.
     if (state.chain.userData?.hobunjiRuinRopeSprite) {
       state.chain.scale.setScalar(localHandleScale * chainScaleY); // Child width already compensates for both authoring axes; keep the billboard uniformly scaled.
