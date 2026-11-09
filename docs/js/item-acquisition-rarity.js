@@ -17,7 +17,8 @@
     lich: Object.freeze({ floors: 4, wings: 5, roomsPerWing: 3 }),
   }); // Mirrors RuinLayerPlan.TIERS; used only when the runtime planner is unavailable.
 
-  const clampProbability = value => value == null || value === '' || !Number.isFinite(Number(value)) ? null : Math.max(0, Math.min(1, Number(value)));
+  const clampProbability = value => value == null || value === '' || typeof value === 'boolean' || !Number.isFinite(Number(value))
+    || Number(value) < 0 || Number(value) > 1 ? null : Number(value); // Invalid odds remain unknown; never silently clamp them to certainty.
   function chain(stages) {
     let probability = 1; // Joint probability of all supplied conditional stages.
     const breakdown = []; // Mobile diagnostics retain the source of every multiplier.
@@ -32,11 +33,11 @@
   }
   function atLeastOne(chance, opportunities) {
     const p = clampProbability(chance), n = Number(opportunities);
-    return p === null || !Number.isInteger(n) || n < 0 ? null : n === 0 ? 0 : p === 1 ? 1 : -Math.expm1(n * Math.log1p(-p));
+    return p === null || opportunities == null || !Number.isInteger(n) || n < 0 ? null : n === 0 ? 0 : p === 1 ? 1 : -Math.expm1(n * Math.log1p(-p));
   }
   function expected(chance, opportunities) {
     const p = clampProbability(chance), n = Number(opportunities);
-    return p === null || !Number.isFinite(n) || n < 0 ? null : p * n;
+    return p === null || opportunities == null || !Number.isFinite(n) || n < 0 ? null : p * n;
   }
   function tierLayout(tier) {
     const authored = G.RuinLayerPlan?.TIERS?.[tier] || RUIN_TIERS[tier]; // Use actual generator settings when available.
@@ -51,7 +52,8 @@
     const layout = tierLayout(tier);
     if (!layout) return null;
     const roomCount = source === 'challenge' ? layout.challengeRooms : layout.rooms;
-    const opportunities = chestsPerRoom === null ? null : roomCount * Number(chestsPerRoom);
+    const opportunities = chestsPerRoom == null || !Number.isInteger(Number(chestsPerRoom)) || Number(chestsPerRoom) < 0
+      ? null : roomCount * Number(chestsPerRoom); // Bernoulli opportunities must be whole, nonnegative chest slots.
     const chancePerChest = clampProbability(lootChance);
     const chestProbability = clampProbability(chestChance);
     const stages = [
@@ -71,19 +73,26 @@
     targetFamily = null, targetRegion = null, caravanEligible = true } = {}) {
     const value = Math.max(0, Math.floor(Number(townValue) || 0));
     const daily = value < 1 ? 0 : Math.min(.7, .15 + (value - 1) * .06); // SlagothimTraders.TUNING daily arrival roll.
-    const family = Math.min(1, offeredFamilies / Math.max(1, familyCount));
-    const region = 1 / Math.max(1, importRegions);
-    const stages = [{ label: 'Daily caravan arrival roll', probability: caravanEligible ? daily : null }];
-    if (targetFamily !== null) stages.push({ label: 'Chosen crop family', probability: family });
-    if (targetRegion !== null) stages.push({ label: 'Chosen import region', probability: region });
+    const family = Number.isInteger(familyCount) && familyCount > 0 && Number.isInteger(offeredFamilies) && offeredFamilies >= 0
+      ? Math.min(1, offeredFamilies / familyCount) : null;
+    const region = Number.isInteger(importRegions) && importRegions > 0 ? 1 / importRegions : null;
+    const possibleFamilies = G.CropVarieties?.FAMILIES; // Existing crop authority rejects unattainable family names when initialized.
+    const chosenFamilyChance = Array.isArray(possibleFamilies) && targetFamily !== null && !possibleFamilies.includes(targetFamily) ? 0 : family;
+    const chosenRegionChance = targetRegion != null && (!Number.isInteger(Number(targetRegion)) || Number(targetRegion) < 1 || Number(targetRegion) > importRegions) ? 0 : region;
+    const arrival = caravanEligible === true ? daily : caravanEligible === false ? 0 : null;
+    const stages = [{ label: 'Daily caravan arrival roll', probability: arrival }];
+    if (targetFamily !== null) stages.push({ label: 'Chosen crop family', probability: chosenFamilyChance });
+    if (targetRegion !== null) stages.push({ label: 'Chosen import region', probability: chosenRegionChance });
     const result = chain(stages);
+    const specificStockChance = chosenFamilyChance == null || chosenRegionChance == null ? null : chosenFamilyChance * chosenRegionChance;
     return { ...result, dailyCaravanChance: daily, familyChancePerCaravan: family,
-      regionChanceGivenFamily: region, specificSeedChancePerCaravan: family * region,
-      specificSeedChancePerDay: caravanEligible ? daily * family * region : null,
+      regionChanceGivenFamily: region, specificSeedChancePerCaravan: specificStockChance,
+      specificSeedChancePerDay: arrival == null || specificStockChance == null ? null : arrival * specificStockChance,
       caveat: 'Assumes a caravan can spawn and its stock is rolled; route access, active-caravan caps and purchases are separate constraints.' };
   }
   function inheritance({ parentA, parentB, target, mutationChance = .025, alleleCount = 6 } = {}) {
-    if (![parentA, parentB,target].every(code => typeof code === 'string' && /^[0-5]{6}$/.test(code))) return null;
+    if (![parentA, parentB,target].every(code => typeof code === 'string' && /^[0-5]{6}$/.test(code))
+      || alleleCount !== 6 || clampProbability(mutationChance) === null) return null; // The production breeder always has six loci and one possible mutation.
     let noMutation = 1; // Product of independent Mendelian picks at each locus.
     for (let i = 0; i < alleleCount; i++) {
       const parent = i % 2 === 0 ? parentA : parentB;
@@ -109,8 +118,8 @@
   function source({ stages = [], opportunities = 1, baseSellPrice = null, referenceProbability = 1 } = {}) {
     const result = chain(stages);
     const p = result.probability;
-    const proposedSellPrice = p === null || p <= 0 || !Number.isFinite(Number(baseSellPrice))
-      || Number(baseSellPrice) < 0 ? null
+    const proposedSellPrice = p === null || p <= 0 || baseSellPrice == null || !Number.isFinite(Number(baseSellPrice))
+      || Number(baseSellPrice) <= 0 ? null
       : Math.max(1, Math.round(Number(baseSellPrice) * Math.min(PRICE_CAP,
         Math.pow(Math.max(MIN_PROBABILITY, referenceProbability) / Math.max(MIN_PROBABILITY, p), PRICE_EXPONENT))));
     return { ...result, opportunities, expectedCount: p === null ? null : expected(p, opportunities),
@@ -122,6 +131,8 @@
   // acquisition source is known. These factors describe supply, not item quality.
   const CULTIVAR_KEY = /^cv_(needlegrain|heftroot|garlink|ongyums|redberries|blueberries|yellowberries|whiteberries|blackberries|blackMustard|greenMustard)_([0-5]{6})(?:_([0-9a-f]{6}))?(Seeds)?$/;
   const REFERENCE_DAY_CHANCE = .15; // A common-enough opportunity; used only to normalize contest/economy premiums.
+  let boundItemDefs = null; // Live ITEM_DEFS passed by CropVarieties.attach for mobile diagnostics; replaces itself on world rebind.
+  function bindItemDefs(defs) { if (defs && typeof defs === 'object') boundItemDefs = defs; }
   function rarityFactor(probability, options = {}) {
     const p = clampProbability(probability);
     if (p === null || p === 0) return null;
@@ -153,7 +164,7 @@
   function cultivarSellPrice(key, nativeSellPrice) {
     const info = cultivarRarity(key);
     const baseline = Number(nativeSellPrice);
-    if (!info || !Number.isFinite(baseline) || baseline < 0) return null;
+    if (!info || nativeSellPrice == null || !Number.isFinite(baseline) || baseline <= 0) return null;
     // Stable across town-growth changes; harvested crops replicate, while imported
     // seeds preserve a slightly higher scarcity premium. No speculative values for
     // other item categories are written into the ordinary economy.
@@ -167,12 +178,12 @@
     if (crop) return { factor:crop.factor, known:crop.origin === 'slagothim-import', sources:[crop] };
     const fish = fishRarity(key);
     if (fish) return { factor:fish.factor, known:true, sources:[fish] };
-    const localDefs = defs || G.ITEM_DEFS || {};
+    const localDefs = defs || boundItemDefs || G.ITEM_DEFS || {};
     const def = localDefs[key] || G.HobunjiCookingData?.items?.[key] || {};
     // A processed item inherits its source ingredients' difficulty without
     // awarding an extra scarcity premium for its processing depth (Gorkunash
     // already doubles for each processing step).
-    const ingredients = [...new Set((def.ingredientKeys || def.giftIngredientKeys || []).filter(x => typeof x === 'string' && x !== key))];
+    const ingredients = [...new Set((def.ingredientKeys?.length ? def.ingredientKeys : def.giftIngredientKeys || []).filter(x => typeof x === 'string' && x !== key))];
     if (!ingredients.length) return { factor:1, known:false, sources:[] };
     const next = new Set(seen); next.add(key);
     const parts = ingredients.map(child => foodRarity(child, localDefs, next));
@@ -219,15 +230,15 @@
       model:'per pool roll, before any unknown parent pool or encounter frequency' };
   }
   function denOffspring({ zoneId = null, species, denCount = null, denSpecies = null,
-    clutchMin = null, clutchMax = null, nestChance = 1 } = {}) {
+    clutchMin = null, clutchMax = null, nestChance = null } = {}) {
     const zone = G.WildlifeSpawn?.zoneConfigFor?.(zoneId) || G.SCRATCHBONES_CONFIG?.game?.wilderness?.zones?.[zoneId];
     const pool = denSpecies || zone?.denSpecies || null;
-    const dens = Number(denCount);
+    const dens = denCount == null ? null : Number(denCount);
     const speciesPool = Array.isArray(pool) ? [...new Set(pool)] : [];
     const members = speciesPool.length;
     const exists = members > 0 && speciesPool.includes(species);
     let slots = null;
-    if (Number.isInteger(dens) && dens >= 0 && members) {
+    if (dens != null && Number.isInteger(dens) && dens >= 0 && members) {
       const base = Math.floor(dens / members);
       const rank = speciesPool.map((id,index) => ({id,index,weight:id === 'nazgraku' ? .8 : 1}))
         .sort((a,b) => b.weight - a.weight || a.index - b.index);
@@ -262,7 +273,7 @@
     const recorded = assigned.map(den => {
       const mapId = zoneId != null ? G.WildlifeSpawn?.denCavernMapId?.(zoneId, den.denId) : null;
       const record = mapId ? G.WildlifeSpawn?.denTurnoverStateForCavern?.(mapId) : null;
-      return record?.clutch?.itemKey === itemKey && Number.isFinite(Number(record.clutch.remaining))
+      return record?.clutch?.itemKey === itemKey && record.clutch.remaining != null && Number.isFinite(Number(record.clutch.remaining))
         ? Math.max(0,Math.floor(Number(record.clutch.remaining))) : null;
     });
     const allRecorded = recorded.every(n => n !== null);
@@ -323,7 +334,7 @@
       model:'Uses actual generated chest roster. Site probability is known only for buried holes per treasure location.' };
   }
   function item(key, context = {}) {
-    const defs = context.itemDefs || G.ITEM_DEFS || {};
+    const defs = context.itemDefs || boundItemDefs || G.ITEM_DEFS || {};
     const def = defs[key] || {};
     const cultivar = cultivarRarity(key);
     if (cultivar) {
@@ -331,9 +342,10 @@
         townValue:context.townValue ?? G.TownMine?.getTownValue?.() ?? 1,
         targetFamily:cultivar.family,targetRegion:Number(cultivar.code[0]) }) : null;
       return { ...cultivar, acquisition:cultivar.probability === null ? null
-        : source({ stages:cultivar.importStages,baseSellPrice:def.sellPrice }),
+        : source({ stages:cultivar.importStages }), // Acquisition report must not apply a second rarity markup to the live sale price.
         currentDailyRollChance:currentRoll?.specificSeedChancePerDay ?? null,
-        proposedSellPrice:cultivarSellPrice(key,context.nativeSellPrice ?? def.sellPrice),
+        actualSellPrice:Number.isFinite(Number(def.sellPrice)) ? Number(def.sellPrice) : null,
+        proposedSellPrice:cultivarSellPrice(key,context.nativeSellPrice ?? def.rarityBaseSellPrice ?? null),
         note:cultivar.model };
     }
     const offspring = context.zoneId ? liveDenOffspring(key,{zoneId:context.zoneId}) : null;
@@ -354,7 +366,7 @@
       note:context.stages ? null : 'Unquantified source; no automatic rarity price or contest premium.' };
   }
   return Object.freeze({ chain, atLeastOne, expected, tierLayout, ruinChest, caravanSeed, inheritance, source,
-    rarityFactor, cultivarRarity, cultivarSellPrice, foodRarity, artifactChest, lootPoolItem, denOffspring, liveDenOffspring, fishCatch, fishRarity, ruinArtifactOpportunity, item,
+    bindItemDefs, rarityFactor, cultivarRarity, cultivarSellPrice, foodRarity, artifactChest, lootPoolItem, denOffspring, liveDenOffspring, fishCatch, fishRarity, ruinArtifactOpportunity, item,
     debugSnapshot: key => key ? item(key) : { supported:['cultivar','artifact-chest','ruin-chest','loot-pool','den-offspring','live-den-offspring','fish-catch','generated-ruin','food-ancestry','inheritance'],
       priceMode:'cultivar-integrated; other categories retain their authored value', noSilentFallback:true } });
 
