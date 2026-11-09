@@ -165,7 +165,9 @@
     },
     loadStorage,
     saveStorage: (worldId, store) => writeField(worldId, 'storage', store),
-    loadCropProvenance: worldId => readWorldField(worldId, 'cropProvenance') || null, // Shared crossbreed history; canonical world metadata survives member switching and folder/cloud recovery.
+    loadCropProvenance(worldId) { // Corrupt or partially restored world metadata must not crash crop setup or world switching.
+      try { return readWorldField(worldId, 'cropProvenance') || null; } catch { return null; }
+    },
     saveCropProvenance: (worldId, ledger) => writeField(worldId, 'cropProvenance', ledger), // Same atomic world-field save path used by barn breeding and incubators.
     loadPendingSupplyOrders,
     completeSeedSupplyOrder,
