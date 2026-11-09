@@ -1428,7 +1428,7 @@
     const cfg = window.SCRATCHBONES_CONFIG?.game || {};
     const mothers = deps?.DEN_MOTHER_DEFS || cfg.wildlife?.denMothers || {};
     const itemKinds = cfg.livestock?.itemKinds || {};
-    const nesting = new Set([...Object.keys(mothers), 'drenkirra', 'pingdort', 'tzatzul', 'skeeri']);
+    const nesting = new Set([...Object.keys(mothers), 'drenkirra', 'pingdort', 'tzatzul', 'skeeri-small', 'skeeri-medium', 'skeeri-large']); // Every actual ruin Skeeri size is registered, but no artificial fertile-egg requirement.
     for (const zone of Object.values(deps?.EXTERIOR_ZONES || {})) {
       for (const field of ['denSpecies', 'packSpecies', 'herbivoreSpecies'])
         for (const kind of zone?.[field] || []) nesting.add(kind);
