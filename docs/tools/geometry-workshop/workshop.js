@@ -86,6 +86,10 @@
     updating = value;
     $('load').disabled = value;
     $('update').disabled = value;
+    // A preview must be built with exactly the controls shown at export time.
+    // Lock settings during asynchronous processing so sliders cannot invalidate a request mid-flight.
+    for (const id of ['source-kind', 'repo-preset', 'repo-path', 'generator', 'seed', 'file', 'pick-scope',
+      'pick-game', 'remesh', 'edge-size', 'reduction', 'error', 'protect-cards']) $(id).disabled = value;
     $('export').disabled = value || !candidateMatchesControls || !candidate || !original || !Core.preservedMaterials(original,candidate);
   }
   function titleText(node) {
