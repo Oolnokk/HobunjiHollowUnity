@@ -176,6 +176,7 @@
     if(weed.damage<3)return true;
     weed.done=true;weed.group.visible=false;weed.rings.forEach(r=>r.setActive(false));
     session.weedsKilled++;
+    updateGates(0,performance.now(),session.kit.playerWorld()); // The lethal strike opens the seal immediately, even between slow rendering frames.
     session.deps?.showToast?.('Binding weed severed — a burning root retreats from the Temple Heart.',true);
     (window.RuinInteractionAudio?.puzzleComplete?.()||window.AudioSystem?.playObjectSfxKey?.('puzzleComplete'));
     return true;
@@ -716,7 +717,7 @@
   // retract() animation pull the roots back; the collision seal releases once they have mostly withdrawn.
   function buildGate(id,passage,isOpen){
     const y=session.floor,x=(passage.minX+passage.maxX)/2,z=(passage.minZ+passage.maxZ)/2;
-    const gate={id,x,z,isOpen,open:false,blocking:true,growth:null,lastHintAt:0};
+    const gate={id,x,z,isOpen,open:false,blocking:true,growth:null,retractStartedAt:null,lastHintAt:0}; // Wall-clock start governs retreat even at low FPS.
     for(const side of [-1,1]){
       const post=cylinder(session.group,'root gate stone post',.42,.55,4.2,x,y+2.1,z+side*1.85,0x2d2f29);
       post.userData.devRuinFootprintIgnore=true; // The solid seal below is the one collision authority.
@@ -759,11 +760,18 @@
     for(const gate of session.gates){
       const open=gate.isOpen();
       if(open&&!gate.open){
-        gate.open=true;gate.growth?.retract();
+        gate.open=true;gate.retractStartedAt=now;
+        gate.growth?.retract();
         session.deps?.showToast?.('The roots withdraw from the passage.',true);
       }
       const growth=gate.growth;
-      if(growth&&growth.getProgress()>0)growth.update(dt); // Idle (fully retracted) gates cost nothing per frame.
+      if(growth&&growth.getProgress()>0){
+        if(gate.open){
+          const durationMs=Math.max(.1,Number(growth.recipe?.duration)||2.8)*1000; // Respect the authored retreat duration independently of render FPS.
+          const progress=Math.max(0,1-Math.max(0,now-gate.retractStartedAt)/durationMs); // No slow-motion collision on throttled frames.
+          if(progress<growth.getProgress())growth.setProgress(progress);
+        }else growth.update(dt);
+      }
       gate.blocking=!gate.open||(growth?growth.getProgress()>.35:false);
       if(!gate.open&&p&&now-gate.lastHintAt>7000&&Math.hypot(p.x-gate.x,p.z-gate.z)<3){
         gate.lastHintAt=now;session.deps?.showToast?.('Roots bar the way. Sever this hall\'s binding weed.',false);
