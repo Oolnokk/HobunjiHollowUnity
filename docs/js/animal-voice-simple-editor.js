@@ -33,12 +33,16 @@
       || String(url || '').split('/').pop().toLowerCase();
   }
   function clone(value) { return JSON.parse(JSON.stringify(value)); }
-  function animalOverride(id) { return ensureAnimalOverride(id); }
+  function animalOverride(id) { return ensureAnimalOverride(voiceSpeciesKey(id)); } // Keep all size variants on one canonical species voice profile.
   function defaultOverride() {
     state.config.animalVocalizations ||= {};
     return state.config.animalVocalizations.default || (state.config.animalVocalizations.default = {});
   }
   function voiceSpeciesKey(id) {
+    const normalized = String(id || '').toLowerCase(); // Fixed Skeeri sizes share the Small Skeeri's sound selection and pitch-multiplier controls.
+    if (/^skeeri-(?:small|medium|large)$/.test(normalized)) return 'skeeri-small';
+    if (normalized === 'tzatzul-hatchling') return 'tzatzul'; // The adult Tzatzul voice is shared with its small hatchlings.
+    if (normalized === 'voorg-ass-herd-mother') return 'voorg-ass'; // Herd mothers belong to the Voorg-Ass family.
     if (typeof voiceKey === 'function') return voiceKey(id);
     const raw = String(id || '').toLowerCase();
     if (raw.includes('dabinggi')) return 'dabinggi-hound';
@@ -53,7 +57,7 @@
   async function loadUtteranceIndex() {
     if (utteranceIndex) return utteranceIndex;
     if (libraryPromise) return libraryPromise;
-    libraryPromise = fetch(UTTERANCE_INDEX_URL)
+    libraryPromise = fetch(`${UTTERANCE_INDEX_URL}?v=20261109voiceindex37`) // Refresh new OGG inventory even if the mobile browser cached an older manifest.
       .then(response => {
         if (!response.ok) throw new Error(`Utterance index fetch ${response.status}`);
         return response.json();
@@ -129,7 +133,7 @@
   }
   function effectiveCall(id, kind) {
     const common = state.config?.animalVocalizations?.default?.[kind] || {};
-    const own = state.config?.animalVocalizations?.[id]?.[kind] || {};
+    const own = state.config?.animalVocalizations?.[voiceSpeciesKey(id)]?.[kind] || {}; // Variant size shares its canonical species' authored response.
     const base = DEFAULT_CALLS[kind];
     const utterances = Array.isArray(own.utterances)
       ? own.utterances
@@ -167,7 +171,7 @@
     return Array.isArray(list) ? list.map(clipName) : [];
   }
   function effectiveAllowed(id, kind, entries) {
-    const own = state.config?.animalVocalizations?.[id]?.[kind];
+    const own = state.config?.animalVocalizations?.[voiceSpeciesKey(id)]?.[kind]; // Medium and Large Skeeri check the same allowed recordings as Small Skeeri.
     const common = state.config?.animalVocalizations?.default?.[kind];
     const configured = Array.isArray(own?.allowedClips)
       ? own.allowedClips
@@ -286,10 +290,21 @@
       return;
     }
 
+    // Honeyfuzzle swarms use their dedicated continuous spatial buzz, never the utterance player.
+    if (animal.id === 'honeyfuzzle') {
+      editor.innerHTML = '<div class="card"><h2>Honeyfuzzle</h2><div class="muted">Honeyfuzzles use the dedicated looping swarm buzz in game, not chatter, warnings, or growl utterances. Their audio cannot be assigned in this editor.</div></div>';
+      return;
+    }
+
     const entries = libraryEntries();
-    const size = speciesSizePitch(animal) || { ...DEFAULT_SIZE_PITCH_MULTIPLIERS }; // Values rendered and edited only for this selected species.
+    const globalPitch = globalSizePitch(); // Legacy size-based pitch offsets also seed new per-species multiplier edits.
+    const size = speciesSizePitch(animal) || { // Display the real effective pitch, not neutral values that would reset all three sizes on first edit.
+      small: Math.pow(2, globalPitch.small / 12),
+      medium: Math.pow(2, globalPitch.medium / 12),
+      large: Math.pow(2, globalPitch.large / 12),
+    };
     const treasure = state.config.companionTreasureLines?.[animal.id] || [];
-    const discovery = state.config.animalVocalizations?.[animal.id]?.discoveryText || {};
+    const discovery = state.config.animalVocalizations?.[voiceSpeciesKey(animal.id)]?.discoveryText || {};
     const defaultSize = ['small', 'medium', 'large'].includes(animal.defaultSizeClass) ? animal.defaultSizeClass : 'medium';
 
     editor.innerHTML = `<div class="card">
@@ -297,7 +312,7 @@
       <div class="muted">Simple voice model: response chooses an indexed recording → global recording base speed/pitch → exact utterance tempo/pitch → this species' size pitch multiplier. The library comes from <code>assets/audio/sfx/utterances/index.json</code>.</div>
       <!-- Global size pitch · shared by every species (legacy source-test phrase; controls below are now species-local). -->
       <div class="subhead">Size pitch · this species</div>
-      <div class="muted">Each size gets its own multiplier. 1.00× leaves pitch unchanged.</div>
+      <div class="muted">All sizes use this species' same recorded calls, shifted in pitch by size. 1.00× leaves pitch unchanged. Medium and Large Skeeri inherit Small Skeeri's sound assignments.</div>
       <div class="grid">
         <label class="field">Small ×<input type="number" step=".01" min=".5" max="2" data-species-size="small" value="${esc(size.small)}"></label>
         <label class="field">Medium ×<input type="number" step=".01" min=".5" max="2" data-species-size="medium" value="${esc(size.medium)}"></label>
@@ -319,7 +334,7 @@
       input.oninput = () => {
         const speciesId = voiceSpeciesKey(animal.id); // Used to save aliases such as wild variants into the runtime's canonical voice profile.
         const own = animalOverride(speciesId); // Stores the three size values beside this species' chatter/warning/growl authoring.
-        own.sizePitchMultipliers ||= { ...DEFAULT_SIZE_PITCH_MULTIPLIERS };
+        own.sizePitchMultipliers ||= { ...size }; // Preserve the other two currently audible size pitches when editing the first multiplier.
         own.sizePitchMultipliers[input.dataset.speciesSize] = clamp(finite(input.value, 1), 0.5, 2);
         mark();
       };
