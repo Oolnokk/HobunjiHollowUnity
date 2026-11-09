@@ -320,8 +320,8 @@ assert.equal(rarity.lootPoolItem('trinket_unstableBalance','puzzleCave',{puzzleC
   'mixed cave source without explicit reward tier chooses among all loaded trinkets');
 const mixedPuzzle={...mixSources,puzzleCave:authoredPuzzle,
   mixed:{kind:'mixed',rolls:2,sourcePools:[{poolId:'sourceA',weight:1},{poolId:'puzzleCave',weight:1}]}};
-assert.equal(rarity.lootPoolItem('trinket_unstableBalance','mixed',mixedPuzzle,
-  {trinketDefinitions:triDefs}).probability,1-Math.pow(1-1/6,2),
+assert(Math.abs(rarity.lootPoolItem('trinket_unstableBalance','mixed',mixedPuzzle,
+  {trinketDefinitions:triDefs}).probability-(1-Math.pow(1-1/6,2))) < 1e-12,
   'a tierless nested puzzle source contributes its correctly weighted trinket chance');
 
 console.log('Item acquisition rarity tests passed.');
