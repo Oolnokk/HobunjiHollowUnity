@@ -1931,7 +1931,14 @@
     }
     const config = deps.EXTERIOR_ZONES?.[zoneId] || {};
     const herdSpecies = Array.isArray(config.roamingHerdSpecies) ? config.roamingHerdSpecies : []; // Preserve duplicate configured species as authored selection weights.
-    const herdSlots = Math.max(0,Math.floor(Number(config.roamingHerdCount)||0));
+    const herdSlots = herdSpecies.length ? Math.max(1,Math.floor(Number(config.roamingHerdCount)||1)) : 0; // ensureCurrentZoneRoamingHerds always allocates at least one normal slot for a nonempty pool.
+    const foragerSpecies = Array.isArray(config.roamingForagerSpecies) ? config.roamingForagerSpecies : []; // Extra forager slots are guaranteed, rather than random draws from the normal herd pool.
+    const foragerSlots = foragerSpecies.length ? Math.max(1,Math.floor(Number(config.roamingForagerCount)||1)) : 0;
+    const foragerSpeciesSlots = {}; // Count the exact repeating index % pool.length distribution used during extra-slot spawning.
+    for (let index=0;index<foragerSlots;index++) {
+      const kind = foragerSpecies[index%foragerSpecies.length];
+      foragerSpeciesSlots[kind] = (foragerSpeciesSlots[kind] || 0) + 1;
+    }
     const herdSpeciesChance = {};
     for (const species of herdSpecies) herdSpeciesChance[species] = (herdSpeciesChance[species]||0) + 1/herdSpecies.length;
     const treeSelection = _nestTreeSelectionCache.get(zoneId); // Actual Drenkirra branch decisions; don't force eligibleNestBranches and accidentally change stream-time nest placement.
@@ -1952,6 +1959,7 @@
       densPerMapTile:Number.isFinite(mapTiles) && mapTiles > 0 ? dens.length/mapTiles : null,
       denSpeciesChance:Object.fromEntries(Object.entries(bySpecies).map(([kind,row])=>[kind,dens.length?row.total/dens.length:null])),
       roamingHerdSlots:herdSlots,roamingSpeciesChancePerSlot:herdSpeciesChance,
+      roamingForagerSlots:foragerSlots,roamingForagerSpeciesSlots:foragerSpeciesSlots, // These are deterministic authored slots, not independent random selection chances.
       nestTreeTarget:Math.max(1,Math.min(NEST_TREE_MAX_PER_ZONE,dens.length || NEST_TREE_MAX_PER_ZONE)),
       surfaceNestSources,
       certainty:'real generated den roster; surface-herd species odds conditioned on each spawn slot',
