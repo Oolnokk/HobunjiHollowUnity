@@ -489,7 +489,7 @@
   function isDisallowed(shaft, head) {
     return !Object.hasOwn(config.shafts, shaft) || !Object.hasOwn(config.heads, head) ||
       config.heads[head].craftDisabled === true || // Retired heads still render on saved gear, but cannot form new forgeable pairs.
-      (config.shafts[shaft].flailAssembly && config.heads[head].flailAssembly) || // One rope owner per final weapon; no nested/double flails.
+      (!!config.shafts[shaft].flailAssembly && !!config.heads[head].flailAssembly) || // One rope owner per final weapon; no nested/double flails.
       (!!config.shafts[shaft].flailAssembly && !flailTemplate(config.shafts[shaft].flailAssembly)) ||
       (!!config.heads[head].flailAssembly && !flailTemplate(config.heads[head].flailAssembly)) ||
       !matchingMounts(config.shafts[shaft], config.heads[head]).length ||
