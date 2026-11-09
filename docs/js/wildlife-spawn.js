@@ -1917,7 +1917,10 @@
   function ecologyCensus(zoneId = deps?.getCurrentArea?.()) {
     const layout = deps?.zoneLayouts?.get?.(zoneId);
     if (!layout) return {zoneId,known:false,reason:'wilderness zone has not generated an animal den layout'};
-    const dens = denCensus(zoneId);
+    const animalDenIds = new Set((layout.caveAnchors || layout.dens || [])
+      .filter(den=>den?.caveSite?.inhabitant ? den.caveSite.inhabitant === 'animal_den' : den?.isAnimalDen !== false)
+      .map(den=>String(den.id))); // Match denSpeciesAllocation's animal-only filter; inhabited cave sites aren't animal nests.
+    const dens = denCensus(zoneId).filter(den=>animalDenIds.has(den.denId));
     const bySpecies = {};
     for (const den of dens) {
       const kind = den.species || 'unassigned';
@@ -1927,9 +1930,10 @@
       row.aliveDenResidents += den.alive;
     }
     const config = deps.EXTERIOR_ZONES?.[zoneId] || {};
-    const herdSpecies = [...new Set(config.roamingHerdSpecies || [])];
+    const herdSpecies = Array.isArray(config.roamingHerdSpecies) ? config.roamingHerdSpecies : []; // Preserve duplicate configured species as authored selection weights.
     const herdSlots = Math.max(0,Math.floor(Number(config.roamingHerdCount)||0));
-    const herdSpeciesChance = herdSpecies.length ? Object.fromEntries(herdSpecies.map(key=>[key,1/herdSpecies.length])) : {};
+    const herdSpeciesChance = {};
+    for (const species of herdSpecies) herdSpeciesChance[species] = (herdSpeciesChance[species]||0) + 1/herdSpecies.length;
     const mapTiles = Number(layout.cols)*Number(layout.rows); // Per generated-zone tile density, not a per-encounter probability.
     return {zoneId,known:true,animalDens:dens.length,bySpecies,
       mapTiles:Number.isFinite(mapTiles) && mapTiles > 0 ? mapTiles : null,
