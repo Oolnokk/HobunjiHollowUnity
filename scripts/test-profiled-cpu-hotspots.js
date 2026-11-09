@@ -5,9 +5,16 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 let loads = 0; // Count image loads for coalesced same-key requests.
+const delayedImages = new Map(); // Lets the tests complete stale and fresh image requests in either order.
 class FakeImage {
   constructor() { this.naturalWidth = 4; this.naturalHeight = 4; }
-  set src(_path) { loads++; Promise.resolve().then(() => this.onload()); }
+  set src(path) {
+    loads++;
+    if (path === 'race.png' || path === 'delay.png') {
+      const requests = delayedImages.get(path) || []; // References all separate loads for this sprite.
+      requests.push(this); delayedImages.set(path, requests);
+    } else Promise.resolve().then(() => this.onload());
+  }
 }
 const fakeDocument = { createElement() {
   return { width: 0, height: 0, getContext() { return {
@@ -79,5 +86,35 @@ for (let i = 0; i < 120; i++) {
   assert.strictEqual(await windowStub.ToolMetalRecolor.getRecoloredCanvas('demo.png', opts), canvas);
   windowStub.ToolMetalRecolor.clearCache();
   assert.notStrictEqual(await windowStub.ToolMetalRecolor.getRecoloredCanvas('demo.png', opts), canvas);
-  console.log('profiled CPU hotspots: outline and pending-canvas cache ok');
+
+  // In-flight work started before a clear cannot put its stale canvas back.
+  const stale = windowStub.ToolMetalRecolor.getRecoloredCanvas('delay.png', opts);
+  windowStub.ToolMetalRecolor.clearCache();
+  const fresh = windowStub.ToolMetalRecolor.getRecoloredCanvas('delay.png', opts);
+  assert.notStrictEqual(stale, fresh);
+  const delayed = delayedImages.get('delay.png'); // First and second requests must both exist after clearing.
+  assert.equal(delayed.length, 2);
+  delayed[0].onload(); delayed[1].onload();
+  const staleCanvas = await stale, freshCanvas = await fresh;
+  assert.notStrictEqual(staleCanvas, freshCanvas);
+  assert.strictEqual(await windowStub.ToolMetalRecolor.getRecoloredCanvas('delay.png', opts), freshCanvas,
+    'the stale render must not overwrite the new cache generation');
+
+  // A failed old image request after cache clearing must not evict the NEW
+  // generation's valid _imgCache entry for a different tint of the same sprite.
+  windowStub.ToolMetalRecolor.clearCache();
+  const failed = windowStub.ToolMetalRecolor.getRecoloredCanvas('race.png', opts);
+  windowStub.ToolMetalRecolor.clearCache();
+  const active = windowStub.ToolMetalRecolor.getRecoloredCanvas('race.png', opts);
+  const races = delayedImages.get('race.png'); // We intentionally trigger the previous image's failure first.
+  assert.equal(races.length, 2);
+  const failure = failed.then(() => false, () => true);
+  races[0].onerror();
+  assert.equal(await failure, true);
+  races[1].onload();
+  await active;
+  const beforeSecondTint = loads; // A fresh tint must reuse the successful source image.
+  await windowStub.ToolMetalRecolor.getRecoloredCanvas('race.png', { ...opts, targetHex: '#f0e0d0' });
+  assert.equal(loads, beforeSecondTint, 'a stale load error cannot evict the fresh source-image cache');
+  console.log('profiled CPU hotspots: outline and pending-canvas cache lifecycle ok');
 })().catch(err => { console.error(err); process.exitCode = 1; });
