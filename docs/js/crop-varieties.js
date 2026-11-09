@@ -107,13 +107,15 @@
       };
       itemDefs[id] = { ...baseProduce, label, icon: baseProduce.icon || base.emoji || '🌾', cat: baseProduce.cat || 'crop',
         ...(baseProduce.spriteIcon ? { spriteIcon: baseProduce.spriteIcon, spriteMode: 'direct', spriteColor: traits.color } : {}), // Tint hybrid inventory PNGs, leave native sprites alone.
-        sellPrice: Math.max(1, Math.round((Number(baseProduce.sellPrice) || 15) * 1.2)),
+        sellPrice: window.ItemAcquisitionRarity?.cultivarSellPrice?.(id, Number(baseProduce.sellPrice) || 15)
+          ?? Math.max(1, Math.round((Number(baseProduce.sellPrice) || 15) * 1.2)), // Real sale value reflects modeled scarcity, but keeps the old markup as fallback.
         cookingCategories: [...(baseProduce.cookingCategories || item?.categories || [])], cookingPrimaryEffect: Object.keys(traits.effects)[0],
         foodEffects: { ...traits.effects }, varietyColor: traits.color, ingredientColor: traits.color,
         tags: [...new Set([...(baseProduce.tags || []), 'Crop', 'Regional Variety'])],
         desc: traits.region + ' variety. Water ' + Math.round(traits.idealMin * 100) + '–' + Math.round(traits.idealMax * 100) + '%. ' + Object.keys(traits.effects).join(' / ') + ' ingredients.' };
       itemDefs[seedKey(id)] = { ...baseSeed, label: label + ' Seeds', icon: baseSeed.icon || '🌱', cat: baseSeed.cat || 'seed',
-        sellPrice: Math.max(1, Math.round((Number(baseSeed.sellPrice) || 4) * 1.4)), varietyColor: traits.color,
+        sellPrice: window.ItemAcquisitionRarity?.cultivarSellPrice?.(seedKey(id), Number(baseSeed.sellPrice) || 4)
+          ?? Math.max(1, Math.round((Number(baseSeed.sellPrice) || 4) * 1.4)), varietyColor: traits.color, // Rare seed stock commands a stronger premium than reproducible harvests.
         tags: [...new Set([...(baseSeed.tags || []), 'Seed', 'Regional Variety'])],
         desc: 'Plant on suitable soil. Origin: ' + traits.region + '. Prefers ' + Math.round(traits.idealMin * 100) + '–' + Math.round(traits.idealMax * 100) + '% water.' };
       if (Array.isArray(inventoryItems) && !inventoryItems.some(entry => entry.key === seedKey(id))) {
