@@ -14,6 +14,7 @@ const rig = entry.bipedalMonsterRig;
 const speciesIndex = JSON.parse(read('docs/config/species/index.json')); // Registered NPC species must exist before NpcAvatarPreview.randomProfile selects a fighter.
 const nohuknukSpecies = JSON.parse(read('docs/config/species/nohuknuk.json'));
 const studio = read('docs/tools/character-studio/index.html');
+const author = read('docs/tools/animation-author/index.html'); // Shared Shoulder Rig editor must render the gameplay monster, not another implementation.
 const rigMaster = read('docs/config/attachment-rig-profiles.js');
 const boots = read('docs/js/attachment-rig-latest-authored-snapshot.js');
 const localDb = read('docs/js/local-db-overrides.js');
@@ -27,6 +28,15 @@ assert.ok(speciesIndex.entries.some(item => item.speciesId === 'nohuknuk' && ite
 assert.equal(nohuknukSpecies.parentSpecies,'engh-sho');
 assert.equal(nohuknukSpecies.npcOnly,true);
 assert.ok(studio.includes('bipedal-monster-assembler.js'));
+assert.ok(author.includes('js/local-db-overrides.js'), 'Animation Author loads the existing NPC sidecar composition rules');
+assert.ok(author.includes('await composeAuthoredNpcSpecies(normalizeDatabase(rawDb), settings)'), 'Repository NPCs use authored species overrides');
+assert.ok(author.includes('await composeAuthoredNpcSpecies(normalizeDatabase(parsed)'), 'Uploaded NPCs also receive authored species overrides');
+assert.ok(author.includes("if (model.userData?.bipedalMonster) {"), 'Author binds the existing creature rig before humanoid neck creation');
+assert.ok(author.includes("rig.implementation = 'creature-painted-neck'"), 'Author identifies its native painted creature neck');
+assert.ok(author.includes("rig.implementation === 'creature-painted-neck' || !source"), 'Humanoid hat deformation never rewrites creature skins');
+assert.ok(author.includes('window.HobunjiBipedalMonsterAssembler?.syncNeck'), 'Author reuses runtime head-skin animation');
+assert.ok(author.includes("actor.source?.type === 'creature' || actor.model?.userData?.bipedalMonster"), 'Monster NPCs use creature viewport deadzones');
+assert.ok(!author.includes('function makeBipedalMonsterPreview'), 'Existing Shoulder Rig is reused; no separate renderer');
 
 assert.equal(rig.handModel, 'primate');
 assert.equal(rig.footModel, 'primate');
@@ -125,6 +135,7 @@ const document = {currentScript:{src:'https://example.test/docs/js/bipedal-monst
 vm.runInNewContext(assembler, {window,document,performance:{now:()=>100},URL,console,Map,Set,Image:undefined});
 const api = window.HobunjiBipedalMonsterAssembler;
 assert.equal(api.type, 'bipedal-monster');
+assert.equal(typeof api.syncNeck, 'function', 'Shared head-skin update works without an NPC walker in the editor');
 assert.equal(window.SCRATCHBONES_CONFIG.game.appearanceEditor.species.nohuknuk.parentSpecies,'engh-sho');
 assert.equal(handsConfig.speciesModels.nohuknuk,'primate');
 assert.equal(handsConfig.models.primate.glb,'assets/models/hands/hand_primate.glb');
@@ -167,6 +178,12 @@ assert.ok(Math.abs(window.PNGPlaneAvatar.latestRef.lastPitch-(-.3*180/Math.PI))<
 assert.ok(Math.abs(window.PNGPlaneAvatar.latestRef.lastYaw-(.2*180/Math.PI))<1e-6,
   'NPC neck yaw drives painted creature head bones');
 assert.equal(root.userData.neckRig.neckJoint.parent,root.children[0]);
+root.userData.neckRig.neckJoint.rotation.x = 0.1;
+root.userData.neckRig.neckJoint.rotation.y = -0.15;
+assert.equal(api.syncNeck(root, 1 / 60), true, 'Author drives the same creature neck on the existing model');
+assert.ok(Math.abs(window.PNGPlaneAvatar.latestRef.lastPitch - (0.1 * 180 / Math.PI)) < 1e-6);
+assert.ok(Math.abs(window.PNGPlaneAvatar.latestRef.lastYaw - (-0.15 * 180 / Math.PI)) < 1e-6);
+assert.equal(api.syncNeck(new Group()), false, 'Ordinary avatars are left alone');
 
 const other=window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE,{width:100},{npcRecord:{id:'regular'}});
 assert.equal(other.fallback,true,'ordinary humanoids must remain on their original builder');
