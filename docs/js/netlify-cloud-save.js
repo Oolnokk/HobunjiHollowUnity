@@ -282,7 +282,7 @@
 
   function festivalCloudWriteBlocked() {
     const phase = window.HobunjiQuickSave?.festivalStatus?.().phase; // The cloud is canonical too: never upload or import a disposable festival timeline.
-    return !!phase && phase !== 'idle' && phase !== 'restored';
+    return !!phase && phase !== 'idle'; // Cloud changes remain blocked until the restored world has been finalized.
   }
 
   async function pushNow({ force = false, automatic = false } = {}) {
