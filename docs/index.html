@@ -481,7 +481,7 @@
   <script src="js/honeyfuzzle-house.js?v=20261026honeyEggGenes3"></script> <!-- Honeyfuzzle House: 1x1 egg/swarm slot on a FarmProduction entry; hooked by farm-production.js, initialised by game.js. -->
   <script src="js/farm-layout-editor.js?v=20261016a"></script>
   <script src="js/world-meta-store.js?v=20261102h9d8381e"></script>
-  <script src="js/farm-animals.js?v=20261107flyers2"></script>
+  <script src="js/farm-animals.js?v=20261109emoji1"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
        via init(), and reads window.FarmAnimals at call time (already
@@ -2823,7 +2823,9 @@
   <script src="js/honeyfuzzle-audio.js?v=20261026hivebuzz2"></script> <!-- Shared 24-tile hive + swarm ambience, one decoded seam-crossfaded loop per nearby source, live aggression and Doppler. -->
   <!-- Semantic animal-call scheduler. Gameplay systems emit vocal intents;
        AudioSystem above remains the replaceable low-level renderer. -->
-  <script src="js/animal-vocalizations.js?v=20261109skeerivoice12"></script>
+  <!-- Original Scratchbones emoji silhouettes rendered over NPCs and animals by one shared world-space effect. -->
+  <script src="js/scratchbones-emoji-reactions.js?v=20261109audit4"></script>
+  <script src="js/animal-vocalizations.js?v=20261109emoji1"></script>
   <!-- Background music/ambient cues/bgs/furniture-proximity SFX
        (window.Music) — wires its own DOM audio-unlock listeners at load
        time, and must load before game.js, which calls
@@ -2888,7 +2890,7 @@
   <!-- Secondary proximity dialogue: NPC chathead greetings, companion
        onomatopoeia, and reusable crowd cheer/jeer hooks. -->
   <script src="js/name-nicknames.js?v=20261108relationship2"></script> <!-- Shared first-syllable forms for friendship, dates and marriage. -->
-  <script src="js/ambient-dialogue.js?v=20261109nicknameAudit1"></script>
+  <script src="js/ambient-dialogue.js?v=20261109emoji1"></script>
   <script src="js/player-social-poses.js?v=20260810a"></script>
   <script src="js/player-chat.js?v=20260810a"></script>
   <!-- Spearfishing minigame + fishing FX particles (window.Fishing) — must
