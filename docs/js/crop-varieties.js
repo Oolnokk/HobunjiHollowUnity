@@ -108,6 +108,7 @@
       };
       itemDefs[id] = { ...baseProduce, label, icon: baseProduce.icon || base.emoji || '🌾', cat: baseProduce.cat || 'crop',
         ...(baseProduce.spriteIcon ? { spriteIcon: baseProduce.spriteIcon, spriteMode: 'direct', spriteColor: traits.color } : {}), // Tint hybrid inventory PNGs, leave native sprites alone.
+        rarityBaseSellPrice: Number(baseProduce.sellPrice) || 15, // Native baseline for resale diagnostics; prevents rarity being applied twice.
         sellPrice: window.ItemAcquisitionRarity?.cultivarSellPrice?.(id, Number(baseProduce.sellPrice) || 15)
           ?? Math.max(1, Math.round((Number(baseProduce.sellPrice) || 15) * 1.2)), // Real sale value reflects modeled scarcity, but keeps the old markup as fallback.
         cookingCategories: [...(baseProduce.cookingCategories || item?.categories || [])], cookingPrimaryEffect: Object.keys(traits.effects)[0],
@@ -115,6 +116,7 @@
         tags: [...new Set([...(baseProduce.tags || []), 'Crop', 'Regional Variety'])],
         desc: traits.region + ' variety. Water ' + Math.round(traits.idealMin * 100) + '–' + Math.round(traits.idealMax * 100) + '%. ' + Object.keys(traits.effects).join(' / ') + ' ingredients.' };
       itemDefs[seedKey(id)] = { ...baseSeed, label: label + ' Seeds', icon: baseSeed.icon || '🌱', cat: baseSeed.cat || 'seed',
+        rarityBaseSellPrice: Number(baseSeed.sellPrice) || 4, // Native seed baseline preserved for rarity inspection.
         sellPrice: window.ItemAcquisitionRarity?.cultivarSellPrice?.(seedKey(id), Number(baseSeed.sellPrice) || 4)
           ?? Math.max(1, Math.round((Number(baseSeed.sellPrice) || 4) * 1.4)), varietyColor: traits.color, // Rare seed stock commands a stronger premium than reproducible harvests.
         tags: [...new Set([...(baseSeed.tags || []), 'Seed', 'Regional Variety'])],
@@ -142,6 +144,7 @@
     if (deps.cropData && deps.cropData !== cropData) { known.clear(); variants.clear(); } // World/replay rebinding restores the new runtime crop table.
     cropData = deps.cropData || cropData;
     itemDefs = deps.ITEM_DEFS || itemDefs;
+    window.ItemAcquisitionRarity?.bindItemDefs?.(itemDefs); // Mobile rarity diagnostics use the same live definitions as game inventory and shops.
     inventory = deps.inventory || inventory;
     inventoryItems = deps.inventoryItems || inventoryItems;
     storageGetter = deps.loadStorage || storageGetter;
