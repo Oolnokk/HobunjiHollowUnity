@@ -1447,9 +1447,9 @@
       const itemKey = otherOffspring[kind] || mother?.nestItemKey || null;
       const registered = !!deps?.CREATURE_DB?.[kind];
       const guardianRegistered = exempt ? true : !!(guardianKey && deps?.CREATURE_DB?.[guardianKey]);
-      const offspringMapped = exempt || (kind === 'honeyfuzzle'
-        ? !!deps?.ITEM_DEFS?.[itemKey] // Hive eggs hatch in the Honeyfuzzle House, not the ordinary stable itemKinds table.
-        : !!(itemKey && itemKinds[itemKey] === family));
+      const itemDef = itemKey && deps?.ITEM_DEFS?.[itemKey]; // Live collectible definition must exist; a stale itemKinds name alone cannot create a real egg or baby.
+      const offspringMapped = exempt || !!(itemDef?.cat === 'livestock'
+        && (kind === 'honeyfuzzle' || itemKinds[itemKey] === family)); // Hive eggs hatch in a Honeyfuzzle House instead of the ordinary Stable.
       const hasGenetics = exempt || !!window.CreatureGeneticsRender?.SPECIES?.[family];
       const ok = registered && guardianRegistered && offspringMapped && hasGenetics;
       return { kind, family, guardianKey, itemKey, registered, guardianRegistered,
