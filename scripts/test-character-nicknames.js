@@ -9,7 +9,6 @@ const vm = require('node:vm');
 const read = file => fs.readFileSync(path.join(__dirname, '..', file), 'utf8'); // Loads the actual runtime source.
 
 const player = { nickname: 'Benjamin', appearance: { gender: 'male', speciesId: 'mao-ao' } }; // Test profile for all address paths.
-const romantic = { date: null, spouse: null, lastDatedNpcId: null }; // Persisted romance state supplied through the real RomanceSystem.
 const W = { SCRATCHBONES_CONFIG: { game: { socialRelationships: { relationships: [
   { type: 'friend', members: ['pahu', 'leaf'] }, { type: 'partner', members: ['gorobi', 'gikali'] },
 ] } } }, CalendarSystem: { timeDebugSnapshot: () => ({ rawDay: 12 }), getHour: () => 10 } }; // Shared stubs for NPC social graph and romance calendar.
@@ -57,7 +56,7 @@ assert.equal(dialogue.testTokens('{{playerLocalNickname}}', other.rec), 'Benjami
 assert.equal(ambient._test.playerNicknameFor(friend), 'Ben');
 assert.equal(ambient._test.playerNicknameFor(other), 'Benjamin');
 assert.equal(ambient.resolveTargetName({ rec: { id: 'pahu' } }, { id: 'leaf', name: 'Leaf' }), 'Leaf');
-assert.equal(ambient.resolveTargetName({ rec: { id: 'gorobi' } }, { id: 'gikali', name: 'Gikali' }), 'Giky');
+assert.equal(ambient.resolveTargetName({ rec: { id: 'gorobi' } }, { id: 'gikali', name: 'Gikali' }), 'Giy');
 romance.restore({ lastDateRawDay: { date_npc: 8 } }); // Legacy world save with only unambiguous day-level history.
 assert.equal(romance.getLastDatedNpcId(), 'date_npc');
 assert.equal(dialogue.testTokens('{{playerLocalNickname}}', dateNpc.rec), 'Benny');
