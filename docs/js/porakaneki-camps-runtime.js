@@ -303,18 +303,26 @@
       restoreEcologyHome(entity);
     }
 
+    const banditCandidates = [...groups.tribe, ...groups.predator]; // Reuse the same target roster for each ordinary bandit this ecology pass.
+    const predatorCandidates = [...groups.tribe, ...groups.bandit]; // Reuse the same target roster for each predator this ecology pass.
+    const rivalsByTribe = new Map(); // One threat roster per tribe, instead of filtering and allocating for each hunter.
     for (const bandit of groups.bandit) {
       if (engagedWithPlayer(bandit)) { yieldToPlayer(bandit); continue; }
       restoreEcologyHome(bandit);
-      const target = committedEcologyTarget(bandit, [...groups.tribe, ...groups.predator]);
+      const target = committedEcologyTarget(bandit, banditCandidates);
       setHumanoidEcologyTarget(bandit, target);
       if (target) humanoidTargets++;
     }
     for (const hunter of groups.tribe) {
       if (hunter._avengerRetreating === true) { setHumanoidEcologyTarget(hunter, null); continue; } // Outnumbered Avengers disengage and ride off.
       if (engagedWithPlayer(hunter)) { hunter._chunkCombatTarget = null; continue; } // Provoked hunters fight the player only; updateDetailedHunter keeps them hostile.
-      const rivals = groups.tribe.filter(other => tribeOf(other) !== tribeOf(hunter)); // Rival tribes fight on sight inside the observed chunk.
-      const threat = committedEcologyTarget(hunter, [...groups.bandit, ...groups.predator, ...rivals]);
+      const tribeId = tribeOf(hunter); // The hunter's faction determines which observed hunters are rivals.
+      let threats = rivalsByTribe.get(tribeId);
+      if (!threats) {
+        threats = [...groups.bandit, ...groups.predator, ...groups.tribe.filter(other => tribeOf(other) !== tribeId)];
+        rivalsByTribe.set(tribeId, threats);
+      }
+      const threat = committedEcologyTarget(hunter, threats);
       const prey = threat ? null : committedEcologyTarget(hunter, groups.prey); // Genuine threats can still interrupt a hunt, but not another fight of equal priority.
       const target = threat || prey;
       setHumanoidEcologyTarget(hunter, target);
@@ -323,7 +331,7 @@
     for (const predator of groups.predator) {
       if (engagedWithPlayer(predator)) { yieldToPlayer(predator); continue; }
       restoreEcologyHome(predator);
-      const target = committedEcologyTarget(predator, [...groups.tribe, ...groups.bandit], '_chunkFactionEcologyTarget');
+      const target = committedEcologyTarget(predator, predatorCandidates, '_chunkFactionEcologyTarget');
       setPredatorEcologyTarget(predator, target);
       if (target) predatorTargets++;
     }
@@ -362,6 +370,7 @@
   let tentPiece = null; // Parsed 3x3 authored Porakaneki tent piece used by tentMesh().
   let tentCanvasTextureCache = null; // Shared canvas texture reused by every authored Porakaneki tent material.
   let gangCfg = null; // Existing humanoid combat balance reused by generated residents.
+  let gangCfgLoading = null; // Shares a single pending gang-config load across concurrently materializing residents.
   let tickAccum = 0; // Accumulates detailed neutral update time.
   let coarseAccum = 0; // Accumulates off-radius abstract update time.
   let buildGeneration = 0; // Invalidates asynchronous entity builds after wilderness regeneration.
@@ -1771,8 +1780,14 @@
   }
 
   async function loadGangConfig() {
-    if (!gangCfg) gangCfg = await window.BanditCombat?.loadGangConfig?.();
-    return gangCfg;
+    if (gangCfg) return gangCfg;
+    if (!gangCfgLoading) {
+      gangCfgLoading = Promise.resolve().then(() => window.BanditCombat?.loadGangConfig?.()).then(config => {
+        if (config) gangCfg = config;
+        return config;
+      }).finally(() => { gangCfgLoading = null; });
+    }
+    return gangCfgLoading;
   }
   async function materializeHunter(hunter, generation) {
     const camp = hunter?.camp;
@@ -1896,9 +1911,10 @@
       if (!entity) continue;
       const previous = Number.isFinite(hunter.lastHealth) ? hunter.lastHealth : num(entity.maxHealth, entity.health);
       const health = num(entity.health, 0);
+      if (health >= previous) { hunter.lastHealth = health; continue; } // Do not scan all enemies for undamaged residents five times per second.
       const close = Math.hypot(hunter.x - player.col, hunter.y - player.row) <= radius;
-      const sharedEnemy = hasSharedEnemyNearby(entity); // Prevents nearby bandit/predator crossfire from being treated as a player crime.
-      if (health < previous && close && !sharedEnemy) camp.provokedUntilMs = Math.max(camp.provokedUntilMs, nowMs() + PROVOKE_SECONDS * 1000);
+      const sharedEnemy = close && hasSharedEnemyNearby(entity); // Only nearby actual damage/death needs crossfire attribution.
+      if (close && !sharedEnemy) camp.provokedUntilMs = Math.max(camp.provokedUntilMs, nowMs() + PROVOKE_SECONDS * 1000);
       if (previous > 0 && health <= 0 && !hunter.killCounted && close) {
         hunter.killCounted = true;
         if (!sharedEnemy) {
@@ -1922,7 +1938,7 @@
       state.greetings += 1;
     }
   }
-  function updateDetailedHunter(hunter, dt) {
+  function updateDetailedHunter(hunter, dt, sleeping = false) {
     const entity = hunter.entity;
     if (!entity || entity.health <= 0) return;
     hunter.x = entity.x / combatDeps.TILE; hunter.y = entity.y / combatDeps.TILE;
@@ -1941,6 +1957,12 @@
       return;
     }
     entity._chunkCombatTarget = null;
+    if (sleeping) {
+      // Visible sleepers retain their native movement, speech and defensive-combat paths.
+      makeNeutral(entity, hunter);
+      maybeHunterGreeting(hunter);
+      return;
+    }
 
     hunter.decisionT -= dt;
     const reached = hunter.target && Math.hypot(hunter.target.col - hunter.x, hunter.target.row - hunter.y) < 0.75;
@@ -1960,19 +1982,21 @@
   function updateCampHunterTick(hunter, dt, coarseDt, sleeping, generation) {
     if (hunter.slain) return; // Killed off-screen (slayHunter); stays dead for this world generation like an observed death.
     if (hunter.entity?.health <= 0 || hunter.killCounted && hunter.entity?.health <= 0) return;
-    if (sleeping) {
+    const observed = sharesPlayerChunk(hunter); // Shared distance/hysteresis gate for daytime and nighttime residents.
+    if (!observed) {
       retireDormantEntity(hunter);
-      if (coarseDt > 0 || currentArea() === hunter.camp.zoneId) advanceAbstractHunter(hunter, coarseDt || dt);
-      return;
-    }
-    if (!sharesPlayerChunk(hunter)) {
-      retireDormantEntity(hunter);
-      if (coarseDt > 0) advanceAbstractHunter(hunter, coarseDt);
+      if (coarseDt > 0 || (sleeping && currentArea() === hunter.camp.zoneId)) advanceAbstractHunter(hunter, coarseDt || dt);
       return;
     }
     hunter.dormantSinceMs = null;
+    if (sleeping) {
+      const sleep = sleepPointFor(hunter); // An observed resident goes to a tent instead of disappearing and remains able to respond.
+      hunter.activity = 'sleep';
+      hunter.target = sleep;
+      hunter.decisionT = 0;
+    }
     if (!hunter.entity && !hunter.building) materializeHunter(hunter, generation).catch(error => window.__farmLog?.(`[${KEY}] materialize failed: ${error.message}`, 'warn'));
-    if (hunter.entity) { placeEntityIfDormant(hunter); updateDetailedHunter(hunter, dt); }
+    if (hunter.entity) { placeEntityIfDormant(hunter); updateDetailedHunter(hunter, dt, sleeping); }
   }
   // Off-screen losses are replaced by newcomers after a few days, so a rival
   // band can thin a camp but never empty the wilderness of a tribe.
@@ -1991,7 +2015,7 @@
     const generation = buildGeneration;
     const sleeping = isSleepingHour();
     if (sleeping) {
-      clearHuntingParties(camp);
+      if (camp.huntingParties.length) clearHuntingParties(camp); // A sleeping camp only needs to dismantle active parties once.
       if (camp.avengerBand) { camp.avengerBand.quarry = null; camp.avengerBand.patrolTarget = null; }
     } else {
       ensureHuntingParties(camp);
@@ -2049,7 +2073,9 @@
   }
 
   function updateAllHunters(dt, coarseDt) {
+    const activeZone = currentArea(); // Cached, non-current wilderness maps need only the abstract coarse update.
     for (const zoneState of state.zones.values()) {
+      if (zoneState.zoneId !== activeZone && coarseDt <= 0) continue;
       for (const camp of activeCamps(zoneState)) {
         try { updateCampHunters(camp, dt, coarseDt); }
         catch (error) { window.__farmLog?.(`[${KEY}] camp tick failed (${camp.id}): ${error?.message || error}`, 'warn'); }
