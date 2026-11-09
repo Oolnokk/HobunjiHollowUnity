@@ -139,6 +139,7 @@
 
   function speciesProfileKey(c) {
     const raw = String(c?.creatureKey || c?.animalKey || c?.speciesKey || c?.species || c?.def?.key || '').toLowerCase();
+    if (/^skeeri-(?:small|medium|large)$/.test(raw)) return 'skeeri-small'; // Three ruin Skeeri sizes share the Small Skeeri's authored vocal repertoire.
     return raw
       .replace(/-wild-den-mother$/, '')
       .replace(/-den-mother$/, '')
@@ -147,6 +148,9 @@
   }
 
   function creatureSizeClass(c) {
+    const key = String(c?.creatureKey || c?.animalKey || c?.speciesKey || c?.species || c?.def?.key || '').toLowerCase(); // Fixed Skeeri variant ID takes precedence over inherited genotype sizes.
+    const skeeriSize = /^skeeri-(small|medium|large)$/.exec(key); // Runtime registration uses separate species IDs for each of the three Skeeri sizes.
+    if (skeeriSize) return skeeriSize[1];
     const raw = String(c?.genotype?.sizeClass || c?.sizeClass || c?.def?.defaultSizeClass || '').toLowerCase();
     return SIZE_CLASSES.includes(raw) ? raw : 'medium';
   }
