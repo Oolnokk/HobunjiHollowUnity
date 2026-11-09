@@ -52,7 +52,7 @@
     const rec = options?.npcRecord || options?.profile?.npcRecord;
     const id = normalize(rec?.id || options?.profile?.portraitSeatId);
     const raw = rec?.bipedalMonsterRig || rec?.appearance?.bipedalMonsterRig
-      || options?.appearance?.bipedalMonsterRig || appearanceById.get(id)
+      || options?.profile?.bipedalMonsterRig || options?.appearance?.bipedalMonsterRig || appearanceById.get(id)
       || (id === DEFAULT_NPC || id === 'old-man-nohuknuk' ? DEFAULT_NOHUKNUK : null);
     return normalizeConfig(raw);
   }
@@ -130,6 +130,30 @@
     debug.registered = !!appearance?.[DEFAULT_NPC] && !!feet?.species?.[DEFAULT_NPC];
   }
 
+  function registerConfiguredSpecies(speciesId, cfg) {
+    if (speciesId === DEFAULT_NPC) return; // Nohuknuk's built-in profile is registered once by ensureSpecies.
+    const appearance = global.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species;
+    if (appearance && !appearance[speciesId]) {
+      appearance[speciesId] = {
+        label: speciesId, parentSpecies: cfg.limbSpecies || DEFAULT_LIMBS,
+        genders: [cfg.gender], npcOnly: true, playerSelectable: false,
+      }; // New bipedal-monster NPCs reuse the parent character's animation schema.
+    }
+    const hand = global.HobunjiHandModelProfiles;
+    if (hand?.mutate && cfg.handModel && hand.data?.models?.[cfg.handModel] &&
+        hand.data?.speciesModels?.[speciesId] !== cfg.handModel) {
+      hand.mutate(data => {
+        data.speciesModels ||= {};
+        data.speciesModels[speciesId] = cfg.handModel;
+      }); // A different monster can select its own registered hand GLB.
+    }
+    const feet = global.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet?.species;
+    const donor = feet?.[cfg.limbSpecies];
+    if (feet && cfg.footModel && donor && !feet[speciesId]) {
+      feet[speciesId] = { ...donor }; // Default to the donor's known-good foot mesh when no exact authored GLB exists.
+    }
+  }
+
   function matchingWalker(record) {
     if (record.walker?.root) return record.walker;
     const walkers = global._npcWalkers;
@@ -159,9 +183,11 @@
     record.lastFacingAt = now;
     syncCreatureNeck(record, dt); // Creature neck skinning responds to the same NPC gaze and scripted animation channels as humanoid necks.
     const parent = walker.root; // NPC locomotion/collision stays unmodified; this child owns the appearance-facing offset.
-    const worldPoint = parent.getWorldPosition(new record.THREE.Vector3());
-    const cameraPoint = camera.getWorldPosition(new record.THREE.Vector3());
-    const perps = perp.cameraRelativeCreaturePerpsAtWorldPosition?.(worldPoint, { x: cameraPoint.x, z: cameraPoint.z });
+    const worldPoint = parent.getWorldPosition(record.worldPoint); // Reused per-NPC samples avoid allocating vectors during each render.
+    const cameraPoint = camera.getWorldPosition(record.cameraPoint);
+    record.cameraBearing.x = cameraPoint.x;
+    record.cameraBearing.z = cameraPoint.z;
+    const perps = perp.cameraRelativeCreaturePerpsAtWorldPosition?.(worldPoint, record.cameraBearing);
     if (!perps) return;
     const logical = Number.isFinite(walker.desiredRot) ? walker.desiredRot : Number(walker.rot) || 0;
     const moving = (Number(walker._moveSpeedTiles) || 0) > .05;
@@ -190,6 +216,7 @@
     ensureSpecies(); // Late editor instantiation can occur after hand-profile initialization.
     const rec = options.npcRecord || {};
     const speciesId = normalize(options?.speciesId || rec?.species || options?.appearance?.speciesId || DEFAULT_NPC);
+    registerConfiguredSpecies(speciesId, cfg);
     const ref = api.buildAnimalPlaneAvatarModel(THREE, assetUrl(cfg.sprite), {
       modelWidth: cfg.modelWidth, modelHeight: cfg.modelHeight, creatureId: speciesId,
       name: options.name || speciesId + '_bipedal_monster', headRig: headRigFor(cfg, speciesId),
@@ -231,6 +258,7 @@
     const record = {
       THREE, ref, root, config: cfg, speciesId, npcId: normalize(rec.id || options?.profile?.portraitSeatId),
       walker: null, neckControl, perpState: {}, facingYaw: NaN, lastFacingAt: 0,
+      worldPoint: new THREE.Vector3(), cameraPoint: new THREE.Vector3(), cameraBearing: { x: 0, z: 0 },
     }; // One self-contained assembly record for diagnostics/facing/disposal.
     active.add(record);
     for (const plane of [ref.frontPlane, ref.backPlane]) {
@@ -273,6 +301,24 @@
       api.disposeAvatarModel = wrappedDispose;
     }
     return true;
+  }
+
+  function installProfileBridge() {
+    const preview = global.NpcAvatarPreview;
+    const original = preview?.buildProfileFromNpcExport;
+    if (!original || original.__bipedalMonsterProfile) return;
+    const wrapped = function buildBipedalMonsterProfile(npcExport) {
+      const profile = original.call(this, npcExport);
+      const cfg = normalizeConfig(npcExport?.bipedalMonsterRig || npcExport?.appearance?.bipedalMonsterRig);
+      if (profile && cfg) {
+        profile.bipedalMonsterRig = cfg; // Species-independent hybrid metadata survives normal portrait/profile construction.
+        const id = normalize(npcExport?.id);
+        if (id) appearanceById.set(id, cfg); // Dialogue may render later without the NPC export attached.
+      }
+      return profile;
+    };
+    wrapped.__bipedalMonsterProfile = true;
+    preview.buildProfileFromNpcExport = wrapped;
   }
 
   // Portraits/chatheads also use Nohuknuk's painted creature body, not an inherited Engh-sho face.
@@ -338,6 +384,7 @@
     headRigFor, diagnostics, defaultNohuknuk: DEFAULT_NOHUKNUK,
   });
   install();
+  installProfileBridge();
   installPortraitBridge();
   // Optional on-screen diagnostics for mobile: game URL ?bipedalMonsterDebug=1.
   if (typeof document !== 'undefined' && /(?:\?|&)bipedalMonsterDebug=1(?:&|$)/.test(location.search)) {
