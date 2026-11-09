@@ -172,6 +172,10 @@ async function ready(page) {
     await page.locator('#head').selectOption('grapple-flail');
     assert.equal(await page.locator('#flail-authoring-panel').evaluate(section=>section.open),true,
       'active flail controls are open while unrelated systems remain collapsible');
+    assert.match(await page.locator('.rig-legend').innerText(),/Gold ring.*Cyan ring.*Purple dashed ruler/,
+      'the visible full-rig legend explains the connector and both endpoints');
+    assert.equal(await page.evaluate(() => window.ModularWeapons.flailGuide('fishing-mace','grapple-flail')?.explicitMount),
+      false,'a head-owned flail without an authored rope mount still has an inherited connector guide');
     await page.waitForFunction(() => document.querySelector('#shaft-bore-panel')?.hidden === false,
       null,{timeout:30000});
     assert.equal(await page.locator('#bore-add').isEnabled(), true);
