@@ -148,6 +148,55 @@ async function ready(page) {
     assert.match(confirmation, /Kylie/);
     assert.equal(await page.evaluate(() => Object.values(window.ModularWeapons.getConfig().shafts.kylie.overrides)
       .flatMap(pair => pair.bridges?.strokes || []).filter(op => op.recipe).length), 1, 'Bulk placement does not add Kylie recipes');
+    // Bore tool is contextual: a flexible SHAFT alone does not show head-owned connector drilling.
+    await page.locator('#shaft').selectOption('grapple-flail');
+    await page.locator('#head').selectOption('warhammer');
+    assert.equal(await page.locator('#shaft-bore-panel').isHidden(), true,
+      'a shaft-owned flail with an ordinary rigid modular head cannot reveal connector bore tools');
+    assert.equal(await page.evaluate(() => window.ModularWeapons.flailGuide('grapple-flail','warhammer')?.explicitMount), true,
+      'the physical shaft rope mount still provides a visible connector guide');
+    await page.locator('#shaft').selectOption('fishing-mace');
+    await page.locator('#head').selectOption('grapple-flail');
+    await page.waitForFunction(() => document.querySelector('#shaft-bore-panel')?.hidden === false,
+      null,{timeout:30000});
+    assert.equal(await page.locator('#bore-add').isEnabled(), true);
+    await page.locator('#bore-add').click();
+    assert.equal(await page.locator('#bore-x').inputValue(), '0', 'new bore X offset is zero at the rope attachment');
+    assert.equal(await page.locator('#bore-y').inputValue(), '0', 'new bore Y offset is zero at the rope attachment');
+    assert.equal(await page.locator('#bore-rx').inputValue(), '20', 'new hole is 20px wide');
+    assert.equal(await page.locator('#bore-ry').inputValue(), '20', 'new hole is 20px high');
+    assert.equal(await page.locator('#bore-outline').inputValue(), '3', 'a black interior rim is automatically authored');
+    assert.equal(await page.locator('#head-rope-x').isDisabled(), true,
+      'the multi-sprite head author, not a modular fitting arrow, owns its attachment');
+    assert.deepEqual(await page.evaluate(() => {
+      const api=window.ModularWeapons, config=api.getConfig(), shaft=config.shafts['fishing-mace'];
+      const [hole]=api.resolvedBores(shaft,config.heads['grapple-flail']);
+      const anchor=api.flailRecipe('fishing-mace','grapple-flail').flail.haftAnchor;
+      return {hole:{x:hole.x,y:hole.y},anchor:{x:anchor.x,y:anchor.y}};
+    }),{hole:{x:210,y:1051},anchor:{x:210,y:1051}},
+    'the pixel compositor and rope attach to the exact same authored source point');
+    await page.locator('#bore-x').fill('15');
+    await page.locator('#bore-x').dispatchEvent('change');
+    assert.equal(await page.evaluate(() => window.ModularWeapons.getConfig().shafts['fishing-mace'].bores[0].offsetX),15);
+    await page.locator('#head').selectOption('warhammer');
+    assert.equal(await page.locator('#shaft-bore-panel').isHidden(),true,'switching to a normal head hides drilling');
+    assert.equal(await page.evaluate(() => window.ModularWeapons.resolvedBores(
+      window.ModularWeapons.getConfig().shafts['fishing-mace'],
+      window.ModularWeapons.getConfig().heads.warhammer).length),0,'a normal weapon never receives the bore in gameplay');
+    await page.locator('#head').selectOption('grapple-flail');
+    assert.equal(await page.locator('#bore-x').inputValue(),'15','relative offsets survive switching heads');
+    await page.waitForFunction(() => document.querySelector('#flail-preview-figure')?.hidden === false,
+      null,{timeout:30000});
+    // Test authored-head anchor is preserved even if the modular editor's stored head arrow is radically moved.
+    assert.deepEqual(await page.evaluate(() => {
+      const api=window.ModularWeapons, config=JSON.parse(JSON.stringify(api.getConfig()));
+      const before=api.flailRecipe('fishing-mace','grapple-flail').flail.head.anchor;
+      config.heads['grapple-flail'].mount={type:'weight',start:{x:5,y:7},end:{x:90,y:101}};
+      api.replace(config);
+      const after=api.flailRecipe('fishing-mace','grapple-flail').flail.head.anchor;
+      return {before,after};
+    }).then(value=>JSON.parse(JSON.stringify(value))),{before:{x:8,y:190},after:{x:8,y:190}},
+    'moving the unused modular head arrow cannot move the real multi-sprite flail attachment');
     assert.deepEqual(errors, [], 'Actual mobile editor should not throw JS exceptions');
     console.log('Modular editor browser: PASS (old Kylie draft, primitive rows, recipe edit, cleanup, Undo/Redo, bulk scope)');
   } finally { await browser?.close(); await new Promise(resolve => server.close(resolve)); }
