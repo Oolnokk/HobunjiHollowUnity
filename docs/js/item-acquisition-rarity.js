@@ -426,6 +426,76 @@
     }
     return found;
   }
+  function wildernessSourceCensus({zoneId = null,zoneIds = null} = {}) {
+    const ids = zoneId == null ? (zoneIds || G.WildernessMapGenerator?.zoneMapIds?.() || [])
+      : [zoneId]; // Read only already generated content; this must never trigger wilderness creation to measure rarity.
+    const uniqueIds = [...new Set(Array.isArray(ids) ? ids : [])].filter(x=>typeof x==='string');
+    const zones = uniqueIds.map(id=>{
+      const den = G.WildlifeSpawn?.ecologyCensus?.(id) || {known:false};
+      const reagent = G.ReagentPlants?.sourceCensus?.(id) || {known:false};
+      const berries = G.WildBerries?.census?.(id) || {known:false};
+      return {zoneId:id,den,reagent,berries,generated:{
+        dens:den.known ? den.animalDens : null,
+        foragePlants:reagent.known ? reagent.generatedTotal : null,
+        currentForagePlants:reagent.known && reagent.isCurrentDay ? reagent.remainingTotal : null,
+        remainingBerries:berries.known && Array.isArray(berries.berries) ? berries.berries.length : null}};
+    });
+    const sumKnown = fn => {
+      const values = zones.map(fn).filter(x=>x!=null && Number.isFinite(x));
+      return {measuredZones:values.length,total:values.length ? values.reduce((sum,value)=>sum+value,0) : null};
+    }; // Unknown/unloaded zones never enter a denominator as fake zero opportunities.
+    return {zoneId,observedZoneCount:zones.length,ruins:G.RuinSites?.sourceCensus?.(zoneId) || null,
+      totals:{dens:sumKnown(z=>z.generated.dens),reagentSites:sumKnown(z=>z.generated.foragePlants),
+        availableReagents:sumKnown(z=>z.generated.currentForagePlants),
+        availableBerries:sumKnown(z=>z.generated.remainingBerries)},
+      zones,certainty:'actual generated site/den/plant rosters; not the chance of encountering them on a random player journey'};
+  }
+  function itemSourceFrequency(key, {zoneId = null} = {}) {
+    const berry = wildBerrySource(key);
+    if (berry) return {key,sourceKind:'wild-berry',zoneId:berry.zoneId,
+      chancePerRandomBush:berry.chancePerRandomZoneBush,perBushHarvestChance:berry.perBushChance,
+      observedBushes:berry.observedBushes,expectedYield:berry.expectedYield,certainty:berry.certainty};
+    const reagentDef = G.AlchemySystem?.REAGENT_DEFS?.[key];
+    if (reagentDef) {
+      const zone = reagentDef.zone;
+      const census = G.ReagentPlants?.sourceCensus?.(zone);
+      const measured = census?.known && census.isCurrentDay;
+      const row = census?.bySpecies?.[key];
+      return {key,sourceKind:'habitat-reagent',zoneId:zone,habitat:reagentDef.habitat,
+        knownCurrentScatter:!!measured,totalGeneratedSites:measured?census.generatedTotal:null,
+        exactGeneratedSpeciesSites:measured?(row?.generated ?? 0):null,
+        remainingSites:measured?(row?.remaining ?? 0):null,
+        chancePerRandomGeneratedReagent:measured && census.generatedTotal>0 ? (row?.generated || 0)/census.generatedTotal : null,
+        chancePerRandomRemainingReagent:measured && census.remainingTotal>0 ? (row?.remaining || 0)/census.remainingTotal : null,
+        zoneTileDensity:census?.generatedPlantsPerMapTile ?? null,
+        certainty:measured?'exact persisted current-day habitat placements':'eligible habitat known; no current-day generated sample'};
+    }
+    const config = G.SCRATCHBONES_CONFIG?.game || {};
+    const mothers = Object.entries(config.wildlife?.denMothers || {}).filter(([,def])=>def.nestItemKey===key);
+    const species = config.livestock?.itemKinds?.[key] || mothers[0]?.[0] || null;
+    if (species && zoneId != null) {
+      const census = G.WildlifeSpawn?.ecologyCensus?.(zoneId);
+      const row = census?.bySpecies?.[species];
+      return {key,sourceKind:'animal-nest-or-herd',zoneId,species,known:!!census?.known,
+        denSites:row?.total ?? (census?.known ? 0 : null),
+        activeDenSites:row?.available ?? (census?.known ? 0 : null),
+        chancePerGeneratedDen:census?.known ? census.denSpeciesChance[species] ?? 0 : null,
+        configuredHerdSlots:census?.known ? census.roamingHerdSlots : null,
+        speciesChancePerRoamingHerdSlot:census?.known ? census.roamingSpeciesChancePerSlot[species] ?? 0 : null,
+        certainty:census?.known?'observed den assignment and authored herd species draws; clutch/capture viability separate':'zone ecology unavailable'};
+    }
+    if (G.ArtifactCollection?.ARTIFACTS?.[key]) {
+      const census = G.RuinSites?.sourceCensus?.(zoneId);
+      return {key,sourceKind:'ruin-artifact',zoneId,
+        observedRegisteredCliffSites:census?.registeredCliffSites ?? null,
+        observedThemes:census?.byTheme || null,knownGuardianTiers:census?.byTier || null,
+        themeSharePerRegisteredSite:census?.themeSharePerRegisteredSite || null,
+        buriedHoleChancePerTreasureLocation:census?.buriedHoleChancePerTreasureLocation ?? null,
+        certainty:'registered ruin traditions and conditional chest odds are separate; boss tier first-entry assignment remains unknown'};
+    }
+    return null;
+  }
+
   function acquisitionSources(key, context = {}) {
     const pools = context.lootPools || G.LootRolling?.getLootPools?.();
     const sources = []; // Each source retains its *own* opportunity unit: one cast, den, chest, kill or caravan day.
@@ -440,6 +510,11 @@
     const berry = wildBerrySource(key,context);
     if (berry) sources.push({kind:'foraging',sourceId:'wild-berry-bush',label:'Random bush in native berry zone',probability:berry.chancePerRandomZoneBush,
       expectedQuantity:berry.chancePerRandomZoneBush,certainty:berry.certainty,detail:berry});
+    const reagent = itemSourceFrequency(key,{zoneId:context.zoneId ?? null});
+    if (reagent?.sourceKind==='habitat-reagent') sources.push({kind:'foraging-reagent',sourceId:reagent.zoneId,
+      label:'Habitat-specific reagent plant',probability:reagent.chancePerRandomRemainingReagent,
+      expectedQuantity:reagent.remainingSites,certainty:reagent.certainty,detail:reagent});
+
     const fish = fishRarity(key);
     if (fish) {
       const cast = context.fishZone && context.season && context.timeOfDay ? fishCatch(key,{
@@ -676,9 +751,10 @@
     if (sourced) return {key,kind:def.cat || 'loot',acquisition:sourced,note:sourced.model};
     const ingredients = foodRarity(key,defs);
     const acquisitionRoutes = acquisitionSources(key,context); // Unified on-demand provenance across shopping, loot, fishing, trade and offspring.
+    const observedHabitat = itemSourceFrequency(key,{zoneId:context.zoneId ?? null}); // Mobile inspector includes observed world opportunities when available.
     const basePrice = context.baseSellPrice ?? def.sellPrice ?? null;
     return { key,kind:def.cat || 'unknown',foodRarity:ingredients.factor,
-      acquisitionRoutes,appraisal:priceQuote(key,basePrice,context),
+      acquisitionRoutes,observedHabitat,appraisal:priceQuote(key,basePrice,context),
       foodRaritySources:ingredients.sources.slice(0,12), // On-demand mobile ingredient provenance: real source names and their certainty, not only an opaque multiplier.
       foodSourceCount:ingredients.sources.length,foodRarityHasMeasuredSource:ingredients.known,
       acquisition:context.stages ? source({stages:context.stages,opportunities:context.opportunities ?? 1,baseSellPrice:def.sellPrice}) : null,
@@ -687,7 +763,7 @@
   }
   return Object.freeze({ chain, atLeastOne, expected, tierLayout, ruinChest, caravanSeed, inheritance, source,
     bindItemDefs, rarityFactor, cultivarRarity, cultivarSellPrice, wildBerrySource, importedSpice, foodRarity, artifactChest, lootPoolItem,
-    lootPoolIdsForItem, shopListings, acquisitionSources, priceQuote, sellPrice, farmBreeding, denOffspring, liveDenOffspring, fishCatch, fishRarity, ruinArtifactOpportunity, item,
+    lootPoolIdsForItem, shopListings, wildernessSourceCensus, itemSourceFrequency, acquisitionSources, priceQuote, sellPrice, farmBreeding, denOffspring, liveDenOffspring, fishCatch, fishRarity, ruinArtifactOpportunity, item,
     debugSnapshot: key => key ? item(key) : { supported:['cultivar','artifact-chest','ruin-chest','loot-pool','den-offspring','live-den-offspring','imported-spice','fish-catch','generated-ruin','food-ancestry','inheritance'],
       priceMode:'cultivar costs and limited loot/spice premiums; existing tuned specialty categories remain protected', noSilentFallback:true } });
 
