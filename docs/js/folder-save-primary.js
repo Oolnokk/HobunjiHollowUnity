@@ -224,6 +224,17 @@
         lastUiError = String(error?.message || error);
       }
 
+      // A normal refresh during Festival Test must keep the disposable
+      // browser snapshot. Reloading the Primary Save Folder here would replace
+      // it with the original world while the test session stayed active.
+      const festivalSession = window.HobunjiQuickSave?.festivalStatus?.();
+      if (festivalSession && festivalSession.phase !== 'idle') {
+        window.HobunjiAutosavePause?.pause?.('festival-test');
+        window.HobunjiQuickSave?.resumeFestivalAutoPlay?.();
+        startupMode = 'festival-test-browser';
+        return startupMode;
+      }
+
       const status = await waitForCoreStatus();
       if (!localSave.isSupported?.() || !status.folderName) {
         startupMode = 'browser-no-folder';
