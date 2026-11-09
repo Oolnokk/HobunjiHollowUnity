@@ -99,6 +99,8 @@
     const ingredients = entries.map((item,index) => {
       const slot = recipe?.slots?.find(candidate => candidate.id === item.slotId) || orderedSlots?.[index];
       return {key:item.key,stars:item.stars,slotId:item.slotId || slot?.id,
+        rarityMultiplier:Number.isFinite(Number(item.rarityMultiplier)) && item.rarityMultiplier != null && Number(item.rarityMultiplier) >= 1
+          ? Number(item.rarityMultiplier) : undefined, // Keep the cook-time rarity factor when the festival snapshots/reloads the dish.
         contributesEffects:typeof item.contributesEffects === 'boolean' ? item.contributesEffects : slot?.contributesEffects !== false};
     }); // True input-star data is preserved, and the original cooking recipe decides whether each ingredient grants a buff.
     return {ingredients,estimated:!exact,
