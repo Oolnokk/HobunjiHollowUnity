@@ -64,6 +64,29 @@
         shorterPosteriorGrip = true;
       }
     }
+    // A species may be only modestly shorter overall yet have a much LOWER authored mouth.
+    // When the true B'shuakauitl lip heights demand an excessive bow, try a
+    // physically bounded posterior hop even if the ordinary height ratio is > .72.
+    const authoredMouths = Number.isFinite(Number(options.firstMouthHeightWorld)) &&
+      Number.isFinite(Number(options.secondMouthHeightWorld)); // Only the accurately measured face landmarks enable this extra choreography.
+    if (!shorterPosteriorGrip && authoredMouths && short / tall >= .27 &&
+        shortMouth / tallMouth < .72 && posteriorDifference >= 0 &&
+        bowRad > COMFORTABLE_BOW_DEG * Math.PI / 180) {
+      const supportedKnee = Math.min(kneeLimit, requestedDrop * .62); // Use the actual stance range before lifting the small partner.
+      const comfortableDrop = torsoLength * (1 - Math.cos(25 * Math.PI / 180)); // Prefer a kneel plus mild bow to a near-horizontal torso.
+      const neededHop = Math.max(0, requestedDrop - supportedKnee - comfortableDrop);
+      const supportedHop = Math.min(short * .75, Math.max(0,
+        posteriorDifference - supportedKnee + shorterLeg * .94)); // Smaller hips may rise above the big posterior only while both legs can still reach back to it.
+      const lift = Math.min(neededHop, supportedHop);
+      const residual = Math.max(0, requestedDrop - supportedKnee - lift);
+      if (lift > Math.max(.015, short * .035) &&
+          residual <= torsoLength * (1 - Math.cos(maxBow))) {
+        kneeDrop = supportedKnee;
+        shorterJumpWorld = lift;
+        shorterPosteriorGrip = true;
+        bowRad = Math.acos(clamp(1 - residual / torsoLength, Math.cos(maxBow), 1));
+      }
+    }
     const bowDrop = torsoLength * (1 - Math.cos(bowRad));
     const remainingGap = Math.max(0, requestedDrop - kneeDrop - bowDrop - shorterJumpWorld);
     return {
