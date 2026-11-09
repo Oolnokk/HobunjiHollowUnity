@@ -184,24 +184,49 @@
     if (reference === null || !Number.isFinite(exponent) || exponent < 0 || !Number.isFinite(cap) || cap < 1) return null;
     return Math.max(1, Math.min(cap, Math.pow(reference / p, exponent)));
   }
-  function cultivarRarity(key) {
+  function cultivarRarity(key, ancestry = new Set()) {
     const match = CULTIVAR_KEY.exec(String(key || ''));
     if (!match) return null;
+    const canonical = key.endsWith('Seeds') ? key.slice(0,-5) : key;
     const code = match[2], digits = [...code].map(Number);
     const pureImport = !match[3] && digits[0] !== 0 && digits.every(v => v === digits[0]);
-    const imported = pureImport ? caravanSeed({ townValue:1, targetFamily:match[1], targetRegion:digits[0] }) : null;
+    const imported = pureImport ? caravanSeed({townValue:1,targetFamily:match[1],targetRegion:digits[0]}) : null;
     const distinctRegions = new Set(digits.filter(v => v !== 0)).size;
     const mixedPairs = [0,2,4].filter(i => digits[i] !== digits[i+1]).length;
-    // Crosses can be made by many genealogies; without saved parents this is
-    // explicitly a complexity proxy, NEVER a claimed per-breeding probability.
-    const heuristicFactor = Math.min(3.5, 1 + .2 * distinctRegions + .12 * mixedPairs + (match[3] ? .1 : 0));
-    const factor = pureImport ? rarityFactor(imported.specificSeedChancePerDay) : Math.max(1, heuristicFactor);
-    return { key, family:match[1], code, colorHex:match[3] || null, isSeed:!!match[4],
-      kind:'cultivar', origin:pureImport ? 'slagothim-import' : 'crossbred-or-inherited',
-      probability:pureImport ? imported.specificSeedChancePerDay : null, factor,
-      model:pureImport ? 'daily independent caravan-stock roll at Town Value 1, before travel restrictions'
-        : 'genotype-complexity proxy; actual breeding odds depend on parent genotypes and breeding opportunities',
-      importStages:imported?.stages || null, distinctRegions, mixedPairs };
+    const heuristicFactor = Math.min(3.5,1+.2*distinctRegions+.12*mixedPairs+(match[3] ? .1 : 0));
+    const history = !pureImport && !ancestry.has(canonical) ? G.CropVarieties?.provenanceFor?.(canonical) : null;
+    const next = new Set(ancestry); next.add(canonical);
+    const pathways = (history?.routes || []).map(route => {
+      const p = clampProbability(route.genotypeChance);
+      if (p == null || p === 0) return null; // Saved parents without exact odds are retained as observations, not priced as an impossible cross.
+      const parents = [route.parentA,route.parentB].map(parent => {
+        const key = parent.endsWith('Seeds') ? parent.slice(0,-5) : parent;
+        if (ancestry.has(key) || key === canonical || next.size >= 10) return 1; // Recrossing identical genotypes must not make recursive scarcity explode.
+        return cultivarRarity(key,next)?.factor ?? 1;
+      });
+      const parentSupplyFactor = Math.sqrt(parents[0]*parents[1]); // A pair needs access to both parents; supply difficulty is a bounded geometric estimate, not unconditional availability.
+      const conditionalFactor = rarityFactor(p,{reference:.5,exponent:.2,cap:2}) ?? 1;
+      return {parentA:route.parentA,parentB:route.parentB,observations:route.observations,
+        conditionalGenotypeChance:p,conditionalFactor,parentSupplyFactor,
+        modeledFactor:Math.min(3.5,Math.max(1,parentSupplyFactor*conditionalFactor))};
+    }).filter(Boolean);
+    // Select the least scarce *observed* reproduction route. Neither the
+    // distribution of available parent pairs nor the exposure rate of Seed
+    // Makers is measured, so this is a provenance-informed difficulty proxy.
+    const easiest = pathways.reduce((best,row)=>!best || row.modeledFactor < best.modeledFactor ? row : best,null);
+    const factor = pureImport ? rarityFactor(imported.specificSeedChancePerDay)
+      : easiest ? easiest.modeledFactor : Math.max(1,heuristicFactor);
+    const origin = pureImport ? 'slagothim-import' : easiest ? 'observed-parentage' : 'crossbred-or-inherited';
+    return {key,family:match[1],code,colorHex:match[3] || null,isSeed:!!match[4],
+      kind:'cultivar',origin,probability:pureImport ? imported.specificSeedChancePerDay : null,
+      factor,conditionalGenotypeChance:easiest?.conditionalGenotypeChance ?? null,
+      parentage:easiest ? {parentA:easiest.parentA,parentB:easiest.parentB} : null,
+      knownParentRoutes:pathways.length,observedParentAttempts:history?.totalObserved ?? 0,
+      parentRoutes:pathways.slice(0,12),
+      model:pureImport ? 'daily caravan-stock draw at Town Value 1; route access separate'
+        : easiest ? 'recorded parent genotypes, exact probability per attempt and modeled parent supply; NOT an unconditional item-acquisition probability'
+        : 'genotype-complexity proxy; historic saves without recorded parents have unknown ancestry',
+      importStages:imported?.stages || null,distinctRegions,mixedPairs};
   }
   function cultivarSellPrice(key, nativeSellPrice) {
     const info = cultivarRarity(key);
@@ -217,7 +242,7 @@
   function foodRarity(key, defs = null, seen = new Set()) {
     if (!key || seen.has(key) || seen.size >= 10) return { factor:1, known:false, sources:[] };
     const crop = cultivarRarity(key);
-    if (crop) return { factor:crop.factor, known:crop.origin === 'slagothim-import', sources:[crop] };
+    if (crop) return {factor:crop.factor,known:crop.origin !== 'crossbred-or-inherited',sources:[crop]}; // Historical parentage makes factors grounded in observed breeding, without claiming an unconditional probability.
     const spice = importedSpice(key,{townValue:1}); // Like regional cultivars, Gorkunash judges stable Town Value 1 source difficulty; ordinary market pricing still reads the current town.
     if (spice?.factor) return {factor:spice.factor,known:spice.probability !== null,sources:[spice]};
     const berry = wildBerrySource(key);
