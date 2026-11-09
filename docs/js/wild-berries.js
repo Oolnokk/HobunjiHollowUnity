@@ -255,7 +255,12 @@
     seedKeyFor: berryKey => deps?.cropData?.[berryKey]?.seedKey || null, // Handles native redberry/blueberry singular seed naming without a duplicated lookup.
     census: mapId => { // Mobile, read-only live zone count. An ungenerated zone is unknown, NOT a zone containing zero berries.
       const known = !!deps?._zoneBerryObjects?.has?.(mapId); // Persisted unloaded placements are not a live spawn census; report them as unknown.
-      return {zoneId:mapId,known,berries:known ? listBerries(mapId) : null};
+      const scene = deps?._zoneScenes?.get?.(mapId);
+      const area = Number(scene?.cols) * Number(scene?.rows); // Area-wide site count denominator; unsuitable terrain is still counted.
+      const bushes = known ? listBerries(mapId) : null;
+      return {zoneId:mapId,known,berries:bushes,
+        mapTiles:Number.isFinite(area) && area > 0 ? area : null,
+        survivingBushesPerMapTile:known && area > 0 ? bushes.length/area : null};
     },
     init,
     forZone,
