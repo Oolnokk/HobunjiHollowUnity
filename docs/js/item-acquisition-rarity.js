@@ -298,7 +298,9 @@
         model:'exclusive weighted pool has unresolved world conditions'};
       const totalWeight = entries.reduce((sum,entry)=>sum + Math.max(0,Number(entry.weight ?? 1)||0),0);
       const weight = matches.reduce((sum,entry)=>sum + Math.max(0,Number(entry.weight ?? 1)||0),0);
-      return {key,poolId,probability:totalWeight ? weight/totalWeight : null,eligible:totalWeight ? weight>0 : null,
+      return {key,poolId,probability:totalWeight ? weight/totalWeight : null,
+        expectedQuantity:totalWeight ? weight/totalWeight : null, // Exclusive roll awards precisely one item, or none when this key is not selected.
+        eligible:totalWeight ? weight>0 : null,
         model:'weighted one-of-N exclusive pool, conditional on this pool being selected and its entries enabled'};
     }
     if (!matches.length) return { key,poolId,probability:0,expectedQuantity:0,eligible:false,
