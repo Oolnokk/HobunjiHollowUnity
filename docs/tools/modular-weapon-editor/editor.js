@@ -608,13 +608,13 @@
       for (const entry of available) select.add(new Option(entry.label, entry.id));
       select.value = choice || '';
     }
-    const ropeMount = shaft.mounts.find(mount => mount.type === 'rope'); // The new line owns both contact and connector length.
-    const sourcePoint = ropeMount?.start || shaft.mounts.find(mount => mount.type === (head.mount.type === 'blade' ? 'tang' : 'eye'))?.start || shaft.mounts[0]?.start || { x: 225, y: 602 };
+    const ropeMount = shaft.mounts.find(mount => mount.type === 'rope'); // The rope line is authoritative whenever it exists.
+    const sourcePoint = api.authoredFlailAnchor(shaft,head) || {x:225,y:602}; // Never show the irrelevant flail head's tang/eye arrow as a suggested shaft contact.
     byId('shaft-rope-x').disabled = byId('shaft-rope-y').disabled = !!ropeMount;
-    byId('shaft-rope-x').value = ropeMount ? String(ropeMount.start.x) : shaft.flailHaftAnchor?.x ?? '';
-    byId('shaft-rope-y').value = ropeMount ? String(ropeMount.start.y) : shaft.flailHaftAnchor?.y ?? '';
-    byId('shaft-rope-x').placeholder = String(Math.round(sourcePoint.x)) + (ropeMount ? ' (Rope mount owns contact)' : ' (legacy socket)');
-    byId('shaft-rope-y').placeholder = String(Math.round(sourcePoint.y)) + (ropeMount ? ' (Rope mount owns contact)' : ' (legacy socket)');
+    byId('shaft-rope-x').value = ropeMount ? String(ropeMount.start.x) : (shaft.flailHaftAnchor?.x ?? sourcePoint.x);
+    byId('shaft-rope-y').value = ropeMount ? String(ropeMount.start.y) : (shaft.flailHaftAnchor?.y ?? sourcePoint.y);
+    byId('shaft-rope-x').placeholder = String(Math.round(sourcePoint.x)) + (ropeMount ? ' (Rope mount owns contact)' : ' (from authored flail recipe)');
+    byId('shaft-rope-y').placeholder = String(Math.round(sourcePoint.y)) + (ropeMount ? ' (Rope mount owns contact)' : ' (from authored flail recipe)');
     const authoredHead = api.flailRecipe(byId('shaft').value,byId('head').value)?.flail?.head;
     byId('head-rope-x').value = authoredHead?.anchor?.x ?? '';
     byId('head-rope-y').value = authoredHead?.anchor?.y ?? '';
@@ -653,6 +653,7 @@
     byId('add').disabled = shaft.mounts.length >= (shaft.maxAttachments || 8);
     byId('mount-kind').value = shaft.mounts[mountIndex].type;
     byId('head-kind').value = head.mount.type;
+    byId('head-kind').disabled = !!head.flailAssembly; // A flail head's authored Multi-sprite connection cannot be reconfigured by an irrelevant modular mount selector.
     const duplicated = shaft.duplicateFrom && data.shafts[shaft.duplicateFrom]; // Duplicated attachment rigs, not shaft sprites, have independent transforms.
     const art=api.shaftArtTransform(shaft);
     byId('shaft-art-enabled').checked=art.enabled;
