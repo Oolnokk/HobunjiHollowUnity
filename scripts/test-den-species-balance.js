@@ -135,7 +135,8 @@ const initStart = gameSource.indexOf('window.WildlifeSpawn?.init({'); // Product
 const initEnd = gameSource.indexOf('window.CavernGenerator?.init({', initStart);
 assert(initStart >= 0 && initEnd > initStart, 'the runtime wildlife dependency bag exists');
 assert.match(gameSource.slice(initStart, initEnd), /\bITEM_DEFS\s*,/, 'wildlife receives the real inventory item registry for offspring validation');
-const auditItems = { puktukBaby: { cat: 'livestock' }, fertileHoneyfuzzleEgg: { cat: 'livestock' } }; // Real, usable item fixtures used by audit validation.
+const auditItems = { puktukBaby: { cat: 'livestock', tags: ['Livestock', 'Baby'] },
+  fertileHoneyfuzzleEgg: { cat: 'livestock', tags: ['Livestock', 'Egg', 'Fertile'] } }; // A real baby or explicitly fertile egg, not a food egg.
 const auditMothers = { puktuk: { creatureKey: 'puktuk', nestItemKey: 'puktukBaby' } }; // A den's guardian and baby mapping must both exist.
 windowStub.SCRATCHBONES_CONFIG = { game: { livestock: { itemKinds: { puktukBaby: 'puktuk' } }, wildlife: { denMothers: auditMothers } } }; // Mirrors the parser-time config read by nestingSpeciesAudit.
 windowStub.CreatureGenetics = { SPECIES_ALIAS: {} }; // Explicitly maps Puktuk/Honeyfuzzle to their own genetic families.
@@ -156,7 +157,10 @@ assert.equal(inspected('skeeri-small')?.exempt, true, 'Skeeri are not forced to 
 delete auditItems.fertileHoneyfuzzleEgg;
 assert.equal(W.nestingSpeciesAudit().find(record => record.kind === 'honeyfuzzle')?.ok, false,
   'a truly absent fertile egg item is detected instead of being silently accepted');
-auditItems.fertileHoneyfuzzleEgg = { cat: 'livestock' };
+auditItems.fertileHoneyfuzzleEgg = { cat: 'livestock', tags: ['Livestock', 'Egg'] }; // Unfertilized food eggs cannot pass.
+assert.equal(W.nestingSpeciesAudit().find(record => record.kind === 'honeyfuzzle')?.ok, false,
+  'an egg without the Fertile tag fails even when its inventory definition exists');
+auditItems.fertileHoneyfuzzleEgg.tags.push('Fertile');
 delete auditItems.puktukBaby;
 assert.equal(W.nestingSpeciesAudit().find(record => record.kind === 'puktuk')?.ok, false,
   'a stale Puktuk itemKinds mapping without an actual baby pickup cannot pass the audit');
