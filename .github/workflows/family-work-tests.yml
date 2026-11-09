@@ -11,6 +11,8 @@ on:
       - 'docs/config/romance-config.js'
       - 'scripts/test-romance-dating.js'
       - 'scripts/test-npc-farm-plots.js'
+      - 'scripts/test-item-quality-and-blackout-wander.js'
+      - 'scripts/test-family-harvest-quality.js'
       - '.github/workflows/family-work-tests.yml'
 
 jobs:
@@ -33,3 +35,7 @@ jobs:
         run: node scripts/test-romance-dating.js
       - name: Farmwork and harvest regression tests
         run: node scripts/test-npc-farm-plots.js
+      - name: Real game harvest and processor-quality integration
+        run: node scripts/test-family-harvest-quality.js
+      - name: Vat quality and save-bound external workers
+        run: node scripts/test-item-quality-and-blackout-wander.js
