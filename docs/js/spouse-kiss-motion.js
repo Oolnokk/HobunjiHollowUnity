@@ -413,7 +413,15 @@
       return { contact: false, distance: null, reason: 'lip-reprojection-failed' };
     }
     const distance = data.firstFrame.position.distanceTo(data.secondFrame.position);
+    const firstBoneWorld = firstJoint.getWorldPosition(data.firstWorld); // Temporary CI/mobile probe for the actual skinned head correction.
+    const secondBoneWorld = secondJoint.getWorldPosition(data.secondWorld);
     return { contact: blend > .99 && distance < .025, distance, baselineGap, blend,
+      debugHead: { first: { bone: [firstJoint.position.x, firstJoint.position.y, firstJoint.position.z],
+        rest: [data.firstRest.x, data.firstRest.y, data.firstRest.z], world: [firstBoneWorld.x, firstBoneWorld.y, firstBoneWorld.z],
+        skeletonHasBone: !!first.userData?.neckRig?.skinnedPlane?.skeleton?.bones?.includes(firstJoint) },
+        second: { bone: [secondJoint.position.x, secondJoint.position.y, secondJoint.position.z],
+        rest: [data.secondRest.x, data.secondRest.y, data.secondRest.z], world: [secondBoneWorld.x, secondBoneWorld.y, secondBoneWorld.z],
+        skeletonHasBone: !!second.userData?.neckRig?.skinnedPlane?.skeleton?.bones?.includes(secondJoint) } },
       reachLimited: firstTravel + secondTravel < baselineGap - .025,
       firstHeadMove: firstTravel * blend, secondHeadMove: secondTravel * blend };
   }
