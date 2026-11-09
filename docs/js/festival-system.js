@@ -18,6 +18,9 @@
   let residentCache = []; // Refreshed at most once every two seconds as NPC records finish loading.
   let residentCacheAt = -Infinity; // Millisecond stamp for the resident cache.
   let lastMissingGuestCheckAt = -Infinity; // Throttles festival guest recovery to once every three seconds.
+  const guestRecoveryInFlight = new Set(); // Limits concurrent festival avatar builds on slower/mobile devices.
+  let guestRecoveryCursor = 0; // Rotates through missing residents so repeatedly failing actors cannot starve later guests.
+  const MAX_PARALLEL_GUEST_RECOVERIES = 3; // Matches the existing initial NPC spawn worker concurrency.
   const costumeState = new WeakMap(); // Each walker redraws only when its event costume changes.
   let lastCostumeTick = -Infinity; // Rare costume refreshes share the existing game-loop tick.
   let lastSipSave = -Infinity; // Throttles world saves caused by NPCs sipping from the keg.
@@ -713,13 +716,17 @@
     if (now - lastMissingGuestCheckAt < 3000) return;
     lastMissingGuestCheckAt = now;
     const present = new Set((deps.getWalkers?.() || []).filter(walker => !walker._doorstepVisitor).map(walker => walker.rec?.id)); // Existing source walkers never need rebuilding.
-    for (const rec of residents()) {
-      const absence = window.NpcScheduling?.getVisitorPresence?.(rec); // Distinguishes a contextual *current* absence from merely having a presence rule.
-      if (rec.visitorPresence || (absence && !absence.active) || present.has(rec.id)) continue; // Traders keep off-days, while an available but missing Hunundi can be rebuilt for other festivals.
+    const roster = residents(); // Uses the hydrated resident list without reloading portraits for visitors.
+    for (let step = 0; step < roster.length && guestRecoveryInFlight.size < MAX_PARALLEL_GUEST_RECOVERIES; step++) {
+      const rec = roster[(guestRecoveryCursor + step) % roster.length];
+      const absence = window.NpcScheduling?.getVisitorPresence?.(rec); // Current absence, rather than existence of any contextual attendance rule.
+      if (rec.visitorPresence || (absence && !absence.active) || present.has(rec.id) || guestRecoveryInFlight.has(rec.id)) continue;
+      guestRecoveryInFlight.add(rec.id);
       Promise.resolve(deps.ensureNpcWalker(rec.id)).catch(error => {
         window.__farmLog?.(`[festival] guest ${rec.id} recovery failed: ${String(error?.message || error)}`, 'warn', 'npc');
-      });
+      }).finally(() => guestRecoveryInFlight.delete(rec.id));
     }
+    guestRecoveryCursor = roster.length ? (guestRecoveryCursor + MAX_PARALLEL_GUEST_RECOVERIES) % roster.length : 0;
   }
   function update() {
     const now = performance.now(); // Called by gameLoop; no independent animation loop.
@@ -860,6 +867,7 @@
     deps = injected;
     residentCacheAt = -Infinity;
     lastMissingGuestCheckAt = -Infinity;
+    guestRecoveryInFlight.clear(); guestRecoveryCursor = 0; // A new world starts with an empty, fairly rotated recovery queue.
     window.FestivalDialogue?.init?.({ getTownMap: deps.getTownMap });
     window.FestivalPotluckContest?.registerRewardVisit?.(deps,()=>{
       recoverPotluckEntries(); // Farmhouse exits recover overdue donations even after the feast has closed.
