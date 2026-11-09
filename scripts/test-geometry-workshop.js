@@ -2,6 +2,7 @@
 // Behavioural regression for the material-preserving geometry workshop.
 // Uses a small Three.js-compatible stub so the suite stays fast in Node.
 const assert = require('node:assert/strict');
+const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
@@ -103,6 +104,9 @@ function twoMaterialMesh(){
   assert.match(uiSource,/candidateMatchesControls = false/, 'pending or failed updates must invalidate export');
   assert.match(uiSource,/function invalidatePreview\(/, 'editing controls must prevent export of stale mesh');
   assert.match(uiSource,/Uint8Array\.from\(new Uint8Array\(bytes\)\)\.buffer/, 'captured game GLBs need a local-realm ArrayBuffer');
+  for (const file of ['core.js', 'workshop.js']) {
+    execFileSync(process.execPath, ['--check', path.resolve(__dirname,'../docs/tools/geometry-workshop/',file)], { stdio: 'pipe' });
+  }
   const html=fs.readFileSync(path.resolve(__dirname,'../docs/tools/index.html'),'utf8');
   assert.match(html,/fw-geometry-workshop/,'workshop must be reachable from the Dev Tools hub');
   const shell=fs.readFileSync(path.resolve(__dirname,'../docs/tools/geometry-workshop/index.html'),'utf8');

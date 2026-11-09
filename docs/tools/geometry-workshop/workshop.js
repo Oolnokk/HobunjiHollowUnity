@@ -37,16 +37,22 @@
   let generation = 0; // Invalidates stale async loads and recomputations.
   let updating = false; // Disables competing export operations while a preview is building.
   const host = $('canvas-host'); // In-tool shared WebGL comparison viewport.
-  const sceneA = new T.Scene(), sceneB = new T.Scene(); // Isolated views; original and candidate never overlap.
-  const camera = new T.PerspectiveCamera(39, 1, 0.02, 2000); // Identical camera for both geometries.
-  const renderer = new T.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'low-power' }); // One context for two comparison views.
-  let lastWidth = 0, lastHeight = 0; // Avoid resizing/reallocating the canvas on every animation frame.
-  const controls = T.OrbitControls ? new T.OrbitControls(camera, renderer.domElement) : null; // Touch-friendly orbital review.
-  if (!Core || !T.GLTFLoader || !T.GLTFExporter || !T.WebGLRenderer) {
+  if (!T?.Scene || !T?.WebGLRenderer || !T?.GLTFLoader || !T?.GLTFExporter || !Core) {
     $('busy').textContent = 'Missing dependency';
     $('loading-note').textContent = 'Three.js, GLTFLoader or mesh processing failed to load.';
     return;
   }
+  const sceneA = new T.Scene(), sceneB = new T.Scene(); // Isolated views; original and candidate never overlap.
+  const camera = new T.PerspectiveCamera(39, 1, 0.02, 2000); // Identical camera for both geometries.
+  let renderer = null; // One WebGL context shared by both views.
+  try { renderer = new T.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'low-power' }); }
+  catch (error) {
+    $('busy').textContent = '3D preview unavailable';
+    $('loading-note').textContent = 'WebGL initialization failed: ' + (error?.message || error);
+    return;
+  }
+  let lastWidth = 0, lastHeight = 0; // Avoid resizing/reallocating the canvas on every animation frame.
+  const controls = T.OrbitControls ? new T.OrbitControls(camera, renderer.domElement) : null; // Touch-friendly orbital review.
   renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1));
   renderer.outputEncoding = T.sRGBEncoding;
   renderer.autoClear = true;
