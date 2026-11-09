@@ -2704,20 +2704,21 @@ const statueSourceReady = new Promise(resolve => { // Shared once by every furni
   image.src = '../../assets/textures/carved_smooth.png';
 });
 function statueTexture(source, stone, cache) {
-  if (!source) return null;
-  if (cache.has(source)) return cache.get(source);
-  const image = source.image;
-  const width = image?.width || image?.naturalWidth, height = image?.height || image?.naturalHeight;
+  const cacheKey=source||'__untextured_stone__'; // GLB hands/feet may have no color map; they still need the same stone material.
+  if (cache.has(cacheKey)) return cache.get(cacheKey);
+  const image = source?.image;
+  const width = source ? (image?.width || image?.naturalWidth) : 256;
+  const height = source ? (image?.height || image?.naturalHeight) : 256;
   if (!(width > 0 && height > 0)) throw Error('A statue mesh has an unloaded sprite texture. Try the export again after its artwork appears.');
   const original = document.createElement('canvas');original.width=width;original.height=height;
   const ctx=original.getContext('2d',{willReadFrequently:true});
-  try { ctx.drawImage(image,0,0,width,height); }
+  try { if(source)ctx.drawImage(image,0,0,width,height);else{ctx.fillStyle='#ffffff';ctx.fillRect(0,0,width,height);} }
   catch (error) { throw Error('Could not read a statue sprite: '+String(error.message||error)); }
   const carved=window.FestivalAncestorFigures.carvedCanvas(original,stone);
   const texture=new THREE.CanvasTexture(carved);
   texture.encoding=THREE.sRGBEncoding; texture.minFilter=THREE.LinearFilter;texture.magFilter=THREE.NearestFilter;
-  texture.flipY=source.flipY!==false; texture.needsUpdate=true;
-  cache.set(source,texture);
+  texture.flipY=source?.flipY!==false; texture.needsUpdate=true;
+  cache.set(cacheKey,texture);
   return texture;
 }
 function freezeStatueGeometry(mesh) {
@@ -2734,6 +2735,14 @@ function freezeStatueGeometry(mesh) {
     positions.needsUpdate=true;
     geometry.computeVertexNormals();
   }
+  if(!geometry.getAttribute('uv')){
+    geometry.computeBoundingBox();
+    const bounds=geometry.boundingBox,size=bounds.getSize(new THREE.Vector3());
+    const a=size.x>=size.z?'x':'z',v=size.y>0.0001?'y':(a==='x'?'z':'x'); // Untextured GLB limbs use a stable planar stone projection.
+    const positions=geometry.getAttribute('position'),uv=[];
+    for(let i=0;i<positions.count;i++){const p=new THREE.Vector3().fromBufferAttribute(positions,i);uv.push((p[a]-bounds.min[a])/Math.max(.0001,size[a]),(p[v]-bounds.min[v])/Math.max(.0001,size[v]));}
+    geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+  }
   geometry.applyMatrix4(mesh.matrixWorld); // Freeze source hierarchy, body yaw, hand, leg and weapon transforms.
   return geometry;
 }
@@ -2741,6 +2750,8 @@ async function bakeStatuePiece({poseKey='neutral',includeWeapon=true,name='Carve
   if(!['neutral','windup','strike'].includes(poseKey))throw Error('Choose Neutral, Windup or Strike.');
   if(!avatarModel)throw Error('NPC preview rig has not loaded yet.');
   if(includeWeapon && !toolPlaneMesh)throw Error('The chosen weapon has not finished loading.');
+  const assembly=window.HobunjiWeaponSpriteAssemblies?.debugSnapshot?.().find(record=>record.itemKey===currentToolKey&&record.attached);
+  if(includeWeapon&&assembly&&!assembly.loaded)throw Error('The weapon assembly is still loading its connector/head/layers. Export only when the whole weapon is visible.');
   const stone=await statueSourceReady;
   if(!stone)throw Error('The carved_smooth.png stone texture could not load.');
   const previousPlaying=playing,previousT=previewT;
@@ -2763,8 +2774,8 @@ async function bakeStatuePiece({poseKey='neutral',includeWeapon=true,name='Carve
         const materials=originalMaterials.map(original=>{
           const map=statueTexture(original?.map,stone,textures);
           return new THREE.MeshBasicMaterial({
-            color:map?0xffffff:0xb99b7d, map, side:THREE.DoubleSide,
-            transparent:!!map,alphaTest:map?0.04:0,depthWrite:true
+            color:0xffffff,map,side:THREE.DoubleSide,
+            transparent:true,alphaTest:0.04,depthWrite:true
           });
         });
         const mesh=new THREE.Mesh(freezeStatueGeometry(node),Array.isArray(node.material)?materials:materials[0]);
