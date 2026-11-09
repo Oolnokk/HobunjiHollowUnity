@@ -264,7 +264,7 @@
           let gateLight=null; // Lights the doorway the solve is about to open (assigned below once the gate is known).
           let challenge=null; // Created by the shared mechanism runtime; its onSolved opens this chamber's real next gate.
           challenge=Challenges.compose({
-            THREE,parent:activeRoot,room,y:floor.y,id:room.id,kind:room.challenge,side:wing.side,
+            THREE,parent:activeRoot,room,y:floor.y,id:room.id,kind:room.challenge,side:wing.side,seed:ruin.seed, // Stable zigzags differ between ruins, not between save loads.
             theme:ruin.theme||null,
             RuinLayerDefense:Defense,mapId:String(rec.mapData?.id||'map_i_dev_random_ruin'),
             isActive:()=>record.solved===i&&!owner.disposed
