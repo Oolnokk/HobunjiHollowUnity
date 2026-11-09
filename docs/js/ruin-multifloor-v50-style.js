@@ -100,8 +100,8 @@
       const fixture=sconce(holder,0,-1.65,front*2.08,0,front,pillar.story,true);
       towerFixtures.push(fixture); // Explicitly detach from a different runtime's owner before it is destroyed.
     }
-    for(let story=0;story<o.floors;story++){
-      const level=story*o.spacing,cell=chooseHubBrazierCell(hub,story); // Reuse the same grid-grounded placement selection that regression tests exercise.
+    for(let story=1;story<o.floors;story++){
+      const level=story*o.spacing,cell=chooseHubBrazierCell(hub,story); // Floor zero now has the universal white, automatically lit shaft brazier; never stack an orange Kanthic optional fixture on it. // Reuse the same grid-grounded placement selection that regression tests exercise.
       if(!cell)continue; // Never invent a brazier on an unsupported story or block the only available path.
       const floorY=grid.levelToY(level),x=grid.colToX(cell[0]+.5),z=grid.rowToZ(cell[1]+.5);
       const group=new THREE.Group(); // Optional fire source, separate from the Great Door's required wing braziers.

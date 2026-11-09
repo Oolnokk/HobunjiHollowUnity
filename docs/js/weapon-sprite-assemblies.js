@@ -181,7 +181,7 @@
         topLocal: new THREE.Vector3(), bottomLocal: new THREE.Vector3(), headAnchorLocal: new THREE.Vector3(),
         chainCenter: new THREE.Vector3(), endWorld: new THREE.Vector3(), headCenter: new THREE.Vector3(),
         chainLocal: new THREE.Vector3(), headLocal: new THREE.Vector3(), tmp: new THREE.Vector3(),
-        baseQ: new THREE.Quaternion(), rootInverseQ: new THREE.Quaternion(),
+        baseQ: new THREE.Quaternion(), rootInverseQ: new THREE.Quaternion(), rootWorldQ: new THREE.Quaternion(), decomposePos: new THREE.Vector3(), // World matrices are decomposed in place; Object3D.getWorld*() would recompute from raw local transforms.
         worldQ: new THREE.Quaternion(), headQ: new THREE.Quaternion(), correction: new THREE.Quaternion(),
         deltaQ: new THREE.Quaternion(), stepQ: new THREE.Quaternion(), basis: new THREE.Matrix4(),
       }, // Reused by every animation frame, avoiding repeated vector/quaternion/matrix allocations.
@@ -282,6 +282,9 @@
         ? { x: Number(f.head.anchor?.x) || 0, y: Number(f.head.anchor?.y) || 0 }
         : anchor(state.headAnchorImage, f.head.anchor, 'bottom'); // Composite coordinates may lie BETWEEN the two head sprites.
       effects?.activateHead(state, f.head, headTextures, unit); // Compute post-assembly visible-metal sources and fuel→front interleaved fire once.
+      // Place the suspension at the grip as soon as the artwork finishes loading.
+      // Otherwise newly equipped flails briefly show their unpositioned, horizontal rope at the root origin.
+      updateOne(state, 0, performance.now());
       global.__farmLog?.('[weapon assembly] ' + itemKey + ' chain/head ready', 'info'); // Visible in the existing mobile game diagnostic log.
     };
     // The base PNG can still be loading while the equipment holder is built.
@@ -398,6 +401,22 @@
     }
   }
 
+  // Holders can override updateMatrixWorld to bake a transient pose around the real
+  // update (weapon-tool-stances.js applies the idle stance and cancels the sweep twist
+  // there, then restores the raw local transform). Object3D.updateWorldMatrix() and the
+  // getWorld*() helpers bypass that override and recompute from the raw local pose, so
+  // an assembly using them attaches its rope to a haft that is not where the renderer
+  // draws it. Refresh through the outermost overriding ancestor instead.
+  function refreshWorldMatrix(object) {
+    let hooked = null;
+    for (let node = object; node; node = node.parent) {
+      if (Object.prototype.hasOwnProperty.call(node, 'updateMatrixWorld')) hooked = node;
+    }
+    if (!hooked) { object.updateWorldMatrix(true, false); return; }
+    hooked.parent?.updateWorldMatrix(true, false);
+    hooked.updateMatrixWorld(true);
+  }
+
   function updateOne(state, dt, now, effectsDt = dt) {
     const { root, plane, config, scratch: q } = state;
     if (!root.parent) {
@@ -412,7 +431,7 @@
     }
     // Use the final holder+plane world pose, including the game's transient
     // authored Neutral. The rigid haft never relinquishes animation authority.
-    plane.updateWorldMatrix(true, false);
+    refreshWorldMatrix(plane); // Same baked holder frame the renderer will draw, not the raw local pose.
     const baseImage = plane.material?.map?.image;
     if (!baseImage) return;
     const unit = (plane.geometry?.parameters?.width || 0.5) / (baseImage.naturalWidth || baseImage.width || 1);
@@ -424,10 +443,11 @@
     if (!state.baseAnchor || !state.chainTop || !state.chainBottom || !state.headAnchor) return;
     const pivot = plane.localToWorld(pixelPoint(baseImage, state.baseAnchor, unit, null, q.pivotLocal));
     q.pivot.copy(pivot);
-    const baseQ = plane.getWorldQuaternion(q.baseQ);
+    plane.matrixWorld.decompose(q.decomposePos, q.baseQ, q.scale); // Rotation and rendered world scale from the baked matrix (getWorldQuaternion/getWorldScale bypass holder hooks).
+    const baseQ = q.baseQ;
     const normal = q.normal.set(0, 0, 1).applyQuaternion(baseQ);
-    plane.getWorldScale(q.scale); // The current haft's rendered world scale includes pre-existing grips, stances and item-size modifiers.
-    root.getWorldScale(q.rootScale); // Both child parts live under root, not under the transformed haft plane.
+    // q.scale (above) is the current haft's rendered world scale, including pre-existing grips, stances and item-size modifiers.
+    root.matrixWorld.decompose(q.decomposePos, q.rootWorldQ, q.rootScale); // Both child parts live under root, not under the transformed haft plane.
     const attachmentScale = Math.max(0.00001, Math.abs(q.scale.x)); // Authoritative world-space handle pixel scale, not a fixed weapon baseline.
     const localHandleScale = attachmentScale / Math.max(0.00001, Math.abs(q.rootScale.x)); // Compensates for extra scale applied to the handle plane itself.
     const chainScaleX = connectorAxisScale(flail.chain, 'scaleX'); // Chain width or generated-rope radius relative to the final rendered handle.
@@ -475,7 +495,7 @@
     const motion = flail.motion || {}; // Authored inertial controls from the Tool Hub; ordinary stances are not modified.
     const lag = Number.isFinite(Number(motion.lag)) ? Math.max(0, Math.min(1, Number(motion.lag))) : MOTION_LAG;
     const shaftUp = q.shaftUp.set(0, -1, 0).applyQuaternion(baseQ).normalize(); // Both haft sprites attach at their bottom end: extend outward along local -Y, away from the grip.
-    const pitchAxis = q.pitchAxis.set(1, 0, 0).applyQuaternion(root.getWorldQuaternion(q.rootInverseQ)).normalize(); // Use the holder frame: the PNG sweep basis rotates its local X away from the authored pitch axis.
+    const pitchAxis = q.pitchAxis.set(1, 0, 0).applyQuaternion(q.rootWorldQ).normalize(); // Use the holder frame: the PNG sweep basis rotates its local X away from the authored pitch axis.
     if (state.attacking && (!state.wasAttacking || state.progress < state.lastFrameProgress - 0.01)) {
       state.angularVelocity.set(0, 0, 0); state.hasPhysicsVelocity = false; q.pivotAcceleration.set(0, 0, 0);
       state.strikeTurnRad = 0; state.hasShaftUp = false; state.hasStrikeStart = false; // Reset the cached strike entry after a new attack or timeline seek.
@@ -487,8 +507,14 @@
     }
     state.lastShaftUp.copy(shaftUp); state.hasShaftUp = true;
     state.wasAttacking = state.attacking; state.lastFrameProgress = state.progress;
-    if (!state.attacking || state.progress <= state.wf) {
-      const target = q.target.set(-velocity.x * lag, -1, -velocity.z * lag).normalize(); // Neutral and ALL of Neutral → Windup hang downward, disturbed only by actor movement.
+    if (!state.attacking) {
+      // Idle suspension is a world-space pendulum: it hangs under gravity, swings
+      // when the holder accelerates or turns, and settles instead of snapping to a pose.
+      // The rigid grip and authored attack motion remain independent of the rope.
+      stepPendulum(state, q.pivotAcceleration, state.physicsLength, dt, 9.81, flailDamping(motion));
+      state.hasStrikeStart = false; // Every attack begins from the current idle suspension.
+    } else if (state.progress <= state.wf) {
+      const target = q.target.set(-velocity.x * lag, -1, -velocity.z * lag).normalize(); // Preserve the authored windup's gravity-and-locomotion lag.
       const turnAngle = state.direction.angleTo(target);
       if (turnAngle > 1e-6) {
         const maxTurn = Math.max(0, Math.min(MAX_DT, dt))
@@ -497,7 +523,6 @@
         q.stepQ.identity().slerp(q.deltaQ, Math.min(1, maxTurn / turnAngle));
         state.direction.applyQuaternion(q.stepQ).normalize();
       }
-      if (!state.attacking) state.hasStrikeStart = false; // Next attack must recapture its own gravitational strike-entry direction.
     } else if (state.progress < state.sf) {
       if (!state.hasStrikeStart) {
         state.strikeStartDirection.copy(state.direction); // Anchor the strike interpolation to the LAST windup gravity/locomotion state.
@@ -512,7 +537,7 @@
       // Hold and Recovery. Pivot deceleration contributes torque instead of a cap.
       stepPendulum(state, q.pivotAcceleration, state.physicsLength, dt, 9.81, flailDamping(motion));
     }
-    if (dt > 0 && (!state.attacking || state.progress < state.sf)) {
+    if (dt > 0 && state.attacking && state.progress < state.sf) {
       q.pitchCross.crossVectors(q.previousDirection, state.direction); // Real driven angular displacement includes simultaneous pitch, yaw, roll and body movement.
       const sine = q.pitchCross.length(); // Atan2 recovers signed 3D travel without choosing a dominant authored axis.
       if (state.hasPhysicsVelocity && sine > 1e-10) state.angularVelocity.copy(q.pitchCross).multiplyScalar(Math.atan2(sine, q.previousDirection.dot(state.direction)) / (sine * dt));
@@ -522,8 +547,7 @@
     const worldQ = planeQuaternion(q.headUp.copy(state.direction).negate(), normal, q.worldQ, q);
     worldQ.multiply(q.correction.setFromUnitVectors(chainSpan, q.axisUp)); // Align both opaque chain endpoints, not the image rectangle.
     const chainCenterWorld = q.chainCenter.copy(pivot).sub(q.tmp.copy(topLocal).multiplyScalar(attachmentScale).applyQuaternion(worldQ)); // Keep the already axis-scaled top contact pinned to the haft.
-    root.updateWorldMatrix(true, false);
-    const rootQInverse = root.getWorldQuaternion(q.rootInverseQ).invert();
+    const rootQInverse = q.rootInverseQ.copy(q.rootWorldQ).invert(); // root's baked matrixWorld was refreshed above and is unchanged since.
     state.chain.position.copy(root.worldToLocal(q.chainLocal.copy(chainCenterWorld)));
     state.chain.quaternion.copy(rootQInverse).multiply(worldQ);
     const endWorld = q.endWorld.copy(chainCenterWorld).add(q.tmp.copy(bottomLocal).multiplyScalar(attachmentScale).applyQuaternion(worldQ)); // Use the stretched bottom endpoint without rescaling the head.
@@ -609,7 +633,7 @@
 
   global.HobunjiWeaponSpriteAssemblies = {
     definitions: DEF, decorate, setAction, tick, drop, debugSnapshot, enchantmentTargets, dualWieldEnchantmentTargets,
-    opaqueAt, anchor, definitionFor, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, // Pure phase helpers are covered by deterministic animation regression tests.
+    opaqueAt, anchor, refreshWorldMatrix, definitionFor, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, // Pure phase helpers are covered by deterministic animation regression tests.
   };
   global.HobunjiCacheAudit?.register('weapon assemblies (active or awaiting cleanup)', () => records.size);
   if (global.RuntimeFrameScheduler?.register) {

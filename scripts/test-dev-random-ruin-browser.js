@@ -313,11 +313,11 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   assert.equal(restoredSimpleSettings.sanctum,true,JSON.stringify(restoredSimpleSettings));
   for(const key of ['pressurePlate','brazier','stackedObelisk','linkedCubePillars','nestedRoom']) assert.equal(restoredSimpleSettings[key],false,JSON.stringify(restoredSimpleSettings));
 
-  function isStruckGlyphColor(hex) { // Struck = green DECAL_ACTIVE (#4dff6e), briefly lerped toward white by the hit flash; idle orange (#ff8a2a) is red-dominant and fails.
-    const value = parseInt(String(hex || ''), 16);
-    if (!Number.isFinite(value)) return false;
+  function isStruckGlyphColor(hex) { // ON green (#4dff6e) pulses down by 30% (#36b34d); the idle orange remains red-dominant, while the struck flash may be white.
+    if (!/^[0-9a-f]{6}$/i.test(String(hex || ''))) return false;
+    const value = parseInt(hex, 16);
     const r = (value >> 16) & 255, g = (value >> 8) & 255, b = value & 255;
-    return g >= 0xcc && g >= r && g >= b;
+    return g >= 0xa0 && g >= r && g >= b; // A glowing ON decal must remain green/white even at the trough of its authored pulse.
   }
 
   async function failureDiagnostics(seed) {

@@ -64,6 +64,60 @@
     store.all[store.key] = entry;
     try { localStorage.setItem(STORE_KEY, JSON.stringify(store.all)); } catch (_) {}
   }
+  function progressStore() {
+    const saved=window.WorldMetaStore?.loadRuinProgress?.(worldId()); // Canonical world metadata travels with every folder/recovery save.
+    return saved?.version===1&&saved.cycle===cycle()&&saved.sites&&typeof saved.sites==='object'
+      ?saved:{version:1,cycle:cycle(),sites:{}}; // Tothal rollover invalidates every vanished ruin's progress.
+  }
+  function activeRuinProgress() {
+    if(!activeVisit||activeVisit.kind==='story-vault')return null;
+    return progressStore().sites[activeVisit.id]||null;
+  }
+  function saveActiveRuinProgress(snapshot) {
+    if(!activeVisit||activeVisit.kind==='story-vault'||!snapshot||snapshot.version!==1)return false;
+    const store=progressStore(); // Do not store scene meshes, mechanisms or player coordinates in world metadata.
+    const previous=store.sites[activeVisit.id];
+    store.sites[activeVisit.id]=previous?.version===1&&Number(previous.seed)===Number(snapshot.seed)
+      ?{...previous,...snapshot}:snapshot; // Preserve opened chests when a puzzle/waystone writes its next snapshot.
+    const ok=window.WorldMetaStore?.saveRuinProgress?.(worldId(),store)===true;
+    if(!ok)debug.progressSaveError='World metadata could not be updated';
+    return ok;
+  }
+  function isActiveRuinChestOpened(id,seed){
+    const snapshot=activeRuinProgress(); // Stable chest IDs never carry between sites or changed generated seeds.
+    return !!id&&snapshot?.version===1&&Number(snapshot.seed)===Number(seed)
+      &&Array.isArray(snapshot.openedChests)&&snapshot.openedChests.includes(String(id));
+  }
+  function markActiveRuinChestOpened(id,seed){
+    if(!activeVisit||activeVisit.kind==='story-vault'||!id||!Number.isFinite(seed))return false;
+    const store=progressStore(),previous=store.sites[activeVisit.id];
+    const snapshot=previous?.version===1&&Number(previous.seed)===Number(seed)?previous:{version:1,seed};
+    const opened=new Set(Array.isArray(snapshot.openedChests)?snapshot.openedChests:[]); // Stable chest IDs, not reward contents, stop re-looting after re-entry.
+    opened.add(String(id));
+    store.sites[activeVisit.id]={...snapshot,openedChests:[...opened]};
+    const saved=window.WorldMetaStore?.saveRuinProgress?.(worldId(),store)===true;
+    if(!saved)debug.progressSaveError='Opened chest state could not be saved';
+    return saved;
+  }
+  function isActiveRuinBossDefeated(seed){
+    const snapshot=activeRuinProgress(); // A dead lich stays defeated while its specific site and seed still exist.
+    return snapshot?.version===1&&snapshot.bossDefeated===true
+      &&Number(snapshot.seed)===Number(seed);
+  }
+  function markActiveRuinBossDefeated(seed){
+    if(!activeVisit||activeVisit.kind==='story-vault'||!Number.isFinite(Number(seed)))return false;
+    const store=progressStore(),previous=store.sites[activeVisit.id];
+    const snapshot=previous?.version===1&&Number(previous.seed)===Number(seed)?previous:{version:1,seed};
+    store.sites[activeVisit.id]={...snapshot,bossDefeated:true};
+    const saved=window.WorldMetaStore?.saveRuinProgress?.(worldId(),store)===true;
+    if(!saved)debug.progressSaveError='Defeated boss state could not be saved';
+    return saved;
+  }
+  function forgetActiveRuinProgress() {
+    if(!activeVisit)return false;
+    const store=progressStore();delete store.sites[activeVisit.id];
+    return window.WorldMetaStore?.saveRuinProgress?.(worldId(),store)===true;
+  }
   function normalizeEntrance(saved = {}) {
     return { open:false, spent:false, ...saved, struck:Array.isArray(saved.struck) ? saved.struck : [] };
   }
@@ -567,6 +621,7 @@
       if (entry.holes[visit.id]) { entry.holes[visit.id].state = 'cleared'; saveState(entry); }
       syncMapMarkers();
     }
+    forgetActiveRuinProgress(); // The cleared site ceases to exist: discard its checkpoint and solved stages.
     const exit = randomExit(visit.zoneId);
     debug.lastExit = { visit, exit, at:Date.now() };
     activeVisit = null;
@@ -720,12 +775,15 @@
     init, registerWorkspace, sourceCensus, expandLocaleDefs, buildZoneMeshes, objectAt, completeActiveRuin, onRuinLeft,
     openHole, holeAt, treasureHoleChance, syncMapMarkers, installRangedHook, trackNearby,
     storyVaultSite, storyVaultDigCheck, refreshStoryVault,
+    activeRuinProgress,saveActiveRuinProgress,isActiveRuinChestOpened,markActiveRuinChestOpened,
+    isActiveRuinBossDefeated,markActiveRuinBossDefeated, // World-scoped boss outcome survives re-entry until the site expires.
     isInSite:() => !!activeVisit,
     debugSnapshot:() => ({
       ...debug, cycle:cycle(), active:activeVisit, rangedHookInstalled,
       zones:Object.fromEntries([...sitesByZone].map(([zoneId, sites]) => [zoneId, sites.map(site => ({ id:site.id, facing:site.facing, door:site.door, state:entranceState(site.id) }))])),
       rendered:Object.fromEntries([...rendered].map(([zoneId, runtime]) => [zoneId, { sites:runtime.sites.map(record => ({ id:record.site.id, doorPoint:record.layout.doorPoint, approach:record.layout.approach, y:record.y, pillars:record.pillars.map(p => ({ id:p.slot.id, x:p.slot.x, z:p.slot.z, struck:p.struck })), spent:!!record.rubble })), holes:runtime.holes.map(h => h.id), blockers:runtime.blockers.length, cells:runtime.cells.size }])),
-      holes:state().holes, bossSites:state().bossSites||{}, // Mobile-readable evidence of the three unique key-guardian graves.
+      holes:state().holes, bossSites:state().bossSites||{},
+      progress:activeRuinProgress()?{seed:activeRuinProgress().seed,checkpoint:activeRuinProgress().travel?.activeCheckpoint}:null, // Mobile-readable evidence of the three unique key-guardian graves.
       storyVault: { phase:window.DelversGuild?.vaultPhase?.(), site:window.DelversGuild?.vaultSite?.(), error:debug.storyVaultError || null },
       mapMarkers:[...(deps?._zoneLayouts?.values?.() || [])].reduce((sum, layout) => sum + (layout?.localeInstances || []).filter(instance => instance?.[MARKER_FLAG]).length, 0),
     }),

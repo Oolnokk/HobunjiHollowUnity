@@ -112,7 +112,13 @@
       opened:false,
       lidAngle:0,
       loot:null,
+      ruinSeed:window.DevRandomRuin?.getSeed?.()??null, // Captures the active generated ruin identity before leaving or rerolling its scene.
     };
+    if(chest.ruinSeed!==null&&window.RuinSites?.isActiveRuinChestOpened?.(chest.id,chest.ruinSeed)===true){
+      chest.opened=true;chest.lidAngle=LID_OPEN_ANGLE;
+      if(chest.hinge)chest.hinge.rotation.x=LID_OPEN_ANGLE;
+      if(chest.glow?.material)chest.glow.material.opacity=0; // Re-entered ruins show the opened lid and cannot grant rewards twice.
+    }
     chest.control = {
       kind:'dungeonChest', object:group, promptRoot:group, range:1.6, priority:22, claimAction1:true, touchIcon:'🗝️',
       label:() => `Open ${look.name} Dungeon Chest`,
@@ -135,6 +141,11 @@
 
   function open(chest) {
     if (!chest || chest.opened) return false;
+    if(chest.ruinSeed!=null&&window.RuinSites?.isInSite?.()
+      &&window.RuinSites?.markActiveRuinChestOpened?.(chest.id,Number(chest.ruinSeed))===false){
+      deps?.showToast?.('Cannot save this dungeon chest. Check save storage before opening.',false);
+      return false; // Prevent generating untracked repeatable loot when the canonical world save is unavailable.
+    }
     chest.opened = true;
     window.GameFeel?.treasureFanfare?.(chest.tier, !!chest.boss); // Chests were silent; the lid swing now lands on a treasure motif.
     if (chest.glow?.material) chest.glow.material.opacity = 1.25; // Light bursts out of the opening lid, then fades through the existing per-frame decay.

@@ -165,7 +165,7 @@
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
   <script src="js/pixel-work-yield.js?v=20261010pwy1"></script>
-  <script src="js/tool-metal-recolor.js?v=20261030rigall5"></script>
+  <script src="js/tool-metal-recolor.js?v=20261109profile1"></script>
   <script src="js/metal-armor-system.js?v=20261104hPatternQuick1435a"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
   <script src="config/attachment-rig-profiles.js?v=20261026homgurkulower03"></script>
@@ -307,7 +307,7 @@
   <!-- Shared condition-axis schema/evaluators (window.ConditionRegistry) —
        single source of truth for the dialogue system's and the Loot & Shop
        system's condition gating, also loaded by their respective dev tools. -->
-  <script src="js/condition-registry.js?v=20261109hpahuloader2"></script>
+  <script src="js/condition-registry.js?v=20261109missingNpcRestore1"></script>
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
        game.js already use. See docs/js/local-save-folder.js. -->
@@ -330,9 +330,9 @@
        weapon-tool-stances.js / enemy-weapon-stances.js, and game.js. -->
   <script src="config/portrait-mouth-points.js?v=20261025mouth1"></script>
   <script src="js/combat/shared-attack-pose.js?v=20261030h12f55f4"></script>
-  <script src="config/weapon-sprite-assemblies.js?v=20261104hb8bce75"></script> <!-- Authoritative multi-sprite weapon recipes shared with Tool Hub. -->
+  <script src="config/weapon-sprite-assemblies.js?v=20261109grappleidle1"></script> <!-- Authoritative multi-sprite weapon recipes shared with Tool Hub. -->
   <script src="js/weapon-layer-effects.js?v=20261031h7702074"></script> <!-- Recolor, visibility masks and fire behind head overlays. -->
-  <script src="js/weapon-sprite-assemblies.js?v=20261104hb8bce75"></script> <!-- Shared layered PNG weapon + flail component runtime; pre-render updates player and enemy assemblies. -->
+  <script src="js/weapon-sprite-assemblies.js?v=20261109bakedholder1"></script> <!-- Shared layered PNG weapon + flail component runtime; pre-render updates player and enemy assemblies. -->
   <script src="js/tool-activity-stages.js?v=20261027h59190d9"></script> <!-- NPC dig/tool-action stages. -->
   <script src="js/combat/weapon-shape-stats.js?v=20261108attackpower1"></script> <!-- Shared melee shape stat resolver; Foundry head modifiers are mitigated. -->
   <script src="js/combat/combat-core.js?v=20261108attackpower1"></script>
@@ -381,7 +381,7 @@
   <script src="js/area-footprint-blockers.js?v=20261108h908e581"></script>
   <!-- Sub-stepped sliding move extracted out of game.js; must load before game.js. -->
   <script src="js/swept-move.js?v=20260927footprints1"></script>
-  <script src="js/combat/ranged-weapons.js?v=20261108ledgeAlpha2"></script>
+  <script src="js/combat/ranged-weapons.js?v=20261109chopcover1"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20261020hitcolor2"></script>
   <script src="js/combat/melee-hud-reticle.js?v=20261105koma1"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
@@ -481,7 +481,7 @@
   <script src="js/farm-production.js?v=20261107moot2"></script>
   <script src="js/honeyfuzzle-house.js?v=20261026honeyEggGenes3"></script> <!-- Honeyfuzzle House: 1x1 egg/swarm slot on a FarmProduction entry; hooked by farm-production.js, initialised by game.js. -->
   <script src="js/farm-layout-editor.js?v=20261016a"></script>
-  <script src="js/world-meta-store.js?v=20261109rarityaudit10"></script>
+  <script src="js/world-meta-store.js?v=20261109rarityMain1"></script>
   <script src="js/farm-animals.js?v=20261109provenance3"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
@@ -634,13 +634,14 @@
   <script src="js/puzzle-cave-plate-art.js?v=20261107ruinpngglow1"></script><!-- Carved-smooth Tankan lettering, reused by interior and exterior melody plates. -->
   <script src="js/ruin-melody-glyph-decal.js?v=20261108cliffWhiteYellowGlowPick3"></script><!-- Plate-revealed Scratchbone clues outside the dev ruin bootstrap. -->
   <script src="js/ruin-layer-challenges.js?v=20261109timedMelody1"></script>
-  <script src="js/ruin-layer-playable.js?v=20261109timedMelody1"></script>
+  <script src="js/ruin-layer-playable.js?v=20261109ruinTravel1"></script>
   <script src="js/ruin-v50-native-mechanisms.js?v=20261107wingDoorSoftlock2"></script>
-  <script src="js/ruin-v50-native-floors.js?v=20261109timedMelody1"></script>
-  <script src="js/ruin-shaft-connector.js?v=20261108h41e2e48"></script>
+  <script src="js/ruin-v50-native-floors.js?v=20261109ruinTravel2"></script>
+  <script src="js/ruin-shaft-connector.js?v=20261109ruinTravel1"></script>
   <script src="js/ruin-v50-vestibule.js?v=20261108h61ad699"></script>
   <script src="js/ruin-wall-coffins.js?v=20261108coffin1"></script>
-  <script src="js/ruin-multifloor-v50-style.js?v=20261108h3bb5d6e"></script> <!-- Vertical hub room composed on a CellGrid3D: balconies, doors, climbable buttresses; see docs/architecture/vertical-grid.md -->
+  <script src="js/ruin-multifloor-v50-style.js?v=20261109ruinTravel1"></script>
+  <script src="js/ruin-checkpoint-travel.js?v=20261109ruinTravel2"></script> <!-- Automatically lit white shaft and checkpoint braziers; teleports through the shared action claims. -->
   <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
        (window.WildernessMap) — reads window.BanditCamps/window.BountyBoard
        at draw time (already global by then), so load order relative to the
@@ -812,7 +813,7 @@
        Cloud Forest — see EXTERIOR_ZONES.map_southern_cloud_forest's
        fogDensity/vegCullRadiusTiles comments in game.js for why. -->
   <script src="js/ruin-light-occlusion.js?v=20261108hac6d00e"></script> <!-- Screen-space ruin torch masks clip behind physical columns, walls and props. -->
-  <script src="js/cloud-forest-fog.js?v=20261108tzNestLight2"></script>
+  <script src="js/cloud-forest-fog.js?v=20261109ruinTravel1"></script>
   <!-- Farm tab hub (header, grid glance, buildings list, processor status
        tiles, livestock roster + breeding, farm<->stable transfers, storage,
        farmhands) and the Stable tab (window.FarmPanel) — reads
@@ -966,7 +967,7 @@
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20261102h082455e"></script>
   <script src="js/tothal-zone-cache.js?v=20261102a"></script>
-  <script src="js/ruin-sites.js?v=20261109provenance1"></script>
+  <script src="js/ruin-sites.js?v=20261109rarityMain1"></script>
   <script src="js/zone-den-totem-features.js?v=20261108h0ea058e"></script>
   <script src="js/transition-markers.js?v=20261004h46d3bfb"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
@@ -2820,7 +2821,7 @@
   <script src="js/companion-movement-speed.js?v=20261102ownerpace1"></script> <!-- Companion move/chase speeds follow each owner's live effective pace. -->
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
-  <script src="js/audio-system.js?v=20261108melodyPickTransient1"></script>
+  <script src="js/audio-system.js?v=20261109chopspatial1"></script>
   <script src="js/honeyfuzzle-audio.js?v=20261026hivebuzz2"></script> <!-- Shared 24-tile hive + swarm ambience, one decoded seam-crossfaded loop per nearby source, live aggression and Doppler. -->
   <!-- Semantic animal-call scheduler. Gameplay systems emit vocal intents;
        AudioSystem above remains the replaceable low-level renderer. -->
@@ -2869,7 +2870,7 @@
   <script src="js/npc-shared-meals.js?v=20261021hdde83ea"></script>
   <script src="js/festival-potluck-contest.js?v=20261109rarityaudit4"></script>
   <script src="js/festival-locale-activities.js?v=20261023h2f3ea4a"></script>
-  <script src="js/festival-system.js?v=20261109rarityaudit4"></script>
+  <script src="js/festival-system.js?v=20261109rarityMain1"></script>
   <script src="js/festival-dialogue.js?v=20261022h561ec26"></script>
   <script src="js/festival-ui.js?v=20261109rarityaudit4"></script>
   <script src="js/tutorial-unlock-visits.js?v=20260930doorstep1"></script>
@@ -2916,7 +2917,7 @@
        npc-scheduling.js's resolveNpcScheduleTarget bridge and before
        game.js, which calls each one's init(...) during its own setup. -->
   <script src="js/npc-agenda.js?v=20261018a"></script>
-  <script src="js/npc-activities.js?v=20261019h7912e56"></script>
+  <script src="js/npc-activities.js?v=20261109lazyCaveNpc1"></script>
   <script src="js/npc-social-stimuli.js?v=20260902a"></script>
   <script src="js/npc-activity-planner.js?v=20261018b"></script>
   <!-- NPC scheduling (resolveNpcScheduleTarget, station registry, on-duty
@@ -2924,7 +2925,7 @@
        calls window.NpcScheduling.init(...) during its own setup.
        resolveNpcScheduleTarget itself now bridges into
        window.NpcActivityPlanner (loaded just above) when present. -->
-  <script src="js/npc-scheduling.js?v=20261020h16be353"></script>
+  <script src="js/npc-scheduling.js?v=20261109lazyCaveNpc1"></script>
   <script src="js/npc-farm-plots.js?v=20261109familyaudit2"></script> <!-- Town and family field/trench worker schedules. -->
   <!-- Authored NPC relationship tags (partner/family/friend) + social
        seating policy (window.SCRATCHBONES_CONFIG.game.socialRelationships) —
@@ -2949,7 +2950,7 @@
   <!-- NPC walkability/beeline checks + area-graph pathfinding
        (window.NpcPathfinding) — must load before game.js, which calls
        window.NpcPathfinding.init(...) during its own setup. -->
-  <script src="js/npc-pathfinding.js?v=20261106independentPuzzle1"></script>
+  <script src="js/npc-pathfinding.js?v=20261109skipDistantDens1"></script>
   <script src="js/npc-route-graph.js?v=20261009h41465f3"></script>
   <!-- Cutscene Director "Preview in game" one-shot handoff — must run
        BEFORE game.js so window.__hobunjiPlayerProfile is already set when
@@ -2994,7 +2995,7 @@
   <script src="js/utility-spyglass.js?v=20261103spyglassControls3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
   <script src="js/ruin-objective-tracker.js?v=20261108tracker1"></script> <!-- Top-left dungeon checklist while inside a generated ruin. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261109rarityaudit4"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261109rarityMain1"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -3041,9 +3042,9 @@
   <script src="js/delvers-vault-signal.js?v=20261031storyVault1"></script>
   <script src="js/bed-lie-pose.js?v=20261102mattressxray2"></script> <!-- Surface-aligned sleep presentation; game.js injects the live player and calendar. -->
   <script src="js/lunge-targeting.js?v=1"></script>
-  <script src="game.js?v=20261109familyaudit2"></script>
+  <script src="game.js?v=20261109lazyCaveNpc1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
-  <script src="js/opening-story-cutscene.js?v=20261029hguild2"></script>
+  <script src="js/opening-story-cutscene.js?v=20261109missingNpcRestore1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>

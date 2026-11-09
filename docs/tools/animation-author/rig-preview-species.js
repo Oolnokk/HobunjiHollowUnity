@@ -115,6 +115,7 @@
     install,
     speciesInfo: kind => definitionFor(kind),
     labelFor: kind => entries[kind]?.label || null,
+    baseSpecies: kind => entries[kind]?.mirrorOf || kind, // Allows alpha/den variant previews to reuse the original species' normal coat palette.
     defaultFrame: kind => entries[kind]?.defaultFrame || null,
     genotypeDefaults: kind => {
       const definition = definitionFor(kind);

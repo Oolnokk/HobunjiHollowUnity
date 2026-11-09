@@ -163,12 +163,16 @@
         return true;
       } catch { return false; }
     },
-    loadStorage,
-    saveStorage: (worldId, store) => writeField(worldId, 'storage', store),
+    loadRuinProgress(worldId) { // Ruin checkpoint/wing state belongs to the shared world and to folder/cloud saves.
+      try { return readWorldField(worldId, 'ruinProgress') || null; } catch { return null; }
+    },
+    saveRuinProgress: (worldId, value) => writeField(worldId, 'ruinProgress', value),
     loadCropProvenance(worldId) { // Corrupt or partially restored world metadata must not crash crop setup or world switching.
       try { return readWorldField(worldId, 'cropProvenance') || null; } catch { return null; }
     },
     saveCropProvenance: (worldId, ledger) => writeField(worldId, 'cropProvenance', ledger), // Same atomic world-field save path used by barn breeding and incubators.
+    loadStorage,
+    saveStorage: (worldId, store) => writeField(worldId, 'storage', store),
     loadPendingSupplyOrders,
     completeSeedSupplyOrder,
   });

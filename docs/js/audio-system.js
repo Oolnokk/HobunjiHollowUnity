@@ -1693,6 +1693,16 @@
     playOneShotSfx(cfgEntry, falloff, undefined, spatial);
   }
 
+  function playThrownCoverChopSfx(x, y, areaId) {
+    if (areaId !== deps.getCurrentArea() || objectSfxConfig().enabled === false) return;
+    const cfgEntry = objectSfxConfig().chop; // Reuses the recorded wood-chop cue for thrown blade impacts on cover.
+    if (!cfgEntry) return;
+    const spatial = combatAudioSpatial({ x, y, areaId }, { earshotTiles: 9 }); // Matches ordinary projectile falloff and positional audio.
+    if (spatial.gain <= 0.002) return;
+    recordCombatSfx('thrownCoverChop', cfgEntry, { cover: true, weapon: 'sharp-thrown' }); // Visible in mobile combat audio diagnostics.
+    playOneShotSfx(cfgEntry, spatial.gain, 1, spatial);
+  }
+
   function playRangedImpactSfx(x, y, areaId, pitch = 1) {
     if (areaId !== deps.getCurrentArea()) return;
     const cfgEntry = combatSfxConfig().rangedImpact;
@@ -1842,6 +1852,7 @@
     playComboFinisherBonusSfx,
     playSoursapBurstSfx,
     playCounterShieldBlockSfx,
+    playThrownCoverChopSfx,
     playRangedImpactSfx,
     combatSfxDebugSnapshot,
     get FOOTSTEP_EARSHOT_PX() { return FOOTSTEP_EARSHOT_PX; },
