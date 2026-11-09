@@ -1,0 +1,27 @@
+'use strict';
+const assert = require('node:assert/strict');
+const rarity = require('../docs/js/item-acquisition-rarity.js');
+
+assert.equal(rarity.chain([{ label:'known', probability:.5 }, { label:'missing' }]).probability, null);
+assert.equal(rarity.chain([{ label:'a', probability:.5 }, { label:'b', probability:.2 }]).probability, .1);
+assert.equal(rarity.atLeastOne(1, 0), 0);
+assert.equal(rarity.atLeastOne(1, 3), 1);
+assert.equal(rarity.atLeastOne(.1, 2).toFixed(3), '0.190');
+assert.equal(rarity.tierLayout('cave').rooms, 8);
+assert.equal(rarity.tierLayout('hole').rooms, 15);
+assert.equal(rarity.tierLayout('lich').rooms, 19);
+assert.equal(rarity.ruinChest({tier:'hole'}).perChest.probability, null);
+assert.equal(rarity.ruinChest({tier:'hole',chestsPerRoom:1,chestChance:1,lootChance:.1,siteChance:.5}).expectedItems, 1.5);
+const imported = rarity.caravanSeed({townValue:1,targetFamily:'heftroot',targetRegion:3});
+assert(Math.abs(imported.specificSeedChancePerCaravan - 4/55) < 1e-12);
+assert(Math.abs(imported.specificSeedChancePerDay - .15*4/55) < 1e-12);
+assert.equal(rarity.caravanSeed({townValue:0}).dailyCaravanChance, 0);
+assert.equal(rarity.caravanSeed({townValue:99}).dailyCaravanChance, .7);
+assert.equal(rarity.inheritance({parentA:'000000',parentB:'000000',target:'000000'}).probability, 1-.025+.025/6);
+assert.equal(rarity.inheritance({parentA:'000000',parentB:'000000',target:'111111'}).probability, 0);
+assert.equal(rarity.inheritance({parentA:'invalid',parentB:'000000',target:'000000'}), null);
+assert.equal(rarity.source({stages:[{label:'rare',probability:.01}],baseSellPrice:100}).proposedSellPrice > 100,true);
+assert.equal(rarity.source({stages:[{label:'unknown'}],baseSellPrice:100}).proposedSellPrice,null);
+assert.equal(rarity.item('cv_heftroot_333333Seeds',{townValue:1,itemDefs:{cv_heftroot_333333Seeds:{sellPrice:10}}}).origin,'slagothim-import');
+assert.equal(rarity.item('cv_heftroot_333330Seeds').origin,'crossbred-or-inherited');
+console.log('Item acquisition rarity tests passed.');
