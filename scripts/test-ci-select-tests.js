@@ -60,8 +60,8 @@ test('direct dependency graph includes transitive require and source references'
 });
 
 test('cache-bust-only HTML changes do not force global runtime coverage', () => {
-  const before = '<script src="js/ruin-layer-playable.js?v=old"></script>\n';
-  const after = '<script src="js/ruin-layer-playable.js?v=new"></script>\n';
+  const before = '<script src="js/ruin-layer-playable.js?' + 'v=old"></script>\n';
+  const after = '<script src="js/ruin-layer-playable.js?' + 'v=new"></script>\n';
   assert.equal(onlyCacheBustChanged(before, after), true);
   assert.equal(onlyCacheBustChanged(before, after.replace('script', 'style')), false);
   assert.equal(onlyCacheBustChanged(before, before), false);
