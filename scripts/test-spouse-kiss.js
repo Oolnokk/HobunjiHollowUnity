@@ -31,6 +31,20 @@ for (const [first, second] of [[1, 1], [1.5, .8], [5, .1], [.1, 5]]) {
 const everyday = solver.solveHeights(.675, .855);
 assert.equal(everyday.shorterPosteriorGrip, false, 'ordinary spouse kiss still kneels without a jump');
 assert.equal(everyday.shorterJumpWorld, 0);
+const authoredLips = solver.solveHeights(.675, .855, {
+  firstMouthHeightWorld: .38615, secondMouthHeightWorld: .76734, // Real Pahu and Leaf B'shuakauitl lip height ratios differ strongly from whole-body ratios.
+  tallerLegLengthWorld: .29, tallerHipHeightWorld: .50,
+  shorterLegLengthWorld: .24, shorterHipHeightWorld: .34,
+}); // Validates the conditional hop that a generic 82%-height solver would never offer for this pair.
+assert.equal(authoredLips.firstMouthHeightWorld, .38615);
+assert.equal(authoredLips.secondMouthHeightWorld, .76734);
+assert.ok(authoredLips.tallerSinkWorld > everyday.tallerSinkWorld,
+  'true mouth coordinates must cause the taller spouse to lower further than generic sprite heights suggest');
+assert.equal(authoredLips.shorterPosteriorGrip, true,
+  'if real mouth heights cannot meet with a comfortable bow, the shorter spouse must hop around the posterior');
+assert.ok(authoredLips.contactPossible, 'authored-mouth hop must close the vertical gap safely');
+assert.ok(authoredLips.shorterJumpWorld > 0 && authoredLips.shorterJumpWorld <= .675 * .75);
+assert.ok(authoredLips.tallerSinkWorld <= authoredLips.kneeLimitWorld);
 for (const [first, second] of [[1, .5], [.5, 1], [1, .3]]) {
   const jump = solver.solveHeights(first, second);
   assert.equal(jump.contactPossible, true, 'a straddled kiss must still align mouth heights');
