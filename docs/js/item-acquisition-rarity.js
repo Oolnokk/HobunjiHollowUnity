@@ -290,6 +290,30 @@
       model:'per ordinary independent-pool roll, conditional on encounter source and all authored world conditions' };
   }
 
+
+  function farmBreeding({averageParentHearts = null,progress = 0,hasCompatiblePair = null,
+    gestationDays = G.FarmAnimals?.GESTATION_DAYS,heartMax = G.FarmAnimals?.HEART_MAX,
+    baseMutationChance = G.CreatureGenetics?.MUTATION_CHANCE} = {}) {
+    const days = Number(gestationDays), cap = Number(heartMax);
+    if (gestationDays == null || heartMax == null || !Number.isFinite(days) || days <= 0
+      || !Number.isFinite(cap) || cap <= 0) return null;
+    const hearts = averageParentHearts == null ? null : Number(averageParentHearts);
+    if (hearts != null && (!Number.isFinite(hearts) || hearts < 0 || hearts > cap)) return null;
+    const p = Number(progress);
+    if (!Number.isFinite(p) || p < 0 || p > 1) return null;
+    const multiplier = hearts == null ? null : .6 + (hearts / cap) * .9; // Same formula as FarmAnimals.breedingSpeedMultiplier.
+    const mutation = hearts == null || baseMutationChance == null ? null
+      : Number(baseMutationChance) * (1 + (hearts / cap) * 2); // Parent happiness boosts the actual mutation roll.
+    const validMutation = mutation !== null && Number.isFinite(mutation) && mutation >= 0 && mutation <= 1 ? mutation : null;
+    const remainingDays = multiplier == null ? null : (1 - p) * days / multiplier;
+    return {kind:'farm-breeding',hasCompatiblePair:hasCompatiblePair === true ? true : hasCompatiblePair === false ? false : null,
+      gestationDays:days,averageParentHearts:hearts,progress:p,speedMultiplier:multiplier,
+      mutationChance:validMutation,remainingWakingDays:remainingDays,
+      remainingWakingHours:remainingDays == null ? null : Math.ceil(remainingDays * (G.FarmAnimals?.GESTATION_HOURS_PER_DAY || 16)),
+      possibleOutcome:'one living farm livestock record in stasis, not one inventory baby or egg item',
+      certainty:hearts === null ? 'parent relationship unknown' : 'exact farm timing, conditional on a maintained valid pair'};
+  }
+
   let lootSourceIndexOwner = null; // Identity of the live LootRolling pool map; replaced on database reloads.
   let lootSourceIndex = new Map(); // Direct item -> pool IDs; avoids rescanning all corpse/chest tables for every shipping quote.
   function lootPoolIdsForItem(key, pools = G.LootRolling?.getLootPools?.()) {
@@ -358,6 +382,13 @@
         expectedQuantity:entry.expectedQuantity ?? null,
         certainty:entry.probability === null ? 'conditional eligibility or delegated source unknown' : 'conditional on one selected pool roll',
         detail:entry});
+    }
+    const babySpecies = G.SCRATCHBONES_CONFIG?.game?.livestock?.itemKinds?.[key];
+    if (babySpecies && G.FarmAnimals?.GESTATION_DAYS != null) {
+      const birth = farmBreeding({averageParentHearts:context.averageParentHearts ?? null,
+        progress:context.breedingProgress ?? 0,hasCompatiblePair:context.hasBreedingPair ?? null});
+      if (birth) sources.push({kind:'breeding',sourceId:'farm-breeding',label:'Farm newborn (living animal)',
+        probability:null,expectedQuantity:null,certainty:birth.certainty,detail:{...birth,species:babySpecies}});
     }
     if (context.zoneId) {
       const den = liveDenOffspring(key,{zoneId:context.zoneId});
@@ -563,7 +594,7 @@
   }
   return Object.freeze({ chain, atLeastOne, expected, tierLayout, ruinChest, caravanSeed, inheritance, source,
     bindItemDefs, rarityFactor, cultivarRarity, cultivarSellPrice, importedSpice, foodRarity, artifactChest, lootPoolItem,
-    lootPoolIdsForItem, shopListings, acquisitionSources, priceQuote, sellPrice, denOffspring, liveDenOffspring, fishCatch, fishRarity, ruinArtifactOpportunity, item,
+    lootPoolIdsForItem, shopListings, acquisitionSources, priceQuote, sellPrice, farmBreeding, denOffspring, liveDenOffspring, fishCatch, fishRarity, ruinArtifactOpportunity, item,
     debugSnapshot: key => key ? item(key) : { supported:['cultivar','artifact-chest','ruin-chest','loot-pool','den-offspring','live-den-offspring','imported-spice','fish-catch','generated-ruin','food-ancestry','inheritance'],
       priceMode:'cultivar costs and limited loot/spice premiums; existing tuned specialty categories remain protected', noSilentFallback:true } });
 
