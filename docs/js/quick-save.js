@@ -522,12 +522,27 @@
   async function finishFestivalReturn(ids) {
     const session = festivalTestSession();
     if (!session || session.phase !== 'restored' || session.characterId !== ids.characterId || session.worldId !== ids.worldId) return false;
-    writeFestivalSession(null);
-    // The pinned original quick save remains available as a manual recovery
-    // point; remove only generated previews and already-applied return slots.
-    for (const id of [session.previewSlotId, session.returnSlotId]) {
-      if (id) try { await deleteSlot(id); } catch (_) {}
+    // Do not clear the recovery marker before a previously armed primary
+    // folder has durably saved the restored state. Otherwise the next boot
+    // could import the older folder and silently discard kept rewards.
+    const folder = window.LocalSaveFolder;
+    const folderStatus = folder?.getStatus?.();
+    if (!session.wasPaused && folderStatus?.folderName) {
+      if (folderStatus.state !== 'ready') {
+        window.__farmLog?.('[festival-test] Restore complete in browser; reconnect Primary Save Folder to finalize.', 'warn');
+        return false;
+      }
+      const synced = await folder.syncNow({ automatic: false, reason: 'festival-test-restored' });
+      if (synced?.lastError && synced?.lastAction !== 'saved-primary-recovery-error') {
+        window.__farmLog?.('[festival-test] Primary folder save failed: ' + synced.lastError, 'warn');
+        return false;
+      }
     }
+    writeFestivalSession(null);
+    // Both return and original snapshots are pinned when rewards are kept;
+    // the player can recover them manually even if autosave was already paused.
+    if (session.previewSlotId) try { await deleteSlot(session.previewSlotId); } catch (_) {}
+    if (!session.keepRewards && session.returnSlotId) try { await deleteSlot(session.returnSlotId); } catch (_) {}
     if (!session.wasPaused) window.HobunjiAutosavePause?.resume?.('festival-test-restored');
     return true;
   }
@@ -747,13 +762,18 @@
               { id: 'restart', label: 'Restart festival test', group: 'Festival', confirm: 'Discard this test attempt and restart the festival from its opening?' },
               { id: 'exit', label: 'Exit & restore original world', group: 'Festival', confirm: 'Restore the original world? Only journaled festival rewards are kept if the checkbox is enabled.' },
             ] : []),
-            ...(!running && status.phase !== 'idle' ? [
-              { id: 'recover', label: 'Finish/repair festival restore', group: 'Festival', confirm: 'Restore your original pre-test world if this festival load was interrupted?' },
+            ...(!running && status.phase !== 'idle' && status.phase !== 'restored' ? [
+              { id: 'recover', label: 'Repair interrupted festival load', group: 'Festival', confirm: 'Restore your original world from the pinned festival snapshot?' },
+            ] : []),
+            ...(status.phase === 'restored' ? [
+              { id: 'finalize', label: 'Finish restore & save', group: 'Festival' },
             ] : []),
           ],
           note: running
-            ? 'The normal world remains in a pinned Quick Save. Autosaves are paused; do not use Manual Save during a test. Rewards are opt-in.'
-            : 'Test starts at 3 PM on the next occurrence. The world reloads into an isolated snapshot; ordinary time progression remains forward-only.',
+            ? 'The original save remains pinned. Primary-folder and cloud writes are blocked until the test exits. Rewards are opt-in.'
+            : status.phase === 'restored'
+              ? 'Your original world has been loaded. Reconnect your Primary Save Folder if needed, then finish saving. A rewards return Quick Save is kept when enabled.'
+              : 'Test starts at 3 PM on the next occurrence. The world reloads into an isolated snapshot; ordinary time progression remains forward-only.',
         };
       },
       onAction: (action, args) => {
@@ -767,6 +787,9 @@
         if (action === 'exit') return exitFestivalTest();
         if (action === 'restart') return restartFestivalTest();
         if (action === 'recover') return recoverFestivalTest();
+        if (action === 'finalize') return finishFestivalReturn(activeIds()).then(ok => ok
+          ? { ok: true, message: 'Original world restored and saved.' }
+          : { ok: false, error: 'Restore still needs a Primary Save Folder connection or a successful save. The recovery snapshot is preserved.' });
         if (action === 'start') {
           if (!document.getElementById('settingDevMode')?.checked) return { ok: false, error: 'Enable Dev Mode before starting a festival test.' };
           return startFestivalTest();
