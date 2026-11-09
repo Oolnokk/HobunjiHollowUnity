@@ -45,17 +45,21 @@ test('unknown and shared runtime dependencies fail open', () => {
   assert(Object.values(selectTests('ruin', ['scripts/ci-select-tests.js']).selected).every(Boolean));
 });
 
-test('direct dependency graph includes transitive require and source references', () => {
-  const root = path.resolve(__dirname, '..');
-  const fixtureA = 'scripts/ci-selector-fixture-entry.js';
-  const fixtureB = 'scripts/ci-selector-fixture-leaf.js';
-  fs.writeFileSync(path.join(root, fixtureA), "require('./ci-selector-fixture-leaf.js');\n");
-  fs.writeFileSync(path.join(root, fixtureB), "module.exports = true;\n");
+test('static graph follows transitive require and literal browser-source references', () => {
+  const root = path.resolve(__dirname, '..'); // Base for disposable dependency fixtures.
+  const fixtureA = 'scripts/ci-selector-fixture-entry.js'; // Test entry depends on the intermediate module.
+  const fixtureB = 'scripts/ci-selector-fixture-leaf.js'; // Intermediate module names the actual browser source.
+  const fixtureC = 'docs/js/ci-selector-fixture-source.js'; // Transitive target represents a served runtime module.
   try {
-    assert(sourceDependencies(fixtureA).has(fixtureB));
+    fs.writeFileSync(path.join(root, fixtureA), "require('./ci-selector-fixture-leaf.js');\n");
+    fs.writeFileSync(path.join(root, fixtureB), "const target = 'docs/js/ci-selector-fixture-source.js';\n");
+    fs.writeFileSync(path.join(root, fixtureC), "module.exports = true;\n");
+    const dependencies = sourceDependencies(fixtureA); // Verifies recursive traversal across both reference types.
+    assert(dependencies.has(fixtureB));
+    assert(dependencies.has(fixtureC));
   } finally {
-    fs.unlinkSync(path.join(root, fixtureA));
-    fs.unlinkSync(path.join(root, fixtureB));
+    for (const file of [fixtureA, fixtureB, fixtureC])
+      fs.rmSync(path.join(root, file), { force: true });
   }
 });
 
