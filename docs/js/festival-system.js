@@ -449,6 +449,7 @@
     if (dance||pendingDance||remembrance) return { icon: '■', label: remembrance?'Stop remembering':pendingDance?'Cancel invitation':'Stop dancing', action: 'festival_stop_dance', allowed: true, style: 'secondary' };
     if (festival()?.id === 'gorkunash') return null; // Schedules and ordinary objects provide the event; there is no event/activity input.
     const prop = nearestActivity(); // Activity remains tied to the prop when moved in the editor.
+    if (festival()?.id === 'tzizkhanash' && prop?.activity?.type === 'remembrance') return null; // Standing at the shrine automatically joins the observance.
     if (prop?.festivalLocale && ['dance','story','duel','music','remembrance'].includes(prop.activity.type)
         && (!festivalHours() || (['story','duel'].includes(prop.activity.type) && Number(window.CalendarSystem?.getHour?.()) >= 22))) return null;
     return prop ? { icon: festival().icon, label: prop.festivalLocale && ['dance','story','duel','music','remembrance'].includes(prop.activity.type)
@@ -743,9 +744,15 @@
         for (const walker of deps.getWalkers()) if (walker.area === 'town' && !walker.rec?.dead && Math.hypot(walker.root.position.x-position.c, walker.root.position.z-position.r) <= 3) addFestivalFun(walker.rec.id, seconds * GORKUNASH_SOCIAL_FUN_PER_SECOND);
       }
     } else socialParticipationS = 0;
+    // The village observes remembrance without the player. A passerby may join without a menu or action button.
+    if (!remembrance && festival()?.id === 'tzizkhanash' && festivalHours() && deps?.getArea?.() === 'town'
+        && !deps?.isFestivalSuspended?.() && !deps?.isBlocked?.() && !dance && !pendingDance && !window.SocialActionWheel?.isDancing?.()) {
+      const shrine = activityProps().find(p=>p.activity?.type === 'remembrance' && atProp(p));
+      if(shrine) remembrance={event:eventKey(),propId:shrine.id,elapsed:0}; // Keep the existing twelve-second participation and annual reward.
+    }
     if (remembrance) {
       const prop = activityProps().find(p=>p.id===remembrance.propId);
-      if (eventKey()!==remembrance.event || !festivalHours() || !atProp(prop) || deps?.isBlocked?.()) {
+      if (eventKey()!==remembrance.event || !festivalHours() || !atProp(prop) || deps?.isBlocked?.() || deps?.getArea?.() !== 'town') {
         remembrance=null; // Leaving the ceremony or entering combat cancels an unfinished observance.
       } else if (!document.hidden && !deps?.socialPaused?.()) {
         remembrance.elapsed+=elapsed;
