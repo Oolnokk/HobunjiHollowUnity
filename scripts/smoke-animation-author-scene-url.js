@@ -103,7 +103,7 @@ async function main() {
         const pahu = poses?.find(actor => actor.name === 'Pahu');
         if (!leaf || !pahu) throw Error('Missing character facing diagnostics at ' + t);
         facingSamples.push({ t, leaf: leaf.rootRotationDeg, portraitUpY: leaf.portraitUpY });
-        if (leaf.worldUpY < .98 || leaf.portraitUpY < .90) {
+        if (leaf.worldUpY < .98 || leaf.portraitUpY <= .08) { // A deep physical bow is allowed; an upside-down head/root is not.
           throw Error('Leaf flips upside down at t=' + t + ': ' + JSON.stringify(leaf));
         }
         if (Math.abs(leaf.rootRotationDeg.x) > 1 || Math.abs(leaf.rootRotationDeg.z) > 1) {
@@ -217,14 +217,20 @@ async function main() {
       if (contactBodies.some(body => !body.handRig || !body.feet || !body.pants)) {
         throw Error('Missing hands, feet, or equipped pants during the kiss: ' + JSON.stringify(contactBodies));
       }
-      if (contactBodies.some(body => body.preview.feetGrounded !== true)) {
-        throw Error('An avatar root is pitching or sinking the procedural soles: ' + JSON.stringify(contactBodies));
+      if (contactBodies.some(body => body.preview.posteriorJump
+        ? !body.preview.jumpFeetAnchored || body.preview.jumpFootReachExcessWorld > .005
+        : body.preview.feetGrounded !== true)) {
+        throw Error('Kiss must keep grounded soles planted or anchor both jump soles to the real posterior: ' +
+          JSON.stringify(contactBodies));
       }
       if (!contactBodies.some(body => body.kneeDrop > 0)) {
         throw Error('The taller NPC must fold their knees at contact: ' + JSON.stringify(contactBodies));
       }
-      if (contactBodies.some(body => !body.preview?.feetGrounded)) {
-        throw Error('Kiss rotated or sank the actual planted feet: ' + JSON.stringify(contactBodies));
+      if (contactBodies.some(body => body.preview?.posteriorJump
+        ? body.preview?.jumpFootReachExcessWorld > .005
+        : !body.preview?.feetGrounded)) {
+        throw Error('Kiss rotated or sank the grounded partner feet, or overextended posterior straddle soles: ' +
+          JSON.stringify(contactBodies));
       }
       if (!contactBodies.some(body => body.preview?.torsoBowDegrees > 1)) {
         throw Error('Tall torso did not bow independently of grounded legs: ' + JSON.stringify(contactBodies));
