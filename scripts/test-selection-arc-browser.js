@@ -46,7 +46,7 @@ const source = fs.readFileSync('docs/js/quick-potion-arc-ui.js', 'utf8'); // Run
           'data-shared-selection-angle', 'data-shared-selection-target-x', 'data-shared-selection-target-y'];
         let writes = 0; // Counts actual attribute mutation records across the whole visible selection HUD.
         const observer = new MutationObserver(records => { writes += records.length; });
-        observer.observe(document.body, { attributes:true, subtree:true, attributeFilter:watched });
+        observer.observe(document.body, { attributes:true, childList:true, subtree:true, attributeFilter:watched });
         const before = window.QuickPotionArcUI.diagnostics().domWrites; // The public mobile readout must agree with real DOM observations.
         await new Promise(resolve => {
           let frames = 0; // At least 12 browser animation frames exercise the live timer-aware enforcer.
@@ -83,6 +83,18 @@ const source = fs.readFileSync('docs/js/quick-potion-arc-ui.js', 'utf8'); // Run
     const scrolledIdle = await idleProbe();
     assert.equal(scrolledIdle.writes, 0, 'selector stops writing after a real animated scroll settles');
 
+    const beforeResize = await page.locator('#choiceA').getAttribute('data-shared-selection-radius');
+    await page.evaluate(() => {
+      document.getElementById('toolBtn').style.right = '205px'; // Moving the permanent ring reference changes the shared selector radius.
+      window.dispatchEvent(new Event('resize'));
+    });
+    await page.waitForFunction(previous => document.getElementById('choiceA')?.dataset.sharedSelectionRadius !== previous, beforeResize);
+    const afterResize = await page.locator('#choiceA').getAttribute('data-shared-selection-radius');
+    assert.notEqual(afterResize, beforeResize, 'the wheel responds to a real outer-ring geometry change');
+    await page.waitForTimeout(260);
+    const resizedIdle = await idleProbe();
+    assert.equal(resizedIdle.writes, 0, 'selector returns to a mutation-free idle after resizing');
+
     await page.evaluate(() => {
       document.querySelectorAll('.arc-slot').forEach(slot => slot.remove()); // Real selector teardown must restore the permanent arch.
     });
@@ -98,7 +110,7 @@ const source = fs.readFileSync('docs/js/quick-potion-arc-ui.js', 'utf8'); // Run
       && document.body.classList.contains('shared-selection-arc-open')
       && document.getElementById('reopenedChoice')?.dataset.sharedSelectionPresented === '1');
     assert.deepEqual(errors, [], 'real selector open, scroll, close, and reopen produce no browser errors');
-    console.log('selection arc real-browser idle: PASS (12+ quiet frames, legacy scroll, close/reopen, diagnostics)');
+    console.log('selection arc real-browser idle: PASS (12+ quiet frames, legacy scroll, responsive resize, close/reopen, diagnostics)');
   } finally {
     await browser.close();
   }
