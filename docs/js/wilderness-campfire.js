@@ -4,8 +4,8 @@
   // One player-owned portable campfire may exist at a time. It can be placed
   // in a wilderness zone or on a procedural Town Mine floor, persists as
   // world-member state across map changes and game sessions, and silently
-  // replaces the previous campfire whenever another is set up for free. Same-year Tothal
-  // reconstruction is only an in-memory replay of the already-saved terrain,
+  // replaces the previous campfire whenever another is set up for free.
+  // Same-year Tothal reconstruction only replays the saved terrain,
   // so it must not delete the restored camp. A genuine new-year Tothal Shift
   // still clears a wilderness camp because the terrain under its coordinates
   // has actually changed. Mine-floor camps are also cleared by mine death.
@@ -150,8 +150,10 @@
     if (!Number.isInteger(col) || !Number.isInteger(row)) return { ok: false, message: 'Choose a valid tile to set up your campfire.' };
     const wx = col + 0.5;
     const wz = row + 0.5;
+    const height = Number(deps.surfaceYAt(wx, wz)); // Protects saved camp coordinates if the destination terrain has no valid surface.
+    if (!Number.isFinite(height)) return { ok: false, message: 'Cannot set up a campfire without solid ground.' };
     removeVisual(); // Placing one new fire destroys the old visual globally before replacing its persistent record.
-    state = { mapId: area, x: wx, y: deps.surfaceYAt(wx, wz), z: wz, ry: deps.getFacingAngle() };
+    state = { mapId: area, x: wx, y: height, z: wz, ry: deps.getFacingAngle() };
     returnPending = false;
     recordDebug('place');
     ensureVisualForCurrentArea();
