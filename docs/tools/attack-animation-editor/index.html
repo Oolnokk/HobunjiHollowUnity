@@ -2814,7 +2814,9 @@ async function bakeStatuePiece({poseKey='neutral',includeWeapon=true,name='Carve
     if(![dimensions.x,dimensions.y,dimensions.z].every(n=>Number.isFinite(n))||dimensions.x<=0||dimensions.y<=0)throw Error('The frozen statue has invalid bounds.');
     dimensions.z=Math.max(.01,dimensions.z); // Flat PNG-plane statues are valid furniture, even when a species has no volumetric limb assets.
     // Static artwork is exported in the very same world-scale rig space displayed in Attack Editor.
-    const buffer=await new Promise((resolve,reject)=>new GLTFExporter().parse(exportGroup,resolve,reject,{binary:true,onlyVisible:true}));
+    const buffer=await new Promise((resolve,reject)=>{ // Three.js r128: parse(input, onDone, options), NOT the newer four-argument form.
+      try{new GLTFExporter().parse(exportGroup,resolve,{binary:true,onlyVisible:true});}catch(error){reject(error);}
+    });
     if(!(buffer instanceof ArrayBuffer))throw Error('GLTFExporter did not produce binary GLB data.');
     const url=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(reader.error);reader.readAsDataURL(new Blob([buffer],{type:'model/gltf-binary'}));});
     const npc=statueNpcExport ? JSON.parse(JSON.stringify(statueNpcExport)) : buildDefaultAvatarExport(currentSpeciesId,currentGender);
