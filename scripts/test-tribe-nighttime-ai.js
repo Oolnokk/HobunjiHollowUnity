@@ -118,6 +118,22 @@ const idle = { isBandit: true, health: 20, state: 'idle' };
 assert.equal(lodContext.canSleepBandit(idle), true, 'ordinary bandits still benefit from distant sleep');
 assert.equal(lodContext.canSleepBandit({ ...idle, isTribeHunter: true }), false, 'tribal residents have one LOD owner');
 assert.equal(lodContext.canSleepBandit({ ...idle, isPorakanekiHunter: true }), false, 'legacy tribal flags are also exempt');
+const snapshotContext = vm.createContext({
+  deps: { hostileObjects: new Set([
+    idle,
+    { ...idle, isTribeHunter: true, _wildlifeVisualLodHidden: true },
+    { ...idle, isPorakanekiHunter: true },
+    { health: 20, creatureKey: 'grehlr', _wildlifeVisualLodHidden: true },
+  ]) },
+  isSleeping: () => false, window: {}, sleepTransitions: 0, wakeTransitions: 0,
+  BANDIT_WAKE_RADIUS_TILES: 14, BANDIT_SLEEP_RADIUS_TILES: 18, BANDIT_LOD_CHECK_INTERVAL_S: .25,
+});
+vm.runInContext(sourceBetween(lod, '  function snapshot() {', '  window.WildernessSimulationLOD =')
+  + '\nthis.snapshot = snapshot;', snapshotContext);
+const lodSnapshot = snapshotContext.snapshot();
+assert.equal(lodSnapshot.totalBandits, 1, 'ordinary bandits remain separately counted');
+assert.equal(lodSnapshot.tribalHunters, 2, 'tribal humanoids have an explicit mobile diagnostic total');
+assert.equal(lodSnapshot.totalWildlife, 1, 'tribal humanoids cannot inflate the wildlife total');
 
 assert(runtime.includes('const rivalsByTribe = new Map()'), 'share target candidate rosters per tribe');
 assert(runtime.includes('const sharedEnemy = close && hasSharedEnemyNearby(entity)'), 'only scan crossfire threats when damaged');
