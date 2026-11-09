@@ -467,8 +467,8 @@
         festivalIngredientQuality: selections.map(({ slot, selected }) => {
           const rarity = window.ItemAcquisitionRarity?.evaluate?.(selected.key,{defs:deps.ITEM_DEFS}) || null; // Snapshot the source economics so later Town Value changes never rewrite cooked dish ratings.
           return {key:selected.key,stars:selected.stars,slotId:slot.id,contributesEffects:slot.contributesEffects !== false,
-            ...(rarity?.known ? {rarityMultiplier:rarity.contestMultiplier,rarityScore:rarity.score,
-              raritySource:rarity.sourceLabel,rarityCertainty:rarity.uncertainty} : {}) };
+            rarityMultiplier:rarity?.contestMultiplier || 1,rarityScore:rarity?.score || 0,
+            raritySource:rarity?.sourceLabel || null,rarityCertainty:rarity?.uncertainty || 'unmodeled' }; // Freeze even neutral/unknown rarity so late-loaded sources cannot rewrite this saved dish.
         }), // Snapshot source tier and recipe slot: structural ingredients still score points but never grant cooking buffs.
         festivalContestScore: window.FestivalPotluckContest?.scoreIngredients?.(selections.map(({ selected })=>({
           ...selected,rarityMultiplier:window.ItemAcquisitionRarity?.contestMultiplier?.(selected.key,{defs:deps.ITEM_DEFS}) || 1
