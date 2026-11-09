@@ -33,7 +33,7 @@
   // denSpecies list overrides general pack/herd ecology; legacy zones without
   // one retain the deterministic predator-pack XOR herbivore-herd choice.
   function nativeSpeciesFor(mapId) {
-    const zoneId = window.WildlifeSpawn.denCavernZoneOf(mapId);
+    const zoneId = window.WildlifeSpawn.denCavernZoneOf(mapId) || caveBiomeForMapId(mapId); // Restored saves may enter a den before exterior transition records re-mint its zone lookup.
     const zoneDef = deps.EXTERIOR_ZONES[zoneId];
     const exactResident = window.WildlifeSpawn.denResidentSpeciesFor?.(zoneId, mapId); // Entrance-home species is authoritative even in legacy multi-species pools.
     if (exactResident) return { zoneId, nativeSpecies: [exactResident] };
