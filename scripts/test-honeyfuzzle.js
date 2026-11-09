@@ -115,6 +115,7 @@ function fakeThree() {
   assert(shader.fragmentShader.includes('vec4 composed = overlayHoneyfuzzle( body, tail )'), 'tail blends beneath the body');
   assert(shader.fragmentShader.includes('composed = overlayHoneyfuzzle( spectacles, composed )'), 'optional spectacles render above all body pixels');
   assert(shader.fragmentShader.includes('weights /= weights.x + weights.y + weights.z'), 'all three fly poses have normalized weights');
+  assert(shader.vertexShader.includes('vSweep = ') && shader.vertexShader.includes('abs( 2.0 * cyc - 1.0 )'), 'pedal sweep reverses direction via a triangle wave');
   assert(shader.vertexShader.includes('vec2( 546.0, 252.0 )'), 'padded, trimmed 3x2 atlas UV mapping is used');
   assert(shader.vertexShader.includes('hfDart') && shader.vertexShader.includes('transformed.x = cr * flip'), 'bird motion is evaluated in the vertex shader');
   assert.equal(S.ATLAS_W, 546); assert.equal(S.ATLAS_H, 252);
@@ -147,10 +148,10 @@ function fakeThree() {
   avatar.update(0, 1570, 0.2, 150, 1);
   assert(Math.abs(avatar.sideSwarms[1].position.z - outerDepth) < 1e-8, 'unattached Z spacing returns to its original value');
   frameAttr.needsUpdate = false;
-  const firstPhase = avatar.swarm.material.userData.honeyfuzzle.uWingPhase.value;
+  const firstPhase = avatar.swarm.material.userData.honeyfuzzle.uWingT.value;
   avatar.update(0, 1001, 0.016, 150);
   assert.equal(frameAttr.needsUpdate, false);
-  assert.notEqual(avatar.swarm.material.userData.honeyfuzzle.uWingPhase.value, firstPhase);
+  assert.notEqual(avatar.swarm.material.userData.honeyfuzzle.uWingT.value, firstPhase);
   avatar.update(0, 1000 + S.WING_TICK_MS, 0.016, 150);
   assert.equal(frameAttr.needsUpdate, false);
   // Body color: uncolored swarms keep the authored mint; a colored one gets its own uniforms and can be recolored.
@@ -171,12 +172,14 @@ function fakeThree() {
   assert.equal(tinted.centerMemberCount, 8); assert.equal(tinted.sideMemberCount, 3);
   assert.equal(tinted.renderedMemberCount, 14, 'default swarm now draws 14 birds instead of 24');
   assert.equal(typeof S.debugSnapshot, 'function');
+  assert(S.PEDAL_RATES.every(r => Number.isInteger(r * S.FLUTTER_HZ / 4 * S.WING_T_WRAP)), 'pedal clocks wrap seamlessly');
+  assert(S.FLUTTER_HZ * Math.max(...S.PEDAL_RATES) < 15 && S.PEDAL_TURNS === 2, 'fastest pedal stays below the 30 FPS Nyquist limit');
   assert(S.FLUTTER_HZ > 0 && S.FLUTTER_HZ < 15, 'opacity variation avoids aliasing at 30 FPS');
-  const beforeWrap = avatar.swarm.material.userData.honeyfuzzle.uWingPhase.value;
+  const beforeWrap = avatar.swarm.material.userData.honeyfuzzle.uWingT.value;
   avatar.update(0, 86400000 + 100, 0.016, 150);
-  assert(Number.isFinite(avatar.swarm.material.userData.honeyfuzzle.uWingPhase.value)
-    && avatar.swarm.material.userData.honeyfuzzle.uWingPhase.value < Math.PI * 2,
-    'phase remains bounded after a full day of continuous game runtime');
+  assert(Number.isFinite(avatar.swarm.material.userData.honeyfuzzle.uWingT.value)
+    && avatar.swarm.material.userData.honeyfuzzle.uWingT.value < S.WING_T_WRAP,
+    'wing clock remains bounded after a full day of continuous game runtime');
   const actor = { id: 'linked_swarm', swarmColor: '#aabbcc',
     genotype: { tailfeathers: { enabled: true, copies: 1, color: '#332211' },
       spectacles: { enabled: true, copies: 1, color: '#889900' } } }; // Exercises the real game factory's color-only constructor followed by actor collection registration.
