@@ -316,7 +316,7 @@
       const { position, uv } = geometry.attributes;
       const width = geometry.parameters.width;
       const spline = window.AnimalShoulderSpline;
-      const moved = authored?.beforePoints.some((point, i) =>
+      const moved = Array.isArray(authored?.beforePoints) && authored.beforePoints.some((point, i) =>
         point.x !== authored.afterPoints[i].x || point.y !== authored.afterPoints[i].y);
       const rest = moved ? spline.normalizeRest({ ...authored, separatorAspect: width }) : null;
       for (let i = 0; i < position.count; i++) {
@@ -372,7 +372,7 @@
     }
 
     function update(camera, pose, seconds, carrying = false, blinkShut = false) {
-      const grounded = pose === 'perched'; // Perched preview retains only the usual yaw deadzone.
+      const grounded = pose === 'perched' || pose === 'hatchling'; // Hatchlings display perched pixels without the adult's bent pose.
       wings.visible = !grounded;
       flying.visible = !grounded && !carrying;
       gripping.visible = !grounded && carrying;
@@ -393,7 +393,7 @@
       root.worldToLocal(view);
       if (Math.hypot(view.x, view.z) > 1e-6) yaw.rotation.y = correct(yawState, Math.atan2(view.x, view.z), rig.yawDeadzone);
       const depth = view.x * Math.sin(yaw.rotation.y) + view.z * Math.cos(yaw.rotation.y); // Camera Z after applying yaw.
-      pitch.rotation.x = grounded ? 0 : correct(pitchState, Math.atan2(-view.y, depth), rig.pitchDeadzone);
+      pitch.rotation.x = pose === 'perched' ? 0 : correct(pitchState, Math.atan2(-view.y, depth), rig.pitchDeadzone); // Hatchling camera orientation matches flight.
       const angle = flapAngle(rig, pose, seconds); // Mirrored stroke about the two fore-aft axes.
       bones[0].rotation.x = angle;
       bones[1].rotation.x = -angle;

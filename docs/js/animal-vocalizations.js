@@ -385,6 +385,9 @@
         debug.pulsed++;
         debug.lastStartLatencyMs = Math.max(0, Date.now() - playbackRequestedAtMs);
         showUtteranceText(c, active, utteranceIndex);
+        if (utteranceIndex === 0 && active.kind !== 'chatter') {
+          window.HobunjiEmojiReactions?.trigger?.(c.avatarRef?.group, active.kind === 'warning' ? 'alarmed' : 'disgust', { height: c.modelHeight }); // Only the first real warning/growl utterance, never passive chatter, gets an emoji.
+        }
       };
       if (deps.renderUtterance(c, {
         ...utterance,

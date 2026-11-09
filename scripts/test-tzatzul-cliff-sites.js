@@ -15,7 +15,7 @@ const w={THREE:T,__farmLog(){},PerchSupport:{
  point:(id,x,y,worldY)=>({id,dimension:0,x,y,worldY}),
  register:(area,p)=>(points.set(area+':'+p.id,p),true),
  unregister:(area,id)=>points.delete(area+':'+id)},
- NaturalSurfaceMaterials:{naturalizeMesh(m,surface,mapping){assert.equal(surface,'cliffs');assert.equal(mapping,'world-stretch');m.material=shared;}},
+ NaturalSurfaceMaterials:{naturalizeMesh(m,surface,mapping){assert.equal(surface,'rocks');assert.equal(mapping,'planar-stretch');m.material=shared;}},
 };
 vm.runInNewContext(fs.readFileSync('docs/js/tzatzul-cliff-sites.js','utf8'),{window:w,console,Map,Set,Math});
 const api=w.TzatzulCliffSites;

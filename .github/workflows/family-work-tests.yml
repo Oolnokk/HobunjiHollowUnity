@@ -1,0 +1,41 @@
+name: Family progression and farmwork
+
+on:
+  pull_request:
+    paths:
+      - 'docs/game.js'
+      - 'docs/js/romance-family.js'
+      - 'docs/js/npc-farm-plots.js'
+      - 'docs/js/farm-plot-editor.js'
+      - 'docs/js/dew-vats.js'
+      - 'docs/config/romance-config.js'
+      - 'scripts/test-romance-dating.js'
+      - 'scripts/test-npc-farm-plots.js'
+      - 'scripts/test-item-quality-and-blackout-wander.js'
+      - 'scripts/test-family-harvest-quality.js'
+      - '.github/workflows/family-work-tests.yml'
+
+jobs:
+  family-and-farm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax-check modified gameplay modules
+        run: |
+          node --check docs/game.js
+          node --check docs/js/romance-family.js
+          node --check docs/js/npc-farm-plots.js
+          node --check docs/js/farm-plot-editor.js
+          node --check docs/js/dew-vats.js
+          node --check docs/config/romance-config.js
+      - name: Romance, childbirth and usefulness regression tests
+        run: node scripts/test-romance-dating.js
+      - name: Farmwork and harvest regression tests
+        run: node scripts/test-npc-farm-plots.js
+      - name: Real game harvest and processor-quality integration
+        run: node scripts/test-family-harvest-quality.js
+      - name: Vat quality and save-bound external workers
+        run: node scripts/test-item-quality-and-blackout-wander.js

@@ -720,10 +720,10 @@
         denMotherDefs[PUKTUK_KIND] = {
           ...existingMother,
           creatureKey: existingMother.creatureKey || PUKTUK_KIND,
-          nestItemKey: existingMother.nestItemKey ?? null,
+          nestItemKey: existingMother.nestItemKey || 'puktukBaby', // Every Puktuk family supplies an inheritable baby pickup.
         };
       }
-      if (denMotherDefs && creatureDb?.nelk && !denMotherDefs.nelk) denMotherDefs.nelk = { creatureKey: 'nelk', nestItemKey: null }; // Nelk joins West dens without inventing collectible hatchlings.
+      if (denMotherDefs && creatureDb?.nelk && !denMotherDefs.nelk) denMotherDefs.nelk = { creatureKey: 'nelk', nestItemKey: 'nelkBaby', liveBirth: true }; // Nelk den nests hold real babies even if the base config was not yet installed.
       window.__farmLog?.(`[puktuk] registered defensive forager species: default=medium sizeProfile=puktuk belly=always foxtail=${Math.round(PUKTUK_FOXTAIL_CHANCE * 100)}% livestock=puktukWool diet=prey; ${PUKTUK_WESTERN_ZONE_ID} legacyDrenkirraRemoved=${legacyDrenkirraRemoved} dens=[${Array.isArray(denSpecies) ? denSpecies.join(',') : 'missing'}] packs=[${Array.isArray(packs) ? packs.join(',') : 'missing'}] herbivores=[${Array.isArray(herbivores) ? herbivores.join(',') : 'missing'}] denMother=${denMotherDefs?.[PUKTUK_KIND]?.creatureKey || 'missing'}`, Array.isArray(denSpecies) && denSpecies.includes(PUKTUK_KIND) && herbivores?.includes(PUKTUK_KIND) ? 'wildlife' : 'warn');
       return originalInit.call(this, injectedDeps);
     };

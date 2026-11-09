@@ -45,11 +45,13 @@ const visualWorld = {
   window: {
     TzatzulRegistration: {
       KIND: 'tzatzul',
+      HATCHLING_KIND: 'tzatzul-hatchling', // Non-deformed perched artwork during actual hopping.
+      HATCHLING_SCALE: { x:3/8, y:5/8 }, // The authored hatchling retains its own width and height.
       identityFor(area, id) { return { mapId: area, id, tintHex: '#a0b0c0' }; },
-      createRig(identity) {
+      createRig(identity, options = {}) {
         const instance = {
-          identity, disposed: false,
-          root: { parent: null, rotation: { y: 0 }, scale: { x: null, setScalar(x) { this.x = x; } } },
+          identity, options, disposed: false,
+          root: { parent: null, rotation: { y: 0 }, position: { y: 0 }, scale: { x: null, setScalar(x) { this.x = x; } } },
           update(camera, pose, elapsed, carrying, blinkShut) { painted.push({ pose, elapsed, carrying, blinkShut }); },
           restoreTint() { tintChecks.push(identity.tintHex); return false; },
           dispose() { this.disposed = true; this.root.parent?.remove(this.root); }
@@ -123,15 +125,41 @@ async function flush() { for (let i = 0; i < 8; i++) await Promise.resolve(); }
   visuals.tick(.016, 'map_northern_cliffs');
   assert.equal(tintChecks.length, beforeTint + 1, 'individual color is restored once the damage flash ends');
   assert.equal(visuals.snapshot().refreshedPlanes, 1, 'mobile diagnostics count the native replacement');
-  const captive = { avatarRef: { group: { quaternion: {
+  const captive = { health:20, avatarRef: { group: { quaternion: {
     angle: .37, clone() { return { angle: this.angle }; }, copy(pose) { this.angle = pose.angle; }
-  } } } }; // A live Porakaneki/player avatar keeps its original quaternion through a bird release.
+  }, scale:{ x:1, clone(){ return {x:this.x}; }, copy(value){this.x=value.x;} } } } }; // A real surviving actor must regain rotation and size after the drop.
   assert(visuals.rememberCaptive(captive));
   captive.avatarRef.group.quaternion.angle = -1.23;
   assert(visuals.restoreCaptive(captive), 'a released prey is returned to its own native orientation');
   assert.equal(captive.avatarRef.group.quaternion.angle, .37);
   assert.equal(visuals.restoreCaptive(captive), false, 'repeat releases must never replay stale rotations');
   assert.equal(visuals.snapshot().captiveRestores, 1);
+  captive.avatarRef.group.quaternion.angle = -1.23; captive.avatarRef.group.scale.x = 3; // A late renderer reapplies the talon matrix after release.
+  visuals.tick(.016, 'map_northern_cliffs');
+  assert.equal(captive.avatarRef.group.quaternion.angle,.37,'next-frame cleanup prevents a lingering sideways captive');
+  assert.equal(captive.avatarRef.group.scale.x,1,'capture scale is restored too');
+  visuals.tick(.016, 'map_northern_cliffs'); // The restoration fence expires after two ticks.
+  captive.avatarRef.group.quaternion.angle = .8;
+  visuals.tick(.016, 'map_northern_cliffs');
+  assert.equal(captive.avatarRef.group.quaternion.angle,.8,'normal character animation takes over after the drop');
+
+  const hatchling = { id:'test-hatchling', creatureKey:'tzatzul-hatchling', health:30,
+    x:180, y:220, state:'idle', areaId:'map_northern_cliffs',
+    def:{modelWidth:.85}, avatarRef:avatar() }; // A real registered creature, not decorative hatchling artwork.
+  hostiles.add(hatchling);
+  for(let step=0;step<7;step++)visuals.tick(.25,'map_northern_cliffs'); // Complete one bounded creature-registration scan.
+  await flush();
+  visuals.tick(.016,'map_northern_cliffs'); // Mount the rig and render its first stationary frame.
+  const childRig=created.at(-1);
+  assert.equal(childRig.options.undeformedPerch,true,'hatchling opts out of the adult seated spline');
+  assert.equal(painted.at(-1).pose,'hatchling','perched pixels use flight-oriented hatchling pose');
+  hatchling.x+=6;
+  visuals.tick(.05,'map_northern_cliffs');
+  assert(childRig.root.position.y>0,'moving hatchling performs a visible upward hop');
+  hostiles.delete(hatchling);
+  visuals.tick(.016,'map_northern_cliffs');
+  assert(childRig.disposed,'the hatchling rig is cleaned up with its owner');
+
   adult.health = 0;
   visuals.tick(0.016, 'map_northern_cliffs');
   assert.equal(created[0].disposed, true, 'corpse transition disposes bird-specific textures and geometry');

@@ -33,9 +33,11 @@
   root.name='tzatzul-nest-spire:'+s.shelfId;
   root.position.set(s.x,s.y-s.height/2,s.z);
   root.userData.tzatzulNest={id:s.id,caveId:s.caveId,caveMapId:s.caveMapId,climbable:false,encounterReady:!!window.TzatzulNestInterior?.isNestMap?.(s.caveMapId)}; // The cave is accessed through the carrier's native building transition.
-  const base=new T.MeshBasicMaterial({color:0x45463f,side:T.DoubleSide});
+  const base=new T.MeshBasicMaterial({color:0x5f5a56,side:T.DoubleSide});
   const rock=new T.Mesh(new T.CylinderGeometry(1.05,.32,s.height,7,3),base);
-  window.NaturalSurfaceMaterials?.naturalizeMesh?.(rock,'cliffs','world-stretch'); // Canonical carved_smooth rock texture.
+  window.NaturalSurfaceMaterials?.naturalizeMesh?.(rock,'rocks','planar-stretch'); // Same carved_smooth PNG/tint pipeline as Banubu's farm-cliff cavern.
+   const stretch=window.HobunjiSurfaceStretchUV; // Give both the cliff top and curved perches proper texture coordinates.
+   stretch?.mapMesh?.(rock,{label:'tzatzul-spire:rock',maxPatchWorldSize:6});
   const black=new T.MeshBasicMaterial({color:0x050607,side:T.DoubleSide});
   const mouth=new T.Mesh(new T.CircleGeometry(.38,12),black);
   mouth.name='tzatzul-dark-cave-mouth'; // Named geometry distinguishes visible sealed nest from future enterable cave runtime.
@@ -45,6 +47,8 @@
   rim.position.copy(mouth.position);rim.rotation.y=mouth.rotation.y;
   const crown=new T.Mesh(new T.TorusGeometry(.60,.13,5,9),rock.material);
   crown.rotation.x=Math.PI/2;crown.position.y=s.height/2;
+   stretch?.mapMesh?.(rim,{label:'tzatzul-spire:mouth-rim',maxPatchWorldSize:6});
+   stretch?.mapMesh?.(crown,{label:'tzatzul-spire:upper-perch',maxPatchWorldSize:6});
   for(const m of [rock,mouth,rim,crown]) {m.userData.terrainJigsawIgnore=true;root.add(m);}
   scene.add(root);
   return {root,geo:[rock.geometry,mouth.geometry,rim.geometry,crown.geometry],material:[base,black]}; // Do not dispose shared natural cliff material.

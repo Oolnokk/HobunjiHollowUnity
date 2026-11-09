@@ -329,24 +329,32 @@ will need addressing.
   town schedule).
 - **Children** (`docs/js/romance-family.js`): 3 months after the wedding a
   pregnancy/egg is announced for same-species opposite-gender couples; the
-  first sleep in your farmhouse bed after 6 months brings the birth/hatching
+  first sleep in your farmhouse bed after 4 months brings the birth/hatching
   (or, for any other pairing, a dream in which the real character creator —
   `HobunjiOnboarding.openCreator`, the same creator UI plus its redesign/life
   preview add-ons re-armed through the `hobunji-creator-session` event — picks
   the child's species, gender, cosmetics, colors and clothing, followed by
   Father Hunundi at the door via `DoorstepVisits` with an orphan to name). Newborns sleep a
-  month in a `babyBasket` fixture, toddle with hidden Toddling Footing (99 → 0
-  over 5 months), then walk the farm, greet you, and can work a squeezing vat
-  (`DewVats.setExternalWorker`) at 2× yield.
+  month in a `babyBasket` fixture, then toddle on the farm with hidden Toddling
+  Footing (99 → 0 over 5 months). Toddlers can till, seed, harvest and dig family
+  plots or squeeze dew, but cannot visit town; after 5 months they become child
+  villagers, greet you, and can visit friends. Births recur no sooner than every
+  six in-game months after the previous baby (`romance.family.birthSpacingDays`),
+  with pregnancies/eggs lasting one month. Spouses, children and toddlers each
+  have one persistent usefulness level (starting at 2★, 1★, 1★). Work advances
+  usefulness at intelligence multipliers 1×, 0.5×, and 0.25× respectively,
+  and completed family harvests and squeezing jobs use that level for actual
+  product stars. Harvests go to the quality-aware Pack; squeezing retains its
+  configured output quantity bonus.
 - Saved per character per world as `member.romanceState`. Executable coverage:
   `scripts/test-romance-dating.js`.
 
 ### Family roadmap and hybrid schedules
 
 - An adoption dream now offers a direct decision before opening child creation. You may accept, or postpone until a later farmhouse sleep after **1, 14, or 28 in-game days**; the chosen earliest day persists through saves. Biological pregnancy and eggs are unchanged.
-- One child per marriage remains the present cap (`romance.family.maxChildrenPerMarriage`). The cap is data-driven for eventual siblings, but changing it alone does not add sibling dialogue or authored household interactions.
+- `romance.family.maxChildrenPerMarriage` defaults to zero (unlimited), with optional positive caps. Siblings share the current household routines and individually saved usefulness XP; unique sibling conversations are not yet authored.
 - Once children finish toddlerhood, they become tagged villagers, form a social friendship with **Gantami Ginju**, and may visit town between 11:00 and 16:00 on a stable roll of 65% of days. They react to live village-child locations, prefer their listed friends, or use valid public stations; they stay at the farm when no safe town spot exists. Vat work has priority.
-- Spouses continue their existing authored NPC agenda during town visits (normally noon–17:00 every third day), returning to the farm routine for the other hours. `romance.spouse.townVisitsByNpc` permits authoring visits by weekday/time per spouse. Neither spouse nor child schedule has player-facing controls yet.
+- Spouses continue their existing authored NPC agenda during town visits (normally noon–17:00 every third day), returning to the farm routine for the other hours. `romance.spouse.townVisitsByNpc` permits authoring visits by weekday/time per spouse. The Farmwork manager assigns spouse/children/toddlers to plots, and the character command wheel assigns them to squeezing vats. Work levels are visible beside worker names.
 
 ## Child proportions
 

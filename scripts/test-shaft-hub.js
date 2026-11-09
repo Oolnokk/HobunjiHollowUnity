@@ -12,6 +12,7 @@ const Connector=require('../docs/js/ruin-shaft-connector.js');
 const Playable=require('../docs/js/ruin-layer-playable.js');
 globalThis.RuinWallFaces=require('../docs/js/ruin-wall-faces.js'); // The wings and shaft build their stone from merged faces when this is loaded, as index.html loads it.
 const Challenges=require('../docs/js/ruin-layer-challenges.js'); // Canonical projectile and plate stage logic. // Tests mounted stone wings, challenge gates and braziers.
+globalThis.PuzzleCaveMelody=require('../docs/js/puzzle-cave-melody.js'); // Real shared composer used by every timed ruin challenge in the headless tests.
 const NetworkChallenges={...Challenges,compose(options){ // Only the network-progression test substitutes the compound room: its real 16 variants and native push state have separate focused runtime tests.
   if(options.kind!=='findBlocks')return Challenges.compose(options);
   const stage={id:options.id,kind:'findBlocks',ready:true,linked:true,solved:false, // Solved state is consumed by the REAL network gate and brazier code.
@@ -47,6 +48,20 @@ assert(!runtime.includes("passage('Enter Shaft Hub'"),'no gameplay teleporter in
 assert(!runtime.includes("passage('Return to Ruin'"),'no gameplay teleporter out of the shaft');
 for(const file of ['ruin-layer-plan.js','ruin-shaft-corridor.js','ruin-shaft-connector.js','ruin-layer-playable.js','ruin-layer-challenges.js','ruin-v50-native-floors.js'])
   assert(index.includes(file),'game page must load '+file);
+
+function playTimedScore(challenge,sendNote=index=>challenge.session.note(index)){
+  const song=challenge.song; // Advance the real beat clock to each authored note, never bypass completion with a synthetic result.
+  let elapsed=0;
+  challenge.session.step(0,false); // A previous partial attempt must not skew the test's first downbeat.
+  challenge.session.step(0,true);
+  for(let i=0;i<song.notes.length;i++){
+    const event=song.notes[i],at=(event.startTick+.1)*song.secondsPerTick;
+    challenge.session.step(Math.max(0,at-elapsed),true);
+    elapsed=at;
+    sendNote(event.index);
+    assert.equal(challenge.session.snapshot().progress,i+1,'score note must be accepted in its own timing window');
+  }
+}
 
 // A forced trial substitutes one regular challenge slot across the generated floors.
 {
@@ -249,7 +264,7 @@ for(let seed=1;seed<=1000;seed++){
       assert.equal(wing.corridors.length,wing.rooms.length,'hallway per progression stage');
       if(wing.rooms.length===3){
         // A room is a room: either puzzle chamber draws from the whole implemented set (no stage-specific families).
-        assert(wing.rooms.slice(0,-1).every(r=>Plan.PLAYABLE_PUZZLES?.includes?.(r.challenge)||['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain','statueDefense','findBlocks'].includes(r.challenge)),'both chambers use an implemented mechanism');
+        assert(wing.rooms.slice(0,-1).every(r=>Plan.PLAYABLE_PUZZLES?.includes?.(r.challenge)||['pressurePlate','glyphObelisk','ceilingRailTargets','timedMelody','dungeonFire','ropeChain','statueDefense','findBlocks'].includes(r.challenge)),'both chambers use an implemented mechanism');
         assert(!(wing.rooms[0].challenge==='findBlocks'&&wing.rooms[1].challenge==='findBlocks'),
           'consecutive large block puzzles would make a short wing repetitive');
       }else assert(Plan.DEFAULTS.minChallenges===1 && wing.rooms[0].challenge,
@@ -462,43 +477,46 @@ const Defense={create:options=>({
   assert.equal(controls.length,0,'fire source control must unregister on challenge disposal');
 }
 
-// A generated Scratchbone melody belongs to the game's existing eight-note
-// flute session, and a failed or unrelated melody cannot unlock the gate.
+// Timed Scratchbone scores reject wrong maps, other floors and off-plate notes.
 {
-  const handlers=new Map(),started=[]; // Event bus and captured challenge payload from the real MusicMinigame signature.
+  const handlers=new Map(),started=[]; // The genuine player-note bridge is distinct from obsolete echo-result callbacks.
   const events={addEventListener:(name,fn)=>handlers.set(name,fn),removeEventListener:(name,fn)=>{
     if(handlers.get(name)===fn)handlers.delete(name);
   }};
   const music={beginPlayerSession:arg=>{started.push(arg);return true;}};
   let floor=4,player={x:27,z:29},done=0;
   const melody=Challenges.compose({THREE,parent:new Group(),room:{x:20,z:22,w:14,d:14},
-    id:'melody-test',kind:'melodyEcho',area:'test-area',y:4,isActive:()=>true,
+    id:'melody-test',kind:'timedMelody',area:'test-area',y:4,isActive:()=>true,
     getPlayerPosition:()=>player,getPlayerY:()=>floor,
     music,events,onSolved:()=>done++});
-  assert.equal(melody.notes.length,Challenges.melodyFor('melody-test').length);
-  assert(melody.notes.every(n=>Number.isInteger(n)&&n>=0&&n<8));
+  assert.deepEqual(melody.notes,melody.song.notes.map(note=>note.index));
   melody.tick(.05);
-  assert.equal(started.length,0,'standing on the plate never equips or locks the instrument');
   for(let i=0;i<10;i++)melody.tick(.05);
-  assert.equal(melody.attempts,1,'standing still does not retrigger the plate');
-  const note=(noteIndex,area='test-area')=>handlers.get('hobunji-kurraya-puzzle-note')({detail:{noteIndex,area}}); // Exercise the actual ordinary instrument event bridge.
-  assert(!handlers.has('hobunji-ruin-melody-result'),'legacy minigame results cannot bypass manual note recognition');
+  assert.equal(melody.attempts,1,'holding the plate never starts a new attempt');
+  assert.equal(started.length,0,'a score never forces the flute into puzzle mode');
+  const note=(noteIndex,area='test-area')=>handlers.get('hobunji-kurraya-puzzle-note')({detail:{noteIndex,area}});
+  assert(!handlers.has('hobunji-ruin-melody-result'),'obsolete echo-result messages cannot unlock a melody');
   for(const value of [undefined,-1,8,NaN])note(value);
-  assert.equal(melody.heardNotes.length,0,'invalid input never advances the melody');
-  floor=0;for(const value of melody.notes)note(value);
-  assert.equal(done,0,'notes from another story cannot solve the room');
-  floor=4;for(const value of melody.notes)note(value,'other-map');
-  assert.equal(done,0,'notes from another map cannot solve the room');
-  player={x:20,z:22};melody.tick(.05);
-  assert.equal(started.length,0,'leaving the plate never needs an automatic music session');
-  note((melody.notes[0]+1)%8);
-  for(const value of melody.notes.slice(0,-1))note(value);
-  assert.equal(done,0,'a partial phrase cannot solve the room');
-  note(melody.notes.at(-1));
-  assert(melody.solved&&done===1,'manual notes solve the phrase even after stepping off the clue plate');
+  assert.equal(melody.session.snapshot().progress,0,'invalid input never advances the timed score');
+  floor=0;melody.tick(.05);
   for(const value of melody.notes)note(value);
-  assert.equal(done,1,'completion fires only once');
-  melody.dispose();assert(!handlers.size,'ordinary note listener removed on ruin exit');
+  assert.equal(done,0,'another story cannot solve the score');
+  floor=4;melody.tick(.05);
+  for(const value of melody.notes)note(value,'other-map');
+  assert.equal(done,0,'another map cannot solve the score');
+  player={x:20,z:22};melody.tick(.05);
+  for(const value of melody.notes)note(value);
+  assert.equal(done,0,'playing the correct tune off the plate must not unlock the chamber');
+  player={x:27,z:29};melody.tick(.05);
+  note((melody.notes[0]+1)%8);
+  assert.equal(melody.session.snapshot().progress,0,'wrong pitch invalidates the current attempt');
+  player={x:20,z:22};melody.tick(.05); // Leaving resets the score clock before a clean attempt.
+  player={x:27,z:29};melody.tick(.05);
+  playTimedScore(melody,index=>note(index));
+  assert(melody.solved&&done===1,'playing each note in the authored beat window opens the chamber');
+  for(const value of melody.notes)note(value);
+  assert.equal(done,1,'completion fires exactly once');
+  melody.dispose();assert(!handlers.size,'timed note listener removed on ruin exit');
 }
 
 // Real projectile challenges share the canonical ranged-hit bus; a stale
@@ -649,7 +667,7 @@ for(const side of ['north','east','south','west']){
   for(const remaining of first.challenges.slice(1)){
     player={x:remaining.x,z:remaining.z,y:remaining.floorY};
     if(remaining.kind==='pressurePlate')for(let i=0;i<17;i++)network.tick(.05);
-    else if(remaining.kind==='melodyEcho')remaining.onMelodyResult({id:remaining.id,solved:true}); // Canonical flute completion event.
+    else if(remaining.kind==='timedMelody')playTimedScore(remaining); // The session judges every authored beat.
     else if(remaining.kind==='dungeonFire')remaining.fireRecord.onBurn(); // Canonical fire-contact callback; not a normal arrow hit.
     else if(remaining.kind==='ropeChain'){player={...remaining.ropeSpec.exit};network.tick(.05);} // Same bank condition as native rope traversal.
     else if(remaining.kind==='statueDefense'||remaining.kind==='findBlocks')remaining.simulateCompletion(); // Separate authored integration test validates plinth completion.
@@ -673,8 +691,8 @@ for(const side of ['north','east','south','west']){
         player={x:challenge.x,z:challenge.z,y:challenge.floorY};
         if(challenge.kind==='pressurePlate')
           for(let j=0;j<17;j++)network.tick(.05);
-        else if(challenge.kind==='melodyEcho')
-          challenge.onMelodyResult({id:challenge.id,solved:true});
+        else if(challenge.kind==='timedMelody')
+          playTimedScore(challenge);
         else if(challenge.kind==='dungeonFire')
           assert.equal(challenge.fireRecord.onBurn(),true);
         else if(challenge.kind==='ropeChain'){
@@ -700,14 +718,11 @@ for(const side of ['north','east','south','west']){
     assert.equal(network.getState().lit,network.getState().braziers,'brazier interactions are idempotent');
   }
 
-  const oldMusic=globalThis.MusicMinigame; // Simulate leaving during a shaft melody without closing the flute overlay.
-  const echo=network.states.flatMap(state=>state.challenges).find(challenge=>challenge.kind==='melodyEcho');
+  const oldMusic=globalThis.MusicMinigame; // Timed sessions never own or close the player's manually equipped instrument.
   let musicClosed=0;
-  if(echo)globalThis.MusicMinigame={
-    state:{echoChallenge:{id:echo.id}},close:()=>{musicClosed++;}
-  };
+  globalThis.MusicMinigame={close:()=>{musicClosed++;}};
   ruin.shaftConnectorCleanup();
-  if(echo)assert.equal(musicClosed,1,'teardown must close the active stacked-story flute session');
+  assert.equal(musicClosed,0,'teardown must not close the player-owned flute');
   globalThis.MusicMinigame=oldMusic;
   assert(network.disposed,'all secondary wing collision grids and meshes are disposable');
   assert.equal(network.lightSources().length,0,'reroll removes all wing-brazier illumination sources');

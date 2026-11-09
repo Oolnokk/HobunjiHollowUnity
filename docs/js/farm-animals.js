@@ -806,8 +806,9 @@
       if (!rec) return { ok: false, message: 'Livestock not found.' };
       const lines = window.AnimalVocalizations?.dialogueLinesFor?.(animal) || [];
       const line = lines.length ? lines[Math.floor(deps.rnd() * lines.length)] : '...';
-      deps.openLivestockDialogue?.(animal, rec, [line]);
-      return { ok: true };
+      const opened = deps.openLivestockDialogue?.(animal, rec, [line]); // Only a successfully started livestock conversation triggers curiosity.
+      if (opened) window.HobunjiEmojiReactions?.trigger?.(animal.avatarRef?.group, 'curious', { height: animal.modelHeight });
+      return { ok: true }; // Preserve the preexisting contextual action result contract.
     }
     if (action === 'obj_alchemy_' + animal.id) return administerBreedingPotion(animal.livestockId, deps.getHeldItemKey?.());
     if (action === 'obj_pet_' + animal.id) {
@@ -818,6 +819,7 @@
         deps.saveWorldLivestock(list);
       }
       window.HobunjiActivityEvents?.emit('animal_petted', { farm: true, kind: rec?.kind || null, livestockId: animal.livestockId });
+      window.HobunjiEmojiReactions?.trigger?.(animal.avatarRef?.group, 'love', { height: animal.modelHeight }); // Petting animates the animal rather than an unrelated HUD icon.
       return { ok: true, message: `🤚 You give ${rec?.name || 'them'} a good scratch. They lean right into it.` };
     }
     if (action === 'obj_collect_' + animal.id) {
@@ -1688,9 +1690,20 @@
       // Newborns start in stasis just like a freshly-released crate
       // animal — the owner assigns them to a barn from the Farm tab
       // when there's room, same as any other unhoused livestock.
+      const parentSource = (ref, parent) => ({
+        source:ref?.source || 'world',id:ref?.id || null,characterId:ref?.characterId || null,
+        genotype:parent?.genotype ? JSON.parse(JSON.stringify(parent.genotype)) : null,
+      }); // Birth-time genome snapshots survive later sale/removal of either parent and keep stable ownership unambiguous.
+      const offspringProvenance = {
+        source:'farm-breeding',species:kind,parents:[parentSource(pair.parentA,parentA),parentSource(pair.parentB,parentB)],
+        averageParentHearts:avgHeart,mutationChance:breedingMutationChance(avgHeart),
+        gestationDays:LIVESTOCK_GESTATION_DAYS,birthDay:Number.isFinite(Number(deps.calendar?.day))?Number(deps.calendar.day):null,
+        genomeDerivedBy:'CreatureGenetics.crossOffspring',
+      }; // Persisted in the same world livestock record: no separate unscoped localStorage identity or migration.
       livestock.push({
         id: 'livestock_' + Math.random().toString(36).slice(2, 10), kind, barnId: null, troughIndex: null, releasedAt: Date.now(),
         name: window.CreatureGenetics.defaultLivestockName(kind), genotype: childGenotype,
+        offspringProvenance,
         daysUntilResource: deps.LIVESTOCK_RESOURCE_DEFS[kind]?.cooldownDays ?? null, resourceReady: false,
         heartLevel: HEART_DEFAULT,
       });
@@ -1835,7 +1848,15 @@
     deps.setWorldLivestockFrameCache(null);
   }
 
+  function offspringProvenanceFor(livestockId) {
+    const entry = deps?.loadWorldLivestock?.()?.find?.(animal=>animal.id===livestockId)
+      || deps?.getStable?.()?.find?.(animal=>animal.id===livestockId); // An animal sold or gifted from the world farm carries its genealogy to the new owner's personal stable.
+    const data = entry?.offspringProvenance; // Read-only mobile inspect of an actual saved birth, never one inferred from its species.
+    return data?.source === 'farm-breeding' ? JSON.parse(JSON.stringify(data)) : null;
+  }
+
   window.FarmAnimals = {
+    offspringProvenanceFor,
     init,
     aimedAnimal,
     canSpawnAt,

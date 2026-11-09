@@ -1870,8 +1870,11 @@
   // the target) is what actually draws a bandit around to its assigned
   // flank/standoff side as it closes in, instead of just walking the
   // direct line and hoping the angle check above sorts itself out.
-  function banditRingPoint(targetPlayer, angle, radiusPx) {
-    return { x: targetPlayer.x + Math.cos(angle) * radiusPx, y: targetPlayer.y + Math.sin(angle) * radiusPx };
+  function banditRingPoint(targetPlayer, angle, radiusPx, result) {
+    // Reuses each combatant's movement scratch point instead of allocating once per queued frame.
+    result.x = targetPlayer.x + Math.cos(angle) * radiusPx;
+    result.y = targetPlayer.y + Math.sin(angle) * radiusPx;
+    return result;
   }
 
   // Bandits frequently request two personal-space nudges each frame. Index the whole
@@ -1941,7 +1944,7 @@
   // Nudges a movement target away from nearby living bandits. An actor can
   // push the target into the NEXT grid cell; expand the candidate set then,
   // so downstream actors still influence it in original hostile list order.
-  function banditPersonalSpaceAdjust(c, point) {
+  function banditPersonalSpaceAdjust(c, point, result = null) {
     let px = point.x, py = point.y;
     const personalSpacePx = banditPersonalSpacePx();
     refreshBanditSpacingBuckets(personalSpacePx);
@@ -1974,6 +1977,12 @@
     // unloads without another combat update.
     candidates.length = 0;
     banditSpacingSeen.clear();
+    if (result) {
+      // Optional output keeps the hot AI path allocation-free; public/test callers still receive a fresh point.
+      result.x = px;
+      result.y = py;
+      return result;
+    }
     return { x: px, y: py };
   }
 
@@ -2178,7 +2187,8 @@
     // deps.clamp (the player has no "movement target" a bandit could aim
     // short of), this one only ever nudges where a bandit is walking
     // toward, never teleports it.
-    const unstack = banditPersonalSpaceAdjust(c, { x: c.x, y: c.y });
+    const movementPoint = c._banditMovementPoint || (c._banditMovementPoint = { x: 0, y: 0 }); // Per-bandit scratch reused by both collision nudges and the queue-ring calculation.
+    const unstack = banditPersonalSpaceAdjust(c, c, movementPoint);
     if (Math.hypot(unstack.x - c.x, unstack.y - c.y) > 1) deps.moveCreatureToward(c, unstack.x, unstack.y, def.moveSpeed, dt);
 
     const engageRangePx = banditEngagementReachPx(c, def, loadout, targetPlayer);
@@ -2243,12 +2253,12 @@
       );
       const strafeT = performance.now() / 1000 * BANDIT_STRAFE_HZ * Math.PI * 2 + (c._banditStrafePhase || 0);
       const swayAngle = Math.sin(strafeT) * BANDIT_STRAFE_ANGLE_AMPLITUDE_RAD;
-      const ringPoint = banditRingPoint(targetPlayer, baseAngle + swayAngle, baseRadius);
+      const ringPoint = banditRingPoint(targetPlayer, baseAngle + swayAngle, baseRadius, movementPoint);
       // Only pulls the bandit off the ring when actually crowding
       // another bandit -- the common case is a pure ring point, so
       // "back off when waiting" and "sway side to side" both fall out
       // of this same call instead of being two separate movements.
-      const targetPoint = banditPersonalSpaceAdjust(c, ringPoint);
+      const targetPoint = banditPersonalSpaceAdjust(c, ringPoint, movementPoint);
       // BANDIT_STRAFE_SPEED_PX_S (55px/s) is deliberately slow -- right
       // for the final small-amplitude sway once already near the ring,
       // but an outer queue ring can sit 500-800px out for a big gang
@@ -2673,7 +2683,7 @@
     // avatars and weapons" this replaces.
     const θ = -(c.facing || 0) + Math.PI / 2;
     const aimOffset = c.def.aimAngleOffset || 0;
-    const base = banditToolBaseXY(c.avatarRef);
+    const base = banditToolBaseXY(c.avatarRef, c._banditToolBase || (c._banditToolBase = { x: 0, y: 0 })); // Per-bandit base point reused for every weapon pose frame.
     // playerMesh.position.y is a feet-level origin (playerToolBaseY then
     // adds the hand height on top of that) -- avatarRef.group.position.y
     // is a CENTER-of-model anchor instead (see makeBanditEntity's
@@ -2776,12 +2786,11 @@
   // rendered portrait (buildBanditAvatar's handAttachX/Y, forwarded from
   // buildSinglePlaneAvatarModel), falling back to the generic
   // -width/2,height/2 guess only if that scan didn't produce one.
-  function banditToolBaseXY(avatarRef) {
+  function banditToolBaseXY(avatarRef, result) {
     const w = avatarRef?.modelWidth || 0.9, h = avatarRef?.modelHeight || 0.9;
-    return {
-      x: avatarRef?.handAttachX ?? (-w / 2),
-      y: avatarRef?.handAttachY ?? (h / 2),
-    };
+    result.x = avatarRef?.handAttachX ?? (-w / 2);
+    result.y = avatarRef?.handAttachY ?? (h / 2);
+    return result;
   }
 
   // Removes everything makeBanditEntity added to the scene for an entity

@@ -55,6 +55,8 @@ const hostileHunter = { health: 10, isPorakanekiHunter: true, avatarRef: { group
 const bandit = { health: 10, isBandit: true, avatarRef: { group: entity({ x: 5, z: 0 }) } };
 const denMother = { health: 10, isDenMother: true, def: { hostile: false }, avatarRef: { group: entity({ x: 5, z: 1 }) } }; // Guardian status overrides a normally peaceful species.
 const farWolf = { health: 10, def: { hostile: true }, avatarRef: { group: entity({ x: 40, z: 0 }) } };
+const buffRangeWolf = { health: 10, def: { hostile: true }, avatarRef: { group: entity({ x: 20, z: 0 }) } }; // Ordinary creature outside 14 tiles, inside a Perception-buffed radius.
+const longRangeWolf = { health: 10, def: { hostile: true }, senseRangeTiles: 30, avatarRef: { group: entity({ x: 38, z: 0 }) } }; // Custom creature radius must receive the same multiplier.
 const offSceneWolf = { health: 10, def: { hostile: true }, avatarRef: { group: entity({ x: 1, z: 0 }, otherScene) } };
 const companion = { health: 10, isCompanion: true, avatarRef: { group: entity({ x: 1, z: 1 }) } };
 const npc = { root: entity({ x: 1, z: 2 }) };
@@ -72,6 +74,8 @@ const growing = { col: 1, row: 1, root: entity({ x: 1, z: 1.5 }), tile: { crop: 
 const ripe = { col: 2, row: 1, root: entity({ x: 2, z: 1.5 }), tile: { crop: 'needlegrain', cropAge: 3, water: 0, cropReady: true, stress: 'too dry' }, data: { label: 'needlegrain', growDays: 3, idealMin: 0.2, idealMax: 0.5 }, maxWater: 3 };
 
 const synced = [];
+let perceptionFoodStacks = 0; // Mutable active food buff used by the range regression cases.
+let perceptionPotionMultiplier = 1; // Mutable existing alchemy multiplier used by the range regression cases.
 const sandbox = {
   window: {},
   performance: { now: () => 1000 },
@@ -93,6 +97,8 @@ const sandbox = {
   console,
 };
 sandbox.window.THREE = THREE;
+sandbox.window.CookingSystem = { getFoodEffectStacks: key => key === 'perception' ? perceptionFoodStacks : 0 }; // Mock live CookingSystem integration.
+sandbox.window.AlchemySystem = { getPerceptionMultiplier: () => perceptionPotionMultiplier }; // Mock live AlchemySystem integration.
 sandbox.window.WorldPopupText = { syncInfoLists: entries => { synced.push(entries); return entries.length; }, clearInfoLists: () => synced.push('cleared') };
 sandbox.window.CavernOreRocks = { senseTargets: () => [ore, separator, farRock, staleRock] };
 sandbox.window.Shattercasks = { senseTargets: () => [shattercask] };
@@ -117,7 +123,7 @@ PM.init({
   getActiveScene: () => scene,
   getPlayerTile: () => ({ x: 0, z: 0 }),
   getSources: () => ({
-    creatures: [wolf, deer, angryDeer, neutralHunter, hostileHunter, bandit, denMother, farWolf, offSceneWolf, { health: 0, def: { hostile: true }, avatarRef: { group: entity({ x: 1, z: 0 }) } }],
+    creatures: [wolf, deer, angryDeer, neutralHunter, hostileHunter, bandit, denMother, farWolf, buffRangeWolf, longRangeWolf, offSceneWolf, { health: 0, def: { hostile: true }, avatarRef: { group: entity({ x: 1, z: 0 }) } }],
     companions: [companion], npcs: [npc], livestock: [cow], corpses: [], interactables: [chest, bigBarn, cow], oreRocks: [wildOre], crops: [growing, ripe],
   }),
   onToggle: on => toggles.push(on),
@@ -191,6 +197,39 @@ assert.equal(landmarkSnap.byCategory.interact, 10, 'ordinary interactables retai
 assert.deepStrictEqual(JSON.parse(JSON.stringify(landmarkSnap.landmarkRanges)), { caves: 24, camps: 24, cliffDoors: 12, herbClusters: 12 });
 assert.deepStrictEqual(JSON.parse(JSON.stringify(landmarkSnap.landmarkSources)), { caves: 3, camps: 4, cliffDoors: 2, herbClusters: 3 }, 'provider counts appear in mobile debug before distance/off-scene rejection');
 assert.equal(PM.COLORS.landmark, '#6ab69e', 'all four landmark kinds share the bronze-verdigris mask material');
+
+// Perception food and potion buffs multiply every existing Sense Mode base radius,
+// including bespoke creature, cave/camp, cliff-door and herb-cluster distances.
+assert.strictEqual(PM.rangeMultiplier(), 1, 'no Perception effects preserves the existing distances');
+perceptionFoodStacks = 10;
+PM.update(7200);
+assert.ok(Math.abs(PM.rangeMultiplier() - 1.2) < 1e-9, 'ten Perception food stacks grant +20% detection range');
+assert.ok(Math.abs(PM.debugSnapshot().ordinaryRangeTiles - 16.8) < 1e-9, 'ordinary range scales with Perception food');
+assert.equal(PM.debugSnapshot().byCategory.hostile, 5, 'food alone does not yet reveal the creature twenty tiles away');
+
+perceptionPotionMultiplier = 1.6;
+PM.update(7400);
+const buffSnap = PM.debugSnapshot();
+assert.ok(Math.abs(buffSnap.rangeMultiplier - 1.92) < 1e-9, 'food and potion multipliers combine');
+assert.ok(Math.abs(buffSnap.ordinaryRangeTiles - 26.88) < 1e-9, 'ordinary Sense Mode reveal distance uses both buffs');
+assert.ok(Math.abs(buffSnap.effectiveLandmarkRanges.caves - 46.08) < 1e-9, 'cave and camp discovery also scales');
+assert.ok(Math.abs(buffSnap.effectiveLandmarkRanges.cliffDoors - 23.04) < 1e-9, 'cliff doors and herb discoveries also scale');
+assert.equal(buffSnap.byCategory.hostile, 7, 'both the ordinary and thirty-tile custom-range creatures are revealed');
+assert.ok(buffSnap.byCategory.landmark > landmarkSnap.byCategory.landmark, 'landmarks beyond their unbuffed radius become visible');
+assert.equal(buffSnap.rejected.offScene >= 1, true, 'buffs never reveal targets in other scenes');
+
+perceptionFoodStacks = 0;
+perceptionPotionMultiplier = 1;
+PM.update(7600);
+const expiredBuffSnap = PM.debugSnapshot();
+assert.equal(expiredBuffSnap.rangeMultiplier, 1, 'expiring the effects restores the default distance without toggling');
+assert.equal(expiredBuffSnap.byCategory.hostile, 5, 'creatures beyond 14 tiles disappear when Perception expires');
+assert.equal(expiredBuffSnap.byCategory.landmark, 7, 'landmark ranges revert when Perception expires');
+perceptionFoodStacks = Infinity;
+perceptionPotionMultiplier = NaN;
+assert.equal(PM.rangeMultiplier(), 1, 'invalid buff values must never corrupt detection range');
+perceptionFoodStacks = 0;
+perceptionPotionMultiplier = 1;
 
 // lerpHex endpoints.
 assert.strictEqual(PM.__test.lerpHex('#ffffff', '#dc143c', 1), '#dc143c');

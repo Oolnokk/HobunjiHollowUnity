@@ -1,7 +1,7 @@
 'use strict';
 // Playwright drives the ACTUAL generated multi-story V50 floor records.
 // This is an instrumented solvability test: it performs authored control
-// callbacks, registered projectile-hit callbacks and menu note-result events,
+// callbacks, registered projectile-hit callbacks and player-note events,
 // while checking planar floor routes and physical CellGrid3D gate voxels.
 // It does not pretend to test weapon aim, the flute performance UI or real-time
 // manual climbing. Those need separate controller-level browser playthroughs.
@@ -88,8 +88,15 @@ module.exports=async function runNativeV50Playthrough(page){
       const cells=[];for(let at=end;at!==null;at=prior.get(at))cells.push(at);
       return cells.reverse(); // These are actual generator-supported floor cells, not a synthetic shortcut through a sealed gate.
     };
-    const closedCells=record=>new Set(record.challenges.filter(stage=>stage.gate?.object.visible)
-      .flatMap(stage=>stage.gate.tiles.map(([x,z])=>key(x,z))));
+    const closedCells=record=>new Set(record.challenges.flatMap(stage=>{
+      const gate=stage.gate; // The collision grid, not the asynchronous stone-sink animation, determines whether this passage is sealed.
+      if(!gate)return [];
+      return gate.tiles.filter(([x,z])=>{
+        const col=gate.grid.xToCol(x+.5),row=gate.grid.zToRow(z+.5);
+        const level=gate.grid.yToLevel(gate.surfaceY+.05); // Read the same floor-specific voxel used by the gate-opening verification.
+        return gate.grid.get(col,row,level)!==0;
+      }).map(([x,z])=>key(x,z));
+    }));
     const trigger=async (control,record,stage)=>{
       if(!control||typeof control.onPress!=='function')fail('missing in-game interaction control',record,stage,control?.kind);
       const player=window.Combat?.deps?.player,tile=Number(window.Combat?.deps?.TILE)||0;
@@ -268,12 +275,27 @@ module.exports=async function runNativeV50Playthrough(page){
         if(!stage.fireLinked||!stage.fireRecord?.isActive?.())fail('native fire-ice challenge did not register a real reactive target',record,stage);
         stage.fireRecord.onBurn(); // Tests production fire target completion; weapon fire-stream collision is verified by separate DungeonFire suites.
         steps.push({floor:record.floor,stage:stage.id,event:'registered-fire-contact-callback'});
-      }else if(stage.kind==='melodyEcho'){
-        const music=window.MusicMinigame;
-        if(!Array.isArray(stage.notes)||stage.notes.length<3)fail('authored Scratchbone echo has no sequence',record,stage);
-        window.dispatchEvent(new CustomEvent('hobunji-ruin-melody-result',{detail:{id:stage.id,solved:true}})); // Explicitly a completed-phrase event injection, NOT proof of actual flute input.
-        steps.push({floor:record.floor,stage:stage.id,event:'simulated-completed-melody-event',notes:stage.notes.slice()});
-        music?.close?.();
+      }else if(stage.kind==='timedMelody'){
+        const song=stage.song,session=stage.session; // The live authored score, not an obsolete completion-event shortcut.
+        if(!song?.notes?.length||!session?.snapshot||!session?.note)
+          fail('authored timed Scratchbone score is missing its judge',record,stage);
+        await advance(1); // Occupy the physical plate and start the shared metronome.
+        if(!session.snapshot().standing)
+          fail('physical melody plate did not arm its timed judge',record,stage,{plate:stage.melodyPlate});
+        for(let index=0;index<song.notes.length;index++){
+          const note=song.notes[index],target=(note.startTick+.3)*song.secondsPerTick;
+          const frames=Math.max(0,Math.ceil((target-session.snapshot().elapsed)/.05)); // Use actual stage ticks; never force a solved flag.
+          if(frames)await advance(frames);
+          const before=session.snapshot();
+          if(before.activeIndex!==index)
+            fail('timed Scratchbone note window was missed',record,stage,{index,before,note});
+          window.dispatchEvent(new CustomEvent('hobunji-kurraya-puzzle-note',{
+            detail:{area:'map_i_dev_random_ruin',noteIndex:note.index}
+          })); // The real ordinary-instrument event bridge, guarded by map, current floor and plate occupancy.
+          if(session.snapshot().progress!==index+1)
+            fail('correctly timed instrument note was rejected',record,stage,{index,note,after:session.snapshot()});
+        }
+        steps.push({floor:record.floor,stage:stage.id,event:'real-timed-melody-judge',bpm:song.bpm,notes:song.notes.length});
       }else if(stage.kind==='ropeChain'){
         if(!stage.ropeLinked)fail('V50 rope physics never registered',record,stage);
         await put(stage.ropeSpec.exit,record,stage);
@@ -311,8 +333,22 @@ module.exports=async function runNativeV50Playthrough(page){
             fail('original V50 authored door has not moved with its accepted solution',record,stage,{
               mechanismId:sourceMechanism.id,progress:sourceMechanism.progress});
         }
-        if(record.solved!==index+1||stage.gate?.object.visible!==false)
-          fail('correct native puzzle input did not open exactly one stage gate',record,stage,{expected:index+1,actual:record.solved,gateVisible:stage.gate?.object.visible});
+        if(record.solved!==index+1){ // The stone may remain visible while GameFeel.sinkAway animates; an open collision grid is asserted immediately below.
+          const mechanism=stage.nativeMechanism
+            ?record.nativeMechanisms.states.get(stage.nativeMechanism.id):null; // Diagnoses the exact authored mechanism that failed to open this stage.
+          const plate=mechanism?.object?.userData?.linkedPressurePlateRoot; // The original V50 weight sensor is authoritative for a push-block puzzle.
+          const burden=plate?.userData?.linkedWeightBlock; // Compare the real moved burden, not the test's intended path endpoint.
+          const position=object=>object?.getWorldPosition?.(new THREE.Vector3())?.toArray?.()||null; // Distinguishes local generator coordinates from transferred story coordinates in CI.
+          fail('correct native puzzle input did not open exactly one stage gate',record,stage,{
+            expected:index+1,actual:record.solved,gateVisible:stage.gate?.object.visible,
+            mechanism:mechanism?{id:mechanism.id,motion:mechanism.motion,solved:mechanism.solved,
+              target:mechanism.target,progress:mechanism.progress,linked:mechanism.linked.map(node=>node.userData?.activatorType)}:null,
+            weight:plate?{progress:plate.userData.weightProgress,active:plate.userData.weightActive,
+              local:plate.position.toArray(),world:position(plate)}:null,
+            burden:burden?{local:burden.position.toArray(),world:position(burden),
+              routeEnd:burden.userData?.pushPath?.at(-1)}:null,
+          });
+        }
         for(const [x,z] of stage.gate.tiles){
           const grid=stage.gate.grid,col=grid.xToCol(x+.5),row=grid.zToRow(z+.5);
           const level=grid.yToLevel(stage.gate.surfaceY+.05);

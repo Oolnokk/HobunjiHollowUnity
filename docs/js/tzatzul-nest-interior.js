@@ -56,6 +56,7 @@
     if (record.mesh !== caveMesh) disposeOwned(record);
     if (record.group?.parent === caveMesh) return caveMesh; // A cached interior must not duplicate geometry.
     const plan = record.plan, group = new THREE.Group();
+    const stretch = window.HobunjiSurfaceStretchUV; // Same connected-surface stretch-to-fit PNG mapping used by Banubu's carved cave.
     group.name = 'tzatzul-nest-arena:' + mapId;
     group.userData.tzatzulArena = { mapId, rockyPerches: plan.wallPerches.length,
       stoneSpikeClusters: plan.stoneSpikeClusters.length };
@@ -65,7 +66,8 @@
       const rock = new THREE.Mesh(new THREE.CylinderGeometry(.7, .93, height, 7, 2), caveMesh.material);
       rock.name = 'tzatzul-stone-wall-perch:' + ledge.id;
       rock.position.set(finite(ledge.col) + .5, record.floorY + height / 2, finite(ledge.row) + .5);
-      rock.userData.tzatzulSharedRockMaterial = true;
+      stretch?.mapMesh?.(rock, { label: 'interior-cavern:tzatzul-rock-perch', maxPatchWorldSize: 6 }); // Texture the top cap and walls, not just the curved side.
+       rock.userData.tzatzulSharedRockMaterial = true;
       rock.userData.tzatzulRockPerch = true; // 1D/0D support is registered on demand when the area becomes active.
       group.add(rock);
       record.points.push({ id: mapId + ':' + ledge.id, col: ledge.col, row: ledge.row,

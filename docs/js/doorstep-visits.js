@@ -250,12 +250,16 @@
     const phase = dialogueDeps?.fishingTimeOfDay?.();
     const timeOfDay = ({ dawn: 'morning', day: 'day', dusk: 'evening', night: 'evening' })[phase] || 'day';
     const playerGender = dialogueDeps?.getPlayerData?.()?.appearance?.gender || 'male';
+    const playerSpeciesId = String(dialogueDeps?.getPlayerData?.()?.appearance?.speciesId || '').toLowerCase(); // Chooses authored species-dependent doorstep lines using the actual player species, not an NPC rig alias.
     const playerHonorific = playerGender === 'female' ? 'Miss' : 'Master';
     for (const node of (tree.nodes || [])) {
       if (node?.type !== 'text') continue;
       node.text = String(node.text ?? '')
         .replace(/\{\{timeOfDay\}\}/g, timeOfDay)
-        .replace(/\{\{playerHonorific\}\}/g, playerHonorific);
+        .replace(/\{\{playerHonorific\}\}/g, playerHonorific)
+        .replace(/<lad\/lass>/gi, playerGender === 'female' ? 'lass' : playerGender === 'neutral' ? 'mate' : 'lad')
+        .replace(/\{\{playerSpeciesIf:([a-z0-9_-]+)\|([^{}|]*)\|([^{}]*)\}\}/gi,
+          (_token, speciesId, whenMatch, otherwise) => playerSpeciesId === speciesId.toLowerCase() ? whenMatch : otherwise);
     }
     markNaturalTerminalText(tree);
     return tree;

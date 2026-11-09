@@ -2903,12 +2903,13 @@
         barrelAging: 'aging', vaseAging: 'aging',
       };
 
-      function addProcessedOutputs(outputs, inputStars, methodId, yieldMultiplier = 1) {
+      function addProcessedOutputs(outputs, inputStars, methodId, yieldMultiplier = 1, fixedFamilyQuality = false) { // Family vat workers preserve their own usefulness stars at completion.
         const methodClass = PROCESSING_METHOD_CLASSES[methodId] || 'quick';
         // Output quality evolves from the input's actual quality rather than
         // being rerolled from scratch — see the processing-quality-resolution
         // design in SkillSystem.rollProcessingQuality.
-        const outputStars = window.SkillSystem?.rollProcessingQuality?.(inputStars, methodClass) ?? inputStars;
+        const outputStars = fixedFamilyQuality ? Math.max(1, Math.min(5, Math.round(Number(inputStars) || 1)))
+          : (window.SkillSystem?.rollProcessingQuality?.(inputStars, methodClass) ?? inputStars); // Only manual/livestock jobs receive the player's processing-quality modifiers.
         // Efficient Processing (Farming perk): a modest chance for one extra
         // unit of each output from the same batch without consuming another
         // ingredient — capped well below Bountiful Harvest's rate since
@@ -2973,7 +2974,7 @@
           if (job?.kind !== 'timed') return;
           const finished = job;
           job = null;
-          const outputStars = addProcessedOutputs(finished.outputs, finished.inputStars, def.method, finished.yieldMultiplier);
+          const outputStars = addProcessedOutputs(finished.outputs, finished.inputStars, def.method, finished.yieldMultiplier, finished.source === 'family');
           window.FarmAnimals?.clearVatWorkerPose?.(obj.id);
           window.FarmEditor.saveFarmLayout();
           saveMemberWorldData();
@@ -5210,8 +5211,10 @@
         // Definitions with a different source canvas provide its width/height
         // ratio so the avatar plane preserves the uploaded sprite's aspect.
         const modelHeight = modelWidth * (def.spriteAspect || (600 / 1375));
-        const sizeScale = window.CreatureGenetics.creatureSizeScale(creatureKey, opts.genotype); // Applies Animation Author size-class values in-world.
-        const authoredGroundOffset = window.CreatureGenetics.creatureGroundOffset(creatureKey, opts.genotype); // Optional absolute floor-to-origin lift measured in Rigging; null means keep automatic half-height placement.
+        const visualGenotype = opts.visualSizeClass && opts.genotype
+          ? { ...opts.genotype, sizeClass: opts.visualSizeClass } : opts.genotype; // A wild adult's presentation size never rewrites its inherited offspring genes.
+        const sizeScale = window.CreatureGenetics.creatureSizeScale(creatureKey, visualGenotype); // Applies Animation Author size-class values in-world.
+        const authoredGroundOffset = window.CreatureGenetics.creatureGroundOffset(creatureKey, visualGenotype); // Optional absolute floor-to-origin lift measured in Rigging; null means keep automatic half-height placement.
         const halfH = modelHeight * sizeScale.y / 2; // Existing automatic prism floor-to-origin distance, retained as the fallback and physical half-height.
         const groundLift = Number.isFinite(authoredGroundOffset) ? authoredGroundOffset : halfH; // Replaces, rather than adds to/subtracts from, the automatic terrain baseline.
         const idUniq = (performance.now() | 0) + '_' + Math.floor(Math.random() * 100000);
@@ -14892,16 +14895,17 @@
           if (mapData.wallStyle === 'cavern') {
             if (Number.isFinite(mapData.nestCol) && Number.isFinite(mapData.nestRow)) {
               const nestCol = mapData.nestCol, nestRow = mapData.nestRow;
-              const motherKey = mapData.denMotherKind;
+              const residentSpecies = mapData.denResidentSpecies
+                || window.WildlifeSpawn.denResidentSpeciesFor?.(window.WildlifeSpawn.denCavernZoneOf(mapId), mapId); // The animals using this entrance as their home choose the entire family.
+              const residentMotherConfig = DEN_MOTHER_DEFS[residentSpecies]; // The live registry also includes species registered after the original config snapshot.
+              const motherKey = residentMotherConfig?.creatureKey || mapData.denMotherKind;
               const motherDef = CREATURE_DB[motherKey];
               // Same shared per-family genotype as this den's exterior pack
               // (see spawnPackAtDen/getOrMakeDenGenotype) — whichever of the
               // two spawns first rolls it, the other reuses it, so the
               // Den-Mother and any same-family pack members (and the nest's
-              // eggs/babies) always match. Keyed by family (not just mapId)
-              // since the Den-Mother's species is picked independently of
-              // whatever the exterior pack currently is (see
-              // pickDenMotherKind) — they can genuinely differ.
+              // eggs/babies) always match. The mother now comes from the
+              // entrance's species, so separate species rolls cannot diverge.
               const motherFamily = window.WildlifeSpawn.denGenotypeFamily(motherKey);
               const denGenotype = motherFamily ? window.WildlifeSpawn.getOrMakeDenGenotype(mapId, motherFamily) : null;
               if (motherDef && !mapData.denMotherDefeated) {
@@ -14910,6 +14914,7 @@
                   scene: bScene, grid: bGrid, cols, rows,
                   areaId: mapId, homeX, homeY, state: 'idle',
                   isDenMother: true, genotype: denGenotype,
+                  visualSizeClass: residentSpecies === 'nelk' ? 'large' : null, // Wild Nelk remain large without altering their inheritable Size allele.
                 });
                 if (mother) hostileObjects.add(mother);
               }
@@ -14921,13 +14926,14 @@
               const remaining = clutchMin + Math.floor(nestRng() * (clutchMax - clutchMin + 1));
               const motherConfig = Object.values(DEN_MOTHER_DEFS).find(def => def.creatureKey === motherKey); // Nest presentation may use hatched babies for an egg-laying species.
               const liveBirth = !!(motherConfig?.liveBirth ?? motherDef?.liveBirth);
-              const itemKey = DEN_MOTHER_ITEM_KEYS[motherKey];
+              const itemKey = residentMotherConfig?.nestItemKey || motherConfig?.nestItemKey || DEN_MOTHER_ITEM_KEYS[motherKey]; // Dynamic registration wins over an early snapshot.
               // The authored nest renderer also needs a record when collection
               // is disabled. Only the clutch count depends on having a reward.
               _denNests.set(mapId, {
                 col: nestCol, row: nestRow, w: 2, h: 2,
                 floorY: tileSurfaceYInArea(bGrid?.[nestRow]?.[nestCol], mapId),
                 itemKey, liveBirth, remaining: itemKey ? (mapData.nestState ? Math.max(0, Number(mapData.nestState.remaining) || 0) : remaining) : 0, genotype: denGenotype,
+                speciesKey: residentSpecies, guardianKey: motherKey, // Inspectable den lineage for debugging and future save migration.
               });
               if (!itemKey) {
                 window.__farmLog?.(`[wildlife] Den-Mother "${motherKey || 'missing'}" has no configured nest reward; nest collection is disabled.`, 'warn');
@@ -17092,7 +17098,7 @@
         nazgrakuCrate: { icon: '🐟', label: 'Nazgraku Crate', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Crate'], desc: 'Add this Nazgraku to your livestock through the Farm tab.' },
         nazgrakuBaby: { icon: '🐟', label: 'Nazgraku Hatchling', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: 'A Nazgraku hatchling taken from a northern-cliff den. Add it to a farm or stable to raise it.' },
         uumkaoiiMeat: { icon: '🥩', label: 'Uumkao\'ii Meat', cat: 'material', sellPrice: 7, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a wild uumkao\'ii.' },
-        uumkaoiiEgg: { icon: '🥚', label: 'Uumkao\'ii Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg'], desc: 'A warm egg taken from a den nest. Add it to your stable to raise the uumkao\'ii inside.' },
+        uumkaoiiEgg: { icon: '🥚', label: 'Uumkao\'ii Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg', 'Fertile'], desc: 'A fertile egg taken from a den nest. Add it to your stable to raise the uumkao\'ii inside.' },
         garWolfBaby: { icon: '🐾', label: 'Gar-wolf Pup', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: 'A gar-wolf pup taken from a den nest. Add it to your stable to raise it.' },
         dabinggiHoundEgg: { icon: '🥚', label: 'Dabinggi-hound Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg'], desc: "A warm, oddly leathery egg — Jubmir swears it's a dabinggi-hound egg. Add it to your farm's livestock from the Farm tab, or to your stable to raise it as a companion." },
         grehlrBaby: { icon: '🐾', label: 'Grehlr Baby', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: 'A grehlr baby rescued from a northern-cliff den. Add it to a farm or stable to raise it.' },
@@ -31365,7 +31371,7 @@
           const seedKey = cropData[crop]?.seedKey;
           return !!seedKey && (Number(_loadWorldStorage()?.[seedKey]) || 0) > 0;
         },
-        applyFarmJob: (job, c, r, crop, plotId) => {
+        applyFarmJob: (job, c, r, crop, plotId, workerId = null) => { // Family-worker identity is used only for harvest quality; players earn no XP from delegated work.
           const tile = grid[r]?.[c];
           if (!tile) return false;
           // The persisted editor is authoritative, even when a worker has an older claim.
@@ -31389,6 +31395,18 @@
             if (store[data.seedKey] <= 0) delete store[data.seedKey];
             if (!_saveWorldStorage(store)) return false; // Never sow a seed that failed to debit Farm Storage.
             tile.crop = crop; tile.cropAge = 0; tile.cropReady = false; tile.stress = '';
+          } else if (job === 'harvest') {
+            const data = cropData[tile.crop] || (window.CropVarieties?.ensure?.(tile.crop) && cropData[tile.crop]); // Match manual harvesting for dynamically bred crop varieties.
+            if (!workerId || !tile.cropReady || !data?.cropKey) return false;
+            const key = data.cropKey; // Ready crops harvested by family go to the quality-aware Pack, not the quality-blind Farm Storage.
+            const cap = window.InventoryStacks?.MAX_TOTAL || 999;
+            if ((Number(inventory[key]) || 0) >= cap) return false; // A full bag must not silently destroy a harvest.
+            const stars = window.RomanceFamily?.rollWorkQuality?.(workerId) ?? 1; // The worker's level—not the player's Farming mastery—sets its quality.
+            inventory[key] = (Number(inventory[key]) || 0) + 1;
+            window.CookingSystem?.recordItemQuality?.(key, stars, 1);
+            tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
+            tile.fertilized = false; tile.stress = '';
+            saveMemberWorldData(); // Persist Pack contents as well as the saved farm tile.
           } else return false;
           markTileDirty(c, r);
           if (currentArea === 'farm') window.WaterSystem.recomputeWater(false);
@@ -32151,6 +32169,7 @@
         zoneLayouts: _zoneLayouts,
         makeCreatureEntity,
         CREATURE_DB,
+        ITEM_DEFS, // Shared live inventory registry: nest audit validates usable eggs and Puktuk baby fallback registers real pickups.
         showToast,
         showZoneBanner,
         buildingScenes: _buildingScenes,

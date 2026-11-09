@@ -420,7 +420,17 @@
       const debugBtn = document.createElement('button'); // Shared mobile-accessible diagnostics for either editor.
       debugBtn.id = 'houseLayoutDebug'; debugBtn.className = 'settings-small-btn'; debugBtn.textContent = 'Copy Layout Debug';
       debugBtn.addEventListener('click', async () => {
-        const report = JSON.stringify({ layout: window.FarmPanel.layoutEditorDebug(), farmColors: window.FarmWorldSettings?.current?.(), barn: _layoutAdapter ? (_layoutAdapter.debugSnapshot ? _layoutAdapter.debugSnapshot() : window.BarnIncubator?.debugSnapshot?.()) : null }, null, 2); // Full report is produced only on demand.
+        const breeding = window.CropVarieties?.lastBreeding; // Most recently observed crop pairing, not fabricated ancestry for arbitrary saved seed stacks.
+        const report = JSON.stringify({
+          layout:window.FarmPanel.layoutEditorDebug(),farmColors:window.FarmWorldSettings?.current?.(),
+          barn:_layoutAdapter ? (_layoutAdapter.debugSnapshot ? _layoutAdapter.debugSnapshot() : window.BarnIncubator?.debugSnapshot?.()) : null,
+          cropGenealogy:{status:window.CropVarieties?.provenanceStatus || null,lastBreeding:breeding || null,
+            lastChildRoutes:breeding ? window.CropVarieties?.provenanceFor?.(breeding.offspring) || null : null},
+          livestockBirths:(deps?.loadWorldLivestock?.() || []).filter(entry=>entry.offspringProvenance)
+            .slice(-20).map(entry=>({id:entry.id,species:entry.kind,provenance:entry.offspringProvenance})),
+          stabledBirths:(deps?.getStable?.() || []).filter(entry=>entry.offspringProvenance)
+            .slice(-20).map(entry=>({id:entry.id,species:entry.kind,provenance:entry.offspringProvenance})), // Transfer of a bred animal moves its genealogy with the animal into its new personal save owner.
+        },null,2); // Existing phone Copy Layout Debug includes only bounded genealogy readbacks on demand.
         try { await navigator.clipboard.writeText(report); deps.showToast('Layout debug copied.', true); }
         catch (_) { window.prompt?.('Copy layout debug:', report); }
       });
@@ -1562,6 +1572,7 @@
       id: 'stable_' + Math.random().toString(36).slice(2, 10), kind: entry.kind, name: entry.name,
       lifeStage: entry.lifeStage === 'baby' ? 'baby' : 'adult', // Farm-to-Stable transfers must preserve Nursery babies rather than silently aging them.
       genotype: entry.genotype, aiType: deps.companionAiTypeForKind(entry.kind), level: 0, stabledAt: Date.now(),
+      ...(entry.offspringProvenance ? {offspringProvenance:JSON.parse(JSON.stringify(entry.offspringProvenance))} : {}), // Preserve birth-time parent genomes through farm-to-Stable gifts, sales and owner transfers.
       ...(entry.swarmColor ? { swarmColor: entry.swarmColor } : {}), // A honeyfuzzle swarm keeps its color as a companion.
     };
   }

@@ -171,7 +171,7 @@
         netChallenge=root.RuinLayerChallenges?.compose?.({
           THREE,parent:group,room:{x:cx-offset-1.5,z:cz-3.5,w:3,d:3},y:floorY,
           id:id+'-net-challenge',kind:netVariant==='glyphs'?'glyphObelisk'
-            :netVariant==='movingTargets'?'ceilingRailTargets':'melodyEcho',
+            :netVariant==='movingTargets'?'ceilingRailTargets':'timedMelody',
           mapId:MAP_ID,isActive:alive,onSolved:release,
           getPlayerPosition:kit.playerWorld,
           getPlayerY:()=>game.getPlayerGroundSupportY?.()??kit.playerWorld()?.y??floorY,
@@ -251,7 +251,7 @@
       if(variant==='melody'||variant==='ceilingRail'){
         const challenge=root.RuinLayerChallenges?.compose?.({
           THREE,parent:group,room:{x:cx+1.5,z:cz-4.5,w:3,d:3},y:floorY, // Away from all four block plates and their pushing approaches.
-          id:id+'-pillar-unlock',kind:variant==='melody'?'melodyEcho':'ceilingRailTargets',mapId:MAP_ID,
+          id:id+'-pillar-unlock',kind:variant==='melody'?'timedMelody':'ceilingRailTargets',mapId:MAP_ID,
           isActive:alive,onSolved:triggerSink,
           getPlayerPosition:kit.playerWorld,
           getPlayerY:()=>game.getPlayerGroundSupportY?.()??kit.playerWorld()?.y??floorY,

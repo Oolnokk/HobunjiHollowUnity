@@ -49,10 +49,31 @@
     if (!census) return '';
     return `<div style="padding:8px 10px;margin-bottom:8px;background:rgba(106,167,255,.08);border:1px solid rgba(106,167,255,.25);border-radius:6px;font-size:12px">
       <div style="font-weight:600;color:#e5e7eb;margin-bottom:2px">Den / Nest Census — ${deps.esc(zoneId)}</div>
-      <div>Gar-wolf dens generated: <b>${census.denCount}</b></div>
+      <div>Animal den anchors: <b>${census.denCount}</b></div>
       <div>Drenkirra nest selections: <b>${census.nestTreesSelected}/${census.nestTreeCap}</b> (minimum ${census.minimumSeparationTiles} tiles apart)</div>
       <div>Resident/populated nest trees: <b>${census.nestTreesResident}/${census.nestTreesAlive}</b></div>
       <div style="opacity:.72">Selected tiles: ${census.selectedNestTiles?.length ? census.selectedNestTiles.map(tile => `(${tile.col},${tile.row})`).join(', ') : 'none yet — distant regions add nests as they stream in'}</div>
+    </div>`;
+  }
+
+  function renderNestingSpeciesAudit() {
+    const audit = window.WildlifeSpawn?.nestingSpeciesAudit?.() || []; // Live registrations, not a hardcoded list of imagined nesting animals.
+    if (!audit.length) return '';
+    const failed = audit.filter(entry => !entry.ok);
+    const rows = audit.map(entry => {
+      const offspring = entry.exempt ? 'offspring item exempt' : entry.itemKey || 'MISSING OFFSPRING';
+      const status = entry.ok ? '✓' : '⚠';
+      const issues = entry.ok ? '' : ' — ' + [
+        !entry.registered ? 'species absent' : null,
+        !entry.guardianRegistered ? 'guardian absent' : null,
+        !entry.offspringMapped ? 'unusable baby/egg' : null,
+        !entry.hasGenetics ? 'no inherited-coat renderer' : null,
+      ].filter(Boolean).join(', ');
+      return `<div>${status} ${deps.esc(entry.kind)} → ${deps.esc(entry.guardianKey || '(no guardian)')} · ${deps.esc(offspring)}${deps.esc(issues)}</div>`;
+    }).join('');
+    return `<div style="padding:8px 10px;margin-bottom:8px;border:1px solid rgba(106,167,255,.3);border-radius:6px;font-size:12px">
+      <div style="font-weight:600;margin-bottom:3px">Nesting Species / Offspring — ${audit.length - failed.length}/${audit.length} valid</div>
+      ${rows}
     </div>`;
   }
 
@@ -174,7 +195,7 @@
     syncWildlifeTabVisibility();
     const container = document.getElementById('wildlifeDenList');
     if (!container) return;
-    const censusHtml = renderDenNestCensus() + renderDenTurnoverCensus() + renderRoamingHerdCensus() + renderCaveGeometryCensus() + renderTzatzulCensus() + renderPingdortCensus();
+    const censusHtml = renderDenNestCensus() + renderNestingSpeciesAudit() + renderDenTurnoverCensus() + renderRoamingHerdCensus() + renderCaveGeometryCensus() + renderTzatzulCensus() + renderPingdortCensus();
     if (!window.WildlifeSpawn.getDenGenotypes().size) {
       container.innerHTML = censusHtml + '<div style="opacity:.6;padding:8px 0">No den-family genotypes generated yet this session. Roaming herds are reported separately above because they do not belong to caverns.</div>';
       return;
