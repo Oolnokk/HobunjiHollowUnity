@@ -99,6 +99,20 @@
     if(!saved)debug.progressSaveError='Opened chest state could not be saved';
     return saved;
   }
+  function isActiveRuinBossDefeated(seed){
+    const snapshot=activeRuinProgress(); // A dead lich stays defeated while its specific site and seed still exist.
+    return snapshot?.version===1&&snapshot.bossDefeated===true
+      &&Number(snapshot.seed)===Number(seed);
+  }
+  function markActiveRuinBossDefeated(seed){
+    if(!activeVisit||activeVisit.kind==='story-vault'||!Number.isFinite(Number(seed)))return false;
+    const store=progressStore(),previous=store.sites[activeVisit.id];
+    const snapshot=previous?.version===1&&Number(previous.seed)===Number(seed)?previous:{version:1,seed};
+    store.sites[activeVisit.id]={...snapshot,bossDefeated:true};
+    const saved=window.WorldMetaStore?.saveRuinProgress?.(worldId(),store)===true;
+    if(!saved)debug.progressSaveError='Defeated boss state could not be saved';
+    return saved;
+  }
   function forgetActiveRuinProgress() {
     if(!activeVisit)return false;
     const store=progressStore();delete store.sites[activeVisit.id];
@@ -726,7 +740,8 @@
     init, registerWorkspace, expandLocaleDefs, buildZoneMeshes, objectAt, completeActiveRuin, onRuinLeft,
     openHole, holeAt, treasureHoleChance, syncMapMarkers, installRangedHook, trackNearby,
     storyVaultSite, storyVaultDigCheck, refreshStoryVault,
-    activeRuinProgress,saveActiveRuinProgress,isActiveRuinChestOpened,markActiveRuinChestOpened, // World-scoped puzzle, checkpoint and chest progress share one record.
+    activeRuinProgress,saveActiveRuinProgress,isActiveRuinChestOpened,markActiveRuinChestOpened,
+    isActiveRuinBossDefeated,markActiveRuinBossDefeated, // World-scoped boss outcome survives re-entry until the site expires.
     isInSite:() => !!activeVisit,
     debugSnapshot:() => ({
       ...debug, cycle:cycle(), active:activeVisit, rangedHookInstalled,
