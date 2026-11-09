@@ -99,6 +99,7 @@ function twoMaterialMesh(){
   const html=fs.readFileSync(path.resolve(__dirname,'../docs/tools/index.html'),'utf8');
   assert.match(html,/fw-geometry-workshop/,'workshop must be reachable from the Dev Tools hub');
   const shell=fs.readFileSync(path.resolve(__dirname,'../docs/tools/geometry-workshop/index.html'),'utf8');
-  for(const id of ['source-kind','repo-path','generator','file','remesh','reduction','export','log'])assert.ok(shell.includes('id="'+id+'"'));
+  for(const id of ['source-kind','repo-path','generator','file','pick-game','pick-scope','remesh','reduction','export','log'])assert.ok(shell.includes('id="'+id+'"'));
+  assert.match(fs.readFileSync(path.resolve(__dirname,'../docs/tools/geometry-workshop/workshop.js'),'utf8'),/function capturePicked\(/);
   console.log('Geometry Workshop: material boundaries, UVs, remesh, optimizer, preservation and hub wiring OK');
 })().catch(err=>{console.error(err);process.exitCode=1;});

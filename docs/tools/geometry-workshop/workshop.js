@@ -29,6 +29,9 @@
   let candidate = null; // Generated preview clone with its own edited geometry.
   let sourceName = 'model'; // Name for diagnostics and exported GLB files.
   let downloadUrl = null; // Retains a manual-tap GLB link on mobile until replaced.
+  let linkedGame = null; // Optional game tab opened directly by this workshop.
+  let liveBuffer = null, liveName = ''; // Captured live GLB bytes/label for the existing load/preview pipeline.
+  let activePick = null; // One-shot game canvas listener, cancelled on another pick or Escape.
   let generation = 0; // Invalidates stale async loads and recomputations.
   let updating = false; // Disables competing export operations while a preview is building.
   const host = $('canvas-host'); // In-tool shared WebGL comparison viewport.
@@ -203,7 +206,7 @@
   }
   function showSourceKind() {
     const kind = $('source-kind').value;
-    for (const key of ['repository', 'generated', 'local']) $('source-' + key).hidden = key !== kind;
+    for (const key of ['repository', 'generated', 'local', 'live']) $('source-' + key).hidden = key !== kind;
   }
   async function parseGLB(data) {
     return new Promise((resolve, reject) => {
@@ -226,6 +229,115 @@
     }
     throw new Error('Unknown game mesh generator');
   }
+  function findGame() {
+    const parent = window.parent !== window ? window.parent : null;
+    const candidates = [linkedGame, parent?.__hobunjiToolsGameWindow, parent?.opener, window.opener]; // Existing game launched from hub or from this lab.
+    for (const game of candidates) {
+      try {
+        if (game && !game.closed && game !== window && game.THREE && game.GridTileAccessors?.getActiveScene) return game;
+      } catch (_) { /* Other origin: never access it. */ }
+    }
+    return null;
+  }
+  function pickStatus(message, error = false) {
+    $('live-status').textContent = message;
+    log(message, error);
+  }
+  function openLinkedGame() {
+    const current = findGame();
+    if (current) { try { current.focus(); } catch (_) {} pickStatus('Linked game tab focused.'); return; }
+    linkedGame = window.open('index.html', '_blank');
+    pickStatus(linkedGame ? 'Linked game opened. Enter a world, enable Dev Mode, then return here to arm picking.' : 'Browser blocked the game tab. Enable popups and try again.', !linkedGame);
+  }
+  function cancelPick() {
+    if (!activePick) return;
+    const entry = activePick;
+    activePick = null;
+    try {
+      entry.canvas.removeEventListener('pointerdown', entry.onPointer, true);
+      entry.game.removeEventListener('keydown', entry.onKey, true);
+    } catch (_) {}
+  }
+  async function loadGameExporter(game) {
+    if (game.THREE?.GLTFExporter) return;
+    await new Promise((resolve, reject) => {
+      const script = game.document.createElement('script'); // Game uses its own Three.js realm for correct material/geometry serialization.
+      script.src = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js';
+      script.onload = resolve;
+      script.onerror = () => reject(new Error('Could not load GLTFExporter into the game tab'));
+      game.document.head.appendChild(script);
+    });
+    if (!game.THREE.GLTFExporter) throw new Error('GLTFExporter did not initialize in the game tab');
+  }
+  async function capturePicked(game, hit, scene) {
+    let target = hit.object;
+    if ($('pick-scope').value === 'group') {
+      for (let node = target.parent; node && node !== scene && !node.isScene; node = node.parent) {
+        if (!node.name || !node.children?.length) continue;
+        const meshCount = Core.stats(node);
+        if (meshCount.meshes > 1 && meshCount.triangles <= Core.MAX_OUTPUT_TRIANGLES) {
+          target = node; break;
+        }
+      }
+    }
+    const counts = Core.stats(target);
+    if (!counts.meshes || counts.triangles > Core.MAX_OUTPUT_TRIANGLES) throw new Error('Pick a smaller object; this capture exceeds the mobile mesh budget.');
+    const custom = [];
+    target.traverse(node => {
+      if (!node.isMesh) return;
+      const mats = Array.isArray(node.material) ? node.material : [node.material];
+      if (mats.some(mat => mat?.isShaderMaterial || mat?.isRawShaderMaterial)) custom.push(node.name || 'unnamed mesh');
+    });
+    if (custom.length) throw new Error('Cannot serialize custom shader materials without losing their appearance. Choose an authored/standard-material mesh instead.');
+    await loadGameExporter(game);
+    const bytes = await new Promise((resolve, reject) => {
+      game.THREE.GLTFExporter && new game.THREE.GLTFExporter().parse(target, result => {
+        if (!(result instanceof game.ArrayBuffer)) return reject(new Error('Game exporter returned non-binary data'));
+        resolve(result);
+      }, { binary: true, onlyVisible: true, includeCustomExtensions: true });
+    });
+    liveBuffer = bytes;
+    liveName = (target.name || target.type || 'game-mesh') + '.glb';
+    pickStatus('Captured ' + counts.triangles.toLocaleString() + ' triangles from ' + (target.name || 'game mesh') + '. Building preview…');
+    $('source-kind').value = 'live';
+    showSourceKind();
+    await loadCurrent();
+  }
+  function armGamePick() {
+    cancelPick();
+    const game = findGame();
+    if (!game) { pickStatus('No linked game tab found. Use Open linked game and enable Dev Mode there.', true); return; }
+    const dev = game.document.getElementById('settingDevMode')?.checked;
+    if (!dev) { pickStatus('Enable Dev Mode in the game Settings before selecting scene geometry.', true); return; }
+    const scene = game.GridTileAccessors.getActiveScene();
+    const camera = game.Combat?.deps?.getActiveCamera?.() || game.BanditCombat?.deps?.getActiveCamera?.() || game.DevRandomRuinInteractions?.activeCamera?.();
+    const canvas = game.__hobunjiGameRenderer?.domElement;
+    if (!scene?.isScene || !camera || !canvas) { pickStatus('Game renderer not ready. Enter a playable area first.', true); return; }
+    const onKey = event => { if (event.key === 'Escape') { cancelPick(); pickStatus('Game mesh selection cancelled.'); } };
+    const onPointer = event => {
+      event.preventDefault();
+      event.stopImmediatePropagation?.();
+      cancelPick();
+      try {
+        const bounds = canvas.getBoundingClientRect();
+        const x = (event.clientX - bounds.left) / bounds.width * 2 - 1;
+        const y = -(event.clientY - bounds.top) / bounds.height * 2 + 1;
+        const ray = new game.THREE.Raycaster();
+        ray.setFromCamera(new game.THREE.Vector2(x,y), camera);
+        const hit = ray.intersectObjects(scene.children, true).find(item =>
+          item.object?.isMesh && item.object.geometry && item.object.visible !== false &&
+          !item.object.userData?.furniturePattern && item.object.material);
+        if (!hit) { pickStatus('No mesh at that position. Arm selection again and tap a solid object.', true); return; }
+        capturePicked(game, hit, scene).catch(error => pickStatus('Capture failed: ' + (error?.message || error), true));
+      } catch (error) { pickStatus('Mesh pick failed: ' + (error?.message || error), true); }
+    };
+    activePick = { game, canvas, onKey, onPointer };
+    canvas.addEventListener('pointerdown', onPointer, true);
+    game.addEventListener('keydown', onKey, true);
+    pickStatus('Pick armed. Switch to the game tab and tap a 3D mesh; the workshop will receive its GLB.');
+    try { game.focus(); } catch (_) {}
+  }
+
   async function loadCurrent() {
     if (updating) return;
     const token = ++generation;
@@ -241,6 +353,11 @@
           name = file.name;
           break;
         }
+        case 'live':
+          if (!liveBuffer) throw new Error('Pick a visible game mesh first.');
+          next = await parseGLB(liveBuffer);
+          name = liveName || 'live-mesh.glb';
+          break;
         case 'generated':
           name = $('generator').value + '_seed-' + $('seed').value;
           next = buildGenerated();
@@ -322,6 +439,9 @@
   $('source-kind').addEventListener('change', showSourceKind);
   $('repo-preset').addEventListener('change', () => { $('repo-path').value = $('repo-preset').value; });
   $('load').addEventListener('click', loadCurrent);
+  $('open-game').addEventListener('click', openLinkedGame);
+  $('pick-game').addEventListener('click', armGamePick);
+  window.addEventListener('pagehide', cancelPick);
   $('update').addEventListener('click', updatePreview);
   $('export').addEventListener('click', exportGLB);
   $('copy-report').addEventListener('click', async () => {

@@ -193,7 +193,7 @@ window.addEventListener('message',e=>{
 const GAME_WS_OVERRIDE_KEY='hobunji_game_workspace_override_v1';
 document.getElementById('open-game-btn').addEventListener('click',()=>{
   try{const bridge=document.getElementById('if-map-editor')?.contentWindow?._mapEditorBridge;const liveWs=bridge?.getWorkspace?bridge.getWorkspace():null;const raw=liveWs?JSON.stringify(liveWs):localStorage.getItem('hobunji_map_editor_workspace_v1');if(raw)localStorage.setItem(GAME_WS_OVERRIDE_KEY,raw)}catch(_){}
-  window.open('../index.html','_blank');
+  window.__hobunjiToolsGameWindow = window.open('../index.html','_blank'); // Workspace-linked game is available to the Geometry Workshop for live mesh picking.
 });
 </script>
 </body>

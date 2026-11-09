@@ -27,6 +27,7 @@
         <option value="repository">Repository GLB</option>
         <option value="generated">Procedural game object</option>
         <option value="local">Local GLB file</option>
+        <option value="live">Pick mesh from running game</option>
       </select>
       <div id="source-repository">
         <label for="repo-preset">Common assets</label><select id="repo-preset"></select>
@@ -42,6 +43,13 @@
       <div id="source-local" hidden>
         <label for="file">Choose a binary glTF (.glb)</label>
         <input id="file" type="file" accept=".glb,model/gltf-binary">
+      </div>
+      <div id="source-live" hidden>
+        <p class="muted">Pick any visible authored or generated mesh from a linked game tab. Only Dev Mode permits picking. Tap here, switch to the game tab and tap the object, then return to the workshop.</p>
+        <label for="pick-scope">Capture scope</label><select id="pick-scope"><option value="mesh">Clicked mesh</option><option value="group">Nearest named parent group</option></select>
+        <button id="open-game" type="button">Open / focus linked game</button>
+        <button id="pick-game" type="button">Pick from game</button>
+        <small id="live-status" role="status">Requires the game and workshop on the same website/origin.</small>
       </div>
       <button id="load" type="button">Load object</button>
     </section>
