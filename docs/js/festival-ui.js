@@ -98,12 +98,14 @@
         html += `<p class="festival-dish-total"><strong>${chosen.score} contest points</strong> · ${chosen.ingredientDetails.length} ingredients</p>`;
         if (chosen.estimatedQuality) html += '<p class="festival-note">This older dish predates ingredient-quality records. Ingredient stars are estimated from finished-food quality; the saved contest score and eating buffs remain authoritative.</p>';
         if (chosen.estimatedEffects) html += '<p class="festival-note">Individual ingredient buffs are approximate for this older recipe; the total eating effects shown below are the stored values.</p>';
+        const inspectedTotal = Math.round((chosen.ingredientDetails || []).reduce((sum,item)=>sum+(Number(item.points)||0),0)*100)/100; // Saved historical contest results may predate rarity snapshots.
+        if (Math.abs((Number(chosen.score)||0)-inspectedTotal)>0.01) html += '<p class="festival-note">Historical score preserved. This ingredient breakdown uses current source estimates because the original rarity multipliers were not recorded.</p>';
         html += '<h4>Ingredient quality and contribution</h4><ul class="festival-ingredient-list">';
         html += chosen.ingredientDetails.map(item=>{
           const contribution=describeEffects(item.effects).join(', ') || 'No cooking buff';
           const rarity=Number(item.rarityMultiplier) || 1; // Inspector shows the same rarity factor actually used for scoring, not the rounded combined multiplier.
           const math=rarity===1 ? `${item.stars} × ${item.processingMultiplier ?? item.multiplier}`
-            : `${item.stars} × ${item.processingMultiplier} processing × ${rarity.toFixed(2)} rarity`;
+            : `${item.stars} × ${item.processingMultiplier} processing × ${rarity.toFixed(2)} rarity (${item.raritySource || 'estimated'})`;
           return `<li><strong>${esc(item.icon)} ${esc(item.label)}</strong> · ${'★'.repeat(item.stars)}${'☆'.repeat(5-item.stars)} · ${esc(math)} = <strong>${item.points} points</strong><small>${esc(contribution)}</small></li>`;
         }).join('') || '<li>Original ingredient details were not recorded for this older dish.</li>';
         html += '</ul><h4>Effects when eaten</h4><div class="festival-dish-total">';
