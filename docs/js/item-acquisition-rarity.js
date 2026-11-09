@@ -96,8 +96,12 @@
     return {probability:p,quantity:p?mean(min,max)*single/p:0,drawWeight:num(target.weight),totalWeight:total};
   }
 
-  function lootOrigins(key,list,ruin) {
-    for (const {id,entry} of lootIndex().get(key)||[]) {
+  function lootOrigins(key,list) {
+    const poolEntries=lootIndex().get(key)||[]; // Only loot-linked keys need the ruin census and chest geometry.
+    const artifact=window.ArtifactCollection?.ARTIFACTS?.[key];
+    if(!poolEntries.length&&!artifact)return;
+    const ruin=ruinContext(); // Avoid doing expensive cross-zone debugSnapshot scans for every ordinary crop or dish.
+    for (const {id,entry} of poolEntries) {
       const chestMatch=/^dungeonChest_tier([1-4])$/.exec(id);
       const chest=chestMatch?chestSource(Number(chestMatch[1]),ruin):null;
       const conditional=Object.keys(entry.conditions || {}).length>0;
@@ -109,7 +113,6 @@
             siteCount:ruin.siteCount,siteCountMeasured:ruin.siteCountMeasured}:{}),
           ...(conditional?{note:'Conditions are not assigned fabricated season/weather frequencies'}:{})}));
     }
-    const artifact=window.ArtifactCollection?.ARTIFACTS?.[key];
     if (!artifact) return;
     const culture=key.startsWith('hachutu')?'hachutu':'harlyao';
     for(let tier=1;tier<=4;tier++) {
@@ -126,7 +129,7 @@
     }
   }
 
-  function crops(key,list) {
+  function crops(key,list,options={}) {
     const data=window.CropVarieties?.rarityProfile?.(key); // Shares real crop genome, trader and growing math.
     if(!data)return false;
     const townValue=Math.max(0,num(window.TownMine?.getTownValue?.()));
@@ -142,11 +145,16 @@
         caravanDailyChance:rounded(arrival),familySelectionChance:rounded(num(data.familyPickChance)),
         regionalSelectionChance:rounded(num(data.regionPickChance)),growDays,seedDerivedProduce:!data.isSeed}));
     else {
+      const parents=Array.isArray(options.breedingParents)?options.breedingParents:[];
+      const knownParents=parents.length===2 && parents.every(parent=>window.CropVarieties?.produceFamily?.(parent)===data.family);
       const choices=Math.max(1,num(data.breedingChoices,1));
-      list.push(origin('crossbreeding','Seed maker crossbred genome',Math.pow(.5,choices),1,1,
-        cultivationEffort+num(data.seedMakerDays), 'proxy-parent-genes',{
+      const chance=knownParents ? window.CropVarieties?.breedingOutcomeChance?.(parents[0],parents[1],key)
+        : Math.pow(.5,choices);
+      list.push(origin('crossbreeding','Seed maker crossbred genome',chance,1,1,
+        cultivationEffort+num(data.seedMakerDays),knownParents?'exact-parent-genetics':'proxy-parent-genes',{
           geneChoices:choices,mutationRate:num(data.mutationRate),
-          note:'Parent alleles are not recorded on an inventory seed: genetic probability is a 50/50 locus proxy'}));
+          ...(knownParents?{parentKeys:[...parents]}:{
+            note:'Parent genotypes were not supplied; 50:50 locus estimate is not an exact world-wide acquisition probability'})}));
     }
     return true;
   }
@@ -254,11 +262,11 @@
   function calculate(key,defs,options={},depth=0,ancestors=new Set()) {
     const def=options.def||defs?.[key]||window.HobunjiCookingData?.items?.[key]||{};
     const sources=[]; // Independent opportunities; no sum of a fish cast and a ruin opening.
-    crops(key,sources);
+    crops(key,sources,options);
     tradersAndShops(key,sources);
     offspring(key,sources,def,options);
     fishing(key,sources);
-    lootOrigins(key,sources,ruinContext());
+    lootOrigins(key,sources);
     if(def.dropChance!=null||def.spawnChance!=null||def.acquisitionChance!=null)
       sources.push(origin('direct-drop','Authored drop chance',def.dropChance??def.spawnChance??def.acquisitionChance,
         mean(def.dropMin,def.dropMax),1,num(def.acquisitionEffort,1),'authored'));
@@ -288,9 +296,10 @@
     const entries=defs&&typeof defs==='object'
       ?(cache.get(defs)||(cache.set(defs,new Map()),cache.get(defs))):fallbackCache;
     const stamp=String(window.TownMine?.getTownValue?.()??'')+':' + key; // Town growth changes caravan frequency.
-    if(!options.force&&!options.genotype&&!options.def&&entries.has(stamp))return entries.get(stamp);
+    const contextual=options.genotype||options.def||options.breedingParents||options.hasBreedingPair;
+    if(!options.force&&!contextual&&entries.has(stamp))return entries.get(stamp);
     const result=calculate(key,defs,options);
-    if(!options.force&&!options.genotype&&!options.def)entries.set(stamp,result);
+    if(!options.force&&!contextual&&result.known)entries.set(stamp,result); // Uninitialized registries can become ready later in the same world.
     lastEvaluation={key,score:result.score,source:result.sourceLabel,certainty:result.uncertainty};
     return result;
   }
