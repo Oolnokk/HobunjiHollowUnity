@@ -486,7 +486,7 @@ eligible painted pixels retain their original relative shading, with
 near-white pixels excluded and alpha unchanged. The flail has no private
 luminance/average-midtone algorithm and does not simply multiply the
 entire image by brown. `ColorFill.debugSnapshot().shadeFillsByLabel`
-records `weapon-rope:#6B4728` for mobile debugging. Recoloring is cached
+records `weapon-rope:#6B4728` for mobile debugging. The weapon assembly's `debugSnapshot().ropeTint` also reports whether the **rendered** rope is using `ColorFill.shadeFillPixels` or the source-image fallback, making a failed CORS/canvas tint visible without a console. Recoloring is cached
 per source sprite and tint, while each flail owns a cloned texture for
 safe disposal. The original `rope_long.png` is not modified.
 
