@@ -340,4 +340,33 @@ assert(Math.abs(rarity.lootPoolItem('trinket_unstableBalance','mixed',mixedPuzzl
   {trinketDefinitions:triDefs}).probability-(1-Math.pow(1-1/6,2))) < 1e-12,
   'a tierless nested puzzle source contributes its correctly weighted trinket chance');
 
+
+const berryHost={window:{}};
+vm.runInNewContext(fs.readFileSync('docs/js/wild-berries.js','utf8'),berryHost);
+const owner=berryHost.window.WildBerries;
+const nativeBerryZone='map_northern_cliffs';
+owner.init({cropData:{redberries:{seedKey:'redberrySeeds'}},
+  _zoneBerryPersist:new Map([[nativeBerryZone,{day:4,placements:[]}]]),
+  _zoneBerryObjects:new Map([[nativeBerryZone,new Map([
+    ['1,1',{berryKey:'redberries',col:1,row:1,reserved:false}],
+    ['2,2',{berryKey:'redberries',col:2,row:2,reserved:false}],
+  ])]])});
+const previousBerries=globalThis.WildBerries;
+globalThis.WildBerries=owner;
+const bush=rarity.wildBerrySource('redberries');
+const wildSeed=rarity.wildBerrySource('redberrySeeds');
+assert.equal(bush.perBushChance,1,'the live berry bush guarantees its primary fruit harvest');
+assert.equal(bush.observedBushes,2,'source readback counts exactly two live registered native bushes');
+assert.equal(wildSeed.perBushChance,.2,'a native berry seed has an independent 20% chance per harvested bush');
+assert(Math.abs(wildSeed.atLeastOne-.36)<1e-12,'two 20% seed opportunities combine to 36%');
+assert.equal(wildSeed.expectedYield,.4,'two bush visits yield .4 seeds in expectation');
+assert.equal(rarity.foodRarity('redberries',{redberries:{}}).factor,1,'native berry source does not invent a rare food premium');
+assert(rarity.acquisitionSources('redberrySeeds',{lootPools:{},shopStock:{}}).some(x=>x.kind==='foraging'),
+  'wild berry seeds are represented as actual wilderness acquisition sources');
+assert.equal(rarity.wildBerrySource('heftroot'),null,'nonberry crops are not given invented wild berry bushes');
+const unreached=rarity.wildBerrySource('blueberries');
+assert.equal(unreached.observedBushes,null,'an ungenerated biome is unknown, not zero berry bushes');
+assert.equal(unreached.atLeastOne,null,'unknown biome count does not fabricate a negative or positive seed availability');
+if(previousBerries===undefined)delete globalThis.WildBerries;else globalThis.WildBerries=previousBerries;
+
 console.log('Item acquisition rarity tests passed.');
