@@ -12,6 +12,7 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8'); // Runtime 
 const player = { nickname: 'Nima', appearance: { speciesId: 'mao-ao', gender: 'female' } }; // Stable player identity for token expectations.
 const windowStub = {
   SCRATCHBONES_CONFIG: { game: {} },
+  __hobunjiPlayerProfile: player, // Matches the live profile that RomanceSystem reads for spouse nicknames.
   CalendarSystem: { timeDebugSnapshot: () => ({ rawDay: 10 }), getHour: () => 10 },
   HobunjiActivityEvents: { emit() {} },
 };
