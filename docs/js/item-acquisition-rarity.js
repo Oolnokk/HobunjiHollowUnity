@@ -137,10 +137,14 @@
     const [fruitKey,zoneId] = match;
     const isSeed = key !== fruitKey;
     const chance = isSeed ? clampProbability(owner.WILD_BERRY_SEED_CHANCE) : 1;
+    const zoneKinds = owner.forZone?.(zoneId) || Object.keys(zones).filter(fruit=>zones[fruit]===zoneId); // Generator picks uniformly among each zone's berry species.
+    const speciesChance = zoneKinds.length ? 1/zoneKinds.length : null;
     const census = context.census || owner.census?.(zoneId);
     const n = census?.known && Array.isArray(census.berries)
       ? census.berries.filter(item => item.berryKey === fruitKey).length : null;
     return {key,kind:isSeed?'seed':'fruit',fruitKey,zoneId,perBushChance:chance,
+      speciesChancePerGeneratedZoneBush:speciesChance,
+      chancePerRandomZoneBush:speciesChance===null||chance===null?null:speciesChance*chance,
       observedBushes:n,expectedYield:n === null || chance === null ? null : n*chance,
       atLeastOne:n === null ? null : atLeastOne(chance,n),
       certainty:n === null ? 'known harvest chance; missing live-zone count' : 'exact harvest chance and observed bushes'};
@@ -409,8 +413,8 @@
       probability:cultivar.probability,expectedQuantity:null,
       certainty:cultivar.origin === 'slagothim-import' ? 'daily stock probability before access' : 'ancestry unknown; proxy only',detail:cultivar});
     const berry = wildBerrySource(key,context);
-    if (berry) sources.push({kind:'foraging',sourceId:'wild-berry-bush',label:'Wild berry bush',probability:berry.perBushChance,
-      expectedQuantity:berry.perBushChance,certainty:berry.certainty,detail:berry});
+    if (berry) sources.push({kind:'foraging',sourceId:'wild-berry-bush',label:'Random bush in native berry zone',probability:berry.chancePerRandomZoneBush,
+      expectedQuantity:berry.chancePerRandomZoneBush,certainty:berry.certainty,detail:berry});
     const fish = fishRarity(key);
     if (fish) {
       const cast = context.fishZone && context.season && context.timeOfDay ? fishCatch(key,{
