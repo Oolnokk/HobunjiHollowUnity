@@ -102,6 +102,28 @@ assert(sourcedChild.sources.some(source=>source.certainty==='exact-parent-geneti
   'breeding source consumes actual parents, not a fabricated rarity tier');
 assert.equal(crops.breedingOutcomeChance('heftroot','needlegrain',rareMutant),0,'different-family crosses have zero chance');
 
+
+// Animal source odds share the live den species, clutch count, gestation and
+// the canonical genetics API; special coats are modifiers, not free new routes.
+sourceItems.wolfBaby={cat:'livestock',sellPrice:35,tags:['Baby']};
+window.SCRATCHBONES_CONFIG={game:{wildlife:{denMothers:{wolf:{nestItemKey:'wolfBaby'}},
+  nestClutch:{min:1,max:3}},livestock:{itemKinds:{wolfBaby:'wolf'}},
+  creatureGenetics:{patternChances:{wolf:{stripe:.1,spot:.2}}}}};
+window.FarmAnimals={GESTATION_DAYS:3};
+let calledWith=null;
+window.CreatureGenetics={PATTERN_DEFS:{wolf:['stripe','spot']},SPECIES_ALIAS:{},
+  sellValueFor:(genotype,kind)=>{calledWith={genotype,kind};return {amount:450,tier:'Rare'};}};
+const plainBaby=rarity.evaluate('wolfBaby',{defs:sourceItems});
+const rareCoat={stripe:{enabled:true,copies:1},spot:{enabled:false,copies:0}};
+const rareBaby=rarity.evaluate('wolfBaby',{defs:sourceItems,genotype:rareCoat});
+assert.equal(calledWith.kind,'wolf','genetic valuation receives genotype first and species second');
+assert.strictEqual(calledWith.genotype,rareCoat,'genetic inspection never mutates shared species definitions');
+assert(rareBaby.score>plainBaby.score,'pattern scarcity raises rarity of a specific offspring');
+assert(rareBaby.sources.some(source=>Math.abs(source.patternPresenceChance-.08)<1e-10
+  && source.genotypeTier==='Rare' && source.genotypeValue===450),
+  'independent species pattern chances combine with canonical coat valuation');
+assert(!rareBaby.sources.some(source=>source.kind==='genotype'),'genetics is not an independently farmable duplicate acquisition route');
+
 const uninitializedWindow={};
 const early=vm.createContext({window:uninitializedWindow,Math,Set,Map,WeakMap});
 vm.runInContext(fs.readFileSync('docs/js/item-acquisition-rarity.js','utf8'),early);
