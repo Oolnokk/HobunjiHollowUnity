@@ -132,6 +132,36 @@ assert.equal(cacheStats.weakBucketReferences, true, 'spatial buckets never hold 
 assert.equal(cacheStats.candidateCount, 0, 'avoidance releases the last per-query strong-reference array');
 assert.equal(cacheStats.seenCount, 0, 'avoidance releases the last per-query strong-reference set');
 
+// The live AI now hands one per-actor scratch object through both avoidance
+// and queue-ring calculations instead of allocating three points each frame.
+// Verify output identity, input preservation, and exact numeric parity.
+const inputPoint = { x: 100, y: 0 };
+const reusableMovementPoint = { x: NaN, y: NaN }; // Mirrors the per-bandit scratch point reused each simulation tick.
+const originalSpacing = spaceContext.adjust(self, inputPoint);
+const reusedSpacing = spaceContext.adjust(self, inputPoint, reusableMovementPoint);
+assert.strictEqual(reusedSpacing, reusableMovementPoint, 'collision avoidance writes into the supplied scratch point');
+assert.equal(reusedSpacing.x, originalSpacing.x, 'in-place avoidance preserves the ordered collision x result');
+assert.equal(reusedSpacing.y, originalSpacing.y, 'in-place avoidance preserves the ordered collision y result');
+assert.deepEqual(inputPoint, { x: 100, y: 0 }, 'avoiding a source point must not mutate the actor/input coordinates');
+const ringStart = banditSource.indexOf('  function banditRingPoint(');
+const ringEnd = banditSource.indexOf('  // Bandits frequently request', ringStart);
+assert(ringStart > 0 && ringEnd > ringStart, 'the enemy queue-ring helper is found');
+const ringContext = vm.runInNewContext(
+  banditSource.slice(ringStart, ringEnd) + '\nthis.ringPoint = banditRingPoint; this;',
+  {},
+);
+const ringReuse = ringContext.ringPoint({ x: 10, y: -5 }, Math.PI / 2, 20, reusableMovementPoint);
+assert.strictEqual(ringReuse, reusableMovementPoint, 'queued movement uses the same per-enemy scratch point');
+assert(Math.abs(ringReuse.x - 10) < 1e-10 && Math.abs(ringReuse.y - 15) < 1e-10, 'the ring point still follows the exact original orbit math');
+const baseHelper = banditSource.match(/  function banditToolBaseXY\([^\n]+\) \{[\s\S]*?\n  \}/)?.[0];
+assert(baseHelper, 'the per-enemy weapon anchor helper is found');
+const baseContext = vm.runInNewContext(baseHelper + '\nthis.base = banditToolBaseXY; this;', {});
+const reusableToolBase = { x: 0, y: 0 }; // Retained on each enemy avatar for idle and swing pose frames.
+assert.strictEqual(baseContext.base({ modelWidth: 2, modelHeight: 4 }, reusableToolBase), reusableToolBase);
+assert.deepEqual(reusableToolBase, { x: -1, y: 2 }, 'fallback weapon anchor matches the prior height/width formula');
+assert.strictEqual(baseContext.base({ handAttachX: 0.4, handAttachY: 1.2 }, reusableToolBase), reusableToolBase);
+assert.deepEqual(reusableToolBase, { x: 0.4, y: 1.2 }, 'authored grip points override the fallback in place');
+
 // Exercise the enemy's real trail owner. Color derives from ResourceRings,
 // while the shared Combat renderer keeps ownership of transient meshes.
 const trailStart = banditSource.indexOf('  const BANDIT_TRAIL_HALF_THICKNESS_TILES =');
