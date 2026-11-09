@@ -751,6 +751,10 @@
     const story = window.OpeningStoryCutscene.debugSnapshot(); // Reuses the same progress and countdown sent to companion diagnostics.
     const doorstep = window.DoorstepVisits?.debugSnapshot?.(); // Adds visitor runtime readiness and the most recent spawn failure.
     const hreesh = window.DoorstepVisits?.sourceDiagnostics?.('hreesh'); // Live source/build status plus retained Hreesh-specific spawn failure.
+    const pahu = window.DoorstepVisits?.sourceDiagnostics?.('pahu'); // Shows Pahu's real NPC spawn and farmhouse-clone readiness on mobile.
+    const leaf = window.DoorstepVisits?.sourceDiagnostics?.('leaf'); // Shows whether his spouse was recovered to a normal world schedule.
+    const pahuGift = window.WEAPON_TRUST_VISIT_CONFIG?.gifts?.find(gift => gift.npcId === 'pahu'); // Authoritative Grapple-Flail trust threshold and gift state.
+    const trust = window.WeaponTrustVisits; // Reads the existing priority queue rather than suggesting a visit can skip other eligible gifts.
     const fey = story.jubmirFey; // Shared persisted countdown/completion, with no timer writes from rendering.
     const registered = doorstep?.providers?.includes(FEY_VISIT_KEY); // Detects a missed provider registration without changing the queue.
     let reason = 'Ready — exit the farmhouse to request the visit.'; // Human-readable eligibility summary shown above the raw progress rows.
@@ -791,6 +795,17 @@
         ['Last exit result', doorstep?.lastExitAttempt?.result || 'None this session'],
         ['Last exit provider results', doorstep?.lastExitAttempt ? JSON.stringify(doorstep.lastExitAttempt.providers) : 'None this session'],
         ['Last spawn attempt', doorstep?.lastSpawnAttempt ? `${doorstep.lastSpawnAttempt.key || 'Unknown'}: ${doorstep.lastSpawnAttempt.reason}` : 'None this session'],
+        ['Pahu relationship hearts', pahuGift ? window.WeaponTrustVisits?.relationshipHearts?.(pahuGift) ?? 'Unavailable' : 'Unavailable'],
+        ['Pahu required hearts', pahuGift ? window.WeaponTrustVisits?.requiredHearts?.(pahuGift) ?? 'Unavailable' : 'Unavailable'],
+        ['Pahu gift eligible', pahuGift ? (trust?.giftEligible?.(pahuGift) ? 'Yes' : 'No (not yet eligible or already completed)') : 'Unavailable'],
+        ['Next eligible weapon-trust visit', trust?.pendingGifts?.()?.[0]?.npcId || 'None'],
+        ['Pahu NPC / scheduled area', pahu?.sourceAvailable ? `Yes / ${pahu.sourceArea || 'Unknown'}` : 'Not currently spawned'],
+        ['Pahu avatar build stage', pahu?.spawnStage || 'Unavailable'],
+        ['Pahu avatar build error', pahu?.spawnError || 'None recorded'],
+        ['Pahu last visit attempt', pahu?.lastAttempt ? `${pahu.lastAttempt.key}: ${pahu.lastAttempt.reason}` : 'None this session'],
+        ['Leaf NPC / scheduled area', leaf?.sourceAvailable ? `Yes / ${leaf.sourceArea || 'Unknown'}` : 'Not currently spawned'],
+        ['Leaf avatar build stage', leaf?.spawnStage || 'Unavailable'],
+        ['Leaf avatar build error', leaf?.spawnError || 'None recorded'],
         ['Hreesh requested NPC id', hreesh?.npcId || 'Unavailable'],
         ['Hreesh database record loaded', hreesh?.recordFound == null ? 'Unavailable' : hreesh.recordFound ? 'Yes' : 'No'],
         ['Hreesh live source / area', hreesh?.sourceAvailable ? `Yes / ${hreesh.sourceArea || 'Unknown'}` : 'No'],
@@ -801,7 +816,7 @@
         ['Hreesh last visit attempt', hreesh?.lastAttempt ? `${hreesh.lastAttempt.key}: ${hreesh.lastAttempt.reason}` : 'None this session'],
         ['Live NPC walker count', hreesh?.walkerCount ?? 'Unavailable'],
         ['Last story error', story.lastError || 'None'],
-        ['Latest change', 'Visitor cloning bypasses circular live hand-rig metadata and remaps cloned skeletons to their own bones; original NPC rigs stay untouched.'],
+        ['Latest change', 'Absent Pahu and Leaf NPC walkers can be recovered during festivals, and Pahu doorstep visitors retry after NPC recovery.'],
       ],
       note: 'Read-only diagnostics. After the countdown reaches zero, enter and exit the farmhouse. The visit stays pending until the inn conversation finishes. Last spawn attempt describes a past attempt, not necessarily the current blocker.',
     };

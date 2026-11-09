@@ -198,6 +198,7 @@ const exitTick = vm.runInNewContext('(function(dt) {' + exitBranchSource + '})',
   root: exitWalker.root, targetArea: 'upstairs', target: exitWalker.currentScheduleTarget,
   findNpcAreaLink: () => ({ exit: { c: 3, r: 1 }, spawn: { c: 0, r: 0 }, toArea: 'upstairs' }),
   npcMovementConfig: deps.npcMovementConfig, canNpcBeeline: window.NpcPathfinding.canNpcBeeline,
+  _isZoneArea: deps.isZoneArea, npcGridForArea: deps.npcGridForArea, // The production offscreen-zone branch reads these helpers before trying its ordinary exit route.
   rec: exitWalker.rec, window, currentArea: 'interior', Math,
 });
 for (let frame = 0; frame < 900 && exitWalker.area === 'interior'; frame++) {

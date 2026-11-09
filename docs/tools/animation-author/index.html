@@ -1208,7 +1208,7 @@ body[data-animation-author-mode="rig"] #maaViewportBadge { max-width:calc(100% -
 <script src="../../js/animal-chathead-frame.js?v=20261029h17359fc"></script>
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
 <script src="../../js/spouse-kiss-motion.js?v=20261108kiss5"></script>
-<script src="rig-preview-species.js?v=20261109rig1"></script>
+<script src="rig-preview-species.js?v=20261109rig2"></script>
 
 <script>
 (() => {
@@ -1680,7 +1680,9 @@ function creatureDisplayLabel(kind = state.creature.kind) {
 
 function defaultCreatureGenotype(kind) {
   const spec = creatureSpeciesConfig(kind);
-  const defaults = CREATURE_DEFAULTS[kind] || window.HobunjiRigPreviewSpecies?.genotypeDefaults(kind) || { base: '#808080', patterns: {} };
+  const baseKind = window.HobunjiRigPreviewSpecies?.baseSpecies(kind) || kind; // New alpha/den variants borrow the source animal's established coat defaults.
+  const defaults = CREATURE_DEFAULTS[kind] || CREATURE_DEFAULTS[baseKind]
+    || window.HobunjiRigPreviewSpecies?.genotypeDefaults(kind) || { base: '#808080', patterns: {} };
   const genotype = { base: { color: normalizeHexColor(defaults.base) } };
   for (const patternId of spec?.patterns || []) {
     genotype[patternId] = {
@@ -11946,8 +11948,36 @@ applyCreatureDefaultRules = function(actor, options = {}) {
   return result;
 };
 
+// The previous V15.23 reset still points at pre-master shoulder-perch positions.
+// Resetting only the scale must not silently move a pet to those older coordinates.
+function resetCanonicalCharacterShoulderPerchV1524(actor) {
+  if (actor?.source?.type !== 'npc') return false;
+  const key = characterRigProfileKey(actor.source); // Current species/gender key used by the shared master and rig editor.
+  const canonical = window.HOBUNJI_ATTACHMENT_RIG_MASTER?.profiles?.characters?.[key]
+    || window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[key]
+    || approvedRigLibraryCloneV1524().characters?.[key]; // Frozen master wins over imported or superseded built-in coordinates.
+  const profile = attachmentRigProfileForActor(actor);
+  if (!canonical?.anchors?.shoulderPerch || !profile) return false;
+  profile.anchors ||= {};
+  profile.anchors.shoulderPerch = normalizeTransformSnapshot(canonical.anchors.shoulderPerch, 1);
+  profile.anchors.shoulderPerch.scale = { x: 1, y: 1, z: 1 }; // Restores an unscaled grip without changing the creature's genetic Small size.
+  profile.shoulderPerchRule = {
+    ...(profile.shoulderPerchRule || {}),
+    ...(canonical.shoulderPerchRule || {}),
+    source: 'canonical-repository-shoulder-perch-reset',
+    authoredFixed: true,
+    recalculateOnPreview: false,
+  }; // Prevents legacy preview migration from immediately replacing the reset coordinate.
+  if (actor.rigAnchors?.shoulderPerch) {
+    applyTransformSnapshot(actor.rigAnchors.shoulderPerch, profile.anchors.shoulderPerch);
+  }
+  return true;
+}
+
 const baseResetAttachmentRigAnchorToRepositoryDefaultV1524 = resetAttachmentRigAnchorToRepositoryDefault;
 resetAttachmentRigAnchorToRepositoryDefault = function(actor, anchorName) {
+  if (actor?.source?.type === 'npc' && anchorName === 'shoulderPerch'
+      && resetCanonicalCharacterShoulderPerchV1524(actor)) return true;
   if (actor?.source?.type === 'creature' && (anchorName === 'saddle' || anchorName === 'shoulderGrip')) {
     const approved = approvedCreatureProfileV1524(actor.source.kind);
     const profile = attachmentRigProfileForActor(actor);

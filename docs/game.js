@@ -10525,6 +10525,8 @@
       const scheduledNpcRecords = new Map(); // Used to respawn recurring visitors at their authored entrance on later visits.
       const npcSpawnDiagnostics = new Map(); // Retains scheduled-avatar build outcomes for mobile doorstep diagnostics.
       const visitorSpawnPending = new Set(); // Used to prevent duplicate asynchronous visitor avatar builds.
+      const npcSpawnPromises = new Map(); // Shared in-flight avatar builds prevent overlapping startup, retry and event recovery spawns.
+      const npcRecoveryRetryAfter = new Map(); // Throttles repeated recovery requests when an NPC's station or avatar cannot yet load.
       window._npcWalkers = window.NpcPathfinding?.trackWalkerArray?.(npcWalkers) || npcWalkers; // Pushed walkers get collision-aware movement (js/npc-pathfinding.js).
       const PLAYER_ACTION_LOCK_ID = 'player'; // Used by shared interaction locks at player movement/tool/action chokepoints.
       // dialogueOpen/_dialogueWalker are read/written both here (camera/
@@ -12632,6 +12634,22 @@
       function npcTransitionPool(area) {
         if (_isBuildingArea(area)) return _buildingScenes.get(area)?.transitions || [];
         if (area === 'town') return worldTownTransitions;
+        if (_isZoneArea(area)) {
+          const zone = _zoneLayouts.get(area); // Uses the active procedural/hand-authored wilderness transitions, including Leaf and Pahu's house.
+          const config = EXTERIOR_ZONES[area]; // Supplies the same fallback exit and town return coordinates as player zone travel.
+          if (!config) return [];
+          const preserved = !zone ? (TOTHAL_PRESERVED_TRANSITIONS[area] || []).map(entry => ({
+            id: entry.id, col: entry.col, row: entry.row, target: 'building', targetMapId: entry.targetMapId,
+          })) : []; // Keeps fixed wilderness house doors routable during the asynchronous first Tothal Shift.
+          if (!zone) return preserved; // Do not route NPCs through an ungenerated wilderness grid before it exists.
+          const gate = zone.toTownExit; // Uses the real authored town gate when the zone provided one.
+          const col = Number.isFinite(gate?.col) ? gate.col : config.exitCol;
+          const row = Number.isFinite(gate?.row) ? gate.row : config.exitRow;
+          return [...(zone.transitions || []), {
+            id: 'npc_zone_town_' + area, area, col, row, target: 'town',
+            targetCol: config.townReturnCol, targetRow: config.townReturnRow,
+          }];
+        }
         return worldTransitions.filter(t => (t.area || 'farm') === area);
       }
 
@@ -12687,7 +12705,9 @@
             if (window.NpcScheduling.hasPresenceSchedule(rec)) visitorSpawnPending.add(rec.id);
             npcSpawnDiagnostics.set(rec.id, { stage: 'Building avatar', error: null });
             try {
-              const w = await makeNpcWalker(rec, target); // Records null returns separately from asset/build exceptions.
+              const build = makeNpcWalker(rec, target); // Reused by event recovery while this startup worker owns the avatar build.
+              npcSpawnPromises.set(rec.id, build);
+              const w = await build; // Records null returns separately from asset/build exceptions.
               if (w) npcWalkers.push(w);
               npcSpawnDiagnostics.set(rec.id, { stage: w ? 'Walker created' : 'Avatar build returned no walker', error: null });
             }
@@ -12695,7 +12715,7 @@
               npcSpawnDiagnostics.set(rec.id, { stage: 'Avatar build failed', error: String(e?.message || e) });
               console.warn('NPC walker failed for schedule', rec?.id, e);
             }
-            finally { if (window.NpcScheduling.hasPresenceSchedule(rec)) visitorSpawnPending.delete(rec.id); }
+            finally { npcSpawnPromises.delete(rec.id); if (window.NpcScheduling.hasPresenceSchedule(rec)) visitorSpawnPending.delete(rec.id); }
           }
         };
         await Promise.all(Array.from({ length: Math.min(NPC_SPAWN_CONCURRENCY, spawnable.length) }, spawnWorker));
@@ -12726,7 +12746,7 @@
         setTimeout(async () => {
           const stillDeferred = [];
           for (const rec of records) {
-            if (npcWalkers.some(walker => walker.rec?.id === rec.id) || visitorSpawnPending.has(rec.id)) continue;
+            if (npcWalkers.some(walker => walker.rec?.id === rec.id) || npcSpawnPromises.has(rec.id) || visitorSpawnPending.has(rec.id)) continue;
             const target = resolveNpcScheduleTarget(rec);
             if (!target) {
               npcSpawnDiagnostics.set(rec.id, { stage: attempt + 1 >= MAX_ATTEMPTS ? 'No schedule target; retries exhausted' : 'Waiting for schedule target', error: null });
@@ -12735,7 +12755,9 @@
             if (window.NpcScheduling.hasPresenceSchedule(rec)) visitorSpawnPending.add(rec.id);
             npcSpawnDiagnostics.set(rec.id, { stage: 'Building avatar on retry', error: null });
             try {
-              const w = await makeNpcWalker(rec, target); // Keeps retry outcomes visible alongside initial spawn results.
+              const build = makeNpcWalker(rec, target); // Deferred bootstrap and event recovery share this in-flight promise.
+              npcSpawnPromises.set(rec.id, build);
+              const w = await build; // Keeps retry outcomes visible alongside initial spawn results.
               if (w) { npcWalkers.push(w); console.log(`[NPC] ${rec.id} spawned on retry ${attempt + 1}`); }
               npcSpawnDiagnostics.set(rec.id, { stage: w ? 'Walker created on retry' : 'Avatar retry returned no walker', error: null });
             }
@@ -12743,12 +12765,58 @@
               npcSpawnDiagnostics.set(rec.id, { stage: 'Avatar retry failed', error: String(e?.message || e) });
               console.warn('NPC walker failed for schedule (retry)', rec?.id, e);
             }
-            finally { if (window.NpcScheduling.hasPresenceSchedule(rec)) visitorSpawnPending.delete(rec.id); }
+            finally { npcSpawnPromises.delete(rec.id); if (window.NpcScheduling.hasPresenceSchedule(rec)) visitorSpawnPending.delete(rec.id); }
           }
           if (!stillDeferred.length) return;
           if (attempt + 1 < MAX_ATTEMPTS) _retrySpawnDeferredNpcs(stillDeferred, attempt + 1);
           else console.warn('[NPC] Gave up waiting for a schedule target after retries:', stillDeferred.map(r => r.id));
         }, 1000);
+      }
+
+      // A missing festival guest or doorstep visitor can be rebuilt from the
+      // authoritative NPC record after the initial 30-second station warm-up.
+      // This uses the same avatar factory and schedule resolver as startup;
+      // no dummy walkers, duplicate actors or forced changes to ordinary routines.
+      async function ensureScheduledNpcWalker(npcId) {
+        const id = String(npcId || ''); // Identifies the scheduled record requested by a festival or doorstep event.
+        if (!id) return false;
+        if (npcWalkers.some(walker => !walker._doorstepVisitor && walker.rec?.id === id)) return true;
+        const pending = npcSpawnPromises.get(id); // Allows callers to wait for an existing startup/retry build.
+        if (pending) return !!(await pending);
+        const rec = scheduledNpcRecords.get(id); // Uses the exact live, composed NPC data already used at world load.
+        if (!rec || rec.dead || rec.deceased) return false;
+        const now = performance.now(); // Prevents repeated failed station/avatar retries on the festival polling cadence.
+        if (now < (npcRecoveryRetryAfter.get(id) || 0)) return false;
+        const target = resolveNpcScheduleTarget(rec); // Event overrides take precedence over the ordinary agenda.
+        if (!target) {
+          npcRecoveryRetryAfter.set(id, now + 2000);
+          npcSpawnDiagnostics.set(id, { stage: 'Recovery waiting for schedule target', error: null });
+          return false;
+        }
+        const build = makeNpcWalker(rec, target); // One awaited avatar construction, shared with other recovery requests.
+        npcSpawnPromises.set(id, build);
+        if (window.NpcScheduling.hasPresenceSchedule(rec)) visitorSpawnPending.add(id);
+        npcSpawnDiagnostics.set(id, { stage: 'Building avatar for event recovery', error: null });
+        try {
+          const walker = await build;
+          if (!walker) {
+            npcRecoveryRetryAfter.set(id, performance.now() + 5000);
+            npcSpawnDiagnostics.set(id, { stage: 'Event recovery returned no walker', error: null });
+            return false;
+          }
+          if (!npcWalkers.some(other => !other._doorstepVisitor && other.rec?.id === id)) npcWalkers.push(walker);
+          npcRecoveryRetryAfter.delete(id);
+          npcSpawnDiagnostics.set(id, { stage: 'Walker recovered for event', error: null });
+          return true;
+        } catch (error) {
+          npcRecoveryRetryAfter.set(id, performance.now() + 5000);
+          npcSpawnDiagnostics.set(id, { stage: 'Event recovery avatar failed', error: String(error?.message || error) });
+          window.__farmLog?.(`[NPC] Could not recover ${id}: ${String(error?.message || error)}`, 'warn', 'npc');
+          return false;
+        } finally {
+          npcSpawnPromises.delete(id);
+          if (window.NpcScheduling.hasPresenceSchedule(rec)) visitorSpawnPending.delete(id);
+        }
       }
 
       // NPC scheduling (resolveNpcScheduleTarget, the station registry, and
@@ -12843,6 +12911,11 @@
         tileSurfaceYInArea, // Injected so graph builds never depend on tile coordinate metadata.
         npcMovementConfig,
         npcTransitionPool,
+        npcExteriorAreas: () => ['town', 'farm', ...Object.keys(EXTERIOR_ZONES)], // Finds a building's actual exterior entrance before selecting its exit destination.
+        npcZoneEntryPoint: area => {
+          const zone = EXTERIOR_ZONES[area]; // Uses the same entry coordinates as player town-to-wilderness travel.
+          return zone ? { c: zone.entryCol, r: zone.entryRow } : null;
+        },
         buildingScenes: _buildingScenes,
         loadBuildingScene,
         buildingSpawnFromExit,
@@ -12999,7 +13072,7 @@
         else if (spawnArea === 'town') { root._npcScene = null; root._pendingTownAdd = true; root._pendingBuildingAdd = null; root._pendingZoneAdd = null; }
         else if (_isBuildingArea(spawnArea)) {
           root._npcScene = null; root._pendingTownAdd = false; root._pendingBuildingAdd = spawnArea; root._pendingZoneAdd = null;
-          if (!_buildingScenes.has(spawnArea)) loadBuildingScene(spawnArea);
+          if (!_buildingScenes.has(spawnArea) && !window.NpcScheduling?.shouldDeferCavernLoad?.(spawnArea)) loadBuildingScene(spawnArea); // Offscreen den residents keep _pendingBuildingAdd until their cave is actually entered.
         } else if (_isZoneArea(spawnArea)) {
           // Unlike buildings, zone scenes are expensive to build (full terrain
           // mesh generation) -- don't eagerly warm one up just to park an idle
@@ -13136,7 +13209,7 @@
             else if (area === 'town') { root._npcScene = null; root._pendingTownAdd = true; }
             else if (_isBuildingArea(area)) {
               root._npcScene = null; root._pendingBuildingAdd = area;
-              if (!_buildingScenes.has(area)) loadBuildingScene(area);
+              if (!_buildingScenes.has(area) && !window.NpcScheduling?.shouldDeferCavernLoad?.(area)) loadBuildingScene(area); // Offscreen cavern transfers queue the rig instead of generating unseen geometry.
             } else if (_isZoneArea(area)) {
               root._npcScene = null; root._pendingZoneAdd = area;
             } else { scene.add(root); root._npcScene = scene; }
@@ -13424,6 +13497,20 @@
               return;
             }
             if (targetArea !== this.area) {
+              // When a wilderness scene has not been rendered, its NPC grid
+              // is unavailable. Offscreen residents must still reach the inn,
+              // home and festivals; advance one logical area-graph hop instead
+              // of leaving them forever unable to walk on an unloaded grid.
+              if (_isZoneArea(this.area) && !npcGridForArea(this.area)) {
+                const hop = findNpcAreaLink(this.area, targetArea); // Reuses real exterior and building entrances, not a fabricated position.
+                const nextArea = hop?.toArea || targetArea; // Retains the existing missing-link fallback for genuinely disconnected destinations.
+                const landing = hop?.spawn || target; // The next walkable destination is checked by transferToArea.
+                if (nextArea !== this.area) {
+                  this._exitSpot = null; this._entrySpot = null; this._exitToArea = null;
+                  this.transferToArea(nextArea, landing);
+                }
+                return;
+              }
               if (!this._exitSpot) {
                 // May be several hops away (e.g. town → a building → one of its
                 // upstairs rooms) — findNpcAreaLink only returns the next leg,
@@ -31424,6 +31511,7 @@
         openNpcDialogue: walker => openNpcDialogue(walker),
       });
       window.DoorstepVisits?.init?.({
+        ensureNpcWalker: ensureScheduledNpcWalker, // Rebuilds an absent source NPC before retrying the same farmhouse visit.
         getNpcSpawnDiagnostics: npcId => {
           const rec = scheduledNpcRecords.get(npcId); // Reads the same database record used by ordinary NPC spawning.
           const target = rec ? resolveNpcScheduleTarget(rec) : null; // Checks today's authoritative schedule without spawning anything.
@@ -31662,8 +31750,9 @@
         },
         inventory,
         getItemDefs: () => ITEM_DEFS,
-        getNpcs: () => [...new Map([...scheduledNpcRecords.values(), ...npcWalkers.map(w => w.rec)].filter(Boolean).map(rec => [rec.id, rec])).values()],
+        getNpcs: () => [...new Map([...scheduledNpcRecords.values(), ...npcWalkers.filter(w => !w._doorstepVisitor).map(w => w.rec)].filter(Boolean).map(rec => [rec.id, rec])).values()], // Festival residents must not include temporary doorstep avatar proxies as extra townsfolk.
         getWalkers: () => npcWalkers,
+        ensureNpcWalker: ensureScheduledNpcWalker, // Festival guests whose initial avatar failed can be recovered after station warm-up.
         getPlayerMesh: () => playerMesh, // Passes the real player avatar root into authored pair animation without registering a clone.
         getTownMap: () => _rawExteriorMaps.get('map_hobunji_town'),
         getDecorSize: key => DECORATIVE_FURNITURE_DEFS[key],

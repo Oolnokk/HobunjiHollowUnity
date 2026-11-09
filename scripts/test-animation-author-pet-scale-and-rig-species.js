@@ -36,6 +36,8 @@ for (const kind of ['tzatzul', 'pingdort', 'skeeri-small', 'skeeri-medium', 'ske
 assert.equal(registry['tzatzul-hatchling'].base.run1, registry['tzatzul-hatchling'].base.perched, 'hatchlings do not switch to adult flight art');
 assert.equal(registry['skeeri-small'].base.perched, registry['skeeri-large'].base.perched, 'skeeri sizes share authored sprite, not unrelated art');
 assert.equal(api.defaultFrame('puktuk'), null, 'ordinary walking creatures remain on idle');
+assert.equal(api.baseSpecies('gar-wolf-alpha'), 'gar-wolf', 'Alpha preview must inherit Gar-wolf coat defaults');
+assert.equal(api.baseSpecies('grehlr-den-mother'), 'grehlr', 'Den-Mothers should retain their parent coat family');
 
 const present = new Set(); // Avoids double-checking frames that intentionally share a perched or flying PNG.
 for (const spec of Object.values(registry)) {
@@ -58,6 +60,43 @@ assert.match(author, /shoulder\.scale\.setScalar\(multiplier\)/, 'X/Y/Z must sca
 assert.match(author, /multiplier < 0\.05 \|\| multiplier > 4/, 'bad scale inputs must be rejected');
 assert.match(author, /profile\.anchors\[name\] = normalizeTransformSnapshot\(transformSnapshot\(actor\.rigAnchors\[name\]\), 1\)/, 'authored scale must persist through export');
 assert.match(author, /const authoredScale = target\.characters\[key\]\?\.anchors\?\.shoulderPerch\?\.scale/, 'rig autosave migrations must preserve custom grip multipliers');
+assert.match(author, /CREATURE_DEFAULTS\[baseKind\]/, 'alpha animal previews must inherit the source species color instead of gray');
+
+const resetStart = author.indexOf('function resetCanonicalCharacterShoulderPerchV1524(actor) {'); // Extracts the actual on-page reset implementation, not a separately replicated formula.
+const resetEnd = author.indexOf('const baseResetAttachmentRigAnchorToRepositoryDefaultV1524', resetStart);
+assert.ok(resetStart > 0 && resetEnd > resetStart, 'author should expose the canonical reset implementation');
+const master = {
+  anchors: { shoulderPerch: { position: { x: -0.2, y: 0.6, z: 0 }, rotationDeg: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } } },
+  shoulderPerchRule: { authoredFixed: true, source: 'latest-master' },
+}; // Deliberately differs from the superseded V15.23 fallback value.
+const live = {
+  anchors: { shoulderPerch: { position: { x: -0.2965, y: 0.6947, z: 0 }, rotationDeg: { x: 0, y: 0, z: 0 }, scale: { x: 0.65, y: 0.65, z: 0.65 } } },
+  shoulderPerchRule: { authoredFixed: true, source: 'previous-preview' },
+}; // Represents an edited Small-size multiplier and an outdated coordinate.
+const resetActor = { source: { type: 'npc' }, rigAnchors: { shoulderPerch: {} } };
+const resetScope = {
+  window: {
+    HOBUNJI_ATTACHMENT_RIG_MASTER: { profiles: { characters: { 'mao-ao::male': master } } },
+    HOBUNJI_ATTACHMENT_RIG_PROFILES: { characters: { 'mao-ao::male': live } },
+  },
+  actor: resetActor,
+  characterRigProfileKey: () => 'mao-ao::male',
+  attachmentRigProfileForActor: () => live,
+  normalizeTransformSnapshot: snapshot => JSON.parse(JSON.stringify(snapshot)),
+  applyTransformSnapshot: (target, snapshot) => { target.applied = JSON.parse(JSON.stringify(snapshot)); },
+  approvedRigLibraryCloneV1524: () => ({ characters: { 'mao-ao::male': live } }),
+}; // The immutable current master must win over preview-local and legacy stored values.
+const didReset = vm.runInNewContext(author.slice(resetStart, resetEnd) + '\nresetCanonicalCharacterShoulderPerchV1524(actor);', resetScope);
+assert.equal(didReset, true, 'character shoulder reset should succeed');
+assert.equal(live.anchors.shoulderPerch.position.x, -0.2, 'reset must use current canonical master X, not the stale pre-master X');
+assert.equal(live.anchors.shoulderPerch.position.y, 0.6, 'reset must restore the current canonical Y');
+assert.equal(live.anchors.shoulderPerch.scale.x, 1, 'reset must clear the authored pet scale');
+assert.equal(live.anchors.shoulderPerch.scale.y, 1, 'reset must restore uniform Y scale');
+assert.equal(live.anchors.shoulderPerch.scale.z, 1, 'reset must restore uniform Z scale');
+assert.equal(resetActor.rigAnchors.shoulderPerch.applied.position.x, -0.2, 'live preview pivot should match saved reset anchor');
+assert.equal(master.anchors.shoulderPerch.scale.x, 1, 'the shared canonical master must never be mutated');
+assert.equal(live.shoulderPerchRule.recalculateOnPreview, false, 'legacy auto placement must not overwrite reset');
+
 assert.match(author, /applyCreatureSizeClass\(creature, 'small'/, 'pet size genetics remain intact');
 assert.match(author, /setActorAttachment\(creature, character, 'shoulderPerch', 'shoulderGrip'/, 'pet root remains parented to species-level perch');
 assert.match(author, /carrier\.add\(actor\.root\)/, 'THREE parent transform composes grip scale with Small size scale');

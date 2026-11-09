@@ -1096,6 +1096,7 @@
       if (ruinTradition === 'hronal' || ruinTradition === 'tothal') drawRuinTraditionLightMasks();
       if (ruinTradition === 'kanthic') drawRuinTraditionLightMasks(window.RuinMultifloorV50Style?.lightSources?.() || []); // Only dedicated Kanthic fire fixtures lift the blackness.
       if (ruinTradition) drawRuinTraditionLightMasks(window.RuinLayerPlayable?.roomLights?.() || []); // A solved puzzle room fills with light.
+      if (ruinTradition) drawRuinTraditionLightMasks(window.RuinCheckpointTravel?.lightSources?.() || []); // White checkpoints brighten all three lich themes.
       if (ruinTradition) drawRuinTraditionLightMasks(window.SkeeriRuins?.eyeLights?.() || EMPTY_LIGHT_LIST); // Planebent Skeeri eyes pierce the dark.
       if (ruinTradition) drawRuinPatternGlowMasks(activeScene,now); // An emissive wall engraving is legible without a carried lantern.
       if (ordinaryBuildingInterior(currentArea) && !ruinTradition) drawWindowLightMasks();
