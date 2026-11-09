@@ -72,6 +72,7 @@
 .workflow-section>summary{font-size:14px}
 }
 
+.rig-legend{flex:1 1 220px;font-size:12px;line-height:1.45;color:#d6e8e2;padding:4px 0}
 /* Undo/Redo are in the document's primary action bar, never beneath the preview label. */
 header .toolbar{align-items:center}
 header .toolbar #pair-undo,header .toolbar #pair-redo{min-width:88px;position:relative}
@@ -272,9 +273,9 @@ header .toolbar #pair-undo,header .toolbar #pair-redo{min-width:88px;position:re
 <details id="editor-debug-workflow" class="workflow-section"><summary>Advanced diagnostics (mobile-friendly)</summary><pre id="debug"></pre></details></section>
 <section class="float-panel" aria-label="Weapon previews">
 <div class="float-bar" role="group" aria-label="Full assembly display controls">
-<label class="rig-guide-toggle"><input id="full-assembly-guides" type="checkbox" checked> Show shaft and head connector markers</label>
+<label class="rig-guide-toggle"><input id="full-assembly-guides" type="checkbox" checked> Show connector endpoints and reach</label><span class="rig-legend">Gold ring = rope starts on haft · Cyan ring = rope attaches to head · Purple dashed ruler = connector reach (not another weapon part)</span>
 </div>
-<div class="sprites"><figure id="flail-preview-figure"><canvas id="flail-preview" width="450" height="1500" aria-label="Full modular flail with actual rope or chain and separately scaled head"></canvas><figcaption>Full assembled rig · 2D resting pose <button class="max-toggle" type="button" data-max aria-pressed="false" aria-label="Maximize flail preview">⤢ Maximize</button></figcaption><p id="flail-preview-status" aria-live="polite">The full assembled haft, connector and head are rendered here; markers identify the actual attachment points.</p></figure>
+<div class="sprites"><figure id="flail-preview-figure"><canvas id="flail-preview" width="450" height="1500" aria-label="Full modular flail with actual rope or chain and separately scaled head"></canvas><figcaption>Full assembled rig · complete 2D resting pose, including the actual rope/chain and all head layers <button class="max-toggle" type="button" data-max aria-pressed="false" aria-label="Maximize flail preview">⤢ Maximize</button></figcaption><p id="flail-preview-status" aria-live="polite">The full assembled haft, connector and head are rendered here; markers identify the actual attachment points.</p></figure>
 <details id="source-preview-workflow" class="workflow-section"><summary>Source canvases · edit haft, head and bridge work</summary>
 <p>Open these three workspaces to drag mounts, reposition an authored bore, or paint metalwork. The full rig stays visible above.</p>
 <div class="source-previews"><figure><canvas id="shaft-canvas" width="450" height="1204"></canvas><figcaption>Haft lines <button class="max-toggle" type="button" data-max aria-pressed="false" aria-label="Maximize haft lines preview">⤢ Maximize</button></figcaption></figure>
