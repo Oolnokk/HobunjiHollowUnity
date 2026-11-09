@@ -225,7 +225,24 @@ function makeSeededRandom(seed) {
   DewVats.autoSqueezeAtVat('vat1', 'blue');
   assert.ok(startTimedJobCalls[1].inputStars > 3, "Working Animals R3 lets a high-heart worker's own quality push the vat's output above the anonymous-machine baseline");
 
-  console.log('dew-vats.js Working Animals wiring checks passed.');
+  // Family workers must use their own level, not inherited player Farming rolls or animal hearts.
+  livestock.length = 0;
+  let familyQualityRolls = 0; // Confirms a family squeezer asks RomanceFamily exactly once per job.
+  windowStub.RomanceFamily = { rollWorkQuality: id => { assert.equal(id, 'toddler1'); familyQualityRolls++; return 1; } };
+  DewVats.setExternalWorker('vat1', { id: 'toddler1', name: 'Pip', familyWorker: true, efficacy: 2 });
+  assert.equal(DewVats.autoSqueezeAtVat('vat1', 'blue'), 'started');
+  const familyJob = startTimedJobCalls.at(-1);
+  assert.equal(familyJob.inputStars, 1, 'a level-one toddler gives the job one-star quality even with the player animal perk');
+  assert.equal(familyJob.source, 'family', 'family processing is identifiable at completion so player skill cannot reroll its stars');
+  assert.equal(familyJob.yieldMultiplier, 2, 'the existing family squeezer quantity multiplier is retained');
+  assert.equal(familyQualityRolls, 1, 'a single family job does not reroll usefulness quality multiple times');
+
+  DewVats.setExternalWorker('vat2', { id: 'otherExternal' });
+  DewVats.clearFamilyWorkers();
+  assert.equal(DewVats.assignedWorkerForVat('vat1'), null, 'character switching clears ghost family vat assignments');
+  assert.equal(DewVats.assignedWorkerForVat('vat2').id, 'otherExternal', 'clearing family vats does not erase unrelated external workers');
+
+  console.log('dew-vats.js livestock and family usefulness quality checks passed.');
 }
 
 // ── Static wiring checks for pieces that live inside game.js/farm-animals.js

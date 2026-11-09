@@ -153,7 +153,8 @@
 
     // ── Family ───────────────────────────────────────────────────────────
     family: {
-      maxChildrenPerMarriage: 1, // Intended to become two later; this is today's one-child cap.
+      maxChildrenPerMarriage: 0, // Zero removes the former one-child cap; positive numbers optionally cap a marriage.
+      birthSpacingDays: 6 * DAYS_PER_MONTH, // Earliest spacing between births or adoptions; renewed after every child.
       dreamPostponeDays: { soon: 1, time: 14, month: DAYS_PER_MONTH }, // Earliest new dream by in-game day.
       childTown: {
         startHour: 11, endHour: 16, visitPercent: 65, // Seeded daily roll; mornings/evenings remain at home.
@@ -162,7 +163,7 @@
         wanderRadiusTiles: 3,
       },
       announceAfterDays: 3 * DAYS_PER_MONTH,
-      birthAfterDays: 6 * DAYS_PER_MONTH,
+      birthAfterDays: 4 * DAYS_PER_MONTH, // Pregnancy/egg lasts one month after the three-month announcement.
       basketDays: 1 * DAYS_PER_MONTH,
       toddlingDays: 5 * DAYS_PER_MONTH, // Toddling Footing eases 99 → 0 over this span after leaving the basket.
       independentAfterDays: 6 * DAYS_PER_MONTH, // Basket month + five toddler months, then village-child phase.
@@ -178,7 +179,13 @@
         toddler: { body: 0.4, head: 0.66 },
         child: null,
       },
-      vatEfficacyMultiplier: 2,
+      vatEfficacyMultiplier: 2, // Output quantity, not output star quality.
+      usefulness: {
+        maxLevel: 5, xpPerLevelFactor: 40, // Repeated family chores grow one general usefulness rank.
+        adultStartLevel: 2, youngStartLevel: 1,
+        intelligenceXpMultiplier: { adult: 1, child: 0.5, toddler: 0.25 },
+        jobXp: { till: 6, dig: 6, seed: 8, harvest: 12, squeeze: 12 },
+      },
     },
   };
 
