@@ -130,6 +130,16 @@ vm.runInContext("const FESTIVAL_TEST_KEY = 'hobunjiFestivalTestSession.v1'; cons
 
   returning.phase = 'restored';
   context.writeFestivalSession(returning);
+  let folderBlocked = true; // Simulates disk/network failure during the final canonical save.
+  context.window.LocalSaveFolder = { getStatus: () => ({ state: 'ready', folderName: 'Hobunji' }),
+    syncNow: async () => folderBlocked
+      ? { lastError: 'permission denied', lastAction: 'save-error' }
+      : { lastError: '', lastAction: 'saved-browser-to-folder' } };
+  assert.equal(await context.finishFestivalReturn({ characterId: 'farmer', worldId: 'world' }), false,
+    'unsaved rewards must keep the original recovery marker for retry');
+  assert.equal(context.festivalTestSession().phase, 'restored');
+  assert.ok(savedSlots.has(returning.returnSlotId), 'a failed folder write keeps the merged reward snapshot');
+  folderBlocked = false;
   assert.equal(await context.finishFestivalReturn({ characterId: 'farmer', worldId: 'world' }), true);
   assert.equal(context.festivalStatus().phase, 'idle');
   assert.equal(durableData.has('hobunjiFestivalTestRecovery.v1'), false,
@@ -137,6 +147,8 @@ vm.runInContext("const FESTIVAL_TEST_KEY = 'hobunjiFestivalTestSession.v1'; cons
   assert.equal(resumeCount, 1, 'autosave resumes only after the original world is active');
   assert.ok(savedSlots.has('baseline'), 'the pinned manual recovery snapshot survives completion');
   assert.ok(!savedSlots.has(returning.previewSlotId), 'temporary preview slot is removed');
+  assert.ok(savedSlots.has(returning.returnSlotId), 'kept rewards retain an independent pinned return checkpoint');
+  delete context.window.LocalSaveFolder; // Second transaction checks browser-only restoration without a folder.
 
   context.setFestivalPrefs({ keepRewards: false });
   await context.startFestivalTest();
