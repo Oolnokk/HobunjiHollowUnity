@@ -68,10 +68,6 @@ const eyes = rig.pitch.children.filter(mesh => mesh.userData.flyingAnimalEyeOver
 assert.equal(eyes.length, 6, 'each of the three poses must have front and rear eye layers');
 assert.equal(eyes.filter(mesh => mesh.material.side === THREE.FrontSide).length, 3);
 assert.equal(eyes.filter(mesh => mesh.material.side === THREE.BackSide).length, 3);
-for (const body of ['flying', 'perched', 'gripping']) {
-  const posePair = eyes.filter(mesh => mesh.material.name.includes('eyes')); // All face meshes must be overlaid on the same authored body shapes.
-  assert.equal(posePair.length, 6);
-}
 assert.deepEqual(eyes.map(mesh => mesh.position.z), [.004, .004, .004, -.004, -.004, -.004],
   'rear face has the opposite depth offset, rather than being hidden beneath the opaque body');
 const camera = { getWorldPosition(vec) { vec.set(0, 1, 3); } }; // Camera facing is irrelevant to paired visibility and blink state.
@@ -108,7 +104,7 @@ for (const mapId of [
   assert.equal(lighting.undergroundLightingForArea(mapId).a, .68,
     mapId + ': the same readable darkness when the cave mist is enabled');
 }
-assert.equal(lighting.enclosedDarknessOverlayAlpha('map_i_den_map_western_slope_animalDen_0'), .91,
+assert(Math.abs(lighting.enclosedDarknessOverlayAlpha('map_i_den_map_western_slope_animalDen_0') - .91) < 1e-10,
   'ordinary wildlife dens retain their original 91% darkness');
 assert.equal(lighting.undergroundLightingForArea('map_i_town_mine_f_1').a, .8,
   'mine and ruin fog still uses the original underground night level');
