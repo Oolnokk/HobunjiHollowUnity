@@ -101,6 +101,9 @@ jobs:
       - name: Multi-sprite weapon 3D browser smoke
         if: steps.select.outputs.multisprite == 'true'
         run: node scripts/test-multi-sprite-weapon-browser.js
+      - name: Statue Author NPC/weapon GLB round-trip into Furniture Editor
+        if: steps.select.outputs.statue == 'true'
+        run: node scripts/test-statue-author-browser.js
 
       - name: Omgurku hybrid calibration browser smoke
         if: steps.select.outputs.omgurku_cal == 'true'
