@@ -169,7 +169,7 @@ const farmTile = (c, r) => farm.tiles[key(c, r)] || (farm.tiles[key(c, r)] = { t
 const farmApi = {
   farmTileInfo: (c, r) => {
     const t = farmTile(c, r);
-    return { tilled: t.type === 'tilled', crop: t.crop, ready: false, dug: t.type === 'trench' && t.depth >= 0.6, canTill: ['grass', 'trench'].includes(t.type) && !t.crop, canDig: !t.crop && (t.type === 'trench' ? t.depth < 1 : true) };
+    return { tilled: t.type === 'tilled', crop: t.crop, ready: !!t.ready, dug: t.type === 'trench' && t.depth >= 0.6, canTill: ['grass', 'trench'].includes(t.type) && !t.crop, canDig: !t.crop && (t.type === 'trench' ? t.depth < 1 : true) };
   },
   seedAvailable: crop => (farm.storage[crop + 'Seed'] || 0) > 0,
   applyFarmJob: (job, c, r, crop, plotId) => {
@@ -177,6 +177,7 @@ const farmApi = {
     if (job === 'till') { t.type = 'tilled'; t.depth = 0; t.water = 0; }
     else if (job === 'dig') { t.type = 'trench'; t.depth = 1; }
     else if (job === 'seed') { if (!(farm.storage[crop + 'Seed'] > 0) || t.type !== 'tilled') return false; farm.storage[crop + 'Seed'] -= 1; t.crop = crop; }
+    else if (job === 'harvest') { if (!t.crop || !t.ready) return false; t.crop = ''; t.ready = false; }
     farm.calls.push({ job, c, r, plotId }); // Assert actions stay on their owned alternating rows.
     farm.jobs.push(job);
     return true;
@@ -281,6 +282,22 @@ assert.equal(api._test.seedForTile(priorityField, 41, 41), 'needlegrain', 'the o
 assert.equal(api._test.seedForTile(priorityField, 40, 40), 'needlegrain', 'restocked primary outranks a still-available lower preference');
 assert.equal(api._test.jobsFor(priorityField, 'spouse1').some(j => j.c === 41 && j.r === 40 && j.job === 'seed'), false, 'an intentionally empty seed block stays unseeded');
 console.log('ok - ordered seed blocks consume farm storage with priority fallback');
+
+// Family plots now harvest, and only actual completed family jobs train usefulness.
+const workAwards = [];
+win.RomanceFamily = { awardWork: (id, action) => workAwards.push({ id, action }), isAssignedToVat: id => id === 'busy_vat' };
+api.registerFarmPlots([{ id: 'family_harvest', kind: 'till', tiles: [[60, 60]], workers: ['kid1'], crop: 'needlegrain', hours: [8, 17] }]);
+const ripe = farmTile(60, 60); ripe.type = 'tilled'; ripe.crop = 'needlegrain'; ripe.ready = true;
+const familyHarvest = api.plots().find(p => p.id === 'family_harvest');
+const ripeJob = api._test.jobsFor(familyHarvest, 'kid1')[0];
+assert.equal(ripeJob.job, 'harvest', 'a ripe family-field crop creates a harvest job');
+api._test.applyJob(familyHarvest, { ...ripeJob, npcId: 'kid1' });
+assert.equal(ripe.crop, '', 'family harvest uses the live grid job path');
+assert.equal(workAwards.at(-1).action, 'harvest', 'a completed harvest gives the worker usefulness XP');
+api._test.applyJob(familyHarvest, { ...ripeJob, npcId: 'kid1' });
+assert.equal(workAwards.length, 1, 'a stale harvest never awards duplicate XP');
+assert.ok(api._test.jobsFor(familyHarvest, 'kid1').every(job => job.job !== 'harvest'), 'ripe harvest cannot be repeated');
+
 
 // The player's farm editor must release assignments immediately when painting over a group.
 context.document = { getElementById: () => null };
