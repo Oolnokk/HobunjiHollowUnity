@@ -5,6 +5,10 @@ on:
     paths:
       - 'docs/tools/animation-author/index.html'
       - 'docs/js/spouse-kiss-motion.js'
+      - 'docs/js/weapon-stance-drop-runtime.js'
+      - 'docs/js/weapon-idle-body-yaw-runtime.js'
+      - 'docs/js/player-body-transform-composer.js'
+      - 'scripts/test-spouse-kiss-player-pose-ownership.js'
       - 'docs/config/npcs/hobunji-starter-npc-database.json'
       - 'scripts/smoke-animation-author-scene-url.js'
       - '.github/workflows/smoke-animation-author-scene-url.yml'
@@ -26,6 +30,8 @@ jobs:
         run: node --check scripts/smoke-animation-author-scene-url.js
       - name: Assert the live player and spouse rigs both animate
         run: node scripts/test-spouse-kiss.js
+      - name: Verify in-game player rig pose ownership over camera and tool yaw
+        run: node scripts/test-spouse-kiss-player-pose-ownership.js
       - name: Install real Chromium
         run: |
           npm install --no-save --package-lock=false playwright@1.55.1 three@0.128.0
