@@ -16,6 +16,40 @@
   const cachedImages = {}; // Source images reused while dragging the arrow interactively.
   const chosenShaft = () => data.shafts[byId('shaft').value]; // Active donor haft.
   const chosenHead = () => data.heads[byId('head').value]; // Active blade/weight part.
+  let selectedBoreId = null; // Stable identifier of the movable, non-destructive shaft aperture.
+  let boreMoveEnabled = false; // While enabled, shaft-canvas drags move the selected bore instead of editing a mount line.
+  let boreDrag = null; // Active touch/pointer, its original center, and the original sprite location for one undo step.
+  let borePreviewScheduled = false; // Coalesces rapid touch moves into one regenerated preview per animation frame.
+  const selectedBore = () => (chosenShaft()?.bores || []).find(bore => bore.id === selectedBoreId) || null;
+  function scheduleBorePreview() {
+    if (borePreviewScheduled) return;
+    borePreviewScheduled = true;
+    requestAnimationFrame(() => {
+      borePreviewScheduled = false;
+      api.replace(data); // Invalidate shared composition; the draft is saved only on release/change, not once per pointer move.
+      drawLines('shaft-canvas'); preview(); // Both previews regenerate from original pixels, preserving manual strokes and materials.
+    });
+  }
+  function updateBoreControls() {
+    const bores = chosenShaft().bores || [];
+    if (!bores.some(bore => bore.id === selectedBoreId)) selectedBoreId = bores[0]?.id || null;
+    const list = byId('bore-list');
+    list.replaceChildren(...bores.map((bore,i) => {
+      const option = document.createElement('option'); option.value = bore.id; option.textContent = (i+1)+': '+bore.id; return option;
+    }));
+    if (selectedBoreId) list.value = selectedBoreId;
+    const bore = selectedBore();
+    for (const name of ['x','y','rx','ry','rotation','rim','warp','shade','lightX','lightY']) {
+      const input = byId('bore-'+name); input.disabled = !bore; input.value = bore ? String(bore[name]) : '';
+    }
+    byId('bore-enabled').disabled = !bore; byId('bore-enabled').checked = bore?.enabled !== false && !!bore;
+    byId('bore-remove').disabled = !bore;
+    byId('bore-drag').disabled = !bore;
+    byId('bore-drag').setAttribute('aria-pressed', String(boreMoveEnabled && !!bore));
+    byId('bore-status').textContent = bore
+      ? bores.length+' bore(s). Selected '+bore.id+': drag in the haft sprite or edit its numbers. The rim is recalculated from the original PNG.'
+      : 'No bores on this shaft. Add one to drill an editable, shaded opening through the original artwork.';
+  }
   let regionSelecting = false; // Preview is temporarily a rectangle picker rather than a bridge paint surface.
   let regionDraft = null; // Active local selection box while dragging on the assembled preview.
   let activeRegionId = null; // Stable ID prevents selection jumping when undo/import removes another region.
@@ -140,8 +174,23 @@
     const art = id === 'shaft-canvas' ? api.shaftArtTransform(chosenShaft()) : null;
     ctx.save();
     if (art?.enabled) {ctx.translate(225+art.x,602+art.y);ctx.scale(art.scaleX,art.scaleY);ctx.translate(-225,-602);}
-    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-    ctx.restore(); // Shaft artwork transform is optional; mounting overlays are painted outside it.
+    ctx.drawImage(id === 'shaft-canvas' ? api.boreShaft(chosenShaft(), image) : image, 0, 0, canvas.width, canvas.height);
+    if (id === 'shaft-canvas') { // The aperture outline is an editing overlay, not part of the exported/composed sprite.
+      for (const bore of chosenShaft().bores || []) {
+        ctx.save();
+        ctx.translate(bore.x, bore.y); ctx.rotate(bore.rotation * Math.PI / 180);
+        ctx.lineWidth = bore.id === selectedBoreId ? 2.2 : 1.3;
+        ctx.strokeStyle = bore.id === selectedBoreId ? '#ffe18b' : '#80d3cf';
+        ctx.setLineDash([5,3]);
+        ctx.beginPath(); ctx.ellipse(0,0,bore.rx,bore.ry,0,0,Math.PI*2); ctx.stroke();
+        if (bore.id === selectedBoreId) {
+          ctx.setLineDash([]); ctx.beginPath(); ctx.moveTo(-8,0); ctx.lineTo(8,0);
+          ctx.moveTo(0,-8); ctx.lineTo(0,8); ctx.stroke();
+        }
+        ctx.restore();
+      }
+    }
+    ctx.restore(); // Bore overlays follow the optional shaft-art transform; mounting arrows remain independent.
     const mounts = displayMounts(id); // What the player sees now matches the composed head and transform diagnostics.
     mounts.forEach((mount, i) => lineMarker(ctx, mount, id === 'head-canvas' || i === mountIndex));
     drawGizmo(ctx, mounts[id === 'head-canvas' ? 0 : mountIndex]); // Selected handle is drawn in world/source-canvas space.
@@ -463,13 +512,14 @@
   function render() {
     const shaft = chosenShaft(), head = chosenHead(), headKey = byId('head').value; // Active authoring context.
     drawIdentity(); // Name/slot/rope diagnostics remain accessible on mobile without developer tools.
+    updateBoreControls(); // Bore selection and touch mover stay in sync with undo, import and source changes.
     const pairKey = byId('shaft').value + '|' + headKey;
     if (pairKey !== pendingKey) { pendingStrokes = []; recipeSel = -1; pendingKey = pairKey; syncBridgeControls(); } // Never carry a recipe selection to another head.
     mountIndex = Math.min(mountIndex, shaft.mounts.length - 1);
     byId('socket').replaceChildren();
     shaft.mounts.forEach((mount, index) => {
       const option = document.createElement('option'); // Multiple directed attachment lines on one shaft.
-      option.value = index; option.textContent = (index + 1) + ': ' + (mount.type === 'eye' ? 'Eye/sleeve' : 'Tang');
+      option.value = index; option.textContent = (index + 1) + ': ' + (mount.type === 'eye' ? 'Eye/sleeve' : mount.type === 'rope' ? 'Rope/chain reach' : 'Tang');
       byId('socket').appendChild(option);
     });
     byId('socket').value = String(mountIndex);
@@ -499,7 +549,7 @@
     byId('allow-head').checked = head.editorOnly !== true && head.craftDisabled !== true;
     byId('allow-head').disabled = head.craftDisabled === true; // Shipped retired heads cannot be re-enabled through this editor.
     byId('head-construction-note').textContent = head.mountNote || ''; // Authoring notes for shovel scoop, transverse hoe, and pick head.
-    const accepted = compatible(), needed = head.mount.type === 'blade' ? 'tang' : 'eye';
+    const accepted = compatible(), needed = shaft.flailAssembly || head.flailAssembly || head.mount.type === 'flail' ? 'rope (or legacy eye/tang)' : head.mount.type === 'blade' ? 'tang' : 'eye';
     byId('part-readiness').textContent = !accepted
       ? 'Incompatible: add a ' + needed + ' line to this haft or choose another head.'
       : shaft.sourceShape === 'bgungku' ? "B'gungku has no gameplay donor; preview/editor use only."
@@ -564,6 +614,15 @@
   function gesture(id) {
     const element = byId(id); // Source sprites accept one active line/handle drag.
     function update(event) {
+      if (boreDrag?.id === id && boreDrag.pointer === event.pointerId) {
+        const bore = selectedBore();
+        if (!bore) return;
+        const p = pointFor(element, event), art = api.shaftArtTransform(chosenShaft());
+        bore.x = Math.max(0,Math.min(450,art.enabled ? (p.x-225-art.x)/art.scaleX+225 : p.x));
+        bore.y = Math.max(0,Math.min(1204,art.enabled ? (p.y-602-art.y)/art.scaleY+602 : p.y));
+        drawLines('shaft-canvas'); scheduleBorePreview(); // Recut and re-shade on each dragged position, at most once per rendered frame.
+        return;
+      }
       if (!drawing || drawing.id !== id || drawing.pointer !== event.pointerId) return;
       const current = rigToLocal(pointFor(element, event), id); // Invert parent transform when writing to the local primitive's line.
       if (drawing.mode === 'draw') {
@@ -578,7 +637,13 @@
       drawLines(id);
     }
     element.addEventListener('pointerdown', event => {
-      if (drawing || !event.isPrimary) return;
+      if (drawing || boreDrag || !event.isPrimary) return;
+      if (id === 'shaft-canvas' && boreMoveEnabled && selectedBore()) {
+        event.preventDefault();
+        boreDrag = { id, pointer: event.pointerId,
+          original: { x: selectedBore().x, y: selectedBore().y } }; // One draggable edit, one undo step on release.
+        element.setPointerCapture(event.pointerId); update(event); return;
+      }
       event.preventDefault();
       const line = id === 'head-canvas' ? chosenHead().mount : chosenShaft().mounts[mountIndex]; // Stored local mount.
       const point = pointFor(element, event); // World/source-canvas pointer for visible handle hit-testing.
@@ -596,10 +661,18 @@
       element.setPointerCapture(event.pointerId); drawLines(id);
     });
     element.addEventListener('pointermove', event => {
+      if (boreDrag?.id === id && boreDrag.pointer === event.pointerId) { event.preventDefault(); update(event); return; }
       if (!drawing || drawing.id !== id || drawing.pointer !== event.pointerId) return;
       event.preventDefault(); update(event); // Live arrows and handles update without expensive image recomposition.
     });
     element.addEventListener('pointerup', event => {
+      if (boreDrag?.id === id && boreDrag.pointer === event.pointerId) {
+        event.preventDefault(); update(event);
+        const changed = selectedBore() && (selectedBore().x !== boreDrag.original.x || selectedBore().y !== boreDrag.original.y);
+        boreDrag = null;
+        if (changed) save(); else drawLines('shaft-canvas');
+        return;
+      }
       if (!drawing || drawing.id !== id || drawing.pointer !== event.pointerId) return;
       event.preventDefault(); update(event); // Apply final delta even if no pointermove preceded release.
       const last = drawing;
@@ -613,6 +686,10 @@
       if (length >= 2 && changed) save(); else drawLines(id);
     });
     function cancel(event) {
+      if (boreDrag?.id === id && boreDrag.pointer === event.pointerId) {
+        const bore = selectedBore(); if (bore) Object.assign(bore,boreDrag.original);
+        boreDrag = null; scheduleBorePreview(); return; // Cancellation restores the unmodified drag-start aperture.
+      }
       if (!drawing || drawing.id !== id || drawing.pointer !== event.pointerId) return;
       Object.assign(drawing.line, drawing.original); drawing = null; drawLines(id); // Never commit aborted multi-touch gestures.
     }
@@ -630,7 +707,45 @@
     byId('shaft').value = selected.shaft; byId('head').value = selected.head; mountIndex = 0;
     render(); msg('Compatible combination: ' + data.shafts[selected.shaft].label + ' / ' + data.heads[selected.head].label);
   };
-  byId('shaft').onchange = () => { mountIndex = 0; activeRegionId=null;regionSelecting=false;regionDraft=null;render(); };
+  byId('shaft').onchange = () => { mountIndex = 0; activeRegionId=null;regionSelecting=false;regionDraft=null;selectedBoreId=null;boreMoveEnabled=false;render(); };
+  byId('bore-add').onclick = () => {
+    const shaft = chosenShaft(), bores = shaft.bores ||= [];
+    if (bores.length >= 12) { msg('At most 12 independent bores per shaft.'); return; }
+    const id = 'bore-' + (Math.max(0,...bores.map(b => Number(String(b.id).replace(/^bore-/,'')) || 0)) + 1);
+    bores.push({ id, x: 225, y: 602, rx: 20, ry: 12, rotation: 0,
+      rim: 5, warp: 1.5, shade: .65, lightX: -.6, lightY: -.8, enabled: true }); // Safe editable ellipse; the source PNG is never overwritten.
+    selectedBoreId = id; boreMoveEnabled = true; save();
+    msg('New bore added. Tap or drag its center on the haft preview to reposition and recalculate.');
+  };
+  byId('bore-remove').onclick = () => {
+    if (!selectedBore()) return;
+    chosenShaft().bores = (chosenShaft().bores || []).filter(bore => bore.id !== selectedBoreId);
+    selectedBoreId = null; boreMoveEnabled = false; save();
+  };
+  byId('bore-list').onchange = () => {
+    selectedBoreId = byId('bore-list').value; updateBoreControls(); drawLines('shaft-canvas');
+  };
+  byId('bore-drag').onclick = () => {
+    if (!selectedBore()) return;
+    boreMoveEnabled = !boreMoveEnabled; updateBoreControls(); drawLines('shaft-canvas');
+    msg(boreMoveEnabled ? 'Tap/drag on the haft sprite to move the bore. Geometry and shading recalculate while moving.' : 'Bore mover disabled; mounting-line gizmos restored.');
+  };
+  byId('bore-enabled').onchange = () => { if (!selectedBore()) return; selectedBore().enabled = byId('bore-enabled').checked; save(); };
+  const boreRanges = { x:[0,450], y:[0,1204], rx:[2,160], ry:[2,160],
+    rotation:[-360,360], rim:[.5,24], warp:[0,6], shade:[0,1], lightX:[-1,1], lightY:[-1,1] }; // Numeric validation matches runtime import sanitation.
+  for (const [field,[min,max]] of Object.entries(boreRanges)) {
+    const input = byId('bore-'+field);
+    function editBore(commit) {
+      const bore = selectedBore(), value = Number(input.value);
+      if (!bore || !input.value.trim() || !Number.isFinite(value) || value < min || value > max) {
+        if (commit) updateBoreControls(); return;
+      }
+      bore[field] = value;
+      if (commit) save(); else { drawLines('shaft-canvas'); scheduleBorePreview(); } // Live shape edits never accumulate repeated destructive cutouts.
+    }
+    input.addEventListener('input', () => editBore(false));
+    input.onchange = () => editBore(true);
+  }
   for (const [id, owner, field] of [
     ['shaft-part-label', 'shaft', 'label'], ['shaft-name-affix', 'shaft', 'nameAffix'],
     ['head-part-label', 'head', 'label'], ['head-name-prefix', 'head', 'prefix'],
