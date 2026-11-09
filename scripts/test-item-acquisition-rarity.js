@@ -179,4 +179,17 @@ for (const name of ['item-acquisition-rarity','crop-varieties','cooking-system',
 const childPrice = rarity.item('cv_heftroot_333333Seeds',{itemDefs:nativeDefs});
 assert.equal(childPrice.actualSellPrice,childPrice.proposedSellPrice,'priced cultivar diagnostics apply scarcity only once');
 
+assert.equal(rarity.foodRarity('malformed',{malformed:{ingredientKeys:'not-an-array'}}).factor,1,'legacy string provenance metadata is safely ignored');
+const traced=rarity.item('flour',{itemDefs:foodDefs});
+assert.equal(traced.foodRaritySources[0].key,'cv_heftroot_333333','food rarity debug reports the actual imported ancestor');
+assert.equal(traced.foodSourceCount,1,'food rarity breakdown counts its actual source chain');
+assert.equal(rarity.item('unknown',{itemDefs:{unknown:{sellPrice:5}}}).foodRarity,1,'unsupported categories remain neutral');
+const shippingSource=fs.readFileSync('docs/js/shipping-panel.js','utf8');
+assert(shippingSource.includes('selectedItemRarity: standaloneDebugVisible && shippingSelected.key') &&
+  shippingSource.includes('selectedItemBaseSellPrice: standaloneDebugVisible && shippingSelected.key'),
+  'existing mobile Shipping debug view exposes source rarity and actual price only when requested');
+assert(indexSource.includes('js/shipping-panel.js?v=20261109rarityaudit4'),'browser cache refresh reaches on-device Shipping rarity diagnostics');
+crops.attach({cropData:{...nativeCrop},ITEM_DEFS:{...nativeDefs},inventory:{},inventoryItems:[]});
+assert.equal(crops.lastBreeding,null,'switching worlds clears previous-world parent/offspring debug state');
+
 console.log('Item acquisition rarity tests passed.');
