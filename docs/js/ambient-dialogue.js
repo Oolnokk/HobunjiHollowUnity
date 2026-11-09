@@ -254,7 +254,7 @@
     let firstL2V1 = '';
     for (const ch of playerName) { firstL2V1 += ch; if (vowels.has(ch)) break; }
     const dlgState = window.DialogueContent?.getNpcDlgState?.(rec?.id) || {};
-    const localNickname = window.CharacterNicknames?.addressPlayer?.(playerName, rec?.id, { favor: dlgState.favor, customNickname: dlgState.localNickname })
+    const localNickname = window.CharacterNicknames?.addressPlayer?.(playerName, rec?.id, { favor: dlgState.favor, customNickname: dlgState.localNickname, gender })
       || window.RomanceSystem?.spouseDialogueFor?.(rec?.id)?.nickname || dlgState.localNickname || playerName; // Same player form of address as normal conversations.
     let out = String(text || '')
       .replace(/\{\{npcName\}\}/g, rec?.name || '')
@@ -279,10 +279,14 @@
     return out;
   }
 
+  function configuredPlayerGender() {
+    return state.dialogueDeps?.getPlayerData?.()?.appearance?.gender || window.__hobunjiPlayerProfile?.appearance?.gender || 'female'; // Target player gender used by world greetings and saved-date forms.
+  }
+
   function conditionedPlayerNicknameFor(walker) {
     const rec = walker?.rec; // Used to find this NPC's conditioned Nicknames phrase pool.
     const intimateNickname = window.CharacterNicknames?.isAffectionateSpeaker?.(rec?.id)
-      ? window.CharacterNicknames.forRelationship(configuredPlayerGreetingName(), 'affectionate') : null; // Most recent date and spouse outrank conditioned address pools.
+      ? window.CharacterNicknames.forRelationship(configuredPlayerGreetingName(), 'affectionate', configuredPlayerGender()) : null; // Most recent date and spouse outrank conditioned address pools.
     if (intimateNickname) return intimateNickname;
     const spouseNickname = window.RomanceSystem?.spouseDialogueFor?.(rec?.id)?.nickname; // Legacy fallback when the nickname module has not loaded.
     if (spouseNickname) return spouseNickname;
@@ -301,7 +305,7 @@
     const special = conditionedPlayerNicknameFor(walker); // Preserves authored terms and the spouse/last-date affectionate form.
     if (special) return special;
     const full = configuredPlayerGreetingName() || 'neighbor'; // Actual player name used only when ordinary greeting policy allows it.
-    return window.CharacterNicknames?.addressPlayer?.(full, walker?.rec?.id, { favor: playerGreetingFavor(walker) }) || full;
+    return window.CharacterNicknames?.addressPlayer?.(full, walker?.rec?.id, { favor: playerGreetingFavor(walker), gender: configuredPlayerGender() }) || full;
   }
 
   function resolveTargetName(walker, target) {
@@ -313,7 +317,9 @@
     const name = firstNameWord(target?.name); // Neutral NPC greeting retains its previous given-name behavior.
     const bond = window.CharacterNicknames?.npcBond?.(speakerId, targetId); // Canonical social relationship tags also cover partners who do not share a greeting group.
     const relationship = bond === 'partner' ? 'affectionate' : (bond === 'friend' || friendSetFor(speakerId).has(targetId) ? 'friend' : 'other');
-    return window.CharacterNicknames?.forRelationship?.(name, relationship) || name;
+    const targetGender = target?.rec?.appearance?.gender || target?.rec?.avatarEditor?.rawExport?.appearance?.gender
+      || target?.rec?.gender || target?.gender || 'female'; // Gender of the NPC being addressed, not the speaking walker.
+    return window.CharacterNicknames?.forRelationship?.(name, relationship, targetGender) || name;
   }
 
   // Off-screen follow tuning for chatheads directed at the player: how far
@@ -938,7 +944,7 @@
       const friends = friendSetFor(walker.rec?.id);
       for (const other of walkers) {
         if (walker === other || !friends.has(other.rec?.id)) continue;
-        if (tryGreeting(walker, { id: other.rec.id, name: other.rec.name, x: other.root.position.x, z: other.root.position.z, root: other.root }, now, day)) return;
+        if (tryGreeting(walker, { id: other.rec.id, name: other.rec.name, rec: other.rec, x: other.root.position.x, z: other.root.position.z, root: other.root }, now, day)) return;
       }
     }
   }
