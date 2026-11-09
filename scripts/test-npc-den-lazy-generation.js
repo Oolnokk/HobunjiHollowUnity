@@ -35,12 +35,12 @@ win.NpcPathfinding.init({
 });
 
 const edges = win.NpcPathfinding.areaLinksFrom('map_highlands'); // An NPC inspecting wilderness transitions must not touch any den.
-assert.deepEqual(edges.map(edge => edge.toArea), ['map_i_researchers_tent', 'map_eastern_mire']);
+assert.deepEqual(Array.from(edges, edge => edge.toArea), ['map_i_researchers_tent', 'map_eastern_mire']);
 assert.deepEqual(loads, ['map_i_researchers_tent'], 'ordinary NPC-reachable interiors still warm on demand');
 const route = win.NpcPathfinding.findNpcAreaLink('town', 'map_eastern_mire'); // BFS crosses the wilderness but must never carve its dens.
 assert.ok(route && route.toArea === 'map_highlands', 'normal NPC travel between wilderness areas still works');
 assert.ok(!loads.some(area => area.startsWith('map_i_den_')), 'route discovery must not generate distant den caverns');
-assert.deepEqual(win.NpcPathfinding.areaLinksFrom(denA, { warmBuildings: false })
-  .map(edge => edge.toArea), ['map_highlands'], 'an NPC already inside a den can still find its exterior exit');
+assert.deepEqual(Array.from(win.NpcPathfinding.areaLinksFrom(denA, { warmBuildings: false }), edge => edge.toArea),
+  ['map_highlands'], 'an NPC already inside a den can still find its exterior exit');
 assert.match(win.NpcPathfinding.debugSnapshot().latestChange, /den/i, 'mobile debug diagnostics identify the disabled den prewarm');
 console.log('NPC area graph skips unloaded animal dens without breaking ordinary building or wilderness routes: ok');
