@@ -196,7 +196,7 @@
     if (!key || seen.has(key) || seen.size >= 10) return { factor:1, known:false, sources:[] };
     const crop = cultivarRarity(key);
     if (crop) return { factor:crop.factor, known:crop.origin === 'slagothim-import', sources:[crop] };
-    const spice = importedSpice(key);
+    const spice = importedSpice(key,{townValue:1}); // Like regional cultivars, Gorkunash judges stable Town Value 1 source difficulty; ordinary market pricing still reads the current town.
     if (spice?.factor) return {factor:spice.factor,known:spice.probability !== null,sources:[spice]};
     const fish = fishRarity(key);
     if (fish) return { factor:fish.factor, known:true, sources:[fish] };
