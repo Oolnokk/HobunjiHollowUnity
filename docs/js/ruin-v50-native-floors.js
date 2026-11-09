@@ -12,7 +12,7 @@
   const nativeGridOwnership=new WeakSet(); // Frozen CellGrid3D objects cannot be tagged; owner checks are identity-based.
   const SIDES={north:[0,-1],east:[1,0],south:[0,1],west:[-1,0]};
   const RANGED=['glyphObelisk','ceilingRailTargets'];
-  const STAGES=['pressurePlate','glyphObelisk','melodyEcho','dungeonFire'];
+  const STAGES=['pressurePlate','glyphObelisk','timedMelody','dungeonFire'];
 
   function doorwayCells(door,scale=1,originX=0,originZ=0){
     const across=door.center*scale+(door.axis==='x'?originZ:originX); // Cell centers covered by the actual authored opening.
@@ -234,10 +234,6 @@
     }
     owner.dispose=()=>{
       if(owner.disposed)return;owner.disposed=true;
-      const music=options.MusicMinigame||root.MusicMinigame; // Only release a flute session owned by this native ruin, never another room's performance.
-      const activeId=music?.state?.echoChallenge?.id;
-      if(activeId&&owner.records.some(state=>state.challenges.some(challenge=>challenge.kind==='melodyEcho'&&challenge.id===activeId)))
-        music.close?.();
       for(const state of owner.records){
         for(const challenge of state.challenges)challenge.dispose?.();
         state.nativeMechanisms?.dispose?.(); // Unregister the native activator scan before disposing its actual geometry.
