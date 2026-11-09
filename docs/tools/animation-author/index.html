@@ -13927,7 +13927,8 @@ function kissTransformV1546(who, time, solution) {
   const first = who === 'leader';
   const taller = first ? solution.taller === 'first' : solution.taller === 'second';
   const bodyBlend = window.SpouseKissMotion.sampleKneelBlend(time, solution.taller === 'second'); // Shorter initiators lift their hands before the tall spouse kneels.
-  const bowRetreat = taller && !solution.shorterPosteriorGrip ? solution.tallerBowForwardWorld * bodyBlend : 0; // A supported hop keeps the taller posterior underneath its planted feet.
+  const bowRetreat = taller && !solution.shorterPosteriorGrip
+    ? Math.min(solution.tallerBowForwardWorld, Math.max(.04, solution.shorterLegLengthWorld * .25)) * bodyBlend : 0; // Keep moving shoulder grips inside the short initiator's reach; neck joints complete contact without root sidesteps.
   const progress = Math.max(0, Math.min(1, (time - .09) / .28));
   const approach = progress * progress * (3 - 2 * progress); // Hands reach early without making face meshes overlap during contact.
   const departure = time <= 1.52 ? 1 : Math.max(0, Math.min(1, (2.4 - time) / .88));
