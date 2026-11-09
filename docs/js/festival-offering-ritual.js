@@ -11,8 +11,8 @@
     const mapped = game?.livestock?.itemKinds?.[key]; // One legal hatchable egg/baby->species table, already used by farm adoption.
     if (!mapped) return null;
     const tags = Array.isArray(definition.tags) ? definition.tags.map(words) : [];
-    const young = tags.includes('baby') || tags.includes('fertile') || tags.includes('livestock') ||
-      /baby$|^fertile.*egg$/i.test(key); // Ordinary edible eggs must never be misclassified as rescued young.
+    const young = tags.includes('baby') || tags.includes('fertile') ||
+      /baby$|^fertile.*egg$/i.test(key); // Adult livestock/crates are not juveniles; being tagged Livestock alone never authorizes release.
     return young ? String(mapped) : null;
   }
   function statFor(key, definition = {}, mode = 'burn') {
