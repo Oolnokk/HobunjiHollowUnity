@@ -422,6 +422,18 @@ assert.equal(crops.provenanceFor(offspringA.id).totalObserved,2,
   'switching back restores all recorded paths directly from canonical saved world metadata');
 assert.equal(rarity.cultivarRarity(offspringA.id).origin,'observed-parentage',
   'rarity resumes source-aware calculations after world reload');
+const fullPedigree=sharedStore.loadCropProvenance('worldA');
+const recoveryPedigree=JSON.parse(JSON.stringify(fullPedigree));
+recoveryPedigree.records[offspringA.id].routes.pop();
+assert.equal(sharedStore.saveCropProvenance('worldA',recoveryPedigree),true,
+  'canonical world provenance can be overwritten by a restored folder-save snapshot');
+crops.attach({cropData:{...nativeCrop},ITEM_DEFS:{...nativeDefs},inventory:{},inventoryItems:[]});
+assert.equal(crops.provenanceFor(offspringA.id).routes.length,1,
+  'same-world attach reloads changed genealogy after cloud recovery rather than keeping stale memory');
+sharedStore.saveCropProvenance('worldA',fullPedigree);
+crops.attach({cropData:{...nativeCrop},ITEM_DEFS:{...nativeDefs},inventory:{},inventoryItems:[]});
+assert.equal(crops.provenanceFor(offspringA.id).routes.length,2,
+  'reloading a saved earlier lineage restores both genuine ancestor paths again');
 const persistedBeforeFailure=JSON.stringify(sharedStore.loadCropProvenance('worldA'));
 rejectWorldSave=true;
 crops.breed(ancestor.id,coloredAncestor.id,()=>.6);
@@ -466,6 +478,7 @@ const testSites=['test_gate_a','test_gate_b'].map(localeId=>({localeId,category:
 ruins.registerWorkspace(sourceZone,{localeInstances:testSites});
 const ruinsCensus=ruins.sourceCensus();
 assert.equal(ruinsCensus.registeredCliffSites,2,'exact cliff-entrance count comes from live workspace registration');
+assert.equal(ruinsCensus.unspentCliffSites,2,'both newly registered entrances remain available until cleared');
 assert.equal(ruinsCensus.registeredZoneCount,1,'unregistered wilderness zones never count as zero ruin sites');
 assert.equal(ruinsCensus.byTier.undetermined,2,'unvisited ruin guardian tiers cannot be guessed');
 assert.equal(Object.values(ruinsCensus.byTheme).reduce((a,b)=>a+b,0),2,
@@ -478,6 +491,8 @@ const resolvedRuinCensus=ruins.sourceCensus(sourceZone);
 assert.equal(resolvedRuinCensus.byTier.lich,1,'actual first guardian owner is the sole known lich-tier ruin of its tradition');
 assert.equal(resolvedRuinCensus.byTier.hole,1,'the other registered site is a middle-tier ruin after guardian assignment');
 assert.equal(resolvedRuinCensus.openBuriedHoles,1,'world-persisted open burrow is counted separately from cliff entrances');
+assert.equal(resolvedRuinCensus.themeSharePerUnspentSite[resolvedRuinCensus.sites[0].theme],1,
+  'all currently accessible gates still count towards their deterministic tradition sample');
 assert.equal(resolvedRuinCensus.holes[0].zoneId,sourceZone,'buried hole keeps its zone-specific event source');
 const wildlifeHost={window:{WildernessMapGenerator:{makeRng:()=>()=>.25}}};
 vm.runInNewContext(fs.readFileSync('docs/js/wildlife-spawn.js','utf8'),wildlifeHost);
@@ -535,6 +550,8 @@ reagents.init({_zoneReagentPersist:new Map([[sourceZone,currentReagentState]]),
   _zoneScenes:new Map([[sourceZone,{cols:20,rows:20}]]),calendar:{day:11}});
 assert.equal(rarity.itemSourceFrequency('frostcapMoss').remainingSites,null,
   'yesterday’s historical scatter does not masquerade as current-day ingredient availability');
+assert.equal(rarity.itemSourceFrequency('frostcapMoss').zoneTileDensity,null,
+  'stale generated-plant density is not reused as a current-day scarcity input');
 assert.equal(rarity.wildernessSourceCensus({zoneIds:[sourceZone]}).totals.availableReagents.total,null,
   'stale current-day reagent opportunities remain unknown, not an invented zero');
 for(const [key,value] of Object.entries(priorSources)){
