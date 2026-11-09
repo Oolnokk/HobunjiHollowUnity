@@ -441,6 +441,11 @@ assert.equal(crops.lastBreeding.provenanceSaved,false,'a failed save is visible 
 assert.equal(JSON.stringify(sharedStore.loadCropProvenance('worldA')),persistedBeforeFailure,
   'failed persistence cannot silently report extra saved breeding observations');
 rejectWorldSave=false;
+const metadataBeforeCorruption=worldJson; // Corrupt incoming world metadata is a recoverable missing pedigree, not a crop initialization crash.
+worldJson='{truncated-bad-json';
+assert.equal(sharedStore.loadCropProvenance('worldA'),null,'damaged metadata does not throw while loading cultivar genealogy');
+worldJson=metadataBeforeCorruption;
+assert.equal(sharedStore.loadCropProvenance('worldA').records[offspringA.id].routes.length,2,'valid world pedigree reads recover after corrupt-file replacement');
 if(originalGlobalCrop===undefined)delete globalThis.CropVarieties;else globalThis.CropVarieties=originalGlobalCrop;
 
 
@@ -582,6 +587,32 @@ assert.equal(rarity.itemSourceFrequency('frostcapMoss').zoneTileDensity,null,
   'stale generated-plant density is not reused as a current-day scarcity input');
 assert.equal(rarity.wildernessSourceCensus({zoneIds:[sourceZone]}).totals.availableReagents.total,null,
   'stale current-day reagent opportunities remain unknown, not an invented zero');
+reagents.init({_zoneReagentPersist:new Map([[sourceZone,{...currentReagentState,version:1}]]),
+  _zoneScenes:new Map([[sourceZone,{cols:20,rows:20}]]),calendar:{day:10}});
+assert.equal(reagents.sourceCensus(sourceZone).isCurrentGeneratorVersion,false,
+  'saved reagent placement from a retired generator version is explicitly historical');
+assert.equal(reagents.sourceCensus(sourceZone).isCurrentDay,false,
+  'same calendar day is not sufficient when a reagent placement schema is obsolete');
+assert.equal(rarity.itemSourceFrequency('frostcapMoss').remainingSites,null,
+  'older-version reagent counts are not presented as live forage opportunities');
+assert.equal(rarity.wildernessSourceCensus({zoneIds:[sourceZone]}).totals.reagentSites.total,null,
+  'historical/obsolete reagent scatter does not contribute to current zone rarity denominators');
+wildlife.init({zoneLayouts:new Map([[sourceZone,{cols:20,rows:20,dens:[
+  {id:'den1',x:1,y:1},{id:'den2',x:5,y:5}]}]]),
+  EXTERIOR_ZONES:{[sourceZone]:{...wildlifeConfig,roamingHerdCount:0,
+    roamingForagerSpecies:['moot','nazgraku'],roamingForagerCount:3}},
+  hostileObjects:new Set(),getCurrentArea:()=>sourceZone});
+const minimumHerd=wildlife.ecologyCensus(sourceZone);
+assert.equal(minimumHerd.roamingHerdSlots,1,
+  'a nonempty roaming herd pool always spawns at least one normal herd slot even if count is configured zero');
+assert.equal(minimumHerd.roamingForagerSlots,3,
+  'separate roaming forager slots are visible without inflating the normal herd pool');
+assert.equal(minimumHerd.roamingForagerSpeciesSlots.moot,2,
+  'deterministic index modulo forager species yields two Moot groups in three slots');
+assert.equal(minimumHerd.roamingForagerSpeciesSlots.nazgraku,1,
+  'other authored roaming forager species receives the remaining slot');
+assert.equal(rarity.itemSourceFrequency('nelkBaby',{zoneId:sourceZone}).configuredForagerSlots,3,
+  'animal source diagnostics show the exact additional nonrandom forager slot count');
 for(const [key,value] of Object.entries(priorSources)){
   if(value===undefined)delete globalThis[key];else globalThis[key]=value;
 }
