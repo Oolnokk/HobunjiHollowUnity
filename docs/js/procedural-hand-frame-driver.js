@@ -448,6 +448,8 @@
       modelHeight,
       mode: 'idle',
       poses: { left: null, right: null },
+      fallbackDefaults: { left: { position: {}, rotationDeg: {} }, right: { position: {}, rotationDeg: {} } }, // Reused as free-hand poses each frame; override providers retain their own separate objects.
+      overridden: { left: false, right: false }, // Updated in place so the gameplay pose ownership check allocates nothing each frame.
       owners: { left: 'fallback-idle', right: 'fallback-idle' },
     };
     return record.fallback;
@@ -460,7 +462,11 @@
   const ARM_SWING_DEG = 38; // Peak forward/back arm swing about the shoulder.
   const ARM_LENGTH_FRACTION = 0.26; // Shoulder-to-wrist distance as a fraction of model height (the arc's radius).
 
-  function fallbackPose(state, side, nowMs) {
+  function fallbackPose(state, side, nowMs, target) {
+    // The attachment rig reads these fields immediately and copies them into
+    // sockets; reusing the per-actor buffers avoids six short-lived objects
+    // for every pair of free hands on every browser frame.
+    const pose = target || { position: {}, rotationDeg: {} }; // The caller supplies state-owned storage; the fallback keeps isolated preview invocations safe.
     const sidePhase = state.phase + (side === 'right' ? Math.PI : 0); // Opposes left/right swings for a natural alternating gait.
     const swing = Math.sin(sidePhase);
     const liftWave = Math.max(0, Math.cos(sidePhase));
@@ -469,18 +475,13 @@
     const h = state.modelHeight;
     const gait = state.gaitStrength;
     const swingAngle = ARM_SWING_DEG * Math.PI / 180 * swing; // Arm swing about the shoulder: the hand's position and its pitch share this angle, so the arm turns as one piece.
-    return {
-      position: {
-        x: 0, // Shoulder-aim wrapper replaces the authored T-pose X with this side's resolved shoulder X.
-        y: h * 0.0045 * idleBreath * (1 - gait) + ARM_LENGTH_FRACTION * h * (1 - Math.cos(swingAngle)) * gait, // The hand rides an arc about its shoulder: it rises as the arm swings away from hanging.
-        z: ARM_LENGTH_FRACTION * h * Math.sin(swingAngle) * gait + h * 0.003 * Math.cos(idlePhase) * (1 - gait),
-      },
-      rotationDeg: {
-        pitch: ARM_SWING_DEG * swing * gait + 2.5 * idleBreath * (1 - gait),
-        yaw: (side === 'right' ? -1 : 1) * 3 * gait * Math.abs(swing),
-        roll: (side === 'right' ? -1 : 1) * (5 * liftWave * gait + 1.5 * idleBreath * (1 - gait)),
-      },
-    };
+    pose.position.x = 0;
+    pose.position.y = h * 0.0045 * idleBreath * (1 - gait) + ARM_LENGTH_FRACTION * h * (1 - Math.cos(swingAngle)) * gait;
+    pose.position.z = ARM_LENGTH_FRACTION * h * Math.sin(swingAngle) * gait + h * 0.003 * Math.cos(idlePhase) * (1 - gait);
+    pose.rotationDeg.pitch = ARM_SWING_DEG * swing * gait + 2.5 * idleBreath * (1 - gait);
+    pose.rotationDeg.yaw = (side === 'right' ? -1 : 1) * 3 * gait * Math.abs(swing);
+    pose.rotationDeg.roll = (side === 'right' ? -1 : 1) * (5 * liftWave * gait + 1.5 * idleBreath * (1 - gait));
+    return pose;
   }
 
   // Gameplay states (e.g. the downed crawl) can take over one free hand by
@@ -523,9 +524,12 @@
     const cadenceHz = state.speed > 0.035 ? Math.max(0.55, Math.min(3.2, state.speed * 0.62 / fullStride)) : 0;
     if (cadenceHz > 0 && elapsed > 0) state.phase = (state.phase + elapsed * cadenceHz * Math.PI * 2) % (Math.PI * 2);
     state.mode = state.gaitStrength > 0.04 ? 'walk' : 'idle';
-    state.poses.left = freeHandOverride(record, 'left', state.modelHeight) || fallbackPose(state, 'left', nowMs);
-    state.poses.right = freeHandOverride(record, 'right', state.modelHeight) || fallbackPose(state, 'right', nowMs);
-    state.overridden = { left: state.poses.left?.overridden === true, right: state.poses.right?.overridden === true };
+    const defaults = state.fallbackDefaults ||= { left: { position: {}, rotationDeg: {} }, right: { position: {}, rotationDeg: {} } }; // Backwards-compatible lazy setup for externally supplied fallback state.
+    state.poses.left = freeHandOverride(record, 'left', state.modelHeight) || fallbackPose(state, 'left', nowMs, defaults.left);
+    state.poses.right = freeHandOverride(record, 'right', state.modelHeight) || fallbackPose(state, 'right', nowMs, defaults.right);
+    const overridden = state.overridden ||= { left: false, right: false }; // Reused ownership flags for the next sync step.
+    overridden.left = state.poses.left?.overridden === true;
+    overridden.right = state.poses.right?.overridden === true;
     return state;
   }
 
