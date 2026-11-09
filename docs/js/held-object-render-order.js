@@ -774,7 +774,9 @@
     // The shell pass supplies a snapshot of its already-visible renderables;
     // other callers keep the original live traversal as a conservative fallback.
     if (visibleCandidates) {
-      for (const object of visibleCandidates) processCandidate(object);
+      for (const object of visibleCandidates) {
+        if (isStillVisibleForShellReplay(object, scene)) processCandidate(object);
+      }
     } else scene.traverseVisible(processCandidate);
     return states;
   }
@@ -1540,9 +1542,23 @@
       object.visible = false;
     };
     if (visibleShellMeshes) {
-      for (const object of visibleShellMeshes) hideCandidate(object);
+      for (const object of visibleShellMeshes) {
+        if (isStillVisibleForShellReplay(object, scene)) hideCandidate(object);
+      }
     } else scene.traverseVisible(hideCandidate);
     return states;
+  }
+
+  function isStillVisibleForShellReplay(object, scene) {
+    // An onBeforeRender hook may hide/detach a mesh (or its parent) after the
+    // snapshot was taken. Mirror traverseVisible's live visibility test before
+    // touching shared materials or temporarily masking a shell.
+    let current = object; // Checked against its ancestors to preserve live scene visibility.
+    while (current && current !== scene) {
+      if (current.visible === false) return false;
+      current = current.parent;
+    }
+    return current === scene && scene.visible !== false;
   }
 
   function collectShellReplayCandidates(scene) {
