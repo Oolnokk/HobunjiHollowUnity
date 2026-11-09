@@ -13,7 +13,11 @@ for (const icon of ['love', 'disgust', 'alarmed', 'curious', 'gloat_cloud', 'glo
 }
 
 let now = 0; // Simulated monotonic animation frame clock.
-const frameQueue = []; // Mock browser RAF callbacks, consumed explicitly in the tests.
+const subscribers = new Map(); // Mimic the game's one authoritative browser-frame scheduler.
+function step() {
+  const owner = subscribers.get('scratchbones-emoji-reactions'); // Only an enabled pre-render subscriber receives a frame.
+  if (owner?.enabled) owner.callback({ timestamp: now, frameId: 1, deltaMs: 16 });
+}
 class CanvasTexture { constructor(canvas) { this.canvas = canvas; } }
 class SpriteMaterial { constructor(options) { Object.assign(this, options); this.rotation = 0; } dispose() {} }
 class Sprite {
@@ -38,7 +42,18 @@ function canvas() {
 }
 const win = { // The minimal public Three/canvas interface used by the shared sprite renderer.
   THREE: { CanvasTexture, SpriteMaterial, Sprite, Box3, Vector3, LinearFilter: 1, SRGBColorSpace: 'srgb' },
-  requestAnimationFrame(callback) { frameQueue.push(callback); },
+  RuntimeFrameScheduler: {
+    register(id, callback, options) {
+      assert.equal(options.phase, 'pre-render', 'emoji motion runs after simulation and before rendering');
+      assert.equal(options.enabled, false, 'emoji work must be initially dormant');
+      subscribers.set(id, { callback, enabled: false });
+    },
+    setEnabled(id, enabled) {
+      const owner = subscribers.get(id); // Record transitions to assert that finished effects sleep.
+      assert.ok(owner, 'subscriber is registered');
+      owner.enabled = enabled;
+    },
+  },
 };
 const context = { // Browser shim: no game loop or visual renderer is required for unit checks.
   window: win, Image: FakeImage, URL, URLSearchParams,
@@ -86,16 +101,19 @@ function actor() {
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(livestock.children.length, 1);
   assert.ok(livestock.children[0].material.map, 'asset texture should be loaded');
+  assert.equal(livestock.children[0].material.depthTest, true, 'world geometry occludes emojis');
+  assert.equal(subscribers.get('scratchbones-emoji-reactions').enabled, true);
   now = 1651;
-  frameQueue.shift()?.();
+  step();
   assert.equal(livestock.children.length, 0, 'ended reaction disposed');
+  assert.equal(subscribers.get('scratchbones-emoji-reactions').enabled, false, 'do not tick when no emotes are active');
 
   const npc = actor(); // NPC uses the identical renderer for the five-ray shock burst.
   assert.equal(api.trigger(npc, 'shock'), true);
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(npc.children.length, 5);
   now += 1600;
-  frameQueue.shift()?.();
+  step();
   assert.equal(npc.children.length, 0);
 
   const gloatingNpc = actor(); // Ensure the raining-coin effect cannot outlive a hidden/despawned actor.
@@ -103,8 +121,32 @@ function actor() {
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(gloatingNpc.children.length, 19);
   gloatingNpc.visible = false;
-  frameQueue.shift()?.();
+  step();
   assert.equal(gloatingNpc.children.length, 0);
+  assert.equal(api.debugSnapshot().active, 0);
+  assert.equal(subscribers.get('scratchbones-emoji-reactions').enabled, false);
+
+  const overlappingNpc = actor(); // Another emote on the same NPC must replace, not stack with the gloat cloud.
+  assert.equal(api.trigger(overlappingNpc, 'gloat'), true);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(overlappingNpc.children.length, 19);
+  now += 1000;
+  assert.equal(api.trigger(overlappingNpc, 'love'), true);
+  assert.equal(overlappingNpc.children.length, 0, 'replace previous particles before measuring actor height');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(overlappingNpc.children.length, 1);
+  now += 1700;
+  step();
+  assert.equal(overlappingNpc.children.length, 0);
+
+  const pending = actor(); // Two same-frame requests must not emit stale effects after async PNG loading.
+  assert.equal(api.trigger(pending, 'curious'), true);
+  assert.equal(api.trigger(pending, 'alarmed', { force: true }), true);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(pending.children.length, 1, 'newer emotion wins pending texture races');
+  pending.parent = null;
+  step();
+  assert.equal(pending.children.length, 0);
   assert.equal(api.debugSnapshot().active, 0);
   console.log('Scratchbones emoji reactions: PASS');
 })().catch(error => { console.error(error); process.exitCode = 1; });
