@@ -138,17 +138,32 @@ $('bake').onclick=async()=>{
 };
 $('downloadJson').onclick=()=>{if(!last)return;const {glb,...portable}=last;download(cleanName(portable.part.name)+'_statue_piece.json',JSON.stringify(portable,null,2),'application/json');status('Exported portable statue piece JSON. Import it in Furniture Editor → Pieces.');};
 $('downloadGlb').onclick=()=>{if(!last)return;download(cleanName(last.part.name)+'.glb',last.glb,'model/gltf-binary');status('Exported static carved GLB. Commit it to assets/models/ for smaller production furniture JSON.');};
+function sendToFurniture(target){
+  if(!last||!target)return;
+  const {glb,...portable}=last; // Transfer the portable piece, never the redundant raw ArrayBuffer.
+  target.postMessage({type:'hobunji-statue-piece-import',payload:portable},location.origin);
+}
 $('send').onclick=()=>{
   if(!last)return;
+  try{
+    const hub=window.parent!==window&&window.parent.document.getElementById('if-statue-author')?.contentWindow===window?window.parent:null;
+    const existing=hub?.document.getElementById('if-furniture-avatar-author');
+    if(existing){
+      transferTarget=existing.contentWindow; // Preserve the furniture assembly that is already being edited in this Tools Hub.
+      hub.document.querySelector('button[data-target="furniture-avatar-author"]')?.click();
+      if(transferTarget.HobunjiFurnitureStatuePiecesReady)sendToFurniture(transferTarget);
+      else status('Opening the existing Furniture Editor tab. The statue will transfer as soon as it initializes.');
+      return;
+    }
+  }catch(_){/* Standalone or cross-origin host; use an isolated editor window. */}
   const target=window.open('../furniture-avatar-author/index.html','_blank');
-  if(!target){status('Popup blocked. Download the piece JSON and import it through the Furniture Editor Pieces tab.',true);return;}
+  if(!target){status('Popup blocked. Download the piece JSON and import it through Furniture Editor → Pieces.',true);return;}
   transferTarget=target;status('Furniture Editor opened. Waiting for its ready handshake to add the statue piece…');
 };
 window.addEventListener('message',event=>{
   if(event.origin!==location.origin||event.source!==transferTarget)return;
   if(event.data?.type==='hobunji-furniture-editor-ready'){
-    if(!last)return;const {glb,...portable}=last;
-    transferTarget.postMessage({type:'hobunji-statue-piece-import',payload:portable},location.origin);
+    sendToFurniture(transferTarget);
   }
   if(event.data?.type==='hobunji-statue-piece-result'){
     status(event.data.ok?'Inserted statue piece '+event.data.imported?.name+' into the Furniture Editor.': 'Furniture Editor import failed: '+event.data.error,!event.data.ok);
