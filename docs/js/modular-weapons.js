@@ -446,7 +446,7 @@
     const headName = partText(head.weaponNames?.[placement], head.label);
     const affix = partText(shaft.nameAffix, shaft.label);
     return [metalLabel, ...(placement === 'prefix' ? [affix, headName] : [headName, affix])]
-      .filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+      .filter(Boolean).join(' ').replace(/-\s+/g, '-').replace(/\s+/g, ' ').trim(); // A trailing authored hyphen joins directly to the next word; ordinary prefix/suffix boundaries retain spaces.
   }
   function replace(data, persist = false) {
     if (!data?.heads || !data?.shafts || ![SCHEMA, 'hobunji_modular_weapons.v1'].includes(data.schema))
