@@ -7,6 +7,10 @@
   const CONFIG_URL = 'config/combat/combat-vocalizations.json';
   const LOCAL_OVERRIDE_KEY = 'hobunji_combat_vocalizations_override_v1';
   const SCHEDULER_ID = 'combat-vocalizations-breath';
+  const SKELETON_VOICE_SPECIES = new Set(['harlyao-skeleton', 'mao-ao-skeleton']); // NPC skeletons use one dedicated shriek in all combat vocal events.
+  const SKELETON_SHRIEK_URL = 'assets/audio/sfx/utterances/sfx_skeletonshriek_1.ogg'; // Real authored recording for skeleton attacks, reactions, and breathing.
+  const SKELETON_SHRIEK_TEMPO = 3; // Skeleton shrieks play at three times the source tempo independently of pitch.
+  const SKELETON_SHRIEK_PITCH_STEPS = Object.freeze([-3, -2, -1, 0, 1, 2, 3]); // Finite random semitone choices reuse cached mobile voice renders.
   const DEFAULT_CONFIG = Object.freeze({
       "schema": "hobunji_combat_vocalizations.v2",
       "assets": {
@@ -332,7 +336,7 @@
       gender,
       pitchSemitones: Number(authored.pitchSemitones ?? fallback.pitchSemitones ?? 0) || 0,
       tempo: clamp(authored.tempo ?? fallback.tempo ?? 1, 0.35, 3),
-      gain: clamp(authored.gain ?? fallback.gain ?? 1, 0, 3),
+      gain: SKELETON_VOICE_SPECIES.has(speciesId) ? 1 : clamp(authored.gain ?? fallback.gain ?? 1, 0, 3), // Skeletons are otherwise muted by their previous generic-human-voice profile.
     };
   }
 
@@ -342,7 +346,15 @@
   }
 
   function specialVoiceFor(entity, event) {
-    return window.MaskboundGuardianCombat?.voiceVariantFor?.(entity, event) || null; // Guardian-only voice preset; all ordinary players/NPCs retain their native recordings.
+    const maskboundVoice = window.MaskboundGuardianCombat?.voiceVariantFor?.(entity, event); // Keep existing Maskbound Guardian vocal variants authoritative.
+    if (maskboundVoice) return maskboundVoice;
+    if (!SKELETON_VOICE_SPECIES.has(voiceIdentity(entity).speciesId)) return null;
+    const pitchIndex = Math.floor(Math.random() * SKELETON_SHRIEK_PITCH_STEPS.length); // Seven fixed semitone steps keep playback varied without unbounded WSOLA cache churn.
+    return {
+      url: SKELETON_SHRIEK_URL,
+      pitchOffsetSemitones: SKELETON_SHRIEK_PITCH_STEPS[Math.min(pitchIndex, SKELETON_SHRIEK_PITCH_STEPS.length - 1)],
+      tempoMultiplier: SKELETON_SHRIEK_TEMPO,
+    };
   }
 
   function voicePlaybackPlan(randomSemitones = 0, entity = player()) {
@@ -1430,6 +1442,8 @@ function beginCharge(options = {}) {
       version: VERSION,
       latestChange: window.CombatVocalizations.latestChange,
       maskboundVoiceSource: window.MaskboundGuardianCombat?.voiceSource || null, // Mobile debug proves all guardian combat utterances use the same recorded scream.
+      skeletonVoiceSource: SKELETON_SHRIEK_URL, // Mobile Pixel Probe exposes the dedicated skeleton recording and intended speed.
+      skeletonVoiceTempo: SKELETON_SHRIEK_TEMPO,
       configSource,
       configError,
       attackStartDelayS: attackStartDelayS(),
