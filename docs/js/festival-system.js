@@ -714,7 +714,8 @@
     lastMissingGuestCheckAt = now;
     const present = new Set((deps.getWalkers?.() || []).filter(walker => !walker._doorstepVisitor).map(walker => walker.rec?.id)); // Existing source walkers never need rebuilding.
     for (const rec of residents()) {
-      if (window.NpcScheduling?.hasPresenceSchedule?.(rec) || present.has(rec.id)) continue; // Respect recurring traders and contextual absences such as Hunundi leaving Gorkunash.
+      const absence = window.NpcScheduling?.getVisitorPresence?.(rec); // Distinguishes a contextual *current* absence from merely having a presence rule.
+      if (rec.visitorPresence || (absence && !absence.active) || present.has(rec.id)) continue; // Traders keep off-days, while an available but missing Hunundi can be rebuilt for other festivals.
       Promise.resolve(deps.ensureNpcWalker(rec.id)).catch(error => {
         window.__farmLog?.(`[festival] guest ${rec.id} recovery failed: ${String(error?.message || error)}`, 'warn', 'npc');
       });
