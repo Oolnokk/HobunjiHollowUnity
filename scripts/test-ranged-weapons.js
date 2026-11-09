@@ -41,7 +41,7 @@ assert.ok(fs.existsSync(path.join(root, 'docs/assets/audio/sfx/combat/sfx_arrow_
 assert.match(scratchbonesConfig, /"rangedLoad":\s*\{\s*"url":\s*"assets\/audio\/sfx\/combat\/sfx_loading_mechanism\.m4a"/, 'combat audio config must register the ranged loading cue');
 assert.match(scratchbonesConfig, /"rangedFire":\s*\{\s*"url":\s*"assets\/audio\/sfx\/combat\/sfx_shootarrow\.m4a"/, 'combat audio config must register the ranged firing cue');
 assert.match(scratchbonesConfig, /"rangedImpact":\s*\{\s*"url":\s*"assets\/audio\/sfx\/combat\/sfx_arrow_hit\.mp3"/, 'combat audio config must register the ranged impact cue');
-assert.match(ranged, /playProjectileImpactSfx\(p, coverHit\.t\)/, 'arrows must sound at cover impacts');
+assert.match(ranged, /playProjectileImpactSfx\(p, coverHit\.t, true\)/, 'cover impacts must carry the cover flag while arrows retain their impact sound');
 assert.match(ranged, /playProjectileImpactSfx\(p, nearest\.interval\.enter\)/, 'arrows must sound at actor impacts');
 assert.match(scratchbonesConfig, /"rangedLoad":[^\n]*"volume":\s*0\.42/, 'loading mechanism cue must use the quieter mix');
 assert.match(scratchbonesConfig, /"rangedFire":[^\n]*"volume":\s*1\.0/, 'arrow cue must use full mobile-safe media-element volume');
