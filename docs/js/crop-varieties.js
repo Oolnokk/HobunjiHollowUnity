@@ -258,7 +258,9 @@
     const first = genesFor(firstKey), second = genesFor(secondKey), target = genesFor(targetKey); // Uses the breeder's exact two-allele parent genomes.
     if (!first || !second || !target || target.family !== family) return 0;
     const pigment = mixHex(colorOf(firstKey), colorOf(secondKey)).toString(16).padStart(6, '0'); // Pigment never mutates; it is the exact midpoint of two parent colors.
-    const nativeFallback = firstKey === family && secondKey === family && targetKey === family;
+    const bothNative = firstKey === family && secondKey === family; // breed() returns the original native item if two native parents produce all-zero genes.
+    const nativeFallback = bothNative && targetKey === family;
+    if (bothNative && targetKey !== family && target.genes === '000000') return 0; // That matching genome is returned as native, never as a redundant cv_ key.
     if (!nativeFallback && target.colorHex !== pigment) return 0;
     const inherited = [
       [first.genes[0], first.genes[1]], [second.genes[0], second.genes[1]],
