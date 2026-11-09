@@ -222,7 +222,7 @@
     p.born = true;
     p.awaitingChild = true; // Prevents creating a new pregnancy while the birth naming UI is unresolved.
     const baby = babyFromParents(p.kind);
-    fam.pendingBaby = { ...baby, origin: p.kind.endsWith('egg') ? 'egg' : 'birth', otherParentId: p.spouseId }; // Save-safe pending newborn, resumed after reload.
+    fam.pendingBaby = { ...baby, bornRawDay: H.rawDay(), origin: p.kind.endsWith('egg') ? 'egg' : 'birth', otherParentId: p.spouseId }; // Save-safe pending newborn and exact birthday, resumed after reload.
     const message = {
       spouse_egg: 'The egg hatched in the night!',
       player_egg: 'Your egg hatched in the night!',
@@ -263,7 +263,7 @@
         const pending = fam.pendingAdoption;
         if (!pending) return true;
         fam.pendingAdoption = null;
-        fam.pendingBaby = { ...pending, origin: 'adopted', otherParentId: pending.spouseId }; // Doorstep completion persists until naming succeeds.
+        fam.pendingBaby = { ...pending, bornRawDay: H.rawDay(), origin: 'adopted', otherParentId: pending.spouseId }; // Arrival date and naming survive save/reload.
         H.persist();
         pendingBabyPromptScheduled = true;
         setTimeout(() => { pendingBabyPromptScheduled = false; if (fam.pendingBaby && !uiOverlay) promptPendingBaby(); }, 300);
@@ -311,12 +311,12 @@
       scheduleHooks: { rules: [] },
     };
   }
-  function createChild({ name, speciesId, gender, bodyColors, cosmetics, equippedCosmetics, appliedDyes, origin, otherParentId }) {
+  function createChild({ name, speciesId, gender, bodyColors, cosmetics, equippedCosmetics, appliedDyes, origin, otherParentId, bornRawDay }) {
     const id = `child_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     const child = {
       id, name: String(name || 'Little One').slice(0, 32), speciesId, gender, bodyColors,
       cosmetics: { ...(cosmetics || {}) }, equippedCosmetics: [...(equippedCosmetics || [])], appliedDyes: { ...(appliedDyes || {}) }, // Dream children keep every creator choice.
-      origin, otherParentId, bornRawDay: H.rawDay(), basketId: null, vatId: null,
+      origin, otherParentId, bornRawDay: Math.min(H.rawDay(), Math.max(0, num(bornRawDay, H.rawDay()))), basketId: null, vatId: null, // An interrupted naming prompt never makes a child younger.
       usefulnessLevel: Math.max(1, num(usefulnessCfg().youngStartLevel, 1)), usefulnessXp: 0, // Lifelong general work progression.
     };
     const placed = deps().furniture?.placeInteriorFixture?.('babyBasket');
