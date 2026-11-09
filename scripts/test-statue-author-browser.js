@@ -44,6 +44,10 @@ function brief(errors){return errors.slice(-10).join('\n').slice(0,2500);}
     await page.goto(base+'statue-author/index.html',{waitUntil:'domcontentloaded',timeout:30000});
     await page.waitForFunction(()=>!!document.querySelector('#attack')?.contentWindow?.HobunjiStatuePoseSource,
       null,{timeout:60000}).catch(error=>{throw Error('Attack Editor bridge not ready: '+error.message+'\n'+brief(errors));});
+    await page.waitForFunction(()=>{
+      const root=document.querySelector('#attack')?.contentWindow?.HobunjiAttackEditorToolContext?.bodyRoot;
+      return root?.children?.some(group=>group.children?.some(model=>Number(model.userData?.portraitModelHeight)>0));
+    },null,{timeout:45000}).catch(error=>{throw Error('NPC preview avatar was not assembled: '+error.message+'\n'+brief(errors));});
     await page.locator('#weapon').selectOption('no');
     await page.locator('#pose').selectOption('neutral');
     await page.locator('#bake').click();
