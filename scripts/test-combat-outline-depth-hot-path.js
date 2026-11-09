@@ -84,6 +84,17 @@ assert.equal(material.depthFunc, 'original');
 assert.equal(material.alphaTest, 0.02, 'source alpha tests are restored');
 assert.equal(occluder.snapshot().registered, 3, 'inactive and hidden sprites remain registered');
 
+const successfulRender = renderer.render; // Reinstalled after deliberately throwing from the render hook.
+renderer.render = () => { throw new Error('injected WebGL failure'); };
+assert.throws(() => occluder.renderDepth(active), /injected WebGL failure/, 'depth pass propagates the original renderer error');
+renderer.render = successfulRender;
+assert.equal(camera.layers.mask, 0xffffffff, 'camera layers also restore after a failed depth draw');
+assert.equal(material.colorWrite, true);
+assert.equal(material.depthWrite, false);
+assert.equal(material.depthTest, false);
+assert.equal(material.depthFunc, 'original');
+assert.equal(material.alphaTest, 0.02, 'temporary material changes cannot survive a failed depth draw');
+
 activeMesh.parent = null;
 occluder.renderDepth(active);
 assert.equal(renders, 1, 'no render is issued when no active visible depth planes remain');
