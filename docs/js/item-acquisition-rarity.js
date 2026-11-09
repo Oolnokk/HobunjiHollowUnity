@@ -211,23 +211,57 @@
       draws:{ min:counts.min, max:counts.max },
       model:'conditional on opening one generated chest of this tier; site and chest frequency are not assumed' };
   }
+  function positiveLootQuantity(entry) {
+    const min = Number(entry?.min || 0), max = Number(entry?.max ?? min);
+    const step = entry?.step ? Number(entry.step) : 1;
+    if (!Number.isInteger(min) || !Number.isInteger(max) || max < min || !Number.isInteger(step) || step < 1) return null;
+    const possibilities = Math.floor((max - min) / step) + 1; // LootRolling samples exactly this many equal-weight integer counts.
+    const firstPositive = min > 0 ? 0 : Math.min(possibilities,Math.max(0,Math.floor(-min / step) + 1));
+    const positive = possibilities - firstPositive;
+    const firstValue = min + firstPositive * step;
+    return { probability:positive / possibilities, expectedQuantity:positive
+      ? (positive * firstValue + step * positive * (positive-1) / 2) / possibilities : 0,
+      min,max,step };
+  }
   function lootPoolItem(key, poolId, pools = G.LootRolling?.getLootPools?.()) {
     const pool = pools?.[poolId];
     if (!pool) return null;
-    const matches = (pool.entries || []).filter(entry => entry?.itemKey === key);
-    if (matches.length === 0) return { key, poolId, probability:0, eligible:false };
-    const stages = matches.map(entry => ({
-      label:entry.id || key,
-      probability:entry.chance ?? 1,
-      conditions:entry.conditions || {},
-      eligibilityKnown:!Object.values(entry.conditions || {}).some(value => Array.isArray(value) ? value.length : value != null),
-    }));
-    // Multiple independent entries for the same key (rare) are a union, not a sum.
-    const odds = stages.every(stage => stage.eligibilityKnown)
-      ? 1 - stages.reduce((none,stage) => none * (1 - (clampProbability(stage.probability) ?? 0)),1)
-      : null;
-    return { key, poolId, probability:odds, entries:stages, eligible:odds !== 0,
-      model:'per pool roll, before any unknown parent pool or encounter frequency' };
+    // Mixed and mastery tables delegate to other pools; absence of a direct
+    // entry is not a zero drop chance. Preserve unknown until ancestors are resolved.
+    if (pool.kind === 'mixed' || pool.mastery)
+      return {key,poolId,probability:null,eligible:null,entries:[],
+        model:'delegated source pools or mastery rules must be resolved before an item probability can be claimed'};
+    const entries = (pool.entries || []);
+    const matches = entries.filter(entry => entry?.itemKey === key);
+    const conditional = entry => ['conditions','excludeConditions'].some(field =>
+      Object.values(entry[field] || {}).some(value =>
+        Array.isArray(value) ? value.length > 0 : value != null && (typeof value !== 'object' || Object.keys(value).length > 0)));
+    if (pool.kind === 'exclusive') {
+      if (entries.some(conditional)) return {key,poolId,probability:null,eligible:null,
+        model:'exclusive weighted pool has unresolved world conditions'};
+      const totalWeight = entries.reduce((sum,entry)=>sum + Math.max(0,Number(entry.weight ?? 1)||0),0);
+      const weight = matches.reduce((sum,entry)=>sum + Math.max(0,Number(entry.weight ?? 1)||0),0);
+      return {key,poolId,probability:totalWeight ? weight/totalWeight : null,eligible:totalWeight ? weight>0 : null,
+        model:'weighted one-of-N exclusive pool, conditional on this pool being selected and its entries enabled'};
+    }
+    if (!matches.length) return { key,poolId,probability:0,expectedQuantity:0,eligible:false,
+      model:'no direct item entries in this ordinary independent pool' };
+    const stages = matches.map(entry => {
+      const quantity = positiveLootQuantity(entry); // An entry with min:0 can pass its chance roll and still award nothing.
+      const itemChance = clampProbability(entry.chance ?? 1);
+      const eligible = !conditional(entry);
+      return {label:entry.id || key,probability:itemChance == null || !quantity ? null : itemChance * quantity.probability,
+        expectedQuantity:itemChance == null || !quantity ? null : itemChance * quantity.expectedQuantity,
+        quantity:quantity ? {min:quantity.min,max:quantity.max,step:quantity.step} : null,
+        conditions:entry.conditions || {},excludeConditions:entry.excludeConditions || {},eligibilityKnown:eligible};
+    });
+    // Multiple direct entries roll independently. An undisclosed world condition
+    // makes the total chance unknown, but the conditional entry math stays inspectable.
+    const known = stages.every(stage => stage.eligibilityKnown && stage.probability !== null);
+    const odds = known ? 1-stages.reduce((none,stage) => none*(1-stage.probability),1) : null;
+    const expectedQuantity = known ? stages.reduce((sum,stage)=>sum+stage.expectedQuantity,0) : null;
+    return {key,poolId,probability:odds,expectedQuantity,entries:stages,eligible:odds === null ? null : odds>0,
+      model:'per ordinary independent-pool roll, conditional on encounter source and all authored world conditions' };
   }
   function denOffspring({ zoneId = null, species, denCount = null, denSpecies = null,
     clutchMin = null, clutchMax = null, nestChance = null } = {}) {
