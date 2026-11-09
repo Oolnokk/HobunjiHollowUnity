@@ -140,6 +140,15 @@
     }
     return null;
   }
+  function syncCreatureNeck(record, dt) {
+    const neck = record.neckControl;
+    if (!neck || !record.ref.headRig) return;
+    const pitchDeg = neck.rotation.x * 180 / Math.PI; // NPC gaze/animation X pitch feeds the creature's authored painted-head hinge.
+    const yawDeg = neck.rotation.y * 180 / Math.PI; // NPC gaze/animation Y yaw feeds the creature's independent side-turn.
+    record.ref.updateHeadRotation?.(pitchDeg, dt);
+    record.ref.updateHeadYaw?.(yawDeg, dt);
+  }
+
   function updateFacing(record, camera) {
     const walker = matchingWalker(record);
     const perp = global.PerpRotation;
@@ -148,6 +157,7 @@
     if (now - record.lastFacingAt < 5) return; // Both sides share one render-time solve.
     const dt = record.lastFacingAt ? Math.min(.1, (now-record.lastFacingAt)/1000) : 1/60;
     record.lastFacingAt = now;
+    syncCreatureNeck(record, dt); // Creature neck skinning responds to the same NPC gaze and scripted animation channels as humanoid necks.
     const parent = walker.root; // NPC locomotion/collision stays unmodified; this child owns the appearance-facing offset.
     const worldPoint = parent.getWorldPosition(new record.THREE.Vector3());
     const cameraPoint = camera.getWorldPosition(new record.THREE.Vector3());
@@ -196,6 +206,12 @@
     const body = ref.group; // Only one creature card assembly is built and owned by this NPC.
     body.position.y = cfg.bodyOffsetY;
     root.add(body);
+    const neckControl = new THREE.Group(); // Real Object3D neck target used by dialogue, movement gaze and NPC animation authors.
+    neckControl.name = speciesId + '_creature_neck_control';
+    const pivot = cfg.neck?.pivot || { x: .5, y: .35 };
+    neckControl.position.set(0, (0.5-finite(pivot.y,.35))*cfg.modelHeight,
+      (0.5-finite(pivot.x,.5))*cfg.modelWidth);
+    body.add(neckControl); // Creature body rotation and authored head pivot share a scene-space parent.
     root.userData = {
       ...(options.userData || {}),
       bipedalMonsterRig: cfg, bipedalMonster: true,
@@ -208,13 +224,13 @@
       handAttachX: -cfg.modelWidth * .35, handAttachY: cfg.modelHeight * .33,
       armLength: cfg.modelWidth * .42, scaledArmLength: cfg.modelWidth * .42,
       poseOrbitAxes: { x: 1, y: 1, z: 1 }, poseOrbitScale: 1,
-      neckRig: { available: false, creatureHeadRig: ref.headRig || null },
+      neckRig: { available: false, neckJoint: neckControl, creatureHeadRig: ref.headRig || null },
       sourceCanvas, backCanvas: options.backCanvas || null,
       proceduralBodyRoot: root, proceduralHandParent: root,
     }; // NPC appearance metadata is consumed by the existing hands/feet/equipment/animation solvers.
     const record = {
       THREE, ref, root, config: cfg, speciesId, npcId: normalize(rec.id || options?.profile?.portraitSeatId),
-      walker: null, perpState: {}, facingYaw: NaN, lastFacingAt: 0,
+      walker: null, neckControl, perpState: {}, facingYaw: NaN, lastFacingAt: 0,
     }; // One self-contained assembly record for diagnostics/facing/disposal.
     active.add(record);
     for (const plane of [ref.frontPlane, ref.backPlane]) {
