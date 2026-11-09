@@ -488,7 +488,11 @@ luminance/average-midtone algorithm and does not simply multiply the
 entire image by brown. `ColorFill.debugSnapshot().shadeFillsByLabel`
 records `weapon-rope:#6B4728` for mobile debugging. The weapon assembly's `debugSnapshot().ropeTint` also reports whether the **rendered** rope is using `ColorFill.shadeFillPixels` or the source-image fallback, making a failed CORS/canvas tint visible without a console. Recoloring is cached
 per source sprite and tint, while each flail owns a cloned texture for
-safe disposal. The original `rope_long.png` is not modified.
+safe disposal. The per-source cache retains at most 12 recently used colors
+(LRU), preventing repeated mobile Tool Hub color experiments from retaining
+unbounded full-resolution canvas textures. Evicted templates are safe to
+dispose because active flails have independent clones. The original
+`rope_long.png` is not modified.
 
 Run `node scripts/test-weapon-sprite-assemblies.js` and
 `node scripts/test-flail-rope-picker-scale.js` for regression coverage.
