@@ -104,6 +104,7 @@
           ctx.drawImage(mask, 0, 0);
           const texture = new window.THREE.CanvasTexture(canvas); // Global per-color cache; no redraw in tick().
           if (window.THREE.SRGBColorSpace) texture.colorSpace = window.THREE.SRGBColorSpace;
+          else if (window.THREE.sRGBEncoding) texture.encoding = window.THREE.sRGBEncoding; // The shipped Three r128 expects .encoding rather than the newer .colorSpace.
           texture.magFilter = window.THREE.LinearFilter;
           texture.minFilter = window.THREE.LinearFilter;
           resolve(texture);
