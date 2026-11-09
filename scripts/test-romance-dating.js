@@ -418,6 +418,18 @@ assert.equal(dream.nextDreamRawDay, clock.rawDay + 28, 'one-month postponement u
 fam.getFamily().pregnancy = priorPlan;
 player.area = oldArea;
 
+// Deferred naming uses the real birth/arrival day, even across a long save/reload delay.
+const actualBirthDay = clock.rawDay - 35; // A child named 35 days late is already a toddler.
+const lateNamed = W.RomanceFamily.createChild({
+  name: 'Late arrival', speciesId: 'engh-sho', gender: 'female',
+  bodyColors: mixed, origin: 'birth', otherParentId: 'tooth_hatayap', bornRawDay: actualBirthDay,
+});
+assert.equal(lateNamed.bornRawDay, actualBirthDay, 'the naming date never overwrites a saved birthday');
+assert.equal(fam.phaseOf(lateNamed), 'toddler', 'growth is based on birth, not delayed naming');
+W.RomanceFamily.restore(W.RomanceFamily.serialize());
+assert.equal(W.RomanceFamily.snapshot().children.find(c => c.id === lateNamed.id)?.ageDays, 35,
+  'the original birth day survives save and reload');
+
 // ── Hold-Action-1 wheel claim ───────────────────────────────────────────
 W.NpcCommandWheel.init({ getNearbyNpcWalker: () => nearby, isCombatActive: () => combatOn, isDialogueOpen: () => false, isMenuOpen: () => false, isFarmEditMode: () => false, openNpcDialogue: walker => opened.push({ walker, node: null, tap: true }) });
 W.NpcCommandWheel._test.syncClaims();
