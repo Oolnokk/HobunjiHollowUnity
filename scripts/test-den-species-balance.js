@@ -118,4 +118,33 @@ for (const den of zoneLayouts.get('map_mixed_wilds').dens) {
   assert(mothers[outside].nestItemKey, `${den.id}: usable egg or baby item exists`);
 }
 
-console.log('den species balance: ok');
+// Verify the mobile audit against an actual injected inventory registry. Without
+// ITEM_DEFS, fertile Honeyfuzzle eggs are incorrectly marked unavailable.
+const gameSource = fs.readFileSync(path.join(ROOT, 'docs/game.js'), 'utf8');
+const initStart = gameSource.indexOf('window.WildlifeSpawn?.init({'); // Production DI seam that exposes the live item catalog.
+const initEnd = gameSource.indexOf('window.CavernGenerator?.init({', initStart);
+assert(initStart >= 0 && initEnd > initStart, 'the runtime wildlife dependency bag exists');
+assert.match(gameSource.slice(initStart, initEnd), /\bITEM_DEFS\s*,/, 'wildlife receives the real inventory item registry for offspring validation');
+const auditItems = { puktukBaby: { cat: 'livestock' }, fertileHoneyfuzzleEgg: { cat: 'livestock' } }; // Real, usable item fixtures used by audit validation.
+const auditMothers = { puktuk: { creatureKey: 'puktuk', nestItemKey: 'puktukBaby' } }; // A den's guardian and baby mapping must both exist.
+windowStub.SCRATCHBONES_CONFIG = { game: { livestock: { itemKinds: { puktukBaby: 'puktuk' } }, wildlife: { denMothers: auditMothers } } }; // Mirrors the parser-time config read by nestingSpeciesAudit.
+windowStub.CreatureGenetics = { SPECIES_ALIAS: {} }; // Explicitly maps Puktuk/Honeyfuzzle to their own genetic families.
+windowStub.CreatureGeneticsRender = { SPECIES: { puktuk: {}, honeyfuzzle: {} } }; // A usable offspring family requires the live coat renderer.
+const auditCreatures = { puktuk: {}, honeyfuzzle: {}, tzatzul: {}, 'skeeri-small': {} }; // Real registry fixtures, not merely names in a zone string.
+W.init({
+  EXTERIOR_ZONES, zoneLayouts, hostileObjects,
+  CREATURE_DB: auditCreatures, DEN_MOTHER_DEFS: auditMothers, ITEM_DEFS: auditItems,
+  getCurrentArea: () => 'map_western_slope', rnd: Math.random, TILE: 32,
+  denNests: new Map(), buildingScenes: new Map(), showToast() {},
+});
+const auditRecords = W.nestingSpeciesAudit(); // The real mobile-facing audit, not a separately implemented validator.
+const inspected = kind => auditRecords.find(record => record.kind === kind);
+assert.equal(inspected('puktuk')?.ok, true, 'a registered den guardian with a real baby item passes');
+assert.equal(inspected('honeyfuzzle')?.ok, true, 'a fertile hive egg is valid without a conventional stable itemKinds mapping');
+assert.equal(inspected('tzatzul')?.exempt, true, 'Tzatzuls are not forced to produce hatchable eggs');
+assert.equal(inspected('skeeri-small')?.exempt, true, 'Skeeri are not forced to produce hatchable eggs');
+delete auditItems.fertileHoneyfuzzleEgg;
+assert.equal(W.nestingSpeciesAudit().find(record => record.kind === 'honeyfuzzle')?.ok, false,
+  'a truly absent fertile egg item is detected instead of being silently accepted');
+
+console.log('den species balance and real offspring registry audit: ok');
