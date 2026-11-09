@@ -660,7 +660,8 @@
     const pool = deps.npcTransitionPool(area);
     const links = [];
     for (const t of pool) {
-      if(t.puzzleCaveOnly || String(t.targetMapId||'').includes('_puzzle_rock_'))continue; // Puzzle Cave entrances are player-only: no NPC route edge, traversal, or scene prewarming.
+      // Generated animal-den interiors belong to player entry and wildlife, not the ambient NPC travel graph. Visiting these links during an NPC's route search otherwise synchronously carves every distant den and flashes the global "Generating den" label.
+      if (t.puzzleCaveOnly || String(t.targetMapId || '').includes('_puzzle_rock_') || String(t.targetMapId || '').startsWith('map_i_den_')) continue;
       if (t.target === 'building' && t.targetMapId) {
         if (warmBuildings && !deps.buildingScenes.has(t.targetMapId)) deps.loadBuildingScene(t.targetMapId);
         const bi = deps.buildingScenes.get(t.targetMapId);
@@ -724,7 +725,7 @@
       ...debugStats,
       cliffRoutes: { ...cliffDebug },
       collisionRadiusTiles: npcCollisionRadiusTiles(),
-      latestChange: 'NPC area graph uses real wilderness transitions and exits wilderness buildings through their actual exterior, not town (0,0).',
+      latestChange: 'NPC route searches skip generated animal-den entrances (no distant SDF carves); ordinary building and wilderness travel remain linked.',
     };
   }
 
