@@ -183,7 +183,9 @@
     // A processed item inherits its source ingredients' difficulty without
     // awarding an extra scarcity premium for its processing depth (Gorkunash
     // already doubles for each processing step).
-    const ingredients = [...new Set((def.ingredientKeys?.length ? def.ingredientKeys : def.giftIngredientKeys || []).filter(x => typeof x === 'string' && x !== key))];
+    const rawIngredients = Array.isArray(def.ingredientKeys) && def.ingredientKeys.length ? def.ingredientKeys
+      : Array.isArray(def.giftIngredientKeys) ? def.giftIngredientKeys : []; // Legacy item metadata is not always an array.
+    const ingredients = [...new Set(rawIngredients.filter(x => typeof x === 'string' && x !== key))];
     if (!ingredients.length) return { factor:1, known:false, sources:[] };
     const next = new Set(seen); next.add(key);
     const parts = ingredients.map(child => foodRarity(child, localDefs, next));
