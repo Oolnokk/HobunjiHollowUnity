@@ -17,7 +17,7 @@
     lich: Object.freeze({ floors: 4, wings: 5, roomsPerWing: 3 }),
   }); // Mirrors RuinLayerPlan.TIERS; used only when the runtime planner is unavailable.
 
-  const clampProbability = value => Number.isFinite(Number(value)) ? Math.max(0, Math.min(1, Number(value))) : null;
+  const clampProbability = value => value == null || value === '' || !Number.isFinite(Number(value)) ? null : Math.max(0, Math.min(1, Number(value)));
   function chain(stages) {
     let probability = 1; // Joint probability of all supplied conditional stages.
     const breakdown = []; // Mobile diagnostics retain the source of every multiplier.
@@ -60,7 +60,7 @@
       { label: 'Item in tier-' + chestTier + ' chest', probability: chancePerChest },
     ];
     const result = chain(stages);
-    return { ...layout, chestTier, eligibleRooms: roomCount, opportunities,
+    return { ...layout, chestTier, eligibleRooms: roomCount, opportunities, sourceBasis:'conditional on a generated ruin of this tier; site frequency is reported separately',
       perChest: result, expectedChests: opportunities === null ? null : expected(chestProbability, opportunities),
       expectedItems: opportunities === null || chestProbability === null || chancePerChest === null
         ? null : opportunities * chestProbability * chancePerChest,
@@ -117,21 +117,162 @@
       chanceAtLeastOne: p === null ? null : atLeastOne(p, opportunities),
       proposedSellPrice };
   }
-  function item(key, context = {}) {
-    const def = context.itemDefs?.[key] || G.ITEM_DEFS?.[key] || {};
-    const cultivar = /^cv_(needlegrain|heftroot|garlink|ongyums|redberries|blueberries|yellowberries|whiteberries|blackberries|blackMustard|greenMustard)_([0-5]{6})(?:_([0-9a-f]{6}))?(Seeds)?$/.exec(String(key));
-    if (cultivar) {
-      const offer = caravanSeed({ townValue: context.townValue ?? G.TownMine?.getTownValue?.() ?? 1,
-        targetFamily: cultivar[1], targetRegion: cultivar[2].split('').every(v => v === cultivar[2][0]) && cultivar[2][0] !== '0' ? cultivar[2][0] : null });
-      const pureImport = !cultivar[3] && offer.stages.length === 3;
-      return { key, kind: 'cultivar', origin: pureImport ? 'slagothim-import' : 'crossbred-or-inherited',
-        ...offer, acquisition: pureImport ? source({ stages: offer.stages, baseSellPrice: def.sellPrice }) : null,
-        note: pureImport ? 'Per-day estimate before route and caravan-cap restrictions.' : 'Crossbred genotype probability requires known parent genes and number of breeding attempts.' };
-    }
-    return { key, kind: def.cat || 'unknown', acquisition: context.stages
-      ? source({ stages: context.stages, opportunities: context.opportunities ?? 1, baseSellPrice: def.sellPrice }) : null,
-      note: context.stages ? null : 'Supply source probabilities not yet registered; authored sell price remains authoritative.' };
+
+  // Native crops and ordinary ingredients have a neutral rarity factor until a real
+  // acquisition source is known. These factors describe supply, not item quality.
+  const CULTIVAR_KEY = /^cv_(needlegrain|heftroot|garlink|ongyums|redberries|blueberries|yellowberries|whiteberries|blackberries|blackMustard|greenMustard)_([0-5]{6})(?:_([0-9a-f]{6}))?(Seeds)?$/;
+  const REFERENCE_DAY_CHANCE = .15; // A common-enough opportunity; used only to normalize contest/economy premiums.
+  function rarityFactor(probability, options = {}) {
+    const p = clampProbability(probability);
+    if (p === null || p === 0) return null;
+    const reference = clampProbability(options.reference ?? REFERENCE_DAY_CHANCE);
+    const exponent = Number(options.exponent ?? .22);
+    const cap = Number(options.cap ?? 3.5);
+    if (reference === null || !Number.isFinite(exponent) || exponent < 0 || !Number.isFinite(cap) || cap < 1) return null;
+    return Math.max(1, Math.min(cap, Math.pow(reference / p, exponent)));
   }
-  return Object.freeze({ chain, atLeastOne, expected, tierLayout, ruinChest, caravanSeed, inheritance, source, item,
-    debugSnapshot: key => key ? item(key) : { supported: ['cultivar','ruin-chest','custom-source','inheritance'], priceMode: 'proposal-only', noSilentFallback: true } });
+  function cultivarRarity(key) {
+    const match = CULTIVAR_KEY.exec(String(key || ''));
+    if (!match) return null;
+    const code = match[2], digits = [...code].map(Number);
+    const pureImport = !match[3] && digits[0] !== 0 && digits.every(v => v === digits[0]);
+    const imported = pureImport ? caravanSeed({ townValue:1, targetFamily:match[1], targetRegion:digits[0] }) : null;
+    const distinctRegions = new Set(digits.filter(v => v !== 0)).size;
+    const mixedPairs = [0,2,4].filter(i => digits[i] !== digits[i+1]).length;
+    // Crosses can be made by many genealogies; without saved parents this is
+    // explicitly a complexity proxy, NEVER a claimed per-breeding probability.
+    const heuristicFactor = Math.min(3.5, 1 + .2 * distinctRegions + .12 * mixedPairs + (match[3] ? .1 : 0));
+    const factor = pureImport ? rarityFactor(imported.specificSeedChancePerDay) : Math.max(1, heuristicFactor);
+    return { key, family:match[1], code, colorHex:match[3] || null, isSeed:!!match[4],
+      kind:'cultivar', origin:pureImport ? 'slagothim-import' : 'crossbred-or-inherited',
+      probability:pureImport ? imported.specificSeedChancePerDay : null, factor,
+      model:pureImport ? 'daily independent caravan-stock roll at Town Value 1, before travel restrictions'
+        : 'genotype-complexity proxy; actual breeding odds depend on parent genotypes and breeding opportunities',
+      importStages:imported?.stages || null, distinctRegions, mixedPairs };
+  }
+  function cultivarSellPrice(key, nativeSellPrice) {
+    const info = cultivarRarity(key);
+    const baseline = Number(nativeSellPrice);
+    if (!info || !Number.isFinite(baseline) || baseline < 0) return null;
+    // Stable across town-growth changes; harvested crops replicate, while imported
+    // seeds preserve a slightly higher scarcity premium. No speculative values for
+    // other item categories are written into the ordinary economy.
+    const authoredMarkup = info.isSeed ? 1.4 : 1.2;
+    const exposure = info.isSeed ? .7 : .5;
+    return Math.max(1, Math.round(baseline * authoredMarkup * Math.pow(info.factor, exposure)));
+  }
+  function foodRarity(key, defs = null, seen = new Set()) {
+    if (!key || seen.has(key) || seen.size >= 10) return { factor:1, known:false, sources:[] };
+    const crop = cultivarRarity(key);
+    if (crop) return { factor:crop.factor, known:crop.origin === 'slagothim-import', sources:[crop] };
+    const localDefs = defs || G.ITEM_DEFS || {};
+    const def = localDefs[key] || G.HobunjiCookingData?.items?.[key] || {};
+    // A processed item inherits its source ingredients' difficulty without
+    // awarding an extra scarcity premium for its processing depth (Gorkunash
+    // already doubles for each processing step).
+    const ingredients = [...new Set((def.ingredientKeys || def.giftIngredientKeys || []).filter(x => typeof x === 'string' && x !== key))];
+    if (!ingredients.length) return { factor:1, known:false, sources:[] };
+    const next = new Set(seen); next.add(key);
+    const parts = ingredients.map(child => foodRarity(child, localDefs, next));
+    const factor = Math.exp(parts.reduce((sum, part) => sum + Math.log(Math.max(1, part.factor)), 0) / parts.length);
+    return { factor, known:parts.some(part => part.known), sources:parts.flatMap(part => part.sources) };
+  }
+  function artifactChest(key, chestTier = 1, culture = 'harlyao', catalog = G.ArtifactCollection) {
+    const artifacts = catalog?.ARTIFACTS, tuning = catalog?.LOOT_TUNING;
+    const def = artifacts?.[key];
+    if (!def || !tuning?.countsByTier) return null;
+    const tier = Math.max(1, Math.min(4, Math.floor(Number(chestTier) || 1)));
+    const kind = culture === 'hachutu' ? 'hachutu' : 'harlyao';
+    const eligible = Object.entries(artifacts).filter(([id,item]) => id.startsWith('hachutu') === (kind === 'hachutu') && item.tier <= tier);
+    const sum = eligible.reduce((total,[,item]) => total + Number(item.weight || 0),0);
+    const weight = eligible.some(([id]) => id === key) ? Number(def.weight || 0) : 0;
+    const counts = tuning.countsByTier[tier-1];
+    if (!sum || !counts || !Number.isInteger(counts.min) || !Number.isInteger(counts.max) || counts.max < counts.min) return null;
+    const drawProbability = weight / sum;
+    const averageDraws = (counts.min + counts.max) / 2;
+    let zeroChance = 0; // Average of no-copy outcomes over every equally likely chest batch size.
+    for (let n = counts.min; n <= counts.max; n++) zeroChance += Math.pow(1 - drawProbability,n);
+    zeroChance /= counts.max - counts.min + 1;
+    return { key, chestTier:tier, culture:kind, eligible:weight > 0,
+      drawProbability, probability:1 - zeroChance, expectedCopies:drawProbability * averageDraws,
+      draws:{ min:counts.min, max:counts.max },
+      model:'conditional on opening one generated chest of this tier; site and chest frequency are not assumed' };
+  }
+  function lootPoolItem(key, poolId, pools = G.LootRolling?.getLootPools?.()) {
+    const pool = pools?.[poolId];
+    if (!pool) return null;
+    const matches = (pool.entries || []).filter(entry => entry?.itemKey === key);
+    if (matches.length === 0) return { key, poolId, probability:0, eligible:false };
+    const stages = matches.map(entry => ({
+      label:entry.id || key,
+      probability:entry.chance ?? 1,
+      conditions:entry.conditions || {},
+      eligibilityKnown:!Object.values(entry.conditions || {}).some(value => Array.isArray(value) ? value.length : value != null),
+    }));
+    // Multiple independent entries for the same key (rare) are a union, not a sum.
+    const odds = stages.every(stage => stage.eligibilityKnown)
+      ? 1 - stages.reduce((none,stage) => none * (1 - (clampProbability(stage.probability) ?? 0)),1)
+      : null;
+    return { key, poolId, probability:odds, entries:stages, eligible:odds !== 0,
+      model:'per pool roll, before any unknown parent pool or encounter frequency' };
+  }
+  function denOffspring({ zoneId = null, species, denCount = null, denSpecies = null,
+    clutchMin = null, clutchMax = null, nestChance = 1 } = {}) {
+    const zone = G.WildlifeSpawn?.zoneConfigFor?.(zoneId) || G.SCRATCHBONES_CONFIG?.game?.wilderness?.zones?.[zoneId];
+    const pool = denSpecies || zone?.denSpecies || null;
+    const dens = Number(denCount);
+    const speciesPool = Array.isArray(pool) ? [...new Set(pool)] : [];
+    const members = speciesPool.length;
+    const exists = members > 0 && speciesPool.includes(species);
+    let slots = null;
+    if (Number.isInteger(dens) && dens >= 0 && members) {
+      const base = Math.floor(dens / members);
+      const rank = speciesPool.map((id,index) => ({id,index,weight:id === 'nazgraku' ? .8 : 1}))
+        .sort((a,b) => b.weight - a.weight || a.index - b.index);
+      const extra = rank.slice(0,dens - base * members).some(x => x.id === species);
+      slots = exists ? base + Number(extra) : 0;
+    }
+    const nest = clampProbability(nestChance);
+    const clutchKnown = Number.isInteger(clutchMin) && Number.isInteger(clutchMax) && clutchMin > 0 && clutchMax >= clutchMin;
+    const perRandomDen = slots === null || !dens ? null : slots / dens;
+    const result = chain([
+      {label:'Den assigned to this species',probability:perRandomDen},
+      {label:'Nest survives/contains offspring',probability:nest},
+    ]);
+    return { zoneId,species,denCount:denCount ?? null,speciesDenCount:slots,perRandomDen,
+      expectedOffspring:slots === null || !clutchKnown || nest === null ? null : slots * nest * (clutchMin + clutchMax) / 2,
+      clutchRange:clutchKnown ? {min:clutchMin,max:clutchMax} : null,
+      ...result, model:'balanced species allocation among real zone dens; nest probability and clutch supplied by caller' };
+  }
+  function item(key, context = {}) {
+    const defs = context.itemDefs || G.ITEM_DEFS || {};
+    const def = defs[key] || {};
+    const cultivar = cultivarRarity(key);
+    if (cultivar) {
+      const currentRoll = cultivar.origin === 'slagothim-import' ? caravanSeed({
+        townValue:context.townValue ?? G.TownMine?.getTownValue?.() ?? 1,
+        targetFamily:cultivar.family,targetRegion:Number(cultivar.code[0]) }) : null;
+      return { ...cultivar, acquisition:cultivar.probability === null ? null
+        : source({ stages:cultivar.importStages,baseSellPrice:def.sellPrice }),
+        currentDailyRollChance:currentRoll?.specificSeedChancePerDay ?? null,
+        proposedSellPrice:cultivarSellPrice(key,context.nativeSellPrice ?? def.sellPrice),
+        note:cultivar.model };
+    }
+    const culture = String(key).startsWith('hachutu') ? 'hachutu' : 'harlyao';
+    const artifact = G.ArtifactCollection?.ARTIFACTS?.[key] ? artifactChest(key,context.chestTier || 4,culture) : null;
+    if (artifact) return { key,kind:'artifact',acquisition:artifact,
+      note:'The conditional chest probability is exact for the weighted artifact draw; generator/site rates remain unquantified.' };
+    const pools = context.lootPools || G.LootRolling?.getLootPools?.();
+    const sourced = context.poolId ? lootPoolItem(key,context.poolId,pools) : null;
+    if (sourced) return {key,kind:def.cat || 'loot',acquisition:sourced,note:sourced.model};
+    const ingredients = foodRarity(key,defs);
+    return { key,kind:def.cat || 'unknown',foodRarity:ingredients.factor,
+      acquisition:context.stages ? source({stages:context.stages,opportunities:context.opportunities ?? 1,baseSellPrice:def.sellPrice}) : null,
+      note:context.stages ? null : 'Unquantified source; no automatic rarity price or contest premium.' };
+  }
+  return Object.freeze({ chain, atLeastOne, expected, tierLayout, ruinChest, caravanSeed, inheritance, source,
+    rarityFactor, cultivarRarity, cultivarSellPrice, foodRarity, artifactChest, lootPoolItem, denOffspring, item,
+    debugSnapshot: key => key ? item(key) : { supported:['cultivar','artifact-chest','ruin-chest','loot-pool','den-offspring','food-ancestry','inheritance'],
+      priceMode:'cultivar-integrated; other categories retain their authored value', noSilentFallback:true } });
+
 });
