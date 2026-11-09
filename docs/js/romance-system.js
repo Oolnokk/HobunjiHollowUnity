@@ -482,7 +482,7 @@
     if (!npcId || state.spouse?.npcId !== npcId) return null;
     const dialogue = cfg().spouse?.dialogue || {}; // Configured dialogue layer, consulted only for the actual player spouse.
     const authored = dialogue.byNpc?.[npcId] || {}; // Individual NPC's affectionate language wins over the shared default.
-    const nickname = window.CharacterNicknames?.forRelationship?.(playerAppearance().name, 'affectionate')
+    const nickname = window.CharacterNicknames?.forRelationship?.(playerAppearance().name, 'affectionate', playerAppearance().gender)
       || String(authored.nickname || dialogue.nickname || 'love').trim(); // New short-y form; legacy endearments remain a fallback if the nickname module is unavailable.
     const greetings = Array.isArray(authored.greetings) && authored.greetings.length
       ? authored.greetings : (Array.isArray(dialogue.greetings) ? dialogue.greetings : []); // Spouse-only greeting pool for event-time selection.
