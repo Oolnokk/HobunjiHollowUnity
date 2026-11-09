@@ -21,9 +21,16 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Select relevant expensive checks
+        id: select
+        env:
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/ci-select-tests.js --suite=regression
       - name: Syntax check shipped scripts
         run: |
           set -e
@@ -43,46 +50,66 @@ jobs:
         # Slow tests only run on main / manual dispatch, not on every PR push.
         run: node scripts/run-tests.js ${{ github.event_name != 'pull_request' && '--all' || '' }}
       - name: Install browser
+        if: steps.select.outputs.needs_deps == 'true'
         run: |
           npm install --no-save --package-lock=false playwright@1.55.1 three@0.128.0
       - name: Substance Cover Shell against real Three.js r128
+        if: steps.select.outputs.substance == 'true'
         run: node scripts/test-substance-cover-shell.js
       - name: Dungeon Fire projectile transforms and contact against real Three.js
+        if: steps.select.outputs.fire == 'true'
         run: node scripts/verify-dungeon-fire-three.js
       - name: Install Chromium for browser regressions
+        if: steps.select.outputs.needs_browser == 'true'
         run: npx playwright install --with-deps chromium
       - name: Clothing species fit runtime portrait browser smoke
+        if: steps.select.outputs.clothing == 'true'
         run: node scripts/test-clothing-fit-runtime-browser.js
       - name: Kurraya Music Lab mobile arpeggio and meter browser smoke
+        if: steps.select.outputs.music == 'true'
         run: node scripts/music-lab-arpeggio-meter-browser.js
       - name: Camera occlusion bounded-ray parity against real three
+        if: steps.select.outputs.camera == 'true'
         run: node scripts/test-camera-occlusion-bounded-rays.js
       - name: Interior Editor floorless exit mouse and touch browser regression
+        if: steps.select.outputs.interior == 'true'
         run: node scripts/test-interior-editor-exit-browser.js
       - name: Surface foliage styles and shared editor controls browser regression
+        if: steps.select.outputs.foliage == 'true'
         run: node scripts/test-surface-foliage-styles-browser.js
       - name: Rooted ruin mechanism gameplay collision browser regression
+        if: steps.select.outputs.root_mechanism == 'true'
         run: node scripts/test-root-mechanism-runtime-browser.js
       - name: Stone Age multiroom floor and texture lifecycle browser regression
+        if: steps.select.outputs.stone_age == 'true'
         run: node scripts/test-stone-age-multiroom-browser.js
       - name: Root snare author and procedural NPC browser regression
+        if: steps.select.outputs.root_author == 'true'
         run: node scripts/test-root-snare-author-browser.js
       - name: Controller modal pin browser regression
+        if: steps.select.outputs.controller_modal == 'true'
         run: node scripts/test-controller-ui-modal-pin.js
       - name: Farmwork controller tile grid and stepper browser regression
+        if: steps.select.outputs.farmwork == 'true'
         run: node scripts/test-farmwork-controller-browser.js
       - name: Controller mastery inventory browser regression
+        if: steps.select.outputs.mastery == 'true'
         run: node scripts/test-controller-mastery-inventory-browser.js
       - name: Modular weapon editor Kylie cleanup mobile browser regression
+        if: steps.select.outputs.modular == 'true'
         run: node scripts/test-modular-editor-ui-browser.js
       - name: Multi-sprite weapon 3D browser smoke
+        if: steps.select.outputs.multisprite == 'true'
         run: node scripts/test-multi-sprite-weapon-browser.js
 
       - name: Omgurku hybrid calibration browser smoke
+        if: steps.select.outputs.omgurku_cal == 'true'
         run: node scripts/test-omgurku-calibration-browser.js
 
       - name: Omgurku NPC gameplay browser smoke
+        if: steps.select.outputs.omgurku_game == 'true'
         run: node scripts/test-omgurku-gameplay-browser.js
 
       - name: Omgurku enemy tribe browser smoke
+        if: steps.select.outputs.omgurku_tribe == 'true'
         run: node scripts/test-omgurku-tribe-browser.js
