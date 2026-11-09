@@ -40,6 +40,7 @@
   }
   function updateBoreControls() {
     const visible = boreIsVisible();
+    if (!visible) { boreMoveEnabled = false; boreDrag = null; } // Never drag an invisible bore after switching from a flail to a rigid head.
     byId('shaft-bore-panel').hidden = !visible; // Rigid or shaft-only flails do not expose nor apply the shaft's stored bore operations.
     const bores = chosenShaft().bores || [];
     if (!bores.some(bore => bore.id === selectedBoreId)) selectedBoreId = bores[0]?.id || null;
@@ -732,7 +733,7 @@
         msg('Flail head contact belongs to Complex Tool Visuals; its modular mounting arrows are ignored.'); return;
       }
       if (drawing || boreDrag || !event.isPrimary) return;
-      if (id === 'shaft-canvas' && boreMoveEnabled && selectedBore()) {
+      if (id === 'shaft-canvas' && boreIsVisible() && boreMoveEnabled && selectedBore()) {
         event.preventDefault();
         boreDrag = { id, pointer: event.pointerId,
           original: { offsetX: selectedBore().offsetX, offsetY: selectedBore().offsetY } }; // One draggable edit, one undo step on release.
