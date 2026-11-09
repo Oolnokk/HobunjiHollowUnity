@@ -206,7 +206,7 @@ const sourcePools = {
   bandit_common:{entries:[{itemKey:'commonLoot',min:1,max:1,chance:1,conditions:{}}]},
   bandit_conditional:{entries:[{itemKey:'conditionalLoot',min:1,max:1,chance:.02,conditions:{seasons:['Coldmuck']}}]}
 };
-const priceDefs={rareLoot:{cat:'material',sellPrice:100},commonLoot:{cat:'material',sellPrice:100},
+const priceDefs={noSource:{cat:'material',sellPrice:100},rareLoot:{cat:'material',sellPrice:100},commonLoot:{cat:'material',sellPrice:100},
   conditionalLoot:{cat:'material',sellPrice:100}, cloudSaffron:{cat:'spice',sellPrice:100},
   cookedRare:{cat:'processed',sellPrice:100,ingredientKeys:['rareLoot']},
   rareBaby:{cat:'livestock',sellPrice:100},
