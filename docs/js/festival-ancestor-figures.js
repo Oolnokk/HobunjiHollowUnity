@@ -68,7 +68,7 @@
     // Reuse the real NPC hand and leg rigs, then freeze the transform immediately; no walker, schedule or animation tick exists.
     parts.hands?.setSideIdle?.('left',{position:{y:pose.handRise*model.userData.portraitModelHeight},rotationDeg:{z:12}});
     parts.hands?.setSideIdle?.('right',{position:{y:-pose.handRise*model.userData.portraitModelHeight*.5},rotationDeg:{z:-8}});
-    parts.legs?.update?.(0);
+    parts.legs?.update?.(0,0,true); // Suppressed movement initializes native feet in the resting stance without starting an animation.
     model.updateMatrixWorld?.(true);
   }
   function addRig(THREE,model,record,profile,source) {
