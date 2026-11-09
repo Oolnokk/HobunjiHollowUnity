@@ -81,6 +81,7 @@ function metadata(){
 
 function solveTimedStage(stage){
   let elapsed=0;
+  stage.session.step(0,false);
   stage.session.step(0,true);
   for(const note of stage.song.notes){
     const time=(note.startTick+.1)*stage.song.secondsPerTick; // Exercise the real active-note window and one-shot solve callback.
