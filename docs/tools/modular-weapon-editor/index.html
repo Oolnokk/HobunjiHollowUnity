@@ -71,8 +71,15 @@
 .float-panel .source-previews canvas{height:34vh;min-height:190px}
 .workflow-section>summary{font-size:14px}
 }
+
+/* Undo/Redo are in the document's primary action bar, never beneath the preview label. */
+header .toolbar{align-items:center}
+header .toolbar #pair-undo,header .toolbar #pair-redo{min-width:88px;position:relative}
+.rig-guide-toggle{display:inline-flex;align-items:center;width:max-content;max-width:100%;flex:none;padding:3px 0;white-space:normal}
+.float-panel>.float-bar{display:flex;align-items:center;justify-content:flex-start;min-height:52px}
+#pair-undo,#pair-redo{scroll-margin-top:calc(var(--header-h,0px) + 12px)}
 </style></head><body>
-<header><h1>Modular Weapon Attachment Editor</h1><div>Complete rig first: see the real assembled haft, hanging connector and authored head together. Expand a numbered section to edit that system; none of the saved geometry was reset.</div><div class="toolbar"><button id="random" type="button">Random valid combination</button><button id="export">Export game config</button><button id="import">Import config</button><button id="reset">Reset draft</button><input id="file" type="file" accept=".json,.js" hidden></div><p id="status" role="status">Loading…</p></header>
+<header><h1>Modular Weapon Attachment Editor</h1><div>Complete rig first: see the real assembled haft, hanging connector and authored head together. Expand a numbered section to edit that system; none of the saved geometry was reset.</div><div class="toolbar"><button id="pair-undo" type="button" disabled>↶ Undo</button><button id="pair-redo" type="button" disabled>↷ Redo</button><button id="random" type="button">Random valid combination</button><button id="export">Export game config</button><button id="import">Import config</button><button id="reset">Reset draft</button><input id="file" type="file" accept=".json,.js" hidden></div><p id="status" role="status">Loading…</p></header>
 <main><div class="pair-area"><section><h2>Choose a haft and head</h2><p>Pick the two parts first. The complete assembled rig stays visible above or beside the controls; open only the editing sections you need.</p>
 <label>Haft <select id="shaft"></select></label><label>Head <select id="head"></select></label>
 <details id="part-identity-panel" class="workflow-section"><summary>01 · Names, tool roles and forging</summary>
@@ -264,9 +271,8 @@
 </details>
 <details id="editor-debug-workflow" class="workflow-section"><summary>Advanced diagnostics (mobile-friendly)</summary><pre id="debug"></pre></details></section>
 <section class="float-panel" aria-label="Weapon previews">
-<div class="float-bar" role="toolbar" aria-label="Preview controls and history">
-<label class="rig-guide-toggle"><input id="full-assembly-guides" type="checkbox" checked> Show connector guides</label>
-<button id="pair-undo" type="button" disabled>↶ Undo</button><button id="pair-redo" type="button" disabled>↷ Redo</button>
+<div class="float-bar" role="group" aria-label="Full assembly display controls">
+<label class="rig-guide-toggle"><input id="full-assembly-guides" type="checkbox" checked> Show shaft and head connector markers</label>
 </div>
 <div class="sprites"><figure id="flail-preview-figure"><canvas id="flail-preview" width="450" height="1500" aria-label="Full modular flail with actual rope or chain and separately scaled head"></canvas><figcaption>Full assembled rig · 2D resting pose <button class="max-toggle" type="button" data-max aria-pressed="false" aria-label="Maximize flail preview">⤢ Maximize</button></figcaption><p id="flail-preview-status" aria-live="polite">The full assembled haft, connector and head are rendered here; markers identify the actual attachment points.</p></figure>
 <details id="source-preview-workflow" class="workflow-section"><summary>Source canvases · edit haft, head and bridge work</summary>
