@@ -476,10 +476,15 @@
         const flame=new THREE.Group(); // No solid cone: the same campfire visual as a player-placed brazier fire.
         flame.name='v50-native-brazier-flame-'+item.floor;
         flame.position.set(cx,goalY+1.22,cz);flame.visible=false;group.add(flame);
-        const flameVisual=root.PersistentGroundFire?.attachCampfireFlame?.(flame,{scale:1.08,rateScale:.95});
+        const flameTone=ruin.lichColor||({tothal:'#8fd6ff',hronal:'#ff8a3a',kanthic:'#b47bff'})[ruin.theme]||'#ff8b3d'; // Native upper-floor wing goals share the authored lich's real glow.
+        const flameHex=/^#[a-f0-9]{6}$/i.test(String(flameTone))?parseInt(String(flameTone).slice(1),16):0xff8b3d;
+        const flameRGB=[(flameHex>>16)&255,(flameHex>>8)&255,flameHex&255]; // Used by both campfire particles and the Kanthic darkness mask.
+        const brightRGB=flameRGB.map(v=>Math.round(v+(255-v)*.16));
+        const flameBright=(brightRGB[0]<<16)|(brightRGB[1]<<8)|brightRGB[2];
+        const flameVisual=root.PersistentGroundFire?.attachCampfireFlame?.(flame,{scale:1.08,rateScale:.95,colorA:flameBright,colorB:flameHex});
         if(flameVisual)nativeFlames.push(flameVisual);
         const brazierLight={x:cx,y:goalY+1.4,z:cz,floorY:goalY,radius:10.5,strength:.98,
-          color:[255,136,61],active:false}; // Uses actual raised support Y, not the nominal story level; otherwise native plateau light floats underground.
+          color:flameRGB,active:false}; // Uses actual raised support Y, not the nominal story level; otherwise native plateau light floats underground.
         if(ruin.theme==='kanthic')brazierLights.push(brazierLight);
         record.goalBrazier={pedestal,flame,restoreLit:()=>{
           if(record.lit)return false;
