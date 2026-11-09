@@ -771,18 +771,23 @@ function populateGenderSelect(speciesId, preferred) {
 }
 $('avatarSpecies').innerHTML = SPECIES_LIST.map(s => `<option value="${s.id}">${s.label}</option>`).join('');
 populateGenderSelect(SPECIES_LIST[0].id, 'male');
+let statueAvatarRebuildPromise=Promise.resolve(); // The Statue Author awaits whichever NPC rebuild the editor started most recently.
+function trackedAvatarRebuild(speciesId,gender){
+  statueAvatarRebuildPromise=rebuildAvatar(speciesId,gender);
+  return statueAvatarRebuildPromise;
+}
 $('avatarSpecies').addEventListener('change', () => {
   statueNpcExport=null; // A deliberate preview species change discards the previously imported NPC identity.
   const speciesId = $('avatarSpecies').value;
   populateGenderSelect(speciesId, $('avatarGender').value);
-  rebuildAvatar(speciesId, $('avatarGender').value).catch(e => logDebug('Avatar rebuild failed: ' + e.message));
+  trackedAvatarRebuild(speciesId, $('avatarGender').value).catch(e => logDebug('Avatar rebuild failed: ' + e.message));
 });
 $('avatarGender').addEventListener('change', () => {
   statueNpcExport=null; // Never export a new gender using a stale imported NPC record.
-  rebuildAvatar($('avatarSpecies').value, $('avatarGender').value).catch(e => logDebug('Avatar rebuild failed: ' + e.message));
+  trackedAvatarRebuild($('avatarSpecies').value, $('avatarGender').value).catch(e => logDebug('Avatar rebuild failed: ' + e.message));
 });
 
-rebuildAvatar($('avatarSpecies').value, $('avatarGender').value)
+trackedAvatarRebuild($('avatarSpecies').value, $('avatarGender').value)
   .catch(e => logDebug('Avatar rebuild failed: ' + e.message));
 
 // toolHolder is what the authored pose (pos+pitch+yaw+roll) actually drives.
@@ -2758,6 +2763,7 @@ function freezeStatueGeometry(mesh) {
 }
 async function bakeStatuePiece({poseKey='neutral',includeWeapon=true,name='Carved ancestor'}={}) {
   if(!['neutral','windup','strike'].includes(poseKey))throw Error('Choose Neutral, Windup or Strike.');
+  try{await statueAvatarRebuildPromise;}catch(error){throw Error('NPC avatar rebuild failed: '+error.message);}
   if(!avatarModel)throw Error('NPC preview rig has not loaded yet.');
   if(includeWeapon && !toolPlaneMesh)throw Error('The chosen weapon has not finished loading.');
   const assembly=window.HobunjiWeaponSpriteAssemblies?.debugSnapshot?.().find(record=>record.itemKey===currentToolKey&&record.attached);
@@ -2844,7 +2850,7 @@ window.HobunjiStatuePoseSource=Object.freeze({
     populateGenderSelect(species,gender);
     if($('avatarGender').value!==gender)$('avatarGender').add(new Option(gender,gender));
     $('avatarGender').value=gender;
-    await rebuildAvatar(species,gender);
+    await trackedAvatarRebuild(species,gender);
     applyPoseToRig(anim.poses[editPhase]);
     return true;
   },
