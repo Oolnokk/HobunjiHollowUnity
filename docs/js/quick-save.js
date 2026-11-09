@@ -30,6 +30,7 @@
   const PENDING_MAX_AGE_MS = 3 * 60 * 1000;
   const QUICK_SAVE_VERSION = 1;
   const FESTIVAL_TEST_KEY = 'hobunjiFestivalTestSession.v1'; // Tracks the isolated test and its restore slots across reloads.
+  const FESTIVAL_RECOVERY_KEY = 'hobunjiFestivalTestRecovery.v1'; // Durable recovery marker survives a closed browser tab when no Primary Save Folder is connected.
   const FESTIVAL_PREFS_KEY = 'hobunjiFestivalTestPrefs.v1'; // Remembers festival selection and the opt-in reward checkbox.
 
   let deps = null; // Injected by game.js (see init).
@@ -224,12 +225,28 @@
   }
 
   function festivalTestSession() {
-    const session = readSession(FESTIVAL_TEST_KEY);
+    let session = readSession(FESTIVAL_TEST_KEY);
+    // sessionStorage disappears when the tab closes. A small localStorage
+    // recovery marker keeps the original IndexedDB snapshot discoverable.
+    if (!session) {
+      try { session = JSON.parse(localStorage.getItem(FESTIVAL_RECOVERY_KEY) || 'null'); }
+      catch { session = null; }
+    }
     return session && session.characterId && session.worldId ? session : null;
   }
 
   function writeFestivalSession(session) {
     if (!writeSession(FESTIVAL_TEST_KEY, session)) throw new Error('Festival test session storage is unavailable.');
+    try {
+      if (session == null) localStorage.removeItem(FESTIVAL_RECOVERY_KEY);
+      else localStorage.setItem(FESTIVAL_RECOVERY_KEY, JSON.stringify(session));
+    } catch (error) {
+      if (session != null) {
+        writeSession(FESTIVAL_TEST_KEY, null); // Refuse a sandbox without a durable recovery route.
+        throw new Error('Cannot preserve festival restore information: ' + String(error?.message || error));
+      }
+      window.__farmLog?.('[festival-test] Could not clear durable recovery marker: ' + String(error?.message || error), 'warn');
+    }
   }
 
   function setFestivalPrefs(next) {
@@ -429,7 +446,7 @@
     writeFestivalSession(session);
     const result = await quickLoad(preview.id, { pauseAutosave: true });
     if (!result.ok) {
-      writeSession(FESTIVAL_TEST_KEY, null);
+      writeFestivalSession(null);
       await deleteSlot(preview.id);
     }
     return result;
@@ -505,7 +522,7 @@
   async function finishFestivalReturn(ids) {
     const session = festivalTestSession();
     if (!session || session.phase !== 'restored' || session.characterId !== ids.characterId || session.worldId !== ids.worldId) return false;
-    writeSession(FESTIVAL_TEST_KEY, null);
+    writeFestivalSession(null);
     // The pinned original quick save remains available as a manual recovery
     // point; remove only generated previews and already-applied return slots.
     for (const id of [session.previewSlotId, session.returnSlotId]) {
