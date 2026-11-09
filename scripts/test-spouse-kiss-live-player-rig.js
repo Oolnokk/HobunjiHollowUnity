@@ -43,9 +43,9 @@ function createHands(root, model, height) {
     group.add(socket);
   }
   const rig = {
-    parent: root, avatarRoot: model, group, provider: null,
-    shoulderPositionLocal(side, out) { return out.set(side === 'left' ? -.11 : .11, height * .72, 0); },
-    armLengthForSide() { return height * .43; },
+    parent: root, avatarRoot: model, group, provider: null, height, // Mutable in the reverse-height scenario to simulate another species.
+    shoulderPositionLocal(side, out) { return out.set(side === 'left' ? -.11 : .11, this.height * .72, 0); },
+    armLengthForSide() { return this.height * .43; },
     setPoseProvider(_owner, fn) { this.provider = fn; },
     useIdlePose() {},
     placeHandWorld(side, target) {
@@ -68,7 +68,7 @@ function createLegs(root, height) {
   const calls = { knee: 0, stanceYaw: [], pants: 0 }; // Counts observed body and trousers updates at simulation and render time.
   return {
     group, modelHeight: height, standingPosteriorY: height * .32, calls,
-    motionAnatomy() { return ['left', 'right'].map(side => ({
+    motionAnatomy() { const height = this.modelHeight; return ['left', 'right'].map(side => ({
       side, hip: new THREE.Vector3(side === 'left' ? -.10 : .10, height * .32, 0),
       ankle: new THREE.Vector3(side === 'left' ? -.10 : .10, height * .03, 0),
       length: height * .29,
@@ -166,4 +166,36 @@ assert(Math.abs(playerModel.position.y) < .00001 && Math.abs(playerModel.rotatio
   'canceled/finished kiss returns the player torso to its original transform');
 assert.equal(playerHands.provider, null, 'hand rig is no longer owned by the kiss');
 assert.equal(kiss.diagnostics().active, false);
-console.log('Spouse kiss LIVE Three.js r128 player rig PASS: body, knees, pants, camera-independent facing/head, late render and restoration.');
+
+// Reverse the stature assignment on the very same live objects: now the player reaches
+// for a taller spouse first, before the recipient kneels. This is the historically broken
+// Pahu-as-player / Leaf-as-partner path, not the tall-player branch checked above.
+playerModel.userData.portraitModelHeight = .75; // Used by the next real solver/camera-independent head-frame pass.
+npcModel.userData.portraitModelHeight = 1.05; // Opposite height ordering with a genuine taller NPC.
+playerHands.height = .75;
+npcHands.height = 1.05;
+playerLegs.modelHeight = .75;
+npcLegs.modelHeight = 1.05;
+playerLegs.standingPosteriorY = .75 * .32;
+npcLegs.standingPosteriorY = 1.05 * .32;
+playerNeck.position.y = .57;
+npcNeck.position.y = .80;
+player.position.y = 0;
+walkerRoot.position.y = 0;
+assert(kiss.start(walker, () => buffTriggers++), 'short-player and tall-NPC version starts on the same live rigs');
+for (let i = 0; i < 16; i++) update({ deltaMs: 70 });
+const reverse = kiss.diagnostics().session;
+assert(reverse && reverse.height.taller === 'second', 'real height solver must now lower the NPC rather than the player');
+assert(reverse.hands?.applied && reverse.hands.hands === 2, 'shorter player moves BOTH actual hand sockets toward taller spouse shoulders');
+assert(npcLegs.getStanceDrop() > 0, 'taller NPC visibly kneels after the shorter player reaches');
+assert.equal(buffTriggers, 2, 'each direction triggers one and only one interaction');
+const shortPlayerYaw = player.rotation.y; // Real facing that should be invariant under any last-moment tool pose.
+player.rotation.set(.3, -2.1, -.4);
+playerNeck.rotation.set(.9, 1.2, .4);
+lastRenderHook([], {}, {position:{x:100,y:100,z:100}});
+assert(Math.abs(player.rotation.y - shortPlayerYaw) < 1e-7, 'short-player yaw ignores camera/weapon transforms');
+assert(reverse.hands?.applied, 'short-player hand pose survives the final rendering pass');
+kiss.stop('reverse-ended');
+assert(!poseLockActive && lastRenderHook === null && hookReleased === 2, 'reverse-height exit releases the entire scoped pose owner');
+assert.equal(playerHands.provider, null, 'short-player hands regain tool/idle ownership');
+console.log('Spouse kiss LIVE Three.js r128 player rig PASS: BOTH height orders, knees, hands, pants, camera-independent facing/head, late render and restoration.');
