@@ -1468,7 +1468,7 @@
         const u = ox / rx, v = oy / ry;
         const distance = Math.hypot(u, v);
         const edge = (distance - 1) * radiusMin; // Approximate distance from elliptical edge in sprite pixels.
-        if (edge > rim + warp + 1) continue;
+        if (edge > Math.max(rim + warp + 1, outline + 1)) continue; // Long interior outlines are never cut short by a narrow bevel.
         const offset = (py * w + px) * 4;
         if (edge < -0.65) { pixels[offset] = pixels[offset + 1] = pixels[offset + 2] = pixels[offset + 3] = 0; continue; }
         if (edge < 0.65) {
