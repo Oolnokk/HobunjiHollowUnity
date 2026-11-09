@@ -1849,8 +1849,9 @@
   }
 
   function offspringProvenanceFor(livestockId) {
-    const entry = deps?.loadWorldLivestock?.()?.find?.(animal=>animal.id===livestockId);
-    const data = entry?.offspringProvenance; // Read-only mobile inspect of an actual saved birth, not a probability inferred from its species.
+    const entry = deps?.loadWorldLivestock?.()?.find?.(animal=>animal.id===livestockId)
+      || deps?.getStable?.()?.find?.(animal=>animal.id===livestockId); // An animal sold or gifted from the world farm carries its genealogy to the new owner's personal stable.
+    const data = entry?.offspringProvenance; // Read-only mobile inspect of an actual saved birth, never one inferred from its species.
     return data?.source === 'farm-breeding' ? JSON.parse(JSON.stringify(data)) : null;
   }
 
