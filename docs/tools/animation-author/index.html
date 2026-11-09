@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <script src="../../js/tap-reliability.js?v=20261010a"></script>
-<title>Hobunji Animation Author V15.45</title>
+<title>Hobunji Animation Author V15.51</title>
 <style>
 :root {
   color-scheme: dark;
@@ -1207,6 +1207,7 @@ body[data-animation-author-mode="rig"] #maaViewportBadge { max-width:calc(100% -
 <script src="../../config/attachment-rig-profiles.js?v=20261026homgurkulower03"></script>
 <script src="../../js/animal-chathead-frame.js?v=20261029h17359fc"></script>
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
+<script src="../../js/spouse-kiss-motion.js?v=20261108kiss5"></script>
 
 <script>
 (() => {
@@ -1217,7 +1218,7 @@ const STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.source.v1';
 const KURRAYA_STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.kurrayaProfiles.v1';
 const CREATURE_STORAGE_KEY = 'hobunjiGameplayBackdropRepoViewer.creatureProfiles.v1';
 const CREATURE_RENDER_SCRIPT = 'js/creature-genetics-render.js';
-const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20261108handGripLoader2', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
+const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20261109h6aea7e8', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
 const AUTHOR_LEG_BONES_SCRIPT = new URL('../../js/leg-bones.js?v=20260821a', location.href).href; // Supplies the exact invisible two-bone solver used by the paired feet preview.
 const AUTHOR_FEET_RUNTIME_SCRIPT = new URL('../../js/procedural-leg-animation.js?v=20261031h99e235f', location.href).href; // Keeps rig-preview feet paired with this author build instead of the selected repository ref.
 // These repository paths are used to load the two authored Kurraya PNG planes.
@@ -1231,6 +1232,8 @@ const REQUIRED_SCRIPTS = [
   'js/portrait-breathing.js',
   'js/npc-avatar-preview-utils.js',
   'js/png-plane-avatar.js',
+  'config/portrait-mouth-points.js', // Shared species/gender lip pixels used by B'shuakauitl and the Kiss contact diagnostic.
+  'js/combat/shared-attack-pose.js', // The exact skinned mouth-frame resolver, without a second face-coordinate formula.
   'js/leg-bones.js',
   'js/procedural-leg-animation.js',
   'config/pants-rigs.js',
@@ -1362,7 +1365,7 @@ function readSettings() {
   return {
     owner: String(stored?.owner || $('ownerInput').value || 'Oolnokk').trim(),
     repo: String(stored?.repo || $('repoInput').value || 'HobunjiHollowUnity').trim(),
-    ref: String(stored?.ref || $('refInput').value || 'main').trim(),
+    ref: String(requestedSceneRepositoryRefV1547() || stored?.ref || $('refInput').value || 'main').trim(),
     docsRoot: ensureSlash(stored?.docsRoot || $('docsInput').value || 'docs/'),
     dbPath: normalizePath(stored?.dbPath || $('dbPathInput').value || 'docs/config/npcs/hobunji-starter-npc-database.json'),
   };
@@ -4007,6 +4010,7 @@ function animationUiTemplate() {
         <span class="maaSpacer"></span>
         <button id="maaRepoBtn" class="secondary">Repository</button>
         <button id="maaDiagnosticsBtn" class="secondary">Diagnostics</button>
+        <button id="maaCopySceneUrlBtn" class="secondary maaMultiOnly" title="Copy a link that rebuilds the selected NPCs and applies the relationship preset">Copy scene link</button>
         <button id="maaExportBtn" class="good">Export JSON</button>
         <label class="maaFileButton secondary" for="maaImportInput">Import</label>
         <input id="maaImportInput" class="maaHidden" type="file" accept=".json,application/json">
@@ -4221,6 +4225,7 @@ function prepareMultiAvatarAnimationAuthor() {
   $('maaRepoBtn').addEventListener('click', () => $('leftPanel').open = true);
   $('maaDiagnosticsBtn').addEventListener('click', () => $('debugPanel').classList.toggle('visible'));
   $('maaExportBtn').addEventListener('click', exportAnimationProject);
+  $('maaCopySceneUrlBtn').addEventListener('click', copyCurrentAnimationSceneUrlV1547);
   $('maaImportInput').addEventListener('change', event => importAnimationProjectFile(event.target.files?.[0]));
   $('maaNpcSearch').addEventListener('input', renderAnimationNpcLibrary);
   $('maaCreatureSpecies').addEventListener('change', refreshAnimationCreatureFrames);
@@ -4299,6 +4304,28 @@ async function onAnimationRepositoryReady() {
   renderAnimationActorList();
   renderAnimationInspector();
   renderAnimationTimeline();
+  let urlScene = null; // Explicit URL scenes must be parsed without crashing repositoryReady on bad query strings.
+  try { urlScene = parseAnimationUrlSceneV1547(location.search); }
+  catch (error) {
+    animationAuthor.pendingProject = null;
+    hideOverlay();
+    log('Invalid animation scene URL: ' + (error.stack || error.message), 'error');
+    setStatus('Invalid scene URL: ' + error.message, 'bad');
+    return;
+  }
+  if (urlScene) {
+    animationAuthor.pendingProject = null;
+    try {
+      await installAnimationUrlSceneV1547(urlScene);
+      hideOverlay();
+      setStatus('Scene ready: ' + animationAuthor.projectName, 'good');
+    } catch (error) {
+      hideOverlay();
+      log('Could not open URL animation scene: ' + (error.stack || error.message), 'error');
+      setStatus('Scene URL failed: ' + error.message, 'bad'); // Keep the error visible on mobile, not just in the console.
+    }
+    return; // Never silently restore an unrelated autosave when an explicit URL scene was requested.
+  }
   const pending = animationAuthor.pendingProject;
   animationAuthor.pendingProject = null;
   if (['hobunji.multi-avatar-animation.v1', 'hobunji.multi-avatar-animation.v2', 'hobunji.multi-avatar-animation.v3', 'hobunji.multi-avatar-animation.v4', animationAuthor.schema].includes(pending?.schema) && Array.isArray(pending.actors) && pending.actors.length) {
@@ -5724,7 +5751,9 @@ function updateAnimationTimeUi() {
   $('maaScrubber').max = String(animationAuthor.duration);
   if ($('maaFpsInput')) $('maaFpsInput').value = String(animationAuthor.fps);
   if ($('maaDurationInput')) $('maaDurationInput').value = String(animationAuthor.duration);
-  $('maaScrubber').step = String(1 / Math.max(1, animationAuthor.fps));
+  $('maaScrubber').step = animationAuthor.multiPreset === 'kiss' ||
+    Math.abs(animationAuthor.duration * animationAuthor.fps - Math.round(animationAuthor.duration * animationAuthor.fps)) > .00001
+    ? 'any' : String(1 / Math.max(1, animationAuthor.fps)); // The final 2.40s kiss frame is not on a 12-FPS tick; allow the slider to reach exact recovery rather than snapping to ~2.33s.
   $('maaScrubber').value = String(animationAuthor.currentTime);
   $('maaTimeReadout').textContent = `${animationAuthor.currentTime.toFixed(2)} / ${animationAuthor.duration.toFixed(2)}s`;
   updateAnimationPlaybackButtons();
@@ -5818,18 +5847,42 @@ function transformMatrixFromSnapshot(value = {}) {
   return new THREE.Matrix4().compose(positionVector, quaternion, scaleVector);
 }
 
-function transformSnapshotFromMatrix(matrix) {
+function transformSnapshotFromMatrix(matrix, authoredRotationDeg = null) {
   const THREE = state.three.THREE;
   const position = new THREE.Vector3();
   const quaternion = new THREE.Quaternion();
   const scale = new THREE.Vector3();
   matrix.decompose(position, quaternion, scale);
-  const rotation = new THREE.Euler().setFromQuaternion(quaternion, 'XYZ');
+  const rotation = authoredRotationDeg
+    ? authorContinuousRotationDeg(THREE, quaternion, authoredRotationDeg)
+    : new THREE.Euler().setFromQuaternion(quaternion, 'XYZ'); // Ordinary transforms retain existing matrix conventions.
   return {
     position: { x: position.x, y: position.y, z: position.z },
-    rotationDeg: { x: radToDeg(rotation.x), y: radToDeg(rotation.y), z: radToDeg(rotation.z) },
+    rotationDeg: authoredRotationDeg ? rotation
+      : { x: radToDeg(rotation.x), y: radToDeg(rotation.y), z: radToDeg(rotation.z) },
     scale: { x: scale.x, y: scale.y, z: scale.z },
   };
+}
+
+// A 180° yaw has two XYZ Euler representations: (0,180,0) and
+// (180,0,180). Clearing the interpolated root X for grounded procedural feet
+// makes the second representation an upside-down roll. Choose the Euler
+// branch closest to the actual authored rotations instead.
+function authorContinuousRotationDeg(THREE, quaternion, referenceDeg = {}) {
+  const euler = new THREE.Euler().setFromQuaternion(quaternion, 'XYZ'); // Primary rotation representation from Three.
+  const first = { x: radToDeg(euler.x), y: radToDeg(euler.y), z: radToDeg(euler.z) }; // Closest to normal zero rotation.
+  const second = { x: first.x + 180, y: 180 - first.y, z: first.z + 180 }; // Quaternion-equivalent alternate XYZ branch.
+  const reference = { x: Number(referenceDeg.x) || 0, y: Number(referenceDeg.y) || 0, z: Number(referenceDeg.z) || 0 }; // Intended authored heading.
+  const nearest = degrees => ({ // Wraps both equivalent candidates near the corresponding keyframe axis.
+    x: reference.x + ((degrees.x - reference.x + 540) % 360) - 180,
+    y: reference.y + ((degrees.y - reference.y + 540) % 360) - 180,
+    z: reference.z + ((degrees.z - reference.z + 540) % 360) - 180,
+  });
+  const a = nearest(first); // First candidate scored for keyframe continuity.
+  const b = nearest(second); // Second candidate scored for keyframe continuity.
+  const score = value => (value.x - reference.x) ** 2 +
+    (value.y - reference.y) ** 2 + (value.z - reference.z) ** 2; // Smaller deviation avoids fake X/Z flips.
+  return score(b) < score(a) ? b : a;
 }
 
 function sampleTransformTrack(baseTransform, keyframes, time) {
@@ -5864,15 +5917,23 @@ function sampleTransformTrack(baseTransform, keyframes, time) {
     degToRad(right.transform.rotationDeg.z),
     'XYZ'
   ));
-  const quaternion = new THREE.Quaternion().slerpQuaternions(leftQuaternion, rightQuaternion, alpha);
-  const rotation = new THREE.Euler().setFromQuaternion(quaternion, 'XYZ');
+  const quaternion = new THREE.Quaternion();
+  quaternion.copy(leftQuaternion).slerp(rightQuaternion, alpha); // Three r128's slerpQuaternions may mutate without returning its receiver.
+  const leftRotation = left.transform.rotationDeg; // Earlier authored keyframe orientation.
+  const rightRotation = right.transform.rotationDeg; // Next authored keyframe orientation.
+  const reference = {
+    x: leftRotation.x + (rightRotation.x - leftRotation.x) * alpha,
+    y: leftRotation.y + (rightRotation.y - leftRotation.y) * alpha,
+    z: leftRotation.z + (rightRotation.z - leftRotation.z) * alpha,
+  }; // Guides quaternion interpolation back to the intended Y-axis facing.
+  const rotation = authorContinuousRotationDeg(THREE, quaternion, reference);
   return {
     position: {
       x: leftPosition.x + (rightPosition.x - leftPosition.x) * alpha,
       y: leftPosition.y + (rightPosition.y - leftPosition.y) * alpha,
       z: leftPosition.z + (rightPosition.z - leftPosition.z) * alpha,
     },
-    rotationDeg: { x: radToDeg(rotation.x), y: radToDeg(rotation.y), z: radToDeg(rotation.z) },
+    rotationDeg: rotation,
     scale: {
       x: leftScale.x + (rightScale.x - leftScale.x) * alpha,
       y: leftScale.y + (rightScale.y - leftScale.y) * alpha,
@@ -5903,8 +5964,14 @@ function sampleNeckTrack(baseRotationDeg, keyframes, time) {
   const alpha = (time - left.time) / Math.max(.000001, right.time - left.time);
   const qa = new THREE.Quaternion().setFromEuler(new THREE.Euler(degToRad(left.neckRotationDeg.x), degToRad(left.neckRotationDeg.y), degToRad(left.neckRotationDeg.z), 'XYZ'));
   const qb = new THREE.Quaternion().setFromEuler(new THREE.Euler(degToRad(right.neckRotationDeg.x), degToRad(right.neckRotationDeg.y), degToRad(right.neckRotationDeg.z), 'XYZ'));
-  const rotation = new THREE.Euler().setFromQuaternion(new THREE.Quaternion().slerpQuaternions(qa, qb, alpha), 'XYZ');
-  return { x: radToDeg(rotation.x), y: radToDeg(rotation.y), z: radToDeg(rotation.z) };
+  const quaternion = new THREE.Quaternion();
+  quaternion.copy(qa).slerp(qb, alpha); // Never pass an r128 slerpQuaternions return value as a quaternion.
+  const reference = {
+    x: left.neckRotationDeg.x + (right.neckRotationDeg.x - left.neckRotationDeg.x) * alpha,
+    y: left.neckRotationDeg.y + (right.neckRotationDeg.y - left.neckRotationDeg.y) * alpha,
+    z: left.neckRotationDeg.z + (right.neckRotationDeg.z - left.neckRotationDeg.z) * alpha,
+  }; // Neck animations also need continuous yaw without surprise X/Z flips.
+  return authorContinuousRotationDeg(THREE, quaternion, reference);
 }
 
 function animationFrameSampleTimes() {
@@ -5937,7 +6004,10 @@ function authoringSnapshotToGameplayLocal(actor, authoringSnapshot, time) {
   const target = actor.targetId ? actorById(actor.targetId) : null;
   if (!target) return clone(authoringSnapshot);
   const inverseTargetAnchor = targetAnchorAuthoringMatrixAtTime(target, time).invert();
-  return transformSnapshotFromMatrix(inverseTargetAnchor.multiply(transformMatrixFromSnapshot(authoringSnapshot)));
+  return transformSnapshotFromMatrix(
+    inverseTargetAnchor.multiply(transformMatrixFromSnapshot(authoringSnapshot)),
+    animationAuthor.multiPreset === 'kiss' ? authoringSnapshot.rotationDeg : null,
+  ); // Export relative kiss tracks without dropping the facing yaw.
 }
 
 function gameplayLocalSnapshotToAuthoring(target, gameplayLocalSnapshot, time) {
@@ -6466,6 +6536,7 @@ function applySelectedMultiAvatarPreset() {
     milking: applyMilkingPreset,
     venom: applyVenomExtractionPreset,
     dance: applyDancePreset,
+    kiss: applyKissPresetV1546, // Uses the same standard Apply dispatcher as every other relationship preset.
     festival: applyFestivalDancePreset,
     mount: applyMountPreset,
     shoulderPet: applyShoulderPetPreset,
@@ -7705,7 +7776,10 @@ authoringSnapshotToGameplayLocal = function(actor, authoringSnapshot, time) {
   const target = actor.targetId ? actorById(actor.targetId) : null;
   if (!target) return clone(authoringSnapshot);
   const inverseTargetAnchor = targetAnchorAuthoringMatrixAtTimeV157(target, time, actor).invert();
-  return transformSnapshotFromMatrix(inverseTargetAnchor.multiply(transformMatrixFromSnapshot(authoringSnapshot)));
+  return transformSnapshotFromMatrix(
+    inverseTargetAnchor.multiply(transformMatrixFromSnapshot(authoringSnapshot)),
+    animationAuthor.multiPreset === 'kiss' ? authoringSnapshot.rotationDeg : null,
+  ); // Export relative kiss tracks without dropping the facing yaw.
 };
 
 gameplayLocalSnapshotToAuthoring = function(target, gameplayLocalSnapshot, time, childActor = null) {
@@ -9138,6 +9212,7 @@ const MULTI_PRESET_LABELS_V1514 = Object.freeze({
   milking: 'Milking',
   venom: 'Venom extraction',
   dance: 'Romantic dance',
+  kiss: 'Kiss', // Required for the existing dropdown change listener; otherwise it announces an "undefined preset".
   festival: 'Festival wheel dance',
   mount: 'Mount',
   shoulderPet: 'Shoulder pet',
@@ -12135,10 +12210,13 @@ function rigPantsGarmentRecordV1546(garmentId) {
 function installRigPantsPreviewV1546(actor) {
   actor.rigPantsPreview = null; // The prior leg handle, if any, already disposed its attached pants before this rebuild.
   const Renderer = window.PantsGarmentRenderer;
-  if (actor?.source?.type !== 'npc' || animationAuthor.mode !== 'rig' || !actor.rigFeetPreview || !Renderer?.attachToLegs) return null;
+  if (actor?.source?.type !== 'npc' || !['rig', 'multi'].includes(animationAuthor.mode) || !actor.rigFeetPreview || !Renderer?.attachToLegs) return null;
   const npc = state.npcs.find(item => String(item.id || item.name) === String(actor.source.id));
-  const garmentId = Renderer.garmentForCosmetics?.(npc?.equippedCosmetics || []);
-  if (!garmentId) return null; // Database NPC clothing is authoritative; the animator must not invent pants for intentionally pantless outfits.
+  const equippedId = Renderer.garmentForCosmetics?.(npc ? portraitExportFor(npc).equippedCosmetics : []); // Avatar-editor wardrobe takes precedence.
+  const defaultAllowed = npc?.noPants !== true && npc?.kind !== 'animal'
+    && Renderer.hasRigFor?.(actor.source.species, actor.source.gender, 'pants_basic'); // Normal NPC gameplay gives basic pants to humanoids without authored legwear.
+  const garmentId = equippedId || (defaultAllowed ? 'pants_basic' : null);
+  if (!garmentId) return null; // Pantless and unsupported species remain uncovered; the NPC record is never mutated.
   const garmentRecord = rigPantsGarmentRecordV1546(garmentId);
   if (!garmentRecord) return null;
   const profile = actor.model?.userData?.rigAvatarProfile || null;
@@ -12170,7 +12248,7 @@ function installShoulderRigFeetPreviewV1529(actor) {
   if (!actor) return null;
   actor.rigFeetPreview?.dispose?.();
   actor.rigFeetPreview = null;
-  if (actor.source?.type !== 'npc' || animationAuthor.mode !== 'rig' || !window.ProceduralLegAnimation?.attach) return null;
+  if (actor.source?.type !== 'npc' || !['rig', 'multi'].includes(animationAuthor.mode) || !window.ProceduralLegAnimation?.attach) return null;
   const metrics = portraitModelMetrics(actor); // Supplies the child/species-scaled dimensions already used by the portrait and idle hands.
   const profile = actor.model?.userData?.rigAvatarProfile || null; // Enables the gameplay feet runtime's normal torso-width stance scan.
   actor.rigFeetPreview = window.ProceduralLegAnimation.attach(state.three.THREE, actor.visualOffset, {
@@ -12180,7 +12258,7 @@ function installShoulderRigFeetPreviewV1529(actor) {
     modelWidth: metrics.modelWidth,
     modelHeight: metrics.modelHeight,
     handAttachY: actor.model?.userData?.handAttachY,
-    name: `${actor.id}_shoulder_rig`,
+    name: `${actor.id}_character_preview_rig`,
     profile,
     portraitSize: metrics.pixelWidth,
   });
@@ -12200,7 +12278,7 @@ addNpcAnimationActor = async function(npcId, options = {}) {
 const baseUpdateRigAnchorVisibilityV1529 = updateRigAnchorVisibility;
 updateRigAnchorVisibility = function(actor) {
   const result = baseUpdateRigAnchorVisibilityV1529(actor);
-  if (actor?.rigFeetPreview?.group) actor.rigFeetPreview.group.visible = animationAuthor.mode === 'rig';
+  if (actor?.rigFeetPreview?.group) actor.rigFeetPreview.group.visible = ['rig', 'multi'].includes(animationAuthor.mode);
   return result;
 };
 
@@ -13780,6 +13858,782 @@ syncCreatureGroundReferenceV1543 = function(actor, sizeClass) {
 animationAuthor.recentChange = 'Omgurku lower-half ground height is editable as an animal rig with its own exportable profile, fixed-size preview, and moving ground plane.';
 animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
 log('Omgurku lower-half animal-style Rig Coordinates controls ready.');
+
+// -----------------------------------------------------------------------------
+// V15.46: Non-looping spouse kiss. The author and gameplay consume precisely the
+// same height solution and eased contact timing from SpouseKissMotion.
+// -----------------------------------------------------------------------------
+const KISS_PRESET_V1546 = 'kiss'; // Serialized as project.relationshipPreset, like the existing dance preset.
+const KISS_TIMES_V1546 = Object.freeze([0, .13, .25, .37, .52, .67, .82, 1.02, 1.52, 1.95, 2.4]); // Keys separate early shoulder grasp, subsequent kneel, contact, and release.
+const KISS_FPS_V1546 = 12; // Playback sampling resolution for both members of the pair.
+
+function kissActorHeightV1546(actor) {
+  const metrics = portraitModelMetrics(actor); // Existing rendered portrait metrics, not the NPC information-form species.
+  const visualScaleY = Math.abs(Number(actor?.visualOffset?.scale?.y) || 1); // Applies the rig's visible vertical scale without movement keyframes.
+  return metrics.modelHeight * visualScaleY;
+}
+
+function kissNeutralMouthHeightV1552(actor) {
+  const height = kissActorHeightV1546(actor); // Cache key changes when the NPC is rescaled for an extreme-size test or edited rig.
+  const cached = actor?.kissNeutralMouthV1552;
+  if (cached?.model === actor.model && Math.abs(cached.height - height) < .00001) return cached.mouth;
+  const pose = window.SharedAttackPose; // Same B'shuakauitl mouth pixel resolver as the live game and Attack Editor.
+  const THREE = state.three?.THREE;
+  if (!pose?.createHeadFrame || !pose?.headFrame || !THREE?.Vector3 || !actor?.model || !actor.root) return null;
+  const frame = pose.createHeadFrame(THREE); // Only sampled at first preset build or when visual size changes, not every preview frame.
+  actor.model.updateWorldMatrix?.(true, true);
+  if (!pose.headFrame(frame, actor.model)) return null;
+  const floor = actor.root.getWorldPosition(new THREE.Vector3());
+  const mouth = frame.position.y - floor.y;
+  if (!(mouth > .001) || !Number.isFinite(mouth)) return null;
+  actor.kissNeutralMouthV1552 = { model: actor.model, height, mouth }; // Used to solve knee/bow from each species' true resting face height.
+  return mouth;
+}
+
+function kissPairHeightV1546() {
+  const pair = romanticDancePair(); // Uses the same selected-actor pairing rules as the romantic dance.
+  if (!pair.leader || !pair.partner) return { ...pair, solution: null };
+  const firstHeight = kissActorHeightV1546(pair.leader);
+  const secondHeight = kissActorHeightV1546(pair.partner);
+  const tallerActor = firstHeight >= secondHeight ? pair.leader : pair.partner; // Both participants' real leg measurements determine whether a supported hop is possible.
+  const shorterActor = tallerActor === pair.leader ? pair.partner : pair.leader;
+  const legMetrics = actor => {
+    const feet = actor.rigFeetPreview; // Same anatomy that drives the deforming pants, not a guessed lower-body proxy.
+    const scale = Math.max(.001, Math.abs(Number(actor.visualOffset?.scale?.y) || 1));
+    const records = feet?.motionAnatomy?.() || [];
+    const lengths = records.map(record => Number(record?.length)).filter(value => Number.isFinite(value) && value > 0);
+    return {
+      length: lengths.length ? Math.min(...lengths) * scale : undefined,
+      hip: Number.isFinite(Number(feet?.standingPosteriorY)) ? feet.standingPosteriorY * scale : undefined,
+    };
+  }; // Measured leg length and posterior Y in the avatar's authored scale.
+  const tall = legMetrics(tallerActor);
+  const short = legMetrics(shorterActor);
+  const firstMouth = kissNeutralMouthHeightV1552(pair.leader); // Canonical lip measurements avoid the old inaccurate 82%-of-height assumption.
+  const secondMouth = kissNeutralMouthHeightV1552(pair.partner);
+  const solution = window.SpouseKissMotion?.solveHeights?.(firstHeight, secondHeight, {
+    ...(firstMouth ? { firstMouthHeightWorld: firstMouth } : {}),
+    ...(secondMouth ? { secondMouthHeightWorld: secondMouth } : {}),
+    ...(tall.length ? { tallerLegLengthWorld: tall.length } : {}),
+    ...(tall.hip ? { tallerHipHeightWorld: tall.hip } : {}),
+    ...(short.length ? { shorterLegLengthWorld: short.length } : {}),
+    ...(short.hip ? { shorterHipHeightWorld: short.hip } : {}),
+  }) || null; // The author and gameplay now agree about physically reachable knees.
+  return { ...pair, solution };
+}
+
+function kissTransformV1546(who, time, solution) {
+  const pose = window.SpouseKissMotion.samplePose(time); // Shared approach, mouth contact, and separation curves.
+  const first = who === 'leader';
+  const taller = first ? solution.taller === 'first' : solution.taller === 'second';
+  const bodyBlend = window.SpouseKissMotion.sampleKneelBlend(time, solution.taller === 'second'); // Shorter initiators lift their hands before the tall spouse kneels.
+  const bowRetreat = taller && !solution.shorterPosteriorGrip
+    ? Math.min(solution.tallerBowForwardWorld, Math.max(.04, solution.shorterLegLengthWorld * .25)) * bodyBlend : 0; // Keep moving shoulder grips inside the short initiator's reach; neck joints complete contact without root sidesteps.
+  const progress = Math.max(0, Math.min(1, (time - .09) / .28));
+  const approach = progress * progress * (3 - 2 * progress); // Hands reach early without making face meshes overlap during contact.
+  const departure = time <= 1.52 ? 1 : Math.max(0, Math.min(1, (2.4 - time) / .88));
+  const departEase = departure * departure * (3 - 2 * departure);
+  const spacing = .20 - .12 * approach * departEase; // At contact ~.08 instead of ~.02 for ordinary ground-based kisses.
+  const jumpBlend = solution.shorterPosteriorGrip ? window.SpouseKissMotion.sampleJumpBlend(time) : 0;
+  const posteriorGap = Math.min(spacing, Math.max(.006,
+    solution.jumpFootForwardWorld + solution.shorterLegLengthWorld * .18)); // Feet must physically reach the posterior, not a point beyond their leg length.
+  const actualGap = spacing + (posteriorGap - spacing) * jumpBlend; // Shorter actor leaps toward the taller hip as well as upward, then returns to normal spacing.
+  const hop = !taller ? solution.shorterJumpWorld * jumpBlend : 0; // Only the smaller body jumps, and the normal couple never gets any lift.
+  return {
+    position: {
+      x: 0,
+      y: hop, // Only jump pairs rise above the ground; regular kiss clips remain grounded.
+      z: first ? -bowRetreat : actualGap + bowRetreat,
+    },
+    rotationDeg: { x: 0, y: first ? 0 : 180, z: 0 }, // Torso bow belongs on the portrait and hand rigs, not the foot/leg root.
+    scale: { x: 1, y: 1, z: 1 },
+  };
+}
+
+function kissTrackV1546(who, solution) {
+  const taller = who === 'leader' ? solution.taller === 'first' : solution.taller === 'second';
+  return KISS_TIMES_V1546.map(time => {
+    const pose = window.SpouseKissMotion.samplePose(time);
+    const bodyBlend = window.SpouseKissMotion.sampleKneelBlend(time, solution.taller === 'second'); // Uses the same delayed lowering as live gameplay.
+    return {
+      time, transform: kissTransformV1546(who, time, solution),
+      // Per-frame percent mirrors Attack Editor body sink. Runtime applies it to
+      // procedural legs/body instead of translating the character's collider.
+      bodySinkPct: taller ? solution.tallerSinkPct * bodyBlend : 0,
+      jumpLiftWorld: !taller ? solution.shorterJumpWorld * window.SpouseKissMotion.sampleJumpBlend(time) : 0, // Root Y and exportable jump metadata describe the same motion.
+      posteriorFeetPlanted: !taller && solution.shorterPosteriorGrip && window.SpouseKissMotion.sampleJumpBlend(time) >= .99,
+      bodyBowDeg: (taller ? solution.tallerBowDeg * bodyBlend : 3 * pose.blend), // Exportable torso-only bow; never tilts the planted foot rig.
+      neckRotationDeg: { x: (taller ? -12 : 8) * pose.blend, y: 0, z: 0 },
+    };
+  });
+}
+
+function applyKissPresetV1546() {
+  if (animationAuthor.mode !== 'multi') return false;
+  const { leader, partner, solution } = kissPairHeightV1546();
+  if (!leader || !partner) { setStatus('Kiss needs two NPC/character actors in the Multi-Avatar scene.', 'warn'); return false; }
+  if (!solution?.contactPossible) {
+    setStatus('These mouth heights exceed the safely reachable kneel and posterior hop. Inspect both leg rigs.', 'warn');
+    return false;
+  }
+  setProjectTimingFromTemplate({ fps: KISS_FPS_V1546, duration: window.SpouseKissMotion.DURATION_S }); // Syncs the author timeline with shared gameplay timing.
+  animationAuthor.loop = false; // A kiss is a one-shot event, not a repeating dance.
+  animationAuthor.projectName = 'Spouse Kiss — ' + leader.label + ' and ' + partner.label;
+  animationAuthor.multiPreset = KISS_PRESET_V1546;
+  animationAuthor.kissInitiatorActorIdV1550 = leader.id; // The initiator remains fixed while switching which avatar to inspect or edit.
+  if ($('maaProjectName')) $('maaProjectName').value = animationAuthor.projectName;
+  if ($('maaLoop')) $('maaLoop').checked = false;
+  if ($('maaPresetSelect')) $('maaPresetSelect').value = KISS_PRESET_V1546;
+
+  const leaderKeys = kissTrackV1546('leader', solution); // Root actor faces the target; no parent cycle.
+  const partnerKeys = kissTrackV1546('partner', solution); // Runtime-local partner track is exported relative to leader.
+  setActorTarget(leader, null, false);
+  leader.rootMotionMode = 'gameplay';
+  leader.keyframes = leaderKeys.map(key => clone(key));
+  leader.baseTransform = clone(leaderKeys[0].transform);
+  applyTransformSnapshot(leader.root, leader.baseTransform);
+  leader.gaze.mode = 'manual'; // Authored neck curves, not live target gaze, control mouth contact.
+
+  setActorTarget(partner, leader.id, false);
+  // The partner's timeline is authored independently in workspace coordinates:
+  // the exporter alone converts it to target-relative gameplay transforms.
+  // This prevents the taller leader's kneel from pulling the shorter actor
+  // down too, even when the height difference is extreme.
+  partner.keyframes = partnerKeys.map(key => clone(key));
+  partner.baseTransform = clone(partnerKeys[0].transform);
+  applyTransformSnapshot(partner.root, partner.baseTransform);
+  partner.gaze.mode = 'manual';
+  leader.kissBodySinkPctAtContact = solution.taller === 'first' ? solution.tallerSinkPct : 0;
+  partner.kissBodySinkPctAtContact = solution.taller === 'second' ? solution.tallerSinkPct : 0;
+  animationAuthor.kissHeightSolutionV1546 = solution;
+
+  setAnimationTime(0, { pause: true });
+  selectAnimationActor(leader.id);
+  renderAllAnimationUi(); // Refresh FPS/seconds, pose inspectors and keyframe tracks after replacing both clips.
+  frameAllAnimationActors('angle');
+  updateKissHeightReadoutV1546();
+  setAnimationRecentChange('V15.46 spouse kiss: adaptive ' + solution.pose +
+    ', ' + solution.tallerSinkPct.toFixed(1) + '% body sink for the taller actor, 2.4 s one-shot and 24-hour Beloved buff on gameplay contact.');
+  scheduleAnimationProjectSave();
+  return true;
+}
+
+function updateKissHeightReadoutV1546() {
+  const node = $('maaKissHeightReadoutV1546');
+  if (!node) return;
+  node.style.display = $('maaPresetSelect')?.value === KISS_PRESET_V1546 ? '' : 'none';
+  if (node.style.display === 'none') return;
+  const { solution } = kissPairHeightV1546();
+  if (!solution) { node.textContent = 'Add two NPC/character actors, then Apply Kiss. Both participants are animated.'; return; }
+  node.textContent = 'Auto height match: ' + solution.firstHeight.toFixed(2) + ' / ' +
+    solution.secondHeight.toFixed(2) + ' model units. ' +
+    (solution.taller === 'first' ? 'First' : 'Second') + ' actor ' +
+    solution.pose + 's ' + solution.tallerSinkPct.toFixed(1) +
+    '% and bows ' + solution.tallerBowDeg.toFixed(1) + '°. Tall spouse steps back ' +
+    solution.tallerBowForwardWorld.toFixed(2) + ' units to make room for the head. ' +
+    'Remaining estimated lip-height gap ' + solution.remainingGap.toFixed(3) +
+    '. ' + (solution.shorterPosteriorGrip
+      ? 'Shorter partner hops ' + solution.shorterJumpWorld.toFixed(3) +
+        ' units, planting both feet around the taller posterior while knees and pants bend.'
+      : 'Both partners keep their feet on the ground.') +
+    ' Unreachable pairs are rejected without false mouth contact.';
+}
+
+function installKissPresetUiV1546() {
+  const select = $('maaPresetSelect');
+  const apply = $('maaApplyPresetBtn');
+  if (!select || !apply || select.dataset.kissPresetInstalled === 'true') return;
+  select.dataset.kissPresetInstalled = 'true';
+  const option = document.createElement('option');
+  option.value = KISS_PRESET_V1546;
+  option.textContent = 'Kiss — two spouses, adaptive height';
+  const danceOption = select.querySelector('option[value="dance"]');
+  if (danceOption) danceOption.insertAdjacentElement('afterend', option);
+  else select.appendChild(option);
+  const note = document.createElement('div');
+  note.id = 'maaKissHeightReadoutV1546';
+  note.className = 'maaSmall maaMuted';
+  note.style.marginTop = '7px';
+  apply.insertAdjacentElement('afterend', note);
+  // The ordinary Apply dispatcher now contains Kiss. Avoid a second capture-phase
+  // listener which could apply the clip twice and hide other preset errors.
+  select.addEventListener('change', updateKissHeightReadoutV1546);
+  updateKissHeightReadoutV1546();
+}
+
+const beforeKissSetActivePresetV1546 = setActiveMultiPresetV1514;
+setActiveMultiPresetV1514 = function(preset, options = {}) {
+  if (preset !== KISS_PRESET_V1546) return beforeKissSetActivePresetV1546(preset, options);
+  animationAuthor.multiPreset = KISS_PRESET_V1546;
+  installKissPresetUiV1546();
+  if ($('maaPresetSelect')) $('maaPresetSelect').value = KISS_PRESET_V1546;
+  if (options.save !== false) scheduleAnimationProjectSave();
+  updateKissHeightReadoutV1546();
+  return KISS_PRESET_V1546;
+};
+
+const beforeKissInferPresetV1546 = inferMultiPresetV1514;
+inferMultiPresetV1514 = function(project = null) {
+  if (project?.project?.relationshipPreset === KISS_PRESET_V1546 ||
+      /kiss/i.test(String(project?.project?.name || ''))) return KISS_PRESET_V1546;
+  return beforeKissInferPresetV1546(project);
+};
+
+const beforeKissSerializeV1546 = serializeAnimationProject;
+serializeAnimationProject = function() {
+  const data = beforeKissSerializeV1546();
+  if (data?.schema !== animationAuthor.schema || animationAuthor.multiPreset !== KISS_PRESET_V1546) return data;
+  data.project.relationshipPreset = KISS_PRESET_V1546;
+  data.project.kiss = {
+    durationHours: 24, effect: 'beloved', effectStats: { staminaRegenMultiplier: 1.1 },
+    adaptation: 'floor-relative-mouth-heights-and-authored-body-sink-percent',
+    mouthHeightRatio: window.SpouseKissMotion.MOUTH_HEIGHT_FRACTION,
+    maxBodySinkPct: window.SpouseKissMotion.MAX_SINK_PCT,
+    deepKneelLegFraction: window.SpouseKissMotion.KNEEL_LEG_FRACTION,
+    maxTorsoBowDeg: window.SpouseKissMotion.MAX_BOW_DEG,
+    initiatorActorId: animationAuthor.kissInitiatorActorIdV1550 || null,
+    initiatorHands: { source: 'leader', target: 'partner-shoulders', shoulderSystem: 'canonical-species-gender-attachment-anchors',
+      reachRule: 'per-arm-reach-with-closest-reachable-shoulder-projection',
+      shorterInitiator: 'hands-before-knee-at-0.52s', tallerInitiator: 'reach-as-torso-lowers' },
+    posteriorJump: { enabled: !!animationAuthor.kissHeightSolutionV1546?.shorterPosteriorGrip,
+      liftWorld: animationAuthor.kissHeightSolutionV1546?.shorterJumpWorld || 0,
+      footAnchor: 'taller-authored-posterior', footTargets: 'two-world-space-left-right-procedural-leg-ik',
+      foldedKnees: true }, // Used by runtime/editor to identify floor-supported vs posterior-supported contact.
+    contactAtSeconds: 1.02, durationSeconds: window.SpouseKissMotion.DURATION_S,
+    heightSolution: clone(animationAuthor.kissHeightSolutionV1546 || null),
+  };
+  for (const record of data.actors || []) {
+    const actor = actorById(record.id);
+    if (actor) record.kissBodySinkPctAtContact = Number(actor.kissBodySinkPctAtContact) || 0;
+    if (actor && Array.isArray(record.keyframes)) {
+      const pct = Number(actor.kissBodySinkPctAtContact) || 0;
+      const pair = configuredKissPairV1550(); // Stable role identity even when the recipient is selected in the inspector.
+      const shorterActor = animationAuthor.kissHeightSolutionV1546?.taller === 'first' ? pair.partner : pair.leader;
+      const jumping = actor === shorterActor && !!animationAuthor.kissHeightSolutionV1546?.shorterPosteriorGrip;
+      record.keyframes.forEach(key => {
+        key.bodySinkPct = pct * window.SpouseKissMotion.sampleKneelBlend(
+          key.time, animationAuthor.kissHeightSolutionV1546?.taller === 'second',
+        );
+        if (jumping) {
+          key.jumpLiftWorld = (animationAuthor.kissHeightSolutionV1546?.shorterJumpWorld || 0) *
+            window.SpouseKissMotion.sampleJumpBlend(key.time); // The exported root and anatomical foot placements use this matching timing.
+          key.posteriorFeetPlanted = window.SpouseKissMotion.sampleJumpBlend(key.time) >= .99;
+        }
+      });
+    }
+  }
+  return data;
+};
+
+const beforeKissImportV1546 = importAnimationProjectData;
+importAnimationProjectData = async function(data, options = {}) {
+  const result = await beforeKissImportV1546(data, options);
+  if (data?.project?.relationshipPreset === KISS_PRESET_V1546) {
+    animationAuthor.kissHeightSolutionV1546 = clone(data?.project?.kiss?.heightSolution || null);
+    animationAuthor.kissInitiatorActorIdV1550 = data?.project?.kiss?.initiatorActorId ||
+      animationAuthor.actors.find(actor => actor.source?.type === 'npc')?.id || null; // Backwards-compatible role identity on existing kiss JSON.
+    for (const record of data.actors || []) {
+      const actor = actorById(record.id);
+      if (actor) actor.kissBodySinkPctAtContact = Number(record.kissBodySinkPctAtContact) || 0;
+    }
+    setActiveMultiPresetV1514(KISS_PRESET_V1546, { save: false });
+  }
+  updateKissHeightReadoutV1546();
+  return result;
+};
+
+// -----------------------------------------------------------------------------
+// V15.47: shareable prebuilt scenes, loaded after the repository/NPC database.
+// Examples:
+//   ?scene=pahu-leaf-kiss
+//   ?actors=pahu,leaf&preset=kiss
+//   ?actors=pahu,leaf&preset=kiss&t=1.12
+//   ?ref=<repository-commit>&scene=pahu-leaf-kiss
+// No autosave is overwritten before the requested NPCs have been validated.
+// -----------------------------------------------------------------------------
+const NAMED_ANIMATION_SCENES_V1547 = Object.freeze({
+  'pahu-leaf-kiss': Object.freeze({ actorIds: ['pahu', 'leaf'], preset: 'kiss', name: 'Pahu and Leaf — Kiss' }),
+}); // Named URL shortcuts can grow without modifying bootstrap or the animation serializers.
+
+function requestedSceneRepositoryRefV1547() {
+  const value = new URLSearchParams(location.search).get('ref')?.trim() || '';
+  return /^[a-zA-Z0-9][a-zA-Z0-9_.\/-]{0,119}$/.test(value) && !value.includes('..') ? value : null;
+}
+
+function parseAnimationUrlSceneV1547(search) {
+  const params = new URLSearchParams(search || '');
+  const named = String(params.get('scene') || '').trim().toLowerCase();
+  const preset = String(params.get('preset') || (named === 'kiss' ? 'kiss' : '')).trim();
+  const actorParam = String(params.get('actors') || '').trim();
+  let actorIds;
+  let appliedPreset;
+  let name;
+  if (Object.hasOwn(NAMED_ANIMATION_SCENES_V1547, named)) {
+    const registered = NAMED_ANIMATION_SCENES_V1547[named];
+    actorIds = [...registered.actorIds];
+    appliedPreset = registered.preset;
+    name = registered.name;
+  } else if (actorParam) {
+    actorIds = actorParam.split(',').map(id => id.trim().toLowerCase()).filter(Boolean);
+    appliedPreset = preset || null;
+    name = null;
+  } else if (named) {
+    throw new Error('Unknown scene "' + named + '". Use scene=pahu-leaf-kiss or actors=pahu,leaf&preset=kiss.');
+  } else {
+    return null; // No URL scene requested; keep existing local autosave workflow unchanged.
+  }
+  if (!actorIds.length || actorIds.length > 8 || new Set(actorIds).size !== actorIds.length ||
+      actorIds.some(id => !/^[a-z0-9_'-]{1,80}$/.test(id))) {
+    throw new Error('Scene actors must be 1–8 distinct NPC IDs.');
+  }
+  if (appliedPreset && !Object.hasOwn(MULTI_PRESET_LABELS_V1514, appliedPreset) && appliedPreset !== 'stinkOilGrehlr') {
+    throw new Error('Unsupported scene preset "' + appliedPreset + '".');
+  }
+  if (appliedPreset === 'kiss' && actorIds.length !== 2) {
+    throw new Error('Kiss requires exactly two NPC actors.');
+  }
+  const requestedTime = params.get('t'); // Used to show an exact point on the authored timeline without auto-playing it.
+  const time = requestedTime === null ? 0 : Number(requestedTime);
+  if (!Number.isFinite(time) || time < 0 || time > 3600) throw new Error('Scene t must be a nonnegative number of seconds.');
+  return { actorIds, preset: appliedPreset, name, time };
+}
+
+async function installAnimationUrlSceneV1547(scene) {
+  const npcs = scene.actorIds.map(id => state.npcs.find(npc =>
+    String(npc.id || '').toLowerCase() === id || String(npc.name || '').toLowerCase() === id));
+  const missing = scene.actorIds.filter((id, i) => !npcs[i]);
+  if (missing.length) throw new Error('NPCs not found in this repository: ' + missing.join(', '));
+  if (!state.three.ready || !animationAuthor.workspaceRoot) throw new Error('The animation workspace is not ready.');
+  await setAnimationAuthorMode('multi');
+  // Unlike "New", an explicit URL scene deliberately replaces a local scene.
+  // The old autosave remains untouched if validation fails above.
+  clearTimeout(animationAuthor.saveTimer);
+  clearAnimationActors();
+  animationAuthor.actorSerial = 1;
+  animationAuthor.multiPreset = scene.preset || 'milking';
+  animationAuthor.playing = false;
+  animationAuthor.fps = 12;
+  animationAuthor.duration = 4;
+  animationAuthor.loop = true;
+  animationAuthor.currentTime = 0;
+  animationAuthor.creatureTransformProfiles = {};
+  animationAuthor.projectName = scene.name || ('Scene — ' + npcs.map(npc => npc.name || npc.id).join(' & '));
+  for (const npc of npcs) {
+    await addNpcAnimationActor(npc.id || npc.name, { skipDefaultPlacement: true });
+  }
+  // The selected actor is the relationship leader. Keep links deterministic
+  // regardless of the addNpc default that selects the most recently added NPC.
+  selectAnimationActor(animationAuthor.actors[0].id);
+  if (scene.preset) {
+    setActiveMultiPresetV1514(scene.preset, { save: false });
+    if (scene.preset === 'kiss') {
+      if (!applyKissPresetV1546()) throw new Error('Could not build a physically reachable kiss for these two avatars.');
+    } else {
+      applySelectedMultiAvatarPreset();
+    }
+  }
+  if (scene.name) {
+    animationAuthor.projectName = scene.name;
+    $('maaProjectName').value = scene.name;
+  }
+  setAnimationTime(Math.min(scene.time, animationAuthor.duration), { pause: true });
+  renderAnimationModeChrome();
+  renderAllAnimationUi();
+  frameAllAnimationActors('angle'); // The angled author camera keeps both flat two-sided portrait planes readable.
+  animationAuthor.playing = false;
+  scheduleAnimationProjectSave();
+  log('URL scene built: ' + scene.actorIds.join(', ') +
+    (scene.preset ? ' · ' + scene.preset : '') + ' · at ' + animationAuthor.currentTime.toFixed(2) + 's');
+  return true;
+}
+
+function currentAnimationSceneUrlV1547() {
+  if (animationAuthor.mode !== 'multi') throw new Error('Open the Multi-Avatar tab to make a shareable scene link.');
+  if (!animationAuthor.actors.length) throw new Error('Add at least one NPC to make a scene link.');
+  if (animationAuthor.actors.some(actor => actor.source?.type !== 'npc')) {
+    throw new Error('Scene links currently support NPCs. Export JSON to preserve creature rigs or mixed scenes.');
+  }
+  const ids = animationAuthor.actors.map(actor => String(actor.source.id || '').toLowerCase());
+  if (new Set(ids).size !== ids.length) throw new Error('A scene URL cannot contain the same NPC twice. Export JSON instead.');
+  const url = new URL(location.href);
+  url.hash = '';
+  url.searchParams.delete('scene');
+  url.searchParams.set('actors', ids.join(','));
+  url.searchParams.set('preset', animationAuthor.multiPreset || 'milking');
+  url.searchParams.set('ref', state.resolvedSha || state.settings?.ref || 'main');
+  url.searchParams.set('t', String(Number(animationAuthor.currentTime.toFixed(2))));
+  return url.href;
+}
+
+async function copyCurrentAnimationSceneUrlV1547() {
+  try {
+    const url = currentAnimationSceneUrlV1547(); // The URL saves actor identities and a preset, not arbitrary hand-edited keyframes.
+    if (!navigator.clipboard?.writeText) throw new Error('clipboard-unavailable');
+    await navigator.clipboard.writeText(url);
+    setStatus('Scene link copied. Opening it rebuilds the NPCs and preset.', 'good');
+  } catch (error) {
+    if (error.message === 'clipboard-unavailable' || error.name === 'NotAllowedError') {
+      const url = currentAnimationSceneUrlV1547();
+      window.prompt('Copy this scene link:', url); // Mobile-safe fallback in browsers that deny clipboard permissions.
+    } else setStatus('Scene link: ' + error.message, 'warn');
+  }
+}
+
+
+// -----------------------------------------------------------------------------
+// V15.48: Multi-Avatar full-character presentation parity.
+//
+// The existing Rig Coordinates gameplay leg + pants preview is reused for
+// every multi-avatar NPC. Hands come from ProceduralHandFrameDriver, which
+// attaches the *real* skinned hand models to proceduralHandParent after
+// PNGPlaneAvatar builds the visual. No duplicate/proxy limb geometry is made.
+// During the kiss, bodySinkPct is sampled into the anatomical knee handle;
+// the existing pants renderer follows those bones automatically.
+// -----------------------------------------------------------------------------
+const MULTI_HAND_KISS_OWNER_V1548 = 'multi-avatar-kiss-preview'; // Direct hand driver retains this action's pose ownership until the preset/mode changes.
+const MULTI_KISS_LEG_LIMIT_V1548 = window.SpouseKissMotion?.KNEEL_LEG_FRACTION || .95; // Deep kneel only for the Kiss preset.
+
+function previewActorKissSinkPctV1548(actor, time) {
+  if (animationAuthor.multiPreset !== 'kiss') return 0;
+  const contact = Number(actor?.kissBodySinkPctAtContact) || 0;
+  if (!contact) return 0;
+  return Math.max(0, contact * (window.SpouseKissMotion?.samplePose?.(time)?.blend || 0));
+}
+
+function applyMultiHandKissV1548(actor, time) {
+  const rig = actor.model?.userData?.proceduralHandRig;
+  if (!rig) return;
+  if (animationAuthor.mode !== 'multi' || animationAuthor.multiPreset !== 'kiss') {
+    if (actor.multiKissHandRigV1548 === rig) {
+      rig.setPoseProvider?.(MULTI_HAND_KISS_OWNER_V1548, null);
+      rig.useIdlePose?.();
+      actor.multiKissHandRigV1548 = null;
+    }
+    return;
+  }
+  if (actor.multiKissHandRigV1548 !== rig) {
+    const height = Math.max(.1, portraitModelMetrics(actor).modelHeight); // Size only for proportional hand reach, not a substitute hand mesh.
+    const pose = { // Live driver-owned fallback frame; both hand sockets reuse the normal species/gender GLB calibration.
+      left: { position: { x: 0, y: 0, z: 0 }, rotationDeg: { pitch: 0, yaw: 0, roll: 0 } },
+      right: { position: { x: 0, y: 0, z: 0 }, rotationDeg: { pitch: 0, yaw: 0, roll: 0 } },
+    };
+    actor.multiKissHandPoseV1548 = { pose, height };
+    rig.setPoseProvider?.(MULTI_HAND_KISS_OWNER_V1548, handRig => handRig.useIdlePose(pose));
+    actor.multiKissHandRigV1548 = rig;
+  }
+  const values = actor.multiKissHandPoseV1548;
+  const blend = window.SpouseKissMotion?.samplePose?.(time)?.blend || 0;
+  const reach = blend * values.height; // Drives an understated paired embrace without requiring a new arm skeleton.
+  values.pose.left.position.y = .055 * reach;
+  values.pose.right.position.y = .055 * reach;
+  values.pose.left.position.z = .075 * reach;
+  values.pose.right.position.z = .075 * reach;
+  values.pose.left.rotationDeg.pitch = -17 * blend;
+  values.pose.right.rotationDeg.pitch = -17 * blend;
+  rig.applyOwnedPose?.(); // Scrubbing responds immediately; the frame driver also maintains the pose each render.
+}
+
+function syncMultiAvatarFullBodiesV1548(time = animationAuthor.currentTime, dt = 0) {
+  const isMulti = animationAuthor.mode === 'multi'; // Rig Coordinates keeps its existing reference/ground preview.
+  const kissing = isMulti && animationAuthor.multiPreset === 'kiss';
+  const pair = kissing ? configuredKissPairV1550() : null; // The authored initiator never changes just because the inspector selection does.
+  const solution = kissing ? animationAuthor.kissHeightSolutionV1546 : null;
+  const frameDelta = Math.max(0, Math.min(.08, Number(dt) || 0));
+  for (const actor of animationAuthor.actors) {
+    if (actor?.source?.type !== 'npc') continue;
+    const participant = !!(solution && (actor === pair?.leader || actor === pair?.partner));
+    applyMultiHandKissV1548(actor, participant ? time : 0);
+    const feet = actor.rigFeetPreview;
+    if (feet?.group) feet.group.visible = isMulti || animationAuthor.mode === 'rig';
+    const model = actor.model;
+    if (!feet || !model) continue;
+    const hands = model.userData?.proceduralHandRig;
+    const rest = actor.multiAvatarBodyRestV1548 || (actor.multiAvatarBodyRestV1548 = {
+      modelY: model.position.y, modelPitch: model.rotation.x,
+    }); // Original model orientation/height used for every preset switch and import.
+    if (hands?.group && !actor.multiAvatarHandRestV1548) {
+      actor.multiAvatarHandRestV1548 = { y: hands.group.position.y, pitch: hands.group.rotation.x }; // Hand rig attaches asynchronously after the portrait.
+    }
+    const handRest = actor.multiAvatarHandRestV1548;
+    if (!isMulti) {
+      model.position.y = rest.modelY;
+      model.rotation.x = rest.modelPitch;
+      if (hands?.group && handRest) { hands.group.position.y = handRest.y; hands.group.rotation.x = handRest.pitch; }
+      continue;
+    }
+
+    const previousPose = frameDelta > 0 ? sampleActorTransform(actor, Math.max(0, time - frameDelta)) : null;
+    const currentPose = frameDelta > 0 ? sampleActorTransform(actor, time) : null;
+    const strideSpeed = previousPose && currentPose && time >= frameDelta
+      ? Math.min(8, Math.hypot(currentPose.position.x - previousPose.position.x,
+          currentPose.position.z - previousPose.position.z) / frameDelta) : 0; // Real authored movement drives the shared procedural walk cycle.
+    const taller = participant && (solution.taller === 'first' ? actor === pair.leader : actor === pair.partner);
+    if (participant) {
+      // Kiss keyframes encode body sink/pitch on the entire authored actor root.
+      // In a full-body preview that root also owns the leg + pants bones, so
+      // retain its horizontal approach/yaw but move sink and bow to the torso
+      // and hand groups below. Otherwise the soles tilt or sink into the floor.
+      actor.root.position.y = participant && !taller && solution.shorterPosteriorGrip
+        ? Number(sampleActorTransform(actor, time).position.y) || 0 : 0; // Keep the authored airborne jump; only taller knees stay planted on the floor.
+      actor.root.rotation.x = 0;
+    }
+    const blend = participant ? window.SpouseKissMotion?.samplePose?.(time)?.blend || 0 : 0;
+    const bodyBlend = participant ? window.SpouseKissMotion?.sampleKneelBlend?.(time, solution.taller === 'second') || 0 : 0; // Matches the shoulder-first variant's delayed knees.
+    const worldDrop = taller ? solution.tallerSinkWorld * bodyBlend : 0; // Solver uses the true leg/anatomy length, not guessed full-body units.
+    const bodyScale = Math.max(.001, Math.abs(Number(actor.visualOffset?.scale?.y) || 1));
+    const localDrop = worldDrop / bodyScale;
+    const torsoBow = participant ? (taller ? solution.tallerBowDeg * bodyBlend : 3 * blend) * Math.PI / 180 : 0;
+
+    feet.setStanceDropLimitFraction?.(taller ? MULTI_KISS_LEG_LIMIT_V1548 : .55);
+    feet.setStanceDrop?.(localDrop, true);
+    feet.update?.(frameDelta, strideSpeed, false, null); // The same gait and knee solve automatically deforms worn pants.
+    const actualDrop = feet.getStanceDrop?.() || 0; // Portrait and hands must follow what the real knee achieved.
+    model.position.y = rest.modelY - actualDrop;
+    model.rotation.x = rest.modelPitch + torsoBow; // The torso bows; the planted feet never pitch or drop through the floor.
+    if (hands?.group && handRest) {
+      hands.group.position.y = handRest.y - actualDrop;
+      hands.group.rotation.x = handRest.pitch + torsoBow;
+      hands.applyOwnedPose?.(); // A scrubbed kiss poses GLB hands immediately, not only on the next animation frame.
+    }
+    model.updateMatrixWorld?.(true);
+    feet.pants?.update?.(); // Belt uses the just-updated torso transform; trouser legs use real hip/knee/ankle positions.
+    actor.previewAnatomyV1548 = {
+      requestedWorldDrop: worldDrop,
+      appliedWorldDrop: actualDrop * bodyScale,
+      torsoBowDegrees: torsoBow * 180 / Math.PI,
+      pants: !!actor.rigPantsPreview,
+      legs: !!feet.group?.parent,
+      gaitSpeed: Number(strideSpeed.toFixed(3)),
+      hands: !!hands?.group?.parent,
+      feetGrounded: (!participant || !solution.shorterPosteriorGrip || taller) &&
+        Math.abs(Number(actor.root.position.y) || 0) < .001 && Math.abs(Number(actor.root.rotation.x) || 0) < .001,
+      posteriorJump: participant && !taller && solution.shorterPosteriorGrip,
+      jumpHeightWorld: participant && !taller ? actor.root.position.y : 0, // Mobile diagnostics distinguish a deliberate airborne straddle from an accidental foot lift.
+    }; // Available through fullBodyDiagnostics for mobile troubleshooting.
+  }
+}
+
+// V15.50: the initiator's actual hand meshes seek the partner's authored
+// shoulder coordinates through the same hand rig used in live gameplay.
+// Hand placement happens AFTER both actors' knees/bows update, otherwise the
+// target is one frame behind the position the player actually sees.
+function configuredKissPairV1550() {
+  const leader = actorById(animationAuthor.kissInitiatorActorIdV1550) || romanticDancePair().leader; // Pinned initiator, including imported clips.
+  const partner = animationAuthor.actors.find(actor => actor.source?.type === 'npc' && actor !== leader) || null;
+  return { leader, partner };
+}
+
+function installInitiatorShoulderContactV1550(initiator, target, time, solution) {
+  const hands = initiator?.model?.userData?.proceduralHandRig; // Initiator's existing species/gender hand sockets.
+  const targetHands = target?.model?.userData?.proceduralHandRig; // Actual shoulder coordinates on the intended partner, never guessed portrait edges.
+  if (!hands?.setPoseProvider || !targetHands?.shoulderPositionLocal) return false;
+  if (initiator.multiKissHandContactRigV1550 !== hands) {
+    initiator.multiKissHandContactScratchV1550 = { THREE: state.three.THREE }; // The author imports Three as a module rather than exposing it on window.
+    hands.setPoseProvider(MULTI_HAND_KISS_OWNER_V1548, () => {
+      const actorTime = Number(initiator.multiKissHandContactTimeV1550) || 0; // Resolves timeline scrubs without frame-dependent motion accumulation.
+      initiator.multiKissHandContactV1550 = window.SpouseKissMotion.applyInitiatorShoulderHands(
+        hands, targetHands, actorTime, solution.taller === 'second',
+        initiator.multiKissHandContactScratchV1550,
+      );
+    }); // Pose owner keeps shoulder grasps authoritative through the render-time hand driver.
+    initiator.multiKissHandContactRigV1550 = hands;
+  }
+  initiator.multiKissHandContactTimeV1550 = time;
+  hands.applyOwnedPose?.(); // Immediate update on slider/touch scrubs, not merely on next render.
+  return true;
+}
+
+const beforeShoulderHandSyncV1550 = syncMultiAvatarFullBodiesV1548;
+syncMultiAvatarFullBodiesV1548 = function(time = animationAuthor.currentTime, dt = 0) {
+  const result = beforeShoulderHandSyncV1550(time, dt); // First resolve both actors' knees, body bow and authored upward jump.
+  if (animationAuthor.mode === 'multi' && animationAuthor.multiPreset === 'kiss') {
+    const { leader, partner } = configuredKissPairV1550(); // Initiator remains Pahu even when Leaf is selected in the timeline.
+    const solution = animationAuthor.kissHeightSolutionV1546;
+    if (leader && partner && solution) {
+      if (solution.shorterPosteriorGrip) {
+        const taller = solution.taller === 'first' ? leader : partner; // Real posterior anchor stays on the taller leg handle.
+        const shorter = taller === leader ? partner : leader;
+        const jumperFeet = shorter.rigFeetPreview;
+        const actualJump = Number(shorter.root.position.y) || 0;
+        const jumpFraction = solution.shorterJumpWorld > .001 ? Math.max(0, Math.min(1, actualJump / solution.shorterJumpWorld)) : 0;
+        const scratch = shorter.multiKissJumpScratchV1551 || (shorter.multiKissJumpScratchV1551 = {}); // Stable vector storage reused while scrubbing.
+        scratch.posteriorLocalOffsetY = -(taller.rigFeetPreview?.getStanceDrop?.() || 0); // In the author only the portrait is lowered; actual game rig roots already move with the pelvis.
+        const targets = window.SpouseKissMotion.posteriorStraddleFootTargets(
+          state.three.THREE, taller.rigFeetPreview, jumperFeet, solution, jumpFraction, scratch,
+        );
+        let reachExcess = 0; // Mobile-readable proof that the planted soles can reach the taller posterior without stretching legs.
+        const footReachDetail = {}; // Per-leg world deltas identify whether a too-short leg missed sideways, upward or forward.
+        if (targets && jumperFeet?.group) {
+          const anatomy = jumperFeet.motionAnatomy?.() || [];
+          const legLength = anatomy.length ? Math.min(...anatomy.map(item => Number(item.length) || 0)) *
+            Math.max(.001, Math.abs(Number(shorter.visualOffset?.scale?.y) || 1)) : 0;
+          const stance = jumperFeet.getRestStance?.();
+          if (legLength > 0 && stance) for (const side of ['left', 'right']) {
+            const hip = stance[side]?.hip; // Each individual leg's authored hip socket, not the sprite-plane center.
+            if (!hip) continue;
+            const source = new state.three.THREE.Vector3(hip.x, hip.y, hip.z);
+            jumperFeet.group.localToWorld(source);
+            const delta = targets[side].clone().sub(source); // Signed world offset from the genuine small hip socket to the desired planted foot.
+            footReachDetail[side] = { dx: Number(delta.x.toFixed(4)), dy: Number(delta.y.toFixed(4)),
+              dz: Number(delta.z.toFixed(4)), distance: Number(delta.length().toFixed(4)),
+              legLength: Number(legLength.toFixed(4)) };
+            reachExcess = Math.max(reachExcess, delta.length() - legLength); // Positive means the requested foot target is unreachable.
+          }
+        }
+        jumperFeet?.setExternalFootTargets?.(targets, { allowDeepFold: true }); // Each genuine leg IK chain grips its own side of the posterior.
+        if (targets) jumperFeet.applyWorldFootTargets?.(targets, null, false, true); // Update on scrub, not one render frame late.
+        shorter.rigPantsPreview?.update?.(); // Worn garment follows both real knee and ankle bones.
+        shorter.previewAnatomyV1548.jumpFeetAnchored = !!targets;
+        shorter.previewAnatomyV1548.jumpFootDistance = targets ? targets.left.distanceTo(targets.right) : 0;
+        shorter.previewAnatomyV1548.jumpFootReachExcessWorld = Number(reachExcess.toFixed(5)); // 0 means the posterior feet fit the species' real leg lengths.
+        shorter.previewAnatomyV1548.jumpFootReachDetail = footReachDetail; // Exposes each hip-to-ankle world delta without browser console access.
+      } else {
+        for (const actor of [leader, partner]) actor.rigFeetPreview?.setExternalFootTargets?.(null); // A new non-jump preset must release old foot targets.
+      }
+      installInitiatorShoulderContactV1550(leader, partner, time, solution);
+      const mouthScratch = animationAuthor.kissMouthScratchV1552 ||
+        (animationAuthor.kissMouthScratchV1552 = { THREE: state.three.THREE }); // Persistent head pivots and skinned lip frames across slider scrub.
+      animationAuthor.kissMouthContactV1552 = window.SpouseKissMotion.syncMouthContact(
+        leader.model, partner.model, time, mouthScratch,
+      ); // Final small neck reach happens AFTER torso lowering + shoulder grip; actor X/Z tracks never change.
+      // The noninitiating partner retains the existing idle/embrace hand pose.
+      // For a shorter initiator the shoulder projection engages at .13–.37 s,
+      // before the taller partner begins kneeling at .52 s.
+    }
+  } else {
+    if (animationAuthor.kissMouthScratchV1552) {
+      window.SpouseKissMotion.syncMouthContact(null, null, 0, animationAuthor.kissMouthScratchV1552); // Restore both original neck joint offsets when leaving Kiss.
+      animationAuthor.kissMouthScratchV1552 = null;
+      animationAuthor.kissMouthContactV1552 = null;
+    }
+    for (const actor of animationAuthor.actors) {
+      actor.rigFeetPreview?.setExternalFootTargets?.(null); // Restore normal gait when leaving the kiss, switching mode or opening another preset.
+      actor.multiKissHandContactRigV1550 = null; // A subsequent Kiss must reinstall its grip provider after dance/mode changes.
+      actor.multiKissHandContactV1550 = null;
+    }
+  }
+  return result;
+};
+
+let fullBodyTickActiveV1548 = false; // Prevents recomputing both actors' legs twice when gameplay-style playback advances a frame.
+const beforeMultiEvaluateV1548 = evaluateAnimationAtTime;
+evaluateAnimationAtTime = function(time) {
+  const result = beforeMultiEvaluateV1548(time);
+  if (animationAuthor.mode === 'multi' && !fullBodyTickActiveV1548) syncMultiAvatarFullBodiesV1548(time, 0); // Slider seeks and imports update all four limbs.
+  return result;
+};
+
+const beforeMultiTickV1548 = tickAnimationAuthor;
+tickAnimationAuthor = function(dt) {
+  fullBodyTickActiveV1548 = true;
+  let result;
+  try { result = beforeMultiTickV1548(dt); }
+  finally { fullBodyTickActiveV1548 = false; }
+  if (animationAuthor.mode === 'multi') syncMultiAvatarFullBodiesV1548(animationAuthor.currentTime, dt); // The body tick runs exactly once after timeline evaluation.
+  return result;
+};
+
+const beforeMultiKissApplyV1548 = applyKissPresetV1546;
+applyKissPresetV1546 = function() {
+  const result = beforeMultiKissApplyV1548();
+  if (result) syncMultiAvatarFullBodiesV1548(0);
+  return result;
+};
+
+const beforeMultiModeV1548 = setAnimationAuthorMode;
+setAnimationAuthorMode = async function(mode) {
+  const result = await beforeMultiModeV1548(mode);
+  // The primary mode-root visibility remains owned by the existing editor.
+  // Drop any kiss-only hand ownership when switching to another workspace.
+  syncMultiAvatarFullBodiesV1548(animationAuthor.currentTime, 0);
+  return result;
+};
+
+const beforeMultiRemoveV1548 = removeAnimationActor;
+removeAnimationActor = function(id) {
+  const actor = actorById(id);
+  actor?.multiKissHandRigV1548?.setPoseProvider?.(MULTI_HAND_KISS_OWNER_V1548, null);
+  actor?.rigFeetPreview?.setExternalFootTargets?.(null);
+  return beforeMultiRemoveV1548(id);
+};
+
+const beforeMultiClearV1548 = clearAnimationActors;
+clearAnimationActors = function() {
+  animationAuthor.kissInitiatorActorIdV1550 = null; // New/cleared scenes must explicitly choose a fresh initiator.
+  for (const actor of animationAuthor.actors) {
+    actor.rigFeetPreview?.setExternalFootTargets?.(null); // Nothing remains attached to an obsolete posterior after actor removal.
+    actor.multiKissHandRigV1548?.setPoseProvider?.(MULTI_HAND_KISS_OWNER_V1548, null);
+  }
+  return beforeMultiClearV1548();
+};
+
+function fullCharacterPreviewDiagnosticsV1548() {
+  return animationAuthor.actors.filter(actor => actor.source?.type === 'npc').map(actor => ({
+    name: actor.label,
+    preview: { ...(actor.previewAnatomyV1548 || {}) },
+    handRig: !!actor.model?.userData?.proceduralHandRig?.group?.parent,
+    feet: !!actor.rigFeetPreview?.group?.parent,
+    pants: !!actor.rigPantsPreview,
+    kneeDrop: actor.rigFeetPreview?.getStanceDrop?.() || 0,
+    initiatorHands: actor.multiKissHandContactV1550 || null, // On-device reach/clamp/engagement diagnostics for the currently selected kiss initiator.
+    lipContact: animationAuthor.kissMouthContactV1552 || null, // Measured skinned mouth distance, not a proxy based on actor root coordinates.
+  }));
+}
+
+const beforeKissPrepareV1546 = prepareMultiAvatarAnimationAuthor;
+prepareMultiAvatarAnimationAuthor = function() {
+  const value = beforeKissPrepareV1546();
+  installKissPresetUiV1546();
+  return value;
+};
+installKissPresetUiV1546(); // The author initialized earlier in the same script; install immediately too.
+if (window.MultiAvatarAnimationAuthor) {
+  window.MultiAvatarAnimationAuthor.version = '15.52';
+  window.MultiAvatarAnimationAuthor.fullBodyDiagnostics = fullCharacterPreviewDiagnosticsV1548;
+  window.MultiAvatarAnimationAuthor.kissMouthDiagnostics = () => animationAuthor.kissMouthContactV1552 || null; // Touch-only diagnostics for actual lip contact and remaining distance.
+  window.MultiAvatarAnimationAuthor.kissPairDiagnostics = () => {
+    const pair = configuredKissPairV1550(); // Exposes pinned initiator, not the currently inspected actor.
+    return {
+      initiator: pair.leader?.source?.id || null,
+      partner: pair.partner?.source?.id || null,
+      taller: animationAuthor.kissHeightSolutionV1546?.taller || null,
+      firstHeight: animationAuthor.kissHeightSolutionV1546?.firstHeight || null,
+      secondHeight: animationAuthor.kissHeightSolutionV1546?.secondHeight || null,
+      posteriorJump: !!animationAuthor.kissHeightSolutionV1546?.shorterPosteriorGrip,
+      jumpWorld: animationAuthor.kissHeightSolutionV1546?.shorterJumpWorld || 0,
+    };
+  };
+  window.MultiAvatarAnimationAuthor.kissFacingDiagnostics = () => animationAuthor.actors
+    .filter(actor => actor.source?.type === 'npc')
+    .map(actor => {
+      const THREE = state.three.THREE; // On-device and browser-test rotation diagnostics.
+      const rootUp = new THREE.Vector3(0, 1, 0).applyQuaternion(actor.root.getWorldQuaternion(new THREE.Quaternion()));
+      const portraitUp = actor.model
+        ? new THREE.Vector3(0, 1, 0).applyQuaternion(actor.model.getWorldQuaternion(new THREE.Quaternion()))
+        : null;
+      return {
+        name: actor.label,
+        time: animationAuthor.currentTime,
+        authoredRotationDeg: { ...sampleActorTransform(actor, animationAuthor.currentTime).rotationDeg },
+        rootRotationDeg: {
+          x: radToDeg(actor.root.rotation.x), y: radToDeg(actor.root.rotation.y), z: radToDeg(actor.root.rotation.z),
+        },
+        worldUpY: rootUp.y,
+        portraitUpY: portraitUp?.y ?? null,
+        body: actor.previewAnatomyV1548 || null,
+      };
+    });
+  window.MultiAvatarAnimationAuthor.tick = tickAnimationAuthor; // The public author API was created before the V15.48 preview wrapper.
+  window.MultiAvatarAnimationAuthor.setMode = setAnimationAuthorMode;
+  window.MultiAvatarAnimationAuthor.parseSceneUrl = parseAnimationUrlSceneV1547;
+  window.MultiAvatarAnimationAuthor.getSceneLink = currentAnimationSceneUrlV1547;
+  window.MultiAvatarAnimationAuthor.applyKissPreset = applyKissPresetV1546;
+  window.MultiAvatarAnimationAuthor.importProject = importAnimationProjectData;
+}
+document.title = 'Hobunji Animation Author V15.51';
+animationAuthor.recentChange = 'V15.51 restores a small space between kissing faces and gives dramatically shorter partners a two-foot, posterior-anchored jump with live knee/pants IK.';
+animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
+log('V15.51 kiss spacing adjusted; the smaller partner straddles the tall posterior only when kneeling alone cannot align their mouths comfortably.');
 
 })();
 </script>

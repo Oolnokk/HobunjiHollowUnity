@@ -26,6 +26,8 @@
   const num = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
   const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, value));
   const TICK_MS = 250; // Genuinely low-frequency bookkeeping (follow catch-up, area hops, timers); see runtime-frame-scheduler.md.
+  const KISS_BUFF_HOURS = 24; // A kiss refreshes, never stacks, a full day of the Beloved blessing.
+  const KISS_STAMINA_REGEN_MULTIPLIER = 1.10; // Small passive benefit while the 24-hour Beloved status is active.
 
   // Activity → like-id rules. `targeted` likes are aimed at the date
   // themselves (a drink, a dance together), so they skip the proximity check.
@@ -59,6 +61,8 @@
   let deps = null;
   let state = defaultState();
   let tickTimer = 0;
+  let kissBuffHudRegistered = false; // Ensures the shared effect bar has one persistent romance provider.
+  let kissBuffStatsRegistered = false; // Ensures ResourceSystem receives only one player-only multiplier.
   let activeScript = null; // Current synthetic conversation (see converse()).
   const debug = { lastLike: null, lastLoss: null, lastDateEnd: null, lastWedding: null };
 
@@ -71,6 +75,7 @@
       lastDatedNpcId: null, // Last person the player actually started a date with; persists independently of the active date.
       engagement: null, // { npcId, proposedRawDay, weddingFromRawDay }
       spouse: null, // { npcId, marriedRawDay, marriedHourStamp }
+      kissBuff: null, // { npcId, startedAtHour, expiresAtHour }; serialized with this member's romance state.
       family: null, // owned by js/romance-family.js
     };
   }
@@ -463,6 +468,7 @@
     weddingInProgress = false;
     state.engagement = null;
     state.spouse = { npcId, marriedRawDay: rawDay(), marriedHourStamp: hourStamp() };
+    state.kissBuff = null; // A new marriage never inherits another spouse's timed bonus.
     debug.lastWedding = { npcId, rawDay: rawDay(), at: Date.now() };
     window.DialogueContent?.recordNpcMemory?.(npcId, 'married');
     toast(`💒 You married ${npcName(npcId)}! They'll move into the farmhouse.`, true);
@@ -632,8 +638,68 @@
       }
     }
     maybeStartWedding();
+    installKissBuffProviders();
+    if (state.kissBuff) {
+      if (remainingKissHours() <= 0) {
+        state.kissBuff = null; // Clear an expired effect without carrying a stale icon into future saves.
+        persist();
+        window.EffectBuffBar?.refresh?.(true);
+      } else window.EffectBuffBar?.refresh?.(); // Refresh the remaining in-game-hours indicator during the active buff.
+    }
     window.RomanceWedding?.tick?.(deps.getCurrentArea?.());
     window.RomanceFamily?.tick?.();
+  }
+
+  // ── Spouse kiss, full-day buff, and shared HUD/stat providers ──────────
+  function remainingKissHours() {
+    if (!state.spouse || state.kissBuff?.npcId !== state.spouse.npcId) return 0;
+    const expires = Number(state.kissBuff.expiresAtHour); // Serialized in-game hour timestamp, not wall-clock milliseconds.
+    return Number.isFinite(expires) ? Math.max(0, expires - hourStamp()) : 0;
+  }
+
+  function completeSpouseKiss(npcId) {
+    if (!npcId || state.spouse?.npcId !== npcId) return false;
+    const startedAtHour = hourStamp();
+    state.kissBuff = { npcId, startedAtHour, expiresAtHour: startedAtHour + KISS_BUFF_HOURS };
+    persist();
+    window.EffectBuffBar?.refresh?.(true);
+    window.InventoryCharacterEffects?.refresh?.();
+    toast('💗 Beloved — +10% Stamina recovery for 24 in-game hours.', true);
+    window.HobunjiActivityEvents?.emit?.('spouse_kissed', { npcId, durationHours: KISS_BUFF_HOURS });
+    return true;
+  }
+
+  function kissSpouse(walker) {
+    const npcId = walker?.rec?.id; // The held-Action-1 command wheel passes the real visible spouse walker.
+    if (!npcId || npcId !== state.spouse?.npcId) return false;
+    const runtime = window.SpouseKissMotion;
+    if (!runtime?.start) { toast('The kiss animation is unavailable.', false); return false; }
+    runtime.init?.();
+    const started = runtime.start(walker, () => completeSpouseKiss(npcId));
+    if (!started) {
+      const reason = runtime.diagnostics?.().lastError || 'out-of-range';
+      toast('Move close to your spouse while both of you are standing (' + reason.replace(/-/g, ' ') + ').', false);
+    }
+    return !!started;
+  }
+
+  function installKissBuffProviders() {
+    if (!kissBuffHudRegistered && window.EffectBuffBar?.registerProvider) {
+      kissBuffHudRegistered = !!window.EffectBuffBar.registerProvider('romance-spouse-kiss', () => {
+        const remaining = remainingKissHours();
+        return remaining > 0 ? [{
+          id: 'beloved', icon: '💗', label: 'Beloved (+10% Stamina recovery)',
+          sourceLabel: 'Spouse kiss', durationS: KISS_BUFF_HOURS * 3600,
+          remainingS: remaining * 3600,
+        }] : [];
+      });
+    }
+    if (!kissBuffStatsRegistered && window.ResourceSystem?.registerStatModifierProvider) {
+      window.ResourceSystem.registerStatModifierProvider((entity, key) =>
+        key === 'staminaRegen' && entity === window.Combat?.deps?.player && remainingKissHours() > 0
+          ? KISS_STAMINA_REGEN_MULTIPLIER : 1);
+      kissBuffStatsRegistered = true;
+    }
   }
 
   // ── Command wheel options (consumed by js/npc-command-wheel.js) ───────
@@ -641,6 +707,9 @@
     const npcId = walker?.rec?.id;
     if (!npcId || walker._doorstepVisitor) return [];
     const options = [];
+    if (state.spouse?.npcId === npcId) {
+      options.push({ id: 'spouse_kiss', icon: '💋', label: 'Kiss', run: () => kissSpouse(walker) });
+    }
     if (isOnDateWith(npcId)) {
       const mode = state.date.mode;
       options.push({ id: 'follow', icon: '👣', label: mode === 'follow' ? 'Following' : 'Follow', active: mode === 'follow', run: () => setDateMode('follow') });
@@ -672,6 +741,8 @@
     window.NpcFollowing?.clear?.();
     const base = defaultState();
     state = saved && typeof saved === 'object' ? { ...base, ...saved, dateCounts: { ...(saved.dateCounts || {}) }, lastDateRawDay: { ...(saved.lastDateRawDay || {}) } } : base;
+    if (state.kissBuff && (!state.spouse || state.kissBuff.npcId !== state.spouse.npcId ||
+      !Number.isFinite(Number(state.kissBuff.expiresAtHour)))) state.kissBuff = null;
     if (state.date && !Number.isFinite(Number(state.date.endHour))) state.date = null;
     if (state.date) {
       state.date.likeCounts = { ...(state.date.likeCounts || {}) };
@@ -689,6 +760,8 @@
     window.HobunjiActivityEvents?.on?.(onActivity);
     window.RomanceFamily?.init?.(api);
     window.RomanceWedding?.init?.(deps);
+    window.SpouseKissMotion?.init?.();
+    installKissBuffProviders();
     if (!tickTimer) tickTimer = setInterval(() => { try { tick(); } catch (error) { console.warn('[RomanceSystem] tick failed', error); } }, TICK_MS);
     return api;
   }
@@ -700,6 +773,13 @@
       lastDatedNpcId: getLastDatedNpcId(), // Mobile diagnostic: last romantic form of address follows this NPC after the date.
       engagement: state.engagement ? { ...state.engagement } : null,
       spouse: state.spouse ? { ...state.spouse } : null,
+      spouseKiss: {
+        active: remainingKissHours() > 0,
+        remainingHours: Math.round(remainingKissHours() * 100) / 100,
+        expiry: state.kissBuff?.expiresAtHour || null,
+        motion: window.SpouseKissMotion?.diagnostics?.() || null,
+        statProviderRegistered: kissBuffStatsRegistered, hudProviderRegistered: kissBuffHudRegistered,
+      },
       family: window.RomanceFamily?.snapshot?.() || null,
       debug: { ...debug },
       followerSafety: window.NpcFollowing?.snapshot?.() || null, // Mobile-friendly combat cover and follower diagnostics.
@@ -729,6 +809,9 @@
     engage,
     completeWedding,
     getSpouse: () => state.spouse ? { ...state.spouse } : null,
+    kissSpouse,
+    remainingKissHours,
+    completeSpouseKiss, // Exposed for deterministic gameplay/test contact assertions.
     getLastDatedNpcId, // Single source of truth for former-partner forms of address, including restored saves.
     spouseDialogueFor, // Event-time read: no mutation of saved NPC nicknames or their authored dialogue.
     spouseTownVisitNow, // Farmwork and town scheduling agree on the same visit window.

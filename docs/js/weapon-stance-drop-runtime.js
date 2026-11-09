@@ -67,6 +67,14 @@
     const composerChanged = composer !== lastComposer || playerMesh !== lastPlayerMesh;
     lastComposer = composer;
     lastPlayerMesh = playerMesh;
+    if (global.CharacterActionLocks?.isLocked?.('player', 'pose')) {
+      // Paired animations (festival dance, spouse kiss) own the real knees, pants and yaw.
+      // A weapon/tool's idle stance must not replace their knee depth or leg twist AFTER the pose frame.
+      composer.clearChannel(CHANNEL);
+      lastDrop = 0; // Forces the normal weapon sink to be recalculated on the first unlocked frame.
+      lastReason = 'paired-pose-owned'; // Exposed in mobile diagnostics for a pose/weapon conflict.
+      return;
+    }
 
     const ownsBody = global.ImpactRagdollPlayback?.isActive?.() || global.PlayerCrawl?.isActive?.(); // Ragdoll / crawl write their own leg and body pose.
     if (ownsBody || !enabled()) {

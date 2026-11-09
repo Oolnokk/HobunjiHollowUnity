@@ -29,6 +29,14 @@
       return;
     }
 
+    if (global.CharacterActionLocks?.isLocked?.('player', 'pose')) {
+      composer.clearChannel(CHANNEL); // Festival dance and spouse kiss author facing independently of the equipped tool.
+      lastYawDeg = null; // Re-publish the idle stance when the paired action releases its ownership.
+      lastComposer = composer;
+      lastPlayerMesh = composer.getPlayerMesh?.() || null;
+      lastReason = 'paired-pose-owned'; // Mobile diagnostics distinguish this intentional suppression from a missing stance.
+      return;
+    }
     const resolved = stances.idleBodyYawSnapshot(idleState);
     const playerMesh = composer.getPlayerMesh?.() || null;
     const composerChanged = composer !== lastComposer || playerMesh !== lastPlayerMesh;

@@ -913,6 +913,7 @@
       hoverPhase: 0, // Slow continuous phase drives loose left/right dangling asymmetry without depending on walking speed.
       hoverStrength: 0, // Damped 0→1 blend prevents feet snapping between planted gait and the airborne pose.
       stanceDropTarget: 0, // Requested hip lowering (root-local units) from a weapon stance; ignored while seated/suppressed/airborne.
+      stanceDropLimitFraction: 0.55, // Default stance cap; paired kisses may temporarily deepen this to a physically grounded kneel.
       stanceSplitBias: 0.35, // -1..1: which foot leads under a sunk stance (+1 = the right/+X foot forward, -1 = the left); fed from body yaw so the leg on the side away from the turn steps forward.
       stanceYawRad: 0, // The body's twist under the stance; the leading leg counter-rotates about its hip by this so its foot points forward.
       splitZ: { left: 0, right: 0 }, // Forward(+)/back(-) foot offsets currently applied, in root-local units.
@@ -1061,7 +1062,7 @@
     // feet are lifted toward them: applyLegChain's fixed-length fold then bends the knees instead of shortening the legs. Raising
     // the group (rather than counter-moving it at render time) keeps everything skinned to these joints, i.e. the pants, in the same frame.
     function applyStanceDrop(drop) {
-      const clamped = Math.max(0, Math.min(drop, standingLegLength() * 0.55)); // Beyond ~55% of the leg the fold would read as a sit, not a stance.
+      const clamped = Math.max(0, Math.min(drop, standingLegLength() * state.stanceDropLimitFraction)); // Normal stances cap at 55%; an explicit paired kneel may bend deeper.
       if (Math.abs(clamped - state.stanceDrop) < 1e-6 && Math.abs(root.position.y - clamped) < 1e-6) return;
       state.stanceDrop = clamped;
       root.position.y = clamped;
@@ -1439,7 +1440,7 @@
         ankle:new THREE.Vector3(side==='left'?state.idleLeftX:state.idleRightX,state[`${side}ContactY`],0),
         length:Math.max(.001,Math.abs(posteriorY-state[`${side}ContactY`])),bend:{...legBend[side]}})); // Captured once when a paired action starts, including the actual posterior and GLB sole offset.
     }
-    function applyWorldFootTargets(targets,footWorldQuaternion=null,allowExtendedReach=false) {
+    function applyWorldFootTargets(targets,footWorldQuaternion=null,allowExtendedReach=false,allowDeepFold=false) {
       if(state.disposed || !window.LegBones)return false;
       root.updateWorldMatrix(true,false);
       pairedBend ||= new THREE.Euler(); // Lazily initialized only for an explicitly owned paired pose.
@@ -1449,7 +1450,7 @@
         root.worldToLocal(pairedFootLocal.copy(target));
         const length=Math.max(.001,Math.abs(posteriorY-state[`${side}ContactY`])); // Rest segment length also handles authored posteriors below the sprite root; never use a signed height as a length.
         const distance=pairedFootLocal.distanceTo(chain.hip.position); // Knee flex stays below 90 degrees; targets never lengthen the leg.
-        if(distance>1e-8 && !allowExtendedReach)pairedFootLocal.sub(chain.hip.position).multiplyScalar(Math.max(length*.72,Math.min(length*.999,distance))/distance).add(chain.hip.position); // Grapple-only override retains the real portrait contact instead of clamping it to a short walking leg.
+        if(distance>1e-8 && !allowExtendedReach)pairedFootLocal.sub(chain.hip.position).multiplyScalar(Math.max(length*(allowDeepFold?.05:.72),Math.min(length*.999,distance))/distance).add(chain.hip.position); // Paired posterior contacts can fold deeply; the same fixed-length bones still never overextend.
         pairedForward.set(0,0,1).applyEuler(pairedBend.set(legBend[side].x*Math.PI/180,0,legBend[side].z*Math.PI/180));
         const solved=window.LegBones.solveTwoBoneLeg(THREE,{hip:chain.hip.position,foot:pairedFootLocal,foldMaxLength:length,foldForward:pairedForward}); // Beyond rest length the shared solver extends the two bones precisely to the world target. // Shared fixed-length two-bone solve; authored bend chooses the safe forward pole.
         chain.thigh.position.set(0,0,0);
@@ -1472,9 +1473,11 @@
 
     let externalFootTargets = null; // Optional per-foot world coordinates, owned by a grapple/mount/cutscene until cleared.
     let externalFootExtendedReach = false; // Opt-in: Headtaker feet must reach the real portrait surface; other users retain fixed walking limb length.
+    let externalFootDeepFold = false; // Opt-in: petite partners fold knees around a spouse posterior without changing regular grounded gait.
     function setExternalFootTargets(targets, options = null) {
       externalFootTargets = targets?.left && targets?.right ? targets : null;
       externalFootExtendedReach = !!(externalFootTargets && options?.allowExtendedReach);
+      externalFootDeepFold = !!(externalFootTargets && options?.allowDeepFold);
       if (!externalFootTargets) state.motionMode = 'idle'; // Normal gait resumes on the next update.
     }
 
@@ -1483,7 +1486,7 @@
       if (!motion?.lunging || motion?.airborne || suppressed || seatedPose) state.lungeActive = false;
       if (state.disposed) return;
       if (externalFootTargets) {
-        if (applyWorldFootTargets(externalFootTargets, null, externalFootExtendedReach)) {
+        if (applyWorldFootTargets(externalFootTargets, null, externalFootExtendedReach, externalFootDeepFold)) {
           state.motionMode = 'external-portrait-contact';
           return; // Contact on another actor's portrait outranks ordinary floor stepping.
         }
@@ -1612,6 +1615,7 @@
       if (state.disposed) return;
       state.disposed = true;
       externalFootTargets = null;
+      externalFootDeepFold = false;
       portraitGuides?.dispose();
       parent.remove(root);
       disposeObjectResources(root);
@@ -1716,6 +1720,13 @@
       // Weapon-stance lowering: the caller asks for a hip drop in root-local units (fraction of height × modelHeight, see weapon-stance-drop-runtime.js);
       // update() eases toward it and getStanceDrop() reports what is really applied so the body channel lowers by exactly the same amount.
       setStanceDrop: (units, immediate = false) => { state.stanceDropTarget = Math.max(0, Number(units) || 0); if (immediate && !state.disposed && state.stanceDropAllowed) applyStanceDrop(state.stanceDropTarget); },
+      setStanceDropLimitFraction: fraction => { // Reversible per-handle deep-kneel allowance; does not change weapon stance defaults.
+        const previous = state.stanceDropLimitFraction;
+        state.stanceDropLimitFraction = Number.isFinite(Number(fraction)) ? Math.max(.55, Math.min(.95, Number(fraction))) : .55;
+        if (state.stanceDrop > standingLegLength() * state.stanceDropLimitFraction) applyStanceDrop(state.stanceDropTarget);
+        return previous;
+      },
+      getStanceDropLimitFraction: () => state.stanceDropLimitFraction,
       getStanceDrop: () => state.stanceDrop,
       setFootDepthPush: distance => { state.footDepthPush = Math.max(0, Number(distance) || 0); },
       setStanceSplitBias: bias => { const next = Math.max(-1, Math.min(1, Number(bias) || 0)); if (Math.abs(next - state.stanceSplitBias) > 1e-6) { state.stanceSplitBias = next; if (!state.disposed && state.stanceDrop > 1e-6) applyStanceSplit(); } },

@@ -706,6 +706,10 @@
     if (npcBedPoses.length) lines.push(`NPC bed poses: ${JSON.stringify(npcBedPoses)}`);
     const pairedDance = window.FestivalWheelDanceRuntime?.diagnostics?.(); // On-demand mobile report includes the latest repair, rig failures, camera mode and garment depth.
     if (pairedDance) lines.push(`Paired dance: ${JSON.stringify(pairedDance)}`);
+    const spouseKiss = window.SpouseKissMotion?.diagnostics?.(); // Mobile-visible contact, reach, cancellation and height-solver readout.
+    if (spouseKiss) lines.push(`Spouse kiss: ${JSON.stringify(spouseKiss)}`);
+    const belovedHours = window.RomanceSystem?.remainingKissHours?.(); // Confirms in-game time remaining without a dev console.
+    if (Number.isFinite(belovedHours)) lines.push(`Beloved buff: ${belovedHours.toFixed(2)} in-game hours remaining`);
     const npcPathing = window.NpcPathfinding?.debugSnapshot?.(); // Search/blocked-move counters help distinguish a stuck sleeper from a scheduling issue.
     if (npcPathing) lines.push(`NPC pathfinding: ${JSON.stringify(npcPathing)}`);
     const following = window.NpcFollowing?.snapshot?.(); // On-demand diagnostics keep mobile reports useful without adding per-frame serialization.

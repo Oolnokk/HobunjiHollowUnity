@@ -33,7 +33,7 @@
 
   function holdAtCurrentSurface(walker, dt, options) {
     const root = walker.root;
-    walker.legs?.update?.(dt, 0, true);
+    walker.legs?.update?.(dt, 0, !window.SpouseKissMotion?.isPartner?.(walker)); // A spouse kiss locks walking, not the knees needed for its visible kneel.
     walker._legsPrevX = root.position.x;
     walker._legsPrevZ = root.position.z;
     walker._moveSpeedTiles = 0;
