@@ -19,7 +19,7 @@ window.MODULAR_WEAPON_CONFIG = {
   },
   "heads": {
     "dagger-sword": {
-      "label": "Dagger-sword Blade",
+      "label": "Mao'ao Long-blade",
       "sourceShape": "daggerSword",
       "sprite": "assets/toolsprites/modular_pieces/weaponhead_dagger-sword.png",
       "dmgType": "sharp",
@@ -36,13 +36,16 @@ window.MODULAR_WEAPON_CONFIG = {
       },
       "editorOnly": false,
       "weaponNames": {
-        "prefix": "Dagger-sword Blade",
-        "suffix": "Dagger-sword Blade"
+        "prefix": "Arrow-blade",
+        "suffix": "Arrow-bladed"
       },
-      "toolSlots": []
+      "toolSlots": [
+        "axe"
+      ],
+      "flailHeadScale": 1
     },
     "dagger": {
-      "label": "Dagger Blade",
+      "label": "Mao'ao Short-blade",
       "sourceShape": "dagger",
       "sprite": "assets/toolsprites/modular_pieces/weaponhead_dagger.png",
       "dmgType": "sharp",
@@ -58,10 +61,13 @@ window.MODULAR_WEAPON_CONFIG = {
         }
       },
       "weaponNames": {
-        "prefix": "Dagger Blade",
-        "suffix": "Dagger Blade"
+        "prefix": "Gutter",
+        "suffix": "Arrow-tipped"
       },
-      "toolSlots": []
+      "toolSlots": [
+        "pick"
+      ],
+      "flailHeadScale": 1
     },
     "fishing-mace": {
       "label": "Barb-flanged Mace Head",
@@ -80,13 +86,16 @@ window.MODULAR_WEAPON_CONFIG = {
         }
       },
       "weaponNames": {
-        "prefix": "Barb-flanged Mace",
-        "suffix": "Barb-flanged Mace"
+        "prefix": "Fishing Mace",
+        "suffix": "Barb-flanged"
       },
-      "toolSlots": []
+      "toolSlots": [
+        "harpoon"
+      ],
+      "flailHeadScale": 1
     },
     "fishing-spear": {
-      "label": "Barbed Fishing Spearhead",
+      "label": "Barbed Spearhead",
       "sourceShape": "fishingspear",
       "sprite": "assets/toolsprites/modular_pieces/weaponhead_fishing_spear.png",
       "dmgType": "sharp",
@@ -102,12 +111,13 @@ window.MODULAR_WEAPON_CONFIG = {
         }
       },
       "weaponNames": {
-        "prefix": "Barbed Fishing",
-        "suffix": "Barbed Fishing"
+        "prefix": "Hide-catcher",
+        "suffix": "Barbed"
       },
       "toolSlots": [
-        "harpoon"
-      ]
+        "axe"
+      ],
+      "flailHeadScale": 1
     },
     "harlyao-broadsword": {
       "label": "Harlyao-style Broad-blade",
@@ -126,10 +136,13 @@ window.MODULAR_WEAPON_CONFIG = {
         }
       },
       "weaponNames": {
-        "prefix": "Harlyao-style Broad-blade",
-        "suffix": "Harlyao-style Broad-blade"
+        "prefix": "Hilted Slasher",
+        "suffix": "Hilted Broad-bladed"
       },
-      "toolSlots": []
+      "toolSlots": [
+        "axe"
+      ],
+      "flailHeadScale": 1
     },
     "harlyao-longsword": {
       "label": "Harlyao-style Long-blade",
@@ -148,10 +161,11 @@ window.MODULAR_WEAPON_CONFIG = {
         }
       },
       "weaponNames": {
-        "prefix": "Harlyao-style Long-blade",
-        "suffix": "Harlyao-style Long-blade"
+        "prefix": "Hilted Slicer",
+        "suffix": "Hilted Long-bladed"
       },
-      "toolSlots": []
+      "toolSlots": [],
+      "flailHeadScale": 1
     },
     "hatchet": {
       "label": "Hatchet Head",
@@ -170,12 +184,13 @@ window.MODULAR_WEAPON_CONFIG = {
         }
       },
       "weaponNames": {
-        "prefix": "Hatchet",
-        "suffix": "Hatchet"
+        "prefix": "Hacker",
+        "suffix": "Hatchet-headed"
       },
       "toolSlots": [
         "axe"
-      ]
+      ],
+      "flailHeadScale": 1
     },
     "hoe": {
       "label": "Hoe Blade",
@@ -195,12 +210,13 @@ window.MODULAR_WEAPON_CONFIG = {
       },
       "mountNote": "Eye mount: transverse hoe blade attaches through a sleeve.",
       "weaponNames": {
-        "prefix": "Hoe Blade",
-        "suffix": "Hoe Blade"
+        "prefix": "Tiller",
+        "suffix": "Hoe-bladed"
       },
       "toolSlots": [
         "hoe"
-      ]
+      ],
+      "flailHeadScale": 1
     },
     "kylie": {
       "label": "Kylie Head",
@@ -223,7 +239,8 @@ window.MODULAR_WEAPON_CONFIG = {
         "prefix": "Kylie",
         "suffix": "Kylie"
       },
-      "toolSlots": []
+      "toolSlots": [],
+      "flailHeadScale": 1
     },
     "pick-shovel-pick": {
       "label": "Pick Head",
@@ -243,12 +260,13 @@ window.MODULAR_WEAPON_CONFIG = {
       },
       "mountNote": "Straight original eye line (not a rotated tang); the Pick-Shovel haft now has an additional centered, perpendicular tang at this location.",
       "weaponNames": {
-        "prefix": "Pick",
-        "suffix": "Pick"
+        "prefix": "Picker",
+        "suffix": "Pick-headed"
       },
       "toolSlots": [
         "pick"
-      ]
+      ],
+      "flailHeadScale": 1
     },
     "pickshovel-scoop": {
       "label": "Shovel Scoop",
@@ -268,15 +286,16 @@ window.MODULAR_WEAPON_CONFIG = {
       },
       "mountNote": "Tang mount: shovel bowl must remain clear of the haft.",
       "weaponNames": {
-        "prefix": "Shovel Scoop",
-        "suffix": "Shovel Scoop"
+        "prefix": "Scooper",
+        "suffix": "Shovel-headed"
       },
       "toolSlots": [
         "shovel"
-      ]
+      ],
+      "flailHeadScale": 1
     },
     "plains-blade": {
-      "label": "Plains Blade",
+      "label": "Oliphanti Broad-tipped Blade",
       "sourceShape": "plainsSword",
       "sprite": "assets/toolsprites/modular_pieces/weaponhead_plains-blade.png",
       "dmgType": "sharp",
@@ -292,13 +311,14 @@ window.MODULAR_WEAPON_CONFIG = {
         }
       },
       "weaponNames": {
-        "prefix": "Plains Blade",
-        "suffix": "Plains Blade"
+        "prefix": "Slayer's Blade",
+        "suffix": "Broad-tipped"
       },
-      "toolSlots": []
+      "toolSlots": [],
+      "flailHeadScale": 1
     },
     "porakaneki-greatclub": {
-      "label": "Porakaneki Greatclub Head",
+      "label": "Spiked Wooden Head",
       "sourceShape": "porakanekiGreatclub",
       "sprite": "assets/toolsprites/modular_pieces/weaponhead_porakaneki_greatclub.png",
       "dmgType": "sharp",
@@ -314,10 +334,13 @@ window.MODULAR_WEAPON_CONFIG = {
         }
       },
       "weaponNames": {
-        "prefix": "Porakaneki Greatclub",
-        "suffix": "Porakaneki Greatclub"
+        "prefix": "Bonker",
+        "suffix": "Spiked"
       },
-      "toolSlots": []
+      "toolSlots": [
+        "pick"
+      ],
+      "flailHeadScale": 1
     },
     "war-cleaver": {
       "label": "War-cleaver Blade",
@@ -337,10 +360,11 @@ window.MODULAR_WEAPON_CONFIG = {
       },
       "editorOnly": false,
       "weaponNames": {
-        "prefix": "War-cleaver Blade",
-        "suffix": "War-cleaver Blade"
+        "prefix": "Dicer",
+        "suffix": "Cleaver-bladed"
       },
-      "toolSlots": []
+      "toolSlots": [],
+      "flailHeadScale": 1
     },
     "warhammer": {
       "label": "Warhammer Head",
@@ -359,13 +383,16 @@ window.MODULAR_WEAPON_CONFIG = {
         }
       },
       "weaponNames": {
-        "prefix": "Warhammer",
-        "suffix": "Warhammer"
+        "prefix": "Destroyer",
+        "suffix": "Elegant Hammer-headed"
       },
-      "toolSlots": []
+      "toolSlots": [
+        "pick"
+      ],
+      "flailHeadScale": 1
     },
     "work-hammer": {
-      "label": "Work Hammer Head",
+      "label": "Simple Hammer Head",
       "sourceShape": "workhammer",
       "sprite": "assets/toolsprites/modular_pieces/weaponhead_work_hammer.png",
       "dmgType": "blunt",
@@ -381,10 +408,11 @@ window.MODULAR_WEAPON_CONFIG = {
         }
       },
       "weaponNames": {
-        "prefix": "Work Hammer",
-        "suffix": "Work Hammer"
+        "prefix": "Flattener",
+        "suffix": "Hammer-headed"
       },
-      "toolSlots": []
+      "toolSlots": [],
+      "flailHeadScale": 1
     },
     "bshuakauitl": {
       "label": "B'shuakauitl Head",
@@ -407,7 +435,8 @@ window.MODULAR_WEAPON_CONFIG = {
         "prefix": "B'shuakauitl",
         "suffix": "B'shuakauitl"
       },
-      "toolSlots": []
+      "toolSlots": [],
+      "flailHeadScale": 1
     },
     "grapple-flail": {
       "label": "Grapple Hook Head",
@@ -428,10 +457,13 @@ window.MODULAR_WEAPON_CONFIG = {
       "editorOnly": false,
       "weaponNames": {
         "prefix": "Grapple-flail",
-        "suffix": "Grapple-flail"
+        "suffix": "Grappling"
       },
-      "toolSlots": [],
-      "flailAssembly": "grappleFlail"
+      "toolSlots": [
+        "harpoon"
+      ],
+      "flailAssembly": "grappleFlail",
+      "flailHeadScale": 1
     }
   },
   "shafts": {
@@ -2383,7 +2415,7 @@ window.MODULAR_WEAPON_CONFIG = {
         "enabled": false
       },
       "namePosition": "suffix",
-      "nameAffix": "on a Blowgun Shaft",
+      "nameAffix": "b'Shuakauitl",
       "toolWorthy": false
     },
     "dagger-sword": {
@@ -3272,8 +3304,8 @@ window.MODULAR_WEAPON_CONFIG = {
         "y": 0,
         "enabled": false
       },
-      "namePosition": "suffix",
-      "nameAffix": "with a Dagger-sword Grip",
+      "namePosition": "prefix",
+      "nameAffix": "Blade-pommeled",
       "toolWorthy": false
     },
     "dagger": {
@@ -3416,8 +3448,8 @@ window.MODULAR_WEAPON_CONFIG = {
         "y": 0,
         "enabled": false
       },
-      "namePosition": "prefix",
-      "nameAffix": "Short-gripped",
+      "namePosition": "suffix",
+      "nameAffix": "Dagger",
       "toolWorthy": false
     },
     "fishing-mace": {
@@ -3563,11 +3595,11 @@ window.MODULAR_WEAPON_CONFIG = {
         "enabled": false
       },
       "namePosition": "prefix",
-      "nameAffix": "Bored-handled",
+      "nameAffix": "Looped",
       "toolWorthy": true
     },
     "fishing-spear": {
-      "label": "Fishing Spear Shaft",
+      "label": "Leather-wrapped Long-haft",
       "sourceShape": "fishingspear",
       "sprite": "assets/toolsprites/modular_pieces/weaponshaft_fishing_spear.png",
       "overrides": {
@@ -3683,11 +3715,11 @@ window.MODULAR_WEAPON_CONFIG = {
         "enabled": false
       },
       "namePosition": "prefix",
-      "nameAffix": "Long-shafted",
+      "nameAffix": "Leather-wrapped Pole-",
       "toolWorthy": true
     },
     "harlyao-broadsword": {
-      "label": "Broad Trapezoidal Hilt",
+      "label": "Broad Crescent Hilt",
       "sourceShape": "harlyaoBroadsword",
       "sprite": "assets/toolsprites/modular_pieces/weaponshaft_harlyao_broadsword.png",
       "overrides": {
@@ -3790,12 +3822,12 @@ window.MODULAR_WEAPON_CONFIG = {
         "y": 0,
         "enabled": false
       },
-      "namePosition": "suffix",
-      "nameAffix": "with a Broad Trapezoidal Hilt",
+      "namePosition": "prefix",
+      "nameAffix": "Crescent-hilted Broad-",
       "toolWorthy": false
     },
     "harlyao-longsword": {
-      "label": "Trapezoidal Hilt",
+      "label": "Tall Crescent Hilt",
       "sourceShape": "harlyaoLongsword",
       "sprite": "assets/toolsprites/modular_pieces/weaponshaft_harlyao_longsword.png",
       "overrides": {
@@ -3923,12 +3955,12 @@ window.MODULAR_WEAPON_CONFIG = {
         "y": 0,
         "enabled": false
       },
-      "namePosition": "suffix",
-      "nameAffix": "with a Trapezoidal Hilt",
+      "namePosition": "prefix",
+      "nameAffix": "Crescent-hilted Long-",
       "toolWorthy": false
     },
     "war-cleaver": {
-      "label": "Heavy Cleaver Grip",
+      "label": "War-cleaver Grip",
       "sourceShape": "warCleaver",
       "sprite": "assets/toolsprites/modular_pieces/weaponshaft_war-cleaver.png",
       "overrides": {
@@ -9322,11 +9354,11 @@ window.MODULAR_WEAPON_CONFIG = {
         "enabled": false
       },
       "namePosition": "suffix",
-      "nameAffix": "with a Cleaver Grip",
-      "toolWorthy": false
+      "nameAffix": "War-cleaver",
+      "toolWorthy": true
     },
     "warhammer": {
-      "label": "Hammer Haft",
+      "label": "Heavy Wooden Haft",
       "sourceShape": "warhammer",
       "sprite": "assets/toolsprites/modular_pieces/weaponshaft_warhammer.png",
       "overrides": {
@@ -9466,11 +9498,11 @@ window.MODULAR_WEAPON_CONFIG = {
         "enabled": false
       },
       "namePosition": "prefix",
-      "nameAffix": "Hammer-hafted",
+      "nameAffix": "Heavy-hafted",
       "toolWorthy": true
     },
     "bgungku": {
-      "label": "B'gungku Shaft (donor not yet mapped)",
+      "label": "Arching Wooden Haft",
       "sourceShape": "bgungku",
       "sprite": "assets/toolsprites/modular_pieces/weaponshaft_bgungku.png",
       "overrides": {
@@ -9560,12 +9592,12 @@ window.MODULAR_WEAPON_CONFIG = {
         "y": 0,
         "enabled": false
       },
-      "namePosition": "suffix",
-      "nameAffix": "with a B'gungku Shaft",
-      "toolWorthy": false
+      "namePosition": "prefix",
+      "nameAffix": "Arch-hafted",
+      "toolWorthy": true
     },
     "hatchet": {
-      "label": "Short Axe Handle",
+      "label": "Spike-pommeled Haft",
       "sourceShape": "hatchet",
       "sprite": "assets/toolsprites/modular_pieces/weaponshaft_hatchet.png",
       "overrides": {
@@ -9657,7 +9689,7 @@ window.MODULAR_WEAPON_CONFIG = {
         "enabled": false
       },
       "namePosition": "prefix",
-      "nameAffix": "Short-hafted",
+      "nameAffix": "Spike-pommeled",
       "toolWorthy": true
     },
     "hoe": {
@@ -9757,7 +9789,7 @@ window.MODULAR_WEAPON_CONFIG = {
       "toolWorthy": true
     },
     "kylie": {
-      "label": "Kylie Grip",
+      "label": "Kylie Haft",
       "sourceShape": "kylie",
       "sprite": "assets/toolsprites/modular_pieces/weaponshaft_kylie.png",
       "overrides": {
@@ -11224,11 +11256,11 @@ window.MODULAR_WEAPON_CONFIG = {
         "enabled": false
       },
       "namePosition": "suffix",
-      "nameAffix": "with a Kylie Grip",
+      "nameAffix": "Kylie",
       "toolWorthy": false
     },
     "pick-shovel": {
-      "label": "Pick-shovel Shaft",
+      "label": "Pick-pommeled Long-haft",
       "sourceShape": "pickshovel",
       "sprite": "assets/toolsprites/modular_pieces/weaponshaft_pick-shovel.png",
       "overrides": {
@@ -11553,11 +11585,11 @@ window.MODULAR_WEAPON_CONFIG = {
         "enabled": false
       },
       "namePosition": "prefix",
-      "nameAffix": "Tool-hafted",
+      "nameAffix": "Pick-pommeled",
       "toolWorthy": true
     },
     "plains-sword": {
-      "label": "Plains Sword Hilt",
+      "label": "Long Leather-wrapped Hilt",
       "sourceShape": "plainsSword",
       "sprite": "assets/toolsprites/modular_pieces/weaponshaft_plains_sword.png",
       "overrides": {
@@ -11637,12 +11669,12 @@ window.MODULAR_WEAPON_CONFIG = {
         "y": 0,
         "enabled": false
       },
-      "namePosition": "suffix",
-      "nameAffix": "with a Plains Hilt",
+      "namePosition": "prefix",
+      "nameAffix": "Long-handled",
       "toolWorthy": false
     },
     "hachutuTorchStaff": {
-      "label": "Hachutu Torch-staff Shaft",
+      "label": "Twin-flamed Torch-shaft",
       "sourceShape": "hachutuTorchStaff",
       "sprite": "assets/toolsprites/hachutu_torch-staff.png",
       "overrides": {
@@ -13602,8 +13634,8 @@ window.MODULAR_WEAPON_CONFIG = {
         "x": 0,
         "y": 0
       },
-      "namePosition": "prefix",
-      "nameAffix": "Flame-hafted",
+      "namePosition": "suffix",
+      "nameAffix": "Torch-staff",
       "toolWorthy": true
     },
     "grapple-flail": {
@@ -13637,9 +13669,9 @@ window.MODULAR_WEAPON_CONFIG = {
       "overrides": {},
       "maxAttachments": 8,
       "editorOnly": false,
-      "namePosition": "prefix",
-      "nameAffix": "Rope-slung",
-      "toolWorthy": false,
+      "namePosition": "suffix",
+      "nameAffix": "Rope Flail",
+      "toolWorthy": true,
       "flailAssembly": "grappleFlail"
     }
   },
