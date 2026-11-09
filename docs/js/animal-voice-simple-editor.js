@@ -169,7 +169,7 @@
     return Array.isArray(list) ? list.map(clipName) : [];
   }
   function effectiveAllowed(id, kind, entries) {
-    const own = state.config?.animalVocalizations?.[id]?.[kind];
+    const own = state.config?.animalVocalizations?.[voiceSpeciesKey(id)]?.[kind]; // Medium and Large Skeeri check the same allowed recordings as Small Skeeri.
     const common = state.config?.animalVocalizations?.default?.[kind];
     const configured = Array.isArray(own?.allowedClips)
       ? own.allowedClips
