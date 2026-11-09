@@ -63,7 +63,7 @@
     ? document.currentScript.src
     : null;
   const SIMPLE_EDITOR_SRC = MODULE_SRC
-    ? new URL('animal-voice-simple-editor.js?v=20261109skeerivoice1', MODULE_SRC).href
+    ? new URL('animal-voice-simple-editor.js?v=20261109skeerivoice4', MODULE_SRC).href
     : null;
 
   const decodedByUrl = new Map();
