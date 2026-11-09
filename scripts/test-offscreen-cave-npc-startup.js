@@ -48,6 +48,7 @@ assert.equal(coldTarget.area, caveId, 'Banubu stays assigned to his cave even be
 assert.equal(coldTarget.c, sleepingStation.col);
 assert.equal(coldTarget.r, sleepingStation.row);
 assert.equal(coldTarget.pose, 'lie', 'deferred Banubu still has a sleeping pose');
+assert.equal(coldTarget.rotY, 270, 'cold sleeping orientation matches the authored west-facing station');
 assert.match(coldTarget.activity, /sleeping/i, 'the named-animal sleep state remains active');
 assert.equal(loads.length, 0, 'resolving a remote cave station must never generate the cave');
 assert(logs.some(log => /cave scene deferred until player entry/.test(log)), 'mobile debug log explains the deferred station');
