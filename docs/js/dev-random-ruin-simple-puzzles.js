@@ -2112,6 +2112,7 @@
       if(!count)throw new Error('The rope-chain puzzle did not expose floorless cells.');
       const pitId='dev_ruin_single_room_abyss'; // The same surface ledger cleans this up on reroll or leaving.
       DS.registerPit({id:pitId,scope:SCOPE,bounds:pit});state.surfaceIds.add(pitId);
+      window.DevRandomRuin?.excludeFloorShellArea?.(pit); // The seam-repair mesh must not put stone under the authored rope abyss, even when viewed below its fog mask.
       const fog=new THREE.Mesh(new THREE.PlaneGeometry(pit.maxX-pit.minX,pit.maxZ-pit.minZ),makeBasic(0x08090b));
       fog.name=pitId+'_mask';fog.rotation.x=-Math.PI/2;
       fog.position.set((pit.minX+pit.maxX)*.5,floorY+.18,(pit.minZ+pit.maxZ)*.5);
