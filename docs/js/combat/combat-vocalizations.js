@@ -9,7 +9,7 @@
   const SCHEDULER_ID = 'combat-vocalizations-breath';
   const SKELETON_VOICE_SPECIES = new Set(['harlyao-skeleton', 'mao-ao-skeleton']); // NPC skeletons use one dedicated shriek in all combat vocal events.
   const SKELETON_SHRIEK_URL = 'assets/audio/sfx/utterances/sfx_skeletonshriek_1.ogg'; // Real authored recording for skeleton attacks, reactions, and breathing.
-  const SKELETON_SHRIEK_TEMPO = 3; // Skeleton shrieks play at three times the source tempo independently of pitch.
+  const SKELETON_SHRIEK_TEMPO = 1; // No speed change was requested; the trailing "3x" instruction was incomplete.
   const SKELETON_SHRIEK_PITCH_STEPS = Object.freeze([-3, -2, -1, 0, 1, 2, 3]); // Finite random semitone choices reuse cached mobile voice renders.
   const DEFAULT_CONFIG = Object.freeze({
       "schema": "hobunji_combat_vocalizations.v2",
@@ -1442,7 +1442,7 @@ function beginCharge(options = {}) {
       version: VERSION,
       latestChange: window.CombatVocalizations.latestChange,
       maskboundVoiceSource: window.MaskboundGuardianCombat?.voiceSource || null, // Mobile debug proves all guardian combat utterances use the same recorded scream.
-      skeletonVoiceSource: SKELETON_SHRIEK_URL, // Mobile Pixel Probe exposes the dedicated skeleton recording and intended speed.
+      skeletonVoiceSource: SKELETON_SHRIEK_URL, // Mobile Pixel Probe identifies the skeleton recording without inferring extra sound processing.
       skeletonVoiceTempo: SKELETON_SHRIEK_TEMPO,
       configSource,
       configError,
