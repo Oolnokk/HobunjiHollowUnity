@@ -254,12 +254,13 @@
     let firstL2V1 = '';
     for (const ch of playerName) { firstL2V1 += ch; if (vowels.has(ch)) break; }
     const dlgState = window.DialogueContent?.getNpcDlgState?.(rec?.id) || {};
+    const playerNickname = window.CharacterNicknames?.addressPlayer?.(playerName, rec?.id, { favor: dlgState.favor, gender }) || playerName; // Relationship nickname for the generic token; authored overrides remain local.
     const localNickname = window.CharacterNicknames?.addressPlayer?.(playerName, rec?.id, { favor: dlgState.favor, customNickname: dlgState.localNickname, gender })
       || window.RomanceSystem?.spouseDialogueFor?.(rec?.id)?.nickname || dlgState.localNickname || playerName; // Same player form of address as normal conversations.
     let out = String(text || '')
       .replace(/\{\{npcName\}\}/g, rec?.name || '')
       .replace(/\{\{playerName\}\}/g, playerName)
-      .replace(/\{\{playerNickname\}\}/g, playerName)
+      .replace(/\{\{playerNickname\}\}/g, playerNickname)
       .replace(/\{\{playerLocalNickname\}\}/g, localNickname)
       .replace(/\{\{playerPronoun1\}\}/g, pr1)
       .replace(/\{\{playerPronoun2\}\}/g, pr2)
@@ -315,6 +316,7 @@
     const authored = state.settings.npcNicknames?.[speakerId]?.[targetId]; // Family/personal names such as Dad, Mom, Sis and Tak always win.
     if (String(authored || '').trim()) return String(authored).trim();
     const name = firstNameWord(target?.name); // Neutral NPC greeting retains its previous given-name behavior.
+    if (/^(?:Father|Eldress)\s+\S/i.test(String(target?.name || '').trim())) return name; // Honorifics are titles, not syllables: Namu'i still calls Father Hunundi 'Father'.
     const bond = window.CharacterNicknames?.npcBond?.(speakerId, targetId); // Canonical social relationship tags also cover partners who do not share a greeting group.
     const relationship = bond === 'partner' ? 'affectionate' : (bond === 'friend' || friendSetFor(speakerId).has(targetId) ? 'friend' : 'other');
     const targetGender = target?.rec?.appearance?.gender || target?.rec?.avatarEditor?.rawExport?.appearance?.gender
