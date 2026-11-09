@@ -104,6 +104,8 @@ window.AnimalVocalizations.setAuthoredProfiles({
     warning: { allowedClips: ['sfx_hoot-yap.ogg'] },
     growl: { allowedClips: ['sfx_scream_chirp.ogg'] },
   },
+  tzatzul: { warning: { allowedClips: ['sfx_scream_chirp.ogg'] } }, // Adult and hatchling share one authored warning recording.
+  'voorg-ass': { warning: { allowedClips: ['sfx_whinny-whistle-bark.ogg'] } }, // Wild herd mothers share ordinary Voorg-Ass voice.
   'gar-wolf': {
     // Deliberately bogus legacy species tuning: profileFor must ignore it now.
     clipTuning: {
@@ -147,6 +149,18 @@ for (const [index, key] of skeeriKeys.entries()) {
   const call = rendered.find(entry => entry.id === 'skeeri-' + index); // Observe the real sequence passed into the audio renderer.
   assert.equal(call.sizePitchSemitones, [3, 0, -4][index], key + ' uses its own size-class pitch');
   assert.deepEqual(Array.from(call.allowedClips), ['sfx_hoot-yap.ogg'], key + ' plays its shared warning selection');
+}
+for (const [id, kind, expectedClip, expectedPitch] of [
+  ['tzatzul-baby', 'tzatzul-hatchling', 'sfx_scream_chirp.ogg', 3],
+  ['voorg-mother', 'voorg-ass-herd-mother', 'sfx_whinny-whistle-bark.ogg', -4],
+]) {
+  const actor = creature(id, kind, kind === 'tzatzul-hatchling' ? 'medium' : 'large'); // Wrong hatchling genotype proves fixed Small variant wins.
+  const shared = window.AnimalVocalizations.profileForDebug(actor);
+  assert.deepEqual(Array.from(shared.warning.allowedClips), [expectedClip], kind + ' inherits its parent species clips');
+  assert.equal(window.AnimalVocalizations.companionDiscovery(actor, 'animal-den'), true, kind + ' emits its parent species voice');
+  const call = rendered.find(entry => entry.id === id);
+  assert.equal(call.sizePitchSemitones, expectedPitch, kind + ' applies the correct variant size pitch');
+  assert.deepEqual(Array.from(call.allowedClips), [expectedClip], kind + ' uses parent species audio, not a default clip');
 }
 const profile = window.AnimalVocalizations.profileForDebug(creature('profile'));
 assert.deepEqual(Array.from(profile.warning.utterances, u => ({ ...u })), [
