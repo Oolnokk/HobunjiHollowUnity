@@ -287,13 +287,39 @@ const legHandle = height => ({
 });
 const avatarRoot = root(0, 0, 0, 1);
 const npcRoot = root(0, 0, .8, 5);
+const mockPoint = () => ({ x: 0, y: 0, z: 0,
+  clone() { return { x: this.x, y: this.y, z: this.z }; },
+  copy(point) { this.x = point.x; this.y = point.y; this.z = point.z; return this; } }); // Resettable neck joint pose shared by this isolated player/NPC fixture.
+const fakeNeck = () => ({ position: mockPoint(), quaternion: {
+  x: 0, clone() { return { x: this.x }; },
+  copy(q) { this.x = q.x || 0; return this; },
+  }, rotateX(amount) { this.quaternion.x += amount; } }); // Minimal rig contract: head pose follows the existing neck rather than modifying body roots.
+const fakeHands = () => ({
+  group: { position: { y: 0 }, rotation: { x: 0 } },
+  shoulderPositionLocal() { return true; },
+  setPoseProvider(owner, provider) { this.owner = owner; this.provider = provider; },
+  placeHandWorld() { return true; },
+  applyOwnedPose() { this.appliedFrames = (this.appliedFrames || 0) + 1; }, // Count real player hand owner updates without needing GLB geometry.
+  useIdlePose() {},
+});
+const playerHandRig = fakeHands();
+const playerPortrait = {
+  parent: avatarRoot, visible: true, name: 'player_avatar', position: { y: 0 },
+  rotation: { x: 0 }, getWorldScale(out) { out.x = 1; out.y = 1; out.z = 1; return out; },
+  updateWorldMatrix() {},
+  userData: { portraitModelHeight: 1, neckRig: { available: true, neckJoint: fakeNeck() },
+    proceduralHandRig: playerHandRig },
+}; // The actual skinned portrait is a CHILD of the player root, as in gameplay and festival dance.
+avatarRoot.traverse = visit => { visit(avatarRoot); visit(playerPortrait); }; // A regression catches any future wrong-root neck/hand lookup.
 const npcRigRoot = { position: { y: 0 }, scale: { y: 1 }, userData: {} };
 npcRoot.getObjectByName = name => name === 'npc_character_rig_root' ? npcRigRoot : null;
 const playerLegs = legHandle(1);
 const partnerLegs = legHandle(5);
 const sceneWalker = {
   rec: { id: 'spouse' }, area: 'farm', root: npcRoot,
-  avatarGroup: { userData: { portraitModelHeight: 5 }, rotation: { x: 0 } }, legs: partnerLegs,
+  avatarGroup: { userData: { portraitModelHeight: 5,
+    neckRig: { available: true, neckJoint: fakeNeck() }, proceduralHandRig: fakeHands() },
+    rotation: { x: 0 }, position: { y: 0 } }, legs: partnerLegs,
 };
 let renderFrame = null;
 const channels = new Map();
@@ -336,15 +362,22 @@ assert.equal(activeTokens.size, 0, 'failed start must leave actors unlocked');
 delete visualWindow.NpcPathfinding;
 assert.equal(visual.start(sceneWalker, () => contacts++), true);
 assert.equal(partnerLegs.limit, .95, 'only the kiss may deepen the kneel');
-assert.equal(lastLockParticipants[0].channels.includes('pose'), false, 'player pose lock would disable the compositor');
+assert.equal(lastLockParticipants[0].channels.includes('pose'), true,
+  'festival dance and spouse kiss must own the live player pose instead of relying on a skipped composer channel');
+assert.equal(visual.diagnostics().session.playerPortrait, 'player_avatar', 'runtime must resolve the nested skinned player portrait');
+assert.equal(visual.diagnostics().session.playerHandRigReady, true);
 for (let i = 0; i < 9; i++) renderFrame({ deltaMs: 80 });
 assert.equal(contacts, 0, 'no blessing before the first contact frame');
 assert.ok(partnerLegs.sink > 0 && playerLegs.sink === 0, 'tall NPC kneels and shorter player stays grounded');
+assert.ok(playerHandRig.appliedFrames > 0, 'the actual player hand rig receives paired animation ticks');
+assert.ok(playerPortrait.rotation.x > 0, 'shorter player leans toward the kiss on the real portrait, not an empty body group');
 assert.ok(sceneWalker.avatarGroup.rotation.x > 0, 'taller torso bends at the waist');
 assert.ok(partnerLegs.sink <= partnerLegs.standingPosteriorY * .95, 'actual knee cap is never exceeded');
 assert.ok(npcRoot.position.z > .8, 'taller partner retreats to allow space for a deep bow');
 assert.equal(activeTokens.size, 1);
 assert.equal(visual.stop('dodge'), true);
+assert.equal(playerPortrait.rotation.x, 0, 'cancel resets the actual player portrait pose');
+assert.equal(playerHandRig.group.rotation.x, 0, 'cancel resets the player's moving hand parent');
 assert.equal(partnerLegs.sink, 0, 'cancel must restore both knee sinks');
 assert.equal(npcRigRoot.position.y, 0, 'cancel must restore the NPC visual root');
 assert.equal(sceneWalker.avatarGroup.rotation.x, 0, 'cancel unbends the torso');
@@ -363,6 +396,7 @@ assert.equal(partnerLegs.limit, .55, 'completed kiss restores normal knee cap');
 
 // The taller player needs the real body composer and floor-anchored procedural legs.
 avatarRoot.userData.portraitModelHeight = 5;
+playerPortrait.userData.portraitModelHeight = 5; // The visible avatar model, not only the outer body container, changes size.
 playerLegs.modelHeight = 5;
 playerLegs.standingPosteriorY = 1.4;
 sceneWalker.avatarGroup.userData.portraitModelHeight = 1;
@@ -372,9 +406,9 @@ assert.equal(visual.start(sceneWalker, () => contacts++), true, 'reversed size p
 for (let i = 0; i < 9; i++) renderFrame({ deltaMs: 80 });
 assert.ok(playerLegs.sink > 0, 'taller player knee actually folds');
 assert.equal(partnerLegs.sink, 0, 'shorter NPC keeps its feet planted');
-assert.ok(channels.get('spouse-kiss')?.rotation?.pitch > 0, 'player composer gets a genuine bow');
-assert.equal(channels.get('spouse-kiss')?.absoluteLegs, true, 'player feet remain vertical');
-assert.ok(channels.has('spouse-kiss-retreat'), 'player body makes room for the bow');
+assert.ok(playerPortrait.rotation.x > 0, 'taller player bows on the real skinned portrait');
+assert.ok(avatarRoot.position.z !== 0, 'player moves bodily to make room for the deep bow, like festival dance');
+assert.equal(channels.size, 0, 'pose-locked paired actions must not depend on invisible composer-only channels');
 assert.equal(visual.stop('reversed-cancel'), true);
 assert.equal(playerLegs.sink, 0);
 assert.equal(playerLegs.limit, .55);
@@ -385,16 +419,16 @@ assert.equal(activeTokens.size, 0);
 // Live in-world jump works in both directions and restores the exact previous
 // NPC root elevation after cancel. A missing hand/foot model in this mock is
 // handled gracefully while the real browser exercises actual IK.
-avatarRoot.userData.portraitModelHeight=1;playerLegs.modelHeight=1;playerLegs.standingPosteriorY=.28;
+avatarRoot.userData.portraitModelHeight=1;playerPortrait.userData.portraitModelHeight=1;playerLegs.modelHeight=1;playerLegs.standingPosteriorY=.28;
 sceneWalker.avatarGroup.userData.portraitModelHeight=2;partnerLegs.modelHeight=2;partnerLegs.standingPosteriorY=.56;
 assert.equal(visual.start(sceneWalker,()=>contacts++),true);
 assert.equal(visual.diagnostics().session.height.shorterPosteriorGrip,true,'shorter live player should hop');
 for(let i=0;i<13;i++)renderFrame({deltaMs:80});
-assert.ok(channels.get('spouse-kiss').translation.y > .01,'shorter player actually rises toward the spouse posterior');
+assert.ok(avatarRoot.position.y > .01,'shorter player's actual character and feet rise toward the spouse posterior');
 assert.equal(npcRoot.position.y,0,'the taller NPC continues to stand on the floor');
 assert.equal(visual.stop('short-player-hop-cancel'),true);
 assert.equal(channels.size,0,'cancel removes the player leap composer channel');
-avatarRoot.userData.portraitModelHeight=2;playerLegs.modelHeight=2;playerLegs.standingPosteriorY=.56;
+avatarRoot.userData.portraitModelHeight=2;playerPortrait.userData.portraitModelHeight=2;playerLegs.modelHeight=2;playerLegs.standingPosteriorY=.56;
 sceneWalker.avatarGroup.userData.portraitModelHeight=1;partnerLegs.modelHeight=1;partnerLegs.standingPosteriorY=.28;
 assert.equal(visual.start(sceneWalker,()=>contacts++),true);
 assert.equal(visual.diagnostics().session.height.shorterPosteriorGrip,true,'shorter NPC should hop');
