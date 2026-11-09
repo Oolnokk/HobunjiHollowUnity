@@ -15,7 +15,7 @@
   const IS_DIALOGUE_EDITOR = String(global.location?.pathname || '').includes('/tools/dialogue-editor');
 
   let craftDeps = null; // MetalCraftShop adapters; authoritative gear/smithing/save functions.
-  let allSmithShapeKeys = null; // Original bronzeworks shape order before friendship gating removes entries.
+  let allSmithShapeKeys = null; // Bronzeworks shape order including registered trust-only shapes, before friendship gating removes entries.
   let editorObserver = null;
   const doorstep = () => global.DoorstepVisits || null; // Shared visitor runtime (js/doorstep-visits.js); absent in bare test/editor contexts.
   const patchedApis = new WeakSet();
@@ -44,6 +44,13 @@
     return Number(originalNpcState(gift)?.favor) || 0;
   }
 
+  function giftItemKey(gift) {
+    if (!gift) return null;
+    return gift.giftItemKey
+      || craftDeps?.craftedToolItemKey?.(gift.shapeKey, gift.giftMetalKey)
+      || `${gift.shapeKey}_${gift.giftMetalKey}`;
+  }
+
   function giftCompleted(gift) {
     // Check the durable owned-tool flag first (see giveGiftItem) — it's an
     // idempotent boolean in gearInventory.tools that never gets evicted.
@@ -52,7 +59,7 @@
     // gifting with this same NPC can push the completion entry out of, so
     // it can't be the sole source of truth without an already-earned
     // weapon shape silently re-locking itself.
-    const itemKey = gift && craftDeps?.craftedToolItemKey?.(gift.shapeKey, gift.giftMetalKey);
+    const itemKey = giftItemKey(gift);
     const gear = itemKey ? craftDeps?.getGearInventory?.() : null;
     if (gear?.tools?.[itemKey]) return true;
     const state = originalNpcState(gift);
@@ -222,6 +229,31 @@
     return changedLive || changedPersisted;
   }
 
+  function registerSmithVariantsFromGifts() {
+    if (!craftDeps?.TOOL_ITEM_DEFS || !craftDeps?.TOOL_SHAPE_DEFS) return;
+    for (const gift of (cfg.gifts || [])) {
+      if (!gift?.smithVariantsFromGift || !gift.giftItemKey) continue;
+      const base = craftDeps.TOOL_ITEM_DEFS[gift.giftItemKey]; // The originally authored weapon is the visual, grip and combat template for its craftable descendants.
+      if (!base?.slots?.includes?.('weapon')) {
+        global.__farmLog?.(`[weapon-trust-visits] cannot smith ${gift.shapeKey}: original gift weapon missing`, 'warn', 'npc');
+        continue;
+      }
+      if (!craftDeps.TOOL_SHAPE_DEFS[gift.shapeKey]) {
+        craftDeps.TOOL_SHAPE_DEFS[gift.shapeKey] = { ...base, label: base.label || gift.shapeKey, shapeKey: gift.shapeKey };
+      }
+      for (const metalKey of (craftDeps.VERDIGRIS_METAL_KEYS || [])) {
+        const itemKey = craftDeps.craftedToolItemKey?.(gift.shapeKey, metalKey) || `${gift.shapeKey}_${metalKey}`;
+        if (craftDeps.TOOL_ITEM_DEFS[itemKey]) continue;
+        const metalLabel = craftDeps.METAL_DEFS?.[metalKey]?.label || metalKey;
+        craftDeps.TOOL_ITEM_DEFS[itemKey] = {
+          ...base, itemKey, shapeKey: gift.shapeKey, metalKey,
+          label: `${metalLabel} ${base.label || gift.shapeKey}`,
+        }; // Registered per-metal versions use the same flail assembly while existing metal/mastery rendering reads their own metalKey.
+      }
+      if (!allSmithShapeKeys?.includes(gift.shapeKey)) allSmithShapeKeys?.push(gift.shapeKey);
+    }
+  }
+
   function syncSmithingShapeUnlocks() {
     if (!craftDeps?.UNLOCKED_TOOL_SHAPES) return;
     if (!allSmithShapeKeys) allSmithShapeKeys = [...craftDeps.UNLOCKED_TOOL_SHAPES];
@@ -242,8 +274,7 @@
 
   function giveGiftItem(gift) {
     if (!gift || !craftDeps) return null;
-    const itemKey = craftDeps.craftedToolItemKey?.(gift.shapeKey, gift.giftMetalKey)
-      || `${gift.shapeKey}_${gift.giftMetalKey}`;
+    const itemKey = giftItemKey(gift);
     const gear = craftDeps.getGearInventory?.();
     if (!gear) return null;
     if (!gear.tools) gear.tools = {};
@@ -321,6 +352,7 @@
       if (!allSmithShapeKeys || injectedDeps?.UNLOCKED_TOOL_SHAPES?.length > allSmithShapeKeys.length) {
         allSmithShapeKeys = [...(injectedDeps?.UNLOCKED_TOOL_SHAPES || [])];
       }
+      registerSmithVariantsFromGifts();
       syncSmithingShapeUnlocks();
       return originalInit(injectedDeps);
     };
