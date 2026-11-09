@@ -69,7 +69,7 @@ const context = vm.createContext({
   quickLoad: async id => { loads.push(id); return { ok: true, slot: { id } }; },
 });
 let testedSnapshot = clone(initial.snapshot); // Captures changed working state during a simulated festival exit.
-vm.runInContext(source.slice(start, end), context, { filename: 'quick-save-festival-session.js' });
+vm.runInContext("const FESTIVAL_TEST_KEY = 'hobunjiFestivalTestSession.v1'; const FESTIVAL_PREFS_KEY = 'hobunjiFestivalTestPrefs.v1';\\n".replace('\\n', '\n') + source.slice(start, end), context, { filename: 'quick-save-festival-session.js' });
 
 (async () => {
   assert.equal(context.festivalStatus().keepRewards, false, 'opt-in must default OFF');
