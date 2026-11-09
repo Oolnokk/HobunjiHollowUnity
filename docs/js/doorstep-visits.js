@@ -426,7 +426,22 @@
     const source = sourceWalker(visit.npcId);
     const door = doorJustExited();
     const spot = nearestWalkableSpawn(door);
-    if (!source) return rejectSpawn(visit, 'Source NPC is unavailable.');
+    if (!source) {
+      // A scheduled NPC may have failed its initial avatar build or exhausted
+      // station warm-up retries. Recover the authoritative actor, then retry
+      // the same visit while the player is still outside the farmhouse.
+      const recovery = gameDeps?.ensureNpcWalker?.(visit.npcId); // Shared game-owned build path, never a fake dialogue-only proxy.
+      if (recovery && typeof recovery.then === 'function') {
+        recovery.then(ready => {
+          if (ready && sourceWalker(visit.npcId) && !activeVisit && currentArea() === config.farmhouseExteriorArea) {
+            onFarmhouseExit('source-recovered'); // Recheck current providers and Favor before showing the restored visitor.
+          }
+        }).catch(error => {
+          global.__farmLog?.(`[doorstep-visits] source recovery failed for ${visit.npcId}: ${String(error?.message || error)}`, 'warn', 'npc');
+        });
+      }
+      return rejectSpawn(visit, recovery ? 'Source NPC unavailable; avatar recovery requested.' : 'Source NPC is unavailable.');
+    }
     if (!door) return rejectSpawn(visit, 'No valid farmhouse entrance was found.');
     if (!spot) return rejectSpawn(visit, 'No unoccupied walkable tile was found near the farmhouse door.');
     if (!visit.tree && !(visit.treeId && source.rec?.dialogueTrees?.some(tree => tree?.id === visit.treeId))) return rejectSpawn(visit, 'Visit dialogue is missing.');
