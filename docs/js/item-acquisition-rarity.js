@@ -216,6 +216,8 @@
     if (crop) return { factor:crop.factor, known:crop.origin === 'slagothim-import', sources:[crop] };
     const spice = importedSpice(key,{townValue:1}); // Like regional cultivars, Gorkunash judges stable Town Value 1 source difficulty; ordinary market pricing still reads the current town.
     if (spice?.factor) return {factor:spice.factor,known:spice.probability !== null,sources:[spice]};
+    const berry = wildBerrySource(key);
+    if (berry) return {factor:1,known:true,sources:[berry]}; // Native fruit guaranteed per accessible bush; no world-encounter probability is invented.
     const fish = fishRarity(key);
     if (fish) return { factor:fish.factor, known:true, sources:[fish] };
     const localDefs = defs || boundItemDefs || G.ITEM_DEFS || {};
@@ -406,6 +408,9 @@
     if (cultivar) sources.push({kind:'cultivar',sourceId:'regional-seed-or-breeding',label:cultivar.origin,
       probability:cultivar.probability,expectedQuantity:null,
       certainty:cultivar.origin === 'slagothim-import' ? 'daily stock probability before access' : 'ancestry unknown; proxy only',detail:cultivar});
+    const berry = wildBerrySource(key,context);
+    if (berry) sources.push({kind:'foraging',sourceId:'wild-berry-bush',label:'Wild berry bush',probability:berry.perBushChance,
+      expectedQuantity:berry.perBushChance,certainty:berry.certainty,detail:berry});
     const fish = fishRarity(key);
     if (fish) {
       const cast = context.fishZone && context.season && context.timeOfDay ? fishCatch(key,{
@@ -652,7 +657,7 @@
         : context.stages ? null : 'Unquantified source; no automatic rarity price or contest premium.' };
   }
   return Object.freeze({ chain, atLeastOne, expected, tierLayout, ruinChest, caravanSeed, inheritance, source,
-    bindItemDefs, rarityFactor, cultivarRarity, cultivarSellPrice, importedSpice, foodRarity, artifactChest, lootPoolItem,
+    bindItemDefs, rarityFactor, cultivarRarity, cultivarSellPrice, wildBerrySource, importedSpice, foodRarity, artifactChest, lootPoolItem,
     lootPoolIdsForItem, shopListings, acquisitionSources, priceQuote, sellPrice, farmBreeding, denOffspring, liveDenOffspring, fishCatch, fishRarity, ruinArtifactOpportunity, item,
     debugSnapshot: key => key ? item(key) : { supported:['cultivar','artifact-chest','ruin-chest','loot-pool','den-offspring','live-den-offspring','imported-spice','fish-catch','generated-ruin','food-ancestry','inheritance'],
       priceMode:'cultivar costs and limited loot/spice premiums; existing tuned specialty categories remain protected', noSilentFallback:true } });
