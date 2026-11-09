@@ -714,7 +714,7 @@
     for (const state of records) {
       if (state.dead) { records.delete(state); continue; }
       try {
-        effects?.refreshMetal(state, now); // Throttled tint updates share weapon plating and verdigris without creating a second animation loop.
+        if (state.root.parent) effects?.refreshMetal(state, now); // Detached cached tools have no visible metal; only refresh on re-equip.
         updateOne(state, freezePhysics ? 0 : dt, now, dt);
       }
       catch (error) {
