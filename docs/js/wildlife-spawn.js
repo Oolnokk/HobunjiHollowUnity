@@ -1527,7 +1527,7 @@
         memberHomeX = homeX + Math.cos(spreadAngle) * spreadDist;
         memberHomeY = homeY + Math.sin(spreadAngle) * spreadDist;
       }
-      const opts = { streamVisuals: true, homeX: memberHomeX, homeY: memberHomeY, denEntranceX, denEntranceY, state: 'idle', denKey, genotype: wildPackGenotype, wildlifeRole: speciesIsHerbivore ? 'prey' : 'predator' }; // Explicit ecology role avoids guessing from hostility/diet overlays later.
+      const opts = { streamVisuals: true, homeX: memberHomeX, homeY: memberHomeY, denEntranceX, denEntranceY, state: 'idle', denKey, genotype: wildPackGenotype, visualSizeClass: speciesKey === 'nelk' ? 'large' : null, wildlifeRole: speciesIsHerbivore ? 'prey' : 'predator' }; // Physical adult size is presentation-only: eggs, mother and exterior retain identical inheritable Size. // Explicit ecology role avoids guessing from hostility/diet overlays later.
       assignWildlifeStation(opts, zoneData, memberHomeX, memberHomeY, speciesIsHerbivore);
       const creature = deps.makeCreatureEntity(speciesKey, x, y, opts);
       if (creature) { deps.hostileObjects.add(creature); spawned++; }
