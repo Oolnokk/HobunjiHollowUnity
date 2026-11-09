@@ -114,7 +114,7 @@
   "npcAnchors": [
     {
       "id": "npc_1",
-      "npcId": "old_man_nohuknuk",
+      "npcId": "nohuknuk",
       "name": "Old Man Nohuknuk",
       "col": 4,
       "row": 6,
