@@ -77,9 +77,10 @@
   function getShipPrice(key) {
     if (!deps) return undefined;
     const base = deps.BASE_PRICES[key];
-    if (base !== undefined) return base;
     const sell = Number(deps.ITEM_DEFS?.[key]?.sellPrice);
-    return Number.isFinite(sell) && sell > 0 ? sell : undefined;
+    const authored = base !== undefined ? Number(base) : sell; // The existing crop table overrides the item definition exactly as before.
+    if (!Number.isFinite(authored) || authored <= 0) return base !== undefined ? base : undefined;
+    return window.ItemAcquisitionRarity?.sellPrice?.(key, authored, { defs:deps.ITEM_DEFS }) ?? authored; // Source scarcity is a bounded addition after the canonical sell-price lookup.
   }
 
   function canShipKey(key) {
