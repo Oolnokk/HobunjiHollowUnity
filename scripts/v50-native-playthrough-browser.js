@@ -326,8 +326,22 @@ module.exports=async function runNativeV50Playthrough(page){
             fail('original V50 authored door has not moved with its accepted solution',record,stage,{
               mechanismId:sourceMechanism.id,progress:sourceMechanism.progress});
         }
-        if(record.solved!==index+1||stage.gate?.object.visible!==false)
-          fail('correct native puzzle input did not open exactly one stage gate',record,stage,{expected:index+1,actual:record.solved,gateVisible:stage.gate?.object.visible});
+        if(record.solved!==index+1||stage.gate?.object.visible!==false){
+          const mechanism=stage.nativeMechanism
+            ?record.nativeMechanisms.states.get(stage.nativeMechanism.id):null; // Diagnoses the exact authored mechanism that failed to open this stage.
+          const plate=mechanism?.object?.userData?.linkedPressurePlateRoot; // The original V50 weight sensor is authoritative for a push-block puzzle.
+          const burden=plate?.userData?.linkedWeightBlock; // Compare the real moved burden, not the test's intended path endpoint.
+          const position=object=>object?.getWorldPosition?.(new THREE.Vector3())?.toArray?.()||null; // Distinguishes local generator coordinates from transferred story coordinates in CI.
+          fail('correct native puzzle input did not open exactly one stage gate',record,stage,{
+            expected:index+1,actual:record.solved,gateVisible:stage.gate?.object.visible,
+            mechanism:mechanism?{id:mechanism.id,motion:mechanism.motion,solved:mechanism.solved,
+              target:mechanism.target,progress:mechanism.progress,linked:mechanism.linked.map(node=>node.userData?.activatorType)}:null,
+            weight:plate?{progress:plate.userData.weightProgress,active:plate.userData.weightActive,
+              local:plate.position.toArray(),world:position(plate)}:null,
+            burden:burden?{local:burden.position.toArray(),world:position(burden),
+              routeEnd:burden.userData?.pushPath?.at(-1)}:null,
+          });
+        }
         for(const [x,z] of stage.gate.tiles){
           const grid=stage.gate.grid,col=grid.xToCol(x+.5),row=grid.zToRow(z+.5);
           const level=grid.yToLevel(stage.gate.surfaceY+.05);
