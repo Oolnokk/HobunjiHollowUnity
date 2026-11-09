@@ -236,6 +236,14 @@
     for (const family of FAMILIES) if (cropData[family]) for (let region = 1; region < REGIONS.length; region++)
       register(family, String(region).repeat(6)); // Every seed offer has a definition before traders roll stock.
     hydrate(inventory);
+    if (itemDefs) for (const id of known) { // World rebinding can restore a different pedigree for a pre-existing genotype; fix its registered prices once, never per frame.
+      for (const key of [id,seedKey(id)]) {
+        const def = itemDefs[key];
+        if (def?.rarityBaseSellPrice == null) continue;
+        const quoted = window.ItemAcquisitionRarity?.cultivarSellPrice?.(key,def.rarityBaseSellPrice);
+        if (quoted != null) def.sellPrice = quoted;
+      }
+    }
     if (itemDefs) window.CookingSystem?.registerIngredientItems?.(); // Populates the real cooking picker without a parallel food system.
     refreshBrushes();
   }
