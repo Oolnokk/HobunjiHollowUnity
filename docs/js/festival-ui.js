@@ -88,7 +88,7 @@
       const chosen = api.feastDishDetails(feastInspectIndex);
       const describeEffects = effects => Object.entries(effects || {}).filter(([,amount])=>Number(amount)>0)
         .map(([effect,amount])=>window.CookingSystem?.formatEffectStrength?.(effect,amount) || `${effect} (+${amount})`);
-      html = '<p class="festival-note">Contest points are for judging; the actual eating buffs depend on the ingredients’ star quality and processing. The strongest dish in the competition may not give you the skill benefits you need today.</p>';
+      html = '<p class="festival-note">Contest points multiply ingredient star quality, processing depth and any known source rarity. The actual eating buffs still depend on quality and processing. The strongest dish in the competition may not give you the skill benefits you need today.</p>';
       html += `<h3>Compare dishes · day ${api.contestStandings()?.day || 1} of 7</h3><div class="festival-dish-picker">${dishes.map((meal,index)=>
         button(`${index+1}. ${meal.label} · ${meal.id==='reserved'?'Not yet entered':meal.score+' points'}\n${describeEffects(meal.foodEffects).slice(0,3).join(', ') || 'No food buffs recorded'}`,
           'inspect-pot', meal.id==='reserved', `data-pot-index="${index}" aria-pressed="${index===feastInspectIndex}"`)
@@ -98,10 +98,15 @@
         html += `<p class="festival-dish-total"><strong>${chosen.score} contest points</strong> · ${chosen.ingredientDetails.length} ingredients</p>`;
         if (chosen.estimatedQuality) html += '<p class="festival-note">This older dish predates ingredient-quality records. Ingredient stars are estimated from finished-food quality; the saved contest score and eating buffs remain authoritative.</p>';
         if (chosen.estimatedEffects) html += '<p class="festival-note">Individual ingredient buffs are approximate for this older recipe; the total eating effects shown below are the stored values.</p>';
+        const inspectedTotal = Math.round((chosen.ingredientDetails || []).reduce((sum,item)=>sum+(Number(item.points)||0),0)*100)/100; // Older saved entries may predate rarity snapshots.
+        if (Math.abs((Number(chosen.score)||0)-inspectedTotal)>0.01) html += '<p class="festival-note">Historical score preserved. The ingredient breakdown reflects current source estimates because the original rarity multipliers were not recorded.</p>';
         html += '<h4>Ingredient quality and contribution</h4><ul class="festival-ingredient-list">';
         html += chosen.ingredientDetails.map(item=>{
           const contribution=describeEffects(item.effects).join(', ') || 'No cooking buff';
-          return `<li><strong>${esc(item.icon)} ${esc(item.label)}</strong> · ${'★'.repeat(item.stars)}${'☆'.repeat(5-item.stars)} · ${item.stars} × ${item.multiplier} = <strong>${item.points} points</strong><small>${esc(contribution)}</small></li>`;
+          const rarity = Number(item.rarityMultiplier) || 1; // Cook-time factor is authoritative for the preserved Gorkunash score.
+          const math = rarity === 1 ? `${item.stars} × ${item.processingMultiplier ?? item.multiplier}`
+            : `${item.stars} × ${item.processingMultiplier} processing × ${rarity.toFixed(2)} rarity (${item.raritySource || 'estimated'})`;
+          return `<li><strong>${esc(item.icon)} ${esc(item.label)}</strong> · ${'★'.repeat(item.stars)}${'☆'.repeat(5-item.stars)} · ${esc(math)} = <strong>${item.points} points</strong><small>${esc(contribution)}</small></li>`;
         }).join('') || '<li>Original ingredient details were not recorded for this older dish.</li>';
         html += '</ul><h4>Effects when eaten</h4><div class="festival-dish-total">';
         html += describeEffects(chosen.foodEffects).map(value=>`<div>${esc(value)}</div>`).join('') || 'No recorded food buffs';
@@ -112,7 +117,7 @@
     } else if (type === 'potluck' || type === 'offering') {
       const done = api.claimed(type);
       html = `<p>${type === 'potluck' && f.id==='gorkunash'
-        ? 'Enter one cooked dish in the seven-day potluck competition. Every ingredient contributes its own star level; processed ingredients earn twice their source ingredient score per processing step. Rivals have fixed quality ceilings. The seventh serving pot is yours for the rest of the festival. After the festival, Hreesh visits the winning cook with the Replica Helm of Bzabag. Your normal 10× friendly gift Favor still applies.'
+        ? 'Enter one cooked dish in the seven-day potluck competition. Every ingredient contributes its own star level; processed ingredients earn twice their source ingredient score per processing step, and known source rarity multiplies that result. Rivals have fixed quality ceilings. The seventh serving pot is yours for the rest of the festival. After the festival, Hreesh visits the winning cook with the Replica Helm of Bzabag. Your normal 10× friendly gift Favor still applies.'
         : type==='potluck'?'Give one cooked meal to the feast.':'Surrender a keepsake to the ancestor pyre, or release a baby animal alive. Item rarity, scarcity of its sources, its value, crafting effort and star quality multiply into a 336-day blessing. The item decides the stat, not a separate choice.'}</p>`;
       if(type==='potluck'&&f.id==='gorkunash') {
         const bowl=api.festivalBowl();
