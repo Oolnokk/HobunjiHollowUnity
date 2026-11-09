@@ -204,11 +204,27 @@
     const gestation=num(window.FarmAnimals?.GESTATION_DAYS);
     if(species&&gestation>0)list.push(origin('animal-breeding','Breeding '+species,1,1,1,
       1+gestation/2,'requires-owned-compatible-parents',{gestationDays:gestation}));
-    if(options.genotype) {
-      const inherited=window.CreatureGenetics?.sellValueFor?.(species,options.genotype);
-      if(inherited&&Number.isFinite(Number(inherited.animalValue)))list.push(origin('genotype',
-        'Inherited animal genetics',.5,1,1,Math.max(1,num(inherited.animalValue)/100),
-        'unknown-parent-proxy',{animalValue:num(inherited.animalValue)}));
+    if(options.genotype && species) {
+      const family=window.CreatureGenetics?.SPECIES_ALIAS?.[species] || species; // The same kind used by FarmAnimals and the appearance system.
+      const patterns=window.CreatureGenetics?.PATTERN_DEFS?.[family] || []; // Source-owned, mutable species pattern catalog.
+      const geneticsCfg=config.creatureGenetics || {};
+      const chances=geneticsCfg.patternChances?.[family] || {};
+      let chance=1; // Multiplies independent, authored pattern-appearance rolls for a fresh wild genotype.
+      for(const id of patterns) {
+        const p=prob(chances[id] ?? geneticsCfg.defaultPatternChance ?? 1/3);
+        const enabled=!!options.genotype[id]?.enabled && num(options.genotype[id]?.copies)>0;
+        chance*=enabled?p:1-p;
+      }
+      const phenotype=window.CreatureGenetics?.sellValueFor?.(options.genotype,family) || null; // Correct API order: genotype first, species second.
+      for(const source of list.filter(entry=>entry.kind==='wild-nest'||entry.kind==='animal-breeding')) {
+        source.patternPresenceChance=rounded(chance,7);
+        source.genotypeTier=phenotype?.tier || null;
+        source.genotypeValue=Number.isFinite(Number(phenotype?.amount))?Number(phenotype.amount):null;
+        source.phenotypeNote='Pattern presence odds only; color palettes and breeding-parent inheritance are not assumed exact';
+        source.expectedUnits=rounded(source.expectedUnits*chance,7);
+        if(source.kind==='animal-breeding')source.certainty='default-pattern-proxy-for-breeding';
+        else source.certainty=source.certainty+'-pattern-only';
+      }
     }
     return true;
   }
