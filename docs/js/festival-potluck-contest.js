@@ -26,7 +26,8 @@
   }
   function ingredientPoints(key, stars, defs) {
     const quality = Math.max(1, Math.min(5, Math.trunc(Number(stars) || 1)));
-    return quality * (2 ** processingDepth(key, defs));
+    const rarity = window.ItemAcquisitionRarity?.foodRarity?.(key, defs)?.factor ?? 1; // Source scarcity multiplies quality and depth; unknown provenance is neutral.
+    return Math.round(quality * (2 ** processingDepth(key, defs)) * rarity * 100) / 100;
   }
   function scoreIngredients(entries, defs) {
     return (entries || []).reduce((sum, item) => sum + ingredientPoints(item.key, item.stars, defs), 0);
@@ -71,8 +72,10 @@
     return (ingredients || []).map(entry => {
       const def = ingredientDefinition(entry.key,defs);
       const stars = Math.max(1,Math.min(5,Math.round(Number(entry.stars) || 1)));
-      const multiplier = 2 ** processingDepth(entry.key,defs);
-      return {key:entry.key,label:def.label,icon:def.icon,stars,multiplier,
+      const processingMultiplier = 2 ** processingDepth(entry.key,defs); // The existing doubled processing factor remains separately inspectable.
+      const rarityMultiplier = window.ItemAcquisitionRarity?.foodRarity?.(entry.key,defs)?.factor ?? 1; // Multiplies actual source-acquisition rarity.
+      const multiplier = Math.round(processingMultiplier * rarityMultiplier * 10000) / 10000; // Display-only combined multiplier; score uses full precision.
+      return {key:entry.key,label:def.label,icon:def.icon,stars,multiplier,processingMultiplier,rarityMultiplier,
         points:ingredientPoints(entry.key,stars,defs),
         contributesEffects:entry.contributesEffects !== false,
         effects:entry.contributesEffects === false ? {} : ingredientEffects(entry.key,stars,defs)};
