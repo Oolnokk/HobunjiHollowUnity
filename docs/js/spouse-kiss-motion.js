@@ -27,8 +27,10 @@
     const taller = first >= second ? 'first' : 'second'; // Only the physically taller partner kneels and bows.
     const tall = Math.max(first, second);
     const short = Math.min(first, second);
-    const tallMouth = tall * MOUTH_HEIGHT_FRACTION;
-    const shortMouth = short * MOUTH_HEIGHT_FRACTION;
+    const firstMouth = clamp(finite(options.firstMouthHeightWorld, first * MOUTH_HEIGHT_FRACTION), .001, first * 1.4); // True lip height supplied by B'shuakauitl where available.
+    const secondMouth = clamp(finite(options.secondMouthHeightWorld, second * MOUTH_HEIGHT_FRACTION), .001, second * 1.4); // Different species place their mouths differently.
+    const tallMouth = taller === 'first' ? firstMouth : secondMouth;
+    const shortMouth = taller === 'first' ? secondMouth : firstMouth;
     const hipHeight = clamp(finite(options.tallerHipHeightWorld, tall * .28), .001, tallMouth); // Ground-to-posterior height from the real leg handle.
     const legLength = Math.max(.001, finite(options.tallerLegLengthWorld, hipHeight)); // Anatomical leg length controls actual stance limits.
     const kneeLimit = Math.min(legLength * KNEEL_LEG_FRACTION, tall * MAX_SINK_PCT / 100);
@@ -66,6 +68,7 @@
     const remainingGap = Math.max(0, requestedDrop - kneeDrop - bowDrop - shorterJumpWorld);
     return {
       taller, firstHeight: first, secondHeight: second,
+      firstMouthHeightWorld: firstMouth, secondMouthHeightWorld: secondMouth, // Expose the actual lip heights in preview/debug.
       mouthHeightRatio: MOUTH_HEIGHT_FRACTION,
       tallerSinkWorld: kneeDrop, tallerSinkPct: kneeDrop / tall * 100,
       shorterSinkPct: 0, tallerBowDeg: bowRad * 180 / Math.PI,
@@ -219,12 +222,22 @@
     return { targetDistance: distance, armReach: limit, exactShoulder: false, onTorso: false };
   }
 
-  function shoulderGripWorld(rig, side, output) {
+  function shoulderGripWorld(rig, side, output, attachment = null, rebase = false) {
     if (!rig?.shoulderPositionLocal || !rig.parent?.localToWorld || !output) return false;
     rig.parent.updateWorldMatrix?.(true, false);
     const local = rig.shoulderPositionLocal(side, output);
     if (!local) return false;
     rig.parent.localToWorld(output);
+    const torso = rig.avatarRoot; // Actual portrait/torso transform, not the separate floor-relative procedural hand parent.
+    if (attachment?.local?.isVector3 && torso?.worldToLocal && torso?.localToWorld && torso !== rig.parent) {
+      torso.updateWorldMatrix?.(true, false);
+      if (!attachment.valid || rebase) {
+        attachment.local.copy(output);
+        torso.worldToLocal(attachment.local); // Capture authored shoulder once in the torso's neutral frame.
+        attachment.valid = true;
+      }
+      torso.localToWorld(output.copy(attachment.local)); // Follow knee lowering and bow without sliding whole roots sideways.
+    }
     return true;
   }
 
@@ -242,6 +255,9 @@
     let exactContacts = 0; // Counts true shoulder coordinates rather than closest reachable upper-torso placements.
     let maxWristReach = 0; // Farthest final wrist distance from its own shoulder, used to detect overextension.
     let unreachableSurfaces = 0; // Counts hand targets that cannot be reached even along the partner's torso.
+    let targetShoulderY = 0; // Dynamic shoulder Y; browser tests detect a static grip during kneeling.
+    let gripY = 0; // Dynamic wrist target Y from the moving shoulder and anatomy clamp.
+    let sampledShoulders = 0; // Denominator for partial/late-loading hand rigs.
     initiatorRig.useIdlePose?.(); // Reset both hands ONCE, or the right-hand solve would undo the left-hand shoulder grip.
     const torsoVector = geometry.torsoVector || (geometry.torsoVector = new THREE.Vector3());
     const torsoQuaternion = geometry.torsoQuaternion || (geometry.torsoQuaternion = new THREE.Quaternion());
@@ -255,9 +271,13 @@
       const data = geometry[side] || (geometry[side] = {
         source: new THREE.Vector3(), target: new THREE.Vector3(), grip: new THREE.Vector3(),
         idle: new THREE.Vector3(), orientation: new THREE.Quaternion(),
+        sourceAttachment: { local: new THREE.Vector3(), valid: false }, // Initiator shoulders move with their torso.
+        targetAttachment: { local: new THREE.Vector3(), valid: false }, // Grip points move with the kneeling recipient's torso.
       }); // Reused world-space shoulder and hand vectors for each side.
-      if (!shoulderGripWorld(initiatorRig, side, data.source) ||
-          !shoulderGripWorld(targetRig, other, data.target)) continue;
+      if (!shoulderGripWorld(initiatorRig, side, data.source, data.sourceAttachment, time <= .001) ||
+          !shoulderGripWorld(targetRig, other, data.target, data.targetAttachment, time <= .001)) continue;
+      targetShoulderY += data.target.y;
+      sampledShoulders++;
       const reach = Math.max(.001, finite(initiatorRig.armLengthForSide(side), .001)) * worldScale;
       const result = resolveShoulderGripWorld(data.source, data.target, reach, data.grip,
         initiatorShorter ? torsoVector : null); // Short initiators reach nearest upper-body surface; tall initiators wait for true shoulders.
@@ -276,6 +296,7 @@
       socket.getWorldPosition(data.idle);
       socket.getWorldQuaternion(data.orientation);
       data.grip.lerpVectors(data.idle, data.grip, gesture.blend);
+      gripY += data.grip.y; // Measured position that the existing hand socket will receive.
       if (gesture.blend > 0) {
         initiatorRig.placeHandWorld(side, data.grip, data.orientation);
         applied++;
@@ -288,7 +309,9 @@
     }
     return { applied: applied === 2, hands: applied, blend: applied ? minGrip : 0, closestGap,
       torsoContacts: surfaceContacts, exactShoulderContacts: exactContacts,
-      maxWristReach, unreachableSurfaces }; // Mobile diagnostics distinguish genuine shoulder contact from reachable chest contact.
+      maxWristReach, unreachableSurfaces,
+      targetShoulderY: sampledShoulders ? targetShoulderY / sampledShoulders : null,
+      gripY: sampledShoulders ? gripY / sampledShoulders : null }; // Hand targets must descend with the taller torso.
   }
 
   function actorHeight(model, legs, root) {
