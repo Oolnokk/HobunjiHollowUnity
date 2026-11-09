@@ -490,7 +490,11 @@
     return residentCache;
   }
   function favorHearts(id) { return window.NpcFavorBalance?.relationshipHeartsForNpc?.(id) ?? (Number(window.DialogueContent?.getNpcDlgState?.(id)?.favor) || 0) / 40; }
-  function giveFavor(id, amount, reason) { return window.DialogueContent?.adjustNpcFavor?.(id, amount, `festival_${reason}`); }
+  function giveFavor(id, amount, reason) {
+    const applied = window.DialogueContent?.adjustNpcFavor?.(id, amount, `festival_${reason}`);
+    if (Number.isFinite(applied) && applied > 0) window.HobunjiQuickSave?.recordFestivalFavor?.(id, applied); // Only actual festival-awarded Favor survives an opt-in test exit.
+    return applied;
+  }
   function allFavor(amount, reason) { for (const rec of residents()) giveFavor(rec.id, amount, reason); }
   function grantItem(key, count = 1, stars = 3) {
     if (!key || !deps.getItemDefs()[key] || !Number.isInteger(count) || count <= 0) return false;
@@ -498,6 +502,7 @@
     if (owned + count > (window.InventoryStacks?.MAX_TOTAL || 9999)) return false;
     deps.inventory[key] = owned + count;
     window.CookingSystem?.recordItemQuality?.(key, stars, count);
+    window.HobunjiQuickSave?.recordFestivalItem?.(key, count, stars); // Journal the granted quality tier, not consumed offerings.
     return true;
   }
   function qualityChoices(kind) {
@@ -1035,6 +1040,7 @@
     if (claimed('mask')) return fail('You have already chosen your free mask this year.');
     const id = `festivalmask_${payload.mask}`; // Existing mask cosmetic retains all authored tint layers and species variants.
     if (!deps.grantMask?.(id)) return fail('The mask is unavailable. Try again once its assets have loaded.');
+    window.HobunjiQuickSave?.recordFestivalMask?.(id); // Keep only this earned cosmetic when the tester opts into rewards.
     mark('mask');
     return commit('Your silly animal mask is in your clothing inventory. Equip it from the item panel.');
   });
