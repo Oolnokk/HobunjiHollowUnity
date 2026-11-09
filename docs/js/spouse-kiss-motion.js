@@ -418,23 +418,7 @@
       return { contact: false, distance: null, reason: 'lip-reprojection-failed' };
     }
     const distance = data.firstFrame.position.distanceTo(data.secondFrame.position);
-    const firstBoneWorld = firstJoint.getWorldPosition(data.firstWorld); // Temporary CI/mobile probe for the actual skinned head correction.
-    const secondBoneWorld = secondJoint.getWorldPosition(data.secondWorld);
     return { contact: blend > .99 && distance < .025, distance, baselineGap, blend,
-      debugHead: { first: { bone: [firstJoint.position.x, firstJoint.position.y, firstJoint.position.z],
-        rest: [data.firstRest.x, data.firstRest.y, data.firstRest.z], world: [firstBoneWorld.x, firstBoneWorld.y, firstBoneWorld.z],
-        skeletonHasBone: !!first.userData?.neckRig?.skinnedPlane?.skeleton?.bones?.includes(firstJoint),
-        skin: { neckY: first.userData?.neckRig?.neckLocal?.y,
-          blendHeight: first.userData?.neckRig?.skinnedPlane?.geometry?.userData?.blendHeight,
-          pixels: pose.mouthPixel?.(first), canvasHeight: first.userData?.sourceCanvas?.height,
-          modelHeight: first.userData?.portraitModelHeight } },
-        second: { bone: [secondJoint.position.x, secondJoint.position.y, secondJoint.position.z],
-        rest: [data.secondRest.x, data.secondRest.y, data.secondRest.z], world: [secondBoneWorld.x, secondBoneWorld.y, secondBoneWorld.z],
-        skeletonHasBone: !!second.userData?.neckRig?.skinnedPlane?.skeleton?.bones?.includes(secondJoint),
-        skin: { neckY: second.userData?.neckRig?.neckLocal?.y,
-          blendHeight: second.userData?.neckRig?.skinnedPlane?.geometry?.userData?.blendHeight,
-          pixels: pose.mouthPixel?.(second), canvasHeight: second.userData?.sourceCanvas?.height,
-          modelHeight: second.userData?.portraitModelHeight } } },
       reachLimited: firstTravel + secondTravel < baselineGap - .025,
       firstHeadMove: firstTravel * blend, secondHeadMove: secondTravel * blend };
   }
