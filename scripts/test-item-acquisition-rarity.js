@@ -634,4 +634,20 @@ assert(browserIndex.includes('js/farm-panel.js?v='),
 for(const item of ['world-meta-store','crop-varieties','farm-animals','reagent-plants','wildlife-spawn','ruin-sites','shipping-panel'])
   assert(browserIndex.includes('js/'+item+'.js?v='),'browser loads each source and genealogical module with a cache version');
 
+
+const farmCoreSource=fs.readFileSync('docs/js/farm-panel-core.js','utf8');
+const stableFactoryStart=farmCoreSource.indexOf('  function _stableEntryFromLivestock(entry) {');
+const stableFactoryEnd=farmCoreSource.indexOf('  function _addToOwnStable(',stableFactoryStart);
+assert(stableFactoryStart>=0 && stableFactoryEnd>stableFactoryStart,'shared Stable transfer factory exists');
+const toStable=Function('deps',farmCoreSource.slice(stableFactoryStart,stableFactoryEnd)+';return _stableEntryFromLivestock;')({companionAiTypeForKind:()=> 'follow'});
+const movedNewborn=toStable(newborn);
+assert.equal(movedNewborn.kind,newborn.kind,'world livestock moves to stable without a species change');
+assert.equal(movedNewborn.offspringProvenance.parents[0].genotype.coat,'striped','stable transfer preserves mother gene snapshot');
+assert.equal(movedNewborn.offspringProvenance.parents[1].id,'father','stable transfer preserves second parent');
+movedNewborn.offspringProvenance.parents[0].genotype.coat='stable-copy';
+assert.equal(newborn.offspringProvenance.parents[0].genotype.coat,'striped','stable transfer clones the genome evidence');
+farm.init({loadWorldLivestock:()=>[],getStable:()=>[movedNewborn]});
+assert.equal(farm.offspringProvenanceFor(movedNewborn.id).parents[1].id,'father','stable provenance inspector works after a transfer');
+assert(farmCoreSource.includes('stabledBirths:') && farmCoreSource.includes('livestockBirths:'),'mobile debug reports births across farm and Stable');
+
 console.log('Item acquisition rarity tests passed.');
