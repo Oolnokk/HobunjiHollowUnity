@@ -32,7 +32,8 @@ assert(attack.includes("geometry.deleteAttribute('skinWeight')"),'baked geometry
 assert(attack.includes("statueSource:{schema:'hobunji_statue_source.v1'"),'statue remains reauthorable using original source metadata');
 assert(attack.includes("texture.repeat.copy(source.repeat)")&&attack.includes("texture.offset.copy(source.offset)"),'carved texture preserves the authored sprite UVs');
 assert(statue.includes("type:'hobunji-statue-piece-import'"),'Statue Author supports a direct furniture-editor transfer');
-assert(furniture.includes("event.origin!==location.origin||event.source!==window.opener"),'direct imports reject unrelated windows/origins');
+assert(furniture.includes("event.origin!==location.origin||!event.source||(event.source!==window.opener&&event.source!==siblingStatue)"),'direct imports reject unrelated windows/origins and allow only the paired Tools Hub author');
+assert(statue.includes("hub.document.querySelector('button[data-target=\"furniture-avatar-author\"]')?.click()"),'direct insertion targets the existing hub Furniture Editor instead of starting a new assembly');
 assert(procedural.includes('part.statueBaked === true && part.preserveMaterials === true'),'furniture does not erase embedded stone texture');
 assert(procedural.includes('child.material.map(material => material.clone())'),'imported statue materials are cloned per piece');
 
