@@ -24,6 +24,8 @@ on:
       - 'docs/tools/debris-ifier/debrisifier-v50-api.js'
       - 'scripts/test-ruin-composer-playable.js'
       - 'scripts/test-dev-random-ruin-*.js'
+      - 'scripts/ci-select-tests.js'
+      - 'scripts/test-ci-select-tests.js'
   pull_request:
     paths:
       - '.github/workflows/smoke-dev-random-ruin-full.yml'
@@ -46,6 +48,8 @@ on:
       - 'docs/tools/debris-ifier/debrisifier-v50-api.js'
       - 'scripts/test-ruin-composer-playable.js'
       - 'scripts/test-dev-random-ruin-*.js'
+      - 'scripts/ci-select-tests.js'
+      - 'scripts/test-ci-select-tests.js'
   workflow_dispatch:
 
 permissions:
