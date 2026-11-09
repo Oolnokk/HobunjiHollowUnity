@@ -241,6 +241,25 @@
     });
   }
 
+  function sourceCensus(mapId = deps?.getCurrentArea?.()) {
+    const record = deps?._zoneReagentPersist?.get?.(mapId);
+    if (!record || !Array.isArray(record.placements)) return {zoneId:mapId,known:false,
+      reason:'this habitat has no generated/persisted daily reagent scatter yet'};
+    const today = record.day === deps?.calendar?.day;
+    const entries = record.placements;
+    const pool = window.AlchemySystem?.reagentsForZone?.(mapId) || [];
+    const bySpecies = Object.fromEntries(pool.map(key=>{
+      const matching=entries.filter(e=>e.key===key);
+      return [key,{generated:matching.length,remaining:matching.filter(e=>!e.harvested).length,
+        habitat:window.AlchemySystem?.REAGENT_DEFS?.[key]?.habitat || null,
+        shareOfGenerated:entries.length?matching.length/entries.length:null}];
+    }));
+    return {zoneId:mapId,known:true,isCurrentDay:today,day:record.day,
+      generatedTotal:entries.length,remainingTotal:entries.filter(e=>!e.harvested).length,
+      bySpecies,certainty:today?'exact current-day recorded habitat placements':'historical scatter only: current day requires regeneration',
+      caution:'Habitat-specific opportunities; no assumption that every wilderness tile can grow every reagent'};
+  }
+
   function diagnosticsSnapshot(mapId = deps?.getCurrentArea?.()) {
     const persisted = deps?._zoneReagentPersist?.get(mapId);
     const placements = persisted?.placements || [];
@@ -268,6 +287,7 @@
     serializeZoneReagentState,
     restoreZoneReagentState,
     diagnosticsSnapshot,
+    sourceCensus,
     diagnosticsText,
   };
 })();
