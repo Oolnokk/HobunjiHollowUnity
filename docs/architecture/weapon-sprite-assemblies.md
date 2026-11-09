@@ -93,15 +93,29 @@ to require a flexible assembly rather than accidentally forging a rigid
 copy. One rope mount is used per modular weapon.
 
 The [Modular Weapon Editor](../tools/modular-weapon-editor/index.html)
-includes a separate **Full flexible assembly** preview alongside the
-usual brush/assembly preview. It shows the actual tinted rope/chain PNG
-and the head's actual separate layers at the chosen contact point,
-including the extra extent beyond the 450×1204 haft sprite. It
-displays physical reach, width, and head scale independently. The
-live in-game pendulum uses the same assembly recipe; the 2D view
-deliberately shows a gravity-hanging rest pose rather than simulating
-player motion. The original assembled brush preview remains available
-without changing its coordinate system.
+now opens with the **complete 2D assembled rig as its primary preview**.
+For flails, it renders the real forged haft (including conditional bores),
+the tinted connector PNG and every independently layered head sprite,
+using the same `flailRecipe`, authored contacts and layer offsets as the
+runtime's Three.js pendulum. At rest the rope hangs under gravity; its
+head and shaft anchor are marked in gold and cyan, with a separate
+purple length guide that **always appears** in the full assembly view,
+including flails without a separately authored shaft rope line.
+The real moving pendulum still belongs exclusively to gameplay.
+Use **Show connector guides** to hide only the annotations; it does not
+change the weapon art, physical rope or saved rig.
+
+Rigid weapons also appear in this complete-rig preview, with their
+transformed attachment marks. The original 450×1204 shaft/head/bridge
+canvases remain available under **Source canvases** for touch editing,
+without changing their authoring coordinate frame. Source canvases
+open automatically when beginning a bore drag, mount adjustment or
+recipe operation; they remain closed by default to prioritize the full
+weapon. The remaining controls are grouped into eight numbered
+collapsible workflows: identity and tool roles; flail and bore; haft
+art/rig regions; mount lines; pair corrections; component cleanup;
+metalwork brushes; and PNG source cutting. User drafts and history are
+unchanged by this layout-only reorganization.
 
 ### Recalculating bores in original shaft artwork
 
