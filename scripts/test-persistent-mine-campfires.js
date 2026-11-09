@@ -65,11 +65,26 @@ camp.init({
 
 assert.equal(camp.supportsArea(area), true, 'mine floor is a valid campfire area');
 assert.equal(camp.placeFromKit(5, 7).ok, true, 'campfire can be placed underground');
-assert.equal(inventory.campfireKitFurniture, 2, 'placing underground consumes exactly one kit');
+assert.equal(inventory.campfireKitFurniture, 3, 'legacy item placement is free and never consumes a kit');
 assert.equal(camp.serialize().mapId, 'map_i_town_mine_f_005', 'underground placement is serializable world state');
+inventory.campfireKitFurniture = 0;
+inventory.wood = 0;
+inventory.stone = 0;
+inventory.gold = 0;
+player.x = 9.5 * 16;
+player.y = 10.5 * 16;
+const freeSetupInventory = JSON.stringify(inventory); // Verifies free utility setup leaves all resources untouched.
+const beforeFreeSetupPersist = persistCount; // Confirms the direct setup persists its replacement camp.
+assert.equal(camp.placeAtPlayer().ok, true, 'utilities can set up a mine camp with no kit, materials, or gold');
+assert.equal(camp.serialize().x, 9.5, 'free setup snaps to the player tile, not to an arbitrary old camp location');
+assert.equal(camp.serialize().z, 10.5, 'free setup uses the player row');
+assert.equal(JSON.stringify(inventory), freeSetupInventory, 'free setup consumes no items or currency');
+assert.equal(persistCount, beforeFreeSetupPersist + 1, 'free setup saves the replacement camp');
 const savedMineCamp = camp.serialize();
 
 area = 'farm';
+assert.equal(camp.placeAtPlayer().ok, false, 'free setup is unavailable on the farm');
+assert.deepEqual(camp.serialize(), savedMineCamp, 'invalid area cannot replace a saved camp');
 camp.updateVfx(0.016);
 assert.deepEqual(camp.serialize(), savedMineCamp, 'leaving the placement map does not delete persistent camp state');
 
@@ -86,7 +101,8 @@ assert.equal(camp.clearMineCampfireOnDeath(), true, 'mine death destroys an unde
 assert.equal(camp.serialize(), null, 'mine death clears persistent camp state');
 
 area = 'map_northern_cliffs';
-assert.equal(camp.placeFromKit(2, 3).ok, true, 'wilderness camp still works');
+assert.equal(camp.placeFromKit(2, 3).ok, true, 'legacy wilderness kit action works even with no kits in inventory');
+assert.equal(inventory.campfireKitFurniture, 0, 'the legacy action never takes or grants a kit');
 assert.equal(camp.clearMineCampfireOnDeath(), false, 'mine death cleanup does not destroy a wilderness camp');
 assert.equal(camp.serialize().mapId, 'map_northern_cliffs');
 const savedWildernessCamp = camp.serialize();
@@ -106,6 +122,9 @@ assert.ok(camp.getDebugState().history.some(entry => entry.event === 'clear' && 
 area = 'map_i_town_mine_f_012';
 assert.equal(camp.placeFromKit(4, 4).ok, true, 'placing a new camp replaces the previous global camp');
 assert.equal(camp.serialize().mapId, 'map_i_town_mine_f_012');
+player.x = NaN;
+assert.equal(camp.placeAtPlayer().ok, false, 'non-finite player positions cannot create corrupt saved camp coordinates');
+assert.equal(camp.serialize().mapId, 'map_i_town_mine_f_012', 'invalid positions do not erase a saved camp');
 assert.ok(persistCount >= 4, 'placement/death changes are persisted immediately');
 
 assert.match(source, /HobunjiSaveCheckpoints[\s\S]{0,320}saveCampfire/, 'campfire Save Game prefers the guarded dedicated campfire checkpoint API');
@@ -115,6 +134,10 @@ assert.match(game, /WildernessCampfire\?\.restore\(playerData\.wildernessCampfir
 assert.match(game, /clearMineCampfireOnDeath/, 'mine player death clears underground camp');
 assert.match(game, /supportsArea\?\.\(currentArea\)/, 'placement and nearby interaction gates accept supported mine areas');
 assert.match(arcUi, /requestReturnToCampfire[\s\S]{0,180}enterBuilding\(campfire\.mapId\)/, 'Return to Camp can travel back to a mine floor');
+assert.match(arcUi, /id: 'set-up-camp'[\s\S]{0,130}label: 'Set Up Campfire \(Free\)'/, 'utility wheel offers free campfire setup instead of requiring inventory');
+assert.match(arcUi, /disabled: !canSetUpCampfire/, 'utility action is disabled in unsupported areas');
+assert.match(arcUi, /WildernessCampfire\?\.placeAtPlayer\?\.\(\)/, 'utility action invokes direct placement without a kit');
+assert.doesNotMatch(arcUi, /id: 'select-kit'/, 'utility wheel no longer disables setup for an empty inventory');
 assert.match(game, /isMineArea: area => !!window\.TownMine\?\.floorFromMapId/, 'mine-area classification is injected into campfire system');
 assert.match(mine, /relocateForGeneratedMineFloor/, 'regenerated mine floors preserve underground camp placement');
 assert.match(mine, /persistedCampfire[\s\S]{0,180}excluded\.add/, 'mine content scatter reserves the persistent camp tile');
