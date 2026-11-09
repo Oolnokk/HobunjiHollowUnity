@@ -611,7 +611,7 @@
     byId('add').disabled = shaft.mounts.length >= (shaft.maxAttachments || 8);
     byId('mount-kind').value = shaft.mounts[mountIndex].type;
     byId('head-kind').value = head.mount.type;
-    byId('head-kind').disabled = !!head.flailAssembly; // A flail head's authored Multi-sprite connection cannot be reconfigured by an irrelevant modular mount selector.
+    byId('head-kind').disabled = api.isFlailHead(head); // A flail head's authored multi-sprite anchor is authoritative, whether flagged by recipe or mount type.
     const duplicated = shaft.duplicateFrom && data.shafts[shaft.duplicateFrom]; // Duplicated attachment rigs, not shaft sprites, have independent transforms.
     const art=api.shaftArtTransform(shaft);
     byId('shaft-art-enabled').checked=art.enabled;
@@ -637,12 +637,20 @@
       ? 'Flail head attachment is from Complex Tool Visuals. The head arrow in this modular editor is ignored for runtime, forging and preview.'
       : (head.mountNote || ''); // Authoring notes for shovel scoop, transverse hoe, and pick head.
     const accepted = compatible(), needed = shaft.flailAssembly || head.flailAssembly || head.mount.type === 'flail' ? 'rope (or legacy eye/tang)' : head.mount.type === 'blade' ? 'tang' : 'eye';
-    byId('part-readiness').textContent = !accepted
-      ? 'Incompatible: add a ' + needed + ' line to this haft or choose another head.'
+    const blocked = api.isDisallowed(byId('shaft').value,headKey); // Real forge gate, not only the number of geometric mount matches.
+    byId('part-readiness').textContent = shaft.flailAssembly && head.flailAssembly
+      ? 'Not forgeable: both parts own a full rope. Keep a flail recipe on only one.'
+      : shaft.overrides[headKey]?.disallow === true
+        ? 'Explicitly excluded: remove the pair disallow checkbox if this combination should be usable.'
+      : !accepted
+        ? 'Incompatible: add a ' + needed + ' line or select a head with a valid authored connector.'
+      : head.craftDisabled ? 'Retired head: existing items remain usable, but the Foundry cannot make new ones.'
+      : blocked ? 'Not forgeable: the flail recipe or head mount is incompatible with this haft.'
       : shaft.sourceShape === 'bgungku' ? "B'gungku has no gameplay donor; preview/editor use only."
-      : head.craftDisabled ? 'This head is retired from Foundry crafting; existing forged weapons remain usable.'
-      : shaft.editorOnly || head.editorOnly ? 'One or both parts still need calibration and Foundry approval.'
-      : 'Compatible directed mounts; both parts are enabled for Foundry.';
+      : shaft.editorOnly || head.editorOnly ? 'One or both parts still require Foundry calibration.'
+      : (shaft.flailAssembly || head.flailAssembly)
+        ? 'Flexible assembly ready: full 2D rig uses original Tool Hub connector and authored head contact.'
+        : 'Rigid assembly ready: directed mounts produce the baked head and haft.';
     editLineNumbers();
     byId('fields').replaceChildren();
     const pair = shaft.overrides[headKey] ||= {}; // Pair-only corrections; no shaft-global defaults.
@@ -991,7 +999,8 @@
     shaft.sprite = sprite; save(); // Replacement PNG is the entire shaft; copied sockets still align to its authoring frame.
   };
   byId('head').onchange = render;
-  byId('socket').onchange = () => { mountIndex = Number(byId('socket').value); render(); };
+  byId('socket').onchange = () => { mountIndex = Number(byId('socket').value);
+    openWorkspace('mount-editor-workflow'); render(); // Selecting a mount opens the viewport where the line is drawn. };
   byId('head-kind').onchange = () => { chosenHead().mount.type = byId('head-kind').value; save(); };
   byId('mount-kind').onchange = () => { chosenShaft().mounts[mountIndex].type = byId('mount-kind').value; save(); };
   byId('add').onclick = () => {
