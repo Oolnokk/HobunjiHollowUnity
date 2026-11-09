@@ -5,7 +5,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 const read=path=>fs.readFileSync(path,'utf8');
-const W={SCRATCHBONES_CONFIG:{game:{livestock:{itemKinds:{puktukBaby:'puktuk',fertilePingdortEgg:'pingdort'}}}}};
+const W={SCRATCHBONES_CONFIG:{game:{livestock:{itemKinds:{puktukBaby:'puktuk',fertilePingdortEgg:'pingdort',adultCrate:'puktuk'}}}}};
 const ctx=vm.createContext({window:W,console});
 vm.runInContext(read('docs/js/festival-offering-ritual.js'),ctx);
 const ritual=W.FestivalOfferingRitual;
@@ -17,6 +17,7 @@ const defs={
   puktukBaby:{label:'Puktuk Baby',sellPrice:90,tags:['Baby','Livestock']},
   fertilePingdortEgg:{label:'Fertile Pingdort Egg',sellPrice:85,tags:['Fertile','Egg','Livestock']},
   commonEgg:{label:'Ordinary Egg',sellPrice:3,tags:['Food','Egg']},
+  adultCrate:{label:'Adult Livestock Crate',sellPrice:100,tags:['Livestock']},
 };
 const rarities={
   ordinary:{kind:'unknown'},rare:{kind:'artifact'},crafted:{kind:'processed',foodRarity:2},
@@ -48,6 +49,7 @@ assert.equal(choose('puktukBaby',2).species,'puktuk','the baby becomes a real cr
 assert.equal(choose('fertilePingdortEgg',3).mode,'release','a hatchable Pingdort egg is saved, not incinerated');
 assert.equal(choose('fertilePingdortEgg',3).stat,'goodwill','releasing a young creature is a goodwill ritual');
 assert.equal(choose('commonEgg',3).mode,'burn','unfertilized cooking eggs are not released as animals');
+assert.equal(choose('adultCrate',3).mode,'burn','adult livestock is not a rescue merely because its item has a Livestock tag');
 assert.equal(ritual.releaseSpecies('unregisteredBaby',defs.puktukBaby,W.SCRATCHBONES_CONFIG.game),null,
   'an arbitrary item name cannot forge a species outside the official livestock catalog');
 const fallback=ritual.assess('ordinary',4,defs,{game:W.SCRATCHBONES_CONFIG.game,rarity:null});
@@ -115,6 +117,12 @@ pending.push({id:'forged:1',key:'puktukBaby',species:'tzatzul'});
 assert.equal(wild.deliverFestivalAnimalReleases('map_western_slope'),0,
   'mismatched saved species and baby item cannot forge a wildlife creature');
 assert.equal(released.length,1,'forged inventory item has not spawned any creature');
+pending.length=0;
+pending.push({id:'stranded:1',key:'puktukBaby',species:'puktuk'});
+releaseZones.map_western_slope.denSpecies=[]; // No generated zone currently declares this species as native.
+assert.equal(wild.deliverFestivalAnimalReleases('map_western_slope'),0,
+  'missing native habitat must not release young animals in arbitrary wilderness');
+assert.equal(pending.length,1,'stranded juvenile stays queued rather than being lost or burned');
 pending.length=0;
 
 console.log('Tzizkhanash source-rarity offering, native-animal release, pyre and mobile preview tests passed.');
