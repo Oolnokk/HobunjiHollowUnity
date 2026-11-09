@@ -129,7 +129,8 @@
       : kind(actor) === 'pingdort'
         ? (actor.genotype ||= window.CreatureGenetics?.makeDefaultGenotype?.('pingdort'))
         : actor.tzatzulIdentity; // Preserve each species' authored palette source and individual identity.
-    Promise.resolve().then(() => create(appearance, { undeformedPerch: kind(actor) === window.TzatzulRegistration?.HATCHLING_KIND })).then(rig => {
+    Promise.resolve().then(() => kind(actor) === window.TzatzulRegistration?.HATCHLING_KIND
+      ? create(appearance, { undeformedPerch: true }) : create(appearance)).then(rig => { // Only Tzatzul hatchlings receive an override; Pingdort and Skeeri retain their existing genotype/rig contract.
       if (!rig?.root || !rig?.dispose) throw new Error('Flying rig renderer did not return a disposable root');
       if (state.removed || tracked.get(actor) !== state || actor.health <= 0
         || actor.avatarRef?.group !== group || !group.parent || actor._wildlifeVisualsReleased) {
