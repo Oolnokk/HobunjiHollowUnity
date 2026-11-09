@@ -29,6 +29,8 @@
   const RESUME_KEY = 'hobunjiQuickResume.v1'; // {slotId, characterId, worldId, exact}
   const PENDING_MAX_AGE_MS = 3 * 60 * 1000;
   const QUICK_SAVE_VERSION = 1;
+  const FESTIVAL_TEST_KEY = 'hobunjiFestivalTestSession.v1'; // Tracks the isolated test and its restore slots across reloads.
+  const FESTIVAL_PREFS_KEY = 'hobunjiFestivalTestPrefs.v1'; // Remembers festival selection and the opt-in reward checkbox.
 
   let deps = null; // Injected by game.js (see init).
   let lastAction = 'initialized';
@@ -132,7 +134,7 @@
   }
 
   // ── Quick save ──────────────────────────────────────────────────────
-  async function quickSave({ label = '' } = {}) {
+  async function quickSave({ label = '', pinned = false } = {}) {
     try {
       if (window.__hobunjiGameStarted !== true) throw new Error('The game has not finished loading a save yet.');
       if (!deps) throw new Error('Quick save is not wired into the game yet.');
@@ -154,6 +156,7 @@
       const slot = {
         id: `qs-${savedAt.toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
         version: QUICK_SAVE_VERSION,
+        pinned: !!pinned, // Festival test restore points must not be pruned while the test runs.
         label: String(label || '').trim() || `${exact?.areaLabel || exact?.area || 'Quick save'} · ${describeTime(exact?.calendar) || new Date(savedAt).toLocaleTimeString()}`,
         savedAt,
         characterId: ids.characterId,
@@ -210,6 +213,233 @@
     return { ok: true };
   }
 
+
+  // ── Isolated Festival Test (Dev Companion) ────────────────────────────
+  // Never rewind the live simulation. Boot a modified COPY of a full save,
+  // then reload the untouched original, optionally adding journaled rewards.
+  function festivalPrefs() {
+    const saved = readSession(FESTIVAL_PREFS_KEY) || {};
+    return { festivalId: String(saved.festivalId || 'gorkunash'), keepRewards: saved.keepRewards === true };
+  }
+
+  function festivalTestSession() {
+    const session = readSession(FESTIVAL_TEST_KEY);
+    return session && session.characterId && session.worldId ? session : null;
+  }
+
+  function writeFestivalSession(session) {
+    if (!writeSession(FESTIVAL_TEST_KEY, session)) throw new Error('Festival test session storage is unavailable.');
+  }
+
+  function setFestivalPrefs(next) {
+    const prefs = { ...festivalPrefs(), ...next }; // Shared by the selector and reward checkbox, including across game reloads.
+    if (!writeSession(FESTIVAL_PREFS_KEY, prefs)) return { ok: false, error: 'Festival test preferences could not be stored.' };
+    const session = festivalTestSession();
+    if (session && Object.hasOwn(next, 'keepRewards')) {
+      session.keepRewards = prefs.keepRewards;
+      writeFestivalSession(session);
+    }
+    return { ok: true, ...prefs };
+  }
+
+  function festivalStatus() {
+    const session = festivalTestSession();
+    return session ? {
+      active: session.phase === 'active', phase: session.phase, festivalId: session.festivalId,
+      keepRewards: !!session.keepRewards, rewardCount: (session.journal?.items || []).length +
+        (session.journal?.masks || []).length + Object.keys(session.journal?.favor || {}).length,
+      restoreSlotId: session.baseSlotId, targetDay: session.targetDay,
+    } : { active: false, phase: 'idle', ...festivalPrefs() };
+  }
+
+  function recordFestivalReward(kind, entry) {
+    const session = festivalTestSession();
+    const ids = activeIds();
+    if (!session || session.phase !== 'active' || session.characterId !== ids.characterId || session.worldId !== ids.worldId) return;
+    const journal = session.journal || (session.journal = { favor: {}, items: [], masks: [] }); // Rewards journaled only by festival award handlers, never by incidental test play.
+    if (kind === 'favor' && entry?.npcId && Number.isFinite(entry.amount) && entry.amount > 0) {
+      journal.favor[entry.npcId] = (Number(journal.favor[entry.npcId]) || 0) + entry.amount;
+    } else if (kind === 'item' && entry?.key && Number.isInteger(entry.count) && entry.count > 0) {
+      journal.items.push({ key: String(entry.key), count: entry.count, stars: Math.max(1, Math.min(5, Number(entry.stars) || 3)) });
+    } else if (kind === 'mask' && /^festivalmask_[\w'-]+$/.test(entry?.id || '')) {
+      if (!journal.masks.includes(entry.id)) journal.masks.push(entry.id);
+    } else return;
+    writeFestivalSession(session);
+  }
+
+  function festivalMember(snapshot, ids) {
+    const world = snapshot?.meta?.worlds?.find(w => String(w.id) === ids.worldId);
+    return world?.members?.[ids.characterId] || null;
+  }
+
+  function mergeFestivalRewards(original, tested, session) {
+    const ids = { characterId: session.characterId, worldId: session.worldId };
+    const member = festivalMember(original, ids);
+    const after = festivalMember(tested, ids);
+    if (!member || !after) throw new Error('Festival reward save does not match the original character and world.');
+    const journal = session.journal || { favor: {}, items: [], masks: [] };
+
+    // Preserve the real timeline and every unrelated field. Only explicitly
+    // awarded festival Favor and items may cross the sandbox boundary.
+    const relationships = member.npcRelationships || (member.npcRelationships = {});
+    for (const [id, amount] of Object.entries(journal.favor || {})) {
+      if (!Number.isFinite(amount) || amount <= 0) continue;
+      const before = relationships[id] || {};
+      relationships[id] = { ...before, favor: (Number(before.favor) || 0) + amount };
+    }
+    const inventory = member.nonGearInventory || (member.nonGearInventory = {});
+    const cooking = member.cookingState || (member.cookingState = {});
+    const qualities = cooking.qualityBuckets || (cooking.qualityBuckets = {});
+    for (const item of journal.items || []) {
+      if (!item?.key || !Number.isInteger(item.count) || item.count <= 0) continue;
+      inventory[item.key] = (Number(inventory[item.key]) || 0) + item.count;
+      const bucket = qualities[item.key] || (qualities[item.key] = {});
+      const stars = String(Math.max(1, Math.min(5, Number(item.stars) || 3)));
+      bucket[stars] = (Number(bucket[stars]) || 0) + item.count;
+      // Procedurally authored festival sweets must retain their definitions.
+      if (after.cookingState?.cookedDefinitions?.[item.key]) {
+        (cooking.cookedDefinitions ||= {})[item.key] = after.cookingState.cookedDefinitions[item.key];
+      }
+    }
+    // Festival masks use the already-authored clothing records; don't copy
+    // unrelated wardrobe edits or clothing made during the test.
+    const pack = member.packClothing || (member.packClothing = []);
+    for (const mask of journal.masks || []) {
+      const isMask = item => item === mask || [item?.id, item?.cosmeticId, item?.key].includes(mask);
+      const record = (after.packClothing || []).find(isMask);
+      if (record && !pack.some(isMask)) pack.push(record);
+    }
+
+    const beforeFestival = member.festivals || (member.festivals = {});
+    const afterFestival = after.festivals || {};
+    const event = String(session.eventKey || '');
+    if (event && afterFestival.claims?.[event]) {
+      (beforeFestival.claims ||= {})[event] = {
+        ...(beforeFestival.claims?.[event] || {}), ...afterFestival.claims[event],
+      };
+      if (event.endsWith(':gorkunash') && afterFestival.potluckContests?.[event]) {
+        (beforeFestival.potluckContests ||= {})[event] = afterFestival.potluckContests[event];
+      }
+    }
+    // Paid event-scoped Fun is transferred only if its Favor was actually
+    // journaled. Do not transfer the future day cursor or pending food timers.
+    for (const name of ['festivalFunEarned', 'festivalFunPaid', 'festivalMealPortions']) {
+      const entries = afterFestival[name] || {};
+      for (const [key, value] of Object.entries(entries)) {
+        if (key.startsWith(event + ':') && event) (beforeFestival[name] ||= {})[key] = value;
+      }
+    }
+    if (event.endsWith(':tzizkhanash') && afterFestival.claims?.[event]?.offering && afterFestival.blessing) {
+      const cal = window.CalendarSystem;
+      const oldDay = original.meta.worlds.find(w => String(w.id) === ids.worldId)?.calendar?.day;
+      const age = day => cal.aotYearNumber(day) * 336 + cal.dayOfYear(day) - 1;
+      const remaining = Math.max(0, Number(afterFestival.blessing.expiresDay) - age(session.targetDay));
+      beforeFestival.blessing = { ...afterFestival.blessing, expiresDay: age(oldDay) + remaining };
+    }
+  }
+
+  async function startFestivalTest() {
+    if (festivalTestSession()) return { ok: false, error: 'Exit the existing festival test before starting another.' };
+    if (window.__hobunjiGameStarted !== true || !deps) return { ok: false, error: 'Start a world before testing a festival.' };
+    const cal = window.CalendarSystem;
+    const prefs = festivalPrefs();
+    const festival = window.FestivalCalendar?.get?.(prefs.festivalId);
+    if (!festival || !cal?.absDayForMonthStart || !cal?.aotYearNumber) return { ok: false, error: 'Festival calendar is unavailable.' };
+    const ids = activeIds();
+    const wasPaused = window.HobunjiAutosavePause?.isPaused?.() === true;
+    const saved = await quickSave({ label: 'Festival test return point', pinned: true });
+    if (!saved.ok) return saved;
+    const baseline = await getSlot(saved.slot.id);
+    let year = cal.aotYearNumber();
+    let day = cal.absDayForMonthStart(year, festival.month - 1) + festival.day - 1;
+    const currentDay = baseline.snapshot.meta.worlds.find(w => String(w.id) === ids.worldId)?.calendar?.day;
+    if (!Number.isFinite(currentDay)) return { ok: false, error: 'Current world has no saved calendar.' };
+    while (day < currentDay || day < 1) {
+      year++;
+      day = cal.absDayForMonthStart(year, festival.month - 1) + festival.day - 1;
+    }
+    const preview = JSON.parse(JSON.stringify(baseline)); // Used only for the temporary festival-world boot.
+    const previewWorld = preview.snapshot.meta.worlds.find(w => String(w.id) === ids.worldId);
+    previewWorld.calendar.day = day;
+    previewWorld.calendar.time01 = (15 - 6) / (22 - 6); // Begins at the gathering's 15:00 opening time.
+    previewWorld.lastDay = day; // Avoid treating every skipped day as a pending overnight rollover.
+    previewWorld.lastSeason = cal.seasonForDay(day)?.name || previewWorld.lastSeason;
+    preview.id = 'festival-test-preview-' + Date.now().toString(36);
+    preview.label = 'Festival test: ' + festival.name;
+    preview.pinned = true;
+    preview.festivalTemporary = true;
+    if (preview.exact?.calendar) preview.exact.calendar = { ...preview.exact.calendar, ...previewWorld.calendar };
+    await putSlot(preview);
+    const session = {
+      characterId: ids.characterId, worldId: ids.worldId, festivalId: festival.id,
+      eventKey: year + ':' + festival.id, targetDay: day,
+      baseSlotId: baseline.id, previewSlotId: preview.id, phase: 'starting',
+      keepRewards: !!prefs.keepRewards, wasPaused, startedAt: Date.now(),
+      journal: { favor: {}, items: [], masks: [] },
+    }; // One tab-local journal identifies only the running festival test.
+    writeFestivalSession(session);
+    const result = await quickLoad(preview.id, { pauseAutosave: true });
+    if (!result.ok) {
+      writeSession(FESTIVAL_TEST_KEY, null);
+      await deleteSlot(preview.id);
+    }
+    return result;
+  }
+
+  async function restartFestivalTest() {
+    const session = festivalTestSession();
+    if (!session || session.phase !== 'active') return { ok: false, error: 'There is no running festival test.' };
+    const previousJournal = session.journal;
+    session.journal = { favor: {}, items: [], masks: [] }; // Restart discards the previous attempt's awards.
+    session.phase = 'starting';
+    writeFestivalSession(session);
+    const result = await quickLoad(session.previewSlotId, { pauseAutosave: true });
+    if (!result.ok) { session.phase = 'active'; session.journal = previousJournal; writeFestivalSession(session); }
+    return result;
+  }
+
+  async function exitFestivalTest() {
+    const session = festivalTestSession();
+    if (!session || session.phase !== 'active') return { ok: false, error: 'There is no running festival test.' };
+    const ids = activeIds();
+    if (ids.characterId !== session.characterId || ids.worldId !== session.worldId) return { ok: false, error: 'The active save changed during this festival test.' };
+    const baseline = await getSlot(session.baseSlotId);
+    if (!baseline?.snapshot) return { ok: false, error: 'The festival restore snapshot is missing. Do not save over the test world.' };
+    try {
+      const returnSlot = JSON.parse(JSON.stringify(baseline)); // Never modify the pinned original restore point.
+      if (session.keepRewards) {
+        deps.flushAll?.();
+        const tested = window.HobunjiSaveSnapshot.capture({ strict: true });
+        mergeFestivalRewards(returnSlot.snapshot, tested, session);
+      }
+      returnSlot.id = 'festival-test-return-' + Date.now().toString(36);
+      returnSlot.label = 'Restored from festival test';
+      returnSlot.festivalTemporary = true;
+      returnSlot.pinned = true;
+      await putSlot(returnSlot);
+      session.returnSlotId = returnSlot.id;
+      session.phase = 'returning';
+      writeFestivalSession(session);
+      const result = await quickLoad(returnSlot.id, { pauseAutosave: true });
+      if (!result.ok) { session.phase = 'active'; writeFestivalSession(session); }
+      return result;
+    } catch (error) {
+      return { ok: false, error: String(error?.message || error) };
+    }
+  }
+
+  async function finishFestivalReturn(ids) {
+    const session = festivalTestSession();
+    if (!session || session.phase !== 'restored' || session.characterId !== ids.characterId || session.worldId !== ids.worldId) return;
+    writeSession(FESTIVAL_TEST_KEY, null);
+    // The pinned original quick save remains available as a manual recovery
+    // point; remove only generated previews and already-applied return slots.
+    for (const id of [session.previewSlotId, session.returnSlotId]) {
+      if (id) try { await deleteSlot(id); } catch (_) {}
+    }
+    if (!session.wasPaused) window.HobunjiAutosavePause?.resume?.('festival-test-restored');
+  }
+
   // ── Quick load ──────────────────────────────────────────────────────
   // Schedules the load and reloads the tab; the snapshot is applied at the
   // start of the next boot. pauseAutosave (default on) keeps the rewind out
@@ -259,6 +489,14 @@
       window.HobunjiSaveSnapshot.apply(slot.snapshot);
       writeSession(AUTOPLAY_KEY, { characterId: slot.characterId, worldId: slot.worldId, requestedAt: Date.now(), reason: 'quick-load' });
       writeSession(RESUME_KEY, { slotId: slot.id, characterId: slot.characterId, worldId: slot.worldId, exact: slot.exact || null, label: slot.label });
+      const festivalSession = festivalTestSession();
+      if (festivalSession?.previewSlotId === slot.id && festivalSession.phase === 'starting') {
+        festivalSession.phase = 'active';
+        writeFestivalSession(festivalSession);
+      } else if (festivalSession?.returnSlotId === slot.id && festivalSession.phase === 'returning') {
+        festivalSession.phase = 'restored';
+        writeFestivalSession(festivalSession);
+      }
       lastAction = 'quick-load-applied';
       lastError = '';
       return { applied: true, slot: slotSummary(slot) };
@@ -318,7 +556,7 @@
   // spawn); false leaves the normal spawn path to run.
   async function restoreResume(playerData) {
     const resume = takeResume(playerData);
-    if (!resume || !deps) return false;
+    if (!resume || !deps) { if (deps) await finishFestivalReturn(activeIds()); return false; }
     const exact = resume.exact;
     try {
       await travelTo(exact);
@@ -330,11 +568,13 @@
       deps.snapCameraTarget?.();
       lastResume = { ok: true, area: exact.area, label: resume.label, at: Date.now() };
       deps.showToast?.(`⚡ Quick loaded: ${resume.label || exact.area}`, true);
+      await finishFestivalReturn(activeIds());
       return true;
     } catch (error) {
       lastResume = { ok: false, area: exact?.area, error: String(error?.message || error), at: Date.now() };
       console.warn('[quick-save] exact placement failed; using the normal login spawn', error);
       deps.showToast?.(`Quick load: could not return to ${exact?.area} (${lastResume.error}) — starting at the farmhouse.`, false);
+      await finishFestivalReturn(activeIds());
       if (deps.getCurrentArea() === 'farm') return false; // Nothing moved yet: let the normal spawn run.
       return true; // Already moved somewhere valid; keep it rather than stacking a second travel.
     }
@@ -387,9 +627,57 @@
       return result;
     });
 
+    companion.registerPanel?.({
+      id: 'festival-test',
+      title: '🎪 Festival Test',
+      order: 21,
+      when: () => window.__hobunjiGameStarted === true && !!window.CalendarSystem?.isInitialized?.(),
+      render: () => {
+        const status = festivalStatus(); // The companion reads the same session that the reward journal writes.
+        const prefs = festivalPrefs();
+        const running = status.phase === 'active';
+        const festival = window.FestivalCalendar?.get?.(status.festivalId || prefs.festivalId);
+        return {
+          summary: running ? 'Testing ' + (festival?.name || '') : status.phase === 'idle' ? 'Safe festival preview' : status.phase,
+          rows: running ? [['Rewards recorded', String(status.rewardCount)], ['Original quick save', status.restoreSlotId]] : [],
+          actions: [
+            { id: 'select', label: 'Festival', group: 'Festival', value: prefs.festivalId,
+              options: (window.FestivalCalendar?.festivals || []).map(f => ({ value: f.id, label: f.name })) },
+            { id: 'keep-rewards', label: 'Keep earned festival rewards when exiting', group: 'Festival',
+              checkbox: true, checked: status.phase === 'idle' ? prefs.keepRewards : status.keepRewards },
+            ...(!running && status.phase === 'idle' ? [{ id: 'start', label: 'Start festival test', group: 'Festival' }] : []),
+            ...(running ? [
+              { id: 'restart', label: 'Restart festival test', group: 'Festival', confirm: 'Discard this test attempt and restart the festival from its opening?' },
+              { id: 'exit', label: 'Exit & restore original world', group: 'Festival', confirm: 'Restore the original world? Only journaled festival rewards are kept if the checkbox is enabled.' },
+            ] : []),
+          ],
+          note: running
+            ? 'The normal world remains in a pinned Quick Save. Autosaves are paused; do not use Manual Save during a test. Rewards are opt-in.'
+            : 'Test starts at 3 PM on the next occurrence. The world reloads into an isolated snapshot; ordinary time progression remains forward-only.',
+        };
+      },
+      onAction: (action, args) => {
+        if (action === 'select') {
+          if (festivalTestSession()) return { ok: false, error: 'Exit the running test to change festivals.' };
+          const id = String(args.value || '');
+          if (!window.FestivalCalendar?.get?.(id)) return { ok: false, error: 'Unknown festival.' };
+          return setFestivalPrefs({ festivalId: id });
+        }
+        if (action === 'keep-rewards') return setFestivalPrefs({ keepRewards: args.checked === true });
+        if (action === 'exit') return exitFestivalTest();
+        if (action === 'restart') return restartFestivalTest();
+        if (action === 'start') {
+          if (!document.getElementById('settingDevMode')?.checked) return { ok: false, error: 'Enable Dev Mode before starting a festival test.' };
+          return startFestivalTest();
+        }
+        return { ok: false, error: 'Unknown festival test action.' };
+      },
+    });
+
     companion.registerStateProvider('saves', () => ({
       autosave: pauseApi()?.getState?.() || null,
       quick: getStatus(),
+      festivalTest: festivalStatus(),
       checkpoint: (() => {
         const status = window.__hobunjiSaveCheckpointDebug?.snapshot?.();
         return status ? { lastAction: status.lastAction, lastError: status.lastError, folderPrimary: status.folderPrimary, hydrated: status.hydrated } : null;
@@ -440,6 +728,10 @@
     takeAutoPlay,
     restoreResume,
     getStatus,
+    festivalStatus,
+    recordFestivalFavor: (npcId, amount) => recordFestivalReward('favor', { npcId, amount }),
+    recordFestivalItem: (key, count, stars) => recordFestivalReward('item', { key, count, stars }),
+    recordFestivalMask: id => recordFestivalReward('mask', { id }),
     _slotSummary: slotSummary,
   };
 })();
