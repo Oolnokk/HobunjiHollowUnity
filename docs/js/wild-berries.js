@@ -20,13 +20,13 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
-  const WILD_BERRY_ZONES = {
+  const WILD_BERRY_ZONES = Object.freeze({
     redberries:    'map_northern_cliffs',       // canon per redDew's "Red Berry Bushes" flavor tag
     blueberries:   'map_southern_cloud_forest',
     yellowberries: 'map_western_slope',
     whiteberries:  'map_western_slope',
     blackberries:  'map_eastern_mire',
-  };
+  });
   const WILD_BERRY_SEED_CHANCE = 0.2; // "small chance to give seeds when harvested"
   function forZone(mapId) {
     return Object.keys(WILD_BERRY_ZONES).filter(k => WILD_BERRY_ZONES[k] === mapId);
@@ -171,7 +171,7 @@
   // themselves (a caller mutating one of those would affect real
   // gameplay bookkeeping; this returns plain copies).
   function listBerries(mapId) {
-    const objs = deps._zoneBerryObjects.get(mapId);
+    const objs = deps?._zoneBerryObjects?.get(mapId);
     if (!objs?.size) return [];
     return [...objs.values()].map(obj => ({ col: obj.col, row: obj.row, berryKey: obj.berryKey, reserved: !!obj.reserved }));
   }
@@ -251,6 +251,12 @@
   }
 
   window.WildBerries = {
+    WILD_BERRY_ZONES, WILD_BERRY_SEED_CHANCE, // Shared live source authority for conditional berry and seed rarity calculations.
+    seedKeyFor: berryKey => deps?.cropData?.[berryKey]?.seedKey || null, // Handles native redberry/blueberry singular seed naming without a duplicated lookup.
+    census: mapId => { // Mobile, read-only live zone count. An ungenerated zone is unknown, NOT a zone containing zero berries.
+      const known = !!deps?._zoneBerryPersist?.has?.(mapId) || !!deps?._zoneBerryObjects?.has?.(mapId);
+      return {zoneId:mapId,known,berries:known ? listBerries(mapId) : null};
+    },
     init,
     forZone,
     ensureZone,
