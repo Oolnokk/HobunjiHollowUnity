@@ -99,7 +99,10 @@
     const ingredients = entries.map((item,index) => {
       const slot = recipe?.slots?.find(candidate => candidate.id === item.slotId) || orderedSlots?.[index];
       return {key:item.key,stars:item.stars,slotId:item.slotId || slot?.id,
-        contributesEffects:typeof item.contributesEffects === 'boolean' ? item.contributesEffects : slot?.contributesEffects !== false};
+        contributesEffects:typeof item.contributesEffects === 'boolean' ? item.contributesEffects : slot?.contributesEffects !== false,
+        ...(Number.isFinite(Number(item.rarityMultiplier)) && Number(item.rarityMultiplier) >= 1 ? {
+          rarityMultiplier:Number(item.rarityMultiplier),rarityScore:Number(item.rarityScore) || 0,
+          raritySource:item.raritySource || null,rarityCertainty:item.rarityCertainty || null} : {})};
     }); // True input-star data is preserved, and the original cooking recipe decides whether each ingredient grants a buff.
     return {ingredients,estimated:!exact,
       estimatedEffects:ingredients.some((item,index)=>entries[index]?.contributesEffects === undefined &&
