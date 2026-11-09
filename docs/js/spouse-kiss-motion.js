@@ -533,6 +533,7 @@
     try {
       window.PlayerBodyTransformComposer?.clearChannel?.(SOURCE);
       window.PlayerBodyTransformComposer?.clearChannel?.(SOURCE + '-retreat');
+      old.releasePlayerRenderPose?.(); // Remove the festival-style late-render player pose owner before normal camera/weapon gaze resumes.
       old.playerHands?.setPoseProvider?.(SOURCE, null);
       if (old.player?.parent === old.playerParent && old.originalPlayerPosition) {
         Object.assign(old.player.position, old.originalPlayerPosition); // Restore from festival-style temporary root hop/retreat.
@@ -687,6 +688,8 @@
       playerHands, npcHands, shoulderScratch: {}, footScratch: {}, mouthScratch: {},
       playerGazeScratch: {}, npcGazeScratch: {}, // Reused head-frame vectors for camera-independent mutual gaze.
       lastLipContact: null, // Verified only after the final composed bodies and neck pivots reach the same frame.
+      lastPlayerPose: null, // The last authored torso/leg pose is replayed at the final render boundary after all normal tool updates.
+      renderPoseCount: 0, // Mobile diagnostics confirm the actual renderer saw an authoritative player pose.
       requireLipContact: !!window.SharedAttackPose?.headFrame, // Real rigs are required at start, even when isolated tests omit the pixel helper.
       lastHandContact: null, // Mobile diagnostics expose reach and timing without requiring DevTools.
       playerNeck, npcNeck,
@@ -717,6 +720,27 @@
         session.lastLipContact = syncMouthContact(session.playerModel, session.walker.avatarGroup,
           session.elapsed, session.mouthScratch); // Skinned lips follow the already-lowered/bowed bodies each rendered frame.
       }); // Render-time ownership keeps real GLB hand contact attached through final-frame sync.
+    }
+    if (composer.addPostHeadAimHook) {
+      const session = active; // A scoped festival-style render owner; never writes into a replaced character's rig.
+      session.releasePlayerRenderPose = composer.addPostHeadAimHook(() => {
+        if (active !== session || !session.lastPlayerPose) return;
+        const pose = session.lastPlayerPose; // The shared clip was sampled after simulation, not advanced separately per render pass.
+        if (!session.playerLegs?.hasExternalFootTargets?.()) {
+          session.playerLegs?.update?.(0, 0, false, null); // Last writer wins over a weapon stance or idle walk update in the same frame.
+          session.playerLegs?.setStanceYawDeg?.(0); // The pair owns the knee pole; weapon/tool body yaw cannot alter it.
+          session.playerLegs?.setStanceDrop?.(pose.drop, true);
+        }
+        poseLivePlayer(session, pose.drop, pose.bow, pose.lift, pose.retreat); // As-rendered root and torso, not a temporary tool-composer channel.
+        aimPairedHead(session.playerNeck, session.npcNeck, pose.blend, session.playerGazeScratch);
+        aimPairedHead(session.npcNeck, session.playerNeck, pose.blend, session.npcGazeScratch);
+        session.lastLipContact = syncMouthContact(session.playerModel, session.walker.avatarGroup,
+          session.elapsed, session.mouthScratch); // Keep the small visible gap even if camera/input changed after pre-render.
+        session.lastHandContact = applyInitiatorShoulderHands(session.playerHands, session.npcHands,
+          session.elapsed, session.height.taller === 'second', session.shoulderScratch);
+        session.playerLegs?.pants?.update?.();
+        session.renderPoseCount++; // Report actual render-boundary ownership in Pixel Probe instead of guessing from an animation timer.
+      });
     }
     lastError = null;
     window.WorldActionInputClaims?.setClaims?.(SOURCE, [
@@ -762,6 +786,9 @@
     const playerRetreat = playerIsTaller && !session.height.shorterPosteriorGrip
       ? session.bowRetreatWorld * kneeBlend : 0; // The actual actor moves rather than a temporary renderer-only copy.
     poseLivePlayer(session, playerDrop, playerBow, playerIsTaller ? 0 : shorterJump, playerRetreat);
+    session.lastPlayerPose = { drop: playerDrop, bow: playerBow, lift: playerIsTaller ? 0 : shorterJump,
+      retreat: playerRetreat, blend: pose.blend }; // Immutable frame target for render-time pose reassertion over camera/tool writes.
+    session.playerLegs.setStanceYawDeg?.(0); // Match the festival's paired leg orientation regardless of held weapon idle body yaw.
     session.playerLegs.pants?.update?.(); // Real knees and pants inherit the matching torso pose.
     const npcDrop = window.ActorBodySink.apply(session.npcSink, npcPct, 0, true);
     if (session.npcTiltPivot?.rotation && Number.isFinite(session.originalNpcTiltX)) {
@@ -825,7 +852,11 @@
         playerPoseLocked: !!window.CharacterActionLocks?.isLocked?.('player', 'pose'),
         playerTorsoBowDeg: (active.playerModel.rotation.x - active.originalPlayerModelPitch) * 180 / Math.PI,
         playerKneeDrop: active.playerLegs?.getStanceDrop?.() || 0,
-        playerHandRigReady: !!active.playerHands?.group } : null };
+        playerHandRigReady: !!active.playerHands?.group,
+        renderPoseCount: active.renderPoseCount, // Nonzero means the final camera render actually reasserted the whole player pose.
+        playerGaze: { pitch: active.playerNeck?.rotation?.x ?? null, yaw: active.playerNeck?.rotation?.y ?? null },
+        weaponPoseOwner: window.WeaponStanceDropRuntime?.getDebug?.()?.reason || null,
+        weaponYawOwner: window.WeaponIdleBodyYawRuntime?.getDebug?.()?.reason || null } : null };
   }
 
   window.SpouseKissMotion = Object.freeze({
