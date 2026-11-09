@@ -102,4 +102,22 @@ assert.equal(applyFarmJob('harvest', 1, 1, 'needlegrain', 'field1', 'toddler1'),
 assert.equal(tile.crop, 'needlegrain');
 assert.equal(farmQuality.length, writesBeforeCap, 'full Pack cannot create orphaned quality bucket entries');
 
+// Crossbred varieties may only be registered lazily; NPCs must resolve them just like player harvesting.
+let varietyEnsures = 0; // Tracks whether the production callback consults the crop variety registry.
+harvestContext.window.CropVarieties = { ensure(key) {
+  varietyEnsures++;
+  if (key === 'crossbred_needlegrain') {
+    harvestContext.cropData[key] = { cropKey: 'crossbredHarvest', seedKey: 'crossbredSeeds' };
+    return true;
+  }
+  return false;
+} };
+tile.crop = 'crossbred_needlegrain'; tile.cropReady = true;
+assert.equal(applyFarmJob('harvest', 1, 1, 'crossbred_needlegrain', 'field1', 'toddler1'), true,
+  'family harvest resolves a dynamically registered crossbred variety');
+assert.equal(inventory.crossbredHarvest, 1, 'crossbred goods are deposited in the Pack');
+assert.equal(varietyEnsures, 1, 'variety registry is only consulted for missing crop definitions');
+assert.deepEqual(farmQuality.at(-1), { item: 'crossbredHarvest', stars: 1, count: 1 },
+  'crossbred goods preserve the toddler worker’s quality');
+
 console.log('ok - actual game.js family harvest and processing quality');
