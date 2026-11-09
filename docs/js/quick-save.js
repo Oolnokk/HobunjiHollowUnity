@@ -534,12 +534,18 @@
     const folderStatus = folder?.getStatus?.();
     if (!session.wasPaused && folderStatus?.folderName) {
       if (folderStatus.state !== 'ready') {
-        window.__farmLog?.('[festival-test] Restore complete in browser; reconnect Primary Save Folder to finalize.', 'warn');
+        lastAction = 'festival-restore-awaiting-folder';
+        lastError = 'Reconnect the Primary Save Folder to finish restoring festival rewards.';
+        window.__farmLog?.('[festival-test] ' + lastError, 'warn');
+        deps?.showToast?.(lastError, false); // Visible on mobile, without requiring browser console access.
         return false;
       }
       const synced = await folder.syncNow({ automatic: false, reason: 'festival-test-restored' });
       if (synced?.lastError && synced?.lastAction !== 'saved-primary-recovery-error') {
-        window.__farmLog?.('[festival-test] Primary folder save failed: ' + synced.lastError, 'warn');
+        lastAction = 'festival-restore-save-failed';
+        lastError = 'Primary folder save failed: ' + synced.lastError;
+        window.__farmLog?.('[festival-test] ' + lastError, 'warn');
+        deps?.showToast?.(lastError, false);
         return false;
       }
     }
@@ -549,6 +555,8 @@
     if (session.previewSlotId) try { await deleteSlot(session.previewSlotId); } catch (_) {}
     if (!session.keepRewards && session.returnSlotId) try { await deleteSlot(session.returnSlotId); } catch (_) {}
     if (!session.wasPaused) window.HobunjiAutosavePause?.resume?.('festival-test-restored');
+    lastError = '';
+    lastAction = 'festival-test-restored';
     return true;
   }
 
