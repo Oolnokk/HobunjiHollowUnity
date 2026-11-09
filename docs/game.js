@@ -13072,7 +13072,7 @@
         else if (spawnArea === 'town') { root._npcScene = null; root._pendingTownAdd = true; root._pendingBuildingAdd = null; root._pendingZoneAdd = null; }
         else if (_isBuildingArea(spawnArea)) {
           root._npcScene = null; root._pendingTownAdd = false; root._pendingBuildingAdd = spawnArea; root._pendingZoneAdd = null;
-          if (!_buildingScenes.has(spawnArea)) loadBuildingScene(spawnArea);
+          if (!_buildingScenes.has(spawnArea) && !window.NpcScheduling?.shouldDeferCavernLoad?.(spawnArea)) loadBuildingScene(spawnArea); // Offscreen den residents keep _pendingBuildingAdd until their cave is actually entered.
         } else if (_isZoneArea(spawnArea)) {
           // Unlike buildings, zone scenes are expensive to build (full terrain
           // mesh generation) -- don't eagerly warm one up just to park an idle
@@ -13209,7 +13209,7 @@
             else if (area === 'town') { root._npcScene = null; root._pendingTownAdd = true; }
             else if (_isBuildingArea(area)) {
               root._npcScene = null; root._pendingBuildingAdd = area;
-              if (!_buildingScenes.has(area)) loadBuildingScene(area);
+              if (!_buildingScenes.has(area) && !window.NpcScheduling?.shouldDeferCavernLoad?.(area)) loadBuildingScene(area); // Offscreen cavern transfers queue the rig instead of generating unseen geometry.
             } else if (_isZoneArea(area)) {
               root._npcScene = null; root._pendingZoneAdd = area;
             } else { scene.add(root); root._npcScene = scene; }
