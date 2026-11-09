@@ -91,23 +91,33 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
         standing:window.DevRandomRuin.getPlayerSupportY?.()??null};
     },nativeSeed);
     assert(shaft.ok&&shaft.surfaces>=2&&shaft.topLevel>=8,'the live multi-floor shaft must expose its physical climb faces: '+JSON.stringify(shaft));
-    await page.waitForFunction(()=>window.DevRandomRuinSanctum?.getState?.()?.built===true,null,{timeout:60000})
-      .catch(async error=>{
-        const diagnostics=await page.evaluate(()=>{
-          const state=window.DevRandomRuinSanctum?.getState?.()||null;
-          const simple=window.DevRandomRuinSimplePuzzles?.snapshot?.()||null;
-          return {
-            area:window.GridTileAccessors?.getCurrentArea?.()||null,
-            sanctum:state?{built:!!state.built,rejects:state.rejects||[],door:!!state.door,
-              shaftHub:!!state.context?.shaftHub}:null,
-            simple:{active:!!simple,composers:Object.keys(simple?.composers||{})},
-            shaftSite:window.DevRandomRuin?.getShaftSanctumDoorSite?.()||null,
-            generation:window.DevRandomRuin?.getGenerationProgress?.()||null,
-          }; // Print bounded diagnostics so a mobile reviewer can distinguish slow initialization from a missing composer.
+    const greatDoorReady=()=>{
+      const sanctum=window.DevRandomRuinSanctum?.getState?.();
+      return sanctum?.built===true&&!!sanctum.door; // Built alone is insufficient: a rejected door site can set built without mounting a door.
+    };
+    if(!await page.evaluate(greatDoorReady)){
+      await page.waitForFunction(greatDoorReady,null,{timeout:60000,polling:200}) // Interval polling is independent of software-WebGL animation frames.
+        .catch(async error=>{
+          const diagnostics=await page.evaluate(()=>{
+            const state=window.DevRandomRuinSanctum?.getState?.()||null;
+            const simple=window.DevRandomRuinSimplePuzzles?.snapshot?.()||null;
+            return {
+              area:window.GridTileAccessors?.getCurrentArea?.()||null,
+              sanctum:state?{built:!!state.built,rejects:state.rejects||[],door:!!state.door,
+                shaftHub:!!state.context?.shaftHub}:null,
+              simple:{active:!!simple,composers:Object.keys(simple?.composers||{})},
+              shaftSite:window.DevRandomRuin?.getShaftSanctumDoorSite?.()||null,
+              generation:window.DevRandomRuin?.getGenerationProgress?.()||null,
+            }; // Print bounded diagnostics so a mobile reviewer can distinguish a slow poll from a missing door.
+          });
+          if(diagnostics.sanctum?.built&&diagnostics.sanctum?.door){
+            console.warn('Great Door ready after delayed browser poll: '+JSON.stringify(diagnostics.sanctum));
+            return; // Heavy software rendering may starve a poll even though the real world object finished mounting.
+          }
+          throw new Error('Live Great Door failed to initialize: '+JSON.stringify(diagnostics)
+            +' | page errors: '+pageErrors.slice(-8).join(' | '),{cause:error});
         });
-        throw new Error('Live Great Door failed to initialize: '+JSON.stringify(diagnostics)
-          +' | page errors: '+pageErrors.slice(-8).join(' | '),{cause:error});
-      });
+    }
     const sanctumDoor=await page.evaluate(()=>{
       const record=window.DevRandomRuinSanctum?.getState?.()?.door;
       const wall=window.DevRandomRuin?.getShaftSanctumDoorSite?.();
