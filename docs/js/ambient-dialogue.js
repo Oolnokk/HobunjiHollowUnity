@@ -50,6 +50,7 @@
     ledgerKey: null,
     renderQueue: Promise.resolve(),
     lastFacingDebug: null, // Used by AmbientDialogue.getDebug and Pixel Probe to report the most recent greeting head-turn decision on mobile.
+    lastAddressDebug: null, // Used by mobile debugging to inspect the last spoken nickname without browser devtools.
   };
 
   function structuredCloneSafe(value) {
@@ -253,7 +254,8 @@
     let firstL2V1 = '';
     for (const ch of playerName) { firstL2V1 += ch; if (vowels.has(ch)) break; }
     const dlgState = window.DialogueContent?.getNpcDlgState?.(rec?.id) || {};
-    const localNickname = window.RomanceSystem?.spouseDialogueFor?.(rec?.id)?.nickname || dlgState.localNickname || playerName; // Married partner's address agrees with conversation token resolution.
+    const localNickname = window.CharacterNicknames?.addressPlayer?.(playerName, rec?.id, { favor: dlgState.favor, customNickname: dlgState.localNickname })
+      || window.RomanceSystem?.spouseDialogueFor?.(rec?.id)?.nickname || dlgState.localNickname || playerName; // Same player form of address as normal conversations.
     let out = String(text || '')
       .replace(/\{\{npcName\}\}/g, rec?.name || '')
       .replace(/\{\{playerName\}\}/g, playerName)
@@ -279,7 +281,10 @@
 
   function conditionedPlayerNicknameFor(walker) {
     const rec = walker?.rec; // Used to find this NPC's conditioned Nicknames phrase pool.
-    const spouseNickname = window.RomanceSystem?.spouseDialogueFor?.(rec?.id)?.nickname; // An affectionate post-wedding name takes priority without destroying saved local nicknames.
+    const intimateNickname = window.CharacterNicknames?.isAffectionateSpeaker?.(rec?.id)
+      ? window.CharacterNicknames.forRelationship(configuredPlayerGreetingName(), 'affectionate') : null; // Most recent date and spouse outrank conditioned address pools.
+    if (intimateNickname) return intimateNickname;
+    const spouseNickname = window.RomanceSystem?.spouseDialogueFor?.(rec?.id)?.nickname; // Legacy fallback when the nickname module has not loaded.
     if (spouseNickname) return spouseNickname;
     const pool = nicknamePoolFor(rec); // Used to preserve authored/conditioned nicknames even when the actual player name is relationship-gated.
     const entry = pickConditionedPoolEntry(pool, rec, walker); // Used to choose the same context-sensitive nickname normal ambient greetings already use.
@@ -293,16 +298,22 @@
   }
 
   function playerNicknameFor(walker) {
-    return conditionedPlayerNicknameFor(walker)
-      || state.dialogueDeps?.getPlayerData?.()?.nickname
-      || state.deps?.getPlayerName?.()
-      || 'neighbor';
+    const special = conditionedPlayerNicknameFor(walker); // Preserves authored terms and the spouse/last-date affectionate form.
+    if (special) return special;
+    const full = configuredPlayerGreetingName() || 'neighbor'; // Actual player name used only when ordinary greeting policy allows it.
+    return window.CharacterNicknames?.addressPlayer?.(full, walker?.rec?.id, { favor: playerGreetingFavor(walker) }) || full;
   }
 
   function resolveTargetName(walker, target) {
     if (target?.id === 'player') return playerNicknameFor(walker);
-    const authored = state.settings.npcNicknames?.[walker?.rec?.id]?.[target?.id]; // Used for directional family/personal nicknames such as Dad, Mom, Sis, and Tak.
-    return String(authored || '').trim() || firstNameWord(target?.name);
+    const speakerId = walker?.rec?.id; // Directional NPC-NPC relation source.
+    const targetId = target?.id; // Directional nickname and social-graph lookup key.
+    const authored = state.settings.npcNicknames?.[speakerId]?.[targetId]; // Family/personal names such as Dad, Mom, Sis and Tak always win.
+    if (String(authored || '').trim()) return String(authored).trim();
+    const name = firstNameWord(target?.name); // Neutral NPC greeting retains its previous given-name behavior.
+    const bond = window.CharacterNicknames?.npcBond?.(speakerId, targetId); // Canonical social relationship tags also cover partners who do not share a greeting group.
+    const relationship = bond === 'partner' ? 'affectionate' : (bond === 'friend' || friendSetFor(speakerId).has(targetId) ? 'friend' : 'other');
+    return window.CharacterNicknames?.forRelationship?.(name, relationship) || name;
   }
 
   // Off-screen follow tuning for chatheads directed at the player: how far
@@ -862,6 +873,9 @@
     const lowFavorNickname = targetId === 'player' && !mayUseActualPlayerName ? conditionedPlayerNicknameFor(walker) : ''; // Used only for a greeting that is firing now, never during the recurring proximity scan.
     const targetName = mayUseActualPlayerName ? resolveTargetName(walker, target) : lowFavorNickname; // Uses an NPC-specific nickname below +1 when available, otherwise leaves the name slot empty.
     const omitTargetName = targetId === 'player' && !mayUseActualPlayerName && !lowFavorNickname; // Used to clean punctuation only when neither an actual name nor a nickname may be spoken.
+    state.lastAddressDebug = { speakerId, targetId, targetName, relation: targetId === 'player'
+      ? (window.CharacterNicknames?.isAffectionateSpeaker?.(speakerId) ? 'affectionate' : (playerGreetingFavor(walker) >= 2 ? 'friend' : 'other'))
+      : (window.CharacterNicknames?.npcBond?.(speakerId, targetId) || (friendSetFor(speakerId).has(targetId) ? 'friend' : 'other')) }; // Captured only for an actual greeting, not during the proximity scan.
     const line = override?.text
       ? (mayUseActualPlayerName ? override.text : rewriteResolvedGreetingTargetName(override.text, configuredPlayerGreetingName(), lowFavorNickname))
       : templateLine(targetName, speakerId, targetId, day, { omitTargetName, walker });
@@ -1056,6 +1070,7 @@
       return {
         active: state.active.map(event => ({ speakerId: event.speakerId, greeting: event.greeting, directedAtPlayer: event.directedAtPlayer, faceMode: event.faceMode })),
         lastFacing: state.lastFacingDebug ? { ...state.lastFacingDebug } : null,
+        lastAddress: state.lastAddressDebug ? { ...state.lastAddressDebug } : null, // Current address choice exposed through existing mobile diagnostics.
         spouseId: window.RomanceSystem?.getSpouse?.()?.npcId || null, // Mobile debug shows whether the wedding state was restored.
       };
     },
