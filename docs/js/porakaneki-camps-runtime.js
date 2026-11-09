@@ -2074,22 +2074,26 @@
 
   function updateAllHunters(dt, coarseDt) {
     const activeZone = currentArea(); // Cached wilderness zones normally run at the coarse cadence.
+    const sleeping = isSleepingHour(); // A night/day transition must disband/reform remote patrols immediately, even between coarse ticks.
     for (const zoneState of state.zones.values()) {
       const distant = zoneState.zoneId !== activeZone;
       if (distant && coarseDt <= 0) {
-        // Establish the original seeded population and hunting parties immediately
-        // after a zone is created. Other tribes' Avengers and debug/map consumers
-        // need those records even before the first four-second coarse tick.
+        // Immediately seed fresh remote camps and honor bedtime/wake-up transitions,
+        // but avoid rebuilding patrols or advancing abstract movement every 0.2 s.
         for (const camp of activeCamps(zoneState)) {
-          if (camp.hunters.length) continue; // Subsequent off-zone 5 Hz updates are skipped.
-          try { updateCampHunters(camp, 0, 0); }
-          catch (error) { window.__farmLog?.(`[${KEY}] initial camp tick failed (${camp.id}): ${error?.message || error}`, 'warn'); }
+          if (camp.hunters.length && camp._lastDistantSleeping === sleeping) continue;
+          try {
+            updateCampHunters(camp, 0, 0);
+            camp._lastDistantSleeping = sleeping; // Only initial/sleep-wake bookends need a fast remote tick.
+          } catch (error) { window.__farmLog?.(`[${KEY}] camp schedule tick failed (${camp.id}): ${error?.message || error}`, 'warn'); }
         }
         continue;
       }
       for (const camp of activeCamps(zoneState)) {
-        try { updateCampHunters(camp, dt, coarseDt); }
-        catch (error) { window.__farmLog?.(`[${KEY}] camp tick failed (${camp.id}): ${error?.message || error}`, 'warn'); }
+        try {
+          updateCampHunters(camp, dt, coarseDt);
+          if (distant) camp._lastDistantSleeping = sleeping; // Keep the coarse and transition clocks in agreement.
+        } catch (error) { window.__farmLog?.(`[${KEY}] camp tick failed (${camp.id}): ${error?.message || error}`, 'warn'); }
       }
     }
   }
