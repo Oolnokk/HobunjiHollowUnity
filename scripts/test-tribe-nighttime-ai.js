@@ -31,7 +31,7 @@ const tickContext = vm.createContext({
   retireDormantEntity: () => { retired++; },
   advanceAbstractHunter: () => { abstract++; },
   materializeHunter: () => Promise.resolve(null),
-  placeEntityIfDormant() {},
+  placeEntity() {}, // The extracted production placement helper calls this when its synthetic rig is first observed.
 });
 vm.runInContext(
   sourceBetween(runtime, '  function updateDetailedHunter(', '  // Off-screen losses are replaced')
