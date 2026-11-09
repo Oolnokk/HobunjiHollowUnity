@@ -1000,7 +1000,8 @@
   };
   byId('head').onchange = render;
   byId('socket').onchange = () => { mountIndex = Number(byId('socket').value);
-    openWorkspace('mount-editor-workflow'); render(); // Selecting a mount opens the viewport where the line is drawn. };
+    openWorkspace('mount-editor-workflow'); render(); // Selecting a mount opens the viewport where the line is drawn.
+  };
   byId('head-kind').onchange = () => { chosenHead().mount.type = byId('head-kind').value; save(); };
   byId('mount-kind').onchange = () => { chosenShaft().mounts[mountIndex].type = byId('mount-kind').value; save(); };
   byId('add').onclick = () => {
