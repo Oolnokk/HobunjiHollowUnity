@@ -165,6 +165,8 @@
     },
     loadStorage,
     saveStorage: (worldId, store) => writeField(worldId, 'storage', store),
+    loadCropProvenance: worldId => readWorldField(worldId, 'cropProvenance') || null, // Shared crossbreed history; canonical world metadata survives member switching and folder/cloud recovery.
+    saveCropProvenance: (worldId, ledger) => writeField(worldId, 'cropProvenance', ledger), // Same atomic world-field save path used by barn breeding and incubators.
     loadPendingSupplyOrders,
     completeSeedSupplyOrder,
   });
