@@ -158,13 +158,15 @@
   function snapshot() {
     let total = 0;
     let sleeping = 0;
+    let tribalHunters = 0; // Reports tribe-owned humanoids separately from regular bandits and wildlife in the mobile snapshot.
     let totalWildlife = 0; // Reports non-bandit wildlife retained in the logical simulation.
     let dataOnlyWildlife = 0; // Counts logical actors whose native visual rig has actually been disposed.
     let visuallySleepingWildlife = 0; // Reports wildlife currently omitted from rendering/visual-rig work by game.js.
     if (deps?.hostileObjects) {
       for (const c of deps.hostileObjects) {
         if (!c || c.health <= 0) continue;
-        if (c.isBandit && !c.isTribeHunter && !c.isPorakanekiHunter) {
+        if (c.isTribeHunter || c.isPorakanekiHunter) { tribalHunters++; continue; } // Tribe LOD belongs to the camp planner, not the generic bandit/wildlife totals.
+        if (c.isBandit) {
           total++;
           if (isSleeping(c)) sleeping++;
         } else {
@@ -178,6 +180,7 @@
       totalBandits: total,
       sleepingBandits: sleeping,
       activeBandits: total - sleeping,
+      tribalHunters, // Mobile verification that tribe entities are excluded from both generic sleeping and wildlife accounting.
       totalWildlife,
       dataOnlyWildlife,
       wildlifeStreaming: window.WildlifeVisualLod?.snapshot?.() || null,      visuallySleepingWildlife,
