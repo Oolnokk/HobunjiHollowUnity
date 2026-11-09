@@ -165,6 +165,8 @@
     if (!key || seen.has(key) || seen.size >= 10) return { factor:1, known:false, sources:[] };
     const crop = cultivarRarity(key);
     if (crop) return { factor:crop.factor, known:crop.origin === 'slagothim-import', sources:[crop] };
+    const fish = fishRarity(key);
+    if (fish) return { factor:fish.factor, known:true, sources:[fish] };
     const localDefs = defs || G.ITEM_DEFS || {};
     const def = localDefs[key] || G.HobunjiCookingData?.items?.[key] || {};
     // A processed item inherits its source ingredients' difficulty without
@@ -244,6 +246,56 @@
       clutchRange:clutchKnown ? {min:clutchMin,max:clutchMax} : null,
       ...result, model:'balanced species allocation among real zone dens; nest probability and clutch supplied by caller' };
   }
+
+  function fishCatch(key, {zone,season,timeOfDay,rareFishWeightMultiplier = null,perkRank = 0,
+    entries = G.FishCatalog?.entries} = {}) {
+    if (!Array.isArray(entries) || !zone || !season || !timeOfDay) return null;
+    const all = entries.filter(f => Array.isArray(f.zones) && f.zones.includes(zone));
+    if (!all.length) return { key,zone,season,timeOfDay,probability:null,reason:'no fish in zone' };
+    let eligible = all.filter(f => (f.seasons === 'any' || f.seasons?.includes?.(season))
+      && (f.timesOfDay === 'any' || f.timesOfDay?.includes?.(timeOfDay)));
+    if (!eligible.length) eligible = all; // Canonical fishing minigame fallback when a time band has no eligible fish.
+    const baseWeights = {common:6,uncommon:3,rare:1};
+    const rank = Math.max(0,Number(perkRank)||0);
+    const weight = fish => (baseWeights[fish.rarity] || 1)
+      * (typeof rareFishWeightMultiplier === 'function' ? rareFishWeightMultiplier(fish.rarity) : 1)
+      * (fish.rarity === 'uncommon' ? 1 + rank*.25 : fish.rarity === 'rare' ? 1 + rank*.55 : 1);
+    const total = eligible.reduce((sum,fish) => sum + Math.max(0,Number(weight(fish))||0),0);
+    const probability = total ? eligible.filter(f=>f.key===key).reduce((sum,fish)=>sum+Math.max(0,Number(weight(fish))||0),0)/total : null;
+    return {key,zone,season,timeOfDay,eligibleCount:eligible.length,probability,
+      model:'conditional on one fish selection in this zone/season/time band; catching/reeling, habitat access and equipment are separate' };
+  }
+  function fishRarity(key, entries = G.FishCatalog?.entries) {
+    const fish = entries?.find?.(f => f.key === key);
+    if (!fish) return null;
+    const weights = {common:6,uncommon:3,rare:1};
+    const sourceWeight = weights[fish.rarity] || 1;
+    const seasons = fish.seasons === 'any' ? 4 : Array.isArray(fish.seasons) ? fish.seasons.length : 4;
+    const hours = {dawn:8,day:9,dusk:3,night:4}; // Same 08/17/20 fishing-time boundaries in fishing-minigame.js.
+    const timeHours = fish.timesOfDay === 'any' ? 24
+      : Array.isArray(fish.timesOfDay) ? [...new Set(fish.timesOfDay)].reduce((sum,phase)=>sum+(hours[phase]||0),0) : 24;
+    // This is an authored category + fishing-window availability factor, not
+    // an unconditional catch rate (the player deliberately selects fishing
+    // zones and times, and an empty active pool falls back to the whole zone).
+    const opportunityFraction = Math.max(1/96,Math.min(1,seasons/4)*Math.max(1,timeHours)/24);
+    const factor = Math.min(3.5,Math.pow(6/sourceWeight/opportunityFraction,.22));
+    return {key,fishRarity:fish.rarity,sourceWeight,opportunityFraction,factor,
+      model:'availability/rarity proxy, not unconditional acquisition probability' };
+  }
+  function ruinArtifactOpportunity(key, {chests = G.DevRandomRuinDungeonChests?.snapshot?.(),sourceKind = 'entrance',
+    siteProbability = sourceKind === 'buried-hole' ? G.RuinSites?.treasureHoleChance?.() : null,
+    culture = key.startsWith('hachutu') ? 'hachutu' : 'harlyao'} = {}) {
+    if (!Array.isArray(chests)) return null;
+    const relevant = chests.filter(chest => (chest.culture || 'harlyao') === culture);
+    const outcomes = relevant.map(chest => artifactChest(key,chest.tier,culture)).filter(Boolean);
+    const perRuin = 1 - outcomes.reduce((none,x) => none * (1-x.probability),1); // Independent chest-loot rolls, conditional on opening all displayed chests.
+    const copies = outcomes.reduce((sum,x) => sum + x.expectedCopies,0);
+    const origin = chain([{label:'Ruin site reached',probability:siteProbability},
+      {label:'At least one copy in the generated chests',probability:perRuin}]);
+    return {key,sourceKind,chestCount:outcomes.length,tierCounts:outcomes.reduce((counts,x)=>(counts[x.chestTier]=(counts[x.chestTier]||0)+1,counts),{}),
+      conditionalChancePerRuin:perRuin,expectedCopiesPerRuin:copies,siteAndLoot:origin,
+      model:'Uses actual generated chest roster. Site probability is known only for buried holes per treasure location.' };
+  }
   function item(key, context = {}) {
     const defs = context.itemDefs || G.ITEM_DEFS || {};
     const def = defs[key] || {};
@@ -258,6 +310,9 @@
         proposedSellPrice:cultivarSellPrice(key,context.nativeSellPrice ?? def.sellPrice),
         note:cultivar.model };
     }
+    const fish = fishRarity(key);
+    if (fish) return {key,kind:'fish',rarity:fish,acquisition:context.fishZone && context.season && context.timeOfDay
+      ? fishCatch(key,{zone:context.fishZone,season:context.season,timeOfDay:context.timeOfDay,perkRank:context.perkRank||0}) : null};
     const culture = String(key).startsWith('hachutu') ? 'hachutu' : 'harlyao';
     const artifact = G.ArtifactCollection?.ARTIFACTS?.[key] ? artifactChest(key,context.chestTier || 4,culture) : null;
     if (artifact) return { key,kind:'artifact',acquisition:artifact,
@@ -271,8 +326,8 @@
       note:context.stages ? null : 'Unquantified source; no automatic rarity price or contest premium.' };
   }
   return Object.freeze({ chain, atLeastOne, expected, tierLayout, ruinChest, caravanSeed, inheritance, source,
-    rarityFactor, cultivarRarity, cultivarSellPrice, foodRarity, artifactChest, lootPoolItem, denOffspring, item,
-    debugSnapshot: key => key ? item(key) : { supported:['cultivar','artifact-chest','ruin-chest','loot-pool','den-offspring','food-ancestry','inheritance'],
+    rarityFactor, cultivarRarity, cultivarSellPrice, foodRarity, artifactChest, lootPoolItem, denOffspring, fishCatch, fishRarity, ruinArtifactOpportunity, item,
+    debugSnapshot: key => key ? item(key) : { supported:['cultivar','artifact-chest','ruin-chest','loot-pool','den-offspring','fish-catch','generated-ruin','food-ancestry','inheritance'],
       priceMode:'cultivar-integrated; other categories retain their authored value', noSilentFallback:true } });
 
 });
