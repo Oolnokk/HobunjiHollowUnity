@@ -105,7 +105,8 @@
   }
   function lineMarker(ctx, mount, selected) {
     const start = mount.start, end = mount.end; // Base of line and directed arrow tip in original sprite coordinates.
-    const color = mount.type === 'tang' || mount.type === 'blade' ? '#ffcc63' : '#75e9ed'; // Gold for tang; aqua for eye.
+    const color = mount.type === 'rope' || mount.type === 'flail' ? '#e5a9ff'
+      : mount.type === 'tang' || mount.type === 'blade' ? '#ffcc63' : '#75e9ed'; // Purple rope reaches are visually distinct from gold tangs and aqua eyes.
     ctx.save(); ctx.strokeStyle = selected ? '#ffffff' : color; ctx.fillStyle = color;
     ctx.lineWidth = selected ? 7 : 4; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); ctx.stroke();
@@ -483,13 +484,15 @@
   function syncElementList() {
     const shaft = chosenShaft(), head = chosenHead(), headKey = byId('head').value; // Current assembly inventory.
     const mounts = byId('assembly-mount-elements'), ops = byId('assembly-operation-elements');
-    const required = head.mount.type === 'blade' ? 'tang' : 'eye'; // Exactly the same rule as runtime primitive matching.
+    const required = head.mount.type === 'blade' ? 'tang' : 'eye'; // Rigid fallback when no dedicated suspension line exists.
+    const flexible = !!(shaft.flailAssembly || head.flailAssembly);
+    const matchedType = flexible && shaft.mounts.some(m => m.type === 'rope') ? 'rope' : required; // Same priority as the runtime resolver.
     const strokes = shaft.overrides[headKey]?.bridges?.strokes || []; // Saved operations before recipe expansion.
     mounts.replaceChildren(); ops.replaceChildren();
     for (const [index, mount] of shaft.mounts.entries()) {
-      const used = mount.type === required;
+      const used = mount.type === matchedType;
       elementRow(mounts, 'Mount ' + (index + 1) + ': ' + (mount.type === 'eye' ? 'eye / sleeve' : mount.type === 'rope' ? 'rope / chain reach' : 'tang')
-        + (used ? ' — draws this head' : ' — not used by this head'), [
+        + (used ? (matchedType === 'rope' ? ' — drives connector reach' : ' — draws this head') : ' — not used by this head'), [
         ['Select line', () => { mountIndex = index; render(); byId('socket').scrollIntoView({ block: 'nearest' }); }],
         ['Remove mount', () => {
           if (chosenShaft().mounts.length <= 1) {
@@ -514,8 +517,8 @@
       ops.appendChild(hint);
     }
     const placed = strokes.filter(op => op.recipe).length, total = recipeBoxCount(shaft); // Per-pair and per-haft cleanup scopes.
-    byId('assembly-summary').textContent = shaft.mounts.filter(m => m.type === ((shaft.flailAssembly || head.flailAssembly) && shaft.mounts.some(m=>m.type==='rope') ? 'rope' : required)).length
-      + ' matching head primitive(s) · ' + strokes.length + ' saved operation(s), including '
+    byId('assembly-summary').textContent = shaft.mounts.filter(m => m.type === matchedType).length
+      + (matchedType === 'rope' ? ' rope/chain reach mount(s)' : ' matching head primitive(s)') + ' · ' + strokes.length + ' saved operation(s), including '
       + placed + ' recipe box(es) on this pair.';
     byId('assembly-clear-pair-recipes').disabled = placed === 0;
     byId('assembly-clear-haft-recipes').disabled = total === 0;
