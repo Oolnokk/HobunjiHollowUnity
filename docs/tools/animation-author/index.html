@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <script src="../../js/tap-reliability.js?v=20261010a"></script>
-<title>Hobunji Animation Author V15.52</title>
+<title>Hobunji Animation Author V15.51</title>
 <style>
 :root {
   color-scheme: dark;
@@ -1232,8 +1232,6 @@ const REQUIRED_SCRIPTS = [
   'js/portrait-breathing.js',
   'js/npc-avatar-preview-utils.js',
   'js/png-plane-avatar.js',
-  'config/portrait-mouth-points.js', // Same committed species/gender mouth table as B'shuakauitl's blowgun anchor.
-  'js/combat/shared-attack-pose.js', // Canonical skinned-head mouth frame; avoids an editor-only mouth height estimate.
   'js/leg-bones.js',
   'js/procedural-leg-animation.js',
   'config/pants-rigs.js',
@@ -13873,53 +13871,11 @@ function kissActorHeightV1546(actor) {
   return metrics.modelHeight * visualScaleY;
 }
 
-function kissActorMouthHeightV1552(actor) {
-  const model = actor?.model; // Actual skinned portrait plane, with its configured species/gender mouth source pixel.
-  const root = actor?.root; // Floor reference for this actor, independent of its workspace X/Z placement.
-  const solver = window.SpouseKissMotion; // Delegates the lookup and skinned pixel-to-world mapping to B'shuakauitl's shared attack pose.
-  if (!model || !root || !solver?.mouthHeightWorld || !window.SharedAttackPose?.headFrame) return null;
-  const scratch = actor.kissMouthScratchV1552 || (actor.kissMouthScratchV1552 = {
-    THREE: state.three.THREE,
-  }); // Reused mouth frame and world vectors to avoid allocations during inspector readouts.
-  // At frame zero the fully posed author already has a neutral, grounded
-  // torso. Sampling its live skinned mouth directly is more accurate than
-  // round-tripping through a saved pre-rig model transform, which can refer
-  // to an earlier renderer state before its skinned neck was installed.
-  if (Math.abs(animationAuthor.currentTime) < .00001 &&
-      (actor.previewAnatomyV1548?.appliedWorldDrop || 0) < .00001) {
-    return solver.mouthHeightWorld(model, root, scratch);
-  }
-  const rest = actor.multiAvatarBodyRestV1548; // Nonzero timeline times still require a neutral-standing sample.
-  const neck = actor.neckRig?.neckJoint; // The active neck joint is restored immediately after neutral mouth measurement.
-  const originalY = model.position.y; // Prevent mouth sampling from changing the actual preview or exported keyframes.
-  const originalPitch = model.rotation.x; // A previously scrubbed bow must not distort neutral mouth height.
-  const originalNeck = neck?.quaternion?.clone?.() || null; // Preserve current manual/look pose across temporary calibration.
-  try {
-    if (rest) {
-      model.position.y = rest.modelY;
-      model.rotation.x = rest.modelPitch;
-    }
-    if (neck && actor.baseNeckRotationDeg) applyRotationDegSnapshot(neck, actor.baseNeckRotationDeg);
-    return solver.mouthHeightWorld(model, root, scratch);
-  } finally {
-    model.position.y = originalY;
-    model.rotation.x = originalPitch;
-    if (neck && originalNeck) neck.quaternion.copy(originalNeck);
-    model.updateMatrixWorld?.(true);
-  }
-}
-
 function kissPairHeightV1546() {
   const pair = romanticDancePair(); // Uses the same selected-actor pairing rules as the romantic dance.
   if (!pair.leader || !pair.partner) return { ...pair, solution: null };
   const firstHeight = kissActorHeightV1546(pair.leader);
   const secondHeight = kissActorHeightV1546(pair.partner);
-  const override = animationAuthor.kissNeutralMouthHeightsV1552; // Used only while rebuilding a new preset from the already-rendered neutral frame.
-  const useOverride = override?.leaderId === pair.leader.id && override?.partnerId === pair.partner.id;
-  const firstMouthHeightWorld = useOverride ? override.first : kissActorMouthHeightV1552(pair.leader); // Authoritative B'shuakauitl mouth above the first floor.
-  const secondMouthHeightWorld = useOverride ? override.second : kissActorMouthHeightV1552(pair.partner); // Same skinned resolver for the other participant.
-  if (firstMouthHeightWorld === null || secondMouthHeightWorld === null)
-    return { ...pair, solution: null, mouthError: 'Canonical skinned mouth points are not ready; load the portrait neck rigs first.' };
   const tallerActor = firstHeight >= secondHeight ? pair.leader : pair.partner; // Both participants' real leg measurements determine whether a supported hop is possible.
   const shorterActor = tallerActor === pair.leader ? pair.partner : pair.leader;
   const legMetrics = actor => {
@@ -13935,7 +13891,6 @@ function kissPairHeightV1546() {
   const tall = legMetrics(tallerActor);
   const short = legMetrics(shorterActor);
   const solution = window.SpouseKissMotion?.solveHeights?.(firstHeight, secondHeight, {
-    firstMouthHeightWorld, secondMouthHeightWorld, // Real mouth anchors replace the old generic 82%-of-height rule.
     ...(tall.length ? { tallerLegLengthWorld: tall.length } : {}),
     ...(tall.hip ? { tallerHipHeightWorld: tall.hip } : {}),
     ...(short.length ? { shorterLegLengthWorld: short.length } : {}),
@@ -13991,24 +13946,10 @@ function kissTrackV1546(who, solution) {
 
 function applyKissPresetV1546() {
   if (animationAuthor.mode !== 'multi') return false;
-  // First establish both complete models in the exact standing, unbowed
-  // frame. A previously edited/loaded kiss may leave the portrait and leg
-  // groups at different phases, which corrupts the first mouth measurement.
-  // This is the same neutral reset used by the full-character author, not
-  // a second guessed mouth-height formula.
-  setAnimationTime(0, { pause: true });
-  const previousPreset = animationAuthor.multiPreset; // Restored immediately after neutralizing all existing pose owners.
-  try {
-    animationAuthor.multiPreset = null;
-    syncMultiAvatarFullBodiesV1548(0);
-  } finally {
-    animationAuthor.multiPreset = previousPreset;
-  }
   const { leader, partner, solution } = kissPairHeightV1546();
   if (!leader || !partner) { setStatus('Kiss needs two NPC/character actors in the Multi-Avatar scene.', 'warn'); return false; }
   if (!solution?.contactPossible) {
-    setStatus(solution ? 'These authored mouth points exceed the safely reachable kneel and posterior hop. Inspect both leg rigs.'
-      : 'Could not resolve both skinned mouth anchors; check the mouth coordinate table and neck rigs.', 'warn');
+    setStatus('These mouth heights exceed the safely reachable kneel and posterior hop. Inspect both leg rigs.', 'warn');
     return false;
   }
   setProjectTimingFromTemplate({ fps: KISS_FPS_V1546, duration: window.SpouseKissMotion.DURATION_S }); // Syncs the author timeline with shared gameplay timing.
@@ -14059,11 +14000,9 @@ function updateKissHeightReadoutV1546() {
   node.style.display = $('maaPresetSelect')?.value === KISS_PRESET_V1546 ? '' : 'none';
   if (node.style.display === 'none') return;
   const { solution } = kissPairHeightV1546();
-  if (!solution) { node.textContent = 'Add two NPC actors with loaded skinned portraits and B\'shuakauitl mouth coordinates, then Apply Kiss.'; return; }
-  node.textContent = 'Real skinned mouth match (B\'shuakauitl anchors): ' +
-    solution.firstMouthHeightWorld.toFixed(3) + ' / ' + solution.secondMouthHeightWorld.toFixed(3) +
-    ' world units above each floor; body heights ' + solution.firstHeight.toFixed(2) + ' / ' +
-    solution.secondHeight.toFixed(2) + ' units. ' +
+  if (!solution) { node.textContent = 'Add two NPC/character actors, then Apply Kiss. Both participants are animated.'; return; }
+  node.textContent = 'Auto height match: ' + solution.firstHeight.toFixed(2) + ' / ' +
+    solution.secondHeight.toFixed(2) + ' model units. ' +
     (solution.taller === 'first' ? 'First' : 'Second') + ' actor ' +
     solution.pose + 's ' + solution.tallerSinkPct.toFixed(1) +
     '% and bows ' + solution.tallerBowDeg.toFixed(1) + '°. Tall spouse steps back ' +
@@ -14123,14 +14062,8 @@ serializeAnimationProject = function() {
   data.project.relationshipPreset = KISS_PRESET_V1546;
   data.project.kiss = {
     durationHours: 24, effect: 'beloved', effectStats: { staminaRegenMultiplier: 1.1 },
-    adaptation: 'bshuakauitl-shared-skinned-mouth-frames-and-authored-body-sink-percent',
-    mouthHeightSource: animationAuthor.kissHeightSolutionV1546?.mouthHeightSource || null, // Names the exact gameplay frame resolver.
-    mouthHeightRatio: animationAuthor.kissHeightSolutionV1546?.mouthHeightRatio ?? null, // Null means no estimated avatar-height ratio was used.
-    mouthHeightsWorld: {
-      initiator: animationAuthor.kissHeightSolutionV1546?.firstMouthHeightWorld ?? null,
-      recipient: animationAuthor.kissHeightSolutionV1546?.secondMouthHeightWorld ?? null,
-    }, // Serialized actual standing mouth coordinates for editable and mobile-readable exports.
-    mouthContactCorrectionXZ: clone(animationAuthor.kissMouthCorrectionV1552 || null), // Baked into the partner's authored track from the actual two lip frames.
+    adaptation: 'floor-relative-mouth-heights-and-authored-body-sink-percent',
+    mouthHeightRatio: window.SpouseKissMotion.MOUTH_HEIGHT_FRACTION,
     maxBodySinkPct: window.SpouseKissMotion.MAX_SINK_PCT,
     deepKneelLegFraction: window.SpouseKissMotion.KNEEL_LEG_FRACTION,
     maxTorsoBowDeg: window.SpouseKissMotion.MAX_BOW_DEG,
@@ -14280,9 +14213,6 @@ async function installAnimationUrlSceneV1547(scene) {
     $('maaProjectName').value = scene.name;
   }
   setAnimationTime(Math.min(scene.time, animationAuthor.duration), { pause: true });
-  if (scene.preset === 'kiss') {
-    animationAuthor.kissUrlMouthRevalidationV1552 = { frames: 150 }; // Portrait/hand profile attachment can finish after the URL scene is first built.
-  }
   renderAnimationModeChrome();
   renderAllAnimationUi();
   frameAllAnimationActors('angle'); // The angled author camera keeps both flat two-sided portrait planes readable.
@@ -14566,133 +14496,13 @@ tickAnimationAuthor = function(dt) {
   try { result = beforeMultiTickV1548(dt); }
   finally { fullBodyTickActiveV1548 = false; }
   if (animationAuthor.mode === 'multi') syncMultiAvatarFullBodiesV1548(animationAuthor.currentTime, dt); // The body tick runs exactly once after timeline evaluation.
-  // One-time URL scene recovery if asynchronous species/head profile setup
-  // subsequently changes the B'shuakauitl mouth coordinate in world space.
-  // Never overwrite an edited/playing timeline or repeat the rebuild.
-  const pending = animationAuthor.kissUrlMouthRevalidationV1552; // Only explicit just-opened URL scenes opt into late profile revalidation.
-  if (pending) {
-    pending.frames--;
-    if (animationAuthor.mode !== 'multi' || animationAuthor.multiPreset !== 'kiss' ||
-        animationAuthor.actors.length !== 2 || animationAuthor.playing || pending.frames <= 0) {
-      animationAuthor.kissUrlMouthRevalidationV1552 = null;
-    } else if (pending.frames % 8 === 0) {
-      const oldTime = animationAuthor.currentTime; // A shared URL may open mid-kiss; the contact pose cannot provide neutral mouth height.
-      const { leader, partner } = configuredKissPairV1550(); // Stable initiator and spouse despite inspector changes.
-      if (oldTime > .00001) setAnimationTime(0, { pause: true });
-      syncMultiAvatarFullBodiesV1548(0); // Pose body and skinned neck at the same neutral frame as browser diagnostics.
-      const THREE = state.three.THREE; // Use B'shuakauitl's own world-space mouth resolver.
-      const first = leader && window.SpouseKissMotion?.mouthHeightWorld?.(leader.model, leader.root, { THREE });
-      const second = partner && window.SpouseKissMotion?.mouthHeightWorld?.(partner.model, partner.root, { THREE });
-      if (oldTime > .00001) setAnimationTime(oldTime, { pause: true });
-      const expected = animationAuthor.kissHeightSolutionV1546; // Old pose may have been built before live portrait skeletons had settled.
-      const drift = expected && Number.isFinite(first) && Number.isFinite(second)
-        ? Math.max(Math.abs(expected.firstMouthHeightWorld - first),
-          Math.abs(expected.secondMouthHeightWorld - second)) : 0; // Never use the old temporary-rest transform when validating a real pose.
-      if (drift > .01 && leader && partner) {
-        animationAuthor.kissNeutralMouthHeightsV1552 = {
-          leaderId: leader.id, partnerId: partner.id, first, second,
-        }; // Preset rebuild consumes actual frame-zero skinned lip positions, then clears this transient calibration.
-        try {
-          const fresh = kissPairHeightV1546().solution; // Reuse the canonical leg and height solver.
-          if (fresh?.contactPossible) {
-            animationAuthor.kissUrlMouthRevalidationV1552 = null; // Clear before rebuilding to avoid recurring URL edits.
-            const oldSelection = animationAuthor.selectedActorId; // Keep mobile inspector selection unchanged.
-            selectAnimationActor(leader.id);
-            if (applyKissPresetV1546()) {
-              setAnimationTime(oldTime, { pause: true });
-              if (oldSelection && actorById(oldSelection)) selectAnimationActor(oldSelection);
-              log('Refreshed Kiss from settled B\'shuakauitl mouth anchors; corrected neutral drift ' +
-                drift.toFixed(3) + ' world units.');
-            }
-          }
-        } finally {
-          animationAuthor.kissNeutralMouthHeightsV1552 = null; // Do not contaminate later user-driven edits.
-        }
-      }
-    }
-  }
   return result;
 };
 
-// Use B'shuakauitl's skinned lip positions to calibrate the *actual*
-// horizontal contact point after the knee/neck/bow has been posed. A guessed
-// center-to-center spacing makes long-nosed and short-nosed species miss each
-// other, even when their true mouth heights are correct.
-function calibrateKissMouthXZV1552() {
-  const { leader, partner } = configuredKissPairV1550(); // Stable initiator and recipient, independent of selected timeline row.
-  const mouthAPI = window.SpouseKissMotion; // The same skinned pixel resolver that seats the ranged mouthpiece.
-  const THREE = state.three.THREE; // Used for the two actual world-space mouth vectors and facing cushion.
-  if (!leader?.model || !partner?.model || !mouthAPI?.mouthWorldPoint || !THREE) return false;
-  const previousTime = animationAuthor.currentTime; // Temporarily sample real kiss contact, then return the scrubber exactly.
-  const contactTime = 1.12; // Known shared kiss contact frame, after all knee/bow/hand transforms have been evaluated.
-  setAnimationTime(contactTime, { pause: true });
-  const source = new THREE.Vector3(); // Initiator mouth coordinate in absolute world space.
-  const target = new THREE.Vector3(); // Recipient mouth coordinate in absolute world space.
-  const scratchA = leader.kissMouthScratchV1552 || (leader.kissMouthScratchV1552 = { THREE }); // Canonical mouth frames reused by diagnostics.
-  const scratchB = partner.kissMouthScratchV1552 || (partner.kissMouthScratchV1552 = { THREE }); // Separate mouth-frame cache for the other actor.
-  const ready = mouthAPI.mouthWorldPoint(leader.model, source, scratchA) &&
-    mouthAPI.mouthWorldPoint(partner.model, target, scratchB);
-  if (!ready) { setAnimationTime(previousTime, { pause: true }); return false; }
-  const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(
-    leader.root.getWorldQuaternion(new THREE.Quaternion())
-  ); // Initiator's forward axis leaves a small lip cushion while mouth X/Z align.
-  forward.y = 0;
-  forward.normalize();
-  const desired = source.clone().addScaledVector(forward, .012); // Tiny intentional lip gap rather than a sprite intersection.
-  const correction = desired.sub(target); // Required x/z translation of the partner's authored root track.
-  correction.y = 0; // Vertical contact belongs to actual legs, neck and bow, never a fake root lift.
-  const magnitude = correction.length(); // Caps pathological offsets from a malformed portrait or missing world transform.
-  if (magnitude > .65) correction.multiplyScalar(.65 / magnitude);
-  for (const key of partner.keyframes) {
-    const blend = mouthAPI.samplePose(key.time).blend; // Timed approach and separation keep the original standing positions.
-    key.transform.position.x += correction.x * blend;
-    key.transform.position.z += correction.z * blend;
-  }
-  partner.baseTransform = clone(partner.keyframes[0].transform); // Root's authoring baseline follows the corrected first key.
-  animationAuthor.kissMouthCorrectionV1552 = {
-    x: correction.x, z: correction.z, initialMouthGapXZ: magnitude,
-  }; // Shown in exports and mobile diagnostics to explain why the root track shifted.
-  setAnimationTime(previousTime, { pause: true }); // Reevaluate feet/hands after the corrected target-relative placement.
-  return true;
-}
-
 const beforeMultiKissApplyV1548 = applyKissPresetV1546;
 applyKissPresetV1546 = function() {
-  let result = beforeMultiKissApplyV1548();
-  if (result) {
-    // Warm the real rig through shoulder reach, knees, lip contact and return
-    // before measuring rest height. The avatar/neck/leg attachments are created
-    // asynchronously and can have different initial and first-sampled poses.
-    // This is a one-time preset build; it never runs during playback.
-    for (const t of [0, .37, .82, 1.12, 0]) setAnimationTime(t, { pause: true });
-    syncMultiAvatarFullBodiesV1548(0);
-    // The authored recipient faces 180° away from their original single-NPC
-    // preview and the skinned head changes orientation with that new pose.
-    // Resolve the mouth after both roots are actually facing each other, then
-    // re-solve the knees once if the initial single-avatar mouths differ.
-    const before = animationAuthor.kissHeightSolutionV1546; // Original pose may contain pre-load, rotated, or previously bowed lip heights.
-    const { leader, partner } = configuredKissPairV1550(); // Stable role order even if inspector selection has changed.
-    const THREE = state.three.THREE; // Same skinned head-frame implementation used by the blowgun.
-    const mouth = window.SpouseKissMotion;
-    const liveFirst = leader && mouth?.mouthHeightWorld?.(leader.model, leader.root, { THREE });
-    const liveSecond = partner && mouth?.mouthHeightWorld?.(partner.model, partner.root, { THREE });
-    const drift = before && liveFirst !== null && liveSecond !== null
-      ? Math.max(Math.abs(liveFirst - before.firstMouthHeightWorld),
-          Math.abs(liveSecond - before.secondMouthHeightWorld)) : 0; // Measured directly at the real standing frame, never by temporarily changing a bowed rig.
-    if (drift > .005 && Number.isFinite(liveFirst) && Number.isFinite(liveSecond)) {
-      log('Kiss mouth calibration: actual frame-zero lips differ by ' + drift.toFixed(3) +
-        ' units; re-solving the kneel from the rendered B\'shuakauitl mouth anchors.');
-      animationAuthor.kissNeutralMouthHeightsV1552 = {
-        leaderId: leader.id, partnerId: partner.id, first: liveFirst, second: liveSecond,
-      }; // Override only during this rebuild, then immediately release it for future edits.
-      try { result = beforeMultiKissApplyV1548(); }
-      finally { animationAuthor.kissNeutralMouthHeightsV1552 = null; }
-      if (result) syncMultiAvatarFullBodiesV1548(0);
-    }
-    if (result && !calibrateKissMouthXZV1552()) {
-      setStatus('Kiss mouths could not be aligned because a skinned mouth anchor is unavailable.', 'warn');
-    }
-  }
+  const result = beforeMultiKissApplyV1548();
+  if (result) syncMultiAvatarFullBodiesV1548(0);
   return result;
 };
 
@@ -14743,33 +14553,8 @@ prepareMultiAvatarAnimationAuthor = function() {
 };
 installKissPresetUiV1546(); // The author initialized earlier in the same script; install immediately too.
 if (window.MultiAvatarAnimationAuthor) {
-  window.MultiAvatarAnimationAuthor.version = '15.52';
+  window.MultiAvatarAnimationAuthor.version = '15.51';
   window.MultiAvatarAnimationAuthor.fullBodyDiagnostics = fullCharacterPreviewDiagnosticsV1548;
-  window.MultiAvatarAnimationAuthor.kissMouthDiagnostics = () => {
-    const pair = configuredKissPairV1550(); // Maintains stable leader/partner order when the inspector selects the spouse.
-    const solution = animationAuthor.kissHeightSolutionV1546; // Original solver mouth levels are reused without changing the scene.
-    const source = window.SharedAttackPose; // Same data/resolver used by B'shuakauitl's live muzzle alignment.
-    const actorPoints = [pair.leader, pair.partner].filter(Boolean).map(actor => {
-      const scratch = actor.kissMouthScratchV1552 || (actor.kissMouthScratchV1552 = {
-        THREE: state.three.THREE,
-      }); // Reused scratch for the live position/visual-gap diagnostic.
-      const mouth = scratch.liveMouth || (scratch.liveMouth = new state.three.THREE.Vector3()); // World-space animated lip coordinate.
-      const resolved = window.SpouseKissMotion?.mouthWorldPoint?.(actor.model, mouth, scratch) || false;
-      const pixel = source?.mouthPixel?.(actor.model) || null;
-      return {
-        name: actor.label, species: actor.source?.species, gender: actor.source?.gender,
-        authored: !!window.HobunjiPortraitMouthPoints?.get?.(actor.source?.species, actor.source?.gender),
-        pixel: pixel ? { x: pixel.x, y: pixel.y } : null,
-        world: resolved ? { x: mouth.x, y: mouth.y, z: mouth.z } : null,
-        neutralHeightWorld: kissActorMouthHeightV1552(actor),
-      };
-    }); // Exportable diagnostic; no DevTools needed to see missing head rigs or mouth points.
-    const [one, two] = actorPoints;
-    const gap = one?.world && two?.world
-      ? Math.hypot(one.world.x - two.world.x, one.world.y - two.world.y, one.world.z - two.world.z)
-      : null; // True lips-to-lips three-dimensional separation at the sampled frame.
-    return { source: solution?.mouthHeightSource || null, actors: actorPoints, mouthGapWorld: gap };
-  };
   window.MultiAvatarAnimationAuthor.kissPairDiagnostics = () => {
     const pair = configuredKissPairV1550(); // Exposes pinned initiator, not the currently inspected actor.
     return {
@@ -14809,10 +14594,10 @@ if (window.MultiAvatarAnimationAuthor) {
   window.MultiAvatarAnimationAuthor.applyKissPreset = applyKissPresetV1546;
   window.MultiAvatarAnimationAuthor.importProject = importAnimationProjectData;
 }
-document.title = 'Hobunji Animation Author V15.52';
-animationAuthor.recentChange = 'V15.52 aligns kiss height matching to each species’ real B\'shuakauitl mouth coordinate through the skinned head, with live lip-gap diagnostics.';
+document.title = 'Hobunji Animation Author V15.51';
+animationAuthor.recentChange = 'V15.51 restores a small space between kissing faces and gives dramatically shorter partners a two-foot, posterior-anchored jump with live knee/pants IK.';
 animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
-log('V15.52 kiss positions use SharedAttackPose.headFrame and the canonical species/gender portrait mouth points used by B\'shuakauitl.');
+log('V15.51 kiss spacing adjusted; the smaller partner straddles the tall posterior only when kneeling alone cannot align their mouths comfortably.');
 
 })();
 </script>
