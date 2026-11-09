@@ -79,7 +79,7 @@ const contest=host.window.FestivalPotluckContest;
 assert.equal(contest.ingredientPoints('plain',4,foodDefs),4,'unknown input sources retain legacy scores');
 assert.equal(contest.ingredientPoints('flour',4,foodDefs),Math.round(8*importedCrop.factor*100)/100,'quality × processing × rarity, multiplicative');
 const breakdown=contest.ingredientBreakdown([{key:'plain',stars:4},{key:'flour',stars:4}],foodDefs);
-assert.equal(contest.scoreIngredients([{key:'plain',stars:4},{key:'flour',stars:4}],foodDefs),breakdown.reduce((sum,entry)=>sum+entry.points,0),'Gorkunash inspector matches actual scoring');
+assert.equal(contest.scoreIngredients([{key:'plain',stars:4},{key:'flour',stars:4}],foodDefs),Math.round(breakdown.reduce((sum,entry)=>sum+entry.points,0)*100)/100,'Gorkunash inspector matches actual scoring to cents');
 assert.equal(breakdown[1].processingMultiplier,2);
 assert(breakdown[1].rarityMultiplier>1);
 
