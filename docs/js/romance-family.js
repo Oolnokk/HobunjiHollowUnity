@@ -1,20 +1,20 @@
 // Children after marriage (builds on js/romance-system.js's spouse state).
 //
-// 3 months after the wedding:
+// 3 months after the wedding (and then on a recurring six-month birth cadence):
 //   • you male + spouse female, same species → spouse announces a pregnancy
 //     (Kenkari: an egg, and the spouse stays in bed with it until it hatches)
 //   • you female + spouse male, same species → you feel sick, bloated, and
 //     throw up (Kenkari: you lay an egg, and your spouse stays in bed with it)
 //   • any other pairing → nothing yet (see the dream below)
-// The first time you sleep in your farmhouse bed 6 months after the wedding:
+// The first time you sleep in your farmhouse bed 4 months after the wedding:
 //   • an egg hatches / a baby is born — case 1 babies mix both parents'
 //     colors, case 2 babies take colors near their same-gender parent
 //   • otherwise you dream of your child (species, gender and colors), and
 //     on waking Father Hunundi is outside with an orphan from a bandit raid
 // Every newborn is named, sleeps a month in a baby basket in the house, then
 // toddles (Toddling Footing eases 99 → 0 over 5 months, no visible bars),
-// and after that walks normally, leaves the house, greets you, has dialogue
-// lines, and can work a squeezing vat in place of Small livestock at 2x.
+// as a toddler works slowly on the farm or a squeezer, then walks normally,
+// visits town, greets you, and develops their single shared usefulness level.
 (() => {
   'use strict';
   if (window.RomanceFamily) return;
@@ -33,7 +33,7 @@
   let registeredChildFriends = ''; // Signature of world-specific NPC friendship links, avoids work each tick.
 
   function defaultFamily() {
-    return { pregnancy: null, children: [], pendingAdoption: null };
+    return { pregnancy: null, children: [], pendingAdoption: null, spouseUsefulness: null, spouseVatId: null };
   }
   const cfg = () => H?.cfg?.()?.family || {};
   const num = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -41,6 +41,57 @@
   const deps = () => H?.deps?.() || {};
   const basketDays = () => num(cfg().basketDays, 28);
   const toddlingDays = () => num(cfg().toddlingDays, 140);
+  const usefulnessCfg = () => cfg().usefulness || {}; // Shared family-work tuning, used for levels, XP and product stars.
+  const workActions = () => usefulnessCfg().jobXp || {};
+  function workProfileFor(workerId) {
+    const spouse = R?.getSpouse?.();
+    if (spouse?.npcId === workerId) {
+      if (fam.spouseUsefulness?.npcId !== workerId) fam.spouseUsefulness = { npcId: workerId, level: Math.max(1, num(usefulnessCfg().adultStartLevel, 2)), xp: 0 }; // One saved stat per spouse.
+      return { record: fam.spouseUsefulness, stage: 'adult', multiplier: num(usefulnessCfg().intelligenceXpMultiplier?.adult, 1) };
+    }
+    const child = fam.children.find(entry => entry.id === workerId);
+    if (!child) return null;
+    const phase = phaseOf(child);
+    if (phase === 'basket') return null;
+    if (!Number.isFinite(Number(child.usefulnessLevel))) child.usefulnessLevel = Math.max(1, num(usefulnessCfg().youngStartLevel, 1));
+    if (!Number.isFinite(Number(child.usefulnessXp))) child.usefulnessXp = 0;
+    return { record: child, stage: phase, multiplier: num(usefulnessCfg().intelligenceXpMultiplier?.[phase], phase === 'toddler' ? 0.25 : 0.5) };
+  }
+  function usefulnessInfo(workerId) {
+    const profile = workProfileFor(workerId);
+    if (!profile) return null;
+    const { record, stage, multiplier } = profile;
+    const level = num(stage === 'adult' ? record.level : record.usefulnessLevel, stage === 'adult' ? 2 : 1);
+    const xp = num(stage === 'adult' ? record.xp : record.usefulnessXp, 0);
+    return { level, xp, nextLevelXp: Math.max(1, num(usefulnessCfg().xpPerLevelFactor, 40)) * level * level, stage, intelligenceMultiplier: multiplier };
+  }
+  function awardWork(workerId, action) {
+    const profile = workProfileFor(workerId);
+    if (!profile || !Object.prototype.hasOwnProperty.call(workActions(), action)) return null;
+    const { record, stage, multiplier } = profile;
+    const levelKey = stage === 'adult' ? 'level' : 'usefulnessLevel';
+    const xpKey = stage === 'adult' ? 'xp' : 'usefulnessXp';
+    record[xpKey] = Math.max(0, num(record[xpKey], 0)) + Math.max(0, num(workActions()[action], 0)) * Math.max(0, multiplier);
+    const maxLevel = Math.max(1, Math.floor(num(usefulnessCfg().maxLevel, 5)));
+    while (record[levelKey] < maxLevel) {
+      const threshold = Math.max(1, num(usefulnessCfg().xpPerLevelFactor, 40)) * record[levelKey] * record[levelKey];
+      if (record[xpKey] < threshold) break;
+      record[xpKey] -= threshold;
+      record[levelKey] += 1;
+      H.toast(`⭐ ${stage === 'adult' ? H.npcName(workerId) : record.name} reached usefulness level ${record[levelKey]}!`, true);
+    }
+    if (record[levelKey] >= maxLevel) record[xpKey] = 0;
+    H.persist();
+    return usefulnessInfo(workerId);
+  }
+  function rollWorkQuality(workerId) {
+    const info = usefulnessInfo(workerId);
+    if (!info) return null;
+    const rank = Math.max(1, Math.min(5, Math.floor(info.level)));
+    if (rank === 1) return 1; // New children genuinely average 1★ instead of being lifted by a lower clamp.
+    const roll = window.GameRandom?.random?.() ?? Math.random();
+    return clamp(rank + (roll < 0.2 ? -1 : roll >= 0.8 ? 1 : 0), 1, 5); // Level two averages exactly 2★.
+  }
 
   // ── Pairing / case resolution ─────────────────────────────────────────
   function isEggLayer(speciesId) { return (cfg().eggLayingSpecies || ['kenkari']).includes(speciesId); }
@@ -56,14 +107,19 @@
     const spouse = R.getSpouse();
     if (!spouse) return null;
     const existingChildren = fam.children.filter(child => child.otherParentId === spouse.npcId); // Existing children count toward a per-marriage limit.
-    if (existingChildren.length >= Math.max(0, Math.floor(num(cfg().maxChildrenPerMarriage, 1)))) return null;
-    if (fam.pendingAdoption || (fam.pregnancy?.spouseId === spouse.npcId && (!fam.pregnancy.born || !existingChildren.length))) return fam.pregnancy;
-    const married = Math.max(num(spouse.marriedRawDay, H.rawDay()), ...existingChildren.map(child => num(child.bornRawDay, 0))); // Later siblings would begin a fresh wait.
+    const childLimit = Math.floor(num(cfg().maxChildrenPerMarriage, 0));
+    if (childLimit > 0 && existingChildren.length >= childLimit) return null;
+    if (fam.pendingAdoption || (fam.pregnancy?.spouseId === spouse.npcId && (!fam.pregnancy.born || fam.pregnancy.awaitingChild))) return fam.pregnancy;
+    const firstWeddingDay = num(spouse.marriedRawDay, H.rawDay());
+    const latestBirth = existingChildren.length ? Math.max(...existingChildren.map(child => num(child.bornRawDay, 0))) : null;
+    const firstDue = firstWeddingDay + num(cfg().birthAfterDays, 112);
+    const nextDue = latestBirth == null ? firstDue : Math.max(firstDue, latestBirth + Math.max(1, num(cfg().birthSpacingDays, 168)));
+    const conceptionDay = nextDue - num(cfg().birthAfterDays, 112); // Subsequent pregnancies are delayed until their own spaced due day.
     fam.pregnancy = {
       spouseId: spouse.npcId,
       kind: resolveKind(spouse.npcId),
-      announceRawDay: married + num(cfg().announceAfterDays, 84),
-      dueRawDay: married + num(cfg().birthAfterDays, 168),
+      announceRawDay: conceptionDay + num(cfg().announceAfterDays, 84),
+      dueRawDay: nextDue,
       announced: false,
       born: false,
     };
@@ -129,7 +185,7 @@
           ]
         : [
             { text: 'You need to see this — look!' },
-            { text: "I laid an egg this morning! I'm going to keep it warm in our bed until it hatches. Three months, maybe.", expression: 'smile', choices: [{ label: 'Our egg!', goto: 'end' }] },
+            { text: "I laid an egg this morning! I'm going to keep it warm in our bed until it hatches. One month, maybe.", expression: 'smile', choices: [{ label: 'Our egg!', goto: 'end' }] },
           ];
       H.converse(walker, steps);
       return;
@@ -146,7 +202,7 @@
     }
   }
 
-  // ── Births (first sleep in your bed after 6 months) ───────────────────
+  // ── Births (first farmhouse sleep after the one-month pregnancy) ──────
   function onTimePassage(event) {
     const detail = event?.detail || {};
     if (detail.kind !== 'sleep') return;
@@ -161,6 +217,7 @@
       return;
     }
     p.born = true;
+    p.awaitingChild = true; // Prevents creating a new pregnancy while the birth naming UI is unresolved.
     const baby = babyFromParents(p.kind);
     const message = {
       spouse_egg: 'The egg hatched in the night!',
@@ -252,11 +309,13 @@
       id, name: String(name || 'Little One').slice(0, 32), speciesId, gender, bodyColors,
       cosmetics: { ...(cosmetics || {}) }, equippedCosmetics: [...(equippedCosmetics || [])], appliedDyes: { ...(appliedDyes || {}) }, // Dream children keep every creator choice.
       origin, otherParentId, bornRawDay: H.rawDay(), basketId: null, vatId: null,
+      usefulnessLevel: Math.max(1, num(usefulnessCfg().youngStartLevel, 1)), usefulnessXp: 0, // Lifelong general work progression.
     };
     const placed = deps().furniture?.placeInteriorFixture?.('babyBasket');
     if (placed?.id) child.basketId = placed.id;
     if (placed?.stored) H.toast(`📦 Moved your ${placed.stored} into farm storage to make room for the baby basket.`, true);
     fam.children.push(child);
+    if (fam.pregnancy?.spouseId === otherParentId) fam.pregnancy.awaitingChild = false; // The next plan can begin after naming/doorstep arrival.
     syncChildFriendships(); // Connects each new child to Gantami via the shared social graph.
     registerChildDialogue(child);
     H.toast(`👶 Welcome home, ${child.name}!`, true);
@@ -334,26 +393,25 @@
       const anchor = interiorAnchor();
       return anchor ? { ...anchor, activity: 'napping' } : null;
     }
-    if (phase === 'toddler' || hour >= 20 || hour < 7) {
+    if (hour >= 20 || hour < 7) {
       const anchor = interiorAnchor();
-      if (!anchor) return null;
-      return phase === 'toddler'
-        ? { ...anchor, activity: 'toddling around', stationId: `child_toddle_${child.id}`, wanderMode: 'radius', wanderRadiusTiles: 3 }
-        : { ...anchor, activity: 'sleeping' };
+      return anchor ? { ...anchor, activity: 'sleeping' } : null;
     }
     const vat = vatObject(child);
     if (!child.vatId) {
-      const chore = window.NpcFarmPlots?.targetFor?.({ id: child.id }, { familyOnly: true }); // Farm assignments on a family day preempt optional town play.
+      const chore = window.NpcFarmPlots?.targetFor?.({ id: child.id }, { familyOnly: true }); // Toddlers may work on the farm, but never visit town.
       if (chore) return chore;
-      const townTarget = childTownTarget(child);
-      if (townTarget) return townTarget;
+      if (phase === 'child') {
+        const townTarget = childTownTarget(child);
+        if (townTarget) return townTarget;
+      }
     }
     if (vat && hour >= 8 && hour < 18 && Number.isFinite(vat.col) && Number.isFinite(vat.row)) {
       const spot = H.nearestWalkable('farm', vat.col, vat.row + 1, 2);
       if (spot) return { area: 'farm', c: spot.c, r: spot.r, activity: 'working the squeezing vat' };
     }
     const door = H.farmhouseDoorAnchor();
-    if (door) return { area: 'farm', c: door.c, r: door.r, activity: 'playing outside', stationId: `child_play_${child.id}`, wanderMode: 'radius', wanderRadiusTiles: 7 };
+    if (door) return { area: 'farm', c: door.c, r: door.r, activity: phase === 'toddler' ? 'toddling on the farm' : 'playing outside', stationId: `child_play_${child.id}`, wanderMode: 'radius', wanderRadiusTiles: phase === 'toddler' ? 3 : 7 };
     const anchor = interiorAnchor();
     return anchor ? { ...anchor, activity: 'at home' } : null;
   }
@@ -401,7 +459,7 @@
       if (walker.catchup !== 1 && phase === 'child') walker.catchup = 1;
     }
     if (child.vatId && !vatObject(child)) { child.vatId = null; H.persist(); }
-    if (child.vatId) window.DewVats?.setExternalWorker?.(child.vatId, { id: child.id, name: child.name, efficacy: num(cfg().vatEfficacyMultiplier, 2) });
+    if (child.vatId) window.DewVats?.setExternalWorker?.(child.vatId, { id: child.id, name: child.name, efficacy: num(cfg().vatEfficacyMultiplier, 2), familyWorker: true });
   }
 
   // Toddler wobble / tumble presentation (visual only; per-frame but bounded
@@ -432,10 +490,15 @@
   }
 
   function onNewDay() {
-    for (const child of fam.children) {
-      if (!child.vatId || phaseOf(child) !== 'child') continue;
-      const status = window.DewVats?.squeezePileWithExternalWorker?.(child.vatId);
-      if (status === 'started') H.toast(`🥛 ${child.name} squeezed a batch of dew at the vat (2x yield).`, true);
+    const spouse = R.getSpouse();
+    const workers = fam.children.filter(child => child.vatId && phaseOf(child) !== 'basket').map(child => ({ id: child.id, name: child.name, vatId: child.vatId }));
+    if (spouse?.npcId && fam.spouseVatId) workers.push({ id: spouse.npcId, name: H.npcName(spouse.npcId), vatId: fam.spouseVatId });
+    for (const worker of workers) {
+      const status = window.DewVats?.squeezePileWithExternalWorker?.(worker.vatId);
+      if (status === 'started') {
+        awardWork(worker.id, 'squeeze');
+        H.toast(`🥛 ${worker.name} squeezed dew at the vat (${num(cfg().vatEfficacyMultiplier, 2)}× yield).`, true);
+      }
     }
   }
 
@@ -472,28 +535,43 @@
     window.AmbientDialogue?.setNpcGreetings?.(child.id, { player: ['Hi {{name}}!', 'Hiya!', 'Look what I found!', 'Can we play later?'] });
   }
 
-  // ── Command wheel (child at a vat) ────────────────────────────────────
+  // ── Command wheel (family squeezing jobs) ─────────────────────────────
   function commandOptionsFor(walker) {
-    const child = fam.children.find(entry => entry.id === walker?.rec?.id);
-    if (!child || phaseOf(child) !== 'child') return [];
-    if (child.vatId) {
-      return [{ id: 'unvat', icon: '🛑', label: 'Stop Vat Work', run: () => { window.DewVats?.setExternalWorker?.(child.vatId, null); child.vatId = null; H.persist(); H.say(walker, 'Okay! Time to play!'); } }];
-    }
+    const workerId = walker?.rec?.id;
+    const child = fam.children.find(entry => entry.id === workerId);
+    const spouse = R?.getSpouse?.();
+    const isSpouse = spouse?.npcId === workerId;
+    if (!isSpouse && (!child || phaseOf(child) === 'basket')) return [];
+    const vatId = isSpouse ? fam.spouseVatId : child.vatId;
+    if (vatId) return [{ id: 'unvat', icon: '🛑', label: 'Stop Vat Work', run: () => {
+      window.DewVats?.setExternalWorker?.(vatId, null);
+      if (isSpouse) fam.spouseVatId = null; else child.vatId = null;
+      H.persist(); H.say(walker, 'Okay! Time to play!');
+    } }];
     const vats = (window.DewVats?.listSqueezingVats?.() || []).filter(vat => !window.DewVats.assignedWorkerForVat(vat.id));
     return [{ id: 'vat', icon: '🥛', label: 'Work the Vat', muted: !vats.length, run: () => {
-      if (!vats.length) { H.toast('There is no free squeezing vat on the farm.', false); return; }
-      child.vatId = vats[0].id;
-      window.DewVats.setExternalWorker(child.vatId, { id: child.id, name: child.name, efficacy: num(cfg().vatEfficacyMultiplier, 2) });
-      H.persist();
-      H.say(walker, "I'll squeeze the dew! I'm really good at it!");
+      const available = (window.DewVats?.listSqueezingVats?.() || []).find(vat => !window.DewVats.assignedWorkerForVat(vat.id));
+      if (!available) { H.toast('There is no free squeezing vat on the farm.', false); return; }
+      if (isSpouse) fam.spouseVatId = available.id; else child.vatId = available.id;
+      window.DewVats.setExternalWorker(available.id, { id: workerId, name: isSpouse ? H.npcName(workerId) : child.name, efficacy: num(cfg().vatEfficacyMultiplier, 2), familyWorker: true });
+      H.persist(); H.say(walker, "I'll work at the squeezing vat!");
     } }];
   }
 
-  // ── Spouse override hook (bed rest with the egg) ──────────────────────
+  // ── Spouse override hook (egg rest or assigned squeezing work) ──────
   function spouseTargetOverride(rec, { bedSpot } = {}) {
-    if (!spouseHoldingEgg() || fam.pregnancy.spouseId !== rec.id) return null;
-    const bed = (bedSpot || H.bedSpot)();
-    return bed ? { ...bed, activity: 'keeping the egg warm in bed', stationId: 'spouse_egg_bed' } : null;
+    if (spouseHoldingEgg() && fam.pregnancy.spouseId === rec.id) {
+      const bed = (bedSpot || H.bedSpot)();
+      return bed ? { ...bed, activity: 'keeping the egg warm in bed', stationId: 'spouse_egg_bed' } : null;
+    }
+    if (fam.spouseVatId && R.getSpouse()?.npcId === rec.id && H.clockHour() >= 8 && H.clockHour() < 18) {
+      const vat = (window.DewVats?.listSqueezingVats?.() || []).find(entry => entry.id === fam.spouseVatId);
+      if (vat) {
+        const spot = H.nearestWalkable('farm', vat.col, vat.row + 1, 2);
+        if (spot) return { area: 'farm', c: spot.c, r: spot.r, activity: 'working the squeezing vat' };
+      }
+    }
+    return null;
   }
 
   // ── UI: dream picker + naming ─────────────────────────────────────────
@@ -562,6 +640,7 @@
       const opened = openDreamPicker(choice => {
         if (fam.pregnancy !== p || p.born) return;
         p.born = true; // Only commit when the player finishes character creation.
+        p.awaitingChild = true; // The doorstep and naming events must finish before another birth is scheduled.
         fam.pendingAdoption = { ...choice, spouseId: p.spouseId };
         H.toast('You wake from a vivid dream of a child you have never met…', true);
         H.persist();
@@ -658,6 +737,11 @@
     maybeAnnounce();
     syncChildFriendships();
     for (const child of fam.children) updateChild(child);
+    if (R.getSpouse()?.npcId && fam.spouseVatId) {
+      const available = (window.DewVats?.listSqueezingVats?.() || []).some(vat => vat.id === fam.spouseVatId);
+      if (!available) { fam.spouseVatId = null; H.persist(); }
+      else window.DewVats?.setExternalWorker?.(fam.spouseVatId, { id: R.getSpouse().npcId, name: H.npcName(R.getSpouse().npcId), efficacy: num(cfg().vatEfficacyMultiplier, 2), familyWorker: true });
+    }
     syncFrameSubscriber();
   }
 
@@ -674,6 +758,9 @@
     fam = saved && typeof saved === 'object'
       ? { ...defaultFamily(), ...saved, children: Array.isArray(saved.children) ? saved.children.map(child => ({ ...child })) : [] }
       : defaultFamily();
+    // Save migration: shorten an existing unannounced or announced 3-month gestation to one month.
+    const plan = fam.pregnancy;
+    if (plan && !plan.born && num(plan.dueRawDay, 0) - num(plan.announceRawDay, 0) === 84) plan.dueRawDay = plan.announceRawDay + 28;
     clearAnnounceTimers();
     lastRawDay = null;
     syncChildFriendships();
@@ -683,13 +770,16 @@
     return {
       pregnancy: fam.pregnancy ? { ...fam.pregnancy } : null,
       pendingAdoption: !!fam.pendingAdoption,
-      children: fam.children.map(child => ({ id: child.id, name: child.name, speciesId: child.speciesId, gender: child.gender, origin: child.origin, ageDays: ageDays(child), phase: phaseOf(child), toddlingFooting: toddlingFooting(child), vatId: child.vatId, spawned: !!walkerFor(child) })),
+      spouseUsefulness: R?.getSpouse?.()?.npcId ? usefulnessInfo(R.getSpouse().npcId) : null,
+      children: fam.children.map(child => ({ id: child.id, name: child.name, speciesId: child.speciesId, gender: child.gender, origin: child.origin, ageDays: ageDays(child), phase: phaseOf(child), toddlingFooting: toddlingFooting(child), vatId: child.vatId, usefulness: usefulnessInfo(child.id), spawned: !!walkerFor(child) })), 
     };
   }
 
   const api = {
     init, tick, serialize, restore, snapshot,
     spouseTargetOverride, commandOptionsFor, spouseHoldingEgg,
+    usefulnessInfo, awardWork, rollWorkQuality,
+    isAssignedToVat: id => R?.getSpouse?.()?.npcId === id ? !!fam.spouseVatId : fam.children.some(child => child.id === id && !!child.vatId),
     openDreamPicker, openNamingPrompt, createChild,
     wardrobeRecordFor: id => { const child = fam.children.find(entry => entry.id === id); return child ? childRecord(child) : null; }, // Offscreen children still have identity/clothing for their family chest.
     isWardrobeChild: id => fam.children.some(child => child.id === id), // Fast per-frame physical wardrobe targeting avoids allocating a full family snapshot.
