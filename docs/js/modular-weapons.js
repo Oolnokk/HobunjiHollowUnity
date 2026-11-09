@@ -353,7 +353,7 @@
   }
   const UTILITY_SLOTS = new Set(['axe', 'pick', 'shovel', 'hoe', 'harpoon', 'fishing', 'instrument']); // Only actual tool channels; weapon/ranged slots cannot be granted by a head.
   function partText(value, fallback) {
-    const text = typeof value === 'string' ? value.trim().replace(/\\s+/g, ' ').slice(0, 96) : '';
+    const text = typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').slice(0, 96) : '';
     return text || fallback; // Missing old-draft fields retain newly shipped part labels, not stale donor weapon names.
   }
   function flailTemplate(id) {
@@ -392,7 +392,7 @@
     const headName = partText(head.weaponNames?.[placement], head.label);
     const affix = partText(shaft.nameAffix, shaft.label);
     return [metalLabel, ...(placement === 'prefix' ? [affix, headName] : [headName, affix])]
-      .filter(Boolean).join(' ').replace(/\\s+/g, ' ').trim();
+      .filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
   }
   function replace(data, persist = false) {
     if (!data?.heads || !data?.shafts || ![SCHEMA, 'hobunji_modular_weapons.v1'].includes(data.schema))
