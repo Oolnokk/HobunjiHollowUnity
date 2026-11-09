@@ -71,7 +71,7 @@
   <script src="js/loot-rolling.js?v=20261105puzzleCaves1"></script>
   <!-- Seed planting/crop harvesting, extracted out of game.js. Must load
        before game.js, which calls window.CropPlanting.init(...). -->
-  <script src="js/item-acquisition-rarity.js?v=20261109provenance2"></script> <!-- Acquisition odds, crop value premiums, and festival ingredient-source rarity. -->
+  <script src="js/item-acquisition-rarity.js?v=20261109rarityaudit10"></script> <!-- Acquisition odds, crop value premiums, and festival ingredient-source rarity. -->
   <script src="js/crop-varieties.js?v=20261109provenance1"></script>
   <script src="js/crop-planting.js?v=20261107h5b0aac4"></script>
   <!-- Wilderness den teleport + Den-Mother nest hold-to-take interaction,
@@ -236,7 +236,7 @@
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
   <script src="js/creature-texture-cache.js?v=20261105h5c6c35c"></script>
   <script src="js/creature-genetics-render.js?v=20261104nelkRig1"></script>
-  <script src="js/honeyfuzzle-swarm.js?v=20261031honey3dz2"></script> <!-- Honeyfuzzle swarm renderer: instanced translucent fly-pose blend plus genotype-tinted tail/spectacles; wild and stable creatures link through shared Combat deps. -->
+  <script src="js/honeyfuzzle-swarm.js?v=20261109hfe37cae"></script> <!-- Honeyfuzzle swarm renderer: instanced translucent fly-pose blend plus genotype-tinted tail/spectacles; wild and stable creatures link through shared Combat deps. -->
   <script src="js/honeyfuzzle-colors.js?v=20261026honeyEggGenes3"></script> <!-- Honeyfuzzle body colors by region (temperate / tropical / ominous) and egg color queue. -->
   <script src="js/honeyfuzzle-hives.js?v=20261102h1b814fe"></script> <!-- Hive stumps: swarm spawn/return, long-hold harvest (eggs + honey), collapse. Initialised by game.js. -->
   <!-- Shared per-frame "where is this creature/character's head" cache — see
@@ -481,7 +481,7 @@
   <script src="js/farm-production.js?v=20261107moot2"></script>
   <script src="js/honeyfuzzle-house.js?v=20261026honeyEggGenes3"></script> <!-- Honeyfuzzle House: 1x1 egg/swarm slot on a FarmProduction entry; hooked by farm-production.js, initialised by game.js. -->
   <script src="js/farm-layout-editor.js?v=20261016a"></script>
-  <script src="js/world-meta-store.js?v=20261109provenance1"></script>
+  <script src="js/world-meta-store.js?v=20261109rarityaudit10"></script>
   <script src="js/farm-animals.js?v=20261109provenance3"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
@@ -536,7 +536,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.ReagentPlants.init(...) during
        its own setup. -->
-  <script src="js/reagent-plants.js?v=20261109provenance1"></script>
+  <script src="js/reagent-plants.js?v=20261109rarityaudit10"></script>
   <!-- Jubmir the traveling trader: daily egg + combat-manual stock (window.JubmirShop)
        — self-contained aside from deps injected via init(), and reads
        window.CreatureGenetics/window.FarmAnimals/window.ConditionRegistry at
@@ -723,7 +723,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20261109provenance2"></script>
+  <script src="js/wildlife-spawn.js?v=20261109rarityaudit10"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
