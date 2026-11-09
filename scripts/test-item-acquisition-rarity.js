@@ -358,6 +358,11 @@ const wildSeed=rarity.wildBerrySource('redberrySeeds');
 assert.equal(bush.perBushChance,1,'the live berry bush guarantees its primary fruit harvest');
 assert.equal(bush.observedBushes,2,'source readback counts exactly two live registered native bushes');
 assert.equal(wildSeed.perBushChance,.2,'a native berry seed has an independent 20% chance per harvested bush');
+assert.equal(wildSeed.chancePerRandomZoneBush,.2,'Northern Cliffs has one wild berry species, so random-bush chance equals seed roll');
+assert.equal(rarity.wildBerrySource('yellowberries').speciesChancePerGeneratedZoneBush,.5,
+  'Yellowberries and Whiteberries share the Western Slope wild berry spawn pool');
+assert.equal(rarity.wildBerrySource('yellowberries').chancePerRandomZoneBush,.5,
+  'a random Western Slope berry bush is Yellowberries exactly half the time');
 assert(Math.abs(wildSeed.atLeastOne-.36)<1e-12,'two 20% seed opportunities combine to 36%');
 assert.equal(wildSeed.expectedYield,.4,'two bush visits yield .4 seeds in expectation');
 assert.equal(rarity.foodRarity('redberries',{redberries:{}}).factor,1,'native berry source does not invent a rare food premium');
@@ -366,6 +371,12 @@ assert(rarity.acquisitionSources('redberrySeeds',{lootPools:{},shopStock:{}}).so
 assert.equal(rarity.wildBerrySource('heftroot'),null,'nonberry crops are not given invented wild berry bushes');
 const unreached=rarity.wildBerrySource('blueberries');
 assert.equal(unreached.observedBushes,null,'an ungenerated biome is unknown, not zero berry bushes');
+const persistedOnlyZone='map_western_slope';
+owner.init({cropData:{yellowberries:{seedKey:'yellowberrySeeds'}},
+  _zoneBerryPersist:new Map([[persistedOnlyZone,{day:4,placements:[{col:2,row:2,key:'yellowberries'}]}]]),
+  _zoneBerryObjects:new Map()});
+assert.equal(rarity.wildBerrySource('yellowberries').observedBushes,null,
+  'an unloaded zone with persisted placements is not misreported as zero live berries');
 assert.equal(unreached.atLeastOne,null,'unknown biome count does not fabricate a negative or positive seed availability');
 if(previousBerries===undefined)delete globalThis.WildBerries;else globalThis.WildBerries=previousBerries;
 
