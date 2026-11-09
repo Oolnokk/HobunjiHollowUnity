@@ -74,6 +74,7 @@ async function ready(page) {
       'Legacy draft adds two boxes without discarding hand-authored brush strokes');
     assert.equal(await page.locator('#assembly-operation-elements .assembly-element-row button').filter({hasText:'Edit box'}).count(), 2,
       'Only two accidental recipe boxes expose recipe editing');
+    await page.locator('#assembly-elements > summary').click(); // Numbered advanced sections start collapsed; activate before touching their buttons.
     assert.match(await page.locator('#assembly-summary').innerText(), /1 matching head primitive/);
 
     // The new element list opens the correct existing recipe and haft line editors.
@@ -151,12 +152,26 @@ async function ready(page) {
     // Bore tool is contextual: a flexible SHAFT alone does not show head-owned connector drilling.
     await page.locator('#shaft').selectOption('grapple-flail');
     await page.locator('#head').selectOption('warhammer');
+    assert.equal(await page.locator('#flail-preview-figure').isVisible(),true,
+      'complete 2D rig is the primary preview, not hidden beneath source thumbnails');
+    assert.equal(await page.locator('#source-preview-workflow').evaluate(element=>element.open),true,
+      'selecting a mount line automatically opens the source workspace');
+    await page.waitForFunction(()=>document.querySelector('#flail-preview')?.dataset?.rigKind==='flail',
+      null,{timeout:30000});
+    assert.match(await page.locator('#flail-preview-status').innerText(),/Complete rest-pose rig/,
+      'full renderer includes actual flail geometry and annotated real contacts');
+    assert.equal(await page.locator('#full-assembly-guides').isChecked(),true);
+    await page.locator('#full-assembly-guides').uncheck();
+    assert.equal(await page.locator('#full-assembly-guides').isChecked(),false,'hide guide does not modify part authoring');
+    await page.locator('#full-assembly-guides').check();
     assert.equal(await page.locator('#shaft-bore-panel').isHidden(), true,
       'a shaft-owned flail with an ordinary rigid modular head cannot reveal connector bore tools');
     assert.equal(await page.evaluate(() => window.ModularWeapons.flailGuide('grapple-flail','warhammer')?.explicitMount), true,
       'the physical shaft rope mount still provides a visible connector guide');
     await page.locator('#shaft').selectOption('fishing-mace');
     await page.locator('#head').selectOption('grapple-flail');
+    assert.equal(await page.locator('#flail-authoring-panel').evaluate(section=>section.open),true,
+      'active flail controls are open while unrelated systems remain collapsible');
     await page.waitForFunction(() => document.querySelector('#shaft-bore-panel')?.hidden === false,
       null,{timeout:30000});
     assert.equal(await page.locator('#bore-add').isEnabled(), true);
@@ -166,6 +181,8 @@ async function ready(page) {
     assert.equal(await page.locator('#bore-rx').inputValue(), '20', 'new hole is 20px wide');
     assert.equal(await page.locator('#bore-ry').inputValue(), '20', 'new hole is 20px high');
     assert.equal(await page.locator('#bore-outline').inputValue(), '3', 'a black interior rim is automatically authored');
+    assert.equal(await page.locator('#source-preview-workflow').evaluate(section=>section.open),true,
+      'starting a bore drag reveals the touch-editable haft canvas automatically');
     assert.equal(await page.locator('#head-rope-x').isDisabled(), true,
       'the multi-sprite head author, not a modular fitting arrow, owns its attachment');
     assert.deepEqual(await page.evaluate(() => {
