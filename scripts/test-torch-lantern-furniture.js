@@ -37,7 +37,7 @@ assert.equal(lampParts.get('lantern_flame').materialLighting, 'unlit', 'flame re
 const emitter = lamp.particleEmitters.find(part => part.id === 'lantern_candle_fire'); // Particle anchoring follows the wax after height adjustments.
 assert.equal(emitter?.attachedPartId, 'lantern_candle', 'ambient flame stays parented to the candle');
 assert.equal(emitter?.type, 'fire', 'existing ambient fire effect powers the lantern');
-assert.ok(read('docs/js/interior-fire-floor-runtime.js').includes("'candleTable', 'standingLamp', 'hearth'"), 'lantern shares the existing furniture fire scheduler');
+assert.ok(read('docs/js/interior-fire-floor-runtime.js').includes("'candleTable', 'candleCluster', 'standingLamp', 'hearth'"), 'lantern and cluster both share the existing furniture fire scheduler');
 assert.ok(!lamp.parts.some(part => /lampshade|fabric shade/i.test(part.name)), 'old lampshade parts are gone');
 assert.equal(sourceLamp.lightSource.enabled, true, 'existing toggle-light and furniture-light metadata is retained');
 assert.ok(torchParts.get('wall_torch_shaft').transform.rz < -15, 'wall torch shaft visibly leans like a Minecraft wall torch');
