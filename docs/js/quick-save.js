@@ -137,6 +137,7 @@
   // ── Quick save ──────────────────────────────────────────────────────
   async function quickSave({ label = '', pinned = false } = {}) {
     try {
+      if (festivalTestSession()) throw new Error('Quick Save is disabled during Festival Test. Use Restart or Exit to return to the original world.');
       if (window.__hobunjiGameStarted !== true) throw new Error('The game has not finished loading a save yet.');
       if (!deps) throw new Error('Quick save is not wired into the game yet.');
       const ids = activeIds();
@@ -211,6 +212,10 @@
   }
 
   async function remove(id) {
+    const test = festivalTestSession();
+    if (test && [test.baseSlotId, test.previewSlotId, test.returnSlotId].includes(id)) {
+      return { ok: false, error: 'This festival recovery snapshot cannot be deleted while the test is unfinished.' };
+    }
     await deleteSlot(id);
     return { ok: true };
   }
@@ -444,7 +449,7 @@
       journal: { favor: {}, items: [], masks: [] },
     }; // One tab-local journal identifies only the running festival test.
     writeFestivalSession(session);
-    const result = await quickLoad(preview.id, { pauseAutosave: true });
+    const result = await quickLoad(preview.id, { pauseAutosave: true, festivalInternal: true });
     if (!result.ok) {
       writeFestivalSession(null);
       await deleteSlot(preview.id);
@@ -470,7 +475,7 @@
     session.returnSlotId = slotId;
     session.phase = 'recovering';
     writeFestivalSession(session);
-    const result = await quickLoad(slotId, { pauseAutosave: true });
+    const result = await quickLoad(slotId, { pauseAutosave: true, festivalInternal: true });
     if (!result.ok) writeFestivalSession(previous);
     return result;
   }
@@ -482,7 +487,7 @@
     session.journal = { favor: {}, items: [], masks: [] }; // Restart discards the previous attempt's awards.
     session.phase = 'starting';
     writeFestivalSession(session);
-    const result = await quickLoad(session.previewSlotId, { pauseAutosave: true });
+    const result = await quickLoad(session.previewSlotId, { pauseAutosave: true, festivalInternal: true });
     if (!result.ok) { session.phase = 'active'; session.journal = previousJournal; writeFestivalSession(session); }
     return result;
   }
@@ -511,7 +516,7 @@
       session.returnSlotId = returnSlot.id;
       session.phase = 'returning';
       writeFestivalSession(session);
-      const result = await quickLoad(returnSlot.id, { pauseAutosave: true });
+      const result = await quickLoad(returnSlot.id, { pauseAutosave: true, festivalInternal: true });
       if (!result.ok) { session.phase = 'active'; writeFestivalSession(session); }
       return result;
     } catch (error) {
@@ -551,13 +556,10 @@
   // Schedules the load and reloads the tab; the snapshot is applied at the
   // start of the next boot. pauseAutosave (default on) keeps the rewind out
   // of the canonical save until you resume autosave yourself.
-  async function quickLoad(id = 'latest', { pauseAutosave = true, reload = true } = {}) {
+  async function quickLoad(id = 'latest', { pauseAutosave = true, reload = true, festivalInternal = false } = {}) {
     try {
-      const festivalSession = festivalTestSession(); // Ordinary quick-load actions must not silently abandon an isolated festival test.
-      if (festivalSession && ['starting', 'active', 'returning'].includes(festivalSession.phase)
-        && id !== festivalSession.previewSlotId && id !== festivalSession.returnSlotId) {
-        throw new Error('Exit Festival Test before loading another save.');
-      }
+      const festivalSession = festivalTestSession(); // Public Quick Load must never replace an unfinished festival test.
+      if (festivalSession && !festivalInternal) throw new Error('Use Festival Test Restore before loading another save.');
       let slot = null;
       if (!id || id === 'latest') {
         const ids = activeIds();
