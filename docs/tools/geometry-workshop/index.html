@@ -14,6 +14,7 @@
 <script src="js/GLTFLoader.js?v=20260712d"></script>
 <script src="js/foliage-generator.js?v=20261031h87aa596"></script>
 <script src="js/procedural-furniture.js"></script>
+<script src="js/geometry-quality.js?v=20261109quality1"></script>
 <script src="tools/geometry-workshop/core.js?v=20261109a"></script>
 </head>
 <body>
@@ -73,6 +74,19 @@
       <div id="materials"></div>
       <button id="export" type="button" disabled>Download optimized GLB</button>
       <div id="manual-download"></div>
+      <h2 style="margin-top:15px">Gameplay quality JSON</h2>
+      <label for="quality-tier">Graphics quality tier for this candidate</label>
+      <select id="quality-tier">
+        <option value="low">Low</option>
+        <option value="medium" selected>Medium</option>
+        <option value="high">High</option>
+      </select>
+      <label for="game-source-path">Original GLB path used by gameplay</label>
+      <input type="text" id="game-source-path" placeholder="assets/models/hands/hand_feline.glb" spellcheck="false">
+      <small>For a procedural object, enter the path of its baked gameplay GLB. A generated-object profile only affects gameplay when that asset is loaded from this same path. Importing JSON does not automatically replace a live generator.</small>
+      <button id="export-json" type="button" disabled>Download quality profile JSON</button>
+      <div id="json-download"></div>
+      <small>Export the matching optimized GLB too, then publish it to the expected assets/models/ path. In-game Settings → Performance → Geometry Detail can import one or more profile JSONs; tiers merge by source.</small>
       <small>Export creates a new file; it does not replace a repository asset or change gameplay. Original GLB is never overwritten.</small>
     </section>
     <details id="diagnostics"><summary>Diagnostics · mobile-friendly</summary><pre id="log" aria-live="polite"></pre><button id="copy-report" type="button">Copy report</button></details>
@@ -83,6 +97,6 @@
     <div id="footer"><span id="busy">Ready</span><span id="loading-note">Loading Three.js and game mesh generators…</span></div>
   </main>
 </div>
-<script src="tools/geometry-workshop/workshop.js?v=20261109audit5"></script>
+<script src="tools/geometry-workshop/workshop.js?v=20261109quality1"></script>
 </body>
 </html>

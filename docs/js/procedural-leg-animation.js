@@ -651,12 +651,17 @@
   }
 
   function loadGlbScene(THREE, path) {
-    const resolvedPath = resolveAssetPath(path); // Shares one correctly-rooted model request between both feet.
-    if (_glbSceneCache.has(resolvedPath)) return _glbSceneCache.get(resolvedPath);
-    const promise = loaderForThree(THREE).then(loader => new Promise((resolve, reject) => {
-      loader.load(resolvedPath, gltf => resolve(gltf.scene), undefined, reject);
+    const quality = window.GeometryQuality; // Loads selected baked foot GLBs without changing species rig positions.
+    const key = resolveAssetPath(path) + '|geometry:' + (quality?.getTier?.() || 'original'); // Cached per quality tier.
+    if (_glbSceneCache.has(key)) return _glbSceneCache.get(key);
+    const load = requested => loaderForThree(THREE).then(loader => new Promise((resolve, reject) => {
+      loader.load(resolveAssetPath(requested), gltf => resolve(gltf.scene), undefined, reject);
     }));
-    _glbSceneCache.set(resolvedPath, promise);
+    const promise = (quality?.loadWithFallback ? quality.loadWithFallback(path, load) : load(path)).catch(error => {
+      _glbSceneCache.delete(key);
+      throw error;
+    });
+    _glbSceneCache.set(key, promise);
     return promise;
   }
 

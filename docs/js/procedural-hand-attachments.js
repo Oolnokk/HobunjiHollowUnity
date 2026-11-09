@@ -318,15 +318,17 @@
   }
 
   function loadGlbScene(THREE, path) {
-    const resolved = resolveAssetPath(path);
-    if (glbCache.has(resolved)) return glbCache.get(resolved);
-    const promise = loaderForThree(THREE).then(loader => new Promise((resolve, reject) => {
-      loader.load(resolved, gltf => resolve(gltf?.scene || gltf), undefined, reject);
-    })).catch(error => {
-      glbCache.delete(resolved);
+    const quality = global.GeometryQuality; // Gameplay quality settings choose a baked hand model without changing any rig transforms.
+    const key = resolveAssetPath(path) + '|geometry:' + (quality?.getTier?.() || 'original'); // Isolate cached scenes by quality tier.
+    if (glbCache.has(key)) return glbCache.get(key);
+    const load = requested => loaderForThree(THREE).then(loader => new Promise((resolve, reject) => {
+      loader.load(resolveAssetPath(requested), gltf => resolve(gltf?.scene || gltf), undefined, reject);
+    }));
+    const promise = (quality?.loadWithFallback ? quality.loadWithFallback(path, load) : load(path)).catch(error => {
+      glbCache.delete(key);
       throw error;
     });
-    glbCache.set(resolved, promise);
+    glbCache.set(key, promise);
     return promise;
   }
 

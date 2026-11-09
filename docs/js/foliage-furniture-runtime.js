@@ -321,7 +321,7 @@
   };
   if (root.TreeAssetLibrary) { activate(); return; }
   const script = root.document.createElement('script');
-  script.src = 'js/tree-asset-library.js?v=20260824-branched-lod-runtime';
+  script.src = 'js/tree-asset-library.js?v=20261109geomquality1';
   script.async = true;
   script.onload = activate;
   script.onerror = () => { /* optional runtime optimization; procedural fallback remains */ };

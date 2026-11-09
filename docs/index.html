@@ -26,6 +26,7 @@
   <script src="js/dev-companion-bridge.js?v=20261019handoff1"></script>
   <script src="js/dev-companion-appearance.js?v=20261107appearance-audit2"></script>
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
+  <script src="js/geometry-quality.js?v=20261109quality1"></script> <!-- Baked GLB quality profiles and Settings import; safe source fallback. -->
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20261013hd467097"></script>
   <script src="js/house-wall-fixtures.js?v=20261027h412254d"></script>
@@ -196,7 +197,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261031h9b18729"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261109h6aea7e8"></script>
+  <script src="js/held-action-animations.js?v=20261109geomquality1"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -213,7 +214,7 @@
   <script src="js/leg-bones.js?v=20261013hb53d07e"></script>
   <!-- Procedural leg/foot animation for non-creature avatars (player + NPC walkers) -->
   <script src="js/actor-body-sink.js?v=20261030a"></script> <!-- Body sink for enemies and NPCs: lowers their own roots while the leg handle folds the knees. -->
-  <script src="js/procedural-leg-animation.js?v=20261108kiss3"></script>
+  <script src="js/procedural-leg-animation.js?v=20261109geomquality1"></script>
   <!-- In-game pants garment: skinned onto the procedural legs (rig data in config/pants-rigs.js, maths in js/pants-rig-core.js) -->
   <script src="config/pants-rigs.js?v=20261015h74422e2"></script>
   <script src="js/pants-rig-core.js?v=20261022omgurkuMerge1"></script>
@@ -254,7 +255,7 @@
   <script src="js/roadside-koma-hedges.js?v=20261105koma1"></script> <!-- Path-adjacent shrub row detection, separate from general foliage. -->
   <script src="js/dungeon-door-ice-coverage.js?v=20261103doorice1"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
-  <script src="js/procedural-furniture.js?v=20261106hlantern9"></script>
+  <script src="js/procedural-furniture.js?v=20261109geomquality1"></script>
   <script src="js/furniture-puzzle-properties.js?v=20261103h9f3db40"></script>
   <script src="js/game-feel.js?v=20261108feel1"></script> <!-- Camera shake, hit-stop, hurt flash, puzzle-solve chime and reveal shot. -->
   <script src="js/ruin-interaction-audio.js?v=20261108h6329763"></script> <!-- Shared, size-pitched stone mechanisms and ignition cues; loaded before shaft mechanisms. -->
@@ -282,7 +283,7 @@
   <!-- Terrain-aware authored locales inspect the finished wilderness and place against existing host terrain. Must load after WildernessMapGenerator so its wrapper installs in the game, not only in editor/tests. -->
   <script src="js/locale-terrain-placement.js?v=20261105cliffPortal1"></script>
   <script src="js/foliage-furniture-renderer.js?v=20261107h509318a"></script>
-  <script src="js/foliage-furniture-runtime.js?v=20261107h7d68d7e"></script>
+  <script src="js/foliage-furniture-runtime.js?v=20261109geomquality1"></script>
   <!-- Generic post-generation locale placement (window.TemporaryLocales) —
        scans an already-generated wilderness zone for a site instead of
        reserving one before generation; used by bandit camps. -->
@@ -2267,6 +2268,29 @@
               <option value="0.5">50%</option>
             </select>
           </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Geometry Detail</div>
+              <div class="settings-desc">Selects pre-baked GLBs using imported quality profiles. Missing variants fall back to the original model. No runtime remeshing is performed.</div>
+            </div>
+            <select id="settingGeometryDetail" aria-label="3D model geometry detail" style="font-size:12px;padding:5px 8px;background:rgba(255,255,255,.06);border:1px solid var(--border-bright);border-radius:6px;color:var(--text);align-self:center">
+              <option value="high">High (original)</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </label>
+          <div class="settings-row settings-row--stacked">
+            <div class="settings-label">
+              <div class="settings-name">Geometry Quality Profiles</div>
+              <div class="settings-desc" id="geometryQualityStatus" role="status" aria-live="polite">Loading geometry quality profiles…</div>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+              <label style="font-size:12px;cursor:pointer">Import Geometry Workshop JSON
+                <input id="settingGeometryQualityImport" type="file" accept=".json,application/json" style="font-size:12px;max-width:230px">
+              </label>
+              <button type="button" class="settings-small-btn" id="settingGeometryQualityClear">Clear Imported Profiles</button>
+            </div>
+          </div>
           <label class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Wildlife Activation Distance</div>

@@ -29,8 +29,10 @@
   let candidate = null; // Generated preview clone with its own edited geometry.
   let sourceName = 'model'; // Name for diagnostics and exported GLB files.
   let downloadUrl = null; // Retains a manual-tap GLB link on mobile until replaced.
+  let profileUrl = null; // Retains a separate manual-tap JSON download on mobile.
   let originalOwnsResources = false; // Imported GLBs own GPU buffers; generated objects may use shared generator caches.
   let candidateMatchesControls = false; // Only current successful preview settings permit an optimized GLB export.
+  let latestResult = null; // Last successful preview's source/candidate triangle statistics for quality JSON metadata.
   let linkedGame = null; // Optional game tab opened directly by this workshop.
   let liveBuffer = null, liveName = ''; // Captured live GLB bytes/label for the existing load/preview pipeline.
   let activePick = null; // One-shot game canvas listener, cancelled on another pick or Escape.
@@ -89,8 +91,9 @@
     // A preview must be built with exactly the controls shown at export time.
     // Lock settings during asynchronous processing so sliders cannot invalidate a request mid-flight.
     for (const id of ['source-kind', 'repo-preset', 'repo-path', 'generator', 'seed', 'file', 'pick-scope',
-      'pick-game', 'remesh', 'edge-size', 'reduction', 'error', 'protect-cards']) $(id).disabled = value;
+      'pick-game', 'remesh', 'edge-size', 'reduction', 'error', 'protect-cards', 'quality-tier', 'game-source-path']) $(id).disabled = value;
     $('export').disabled = value || !candidateMatchesControls || !candidate || !original || !Core.preservedMaterials(original,candidate);
+    $('export-json').disabled = $('export').disabled;
   }
   function titleText(node) {
     return (node.name || 'unnamed mesh').slice(0, 72);
@@ -195,7 +198,9 @@
       $('materials').textContent;
     for (const note of result.warnings) log(note, false);
     candidateMatchesControls = safe && meaningfulResult; // Export approval belongs to this completed preview and applied processing.
+    latestResult = candidateMatchesControls ? result : null; // Only current measured geometry may be described by exported quality profiles.
     $('export').disabled = !candidateMatchesControls;
+    $('export-json').disabled = !candidateMatchesControls;
     if (!safe) log('Material preservation validation failed', true);
     else if (!meaningfulResult) log('No processable geometry was changed; export disabled. Check diagnostics or reduce protection.', true);
     else log('Preview built. Actual triangle reduction: ' + percent + '%.');
@@ -204,6 +209,7 @@
     if (!original) { log('Load an object first.', true); return; }
     const version = ++generation;
     candidateMatchesControls = false; // A failed reprocess must never leave stale export enabled.
+    latestResult = null;
     setBusy(true);
     try {
       const options = {
@@ -426,6 +432,10 @@
       if (token !== generation) { if (ownsResources) disposeImported(next); return; }
       disposeCandidate();
       candidateMatchesControls = false; // Old source/preview export is invalid once a new object is selected.
+      latestResult = null;
+      $('game-source-path').value = kind === 'repository' ? $('repo-path').value.trim() : '';
+      $('json-download').replaceChildren();
+      if (profileUrl) { URL.revokeObjectURL(profileUrl); profileUrl = null; }
       releaseOriginal();
       original = next;
       originalOwnsResources = ownsResources;
@@ -446,6 +456,64 @@
       if (token === generation) setBusy(false);
     }
     await updatePreview();
+  }
+  function optimizedFilename() {
+    return sourceName.replace(/\.glb$/i, '').replace(/[^a-zA-Z0-9_-]/g, '_') +
+      ($('remesh').checked ? '_remeshed' : '') + '_lod-' + $('reduction').value + '.glb';
+  }
+  function exportQualityJson() {
+    if (!candidateMatchesControls || !latestResult || updating) return;
+    const quality = window.GeometryQuality; // Shared, strict schema with the game-side profile importer.
+    const source = $('game-source-path').value.trim();
+    const tier = $('quality-tier').value;
+    if (!quality?.modelPath(source) || !quality.TIERS.includes(tier)) {
+      log('Enter a valid gameplay source path under assets/models/ ending in .glb.', true);
+      $('diagnostics').open = true;
+      return;
+    }
+    const optimized = source.slice(0, source.lastIndexOf('/') + 1) + optimizedFilename();
+    const settings = {
+      remesh: $('remesh').checked,
+      edgePercent: Number($('edge-size').value),
+      reductionPercent: Number($('reduction').value),
+      maximumErrorPercent: Number($('error').value),
+      preserveTransparentCards: $('protect-cards').checked,
+    }; // Metadata documents the exact workshop preview used to bake the optimized model.
+    const report = {
+      schema: quality.SCHEMA,
+      profiles: [{
+        source,
+        variants: { [tier]: optimized },
+        metadata: {
+          sourceType: $('source-kind').value,
+          generatedFrom: $('source-kind').value === 'generated' ? {
+            generator: $('generator').value, seed: Number($('seed').value),
+          } : null,
+          sourceTriangles: latestResult.source.triangles,
+          outputTriangles: latestResult.result.triangles,
+          sourceVertices: latestResult.source.vertices,
+          outputVertices: latestResult.result.vertices,
+          actualReductionPercent: Number((100 * (1 - latestResult.result.triangles / Math.max(1,latestResult.source.triangles))).toFixed(2)),
+          materialSlots: latestResult.result.materialSlots,
+          workshopSettings: settings,
+        },
+      }],
+    };
+    try {
+      quality.validate(report); // Exported documents can be imported by the game without editing schema fields.
+      if (profileUrl) URL.revokeObjectURL(profileUrl);
+      profileUrl = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2) + '\n'], { type: 'application/json' }));
+      const link = document.createElement('a');
+      link.href = profileUrl;
+      link.download = optimizedFilename().replace(/\.glb$/, '_quality-' + tier + '.json');
+      link.textContent = 'Tap to save ' + link.download;
+      $('json-download').replaceChildren(link);
+      link.click();
+      log('Exported quality JSON for ' + tier + '. Publish ' + optimized + ' alongside its profile to use it in-game.');
+    } catch (error) {
+      log('Quality JSON failed: ' + (error?.message || error), true);
+      $('diagnostics').open = true;
+    }
   }
   async function exportGLB() {
     if (!candidate || !candidateMatchesControls || updating || !Core.preservedMaterials(original, candidate)) return;
@@ -468,8 +536,7 @@
           resolve(data);
         }, { binary: true, onlyVisible: true, includeCustomExtensions: true });
       });
-      const filename = sourceName.replace(/\.glb$/i, '').replace(/[^a-zA-Z0-9_-]/g, '_') +
-        ($('remesh').checked ? '_remeshed' : '') + '_lod-' + $('reduction').value + '.glb';
+      const filename = optimizedFilename();
       if (downloadUrl) URL.revokeObjectURL(downloadUrl);
       downloadUrl = URL.createObjectURL(new Blob([buffer], { type: 'model/gltf-binary' }));
       const link = document.createElement('a');
@@ -496,15 +563,19 @@
   function invalidatePreview() {
     candidateMatchesControls = false; // Sliders/input changes invalidate the candidate until Update preview succeeds.
     $('export').disabled = true;
+    $('export-json').disabled = true;
+    latestResult = null;
     if (candidate) $('loading-note').textContent = 'Settings changed. Update preview before exporting.';
   }
   for (const id of ['remesh','edge-size','reduction','error','protect-cards']) $(id).addEventListener('input', invalidatePreview);
   $('export').addEventListener('click', exportGLB);
+  $('export-json').addEventListener('click', exportQualityJson);
   window.addEventListener('pagehide', () => {
     cancelPick();
     disposeCandidate();
     releaseOriginal();
     if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+    if (profileUrl) URL.revokeObjectURL(profileUrl);
     renderer.dispose();
   });
   $('copy-report').addEventListener('click', async () => {
