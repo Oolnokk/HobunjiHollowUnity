@@ -87,10 +87,12 @@ currentArea = caveId; // The player has now entered; normal scene loading is leg
 assert.equal(win.NpcScheduling.shouldDeferCavernLoad(caveId), false);
 win.NpcScheduling.resolveLegacyNpcScheduleTarget(banubu);
 assert.deepEqual(loads.slice(-1), [caveId], 'once the player enters, Banubu station lookup may initialize the cave');
-win.NpcScheduling.registerNpcStations([{ ...sleepingStation, area: caveId, c: sleepingStation.col, r: sleepingStation.row }], caveId);
+assert.match(read('docs/js/cavern-generator.js'), /rotY: facingRotation\(anchor\.facing\)/, 'the cave generator converts authored west-facing anchors into real station rotations');
+win.NpcScheduling.registerNpcStations([{ ...sleepingStation, area: caveId, c: sleepingStation.col, r: sleepingStation.row, rotY: 270 }], caveId);
 const loadedTarget = win.NpcScheduling.resolveLegacyNpcScheduleTarget(banubu);
 assert.equal(loadedTarget.stationId, sleepingStation.id, 'the real authored sleeping station takes over after scene entry');
 assert.equal(loadedTarget.pose, 'lie');
+assert.equal(loadedTarget.rotY, coldTarget.rotY, 'entering the cave preserves Banubu\'s sleeping facing direction');
 assert.equal(loadedTarget.c, coldTarget.c);
 assert.equal(loadedTarget.r, coldTarget.r);
 assert.equal(loads.filter(area => area === caveId).length, 1, 'loading the sleeping station must not restart the cave generation');
