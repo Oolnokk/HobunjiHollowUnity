@@ -1474,7 +1474,9 @@
         if (edge < 0.65) {
           const coverage = Math.max(0, Math.min(1, (edge + 0.65) / 1.3)); // Anti-aliased cutout without a jagged pixel stair.
           pixels[offset + 3] = Math.round(original[offset + 3] * coverage);
-          if (pixels[offset + 3] === 0) pixels[offset] = pixels[offset + 1] = pixels[offset + 2] = 0;
+          // Match the existing sprite-cutter's pure-black antialiased outline at the cut boundary,
+          // not a stray colored wood/metal fringe between the hole and its interior ink ring.
+          pixels[offset] = pixels[offset + 1] = pixels[offset + 2] = 0;
           continue;
         }
         if (edge >= Math.max(rim, outline + 1)) continue;
