@@ -12634,6 +12634,18 @@
       function npcTransitionPool(area) {
         if (_isBuildingArea(area)) return _buildingScenes.get(area)?.transitions || [];
         if (area === 'town') return worldTownTransitions;
+        if (_isZoneArea(area)) {
+          const zone = _zoneLayouts.get(area); // Uses the active procedural/hand-authored wilderness transitions, including Leaf and Pahu's house.
+          const config = EXTERIOR_ZONES[area]; // Supplies the same fallback exit and town return coordinates as player zone travel.
+          if (!zone || !config) return [];
+          const gate = zone.toTownExit; // Uses the real authored town gate when the zone provided one.
+          const col = Number.isFinite(gate?.col) ? gate.col : config.exitCol;
+          const row = Number.isFinite(gate?.row) ? gate.row : config.exitRow;
+          return [...(zone.transitions || []), {
+            id: 'npc_zone_town_' + area, area, col, row, target: 'town',
+            targetCol: config.townReturnCol, targetRow: config.townReturnRow,
+          }];
+        }
         return worldTransitions.filter(t => (t.area || 'farm') === area);
       }
 
@@ -12895,6 +12907,11 @@
         tileSurfaceYInArea, // Injected so graph builds never depend on tile coordinate metadata.
         npcMovementConfig,
         npcTransitionPool,
+        npcExteriorAreas: () => ['town', 'farm', ...Object.keys(EXTERIOR_ZONES)], // Finds a building's actual exterior entrance before selecting its exit destination.
+        npcZoneEntryPoint: area => {
+          const zone = EXTERIOR_ZONES[area]; // Uses the same entry coordinates as player town-to-wilderness travel.
+          return zone ? { c: zone.entryCol, r: zone.entryRow } : null;
+        },
         buildingScenes: _buildingScenes,
         loadBuildingScene,
         buildingSpawnFromExit,
