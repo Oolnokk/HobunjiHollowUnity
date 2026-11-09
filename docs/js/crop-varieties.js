@@ -141,7 +141,7 @@
     for (const key of Object.keys(stacks || {})) if (fromItemKey(key)) ensure(key);
   }
   function attach(deps = {}) {
-    if (deps.cropData && deps.cropData !== cropData) { known.clear(); variants.clear(); } // World/replay rebinding restores the new runtime crop table.
+    if (deps.cropData && deps.cropData !== cropData) { known.clear(); variants.clear(); lastBreeding = null; } // World/replay rebinding clears stale genetics diagnostics as well as variant caches.
     cropData = deps.cropData || cropData;
     itemDefs = deps.ITEM_DEFS || itemDefs;
     window.ItemAcquisitionRarity?.bindItemDefs?.(itemDefs); // Mobile rarity diagnostics use the same live definitions as game inventory and shops.
