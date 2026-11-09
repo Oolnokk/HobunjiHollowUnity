@@ -14587,10 +14587,26 @@ function calibrateKissMouthXZV1552() {
 
 const beforeMultiKissApplyV1548 = applyKissPresetV1546;
 applyKissPresetV1546 = function() {
-  const result = beforeMultiKissApplyV1548();
+  let result = beforeMultiKissApplyV1548();
   if (result) {
     syncMultiAvatarFullBodiesV1548(0);
-    if (!calibrateKissMouthXZV1552()) {
+    // The authored recipient faces 180° away from their original single-NPC
+    // preview and the skinned head changes orientation with that new pose.
+    // Resolve the mouth after both roots are actually facing each other, then
+    // re-solve the knees once if the initial single-avatar mouths differ.
+    const before = animationAuthor.kissHeightSolutionV1546; // Initial one-pass body and mouth measurements.
+    const facing = kissPairHeightV1546().solution; // Standing skinned mouth coordinates in the real paired pose.
+    const drift = facing && before
+      ? Math.max(Math.abs(facing.firstMouthHeightWorld - before.firstMouthHeightWorld),
+          Math.abs(facing.secondMouthHeightWorld - before.secondMouthHeightWorld))
+      : 0; // Only a material change from source portrait to contact-facing avatar triggers a rebuild.
+    if (drift > .005 && facing?.contactPossible) {
+      log('Kiss mouth calibration: partner facing changed the true skinned lip height by ' +
+        drift.toFixed(3) + ' units; rebuilding knees and bow from the facing mouth frames.');
+      result = beforeMultiKissApplyV1548();
+      if (result) syncMultiAvatarFullBodiesV1548(0);
+    }
+    if (result && !calibrateKissMouthXZV1552()) {
       setStatus('Kiss mouths could not be aligned because a skinned mouth anchor is unavailable.', 'warn');
     }
   }
