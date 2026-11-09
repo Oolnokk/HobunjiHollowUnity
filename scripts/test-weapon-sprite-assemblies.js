@@ -28,6 +28,9 @@ assert(game.includes('movementPosition: playerMesh.position'), 'player flail use
 assert(bandits.includes('movementPosition: c.avatarRef?.group?.position'), 'NPC flail uses actual character locomotion');
 assert(editor.includes('movementPosition: rig.position'), 'editor preview uses actor position, not hand offsets');
 assert(source.includes('state.progress <= state.wf'), 'all of neutral-to-windup uses a gravity-and-locomotion target');
+assert(source.includes('updateOne(state, 0, performance.now())'), 'newly loaded flail rope is anchored before its first rendered frame');
+assert.match(source, /if \(!state\.attacking\) \{[\s\S]*?stepPendulum\(state, q\.pivotAcceleration, state\.physicsLength, dt, 9\.81, flailDamping\(motion\)\)/, 'idle rope responds to real acceleration through the pendulum');
+assert.match(source, /if \(dt > 0 && state\.attacking && state\.progress < state\.sf\)/, 'idle pendulum momentum is not overwritten by the attack interpolation derivative');
 assert(source.includes('state.strikeStartDirection.copy(state.direction)'), 'transition starts from the real hanging-chain orientation');
 assert(!source.includes('windupStartDirection'), 'windup cannot drag the connector toward the shaft');
 assert(game.includes('(swingStrikePitch - swingWindupPitch) * combatSwingPower'), 'the player applies the same pitch-power multiplier as its sampled pose');

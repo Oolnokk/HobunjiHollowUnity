@@ -282,6 +282,9 @@
         ? { x: Number(f.head.anchor?.x) || 0, y: Number(f.head.anchor?.y) || 0 }
         : anchor(state.headAnchorImage, f.head.anchor, 'bottom'); // Composite coordinates may lie BETWEEN the two head sprites.
       effects?.activateHead(state, f.head, headTextures, unit); // Compute post-assembly visible-metal sources and fuel→front interleaved fire once.
+      // Place the suspension at the grip as soon as the artwork finishes loading.
+      // Otherwise newly equipped flails briefly show their unpositioned, horizontal rope at the root origin.
+      updateOne(state, 0, performance.now());
       global.__farmLog?.('[weapon assembly] ' + itemKey + ' chain/head ready', 'info'); // Visible in the existing mobile game diagnostic log.
     };
     // The base PNG can still be loading while the equipment holder is built.
@@ -487,8 +490,14 @@
     }
     state.lastShaftUp.copy(shaftUp); state.hasShaftUp = true;
     state.wasAttacking = state.attacking; state.lastFrameProgress = state.progress;
-    if (!state.attacking || state.progress <= state.wf) {
-      const target = q.target.set(-velocity.x * lag, -1, -velocity.z * lag).normalize(); // Neutral and ALL of Neutral → Windup hang downward, disturbed only by actor movement.
+    if (!state.attacking) {
+      // Idle suspension is a world-space pendulum: it hangs under gravity, swings
+      // when the holder accelerates or turns, and settles instead of snapping to a pose.
+      // The rigid grip and authored attack motion remain independent of the rope.
+      stepPendulum(state, q.pivotAcceleration, state.physicsLength, dt, 9.81, flailDamping(motion));
+      state.hasStrikeStart = false; // Every attack begins from the current idle suspension.
+    } else if (state.progress <= state.wf) {
+      const target = q.target.set(-velocity.x * lag, -1, -velocity.z * lag).normalize(); // Preserve the authored windup's gravity-and-locomotion lag.
       const turnAngle = state.direction.angleTo(target);
       if (turnAngle > 1e-6) {
         const maxTurn = Math.max(0, Math.min(MAX_DT, dt))
@@ -497,7 +506,6 @@
         q.stepQ.identity().slerp(q.deltaQ, Math.min(1, maxTurn / turnAngle));
         state.direction.applyQuaternion(q.stepQ).normalize();
       }
-      if (!state.attacking) state.hasStrikeStart = false; // Next attack must recapture its own gravitational strike-entry direction.
     } else if (state.progress < state.sf) {
       if (!state.hasStrikeStart) {
         state.strikeStartDirection.copy(state.direction); // Anchor the strike interpolation to the LAST windup gravity/locomotion state.
@@ -512,7 +520,7 @@
       // Hold and Recovery. Pivot deceleration contributes torque instead of a cap.
       stepPendulum(state, q.pivotAcceleration, state.physicsLength, dt, 9.81, flailDamping(motion));
     }
-    if (dt > 0 && (!state.attacking || state.progress < state.sf)) {
+    if (dt > 0 && state.attacking && state.progress < state.sf) {
       q.pitchCross.crossVectors(q.previousDirection, state.direction); // Real driven angular displacement includes simultaneous pitch, yaw, roll and body movement.
       const sine = q.pitchCross.length(); // Atan2 recovers signed 3D travel without choosing a dominant authored axis.
       if (state.hasPhysicsVelocity && sine > 1e-10) state.angularVelocity.copy(q.pitchCross).multiplyScalar(Math.atan2(sine, q.previousDirection.dot(state.direction)) / (sine * dt));
