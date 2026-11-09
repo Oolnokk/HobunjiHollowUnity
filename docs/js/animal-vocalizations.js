@@ -91,7 +91,7 @@
     ? new URL('environmental-reverb.js?v=20261002hadfec51', MODULE_BASE_SRC).href
     : null;
   const PLAYBACK_MODULE_SRC = MODULE_BASE_SRC
-    ? new URL('animal-voice-independent-playback.js?v=20261107stoneDuration1', MODULE_BASE_SRC).href
+    ? new URL('animal-voice-independent-playback.js?v=20261109skeerivoice11', MODULE_BASE_SRC).href
     : null;
 
   function requestEnvironmentalReverbModule() {
@@ -139,7 +139,10 @@
 
   function speciesProfileKey(c) {
     const raw = String(c?.creatureKey || c?.animalKey || c?.speciesKey || c?.species || c?.def?.key || '').toLowerCase();
+    if (/^skeeri-(?:small|medium|large)$/.test(raw)) return 'skeeri-small'; // Three ruin Skeeri sizes share the Small Skeeri's authored vocal repertoire.
     return raw
+      .replace(/-hatchling$/, '') // Young Tzatzul reuse the adult's sounds with Small size pitch.
+      .replace(/-herd-mother$/, '') // Herd-mother Voorg-Ass use their species' voice, not a silent variant identity.
       .replace(/-wild-den-mother$/, '')
       .replace(/-den-mother$/, '')
       .replace(/-(?:mother|alpha)$/, '')
@@ -147,6 +150,10 @@
   }
 
   function creatureSizeClass(c) {
+    const key = String(c?.creatureKey || c?.animalKey || c?.speciesKey || c?.species || c?.def?.key || '').toLowerCase(); // Fixed Skeeri variant ID takes precedence over inherited genotype sizes.
+    const skeeriSize = /^skeeri-(small|medium|large)$/.exec(key); // Runtime registration uses separate species IDs for each of the three Skeeri sizes.
+    if (skeeriSize) return skeeriSize[1];
+    if (key === 'tzatzul-hatchling') return 'small'; // Hatchlings have fixed small proportions, whatever inherited adult genotype may say.
     const raw = String(c?.genotype?.sizeClass || c?.sizeClass || c?.def?.defaultSizeClass || '').toLowerCase();
     return SIZE_CLASSES.includes(raw) ? raw : 'medium';
   }
@@ -259,7 +266,7 @@
   async function loadAuthoredProfiles() {
     if (typeof fetch !== 'function') return;
     try {
-      const response = await fetch('config/dialogue/ambient-dialogue.json');
+      const response = await fetch('config/dialogue/ambient-dialogue.json?v=20261109voiceimport37'); // Revisioned authored voices prevent cached pre-import animal calls on mobile.
       if (!response.ok) return;
       const config = await response.json();
       setAuthoredProfiles(config?.animalVocalizations || {});

@@ -44,6 +44,7 @@
   // night stop for the overlay, plus near-black fog and mist that swallow the
   // distance while nearby things stay readable.
   const UNDERGROUND_NIGHT_LIGHTING = Object.freeze({ r: 5, g: 8, b: 23, a: 0.80 });
+  const TZATZUL_NEST_LIGHTING = Object.freeze({ r: 18, g: 22, b: 31, a: 0.68 }); // Abduction arenas keep cave-colored mist but retain roughly a third of the unlit image for boss/hatchling readability.
   const KANTHIC_STANDARD_DARKNESS_ALPHA = 0.95; // Kanthic uses the same unified mist/night darkness pass at higher opacity, never a second vignette.
   const UNDERGROUND_FOG_DENSITY = 0.055; // Same as map_southern_cloud_forest's fogDensity.
   let ruinMistFade = 1; // 1 = normal mist, 0 = suppressed while standing in a ruin shaft.
@@ -347,7 +348,7 @@
       if (skyRoot) skyRoot.visible = false;
       updateFogLighting(activeScene);
     } else {
-      updateFogLighting(activeScene, UNDERGROUND_NIGHT_LIGHTING);
+      updateFogLighting(activeScene, undergroundLightingForArea(deps.getCurrentArea?.()));
     }
 
     const px = deps.player.x / deps.TILE;
@@ -407,6 +408,14 @@
     return id.startsWith('map_i_den_') || id === 'map_i_dev_random_ruin';
   }
 
+  function isTzatzulNestArea(area) {
+    return String(area || '').toLowerCase().startsWith('map_i_den_tzatzul_'); // Only the four authored Tzatzul abduction caves use the brighter encounter profile.
+  }
+
+  function undergroundLightingForArea(area) {
+    return isTzatzulNestArea(area) ? TZATZUL_NEST_LIGHTING : UNDERGROUND_NIGHT_LIGHTING; // Shared by physical cave mist and the overlaid nighttime tint.
+  }
+
   function enclosedDarknessOverlayAlpha(area) {
     if (String(area || '').toLowerCase() === 'map_i_dev_random_ruin') {
       const testSettings = window.DevRandomRuin?.getDarknessSettings?.(); // Random Test Ruin defaults bright for inspection while retaining an explicit den-darkness preview control.
@@ -417,6 +426,7 @@
       return testSettings?.enabled === true ? base * severity : base;
     }
     if (isMineArea(area)) return MINE_DARKNESS_OVERLAY_ALPHA;
+    if (isTzatzulNestArea(area)) return TZATZUL_NEST_LIGHTING.a; // Same brightness whether Cloud Forest Mist is enabled or disabled.
     if (isDenArea(area)) return DEN_DARKNESS_OVERLAY_ALPHA;
     return INTERIOR_DARKNESS_OVERLAY_ALPHA;
   }
@@ -1098,7 +1108,7 @@
     }
 
     lastInteriorDarknessDraw = null; // Never report an interior base fill after returning outside.
-    const { r, g, b, a } = undergroundFog ? UNDERGROUND_NIGHT_LIGHTING : getFullDayLighting();
+    const { r, g, b, a } = undergroundFog ? undergroundLightingForArea(currentArea) : getFullDayLighting();
     const darknessAlpha = undergroundFog && activeRuinTradition() === 'kanthic' ? Math.max(a, KANTHIC_STANDARD_DARKNESS_ALPHA) : a; // Stronger ordinary ambient darkness replaces the old hard circular cutout.
     ctx.globalCompositeOperation = darknessAlpha < 0.09 ? 'screen' : 'multiply';
     ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${darknessAlpha})`;
@@ -1146,6 +1156,7 @@
   }
 
   window.CloudForestFog = {
+    __test: Object.freeze({ undergroundLightingForArea, enclosedDarknessOverlayAlpha }), // Pure policy checks; the production overlay and mobile diagnostics use these same functions.
     init,
     update,
     setLayerRadius,
@@ -1178,7 +1189,7 @@
         fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
         skydomeSuppressed: !!isNoSkyArea(debugArea),
         undergroundLanternArea: isUndergroundLanternArea(debugArea),
-        latestChange: 'Shaft ladder glyphs and sense outlines; ruin torches cast screen-space shadows from solid stone and props.',
+        latestChange: 'Tzatzul nest visibility adjusted in mist and darkness; all other den, mine and ruin lighting remains unchanged.',
         ruinLightOcclusion: window.RuinLightOcclusion?.debugSnapshot?.() || null, // Mobile debug readout counts scanned casters, firelight evaluations and clipped shadow projections.
         ruinEngravingGlowMasks: { ...ruinGlowStats }, // Mobile-visible proof that glowing wall patterns survive the darkness overlay.
         kanthicFirelight: { ...ruinFireMaskStats, ...(window.RuinMultifloorV50Style?.lightDebug?.()||{}) }, // Both emitted/visible mask counts and actual ignited brazier counts are readable without devtools.
@@ -1186,6 +1197,7 @@
         interiorLightFalloff: 'ease-out',
         undergroundDarknessKind: enclosedDarknessKind(debugArea),
         undergroundDarknessOverlayAlpha: enclosedDarknessOverlayAlpha(debugArea),
+        undergroundFogLighting: { ...undergroundLightingForArea(debugArea) }, // Mobile Pixel Probe distinguishes the more legible Tzatzul nest fog from ordinary den darkness.
         lastInteriorDarknessDraw: lastInteriorDarknessDraw ? { ...lastInteriorDarknessDraw } : null, // Mobile QA shows whether a base mask was drawn for the active farmhouse.
         playerLanternVisible: !!debugScene?.getObjectByName?.('mine_player_torch')?.visible,
         outdoorLanternActivation: currentOutdoorLanternActivation(),

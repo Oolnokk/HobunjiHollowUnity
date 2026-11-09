@@ -584,7 +584,7 @@ assert.doesNotMatch(overlayScheduler, /baseDraw|daylightDraw|drawLightingOverlay
 const cloudFog = read('docs/js/cloud-forest-fog.js'); // Shared compositor must keep enclosed rooms stable while local light masks reveal nearby sources.
 assert.match(cloudFog, /const darknessAlpha = enclosedDarknessOverlayAlpha\(currentArea\)/, 'enclosed interiors must retain the established darkness baseline');
 const enclosedBranchStart = cloudFog.indexOf('if (enclosed && !undergroundFog) {');
-const enclosedBranchEnd = cloudFog.indexOf('const { r, g, b, a } = undergroundFog ? UNDERGROUND_NIGHT_LIGHTING : getFullDayLighting();', enclosedBranchStart);
+const enclosedBranchEnd = cloudFog.indexOf('    lastInteriorDarknessDraw = null; // Never report an interior base fill after returning outside.', enclosedBranchStart); // Split at the actual enclosed/underground branch boundary, regardless of underground tint selection.
 const enclosedBranch = cloudFog.slice(enclosedBranchStart, enclosedBranchEnd);
 assert.match(enclosedBranch, /drawLanternMasksCompat\(1\)/, 'ordinary interiors must retain the stable positional carried-lantern reveal');
 assert.match(enclosedBranch, /drawFurnitureLightMasksCompat\(\)/, 'ordinary interiors must retain stable positional furniture-light reveals');

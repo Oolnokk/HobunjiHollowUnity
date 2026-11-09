@@ -365,6 +365,32 @@
         "small": 2.5,
         "medium": 0,
         "large": -2.5
+      },
+      "clipTuning": {
+        "sfx_hoot-yap.ogg": {
+          "tempo": 1,
+          "pitchSemitones": 12
+        },
+        "sfx_spooky_raptor.ogg": {
+          "tempo": 1,
+          "pitchSemitones": 8
+        },
+        "sfx_saddish-puff.ogg": {
+          "tempo": 1,
+          "pitchSemitones": 8
+        },
+        "sfx_oof-hoot.ogg": {
+          "tempo": 1,
+          "pitchSemitones": 12
+        },
+        "sfx_hoowee_caw.ogg": {
+          "tempo": 1,
+          "pitchSemitones": 12
+        },
+        "sfx_hoot-squeak.ogg": {
+          "tempo": 1,
+          "pitchSemitones": 12
+        }
       }
     },
     "drenkirra": {
@@ -850,6 +876,158 @@
         "bandit-camp": [
           "Hrayooo!"
         ]
+      }
+    },
+    "skeeri-small": {
+      "chatter": {
+        "allowedClips": [
+          "sfx_hoot-squeak.ogg",
+          "sfx_oof-hoot.ogg",
+          "sfx_saddish-puff.ogg"
+        ],
+        "utterances": [
+          {
+            "tempo": 2,
+            "pitchSemitones": 12
+          },
+          {
+            "tempo": 2,
+            "pitchSemitones": 12
+          },
+          {
+            "tempo": 2,
+            "pitchSemitones": 12
+          }
+        ],
+        "intervalMs": 180
+      },
+      "warning": {
+        "utterances": [
+          {
+            "tempo": 2,
+            "pitchSemitones": 12
+          },
+          {
+            "tempo": 2,
+            "pitchSemitones": 12
+          },
+          {
+            "tempo": 2,
+            "pitchSemitones": 12
+          }
+        ],
+        "allowedClips": [
+          "sfx_hoot-yap.ogg",
+          "sfx_hoot-yap_2.ogg",
+          "sfx_hoot_kee_koo.ogg"
+        ],
+        "intervalMs": 200
+      },
+      "growl": {
+        "allowedClips": [
+          "sfx_hoot-squeak.ogg",
+          "sfx_scream_chirp.ogg"
+        ],
+        "utterances": [
+          {
+            "tempo": 1,
+            "pitchSemitones": 6
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": 6
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": 12
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": 9
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": 9
+          },
+          {
+            "tempo": 0.5,
+            "pitchSemitones": 7
+          }
+        ],
+        "intervalMs": 150
+      }
+    },
+    "tzatzul": {
+      "warning": {
+        "allowedClips": [
+          "sfx_scream_chirp.ogg"
+        ],
+        "utterances": [
+          {
+            "tempo": 1,
+            "pitchSemitones": 0
+          },
+          {
+            "tempo": 0.75,
+            "pitchSemitones": 12
+          }
+        ]
+      },
+      "chatter": {
+        "allowedClips": [
+          "sfx_whistle-scream.ogg"
+        ]
+      },
+      "growl": {
+        "allowedClips": [
+          "sfx_spooky_raptor.ogg"
+        ],
+        "utterances": [
+          {
+            "tempo": 0.8,
+            "pitchSemitones": 0
+          }
+        ]
+      }
+    },
+    "pingdort": {
+      "chatter": {
+        "allowedClips": [
+          "sfx_crying_bird.ogg",
+          "sfx_silly_bird_noise_1.ogg"
+        ],
+        "utterances": [
+          {
+            "tempo": 1,
+            "pitchSemitones": 0
+          }
+        ]
+      },
+      "warning": {
+        "allowedClips": [
+          "sfx_curious_huff.ogg"
+        ],
+        "intervalMs": 200
+      },
+      "growl": {
+        "allowedClips": [
+          "sfx_crying_bird.ogg"
+        ],
+        "utterances": [
+          {
+            "tempo": 1,
+            "pitchSemitones": 0
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": 6
+          },
+          {
+            "tempo": 1,
+            "pitchSemitones": 12
+          }
+        ],
+        "intervalMs": 100
       }
     }
   },

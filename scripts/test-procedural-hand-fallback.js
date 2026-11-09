@@ -100,6 +100,7 @@ assert.strictEqual(frames.length, 1, 'driver should schedule its managed-frame l
 frames.shift()(); // Attaches the pending rig and establishes its first stationary world sample.
 assert.strictEqual(windowObject.ProceduralHandFrameDriver.getDebug()[0].fallback.mode, 'idle');
 assert(idleCalls.every(call => call.pose), 'idle fallback must provide a procedural pose for both free hands');
+const initialLeftPose = idleCalls.find(call => call.side === 'left')?.pose; // Checks the same free-hand pose object is reused during subsequent movement.
 
 idleCalls.length = 0;
 for (let step = 1; step <= 10; step += 1) {
@@ -114,6 +115,7 @@ assert.deepStrictEqual({ ...walking.owners }, { left: 'fallback-walk', right: 'f
 const left = [...idleCalls].reverse().find(call => call.side === 'left')?.pose;
 const right = [...idleCalls].reverse().find(call => call.side === 'right')?.pose;
 assert(left && right, 'walking fallback must animate both unowned sides');
+assert.strictEqual(left, initialLeftPose, 'the animation should update one left-hand pose in place instead of allocating a new object every frame');
 assert(Math.sign(left.position.z) === -Math.sign(right.position.z), 'left and right hands must swing in opposite directions');
 
 assert.match(source, /owners\.right = freeHand\?\.influence > 0\.0001 \? 'avatar-local-free-right-hand' : 'primary-grip'/, 'ordinary primary grips own the right hand unless an active avatar-local free-hand pose owns it');

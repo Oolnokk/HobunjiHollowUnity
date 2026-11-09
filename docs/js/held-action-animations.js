@@ -378,7 +378,7 @@
     new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261102maoskelrear1', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20261017h3921033', docsBase).href,
     new URL('js/procedural-hand-shoulder-aim.js?v=20261107instrHand1', docsBase).href,
-    new URL('js/procedural-hand-frame-driver.js?v=20261107instrNeutral2', docsBase).href,
+    new URL('js/procedural-hand-frame-driver.js?v=20261108handGripScan1', docsBase).href,
   ];
   if (isAttackEditor) {
     // The editor starts its first avatar rebuild immediately after these parser-time
@@ -400,7 +400,7 @@
     handScripts.push(new URL('js/weapon-stance-drop-runtime.js?v=20261109pairedpose1', docsBase).href);
     handScripts.push(new URL('js/crossbow-strike-audio-trim.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/weapon-png-scale.js?v=20260902c', docsBase).href);
-    handScripts.push(new URL('js/hand-pixel-probe-diagnostics.js?v=20261101handdrift2', docsBase).href);
+    handScripts.push(new URL('js/hand-pixel-probe-diagnostics.js?v=20261108handperf1', docsBase).href);
   }
 
   function loadSequentially(urls) {

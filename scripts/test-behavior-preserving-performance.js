@@ -153,6 +153,7 @@ function replayHandSync(source, diagnostic) {
     playerKurrayaActive: () => false, freeRightHandFor: () => null,
     currentToolKey: () => 'axe', currentGripContext: () => 'melee',
     toolGrips: { primaryGripForTool: () => primaryGrip, secondaryGripForTool: () => useSecondary ? secondaryGrip : null },
+    visualGripBasisDelta: () => ({ quaternion: { w: 1 }, source: 'none', angleDeg: 0 }), // The production hand solve now computes one shared basis before asking for sockets.
     toolSocketWorld: (_record, _holder, grip) => grip,
     handWorldFromSocket: (_record, grip) => ({ position: grip.position, quaternion: { w: 1 }, authored: {}, visualBasis: 'test' }), // Baseline helper retained for PERF_BASE_REF replay.
     handSocketAfterGripMode: (_record, grip) => ({ position: grip.position, quaternion: { w: 1 }, mode: {}, visualBasis: 'test' }), // Current socket-only helper; model calibration is mocked as a downstream child.

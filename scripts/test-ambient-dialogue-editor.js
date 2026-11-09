@@ -29,7 +29,11 @@ assert(editor.includes('ambient-dialogue.json'), 'editor imports/exports shared 
 assert(editor.includes('animal-voice-independent-playback.js'), 'animal editor loads fixed voice playback helper');
 assert.doesNotMatch(editor, /tempoMin|tempoMax|pitchMinSemitones|pitchMaxSemitones|tempoContour|pitchContourSemitones|frequency analysis|normalization/i, 'base editor no longer contains dead modulation UI');
 
-assert.equal(utteranceIndex.clips.length, 22, 'utterance index exposes every uploaded experimental sound');
+const uploadedOggNames = fs.readdirSync(path.join(root, 'docs/assets/audio/sfx/utterances')).filter(name => /\.ogg$/i.test(name)).sort(); // Manifest must include every supported uploaded utterance, including future uploads.
+assert.deepEqual(utteranceIndex.clips.map(entry => entry.file).sort(), uploadedOggNames, 'utterance index exposes every uploaded .ogg sound');
+assert.equal(new Set(utteranceIndex.clips.map(entry => entry.file)).size, uploadedOggNames.length, 'utterance library has no duplicate filenames');
+for (const species of ['moot', 'pingdort', 'tzatzul', 'tzatzul-hatchling', 'skeeri-small', 'skeeri-medium', 'skeeri-large', 'honeyfuzzle']) assert(editor.includes(`id:'${species}'`), `new creature appears in animal editor: ${species}`);
+assert.match(simpleVoiceEditor, /animal\.id === 'honeyfuzzle'/, 'buzz-only Honeyfuzzle does not offer nonfunctional utterance assignments');
 assert.match(simpleVoiceEditor, /UTTERANCE_INDEX_URL = '\.\.\/\.\.\/assets\/audio\/sfx\/utterances\/index\.json'/, 'Animals tab reads the manifest rather than a hardcoded species pool');
 assert.doesNotMatch(simpleVoiceEditor, /VOICE_CLIPS\[/, 'simple editor no longer depends on hardcoded voice pools');
 assert.match(simpleVoiceEditor, /Simple voice model:/, 'Animals tab uses simple fixed voice model');
@@ -42,7 +46,7 @@ assert.match(simpleVoiceEditor, /Warning \/ discovery/);
 assert.match(simpleVoiceEditor, /Threat growl/);
 assert.match(simpleVoiceEditor, /Choose any indexed recordings this response may use/, 'response-specific library selection is authorable');
 assert.match(simpleVoiceEditor, /All library sounds/, 'author can rapidly experiment with the complete library');
-assert.match(simpleVoiceEditor, /Filter utterance library/, '22-sound library is searchable by description/tag/filename');
+assert.match(simpleVoiceEditor, /Filter utterance library/, 'utterance library is searchable by description/tag/filename');
 assert.match(simpleVoiceEditor, /data-utterance-field="tempo"/, 'each utterance has exact tempo');
 assert.match(simpleVoiceEditor, /data-utterance-field="pitchSemitones"/, 'each utterance has exact pitch');
 assert.match(simpleVoiceEditor, /Add utterance/, 'response length is explicit instead of randomized repeat modulation');
@@ -71,6 +75,19 @@ for (const entry of utteranceIndex.clips) {
   assert.ok(fs.existsSync(path.join(root, 'docs/assets/audio/sfx/utterances', entry.file)), `indexed file exists: ${entry.file}`);
 }
 for (const replacement of Object.values(utteranceIndex.legacyAliases || {})) assert.ok(indexedNames.has(replacement), `alias target is indexed: ${replacement}`);
+for (const species of ['skeeri-small', 'tzatzul', 'pingdort']) {
+  const authored = config.animalVocalizations?.[species]; // Imported editor assignment must remain in the shipped runtime config.
+  assert.ok(authored, `authored animal voice profile exists: ${species}`);
+  for (const response of ['chatter', 'warning', 'growl']) {
+    const clips = authored[response]?.allowedClips; // Check that each imported response references shipped utterance audio.
+    assert.ok(Array.isArray(clips) && clips.length, `authored ${species} ${response} has clips`);
+    for (const clip of clips) assert.ok(indexedNames.has(clip), `authored ${species} ${response} clip is indexed: ${clip}`);
+  }
+}
+for (const fileName of Object.keys(config.animalVocalizations?.default?.clipTuning || {})) {
+  assert.ok(indexedNames.has(fileName), `global authored recording tuning points to indexed clip: ${fileName}`);
+}
+
 
 assert(runtime.includes('npcGreetings'), 'runtime consumes per-NPC greeting pools');
 assert(runtime.includes('npcNicknames'), 'runtime consumes directional NPC nicknames');
