@@ -1446,7 +1446,7 @@
       const x = Number(bore.x) || 0, y = Number(bore.y) || 0;
       const rim = Math.max(0.5, Math.min(24, Number(bore.rim) || 5)); // Physical bevel width, independent of hole diameter.
       const strength = Math.max(0, Math.min(1, Number.isFinite(Number(bore.shade)) ? Number(bore.shade) : 0.65));
-      const warp = Math.max(0, Math.min(6, Number(bore.warp) ?? 1.5)); // Small outward lip deformation, retaining the underlying sprite material.
+      const warp = Math.max(0, Math.min(6, Number.isFinite(Number(bore.warp)) ? Number(bore.warp) : 1.5)); // Small outward lip deformation, retaining the underlying sprite material.
       const angle = (Number(bore.rotation) || 0) * Math.PI / 180;
       const c = Math.cos(angle), sn = Math.sin(angle);
       const vx = Number(bore.lightX), vy = Number(bore.lightY);
