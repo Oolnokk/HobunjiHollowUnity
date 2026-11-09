@@ -245,7 +245,8 @@
     const record = deps?._zoneReagentPersist?.get?.(mapId);
     if (!record || !Array.isArray(record.placements)) return {zoneId:mapId,known:false,
       reason:'this habitat has no generated/persisted daily reagent scatter yet'};
-    const today = record.day === deps?.calendar?.day;
+    const versionMatches = record.version === HABITAT_VERSION; // Current-day site chances only refer to the active generator layout.
+    const today = versionMatches && record.day === deps?.calendar?.day;
     const entries = record.placements;
     const pool = window.AlchemySystem?.reagentsForZone?.(mapId) || [];
     const bySpecies = Object.fromEntries(pool.map(key=>{
@@ -256,7 +257,8 @@
     }));
     const scene = deps?._zoneScenes?.get?.(mapId);
     const zoneTiles = Number(scene?.cols) * Number(scene?.rows); // Generated tile footprint; not a claim that every tile supports each reagent habitat.
-    return {zoneId:mapId,known:true,isCurrentDay:today,day:record.day,
+    return {zoneId:mapId,known:true,isCurrentDay:today,isCurrentGeneratorVersion:versionMatches,
+      generatorVersion:record.version ?? null,day:record.day,
       generatedMapTiles:Number.isFinite(zoneTiles) && zoneTiles > 0 ? zoneTiles : null,
       generatedPlantsPerMapTile:Number.isFinite(zoneTiles) && zoneTiles > 0 ? entries.length/zoneTiles : null,
       generatedTotal:entries.length,remainingTotal:entries.filter(e=>!e.harvested).length,
