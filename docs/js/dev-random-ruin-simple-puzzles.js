@@ -753,6 +753,7 @@
   }
 
   function updateRopeChainCheckpoints() {
+    if(window.RuinCheckpointTravel?.activeRespawnPoint?.())return; // White braziers own the persistent checkpoint; rope banks must not steal it.
     if(!state?.ropeChains?.length||state.activeRope||state.flight)return;
     const player=playerWorld();
     if(!player)return;
@@ -1818,6 +1819,7 @@
 
   function updateDoorwayCheckpoints() {
     const nowPoint=playerWorld();
+    if(window.RuinCheckpointTravel?.activeRespawnPoint?.()){if(state)state.lastPlayerWorld=nowPoint;return;} // Ordinary doors never overwrite a lit white-fire checkpoint.
     if(!nowPoint||state.activeRope||state.flight){state.lastPlayerWorld=nowPoint;return;}
     const previous=state.lastPlayerWorld;
     if(previous){
@@ -1865,7 +1867,8 @@
 
   function respawnAtCheckpoint(reason='death') {
     if(!inRuin()||!state?.checkpoints?.active||!deps?.player)return false; // Canonical game respawn calls this for every death source; never hijack deaths after leaving the test ruin.
-    const checkpoint=state.checkpoints.active;
+    const white=window.RuinCheckpointTravel?.activeRespawnPoint?.();
+    const checkpoint=white?{id:'ruin-white-brazier',point:white}:state.checkpoints.active; // Single death/abyss authority, including reloads and upper-floor rope falls.
     const context=state.context;
     for(const composer of composers){
       try{composer.onPlayerDeath?.(state.kit,reason);}catch(error){console.warn('[Random Test Ruin] composer death reset failed',error);}
@@ -2758,7 +2761,7 @@
         if(![anchor.x,anchor.y,anchor.z].every(Number.isFinite))throw new Error('Invalid rope anchor');
         const bank=i===0?spec.entry:i===spec.anchors.length-1?spec.exit:null;
         const rope=createRopeObject({
-          room,idSuffix:String(i),anchor,yaw:Number(spec.yaw)||0,
+          room,idSuffix:String(i),anchor,yaw:Number.isFinite(Number(anchor.yaw))?Number(anchor.yaw):(Number(spec.yaw)||0),
           length,maxLength,minBobY:Number(spec.floorY)+.12,
           angle:i===0?-.12:i===spec.anchors.length-1?.12:0,
           grabPoint:bank?{...bank,y:Number(spec.floorY)+.92}:null,
@@ -2792,6 +2795,14 @@
     }
   }
 
+  function hasNearbyRopeChain(point,radius=0){
+    if(!inRuin()||!state||!point)return false;
+    const x=Number(point.x),z=Number(point.z),y=Number(point.y),r=Math.max(0,Number(radius)||0);
+    if(![x,z,y].every(Number.isFinite))return false;
+    return state.ropeChains.some(chain=>Math.abs(y-chain.floorY)<=r+2
+      &&x>=chain.bounds.minX-r&&x<=chain.bounds.maxX+r
+      &&z>=chain.bounds.minZ-r&&z<=chain.bounds.maxZ+r); // A lantern may illuminate nearby ropes on the current story, not all Tothal chambers.
+  }
   function removeExternalRopeChain(chain){
     if(!chain?.external||!state||state.root!==chain.scopeRoot)return false;
     const index=state.ropeChains.indexOf(chain);
@@ -2825,7 +2836,7 @@
     getInteractionControls,
     addFurnitureRope,removeFurnitureRope,registerExternalProjectileTarget,
     lastExternalRopeError:()=>lastExternalRopeError, // Dev-mobile diagnostic access for failed rope registrations.
-    registerExternalRopeChain,removeExternalRopeChain,
+    registerExternalRopeChain,removeExternalRopeChain,hasNearbyRopeChain,
     hasActiveRuinState:()=>!!state&&inRuin()&&state.root===window.DevRandomRuin?.getRuntimeContext?.()?.root, // External fire/ranged challenges must not bind to an old generation.
     isNoClimbSurface:id=>!!state?.noClimbSurfaceIds?.has(String(id)),
     ownsPlayerMotion:()=>!!(state?.activeRope||state?.flight),
