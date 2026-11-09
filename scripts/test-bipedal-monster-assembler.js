@@ -118,7 +118,7 @@ const window = {
   PerpRotation: {
     CREATURE_PLANE_ROT_MODE:'halt',CREATURE_PERP_DEAD_RAD:.4,
     cameraRelativeCreaturePerpsAtWorldPosition(){return [0,Math.PI/2];},
-    perpClamp(_state,yaw){return {effectiveTarget:y+.25,snapTo:null};},
+    perpClamp(_state,yaw){return {effectiveTarget:yaw+.25,snapTo:null};},
   },
 };
 const document = {currentScript:{src:'https://example.test/docs/js/bipedal-monster-assembler.js'}};
