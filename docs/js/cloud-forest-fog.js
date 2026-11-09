@@ -623,7 +623,11 @@
     if (lanternStrength <= 0) return;
     const currentArea = lightingDeps.getCurrentArea(); // Use the same carried-lantern gradient in every room; Tothal alone suppresses it.
     const ruinTradition = currentArea === 'map_i_dev_random_ruin' ? (window.DevRandomRuinLichThemes?.activeTheme?.() || window.DevRandomRuin?.getRuntimeContext?.()?.theme) : null;
-    if (ruinTradition === 'tothal') return; // Even an equipped lantern cannot lift Tothal's blue overcast.
+    if (ruinTradition === 'tothal' && !window.DevRandomRuinSimplePuzzles?.hasNearbyRopeChain?.({
+      x:lightingDeps.player.x/lightingDeps.TILE,
+      z:lightingDeps.player.y/lightingDeps.TILE,
+      y:lightingDeps.getPlayerWorldY()
+    },tuning.lantern.radiusTiles))return; // Exception: a carried lantern reveals nearby Tothal swing ropes; elsewhere the cold overcast remains.
     const ruinLanternScale = 1; // Kanthic uses the ordinary full-radius, soft-edged lantern rather than a separate circular vignette.
     const ctx = lightingDeps.lctx;
     const activeScene = lightingDeps.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.(); // The player farmhouse's special base-light rule uses its active scene identity.
@@ -1121,6 +1125,7 @@
     if (!(undergroundFog && activeRuinTradition() === 'kanthic')) drawFurnitureLightMasksCompat(!undergroundFog); // The pure-black Kanthic room has no generic warm furniture pools.
     if (undergroundFog && activeRuinTradition() === 'kanthic') drawRuinTraditionLightMasks(window.RuinMultifloorV50Style?.lightSources?.() || []);
     if (currentArea === 'map_i_dev_random_ruin') drawRuinTraditionLightMasks(window.RuinLayerPlayable?.roomLights?.() || []); // Solved rooms are lit in the fog path too.
+    if (currentArea === 'map_i_dev_random_ruin') drawRuinTraditionLightMasks(window.RuinCheckpointTravel?.lightSources?.() || []); // White checkpoint flames remain visible under the fog variant too.
     if (currentArea === 'map_i_dev_random_ruin') drawRuinTraditionLightMasks(window.SkeeriRuins?.eyeLights?.() || EMPTY_LIGHT_LIST);
     if (currentArea === 'map_i_dev_random_ruin') drawRuinPatternGlowMasks(activeScene,now); // The fog and enclosed paths must agree about engraved emission.
 
