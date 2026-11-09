@@ -237,6 +237,8 @@
       Object.values(entry[field] || {}).some(value =>
         Array.isArray(value) ? value.length > 0 : value != null && (typeof value !== 'object' || Object.keys(value).length > 0)));
     if (pool.kind === 'exclusive') {
+      if (poolId === 'puzzleCave') return {key,poolId,probability:null,eligible:null,
+        model:'puzzle cave rewards require the current rewardTier and the loaded trinket catalog; omit neither filter'};
       if (entries.some(conditional)) return {key,poolId,probability:null,eligible:null,
         model:'exclusive weighted pool has unresolved world conditions'};
       const totalWeight = entries.reduce((sum,entry)=>sum + Math.max(0,Number(entry.weight ?? 1)||0),0);
@@ -370,11 +372,11 @@
     const outcomes = relevant.map(chest => artifactChest(key,chest.tier,culture)).filter(Boolean);
     const perRuin = 1 - outcomes.reduce((none,x) => none * (1-x.probability),1); // Independent chest-loot rolls, conditional on opening all displayed chests.
     const copies = outcomes.reduce((sum,x) => sum + x.expectedCopies,0);
-    const origin = chain([{label:'Ruin site reached',probability:siteProbability},
+    const origin = chain([{label:sourceKind === 'buried-hole' ? 'Buried ruin per wilderness treasure opportunity' : 'Ruin site reached',probability:siteProbability},
       {label:'At least one copy in the generated chests',probability:perRuin}]);
     return {key,sourceKind,chestCount:outcomes.length,tierCounts:outcomes.reduce((counts,x)=>(counts[x.chestTier]=(counts[x.chestTier]||0)+1,counts),{}),
       conditionalChancePerRuin:perRuin,expectedCopiesPerRuin:copies,siteAndLoot:origin,
-      model:'Uses actual generated chest roster. Site probability is known only for buried holes per treasure location.' };
+      model:'Uses the tracked generated chest roster. The buried-hole probability is per wilderness treasure location, not per arbitrary tile; entrance-site frequency is unmeasured.' };
   }
   function item(key, context = {}) {
     const defs = context.itemDefs || boundItemDefs || G.ITEM_DEFS || {};
