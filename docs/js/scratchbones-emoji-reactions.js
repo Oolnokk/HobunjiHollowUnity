@@ -19,7 +19,9 @@
   const active = new Set(); // Live short-lived effects; the updater never traverses the entire scene.
   const lastByRoot = new WeakMap(); // Actor-specific cooldown shared by NPC and animal reaction triggers.
   const stats = { triggered: 0, completed: 0, failedAssets: 0, last: null }; // Read by Pixel Probe or ?emojiDebug=1.
-  let queued = false; // Prevents scheduling multiple requestAnimationFrame loops.
+  const FRAME_SUBSCRIBER_ID = 'scratchbones-emoji-reactions'; // Single owner for render-time animation, managed by RuntimeFrameScheduler.
+  let frameRegistered = false; // Lazy registration keeps this effect entirely inactive until first use.
+  const generationByRoot = new WeakMap(); // Ignores stale async image loads when a newer reaction takes over the same actor.
 
   function clamp(value) { return Math.max(0, Math.min(1, Number(value) || 0)); }
   function smooth(value) { const t = clamp(value); return t * t * (3 - 2 * t); }
@@ -143,9 +145,8 @@
     }
     stats.completed++;
   }
-  function update() {
-    queued = false;
-    const now = performance.now(); // Shared clock for all short-lived reactions.
+  function update(frameContext) {
+    const now = Number(frameContext?.timestamp) || performance.now(); // Authoritative pre-render frame time, shared with the game.
     for (const effect of active) {
       const progress = (now - effect.startedAt) / effect.duration;
       if (!effect.root.parent || effect.root.visible === false || progress >= 1) {
@@ -165,34 +166,43 @@
         sprite.material.rotation = pose.rotation * Math.PI / 180;
       }
     }
-    if (active.size) queueFrame();
+    if (!active.size) window.RuntimeFrameScheduler?.setEnabled?.(FRAME_SUBSCRIBER_ID, false); // Nothing remains to animate between reactions.
   }
-  function queueFrame() {
-    if (queued || typeof window.requestAnimationFrame !== 'function') return;
-    queued = true;
-    window.requestAnimationFrame(update);
+  function ensureFrameOwner() {
+    const scheduler = window.RuntimeFrameScheduler; // The parser-bootstrapped game scheduler owns every persistent browser frame.
+    if (!scheduler?.register || !scheduler?.setEnabled) return false;
+    if (frameRegistered) return true;
+    scheduler.register(FRAME_SUBSCRIBER_ID, update, {
+      phase: 'pre-render', enabled: false, owner: 'HobunjiEmojiReactions',
+      description: 'Move and expire Scratchbones emoji billboards after gameplay pose updates, before scene render.',
+    });
+    frameRegistered = true;
+    return true;
   }
 
   function trigger(root, inputType, options = {}) {
     const type = String(inputType || '').toLowerCase();
-    if (!TYPES[type] || !root?.isObject3D || !root.parent || root.visible === false) return false;
+    if (!TYPES[type] || !root?.isObject3D || !root.parent || root.visible === false || !ensureFrameOwner()) return false;
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
     const last = lastByRoot.get(root); // Limits repeated emotional reactions on any one character.
     if (!options.force && last != null && now - last < 900) return false;
     if (active.size >= 20) return false; // Hard cap for crowded festival scenes.
     lastByRoot.set(root, now);
-    const height = heightFor(root, options.height); // Read geometry before adding any emoji to the root.
+    for (const effect of active) if (effect.root === root) end(effect); // Do not stack sprites or mistake a previous emoji for character height.
+    const generation = (generationByRoot.get(root) || 0) + 1; // Newer reactions supersede pending async masks for this actor.
+    generationByRoot.set(root, generation);
+    const height = heightFor(root, options.height); // Read geometry after retiring any previous emoji from this root.
     const size = Math.max(.25, Math.min(.62, height * .38)); // Proportional to species size but still legible on small animals.
     const parts = partsFor(type); // Sprite specifications for a single icon, five rays or a cloud/coin shower.
     stats.triggered++;
     stats.last = { actor: root.name || 'character', type, at: Date.now() };
     Promise.all(parts.map(item => textureFor(item.icon, item.color))).then(loaded => {
-      if (!root.parent || root.visible === false || active.size >= 20) return;
+      if (!root.parent || root.visible === false || active.size >= 20 || generationByRoot.get(root) !== generation) return;
       const items = []; // Own one disposable material per sprite; share recolored mask textures.
       for (let i = 0; i < parts.length; i++) {
         if (!loaded[i]) continue;
         const material = new window.THREE.SpriteMaterial({ map: loaded[i], transparent: true,
-          opacity: 0, depthTest: false, depthWrite: false, fog: false, toneMapped: false });
+          opacity: 0, depthTest: true, depthWrite: false, fog: false, toneMapped: false }); // Opaque world surfaces occlude the FX; avoid through-wall emojis.
         const sprite = new window.THREE.Sprite(material);
         sprite.name = 'scratchbones_emoji_' + type;
         sprite.userData.hobunjiEmojiFx = true;
@@ -202,7 +212,7 @@
       }
       if (!items.length) return;
       active.add({ root, type, items, height, size, duration: TYPES[type].duration, startedAt: performance.now() });
-      queueFrame();
+      window.RuntimeFrameScheduler.setEnabled(FRAME_SUBSCRIBER_ID, true); // Wake the dormant pre-render subscriber only for an active reaction.
     }).catch(() => { stats.failedAssets++; });
     return true;
   }
