@@ -4,7 +4,12 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const THREE = require('three');
+let THREE; // Required by the focused browser/Three CI; the standalone 1,000+ test runner intentionally installs no npm dependencies.
+try { THREE = require('three'); } catch (error) {
+  if (error?.code !== 'MODULE_NOT_FOUND' || !/three/.test(String(error.message))) throw error;
+  console.log('SKIP live Three.js kiss rig (install three@0.128.0 or use the focused Animation Author CI workflow).');
+  process.exit(0); // Never falsely claim live-rig coverage from the dependency-free broad regression job.
+}
 
 const scene = new THREE.Scene(); // Ensures world transforms include parent/grandparent effects.
 const player = new THREE.Group(); // Same full-body root targeted by PlayerBodyTransformComposer.
