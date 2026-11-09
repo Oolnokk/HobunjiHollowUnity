@@ -235,10 +235,10 @@
     root.add(body);
     const neckControl = new THREE.Group(); // Real Object3D neck target used by dialogue, movement gaze and NPC animation authors.
     neckControl.name = speciesId + '_creature_neck_control';
-    const pivot = cfg.neck?.pivot || { x: .5, y: .35 };
-    neckControl.position.set(0, (0.5-finite(pivot.y,.35))*cfg.modelHeight,
-      (0.5-finite(pivot.x,.5))*cfg.modelWidth);
-    body.add(neckControl); // Creature body rotation and authored head pivot share a scene-space parent.
+    const face = cfg.neck?.center || cfg.neck?.pivot || { x: .5, y: .35 };
+    neckControl.position.set(0, (0.5-finite(face.y,.35))*cfg.modelHeight,
+      (0.5-finite(face.x,.5))*cfg.modelWidth);
+    body.add(neckControl); // Creature body and dialogue eye target share a parent; the painted mesh retains its distinct neck pivot.
     root.userData = {
       ...(options.userData || {}),
       bipedalMonsterRig: cfg, bipedalMonster: true,
