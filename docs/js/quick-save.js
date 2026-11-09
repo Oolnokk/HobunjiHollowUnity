@@ -261,7 +261,7 @@
       journal.favor[entry.npcId] = (Number(journal.favor[entry.npcId]) || 0) + entry.amount;
     } else if (kind === 'item' && entry?.key && Number.isInteger(entry.count) && entry.count > 0) {
       journal.items.push({ key: String(entry.key), count: entry.count, stars: Math.max(1, Math.min(5, Number(entry.stars) || 3)) });
-    } else if (kind === 'mask' && /^festivalmask_[\w'-]+$/.test(entry?.id || '')) {
+    } else if (kind === 'mask' && /^(festivalmask_[\w'-]+|replica_bzabag_helm)$/.test(entry?.id || '')) {
       if (!journal.masks.includes(entry.id)) journal.masks.push(entry.id);
     } else return;
     writeFestivalSession(session);
@@ -304,10 +304,29 @@
     // Festival masks use the already-authored clothing records; don't copy
     // unrelated wardrobe edits or clothing made during the test.
     const pack = member.packClothing || (member.packClothing = []);
-    for (const mask of journal.masks || []) {
-      const isMask = item => item === mask || [item?.id, item?.cosmeticId, item?.key].includes(mask);
-      const record = (after.packClothing || []).find(isMask);
-      if (record && !pack.some(isMask)) pack.push(record);
+    const character = original.meta.characters?.find(c => String(c.id) === ids.characterId);
+    const testedCharacter = tested.meta.characters?.find(c => String(c.id) === ids.characterId);
+    const gearBefore = character?.gearInventory || {};
+    const gearAfter = testedCharacter?.gearInventory || {};
+    const owned = [
+      ...pack, ...(gearBefore.clothingItems || []), ...Object.values(gearBefore.clothing || {}),
+    ]; // Avoid duplicate cosmetics when the real character already owns one in Gear.
+    const earned = [
+      ...(after.packClothing || []), ...(gearAfter.clothingItems || []), ...Object.values(gearAfter.clothing || {}),
+    ]; // Festival rewards can be granted straight to worn/owned Gear instead of Pack.
+    const cosmeticIdentity = item => String(item?.baseCosmeticId || item?.cosmeticId || item?.id || (typeof item === 'string' ? item : ''));
+    for (const cosmeticId of journal.masks || []) {
+      if (!/^(festivalmask_[\w'-]+|replica_bzabag_helm)$/.test(cosmeticId)) continue;
+      if (owned.some(item => cosmeticIdentity(item) === cosmeticId)) continue;
+      const record = earned.find(item => cosmeticIdentity(item) === cosmeticId);
+      if (!record || typeof record !== 'object') throw new Error('Earned festival cosmetic missing from test save: ' + cosmeticId);
+      const copy = JSON.parse(JSON.stringify(record)); // Never alias a gear article from the disposable snapshot.
+      if (copy.uid && owned.some(item => item?.uid === copy.uid)) copy.uid += '_festival';
+      pack.push(copy); owned.push(copy);
+      if (cosmeticId === 'replica_bzabag_helm' && character?.gearInventory) {
+        const known = character.gearInventory.knownMetalArmorBlueprints || (character.gearInventory.knownMetalArmorBlueprints = []);
+        if (!known.includes(cosmeticId)) known.push(cosmeticId); // Helm ownership unlocks its authored smith recipe.
+      }
     }
 
     const beforeFestival = member.festivals || (member.festivals = {});
@@ -321,19 +340,24 @@
         (beforeFestival.potluckContests ||= {})[event] = afterFestival.potluckContests[event];
       }
     }
-    // Paid event-scoped Fun is transferred only if its Favor was actually
-    // journaled. Do not transfer the future day cursor or pending food timers.
-    for (const name of ['festivalFunEarned', 'festivalFunPaid', 'festivalMealPortions']) {
+    // A completed festival claim transfers its payout ledger, but pending
+    // Fun stays in the test until explicitly settled. It must never create
+    // a phantom payout or suppress real rewards on the original timeline.
+    if (event && afterFestival.festivalFunPaid && Object.keys(journal.favor || {}).length) {
+      for (const name of ['festivalFunEarned', 'festivalFunPaid', 'festivalMealPortions']) {
       const entries = afterFestival[name] || {};
-      for (const [key, value] of Object.entries(entries)) {
-        if (key.startsWith(event + ':') && event) (beforeFestival[name] ||= {})[key] = value;
+        for (const [key, value] of Object.entries(entries)) {
+          if (key.startsWith(event + ':')) (beforeFestival[name] ||= {})[key] = value;
+        }
       }
     }
     if (event.endsWith(':tzizkhanash') && afterFestival.claims?.[event]?.offering && afterFestival.blessing) {
       const cal = window.CalendarSystem;
       const oldDay = original.meta.worlds.find(w => String(w.id) === ids.worldId)?.calendar?.day;
+      const elapsedDay = tested.meta.worlds.find(w => String(w.id) === ids.worldId)?.calendar?.day;
       const age = day => cal.aotYearNumber(day) * 336 + cal.dayOfYear(day) - 1;
-      const remaining = Math.max(0, Number(afterFestival.blessing.expiresDay) - age(session.targetDay));
+      if (!Number.isFinite(oldDay) || !Number.isFinite(elapsedDay)) throw new Error('Could not translate festival blessing to the restored calendar.');
+      const remaining = Math.max(0, Number(afterFestival.blessing.expiresDay) - age(elapsedDay));
       beforeFestival.blessing = { ...afterFestival.blessing, expiresDay: age(oldDay) + remaining };
     }
   }
