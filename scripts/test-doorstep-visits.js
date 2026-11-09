@@ -587,3 +587,66 @@ console.log('doorstep visits: ok');
   assert.strictEqual(neck.parent, portrait);
   assert.strictEqual(hands.parent, source.root);
 }
+
+
+// Pahu's real trust provider grants the existing Grapple-Flail and unlocks its
+// smithing shape only after the player finishes the species-sensitive conversation.
+for (const [speciesId, gender] of [['rakakoan', 'male'], ['kenkari', 'female']]) {
+  const ctx = makeContext(); // Creates independent character/visit/inventory state for each cultural ending.
+  ctx.run('docs/js/doorstep-visits.js');
+  const world = installWorld(ctx, { npcIds: ['pahu'] }); // A source NPC with a real walker is required for a farmhouse visit.
+  const hearts = { pahu: 4 }; // Controls the trust threshold without bypassing the real gift provider.
+  const memory = []; // Captures the normal NPC completion event, not an artificial success flag.
+  const gear = { tools: {} }; // Tracks the granted physical weapon and its durable smithing unlock.
+  const smithShapes = ['hatchet', 'grappleFlail']; // Mimics the base smith catalog before friendship gating.
+  ctx.window.NpcFavorBalance = { relationshipHeartsForNpc: npcId => hearts[npcId] || 0 };
+  ctx.window.DialogueContent.getNpcDlgState = () => ({ favor: 0, memory });
+  ctx.window.DialogueContent.recordNpcMemory = (_npcId, event) => memory.push({ event });
+  ctx.window.DialogueContent.deps.getPlayerData = () => ({ appearance: { speciesId, gender } });
+  ctx.window.MetalCraftShop = { init() {} };
+  ctx.run('docs/config/weapon-trust-visits.js');
+  const gift = ctx.window.WEAPON_TRUST_VISIT_CONFIG.gifts.find(entry => entry.npcId === 'pahu'); // Uses the authored Pahu text and production shape key.
+  assert(gift, 'Pahu must be a real trust-gift provider');
+  assert.equal(gift.shapeKey, 'grappleFlail');
+  assert.equal(gift.giftMetalKey, 'nativeCopper');
+  ctx.run('docs/js/weapon-trust-visits.js');
+  ctx.window.MetalCraftShop.init({
+    UNLOCKED_TOOL_SHAPES: smithShapes,
+    TOOL_SHAPE_DEFS: { hatchet: {}, grappleFlail: {} },
+    TOOL_ITEM_DEFS: { grappleFlail_nativeCopper: { shapeKey: 'grappleFlail', label: 'Native Copper Grapple-Flail' } },
+    craftedToolItemKey: (shape, metal) => `${shape}_${metal}`,
+    getGearInventory: () => gear,
+    saveGearInventory() {}, saveMemberWorldData() {}, refreshMetalToolWorldTexture() {},
+    buildInventoryGrid() {}, buildEquipmentSlots() {}, showToast() {},
+  });
+  assert(!smithShapes.includes('grappleFlail'), 'the smith cannot forge Pahu\'s shape before his gift');
+  goOutside(ctx, world);
+  assert.equal(ctx.window.DoorstepVisits.activeVisitKey(), null, 'four hearts cannot summon Pahu');
+  hearts.pahu = 5;
+  world.state.area = 'town'; ctx.tick();
+  goOutside(ctx, world);
+  assert.equal(ctx.window.DoorstepVisits.activeVisitKey(), 'weapon_trust:pahu_grapple_flail');
+  const visitor = world.walkers.find(walker => walker._doorstepVisitor); // Real spawned visitor whose dialogue has resolved live species/gender placeholders.
+  const text = visitor.rec.dialogueTrees[0].nodes.map(node => node.text || '').join('\n'); // Joined dialogue is used only to assert the authorial branch content.
+  assert(text.includes(gender === 'female' ? 'Ahoy, lass' : 'Ahoy, lad'));
+  assert(!text.includes('<lad/lass>'));
+  assert(!text.includes('playerSpeciesIf:'));
+  if (speciesId === 'rakakoan') {
+    assert(text.includes('somethin\' useful you may have forrgot about.'));
+    assert(!text.includes('a well kept Rakako\'an secret'));
+    assert(!text.includes('bein\' a Rakako\'an ain\'t really about'));
+  } else {
+    assert(text.includes('bein\' a Rakako\'an ain\'t really about'));
+    assert(text.includes('a well kept Rakako\'an secret'));
+    assert(!text.includes('somethin\' useful you may have forrgot about.'));
+  }
+  talkThrough(ctx, world, { naturalEnd: false });
+  assert(!gear.tools.grappleFlail_nativeCopper, 'escaping a visit must not grant the weapon');
+  assert(!smithShapes.includes('grappleFlail'));
+  talkThrough(ctx, world, { naturalEnd: true });
+  assert.equal(gear.tools.grappleFlail_nativeCopper, true, 'natural dialogue end grants Pahu\'s concrete weapon');
+  assert(smithShapes.includes('grappleFlail'), 'the same completion unlocks all smithable metals for this shape');
+  assert(memory.some(entry => entry.event === 'weapon_trust_gift:pahu_grapple_flail'));
+  goOutside(ctx, world);
+  assert.equal(ctx.window.DoorstepVisits.activeVisitKey(), null, 'completed gift never repeats');
+}
