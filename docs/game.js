@@ -31396,7 +31396,7 @@
             if (!_saveWorldStorage(store)) return false; // Never sow a seed that failed to debit Farm Storage.
             tile.crop = crop; tile.cropAge = 0; tile.cropReady = false; tile.stress = '';
           } else if (job === 'harvest') {
-            const data = cropData[tile.crop];
+            const data = cropData[tile.crop] || (window.CropVarieties?.ensure?.(tile.crop) && cropData[tile.crop]); // Match manual harvesting for dynamically bred crop varieties.
             if (!workerId || !tile.cropReady || !data?.cropKey) return false;
             const key = data.cropKey; // Ready crops harvested by family go to the quality-aware Pack, not the quality-blind Farm Storage.
             const cap = window.InventoryStacks?.MAX_TOTAL || 999;
