@@ -192,7 +192,7 @@
       "scheduleHooks": {
         "defaultMapId": "map_i_den_banubu",
         "defaultStationId": "station_banubu_cave_sleep",
-        "defaultPosition": { "area": "map_i_den_banubu", "c": 6, "r": 5, "pose": "lie", "facing": "west", "activity": "sleeping in his cave" },
+        "defaultPosition": { "area": "map_i_den_banubu", "c": 6, "r": 5, "pose": "lie", "facing": "west", "rotY": 270, "activity": "sleeping in his cave" },
         "rules": [
           {
             "id": "banubu_sleep_forever",
