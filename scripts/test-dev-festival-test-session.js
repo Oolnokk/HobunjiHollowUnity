@@ -16,6 +16,7 @@ assert.ok(start > 0 && end > start, 'Festival Test must stay in quick-save.js');
 
 const clone = value => JSON.parse(JSON.stringify(value)); // Used by each mock snapshot to enforce copy isolation.
 const sessionData = new Map(); // Models the tab-local sessionStorage JSON envelope.
+const durableData = new Map(); // Models the recovery marker that survives a browser-tab close.
 const savedSlots = new Map(); // Models IndexedDB slots used by QuickSave.
 const loads = []; // Asserts which full-world snapshot is scheduled for boot.
 let resumeCount = 0; // Verifies autosave is resumed after restoration.
@@ -42,6 +43,9 @@ const initial = {
 savedSlots.set('baseline', clone(initial));
 
 const context = vm.createContext({
+  localStorage: { getItem: key => durableData.get(key) || null,
+    setItem: (key, value) => durableData.set(key, String(value)),
+    removeItem: key => durableData.delete(key) },
   window: {
     __hobunjiGameStarted: true,
     CalendarSystem: {
@@ -69,7 +73,7 @@ const context = vm.createContext({
   quickLoad: async id => { loads.push(id); return { ok: true, slot: { id } }; },
 });
 let testedSnapshot = clone(initial.snapshot); // Captures changed working state during a simulated festival exit.
-vm.runInContext("const FESTIVAL_TEST_KEY = 'hobunjiFestivalTestSession.v1'; const FESTIVAL_PREFS_KEY = 'hobunjiFestivalTestPrefs.v1';\\n".replace('\\n', '\n') + source.slice(start, end), context, { filename: 'quick-save-festival-session.js' });
+vm.runInContext("const FESTIVAL_TEST_KEY = 'hobunjiFestivalTestSession.v1'; const FESTIVAL_RECOVERY_KEY = 'hobunjiFestivalTestRecovery.v1'; const FESTIVAL_PREFS_KEY = 'hobunjiFestivalTestPrefs.v1';\\n".replace('\\n', '\n') + source.slice(start, end), context, { filename: 'quick-save-festival-session.js' });
 
 (async () => {
   assert.equal(context.festivalStatus().keepRewards, false, 'opt-in must default OFF');
@@ -86,7 +90,10 @@ vm.runInContext("const FESTIVAL_TEST_KEY = 'hobunjiFestivalTestSession.v1'; cons
 
   session.phase = 'active';
   session.journal.favor.pahu = 4;
-  context.writeFestivalSession('hobunjiFestivalTestSession.v1', session);
+  context.writeFestivalSession(session);
+  sessionData.clear(); // The original tab was closed, leaving only the persistent recovery marker.
+  assert.equal(context.festivalTestSession().phase, 'active',
+    'an unfinished festival can be recovered after a browser-tab closure');
   const restarted = await context.restartFestivalTest();
   assert.equal(restarted.ok, true);
   assert.deepEqual(context.festivalTestSession().journal, { favor: {}, items: [], masks: [] },
@@ -95,7 +102,7 @@ vm.runInContext("const FESTIVAL_TEST_KEY = 'hobunjiFestivalTestSession.v1'; cons
 
   const active = context.festivalTestSession();
   active.phase = 'active';
-  context.writeFestivalSession('hobunjiFestivalTestSession.v1', active);
+  context.writeFestivalSession(active);
   const failed = { ...active };
   flushError = true;
   context.setFestivalPrefs({ keepRewards: true });
@@ -109,7 +116,7 @@ vm.runInContext("const FESTIVAL_TEST_KEY = 'hobunjiFestivalTestSession.v1'; cons
   testedSnapshot.meta.worlds[0].members.farmer.npcRelationships.pahu.favor = 100;
   const earning = context.festivalTestSession();
   earning.journal.favor.pahu = 5;
-  context.writeFestivalSession('hobunjiFestivalTestSession.v1', earning);
+  context.writeFestivalSession(earning);
   const exit = await context.exitFestivalTest();
   assert.equal(exit.ok, true);
   assert.ok(settleCount > 0, 'opted-in exit must settle unconverted festival rewards');
@@ -122,9 +129,11 @@ vm.runInContext("const FESTIVAL_TEST_KEY = 'hobunjiFestivalTestSession.v1'; cons
   assert.equal(ret.snapshot.meta.worlds[0].members.farmer.npcRelationships.pahu.favor, 10);
 
   returning.phase = 'restored';
-  context.writeFestivalSession('hobunjiFestivalTestSession.v1', returning);
+  context.writeFestivalSession(returning);
   assert.equal(await context.finishFestivalReturn({ characterId: 'farmer', worldId: 'world' }), true);
   assert.equal(context.festivalStatus().phase, 'idle');
+  assert.equal(durableData.has('hobunjiFestivalTestRecovery.v1'), false,
+    'successful restoration clears durable recovery state');
   assert.equal(resumeCount, 1, 'autosave resumes only after the original world is active');
   assert.ok(savedSlots.has('baseline'), 'the pinned manual recovery snapshot survives completion');
   assert.ok(!savedSlots.has(returning.previewSlotId), 'temporary preview slot is removed');
@@ -133,7 +142,7 @@ vm.runInContext("const FESTIVAL_TEST_KEY = 'hobunjiFestivalTestSession.v1'; cons
   await context.startFestivalTest();
   const noRewards = context.festivalTestSession();
   noRewards.phase = 'active';
-  context.writeFestivalSession('hobunjiFestivalTestSession.v1', noRewards);
+  context.writeFestivalSession(noRewards);
   testedSnapshot.meta.worlds[0].members.farmer.nonGearInventory.gold = 100000;
   const unchecked = await context.exitFestivalTest();
   assert.equal(unchecked.ok, true);
@@ -143,7 +152,7 @@ vm.runInContext("const FESTIVAL_TEST_KEY = 'hobunjiFestivalTestSession.v1'; cons
 
   const recover = context.festivalTestSession();
   recover.phase = 'starting';
-  context.writeFestivalSession('hobunjiFestivalTestSession.v1', recover);
+  context.writeFestivalSession(recover);
   const recoverResult = await context.recoverFestivalTest();
   assert.equal(recoverResult.ok, true, 'interrupted festival load can recover its pinned original');
   assert.equal(context.festivalTestSession().phase, 'recovering');
