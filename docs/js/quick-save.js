@@ -474,6 +474,7 @@
     try {
       const returnSlot = JSON.parse(JSON.stringify(baseline)); // Never modify the pinned original restore point.
       if (session.keepRewards) {
+        window.FestivalSystem?.settleTestRewards?.(); // Convert same-day earned Festival Fun before the discard/restore boundary.
         const flushed = deps.flushAll?.();
         if (flushed?.ok === false) throw new Error('Cannot collect test rewards: ' + (flushed.error || 'save flush failed'));
         const tested = window.HobunjiSaveSnapshot.capture({ strict: true });
