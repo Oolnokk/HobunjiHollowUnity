@@ -437,7 +437,7 @@
       const nests = den?.known ? den.surfaceNestSources : null; // Only real selected/loaded nest records count, never the biome's theoretical maximum.
       return {zoneId:id,den,reagent,berries,generated:{
         dens:den.known ? den.animalDens : null,
-        foragePlants:reagent.known ? reagent.generatedTotal : null,
+        foragePlants:reagent.known && reagent.isCurrentDay ? reagent.generatedTotal : null, // Do not include obsolete or yesterday's scatter in current source opportunities.
         currentForagePlants:reagent.known && reagent.isCurrentDay ? reagent.remainingTotal : null,
         remainingBerries:berries.known && Array.isArray(berries.berries) ? berries.berries.length : null,
         treeNests:nests?.drenkirraTreeNests?.known ? nests.drenkirraTreeNests.selected : null,
@@ -513,6 +513,8 @@
         chancePerGeneratedDen:census?.known ? census.denSpeciesChance[species] ?? 0 : null,
         configuredHerdSlots:census?.known ? census.roamingHerdSlots : null,
         speciesChancePerRoamingHerdSlot:census?.known ? census.roamingSpeciesChancePerSlot[species] ?? 0 : null,
+        configuredForagerSlots:census?.known ? census.roamingForagerSlots : null,
+        guaranteedForagerSlotsOfSpecies:census?.known ? census.roamingForagerSpeciesSlots[species] ?? 0 : null, // Extra foragers are deterministic authored spawn slots.
         certainty:census?.known?'observed den assignment and authored herd species draws; clutch/capture viability separate':'zone ecology unavailable'};
     }
     if (G.ArtifactCollection?.ARTIFACTS?.[key]) {
