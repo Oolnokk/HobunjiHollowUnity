@@ -478,12 +478,17 @@ that visible region before scaling. `ropeSpriteSizing` derives the
 height and width from the **visible** pixel aspect ratio instead of the
 padded source canvas, keeping both ends attached and matching the
 new diameter without changing the user's authored pendulum, contact or attack logic.
-The rope also restores the previous warm-brown `#6B4728` midtone. Rather
-than multiplying an already-dark sprite by brown and nearly blackening it,
-the renderer recolors the PNG in memory around its average solid-pixel
-luminance, retaining the source art's lighter windings, inked shadows and
-unchanged alpha. Recoloring is cached per sprite and tint, so multiple
-characters reuse it. Each flail owns a cloned texture for safe disposal.
+The rope uses the previous warm-brown `#6B4728` target color, applied
+by **the actual `ColorFill.shadeFillPixels` implementation** used by
+Gar-wolf and other non-mint animal recolors (`CreatureGeneticsRender`).
+The original rope PNG supplies the luminance reference automatically:
+eligible painted pixels retain their original relative shading, with
+near-white pixels excluded and alpha unchanged. The flail has no private
+luminance/average-midtone algorithm and does not simply multiply the
+entire image by brown. `ColorFill.debugSnapshot().shadeFillsByLabel`
+records `weapon-rope:#6B4728` for mobile debugging. Recoloring is cached
+per source sprite and tint, while each flail owns a cloned texture for
+safe disposal. The original `rope_long.png` is not modified.
 
 Run `node scripts/test-weapon-sprite-assemblies.js` and
 `node scripts/test-flail-rope-picker-scale.js` for regression coverage.
