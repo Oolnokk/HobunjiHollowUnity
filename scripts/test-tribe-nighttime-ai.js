@@ -15,17 +15,18 @@ function sourceBetween(source, before, after) {
   return source.slice(first, last);
 }
 
-let retired = 0, abstract = 0, neutralized = 0, greeted = 0, provoked = 0;
+let retired = 0, abstract = 0, greeted = 0, provoked = 0, activityDecisions = 0; // Records daytime planner transitions in the live entity handoff.
 let observed = true, fighting = false, hostile = false;
 const tickContext = vm.createContext({
   Math, Promise, window: { __farmLog() {} }, KEY: 'porakaneki',
   combatDeps: { TILE: 64 }, currentArea: () => 'map_western_slope',
-  sharesPlayerChunk: () => observed, sleepPointFor: () => ({ col: 3, row: 4 }),
+  sharesPlayerChunk: () => observed, sleepPointFor: () => ({ col: 5, row: 6 }),
   gameDay: () => 1, peacefulRapport: () => true, favor: () => 2,
   campProvoked: () => hostile, makeHostile: actor => { provoked++; actor.state = 'chase'; },
-  makeNeutral: actor => { neutralized++; actor.state = 'return'; },
+  travelSpeedTiles: () => 1.05, // The real makeNeutral converts this authored tile speed into the shared hostile movement speed.
   validChunkCombatTarget: () => fighting,
-  chooseHunterActivity() {}, rand: () => 0.5, cfg: { behavior: {}, reputation: {} },
+  chooseHunterActivity(hunter) { activityDecisions++; hunter.activity = 'wander'; hunter.target = { col: 8, row: 9 }; },
+  rand: () => 0.5, cfg: { behavior: {}, reputation: {} },
   num: (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback,
   maybeHunterGreeting: () => { greeted++; },
   retireDormantEntity: () => { retired++; },
@@ -34,14 +35,18 @@ const tickContext = vm.createContext({
   placeEntity() {}, // The extracted production placement helper calls this when its synthetic rig is first observed.
 });
 vm.runInContext(
-  sourceBetween(runtime, '  function updateDetailedHunter(', '  // Off-screen losses are replaced')
+  sourceBetween(runtime, '  function makeNeutral(', '  function makeHostile(')
+    + '\n' + sourceBetween(runtime, '  function updateDetailedHunter(', '  // Off-screen losses are replaced')
     + '\nthis.updateHunterTick = updateCampHunterTick;', tickContext,
 );
-const actor = { health: 20, x: 3 * 64, y: 4 * 64, state: 'idle', _chunkCombatTarget: null };
+const actor = { health: 20, x: 3 * 64, y: 4 * 64, state: 'idle', _chunkCombatTarget: null,
+  def: { aggroRangePx: 5 * 64, moveSpeed: 120 } }; // The actual neutral handoff reads and writes ordinary humanoid combat stats.
 const hunter = { entity: actor, camp: { zoneId: 'map_western_slope' }, x: 3, y: 4, activity: 'wander', target: null, decisionT: 0 };
 tickContext.updateHunterTick(hunter, .21, 0, true, 1);
 assert.equal(retired, 0, 'nearby hunter must not despawn at night');
 assert.equal(actor.state, 'return', 'sleeping visible hunter delegates travel to native movement');
+assert.equal(actor.homeX, 5 * 64, 'native return locomotion heads to the sleeping point');
+assert.equal(actor.homeY, 6 * 64, 'native return locomotion tracks both axes');
 assert.equal(hunter.activity, 'sleep', 'nighttime plan heads for an authored sleep point');
 assert.equal(greeted, 1, 'nearby friend can still greet while settling for the night');
 
@@ -49,12 +54,18 @@ fighting = true;
 actor._chunkCombatTarget = { health: 20 };
 tickContext.updateHunterTick(hunter, .21, 0, true, 1);
 assert.equal(actor.state, 'chase', 'nearby rival combat still runs at night');
-assert.equal(neutralized, 1, 'sleep planner does not cancel a committed attack');
+assert.equal(actor.homeX, 5 * 64, 'sleep planner does not reset the committed chase destination');
 fighting = false;
 hostile = true;
 tickContext.updateHunterTick(hunter, .21, 0, true, 1);
 assert.equal(provoked, 1, 'provoked night hunter attacks the player');
 hostile = false;
+actor._chunkCombatTarget = null;
+tickContext.updateHunterTick(hunter, .21, 0, false, 1);
+assert.equal(activityDecisions, 1, 'daytime resumes the normal wander/social decision planner');
+assert.equal(actor.homeX, 8 * 64, 'awake planner gives the shared native movement a fresh waypoint');
+assert.equal(actor.homeY, 9 * 64, 'daytime waypoint also updates the second axis');
+assert.equal(actor.state, 'return', 'daytime movement still delegates to the shared hostile return loop');
 observed = false;
 tickContext.updateHunterTick(hunter, .21, 0, true, 1);
 assert.equal(retired, 1, 'out-of-range sleeping hunters still become cheap abstract data');
