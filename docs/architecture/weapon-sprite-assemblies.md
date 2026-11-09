@@ -471,11 +471,12 @@ omitted because the grapple head already occupies the endpoint.
 The original handle-relative settings are preserved: `lengthPx: 160`,
 `scaleY: 3.75`, `radiusPx: 2.5`, `scaleX: 5.25`. Consequently the
 visible rope remains `160 × 3.75 = 600` original-handle pixels long and
-`2 × 2.5 × 5.25 = 26.25` original-handle pixels wide. The native
-152 × 2164 PNG would require image-axis multipliers of about 0.1726974
-(width) and 0.2772643 (length); `ropeSpriteSizing` derives the equivalent
-geometry automatically instead of changing the artist's existing physics
-and anchor settings. The grip/head contacts, swing solver and hit behavior
+`2 × 2.5 × 5.25 = 26.25` original-handle pixels wide. The 152 × 2164 PNG has transparent padding, so the runtime scans its
+visible alpha bounds once per cached image and crops the texture UVs to
+that visible region before scaling. `ropeSpriteSizing` derives the
+height and width from the **visible** pixel aspect ratio instead of the
+padded source canvas, keeping both ends attached and matching the
+previous diameter without changing the artist's pendulum or anchor settings. The grip/head contacts, swing solver and hit behavior
 remain unchanged. Each flail owns its texture clone.
 
 Run `node scripts/test-weapon-sprite-assemblies.js` and
