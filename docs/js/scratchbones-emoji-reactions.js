@@ -211,8 +211,11 @@
     if (TYPES[options.emojiReaction]) return options.emojiReaction;
     const tone = String(options.tone || '').toLowerCase(); // Existing NPC tone categories, not guessed text sentiment.
     if (tone === 'animal') return null; // Creature vocalizations have their own warning/growl hook.
+    if (tone === 'shock' || tone === 'surprise' || tone === 'startled') return 'shock';
+    if (tone === 'warning' || tone === 'alarmed') return 'alarmed';
+    if (tone === 'gloat' || tone === 'cheer' || tone === 'reaction-silliness-positive') return 'gloat'; // Gloating coin shower is used for exuberant cheers and playful NPC reactions.
     if (tone.includes('negative') || tone === 'jeer' || tone === 'refuse') return 'disgust';
-    if (tone.includes('positive') || tone === 'cheer' || tone === 'accept') return 'love';
+    if (tone.includes('positive') || tone === 'accept') return 'love';
     if (tone === 'quest' || tone === 'question') return 'curious';
     return options.greeting === true ? 'curious' : null;
   }
