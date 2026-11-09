@@ -32,7 +32,7 @@
   }
   function atLeastOne(chance, opportunities) {
     const p = clampProbability(chance), n = Number(opportunities);
-    return p === null || !Number.isInteger(n) || n < 0 ? null : -Math.expm1(n * Math.log1p(-p));
+    return p === null || !Number.isInteger(n) || n < 0 ? null : n === 0 ? 0 : p === 1 ? 1 : -Math.expm1(n * Math.log1p(-p));
   }
   function expected(chance, opportunities) {
     const p = clampProbability(chance), n = Number(opportunities);
