@@ -90,8 +90,8 @@ repeatMaskTest.meta.worlds[0].members.farmer.packClothing.push({
 });
 context.mergeFestivalRewards(repeatMaskOriginal, repeatMaskTest,
   { ...session, journal: { favor: {}, items: [], masks: ['festivalmask_grehlr'] } });
-assert.equal(repeatMaskOriginal.meta.worlds[0].members.farmer.packClothing.length, 2,
-  'a second annual mask prize must not be discarded because one was already owned');
+assert.equal(repeatMaskOriginal.meta.worlds[0].members.farmer.packClothing.length, 3,
+  'a second annual mask prize must be added alongside the ordinary hat and previously owned mask');
 assert.equal(repeatMaskOriginal.meta.worlds[0].members.farmer.packClothing.at(-1).uid, 'new-mask');
 
 const overflowing = fixture();
