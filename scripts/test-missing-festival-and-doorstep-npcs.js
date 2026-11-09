@@ -169,9 +169,9 @@ async function testFestivalRecovery() {
   };
   const crowded = new Function(
     'deps', 'residents', 'festivalHours', 'window', 'Promise',
-    'let lastMissingGuestCheckAt = -Infinity;\\nlet guestRecoveryCursor = 0;\\n' +
-    'const guestRecoveryInFlight = new Set();\\nconst MAX_PARALLEL_GUEST_RECOVERIES = 3;\\n' +
-    festivalSource.slice(start, end) + '\\nreturn recoverMissingFestivalGuests;'
+    'let lastMissingGuestCheckAt = -Infinity;\nlet guestRecoveryCursor = 0;\n' +
+    'const guestRecoveryInFlight = new Set();\nconst MAX_PARALLEL_GUEST_RECOVERIES = 3;\n' +
+    festivalSource.slice(start, end) + '\nreturn recoverMissingFestivalGuests;'
   )(crowdedDeps, () => crowd, () => true, {NpcScheduling: {getVisitorPresence: () => null}}, Promise);
   crowded(4000);
   assert.equal(limited.length, 3, 'festival recovery must start at most three slow avatar builds');
