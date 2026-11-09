@@ -410,7 +410,8 @@
     const visibleWidth = opaque.maxX - opaque.minX + 1, visibleHeight = opaque.maxY - opaque.minY + 1;
     const aspect = visibleWidth / visibleHeight; // Keep the opaque silhouette rather than the 152 × 2164 canvas dimensions.
     const sizing = ropeSpriteSizing(spec, unit, aspect); // Same final visible reach and diameter as the former generated cylinder.
-    const map = tintedRopeTexture(THREE, sourceTexture, spec.color).clone(); // Cached midtone recolor preserves the ruin PNG's original shading, not a near-black color multiplication.
+    const tintedSource = tintedRopeTexture(THREE, sourceTexture, spec.color); // Reuses the exact Gar-wolf color fill, rather than a private luminance formula.
+    const map = tintedSource.clone(); // Each flail owns only its clone, preserving the cached tinted source across actors.
     map.offset.set(opaque.minX / width, 1 - (opaque.maxY + 1) / height); // Plane UVs have bottom-left origin, whereas ImageData rows begin at the top.
     map.repeat.set(visibleWidth / width, visibleHeight / height); // No tiling: one full opaque rope from grip to head.
     map.wrapS = map.wrapT = THREE.ClampToEdgeWrapping;
@@ -429,6 +430,7 @@
     mesh.userData.hobunjiHeldObjectPlane = true; // Keep existing held-weapon draw ordering.
     mesh.userData.hobunjiGeneratedRope = true; // Tool Hub frames the actual plane bounds, not a PNG's blank margins.
     mesh.userData.dungeonRopeSprite = spec.sprite || 'assets/objectsprites/rope_long.png'; // Mobile diagnostics identify the art source.
+    mesh.userData.ropeTintMethod = tintedSource === sourceTexture ? 'source-fallback' : 'ColorFill.shadeFillPixels'; // Distinguishes a successful animal shade-fill from a silently uncolored source on mobile.
     mesh.userData.noOutline = false;
     const group = new THREE.Group(); // Reuses the current pendulum carrier and grip/head positioning.
     group.name = 'flail_ruin_rope';
@@ -715,6 +717,7 @@
       } : null, // Mobile diagnostics expose both independent connector axes.
       connector: s.config.flail?.chain?.type === 'rope' ? 'rope' : s.config.flail ? 'chain' : null, // Mobile diagnostics expose both handle-relative multipliers.
       ropeArt: s.chain?.userData?.hobunjiRuinRopeSprite ? 'assets/objectsprites/rope_long.png' : null, // Mobile confirmation of the rope source.
+      ropeTint: s.chain?.userData?.hobunjiRuinRopeSprite ? { color: s.config.flail.chain.color, method: s.chain.children?.[0]?.userData?.ropeTintMethod || 'unavailable' } : null, // Confirms the real 3D texture was shade-filled, including editor previews, without accessing devtools.
     }));
   }
 
