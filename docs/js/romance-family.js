@@ -34,7 +34,7 @@
   let registeredChildFriends = ''; // Signature of world-specific NPC friendship links, avoids work each tick.
 
   function defaultFamily() {
-    return { pregnancy: null, children: [], pendingAdoption: null, pendingBaby: null, spouseUsefulness: null, spouseVatId: null };
+    return { pregnancy: null, children: [], pendingAdoption: null, pendingBaby: null, spouseUsefulness: null, spouseVatId: null, spouseVatWorkerId: null };
   }
   const cfg = () => H?.cfg?.()?.family || {};
   const num = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -97,6 +97,21 @@
   }
 
   // ── Pairing / case resolution ─────────────────────────────────────────
+  function reconcileSpouseVat() {
+    if (!fam.spouseVatId) { fam.spouseVatWorkerId = null; return; }
+    const spouseId = R?.getSpouse?.()?.npcId || null; // Used to prevent a newly married spouse inheriting an old spouse's vat shift.
+    if (!fam.spouseVatWorkerId && spouseId) {
+      fam.spouseVatWorkerId = spouseId; // Older saves predate the owner field; bind their existing job to their restored spouse.
+      H.persist();
+      return;
+    }
+    if (!spouseId || fam.spouseVatWorkerId !== spouseId) {
+      window.DewVats?.setExternalWorker?.(fam.spouseVatId, null);
+      fam.spouseVatId = null;
+      fam.spouseVatWorkerId = null;
+      H.persist();
+    }
+  }
   function isEggLayer(speciesId) { return (cfg().eggLayingSpecies || ['kenkari']).includes(speciesId); }
   function resolveKind(spouseId) {
     const you = H.playerAppearance();
@@ -498,6 +513,7 @@
   }
 
   function onNewDay() {
+    reconcileSpouseVat(); // Day-rollover squeezing must use the actual current spouse, not a former spouse's saved vat.
     const spouse = R.getSpouse();
     const workers = fam.children.filter(child => child.vatId && phaseOf(child) !== 'basket').map(child => ({ id: child.id, name: child.name, vatId: child.vatId }));
     if (spouse?.npcId && fam.spouseVatId && !spouseHoldingEgg()) workers.push({ id: spouse.npcId, name: H.npcName(spouse.npcId), vatId: fam.spouseVatId }); // An egg-tending spouse rests rather than squeezing.
@@ -553,14 +569,14 @@
     const vatId = isSpouse ? fam.spouseVatId : child.vatId;
     if (vatId) return [{ id: 'unvat', icon: '🛑', label: 'Stop Vat Work', run: () => {
       window.DewVats?.setExternalWorker?.(vatId, null);
-      if (isSpouse) fam.spouseVatId = null; else child.vatId = null;
+      if (isSpouse) { fam.spouseVatId = null; fam.spouseVatWorkerId = null; } else child.vatId = null;
       H.persist(); H.say(walker, 'Okay! Time to play!');
     } }];
     const vats = (window.DewVats?.listSqueezingVats?.() || []).filter(vat => !window.DewVats.assignedWorkerForVat(vat.id));
     return [{ id: 'vat', icon: '🥛', label: 'Work the Vat', muted: !vats.length, run: () => {
       const available = (window.DewVats?.listSqueezingVats?.() || []).find(vat => !window.DewVats.assignedWorkerForVat(vat.id));
       if (!available) { H.toast('There is no free squeezing vat on the farm.', false); return; }
-      if (isSpouse) fam.spouseVatId = available.id; else child.vatId = available.id;
+      if (isSpouse) { fam.spouseVatId = available.id; fam.spouseVatWorkerId = workerId; } else child.vatId = available.id;
       window.DewVats.setExternalWorker(available.id, { id: workerId, name: isSpouse ? H.npcName(workerId) : child.name, efficacy: num(cfg().vatEfficacyMultiplier, 2), familyWorker: true });
       H.persist(); H.say(walker, "I'll work at the squeezing vat!");
     } }];
@@ -751,6 +767,7 @@
     const day = H.rawDay();
     if (lastRawDay !== null && day !== lastRawDay) onNewDay();
     lastRawDay = day;
+    reconcileSpouseVat();
     ensurePlan();
     maybeAnnounce();
     if (fam.pendingBaby && !pendingBabyPromptScheduled && !uiOverlay && !deps().isDialogueOpen?.()) promptPendingBaby();
@@ -758,7 +775,7 @@
     for (const child of fam.children) updateChild(child);
     if (R.getSpouse()?.npcId && fam.spouseVatId) {
       const available = (window.DewVats?.listSqueezingVats?.() || []).some(vat => vat.id === fam.spouseVatId);
-      if (!available) { fam.spouseVatId = null; H.persist(); }
+      if (!available) { fam.spouseVatId = null; fam.spouseVatWorkerId = null; H.persist(); }
       else window.DewVats?.setExternalWorker?.(fam.spouseVatId, { id: R.getSpouse().npcId, name: H.npcName(R.getSpouse().npcId), efficacy: num(cfg().vatEfficacyMultiplier, 2), familyWorker: true });
     }
     syncFrameSubscriber();
