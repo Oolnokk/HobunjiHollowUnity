@@ -296,6 +296,9 @@
   // their own, so they squeeze dew piles from the farm instead (see
   // squeezePileWithExternalWorker), at `efficacy`× the yield.
   const externalWorkers = new Map(); // vatId → worker
+  function clearFamilyWorkers() { // Family assignments are save-scoped; remove ghosts when changing characters/worlds.
+    for (const [vatId, worker] of externalWorkers) if (worker.familyWorker) externalWorkers.delete(vatId);
+  }
   function setExternalWorker(vatId, worker) {
     if (!vatId) return false;
     if (worker) externalWorkers.set(vatId, { ...worker, external: true });
@@ -400,22 +403,22 @@
     _guardSqueezingVatStart(vat);
     const outputs = deps.getProcessingOutputs('squeezing', deps.dewItemKey(colorKey));
     if (!outputs) return false;
-    const baseStars = deps.rollItemStars('farming'); // Used to make automatically squeezed animal goods inherit Farming-driven quality.
+    const familyWorker = !!(worker.external && worker.familyWorker); // Family output always uses that worker's usefulness, independent of player perks.
+    const baseStars = familyWorker ? (window.RomanceFamily?.rollWorkQuality?.(worker.id) ?? 1) : deps.rollItemStars('farming');
     // Working Animals (Farming perk): without it, an assigned vat worker is
     // just an anonymous machine — only with the perk does that specific
     // animal's own hearts start nudging the vat's output, mirroring the
     // direct-collection heart bonus in farm-animals.js's collectResource.
     const workingAnimalsRank = window.PerkSystem?.rank('farming', 'workingAnimals') || 0; // 0-3
     let stars = baseStars;
-    if (worker.external && worker.familyWorker) stars = window.RomanceFamily?.rollWorkQuality?.(worker.id) ?? baseStars;
-    else if (workingAnimalsRank > 0) {
+    if (!familyWorker && workingAnimalsRank > 0) {
       const hearts = Number.isFinite(worker.heartLevel) ? worker.heartLevel : (window.FarmAnimals?.HEART_DEFAULT ?? 2);
       const heartMax = window.FarmAnimals?.HEART_MAX ?? 5;
       const heartStars = Math.round((hearts - 2.5) / (heartMax / 2) * (workingAnimalsRank / 3));
       stars = Math.max(1, Math.min(5, baseStars + heartStars));
     }
     const yieldMultiplier = worker.external ? Math.max(1, Number(worker.efficacy) || 1) : 1; // Used so an external worker's efficacy multiplies each output unit.
-    const result = vat.startTimedJob?.({ outputs, inputStars: stars, inputLabel: `${colorKey} dew`, source: worker.external ? 'worker' : 'livestock', yieldMultiplier });
+    const result = vat.startTimedJob?.({ outputs, inputStars: stars, inputLabel: `${colorKey} dew`, source: familyWorker ? 'family' : worker.external ? 'worker' : 'livestock', yieldMultiplier });
     if (result?.busy) return 'busy';
     return result?.ok ? 'started' : false;
   }
@@ -454,6 +457,7 @@
     retargetAssignments,
     autoSqueezeAtVat,
     setExternalWorker,
+    clearFamilyWorkers,
     squeezePileWithExternalWorker,
     listSqueezingVats: () => [...(deps?.processingFurnitureObjects || [])].filter(obj => deps.PROCESSING_FURNITURE_DEFS[obj.furnitureKey]?.method === 'squeezing'),
     dewShovelSfxDebugSnapshot,
