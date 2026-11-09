@@ -380,4 +380,55 @@ assert.equal(rarity.wildBerrySource('yellowberries').observedBushes,null,
 assert.equal(unreached.atLeastOne,null,'unknown biome count does not fabricate a negative or positive seed availability');
 if(previousBerries===undefined)delete globalThis.WildBerries;else globalThis.WildBerries=previousBerries;
 
+
+const worldMetadata={worlds:[{id:'worldA'},{id:'worldB'}]};
+let worldJson=JSON.stringify(worldMetadata),rejectWorldSave=false;
+const worldStoreContext={window:{},localStorage:{
+  getItem:()=>worldJson,
+  setItem:(_key,value)=>{if(rejectWorldSave)throw Error('simulated disk full');worldJson=String(value);},
+},performance:{now:()=>0}};
+vm.runInNewContext(fs.readFileSync('docs/js/world-meta-store.js','utf8'),worldStoreContext);
+const sharedStore=worldStoreContext.window.WorldMetaStore;
+cropHost.window.WorldMetaStore=sharedStore;
+cropHost.window.__hobunjiPlayerProfile={worldId:'worldA'};
+const originalGlobalCrop=globalThis.CropVarieties;
+globalThis.CropVarieties=crops; // Engine observes the same production CropVarieties owner it would see in a browser.
+crops.attach({cropData:{...nativeCrop},ITEM_DEFS:{...nativeDefs},inventory:{},inventoryItems:[]});
+const ancestor=crops.ensure('cv_heftroot_333333');
+const coloredAncestor=crops.ensure('cv_heftroot_333333_aabbcc');
+const offspringA=crops.breed(ancestor.id,coloredAncestor.id,()=>.6);
+const offspringB=crops.breed(coloredAncestor.id,ancestor.id,()=>.6);
+assert.equal(offspringA.id,offspringB.id,'distinct parent directions can produce the same genetically identical child key');
+const savedPedigree=crops.provenanceFor(offspringA.id);
+assert.equal(savedPedigree.totalObserved,2,'two actual breeding events are recorded for a child genotype');
+assert.equal(savedPedigree.routes.length,2,'separate observed parent pairs are retained rather than overwritten');
+assert.equal(crops.provenanceFor(offspringA.seedKey).key,offspringA.id,'seed and produce refer to the same recorded genotype lineage');
+assert.equal(sharedStore.loadCropProvenance('worldA').records[offspringA.id].routes.length,2,
+  'canonical world metadata saves the actual parent routes for folder/cloud recovery');
+const lineageEstimate=rarity.cultivarRarity(offspringA.id);
+assert.equal(lineageEstimate.origin,'observed-parentage','rarity model reads the saved parent evidence');
+assert.equal(lineageEstimate.probability,null,'conditional genotype probability is not a universal world acquisition rate');
+assert.equal(lineageEstimate.knownParentRoutes,2,'rarity diagnostics preserve both observed parent pathways');
+assert(lineageEstimate.conditionalGenotypeChance>0,'recorded source exposes mathematically exact per-attempt odds');
+assert(rarity.foodRarity(offspringA.id).factor>1,'Gorkunash derives multigeneration rarity from observed parents');
+cropHost.window.__hobunjiPlayerProfile={worldId:'worldB'};
+crops.attach({cropData:{...nativeCrop},ITEM_DEFS:{...nativeDefs},inventory:{},inventoryItems:[]});
+assert.equal(crops.provenanceFor(offspringA.id),null,'changing active world clears the previous world’s observed genealogy');
+assert.equal(rarity.cultivarRarity(offspringA.id).origin,'crossbred-or-inherited',
+  'an identical saved genotype in a different world does not inherit foreign-world parent evidence');
+cropHost.window.__hobunjiPlayerProfile={worldId:'worldA'};
+crops.attach({cropData:{...nativeCrop},ITEM_DEFS:{...nativeDefs},inventory:{},inventoryItems:[]});
+assert.equal(crops.provenanceFor(offspringA.id).totalObserved,2,
+  'switching back restores all recorded paths directly from canonical saved world metadata');
+assert.equal(rarity.cultivarRarity(offspringA.id).origin,'observed-parentage',
+  'rarity resumes source-aware calculations after world reload');
+const persistedBeforeFailure=JSON.stringify(sharedStore.loadCropProvenance('worldA'));
+rejectWorldSave=true;
+crops.breed(ancestor.id,coloredAncestor.id,()=>.6);
+assert.equal(crops.lastBreeding.provenanceSaved,false,'a failed save is visible in mobile breeding diagnostics');
+assert.equal(JSON.stringify(sharedStore.loadCropProvenance('worldA')),persistedBeforeFailure,
+  'failed persistence cannot silently report extra saved breeding observations');
+rejectWorldSave=false;
+if(originalGlobalCrop===undefined)delete globalThis.CropVarieties;else globalThis.CropVarieties=originalGlobalCrop;
+
 console.log('Item acquisition rarity tests passed.');
