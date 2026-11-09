@@ -575,14 +575,18 @@
     culture = key.startsWith('hachutu') ? 'hachutu' : 'harlyao'} = {}) {
     if (!Array.isArray(chests)) return null;
     const relevant = chests.filter(chest => (chest.culture || 'harlyao') === culture);
-    const outcomes = relevant.map(chest => artifactChest(key,chest.tier,culture)).filter(Boolean);
-    const perRuin = 1 - outcomes.reduce((none,x) => none * (1-x.probability),1); // Independent chest-loot rolls, conditional on opening all displayed chests.
+    const pending = relevant.filter(chest=>!chest.opened); // Only unopened chests are future acquisition opportunities.
+    const outcomes = pending.map(chest => artifactChest(key,chest.tier,culture)).filter(Boolean);
+    const perRuin = 1 - outcomes.reduce((none,x) => none * (1-x.probability),1); // Independent fresh draws, conditional on opening every remaining chest.
     const copies = outcomes.reduce((sum,x) => sum + x.expectedCopies,0);
+    const collected = relevant.filter(chest=>chest.opened).reduce((sum,chest)=>sum+Math.max(0,Number(chest.loot?.[key])||0),0);
     const origin = chain([{label:sourceKind === 'buried-hole' ? 'Buried ruin per wilderness treasure opportunity' : 'Ruin site reached',probability:siteProbability},
-      {label:'At least one copy in the generated chests',probability:perRuin}]);
-    return {key,sourceKind,chestCount:outcomes.length,tierCounts:outcomes.reduce((counts,x)=>(counts[x.chestTier]=(counts[x.chestTier]||0)+1,counts),{}),
+      {label:'At least one copy in unopened chests',probability:perRuin}]);
+    return {key,sourceKind,chestCount:relevant.length,unopenedChestCount:pending.length,
+      openedChestCount:relevant.length-pending.length,alreadyLootedCopies:collected,
+      tierCounts:outcomes.reduce((counts,x)=>(counts[x.chestTier]=(counts[x.chestTier]||0)+1,counts),{}),
       conditionalChancePerRuin:perRuin,expectedCopiesPerRuin:copies,siteAndLoot:origin,
-      model:'Uses the tracked generated chest roster. The buried-hole probability is per wilderness treasure location, not per arbitrary tile; entrance-site frequency is unmeasured.' };
+      model:'Uses real unopened chests; already opened loot is counted separately, not rerolled. Buried-hole chance is per treasure location; entrance-site frequency remains unknown.' };
   }
   function item(key, context = {}) {
     const defs = context.itemDefs || boundItemDefs || G.ITEM_DEFS || {};
@@ -609,9 +613,12 @@
     if (fish) return {key,kind:'fish',rarity:fish,acquisition:context.fishZone && context.season && context.timeOfDay
       ? fishCatch(key,{zone:context.fishZone,season:context.season,timeOfDay:context.timeOfDay,perkRank:context.perkRank||0}) : null};
     const culture = String(key).startsWith('hachutu') ? 'hachutu' : 'harlyao';
-    const artifact = G.ArtifactCollection?.ARTIFACTS?.[key] ? artifactChest(key,context.chestTier || 4,culture) : null;
-    if (artifact) return { key,kind:'artifact',acquisition:artifact,
-      note:'The conditional chest probability is exact for the weighted artifact draw; generator/site rates remain unquantified.' };
+    if (G.ArtifactCollection?.ARTIFACTS?.[key]) {
+      const artifact = context.chestTier != null ? artifactChest(key,context.chestTier,culture) : null;
+      return {key,kind:'artifact',acquisition:artifact,acquisitionRoutes:acquisitionSources(key,context),
+        note:artifact ? 'Exact conditional draw from the explicitly selected chest tier; ruin access is separate.'
+          : 'No chest tier was provided: compare the documented per-tier sources instead of silently assuming tier 4.'};
+    }
     const pools = context.lootPools || G.LootRolling?.getLootPools?.();
     const sourced = context.poolId ? lootPoolItem(key,context.poolId,pools) : null;
     if (sourced) return {key,kind:def.cat || 'loot',acquisition:sourced,note:sourced.model};
