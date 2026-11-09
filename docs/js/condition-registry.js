@@ -240,7 +240,7 @@
     new URL('config/weapon-trust-visits.js?v=20261109hpahugift1', docsBase).href,
     new URL('config/weapon-discovery-rewards.js?v=20261017h2885c04', docsBase).href,
     new URL('js/weapon-discovery-rewards.js?v=20261017h2885c04', docsBase).href,
-    new URL('js/weapon-trust-visits.js?v=20261015hedc83d7', docsBase).href,
+    new URL('js/weapon-trust-visits.js?v=20261109hpahusmith1', docsBase).href,
     new URL('js/weapon-trust-bandit-loadouts.js?v=20261028he43aba7', docsBase).href,
   ];
   for (const src of scripts) {
