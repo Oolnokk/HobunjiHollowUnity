@@ -9,8 +9,15 @@
       "bipedalMonsterRig": {
         "type": "bipedal-monster",
         "sprite": "assets/creaturesprites/old_man_nohuknuk.png",
-        "limbSpecies": "engh-sho",
+        "limbSpecies": "nohuknuk",
+        "handModel": "primate",
+        "footModel": "primate",
         "gender": "male",
+        "uvMode": "stretch-fit",
+        "materials": {
+          "body": { "texture": "assets/textures/canvas.png", "color": "#CECECE" },
+          "bone": { "texture": "assets/textures/canvas.png", "color": "#0D0D0D" }
+        },
         "modelWidth": 1.18,
         "modelHeight": 1.19,
         "bodyOffsetY": 0.0,
