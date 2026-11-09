@@ -128,6 +128,24 @@
   }
 
 
+  function wildBerrySource(key, context = {}) {
+    const owner = G.WildBerries;
+    const zones = owner?.WILD_BERRY_ZONES;
+    if (!zones) return null;
+    const match = Object.entries(zones).find(([fruit]) => key === fruit || key === owner.seedKeyFor?.(fruit));
+    if (!match) return null;
+    const [fruitKey,zoneId] = match;
+    const isSeed = key !== fruitKey;
+    const chance = isSeed ? clampProbability(owner.WILD_BERRY_SEED_CHANCE) : 1;
+    const census = context.census || owner.census?.(zoneId);
+    const n = census?.known && Array.isArray(census.berries)
+      ? census.berries.filter(item => item.berryKey === fruitKey).length : null;
+    return {key,kind:isSeed?'seed':'fruit',fruitKey,zoneId,perBushChance:chance,
+      observedBushes:n,expectedYield:n === null || chance === null ? null : n*chance,
+      atLeastOne:n === null ? null : atLeastOne(chance,n),
+      certainty:n === null ? 'known harvest chance; missing live-zone count' : 'exact harvest chance and observed bushes'};
+  }
+
   function importedSpice(key, {townValue = G.TownMine?.getTownValue?.() ?? 1, caravanEligible = true} = {}) {
     const spiceKeys = G.SlagothimTraders?.IMPORTED_SPICES || ['cloudSaffron','starpepper','nightCardamom']; // Loader fallback mirrors the authored trade pool; live trader stock always takes precedence.
     if (!spiceKeys.includes(key)) return null;
