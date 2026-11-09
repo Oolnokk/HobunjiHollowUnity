@@ -284,13 +284,22 @@
       potentialMeanOffspring:validClutch ? assigned.length*(clutchMin+clutchMax)/2 : null,
       model:'Exact species assignment among current den sites; unless all clutch records exist, remaining loot and encounter viability are unverified.'};
   }
-  function fishCatch(key, {zone,season,timeOfDay,rareFishWeightMultiplier = null,perkRank = 0,
+  const FISH_SEASON_LABELS = Object.freeze({ spring:'Stormtide', summer:'Deadgrass', fall:'Longpour', winter:'Coldmuck' }); // FishCatalog stores raw season codes; Fishing uses translated names.
+  function fishSeasons(fish) {
+    if (fish?.seasons === 'any') return 'any';
+    const raw = Array.isArray(fish?.seasons) ? fish.seasons : String(fish?.seasons || '').split(',');
+    return [...new Set(raw.map(season => FISH_SEASON_LABELS[season] || season).filter(Boolean))];
+  }
+  function fishCatch(key, {zone,season,timeOfDay,allowAmphibious = true,rareFishWeightMultiplier = null,perkRank = 0,
     entries = G.FishCatalog?.entries} = {}) {
     if (!Array.isArray(entries) || !zone || !season || !timeOfDay) return null;
-    const all = entries.filter(f => Array.isArray(f.zones) && f.zones.includes(zone));
+    const zoneKeys = zone === 'westernSlope' ? ['westernSlope','northernCliffs'] : [zone]; // Fishing.buildFishingDefs duplicates the northern pool for Western Slope.
+    const all = entries.filter(fish => Array.isArray(fish.zones) && fish.zones.some(z => zoneKeys.includes(z))
+      && (allowAmphibious || !fish.amphibious)); // The canonical minigame excludes amphibious fish when fishing from shore.
     if (!all.length) return { key,zone,season,timeOfDay,probability:null,reason:'no fish in zone' };
-    let eligible = all.filter(f => (f.seasons === 'any' || f.seasons?.includes?.(season))
-      && (f.timesOfDay === 'any' || f.timesOfDay?.includes?.(timeOfDay)));
+    const seasonName = FISH_SEASON_LABELS[season] || season;
+    let eligible = all.filter(fish => (fishSeasons(fish) === 'any' || fishSeasons(fish).includes(seasonName))
+      && (fish.timesOfDay === 'any' || fish.timesOfDay?.includes?.(timeOfDay)));
     if (!eligible.length) eligible = all; // Canonical fishing minigame fallback when a time band has no eligible fish.
     const baseWeights = {common:6,uncommon:3,rare:1};
     const rank = Math.max(0,Number(perkRank)||0);
@@ -298,8 +307,8 @@
       * (typeof rareFishWeightMultiplier === 'function' ? rareFishWeightMultiplier(fish.rarity) : 1)
       * (fish.rarity === 'uncommon' ? 1 + rank*.25 : fish.rarity === 'rare' ? 1 + rank*.55 : 1);
     const total = eligible.reduce((sum,fish) => sum + Math.max(0,Number(weight(fish))||0),0);
-    const probability = total ? eligible.filter(f=>f.key===key).reduce((sum,fish)=>sum+Math.max(0,Number(weight(fish))||0),0)/total : null;
-    return {key,zone,season,timeOfDay,eligibleCount:eligible.length,probability,
+    const probability = total ? eligible.filter(fish=>fish.key===key).reduce((sum,fish)=>sum+Math.max(0,Number(weight(fish))||0),0)/total : null;
+    return {key,zone,season:seasonName,timeOfDay,allowAmphibious,eligibleCount:eligible.length,probability,
       model:'conditional on one fish selection in this zone/season/time band; catching/reeling, habitat access and equipment are separate' };
   }
   function fishRarity(key, entries = G.FishCatalog?.entries) {
@@ -307,16 +316,16 @@
     if (!fish) return null;
     const weights = {common:6,uncommon:3,rare:1};
     const sourceWeight = weights[fish.rarity] || 1;
-    const seasons = fish.seasons === 'any' ? 4 : Array.isArray(fish.seasons) ? fish.seasons.length : 4;
+    const seasonal = fishSeasons(fish);
+    const seasons = seasonal === 'any' ? 4 : seasonal.length;
     const hours = {dawn:8,day:9,dusk:3,night:4}; // Same 08/17/20 fishing-time boundaries in fishing-minigame.js.
     const timeHours = fish.timesOfDay === 'any' ? 24
       : Array.isArray(fish.timesOfDay) ? [...new Set(fish.timesOfDay)].reduce((sum,phase)=>sum+(hours[phase]||0),0) : 24;
-    // This is an authored category + fishing-window availability factor, not
-    // an unconditional catch rate (the player deliberately selects fishing
-    // zones and times, and an empty active pool falls back to the whole zone).
+    // Authored rarity class × season and daypart availability; without zone
+    // distribution this is a bounded contest proxy, not an unconditional catch probability.
     const opportunityFraction = Math.max(1/96,Math.min(1,seasons/4)*Math.max(1,timeHours)/24);
     const factor = Math.min(3.5,Math.pow(6/sourceWeight/opportunityFraction,.22));
-    return {key,fishRarity:fish.rarity,sourceWeight,opportunityFraction,factor,
+    return {key,fishRarity:fish.rarity,sourceWeight,opportunityFraction,availableSeasons:seasonal,factor,
       model:'availability/rarity proxy, not unconditional acquisition probability' };
   }
   function ruinArtifactOpportunity(key, {chests = G.DevRandomRuinDungeonChests?.snapshot?.(),sourceKind = 'entrance',
