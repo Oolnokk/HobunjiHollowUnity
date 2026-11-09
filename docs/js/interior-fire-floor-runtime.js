@@ -213,6 +213,38 @@
     return emitters.every(emitter => !emitter?.attachedPartId || !!meshById?.get?.(emitter.attachedPartId));
   }
 
+  function instanceCandleClusterBodies(group, parts) {
+    // The authored source remains separate/editable in Furniture Author, but gameplay batches matching
+    // wax/tin geometries into a handful of static instanced draws instead of 32 draws per 1x1 cluster.
+    if (!THREE.InstancedMesh || !group?.userData?.meshById || group.userData.hobunjiCandleClusterInstanced) return false;
+    const buckets = new Map(); // Each tint family keeps the actual PNG material from the authored candle-table part.
+    for (const part of parts || []) {
+      if (!/^cluster_(wax|socket)_\d+$/.test(part.id || '')) continue;
+      const mesh = group.userData.meshById.get(part.id);
+      if (!mesh?.isMesh || !mesh.geometry || !mesh.material || Array.isArray(mesh.material) || mesh.parent !== group) return false;
+      const key = part.id.startsWith('cluster_wax_') ? 'wax:'+(part.materialFillColor || part.color || '') : 'socket';
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(mesh);
+    }
+    if (!buckets.size) return false;
+    const batches = []; // Instance meshes are retained by group disposal; invisible source meshes remain as map/editor part anchors.
+    for (const [kind,meshes] of buckets) {
+      const first = meshes[0], batch = new THREE.InstancedMesh(first.geometry, first.material, meshes.length);
+      batch.name='festival_candle_cluster_'+kind.replace(':','_');
+      batch.userData.hobunjiCandleClusterBatch=true;
+      for (let index=0;index<meshes.length;index++) {
+        meshes[index].updateMatrix?.();
+        batch.setMatrixAt(index,meshes[index].matrix);
+      }
+      batch.instanceMatrix.needsUpdate=true;
+      group.add(batch);
+      batches.push(batch);
+    }
+    for (const meshes of buckets.values()) for (const mesh of meshes) mesh.visible=false;
+    group.userData.hobunjiCandleClusterInstanced=batches.length; // Copyable Pixel Probe clue: usually four static draws per cluster.
+    return true;
+  }
+
   function makeCandleClusterFlames(group, emitters, parts) {
     // One Points draw for sixteen candle tips: per-candle authored particle emitters in the Furniture Editor
     // still describe the arrangement, but runtime must not add sixteen draw calls for each of 25 town clusters.
@@ -258,6 +290,7 @@
       group.userData.hobunjiAmbientFurnitureVfxPendingKey = key; // Used by the authored-upgrade callback to retry only after attachedPartId meshes exist.
       return group;
     }
+    if (key === 'candleCluster') instanceCandleClusterBodies(group, data.parts); // Optimization is limited to these static authored candle parts.
     const visuals = key === 'candleCluster'
       ? [makeCandleClusterFlames(group, emitters, data.parts)].filter(Boolean)
       : emitters.map(emitter => authored.createEmitterVisual(group, emitter)).filter(Boolean); // Batched candle tips keep draw calls proportional to clusters, not total candles.
