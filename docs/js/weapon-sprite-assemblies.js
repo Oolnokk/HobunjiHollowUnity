@@ -17,7 +17,7 @@
   const PIXEL_ALPHA = 128; // Treat only the solid half of an antialiased edge as the opaque connection tip.
   const MAX_DT = 0.08; // Prevent tab-resume and loading stalls from launching the head sideways.
   const MOTION_LAG = 0.065; // Converts haft travel velocity to idle trailing angle.
-  const DETACHED_TIMEOUT = 5000; // Remove orphaned assemblies without deleting reusable inventory meshes immediately.
+  const DETACHED_TIMEOUT = 5000; // Reclaim orphaned assemblies but never an unequipped tool retained in the current player's equipment cache.
   const DEF = global.WEAPON_SPRITE_ASSEMBLY_CONFIG?.weapons || {}; // Single committed recipe registry shared with the Tool Hub; tool-specific definitions may still override it.
   const effects = global.HobunjiLayeredWeaponEffects; // Materials, interleaved fire, and visible-metal source masks live outside the animation module.
 
@@ -544,11 +544,23 @@
     hooked.updateMatrixWorld(true);
   }
 
+  function isCachedPlayerToolRoot(root) {
+    // The player's equipment map holds unequipped tool meshes by reference even with root.parent=null.
+    for (const deps of [global.ProceduralHandAttachments?.gameDeps, global.Combat?.deps]) {
+      const map=deps?.toolMeshMap; // Both gameplay and edit preview adapters are supported.
+      if (!map) continue;
+      const values=typeof map.values==='function' ? map.values() : Object.values(map);
+      for (const mesh of values) if (mesh===root) return true;
+    }
+    return false;
+  }
+
   function updateOne(state, dt, now, effectsDt = dt) {
     const { root, plane, config, scratch: q } = state;
     if (!root.parent) {
       if (!state.detachedAt) state.detachedAt = now;
-      if (now - state.detachedAt > DETACHED_TIMEOUT) drop(root);
+      // Cached, unequipped player weapons retain their complete rope/head; obsolete meshes still time out.
+      if (now - state.detachedAt > DETACHED_TIMEOUT && !isCachedPlayerToolRoot(root)) drop(root);
       return;
     }
     state.detachedAt = 0;
@@ -709,7 +721,7 @@
     for (const state of records) {
       if (state.dead) { records.delete(state); continue; }
       try {
-        effects?.refreshMetal(state, now); // Throttled tint updates share weapon plating and verdigris without creating a second animation loop.
+        if (state.root.parent) effects?.refreshMetal(state, now); // Invisible cached tools do not need repeated plating/verdigris updates.
         updateOne(state, freezePhysics ? 0 : dt, now, dt);
       }
       catch (error) {
@@ -725,6 +737,7 @@
     return [...records].map(s => ({
       itemKey: s.itemKey, loaded: s.config.flail ? !!(s.chain && s.headRoot) : !!s.staticReady,
       attached: !!s.root.parent, attacking: s.attacking,
+      detachedForMs: s.root.parent ? 0 : Math.max(0, performance.now() - s.detachedAt), // Mobile diagnostics for cached tool retention.
       progress: s.progress, direction: s.direction.toArray(),
       attackTiming: { windup: s.wf, strike: s.sf, hold: s.hf }, // Mobile-readable phase diagnostics.
       pitchTravelDeg: Number.isFinite(s.pitchTravelRad) ? s.pitchTravelRad * 180 / Math.PI : s.strikeTurnRad * 180 / Math.PI, // Authored pitch travel for comparison with physical motion.
