@@ -253,8 +253,8 @@ try{
       const grid=stage.gate.grid,[gx,gz]=stage.gate.tiles[0];
       assert(grid.isSolid(grid.xToCol(gx+.5),grid.zToRow(gz+.5),
         grid.yToLevel(stage.gate.surfaceY+.5)));
-      player.x=stage.kind==='pressurePlate'?stage.x:state.place.originX+5;
-      player.z=stage.kind==='pressurePlate'?stage.z:state.place.originZ+18;
+      player.x=stage.kind==='pressurePlate'||stage.kind==='timedMelody'?stage.x:state.place.originX+5;
+      player.z=stage.kind==='pressurePlate'||stage.kind==='timedMelody'?stage.z:state.place.originZ+18; // Timed melody tests stand on the actual plate rather than bypassing the positional rule.
       player.y=stage.floorY;
       if(stage.kind==='v50Authored'){
         native.tick(.05);
