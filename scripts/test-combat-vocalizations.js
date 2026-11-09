@@ -443,29 +443,37 @@ for (const [speciesId, genders] of Object.entries(W.CombatVocalizations.getConfi
       id: `voice-${speciesId}-${gender}`, health: 80, maxHealth: 100, stamina: 50, maxStamina: 100,
       appearance: { speciesId, gender },
     };
+    const isSkeleton = speciesId === 'mao-ao-skeleton' || speciesId === 'harlyao-skeleton'; // Both ordinary skeleton species use the dedicated shared shriek recording.
+    const expectedGain = isSkeleton ? 1 : profile.gain; // Their old human-vocal modulation muted them; their new special voice is audible.
+    const expectedPitch = profile.pitchSemitones + (isSkeleton ? 3 : 1.47); // Math.random() = 0.99 selects +3 of the seven shriek semitone variants.
+    const expectedTempo = profile.tempo * (isSkeleton ? 3 : 1); // Skeleton shrieks are independently rendered at 3× source speed.
+    const skeletonShriekUrl = 'assets/audio/sfx/utterances/sfx_skeletonshriek_1.ogg'; // Verified shipped OGG source and runtime routing target.
     for (const category of ['combo', 'quickAttack', 'offensiveHold']) {
       W.CombatVocalizations.playStrikeGrunt(actor, category, 'profile-audit');
-      assert(Math.abs(played.at(-1).pitchSemitones - (profile.pitchSemitones + 1.47)) < 1e-9, `${actor.id}/${category} pitch`);
-      assert.equal(played.at(-1).tempo, profile.tempo);
-      assert.equal(played.at(-1).volume, Math.min(1, 0.86 * profile.gain));
+      assert(Math.abs(played.at(-1).pitchSemitones - expectedPitch) < 1e-9, `${actor.id}/${category} pitch`);
+      assert.equal(played.at(-1).tempo, expectedTempo);
+      assert.equal(played.at(-1).volume, Math.min(1, 0.86 * expectedGain));
+      if (isSkeleton) assert.equal(played.at(-1).url, skeletonShriekUrl, 'skeleton attack uses the skeleton shriek');
       played.at(-1).handle.finish();
     }
     emit(listeners, 'hobunji-resource-change', { entity: actor, delta: -1, immediate: true });
-    assert(Math.abs(played.at(-1).pitchSemitones - (profile.pitchSemitones + 1.47)) < 1e-9, `${actor.id}/pain pitch`);
-    assert.equal(played.at(-1).volume, Math.min(1, 0.9 * profile.gain));
+    assert(Math.abs(played.at(-1).pitchSemitones - expectedPitch) < 1e-9, `${actor.id}/pain pitch`);
+    assert.equal(played.at(-1).tempo, expectedTempo);
+    assert.equal(played.at(-1).volume, Math.min(1, 0.9 * expectedGain));
+    if (isSkeleton) assert.equal(played.at(-1).url, skeletonShriekUrl, 'skeleton pain uses the skeleton shriek');
     played.at(-1).handle.finish();
     scheduledBreath({ timestamp: 100000 });
-    assert(played.at(-1).url.includes('heavybreath_'));
-    assert(Math.abs(played.at(-1).pitchSemitones - (profile.pitchSemitones + 0.2156)) < 1e-9, `${actor.id}/breath pitch`);
-    assert.equal(played.at(-1).tempo, profile.tempo);
-    assert.equal(played.at(-1).volume, Math.min(1, 0.72 * profile.gain));
+    assert(isSkeleton ? played.at(-1).url === skeletonShriekUrl : played.at(-1).url.includes('heavybreath_'), 'skeleton breathing uses the shriek, other humanoids retain breath audio');
+    assert(Math.abs(played.at(-1).pitchSemitones - (isSkeleton ? expectedPitch : profile.pitchSemitones + 0.2156)) < 1e-9, `${actor.id}/breath pitch`);
+    assert.equal(played.at(-1).tempo, expectedTempo);
+    assert.equal(played.at(-1).volume, Math.min(1, 0.72 * expectedGain));
     const breathEntry = played.at(-1); // Dodge must preempt this actor's breathing with the shared click-safe handoff.
     const dodge = W.CombatVocalizations.playDodge(actor); // Captures the actual independent tempo/pitch request.
     assert.equal(breathEntry.stopped, true);
-    assert(played.at(-1).url.endsWith('sfx_pain_intensity1.m4a'));
-    assert(Math.abs(played.at(-1).pitchSemitones - (profile.pitchSemitones + 1.47)) < 1e-9, `${actor.id}/dodge pitch`);
-    assert.equal(played.at(-1).tempo, profile.tempo / 0.75);
-    assert.equal(played.at(-1).volume, Math.min(1, 0.9 * profile.gain));
+    assert(isSkeleton ? played.at(-1).url === skeletonShriekUrl : played.at(-1).url.endsWith('sfx_pain_intensity1.m4a'));
+    assert(Math.abs(played.at(-1).pitchSemitones - expectedPitch) < 1e-9, `${actor.id}/dodge pitch`);
+    assert.equal(played.at(-1).tempo, expectedTempo / 0.75);
+    assert.equal(played.at(-1).volume, Math.min(1, 0.9 * expectedGain));
     assert.equal(dodge.durationScale, 0.75);
     assert.equal(W.CharacterVoiceOwner.current(actor).kind, 'active');
     assert.equal(W.CombatVocalizations.debugSnapshot().lastDodge.intensity, 1);
@@ -560,6 +568,7 @@ console.log('all species/gender combat voice profiles, dodge duration, native fa
   for (const [speciesId, genders] of Object.entries(W.CombatVocalizations.getConfig().utteranceModulation.species)) {
     for (const [gender, profile] of Object.entries(genders)) {
       const actor = { appearance: { speciesId, gender } }; // Fresh humanoid owns each timed charge and release separately.
+      const isSkeleton = speciesId === 'harlyao-skeleton' || speciesId === 'mao-ao-skeleton'; // Timed skeleton vocals also use their new special source and audible volume.
       for (const category of ['charge', 'combo', 'quickAttack', 'offensiveHold']) {
         const token = W.CombatVocalizations.beginCharge({ // Unique release URL avoids pre-existing failed-decode entries from the offline harness.
           entity: actor, category, targetDurationS: 0.6,
@@ -567,13 +576,13 @@ console.log('all species/gender combat voice profiles, dodge duration, native fa
         });
         for (let turn = 0; turn < 20 && !token.ready && !token.done; turn++) await Promise.resolve();
         assert.equal(token.ready, true, `${speciesId}/${gender}/${category} renders`);
-        assert(Math.abs(token.pitchSemitones - (profile.pitchSemitones + 1.47)) < 1e-9, `${speciesId}/${gender}/${category} modulation`);
-        assert.equal(token.output.gain.value, 0.86 * profile.gain, 'the original voice master retains species volume and charge fade');
+        assert(Math.abs(token.pitchSemitones - (profile.pitchSemitones + (isSkeleton ? 3 : 1.47))) < 1e-9, `${speciesId}/${gender}/${category} modulation`);
+        assert.equal(token.output.gain.value, 0.86 * (isSkeleton ? 1 : profile.gain), 'timed voice master preserves the enabled special skeleton recording');
         assert.equal(token.output.__combatVocalDistanceGain?.gain.value, 1, 'distance-following attenuation is a separate gain node');
         assert.equal(renders.at(-1).pitchSemitones, token.pitchSemitones);
         assert.equal(token.normalTempo, profile.tempo);
         if (category === 'charge') {
-          assert.equal(token.catchUpTempo, profile.tempo * 2);
+          assert.equal(token.catchUpTempo, isSkeleton ? Math.min(4, profile.tempo * 6) : profile.tempo * 2);
           W.CombatVocalizations.releaseCharge(token);
         }
         token.source.onended();
