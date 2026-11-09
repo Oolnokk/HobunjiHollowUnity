@@ -722,7 +722,7 @@ for(const side of ['north','east','south','west']){
   let musicClosed=0;
   globalThis.MusicMinigame={close:()=>{musicClosed++;}};
   ruin.shaftConnectorCleanup();
-  assert.equal(musicClosed,0,'teardown must not close the player's independent flute');
+  assert.equal(musicClosed,0,'teardown must not close the player-owned flute');
   globalThis.MusicMinigame=oldMusic;
   assert(network.disposed,'all secondary wing collision grids and meshes are disposable');
   assert.equal(network.lightSources().length,0,'reroll removes all wing-brazier illumination sources');
