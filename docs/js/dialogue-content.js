@@ -240,7 +240,8 @@
     let fl2v1 = '';
     for (const ch of name) { fl2v1 += ch; if (VOWELS.has(ch)) break; }
     const st    = getNpcDlgState(npcRec?.id);
-    const local = window.RomanceSystem?.spouseDialogueFor?.(npcRec?.id)?.nickname || st.localNickname || name; // Post-wedding forms of address apply to {{playerLocalNickname}} without altering saved dialogue choices.
+    const local = window.CharacterNicknames?.addressPlayer?.(name, npcRec?.id, { favor: st.favor, customNickname: st.localNickname })
+      || window.RomanceSystem?.spouseDialogueFor?.(npcRec?.id)?.nickname || st.localNickname || name; // The same event-time nickname is used in dialogue and ambient greetings.
     let out = text
       .replace(/\{\{npcName\}\}/g,            npcRec?.name || '')
       .replace(/\{\{playerName\}\}/g,          name)
