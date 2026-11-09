@@ -159,9 +159,10 @@
     }).catch(error => { rigPromise = null; last.error = String(error); throw error; }); // Failed image fetches are retryable.
     return rigPromise;
   }
-  async function createRig(identity = null) {
+  async function createRig(identity = null, options = {}) {
     const { settings, images } = await loadRig();
     const instance = window.FlyingAnimalRig.create(settings, images);
+    if (options.undeformedPerch) instance.setPerchSpline(null); // Hatchling uses flat perched art, oriented as flying.
     instance.talonCarry = settings.talonCarry; // Live actors use the same authored socket and payload poses as the editor.
     if (identity?.tintHex && window.THREE) {
       const tintHex = identity.tintHex; // The assigned mother's individual coat color survives damage and visual refreshes.

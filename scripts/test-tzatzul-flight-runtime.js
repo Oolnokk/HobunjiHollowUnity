@@ -102,6 +102,21 @@ for(let i=0;i<60&&farBird._tzFlight.phase==='swoop';i++)w.TzatzulFlightRuntime.u
 assert.equal(hits,beforeContact+1,'stationary prey nine tiles away is hit by the swept torso');
 assert.equal(w.TzatzulFlightRuntime.debugSnapshot().lastBodyContact.collider,'body',
   'body, rather than talon or a timed attack, is the recorded damaging collider');
+// A dive/scouting line must rise above a real plateau before crossing its horizontal footprint.
+const previousSurface = deps.worldSurfaceY;
+deps.worldSurfaceY = (x, y) => x >= 1400 && x <= 1750 ? 9 : 0;
+const plateauLeg = { from:{x:1100,y:900,worldY:4},to:{x:2050,y:900,worldY:4},mode:'search' };
+plateauLeg.terrain = w.TzatzulFlightRuntime.__test.terrainFlightProfile(plateauLeg.from,plateauLeg.to,{y:.5});
+assert(plateauLeg.terrain.samples.some(height=>height===9),'planner samples high terrain between endpoints');
+const safeHeights = plateauLeg.terrain.level;
+for(let i=1;i<safeHeights.length;i++) {
+  assert(Math.abs(safeHeights[i]-safeHeights[i-1])<=plateauLeg.terrain.heightDeltaPerStep+1e-6,
+    'cliff clearance climbs and descends continuously rather than snapping to a future plateau top');
+}
+assert(w.TzatzulFlightRuntime.__test.flightHeightAt(plateauLeg,.45)>9.5,'flight body clears the high plateau');
+assert(w.TzatzulFlightRuntime.__test.flightHeightAt({...plateauLeg,mode:'swoop'},.45)>9,'dives also clear plateau walls');
+assert.equal(w.TzatzulFlightRuntime.__test.flightHeightAt({...plateauLeg,mode:'swoop'},1),4,'a body dive still reaches a clear ground-level target');
+deps.worldSurfaceY = previousSurface;
 const beforeDodge=hits;
 farBird.x=2240;farBird.y=128;farBird.branchSurfaceY=7;
 player.x=farBird.x-64*9;player.y=farBird.y;
