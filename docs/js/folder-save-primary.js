@@ -33,13 +33,17 @@
     return navigator.locks.request(LOCK_NAME, { mode: 'exclusive' }, operation);
   }
 
-  localSave.loadFromFolder = async (...args) => withFolderLock(async () => {
+  localSave.loadFromFolder = async (...args) => {
+    const guarded = festivalTestSaveGuard(); // A manual import must not replace the disposable test state while its reward journal is active.
+    if (guarded) return guarded;
+    return withFolderLock(async () => {
     const result = await rawLoadFromFolder(...args);
     if (result && typeof result.message === 'string') {
       result.message = result.message.replace(/\s*Reload the page to apply it\.?\s*$/i, '');
     }
     return result;
-  });
+    });
+  };
 
   function festivalTestSaveGuard() {
     const phase = window.HobunjiQuickSave?.festivalStatus?.().phase; // Prevent explicit folder saves from persisting an isolated festival preview.
