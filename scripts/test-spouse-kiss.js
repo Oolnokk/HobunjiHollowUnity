@@ -377,7 +377,7 @@ assert.ok(npcRoot.position.z > .8, 'taller partner retreats to allow space for a
 assert.equal(activeTokens.size, 1);
 assert.equal(visual.stop('dodge'), true);
 assert.equal(playerPortrait.rotation.x, 0, 'cancel resets the actual player portrait pose');
-assert.equal(playerHandRig.group.rotation.x, 0, 'cancel resets the player's moving hand parent');
+assert.equal(playerHandRig.group.rotation.x, 0, "cancel resets the player's moving hand parent");
 assert.equal(partnerLegs.sink, 0, 'cancel must restore both knee sinks');
 assert.equal(npcRigRoot.position.y, 0, 'cancel must restore the NPC visual root');
 assert.equal(sceneWalker.avatarGroup.rotation.x, 0, 'cancel unbends the torso');
