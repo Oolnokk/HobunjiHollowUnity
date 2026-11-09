@@ -729,6 +729,7 @@
       visibleChars: -1,
     };
     state.active.push(event);
+    window.HobunjiEmojiReactions?.reactToDialogue?.(root, { ...options, tone: event.tone }); // NPC greeting, acceptance/refusal and personality reactions reuse the one emoji owner.
     drawText(event, '');
     if (!event.revealSchedule.length) {
       drawText(event, message);
