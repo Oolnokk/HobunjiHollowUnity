@@ -45,11 +45,37 @@
 .assembly-element-panel button:disabled{opacity:.5}
 #assembly-status{min-height:1.5em}
 .assembly-provenance-warning{margin:10px 0;padding:8px;border:1px solid #78968f;border-radius:6px}
-.assembly-provenance-warning button{width:100%;white-space:normal}
+.assembly-provenance-warning button{width:100%;white-space:normal}#part-identity-panel{background:#203945;padding:10px;border-radius:7px;margin:12px 0}#part-identity-panel>summary{cursor:pointer}#part-identity-panel .grid2 label{min-width:0}#part-identity-panel input:not([type=checkbox]),#part-identity-panel select{width:100%;box-sizing:border-box}#part-identity-panel p{font-size:13px}
 </style></head><body>
 <header><h1>Modular Weapon Attachment Editor</h1><div>Latest change: duplicated attachment primitives and tang/sleeve rigs can be scaled and translated independently, leaving shaft artwork and fire untouched.</div><div class="toolbar"><button id="random" type="button">Random valid combination</button><button id="export">Export game config</button><button id="import">Import config</button><button id="reset">Reset draft</button><input id="file" type="file" accept=".json,.js" hidden></div><p id="status" role="status">Loading…</p></header>
 <main><div class="pair-area"><section><h2>Directed head and haft mounts</h2>
 <label>Haft <select id="shaft"></select></label><label>Head <select id="head"></select></label>
+<details id="part-identity-panel" open><summary><strong>Part names, weapon grammar, tool roles and flail conversion</strong></summary>
+<p>Part labels describe the actual unlocked piece. A haft chooses whether it supplies a weapon-name prefix or suffix; every head supplies both matching forms. Stable internal IDs, grip donors, materials and saved gear stay unchanged.</p>
+<div class="grid2">
+<label>Haft part name <input id="shaft-part-label" maxlength="96"></label>
+<label>Haft contributes <select id="shaft-name-position"><option value="prefix">Prefix (before head)</option><option value="suffix">Suffix (after head)</option></select></label>
+<label>Haft prefix / suffix words <input id="shaft-name-affix" maxlength="96"></label>
+<label><input id="shaft-tool-worthy" type="checkbox"> Tool-worthy haft (allows compatible head tool slots)</label>
+<label>Head part name <input id="head-part-label" maxlength="96"></label>
+<label>Head form when haft is a prefix <input id="head-name-prefix" maxlength="96"></label>
+<label>Head form when haft is a suffix <input id="head-name-suffix" maxlength="96"></label>
+<label>Head tool slots (comma-separated) <input id="head-tool-slots" placeholder="axe, pick, shovel, hoe, harpoon"></label>
+</div>
+<p id="identity-preview" aria-live="polite">Resulting weapon name and eligible slots appear here.</p>
+<h3>Flail ownership</h3>
+<p>Edit rope length, diameter, tint, head layers, suspension anchors and motion in the <a href="../multi-sprite-weapon-editor/" target="_blank" rel="noopener">Multi-sprite Weapon Editor</a>. Here assign an existing flail recipe to either the head or the haft, not both. A head-owned flail hangs from this haft's matching mounting arrow or optional rope point. A haft-owned flail swaps its multi-sprite head for the selected modular head PNG and its custom contact point/scale.</p>
+<div class="grid2">
+<label>Head-owned flail recipe <select id="head-flail-assembly"></select></label>
+<label>Haft-owned flail recipe <select id="shaft-flail-assembly"></select></label>
+<label>Haft rope point X (450px source) <input id="shaft-rope-x" type="number" step="1" min="0" max="450" placeholder="Auto: first compatible socket"></label>
+<label>Haft rope point Y (1204px source) <input id="shaft-rope-y" type="number" step="1" min="0" max="1204" placeholder="Auto: first compatible socket"></label>
+<label>Modular head rope contact X <input id="head-rope-x" type="number" step="1" min="0" max="450"></label>
+<label>Modular head rope contact Y <input id="head-rope-y" type="number" step="1" min="0" max="1204"></label>
+<label>Modular hanging-head scale <input id="head-rope-scale" type="number" step=".05" min=".05" max="8"></label>
+</div>
+<p id="identity-flail-status" aria-live="polite"></p>
+</details>
 <div class="panel" id="shaft-duplicate-panel">
 <h2>Shaft attachment scaling rig</h2>
 <button id="duplicate-shaft" type="button">Duplicate selected shaft + mounts + fitting rules</button>
