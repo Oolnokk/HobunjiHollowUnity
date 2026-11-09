@@ -10,6 +10,7 @@ const plain = value => JSON.parse(JSON.stringify(value)); // Compares VM-owned o
 
 load('docs/config/weapon-sprite-assemblies.js');
 load('docs/config/modular-weapons.js');
+load('docs/js/modular-weapon-bridge-fill.js');
 load('docs/js/modular-weapons.js');
 const api = window.ModularWeapons; // Live Foundry resolver under test.
 const config = api.getConfig(); // Shared, committed identities (not cosmetic hardcoded test data).
@@ -21,17 +22,17 @@ const item = (shaft, head) => api.itemKey(shaft, head, 'nativeCopper'); // Saved
 
 assert.equal(config.shafts['fishing-mace'].label, 'Bored Wrapped Handle');
 assert.equal(config.heads['fishing-mace'].label, 'Barb-flanged Mace Head');
-assert.equal(config.shafts['harlyao-longsword'].label, 'Trapezoidal Hilt');
+assert.equal(config.shafts['harlyao-longsword'].label, 'Tall Crescent Hilt');
 assert.equal(config.heads['harlyao-longsword'].label, 'Harlyao-style Long-blade');
-assert.equal(api.weaponName('fishing-mace', 'fishing-mace', 'Copper'), 'Copper Bored-handled Barb-flanged Mace');
+assert.equal(api.weaponName('fishing-mace', 'fishing-mace', 'Copper'), 'Copper Looped Fishing Mace');
 assert.equal(api.weaponName('harlyao-longsword', 'harlyao-longsword', 'Copper'),
-  'Copper Harlyao-style Long-blade with a Trapezoidal Hilt');
+  'Copper Crescent-hilted Long- Hilted Slicer');
 assert.equal(item('fishing-mace','warhammer'), 'modular:fishing-mace:warhammer:nativeCopper');
 assert.deepEqual(plain(api.decode(item('fishing-mace','warhammer'))),
   { shaft: 'fishing-mace', head: 'warhammer', metal: 'nativeCopper' });
 
 api.registerDefinitions(definitions, shapes, metals, ['nativeCopper']);
-assert.equal(definitions[item('fishing-mace','fishing-mace')].label, 'Copper Bored-handled Barb-flanged Mace');
+assert.equal(definitions[item('fishing-mace','fishing-mace')].label, 'Copper Looped Fishing Mace');
 assert.equal(definitions[item('harlyao-longsword','harlyao-longsword')].label,
   'Copper Harlyao-style Long-blade with a Trapezoidal Hilt');
 assert.deepEqual(plain(definitions[item('fishing-spear', 'hatchet')].slots), ['weapon','axe'],
@@ -48,6 +49,13 @@ const shaftOwner = api.flailRecipe('grapple-flail','warhammer'); // Haft-owned r
 assert(shaftOwner?.flail, 'rope-bearing shaft produces an actual flexible weapon assembly');
 assert.equal(shaftOwner.flail.chain.type, 'rope');
 assert.equal(shaftOwner.flail.chain.lengthPx, original.flail.chain.lengthPx);
+assert.equal(shaftOwner.flail.chain.mountLengthPx, 843.75, 'new suspension line replaces only the rope reach');
+assert.equal(shaftOwner.flail.chain.radiusPx, original.flail.chain.radiusPx, 'changing suspension length does not affect thickness');
+assert.equal(shaftOwner.flail.chain.scaleX, original.flail.chain.scaleX, 'rope width multiplier stays authored');
+assert.equal(shaftOwner.flail.head.scale, 1, 'hanging head size is independent of the rope line');
+assert.equal(api.matchingMounts(config.shafts['grapple-flail'], config.heads.warhammer)[0].type,'rope');
+assert.equal(api.attachmentRig(config.shafts['grapple-flail'],config.heads.warhammer,api.settings('grapple-flail','warhammer')).children[0].children.length,0,
+  'a rope mount is never used as an automatic rigid-head fitting/scaling axis');
 assert.equal(shaftOwner.flail.head.layers.length, 1);
 assert.equal(shaftOwner.flail.head.layers[0].sprite, config.heads.warhammer.sprite);
 assert.equal(shaftOwner.flail.head.anchorLayer, 'modular-head');
@@ -60,11 +68,16 @@ assert.equal(headOwner.flail.head.layers.length, original.flail.head.layers.leng
 assert.equal(headOwner.flail.haftAnchor.x, config.shafts['fishing-mace'].mounts[0].start.x);
 assert.equal(headOwner.flail.haftAnchor.y, config.shafts['fishing-mace'].mounts[0].start.y);
 assert.equal(headOwner.sprite, config.shafts['fishing-mace'].sprite);
+assert.equal(headOwner.flail.chain.mountLengthPx, undefined,
+  'older flails without an authored rope line preserve their original chain length');
 assert.deepEqual(plain(window.WEAPON_SPRITE_ASSEMBLY_CONFIG.weapons.grappleFlail), original,
   'derived modular flails never overwrite the Tool Hub source recipe');
 assert.equal(api.isDisallowed('grapple-flail', 'grapple-flail'), true,
   'two rope-owning pieces cannot produce two overlapping pendulums');
 assert.equal(api.flailRecipe('grapple-flail', 'grapple-flail'), null);
+assert.equal(config.heads.dagger.weaponNames.prefix,'Gutter','uploaded head prefix/suffix forms are swapped');
+assert.equal(config.heads.dagger.weaponNames.suffix,'Arrow-tipped');
+assert.equal(config.shafts['fishing-spear'].nameAffix,'Leather-wrapped Pole-','uploaded naming fields are retained without importing geometry');
 
 assert(definitions[item('grapple-flail','warhammer')].weaponAssembly?.flail,
   'real equipment definition hands the multi-sprite runtime a dynamic head/rope assembly');
@@ -73,6 +86,7 @@ assert(definitions[item('fishing-mace','grapple-flail')].weaponAssembly?.flail,
 assert.equal(definitions[item('fishing-mace','warhammer')].weaponAssembly, undefined,
   'ordinary rigid modular weapons keep their prior baked sprite route');
 
+const originalMounts = plain(config.shafts['fishing-mace'].mounts); // Historical fitted-head geometry must not be replaced by a user's unrelated local draft.
 const editable = plain(config); // Author edits and imported draft sanitation exercise the real replace() migration path.
 editable.heads.warhammer.weaponNames = { prefix: 'Mallet Head', suffix: 'Hammer End' };
 editable.heads.warhammer.toolSlots = ['axe', 'weapon', 'unknown', 'axe'];
@@ -80,9 +94,14 @@ editable.shafts.dagger.namePosition = 'suffix';
 editable.shafts.dagger.nameAffix = 'on a dagger grip';
 editable.shafts.dagger.toolWorthy = true;
 editable.shafts['grapple-flail'].flailAssembly = null;
+editable.shafts['fishing-mace'].bores = [
+  {id:'bore-1',x:225,y:602,rx:12,ry:16,rotation:20,rim:5,warp:2,shade:0.75,lightX:-.6,lightY:-.8,enabled:true}
+];
 api.replace(editable);
 assert.equal(api.weaponName('dagger','warhammer','Copper'), 'Copper Hammer End on a dagger grip');
 assert.deepEqual(plain(api.getConfig().heads.warhammer.toolSlots), ['axe']);
+assert.equal(api.getConfig().shafts['fishing-mace'].bores[0].rx, 12, 'bore geometry survives the shared editor draft validator');
+assert.deepEqual(plain(api.getConfig().shafts['fishing-mace'].mounts), originalMounts, 'bore and name edits do not modify original mounting geometry');
 assert.equal(api.getConfig().shafts['grapple-flail'].flailAssembly, null,
   'author can remove an existing rope reference and return to rigid weapon behavior');
 api.registerDefinitions(definitions, shapes, metals, ['nativeCopper']);
@@ -96,10 +115,25 @@ api.replace(oldDraft);
 assert.equal(api.getConfig().heads['fishing-mace'].label, 'Barb-flanged Mace Head');
 assert.equal(api.getConfig().shafts['fishing-mace'].label, 'Bored Wrapped Handle');
 
+// Existing brush helper applies live bores to fresh source pixels without accumulating damage.
+const pixels = new Uint8ClampedArray(32*32*4); // Representative opaque wooden material tests shade and transparency together.
+for(let i=0;i<32*32;i++){ pixels[i*4]=170;pixels[i*4+1]=150;pixels[i*4+2]=125;pixels[i*4+3]=255; }
+const bore={id:'b',x:12,y:12,rx:5,ry:5,rotation:0,rim:3,warp:1.5,shade:.8,lightX:-.6,lightY:-.8,enabled:true};
+const fill=window.ModularWeaponBridgeFill; // Same pixel helper used by the existing manual bridge/smudge processing.
+const cut=fill.borePixels(pixels,32,32,[bore]); // First position drills a transparent center with shaded nearby wood.
+const moved=fill.borePixels(pixels,32,32,[{...bore,x:22,y:22}]); // Recalculate from original; previous hole must be fully recovered.
+const alpha=(arr,x,y)=>arr[(y*32+x)*4+3];
+assert.equal(alpha(cut,12,12),0);
+assert.equal(alpha(moved,12,12),255,'moving a bore does not leave a permanent old cutout');
+assert.equal(alpha(moved,22,22),0);
+assert.equal(alpha(pixels,12,12),255,'source sprite remains pristine');
+assert(cut[(12*32+18)*4]<pixels[(12*32+18)*4], 'rim darkening follows existing material colors');
+assert.equal(cut[0],pixels[0], 'distant unmodified pixel is preserved');
 const gameHtml = fs.readFileSync('docs/index.html', 'utf8'); // Check the runtime and modular authoring tool use the same cache-revisioned catalog.
 const editorHtml = fs.readFileSync('docs/tools/modular-weapon-editor/index.html', 'utf8');
 for (const id of ['head-part-label','head-name-prefix','head-name-suffix','head-tool-slots','shaft-tool-worthy',
-  'shaft-name-affix','shaft-name-position','head-flail-assembly','shaft-flail-assembly','head-rope-x','head-rope-y'])
+  'shaft-name-affix','shaft-name-position','head-flail-assembly','shaft-flail-assembly','head-rope-x','head-rope-y',
+  'bore-add','bore-remove','bore-drag','bore-list','flail-preview','mount-kind'])
   assert(editorHtml.includes('id="' + id + '"'), 'The editable modular part field must exist: ' + id);
 const gameToken = gameHtml.split('config/modular-weapons.js?v=')[1]?.split('"')[0];
 const editorToken = editorHtml.split('config/modular-weapons.js?v=')[1]?.split('"')[0];
