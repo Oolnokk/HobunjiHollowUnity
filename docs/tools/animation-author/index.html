@@ -14647,6 +14647,11 @@ const beforeMultiKissApplyV1548 = applyKissPresetV1546;
 applyKissPresetV1546 = function() {
   let result = beforeMultiKissApplyV1548();
   if (result) {
+    // Warm the real rig through shoulder reach, knees, lip contact and return
+    // before measuring rest height. The avatar/neck/leg attachments are created
+    // asynchronously and can have different initial and first-sampled poses.
+    // This is a one-time preset build; it never runs during playback.
+    for (const t of [0, .37, .82, 1.12, 0]) setAnimationTime(t, { pause: true });
     syncMultiAvatarFullBodiesV1548(0);
     // The authored recipient faces 180° away from their original single-NPC
     // preview and the skinned head changes orientation with that new pose.
