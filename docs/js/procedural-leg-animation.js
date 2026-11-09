@@ -391,7 +391,12 @@
         : `${role}|${cleanOriginalHex || 'fallback'}`;
       if (promises.has(cacheKey)) return promises.get(cacheKey);
       let promise;
-      if (role === 'bone') {
+      const materialOverride = window.HobunjiBipedalMonsterAssembler?.materialForSpecies?.(speciesId, role); // Bipedal monster palette stays NPC-specific; all other feet use canonical species roles.
+      if (materialOverride) {
+        promise = buildSurfaceTexture(THREE, materialOverride.texture,
+          { hex: materialOverride.color }, materialOverride.color, 1,
+          `${speciesId}_foot_${role}_${materialOverride.color.slice(1)}`, '');
+      } else if (role === 'bone') {
         // Match the sloth/pachyderm hand claw/nail slot exactly: the shared
         // fixed bone color is authoritative, never the old GLB material color.
         const baseHex = window.HobunjiHandModelProfiles?.data?.colors?.bone || cfg().boneColorHex || '#D8C7A3';
