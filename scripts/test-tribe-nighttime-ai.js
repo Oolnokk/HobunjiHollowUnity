@@ -72,13 +72,15 @@ assert.equal(retired, 1, 'out-of-range sleeping hunters still become cheap abstr
 assert.equal(abstract, 1, 'out-of-range sleeping hunters advance without a native rig');
 
 const calls = [];
+let remoteSleeping = false; // Simulated calendar night/day transition for cached wilderness camps.
 const zoneContext = vm.createContext({
-  state: { zones: new Map([['current', { zoneId: 'current', hunters: [] }], ['cached', { zoneId: 'cached', hunters: [] }]]) },
-  currentArea: () => 'current',
+  state: { zones: new Map([['current', { zoneId: 'current', hunters: [], huntingParties: [] }], ['cached', { zoneId: 'cached', hunters: [], huntingParties: [] }]]) },
+  currentArea: () => 'current', isSleepingHour: () => remoteSleeping,
   activeCamps: zone => [zone],
   updateCampHunters: (camp, dt, coarseDt) => {
     calls.push([camp.zoneId, coarseDt]);
-    camp.hunters.push({ role: 'resident' }); // Mimics the first tick seeding data-only residents.
+    if (!camp.hunters.length) camp.hunters.push({ role: 'resident' }); // Mimics first-tick seeding without double-spawning.
+    camp.huntingParties = remoteSleeping ? [] : [{ id: camp.zoneId + ':hunt' }]; // Mirrors the production night disband and day re-formation.
   },
   window: { __farmLog() {} }, KEY: 'porakaneki',
 });
@@ -92,6 +94,16 @@ zoneContext.updateAllHunters(.2, 0);
 assert.deepEqual(calls.slice(2).map(c => c[0]), ['current'], 'initialized cached zones skip high-rate AI');
 zoneContext.updateAllHunters(.2, 4);
 assert.deepEqual(calls.slice(3).map(c => c[0]), ['current', 'cached'], 'cached zones retain coarse simulation');
+const remote = zoneContext.state.zones.get('cached');
+remoteSleeping = true;
+zoneContext.updateAllHunters(.2, 0);
+assert.equal(remote.huntingParties.length, 0, 'offscreen parties stand down immediately at bedtime, without a coarse tick');
+remoteSleeping = false;
+zoneContext.updateAllHunters(.2, 0);
+assert.equal(remote.huntingParties.length, 1, 'offscreen parties regroup on the first daylight tick');
+const remoteUpdates = calls.filter(c => c[0] === 'cached').length;
+zoneContext.updateAllHunters(.2, 0);
+assert.equal(calls.filter(c => c[0] === 'cached').length, remoteUpdates, 'remote camp does not update unnecessarily between schedule transitions');
 
 const lodContext = vm.createContext({ performance: { now: () => 10000 } });
 vm.runInContext(sourceBetween(lod, '  function canSleepBandit(', '  function setBanditVisuals(')
