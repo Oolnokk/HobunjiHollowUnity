@@ -34,7 +34,7 @@ assert.deepEqual(plain(api.decode(item('fishing-mace','warhammer'))),
 api.registerDefinitions(definitions, shapes, metals, ['nativeCopper']);
 assert.equal(definitions[item('fishing-mace','fishing-mace')].label, 'Copper Looped Fishing Mace');
 assert.equal(definitions[item('harlyao-longsword','harlyao-longsword')].label,
-  'Copper Harlyao-style Long-blade with a Trapezoidal Hilt');
+  'Copper Crescent-hilted Long- Hilted Slicer');
 assert.deepEqual(plain(definitions[item('fishing-spear', 'hatchet')].slots), ['weapon','axe'],
   'only a tool-worthy handle with an axe-capable head grants the existing axe action and mastery events');
 assert.deepEqual(plain(definitions[item('dagger','hatchet')].slots), ['weapon'],
