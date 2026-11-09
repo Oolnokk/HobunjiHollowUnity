@@ -341,6 +341,13 @@
       selectedSide: shippingSelected.side,
       selectedKey: shippingSelected.key,
       selectedAmount: shippingAmount,
+      rarity: shippingSelected.key
+        ? window.ItemAcquisitionRarity?.evaluate?.(shippingSelected.key,{ defs:deps?.ITEM_DEFS }) || null
+        : null, // The built-in phone-visible Shipping debug panel reveals every source and its certainty.
+      authoredPrice: shippingSelected.key
+        ? deps?.BASE_PRICES?.[shippingSelected.key] ?? deps?.ITEM_DEFS?.[shippingSelected.key]?.sellPrice ?? null
+        : null, // Displays the unmodified economy baseline beside the source-aware price.
+      computedPrice: shippingSelected.key ? getShipPrice(shippingSelected.key) : null,
       animalHides: window.AnimalHides?.getDebug?.() || null, // Mobile-copyable hide provenance and transfer counters.
       boxPosition: box ? { col: box.col, row: box.row, width: box.w, height: box.h } : null,
     };
