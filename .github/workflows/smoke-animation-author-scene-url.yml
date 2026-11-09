@@ -12,6 +12,7 @@ on:
       - 'docs/js/weapon-idle-body-yaw-runtime.js'
       - 'docs/js/player-body-transform-composer.js'
       - 'scripts/test-spouse-kiss-player-pose-ownership.js'
+      - 'scripts/test-spouse-kiss-live-player-rig.js'
       - 'docs/config/npcs/hobunji-starter-npc-database.json'
       - 'scripts/smoke-animation-author-scene-url.js'
       - '.github/workflows/smoke-animation-author-scene-url.yml'
@@ -39,6 +40,8 @@ jobs:
         run: |
           npm install --no-save --package-lock=false playwright@1.55.1 three@0.128.0
           npx playwright install --with-deps chromium
+      - name: Exercise real Three.js player and spouse rig under camera/tool interference
+        run: node scripts/test-spouse-kiss-live-player-rig.js
       - name: Serve local editor and NPC assets
         run: python3 -m http.server 8000 --directory docs >/tmp/hobunji-anim-author-http.log 2>&1 &
       - name: Rebuild Pahu and Leaf from URL and exercise real Three.js author/exports
