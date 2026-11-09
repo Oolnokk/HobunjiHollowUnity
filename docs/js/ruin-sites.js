@@ -64,6 +64,28 @@
     store.all[store.key] = entry;
     try { localStorage.setItem(STORE_KEY, JSON.stringify(store.all)); } catch (_) {}
   }
+  function progressStore() {
+    const saved=window.WorldMetaStore?.loadRuinProgress?.(worldId()); // Canonical world metadata travels with every folder/recovery save.
+    return saved?.version===1&&saved.cycle===cycle()&&saved.sites&&typeof saved.sites==='object'
+      ?saved:{version:1,cycle:cycle(),sites:{}}; // Tothal rollover invalidates every vanished ruin's progress.
+  }
+  function activeRuinProgress() {
+    if(!activeVisit||activeVisit.kind==='story-vault')return null;
+    return progressStore().sites[activeVisit.id]||null;
+  }
+  function saveActiveRuinProgress(snapshot) {
+    if(!activeVisit||activeVisit.kind==='story-vault'||!snapshot||snapshot.version!==1)return false;
+    const store=progressStore(); // Do not store scene meshes, mechanisms or player coordinates in world metadata.
+    store.sites[activeVisit.id]=snapshot;
+    const ok=window.WorldMetaStore?.saveRuinProgress?.(worldId(),store)===true;
+    if(!ok)debug.progressSaveError='World metadata could not be updated';
+    return ok;
+  }
+  function forgetActiveRuinProgress() {
+    if(!activeVisit)return false;
+    const store=progressStore();delete store.sites[activeVisit.id];
+    return window.WorldMetaStore?.saveRuinProgress?.(worldId(),store)===true;
+  }
   function normalizeEntrance(saved = {}) {
     return { open:false, spent:false, ...saved, struck:Array.isArray(saved.struck) ? saved.struck : [] };
   }
@@ -567,6 +589,7 @@
       if (entry.holes[visit.id]) { entry.holes[visit.id].state = 'cleared'; saveState(entry); }
       syncMapMarkers();
     }
+    forgetActiveRuinProgress(); // The cleared site ceases to exist: discard its checkpoint and solved stages.
     const exit = randomExit(visit.zoneId);
     debug.lastExit = { visit, exit, at:Date.now() };
     activeVisit = null;
@@ -685,12 +708,14 @@
     init, registerWorkspace, expandLocaleDefs, buildZoneMeshes, objectAt, completeActiveRuin, onRuinLeft,
     openHole, holeAt, treasureHoleChance, syncMapMarkers, installRangedHook, trackNearby,
     storyVaultSite, storyVaultDigCheck, refreshStoryVault,
+    activeRuinProgress,saveActiveRuinProgress, // Consumed by the mounted ruin's one progress snapshot owner.
     isInSite:() => !!activeVisit,
     debugSnapshot:() => ({
       ...debug, cycle:cycle(), active:activeVisit, rangedHookInstalled,
       zones:Object.fromEntries([...sitesByZone].map(([zoneId, sites]) => [zoneId, sites.map(site => ({ id:site.id, facing:site.facing, door:site.door, state:entranceState(site.id) }))])),
       rendered:Object.fromEntries([...rendered].map(([zoneId, runtime]) => [zoneId, { sites:runtime.sites.map(record => ({ id:record.site.id, doorPoint:record.layout.doorPoint, approach:record.layout.approach, y:record.y, pillars:record.pillars.map(p => ({ id:p.slot.id, x:p.slot.x, z:p.slot.z, struck:p.struck })), spent:!!record.rubble })), holes:runtime.holes.map(h => h.id), blockers:runtime.blockers.length, cells:runtime.cells.size }])),
-      holes:state().holes, bossSites:state().bossSites||{}, // Mobile-readable evidence of the three unique key-guardian graves.
+      holes:state().holes, bossSites:state().bossSites||{},
+      progress:activeRuinProgress()?{seed:activeRuinProgress().seed,checkpoint:activeRuinProgress().travel?.activeCheckpoint}:null, // Mobile-readable evidence of the three unique key-guardian graves.
       storyVault: { phase:window.DelversGuild?.vaultPhase?.(), site:window.DelversGuild?.vaultSite?.(), error:debug.storyVaultError || null },
       mapMarkers:[...(deps?._zoneLayouts?.values?.() || [])].reduce((sum, layout) => sum + (layout?.localeInstances || []).filter(instance => instance?.[MARKER_FLAG]).length, 0),
     }),

@@ -480,7 +480,7 @@
   <script src="js/farm-production.js?v=20261107moot2"></script>
   <script src="js/honeyfuzzle-house.js?v=20261026honeyEggGenes3"></script> <!-- Honeyfuzzle House: 1x1 egg/swarm slot on a FarmProduction entry; hooked by farm-production.js, initialised by game.js. -->
   <script src="js/farm-layout-editor.js?v=20261016a"></script>
-  <script src="js/world-meta-store.js?v=20261102h9d8381e"></script>
+  <script src="js/world-meta-store.js?v=20261109ruinTravel1"></script>
   <script src="js/farm-animals.js?v=20261109emoji1"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
@@ -633,13 +633,14 @@
   <script src="js/puzzle-cave-plate-art.js?v=20261107ruinpngglow1"></script><!-- Carved-smooth Tankan lettering, reused by interior and exterior melody plates. -->
   <script src="js/ruin-melody-glyph-decal.js?v=20261108cliffWhiteYellowGlowPick3"></script><!-- Plate-revealed Scratchbone clues outside the dev ruin bootstrap. -->
   <script src="js/ruin-layer-challenges.js?v=20261109timedMelody1"></script>
-  <script src="js/ruin-layer-playable.js?v=20261109timedMelody1"></script>
+  <script src="js/ruin-layer-playable.js?v=20261109ruinTravel1"></script>
   <script src="js/ruin-v50-native-mechanisms.js?v=20261107wingDoorSoftlock2"></script>
-  <script src="js/ruin-v50-native-floors.js?v=20261109timedMelody1"></script>
-  <script src="js/ruin-shaft-connector.js?v=20261108h41e2e48"></script>
+  <script src="js/ruin-v50-native-floors.js?v=20261109ruinTravel1"></script>
+  <script src="js/ruin-shaft-connector.js?v=20261109ruinTravel1"></script>
   <script src="js/ruin-v50-vestibule.js?v=20261108h61ad699"></script>
   <script src="js/ruin-wall-coffins.js?v=20261108coffin1"></script>
-  <script src="js/ruin-multifloor-v50-style.js?v=20261108h3bb5d6e"></script> <!-- Vertical hub room composed on a CellGrid3D: balconies, doors, climbable buttresses; see docs/architecture/vertical-grid.md -->
+  <script src="js/ruin-multifloor-v50-style.js?v=20261109ruinTravel1"></script>
+  <script src="js/ruin-checkpoint-travel.js?v=20261109ruinTravel1"></script> <!-- Automatically lit white shaft and checkpoint braziers; teleports through the shared action claims. -->
   <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
        (window.WildernessMap) — reads window.BanditCamps/window.BountyBoard
        at draw time (already global by then), so load order relative to the
@@ -811,7 +812,7 @@
        Cloud Forest — see EXTERIOR_ZONES.map_southern_cloud_forest's
        fogDensity/vegCullRadiusTiles comments in game.js for why. -->
   <script src="js/ruin-light-occlusion.js?v=20261108hac6d00e"></script> <!-- Screen-space ruin torch masks clip behind physical columns, walls and props. -->
-  <script src="js/cloud-forest-fog.js?v=20261108tzNestLight2"></script>
+  <script src="js/cloud-forest-fog.js?v=20261109ruinTravel1"></script>
   <!-- Farm tab hub (header, grid glance, buildings list, processor status
        tiles, livestock roster + breeding, farm<->stable transfers, storage,
        farmhands) and the Stable tab (window.FarmPanel) — reads
@@ -965,7 +966,7 @@
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20261102h082455e"></script>
   <script src="js/tothal-zone-cache.js?v=20261102a"></script>
-  <script src="js/ruin-sites.js?v=20261108hc128de7"></script>
+  <script src="js/ruin-sites.js?v=20261109ruinTravel1"></script>
   <script src="js/zone-den-totem-features.js?v=20261108h0ea058e"></script>
   <script src="js/transition-markers.js?v=20261004h46d3bfb"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
@@ -2993,7 +2994,7 @@
   <script src="js/utility-spyglass.js?v=20261103spyglassControls3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
   <script src="js/ruin-objective-tracker.js?v=20261108tracker1"></script> <!-- Top-left dungeon checklist while inside a generated ruin. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261109timedMelody1"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261109ruinTravel1"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their

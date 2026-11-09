@@ -163,6 +163,10 @@
         return true;
       } catch { return false; }
     },
+    loadRuinProgress(worldId) { // Ruin checkpoint/wing state belongs to the shared world and to folder/cloud saves.
+      try { return readWorldField(worldId, 'ruinProgress') || null; } catch { return null; }
+    },
+    saveRuinProgress: (worldId, value) => writeField(worldId, 'ruinProgress', value),
     loadStorage,
     saveStorage: (worldId, store) => writeField(worldId, 'storage', store),
     loadPendingSupplyOrders,

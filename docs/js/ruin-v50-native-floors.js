@@ -216,7 +216,7 @@
       const mesh=new THREE.Mesh(geometry,mat);mesh.name=name;mesh.position.set(x,y,z);
       mesh.userData.devRuinFootprintIgnore=true;parent.add(mesh);return mesh;
     }
-    function setGate(stage,blocked){
+    function setGate(stage,blocked,silent=false){
       const {grid,tiles,object,surfaceY,height}=stage.gate;
       const lower=grid.yToLevel(surfaceY+.01),upper=grid.yToLevel(surfaceY+height-.01); // Cover the actual plateau doorway, not the story's nominal Y=0 slice.
       if(lower<0||upper>=grid.levels)throw new Error('Native V50 gate exceeds its height-aware voxel grid');
@@ -225,7 +225,7 @@
         grid.fillBox(col,row,lower,col,row,upper,blocked?CG.KIND.SOLID:CG.KIND.AIR);
       }
       if(blocked){root.GameFeel?.cancelSink?.(object);object.visible=true;}
-      else if(object.visible){root.RuinInteractionAudio?.mechanism?.(object,{size:4});if(!root.GameFeel?.sinkAway?.(object))object.visible=false;} // Sinks into the floor (collision already open) instead of vanishing.
+      else if(object.visible){if(!silent)root.RuinInteractionAudio?.mechanism?.(object,{size:4});if(silent||!root.GameFeel?.sinkAway?.(object))object.visible=false;} // Restored doors skip the cinematic sink and audio.
       else object.visible=false;
     }
     function updateGoals(){
@@ -428,7 +428,7 @@
               tick:()=>{
                 if(challenge.disposed||challenge.solved||owner.disposed||record.solved!==i
                   ||!record.nativeMechanisms.isSolved(authored.id))return;
-                challenge.solved=true;record.solved++;root.RuinInteractionAudio?.puzzleComplete?.();setGate(challenge,false);
+                challenge.solved=true;record.solved++;options.onProgressChange?.();root.RuinInteractionAudio?.puzzleComplete?.();setGate(challenge,false);
                 options.showToast?.('A mechanism grinds — the next chamber unlocks.',true);
                 options.onStateChange?.();
               },
@@ -442,7 +442,7 @@
               onLink:options.onStateChange,onError:options.onError,
               onSolved:()=>{
                 if(owner.disposed||record.solved!==i)return;
-                record.solved++;root.RuinInteractionAudio?.puzzleComplete?.();setGate(challenge,false);
+                record.solved++;options.onProgressChange?.();root.RuinInteractionAudio?.puzzleComplete?.();setGate(challenge,false);
                 options.showToast?.('The chamber gate opens.',true);options.onStateChange?.();
               },
             });
@@ -481,17 +481,22 @@
         const brazierLight={x:cx,y:goalY+1.4,z:cz,floorY:goalY,radius:10.5,strength:.98,
           color:[255,136,61],active:false}; // Uses actual raised support Y, not the nominal story level; otherwise native plateau light floats underground.
         if(ruin.theme==='kanthic')brazierLights.push(brazierLight);
-        record.goalBrazier={pedestal,flame};
+        record.goalBrazier={pedestal,flame,restoreLit:()=>{
+          if(record.lit)return false;
+          record.lit=true;flame.visible=true;brazierLight.active=true;owner.lit++;
+          updateGoals();
+          return true;
+        }}; // Reload and manual ignition use one state transition.
         addControl({kind:'v50NativeBrazier',object:pedestal,promptRoot:pedestal,
-          floorY:goalY,range:1.7,priority:20,touchIcon:'🔥',
+          floorY:goalY,range:1.7,priority:20,touchIcon:'🔥',lit:()=>record.lit,available:()=>!record.lit,
           label:()=>record.lit?'Brazier Burning':'Ignite Wing Brazier',
           onPress:()=>{
             if(owner.disposed||record.lit||!Number.isFinite(Number(getPlayerY?.()))||Math.abs(Number(getPlayerY())-goalY)>.8)return;
             if(record.solved!==record.challenges.length){
               options.showToast?.('Clear this wing\'s chambers first.',false);return;
             }
-            record.lit=true;flame.visible=true;brazierLight.active=true;owner.lit++; // Kanthic visibility follows the required goal brazier's existing solved state.
-            updateGoals();
+            record.goalBrazier.restoreLit(); // Kanthic lighting follows the same ignition state after reload.
+            options.onProgressChange?.();
             if(ruin.theme==='kanthic')root.CloudForestFog?.refreshLightingOverlay?.(); // The completed chamber reveals immediately, including mobile.
             root.RuinInteractionAudio?.igniteTorch?.();
             const network=ruin.shaftLayerRuntime?.getState?.(); // Whole-shaft count (layer + native wings) for the rising progress note.
@@ -516,6 +521,27 @@
         record.challenges[record.solved]?.tick?.(dt);
         for(let i=0;i<record.solved;i++)record.challenges[i]?.animate?.(dt);
       }
+    };
+    owner.serializeProgress=()=>Object.fromEntries(owner.records.map(record=>[
+      String(record.floor),{solved:record.solved,lit:record.lit===true}
+    ])); // World-save data contains only puzzle progression and stable floor identities.
+    owner.restoreProgress=(saved={})=>{
+      if(owner.disposed||!saved||typeof saved!=='object')return false;
+      let restored=false;
+      for(const record of owner.records){
+        const data=saved[String(record.floor)];
+        if(!data||!Number.isInteger(data.solved)||data.solved<0||data.solved>record.challenges.length)continue;
+        for(let i=0;i<data.solved;i++){
+          const challenge=record.challenges[i];
+          if(challenge?.kind==='v50Authored')challenge.solved=true;
+          setGate(challenge,false,true); // Restore the collision grid as well as the visible door.
+        }
+        record.solved=data.solved;
+        if(data.lit===true&&record.solved===record.challenges.length)record.goalBrazier?.restoreLit?.();
+        restored=true;
+      }
+      updateGoals();
+      return restored;
     };
     owner.getState=()=>({
       floors:owner.records.length,rooms:owner.records.reduce((n,r)=>n+r.analysis.rooms,0),
