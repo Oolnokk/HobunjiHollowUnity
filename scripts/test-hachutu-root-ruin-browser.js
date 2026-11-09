@@ -99,7 +99,16 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
     assert(floorRoots.gates.every(g=>g.grown===1),'gate roots are fully grown at the start');
     assert(floorRoots.gates.every(g=>g.onSubstrate),'gate roots grow out of the passage floor root mat, not a private patch');
     await page.evaluate(()=>{for(let i=0;i<3;i++)window.DevHachutuRuin.debugClearRing(0,i);for(let i=0;i<3;i++)window.DevHachutuRuin.debugSever(0);});
-    await page.waitForFunction(()=>{const g=window.DevHachutuRuin.debug().gates;return g[0].open&&!g[0].blocking;},null,{timeout:30000});
+    const afterSever=await page.evaluate(()=>window.DevHachutuRuin.debug());
+    assert(afterSever.plants[0].dead&&afterSever.gates[0].open,
+      'Severing the swing weed must immediately initiate root-gate withdrawal: '+JSON.stringify(afterSever));
+    await page.waitForFunction(()=>{const g=window.DevHachutuRuin.debug().gates;return g[0].open&&!g[0].blocking;},null,{timeout:30000}).catch(async error=>{
+      const state=await page.evaluate(()=>({temple:window.DevHachutuRuin?.debug?.(),
+        progress:window.DevRandomRuin?.getGenerationProgress?.(),
+        area:window.GridTileAccessors?.getCurrentArea?.()}));
+      throw new Error('Swing gate remained blocked after severing (root progress, area, and composer state): '
+        +JSON.stringify(state),{cause:error});
+    });
     const gates=await page.evaluate(()=>window.DevHachutuRuin.debug().gates);
     assert.equal(gates[1].blocking,true,'severing the swing weed must not open the labyrinth gate');
     const vestibule=await page.evaluate(()=>window.DevRandomRuin.getVestibuleRoots());

@@ -948,7 +948,7 @@
     if (!s?.isSpecialBoss || !s.roomCoffins?.length || !s.built || !s.inSanctum && !s.boss) {
       // The ordinary dungeon rooms can be explored before the sanctum boss awakens.
     }
-    if (!s?.isSpecialBoss || deps?.getCurrentArea?.()!==MAP_ID) return;
+    if (!s?.isSpecialBoss || s.bossDefeated || deps?.getCurrentArea?.()!==MAP_ID) return; // A previously defeated guardian cannot respawn room sentinels on re-entry.
     const tile=deps.TILE||64, px=deps.player.x/tile, pz=deps.player.y/tile;
     for(const guard of s.roomCoffins||[]) {
       const b=guard.bounds;
@@ -1094,6 +1094,9 @@
     if (!dead) return;
     s.bossDefeated = true;
     if (s.isSpecialBoss) window.SpecialHarlyaoLiches?.onDefeat?.(boss); // Single canonical Key-Stone grant; repeats and old saves cannot duplicate the quest reward.
+    if(window.RuinSites?.isInSite?.()&&!window.RuinSites?.markActiveRuinBossDefeated?.(window.DevRandomRuin?.getSeed?.())){
+      deps?.showToast?.('The lich is defeated, but its progress could not be saved.',false);
+    } // Save after the idempotent quest reward so reloading cannot permanently forfeit an unclaimed Key-Stone.
     (window.RuinInteractionAudio?.puzzleComplete?.()||window.AudioSystem?.playObjectSfxKey?.('puzzleComplete'));
     s.bossDefeatedAt = now;
     for (const minion of boss._lichSummons || []) if (Number(minion?.health) > 0) deps?.damageCreature?.(minion, minion.health, undefined, undefined, 0, {});
@@ -1132,6 +1135,10 @@
     if(site.shaft)s.doorSiteStats={shaft:true,side:site.side,x:site.x,z:site.z}; // In-game/mobile debug confirms where the door is actually mounted.
     s.door = buildGreatDoor(kit, context, site, s.braziers.length);
     buildSanctum(kit, context, s.braziers.length, s.rng);
+    if(s.bossDefeated&&s.rearDoor){
+      s.rearDoor.open=true;s.rearDoor.progress=1;
+      updateRearDoor(0); // Restore the real vault opening immediately, not a sealed door protecting a permanently dead lich.
+    }
     if (!s.braziers.length) tryAwakenDoor(); // A ruin without local blue goals still requires all shaft-wing braziers.
     kit.recordModulePlacement('greatDoorSanctum', 'room', 'sanctum', { braziers:s.braziers.length, bossType:s.bossType, door:{ x:+site.x.toFixed(2), z:+site.z.toFixed(2) } });
   }
@@ -1145,7 +1152,10 @@
       s = {
         context, rng, built:false, rejects:[], braziers:[], litOrder:[], occluders:[], door:null, bgs:null,
         layout:reservedLayout(context), // floorProjection reserved these tiles; recover the plan from the live grid size.
-        boss:null, bossPending:false, bossDefeated:false, inSanctum:false,
+        boss:null,bossPending:false,
+        bossDefeated:window.DevRandomRuin?.getSeed?.()!=null
+          &&window.RuinSites?.isActiveRuinBossDefeated?.(window.DevRandomRuin.getSeed())===true,
+        inSanctum:false, // Re-entry restores the boss outcome from the same world/cycle/site as the brazier network.
         isSpecialBoss:context.specialBoss === true, roomCoffins:[], // Site generation explicitly opts into the three named key guardians; dev/ordinary ruins stay unchanged.
       };
     },
