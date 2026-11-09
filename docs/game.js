@@ -32156,6 +32156,7 @@
         zoneLayouts: _zoneLayouts,
         makeCreatureEntity,
         CREATURE_DB,
+        ITEM_DEFS, // Shared live inventory registry: nest audit validates usable eggs and Puktuk baby fallback registers real pickups.
         showToast,
         showZoneBanner,
         buildingScenes: _buildingScenes,
