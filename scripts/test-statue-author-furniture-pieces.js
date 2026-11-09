@@ -21,7 +21,7 @@ for(const [name,html] of [['attack',attack],['statue',statue],['furniture',furni
   bodies.forEach(body=>assert.doesNotThrow(()=>new vm.Script(body),name+' JS must parse'));
 }
 assert(hub.includes('data-target="statue-author"')&&hub.includes('id="if-statue-author"'),'the reusable Statue Author is reachable from Tools Hub');
-assert(statue.includes('src="../attack-animation-editor/index.html?statueAuthor=1"'),'statues reuse the actual Attack Animation Editor');
+assert(/src="\.\.\/attack-animation-editor\/index\.html\?statueAuthor=1(?:&amp;|&)v=[^"]+"/.test(statue),'statues reuse the cache-busted Attack Animation Editor');
 assert(attack.includes('window.HobunjiStatuePoseSource=Object.freeze({'),'statues use an explicit, narrow pose/capture API');
 assert(attack.includes("window.FestivalAncestorFigures.carvedCanvas(original,stone)"),'the renderer reuses the Tzizkhanash stone mask');
 assert(attack.includes('fromBufferAttribute(mesh.geometry.getAttribute'), 'skinned vertices must start from the original vertex');
