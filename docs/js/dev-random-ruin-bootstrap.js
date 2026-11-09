@@ -21,12 +21,12 @@
   document.write('<script src="js/ruin-footprint-pixel-probe.js?v=20261015ruinfootprintprobe1"></scr' + 'ipt>'); // One-shot Pixel Probe adapter: ray-tests the exact oriented ruin footprints used by movement/projectile occupancy.
   if (!window.DynamicSurfaces) document.write('<script src="js/dynamic-surfaces.js?v=20260914v50wallsinputs1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-config.js?v=20260929config1"></scr' + 'ipt>'); // docs/config/random-ruin/ruin-config.json loader, read by every ruin module below.
-  if (!window.FurnitureDecalRuntime) document.write('<script src="js/furniture-decal-runtime.js?v=20261107ruinpngglow1"></scr' + 'ipt>'); // Authored decals + state glow (usually already loaded by zone features).
+  if (!window.FurnitureDecalRuntime) document.write('<script src="js/furniture-decal-runtime.js?v=20261108h4717d33"></scr' + 'ipt>'); // Authored decals + state glow (usually already loaded by zone features).
   document.write('<script src="js/dev-random-ruin-furniture-pieces.js?v=20261107combined1520_1524_1"></scr' + 'ipt>'); // Door seals, glyph plaques, Great Door as authored furniture.
-  document.write('<script src="js/dev-random-ruin-hit-puzzles.js?v=20261107combined1520_1524_1"></scr' + 'ipt>'); // Plain source (formerly nine base64 part files reassembled with eval).
+  document.write('<script src="js/dev-random-ruin-hit-puzzles.js?v=20261108h0dc210f"></scr' + 'ipt>'); // Plain source (formerly nine base64 part files reassembled with eval).
   document.write('<script src="js/dev-random-ruin-prototype-hooks.js?v=20261018badge1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-solid-footprints.js?v=20261031hcefb03e"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-tile-occupancy.js?v=20261107h01bf4f3"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-tile-occupancy.js?v=20261108h50f63e6"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-solvability.js?v=20261104directVestibule2"></scr' + 'ipt>');
   document.write('<script src="js/live-root-network.js?v=1"></scr' + 'ipt>');
   document.write('<script src="js/live-root-growth.js?v=20261101htempleroot1"></scr' + 'ipt>');
@@ -34,28 +34,28 @@
   document.write('<script src="js/stone-age-ruin-scenery.js?v=20261102h20daaea"></scr' + 'ipt>'); // Same quarry floor, wall rockification and Temple vegetation as the author preview.
   document.write('<script src="js/dev-random-ruin-door-slabs.js?v=20261105slab1"></scr' + 'ipt>'); // Must precede the interior map: its material pass calls DevRandomRuinDoorSlabs.normalize.
   document.write('<script src="js/dev-random-ruin-cube-pillars.js?v=20261105cube2"></scr' + 'ipt>'); // Must precede the interior map: its material pass calls DevRandomRuinCubePillars.normalize.
-  document.write('<script src="js/dev-random-ruin-interior-map.js?v=20261108h398965b"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-interior-map.js?v=20261108h64e4b1a"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-wall-planes.js?v=20260927geometry1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-wall-render-proxy.js?v=20261107nativeglyphsource1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-collision-precision.js?v=20261107hf7aabd8"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-motion-runtime.js?v=20261106he3ce4c7"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-dungeon-chests.js?v=20261104chestlocks1"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-ceiling-target-visuals.js?v=20261018targethum1"></scr' + 'ipt>'); // Reused, connected stone block + four glowing decals, for fixed and moving overhead targets.
+  document.write('<script src="js/dev-random-ruin-dungeon-chests.js?v=20261108h553ef73"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-ceiling-target-visuals.js?v=20261108h810cd97"></scr' + 'ipt>'); // Reused, connected stone block + four glowing decals, for fixed and moving overhead targets.
   if (!window.RopeCore) document.write('<script src="js/rope-core.js?v=1"></scr' + 'ipt>'); // The ruin rope runtime delegates its swing math to RopeCore (also loaded by index.html for other rope users).
   document.write('<script src="js/ruin-melody-glyph-decal.js?v=20261104scratchbone3"></scr' + 'ipt>'); // Procedural, non-interactive floor inscription for each generated melody.
-  document.write('<script src="js/dev-random-ruin-simple-puzzles.js?v=20261108witchBombExtern1"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-simple-puzzles.js?v=20261108h6e959b6"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-rope-rewards.js?v=20261107ruinpngglow1"></scr' + 'ipt>'); // Registers rope payoffs + lava basins as a simple-puzzle composer.
   document.write('<script src="js/dev-random-ruin-rope-variants.js?v=20261106h1a72ad5"></scr' + 'ipt>'); // Pump-to-height and rope-to-rope standalone rope rooms.
   document.write('<script src="js/dev-random-ruin-rail-targets.js?v=20261018sconceaudit2"></scr' + 'ipt>'); // Ceiling-rail projectile targets that emerge from the walls while the player is in their room.
   document.write('<script src="js/dev-random-ruin-target-hum.js?v=20261018targethum1"></scr' + 'ipt>'); // Proximity hum on every unstruck projectile target.
-  document.write('<script src="js/dev-random-ruin-sanctum.js?v=20261107integratedDungeon1"></scr' + 'ipt>'); // Braziers, Great Door, boss sanctum + vault (simple-puzzle composer).
+  document.write('<script src="js/dev-random-ruin-sanctum.js?v=20261108hcd93a81"></scr' + 'ipt>'); // Braziers, Great Door, boss sanctum + vault (simple-puzzle composer).
   if(!window.RootSnareHands)document.write('<script src="js/root-snare-hands.js?v=20261101hachutu1"></scr' + 'ipt>'); // Reuse the real Root Growth Author three-digit hands for the playable Hachutu labyrinth.
   document.write('<script src="js/root-snare-runner.js?v=20261101fullbody1"></scr' + 'ipt>'); // Reuses the author preview's exact 1.5 + 1.5 + 3-second tug curve.
   document.write('<script src="js/root-snare-toss.js?v=20261101fullbody1"></scr' + 'ipt>'); // Baked renderable-only tumbling halves, no gameplay bone reparenting.
   document.write('<script src="js/root-snare-player-tear.js?v=20261101fullbody4"></scr' + 'ipt>'); // Full skinned character silhouette, dynamic cinematic view and insta-death.
-  document.write('<script src="js/dev-hachutu-ruin.js?v=20261107ruinpngglow1"></scr' + 'ipt>'); // Separate dev-only stone-age encounters, moving vine rooms and Maskbound Temple Heart.
+  document.write('<script src="js/dev-hachutu-ruin.js?v=20261108h396f14f"></scr' + 'ipt>'); // Separate dev-only stone-age encounters, moving vine rooms and Maskbound Temple Heart.
   document.write('<script src="js/dev-hachutu-vestibule-stone.js?v=20261102vestibulestone1"></scr' + 'ipt>'); // Re-skins the Hachutu vestibule doors the root binding did not take with stone-age rock.
-  document.write('<script src="js/dev-random-ruin-lich-themes.js?v=20261104azgarlu3"></scr' + 'ipt>'); // Lich-specific floor/wall illumination and disposable ruin hazard composer.
+  document.write('<script src="js/dev-random-ruin-lich-themes.js?v=20261108h5c3024e"></scr' + 'ipt>'); // Lich-specific floor/wall illumination and disposable ruin hazard composer.
   document.write('<script src="js/dev-random-ruin-dungeon-fire.js?v=20261107integratedDungeon1"></scr' + 'ipt>'); // One-shot ranged ignition, ice/plasm mechanisms, and modular ceiling Burdens.
   document.write('<script src="js/dev-random-ruin-interactions.js?v=20261108ruinjump3"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-glyph-circuits.js?v=20261104glyphSync1"></scr' + 'ipt>');

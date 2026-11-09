@@ -17,9 +17,11 @@
   const ICE_PHYSICS=Object.freeze({accelerationFactor:.28,turningFactor:.22,retention20Hz:.892});
   const PLASM_DEPTH = 0.22; // Match Western Slope snow's visibly raised cap and .22-wide curved perimeter lip.
   const PLASM_PULL_TILES_S = 0.72; // Player drift toward the nearest patch's interior.
+  const PLASM_COLOR = 0xffffff, PLASM_OPACITY = 1; // The authored oil PNG untinted: only the temporary kind is coloured, and only along its glowing outline.
+  const PLASM_WORLD_UV_TILES = 3.2; // World tiles one repeat of the plasm PNG covers on explicit-tile patches (about the scale of a ground puddle).
   const PLASM_SINK_SECONDS = 2.8; // Time immersed in the pull before a full-body fatal sink.
   const ROCK_SFX = 'assets/audio/sfx/sfx_break_rock.mp3'; // Existing rock-break sample used for the three warning pulses.
-  const OIL_TEXTURE = 'assets/textures/canvas.png'; // Same petroleum-surface texture as HarlyaoLichCombat.
+  const OIL_TEXTURE = 'assets/textures/dark_oil.png.png'; // The authored plasm oil PNG: a rimmed puddle designed for the edge-preserving (nine-slice) mapping.
   const LIGHT_CAP = 120; // Bound per-frame 2D light-mask work on large generated sites.
   const BOSS_ICICLE_TRACK_SPEED = 9; // Ceiling emitter pursuit speed in tiles/sec during Nanahi's kneeling attack.
   let world = null; // Active composer state, invalidated on reroll/exit.
@@ -527,7 +529,7 @@
     }
     return converted;
   }
-  function makeBoxExplodingPillar(kit,x,z,y,height,id,summoned=false,boss=null) {
+  function makeBoxExplodingPillar(kit,x,z,y,height,id,summoned=false,boss=null,options={}) {
     const group=new THREE.Group();
     group.position.set(x,y,z);group.name='hronal_exploding_pillar';
     const shaft=new THREE.Mesh(new THREE.BoxGeometry(.62,height,.62),kit.makeBasic(0x65554b)); // Existing 0.62×0.62 preset footprint is immutable during growth.
@@ -543,11 +545,19 @@
     group.scale.y=summoned?.001:1; // Group pivot stays at ground level so only the height rises visibly.
     world.group.add(group);
     const tag=summoned?'lich-theme-boss-'+id:'lich-theme-pillars'; // Separate tag allows single boss-pillar collision cleanup.
-    const pillar={x,z,y,height,width:.62,group,cracks,phase:summoned?'emerging':'idle',elapsed:0,pulses:0,riseElapsed:0,temporary:summoned,owner:boss,tag,arena:!!world.isTestingArena}; // Only generated ruins own DevRandomRuinTileOccupancy registration.
+    const pillar={x,z,y,height,width:.62,group,cracks,phase:summoned?'emerging':'idle',elapsed:0,pulses:0,riseElapsed:0,temporary:summoned,owner:boss,tag,arena:!!world.isTestingArena,external:options.external===true}; // Only generated ruins own DevRandomRuinTileOccupancy registration; shaft-platform pillars (external) are non-colliding and height-gated.
     world.pillars.push(pillar);
-    if(!pillar.arena)window.DevRandomRuinTileOccupancy?.addSolidBox?.(id,
+    if(!pillar.arena&&!pillar.external)window.DevRandomRuinTileOccupancy?.addSolidBox?.(id,
       {cx:x,cz:z,halfX:.31,halfZ:.31},()=>pillar.phase!=='spent'&&pillar.phase!=='emerging',tag); // Fixed footprint; the arena instead uses a live AreaFootprintBlockers provider.
     return pillar;
+  }
+  // A shaft jump platform's pillar (js/ruin-jump-shaft.js): same charge/pulse/blast
+  // pipeline as every Hronal pillar, but it never blocks movement and only reacts to
+  // the player standing near its own platform height (platforms of other stories can
+  // share its X/Z).
+  function addPlatformPillar({x,z,y,height=2.4,id='platform'}={}) {
+    if(world?.theme!=='hronal'||!Number.isFinite(x)||!Number.isFinite(z)||!Number.isFinite(y))return null;
+    return makeBoxExplodingPillar(world.kit,x,z,y,height,'jump-'+id,false,null,{external:true});
   }
   function clearArenaBossPillars() {
     if(!arenaWorld)return;
@@ -661,6 +671,17 @@
       makeBoxExplodingPillar(kit,point.x,point.z,y,height,'hronal-pillar-'+room.id); // Both ambient and summoned versions reuse one fixed-footprint recipe.
     }
   }
+  function playerFeetY(kit) {
+    const player=kit.deps?.player,feet=Number(player?.physicalFeetY);
+    return Number.isFinite(feet)?feet:Number(window.DevRandomRuin?.getPlayerGroundSupportY?.());
+  }
+  function inBlast(kit,actor,pillar) { // Horizontal radius, plus a height gate for platform pillars.
+    if(distance(pointOf(actor,kit.deps.TILE),pillar)>PILLAR_RADIUS)return false;
+    if(!pillar.external)return true;
+    if(actor!==kit.deps.player)return false;
+    const feet=playerFeetY(kit);
+    return !Number.isFinite(feet)||Math.abs(feet-pillar.y)<2.3;
+  }
   function updatePillars(kit, dt, actors) {
     for (const pillar of world.pillars) {
       if (pillar.phase === 'spent') continue;
@@ -672,7 +693,7 @@
         continue;
       }
       if (pillar.phase === 'idle') {
-        if (!actors.some(a => distance(pointOf(a, kit.deps.TILE), pillar) <= PILLAR_RADIUS)) continue;
+        if (!actors.some(a => inBlast(kit, a, pillar))) continue;
         pillar.phase = 'charging'; pillar.elapsed = 0; pillar.pulses = 0;
       }
       pillar.elapsed += dt;
@@ -702,7 +723,7 @@
       emitShards(pillar.x, pillar.y + pillar.height * .45, pillar.z, 0x726359, PILLAR_RADIUS, 64, pillar.height, pillar.width || .62);
       emitShards(pillar.x, pillar.y + pillar.height * .5, pillar.z, 0xff6419, PILLAR_RADIUS * .85, 24);
       for (const actor of actors) {
-        if (distance(pointOf(actor, kit.deps.TILE), pillar) <= PILLAR_RADIUS) {
+        if (inBlast(kit, actor, pillar)) {
           window.ResourceSystem?.addAffliction?.(actor, 'burningHealth', 25);
           window.ResourceSystem?.spendFooting?.(actor, 22, 'Hronal exploding pillar');
         }
@@ -786,7 +807,7 @@
     world.ownedTexture=texture;
     // Snow-style curved edges; an individual patch is contiguous at birth and
     // remains in place until the entire ruin is left or regenerated.
-    world.plasmMaterial=new THREE.MeshBasicMaterial({color:0x251c34,map:texture,transparent:true,opacity:.88,depthWrite:false});
+    world.plasmMaterial=new THREE.MeshBasicMaterial({color:PLASM_COLOR,map:texture,transparent:true,opacity:PLASM_OPACITY,depthWrite:false}); // The lighter violet the bomb puddles had: now the one look of ALL plasm (ground, platforms, pit).
     updatePlasmMesh(kit);
   }
   // Mirrors EnvironmentSurfaceMicroPlateau's snow: assemble the whole
@@ -848,12 +869,12 @@
     const t=nearest/.22; // Smooth curved shoulder without independently tapering the adjoining tiles.
     return t*t*(3-2*t);
   }
-  function makePlasmSurface(kit,room) {
+  function makePlasmSurface(kit,room,withSeam=false,worldUv=false) {
     const patch=room.plasm;
     if(!patch?.size)return null;
     const axis=[0,.11,.22,.78,.89,1],width=axis.length;
-    const pos=[],idx=[],uv=[];
-    const {corners,mapping}=plasmTextureCorners(patch,room);
+    const pos=[],idx=[],uv=[],seam=[];
+    const {corners,mapping}=worldUv?{corners:new Map(),mapping:'world-tiled'}:plasmTextureCorners(patch,room); // Explicit-tile patches (platforms, the pit, bomb puddles) tile the PNG at a fixed world scale: stretching one texture over a big patch looked nothing like the ground plasm.
     const coordBounds=[Infinity,Infinity,-Infinity,-Infinity];
     if(mapping!=='edge-preserving-nine-slice'){
       for(const key of patch){
@@ -872,11 +893,13 @@
         const u=axis[i],v=axis[j];
         const factor=plasmHeightFactor(x+u,z+v,patch); // Concave corners use the same perimeter distance from either neighboring tile.
         pos.push(x+u,(room.plasmFloorY.get(key)??floorY(kit,x+.5,z+.5))+.006+PLASM_DEPTH*factor,z+v);
+        if(withSeam){const rim=Math.pow(1-factor,2);seam.push(.85*rim,.3*rim,1.4*rim);} // Glow lives only on the sloped seam where the puddle meets the floor.
         if(mapped){
           uv.push(a[0]*(1-u)*(1-v)+b[0]*u*(1-v)+c[0]*(1-u)*v+d[0]*u*v,
             a[1]*(1-u)*(1-v)+b[1]*u*(1-v)+c[1]*(1-u)*v+d[1]*u*v);
         }else{
-          uv.push((x+u-coordBounds[0])/Math.max(1,coordBounds[2]-coordBounds[0]),
+          if(worldUv)uv.push((x+u)/PLASM_WORLD_UV_TILES,(z+v)/PLASM_WORLD_UV_TILES);
+          else uv.push((x+u-coordBounds[0])/Math.max(1,coordBounds[2]-coordBounds[0]),
             (z+v-coordBounds[1])/Math.max(1,coordBounds[3]-coordBounds[1]));
         }
       }
@@ -888,6 +911,7 @@
     const geometry=new THREE.BufferGeometry();
     geometry.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
     geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+    if(withSeam)geometry.setAttribute('color',new THREE.Float32BufferAttribute(seam,3));
     geometry.setIndex(idx);
     const mesh=new THREE.Mesh(geometry,world.plasmMaterial);
     mesh.name='kanthic_plasm_connected_room_'+room.index;
@@ -932,6 +956,7 @@
   }
   function resetPlasmOnDeath(kit) {
     if(!world)return;
+    restorePlasmPresentation();
     // Stationary patches are immutable: deaths only reset immersion, never rebuild geometry or change walkable space.
     world.sink=0;
     lastEvent='kanthic:immersion-reset';
@@ -961,6 +986,78 @@
       if(!owner.spellPlasm.delete(patch))return;
       patch.mesh.parent?.remove(patch.mesh);patch.mesh.geometry.dispose?.();
     }};
+  }
+
+  // Explicit-tile plasm: jump-shaft platform slabs (permanent) and Kanthic bomb puddles
+  // (timed). Tiles carry their own surface height, so stacked floors and elevated
+  // platforms work. ignoreClear skips the floor-set/solid/checkpoint filters (platform
+  // slabs float over empty shaft air); timed patches fade out over their last second.
+  function createPlasmPatch(tiles,opts={}) {
+    if(world?.theme!=='kanthic'||!Array.isArray(tiles)||!tiles.length)return null;
+    const kit=world.kit,patch={index:opts.label||'tiles',plasm:new Set(),plasmFloorY:new Map(),timed:false};
+    for(const t of tiles){
+      const tx=Math.floor(Number(t.x)),tz=Math.floor(Number(t.z));
+      if(!Number.isFinite(tx)||!Number.isFinite(tz))continue;
+      const y=Number.isFinite(Number(t.y))?Number(t.y):floorY(kit,tx+.5,tz+.5);
+      if(!opts.ignoreClear&&(protectedPlasmTile(kit,tx,tz)||!clearAt(tx+.5,tz+.5,y)))continue;
+      const key=tileKey(tx,tz),existing=plasmPatchAt(tx+.5,tz+.5,y);
+      if(existing&&Math.abs(existing.plasmFloorY.get(key)-y)<.01)continue;
+      patch.plasm.add(key);patch.plasmFloorY.set(key,y);
+    }
+    if(!patch.plasm.size)return null;
+    const ttl=Number(opts.ttl);
+    patch.mesh=makePlasmSurface(kit,patch,ttl>0); // Same edge-preserving mapping as ground plasm (the oil PNG has its own rim).
+    if(!patch.mesh)return null;
+    if(ttl>0){ // Temporary plasm is the SAME material as the permanent kind; only a faint violet glow along its seam tells them apart.
+      patch.timed=true;patch.life=ttl;patch.ttl=ttl;
+      patch.material=world.plasmMaterial.clone();
+      patch.mesh.material=patch.material;
+      patch.glowMaterial=new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:1,blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false});
+      const glow=new THREE.Mesh(patch.mesh.geometry,patch.glowMaterial);
+      glow.position.y=.004;glow.frustumCulled=false;glow.name='kanthic_plasm_seam_glow';patch.mesh.add(glow);
+      (world.timedPlasm||(world.timedPlasm=new Set())).add(patch);
+    }
+    world.group.add(patch.mesh);
+    const owner=world;owner.spellPlasm.add(patch);
+    const dispose=()=>{
+      if(!owner.spellPlasm.delete(patch))return;
+      owner.timedPlasm?.delete(patch);
+      patch.mesh?.parent?.remove(patch.mesh);patch.mesh?.geometry?.dispose?.();patch.material?.dispose?.();patch.glowMaterial?.dispose?.();
+    };
+    patch.dispose=dispose;
+    return {mesh:patch.mesh,tiles:patch.plasm.size,contains(x,z,y){
+      const key=tileKey(x,z);
+      return owner.spellPlasm.has(patch)&&patch.plasm.has(key)&&(!Number.isFinite(y)||Math.abs(patch.plasmFloorY.get(key)-y)<.01);
+    },dispose};
+  }
+  // A circular puddle of temporary plasm (Kanthic witch-bomb blast). Each tile rests on
+  // the support under the blast height (platform or floor), so a bomb that goes off on a
+  // shaft platform paints that platform, not the ground story below it.
+  function createPlasmPuddle(x,z,{radius=3.2,ttl=5,y=null}={}) {
+    if(world?.theme!=='kanthic'||!Number.isFinite(x)||!Number.isFinite(z))return null;
+    const DS=window.DynamicSurfaces,tiles=[],range=Math.max(.6,Number(radius)||3.2),phase=seeded(Math.floor(x*13+z*29),0x77)*6.283;
+    for(let tz=Math.floor(z-range);tz<=Math.floor(z+range);tz++)for(let tx=Math.floor(x-range);tx<=Math.floor(x+range);tx++){
+      const cx=tx+.5,cz=tz+.5;
+      const dxp=cx-x,dzp=cz-z,dist=Math.hypot(dxp,dzp),theta=Math.atan2(dzp,dxp);
+      const wobble=.74+.2*Math.sin(theta*3+phase)+.12*Math.sin(theta*5+phase*1.7)+.1*(seeded(tx*31+tz*17,0x9a5)-.5); // Ragged outline instead of a perfect disc.
+      if(dist>range*Math.min(1,wobble*1.15)||protectedPlasmTile(world.kit,tx,tz))continue; // Entrance and checkpoint landings are never plasm.
+      let tileY;
+      if(Number.isFinite(y)){
+        const support=DS?.sampleSupport?.(cx,cz,{minY:y-2.6,maxY:y+.35,pad:.02});
+        if(!support)continue; // Nothing to pool on: no plasm hanging in shaft air.
+        tileY=support.y;
+      }
+      tiles.push({x:tx,z:tz,y:tileY});
+    }
+    return createPlasmPatch(tiles,{ttl,label:'bomb-puddle',ignoreClear:true});
+  }
+  function tickTimedPlasm(dt) {
+    if(!world?.timedPlasm?.size)return;
+    for(const patch of [...world.timedPlasm]){
+      patch.life-=dt;
+      if(patch.life<=0){patch.dispose?.();continue;}
+      if(patch.material&&patch.life<1){const k=Math.max(0,patch.life);patch.material.opacity=PLASM_OPACITY*k;if(patch.glowMaterial)patch.glowMaterial.opacity=k;} // One-second fade, then gone.
+    }
   }
 
   function plasmTileCenters() {
@@ -1036,6 +1133,14 @@
     return best;
   }
 
+  // Sinking publishes a lowered presentation height. Every way OUT of the plasm (stepping off, the bomb puddle expiring
+  // under you, jumping out, dying) must hand the real support height back, or the ruin keeps believing you stand
+  // below the floor and jumps/movement misbehave afterwards.
+  function restorePlasmPresentation() {
+    if(!world?.presentationSunk)return;
+    world.presentationSunk=false;
+    window.DevRandomRuin?.setPresentationSink?.(0);
+  }
   function updatePlasm(kit,dt) {
     const player=kit.deps.player,tile=kit.deps.TILE;
     if(!player||!tile)return;
@@ -1043,6 +1148,7 @@
     if(!alive(player)){
       if(world.playerWasAlive!==false)resetPlasmOnDeath(kit);
       world.playerWasAlive=false;
+      restorePlasmPresentation();
       return;
     }
     world.playerWasAlive=true;
@@ -1052,11 +1158,13 @@
     // Newly activated checkpoints are always safe, without altering or re-uploading the authored surface.
     if(!room?.plasm?.has(key)||protectedPlasmTile(kit,Math.floor(point.x),Math.floor(point.z))){
       world.sink=0;
+      restorePlasmPresentation();
       return;
     }
     const baseY=room.plasmFloorY.get(key)??floorY(kit,point.x,point.z); // Keep static puddles at the original floor, even if a bridge appears later.
-    if(kit.ownsPlayerMotion?.()||player.climbing||playerY>baseY+PLASM_DEPTH+.08||(world.sink===0&&playerY<baseY-.3)){
+    if(kit.ownsPlayerMotion?.()||player.climbing||player._freeJump?.phase==='air'||playerY>baseY+PLASM_DEPTH+.08||(world.sink===0&&playerY<baseY-.3)){ // A mid-air hop over plasm neither sinks nor pulls you.
       world.sink=0;
+      restorePlasmPresentation();
       return; // Ropes, flying and elevated supports take precedence.
     }
     let patch=null,best=Infinity; // Nearest seeded tile attracts the player; avoid allocating/sorting an array every frame.
@@ -1071,10 +1179,12 @@
     if(pull>0){
       const dx=patch.x-point.x,dz=patch.z-point.z,d=Math.max(.001,Math.hypot(dx,dz));
       const nx=point.x+dx/d*pull,nz=point.z+dz/d*pull;
-      if(clearAt(nx,nz,floorY(kit,point.x,point.z))){player.x=nx*tile;player.y=nz*tile;}
+      // Judge the pull at the plasm's own surface height: a raised shaft platform floats above the ground story's floorY.
+      if(clearAt(nx,nz,baseY)||room.plasm.has(tileKey(nx,nz))){player.x=nx*tile;player.y=nz*tile;}
     }
     const bodyHeight=Math.max(.9,Number(kit.deps.playerMesh?.userData?.portraitModelHeight)||1.8);
-    window.DevRandomRuin?.syncPlayerPresentationHeight?.(baseY-world.sink*bodyHeight);
+    world.presentationSunk=true;
+    window.DevRandomRuin?.setPresentationSink?.(world.sink*bodyHeight); // Visible on EVERY plasm, shaft platforms included (they re-publish their own stand height each frame).
     if(world.sink>=1){
       world.sink=0;
       player.health=0;
@@ -1118,7 +1228,7 @@
       for (const spike of world.icicles) if (spike.temporary && spike.phase === 'done') spike.mesh.parent?.remove?.(spike.mesh); // Shared geometry/material remain owned by the ruin.
       world.icicles = world.icicles.filter(spike => !spike.temporary || spike.phase !== 'done');
     }
-    if (world.theme === 'kanthic') updatePlasm(kit,dt);
+    if (world.theme === 'kanthic') { updatePlasm(kit,dt); tickTimedPlasm(dt); }
     updateBursts(dt);
     badgeClock += dt;
     if (badgeClock >= .25) { // The composer snapshot already feeds mobile Pixel Probe; echo a compact live state in the in-game badge.
@@ -1192,7 +1302,8 @@
     activeTheme:()=>world?.theme||null,
     snapshot,
     isIceAt:(x,z)=>!!world?.iceTiles?.has(tileKey(x,z)), // Identical coverage for rendering and native locomotion.
-    movementPhysicsAt:(x,z)=>world?.theme==='tothal'&&world.iceTiles.has(tileKey(x,z))?ICE_PHYSICS:null, // No allocations per game frame.
+    movementPhysicsAt:(x,z)=>world?.theme==='tothal'&&(world.iceTiles.has(tileKey(x,z))||window.RuinJumpShaft?.isIceAt?.(x,z,window.DevRandomRuin?.getPlayerGroundSupportY?.()))?ICE_PHYSICS:null, // No allocations per game frame; jump-shaft ice platforms answer for their own height.
+    addPlatformPillar,createPlasmPatch,createPlasmPuddle,
     createSpellPlasm, // Lich drops share tile rendering, immersion and checkpoint recovery.
     trackBossBlizzard,stopBossBlizzard,triggerBossBlizzard, // Nanahi tracks one spawn point and releases one icicle into the ordinary hit/shatter handlers each time.
     spawnBossPillar,updateArenaBossPillars,clearArenaBossPillars, // Testing Arena and the real ruin use the same preset-footprint pillar charge and explosion pipeline.

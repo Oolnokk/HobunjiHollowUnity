@@ -34,7 +34,11 @@
       {side:'N',dx:0,dz:1},{side:'S',dx:0,dz:-1},
       {side:'W',dx:1,dz:0},{side:'E',dx:-1,dz:0},
     ]; // Prefer a floor-zero wall; never take another shaft exit or upper-story balcony.
-    for(const facing of directions)for(const shift of [-11,-12,-10,-13,-9,-14,-8,-15]){
+    const flat=o.shaft-2*Math.floor(o.shaft*.19),reach=Math.max(0,Math.floor(flat/2)-half); // Straight wall length available either side of centre (small cave/hole shafts have far less than the original 45-cell one).
+    const preferred=[-11,-12,-10,-13,-9,-14,-8,-15].filter(shift=>Math.abs(shift)<=reach);
+    const fallback=[]; for(let shift=reach;shift>=-reach;shift--)if(!preferred.includes(shift))fallback.push(shift);
+    fallback.sort((a,b)=>Math.abs(b)-Math.abs(a)||a-b); // Away from the wall's centre, where wing portals and the entrance sit.
+    for(const facing of directions)for(const shift of [...preferred,...fallback]){
       const across=mid+shift;
       const cell=step=>{
         if(facing.side==='N')return{c:across,r:lo+step};
@@ -120,7 +124,7 @@
     ]); // All E-side native V50 entrances are reserved before V50 emits any floor scene. // Every generated room chain now receives a separate physical doorway.
     const shaftOptions={seed,floors:plan.floorCount,chambers:false,wall:plan.options.shaftWall,
       shaft:plan.options.shaftSize,spacing:plan.options.floorHeight,traversal:plan.options.shaftTraversal,
-      entranceSide:plan.options.groundEntranceSide||'W',portals};
+      entranceSide:plan.options.groundEntranceSide||'W',portals,theme:ruin.theme||null};
     const hub=ShaftHub.compose(shaftOptions); // The real shared room; origin is set below after determining its full masonry shell.
     const originX=plan.shaft.anchor.x-Math.floor(hub.cols/2),originZ=plan.shaft.anchor.z-Math.floor(hub.rows/2); // The pre-generation anchor owns every portal and wing, including the rendered shaft.
     const placed=ShaftHub.compose({...shaftOptions,originX,originZ});
@@ -237,6 +241,11 @@
         scope:'shaft-obelisks',THREE,parent:rec.scene,DynamicSurfaces:DS,ClimbSurfaces,
         tradition:ruin.theme,getPlayerPosition,getPlayerY,projectileBus:root.DevRandomRuinSimplePuzzles,onStateChange:onMechanismStateChange,
       });
+    }
+    if(placed.jumpShaft){ // Free-jump platform staircase: same runtime surface as the obelisks, so the ruin's airborne/fall reconciler drives it unchanged.
+      const jump=root.RuinJumpShaft;
+      if(!jump?.mount)throw new Error('Selected jump-platform shaft module is not loaded.');
+      obeliskRuntime=jump.mount(placed.jumpShaft,{scope:'shaft-obelisks',THREE,parent:rec.scene,DynamicSurfaces:DS,tradition:ruin.theme});
     }
     ruin.shaftObeliskRuntime=obeliskRuntime; // Height-aware fall, switch updates and mobile badge all reuse this one runtime.
     layerRuntime=RuinLayerPlayable.mount({

@@ -362,7 +362,7 @@
 // later zone adapters wrap its generator methods without bypassing it.
 if (typeof document !== 'undefined' && document.currentScript) {
   const localeTerrainSrc = new URL('locale-terrain-placement.js', document.currentScript.src).href; // Shared fixed-locale terrain matcher used by the game and Wilderness Lab.
-  const cloudRuntimeSrc = new URL('cloud-forest-runtime.js', document.currentScript.src).href;
+  const cloudRuntimeSrc = new URL('cloud-forest-runtime.js?v=20261108karst1', document.currentScript.src).href;
   const entryCorridorSrc = new URL('wilderness-entry-corridor.js', document.currentScript.src).href;
   document.write('<script src="' + localeTerrainSrc + '"></' + 'script><script src="' + cloudRuntimeSrc + '"></' + 'script><script src="' + entryCorridorSrc + '"></' + 'script>');
 }

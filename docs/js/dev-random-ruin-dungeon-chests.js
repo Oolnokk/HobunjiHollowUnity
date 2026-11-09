@@ -136,6 +136,8 @@
   function open(chest) {
     if (!chest || chest.opened) return false;
     chest.opened = true;
+    window.GameFeel?.treasureFanfare?.(chest.tier, !!chest.boss); // Chests were silent; the lid swing now lands on a treasure motif.
+    if (chest.glow?.material) chest.glow.material.opacity = 1.25; // Light bursts out of the opening lid, then fades through the existing per-frame decay.
     window.HobunjiActivityEvents?.emit('chest_opened', { buried: false, boss: !!chest.boss });
     const gained = chest.culture==='hachutu' ? (window.ArtifactCollection?.rollArtifacts?.(chest.tier,'hachutu') || {hachutuMoneyBones:1}) : (window.LootRolling?.rollLootPool?.(chest.poolId, { boss: chest.boss, theme: chest.theme }) || {});
     // Old/local pool overrides and config load failures still award a guaranteed artifact batch.

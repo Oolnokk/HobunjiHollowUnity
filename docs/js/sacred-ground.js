@@ -29,6 +29,26 @@
     return false;
   }
 
+  // Closest Root Totem's walkable pathAnchor tile ({x,y}) to a world-pixel
+  // position within one zone, or null. Totems never reach another zone's
+  // terrain, so a death is recovered within its own zone (game.js falls back
+  // to the farmhouse when this returns null). Moved here from game.js; it
+  // reads the same injected getRootTotems as the sacred-radius check above.
+  function nearestRootTotem(zoneId, worldX, worldY) {
+    const totems = context?.getRootTotems?.(zoneId);
+    if (!Array.isArray(totems) || !totems.length) return null;
+    const tile = Math.max(1, Number(context?.tileSize) || 64);
+    const px = worldX / tile, py = worldY / tile;
+    let best = null, bestDist = Infinity;
+    for (const t of totems) {
+      const anchor = t?.pathAnchor || t;
+      if (!anchor) continue;
+      const d = Math.hypot(anchor.x - px, anchor.y - py);
+      if (d < bestDist) { bestDist = d; best = anchor; }
+    }
+    return best;
+  }
+
   function sacredSources(actor, areaOverride) {
     if (!actor || !Number.isFinite(actor.x) || !Number.isFinite(actor.y)) return [];
     const area = areaOverride || (actor === context?.getPlayer?.() ? context?.getCurrentArea?.() : actor.areaId || context?.getCurrentArea?.()); // The player uses the live map, while enemies use their own zone identity.
@@ -59,5 +79,5 @@
   function debugSnapshot(actor) {
     return { latest, providers: [...providers.keys()], current: actor ? sacredSources(actor) : null, rentHealth: actor ? (window.ResourceSystem?.getAffliction?.(actor, 'rentHealth') || 0) : null };
   }
-  window.HobunjiSacredGround = { init, registerProvider, contains, sacredSources, cleanseRentHealth, debugSnapshot };
+  window.HobunjiSacredGround = { init, registerProvider, contains, sacredSources, cleanseRentHealth, nearestRootTotem, debugSnapshot };
 })();

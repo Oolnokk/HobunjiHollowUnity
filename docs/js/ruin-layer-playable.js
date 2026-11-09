@@ -45,6 +45,8 @@
     }
     return {minX,minZ,maxX,maxZ};
   }
+  const lichRgbWashed=hex=>[1,3,5].map(n=>parseInt(String(hex).slice(n,n+2),16)).map(v=>Number.isFinite(v)?Math.round(v+(255-v)*.45):220);
+  let liveOwner=null; // The mounted wing network, for the lighting compositor's per-room lights.
   function mount(options={}){
     const {rec,ruin,plan,hub,makeTile,getPlayerPosition,getPlayerY}=options;
     const THREE=options.THREE||root.THREE,DS=options.DynamicSurfaces||root.DynamicSurfaces;
@@ -83,6 +85,7 @@
     const brazierMat=tintedStone('#665346',0x665346);
     const materials=[material,plateMat,gateMat,brazierMat]; // Disposed together with the geometry and owned interactive controls.
     const wingFlameVisuals=[]; // Owns the player's campfire particle emitters for every ignited wing brazier.
+    const roomLights=[]; // One light per puzzle room (and, outside Kanthic, each goal room): a room fills with light when its puzzle is solved.
     const brazierLights=[]; // Kanthic-only completed-wing flames feed the shared darkness overlay without adding real Three.js lights.
     const states=[],gridScopes=[],added=new Set(),surfaces=[]; // Runtime gate/puzzle records, registered voxel scopes, map floor keys and terrain rectangles.
     const ownedControls=new Set(); // Every wing brazier, fire-source and authored puzzle control is released on reroll or failed setup.
@@ -95,6 +98,8 @@
     let activeRoot=group; // Mesh batching writes into the currently composed story's subscene.
     const owner={group,states,disposed:false,complete:false,lit:0,total:plan.totalBraziers,
       nativeTotal:plan.nativeFloorCount||0,nativeLit:0,geometryCount:0}; // The Great Door requires BOTH composed wings and real V50 floor braziers. // Exposed to mobile diagnostics.
+    owner.roomLights=()=>owner.disposed?[]:roomLights;
+    liveOwner=owner;
     owner.lightSources=()=>owner.disposed?[]:brazierLights; // Exposes already-created light records without scene traversals during the compositor's 60 Hz pass.
     owner.updateCompletion=()=>{
       owner.complete=owner.lit+owner.nativeLit===owner.total+owner.nativeTotal;
@@ -107,6 +112,7 @@
       owner.updateCompletion();
     };
     owner.dispose=()=>{
+      if(liveOwner===owner)liveOwner=null;
       if(owner.disposed)return;owner.disposed=true;
       // The V50 music composer only closes *its own* echo sessions. A shaft
       // melody can outlive scene removal unless this module releases it too.
@@ -185,8 +191,10 @@
         // can have a perfectly open room at the same X/Z. Only this wing's
         // height-specific voxel grid owns the door's collision.
       }
-      if(record.gate.object.visible!==blocked)root.RuinInteractionAudio?.mechanism?.(record.gate.object,{size:4}); // The story-wing gate changes collision and sound exactly once, not every tick.
-      record.gate.object.visible=blocked;
+      const gateObject=record.gate.object,wasVisible=gateObject.visible;
+      if(wasVisible!==blocked)root.RuinInteractionAudio?.mechanism?.(gateObject,{size:4}); // The story-wing gate changes collision and sound exactly once, not every tick.
+      if(blocked){root.GameFeel?.cancelSink?.(gateObject);gateObject.visible=true;}
+      else if(!wasVisible||!root.GameFeel?.sinkAway?.(gateObject))gateObject.visible=false; // Collision is already open; the stone visibly sinks into the floor instead of vanishing.
 
     }
     try{
@@ -255,9 +263,15 @@
         states.push(record);
         for(let i=0;i<wing.rooms.length-1;i++){
           const room=wing.rooms[i],cx=room.x+room.w/2,cz=room.z+room.d/2;
+          const roomHex=ruin.lichColor||({tothal:'#8fd6ff',hronal:'#ff8a3a',kanthic:'#b47bff'})[ruin.theme]||'#ff8b3d';
+          const roomRgb=[1,3,5].map(n=>parseInt(String(roomHex).slice(n,n+2),16)).map(v=>Number.isFinite(v)?Math.round(v+(255-v)*.45):220); // The lich's colour, washed toward white: a lit room, not a coloured spotlight.
+          const roomLight={x:cx,y:floor.y+1.4,z:cz,floorY:floor.y,floorTolerance:3,radius:Math.max(room.w,room.d)*.7+2,strength:.92,color:roomRgb,active:false};
+          roomLights.push(roomLight);
+          let gateLight=null; // Lights the doorway the solve is about to open (assigned below once the gate is known).
           let challenge=null; // Created by the shared mechanism runtime; its onSolved opens this chamber's real next gate.
           challenge=Challenges.compose({
             THREE,parent:activeRoot,room,y:floor.y,id:room.id,kind:room.challenge,side:wing.side,
+            theme:ruin.theme||null,
             RuinLayerDefense:Defense,mapId:String(rec.mapData?.id||'map_i_dev_random_ruin'),
             isActive:()=>record.solved===i&&!owner.disposed
               &&(room.challenge!=='findBlocks'||Math.abs(Number(getPlayerY?.())-floor.y)<4.5), // Stacked block barriers must not project onto a lower floor.
@@ -273,15 +287,23 @@
             onSolved:()=>{
               if(owner.disposed||record.solved!==i)return;
               record.solved++;
-              setGate(challenge,false);
-              options.showToast?.(challenge.kind==='pressurePlate'?'A stone gate opens.'
-                :challenge.kind==='melodyEcho'?'The stone answers your melody — a gate opens.'
-                :challenge.kind==='dungeonFire'?'The ice recedes — a stone gate opens.'
-                :challenge.kind==='statueDefense'?'The defended statue sinks into the plinth — a stone gate opens.'
-                :challenge.kind==='ropeChain'?'The far bank releases the stone gate.'
-                :challenge.kind==='findBlocks'?'Four stone blocks settle — the gate opens.'
-                :'The last target falls — the stone gate opens.',true);
+              roomLight.active=true;if(gateLight)gateLight.active=true; // The solved room AND the doorway about to open light up first...
               options.onStateChange?.();
+              root.RuinInteractionAudio?.puzzleComplete?.(); // Chime + reveal window before the gate starts moving.
+              const openGate=()=>{ // ...then the stone gate moves and the reveal camera pans to it, so the door is actually visible when the shot arrives.
+                if(owner.disposed)return;
+                setGate(challenge,false);
+                options.showToast?.(challenge.kind==='pressurePlate'?'A stone gate opens.'
+                  :challenge.kind==='melodyEcho'?'The stone answers your melody — a gate opens.'
+                  :challenge.kind==='dungeonFire'?'The ice recedes — a stone gate opens.'
+                  :challenge.kind==='statueDefense'?'The defended statue sinks into the plinth — a stone gate opens.'
+                  :challenge.kind==='ropeChain'?'The far bank releases the stone gate.'
+                  :challenge.kind==='findBlocks'?'Four stone blocks settle — the gate opens.'
+                  :'The last target falls — the stone gate opens.',true);
+                options.onStateChange?.();
+              };
+              const delay=Number.isFinite(Number(options.gateOpenDelayMs))?Number(options.gateOpenDelayMs):(typeof document!=='undefined'?450:0); // Headless node tests open the gate immediately.
+              if(delay>0&&typeof setTimeout==='function')setTimeout(openGate,delay);else openGate();
             }
           });
           challenge.x=cx;challenge.z=cz;challenge.floorY=floor.y;challenge.gate=null;
@@ -297,20 +319,35 @@
             const gate=authoredGate?authoredGate.object:mesh('ruin-challenge-gate-'+room.id,
               new THREE.BoxGeometry(dx?1.1:3,2.4,dz?1.1:3),gateMat,cx+.5,floor.y+1.2,cz+.5);
             challenge.gate={tiles:gateTiles,object:gate};
+            gateLight={x:cx+.5,y:floor.y+1.4,z:cz+.5,floorY:floor.y,floorTolerance:3,radius:5.5,strength:.95,color:roomRgb,active:false};
+            roomLights.push(gateLight);
             challenge.grid=grid;setGate(challenge,true);
           }
           record.challenges.push(challenge);
         }
         const goal=wing.rooms[wing.rooms.length-1],bx=goal.x+goal.w/2,bz=goal.z+goal.d/2;
-        const pedestal=mesh('ruin-brazier-'+wing.id,new THREE.CylinderGeometry(.7,.85,.65,8),
-          brazierMat,bx,floor.y+.38,bz);
-        const flame=new THREE.Group(); // Particle anchor replaces the opaque cone; visible only after this brazier is lit.
-        flame.name='ruin-brazier-flame-'+wing.id;
-        flame.position.set(bx,floor.y+1.27,bz);flame.visible=false;activeRoot.add(flame);
-        const flameVisual=root.PersistentGroundFire?.attachCampfireFlame?.(flame,{scale:1.1,rateScale:.95});
-        if(flameVisual)wingFlameVisuals.push(flameVisual); // Uses the exact player-placeable campfire emitter recipe.
+        // The sanctum's stone-bowl brazier, bigger, burning in the lich's colour (the same
+        // colour as the named-lich wall glow). Falls back to the plain cylinder if the
+        // sanctum module is unavailable.
+        const lichColor=ruin.lichColor||({tothal:'#8fd6ff',hronal:'#ff8a3a',kanthic:'#b47bff'})[ruin.theme]||'#ff8b3d';
+        const lichBrazier=root.DevRandomRuinSanctum?.buildLichBrazier?.({parent:activeRoot,x:bx,y:floor.y,z:bz,scale:2.6,color:lichColor,name:'ruin-brazier-'+wing.id});
+        let pedestal,flame;
+        if(lichBrazier){
+          pedestal=lichBrazier.holder;flame=lichBrazier.fire.anchor;
+          wingFlameVisuals.push({update:dt=>lichBrazier.update(dt),dispose:()=>lichBrazier.fire.emitter?.dispose?.()}); // Flicker + particles each tick; emitter freed on reroll.
+        }else{
+          pedestal=mesh('ruin-brazier-'+wing.id,new THREE.CylinderGeometry(.7,.85,.65,8),brazierMat,bx,floor.y+.38,bz);
+          flame=new THREE.Group(); // Particle anchor replaces the opaque cone; visible only after this brazier is lit.
+          flame.name='ruin-brazier-flame-'+wing.id;
+          flame.position.set(bx,floor.y+1.27,bz);flame.visible=false;activeRoot.add(flame);
+          const flameVisual=root.PersistentGroundFire?.attachCampfireFlame?.(flame,{scale:1.1,rateScale:.95});
+          if(flameVisual)wingFlameVisuals.push(flameVisual); // Uses the exact player-placeable campfire emitter recipe.
+        }
+        const lichRgb=[1,3,5].map(i=>parseInt(String(lichColor).slice(i,i+2),16));
+        const goalLight=ruin.theme==='kanthic'?null:{x:bx,y:floor.y+1.4,z:bz,floorY:floor.y,floorTolerance:3,radius:Math.max(goal.w,goal.d)*.7+2,strength:.92,color:lichRgbWashed(lichColor),active:false}; // Kanthic's goal room is already lit by its brazier record below.
+        if(goalLight)roomLights.push(goalLight);
         const brazierLight={x:bx,y:floor.y+1.4,z:bz,floorY:floor.y,radius:10,strength:.98,
-          color:[255,139,61],active:false}; // A solved Kanthic wing brightens its chamber; other lich themes keep their original atmosphere.
+          color:lichRgb.every(Number.isFinite)?lichRgb:[255,139,61],active:false}; // A solved Kanthic wing brightens its chamber in its lich's colour; other lich themes keep their original atmosphere.
         if(ruin.theme==='kanthic')brazierLights.push(brazierLight);
         const brazier={id:wing.goalBrazierId,wingId:wing.id,lit:false,flame,pedestal};
         record.braziers.push(brazier);
@@ -320,10 +357,12 @@
           onPress:()=>{
             if(brazier.lit||Math.abs(Number(getPlayerY?.())-floor.y)>.8)return; // A brazier on floor 4 cannot be lit through the deck from a lower floor.
             if(record.solved<record.challenges.length){options.showToast?.('Complete the wing challenges first.',false);return;}
-            brazier.lit=true;flame.visible=true;brazierLight.active=true;owner.lit++; // Illumination follows the existing completion interaction, never a parallel trigger.
+            brazier.lit=true;flame.visible=true;brazierLight.active=true;lichBrazier?.ignite?.();if(goalLight)goalLight.active=true;owner.lit++; // ignite() marks the fire lit: without it update() skipped the particle emitter, so the bowl glowed with no flame. // Illumination follows the existing completion interaction, never a parallel trigger.
             owner.updateCompletion();
             if(ruin.theme==='kanthic')root.CloudForestFog?.refreshLightingOverlay?.(); // The lit wing becomes visible on the first rendered frame, including mobile.
-            options.showToast?.(owner.complete?'All shaft braziers are lit.':'Wing brazier ignited.',true);
+            root.RuinInteractionAudio?.igniteTorch?.();
+            if(owner.complete)root.RuinInteractionAudio?.puzzleComplete?.();else root.RuinInteractionAudio?.progress?.(owner.lit+owner.nativeLit,owner.total+owner.nativeTotal);
+            options.showToast?.(owner.complete?'All wing braziers are lit — the Great Door\'s binding breaks.':`Wing brazier ignited (${owner.lit+owner.nativeLit}/${owner.total+owner.nativeTotal}).`,true);
             options.onStateChange?.();
           }
         });
@@ -398,5 +437,5 @@
 
     return owner;
   }
-  return Object.freeze({mount,projectedExtent,collect,selectGrid});
+  return Object.freeze({mount,projectedExtent,collect,selectGrid,roomLights:()=>liveOwner&&!liveOwner.disposed?liveOwner.roomLights():[]});
 });

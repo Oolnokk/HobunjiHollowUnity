@@ -7,6 +7,7 @@
   const ATLAS_QUANTUM_PX = 64; // Atlas edges round up to this step so similarly sized surfaces share one composited GPU tile.
   const textureCache = new WeakMap(); // Identical tiles share one GPU texture while any furniture material still uses it.
   const tileCache = new Map(); // Bounded composite promises shared by identical pattern/palette definitions.
+  const ruinSignalTextures = new Map(); // Keyed by resolved path: a ruin's tradition motif replaces the generic rune.
   let ruinSignalTexture = null; // Shared repository PNG rune used by interactive stone markings, never by the stone body.
   const ruinAwardTargets = new WeakMap(); // Maps visual-only ruin groups to their owning gameplay root without serializable object cycles.
   const hex = (value, fallback) => /^#[0-9a-f]{6}$/i.test(value || '') ? value : fallback;
@@ -405,9 +406,14 @@
   function createStoneSignalBatch(count, options = {}) {
     const THREE = window.THREE; // Keep one draw call for many stateful plates without ever recoloring their stone instances.
     if (!THREE?.InstancedMesh || !THREE?.PlaneGeometry || !THREE?.InstancedBufferAttribute || !THREE?.TextureLoader || !Number.isInteger(count) || count < 1) return null;
-    if (!ruinSignalTexture) {
-      ruinSignalTexture = new THREE.TextureLoader().load('assets/textures/decals/ruin_glyph_rune.png');
-      if (THREE.SRGBColorSpace) ruinSignalTexture.colorSpace = THREE.SRGBColorSpace;
+    {
+      const path = window.RuinEmblem?.resolve?.('assets/textures/decals/ruin_glyph_rune.png') || 'assets/textures/decals/ruin_glyph_rune.png';
+      ruinSignalTexture = ruinSignalTextures.get(path);
+      if (!ruinSignalTexture) {
+        ruinSignalTexture = new THREE.TextureLoader().load(path);
+        if (THREE.SRGBColorSpace) ruinSignalTexture.colorSpace = THREE.SRGBColorSpace;
+        ruinSignalTextures.set(path, ruinSignalTexture);
+      }
     }
     const geometry = new THREE.PlaneGeometry(Math.max(.1,Number(options.width)||.34),Math.max(.1,Number(options.height)||.34));
     geometry.rotateX?.(-Math.PI/2); // World-space up-facing glyph without rotating instance translations.
@@ -437,9 +443,14 @@
   function attachStoneSignal(mesh, options = {}) {
     const THREE = window.THREE; // Reuse the existing PNG decal pipeline without repainting the stone material.
     if (!mesh?.add || !THREE?.TextureLoader || !THREE?.MeshBasicMaterial || !THREE?.PlaneGeometry) return null;
-    if (!ruinSignalTexture) {
-      ruinSignalTexture = new THREE.TextureLoader().load('assets/textures/decals/ruin_glyph_rune.png');
-      if (THREE.SRGBColorSpace) ruinSignalTexture.colorSpace = THREE.SRGBColorSpace;
+    {
+      const path = window.RuinEmblem?.resolve?.('assets/textures/decals/ruin_glyph_rune.png') || 'assets/textures/decals/ruin_glyph_rune.png';
+      ruinSignalTexture = ruinSignalTextures.get(path);
+      if (!ruinSignalTexture) {
+        ruinSignalTexture = new THREE.TextureLoader().load(path);
+        if (THREE.SRGBColorSpace) ruinSignalTexture.colorSpace = THREE.SRGBColorSpace;
+        ruinSignalTextures.set(path, ruinSignalTexture);
+      }
     }
     const size = mesh.geometry?.parameters || {}; // Centered box/cylinder dimensions locate the actual visible face.
     const face = options.face || 'top'; // Top plates and upright projectile plaques share the same glowing glyph.
@@ -669,6 +680,8 @@
       while (node && node !== root) { role += ` ${node.name || ''} ${node.userData?.interiorRuinRole || ''} ${node.userData?.ruinFurnitureKey || ''}`; if (node.userData?.ruinInteriorWall) role += ' wall'; node = node.parent; }
       const structural = /wall|pillar|pedestal|platform/i.test(role) && !/seal|glyph|decal|fire|ceiling/i.test(mesh.name || '');
       const namedWall = !!special?.specialBoss && /wall/i.test(role) && !/seal|glyph|decal|fire|ceiling/i.test(mesh.name || ''); // Only the named tomb's walls glow with the guardian's own glyph. // Built-in eligibility when no rules module is loaded.
+      const traditionWall = !namedWall && !!special?.tradition && !!special.patternId && /wall/i.test(role) && !/seal|glyph|decal|fire|ceiling/i.test(mesh.name || ''); // Ordinary ruins: the tradition's own glyph and lich colour on their walls, never a random catalog glyph.
+      const ownGlyph = namedWall || traditionWall;
       if ((!rules && !structural) || !catalog.length) continue;
       for (const child of [...mesh.children]) if (child.userData?.furniturePattern?.mode === 'engraving') { mesh.remove(child); child.geometry?.dispose(); child.material?.map?.dispose(); child.material?.dispose(); } // Re-decoration (rule edits) starts clean, including types now switched off.
       const rule = rules?.resolve?.(mesh, root, structural) || null; // { key, label, context, enabled, scale, partScale, defaultScale, maxAtlasPx, minSurfaceTiles, tilePx }; every ruin mesh gets a type so the Dev Companion can list it.
@@ -691,12 +704,12 @@
       const records = templates.map(template => {
         const slot = template.slot; // Sides and tops of one surface type roll separately.
         const entry = catalog[hash(`${seed}|${category}|${slot}`) % catalog.length]; // Stable per-ruin, per-surface-type selection.
-        const patternId = namedWall && special.patternId ? special.patternId : template.random === false && template.patternId ? template.patternId : entry.id; // Completion grants the actual displayed motif.
+        const patternId = ownGlyph && special.patternId ? special.patternId : template.random === false && template.patternId ? template.patternId : entry.id; // Completion grants the actual displayed motif.
         return { ...template, pattern: template.random === false ? template.pattern : null,
           patterns:template.random === false ? template.patterns : template.patterns?.length > 1 ? [resolvePattern({patternId}),template.patterns[1]] : null, // Keep seeded ruin primaries independent of the authored overpass snapshot.
-          patternId, palette: namedWall ? [special.ink || '#ffd5a3', special.ink || '#ffd5a3'] : (template.palette || ['#b7a185', '#625447']), scale: template.scale || rule?.defaultScale || 1.5,
-          glowColor:template.glowColor || (namedWall ? special.ink || '#ffd5a3' : '#7cebc6'),
-          glowIntensity:template.glowIntensity ?? (namedWall ? 1.5 : .95),
+          patternId, palette: ownGlyph ? [special.ink || '#ffd5a3', special.ink || '#ffd5a3'] : (template.palette || ['#b7a185', '#625447']), scale: template.scale || rule?.defaultScale || 1.5,
+          glowColor:template.glowColor || (ownGlyph ? special.ink || '#ffd5a3' : '#7cebc6'),
+          glowIntensity:template.glowIntensity ?? (namedWall ? 1.5 : traditionWall ? 1.1 : .95),
           glowPulseDepth:template.glowPulseDepth ?? .14,
           ...(rule?.scale > 0 ? { scaleOverride: rule.scale } : {}), ...(rule ? { maxAtlasPx: rule.maxAtlasPx, minSurfaceTiles: template.allowRegions ? 0 : rule.minSurfaceTiles, tilePx: rule.tilePx } : {}) }; // Region-picked faces were size-checked in world space already.
       });

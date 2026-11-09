@@ -134,6 +134,16 @@
     const text=String(value||'').toLowerCase();
     return text.includes('tothal')?'tothal':text.includes('kanthic')?'kanthic':'hronal';
   };
+  const liveLadderGroups=new Set(); // Only currently mounted shaft ladders are offered to sense mode; disposed scenes never linger.
+  function senseTargets(scene){
+    const result=[];
+    for(const group of liveLadderGroups){
+      let parent=group;while(parent?.parent)parent=parent.parent;
+      if(parent!==scene)continue; // An off-scene or discarded shaft must not glow through an unrelated level.
+      group.traverse(node=>{if(node.userData?.ruinLadderSenseTarget&&node.visible!==false)result.push(node);});
+    }
+    return result;
+  }
   function mount(plan,deps={}){
     if(!plan?.ok)throw new Error('Cannot mount an unverified obelisk route.');
     const {THREE,DynamicSurfaces:DS,ClimbSurfaces:CS,parent,getPlayerPosition,getPlayerY}=deps;
@@ -204,7 +214,7 @@
       record.worldFaces=[];
       for(const [i,face] of climbFaces(record,Math.round(record.y),record.rotation).entries()){
         const id=scope+'-climb-'+record.id+'-'+i;
-        const normalized=CS.register({...face,id,scope});
+        const normalized=CS.register({...face,id,scope,autoCatch:true}); // A falling player can catch this exact rotating climb band without facing it.
         const visual=CS.buildVisual?.(THREE,{...normalized,ruin:true});
         if(visual){
           visual.name=id;
@@ -302,12 +312,18 @@
     const dispose=()=>{
       if(disposed)return;disposed=true;
       DS.clearScope(scope);CS.clearScope(scope);
+      liveLadderGroups.delete(group);
       group.parent?.remove(group);
       for(const node of owned)node.geometry?.dispose?.();
-      const extra=new Set();group.traverse(node=>{if(node.material&&!materials.includes(node.material))extra.add(node.material);});
+      const ownedMeshes=new Set(owned),extra=new Set(); // V50 ladder meshes and rune strips are not in the central pillar's owned array.
+      group.traverse(node=>{
+        if(node.geometry&&!ownedMeshes.has(node))node.geometry.dispose?.();
+        if(node.material&&!materials.includes(node.material))extra.add(node.material);
+      });
       extra.forEach(mat=>mat.dispose?.());for(const mat of materials)mat.dispose?.();
       columns.clear();
     };
+    liveLadderGroups.add(group); // The perception provider reads the actual ladder visuals, not collision proxy faces.
     return {plan,method:TRAVERSAL,tick,dispose,columns,
       supportAt,isVoidAt,isDeathAt:(x,z,y)=>isVoidAt(x,z)&&Number(y)<=pitY+.15,
       pitY,tradition,getState:()=>({method:TRAVERSAL,active,beat:beatCount?(beatCount-1)%BEATS_PER_MEASURE+1:0,
@@ -316,5 +332,5 @@
         moving:[...columns.values()].filter(p=>Math.abs(p.y-p.desiredY)>.01).length,
         pit:tradition,gravity:GRAVITY,fallPerTile:plan.physics.fallPerTile})};
   }
-  return Object.freeze({TRAVERSAL,BEAT_SECONDS,BEATS_PER_MEASURE,MEASURES_PER_CYCLE,ROTATION_SECONDS,GRAVITY,UNBUFFED_SPEED,SIZE,DEATH_DEPTH,fallDistanceForTiles,catchDepthForGap,climbFaces,compose,verify,mount,traditionOf});
+  return Object.freeze({TRAVERSAL,BEAT_SECONDS,BEATS_PER_MEASURE,MEASURES_PER_CYCLE,ROTATION_SECONDS,GRAVITY,UNBUFFED_SPEED,SIZE,DEATH_DEPTH,fallDistanceForTiles,catchDepthForGap,climbFaces,compose,verify,mount,traditionOf,senseTargets});
 });

@@ -842,7 +842,9 @@ window.SCRATCHBONES_CONFIG = {
           "rakakoan": "kenkari",
           "tletingan": "slagothim",
           "engh_sho": "engh_sho",
-          "engh-sho": "engh_sho"
+          "engh-sho": "engh_sho",
+          "harlyao": "harlyao",
+          "harlyao-skeleton": "harlyao"
         }
       },
       "cultures": {
@@ -1001,6 +1003,21 @@ window.SCRATCHBONES_CONFIG = {
                 "nk": 10, "mp": 6, "nt": 5, "lk": 4, "rk": 4
               }
             }
+          }
+        },
+        "harlyao": {
+          "id": "harlyao",
+          "displayName": "Harlyao",
+          "casing": "title",
+          "harlyaoRules": {
+            "firstParts": ["na", "az", "im", "kril", "am", "nar", "gar", "mal", "il", "ur", "zan", "hal", "dran", "gril", "kal", "an", "zen", "mar", "lor", "rak", "ir", "ran", "kar", "zul", "orl", "ga", "va", "ha"],
+            "middleParts": ["na", "gar", "la", "ri", "ra", "ha", "mi", "nar", "nu", "ril", "ar", "ma", "zul", "va", "gal", "lu", "n"],
+            "lastParts": ["hi", "lu", "lao", "larg", "nao", "ri", "ra", "na", "aru", "ar", "an", "il", "ir", "or", "ur", "gar", "ga", "nir", "kal", "arg", "lar", "ma", "ha", "no", "za", "ai"],
+            "surnameFirstParts": ["gar", "kril", "az", "mal", "nar", "zan", "hal", "dran", "gril", "kal", "zen", "mar", "lor", "rak", "ran", "kar", "zul", "orl", "var", "am", "im", "grar", "tarl"],
+            "surnameLastParts": ["gar", "larg", "kal", "ril", "nar", "arg", "lur", "mar", "nil", "rak", "lan", "ral", "har", "nir", "zar", "kul", "gal", "ran", "lar", "ai", "nao"],
+            "threePartChance": 0.38,
+            "bridgeConsonants": ["n", "l", "r", "g", "k", "m", "h"],
+            "reservedNames": ["Nanahi", "Azgarlu", "Imlao"]
           }
         }
       }

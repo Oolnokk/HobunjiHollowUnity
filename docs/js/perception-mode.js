@@ -221,7 +221,7 @@
     lastStats.sources = Object.fromEntries(Object.entries(sources).map(([key, list]) => [key, count(list)]));
     lastStats.rejected = rejected;
     for (const c of sources.companions || []) if (isAliveCreature(c)) consider(rootOf(c), 'friendly');
-    for (const c of sources.creatures || []) if (isAliveCreature(c)) consider(rootOf(c), creatureCategory(c), { creature: c });
+    for (const c of sources.creatures || []) if (isAliveCreature(c)) consider(rootOf(c), creatureCategory(c), { creature: c }, Number(c.senseRangeTiles) || RANGE_TILES); // Ruin bombers roost far above the player; they publish a longer reveal radius.
     for (const walker of sources.npcs || []) consider(walker?.root || rootOf(walker), 'friendly');
     for (const animal of sources.livestock || []) consider(rootOf(animal), 'friendly', { livestockId: animal.livestockId || null });
     for (const c of sources.corpses || []) consider(rootOf(c), 'interact');
@@ -240,6 +240,7 @@
       nests: window.DenNestSystem?.senseTargets?.(scene) || [],
       hives: window.HoneyfuzzleHives?.senseTargets?.(scene) || [],
       caveFeatures: window.CaveSiteSystem?.senseTargets?.(scene) || [],
+      shaftLadders: [ ...(window.RuinReachingObelisks?.senseTargets?.(scene) || []), ...(window.ShaftHub?.senseTargets?.(scene) || []) ], // Both moving obelisks and fixed buttresses show only their real V50 ladder meshes.
     };
     lastStats.specialSources = Object.fromEntries(Object.entries(specialSources).map(([name, roots]) => [name, roots.length]));
     for (const roots of Object.values(specialSources)) for (const root of roots) consider(root, 'interact');

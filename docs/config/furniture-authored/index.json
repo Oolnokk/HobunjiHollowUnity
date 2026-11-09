@@ -310,6 +310,14 @@
       "file": "config/furniture-authored/hronalWitchBomb.json"
     },
     {
+      "key": "tothalWitchBomb",
+      "file": "config/furniture-authored/tothalWitchBomb.json"
+    },
+    {
+      "key": "kanthicWitchBomb",
+      "file": "config/furniture-authored/kanthicWitchBomb.json"
+    },
+    {
       "key": "keyStatue",
       "file": "config/furniture-authored/keyStatue.json"
     },
