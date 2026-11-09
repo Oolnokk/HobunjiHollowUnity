@@ -59,7 +59,7 @@ async function main(){
     const labTab=page.locator('#devRuinLabBtn'); // The in-arena route is covered separately from direct fixture generation.
     if(await labTab.isVisible())throw new Error('Puzzle Lab tab appeared before entering the arena');
     const report=[]; // Per-choice verification survives later generator failures and supplies mobile-friendly CI diagnostics.
-    const seeds={glyphObelisk:0x51a7cafe,ceilingRailTargets:0x17a31,melodyEcho:0x17a32,
+    const seeds={glyphObelisk:0x51a7cafe,ceilingRailTargets:0x17a31,timedMelody:0x17a32,
       dungeonFire:0x17a33,ropeChain:0x2468ace0,statueDefense:0x17a35,
       nativeBrazier:0x17a36,nativeGlyphObelisk:0x17a37,
       nativeStackedObelisk:0x4ed17f2a,nativeLinkedCubePillars:0x17a39,nativePushBlock:0x17a3a,findBlocks:0x17a3b};
@@ -126,7 +126,7 @@ async function main(){
           row.ok=s.rooms===1&&s.noLoot&&!s.trial.error&&s.trial.kind===kind&&s.trial.ready===true
             &&(!needsLink||(s.trial.linked===true&&s.targets>0))
             &&(kind!=='dungeonFire'||(s.trial.fireLinked===true&&s.controls>0))
-            &&(kind!=='melodyEcho'||s.trial.noteCount>=4)
+            &&(kind!=='timedMelody'||s.trial.noteCount>=2)
             &&(kind!=='ropeChain'||(s.trial.ropeLinked===true&&s.ropes>0))
             &&(!native||(s.mechanism?.gated===true&&s.mechanism.rootPresent===true
               &&s.fixture?.kind===expectedNative&&(s.counts[expectedNative]||0)>0))
