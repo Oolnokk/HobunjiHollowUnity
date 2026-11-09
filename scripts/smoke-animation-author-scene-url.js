@@ -156,8 +156,31 @@ async function main() {
       if (!(afterLowering.find(actor => actor.name === 'Leaf')?.kneeDrop > .005)) {
         throw Error('Leaf never kneels after the initiator shoulder grasp: ' + JSON.stringify(afterLowering));
       }
+      const shoulderEarly = Number(earlyInitiator.initiatorHands.targetShoulderY); // Should remain fixed in the taller portrait's neutral torso, not the floor-space hand parent.
+      const shoulderDuringKneel = Number(afterLowering.find(actor => actor.name === 'Pahu')?.initiatorHands?.targetShoulderY);
+      if (!(Number.isFinite(shoulderEarly) && Number.isFinite(shoulderDuringKneel) &&
+          shoulderDuringKneel < shoulderEarly - .015)) {
+        throw Error('Taller recipient shoulders did not descend with their torso while the initiating hands followed: ' +
+          JSON.stringify({ shoulderEarly, shoulderDuringKneel, early, afterLowering }));
+      }
       const afterContact = seek(1.12);
       const contactMouths = api.__testRealMouths(); // Canonical skinned lip positions at actual contact.
+      const mouthDistance = Math.hypot(
+        contactMouths[0].world.x - contactMouths[1].world.x,
+        contactMouths[0].world.y - contactMouths[1].world.y,
+        contactMouths[0].world.z - contactMouths[1].world.z,
+      ); // Real pixel-to-pixel contact, not actor centers or the old generic 82%-height approximation.
+      const lipContact = api.kissMouthDiagnostics?.();
+      if (!(mouthDistance < .025 && lipContact?.contact && lipContact.firstHeadMove > 0 &&
+          lipContact.secondHeadMove > 0)) {
+        throw Error('Canonical B\'shuakauitl lip coordinates do not meet without a root sidestep: ' +
+          JSON.stringify({ mouthDistance, contactMouths, lipContact }));
+      }
+      const contactShoulderY = Number(afterContact.find(actor => actor.name === 'Pahu')?.initiatorHands?.targetShoulderY);
+      if (!(Number.isFinite(contactShoulderY) && contactShoulderY <= shoulderDuringKneel + .008)) {
+        throw Error('Grip point drifted away from the lowering recipient torso at contact: ' +
+          JSON.stringify({ shoulderEarly, shoulderDuringKneel, contactShoulderY }));
+      }
       if (!afterContact.find(actor => actor.name === 'Pahu')?.initiatorHands?.applied) {
         throw Error('Initiator wrist anchors must follow the spouse shoulders during contact: ' + JSON.stringify(afterContact));
       }
@@ -242,6 +265,7 @@ async function main() {
         exportable: again.actors.length === 2,
         fullBodiesAtContact: contactBodies,
         realMouthFrames: { neutral: neutralMouths, contact: contactMouths },
+        mouthDistance, lipContact, shoulderTravelY: shoulderDuringKneel - shoulderEarly, // Readable CI report on mobile.
         facingSamples,
         shoulderGripEarly: earlyInitiator.initiatorHands,
         shoulderGripAtContact: afterContact.find(actor => actor.name === 'Pahu')?.initiatorHands,
