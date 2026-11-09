@@ -44,7 +44,74 @@
   const known = new Set(); // Keys already registered as crops; avoids repeated catalog and UI work.
   const variants = new Map(); // Cached resolved traits: rendering thousands of frames must not rebuild item definitions.
   let lastChange = 'Regional crop varieties are gene-coded; no independent world save is required.';
-  let lastBreeding = null; // Last explicitly observed parent/offspring odds, displayed by mobile crop diagnostics; not saved as genotype ancestry.
+  let lastBreeding = null; // One most recent breeding result for the phone inspector, independent of historical stack ancestry.
+  let worldIdGetter = null; // Optional injected world ID authority, used by the shared WorldMetaStore and test harness.
+  let provenanceWorldId = null; // World whose cultivar parent-pair observations are currently in memory.
+  let provenanceLedger = {version:1,records:{}}; // Saved per-world cultivar key -> multiple actually observed parent-pair routes; never assigns provenance to merged inventory units.
+  const MAX_PROVENANCE_CULTIVARS = 600; // Bound portable world save size even when a player breeds hundreds of unique genotypes.
+  const MAX_PROVENANCE_ROUTES = 12; // Different pairs may create identical cultivar keys; preserve many, but never grow one record without bound.
+  function activeWorldId() {
+    const injected = typeof worldIdGetter === 'function' ? worldIdGetter() : null;
+    return String(injected || window.__hobunjiPlayerProfile?.worldId || '') || null;
+  }
+  function normalizedProvenance(saved) {
+    const cleaned = {version:1,records:{}};
+    if (!saved || typeof saved !== 'object' || !saved.records || typeof saved.records !== 'object') return cleaned;
+    for (const [key,history] of Object.entries(saved.records).slice(0,MAX_PROVENANCE_CULTIVARS)) {
+      if (!fromItemKey(key) || !Array.isArray(history?.routes)) continue;
+      const valid = history.routes.filter(route => route && typeof route === 'object' && genesFor(route.parentA)
+        && genesFor(route.parentB) && Number.isInteger(route.observations) && route.observations > 0
+        && (route.genotypeChance == null || Number.isFinite(route.genotypeChance) && route.genotypeChance >= 0 && route.genotypeChance <= 1))
+        .slice(0,MAX_PROVENANCE_ROUTES).map(route => ({
+          parentA:route.parentA,parentB:route.parentB,observations:Math.min(999999,route.observations),
+          genotypeChance:route.genotypeChance ?? null,pigmentHex:route.pigmentHex ?? null,
+        }));
+      if (!valid.length) continue;
+      cleaned.records[key] = {routes:valid,unrecordedRoutes:Math.max(0,Math.floor(Number(history.unrecordedRoutes)||0))};
+    }
+    return cleaned;
+  }
+  function syncProvenanceWorld() {
+    const id = activeWorldId();
+    if (id === provenanceWorldId) return;
+    provenanceWorldId = id;
+    lastBreeding = null;
+    provenanceLedger = id ? normalizedProvenance(window.WorldMetaStore?.loadCropProvenance?.(id)) : {version:1,records:{}}; // World switching never reuses another world’s family tree.
+  }
+  function provenanceFor(key) {
+    syncProvenanceWorld();
+    const parsed = fromItemKey(key);
+    const id = parsed && idFor(parsed.family,parsed.code,parsed.colorHex);
+    const saved = id ? provenanceLedger.records[id] : null;
+    return saved ? {key:id,source:'world-recorded parent pairs; individual merged inventory stacks are not lineage-labelled',
+      routes:saved.routes.map(route => ({...route})),
+      totalObserved:saved.routes.reduce((sum,route)=>sum+route.observations,0),
+      unrecordedRoutes:saved.unrecordedRoutes} : null;
+  }
+  function recordBreedingPair(resultId,firstKey,secondKey,genotypeChance,pigmentHex) {
+    syncProvenanceWorld();
+    const parsed = fromItemKey(resultId), parentA=genesFor(firstKey), parentB=genesFor(secondKey);
+    if (!parsed || !parentA || !parentB || parentA.family !== parsed.family || parentB.family !== parsed.family)
+      return {saved:false,reason:'unsupported cross'}; // Native crops are not assigned a fictitious hybrid pedigree.
+    const id = idFor(parsed.family,parsed.code,parsed.colorHex);
+    if (!provenanceWorldId || !window.WorldMetaStore?.saveCropProvenance)
+      return {saved:false,reason:'no canonical world save available'};
+    const draft = {version:1,records:{...provenanceLedger.records}}; // Copy-on-write: report success only after actual world metadata persistence.
+    const existing = draft.records[id] || {routes:[],unrecordedRoutes:0};
+    const routes = existing.routes.map(route=>({...route}));
+    const path = routes.find(route=>route.parentA===firstKey && route.parentB===secondKey);
+    if (path) path.observations = Math.min(999999,path.observations+1);
+    else if (routes.length < MAX_PROVENANCE_ROUTES) routes.push({
+      parentA:firstKey,parentB:secondKey,observations:1,genotypeChance,pigmentHex});
+    else existing.unrecordedRoutes++;
+    if (!draft.records[id] && Object.keys(draft.records).length >= MAX_PROVENANCE_CULTIVARS)
+      return {saved:false,reason:'provenance history capacity reached'};
+    draft.records[id] = {routes,unrecordedRoutes:existing.unrecordedRoutes};
+    if (!window.WorldMetaStore.saveCropProvenance(provenanceWorldId,draft))
+      return {saved:false,reason:'world save rejected the record'};
+    provenanceLedger = draft;
+    return {saved:true,routeCount:routes.length,observations:routes.reduce((sum,route)=>sum+route.observations,0)};
+  }
 
   const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
   const seedKey = crop => crop + 'Seeds'; // Dynamic seed keys live in the ordinary inventory.
@@ -142,6 +209,8 @@
   }
   function attach(deps = {}) {
     if (deps.cropData && deps.cropData !== cropData) { known.clear(); variants.clear(); lastBreeding = null; } // World/replay rebinding clears stale genetics diagnostics as well as variant caches.
+    worldIdGetter = deps.getWorldId || worldIdGetter; // World identity is supplied by the same owner as livestock and storage when available.
+    syncProvenanceWorld(); // Load saved parent paths before any hydrated crossbreed is repriced.
     cropData = deps.cropData || cropData;
     itemDefs = deps.ITEM_DEFS || itemDefs;
     window.ItemAcquisitionRarity?.bindItemDefs?.(itemDefs); // Mobile rarity diagnostics use the same live definitions as game inventory and shops.
@@ -230,8 +299,17 @@
       : register(a, childCode, mixedPigment); // All other crosses visibly blend and preserve color in their ordinary seed IDs.
     if (result) {
       const odds = window.ItemAcquisitionRarity?.inheritance?.({parentA:first,parentB:second,target:childCode}) || null; // Exact conditional genotype probability for this breeding attempt.
-      lastBreeding = { parentA:firstKey, parentB:secondKey, offspring:result.id, genotypeChance:odds?.probability ?? null,
-        pigmentHex:mixedPigment, source:'observed-parent-pair; descendants do not persist parent provenance' }; // Explicitly separates this attempt from inferred market rarity.
+      const provenance = recordBreedingPair(result.id,firstKey,secondKey,odds?.probability ?? null,mixedPigment); // Save all observed family routes, not only the last attempt.
+      lastBreeding = {parentA:firstKey,parentB:secondKey,offspring:result.id,genotypeChance:odds?.probability ?? null,
+        pigmentHex:mixedPigment,provenanceSaved:provenance.saved,provenanceStatus:provenance.reason || 'saved',
+        source:'observed parent pair; per-stack ancestry is unknowable when identical genotypes are merged'}; // The inspector shows persistence failure on mobile.
+      const itemDef = itemDefs?.[result.id], seedDef = itemDefs?.[seedKey(result.id)];
+      if (provenance.saved) for (const [itemKey,definition] of [[result.id,itemDef],[seedKey(result.id),seedDef]]) {
+        if (definition?.rarityBaseSellPrice != null) {
+          const updated = window.ItemAcquisitionRarity?.cultivarSellPrice?.(itemKey,definition.rarityBaseSellPrice);
+          if (updated != null) definition.sellPrice = updated; // New recorded pathways refresh the current market without compounding the old premium.
+        }
+      }
       lastChange = 'Crossbred ' + firstKey + ' × ' + secondKey + ' → ' + result.label + '.';
       window.CookingSystem?.registerIngredientItems?.(); // The newly invented ingredient keeps its inherited buffs in every recipe picker.
     }
@@ -262,5 +340,7 @@
     return a && a === b ? mixHex(colorOf(firstKey), colorOf(secondKey)) : null;
   }
   window.CropVarieties = Object.freeze({ REGIONS, FAMILIES, attach, ensure, hydrate, registered, refreshBrushes, offers, produceFamily, breed, details, colorOf, seedColorOf, blendedColor,
+    provenanceFor, // World-scoped parent-pair evidence, safe to inspect on mobile; not tied to individual stacked items.
+    get provenanceStatus() { syncProvenanceWorld(); return {worldId:provenanceWorldId,recordedCultivars:Object.keys(provenanceLedger.records).length}; },
     get lastChange() { return lastChange; }, get lastBreeding() { return lastBreeding && { ...lastBreeding }; } }); // Exposed for mobile production diagnostics and regression tests.
 })();
