@@ -1530,6 +1530,33 @@
     return added;
   }
 
+  function updateRuinFloorShellBacking(owner) {
+    const repair=owner?.floorShellRepair;
+    if(!repair?.object)return 0;
+    const matrix=new THREE.Matrix4(); // Used to repack supported V50 cells whenever a generated puzzle opens a real pit.
+    let count=0;
+    for(const [key,y] of floorHeights){
+      const [c,r]=key.split(',').map(Number);
+      if(!Number.isFinite(c)||!Number.isFinite(r)||!Number.isFinite(y))continue;
+      const x=entryPadX+(c+.5)*floorCellSize,z=entryPadZ+(r+.5)*floorCellSize; // Each cell center determines whether a pit owns this visual backing tile.
+      if((owner.floorShellCutouts||[]).some(pit=>x>pit.minX+.01&&x<pit.maxX-.01&&z>pit.minZ+.01&&z<pit.maxZ-.01))continue;
+      matrix.makeTranslation(x,y-.025,z);
+      repair.object.setMatrixAt(count++,matrix);
+    }
+    repair.object.count=count;repair.object.instanceMatrix.needsUpdate=true;
+    repair.count=count; // Mobile getState exposes the number of visible repaired cells, excluding intentional holes.
+    return count;
+  }
+
+  function excludeFloorShellArea(bounds) {
+    if(!ruin?.scene||!bounds||![bounds.minX,bounds.maxX,bounds.minZ,bounds.maxZ].every(Number.isFinite)
+      ||bounds.maxX<=bounds.minX||bounds.maxZ<=bounds.minZ)return false;
+    const cutout={minX:bounds.minX,maxX:bounds.maxX,minZ:bounds.minZ,maxZ:bounds.maxZ}; // Saved on this ruin so masks work whether the puzzle registers before or after enterRuin.
+    (ruin.floorShellCutouts??=[]).push(cutout);
+    updateRuinFloorShellBacking(ruin);
+    return true;
+  }
+
   function repairRuinFloorShell(owner) {
     if (!owner?.scene || !floorHeights.size || !THREE?.InstancedMesh) return 0;
     if (owner.floorShellRepair) return owner.floorShellRepair.count; // Each generated ruin receives one visual backing, not another on re-entry.
@@ -1542,20 +1569,11 @@
     geometry.rotateX(-Math.PI/2);
     const backing=new THREE.InstancedMesh(geometry,stone,floorHeights.size);
     backing.name='ruin-supported-floor-gap-backing';
-    backing.userData.devRuinFootprintIgnore=true; // This repair never creates navigation or raycast collision; DynamicSurfaces still owns support.
+    backing.userData.devRuinFootprintIgnore=true; // Visual repair cannot create support/collision; DynamicSurfaces and rope-pit cutouts remain authoritative.
     backing.raycast=()=>{};
-    const matrix=new THREE.Matrix4();
-    let count=0;
-    for(const [key,y] of floorHeights){
-      const [c,r]=key.split(',').map(Number);
-      if(!Number.isFinite(c)||!Number.isFinite(r)||!Number.isFinite(y))continue;
-      matrix.makeTranslation(entryPadX+(c+.5)*floorCellSize,y-.025,entryPadZ+(r+.5)*floorCellSize);
-      backing.setMatrixAt(count++,matrix);
-    }
-    backing.count=count;backing.instanceMatrix.needsUpdate=true;
     owner.scene.add(backing);
-    owner.floorShellRepair={object:backing,count}; // Exposed through ruin diagnostics for mobile checks.
-    return count;
+    owner.floorShellRepair={object:backing,count:0}; // Repacked after creation and when a puzzle cuts new floor holes.
+    return updateRuinFloorShellBacking(owner);
   }
 
   function enterRuin() {
@@ -2300,7 +2318,7 @@
     return Math.abs(x)<=half&&Math.abs(z)<=half;
   }
   window.DevRandomRuin=Object.freeze({isPlayerInShaft,getLichName:()=>ruin?.lichName||null,setDebugBadgeEnabled,getSeed:()=>ruin?.seed??null,getTitle:()=>ruin?arrivalTitle(ruin):'',getVestibuleRoots:()=>ruin?{stone:ruin.vestibuleStone||null,props:ruin.stoneAgeStats?.props||0,bindings:ruin.rootGrowthBindings?.length||0,rooted:!!ruin.rootedMechanisms,ms:ruin.vestibuleRootMs||0,error:ruin.vestibuleRootError||null}:null,generate,generateStoryVault,reroll:()=>ruin?.shaftTest?generateShaftTest():generate(randomSeed(),ruin?.singleRoomTrial?{singleRoomTrial:true,puzzleType:ruin.singleRoomTrial.mode==='weighted'?'weighted':ruin.singleRoomTrial.kind}:{hachutu:ruin?.hachutu===true,rootMechanisms:ruin?.rootedMechanisms===true,stoneAge:ruin?.stoneAgeRequested===true,composedTrial:ruin?.composedTrialForced===true?true:undefined}),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,exitTo,getInteractionControls:()=>ruin?ruin.controls.filter(control=>control.kind!=='story-vault-pedestal'||window.DelversGuild?.vaultPhase?.()==='search').map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],registerLabPushBlock,unregisterLabPushBlock,getNativeV50TestRuntime:()=>devModeEnabled()?ruin?.nativeV50Runtime||null:null, // Developer-mode-only diagnostic handle for Playwright to exercise the actual generated puzzle controls and stage gates; not a gameplay solver.
-    setPuzzleLabStatus,
+    setPuzzleLabStatus,excludeFloorShellArea,
     getRuntimeContext:()=>ruin?{scene:ruin.scene,grid:ruin.grid,root:ruin.localeRoot,meta:ruin.meta,floorSet:ruin.floorSet,floorScope:SCOPE,ceilingY:ruin.ceilingY,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,sanctumMapSize:ruin.sanctumMapSize,sanctumPlan:ruin.sanctumPlan||null,
     shaftEntrance:ruin.compactVestibule?window.RuinShaftConnector?.entranceOutside?.(ruin.meta,{x:entryPadX,z:entryPadZ},RUIN_TILE_SCALE)||null:null,seed:ruin.seed,theme:ruin.theme,tier:ruin.tier||null,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,stoneAge:!!ruin.stoneAge,stoneAgeStats:ruin.stoneAgeStats||null,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,labFurniture:ruin.labFurniture,noLoot:ruin.noLoot===true,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,hasOccupancy:()=>!!ruin?.occupancy?.snapshot,debugPlayerCollision:()=>{ // Pixel Probe readout: the 3D voxel grid (not the footprint registry) is what snaps to whole tiles.
       if(!ruin||!deps?.player)return null;
@@ -2345,7 +2363,8 @@
     getGenerationProgress:()=>({phase:generationPhase,elapsedS:+((performance.now()-generationStartedMs)/1000).toFixed(1),attempts:lastGenerationAudit?.attempts?.length||0}),getDarknessSettings,setDebugBadgePart,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,getPlayerGroundSupportY,shaftSegmentHit,shaftCreatureCanEnter,syncShaftCreatureFloor,registerShaftGrid,unregisterShaftGrid:scope=>ruin?.shaftGrids?.delete(scope),setLevelRelativeSupport:on=>{if(ruin)ruin.levelRelativeSupport=on!==false;return !!ruin?.levelRelativeSupport;},getGroundSupportYAt,acceptFreeJumpLanding,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,setPresentationSink,flightClear,getState:()=>ruin?{mapId:MAP_ID,storyVault:ruin.storyVault ? {footprints:ruin.storyVaultFootprintCount,doorBlocks:false,puzzles:0,decalReady:ruin.storyVaultDecalReady,decalError:ruin.storyVaultDecalError||null} : null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,noLoot:ruin.noLoot===true,shaftConnection:ruin.shaftConnection||null, // The mobile debug snapshot reports the laboratory's chosen puzzle and reward policy.shaftLayerRuntime:ruin.shaftLayerRuntime?.getState?.()||null,
     nativeV50Runtime:ruin.nativeV50Runtime?.getState?.()||null,
     checkpointTravel:ruin.checkpointRuntime?.getState?.()||null,
-    floorShellRepair:ruin.floorShellRepair?.count||0, // Number of backed walkable cells (no collision or puzzle voids added).
+    floorShellRepair:ruin.floorShellRepair?.count||0, // Visible supported cells after intentionally floorless puzzle areas have been cut out.
+    floorShellCutouts:ruin.floorShellCutouts?.length||0, // Mobile diagnostics show how many rope-pit masks were applied.
     runtimeWallPlanes:ruin.entranceWallPlanes||null,
     runtimeHallways:ruin.entranceHallways||null, // Persist the authoritative floor-zero generated audit after V50's iframe has detached every upper-floor preview root.
     preplannedShaft:{nativeFloors:ruin.preplannedShaft?.nativeFloorCount||0,
