@@ -10,6 +10,7 @@
   const images = new Map(); // CORS image promises reused across combinations.
   const alphaBounds = new WeakMap(); // Each source bitmap is scanned once when finding visible composition bounds.
   const canvases = new Map(); // Bounded composed sprites, created only when requested.
+  const boredCanvases = new Map(); // One regenerated source-art image per edited shaft and revision, shared by all head/metal combinations.
   let config = global.MODULAR_WEAPON_CONFIG; // Current authored attachment data.
   let revision = 0; // Discards stale preview renders after edits.
 
@@ -217,8 +218,8 @@
   function line(raw, kind, fallback) {
     const source = raw && typeof raw === 'object' ? raw : fallback; // Only valid authored directed lines may replace shipped geometry.
     const type = kind === 'head'
-      ? (source?.type === 'weight' || source?.type === 'blade' ? source.type : fallback.type)
-      : (source?.type === 'tang' || source?.type === 'eye' ? source.type : fallback.type); // Shaft mounts accept both kinds.
+      ? (['weight', 'blade', 'flail'].includes(source?.type) ? source.type : fallback.type)
+      : (['tang', 'eye', 'rope'].includes(source?.type) ? source.type : fallback.type); // Rope mounts control connector reach only: they never fit/scal e a rigid head.
     const start = point(source?.start || fallback.start), end = point(source?.end || fallback.end); // Fixed sprite reference coordinates.
     if (Math.hypot(end.x - start.x, end.y - start.y) < 1) return { ...fallback, start: point(fallback.start), end: point(fallback.end) };
     return { type, start, end };
@@ -284,8 +285,14 @@
     }); // A selected mounting primitive travels with its area, rather than only the whole rig.
   }
   function matchingMounts(shaft, head) {
+    const flexible = !!(shaft?.flailAssembly || head?.flailAssembly || head?.mount?.type === 'flail'); // Flexible heads require a suspension, never an axis-fit primitive.
+    const mounts = shaftMounts(shaft); // Editor region transforms preserve the visible suspension mark.
+    if (flexible) {
+      const rope = mounts.filter(mount => mount.type === 'rope');
+      if (rope.length) return rope; // Explicit rope mount wins; its span controls connector length, not head shape.
+    }
     const kind = head?.mount?.type === 'blade' ? 'tang' : head?.mount?.type === 'weight' ? 'eye' : '';
-    return shaftMounts(shaft).filter(mount => mount.type === kind); // Works on the transformed clone without weakening original exclusions.
+    return mounts.filter(mount => mount.type === kind); // Older saved flails without rope lines retain a legacy eye/tang anchor.
   }
   function renderingMounts(shaft, head) {
     const compatible = matchingMounts(shaft, head); // Only same-kind arrows are valid for newly crafted combinations.
@@ -364,6 +371,38 @@
     if (typeof id !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(id)) return null;
     return global.WEAPON_SPRITE_ASSEMBLY_CONFIG && !flailTemplate(id) ? null : id; // Preserve saved assembly IDs when their optional visual registry has not loaded yet.
   }
+  function cleanBores(raw) {
+    if (!Array.isArray(raw)) return [];
+    const ids = new Set(); // Stable bore identities drive selection, undo and regenerated previews without mixing one aperture with another.
+    return raw.slice(0, 12).flatMap((item, index) => {
+      if (!item || typeof item !== 'object') return [];
+      const id = /^[a-z0-9_-]{1,40}$/i.test(String(item.id || '')) ? String(item.id) : 'bore-' + (index + 1);
+      if (ids.has(id)) return []; ids.add(id);
+      return [{ id, x: finite(item.x, 225, 0, 450), y: finite(item.y, 602, 0, 1204),
+        rx: finite(item.rx, 14, 2, 160), ry: finite(item.ry, 14, 2, 160),
+        rotation: finite(item.rotation, 0, -360, 360),
+        rim: finite(item.rim, 5, 0.5, 24), shade: finite(item.shade, 0.65, 0, 1),
+        warp: finite(item.warp, 1.5, 0, 6),
+        lightX: finite(item.lightX, -0.6, -1, 1), lightY: finite(item.lightY, -0.8, -1, 1),
+        enabled: item.enabled !== false }];
+    });
+  }
+  function boreShaft(shaft, source) {
+    if (!shaft?.bores?.length || !global.ModularWeaponBridgeFill?.borePixels || !source) return source;
+    const cacheKey = revision + ':' + (shaft.sprite || ''); // Multiple heads with the same haft reuse the identical aperture geometry.
+    if (boredCanvases.has(cacheKey)) return boredCanvases.get(cacheKey);
+    const canvas = document.createElement('canvas');
+    canvas.width = 450; canvas.height = 1204; // Bores are authored in the original sprite's fixed coordinate frame.
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return source;
+    ctx.drawImage(source, 0, 0, 450, 1204);
+    const image = ctx.getImageData(0, 0, 450, 1204);
+    image.data.set(global.ModularWeaponBridgeFill.borePixels(image.data, 450, 1204, shaft.bores)); // Recompute from untouched art, not from a previous drilled image.
+    ctx.putImageData(image, 0, 0);
+    boredCanvases.set(cacheKey, canvas);
+    if (boredCanvases.size > 24) boredCanvases.delete(boredCanvases.keys().next().value);
+    return canvas;
+  }
   function flailRecipe(shaftKey, headKey) {
     const shaft = config.shafts[shaftKey], head = config.heads[headKey]; // Both stable part IDs are looked up without guessing from their names.
     if (!shaft || !head || (!!shaft.flailAssembly && !!head.flailAssembly)) return null;
@@ -374,13 +413,19 @@
     recipe.layers = []; // No extra rigid head or legacy base overlays: the hanging head is the only head rendered.
     delete recipe.base; // A donor's special fuel VFX must not attach to an unrelated modular haft.
     if (shaft.fireAssembly) recipe.base = global.WEAPON_SPRITE_ASSEMBLY_CONFIG?.weapons?.[shaft.fireAssembly]?.base || undefined; // Preserve a living shaft's own authored flames (Torch-Staff) while changing only its head.
+    const ropeMount = shaft.mounts?.find(candidate => candidate.type === 'rope'); // Start = physical top contact; arrow span = desired suspended length.
+    if (ropeMount) {
+      recipe.flail.haftAnchor = { ...ropeMount.start };
+      recipe.flail.chain.mountLengthPx = Math.max(2, Math.min(2048, Math.hypot(
+        ropeMount.end.x - ropeMount.start.x, ropeMount.end.y - ropeMount.start.y))); // The rope/chain alone adopts this length. Head scale and diameter stay authored.
+    }
     if (head.flailAssembly) {
-      const required = head.mount?.type === 'blade' ? 'tang' : 'eye'; // The rope must attach to original haft art coordinates, not to head-only rig transforms.
-      const mount = shaft.mounts?.find(candidate => candidate.type === required); // Matching socket chosen by the modular fitting rule.
-      if (!mount) return null;
-      recipe.flail.haftAnchor = shaft.flailHaftAnchor || { ...mount.start }; // Optional shaft-local contact is edited beside the fitting arrow.
+      const required = head.mount?.type === 'blade' ? 'tang' : 'eye';
+      const legacyMount = shaft.mounts?.find(candidate => candidate.type === required); // Legacy fallback for old smithed flails without the new rope mount.
+      if (!ropeMount && !legacyMount) return null;
+      if (!ropeMount) recipe.flail.haftAnchor = shaft.flailHaftAnchor || { ...legacyMount.start };
     } else {
-      recipe.flail.haftAnchor = shaft.flailHaftAnchor || recipe.flail.haftAnchor; // Haft-owned rope retains the original authored point unless explicitly overridden.
+      if (!ropeMount) recipe.flail.haftAnchor = shaft.flailHaftAnchor || recipe.flail.haftAnchor; // Original multipart flail behavior when the optional new suspension line is absent.
       recipe.flail.head = {
         anchorLayer: 'modular-head', anchor: head.flailHeadAnchor || head.mount.start,
         scale: Number.isFinite(head.flailHeadScale) ? head.flailHeadScale : 1,
@@ -440,6 +485,7 @@
         if (Object.hasOwn(raw, 'flailAssembly')) shaft.flailAssembly = cleanFlailReference(raw.flailAssembly); // Unlinking restores ordinary rigid assembly.
         if (raw.flailHaftAnchor) shaft.flailHaftAnchor = point(raw.flailHaftAnchor);
       }
+      shaft.bores = cleanBores(Object.hasOwn(raw, 'bores') ? raw.bores : shaft.bores); // Optional whole-haft, non-destructive apertures survive browser draft/import/export.
       shaft.rigRegions = cleanRigRegions(raw.rigRegions || shaft.rigRegions); // Region selections are validated and persist in exported drafts.
       shaft.shaftArtTransform = { ...duplicateTransform(raw.shaftArtTransform || shaft.shaftArtTransform),
         enabled: (raw.shaftArtTransform || shaft.shaftArtTransform)?.enabled === true }; // Explicit opt-in, neutral for old saves.
@@ -476,6 +522,7 @@
     config = next;
     revision++;
     canvases.clear();
+    boredCanvases.clear(); // Any renamed/moved/reshaped bore recomposes from the original source art.
     if (persist) global.localStorage?.setItem(DRAFT_KEY, JSON.stringify(config));
     return config;
   }
@@ -555,7 +602,15 @@
     const required = head?.mount?.type === 'blade' ? 'tang' : head?.mount?.type === 'weight' ? 'eye' : '';
     const compatible = (shaft?.mounts || []).map((mount, index) => ({ mount, index }))
       .filter(entry => entry.mount.type === required);
-    const selected = compatible.length ? compatible : (shaft?.mounts || []).slice(0, 1).map((mount, index) => ({ mount, index }));
+    const selected = compatible.length ? compatible : (shaft?.mounts || []).filter(mount => mount.type !== 'rope').slice(0, 1).map((mount, index) => ({ mount, index }));
+    if (shaft?.flailAssembly || head?.flailAssembly) {
+      const rope = (shaft.mounts || []).map((mount,index)=>({mount,index})).filter(entry=>entry.mount.type==='rope');
+      return { kind:'flailSuspensionRig',parent,shaftOutsideRig:true,
+        children:(rope.length?rope:selected).map(({mount,index})=>({
+          kind:'rope',index,type:mount.type,children:[],localMount:mount,
+          worldMount:{type:mount.type,start:rigPoint(shaft,mount.start),end:rigPoint(shaft,mount.end)}
+        })) }; // Rope lines are never passed through headTransform; no head stretching even in debug/editor.
+    }
     const children = selected.map(({ mount, index }) => {
       const region = regionAt(shaft,{x:(mount.start.x+mount.end.x)/2,y:(mount.start.y+mount.end.y)/2});
       const regionMatrix=regionAffine(region); // Mount and fitted primitive are descendants of this local area.
@@ -686,9 +741,10 @@
       }
       function paintHaft() {
         const fire = shaft.fireAssembly && global.WEAPON_SPRITE_ASSEMBLY_CONFIG?.weapons?.[shaft.fireAssembly]?.base;
-        const image = fire?.material === 'marker'
+        const artImage = fire?.material === 'marker'
           ? global.HobunjiLayeredWeaponEffects?.recolorMarker?.(shaftImage, fire.sourceHex, fire.targetHex) || shaftImage
           : shaftImage; // The shaft's fixed artwork is recolored, but never scaled or translated with its mounting rig.
+        const image = boreShaft(shaft, artImage); // Apply transparent, shaded bores to the shaft before any head overlays or manual pair brush operations.
         const art=shaftArtTransform(shaft); // Optional shaft-only scale/translation; head primitives remain under their separate rig.
         for (const context of [ctx, protectedCtx].filter(Boolean)) {
           context.save();
@@ -790,7 +846,7 @@
     else if (prior) replace(addCompanionsToPreviousDraft(JSON.parse(prior)), true);
     else if (oldest) replace(JSON.parse(oldest), true);
   } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
-  global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, weaponName, flailRecipe, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, registerDefinitions, unlockedParts, matchingMounts,
+  global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, weaponName, flailRecipe, boreShaft, cleanBores, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, registerDefinitions, unlockedParts, matchingMounts,
     duplicateTransform, duplicatePoint, shaftRigTransform, shaftArtTransform, cleanRigRegions, regionAt, regionAffine, affinePoint, rigPoint, shaftMounts, attachmentRig, rigBridgeOperations, multiplyAffine, JUNCTIONS, junctionPath, drawJunction, expandOps,
     diagnostics: key => ({ parts: decode(key), gripSource: sourceShape(key),
       name: decode(key) ? weaponName(decode(key).shaft, decode(key).head, decode(key).metal) : null,
