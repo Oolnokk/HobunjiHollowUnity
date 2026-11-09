@@ -202,6 +202,27 @@
     };
   }
 
+  // Old Man Nohuknuk's bipedal-monster limb anchors are independent of Engh-sho.
+  // Rig Coordinates can subsequently author his hands, feet and posterior without editing the donor.
+  const nohuknukCharacterRig = clone(masterCharacters['engh-sho::male']); // Separate NPC anatomy used by the hybrid assembler and GLB solvers.
+  nohuknukCharacterRig.species = 'nohuknuk';
+  nohuknukCharacterRig.gender = 'male';
+  nohuknukCharacterRig.anchors.leftHandShoulder = identityAnchor([0.35, 0.70, 0]); // Nohuknuk's left-hand socket, adjustable in Rig Coordinates.
+  nohuknukCharacterRig.anchors.rightHandShoulder = identityAnchor([-0.35, 0.70, 0]); // Nohuknuk's right-hand socket, adjustable in Rig Coordinates.
+  nohuknukCharacterRig.anchors.shoulderPerch = identityAnchor([0, 0.77, 0]); // Independent upper-body reference for equipment and interactions.
+  nohuknukCharacterRig.posteriorRule = {
+    ...nohuknukCharacterRig.posteriorRule,
+    heightPercentOffset: 0, heightPercentFromFloor: 32,
+  }; // Creature body's hip/leg reference is floor-relative, not inherited from Engh-sho art.
+  nohuknukCharacterRig.anatomy = {
+    ...nohuknukCharacterRig.anatomy, portraitScale: 1, handScale: 1, footScale: 1, portraitVerticalPlacementRatio: 0.5,
+  }; // No Engh-sho portrait-scale distortion should reach the creature sprite or primate limbs.
+  nohuknukCharacterRig.shoulderPerchRule = {
+    ...nohuknukCharacterRig.shoulderPerchRule,
+    appearanceSpeciesId: 'nohuknuk', portraitModelHeight: 1.19, portraitVerticalPlacementRatio: 0.5,
+  }; // Creature-sprite dimensions supply Nohuknuk's authored shoulder frame.
+  masterCharacters['nohuknuk::male'] = nohuknukCharacterRig;
+
   const masterCreatures = {};
   for (const [kind, saddle, saddleSource, saddleOffset, saddlePixel, midlineSearchRadiusPx, shoulderGrip, scales, grehlrSizeScaleDefaultVersion] of creatureRecords) {
     const creatureAuthoredSource = kind === 'grehlr'
