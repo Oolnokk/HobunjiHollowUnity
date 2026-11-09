@@ -340,6 +340,9 @@
       selectedSide: shippingSelected.side,
       selectedKey: shippingSelected.key,
       selectedAmount: shippingAmount,
+      selectedItemRarity: standaloneDebugVisible && shippingSelected.key
+        ? window.ItemAcquisitionRarity?.item?.(shippingSelected.key,{itemDefs:deps?.ITEM_DEFS,townValue:window.TownMine?.getTownValue?.()}) || null : null, // On-demand mobile rarity stages, not a per-frame computation when the debug panel is hidden.
+      selectedItemBaseSellPrice: standaloneDebugVisible && shippingSelected.key ? getShipPrice(shippingSelected.key) ?? null : null, // Compare modeled rarity against the real shipping quote.
       animalHides: window.AnimalHides?.getDebug?.() || null, // Mobile-copyable hide provenance and transfer counters.
       boxPosition: box ? { col: box.col, row: box.row, width: box.w, height: box.h } : null,
     };
