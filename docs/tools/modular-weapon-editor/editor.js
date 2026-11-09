@@ -248,8 +248,8 @@
       const anchorImage=layerImages.find(({layer})=>layer.id===head.anchorLayer)?.image || layers[0];
       const anchorLocal=head.anchorSpace==='composite'
         ? {x:Number(head.anchor?.x)||0,y:Number(head.anchor?.y)||0}
-        : {x:(Number(head.anchor?.x)??anchorImage.width/2)-anchorImage.width/2,
-           y:(Number(head.anchor?.y)??anchorImage.height/2)-anchorImage.height/2};
+        : {x:(Number.isFinite(Number(head.anchor?.x))?Number(head.anchor.x):anchorImage.width/2)-anchorImage.width/2,
+           y:(Number.isFinite(Number(head.anchor?.y))?Number(head.anchor.y):anchorImage.height/2)-anchorImage.height/2};
       const positions=layerImages.map(({layer,image})=>({
         image,layer,x:end.x + headScale*((Number(layer.offsetPx?.x)||0)-image.width/2-anchorLocal.x),
         y:end.y + headScale*((Number(layer.offsetPx?.y)||0)-image.height/2-anchorLocal.y),
