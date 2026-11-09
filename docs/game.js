@@ -12641,10 +12641,11 @@
           const preserved = !zone ? (TOTHAL_PRESERVED_TRANSITIONS[area] || []).map(entry => ({
             id: entry.id, col: entry.col, row: entry.row, target: 'building', targetMapId: entry.targetMapId,
           })) : []; // Keeps fixed wilderness house doors routable during the asynchronous first Tothal Shift.
-          const gate = zone?.toTownExit; // Uses the real authored town gate when the zone provided one.
+          if (!zone) return preserved; // Do not route NPCs through an ungenerated wilderness grid before it exists.
+          const gate = zone.toTownExit; // Uses the real authored town gate when the zone provided one.
           const col = Number.isFinite(gate?.col) ? gate.col : config.exitCol;
           const row = Number.isFinite(gate?.row) ? gate.row : config.exitRow;
-          return [...(zone?.transitions || preserved), {
+          return [...(zone.transitions || []), {
             id: 'npc_zone_town_' + area, area, col, row, target: 'town',
             targetCol: config.townReturnCol, targetRow: config.townReturnRow,
           }];
