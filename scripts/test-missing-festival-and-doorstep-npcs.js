@@ -134,8 +134,9 @@ async function testFestivalRecovery() {
     getWalkers: () => existing,
     isFestivalSuspended: () => false,
   };
+  const contextAbsent = new Set(['father_hunundi_hodu']); // Models Hunundi's genuine absence on one festival and normal attendance on another.
   const scheduling = {
-    hasPresenceSchedule: rec => !!rec.visitorPresence || rec.id === 'father_hunundi_hodu',
+    getVisitorPresence: rec => contextAbsent.has(rec.id) ? {active: false} : null,
   };
   const recover = new Function(
     'deps', 'residents', 'festivalHours', 'window', 'Promise',
@@ -151,6 +152,10 @@ async function testFestivalRecovery() {
   recover(7500);
   await Promise.resolve();
   assert.equal(requested.length, 4, 'another check is allowed after the throttle interval');
+  contextAbsent.delete('father_hunundi_hodu'); // An authored presence provider exists but its absence no longer applies.
+  recover(11000);
+  await Promise.resolve();
+  assert.deepEqual(requested.slice(4), ['pahu', 'leaf', 'father_hunundi_hodu'], 'inactive presence rules must not hide a genuine resident forever');
 }
 
 function testWildernessHomeRoutes() {
