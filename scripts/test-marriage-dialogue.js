@@ -55,7 +55,7 @@ romance.completeWedding('sloomi');
 const married = romance.spouseDialogueFor('sloomi'); // Marriage-specific lines and nickname resolved from config.
 assert.equal(married.nickname, 'Nimy');
 assert.equal(romance.spouseDialogueFor('gorobi_ginju'), null, 'marriage is exclusive to the actual spouse');
-assert.equal(dialogue.testTokens('{{playerLocalNickname}} / {{playerName}}', sloomi.rec), 'Nimy / Nima');
+assert.equal(dialogue.testTokens('{{playerLocalNickname}} / {{playerNickname}} / {{playerName}}', sloomi.rec), 'Nimy / Nimy / Nima');
 assert.equal(dialogue.testTokens('{{playerLocalNickname}}', neighbor.rec), 'Nima', 'other NPC token fallback unaffected');
 assert.equal(ambient._test.playerNicknameFor(sloomi), 'Nimy');
 assert.equal(ambient._test.playerGreetingPolicy(sloomi).allowed, true, 'marriage outranks stale low-favor greeting restrictions');
