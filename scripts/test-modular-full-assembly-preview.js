@@ -50,12 +50,13 @@ assert(plan.bounds.top<=0 && plan.bounds.top+plan.bounds.height>=plan.end.y,
   'whole rig bounding box includes BOTH full shaft and rope end, no crop');
 
 const canvas={width:450,height:1500,dataset:{},getContext:()=>ctx()};
+const beforeRender=calls.length; // An opaque-border scan drew the source rope once offscreen; that is NOT a rig layer.
 const painted=api.render(canvas,plan,true);
 assert.equal(canvas.dataset.rigKind,'flail');
 assert.equal(painted.layerCount,2);
-assert.equal(calls.filter(op=>op[0]==='image').length,4,
+assert.equal(calls.slice(beforeRender).filter(op=>op[0]==='image').length,4,
   'actual assembled haft, rope art, and two separate head layers are painted in correct order');
-assert.deepEqual(calls.filter(op=>op[0]==='image').slice(0,4).map(op=>op[1]),
+assert.deepEqual(calls.slice(beforeRender).filter(op=>op[0]==='image').slice(0,4).map(op=>op[1]),
   [composed,ropeImage,...headImages], 'the entire rig is made of genuine source images, never a decorative guide-only mockup');
 assert(calls.some(op=>op[0]==='text' && op[1]==='SHAFT ANCHOR'),'full view labels the real attachment');
 assert(calls.some(op=>op[0]==='text' && op[1]==='HEAD CONTACT'),'full view labels the head end');
