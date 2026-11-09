@@ -38,6 +38,7 @@
   const PANEL_ID = 'slagothimTradePanel';
   const SAVE_VERSION = 1;
 
+  const IMPORTED_SPICES = Object.freeze(['cloudSaffron','starpepper','nightCardamom']); // Shared with the acquisition-rarity calculation and rolled stock.
   const TUNING = Object.freeze({
     MIN_TOWN_VALUE: 1, // Caravans never appear before the town has grown at least once.
     DAILY_CHANCE_BASE: 0.15, // Chance per world day at Town Value 1…
@@ -620,7 +621,7 @@
       stock.push(itemEntry(offer.key, offer.qty, Math.max(16, itemPrice(offer.key, 3)), { note: offer.region + ' seed variety' }));
     }
     // Rare imported spices from far-ranging trade routes; every caravan has at least one.
-    const importedSpices = ['cloudSaffron','starpepper','nightCardamom']; // Sold alongside the established foreign fish and seasonal crops.
+    const importedSpices = IMPORTED_SPICES; // Same authored three-spice pool used for trade-frequency valuation.
     for (const key of shuffled(rng, importedSpices).slice(0,intRoll(rng,1,2))) {
       if (deps?.ITEM_DEFS?.[key]) stock.push(itemEntry(key,intRoll(rng,1,3),Math.max(35,itemPrice(key,5)),{note:'Rare imported spice',rare:true}));
     }
@@ -1382,6 +1383,8 @@
 
   window.SlagothimTraders = Object.freeze({
     TUNING,
+    IMPORTED_SPICES,
+    dailySpawnChance, // Public, deterministic caravan availability; rarity pricing must not call dev-only hooks.
     TRADE_ACTION,
     init,
     update,
