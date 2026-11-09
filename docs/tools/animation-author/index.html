@@ -13873,6 +13873,23 @@ function kissActorHeightV1546(actor) {
   return metrics.modelHeight * visualScaleY;
 }
 
+function kissNeutralMouthHeightV1552(actor) {
+  const height = kissActorHeightV1546(actor); // Cache key changes when the NPC is rescaled for an extreme-size test or edited rig.
+  const cached = actor?.kissNeutralMouthV1552;
+  if (cached?.model === actor.model && Math.abs(cached.height - height) < .00001) return cached.mouth;
+  const pose = window.SharedAttackPose; // Same B'shuakauitl mouth pixel resolver as the live game and Attack Editor.
+  const THREE = state.three?.THREE;
+  if (!pose?.createHeadFrame || !pose?.headFrame || !THREE?.Vector3 || !actor?.model || !actor.root) return null;
+  const frame = pose.createHeadFrame(THREE); // Only sampled at first preset build or when visual size changes, not every preview frame.
+  actor.model.updateWorldMatrix?.(true, true);
+  if (!pose.headFrame(frame, actor.model)) return null;
+  const floor = actor.root.getWorldPosition(new THREE.Vector3());
+  const mouth = frame.position.y - floor.y;
+  if (!(mouth > .001) || !Number.isFinite(mouth)) return null;
+  actor.kissNeutralMouthV1552 = { model: actor.model, height, mouth }; // Used to solve knee/bow from each species' true resting face height.
+  return mouth;
+}
+
 function kissPairHeightV1546() {
   const pair = romanticDancePair(); // Uses the same selected-actor pairing rules as the romantic dance.
   if (!pair.leader || !pair.partner) return { ...pair, solution: null };
@@ -13892,7 +13909,11 @@ function kissPairHeightV1546() {
   }; // Measured leg length and posterior Y in the avatar's authored scale.
   const tall = legMetrics(tallerActor);
   const short = legMetrics(shorterActor);
+  const firstMouth = kissNeutralMouthHeightV1552(pair.leader); // Canonical lip measurements avoid the old inaccurate 82%-of-height assumption.
+  const secondMouth = kissNeutralMouthHeightV1552(pair.partner);
   const solution = window.SpouseKissMotion?.solveHeights?.(firstHeight, secondHeight, {
+    ...(firstMouth ? { firstMouthHeightWorld: firstMouth } : {}),
+    ...(secondMouth ? { secondMouthHeightWorld: secondMouth } : {}),
     ...(tall.length ? { tallerLegLengthWorld: tall.length } : {}),
     ...(tall.hip ? { tallerHipHeightWorld: tall.hip } : {}),
     ...(short.length ? { shorterLegLengthWorld: short.length } : {}),
@@ -14469,11 +14490,21 @@ syncMultiAvatarFullBodiesV1548 = function(time = animationAuthor.currentTime, dt
         for (const actor of [leader, partner]) actor.rigFeetPreview?.setExternalFootTargets?.(null); // A new non-jump preset must release old foot targets.
       }
       installInitiatorShoulderContactV1550(leader, partner, time, solution);
+      const mouthScratch = animationAuthor.kissMouthScratchV1552 ||
+        (animationAuthor.kissMouthScratchV1552 = { THREE: state.three.THREE }); // Persistent head pivots and skinned lip frames across slider scrub.
+      animationAuthor.kissMouthContactV1552 = window.SpouseKissMotion.syncMouthContact(
+        leader.model, partner.model, time, mouthScratch,
+      ); // Final small neck reach happens AFTER torso lowering + shoulder grip; actor X/Z tracks never change.
       // The noninitiating partner retains the existing idle/embrace hand pose.
       // For a shorter initiator the shoulder projection engages at .13–.37 s,
       // before the taller partner begins kneeling at .52 s.
     }
   } else {
+    if (animationAuthor.kissMouthScratchV1552) {
+      window.SpouseKissMotion.syncMouthContact(null, null, 0, animationAuthor.kissMouthScratchV1552); // Restore both original neck joint offsets when leaving Kiss.
+      animationAuthor.kissMouthScratchV1552 = null;
+      animationAuthor.kissMouthContactV1552 = null;
+    }
     for (const actor of animationAuthor.actors) {
       actor.rigFeetPreview?.setExternalFootTargets?.(null); // Restore normal gait when leaving the kiss, switching mode or opening another preset.
       actor.multiKissHandContactRigV1550 = null; // A subsequent Kiss must reinstall its grip provider after dance/mode changes.
@@ -14544,6 +14575,7 @@ function fullCharacterPreviewDiagnosticsV1548() {
     pants: !!actor.rigPantsPreview,
     kneeDrop: actor.rigFeetPreview?.getStanceDrop?.() || 0,
     initiatorHands: actor.multiKissHandContactV1550 || null, // On-device reach/clamp/engagement diagnostics for the currently selected kiss initiator.
+    lipContact: animationAuthor.kissMouthContactV1552 || null, // Measured skinned mouth distance, not a proxy based on actor root coordinates.
   }));
 }
 
@@ -14555,8 +14587,9 @@ prepareMultiAvatarAnimationAuthor = function() {
 };
 installKissPresetUiV1546(); // The author initialized earlier in the same script; install immediately too.
 if (window.MultiAvatarAnimationAuthor) {
-  window.MultiAvatarAnimationAuthor.version = '15.51';
+  window.MultiAvatarAnimationAuthor.version = '15.52';
   window.MultiAvatarAnimationAuthor.fullBodyDiagnostics = fullCharacterPreviewDiagnosticsV1548;
+  window.MultiAvatarAnimationAuthor.kissMouthDiagnostics = () => animationAuthor.kissMouthContactV1552 || null; // Touch-only diagnostics for actual lip contact and remaining distance.
   window.MultiAvatarAnimationAuthor.kissPairDiagnostics = () => {
     const pair = configuredKissPairV1550(); // Exposes pinned initiator, not the currently inspected actor.
     return {
