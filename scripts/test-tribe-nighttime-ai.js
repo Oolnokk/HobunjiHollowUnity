@@ -72,12 +72,13 @@ assert.equal(retired, 1, 'out-of-range sleeping hunters still become cheap abstr
 assert.equal(abstract, 1, 'out-of-range sleeping hunters advance without a native rig');
 
 const calls = [];
+let tacticalTicks = 0; // Tracks cheap off-screen Avenger decisions independently of whole-camp movement updates.
 let remoteSleeping = false; // Simulated calendar night/day transition for cached wilderness camps.
 let remoteDay = 1; // Synthetic world day to verify immediate distant slain-resident replacement and new daily patrols.
 const zoneContext = vm.createContext({
-  state: { zones: new Map([['current', { zoneId: 'current', hunters: [], huntingParties: [] }], ['cached', { zoneId: 'cached', hunters: [], huntingParties: [] }]]) },
+  state: { zones: new Map([['current', { zoneId: 'current', hunters: [], huntingParties: [] }], ['cached', { zoneId: 'cached', hunters: [], huntingParties: [], avengerBand: {} }]]) },
   currentArea: () => 'current', isSleepingHour: () => remoteSleeping, gameDay: () => remoteDay,
-  activeCamps: zone => [zone],
+  activeCamps: zone => [zone], updateAvengerBand: () => { tacticalTicks++; },
   updateCampHunters: (camp, dt, coarseDt) => {
     calls.push([camp.zoneId, coarseDt]);
     if (!camp.hunters.length) camp.hunters.push({ role: 'resident' }); // Mimics first-tick seeding without double-spawning.
@@ -93,6 +94,7 @@ zoneContext.updateAllHunters(.2, 0);
 assert.deepEqual(calls.map(c => c[0]), ['current', 'cached'], 'cached zones initialize their population on the first tick');
 zoneContext.updateAllHunters(.2, 0);
 assert.deepEqual(calls.slice(2).map(c => c[0]), ['current'], 'initialized cached zones skip high-rate AI');
+assert.equal(tacticalTicks, 1, 'Avengers retain fast tactical decisions while remote residents do not move');
 zoneContext.updateAllHunters(.2, 4);
 assert.deepEqual(calls.slice(3).map(c => c[0]), ['current', 'cached'], 'cached zones retain coarse simulation');
 const remote = zoneContext.state.zones.get('cached');
