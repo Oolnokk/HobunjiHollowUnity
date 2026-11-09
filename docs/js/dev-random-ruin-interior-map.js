@@ -1616,6 +1616,11 @@
     window.FurniturePuzzleRuntime?.clearMap?.(MAP_ID); // The map ID is reused on reroll: release authored support, inputs and pending animations before scene disposal.
     for(const burden of window.Shattercasks?.activeBurdenRecords?.(MAP_ID)||[])window.Shattercasks?.discardBurden?.(burden); // The reusable map must never inherit loose bombs or statues from an old scene.
     for(const shaft of ruin?.shaftGrids?.values()||[])shaft.dispose();
+    if(ruin?.floorShellRepair){
+      const backing=ruin.floorShellRepair.object; // Backing is runtime-owned, unlike the reusable V50 generator's source meshes.
+      detach(backing);backing.geometry?.dispose?.();backing.material?.dispose?.();
+      ruin.floorShellRepair=null;
+    }
     ruin?.v50EntryCubeRelease?.(); // Release entrance-floor V50 puzzle solvers before regenerating the shared iframe.
     ruin?.shaftConnectorCleanup?.(); // Corridor stone, side walls, native V50 story meshes and support scopes do not survive regeneration.
     if(ruin?.nativeV50Pending?.length&&!ruin.nativeV50Runtime){
