@@ -170,11 +170,16 @@ function testWildernessHomeRoutes() {
   const zoneDefs = {map_eastern_mire: {entryCol: 1, entryRow: 20, exitCol: 1, exitRow: 20, townReturnCol: 58, townReturnRow: 25}};
   const town = [{target: 'building', targetMapId: 'map_i_inn', col: 30, row: 21}, {target: 'zone', targetMapId: 'map_eastern_mire', col: 59, row: 25}];
   const isBuilding = area => area.startsWith('map_i_');
-  const pool = new Function(
+  const preserved = {map_eastern_mire: [{id: 'sp_emi_swamp', col: 34, row: 29, targetMapId: 'map_i_swamp_house'}]}; // Source-of-truth fixed door before generation finishes.
+  const poolFactory = new Function(
     '_isBuildingArea', '_buildingScenes', 'worldTownTransitions', '_isZoneArea',
-    '_zoneLayouts', 'EXTERIOR_ZONES', 'worldTransitions',
+    '_zoneLayouts', 'EXTERIOR_ZONES', 'worldTransitions', 'TOTHAL_PRESERVED_TRANSITIONS',
     game.slice(start, end) + '\nreturn npcTransitionPool;'
-  )(isBuilding, interiors, town, area => area === 'map_eastern_mire', zones, zoneDefs, []);
+  );
+  const pool = poolFactory(isBuilding, interiors, town, area => area === 'map_eastern_mire', zones, zoneDefs, [], preserved);
+  const coldPool = poolFactory(isBuilding, interiors, town, area => area === 'map_eastern_mire', new Map(), zoneDefs, [], preserved); // Pre-Tothal scene has no live grid.
+  assert.equal(coldPool('map_eastern_mire')[0].targetMapId, 'map_i_swamp_house', 'pre-shift known house entrance remains discoverable');
+  assert.equal(coldPool('map_eastern_mire').some(t => t.target === 'town'), false, 'NPCs cannot cross unfinished wilderness terrain');
   const win = {}; // Actual pathfinding namespace registered by its production module.
   new Function('window', code)(win);
   win.NpcPathfinding.init({
