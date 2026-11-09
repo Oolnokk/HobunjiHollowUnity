@@ -126,6 +126,8 @@ api.tintRopePixels(unchangedWhite, '#FFFFFF');
 assert.deepEqual(Array.from(unchangedWhite),Array.from(originalRopePixels),'default white rope retains the source image');
 
 assert.equal(source.includes('tintedRopeTextures = new WeakMap()'),true,'recolored rope variants are cached per source image');
+assert.match(source, /ropeTintMethod = tintedSource === sourceTexture/, 'the actual textured rope reports whether the shared color fill succeeded');
+assert.match(source, /ropeTint: s\.chain\?\.userData/, 'mobile diagnostics expose the real rope tint path');
 assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.head.layers[2].vfx.type, 'fire');
 assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.head.layers[2].targetHex.toUpperCase(), '#E7DDC9');
 assert.match(source, /enchantmentTargets/, 'the assembly exposes head-only enchantment masks');
