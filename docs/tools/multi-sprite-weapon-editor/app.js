@@ -158,7 +158,7 @@
     $('ropeFields').hidden = !rope;
     $('ropeLength').value = f.chain.lengthPx ?? 160;
     $('ropeRadius').value = f.chain.radiusPx ?? 2.5;
-    $('ropeColor').value = f.chain.color || '#6B4728';
+    $('ropeColor').value = f.chain.color || '#FFFFFF';
     $('chainScaleX').value = f.chain.scaleX ?? f.chain.scale ?? 1; // A saved uniform multiplier still appears correctly on both axis controls.
     $('chainScaleY').value = f.chain.scaleY ?? f.chain.scale ?? 1;
     $('headScale').value = f.head.scale ?? 1;
@@ -337,13 +337,13 @@
       const chain = ensureFlail().chain; // Type conversion retains saved PNG and rope settings if toggled back.
       if (value === 'rope') {
         chain.type = 'rope'; chain.lengthPx ??= 160; chain.radiusPx ??= 2.5;
-        chain.color ||= '#6B4728'; chain.texture ||= 'assets/textures/wavy_surface.png';
+        chain.color ||= '#FFFFFF'; chain.sprite = 'assets/objectsprites/rope_long.png'; // Selecting rope changes to the ruin sprite art.
       } else delete chain.type;
       setFlailFields(); window.HobunjiMultiSpritePreviewRenderer?.resetEffects();
     });
     bindInput('ropeLength', value => { ensureFlail().chain.lengthPx = safeNum(value,160,2,2048); });
     bindInput('ropeRadius', value => { ensureFlail().chain.radiusPx = safeNum(value,2.5,.25,30); });
-    bindInput('ropeColor', value => { ensureFlail().chain.color = validHex(value,'#6B4728'); });
+    bindInput('ropeColor', value => { ensureFlail().chain.color = validHex(value,'#FFFFFF'); });
     for (const [id, axis] of [['chainScaleX', 'scaleX'], ['chainScaleY', 'scaleY']]) bindInput(id, value => {
       const chain = ensureFlail().chain; // Used by the renderer and serialized weapon recipe for both chains and generated ropes.
       const legacyScale = safeNum(chain.scale ?? 1, 1, 0.05, 8); // Preserves the untouched axis when migrating a saved uniform draft.
