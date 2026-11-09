@@ -30,6 +30,7 @@
   let sourceName = 'model'; // Name for diagnostics and exported GLB files.
   let downloadUrl = null; // Retains a manual-tap GLB link on mobile until replaced.
   let originalOwnsResources = false; // Imported GLBs own GPU buffers; generated objects may use shared generator caches.
+  let candidateMatchesControls = false; // Only current successful preview settings permit an optimized GLB export.
   let linkedGame = null; // Optional game tab opened directly by this workshop.
   let liveBuffer = null, liveName = ''; // Captured live GLB bytes/label for the existing load/preview pipeline.
   let activePick = null; // One-shot game canvas listener, cancelled on another pick or Escape.
@@ -79,7 +80,7 @@
     updating = value;
     $('load').disabled = value;
     $('update').disabled = value;
-    $('export').disabled = value || !candidate || !original || !Core.preservedMaterials(original,candidate);
+    $('export').disabled = value || !candidateMatchesControls || !candidate || !original || !Core.preservedMaterials(original,candidate);
   }
   function titleText(node) {
     return (node.name || 'unnamed mesh').slice(0, 72);
@@ -181,6 +182,7 @@
     $('materials').textContent = (safe ? '✓ Materials and group assignments preserved. ' : '⚠ Material assignments changed — export disabled. ') +
       $('materials').textContent;
     for (const note of result.warnings) log(note, false);
+    candidateMatchesControls = safe; // Export approval belongs to this completed preview, not a previously rendered one.
     $('export').disabled = !safe;
     if (!safe) log('Material preservation validation failed', true);
     else log('Preview built. Actual triangle reduction: ' + percent + '%.');
@@ -188,6 +190,7 @@
   async function updatePreview() {
     if (!original) { log('Load an object first.', true); return; }
     const version = ++generation;
+    candidateMatchesControls = false; // A failed reprocess must never leave stale export enabled.
     setBusy(true);
     try {
       const options = {
@@ -409,6 +412,7 @@
       if (!next?.traverse || !Core.stats(next).meshes) throw new Error('Source contains no triangle meshes');
       if (token !== generation) { if (ownsResources) disposeImported(next); return; }
       disposeCandidate();
+      candidateMatchesControls = false; // Old source/preview export is invalid once a new object is selected.
       releaseOriginal();
       original = next;
       originalOwnsResources = ownsResources;
@@ -431,7 +435,7 @@
     await updatePreview();
   }
   async function exportGLB() {
-    if (!candidate || updating || !Core.preservedMaterials(original, candidate)) return;
+    if (!candidate || !candidateMatchesControls || updating || !Core.preservedMaterials(original, candidate)) return;
     const unsupported = [];
     candidate.traverse(node => {
       if (!node.isMesh) return;
@@ -476,6 +480,12 @@
   $('pick-game').addEventListener('click', armGamePick);
   // Pagehide cleanup above also cancels an armed live pick.
   $('update').addEventListener('click', updatePreview);
+  function invalidatePreview() {
+    candidateMatchesControls = false; // Sliders/input changes invalidate the candidate until Update preview succeeds.
+    $('export').disabled = true;
+    if (candidate) $('loading-note').textContent = 'Settings changed. Update preview before exporting.';
+  }
+  for (const id of ['remesh','edge-size','reduction','error','protect-cards']) $(id).addEventListener('input', invalidatePreview);
   $('export').addEventListener('click', exportGLB);
   window.addEventListener('pagehide', () => {
     cancelPick();
