@@ -439,7 +439,7 @@
       for (const entry of available) select.add(new Option(entry.label, entry.id));
       select.value = choice || '';
     }
-    const sourcePoint = api.matchingMounts(shaft, head)[0]?.start || shaft.mounts[0]?.start || { x: 225, y: 602 };
+    const sourcePoint = shaft.mounts.find(mount => mount.type === (head.mount.type === 'blade' ? 'tang' : 'eye'))?.start || shaft.mounts[0]?.start || { x: 225, y: 602 };
     byId('shaft-rope-x').value = shaft.flailHaftAnchor?.x ?? '';
     byId('shaft-rope-y').value = shaft.flailHaftAnchor?.y ?? '';
     byId('shaft-rope-x').placeholder = String(Math.round(sourcePoint.x)) + ' (socket)';
@@ -655,7 +655,7 @@
     const shaft = chosenShaft(), x = byId('shaft-rope-x').value.trim(), y = byId('shaft-rope-y').value.trim();
     if (!x && !y) delete shaft.flailHaftAnchor; // Blank coordinates restore the matching authored socket.
     else {
-      const source = api.matchingMounts(shaft, chosenHead())[0]?.start || shaft.mounts[0]?.start || { x: 225, y: 602 };
+      const source = shaft.mounts.find(mount => mount.type === (chosenHead().mount.type === 'blade' ? 'tang' : 'eye'))?.start || shaft.mounts[0]?.start || { x: 225, y: 602 };
       shaft.flailHaftAnchor = { x: x ? Number(x) : source.x, y: y ? Number(y) : source.y };
     }
     save();
