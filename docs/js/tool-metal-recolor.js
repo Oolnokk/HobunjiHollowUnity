@@ -520,41 +520,57 @@
     return shortSide > 0 ? Math.min(1, shortSide / OUTLINE_REFERENCE_SHORT_SIDE) : 1;
   }
 
+  // Exact squared Euclidean distance transform; O(width * height) instead
+  // of searching an entire circular neighborhood for every metal pixel.
+  function squaredDistanceLine(input, length, sites, breaks, output) {
+    let k = 0;
+    sites[0] = 0; breaks[0] = -Infinity; breaks[1] = Infinity;
+    for (let q = 1; q < length; q++) {
+      let p = sites[k];
+      let cross = ((input[q] + q * q) - (input[p] + p * p)) / (2 * (q - p));
+      while (cross <= breaks[k]) {
+        p = sites[--k];
+        cross = ((input[q] + q * q) - (input[p] + p * p)) / (2 * (q - p));
+      }
+      sites[++k] = q; breaks[k] = cross; breaks[k + 1] = Infinity;
+    }
+    k = 0;
+    for (let q = 0; q < length; q++) {
+      while (breaks[k + 1] < q) k++;
+      const delta = q - sites[k]; // Distance from this pixel to its nearest parabola site.
+      output[q] = delta * delta + input[sites[k]];
+    }
+  }
+
   function buildOxidationOutlineMask(oxidationMask, metalMask, width, height, outlineWidth, centered = false) {
     const outline = new Uint8Array(oxidationMask.length);
-    if (!outlineWidth) return outline;
-
+    if (!outlineWidth || !width || !height) return outline;
     const boundary = new Uint8Array(oxidationMask.length);
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const p = y * width + x;
-        if (!oxidationMask[p]) continue;
-        let isEdge = false;
-        for (let oy = -1; oy <= 1 && !isEdge; oy++) {
-          for (let ox = -1; ox <= 1; ox++) {
-            if (!ox && !oy) continue;
-            const nx = x + ox;
-            const ny = y + oy;
-            if (nx < 0 || ny < 0 || nx >= width || ny >= height) {
-              isEdge = true;
-              break;
-            }
-            const np = ny * width + nx;
-            if (!oxidationMask[np] && metalMask[np]) {
-              isEdge = true;
-              break;
-            }
-          }
+    let boundaryPixels = 0; // Avoid transforming masks with no visible edge.
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+      const p = y * width + x;
+      if (!oxidationMask[p]) continue;
+      let isEdge = false;
+      for (let oy = -1; oy <= 1 && !isEdge; oy++) for (let ox = -1; ox <= 1; ox++) {
+        if (!ox && !oy) continue;
+        const nx = x + ox, ny = y + oy;
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height ||
+            (!oxidationMask[ny * width + nx] && metalMask[ny * width + nx])) {
+          isEdge = true; break;
         }
-        if (isEdge) boundary[p] = 1;
       }
+      if (isEdge) { boundary[p] = 1; boundaryPixels++; }
     }
+    if (!boundaryPixels) return outline;
 
     const totalRadius = Math.max(1, Math.round((outlineWidth | 0) * 5 * outlineRasterScale(width, height)));
-    const inwardRadius = centered ? Math.floor(totalRadius / 2) : 0; // Authored patterns move half of the old outward-only border onto the filled side.
-    const outwardRadius = centered ? totalRadius - inwardRadius : totalRadius; // Procedural verdigris keeps its legacy outward-only border.
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
+    const inwardRadius = centered ? Math.floor(totalRadius / 2) : 0; // Authored motifs split the old radius across their contour.
+    const outwardRadius = centered ? totalRadius - inwardRadius : totalRadius; // Procedural verdigris remains outward-only.
+    // Densely speckled oxidation puts a boundary beside almost every pixel.
+    // The old early-exit neighborhood check wins in this case: avoid allocating
+    // the full-distance raster when most searches terminate after 1-2 neighbors.
+    if (boundaryPixels * 3 >= width * height) {
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
         const p = y * width + x;
         if (!metalMask[p]) continue;
         const radius = oxidationMask[p] ? inwardRadius : outwardRadius;
@@ -563,16 +579,38 @@
         for (let oy = -radius; oy <= radius && !nearBoundary; oy++) {
           for (let ox = -radius; ox <= radius; ox++) {
             if (Math.hypot(ox, oy) > radius + 0.01) continue;
-            const nx = x + ox;
-            const ny = y + oy;
+            const nx = x + ox, ny = y + oy;
             if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-            if (boundary[ny * width + nx]) {
-              nearBoundary = true;
-              break;
-            }
+            if (boundary[ny * width + nx]) { nearBoundary = true; break; }
           }
         }
         if (nearBoundary) outline[p] = 1;
+      }
+      return outline;
+    }
+    const maxLength = Math.max(width, height); // Buffer capacity for both axis passes.
+    const sites = new Int32Array(maxLength); // Active nearest-boundary parabola positions.
+    const breaks = new Float64Array(maxLength + 1); // Positions where the closest parabola changes.
+    const input = new Float64Array(maxLength); // Source squared distances for one line.
+    const output = new Float64Array(maxLength); // Exact nearest-boundary distances for one line.
+    const rowDistances = new Float64Array(width * height); // Horizontal results consumed by column transforms.
+    const far = width * width + height * height + 1; // Finite infinity prevents NaNs.
+
+    for (let y = 0; y < height; y++) {
+      const row = y * width; // Base offset for this horizontal line.
+      for (let x = 0; x < width; x++) input[x] = boundary[row + x] ? 0 : far;
+      squaredDistanceLine(input, width, sites, breaks, output);
+      for (let x = 0; x < width; x++) rowDistances[row + x] = output[x];
+    }
+    for (let x = 0; x < width; x++) {
+      for (let y = 0; y < height; y++) input[y] = rowDistances[y * width + x];
+      squaredDistanceLine(input, height, sites, breaks, output);
+      for (let y = 0; y < height; y++) {
+        const p = y * width + x;
+        if (!metalMask[p]) continue;
+        const radius = oxidationMask[p] ? inwardRadius : outwardRadius;
+        // Preserve the original Math.hypot(ox, oy) <= radius + 0.01 rounding.
+        if (radius > 0 && output[y] <= (radius + 0.01) * (radius + 0.01)) outline[p] = 1;
       }
     }
     return outline;
@@ -806,8 +844,11 @@
   const MAX_CANVAS_CACHE_ENTRIES = 32; // Pattern-authoring live-editing settles one new cache key per slider tweak (translate/rotate/scale); without a cap this grows unbounded for the life of the tab.
   const _imgCache = new Map();
   const _canvasCache = new Map();
+  const _pendingCanvasCache = new Map(); // Deduplicates same-key requests before the first sprite render finishes.
+  let _cacheGeneration = 0; // Clear-cache invalidation prevents old asynchronous work from repopulating the cache.
   window.HobunjiCacheAudit?.register('ToolMetalRecolor.imgCache', () => _imgCache.size);
   window.HobunjiCacheAudit?.register('ToolMetalRecolor.canvasCache', () => _canvasCache.size);
+  window.HobunjiCacheAudit?.register('ToolMetalRecolor.pendingCanvasCache', () => _pendingCanvasCache.size);
 
   function loadImage(spritePath, opts = {}) {
     const modular = window.ModularWeapons?.decode?.(spritePath); // Virtual sprites reuse the normal metal/plating/icon recolor cache.
@@ -832,7 +873,9 @@
         resolve(img);
       };
       img.onerror = () => {
-        _imgCache.delete(spritePath);
+        // Clear-cache may have installed a newer load for this sprite while the
+        // old image request was still pending; only evict our own failed promise.
+        if (_imgCache.get(spritePath) === promise) _imgCache.delete(spritePath);
         const error = new Error(`Failed to load tool sprite: ${spritePath}`);
         debugError(opts, 'image load failed', { spritePath, message: error.message });
         reject(error);
@@ -901,6 +944,9 @@
       return Promise.resolve(cached);
     }
 
+    const pending = _pendingCanvasCache.get(cacheKey); // Same equipment request can be issued by several renderers simultaneously.
+    if (pending) { debugLog(opts, 'canvas request joined', { spritePath, oxidationAmount }); return pending; }
+    const requestGeneration = _cacheGeneration; // A reset while this promise is active must not restore its stale result.
     debugLog(opts, 'canvas cache miss', { spritePath, oxidationAmount });
     if (debugEnabled(opts)) console.trace('[ToolMetalRecolor] request caller');
 
@@ -908,7 +954,7 @@
     // being embedded directly; resolve each optional slot independently.
     const motifLoads = authoredPatterns.map(pattern => patternMotifPromise(pattern, opts));
 
-    return Promise.all([loadImage(spritePath, opts), Promise.all(motifLoads)]).then(([img, motifImages]) => {
+    const work = Promise.all([loadImage(spritePath, opts), Promise.all(motifLoads)]).then(([img, motifImages]) => {
       const canvas = document.createElement('canvas');
       canvas.width = img.naturalWidth || img.width || 1;
       canvas.height = img.naturalHeight || img.height || 1;
@@ -944,8 +990,10 @@
         } // Keep the entire authored shaft and its off-white fire markers unplated, regardless of hue or verdigris patterns.
       }
       ctx.putImageData(imageData, 0, 0);
-      _canvasCache.set(cacheKey, canvas);
-      while (_canvasCache.size > MAX_CANVAS_CACHE_ENTRIES) _canvasCache.delete(_canvasCache.keys().next().value); // Evict oldest (Map preserves insertion order) instead of growing forever.
+      if (requestGeneration === _cacheGeneration) {
+        _canvasCache.set(cacheKey, canvas);
+        while (_canvasCache.size > MAX_CANVAS_CACHE_ENTRIES) _canvasCache.delete(_canvasCache.keys().next().value); // Bounded cache survives long authoring sessions.
+      }
       debugLog(opts, 'canvas ready', {
         spritePath,
         oxidationAmount,
@@ -960,12 +1008,18 @@
         message: error?.message || String(error),
       });
       throw error;
+    }).finally(() => {
+      if (_pendingCanvasCache.get(cacheKey) === work) _pendingCanvasCache.delete(cacheKey);
     });
+    _pendingCanvasCache.set(cacheKey, work);
+    return work;
   }
 
   function clearCache() {
+    _cacheGeneration++;
     _imgCache.clear();
     _canvasCache.clear();
+    _pendingCanvasCache.clear();
     debugLog({}, 'cache cleared');
   }
 
