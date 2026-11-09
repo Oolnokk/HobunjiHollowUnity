@@ -4,6 +4,7 @@
 (function (global) {
   'use strict';
   const alphaBoundsCache = new WeakMap(); // Avoid rescanning transparent borders when inspecting many flail combinations.
+  const alphaContactCache = new WeakMap(); // Top/bottom sprite attachment points, using the live renderer's >=128 alpha threshold.
   const tintedRopes = new Map(); // Small reuse cache for ColorFill-tinted copies of the source ruin rope PNG.
   const pixelSize = image => ({ width: image?.naturalWidth || image?.width || 0,
     height: image?.naturalHeight || image?.height || 0 }); // Normalizes HTMLImageElement and Canvas source frames.
@@ -31,6 +32,27 @@
     return crop;
   }
 
+  function opaqueContact(image, edge) {
+    let cached=alphaContactCache.get(image);
+    if (!cached) {cached={};alphaContactCache.set(image,cached);}
+    if (cached[edge]) return cached[edge];
+    const {width,height}=pixelSize(image);
+    if (!(width>0 && height>0)) throw new Error('Authored sprite has no pixels');
+    const fallback={x:(width-1)/2,y:edge==='top'?0:height-1}; // Same default contact as the gameplay sprite assembler.
+    try {
+      const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+      const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(image,0,0);
+      const rgba=ctx.getImageData(0,0,width,height).data;
+      for(let n=0;n<height;n++){
+        const y=edge==='top'?n:height-n-1;
+        let total=0,count=0;
+        for(let x=0;x<width;x++) if(rgba[(y*width+x)*4+3]>=128){total+=x;count++;}
+        if(count) return (cached[edge]={x:total/count,y});
+      }
+    }catch(_){ /* A pure-source fallback remains readable if alpha pixels are inaccessible. */ }
+    return (cached[edge]=fallback);
+  }
+
   function tintedRope(image, color) {
     const hex = String(color || '').toUpperCase();
     if (!/^#[0-9A-F]{6}$/.test(hex) || hex === '#FFFFFF') return image;
@@ -56,18 +78,23 @@
     const selected = layers.find(piece=>piece.layer.id===head.anchorLayer) || layers[0]; // Matches the live Three.js anchor layer fallback.
     if (!selected) throw new Error('Flail head has no authored sprite layers.');
     const {width,height} = pixelSize(selected.image);
-    const point = head.anchor || {}; // Pixel anchors use image-center-relative half-pixel coordinates in gameplay.
-    return { x:(number(point.x,width/2) + .5 - width/2) + number(selected.layer.offsetPx?.x),
-      y:(number(point.y,height/2) + .5 - height/2) + number(selected.layer.offsetPx?.y) };
+    const written = head.anchor || {}; // Explicit pixel positions are clamped by the real sprite assembler.
+    const defaultPoint=opaqueContact(selected.image,written.opaque==='top'?'top':'bottom');
+    const point = Number.isFinite(written.x) && Number.isFinite(written.y)
+      ? {x:Math.max(0,Math.min(width-1,written.x)),y:Math.max(0,Math.min(height-1,written.y))} : defaultPoint;
+    return { x:(point.x + .5 - width/2) + number(selected.layer.offsetPx?.x),
+      y:(point.y + .5 - height/2) + number(selected.layer.offsetPx?.y) };
   }
 
   function rasterChainPlan(chain, image, start, alpha) {
     const size = pixelSize(image), sx = connectorScale(chain,'scaleX');
     let sy = connectorScale(chain,'scaleY'); // Y length is the only degree of freedom changed by the rope/chain mount.
-    const top = chain.top && Number.isFinite(chain.top.x) && Number.isFinite(chain.top.y)
-      ? chain.top : {x:alpha.x+alpha.w/2,y:alpha.y};
-    const bottom = chain.bottom && Number.isFinite(chain.bottom.x) && Number.isFinite(chain.bottom.y)
-      ? chain.bottom : {x:alpha.x+alpha.w/2,y:alpha.y+alpha.h};
+    const top = Number.isFinite(chain.top?.x) && Number.isFinite(chain.top?.y)
+      ? {x:Math.max(0,Math.min(size.width-1,chain.top.x)),y:Math.max(0,Math.min(size.height-1,chain.top.y))}
+      : opaqueContact(image,chain.top?.opaque==='bottom'?'bottom':'top');
+    const bottom = Number.isFinite(chain.bottom?.x) && Number.isFinite(chain.bottom?.y)
+      ? {x:Math.max(0,Math.min(size.width-1,chain.bottom.x)),y:Math.max(0,Math.min(size.height-1,chain.bottom.y))}
+      : opaqueContact(image,chain.bottom?.opaque==='top'?'top':'bottom');
     const vx = (bottom.x - top.x) * sx;
     const height = bottom.y - top.y;
     const target = Number(chain.mountLengthPx);
@@ -189,5 +216,5 @@
     return {layerCount:0,sourceFrame:frame,mounts:mounts.length};
   }
 
-  global.ModularWeaponFullAssembly=Object.freeze({layout,render,renderRigid,authoredContact,opaqueBounds,rasterChainPlan});
+  global.ModularWeaponFullAssembly=Object.freeze({layout,render,renderRigid,authoredContact,opaqueContact,opaqueBounds,rasterChainPlan});
 })(window);
