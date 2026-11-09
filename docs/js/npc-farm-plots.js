@@ -98,7 +98,7 @@
       const workers = lineupOf(raw, 'workers');
       const plot = {
         id: String(raw.id), mapId: 'farm', area: 'farm', grid: true, family: true, kind, label: raw.label || raw.id, crop: raw.crop || '',
-        tillers: kind === 'till' ? workers : [], seeders: kind === 'till' ? workers : [], harvesters: [], diggers: kind === 'dig' ? workers : [],
+        tillers: kind === 'till' ? workers : [], seeders: kind === 'till' ? workers : [], harvesters: kind === 'till' ? workers : [], diggers: kind === 'dig' ? workers : [], // Family workers harvest into the player's quality-aware bag.
         startWorked: false,
         hours: Array.isArray(raw.hours) && raw.hours.length === 2 ? [num(raw.hours[0], DEFAULT_HOURS[0]), num(raw.hours[1], 17)] : [8, 17],
         tiles: raw.tiles.map(t => ({ c: Math.floor(num(t[0], 0)), r: Math.floor(num(t[1], 0)) })),
@@ -126,6 +126,7 @@
       if (!window.RomanceSystem?.spouseTownVisitNow?.(npcId)) return true;
     }
     if (window.NpcFollowing?.isCompanion?.(npcId)) return true;
+    if (plot?.family && window.RomanceFamily?.isAssignedToVat?.(npcId)) return true; // Vat work takes priority over a farm-plot claim.
     return false;
   }
   function activeWorker(plot, role) {
@@ -172,11 +173,13 @@
       }
       const tiller = activeWorker(plot, 'tillers') === npcId;
       const seeder = activeWorker(plot, 'seeders') === npcId;
+      const harvester = activeWorker(plot, 'harvesters') === npcId;
       const seedStock = seeder ? deps?.farmSeedStock?.() : null; // One storage read per job scan, not per tile/crop.
       for (const t of plot.tiles) {
         const i = tileOf(plot, t.c, t.r);
         const crop = seeder && i.tilled && !i.crop ? seedForTile(plot, t.c, t.r, seedStock) : null;
-        if (crop) jobs.push({ c: t.c, r: t.r, job: 'seed', crop });
+        if (harvester && i.crop && i.ready) jobs.push({ c: t.c, r: t.r, job: 'harvest', crop: i.crop });
+        else if (crop) jobs.push({ c: t.c, r: t.r, job: 'seed', crop });
         else if (tiller && i.canTill) jobs.push({ c: t.c, r: t.r, job: 'till' });
       }
       return jobs;
@@ -242,7 +245,7 @@
     const picked = pickJob(npcId, walker, { familyOnly });
     if (!picked) return null;
     const spot = standSpot(picked.plot, picked, walker);
-    claim = { plotId: picked.plot.id, area: picked.plot.area, c: picked.c, r: picked.r, job: picked.job, crop: picked.crop, standC: spot.c, standR: spot.r, workedS: 0, ageS: 0 };
+    claim = { plotId: picked.plot.id, npcId, area: picked.plot.area, c: picked.c, r: picked.r, job: picked.job, crop: picked.crop, standC: spot.c, standR: spot.r, workedS: 0, ageS: 0 }; // Worker identity follows the job to quality and XP attribution.
     claims.set(npcId, claim);
     claimedKeys.add(`${claim.plotId}:${keyOf(claim.c, claim.r)}`);
     return claim;
@@ -284,7 +287,7 @@
       // A claim may have been issued before a layout restore or edit; never let a stale
       // dig claim overwrite a tile now assigned to a planting field.
       const inPlot = plot.tiles.some(tile => tile.c === claim.c && tile.r === claim.r);
-      const allowedJob = plot.kind === 'dig' ? claim.job === 'dig' : claim.job === 'till' || claim.job === 'seed';
+      const allowedJob = plot.kind === 'dig' ? claim.job === 'dig' : ['till', 'seed', 'harvest'].includes(claim.job);
       const authoritative = window.FarmPlotEditor?.plots?.().find(owner => owner.tiles?.some(tile => tile[0] === claim.c && tile[1] === claim.r));
       const crop = claim.job === 'seed' ? seedForTile(plot, claim.c, claim.r) : null;
       if (!inPlot || !allowedJob || (claim.job === 'seed' && !crop) || (authoritative && (authoritative.id !== plot.id || authoritative.kind !== plot.kind))) {
@@ -292,7 +295,10 @@
         debug.lastRejected = { plot: plot.id, job: claim.job, c: claim.c, r: claim.r, at: Date.now() };
         return;
       }
-      if (deps?.applyFarmJob?.(claim.job, claim.c, claim.r, crop || plot.crop, plot.id)) { debug.jobsDone += 1; debug.lastJob = { plot: plot.id, job: claim.job, crop: crop || null, c: claim.c, r: claim.r, at: Date.now() }; }
+      if (deps?.applyFarmJob?.(claim.job, claim.c, claim.r, crop || plot.crop, plot.id, claim.npcId)) {
+        if (claim.npcId) window.RomanceFamily?.awardWork?.(claim.npcId, claim.job); // Only completed real jobs train usefulness.
+        debug.jobsDone += 1; debug.lastJob = { plot: plot.id, worker: claim.npcId || null, job: claim.job, crop: crop || null, c: claim.c, r: claim.r, at: Date.now() };
+      }
       return;
     }
     const s = stateOf(plot, claim.c, claim.r, true);
