@@ -13497,6 +13497,20 @@
               return;
             }
             if (targetArea !== this.area) {
+              // When a wilderness scene has not been rendered, its NPC grid
+              // is unavailable. Offscreen residents must still reach the inn,
+              // home and festivals; advance one logical area-graph hop instead
+              // of leaving them forever unable to walk on an unloaded grid.
+              if (_isZoneArea(this.area) && !npcGridForArea(this.area)) {
+                const hop = findNpcAreaLink(this.area, targetArea); // Reuses real exterior and building entrances, not a fabricated position.
+                const nextArea = hop?.toArea || targetArea; // Retains the existing missing-link fallback for genuinely disconnected destinations.
+                const landing = hop?.spawn || target; // The next walkable destination is checked by transferToArea.
+                if (nextArea !== this.area) {
+                  this._exitSpot = null; this._entrySpot = null; this._exitToArea = null;
+                  this.transferToArea(nextArea, landing);
+                }
+                return;
+              }
               if (!this._exitSpot) {
                 // May be several hops away (e.g. town → a building → one of its
                 // upstairs rooms) — findNpcAreaLink only returns the next leg,
