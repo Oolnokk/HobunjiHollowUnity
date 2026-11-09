@@ -324,8 +324,8 @@
       selected = 0; setFlailFields(); fillLayers(); markChanged();
     });
     on('newWeapon', 'click', () => {
-      const id = prompt('Existing TOOL_ITEM_DEFS key or held shape ID (letters and digits):', 'warhammer');
-      if (!id || !/^[a-z][a-zA-Z0-9_-]{1,63}$/.test(id)) { log('Please enter a valid existing weapon key.', true); return; }
+      const id = prompt('Weapon shape/tool key or reusable modular flail recipe ID:', 'modularRopeFlail');
+      if (!id || !/^[a-z][a-zA-Z0-9_-]{1,63}$/.test(id)) { log('Please enter a valid recipe ID (starts with a letter).', true); return; }
       if (!state.weapons[id]) state.weapons[id] = { label: id, sprite: '', layers: [] };
       selectWeapon(id);
     });
