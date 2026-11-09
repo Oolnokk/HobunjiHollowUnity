@@ -189,6 +189,10 @@
       const t=now(); // One shared particle-update cadence; the caller need not supply a frame delta.
       if(t-lastBlink>80){const step=Math.min(.05,Math.max(0,Number(dt)||((t-lastBlink)/1000)));lastBlink=t;for(const f of flames)f.update?.(step);} 
     }
+    function activeRespawnPoint(){
+      const active=records.get(activeId);
+      return active?.lit?{...active.at}:null; // Exact white-fire location; the legacy rope and doorway checkpoint system must defer to this one.
+    }
     function serializeProgress(){
       return {shaftLit,activeCheckpoint:activeId}; // Stable IDs, never Three.js objects or source pointers.
     }
@@ -200,10 +204,12 @@
       bowl.dispose();foot.dispose();stone.dispose?.();
       group.parent?.remove(group);
     }
-    const owner={tick,dispose,restore,serializeProgress,lightSources:()=>lights,
+    const owner={tick,dispose,restore,serializeProgress,activeRespawnPoint,lightSources:()=>lights,
       getState:()=>({shaftLit,activeCheckpoint:activeId,checkpoints:[...records.values()].map(r=>({id:r.id,lit:r.lit,x:r.at.x,z:r.at.z,y:r.at.y}))})};
     liveOwner=owner;
     return owner;
   }
-  return Object.freeze({mount,closeEnough,snapshotValid,HOLD_MS,lightSources:()=>liveOwner?.lightSources?.()||[]});
+  return Object.freeze({mount,closeEnough,snapshotValid,HOLD_MS,
+    activeRespawnPoint:()=>liveOwner?.activeRespawnPoint?.()||null, // White flame owns actual death/abyss return even when rope-bank hints are nearby.
+    lightSources:()=>liveOwner?.lightSources?.()||[]});
 });
