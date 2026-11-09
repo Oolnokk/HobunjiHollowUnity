@@ -181,7 +181,7 @@
         topLocal: new THREE.Vector3(), bottomLocal: new THREE.Vector3(), headAnchorLocal: new THREE.Vector3(),
         chainCenter: new THREE.Vector3(), endWorld: new THREE.Vector3(), headCenter: new THREE.Vector3(),
         chainLocal: new THREE.Vector3(), headLocal: new THREE.Vector3(), tmp: new THREE.Vector3(),
-        baseQ: new THREE.Quaternion(), rootInverseQ: new THREE.Quaternion(),
+        baseQ: new THREE.Quaternion(), rootInverseQ: new THREE.Quaternion(), rootWorldQ: new THREE.Quaternion(), decomposePos: new THREE.Vector3(), // World matrices are decomposed in place; Object3D.getWorld*() would recompute from raw local transforms.
         worldQ: new THREE.Quaternion(), headQ: new THREE.Quaternion(), correction: new THREE.Quaternion(),
         deltaQ: new THREE.Quaternion(), stepQ: new THREE.Quaternion(), basis: new THREE.Matrix4(),
       }, // Reused by every animation frame, avoiding repeated vector/quaternion/matrix allocations.
@@ -401,6 +401,22 @@
     }
   }
 
+  // Holders can override updateMatrixWorld to bake a transient pose around the real
+  // update (weapon-tool-stances.js applies the idle stance and cancels the sweep twist
+  // there, then restores the raw local transform). Object3D.updateWorldMatrix() and the
+  // getWorld*() helpers bypass that override and recompute from the raw local pose, so
+  // an assembly using them attaches its rope to a haft that is not where the renderer
+  // draws it. Refresh through the outermost overriding ancestor instead.
+  function refreshWorldMatrix(object) {
+    let hooked = null;
+    for (let node = object; node; node = node.parent) {
+      if (Object.prototype.hasOwnProperty.call(node, 'updateMatrixWorld')) hooked = node;
+    }
+    if (!hooked) { object.updateWorldMatrix(true, false); return; }
+    hooked.parent?.updateWorldMatrix(true, false);
+    hooked.updateMatrixWorld(true);
+  }
+
   function updateOne(state, dt, now, effectsDt = dt) {
     const { root, plane, config, scratch: q } = state;
     if (!root.parent) {
@@ -415,7 +431,7 @@
     }
     // Use the final holder+plane world pose, including the game's transient
     // authored Neutral. The rigid haft never relinquishes animation authority.
-    plane.updateWorldMatrix(true, false);
+    refreshWorldMatrix(plane); // Same baked holder frame the renderer will draw, not the raw local pose.
     const baseImage = plane.material?.map?.image;
     if (!baseImage) return;
     const unit = (plane.geometry?.parameters?.width || 0.5) / (baseImage.naturalWidth || baseImage.width || 1);
@@ -427,10 +443,11 @@
     if (!state.baseAnchor || !state.chainTop || !state.chainBottom || !state.headAnchor) return;
     const pivot = plane.localToWorld(pixelPoint(baseImage, state.baseAnchor, unit, null, q.pivotLocal));
     q.pivot.copy(pivot);
-    const baseQ = plane.getWorldQuaternion(q.baseQ);
+    plane.matrixWorld.decompose(q.decomposePos, q.baseQ, q.scale); // Rotation and rendered world scale from the baked matrix (getWorldQuaternion/getWorldScale bypass holder hooks).
+    const baseQ = q.baseQ;
     const normal = q.normal.set(0, 0, 1).applyQuaternion(baseQ);
-    plane.getWorldScale(q.scale); // The current haft's rendered world scale includes pre-existing grips, stances and item-size modifiers.
-    root.getWorldScale(q.rootScale); // Both child parts live under root, not under the transformed haft plane.
+    // q.scale (above) is the current haft's rendered world scale, including pre-existing grips, stances and item-size modifiers.
+    root.matrixWorld.decompose(q.decomposePos, q.rootWorldQ, q.rootScale); // Both child parts live under root, not under the transformed haft plane.
     const attachmentScale = Math.max(0.00001, Math.abs(q.scale.x)); // Authoritative world-space handle pixel scale, not a fixed weapon baseline.
     const localHandleScale = attachmentScale / Math.max(0.00001, Math.abs(q.rootScale.x)); // Compensates for extra scale applied to the handle plane itself.
     const chainScaleX = connectorAxisScale(flail.chain, 'scaleX'); // Chain width or generated-rope radius relative to the final rendered handle.
@@ -478,7 +495,7 @@
     const motion = flail.motion || {}; // Authored inertial controls from the Tool Hub; ordinary stances are not modified.
     const lag = Number.isFinite(Number(motion.lag)) ? Math.max(0, Math.min(1, Number(motion.lag))) : MOTION_LAG;
     const shaftUp = q.shaftUp.set(0, -1, 0).applyQuaternion(baseQ).normalize(); // Both haft sprites attach at their bottom end: extend outward along local -Y, away from the grip.
-    const pitchAxis = q.pitchAxis.set(1, 0, 0).applyQuaternion(root.getWorldQuaternion(q.rootInverseQ)).normalize(); // Use the holder frame: the PNG sweep basis rotates its local X away from the authored pitch axis.
+    const pitchAxis = q.pitchAxis.set(1, 0, 0).applyQuaternion(q.rootWorldQ).normalize(); // Use the holder frame: the PNG sweep basis rotates its local X away from the authored pitch axis.
     if (state.attacking && (!state.wasAttacking || state.progress < state.lastFrameProgress - 0.01)) {
       state.angularVelocity.set(0, 0, 0); state.hasPhysicsVelocity = false; q.pivotAcceleration.set(0, 0, 0);
       state.strikeTurnRad = 0; state.hasShaftUp = false; state.hasStrikeStart = false; // Reset the cached strike entry after a new attack or timeline seek.
@@ -530,8 +547,7 @@
     const worldQ = planeQuaternion(q.headUp.copy(state.direction).negate(), normal, q.worldQ, q);
     worldQ.multiply(q.correction.setFromUnitVectors(chainSpan, q.axisUp)); // Align both opaque chain endpoints, not the image rectangle.
     const chainCenterWorld = q.chainCenter.copy(pivot).sub(q.tmp.copy(topLocal).multiplyScalar(attachmentScale).applyQuaternion(worldQ)); // Keep the already axis-scaled top contact pinned to the haft.
-    root.updateWorldMatrix(true, false);
-    const rootQInverse = root.getWorldQuaternion(q.rootInverseQ).invert();
+    const rootQInverse = q.rootInverseQ.copy(q.rootWorldQ).invert(); // root's baked matrixWorld was refreshed above and is unchanged since.
     state.chain.position.copy(root.worldToLocal(q.chainLocal.copy(chainCenterWorld)));
     state.chain.quaternion.copy(rootQInverse).multiply(worldQ);
     const endWorld = q.endWorld.copy(chainCenterWorld).add(q.tmp.copy(bottomLocal).multiplyScalar(attachmentScale).applyQuaternion(worldQ)); // Use the stretched bottom endpoint without rescaling the head.
@@ -617,7 +633,7 @@
 
   global.HobunjiWeaponSpriteAssemblies = {
     definitions: DEF, decorate, setAction, tick, drop, debugSnapshot, enchantmentTargets, dualWieldEnchantmentTargets,
-    opaqueAt, anchor, definitionFor, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, // Pure phase helpers are covered by deterministic animation regression tests.
+    opaqueAt, anchor, refreshWorldMatrix, definitionFor, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, // Pure phase helpers are covered by deterministic animation regression tests.
   };
   global.HobunjiCacheAudit?.register('weapon assemblies (active or awaiting cleanup)', () => records.size);
   if (global.RuntimeFrameScheduler?.register) {
