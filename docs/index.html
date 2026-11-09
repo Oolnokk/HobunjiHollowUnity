@@ -101,7 +101,7 @@
        createInitialGrid(), before loading any saved farm layout) and
        window.FarmEditor.loadFarmLayout()/etc. immediately after. -->
   <script src="js/farm-editor.js?v=20261102tablechild1"></script>
-  <script src="js/farm-plot-editor.js?v=20261107cultivar2"></script> <!-- Shared family plot records and workers. -->
+  <script src="js/farm-plot-editor.js?v=20261109family1"></script> <!-- Shared family plot records and workers. -->
   <script src="js/farmwork-ui.js?v=20261029seedblocks2"></script> <!-- Controller-capable normal gameplay Farmwork manager. -->
   <!-- Terrain/path tile geometry builders, extracted out of game.js. Must
        load before game.js, which calls window.TerrainGeometry.init(...)
@@ -307,7 +307,7 @@
   <!-- Shared condition-axis schema/evaluators (window.ConditionRegistry) —
        single source of truth for the dialogue system's and the Loot & Shop
        system's condition gating, also loaded by their respective dev tools. -->
-  <script src="js/condition-registry.js?v=20261028h032d631"></script>
+  <script src="js/condition-registry.js?v=20261109hpahuloader2"></script>
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
        game.js already use. See docs/js/local-save-folder.js. -->
@@ -392,7 +392,7 @@
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
   <script src="js/combat/enemy-loadout-rules.js?v=20261101playerhead3"></script>
-  <script src="js/combat/combat-bandit.js?v=20261108attackpower1"></script>
+  <script src="js/combat/combat-bandit.js?v=20261109combatscratch1"></script>
   <script src="js/combat/ghoul-special-variants.js?v=20261031ghoulvar1"></script>
   <script src="js/combat/bandit-rank-wardrobe.js?v=20261031rankwardrobe1"></script> <!-- Lieutenant/captain pauldrons and circlet, patterned pants and captain overwear. --> <!-- Shadowknight / Wyrm-witch wardrobe, patterns and enchanted weapons. -->
   <script src="js/combat/combat-ghoul-wyrm-witches.js?v=20261027hcd7121b"></script> <!-- Distinct mobile-friendly Wyrm-witch cloud and stationary water-cone actions. -->
@@ -457,7 +457,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.DewVats.init(...) during its own
        setup. -->
-  <script src="js/dew-vats.js?v=20261008hcf36900"></script>
+  <script src="js/dew-vats.js?v=20261109familyaudit2"></script>
   <!-- Wild berry bushes (window.WildBerries) — self-contained aside from
        deps injected via init(), so load order relative to the other
        systems above doesn't matter; must load before game.js, which
@@ -625,18 +625,18 @@
   <script src="js/ruin-reaching-obelisks.js?v=20261108shaftfallgrab1"></script> <!-- Complete stateful vertical traversal, after CellGrid3D and the climb pipeline. -->
   <script src="js/ruin-jump-shaft.js?v=20261108jump1"></script> <!-- Free-jump platform staircase shaft traversal (replaces the reaching obelisks for generated ruins); before shaft-hub.js. -->
   <script src="js/shaft-hub.js?v=20261108h1e00563"></script>
-  <script src="js/ruin-layer-plan.js?v=20261108h7c950b1"></script>
-  <script src="js/dev-ruin-single-room-trial.js?v=20261108witchBombExtern1"></script> <!-- One-room developer puzzle chooser and normal-plan weighted odds. -->
-  <script src="js/dev-ruin-find-blocks.js?v=20261108witchBombExtern1"></script> <!-- Four-block compound lab fixture, using native ruin push, fire, flute and bomb mechanics. -->
+  <script src="js/ruin-layer-plan.js?v=20261109timedMelody1"></script>
+  <script src="js/dev-ruin-single-room-trial.js?v=20261109timedMelody1"></script> <!-- One-room developer puzzle chooser and normal-plan weighted odds. -->
+  <script src="js/dev-ruin-find-blocks.js?v=20261109timedMelody1"></script> <!-- Four-block compound lab fixture, using native ruin push, fire, flute and bomb mechanics. -->
   <script src="js/ruin-shaft-corridor.js?v=20261104directVestibule1"></script>
   <script src="js/ruin-layer-defense.js?v=20261104soloNoLoot1"></script>
   <script src="js/puzzle-cave-melody.js?v=20261108cliffWhiteYellowGlowPick3"></script><!-- Reusable rhythm grid and timed plate-gated cave songs. -->
   <script src="js/puzzle-cave-plate-art.js?v=20261107ruinpngglow1"></script><!-- Carved-smooth Tankan lettering, reused by interior and exterior melody plates. -->
   <script src="js/ruin-melody-glyph-decal.js?v=20261108cliffWhiteYellowGlowPick3"></script><!-- Plate-revealed Scratchbone clues outside the dev ruin bootstrap. -->
-  <script src="js/ruin-layer-challenges.js?v=20261108ha4cd8ba"></script>
-  <script src="js/ruin-layer-playable.js?v=20261108hf0f7943"></script>
+  <script src="js/ruin-layer-challenges.js?v=20261109timedMelody1"></script>
+  <script src="js/ruin-layer-playable.js?v=20261109timedMelody1"></script>
   <script src="js/ruin-v50-native-mechanisms.js?v=20261107wingDoorSoftlock2"></script>
-  <script src="js/ruin-v50-native-floors.js?v=20261108h232d4e7"></script>
+  <script src="js/ruin-v50-native-floors.js?v=20261109timedMelody1"></script>
   <script src="js/ruin-shaft-connector.js?v=20261108h41e2e48"></script>
   <script src="js/ruin-v50-vestibule.js?v=20261108h61ad699"></script>
   <script src="js/ruin-wall-coffins.js?v=20261108coffin1"></script>
@@ -984,7 +984,7 @@
   <!-- PNG-plane avatar outline occluders: registry of sprite-plane meshes on
        outline layer 4 plus the depth-only replay game.js runs before its
        outline passes (window.PngPlaneOutlineOccluder; game.js calls init). -->
-  <script src="js/png-plane-outline-occluder.js?v=20261029enemyParity1"></script>
+  <script src="js/png-plane-outline-occluder.js?v=20261109combatsinglepass1"></script>
   <!-- World-space avatar blink/breathing refresh with distance-scaled rates
        (window.WorldPortraitLife; game.js calls init and ticks it). -->
   <!-- Daily crop growth tick + water/ditch growth multiplier
@@ -2925,7 +2925,7 @@
        resolveNpcScheduleTarget itself now bridges into
        window.NpcActivityPlanner (loaded just above) when present. -->
   <script src="js/npc-scheduling.js?v=20261020h16be353"></script>
-  <script src="js/npc-farm-plots.js?v=20261029seedblocks2"></script> <!-- Town and family field/trench worker schedules. -->
+  <script src="js/npc-farm-plots.js?v=20261109familyaudit2"></script> <!-- Town and family field/trench worker schedules. -->
   <!-- Authored NPC relationship tags (partner/family/friend) + social
        seating policy (window.SCRATCHBONES_CONFIG.game.socialRelationships) —
        read lazily at call time by npc-social-seating-bridge.js below, so
@@ -3015,8 +3015,8 @@
   <!-- Dating / marriage / children + the hold-Action-1 NPC command wheel.
        romance-family.js must load before romance-system.js (whose init()
        wires the family module in); game.js calls both init()s. -->
-  <script src="config/romance-config.js?v=20261028spouse1"></script>
-  <script src="js/romance-family.js?v=20261101spousebed2"></script>
+  <script src="config/romance-config.js?v=20261109family1"></script>
+  <script src="js/romance-family.js?v=20261109familyaudit2"></script>
   <script src="js/romance-wedding.js?v=20261027hbreath8"></script>
   <script src="js/npc-following.js?v=20261021-npcsafety-rebased1"></script>
   <!-- Shared spouse kiss motion/height solver. Loads before RomanceSystem.init but after the player render/leg APIs. -->
@@ -3041,7 +3041,7 @@
   <script src="js/delvers-vault-signal.js?v=20261031storyVault1"></script>
   <script src="js/bed-lie-pose.js?v=20261102mattressxray2"></script> <!-- Surface-aligned sleep presentation; game.js injects the live player and calendar. -->
   <script src="js/lunge-targeting.js?v=1"></script>
-  <script src="game.js?v=20261108hdenreview5"></script>
+  <script src="game.js?v=20261109familyaudit2"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261029hguild2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

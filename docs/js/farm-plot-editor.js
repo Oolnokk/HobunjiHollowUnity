@@ -72,9 +72,12 @@
     const out = [];
     const spouse = window.RomanceSystem?.getSpouse?.();
     const name = id => window.RomanceSystem?.helpers?.npcName?.(id) || id;
-    if (spouse?.npcId) out.push({ id: spouse.npcId, name: `${name(spouse.npcId)} (spouse)` });
+    if (spouse?.npcId) out.push({ id: spouse.npcId, name: `${name(spouse.npcId)} (spouse, Lv ${window.RomanceFamily?.usefulnessInfo?.(spouse.npcId)?.level || 2})` });
     for (const child of window.RomanceFamily?.snapshot?.()?.children || []) {
-      if (child?.id && child.phase === 'child') out.push({ id: child.id, name: `${child.name || child.id} (child)` });
+      if (child?.id && (child.phase === 'toddler' || child.phase === 'child')) {
+        const rank = child.usefulness?.level || 1; // Shown in both developer and ordinary Farmwork worker selectors.
+        out.push({ id: child.id, name: `${child.name || child.id} (${child.phase}, Lv ${rank})` });
+      }
     }
     return out;
   }
@@ -277,11 +280,11 @@
         html += `<select data-fplotfield="crop" aria-label="Crop to seed"><option value="">No seeding</option>${allCrops().map(c => `<option value="${c}" ${ap.crop === c ? 'selected' : ''}>${esc(deps?.cropLabel?.(c) || c)}</option>`).join('')}</select>`;
       }
       html += `<div style="display:flex;gap:4px"><input data-fplotfield="from" type="number" min="0" max="24" step="0.5" value="${ap.hours[0]}" aria-label="From hour" style="width:50%"><input data-fplotfield="to" type="number" min="0" max="24" step="0.5" value="${ap.hours[1]}" aria-label="Until hour" style="width:50%"></div>`;
-      if (!people.length) html += '<div style="font-size:11px;opacity:.7">Marry, or have a child old enough to walk, to assign someone.</div>';
+      if (!people.length) html += '<div style="font-size:11px;opacity:.7">Marry, or have a toddler or older child, to assign someone.</div>';
       for (let i = 0; i < SLOTS; i += 1) {
         html += `<select data-fplotworker="${i}" aria-label="${i === 0 ? 'Does the work' : `Backup ${i}`}"><option value="">${i === 0 ? 'Assign who does the work…' : `Backup ${i}…`}</option>${people.map(person => `<option value="${esc(person.id)}" ${ap.workers[i] === person.id ? 'selected' : ''}>${esc(person.name)}</option>`).join('')}</select>`;
       }
-      html += `<div style="font-size:11px;opacity:.7">${ap.kind === 'till' ? 'They till the group and sow the chosen crop (seeds come from Farm Storage).' : 'They keep the trenches dug.'} Tiles you paint into an assigned group are theirs to work.</div></div>`;
+      html += `<div style="font-size:11px;opacity:.7">${ap.kind === 'till' ? 'They till, sow and harvest. Seeds come from Farm Storage; graded harvests go to your bag.' : 'They keep the trenches dug.'} Tiles you paint into an assigned group are theirs to work.</div></div>`;
     }
     el.innerHTML = html;
     el.querySelectorAll('[data-fplot]').forEach(node => node.addEventListener('click', event => {

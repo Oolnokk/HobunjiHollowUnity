@@ -9,7 +9,7 @@
   const TYPES=Object.freeze([
     ['glyphObelisk','Projectile glyph targets','Hit every glyph with a ranged shot.'],
     ['ceilingRailTargets','Moving ceiling targets','Look up and lead your shots as the targets move.'],
-    ['melodyEcho','Melody echo','Read the carved notes and play the phrase back on your instrument.'],
+    ['timedMelody','Timed melody','Follow the glowing beat and play each note while standing on the plate.'],
     ['dungeonFire','Dungeon fire / ice','Equip a ranged weapon, use the lit brazier, then shoot the ice.'],
     ['ropeChain','Bottomless rope chain','Grab the first rope, build momentum, then jump toward the next rope.'],
     ['statueDefense','Key Statue defense','Place the Key Statue on the plinth and protect it until the plinth finishes sinking.'],
@@ -23,7 +23,7 @@
   const MECHANISMS=Object.freeze([
     ['stoneDoor','Rising stone door','Interact beside the slab to raise or lower it.'],
     ['ceilingGlyph','Ceiling projectile glyph','Aim a ranged shot at the glyph overhead.'],
-    ['melodyPlate','Melody demonstration plate','Step on the bronze plate to hear the phrase, then play it back.'],
+    ['melodyPlate','Timed melody plate','Stand on the bronze plate and follow the glowing score to play in time.'],
     ['safePathGrid','Safe-path tile grid','Use the reveal pedestal and cross on the green tiles.'],
     ['stoneCanopy','Stone projectile canopy','Shoot along a line that crosses the canopy to test its cover.'],
     ['cyclingLift','Cycling stone lift','Board at the bottom of the cycle and ride it up.'],

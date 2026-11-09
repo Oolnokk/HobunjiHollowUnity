@@ -86,8 +86,9 @@
   // renderDepth() (which also compacts this registry) only runs while
   // outlines are on. With outlines off, despawned entries would never get
   // dropped and the registry would grow for the entire session.
-  function prune() {
+  function collectDepthMeshes(activeScene) {
     let writeIdx = 0;
+    let meshCount = 0; // Counts active-scene depth participants while pruning detached registrations in the same parent walk.
     for (let i = 0; i < meshes.length; i++) {
       const object = meshes[i];
       let root = object;
@@ -97,9 +98,20 @@
         continue;
       }
       meshes[writeIdx++] = object;
+      if (root !== activeScene) continue; // Retain inactive-area actors without modifying their materials.
+      if (!object.isMesh || !object.visible || !(object.layers.mask & (1 << LAYER))) continue;
+      meshCount++;
+      if (Array.isArray(object.material)) {
+        for (const material of object.material) captureMaterial(material);
+      } else {
+        captureMaterial(object.material);
+      }
     }
     meshes.length = writeIdx;
+    return meshCount;
   }
+
+  function prune() { collectDepthMeshes(null); }
 
   function captureMaterial(material) {
     if (!material || materialStates.has(material)) return;
@@ -126,25 +138,11 @@
   // pet/player/NPC capable of blocking the shell and material-seam passes
   // that follow.
   function renderDepth(activeScene) {
-    prune();
     const renderer = deps?.renderer;
     const camera = deps?.camera;
-    if (!renderer || !camera) return;
-    let meshCount = 0; // Reported through the existing mobile-visible farm log when it changes.
-    for (let i = 0; i < meshes.length; i++) {
-      const object = meshes[i];
-      let root = object;
-      while (root.parent) root = root.parent;
-      if (root !== activeScene) continue; // Alive, but in a different area's scene right now.
-      if (!object.isMesh || !object.visible || !(object.layers.mask & (1 << LAYER))) continue;
-      meshCount++;
-      if (Array.isArray(object.material)) {
-        for (const material of object.material) captureMaterial(material);
-      } else {
-        captureMaterial(object.material);
-      }
-    }
-    if (meshCount === 0) return;
+    // Combines the former prune() and active-scene scan so each registered mesh climbs to its scene only once per outlined frame.
+    const meshCount = collectDepthMeshes(renderer && camera ? activeScene : null);
+    if (!renderer || !camera || meshCount === 0) return;
 
     const previousLayerMask = camera.layers.mask; // Restored even if the depth replay throws.
     try {
