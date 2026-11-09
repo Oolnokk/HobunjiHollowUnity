@@ -459,3 +459,24 @@ checks rope preview placement, independent scaling, fitted mobile bounds,
 two-layer assembly, source-image pixel selection and composite-gap taps.
 `scripts/test-multi-sprite-editor-frame.js` also exercises the actual
 Grapple-Flail UI events and resulting saved JSON.
+
+## Grapple-Flail uses the ruin swing-rope sprite (November 9)
+
+The Grapple-Flail's brown procedural cylinder is now rendered with the exact
+`assets/objectsprites/rope_long.png` image used by traversable ruin ropes.
+It uses their transparent, unlit, camera-facing presentation in the game,
+Tool Hub and Attack Animation Editor. The large ruin rope brush tip is
+omitted because the grapple head already occupies the endpoint.
+
+The original handle-relative settings are preserved: `lengthPx: 160`,
+`scaleY: 3.75`, `radiusPx: 2.5`, `scaleX: 5.25`. Consequently the
+visible rope remains `160 × 3.75 = 600` original-handle pixels long and
+`2 × 2.5 × 5.25 = 26.25` original-handle pixels wide. The native
+152 × 2164 PNG would require image-axis multipliers of about 0.1726974
+(width) and 0.2772643 (length); `ropeSpriteSizing` derives the equivalent
+geometry automatically instead of changing the artist's existing physics
+and anchor settings. The grip/head contacts, swing solver and hit behavior
+remain unchanged. Each flail owns its texture clone.
+
+Run `node scripts/test-weapon-sprite-assemblies.js` and
+`node scripts/test-flail-rope-picker-scale.js` for regression coverage.
