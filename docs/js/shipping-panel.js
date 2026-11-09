@@ -328,6 +328,7 @@
 
   function getDebugState() {
     initializeConfiguredState();
+    const activeWildernessZone = deps?.getCurrentArea?.() || window.__hobunjiFurnitureDebug?.getCurrentArea?.() || null; // Phone inspector reads current area only; never triggers generation of unexplored zones.
     const box = deps?.getShippingBoxObject?.();
     const pane = document.getElementById('mpShipping');
     return {
@@ -342,7 +343,9 @@
       selectedKey: shippingSelected.key,
       selectedAmount: shippingAmount,
       selectedItemRarity: standaloneDebugVisible && shippingSelected.key
-        ? window.ItemAcquisitionRarity?.item?.(shippingSelected.key,{itemDefs:deps?.ITEM_DEFS,townValue:window.TownMine?.getTownValue?.()}) || null : null, // On-demand mobile rarity stages, not a per-frame computation when the debug panel is hidden.
+        ? window.ItemAcquisitionRarity?.item?.(shippingSelected.key,{itemDefs:deps?.ITEM_DEFS,townValue:window.TownMine?.getTownValue?.(),zoneId:activeWildernessZone}) || null : null, // On-demand mobile rarity stages, not a per-frame computation when the debug panel is hidden.
+      currentWildernessSources: standaloneDebugVisible && activeWildernessZone
+        ? window.ItemAcquisitionRarity?.wildernessSourceCensus?.({zoneId:activeWildernessZone}) || null : null, // Inspect real den/forage/ruin counts only with the mobile debug panel open.
       selectedItemBaseSellPrice: standaloneDebugVisible && shippingSelected.key
         ? deps?.BASE_PRICES?.[shippingSelected.key] ?? deps?.ITEM_DEFS?.[shippingSelected.key]?.sellPrice ?? null : null, // Authored price before any conditional scarcity premium.
       selectedItemSalePrice: standaloneDebugVisible && shippingSelected.key ? getShipPrice(shippingSelected.key) ?? null : null, // Actual quoted sale price after the premium, before Town Value and quality.
