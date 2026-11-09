@@ -25,6 +25,7 @@ const TESTS = Object.freeze({
     mastery: { file: 'scripts/test-controller-mastery-inventory-browser.js', tags: ['ui', 'weapon'] },
     modular: { file: 'scripts/test-modular-editor-ui-browser.js', tags: ['weapon'] },
     multisprite: { file: 'scripts/test-multi-sprite-weapon-browser.js', tags: ['weapon', 'appearance'] },
+    statue: { file: 'scripts/test-statue-author-browser.js', tags: ['weapon', 'appearance'] }, // The original Attack Editor and furniture pipeline are shared with this UI.
     omgurku_cal: { file: 'scripts/test-omgurku-calibration-browser.js', tags: ['omgurku'] },
     omgurku_game: { file: 'scripts/test-omgurku-gameplay-browser.js', tags: ['omgurku'] },
     omgurku_tribe: { file: 'scripts/test-omgurku-tribe-browser.js', tags: ['omgurku'] },
