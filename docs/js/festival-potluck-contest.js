@@ -24,12 +24,16 @@
     const visited = new Set(seen); visited.add(key);
     return Math.min(3, 1 + (direct.length ? Math.max(...direct.map(input => processingDepth(input, defs, visited))) : 0));
   }
-  function ingredientPoints(key, stars, defs) {
+  function ingredientPoints(key, stars, defs, recordedRarityMultiplier = null) {
     const quality = Math.max(1, Math.min(5, Math.trunc(Number(stars) || 1)));
-    return quality * (2 ** processingDepth(key, defs));
+    const candidate = Number(recordedRarityMultiplier); // A cooked/saved entry locks its source rarity at the moment of preparation.
+    const rarity = Number.isFinite(candidate) && candidate >= 1
+      ? Math.min(1.65, candidate)
+      : (window.ItemAcquisitionRarity?.contestMultiplier?.(key, { defs }) || 1);
+    return Math.round(quality * (2 ** processingDepth(key, defs)) * rarity * 10) / 10;
   }
   function scoreIngredients(entries, defs) {
-    return (entries || []).reduce((sum, item) => sum + ingredientPoints(item.key, item.stars, defs), 0);
+    return (entries || []).reduce((sum, item) => sum + ingredientPoints(item.key, item.stars, defs, item.rarityMultiplier), 0);
   }
   function scoreCooked(def, stars, defs) {
     if (!def) return 0;
@@ -72,8 +76,13 @@
       const def = ingredientDefinition(entry.key,defs);
       const stars = Math.max(1,Math.min(5,Math.round(Number(entry.stars) || 1)));
       const multiplier = 2 ** processingDepth(entry.key,defs);
-      return {key:entry.key,label:def.label,icon:def.icon,stars,multiplier,
-        points:ingredientPoints(entry.key,stars,defs),
+      const appraisal = window.ItemAcquisitionRarity?.evaluate?.(entry.key, { defs }) || null; // Authoritative acquisition source for the mobile ingredient inspector.
+      const rarityMultiplier = Math.max(1, Math.min(1.65, Number(entry.rarityMultiplier) || appraisal?.contestMultiplier || 1));
+      return {key:entry.key,label:def.label,icon:def.icon,stars,multiplier,rarityMultiplier,
+        rarityScore:Number(entry.rarityScore) || appraisal?.score || 0,
+        raritySource:entry.raritySource || appraisal?.sourceLabel || null,
+        rarityCertainty:entry.rarityCertainty || appraisal?.uncertainty || 'unknown',
+        points:ingredientPoints(entry.key,stars,defs,rarityMultiplier),
         contributesEffects:entry.contributesEffects !== false,
         effects:entry.contributesEffects === false ? {} : ingredientEffects(entry.key,stars,defs)};
     });
@@ -156,11 +165,19 @@
     const allowed = selection.keys.filter(key => defs?.[key] || window.HobunjiCookingData?.items?.[key]);
     const fallback = Object.keys(window.HobunjiCookingData?.items || {}).filter(key => defs?.[key] || window.HobunjiCookingData?.items?.[key]).slice(0,4); // Reduced cooking fixtures still serve real registered ingredients.
     const keys = allowed.length ? allowed : (fallback.length ? fallback : selection.keys);
-    const limits = bounds(rec);
+    const authoredLimits = bounds(rec);
+    const minAchievable = scoreIngredients(keys.map(key => ({key,stars:1})),defs); // New regional-source bonuses can raise a recipe's unavoidable minimum.
+    const limits = {min:Math.max(authoredLimits.min,Math.floor(minAchievable)),
+      max:Math.max(authoredLimits.max,Math.ceil(minAchievable))}; // Preserve honest bounds instead of clipping a real sum.
     const target = limits.min + Math.floor(rng() * (limits.max - limits.min + 1)); // One rolled strength target per dish; experienced cooks have higher floors.
     let best = null; // Closest *achievable* ingredient sum, never a fabricated clamped rating.
     for (let attempt = 0; attempt < 160; attempt++) {
-      const ingredients = keys.map(key => ({ key, stars:1 + Math.floor(rng() * 5) }));
+      const ingredients = keys.map(key => {
+        const rarity = window.ItemAcquisitionRarity?.evaluate?.(key,{defs}) || null; // A rival's recipe records the same acquisition valuation as the player's cooked meal.
+        return { key, stars:1 + Math.floor(rng() * 5),
+          ...(rarity?.known ? {rarityMultiplier:rarity.contestMultiplier,rarityScore:rarity.score,
+            raritySource:rarity.sourceLabel,rarityCertainty:rarity.uncertainty} : {}) };
+      });
       const score = scoreIngredients(ingredients, defs);
       const inBounds = score >= limits.min && score <= limits.max;
       const distance = inBounds ? Math.abs(score - target) : 1000 + Math.max(limits.min - score, score - limits.max, 0);
