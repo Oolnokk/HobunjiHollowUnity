@@ -71,8 +71,8 @@
   <script src="js/loot-rolling.js?v=20261105puzzleCaves1"></script>
   <!-- Seed planting/crop harvesting, extracted out of game.js. Must load
        before game.js, which calls window.CropPlanting.init(...). -->
-  <script src="js/item-acquisition-rarity.js?v=20261109rarity9"></script> <!-- Acquisition odds, crop value premiums, and festival ingredient-source rarity. -->
-  <script src="js/crop-varieties.js?v=20261109rarityaudit4"></script>
+  <script src="js/item-acquisition-rarity.js?v=20261109provenance1"></script> <!-- Acquisition odds, crop value premiums, and festival ingredient-source rarity. -->
+  <script src="js/crop-varieties.js?v=20261109provenance1"></script>
   <script src="js/crop-planting.js?v=20261107h5b0aac4"></script>
   <!-- Wilderness den teleport + Den-Mother nest hold-to-take interaction,
        extracted out of game.js. Must load before game.js, which calls
@@ -462,7 +462,7 @@
        deps injected via init(), so load order relative to the other
        systems above doesn't matter; must load before game.js, which
        calls window.WildBerries.init(...) during its own setup. -->
-  <script src="js/wild-berries.js?v=20261109rarity9"></script>
+  <script src="js/wild-berries.js?v=20261109provenance1"></script>
   <!-- Buried wilderness treasure (window.WildTreasure) — self-contained
        aside from deps injected via init(), and reads window.AlchemySystem/
        window.DyeSystem at roll time (both already global by then), so
@@ -481,8 +481,8 @@
   <script src="js/farm-production.js?v=20261107moot2"></script>
   <script src="js/honeyfuzzle-house.js?v=20261026honeyEggGenes3"></script> <!-- Honeyfuzzle House: 1x1 egg/swarm slot on a FarmProduction entry; hooked by farm-production.js, initialised by game.js. -->
   <script src="js/farm-layout-editor.js?v=20261016a"></script>
-  <script src="js/world-meta-store.js?v=20261102h9d8381e"></script>
-  <script src="js/farm-animals.js?v=20261109emoji1"></script>
+  <script src="js/world-meta-store.js?v=20261109provenance1"></script>
+  <script src="js/farm-animals.js?v=20261109provenance1"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
        via init(), and reads window.FarmAnimals at call time (already
@@ -536,7 +536,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.ReagentPlants.init(...) during
        its own setup. -->
-  <script src="js/reagent-plants.js?v=20261008hd731896"></script>
+  <script src="js/reagent-plants.js?v=20261109provenance1"></script>
   <!-- Jubmir the traveling trader: daily egg + combat-manual stock (window.JubmirShop)
        — self-contained aside from deps injected via init(), and reads
        window.CreatureGenetics/window.FarmAnimals/window.ConditionRegistry at
@@ -723,7 +723,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20261108hdenreview4"></script>
+  <script src="js/wildlife-spawn.js?v=20261109provenance1"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -842,7 +842,7 @@
        load before game.js, which calls window.ShippingPanel.init(...)
        during its own setup, and also wires boot-time shipping-tab button
        listeners through window.ShippingPanel.* directly. -->
-  <script src="js/shipping-panel.js?v=20261109rarity5"></script>
+  <script src="js/shipping-panel.js?v=20261109provenance1"></script>
   <!-- Settings tab's input-binding rows (window.InputSettingsPanel) — pure
        DOM/state, no other window.* system reads; must load before game.js,
        which calls window.InputSettingsPanel.init(...) and an immediate
@@ -966,7 +966,7 @@
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20261102h082455e"></script>
   <script src="js/tothal-zone-cache.js?v=20261102a"></script>
-  <script src="js/ruin-sites.js?v=20261108hc128de7"></script>
+  <script src="js/ruin-sites.js?v=20261109provenance1"></script>
   <script src="js/zone-den-totem-features.js?v=20261108h0ea058e"></script>
   <script src="js/transition-markers.js?v=20261004h46d3bfb"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
