@@ -24,17 +24,24 @@
     const visited = new Set(seen); visited.add(key);
     return Math.min(3, 1 + (direct.length ? Math.max(...direct.map(input => processingDepth(input, defs, visited))) : 0));
   }
-  function ingredientPoints(key, stars, defs) {
+  function ingredientRarity(key, defs, recorded = null) {
+    const saved = Number(recorded); // Saved source factors survive future economy tuning without rewriting historical scores.
+    if (recorded != null && Number.isFinite(saved) && saved >= 1) return saved;
+    const live = window.ItemAcquisitionRarity?.foodRarity?.(key, defs)?.factor;
+    return Number.isFinite(live) && live >= 1 ? live : 1; // Unknown provenance stays neutral.
+  }
+  function ingredientPoints(key, stars, defs, recordedRarity = null) {
     const quality = Math.max(1, Math.min(5, Math.trunc(Number(stars) || 1)));
-    const rarity = window.ItemAcquisitionRarity?.foodRarity?.(key, defs)?.factor ?? 1; // Source scarcity multiplies quality and depth; unknown provenance is neutral.
+    const rarity = ingredientRarity(key, defs, recordedRarity);
     return Math.round(quality * (2 ** processingDepth(key, defs)) * rarity * 100) / 100;
   }
   function scoreIngredients(entries, defs) {
-    return (entries || []).reduce((sum, item) => sum + ingredientPoints(item.key, item.stars, defs), 0);
+    const total = (entries || []).reduce((sum, item) => sum + ingredientPoints(item.key, item.stars, defs, item.rarityMultiplier), 0);
+    return Math.round(total * 100) / 100; // Fractional rarity points are preserved with a stable two-decimal contest total.
   }
   function scoreCooked(def, stars, defs) {
     if (!def) return 0;
-    if (Number.isFinite(def.festivalContestScore)) return Math.max(0, Math.trunc(def.festivalContestScore));
+    if (Number.isFinite(def.festivalContestScore)) return Math.max(0, Math.round(def.festivalContestScore * 100) / 100); // Do not discard the player's fractional rarity bonus.
     const entries = Array.isArray(def.festivalIngredientQuality) ? def.festivalIngredientQuality
       : (def.ingredientKeys || []).map(key => ({ key, stars }));
     return entries.length ? scoreIngredients(entries, defs) : Math.max(1, Math.min(5, Number(stars) || 1));
@@ -71,12 +78,13 @@
   function ingredientBreakdown(ingredients, defs) {
     return (ingredients || []).map(entry => {
       const def = ingredientDefinition(entry.key,defs);
-      const stars = Math.max(1,Math.min(5,Math.round(Number(entry.stars) || 1)));
+      const stars = Math.max(1,Math.min(5,Math.trunc(Number(entry.stars) || 1)));
       const processingMultiplier = 2 ** processingDepth(entry.key,defs); // The existing doubled processing factor remains separately inspectable.
-      const rarityMultiplier = window.ItemAcquisitionRarity?.foodRarity?.(entry.key,defs)?.factor ?? 1; // Multiplies actual source-acquisition rarity.
+      const rarityMultiplier = ingredientRarity(entry.key,defs,entry.rarityMultiplier); // Prefer frozen cooking/contest source rarity over recalculating older scores.
       const multiplier = Math.round(processingMultiplier * rarityMultiplier * 10000) / 10000; // Display-only combined multiplier; score uses full precision.
-      return {key:entry.key,label:def.label,icon:def.icon,stars,multiplier,processingMultiplier,rarityMultiplier,
-        points:ingredientPoints(entry.key,stars,defs),
+      const raritySource = entry.rarityMultiplier != null ? 'saved' : 'current estimate'; // Mobile inspector distinguishes archived values from inferred ones.
+      return {key:entry.key,label:def.label,icon:def.icon,stars,multiplier,processingMultiplier,rarityMultiplier,raritySource,
+        points:ingredientPoints(entry.key,stars,defs,entry.rarityMultiplier),
         contributesEffects:entry.contributesEffects !== false,
         effects:entry.contributesEffects === false ? {} : ingredientEffects(entry.key,stars,defs)};
     });
@@ -159,11 +167,12 @@
     const allowed = selection.keys.filter(key => defs?.[key] || window.HobunjiCookingData?.items?.[key]);
     const fallback = Object.keys(window.HobunjiCookingData?.items || {}).filter(key => defs?.[key] || window.HobunjiCookingData?.items?.[key]).slice(0,4); // Reduced cooking fixtures still serve real registered ingredients.
     const keys = allowed.length ? allowed : (fallback.length ? fallback : selection.keys);
+    const rarityByKey = Object.fromEntries(keys.map(key => [key,ingredientRarity(key,defs)])); // Cache source multipliers once for this NPC's 160 seeded scoring attempts.
     const limits = bounds(rec);
     const target = limits.min + Math.floor(rng() * (limits.max - limits.min + 1)); // One rolled strength target per dish; experienced cooks have higher floors.
     let best = null; // Closest *achievable* ingredient sum, never a fabricated clamped rating.
     for (let attempt = 0; attempt < 160; attempt++) {
-      const ingredients = keys.map(key => ({ key, stars:1 + Math.floor(rng() * 5) }));
+      const ingredients = keys.map(key => ({ key, stars:1 + Math.floor(rng() * 5), rarityMultiplier:rarityByKey[key] })); // Save the same source multiplier used when judging.
       const score = scoreIngredients(ingredients, defs);
       const inBounds = score >= limits.min && score <= limits.max;
       const distance = inBounds ? Math.abs(score - target) : 1000 + Math.max(limits.min - score, score - limits.max, 0);
@@ -231,5 +240,5 @@
     });
   }
   window.FestivalPotluckContest = Object.freeze({ HELM_ID, DAYS, SPICES, profileFor, bounds, processingDepth,
-    ingredientPoints, scoreIngredients, scoreCooked, ingredientEffects, mealEffects, ingredientBreakdown, buildDays, winner, registerRewardVisit });
+    ingredientRarity, ingredientPoints, scoreIngredients, scoreCooked, ingredientEffects, mealEffects, ingredientBreakdown, buildDays, winner, registerRewardVisit });
 })();
