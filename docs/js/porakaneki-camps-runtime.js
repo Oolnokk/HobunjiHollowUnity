@@ -1254,8 +1254,9 @@
 
 
   function weaponRoll(rng = rand) {
-    const shapes = Array.isArray(cfg?.equipment?.weaponShapes) && cfg.equipment.weaponShapes.length ? cfg.equipment.weaponShapes : ['fishingspear', 'hatchet', 'dagger'];
-    return shapes[Math.floor(rng() * shapes.length)] || shapes[0];
+    const authored = Array.isArray(cfg?.equipment?.weaponShapes) && cfg.equipment.weaponShapes.length ? cfg.equipment.weaponShapes : ['fishingspear', 'hatchet', 'dagger']; // Cultural Porakaneki club is allowed only if its held shape is registered.
+    const shapes = combatDeps?.HELD_SHAPE_DEFS ? authored.filter(shape => { const def = combatDeps.HELD_SHAPE_DEFS[shape]; return !!def && (!Array.isArray(def.slots) || def.slots.includes('weapon')); }) : authored; // Active actors require a registered weapon; test/data-only catalog entries may omit optional slot metadata.
+    return shapes[Math.floor(rng() * shapes.length)] || 'fishingspear';
   }
   function weaponDef(shapeKey) {
     const metalKey = cfg?.equipment?.weaponMetalKey || 'nativeCopper';
@@ -1265,7 +1266,8 @@
       metalKey,
       weaponKey: combatDeps?.craftedToolItemKey?.(shapeKey, metalKey) || shapeKey,
       attackTag: shape.dmgType || 'sharp',
-      ranged: shapeKey === 'dagger',
+      ranged: ['dagger', 'hatchet', 'fishingspear'].includes(shapeKey),
+      rangedWeaponKey: combatDeps?.craftedToolItemKey?.(['dagger', 'hatchet', 'fishingspear'].includes(shapeKey) ? shapeKey : 'fishingspear', metalKey) || `fishingspear_${metalKey}`, // Club wielders carry an additional spear to use from unreachable ledges.
     };
   }
   function randomCampPoint(camp, rng = rand) {
@@ -1779,12 +1781,15 @@
     try {
       const base = await loadGangConfig();
       if (!base || generation !== buildGeneration || currentArea() !== camp.zoneId) return null;
+      window.HobunjiRangedWeaponArchetypes?.patchGeneratedDefinitions?.(); // Register dual-role spear/hatchet/dagger definitions before creating the held ranged mesh.
       const weapon = weaponDef(hunter.weaponShape);
       const avenger = isAvenger(hunter);
       const title = `${LABEL} ${avenger ? 'Avenger' : 'Hunter'}`;
       const entity = await window.BanditCombat.makeEntity({
         ...base,
         speciesWeights: { [SPECIES_ID]: 1 },
+        weaponShapePool: [weapon.shapeKey], // The common bandit factory rolls the actual tribal weapon so damage, cooldown, reach and combo share its shape.
+        weaponMetalKey: weapon.metalKey, // Melee stat calculations match the generated weapon rather than a random material.
         rangedWeaponChanceByRank: { grunt: 0, lieutenant: 0, captain: 0 },
       }, 'grunt', avenger ? Math.max(0, Math.floor(num(avengerCfg()?.tier, 1))) : 0, hunter.x * combatDeps.TILE, hunter.y * combatDeps.TILE, {
         zoneId: camp.zoneId,
@@ -1796,8 +1801,9 @@
           weaponKey: weapon.weaponKey,
           weaponShapeKey: weapon.shapeKey,
           weaponMetalKey: weapon.metalKey,
+          weaponShapeStats: window.WeaponShapeStats?.forKey?.(weapon.weaponKey, combatDeps?.TOOL_ITEM_DEFS?.[weapon.weaponKey]) || window.WeaponShapeStats?.forShape?.(weapon.shapeKey), // Status potency and melee geometry follow the visible weapon, including explicit Workshop rolls.
           attackTag: weapon.attackTag,
-          rangedWeaponKey: weapon.ranged ? weapon.weaponKey : null,
+          rangedWeaponKey: window.RangedWeapons?.config?.[weapon.rangedWeaponKey] ? weapon.rangedWeaponKey : null, // Keep ranged equipment valid even when an optional content pack is missing.
         },
         extra: {
           isTribeHunter: true, // Shared tribe-camp semantics (neutral planner, Favor, gifts, barbarian voice).

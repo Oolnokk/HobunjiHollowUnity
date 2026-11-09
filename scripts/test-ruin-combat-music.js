@@ -40,7 +40,7 @@ function play(area) {
     areaBgmIncludesTrack: () => true, areaCueIncludesTrack: () => true, ambientMusicOwnsSoundtrack: () => false,
     audioDebug() {}, audioTrace() {}, audioTraceEnabled: () => false,
     isAudioEntryEligible: entry => Registry.entryEligible(entry, { maps: area }), // Production rule, real registry.
-    audioUrlFailed: () => false, festivalSilencesAmbient: () => false, ruinVaultSilencesAmbient: () => false, ruinShaftSilencesAmbient: () => false,
+    audioUrlFailed: () => false, festivalSilencesAmbient: () => false, ruinVaultSilencesAmbient: () => false, ruinShaftSilencesAmbient: () => false, // Stub the newer shaft-hub ambient rule when extracting the music pipeline.
     musicFadeConfig: () => ({ songFadeInMs: 0, songFadeOutMs: 0 }),
     pauseAmbientForCombat() {}, restoreAmbientSchedulerAfterCombat() {}, resumeAmbientAfterCombat() {},
     stopMusicSlot(key) { state[key] = null; }, retireMusicTrack() {},

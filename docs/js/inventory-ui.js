@@ -573,6 +573,11 @@
         for (const [label, value] of [['Power', stats.power], ['Speed', stats.speed], ['Stamina eff.', stats.efficiency], ['Range', stats.range]]) {
           addStatChip(chips, `${label} ×${value.toFixed(2)}`);
         }
+        addStatChip(chips, `Attack Power ${stats.attackPower.toFixed(0)} (afflictions)`); // Absolute offensive status potency differs from the existing Health-damage multiplier.
+      }
+      if (parsed.slot === 'ranged' && itemKey) {
+        const rangedAttackPower = window.RangedWeapons?.config?.[itemKey]?.attackPower ?? window.WeaponShapeStats?.forKey?.(itemKey, def)?.attackPower; // Ranged mode uses its authored projectile potency, not the equipped melee weapon.
+        if (Number.isFinite(Number(rangedAttackPower))) addStatChip(chips, `Attack Power ${Number(rangedAttackPower).toFixed(0)} (afflictions)`);
       }
 
       if (!chips.children.length) addStatChip(chips, 'Current tool data');

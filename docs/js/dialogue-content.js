@@ -240,11 +240,13 @@
     let fl2v1 = '';
     for (const ch of name) { fl2v1 += ch; if (VOWELS.has(ch)) break; }
     const st    = getNpcDlgState(npcRec?.id);
-    const local = window.RomanceSystem?.spouseDialogueFor?.(npcRec?.id)?.nickname || st.localNickname || name; // Post-wedding forms of address apply to {{playerLocalNickname}} without altering saved dialogue choices.
+    const nickname = window.CharacterNicknames?.addressPlayer?.(name, npcRec?.id, { favor: st.favor, gender: gen }) || name; // Relationship-derived nickname for {{playerNickname}}, distinct from NPC-specific overrides.
+    const local = window.CharacterNicknames?.addressPlayer?.(name, npcRec?.id, { favor: st.favor, customNickname: st.localNickname, gender: gen })
+      || window.RomanceSystem?.spouseDialogueFor?.(npcRec?.id)?.nickname || st.localNickname || name; // The same event-time nickname is used in dialogue and ambient greetings.
     let out = text
       .replace(/\{\{npcName\}\}/g,            npcRec?.name || '')
       .replace(/\{\{playerName\}\}/g,          name)
-      .replace(/\{\{playerNickname\}\}/g,      name)
+      .replace(/\{\{playerNickname\}\}/g,      nickname)
       .replace(/\{\{playerLocalNickname\}\}/g, local)
       .replace(/\{\{playerPronoun1\}\}/g,      pr1)
       .replace(/\{\{playerPronoun2\}\}/g,      pr2)
