@@ -9,6 +9,9 @@ const render = fs.readFileSync('docs/tools/multi-sprite-weapon-editor/preview-re
 const picker = fs.readFileSync('docs/tools/multi-sprite-weapon-editor/pick-on-sprite.js','utf8'); // The same pixel selection widget used by Tool Hub.
 const app = fs.readFileSync('docs/tools/multi-sprite-weapon-editor/app.js','utf8'); // Source integration sanity checks.
 const runtime = fs.readFileSync('docs/js/weapon-sprite-assemblies.js','utf8'); // Real game rope/scale adapter.
+assert(runtime.includes('flail_ruin_rope_sprite'),'flail assembly uses the ruin art plane');
+assert(runtime.includes('mesh.onBeforeRender'),'the rope faces the current camera');
+assert(!runtime.includes('new THREE.CylinderGeometry'),'the old generated rope cylinder is gone');
 const game = fs.readFileSync('docs/game.js','utf8'); // Grapple-Flail weapon inventory and sprite registration.
 const index = fs.readFileSync('docs/tools/multi-sprite-weapon-editor/index.html','utf8'); // Correct script order and picker controls.
 for (const source of [config,render,picker,app,runtime]) new Function(source);
@@ -26,7 +29,7 @@ assert.match(runtime,/connectorAxisScale\(flail\.chain, 'scaleX'\)/);
 assert.match(runtime,/connectorAxisScale\(flail\.chain, 'scaleY'\)/);
 assert.match(runtime,/state\.headRoot\.scale\.setScalar\(localHandleScale \* headScale\)/);
 assert.match(runtime,/headSpec\.anchorSpace === 'composite'/);
-assert.match(runtime,/assets\/textures\/wavy_surface\.png/);
+assert.match(runtime,/assets\/objectsprites\/rope_long\.png/);
 assert.match(game,/grappleFlail: \{ label: 'Grapple-Flail'/);
 assert.match(game,/ITEM_DEFS\.grappleFlail/);
 
@@ -61,6 +64,10 @@ assert.deepEqual(Object.keys(registry),['hachutuTorchFlail','hachutuTorchStaff',
 assert.equal(registry.hachutuTorchStaff.flail, undefined, 'a complex tool may have effects without a flail assembly');
 assert.deepEqual(Array.from(registry.grappleFlail.flail.head.layers,l=>l.id),['back','front']);
 assert.equal(registry.grappleFlail.flail.chain.type,'rope');
+assert.equal(registry.grappleFlail.flail.chain.sprite,'assets/objectsprites/rope_long.png');
+assert.equal(registry.grappleFlail.flail.chain.color,'#FFFFFF');
+assert.equal(registry.grappleFlail.flail.chain.lengthPx * registry.grappleFlail.flail.chain.scaleY,600);
+assert.equal(2 * registry.grappleFlail.flail.chain.radiusPx * registry.grappleFlail.flail.chain.scaleX,26.25);
 assert.equal(registry.grappleFlail.flail.head.anchorSpace,'composite');
 const lookup=path=>art[String(path||'').split('/').pop()]||null;
 const preview=window.HobunjiMultiSpritePreviewRenderer;
