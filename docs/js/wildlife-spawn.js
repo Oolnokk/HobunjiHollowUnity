@@ -89,7 +89,7 @@
       };
     }
 
-    if (denMotherDefs && creatureDb?.nelk && !denMotherDefs.nelk) denMotherDefs.nelk = { creatureKey: 'nelk', nestItemKey: null }; // Explicit den species participates in cavern ecology without inventing collectible eggs.
+    if (denMotherDefs && creatureDb?.nelk && !denMotherDefs.nelk) denMotherDefs.nelk = { creatureKey: 'nelk', nestItemKey: 'nelkBaby', liveBirth: true }; // A Nelk den must have a real collectible baby, not a null placeholder.
     const ready = !!creatureDb?.puktuk
       && Array.isArray(denSpecies) && denSpecies.includes('puktuk')
       && Array.isArray(herbivores) && herbivores.includes('puktuk')
