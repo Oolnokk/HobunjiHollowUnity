@@ -31370,7 +31370,7 @@
           const seedKey = cropData[crop]?.seedKey;
           return !!seedKey && (Number(_loadWorldStorage()?.[seedKey]) || 0) > 0;
         },
-        applyFarmJob: (job, c, r, crop, plotId) => {
+        applyFarmJob: (job, c, r, crop, plotId, workerId = null) => { // Family-worker identity is used only for harvest quality; players earn no XP from delegated work.
           const tile = grid[r]?.[c];
           if (!tile) return false;
           // The persisted editor is authoritative, even when a worker has an older claim.
@@ -31394,6 +31394,18 @@
             if (store[data.seedKey] <= 0) delete store[data.seedKey];
             if (!_saveWorldStorage(store)) return false; // Never sow a seed that failed to debit Farm Storage.
             tile.crop = crop; tile.cropAge = 0; tile.cropReady = false; tile.stress = '';
+          } else if (job === 'harvest') {
+            const data = cropData[tile.crop];
+            if (!workerId || !tile.cropReady || !data?.cropKey) return false;
+            const key = data.cropKey; // Ready crops harvested by family go to the quality-aware Pack, not the quality-blind Farm Storage.
+            const cap = window.InventoryStacks?.MAX_TOTAL || 999;
+            if ((Number(inventory[key]) || 0) >= cap) return false; // A full bag must not silently destroy a harvest.
+            const stars = window.RomanceFamily?.rollWorkQuality?.(workerId) ?? 1; // The worker's level—not the player's Farming mastery—sets its quality.
+            inventory[key] = (Number(inventory[key]) || 0) + 1;
+            window.CookingSystem?.recordItemQuality?.(key, stars, 1);
+            tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
+            tile.fertilized = false; tile.stress = '';
+            saveMemberWorldData(); // Persist Pack contents as well as the saved farm tile.
           } else return false;
           markTileDirty(c, r);
           if (currentArea === 'farm') window.WaterSystem.recomputeWater(false);
