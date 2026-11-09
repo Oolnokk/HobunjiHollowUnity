@@ -41,8 +41,20 @@
     return result;
   });
 
-  localSave.syncNow = async (options = {}) => withFolderLock(() => rawSyncNow(options));
-  if (rawSyncSnapshot) localSave.syncSnapshot = async (snapshot, options = {}) => withFolderLock(() => rawSyncSnapshot(snapshot, options));
+  function festivalTestSaveGuard() {
+    const phase = window.HobunjiQuickSave?.festivalStatus?.().phase; // Prevent explicit folder saves from persisting an isolated festival preview.
+    if (!phase || phase === 'idle' || phase === 'restored') return null;
+    return { ...localSave.getStatus(), ok: false, lastError: 'Exit Festival Test before saving to the primary folder.', message: 'Festival Test is isolated; restore your original world before saving.' };
+  }
+
+  localSave.syncNow = async (options = {}) => {
+    const guarded = festivalTestSaveGuard();
+    return guarded || withFolderLock(() => rawSyncNow(options));
+  };
+  if (rawSyncSnapshot) localSave.syncSnapshot = async (snapshot, options = {}) => {
+    const guarded = festivalTestSaveGuard();
+    return guarded || withFolderLock(() => rawSyncSnapshot(snapshot, options));
+  };
 
   function esc(value) {
     return String(value ?? '')
