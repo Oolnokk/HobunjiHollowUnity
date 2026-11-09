@@ -2717,7 +2717,15 @@ function statueTexture(source, stone, cache) {
   const carved=window.FestivalAncestorFigures.carvedCanvas(original,stone);
   const texture=new THREE.CanvasTexture(carved);
   texture.encoding=THREE.sRGBEncoding; texture.minFilter=THREE.LinearFilter;texture.magFilter=THREE.NearestFilter;
-  texture.flipY=source?.flipY!==false; texture.needsUpdate=true;
+  texture.flipY=source?.flipY!==false;
+  if(source){ // Preserve source UV transforms, including portrait mirroring and trimmed weapon sprites.
+    texture.wrapS=source.wrapS;texture.wrapT=source.wrapT;
+    texture.repeat.copy(source.repeat);texture.offset.copy(source.offset);
+    texture.center.copy(source.center);texture.rotation=source.rotation;
+    texture.matrixAutoUpdate=source.matrixAutoUpdate;
+    if(!source.matrixAutoUpdate)texture.matrix.copy(source.matrix);
+  }
+  texture.needsUpdate=true;
   cache.set(cacheKey,texture);
   return texture;
 }
@@ -2756,20 +2764,24 @@ async function bakeStatuePiece({poseKey='neutral',includeWeapon=true,name='Carve
   const stone=await statueSourceReady;
   if(!stone)throw Error('The carved_smooth.png stone texture could not load.');
   const previousPlaying=playing,previousT=previewT;
-  playing=false; // Prevent an animated frame from changing the pose during export.
-  const sample=phasePreviewT(poseKey);
-  previewT=sample; $('scrub').value=sample; updateTimelineMarker(sample);
-  applyPoseToRig(anim.poses[poseKey]);
-  editorLegs?.update?.(0,0,true,null,{});
-  window.HobunjiWeaponSpriteAssemblies?.setAction?.(toolPlaneMesh,{attacking:false,progress:0,movementPosition:rig.position});
-  window.HobunjiWeaponSpriteAssemblies?.tick?.(0);
-  rig.updateMatrixWorld(true);
   const exportGroup=new THREE.Group(),textures=new Map(); // One shared carved canvas per source sprite.
   let meshCount=0,weaponCount=0,skinnedCount=0;
   try{
+    playing=false; // Prevent an animated frame from changing the pose during export.
+    const sample=phasePreviewT(poseKey);
+    previewT=sample; $('scrub').value=sample; updateTimelineMarker(sample);
+    applyPoseToRig(anim.poses[poseKey]);
+    editorLegs?.update?.(0,0,true,null,{});
+    await new Promise(resolve=>requestAnimationFrame(resolve)); // Let existing hand/weapon frame owners settle before freezing the rig.
+    if(previewT!==sample)throw Error('The editor pose changed during the statue capture.');
+    applyPoseToRig(anim.poses[poseKey]); // Reassert the exact authored phase after the frame owner synchronizes the grips.
+    window.HobunjiWeaponSpriteAssemblies?.setAction?.(toolPlaneMesh,{attacking:false,progress:0,movementPosition:rig.position});
+    window.HobunjiWeaponSpriteAssemblies?.tick?.(0);
+    rig.updateMatrixWorld(true);
     const capture=(root,weapon=false)=>{
       root?.traverse(node=>{
         if(!node.isMesh||!node.visible||!node.geometry?.getAttribute?.('position'))return;
+        if(/(?:^|[_ -])(debug|gizmo|guide|marker|hitbox|reticle|xray)(?:$|[_ -])/i.test(node.name||'')||node.userData?.referenceShape==='folded-paper-grasp')return; // Only the posed character and weapon, never editor calibration overlays.
         for(let parent=node.parent;parent&&parent!==root;parent=parent.parent)if(parent.visible===false)return;
         const originalMaterials=Array.isArray(node.material)?node.material:[node.material];
         const materials=originalMaterials.map(original=>{
@@ -2814,7 +2826,8 @@ async function bakeStatuePiece({poseKey='neutral',includeWeapon=true,name='Carve
     for(const texture of textures.values())texture.dispose();
     previewT=previousT;playing=previousPlaying;
     $('scrub').value=previousT;
-    applyPoseToRig(poseAt(previousT).pose);
+    updateTimelineMarker(previousT);
+    try{applyPoseToRig(poseAt(previousT).pose);}catch(error){logDebug('Restoring preview after statue export failed: '+error.message);}
   }
 }
 window.HobunjiStatuePoseSource=Object.freeze({
