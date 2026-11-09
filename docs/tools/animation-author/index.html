@@ -14563,25 +14563,37 @@ tickAnimationAuthor = function(dt) {
         animationAuthor.actors.length !== 2 || animationAuthor.playing || pending.frames <= 0) {
       animationAuthor.kissUrlMouthRevalidationV1552 = null;
     } else if (pending.frames % 8 === 0) {
-      const expected = animationAuthor.kissHeightSolutionV1546; // Stored mouth heights from the originally built clip.
-      const fresh = kissPairHeightV1546().solution; // Recheck only after the latest asynchronous portrait rig settled.
-      const drift = expected && fresh
-        ? Math.max(Math.abs(expected.firstMouthHeightWorld - fresh.firstMouthHeightWorld),
-          Math.abs(expected.secondMouthHeightWorld - fresh.secondMouthHeightWorld))
-        : 0; // A changed skinned mouth coordinate, not mere viewport camera motion, triggers recalibration.
-      if (drift > .01 && fresh?.contactPossible) {
-        animationAuthor.kissUrlMouthRevalidationV1552 = null; // Clear before invoking the preset to prevent recursion.
-        const oldTime = animationAuthor.currentTime; // Preserve an explicit ?t=1.12 share URL when recalculating keyframes.
-        const oldSelection = animationAuthor.selectedActorId; // Restore whichever participant the author was inspecting.
-        const leader = configuredKissPairV1550().leader;
-        if (leader) {
-          selectAnimationActor(leader.id);
-          if (applyKissPresetV1546()) {
-            setAnimationTime(oldTime, { pause: true });
-            if (oldSelection && actorById(oldSelection)) selectAnimationActor(oldSelection);
-            log('Refreshed URL kiss after species mouth rig settled; true lip heights changed ' +
-              drift.toFixed(3) + ' world units.');
+      const oldTime = animationAuthor.currentTime; // A shared URL may open mid-kiss; the contact pose cannot provide neutral mouth height.
+      const { leader, partner } = configuredKissPairV1550(); // Stable initiator and spouse despite inspector changes.
+      if (oldTime > .00001) setAnimationTime(0, { pause: true });
+      syncMultiAvatarFullBodiesV1548(0); // Pose body and skinned neck at the same neutral frame as browser diagnostics.
+      const THREE = state.three.THREE; // Use B'shuakauitl's own world-space mouth resolver.
+      const first = leader && window.SpouseKissMotion?.mouthHeightWorld?.(leader.model, leader.root, { THREE });
+      const second = partner && window.SpouseKissMotion?.mouthHeightWorld?.(partner.model, partner.root, { THREE });
+      if (oldTime > .00001) setAnimationTime(oldTime, { pause: true });
+      const expected = animationAuthor.kissHeightSolutionV1546; // Old pose may have been built before live portrait skeletons had settled.
+      const drift = expected && Number.isFinite(first) && Number.isFinite(second)
+        ? Math.max(Math.abs(expected.firstMouthHeightWorld - first),
+          Math.abs(expected.secondMouthHeightWorld - second)) : 0; // Never use the old temporary-rest transform when validating a real pose.
+      if (drift > .01 && leader && partner) {
+        animationAuthor.kissNeutralMouthHeightsV1552 = {
+          leaderId: leader.id, partnerId: partner.id, first, second,
+        }; // Preset rebuild consumes actual frame-zero skinned lip positions, then clears this transient calibration.
+        try {
+          const fresh = kissPairHeightV1546().solution; // Reuse the canonical leg and height solver.
+          if (fresh?.contactPossible) {
+            animationAuthor.kissUrlMouthRevalidationV1552 = null; // Clear before rebuilding to avoid recurring URL edits.
+            const oldSelection = animationAuthor.selectedActorId; // Keep mobile inspector selection unchanged.
+            selectAnimationActor(leader.id);
+            if (applyKissPresetV1546()) {
+              setAnimationTime(oldTime, { pause: true });
+              if (oldSelection && actorById(oldSelection)) selectAnimationActor(oldSelection);
+              log('Refreshed Kiss from settled B\'shuakauitl mouth anchors; corrected neutral drift ' +
+                drift.toFixed(3) + ' world units.');
+            }
           }
+        } finally {
+          animationAuthor.kissNeutralMouthHeightsV1552 = null; // Do not contaminate later user-driven edits.
         }
       }
     }
