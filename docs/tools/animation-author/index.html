@@ -11892,7 +11892,15 @@ function installApprovedRigLibraryV1524(target, { replaceAll = true } = {}) {
   } else {
     target.characters ||= {};
     target.creatures ||= {};
-    for (const [key, profile] of Object.entries(approved.characters)) target.characters[key] = profile;
+    for (const [key, profile] of Object.entries(approved.characters)) {
+      const authoredScale = target.characters[key]?.anchors?.shoulderPerch?.scale; // Preserve a saved character-specific pet multiplier while migrating older approved coordinates.
+      if (authoredScale && ['x', 'y', 'z'].every(axis => Number.isFinite(Number(authoredScale[axis])) && Number(authoredScale[axis]) > 0)) {
+        profile.anchors.shoulderPerch.scale = {
+          x: Number(authoredScale.x), y: Number(authoredScale.y), z: Number(authoredScale.z),
+        }; // Only the scale survives default replacement; obsolete positions and rotations still migrate as before.
+      }
+      target.characters[key] = profile;
+    }
     for (const [kind, profile] of Object.entries(approved.creatures)) target.creatures[kind] = profile;
   }
   return target;
