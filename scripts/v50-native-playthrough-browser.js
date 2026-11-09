@@ -88,8 +88,15 @@ module.exports=async function runNativeV50Playthrough(page){
       const cells=[];for(let at=end;at!==null;at=prior.get(at))cells.push(at);
       return cells.reverse(); // These are actual generator-supported floor cells, not a synthetic shortcut through a sealed gate.
     };
-    const closedCells=record=>new Set(record.challenges.filter(stage=>stage.gate?.object.visible)
-      .flatMap(stage=>stage.gate.tiles.map(([x,z])=>key(x,z))));
+    const closedCells=record=>new Set(record.challenges.flatMap(stage=>{
+      const gate=stage.gate; // The collision grid, not the asynchronous stone-sink animation, determines whether this passage is sealed.
+      if(!gate)return [];
+      return gate.tiles.filter(([x,z])=>{
+        const col=gate.grid.xToCol(x+.5),row=gate.grid.zToRow(z+.5);
+        const level=gate.grid.yToLevel(gate.surfaceY+.05); // Read the same floor-specific voxel used by the gate-opening verification.
+        return gate.grid.get(col,row,level)!==0;
+      }).map(([x,z])=>key(x,z));
+    }));
     const trigger=async (control,record,stage)=>{
       if(!control||typeof control.onPress!=='function')fail('missing in-game interaction control',record,stage,control?.kind);
       const player=window.Combat?.deps?.player,tile=Number(window.Combat?.deps?.TILE)||0;
@@ -326,7 +333,7 @@ module.exports=async function runNativeV50Playthrough(page){
             fail('original V50 authored door has not moved with its accepted solution',record,stage,{
               mechanismId:sourceMechanism.id,progress:sourceMechanism.progress});
         }
-        if(record.solved!==index+1||stage.gate?.object.visible!==false){
+        if(record.solved!==index+1){ // The stone may remain visible while GameFeel.sinkAway animates; an open collision grid is asserted immediately below.
           const mechanism=stage.nativeMechanism
             ?record.nativeMechanisms.states.get(stage.nativeMechanism.id):null; // Diagnoses the exact authored mechanism that failed to open this stage.
           const plate=mechanism?.object?.userData?.linkedPressurePlateRoot; // The original V50 weight sensor is authoritative for a push-block puzzle.
