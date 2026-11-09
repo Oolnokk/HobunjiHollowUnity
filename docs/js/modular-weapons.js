@@ -351,6 +351,47 @@
     }
     return addCompanionsToPreviousDraft(converted); // Imported legacy socket-only shafts also receive compatible eye/tang mount pairs.
   }
+  const UTILITY_SLOTS = new Set(['axe', 'pick', 'shovel', 'hoe', 'harpoon', 'fishing', 'instrument']); // Only actual tool channels; weapon/ranged slots cannot be granted by a head.
+  function partText(value, fallback) {
+    const text = typeof value === 'string' ? value.trim().replace(/\\s+/g, ' ').slice(0, 96) : '';
+    return text || fallback; // Missing old-draft fields retain newly shipped part labels, not stale donor weapon names.
+  }
+  function flailTemplate(id) {
+    const template = global.WEAPON_SPRITE_ASSEMBLY_CONFIG?.weapons?.[id]; // Multi-sprite Tool Hub is the sole rope/chain and animation authoring authority.
+    return template?.flail?.chain && template.flail.head ? template : null;
+  }
+  function flailRecipe(shaftKey, headKey) {
+    const shaft = config.shafts[shaftKey], head = config.heads[headKey]; // Both stable part IDs are looked up without guessing from their names.
+    if (!shaft || !head || (!!shaft.flailAssembly && !!head.flailAssembly)) return null;
+    const template = flailTemplate(head.flailAssembly || shaft.flailAssembly);
+    if (!template) return null;
+    const recipe = JSON.parse(JSON.stringify(template)); // Never mutate the Tool Hub's shared recipe while fitting another custom weapon.
+    recipe.sprite = shaft.sprite; // Base plane remains the selected modular haft, keeping its grip, idle stance and dimensions.
+    recipe.layers = []; // No extra rigid head or legacy base overlays: the hanging head is the only head rendered.
+    delete recipe.base; // A donor's special fuel VFX must not attach to an unrelated modular haft.
+    if (head.flailAssembly) {
+      const mount = matchingMounts(shaft, head)[0]; // Head-owned rope begins at the selected haft's matching socket, not its original weapon.
+      if (!mount) return null;
+      recipe.flail.haftAnchor = { ...mount.start };
+    } else {
+      recipe.flail.haftAnchor = shaft.flailHaftAnchor || recipe.flail.haftAnchor; // Haft-owned rope retains the original authored point unless explicitly overridden.
+      recipe.flail.head = {
+        anchorLayer: 'modular-head', anchor: head.flailHeadAnchor || head.mount.start,
+        scale: Number.isFinite(head.flailHeadScale) ? head.flailHeadScale : 1,
+        layers: [{ id: 'modular-head', sprite: head.sprite, material: 'metal' }],
+      }; // Head artwork and its rope contact are authored on the modular head; physics/rope settings come from the shaft's Tool Hub recipe.
+    }
+    return recipe;
+  }
+  function weaponName(shaftKey, headKey, metalLabel = '') {
+    const shaft = config.shafts[shaftKey], head = config.heads[headKey];
+    if (!shaft || !head) return '';
+    const placement = shaft.namePosition === 'suffix' ? 'suffix' : 'prefix'; // Only the shaft chooses which of the head's two grammatical forms is used.
+    const headName = partText(head.weaponNames?.[placement], head.label);
+    const affix = partText(shaft.nameAffix, shaft.label);
+    return [metalLabel, ...(placement === 'prefix' ? [affix, headName] : [headName, affix])]
+      .filter(Boolean).join(' ').replace(/\\s+/g, ' ').trim();
+  }
   function replace(data, persist = false) {
     if (!data?.heads || !data?.shafts || ![SCHEMA, 'hobunji_modular_weapons.v1'].includes(data.schema))
       throw new Error('Invalid modular weapon attachment file.');
@@ -369,10 +410,30 @@
       const raw = incoming.heads[key] || head;
       head.mount = line(raw.mount, 'head', head.mount);
       if (typeof raw.editorOnly === 'boolean') head.editorOnly = raw.editorOnly;
+      if (raw.weaponNames && typeof raw.weaponNames === 'object') { // Old v2 browser drafts have none of this metadata: keep today's committed names.
+        head.label = partText(raw.label, head.label);
+        head.weaponNames = {
+          prefix: partText(raw.weaponNames.prefix, head.weaponNames?.prefix || head.label),
+          suffix: partText(raw.weaponNames.suffix, head.weaponNames?.suffix || head.label),
+        };
+        head.toolSlots = [...new Set((Array.isArray(raw.toolSlots) ? raw.toolSlots : head.toolSlots || [])
+          .filter(slot => UTILITY_SLOTS.has(slot)))]; // Whitelist real tool slots so malformed JSON cannot create arbitrary equipment types.
+        head.flailAssembly = flailTemplate(raw.flailAssembly) ? raw.flailAssembly : (head.flailAssembly || null);
+        if (raw.flailHeadAnchor) head.flailHeadAnchor = point(raw.flailHeadAnchor);
+        head.flailHeadScale = finite(raw.flailHeadScale, head.flailHeadScale || 1, 0.05, 8);
+      }
     }
     for (const [key, shaft] of Object.entries(next.shafts)) {
       const raw = incoming.shafts[key] || shaft; // Missing imports use committed lines and pair settings.
       if (typeof raw.editorOnly === 'boolean') shaft.editorOnly = raw.editorOnly;
+      if (raw.namePosition === 'prefix' || raw.namePosition === 'suffix') { // Older drafts keep the latest committed names and craft roles.
+        shaft.label = partText(raw.label, shaft.label);
+        shaft.namePosition = raw.namePosition;
+        shaft.nameAffix = partText(raw.nameAffix, shaft.nameAffix || shaft.label);
+        shaft.toolWorthy = raw.toolWorthy === true;
+        shaft.flailAssembly = flailTemplate(raw.flailAssembly) ? raw.flailAssembly : (shaft.flailAssembly || null);
+        if (raw.flailHaftAnchor) shaft.flailHaftAnchor = point(raw.flailHaftAnchor);
+      }
       shaft.rigRegions = cleanRigRegions(raw.rigRegions || shaft.rigRegions); // Region selections are validated and persist in exported drafts.
       shaft.shaftArtTransform = { ...duplicateTransform(raw.shaftArtTransform || shaft.shaftArtTransform),
         enabled: (raw.shaftArtTransform || shaft.shaftArtTransform)?.enabled === true }; // Explicit opt-in, neutral for old saves.
@@ -426,6 +487,9 @@
   function isDisallowed(shaft, head) {
     return !Object.hasOwn(config.shafts, shaft) || !Object.hasOwn(config.heads, head) ||
       config.heads[head].craftDisabled === true || // Retired heads still render on saved gear, but cannot form new forgeable pairs.
+      (config.shafts[shaft].flailAssembly && config.heads[head].flailAssembly) || // One rope owner per final weapon; no nested/double flails.
+      (!!config.shafts[shaft].flailAssembly && !flailTemplate(config.shafts[shaft].flailAssembly)) ||
+      (!!config.heads[head].flailAssembly && !flailTemplate(config.heads[head].flailAssembly)) ||
       !matchingMounts(config.shafts[shaft], config.heads[head]).length ||
       config.shafts[shaft].overrides[head]?.disallow === true;
   }
@@ -586,13 +650,15 @@
     if (canvases.has(cacheKey)) return canvases.get(cacheKey);
     const shaft = config.shafts[shaftKey], head = config.heads[headKey]; // Validated manifest entries.
     if (!shaft || !head) throw new Error('Unknown weapon parts.');
-    const pieces = [...new Set(expandOps(settings(shaftKey, headKey).bridges?.strokes || []).filter(op => op.junction).map(op => op.junction))];
+    const flail = flailRecipe(shaftKey, headKey); // Animated assemblies must not receive a baked rigid head in their base PNG.
+    const pieces = flail ? [] : [...new Set(expandOps(settings(shaftKey, headKey).bridges?.strokes || []).filter(op => op.junction).map(op => op.junction))];
     const junctionsReady = Promise.all(pieces.map(name => loadImage(junctionPath(name), base).then(image => [name, image],
       () => { global.console?.warn?.('Modular weapon junction piece missing:', name); return [name, null]; })));
     const task = Promise.all([loadImage(shaft.sprite, base), loadImage(head.sprite, base), junctionsReady]).then(([shaftImage, headImage, junctionList]) => {
       const values = settings(shaftKey, headKey); // Resolved authoring values are shared by bounds calculation and drawing.
-      const frame = compositionFrame(shaft, head, visibleBounds(headImage), values,
-        rigBridgeOperations(shaft, values.bridges?.strokes || []), Object.fromEntries(junctionList)); // Include movable bridge/junction children in bounds.
+      const frame = flail ? { left: 0, top: 0, width: 450, height: 1204 }
+        : compositionFrame(shaft, head, visibleBounds(headImage), values,
+          rigBridgeOperations(shaft, values.bridges?.strokes || []), Object.fromEntries(junctionList)); // Animated heads are separate Three.js planes; the base keeps its 450×1204 authored socket coordinates.
       let pixelScale = Math.min(1, 2048 / Math.max(frame.width, frame.height), Math.sqrt(2097152 / (frame.width * frame.height))); // Bound mobile texture memory without cropping logical geometry.
       if (pixelScale < 1) {
         const padding = Math.ceil(4 / pixelScale); // Retain several bitmap pixels of outline clearance even after extreme downsampling.
@@ -656,9 +722,12 @@
           drawChildren(protectedCtx, true); // The same parent and descendants occlude only covered nonmetal-shaft pixels.
         }
       }
-      if (values.layerOrder === 'head-over-haft') { paintHaft(); paintHeads(); } // Specific pair opts into foreground heads.
-      else { paintHeads(); paintHaft(); } // Default: all repeated heads behind the single, intact haft.
-      applyBridges(canvas, frame, values.bridges, Object.fromEntries(junctionList), shaft); // All strokes and expanded recipes follow the same parent rig as head primitives.
+      if (flail) paintHaft(); // Rope/head are separate runtime children; never duplicate them in the held base texture.
+      else {
+        if (values.layerOrder === 'head-over-haft') { paintHaft(); paintHeads(); } // Specific pair opts into foreground heads.
+        else { paintHeads(); paintHaft(); } // Default: all repeated heads behind the single, intact haft.
+        applyBridges(canvas, frame, values.bridges, Object.fromEntries(junctionList), shaft); // All strokes and expanded recipes follow the same parent rig as head primitives.
+      }
       if (protectedCtx) {
         const rgba = protectedCtx.getImageData(0, 0, canvas.width, canvas.height).data;
         const mask = new Uint8Array(canvas.width * canvas.height); // One byte per protected shaft pixel; head metal remains exposed.
@@ -680,9 +749,14 @@
         if (head.editorOnly) continue; // Uncalibrated previews lack definitions; craftDisabled heads retain definitions for existing saved weapons.
         const key = itemKey(shaftKey, headKey, metalKey); // Pre-register metadata only; no image loads for unowned combinations.
         const animation = settings(shaftKey, headKey).animation; // Authored pair override or shaft default drives attacks and combo selection.
-        defs[key] = { ...source, animStyle: animation, comboStyle: animation, label: `${metals[metalKey].label} ${head.label} / ${shaft.label}`, icon: '⚒️', sprite: key,
-          slots: ['weapon'], dmgType: head.dmgType, spinning: false, shapeKey: shaft.sourceShape, metalKey, itemKey: key,
-          modular: { shaft: shaftKey, head: headKey }, weaponIdleClass: source.weaponIdleClass || 'light' };
+        const toolSlots = shaft.toolWorthy === true ? (head.toolSlots || []).filter(slot => UTILITY_SLOTS.has(slot)) : []; // Both independent component capabilities are required before tool-use XP can occur.
+        const assembly = flailRecipe(shaftKey, headKey); // Dynamic head/rope config rides the existing gameplay and editor renderer.
+        defs[key] = { ...source, animStyle: animation, comboStyle: animation,
+          label: weaponName(shaftKey, headKey, metals[metalKey]?.label || metalKey), icon: '⚒️', sprite: key,
+          slots: ['weapon', ...new Set(toolSlots)], dmgType: head.dmgType, spinning: false,
+          shapeKey: shaft.sourceShape, metalKey, itemKey: key,
+          modular: { shaft: shaftKey, head: headKey }, ...(assembly ? { weaponAssembly: assembly } : {}),
+          weaponIdleClass: source.weaponIdleClass || 'light' };
       }
     }
   }
@@ -710,7 +784,10 @@
     else if (prior) replace(addCompanionsToPreviousDraft(JSON.parse(prior)), true);
     else if (oldest) replace(JSON.parse(oldest), true);
   } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
-  global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, registerDefinitions, unlockedParts, matchingMounts,
+  global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, weaponName, flailRecipe, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, registerDefinitions, unlockedParts, matchingMounts,
     duplicateTransform, duplicatePoint, shaftRigTransform, shaftArtTransform, cleanRigRegions, regionAt, regionAffine, affinePoint, rigPoint, shaftMounts, attachmentRig, rigBridgeOperations, multiplyAffine, JUNCTIONS, junctionPath, drawJunction, expandOps,
-    diagnostics: key => ({ parts: decode(key), gripSource: sourceShape(key), cachedSprites: canvases.size, revision }) };
+    diagnostics: key => ({ parts: decode(key), gripSource: sourceShape(key),
+      name: decode(key) ? weaponName(decode(key).shaft, decode(key).head, decode(key).metal) : null,
+      flailOwner: decode(key) ? (config.heads[decode(key).head].flailAssembly ? 'head' : config.shafts[decode(key).shaft].flailAssembly ? 'haft' : null) : null,
+      cachedSprites: canvases.size, revision }) };
 })(window);
