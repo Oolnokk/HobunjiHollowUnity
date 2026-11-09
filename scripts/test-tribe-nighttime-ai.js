@@ -73,9 +73,10 @@ assert.equal(abstract, 1, 'out-of-range sleeping hunters advance without a nativ
 
 const calls = [];
 let remoteSleeping = false; // Simulated calendar night/day transition for cached wilderness camps.
+let remoteDay = 1; // Synthetic world day to verify immediate distant slain-resident replacement and new daily patrols.
 const zoneContext = vm.createContext({
   state: { zones: new Map([['current', { zoneId: 'current', hunters: [], huntingParties: [] }], ['cached', { zoneId: 'cached', hunters: [], huntingParties: [] }]]) },
-  currentArea: () => 'current', isSleepingHour: () => remoteSleeping,
+  currentArea: () => 'current', isSleepingHour: () => remoteSleeping, gameDay: () => remoteDay,
   activeCamps: zone => [zone],
   updateCampHunters: (camp, dt, coarseDt) => {
     calls.push([camp.zoneId, coarseDt]);
@@ -104,6 +105,9 @@ assert.equal(remote.huntingParties.length, 1, 'offscreen parties regroup on the 
 const remoteUpdates = calls.filter(c => c[0] === 'cached').length;
 zoneContext.updateAllHunters(.2, 0);
 assert.equal(calls.filter(c => c[0] === 'cached').length, remoteUpdates, 'remote camp does not update unnecessarily between schedule transitions');
+remoteDay += 2;
+zoneContext.updateAllHunters(.2, 0);
+assert.equal(calls.filter(c => c[0] === 'cached').length, remoteUpdates + 1, 'slain residents and daily patrols refresh immediately at a new game day');
 
 const lodContext = vm.createContext({ performance: { now: () => 10000 } });
 vm.runInContext(sourceBetween(lod, '  function canSleepBandit(', '  function setBanditVisuals(')
