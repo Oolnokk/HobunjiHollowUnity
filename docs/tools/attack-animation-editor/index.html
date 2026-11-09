@@ -2811,7 +2811,8 @@ async function bakeStatuePiece({poseKey='neutral',includeWeapon=true,name='Carve
     if(includeWeapon&&!weaponCount)throw Error('The weapon has no visible geometry to capture.');
     const bounds=new THREE.Box3().setFromObject(exportGroup);
     const dimensions=bounds.getSize(new THREE.Vector3());
-    if(![dimensions.x,dimensions.y,dimensions.z].every(n=>Number.isFinite(n)&&n>0))throw Error('The frozen statue has invalid bounds.');
+    if(![dimensions.x,dimensions.y,dimensions.z].every(n=>Number.isFinite(n))||dimensions.x<=0||dimensions.y<=0)throw Error('The frozen statue has invalid bounds.');
+    dimensions.z=Math.max(.01,dimensions.z); // Flat PNG-plane statues are valid furniture, even when a species has no volumetric limb assets.
     // Static artwork is exported in the very same world-scale rig space displayed in Attack Editor.
     const buffer=await new Promise((resolve,reject)=>new GLTFExporter().parse(exportGroup,resolve,reject,{binary:true,onlyVisible:true}));
     if(!(buffer instanceof ArrayBuffer))throw Error('GLTFExporter did not produce binary GLB data.');
