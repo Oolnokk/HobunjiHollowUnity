@@ -71,7 +71,7 @@
   <script src="js/loot-rolling.js?v=20261105puzzleCaves1"></script>
   <!-- Seed planting/crop harvesting, extracted out of game.js. Must load
        before game.js, which calls window.CropPlanting.init(...). -->
-  <script src="js/item-acquisition-rarity.js?v=20261109provenance1"></script> <!-- Acquisition odds, crop value premiums, and festival ingredient-source rarity. -->
+  <script src="js/item-acquisition-rarity.js?v=20261109provenance2"></script> <!-- Acquisition odds, crop value premiums, and festival ingredient-source rarity. -->
   <script src="js/crop-varieties.js?v=20261109provenance1"></script>
   <script src="js/crop-planting.js?v=20261107h5b0aac4"></script>
   <!-- Wilderness den teleport + Den-Mother nest hold-to-take interaction,
@@ -723,7 +723,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20261109provenance1"></script>
+  <script src="js/wildlife-spawn.js?v=20261109provenance2"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -822,7 +822,7 @@
        so load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.FarmPanel.init(...)
        during its own setup. -->
-  <script src="js/farm-panel.js?v=20261107flyers2"></script>
+  <script src="js/farm-panel.js?v=20261109provenance2"></script>
   <!-- Tasks tab (window.TasksPanel), Supplies tab (window.SupplyPage),
        whistle-equip row (window.WhistleEquip), and the Wildlife/genotype
        debug panel (window.WildlifeDebugPanel) — all read
