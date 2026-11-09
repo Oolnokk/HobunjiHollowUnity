@@ -667,7 +667,33 @@
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = grad;
       const shadows = ruinShadowPolygons(carrier, lanternTuning.radiusTiles * ruinLanternScale * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1)); // Carried light throws stone shadows like a wall torch (was an undefined name that aborted every dark-area overlay frame).
-      withRuinShadowClip(ctx,shadows,()=>{ctx.beginPath();ctx.arc(center.x,center.y,shineR,0,Math.PI*2);ctx.fill();});
+      withRuinShadowClip(ctx,shadows,()=>{
+        ctx.beginPath();ctx.arc(center.x,center.y,shineR,0,Math.PI*2);ctx.fill();
+        if(ruinTradition!=='kanthic')return; // Tothal's suppression and Hronal's original lantern behavior are deliberately untouched.
+        // A rope's projected top and bottom can lie outside the floor-height lantern disk even
+        // when its fibers are near the player in 3D. Clear darkness *on those fibers only*.
+        const ropes=window.DevRandomRuinSimplePuzzles?.getIlluminableRopes?.()||EMPTY_LIGHT_LIST;
+        const localRadius=(window.RopeCore?.COLLISION_RADIUS||.24)+(window.RopeCore?.BODY_RADIUS||.045);
+        for(const rope of ropes){
+          const anchor=rope.anchor,bob=rope.bob||window.RopeCore?.bobAt?.(rope);
+          if(!anchor||!bob)continue;
+          if(Math.min(Math.hypot(anchor.x-carrier.x,anchor.z-carrier.z),
+             Math.hypot(bob.x-carrier.x,bob.z-carrier.z))>lanternTuning.radiusTiles+localRadius)continue;
+          for(let segment=1;segment<=6;segment++){
+            const t=segment/6,x=anchor.x+(bob.x-anchor.x)*t,y=anchor.y+(bob.y-anchor.y)*t,z=anchor.z+(bob.z-anchor.z)*t;
+            const distance=Math.hypot(x-carrier.x,y-carrier.y,z-carrier.z);
+            if(distance>=lanternTuning.radiusTiles)continue;
+            const projected=lightingDeps.worldToOverlay(x,y,z);
+            const radius=lightScreenRadius(x,z,y,localRadius);
+            if(!(radius>0)&&radius!==0)continue;
+            const alpha=lanternTuning.centerMaskAlpha*effectiveStrength*(1-distance/lanternTuning.radiusTiles);
+            const glow=ctx.createRadialGradient(projected.x,projected.y,0,projected.x,projected.y,Math.max(.01,radius));
+            glow.addColorStop(0,'rgba(0,0,0,'+alpha+')');
+            glow.addColorStop(1,'rgba(0,0,0,0)');
+            ctx.fillStyle=glow;ctx.beginPath();ctx.arc(projected.x,projected.y,Math.max(.01,radius),0,Math.PI*2);ctx.fill();
+          }
+        }
+      });
     }
 
     const weatherTint = preserveOutdoorWeatherTint ? currentOutdoorWeatherTintState() : null; // Used below to put back weather color without restoring the darkness the lantern just removed.

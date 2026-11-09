@@ -681,7 +681,9 @@
       const structural = /wall|pillar|pedestal|platform/i.test(role) && !/seal|glyph|decal|fire|ceiling/i.test(mesh.name || '');
       const namedWall = !!special?.specialBoss && /wall/i.test(role) && !/seal|glyph|decal|fire|ceiling/i.test(mesh.name || ''); // Only the named tomb's walls glow with the guardian's own glyph. // Built-in eligibility when no rules module is loaded.
       const traditionWall = !namedWall && !!special?.tradition && !!special.patternId && /wall/i.test(role) && !/seal|glyph|decal|fire|ceiling/i.test(mesh.name || ''); // Ordinary ruins: the tradition's own glyph and lich colour on their walls, never a random catalog glyph.
-      const ownGlyph = namedWall || traditionWall;
+      const thematicSurface = /wall|pillar|column|pedestal|plinth|platform|dais|balcony|furniture|obelisk|statue|door|plate|puzzle|table|chair|shelf|cabinet|chest|altar|brazier/i.test(role)
+        && !/seal|glyph|decal|fire|ceiling|flame|light|rope|ladder/i.test(mesh.name || ''); // Use the ruin's tradition on actual decorative/puzzle stone, not functional signal decals.
+      const ownGlyph = (namedWall || traditionWall || thematicSurface) && !!special?.patternId; // The same Harlyao motif now covers eligible walls, pillars, furniture and puzzle masonry.
       if ((!rules && !structural) || !catalog.length) continue;
       for (const child of [...mesh.children]) if (child.userData?.furniturePattern?.mode === 'engraving') { mesh.remove(child); child.geometry?.dispose(); child.material?.map?.dispose(); child.material?.dispose(); } // Re-decoration (rule edits) starts clean, including types now switched off.
       const rule = rules?.resolve?.(mesh, root, structural) || null; // { key, label, context, enabled, scale, partScale, defaultScale, maxAtlasPx, minSurfaceTiles, tilePx }; every ruin mesh gets a type so the Dev Companion can list it.
@@ -708,8 +710,8 @@
         return { ...template, pattern: template.random === false ? template.pattern : null,
           patterns:template.random === false ? template.patterns : template.patterns?.length > 1 ? [resolvePattern({patternId}),template.patterns[1]] : null, // Keep seeded ruin primaries independent of the authored overpass snapshot.
           patternId, palette: ownGlyph ? [special.ink || '#ffd5a3', special.ink || '#ffd5a3'] : (template.palette || ['#b7a185', '#625447']), scale: template.scale || rule?.defaultScale || 1.5,
-          glowColor:template.glowColor || (ownGlyph ? special.ink || '#ffd5a3' : '#7cebc6'),
-          glowIntensity:template.glowIntensity ?? (namedWall ? 1.5 : traditionWall ? 1.1 : .95),
+          glowColor:ownGlyph ? (special.ink || '#ffd5a3') : (template.glowColor || '#7cebc6'),
+          glowIntensity:template.glowIntensity ?? (special?.specialBoss && ownGlyph ? 1.5 : ownGlyph ? 1.1 : .95),
           glowPulseDepth:template.glowPulseDepth ?? .14,
           ...(rule?.scale > 0 ? { scaleOverride: rule.scale } : {}), ...(rule ? { maxAtlasPx: rule.maxAtlasPx, minSurfaceTiles: template.allowRegions ? 0 : rule.minSurfaceTiles, tilePx: rule.tilePx } : {}) }; // Region-picked faces were size-checked in world space already.
       });
