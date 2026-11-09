@@ -247,6 +247,32 @@
       ...result, model:'balanced species allocation among real zone dens; nest probability and clutch supplied by caller' };
   }
 
+  function liveDenOffspring(itemKey, { zoneId = null, census = null, mothers = null, clutch = null } = {}) {
+    const allMothers = mothers || G.SCRATCHBONES_CONFIG?.game?.wildlife?.denMothers;
+    const roster = census || (zoneId ? G.WildlifeSpawn?.denCensus?.(zoneId) : null);
+    const clutchRules = clutch || G.SCRATCHBONES_CONFIG?.game?.wildlife?.nestClutch;
+    if (!allMothers || !Array.isArray(roster)) return null;
+    const matchingSpecies = Object.keys(allMothers).filter(kind => allMothers[kind]?.nestItemKey === itemKey);
+    if (!matchingSpecies.length) return null; // Surface nests and roaming herds use different owners; don't invent a den probability.
+    const accessible = roster.filter(den => den && !den.collapsed && den.stage !== 'collapsed');
+    const assigned = accessible.filter(den => matchingSpecies.includes(den.species));
+    const clutchMin = Number(clutchRules?.min), clutchMax = Number(clutchRules?.max);
+    const validClutch = Number.isInteger(clutchMin) && Number.isInteger(clutchMax) && clutchMin > 0 && clutchMax >= clutchMin;
+    const probability = roster.length ? assigned.length / roster.length : 0; // Exact conditional odds among real generated den sites.
+    const recorded = assigned.map(den => {
+      const mapId = zoneId != null ? G.WildlifeSpawn?.denCavernMapId?.(zoneId, den.denId) : null;
+      const record = mapId ? G.WildlifeSpawn?.denTurnoverStateForCavern?.(mapId) : null;
+      return record?.clutch?.itemKey === itemKey && Number.isFinite(Number(record.clutch.remaining))
+        ? Math.max(0,Math.floor(Number(record.clutch.remaining))) : null;
+    });
+    const allRecorded = recorded.every(n => n !== null);
+    return {itemKey,zoneId,species:matchingSpecies,denCount:roster.length,accessibleDens:accessible.length,
+      speciesDenCount:assigned.length,probability,
+      currentlyRecordedOffspring:allRecorded ? recorded.reduce((sum,n)=>sum+n,0) : null,
+      potentialClutchRange:validClutch ? {min:clutchMin,max:clutchMax} : null,
+      potentialMeanOffspring:validClutch ? assigned.length*(clutchMin+clutchMax)/2 : null,
+      model:'Exact species assignment among current den sites; unless all clutch records exist, remaining loot and encounter viability are unverified.'};
+  }
   function fishCatch(key, {zone,season,timeOfDay,rareFishWeightMultiplier = null,perkRank = 0,
     entries = G.FishCatalog?.entries} = {}) {
     if (!Array.isArray(entries) || !zone || !season || !timeOfDay) return null;
@@ -310,6 +336,8 @@
         proposedSellPrice:cultivarSellPrice(key,context.nativeSellPrice ?? def.sellPrice),
         note:cultivar.model };
     }
+    const offspring = context.zoneId ? liveDenOffspring(key,{zoneId:context.zoneId}) : null;
+    if (offspring) return {key,kind:'offspring',acquisition:offspring,note:offspring.model};
     const fish = fishRarity(key);
     if (fish) return {key,kind:'fish',rarity:fish,acquisition:context.fishZone && context.season && context.timeOfDay
       ? fishCatch(key,{zone:context.fishZone,season:context.season,timeOfDay:context.timeOfDay,perkRank:context.perkRank||0}) : null};
@@ -326,8 +354,8 @@
       note:context.stages ? null : 'Unquantified source; no automatic rarity price or contest premium.' };
   }
   return Object.freeze({ chain, atLeastOne, expected, tierLayout, ruinChest, caravanSeed, inheritance, source,
-    rarityFactor, cultivarRarity, cultivarSellPrice, foodRarity, artifactChest, lootPoolItem, denOffspring, fishCatch, fishRarity, ruinArtifactOpportunity, item,
-    debugSnapshot: key => key ? item(key) : { supported:['cultivar','artifact-chest','ruin-chest','loot-pool','den-offspring','fish-catch','generated-ruin','food-ancestry','inheritance'],
+    rarityFactor, cultivarRarity, cultivarSellPrice, foodRarity, artifactChest, lootPoolItem, denOffspring, liveDenOffspring, fishCatch, fishRarity, ruinArtifactOpportunity, item,
+    debugSnapshot: key => key ? item(key) : { supported:['cultivar','artifact-chest','ruin-chest','loot-pool','den-offspring','live-den-offspring','fish-catch','generated-ruin','food-ancestry','inheritance'],
       priceMode:'cultivar-integrated; other categories retain their authored value', noSilentFallback:true } });
 
 });
