@@ -64,6 +64,14 @@ for (const [event,kinds] of Object.entries(activityKinds)) {
     if(t.festivalLocaleKind==='mask-dance'||t.festivalLocaleKind==='blossom-dance')performed ||= !!t.socialDance;
   }
   if(kinds.some(x=>x.endsWith('dance'))) assert(performed,event+' has NPCs performing visible dances');
+  if(event==='tzizkhanash'){
+    const mourners=records.map(rec=>api.targetFor(rec)).filter(t=>t?.socialAncestorCeremony);
+    assert(mourners.length>=2,'ancestor offering and remembrance have visible NPC participants without the player');
+    assert(mourners.every(t=>!t.socialDance),'solemn ancestor observance must not use smile/dance presentation');
+    assert(mourners.some(t=>t.socialAncestorCeremony.kind==='remembrance'),'NPCs autonomously remember the departed');
+    assert(mourners.some(t=>t.socialAncestorCeremony.kind==='ancestor-offerings'),'NPCs autonomously observe at the offering shrine');
+  }
+
   if(event==='five_blossoms')assert.equal(api.targetFor(records.find(r=>r.id==='foroji_funji')).toolKey,'kurraya','festival musician performs at the real instrument station');
 }
 active=false;api.update();
