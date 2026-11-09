@@ -35,11 +35,11 @@
     const ranked = Object.entries(scores).sort((a,b)=>b[1]-a[1]);
     return ranked[0][1] > 0 ? ranked[0][0] : 'goodwill'; // An unfamiliar keepsake is symbolically a bond with the departed.
   }
-  function sourceEvidence(key,def,rarity) {
+  function sourceEvidence(key,def,rarity,definitions = {}) {
     if (!rarity) return {factor:1,kind:'unmeasured',label:'No acquisition model loaded',confidence:'unknown',sources:[]};
-    const item = rarity.item?.(key,{itemDefs:{[key]:def},townValue:1}) || {};
+    const item = rarity.item?.(key,{itemDefs:definitions,townValue:1}) || {};
     const sources = rarity.acquisitionSources?.(key,{townValue:1}) || item.acquisitionRoutes || [];
-    const food = rarity.foodRarity?.(key,{[key]:def});
+    const food = rarity.foodRarity?.(key,definitions);
     const entries = []; // Comparable factor candidates, retaining their different unit labels.
     function propose(factor,label,kind,confidence) {
       const x = number(factor);
@@ -74,7 +74,7 @@
       return null; // UI and world action cannot award blessings for invalid inventory/quality selections.
     const species = releaseSpecies(key,def,options.game);
     const mode = species ? 'release' : 'burn';
-    const scarcity = sourceEvidence(key,def,options.rarity || window.ItemAcquisitionRarity);
+    const scarcity = sourceEvidence(key,def,options.rarity || window.ItemAcquisitionRarity,definitions);
     const value = Math.max(0,number(def.sellPrice) || 0);
     const valueFactor = Math.min(1.55,1 + Math.log1p(value/25)*.09); // Economic cost of foregoing a valuable, nonrenewable keepsake.
     const processTier = clamp(number(def.cookingProcessingTier ?? def.processingTier) || 0,0,6);
