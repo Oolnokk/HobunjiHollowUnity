@@ -192,6 +192,23 @@
     const safe=shelf.reward?spots.filter(p=>dist(p,reward)>gap):spots;
     return safe.sort((a,b)=>dist(a,reward)-dist(b,reward))[0]||null;
   }
+  const nestLineages = new Map(); // World+site -> saved flock genotype; reconnects offspring and parents after streaming or reload.
+  function nestFamilyGenotype(session, nestId) {
+    const worldId = window.__hobunjiPlayerProfile?.worldId || 'world'; // Existing world key prevents cross-save coat inheritance.
+    const key = 'pingdort:family:' + worldId + ':' + session.area + ':' + nestId; // One bloodline for all eggs and the three home-point birds.
+    if (nestLineages.has(key)) return nestLineages.get(key);
+    let genotype = null;
+    try {
+      const saved = JSON.parse(localStorage.getItem(key) || 'null');
+      if (saved?.base?.color && saved?.sizeClass) genotype = saved;
+    } catch (_) {} // Storage may be disabled or contain an older malformed genotype.
+    if (!genotype) {
+      genotype = window.CreatureGenetics?.makeDefaultGenotype?.(KIND) || null;
+      if (genotype) try { localStorage.setItem(key, JSON.stringify(genotype)); } catch (_) {}
+    }
+    nestLineages.set(key, genotype);
+    return genotype;
+  }
   function nestVisual(session,shelf,index) {
     const THREE=window.THREE,spot=clearNestTile(shelf);
     if(!spot||![spot.x,spot.z,shelf.y].every(Number.isFinite))return null;
@@ -215,7 +232,7 @@
     group.userData.pingdortNest=true;
     const nest={id:session.area+':'+shelf.id,x,z,worldY,shelfId:shelf.id,
       areaId:session.area,remaining:NEST_EGGS,itemKey:FERTILE_EGG,
-      genotype:window.CreatureGenetics?.makeDefaultGenotype?.(KIND)||null,
+      genotype:nestFamilyGenotype(session,session.area+':'+shelf.id), // Same stored bloodline as its guarding flock, including after re-entry.
       col:Math.floor(x),row:Math.floor(z),w:1,h:1,
       mesh:group,group,fallbackArt,flockLoaded:false,deadBirdSlots:new Set()};
     nest.x=x*unit();nest.y=z*unit(); // Native DenNestSystem uses pixel-space nest coordinates like branch nests.
@@ -226,7 +243,7 @@
   }
   function spawnBird(session,nest,index){
     const pos={x:nest.col+.5+(index-1)*.18,z:nest.row+.5+(index%2)*.12}; // Three roosting birds stay over the same raised 1×1 cap.
-    const genotype=window.CreatureGenetics?.makeDefaultGenotype?.(KIND)||null; // Each wild flock member rolls one persistent-in-session earth-tone coat and default small size.
+    const genotype=nest.genotype ? JSON.parse(JSON.stringify(nest.genotype)) : null; // Identical inherited colors and Size; no independent guardian reroll.
     const actor=deps.makeCreatureEntity?.(KIND,pos.x*unit(),pos.z*unit(),{
       genotype,
       homeX:pos.x*unit(),homeY:pos.z*unit(),state:'idle',wildlifeRole:'predator',streamVisuals:true,
