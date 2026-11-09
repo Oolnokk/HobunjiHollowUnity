@@ -12,7 +12,7 @@
   const activeSfx = new Set(); // Intro audio cleanup stops one-shots and pooled voices already in flight.
   let introductionMix = null; // Single owner restores audio settings after success/cancellation.
   const objectSfxPreloads = new Map(); // Retains eagerly loaded tool cues for low-latency clones in playObjectSfx.
-  let metronomeSfxVoice = null; // Only the melody metronome owns this transient voice; ordinary mining pick SFX remain untouched.
+  let metronomeSfxVoice = null; // Only the melody metronome owns this voice; ordinary mining SFX remain untouched.
   const combatSfxPreloads = new Map(); // URL -> bounded ready-element pool used so rapid combat cues cannot queue indefinitely.
   const animalVoicePreloads = new Map(); // Keeps species calls decoded/ready before a semantic vocal intent fires.
   const footstepAudioPools = new Map(); // URL -> reusable preloaded native-audio voices used by every recorded footstep.
@@ -1236,17 +1236,22 @@
     if (cfgEntry?.generatedStoneKchunk && gameAudioConfig().enabled !== false && objectSfxConfig().enabled !== false && Number(gameAudioConfig().sfxVolume ?? 1) > 0) playGeneratedStoneKchunk(Math.max(0,Number(gameAudioConfig().sfxVolume ?? 1))*Math.max(0,Number(cfgEntry.volume ?? .8))*volumeScale);
   }
 
-  function playObjectSfxKeyMetronome(volumeScale = 1) {
-    const cfgEntry = objectSfxConfig().pick; // The actual preloaded sfx_pick.mp3 recording, shared with normal mining.
+  function playObjectSfxKeyMetronome(volumeScale = 1, beatIndex = 0) {
+    const beat = Number.isFinite(beatIndex) ? ((Math.trunc(beatIndex) % 4 + 4) % 4) + 1 : 1; // Maps the judge's zero-based quarter beats onto the four authored recordings.
+    const key = 'stoneBeat' + beat; // The same four cues are reused across every measure and silent-score interval.
+    const cfgEntry = objectSfxConfig()[key]; // Reuses the configured object-SFX preloader, mixer and native media voice.
     const audioCfg = gameAudioConfig();
     if (!cfgEntry?.url || audioCfg.enabled === false || objectSfxConfig().enabled === false ||
-      Number(audioCfg.sfxVolume ?? 1) <= 0) return false;
+      Number(audioCfg.sfxVolume ?? 1) <= 0) {
+      lastObjectSfxKeyDebug = {key,found:!!cfgEntry,url:cfgEntry?.url||null,metronome:true,playbackState:'unavailable'};
+      return false;
+    }
     const preloaded = objectSfxPreloads.get(cfgEntry.url);
     lastObjectSfxKeyDebug = {
-      key:'pick',found:true,url:cfgEntry.url,preloaded:!!preloaded,readyState:preloaded?.readyState ?? null,
-      metronome:true,maxDurationSec:.36,oneVoice:true,atMs:Math.round(performance.now()),
-    }; // Pixel Probe distinguishes the short metronome transient from an ordinary full-length mining strike.
-    playObjectSfx(cfgEntry,volumeScale,1,.36); // Preserve the original pitch/impact, silence the 1.85-second tail after the click.
+      key,found:true,url:cfgEntry.url,preloaded:!!preloaded,readyState:preloaded?.readyState ?? null,
+      metronome:true,beat,oneVoice:true,maxDurationSec:3,atMs:Math.round(performance.now()),
+    }; // Pixel Probe exposes exactly which numbered stone recording was requested.
+    playObjectSfx(cfgEntry,volumeScale,1,3); // Play the complete stone strike; the next quarter beat replaces its voice if necessary.
     return true;
   }
 

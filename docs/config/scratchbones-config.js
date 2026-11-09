@@ -3737,6 +3737,10 @@ window.SCRATCHBONES_CONFIG = {
           "igniteSmall": { "url": "assets/audio/sfx/sfx_ignite_small.m4a", "volume": 0.78, "preload": true },
           "stoneActivator": { "url": "assets/audio/sfx/sfx_stone_activator.m4a", "volume": 0.8, "preload": true },
           "stoneMechanism": { "url": "assets/audio/sfx/sfx_stone_mechanism.m4a", "volume": 0.86, "preload": true },
+          "stoneBeat1": { "url": "assets/audio/sfx/sfx_stonebeat-1.mp3", "volume": 0.8, "preload": true },
+          "stoneBeat2": { "url": "assets/audio/sfx/sfx_stonebeat-2.mp3", "volume": 0.8, "preload": true },
+          "stoneBeat3": { "url": "assets/audio/sfx/sfx_stonebeat-3.mp3", "volume": 0.8, "preload": true },
+          "stoneBeat4": { "url": "assets/audio/sfx/sfx_stonebeat-4.mp3", "volume": 0.8, "preload": true },
           "uiClick": {
             "url": "assets/audio/sfx/ui/sfx_ui_click.mp3",
             "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_ui_click.wav",
