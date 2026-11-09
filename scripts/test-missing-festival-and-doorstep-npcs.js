@@ -145,18 +145,19 @@ async function testFestivalRecovery() {
     festivalSource.slice(start, end) +
     '\nreturn recoverMissingFestivalGuests;'
   )(deps, () => residents, () => true, {NpcScheduling: scheduling, __farmLog() {}}, Promise);
+  const settle = async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); }; // Allows the rejection handler and cleanup microtasks to finish.
   recover(4000);
-  await Promise.resolve();
+  await settle();
   assert.deepEqual(requested, ['pahu', 'leaf'], 'only absent resident actors are recovered');
   recover(6000);
-  await Promise.resolve();
+  await settle();
   assert.equal(requested.length, 2, 'recovery does not rebuild on every festival tick');
   recover(7500);
-  await Promise.resolve();
+  await settle();
   assert.equal(requested.length, 4, 'another check is allowed after the throttle interval');
   contextAbsent.delete('father_hunundi_hodu'); // An authored presence provider exists but its absence no longer applies.
   recover(11000);
-  await Promise.resolve();
+  await settle();
   assert.deepEqual(requested.slice(4).sort(), ['pahu', 'leaf', 'father_hunundi_hodu'].sort(), 'inactive presence rules must not hide a genuine resident forever');
 }
 
