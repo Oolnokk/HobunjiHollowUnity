@@ -319,7 +319,7 @@
       origin, otherParentId, bornRawDay: Math.min(H.rawDay(), Math.max(0, num(bornRawDay, H.rawDay()))), basketId: null, vatId: null, // An interrupted naming prompt never makes a child younger.
       usefulnessLevel: Math.max(1, num(usefulnessCfg().youngStartLevel, 1)), usefulnessXp: 0, // Lifelong general work progression.
     };
-    const placed = deps().furniture?.placeInteriorFixture?.('babyBasket');
+    const placed = phaseOf(child) === 'basket' ? deps().furniture?.placeInteriorFixture?.('babyBasket') : null; // A delayed naming after toddlerhood must not displace furniture for a basket already outgrown.
     if (placed?.id) child.basketId = placed.id;
     if (placed?.stored) H.toast(`📦 Moved your ${placed.stored} into farm storage to make room for the baby basket.`, true);
     fam.children.push(child);
