@@ -254,7 +254,7 @@
     WILD_BERRY_ZONES, WILD_BERRY_SEED_CHANCE, // Shared live source authority for conditional berry and seed rarity calculations.
     seedKeyFor: berryKey => deps?.cropData?.[berryKey]?.seedKey || null, // Handles native redberry/blueberry singular seed naming without a duplicated lookup.
     census: mapId => { // Mobile, read-only live zone count. An ungenerated zone is unknown, NOT a zone containing zero berries.
-      const known = !!deps?._zoneBerryPersist?.has?.(mapId) || !!deps?._zoneBerryObjects?.has?.(mapId);
+      const known = !!deps?._zoneBerryObjects?.has?.(mapId); // Persisted unloaded placements are not a live spawn census; report them as unknown.
       return {zoneId:mapId,known,berries:known ? listBerries(mapId) : null};
     },
     init,
