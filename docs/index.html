@@ -200,7 +200,7 @@
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
-  <script src="js/character-action-locks.js?v=20261107flyers2"></script>
+  <script src="js/character-action-locks.js?v=20261109htziza1"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20261108kiss3"></script>
   <script src="js/npc-movement-head-target.js?v=20261101rugchairbednpc3"></script> <!-- Shared invisible movement gaze for allied NPC walkers and humanoid hostiles. -->
@@ -274,7 +274,7 @@
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
   <script src="js/map-boundary-guard.js?v=1"></script>
-  <script src="js/terrain-preview.js?v=20261029maskSlots2"></script>
+  <script src="js/terrain-preview.js?v=20261109htzizp1"></script>
   <script src="js/den-cliff-placement.js?v=20261028localeopen1"></script>
   <script src="js/wilderness-archipelago.js?v=20261020islandatlas1"></script>
   <script src="js/wilderness-map-generator.js?v=20261107mireOutlet1"></script>
@@ -369,7 +369,7 @@
   <script src="js/combat/combat-enchantments.js?v=20261027shapeaudit1"></script>
   <script src="js/combat/weapon-enchantment-vfx.js?v=20261103particlesheld1"></script>
   <!-- A separate WebGL scene, activated only while the Loadout pane is open. -->
-  <script src="js/combat/loadout-weapon-preview.js?v=20261029maskSlots2"></script>
+  <script src="js/combat/loadout-weapon-preview.js?v=20261109htzizp1"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/nearby-volume-collision.js?v=20261107jump-rebased2"></script>
@@ -567,7 +567,7 @@
        load-order dependency on anything else here; game.js calls into it
        from loadBuildingScene/_loadTownFromWorkspace and its own live-swap
        check. -->
-  <script src="js/festival-calendar.js?v=20261021ha63617d"></script>
+  <script src="js/festival-calendar.js?v=20261109htzizc1"></script>
   <script src="js/map-layout-system.js?v=20261019h5ca2b48"></script>
   <!-- Gives interior furniture an authored tile footprint/quarter-turn transform and derives occupied-tile collision before the scene consumes the effective layout. -->
   <script src="js/interior-furniture-grid.js?v=20261102chairreview2"></script>
@@ -734,7 +734,7 @@
   <script src="js/town-zone-buildings.js?v=20261027h07bdab3"></script>
   <!-- Same-origin live Map Editor transport + runtime bridge. Loaded before
        game.js so its private scene state can be injected during setup. -->
-  <script src="js/map-live-preview.js?v=20261029maskSlots2&window=20260926rebase1"></script>
+  <script src="js/map-live-preview.js?v=20261109htzizp1&window=20260926rebase1"></script>
   <!-- Wall-mounted furniture loads synchronously before game.js consumers initialize. -->
   <script src="js/wall-ornament-placement.js?v=20261027h8bf7bae"></script>
   <script src="js/map-live-preview-runtime.js?v=20261002hb01296f"></script>
@@ -784,7 +784,7 @@
        order relative to the other systems above doesn't matter; must load
        before game.js, which calls window.WeatherFX.init(...) during its
        own setup. -->
-  <script src="js/weather-fx.js?v=20261101hfakesmooth1"></script>
+  <script src="js/weather-fx.js?v=20261109htzizw1"></script>
   <script src="js/emissive-light-orbs.js?v=20261104hc955306"></script> <!-- Blizzard-style glow circles above darkness/fog for emissive fake lights (mask eyes). -->
   <!-- Load after WeatherFX exists, but before game.js calls WeatherFX.init(), so daylight windows always capture the real overlay dependencies. -->
   <script src="js/daylight-window-runtime.js?v=20261027hglassB1"></script>
@@ -966,7 +966,7 @@
   <script src="js/stampable-locale-defs.js?v=20261102h082455e"></script>
   <script src="js/tothal-zone-cache.js?v=20261102a"></script>
   <script src="js/ruin-sites.js?v=20261108hc128de7"></script>
-  <script src="js/zone-den-totem-features.js?v=20261108h0ea058e"></script>
+  <script src="js/zone-den-totem-features.js?v=20261109htzizz1"></script>
   <script src="js/transition-markers.js?v=20261004h46d3bfb"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
        (window.ZoneGrassBillboards) — pure scene-graph generation, no
@@ -2866,8 +2866,8 @@
   <script src="js/npc-festival-dance.js?v=20261020hd350a73"></script>
   <script src="js/npc-shared-meals.js?v=20261021hdde83ea"></script>
   <script src="js/festival-potluck-contest.js?v=20261028h97a1825"></script>
-  <script src="js/festival-locale-activities.js?v=20261023h2f3ea4a"></script>
-  <script src="js/festival-system.js?v=20261104faction-luau1"></script>
+  <script src="js/festival-locale-activities.js?v=20261109htzizl1"></script>
+  <script src="js/festival-system.js?v=20261109htzizs1"></script>
   <script src="js/festival-dialogue.js?v=20261022h561ec26"></script>
   <script src="js/festival-ui.js?v=20261023h929b96d"></script>
   <script src="js/tutorial-unlock-visits.js?v=20260930doorstep1"></script>
