@@ -357,6 +357,20 @@
           if(!heightGroups.has(code))heightGroups.set(code,[]);
           heightGroups.get(code).push(k.split(',').map(Number));
         }
+        // The V50 source can leave tiny visual seams between attached rooms/halls.
+        // Back only its explicitly supported footprint; pits and shaft voids are absent.
+        const gapGeometry=new THREE.PlaneGeometry(1,1);
+        gapGeometry.rotateX(-Math.PI/2);
+        for(const [height,cells] of heightGroups){
+          const backing=new THREE.InstancedMesh(gapGeometry,material,cells.length);
+          backing.name='native-v50-floor-gap-backing-'+item.floor+'-'+height;
+          backing.userData.devRuinFootprintIgnore=true;
+          backing.raycast=()=>{}; // Backing is a visual repair, never a new projectile or walking collider.
+          const matrix=new THREE.Matrix4();
+          cells.forEach(([x,z],i)=>backing.setMatrixAt(i,matrix.makeTranslation(x+.5,Number(height)-.025,z+.5)));
+          backing.instanceMatrix.needsUpdate=true;
+          group.add(backing);
+        }
         for(const [height,cells] of heightGroups){
           for(const [i,rect] of Corridors.rectangles(cells).entries())
             DS.registerSurface({id:scope+'-v50-'+height+'-'+i,scope,priority:3,
