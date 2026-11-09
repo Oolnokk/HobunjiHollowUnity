@@ -149,6 +149,22 @@ const sourceCount = rarity.ruinArtifactOpportunity('hachutuCommon',{chests:[{tie
 assert.equal(sourceCount.chestCount,1,'generated ruin census filters real Hachutu vs Harlyao chest cultures');
 assert.equal(sourceCount.conditionalChancePerRuin,1,'one eligible chest with a single eligible artifact must contain that artifact');
 assert.equal(rarity.ruinArtifactOpportunity('harlyaoRare',{chests:[{tier:1,culture:'harlyao'}]}).conditionalChancePerRuin,0,'ineligible chest tier cannot generate a higher-tier relic');
+const testedRuin=rarity.ruinArtifactOpportunity('harlyaoCommon',{chests:[
+  {tier:1,culture:'harlyao',opened:true,loot:{harlyaoCommon:2}},
+  {tier:2,culture:'harlyao',opened:false,loot:null},
+  {tier:1,culture:'hachutu',opened:false,loot:null},
+]});
+assert.equal(testedRuin.chestCount,2,'Hachutu chests are excluded from a Harlyao opportunity count');
+assert.equal(testedRuin.openedChestCount,1,'already opened Harlyao chest is not a future roll');
+assert.equal(testedRuin.unopenedChestCount,1,'only one unopened chest remains available');
+assert.equal(testedRuin.alreadyLootedCopies,2,'real recovered copies remain visible without being rerolled');
+assert(Math.abs(testedRuin.conditionalChancePerRuin - rarity.artifactChest('harlyaoCommon',2,'harlyao',catalog).probability)<1e-12,
+  'remaining chance matches only the unopened eligible chest tier');
+assert.equal(rarity.item('harlyaoRare').acquisition,null,'no unspecified default tier-4 artifact probability');
+assert(rarity.item('harlyaoRare').acquisitionRoutes.some(route=>route.kind==='artifact'),
+  'artifact diagnostics enumerate eligible tiers rather than pretending one tier is universal');
+assert.equal(rarity.item('harlyaoRare',{chestTier:2}).acquisition.chestTier,2,
+  'explicit artifact tier restores exact conditional chest probability');
 if (oldArtifactCatalog === undefined) delete globalThis.ArtifactCollection;
 else globalThis.ArtifactCollection = oldArtifactCatalog;
 assert.equal(rarity.lootPoolItem('rare','puzzleCave',{puzzleCave:{kind:'exclusive',entries:[{itemKey:'rare',weight:1}]}}).probability,null,
