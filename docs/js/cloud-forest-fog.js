@@ -1156,6 +1156,7 @@
   }
 
   window.CloudForestFog = {
+    __test: Object.freeze({ undergroundLightingForArea, enclosedDarknessOverlayAlpha }), // Pure policy checks; the production overlay and mobile diagnostics use these same functions.
     init,
     update,
     setLayerRadius,
