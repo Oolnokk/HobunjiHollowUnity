@@ -190,6 +190,15 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   assert.ok(constrained.counts.every(count => count <= 1), JSON.stringify(constrained));
   assert.ok(constrained.activatorTypes.every(type => type === 'glyphObelisk' || type === 'alwaysLitTorch' || type === 'projectile'), JSON.stringify(constrained)); // 'projectile' = authored ruinGlyphTarget plaques mounted over glyph decals.
 
+  // A glyph-only option permits zero placed glyph rooms for a particular ordinary-layout seed.
+  // Test the authored glyph decals against a forced *native V50* room instead of assuming that the random floor contains one.
+  const glyphLab=await page.evaluate(async seed=>window.DevRandomRuin.generate(seed,{
+    singleRoomTrial:true,puzzleType:'nativeGlyphObelisk',
+  }),constrainedSeed);
+  assert.equal(glyphLab,true,'forced native V50 glyph room must generate for the projectile decal test');
+  await page.waitForFunction(()=>window.DevRandomRuinHitPuzzles?.snapshot?.()?.glyphs?.total>0,
+    null,{timeout:90000,polling:100});
+
   const glyphVisuals = await page.evaluate(async () => {
     const scene=window.GridTileAccessors.getActiveScene();
     const roots=[];
