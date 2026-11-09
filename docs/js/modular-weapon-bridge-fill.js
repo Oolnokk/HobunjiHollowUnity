@@ -1445,6 +1445,7 @@
       const rx = Math.max(2, Number(bore.rx) || 12), ry = Math.max(2, Number(bore.ry) || 12);
       const x = Number(bore.x) || 0, y = Number(bore.y) || 0;
       const rim = Math.max(0.5, Math.min(24, Number(bore.rim) || 5)); // Physical bevel width, independent of hole diameter.
+      const outline = Math.max(1, Math.min(12, Number(bore.outline) || 3)); // Interior cutout outline: same opaque-black, 8-connected ink treatment as the head/haft sprite authoring outline tool.
       const strength = Math.max(0, Math.min(1, Number.isFinite(Number(bore.shade)) ? Number(bore.shade) : 0.65));
       const warp = Math.max(0, Math.min(6, Number.isFinite(Number(bore.warp)) ? Number(bore.warp) : 1.5)); // Small outward lip deformation, retaining the underlying sprite material.
       const angle = (Number(bore.rotation) || 0) * Math.PI / 180;
@@ -1476,7 +1477,7 @@
           if (pixels[offset + 3] === 0) pixels[offset] = pixels[offset + 1] = pixels[offset + 2] = 0;
           continue;
         }
-        if (edge >= rim) continue;
+        if (edge >= Math.max(rim, outline + 1)) continue;
         const influence = Math.max(0, 1 - edge / rim);
         const rad = Math.hypot(dx, dy) || 1;
         const nx = dx / rad, ny = dy / rad;
@@ -1488,8 +1489,13 @@
         const innerShadow = strength * influence * 0.68;
         const highlight = strength * influence * Math.max(0, directional) * 0.35;
         const brightness = Math.max(0.24, Math.min(1.2, 1 - innerShadow + highlight));
-        for (let channel = 0; channel < 3; channel++) pixels[offset + channel] = Math.round(original[chosen + channel] * brightness);
-        pixels[offset + 3] = original[chosen + 3]; // Keep the original material and antialiasing; do not recolor metal/wood to a fixed shade.
+        // Follow the existing head/haft outline tool's pure-black ink: a narrow, continuous
+        // 8-connected border is painted INTO the surviving shaft pixels around the hole.
+        // Unlike expanding the sprite silhouette, this never fills the hole or inks the exterior.
+        const ink = Math.max(0, Math.min(1, outline + 0.5 - edge));
+        for (let channel = 0; channel < 3; channel++)
+          pixels[offset + channel] = Math.round(original[chosen + channel] * brightness * (1 - ink));
+        pixels[offset + 3] = original[chosen + 3]; // Wood, metal, straps and their existing alpha remain intact outside the cutout.
       }
     }
     return pixels;
