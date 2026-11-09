@@ -93,6 +93,12 @@ const server = http.createServer((req, res) => {
     assert.equal(rope.combined.chainReady, true, 'generated rope builds after switching weapon');
     assert(rope.physics.find(weapon => weapon.itemKey === 'grappleFlail').physics.length > 0,
       'the rope supplies a positive measured physical lever');
+    const ropeActor = rope.physics.find(weapon => weapon.itemKey === 'grappleFlail'); // This is the assembled, actually rendered rope, not the model's draft dimensions.
+    assert.deepEqual(ropeActor.ropeTint, { color: '#6B4728', method: 'ColorFill.shadeFillPixels' },
+      'the rendered 3D rope uses the shared Gar-wolf shade-fill, not the uncolored PNG fallback');
+    const sharedFill = await page.evaluate(() => window.ColorFill?.debugSnapshot()?.shadeFillsByLabel?.['weapon-rope:#6B4728']); // ColorFill records actual pixels processed from the PNG.
+    assert(sharedFill?.appliedCount > 0 && sharedFill.sampledCount > 0,
+      'Chromium has decoded and shade-filled the real ruin-rope PNG through the animal color-fill pipeline');
     assert.deepEqual(errors, [], '3D author does not throw in real Chromium');
     assert(!/Preview: |\[weapon assembly\].*(?:failed|Error)/i.test(await page.locator('#log').innerText()),
       'visible mobile diagnostics remain free of preview failures');
