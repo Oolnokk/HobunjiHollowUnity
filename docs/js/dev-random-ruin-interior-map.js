@@ -59,10 +59,16 @@
     presentationSink = 0;
   }
 
-  // Ordinary (unnamed) ruins: wall engravings use their tradition's own glyph, glowing in its lich's colour.
-  function traditionWalls(theme) {
+  // Ordinary ruins choose deterministic Harlyao tradition dyes; only named guardians use their special inverse-robe Body C.
+  function traditionWalls(theme, seed) {
     const glyph = window.SpecialHarlyaoLiches?.defFor?.(theme)?.glyph;
-    const ink = window.SpecialHarlyaoLiches?.specialRoster?.(theme)?.appearance?.bodyColors?.C?.hex || null;
+    const hues = window.HarlyaoLichCombat?.TYPE_DEFS?.[theme]?.hues || [];
+    const catalog = window.ScratchbonesAccount?.getDyeCatalog?.() || window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || [];
+    const variants = ['pure','muted','dusty','dark_muted']; // Matches the ordinary lich wardrobe's HUE_VARIANTS.
+    const palette = variants.flatMap(variant=>hues.map(hue=>'dye:CLOTH:'+variant+'_'+hue))
+      .map(id=>catalog.find(entry=>entry.id===id)?.hex).filter(hex=>/^#[0-9a-f]{6}$/i.test(hex||''));
+    const index = (Number(seed)>>>0)%Math.max(1,palette.length); // One stable selected color across all surfaces in this ruin.
+    const ink = palette[index] || ({tothal:'#4fa7b5',hronal:'#e18a43',kanthic:'#aa76d1'})[theme] || '#c7a58c';
     return glyph ? { tradition:true, patternId:glyph, ink } : undefined;
   }
 
@@ -1181,8 +1187,8 @@
         await window.RuinPatternSurfaceRules?.ready; await window.RuinPatternSurfaceRules?.preloadPieces?.(ruin.localeRoot); // Per-piece enable/scale rules (Dev Companion + Furniture Author patternScale).
         const bossBodyColor3 = specialDef ? window.SpecialHarlyaoLiches?.specialRoster?.(theme)?.appearance?.bodyColors?.C?.hex : null; // Read the named lich's actual Body Color 3, never an independent wall-ink constant.
         ruin.specialBodyColor3 = bossBodyColor3; // Mobile dungeon diagnostics can compare wall glow against the eventual guardian portrait.
-        ruin.lichColor = bossBodyColor3 || window.SpecialHarlyaoLiches?.specialRoster?.(theme)?.appearance?.bodyColors?.C?.hex || null; // Wing braziers burn in this lich's colour (named tomb: its exact wall-glow colour; others: their tradition's lich).
-        if(!ruin.hachutu)window.FurniturePatternSurfaces?.decorateRuin?.(ruin.localeRoot, candidateSeed, specialDef ? { specialBoss:true, patternId:specialDef.glyph, ink:bossBodyColor3 } : traditionWalls(theme)); // No Harlyao wall glyphs inside the Hachutu temple. // The same C hex colors both emissive wall motifs and the boss's dyed eyes.
+        ruin.lichColor = bossBodyColor3 || traditionWalls(theme,candidateSeed)?.ink || null; // Wing braziers burn in this lich's colour (named tomb: its exact wall-glow colour; others: their tradition's lich).
+        if(!ruin.hachutu)window.FurniturePatternSurfaces?.decorateRuin?.(ruin.localeRoot, candidateSeed, specialDef ? { specialBoss:true, patternId:specialDef.glyph, ink:bossBodyColor3 } : traditionWalls(theme,candidateSeed)); // No Harlyao wall glyphs inside the Hachutu temple. // The same C hex colors both emissive wall motifs and the boss's dyed eyes.
         generationMark('preparing-stone-age');
         if(stoneAgeRequested)await prepareStoneAgeScenery(ruin);
         generationMark('preparing-live-roots');
@@ -1216,7 +1222,7 @@
         if(!ruin.hachutu)for(const item of nativeSnapshots){
           await window.RuinPatternSurfaceRules?.preloadPieces?.(item.roots.localeRoot);
           const ids=window.FurniturePatternSurfaces?.decorateRuin?.(item.roots.localeRoot,candidateSeed,
-            specialDef?{specialBoss:true,patternId:specialDef.glyph,ink:bossBodyColor3}:traditionWalls(theme))||[];
+            specialDef?{specialBoss:true,patternId:specialDef.glyph,ink:bossBodyColor3}:traditionWalls(theme,candidateSeed))||[];
           ruin.localeRoot.userData.ruinPatternIds=[...new Set([
             ...(ruin.localeRoot.userData.ruinPatternIds||[]),...ids,
           ])];
