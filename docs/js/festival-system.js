@@ -329,11 +329,11 @@
     window.WorldPopupText?.queueSocialGain?.('festivalFun',credited,id);
     return credited;
   }
-  function settleFestivalFun() {
+  function settleFestivalFun(force = false) {
     if (!deps || !window.CalendarSystem?.isInitialized?.() || typeof window.DialogueContent?.adjustNpcFavor !== 'function') return; // Keep earned Fun pending until the Favor service is hydrated; never erase an unpaid social reward.
     const today = day();
     if (!Number.isFinite(state.funDay)) { state.funDay=today; return; }
-    if (today<=state.funDay) return;
+    if (today<=state.funDay && !force) return;
     const awarded = []; // Permanent Favor follows the same overnight conversion without losing sub-heart Festival Fun.
     for (const [id, raw] of Object.entries(state.festivalFun || {})) {
       const keys = Object.keys(state.festivalFunEarned).filter(key => key.endsWith(':' + id)); // A character's earned ledger is event-scoped; settled credits never borrow a future event.
@@ -351,6 +351,11 @@
     }
     state.funDay = today;
     if (awarded.length) commit('Festival Fun converted overnight: ' + awarded.join(', ') + '.');
+  }
+  function settleTestRewards() {
+    if (!window.HobunjiQuickSave?.festivalStatus?.().active) return false; // Never bypass the overnight payout gate in normal gameplay.
+    settleFestivalFun(true); // A festival test may exit before midnight; pay earned Fun once before restoring the real world.
+    return true;
   }
   function settlePotluckWinnings() {
     if (!deps || !window.CalendarSystem?.isInitialized?.() || !window.FestivalPotluckContest) return;
@@ -1088,5 +1093,5 @@
   });
   window.FestivalSystem = { init, festival, year, claims, claimed, residents, favorHearts, qualityChoices, registerActivity, perform, actionButton, npcRewardAction, receiveNpcReward, nearestActivity, activityProps, atProp, update, cancelDance, giftMultiplier, blessingMultiplier, serialize, restore, diagnostics, MASKS, STORY,
     socialOptionsFor, festivalHours, gatheringHoursLabel, shopsClosedFor, silencesTownMusic, musicPlaying, feastMenu, feastDishDetails, contestStandings, festivalBowl, festivalCup, heldVessel, vesselDef, takeOrRefillCup, takeFestivalBowl, fillFestivalBowl, eatFestivalBowl, currentFullness, addFestivalFun, askFestivalDance, festivalFoodStacks,
-    discardFestivalBowl, potIndexAtAim, seatedMealAction, toggleSeatedMeal, isDiningSeat,get pendingDance() { return pendingDance; }, get dance() { return dance; }, getNpcs: () => deps?.getNpcs?.() || [] };
+    discardFestivalBowl, potIndexAtAim, seatedMealAction, toggleSeatedMeal, isDiningSeat, settleTestRewards, get pendingDance() { return pendingDance; }, get dance() { return dance; }, getNpcs: () => deps?.getNpcs?.() || [] };
 })();
