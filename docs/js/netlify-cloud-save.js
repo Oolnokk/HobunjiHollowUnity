@@ -280,7 +280,16 @@
     }
   }
 
+  function festivalCloudWriteBlocked() {
+    const phase = window.HobunjiQuickSave?.festivalStatus?.().phase; // The cloud is canonical too: never upload or import a disposable festival timeline.
+    return !!phase && phase !== 'idle'; // Cloud changes remain blocked until the restored world has been finalized.
+  }
+
   async function pushNow({ force = false, automatic = false } = {}) {
+    if (festivalCloudWriteBlocked()) {
+      if (automatic) return null;
+      throw new Error('Exit Festival Test before saving or loading the cloud copy.');
+    }
     if (!_user) throw new Error('Sign in to use cloud saves.');
     const snapshots = snapshotApi();
     if (!snapshots) throw new Error('Save snapshot adapter is not loaded.');
@@ -317,6 +326,7 @@
   }
 
   async function pullNow({ confirmOverwrite = true } = {}) {
+    if (festivalCloudWriteBlocked()) throw new Error('Exit Festival Test before loading a cloud save.');
     if (!_user) throw new Error('Sign in to use cloud saves.');
     if (confirmOverwrite && !confirm('Replace this browser save with the current cloud save? The browser copy will be overwritten.')) return null;
     const result = await cloud('pull');
@@ -334,6 +344,7 @@
   }
 
   async function safeSync({ automatic = false } = {}) {
+    if (festivalCloudWriteBlocked()) return null; // Autosync must never publish the temporary festival state.
     if (!_user || _busy) return null;
     if (_conflict) return null;
 

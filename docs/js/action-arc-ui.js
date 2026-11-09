@@ -132,8 +132,8 @@
   // Utilities wheel — opened by holding 'c' (see desktopHoldKeys/
   // openDesktopHoldArc below), for quick actions that don't belong on the
   // per-tile action bar: opening furniture placement, warping back to a
-  // placed wilderness campfire or the farm, quick-selecting a Campfire Kit
-  // without scrolling the item wheel, or orbiting around the stationary player.
+  // placed wilderness campfire or the farm, setting up camp for free,
+  // or orbiting around the stationary player.
   function _openUtilitiesArc() {
     window.Spyglass?.endAim?.('utility arch opened'); // Keep the optical mask out of the utility selector while browsing it.
     // A placed campfire now persists indefinitely, including outside its
@@ -142,7 +142,7 @@
     // ever answers "is it in the CURRENT zone", which used to be the same
     // question back when leaving destroyed it.
     const campfire = window.WildernessCampfire?.serialize?.();
-    const kitCount = deps.inventory.campfireKitFurniture || 0;
+    const canSetUpCampfire = window.WildernessCampfire?.supportsArea?.(deps.getCurrentArea()) === true; // Disables free setup outside wilderness and mine floors.
     const furniturePlacementAvailable = window.FurniturePlacer?.canOpen?.() === true; // Used to disable the utility entry anywhere normal furniture placement is not permitted.
     _openEntries('utilities', [
       {
@@ -194,9 +194,13 @@
         },
       },
       {
-        id: 'select-kit', icon: '🔥', label: kitCount > 0 ? `Campfire Kit ×${kitCount}` : 'No Campfire Kit',
-        disabled: kitCount <= 0,
-        onSelect: () => _selectHeldInventoryKey('campfireKitFurniture'),
+        id: 'set-up-camp', icon: '🔥', label: 'Set Up Campfire (Free)',
+        disabled: !canSetUpCampfire,
+        onSelect: () => {
+          const result = window.WildernessCampfire?.placeAtPlayer?.() || { ok: false, message: 'Campfires are unavailable right now.' }; // Reuses the persistent one-campfire placement logic.
+          deps.showToast(result.message, result.ok === true);
+          if (result.ok) deps.refreshActionBar();
+        },
       },
       {
         id: 'return-farm', icon: '🏡', label: deps.getCurrentArea() === 'farm' ? 'Already on Farm' : 'Return to Farm',
