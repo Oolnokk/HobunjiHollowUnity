@@ -93,7 +93,7 @@
        window.HudUpdate.refreshItemScroll, so must load after it and before
        game.js, which calls window.ActionArcUI.init(...) (binds its own
        toolBtn/itemBtn/btnUtilityMenu listeners) during its own setup. -->
-  <script src="js/action-arc-ui.js?v=20261104backcarry1"></script>
+  <script src="js/action-arc-ui.js?v=20261109freecamp1"></script>
   <!-- Farm editor + farm layout save/load persistence, extracted out of
        game.js. Must load before game.js, which calls
        window.FarmEditor.init(...) very early (right after
@@ -765,12 +765,12 @@
        Must load before game.js, which calls window.FurniturePlacer.init(...)
        during its own setup. -->
   <script src="js/furniture-placer.js?v=20261102chairreview4"></script>
-  <!-- Player-craftable persistent campfire (window.WildernessCampfire) —
+  <!-- Player-owned free persistent campfire (window.WildernessCampfire) —
        only one at a time; survives map changes/saves and also works on Town
        Mine floors, where player death destroys an underground camp.
        Self-contained aside from deps injected via init(); must load before game.js, which calls
        window.WildernessCampfire.init(...) during its own setup. -->
-  <script src="js/wilderness-campfire.js?v=20261105h26a351c"></script>
+  <script src="js/wilderness-campfire.js?v=20261109freecamp1"></script>
   <!-- Per-tile grid water simulation (rain/absorption/flow/siltation) and
        the merged dynamic-water mesh renderer (window.WaterSystem). Must
        load before game.js — unusually early among these, in fact: game.js
@@ -2717,7 +2717,7 @@
       <!-- Utility menu: penultimate control on the outer ring, taking the
            12:00 slot Call Mount used to occupy; live CSS keeps it inside the screen.
            Hold to open the utilities wheel (Character View, Return to Camp,
-           quick-select a Campfire Kit, Return to Farm — see game.js's
+           set up a free campfire, Return to Farm — see js/action-arc-ui.js's
            _openUtilitiesArc)
            and drag to pick, release to commit; a plain tap does nothing,
            same as the desktop 'c' key it mirrors. -->
