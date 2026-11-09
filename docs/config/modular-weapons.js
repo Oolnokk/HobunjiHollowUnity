@@ -13664,6 +13664,17 @@ window.MODULAR_WEAPON_CONFIG = {
             "x": 210,
             "y": 975
           }
+        },
+        {
+          "type": "rope",
+          "start": {
+            "x": 210,
+            "y": 1051
+          },
+          "end": {
+            "x": 210,
+            "y": 207.25
+          }
         }
       ],
       "overrides": {},
