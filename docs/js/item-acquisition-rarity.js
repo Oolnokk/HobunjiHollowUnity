@@ -102,15 +102,23 @@
     if(!poolEntries.length&&!artifact)return;
     const ruin=ruinContext(); // Avoid doing expensive cross-zone debugSnapshot scans for every ordinary crop or dish.
     for (const {id,entry} of poolEntries) {
+      const pool=window.LootRolling?.getLootPools?.()?.[id] || {}; // Exactly the same authored pool kind as the actual roll.
+      const exclusive=pool.kind==='exclusive'; // Exclusive one-of-N tables use weight / total weight, NOT independent entry chances.
+      const tierFiltered=exclusive&&entry.tier!=null;
+      const eligible=exclusive?(pool.entries||[]).filter(candidate=>candidate?.itemKey&&num(candidate.weight,1)>0
+        &&(!tierFiltered||Number(candidate.tier)===Number(entry.tier))):[];
+      const totalWeight=eligible.reduce((sum,candidate)=>sum+num(candidate.weight,1),0);
+      const entryChance=exclusive?(totalWeight>0?prob(num(entry.weight,1)/totalWeight):0):prob(entry.chance??1);
       const chestMatch=/^dungeonChest_tier([1-4])$/.exec(id);
       const chest=chestMatch?chestSource(Number(chestMatch[1]),ruin):null;
       const conditional=Object.keys(entry.conditions || {}).length>0;
-      list.push(origin(chest?'chest-loot':'loot',id,prob(entry.chance??1)*(chest?.siteChance??1),
-        mean(entry.min,entry.max),chest?.count??1,chest?.effort??1.2,
-        conditional?'conditional-filters':chest?.certainty||'exact',{
+      list.push(origin(exclusive?'exclusive-loot':chest?'chest-loot':'loot',id,entryChance*(chest?.siteChance??1),
+        exclusive?1:mean(entry.min,entry.max),chest?.count??1,chest?.effort??1.2,
+        tierFiltered?'conditional-reward-tier':conditional?'conditional-filters':chest?.certainty||'exact',{
           ...(chest?{chestTier:Number(chestMatch[1]),ruinKind:chest.kind,floors:chest.layout.floors,
             wings:chest.layout.wings,rooms:chest.layout.rooms,chestsPerRuin:chest.count,
             siteCount:ruin.siteCount,siteCountMeasured:ruin.siteCountMeasured}:{}),
+          ...(exclusive?{drawWeight:num(entry.weight,1),totalEligibleWeight:totalWeight,rewardTier:entry.tier??null}:{}),
           ...(conditional?{note:'Conditions are not assigned fabricated season/weather frequencies'}:{})}));
     }
     if (!artifact) return;
