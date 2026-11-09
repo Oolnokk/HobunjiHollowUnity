@@ -105,19 +105,39 @@ without changing its coordinate system.
 
 ### Recalculating bores in original shaft artwork
 
-The modular editor also includes a **Recalculating bores** panel,
-reusing the existing manual sprite/bridge engine and undo/draft
-history. A bore has independently editable center, X/Y radii, angle,
-rim width, edge deformation, shading strength and light direction.
-Use the explicit drag mode to reposition it on the original shaft
-sprite; its hole is cut to transparency and its surrounding rim
-deformed/shaded from the original material. Movement and number edits
-recompute the entire image from the *unaltered source PNG* with each
-step, so the former hole is restored and no destructive pixel changes
-accumulate. Bores are stored on `shaft.bores` (not on individual
-pairs), applied before all head geometry and existing pair bridge
-strokes. Removing the bore restores the original shaft image without
-deleting any manual pair recipes or brush strokes.
+The modular editor's **Recalculating bores** panel only appears
+when a valid **flail head** is selected. A bore is a connector socket
+drilled into the shaft at the **exact physical rope attachment**: the
+`rope` mount's start when present, or the Complex Tool Visuals
+recipe's authored `flail.haftAnchor` for an older shaft without one.
+The editor also draws a purple dashed connector line from the rope
+mount's start to its tip; its length matches the connector's runtime
+reach, without stretching the separate head or rope width.
+
+Bores are stored in `shaft.bores`, but are applied to a weapon
+**only if its selected head is a flail**. Each bore stores
+`offsetX` and `offsetY`, not absolute sprite coordinates; its
+center is `connectorAnchor + offset`. **New defaults are (0, 0)
+offset, 20 × 20 pixels (X/Y diameter), and a 3px interior outline.**
+The editor has numeric width/height controls, relative translation,
+rotation, shaded rim, edge deformation and light direction. Its
+non-destructive compositor reuses the shaft/head outlining style to
+draw an opaque-black **interior** ink ring around the transparent
+opening, while keeping the original material colors further out.
+Moving the connector's authored mount automatically moves the bore,
+and moving the bore recalculates pixels from the uncut source PNG.
+Old absolute `x/y` bore drafts are migrated to relative offsets
+without shifting the old visible hole. Brush, smudge, junction and
+pair operations remain separate.
+
+Flail heads use their **original Complex Tool Visuals
+`flail.head.anchor`** and authored layer offsets. The modular
+editor's head tang/eye arrows and legacy `flailHeadAnchor`
+cannot move this contact: the flail recipe and preview ignore them,
+and flail-head arrow controls are suppressed. For shaft-owned ropes
+paired with a replaceable modular head, the rope recipe's authored
+head attachment is retained while the layered head art is replaced.
+The head's scale is independent of the connector length.
 
 The first `grappleFlail` reusable reference is available from either
 a dedicated Rope-bound Grapple Handle or a Grapple Hook Head, unlocked
