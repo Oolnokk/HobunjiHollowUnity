@@ -1343,7 +1343,7 @@
           Array.isArray(area?.[field])&&area[field].includes(offer.species))).map(([id])=>id);
       if(offer.species===window.PingdortRegistration?.KIND)for(const id of window.PingdortRegistration.ZONES||[])
         if(!native.includes(id))native.push(id); // Flying Pingdort habitat does not rely on the ground-herd roster.
-      if(native.length&&!native.includes(zoneId))continue; // A Puktuk returns to its Western Slope rather than appearing in town.
+      if(!native.length||!native.includes(zoneId))continue; // Missing native habitat must defer release, never spawn the animal in an arbitrary zone.
       if(!deps.CREATURE_DB?.[offer.species])continue;
       const hash=[...offer.id].reduce((n,ch)=>(n*33+ch.charCodeAt(0))>>>0,5381);
       const anchor=roamingHerdAnchor(zoneId,hash%7,7); // Existing generated safe forage anchors, never a guessed town tile.
