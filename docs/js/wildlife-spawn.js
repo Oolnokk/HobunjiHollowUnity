@@ -1428,20 +1428,27 @@
     const cfg = window.SCRATCHBONES_CONFIG?.game || {};
     const mothers = deps?.DEN_MOTHER_DEFS || cfg.wildlife?.denMothers || {};
     const itemKinds = cfg.livestock?.itemKinds || {};
-    const nesting = new Set([...Object.keys(mothers), 'drenkirra', 'pingdort', 'tzatzul', 'skeeri-small', 'skeeri-medium', 'skeeri-large']); // Every actual ruin Skeeri size is registered, but no artificial fertile-egg requirement.
+    const otherOffspring = { // Surface nests, hive swarms and open-air herds use their own existing fertility owners.
+      pingdort: 'fertilePingdortEgg', honeyfuzzle: 'fertileHoneyfuzzleEgg',
+      moot: 'mootBaby', 'voorg-ass': 'voorgAssBaby',
+    };
+    const nesting = new Set([...Object.keys(mothers), ...Object.keys(otherOffspring), 'drenkirra',
+      'tzatzul', 'skeeri-small', 'skeeri-medium', 'skeeri-large']); // All ruin Skeeri sizes are real, but not hatchable.
     for (const zone of Object.values(deps?.EXTERIOR_ZONES || {})) {
-      for (const field of ['denSpecies', 'packSpecies', 'herbivoreSpecies'])
+      for (const field of ['denSpecies', 'packSpecies', 'herbivoreSpecies', 'roamingHerdSpecies', 'roamingForagerSpecies'])
         for (const kind of zone?.[field] || []) nesting.add(kind);
     }
     return [...nesting].sort().map(kind => {
       const exempt = kind === 'tzatzul' || kind.startsWith('skeeri');
       const family = window.CreatureGenetics?.SPECIES_ALIAS?.[kind] || kind;
       const mother = mothers[kind];
-      const guardianKey = mother?.creatureKey || ((kind === 'pingdort' || exempt) ? kind : null);
-      const itemKey = kind === 'pingdort' ? 'fertilePingdortEgg' : mother?.nestItemKey || null;
+      const guardianKey = mother?.creatureKey || (kind === 'voorg-ass' ? 'voorg-ass-herd-mother' : otherOffspring[kind] || exempt ? kind : null);
+      const itemKey = otherOffspring[kind] || mother?.nestItemKey || null;
       const registered = !!deps?.CREATURE_DB?.[kind];
       const guardianRegistered = exempt ? true : !!(guardianKey && deps?.CREATURE_DB?.[guardianKey]);
-      const offspringMapped = exempt || !!(itemKey && itemKinds[itemKey] === family);
+      const offspringMapped = exempt || (kind === 'honeyfuzzle'
+        ? !!deps?.ITEM_DEFS?.[itemKey] // Hive eggs hatch in the Honeyfuzzle House, not the ordinary stable itemKinds table.
+        : !!(itemKey && itemKinds[itemKey] === family));
       const hasGenetics = exempt || !!window.CreatureGeneticsRender?.SPECIES?.[family];
       const ok = registered && guardianRegistered && offspringMapped && hasGenetics;
       return { kind, family, guardianKey, itemKey, registered, guardianRegistered,
