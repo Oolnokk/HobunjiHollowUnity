@@ -6,7 +6,8 @@
   const SCAN_PERIOD_S = 1.4; // Finds dev-spawned birds without checking every creature on every rendered frame.
   const RETRY_DELAY_MS = 10000; // An absent sprite or GLB cannot initiate a failing fetch every frame.
   const tracked = new Map(); // Live adults only; stale area and removed Set members are disposed on the next reconciliation.
-  const captivePoses = new WeakMap(); // The original actor group and quaternion are restored when its Tzatzul releases it.
+  const captivePoses = new WeakMap(); // Original rotation and size before matrix-decomposed talon carrying.
+  const releasedPoseChecks = new Map(); // Two native ticks to stop a late talon renderer leaving prey permanently sideways.
   let deps = null; // WildlifeSpawn's live hostile collection and optional camera dependency.
   let scanT = 0; // Timer for bounded active-area scans rather than per-frame global searches.
   let area = null; // Last map id, used to immediately clear attachments across scene transitions.
@@ -31,7 +32,9 @@
   function rememberCaptive(prey, group = prey?.avatarRef?.group) {
     if (!prey || !group?.quaternion?.clone) return false;
     if (captivePoses.get(prey)?.group === group) return true;
-    captivePoses.set(prey, { group, quaternion: group.quaternion.clone() }); // A promoted/rebuilt avatar gets its own uncaptured baseline.
+    releasedPoseChecks.delete(prey); // The new capture supersedes any previous drop correction.
+    captivePoses.set(prey, { group, quaternion: group.quaternion.clone(),
+      scale: group.scale?.clone?.() || null }); // Restore the actual live avatar's original size and orientation.
     return true;
   }
   function restoreCaptive(prey) {
@@ -39,7 +42,9 @@
     if (!pose) return false;
     captivePoses.delete(prey); // Never reuse a previous capture's rotation on the next abduction.
     if (prey.avatarRef?.group !== pose.group || !pose.group?.quaternion?.copy) return false;
-    pose.group.quaternion.copy(pose.quaternion); // Position is resolved by native ground movement; do not teleport a fallen actor to its old rendered coordinates.
+    pose.group.quaternion.copy(pose.quaternion); // Native locomotion resolves position; never teleport back to the pickup.
+    if (pose.scale) pose.group.scale?.copy?.(pose.scale); // Matrix decomposition must not leave an altered scale behind.
+    releasedPoseChecks.set(prey, { ...pose, remaining: 2 }); // Clear the old pose after the release frame and next native render.
     debug.captiveRestores++;
     return true;
   }
@@ -68,7 +73,8 @@
   function present(actor, state, camera) {
     if (!state.rig) return;
     const flightPose = actor.isRuinSkeeri ? actor.skeeriFlightPose : kind(actor)==='pingdort' ? actor.pingdortFlightPose : actor.tzatzulFlightPose; // All three flyers use the shared authored wing assembly.
-    const pose = kind(actor) === window.TzatzulRegistration?.HATCHLING_KIND ? 'perched' : flightPose === 'perched' || flightPose === 'glide'
+    const hatchling = kind(actor) === window.TzatzulRegistration?.HATCHLING_KIND; // Perched artwork with no adult seated deformation.
+    const pose = hatchling ? 'hatchling' : flightPose === 'perched' || flightPose === 'glide'
       || flightPose === 'flap' ? flightPose
       : actor.onBranch ? 'perched'
         : actor._animalAttack || ['chase','patrol-chase','fleeing-low-health'].includes(actor.state) ? 'flap' : 'perched';
@@ -100,7 +106,13 @@
         state.rig.update(camera?.getWorldPosition ? camera : fallback,
           pose, seconds, !!actor.tzatzulCarrying, window.CreatureBlink?.isShut?.(actor) === true);
         if (!(Number(actor.hitFlashT) > 0) && state.rig.restoreTint?.(kind(actor)==='pingdort' ? actor.genotype?.base?.color : undefined)) debug.tintRestores++; // Repair native hit-flash tint and reflect any live Pingdort genotype edits.
-        state.rig.root.rotation.z = pose !== 'perched' ? Number(actor.isRuinSkeeri ? actor.skeeriDivePitchRad : kind(actor)==='pingdort' ? actor.pingdortDivePitchRad : actor.tzatzulDivePitchRad) || 0 : 0; // Shared headfirst swoop pitch.
+        state.rig.root.rotation.z = pose !== 'perched' && !hatchling ? Number(actor.isRuinSkeeri ? actor.skeeriDivePitchRad : kind(actor)==='pingdort' ? actor.pingdortDivePitchRad : actor.tzatzulDivePitchRad) || 0 : 0; // Shared headfirst swoop pitch.
+        if (hatchling && state.rig.root.position) {
+          const moved = state.previousHatchlingPosition && Math.hypot(actor.x - state.previousHatchlingPosition.x, actor.y - state.previousHatchlingPosition.y) > .08;
+          state.hopPhase = moved ? (state.hopPhase || 0) + Math.min(.1, state.renderDt || 0) * 21 : 0; // Native foot pathing moves, while only the visual body hops.
+          state.rig.root.position.y = moved ? Math.max(0, Math.sin(state.hopPhase)) * .13 : 0;
+          state.previousHatchlingPosition = { x: actor.x, y: actor.y };
+        }
       } catch (error) { debug.lastError = String(error); }
     }
     state.lastPose = pose;
@@ -117,7 +129,7 @@
       : kind(actor) === 'pingdort'
         ? (actor.genotype ||= window.CreatureGenetics?.makeDefaultGenotype?.('pingdort'))
         : actor.tzatzulIdentity; // Preserve each species' authored palette source and individual identity.
-    Promise.resolve().then(() => create(appearance)).then(rig => {
+    Promise.resolve().then(() => create(appearance, { undeformedPerch: kind(actor) === window.TzatzulRegistration?.HATCHLING_KIND })).then(rig => {
       if (!rig?.root || !rig?.dispose) throw new Error('Flying rig renderer did not return a disposable root');
       if (state.removed || tracked.get(actor) !== state || actor.health <= 0
         || actor.avatarRef?.group !== group || !group.parent || actor._wildlifeVisualsReleased) {
@@ -160,6 +172,14 @@
   function tick(dt, activeArea = deps?.getCurrentArea?.()) {
     if (!deps?.hostileObjects || !activeArea) return 0;
     const step = Math.max(0, Math.min(.25, Number(dt) || 0));
+    for (const [prey, reset] of releasedPoseChecks) {
+      if (prey.tzatzulCapturedBy || prey.avatarRef?.group !== reset.group || !(prey.health > 0)) {
+        releasedPoseChecks.delete(prey); continue;
+      }
+      reset.group.quaternion?.copy?.(reset.quaternion);
+      if (reset.scale) reset.group.scale?.copy?.(reset.scale);
+      if (--reset.remaining <= 0) releasedPoseChecks.delete(prey);
+    } // Ordinary movement regains control after two frames; no persistent pose lock.
     seconds += step;
     if (area !== activeArea) {
       for (const actor of [...tracked.keys()]) release(actor, 'area transition');
@@ -193,6 +213,7 @@
         }
         state.group = null;
       }
+      state.renderDt = step; // Existing wildlife renderer cadence drives hatchling hops.
       if (!state.rig) mount(actor, state);
       else present(actor, state, camera);
     }
