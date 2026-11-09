@@ -52,7 +52,7 @@
   }
 
   function canSleepBandit(c) {
-    if (!c?.isBandit || c.health <= 0) return false;
+    if (!c?.isBandit || c.health <= 0 || c.isTribeHunter || c.isPorakanekiHunter) return false; // Tribe hunters use the separate camp LOD controller.
     // Restrict sleeping to the genuinely quiescent state. A bandit that is
     // chasing, retreating, returning home, staggered, knocked down, guarding,
     // lunging, swinging, or still settling its weapon pose keeps the normal
@@ -116,7 +116,7 @@
 
     const currentArea = deps.getCurrentArea();
     for (const c of deps.hostileObjects) {
-      if (!c?.isBandit || c.health <= 0) continue;
+      if (!c?.isBandit || c.health <= 0 || c.isTribeHunter || c.isPorakanekiHunter) continue; // No competing tribal area/visibility transitions.
       const areaId = actualAreaId(c);
 
       // A bandit from some other cached zone is already excluded by
@@ -164,7 +164,7 @@
     if (deps?.hostileObjects) {
       for (const c of deps.hostileObjects) {
         if (!c || c.health <= 0) continue;
-        if (c.isBandit) {
+        if (c.isBandit && !c.isTribeHunter && !c.isPorakanekiHunter) {
           total++;
           if (isSleeping(c)) sleeping++;
         } else {
