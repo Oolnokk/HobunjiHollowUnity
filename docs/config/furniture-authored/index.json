@@ -2,8 +2,8 @@
   "schema": "hobunji-furniture-authored-index/v1",
   "furniture": [
     {
-      "key": "artifactPedestal",
-      "file": "config/furniture-authored/artifactPedestal.json"
+      "key": "advancedLoom",
+      "file": "config/furniture-authored/advancedLoom.json"
     },
     {
       "key": "agingBarrel",
@@ -16,6 +16,10 @@
     {
       "key": "alchemyTable",
       "file": "config/furniture-authored/alchemyTable.json"
+    },
+    {
+      "key": "artifactPedestal",
+      "file": "config/furniture-authored/artifactPedestal.json"
     },
     {
       "key": "basicBed",
@@ -38,6 +42,10 @@
       "file": "config/furniture-authored/bookshelf.json"
     },
     {
+      "key": "bowlStack",
+      "file": "config/furniture-authored/bowlStack.json"
+    },
+    {
       "key": "bucket",
       "file": "config/furniture-authored/bucket.json"
     },
@@ -56,6 +64,10 @@
     {
       "key": "campfire",
       "file": "config/furniture-authored/campfire.json"
+    },
+    {
+      "key": "candleCluster",
+      "file": "config/furniture-authored/candleCluster.json"
     },
     {
       "key": "candleTable",
@@ -78,6 +90,14 @@
       "file": "config/furniture-authored/chest.json"
     },
     {
+      "key": "cliffDoor",
+      "file": "config/furniture-authored/cliffDoor.json"
+    },
+    {
+      "key": "cliffGate",
+      "file": "config/furniture-authored/cliffGate.json"
+    },
+    {
       "key": "copperBarrel",
       "file": "config/furniture-authored/copperBarrel.json"
     },
@@ -88,10 +108,6 @@
     {
       "key": "crateStack",
       "file": "config/furniture-authored/crateStack.json"
-    },
-    {
-      "key": "looseCrate",
-      "file": "config/furniture-authored/looseCrate.json"
     },
     {
       "key": "desk",
@@ -118,12 +134,56 @@
       "file": "config/furniture-authored/feedGrinder.json"
     },
     {
+      "key": "festivalAncestors",
+      "file": "config/furniture-authored/festivalAncestors.json"
+    },
+    {
+      "key": "festivalArch",
+      "file": "config/furniture-authored/festivalArch.json"
+    },
+    {
+      "key": "festivalBlossoms",
+      "file": "config/furniture-authored/festivalBlossoms.json"
+    },
+    {
+      "key": "festivalBunting",
+      "file": "config/furniture-authored/festivalBunting.json"
+    },
+    {
+      "key": "festivalDanceFloor",
+      "file": "config/furniture-authored/festivalDanceFloor.json"
+    },
+    {
+      "key": "festivalFeast",
+      "file": "config/furniture-authored/festivalFeast.json"
+    },
+    {
+      "key": "festivalGifts",
+      "file": "config/furniture-authored/festivalGifts.json"
+    },
+    {
+      "key": "festivalMasks",
+      "file": "config/furniture-authored/festivalMasks.json"
+    },
+    {
+      "key": "festivalStage",
+      "file": "config/furniture-authored/festivalStage.json"
+    },
+    {
+      "key": "festivalSweets",
+      "file": "config/furniture-authored/festivalSweets.json"
+    },
+    {
       "key": "generalStoreSign",
       "file": "config/furniture-authored/generalStoreSign.json"
     },
     {
       "key": "handMill",
       "file": "config/furniture-authored/handMill.json"
+    },
+    {
+      "key": "hangingBanner",
+      "file": "config/furniture-authored/hangingBanner.json"
     },
     {
       "key": "hangingSign",
@@ -134,12 +194,32 @@
       "file": "config/furniture-authored/hearth.json"
     },
     {
+      "key": "honeyfuzzleHouse",
+      "file": "config/furniture-authored/honeyfuzzleHouse.json"
+    },
+    {
+      "key": "hronalWitchBomb",
+      "file": "config/furniture-authored/hronalWitchBomb.json"
+    },
+    {
       "key": "incubator",
       "file": "config/furniture-authored/incubator.json"
     },
     {
       "key": "innSign",
       "file": "config/furniture-authored/innSign.json"
+    },
+    {
+      "key": "kanthicWitchBomb",
+      "file": "config/furniture-authored/kanthicWitchBomb.json"
+    },
+    {
+      "key": "keyStatue",
+      "file": "config/furniture-authored/keyStatue.json"
+    },
+    {
+      "key": "keyStatueDispenser",
+      "file": "config/furniture-authored/keyStatueDispenser.json"
     },
     {
       "key": "lifeTotem",
@@ -150,8 +230,8 @@
       "file": "config/furniture-authored/loom.json"
     },
     {
-      "key": "advancedLoom",
-      "file": "config/furniture-authored/advancedLoom.json"
+      "key": "looseCrate",
+      "file": "config/furniture-authored/looseCrate.json"
     },
     {
       "key": "mineLadder",
@@ -180,6 +260,58 @@
     {
       "key": "rug",
       "file": "config/furniture-authored/rug.json"
+    },
+    {
+      "key": "ruinClimbHoldsEndLeft",
+      "file": "config/furniture-authored/ruinClimbHoldsEndLeft.json"
+    },
+    {
+      "key": "ruinClimbHoldsEndRight",
+      "file": "config/furniture-authored/ruinClimbHoldsEndRight.json"
+    },
+    {
+      "key": "ruinClimbHoldsMid",
+      "file": "config/furniture-authored/ruinClimbHoldsMid.json"
+    },
+    {
+      "key": "ruinClimbHoldsSingle",
+      "file": "config/furniture-authored/ruinClimbHoldsSingle.json"
+    },
+    {
+      "key": "ruinDefensePlinth",
+      "file": "config/furniture-authored/ruinDefensePlinth.json"
+    },
+    {
+      "key": "ruinPassageDoor",
+      "file": "config/furniture-authored/ruinPassageDoor.json"
+    },
+    {
+      "key": "ruinPassageDoorNarrow",
+      "file": "config/furniture-authored/ruinPassageDoorNarrow.json"
+    },
+    {
+      "key": "ruinPassageDoorSlim",
+      "file": "config/furniture-authored/ruinPassageDoorSlim.json"
+    },
+    {
+      "key": "ruinPassageDoorWide",
+      "file": "config/furniture-authored/ruinPassageDoorWide.json"
+    },
+    {
+      "key": "ruinPillarBridge",
+      "file": "config/furniture-authored/ruinPillarBridge.json"
+    },
+    {
+      "key": "ruinRopeMount",
+      "file": "config/furniture-authored/ruinRopeMount.json"
+    },
+    {
+      "key": "servingPot",
+      "file": "config/furniture-authored/servingPot.json"
+    },
+    {
+      "key": "servingTable",
+      "file": "config/furniture-authored/servingTable.json"
     },
     {
       "key": "shippingBox",
@@ -222,6 +354,10 @@
       "file": "config/furniture-authored/tableSmall.json"
     },
     {
+      "key": "tothalWitchBomb",
+      "file": "config/furniture-authored/tothalWitchBomb.json"
+    },
+    {
       "key": "trough",
       "file": "config/furniture-authored/trough.json"
     },
@@ -234,144 +370,12 @@
       "file": "config/furniture-authored/washTub.json"
     },
     {
-      "key": "woodenDoor",
-      "file": "config/furniture-authored/woodenDoor.json"
-    },
-    {
-      "key": "cliffDoor",
-      "file": "config/furniture-authored/cliffDoor.json"
-    },
-    {
-      "key": "cliffGate",
-      "file": "config/furniture-authored/cliffGate.json"
-    },
-    {
-      "key": "hangingBanner",
-      "file": "config/furniture-authored/hangingBanner.json"
-    },
-    {
-      "key": "festivalStage",
-      "file": "config/furniture-authored/festivalStage.json"
-    },
-    {
-      "key": "festivalDanceFloor",
-      "file": "config/furniture-authored/festivalDanceFloor.json"
-    },
-    {
-      "key": "festivalArch",
-      "file": "config/furniture-authored/festivalArch.json"
-    },
-    {
-      "key": "festivalGifts",
-      "file": "config/furniture-authored/festivalGifts.json"
-    },
-    {
-      "key": "festivalAncestors",
-      "file": "config/furniture-authored/festivalAncestors.json"
-    },
-    {
-      "key": "festivalBlossoms",
-      "file": "config/furniture-authored/festivalBlossoms.json"
-    },
-    {
-      "key": "festivalFeast",
-      "file": "config/furniture-authored/festivalFeast.json"
-    },
-    {
-      "key": "festivalSweets",
-      "file": "config/furniture-authored/festivalSweets.json"
-    },
-    {
-      "key": "festivalMasks",
-      "file": "config/furniture-authored/festivalMasks.json"
-    },
-    {
-      "key": "festivalBunting",
-      "file": "config/furniture-authored/festivalBunting.json"
-    },
-    {
-      "key": "servingTable",
-      "file": "config/furniture-authored/servingTable.json"
-    },
-    {
-      "key": "servingPot",
-      "file": "config/furniture-authored/servingPot.json"
-    },
-    {
-      "key": "bowlStack",
-      "file": "config/furniture-authored/bowlStack.json"
-    },
-    {
-      "key": "honeyfuzzleHouse",
-      "file": "config/furniture-authored/honeyfuzzleHouse.json"
-    },
-    {
-      "key": "hronalWitchBomb",
-      "file": "config/furniture-authored/hronalWitchBomb.json"
-    },
-    {
-      "key": "tothalWitchBomb",
-      "file": "config/furniture-authored/tothalWitchBomb.json"
-    },
-    {
-      "key": "kanthicWitchBomb",
-      "file": "config/furniture-authored/kanthicWitchBomb.json"
-    },
-    {
-      "key": "keyStatue",
-      "file": "config/furniture-authored/keyStatue.json"
-    },
-    {
-      "key": "keyStatueDispenser",
-      "file": "config/furniture-authored/keyStatueDispenser.json"
-    },
-    {
       "key": "witchBombCeilingTube",
       "file": "config/furniture-authored/witchBombCeilingTube.json"
     },
     {
-      "key": "ruinPillarBridge",
-      "file": "config/furniture-authored/ruinPillarBridge.json"
-    },
-    {
-      "key": "ruinRopeMount",
-      "file": "config/furniture-authored/ruinRopeMount.json"
-    },
-    {
-      "key": "ruinDefensePlinth",
-      "file": "config/furniture-authored/ruinDefensePlinth.json"
-    },
-    {
-      "key": "ruinClimbHoldsMid",
-      "file": "config/furniture-authored/ruinClimbHoldsMid.json"
-    },
-    {
-      "key": "ruinClimbHoldsEndLeft",
-      "file": "config/furniture-authored/ruinClimbHoldsEndLeft.json"
-    },
-    {
-      "key": "ruinClimbHoldsEndRight",
-      "file": "config/furniture-authored/ruinClimbHoldsEndRight.json"
-    },
-    {
-      "key": "ruinClimbHoldsSingle",
-      "file": "config/furniture-authored/ruinClimbHoldsSingle.json"
-    },
-    {
-      "key": "ruinPassageDoor",
-      "file": "config/furniture-authored/ruinPassageDoor.json"
-    },
-    {
-      "key": "ruinPassageDoorNarrow",
-      "file": "config/furniture-authored/ruinPassageDoorNarrow.json"
-    },
-    {
-      "key": "ruinPassageDoorSlim",
-      "file": "config/furniture-authored/ruinPassageDoorSlim.json"
-    },
-    {
-      "key": "ruinPassageDoorWide",
-      "file": "config/furniture-authored/ruinPassageDoorWide.json"
+      "key": "woodenDoor",
+      "file": "config/furniture-authored/woodenDoor.json"
     }
   ]
 }

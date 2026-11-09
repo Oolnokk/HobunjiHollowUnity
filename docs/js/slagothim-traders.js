@@ -37,6 +37,7 @@
   const TRADE_ACTION = 'npc_slagothim_trade';
   const PANEL_ID = 'slagothimTradePanel';
   const SAVE_VERSION = 1;
+  const IMPORTED_SPICES = Object.freeze(['cloudSaffron','starpepper','nightCardamom']); // Shared with rarity: one or two distinct imported spice keys per caravan.
 
   const TUNING = Object.freeze({
     MIN_TOWN_VALUE: 1, // Caravans never appear before the town has grown at least once.
@@ -620,8 +621,7 @@
       stock.push(itemEntry(offer.key, offer.qty, Math.max(16, itemPrice(offer.key, 3)), { note: offer.region + ' seed variety' }));
     }
     // Rare imported spices from far-ranging trade routes; every caravan has at least one.
-    const importedSpices = ['cloudSaffron','starpepper','nightCardamom']; // Sold alongside the established foreign fish and seasonal crops.
-    for (const key of shuffled(rng, importedSpices).slice(0,intRoll(rng,1,2))) {
+    for (const key of shuffled(rng, IMPORTED_SPICES).slice(0,intRoll(rng,1,2))) { // Share the same source authority used by rarity estimates.
       if (deps?.ITEM_DEFS?.[key]) stock.push(itemEntry(key,intRoll(rng,1,3),Math.max(35,itemPrice(key,5)),{note:'Rare imported spice',rare:true}));
     }
     const metals = deps?.VERDIGRIS_METAL_KEYS || [];
@@ -1381,7 +1381,7 @@
   }
 
   window.SlagothimTraders = Object.freeze({
-    TUNING,
+    TUNING, IMPORTED_SPICES, dailySpawnChance, // Public source tuning for market scarcity without calling dev-only methods.
     TRADE_ACTION,
     init,
     update,

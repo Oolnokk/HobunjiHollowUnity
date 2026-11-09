@@ -88,7 +88,7 @@
       const chosen = api.feastDishDetails(feastInspectIndex);
       const describeEffects = effects => Object.entries(effects || {}).filter(([,amount])=>Number(amount)>0)
         .map(([effect,amount])=>window.CookingSystem?.formatEffectStrength?.(effect,amount) || `${effect} (+${amount})`);
-      html = '<p class="festival-note">Contest points are for judging; the actual eating buffs depend on the ingredients’ star quality and processing. The strongest dish in the competition may not give you the skill benefits you need today.</p>';
+      html = '<p class="festival-note">Contest points multiply ingredient star quality, processing depth and any known source rarity. The actual eating buffs still depend on quality and processing. The strongest dish in the competition may not give you the skill benefits you need today.</p>';
       html += `<h3>Compare dishes · day ${api.contestStandings()?.day || 1} of 7</h3><div class="festival-dish-picker">${dishes.map((meal,index)=>
         button(`${index+1}. ${meal.label} · ${meal.id==='reserved'?'Not yet entered':meal.score+' points'}\n${describeEffects(meal.foodEffects).slice(0,3).join(', ') || 'No food buffs recorded'}`,
           'inspect-pot', meal.id==='reserved', `data-pot-index="${index}" aria-pressed="${index===feastInspectIndex}"`)
@@ -98,10 +98,15 @@
         html += `<p class="festival-dish-total"><strong>${chosen.score} contest points</strong> · ${chosen.ingredientDetails.length} ingredients</p>`;
         if (chosen.estimatedQuality) html += '<p class="festival-note">This older dish predates ingredient-quality records. Ingredient stars are estimated from finished-food quality; the saved contest score and eating buffs remain authoritative.</p>';
         if (chosen.estimatedEffects) html += '<p class="festival-note">Individual ingredient buffs are approximate for this older recipe; the total eating effects shown below are the stored values.</p>';
+        const inspectedTotal = Math.round((chosen.ingredientDetails || []).reduce((sum,item)=>sum+(Number(item.points)||0),0)*100)/100; // Older saved entries may predate rarity snapshots.
+        if (Math.abs((Number(chosen.score)||0)-inspectedTotal)>0.01) html += '<p class="festival-note">Historical score preserved. The ingredient breakdown reflects current source estimates because the original rarity multipliers were not recorded.</p>';
         html += '<h4>Ingredient quality and contribution</h4><ul class="festival-ingredient-list">';
         html += chosen.ingredientDetails.map(item=>{
           const contribution=describeEffects(item.effects).join(', ') || 'No cooking buff';
-          return `<li><strong>${esc(item.icon)} ${esc(item.label)}</strong> · ${'★'.repeat(item.stars)}${'☆'.repeat(5-item.stars)} · ${item.stars} × ${item.multiplier} = <strong>${item.points} points</strong><small>${esc(contribution)}</small></li>`;
+          const rarity = Number(item.rarityMultiplier) || 1; // Cook-time factor is authoritative for the preserved Gorkunash score.
+          const math = rarity === 1 ? `${item.stars} × ${item.processingMultiplier ?? item.multiplier}`
+            : `${item.stars} × ${item.processingMultiplier} processing × ${rarity.toFixed(2)} rarity (${item.raritySource || 'estimated'})`;
+          return `<li><strong>${esc(item.icon)} ${esc(item.label)}</strong> · ${'★'.repeat(item.stars)}${'☆'.repeat(5-item.stars)} · ${esc(math)} = <strong>${item.points} points</strong><small>${esc(contribution)}</small></li>`;
         }).join('') || '<li>Original ingredient details were not recorded for this older dish.</li>';
         html += '</ul><h4>Effects when eaten</h4><div class="festival-dish-total">';
         html += describeEffects(chosen.foodEffects).map(value=>`<div>${esc(value)}</div>`).join('') || 'No recorded food buffs';
@@ -112,8 +117,8 @@
     } else if (type === 'potluck' || type === 'offering') {
       const done = api.claimed(type);
       html = `<p>${type === 'potluck' && f.id==='gorkunash'
-        ? 'Enter one cooked dish in the seven-day potluck competition. Every ingredient contributes its own star level; processed ingredients earn twice their source ingredient score per processing step. Rivals have fixed quality ceilings. The seventh serving pot is yours for the rest of the festival. After the festival, Hreesh visits the winning cook with the Replica Helm of Bzabag. Your normal 10× friendly gift Favor still applies.'
-        : type==='potluck'?'Give one cooked meal to the feast.':'Give one item. Its 1–5 star quality becomes your chosen blessing’s level, lasting 336 days.'}</p>`;
+        ? 'Enter one cooked dish in the seven-day potluck competition. Every ingredient contributes its own star level; processed ingredients earn twice their source ingredient score per processing step, and known source rarity multiplies that result. Rivals have fixed quality ceilings. The seventh serving pot is yours for the rest of the festival. After the festival, Hreesh visits the winning cook with the Replica Helm of Bzabag. Your normal 10× friendly gift Favor still applies.'
+        : type==='potluck'?'Give one cooked meal to the feast.':'Surrender a keepsake to the ancestor pyre, or release a baby animal alive. Item rarity, scarcity of its sources, its value, crafting effort and star quality multiply into a 336-day blessing. The item decides the stat, not a separate choice.'}</p>`;
       if(type==='potluck'&&f.id==='gorkunash') {
         const bowl=api.festivalBowl();
         const dishes=api.feastMenu();
@@ -128,8 +133,23 @@
       if (done) html += '<p>You have already contributed your one festival meal or offering.</p>';
       else {
         html += `<div class="festival-options">${api.qualityChoices(type).map(choice => button(`${choice.label} · ${'★'.repeat(choice.stars)} ×${choice.count}`, 'select-item', false, `data-key="${esc(choice.key)}" data-stars="${choice.stars}" aria-pressed="${selection.key === choice.key && selection.stars === choice.stars}"`)).join('') || '<p>No eligible items in your bag.</p>'}</div>`;
-        if (type === 'offering') html += `<h3>Choose your blessing</h3><div class="festival-options">${Object.entries(window.FestivalCalendar.blessings).map(([id, def]) => button(`${def.icon} ${def.label} · ${def.description} +${Math.round(def.perLevel * 100 * (selection.stars || 1))}%`, 'select-stat', false, `data-stat="${id}" aria-pressed="${selection.stat === id}"`)).join('')}</div>`;
-        html += button('Confirm: give one selected item', 'perform', !selection.key || (type === 'offering' && !selection.stat));
+        if (type === 'offering' && selection.key) {
+          const preview = api.offeringPreview?.(selection.key,selection.stars); // The same frozen appraisal as actual sacrifice, not an unrelated UI formula.
+          const bless = preview && window.FestivalCalendar.blessings[preview.stat];
+          if (preview && bless) {
+            const percent = Math.round(bless.perLevel * preview.level * 1000) / 10;
+            html += '<section class="festival-dish-info"><h3>' +
+              (preview.mode === 'release' ? '🐣 Return a young animal to the wild' : '🔥 Offer to the communal pyre') +
+              '</h3><p>' + esc(preview.statement) + '</p><div class="festival-dish-total"><strong>' +
+              esc(bless.icon + ' ' + bless.label + ' · level ' + preview.level) + '</strong> · ' + esc(bless.description) +
+              ' +' + percent + '% for 336 days</div><p class="festival-note">Quality ' +
+              preview.qualityUnits.toFixed(2) + ' × source rarity ' + preview.scarcityFactor.toFixed(2) +
+              ' × value ' + preview.valueFactor.toFixed(2) + ' × processing ' + preview.effortFactor.toFixed(2) +
+              ' (capped at level 5).</p><p class="festival-note">Source: ' + esc(preview.sourceLabel) +
+              ' · ' + esc(preview.confidence) + '. Conditional loot odds do not equal universal encounter odds.</p></section>';
+          }
+        }
+        html += button(type === 'offering' ? (api.offeringPreview?.(selection.key,selection.stars)?.mode === 'release' ? 'Confirm: release the animal' : 'Confirm: surrender the keepsake') : 'Confirm: give one selected item', 'perform', !selection.key);
       }
     } else if (type === 'gifts' || type === 'sweets') {
       const candidates = type === 'sweets' ? api.residents() : api.getNpcs().filter(npc => !npc.deceased && !npc.dead && !String(npc.homeId || '').includes('deceased') && api.favorHearts(npc.id) >= 3);
@@ -137,7 +157,7 @@
     } else if (type === 'masks') {
       html = '<p>Choose one free animal mask. It is ordinary wearable clothing and stays yours after the festival.</p><div class="festival-options">' + api.MASKS.map(mask => button(mask, 'perform', api.claimed('mask'), `data-mask="${esc(mask)}"`)).join('') + '</div>';
     } else if (type === 'remembrance') {
-      html = '<p>Little wooden carvings stand for the ancestors. Honor those lost, and appreciate the peace in death.</p><p>“Everyone gets a little engh-sho-ey today,” Kinami says of the Mashtzarr.</p><p class="festival-note">The offering shrine nearby grants your chosen year-long blessing.</p>';
+      html = '<p>Little wooden carvings stand for the ancestors. Honor those lost, and appreciate the peace in death.</p><p>“Everyone gets a little engh-sho-ey today,” Kinami says of the Mashtzarr.</p><p class="festival-note">The offering shrine grants a year-long blessing based on each sacrificed keepsake. Baby animals are released alive, never burned.</p>';
     } else {
       const descriptions = { dance: `${f.id === 'five_blossoms' ? 'The Five Blossom Dance' : 'The festival dance'}: stay in the marked court and dance for 20 seconds. Your first completed dance this festival earns +2 Favor with every townsfolk. You can dance again for pleasure.`, story: 'Hear Father Hunundi tell how laughter defeated the Hachutu and their magical masks.', duel: 'Spearhead supervises a safe, live sparring round with Oddclaw in this ring. Land three hits. Borrowed equipment and your original resources are restored when you finish or leave. First completion: +6 Favor with each of them.', music: 'Join the existing music minigame. The festival musician supplies live accompaniment when present.', liquor: 'The festival keg pours a free, already-filled cup. Hold it to drink or offer a swig (which earns Festival Fun) through the ordinary alcohol system, and refill whenever you like. It cannot be stowed or gifted.' }; // Mechanical promises shown before entering an activity.
       html = `<p>${esc(descriptions[type] || '')}</p>${button(window.FestivalCalendar.activityLabels[type], 'perform', false)}`;
@@ -168,7 +188,6 @@
       render();status(result?.message||'');return;
     }
     if (action === 'select-item') { selection.key = target.dataset.key; selection.stars = Number(target.dataset.stars); render(); return; }
-    if (action === 'select-stat') { selection.stat = target.dataset.stat; render(); return; }
     if (action !== 'perform') return;
     busy = true; target.disabled = true;
     try {

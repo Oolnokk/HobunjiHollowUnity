@@ -111,7 +111,9 @@
     // listen or watch at the story/duel; face the offering, remembrance or gift exchange.
     const presentation = isDance(state.kind) && state.role === 'participant'
       ? dancePose(state.kind, state.root.id, focus)
-      : {socialLookAt:focus, socialWatching:true};
+      : (['ancestor-offerings','remembrance'].includes(state.kind) && state.role === 'participant')
+        ? {socialLookAt:focus,socialWatching:false,socialAncestorCeremony:{kind:state.kind,stimulusId:'festival-locale:'+state.root.id}}
+        : {socialLookAt:focus, socialWatching:true}; // Participants fold hands and bow; spectators remain solemn and still.
     state.presenting = {...state.target, ...presentation};
     return state.presenting;
   }

@@ -80,7 +80,7 @@
   }
 
   function arrivedForSocialPose(walker, target) {
-    if (!walker?.root || !target?.socialDance) return false;
+    if (!walker?.root || !(target?.socialDance || target?.socialAncestorCeremony)) return false;
     if (walker.state === 'idle') return true;
     if (!Number.isFinite(target.c) || !Number.isFinite(target.r)) return false;
     return Math.hypot(
@@ -142,7 +142,8 @@
   function lateHandPose(entry, target) {
     if (!arrivedForSocialPose(entry.walker, target)) return;
 
-    const presentation = target.socialDance;
+    const presentation = target.socialDance || target.socialAncestorCeremony;
+    const ceremony = !!target.socialAncestorCeremony; // Mourners do not dance or smile.
     const { left, right } = socketsFor(entry);
     if (!left || !right) return;
 
@@ -171,7 +172,14 @@
       socket.quaternion.copy(poseState.baseQuat);
 
       const sign = Math.sign(poseState.basePos.x) || (side === 'left' ? -1 : 1);
-      if (presentation.armStyle === 'tpose-jiggle') {
+      if (ceremony) {
+        // A restrained, slowly breathing bow with hands folded in front of the torso, using the real NPC hand sockets.
+        const bow = Math.max(0, Math.sin(phase * .125)) * .05;
+        socket.position.x = sign * dimensions.width * .095;
+        socket.position.y = poseState.basePos.y + dimensions.height * (.02 + bow);
+        socket.position.z += dimensions.height * .075;
+        socket.rotateX(side === 'left' ? -.32 : .32);
+      } else if (presentation.armStyle === 'tpose-jiggle') {
         socket.position.x += sign * dimensions.width * 0.32;
         socket.position.y += dimensions.height * (
           0.08 + 0.035 * Math.sin(phase + (side === 'right' ? Math.PI : 0))
@@ -234,7 +242,7 @@
     };
     sentinel.onBeforeRender = () => {
       const target = walker.currentScheduleTarget;
-      if (!target?.socialDance) {
+      if (!target?.socialDance && !target?.socialAncestorCeremony) {
         entry.session = null;
         entry.handPoseState.left = null;
         entry.handPoseState.right = null;

@@ -895,6 +895,7 @@
     clearDebugWeather,
     getDebugWeather,
     getDebugWeatherOwner,
+    isRaining: () => !!deps?.calendar?.isRaining, // Shared actual forecast/debug weather state for outdoor festival flame emitters.
     ensurePresentationSurface,
     getProjection: () => deps, // Camera/worldToOverlay/rect provider for layers drawn above the lighting canvas (js/emissive-light-orbs.js).
     getRenderRecoveryState,

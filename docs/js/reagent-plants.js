@@ -241,6 +241,31 @@
     });
   }
 
+  function sourceCensus(mapId = deps?.getCurrentArea?.()) {
+    const record = deps?._zoneReagentPersist?.get?.(mapId);
+    if (!record || !Array.isArray(record.placements)) return {zoneId:mapId,known:false,
+      reason:'this habitat has no generated/persisted daily reagent scatter yet'};
+    const versionMatches = record.version === HABITAT_VERSION; // Current-day site chances only refer to the active generator layout.
+    const today = versionMatches && record.day === deps?.calendar?.day;
+    const entries = record.placements;
+    const pool = window.AlchemySystem?.reagentsForZone?.(mapId) || [];
+    const bySpecies = Object.fromEntries(pool.map(key=>{
+      const matching=entries.filter(e=>e.key===key);
+      return [key,{generated:matching.length,remaining:matching.filter(e=>!e.harvested).length,
+        habitat:window.AlchemySystem?.REAGENT_DEFS?.[key]?.habitat || null,
+        shareOfGenerated:entries.length?matching.length/entries.length:null}];
+    }));
+    const scene = deps?._zoneScenes?.get?.(mapId);
+    const zoneTiles = Number(scene?.cols) * Number(scene?.rows); // Generated tile footprint; not a claim that every tile supports each reagent habitat.
+    return {zoneId:mapId,known:true,isCurrentDay:today,isCurrentGeneratorVersion:versionMatches,
+      generatorVersion:record.version ?? null,day:record.day,
+      generatedMapTiles:Number.isFinite(zoneTiles) && zoneTiles > 0 ? zoneTiles : null,
+      generatedPlantsPerMapTile:Number.isFinite(zoneTiles) && zoneTiles > 0 ? entries.length/zoneTiles : null,
+      generatedTotal:entries.length,remainingTotal:entries.filter(e=>!e.harvested).length,
+      bySpecies,certainty:today?'exact current-day recorded habitat placements':'historical scatter only: current day requires regeneration',
+      caution:'Habitat-specific opportunities; no assumption that every wilderness tile can grow every reagent'};
+  }
+
   function diagnosticsSnapshot(mapId = deps?.getCurrentArea?.()) {
     const persisted = deps?._zoneReagentPersist?.get(mapId);
     const placements = persisted?.placements || [];
@@ -268,6 +293,7 @@
     serializeZoneReagentState,
     restoreZoneReagentState,
     diagnosticsSnapshot,
+    sourceCensus,
     diagnosticsText,
   };
 })();

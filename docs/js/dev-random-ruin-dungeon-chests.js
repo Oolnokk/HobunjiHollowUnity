@@ -192,6 +192,6 @@
     // Controls for chests still unopened; the owning puzzle module merges
     // these into its own interaction list.
     controlsFor:list => (list || []).filter(chest => chest && !chest.opened).map(chest => chest.control),
-    snapshot:() => [...chests].map(chest => ({ id:chest.id, tier:chest.tier, opened:chest.opened, loot:chest.loot, x:+chest.group.position.x.toFixed(3), y:+chest.group.position.y.toFixed(3), z:+chest.group.position.z.toFixed(3) })),
+    snapshot:() => [...chests].map(chest => ({ id:chest.id, tier:chest.tier, culture:chest.culture, theme:chest.theme, poolId:chest.poolId, opened:chest.opened, loot:chest.loot, x:+chest.group.position.x.toFixed(3), y:+chest.group.position.y.toFixed(3), z:+chest.group.position.z.toFixed(3) })),
   });
 })();

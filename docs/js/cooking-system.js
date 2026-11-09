@@ -436,6 +436,11 @@
     cookTimer = setTimeout(() => {
       const effects = effectTotals(recipe); // Used before selections are cleared.
       const stars = outputQuality(recipe); // Used as the persistent cooked-food quality.
+      const contestIngredients = selections.map(({slot,selected}) => ({
+        key:selected.key,stars:selected.stars,slotId:slot.id,contributesEffects:slot.contributesEffects !== false,
+        rarityMultiplier:window.FestivalPotluckContest?.ingredientRarity?.(selected.key,deps.ITEM_DEFS)
+          ?? window.ItemAcquisitionRarity?.foodRarity?.(selected.key,deps.ITEM_DEFS)?.factor ?? 1,
+      })); // Freeze source rarity with each ingredient before this dish becomes an inventory/save item.
       const signature = selections.map(({ slot, selected }) => `${slot.id}:${selected.key}:${selected.stars}`).join('|'); // Used to stack identical dishes only.
       const key = `food_${recipe.id}_${hash(signature + `|${stars}|${JSON.stringify(effects)}`)}`;
       const label = foodName(recipe, effects);
@@ -458,8 +463,9 @@
         foodEffects: effects, foodQuality: stars, cookingDefaultStars: stars,
         ingredientKeys: selections.map(({ selected }) => selected.key), // Used by ordinary item-trait inheritance for this cooked stack.
         giftIngredientKeys: selections.map(({ selected }) => selected.key), // Used by specific NPC food preferences; cooked stack identity is unique to this exact ingredient signature.
-        festivalIngredientQuality: selections.map(({ slot, selected }) => ({key:selected.key,stars:selected.stars,slotId:slot.id,contributesEffects:slot.contributesEffects !== false})), // Snapshot source tier and recipe slot: structural ingredients still score points but never grant cooking buffs.
-        festivalContestScore: window.FestivalPotluckContest?.scoreIngredients?.(selections.map(({ selected })=>selected),deps.ITEM_DEFS) || selections.reduce((sum,{selected})=>sum+selected.stars,0), // Uses provenance-based processing multipliers; not the output meal's aggregate star label.
+        festivalIngredientQuality:contestIngredients, // Source quality, slot effects and rarity snapshots all survive cooked-food saves.
+        festivalContestScore:window.FestivalPotluckContest?.scoreIngredients?.(contestIngredients,deps.ITEM_DEFS)
+          ?? selections.reduce((sum,{selected})=>sum+selected.stars,0), // Judge the same frozen ingredient factors later shown in the festival inspector.
       });
       deps.inventory[key] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[key] || 0) + servings);
       recordItemQuality(key, stars, servings); // Both servings share the same completed dish quality/effects because the perk increases batch yield, not recipe resolution.

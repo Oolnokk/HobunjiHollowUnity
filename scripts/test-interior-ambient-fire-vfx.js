@@ -107,6 +107,22 @@ assert.equal(visuals[0].updates.length, 1, 'the scheduled tick updates the attac
 assert.equal(visuals[0].disposed, false, 'an attached emitter is not disposed while still in the scene');
 assert.equal(entry.options.enabled, true, 'the subscriber stays enabled while a live emitter remains');
 
+// Tzizkhanash is an outdoor exception: individual placed fire pieces should follow
+// real weather, without mutating indoor candle tables or deleting emitters on rain.
+let raining = true;
+context.WeatherFX = { isRaining: () => raining };
+group.userData.festivalWeatherFire = true;
+group.userData.mapEditorAux = { light: { intensity: 1.35 } };
+tick({ timestamp: 19 });
+assert.equal(visuals[0].updates.at(-1).ambient, false, 'festival flame stops spawning during rain');
+assert.equal(group.userData.mapEditorAux.light.intensity, 0, 'rain turns off the linked campfire light');
+assert(context.InteriorFireFloorRuntime.debugSnapshot().suppressedFestivalFlames > 0, 'mobile debug includes suppressed fires');
+raining = false;
+tick({ timestamp: 23 });
+assert.equal(visuals[0].updates.at(-1).ambient, true, 'clearing weather relights the very same emitter');
+assert.equal(group.userData.mapEditorAux.light.intensity, 1.35, 'linked light restores its previous brightness');
+
+
 // Removing the furniture from the scene (no parent) and letting the tick
 // observe that must eventually dispose the record and disable the
 // subscriber, matching "zero work when no fires exist".
