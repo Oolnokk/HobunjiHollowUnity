@@ -1524,6 +1524,34 @@
     return added;
   }
 
+  function repairRuinFloorShell(owner) {
+    if (!owner?.scene || !floorHeights.size || !THREE?.InstancedMesh) return 0;
+    if (owner.floorShellRepair) return owner.floorShellRepair.count; // Each generated ruin receives one visual backing, not another on re-entry.
+    const stone=window.ProceduralFurniture?.makePartMaterial?.({
+      materialTexture:'carved_smooth.png',materialLighting:'unlit',
+      materialFillMode:'never',color:'#7a746b',
+    }) || new THREE.MeshBasicMaterial({color:0x7a746b,side:THREE.DoubleSide}); // The existing V50 wall material is reused for supported floor gaps.
+    stone.side=THREE.DoubleSide;
+    const geometry=new THREE.PlaneGeometry(floorCellSize,floorCellSize);
+    geometry.rotateX(-Math.PI/2);
+    const backing=new THREE.InstancedMesh(geometry,stone,floorHeights.size);
+    backing.name='ruin-supported-floor-gap-backing';
+    backing.userData.devRuinFootprintIgnore=true; // This repair never creates navigation or raycast collision; DynamicSurfaces still owns support.
+    backing.raycast=()=>{};
+    const matrix=new THREE.Matrix4();
+    let count=0;
+    for(const [key,y] of floorHeights){
+      const [c,r]=key.split(',').map(Number);
+      if(!Number.isFinite(c)||!Number.isFinite(r)||!Number.isFinite(y))continue;
+      matrix.makeTranslation(entryPadX+(c+.5)*floorCellSize,y-.025,entryPadZ+(r+.5)*floorCellSize);
+      backing.setMatrixAt(count++,matrix);
+    }
+    backing.count=count;backing.instanceMatrix.needsUpdate=true;
+    owner.scene.add(backing);
+    owner.floorShellRepair={object:backing,count}; // Exposed through ruin diagnostics for mobile checks.
+    return count;
+  }
+
   function enterRuin() {
     const entering=ruin;
     return runSceneTransition(()=>{
@@ -1535,6 +1563,7 @@
        window.LocationArrival?.announce?.(arrivalTitle(entering), {area:MAP_ID}); // Every ruin gets the cave/camp arrival banner (a dungeon title card), not only boss tombs.
       deps.player.x=entering.spawn.x*deps.TILE; deps.player.y=entering.spawn.z*deps.TILE; deps.player.vx=0;deps.player.vy=0;
       movePlayerObjectsTo(entering.scene);
+      repairRuinFloorShell(entering); // Seal only known walkable V50 floor cells; intentionally missing puzzle/shaft cells stay open.
       const s=DS.sampleSupport(entering.spawn.x,entering.spawn.z,{minY:-4,maxY:5,pad:.02}); entering.supportId=s?.id||null;entering.supportY=s?.y||0;
       entering.lastAcceptedPx={x:deps.player.x,y:deps.player.y}; entering.lastSafePx={...entering.lastAcceptedPx};
       syncRuinPresentationHeight(entering.supportY);
@@ -2303,6 +2332,7 @@
     isSlidingPushBlock:block=>ruin?.blockSlide?.block===block, // Keeps the separate floor-settling pass from adjusting a block mid-slide.
     getGenerationProgress:()=>({phase:generationPhase,elapsedS:+((performance.now()-generationStartedMs)/1000).toFixed(1),attempts:lastGenerationAudit?.attempts?.length||0}),getDarknessSettings,setDebugBadgePart,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,getPlayerGroundSupportY,shaftSegmentHit,shaftCreatureCanEnter,syncShaftCreatureFloor,registerShaftGrid,unregisterShaftGrid:scope=>ruin?.shaftGrids?.delete(scope),setLevelRelativeSupport:on=>{if(ruin)ruin.levelRelativeSupport=on!==false;return !!ruin?.levelRelativeSupport;},getGroundSupportYAt,acceptFreeJumpLanding,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,setPresentationSink,flightClear,getState:()=>ruin?{mapId:MAP_ID,storyVault:ruin.storyVault ? {footprints:ruin.storyVaultFootprintCount,doorBlocks:false,puzzles:0,decalReady:ruin.storyVaultDecalReady,decalError:ruin.storyVaultDecalError||null} : null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,noLoot:ruin.noLoot===true,shaftConnection:ruin.shaftConnection||null, // The mobile debug snapshot reports the laboratory's chosen puzzle and reward policy.shaftLayerRuntime:ruin.shaftLayerRuntime?.getState?.()||null,
     nativeV50Runtime:ruin.nativeV50Runtime?.getState?.()||null,
+    floorShellRepair:ruin.floorShellRepair?.count||0, // Number of backed walkable cells (no collision or puzzle voids added).
     runtimeWallPlanes:ruin.entranceWallPlanes||null,
     runtimeHallways:ruin.entranceHallways||null, // Persist the authoritative floor-zero generated audit after V50's iframe has detached every upper-floor preview root.
     preplannedShaft:{nativeFloors:ruin.preplannedShaft?.nativeFloorCount||0,
