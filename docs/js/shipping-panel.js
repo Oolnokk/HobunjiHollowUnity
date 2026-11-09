@@ -76,10 +76,11 @@
   // and the box used to reject everything missing from BASE_PRICES.
   function getShipPrice(key) {
     if (!deps) return undefined;
-    const base = deps.BASE_PRICES[key];
-    if (base !== undefined) return base;
-    const sell = Number(deps.ITEM_DEFS?.[key]?.sellPrice);
-    return Number.isFinite(sell) && sell > 0 ? sell : undefined;
+    const tablePrice = deps.BASE_PRICES[key]; // Keep the existing crop/economy authority ahead of item definitions.
+    const defPrice = Number(deps.ITEM_DEFS?.[key]?.sellPrice);
+    const authored = tablePrice !== undefined ? tablePrice : Number.isFinite(defPrice) && defPrice > 0 ? defPrice : undefined;
+    if (authored === undefined) return undefined;
+    return window.ItemAcquisitionRarity?.sellPrice?.(key,authored,{itemDefs:deps.ITEM_DEFS}) ?? authored; // One capped scarcity premium only for sourced loot/spices not already priced by other systems.
   }
 
   function canShipKey(key) {
@@ -342,7 +343,9 @@
       selectedAmount: shippingAmount,
       selectedItemRarity: standaloneDebugVisible && shippingSelected.key
         ? window.ItemAcquisitionRarity?.item?.(shippingSelected.key,{itemDefs:deps?.ITEM_DEFS,townValue:window.TownMine?.getTownValue?.()}) || null : null, // On-demand mobile rarity stages, not a per-frame computation when the debug panel is hidden.
-      selectedItemBaseSellPrice: standaloneDebugVisible && shippingSelected.key ? getShipPrice(shippingSelected.key) ?? null : null, // Compare modeled rarity against the real shipping quote.
+      selectedItemBaseSellPrice: standaloneDebugVisible && shippingSelected.key
+        ? deps?.BASE_PRICES?.[shippingSelected.key] ?? deps?.ITEM_DEFS?.[shippingSelected.key]?.sellPrice ?? null : null, // Authored price before any conditional scarcity premium.
+      selectedItemSalePrice: standaloneDebugVisible && shippingSelected.key ? getShipPrice(shippingSelected.key) ?? null : null, // Actual quoted sale price after the premium, before Town Value and quality.
       animalHides: window.AnimalHides?.getDebug?.() || null, // Mobile-copyable hide provenance and transfer counters.
       boxPosition: box ? { col: box.col, row: box.row, width: box.w, height: box.h } : null,
     };
