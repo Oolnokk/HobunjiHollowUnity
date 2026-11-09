@@ -431,4 +431,88 @@ assert.equal(JSON.stringify(sharedStore.loadCropProvenance('worldA')),persistedB
 rejectWorldSave=false;
 if(originalGlobalCrop===undefined)delete globalThis.CropVarieties;else globalThis.CropVarieties=originalGlobalCrop;
 
+
+const sourceZone='map_northern_cliffs';
+const reagentDefs={
+  frostcapMoss:{zone:sourceZone,habitat:'waterEdge'},
+  graniteThistle:{zone:sourceZone,habitat:'cliffBase'}};
+const alchemySource={REAGENT_DEFS:reagentDefs,reagentsForZone:()=>Object.keys(reagentDefs)};
+const reagentHost={window:{AlchemySystem:alchemySource}};
+vm.runInNewContext(fs.readFileSync('docs/js/reagent-plants.js','utf8'),reagentHost);
+const reagents=reagentHost.window.ReagentPlants;
+const currentReagentState={version:2,day:10,placements:[
+  {col:1,row:2,key:'frostcapMoss',harvested:false},
+  {col:2,row:3,key:'frostcapMoss',harvested:true},
+  {col:3,row:3,key:'graniteThistle',harvested:false},
+]};
+reagents.init({_zoneReagentPersist:new Map([[sourceZone,currentReagentState]]),
+  _zoneScenes:new Map([[sourceZone,{cols:20,rows:20}]]),calendar:{day:10}});
+const forageCensus=reagents.sourceCensus(sourceZone);
+assert.equal(forageCensus.known,true,'real daily reagent persistence counts as a measured scatter');
+assert.equal(forageCensus.generatedTotal,3,'real source roster includes picked and unpicked plants');
+assert.equal(forageCensus.remainingTotal,2,'harvested plants are removed from available opportunities');
+assert.equal(forageCensus.bySpecies.frostcapMoss.generated,2,'habitat eligibility controls species-specific generated totals');
+assert.equal(forageCensus.bySpecies.frostcapMoss.remaining,1,'only one frostcap remains to gather');
+assert.equal(forageCensus.generatedMapTiles,400,'the generated zone has a measured area denominator');
+assert(Math.abs(forageCensus.generatedPlantsPerMapTile-3/400)<1e-12,
+  'tile density uses the real map area, not a guessed global spawn frequency');
+const ruinHost={window:{THREE:{},RuinSiteLocales:{CATEGORY:'ruin_entrance',hashString:()=>5},
+  AuthoredFurniture:{load:()=>null}},localStorage:{getItem:()=>null,setItem:()=>{}}};
+vm.runInNewContext(fs.readFileSync('docs/js/ruin-sites.js','utf8'),ruinHost);
+const ruins=ruinHost.window.RuinSites;
+const testSites=['test_gate_a','test_gate_b'].map(localeId=>({localeId,category:'ruin_entrance',
+  objects:[{kind:'ruinDoor',x:2,y:2,w:2,h:2}]}));
+ruins.registerWorkspace(sourceZone,{localeInstances:testSites});
+const ruinsCensus=ruins.sourceCensus();
+assert.equal(ruinsCensus.registeredCliffSites,2,'exact cliff-entrance count comes from live workspace registration');
+assert.equal(ruinsCensus.registeredZoneCount,1,'unregistered wilderness zones never count as zero ruin sites');
+assert.equal(ruinsCensus.byTier.undetermined,2,'unvisited ruin guardian tiers cannot be guessed');
+assert.equal(Object.values(ruinsCensus.byTheme).reduce((a,b)=>a+b,0),2,
+  'each actually registered ruin belongs to exactly one deterministic tradition');
+assert.equal(ruinsCensus.buriedHoleChancePerTreasureLocation,.06,'buried-ruin odds remain conditional on a treasure location');
+const wildlifeHost={window:{WildernessMapGenerator:{makeRng:()=>()=>.25}}};
+vm.runInNewContext(fs.readFileSync('docs/js/wildlife-spawn.js','utf8'),wildlifeHost);
+const wildlife=wildlifeHost.window.WildlifeSpawn;
+const wildlifeConfig={denSpecies:['puktuk','nelk'],roamingHerdCount:4,roamingHerdSpecies:['voorg-ass','moot']};
+wildlife.init({zoneLayouts:new Map([[sourceZone,{cols:20,rows:20,
+  dens:[{id:'den1',x:1,y:1},{id:'den2',x:5,y:5}]}]]),
+  EXTERIOR_ZONES:{[sourceZone]:wildlifeConfig},hostileObjects:new Set(),
+  getCurrentArea:()=>sourceZone});
+const ecology=wildlife.ecologyCensus(sourceZone);
+assert.equal(ecology.known,true,'den source enumerates the current generated wilderness zone');
+assert.equal(ecology.animalDens,2,'exact real den roster contains two allocated dens');
+assert.equal(ecology.bySpecies.nelk.total,1,'balanced den allocation gives one Nelk den');
+assert.equal(ecology.bySpecies.puktuk.total,1,'balanced den allocation gives one Puktuk den');
+assert.equal(ecology.roamingSpeciesChancePerSlot.moot,.5,'surface-herd selection is equal-weight between two configured species');
+assert.equal(ecology.roamingHerdSlots,4,'encounter denominator uses configured herd slot count');
+const priorSources={AlchemySystem:globalThis.AlchemySystem,ReagentPlants:globalThis.ReagentPlants,
+  RuinSites:globalThis.RuinSites,WildlifeSpawn:globalThis.WildlifeSpawn,
+  SCRATCHBONES_CONFIG:globalThis.SCRATCHBONES_CONFIG};
+globalThis.AlchemySystem=alchemySource;globalThis.ReagentPlants=reagents;
+globalThis.RuinSites=ruins;globalThis.WildlifeSpawn=wildlife;
+globalThis.SCRATCHBONES_CONFIG={game:{livestock:{itemKinds:{nelkBaby:'nelk'}}}};
+const forageFrequency=rarity.itemSourceFrequency('frostcapMoss');
+assert.equal(forageFrequency.sourceKind,'habitat-reagent','foraged reagent lookup uses AlchemySystem species/habitat owner');
+assert.equal(forageFrequency.exactGeneratedSpeciesSites,2,'item rarity reads exact generated habitat sites');
+assert.equal(forageFrequency.remainingSites,1,'item rarity uses the unharvested actual repertoire');
+assert.equal(forageFrequency.chancePerRandomGeneratedReagent,2/3,
+  'species fraction is conditional on a generated habitat-correct reagent plant');
+assert.equal(forageFrequency.chancePerRandomRemainingReagent,.5,
+  'available plant odds recalculate after harvesting one of the species');
+const nestFrequency=rarity.itemSourceFrequency('nelkBaby',{zoneId:sourceZone});
+assert.equal(nestFrequency.denSites,1,'baby acquisition knows actual matching resident den count');
+assert.equal(nestFrequency.chancePerGeneratedDen,.5,'specific den species share is measured rather than treated as a default guess');
+const across=rarity.wildernessSourceCensus({zoneIds:[sourceZone,'map_not_generated']});
+assert.equal(across.totals.dens.measuredZones,1,'only loaded/generated animal zones enter the sample');
+assert.equal(across.totals.dens.total,2,'real two-den roster carries through world census');
+assert.equal(across.totals.reagentSites.measuredZones,1,'unexplored reagents are not counted as absence');
+assert.equal(across.totals.reagentSites.total,3,'habitat-specific generated site count is reported');
+assert.equal(across.totals.availableReagents.total,2,'actual unharvested reagent count survives the census');
+assert.equal(across.ruins.registeredCliffSites,2,'ruin counts come from the registered site owner');
+assert.equal(rarity.item('frostcapMoss',{itemDefs:{frostcapMoss:{}},zoneId:sourceZone}).observedHabitat.remainingSites,1,
+  'mobile item diagnostics surface the measured reagent opportunity count');
+for(const [key,value] of Object.entries(priorSources)){
+  if(value===undefined)delete globalThis[key];else globalThis[key]=value;
+}
+
 console.log('Item acquisition rarity tests passed.');
