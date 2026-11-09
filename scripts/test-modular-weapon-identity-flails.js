@@ -26,7 +26,7 @@ assert.equal(config.shafts['harlyao-longsword'].label, 'Tall Crescent Hilt');
 assert.equal(config.heads['harlyao-longsword'].label, 'Harlyao-style Long-blade');
 assert.equal(api.weaponName('fishing-mace', 'fishing-mace', 'Copper'), 'Copper Looped Fishing Mace');
 assert.equal(api.weaponName('harlyao-longsword', 'harlyao-longsword', 'Copper'),
-  'Copper Crescent-hilted Long- Hilted Slicer');
+  'Copper Crescent-hilted Long-Hilted Slicer');
 assert.equal(item('fishing-mace','warhammer'), 'modular:fishing-mace:warhammer:nativeCopper');
 assert.deepEqual(plain(api.decode(item('fishing-mace','warhammer'))),
   { shaft: 'fishing-mace', head: 'warhammer', metal: 'nativeCopper' });
@@ -34,7 +34,7 @@ assert.deepEqual(plain(api.decode(item('fishing-mace','warhammer'))),
 api.registerDefinitions(definitions, shapes, metals, ['nativeCopper']);
 assert.equal(definitions[item('fishing-mace','fishing-mace')].label, 'Copper Looped Fishing Mace');
 assert.equal(definitions[item('harlyao-longsword','harlyao-longsword')].label,
-  'Copper Crescent-hilted Long- Hilted Slicer');
+  'Copper Crescent-hilted Long-Hilted Slicer');
 assert.deepEqual(plain(definitions[item('fishing-spear', 'hatchet')].slots), ['weapon','axe'],
   'only a tool-worthy handle with an axe-capable head grants the existing axe action and mastery events');
 assert.deepEqual(plain(definitions[item('dagger','hatchet')].slots), ['weapon'],
