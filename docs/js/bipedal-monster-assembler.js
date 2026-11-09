@@ -186,6 +186,11 @@
       alphaTest: options.alphaTest,
     }); // Canonical animal sprite, material, mirrored cards, and painted neck; never a second game actor.
     if (!ref?.group) return original.call(api, THREE, sourceCanvas, options);
+    // Animal Head Rig replaces both original Mesh objects with new SkinnedMeshes.
+    // Keep all downstream facing hooks on the LIVE cards, not their detached predecessors.
+    const planes = ref.group.children.filter(node => node.isMesh || node.isSkinnedMesh);
+    ref.frontPlane = planes.find(node => node.userData?.hobunjiPlaneFace === 'front') || planes[0] || null;
+    ref.backPlane = planes.find(node => node.userData?.hobunjiPlaneFace === 'back') || planes[1] || null;
     const root = new THREE.Group(); // Existing NPC animation parent sees a normal floor-relative portrait Group.
     root.name = options.name || speciesId + '_bipedal_monster';
     const body = ref.group; // Only one creature card assembly is built and owned by this NPC.
