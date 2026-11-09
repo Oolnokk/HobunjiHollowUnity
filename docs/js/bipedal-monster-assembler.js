@@ -387,7 +387,7 @@
   installProfileBridge();
   installPortraitBridge();
   // Optional on-screen diagnostics for mobile: game URL ?bipedalMonsterDebug=1.
-  if (typeof document !== 'undefined' && /(?:\?|&)bipedalMonsterDebug=1(?:&|$)/.test(location.search)) {
+  if (typeof document !== 'undefined' && typeof location !== 'undefined' && /(?:\?|&)bipedalMonsterDebug=1(?:&|$)/.test(location.search)) {
     const mount = () => {
       if (document.getElementById('bipedalMonsterDebug')) return;
       const panel = document.createElement('details');
