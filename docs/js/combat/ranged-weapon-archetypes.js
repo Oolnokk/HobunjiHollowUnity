@@ -31,7 +31,7 @@
   });
   const BLOWGUN_RAW_DAMAGE = 2; // Used as the deliberately tiny direct dart hit; mastery afflictions are the blowgun's real damage identity.
   const BLOWGUN_FIRE_SPEED_MULTIPLIER = 2; // Scales only B'shuakauitl firing action time, preserving its authored strike/hold phase ratios and separate load time.
-  const BLOWGUN_AFFLICTION_SCALE = 40; // Multiplies the ranged system's normal 0.15-per-rank buildup into a huge 6.0x raw-damage multiplier per chosen affliction rank.
+  const BLOWGUN_AFFLICTION_SCALE = 10; // Independent 18-point Attack Power yields 27 buildup per rank while preserving only 2 Health damage per dart.
   const BLOWGUN_AFFLICTION_EFFECT_IDS = Object.freeze([
     'bleedingHealth', 'woundedStamina', 'congealedHealth', 'infectedStamina',
     'windedStamina', 'bruisedHealth', 'shatteredStamina', 'poisonedHealth', 'scentMarkedHealth',
@@ -182,6 +182,7 @@
       speedPxS: projectileStats.speedPxS || base.speedPxS,
       label: toolDef?.label || 'Thrown Weapon',
       rangedType: THROWN_TYPE,
+      attackPower: finiteOr(toolDef?.rangedAttackPower, window.WeaponShapeStats?.forKey?.(itemKey, toolDef)?.attackPower ?? 12), // Shared shape Attack Power also applies to thrown weapons.
       dmgType: toolDef?.dmgType === 'blunt' ? 'blunt' : 'sharp', // Used by RangedWeapons.playProjectileImpactSfx so a thrown hit sounds like the same weapon's melee hit.
       inputMode: 'hold-release',
       gripMode: animation.gripMode || 'palm-parallel',
@@ -251,6 +252,7 @@
       damage: finiteOr(toolDef?.rangedDamage, BLOWGUN_RAW_DAMAGE),
       label: toolDef?.label || 'Blowgun',
       rangedType: BLOWGUN_TYPE,
+      attackPower: finiteOr(toolDef?.rangedAttackPower, 18), // B'shuakauitl is a status weapon, deliberately not a damaging dart.
       afflictionProfile: toolDef?.rangedAfflictionProfile || BLOWGUN_TYPE,
       basicAfflictionScale: Math.max(1, finiteOr(toolDef?.rangedAfflictionScale, BLOWGUN_AFFLICTION_SCALE)),
       basicAmmoEffectIds: authoredEffectIds(toolDef, BLOWGUN_AFFLICTION_EFFECT_IDS),

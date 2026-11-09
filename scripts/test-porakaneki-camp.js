@@ -146,7 +146,7 @@ assert(/HousePieceGen\.js\?v=[A-Za-z0-9_.-]+/.test(gameIndexSource), 'game runti
 assert(banditRuntimeSource.includes("const BANDIT_TENT_PIECE_URL = 'config/pieces/bandit-tent.json'"), 'Bandit runtime must load the authored bandit tent clone');
 assert(banditRuntimeSource.includes('HousePieceGen.buildGroupFromPiece'), 'Bandit runtime must render through HousePieceGen');
 assert(!banditRuntimeSource.includes('buildBanditTentCanvasGeometry'), 'old procedural five-sided bandit tent geometry must stay removed');
-assert.deepEqual(cfg.equipment.weaponShapes, ['fishingspear', 'hatchet', 'dagger'], 'Porakaneki must use the true dagger shape, never daggerSword');
+assert.deepEqual(cfg.equipment.weaponShapes, ['fishingspear', 'hatchet', 'dagger', 'porakanekiGreatclub'], 'Porakaneki carry the real dagger and their own spiked club, never daggerSword');
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_small'));
 assert(localeIndex.locales.some(entry => entry.id === 'locale_porakaneki_camp_chief' && entry.singleton === true));
 assert(/porakaneki-camps-runtime\.js\?v=[A-Za-z0-9_.-]+/.test(houseLoader));
@@ -250,6 +250,8 @@ const banditCombat = {
   init(deps) { this.deps = deps; return 'bandit-init'; },
   async loadGangConfig() { return { baseline: true }; },
   async makeEntity(_base, _rank, _tier, x, y, opts) {
+    assert.deepEqual(Array.from(_base.weaponShapePool), [opts.defOverride.weaponShapeKey], 'tribal combat math is rolled from the visible club/spear rather than a random bandit weapon');
+    assert.equal(_base.weaponMetalKey, opts.defOverride.weaponMetalKey, 'the held weapon and NPC damage use the same metal strength');
     return {
       id: `generated_${opts.extra.porakanekiCampId}_${opts.extra.porakanekiHunterIndex}`,
       x, y, health: 20, maxHealth: 20, halfHeight: 0.5,
