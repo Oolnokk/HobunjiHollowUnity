@@ -213,6 +213,41 @@
     return emitters.every(emitter => !emitter?.attachedPartId || !!meshById?.get?.(emitter.attachedPartId));
   }
 
+  function makeCandleClusterFlames(group, emitters, parts) {
+    // One Points draw for sixteen candle tips: per-candle authored particle emitters in the Furniture Editor
+    // still describe the arrangement, but runtime must not add sixteen draw calls for each of 25 town clusters.
+    const sources = new Map((parts || []).map(part => [part.id, part]));
+    const tips = emitters.map((emitter, i) => {
+      const part = sources.get(emitter.attachedPartId);
+      if (!part?.transform) return null;
+      const t = part.transform;
+      return {x:Number(t.x)||0,y:(Number(t.y)||0)+(Number(t.sy)||0)*.5+.02,z:Number(t.z)||0,phase:i*2.39996};
+    }).filter(Boolean); // Every flame follows its candle's authored footprint and height.
+    if (!tips.length) return null;
+    const count=tips.length*3, positions=new Float32Array(count*3), colors=new Float32Array(count*3);
+    const geometry=new THREE.BufferGeometry(), position=new THREE.BufferAttribute(positions,3), color=new THREE.BufferAttribute(colors,3);
+    geometry.setAttribute('position',position); geometry.setAttribute('color',color);
+    const material=new THREE.PointsMaterial({size:.047,vertexColors:true,transparent:true,opacity:.9,depthWrite:false,sizeAttenuation:true});
+    const points=new THREE.Points(geometry,material);points.name='festival_cluster_candle_flames';points.frustumCulled=false;
+    points.visible=false;group.add(points);
+    let phase=0; // Each update advances all 48 tiny flame particles without allocating Three.js objects.
+    return {
+      update(dt,lit) {
+        phase+=Math.max(0,Number(dt)||0);
+        for(let i=0;i<tips.length;i++)for(let n=0;n<3;n++) {
+          const tip=tips[i], k=(i*3+n)*3, offset=phase*(1.6+n*.2)+tip.phase+n*2;
+          positions[k]=tip.x+Math.sin(offset)*.008;
+          positions[k+1]=tip.y+n*.023+Math.sin(offset*1.3)*.01;
+          positions[k+2]=tip.z+Math.cos(offset)*.008;
+          colors[k]=1;colors[k+1]=n===2?.22:.65+Math.sin(offset)*.1;colors[k+2]=n===2?.04:.09;
+        }
+        position.needsUpdate=true;color.needsUpdate=true;
+        points.visible=!!lit; // Rain extinguishes every tip immediately; clear weather reignites automatically.
+      },
+      dispose(){group.remove(points);geometry.dispose();material.dispose();}
+    };
+  }
+
   function attachAmbientEmitters(group, data, key) {
     if (!group || !AMBIENT_FIRE_KEYS.has(key) || !Array.isArray(data?.particleEmitters) || !authored.createEmitterVisual) return group;
     if (ambientRecordByGroup.has(group)) return group;
@@ -223,7 +258,9 @@
       group.userData.hobunjiAmbientFurnitureVfxPendingKey = key; // Used by the authored-upgrade callback to retry only after attachedPartId meshes exist.
       return group;
     }
-    const visuals = emitters.map(emitter => authored.createEmitterVisual(group, emitter)).filter(Boolean); // Used by the shared ambient RAF below.
+    const visuals = key === 'candleCluster'
+      ? [makeCandleClusterFlames(group, emitters, data.parts)].filter(Boolean)
+      : emitters.map(emitter => authored.createEmitterVisual(group, emitter)).filter(Boolean); // Batched candle tips keep draw calls proportional to clusters, not total candles.
     if (!visuals.length) return group;
     const record = { group, visuals, key, createdAt: performance.now(), wasAttached: false }; // Stored until the furniture is removed from its scene.
     ambientRecords.add(record);
@@ -270,7 +307,7 @@
     const itemDefs = injectedDeps?.ITEM_DEFS; // Used to make the new furniture keys readable/placeable anywhere a furniture inventory item is granted.
     if (itemDefs) {
       for (const [itemKey, definition] of Object.entries(FIRE_FURNITURE_DEFS)) {
-        if (itemDefs[itemKey]) continue;
+        if (!itemKey.endsWith('Furniture') || itemDefs[itemKey]) continue; // Decor-only candleCluster is not a duplicate inventory item.
         itemDefs[itemKey] = {
           icon: definition.icon,
           label: definition.name,
