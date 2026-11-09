@@ -2082,7 +2082,13 @@
         // Immediately seed fresh remote camps and honor bedtime/wake-up transitions,
         // but avoid rebuilding patrols or advancing abstract movement every 0.2 s.
         for (const camp of activeCamps(zoneState)) {
-          if (camp.hunters.length && camp._lastDistantSleeping === sleeping && camp._lastDistantDay === currentDay) continue;
+          if (camp.hunters.length && camp._lastDistantSleeping === sleeping && camp._lastDistantDay === currentDay) {
+            // Avenger tactical choices still need the authored 5 Hz cadence:
+            // quarry selection, escape reprieves and outnumbered withdrawals are
+            // independent of coarse positional movement or resident LOD.
+            if (!sleeping && camp.avengerBand) updateAvengerBand(camp);
+            continue;
+          }
           try {
             updateCampHunters(camp, 0, 0);
             camp._lastDistantSleeping = sleeping; // Only initial/sleep-wake/calendar transitions need a fast remote tick.
