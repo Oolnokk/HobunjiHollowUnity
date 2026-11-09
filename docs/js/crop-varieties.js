@@ -34,6 +34,10 @@
   }); // Fallback ripe colors match VegetationCropRendering's existing native crop palette.
   const COLOR_FILTERS = Object.freeze([0xffffff, 0xd6ac72, 0xafc4aa, 0xb2c6ed, 0x72c7c8, 0xb98bce]); // Regional tint genes shared by renderer and seed catalog.
   const REGIONAL_EFFECTS = Object.freeze([null, 'foraging', 'fortitude', 'vigor', 'fishing', 'perception']); // Imported food traits reflect climate-driven cultivation, not a new buff system.
+  const TRADE_OFFER_LIMIT = 4; // Used by both real caravan seed rolls and the item rarity estimate.
+  const TRADE_QUANTITY_MIN = 2; // Smallest regional seed packet on one Slagothim caravan.
+  const TRADE_QUANTITY_MAX = 5; // Largest regional seed packet on one Slagothim caravan.
+  const BREED_MUTATION_CHANCE = .025; // Shared by the breeder and the acquisition-rarity estimator.
   const MAX_CODE = /^[0-5]{6}$/; // Prevents unbounded arbitrary keys from being installed as game items.
   const VARIANT_KEY = /^cv_(needlegrain|heftroot|garlink|ongyums|redberries|blueberries|yellowberries|whiteberries|blackberries|blackMustard|greenMustard)_([0-5]{6})(?:_([0-9a-f]{6}))?(Seeds)?$/;
   let cropData = null; // Shared runtime cropData mutated in place; read by growth, planting and the farm.
@@ -193,12 +197,12 @@
   }
   function offers(rng = Math.random) {
     const families = FAMILIES.filter(family => cropData?.[family]); // Selected independently for each caravan; no new shop route.
-    const count = Math.min(4, families.length);
+    const count = Math.min(TRADE_OFFER_LIMIT, families.length);
     const pool = families.map(family => ({ family, n: rng() })).sort((a, b) => a.n - b.n).slice(0, count);
     return pool.map(({ family }) => {
       const region = 1 + Math.floor(rng() * (REGIONS.length - 1));
       const variety = register(family, String(region).repeat(6));
-      return variety ? { key: variety.seedKey, qty: 2 + Math.floor(rng() * 4), region: variety.region } : null;
+      return variety ? { key: variety.seedKey, qty: TRADE_QUANTITY_MIN + Math.floor(rng() * (TRADE_QUANTITY_MAX - TRADE_QUANTITY_MIN + 1)), region: variety.region } : null;
     }).filter(Boolean);
   }
   function produceFamily(key) {
@@ -217,7 +221,7 @@
     const pick = (code, start) => Number(code[start + (rng() < .5 ? 0 : 1)]);
     const child = '' + pick(first, 0) + pick(second, 0) + pick(first, 2) + pick(second, 2) + pick(first, 4) + pick(second, 4);
     const genes = [...child];
-    if (rng() < .025) { const locus = Math.floor(rng() * 6); genes[locus] = String(Math.floor(rng() * REGIONS.length)); } // Rare single-allele mutation, as in livestock.
+    if (rng() < BREED_MUTATION_CHANCE) { const locus = Math.floor(rng() * 6); genes[locus] = String(Math.floor(rng() * REGIONS.length)); } // Rare single-allele mutation, as in livestock.
     const childCode = genes.join(''); // Keep climate/effect genes at their original simple inherited complexity.
     const result = firstKey === a && secondKey === a && childCode === '000000'
       ? { id: a, seedKey: cropData[a]?.seedKey, label: cropData[a]?.label, ...phenotype(a, '000000') }
@@ -248,10 +252,36 @@
     });
     return family ? NATIVE_COLORS[family] : null; // Same ripe pigment used by native planted/harvested vegetables.
   }
+  function rarityProfile(key) {
+    const id = String(key || ''); // Current produce or seed item key, including inherited pigment suffixes.
+    const parsed = fromItemKey(id); // Saved gene codes use the same parser as real crop planting and breeding.
+    const family = parsed?.family || (FAMILIES.includes(id) ? id : FAMILIES.find(name => cropData?.[name]?.seedKey === id));
+    const base = family && cropData?.[family]; // Crop data remains the single authority for growing requirements and duration.
+    if (!base) return null;
+    const isSeed = id === base.seedKey || id.endsWith('Seeds');
+    const cultivar = parsed ? (variants.get(id.replace(/Seeds$/, '')) || phenotype(family, parsed.code, parsed.colorHex)) : null;
+    const readyFamilies = FAMILIES.filter(name => cropData?.[name]); // Every caravan draws exactly four distinct installed crop families.
+    const familyPickChance = readyFamilies.length ? Math.min(TRADE_OFFER_LIMIT, readyFamilies.length) / readyFamilies.length : 0;
+    const regionPickChance = 1 / Math.max(1, REGIONS.length - 1); // Only the five non-native regions are exported by Slagothim traders.
+    const pureImport = !!parsed && !parsed.colorHex && /^([1-5])\\1{5}$/.test(parsed.code);
+    const breedingChoices = parsed ? Math.max(1, [...parsed.code].filter(gene => gene !== parsed.code[0]).length + (parsed.colorHex ? 2 : 0)) : 0;
+    const seedMakerDays = Object.values(window.FARM_SPECIALIZATIONS_CONFIG?.buildings || {})
+      .find(def => def?.family === 'seedMaker')?.daysPerInput; // Authoritative processing time, not a copied constant.
+    return {
+      family, native:!parsed, pureImport, isSeed,
+      geneCode:parsed?.code || '000000', breedingChoices,
+      mutationRate:BREED_MUTATION_CHANCE,
+      familyPickChance, regionPickChance, chancePerCaravan:pureImport ? familyPickChance * regionPickChance : 0,
+      meanOfferQuantity:(TRADE_QUANTITY_MIN + TRADE_QUANTITY_MAX) / 2,
+      growDays:Math.max(1, Number(cultivar?.growDays || base.growDays) || 3),
+      seedMakerDays:Number.isFinite(Number(seedMakerDays)) ? Number(seedMakerDays) : null,
+      region:cultivar?.region || REGIONS[0].label,
+    };
+  }
   function blendedColor(firstKey, secondKey) {
     const a = produceFamily(firstKey), b = produceFamily(secondKey); // Incompatible crop species cannot mix.
     return a && a === b ? mixHex(colorOf(firstKey), colorOf(secondKey)) : null;
   }
-  window.CropVarieties = Object.freeze({ REGIONS, FAMILIES, attach, ensure, hydrate, registered, refreshBrushes, offers, produceFamily, breed, details, colorOf, seedColorOf, blendedColor,
+  window.CropVarieties = Object.freeze({ REGIONS, FAMILIES, attach, ensure, hydrate, registered, refreshBrushes, offers, produceFamily, breed, rarityProfile, details, colorOf, seedColorOf, blendedColor,
     get lastChange() { return lastChange; } }); // Exposed for mobile production diagnostics and regression tests.
 })();
