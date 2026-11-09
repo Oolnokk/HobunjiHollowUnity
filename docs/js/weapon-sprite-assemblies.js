@@ -250,7 +250,7 @@
       const f = config.flail;
       const isRope = f.chain.type === 'rope'; // Generated suspension shares the same attachment animation as a raster chain.
       const chainTex = isRope ? null : await textureFor(THREE, f.chain.sprite);
-      const ropeTexture = isRope ? await textureFor(THREE, f.chain.texture || 'assets/textures/wavy_surface.png') : null; // Same texture resource as suspended root-totem bottles.
+      const ropeTexture = isRope ? await textureFor(THREE, f.chain.sprite || 'assets/objectsprites/rope_long.png') : null; // Original PNG shared with traversable ruin ropes.
       if (state.dead) return;
       const headTextures = await Promise.all(f.head.layers.map(layer => textureFor(THREE, layer.sprite)));
       if (state.dead) return;
@@ -321,28 +321,64 @@
     state.movementPosition = options.movementPosition || null; // Player/NPC world position excludes hand-motion offsets from neutral-to-windup lag.
   }
 
+  function ropeSpriteSizing(spec, unit, aspect) {
+    const lengthPx = Math.max(2, Math.min(2048, Number(spec.lengthPx) || 160)); // The existing virtual endpoints use handle-image pixels.
+    const radiusPx = Math.max(0.25, Math.min(30, Number(spec.radiusPx) || 2.5)); // Preserves the former rope cylinder's radius.
+    const scaleX = connectorAxisScale(spec, 'scaleX'); // Width adjustment stays independent of reach.
+    const scaleY = connectorAxisScale(spec, 'scaleY'); // Reach adjustment stays independent of width.
+    return {
+      length: lengthPx * unit, // Local sprite height before the uniform carrier scale.
+      widthScale: 2 * radiusPx * unit / aspect * (scaleX / scaleY), // Normalize the PNG's native aspect and compensate for the carrier's Y scale.
+      lengthPx: lengthPx * scaleY, // Final grip-to-head span in original handle pixels, before tool-size scaling.
+      diameterPx: 2 * radiusPx * scaleX, // Final apparent thickness in original handle pixels.
+    };
+  }
+
   function makeRope(THREE, spec, unit, renderOrder, sourceTexture) {
-    const length = Math.max(2, Math.min(2048, Number(spec.lengthPx) || 160)) * unit; // The rope length is expressed in the handle's original pixels, then inherits all handle size modifiers.
-    const radius = Math.max(0.25, Math.min(30, Number(spec.radiusPx) || 2.5)) * unit; // Root-totem style generated rope cylinder, never a flat PNG chain.
-    const geometry = new THREE.CylinderGeometry(radius, radius * 0.75, length, 6, 1, true);
-    const ropeTexture = sourceTexture?.clone?.() || null; // Reuses the root totem's authored wavy_surface texture without sharing mutable UV repeat state.
-    if (ropeTexture) {
-      ropeTexture.wrapS = ropeTexture.wrapT = THREE.RepeatWrapping;
-      ropeTexture.repeat.set(1, Math.max(1, length / 0.22));
-      ropeTexture.needsUpdate = true;
-    }
-    const material = new THREE.MeshLambertMaterial({
-      map: ropeTexture, color: spec.color || '#6B4728', side: THREE.FrontSide,
-      transparent: false,
-    }); // Matches the root totem's tapered, textured volumetric rope, rather than substituting a flat chain sprite.
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.name = 'flail_generated_rope';
+    const image = sourceTexture?.image; // The full ruin sprite supplies the physical camera-facing strip.
+    const width = image?.naturalWidth || image?.width, height = image?.naturalHeight || image?.height;
+    if (!(width > 0 && height > 0)) throw new Error('Ruin rope PNG has no dimensions');
+    const aspect = width / height; // The shipped rope_long.png image measures 152 × 2164.
+    const sizing = ropeSpriteSizing(spec, unit, aspect); // Same final reach and diameter as the former generated cylinder.
+    const map = sourceTexture.clone(); // Per-weapon ownership permits clean disposal without modifying other rope textures.
+    map.wrapS = map.wrapT = THREE.ClampToEdgeWrapping;
+    map.encoding = THREE.sRGBEncoding;
+    map.needsUpdate = true;
+    const material = new THREE.MeshBasicMaterial({
+      map, color: spec.color || '#FFFFFF', side: THREE.DoubleSide,
+      transparent: true, alphaTest: 0.035, depthWrite: false, toneMapped: false,
+    }); // Same unlit, transparent, double-sided rendering as DungeonRopeArt.
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(aspect, 1), material);
+    mesh.name = 'flail_ruin_rope_sprite';
+    mesh.scale.set(sizing.widthScale, sizing.length, 1);
     mesh.renderOrder = renderOrder;
     mesh.userData.hobunjiWeaponAssemblyPart = true;
-    mesh.userData.hobunjiHeldObjectPlane = true; // Held objects obey the usual weapon occlusion handling.
-    mesh.userData.hobunjiGeneratedRope = true; // Allows diagnostics and selective texture upgrades.
+    mesh.userData.hobunjiHeldObjectPlane = true; // Keep existing held-weapon draw ordering.
+    mesh.userData.hobunjiGeneratedRope = true; // Tool Hub frames the actual plane bounds, not a PNG's blank margins.
+    mesh.userData.dungeonRopeSprite = spec.sprite || 'assets/objectsprites/rope_long.png'; // Mobile diagnostics identify the art source.
     mesh.userData.noOutline = false;
-    return mesh;
+    const group = new THREE.Group(); // Reuses the current pendulum carrier and grip/head positioning.
+    group.name = 'flail_ruin_rope';
+    group.userData.hobunjiRuinRopeSprite = true; // Uniform world scale avoids skewing the camera-facing ribbon.
+    group.add(mesh);
+    const cameraPosition = new THREE.Vector3(); // Render-time camera position relative to this rope carrier.
+    const normal = new THREE.Vector3(); // Direction to camera, projected perpendicular to the rope axis.
+    const right = new THREE.Vector3(); // Horizontal basis for the camera-facing rope PNG.
+    const up = new THREE.Vector3(0, 1, 0); // The carrier's local Y remains the taut suspension axis.
+    const basis = new THREE.Matrix4(); // Reused to orient the plane without allocations per frame.
+    mesh.onBeforeRender = (_renderer, _scene, camera) => {
+      if (!camera?.getWorldPosition) return;
+      camera.getWorldPosition(cameraPosition);
+      group.worldToLocal(cameraPosition); // Match the ruin rope's camera-facing presentation in local coordinates.
+      normal.set(cameraPosition.x, 0, cameraPosition.z);
+      if (normal.lengthSq() < 1e-8) normal.set(0, 0, 1);
+      normal.normalize();
+      right.crossVectors(up, normal).normalize();
+      normal.crossVectors(right, up).normalize();
+      mesh.quaternion.setFromRotationMatrix(basis.makeBasis(right, up, normal));
+      mesh.updateMatrixWorld(); // Face the actual rendering camera, including Tool Hub/attack preview cameras.
+    };
+    return group; // The grapple head replaces the ruin rope's brush-shaped grip tip.
   }
 
   function relativePartScale(part) {
@@ -453,11 +489,15 @@
     const chainScaleX = connectorAxisScale(flail.chain, 'scaleX'); // Chain width or generated-rope radius relative to the final rendered handle.
     const chainScaleY = connectorAxisScale(flail.chain, 'scaleY'); // Connector length relative to the handle, independent of width.
     const headScale = relativePartScale(flail.head); // Head size is still independently handle-relative.
-    state.chain.scale.set(
-      localHandleScale * chainScaleX,
-      localHandleScale * chainScaleY,
-      localHandleScale * (state.chain.userData?.hobunjiGeneratedRope ? chainScaleX : 1),
-    ); // Rope-cylinder X and Z both control thickness; Y alone controls reach.
+    if (state.chain.userData?.hobunjiRuinRopeSprite) {
+      state.chain.scale.setScalar(localHandleScale * chainScaleY); // Child width already compensates for both authoring axes; keep the billboard uniformly scaled.
+    } else {
+      state.chain.scale.set(
+        localHandleScale * chainScaleX,
+        localHandleScale * chainScaleY,
+        localHandleScale * (state.chain.userData?.hobunjiGeneratedRope ? chainScaleX : 1),
+      ); // Raster chains keep their authored width/length transform.
+    }
     state.headRoot.scale.setScalar(localHandleScale * headScale);
     const topLocal = pixelPoint(state.chainImage, state.chainTop, unit, null, q.topLocal);
     const bottomLocal = pixelPoint(state.chainImage, state.chainBottom, unit, null, q.bottomLocal);
@@ -600,6 +640,7 @@
         head: relativePartScale(s.config.flail.head),
       } : null, // Mobile diagnostics expose both independent connector axes.
       connector: s.config.flail?.chain?.type === 'rope' ? 'rope' : s.config.flail ? 'chain' : null, // Mobile diagnostics expose both handle-relative multipliers.
+      ropeArt: s.chain?.userData?.hobunjiRuinRopeSprite ? 'assets/objectsprites/rope_long.png' : null, // Mobile confirmation of the rope source.
     }));
   }
 
@@ -633,7 +674,7 @@
 
   global.HobunjiWeaponSpriteAssemblies = {
     definitions: DEF, decorate, setAction, tick, drop, debugSnapshot, enchantmentTargets, dualWieldEnchantmentTargets,
-    opaqueAt, anchor, refreshWorldMatrix, definitionFor, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, // Pure phase helpers are covered by deterministic animation regression tests.
+    opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, // Pure sizing and phase helpers have regression tests.
   };
   global.HobunjiCacheAudit?.register('weapon assemblies (active or awaiting cleanup)', () => records.size);
   if (global.RuntimeFrameScheduler?.register) {
