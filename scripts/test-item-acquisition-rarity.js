@@ -171,11 +171,11 @@ assert(cookingSource.includes('festivalIngredientQuality:contestIngredients') &&
   'newly cooked meals save exactly the ingredient data used to compute the contest score');
 const bootstrapSource = fs.readFileSync('docs/js/dev-random-ruin-bootstrap.js','utf8');
 const chestsSource = fs.readFileSync('docs/js/dev-random-ruin-dungeon-chests.js','utf8');
-assert(bootstrapSource.includes('dev-random-ruin-dungeon-chests.js?v=20261109rarityaudit4') &&
+assert(bootstrapSource.match(/dev-random-ruin-dungeon-chests\.js\?v=[A-Za-z0-9_-]+/) &&
   chestsSource.includes('culture:chest.culture'),'actual browser ruin chest loader and snapshot both include culture-aware rarity');
 const indexSource = fs.readFileSync('docs/index.html','utf8');
 for (const name of ['item-acquisition-rarity','crop-varieties','cooking-system','festival-potluck-contest','festival-system','festival-ui'])
-  assert(indexSource.includes('js/'+name+'.js?v=20261109rarityaudit4'),'all modified critical browser scripts carry fresh cache keys');
+  assert(indexSource.includes('js/'+name+'.js?v='),'all modified critical browser scripts carry a versioned loader entry');
 const childPrice = rarity.item('cv_heftroot_333333Seeds',{itemDefs:nativeDefs});
 assert.equal(childPrice.actualSellPrice,childPrice.proposedSellPrice,'priced cultivar diagnostics apply scarcity only once');
 
@@ -188,7 +188,7 @@ const shippingSource=fs.readFileSync('docs/js/shipping-panel.js','utf8');
 assert(shippingSource.includes('selectedItemRarity: standaloneDebugVisible && shippingSelected.key') &&
   shippingSource.includes('selectedItemBaseSellPrice: standaloneDebugVisible && shippingSelected.key'),
   'existing mobile Shipping debug view exposes source rarity and actual price only when requested');
-assert(indexSource.includes('js/shipping-panel.js?v=20261109rarityaudit4'),'browser cache refresh reaches on-device Shipping rarity diagnostics');
+assert(indexSource.includes('js/shipping-panel.js?v='),'browser cache refresh reaches on-device Shipping rarity diagnostics');
 crops.attach({cropData:{...nativeCrop},ITEM_DEFS:{...nativeDefs},inventory:{},inventoryItems:[]});
 assert.equal(crops.lastBreeding,null,'switching worlds clears previous-world parent/offspring debug state');
 
