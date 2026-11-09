@@ -46,7 +46,7 @@
   function waitingOrUnavailable(area, reason) {
     const a = area ? deps.normalizeNpcArea(area) : null;
     if (a && deps.isBuildingArea(a) && !deps.buildingScenes.has(a)) {
-      deps.loadBuildingScene(a);
+      if (!window.NpcScheduling?.shouldDeferCavernLoad?.(a)) deps.loadBuildingScene(a); // Remote dens stay data-only until the player enters; ordinary interiors still warm for missing roles.
       return waitingForWorld(a, reason);
     }
     return unavailable(reason);

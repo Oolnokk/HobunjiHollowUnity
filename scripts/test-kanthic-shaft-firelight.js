@@ -40,9 +40,9 @@ const cleanup=style.apply({rec:{scene},ruin,hub,seed:7,THREE,getPlayerY:()=>play
 const lights=style.lightSources(),sconces=lights.filter(l=>l.anchor);
 const braziers=ruin.controls.filter(c=>c.kind==='kanthicShaftBrazier');
 assert(sconces.length>=12,'giant sconces should occupy shaft walls, wings and towers');
-assert.equal(braziers.length,3,'each shaft story has one optional brazier');
+assert.equal(braziers.length,2,'the floor-zero shaft now has the shared white brazier; only higher Kanthic stories have optional fires');
 assert.equal(ruin.shaftConnection.kanthicSconces,sconces.length,'diagnostics report real sconce count');
-assert.equal(ruin.shaftConnection.kanthicOptionalBraziers,3,'diagnostics report optional fires');
+assert.equal(ruin.shaftConnection.kanthicOptionalBraziers,2,'diagnostics report higher-story optional fires');
 assert.equal(ruin.shaftConnection.kanthicRequiredBrazierLights,2,'real required wing and native sources feed the same light list');
 assert(lights.includes(wingGoal)&&lights.includes(nativeGoal),'no completed-wing flame can be omitted from Kanthic projection');
 assert(!wingGoal.active&&!nativeGoal.active,'unlit goal braziers do not reveal their chamber');
@@ -59,8 +59,8 @@ const before=moving.x;tower.position.x+=2;cleanup.tick();
 assert.equal(moving.x-before,2,'light follows the raised or rotating tower owner');
 braziers.find(c=>c.floorY===16).onPress();
 assert(!lights.some(l=>!l.anchor&&l.floorY===16&&l.active),'cannot ignite upstairs from downstairs');
-braziers.find(c=>c.floorY===0).onPress();
-assert(lights.some(l=>!l.anchor&&l.floorY===0&&l.active),'igniting a brazier activates its light pool');
+playerY=16;braziers.find(c=>c.floorY===16).onPress();
+assert(lights.some(l=>!l.anchor&&l.floorY===16&&l.active),'igniting a higher-story Kanthic brazier activates its light pool');
 assert.equal(notices,1,'ignition provides mobile feedback');
 assert(style.lightDebug().litBraziers===1,'only the optional brazier currently contributes new visible light');
 wingGoal.active=true;nativeGoal.active=true; // Each owner's actual existing ignition routine activates its own source, tested below by source contract.

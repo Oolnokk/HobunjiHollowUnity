@@ -175,7 +175,7 @@
       }
       add(wingName+'-walls',Faces.buildEdgeWallQuads(pieces.filter(piece=>!featured.has(piece)),wallOptions));
     }
-    function setGate(record,blocked){
+    function setGate(record,blocked,silent=false){
       if(!record?.gate)return;
       for(const [x,z] of record.gate.tiles){
         const c=record.grid.xToCol(x+.5),r=record.grid.zToRow(z+.5);
@@ -186,9 +186,9 @@
         // height-specific voxel grid owns the door's collision.
       }
       const gateObject=record.gate.object,wasVisible=gateObject.visible;
-      if(wasVisible!==blocked)root.RuinInteractionAudio?.mechanism?.(gateObject,{size:4}); // The story-wing gate changes collision and sound exactly once, not every tick.
+      if(wasVisible!==blocked&&!silent)root.RuinInteractionAudio?.mechanism?.(gateObject,{size:4}); // The story-wing gate changes collision and sound exactly once, not every tick.
       if(blocked){root.GameFeel?.cancelSink?.(gateObject);gateObject.visible=true;}
-      else if(!wasVisible||!root.GameFeel?.sinkAway?.(gateObject))gateObject.visible=false; // Collision is already open; the stone visibly sinks into the floor instead of vanishing.
+      else if(silent||!wasVisible||!root.GameFeel?.sinkAway?.(gateObject))gateObject.visible=false; // Collision is already open; the stone visibly sinks into the floor instead of vanishing.
 
     }
     try{
@@ -281,6 +281,7 @@
             onSolved:()=>{
               if(owner.disposed||record.solved!==i)return;
               record.solved++;
+              options.onProgressChange?.(); // Persist this gate's completed stage before the reveal animation.
               roomLight.active=true;if(gateLight)gateLight.active=true; // The solved room AND the doorway about to open light up first...
               options.onStateChange?.();
               root.RuinInteractionAudio?.puzzleComplete?.(); // Chime + reveal window before the gate starts moving.
@@ -301,6 +302,7 @@
             }
           });
           challenge.x=cx;challenge.z=cz;challenge.floorY=floor.y;challenge.gate=null;
+          challenge.restoreSolved=()=>{roomLight.active=true;if(gateLight)gateLight.active=true;setGate(challenge,false,true);}; // A reload opens the same real voxel gate without repeating puzzle audio.
           const next=wing.corridors[i+1];
           if(next){
             const {dx,dz}=side,cx=next.end.x,cz=next.end.z;
@@ -344,15 +346,23 @@
           color:lichRgb.every(Number.isFinite)?lichRgb:[255,139,61],active:false}; // A solved Kanthic wing brightens its chamber in its lich's colour; other lich themes keep their original atmosphere.
         if(ruin.theme==='kanthic')brazierLights.push(brazierLight);
         const brazier={id:wing.goalBrazierId,wingId:wing.id,lit:false,flame,pedestal};
+        brazier.restoreLit=()=>{
+          if(brazier.lit)return false;
+          brazier.lit=true;flame.visible=true;brazierLight.active=true;lichBrazier?.ignite?.();
+          if(goalLight)goalLight.active=true;
+          owner.lit++;owner.updateCompletion();
+          return true;
+        }; // One ignition authority for manual lighting and world-save restoration.
         record.braziers.push(brazier);
         addControl({
           kind:'layerBrazier',object:pedestal,promptRoot:pedestal,floorY:floor.y,range:1.7,
-          priority:20,touchIcon:'🔥',label:()=>brazier.lit?'Brazier Burning':'Ignite Wing Brazier',
+          priority:20,touchIcon:'🔥',lit:()=>brazier.lit,available:()=>!brazier.lit,
+          label:()=>brazier.lit?'Brazier Burning':'Ignite Wing Brazier',
           onPress:()=>{
             if(brazier.lit||Math.abs(Number(getPlayerY?.())-floor.y)>.8)return; // A brazier on floor 4 cannot be lit through the deck from a lower floor.
             if(record.solved<record.challenges.length){options.showToast?.('Complete the wing challenges first.',false);return;}
-            brazier.lit=true;flame.visible=true;brazierLight.active=true;lichBrazier?.ignite?.();if(goalLight)goalLight.active=true;owner.lit++; // ignite() marks the fire lit: without it update() skipped the particle emitter, so the bowl glowed with no flame. // Illumination follows the existing completion interaction, never a parallel trigger.
-            owner.updateCompletion();
+            brazier.restoreLit(); // ignite() also wakes the existing particle emitter.
+            options.onProgressChange?.(); // Save the exact lit-wing count, not just its visual flame.
             if(ruin.theme==='kanthic')root.CloudForestFog?.refreshLightingOverlay?.(); // The lit wing becomes visible on the first rendered frame, including mobile.
             root.RuinInteractionAudio?.igniteTorch?.();
             if(owner.complete)root.RuinInteractionAudio?.puzzleComplete?.();else root.RuinInteractionAudio?.progress?.(owner.lit+owner.nativeLit,owner.total+owner.nativeTotal);
@@ -398,6 +408,23 @@
         for(let i=0;i<record.solved;i++)
           record.challenges[i]?.animate?.(dt); // Already-cleared ice may still shrink; no inactive puzzle logic runs.
       }
+    };
+    owner.serializeProgress=()=>Object.fromEntries(states.map(record=>[
+      record.wingId,{solved:record.solved,lit:record.braziers[0]?.lit===true}
+    ])); // Tiny, stable IDs for the shared world save; no scene/Three.js objects.
+    owner.restoreProgress=(saved={})=>{
+      if(owner.disposed||!saved||typeof saved!=='object')return false;
+      let restored=false;
+      for(const record of states){
+        const data=saved[record.wingId];
+        if(!data||!Number.isInteger(data.solved)||data.solved<0||data.solved>record.challenges.length)continue;
+        for(let i=0;i<data.solved;i++)record.challenges[i]?.restoreSolved?.();
+        record.solved=data.solved;
+        if(data.lit===true&&record.solved===record.challenges.length)record.braziers[0]?.restoreLit?.();
+        restored=true;
+      }
+      owner.updateCompletion();
+      return restored;
     };
     owner.getState=()=>({floors:plan.floorCount,wings:states.length+owner.nativeTotal,
       braziers:owner.total+owner.nativeTotal,lit:owner.lit+owner.nativeLit,

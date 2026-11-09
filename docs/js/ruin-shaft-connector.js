@@ -231,9 +231,17 @@
       topY:placed.grid.baseY,priority:1}));
     ruin.shaftConnection.supportRects=corridorSupportRects.length;
     const unmountVisual=visual(route.tiles.filter(([c,r])=>!oldFloor.has(key(c,r))),THREE,rec.scene,placed.grid.baseY,rec.floorSet);
-    let layerRuntime=null,nativeRuntime=null,obeliskRuntime=null,styleCleanup=null,skeeriRuntime=null; // Gameplay mechanisms and aerial enemies share the shaft session lifecycle.
-    ruin.shaftConnectorCleanup=()=>{skeeriRuntime?.dispose?.();styleCleanup?.();nativeRuntime?.dispose();layerRuntime?.dispose();obeliskRuntime?.dispose();ruin.shaftObeliskRuntime=null;unmountVisual();DS.clearScope(scope);};
+    let layerRuntime=null,nativeRuntime=null,obeliskRuntime=null,styleCleanup=null,skeeriRuntime=null,checkpointRuntime=null; // Gameplay mechanisms and aerial enemies share the shaft session lifecycle.
+    ruin.shaftConnectorCleanup=()=>{checkpointRuntime?.dispose?.();skeeriRuntime?.dispose?.();styleCleanup?.();nativeRuntime?.dispose();layerRuntime?.dispose();obeliskRuntime?.dispose();ruin.shaftObeliskRuntime=null;ruin.checkpointRuntime=null;unmountVisual();DS.clearScope(scope);};
     const registered=ShaftHub.mount(placed,{THREE,parent:rec.scene,ClimbSurfaces,DynamicSurfaces:DS,DevRandomRuin});
+    const saveProgress=()=>{
+      if(!layerRuntime||!checkpointRuntime||!ruin?.shaftHub)return false;
+      return root.RuinSites?.saveActiveRuinProgress?.({
+        version:1,seed:ruin.seed,layer:layerRuntime.serializeProgress?.()||{},
+        native:nativeRuntime?.serializeProgress?.()||{},
+        travel:checkpointRuntime.serializeProgress?.()||{},
+      })===true;
+    }; // All wing puzzles, permanent flames and the active checkpoint share one atomic world metadata update.
     const onMechanismStateChange=()=>{root.SkeeriRuins?.signalMechanism?.();onStateChange?.();}; // Existing puzzle/obelisk completions can open nearby hidden wall hatches.
     if(placed.obelisks){
       if(!RuinReachingObelisks?.mount)throw new Error('Selected Reaching Obelisks module is not loaded.');
@@ -250,21 +258,32 @@
     ruin.shaftObeliskRuntime=obeliskRuntime; // Height-aware fall, switch updates and mobile badge all reuse this one runtime.
     layerRuntime=RuinLayerPlayable.mount({
       rec,ruin,plan,hub:placed,makeTile,THREE,DynamicSurfaces:DS,CellGrid3D,
-      RuinShaftCorridor,RuinLayerChallenges,RuinLayerDefense,DevRandomRuin,getPlayerPosition,getPlayerY,showToast,onStateChange:onMechanismStateChange
+      RuinShaftCorridor,RuinLayerChallenges,RuinLayerDefense,DevRandomRuin,getPlayerPosition,getPlayerY,showToast,onStateChange:onMechanismStateChange,onProgressChange:saveProgress
     }); // Mounts 1–4 stone puzzle wings and one interactive brazier per story-side.
     ruin.shaftLayerRuntime=layerRuntime;
     nativeRuntime=plan.nativeFloorCount?RuinV50NativeFloors.mount({
       rec,ruin,plan,hub:placed,records:nativeFloors,makeTile,THREE,
       DynamicSurfaces:DS,CellGrid3D,RuinShaftCorridor,RuinLayerChallenges,
       RuinLayerPlayable,DevRandomRuin,getPlayerPosition,getPlayerY,showToast,onStateChange:onMechanismStateChange,
-      prepareMaterials,tileScale,
+      prepareMaterials,tileScale,onProgressChange:saveProgress,
     }):null; // Each real upper V50 graph gets its own collision, stage gates, brazier and render root.
     ruin.nativeV50Runtime=nativeRuntime;
     try { skeeriRuntime=root.SkeeriRuins?.mount?.({rec,plan,seed,getPlayerY,theme:ruin.theme,difficulty:ruin.difficulty??plan.floorCount})||null; }
     catch(error) {root.__farmLog?.('[skeeri] Ruin encounter initialization failed: '+error,'warn');} // A missing optional creature asset must never invalidate an otherwise playable ruin.
     if(plan.options.groundEntranceSide)
       styleCleanup=root.RuinMultifloorV50Style?.apply?.({rec,ruin,hub:placed,seed,THREE,getPlayerY,routeTiles:route.tiles,showToast,onStateChange:onMechanismStateChange})||null;
-    ruin.shaftStyleTick=styleCleanup?.tick||null; // The existing frame client keeps higher-story engravings hidden with the puzzle-wing visuals.
+    checkpointRuntime=root.RuinCheckpointTravel?.mount?.({
+      rec,ruin,plan,hub:placed,THREE,getPlayerPosition,getPlayerY,
+      showToast,onProgressChange:saveProgress,
+    })||null; // One shaft brazier plus small auto-igniting checkpoints; not a second puzzle network.
+    ruin.checkpointRuntime=checkpointRuntime;
+    const previous=root.RuinSites?.activeRuinProgress?.(); // Site identity + world and Tothal-cycle are validated before restoring puzzle state.
+    if(previous?.version===1&&Number(previous.seed)===Number(ruin.seed)){
+      layerRuntime.restoreProgress?.(previous.layer);
+      nativeRuntime?.restoreProgress?.(previous.native);
+      checkpointRuntime?.restore?.({...previous.travel,version:1,seed:ruin.seed});
+    }
+    ruin.shaftStyleTick=()=>{styleCleanup?.tick?.();checkpointRuntime?.tick?.();}; // Reuse the existing render-frame hook instead of adding a new loop.
     const active=layerRuntime.getState();
     ruin.shaftConnection.wingsPlayable=active.wings;
     ruin.shaftConnection.braziersPlayable=active.braziers;
