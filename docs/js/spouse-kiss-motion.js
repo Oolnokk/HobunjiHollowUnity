@@ -711,6 +711,11 @@
     const npcLocalKnee = playerIsTaller ? 0 : kneeWorld / session.npcAnatomy.worldScale;
     const npcPct = npcLocalKnee / Math.max(.001, Number(session.npcLegs.modelHeight) || 0) * 100;
 
+    // The ordinary player loop may mark leg gait "suppressed" under our pose lock,
+    // which disallows setStanceDrop even with immediate=true. Festival dance
+    // solves its own real leg handles after taking pose ownership. Refresh this
+    // same live player leg handle in paired mode before applying our knee bend.
+    session.playerLegs.update?.(0, 0, false, null);
     session.playerLegs.setStanceDrop(playerLocalKnee, true);
     const playerDrop = session.playerLegs.getStanceDrop?.() || 0;
     const playerBow = playerIsTaller ? session.height.tallerBowDeg * Math.PI / 180 * kneeBlend : .025 * pose.blend;
