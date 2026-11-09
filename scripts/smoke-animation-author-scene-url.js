@@ -51,8 +51,18 @@ async function main() {
         JSON.stringify({ schema: 'hobunji.multi-avatar-animation.v8', actors: [{ id: 'stale-autosave' }] }));
     });
     await page.goto(PAGE, { waitUntil: 'domcontentloaded', timeout: 35000 });
-    await page.waitForFunction(() => window.MultiAvatarAnimationAuthor?.getActors?.().length === 2 &&
-      document.getElementById('maaPresetSelect')?.value === 'kiss', null, { timeout: 120000 });
+    await page.waitForFunction(() => {
+      const api = window.MultiAvatarAnimationAuthor;
+      if (api?.getActors?.().length !== 2 ||
+          document.getElementById('maaPresetSelect')?.value !== 'kiss') return false;
+      const mouths = api.kissMouthDiagnostics?.().actors; // A populated scene is not necessarily a finished skinned rig.
+      const saved = api.exportProject?.().project?.kiss?.mouthHeightsWorld;
+      if (!saved || mouths?.length !== 2) return false;
+      return Number.isFinite(mouths[0].neutralHeightWorld) &&
+        Number.isFinite(mouths[1].neutralHeightWorld) &&
+        Math.abs(mouths[0].neutralHeightWorld - saved.initiator) < .01 &&
+        Math.abs(mouths[1].neutralHeightWorld - saved.recipient) < .01;
+    }, null, { timeout: 120000 }); // Wait for rig settlement and calibration, not just NPC card creation.
     const result = await page.evaluate(() => {
       const api = window.MultiAvatarAnimationAuthor;
       const actors = api.getActors();
