@@ -291,7 +291,7 @@
       const rope = mounts.filter(mount => mount.type === 'rope');
       if (rope.length) return rope; // Explicit rope mount wins; its span controls connector length, not head shape.
     }
-    const kind = head?.mount?.type === 'blade' ? 'tang' : head?.mount?.type === 'weight' ? 'eye' : '';
+    const kind = head?.mount?.type === 'blade' ? 'tang' : ['weight', 'flail'].includes(head?.mount?.type) ? 'eye' : ''; // Unmodified legacy flails can attach to an eye until a dedicated rope mount is authored.
     return mounts.filter(mount => mount.type === kind); // Older saved flails without rope lines retain a legacy eye/tang anchor.
   }
   function renderingMounts(shaft, head) {
