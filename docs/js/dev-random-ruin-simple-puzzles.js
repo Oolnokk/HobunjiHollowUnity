@@ -753,6 +753,7 @@
   }
 
   function updateRopeChainCheckpoints() {
+    if(globalThis.RuinCheckpointTravel?.isActive?.())return; // White fire takes precedence; rope banks no longer silently overwrite a discovered checkpoint.
     if(!state?.ropeChains?.length||state.activeRope||state.flight)return;
     const player=playerWorld();
     if(!player)return;
@@ -1817,6 +1818,7 @@
   }
 
   function updateDoorwayCheckpoints() {
+    if(globalThis.RuinCheckpointTravel?.isActive?.()){state.lastPlayerWorld=playerWorld();return;} // Legacy doorway saves cannot beat a white brazier.
     const nowPoint=playerWorld();
     if(!nowPoint||state.activeRope||state.flight){state.lastPlayerWorld=nowPoint;return;}
     const previous=state.lastPlayerWorld;
@@ -1865,7 +1867,8 @@
 
   function respawnAtCheckpoint(reason='death') {
     if(!inRuin()||!state?.checkpoints?.active||!deps?.player)return false; // Canonical game respawn calls this for every death source; never hijack deaths after leaving the test ruin.
-    const checkpoint=state.checkpoints.active;
+    const whitePoint=globalThis.RuinCheckpointTravel?.activeRespawnPoint?.();
+    const checkpoint=whitePoint?{id:'white-fire',point:whitePoint}:state.checkpoints.active; // Death, rope falls and other resets use the same saved white flame.
     const context=state.context;
     for(const composer of composers){
       try{composer.onPlayerDeath?.(state.kit,reason);}catch(error){console.warn('[Random Test Ruin] composer death reset failed',error);}
@@ -2474,7 +2477,7 @@
     const f=state.flight;
     if(!f)return;
     const previous={x:f.x,y:f.y,z:f.z}; // Start of the swept rope-to-rope catch path.
-    f.vy-=ROPE_GRAVITY*dt;
+    f.vy-=ROPE_GRAVITY*(window.PlayerAirMotionConfig?.gravityMultiplier?.()??1)*dt; // Only live flight may use future slow-fall buffs; baseline generation retains RopeCore gravity.
     const control=window.PlayerJump?.airControl?.(0.6)||{x:0,z:0}; // Steering while falling never discards the original rope release momentum.
     const next={x:f.x+(f.vx+control.x)*dt,z:f.z+(f.vz+control.z)*dt,y:f.y+f.vy*dt};
     const sweep=sweptRopePoint(f,next);
@@ -2693,8 +2696,9 @@
       spawnedMinions:state.spawnedMinions.size,
       liveProjectiles:state.projectiles.length,
       checkpoints:{
-        activeId:state.checkpoints.active?.id||null,
-        activePoint:clonePoint(state.checkpoints.active?.point),
+        activeId:globalThis.RuinCheckpointTravel?.isActive?.()?globalThis.RuinCheckpointTravel?.activeRespawnPoint?.()?'white-fire':'ruin-entry':state.checkpoints.active?.id||null,
+        activePoint:globalThis.RuinCheckpointTravel?.activeRespawnPoint?.()||clonePoint(state.checkpoints.active?.point),
+        whiteFireAuthority:globalThis.RuinCheckpointTravel?.isActive?.()===true, // Mobile snapshot distinguishes the saved brazier from legacy doorway/rope triggers.
         triggered:[...state.checkpoints.triggered],
         doorwayCount:state.checkpoints.doorwayCount,
         doorways:state.checkpoints.doorways.map(door=>({id:door.id,axis:door.axis,x:+door.x.toFixed(3),z:+door.z.toFixed(3),width:+door.width.toFixed(3)})),
@@ -2832,6 +2836,7 @@
     releaseActiveRope:()=>state?.activeRope?releaseRope(state.activeRope):window.HangingRopes?.releaseActiveRope?.()===true, // The native Dodge action also dismounts outdoor ropes.
     catchAirborneRope, // Called by PlayerJump after a physical airborne approach, including jumps into generated ruin ropes.
     respawnAtCheckpoint,
+    getIlluminableRopes:()=>state&&inRuin()?state.ropes:[], // Kanthic lantern lighting can project onto the actual hanging rope endpoints without creating a light per mesh.
     isInstantDeathPit:(x,z)=>!!ropeChainPitAt(Number(x),Number(z),playerWorld()?.y), // Consumed by the canonical ruin floor reconciliation before its ordinary footing-fall path.
     instantRopeChainDeath,
     // Every unsolved projectile target this runtime owns (ceiling glyphs and
