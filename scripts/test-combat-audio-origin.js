@@ -23,7 +23,8 @@ const combatSfx = {
   rangedImpact: { url: 'impact.mp3', volume: 1, preload: true },
   creatureClawHit: { url: 'claw.mp3', volume: 1, preload: true },
 };
-const window = { SCRATCHBONES_CONFIG: { game: { audio: { enabled: true, sfxVolume: 1, combatSfx } } } }; // Native audio settings match normal gameplay defaults.
+const objectSfx = { enabled: true, chop: { url: 'chop.mp3', volume: 0.8, preload: true } }; // Reuses the real tool chop cue for spatialized cover impacts.
+const window = { SCRATCHBONES_CONFIG: { game: { audio: { enabled: true, sfxVolume: 1, combatSfx, objectSfx } } } }; // Native audio settings match normal gameplay defaults.
 const context = { window, Audio: FakeAudio, performance: { now: () => 10 }, setTimeout: () => 0, Math };
 vm.runInNewContext(fs.readFileSync('docs/js/audio-system.js', 'utf8'), context, { filename: 'audio-system.js' });
 window.AudioSystem.init({
@@ -66,6 +67,15 @@ assert.equal(played.at(-1).url, 'hit.mp3', 'out-of-earshot shield block is suppr
 audio.playRangedImpactSfx(TILE * 3, 0, area);
 assert.equal(played.at(-1).url, 'impact.mp3', 'nearby projectile impact is still audible');
 assert(played.at(-1).volume < 1, 'projectile impact has 3D distance reduction');
+audio.playThrownCoverChopSfx(0, 0, area);
+assert.equal(played.at(-1).url, 'chop.mp3', 'sharp thrown cover uses the configured wood-chop recording');
+assert.equal(played.at(-1).volume, 0.8, 'nearby thrown cover preserves the authored chop gain');
+audio.playThrownCoverChopSfx(TILE * 3, 0, area);
+assert(played.at(-1).volume < 0.8, 'distant thrown cover attenuates rather than playing globally');
+const beforeDistantChop = played.length; // Ensures the distant enemy cannot trigger an out-of-earshot chop.
+audio.playThrownCoverChopSfx(opposite.x, opposite.y, area);
+audio.playThrownCoverChopSfx(0, 0, elsewhere.areaId);
+assert.equal(played.length, beforeDistantChop, 'out-of-earshot and other-area cover impacts are silent');
 audio.playCreatureSfxAt(bottom, combatSfx.creatureClawHit, 1);
 assert(played.at(-1).volume < 0.1, 'animal attacks from the ravine bottom are reduced too');
 const snapshot = audio.combatSfxDebugSnapshot();
