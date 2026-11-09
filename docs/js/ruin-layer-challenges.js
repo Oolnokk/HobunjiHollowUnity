@@ -195,6 +195,7 @@
               Math.min(song.notes.length-1,rec.melodyState?.progress||0);
           }
           rec.melodyState=snapshot;
+          rec.heardNotes=rec.notes.slice(0,snapshot.progress); // The debug view shows only notes accepted this beat cycle.
           if(rec.flashRemaining>0)for(let i=0;i<(rec.glyphs||[]).length;i++)
             if(i===rec.flashGlyphIndex)composer.advanceGlyphGlow?.(rec.glyphs[i],{rejected:true,dt:0});
         }
@@ -455,12 +456,12 @@
       rec.notes=song.notes.map(note=>note.index);
       rec.melodyPlate={x:cx,z:cz,radius:.72}; // Preserve the native square trigger's original footprint.
       rec.lastDown=false;rec.attempts=0;
-      rec.heardNotes=[];rec.glyphs=[]; // Rolling player-note history and owned fallback art for native challenge diagnostics.
+      rec.heardNotes=[];rec.glyphs=[]; // Accepted notes and owned glyphs remain available in the mobile ruin diagnostics.
       rec.inscription=root.RuinMelodyGlyphDecal?.create?.({
         root:group,plate:{x:cx,y,z:cz},notes:rec.notes,
         bounds:{minX:room.x,maxX:room.x+room.w,minZ:room.z,maxZ:room.z+room.d},
         sampleSupport:()=>({y}),surfaces:options.melodySurfaces||[],surfaceRoot:options.surfaceRoot,
-        seed:melodyFor(id).reduce((sum,n)=>sum*8+n,0),
+        seed:rec.notes.reduce((sum,n)=>sum*8+n,0),
       });
       if(!rec.inscription&&THREE.TextureLoader&&THREE.PlaneGeometry){
         // Standalone layered rooms may load without the random-ruin decal module.
