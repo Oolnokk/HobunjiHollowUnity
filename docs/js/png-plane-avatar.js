@@ -1125,7 +1125,10 @@
       modelHeight * .012,
       Number(skinnedPlane.geometry?.userData?.blendHeight) || modelHeight * .30,
     );
-    const neckY = Number(rig.neckLocal?.y) || 0;
+    const authoredNeckY = Number(rig.neckLocal?.y); // The skinned geometry stores the authoritative pivot even when an editor shim only exposes the bones.
+    const geometryNeckY = Number(skinnedPlane.geometry?.userData?.neckLocal?.y); // Same Y passed to buildSkinnedPlaneGeometry when the mesh was constructed.
+    const neckY = Number.isFinite(authoredNeckY) ? authoredNeckY
+      : Number.isFinite(geometryNeckY) ? geometryNeckY : 0; // Never silently recenter a real neck at zero because a wrapper omitted neckLocal.
     const t = Math.max(0, Math.min(1, (localPoint.y - (neckY - blendHeight * .55)) / blendHeight));
     let headWeight = t * t * (3 - 2 * t); // Same smoothstep as buildSkinnedPlaneGeometry.
 
