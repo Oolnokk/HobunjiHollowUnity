@@ -52,6 +52,7 @@ for(const file of ['ruin-layer-plan.js','ruin-shaft-corridor.js','ruin-shaft-con
 function playTimedScore(challenge,sendNote=index=>challenge.session.note(index)){
   const song=challenge.song; // Advance the real beat clock to each authored note, never bypass completion with a synthetic result.
   let elapsed=0;
+  challenge.session.step(0,false); // A previous partial attempt must not skew the test's first downbeat.
   challenge.session.step(0,true);
   for(let i=0;i<song.notes.length;i++){
     const event=song.notes[i],at=(event.startTick+.1)*song.secondsPerTick;
