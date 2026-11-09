@@ -13914,8 +13914,10 @@ function kissPairHeightV1546() {
   if (!pair.leader || !pair.partner) return { ...pair, solution: null };
   const firstHeight = kissActorHeightV1546(pair.leader);
   const secondHeight = kissActorHeightV1546(pair.partner);
-  const firstMouthHeightWorld = kissActorMouthHeightV1552(pair.leader); // Pahu/initiator's real B'shuakauitl mouth point above his own floor.
-  const secondMouthHeightWorld = kissActorMouthHeightV1552(pair.partner); // Spouse/recipient's real, independently authored mouth position.
+  const override = animationAuthor.kissNeutralMouthHeightsV1552; // Used only while rebuilding a new preset from the already-rendered neutral frame.
+  const useOverride = override?.leaderId === pair.leader.id && override?.partnerId === pair.partner.id;
+  const firstMouthHeightWorld = useOverride ? override.first : kissActorMouthHeightV1552(pair.leader); // Authoritative B'shuakauitl mouth above the first floor.
+  const secondMouthHeightWorld = useOverride ? override.second : kissActorMouthHeightV1552(pair.partner); // Same skinned resolver for the other participant.
   if (firstMouthHeightWorld === null || secondMouthHeightWorld === null)
     return { ...pair, solution: null, mouthError: 'Canonical skinned mouth points are not ready; load the portrait neck rigs first.' };
   const tallerActor = firstHeight >= secondHeight ? pair.leader : pair.partner; // Both participants' real leg measurements determine whether a supported hop is possible.
@@ -14638,16 +14640,23 @@ applyKissPresetV1546 = function() {
     // preview and the skinned head changes orientation with that new pose.
     // Resolve the mouth after both roots are actually facing each other, then
     // re-solve the knees once if the initial single-avatar mouths differ.
-    const before = animationAuthor.kissHeightSolutionV1546; // Initial one-pass body and mouth measurements.
-    const facing = kissPairHeightV1546().solution; // Standing skinned mouth coordinates in the real paired pose.
-    const drift = facing && before
-      ? Math.max(Math.abs(facing.firstMouthHeightWorld - before.firstMouthHeightWorld),
-          Math.abs(facing.secondMouthHeightWorld - before.secondMouthHeightWorld))
-      : 0; // Only a material change from source portrait to contact-facing avatar triggers a rebuild.
-    if (drift > .005 && facing?.contactPossible) {
-      log('Kiss mouth calibration: partner facing changed the true skinned lip height by ' +
-        drift.toFixed(3) + ' units; rebuilding knees and bow from the facing mouth frames.');
-      result = beforeMultiKissApplyV1548();
+    const before = animationAuthor.kissHeightSolutionV1546; // Original pose may contain pre-load, rotated, or previously bowed lip heights.
+    const { leader, partner } = configuredKissPairV1550(); // Stable role order even if inspector selection has changed.
+    const THREE = state.three.THREE; // Same skinned head-frame implementation used by the blowgun.
+    const mouth = window.SpouseKissMotion;
+    const liveFirst = leader && mouth?.mouthHeightWorld?.(leader.model, leader.root, { THREE });
+    const liveSecond = partner && mouth?.mouthHeightWorld?.(partner.model, partner.root, { THREE });
+    const drift = before && liveFirst !== null && liveSecond !== null
+      ? Math.max(Math.abs(liveFirst - before.firstMouthHeightWorld),
+          Math.abs(liveSecond - before.secondMouthHeightWorld)) : 0; // Measured directly at the real standing frame, never by temporarily changing a bowed rig.
+    if (drift > .005 && Number.isFinite(liveFirst) && Number.isFinite(liveSecond)) {
+      log('Kiss mouth calibration: actual frame-zero lips differ by ' + drift.toFixed(3) +
+        ' units; re-solving the kneel from the rendered B\'shuakauitl mouth anchors.');
+      animationAuthor.kissNeutralMouthHeightsV1552 = {
+        leaderId: leader.id, partnerId: partner.id, first: liveFirst, second: liveSecond,
+      }; // Override only during this rebuild, then immediately release it for future edits.
+      try { result = beforeMultiKissApplyV1548(); }
+      finally { animationAuthor.kissNeutralMouthHeightsV1552 = null; }
       if (result) syncMultiAvatarFullBodiesV1548(0);
     }
     if (result && !calibrateKissMouthXZV1552()) {
