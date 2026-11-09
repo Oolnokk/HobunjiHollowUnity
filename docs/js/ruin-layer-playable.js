@@ -114,12 +114,6 @@
     owner.dispose=()=>{
       if(liveOwner===owner)liveOwner=null;
       if(owner.disposed)return;owner.disposed=true;
-      // The V50 music composer only closes *its own* echo sessions. A shaft
-      // melody can outlive scene removal unless this module releases it too.
-      const music=options.MusicMinigame||root.MusicMinigame;
-      const activeId=music?.state?.echoChallenge?.id;
-      if(activeId&&states.some(state=>state.challenges.some(challenge=>challenge.kind==='melodyEcho'&&challenge.id===activeId)))
-        music.close?.();
       for(const state of states)for(const challenge of state.challenges)challenge.dispose?.();
       for(const flame of wingFlameVisuals)flame.dispose?.(); // No stale authored GPU particles after a dungeon reroll.
       for(const control of [...ownedControls])removeControl(control);
@@ -294,7 +288,7 @@
                 if(owner.disposed)return;
                 setGate(challenge,false);
                 options.showToast?.(challenge.kind==='pressurePlate'?'A stone gate opens.'
-                  :challenge.kind==='melodyEcho'?'The stone answers your melody — a gate opens.'
+                  :challenge.kind==='timedMelody'?'The stone answers your melody — a gate opens.'
                   :challenge.kind==='dungeonFire'?'The ice recedes — a stone gate opens.'
                   :challenge.kind==='statueDefense'?'The defended statue sinks into the plinth — a stone gate opens.'
                   :challenge.kind==='ropeChain'?'The far bank releases the stone gate.'
