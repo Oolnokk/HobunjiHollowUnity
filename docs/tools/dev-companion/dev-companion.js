@@ -618,7 +618,13 @@
         panel.rows?.length ? el('dl', { class: 'kv small-text' }, ...panel.rows.flatMap(([label, value]) => [el('dt', { text: label }), el('dd', { text: value })])) : null,
         ...[...groups.entries()].map(([group, actions]) => el('div', { class: 'group' },
           group ? el('span', { class: 'group-label', text: group }) : null,
-          ...actions.map(action => action.input ? el('label', { class: 'group' }, action.label,
+          ...actions.map(action => action.checkbox ? el('label', { class: 'mini-check' },
+            el('input', { type: 'checkbox', checked: !!action.checked, disabled: !state.connected,
+              onchange: async event => {
+                const input = event.target; // Festival reward opt-in updates immediately, without treating a checkbox as a number field.
+                const ok = await run('panel-action', { panel: panel.id, action: action.id, args: { ...action.args, checked: input.checked } });
+                if (!ok) input.checked = !!action.checked;
+              } }), action.label) : action.input ? el('label', { class: 'group' }, action.label,
             el('input', { type: action.input.type === 'color' ? 'color' : 'number', value: action.value, min: action.input.min, max: action.input.max, step: action.input.step,
               'aria-label': action.label, disabled: !state.connected, style: action.input.type === 'color' ? 'width:64px;height:32px;cursor:pointer' : 'width:90px',
               onchange: async event => {

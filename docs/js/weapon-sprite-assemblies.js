@@ -11,6 +11,9 @@
   const records = new Set(); // Active or recently detached assemblies, updated at the pre-render checkpoint.
   const states = new WeakMap(); // One attachment state per held visual; no global weapon pose is shared between actors.
   const alphaBounds = new WeakMap(); // Transparent-pixel anchor scans are cached by the loaded image.
+  const ropeSpriteBounds = new WeakMap(); // Original ruin rope alpha extents are scanned once per decoded image; every flail shares the result.
+  const tintedRopeTextures = new WeakMap(); // Retains reusable recolored templates for each source PNG; live weapons own independent texture clones.
+  const ROPE_TINT_CACHE_LIMIT = 12; // Limits the full-resolution canvas footprint when mobile authors try many rope colors.
   const PIXEL_ALPHA = 128; // Treat only the solid half of an antialiased edge as the opaque connection tip.
   const MAX_DT = 0.08; // Prevent tab-resume and loading stalls from launching the head sideways.
   const MOTION_LAG = 0.065; // Converts haft travel velocity to idle trailing angle.
@@ -250,7 +253,7 @@
       const f = config.flail;
       const isRope = f.chain.type === 'rope'; // Generated suspension shares the same attachment animation as a raster chain.
       const chainTex = isRope ? null : await textureFor(THREE, f.chain.sprite);
-      const ropeTexture = isRope ? await textureFor(THREE, f.chain.texture || 'assets/textures/wavy_surface.png') : null; // Same texture resource as suspended root-totem bottles.
+      const ropeTexture = isRope ? await textureFor(THREE, f.chain.sprite || 'assets/objectsprites/rope_long.png') : null; // Original PNG shared with traversable ruin ropes.
       if (state.dead) return;
       const headTextures = await Promise.all(f.head.layers.map(layer => textureFor(THREE, layer.sprite)));
       if (state.dead) return;
@@ -321,28 +324,148 @@
     state.movementPosition = options.movementPosition || null; // Player/NPC world position excludes hand-motion offsets from neutral-to-windup lag.
   }
 
-  function makeRope(THREE, spec, unit, renderOrder, sourceTexture) {
-    const length = Math.max(2, Math.min(2048, Number(spec.lengthPx) || 160)) * unit; // The rope length is expressed in the handle's original pixels, then inherits all handle size modifiers.
-    const radius = Math.max(0.25, Math.min(30, Number(spec.radiusPx) || 2.5)) * unit; // Root-totem style generated rope cylinder, never a flat PNG chain.
-    const geometry = new THREE.CylinderGeometry(radius, radius * 0.75, length, 6, 1, true);
-    const ropeTexture = sourceTexture?.clone?.() || null; // Reuses the root totem's authored wavy_surface texture without sharing mutable UV repeat state.
-    if (ropeTexture) {
-      ropeTexture.wrapS = ropeTexture.wrapT = THREE.RepeatWrapping;
-      ropeTexture.repeat.set(1, Math.max(1, length / 0.22));
-      ropeTexture.needsUpdate = true;
+  function ropeSpriteSizing(spec, unit, aspect) {
+    const lengthPx = Math.max(2, Math.min(2048, Number(spec.lengthPx) || 160)); // The existing virtual endpoints use handle-image pixels.
+    const radiusPx = Math.max(0.25, Math.min(30, Number(spec.radiusPx) || 2.5)); // Preserves the former rope cylinder's radius.
+    const scaleX = connectorAxisScale(spec, 'scaleX'); // Width adjustment stays independent of reach.
+    const scaleY = connectorAxisScale(spec, 'scaleY'); // Reach adjustment stays independent of width.
+    return {
+      length: lengthPx * unit, // Local sprite height before the uniform carrier scale.
+      widthScale: 2 * radiusPx * unit / aspect * (scaleX / scaleY), // Normalize the PNG's native aspect and compensate for the carrier's Y scale.
+      lengthPx: lengthPx * scaleY, // Final grip-to-head span in original handle pixels, before tool-size scaling.
+      diameterPx: 2 * radiusPx * scaleX, // Final apparent thickness in original handle pixels.
+    };
+  }
+
+  function ropeOpaqueBounds(image) {
+    if (ropeSpriteBounds.has(image)) return ropeSpriteBounds.get(image);
+    const width = image?.naturalWidth || image?.width, height = image?.naturalHeight || image?.height;
+    let bounds = { minX: 0, minY: 0, maxX: width - 1, maxY: height - 1 }; // Full-image fallback if the browser refuses pixel reads.
+    try {
+      const canvas = document.createElement('canvas'); // Reads only the shared rope PNG once, not every frame.
+      canvas.width = width; canvas.height = height;
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      if (context) {
+        context.drawImage(image, 0, 0);
+        const rgba = context.getImageData(0, 0, width, height).data;
+        let minX = width, minY = height, maxX = -1, maxY = -1; // Opaque silhouette used to align the visible rope with its physical tips.
+        for (let y = 0; y < height; y++) {
+          for (let x = 0; x < width; x++) {
+            if (rgba[(y * width + x) * 4 + 3] < 9) continue; // Matches the ruin renderer's alphaTest of 0.035.
+            minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+            minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+          }
+        }
+        if (maxX >= minX && maxY >= minY) bounds = { minX, minY, maxX, maxY };
+      }
+    } catch (error) { report('Ruin rope alpha scan unavailable: ' + (error?.message || error)); }
+    ropeSpriteBounds.set(image, bounds); // Subsequent actors reuse the exact bounds without another canvas read.
+    return bounds;
+  }
+
+  function tintRopePixels(rgba, hex) {
+    const color = String(hex || '').toUpperCase(); // Validated authored target for the same ColorFill shade-fill used by Gar-wolf coats.
+    if (!/^#[0-9A-F]{6}$/.test(color) || color === '#FFFFFF') return rgba;
+    const fill = global.ColorFill?.shadeFillPixels; // Canonical animal/NPC shade-fill, not a second flail-only recolor algorithm.
+    if (typeof fill !== 'function') throw new Error('ColorFill.shadeFillPixels unavailable for flail rope');
+    const rgb = [1, 3, 5].map(index => parseInt(color.slice(index, index + 2), 16)); // Original warm-brown target channels for the shared fill.
+    fill(rgba, rgb, { debugLabel: 'weapon-rope:' + color }); // Auto-reference uses original PNG's brightest eligible region, as with unmasked animal patterns.
+    return rgba; // ColorFill preserves alpha, near-white details and the native dark windings.
+  }
+
+  function tintedRopeTexture(THREE, sourceTexture, hex) {
+    const image = sourceTexture?.image; // Original, still-white-material ruin PNG; never recolor the shared texture in place.
+    const color = /^#[0-9a-f]{6}$/i.test(String(hex)) ? hex.toUpperCase() : '#FFFFFF';
+    if (!image || color === '#FFFFFF') return sourceTexture;
+    let variants = tintedRopeTextures.get(image);
+    if (!variants) { variants = new Map(); tintedRopeTextures.set(image, variants); }
+    if (variants.has(color)) {
+      const cached = variants.get(color); // Recent artist colors stay resident; old swatches are recycled first.
+      variants.delete(color); variants.set(color, cached);
+      return cached;
     }
-    const material = new THREE.MeshLambertMaterial({
-      map: ropeTexture, color: spec.color || '#6B4728', side: THREE.FrontSide,
-      transparent: false,
-    }); // Matches the root totem's tapered, textured volumetric rope, rather than substituting a flat chain sprite.
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.name = 'flail_generated_rope';
+    try {
+      const canvas = document.createElement('canvas'); // Paint once per image/tint; weapon instances only clone the result.
+      canvas.width = image.naturalWidth || image.width;
+      canvas.height = image.naturalHeight || image.height;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) throw new Error('Canvas 2D context unavailable');
+      ctx.drawImage(image, 0, 0);
+      const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      tintRopePixels(pixels.data, color);
+      ctx.putImageData(pixels, 0, 0);
+      const recolored = new THREE.CanvasTexture(canvas); // Preserves the full PNG and its alpha; makeRope applies the same visible-alpha crop.
+      recolored.encoding = THREE.sRGBEncoding;
+      recolored.generateMipmaps = false;
+      recolored.minFilter = recolored.magFilter = THREE.LinearFilter;
+      recolored.needsUpdate = true;
+      variants.set(color, recolored);
+      while (variants.size > ROPE_TINT_CACHE_LIMIT) {
+        const oldest = variants.keys().next().value; // LRU eviction affects only cached templates, never currently rendered flail clones.
+        const stale = variants.get(oldest);
+        variants.delete(oldest);
+        stale?.dispose?.();
+      }
+      return recolored;
+    } catch (error) {
+      report('Ruin rope recolor unavailable: ' + (error?.message || error)); // Existing mobile log explains missing color without blocking the weapon.
+      return sourceTexture;
+    }
+  }
+
+  function makeRope(THREE, spec, unit, renderOrder, sourceTexture) {
+    const image = sourceTexture?.image; // The full ruin sprite supplies the physical camera-facing strip.
+    const width = image?.naturalWidth || image?.width, height = image?.naturalHeight || image?.height;
+    if (!(width > 0 && height > 0)) throw new Error('Ruin rope PNG has no dimensions');
+    const opaque = ropeOpaqueBounds(image); // Crop the sprite's transparent margins, so both visible tips land exactly on the existing rope endpoints.
+    const visibleWidth = opaque.maxX - opaque.minX + 1, visibleHeight = opaque.maxY - opaque.minY + 1;
+    const aspect = visibleWidth / visibleHeight; // Keep the opaque silhouette rather than the 152 × 2164 canvas dimensions.
+    const sizing = ropeSpriteSizing(spec, unit, aspect); // Same final visible reach and diameter as the former generated cylinder.
+    const tintedSource = tintedRopeTexture(THREE, sourceTexture, spec.color); // Reuses the exact Gar-wolf color fill, rather than a private luminance formula.
+    const map = tintedSource.clone(); // Each flail owns only its clone, preserving the cached tinted source across actors.
+    map.offset.set(opaque.minX / width, 1 - (opaque.maxY + 1) / height); // Plane UVs have bottom-left origin, whereas ImageData rows begin at the top.
+    map.repeat.set(visibleWidth / width, visibleHeight / height); // No tiling: one full opaque rope from grip to head.
+    map.wrapS = map.wrapT = THREE.ClampToEdgeWrapping;
+    map.encoding = THREE.sRGBEncoding;
+    map.minFilter = map.magFilter = THREE.LinearFilter; // Match the ruin rope's original full-resolution TextureLoader filtering.
+    map.needsUpdate = true;
+    const material = new THREE.MeshBasicMaterial({
+      map, color: '#FFFFFF', side: THREE.DoubleSide, // Pixel colors are already adjusted; do not multiply the whole shaded PNG again.
+      transparent: true, alphaTest: 0.035, depthWrite: false, toneMapped: false,
+    }); // Same unlit, transparent, double-sided rendering as DungeonRopeArt.
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(aspect, 1), material);
+    mesh.name = 'flail_ruin_rope_sprite';
+    mesh.scale.set(sizing.widthScale, sizing.length, 1);
     mesh.renderOrder = renderOrder;
     mesh.userData.hobunjiWeaponAssemblyPart = true;
-    mesh.userData.hobunjiHeldObjectPlane = true; // Held objects obey the usual weapon occlusion handling.
-    mesh.userData.hobunjiGeneratedRope = true; // Allows diagnostics and selective texture upgrades.
+    mesh.userData.hobunjiHeldObjectPlane = true; // Keep existing held-weapon draw ordering.
+    mesh.userData.hobunjiGeneratedRope = true; // Tool Hub frames the actual plane bounds, not a PNG's blank margins.
+    mesh.userData.dungeonRopeSprite = spec.sprite || 'assets/objectsprites/rope_long.png'; // Mobile diagnostics identify the art source.
+    mesh.userData.ropeTintMethod = tintedSource === sourceTexture ? 'source-fallback' : 'ColorFill.shadeFillPixels'; // Distinguishes a successful animal shade-fill from a silently uncolored source on mobile.
     mesh.userData.noOutline = false;
-    return mesh;
+    const group = new THREE.Group(); // Reuses the current pendulum carrier and grip/head positioning.
+    group.name = 'flail_ruin_rope';
+    group.userData.hobunjiRuinRopeSprite = true; // Uniform world scale avoids skewing the camera-facing ribbon.
+    group.add(mesh);
+    const cameraPosition = new THREE.Vector3(); // Render-time camera position relative to this rope carrier.
+    const normal = new THREE.Vector3(); // Direction to camera, projected perpendicular to the rope axis.
+    const right = new THREE.Vector3(); // Horizontal basis for the camera-facing rope PNG.
+    const up = new THREE.Vector3(0, 1, 0); // The carrier's local Y remains the taut suspension axis.
+    const basis = new THREE.Matrix4(); // Reused to orient the plane without allocations per frame.
+    const inverseWorld = new THREE.Matrix4(); // Uses the rendered carrier matrix directly, avoiding a holder-pose recomputation during onBeforeRender.
+    mesh.onBeforeRender = (_renderer, _scene, camera) => {
+      if (!camera?.getWorldPosition) return;
+      camera.getWorldPosition(cameraPosition);
+      cameraPosition.applyMatrix4(inverseWorld.copy(group.matrixWorld).invert()); // Match the ruin rope billboard without recomputing the game's baked tool-holder pose.
+      normal.set(cameraPosition.x, 0, cameraPosition.z);
+      if (normal.lengthSq() < 1e-8) normal.set(0, 0, 1);
+      normal.normalize();
+      right.crossVectors(up, normal).normalize();
+      normal.crossVectors(right, up).normalize();
+      mesh.quaternion.setFromRotationMatrix(basis.makeBasis(right, up, normal));
+      mesh.updateMatrixWorld(); // Face the actual rendering camera, including Tool Hub/attack preview cameras.
+    };
+    return group; // The grapple head replaces the ruin rope's brush-shaped grip tip.
   }
 
   function relativePartScale(part) {
@@ -453,11 +576,15 @@
     const chainScaleX = connectorAxisScale(flail.chain, 'scaleX'); // Chain width or generated-rope radius relative to the final rendered handle.
     const chainScaleY = connectorAxisScale(flail.chain, 'scaleY'); // Connector length relative to the handle, independent of width.
     const headScale = relativePartScale(flail.head); // Head size is still independently handle-relative.
-    state.chain.scale.set(
-      localHandleScale * chainScaleX,
-      localHandleScale * chainScaleY,
-      localHandleScale * (state.chain.userData?.hobunjiGeneratedRope ? chainScaleX : 1),
-    ); // Rope-cylinder X and Z both control thickness; Y alone controls reach.
+    if (state.chain.userData?.hobunjiRuinRopeSprite) {
+      state.chain.scale.setScalar(localHandleScale * chainScaleY); // Child width already compensates for both authoring axes; keep the billboard uniformly scaled.
+    } else {
+      state.chain.scale.set(
+        localHandleScale * chainScaleX,
+        localHandleScale * chainScaleY,
+        localHandleScale * (state.chain.userData?.hobunjiGeneratedRope ? chainScaleX : 1),
+      ); // Raster chains keep their authored width/length transform.
+    }
     state.headRoot.scale.setScalar(localHandleScale * headScale);
     const topLocal = pixelPoint(state.chainImage, state.chainTop, unit, null, q.topLocal);
     const bottomLocal = pixelPoint(state.chainImage, state.chainBottom, unit, null, q.bottomLocal);
@@ -600,6 +727,8 @@
         head: relativePartScale(s.config.flail.head),
       } : null, // Mobile diagnostics expose both independent connector axes.
       connector: s.config.flail?.chain?.type === 'rope' ? 'rope' : s.config.flail ? 'chain' : null, // Mobile diagnostics expose both handle-relative multipliers.
+      ropeArt: s.chain?.userData?.hobunjiRuinRopeSprite ? 'assets/objectsprites/rope_long.png' : null, // Mobile confirmation of the rope source.
+      ropeTint: s.chain?.userData?.hobunjiRuinRopeSprite ? { color: s.config.flail.chain.color, method: s.chain.children?.[0]?.userData?.ropeTintMethod || 'unavailable' } : null, // Confirms the real 3D texture was shade-filled, including editor previews, without accessing devtools.
     }));
   }
 
@@ -633,7 +762,7 @@
 
   global.HobunjiWeaponSpriteAssemblies = {
     definitions: DEF, decorate, setAction, tick, drop, debugSnapshot, enchantmentTargets, dualWieldEnchantmentTargets,
-    opaqueAt, anchor, refreshWorldMatrix, definitionFor, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, // Pure phase helpers are covered by deterministic animation regression tests.
+    opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, // Pure sizing and phase helpers have regression tests.
   };
   global.HobunjiCacheAudit?.register('weapon assemblies (active or awaiting cleanup)', () => records.size);
   if (global.RuntimeFrameScheduler?.register) {

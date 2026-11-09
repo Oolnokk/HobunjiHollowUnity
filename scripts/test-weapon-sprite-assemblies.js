@@ -7,6 +7,7 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync('docs/js/weapon-sprite-assemblies.js', 'utf8'); // Evaluated in a DOM shim to exercise the real asset-anchor helpers.
 const registry = fs.readFileSync('docs/config/weapon-sprite-assemblies.js', 'utf8'); // Shared committed artist recipe, loaded before the reusable runtime.
+const sharedColorFill = fs.readFileSync('docs/js/color-fill.js', 'utf8'); // Same canonical shade-fill implementation used by Gar-wolf recoloring.
 const game = fs.readFileSync('docs/game.js', 'utf8'); // Confirms that all gameplay tool planes acquire the same decorator.
 const editor = fs.readFileSync('docs/tools/attack-animation-editor/index.html', 'utf8'); // Confirms the standalone preview uses the same visual logic.
 const html = fs.readFileSync('docs/index.html', 'utf8'); // Confirms the game loads the assembly before its main script.
@@ -46,13 +47,14 @@ for (const [x, y] of [[1, 1], [3, 1], [2, 2], [4, 3], [3, 4], [5, 4]]) {
   pixels[(y * 6 + x) * 4 + 3] = 255;
 }
 let imageDrawn = null; // The fake canvas stores the last requested image to exercise its alpha scan.
+let imageDraws = 0; // Count source-image copies so the opaque rope artwork is scanned only once per actor-shared image.
 const document = {
   currentScript: { src: 'https://example.test/js/weapon-sprite-assemblies.js' },
   createElement: type => {
     assert.equal(type, 'canvas');
     return {
       getContext: () => ({
-        drawImage(image) { imageDrawn = image; },
+        drawImage(image) { imageDrawn = image; imageDraws++; },
         getImageData() { return { data: imageDrawn.pixels }; },
       }),
     };
@@ -60,6 +62,7 @@ const document = {
 };
 const scheduler = { register(id, callback, options) { this.id = id; this.callback = callback; this.options = options; } }; // Records the real module's pre-render registration.
 const window = { RuntimeFrameScheduler: scheduler }; // Minimal host, no gameplay side effects.
+vm.runInNewContext(sharedColorFill, { window }); // Load the real canonical animal/NPC color fill, not a simulated recolor helper.
 vm.runInNewContext(registry, { window }); // The source of truth now comes from the shared editor + gameplay configuration.
 vm.runInNewContext(source, {
   window, document, URL, setTimeout: () => {}, performance: { now: () => 100 },
@@ -72,6 +75,12 @@ const first = api.opaqueAt(image, 'top'); // Highest nontransparent row, horizon
 const last = api.opaqueAt(image, 'bottom'); // Lowest nontransparent row, horizontal center of the opaque pixels.
 assert.equal(first.x, 2); assert.equal(first.y, 1);
 assert.equal(last.x, 4); assert.equal(last.y, 4);
+const beforeRopeScan = imageDraws; // Transparent padding is present around the fake rope's 1..5 x and 1..4 y alpha bounds.
+const visibleRope = JSON.parse(JSON.stringify(api.ropeOpaqueBounds(image)));
+assert.deepEqual(visibleRope,{minX:1,minY:1,maxX:5,maxY:4},'visible alpha bounds exclude transparent padding at both rope ends');
+assert.equal(imageDraws,beforeRopeScan+1,'first rope inspection scans the PNG');
+api.ropeOpaqueBounds(image);
+assert.equal(imageDraws,beforeRopeScan+1,'subsequent flails reuse cached sprite bounds without scanning again');
 assert.equal(api.anchor(image, { x: 5, y: 2 }, 'top').x, 5); // Explicit artist coordinates override edge detection.
 assert.equal(api.anchor(image, { x: -100, y: 99 }, 'top').y, 5); // Out-of-bounds authored anchors clamp safely.
 assert.equal(api.definitionFor('plain', { spriteLayers: [{ sprite: 'assets/toolsprites/example.png' }] }).layers.length, 1);
@@ -82,6 +91,46 @@ assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.chain.scaleY, 0.25
 assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.head.scale, 2.5);
 assert.equal(api.definitionFor('grappleFlail', {}).flail.chain.scaleX, 5.25);
 assert.equal(api.definitionFor('grappleFlail', {}).flail.chain.scaleY, 3.75);
+assert.equal(api.definitionFor('grappleFlail', {}).flail.chain.sprite,'assets/objectsprites/rope_long.png');
+assert.equal(api.definitionFor('grappleFlail', {}).flail.chain.lengthPx,225,'apply the new exported grip-to-head rope length');
+assert.equal(api.definitionFor('grappleFlail', {}).flail.chain.radiusPx,6.25,'apply the new exported rope radius');
+assert.equal(api.definitionFor('grappleFlail', {}).flail.chain.color,'#6B4728','restore the original flail rope brown');
+const sizes = api.ropeSpriteSizing(api.definitionFor('grappleFlail', {}).flail.chain, .5 / 450, 152 / 2164); // Nominal game units; actual rendering uses the cropped visible aspect.
+const visibleAspect = (visibleRope.maxX-visibleRope.minX+1)/(visibleRope.maxY-visibleRope.minY+1); // Compare a trimmed PNG's art extent, not its padded canvas.
+const visibleSizing = api.ropeSpriteSizing(api.definitionFor('grappleFlail', {}).flail.chain, .5 / 450, visibleAspect);
+assert(Math.abs(visibleSizing.widthScale * visibleAspect * 3.75 - 65.625 * (.5 / 450)) < 1e-10,'trimmed rope keeps original world thickness');
+assert(Math.abs(visibleSizing.length * 3.75 - 843.75 * (.5 / 450)) < 1e-10,'trimmed rope keeps both physical endpoints');
+assert(Math.abs(sizes.lengthPx - 843.75) < 1e-10,'original 843.75-pixel chain reach survives the art swap');
+assert(Math.abs(sizes.diameterPx - 65.625) < 1e-10,'original 65.625-pixel thickness survives the art swap');
+assert(Math.abs(sizes.widthScale * (152 / 2164) * 3.75 - 65.625 * (.5 / 450)) < 1e-10,'billboard width compensates for uniform Y scaling');
+assert(Math.abs(sizes.length * 3.75 - 843.75 * (.5 / 450)) < 1e-10,'sprite height reaches the same grapple contact');
+assert(!source.includes('new THREE.CylinderGeometry'),'the generated cylinder was removed');
+const ropePixels = Uint8ClampedArray.from([
+  12, 10, 8, 255, // Near-black winding must stay appropriately dark.
+  60, 55, 45, 255, // Authored darker rope section.
+  120, 110, 90, 255, // Authored brighter rope section.
+  250, 250, 250, 255, // Near-white decorative highlight must be left alone by the canonical fill.
+  240, 210, 180, 0, // Transparent margin is not eligible for recoloring.
+]); // Full opaque spectrum ensures direct parity with the shared Gar-wolf shade-fill routine.
+const originalRopePixels = Uint8ClampedArray.from(ropePixels); // Independent original used to validate alpha, bright highlights and relative shading.
+const expectedAnimalFill = Uint8ClampedArray.from(ropePixels); // Applies the real shared algorithm to the same source pixels.
+window.ColorFill.shadeFillPixels(expectedAnimalFill, [107, 71, 40], { debugLabel: 'animal-parity-expected' });
+assert.equal(api.tintRopePixels(ropePixels, '#6B4728'),ropePixels,'the rope fill must update its supplied pixels in place');
+assert.deepEqual(Array.from(ropePixels),Array.from(expectedAnimalFill),'Grapple-Flail recoloring must be byte-for-byte identical to the shared animal shade-fill algorithm');
+assert.deepEqual([3,7,11,15,19].map(i=>ropePixels[i]),[3,7,11,15,19].map(i=>originalRopePixels[i]),'the inherited animal fill retains all alpha values');
+assert.deepEqual(Array.from(ropePixels.slice(12,16)),Array.from(originalRopePixels.slice(12,16)),'near-white artwork is excluded from animal shade-fill');
+assert(ropePixels[0] < ropePixels[4] && ropePixels[4] < ropePixels[8],'dark outlines and intermediate shading retain their authored brightness order');
+assert.equal(window.ColorFill.debugSnapshot().lastShadeFill.label,'weapon-rope:#6B4728','mobile diagnostics label the shared shade-fill pass');
+const unchangedWhite = Uint8ClampedArray.from(originalRopePixels); // White is the original art/no-recolor option, not a brown paint.
+api.tintRopePixels(unchangedWhite, '#FFFFFF');
+assert.deepEqual(Array.from(unchangedWhite),Array.from(originalRopePixels),'default white rope retains the source image');
+
+assert.equal(source.includes('tintedRopeTextures = new WeakMap()'),true,'recolored rope variants are cached per source image');
+assert.match(source, /const ROPE_TINT_CACHE_LIMIT = 12/, 'large recolored rope canvases must have a finite cache budget');
+assert.match(source, /while \(variants\.size > ROPE_TINT_CACHE_LIMIT\)/, 'discard old full-resolution tint templates after too many color edits');
+assert.match(source, /stale\?\.dispose\?\.\(\)/, 'evicted canvas texture templates are disposed while rendered clones remain independent');
+assert.match(source, /ropeTintMethod = tintedSource === sourceTexture/, 'the actual textured rope reports whether the shared color fill succeeded');
+assert.match(source, /ropeTint: s\.chain\?\.userData/, 'mobile diagnostics expose the real rope tint path');
 assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.head.layers[2].vfx.type, 'fire');
 assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.head.layers[2].targetHex.toUpperCase(), '#E7DDC9');
 assert.match(source, /enchantmentTargets/, 'the assembly exposes head-only enchantment masks');

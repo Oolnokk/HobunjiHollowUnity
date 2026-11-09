@@ -459,3 +459,40 @@ checks rope preview placement, independent scaling, fitted mobile bounds,
 two-layer assembly, source-image pixel selection and composite-gap taps.
 `scripts/test-multi-sprite-editor-frame.js` also exercises the actual
 Grapple-Flail UI events and resulting saved JSON.
+
+## Grapple-Flail uses the ruin swing-rope sprite (November 9)
+
+The Grapple-Flail's brown procedural cylinder is now rendered with the exact
+`assets/objectsprites/rope_long.png` image used by traversable ruin ropes.
+It uses their transparent, unlit, camera-facing presentation in the game,
+Tool Hub and Attack Animation Editor. The large ruin rope brush tip is
+omitted because the grapple head already occupies the endpoint.
+
+The original cylinder calibration was `lengthPx: 160`, `radiusPx: 2.5`,
+`scaleY: 3.75`, `scaleX: 5.25`. The approved Tool Hub export now changes
+**only the rope dimensions** to `lengthPx: 225`, `radiusPx: 6.25`, retaining
+`scaleY: 3.75` and `scaleX: 5.25`. The result is `225 × 3.75 = 843.75`
+original-handle pixels long and `2 × 6.25 × 5.25 = 65.625` pixels wide. The 152 × 2164 PNG has transparent padding, so the runtime scans its
+visible alpha bounds once per cached image and crops the texture UVs to
+that visible region before scaling. `ropeSpriteSizing` derives the
+height and width from the **visible** pixel aspect ratio instead of the
+padded source canvas, keeping both ends attached and matching the
+new diameter without changing the user's authored pendulum, contact or attack logic.
+The rope uses the previous warm-brown `#6B4728` target color, applied
+by **the actual `ColorFill.shadeFillPixels` implementation** used by
+Gar-wolf and other non-mint animal recolors (`CreatureGeneticsRender`).
+The original rope PNG supplies the luminance reference automatically:
+eligible painted pixels retain their original relative shading, with
+near-white pixels excluded and alpha unchanged. The flail has no private
+luminance/average-midtone algorithm and does not simply multiply the
+entire image by brown. `ColorFill.debugSnapshot().shadeFillsByLabel`
+records `weapon-rope:#6B4728` for mobile debugging. The weapon assembly's `debugSnapshot().ropeTint` also reports whether the **rendered** rope is using `ColorFill.shadeFillPixels` or the source-image fallback, making a failed CORS/canvas tint visible without a console. Recoloring is cached
+per source sprite and tint, while each flail owns a cloned texture for
+safe disposal. The per-source cache retains at most 12 recently used colors
+(LRU), preventing repeated mobile Tool Hub color experiments from retaining
+unbounded full-resolution canvas textures. Evicted templates are safe to
+dispose because active flails have independent clones. The original
+`rope_long.png` is not modified.
+
+Run `node scripts/test-weapon-sprite-assemblies.js` and
+`node scripts/test-flail-rope-picker-scale.js` for regression coverage.

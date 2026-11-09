@@ -540,12 +540,12 @@ assert.ok(shellReplayStart >= 0 && shellReplayEnd > shellReplayStart,
   'the renderer has a dedicated shell x-ray replay');
 const shellReplay = heldRender.slice(shellReplayStart, shellReplayEnd);
 const shellGroundFilterAt = shellReplay.indexOf('setGroundElevationFilter(groundMeshes, group.elevation)');
-const shellDepthAt = shellReplay.indexOf('prepareNonGroundDepthMaterials(scene)', shellGroundFilterAt);
+const shellDepthAt = shellReplay.indexOf('prepareNonGroundDepthMaterials(scene, replayCandidates.depth)', shellGroundFilterAt);
 const shellDepthDrawAt = shellReplay.indexOf('rawRender.call(renderer, scene, camera)', shellDepthAt);
-const shellOnlyAt = shellReplay.indexOf('hideNonXrayShellMeshes(scene, groupSet)');
+const shellOnlyAt = shellReplay.indexOf('hideNonXrayShellMeshes(scene, groupSet, replayCandidates.shell)');
 const shellOutlineDrawAt = shellReplay.indexOf('rawRender.call(renderer, scene, camera)', shellOnlyAt);
 const shellRestoreAt = shellReplay.indexOf('renderer.clearDepth();', shellOutlineDrawAt);
-const shellDepthRestoreAt = shellReplay.indexOf('prepareNonGroundDepthMaterials(scene)', shellRestoreAt);
+const shellDepthRestoreAt = shellReplay.indexOf('prepareNonGroundDepthMaterials(scene, replayCandidates.depth)', shellRestoreAt);
 assert.match(shellReplay, /material\.depthTest = true;\s*material\.depthWrite = true;/,
   'source-mesh depth remains available to mask the expanded back-face shell');
 assert.ok(shellGroundFilterAt >= 0 && shellGroundFilterAt < shellDepthAt

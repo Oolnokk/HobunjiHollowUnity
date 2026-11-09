@@ -61,9 +61,9 @@ window.WEAPON_SPRITE_ASSEMBLY_CONFIG = Object.freeze({
       flail: {
         haftAnchor: { x: 210, y: 1051 },
         chain: {
-          type: 'rope', lengthPx: 160, radiusPx: 2.5,
-          color: '#6B4728', texture: 'assets/textures/wavy_surface.png',
-          scaleX: 5.25, scaleY: 3.75, // Length inherits the torch chain ratio: 5.25 × (0.25 / 0.35).
+          type: 'rope', sprite: 'assets/objectsprites/rope_long.png', // Reuse the original transparent rope art from ruin swings.
+          lengthPx: 225, radiusPx: 6.25, color: '#6B4728', // User-exported 225px length and 6.25px radius; retain the old flail's warm-brown target hue.
+          scaleX: 5.25, scaleY: 3.75, // New dimensions: 843.75px grip-to-head reach and 65.625px visible width.
         },
         head: {
           scale: 1,

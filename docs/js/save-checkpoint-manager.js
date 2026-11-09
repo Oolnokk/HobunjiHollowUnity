@@ -537,7 +537,13 @@
     return recoveryMirrorPromise;
   }
 
+  function festivalCheckpointBlocked() {
+    const phase = window.HobunjiQuickSave?.festivalStatus?.().phase; // A disposable festival must never replace manual/campfire/recovery checkpoints.
+    return !!phase && phase !== 'idle'; // Restored but uncommitted worlds must not overwrite recovery history.
+  }
+
   async function saveManual({ reason = 'menu-manual-save', force = false } = {}) {
+    if (festivalCheckpointBlocked()) return { ok: false, error: 'Exit Festival Test before making a manual save.' };
     try {
       if (!isHydrated()) throw new Error('Manual save is unavailable until the farmer and farm finish loading.');
       const useFolder = explicitFolderAvailable(); // Manual saves can target a connected folder before its first successful push.
@@ -586,6 +592,7 @@
 
 
   async function saveCampfire({ reason = 'campfire-save', force = false } = {}) {
+    if (festivalCheckpointBlocked()) return { ok: false, error: 'Exit Festival Test before saving at a campfire.' };
     try {
       if (!isHydrated()) throw new Error('Campfire save is unavailable until the farmer and farm finish loading.');
       const useFolder = explicitFolderAvailable(); // Campfire saves are explicit writes just like the pause-menu save.
@@ -646,6 +653,7 @@
   }
 
   async function saveAuto({ reason = 'timer', mapChange = false } = {}) {
+    if (festivalCheckpointBlocked()) return { ok: true, skipped: true, reason: 'festival-test' };
     const generation = ++autoSaveGeneration;
     markHydrated();
     if (window.HobunjiAutosavePause?.isPaused?.()) { // Dev Companion autosave pause keeps rolling recovery history at its pre-pause checkpoints.
@@ -798,6 +806,7 @@
   }
 
   async function applyRecord(record) {
+    if (festivalCheckpointBlocked()) return { ok: false, error: 'Exit Festival Test before loading a recovery save.' };
     let preRestore = null;
     try {
       if (!record?.snapshot) throw new Error('That recovery checkpoint is unavailable.');
