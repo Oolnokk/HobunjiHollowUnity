@@ -37,7 +37,8 @@ assert(index.furniture.some(record=>record.key==='candleCluster'),'cluster is av
 const mapEditor=read('docs/tools/map-editor/index.html');
 assert(mapEditor.includes('candleCluster:{icon:'),'map editor can select and preview the cluster');
 const fire=read('docs/js/interior-fire-floor-runtime.js');
-assert(fire.includes('makeCandleClusterFlames(group, emitters, data.parts)'),'cluster uses one batched draw rather than sixteen');
+assert(fire.includes('makeCandleClusterFlames(group, emitters, data.parts)'),'cluster uses one batched particle draw rather than sixteen');
+assert(fire.includes('instanceCandleClusterBodies(group, data.parts)'),'static candle bodies are instanced rather than 32 separate draw calls per cluster');
 assert(fire.includes('suppressedFestivalFlames'),'mobile fire diagnostics report rain suppression');
 const festivals=read('docs/js/festival-system.js');
 assert(festivals.includes("!claimed('remembrance') && festival()?.id === 'tzizkhanash'"),'once-per-year auto remembrance cannot restart and spam notifications');
