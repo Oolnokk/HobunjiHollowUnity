@@ -37,7 +37,7 @@ function fakeStyle(trackWrites = true) {
     setProperty(name, value, priority = '') {
       if (trackWrites) actualDomWrites++;
       const serialized = name === 'box-shadow' ? 'rgba(0, 0, 0, 0.42) 0px 2px 7px'
-        : (name === 'width' || name === 'height') ? String(value).replace(/,\\s*/g, ', ')
+        : (name === 'width' || name === 'height') ? String(value).replace(/,\s*/g, ', ')
         : String(value); // Simulate Chromium's CSSOM normalization that the prior test missed.
       values.set(name, { value:serialized, priority:String(priority) });
     },
@@ -101,9 +101,10 @@ assert.equal(slot.style.getPropertyValue('width'), 'clamp(22px, 4.25vmin, 30px)'
 wheel.enforceSlotPresentation(slot, true);
 assert.equal(actualDomWrites, legacyWrites + 1, 'normalized CSSOM still stabilizes after repairing legacy style');
 
+const beforeOuterArch = actualDomWrites; // Previous legacy-style repair is not part of arch visibility bookkeeping.
 wheel.setOuterArchHidden(true);
 const hiddenWrites = actualDomWrites; // Permanent ring hides only on transition into selector mode.
-assert.equal(hiddenWrites, denseWrites + 1, 'opening a selector hides the permanent ring once');
+assert.equal(hiddenWrites, beforeOuterArch + 1, 'opening a selector hides the permanent ring once');
 wheel.setOuterArchHidden(true);
 assert.equal(actualDomWrites, hiddenWrites, 'subsequent open frames never toggle body class');
 wheel.setOuterArchHidden(false);
