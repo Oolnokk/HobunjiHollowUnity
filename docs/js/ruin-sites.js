@@ -685,6 +685,7 @@
     const saved = state();
     const themes = ['tothal','hronal','kanthic'];
     const byTheme = {tothal:0,hronal:0,kanthic:0};
+    const unspentByTheme = {tothal:0,hronal:0,kanthic:0}; // Separate access to remaining entrances from their original world-generation frequencies.
     const byTier = {hole:0,lich:0,undetermined:0};
     const sites = [];
     for (const [area,roster] of sitesByZone) {
@@ -695,17 +696,22 @@
         const tier = owner == null ? 'undetermined' : owner === site.id ? 'lich' : 'hole';
         byTheme[theme]++;
         byTier[tier]++;
+        const spent = !!saved.entrances?.[site.id]?.spent;
+        if (!spent) unspentByTheme[theme]++;
         sites.push({id:site.id,zoneId:area,theme,tier,guardianOwner:owner,
-          firstEntryCouldBecomeGuardian:owner==null,spent:!!saved.entrances?.[site.id]?.spent});
+          firstEntryCouldBecomeGuardian:owner==null,spent});
       }
     }
     const holes = Object.entries(saved.holes || {}).filter(([,h])=>zoneId==null || String(zoneId)===h.zoneId)
       .map(([id,h])=>({id,zoneId:h.zoneId,theme:themes[seedFor(id)%themes.length],state:h.state}));
     return {cycle:cycle(),zoneId,registeredZoneCount:zoneId==null?sitesByZone.size:Number(sitesByZone.has(String(zoneId))),
-      registeredCliffSites:sites.length,byTheme,byTier,sites,holes,
+      registeredCliffSites:sites.length,unspentCliffSites:sites.filter(site=>!site.spent).length,
+      byTheme,unspentByTheme,byTier,sites,holes,
       openBuriedHoles:holes.filter(h=>h.state==='open').length,
       buriedHoleChancePerTreasureLocation:treasureHoleChance(),
       themeSharePerRegisteredSite:sites.length ? Object.fromEntries(themes.map(theme=>[theme,byTheme[theme]/sites.length])) : null,
+      themeSharePerUnspentSite:sites.some(site=>!site.spent)
+        ? Object.fromEntries(themes.map(theme=>[theme,unspentByTheme[theme]/sites.filter(site=>!site.spent).length])) : null,
       certainty:'exact registered sites; guardian assignment before first entry is undetermined',
       caution:'not a probability per unexplored wilderness tile'};
   }
