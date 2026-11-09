@@ -341,6 +341,8 @@ assert.ok(childRec.childHeadScale > childRec.childBodyScale, 'babies: the head s
 clock.rawDay += 28;
 assert.equal(fam.phaseOf(child), 'toddler');
 assert.equal(W.RomanceFamily.usefulnessInfo(child.id).intelligenceMultiplier, 0.25, 'toddlers gain one-quarter XP');
+clock.hour = 11;
+assert.equal(fam.childTarget(child).area, 'farm', 'toddlers leave the basket but never leave their farm');
 assert.equal(W.RomanceFamily.rollWorkQuality(child.id), 1, 'untrained toddlers produce one-star goods');
 assert.equal(W.RomanceFamily.awardWork(child.id, 'till').xp, 1.5, 'toddler work trains the one shared stat at quarter rate');
 assert.equal(fam.toddlingFooting(child), 99, 'Toddling Footing starts at 99');
@@ -382,8 +384,19 @@ const siblingPlan = W.RomanceFamily.snapshot().pregnancy;
 assert.equal(siblingPlan.dueRawDay, child.bornRawDay + 168, 'siblings are scheduled six months apart');
 assert.equal(siblingPlan.dueRawDay - siblingPlan.announceRawDay, 28, 'later pregnancies also last one month');
 const savedFamily = W.RomanceFamily.serialize();
+let clearedFamilyVats = 0; // Character/world changes must not leave ghost external worker assignments behind.
+W.DewVats = { clearFamilyWorkers() { clearedFamilyVats++; } };
 W.RomanceFamily.restore(savedFamily);
+assert.equal(clearedFamilyVats, 1, 'loading a family clears stale vat worker registrations');
 assert.equal(W.RomanceFamily.snapshot().children[0].usefulness.level, 1, 'child usefulness survives a save/restore cycle');
+const corrupted = W.RomanceFamily.serialize();
+corrupted.children[0].usefulnessLevel = 0; corrupted.children[0].usefulnessXp = -1;
+corrupted.spouseUsefulness = { npcId: 'tooth_hatayap', level: 0, xp: -1 };
+W.RomanceFamily.restore(corrupted);
+assert.equal(W.RomanceFamily.usefulnessInfo(corrupted.children[0].id).level, 1, 'invalid saved child level is repaired safely');
+assert.equal(W.RomanceFamily.usefulnessInfo('tooth_hatayap').level, 2, 'invalid saved spouse level is repaired safely');
+W.RomanceFamily.restore(savedFamily);
+delete W.DewVats;
 const priorPlan = fam.getFamily().pregnancy; // Save the later biological plan while exercising adoption deferrals.
 const dream = { spouseId: 'tooth_hatayap', kind: 'adoption', dueRawDay: clock.rawDay, announced: true, born: false };
 fam.getFamily().pregnancy = dream;
