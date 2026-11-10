@@ -353,5 +353,5 @@
     }
   }
 
-  window.HobunjiGrehlrForaging = { applyForagingPose };
+  window.HobunjiGrehlrForaging = { applyForagingPose, waterTilesFor }; // Nohuknuk fishing reuses this generated-map-identity cache instead of scanning every zone tile again.
 })();
