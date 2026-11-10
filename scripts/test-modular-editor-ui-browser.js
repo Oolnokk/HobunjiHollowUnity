@@ -193,7 +193,7 @@ async function ready(page) {
     const previewBefore=await page.locator('#flail-preview').evaluate(canvas=>canvas.toDataURL('image/png'));
     const scaleYField=page.locator('#fields [aria-label="Pair scaleY"]');
     await scaleYField.fill('0.45');
-    await scaleYField.dispatchEvent('change');
+    await scaleYField.press('Tab'); // Commit like a real editor user: blur ONCE. Save rebuilds #fields, so dispatching a second change on the replacement input resets it.
     const pairedScale=await page.evaluate(() => {
       const api=window.ModularWeapons, pair=api.getConfig().shafts['grapple-flail'].overrides['fishing-mace'];
       return {field:document.querySelector('#fields [aria-label="Pair scaleY"]')?.value,
