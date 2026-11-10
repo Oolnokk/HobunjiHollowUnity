@@ -151,6 +151,8 @@ api.decorate(root, 'grappleFlail', { shapeKey:'grappleFlail' }, { THREE });
   // with a connector that remains attached to the hidden original weapon.
   const dualMain = new Mesh(new PlaneGeometry(.5, 1204/900), new MeshBasicMaterial({ map:new Texture(handleImage) })); // Main-hand flail carries its own pendulum.
   const dualOff = new Mesh(new PlaneGeometry(.5, 1204/900), new MeshBasicMaterial({ map:new Texture(handleImage) })); // Offhand flail must have a separate connector and head.
+  dualMain.userData.hobunjiDualWieldDuplicate = true; // Matches the production visible main duplicate marker used by mobile diagnostics.
+  dualOff.userData.hobunjiDualWieldDuplicate = true; // Matches the production visible offhand duplicate marker.
   assert.equal(api.syncDualWield(root, dualMain, dualOff, true), false, 'source stays visible while copies load');
   for (let i = 0; i < 25 && api.debugSnapshot().filter(item => item.dualFlail?.replica && item.loaded).length !== 2; i++) await Promise.resolve();
   assert.equal(api.debugSnapshot().filter(item => item.dualFlail?.replica && item.loaded).length, 2, 'both replica assemblies finish loading');
