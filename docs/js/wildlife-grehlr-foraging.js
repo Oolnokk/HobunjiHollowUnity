@@ -107,6 +107,7 @@
   // reference is exactly what invalidates this automatically.
   const _waterTileCache = new Map(); // zoneId -> { tilesRef, waterTiles }
   function waterTilesFor(zoneId) {
+    if (!deps?.zoneLayouts || !deps?.TileType) return null; // Pre-init NPC previews fall back to their own zone layout rather than throwing.
     const tiles = deps.zoneLayouts.get(zoneId)?.tiles;
     if (!tiles?.length) return null;
     const cached = _waterTileCache.get(zoneId);
@@ -353,5 +354,5 @@
     }
   }
 
-  window.HobunjiGrehlrForaging = { applyForagingPose };
+  window.HobunjiGrehlrForaging = { applyForagingPose, waterTilesFor }; // Nohuknuk fishing reuses this generated-map-identity cache instead of scanning every zone tile again.
 })();

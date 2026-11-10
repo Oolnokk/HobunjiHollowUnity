@@ -336,11 +336,13 @@
     return material;
   }
   function emitDig(c, substrate, tile) {
-    const group = c.avatarRef?.group, parent = group?.parent;
+    const group = c.avatarRef?.group || c.root, parent = group?.parent; // Named NPC walkers reuse the same particles via their floor-anchored root.
     if (!group || !parent || c._wildlifeVisualsReleased || particles.length >= MAX_PARTICLES) return;
     const THREE = window.THREE, material = materialFor(substrate);
     if (!THREE || !material) return;
-    const surface = group.position.y - (c.groundLift || c.halfHeight || 0.5) + (substrate === 'snow' ? 0.23 : 0); // Raised Western snow cap is 0.22 world units above normal terrain. // Particle origin stays on the real terrain, not the actor's sinking plane center.
+    const surface = c.root && !c.avatarRef?.group
+      ? group.position.y + (substrate === 'snow' ? 0.23 : 0)
+      : group.position.y - (c.groundLift || c.halfHeight || 0.5) + (substrate === 'snow' ? 0.23 : 0); // Actor root is already ground-level; ordinary creatures retain their original half-height adjustment. // Raised Western snow cap is 0.22 world units above normal terrain. // Particle origin stays on the real terrain, not the actor's sinking plane center.
     for (let i = 0; i < MAX_BURST && particles.length < MAX_PARTICLES; i++) {
       const angle = rng() * Math.PI * 2, speed = 0.3 + rng() * 1.0;
       const mesh = new THREE.Mesh(geometry, material);
@@ -381,6 +383,6 @@
   window.WildlifeFoodWeb = Object.freeze({
     PROFILES, profile, kindOf, updateThreats, tickForage, applyPose,
     onSkirmishHit, isDefending, cancelForage, abandon, tickParticles,
-    npcWalkerStrike, getDebug: () => ({ ...debug }),
+    npcWalkerStrike, emitDig, getDebug: () => ({ ...debug }), // Public snow/dirt burst adapter shared by a digging named NPC; existing particle cap/simulation remains singular.
   });
 })();

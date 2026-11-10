@@ -9556,6 +9556,7 @@
         member.minedRockState = serializeZoneMinedRockState();
         member.townMineState = window.TownMine?.serialize?.() || null;
         member.slagothimTradersState = window.SlagothimTraders?.serialize?.() || null;
+        member.nohuknukWildernessState = window.NohuknukWilderness?.serialize?.() || null; // Persists his logical snowfield position after an unseen burrow.
         member.tzatzulNestState = window.TzatzulNestEncounter?.serialize?.() || null;
         member.caveSiteState = window.CaveSiteSystem?.serialize?.() || null;
         member.doorstepVisitState = window.DoorstepVisits?.serialize?.() || {};
@@ -12978,6 +12979,14 @@
         findNpcAreaLink,
       } = window.NpcPathfinding;
 
+      window.NohuknukWilderness?.init?.({
+        npcWalkers, hostileObjects, player, TILE, EXTERIOR_ZONES,
+        getZoneLayout: area => _zoneLayouts.get(area), // Existing generated wilderness data drives all safe wandering/relocation choices.
+        getCurrentArea: () => currentArea, // Reciprocal LOS only runs where a player is physically present.
+        getNpcRecord: id => scheduledNpcRecords.get(id), // Named NPC species override supplies its own authored roaming parameters.
+        npcSurfaceY, damageCreature, // Reuse the live terrain surface and NPC-attributed creature combat.
+      });
+
       // Fixed local "right" axis for station tool-swing animation — see makeNpcWalker.
       const NPC_TOOL_SWING_AXIS = new THREE.Vector3(-1, 0, 0);
 
@@ -13943,6 +13952,7 @@
         // NPC detection below running so a frozen villager is still talkable.
         if (!window.DevTestingSwitchbox?.flags?.noNpcBehavior) {
           updateNpcVisitorArrivals(dt);
+          window.NohuknukWilderness?.update?.(dt); // Attach the single roaming NPC to the normal walker tick; no parallel NPC simulation.
           const npcUpdateNowMs = performance.now(); // Bounds retries for one broken NPC without stalling the rest of the simulation.
           // Backwards indexed loop (not `for...of [...npcWalkers]`) so a walker
           // that despawns itself mid-update (npcWalkers.splice in
@@ -33511,6 +33521,7 @@
         restoreZoneMinedRockState(playerData.minedRockState);
         window.TownMine?.restore?.(playerData.townMineState);
         window.SlagothimTraders?.restore?.(playerData.slagothimTradersState);
+        window.NohuknukWilderness?.restore?.(playerData.nohuknukWildernessState); // Restore position before the next visible wilderness encounter.
         window.TzatzulNestEncounter?.restore?.(playerData.tzatzulNestState);
         window.CaveSiteSystem?.restore?.(playerData.caveSiteState);
         // Potion items just restored into `inventory` above have no ITEM_DEFS

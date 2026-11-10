@@ -127,6 +127,9 @@
       if (!species) continue;
       const displayName = String(override?.displayName || '').trim(); // Used to migrate player-facing named-NPC labels even when a stale local database overrides the repo record.
       if (displayName) npc.name = displayName;
+      if (override?.wildernessRoaming?.zoneId) {
+        npc.wildernessRoaming = JSON.parse(JSON.stringify(override.wildernessRoaming)); // Named NPC-only roaming policy consumed by the shared walker target override.
+      }
 
       const avatarExport = override?.avatarExport;
       if (avatarExport && typeof avatarExport === 'object' && !Array.isArray(avatarExport)) {
