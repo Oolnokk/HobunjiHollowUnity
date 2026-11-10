@@ -219,6 +219,19 @@ function makeHost() {
   assert.equal(joiningNpc.sync().jamStopCount,1,'the player releases the missing NPC clock');
   joiningNpc.window.MusicMinigame.close();
 
+  const swappingNpc = makeHost(); // Discard an old clock before the replacement NPC frame is ready.
+  swappingNpc.setPerformers([{npcId:'foroji',name:'Foroji',area:'town',songId:'when-the-kininjis-bloom'}]);
+  swappingNpc.window.MusicMinigame.beginPlayerSession();
+  swappingNpc.window.MusicMinigame.switchInstrumentMode('performance');
+  swappingNpc.frame.handlers.get('load')();
+  assert.equal(swappingNpc.sync().count,1,'the original leader syncs before the musician changes');
+  swappingNpc.setPerformers([{npcId:'leaf',name:'Leaf',area:'town',songId:'when-the-kininjis-bloom'}]);
+  swappingNpc.window.MusicMinigame.tick(1.1);
+  assert.equal(swappingNpc.sync().jamStopCount,1,'the departed musician clock is discarded immediately');
+  assert.equal(swappingNpc.window.MusicMinigame.state.npcId,'leaf','the jam targets the replacement NPC');
+  assert.equal(swappingNpc.sync().count,2,'the replacement NPC provides a fresh clock');
+  swappingNpc.window.MusicMinigame.close();
+
   const sounds = []; // Fake voice creation and stop events for validating monophonic playback.
   const gains = []; // Records instrument output levels without decoding actual media in Node.
   class AudioContext {
