@@ -91,6 +91,7 @@
     if(!song||!Array.isArray(song.notes)||!song.notes.length)throw new Error('Puzzle Cave song is missing its note sequence.');
     let standing=false,solved=false,elapsed=0,progress=0,mistakes=0,cycle=0,lastSignature='';
     let startedAtMs=null,nextScheduledBeat=1; // The plate's monotonic start and next unqueued beat keep both score judgment and audio on one clock.
+    let currentClockMs=clockMs; // The optional author/test clock can be swapped without changing the live game's absolute-time source.
     const quarterSeconds=song.secondsPerTick*4; // Four sixteenth ticks per numbered stonebeat recording; independent of MP3 duration.
     const lookaheadSeconds=clamp((Number(lookaheadMs)||0)/1000,0,.15); // Performance-mode-style audio lead; tests without a clock retain exact delta-time behavior.
     const tickAt=()=>elapsed/song.secondsPerTick;
@@ -110,7 +111,7 @@
     }
     function step(dt,isStanding){
       const down=!!isStanding;
-      const sampledMs=typeof clockMs==='function'?Number(clockMs()):NaN; // Browser performance.now; deterministic unit tests use dt when no clock is injected.
+      const sampledMs=typeof currentClockMs==='function'?Number(currentClockMs()):NaN; // Browser performance.now; deterministic unit tests use dt when no clock is injected.
       if(!down){
         if(standing){
           standing=false;elapsed=0;progress=0;cycle=0;startedAtMs=null;nextScheduledBeat=1;
@@ -167,7 +168,14 @@
       notify();
       return true;
     }
-    return Object.freeze({step,note,snapshot,activeIndex,get solved(){return solved;}});
+    function setClockSource(source){
+      if(source!==null && typeof source!=='function')throw new TypeError('Melody clock source must be a function or null.');
+      currentClockMs=source; // Native V50 autoplay and music author tools can supply deterministic time without overriding global performance.now.
+      const sampledMs=typeof currentClockMs==='function'?Number(currentClockMs()):NaN;
+      startedAtMs=standing&&Number.isFinite(sampledMs)?sampledMs-elapsed*1000:null; // Maintain the current score phase if a test changes its clock after plate entry.
+      return true;
+    }
+    return Object.freeze({step,note,snapshot,activeIndex,setClockSource,get solved(){return solved;}});
   }
   return Object.freeze({TICKS_PER_MEASURE,NOTE_COUNT,MIN_BPM,MAX_BPM,DURATIONS,generate,createSession,advanceGlyphGlow,GLYPH_COLORS});
 });
