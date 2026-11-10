@@ -1281,6 +1281,8 @@
       const strikeTimes = meleeDebug.strikeCpuMs; // Combat's small snapshot avoids collecting all profiler buckets during live debugging.
       if ((strikeTimes?.enemy?.samples || 0) + (strikeTimes?.player?.samples || 0) > 0)
         lines.push(`Strike CPU peak/last: enemy=${Number(strikeTimes.enemy.max).toFixed(1)}/${Number(strikeTimes.enemy.last).toFixed(1)}ms player=${Number(strikeTimes.player.max).toFixed(1)}/${Number(strikeTimes.player.last).toFixed(1)}ms (Performance Profiler)`);
+      const swingPose = window.BanditCombat?.swingPoseCpuMs; // Per-enemy animation cost, also captured on completely missed attacks.
+      if (swingPose?.samples) lines.push(`Bandit swing pose CPU peak/last: ${Number(swingPose.peakMs).toFixed(1)}/${Number(swingPose.lastMs).toFixed(1)}ms per bandit (Profiler)`);
     }
     const held = deps.getHeldObjectDebug?.();
     if (held) lines.push(`Held objects: mode=${held.mode} tool=${held.toolVisible ? 'visible' : 'hidden'}/${held.toolParent} item=${held.heldItemVisible ? 'visible' : 'hidden'}/${held.heldItemParent} key=${held.heldItemKey || '-'} drink=${held.drinkAnimating ? `${held.drinkPhase}@${Math.round(held.drinkProgress * 100)}%` : 'idle'}`);
