@@ -361,8 +361,7 @@
     }
     return null;
   }
-  function placementFrame(entry) {
-    const stamp=deps?.frameId?.(); // Movement probes share one transformed footprint per furniture instance per frame.
+  function placementFrame(entry, stamp = deps?.frameId?.()) {
     if(stamp!=null && entry.frameStamp===stamp)return entry.frame;
     entry.frameStamp=stamp;
     const root = entry.root; // Live matrices carry editor offsets, scale and grid rotation into every footprint query.
@@ -389,7 +388,7 @@
     index.stamp=stamp;collisionStats.builds++;
     for(const entry of entries(area).values()) {
       if(!entry.root?.parent || !solid(entry))continue;
-      const f=placementFrame(entry), ex=Math.abs(f.cos)*f.w+Math.abs(f.sin)*f.d, ez=Math.abs(f.sin)*f.w+Math.abs(f.cos)*f.d; // Conservative world AABB encloses the rotated footprint.
+      const f=placementFrame(entry,stamp), ex=Math.abs(f.cos)*f.w+Math.abs(f.sin)*f.d, ez=Math.abs(f.sin)*f.w+Math.abs(f.cos)*f.d; // Conservative world AABB encloses the rotated footprint.
       if(!Number.isFinite(f.x+f.z+ex+ez))continue;
       for(let c=Math.floor((f.x-ex)/COLLISION_CELL);c<=Math.floor((f.x+ex)/COLLISION_CELL);c++) {
         let column=index.columns.get(c); // Numeric keys avoid constructing a tile string for every path probe.
@@ -403,10 +402,10 @@
     }
     return index;
   }
-  function entryBlocksBox(entry,x,z,half,worldY) {
+  function entryBlocksBox(entry,x,z,half,worldY,stamp) {
     if(!entry.root?.parent)return false;
     collisionStats.candidates++;
-    const f=placementFrame(entry), dx=x-f.x, dz=z-f.z; // OBB/AABB separating axes preserve rotated narrow furniture and whole-body clearance.
+    const f=placementFrame(entry,stamp), dx=x-f.x, dz=z-f.z; // OBB/AABB separating axes preserve rotated narrow furniture and whole-body clearance.
     if(Number.isFinite(worldY) && (worldY<f.y || worldY>f.y+(entry.height||1)*Math.abs(entry.root.scale?.y||1)))return false;
     const c=Math.abs(f.cos), s=Math.abs(f.sin), margin=half*(c+s);
     return Math.abs(dx*f.cos-dz*f.sin)<f.w+margin && Math.abs(dx*f.sin+dz*f.cos)<f.d+margin
@@ -419,10 +418,16 @@
     if(!areas.has(area))return false;
     const stamp=deps?.frameId?.(); // Editors without a frame owner retain immediate live-transform queries.
     if(stamp==null) {
-      for(const entry of entries(area).values())if(entry.root?.parent && solid(entry) && entryBlocksBox(entry,x,z,half,worldY))return true;
+      for(const entry of entries(area).values())if(entry.root?.parent && solid(entry) && entryBlocksBox(entry,x,z,half,worldY,stamp))return true;
       return false;
     }
     const index=collisionIndex(area,stamp), visit=collisionStats.queries; // Global query id survives same-frame index replacement; no per-query Set.
+    if (half === 0) {
+      const bucket = index.columns.get(Math.floor(x / COLLISION_CELL))?.get(Math.floor(z / COLLISION_CELL)); // A point only touches one bucket and never sees duplicate candidates.
+      if (!bucket) return false;
+      for (const entry of bucket) if (entryBlocksBox(entry, x, z, 0, worldY, stamp)) return true;
+      return false;
+    }
     for(let c=Math.floor((x-half)/COLLISION_CELL);c<=Math.floor((x+half)/COLLISION_CELL);c++) {
       const column=index.columns.get(c); // Empty space returns without visiting any furniture.
       if(!column)continue;
@@ -432,7 +437,7 @@
         for(const entry of bucket) {
           if(entry.collisionVisit===visit)continue;
           entry.collisionVisit=visit;
-          if(entryBlocksBox(entry,x,z,half,worldY))return true;
+          if(entryBlocksBox(entry,x,z,half,worldY,stamp))return true;
         }
       }
     }
