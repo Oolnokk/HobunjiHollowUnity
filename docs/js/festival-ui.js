@@ -8,7 +8,9 @@
   let lock = null; // Existing character-action authority owns movement/tool blocking while the menu is open.
   let previousFocus = null; // Restored on dismissal for keyboard and controller users.
   let selection = {}; // Exact inventory quality and genotype variant selected for the ancestor offering.
-  let offeringFilter = ''; // Search persists while the offering preview rerenders.
+  let offeringFilter = ''; // Touch search persists while a controller user moves between category groups.
+  let selectedOfferingButton = null; // Lets preview updates change only the old/new button state instead of rebuilding every card.
+  const offeringUiDebug = { listBuilds:0, detailUpdates:0, lastVisibleCount:0 }; // Copied with festival diagnostics for mobile performance/focus checks.
   let busy = false; // Stops double-clicked async activities and reward actions.
   const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])); // Shared safe text interpolation.
   function system() { return window.FestivalSystem; }
@@ -21,8 +23,8 @@
     style.textContent += '#festivalDialog .festival-card.festival-offering-view{width:min(860px,100%)}#festivalDialog .festival-offering-search{width:100%;min-height:44px;background:#0c1916;color:#fff;border:1px solid #879b81;border-radius:8px;padding:10px;font:inherit;box-sizing:border-box}#festivalDialog .festival-offering-group{margin:12px 0;padding:10px;background:#192e29;border:1px solid #44584e;border-radius:10px}#festivalDialog .festival-offering-group h3{margin:0 0 9px;font-size:17px}#festivalDialog .festival-offering-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,230px),1fr));gap:8px}#festivalDialog .festival-offering-choice{display:flex;gap:9px;align-items:flex-start;width:100%;margin:0;text-align:left;min-height:62px;padding:10px;background:#263d35}#festivalDialog .festival-offering-choice span{display:block;min-width:0;overflow-wrap:anywhere}#festivalDialog .festival-offering-choice small{display:block;color:#c0d4c6;line-height:1.35;font-size:12px;margin-top:4px}#festivalDialog .festival-offering-choice .festival-offering-icon{font-size:25px;min-width:30px;text-align:center}#festivalDialog .festival-offering-group[hidden],#festivalDialog .festival-offering-choice[hidden]{display:none}#festivalDialog .festival-offering-preview{background:#263a33;border:1px solid #8ca281;border-radius:10px;padding:12px;margin-top:14px}#festivalDialog .festival-offering-preview h3{margin:3px 0 8px}#festivalDialog .festival-offering-math{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr));gap:6px;padding:8px 0}#festivalDialog .festival-offering-math span{background:#10251e;border-radius:5px;padding:7px;font-size:12px}#festivalDialog .festival-offering-commit{font-weight:bold;border-color:#f7d991;background:#475b39;padding:12px 18px}';
     document.head.append(style);
     root = document.createElement('section');
-    root.id = 'festivalDialog'; root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-labelledby', 'festivalTitle'); root.setAttribute('data-ctrl-panel', '');
-    root.innerHTML = '<div class="festival-card"><header><h2 id="festivalTitle"></h2><div id="festivalSubtitle" class="festival-note"></div></header><div id="festivalContent"></div><p id="festivalStatus" class="festival-status" role="status" hidden></p><footer><button type="button" data-festival-action="close" data-ctrl-cancel>Close</button><button type="button" data-festival-action="debug">Copy diagnostics</button></footer></div>';
+    root.id = 'festivalDialog'; root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-labelledby', 'festivalTitle'); root.setAttribute('data-ctrl-panel', ''); root.setAttribute('data-ctrl-modal', ''); // Keep this ceremony on top of newly appearing unrelated controller panels.
+    root.innerHTML = '<div class="festival-card" data-ctrl-scroll><header><h2 id="festivalTitle"></h2><div id="festivalSubtitle" class="festival-note"></div></header><div id="festivalContent"></div><p id="festivalStatus" class="festival-status" role="status" hidden></p><footer><button type="button" data-festival-action="close" data-ctrl-cancel>Close</button><button type="button" data-festival-action="debug">Copy diagnostics</button></footer></div>';
     document.body.append(root);
     root.addEventListener('pointerdown', event => event.stopPropagation());
     root.addEventListener('pointerup', event => event.stopPropagation());
@@ -33,57 +35,81 @@
   function filterOfferingChoices() {
     if (!root) return;
     const needle=offeringFilter.trim().toLocaleLowerCase(); // Filter existing offering cards without closing the mobile keyboard.
+    let visible = 0; // Mobile diagnostics verifies a typed search doesn't rebuild the offering grid.
     for (const group of root.querySelectorAll('.festival-offering-group')) {
       let showing=0;
       for (const choice of group.querySelectorAll('.festival-offering-choice')) {
         choice.hidden=!!needle && !(choice.dataset.search || '').includes(needle);
-        if (!choice.hidden) showing++;
+        if (!choice.hidden) { showing++; visible++; }
       }
       group.hidden=!showing;
     }
+    offeringUiDebug.lastVisibleCount=visible;
     const empty=root.querySelector('[data-offering-no-results]'); // Search feedback for mobile users.
     if (empty) empty.hidden=!!root.querySelector('.festival-offering-choice:not([hidden])');
   }
   function offeringChoicesHtml(api) {
     const choices=api.qualityChoices('offering'); // Already separated by exact inherited genotype when applicable.
+    offeringUiDebug.listBuilds++; // Counts costly full-grid builds, which selecting an item must no longer trigger.
+    selectedOfferingButton=null;
     const categories=new Map(); // Groups item cards by their independently tunable fortune effect.
     for (const choice of choices) {
       const id=choice.category || 'treasureFortune';
       if (!categories.has(id)) categories.set(id,[]);
       categories.get(id).push(choice);
     }
-    let html='<label for="festivalOfferingFilter"><strong>Find an offering</strong></label><input id="festivalOfferingFilter" data-offering-filter class="festival-offering-search" type="search" placeholder="Search items, traits or fortunes" value="'+esc(offeringFilter)+'" autocomplete="off">';
-    html+='<p class="festival-note">Different animal genotypes are separate choices, including hidden carriers; identical genotypes may stack. One yearly offering replaces the previous fortune.</p>';
+    let html='<label for="festivalOfferingFilter"><strong>Find an offering</strong></label><input data-ctrl-skip id="festivalOfferingFilter" data-offering-filter class="festival-offering-search" type="search" placeholder="Search items, traits or fortunes" value="'+esc(offeringFilter)+'" autocomplete="off">';
+    html+='<p class="festival-note">Use A to enter a fortune category and select an offering, then A to confirm; B returns to your previous selection. Different animal genotypes, including hidden carriers, remain separate. Identical genotypes may stack. One offering replaces the previous fortune.</p>';
     for (const [id,rows] of categories) {
+      const firstCategory = id === categories.keys().next().value; // The first group starts controller focus above the long inventory grid.
       const def=window.FestivalCalendar.blessings[id]; // One authored definition supplies label, target and actual effect strength.
-      html+='<section class="festival-offering-group"><h3>'+esc((def?.icon || '✨')+' '+(def?.label || id))+'</h3><p class="festival-note">'+esc(def?.target || 'Fortune')+'</p><div class="festival-offering-grid">';
+      html+='<section id="festival-offering-'+esc(id)+'" class="festival-offering-group" data-ctrl-group tabindex="0" aria-label="'+esc((def?.label || id)+' offerings')+'"'+(firstCategory?' data-ctrl-default':'')+'><h3>'+esc((def?.icon || '✨')+' '+(def?.label || id))+'</h3><p class="festival-note">'+esc(def?.target || 'Fortune')+'</p><div class="festival-offering-grid">';
       for (const choice of rows) {
         const selected=selection.key===choice.key && selection.stars===choice.stars && selection.variant===choice.variant;
         const traits=choice.traitSummary || '';
         const search=[choice.label,traits,def?.label,def?.target].filter(Boolean).join(' ').toLocaleLowerCase();
         const variant=typeof choice.variant==='string' ? ' data-variant="'+esc(choice.variant)+'"' : '';
-        html+='<button type="button" class="festival-offering-choice" data-festival-action="select-item" data-search="'+esc(search)+'" data-key="'+esc(choice.key)+'" data-stars="'+choice.stars+'"'+variant+' aria-pressed="'+selected+'"><span class="festival-offering-icon">'+esc(choice.icon)+'</span><span><strong>'+esc(choice.label)+'</strong><small>'+esc('★'.repeat(choice.stars)+'☆'.repeat(5-choice.stars))+' · ×'+choice.count+'</small>'+(traits?'<small>'+esc(traits)+'</small>':'')+'</span></button>';
+        const identity=esc(JSON.stringify([choice.key,choice.stars,choice.variant ?? null])); // Controller navigation reselects an exact genome even if other sibling cards change.
+        html+='<button type="button" class="festival-offering-choice" data-ctrl-detail="festivalOfferingDetail" data-stack-id="'+identity+'" data-festival-action="select-item" data-search="'+esc(search)+'" data-key="'+esc(choice.key)+'" data-stars="'+choice.stars+'"'+variant+' aria-pressed="'+selected+'"><span class="festival-offering-icon">'+esc(choice.icon)+'</span><span><strong>'+esc(choice.label)+'</strong><small>'+esc('★'.repeat(choice.stars)+'☆'.repeat(5-choice.stars))+' · ×'+choice.count+(choice.sharedQuality?' · shared star tier':'')+'</small>'+(traits?'<small>'+esc(traits)+'</small>':'')+'</span></button>';
       }
       html+='</div></section>';
     }
     if (!choices.length) html+='<p class="festival-note">No suitable keepsakes or young animals in your bag.</p>';
     else html+='<p data-offering-no-results hidden class="festival-note">No offerings match this search.</p>';
-    const preview=selection.key ? api.offeringPreview?.(selection.key,selection.stars,selection.variant) : null; // Matches the selected lineage rather than a generic species.
+    html+='<section id="festivalOfferingDetail" data-ctrl-detail-panel tabindex="0" aria-label="Selected offering details"></section>'; // Controller A enters this after selecting an item; B returns to its exact card.
+    return html;
+  }
+  function offeringDetailHtml(api) {
+    const preview=selection.key ? api.offeringPreview?.(selection.key,selection.stars,selection.variant) : null; // Appraisal matches the exact selected genotype.
     const bless=preview && window.FestivalCalendar.blessings[preview.stat];
+    let html = '';
     if (preview && bless) {
-      const amount=Math.round(bless.perLevel*preview.level*1000)/10; // Probability points are different from relative drop-weight boosts.
+      const amount=Math.round(bless.perLevel*preview.level*1000)/10; // Probability points and relative rarity weights remain distinguishable.
       const effect=bless.unit==='chance' ? '+'+amount+' percentage points' : '+'+amount+'% to the relevant chance or rarity weight';
-      html+='<section class="festival-offering-preview" aria-label="Selected fortune"><h3>'+
+      html+='<div class="festival-offering-preview" aria-label="Selected fortune"><h3>'+
         esc((preview.mode==='release'?'🐣 Release alive':'🔥 Offer to the pyre')+' · '+bless.icon+' '+bless.label)+
         '</h3><p>'+esc(preview.statement)+'</p><strong>'+esc(bless.description)+': '+effect+'</strong>'+
         '<p class="festival-note">Power '+esc(preview.level)+'/5 · Duration 336 game days · Target: '+esc(bless.target||bless.description)+'</p>'+
         '<div class="festival-offering-math"><span>Quality ×'+preview.qualityUnits.toFixed(2)+'</span><span>Source rarity ×'+preview.scarcityFactor.toFixed(2)+'</span>'+
         '<span>Value ×'+preview.valueFactor.toFixed(2)+'</span><span>Processing ×'+preview.effortFactor.toFixed(2)+'</span>'+
         (preview.traitFactor>1?'<span>Inherited traits ×'+preview.traitFactor.toFixed(2)+'</span>':'')+'</div>'+
-        '<p class="festival-note">Known source: '+esc(preview.sourceLabel)+' ('+esc(preview.confidence)+'). Conditional source odds are not global drop rates.</p></section>';
-    } else if (selection.key) html+='<p class="festival-note">This exact offering is no longer available. Select another.</p>';
-    html+='<div class="festival-options">'+button(preview?.mode==='release'?'Confirm: release this exact animal':'Confirm: sacrifice this keepsake','perform',!preview,'class="festival-offering-commit"')+'</div>';
+        '<p class="festival-note">Known source: '+esc(preview.sourceLabel)+' ('+esc(preview.confidence)+'). Conditional source odds are not global drop rates.</p>'+
+        (typeof selection.variant==='string'?'<p class="festival-note">This exact animal’s genes are preserved. Star quality is recorded per item type, not per animal, so the ceremony uses the next available quality tier.</p>':'')+
+        '</div>';
+    } else if (selection.key) {
+      html+='<p class="festival-note">This exact offering is no longer available. Select another.</p>';
+    }
+    if (selection.key) {
+      html+='<div class="festival-options">'+button(preview?.mode==='release'?'Confirm: release this exact animal':'Confirm: sacrifice this keepsake',
+        'perform',!preview,'class="festival-offering-commit" data-ctrl-default')+'</div>';
+    }
     return html;
+  }
+  function updateOfferingDetail(api=system()) {
+    const detail=root?.querySelector('#festivalOfferingDetail'); // Only the small inspector is changed; offering cards, scroll and controller focus stay intact.
+    if (!detail) return;
+    detail.innerHTML=offeringDetailHtml(api);
+    offeringUiDebug.detailUpdates++;
   }
   function open(anchor = system().nearestActivity()) {
     if (!anchor || !system().atProp(anchor) || !system().festival()) return false;
@@ -95,12 +121,12 @@
     }
     ensure();
     close();
-    prop = anchor; eventId = `${system().year()}:${system().festival().id}`; selection = {}; offeringFilter=''; previousFocus = document.activeElement;
+    prop = anchor; eventId = `${system().year()}:${system().festival().id}`; selection = {}; offeringFilter=''; selectedOfferingButton=null; previousFocus = document.activeElement;
     root.style.display = 'flex'; root.style.setProperty('--festival-color', system().festival().color);
     document.exitPointerLock?.();
     lock = window.CharacterActionLocks?.acquire?.({ owner: 'festival-menu', reason: 'Festival activity menu', participants: [{ id: 'player', channels: ['movement', 'tools', 'actions'] }] });
     render();
-    root.querySelector('button:not(:disabled)')?.focus();
+    (anchor.activity?.type==='offering' ? root.querySelector('[data-ctrl-default]') : root.querySelector('button:not(:disabled)'))?.focus?.();
     return true;
   }
   function openFeast(index = 0) {
@@ -207,14 +233,14 @@
       html = `<p>${esc(descriptions[type] || '')}</p>${button(window.FestivalCalendar.activityLabels[type], 'perform', false)}`;
     }
     content.innerHTML = html;
-    if (type==='offering') filterOfferingChoices(); // Preserve the active search while updating the details pane.
+    if (type==='offering') { updateOfferingDetail(api); filterOfferingChoices(); } // Build one grid, then one lightweight preview.
     status('');
   }
   async function handle(target) {
     const action = target.dataset.festivalAction; // Standard click works with touch, keyboard, and ControllerUI.
     if (action === 'close') { close(); return; }
     if (action === 'debug') {
-      const report = JSON.stringify(system().diagnostics(), null, 2);
+      const report = JSON.stringify({ ...system().diagnostics(), offeringUI:{...offeringUiDebug,selectedKey:selection.key || null,hasGenotypeSelection:typeof selection.variant==='string'} }, null, 2);
       try { await navigator.clipboard.writeText(report); status('Diagnostics copied.'); }
       catch { const output = document.createElement('textarea'); output.value = report; output.style.cssText = 'width:100%;height:180px'; root.querySelector('#festivalContent').append(output); output.select(); status('Select and copy the diagnostics below.'); }
       return;
@@ -232,7 +258,17 @@
         system().eatFestivalBowl();
       render();status(result?.message||'');return;
     }
-    if (action === 'select-item') { const panel=root.querySelector('.festival-card'); const top=panel?.scrollTop ?? 0; selection={key:target.dataset.key,stars:Number(target.dataset.stars),...(target.hasAttribute('data-variant')?{variant:target.dataset.variant}:{})}; render(); if(panel) panel.scrollTop=top; return; }
+    if (action === 'select-item') {
+      selection={key:target.dataset.key,stars:Number(target.dataset.stars),
+        ...(target.hasAttribute('data-variant')?{variant:target.dataset.variant}:{})}; // Preserve the exact animal bloodline chosen in the original card.
+      if (prop?.activity?.type==='offering') {
+        if (selectedOfferingButton && selectedOfferingButton!==target) selectedOfferingButton.setAttribute('aria-pressed','false');
+        selectedOfferingButton=target;
+        target.setAttribute('aria-pressed','true');
+        updateOfferingDetail(); // Leave category nodes and controller focus untouched: A can immediately enter its detail group.
+      } else render();
+      return;
+    }
     if (action !== 'perform') return;
     busy = true; target.disabled = true;
     try {
@@ -248,5 +284,6 @@
     }
     if (prop && (!system().atProp(prop) || eventId !== `${system().year()}:${system().festival()?.id}`)) close();
   }
-  window.FestivalUI = { open, openFeast, close, update, isOpen: () => !!prop || feastInspectIndex !== null };
+  window.FestivalUI = { open, openFeast, close, update, isOpen: () => !!prop || feastInspectIndex !== null,
+    diagnostics: () => ({ ...offeringUiDebug, selectedKey:selection.key || null, hasGenotypeSelection:typeof selection.variant==='string' }) };
 })();
