@@ -2102,16 +2102,15 @@
   function wouldHitHostile(){return wouldHitTarget()==='hostile';}
   function wouldHitShattercask(){return wouldHitTarget()==='shattercask';}
 
-  let nextAimLabelDecisionAt = 0; // Camera-ray selection ~12Hz, label world positioning remains frame-accurate.
   function updateBanditAimLabel() {
     if (!deps?.isWeaponAiming?.()) {
-      nextAimLabelDecisionAt = 0;
+      updateBanditAimLabel.nextDecisionAt = 0; // Instantly reacquire when aim is re-enabled.
       window.WorldPopupText?.clearAimLabel?.();
       return;
     }
-    const nowMs = performance.now(); // Ranged projectiles and precise aim ray are unaffected by this cosmetic label cadence.
-    if (nowMs < nextAimLabelDecisionAt) return;
-    nextAimLabelDecisionAt = nowMs + 80;
+    const nowMs = typeof performance === 'undefined' ? 0 : performance.now(); // Compatible with isolated runtime/test contexts without a browser clock.
+    if (nowMs < (updateBanditAimLabel.nextDecisionAt || 0)) return;
+    updateBanditAimLabel.nextDecisionAt = nowMs + 80; // Cosmetic target choice only; world label presentation stays frame-accurate.
     const focused = focusedHostile(deps.getAimLabelRangeWorld?.() ?? 14);
     const bandit = focused?.candidate?.data;
     if (!bandit?.isBandit || !bandit.avatarRef?.group) {
