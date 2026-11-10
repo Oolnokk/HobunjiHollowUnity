@@ -59,4 +59,38 @@ function node(name, parent = null) {
 const updateOne = source.slice(source.indexOf('function updateOne('), source.indexOf('function tick('));
 assert(!/\.getWorld(Quaternion|Scale|Position)\(/.test(updateOne), 'getWorld*() recompute from raw local transforms and clobber the baked holder pose');
 assert(!/\.updateWorldMatrix\(/.test(updateOne), 'use refreshWorldMatrix() so holder updateMatrixWorld overrides run');
+// Execute the actual cached-matrix conversion against rotated and translated
+// weapon frames. The player's side-held flail turns a local Y anchor into world X.
+class Point {
+  constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
+  copy(other) { Object.assign(this, { x:other.x, y:other.y, z:other.z }); return this; }
+  applyMatrix4(m) {
+    const x = this.x, y = this.y; // Snapshot the local point before the in-place rotation.
+    this.x = m.tx + Math.cos(m.angle) * x - Math.sin(m.angle) * y;
+    this.y = m.ty + Math.sin(m.angle) * x + Math.cos(m.angle) * y;
+    return this;
+  }
+}
+class BakedMatrix {
+  constructor(tx = 0, ty = 0, angle = 0) { Object.assign(this, { tx, ty, angle }); }
+  copy(other) { Object.assign(this, { tx:other.tx, ty:other.ty, angle:other.angle }); return this; }
+  invert() {
+    const angle = -this.angle, tx = this.tx, ty = this.ty; // Inverse translation is -R^-1 * t.
+    this.tx = -Math.cos(angle) * tx + Math.sin(angle) * ty;
+    this.ty = -Math.sin(angle) * tx - Math.cos(angle) * ty;
+    this.angle = angle;
+    return this;
+  }
+}
+const bakedMain = { matrixWorld:new BakedMatrix(2, 3, 0) }; // Source-straight haft, left here as a control.
+const bakedOff = { matrixWorld:new BakedMatrix(7, -2, Math.PI / 2) }; // Authored side-held haft rotated 90 degrees.
+const inverseScratch = new BakedMatrix(); // Reused inverse instead of allocating while simulating frames.
+const localAnchor = new Point(0, -0.4); // Deliberately offset on the haft's LOCAL Y axis.
+const mainAnchor = bakedPoint(localAnchor, bakedMain, null, inverseScratch, new Point());
+const offAnchor = bakedPoint(localAnchor, bakedOff, null, inverseScratch, new Point());
+assert(Math.abs(mainAnchor.x - 2) < 1e-9 && Math.abs(mainAnchor.y - 2.6) < 1e-9, 'unrotated haft retains authored local Y');
+assert(Math.abs(offAnchor.x - 7.4) < 1e-9 && Math.abs(offAnchor.y + 2) < 1e-9, 'side-held haft rotates local Y into world X and stays attached');
+const sameFramePoint = bakedPoint(offAnchor, null, bakedOff, inverseScratch, new Point());
+assert(Math.abs(sameFramePoint.x) < 1e-9 && Math.abs(sameFramePoint.y + 0.4) < 1e-9, 'rope and head both convert back to their own baked weapon coordinates');
+assert(!/\\.localToWorld\\(|\\.worldToLocal\\(/.test(updateOne), 'animation update never re-enters raw world-matrix recalculation');
 console.log('flail baked holder pose tests passed');
