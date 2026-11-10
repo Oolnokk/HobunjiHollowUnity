@@ -955,12 +955,30 @@
     save();
   };
   for (const id of ['head-rope-x','head-rope-y']) byId(id).onchange = () => {
-    drawIdentity(); // Read-only: Complex Tool Visuals owns the flail's true head attachment point.
+    if (!shaftOwnsFlail()) {drawIdentity();return;}
+    const sx=byId('head-rope-x').value.trim(),sy=byId('head-rope-y').value.trim(),x=Number(sx),y=Number(sy);
+    if(!sx||!sy||!Number.isFinite(x)||!Number.isFinite(y)||x<0||x>450||y<0||y>1204) {
+      drawIdentity();msg('Head contact X/Y must be within the original 450 × 1204 source sprite.');return;
+    }
+    (chosenShaft().overrides[byId('head').value] ||= {}).flailHeadAnchor={x,y};save();
   };
   byId('head-rope-scale').onchange = () => {
-    const value = Number(byId('head-rope-scale').value);
-    if (!Number.isFinite(value) || value < 0.05 || value > 8) { drawIdentity(); return; }
-    chosenHead().flailHeadScale = value; save();
+    if(!shaftOwnsFlail()) {drawIdentity();return;}
+    const raw=byId('head-rope-scale').value.trim(),value=Number(raw);
+    if(!raw||!Number.isFinite(value)||value<0.05||value>8) {drawIdentity();return;}
+    (chosenShaft().overrides[byId('head').value] ||= {}).flailHeadScale=value;save();
+  };
+  byId('head-contact-move').onclick=()=>{
+    if(!shaftOwnsFlail())return;
+    headContactMoveEnabled=!headContactMoveEnabled;
+    if(headContactMoveEnabled)openWorkspace('flail-authoring-panel');
+    drawIdentity();drawLines('head-canvas');
+    msg(headContactMoveEnabled?'Move the cyan contact on the HEAD source image; its original rigid mount is protected.':'Head-contact drag disabled.');
+  };
+  byId('head-contact-reset').onclick=()=>{
+    if(!shaftOwnsFlail())return;
+    delete (chosenShaft().overrides[byId('head').value] ||= {}).flailHeadAnchor;save();
+    msg('Pair contact reset to original '+(chosenHead().mount.type==='blade'?'tang start.':'sleeve end.'));
   };
   byId('duplicate-shaft').onclick = () => {
     const from = byId('shaft').value, source = chosenShaft(); // Copy ALL source mount lines, pair overrides and optional living-shaft fire.
