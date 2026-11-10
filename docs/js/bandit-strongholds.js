@@ -392,7 +392,8 @@
       activeSites: [...siteRegistrations.entries()].map(([mapId, site]) => ({ mapId, ...site })),
       interiorMaps: [...interiorScenes.keys()], pendingBarrels: pendingBarrels.size, barrelLootRules: BARREL_LOOT,
       cover:window.BanditStrongholdCover?.debugSnapshot?.()||null,
-      wolves:window.BanditStrongholdWolves?.debugSnapshot?.()||null, style: 'authored boards.png wood and carved_smooth.png stone via ProceduralFurniture' };
+      wolves:window.BanditStrongholdWolves?.debugSnapshot?.()||null,
+      throws:window.BanditStrongholdCombat?.debugSnapshot?.()||null, style: 'authored boards.png wood and carved_smooth.png stone via ProceduralFurniture' };
   }
 
   window.BanditStrongholds = Object.freeze({
