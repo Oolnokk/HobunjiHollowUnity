@@ -57,7 +57,7 @@
         cookingProcessSteps: [...(Array.isArray(input?.cookingProcessSteps) ? input.cookingProcessSteps : []), { method: methodId, baseHours: baseProcessHours(methodId), multiplier: factor }],
         cookingProcessSourceKey: inputKey,
         cookingProcessLastMethod: methodId,
-        cookingProcessingTier: 'raw', // Explicit stage history replaces the old one-shot tier bonus.
+        cookingProcessingTier: output.cookingProcessingTier || input?.cookingProcessingTier || 'raw', // Keep legacy tier labels for existing consumers; the explicit stage multiplier takes precedence in buff math.
       };
     });
   }
