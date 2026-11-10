@@ -106,7 +106,7 @@ let focusCalls = 0, hitboxCalls = 0; // Cheap counters verify remote actors do n
 const near = { id: 'near', x: 64, y: 0, health: 100, areaId: 'town' };
 const far = { id: 'far', x: 6400, y: 0, health: 100, areaId: 'town' };
 const hudContext = {
-  THREE: { Vector3 }, Math,
+  THREE: { Vector3 }, Math, OUT_OF_REACH_MARGIN_WORLD: 0.5, // Same outer-scope margin used by the production HUD's extracted function.
   window: { RangedWeapons: {
     actorHitbox(entity) {
       hitboxCalls++;

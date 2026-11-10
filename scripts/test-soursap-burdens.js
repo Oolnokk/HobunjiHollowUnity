@@ -132,7 +132,8 @@ assert(begin > 0 && end > begin, 'ranged ammo exposes the canonical status imple
 let now = 1000;
 const statuses = vm.runInNewContext(rangedCode.slice(begin,end) +
   '\n({applySpecialAmmoDebuff,applySticky,movementDirectionMultiplier,movementSpeedMultiplier})',
-  {performance:{now:()=>now},DISORIENT_DURATION_MS:3000,SHRAPNEL_DURATION_MS:5000});
+  {performance:{now:()=>now},DISORIENT_DURATION_MS:3000,SHRAPNEL_DURATION_MS:5000,
+    activeAmmoDebuffActors:new Set()}); // Extracted ammo functions share the production active-affliction registry.
 const actor = {x:0,y:0,health:100};
 statuses.applySpecialAmmoDebuff(actor,'concussive');
 statuses.applySticky(actor,2200);
