@@ -12,7 +12,14 @@
   const activeSfx = new Set(); // Intro audio cleanup stops one-shots and pooled voices already in flight.
   let introductionMix = null; // Single owner restores audio settings after success/cancellation.
   const objectSfxPreloads = new Map(); // Retains eagerly loaded tool cues for low-latency clones in playObjectSfx.
-  let metronomeSfxVoice = null; // Only the melody metronome owns this voice; ordinary mining SFX remain untouched.
+  let metronomeSfxVoice = null; // Native fallback owns one voice; decoded stonebeats use independent scheduled Web Audio sources.
+  const STONEBEAT_LOOKAHEAD_MS = 90; // Matches performance mode's proven transport-audio ahead-of-time horizon.
+  const stoneBeatDecoded = new Map(); // Four cached decoded recordings avoid per-beat HTML media startup/decode jitter.
+  const stoneBeatDecoding = new Map(); // Deduplicates asynchronous audio preloads across init/reloads.
+  const stoneBeatScheduled = new Set(); // Pending and sounding independent buffer sources support tail overlap and cancellation.
+  const stoneBeatFallbackTimers = new Set(); // Future HTML fallbacks must be cancelled when the player leaves the pressure plate.
+  let stoneBeatContext = null; // Shared footstep AudioContext drives all four clips with the audio hardware clock.
+  let stoneBeatDecodeError = null; // Readable in Pixel Probe if mobile decode or network access fails.
   const combatSfxPreloads = new Map(); // URL -> bounded ready-element pool used so rapid combat cues cannot queue indefinitely.
   const animalVoicePreloads = new Map(); // Keeps species calls decoded/ready before a semantic vocal intent fires.
   const footstepAudioPools = new Map(); // URL -> reusable preloaded native-audio voices used by every recorded footstep.
@@ -45,6 +52,7 @@
     installCombatGestureUnlock(); // Warm audio unlock happens on a trusted gesture, before the next wilderness attack.
     installCombatDirectionalUpdates(); // Turn the camera mid-grunt without leaving an enemy pinned to an old ear.
     preloadConfiguredObjectSfx();
+    preloadStoneBeatBuffers(); // Decode all four real recordings before a player steps onto a timed melody plate.
     preloadConfiguredCombatSfx();
     preloadSpecialCombatSfx(); // Drenkirra projectile sounds are authored separately from the shared combat manifest.
     preloadAnimalVoices();
@@ -1236,10 +1244,92 @@
     if (cfgEntry?.generatedStoneKchunk && gameAudioConfig().enabled !== false && objectSfxConfig().enabled !== false && Number(gameAudioConfig().sfxVolume ?? 1) > 0) playGeneratedStoneKchunk(Math.max(0,Number(gameAudioConfig().sfxVolume ?? 1))*Math.max(0,Number(cfgEntry.volume ?? .8))*volumeScale);
   }
 
-  function playObjectSfxKeyMetronome(volumeScale = 1, beatIndex = 0) {
-    const beat = Number.isFinite(beatIndex) ? ((Math.trunc(beatIndex) % 4 + 4) % 4) + 1 : 1; // Maps the judge's zero-based quarter beats onto the four authored recordings.
-    const key = 'stoneBeat' + beat; // The same four cues are reused across every measure and silent-score interval.
-    const cfgEntry = objectSfxConfig()[key]; // Reuses the configured object-SFX preloader, mixer and native media voice.
+  function stoneBeatAudioContext() {
+    if (stoneBeatContext?.state !== 'closed') return stoneBeatContext;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    try {
+      stoneBeatContext = window._footstepAudioCtx || (window._footstepAudioCtx = new Ctx());
+      return stoneBeatContext;
+    } catch (error) {
+      stoneBeatDecodeError = String(error?.message || error);
+      return null;
+    }
+  }
+
+  function stoneBeatAttackOffset(buffer) {
+    // Remove recording/MP3 encoder leading silence, not the natural stone decay.
+    // Three-millisecond pre-roll preserves a soft strike onset; never seek further than 120 ms into an authored clip.
+    if (!buffer?.getChannelData || !buffer.sampleRate || !buffer.length) return 0;
+    const scanEnd = Math.min(buffer.length, Math.floor(buffer.sampleRate * 0.12));
+    let peak = 0; // Peak over the short leading window establishes a per-recording onset threshold.
+    for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+      const data = buffer.getChannelData(channel);
+      for (let i = 0; i < scanEnd; i++) peak = Math.max(peak, Math.abs(data[i]));
+    }
+    if (peak < 0.005) return 0;
+    const threshold = Math.max(0.005, peak * 0.10);
+    const channels = Array.from({length:buffer.numberOfChannels}, (_, channel) => buffer.getChannelData(channel));
+    for (let i = 0; i < scanEnd; i++) {
+      if (channels.some(data => Math.abs(data[i]) >= threshold))
+        return Math.max(0, i / buffer.sampleRate - 0.003);
+    }
+    return 0;
+  }
+
+  function preloadStoneBeatBuffers() {
+    const context = stoneBeatAudioContext();
+    const fetchFn = window.fetch || (typeof fetch === 'function' ? fetch : null);
+    if (!context || !fetchFn) return;
+    for (let index = 1; index <= 4; index++) {
+      const url = objectSfxConfig()['stoneBeat' + index]?.url; // Same manifest as native fallback and existing tool SFX tests.
+      if (!url || stoneBeatDecoded.has(url) || stoneBeatDecoding.has(url)) continue;
+      const pending = Promise.resolve().then(async () => {
+        const response = await fetchFn(url);
+        if (!response?.ok) throw Error('Stonebeat HTTP ' + (response?.status ?? 'unavailable'));
+        const bytes = await response.arrayBuffer();
+        const buffer = await new Promise((resolve, reject) => {
+          let settled = false; // Some Safari decoders call the callbacks and return a Promise; settle only once.
+          const success = value => { if (!settled) { settled = true; resolve(value); } };
+          const failure = error => { if (!settled) { settled = true; reject(error); } };
+          try {
+            const result = context.decodeAudioData(bytes.slice(0), success, failure);
+            result?.then?.(success, failure);
+          } catch (error) { failure(error); }
+        });
+        stoneBeatDecoded.set(url, { buffer, offset:stoneBeatAttackOffset(buffer) });
+      }).catch(error => {
+        stoneBeatDecodeError = url + ': ' + String(error?.message || error);
+        window.__farmLog?.('[stonebeat] ' + stoneBeatDecodeError, 'warn');
+      }).finally(() => stoneBeatDecoding.delete(url));
+      stoneBeatDecoding.set(url, pending);
+    }
+  }
+
+  function cancelObjectSfxMetronome() {
+    for (const timer of stoneBeatFallbackTimers) clearTimeout(timer);
+    stoneBeatFallbackTimers.clear();
+    const now = performance.now();
+    for (const entry of stoneBeatScheduled) {
+      if (entry.whenMs <= now + 2) continue; // A sounded beat retains its natural tail; only pending strikes are cancelled.
+      try { entry.source.stop(); } catch (_) {}
+      stoneBeatScheduled.delete(entry);
+    }
+  }
+
+  function stoneBeatDebugSnapshot() {
+    return {
+      backend:stoneBeatContext?.state === 'running' ? 'web-audio' : 'native-fallback',
+      decoded:stoneBeatDecoded.size,decoding:stoneBeatDecoding.size,
+      voices:stoneBeatScheduled.size,fallbackQueued:stoneBeatFallbackTimers.size,
+      lastError:stoneBeatDecodeError,lookaheadMs:STONEBEAT_LOOKAHEAD_MS,
+    };
+  }
+
+  function playObjectSfxKeyMetronome(volumeScale = 1, beatIndex = 0, whenMs = null) {
+    const beat = Number.isFinite(beatIndex) ? ((Math.trunc(beatIndex) % 4 + 4) % 4) + 1 : 1;
+    const key = 'stoneBeat' + beat;
+    const cfgEntry = objectSfxConfig()[key];
     const audioCfg = gameAudioConfig();
     if (!cfgEntry?.url || audioCfg.enabled === false || objectSfxConfig().enabled === false ||
       Number(audioCfg.sfxVolume ?? 1) <= 0) {
@@ -1247,14 +1337,57 @@
       return false;
     }
     const preloaded = objectSfxPreloads.get(cfgEntry.url);
-    lastObjectSfxKeyDebug = {
+    const targetMs = Number.isFinite(whenMs) ? whenMs : performance.now(); // Absolute monotonic deadline from the very same clock as the glyph judge.
+    const context = stoneBeatAudioContext();
+    const clip = stoneBeatDecoded.get(cfgEntry.url);
+    if (!clip && !stoneBeatDecoding.has(cfgEntry.url)) preloadStoneBeatBuffers();
+    if (context?.state === 'suspended') context.resume?.().catch(error => {
+      stoneBeatDecodeError = String(error?.message || error);
+    });
+    const baseDebug = {
       key,found:true,url:cfgEntry.url,preloaded:!!preloaded,readyState:preloaded?.readyState ?? null,
-      metronome:true,beat,oneVoice:true,maxDurationSec:3,atMs:Math.round(performance.now()),
-    }; // Pixel Probe exposes exactly which numbered stone recording was requested.
-    playObjectSfx(cfgEntry,volumeScale,1,3); // Play the complete stone strike; the next quarter beat replaces its voice if necessary.
+      metronome:true,beat,scheduledAtMs:targetMs,lookaheadMs:STONEBEAT_LOOKAHEAD_MS,
+      decoded:!!clip,atMs:Math.round(performance.now()),
+    };
+    if (clip && context?.state === 'running') {
+      try {
+        const volume = Math.max(0,Math.min(1,Number(cfgEntry.volume)||.8))
+          * Math.max(0,Number(audioCfg.sfxVolume??1)) * Math.max(0,Number(volumeScale)||0);
+        const source = context.createBufferSource(); // Independent voice for every quarter-note, including successive repetitions of one sample.
+        const gain = context.createGain();
+        const startAt = context.currentTime + Math.max(0,(targetMs-performance.now())/1000);
+        source.buffer = clip.buffer;
+        source.playbackRate.value = 1; // Never accelerate the four authored recordings to fit a beat.
+        gain.gain.setValueAtTime(Math.max(0,Math.min(1,volume)),startAt);
+        source.connect(gain).connect(context.destination);
+        const entry = { source, whenMs:targetMs }; // Used to cancel only not-yet-sounded events on plate release.
+        stoneBeatScheduled.add(entry);
+        source.onended = () => {
+          stoneBeatScheduled.delete(entry);
+          try { source.disconnect();gain.disconnect(); } catch (_) {}
+        };
+        source.start(startAt,clip.offset);
+        lastObjectSfxKeyDebug = {...baseDebug,oneVoice:false,backend:'web-audio',playbackState:'scheduled',attackOffsetMs:Math.round(clip.offset*1000),startAt};
+        return true;
+      } catch (error) {
+        stoneBeatDecodeError = String(error?.message || error); // Native audio is still available if a mobile AudioContext graph fails.
+      }
+    }
+    const fallback = () => {
+      if (gameAudioConfig().enabled === false || objectSfxConfig().enabled === false) return;
+      playObjectSfx(cfgEntry,volumeScale,1,3); // Existing native HTML fallback still interrupts its previous voice.
+    };
+    const remainingMs = targetMs - performance.now();
+    if (remainingMs > 4) {
+      const timer = setTimeout(() => {stoneBeatFallbackTimers.delete(timer);fallback();},remainingMs);
+      stoneBeatFallbackTimers.add(timer);
+      lastObjectSfxKeyDebug = {...baseDebug,oneVoice:true,backend:'native-fallback',playbackState:'queued'};
+    } else {
+      lastObjectSfxKeyDebug = {...baseDebug,oneVoice:true,backend:'native-fallback',playbackState:'requested'};
+      fallback();
+    }
     return true;
   }
-
   // AlchemyFlasks emits semantic events and never imports AudioSystem. This
   // adapter is the only place that resolves those placeholders to ordinary
   // object-SFX keys, so adding real recordings later is a config-only change.
@@ -1840,6 +1973,9 @@
     playObjectSfx,
     playObjectSfxKey,
     playObjectSfxKeyMetronome,
+    cancelObjectSfxMetronome,
+    stoneBeatDebugSnapshot,
+    metronomeLookaheadMs: STONEBEAT_LOOKAHEAD_MS,
     playObjectSfxKeyIndependentPitch,
     objectSfxDebugSnapshot,
     playCreatureSfxAt,
