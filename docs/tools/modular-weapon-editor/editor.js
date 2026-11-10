@@ -722,7 +722,8 @@
       }
       input.onchange = () => {
         const value = bool ? input.checked : key === 'animation' ? input.value : Number(input.value);
-        if (value === neutral[key]) delete pair[key]; else pair[key] = value; // Store only exceptions for this exact combination.
+        const currentPair = (chosenShaft().overrides[byId('head').value] ||= {}); // Always edit the current draft, even after async preview/save replaces its object graph.
+        if (value === neutral[key]) delete currentPair[key]; else currentPair[key] = value; // Store only exceptions for this exact combination.
         save();
       };
       cell.appendChild(input); row.append(title, cell); byId('fields').appendChild(row);
