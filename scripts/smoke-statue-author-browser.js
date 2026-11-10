@@ -194,6 +194,42 @@ async function run(){
       pieceBounds:pahu.pieces.map(p=>({id:p.id,worldSize:p.worldSize,visible:p.visible,screenCenter:p.screenCenter})),
       screenshot:'artifacts/statue-pahu.png'
     }));
+    await page.waitForFunction(()=>document.querySelector('#generateHero')?.disabled===false,
+      null,{timeout:20000});
+    await page.selectOption('#heroSpecies','mao-ao');
+    await page.click('#generateHero');
+    await page.waitForFunction(()=>{
+      const debug=window.__hobunjiStatueDebug?.();
+      return debug?.builtNpcId?.startsWith('statue-hero-mao-ao-')
+        &&debug.heroEquipment?.armor?.length>0&&!debug.buildActive;
+    },null,{timeout:120000});
+    await page.waitForFunction(()=>{
+      const debug=window.__hobunjiStatueDebug?.();
+      return !!debug?.pieces?.length&&debug.pieces.every(piece=>
+        piece.id.includes('_hand')||piece.id.includes('_foot')
+          ? piece.modelReady&&piece.textureReady
+          : piece.textureReady);
+    },null,{timeout:30000});
+    const generated=await page.evaluate(()=>window.__hobunjiStatueDebug());
+    assert.equal(generated.heroEquipment.speciesId,'mao-ao',
+      'Hero species must be selected by the user, not bandit gang species weights');
+    assert.ok(generated.heroEquipment.cosmetics.length>0,'Hero must have actual whitelist-approved clothing');
+    assert.ok(generated.heroEquipment.armor.some(item=>item.id==='rounded_pauldron'),
+      'Captain armor must use the game’s real crafted pauldron blueprint');
+    assert.ok(generated.heroEquipment.armor.some(item=>item.id==='tangedcirclet'),
+      'Captain helmet must use the game’s real crafted circlet blueprint');
+    assert.ok(generated.heroEquipment.metalKey,'Hero weapon must use a real metal tier');
+    assert.ok(generated.pieces.some(item=>item.id==='statue_weapon_0'&&item.textureReady),
+      'Hero must visibly hold a weapon from the cultural bandit shape pool');
+    assert.ok(generated.pieces.some(item=>item.id==='statue_weapon_1'&&item.textureReady),
+      'Hero must receive a second weapon from the captain ranged pool');
+    await page.locator('#viewport').screenshot({path:path.join(root,'artifacts','statue-hero.png')});
+    console.log('PASS Random Hero species-locked equipment: '+JSON.stringify({
+      hero:generated.builtNpcId,equipment:generated.heroEquipment,
+      pieces:generated.pieces.map(item=>({id:item.id,ready:item.textureReady})),
+      screenshot:'artifacts/statue-hero.png'
+    }));
+
   }finally{
     if(browser)await browser.close();
     await new Promise(resolve=>server.close(resolve));
