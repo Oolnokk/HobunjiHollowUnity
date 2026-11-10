@@ -185,6 +185,7 @@ const wolfHostiles=new Set();
 const wolfDeps={
   TILE:64,zoneLayouts:deps.zoneLayouts,zoneScenes:new Map([[zoneId,{scene:zoneScene,grid:zoneGrid}]]),
   hostileObjects:wolfHostiles,
+  player:{x:19*64,y:20*64,health:100},
   getCurrentArea:()=>activeArea,getActiveScene:()=>zoneScene,getActiveGrid:()=>zoneGrid,
   getActiveCols:()=>46,getActiveRows:()=>38,tileSurfaceYInArea:()=>0,
   makeCreatureEntity(kind,x,y,options){assert.equal(kind,'gar-wolf');
@@ -194,6 +195,8 @@ const wolfDeps={
   showToast(){},
 };
 assert.equal(wolves.ensureExterior(secondCamp,wolfDeps),2,'two real chained gar-wolf entities spawn at each stake');
+assert([...wolfHostiles].filter(actor=>actor.banditStrongholdWolf).every(wolf=>wolf.def.hostile===false),
+  'neither chained wolf can aggro the player before the actual cave threshold');
 assert.equal(wolves.ensureExterior(secondCamp,wolfDeps),0,'exterior wolf setup is idempotent');
 const wolfStake=secondCamp.props.find(prop=>prop.strongholdStake&&prop.wolfSlot===0);
 const secondMap=secondCamp.stronghold.mapId;
@@ -206,10 +209,16 @@ assert(wolves.debugSnapshot().escaped>0,'released wolf visibly reaches the cave 
 const enemy={id:'enemy-native',isBandit:true,health:50,caveSiteMapId:secondMap,x:21*64,y:20*64};
 wolfHostiles.add(enemy);
 activeArea=secondMap;
+assert.equal(caves.markStrongholdWolfAttackActivated(secondMap),true,
+  'the first interior transition, not approaching the stake, arms wolf hostility');
+assert.equal(caves.strongholdWolfStatus(secondMap,1).activated,true);
 const caveProfile=caves.profileForMapId(secondMap);
 const caveState=caves.__test.runtimeStateBySignature.get(caveProfile.signature);
-assert.equal(wolves.ensureInterior(caveProfile,{banditSpawns:[{col:21,row:20}]},caveState,wolfDeps),1,
-  'liberated wolf is spawned only after entering a populated bandit cave');
+assert.equal(wolves.ensureInterior(caveProfile,{banditSpawns:[{col:21,row:20}],entranceTile:{col:17,row:19}},caveState,wolfDeps),2,
+  'freed and unfreed wolves enter actual native cave combat in opposite factions');
+const hostileWolf=[...wolfHostiles].find(actor=>actor.banditStrongholdGateWolf);
+assert(hostileWolf && hostileWolf.targetPlayer===wolfDeps.player && hostileWolf.def.hostile,
+  'only the unrescued wolf attacks the player after the cave threshold');
 const ally=[...wolfHostiles].find(actor=>actor.banditStrongholdLiberated);
 assert(ally && ally.targetCreature===enemy && ally.targetPlayer==null && ally.def.hostile===false,
   'liberated wolf uses native patrol-chase against bandits, never the player');
@@ -303,9 +312,13 @@ async function testPhysicalBarrels() {
     areaId:mapId,scene,health:50,x:64*9,y:64*8,
     avatarRef:{group:{position:{y:1.2}}},def:{},telegraphState:null,
   };
-  const target = {id:'player',areaId:mapId,health:100,x:64*14,y:64*9};
+  const target = {id:'player',areaId:mapId,health:100,x:64*16.5,y:64*9};
   assert.equal(throwApi.updateThrow({...thrower,banditStrongholdThrower:false},.1,target),null,
     'only explicit stronghold throwers use the optional ballistics');
+  assert.equal(throwApi.__test.selfBlastSafe(thrower,{x:64*13,y:64*8},64),false,
+    'thrower will never blast its own tile even if allies could be endangered');
+  assert.equal(throwApi.__test.selfBlastSafe(thrower,target,64),true,
+    'safe self-distance permits enemy Shattercasks without checking allied positions');
   const shotStart={x:1,y:1,z:2},shotEnd={x:5,y:.3,z:4};
   const initial=throwApi.arc(shotStart,shotEnd);
   const computedY=shotStart.y+initial.y*initial.flightSeconds-.5*13*initial.flightSeconds**2;
