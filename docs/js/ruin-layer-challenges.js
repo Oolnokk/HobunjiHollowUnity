@@ -8,6 +8,7 @@
 })(typeof self!=='undefined'?self:globalThis,function(root){
   'use strict';
   const TYPES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain','statueDefense','findBlocks','timedMelody','fireSconces']);
+  const ropeGeometry=()=>root.RuinRopeGeometry||(typeof require==='function'?require('./ruin-rope-geometry.js'):null); // Resolve at compose time: RopeCore loads later in the browser.
   const boneTextures=new Map(); // Shared Scratchbone numeral textures for every generated melody decal.
   function scratchboneMaterial(THREE,texture,options,name){
     if(root.RuinMelodyGlyphDecal?.makeInkMaterial)
@@ -34,8 +35,9 @@
     if(!room||!['N','E','S','W'].includes(side))return null;
     const alongX=side==='E'||side==='W';
     const length=alongX?room.w:room.d;
-    if(length<11)return null; // Three supported cells on either bank and at least five cells of actual abyss.
-    const bank=3; // Physical ground left before/after the void, measured from the chamber's full exterior walls.
+    const math=ropeGeometry();
+    if(!math||length<math.ROOM_LENGTH||(alongX?room.d:room.w)<math.CROSS_WIDTH)return null; // Full derived swing and lateral clearances are required.
+    const bank=math.BANK; // Physical ground left before/after the void, measured from the chamber's full exterior walls.
     const bounds={
       minX:room.x+(alongX?bank:0),maxX:room.x+room.w-(alongX?bank:0),
       minZ:room.z+(alongX?0:bank),maxZ:room.z+room.d-(alongX?0:bank),
@@ -295,12 +297,10 @@
       const finish=alongX?(positive?pit.maxX:pit.minX):(positive?pit.maxZ:pit.minZ);
       const entry={x:alongX?start+from*.8:centerX,z:alongX?centerZ:start+from*.8,y};
       const exit={x:alongX?finish+to*.8:centerX,z:alongX?centerZ:finish+to*.8,y};
-      const count=Math.max(3,Math.min(8,Math.ceil((pitLength-1)/2.25)+1));
-      const anchors=Array.from({length:count},(_,i)=>{
-        const t=.5+(pitLength-1)*i/(count-1); // Spread across the entire abyss, keeping a small margin at either bank.
-        const along=start+(positive?1:-1)*t;
-        return {x:alongX?along:centerX,z:alongX?centerZ:along,y:y+3.35};
-      });
+      const math=ropeGeometry(); // Shared geometry uses the baseline flight, never active potion multipliers.
+      const anchors=math.anchors(pit,side,id,root.DevRandomRuin?.getSeed?.()??0)
+        .map(site=>({...site,y:y+math.ANCHOR_RISE}));
+      const count=anchors.length;
       for(const anchor of anchors){
         const mount=authored('ruinRopeMount',anchor.x,anchor.y-2.965,anchor.z); // The existing Rope Furniture mount's top anchor sits exactly on the actual physics rope pivot.
         if(mount)mount.userData.ruinLabRopeFixture=true;
@@ -309,6 +309,16 @@
         new THREE.BoxGeometry(alongX?pitLength+1:0.5,.3,alongX?.5:pitLength+1),
         stone,centerX,y+3.4,centerZ);
       beam.userData.devRuinCeilingBeam=true;
+      // The longitudinal spine alone is too narrow for offset rope mounts.
+      // Each shifted anchor gets a short transverse stone rib linking it back to the spine.
+      for(let i=0;i<anchors.length;i++){
+        const anchor=anchors[i],sideways=alongX?anchor.z-centerZ:anchor.x-centerX;
+        if(Math.abs(sideways)<=.2)continue;
+        const rib=body('ruin-abyss-rope-rib-'+id+'-'+i,
+          new THREE.BoxGeometry(alongX?.45:Math.abs(sideways)+.6,.3,alongX?Math.abs(sideways)+.6:.45),
+          stone,alongX?anchor.x:centerX+sideways/2,y+3.4,alongX?centerZ+sideways/2:anchor.z);
+        rib.userData.devRuinCeilingBeam=true; // Presentation-only support above the traversable swing envelope.
+      }
       const fog=body('ruin-bottomless-abyss-'+id,
         new THREE.PlaneGeometry(pit.maxX-pit.minX,pit.maxZ-pit.minZ),
         basic(0x08090b),centerX,y-.15,centerZ);
@@ -321,9 +331,10 @@
         sheet.rotation.x=-Math.PI/2;sheet.userData.devRuinAbyssHazard=options.theme;
       }
       rec.pit=pit;rec.ropesRequested=count;
+      rec.ropeGeometry={...math.snapshot(),lateralOffsets:anchors.map(p=>alongX?p.z-centerZ:p.x-centerX)}; // Mobile diagnostics show the actual seeded zigzag.
       rec.ropeSpec={id,roomId:id,bounds:pit,entry,exit,floorY:y,anchors,
         yaw:Math.atan2(side==='S'?1:side==='N'?-1:0,side==='E'?1:side==='W'?-1:0),
-        length:2.43, maxLength:2.55,parent:group};
+        length:math.ROPE_LENGTH,maxLength:math.MAX_LENGTH,parent:group};
     }else if(kind==='dungeonFire'){
       // The standard DungeonFire runtime owns shot ignition and plume-to-ice
       // collision. The room merely authors a source brazier, a heat target,

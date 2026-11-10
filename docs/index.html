@@ -26,7 +26,7 @@
   <script src="js/dev-companion-bridge.js?v=20261019handoff1"></script>
   <script src="js/dev-companion-appearance.js?v=20261107appearance-audit2"></script>
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
-  <script src="js/geometry-quality.js?v=20261109quality1"></script> <!-- Baked GLB quality profiles and Settings import; safe source fallback. -->
+  <script src="js/geometry-quality.js?v=20261109quality1"></script> <!-- Baked GLB quality profiles; original-source fallback. -->
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20261013hd467097"></script>
   <script src="js/house-wall-fixtures.js?v=20261027h412254d"></script>
@@ -161,7 +161,7 @@
   <script src="debug.js?v=20261107h4ad2a3b"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20261026h7f369c3"></script>
-  <script src="config/scratchbones-config.js?v=20261108harlyao2"></script>
+  <script src="config/scratchbones-config.js?v=20261109stonebeatcfg1"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
@@ -258,7 +258,7 @@
   <script src="js/procedural-furniture.js?v=20261109geomquality1"></script>
   <script src="js/furniture-puzzle-properties.js?v=20261103h9f3db40"></script>
   <script src="js/game-feel.js?v=20261108feel1"></script> <!-- Camera shake, hit-stop, hurt flash, puzzle-solve chime and reveal shot. -->
-  <script src="js/ruin-interaction-audio.js?v=20261108h6329763"></script> <!-- Shared, size-pitched stone mechanisms and ignition cues; loaded before shaft mechanisms. -->
+  <script src="js/ruin-interaction-audio.js?v=20261109stonebeat1"></script> <!-- Shared, size-pitched stone mechanisms and ignition cues; loaded before shaft mechanisms. -->
   <script src="js/furniture-puzzle-runtime.js?v=20261107combined1520_1524_1"></script>
   <script src="js/interior-door-tiles.js?v=20261104crossheightAudit2"></script>
 <script src="js/farmhouse-room-planner.js?v=20261029roomspace3"></script> <!-- Saved farmhouse wall segments and movable one-tile door slots. -->
@@ -271,7 +271,7 @@
   <!-- Preserve authored sign decals when house fixtures render at town load. -->
   <script src="js/ruin-emblem.js?v=20261108emblem1"></script>
   <script src="js/furniture-decal-runtime.js?v=20261108h4717d33"></script>
-  <script src="js/furniture-pattern-surfaces.js?v=20261108h66ae7a9"></script>
+  <script src="js/furniture-pattern-surfaces.js?v=20261109shellaudit1"></script>
   <script src="js/ruin-pattern-surface-rules.js?v=20261107ruinpngglow1"></script>
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
@@ -333,7 +333,7 @@
   <script src="js/combat/shared-attack-pose.js?v=20261030h12f55f4"></script>
   <script src="config/weapon-sprite-assemblies.js?v=20261109ropebrown3"></script> <!-- Authoritative multi-sprite weapon recipes shared with Tool Hub. -->
   <script src="js/weapon-layer-effects.js?v=20261031h7702074"></script> <!-- Recolor, visibility masks and fire behind head overlays. -->
-  <script src="js/weapon-sprite-assemblies.js?v=20261109animalshade7"></script> <!-- Shared layered PNG weapon + flail component runtime; pre-render updates player and enemy assemblies. -->
+  <script src="js/weapon-sprite-assemblies.js?v=20261109cachedFlail1"></script> <!-- Shared layered PNG weapon + flail component runtime; pre-render updates player and enemy assemblies. -->
   <script src="js/tool-activity-stages.js?v=20261027h59190d9"></script> <!-- NPC dig/tool-action stages. -->
   <script src="js/combat/weapon-shape-stats.js?v=20261108attackpower1"></script> <!-- Shared melee shape stat resolver; Foundry head modifiers are mitigated. -->
   <script src="js/combat/combat-core.js?v=20261108attackpower1"></script>
@@ -445,7 +445,7 @@
   <script src="js/tea-grinder.js?v=20261019h0edeaef"></script>
   <script src="js/persistent-ground-fire.js?v=20261107integratedDungeon1"></script><!-- Area-scoped fire patches shared by flasks, Shattercasks and stone sconces. -->
   <script src="js/throw-cover-trajectory.js?v=20261107burdenCombined1"></script> <!-- Shared height-aware throw cover and outlined ground previews; loads before both consumers. -->
-  <script src="js/alchemy-flasks.js?v=20261107burdenCombined1"></script>
+  <script src="js/alchemy-flasks.js?v=20261109idleStyles1"></script>
   <!-- Dye catalog/ownership (window.DyeSystem) — character creation, the
        redye panel, General Store clothing stock, and treasure loot all
        draw from it. Self-contained aside from deps injected via init(), so
@@ -609,7 +609,8 @@
   <script src="js/perch-support.js?v=20261105perchAudit7"></script> <!-- Point/line perches and shared branch-fall release on prone, death, or knockback. -->
   <script src="js/cliff-route-network.js?v=20261108karstcliffs1"></script> <!-- Shared graph for selected exterior handholds, balcony terrain and wildlife routes. -->
   <script src="js/fall-system.js?v=20261107fall1"></script>
-  <script src="js/player-jump.js?v=20261108shaftfallgrab1"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
+  <script src="js/player-air-motion-config.js?v=20261109actualMoveSpeed2"></script>
+  <script src="js/player-jump.js?v=20261109ropeBase1"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
   <script src="js/climb-system.js?v=20261107releaseFall3"></script>
   <script src="js/cliff-crawl-presentation.js?v=20261107contactBody1"></script> <!-- Rock-projected hands, feet and body for handhold routes and attached wall surfaces. -->
   <script src="js/creature-cliff-climb.js?v=20261104cliffAudit1"></script>
@@ -626,7 +627,7 @@
   <script src="js/ruin-reaching-obelisks.js?v=20261108shaftfallgrab1"></script> <!-- Complete stateful vertical traversal, after CellGrid3D and the climb pipeline. -->
   <script src="js/ruin-jump-shaft.js?v=20261108jump1"></script> <!-- Free-jump platform staircase shaft traversal (replaces the reaching obelisks for generated ruins); before shaft-hub.js. -->
   <script src="js/shaft-hub.js?v=20261108h1e00563"></script>
-  <script src="js/ruin-layer-plan.js?v=20261109timedMelody1"></script>
+  <script src="js/ruin-layer-plan.js?v=20261109ropeZigzag1"></script>
   <script src="js/dev-ruin-single-room-trial.js?v=20261109timedMelody1"></script> <!-- One-room developer puzzle chooser and normal-plan weighted odds. -->
   <script src="js/dev-ruin-find-blocks.js?v=20261109timedMelody1"></script> <!-- Four-block compound lab fixture, using native ruin push, fire, flute and bomb mechanics. -->
   <script src="js/ruin-shaft-corridor.js?v=20261104directVestibule1"></script>
@@ -634,15 +635,15 @@
   <script src="js/puzzle-cave-melody.js?v=20261108cliffWhiteYellowGlowPick3"></script><!-- Reusable rhythm grid and timed plate-gated cave songs. -->
   <script src="js/puzzle-cave-plate-art.js?v=20261107ruinpngglow1"></script><!-- Carved-smooth Tankan lettering, reused by interior and exterior melody plates. -->
   <script src="js/ruin-melody-glyph-decal.js?v=20261108cliffWhiteYellowGlowPick3"></script><!-- Plate-revealed Scratchbone clues outside the dev ruin bootstrap. -->
-  <script src="js/ruin-layer-challenges.js?v=20261109timedMelody1"></script>
-  <script src="js/ruin-layer-playable.js?v=20261109ruinTravel1"></script>
+  <script src="js/ruin-layer-challenges.js?v=20261109ropeZigzag1"></script>
+  <script src="js/ruin-layer-playable.js?v=20261109ropeGeometryMobile1"></script>
   <script src="js/ruin-v50-native-mechanisms.js?v=20261107wingDoorSoftlock2"></script>
-  <script src="js/ruin-v50-native-floors.js?v=20261109ruinTravel2"></script>
+  <script src="js/ruin-v50-native-floors.js?v=20261109ruinTravel2shellaudit1"></script>
   <script src="js/ruin-shaft-connector.js?v=20261109ruinTravel1"></script>
   <script src="js/ruin-v50-vestibule.js?v=20261108h61ad699"></script>
   <script src="js/ruin-wall-coffins.js?v=20261108coffin1"></script>
   <script src="js/ruin-multifloor-v50-style.js?v=20261109ruinTravel1"></script>
-  <script src="js/ruin-checkpoint-travel.js?v=20261109ruinTravel2"></script> <!-- Automatically lit white shaft and checkpoint braziers; teleports through the shared action claims. -->
+  <script src="js/ruin-checkpoint-travel.js?v=20261109ropeCheckpoint1"></script> <!-- Automatically lit white shaft and checkpoint braziers; teleports through the shared action claims. -->
   <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
        (window.WildernessMap) — reads window.BanditCamps/window.BountyBoard
        at draw time (already global by then), so load order relative to the
@@ -659,7 +660,7 @@
   <script src="js/animal-shoulder-spline.js?v=20261105tzFlight1"></script> <!-- Required by the actual seven-point flying rig perch deformation. -->
   <script src="js/flying-animal-rig.js?v=20261108tzflightnest2"></script> <!-- Canonical authored two-bone bird wing/body assembly. -->
   <script src="js/tzatzul-registration.js?v=20261108tzflightnest2"></script> <!-- Tzatzul dev species, hatchling peck, stable individual tint and flying-rig JSON. -->
-  <script src="js/skeeri-ruins.js?v=20261108hb17c172"></script> <!-- Three authored Skeeri sizes, concealed ruin hatches and shaft witch-bomb runs. -->
+  <script src="js/skeeri-ruins.js?v=20261109hatchrange1"></script> <!-- Three authored Skeeri sizes, concealed ruin hatches and shaft witch-bomb runs. -->
   <script src="js/tzatzul-live-visuals.js?v=20261108tzflightnest2"></script>
   <script src="js/tzatzul-cliff-sites.js?v=20261108tzflightnest2"></script> <!-- Separate rock-textured, non-climbable Tzatzul spires. -->
   <script src="js/tzatzul-flight-runtime.js?v=20261108tzflightnest2"></script> <!-- Shared swept-body dive for exterior and nest mothers. -->
@@ -814,7 +815,7 @@
        Cloud Forest — see EXTERIOR_ZONES.map_southern_cloud_forest's
        fogDensity/vegCullRadiusTiles comments in game.js for why. -->
   <script src="js/ruin-light-occlusion.js?v=20261108hac6d00e"></script> <!-- Screen-space ruin torch masks clip behind physical columns, walls and props. -->
-  <script src="js/cloud-forest-fog.js?v=20261109ruinTravel1"></script>
+  <script src="js/cloud-forest-fog.js?v=20261109kanthicRopeLight1"></script>
   <!-- Farm tab hub (header, grid glance, buildings list, processor status
        tiles, livestock roster + breeding, farm<->stable transfers, storage,
        farmhands) and the Stable tab (window.FarmPanel) — reads
@@ -954,6 +955,7 @@
   <!-- Hanging ropes: the shared rope swing arithmetic (pure) and the rope component burdens hang from. Needs Shattercasks at
        call time only. See docs/architecture/ruin-capabilities.md. -->
   <script src="js/rope-core.js?v=1"></script>
+  <script src="js/ruin-rope-geometry.js?v=20261109actualMoveSpeed1"></script> <!-- Unbuffed new-player flight envelope sizes rope rooms and zigzags. -->
   <script src="js/dungeon-rope-art.js?v=20261105hfe97236"></script> <!-- Shared transparent rope sprite for pendulums and net frustums. -->
   <script src="js/hanging-ropes.js?v=20261107ropesAir1"></script>
   <script src="js/rope-furniture.js?v=1"></script> <!-- Ropes as furniture: a piece with a `rope` block hangs a rope; see docs/architecture/ruin-capabilities.md -->
@@ -2836,7 +2838,7 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20261109shellsnapshotloader1"></script>
+  <script src="js/tool-icon-render.js?v=20261109scopeReplayFix1"></script>
   <script src="js/sprite-recolor.js?v=20261105koma1"></script>
   <script src="js/object-sprite-catalog.js?v=20261107pouch1"></script> <!-- Central metadata-to-authored-PNG resolver for new inventory icons. -->
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
@@ -2845,7 +2847,7 @@
   <script src="js/companion-movement-speed.js?v=20261102ownerpace1"></script> <!-- Companion move/chase speeds follow each owner's live effective pace. -->
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
-  <script src="js/audio-system.js?v=20261109chopspatial1"></script>
+  <script src="js/audio-system.js?v=20261109stonebeat1"></script>
   <script src="js/honeyfuzzle-audio.js?v=20261026hivebuzz2"></script> <!-- Shared 24-tile hive + swarm ambience, one decoded seam-crossfaded loop per nearby source, live aggression and Doppler. -->
   <!-- Semantic animal-call scheduler. Gameplay systems emit vocal intents;
        AudioSystem above remains the replaceable low-level renderer. -->
@@ -3021,7 +3023,7 @@
   <script src="js/utility-spyglass.js?v=20261103spyglassControls3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
   <script src="js/ruin-objective-tracker.js?v=20261108tracker1"></script> <!-- Top-left dungeon checklist while inside a generated ruin. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261109rarityMain1"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261109rarityRopeLab1shellaudit1pitCutout1"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their

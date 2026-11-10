@@ -174,8 +174,9 @@ async function check(){
   const plan={floorCount:5,shaft:{anchor:{x:110,z:110}},
     floors:Array.from({length:5},(_,i)=>({floor:i,y:i*16,
       rooms:[{id:'r'+i,kind:'challenge-room',x:60,z:70,w:12,d:12,y:i*16}]}))};
+  let playerFloorY=0; // Move the simulated player between floors when verifying hatch activation ranges.
   const ruin=w.SkeeriRuins.mount({rec:{scene,mapData:{id:area}},plan,seed:11,
-    getPlayerY:()=>0,difficulty:5,theme:'kanthic'});
+    getPlayerY:()=>playerFloorY,difficulty:5,theme:'kanthic'});
   w.SkeeriRuins.update(.01); // bombers are created lazily once the ruin is the active area
   assert.equal(ruin.theme,'kanthic', "Skeeri inherit the generated ruin’s lich tradition");
   assert(ruin.bombers.every(b=>b.actor.skeeriPalette.theme==='kanthic'
@@ -189,6 +190,21 @@ async function check(){
   const before=ruin.actors.size;assert(w.SkeeriRuins.activateCompartment(hatch.id));
   for(let i=0;i<10;i++)w.SkeeriRuins.update(.1);
   assert.equal(ruin.actors.size-before,hatch.size==='small'?3:1);
+  const nearby=ruin.hatches.find(h=>h.trigger==='proximity'&&!h.opened); // A distinct hatch lets the original spawn-count assertion remain isolated.
+  assert(nearby,'a sealed proximity hatch remains after the explicit activation');
+  playerFloorY=nearby.y;
+  player.x=(nearby.x+5.1)*64;player.y=nearby.z*64;
+  w.SkeeriRuins.update(.01);assert.equal(nearby.opened,false,'proximity hatch stays shut outside five tiles');
+  player.x=(nearby.x+4.9)*64;
+  w.SkeeriRuins.update(.01);assert.equal(nearby.opened,true,'proximity hatch opens at the new five-tile range');
+  const mechanism=ruin.hatches.find(h=>h.trigger==='mechanism'&&!h.opened); // A higher-floor puzzle must use its own nine-tile radius.
+  assert(mechanism,'a sealed mechanism hatch remains');
+  playerFloorY=mechanism.y;
+  player.x=(mechanism.x+9.1)*64;player.y=mechanism.z*64;
+  assert.equal(w.SkeeriRuins.signalMechanism(),0,'mechanism stays shut beyond nine tiles');
+  player.x=(mechanism.x+8.9)*64;
+  assert.equal(w.SkeeriRuins.signalMechanism(),1,'mechanism opens inside nine tiles');
+  playerFloorY=0;
   player.x=110*64;player.y=110*64;
   for(let i=0;i<430;i++){w.SkeeriRuins.update(.1);if(i%80===0)await Promise.resolve();}
   assert(bombs>=1&&drops>=1,'large Skeeri drop ordinary Hronal witch-bombs');

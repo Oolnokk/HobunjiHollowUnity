@@ -9,11 +9,20 @@ const planner=require('../docs/js/ruin-layer-plan.js');
 const solo=require('../docs/js/dev-ruin-single-room-trial.js');
 const valid=new Set(solo.TYPES.map(([kind])=>kind)); // Shared authoring choices and normal planner output.
 const challenges=require('../docs/js/ruin-layer-challenges.js'); // Geometry-only pit preview verifies standalone rope spacing without Three.js.
-for(let length=11;length<=18;length++){
-  const pit=challenges.ropePitForRoom({x:0,z:0,w:length,d:13},'E');
-  assert.ok(pit,'large-preset rooms must have two actual rope banks');
-  const span=pit.maxX-pit.minX,count=Math.max(3,Math.min(8,Math.ceil((span-1)/2.25)+1));
-  assert.ok((span-1)/(count-1)<=2.25,'normal rope catch distances must be physically achievable');
+const ropeGeometry=require('../docs/js/ruin-rope-geometry.js'); // Same unbuffed reach bounds as the actual room planner.
+for(let length=11;length<=ropeGeometry.ROOM_LENGTH+1;length++){
+  const room={x:0,z:0,w:length,d:ropeGeometry.CROSS_WIDTH};
+  const pit=challenges.ropePitForRoom(room,'E');
+  if(length<ropeGeometry.ROOM_LENGTH){
+    assert.equal(pit,null,'an undersized solo room must not silently accept a rope puzzle');
+    continue;
+  }
+  assert.ok(pit,'derived-size rooms preserve two real rope banks');
+  const anchors=ropeGeometry.anchors(pit,'E','solo-rope',length);
+  assert.ok(anchors.length>=ropeGeometry.COUNT,'oversized chambers add as many ropes as baseline reach requires');
+  for(let i=1;i<anchors.length;i++)
+    assert.ok(Math.hypot(anchors[i].x-anchors[i-1].x,anchors[i].z-anchors[i-1].z)<=ropeGeometry.MAX_NEIGHBOR_DISTANCE+1e-5,
+      'lateral zigzags never exceed the derived neighbor distance clamp');
 }
 assert.equal(valid.size,12,'Find the Blocks remains independently selectable in the lab');
 assert.equal(solo.pick(19,'findBlocks',planner).mode,'forced');
@@ -56,7 +65,7 @@ assert.ok(encounters.includes('if(enc.noLoot)entity.ruinNoLoot=true'));
 assert.ok(corpses.includes('if (c.ruinNoLoot===true)return [];')||corpses.includes('if(c.ruinNoLoot===true)return [];'));
 assert.ok(corpses.includes('if(c.ruinNoLoot===true)return {ok:false'));
 assert.ok(interior.includes('singleRoomLab:singleRoomTrial'));
-assert.ok(interior.includes("['statueDefense','nativePushBlock','findBlocks'].includes(soloChoice.kind)?'veryLarge':nativeSoloType==='glyphObelisk'?'medium':'large'"),'statue, rope and native V50 puzzle types retain their correct authored room size');
+assert.ok(interior.includes("['statueDefense','ropeChain','nativePushBlock','findBlocks'].includes(soloChoice.kind)?'veryLarge':nativeSoloType==='glyphObelisk'?'medium':'large'"),'statue, rope and native V50 puzzle types retain their correct authored room size');
 assert.ok(read('docs/tools/debris-ifier/debrisifier-v50-api.js').includes('window.__devRuinSingleRoomLab ='));
 assert.ok(read('docs/tools/debris-ifier/debrisifier-01.js').includes("['flat puzzle lab floor',"));
 assert.ok(read('docs/tools/debris-ifier/debrisifier-01.js').includes("['clear solo chamber support pillars',")); // A normal V50 support column cannot overlap the selected challenge center.

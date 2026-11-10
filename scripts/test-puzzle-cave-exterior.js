@@ -56,9 +56,10 @@ const context={console,THREE,Math,Promise,Number,Map,Set,Date,
 context.window=context;context.globalThis=context;
 const sounds=[]; // Captures the shipped audio adapter's real semantic SFX calls in this no-speaker gameplay fixture.
 context.AudioSystem={
-  objectSfxConfig:()=>({pick:{url:'assets/audio/sfx/sfx_pick.mp3',preload:true}}),
-  objectSfxDebugSnapshot:()=>({last:{key:'pick',found:true,url:'assets/audio/sfx/sfx_pick.mp3',preloaded:true,readyState:4,maxDurationSec:.36}}),
-  playObjectSfxKeyMetronome:volume=>{sounds.push({key:'pick',volume,pitch:1,shortVoice:true});return true;},
+  objectSfxConfig:()=>Object.fromEntries([1,2,3,4].map(beat=>['stoneBeat'+beat,
+    {url:'assets/audio/sfx/sfx_stonebeat-'+beat+'.mp3',preload:true}])),
+  objectSfxDebugSnapshot:()=>({last:{found:true,preloaded:true,readyState:4,oneVoice:true,maxDurationSec:3}}),
+  playObjectSfxKeyMetronome:(volume,beatIndex)=>{sounds.push({key:'stoneBeat'+(beatIndex+1),volume,pitch:1,shortVoice:true});return true;},
   playObjectSfxKey:(key,volume,pitch)=>sounds.push({key,volume,pitch}),
 };
 function load(file) {
@@ -225,13 +226,13 @@ Exterior.update(.01,area);
 assert.equal(opened,0,'stepping onto the plate must not auto-equip or open an instrument');
 assert.equal(gate.lastDown,true,'standing on the real raised plate activates the melody clue');
 assert(gate.scoreBoard.visible,'the exterior Scratchbone score lights up on the active raised plate');
-assert(sounds.some(event=>event.key==='pick'&&event.volume===.72&&event.pitch===1),
-  'the first timed beat dispatches the configured recorded mine-pick at a clear downbeat volume and normal playback rate');
-assert(context.RuinInteractionAudio.debugSnapshot().metronomeSource==='assets/audio/sfx/sfx_pick.mp3',
-  'mobile audio diagnostics expose the actual recorded pick file');
+assert(sounds.some(event=>event.key==='stoneBeat1'&&event.volume===.72&&event.pitch===1),
+  'stepping onto the plate immediately plays the real first stonebeat at its authored pitch');
+assert(context.RuinInteractionAudio.debugSnapshot().metronomeSource==='assets/audio/sfx/sfx_stonebeat-1.mp3',
+  'mobile audio diagnostics expose the correct numbered recording');
 assert(context.RuinInteractionAudio.debugSnapshot().metronomeShortVoice===true&&
-  context.RuinInteractionAudio.debugSnapshot().metronomeMaxDurationSec===.36,
-  'the actual metronome adapter selects the single-voice 360 ms pick transient rather than overlapping full mining sounds');
+  context.RuinInteractionAudio.debugSnapshot().metronomeMaxDurationSec===3,
+  'the stonebeat uses a single voice without prematurely truncating the recording');
 assert.equal(sounds.filter(event=>event.key==='stoneActivator').length,1,
   'stepping onto the outdoor melody plate plays exactly one recorded activator cue');
 assert(gate.glyphGlows.some(glow=>glow.material.opacity>.11&&glow.material.opacity<.80),
@@ -247,12 +248,12 @@ assert(gate.flashRemaining>0&&gate.glyphs[0].material.color.hex===0xff6666,
   'wrong notes flash the current beat red rather than failing silently');
 Exterior.update(.5,area);
 assert.equal(gate.flashRemaining,0,'error feedback clears without requiring another note');
-const initialPickCount=sounds.filter(event=>event.key==='pick').length;
+const initialBeatCount=sounds.filter(event=>/^stoneBeat[1-4]$/.test(event.key)).length;
 Exterior.update(gate.song.secondsPerTick*4.02,area);
-assert.equal(sounds.filter(event=>event.key==='pick').length,initialPickCount+1,
-  'each actual quarter-note boundary adds exactly one mine-pick click');
-assert(sounds.some(event=>event.key==='pick'&&event.volume===.54&&event.pitch===1),
-  'the subsequent quarter-note strikes use the unpitched mining pick recording with a softer accent');
+assert.equal(sounds.filter(event=>/^stoneBeat[1-4]$/.test(event.key)).length,initialBeatCount+1,
+  'the next quarter-note boundary adds exactly one numbered stonebeat');
+assert(sounds.some(event=>event.key==='stoneBeat2'&&event.volume===.54&&event.pitch===1),
+  'the second beat uses the second original-pitch recording at the existing softer volume');
 
 const scoreHeight=gate.scoreBoard.position.y; // The exterior score must remain pinned to its wall or pillar during door animation.
 player.x=(gate.plate.x+1.2)*64;player.y=(gate.plate.z+1.2)*64;

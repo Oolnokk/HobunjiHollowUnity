@@ -73,28 +73,29 @@
   function igniteTorch(){return play('igniteLarge');}
   function igniteAmmo(){return play('igniteSmall');}
   function metronomeTick({downbeat=false,beatIndex=0}={}){
-    const audio=root.AudioSystem; // Uses the same genuine preloaded pick-strike recording as mining, at unchanged pitch and duration.
+    const audio=root.AudioSystem;
+    const normalizedBeat=Number.isFinite(beatIndex)?((Math.trunc(beatIndex)%4+4)%4):0; // Stable 1-2-3-4 sequence regardless of score duration or replay.
+    const key='stoneBeat'+(normalizedBeat+1); // Match the configured filename number; the judge supplies beat 0 on entry.
     const configuration=audio?.objectSfxConfig?.();
-    const clip=configuration?.pick;
-    if((typeof audio?.playObjectSfxKey!=='function'&&typeof audio?.playObjectSfxKeyMetronome!=='function')||
-      configuration&&(!clip?.url||configuration.enabled===false)){
-      debug.metronomeError=!audio?'AudioSystem unavailable':'Recorded pick SFX missing or disabled';
-      return false;
+    const clip=configuration?.[key];
+    if(typeof audio?.playObjectSfxKeyMetronome!=='function'||!clip?.url||configuration?.enabled===false){
+      debug.metronomeError=!audio?'AudioSystem unavailable':key+' recording missing or disabled';
+      debug.lastCue=key;return false;
     }
-    const volume=downbeat?.72:.54; // Distinct first beat, with enough volume to hear quarter-note timing over cave ambience.
-    const shortCue=typeof audio.playObjectSfxKeyMetronome==='function';
-    const played=shortCue?audio.playObjectSfxKeyMetronome(volume):
-      (audio.playObjectSfxKey('pick',volume,1),true); // Headless/legacy adapter retains the same recorded pick key.
-    if(played===false){debug.metronomeError='Recorded pick unavailable or audio muted';return false;}
-    const playback=audio.objectSfxDebugSnapshot?.()?.last; // Pixel Probe exposes the trimmed single-voice click and recording readiness.
-    debug.metronomeSource=clip?.url||playback?.url||'pick';
+    const volume=downbeat?.72:.54; // Preserve the existing downbeat accent without changing the new recording's pitch or tempo.
+    if(audio.playObjectSfxKeyMetronome(volume,normalizedBeat)===false){
+      debug.metronomeError=key+' unavailable or audio muted';debug.lastCue=key;return false;
+    }
+    const playback=audio.objectSfxDebugSnapshot?.()?.last; // Pixel Probe reveals the active numbered recording and preload state.
+    debug.metronomeSource=clip.url;
     debug.metronomePreloaded=playback?.preloaded??null;
     debug.metronomeReadyState=playback?.readyState??null;
     debug.metronomeVolume=volume;
-    debug.metronomeShortVoice=shortCue;debug.metronomeMaxDurationSec=playback?.maxDurationSec??null;
-    debug.metronomeError=playback?.found===false?'AudioSystem did not resolve recorded pick SFX':null;
-    debug.lastCue='pick';debug.lastPitch=1;debug.lastSpan=null;debug.lastTempo=1;
-    debug.metronomeBeats++;debug.lastMetronomeDownbeat=!!downbeat;debug.lastMetronomeBeatIndex=beatIndex;debug.plays++;
+    debug.metronomeShortVoice=playback?.oneVoice??true;
+    debug.metronomeMaxDurationSec=playback?.maxDurationSec??null;
+    debug.metronomeError=playback?.found===false?key+' recording failed to resolve':null;
+    debug.lastCue=key;debug.lastPitch=1;debug.lastSpan=null;debug.lastTempo=1;
+    debug.metronomeBeats++;debug.lastMetronomeDownbeat=!!downbeat;debug.lastMetronomeBeatIndex=normalizedBeat;debug.plays++;
     return !debug.metronomeError;
   }
   function watchMovement(object,progress,options={}){

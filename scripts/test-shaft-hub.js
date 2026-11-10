@@ -7,6 +7,7 @@ const fs=require('fs');
 const G=require('../docs/js/cell-grid-3d.js');
 const H=require('../docs/js/shaft-hub.js');
 const Plan=require('../docs/js/ruin-layer-plan.js');
+const RopeGeometry=require('../docs/js/ruin-rope-geometry.js'); // Width and bank allocations must follow the global baseline flight envelope.
 const Corridor=require('../docs/js/ruin-shaft-corridor.js');
 const Connector=require('../docs/js/ruin-shaft-connector.js');
 const Playable=require('../docs/js/ruin-layer-playable.js');
@@ -414,14 +415,14 @@ const Defense={create:options=>({
 // exactly two safe banks and never trapping the player in a sealed room.
 {
   for(const side of ['N','E','S','W']){
-    const room={x:20,z:30,w:15,d:13},pit=Challenges.ropePitForRoom(room,side);
-    assert(pit,'minimum generated room fits a three-or-more rope chain');
+    const room={x:20,z:30,...RopeGeometry.dimensions(side)},pit=Challenges.ropePitForRoom(room,side);
+    assert(pit,'baseline-derived room fits its sideways zigzag rope chain');
     assert(!pit.contains(room.x+.5,room.z+.5),'one corner is a safe bank or an intact side wall');
     const along=side==='E'||side==='W'?'x':'z';
     assert.equal(along==='x'?pit.maxX-pit.minX:pit.maxZ-pit.minZ,
-      (along==='x'?room.w:room.d)-6,'three full safe floor cells at both entry and exit');
+      (along==='x'?room.w:room.d)-2*RopeGeometry.BANK,'the configured safe bank width is retained');
   }
-  const room={x:20,z:30,w:15,d:13},parent=new Group();
+  const room={x:20,z:30,...RopeGeometry.dimensions('E')},parent=new Group();
   let player={x:21,z:36},y=8,solved=0,created=0,removed=0;
   const registry={
     hasActiveRuinState:()=>true,

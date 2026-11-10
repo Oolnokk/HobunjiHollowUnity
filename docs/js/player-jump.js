@@ -5,9 +5,11 @@
 (() => {
   'use strict';
 
+  const Motion = window.PlayerAirMotionConfig; // Gameplay may apply future jump/slow-fall multipliers; generators use Motion.BASE only.
   const CONFIG = Object.freeze({
-    launchSpeed: 6.25 / Math.SQRT2, gravity: 11.8, airTilesPerSecond: 3.15,
-    groundTilesPerSecond: 2.6, radius: 0.17, stepSeconds: 1 / 60,
+    launchSpeed: Motion?.BASE.jumpLaunchSpeed ?? 6.25 / Math.SQRT2,
+    gravity: Motion?.BASE.jumpGravity ?? 11.8, airTilesPerSecond: Motion?.BASE.airTilesPerSecond ?? 3.15,
+    groundTilesPerSecond: Motion?.BASE.groundTilesPerSecond ?? 2.6, radius: 0.17, stepSeconds: 1 / 60,
     maxFrameSeconds: 0.22, maxStepUp: 0.25, landingTolerance: 0.045,
     assistReach: 1, assistSeconds: 0.16, // Short, collision-checked forward lerp after clearing an obstacle.
   }); // Halve the original 1.65-world-unit apex (~0.83) via launch speed; retain fall gravity.
@@ -238,7 +240,7 @@
     const state = {
       area: deps.getCurrentArea(), phase: 'air', feetY: baseY,
       takeoffY: baseY, // Ruin wall catches compare with jump launch height, not the inflated midair feet height.
-      launchGround, vy: CONFIG.launchSpeed, vx: 0, vz: 0, elapsed: 0, blocked: null, source: 'free jump',
+      launchGround, vy: Motion?.jumpLaunchSpeed?.() ?? CONFIG.launchSpeed, vx: 0, vz: 0, elapsed: 0, blocked: null, source: 'free jump',
       lastX: x, lastZ: z, safeX: x, safeZ: z, // Last verified walkable point for fallback when no area-specific abyss physics exists.
     }; // Sole airborne state; kept off save data and discarded on area changes.
     player._freeJump = state; // Independent of player.climbing so the player can use ordinary actions while elevated.
@@ -464,7 +466,7 @@
       const step = Math.min(remaining, CONFIG.stepSeconds);
       remaining -= step;
       const previous = state.feetY;
-      state.vy -= CONFIG.gravity * step;
+      state.vy -= CONFIG.gravity * (Motion?.gravityMultiplier?.() ?? 1) * step; // Future slow-fall never modifies baseline puzzle generation.
       state.feetY += state.vy * step;
       state.elapsed += step;
       stepMovement(state, step, CONFIG.airTilesPerSecond, previous);
@@ -525,7 +527,8 @@
       const s = deps?.player?._freeJump;
       return { ...debug, latestChange: 'Shared free-jump, rope-flight and rope-ride elevation; momentum steering and midair rope catches', active: !!s, phase: s?.phase || null, feetY: s?.feetY ?? null,
         heightAboveGround: deps?.player?.heightAboveGround ?? 0,
-        vy: s?.vy ?? 0, elapsed: s?.elapsed ?? 0, blocked: s?.blocked || null };
+        vy: s?.vy ?? 0, elapsed: s?.elapsed ?? 0, blocked: s?.blocked || null,
+        baseAirMotion:Motion?.BASE||null,airMultipliers:Motion?{...Motion.multipliers}:null };
     },
     config: CONFIG,
     easyJumpRise: EASY_JUMP_RISE, // Shared with short-ledge and authored-wall climb selection; real jump physics remain authoritative.

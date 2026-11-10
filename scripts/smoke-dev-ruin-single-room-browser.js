@@ -103,6 +103,7 @@ async function main(){
     const ropeInfo=await page.evaluate(()=>{
       const runtime=window.DevRandomRuin.getRuntimeContext();
       const simple=window.DevRandomRuinSimplePuzzles.snapshot();
+      const state=window.DevRandomRuin.getState(); // Integration diagnostics expose visual floor-backing cutouts, independent of collision.
       const room=runtime.meta.rooms[0],cs=(Number(runtime.meta.cellSize)||.5)*2;
       const minX=2+room.col*cs,minZ=2+room.row*cs;
       const center={x:minX+room.w*cs/2,z:minZ+room.h*cs/2};
@@ -112,12 +113,18 @@ async function main(){
         chains:simple.ropeChains.length,
         voidAtCenter:!!window.DynamicSurfaces.pointInPit(center.x,center.z),
         centerSupport:window.DynamicSurfaces.sampleSupport(center.x,center.z,{scope:'dev-random-ruin-interior'})?.id||null,
+        floorShellRepair:state.floorShellRepair, // Number of visual backing cells after the rope pit is punched through it.
+        sourceFloorCells:runtime.meta.floorCells.length, // Original V50 source floor count, before any pit exclusions.
+        floorShellCutouts:state.floorShellCutouts, // One cutout expected for the single-room rope abyss.
       };
     });
     assert.equal(ropeInfo.rooms,1);
     assert.equal(ropeInfo.chains,1);
     assert.equal(ropeInfo.voidAtCenter,true);
     assert.equal(ropeInfo.centerSupport,null,'the rope abyss must have no ordinary V50 floor support');
+    assert.equal(ropeInfo.floorShellCutouts,1,'rope pit must request one visual seam-backing cutout');
+    assert.ok(ropeInfo.floorShellRepair>0&&ropeInfo.floorShellRepair<ropeInfo.sourceFloorCells,
+      'rope abyss must physically omit seam backing while preserving safe bank repairs: '+JSON.stringify(ropeInfo));
 
     // Native V50 mode must mount an original V50 obelisk and linked stone door.
     const native=await page.evaluate(seed=>window.DevRandomRuin.generate(seed,{
@@ -132,6 +139,7 @@ async function main(){
     }));
     assert.equal(nativeInfo.state.rooms,1);
     assert.equal(nativeInfo.state.noLoot,true);
+    assert.equal(nativeInfo.state.floorShellCutouts,0,'new puzzle lab scene cannot inherit the prior rope abyss seam mask');
     assert.equal(nativeInfo.puzzle.kind,'nativeStackedObelisk');
     assert.equal(nativeInfo.puzzle.linked,true);
     assert.equal(nativeInfo.state.puzzleGeneration.nativeLab.kind,'stackedObelisk');

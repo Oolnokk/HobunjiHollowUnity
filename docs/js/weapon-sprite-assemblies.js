@@ -16,8 +16,8 @@
   const ROPE_TINT_CACHE_LIMIT = 12; // Limits the full-resolution canvas footprint when mobile authors try many rope colors.
   const PIXEL_ALPHA = 128; // Treat only the solid half of an antialiased edge as the opaque connection tip.
   const MAX_DT = 0.08; // Prevent tab-resume and loading stalls from launching the head sideways.
+  const DETACHED_TIMEOUT = 5000; // Cleans orphaned assemblies, but never a root still owned by the player's current equipment cache.
   const MOTION_LAG = 0.065; // Converts haft travel velocity to idle trailing angle.
-  const DETACHED_TIMEOUT = 5000; // Remove orphaned assemblies without deleting reusable inventory meshes immediately.
   const DEF = global.WEAPON_SPRITE_ASSEMBLY_CONFIG?.weapons || {}; // Single committed recipe registry shared with the Tool Hub; tool-specific definitions may still override it.
   const effects = global.HobunjiLayeredWeaponEffects; // Materials, interleaved fire, and visible-metal source masks live outside the animation module.
 
@@ -540,11 +540,27 @@
     hooked.updateMatrixWorld(true);
   }
 
+  function isCachedPlayerToolRoot(root) {
+    // The player's equipment map retains unequipped tool roots by reference,
+    // even when they have no parent. A rebuilt/discarded tool is absent from
+    // the current map, so it remains eligible for the ordinary timeout.
+    for (const deps of [global.ProceduralHandAttachments?.gameDeps, global.Combat?.deps]) {
+      const map = deps?.toolMeshMap; // Authoritative live equipment-slot ownership, shared by both gameplay integration paths.
+      if (!map) continue;
+      const candidates = typeof map.values === 'function' ? map.values() : Object.values(map); // Supports the game's object map and editor/test Map adapters.
+      for (const visual of candidates) if (visual === root) return true;
+    }
+    return false;
+  }
+
   function updateOne(state, dt, now, effectsDt = dt) {
     const { root, plane, config, scratch: q } = state;
     if (!root.parent) {
       if (!state.detachedAt) state.detachedAt = now;
-      if (now - state.detachedAt > DETACHED_TIMEOUT) drop(root);
+      // Cached unequipped weapons must outlive the old five-second timeout.
+      // Abandoned meshes (e.g. replaced loadouts) can still be reclaimed,
+      // avoiding an unbounded records/texture leak during equipment rebuilds.
+      if (now - state.detachedAt > DETACHED_TIMEOUT && !isCachedPlayerToolRoot(root)) drop(root);
       return;
     }
     state.detachedAt = 0;
@@ -698,7 +714,7 @@
     for (const state of records) {
       if (state.dead) { records.delete(state); continue; }
       try {
-        effects?.refreshMetal(state, now); // Throttled tint updates share weapon plating and verdigris without creating a second animation loop.
+        if (state.root.parent) effects?.refreshMetal(state, now); // Detached cached tools have no visible metal; only refresh on re-equip.
         updateOne(state, freezePhysics ? 0 : dt, now, dt);
       }
       catch (error) {
@@ -714,6 +730,7 @@
     return [...records].map(s => ({
       itemKey: s.itemKey, loaded: s.config.flail ? !!(s.chain && s.headRoot) : !!s.staticReady,
       attached: !!s.root.parent, attacking: s.attacking,
+      detachedForMs: s.root.parent ? 0 : Math.max(0, performance.now() - s.detachedAt), // Mobile proof that cached unequipped weapons retain their rope/head without a timeout.
       progress: s.progress, direction: s.direction.toArray(),
       attackTiming: { windup: s.wf, strike: s.sf, hold: s.hf }, // Mobile-readable phase diagnostics.
       pitchTravelDeg: Number.isFinite(s.pitchTravelRad) ? s.pitchTravelRad * 180 / Math.PI : s.strikeTurnRad * 180 / Math.PI, // Authored pitch travel for comparison with physical motion.

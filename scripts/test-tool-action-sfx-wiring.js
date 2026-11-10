@@ -58,6 +58,8 @@ const audioContext = { // Supplies the browser globals used by AudioSystem durin
       game: { audio: { objectSfx: {
         dig: { url: 'dig.mp3', volume: 0.8, preload: true },
         pick: { url: 'assets/audio/sfx/sfx_pick.mp3', volume: 0.8, preload: true },
+        ...Object.fromEntries([1,2,3,4].map(beat => ['stoneBeat'+beat,
+          {url:'assets/audio/sfx/sfx_stonebeat-'+beat+'.mp3',volume:0.8,preload:true}])),
       } } },
     },
   },
@@ -79,23 +81,28 @@ assert.equal(audioDebug.last.key, 'dig');
 assert.equal(audioDebug.last.preloaded, true);
 const audioSystem=audioContext.window.AudioSystem;
 assert.equal(FakeAudio.loadsByUrl.get('assets/audio/sfx/sfx_pick.mp3'),1,
-  'the real mine-pick clip is preloaded for immediate musical beat strikes');
-assert.equal(audioSystem.playObjectSfxKeyMetronome(.72),true,'the dedicated recorded pick transient is available');
-const firstPickVoice=FakeAudio.instances.at(-1);
-assert.equal(firstPickVoice.paused,false,'the first click starts playback');
-assert.equal(firstPickVoice.playbackRate,1,'metronome must use original pick pitch and duration through the audible strike');
-assert.equal(audioSystem.playObjectSfxKeyMetronome(.54),true,'each quarter beat can strike again');
-const secondPickVoice=FakeAudio.instances.at(-1);
-assert.notEqual(firstPickVoice,secondPickVoice,'each hit obtains a real preloaded recorded voice');
-assert.equal(firstPickVoice.paused,true,'a new beat silences the previous 1.85-second pick tail');
-secondPickVoice.currentTime=.37;
-secondPickVoice.emit('timeupdate');
-assert.equal(secondPickVoice.paused,true,'metronome recorded clip ends after its 360 ms transient');
-assert.equal(audioSystem.objectSfxDebugSnapshot().last.maxDurationSec,.36,
-  'mobile audio diagnostic distinguishes the short timed-puzzle cue');
+  'ordinary mining still preloads its full-length pick recording');
+for(let beat=1;beat<=4;beat++)assert.equal(FakeAudio.loadsByUrl.get('assets/audio/sfx/sfx_stonebeat-'+beat+'.mp3'),1,
+  'the numbered stone beat must preload exactly once');
+let previousVoice=null; // Checks each beat takes over the single metronome voice without cutting off other object SFX.
+for(let beatIndex=0;beatIndex<8;beatIndex++){
+  assert.equal(audioSystem.playObjectSfxKeyMetronome(beatIndex%4===0?.72:.54,beatIndex),true);
+  const voice=FakeAudio.instances.at(-1),expectedBeat=beatIndex%4+1;
+  assert.equal(voice.src,'assets/audio/sfx/sfx_stonebeat-'+expectedBeat+'.mp3',
+    'quarter beat '+beatIndex+' must use its matching recorded number');
+  assert.equal(voice.playbackRate,1,'stone beats never drift in pitch or playback duration');
+  if(previousVoice)assert.equal(previousVoice.paused,true,'the next beat replaces the last metronome voice');
+  previousVoice=voice;
+}
+assert.equal(audioSystem.objectSfxDebugSnapshot().last.key,'stoneBeat4','mobile probe reports the actual fourth beat');
+assert.equal(audioSystem.objectSfxDebugSnapshot().last.maxDurationSec,3,
+  'the recording may play to its natural end instead of being cut off at the old pick transient');
+previousVoice.currentTime=3.01;
+previousVoice.emit('timeupdate');
+assert.equal(previousVoice.paused,true,'the safety cap retires an unusually long recording');
 audioSystem.playObjectSfxKey('pick');
 const ordinaryMiningVoice=FakeAudio.instances.at(-1);
 ordinaryMiningVoice.currentTime=.7;ordinaryMiningVoice.emit('timeupdate');
 assert.equal(ordinaryMiningVoice.paused,false,
   'regular mining picks still play the FULL untrimmed recording');
-console.log('tool action SFX wiring: full-duration tools and non-overlapping preloaded melody pick clicks ok');
+console.log('tool action SFX wiring: full-length mining pick and cycling 1-2-3-4 stone beat recordings OK');
