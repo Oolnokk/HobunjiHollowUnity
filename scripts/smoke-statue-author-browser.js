@@ -117,6 +117,30 @@ async function run(){
       layout,body:body.material,head:head.material,pieces:output.pieces.length,
       redirectedImages:imageRedirects,pose:output.phase
     }));
+    // Pahu's facial cosmetics were visibly lost by the old bare-head-only
+    // extraction path. Exercise the actual NPC instead of trusting generic
+    // alpha coverage tests on the first NPC in the repository list.
+    const options=await page.locator('#npcSelect option').allTextContents();
+    const pahuIndex=options.findIndex(option=>/\bPahu\b/i.test(option));
+    assert.ok(pahuIndex>0,'Pahu must be selectable in the repository NPC list');
+    await page.selectOption('#npcSelect',{index:pahuIndex});
+    await page.fill('#weaponPaths','');
+    await page.click('#build');
+    await page.waitForFunction(()=>{
+      const debug=window.__hobunjiStatueDebug?.();
+      return debug?.built&&String(debug.record)===''+document.getElementById('npcSelect').value
+        &&debug.pieces?.filter(p=>p.id==='statue_body'||p.id==='statue_head').every(p=>p.textureReady||p.textureError);
+    },null,{timeout:90000});
+    const pahu=await page.evaluate(()=>window.__hobunjiStatueDebug());
+    assert.ok(pahu.built,'Pahu statue should construct: '+JSON.stringify(pahu));
+    const pahuHead=pahu.pieces.find(piece=>piece.id==='statue_head');
+    assert.ok(pahuHead?.textureReady&&!pahuHead?.textureError,'Pahu head and cosmetics should render');
+    assert.ok(pahuHead.material?.coverage>.02,'Pahu head must have a visible silhouette');
+    fs.mkdirSync(path.join(root,'artifacts'),{recursive:true});
+    await page.screenshot({path:path.join(root,'artifacts','statue-pahu.png'),fullPage:true});
+    console.log('PASS Pahu head-and-cosmetics statue: '+JSON.stringify({
+      head:pahuHead.material,selected:options[pahuIndex],screenshot:'artifacts/statue-pahu.png'
+    }));
   }finally{
     if(browser)await browser.close();
     await new Promise(resolve=>server.close(resolve));
