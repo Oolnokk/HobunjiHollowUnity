@@ -136,10 +136,33 @@ async function run(){
     const pahuHead=pahu.pieces.find(piece=>piece.id==='statue_head');
     assert.ok(pahuHead?.textureReady&&!pahuHead?.textureError,'Pahu head and cosmetics should render');
     assert.ok(pahuHead.material?.coverage>.02,'Pahu head must have a visible silhouette');
+    const pahuBody=pahu.pieces.find(piece=>piece.id==='statue_body');
+    for(const piece of [pahuBody,pahuHead]){
+      assert.equal(piece.visible,true,'Pahu portrait mesh was hidden: '+JSON.stringify(piece));
+      assert.equal(piece.opacity,1,'Pahu portrait material was not ready: '+JSON.stringify(piece));
+      assert.ok(piece.worldSize?.[1]>.1&&piece.worldSize?.[1]<1.5,
+        'Pahu statue must fit in a furniture tile: '+JSON.stringify(piece));
+      assert.ok(Math.abs(piece.screenCenter?.[0])<.85&&Math.abs(piece.screenCenter?.[1])<.85,
+        'Pahu statue must be inside the actual 3D camera: '+JSON.stringify(piece));
+    }
     fs.mkdirSync(path.join(root,'artifacts'),{recursive:true});
-    await page.screenshot({path:path.join(root,'artifacts','statue-pahu.png'),fullPage:true});
+    const image=await page.locator('#viewport').screenshot({path:path.join(root,'artifacts','statue-pahu.png')});
+    const pixels=await page.evaluate(async url=>{
+      const image=new Image();image.src=url;await image.decode();
+      const canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;
+      const ctx=canvas.getContext('2d');ctx.drawImage(image,0,0);
+      const data=ctx.getImageData(0,0,canvas.width,Math.round(canvas.height*.85)).data;
+      let brown=0;
+      for(let i=0;i<data.length;i+=4){
+        const r=data[i],g=data[i+1],b=data[i+2];
+        if(r>45&&g>19&&r>g*1.12&&r>b*1.25)brown++;
+      }
+      return {brown,width:canvas.width,height:canvas.height};
+    },'data:image/png;base64,'+image.toString('base64'));
+    assert.ok(pixels.brown>3500,
+      'Pahu body/head must actually be visible (not merely textured off-camera): '+JSON.stringify({pixels,rig:pahu.sourceRig,body:pahuBody,head:pahuHead}));
     console.log('PASS Pahu head-and-cosmetics statue: '+JSON.stringify({
-      head:pahuHead.material,selected:options[pahuIndex],screenshot:'artifacts/statue-pahu.png'
+      head:pahuHead.material,selected:options[pahuIndex],pixels,screenshot:'artifacts/statue-pahu.png'
     }));
   }finally{
     if(browser)await browser.close();
