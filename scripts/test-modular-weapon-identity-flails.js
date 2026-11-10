@@ -59,9 +59,14 @@ assert.equal(api.attachmentRig(config.shafts['grapple-flail'],config.heads['fish
 assert.equal(shaftOwner.flail.head.layers.length, 1);
 assert.equal(shaftOwner.flail.head.layers[0].sprite, config.heads['fishing-mace'].sprite);
 assert.equal(shaftOwner.flail.head.anchorLayer, 'modular-head');
-assert.deepEqual(plain(shaftOwner.flail.head.anchor), plain(original.flail.head.anchor),
-  'haft-owned flail keeps the contact from the Complex Tool Visuals author, ignoring modular head.mount');
-assert.equal(shaftOwner.flail.head.anchorSpace, original.flail.head.anchorSpace);
+assert.deepEqual(plain(shaftOwner.flail.head.anchor), plain(config.heads['fishing-mace'].mount.end),
+  'shaft-owned flail hangs a sleeve head at its original END without changing the rigid head arrow');
+assert.equal(shaftOwner.flail.head.anchorSpace, 'layer',
+  'head contact is authored in the 450x1204 head sprite coordinates in both the preview and Three.js runtime');
+assert.deepEqual(plain(api.flailRecipe('grapple-flail','dagger').flail.head.anchor),
+  plain(config.heads.dagger.mount.start), 'tanged heads hang from their original START, not their tip');
+assert.deepEqual(plain(api.flailRecipe('grapple-flail','war-cleaver').flail.head.anchor),
+  plain(config.heads['war-cleaver'].mount.start), 'straight cleaver uses its actual rig start, not a stale global flailHeadAnchor');
 assert.equal(shaftOwner.sprite, config.shafts['grapple-flail'].sprite);
 const headOwner = api.flailRecipe('fishing-mace', 'grapple-flail'); // Head-owned rope reattaches original multilayer head to a different shaft.
 assert(headOwner?.flail);
@@ -101,6 +106,19 @@ assert(definitions[item('fishing-mace','grapple-flail')].weaponAssembly?.flail,
   'head-authored flexible assemblies reach the exact same renderer');
 assert.equal(definitions[item('fishing-mace','warhammer')].weaponAssembly, undefined,
   'ordinary rigid modular weapons keep their prior baked sprite route');
+const pairAuthoring = plain(config); // Only the selected flail-shaft pair may adjust this particular hanging head.
+pairAuthoring.shafts['grapple-flail'].overrides['fishing-mace'].flailHeadAnchor={x:199,y:911};
+pairAuthoring.shafts['grapple-flail'].overrides['fishing-mace'].flailHeadScale=1.35;
+api.replace(pairAuthoring);
+assert.deepEqual(plain(api.flailRecipe('grapple-flail','fishing-mace').flail.head.anchor),{x:199,y:911},
+  'pair-only contact survives validation and drives the actual rendered flail head');
+assert.equal(api.flailRecipe('grapple-flail','fishing-mace').flail.head.scale,1.35,
+  'head scale is unique to a selected flail-shaft pairing');
+assert.deepEqual(plain(api.getConfig().heads['fishing-mace'].mount),plain(config.heads['fishing-mace'].mount),
+  'editing flail contact never changes the original rigid head mounting line');
+assert.equal(api.flailRecipe('fishing-mace','grapple-flail').flail.head.anchorSpace, original.flail.head.anchorSpace,
+  'the unrelated head-owned original Grapple Hook retains its Tool Hub anchor');
+api.replace(plain(config)); // Restore committed fixture before exercising independent import migrations.
 
 const originalMounts = plain(config.shafts['fishing-mace'].mounts); // Historical fitted-head geometry must not be replaced by a user's unrelated local draft.
 const editable = plain(config); // Author edits and imported draft sanitation exercise the real replace() migration path.
