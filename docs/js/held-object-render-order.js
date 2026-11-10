@@ -1096,17 +1096,27 @@
       }
       if (!geometry.boundingBox) geometry.computeBoundingBox();
       if (!geometry.boundingBox || geometry.boundingBox.isEmpty()) return true;
-      scissorBox.copy(geometry.boundingBox).applyMatrix4(mesh.matrixWorld);
-      const vfxPadding = Number(mesh.userData?.hobunjiHeldOverlayVfxPadding) || 0; // Ordinary enchantment particles retain their symmetric world overdraw budget.
-      if (vfxPadding > 0) scissorBox.expandByScalar(vfxPadding * mesh.matrixWorld.getMaxScaleOnAxis());
-      const dungeonRise = Number(mesh.userData?.hobunjiDungeonFireVfxPadding) || 0; // The charged flame rises in world +Y, not radially around the weapon.
-      if (dungeonRise > 0) {
-        const lateral = .55; // Covers the authored fire emitter's initial radius, random spread and point size without full-screen redraws.
-        scissorBox.min.x -= lateral; scissorBox.max.x += lateral;
-        scissorBox.min.z -= lateral; scissorBox.max.z += lateral;
-        scissorBox.min.y -= lateral; scissorBox.max.y += dungeonRise; // Plume height is already world-space; never multiply it by shaft scale.
-      }
-      return includeBox(scissorBox);
+      const includeMatrixBounds = matrix => {
+        scissorBox.copy(geometry.boundingBox).applyMatrix4(matrix);
+        const vfxPadding = Number(mesh.userData?.hobunjiHeldOverlayVfxPadding) || 0; // Preserve the original dynamic aura margin.
+        if (vfxPadding > 0) scissorBox.expandByScalar(vfxPadding * matrix.getMaxScaleOnAxis());
+        const dungeonRise = Number(mesh.userData?.hobunjiDungeonFireVfxPadding) || 0; // Preserve the fire plume's world-Y reach.
+        if (dungeonRise > 0) {
+          const lateral = .55;
+          scissorBox.min.x -= lateral; scissorBox.max.x += lateral;
+          scissorBox.min.z -= lateral; scissorBox.max.z += lateral;
+          scissorBox.min.y -= lateral; scissorBox.max.y += dungeonRise;
+        }
+        return includeBox(scissorBox);
+      }; // One precise projection for each matrix a trusted parity hook can use.
+      if (!includeMatrixBounds(mesh.matrixWorld)) return false;
+      // Known procedural hand/foot callbacks may replay a recent visible pose
+      // instead of the current transform. Enclose BOTH possible matrices; do
+      // not tighten bounds for unknown onBeforeRender hooks or skinned meshes.
+      const parity = mesh.__hobunjiXrayBoundParity;
+      if (parity?.hook === mesh.onBeforeRender && parity.isFresh?.()
+          && parity.visibleMatrixWorld && !includeMatrixBounds(parity.visibleMatrixWorld)) return false;
+      return true;
     }
     function includeBox({ min, max }) {
       minWorldY = Math.min(minWorldY, min.y);
@@ -1269,7 +1279,10 @@
   }
 
   function canBoundXrayMesh(mesh) {
-    if (!isReplayCullable(mesh) || (mesh.onBeforeRender && mesh.onBeforeRender !== objectProto.onBeforeRender)
+    const parity = mesh.__hobunjiXrayBoundParity; // Only trusted rig adapters can bound a per-draw pose change.
+    const unknownHook = mesh.onBeforeRender && mesh.onBeforeRender !== objectProto.onBeforeRender
+      && parity?.hook !== mesh.onBeforeRender;
+    if (!isReplayCullable(mesh) || unknownHook
         || mesh.userData?.hobunjiReplayNeverCull === true
         || Number(mesh.userData?.hobunjiHeldOverlayVfxPadding) > 0 || Number(mesh.userData?.hobunjiDungeonFireVfxPadding) > 0) return false;
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]; // Custom vertex deformation needs an isolated replay.
@@ -1882,7 +1895,8 @@
       if (!xrayMeshes.length || (!ground.length && !topFaceGround.length)) {
         return originalRender.call(this, scene, camera);
       }
-      const shellPadding = Math.abs(Number(scene.overrideMaterial.uniforms.uThickness.value) || 0); // Shell vertices extend outside their source bounds in screen space.
+      const baseShellPadding = Math.abs(Number(scene.overrideMaterial.uniforms.uThickness.value) || 0); // Source shell thickness before per-limb pose adapters.
+      const shellPadding = baseShellPadding * (xrayMeshes.some(mesh => mesh.__hobunjiXrayBoundParity?.hook === mesh.onBeforeRender) ? 2 : 1); // Hand/foot outlines can double their authored shell thickness; bound the maximum.
       const { groups, ordinary } = buildXrayGroups(this, scene, camera, xrayMeshes, shellPadding);
       lastShellElevationGroups = groups.length;
       // Ordinary shells use the real scene depth unchanged; reconstructing all
