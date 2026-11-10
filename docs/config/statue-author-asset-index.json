@@ -1,6 +1,6 @@
 {
   "schema": "hobunji_statue_asset_index.v1",
-  "description": "Checked-in asset index for the Statue Author. Regenerate with scripts/generate-statue-author-index.js when new PNG assets land; runtime also uses the canonical species and built-in animation registries.",
+  "description": "Repository-generated Statue Author texture, sprite, and animation dropdown index, with species/NPC and bandit rules consumed directly from their canonical sources. Regenerate using scripts/generate-statue-author-index.js --write.",
   "sources": {
     "species": "config/species/index.json",
     "npcs": "config/npcs/hobunji-starter-npc-database.json",
@@ -266,5 +266,770 @@
     "warCleaver": [
       "assets/toolsprites/war-cleaver.png"
     ]
-  }
+  },
+  "animationPresets": [
+    {
+      "id": "blowgunReady",
+      "label": "B'shuakauitl — Loaded",
+      "animation": {
+        "kind": "hobunji_attack_animation",
+        "name": "B'shuakauitl — Loaded",
+        "style": "ranged",
+        "poses": {
+          "neutral": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "pitch": -180,
+            "yaw": 0,
+            "roll": 4,
+            "bodyYaw": 0,
+            "scale": 1.3,
+            "headRelative": true,
+            "shoulderAim": {
+              "grip": false,
+              "palmNormal": true
+            },
+            "secondaryGrip": {
+              "enabled": false,
+              "percent": 50,
+              "primaryPercent": 50
+            },
+            "dualWield": {
+              "enabled": false
+            }
+          },
+          "windup": {
+            "headRelative": true,
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "pitch": -180,
+            "yaw": 0,
+            "roll": 0,
+            "bodyYaw": 0,
+            "shoulderAim": {
+              "grip": false,
+              "palmNormal": true
+            },
+            "scale": 1.3,
+            "secondaryGrip": {
+              "enabled": false,
+              "percent": 50,
+              "primaryPercent": 50
+            },
+            "dualWield": {
+              "enabled": false
+            }
+          },
+          "strike": {
+            "headRelative": true,
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "pitch": -180,
+            "yaw": 0,
+            "roll": 4,
+            "bodyYaw": 0,
+            "shoulderAim": {
+              "grip": false,
+              "palmNormal": true
+            },
+            "scale": 1.3,
+            "secondaryGrip": {
+              "enabled": false,
+              "percent": 50,
+              "primaryPercent": 50
+            },
+            "dualWield": {
+              "enabled": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "drink",
+      "label": "Drink",
+      "animation": {
+        "kind": "hobunji_held_action_animation",
+        "name": "Drink",
+        "style": "drink",
+        "poses": {
+          "neutral": {
+            "headRelative": true,
+            "x": -0.45,
+            "y": -0.42,
+            "z": 0.061,
+            "pitch": 10.31,
+            "yaw": 0,
+            "roll": 0,
+            "bodyYaw": 0,
+            "shoulderAim": {
+              "grip": true,
+              "palmNormal": true
+            }
+          },
+          "windup": {
+            "headRelative": true,
+            "x": -0.144,
+            "y": -0.087,
+            "z": 0.056,
+            "pitch": -114,
+            "yaw": 18,
+            "roll": -8,
+            "bodyYaw": 0,
+            "shoulderAim": {
+              "grip": false,
+              "palmNormal": true
+            }
+          },
+          "strike": {
+            "headRelative": true,
+            "x": -0.09,
+            "y": 0,
+            "z": 0.115,
+            "pitch": -180,
+            "yaw": 21,
+            "roll": 4,
+            "bodyYaw": 0,
+            "shoulderAim": {
+              "grip": false,
+              "palmNormal": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "heldItemSmall",
+      "label": "Small Held Item — Idle",
+      "animation": {
+        "kind": "hobunji_held_action_animation",
+        "name": "Small Held Item — Idle",
+        "style": "thrust",
+        "poses": {
+          "neutral": {
+            "x": 0.21,
+            "y": -0.12,
+            "z": -0.08,
+            "pitch": 17,
+            "yaw": -49,
+            "roll": -96,
+            "bodyYaw": -8,
+            "shoulderAim": {
+              "grip": true,
+              "palmNormal": true
+            }
+          },
+          "windup": {
+            "x": 0.21,
+            "y": -0.12,
+            "z": -0.08,
+            "pitch": 17,
+            "yaw": -49,
+            "roll": -96,
+            "bodyYaw": -8,
+            "shoulderAim": {
+              "grip": true,
+              "palmNormal": true
+            }
+          },
+          "strike": {
+            "x": 0.21,
+            "y": -0.12,
+            "z": -0.08,
+            "pitch": 17,
+            "yaw": -49,
+            "roll": -96,
+            "bodyYaw": -8,
+            "shoulderAim": {
+              "grip": true,
+              "palmNormal": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "heldItemLarge",
+      "label": "Large Held Item (two-hand)",
+      "animation": {
+        "kind": "hobunji_held_action_animation",
+        "name": "Large Held Item (two-hand)",
+        "style": "drink",
+        "poses": {
+          "neutral": {
+            "x": 0.45,
+            "y": 0.19,
+            "z": 0.32,
+            "pitch": 0,
+            "yaw": 0,
+            "roll": 0,
+            "bodyYaw": 0,
+            "shoulderAim": {
+              "grip": true,
+              "palmNormal": true
+            },
+            "secondaryGrip": {
+              "enabled": true,
+              "percent": 50,
+              "primaryPercent": 50
+            }
+          },
+          "windup": {
+            "x": 0.45,
+            "y": 0.19,
+            "z": 0.32,
+            "pitch": 0,
+            "yaw": 0,
+            "roll": 0,
+            "bodyYaw": 0,
+            "shoulderAim": {
+              "grip": true,
+              "palmNormal": true
+            },
+            "secondaryGrip": {
+              "enabled": true,
+              "percent": 50,
+              "primaryPercent": 50
+            }
+          },
+          "strike": {
+            "x": 0.45,
+            "y": 0.19,
+            "z": 0.32,
+            "pitch": 0,
+            "yaw": 0,
+            "roll": 0,
+            "bodyYaw": 0,
+            "shoulderAim": {
+              "grip": true,
+              "palmNormal": true
+            },
+            "secondaryGrip": {
+              "enabled": true,
+              "percent": 50,
+              "primaryPercent": 50
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "throwFlask",
+      "label": "Weapon Throw (Spin)",
+      "animation": {
+        "kind": "hobunji_attack_animation",
+        "name": "Weapon Throw (Spin)",
+        "style": "chop",
+        "poses": {
+          "neutral": {
+            "x": -0.04,
+            "y": 0.29,
+            "z": -0.1,
+            "pitch": 47,
+            "yaw": 107,
+            "bodyYaw": -55,
+            "roll": 88,
+            "shoulderAim": {
+              "grip": true,
+              "palmNormal": true
+            },
+            "secondaryGrip": {
+              "enabled": false,
+              "percent": 50,
+              "primaryPercent": 50
+            },
+            "dualWield": {
+              "enabled": true
+            }
+          },
+          "windup": {
+            "x": 0.41,
+            "y": 0.37,
+            "z": 0.42,
+            "pitch": -180,
+            "yaw": 139,
+            "bodyYaw": -152,
+            "roll": -92,
+            "shoulderAim": {
+              "grip": false,
+              "palmNormal": true
+            },
+            "secondaryGrip": {
+              "enabled": true,
+              "percent": 50,
+              "primaryPercent": 50
+            },
+            "dualWield": {
+              "enabled": true
+            }
+          },
+          "strike": {
+            "x": -0.57,
+            "y": 0.33,
+            "z": 0.17,
+            "pitch": -25,
+            "yaw": -65,
+            "bodyYaw": 63,
+            "roll": -88,
+            "shoulderAim": {
+              "grip": false,
+              "palmNormal": true
+            },
+            "secondaryGrip": {
+              "enabled": true,
+              "percent": 50,
+              "primaryPercent": 50
+            },
+            "dualWield": {
+              "enabled": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "weaponThrowSpin",
+      "label": "Weapon Throw (Spin)",
+      "animation": {
+        "kind": "hobunji_attack_animation",
+        "name": "Weapon Throw (Spin)",
+        "style": "chop",
+        "poses": {
+          "neutral": {
+            "x": -0.04,
+            "y": 0.29,
+            "z": -0.1,
+            "pitch": 47,
+            "yaw": 107,
+            "bodyYaw": -55,
+            "roll": 88,
+            "shoulderAim": {
+              "grip": true,
+              "palmNormal": true
+            },
+            "secondaryGrip": {
+              "enabled": false,
+              "percent": 50,
+              "primaryPercent": 50
+            },
+            "dualWield": {
+              "enabled": true
+            }
+          },
+          "windup": {
+            "x": 0.41,
+            "y": 0.37,
+            "z": 0.42,
+            "pitch": -180,
+            "yaw": 139,
+            "bodyYaw": -152,
+            "roll": -92,
+            "shoulderAim": {
+              "grip": false,
+              "palmNormal": true
+            },
+            "secondaryGrip": {
+              "enabled": true,
+              "percent": 50,
+              "primaryPercent": 50
+            },
+            "dualWield": {
+              "enabled": true
+            }
+          },
+          "strike": {
+            "x": -0.57,
+            "y": 0.33,
+            "z": 0.17,
+            "pitch": -25,
+            "yaw": -65,
+            "bodyYaw": 63,
+            "roll": -88,
+            "shoulderAim": {
+              "grip": false,
+              "palmNormal": true
+            },
+            "secondaryGrip": {
+              "enabled": true,
+              "percent": 50,
+              "primaryPercent": 50
+            },
+            "dualWield": {
+              "enabled": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "weaponThrowSpearSpin",
+      "label": "Fishing Spear Throw (Offset Spin)",
+      "animation": {
+        "kind": "hobunji_attack_animation",
+        "name": "Fishing Spear Throw (Offset Spin)",
+        "style": "chop",
+        "poses": {
+          "neutral": {
+            "x": -0.12,
+            "y": 0.2,
+            "z": 0,
+            "pitch": -10,
+            "yaw": 167,
+            "bodyYaw": -62,
+            "roll": 75,
+            "shoulderAim": {
+              "grip": true,
+              "palmNormal": true
+            },
+            "secondaryGrip": {
+              "enabled": false,
+              "percent": 50,
+              "primaryPercent": 50
+            },
+            "dualWield": {
+              "enabled": true
+            }
+          },
+          "windup": {
+            "x": 0.41,
+            "y": 0.37,
+            "z": 0.42,
+            "pitch": -180,
+            "yaw": 139,
+            "bodyYaw": -152,
+            "roll": -92,
+            "shoulderAim": {
+              "grip": false,
+              "palmNormal": true
+            },
+            "secondaryGrip": {
+              "enabled": true,
+              "percent": 50,
+              "primaryPercent": 50
+            },
+            "dualWield": {
+              "enabled": true
+            }
+          },
+          "strike": {
+            "x": -0.57,
+            "y": 0.33,
+            "z": 0.17,
+            "pitch": -25,
+            "yaw": -65,
+            "bodyYaw": 63,
+            "roll": -88,
+            "shoulderAim": {
+              "grip": false,
+              "palmNormal": true
+            },
+            "secondaryGrip": {
+              "enabled": true,
+              "percent": 50,
+              "primaryPercent": 50
+            },
+            "dualWield": {
+              "enabled": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "counterShield",
+      "label": "Counter Shield",
+      "animation": {
+        "kind": "hobunji_held_action_animation",
+        "name": "Counter Shield",
+        "style": "sweep",
+        "poses": {
+          "neutral": {
+            "x": 0,
+            "y": 0,
+            "z": 0.16,
+            "pitch": 0,
+            "yaw": 0,
+            "roll": 180,
+            "bodyYaw": 0,
+            "secondaryGrip": {
+              "enabled": false,
+              "percent": 50,
+              "primaryPercent": 50
+            },
+            "dualWield": {
+              "enabled": true
+            }
+          },
+          "windup": {
+            "x": 0,
+            "y": 0.05,
+            "z": 0.3,
+            "pitch": 14,
+            "yaw": 0,
+            "roll": 180,
+            "bodyYaw": -20,
+            "secondaryGrip": {
+              "enabled": true,
+              "percent": 50,
+              "primaryPercent": 50
+            },
+            "dualWield": {
+              "enabled": true
+            }
+          },
+          "strike": {
+            "x": 0,
+            "y": 0.05,
+            "z": 0.3,
+            "pitch": 14,
+            "yaw": 0,
+            "roll": 180,
+            "bodyYaw": -20,
+            "secondaryGrip": {
+              "enabled": true,
+              "percent": 50,
+              "primaryPercent": 50
+            },
+            "dualWield": {
+              "enabled": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "flutePlayNote",
+      "label": "Flute — Play Note",
+      "animation": {
+        "kind": "hobunji_held_action_animation",
+        "name": "Flute — Play Note",
+        "style": "ranged",
+        "poses": {
+          "neutral": {
+            "headRelative": true,
+            "x": 0.01,
+            "y": 0,
+            "z": 0,
+            "pitch": -108,
+            "yaw": 0,
+            "bodyYaw": 0,
+            "roll": 4,
+            "scale": 1.3,
+            "bodySink": 0,
+            "shoulderAim": {
+              "grip": true,
+              "palmNormal": false
+            },
+            "secondaryGrip": {
+              "enabled": false,
+              "percent": 50,
+              "primaryPercent": 50
+            },
+            "dualWield": {
+              "enabled": false
+            },
+            "elbows": {
+              "right": {
+                "x": 0,
+                "y": -0.15,
+                "z": 0.1
+              }
+            }
+          },
+          "windup": {
+            "headRelative": true,
+            "x": 0.01,
+            "y": 0,
+            "z": 0,
+            "pitch": -108,
+            "yaw": 0,
+            "bodyYaw": 0,
+            "roll": 4,
+            "scale": 1.3,
+            "bodySink": 0,
+            "shoulderAim": {
+              "grip": true,
+              "palmNormal": false
+            },
+            "secondaryGrip": {
+              "enabled": false,
+              "percent": 50,
+              "primaryPercent": 50
+            },
+            "dualWield": {
+              "enabled": false
+            },
+            "elbows": {
+              "right": {
+                "x": 0,
+                "y": -0.15,
+                "z": 0.1
+              }
+            }
+          },
+          "strike": {
+            "headRelative": true,
+            "x": 0.01,
+            "y": 0,
+            "z": 0,
+            "pitch": -108,
+            "yaw": 0,
+            "bodyYaw": 0,
+            "roll": 4,
+            "scale": 1.3,
+            "bodySink": 10,
+            "shoulderAim": {
+              "grip": true,
+              "palmNormal": false
+            },
+            "secondaryGrip": {
+              "enabled": false,
+              "percent": 50,
+              "primaryPercent": 50
+            },
+            "dualWield": {
+              "enabled": false
+            },
+            "elbows": {
+              "right": {
+                "x": 0,
+                "y": -0.15,
+                "z": 0.1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "kurrayaPlayNote",
+      "label": "Kurraya — Play Note",
+      "animation": {
+        "kind": "hobunji_held_action_animation",
+        "name": "Kurraya — Play Note",
+        "style": "thrust",
+        "poses": {
+          "neutral": {
+            "x": 0.27,
+            "y": 0.08,
+            "z": 0.03,
+            "pitch": 0,
+            "yaw": 0,
+            "bodyYaw": 0,
+            "headRelative": false,
+            "shoulderAim": {
+              "grip": false,
+              "palmNormal": false
+            },
+            "secondaryGrip": {
+              "enabled": true,
+              "percent": 50,
+              "primaryPercent": 50
+            },
+            "dualWield": {
+              "enabled": false
+            },
+            "elbows": {
+              "left": {
+                "x": 0.155,
+                "y": -0.195,
+                "z": 0
+              }
+            },
+            "rightHand": {
+              "enabled": true,
+              "x": -0.13,
+              "y": 0.07,
+              "z": 0.085,
+              "roll": 52
+            },
+            "roll": 7,
+            "scale": 0.85,
+            "bodySink": 0
+          },
+          "windup": {
+            "x": 0.27,
+            "y": 0.08,
+            "z": 0.03,
+            "pitch": 0,
+            "yaw": 0,
+            "bodyYaw": 0,
+            "headRelative": false,
+            "shoulderAim": {
+              "grip": false,
+              "palmNormal": false
+            },
+            "secondaryGrip": {
+              "enabled": true,
+              "percent": 50,
+              "primaryPercent": 50
+            },
+            "dualWield": {
+              "enabled": false
+            },
+            "elbows": {
+              "left": {
+                "x": 0.155,
+                "y": -0.195,
+                "z": 0
+              }
+            },
+            "rightHand": {
+              "enabled": true,
+              "x": -0.13,
+              "y": 0.07,
+              "z": 0.085,
+              "roll": 52
+            },
+            "roll": 5
+          },
+          "strike": {
+            "x": 0.27,
+            "y": 0.08,
+            "z": 0.03,
+            "pitch": 0,
+            "yaw": 0,
+            "bodyYaw": 0,
+            "headRelative": false,
+            "shoulderAim": {
+              "grip": false,
+              "palmNormal": false
+            },
+            "secondaryGrip": {
+              "enabled": true,
+              "percent": 50,
+              "primaryPercent": 50
+            },
+            "dualWield": {
+              "enabled": false
+            },
+            "elbows": {
+              "left": {
+                "x": 0.155,
+                "y": -0.15,
+                "z": 0.02
+              },
+              "right": {
+                "x": -0.17,
+                "y": -0.28,
+                "z": 0.11
+              }
+            },
+            "rightHand": {
+              "enabled": true,
+              "x": -0.13,
+              "y": 0.1,
+              "z": 0.085,
+              "roll": 52
+            },
+            "roll": 11,
+            "bodySink": 3
+          }
+        }
+      }
+    }
+  ]
 }
