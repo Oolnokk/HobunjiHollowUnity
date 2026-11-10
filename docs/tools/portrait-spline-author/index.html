@@ -121,11 +121,12 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
 'use strict';
 const $=id=>document.getElementById(id),Rig=window.PortraitSplineRig,Catalog=window.PortraitSplineCatalog;
 const DIRECTIONS=['left','right','up','down','toward','away'],FIELDS=['yaw','pitch','roll'];
-const makeSegment=()=>({deadzone:{x:4,y:4,z:6},poses:Object.fromEntries(DIRECTIONS.map(x=>[x,{yaw:0,pitch:0,roll:0}]))});
+const makeSegment=()=>({deadzone:{x:4,y:4,z:6},poses:Object.fromEntries(DIRECTIONS.map(x=>[x,{yaw:0,pitch:0,roll:0,translate:{x:0,y:0,z:0}}]))});
 const makeRig=()=>({version:1,enabled:true,points:[{u:.5,v:.28,depth:.015},{u:.52,v:.43,depth:.025},{u:.53,v:.6,depth:.035}],
 segments:[makeSegment(),makeSegment()],seam:[],rearOffset:{u:0,v:0},width:.1,windResponse:1,segmentsX:16,segmentsY:20});
-let rig=makeRig(),cosmetic={},loadedName='cosmetic.json',selectedKnot=0,selectedSegment=0,direction='right',mode='move';
-let images={front:null,rear:null,hood:null,hoodRear:null},dragging=false,lastPaint=null;
+let rig=makeRig(),cosmetic={},loadedName='cosmetic.json',selectedKnot=1,selectedSegment=0,direction='right',mode='move';
+let images={front:null,rear:null,hood:null,hoodRear:null,head:null},dragging=false,lastPaint=null;
+let viewer=null,viewerMode='translate',selectedSeam=0,seamBackup=null,headGeneration=0; // 3D gizmo and silhouette edit state shared with the 2D author.
 let catalog=null,styles=[],hoods=[],activeStyle=null,activeDraftKey=null,styleGeneration=0,assetGeneration=0,hoodGeneration=0,indexGeneration=0;
 let manualSelected=false; // Explicit file import is not silently replaced by a concurrent index fetch.
 const rigDrafts=new Map(); // Per-cosmetic/per-species unsaved edits survive dropdown switching until the author page closes.
@@ -139,7 +140,7 @@ function imageInput(id,key){$(id).addEventListener('change',async e=>{
   img.onerror=()=>{URL.revokeObjectURL(url);message('Could not decode '+file.name);};
   img.src=url;
 });}
-imageInput('frontFile','front');imageInput('rearFile','rear');imageInput('hoodFile','hood');
+imageInput('frontFile','front');imageInput('rearFile','rear');imageInput('hoodFile','hood');imageInput('headFile','head');
 $('cosmeticFile').addEventListener('change',async e=>{
   const file=e.target.files?.[0];if(!file)return;
   try{
@@ -150,7 +151,7 @@ $('cosmeticFile').addEventListener('change',async e=>{
     cosmetic=parsed;loadedName=file.name.replace(/^\(HA\)\s*/,'');
     rig=Rig.normalize(parsed.portraitSplineRig) || makeRig(); // Always edit the validated full schema, including every segment's default pose.
     $('sourcePath').textContent='Local import: '+file.name;
-    selectedKnot=0;selectedSegment=0;controls();render();message('Imported '+file.name+'. Export preserves existing cosmetic fields.');
+    selectedKnot=1;selectedSegment=0;controls();render();message('Imported '+file.name+'. Export preserves existing cosmetic fields.');
   }catch(error){message('Invalid JSON: '+error.message);}
 });
 
@@ -186,6 +187,7 @@ async function loadStyles(){
   const generation=++styleGeneration;
   assetGeneration++; // An outstanding sprite fetch from another species must never repaint this one's preview.
   if(!catalog || !selectedSpecies() || !selectedGender())return;
+  void loadHead(); // Read the gender-specific headSprite from config/species/index.json, independent of which hair style is selected.
   rememberDraft();
   setSelect('cosmeticSelect',[],'Loading indexed cosmetics…');
   message('Loading '+selectedSpecies()+' '+selectedGender()+' cosmetics…');
@@ -199,6 +201,19 @@ async function loadStyles(){
   }catch(error){
     if(generation!==styleGeneration)return;
     styles=[];fillStyles();message('Unable to load styles: '+error.message);
+  }
+}
+async function loadHead(){
+  const generation=++headGeneration;
+  images.head=null;render();
+  if(!catalog || !selectedSpecies() || !selectedGender())return;
+  const species=selectedSpecies(),gender=selectedGender();
+  try{
+    const image=await catalog.headArtwork(species,gender);
+    if(generation!==headGeneration || species!==selectedSpecies() || gender!==selectedGender())return;
+    images.head=image;render(); // The same aligned head canvas is used by silhouette tracing and the WebGL reference plane.
+  }catch(error){
+    if(generation===headGeneration)message('Could not load '+species+' head silhouette: '+error.message+'. Manual head reference is available below.');
   }
 }
 function fillStyles(){
@@ -233,7 +248,7 @@ async function selectIndexedStyle(){
     ?selected.config.speciesVariants?.[selected.scope.key]?.portraitSplineRig
     :selected.config.portraitSplineRig;
   rig=Rig.normalize(rigDrafts.get(draftKey)||authored||selected.config.portraitSplineRig)||makeRig();
-  selectedKnot=0;selectedSegment=0;controls();
+  selectedKnot=1;selectedSegment=0;controls();
   images.front=null;images.rear=null;render();
   const scopeText=selected.scope.variant?'variant '+selected.scope.key:'shared cosmetic';
   $('sourcePath').textContent='Source: config/cosmetics/'+selected.entry.path.replace(/^\.\//,'')+' · rig scope: '+scopeText;
@@ -335,10 +350,12 @@ function controls(){
     const div=document.createElement('div');div.className='field';
     const title=document.createElement('label');title.textContent=label;
     const input=document.createElement('input');input.type='number';input.min=min;input.max=max;input.step=step;input.value=value;
+    input.dataset.poseField=label; // 3D gizmo edits update the displayed values without recreating numeric controls on every pointer move.
     input.addEventListener('change',()=>{changed(clamp(numeric(input.value,value),min,max));input.value=clamp(numeric(input.value,value),min,max);render();});
     div.append(title,input);return div;
   };
   for(const key of FIELDS)holder.append(field(key+' (°)',slot.poses[direction][key],-85,85,1,v=>slot.poses[direction][key]=v));
+  for(const key of ['x','y','z'])holder.append(field('Translate '+key.toUpperCase(),slot.poses[direction].translate[key],-.35,.35,.005,v=>slot.poses[direction].translate[key]=v));
   for(const key of ['x','y','z'])holder.append(field('Deadzone '+key+'°',slot.deadzone[key],0,44,1,v=>slot.deadzone[key]=v));
   holder.append(field('Knot depth',rig.points[selectedKnot].depth,.003,.35,.005,v=>rig.points[selectedKnot].depth=v));
   $('json').value=JSON.stringify(rig,null,2);
@@ -354,6 +371,7 @@ function render(){
   ctx.strokeStyle='#26364d';ctx.lineWidth=1;
   for(let i=0;i<=10;i++){ctx.beginPath();ctx.moveTo(i*W/10,0);ctx.lineTo(i*W/10,H);ctx.stroke();ctx.beginPath();ctx.moveTo(0,i*H/10);ctx.lineTo(W,i*H/10);ctx.stroke();}
   const shown=$('viewSelect').value==='rear';
+  if(images.head){ctx.globalAlpha=.72;ctx.drawImage(images.head,0,0,W,H);ctx.globalAlpha=1;}
   if(images[shown?'rear':'front']){ctx.globalAlpha=.8;
     if(shown){ctx.save();ctx.translate(rig.rearOffset.u*W,rig.rearOffset.v*H);} // Preview the same rear-only transform used on the 3D ribbon.
     ctx.drawImage(images[shown?'rear':'front'],0,0,W,H);
@@ -361,7 +379,7 @@ function render(){
   const hoodReference=shown?(images.hoodRear||images.hood):images.hood;
   if(hoodReference){ctx.globalAlpha=.28;ctx.drawImage(hoodReference,0,0,W,H);ctx.globalAlpha=1;}
   ctx.strokeStyle='#ffb2d3';ctx.lineWidth=1;ctx.fillStyle='#ec88b643';
-  for(const p of rig.seam){ctx.beginPath();ctx.arc(p.u*W,p.v*H,p.radiusPx*W/200,0,Math.PI*2);ctx.fillStyle=p.color||'#ec88b643';ctx.fill();ctx.stroke();}
+  for(let i=0;i<rig.seam.length;i++){const p=rig.seam[i];ctx.beginPath();ctx.arc(p.u*W,p.v*H,p.radiusPx*W/200,0,Math.PI*2);ctx.fillStyle=p.color||'#ec88b643';ctx.fill();ctx.strokeStyle=(i===selectedSeam?'#ffe087':'#ffb2d3');ctx.lineWidth=i===selectedSeam?2:1;ctx.stroke();}
   const active=normalized();if(!active){message('Invalid spline: add at least two distinct knots.');return;}
   const posed=Rig.posePoints(active,wind()),pts=posed.points;
   const drawCurve=(controlPoints,neutral)=>{
@@ -384,6 +402,7 @@ function render(){
     '\nPortrait plane: '+(shown?'rear (offset '+rig.rearOffset.u+', '+rig.rearOffset.v+')':'front')+
     '\nOnly enabled styles create extra geometry; others retain 2D rendering.';
   $('json').value=JSON.stringify(rig,null,2);
+  if(viewer)viewer.update({rig,wind:wind(),selectedKnot,direction,head:images.head,front:images.front,rear:images.rear,hood:shown?(images.hoodRear||images.hood):images.hood}); // Render precisely the same posed geometry as the runtime, plus reference art and interactive handles.
 }
 function updateKnots(){while(rig.segments.length<rig.points.length-1)rig.segments.push(makeSegment());rig.segments.length=rig.points.length-1;controls();render();}
 function pick(e){const bounds=$('preview').getBoundingClientRect();return{u:clamp((e.clientX-bounds.left)/bounds.width,0,1),v:clamp((e.clientY-bounds.top)/bounds.height,0,1)};}
