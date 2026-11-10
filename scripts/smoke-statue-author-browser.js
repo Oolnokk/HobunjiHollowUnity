@@ -134,11 +134,18 @@ async function run(){
         : p.textureReady||p.textureError);
     },null,{timeout:90000});
     const pahu=await page.evaluate(()=>window.__hobunjiStatueDebug());
+    console.log('PAHU PARTS '+JSON.stringify({rig:pahu.sourceRig,parts:pahu.pieces.map(p=>({
+      id:p.id,worldSize:p.worldSize,screenCenter:p.screenCenter,visible:p.visible,textureError:p.textureError,modelError:p.modelError
+    }))}));
     assert.ok(pahu.built,'Pahu statue should construct: '+JSON.stringify(pahu));
     const pahuHead=pahu.pieces.find(piece=>piece.id==='statue_head');
     assert.ok(pahuHead?.textureReady&&!pahuHead?.textureError,'Pahu head and cosmetics should render');
     assert.ok(pahuHead.material?.coverage>.02,'Pahu head must have a visible silhouette');
     const pahuBody=pahu.pieces.find(piece=>piece.id==='statue_body');
+    for(const limb of pahu.pieces.filter(p=>p.id.includes('_hand')||p.id.includes('_foot'))){
+      assert.ok(limb.worldSize?.every(value=>value<.55),
+        'Attached limb exceeds its furniture dimensions: '+JSON.stringify(limb));
+    }
     for(const piece of [pahuBody,pahuHead]){
       assert.equal(piece.visible,true,'Pahu portrait mesh was hidden: '+JSON.stringify(piece));
       assert.equal(piece.opacity,1,'Pahu portrait material was not ready: '+JSON.stringify(piece));
