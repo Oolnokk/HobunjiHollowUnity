@@ -1,4 +1,175 @@
 {
   "schema": "hobunji_geometry_quality.v1",
-  "profiles": []
+  "profiles": [
+    {
+      "source": "assets/models/cave_small.glb",
+      "variants": {
+        "low": "assets/models/cave_small_optimized60.glb"
+      },
+      "metadata": {
+        "method": "offline_meshoptimizer_simplify",
+        "sourceTriangles": 520,
+        "outputTriangles": 208,
+        "sourceVertices": 315,
+        "outputVertices": 148,
+        "actualReductionPercent": 60,
+        "maximumErrorPercent": 2,
+        "preserveTransparentCards": true,
+        "runtimeSimplification": false
+      }
+    },
+    {
+      "source": "assets/models/feet/foot_feline.glb",
+      "variants": {
+        "low": "assets/models/feet/foot_feline_optimized60.glb"
+      },
+      "metadata": {
+        "method": "offline_meshoptimizer_simplify",
+        "sourceTriangles": 520,
+        "outputTriangles": 250,
+        "sourceVertices": 315,
+        "outputVertices": 172,
+        "actualReductionPercent": 51.92,
+        "maximumErrorPercent": 2,
+        "preserveTransparentCards": true,
+        "runtimeSimplification": false
+      }
+    },
+    {
+      "source": "assets/models/feet/foot_pachyderm.glb",
+      "variants": {
+        "low": "assets/models/feet/foot_pachyderm_optimized60.glb"
+      },
+      "metadata": {
+        "method": "offline_meshoptimizer_simplify",
+        "sourceTriangles": 2080,
+        "outputTriangles": 870,
+        "sourceVertices": 2520,
+        "outputVertices": 628,
+        "actualReductionPercent": 58.17,
+        "maximumErrorPercent": 2,
+        "preserveTransparentCards": true,
+        "runtimeSimplification": false
+      }
+    },
+    {
+      "source": "assets/models/feet/foot_sloth.glb",
+      "variants": {
+        "low": "assets/models/feet/foot_sloth_optimized60.glb"
+      },
+      "metadata": {
+        "method": "offline_meshoptimizer_simplify",
+        "sourceTriangles": 2400,
+        "outputTriangles": 960,
+        "sourceVertices": 2876,
+        "outputVertices": 681,
+        "actualReductionPercent": 60,
+        "maximumErrorPercent": 2,
+        "preserveTransparentCards": true,
+        "runtimeSimplification": false
+      }
+    },
+    {
+      "source": "assets/models/furniture/basicbed_single_original_reference.glb",
+      "variants": {
+        "low": "assets/models/furniture/basicbed_single_original_reference_optimized60.glb"
+      },
+      "metadata": {
+        "method": "offline_meshoptimizer_simplify",
+        "sourceTriangles": 320,
+        "outputTriangles": 186,
+        "sourceVertices": 473,
+        "outputVertices": 379,
+        "actualReductionPercent": 41.88,
+        "maximumErrorPercent": 2,
+        "preserveTransparentCards": true,
+        "runtimeSimplification": false
+      }
+    },
+    {
+      "source": "assets/models/furniture/basicbed_single.glb",
+      "variants": {
+        "low": "assets/models/furniture/basicbed_single_optimized60.glb"
+      },
+      "metadata": {
+        "method": "offline_meshoptimizer_simplify",
+        "sourceTriangles": 320,
+        "outputTriangles": 186,
+        "sourceVertices": 473,
+        "outputVertices": 379,
+        "actualReductionPercent": 41.88,
+        "maximumErrorPercent": 2,
+        "preserveTransparentCards": true,
+        "runtimeSimplification": false
+      }
+    },
+    {
+      "source": "assets/models/hands/hand_feline.glb",
+      "variants": {
+        "low": "assets/models/hands/hand_feline_optimized60.glb"
+      },
+      "metadata": {
+        "method": "offline_meshoptimizer_simplify",
+        "sourceTriangles": 3120,
+        "outputTriangles": 1248,
+        "sourceVertices": 1890,
+        "outputVertices": 898,
+        "actualReductionPercent": 60,
+        "maximumErrorPercent": 2,
+        "preserveTransparentCards": true,
+        "runtimeSimplification": false
+      }
+    },
+    {
+      "source": "assets/models/hands/hand_pachyderm.glb",
+      "variants": {
+        "low": "assets/models/hands/hand_pachyderm_optimized60.glb"
+      },
+      "metadata": {
+        "method": "offline_meshoptimizer_simplify",
+        "sourceTriangles": 3120,
+        "outputTriangles": 1248,
+        "sourceVertices": 3780,
+        "outputVertices": 906,
+        "actualReductionPercent": 60,
+        "maximumErrorPercent": 2,
+        "preserveTransparentCards": true,
+        "runtimeSimplification": false
+      }
+    },
+    {
+      "source": "assets/models/hands/hand_parrot.glb",
+      "variants": {
+        "low": "assets/models/hands/hand_parrot_optimized60.glb"
+      },
+      "metadata": {
+        "method": "offline_meshoptimizer_simplify",
+        "sourceTriangles": 2600,
+        "outputTriangles": 1040,
+        "sourceVertices": 3150,
+        "outputVertices": 746,
+        "actualReductionPercent": 60,
+        "maximumErrorPercent": 2,
+        "preserveTransparentCards": true,
+        "runtimeSimplification": false
+      }
+    },
+    {
+      "source": "assets/models/hands/hand_sloth.glb",
+      "variants": {
+        "low": "assets/models/hands/hand_sloth_optimized60.glb"
+      },
+      "metadata": {
+        "method": "offline_meshoptimizer_simplify",
+        "sourceTriangles": 2400,
+        "outputTriangles": 1078,
+        "sourceVertices": 2876,
+        "outputVertices": 746,
+        "actualReductionPercent": 55.08,
+        "maximumErrorPercent": 2,
+        "preserveTransparentCards": true,
+        "runtimeSimplification": false
+      }
+    }
+  ]
 }
