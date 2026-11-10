@@ -23,9 +23,9 @@ small{display:block;color:#b2c6da;line-height:1.4;margin:7px 0}a{color:#9edafa}.
 aside{max-height:none;overflow:visible;border-right:0;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))}
 #status{font-size:12px;max-height:34%;padding:7px}}
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="../../config/scratchbones-config.js"></script>
 <script src="../../config/hand-model-profiles.js"></script>
 <script src="../../js/color-fill.js"></script>
@@ -77,6 +77,7 @@ aside{max-height:none;overflow:visible;border-right:0;grid-template-columns:repe
 'use strict';
 const $=id=>document.getElementById(id); // Single control lookup for the Statue Author.
 const records=[]; // Repository NPC source list; never mutated by pose authoring.
+const runtimeErrors=[]; // Collects script/asset errors for the mobile copyable diagnostics.
 let selectedRecord=null; // Imported Character Studio record, if one is loaded.
 let animation=null; // Imported attack animation with Neutral, Windup and Strike.
 let exportProject=null; // Latest furniture-author-compatible JSON.
@@ -373,7 +374,7 @@ window.__hobunjiStatueDebug=()=>{
   return {built:!!exportProject,record:selectedRecord?.id||$('npcSelect').value,
     importedAnimation:animation?.name||null,phase:exportProject?.statueSource?.phase||null,
     texture:exportProject?.statueSource?.materialFile||$('materialFile').value,
-    pieces:meshes,visibleStatus:$('status').textContent};
+    pieces:meshes,runtimeErrors:runtimeErrors.slice(-15),visibleStatus:$('status').textContent};
 }; // Safe read-only mobile diagnostics and browser-smoke verification.
 $('diagnostics').onclick=async()=>{
   const report={...window.__hobunjiStatueDebug(),
@@ -422,8 +423,19 @@ function initPreview(){
   new ResizeObserver(resize).observe(host);resize();
   (function draw(){requestAnimationFrame(draw);controls.update();renderer.render(scene,camera);})();
 }
-window.addEventListener('error',event=>status('Error: '+event.message));
-window.addEventListener('unhandledrejection',event=>status('Error: '+String(event.reason)));
+window.addEventListener('error',event=>{
+  const source=event.filename ? ' ('+event.filename.split('/').pop()+':'+(event.lineno||0)+')' : '';
+  const detail=event.error?.stack||event.message||event.target?.src||'Unknown script error';
+  runtimeErrors.push(String(detail)+source);
+  // "Script error." is Chrome's opaque cross-origin report: do not erase a
+  // successfully rendered statue's build status with an unhelpful label.
+  if(!exportProject || event.message!=='Script error.')status('Error: '+detail+source);
+});
+window.addEventListener('unhandledrejection',event=>{
+  const detail=String(event.reason?.stack||event.reason||'Unknown rejection');
+  runtimeErrors.push(detail);
+  if(!exportProject)status('Error: '+detail);
+});
 initPreview();loadNpcs();
 })();
 </script>
