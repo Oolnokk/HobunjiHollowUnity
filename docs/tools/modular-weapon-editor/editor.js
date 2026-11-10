@@ -128,12 +128,12 @@
     savedState = JSON.stringify(data); pendingStrokes = [];
     updateShaftList(); render(); syncBridgeControls(); historyButtons();
   }
-  function save({ keepPairFields = false } = {}) {
+  function save({ preserveInputs = false } = {}) {
     try {
       data = JSON.parse(JSON.stringify(api.replace(data, true))); // Persist the validated draft and keep Undo/Redo history intact.
       record();
-      if (keepPairFields) {
-        msg('Pair correction saved. Live assembly and original head attachment are unchanged except for this pair.');
+      if (preserveInputs) {
+        msg('Pair-specific adjustment saved. The full rig and source previews reflect these values without replacing the active input.');
         drawIdentity(); // Refresh the pair-specific contact, damage and scale diagnostics without deleting the active input.
         updateRigTree(); // Rig output must match the same corrected pair as the live preview.
         preview(); // Rebuild only the assembled artwork; do not recreate #fields during a number input change.
@@ -731,7 +731,7 @@
         const value = bool ? input.checked : key === 'animation' ? input.value : Number(input.value);
         const currentPair = (chosenShaft().overrides[byId('head').value] ||= {}); // Always edit the current draft, even after async preview/save replaces its object graph.
         if (value === neutral[key]) delete currentPair[key]; else currentPair[key] = value; // Store only exceptions for this exact combination.
-        save({ keepPairFields: true }); // Live changes update the flail/rig without destroying and resetting this focused mobile field.
+        save({ preserveInputs: true }); // Changing numeric pair corrections refreshes the rig without deleting the focused field.
       };
       cell.appendChild(input); row.append(title, cell); byId('fields').appendChild(row);
     }
@@ -976,20 +976,22 @@
     if(!sx||!sy||!Number.isFinite(x)||!Number.isFinite(y)||x<0||x>450||y<0||y>1204) {
       drawIdentity();msg('Head contact X/Y must be within the original 450 × 1204 source sprite.');return;
     }
-    (chosenShaft().overrides[byId('head').value] ||= {}).flailHeadAnchor={x,y};save();
+    (chosenShaft().overrides[byId('head').value] ||= {}).flailHeadAnchor={x,y};
+    save({ preserveInputs: true }); // A contact change must not replace the next numeric input while mobile focus moves.
   };
   byId('head-rope-scale').onchange = () => {
     if(!shaftOwnsFlail()) {drawIdentity();return;}
     const raw=byId('head-rope-scale').value.trim(),value=Number(raw);
     if(!raw||!Number.isFinite(value)||value<0.05||value>8) {drawIdentity();return;}
-    (chosenShaft().overrides[byId('head').value] ||= {}).flailHeadScale=value;save();
+    (chosenShaft().overrides[byId('head').value] ||= {}).flailHeadScale=value;
+    save({ preserveInputs: true }); // Preserve input identity and keyboard focus across head scale and pair scale edits.
   };
   byId('pair-damage-type').onchange = () => {
     if (!shaftOwnsFlail()) {drawIdentity();return;}
     const value=byId('pair-damage-type').value;
     const pair=(chosenShaft().overrides[byId('head').value] ||= {}); // This pairing alone owns the damage override.
     pair.dmgType = value==='blunt'||value==='sharp' ? value : 'inherit'; // Explicit sentinel overrides a shipped default without editing the original head.
-    save();
+    save({ preserveInputs: true }); // Damage dropdown is another pair-local value; no table rebuild is needed.
   };
   byId('head-contact-move').onclick=()=>{
     if(!shaftOwnsFlail())return;
