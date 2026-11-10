@@ -176,11 +176,15 @@ async function ready(page) {
     assert.equal(await page.locator('#head-rope-y').inputValue(),'894');
     const originalRigidMount=await page.evaluate(() => JSON.stringify(window.ModularWeapons.getConfig().heads['fishing-mace'].mount));
     await page.locator('#head-rope-x').fill('199');
-    await page.locator('#head-rope-x').dispatchEvent('change');
+    await page.locator('#head-rope-x').press('Tab'); // Native blur commits once without a second synthetic change.
     await page.locator('#head-rope-y').fill('911');
-    await page.locator('#head-rope-y').dispatchEvent('change');
-    await page.locator('#head-rope-scale').fill('1.35');
-    await page.locator('#head-rope-scale').dispatchEvent('change');
+    await page.locator('#head-rope-y').press('Tab');
+    const hangingScale=page.locator('#head-rope-scale');
+    await hangingScale.evaluate(input=>{input.dataset.editMarker='keep-contact-controls';});
+    await hangingScale.fill('1.35');
+    await hangingScale.press('Tab');
+    assert.equal(await hangingScale.getAttribute('data-edit-marker'),'keep-contact-controls',
+      'the head scale editor must remain mounted when leaving the field for pair corrections');
     assert.deepEqual(await page.evaluate(() => {
       const api=window.ModularWeapons, recipe=api.flailRecipe('grapple-flail','fishing-mace');
       return {anchor:recipe.flail.head.anchor,space:recipe.flail.head.anchorSpace,scale:recipe.flail.head.scale};
