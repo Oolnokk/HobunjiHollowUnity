@@ -103,6 +103,49 @@ assert.equal(navigation.subtabsByGroup.get(reopenedFarm)?.selected.id, 'farmSect
 assert.equal(navigation.lastSubtabByGroupKey.get('mpFarm')?.id, 'farmSectionLivestock', 'Explicit jumps become the next remembered section');
 
 
+// Execute the actual controller page-turn handler with the Stable page active.
+// The game's configured uiTabPrev/uiTabNext inputs both reach cycleTabs; no
+// second gamepad polling/physical-button mapping should be added for Stable.
+const stableCycleSource = between(navSource, '  function cycleTabs(delta) {', '  // ── on-screen button hint bar'); // Executes the production nav branch unchanged.
+let activeStableRole = 'companion'; // Fake button click updates the selected role as the real Stable renderer does.
+let stablePageClicks = 0; // Confirms configured controller input operates the same touch buttons.
+let stablePageFocused = '';
+let stableTabSelected = true;
+let focusInsideStable = true; // Focus on the top menu tab bar must restore ordinary main-tab bumper behavior.
+const stableRoleButtons = ['companion', 'mount', 'shoulderPet'].map(role => ({
+  dataset: { stableRole: role },
+  getAttribute: key => key === 'aria-pressed' ? String(activeStableRole === role) : null,
+  click() { activeStableRole = role; stablePageClicks++; },
+}));
+const stableTestPanel = {
+  id: 'menuPanel',
+  querySelector: selector => selector === '.mp-tab.active[data-mpanel="stable"]' && stableTabSelected ? {} : null,
+  querySelectorAll: selector => selector === '#stableRoleTabs > .stable-role-tab' ? stableRoleButtons : [],
+};
+const stableControllerContext = vm.createContext({
+  activePanel: () => stableTestPanel,
+  currentTarget: { closest: selector => selector === '#mpStable' && focusInsideStable ? {} : null },
+  panelOwnsAction: () => false,
+  localSubtabs: () => null,
+  findTabGroup: () => null, // An absent menu-bar fallback means other pages must not turn Stable categories.
+  clearGroups() {},
+  setFocus: node => { stablePageFocused = node.dataset.stableRole; },
+});
+vm.runInContext(stableCycleSource + '\nthis.cycleStablePage = cycleTabs', stableControllerContext);
+stableControllerContext.cycleStablePage(1);
+assert.equal(activeStableRole, 'mount', 'controller Next selects the Mounts page through its actual button');
+assert.equal(stablePageFocused, 'mount', 'focus returns to the newly rendered role-page button');
+stableControllerContext.cycleStablePage(-1);
+assert.equal(activeStableRole, 'companion', 'controller Previous returns to Animal Companions');
+stableControllerContext.cycleStablePage(-1);
+assert.equal(activeStableRole, 'shoulderPet', 'category page turning wraps backward');
+focusInsideStable = false;
+stableControllerContext.cycleStablePage(1);
+assert.equal(stablePageClicks, 3, 'top-level menu tab focus keeps its ordinary controller page-turn behavior');
+stableTabSelected = false;
+stableControllerContext.cycleStablePage(1);
+assert.equal(stablePageClicks, 3, 'other main menu tabs do not borrow Stable role navigation');
+
 const categories = [...htmlSource.matchAll(/class="inv-cat(?: active)?" data-cat="([^"]+)"/g)].map(match => match[1]); // Matches the real Pack filter bar, not the shipping filters.
 assert.equal(new Set(categories).size, 16, 'Sixteen distinct Pack filters are present');
 assert.equal(categories[0], 'all', 'All remains the default and first choice');
