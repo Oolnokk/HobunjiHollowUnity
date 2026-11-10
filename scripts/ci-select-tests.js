@@ -26,6 +26,7 @@ const TESTS = Object.freeze({
     modular: { file: 'scripts/test-modular-editor-ui-browser.js', tags: ['weapon'] },
     multisprite: { file: 'scripts/test-multi-sprite-weapon-browser.js', tags: ['weapon', 'appearance'] },
     statue: { file: 'scripts/test-statue-pose-bake-browser.js', tags: ['weapon', 'appearance'] }, // The original Attack Editor and furniture pipeline are shared with this UI.
+    portrait_spline: { file: 'scripts/test-portrait-spline-viewer-browser.js', tags: ['portrait_spline'] }, // Browser GPU readback catches the solid-black mobile portrait regression.
     omgurku_cal: { file: 'scripts/test-omgurku-calibration-browser.js', tags: ['omgurku'] },
     omgurku_game: { file: 'scripts/test-omgurku-gameplay-browser.js', tags: ['omgurku'] },
     omgurku_tribe: { file: 'scripts/test-omgurku-tribe-browser.js', tags: ['omgurku'] },
