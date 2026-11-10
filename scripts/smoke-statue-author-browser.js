@@ -141,11 +141,15 @@ async function run(){
     const pahuHead=pahu.pieces.find(piece=>piece.id==='statue_head');
     const inkSurfaces=pahu.pieces.filter(piece=>piece.id==='statue_head'||piece.id==='statue_body');
     const cells=inkSurfaces.reduce((total,piece)=>total+(piece.surfaceCells||0),0);
-    assert.ok(cells>2,'Pahu must show separate textures inside its black-outlined areas, not one flat brown surface: '+JSON.stringify(inkSurfaces));
+    assert.ok(cells>2,'Pahu must use independent animal-style shading per black-outlined cell: '+JSON.stringify(inkSurfaces));
+    assert.ok(inkSurfaces.every(piece=>piece.surfaceCellStats?.mode==='animal-cell-shading-global-brightness-overlay'),
+      'Each portrait layer must use the new two-pass color pipeline: '+JSON.stringify(inkSurfaces));
+    assert.ok(inkSurfaces.every(piece=>piece.surfaceCellStats?.meanOverlayAlpha>=0&&piece.surfaceCellStats?.overlayPeak>0),
+      'One normalized grayscale overlay must be applied after color fills: '+JSON.stringify(inkSurfaces));
     assert.ok(inkSurfaces.some(piece=>piece.surfaceCellStats?.inkPixels>15),
       'The statue must preserve original black cell outlines: '+JSON.stringify(inkSurfaces));
     assert.ok(inkSurfaces.every(piece=>piece.material?.surfaceShadeBins>=3&&piece.material?.surfaceShadeRange>20),
-      'Per-cell material must retain both darker perimeter and lighter interior: '+JSON.stringify(inkSurfaces));
+      'Animal-style cell shading plus global overlay must preserve authored tonal differences: '+JSON.stringify(inkSurfaces));
     assert.ok(pahuHead?.textureReady&&!pahuHead?.textureError,'Pahu head and cosmetics should render');
     assert.ok(pahuHead.material?.coverage>.02,'Pahu head must have a visible silhouette');
     const pahuBody=pahu.pieces.find(piece=>piece.id==='statue_body');
@@ -168,14 +172,14 @@ async function run(){
       const canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;
       const ctx=canvas.getContext('2d');ctx.drawImage(image,0,0);
       const data=ctx.getImageData(0,0,canvas.width,Math.round(canvas.height*.85)).data;
-      let brown=0;
+      let statuePixels=0;
       for(let i=0;i<data.length;i+=4){
         const r=data[i],g=data[i+1],b=data[i+2];
-        if(r>45&&g>19&&r>g*1.12&&r>b*1.25)brown++;
+        if(r>45&&g>35&&b>25&&r>b*1.05&&g>b*.95&&(r+g+b)>150)statuePixels++;
       }
-      return {brown,width:canvas.width,height:canvas.height};
+      return {statuePixels,width:canvas.width,height:canvas.height};
     },'data:image/png;base64,'+image.toString('base64'));
-    assert.ok(pixels.brown>3500,
+    assert.ok(pixels.statuePixels>3500,
       'Pahu body/head must actually be visible (not merely textured off-camera): '+JSON.stringify({pixels,rig:pahu.sourceRig,body:pahuBody,head:pahuHead}));
     console.log('PASS Pahu head-and-cosmetics statue: '+JSON.stringify({
       head:pahuHead.material,cells,selected:options[pahuIndex],pixels,rig:pahu.sourceRig,
