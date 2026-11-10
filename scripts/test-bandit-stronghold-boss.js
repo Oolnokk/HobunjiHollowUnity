@@ -59,6 +59,10 @@ const plan={banditSpawns:[{col:7,row:7}]};
 assert.equal(Boss.decorateParent(parent,original,plan,new Set(['4,4']),candidates),true);
 assert.equal(original.keyGatedDoors[0].requiresKeyItem,'strongholdGarrisonSeal');
 assert.equal(original.exits[1].targetMap,lord.mapId);
+assert.equal(Boss.entityOptions(parent,{strongholdRole:'crossbowman'})?.defOverride?.rangedWeaponKey,'crossbow',
+  'the front line is covered by actual BanditCombat ranged weapon holders');
+assert.equal(Boss.entityOptions(parent,{strongholdRole:'charger'})?.extra?.state,'chase',
+  'normal melee bandits charge instead of remaining passive props');
 assert(Cave.strongholdGateReturn(parent.mapId,'boss'),'boss gate tile persists separately from the room shell');
 const initial=()=>({floor:[],exits:[{id:'den_exit',tiles:[[12,12]]}],
   exitCol:12,exitRow:12,outerRimTiles:[],colliders:[[1,1]],mesh:{}});
