@@ -21,6 +21,24 @@
   const cachedImages = {}; // Source images reused while dragging the arrow interactively.
   const chosenShaft = () => data.shafts[byId('shaft').value]; // Active donor haft.
   const chosenHead = () => data.heads[byId('head').value]; // Active blade/weight part.
+  const shaftOwnsFlail = () => !!chosenShaft()?.flailAssembly && !api.isFlailHead(chosenHead())
+    && !!api.flailRecipe(byId('shaft').value,byId('head').value); // Rigid head hangs from this shaft's rope.
+  const currentFlailHeadContact = () => {
+    const head=chosenHead(), pair=chosenShaft()?.overrides?.[byId('head').value];
+    return pair?.flailHeadAnchor || (head.mount.type === 'blade' ? head.mount.start : head.mount.end); // Tang start; sleeve end.
+  };
+  let headContactMoveEnabled = false; // Pair-only head-contact mover; never edits the rigid head mounting arrows.
+  let headContactDrag = null; // Single touch drag and Undo step for one shaft/head combination.
+  let headContactPreviewScheduled = false; // Coalesce full-rig renders on mobile.
+  function refreshHeadContactPreview() {
+    if (headContactPreviewScheduled) return;
+    headContactPreviewScheduled = true;
+    requestAnimationFrame(() => {
+      headContactPreviewScheduled = false;
+      api.replace(data); // Refresh runtime recipe without persisting every pointer position.
+      drawLines('head-canvas'); preview();
+    });
+  }
   let selectedBoreId = null; // Stable identifier of the movable, non-destructive shaft aperture.
   let boreMoveEnabled = false; // While enabled, shaft-canvas drags move the selected bore instead of editing a mount line.
   let boreDrag = null; // Active touch/pointer, its original center, and the original sprite location for one undo step.
@@ -220,6 +238,15 @@
         ctx.restore();
       }
     ctx.restore(); // Guide follows the SHAFT ART in the same coordinate frame as the connector bore.
+    if (id === 'head-canvas' && shaftOwnsFlail()) {
+      const pt=currentFlailHeadContact(); // This cyan target is the rope-to-head contact, not the rigid head mounting arrow.
+      ctx.save();ctx.lineWidth=3;ctx.strokeStyle='#72e6ff';ctx.fillStyle='#72e6ff';
+      ctx.beginPath();ctx.arc(pt.x,pt.y,11,0,Math.PI*2);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(pt.x-22,pt.y);ctx.lineTo(pt.x+22,pt.y);
+      ctx.moveTo(pt.x,pt.y-22);ctx.lineTo(pt.x,pt.y+22);ctx.stroke();
+      ctx.font='bold 17px system-ui';ctx.fillText('ROPE CONTACT (pair only)',Math.max(4,pt.x-100),Math.max(20,pt.y-28));
+      ctx.restore();return;
+    }
     if (id === 'head-canvas' && api.isFlailHead(chosenHead())) return; // Original Tool Hub head anchor replaces all modular-head arrow gizmos.
     const mounts = displayMounts(id); // Ordinary rigid fitting lines continue to use the existing controls.
     mounts.forEach((mount, i) => lineMarker(ctx, mount, id === 'head-canvas' || i === mountIndex));
@@ -315,7 +342,7 @@
   function editLineNumbers() {
     const area = byId('attach-controls'); // Precise fallback when drag placement is difficult on a phone.
     area.replaceChildren();
-    const lines = api.isFlailHead(chosenHead()) ? [['Haft', chosenShaft().mounts[mountIndex]]]
+    const lines = api.isFlailHead(chosenHead()) || shaftOwnsFlail() ? [['Haft', chosenShaft().mounts[mountIndex]]]
       : [['Head', chosenHead().mount], ['Haft', chosenShaft().mounts[mountIndex]]]; // No editable modular head mounting line for a flail.
     for (const [label, line] of lines) {
       const group = document.createElement('div'), title = document.createElement('span'); // One length per selected arrow.
@@ -575,11 +602,20 @@
     byId('shaft-rope-x').placeholder = String(Math.round(sourcePoint.x)) + (ropeMount ? ' (Rope mount owns contact)' : ' (from authored flail recipe)');
     byId('shaft-rope-y').placeholder = String(Math.round(sourcePoint.y)) + (ropeMount ? ' (Rope mount owns contact)' : ' (from authored flail recipe)');
     const authoredHead = api.flailRecipe(byId('shaft').value,byId('head').value)?.flail?.head;
-    byId('head-rope-x').value = authoredHead?.anchor?.x ?? '';
-    byId('head-rope-y').value = authoredHead?.anchor?.y ?? '';
-    byId('head-rope-x').disabled = byId('head-rope-y').disabled = true; // Attachment is read-only here: edit its exact point only in Complex Tool Visuals.
-    byId('head-rope-scale').value = head.flailAssembly ? (authoredHead?.scale || 1) : (head.flailHeadScale || 1);
-    byId('head-rope-scale').disabled = !!head.flailAssembly; // Head-owned flails inherit the author's scaling and attachment settings entirely.
+    const editable=shaftOwnsFlail(), pair=shaft.overrides[byId('head').value] || {};
+    byId('head-rope-x').value = editable ? currentFlailHeadContact().x : (authoredHead?.anchor?.x ?? '');
+    byId('head-rope-y').value = editable ? currentFlailHeadContact().y : (authoredHead?.anchor?.y ?? '');
+    byId('head-rope-x').disabled = byId('head-rope-y').disabled = !editable; // Only the selected combination can adjust the contact.
+    byId('head-rope-scale').value = editable ? (pair.flailHeadScale ?? head.flailHeadScale ?? 1) : (authoredHead?.scale ?? 1);
+    byId('head-rope-scale').disabled = !editable;
+    if (!editable) {headContactMoveEnabled=false;headContactDrag=null;}
+    byId('head-contact-move').disabled = !editable;
+    byId('head-contact-move').setAttribute('aria-pressed',String(editable && headContactMoveEnabled));
+    byId('head-contact-reset').disabled = !editable || !pair.flailHeadAnchor;
+    byId('head-contact-status').textContent = editable
+      ? 'Cyan target on the head source sprite is the rope contact. Drag it using Move contact, or edit X/Y here. Only this '+shaft.label+' + '+head.label+' pair is changed; the original head mount stays intact.'
+      : head.flailAssembly ? 'Grapple-head contact belongs to Complex Tool Visuals and is read-only here.'
+        : 'Choose a flail haft and a non-flail head to edit their rope-to-head contact.';
     const toolSlots = shaft.toolWorthy ? (head.toolSlots || []).join(', ') || 'no utility roles on this head' : 'weapon only: haft not tool-worthy';
     byId('identity-preview').textContent = 'Example forged name: ' + api.weaponName(byId('shaft').value, byId('head').value, 'Copper')
       + ' · Slots: weapon' + (shaft.toolWorthy && head.toolSlots?.length ? ', ' + head.toolSlots.join(', ') : '')
@@ -612,7 +648,7 @@
     byId('add').disabled = shaft.mounts.length >= (shaft.maxAttachments || 8);
     byId('mount-kind').value = shaft.mounts[mountIndex].type;
     byId('head-kind').value = head.mount.type;
-    byId('head-kind').disabled = api.isFlailHead(head); // A flail head's authored multi-sprite anchor is authoritative, whether flagged by recipe or mount type.
+    byId('head-kind').disabled = api.isFlailHead(head) || shaftOwnsFlail(); // A flail head's authored multi-sprite anchor is authoritative, whether flagged by recipe or mount type.
     const duplicated = shaft.duplicateFrom && data.shafts[shaft.duplicateFrom]; // Duplicated attachment rigs, not shaft sprites, have independent transforms.
     const art=api.shaftArtTransform(shaft);
     byId('shaft-art-enabled').checked=art.enabled;
@@ -636,7 +672,9 @@
     byId('allow-head').disabled = head.craftDisabled === true; // Shipped retired heads cannot be re-enabled through this editor.
     byId('head-construction-note').textContent = api.isFlailHead(head)
       ? 'Flail head attachment is from Complex Tool Visuals. The head arrow in this modular editor is ignored for runtime, forging and preview.'
-      : (head.mountNote || ''); // Authoring notes for shovel scoop, transverse hoe, and pick head.
+      : shaftOwnsFlail()
+        ? 'Hanging rigid head: adjust its cyan pair-only contact in section 02; leave its shared tang/eye mounting arrow unchanged.'
+        : (head.mountNote || ''); // Authoring notes for shovel scoop, transverse hoe, and pick head.
     const accepted = compatible(), needed = shaft.flailAssembly || head.flailAssembly || head.mount.type === 'flail' ? 'rope (or legacy eye/tang)' : head.mount.type === 'blade' ? 'tang' : 'eye';
     const blocked = api.isDisallowed(byId('shaft').value,headKey); // Real forge gate, not only the number of geometric mount matches.
     byId('part-readiness').textContent = shaft.flailAssembly && head.flailAssembly
