@@ -27,3 +27,10 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Build real NPC statue and inspect alpha/material on a mobile viewport
         run: node scripts/smoke-statue-author-browser.js
+      - name: Attach Pahu statue screenshot for composition review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: statue-pahu-mobile-preview
+          path: artifacts/statue-pahu.png
+          if-no-files-found: ignore
