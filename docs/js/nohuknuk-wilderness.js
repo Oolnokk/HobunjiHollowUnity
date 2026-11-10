@@ -298,15 +298,18 @@
   }
 
   function findFishSpot(walker) {
-    const water = layout()?.tiles?.filter(t => t.type === 'river' || t.type === 'stream') || [];
+    // Share Grehlr's tilesRef-keyed water index; the rare fallback keeps standalone NPC previews functional.
+    const water = window.HobunjiGrehlrForaging?.waterTilesFor?.(ZONE)
+      || layout()?.tiles?.filter(t => t.type === 'river' || t.type === 'stream') || [];
     const origin = posOf(walker);
     let best = null, bestDistance = Infinity;
     for (const tile of water) {
       for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const c = tile.c + dc, r = tile.r + dr;
-        if (!validTile(c, r)) continue;
-        const d = Math.hypot(origin.x - c - 0.5, origin.z - r - 0.5);
-        if (d < bestDistance) { bestDistance = d; best = { c, r }; }
+        const d = Math.hypot(origin.x - c - 0.5, origin.z - r - 0.5); // Reject more-distant banks before the expensive NPC-size collision check.
+        if (d >= bestDistance || !validTile(c, r)) continue;
+        bestDistance = d;
+        best = { c, r };
       }
     }
     return best; // Activity uses the canonical fishing spear station animation once standing at the bank.
