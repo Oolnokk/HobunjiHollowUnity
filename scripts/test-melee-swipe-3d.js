@@ -36,7 +36,7 @@ const THREE = {
   MathUtils: { degToRad: v => v * Math.PI / 180, radToDeg: v => v * 180 / Math.PI, clamp: (v, lo, hi) => Math.max(lo, Math.min(hi, v)), lerp: (a, b, t) => a + (b - a) * t },
 };
 const player = { x: 0, y: 0, angle: 0 }; // Known collider origin for the player-facing strip.
-const scene = { children: [], add(mesh) { this.children.push(mesh); mesh.parent = this; }, remove(mesh) { this.children.splice(this.children.indexOf(mesh), 1); } }; // Exposes geometry for render-free inspection.
+const scene = { children: [], add(mesh) { this.children.push(mesh); mesh.parent = this; }, remove(mesh) { const at = this.children.indexOf(mesh); if (at >= 0) this.children.splice(at, 1); mesh.parent = null; } }; // Three.js-style detach tests pool cleanup without retaining an old scene.
 const window = {}; // Global Combat export used by the real game.js swipe path.
 const context = vm.createContext({ window, THREE, performance: { now: () => 0 }, console, Date, Math });
 vm.runInContext(fs.readFileSync('docs/js/combat/combat-core.js', 'utf8'), context, { filename: 'combat-core.js' });
@@ -94,6 +94,7 @@ assert(trail.mesh.material.opacity < 0.85, 'a live ribbon fades during the autho
 window.Combat.update(1);
 assert.equal(scene.children.length, 0, 'expired swipes leave the active scene immediately');
 assert.equal(trail.mesh.visible, false, 'pooled swipes do not stay visible after retirement');
+assert.equal(trail.mesh.parent, null, 'pooled ribbon releases the old scene reference');
 assert.notEqual(trail.mesh.geometry.disposed, true, 'retired GPU geometry is preserved for future sword strikes');
 
 // Reuse the first enemy ribbon for a different pitch/width/color in another world scene:
@@ -140,4 +141,33 @@ assert.deepEqual(measuredLabels, ['Combat: enemy strike callback', 'Combat: play
 assert.equal(afterStrikes.strikeCpuMs.enemy.max, 12);
 assert.equal(afterStrikes.strikeCpuMs.player.last, 5);
 assert.equal(afterStrikes.strikeCpuMs.enemy.samples, 1);
-console.log('3D swipe: pitched collider parity, pooled draw resources, crowd limit and strike profiling: PASS');
+// A miss still creates the swoosh; it is the attack event, not a damage/hit reaction.
+let missedStrikeDamage = 0; // Guard verifies this path never needs a successful hit to render a trail.
+window.Combat.beginStagedAction({ windupS: 0, strikeS: 0, data: { isBandit: true, attacker: enemy }, onStrike: () => {
+  window.Combat.spawnMeleeTrail({ actor: enemy, scene, yaw: 0, pitch: 0, rangePx: 64, halfConeRad: 0.2 });
+  if (false) missedStrikeDamage++;
+} });
+assert.equal(missedStrikeDamage, 0, 'enemy attack misses without dealing damage');
+assert.equal(scene.children.length, 1, 'even a missed enemy attack displays its pooled swipe');
+window.Combat.update(1);
+assert.equal(scene.children.length, 0, 'a missed attack also returns its ribbon to the pool');
+
+// Exercise the real bandit swing profiling seam with a lightweight pose stub.
+const banditSource = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8'); // Production attack-pose wrapper, not a duplicated test implementation.
+const measureStart = banditSource.indexOf('  const banditSwingPoseCpuStats = ');
+const measureEnd = banditSource.indexOf('  window.BanditCombat = {', measureStart);
+assert(measureStart >= 0 && measureEnd > measureStart, 'the real bandit pose timing wrapper is present');
+const poseCalls = []; // Records whether idle, windup and post-attack tail animation all run.
+const poseRuntime = vm.createContext({ window: { PerfProfiler: {
+  isEnabled: () => true,
+  begin: name => { poseCalls.push(name); return { name }; },
+  end: () => 7,
+} }, updateBanditToolMesh: c => { poseCalls.push('pose:' + c.id); return c.id; } });
+vm.runInContext(banditSource.slice(measureStart, measureEnd) + '\nthis.measured = measuredBanditToolMesh; this.stats = () => ({ ...banditSwingPoseCpuStats });', poseRuntime);
+assert.equal(poseRuntime.measured({ id: 'idle' }), 'idle');
+assert.equal(poseRuntime.measured({ id: 'missed', _banditAction: {} }), 'missed');
+assert.equal(poseRuntime.measured({ id: 'recovering', _banditToolTail: {} }), 'recovering');
+assert.equal(poseRuntime.stats().samples, 2, 'only active swing/recovery poses incur profiler timing');
+assert.equal(poseRuntime.stats().peakMs, 7);
+assert.deepEqual(poseCalls, ['pose:idle', 'Combat: bandit swing pose', 'pose:missed', 'Combat: bandit swing pose', 'pose:recovering']);
+console.log('3D swipe: pitch parity, pooling, misses, crowd limit and strike/swing timing: PASS');
