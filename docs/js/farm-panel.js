@@ -524,8 +524,8 @@
     const stowedAdultCount = stable.filter(entry => entry.stowed && !stableIsBaby(entry) && stableRole(entry) === selectedStableRole).length; // Drawer counts only this page's stowed adults.
     const stowedBabyCount = stable.filter(entry => entry.stowed && stableIsBaby(entry) && stableRole(entry) === selectedStableRole).length; // Baby storage remains counted in its own category.
 
+    stable.forEach(normalizeStableEntry); // Ensure legacy level caps are normalized before comparing visible levels.
     stable.slice().sort(compareStableRoster).forEach(entry => { // Sorts the UI without changing persistence order or stable IDs.
-      normalizeStableEntry(entry);
       const role = stableRole(entry);
       const meta = roleMeta(entry);
       const baby = stableIsBaby(entry); // Used throughout the row to gate role assignment and growth controls.
