@@ -493,8 +493,68 @@
     return ensureUvs(geometry);
   }
 
+  // Statue authors preserve the NPC's alpha silhouette as a reusable furniture sprite.
+  // The chosen furniture finish is shared with its GLB hands, feet and weapons;
+  // individual pieces can be edited without baking the finish into their image.
+  const statueImages = new Map(); // URL -> decoded image promise; reused by all statue parts and rebuilds.
+  function statueImage(url) {
+    if (!statueImages.has(url)) statueImages.set(url, new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error('Unable to load statue mask/material'));
+      image.src = url;
+    }).catch(error => { statueImages.delete(url); throw error; }));
+    return statueImages.get(url);
+  }
+  function applyStatueSpriteFinish(mesh, part) {
+    if (!/^data:image\/(?:png|webp);base64,/i.test(part.statueMaskDataUrl || '')) {
+      mesh.userData.statueTextureError = 'Missing or invalid statue alpha mask';
+      return;
+    }
+    const materialFile = String(part.materialTexture || 'carved_smooth.png');
+    if (!/^[\w.-]+\.png$/i.test(materialFile)) {
+      mesh.userData.statueTextureError = 'Unsupported furniture material texture';
+      return;
+    }
+    const textureUrl = (window.__hobunjiFurnitureAssetBase || 'assets/') + 'textures/' + materialFile;
+    const token = {}; // Guards async material/mask completion after a removed editor or game mesh.
+    mesh.userData.statueFinishToken = token;
+    Promise.all([statueImage(part.statueMaskDataUrl), statueImage(textureUrl)]).then(([mask, finish]) => {
+      if (mesh.userData.statueFinishToken !== token || mesh.userData.glbDisposed) return;
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.min(2048, mask.naturalWidth || mask.width);
+      canvas.height = Math.min(2048, mask.naturalHeight || mask.height);
+      if (!canvas.width || !canvas.height) return;
+      const context = canvas.getContext('2d');
+      context.drawImage(finish, 0, 0, canvas.width, canvas.height);
+      context.globalCompositeOperation = 'destination-in';
+      context.drawImage(mask, 0, 0, canvas.width, canvas.height);
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const material = mesh.material;
+      if (mesh.userData.statueOwnedTexture) mesh.userData.statueOwnedTexture.dispose();
+      mesh.userData.statueOwnedTexture = tex;
+      material.map = tex;
+      material.needsUpdate = true;
+      mesh.userData.statueTextureError = '';
+    }).catch(error => { mesh.userData.statueTextureError = String(error.message || error); });
+  }
+
   function buildPartMesh(part, baseColor) {
     let geo;
+    const t = part.transform;
+    if (part.kind === 'statueSprite') {
+      const geometry = new THREE.PlaneGeometry(Math.max(.001, t.sx || 1), Math.max(.001, t.sy || 1));
+      const material = new THREE.MeshLambertMaterial({color:0xffffff,side:THREE.DoubleSide,transparent:true,alphaTest:.025,depthWrite:true});
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(t.x || 0,t.y || 0,t.z || 0);
+      mesh.rotation.set((t.rx || 0) * DEG,(t.ry || 0) * DEG,(t.rz || 0) * DEG);
+      mesh.name = part.name || 'Statue portrait piece';
+      mesh.userData.authoredPart = part;
+      mesh.castShadow = true;
+      applyStatueSpriteFinish(mesh, part);
+      return mesh;
+    }
     const t = part.transform;
     if (part.kind === 'glb') {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(.001, .001, .001), new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false })); // Animation/picking owner while the bone-hidden model loads.
