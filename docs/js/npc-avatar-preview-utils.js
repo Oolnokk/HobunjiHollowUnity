@@ -329,10 +329,20 @@
       renderOptions = { ...renderOptions, seatId };
     }
     const weaving = window.ClothingWeavingSystem; // Optional runtime bridge that reapplies woven rendering when a later wrapper replaced the initially woven global renderer.
-    if (typeof weaving?.renderProfileWithWovenPatterns === 'function') {
-      await weaving.renderProfileWithWovenPatterns(renderer, canvas, profile, renderOptions);
-    } else {
-      await renderer(canvas, profile, renderOptions);
+    const draw = (target, options) => typeof weaving?.renderProfileWithWovenPatterns === 'function'
+      ? weaving.renderProfileWithWovenPatterns(renderer, target, profile, options)
+      : renderer(target, profile, options); // Keep woven garments and original portrait ordering on both render targets.
+    await draw(canvas, renderOptions);
+    canvas.hobunjiSplineBaseCanvas = null; // An old hairstyle must never leave a stale 3D base on a reused canvas.
+    const hasSpline = !renderOptions.onlyHeadSprite && !renderOptions.headCosmeticsOnly
+      && ['facialHair', 'hairSide', 'hairSideL'].some(slot =>
+        window.PortraitSplineRig?.resolveOptionRig?.(profile[slot], profile.fighter));
+    if (hasSpline && !renderOptions.deferSplineParts) {
+      const base = document.createElement('canvas'); // Full 2D portraits keep their hair; only a WebGL avatar consumes the detached base.
+      base.width = canvas.width; base.height = canvas.height;
+      await draw(base, { ...renderOptions, deferSplineParts: true });
+      canvas.hobunjiSplineBaseCanvas = base;
+      canvas.hobunjiSplineParts = base.hobunjiSplineParts; // Same pieces, tint, seam bridge and garment masks as the extracted base.
     }
     return true;
   }
