@@ -1204,7 +1204,8 @@ body[data-animation-author-mode="rig"] #maaViewportBadge { max-width:calc(100% -
      Only resolves when this tool is served from its real docs/tools/
      animation-author/ location; the inline default below still applies
      when it isn't (e.g. fetched standalone from a different docs root). -->
-<script src="../../config/attachment-rig-profiles.js?v=20261026homgurkulower03"></script>
+<script src="../../config/attachment-rig-profiles.js?v=20261109nohuknuk1"></script>
+<script src="../../js/local-db-overrides.js?v=20261109bipedalAuthor1"></script> <!-- Reuses the gameplay NPC species composer. -->
 <script src="../../js/animal-chathead-frame.js?v=20261029h17359fc"></script>
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
 <script src="../../js/spouse-kiss-motion.js?v=20261108kiss5"></script>
@@ -1219,9 +1220,9 @@ const STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.source.v1';
 const KURRAYA_STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.kurrayaProfiles.v1';
 const CREATURE_STORAGE_KEY = 'hobunjiGameplayBackdropRepoViewer.creatureProfiles.v1';
 const CREATURE_RENDER_SCRIPT = 'js/creature-genetics-render.js';
-const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20261109geomquality1', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
+const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20261110geomAutoNoHu1', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
 const AUTHOR_LEG_BONES_SCRIPT = new URL('../../js/leg-bones.js?v=20260821a', location.href).href; // Supplies the exact invisible two-bone solver used by the paired feet preview.
-const AUTHOR_FEET_RUNTIME_SCRIPT = new URL('../../js/procedural-leg-animation.js?v=20261031h99e235f', location.href).href; // Keeps rig-preview feet paired with this author build instead of the selected repository ref.
+const AUTHOR_FEET_RUNTIME_SCRIPT = new URL('../../js/procedural-leg-animation.js?v=20261110geomAutoNoHu1', location.href).href; // Keeps rig-preview feet paired with this author build instead of the selected repository ref.
 // These repository paths are used to load the two authored Kurraya PNG planes.
 const KURRAYA_ASSETS = {
   front: { path: 'docs/assets/toolsprites/kurraya_front.png', width: 320, height: 663 },
@@ -1557,6 +1558,18 @@ function normalizeDatabase(input) {
   if (Array.isArray(input?.npcDatabase)) return { ...input, npcs: input.npcDatabase };
   if (input && typeof input === 'object') return { schema: input.schema || 'single-npc', npcs: [input] };
   throw new Error('The selected JSON does not contain an NPC database.');
+}
+
+async function composeAuthoredNpcSpecies(database, settings) {
+  const compose = window.HobunjiNpcSpeciesRegistry?.applyNpcSpeciesOverrides; // Reuse the game's named-NPC composition rules, not a second editor-specific implementation.
+  if (typeof compose !== 'function') throw new Error('Shared NPC species composition did not load.');
+  try {
+    const overrides = await fetchRepoJson(settings.docsRoot + 'config/npcs/species-overrides.json'); // Fetch the same revision as the selected database.
+    return compose(database, overrides);
+  } catch (error) {
+    log('NPC species sidecar unavailable for selected source: ' + error.message, 'warn');
+    return database; // Third-party databases without a sidecar still load as before.
+  }
 }
 
 function normalizeGender(value) {
@@ -2566,6 +2579,13 @@ function tickThree(now) {
   if (t.autoRotate && t.model) t.model.rotation.y += dt * .55;
   t.controls?.update();
   window.MultiAvatarAnimationAuthor?.tick?.(dt, now);
+  const syncMonster = window.HobunjiBipedalMonsterAssembler?.syncNeck; // Reuse the game's head-skin update after animation keyframes.
+  if (syncMonster) {
+    if (t.model?.userData?.bipedalMonster) syncMonster(t.model, dt);
+    for (const actor of animationAuthor.actors) {
+      if (actor.model?.userData?.bipedalMonster) syncMonster(actor.model, dt);
+    }
+  }
   t.renderer.render(t.scene, t.camera);
   requestAnimationFrame(tickThree);
 }
@@ -2734,7 +2754,7 @@ async function loadSource(settings = settingsFromInputs()) {
     setStatus('Loading NPC database…', 'warn');
     showOverlay('Loading NPC database', settings.dbPath, true);
     const rawDb = await fetchRepoJson(settings.dbPath);
-    state.db = normalizeDatabase(rawDb);
+    state.db = await composeAuthoredNpcSpecies(normalizeDatabase(rawDb), settings);
     state.npcs = state.db.npcs.filter(npc => npc && typeof npc === 'object');
     if (!state.npcs.length) throw new Error('The NPC database contains no NPC records.');
     state.renderCache.clear();
@@ -2763,7 +2783,7 @@ async function loadUploadedDatabase(file) {
       await loadSource(settingsFromInputs());
     }
     const parsed = JSON.parse(await file.text());
-    state.db = normalizeDatabase(parsed);
+    state.db = await composeAuthoredNpcSpecies(normalizeDatabase(parsed), state.settings || settingsFromInputs());
     state.npcs = state.db.npcs.filter(npc => npc && typeof npc === 'object');
     if (!state.npcs.length) throw new Error('Uploaded database contains no NPCs.');
     state.renderCache.clear();
@@ -4695,6 +4715,32 @@ function buildTwoSidedSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckL
 
 async function buildNpcNeckRig(model, avatar, npc) {
   const THREE = state.three.THREE;
+  if (model.userData?.bipedalMonster) {
+    // Bind the exact AnimalHeadRigRuntime skin already built for this creature-bodied NPC.
+    const rig = model.userData.neckRig; // Existing control used by dialogue, authored animation, and the Shoulder Rig gizmo.
+    const painted = rig?.creatureHeadRig?.rig; // Source of truth for the painted weight map and pivot.
+    if (!rig?.neckJoint || !painted) throw new Error('Bipedal monster creature head skin did not initialize.');
+    const width = avatar.front.width || 200;
+    const height = avatar.front.height || width;
+    const pivotPx = { x: painted.pivot.x * width, y: painted.pivot.y * height }; // Matches the native head painter's pixel space.
+    const eyeMarker = new THREE.Group(); // Gaze solver targets the authored creature pivot; no guessed humanoid eye positions.
+    eyeMarker.name = model.name + '_creature_head_aim';
+    rig.neckJoint.add(eyeMarker);
+    const neckAxes = new THREE.AxesHelper(.22); // Existing show-axes checkbox can display the creature neck coordinate.
+    neckAxes.name = model.name + '_creature_neck_axes';
+    neckAxes.visible = false;
+    rig.neckJoint.add(neckAxes);
+    rig.available = true;
+    rig.implementation = 'creature-painted-neck';
+    rig.eyeMarker = eyeMarker;
+    rig.neckAxes = neckAxes;
+    rig.detected = { detectionMethod: 'authored-creature-paint', pivotPx, eyePx: { ...pivotPx },
+      eyePerspectiveShiftPx: 0, boundsPx: { x: 0, y: 0, width, height } };
+    rig.mesh = { segmentsX: painted.meshResolution, segmentsY: painted.meshResolution };
+    rig.baseRotationDeg = { x: 0, y: 0, z: 0 };
+    log('Bound ' + (npc.name || npc.id) + ' to its existing painted creature neck (no extra portrait mesh).');
+    return rig;
+  }
   const size = avatar.front.width || 200;
   const baseHead = makePortraitCanvas(size);
   baseHead.height = avatar.front.height || size;
@@ -5078,8 +5124,10 @@ function renderAnimationInspector() {
   const neckRotation = neckRig?.neckJoint ? rotationDegSnapshot(neckRig.neckJoint) : { x: 0, y: 0, z: 0 };
   const batchDelta = ensureBatchOffsetSession(actor).delta;
   const creatureProfileEntry = creatureSizeProfileEntry(actor);
-  const neckStatus = neckRig?.available
-    ? `One <b>${neckRig.mesh?.segmentsX || 28}×${neckRig.mesh?.segmentsY || 36}</b> skinned plane. The neck bone is anchored at <b>${neckRig.detected.pivotPx.x.toFixed(1)}, ${neckRig.detected.pivotPx.y.toFixed(1)} px</b> from the lowest opaque base-head pixels; blended weights bend the portrait without a head/torso seam.`
+  const neckStatus = neckRig?.implementation === 'creature-painted-neck'
+    ? `Native painted creature neck: <b>${neckRig.mesh.segmentsX}×${neckRig.mesh.segmentsY}</b> weighted skin, pivot <b>${neckRig.detected.pivotPx.x.toFixed(1)}, ${neckRig.detected.pivotPx.y.toFixed(1)} px</b>. Shoulder Rig keyframes animate the actual creature head.`
+    : neckRig?.available
+      ? `One <b>${neckRig.mesh?.segmentsX || 28}×${neckRig.mesh?.segmentsY || 36}</b> skinned plane. The neck bone is anchored at <b>${neckRig.detected.pivotPx.x.toFixed(1)}, ${neckRig.detected.pivotPx.y.toFixed(1)} px</b> from the lowest opaque base-head pixels; blended weights bend the portrait without a head/torso seam.`
     : 'This actor has no skinned portrait neck rig. Creature targets can receive eye contact but do not currently deform a humanoid portrait plane.';
   inspector.innerHTML = `
     <section id="maaBatchOffsetSection" class="maaSection">
@@ -5688,7 +5736,7 @@ function applyViewportRotationDeadzones(dt = 0) {
     const record = actor.viewportFacingState || (actor.viewportFacingState = { perpSides: [null, null], locked: [false, false], visualYaw: null });
     if (!Number.isFinite(record.visualYaw)) record.visualYaw = rawYaw;
     let targetYaw = rawYaw;
-    if (actor.source?.type === 'creature') {
+    if (actor.source?.type === 'creature' || actor.model?.userData?.bipedalMonster) {
       targetYaw = viewportCreatureDeadzoneTarget(record, rawYaw, viewportCreaturePerps(cameraAzimuth), degToRad(facing.creatureDeg), hysteresisRad);
     } else {
       const result = viewportPerpClamp(record, rawYaw, viewportCharacterPerps(cameraAzimuth), degToRad(facing.characterDeg), hysteresisRad);
@@ -8697,7 +8745,7 @@ applyViewportRotationDeadzones = function(dt = 0) {
     if (!Number.isFinite(record.visualYaw)) record.visualYaw = rawYaw;
 
     let targetYaw = rawYaw; // Used as the camera-constrained visible yaw selected for this actor type.
-    if (actor.source?.type === 'creature') {
+    if (actor.source?.type === 'creature' || actor.model?.userData?.bipedalMonster) {
       targetYaw = viewportCreatureDeadzoneTarget(record, rawYaw, viewportCreaturePerps(cameraAzimuth), degToRad(facing.creatureDeg), hysteresisRad);
     } else {
       const result = viewportPerpClamp(record, rawYaw, viewportCharacterPerps(cameraAzimuth), degToRad(facing.characterDeg), hysteresisRad); // Used to preserve the repository character snap behavior.
@@ -10698,7 +10746,8 @@ serializeAnimationProject = function() {
         facingRootTransformAtExport: facingRoot ? transformSnapshot(facingRoot) : identityTransformSnapshot(),
         stateAtExport: structuredCloneSafe(actor.viewportFacingState || null),
         cameraAzimuthDegAtExport: data.project.exportCameraAzimuthDeg,
-        deadzoneDeg: actor.source?.type === 'creature' ? animationAuthor.viewportFacing.creatureDeg : animationAuthor.viewportFacing.characterDeg,
+        deadzoneDeg: actor.source?.type === 'creature' || actor.model?.userData?.bipedalMonster
+          ? animationAuthor.viewportFacing.creatureDeg : animationAuthor.viewportFacing.characterDeg,
         hysteresisDeg: animationAuthor.viewportFacing.hysteresisDeg,
       };
       addRotationMetadataV1518(record.viewportFacing.facingRootTransformAtExport);
@@ -11228,7 +11277,7 @@ buildNpcNeckRig = async function(model, avatar, npc) {
 async function buildLazyHatOverlayV1521(carrier) {
   const rig = carrier?.neckRig;
   const source = rig?.lazyHatXraySource;
-  if (!rig?.available || !source || !portraitOptionIsPresentV1521(source.profile?.hat)) return null;
+  if (!rig?.available || rig.implementation === 'creature-painted-neck' || !source || !portraitOptionIsPresentV1521(source.profile?.hat)) return null;
   if (rig.hatXrayOverlay) return rig.hatXrayOverlay;
   if (rig.hatXrayOverlayPromise) return rig.hatXrayOverlayPromise;
 

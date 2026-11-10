@@ -57,6 +57,8 @@
   }
 
   function roleColor(role, speciesId, bodyColors) {
+    const override = global.HobunjiBipedalMonsterAssembler?.materialForSpecies?.(speciesId, role); // Actor-only palette; preserves all ordinary hand defaults.
+    if (override?.color) return override.color;
     const colors = profiles.data?.colors || {};
     if (role === 'bone') return colors.bone || '#D8C7A3';
     if (role === 'keratin') return colors.keratin || '#44484D';
@@ -165,18 +167,21 @@
     if (role !== 'body' && role !== 'bone') return null;
     const referenceHex = bodyReferenceHex(speciesId);
     const isBody = role === 'body';
-    const sourcePath = isBody
+    const materialOverride = global.HobunjiBipedalMonsterAssembler?.materialForSpecies?.(speciesId, role); // Unique bipedal-monster surfaces when authored, otherwise the existing shared materials.
+    const sourcePath = materialOverride?.texture || (isBody
       ? 'assets/textures/wavy_surface.png'
-      : 'assets/textures/carved_smooth.png';
-    const descriptor = isBody
-      ? (bodyColors?.A || { hex: referenceHex })
-      : { hex: profiles.data?.colors?.bone || '#D8C7A3' };
-    const resolvedHex = isBody ? bodyColorHex(speciesId, bodyColors) : descriptor.hex;
-    const tintSpeciesId = isBody ? speciesId : '';
+      : 'assets/textures/carved_smooth.png');
+    const descriptor = materialOverride?.color
+      ? { hex: materialOverride.color }
+      : isBody
+        ? (bodyColors?.A || { hex: referenceHex })
+        : { hex: profiles.data?.colors?.bone || '#D8C7A3' };
+    const resolvedHex = materialOverride?.color || (isBody ? bodyColorHex(speciesId, bodyColors) : descriptor.hex);
+    const tintSpeciesId = materialOverride ? '' : isBody ? speciesId : '';
     const spriteTintMode = isBody && typeof global.bodyTintModeForSpecies === 'function'
       ? global.bodyTintModeForSpecies(speciesId)
       : 'shadeFill';
-    const cacheKey = `${role}:${normalizeKey(speciesId)}:${spriteTintMode}:${String(resolvedHex).toLowerCase()}`;
+    const cacheKey = `${role}:${normalizeKey(speciesId)}:${sourcePath}:${spriteTintMode}:${String(resolvedHex).toLowerCase()}`; // Texture paths must not share caches across different monster materials.
     if (handSurfaceTextureCache.has(cacheKey)) return handSurfaceTextureCache.get(cacheKey);
 
     const textureName = `${normalizeKey(speciesId) || 'avatar'}_hand_${role}_${sourcePath.split('/').pop().replace(/\.png$/i, '')}`;
@@ -366,7 +371,7 @@
             });
         next.name = materialName;
         next.userData.hobunjiHandRole = role;
-        next.userData.hobunjiHandSurfaceTexture = surfaceTexture ? (role === 'bone' ? 'carved_smooth.png' : 'canvas.png') : null;
+        next.userData.hobunjiHandSurfaceTexture = surfaceTexture ? (global.HobunjiBipedalMonsterAssembler?.materialForSpecies?.(speciesId, role)?.texture?.split('/').pop() || (role === 'bone' ? 'carved_smooth.png' : 'wavy_surface.png')) : null; // Mobile diagnostics report the actual species texture.
         next.userData.hobunjiPortraitOccludedWingLayer = isParrotWingLayer;
         remapped.set(material, next);
         return next;
