@@ -21,7 +21,7 @@
   // The ends lie at the rock/floor boundary, not a guessed wall position.
   // floorKeys includes ALL walkable cave tiles, even if the cache's optional
   // extension is behind mineable rock.
-  function spanFor(tile, floorKeys) {
+  function spanFor(tile, floorKeys, breakableWalls = null) {
     if (!tile || !floorKeys?.has?.(key(tile.col, tile.row))) return null;
     let chosen = null;
     for (const axis of ['x', 'z']) {
@@ -30,6 +30,8 @@
       while (minus <= MAX_WALL_STEPS && floorKeys.has(key(tile.col - minus * dx, tile.row - minus * dz))) minus++;
       while (plus <= MAX_WALL_STEPS && floorKeys.has(key(tile.col + plus * dx, tile.row + plus * dz))) plus++;
       if (minus > MAX_WALL_STEPS || plus > MAX_WALL_STEPS || minus + plus < 2) continue;
+      if (breakableWalls?.has?.(key(tile.col - minus * dx, tile.row - minus * dz))
+        || breakableWalls?.has?.(key(tile.col + plus * dx, tile.row + plus * dz))) continue; // A mined-out barrier cannot hold a rope end.
       const halfMinus = minus - .5, halfPlus = plus - .5;
       const span = {
         axis,
