@@ -559,18 +559,18 @@
     };
     itemProcessing.getProcessingOutput = function butterChurnGetProcessingOutput(methodId, inputKey) {
       if (methodId === 'churning') {
-        return getProcessingOutputs(methodId, inputKey, processingDeps?.ITEM_DEFS?.[inputKey])?.[0] || null;
+        return itemProcessing.enrichOutputs(methodId, inputKey, getProcessingOutputs(methodId, inputKey, processingDeps?.ITEM_DEFS?.[inputKey]))?.[0] || null;
       }
       return originalGetOutput.call(this, methodId, inputKey);
     };
     itemProcessing.getProcessingOutputs = function butterChurnGetProcessingOutputs(methodId, inputKey) {
       if (methodId === 'churning') {
-        return getProcessingOutputs(methodId, inputKey, processingDeps?.ITEM_DEFS?.[inputKey]);
+        return itemProcessing.enrichOutputs(methodId, inputKey, getProcessingOutputs(methodId, inputKey, processingDeps?.ITEM_DEFS?.[inputKey]));
       }
       return originalGetOutputs.call(this, methodId, inputKey);
     };
     itemProcessing.processButtonLabel = function butterChurnProcessButtonLabel(methodId, inputKey, output) {
-      if (methodId === 'churning') return `Churn → ${output?.icon || '🧈'}`;
+      if (methodId === 'churning') return `Churn → ${output?.icon || '🧈'} · ${itemProcessing.formatProcessHours(itemProcessing.baseProcessHours(methodId))}`;
       return originalButtonLabel.call(this, methodId, inputKey, output);
     };
     itemProcessing.methodIdleLabel = function butterChurnMethodIdleLabel(methodId) {

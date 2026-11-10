@@ -137,6 +137,12 @@ hr{border:0;border-top:1px solid rgba(255,255,255,.11);margin:9px 0}
     <div id="tab-parts">
       <div class="section">
         <h2>Add pre-made piece</h2>
+        <details><summary>🗿 Import baked NPC statue piece</summary>
+          <p class="muted tight">Adds the frozen NPC, limbs and weapon as an editable, independently positioned piece in this furniture assembly. Does not replace the furniture.</p>
+          <label>Statue Pose Bake piece JSON <input id="statuePieceFileInput" type="file" accept=".json,application/json"></label>
+          <p id="statuePieceImportStatus" class="muted tight" role="status">Choose an exported statue piece, or send it directly from Statue Pose Bake.</p>
+          <a href="../statue-pose-bake/index.html" target="_blank" rel="noopener" style="color:#b6d4ff">Open Statue Pose Bake</a>
+        </details>
         <div class="g2">
           <button data-add="box">▭ Rect Prism</button>
           <button data-add="beam">▬ Beam</button>
@@ -655,12 +661,12 @@ window.HOBUNJI_PNG_PLANE_AVATAR_FALLBACK = {
 <script src="../../js/foliage-generator.js?v=20261105stone1"></script>
 <script src="../../config/natural-surface-materials.js?v=20261027h1fb8ced"></script>
 <script src="../../js/natural-surface-materials.js?v=20261027h1fb8ced"></script>
-<script src="../../js/authored-furniture-runtime.js?v=20261110statueparts1"></script>
+<script src="../../js/authored-furniture-runtime.js?v=20261110statueParts2"></script>
 <script src="../../js/terrain-preview.js?v=20261013he41c002"></script>
-<script src="../../js/procedural-furniture.js?v=20261110statueparts1" onerror="window.__hobunjiThreeLoadError.push('procedural-furniture failed to load')"></script>
+<script src="../../js/procedural-furniture.js?v=20261110statueTwoPass1" onerror="window.__hobunjiThreeLoadError.push('procedural-furniture failed to load')"></script>
 <script src="../../js/runtime-frame-scheduler.js?v=organic-surfaces-1"></script>
 <script src="../../js/furniture-vessel-runtime.js?v=20261030h33c4e64"></script>
-<script src="../../js/color-fill.js?v=20261110statueWhite8"></script>
+<script src="../../js/color-fill.js?v=20261110statueTint8"></script>
 <script src="../../js/portrait-utils.js" onerror="window.__hobunjiThreeLoadError.push('portrait-utils failed to load')"></script>
 <script src="../../js/portrait-breathing.js" onerror="window.__hobunjiThreeLoadError.push('portrait-breathing failed to load')"></script>
 <script src="../../js/npc-avatar-preview-utils.js" onerror="window.__hobunjiThreeLoadError.push('npc-avatar-preview-utils failed to load')"></script>
@@ -2391,6 +2397,20 @@ function rebuildLiquidSurfaceMesh(part) { if(!part||part.kind!=='liquidSurface')
 function updateLiquidFields(event) { const part=selectedPart();if(!part||part.kind!=='liquidSurface')return;const targetId=event?.target?.id||'';if(['liquidLevel','liquidLevelNumber'].includes(targetId)){const value=Number(event?.target?.value);if(Number.isFinite(value))part.liquidLevel=clamp(value,0,1);}part.color=$('liquidColor').value||part.color;part.surfaceOpacity=clamp(num('liquidOpacity',part.surfaceOpacity??.78),0,1);part.substanceFillOpacity=clamp(num('liquidFillOpacity',part.substanceFillOpacity??0),0,1);part.substanceColor=$('liquidSubstanceColor').value||part.substanceColor||part.color;part.timelineUseSubstanceColor=$('liquidUseTimelineSubstance').checked;rebuildLiquidSurfaceMesh(part);syncLiquidTransformProxy(part);transform.attach(liquidTransformProxy);refreshSelectionUI();refreshSurfaceHighlights(); }
 function deleteSelectedParts() { const ids=new Set(activePartIds());if(!ids.size)return;for(const part of state.parts)if(part.kind==='liquidSurface'&&ids.has(part.liquidContainerId))ids.add(part.id);state.parts=state.parts.filter(part=>!ids.has(part.id));state.particleEmitters=(state.particleEmitters||[]).map(record=>ids.has(record.attachedPartId)?{...record,attachedPartId:null}:record);state.processingWarps=(state.processingWarps||[]).map(warp=>({...warp,partIds:warp.partIds.filter(id=>!ids.has(id))})).filter(warp=>warp.partIds.length);for(const key of Object.keys(state.surfaceSettings))if([...ids].some(id=>key.startsWith(id+':surface:')))delete state.surfaceSettings[key];state.itemPlacements=state.itemPlacements.filter(record=>![...ids].some(id=>record.surfaceId.startsWith(id+':surface:')));state.selectedPartIds=[];state.selectedType=null;state.selectedId=null;transform.detach();rebuildAll();log(`Deleted ${ids.size} selected pieces.`); }
 
+function importStatueFurniturePiece(payload) {
+  if(payload?.schema!=='hobunji_statue_piece.v1'||!payload.part||payload.part.kind!=='glb'||payload.part.statueBaked!==true)throw Error('Expected a Statue Pose Bake piece JSON.');
+  const source=payload.part;
+  if(typeof source.modelPath!=='string'||!(/^(?:data:model\/gltf-binary;base64,|assets\/models\/[^\s]+\.glb$|https:\/\/[^\s]+\.glb$)/i.test(source.modelPath)))throw Error('The statue has no supported embedded GLB or repository GLB path.');
+  if(source.modelPath.startsWith('data:') && source.modelPath.length>55_000_000)throw Error('This portable statue exceeds the 40 MB import limit. Export the GLB as a repository asset instead.');
+  const t=source.transform||{};
+  if(!['sx','sy','sz'].every(k=>Number.isFinite(Number(t[k]))&&Number(t[k])>0))throw Error('Statue bounds must be positive finite numbers.');
+  const part=normalizePart({...source,id:uid('statue'),preserveMaterials:true,statueBaked:true}); // Never reuse the exported ID: identical imported statues are independent furniture pieces.
+  state.parts.push(part);setEditorMode('parts');rebuildAll();selectObject('part',part.id,{force:true});frameFurniture();queueUndoHistory('import statue piece');
+  const msg='Added '+part.name+' as one independent furniture piece. Its frozen NPC and weapon use the embedded finish.';
+  $('statuePieceImportStatus').textContent=msg;$('statuePieceFileInput')?.closest('details')?.setAttribute('open',''); // Make the import result visible even if the section was collapsed.
+  log(msg,'ok');
+  return {id:part.id,name:part.name};
+}
 function addPart(kind,overrides={}) { const part=pushPart(kind,overrides);buildPartMesh(part);if(part.materialTexture){applyEntrySurfaceDefaults({materialRules:{roleTextures:{[part.materialRole||'wood']:part.materialTexture},mapping:'stretch'}},[part]);buildPartMesh(part);}rebuildItemPreviews();selectObject('part',part.id);updateStats();updateLists();log(`Added ${part.name}`); }
 function setPresetFootprint(width,depth){state.tileBase.footprintW=width;state.tileBase.footprintD=depth;syncControlsFromState();rebuildTileBase();}
 function findBestTopSurface(partId) { return [...surfaceGroups.values()].filter(group=>group.partId===partId).sort((a,b)=>{const fa=getSurfaceWorldFrame(a.id),fb=getSurfaceWorldFrame(b.id);return((fb?.normal.y||-1)-(fa?.normal.y||-1))||((fb?.center.y||0)-(fa?.center.y||0));})[0]||null; }
@@ -2507,6 +2527,12 @@ function setupEvents(){
   const importGlb = path => { if (!/^(?:assets\/|https?:)/.test(path) || !/\.glb(?:[?#]|$)/i.test(path)) { log('Use a repository assets/ GLB path or an HTTPS GLB URL.', 'warn'); return; } const part = pushPart('glb', { name: 'Imported shingle', modelPath: path, hideBone: true, materialRole: 'wood', materialTexture: 'carved_smooth.png', transform: { x:0,y:.5,z:0,rx:0,ry:0,rz:0,sx:1,sy:.1,sz:.3 } }); rebuildAll(); selectObject('part',part.id); queueUndoHistory('import GLB furniture piece'); log('Imported independent GLB piece; alignment bone hidden. JSON retains its model path.'); }; // Keeps imported models editable and reusable through the existing furniture export.
   $('importHighlandShingleBtn').onclick = () => importGlb('assets/models/HighlandLongshingle_boned.glb');
   $('importFurnitureGlbBtn').onclick = () => importGlb($('furnitureGlbPath').value.trim());
+  $('statuePieceFileInput').onchange=async event=>{
+    const file=event.target.files?.[0];if(!file)return;
+    try{if(file.size>55_000_000)throw Error('Statue JSON is too large (40 MB embedded GLB limit).');importStatueFurniturePiece(JSON.parse(await file.text()));}
+    catch(error){$('statuePieceImportStatus').textContent='Import failed: '+error.message;log('Statue piece import failed: '+error.message,'error');}
+    finally{event.target.value='';}
+  };
   $('loadRepoItemsBtn').onclick=loadRepoItemDatabase;$('itemSearch').addEventListener('input',renderItemCatalog);$('addItemToSurfaceBtn').onclick=addSelectedItemToSurface;$('fillPlacementGridBtn').onclick=fillSelectedItemAcrossGrid;$('clearPlacementSurfaceItemsBtn').onclick=clearItemsFromSelectedPlacementSurface;$('showPlacementGrid').onchange=()=>{state.placementGrid.visible=$('showPlacementGrid').checked;rebuildPlacementGrid();};$('snapPlacementGrid').onchange=()=>{state.placementGrid.snap=$('snapPlacementGrid').checked;if(state.placementGrid.snap)normalizePlacementGridRecords();rebuildItemPreviews();refreshSelectionUI();};$('placementGridOpacity').onchange=()=>{state.placementGrid.opacity=clamp(num('placementGridOpacity',.85),0,1);rebuildPlacementGrid();};$('itemDbFileInput').onchange=event=>{const file=event.target.files?.[0];if(!file)return;const reader=new FileReader();reader.onload=loadEvent=>{try{itemCatalog=normalizeImportedItems(JSON.parse(loadEvent.target.result));$('itemDbStatus').textContent=`${itemCatalog.length} imported items`;renderItemCatalog();queueUndoHistory('import item database');log(`Loaded ${itemCatalog.length} items from ${file.name}.`);}catch(error){log(`Item database import failed: ${error.message}`,'error');}};reader.readAsText(file);event.target.value='';};
   $('placementDeleteBtn').onclick=()=>{const record=selectedPlacement();if(!record)return;state.itemPlacements=state.itemPlacements.filter(candidate=>candidate.id!==record.id);state.selectedType=null;state.selectedId=null;state.selectedSurfaceIds=[];rebuildItemPreviews();updateLists();updateStats();refreshSelectionUI();};$('placementDuplicateBtn').onclick=()=>{const record=selectedPlacement();if(!record)return;const copy=JSON.parse(JSON.stringify(record));copy.id=uid('placement');copy.itemName+=' Copy';if(copy.gridSnapped!==false&&state.placementGrid?.snap){const empty=firstEmptyGridCell(copy.surfaceId);if(!empty){log('No empty grid cell is available for the duplicate.','warn');return;}snapPlacementRecord(copy,empty);}else{copy.position.u+=.08;copy.position.v+=.08;}state.itemPlacements.push(copy);rebuildItemPreviews();selectObject('placement',copy.id);};
   $('refreshRepoFurnitureBtn').onclick=refreshRepoFurnitureCatalog;$('repoFurnitureSearch').addEventListener('input',renderRepoFurnitureList);$('importRepoFurnitureBtn').onclick=importRepoFurniture;$('exportFurnitureDbBtn').onclick=exportFurnitureDatabase;$('resetFurnitureDbBtn').onclick=resetFurnitureDatabase;$('saveFurnitureDbEntryBtn').onclick=saveCurrentFurnitureToDatabase;$('deleteFurnitureDbEntryBtn').onclick=deleteSelectedFurnitureDatabaseEntry;$('furnitureDbName').addEventListener('change',()=>{furnitureDatabase.name=$('furnitureDbName').value.trim()||furnitureDatabase.name;syncFurnitureDatabaseUI();refreshRepoFurnitureCatalog();});$('furnitureDbFileInput').onchange=event=>{const file=event.target.files?.[0];if(!file)return;const reader=new FileReader();reader.onload=loadEvent=>{try{activateFurnitureDatabase(JSON.parse(loadEvent.target.result),file.name);queueUndoHistory('import furniture database');}catch(error){log(`Furniture database import failed: ${error.message}`,'error');}};reader.readAsText(file);event.target.value='';};
@@ -2521,7 +2547,20 @@ function resize(){const rect=canvas.getBoundingClientRect(),width=Math.max(1,rec
 function animate(){requestAnimationFrame(animate);const now=performance.now()/1000;orbit?.update();updateProcessTimelines(now);applyProcessingWarps(now);updateStompAttachVisuals(now);updateParticleEffects(now);updateAllSeatedLegRigs();updateCameraRelativePlacements();renderer.render(scene,camera);if(activeStandingComparisonRecord()&&comparisonStandingState){updateLinkedComparisonCamera();comparisonRenderer.render(comparisonScene,comparisonCamera);updateStandingComparisonLabels();}}
 
 SurfaceFoliageAuthoring.mount($('tab-foliage'),{targets:[['all','All furniture pieces'],['selected','Selected pieces']],read:()=>state.surfaceGrowth.filter(recipe=>recipe.kind!=='iceStalagmites'&&recipe.kind!=='stoneStalagmites'),selectedIds:()=>activePartIds(),write:recipes=>{const iceLayers=state.surfaceGrowth.filter(recipe=>recipe.kind==='iceStalagmites'||recipe.kind==='stoneStalagmites');if(recipes.length+iceLayers.length>32)throw new Error('Maximum 32 combined roots, vines, and ice layers. Remove a layer first.');state.surfaceGrowth=[...recipes,...iceLayers];const report=rebuildSurfaceFoliage();queueUndoHistory('surface foliage');log('Latest change: surface roots/vines regenerated. '+report);return report;},log});
-furnitureDatabase=normalizeFurnitureDatabase(makeDefaultFurnitureDatabase());setupEvents();syncFurnitureDatabaseUI();syncControlsFromState();presetTable();syncMaoaoAvatarConfigFromRuntime();renderSeatingUI();rebuildSeatGrid();rebuildSeatedAvatars();updateAvatarModeDiagnostics(true);refreshRepoFurnitureCatalog();loadRepoItemDatabase();frameFurniture();resize();animate();resetUndoBaseline();log(`Ready. Latest change: festival structures and serving furniture import with their house PNG materials; viewport framing fits narrow screens. Review fixes preserve arch span during map edits and release removed festival visuals. V58 keeps the adjustedchair2.json chair/stool calibration, preserves full bench width, uses editable per-anchor seat-normal offsets with the adjusted-chair-derived 0.01 default, and shortens seat backrests to about 1.10 times seat depth. Seated thighs remain flush to the averaged seat plane. Each calf now stays perfectly straight while its knee projects over the actual seat face, then drops exactly 90 degrees only after the knee clears the edge.`);
+window.addEventListener('message',event=>{
+  let siblingStatue=null; // Only the dedicated Statue Pose Bake in this same Tools Hub may target its sibling Furniture Editor.
+  try{if(window.parent!==window)siblingStatue=window.parent.document.getElementById('if-statue-pose-bake')?.contentWindow||null;}catch(_){}
+  if(event.origin!==location.origin||!event.source||(event.source!==window.opener&&event.source!==siblingStatue)||event.data?.type!=='hobunji-statue-piece-import')return;
+  try{const imported=importStatueFurniturePiece(event.data.payload);event.source.postMessage({type:'hobunji-statue-piece-result',ok:true,imported},event.origin);}
+  catch(error){log('Statue transfer failed: '+error.message,'error');event.source.postMessage({type:'hobunji-statue-piece-result',ok:false,error:error.message},event.origin);}
+}); // Exact-origin, opener-only transfer; ordinary JSON file imports do not need a second window.
+window.HobunjiFurnitureStatuePiecesReady=false; // Same-hub Statue Pose Bake can distinguish a loaded editor from a lazy iframe.
+furnitureDatabase=normalizeFurnitureDatabase(makeDefaultFurnitureDatabase());setupEvents();syncFurnitureDatabaseUI();syncControlsFromState();presetTable();syncMaoaoAvatarConfigFromRuntime();renderSeatingUI();rebuildSeatGrid();rebuildSeatedAvatars();updateAvatarModeDiagnostics(true);refreshRepoFurnitureCatalog();loadRepoItemDatabase();frameFurniture();resize();animate();resetUndoBaseline();
+window.HobunjiFurnitureStatuePiecesReady=true; // A direct piece transfer is safe only after setupEvents has bound its importer.
+if(window.opener)window.opener.postMessage({type:'hobunji-furniture-editor-ready'},location.origin);
+try{const sibling=window.parent!==window?window.parent.document.getElementById('if-statue-pose-bake')?.contentWindow:null;
+  sibling?.postMessage({type:'hobunji-furniture-editor-ready'},location.origin);}catch(_){}
+log(`Ready. Latest change: festival structures and serving furniture import with their house PNG materials; viewport framing fits narrow screens. Review fixes preserve arch span during map edits and release removed festival visuals. V58 keeps the adjustedchair2.json chair/stool calibration, preserves full bench width, uses editable per-anchor seat-normal offsets with the adjusted-chair-derived 0.01 default, and shortens seat backrests to about 1.10 times seat depth. Seated thighs remain flush to the averaged seat plane. Each calf now stays perfectly straight while its knee projects over the actual seat face, then drops exactly 90 degrees only after the knee clears the edge.`);
 
 
 </script>

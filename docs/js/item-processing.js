@@ -10,11 +10,55 @@
   // (declared later in game.js than this cluster originally sat, so it's
   // a getter to stay forward-reference-safe regardless of init() timing).
   let deps = null;
+  const processedDefinitions = new Map(); // Records completed output definitions so their processing stages survive reloading the member.
   function init(injectedDeps) { deps = injectedDeps; }
+
+  // Unmodified hours for a single manually operated processor. Used by production jobs and every ingredient-stage buff.
+  const BASE_PROCESS_HOURS = Object.freeze({
+    mashing: 0.5, squeezing: 1, grinding: 1, churning: 2,
+    drying: 24, smoking: 8, barrelAging: 168, vaseAging: 72,
+    grindingFeed: 1, composting: 72, teaGrinding: 0.5, cooking: 0.75, alchemyBrewing: 2,
+  });
+  function baseProcessHours(methodId) { return BASE_PROCESS_HOURS[methodId] || 1; }
+  function processBuffMultiplier(methodId) {
+    // Slower manual work has diminishing per-step returns, but chained steps multiply (no artificial overall cap).
+    return 1 + Math.log2(1 + baseProcessHours(methodId)) / 2;
+  }
+  function gameHour() {
+    return window.CalendarSystem?.getAbsoluteGameHour?.() ?? NaN;
+  }
+  function formatProcessHours(hours) {
+    const n = Math.max(0, Number(hours) || 0); // Used by station actions and Farm tab countdowns.
+    return `${Number(n.toFixed(1))} in-game h`;
+  }
+  function enrichOutputs(methodId, inputKey, outputs) {
+    if (!Array.isArray(outputs)) return outputs;
+    const input = deps?.ITEM_DEFS?.[inputKey]; // Used to propagate the original ingredient's buffs through each production step.
+    const tier = window.HobunjiCookingData?.processingTiers?.[input?.cookingProcessingTier];
+    const inherited = Number.isFinite(Number(input?.cookingProcessMultiplier)) && input?.cookingProcessMultiplier != null
+      ? Number(input.cookingProcessMultiplier) : (Number(tier?.multiplier) || 1);
+    const factor = processBuffMultiplier(methodId); // Each independent processor multiplies, never adds, its buff contribution.
+    return outputs.map(output => {
+      if (!output || ['grindingFeed', 'composting'].includes(methodId) || output.cat === 'material') return output;
+      if (output.cookingProcessSourceKey === inputKey && output.cookingProcessLastMethod === methodId) return output;
+      return {
+        ...output,
+        ...(input?.cookingPrimaryEffect && !output.cookingPrimaryEffect ? { cookingPrimaryEffect: input.cookingPrimaryEffect } : {}),
+        ...(input?.foodEffects && !output.foodEffects ? { foodEffects: { ...input.foodEffects } } : {}),
+        ...(input?.cookingBaseBoost && !output.cookingBaseBoost ? { cookingBaseBoost: input.cookingBaseBoost } : {}),
+        ...(input?.cookingCategories?.length && !output.cookingCategories?.length ? { cookingCategories: [...input.cookingCategories] } : {}),
+        cookingProcessMultiplier: inherited * factor,
+        cookingProcessSteps: [...(Array.isArray(input?.cookingProcessSteps) ? input.cookingProcessSteps : []), { method: methodId, baseHours: baseProcessHours(methodId), multiplier: factor }],
+        cookingProcessSourceKey: inputKey,
+        cookingProcessLastMethod: methodId,
+        cookingProcessingTier: output.cookingProcessingTier || input?.cookingProcessingTier || 'raw', // Keep legacy tier labels for existing consumers; the explicit stage multiplier takes precedence in buff math.
+      };
+    });
+  }
 
   function processButtonLabel(methodId, inputKey, output) {
     const methodVerb = ({ mashing: 'Mash', squeezing: 'Squeeze', grinding: 'Grind', drying: 'Dry', smoking: 'Smoke', barrelAging: 'Age', vaseAging: 'Age' })[methodId] || 'Process';
-    return methodVerb + ' → ' + output.icon;
+    return methodVerb + ' → ' + output.icon + ' · ' + formatProcessHours(baseProcessHours(methodId));
   }
 
   function methodIdleLabel(methodId) {
@@ -266,12 +310,12 @@
         if (methodId === 'composting' || methodId === 'grindingFeed') return [baseOutput]; // Fodder and fertilizer are generic, not genetic.
         const suffix = baseOutput.key.startsWith(cultivar.family) ? baseOutput.key.slice(cultivar.family.length) : null;
         if (suffix) {
-          return [{
+          return enrichOutputs(methodId, inputKey, [{
             ...baseOutput, key: inputKey + suffix,
             label: baseOutput.label.replace(deps.ITEM_DEFS[cultivar.family]?.label || cultivar.family, input.label),
             ingredientKeys: [inputKey], giftIngredientKeys: [inputKey], spriteColor: cultivar.color,
             ...cookingFromSource(input, baseOutput.cookingCategories?.length ? baseOutput.cookingCategories : input.cookingCategories || [], baseOutput.cookingProcessingTier || 'quick', 'cooking'),
-          }]; // Distinct processed keys retain the inherited food-effect pair and never collapse into ordinary flour/jam.
+          }]); // Distinct processed keys retain the inherited food-effect pair and never collapse into ordinary flour/jam.
         }
       }
     }
@@ -280,15 +324,15 @@
       const color = dewColorMatch;
       const properLabel = color.charAt(0).toUpperCase() + color.slice(1);
       const dewColorHex = input.spriteColor;
-      return [
+      return enrichOutputs(methodId, inputKey, [
         { key: dewMilkKey(color), icon: '🥛', label: properLabel + " Uumkao'ii Milk", cat: 'processed', sellPrice: processedValue('dewMilk', input.sellPrice), tags: ['Processed', 'Milk', "Uumkao'ii", 'Squeezed', 'Not Animal Milk'], desc: 'Milk squeezed from ' + input.label.toLowerCase() + '.', giftIngredientKeys: [inputKey], spriteIcon: 'jar_liquid.png', spriteColor: dewColorHex, spriteMode: 'keyed' },
         { key: dewCurdsKey(color), icon: '🧀', label: properLabel + " Uumkao'ii Curds", cat: 'processed', sellPrice: processedValue('dewCurds', input.sellPrice), tags: ['Processed', 'Curds', "Uumkao'ii", 'Squeezed', 'Not Dairy'], desc: 'Curds squeezed from ' + input.label.toLowerCase() + '.', giftIngredientKeys: [inputKey], spriteIcon: 'cheese.png', spriteColor: dewColorHex, spriteMode: 'direct' },
-      ];
+      ]);
     }
     const modularOutputs = window.HobunjiFoodProcessing?.getProcessingOutputs?.(methodId, inputKey, input); // Used for decoupled nut-oil, lard, and fish-oil vat recipes.
-    if (modularOutputs?.length) return modularOutputs;
+    if (modularOutputs?.length) return enrichOutputs(methodId, inputKey, modularOutputs);
     const single = getProcessingOutput(methodId, inputKey);
-    return single ? [single] : null;
+    return single ? enrichOutputs(methodId, inputKey, [single]) : null;
   }
 
   // World-object placement items whose only "held" action is being set
@@ -362,6 +406,26 @@
     return repaired;
   }
 
+  function isTrackedProcessedOutput(output) {
+    return !!output && typeof output.key === 'string' && /^[\w-]+$/.test(output.key) && !Object.hasOwn(Object.prototype, output.key)
+      && Number.isFinite(output.cookingProcessMultiplier) && output.cookingProcessMultiplier > 0
+      && Array.isArray(output.cookingProcessSteps) && output.cookingProcessSteps.length > 0
+      && output.cookingProcessSteps.every(step => step && typeof step.method === 'string')
+      && ['tags', 'cookingCategories', 'ingredientKeys', 'giftIngredientKeys'].every(field =>
+        output[field] == null || Array.isArray(output[field]));
+  }
+
+  function serializeProcessedDefinitions() {
+    return JSON.parse(JSON.stringify([...processedDefinitions.values()]));
+  }
+
+  function restoreProcessedDefinitions(saved) {
+    processedDefinitions.clear();
+    for (const output of Array.isArray(saved) ? saved : []) {
+      if (isTrackedProcessedOutput(output)) ensureProcessedItemDef(output);
+    }
+  }
+
   function ensureProcessedItemDef(output) {
     if (!output?.cookingCategories?.length) { // Saved batch snapshots predate cooking metadata.
       const current = currentPreservedOutput(output?.key, output?.giftIngredientKeys?.[0]);
@@ -383,7 +447,13 @@
       ...(output.cookingProcessingTier ? { cookingProcessingTier: output.cookingProcessingTier } : {}),
       ...(output.cookingDefaultStars ? { cookingDefaultStars: output.cookingDefaultStars } : {}),
       ...(output.foodEffects ? { foodEffects: { ...output.foodEffects } } : {}), // Preserve both inherited buffs in the registered processed item.
+      ...(Number.isFinite(Number(output.cookingProcessMultiplier)) ? { cookingProcessMultiplier: Number(output.cookingProcessMultiplier) } : {}),
+      ...(Array.isArray(output.cookingProcessSteps) ? { cookingProcessSteps: output.cookingProcessSteps.map(step => ({ ...step })) } : {}),
     }; // Used to make dynamically generated fats valid hearth ingredients immediately.
+    if (isTrackedProcessedOutput(output)) {
+      processedDefinitions.set(output.key, { key: output.key, ...presentationMetadata, ...cookingMetadata,
+        ingredientKeys: [...(output.ingredientKeys || [])], giftIngredientKeys: [...(output.giftIngredientKeys || [])] });
+    }
     if (deps.ITEM_DEFS[output.key]) {
       if (output.ingredientKeys?.length) deps.ITEM_DEFS[output.key].ingredientKeys = [...output.ingredientKeys];
       if (output.giftIngredientKeys?.length) deps.ITEM_DEFS[output.key].giftIngredientKeys = [...output.giftIngredientKeys];
@@ -426,6 +496,9 @@
     getProcessingOutputs,
     isWheelEligible,
     ensureProcessedItemDef,
+    serializeProcessedDefinitions,
+    restoreProcessedDefinitions,
     repairPreservedDefs,
+    BASE_PROCESS_HOURS, baseProcessHours, processBuffMultiplier, gameHour, formatProcessHours, enrichOutputs,
   };
 })();

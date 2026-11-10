@@ -2867,12 +2867,10 @@
         return true;
       }
 
-      // barrelAging/vaseAging ("long" tier, per the flavor text on Aging
-      // Barrel/Aging Vase — literal aging, not an instant press) take this
-      // many in-game days once started, uniformly across every recipe under
-      // those two methods (existing berry Wine included) rather than some
-      // outputs being instant and others delayed on the same furniture type.
-      const AGING_DURATION_DAYS = 3;
+      // Shared unmodified manual work durations (in in-game hours) drive every
+      // processor, including aging. ItemProcessing also uses these durations for
+      // ingredient-buff stage multipliers; don't duplicate numerical timings here.
+      const baseProcessingHours = method => window.ItemProcessing?.baseProcessHours?.(method) || 1;
       const AGING_METHODS = new Set(['barrelAging', 'vaseAging']);
 
       // How long an instant-process (mashing/squeezing/grinding/drying/
@@ -2939,10 +2937,23 @@
         scene.add(mesh);
 
         const isAging = AGING_METHODS.has(def.method);
-        // Aging jobs use readyDay; authored real-time process jobs use readyAtMs.
-        // Both are saved by the farm layout so a batch never turns back into an
-        // instantaneous action (or silently vanishes) across a reload.
-        let job = savedJob ? { ...savedJob, kind: savedJob.kind || (savedJob.readyDay != null ? 'aging' : null), inputStars: Number(savedJob.inputStars) || 3 } : null;
+        // Production jobs all use the monotonic in-game hour clock. Legacy
+        // saved readyDay/readyAtMs jobs migrate once, preserving progress.
+        let job = savedJob ? { ...savedJob, kind: savedJob.kind || (savedJob.readyDay != null ? 'aging' : 'timed'), inputStars: Number(savedJob.inputStars) || 3 } : null;
+        if (job && !Number.isFinite(job.readyAtGameHour)) {
+          const durationHours = baseProcessingHours(def.method); // Used for legacy-to-hour conversion without applying perks.
+          const elapsedToday = Math.max(0, Number(calendar.time01) || 0) * (NIGHT_HOUR - MORNING_HOUR); // Old aging jobs were collectible as soon as the ready day began.
+          const remainingHours = job.kind === 'aging'
+            ? Math.max(0, ((Number(job.readyDay) || calendar.day) - calendar.day) * 24 - elapsedToday)
+            : Math.min(1, Math.max(0, (Number(job.readyAtMs) - Date.now()) / (Math.max(0.1, Number(job.durationS) || 12) * 1000))) * durationHours;
+          job.durationHours = durationHours;
+          job.legacyRemainingHours = Number.isFinite(remainingHours) ? remainingHours : durationHours;
+          const now = window.ItemProcessing?.gameHour?.();
+          if (Number.isFinite(now)) {
+            job.readyAtGameHour = now + job.legacyRemainingHours;
+            delete job.legacyRemainingHours;
+          }
+        }
 
         // ── Processing VFX (docs/js/authored-furniture-runtime.js) ──────
         // Reuses whatever processingWarps/particleEmitters this piece's
@@ -2958,22 +2969,34 @@
         let burstRemaining = 0;
         function vfxActive() { return (isAging && !!job) || job?.kind === 'timed' || burstRemaining > 0; }
         function triggerBurst() { if (!isAging) burstRemaining = PROCESS_BURST_S; }
-        function timedJobRemainingS() { return job?.kind === 'timed' ? Math.max(0, (Number(job.readyAtMs) - Date.now()) / 1000) : 0; }
+        function jobRemainingHours() {
+          if (!job) return 0;
+          const now = window.ItemProcessing?.gameHour?.(); // Production halts with the calendar, including paused games.
+          if (!Number.isFinite(now)) return Math.max(0, Number(job.legacyRemainingHours ?? job.durationHours) || baseProcessingHours(def.method));
+          if (job.readyAtGameHour == null || !Number.isFinite(Number(job.readyAtGameHour))) {
+            job.readyAtGameHour = now + Math.max(0, Number(job.legacyRemainingHours ?? job.durationHours) || 0);
+            delete job.legacyRemainingHours;
+          }
+          return Math.max(0, Number(job.readyAtGameHour) - now);
+        }
         function timelineSubstanceColor(outputs) {
           const color = outputs?.[0]?.spriteColor;
           return Number.isFinite(color) ? '#' + Number(color).toString(16).padStart(6, '0') : processTimeline?.substanceColor;
         }
         function startTimedJob(outputs, inputStars, inputLabel, source = 'manual', yieldMultiplier = 1) {
-          if (!processTimeline) return { ok: false, message: `${def.name} has no authored process timeline.` };
-          if (job) return { ok: false, busy: true, message: `${def.name} is already squeezing a batch.` };
-          const durationS = Math.max(.1, Number(processTimeline.duration) || 12);
-          job = { kind: 'timed', outputs, inputStars, inputLabel, source, yieldMultiplier, durationS, readyAtMs: Date.now() + durationS * 1000, substanceColor: timelineSubstanceColor(outputs) };
+          if (job) return { ok: false, busy: true, message: `${def.name} is already working on a batch.` };
+          const now = window.ItemProcessing?.gameHour?.(); // No input is consumed if the game clock cannot schedule a job.
+          if (!Number.isFinite(now)) return { ok: false, message: 'The game calendar is not ready for processing.' };
+          const durationHours = baseProcessingHours(def.method);
+          job = { kind: 'timed', outputs, inputStars, inputLabel, source, yieldMultiplier,
+            durationHours, readyAtGameHour: now + durationHours, substanceColor: timelineSubstanceColor(outputs) };
           window.FarmEditor.saveFarmLayout();
           window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().processStart);
-          return { ok: true, started: true, durationS };
+          triggerBurst(); // Authored timeline/particle animations remain on render-time seconds, distinct from production.
+          return { ok: true, started: true, durationHours };
         }
-        function finishTimedJob() {
-          if (job?.kind !== 'timed') return;
+        function finishTimedJob(notify = true) {
+          if (job?.kind !== 'timed') return null;
           const finished = job;
           job = null;
           const outputStars = addProcessedOutputs(finished.outputs, finished.inputStars, def.method, finished.yieldMultiplier, finished.source === 'family');
@@ -2982,15 +3005,19 @@
           saveMemberWorldData();
           window.HudUpdate.refreshItemScroll(); buildInventoryGrid(); refreshActionBar();
           window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
-          showToast(`${def.icon} ${finished.inputLabel || 'Batch'} finished: ${window.LootRolling.starRatingText(outputStars)} ${finished.outputs.map(output => output.label).join(', ')}.`);
+          const message = `${def.icon} ${finished.inputLabel || 'Batch'} finished: ${window.LootRolling.starRatingText(outputStars)} ${finished.outputs.map(output => output.label).join(', ')}.`;
+          if (notify) showToast(message);
+          return { ok: true, message };
         }
         function updateVfx(dt) {
+          // Non-authored stations still need to complete queued work after time passes.
+          if (job?.kind === 'timed' && jobRemainingHours() <= 0) finishTimedJob();
           if (!authoredVfx) return;
           vfxT += dt;
           if (burstRemaining > 0) burstRemaining = Math.max(0, burstRemaining - dt);
           const active = vfxActive();
           const timed = job?.kind === 'timed';
-          const progress = timed ? Math.max(0, Math.min(1, 1 - timedJobRemainingS() / Math.max(.1, Number(job.durationS) || Number(processTimeline?.duration) || 12))) : 0;
+          const progress = timed ? Math.max(0, Math.min(1, 1 - jobRemainingHours() / Math.max(0.1, Number(job.durationHours) || baseProcessingHours(def.method)))) : 0;
           const liveTimeline = processTimeline ? { ...processTimeline, substanceColor: timed ? job.substanceColor : processTimeline.substanceColor } : null;
           const timelineState = liveTimeline ? window.AuthoredFurniture.applyProcessTimeline(mesh, authoredVfx, liveTimeline, progress) : null;
           for (const warp of authoredVfx.processingWarps || []) {
@@ -3003,7 +3030,6 @@
             const stompPoint = authoredVfx.stompAttachPoints?.find(point => point.enabled !== false);
             const anchorMatrix = stompPoint && window.AuthoredFurniture.stompAttachWorldMatrix(mesh, authoredVfx, stompPoint, vfxT);
             if (anchorMatrix) window.FarmAnimals?.setVatWorkerPose?.(obj.id, anchorMatrix, stompPoint.anchorName || 'shoulderGrip');
-            if (timedJobRemainingS() <= 0) finishTimedJob();
           } else {
             window.FarmAnimals?.clearVatWorkerPose?.(obj.id);
           }
@@ -3021,17 +3047,13 @@
             if (def.specialMode === 'teaGrinder') {
               return [{ icon: def.icon, label: 'Blend Tea Leaves', action: 'obj_process_' + furnitureKey, style: 'primary', allowed: true }]; // Tea Grinder owns a three-input modal rather than the generic one-held-item processor contract.
             }
-            if (job?.kind === 'timed') {
-              const seconds = Math.max(1, Math.ceil(timedJobRemainingS()));
-              return [{ icon: '🫗', label: `Squeezing… ${seconds}s`, action: 'obj_process_' + furnitureKey, style: 'secondary', allowed: false }];
-            }
-            if (isAging && job) {
-              const daysLeft = Math.max(0, job.readyDay - calendar.day);
-              if (daysLeft > 0) {
-                return [{ icon: '⏳', label: `Aging… ${daysLeft} day${daysLeft === 1 ? '' : 's'} left`, action: 'obj_process_' + furnitureKey, style: 'secondary', allowed: false }];
+            if (job) {
+              const remainingHours = jobRemainingHours();
+              if (remainingHours > 0) {
+                return [{ icon: '⏳', label: `${isAging ? 'Aging' : 'Processing'}… ${window.ItemProcessing.formatProcessHours(remainingHours)} left`, action: 'obj_process_' + furnitureKey, style: 'secondary', allowed: false }];
               }
-              const outDef = job.outputs[0];
-              return [{ icon: outDef.icon, label: `Collect ${outDef.label}`, action: 'obj_process_' + furnitureKey, style: 'primary', allowed: true }];
+              const outDef = job.outputs?.[0] || {};
+              return [{ icon: outDef.icon || def.icon, label: `Collect ${outDef.label || 'finished batch'}`, action: 'obj_process_' + furnitureKey, style: 'primary', allowed: true }];
             }
             // Insertion eligibility requires the ingredient to actually be
             // the held item (heldMode === 'item'), not merely whatever
@@ -3056,14 +3078,16 @@
           onAction(action) {
             if (action !== 'obj_process_' + furnitureKey) return { ok: false, message: 'Unknown processor action.' };
             if (def.specialMode === 'teaGrinder') return window.TeaGrinder?.open?.() || { ok: false, message: 'Tea Grinder failed to initialize.' }; // Uses the processor's normal world interaction while delegating three-herb recipe UI/state.
-            if (job?.kind === 'timed') return { ok: false, message: `${def.name} is still squeezing — ${Math.max(1, Math.ceil(timedJobRemainingS()))}s left.` };
-            if (isAging && job) {
-              if (calendar.day < job.readyDay) return { ok: false, message: 'Still aging — not ready yet.' };
+            if (job) {
+              const remainingHours = jobRemainingHours();
+              if (remainingHours > 0) return { ok: false, message: `${def.name} is still working — ${window.ItemProcessing.formatProcessHours(remainingHours)} left.` };
+              if (job.kind === 'timed') return finishTimedJob(false);
               const outputs = job.outputs;
               const inputStars = job.inputStars;
               job = null;
               const outputStars = addProcessedOutputs(outputs, inputStars, def.method);
               window.FarmEditor.saveFarmLayout();
+              saveMemberWorldData();
               window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
               return { ok: true, message: `${def.icon} Collected ${window.LootRolling.starRatingText(outputStars)} ${outputs.map(o => o.label).join(', ')}.` };
             }
@@ -3077,24 +3101,21 @@
             const outputs = window.ItemProcessing.getProcessingOutputs(def.method, active.key);
             if (!outputs) return { ok: false, message: def.name + ' cannot process ' + (ITEM_DEFS[active.key]?.label || active.label) + '.' };
             if ((inventory[active.key] || 0) < 1) return { ok: false, message: 'No ' + (ITEM_DEFS[active.key]?.label || active.label) + ' left.' };
-            const inputStars = consumeProcessingInput(active.key); // Used to preserve the selected stack's best available quality.
+            const now = window.ItemProcessing?.gameHour?.(); // Check the game clock before consuming inventory.
+            if (!Number.isFinite(now)) return { ok: false, message: 'The game calendar is not ready for processing.' };
+            const inputStars = consumeProcessingInput(active.key); // Preserve source star quality for queued batches.
+            const inputLabel = ITEM_DEFS[active.key]?.label || active.label;
+            const durationHours = baseProcessingHours(def.method); // Manual, unmodified duration; never affected by skill/perks.
             if (isAging) {
-              job = { kind: 'aging', outputs, readyDay: calendar.day + AGING_DURATION_DAYS, inputStars };
+              job = { kind: 'aging', outputs, readyAtGameHour: now + durationHours, durationHours, inputStars, inputLabel };
               window.FarmEditor.saveFarmLayout();
               window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().processStart);
-              return { ok: true, message: `${def.icon} Set ${ITEM_DEFS[active.key]?.label || active.label} to age for ${AGING_DURATION_DAYS} days.` };
+              return { ok: true, message: `${def.icon} Set ${inputLabel} to age for ${window.ItemProcessing.formatProcessHours(durationHours)}.` };
             }
-            if (processTimeline) {
-              const inputLabel = ITEM_DEFS[active.key]?.label || active.label;
-              const started = startTimedJob(outputs, inputStars, inputLabel);
-              return started.ok
-                ? { ok: true, message: `${def.icon} Started squeezing 1 ${inputLabel}; the batch will finish in ${Math.round(started.durationS)} seconds.` }
-                : started;
-            }
-            const outputStars = addProcessedOutputs(outputs, inputStars, def.method);
-            window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
-            triggerBurst();
-            return { ok: true, message: `${def.icon} Processed 1 ${ITEM_DEFS[active.key]?.label || active.label} into ${window.LootRolling.starRatingText(outputStars)} ${outputs.map(o => o.label).join(', ')}.` };
+            const started = startTimedJob(outputs, inputStars, inputLabel);
+            return started.ok
+              ? { ok: true, message: `${def.icon} Started processing 1 ${inputLabel}; ready in ${window.ItemProcessing.formatProcessHours(started.durationHours)}.` }
+              : started;
           },
           // Cheap non-mutating precheck for the held-item hold controller's
           // press — mirrors getButtons()'s eligibility without touching
@@ -9542,6 +9563,7 @@
         member.npcDiscoveredGiftTraits = window.NpcGifting?.serializeDiscoveredPrefs?.() || {};
         member.alchemyKnownEffects = window.AlchemySystem.serializeKnownEffects();
         member.alchemyKnownRecipes = window.AlchemySystem.serializeKnownRecipes();
+        member.alchemyFavoriteRecipes = window.AlchemySystem.serializeFavorites?.() || []; // Save this character's assembled reagent combinations.
         member.alchemyActiveEffects = window.AlchemySystem.serializeActiveEffects();
         member.alchemyReagentState = window.ReagentPlants.serializeZoneReagentState();
         member.knownFurnitureBlueprints = window.CraftingPanel?.serializeBlueprints?.() || [];
@@ -14239,8 +14261,15 @@
             for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
               const t = m.tiles?.[`${c},${r}`];
               const key = `${c + offsetC},${r + offsetR}`;
-              if (!t || (t.plateau && !isCarvedPlateauOverride(t))) {
+              const isGeneratedBoulder = t?.plateau && t.type === 'rock' && t.generatedObjectType === 'undiggableBoulder'; // Keep collision-bearing boulder tiles when the plateau mask stakes its floor.
+              if (!t || (t.plateau && !isCarvedPlateauOverride(t) && !isGeneratedBoulder)) {
                 if (!outTiles.has(key)) outTiles.set(key, { c: c + offsetC, r: r + offsetR, type: 'grass', elevTier: baseTier, skipFloor: false, rampElevation: 0, incline: false });
+                continue;
+              }
+              if (isGeneratedBoulder) {
+                // Preserve the already-staked mesa elevation/edge while restoring every solid tile of a wide generated boulder.
+                const staked = outTiles.get(key) || { c: c + offsetC, r: r + offsetR, elevTier: baseTier, skipFloor: true, rampElevation: 0, incline: false }; // Used to keep plateau collision and rock geometry on the same tile.
+                outTiles.set(key, { ...staked, type: 'rock', rockKind: 'undiggableBoulder', boulderId: t.generatedObjectId ? (m.parentMapId || m.id) + ':' + t.generatedObjectId : undefined });
                 continue;
               }
               if (isCarvedPlateauOverride(t)) {
@@ -14283,7 +14312,7 @@
                 // ZoneTerrainFeatures.buildUndiggableBoulderMeshes assembles each
                 // multi-tile boulder as one shell instead of rediscovering it.
                 boulderId: type === 'rock' && t.generatedObjectType === 'undiggableBoulder' && t.generatedObjectId
-                  ? m.id + ':' + t.generatedObjectId
+                  ? (m.parentMapId || m.id) + ':' + t.generatedObjectId
                   : undefined,
               });
             }
@@ -33510,6 +33539,7 @@
         // today's (not-yet-picked) wilderness reagent placements — all
         // world-scoped per character, same as the fields just above.
         window.AlchemySystem.restoreKnownRecipes(playerData.alchemyKnownRecipes, playerData.alchemyKnownEffects);
+        window.AlchemySystem.restoreFavorites?.(playerData.alchemyFavoriteRecipes); // Restore saved assemblies without fixing ingredient star tiers.
         window.AlchemySystem.restoreActiveEffects(playerData.alchemyActiveEffects);
         window.ReagentPlants.restoreZoneReagentState(playerData.alchemyReagentState);
         window.WildBerries.restoreState(playerData.wildBerryState);

@@ -64,6 +64,14 @@
 .cooking-picker button strong, .cooking-picked strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cooking-picker button small, .cooking-picked small { grid-column: 2; color: #c9bca8; font-size: 10px; line-height: 1.25; }
 .cooking-picker button em, .cooking-picked em { grid-column: 2; color: #e9b655; font-size: 10px; font-style: normal; }
+.cooking-saved-favorites { margin-top: 12px; padding: 10px; border: 1px solid #8d6a36; border-radius: 10px; background: #302014; }
+.cooking-saved-favorites > strong { display: block; color: #edc878; font-size: 12px; margin-bottom: 7px; }
+.cooking-favorite-row { display: flex; gap: 5px; margin: 5px 0; }
+.cooking-favorite-row button { border: 1px solid #73502d; border-radius: 8px; background: #251812; color: #f7ead0; padding: 8px; }
+.cooking-favorite-row button:first-child { flex: 1; min-width: 0; text-align: left; overflow-wrap: anywhere; font-size: 11px; }
+.cooking-favorite-row button small { display: block; color: #a9967e; margin-top: 3px; }
+.cooking-preview > small { display: block; color: #c9bca8; margin-top: 6px; }
+.cooking-footer { flex-wrap: wrap; }
 .cooking-preview { margin-top: 15px; padding: 13px; border: 1px solid #66472b; border-radius: 10px; background: #42251966; }
 .cooking-preview > div { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
 .cooking-preview span { padding: 5px 8px; color: #f8ddb1; border: 1px solid #875d2d; border-radius: 999px; background: #1b120e; font-size: 12px; }

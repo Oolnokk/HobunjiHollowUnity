@@ -253,7 +253,10 @@
           if(part.materialTexture)applyPartTexture(result,part);
           return result;
         }; // Ordinary furniture GLBs keep their original authored materials.
-        child.material = part.rockShape?.enabled?makePartMaterial(rockMaterialPart(part),baseColor):Array.isArray(child.material) ? child.material.map(color) : color(child.material);
+        child.material = part.rockShape?.enabled ? makePartMaterial(rockMaterialPart(part),baseColor)
+          : (part.statueBaked === true && part.preserveMaterials === true)
+            ? (Array.isArray(child.material) ? child.material.map(material => material.clone()) : child.material.clone()) // Preserve the finish baked by Statue Pose Bake.
+            : Array.isArray(child.material) ? child.material.map(color) : color(child.material);
         child.castShadow = child.receiveShadow = true;
       });
       if(part.statueUniformFinish===true) {
