@@ -435,9 +435,14 @@ function meshMaterialStats(mesh) {
 }
 window.__hobunjiStatueDebug=()=>{
   const meshes=[];
+  statueGroup?.updateMatrixWorld(true);
+  camera?.updateMatrixWorld(true);
   statueGroup?.traverse(mesh=>{
     if(!mesh.userData?.statuePieceId)return;
+    const box=new THREE.Box3().setFromObject(mesh);
+    const worldSize=box.getSize(new THREE.Vector3()),screenCenter=box.getCenter(new THREE.Vector3()).project(camera);
     meshes.push({id:mesh.userData.statuePieceId,type:mesh.userData.authoredPart?.kind||'piece',
+      worldSize:worldSize.toArray(),screenCenter:screenCenter.toArray(),
       textureReady:mesh.userData.statueTextureReady===true,
       modelReady:mesh.userData.glbReady===true,
       visible:mesh.visible,opacity:mesh.material?.opacity??1,
