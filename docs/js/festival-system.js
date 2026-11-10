@@ -513,18 +513,55 @@
     window.HobunjiQuickSave?.recordFestivalItem?.(key, count, stars); // Journal the granted quality tier, not consumed offerings.
     return true;
   }
+  function offeringTraitSummary(species, genotype) {
+    if (!genotype) return 'No recorded inherited traits';
+    try {
+      const traits = window.CreatureGenetics?.genotypeTraits?.(species, genotype); // Same size, coat and carrier descriptions as Farm and Stable.
+      if (!traits) return 'Inherited genotype recorded';
+      return [traits.size?.label ? traits.size.label+' size' : null,
+        ...(traits.colors || []).map(c => c.label+': '+c.colorName),
+        ...(traits.patterns || []).map(p => p.label+(p.carrier ? ' (hidden carrier)' : '')+': '+p.colorName)]
+        .filter(Boolean).join(' · ') || 'Inherited genotype recorded';
+    } catch (_) { return 'Inherited genotype recorded'; } // The picker remains usable before genetics visuals finish initializing.
+  }
   function qualityChoices(kind) {
     return Object.entries(deps?.inventory || {}).filter(([key, count]) => {
       const def = deps.getItemDefs()[key]; // Only physical giftable items; coins/equipment/quest objects cannot become offerings.
-      return count > 0 && def && (kind === 'potluck' ? def.isCookedFood : key !== 'gold' && !def.questItem && !def.isQuestItem && !def.isBlueprint && !def.isTool && (window.FestivalOfferingRitual?.releaseSpecies?.(key,def) || window.NpcGifting?.isItemGiftable?.({ key, kind: 'item' }))); // Living baby/egg items can be released even when they cannot be gifts.
-    }).flatMap(([key]) => (window.CookingSystem?.availableQualityEntries?.(key) || []).map(entry => ({ ...entry, key, label: deps.getItemDefs()[key].label || key })));
+      return count > 0 && def && (kind === 'potluck' ? def.isCookedFood : key !== 'gold' && !def.questItem && !def.isQuestItem && !def.isBlueprint && !def.isTool && (window.FestivalOfferingRitual?.releaseSpecies?.(key,def) || window.NpcGifting?.isItemGiftable?.({ key, kind: 'item' })));
+    }).flatMap(([key,total]) => {
+      const def = deps.getItemDefs()[key]; // Used to display a predictable label/icon and the actual targeted fortune before confirmation.
+      const species = kind === 'offering' ? window.FestivalOfferingRitual?.releaseSpecies?.(key,def) : null;
+      const lineages = species ? window.LivestockItemGenotypePersistence?.groupsFor?.(key,total) : null; // Unique genotypes never collapse into a generic baby stack.
+      const groups = lineages?.length ? lineages : [{ count:total, variant:null, genotype:null }];
+      const qualities = window.CookingSystem?.availableQualityEntries?.(key) || [];
+      return groups.flatMap(group => qualities.filter(entry=>entry.count>0)
+        .map(entry => ({key,stars:entry.stars,count:Math.min(entry.count,group.count),
+          label:def.label || key,icon:def.icon || '🎁',category:window.FestivalOfferingRitual?.statFor?.(key,def,species?'release':'burn') || null,
+          ...(lineages ? {variant:group.variant,species,traitSummary:offeringTraitSummary(species,group.genotype)} : {})}))
+        .filter(entry=>entry.count>0));
+    });
+  }
+  function offeringVariant(key, variant) {
+    if (typeof variant !== 'string') return null;
+    const groups=window.LivestockItemGenotypePersistence?.groupsFor?.(key,Number(deps?.inventory?.[key])||0);
+    return groups?.find(group=>group.variant===variant && group.count>0) || null;
   }
   function consumeChoice(kind, payload) {
-    if (!qualityChoices(kind).some(choice => choice.key === payload.key && choice.stars === payload.stars && choice.count >= 1)) return false;
+    if (!qualityChoices(kind).some(choice => choice.key === payload.key && choice.stars === payload.stars && choice.count >= 1
+        && (kind !== 'offering' || choice.variant === payload.variant))) return false;
+    if (kind==='offering' && typeof payload.variant === 'string') {
+      return window.LivestockItemGenotypePersistence?.consumeVariant?.(payload.key,payload.variant,
+        Number(deps?.inventory?.[payload.key])||0,()=>window.CookingSystem.consumeQuality(payload.key,payload.stars,1)) || false;
+    }
     return window.CookingSystem.consumeQuality(payload.key, payload.stars, 1);
   }
-  function offeringPreview(key,stars) {
-    return window.FestivalOfferingRitual?.assess?.(key,stars,deps?.getItemDefs?.() || {},{rarity:window.ItemAcquisitionRarity}) || null; // Preview and commit share the same rarity and item-stat model.
+  function offeringPreview(key,stars,variant) {
+    const def=deps?.getItemDefs?.()?.[key];
+    const species=window.FestivalOfferingRitual?.releaseSpecies?.(key,def);
+    const matched=species && variant !== undefined ? offeringVariant(key,variant) : null;
+    if (species && variant !== undefined && !matched) return null; // Never preview an animal that no longer exists.
+    return window.FestivalOfferingRitual?.assess?.(key,stars,deps?.getItemDefs?.() || {},
+      {rarity:window.ItemAcquisitionRarity,genotype:matched?.genotype || null}) || null; // Preview and commit share exact lineage and rarity appraisal.
   }
   function pendingAnimalReleases() {
     return (state.animalReleases||[]).map(row=>({...row})); // Read-only saved queue, consumed when wildlife can rehome the species in its own wilderness.
@@ -540,6 +577,14 @@
   }
   function hasPendingAnimalReleases() { return !!state.animalReleases?.length; } // Lightweight gate checked by the ordinary wildlife tick, without cloning the whole queue.
   function giftMultiplier() { return festival()?.id === 'mountaindawn' ? 2 : 1; }
+  function fortuneBonus(effectId) {
+    if (!window.CalendarSystem?.isInitialized?.()) return 0;
+    const buff=state.blessing; // All independent fortune hooks consult the same saved, expiring offering.
+    const def=window.FestivalCalendar?.blessings?.[effectId];
+    return buff?.stat===effectId && def && !def.legacy && Number.isFinite(buff.expiresDay) && day()<buff.expiresDay
+      ? Math.min(5,Math.max(1,Number(buff.level)||1)) * def.perLevel : 0;
+  }
+  function fortuneMultiplier(effectId) { return 1 + fortuneBonus(effectId); } // For weighted rarity rolls; additive probability hooks use fortuneBonus directly.
   function blessingMultiplier(stat) {
     if (!window.CalendarSystem?.isInitialized?.()) return 1;
     const buff = state.blessing; // Date-based expiry survives sleeping, reloading, year boundaries, and character switches.
@@ -619,11 +664,13 @@
       valueFactor:Number.isFinite(saved.blessing.valueFactor)?saved.blessing.valueFactor:null,
       effortFactor:Number.isFinite(saved.blessing.effortFactor)?saved.blessing.effortFactor:null,
       source:typeof saved.blessing.source==='string'?saved.blessing.source:null,
-      sourceLabel:typeof saved.blessing.sourceLabel==='string'?saved.blessing.sourceLabel:null }; // Historical sacrifice appraisal is immutable after save; future rarity models must not silently change it.
+      sourceLabel:typeof saved.blessing.sourceLabel==='string'?saved.blessing.sourceLabel:null,
+      traitFactor:Number.isFinite(saved.blessing.traitFactor)?Math.max(1,Math.min(1.35,saved.blessing.traitFactor)):1 }; // Historical sacrifice appraisal is immutable after save; future rarity models must not silently change it.
     state.animalReleases=(Array.isArray(saved?.animalReleases)?saved.animalReleases:[])
       .filter(row=>row&&typeof row.id==='string'&&typeof row.species==='string'&&typeof row.key==='string'&&Number.isFinite(row.createdDay))
       .slice(0,128).map(row=>({id:row.id,species:row.species,key:row.key,createdDay:row.createdDay,
-        stars:Math.max(1,Math.min(5,Number(row.stars)||3))})); // Unfinished liberation survives saving and character reload; invalid records are ignored.
+        stars:Math.max(1,Math.min(5,Number(row.stars)||3)),
+        genotype:row.genotype && typeof row.genotype==='object' && !Array.isArray(row.genotype) ? JSON.parse(JSON.stringify(row.genotype)) : null})); // Unfinished liberation survives saving and character reload; invalid records are ignored.
     potluckRecoveryPending = true; // Recheck only the newly restored member's annual claims; resolved entries remain untouched.
     cancelDance();
     window.FestivalProps?.refreshFeast?.();
@@ -888,7 +935,8 @@
       remembrance, musicParticipation, localeActivities:window.FestivalLocaleActivities?.diagnostics?.(),
       festivalDialogue:window.FestivalDialogue?.diagnostics?.(),sharedMeals:window.NpcSharedMeals?.diagnostics?.(),
       gatheringActive:festivalHours(),gatheringHours:gatheringHoursLabel(),shopsClosed:!deps?.isFestivalSuspended?.() && festivalHours(),
-      latestChange:'Autonomous ancestor offerings and missing resident walkers both use the existing festival tick.' };
+      fortune:state.blessing?{id:state.blessing.stat,bonus:fortuneBonus(state.blessing.stat),target:window.FestivalCalendar?.blessings?.[state.blessing.stat]?.target}:null,
+      latestChange:'Targeted fortune blessings use exact genotype offering selection and the existing festival save/expiry authority.' };
   }
   // The combat loader installs the alcohol bridge asynchronously, so registration is retried until it exists.
   let cupProviderRegistered = false;
@@ -1051,23 +1099,24 @@
   registerActivity('offering', payload => {
     if (festival()?.id !== 'tzizkhanash' || !festivalHours()) return fail('The ancestor offering ceremony is not underway.');
     if (claimed('offering')) return fail('You have already made this year’s offering.');
-    const preview=offeringPreview(payload?.key,payload?.stars);
+    const preview=offeringPreview(payload?.key,payload?.stars,payload?.variant);
     if (!preview || !window.FestivalCalendar.blessings[preview.stat])
       return fail('Choose a valid keepsake or a young creature to release.');
     if (preview.mode==='release' && (state.animalReleases?.length||0)>=128)
       return fail('Too many creatures are awaiting their wilderness release.');
-    if (!consumeChoice('offering',payload)) return fail('Choose an offering and a quality you still have.');
+    const consumed=consumeChoice('offering',payload); // Genotype-bearing animals debit one exact persisted variant before the reward is granted.
+    if (!consumed || consumed.ok===false) return fail('That exact offering is no longer in your bag. Choose it again.');
     if (preview.mode==='release') {
       (state.animalReleases ||= []).push({id:eventKey()+':release:'+state.animalReleases.length,
-        key:payload.key,species:preview.species,stars:payload.stars,createdDay:day()}); // Never burn live young; the wildlife bridge delivers it in its native biome.
+        key:payload.key,species:preview.species,stars:payload.stars,createdDay:day(),genotype:consumed.genotype || null}); // Never burn live young; the wildlife bridge delivers it in its native biome.
     }
     state.blessing={stat:preview.stat,level:preview.level,expiresDay:day()+336,
       sourceItem:payload.key,sourceStars:payload.stars,mode:preview.mode,
       scarcityFactor:preview.scarcityFactor,valueFactor:preview.valueFactor,
-      effortFactor:preview.effortFactor,source:preview.source,sourceLabel:preview.sourceLabel};
-    mark('offering',{key:payload.key,stars:payload.stars,mode:preview.mode,species:preview.species,
+      effortFactor:preview.effortFactor,traitFactor:preview.traitFactor,source:preview.source,sourceLabel:preview.sourceLabel};
+    mark('offering',{key:payload.key,stars:payload.stars,variant:payload.variant || null,mode:preview.mode,species:preview.species,
       stat:preview.stat,level:preview.level,scarcityFactor:preview.scarcityFactor,
-      valueFactor:preview.valueFactor,effortFactor:preview.effortFactor,
+      valueFactor:preview.valueFactor,effortFactor:preview.effortFactor,traitFactor:preview.traitFactor,
       source:preview.source,sourceLabel:preview.sourceLabel}); // Keep the source appraisal frozen for this year's blessing.
     const verb=preview.mode==='release'?'set free for its native wilderness':'placed on the ancestor pyre';
     return commit(`${payload.key} ${verb}. ${window.FestivalCalendar.blessings[preview.stat].label} level ${preview.level} for 336 days (rarity ×${preview.scarcityFactor.toFixed(2)}). Your previous blessing is replaced.`);
@@ -1145,7 +1194,7 @@
     const quest = { isAvailable: () => eventKey() === duelEvent, id: `festival_duel_${year()}`, title: 'Hachutukara — Laugh at Fear', transient: true, practice: arena, steps: [{ id: 'fearless', title: 'Friendly duel', text: 'Stand calmly against Oddclaw. Land three ordinary hits while he spars back. Our borrowed weapons cannot cost you your belongings, and we restore your resources when you finish or leave.', check: 'hit', count: 3, hostile: true, goal: 'Land three hits on Oddclaw', weapon: 'hatchet' }], onComplete: () => { if (eventKey() === duelEvent && !claimed('duel')) { mark('duel'); giveFavor('spearhead_unumanuk', FESTIVAL_MAX_FAVOR, 'duel'); giveFavor('oddclaw_unumanuk', FESTIVAL_MAX_FAVOR, 'duel'); commit('Fear faced! +' + FESTIVAL_MAX_FAVOR + ' Favor with Spearhead and Oddclaw.'); } } };
     return window.CombatTutorial.start(quest, walker);
   });
-  window.FestivalSystem = { init, festival, year, claims, claimed, residents, favorHearts, qualityChoices, offeringPreview, pendingAnimalReleases, hasPendingAnimalReleases, acknowledgeAnimalRelease, registerActivity, perform, actionButton, npcRewardAction, receiveNpcReward, nearestActivity, activityProps, atProp, update, cancelDance, giftMultiplier, blessingMultiplier, serialize, restore, diagnostics, MASKS, STORY,
+  window.FestivalSystem = { init, festival, year, claims, claimed, residents, favorHearts, qualityChoices, offeringPreview, pendingAnimalReleases, hasPendingAnimalReleases, acknowledgeAnimalRelease, registerActivity, perform, actionButton, npcRewardAction, receiveNpcReward, nearestActivity, activityProps, atProp, update, cancelDance, giftMultiplier, blessingMultiplier, fortuneBonus, fortuneMultiplier, serialize, restore, diagnostics, MASKS, STORY,
     socialOptionsFor, festivalHours, gatheringHoursLabel, shopsClosedFor, silencesTownMusic, musicPlaying, feastMenu, feastDishDetails, contestStandings, festivalBowl, festivalCup, heldVessel, vesselDef, takeOrRefillCup, takeFestivalBowl, fillFestivalBowl, eatFestivalBowl, currentFullness, addFestivalFun, askFestivalDance, festivalFoodStacks,
     discardFestivalBowl, potIndexAtAim, seatedMealAction, toggleSeatedMeal, isDiningSeat, settleTestRewards, get pendingDance() { return pendingDance; }, get dance() { return dance; }, getNpcs: () => deps?.getNpcs?.() || [] };
 })();
