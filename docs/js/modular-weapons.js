@@ -495,6 +495,7 @@
         anchor: point(contact || { x: 225, y: 602 }), // Layer-local source pixel: both Three.js and the full 2D preview use it.
         scale: finite(pair.flailHeadScale, head.flailHeadScale || authoredHead.scale || 1, 0.05, 8),
         visualTransform: Object.fromEntries(transforms.map(key => [key, values[key]])), // Pair-only artwork adjustment around the rope contact; never stretches the chain.
+        layerOrder: values.layerOrder === 'haft-over-head' ? 'haft-over-head' : 'head-over-haft', // One pair controls whether its moving head appears in front of the shaft.
         layers: [{ id: 'modular-head', sprite: head.sprite, material: 'metal' }],
       };
     } // Head-owned flails retain their entire original Tool Hub head and untouched authored contact.
