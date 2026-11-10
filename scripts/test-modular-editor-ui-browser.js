@@ -188,6 +188,39 @@ async function ready(page) {
     'pair-only numeric head contact and independent scale are applied by the ACTUAL runtime assembler');
     assert.equal(await page.evaluate(() => JSON.stringify(window.ModularWeapons.getConfig().heads['fishing-mace'].mount)),
       originalRigidMount,'head mounting line is never changed by the hanging rope controls');
+    // The complete canvas must visually re-render when an existing pair-specific scale/flip value changes.
+    await page.locator('#pair-workflow > summary').click(); // Section 05 expands the existing numeric/checkbox pair corrections.
+    const previewBefore=await page.locator('#flail-preview').evaluate(canvas=>canvas.toDataURL('image/png'));
+    const scaleYField=page.locator('#fields [aria-label="Pair scaleY"]');
+    await scaleYField.fill('0.45');
+    await scaleYField.dispatchEvent('change');
+    await page.waitForFunction(() => window.ModularWeapons.flailRecipe(
+      'grapple-flail','fishing-mace')?.flail?.head?.visualTransform?.scaleY===0.45);
+    await page.waitForFunction(previous => document.querySelector('#flail-preview')?.toDataURL('image/png')!==previous,
+      previewBefore,{timeout:30000});
+    assert.match(await page.locator('#pair-transform-status').innerText(),/scale 1 × 0.45/,
+      'mobile diagnostics report the head-only visual correction actually used in the full rig');
+    const flipYField=page.locator('#fields [aria-label="Pair flipY"]');
+    await flipYField.check(); // Flipping a suspended head changes art only, not the authored rigid fitting line.
+    await page.waitForFunction(()=>window.ModularWeapons.flailRecipe(
+      'grapple-flail','fishing-mace')?.flail?.head?.visualTransform?.flipY===true);
+    assert.equal(await page.evaluate(() => window.ModularWeapons.flailRecipe(
+      'grapple-flail','fishing-mace').flail.chain.mountLengthPx),843.75,
+      'pair-specific head scaling and reversal do not alter connector length');
+    assert.equal(await page.evaluate(() => JSON.stringify(window.ModularWeapons.getConfig().heads['fishing-mace'].mount)),
+      originalRigidMount,'pair scale and flip never alter original mace head mounting geometry');
+    await page.locator('#head').selectOption('pick-shovel-pick'); // Exact new allowance and damage override from user export.
+    assert.equal(await page.locator('#pair-damage-type').inputValue(),'blunt');
+    assert.deepEqual(await page.evaluate(() => {
+      const api=window.ModularWeapons,head=api.getConfig().heads['pick-shovel-pick'];
+      const flail=api.flailRecipe('grapple-flail','pick-shovel-pick');
+      return {allowed:!api.isDisallowed('grapple-flail','pick-shovel-pick'),
+        flailDamage:api.weaponDamageType('grapple-flail','pick-shovel-pick'),
+        normalDamage:api.weaponDamageType('fishing-spear','pick-shovel-pick'),
+        headDamage:head.dmgType,flipY:flail.flail.head.visualTransform.flipY};
+    }),{allowed:true,flailDamage:'blunt',normalDamage:'sharp',headDamage:'sharp',flipY:true},
+    'Pick Head is blunt only on this flail shaft, while its original sharp geometry and ordinary weapons remain intact');
+    assert.match(await page.locator('#pair-transform-status').innerText(),/blunt damage/);
     await page.locator('#head-contact-reset').click();
     assert.equal(await page.locator('#head-rope-x').inputValue(),'185','reset restores the original rigid sleeve endpoint');
     await page.locator('#head-contact-move').click(); // Open source canvas and activate pair-only point editing on mobile.
