@@ -205,7 +205,7 @@
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
   <script src="js/character-action-locks.js?v=20261109festivalMerge2"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
-  <script src="js/npc-character-state.js?v=20261110dec70513b1"></script>
+  <script src="js/npc-character-state.js?v=20261110check776afdb"></script>
   <script src="js/npc-movement-head-target.js?v=20261101rugchairbednpc3"></script> <!-- Shared invisible movement gaze for allied NPC walkers and humanoid hostiles. -->
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
   <script src="js/npc-drink-interaction.js?v=20261025h56b02d2"></script>
@@ -385,7 +385,7 @@
   <script src="js/swept-move.js?v=20260927footprints1"></script>
   <script src="js/combat/ranged-weapons.js?v=20261110deca38cbf5"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20261020hitcolor2"></script>
-  <script src="js/combat/melee-hud-reticle.js?v=20261110dec65b033f"></script>
+  <script src="js/combat/melee-hud-reticle.js?v=20261110checkcd5b1b7"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
        load before game.js, which calls window.BanditCombat.init(...)
        during its own setup. Reads window.Combat's comboData/quickAttackData/
@@ -2964,7 +2964,7 @@
        calls window.NpcScheduling.init(...) during its own setup.
        resolveNpcScheduleTarget itself now bridges into
        window.NpcActivityPlanner (loaded just above) when present. -->
-  <script src="js/npc-scheduling.js?v=20261110dec767433a"></script>
+  <script src="js/npc-scheduling.js?v=20261110check8bebafa"></script>
   <script src="js/npc-farm-plots.js?v=20261109familyaudit2"></script> <!-- Town and family field/trench worker schedules. -->
   <!-- Authored NPC relationship tags (partner/family/friend) + social
        seating policy (window.SCRATCHBONES_CONFIG.game.socialRelationships) —

@@ -220,17 +220,21 @@
     };
   }
   function registerNpcStations(stations, fallbackArea) {
+    let changed = false; // Dynamic map/station registration invalidates cached NPC destinations.
     (stations || []).forEach(st => {
       const normalized = normalizeNpcStation(st, fallbackArea);
-      if (normalized) npcStationsById.set(normalized.id, normalized);
+      if (normalized) { npcStationsById.set(normalized.id, normalized); changed = true; }
     });
+    if (changed) targetRevision++;
   }
   function resolveNpcStationTarget(stationId) {
     const station = npcStationsById.get(stationId);
     return station ? { ...station, stationId: station.id } : null;
   }
   function replaceMapNpcStations(stations, area) {
-    for (const id of mapStationIds.get(area) || []) npcStationsById.delete(id);
+    const priorIds = mapStationIds.get(area); // Empty replacement maps may remove every old station without introducing a new one.
+    if (priorIds?.size) targetRevision++;
+    for (const id of priorIds || []) npcStationsById.delete(id);
     registerNpcStations(stations, area);
     mapStationIds.set(area, new Set((stations || []).map(station => normalizeNpcStation(station, area)?.id).filter(Boolean)));
   }
@@ -649,18 +653,20 @@
     const day = deps?.calendar?.day; // Day changes invalidate a cached agenda immediately.
     const time01 = deps?.calendar?.time01; // Clock jumps from dev tools or scenes invalidate without waiting for the lease.
     const record = walker.rec;
+    const floodEmergency = !!window.WaterSystem?.isTownFloodEmergency?.(); // Emergencies should interrupt cached ordinary station routines immediately.
     const cache = walker._npcScheduleDecision; // Walker-local cache avoids a global traversal and repeated planner allocation.
     const timeJumped = cache && Number.isFinite(time01) && Number.isFinite(cache.time01) &&
       (time01 < cache.time01 - 0.01 || time01 - cache.time01 > 0.02);
     if (cache && nowMs < cache.nextAt && !timeJumped &&
         cache.area === walker.area && cache.record === record &&
         cache.hooks === record.scheduleHooks && cache.rules === record.scheduleHooks?.rules &&
-        cache.day === day && cache.revision === targetRevision) return cache.target;
+        cache.day === day && cache.floodEmergency === floodEmergency &&
+        cache.revision === targetRevision) return cache.target;
     const target = resolveNpcScheduleTarget(record);
     walker._npcScheduleDecision = {
       target, nextAt: nowMs + (visibleArea ? NEAR_DECISION_MS : FAR_DECISION_MS),
       area: walker.area, record, hooks: record.scheduleHooks,
-      rules: record.scheduleHooks?.rules, day, time01, revision: targetRevision,
+      rules: record.scheduleHooks?.rules, day, time01, floodEmergency, revision: targetRevision,
     };
     return target;
   }

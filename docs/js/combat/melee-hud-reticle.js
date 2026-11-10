@@ -219,11 +219,6 @@
 
   function targetState(deps, direction, slotProfiles) {
     const area = deps.getCurrentArea?.() || deps.currentArea?.() || null;
-    const candidates = []; // Ray focus has priority; other candidates must lie near real equipped melee reach.
-    let focused = null; // Eliminate a duplicate camera-ray scan in the same HUD refresh.
-    try { focused = deps.getMeleeReticleTarget?.() || null; } catch (_) {}
-    if (focused?.health > 0 && (!area || focused.areaId === area)) candidates.push({ entity: focused, source: 'combat-target' });
-
     const origin = new THREE.Vector3(
       deps.player.x / deps.TILE,
       deps.player.avatarRef?.group?.position?.y || 0.55,
@@ -233,16 +228,46 @@
     let maxReachPx = 0;
     for (const profile of slotProfiles) if (profile.attackId && profile.reachPx > maxReachPx) maxReachPx = profile.reachPx;
     const maxReachWorld = maxReachPx / deps.TILE + OUT_OF_REACH_MARGIN_WORLD;
-    if (maxReachWorld > 0) for (const entity of (deps.hostileObjects || [])) {
-      if (!entity || entity === focused || entity.health <= 0 || (area && entity.areaId !== area) || entity._denHidden) continue;
-      const halfWidthWorld = Math.max(1.5, Number(entity.halfWidth || entity.radius || 0) / deps.TILE); // Broadphase has slack for large actors; exact hitboxes decide final reach.
-      const reach = maxReachWorld + halfWidthWorld;
-      if (Math.abs(entity.x / deps.TILE - origin.x) > reach || Math.abs(entity.y / deps.TILE - origin.z) > reach) continue;
-      candidates.push({ entity, source: 'nearby-cone' });
+    const nowMs = typeof performance === 'undefined' ? Date.now() : performance.now(); // Use elapsed time, not number of rendered frames.
+    const roster = deps.hostileObjects; // One shared actor registry; it is only traversed when candidate discovery is due.
+    const rosterSize = roster?.size ?? roster?.length ?? -1; // Creature spawns/despawns invalidate candidate decisions immediately.
+    const previous = targetState._candidateCache; // This HUD owns one short-lived candidate cache, independent of projectile targeting.
+    const stillNearOrigin = previous && Math.hypot(origin.x - previous.x, origin.z - previous.z) < 0.16;
+    const stillFacing = previous && (aim.x * previous.aimX + aim.y * previous.aimY + aim.z * previous.aimZ) > 0.996;
+    const canReuse = stillNearOrigin && stillFacing && previous.area === area &&
+      previous.roster === roster && previous.rosterSize === rosterSize &&
+      previous.maxReachWorld === maxReachWorld && nowMs < previous.nextAt;
+    let candidates;
+    if (canReuse) {
+      candidates = previous.candidates;
+      targetState._candidateCacheHits = (targetState._candidateCacheHits || 0) + 1; // Read only when the mobile HUD diagnostics snapshot is requested.
+    } else {
+      candidates = []; // The full hostile and camera-ray scans run at most about 12.5Hz while stationary.
+      let focused = null; // Perform one interaction-ray query, then consider only local off-axis attack targets.
+      if (maxReachPx > 0) {
+        try { focused = deps.getMeleeReticleTarget?.() || null; } catch (_) {}
+      }
+      if (focused?.health > 0 && (!area || focused.areaId === area)) candidates.push({ entity: focused, source: 'combat-target' });
+      if (maxReachPx > 0) for (const entity of (roster || [])) {
+        if (!entity || entity === focused || entity.health <= 0 || (area && entity.areaId !== area) || entity._denHidden) continue;
+        const halfWidthWorld = Math.max(1.5, Number(entity.halfWidth || entity.radius || 0) / deps.TILE); // Large hitboxes may reach the player even when their centers are farther away.
+        const reach = maxReachWorld + halfWidthWorld;
+        if (Math.abs(entity.x / deps.TILE - origin.x) > reach || Math.abs(entity.y / deps.TILE - origin.z) > reach) continue;
+        candidates.push({ entity, source: 'nearby-cone' });
+      }
+      targetState._candidateCache = {
+        candidates, area, roster, rosterSize, maxReachWorld, nextAt: nowMs + 80,
+        x: origin.x, z: origin.z, aimX: aim.x, aimY: aim.y, aimZ: aim.z,
+      }; // Move/turn, attack range, area or roster changes break the lease immediately.
+      targetState._candidateScans = (targetState._candidateScans || 0) + 1; // Number of full candidate discoveries since module load.
     }
     let selected = null;
     for (const candidate of candidates) {
       const target = candidate.entity;
+      if (!target || target.health <= 0 || target._denHidden || (area && target.areaId !== area)) continue; // Death, hiding and area changes invalidate a cached actor on this frame.
+      const halfWidthWorld = Math.max(1.5, Number(target.halfWidth || target.radius || 0) / deps.TILE);
+      const reach = maxReachWorld + halfWidthWorld;
+      if (Math.abs(target.x / deps.TILE - origin.x) > reach || Math.abs(target.y / deps.TILE - origin.z) > reach) continue; // Moving enemies cannot leave stale readiness after a cache hit.
       const hitbox = window.RangedWeapons?.actorHitbox?.(target);
       const closest = hitbox?.box?.clampPoint?.(origin, new THREE.Vector3())
         || new THREE.Vector3(target.x / deps.TILE, origin.y, target.y / deps.TILE);
@@ -332,7 +357,8 @@
         scale: lastSnapshot.ready[index] ? READY_SCALE : 1,
       })),
     } : { visible: false, target: null, slots: [] }; // Public diagnostic result; never exposes the retained frame inputs.
-    return { ...result, asset: RETICLE_URL, sizePx: [RETICLE_WIDTH_PX, RETICLE_HEIGHT_PX], opacity: RETICLE_OPACITY };
+    return { ...result, asset: RETICLE_URL, sizePx: [RETICLE_WIDTH_PX, RETICLE_HEIGHT_PX], opacity: RETICLE_OPACITY,
+      candidateSearches: targetState._candidateScans || 0, candidateCacheHits: targetState._candidateCacheHits || 0 }; // Mobile-readable evidence that full-roster decisions are no longer frame-bound.
   }
 
   function tick() {
@@ -355,6 +381,7 @@
     container = null;
     pieces = [];
     lastSnapshot = { visible: false, target: null, slots: [] };
+    targetState._candidateCache = null; // Release old actors when the HUD module is torn down.
   }
 
   window.MeleeHudReticle = {
