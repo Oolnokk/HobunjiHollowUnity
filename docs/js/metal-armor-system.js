@@ -1022,6 +1022,7 @@
     KG_PER_WEIGHT_UNIT,
     PORTRAIT_MARKER_KEY,
     ARMOR_BLUEPRINTS,
+    METAL_VISUAL_FALLBACKS, // Rank-tier alloy catalog shared with Statue Author (no duplicate weapon-metal list).
     init,
     baseCosmeticId,
     blueprintForId,
