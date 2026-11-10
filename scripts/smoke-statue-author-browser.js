@@ -128,8 +128,10 @@ async function run(){
     await page.click('#build');
     await page.waitForFunction(()=>{
       const debug=window.__hobunjiStatueDebug?.();
-      return debug?.built&&String(debug.record)===''+document.getElementById('npcSelect').value
-        &&debug.pieces?.filter(p=>p.id==='statue_body'||p.id==='statue_head').every(p=>p.textureReady||p.textureError);
+      if(debug?.builtNpcId!=='pahu'||debug.buildActive)return false; // Wait for this NPC's finished export, not the previously built one.
+      return debug.pieces?.every(p=>p.id.includes('_hand')||p.id.includes('_foot')
+        ? p.modelError||p.textureError||(p.modelReady&&p.textureReady)
+        : p.textureReady||p.textureError);
     },null,{timeout:90000});
     const pahu=await page.evaluate(()=>window.__hobunjiStatueDebug());
     assert.ok(pahu.built,'Pahu statue should construct: '+JSON.stringify(pahu));
@@ -162,7 +164,9 @@ async function run(){
     assert.ok(pixels.brown>3500,
       'Pahu body/head must actually be visible (not merely textured off-camera): '+JSON.stringify({pixels,rig:pahu.sourceRig,body:pahuBody,head:pahuHead}));
     console.log('PASS Pahu head-and-cosmetics statue: '+JSON.stringify({
-      head:pahuHead.material,selected:options[pahuIndex],pixels,screenshot:'artifacts/statue-pahu.png'
+      head:pahuHead.material,selected:options[pahuIndex],pixels,rig:pahu.sourceRig,
+      pieceBounds:pahu.pieces.map(p=>({id:p.id,worldSize:p.worldSize,visible:p.visible,screenCenter:p.screenCenter})),
+      screenshot:'artifacts/statue-pahu.png'
     }));
   }finally{
     if(browser)await browser.close();
