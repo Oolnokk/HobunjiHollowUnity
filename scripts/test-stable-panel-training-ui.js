@@ -458,4 +458,18 @@ assert.match(source, /api\?\.growStableBaby\?\.\(entry\.id/, 'native Stable grow
 assert.match(source, /stable-pet-rapport-partial-heart/, 'Stable Pet Rapport reuses gradual clipped-heart presentation');
 assert.match(source, /armNativeInstallOnFarmPanelPublication/, 'browser parser timing is handled at the FarmPanel publication boundary');
 
+// Browser-like collection and empty-Stable regression: category buttons remain usable
+// even before the player adopts their first animal.
+const savedStableForEmptyCase = stable.splice(0); // Restored immediately after this isolated empty-inventory render check.
+context.FarmPanel.renderStablePanel();
+assert.equal(descendantsByClass(stableList, 'stable-role-tab').length, 3, 'empty Stable still exposes all three category pages');
+assert.match(allText(stableList), /Your stable is empty/, 'empty Stable retains its acquisition guidance');
+stable.push(...savedStableForEmptyCase);
+
+const portraitCalls = []; // Tracks only actual visible-page portrait requests, not stowed/off-page background work.
+context.InventoryStacks = { applyHeadIcon(element, kind) { portraitCalls.push(kind); } };
+context.FarmPanel.renderStablePanel();
+const visibleRole = context.FarmPanel.stableTrainingDebug().selectedRole;
+assert.equal(portraitCalls.length, stable.filter(entry => entry.role === visibleRole).length, 'only the selected Stable role composes animal portraits');
+
 console.log('Native Stable panel training, stowage, cap, and collapsible baby-inventory regression tests passed.');
