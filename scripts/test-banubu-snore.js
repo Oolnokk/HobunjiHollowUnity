@@ -181,7 +181,7 @@ assert(audioSource.includes('function animalVoiceAcousticDistancePx(c, opts = {}
 assert(audioSource.includes('const distance = animalVoiceAcousticDistancePx(c, opts);'), 'animal voice volume falloff must consume acoustic distance');
 assert(playbackSource.includes('const MIN_TEMPO = 1 / 9;'), 'independent animal playback must permit exact one-ninth tempo');
 assert(playbackSource.includes('const MAX_SHIFT_SEMITONES = 12;'), 'shared animal playback returns to the pre-snore-pitch clamp');
-assert(playbackSource.includes('0.25, 9);'), 'WSOLA must retain the full tripled duration after pitch compensation');
+assert.match(playbackSource, /function\* wsolaStretchSteps\(channels, stretch, sampleRate, minimumStretch = 0\.25\)/, 'WSOLA must keep its original default stretch limit for Banubu and other non-combo voices');
 assert(playbackSource.includes('creatureAudioSpatial?.(c, opts)'), 'processed animal playback must forward acoustic distance to spatial reverb');
 assert(playbackSource.includes('let completed = false;'), 'animal voice adapter must guard terminal callbacks so renderer cleanup cannot double-complete a snore');
 assert(playbackSource.includes('onError: error => complete(error)'), 'animal voice adapter must route playback errors through the single completion bridge');
