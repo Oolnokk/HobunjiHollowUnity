@@ -18,7 +18,10 @@ button.primary{background:#1d806c}.buttons{display:grid;grid-template-columns:1f
 #viewport{position:relative;min-height:300px;overflow:hidden}#viewport canvas{display:block;width:100%;height:100%;touch-action:none}
 #status{position:absolute;left:12px;bottom:12px;right:12px;padding:10px;border-radius:7px;background:#13202de8;max-height:38%;overflow:auto;white-space:pre-wrap}
 small{display:block;color:#b2c6da;line-height:1.4;margin:7px 0}a{color:#9edafa}.row{display:flex;align-items:center;gap:8px}.row label{margin:0}
-@media(max-width:730px){main{display:block;height:auto}aside{max-height:none;border-right:0}#viewport{height:60vh;min-height:360px}}
+@media(max-width:1100px){main{display:flex;flex-direction:column;height:auto}
+#viewport{order:-1;position:sticky;top:0;height:43dvh;min-height:255px;z-index:3;border-bottom:1px solid #405168}
+aside{max-height:none;overflow:visible;border-right:0;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))}
+#status{font-size:12px;max-height:34%;padding:7px}}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -56,6 +59,7 @@ small{display:block;color:#b2c6da;line-height:1.4;margin:7px 0}a{color:#9edafa}.
 <label for="materialRole">Material classification</label><select id="materialRole"><option value="stone">Stone</option><option value="wood">Wood</option><option value="metal">Metal</option><option value="other">Other</option></select>
 <label for="weaponPaths">Weapon PNG layers (assets/toolsprites/, one per line)</label><textarea id="weaponPaths" rows="3" placeholder="assets/toolsprites/harlyao_longsword.png"></textarea>
 <small>Leave weapon paths empty for unarmed statues. For modular weapons supply each visible sprite layer; every layer becomes its own child piece and shares the finish.</small>
+<details><summary>Inspect source portrait / alpha masks</summary><div id="portraitDiagnostics" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px"></div></details>
 </section>
 <section>
 <h2>4 · Assemble and export</h2>
@@ -105,6 +109,36 @@ function maskBounds(canvas){
   }
   return right<left?null:{x:left,y:top,w:right-left+1,h:bottom-top+1};
 }
+function portraitMaskStats(canvas){
+  const pixels=canvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,canvas.width,canvas.height).data;
+  let opaque=0,colored=0,ink=0;
+  for(let i=0;i<pixels.length;i+=4){
+    if(pixels[i+3]<=8)continue;
+    opaque++;
+    if(pixels[i]>18||pixels[i+1]>18||pixels[i+2]>18)colored++;
+    else ink++;
+  }
+  return {opaque,colored,ink,coverage:opaque/(canvas.width*canvas.height)};
+}
+function assertPortraitMask(canvas,label,strict=true){
+  const stats=portraitMaskStats(canvas);
+  if(!stats.opaque || !stats.colored || (strict&&stats.coverage>.96)){
+    throw Error(label+' is blank, all-black or an opaque rectangle ('+
+      Math.round(stats.coverage*100)+'% filled, '+stats.colored+' colored pixels). Check portrait assets.');
+  }
+  return stats;
+}
+function showPortraitDebug(surfaces){
+  const target=$('portraitDiagnostics');
+  target.replaceChildren();
+  for(const [name,canvas] of Object.entries(surfaces)){
+    const container=document.createElement('div');
+    const text=document.createElement('small');text.textContent=name+' — '+Math.round(portraitMaskStats(canvas).coverage*100)+'% alpha';
+    const image=new Image();image.src=canvas.toDataURL('image/png');image.alt=name+' portrait alpha preview';
+    image.style.cssText='width:100%;display:block;min-height:80px;background:repeating-conic-gradient(#41516b 0% 25%,#253448 0% 50%) 50%/16px 16px;border:1px solid #526780;border-radius:5px';
+    container.append(image,text);target.appendChild(container);
+  }
+}
 function maskedPart(source,rectangle,remove=null){
   const out=transparentCanvas(rectangle.w,rectangle.h),ctx=out.getContext('2d');
   ctx.drawImage(source,rectangle.x,rectangle.y,rectangle.w,rectangle.h,0,0,rectangle.w,rectangle.h);
@@ -116,12 +150,13 @@ function maskedPart(source,rectangle,remove=null){
 }
 function sprite(id,name,mask,backMask,finish,role,pose,parentId=null){
   return {id,name,kind:'statueSprite',parentPartId:parentId,statueMaskDataUrl:mask,statueBackMaskDataUrl:backMask,
+    statueUniformFinish:true,statueKeepOutline:!id.startsWith('statue_weapon_'),
     materialTexture:finish,materialRole:role,color:'#ffffff',surfaceOpacity:1,
     transform:pose,wonkiness:0,topScaleX:1,topScaleZ:1,bottomScaleX:1,bottomScaleZ:1};
 }
 function glb(id,name,path,finish,role,pose,parentId){
   return {id,name,kind:'glb',parentPartId:parentId,modelPath:path,materialTexture:finish,
-    materialRole:role,color:'#ffffff',surfaceOpacity:1,transform:pose};
+    statueUniformFinish:true,materialRole:role,color:'#ffffff',surfaceOpacity:1,transform:pose};
 }
 function limbPaths(species){
   const hands=window.HobunjiHandModelProfiles,model=hands?.modelForSpecies?.(species);
@@ -196,10 +231,18 @@ async function makeProject(){
   if(!profile)throw Error('NPC appearance could not be rendered');
   const front=transparentCanvas(256,256),head=transparentCanvas(256,256);
   const back=transparentCanvas(256,256),backHead=transparentCanvas(256,256);
-  await window.NpcAvatarPreview.renderProfileToCanvas(front,profile,{forceEyesOpen:true,breathingComposer:null});
-  await window.NpcAvatarPreview.renderProfileToCanvas(head,profile,{onlyHeadSprite:true,forceEyesOpen:true,breathingComposer:null});
-  await window.NpcAvatarPreview.renderProfileToCanvas(back,profile,{portraitView:'behind',forceEyesOpen:true,breathingComposer:null});
-  await window.NpcAvatarPreview.renderProfileToCanvas(backHead,profile,{portraitView:'behind',onlyHeadSprite:true,forceEyesOpen:true,breathingComposer:null});
+  const render=async (canvas,options,label)=>{
+    if(!await window.NpcAvatarPreview.renderProfileToCanvas(canvas,profile,options))
+      throw Error('Portrait renderer was unavailable for '+label);
+  };
+  await render(front,{forceEyesOpen:true,breathingComposer:null},'front');
+  await render(head,{onlyHeadSprite:true,forceEyesOpen:true,breathingComposer:null},'head');
+  await render(back,{portraitView:'behind',forceEyesOpen:true,breathingComposer:null},'behind');
+  await render(backHead,{portraitView:'behind',onlyHeadSprite:true,forceEyesOpen:true,breathingComposer:null},'behind head');
+  showPortraitDebug({front,back,head,backHead});
+  assertPortraitMask(front,'Front portrait');
+  assertPortraitMask(back,'Behind portrait');
+  assertPortraitMask(head,'Head mask',false);
   const weapons=await weaponsFromInput();
   if(myGeneration!==generation)return null;
   const parts=makeStaticParts(front,back,head,backHead,profile,pose,filename,role,weapons);
