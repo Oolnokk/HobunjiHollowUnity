@@ -1593,9 +1593,14 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const splineSlots = new Map([[facialHair, 'facialHair'], [hairSide, 'hairSide'], [hairSideL, 'hairSideL']]); // Only beard and side hairstyle slots.
   const splineRigFor = group => deferSplineParts && group && !hiddenCosmeticGroups.has(group)
     ? window.PortraitSplineRig?.resolveOptionRig?.(group, resolvedFighter) : null;
+  const seamForView = rig => !rig ? [] : !renderBehindView ? rig.seam
+    : rig.seam.map(dab => ({ ...dab,
+      u: Math.max(0, Math.min(1, dab.u + rig.rearOffset.u)),
+      v: Math.max(0, Math.min(1, dab.v + rig.rearOffset.v)),
+    })); // Rear sprite offsets also move its hood passage and connecting paint.
   const splineSeams = [facialHair, hairSide, hairSideL].flatMap(group => {
     if (renderBehindView && group === facialHair) return []; // Never project a beard onto the rear plane.
-    return splineRigFor(group)?.seam || [];
+    return seamForView(splineRigFor(group));
   }); // Painted crossings alone control the hood edge warp.
 
   const pushToTarget = (group, target) => {
@@ -1961,7 +1966,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
           drawLayerWithEmote(img, resolveXform(entry.layer), tint, 1, sourceKey, partCtx));
         const key = slot + ':' + String(entry.group?.id || 'unknown') + ':' + i; // Matches front and back independently composed slot indices.
         canvas.hobunjiSplineParts.push({ key, slot, rig, canvas: partCanvas, phase: (i + 1) * 1.37 });
-        window.PortraitSplineRig?.paintSeamBridge?.(ctx, partCanvas, rig.seam); // Pixel-colored hinge bridge stays on the skull/hood canvas.
+        window.PortraitSplineRig?.paintSeamBridge?.(ctx, partCanvas, seamForView(rig)); // Pixel-colored hinge bridge stays on the skull/hood canvas.
         continue;
       }
       withPixelDyeLayer(entry, (img, tint, sourceKey) =>
