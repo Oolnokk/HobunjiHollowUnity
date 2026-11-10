@@ -53,6 +53,23 @@
       }
     },
     {
+      "source": "assets/models/feet/foot_primate.glb",
+      "variants": {
+        "low": "assets/models/feet/foot_primate_optimized60.glb"
+      },
+      "metadata": {
+        "method": "offline_meshoptimizer_simplify",
+        "sourceTriangles": 3144,
+        "outputTriangles": 1374,
+        "sourceVertices": 2598,
+        "outputVertices": 759,
+        "actualReductionPercent": 56.3,
+        "maximumErrorPercent": 2,
+        "preserveTransparentCards": true,
+        "runtimeSimplification": false
+      }
+    },
+    {
       "source": "assets/models/feet/foot_sloth.glb",
       "variants": {
         "low": "assets/models/feet/foot_sloth_optimized60.glb"
@@ -64,6 +81,23 @@
         "sourceVertices": 2876,
         "outputVertices": 681,
         "actualReductionPercent": 60,
+        "maximumErrorPercent": 2,
+        "preserveTransparentCards": true,
+        "runtimeSimplification": false
+      }
+    },
+    {
+      "source": "assets/models/furniture/barrel_copper_hoop.glb",
+      "variants": {
+        "low": "assets/models/furniture/barrel_copper_hoop_optimized60.glb"
+      },
+      "metadata": {
+        "method": "offline_meshoptimizer_simplify",
+        "sourceTriangles": 144,
+        "outputTriangles": 132,
+        "sourceVertices": 78,
+        "outputVertices": 72,
+        "actualReductionPercent": 8.33,
         "maximumErrorPercent": 2,
         "preserveTransparentCards": true,
         "runtimeSimplification": false
@@ -98,6 +132,74 @@
         "sourceVertices": 473,
         "outputVertices": 379,
         "actualReductionPercent": 41.88,
+        "maximumErrorPercent": 2,
+        "preserveTransparentCards": true,
+        "runtimeSimplification": false
+      }
+    },
+    {
+      "source": "assets/models/furniture/bedroll_folded.glb",
+      "variants": {
+        "low": "assets/models/furniture/bedroll_folded_optimized60.glb"
+      },
+      "metadata": {
+        "method": "offline_meshoptimizer_simplify",
+        "sourceTriangles": 108,
+        "outputTriangles": 92,
+        "sourceVertices": 60,
+        "outputVertices": 52,
+        "actualReductionPercent": 14.81,
+        "maximumErrorPercent": 2,
+        "preserveTransparentCards": true,
+        "runtimeSimplification": false
+      }
+    },
+    {
+      "source": "assets/models/furniture/station_aging_barrel.glb",
+      "variants": {
+        "low": "assets/models/furniture/station_aging_barrel_optimized60.glb"
+      },
+      "metadata": {
+        "method": "offline_meshoptimizer_simplify",
+        "sourceTriangles": 272,
+        "outputTriangles": 244,
+        "sourceVertices": 152,
+        "outputVertices": 138,
+        "actualReductionPercent": 10.29,
+        "maximumErrorPercent": 2,
+        "preserveTransparentCards": true,
+        "runtimeSimplification": false
+      }
+    },
+    {
+      "source": "assets/models/furniture/station_hand_mill.glb",
+      "variants": {
+        "low": "assets/models/furniture/station_hand_mill_optimized60.glb"
+      },
+      "metadata": {
+        "method": "offline_meshoptimizer_simplify",
+        "sourceTriangles": 120,
+        "outputTriangles": 112,
+        "sourceVertices": 68,
+        "outputVertices": 64,
+        "actualReductionPercent": 6.67,
+        "maximumErrorPercent": 2,
+        "preserveTransparentCards": true,
+        "runtimeSimplification": false
+      }
+    },
+    {
+      "source": "assets/models/furniture/station_vat.glb",
+      "variants": {
+        "low": "assets/models/furniture/station_vat_optimized60.glb"
+      },
+      "metadata": {
+        "method": "offline_meshoptimizer_simplify",
+        "sourceTriangles": 204,
+        "outputTriangles": 192,
+        "sourceVertices": 110,
+        "outputVertices": 104,
+        "actualReductionPercent": 5.88,
         "maximumErrorPercent": 2,
         "preserveTransparentCards": true,
         "runtimeSimplification": false
@@ -149,6 +251,23 @@
         "sourceVertices": 3150,
         "outputVertices": 746,
         "actualReductionPercent": 60,
+        "maximumErrorPercent": 2,
+        "preserveTransparentCards": true,
+        "runtimeSimplification": false
+      }
+    },
+    {
+      "source": "assets/models/hands/hand_primate.glb",
+      "variants": {
+        "low": "assets/models/hands/hand_primate_optimized60.glb"
+      },
+      "metadata": {
+        "method": "offline_meshoptimizer_simplify",
+        "sourceTriangles": 2472,
+        "outputTriangles": 1106,
+        "sourceVertices": 2260,
+        "outputVertices": 623,
+        "actualReductionPercent": 55.26,
         "maximumErrorPercent": 2,
         "preserveTransparentCards": true,
         "runtimeSimplification": false
