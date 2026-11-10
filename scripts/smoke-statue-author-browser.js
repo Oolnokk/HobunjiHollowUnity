@@ -109,8 +109,10 @@ async function run(){
       assert.equal(limb.modelError,null,'Species limb GLB should load: '+JSON.stringify(limb));
       assert.equal(limb.modelReady,true,'The real hand/foot model must be loaded: '+JSON.stringify(limb));
       assert.equal(limb.textureReady,true,'The chosen finish must cover hand/foot meshes: '+JSON.stringify(limb));
-      assert.ok(limb.material?.brightCoverage>.12,
-        'The same statue texture must not leave limb GLBs black: '+JSON.stringify(limb));
+      assert.ok(limb.material?.brightCoverage>.6&&limb.material.meanVisibleBrightness>100,
+        'The hand/foot texture must be genuinely light enough to read, not nearly black: '+JSON.stringify(limb));
+      assert.ok(limb.glbUvModes?.length>0&&!limb.glbUvModes.includes('unknown'),
+        'Every GLB limb needs usable authored or generated UVs: '+JSON.stringify(limb));
     }
     assert.equal(pageErrors.length,0,'No unhandled browser errors: '+pageErrors.join('\n'));
     console.log('PASS actual Chromium mobile statue: '+JSON.stringify({
@@ -153,7 +155,13 @@ async function run(){
     assert.ok(pahuHead?.textureReady&&!pahuHead?.textureError,'Pahu head and cosmetics should render');
     assert.ok(pahuHead.material?.coverage>.02,'Pahu head must have a visible silhouette');
     const pahuBody=pahu.pieces.find(piece=>piece.id==='statue_body');
+    assert.ok(pahuBody.material?.meanVisibleBrightness>45&&pahuHead.material?.meanVisibleBrightness>45,
+      'The head/hood and body must both show visible sculpture color: '+JSON.stringify([pahuBody,pahuHead]));
+    assert.ok(pahuHead.material.meanVisibleBrightness>=pahuBody.material.meanVisibleBrightness*.55,
+      'The head cannot be disproportionately darker than the torso: '+JSON.stringify([pahuBody.material,pahuHead.material]));
     for(const limb of pahu.pieces.filter(p=>p.id.includes('_hand')||p.id.includes('_foot'))){
+      assert.ok(limb.material?.meanVisibleBrightness>100,
+        'Pahu hand and foot material cannot fall back to black: '+JSON.stringify(limb));
       assert.ok(limb.worldSize?.every(value=>value<.55),
         'Attached limb exceeds its furniture dimensions: '+JSON.stringify(limb));
     }
