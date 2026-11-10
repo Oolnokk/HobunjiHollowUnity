@@ -28,38 +28,48 @@ furniture material mapper applies the same texture. Source NPC coloring is not
 baked into the output, so changing the statue finish can recolor the entire statue
 without editing its NPC source. Imported furniture can still override individual pieces.
 
-Portrait alpha is checked before export: a missing sprite, blank portrait or an
-opaque full-canvas rectangle fails with a visible message rather than exporting
-a black placeholder. **The portrait is not painted with one uniform brown
-plane or a fixed 12-by-12 grid:** `ProceduralFurniture.paintStatueSurfaceCells`
-uses four-neighbour region detection on the original non-black opaque pixels.
-Black ink strokes and transparent pixels are never overwritten. Each contiguous
-cell receives one complete copy of the selected furniture PNG (including its
-dark border), fitted by independent row and column spans so that the shaded
-perimeter follows the irregular enclosed outline. This is the *raster equivalent*
-of `SurfaceStretchUV`'s per-irregular-surface full-square mapping used by
-the farm cliffs; it does **not** remesh the portrait into 3D cliff geometry.
-A fully black sprite without detectable interior cells falls back to one
-textured silhouette, not a black blob. Each sprite reports region counts,
-untouched ink pixels, and material shade variation in mobile diagnostics.
+Portrait alpha is checked before export: blank or opaque rectangular masks
+fail with a mobile-visible error instead of producing black panels. **Statue
+materials use two independent passes:**
 
-For hand/foot GLBs the same selected material PNG is mapped as one cached
-texture. The **UV treatment**, rather than the farm cliffs' unlit shader, is
-the shared behavior: statue portrait and hand/foot materials retain
-`MeshLambertMaterial`, because the actual browser screenshot demonstrated
-that applying unlit material directly made the source PNG too dark for the
-statue preview. The mobile preview stays visible while scrolling and exposes
-original front/back/head canvases plus copyable material, detected cell,
-outline and GLB readiness diagnostics.
+1. **Animal-style color fill per black-outlined cell.** `ProceduralFurniture.paintStatueSurfaceCells`
+   identifies four-connected non-black regions. Each region gets the sculptor's
+   selected base color through the existing `ColorFill.createShadeReference`
+   and `ColorFill.shadeFillPixels`. The brightest eligible source pixel of
+   *that cell* becomes the tint reference; all darker source pixels keep their
+   proportional darkness. ColorFill v8 introduces an opt-in
+   `includeNearWhite: true` for sculpted art, leaving the behavior of living
+   animal recolors unchanged. Black outlines and transparent pixels survive.
+2. **One grayscale material overlay over the complete statue image.** The
+   selected PNG becomes grayscale; its brightest pixel is normalized to white
+   and therefore fully transparent. Gray pixels become partially transparent,
+   dark pixels more opaque. This overlay is composited over the shaded cell
+   fills *without restarting the texture for each region*. Head and body
+   pieces share the original 256px portrait atlas and its origin, so their
+   material grain lines up when imported as separate furniture parts. Weapons
+   inherit an approximate projected atlas offset from their attachment pose;
+   separate 3D hands/feet use the same full material PNG on their mesh UVs.
+
+Unlike the earlier experiment, the texture's dark border is **not fitted to
+each region**. The black ink creates the cell boundaries; the material simply
+passes over them. The selected base color is independent of stone, wood or any
+other texture, and the entire hierarchy remains editable. The chosen finish is
+used on GLB limbs as a cached, opaque base-color-plus-grayscale map. For
+lighting, statue materials retain `MeshLambertMaterial`; the earlier unlit
+experiment darkened the real Pahu browser preview.
+
+The mobile preview stays visible while scrolling and exposes original
+front/back/head canvases plus copyable shading-region and material diagnostics.
 
 The additional `scripts/smoke-statue-author-browser.js` regression runs the
 actual authored NPC and Three.js r128 stack in headless Chromium at a 390px
 mobile viewport, asserting non-rectangular, non-black portrait and GLB finishes,
-actual Pahu on-screen color, multiple enclosed cells, original black ink and
-distinct dark-edge/light-interior material shades. The pure typed-array mapper
-is also exercised by `scripts/test-statue-surface-cells.js`, including
-irregular disconnected regions, all-black weapon silhouettes, alpha invariance
-and malformed source rejection.
+actual Pahu on-screen color, multiple independently shaded outlined cells,
+original black ink and a shared brightness-transparent overlay. The mapper is
+also exercised by `scripts/test-statue-surface-cells.js`, including
+independent brightness references, white-inclusive fills, grayscale alpha,
+unmodified outlines and transparency, all-black weapon silhouettes, and
+malformed source rejection.
 
 To install a reusable authored statue in game content, save the exported JSON
 as `docs/config/furniture-authored/<key>.json` and register its key
