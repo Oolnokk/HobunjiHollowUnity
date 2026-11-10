@@ -980,8 +980,7 @@
     if (!shaftOwnsFlail()) {drawIdentity();return;}
     const value=byId('pair-damage-type').value;
     const pair=(chosenShaft().overrides[byId('head').value] ||= {}); // This pairing alone owns the damage override.
-    if (value==='blunt'||value==='sharp') pair.dmgType=value;
-    else delete pair.dmgType; // Restore the original head's normal damage type without mutating it.
+    pair.dmgType = value==='blunt'||value==='sharp' ? value : 'inherit'; // Explicit sentinel overrides a shipped default without editing the original head.
     save();
   };
   byId('head-contact-move').onclick=()=>{
