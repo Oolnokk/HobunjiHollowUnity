@@ -57,16 +57,34 @@
       if(mesh.userData.image===image && mesh.userData.mirror===mirror)return;
       mesh.material.map?.dispose();
       mesh.userData.image=image;mesh.userData.mirror=mirror;
-      if(!image){mesh.visible=false;mesh.material.map=null;return;}
-      let source=image;
-      if(mirror){
-        source=document.createElement('canvas');source.width=image.width;source.height=image.height;
-        const c=source.getContext('2d');c.translate(source.width,0);c.scale(-1,1);c.drawImage(image,0,0);
+      if(!image){mesh.visible=false;mesh.material.map=null;mesh.userData.pixelStats=null;return;}
+      const width=Math.round(image.naturalWidth||image.width||0),height=Math.round(image.naturalHeight||image.height||0);
+      if(width<1||height<1||width*height>4194304)throw new Error('Invalid 3D sprite reference size: '+width+' × '+height);
+      const pixelsCanvas=document.createElement('canvas'); // Single 2D staging surface shared by imported PNGs and repository-generated portrait canvases.
+      pixelsCanvas.width=width;pixelsCanvas.height=height;
+      const ctx=pixelsCanvas.getContext('2d',{willReadFrequently:true});
+      if(!ctx)throw new Error('Could not obtain the 3D portrait pixel source.');
+      if(mirror){ctx.translate(width,0);ctx.scale(-1,1);}
+      ctx.drawImage(image,0,0,width,height);
+      // Explicit RGBA DataTexture bypasses Android canvas-to-WebGL black-texture uploads.
+      // All artwork is static until its selected style changes, so no per-frame readback/upload is needed.
+      const rgba=new Uint8Array(ctx.getImageData(0,0,width,height).data);
+      let opaque=0,colored=0;
+      for(let offset=0;offset<rgba.length;offset+=4){
+        if(rgba[offset+3]<8)continue;
+        opaque++;
+        if(rgba[offset]>12||rgba[offset+1]>12||rgba[offset+2]>12)colored++;
       }
-      const texture=new THREE.CanvasTexture(source);
-      texture.magFilter=THREE.NearestFilter;texture.minFilter=THREE.LinearFilter;
+      mesh.userData.pixelStats={width,height,opaque,colored,format:'RGBA8 DataTexture'}; // Source-pixel health check surfaced in mobile diagnostics.
+      const texture=new THREE.DataTexture(rgba,width,height,THREE.RGBAFormat,THREE.UnsignedByteType);
+      texture.flipY=true; // Canvas data has a top-left origin; Three's plane UVs and authoring canvas use an upward V.
+      texture.unpackAlignment=1;
+      texture.generateMipmaps=false;
+      texture.magFilter=THREE.NearestFilter;texture.minFilter=THREE.NearestFilter;
+      texture.wrapS=THREE.ClampToEdgeWrapping;texture.wrapT=THREE.ClampToEdgeWrapping;
       if ('colorSpace' in texture)texture.colorSpace=THREE.SRGBColorSpace;
       else if (THREE.sRGBEncoding)texture.encoding=THREE.sRGBEncoding;
+      texture.needsUpdate=true;
       mesh.material.map=texture;mesh.material.needsUpdate=true;mesh.visible=true;
     }
     function replaceMeshGeometry(mesh,newGeometry) {
@@ -281,6 +299,9 @@
         webgl:true,mode,selectedKnot:selectedIndex,knots:dots.length,handles:handles.length,
         ribbonVertices:hairPlane.geometry?.attributes?.position?.count||0,
         headLoaded:!!headPlane.material.map,hairLoaded:!!hairPlane.material.map,
+        textures:{head:headPlane.userData.pixelStats||null,hair:hairPlane.userData.pixelStats||null,
+          rear:rearPlane.userData.pixelStats||null,hood:hoodPlane.userData.pixelStats||null},
+        gpuTextureCount:renderer.info.memory.textures,
         arrows,rings, // Mobile diagnostics and browser pointer-test coordinates for actual visible gizmo handles.
       };
     }
