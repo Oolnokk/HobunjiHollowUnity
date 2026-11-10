@@ -114,7 +114,8 @@
     // A preview must be built with exactly the controls shown at export time.
     // Lock settings during asynchronous processing so sliders cannot invalidate a request mid-flight.
     for (const id of ['source-kind', 'repo-preset', 'repo-path', 'generator', 'seed', 'file', 'pick-scope',
-      'pick-game', 'remesh', 'edge-size', 'reduction', 'error', 'protect-cards', 'quality-tier', 'game-source-path']) $(id).disabled = value;
+      'pick-game', 'remesh', 'edge-size', 'reduction', 'error', 'protect-cards', 'quality-tier', 'game-source-path',
+      'game-surfaces', 'sample-body-color']) $(id).disabled = value;
     $('export').disabled = value || !candidateMatchesControls || !candidate || !original || !Core.preservedMaterials(original,candidate);
     $('export-json').disabled = $('export').disabled;
   }
@@ -601,9 +602,9 @@
   $('export').addEventListener('click', exportGLB);
   $('export-json').addEventListener('click', exportQualityJson);
   $('game-lighting').addEventListener('change', () => renderPreview?.setMode($('game-lighting').value));
-  for (const id of ['game-surfaces', 'sample-body-color']) $(id).addEventListener('input', () => {
+  for (const id of ['game-surfaces', 'sample-body-color']) $(id).addEventListener('change', () => {
     if (!updating) rebuildDisplays(); // Only scene materials change; optimized geometry/export stays unmodified.
-  });
+  }); // Color pickers can emit dozens of input events; build tinted CanvasTextures only once on commit.
   window.addEventListener('pagehide', () => {
     cancelPick();
     disposeCandidate();

@@ -54,7 +54,8 @@ const originalRoot = {
 };
 const fakeWindow = {
   THREE: {
-    Mesh:FakeMesh, FogExp2:class{constructor(color,density){this.color=color;this.density=density}},
+    Mesh:FakeMesh, BufferAttribute: class { constructor(array,size){this.array=array;this.itemSize=size;} },
+    MeshBasicMaterial: FakeMaterial, FogExp2:class{constructor(color,density){this.color=color;this.density=density}},
     Color:class{constructor(value){this.value=value}}, LinearEncoding:3000, NoToneMapping:0, PCFSoftShadowMap:2,
   },
   WeatherFX: {
@@ -75,7 +76,7 @@ const fakeWindow = {
   NaturalSurfaceMaterials:{
     naturalizeMesh(proxy,surface,mapping,options){
       assert.equal(surface,'trunks');
-      assert.equal(mapping,'cylindrical-stretch');
+      assert.equal(mapping,'authored-stretch-fit');
       assert.equal(options.texture,'assets/textures/wavy_surface.png');
       tintCalls++;
       proxy.material = new FakeMaterial('game-surface');

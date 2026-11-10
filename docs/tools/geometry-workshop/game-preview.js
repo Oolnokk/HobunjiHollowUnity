@@ -22,10 +22,34 @@
     }
     return {};
   }
-  function surfacePath(role) {
-    return role === 'bone' ? 'assets/textures/carved_smooth.png'
-      : role === 'keratin' ? 'assets/textures/boards.png'
-      : 'assets/textures/wavy_surface.png'; // Exact paths selected in both procedural hand and foot rigs.
+  function surfacePath(role, sourcePath = '') {
+    if (role === 'bone') return 'assets/textures/carved_smooth.png';
+    if (role === 'keratin') return /\/feet\//.test(sourcePath) ? 'assets/textures/boards.png' : null;
+    return 'assets/textures/wavy_surface.png'; // Hand keratin is untextured; foot keratin uses boards.png in gameplay.
+  }
+  function stretchFitUvs(geometry) {
+    // Exact biggest-two-axes stretch-fit contract in procedural-hand-attachments and
+    // procedural-leg-animation. Operates solely on a preview-owned geometry clone.
+    const position = geometry?.getAttribute?.('position');
+    if (!position?.count || !position.getX || !geometry.computeBoundingBox) return false;
+    geometry.computeBoundingBox();
+    const box = geometry.boundingBox;
+    if (!box) return false;
+    const axes = [
+      { key: 'x', min: box.min.x, size: Math.max(1e-6, box.max.x - box.min.x) },
+      { key: 'y', min: box.min.y, size: Math.max(1e-6, box.max.y - box.min.y) },
+      { key: 'z', min: box.min.z, size: Math.max(1e-6, box.max.z - box.min.z) },
+    ].sort((a, b) => b.size - a.size);
+    const uAxis = axes[0], vAxis = axes[1];
+    const read = (axis, i) => axis.key === 'x' ? position.getX(i) : axis.key === 'y' ? position.getY(i) : position.getZ(i);
+    const uv = new Float32Array(position.count * 2);
+    for (let i = 0; i < position.count; i++) {
+      uv[i * 2] = Math.max(0, Math.min(1, (read(uAxis, i) - uAxis.min) / uAxis.size));
+      uv[i * 2 + 1] = Math.max(0, Math.min(1, (read(vAxis, i) - vAxis.min) / vAxis.size));
+    }
+    geometry.setAttribute('uv', new T.BufferAttribute(uv, 2));
+    geometry.userData = { ...(geometry.userData || {}), hobunjiStretchFitUvAxes: uAxis.key + vAxis.key };
+    return true;
   }
   function previewableMesh(mesh) {
     if (!mesh?.isMesh || !mesh.geometry?.getAttribute?.('normal')) return false;
@@ -33,9 +57,10 @@
       mesh.userData?.facetedSurfaceTextureOutline || mesh.userData?.isPngPlane) return false;
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     if (!materials.length) return false;
+    const isCharacterSolid = mesh.userData?.workshopHandFoot === true; // Game registers true 3D hands/feet on layer 1 even with cutout materials.
     return materials.every(material => material && material.visible !== false &&
       !material.isShaderMaterial && !material.isRawShaderMaterial &&
-      !material.transparent && !material.alphaTest && material.opacity !== 0);
+      (isCharacterSolid || (!material.transparent && !material.alphaTest)) && material.opacity !== 0);
   }
 
   function decorate(source, sourcePath, useGameSurfaces, bodyColor) {
@@ -49,12 +74,14 @@
     const roleTreatments = useGameSurfaces && isRoleModel && surfaces?.naturalizeMesh;
     display.traverse(mesh => {
       if (!mesh.isMesh) return;
+      if (isRoleModel) mesh.userData.workshopHandFoot = true; // Display-only outline eligibility, matching character rig registration.
       if (roleTreatments && mesh.geometry?.getAttribute?.('position')) {
         // The game maps the authored PNG on every hand/foot component; never mutate
         // shared source geometry, source materials, or optimized export materials.
         const geometry = mesh.geometry.clone();
         ownedGeometries.add(geometry);
         mesh.geometry = geometry;
+        stretchFitUvs(geometry); // Runtime 3D hand/foot PNG projection, without touching source geometry.
         const originalMaterials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
         const displayMaterials = originalMaterials.map(material => {
           if (!material || material.isShaderMaterial || material.isRawShaderMaterial) return material;
@@ -62,15 +89,38 @@
           const color = role === 'bone'
             ? window.HobunjiHandModelProfiles?.data?.colors?.bone || '#D8C7A3'
             : role === 'keratin' ? '#44484D' : bodyColor || DEFAULT_BODY;
-          const proxy = new T.Mesh(geometry, material);
-          surfaces.naturalizeMesh(proxy, 'trunks', 'cylindrical-stretch', {
-            texture: surfacePath(role), tint: color, tintTreatment: 'body-sprite-tint',
-          }); // Reuse game's own PNG tint, UV and material construction rather than inventing a second shader.
-          const made = proxy.material?.clone?.() || material;
+          let made;
+          const texture = surfacePath(role, sourcePath);
+          if (!texture) {
+            // The parrot's hand keratin uses the game's flat unlit color; only
+            // feet use the authored boards PNG for keratin-role materials.
+            made = new T.MeshBasicMaterial({ color, side: material.side, name: material.name });
+          } else {
+            const proxy = new T.Mesh(geometry, material);
+            surfaces.naturalizeMesh(proxy, 'trunks', 'authored-stretch-fit', {
+              texture, tint: color, tintTreatment: 'body-sprite-tint',
+            }); // Use runtime PNG material creation but preserve the actual hand/foot UV projection.
+            made = proxy.material?.clone?.() || material;
+          }
           if (made !== material) ownedMaterials.add(made);
           return made;
         });
         mesh.material = Array.isArray(mesh.material) ? displayMaterials : displayMaterials[0];
+      }
+      if (/^assets\/models\/trees\//.test(sourcePath || '')) {
+        // TreeAssetLibrary.demoteSpecularBarkMaterial makes loaded untextured
+        // GLB bark non-metallic/rough in gameplay (glTF r128's Lambert export
+        // otherwise becomes shiny StandardMaterial). Keep this display-only.
+        const normalizeBark = material => {
+          if (!material?.isMeshStandardMaterial || material.map) return material;
+          const copy = material.clone();
+          copy.metalness = 0;
+          copy.roughness = 1;
+          ownedMaterials.add(copy);
+          return copy;
+        };
+        mesh.material = Array.isArray(mesh.material)
+          ? mesh.material.map(normalizeBark) : normalizeBark(mesh.material);
       }
       if (previewableMesh(mesh)) mesh.layers.enable(OUTLINE_LAYER);
       else mesh.layers.disable(OUTLINE_LAYER);
