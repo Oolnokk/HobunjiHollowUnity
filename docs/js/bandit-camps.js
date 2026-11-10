@@ -1106,6 +1106,8 @@
       return;
     }
     ensureBanditCampMeshes(zoneId);
+    for(const camp of _banditCampInstances.get(zoneId)||[])if(camp.stronghold)
+      window.BanditStrongholdWolves?.ensureExterior?.(camp,deps); // Failed or late native spawn can be retried on the normal zone ecology check.
     if (!reentered) return;
     const cleared = (_banditCampInstances.get(zoneId) || []).filter(isBanditCampCleared);
     if (!cleared.length) return;
