@@ -101,6 +101,9 @@ jobs:
       - name: Modular weapon editor Kylie cleanup mobile browser regression
         if: steps.select.outputs.modular == 'true'
         run: node scripts/test-modular-editor-ui-browser.js
+      - name: Foundry Forge button viewport and touch regression
+        if: steps.select.outputs.needs_browser == 'true'
+        run: node scripts/test-foundry-forge-button-browser.js
       - name: Multi-sprite weapon 3D browser smoke
         if: steps.select.outputs.multisprite == 'true'
         run: node scripts/test-multi-sprite-weapon-browser.js
