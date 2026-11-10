@@ -67,7 +67,6 @@
   const BODY_RISE_DELAY_S = Object.freeze([3, 12]); // ...which fires after a random delay, once the player has relaxed...
   const BODY_RISE_MAX_DISTANCE_TILES = 9; // ...provided they are still around to see it.
   const CACHE_OPEN_RADIUS_TILES = 1.05; // Used by runtime proximity interaction for hidden caches without adding another central getWorldObjectAt branch.
-  const TRAP_TRIGGER_RADIUS_TILES = 0.48; // Used by one-shot pressure/trip hazards around cache approaches.
   const RUIN_TRIGGER_RADIUS_TILES = 0.90; // Used by the deep ruin threshold; entering is deliberately close-range.
   const CAVE_RUNTIME_INTERVAL_S = 0.12; // Used to keep cave proximity checks cheap on mobile while still feeling immediate.
   const CACHE_RELIC_CHANCE = 0.28; // Used by cache loot; Harlyao relic logic already owns enchanted-weapon construction/persistence.
@@ -1630,7 +1629,7 @@
     caveRuntimeTimer = CAVE_RUNTIME_INTERVAL_S;
     const plan = plansByMapId.get(mapId); // Only caverns decorated this session have a plan; checked first so open-world ticks do no profile work.
     const profile = plan && sitesByMapId.get(mapId);
-    if (!profile) { lastCaveArea = null; return; }
+    if (!profile) { lastCaveArea = null; window.CaveTripwireTraps?.suspend?.(); return; } // Area changes reset the crossing segment; returning to the same cave cannot fire from its last position.
     const state = stateFor(profile);
     if(state.puzzleRewardPending&&!state.puzzleRewardClaimed &&
       window.TrinketSystem?.claimLoot && window.LootRolling?.getLootPools?.()?.puzzleCave?.entries?.some(
