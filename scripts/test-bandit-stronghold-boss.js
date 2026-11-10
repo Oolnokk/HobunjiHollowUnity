@@ -22,8 +22,18 @@ const ctx={
     return Object.entries(items).map(([key,count])=>key+'×'+count);
   }},
   ItemProcessing:{init(deps){this.deps=deps;}},
-  LootRolling:{rollLootPool(id){assert.match(id,/^dungeonChest_tier[234]$/);return {gold:21};}},
-  TrinketSystem:{claimLoot:()=>[]},
+  LootRolling:{rollLootPool(id,options){
+    if(id==='puzzleCave'){
+      assert([2,3,4].includes(options.rewardTier),'real Puzzle Cave reward tiers are selected');
+      return {trinket_leadKnuckles:1};
+    }
+    assert.match(id,/^dungeonChest_tier[234]$/);return {gold:21};
+  }},
+  TrinketSystem:{claimLoot(loot) {
+    const keys=Object.keys(loot).filter(key=>key.startsWith('trinket_'));
+    for(const key of keys)delete loot[key]; // Production claimLoot grants genuine trinkets and removes their inventory keys.
+    return keys;
+  }},
 };
 ctx.window=ctx;
 vm.createContext(ctx);
@@ -65,6 +75,8 @@ assert.deepEqual(plain(annex.strongholdTreasuryChests.map(c=>c.key)),
   ['ruinDungeonChestT2','ruinDungeonChestT3','ruinDungeonChestT4']);
 assert(annex.strongholdBarrels.length>=5&&annex.strongholdBarrels.length<=8,
   'treasury contains 5–8 physical reusable Aging Barrel Burdens');
+assert(annex.strongholdBarrels.every(barrel=>barrel.kind==='contrabandBarrel'),
+  'all treasury barrels contain contraband, independently of separate garrison flask stock');
 assert.equal(Cave.fortifiedStrongholdCleared(parent.mapId),false,'a living lord prevents premature camp turnover');
 const parentState=Cave.__test.runtimeStateBySignature.get(parent.signature);
 parentState.occupantsCleared=true;
@@ -93,6 +105,7 @@ assert.equal(Boss.entityOptions(lord,{strongholdLord:true})?.nameOverride,'Bandi
 Boss.onEntitySpawned(lord,{strongholdLord:true,bossVariant:'beastkeeper'},lordEntity,nativeDeps);
 assert.equal(lordEntity.banditMastery,5);
 assert(lordEntity.health>=180,'Bandit Lord substantially more durable than a captain');
+assert(lordEntity.def.attackDamage>=15,'Lord hits significantly harder than a standard captain');
 assert.equal(wolves.length,3,'Beastkeeper summons three actual gar-wolf entities');
 assert(wolves.every(w=>w.banditStrongholdBossWolf&&w.banditCompanion&&w.health>60));
 assert.equal(Boss.onWolfPounce(wolves[0],victim,nativeDeps),true);
@@ -125,6 +138,8 @@ const object=Boss.objectAt(treasury,chestPlan,chest.col,chest.row,{},
   {currentArea:treasury.mapId,distanceTiles:.1});
 assert.equal(object.getButtons()[0].action,'obj_loot_stronghold_chest');
 assert.equal(object.onAction('obj_loot_stronghold_chest').ok,true);
+assert.equal(inventory.trinket_leadKnuckles,undefined,
+  'Puzzle Cave trinkets use the actual trinket owner, not a duplicate inventory key');
 assert.equal(object.onAction('obj_loot_stronghold_chest').ok,false,'second action cannot duplicate loot');
 assert.equal(Cave.strongholdStage(treasury.mapId).treasuryClaimed.length,1);
 const saved=Cave.serialize();
