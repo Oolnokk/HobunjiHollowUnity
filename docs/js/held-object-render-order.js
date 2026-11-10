@@ -154,6 +154,8 @@
   let nonGroundDepthReplayCount = 0;
   let groundDepthRestoreCount = 0;
   let invariantRepairCount = 0;
+  let ordinaryShellMeshesDrawnOnce = 0; // Normal-depth outlines kept in the existing scene pass, shared by all actor types.
+  let ordinaryShellReplaysAvoided = 0; // Entire depth-rebuild shell sequences skipped when no part needs a tile exception.
   let shellXrayPassCount = 0; // Shell passes replay registered x-ray objects against elevation-filtered ground depth.
   let shellXrayMeshDrawCount = 0; // Registered x-ray meshes whose shell was redrawn with matching visibility.
   let lastXrayTileRegions = 0; // Active neighborhoods before merging compatible depth draws.
@@ -1883,7 +1885,15 @@
       const shellPadding = Math.abs(Number(scene.overrideMaterial.uniforms.uThickness.value) || 0); // Shell vertices extend outside their source bounds in screen space.
       const { groups, ordinary } = buildXrayGroups(this, scene, camera, xrayMeshes, shellPadding);
       lastShellElevationGroups = groups.length;
-      if (ordinary.length) groups.unshift({ meshes: ordinary, regions: [] }); // Retain cutout and translucent-cover depth for ordinary shells.
+      // Ordinary shells use the real scene depth unchanged; reconstructing all
+      // geometry for them duplicates the existing shell pass. Keep their normal
+      // silhouettes in that pass, including NPC, hostile, pet and player rigs.
+      ordinaryShellMeshesDrawnOnce += ordinary.length;
+      if (!groups.length) {
+        ordinaryShellReplaysAvoided++;
+        return originalRender.call(this, scene, camera);
+      }
+      const xrayGroupMeshes = groups.flatMap(group => group.meshes); // Only genuine local floor exemptions need a depth reconstruction.
       const shellGlState = this.state; // Scissoring is shared with the existing held/foot replay safety switch.
       const hasShellScissorApi = !!(shellGlState?.scissor && shellGlState?.setScissorTest); // Reports unavailable scissor support distinctly from an unsafe bound.
       const scissored = replayScissorEnabled && hasShellScissorApi
@@ -1895,14 +1905,14 @@
       }
       // Avoid drawing these shells once under normal ground depth and again in
       // the selective replay. The replay redraws their complete visible shell.
-      const hiddenXrayShells = hideObjects(xrayMeshes); // Avoid a normal-depth shell draw before the selective replay.
+      const hiddenXrayShells = hideObjects(xrayGroupMeshes); // Ordinary shells are drawn once in the standard outline pass.
       let shellResult; // Return value of the ordinary shell pass, excluding x-ray participants.
       try {
         shellResult = originalRender.call(this, scene, camera);
       } finally {
         restoreVisibility(hiddenXrayShells);
       }
-      replayShellOutlineXray(this, scene, camera, xrayMeshes, ground, topFaceGround, scissored, groups, shellPadding);
+      replayShellOutlineXray(this, scene, camera, xrayGroupMeshes, ground, topFaceGround, scissored, groups, shellPadding);
       return shellResult;
     }
     if (!enabled || !isBaseWorldPass(scene, camera)) return originalRender.call(this, scene, camera);
@@ -2001,6 +2011,8 @@
       nonGroundDepthReplays: nonGroundDepthReplayCount,
       groundDepthRestores: groundDepthRestoreCount,
       invariantRepairs: invariantRepairCount,
+      ordinaryShellMeshesDrawnOnce,
+      ordinaryShellReplaysAvoided,
       shellXrayPasses: shellXrayPassCount,
       shellXrayMeshes: shellXrayMeshDrawCount,
       elevationReplayGroups: lastElevationReplayGroups,
