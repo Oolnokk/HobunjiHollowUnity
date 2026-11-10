@@ -146,7 +146,7 @@ assert.match(gameSource, /HobunjiFoodProcessing\?\.rollTreeNutDrop/, 'game.js de
 assert.doesNotMatch(processingSource, /(?:import|require).*game\.js/, 'food processing does not import game.js');
 assert.match(cookingSource, /consumeBestQuality/, 'processors can consume tracked quality without desynchronizing cooking stacks');
 const squeezingTimeline = squeezerAuthored.processTimelines.find(timeline => timeline.enabled !== false);
-assert.equal(squeezingTimeline.duration, 12, 'the placed squeezing vat uses the editor-authored 12-second process');
+assert.equal(squeezingTimeline.duration, 12, 'the vat still plays its editor-authored 12-second visual timeline, independent of the in-game hour job');
 assert.equal(squeezingTimeline.liquidTracks.length, 2, 'the authored process transfers both the upper and collected liquid surfaces');
 assert(squeezerAuthored.stompAttachPoints.some(point => point.enabled !== false && point.anchorName === 'shoulderGrip'), 'the vat exports a live livestock stomp anchor');
 assert.match(authoredRuntimeSource, /function applyProcessTimeline\(/, 'the game runtime samples authored furniture process timelines');
@@ -156,8 +156,8 @@ assert.match(authoredRuntimeSource, /resetWarp\(group, warp\);\s*group\.updateMa
 assert.doesNotMatch(authoredRuntimeSource, /box\.setFromObject\(mesh\)/, 'warp centroid excludes descendant VFX instead of recursively measuring particle children');
 assert.match(authoredRuntimeSource, /box\.copy\(geometry\.boundingBox\)\.applyMatrix4\(mesh\.matrixWorld\)/, 'warp centroid measures each furniture part geometry in world space');
 assert.match(authoredRuntimeSource, /authored_furniture_emitter_/, 'runtime emitter meshes are named for Pixel Probe diagnostics');
-assert.match(gameSource, /kind: 'timed'[\s\S]{0,500}readyAtMs/, 'squeezing persists a real-time job instead of granting its output immediately');
-assert.match(gameSource, /if \(processTimeline\)[\s\S]{0,500}startTimedJob/, 'manual nut, meat, and fish inputs start the authored squeezing timeline');
+assert.match(gameSource, /kind: 'timed'[\s\S]{0,500}readyAtGameHour: now \+ durationHours/, 'squeezing persists an in-game-hour production job instead of granting its output immediately');
+assert.match(gameSource, /const started = startTimedJob\(outputs, inputStars, inputLabel\)/, 'manual nut, meat, and fish inputs start a timed squeezing job independently of visual authoring');
 assert.match(farmAnimalsSource, /function setVatWorkerPose\(/, 'assigned livestock are rendered at the live vat anchor during a batch');
 assert.match(farmAnimalsSource, /targetMatrix\.clone\(\)\.multiply\(staticPose\.gripMatrix\)\.multiply\(staticPose\.sizeMatrix\)/, 'live vat workers use the editor hierarchy: target × inverse scaled grip × size');
 assert.doesNotMatch(farmAnimalsSource, /\(grip\.y \|\| 0\) - animal\.halfHeight/, 'vat attachment no longer invents a half-height offset absent from the furniture editor');

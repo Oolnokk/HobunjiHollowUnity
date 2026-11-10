@@ -120,55 +120,87 @@
   }
 
   function spawnParticle(creature, state, deps) {
-    const THREE = ensureParticleAssets(); // Used to create this one cosmetic stink droplet.
+    const THREE = ensureParticleAssets(); // Lazy shared geometry and one stink-oil material for either renderer path.
     const parent = particleParent(creature);
     if (!THREE || !parent || !deps.TILE) return;
 
-    const halfConeRad = tuning.HALF_CONE_DEG * Math.PI / 180; // Used as the same cone width that determines actual status hits.
+    if (!state.particleBatch && !state.particleBatchAttempted) {
+      state.particleBatchAttempted = true;
+      const expectedCount = Math.ceil(Math.max(0, tuning.PARTICLES_PER_S)
+        * (Math.max(0, tuning.SPRAY_S) + Math.max(0, tuning.PARTICLE_LIFE_MAX_S))) + 2; // Full visible overlap of this short attack, including the tail.
+      state.particleBatch = attacks.createParticleBatch?.(THREE, parent, particleGeometry, [particleMaterial], expectedCount) || null;
+    }
+    const halfConeRad = tuning.HALF_CONE_DEG * Math.PI / 180; // Same cone as gameplay status hit resolution.
     const angle = state.sprayAngle + (visualRandom() * 2 - 1) * halfConeRad;
-    const rearOffsetPx = deps.TILE * tuning.REAR_OFFSET_TILES; // Used to emit from the Grehlr's rear after it turns around.
+    const rearOffsetPx = deps.TILE * tuning.REAR_OFFSET_TILES;
     const originX = creature.x + Math.cos(state.sprayAngle) * rearOffsetPx;
     const originY = creature.y + Math.sin(state.sprayAngle) * rearOffsetPx;
     const speedTilesS = tuning.PARTICLE_SPEED_MIN_TILES_S
       + visualRandom() * Math.max(0, tuning.PARTICLE_SPEED_MAX_TILES_S - tuning.PARTICLE_SPEED_MIN_TILES_S);
     const life = tuning.PARTICLE_LIFE_MIN_S
       + visualRandom() * Math.max(0, tuning.PARTICLE_LIFE_MAX_S - tuning.PARTICLE_LIFE_MIN_S);
-    const mesh = new THREE.Mesh(particleGeometry, particleMaterial);
+    const x = originX / deps.TILE, y = sprayWorldY(creature), z = originY / deps.TILE; // Shared initial position for instanced and legacy particles.
     const scale = 0.7 + visualRandom() * 1.2;
-
-    mesh.position.set(originX / deps.TILE, sprayWorldY(creature), originY / deps.TILE);
-    mesh.scale.setScalar(scale);
-    mesh.rotation.set(visualRandom() * Math.PI, visualRandom() * Math.PI, visualRandom() * Math.PI);
-    parent.add(mesh);
-    state.particles.push({
-      mesh,
+    const rx = visualRandom() * Math.PI, ry = visualRandom() * Math.PI, rz = visualRandom() * Math.PI;
+    const particle = {
       vx: Math.cos(angle) * speedTilesS,
       vz: Math.sin(angle) * speedTilesS,
       vy: (visualRandom() * 2 - 1) * 0.22,
-      life,
-      maxLife: life,
-    });
+      life, maxLife: life,
+    }; // Compact state advanced every frame without an Object3D per droplet on supported GPUs.
+    if (state.particleBatch) {
+      Object.assign(particle, { x, y, z, scale, rx, ry, rz });
+    } else {
+      const mesh = new THREE.Mesh(particleGeometry, particleMaterial); // Compatibility fallback for renderers without instancing.
+      mesh.position.set(x, y, z);
+      mesh.scale.setScalar(scale);
+      mesh.rotation.set(rx, ry, rz);
+      parent.add(mesh);
+      particle.mesh = mesh;
+    }
+    state.particles.push(particle);
   }
 
   function updateParticles(state, dt) {
+    const batch = state.particleBatch; // One GPU draw replaces one draw call per active droplet when supported.
     for (let index = state.particles.length - 1; index >= 0; index -= 1) {
-      const particle = state.particles[index]; // Used to integrate and retire one active stink droplet.
+      const particle = state.particles[index];
       particle.life -= dt;
-      particle.mesh.position.x += particle.vx * dt;
-      particle.mesh.position.y += particle.vy * dt;
-      particle.mesh.position.z += particle.vz * dt;
-      particle.mesh.rotation.x += dt * 9;
-      particle.mesh.rotation.z += dt * 7;
-      particle.mesh.scale.multiplyScalar(Math.max(0.72, particle.life / Math.max(0.001, particle.maxLife)));
+      if (batch) {
+        particle.x += particle.vx * dt;
+        particle.y += particle.vy * dt;
+        particle.z += particle.vz * dt;
+        particle.rx += dt * 9;
+        particle.rz += dt * 7;
+        particle.scale *= Math.max(0.72, particle.life / Math.max(0.001, particle.maxLife));
+      } else {
+        particle.mesh.position.x += particle.vx * dt;
+        particle.mesh.position.y += particle.vy * dt;
+        particle.mesh.position.z += particle.vz * dt;
+        particle.mesh.rotation.x += dt * 9;
+        particle.mesh.rotation.z += dt * 7;
+        particle.mesh.scale.multiplyScalar(Math.max(0.72, particle.life / Math.max(0.001, particle.maxLife)));
+      }
       if (particle.life <= 0) {
-        particle.mesh.parent?.remove(particle.mesh);
+        particle.mesh?.parent?.remove(particle.mesh);
         state.particles.splice(index, 1);
       }
     }
+    syncSprayParticles(state);
+  }
+
+  function syncSprayParticles(state) {
+    state.particleBatch?.sync(state.particles, (transform, particle) => {
+      transform.position.set(particle.x, particle.y, particle.z);
+      transform.rotation.set(particle.rx, particle.ry, particle.rz);
+      transform.scale.setScalar(particle.scale);
+    }); // Updates all active stink motes in one draw on instancing-capable devices.
   }
 
   function clearParticles(state) {
-    for (const particle of state.particles || []) particle.mesh.parent?.remove(particle.mesh);
+    for (const particle of state.particles || []) particle.mesh?.parent?.remove(particle.mesh);
+    state.particleBatch?.dispose(); // Removing the burst also releases its cloned GPU instance geometry.
+    state.particleBatch = null;
     state.particles = [];
   }
 
@@ -269,6 +301,8 @@
     state.sprayAngle = state.lungeAngle; // A single committed direction is used by movement and the rear emitter.
     state.flippedFacing = normalizeAngle(targetAngle + Math.PI);
     state.particles = [];
+    state.particleBatch = null; // Active GPU-instanced spray, disposed on finish or interruption.
+    state.particleBatchAttempted = false; // Avoid repeated unsupported-renderer batch probes per emitted droplet.
     state.particleCarry = 0;
     state.sprayResolved = false;
     state.hitCount = 0;
@@ -315,6 +349,7 @@
         state.particleCarry -= 1;
         spawnParticle(creature, state, deps);
       }
+      syncSprayParticles(state); // First-frame emission must appear immediately, not after the next update.
       if (state.t >= tuning.SPRAY_S) {
         state.stage = 'recover';
         state.t = 0;
