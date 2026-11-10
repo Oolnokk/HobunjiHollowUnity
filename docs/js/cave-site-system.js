@@ -1177,6 +1177,7 @@
     const plan = {
       profile: clone(profile),
       clearanceFootprints,
+      entranceTile:{col:Number(mapData.exitCol)||0,row:Number(mapData.exitRow)||0}, // Cave's safe entry tile locates unrescued wolves after the threshold.
       separator: null,
       shattercasks: [], // Deterministic explosives spawned outside separator walls and occasionally elsewhere in caves.
       banditSpawns: [], strongholdBarrels: [], bodies: [], traps: [], coffins: [], mineRocks: [], mushrooms: [], cache: null, ruinEntrance: null, puzzleCave: null, puzzleTreasure:null,
@@ -1362,7 +1363,7 @@
     mapData.name = window.WildlifeSpawn?.denTurnoverStateForCavern?.(mapId)?.name || 'Unexplored cave';
     mapData.caveSite = clone(profile);
     mapData.caveSitePlan = {
-      shattercasks: clone(plan.shattercasks), strongholdBarrels: clone(plan.strongholdBarrels), separatorRock: plan.separator ? { col: plan.separator.col, row: plan.separator.row, cells: clone(plan.separator.cells), oreKind: plan.separator.oreKind } : null,
+      shattercasks: clone(plan.shattercasks), strongholdBarrels: clone(plan.strongholdBarrels), entranceTile:clone(plan.entranceTile), separatorRock: plan.separator ? { col: plan.separator.col, row: plan.separator.row, cells: clone(plan.separator.cells), oreKind: plan.separator.oreKind } : null,
       banditSpawns: clone(plan.banditSpawns), bodies: clone(plan.bodies), traps: clone(plan.traps), cache: clone(plan.cache),
       coffins: clone(plan.coffins), ruinEntrance: clone(plan.ruinEntrance), puzzleCave: clone(plan.puzzleCave), puzzleDoor:clone(plan.puzzleDoor), mushrooms: clone(plan.mushrooms), mineRockCount: plan.mineRocks.length,
       extension: plan.separator ? { contentType: contents, hiddenTiles: plan.separator.farKeys.length } : null,
