@@ -48,7 +48,10 @@ const context={
   songTitle:()=> 'When the Kininjis Bloom',
   currentHarmonyStep:clock=>clock.mixedPhase.absoluteChord,
   currentHarmonyData:()=>({chordName:'C major'}),
-  FIXED_HARMONY_CYCLE_CHORDS:20,FIXED_HARMONY_CHORD_QUARTER_BEATS:3
+  FIXED_HARMONY_CYCLE_CHORDS:20,FIXED_HARMONY_CHORD_QUARTER_BEATS:3,
+  FIXED_HARMONY_SIX_EIGHT_CHORDS:4,FIXED_HARMONY_THREE_FOUR_CHORDS:16, // Authored 6/8 intro plus 3/4 melody bar guards.
+  KURRAYA_DEFAULT_INTRO_STEPS:[0,1,2,3],KURRAYA_DEFAULT_BODY_STEPS:Array(16).fill(0), // Required fallback constants of the real arrangement setter.
+  JAM_SYNC_HARD_RESET_MS:120,JAM_SYNC_DRIFT_TOLERANCE_MS:6,TRANSPORT_AUDIO_LOOKAHEAD_MS:90 // Production follower correction and public bridge constants.
 }; // All side effects are observable counters or state changes; no real audio, DOM, or timers are created.
 vm.runInNewContext(
   'let jamLeaderSync = null;\n' +
