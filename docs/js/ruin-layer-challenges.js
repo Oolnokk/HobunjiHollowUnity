@@ -850,7 +850,7 @@
       rec.inscription?.dispose?.();
       if(timedNoteListener)events?.removeEventListener?.('hobunji-kurraya-puzzle-note',timedNoteListener);
       rec.plateArt?.dispose?.(); // Retire async Tankan lettering without affecting the player's own instrument session.
-      if(rec.plateArt)rec.plateArtStoneMesh?.material?.dispose?.() || rec.plate?.material?.dispose?.(); // Dispose the decorated visible plate's owned stone material.
+      if(rec.plateArt)rec.plateArtStoneMesh?.material?.dispose?.(); // Only the decorated visible stone material belongs to this mechanism.
       for(const emitter of flameVisuals)emitter.dispose?.();
       flameVisuals=[];
       if(icePlacement)root.DungeonDoorIceCoverage?.clear?.(icePlacement);
