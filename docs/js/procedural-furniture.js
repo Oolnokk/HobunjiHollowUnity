@@ -581,115 +581,185 @@
   // perimeter follows that region's irregular silhouette. Unlike a regular
   // grid, the UV frame is computed from the region's row/column spans.
   // Pixel arrays are plain RGBA; no Three.js state or DOM is used in this pass.
+  // Return the source material's lightest visible RGB color for older statue
+  // exports which predate an explicit base tint. The same target is reused by
+  // every ink-bounded region, rather than picking a new material per region.
+  function statueMaterialColor(material) {
+    let maximum = -1, selected = [182, 174, 161]; // Fallback tint for an empty overlay source.
+    const luminance = window.ColorFill?.relativeLuminance;
+    if (typeof luminance !== 'function') throw new Error('ColorFill unavailable during statue authoring');
+    for (let i = 0; i < material.length; i += 4) {
+      if (material[i + 3] <= 8) continue;
+      const value = luminance(material[i], material[i + 1], material[i + 2]);
+      if (value > maximum) {maximum = value; selected = [material[i], material[i + 1], material[i + 2]];}
+    }
+    return selected;
+  }
+  function statueBaseRgb(value, material) {
+    if (Array.isArray(value) && value.length === 3
+        && value.every(channel => Number.isFinite(Number(channel)))) {
+      return value.map(channel => Math.min(255,Math.max(0,Math.round(Number(channel)))));
+    }
+    const match = /^#([0-9a-f]{6})$/i.exec(String(value || ''));
+    return match
+      ? [parseInt(match[1].slice(0,2),16),parseInt(match[1].slice(2,4),16),parseInt(match[1].slice(4,6),16)]
+      : statueMaterialColor(material);
+  }
+
+  // Animal ColorFill shading runs on each connected ink-bounded NPC region.
+  // A *single* grayscale material atlas is blended once afterwards, ignoring
+  // the region labels entirely. White/high brightness becomes transparent;
+  // darker material pixels progressively cover the recolored statue surface.
+  // The source alpha and original black ink are never altered.
   function paintStatueSurfaceCells(source, material, width, height, options = {}) {
     const pixels = width * height;
     if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1
         || pixels > 4194304 || source?.length !== pixels * 4 || material?.length !== pixels * 4) {
       throw new Error('Statue material mapping requires equally sized, bounded RGBA images');
     }
-    const output = new Uint8ClampedArray(source); // Preserves original alpha and black ink exactly.
-    const threshold = Math.max(0, Math.min(64, Math.round(Number(options.inkThreshold) || 18)));
-    const alphaThreshold = 8;
-    const preserveInk = options.preserveInk !== false;
-    let opaque = 0, colored = 0, ink = 0;
-    for (let i = 0; i < pixels; i++) {
-      const p = i * 4;
-      if (source[p + 3] <= alphaThreshold) continue;
+    const colorFill = window.ColorFill;
+    if (typeof colorFill?.shadeFillPixels !== 'function' || typeof colorFill.createShadeReference !== 'function'
+        || Number(colorFill.version) < 8) throw new Error('ColorFill v8 required for white-inclusive animal-style statue fills');
+    const output = new Uint8ClampedArray(source); // Independent output: the authoring sprite is never modified.
+    const threshold = Math.min(64,Math.max(0,Math.round(Number(options.inkThreshold) || 18)));
+    const baseRgb = statueBaseRgb(options.baseColor,material); // One sculpture color shared by every limb/piece.
+    let opaque=0,colored=0,ink=0;
+    const alphaThreshold=8;
+    for(let i=0;i<pixels;i++){
+      const p=i*4;
+      if(source[p+3]<=alphaThreshold)continue;
       opaque++;
-      if (source[p] > threshold || source[p + 1] > threshold || source[p + 2] > threshold) colored++;
+      if(source[p]>threshold||source[p+1]>threshold||source[p+2]>threshold)colored++;
       else ink++;
     }
-    if (!opaque || (!options.allowFullMask && opaque >= pixels * .96)) {
+    if(!opaque||(!options.allowFullMask&&opaque>=pixels*.96)){
       throw new Error('Statue portrait mask is blank or rectangular; rebuild its NPC appearance');
     }
-    // An all-black imported sprite has no detectable ink-enclosed cells.
-    // Treat its opaque silhouette as one textured surface instead of retaining
-    // the entire shape as black (and keep its transparency).
-    const inkBarrier = preserveInk && colored > 0;
-    const regionMask = new Uint8Array(pixels); // 1 = already visited, 2 = black stroke or empty.
-    const queue = new Int32Array(pixels); // Reused across all connected components; no per-pixel objects.
-    let regions = 0, largest = 0, tiny = 0, painted = 0;
-    const eligible = index => {
-      const base = index * 4;
-      return source[base + 3] > alphaThreshold &&
-        (!inkBarrier || source[base] > threshold || source[base + 1] > threshold || source[base + 2] > threshold);
+    const inkBarrier=options.preserveInk!==false&&colored>0;
+    const visited=new Uint8Array(pixels); // 1 painted/visited; 2 transparent/ink barrier.
+    const labels=new Int32Array(pixels).fill(-1); // Keeps animal fill confined to each independent source-art cell.
+    const queue=new Int32Array(pixels); // Reused bounded flood-fill queue across all regions.
+    let regions=0,largest=0,tiny=0,painted=0;
+    const eligible=index=>{
+      const p=index*4;
+      return source[p+3]>alphaThreshold
+        &&(!inkBarrier||source[p]>threshold||source[p+1]>threshold||source[p+2]>threshold);
     };
-    for (let start = 0; start < pixels; start++) {
-      if (regionMask[start]) continue;
-      if (!eligible(start)) { regionMask[start] = 2; continue; }
-      let tail = 1;
-      queue[0] = start;
-      regionMask[start] = 1;
-      // Each cell's row/column span becomes an edge-to-edge UV frame. This
-      // follows an irregular boundary instead of stretching by a rectangular
-      // component bounding box or by unrelated global 12x12 tiles.
-      const left = new Int32Array(height).fill(width);
-      const right = new Int32Array(height).fill(-1);
-      const top = new Int32Array(width).fill(height);
-      const bottom = new Int32Array(width).fill(-1);
-      for (let head = 0; head < tail; head++) {
-        const index = queue[head], y = Math.floor(index / width), x = index - y * width;
-        if (x < left[y]) left[y] = x;
-        if (x > right[y]) right[y] = x;
-        if (y < top[x]) top[x] = y;
-        if (y > bottom[x]) bottom[x] = y;
-        const push = neighbour => {
-          if (regionMask[neighbour]) return;
-          if (!eligible(neighbour)) {regionMask[neighbour] = 2; return;}
-          regionMask[neighbour] = 1;
-          queue[tail++] = neighbour;
+    for(let start=0;start<pixels;start++){
+      if(visited[start])continue;
+      if(!eligible(start)){visited[start]=2;continue;}
+      let tail=1;
+      queue[0]=start;visited[start]=1;labels[start]=regions;
+      for(let head=0;head<tail;head++){
+        const index=queue[head],y=Math.floor(index/width),x=index-y*width;
+        const push=neighbour=>{
+          if(visited[neighbour])return;
+          if(!eligible(neighbour)){visited[neighbour]=2;return;}
+          visited[neighbour]=1;labels[neighbour]=regions;queue[tail++]=neighbour;
         };
-        if (x > 0) push(index - 1);
-        if (x + 1 < width) push(index + 1);
-        if (y > 0) push(index - width);
-        if (y + 1 < height) push(index + width);
+        if(x>0)push(index-1);
+        if(x+1<width)push(index+1);
+        if(y>0)push(index-width);
+        if(y+1<height)push(index+width);
       }
-      regions++;
-      largest = Math.max(largest, tail);
-      if (tail <= 4) tiny++;
-      for (let i = 0; i < tail; i++) {
-        const index = queue[i], y = Math.floor(index / width), x = index - y * width;
-        // For single-pixel-width ridges use the center of the texture, not a
-        // near-black edge sample that would turn hair and thin weapons black.
-        const rowSpan = right[y] - left[y] + 1;
-        const columnSpan = bottom[x] - top[x] + 1;
-        const u = rowSpan <= 2 ? .5 : (x - left[y] + .5) / rowSpan;
-        const v = columnSpan <= 2 ? .5 : (y - top[x] + .5) / columnSpan;
-        const sampleX = Math.min(width - 1, Math.max(0, Math.floor(u * width)));
-        const sampleY = Math.min(height - 1, Math.max(0, Math.floor(v * height)));
-        const src = index * 4, texture = (sampleY * width + sampleX) * 4;
-        output[src] = material[texture];
-        output[src + 1] = material[texture + 1];
-        output[src + 2] = material[texture + 2];
-        painted++;
+      const label=regions++;
+      largest=Math.max(largest,tail);
+      if(tail<=4)tiny++;
+      painted+=tail;
+      if(!inkBarrier){
+        // Entirely black silhouettes (e.g. some weapons) have no detectable
+        // internal fill; paint their opaque shape with the same base color.
+        for(let j=0;j<tail;j++){
+          const p=queue[j]*4;
+          output[p]=baseRgb[0];output[p+1]=baseRgb[1];output[p+2]=baseRgb[2];
+        }
+      }else{
+        const belongs=index=>labels[index>>2]===label;
+        const shadeReference=colorFill.createShadeReference(source,belongs,{includeNearWhite:true});
+        colorFill.shadeFillPixels(output,baseRgb,{
+          sourceData:source,applyPredicate:belongs,shadeReference,includeNearWhite:true
+        });
       }
     }
-    return {data: output, stats: {
-      mode: 'ink-bounded-irregular-surface',
-      regions, largest, tiny, painted, inkPixels: inkBarrier ? ink : 0,
-      sourceOpaquePixels: opaque, fallbackAllBlack: !inkBarrier
+    // Overlay is deliberately processed only *after* the individual cell
+    // recolors and its sampling coordinates do NOT depend on region labels.
+    // Normalize the whole source PNG's brightest grayscale value to white so
+    // that material PNGs like carved_smooth (with no literal white pixels)
+    // still have fully transparent highlights.
+    const luminance=colorFill.relativeLuminance;
+    let overlayPeak=Number(options.overlayPeak);
+    if(!Number.isFinite(overlayPeak)||overlayPeak<=0){
+      overlayPeak=0;
+      for(let p=0;p<material.length;p+=4){
+        if(material[p+3]<=8)continue;
+        overlayPeak=Math.max(overlayPeak,luminance(material[p],material[p+1],material[p+2]));
+      }
+    }
+    let overlayPixels=0,overlayAlphaSum=0;
+    for(let index=0;index<pixels;index++){
+      if(!visited[index]||visited[index]===2)continue; // Transparent and original ink remain bit-for-bit unchanged.
+      const p=index*4;
+      if(material[p+3]<=8)continue;
+      const level=Math.max(0,Math.min(1,luminance(material[p],material[p+1],material[p+2])/Math.max(.00001,overlayPeak)));
+      const grayscale=Math.round(255*level);
+      const overlayAlpha=(1-level)*(material[p+3]/255); // White=0, black=1, gray=intermediate.
+      if(overlayAlpha<=0)continue;
+      for(let channel=0;channel<3;channel++){
+        output[p+channel]=Math.round(output[p+channel]*(1-overlayAlpha)+grayscale*overlayAlpha);
+      }
+      overlayPixels++;
+      overlayAlphaSum+=overlayAlpha;
+    }
+    return {data:output,stats:{
+      mode:'animal-cell-shading-global-brightness-overlay',
+      regions,largest,tiny,painted,inkPixels:inkBarrier?ink:0,
+      sourceOpaquePixels:opaque,fallbackAllBlack:!inkBarrier,
+      baseRgb,overlayPeak:+overlayPeak.toFixed(4),overlayPixels,
+      meanOverlayAlpha:overlayPixels?+(overlayAlphaSum/overlayPixels).toFixed(3):0
     }};
   }
 
-  function paintedStatueCanvas(source, finish, options = {}) {
-    const width = Math.max(1, source.naturalWidth || source.width);
-    const height = Math.max(1, source.naturalHeight || source.height);
-    const original = document.createElement('canvas');
-    original.width = width; original.height = height;
-    const sourceCtx = original.getContext('2d', {willReadFrequently: true});
-    sourceCtx.drawImage(source, 0, 0, width, height);
-    const mask = sourceCtx.getImageData(0, 0, width, height);
-    const canvas = document.createElement('canvas');
-    canvas.width = width; canvas.height = height;
-    const ctx = canvas.getContext('2d', {willReadFrequently: true});
-    // Stretch the *complete* selected PNG once into the working pixel space.
-    // Its perimeter shading will be warped to each detected ink-enclosed cell.
-    ctx.drawImage(finish, 0, 0, width, height);
-    const material = ctx.getImageData(0, 0, width, height);
-    const mapped = paintStatueSurfaceCells(mask.data, material.data, width, height, options);
-    material.data.set(mapped.data);
-    ctx.putImageData(material, 0, 0);
-    canvas.statueSurfaceStats = mapped.stats; // Read by mobile diagnostics and visual regression tests.
+  const statueOverlayInfoCache=new WeakMap(); // Decoded texture image -> one shared whole-statue peak/tint calculation.
+  function statueOverlayInfo(image){
+    if(statueOverlayInfoCache.has(image))return statueOverlayInfoCache.get(image);
+    const canvas=document.createElement('canvas');
+    canvas.width=image.naturalWidth||image.width;canvas.height=image.naturalHeight||image.height;
+    const context=canvas.getContext('2d',{willReadFrequently:true});
+    context.drawImage(image,0,0);
+    const pixels=context.getImageData(0,0,canvas.width,canvas.height).data;
+    const luminance=window.ColorFill?.relativeLuminance;
+    if(typeof luminance!=='function')throw new Error('Statue material needs canonical ColorFill');
+    let peak=0;
+    for(let p=0;p<pixels.length;p+=4)if(pixels[p+3]>8){
+      peak=Math.max(peak,luminance(pixels[p],pixels[p+1],pixels[p+2]));
+    }
+    const info={peak,baseRgb:statueMaterialColor(pixels)};
+    statueOverlayInfoCache.set(image,info);
+    return info;
+  }
+
+  function paintedStatueCanvas(source,finish,options={}){
+    const width=Math.max(1,source.naturalWidth||source.width),height=Math.max(1,source.naturalHeight||source.height);
+    const original=document.createElement('canvas');original.width=width;original.height=height;
+    const originalCtx=original.getContext('2d',{willReadFrequently:true});
+    originalCtx.drawImage(source,0,0,width,height);
+    const pixels=originalCtx.getImageData(0,0,width,height);
+    const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+    const context=canvas.getContext('2d',{willReadFrequently:true});
+    const frame=options.overlayFrame||{width,height,x:0,y:0};
+    const fw=Number(frame.width)||width,fh=Number(frame.height)||height;
+    const fx=Number(frame.x)||0,fy=Number(frame.y)||0;
+    // The head is a crop from the same 256px portrait atlas as the body:
+    // offset the *single* texture so its grain continues across their seam.
+    context.drawImage(finish,-fx,-fy,fw,fh);
+    const material=context.getImageData(0,0,width,height);
+    const overlayInfo=statueOverlayInfo(finish);
+    const painted=paintStatueSurfaceCells(pixels.data,material.data,width,height,{
+      ...options,overlayPeak:overlayInfo.peak,baseColor:options.baseColor||overlayInfo.baseRgb
+    });
+    material.data.set(painted.data);
+    context.putImageData(material,0,0);
+    canvas.statueSurfaceStats=painted.stats;
     return canvas;
   }
 
