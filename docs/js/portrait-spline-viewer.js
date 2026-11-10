@@ -71,20 +71,24 @@
     }
     function replaceMeshGeometry(mesh,newGeometry) {
       if(mesh.geometry===newGeometry)return;
-      if(mesh.userData.ownsGeometry)mesh.geometry.dispose();
+      mesh.geometry?.dispose(); // The editor owns the original static plane and every regenerated grid.
       mesh.geometry=newGeometry;mesh.userData.ownsGeometry=true;
     }
-    function geometryFor(rig,posed,rear){
-      // Runtime's PlaneGeometry UVs and its per-vertex deformation are shared verbatim.
-      const plane=new THREE.PlaneGeometry(1,1,rig.segmentsX,rig.segmentsY);
-      const p=plane.attributes.position, original=p.array.slice();
+    function deformMesh(mesh,rig,posed,rear){
+      // Reuse the authored ribbon's vertex buffers during pointer drags; only reallocate if grid density changes.
+      const grid=rig.segmentsX+'x'+rig.segmentsY;
+      if(mesh.userData.grid!==grid){
+        replaceMeshGeometry(mesh,new THREE.PlaneGeometry(1,1,rig.segmentsX,rig.segmentsY));
+        mesh.userData.rest=new Float32Array(mesh.geometry.attributes.position.array); // Neutral UV mesh, unchanged by 3D pose deformation.
+        mesh.userData.grid=grid;
+      }
+      const plane=mesh.geometry,p=plane.attributes.position,original=mesh.userData.rest;
       for(let i=0;i<p.count;i++){
         const u=original[i*3]+.5,v=.5-original[i*3+1];
         const at=window.PortraitSplineRig.deformPosition(rig,posed,u,v,1,1);
         p.setXYZ(i,at.x,at.y,rear?-at.z:at.z);
       }
       p.needsUpdate=true;plane.computeVertexNormals();plane.computeBoundingSphere();
-      return plane;
     }
     function clearChildren(group){
       for(const child of [...group.children]){
@@ -140,8 +144,8 @@
       replaceTexture(rearPlane,next.rear||null,true);
       const geometryKey=JSON.stringify([rig.points,rig.segments,rig.width,rig.segmentsX,rig.segmentsY,next.wind]);
       if(geometryKey!==lastGeometryKey){
-        replaceMeshGeometry(hairPlane,geometryFor(rig,posed.points,false));
-        replaceMeshGeometry(rearPlane,geometryFor(rig,posed.points,true));
+        deformMesh(hairPlane,rig,posed.points,false);
+        deformMesh(rearPlane,rig,posed.points,true);
         lastGeometryKey=geometryKey;
       }
       if(next.rear){
@@ -172,10 +176,10 @@
       if(!hits.length)return; // Empty-space drag remains the normal orbit camera interaction.
       const object=hits[0].object;
       if(object.userData.knotIndex!=null){
-        e.stopPropagation();selectKnot(object.userData.knotIndex);schedule();return;
+        e.stopImmediatePropagation();selectKnot(object.userData.knotIndex);schedule();return;
       }
       if(!object.userData.axis||selectedIndex<1)return;
-      e.preventDefault();e.stopPropagation();
+      e.preventDefault();e.stopImmediatePropagation();
       const axis=object.userData.axis,unit=axisUnit(axis);
       const origin=gizmo.position.clone();
       const base=readPose(axis);
