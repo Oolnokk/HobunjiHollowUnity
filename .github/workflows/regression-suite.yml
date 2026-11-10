@@ -62,6 +62,10 @@ jobs:
       - name: Install Chromium for browser regressions
         if: steps.select.outputs.needs_browser == 'true'
         run: npx playwright install --with-deps chromium
+      - name: Portrait spline 3D WebGL texture and gizmo browser smoke
+        if: steps.select.outputs.portrait_spline == 'true'
+        run: node scripts/test-portrait-spline-viewer-browser.js
+
       - name: Selector arc idle DOM and legacy scroll browser regression
         if: steps.select.outputs.needs_browser == 'true'
         run: node scripts/test-selection-arc-browser.js
@@ -110,10 +114,6 @@ jobs:
       - name: Statue Pose Bake NPC/weapon GLB round-trip into Furniture Editor
         if: steps.select.outputs.statue == 'true'
         run: node scripts/test-statue-pose-bake-browser.js
-
-      - name: Portrait spline 3D WebGL texture and gizmo browser smoke
-        if: steps.select.outputs.portrait_spline == 'true'
-        run: node scripts/test-portrait-spline-viewer-browser.js
 
       - name: Omgurku hybrid calibration browser smoke
         if: steps.select.outputs.omgurku_cal == 'true'
