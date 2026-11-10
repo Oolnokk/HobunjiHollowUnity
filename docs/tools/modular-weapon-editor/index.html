@@ -101,7 +101,7 @@ header .toolbar #pair-undo,header .toolbar #pair-redo{min-width:88px;position:re
 </details>
 <details id="flail-authoring-panel" class="workflow-section" open><summary>02 · Flail connector and bored haft</summary>
 <h3>Flexible head and rope authoring</h3>
-<p><strong>Two different modes:</strong> For a <strong>Grapple Hook head</strong> on an ordinary haft, its layered contact comes from <a href="../multi-sprite-weapon-editor/" target="_blank" rel="noopener">Complex Tool Visuals</a>; author the haft bore and purple rope mount here. For an <strong>ordinary head on the Grapple-Flail haft</strong>, the cyan head contact is editable below and on the head source sprite <em>for this pairing only</em>. It starts at the rigid tang's START or sleeve's END and never changes the original head's mount arrow. The rope line on the haft still controls the other endpoint and total reach.</p>
+<p><strong>Pair-specific transformations:</strong> To flip, rotate, stretch X/Y, or nudge a rigid head on a flexible haft, use the controls in <strong>04 · Pair corrections</strong>. They now affect both the full rig preview and gameplay; only the selected combination changes. Connector length and width stay independent.</p><p><strong>Two different modes:</strong> For a <strong>Grapple Hook head</strong> on an ordinary haft, its layered contact comes from <a href="../multi-sprite-weapon-editor/" target="_blank" rel="noopener">Complex Tool Visuals</a>; author the haft bore and purple rope mount here. For an <strong>ordinary head on the Grapple-Flail haft</strong>, the cyan head contact is editable below and on the head source sprite <em>for this pairing only</em>. It starts at the rigid tang's START or sleeve's END and never changes the original head's mount arrow. The rope line on the haft still controls the other endpoint and total reach.</p>
 <div class="grid2">
 <label>Head-owned flail recipe <select id="head-flail-assembly"></select></label>
 <label>Haft-owned flail recipe <select id="shaft-flail-assembly"></select></label>
@@ -110,9 +110,13 @@ header .toolbar #pair-undo,header .toolbar #pair-redo{min-width:88px;position:re
 <label>Head rope contact X (pair-only, source px) <input id="head-rope-x" type="number" min="0" max="450" step="1" disabled></label>
 <label>Head rope contact Y (pair-only, source px) <input id="head-rope-y" type="number" min="0" max="1204" step="1" disabled></label>
 <label>Hanging-head scale for this combination <input id="head-rope-scale" type="number" step=".05" min=".05" max="8" disabled></label>
+<label>Damage for this flail combination <select id="pair-damage-type" disabled>
+<option value="inherit">Head's normal damage type</option>
+<option value="blunt">Blunt</option><option value="sharp">Sharp</option></select></label>
 </div>
 <div class="toolbar"><button id="head-contact-move" type="button" aria-pressed="false">Move contact on head sprite</button><button id="head-contact-reset" type="button">Reset contact to head mount</button></div>
 <p id="head-contact-status" aria-live="polite">Select a flail haft and a rigid head to edit its independent rope-to-head contact.</p>
+<p id="pair-transform-status" aria-live="polite">For a hanging rigid head, section 04's scale X/Y, flips, rotation and X/Y corrections affect only the head artwork — not the rope.</p>
 <p id="identity-flail-status" aria-live="polite"></p>
 <details id="shaft-bore-panel" open hidden>
 <summary><strong>Recalculating bores in the shaft artwork</strong></summary>
