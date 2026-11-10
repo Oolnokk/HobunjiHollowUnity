@@ -164,6 +164,27 @@ by gameplay and is no longer authored. Live Three.js and the full
 2D resting-pose preview share this same per-pair contact.
 Head size and connector reach are controlled independently.
 
+For the same **flail-haft + rigid-head pair**, ordinary `overrides[headKey]`
+visual values (`scaleX`, `scaleY`, `flipX`, `flipY`, `rotation`,
+`x` and `y`) now affect **only the hanging head artwork**, both
+in the full-assembly 2D preview and the live Three.js pendulum.
+The sprite is rotated and mirrored about its resolved rope contact;
+the user-entered X/Y values additionally nudge the head relative to the
+rope end, without changing connector reach or thickness. The original
+shared head artwork, tang/sleeve line and rigid weapon combinations
+remain unchanged.
+
+A `dmgType: 'blunt'|'sharp'|'inherit'` pairing value may override
+the hanging rigid head's combat classification **only** when the
+shaft itself owns a flail recipe. The uploaded Pick Head +
+Grapple-Flail shaft is an allowed pairing with `flipY: true` and
+`dmgType: 'blunt'`, while the original Pick Head remains `sharp` on
+ordinary hafts. Older imported drafts without the new damage field
+inherit the shipped pair damage; selecting `inherit` in section 02
+explicitly restores the head's ordinary damage type for that pairing.
+The Foundry uses the effective weapon definition's damage type, rather
+than labeling the item solely from its shared head.
+
 The first `grappleFlail` reusable reference is available from either
 a dedicated Rope-bound Grapple Handle or a Grapple Hook Head, unlocked
 through the original weapon's `grappleFlail` source shape. The combo
