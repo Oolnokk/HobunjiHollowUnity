@@ -24,6 +24,25 @@
       (targetingPet ? 0.32 : targetingOwner ? ACTIVE_THREAT_MULTIPLIER : 1);
   }
 
+  const TARGET_DECISION_INTERVAL_MS = 140; // Full enemy prioritization runs at ~7Hz; a committed target still fights and moves each frame.
+  function shouldReevaluate(companion, master, areaId, alertPx) {
+    const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now(); // Time-based cadence independent of rendering speed.
+    const target = companion._companionCombatTarget; // Live current target is validated without any roster scan.
+    const radius = Math.max(0, Number(alertPx) || 0);
+    const lostTarget = !!target && (!validEnemy(target, areaId) ||
+      (Math.hypot(target.x - master.x, target.y - master.y) > radius &&
+        !((target.targetCreature === companion || target.targetPlayer === companion) &&
+          Math.hypot(target.x - companion.x, target.y - companion.y) <= radius * 0.5)));
+    const changed = companion._companionDecisionMaster !== master ||
+      companion._companionDecisionArea !== areaId || companion._companionDecisionRadius !== radius;
+    if (!lostTarget && !changed && nowMs < (companion._companionDecisionNextAt || 0)) return false;
+    companion._companionDecisionMaster = master;
+    companion._companionDecisionArea = areaId;
+    companion._companionDecisionRadius = radius;
+    companion._companionDecisionNextAt = nowMs + TARGET_DECISION_INTERVAL_MS;
+    return true;
+  }
+
   function chooseTarget(companion, master, enemies, areaId, alertPx) {
     const radius = Number(alertPx) > 0 ? Number(alertPx) : 0; // Masters' alert radius keeps pets from chasing faraway enemies.
     let chosen = null, chosenScore = Infinity, currentSeen = false; // Keep a stable target without creating a new array of hostile objects every frame.
@@ -80,6 +99,6 @@
       cooldown: companion?.attackCooldownT ?? null };
   }
 
-  window.CompanionCombatResponse = Object.freeze({ chooseTarget, validEnemy, shouldRestartApproach,
+  window.CompanionCombatResponse = Object.freeze({ chooseTarget, shouldReevaluate, validEnemy, shouldRestartApproach,
     debugSnapshot, tuning: Object.freeze({ SWITCH_RATIO, MASTER_WEIGHT, ACTIVE_THREAT_MULTIPLIER, APPROACH_RESTART_RATIO }) });
 })();
