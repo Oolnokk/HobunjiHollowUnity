@@ -214,12 +214,13 @@
     const halfConeRad = Math.min(Math.PI, technique.halfConeDeg * Math.PI / 180 * (shape.range || 1) * (1 + (stats.coneWidthMul || 0))); // Final strike angle after those same modifiers.
     const baseLungePx = Math.max(0, tile * LUNGE_TILE_MUL * (1 + (stats.lungeMul || 0))); // Same base distance passed to attack preparation.
     const enchantment = window.EnchantmentSystem; // Only Living Gust currently modifies the lunge during prepare.
-    const gustPower = Number(enchantment?.getEnchantmentPowerMultiplier?.(weaponKey)); // Mirrors prepareLivingGust's power without spending Footing.
-    const gustScale = Number(enchantment?.TUNING?.LIVING_GUST_LUNGE_MULTIPLIER); // Authored lunge scalar rather than a copied constant.
-    const lungeMultiplier = enchantment?.hasBase?.('livingGust', weaponKey) && Number.isFinite(gustPower) && Number.isFinite(gustScale)
-      ? Math.max(0, 1 + (gustScale - 1) * gustPower) : 1; // Read-only equivalent of Living Gust's prepare modifier.
+    const hasGust = !!enchantment?.hasBase?.('livingGust', weaponKey); // Avoid computing Immundanity when no equipped enchantment affects lunges.
+    const gustPower = hasGust ? Number(enchantment.getEnchantmentPowerMultiplier?.(weaponKey)) : 0; // Read-only Living Gust strength.
+    const gustScale = hasGust ? Number(enchantment.TUNING?.LIVING_GUST_LUNGE_MULTIPLIER) : 1; // Read the same authored enchantment scalar as prepareLivingGust.
+    const lungeMultiplier = hasGust && Number.isFinite(gustPower) && Number.isFinite(gustScale)
+      ? Math.max(0, 1 + (gustScale - 1) * gustPower) : 1; // Do not invoke the Footing-spending attack prepare hook.
     const lungePx = baseLungePx * lungeMultiplier; // Furthest possible forward travel before the cone lands.
-    return { rangePx, halfConeRad, baseLungePx, lungePx, reachPx: lungePx + rangePx }; // Straight-line upper bound; no current aim direction is required.
+    return { rangePx, halfConeRad, baseLungePx, lungePx, reachPx: lungePx + rangePx, effects }; // Share mastery effects with the indicator's affliction tint pass.
   }
 
   function registerQuickAttack(id, def) {
