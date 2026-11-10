@@ -199,7 +199,7 @@ assert.match(
 
 assert.match(
   source,
-  /function sharedTransportData\([\s\S]*?rawHarmonyQuarterBeatFloat = fixedKurraya && state\.game\.active[\s\S]*?transportElapsedMs \/ Math\.max\(1,quarterBeatMs\)[\s\S]*?harmonyQuarterBeatFloat[\s\S]*?activeKurrayaLabMeter\(\)\?\.measureQuarterBeats[\s\S]*?FIXED_HARMONY_CYCLE_CHORDS - 1e-6[\s\S]*?mixedPhase = fixedKurraya \? fixedKurrayaMixedMeterPhase\(harmonyQuarterBeatFloat\)[\s\S]*?transportMeterBeatFloat = fixedKurraya[\s\S]*?transportAbsoluteBeat = Math\.floor\(transportMeterBeatFloat\)/,
+  /function sharedTransportData\([\s\S]*?rawHarmonyQuarterBeatFloat = fixedKurraya && \(state\.game\.active \|\| followingSong\)[\s\S]*?transportElapsedMs \/ Math\.max\(1,quarterBeatMs\)[\s\S]*?harmonyQuarterBeatFloat[\s\S]*?activeKurrayaLabMeter\(\)\?\.measureQuarterBeats[\s\S]*?FIXED_HARMONY_CYCLE_CHORDS - 1e-6[\s\S]*?mixedPhase = fixedKurraya \? fixedKurrayaMixedMeterPhase\(harmonyQuarterBeatFloat\)[\s\S]*?transportMeterBeatFloat = fixedKurraya[\s\S]*?transportAbsoluteBeat = Math\.floor\(transportMeterBeatFloat\)/,
   'the authored-song harmony clock must advance through the four 6/8 intro bars, then stay monotonic through the 3/4 melody and hold the final authored root through the playback tail'
 );
 
