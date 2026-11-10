@@ -115,6 +115,12 @@ let animation=null; // Imported attack animation with Neutral, Windup and Strike
 let exportProject=null; // Latest furniture-author-compatible JSON.
 let statueGroup=null; // Currently previewed static furniture group, disposed on rebuild.
 let generation=0; // Cancels stale portrait builds when a mobile user selects another NPC.
+let assetIndex=null; // Checked-in repository material, tool-sprite and animation dropdown manifest.
+let banditConfig=null; // Live bandit captain clothing and metal-tier probabilities.
+let speciesIndex=[]; // Species choices sourced only from config/species/index.json.
+const speciesDefinitions=new Map(); // Lazy, cached authored species whitelist/cosmetic weights.
+let heroLoadout=null; // The last generated captain-style hero and its optional offhand weapon.
+const registeredAnimations=new Map(); // Repository animations keyed by the checked-in held-action registry id.
 const status=message=>{$('status').textContent=message;}; // Visible debug/status; no console needed.
 const transform=(x=0,y=0,z=0,rx=0,ry=0,rz=0,sx=1,sy=1,sz=1)=>({x,y,z,rx,ry,rz,sx,sy,sz});
 const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
@@ -132,6 +138,126 @@ async function loadNpcs(){
     $('npcSelect').replaceChildren(new Option('Choose an NPC',''),...records.map((npc,index)=>new Option(npc.name||npc.id||('NPC '+index),String(index))));
     status('Loaded '+records.length+' NPC appearances. Import an animation JSON to use an authored attack pose.');
   }catch(error){status('NPC database unavailable: '+error.message+'. You can still import a Character Studio NPC export.');}
+}
+async function fetchRepoJson(path){
+  const url=new URL('../../'+path,location.href); // Only same-commit, same-origin repository files are selectable.
+  if(url.origin!==location.origin)throw Error('Repository asset index cannot cross origins');
+  const response=await fetch(url,{cache:'no-store'});
+  if(!response.ok)throw Error(path+' HTTP '+response.status);
+  return response.json();
+}
+function fillSelect(select,items,placeholder){
+  select.replaceChildren(new Option(placeholder,''));
+  for(const item of items)select.add(new Option(item.label,item.value));
+}
+function syncWeaponSummary(){
+  const paths=$('weaponPaths').value.split(/\r?\n/).map(v=>v.trim()).filter(Boolean);
+  $('weaponChoiceSummary').textContent=paths.length
+    ? paths.length+' weapon sprite'+(paths.length===1?'':'s')+': '+paths.map(v=>v.split('/').pop()).join(', ')
+    : 'No weapon sprites selected';
+}
+async function loadRepositoryIndexes(){
+  try{
+    const [assets,species,bandits]=await Promise.all([
+      fetchRepoJson('config/statue-author-asset-index.json'),
+      fetchRepoJson('config/species/index.json'),
+      fetchRepoJson('config/bandits/bandit-gang-config.json')
+    ]);
+    if(assets?.schema!=='hobunji_statue_asset_index.v1'
+       || !Array.isArray(assets.textures)||!Array.isArray(assets.toolSprites)
+       || !Array.isArray(species.entries)||!bandits.clothingPool)throw Error('Repository indexes have an unexpected schema');
+    assetIndex=assets;banditConfig=bandits;speciesIndex=species.entries;
+    fillSelect($('heroSpecies'),speciesIndex.map(entry=>({
+      value:entry.speciesId,label:entry.label||entry.speciesId
+    })),'Choose a species');
+    $('heroSpecies').value=speciesIndex.some(entry=>entry.speciesId==='mao-ao')?'mao-ao':speciesIndex[0]?.speciesId||'';
+    $('generateHero').disabled=!$('heroSpecies').value;
+    $('materialPreset').replaceChildren(...assets.textures.map(item=>
+      new Option(item.name.replace(/\.png$/i,'').replace(/_/g,' '),item.name)));
+    $('materialPreset').add(new Option('Other repository PNG (manual)','other'));
+    $('materialPreset').value=assets.textures.some(t=>t.name==='carved_smooth.png')?'carved_smooth.png':assets.textures[0]?.name||'other';
+    $('materialPreset').dispatchEvent(new Event('change'));
+    fillSelect($('weaponSpriteSelect'),assets.toolSprites.map(sprite=>({
+      value:sprite.path,label:sprite.name
+    })),'Choose a weapon sprite');
+    registeredAnimations.clear();
+    for(const preset of assets.animationPresets||[]){
+      if(!preset?.id||!preset.animation?.poses)continue;
+      registeredAnimations.set(preset.id,preset.animation);
+    }
+    fillSelect($('repoAnimation'),[...registeredAnimations].map(([id,animation])=>({
+      value:id,label:animation.name||id
+    })),'Neutral (no animation)');
+    $('repoAnimation').add(new Option('Imported custom animation','custom'));
+    $('heroResult').textContent='Ready: '+speciesIndex.length+' indexed species, '+
+      assets.textures.length+' materials, '+assets.toolSprites.length+' weapon sprites, '+
+      registeredAnimations.size+' repository poses.';
+    syncWeaponSummary();
+  }catch(error){
+    $('generateHero').disabled=true;
+    $('heroResult').textContent='Repository asset indexes unavailable: '+error.message+
+      '. The ordinary NPC dropdown and manual imports still work.';
+    status($('heroResult').textContent);
+  }
+}
+async function indexedSpeciesDefinition(speciesId){
+  if(speciesDefinitions.has(speciesId))return speciesDefinitions.get(speciesId);
+  const entry=speciesIndex.find(item=>item.speciesId===speciesId);
+  if(!entry||!/^\.\/[\w-]+\.json$/.test(entry.path||''))throw Error('Species missing from canonical species index');
+  const definition=await fetchRepoJson('config/species/'+entry.path.slice(2));
+  if(definition?.speciesId!==speciesId)throw Error('Species index/definition mismatch: '+speciesId);
+  speciesDefinitions.set(speciesId,definition);
+  return definition;
+}
+function selectRepositoryAnimation(id){
+  animation=id&&registeredAnimations.has(id)?clone(registeredAnimations.get(id)):null;
+  $('phase').disabled=!animation;
+  $('phase').value='neutral';
+  $('repoAnimation').value=id||'';
+}
+async function generateHero(){
+  if(!assetIndex||!banditConfig)throw Error('Repository indexes are not loaded');
+  const speciesId=$('heroSpecies').value;
+  const speciesDef=await indexedSpeciesDefinition(speciesId);
+  const pools=window.HobunjiBanditEquipmentPools;
+  const armory=window.MetalArmorSystem;
+  const rankWardrobe=window.BanditRankWardrobe;
+  if(!pools?.rollCaptainHero||!armory?.makeCraftedItem||!rankWardrobe?.style)
+    throw Error('Shared bandit rank armor/equipment systems are unavailable');
+  const rolled=pools.rollCaptainHero({
+    speciesId,speciesDef,gang:banditConfig,
+    trust:window.WEAPON_TRUST_VISIT_CONFIG,
+    npcs:records,shapeSprites:assetIndex.shapeSprites,
+    metalDefs:armory.METAL_VISUAL_FALLBACKS
+  });
+  if(!rolled.spritePaths.length)throw Error('Selected species weapon has no indexed sprite');
+  // Same captain armor and cosmetic rendering rules used by ordinary bandits.
+  rankWardrobe.style(rolled.npc,{
+    rank:'captain',metalKey:rolled.metalKey,mastery:5,
+    rollDyeId:()=>null
+  });
+  const rangedWeights=banditConfig.rangedWeaponWeightsByRank?.captain||{};
+  const ranged=pools.weightedPick(rangedWeights);
+  const rangedSprite=ranged==='crossbow'?'assets/toolsprites/ranged_crossbow.png'
+    :ranged==='scatterbow'?'assets/toolsprites/ranged_scatterbow.png':null;
+  const indexed=new Set(assetIndex.toolSprites.map(sprite=>sprite.path));
+  const secondary=rangedSprite&&indexed.has(rangedSprite)?rangedSprite:null;
+  heroLoadout={
+    speciesId,shapeKey:rolled.shapeKey,metalKey:rolled.metalKey,
+    rangedKey:secondary?ranged:null,offhandPath:secondary
+  }; // Preserved in export metadata; secondary ranged weapon follows the separate offhand.
+  rolled.npc.statueHeroLoadout=clone(heroLoadout);
+  selectedRecord=rolled.npc;
+  $('npcSelect').value='';
+  $('weaponPaths').value=[...rolled.spritePaths,...(secondary?[secondary]:[])].join('\n');
+  syncWeaponSummary();
+  $('statueName').value=rolled.npc.name+' Statue';
+  // Choose a repo pose that already exists. An explicit user selection wins.
+  if(!animation&&registeredAnimations.has('heldItemLarge'))selectRepositoryAnimation('heldItemLarge');
+  $('heroResult').textContent='Generated '+rolled.npc.name+' ('+rolled.gender+
+    ') • Captain armor: '+(rolled.npc.metalArmorItems||[]).map(item=>item.baseCosmeticId).join(', ')+
+    ' • '+rolled.shapeKey+' / '+rolled.metalKey+(secondary?' + '+ranged:'');
+  await $('build').click(); // Normal statue authoring/export pipeline, never a separate rendering shortcut.
 }
 function maskBounds(canvas){
   const ctx=canvas.getContext('2d',{willReadFrequently:true}),w=canvas.width,h=canvas.height;
@@ -347,7 +473,10 @@ async function makeProject(){
   const role=$('materialRole').value,baseColor=$('statueTint').value,phase=animation?$('phase').value:'neutral';
   const pose=animation?.poses?.[phase]||{};
   await window.NpcAvatarPreview.ensurePortraitCosmetics({assetBase:'../../assets/',configBase:'../../config/'});
-  const profile=window.NpcAvatarPreview.buildProfileFromNpcExport(npc);
+  const armorData=npc.metalArmorItems?.length
+    ? (window.MetalArmorSystem?.decorateAvatarDataWithMetalArmor?.(npc,npc.metalArmorItems)||npc)
+    : npc;
+  const profile=window.NpcAvatarPreview.buildProfileFromNpcExport(armorData);
   if(!profile)throw Error('NPC appearance could not be rendered');
   const front=transparentCanvas(256,256),head=transparentCanvas(256,256);
   const back=transparentCanvas(256,256),backHead=transparentCanvas(256,256);
@@ -364,13 +493,16 @@ async function makeProject(){
   assertPortraitMask(back,'Behind portrait');
   assertPortraitMask(head,'Head mask',false);
   const weapons=await weaponsFromInput();
+  if(heroLoadout&&selectedRecord?.statueHeroLoadout)
+    for(const weapon of weapons)weapon.offhand=weapon.path===heroLoadout.offhandPath;
   if(myGeneration!==generation)return null;
   const rig=measureNpcRig(front,back,profile,npc);
   const parts=makeStaticParts(front,back,head,backHead,profile,pose,filename,role,weapons,rig,baseColor);
   // The runtime schema is also accepted by Furniture Author's existing JSON import.
   return {schema:'hobunji_furniture_surface_author.v58',key:safeName(name).toLowerCase(),id:safeName(name),
     name,notes:'Generated with Statue Author from NPC '+(npc.name||npc.id||'unknown')+' / pose '+phase,
-    statueSource:{npcId:npc.id||null,animationName:animation?.name||null,phase,materialFile:filename,materialRole:role,baseColor,sourceRig:rig},
+    statueSource:{npcId:npc.id||null,animationName:animation?.name||null,phase,materialFile:filename,materialRole:role,baseColor,sourceRig:rig,
+      ...(npc.statueHeroLoadout?{heroLoadout:clone(npc.statueHeroLoadout)}:{})},
     tileBase:{visible:true,tileSize:1,footprintW:1,footprintD:1,y:0,gridOpacity:.55},
     surfaceRecognition:{splitAngleDeg:24,colorCode:false,selectSurfaces:true,multiSelect:true},parts,
     avatar:{visible:false}};
@@ -406,13 +538,39 @@ function downloadJson(project){
   anchor.href=url;anchor.download=safeName(project.name)+'.json';anchor.click();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
-$('npcSelect').onchange=()=>{selectedRecord=null;};
+$('npcSelect').onchange=()=>{
+  selectedRecord=null;heroLoadout=null;
+  const record=records[Number($('npcSelect').value)];
+  if(record?.appearance?.speciesId&&speciesIndex.some(s=>s.speciesId===record.appearance.speciesId))
+    $('heroSpecies').value=record.appearance.speciesId;
+};
+$('heroSpecies').onchange=()=>{$('generateHero').disabled=!$('heroSpecies').value;};
+$('generateHero').onclick=async()=>{
+  $('generateHero').disabled=true;
+  try{await generateHero();}
+  catch(error){$('heroResult').textContent='Hero generation failed: '+(error?.stack||error);status($('heroResult').textContent);}
+  finally{$('generateHero').disabled=!$('heroSpecies').value||!assetIndex;}
+};
+$('repoAnimation').onchange=()=>{
+  const id=$('repoAnimation').value;
+  if(id==='custom'){status('Import an Attack Animation Editor JSON using Advanced.');return;}
+  selectRepositoryAnimation(id);
+  status(animation?'Selected repository pose: '+animation.name:'Using neutral pose.');
+};
+$('addWeaponSprite').onclick=()=>{
+  const path=$('weaponSpriteSelect').value;if(!path)return;
+  const entries=$('weaponPaths').value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+  if(entries.length>=12){status('Maximum 12 indexed weapon layers.');return;}
+  entries.push(path);$('weaponPaths').value=entries.join('\n');heroLoadout=null;syncWeaponSummary();
+};
+$('clearWeaponSprites').onclick=()=>{$('weaponPaths').value='';heroLoadout=null;syncWeaponSummary();};
+$('weaponPaths').oninput=()=>{heroLoadout=null;syncWeaponSummary();};
 $('npcFile').onchange=async event=>{
   try{
     const raw=await readJsonFile(event.target.files?.[0]);
     const npc=raw?.appearance?raw:raw?.npc?.appearance?raw.npc:null;
     if(!npc)throw Error('Expected NPC export with an appearance object');
-    selectedRecord=npc;
+    selectedRecord=npc;heroLoadout=null;
     status('Imported NPC '+(npc.name||npc.id||'unnamed')+'.');
   }catch(error){status('NPC import failed: '+error.message);}
   event.target.value='';
@@ -422,7 +580,7 @@ $('animationFile').onchange=async event=>{
     const raw=await readJsonFile(event.target.files?.[0]);
     const value=raw?.animation?.poses?raw.animation:raw;
     if(!value?.poses||!['neutral','windup','strike'].some(k=>value.poses[k]))throw Error('Expected Attack Animation Editor poses');
-    animation=value;$('phase').disabled=false;status('Loaded '+(animation.name||'attack animation')+'. Choose a phase and build.');
+    animation=value;$('repoAnimation').value='custom';$('phase').disabled=false;status('Loaded '+(animation.name||'attack animation')+'. Choose a phase and build.');
   }catch(error){animation=null;$('phase').value='neutral';$('phase').disabled=true;status('Pose import failed: '+error.message);}
   event.target.value='';
 };
@@ -581,7 +739,7 @@ window.addEventListener('unhandledrejection',event=>{
   runtimeErrors.push(detail);
   if(!exportProject)status('Error: '+detail);
 });
-initPreview();loadNpcs();
+initPreview();Promise.allSettled([loadNpcs(),loadRepositoryIndexes()]); // Independent indexed dropdowns and canonical NPC source load without blocking one another.
 })();
 </script>
 </body>
