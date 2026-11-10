@@ -526,6 +526,7 @@
   function statueImage(url) {
     const decode=()=>new Promise((resolve,reject)=>{
       const image=new Image();
+      image.crossOrigin='anonymous'; // Commit-pinned CDNs can redirect the image to a different origin; preserve canvas pixel reads.
       image.onload=()=>resolve(image);
       image.onerror=()=>reject(new Error('Unable to load statue image: '+url.slice(0,140)));
       image.src=url;
