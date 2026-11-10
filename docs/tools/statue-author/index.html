@@ -290,14 +290,19 @@ $('diagnostics').onclick=async()=>{
   status(text);
   try{await navigator.clipboard.writeText(text);}catch(_){/* Diagnostics remain visible for copying on mobile. */}
 };
-$('send').onclick=()=>{
+$('send').onclick=async()=>{
   if(!exportProject)return;
   try{
     const tab=window.parent.document.querySelector('[data-target="furniture-avatar-author"]');
     const frame=window.parent.document.getElementById('if-furniture-avatar-author');
-    if(!frame?.contentWindow?.HobunjiFurnitureStatueImport)throw Error('Furniture Editor iframe not loaded. Open its tab once, then try again.');
+    if(!tab||!frame)throw Error('The Furniture Editor hub panel was not found');
+    tab.click(); // A lazy iframe begins loading only once its tab becomes visible.
+    const deadline=Date.now()+10000;
+    while(!frame.contentWindow?.HobunjiFurnitureStatueImport&&Date.now()<deadline){
+      await new Promise(resolve=>setTimeout(resolve,100));
+    }
+    if(!frame.contentWindow?.HobunjiFurnitureStatueImport)throw Error('Furniture Editor did not finish loading');
     frame.contentWindow.HobunjiFurnitureStatueImport(clone(exportProject));
-    tab?.click();
     status('Sent '+exportProject.parts.length+' statue pieces to Furniture Editor.');
   }catch(error){status('Direct transfer unavailable: '+error.message+'\nUse Download furniture JSON and Furniture Editor → Import JSON instead.');}
 };
