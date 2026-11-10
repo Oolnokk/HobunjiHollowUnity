@@ -195,6 +195,16 @@
     const ctx=canvas.getContext('2d');
     ctx.clearRect(0,0,canvas.width,canvas.height);
     ctx.save();ctx.scale(ratio,ratio);ctx.translate(-bounds.left,-bounds.top);
+    const paintHead = () => { // One renderer for front and behind placements; source images and pair visual transforms stay identical.
+      if(plan.visual) {
+        ctx.save();ctx.translate(plan.center.x,plan.center.y);ctx.rotate(plan.visual.angle);
+        ctx.scale(headScale*plan.visual.scaleX,headScale*plan.visual.scaleY);
+        for(const part of parts) ctx.drawImage(part.image,part.local.x,part.local.y);
+        ctx.restore();
+      } else for(const part of parts) ctx.drawImage(part.image,part.x,part.y,part.width,part.height);
+    };
+    const behind=plan.head.layerOrder==='haft-over-head'; // Match Three.js renderOrder for the exact shaft/head pair.
+    if(behind) paintHead();
     ctx.drawImage(composed,frame.left,frame.top,frame.width,frame.height); // Renders the REAL shaft including any conditional connector bore.
     if(rope.kind==='rope') {
       const source=tintedRope(ropeImage,plan.chain.color||'#FFFFFF');
@@ -205,12 +215,7 @@
       ctx.save();ctx.translate(start.x,start.y);ctx.rotate(rope.angle);ctx.scale(rope.scaleX,rope.scaleY);
       ctx.drawImage(source,-rope.top.x,-rope.top.y);ctx.restore();
     }
-    if(plan.visual) {
-      ctx.save();ctx.translate(plan.center.x,plan.center.y);ctx.rotate(plan.visual.angle);
-      ctx.scale(headScale*plan.visual.scaleX,headScale*plan.visual.scaleY); // Flip, anisotropic scale and rotation only the moving head.
-      for(const part of parts) ctx.drawImage(part.image,part.local.x,part.local.y);
-      ctx.restore();
-    } else for(const part of parts) ctx.drawImage(part.image,part.x,part.y,part.width,part.height); // Original multi-layer Tool Hub flail remains unchanged.
+    if(!behind) paintHead(); // Foreground heads overlap the haft; behind heads have already been painted beneath it.
     if(showGuides) {
       const x=plan.guideX,st={x,y:start.y},en={x,y:end.y};
       line(ctx,start,st,'#f5c5ff',[5,4]);line(ctx,st,en,'#ed93ff',[12,6]);
