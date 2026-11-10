@@ -194,8 +194,14 @@ async function ready(page) {
     const scaleYField=page.locator('#fields [aria-label="Pair scaleY"]');
     await scaleYField.fill('0.45');
     await scaleYField.dispatchEvent('change');
-    await page.waitForFunction(() => window.ModularWeapons.flailRecipe(
-      'grapple-flail','fishing-mace')?.flail?.head?.visualTransform?.scaleY===0.45);
+    const pairedScale=await page.evaluate(() => {
+      const api=window.ModularWeapons, pair=api.getConfig().shafts['grapple-flail'].overrides['fishing-mace'];
+      return {field:document.querySelector('#fields [aria-label="Pair scaleY"]')?.value,
+        pairScaleY:pair.scaleY,renderScaleY:api.flailRecipe('grapple-flail','fishing-mace')?.flail?.head?.visualTransform?.scaleY,
+        status:document.querySelector('#status')?.textContent};
+    }); // Fail with actual browser state rather than an opaque 30-second polling timeout.
+    assert.equal(pairedScale.renderScaleY,0.45,
+      'Pair scaleY must survive the editor save and reach the real flail recipe: '+JSON.stringify(pairedScale));
     await page.waitForFunction(previous => document.querySelector('#flail-preview')?.toDataURL('image/png')!==previous,
       previewBefore,{timeout:30000});
     assert.match(await page.locator('#pair-transform-status').innerText(),/scale 1 × 0.45/,
