@@ -33,6 +33,40 @@ trusted.material.isShaderMaterial=true;
 assert(!canBound(trusted),'GPU shader deformation still keeps independent conservative occlusion');
 assert(!canBound({...trusted,isSkinnedMesh:true}), 'skinned meshes are not treated as rigid');
 
+// Confirm the shipping tile-batching algorithm actually consolidates screen-
+// separated trusted rigs, rather than merely accepting a marker in isolation.
+const groupingCode=section('  function rectsOverlap(', '  function installGroundElevationShader(');
+const groupActors=new Function('actorXrayScope','replayScissorRect','isReplayCullable','objectProto',[
+  'const XRAY_TILE_RADIUS=1,XRAY_TILE_EDGE_EPSILON=.0001,XRAY_MAX_BATCH_TILES=8,XRAY_ELEVATION_GROUP_EPSILON=.05,XRAY_ELEVATION_TOLERANCE=.18;',
+  'let lastElevationReplayGroups=0,lastUnknownElevationMeshes=0,lastXrayTileRegions=0,lastXrayOrdinaryMeshes=0,scissorMinimumWorldY=0;',
+  'const xrayGearRect={},xrayGroundRect={};',
+  'const pt=()=>({set(x,y,z){this.x=x;this.y=y;this.z=z;}});',
+  'const xrayGroundBox={min:pt(),max:pt()};',
+  groupingCode,'return buildXrayGroups;'
+].join('\n'))(
+  mesh=>mesh.scope,
+  (_renderer,_camera,meshes,out,worldBox)=>{
+    if(worldBox)Object.assign(out,{x:worldBox.min.x,y:worldBox.min.z,z:worldBox.max.x-worldBox.min.x,w:worldBox.max.z-worldBox.min.z});
+    else Object.assign(out,{x:meshes[0].x,y:meshes[0].z,z:.12,w:.12});
+    return true;
+  },
+  mesh=>!mesh.isSkinnedMesh&&!mesh.children.length,
+  {onBeforeRender:noop},
+);
+const isolated=Array.from({length:24},(_,i)=>{
+  const mesh=mkMesh(hooked);
+  mesh.x=i*10+.5;mesh.z=.5;mesh.scope={col:i*10,row:0,elevation:0};
+  mesh.__hobunjiXrayBoundParity={hook:hooked,isFresh:()=>true,visibleMatrixWorld:{}};
+  return mesh;
+}); // 24 real player/NPC/enemy hand/foot parts whose gear rectangles cannot overlap another tile neighborhood.
+const batch=groupActors({},null,{},isolated);
+assert.equal(batch.groups.length,3,'24 spaced trusted rigs share three eight-tile depth builds instead of 24');
+assert(batch.groups.every(x=>x.regions.length===8),'shader tile uniform budget remains capped at eight');
+const untrusted=isolated.map(mesh=>({...mesh,__hobunjiXrayBoundParity:null}));
+assert.equal(groupActors({},null,{},untrusted).groups.length,24,'unknown onBeforeRender hooks keep 24 conservative independent depth draws');
+const overlapping=isolated.slice(0,2).map((mesh,i)=>({...mesh,x:i+.5,z:.5,scope:{col:i,row:0,elevation:0}}));
+assert.equal(groupActors({},null,{},overlapping).groups.length,2,'neighboring projected floor exemptions never share a potentially leaking depth buffer');
+
 for (const [label,source] of [['hand',hand],['foot',foot]]) {
   assert.match(source,/Object\.defineProperty\(mesh, '__hobunjiXrayBoundParity'/,
     label+' publishes its bounded hook only from the existing adapter');
