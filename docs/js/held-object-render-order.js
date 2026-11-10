@@ -1918,7 +1918,7 @@
       const shellGlState = this.state; // Scissoring is shared with the existing held/foot replay safety switch.
       const hasShellScissorApi = !!(shellGlState?.scissor && shellGlState?.setScissorTest); // Reports unavailable scissor support distinctly from an unsafe bound.
       const scissored = replayScissorEnabled && hasShellScissorApi
-        && replayScissorRect(this, camera, xrayMeshes, scissorRect, null, shellPadding);
+        && replayScissorRect(this, camera, xrayGroupMeshes, scissorRect, null, shellPadding); // Ordinary shells were drawn in the normal pass and must not inflate the exceptional replay rectangle.
       lastShellFullscreenReason = scissored ? 'none' : !replayScissorEnabled ? 'disabled'
         : !hasShellScissorApi ? 'scissor-api-unavailable' : lastScissorFailureReason;
       if (scissored && (scissorRect.z <= 0 || scissorRect.w <= 0)) {
