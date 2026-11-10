@@ -16,7 +16,7 @@ vm.runInNewContext(source, {
   window, document: {}, URL, setTimeout: () => {}, performance: { now: () => 0 },
   location: { href: 'https://example.test/game.html', pathname: '/game.html' },
 });
-const { refreshWorldMatrix } = window.HobunjiWeaponSpriteAssemblies;
+const { refreshWorldMatrix, bakedPoint } = window.HobunjiWeaponSpriteAssemblies;
 assert.equal(typeof refreshWorldMatrix, 'function');
 
 // Minimal Object3D stand-in that records which update path ran.
