@@ -7,6 +7,7 @@
   else root.RuinLayerChallenges=api;
 })(typeof self!=='undefined'?self:globalThis,function(root){
   'use strict';
+  const MELODY_PLATE_RADIUS=0.46; // One-tile physical footprint, shared by the timed cave and ruin pressure-plate triggers.
   const TYPES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain','statueDefense','findBlocks','timedMelody','fireSconces']);
   const ropeGeometry=()=>root.RuinRopeGeometry||(typeof require==='function'?require('./ruin-rope-geometry.js'):null); // Resolve at compose time: RopeCore loads later in the browser.
   const boneTextures=new Map(); // Shared Scratchbone numeral textures for every generated melody decal.
@@ -423,18 +424,20 @@
       };
     }else if(kind==='timedMelody'&&options.authoredCliffDoor){
       // Cliff-door score: visible Scratchbone notation on a stone gate, no audible example.
-      // The generated score's beat clock advances only while the player stays on the large plate.
+      // The generated score advances only while the player stays on its one-tile plate.
       const composer=options.puzzleCaveMelody||root.PuzzleCaveMelody; // One generator/judge for both exterior and interior puzzle cave doors.
       if(!composer?.generate||!composer?.createSession)throw new Error('PuzzleCaveMelody is not installed.');
       const song=composer.generate(id,options.songOptions||{}); // The cave's stable ID fixes the tune and reward tier on reload.
       const plate=body('puzzle-cave-music-plate-'+id,
-        new THREE.CylinderGeometry(1.18,1.18,.15,32),plateMat,cx,y+.08,cz-1.6);
+        new THREE.CylinderGeometry(MELODY_PLATE_RADIUS,MELODY_PLATE_RADIUS,.15,32),plateMat,cx,y+.08,cz-1.6);
       rec.plate=plate;rec.attempts=0;rec.lastDown=false;
-      rec.melodyPlate={x:cx,z:cz-1.6,radius:1.18}; // Cave melody uses the large circular bronze plate.
-      const plateSignal=root.FurniturePatternSurfaces?.attachStoneSignal?.(plate,{width:.32,height:.32,idleColor:'#e5aa55',activeColor:'#65ffaf'});
+      rec.melodyPlate={x:cx,z:cz-1.6,radius:MELODY_PLATE_RADIUS}; // Collision and visible stone agree on the same one-tile radius.
+      const plateSignal=root.FurniturePatternSurfaces?.attachStoneSignal?.(plate,{width:.11,height:.11,idleColor:'#e5aa55',activeColor:'#65ffaf'});
+      if(plateSignal?.glyph)plateSignal.glyph.position.x=.31; // Small state rune sits outside the central Hao'uun ring.
       rec.plateSignal=plateSignal; // Both the musical session and an external result use the same glyph state.
+      rec.plateArtStoneMesh=plate; // The cave's visible cylinder owns its authored stone material.
       rec.plateArt=root.PuzzleCavePlateArt?.decorate?.(THREE,plate,{
-        radius:1.18,thickness:.15,toward:{x:0,z:1}
+        radius:MELODY_PLATE_RADIUS,thickness:.15,toward:{x:0,z:1}
       })||null; // Furniture-textured stone, inscribed with hao'uun in the Tankan author font.
       const gate=body('puzzle-cave-stone-door-'+id,
         new THREE.BoxGeometry(4.7,3.4,.32),stone,cx,y+1.75,caveGateZ);
@@ -451,10 +454,10 @@
     }else if(kind==='timedMelody'||kind==='melodyEcho'){
       // Read the inscription and play the ordinary equipped instrument; the plate never opens or claims input.
       const plate=body('ruin-melody-trigger-'+id,
-        new THREE.BoxGeometry(1.35,.14,1.35),plateMat,cx,y+.07,cz);
+        new THREE.BoxGeometry(1,.14,1),plateMat,cx,y+.07,cz);
       const plateSkin=authored('ruinRewardPlate',cx,y,cz);
       if(plateSkin){
-        plateSkin.scale.set(1.8,1,1.8); // The authored press surface remains the same footprint as the melody's trigger region.
+        plateSkin.scale.set(1,1,1); // Authored stone is .74×.74 tiles, never enlarged beyond its one-tile reservation.
         const invisible=basic(0xffffff);
         invisible.transparent=true;invisible.opacity=0;invisible.depthWrite=false;
         plate.material=invisible;
@@ -462,13 +465,20 @@
       rec.plate=plate;rec.plateSkin=plateSkin;
       const visiblePlate=plateSkin?.userData?.meshById?.get?.('plate')||plate; // Prefer the actual authored stone face when available.
       rec.plateSignal=root.FurniturePatternSurfaces?.attachStoneSignal?.(visiblePlate,{
-        width:.54,height:.54,idleColor:'#82d8b7',activeColor:'#ffe18a',
+        width:.10,height:.10,idleColor:'#82d8b7',activeColor:'#ffe18a',
       }); // Only the melody plate's glyph changes on completion; the carved stone remains neutral.
+      if(rec.plateSignal?.glyph)rec.plateSignal.glyph.position.x=.30; // The centered circular lettering remains unobstructed.
+      rec.plateArtStoneMesh=visiblePlate; // The textured visible mesh owns the ring and any replacement material, not the invisible trigger.
+      rec.plateArt=root.PuzzleCavePlateArt?.decorate?.(THREE,visiblePlate,{
+        radius:plateSkin?.userData?.meshById?.get?.('plate') ? .37 : MELODY_PLATE_RADIUS,
+        thickness:plateSkin?.userData?.meshById?.get?.('plate') ? .07 : .14,
+        toward:{x:0,z:1}
+      })||null;
       const composer=options.puzzleCaveMelody||root.PuzzleCaveMelody; // Legacy echo placements now use the timed-score generator and judge.
       if(!composer?.generate||!composer?.createSession)throw new Error('PuzzleCaveMelody is not installed.');
       const song=composer.generate(id,options.songOptions||{});
       rec.notes=song.notes.map(note=>note.index);
-      rec.melodyPlate={x:cx,z:cz,radius:.72}; // Preserve the native square trigger's original footprint.
+      rec.melodyPlate={x:cx,z:cz,radius:MELODY_PLATE_RADIUS}; // The rhythm is gated only inside the one-tile footprint.
       rec.lastDown=false;rec.attempts=0;
       rec.heardNotes=[];rec.glyphs=[]; // Accepted notes and owned glyphs remain available in the mobile ruin diagnostics.
       rec.inscription=root.RuinMelodyGlyphDecal?.create?.({
@@ -840,7 +850,7 @@
       rec.inscription?.dispose?.();
       if(timedNoteListener)events?.removeEventListener?.('hobunji-kurraya-puzzle-note',timedNoteListener);
       rec.plateArt?.dispose?.(); // Retire async Tankan lettering without affecting the player's own instrument session.
-      if(rec.plateArt)rec.plate?.material?.dispose?.(); // Author-textured plate material is owned by this challenge, not the shared furniture texture.
+      if(rec.plateArt)rec.plateArtStoneMesh?.material?.dispose?.() || rec.plate?.material?.dispose?.(); // Dispose the decorated visible plate's owned stone material.
       for(const emitter of flameVisuals)emitter.dispose?.();
       flameVisuals=[];
       if(icePlacement)root.DungeonDoorIceCoverage?.clear?.(icePlacement);
