@@ -206,7 +206,7 @@
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
   <script src="js/character-action-locks.js?v=20261109festivalMerge2"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
-  <script src="js/npc-character-state.js?v=20261108kiss3"></script>
+  <script src="js/npc-character-state.js?v=20261110check776afdb"></script>
   <script src="js/npc-movement-head-target.js?v=20261101rugchairbednpc3"></script> <!-- Shared invisible movement gaze for allied NPC walkers and humanoid hostiles. -->
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
   <script src="js/npc-drink-interaction.js?v=20261025h56b02d2"></script>
@@ -357,13 +357,13 @@
   <script src="js/combat/combat-attack-events.js?v=20261027shape2"></script>
   <!-- Shared companion offensive-stat aggregation (Engraved Whistle × Sicced). -->
   <script src="js/combat/companion-offense.js?v=20261104scent1439c"></script>
-  <script src="js/companion-combat-response.js?v=20261107compgroundreview2"></script>
+  <script src="js/companion-combat-response.js?v=20261110decf5f6ae3"></script>
   <script src="js/combat/animal-scent-targeting.js?v=20261104scent1439c"></script> <!-- Scent target priority for wild/enemy animals. --> <!-- Modular companion target priority, commitment and mobile debug; read by game.js. -->
   <script src="js/combat/combat-input.js?v=20261024hc6ea2cd"></script>
   <!-- Attack pose templates shared with the attack-animation editor; before every ability module. -->
   <script src="js/combat/attack-pose-templates.js?v=20261017a"></script>
   <script src="js/combat/combat-combo.js?v=20261107combo1501a"></script>
-  <script src="js/combat/combat-quickattacks.js?v=20261106trinkets20"></script>
+  <script src="js/combat/combat-quickattacks.js?v=20261110quickreach2"></script>
   <script src="js/combat/combat-counter-shield.js?v=20261106trinkets20"></script>
   <script src="js/combat/combat-blink-dodge.js?v=20261026hmaskalpha10"></script>
   <script src="js/combat/combat-charged-breaker.js?v=20261106charge879"></script>
@@ -384,9 +384,9 @@
   <script src="js/area-footprint-blockers.js?v=20261108h908e581"></script>
   <!-- Sub-stepped sliding move extracted out of game.js; must load before game.js. -->
   <script src="js/swept-move.js?v=20260927footprints1"></script>
-  <script src="js/combat/ranged-weapons.js?v=20261109chopcover1"></script>
+  <script src="js/combat/ranged-weapons.js?v=20261110deca38cbf5"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20261020hitcolor2"></script>
-  <script src="js/combat/melee-hud-reticle.js?v=20261105koma1"></script>
+  <script src="js/combat/melee-hud-reticle.js?v=20261110checkcd5b1b7"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
        load before game.js, which calls window.BanditCombat.init(...)
        during its own setup. Reads window.Combat's comboData/quickAttackData/
@@ -2924,7 +2924,7 @@
        helper at module evaluation time, so it belongs here rather than in the
        earlier combat-definition block. It still loads before game.js and
        registers in RuntimeFrameScheduler's pre-game phase. -->
-  <script src="js/combat/quick-attack-bonus-indicator.js?v=20261107hbab3aae"></script>
+  <script src="js/combat/quick-attack-bonus-indicator.js?v=20261110halfmoon2"></script>
   <!-- Lore loading-screen overlay, shown while a wilderness zone or mine
        floor rebuilds from scratch. Content authored via
        tools/loading-screen-editor/index.html. -->
@@ -2965,7 +2965,7 @@
        calls window.NpcScheduling.init(...) during its own setup.
        resolveNpcScheduleTarget itself now bridges into
        window.NpcActivityPlanner (loaded just above) when present. -->
-  <script src="js/npc-scheduling.js?v=20261109lazyCaveNpc1"></script>
+  <script src="js/npc-scheduling.js?v=20261110check8bebafa"></script>
   <script src="js/npc-farm-plots.js?v=20261109familyaudit2"></script> <!-- Town and family field/trench worker schedules. -->
   <!-- Authored NPC relationship tags (partner/family/friend) + social
        seating policy (window.SCRATCHBONES_CONFIG.game.socialRelationships) —
@@ -3083,7 +3083,7 @@
   <script src="js/delvers-vault-signal.js?v=20261031storyVault1"></script>
   <script src="js/bed-lie-pose.js?v=20261102mattressxray2"></script> <!-- Surface-aligned sleep presentation; game.js injects the live player and calendar. -->
   <script src="js/lunge-targeting.js?v=1"></script>
-  <script src="game.js?v=20261110he2ae89e"></script>
+  <script src="game.js?v=20261110decc9e7ea9"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261109missingNpcRestore1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

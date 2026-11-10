@@ -7094,12 +7094,6 @@
       });
 
       function updateHostiles(dt) {
-        for (const entity of hostileObjects) {
-          if (entity?.maskboundTroop === 'headtaker' && window.MaskboundHeadtaker?.isActive?.(entity)
-            && entity.areaId && entity.areaId !== currentArea) { // Catches both an airborne leap and a landed neck-grip when the target changes maps.
-            window.MaskboundHeadtaker?.cancel?.(entity, 'area-changed'); // The old area's AI won't tick the grapple again; never strand the player's head lock across a doorway.
-          }
-        }
         window.WildlifeFoodWeb?.tickParticles?.(dt); // Integrates scene-owned dig clods even when their owner is out of visual range.
         const foodWebCtx = { zoneId: currentArea, tile: TILE, canOccupyAt, moveCreatureToward }; // Shared across the actor batch to avoid per-animal allocation.
         window.OffscreenRigLod.beginFrame(camera); // One frustum per frame for the behind-camera rig skip in updateCreatureMesh.
@@ -7113,6 +7107,8 @@
           for (const patchPrey of grazingPreyByPatchFrame.values()) patchPrey.length = 0;
         }
         for (const c of hostileObjects) {
+          if (c?.maskboundTroop === 'headtaker' && c.areaId && c.areaId !== currentArea &&
+              window.MaskboundHeadtaker?.isActive?.(c)) window.MaskboundHeadtaker.cancel(c, 'area-changed'); // Cancel cross-area grips during the existing roster pass.
           if (c.health <= 0 || c.areaId !== currentArea) continue;
           currentHostilesFrame.push(c);
           if (c.def?.diet !== 'herbivore' || c.state !== 'at-station-grazing') continue;
@@ -8960,7 +8956,9 @@
           let target = isBanditCompanion && player.health > 0 && playerNearBanditMaster ? player : null;
           if (!isBanditCompanion) {
             if (window.CompanionCombatResponse) {
-              target = window.CompanionCombatResponse.chooseTarget(c, master, hostileObjects, currentArea, ALERT_RANGE_PX); // Nearest active threat, with persistent commitment to avoid flip-flopping.
+              if (window.CompanionCombatResponse.shouldReevaluate(c, master, currentArea, ALERT_RANGE_PX)) {
+                target = window.CompanionCombatResponse.chooseTarget(c, master, hostileObjects, currentArea, ALERT_RANGE_PX); // Full target scoring ~7 Hz, attacks/movement per-frame.
+              } else target = c._companionCombatTarget || null; // A valid committed target needs no full-enemy rescan.
             } else {
               for (const h of hostileObjects) {
                 if (h.health > 0 && h.areaId === currentArea && !h._denHidden && h.def?.hostile !== false
@@ -13274,6 +13272,8 @@
             this._gridPath = null; this._gridPathTargetKey = null; // Cross-area hops must not retain a path planned on a different terrain grid.
             this._npcPathFailKey = null; this._npcPathFailUntil = 0; // Reset failed-path cooldown when an area becomes newly available.
             this._wanderTarget = null; this._wanderGridPath = null;
+            this._npcScheduleDecision = null; this._npcBeelineDecision = null;
+            this._npcRouteDecisionNextAt = 0;
           },
           // `spawnPos` is where the NPC reappears in `nextArea` — normally the
           // Spot they're entering through, never the final schedule target,
@@ -13324,6 +13324,18 @@
           // target so a genuinely unreachable target (e.g. a different
           // area, resolved separately above) fails fast instead of
           // scanning the whole map.
+          canBeelineDecision(targetC, targetR, allowOccupiedTarget = false) {
+            const nowMs = performance.now(); // Navigation choice lease is independent of this frame's physical movement.
+            const x = root.position.x, z = root.position.z;
+            const cache = this._npcBeelineDecision; // Reuses a recent swept path only over a small sub-tile movement.
+            if (cache && cache.area === this.area && cache.c === targetC && cache.r === targetR &&
+                cache.allowOccupied === allowOccupiedTarget && nowMs < cache.nextAt &&
+                Math.hypot(x - cache.x, z - cache.z) < 0.12) return cache.clear;
+            const clear = canNpcBeeline(this.area, x, z, targetC, targetR, allowOccupiedTarget);
+            this._npcBeelineDecision = { area: this.area, c: targetC, r: targetR,
+              allowOccupied: allowOccupiedTarget, x, z, nextAt: nowMs + 110, clear };
+            return clear;
+          },
           _tryStartGridPath(target) {
             if (!window.TilePathfinding) return false;
             const startCol = Math.floor(root.position.x), startRow = Math.floor(root.position.z);
@@ -13404,7 +13416,7 @@
               if (this.moveToward(hop.col + 0.5, hop.row + 0.5, dt)) this._wanderGridPath.shift();
               return;
             }
-            if (canNpcBeeline(this.area, root.position.x, root.position.z, this._wanderTarget.c, this._wanderTarget.r)) {
+            if (this.canBeelineDecision(this._wanderTarget.c, this._wanderTarget.r)) {
               this.moveToward(wx, wz, dt);
               return;
             }
@@ -13499,7 +13511,7 @@
               const breathScaleY = window.CreatureGenetics.creatureBreathScaleY(this.animalAvatarRef, performance.now()); // Named animals keep the same subtle alive-at-rest scale cycle as ordinary creatures.
               window.CreatureGenetics.applyCreatureBillboardScale(this.avatarGroup, this.animalSizeScale, breathScaleY);
             }
-            const scheduledTarget = resolveNpcScheduleTarget(this.rec); // Raw schedule target; spouse/child overrides historically describe sleeping without a pose.
+            const scheduledTarget = window.NpcScheduling.resolveNpcScheduleTargetCached(this, this.area === currentArea); // Schedule decisions use short leases while movement/pose remain per-frame.
             const target = scheduledTarget && scheduledTarget.pose !== 'lie' && /sleep/i.test(String(scheduledTarget.activity || ''))
               ? { ...scheduledTarget, pose: 'lie' } : scheduledTarget; // Unifies all humanoid sleepers with existing authored pose:'lie' stations.
             window.FurnitureTableSystem?.setSeatTarget(this.rec.id, target); // Publish the reservation before movement/arrival so later walkers cannot choose the same physical seat.
@@ -13614,7 +13626,7 @@
                   const exitTarget = { ...this._exitSpot, routeId: 'exit:' + this._exitToArea }; // Routes to the next local door rather than the destination map's coordinates.
                   if (this._gridPath?.length && this._gridPathTargetKey === exitTarget.routeId + '|' + exitTarget.c + ',' + exitTarget.r) {
                     this._stepGridPath(exitTarget, dt);
-                  } else if (canNpcBeeline(this.area, root.position.x, root.position.z, exitTarget.c, exitTarget.r)) {
+                  } else if (this.canBeelineDecision(exitTarget.c, exitTarget.r)) {
                     this._gridPath = null;
                     this.moveToward(ex, ez, dt);
                   } else {
@@ -13768,16 +13780,22 @@
             }
             if (this.stationToolMesh) { this.stationToolMesh.parent?.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationToolFlip = false; this.stationKurrayaTwitch = null; }
             if (this.catchupDur > 0) { this.catchupDur -= dt; if (this.catchupDur <= 0) { this.catchupDur = 0; this.catchup = 1; } }
-            if (!target.routeId && canNpcBeeline(this.area, root.position.x, root.position.z, seatTransform || bedTransform ? tx - 0.5 : target.c, seatTransform || bedTransform ? tz - 0.5 : target.r, target.pose === 'sit' || target.pose === 'lie')) {
+            if (!target.routeId && this.canBeelineDecision(seatTransform || bedTransform ? tx - 0.5 : target.c, seatTransform || bedTransform ? tz - 0.5 : target.r, target.pose === 'sit' || target.pose === 'lie')) {
               this.state = 'beeline'; this.routeNode = this.routeTarget = this.routePath = this._gridPath = null; this._routePathTargetKey = null;
               this.moveToward(tx, tz, dt);
             } else if (this.state === 'grid-path') {
               this._stepGridPath(target, dt);
+            } else if (this.state === 'to-route' && this.routeTarget &&
+                this._npcRouteDecisionNextAt > performance.now() &&
+                this._npcRouteDecisionKey === (this.area + '|' + target.routeId + '|' + target.c + ',' + target.r)) {
+              this.moveToward(this.routeTarget.c + 0.5, this.routeTarget.r + 0.5, dt); // Keep walking without rediscovering the same route node each frame.
             } else if (this.state !== 'on-route') {
+              this._npcRouteDecisionKey = this.area + '|' + target.routeId + '|' + target.c + ',' + target.r;
+              this._npcRouteDecisionNextAt = performance.now() + 160;
               this.routeTarget = findNearestRouteNode(this.area, root.position.x, root.position.z, target);
               // Don't wade to the route node — if the direct line there crosses
               // water, wait instead (no off-route dry path is computed here).
-              if (this.routeTarget && !canNpcBeeline(this.area, root.position.x, root.position.z, this.routeTarget.c, this.routeTarget.r)) {
+              if (this.routeTarget && !this.canBeelineDecision(this.routeTarget.c, this.routeTarget.r)) {
                 this.routeTarget = null;
               }
               if (this.routeTarget) {

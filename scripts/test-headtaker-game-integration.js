@@ -16,8 +16,9 @@ assert(playerComposer.includes('maskboundHeadtakerNeckControlled'),'player rende
 assert(bandits.includes("if (c?._maskboundHeadtakerNeckControlled) return;"),'victim bandits can walk but not independently aim their neck');
 assert(head.includes('detachOnHostDodge: true'),'player can still dodge to escape the grapple');
 assert(head.includes("'player-portrait-rebuilt'"),'rebuilding a player avatar clears stale neck/joint ownership instead of writing disposed skin bones');
-assert(game.includes("cancel?.(entity, 'area-changed')"),'area transition cleans up the old-area Headtaker even though it cannot chase into the new map');
-assert(game.includes("entity?.maskboundTroop === 'headtaker' && window.MaskboundHeadtaker?.isActive?.(entity)"),'area cleanup covers leap before attachment as well as an active grip');
+assert(game.includes("window.MaskboundHeadtaker.cancel(c, 'area-changed')"),'area transition cancels an off-area Headtaker during the existing hostile roster pass');
+assert(game.includes("c?.maskboundTroop === 'headtaker' && c.areaId && c.areaId !== currentArea"),'roster cleanup covers off-area leaping and attached Headtakers without a duplicate pass');
+assert(game.includes("window.MaskboundHeadtaker?.isActive?.(c)) window.MaskboundHeadtaker.cancel(c, 'area-changed')"),'only active Headtaker attacks are cancelled across areas');
 assert(game.includes("cancel?.(c, 'despawn')"),'despawn releases the scoped player neck lock before disposing the attacker');
 assert(head.includes('isActive: attacker =>'),'active committed attacks are detectable independently from hostile AI state');
 assert(game.includes("c.maskboundTroop === 'headtaker' && window.MaskboundHeadtaker?.isActive?.(c)"),'search/flee transitions cannot freeze a committed Headtaker grapple');

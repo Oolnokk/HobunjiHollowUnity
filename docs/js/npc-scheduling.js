@@ -121,6 +121,7 @@
     if (!npcId) return false;
     if (typeof provider === 'function') presenceProviders.set(String(npcId), provider);
     else presenceProviders.delete(String(npcId));
+    targetRevision += 1; // Visitor registration invalidates cached destinations, including departures.
     return true;
   }
   function hasPresenceSchedule(rec) { return !!rec?.visitorPresence || presenceProviders.has(rec?.id); }
@@ -219,17 +220,21 @@
     };
   }
   function registerNpcStations(stations, fallbackArea) {
+    let changed = false; // Dynamic map/station registration invalidates cached NPC destinations.
     (stations || []).forEach(st => {
       const normalized = normalizeNpcStation(st, fallbackArea);
-      if (normalized) npcStationsById.set(normalized.id, normalized);
+      if (normalized) { npcStationsById.set(normalized.id, normalized); changed = true; }
     });
+    if (changed) targetRevision++;
   }
   function resolveNpcStationTarget(stationId) {
     const station = npcStationsById.get(stationId);
     return station ? { ...station, stationId: station.id } : null;
   }
   function replaceMapNpcStations(stations, area) {
-    for (const id of mapStationIds.get(area) || []) npcStationsById.delete(id);
+    const priorIds = mapStationIds.get(area); // Empty replacement maps may remove every old station without introducing a new one.
+    if (priorIds?.size) targetRevision++;
+    for (const id of priorIds || []) npcStationsById.delete(id);
     registerNpcStations(stations, area);
     mapStationIds.set(area, new Set((stations || []).map(station => normalizeNpcStation(station, area)?.id).filter(Boolean)));
   }
@@ -587,12 +592,16 @@
   // NPC's schedule outright, or null/undefined to leave it alone. Checked
   // before visitors/agenda/flood shelter so a following date can't be
   // pulled back to their workplace mid-date.
+  let targetRevision = 0; // Invalidates all walker decision leases when a dynamic override changes.
+  const NEAR_DECISION_MS = 160; // Active-area destination selection at ~6Hz instead of render cadence.
+  const FAR_DECISION_MS = 500; // Off-area agendas need fewer polls; movement remains independently updated.
   const targetOverrides = new Map(); // ownerId → provider, insertion-ordered.
   function registerTargetOverride(ownerId, provider) {
     const id = String(ownerId || '').trim();
     if (!id) return false;
     if (typeof provider === 'function') targetOverrides.set(id, provider);
     else targetOverrides.delete(id);
+    targetRevision++;
     return true;
   }
   function resolveTargetOverride(rec) {
@@ -638,6 +647,30 @@
     return applyTownFloodShelter(rec, normalTarget);
   }
 
+  function resolveNpcScheduleTargetCached(walker, visibleArea = true) {
+    if (!walker?.rec) return null;
+    const nowMs = performance.now(); // Schedule decision lease; motion/pose uses the retained destination each frame.
+    const day = deps?.calendar?.day; // Day changes invalidate a cached agenda immediately.
+    const time01 = deps?.calendar?.time01; // Clock jumps from dev tools or scenes invalidate without waiting for the lease.
+    const record = walker.rec;
+    const floodEmergency = !!window.WaterSystem?.isTownFloodEmergency?.(); // Emergencies should interrupt cached ordinary station routines immediately.
+    const cache = walker._npcScheduleDecision; // Walker-local cache avoids a global traversal and repeated planner allocation.
+    const timeJumped = cache && Number.isFinite(time01) && Number.isFinite(cache.time01) &&
+      (time01 < cache.time01 - 0.01 || time01 - cache.time01 > 0.02);
+    if (cache && nowMs < cache.nextAt && !timeJumped &&
+        cache.area === walker.area && cache.record === record &&
+        cache.hooks === record.scheduleHooks && cache.rules === record.scheduleHooks?.rules &&
+        cache.day === day && cache.floodEmergency === floodEmergency &&
+        cache.revision === targetRevision) return cache.target;
+    const target = resolveNpcScheduleTarget(record);
+    walker._npcScheduleDecision = {
+      target, nextAt: nowMs + (visibleArea ? NEAR_DECISION_MS : FAR_DECISION_MS),
+      area: walker.area, record, hooks: record.scheduleHooks,
+      rules: record.scheduleHooks?.rules, day, time01, floodEmergency, revision: targetRevision,
+    };
+    return target;
+  }
+
   // ── Dev/test-only scheduling hooks ────────────────────────────────────
   // Lets headless tests (and manual console poking) validate the NPC
   // station-arrival/perform pipeline — pathfind to a station, go idle, pick
@@ -655,6 +688,7 @@
     jumpTime(day, time01) {
       if (Number.isFinite(day)) deps.calendar.day = Math.max(1, Math.round(day));
       if (Number.isFinite(time01)) deps.calendar.time01 = Math.max(0, Math.min(0.999, time01));
+      targetRevision++;
       return { day: deps.calendar.day, time01: deps.calendar.time01, hour: window.CalendarSystem?.getHour?.() };
     },
     // Registers an ad-hoc station and pins npcId to it via an always-active
@@ -671,6 +705,7 @@
       const hooks = walker.rec.scheduleHooks || (walker.rec.scheduleHooks = { rules: [] });
       hooks.rules = (hooks.rules || []).filter(r => r.id !== `test_rule_${npcId}`);
       hooks.rules.unshift({ id: `test_rule_${npcId}`, from: '00:00', to: '23:59', mapId: targetArea, stationId, activity: label });
+      targetRevision++;
       return true;
     },
     // Undoes forceNpcToTestStation, letting the NPC's real schedule resume.
@@ -679,6 +714,7 @@
       if (!walker?.rec?.scheduleHooks?.rules) return false;
       walker.rec.scheduleHooks.rules = walker.rec.scheduleHooks.rules.filter(r => r.id !== `test_rule_${npcId}`);
       npcStationsById.delete(`test_station_${npcId}`);
+      targetRevision++;
       return true;
     },
     // Reproduces exactly what local-db-overrides.js's _applyPositionRedirect
@@ -696,6 +732,7 @@
       const hooks = walker.rec.scheduleHooks || (walker.rec.scheduleHooks = { rules: [] });
       hooks.rules = (hooks.rules || []).filter(rule => rule.id !== `test_rule_${npcId}`);
       hooks.rules.unshift({ id: `test_rule_${npcId}`, from: '00:00', to: '23:59', mapId: targetArea, sourceStationId, c, r, activity: label });
+      targetRevision++;
       return true;
     },
     listNpcIds() { return deps.npcWalkers.map(w => w.rec?.id).filter(Boolean); },
@@ -734,6 +771,8 @@
     registerPresenceProvider,
     hasPresenceSchedule,
     resolveNpcScheduleTarget,
+    resolveNpcScheduleTargetCached,
+    invalidateTargetDecisions: () => { targetRevision++; }, // External story/agenda owners can invalidate immediately.
     registerTargetOverride,
     applyTownFloodShelter,
     floodShelterSnapshot,
