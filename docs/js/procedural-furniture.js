@@ -205,11 +205,20 @@
 
   const glbTemplates = new Map(); // Shared decoded templates; instances clone geometry/materials before applying furniture edits.
   function loadFurnitureGlb(path) {
-    if (!glbTemplates.has(path)) glbTemplates.set(path, new Promise((resolve, reject) => {
-      if (!THREE.GLTFLoader) { reject(new Error('GLTFLoader unavailable')); return; }
-      new THREE.GLTFLoader().load(path, gltf => resolve(gltf.scene), undefined, reject);
-    }));
-    return glbTemplates.get(path);
+    const quality = window.GeometryQuality; // Authored furniture GLBs can use exported pre-baked geometry tiers.
+    const key = path + '|geometry:' + (quality?.getTier?.() || 'original'); // Cache geometry once per model and tier.
+    if (!glbTemplates.has(key)) {
+      const load = requested => new Promise((resolve, reject) => {
+        if (!THREE.GLTFLoader) { reject(new Error('GLTFLoader unavailable')); return; }
+        new THREE.GLTFLoader().load(requested, gltf => resolve(gltf.scene), undefined, reject);
+      });
+      const promise = (quality?.loadWithFallback ? quality.loadWithFallback(path, load) : load(path)).catch(error => {
+        glbTemplates.delete(key);
+        throw error;
+      });
+      glbTemplates.set(key, promise);
+    }
+    return glbTemplates.get(key);
   }
   // The roof shingle GLB is drawn through HousePieceGen's shingle pipeline (bone-aligned,
   // surface-mapped geometry and the farm roofs' tinted material) so windmill blades match

@@ -81,6 +81,7 @@ iframe{width:100%;height:100%;border:none;display:block;background:var(--bg)}
         <button class="tab" data-target="animal-head-rig"><span class="tab-dot"></span>🐾 Animal Head Rig</button>
         <button class="tab" data-target="flying-animal-author"><span class="tab-dot"></span>Flying Animal Author</button>
         <button class="tab" data-target="pattern-editor"><span class="tab-dot"></span>🧵 Pattern Editor</button>
+        <button class="tab" data-target="geometry-workshop" title="Preview material-safe remeshing and decimation of authored and generated 3D objects"><span class="tab-dot"></span>🔺 Geometry Workshop</button>
         <button class="tab" data-target="tree-asset-exporter"><span class="tab-dot"></span>🌲 Tree Assets</button>
         <span class="tab-group">World</span>
         <button class="tab" data-target="wilderness-generation-lab"><span class="tab-dot"></span>❄ Wilderness + Surface Lab</button>
@@ -120,6 +121,7 @@ iframe{width:100%;height:100%;border:none;display:block;background:var(--bg)}
         <div class="frame-wrap" id="fw-animal-head-rig"><iframe src="animal-head-rig/index.html" title="Animal Head Rig Author" id="if-animal-head-rig" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-flying-animal-author"><iframe src="flying-animal-author/index.html?v=20261103tzatzul9" title="Flying Animal Author" id="if-flying-animal-author" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-pattern-editor"><iframe src="pattern-editor/index.html?v=20261106grehlr3" title="Pattern Editor" id="if-pattern-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-geometry-workshop"><iframe src="geometry-workshop/index.html" title="Geometry Workshop" id="if-geometry-workshop" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-tree-asset-exporter"><iframe src="tree-asset-exporter/index.html" title="Tree Asset Exporter" id="if-tree-asset-exporter" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-wilderness-generation-lab"><iframe src="wilderness-generation-lab/index.html" title="Wilderness + Surface Lab" id="if-wilderness-generation-lab" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-background-scenery-author"><iframe src="background-scenery-author/index.html?v=20261103hiddenTool2" title="Background Scenery Author" id="if-background-scenery-author" loading="lazy"></iframe></div>
@@ -193,7 +195,7 @@ window.addEventListener('message',e=>{
 const GAME_WS_OVERRIDE_KEY='hobunji_game_workspace_override_v1';
 document.getElementById('open-game-btn').addEventListener('click',()=>{
   try{const bridge=document.getElementById('if-map-editor')?.contentWindow?._mapEditorBridge;const liveWs=bridge?.getWorkspace?bridge.getWorkspace():null;const raw=liveWs?JSON.stringify(liveWs):localStorage.getItem('hobunji_map_editor_workspace_v1');if(raw)localStorage.setItem(GAME_WS_OVERRIDE_KEY,raw)}catch(_){}
-  window.open('../index.html','_blank');
+  window.__hobunjiToolsGameWindow = window.open('../index.html','_blank'); // Workspace-linked game is available to the Geometry Workshop for live mesh picking.
 });
 </script>
 </body>
