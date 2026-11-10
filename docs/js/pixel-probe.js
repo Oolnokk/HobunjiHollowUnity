@@ -1277,6 +1277,12 @@
       lines.push(result
         ? `3D melee ${result.shape || 'collider'}: hit=${result.hit ? 'YES' : 'no'} range=${Number(result.bestDistanceWorld).toFixed(2)}/${Number(result.rangeWorld).toFixed(2)} angle=${Number(result.bestAngleDeg).toFixed(1)}°/${Number(result.halfConeDeg).toFixed(1)}° pitch=${Number(result.pitchDeg).toFixed(1)}° height=${Number(result.halfHeightWorld || 0).toFixed(2)} trails=${meleeDebug.activeTrailCount}`
         : `3D melee: no resolved swing yet; trails=${meleeDebug.activeTrailCount}`);
+      lines.push(`Melee trail pool: free=${meleeDebug.pooledTrailCount || 0} created=${meleeDebug.trailMeshesCreated || 0} reused=${meleeDebug.trailMeshesReused || 0} freed=${meleeDebug.trailMeshesDisposed || 0}`); // Mobile-visible proof that successive strikes reuse GPU buffers.
+      const strikeTimes = meleeDebug.strikeCpuMs; // Combat's small snapshot avoids collecting all profiler buckets during live debugging.
+      if ((strikeTimes?.enemy?.samples || 0) + (strikeTimes?.player?.samples || 0) > 0)
+        lines.push(`Strike CPU peak/last: enemy=${Number(strikeTimes.enemy.max).toFixed(1)}/${Number(strikeTimes.enemy.last).toFixed(1)}ms player=${Number(strikeTimes.player.max).toFixed(1)}/${Number(strikeTimes.player.last).toFixed(1)}ms (Performance Profiler)`);
+      const swingPose = window.BanditCombat?.swingPoseCpuMs; // Per-enemy animation cost, also captured on completely missed attacks.
+      if (swingPose?.samples) lines.push(`Bandit swing pose CPU peak/last: ${Number(swingPose.peakMs).toFixed(1)}/${Number(swingPose.lastMs).toFixed(1)}ms per bandit (Profiler)`);
     }
     const held = deps.getHeldObjectDebug?.();
     if (held) lines.push(`Held objects: mode=${held.mode} tool=${held.toolVisible ? 'visible' : 'hidden'}/${held.toolParent} item=${held.heldItemVisible ? 'visible' : 'hidden'}/${held.heldItemParent} key=${held.heldItemKey || '-'} drink=${held.drinkAnimating ? `${held.drinkPhase}@${Math.round(held.drinkProgress * 100)}%` : 'idle'}`);

@@ -3085,6 +3085,22 @@
     if (cfg.attackCooldownSOther != null) BANDIT_ATTACK_COOLDOWN_S_OTHER = cfg.attackCooldownSOther;
   }
 
+  const banditSwingPoseCpuStats = { lastMs: 0, peakMs: 0, samples: 0 }; // Pixel Probe diagnoses attack-frame pose spikes only when the existing profiler is enabled.
+  function measuredBanditToolMesh(c) {
+    const profiler = window.PerfProfiler; // Reuse existing opt-in instrumentation rather than adding a timer to every hostile animation frame.
+    if ((!c?._banditAction && !c?._banditToolTail) || !profiler?.isEnabled?.()) return updateBanditToolMesh(c);
+    const token = profiler.begin('Combat: bandit swing pose');
+    try { return updateBanditToolMesh(c); }
+    finally {
+      if (token) {
+        const elapsedMs = profiler.end(token);
+        banditSwingPoseCpuStats.lastMs = elapsedMs;
+        banditSwingPoseCpuStats.peakMs = Math.max(banditSwingPoseCpuStats.peakMs, elapsedMs);
+        banditSwingPoseCpuStats.samples++;
+      }
+    }
+  }
+
   window.BanditCombat = {
     init,
     applyBanditConfig,
@@ -3111,7 +3127,8 @@
     updateCombatAI: updateBanditCombatAI,
     restNeckLook,
     updateMovementHeadLook,
-    updateToolMesh: updateBanditToolMesh,
+    updateToolMesh: measuredBanditToolMesh, // Unchanged gameplay/pose calculation, with optional per-bandit swing timing.
+    get swingPoseCpuMs() { return { ...banditSwingPoseCpuStats }; }, // Cheap mobile diagnostics without a full performance snapshot.
     updateTrailArc: () => {}, // Shared Combat.update owns ribbon lifetime; legacy API remains callable.
     fireCounterRiposte: fireBanditCounterRiposte,
     naturalSwing: banditNaturalSwing,
