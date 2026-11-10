@@ -35,8 +35,10 @@ class Group { // Minimal scene graph tests parent linking without requiring brow
   remove(child){const index=this.children.indexOf(child);if(index>=0)this.children.splice(index,1);if(child.parent===this)child.parent=null;return this;}
 }
 class Matrix4 {compose(){return this;}}
+class Vector3 {}
+class Quaternion {}
 const context={window:{FoliageGenerator:null,ProceduralFurniture:{buildPartMesh:()=>new Group()}},
-  THREE:{Group,Matrix4},fetch:()=>{throw Error('No fetch in furniture graph test');}};
+  THREE:{Group,Matrix4,Vector3,Quaternion},fetch:()=>{throw Error('No fetch in furniture graph test');}};
 vm.runInNewContext(runtime,context,{filename:'authored-furniture-runtime.js'});
 const build=context.window.AuthoredFurniture.buildGroup;
 const records=[
