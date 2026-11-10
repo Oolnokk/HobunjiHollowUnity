@@ -344,6 +344,21 @@
     return Array.isArray(gained)?gained:[];
   }
 
+  function recoverLostBossKeyOnReentry(profile,state) {
+    if(profile?.fortifiedStrongholdChild!=='boss'||!state?.occupantsCleared
+      ||state.strongholdLordKeyClaimed)return false;
+    // A corpse is retained when possible, but not every cached cave survives unloading.
+    // Never lock the player out of an already-earned treasury if that corpse disappears.
+    if(!window.Shattercasks?.grantBurdenLoot || !window.CaveSiteSystem?.claimStrongholdLordKey)return false;
+    const granted=grantItems({[TREASURY_KEY]:1});
+    if(!granted)return false; // Missing inventory service is retryable on the next boss-room visit.
+    if(!window.CaveSiteSystem.claimStrongholdLordKey(profile.mapId))return false;
+    status.keysClaimed++;
+    status.last='Recovered unclaimed Lord treasury key on reentry: '+profile.mapId;
+    window.__farmLog?.('[bandit-stronghold] '+status.last,'world');
+    return true; // Other native corpse loot is never duplicated or stolen by this recovery.
+  }
+
   function installCorpseHook() {
     const api=window.BanditCamps;
     if(!api?.makeCorpseWorldObject||api.__strongholdBossCorpseHook)return false;
@@ -454,7 +469,7 @@
 
   window.BanditStrongholdBoss=Object.freeze({
     decorateParent,decorateChild,entityOptions,onEntitySpawned,onWolfPounce,enrichHit,updateAI,
-    grantCorpseDrops,installCorpseHook,installItemRegistration,itemRegistration,
+    grantCorpseDrops,recoverLostBossKeyOnReentry,installCorpseHook,installItemRegistration,itemRegistration,
     tick,objectAt,bossStillAlive,forgetMap,debugSnapshot,
     __test:Object.freeze({circularTiles,kindFor,masteryEffectsForHit,scrollLoot}),
   });
