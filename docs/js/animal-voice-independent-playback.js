@@ -213,7 +213,7 @@
     return dot / Math.sqrt(refEnergy * candidateEnergy);
   }
 
-  function* wsolaStretchSteps(channels, stretch, sampleRate) {
+  function* wsolaStretchSteps(channels, stretch, sampleRate, minimumStretch = 0.25) {
     const sourceLength = channels[0]?.length || 0;
     if (!sourceLength) {
       lastStretchSourceSamples = 0;
@@ -221,7 +221,7 @@
       lastStretchCoverage = 1;
       return channels.map(() => new Float32Array(1));
     }
-    const safeStretch = clamp(finite(stretch, 1), 0.25, 9); // Accommodates the snore's one-ninth tempo at neutral pitch.
+    const safeStretch = clamp(finite(stretch, 1), clamp(finite(minimumStretch, 0.25), 1 / 256, 0.25), 9); // Default is the original 4x compression ceiling; only explicitly opted-in short skeleton combo voices can exceed it.
     const targetLength = Math.max(1, Math.round(sourceLength * safeStretch));
     lastStretchSourceSamples = sourceLength;
     lastStretchTargetSamples = targetLength;
@@ -309,8 +309,8 @@
     return outputs;
   }
 
-  function wsolaStretch(channels, stretch, sampleRate) {
-    const steps = wsolaStretchSteps(channels, stretch, sampleRate); // Existing animal rendering retains its synchronous API.
+  function wsolaStretch(channels, stretch, sampleRate, minimumStretch = 0.25) {
+    const steps = wsolaStretchSteps(channels, stretch, sampleRate, minimumStretch); // Existing animal rendering retains its synchronous API.
     let result = steps.next(); // Holds the generator's completed channel buffers.
     while (!result.done) result = steps.next();
     return result.value;
@@ -347,7 +347,7 @@
       self.onmessage = ({ data }) => {
         try {
           const started = performance.now();
-          const stretched = wsolaStretch(data.channels, Math.pow(2, data.pitchSemitones / 12) / data.tempo, data.sampleRate);
+          const stretched = wsolaStretch(data.channels, Math.pow(2, data.pitchSemitones / 12) / data.tempo, data.sampleRate, data.opts.minimumStretch);
           const channels = applyOutputEdgeEnvelope(stretched, data.sampleRate, data.opts);
           self.postMessage({ id: data.id, channels, elapsedMs: performance.now() - started,
             sourceSamples: lastStretchSourceSamples, targetSamples: lastStretchTargetSamples, coverage: lastStretchCoverage }, channels.map(channel => channel.buffer));
@@ -395,7 +395,7 @@
           renderJobs.set(id, { resolve, reject });
           try {
             worker.postMessage({ id, channels, sampleRate: buffer.sampleRate, tempo, pitchSemitones,
-              opts: { edgeFadeS: opts.edgeFadeS, tailPadS: opts.tailPadS } }, channels.map(channel => channel.buffer));
+              opts: { edgeFadeS: opts.edgeFadeS, tailPadS: opts.tailPadS, minimumStretch: opts.minimumStretch } }, channels.map(channel => channel.buffer));
           } catch (error) {
             disableRenderWorker(error);
           }
@@ -408,7 +408,7 @@
   async function processConstantAxesCooperatively(buffer, tempo, pitchSemitones, opts) {
     const channels = Array.from({ length: buffer.numberOfChannels }, (_, index) => buffer.getChannelData(index).slice()); // Private processing buffers.
     const pitchRatio = Math.pow(2, pitchSemitones / 12); // Matches the synchronous renderer's independent pitch math.
-    const steps = wsolaStretchSteps(channels, pitchRatio / tempo, buffer.sampleRate); // Shares every DSP calculation with animal playback.
+    const steps = wsolaStretchSteps(channels, pitchRatio / tempo, buffer.sampleRate, opts?.minimumStretch); // Shares every DSP calculation with animal playback.
     let sliceStartedAt = performance.now(); // Measures CPU slices between task yields.
     let deadline = sliceStartedAt + 2; // Yield between grains once this task has used its short processing budget.
     let result = steps.next(); // Final value contains the stretched channels.
@@ -523,7 +523,7 @@
     const channels = Array.from({ length: buffer.numberOfChannels }, (_, index) => buffer.getChannelData(index).slice());
     const pitchRatio = Math.pow(2, clampPitchFor(pitchSemitones, maxPitchSemitones) / 12); // Explicit pitch remains independent from tempo; only this final resample transposes it.
     const safeTempo = clampTempoFor(tempo, maxTempo);
-    const stretched = wsolaStretch(channels, pitchRatio / safeTempo, buffer.sampleRate); // WSOLA changes wall-clock speed while compensating for the later pitch resample.
+    const stretched = wsolaStretch(channels, pitchRatio / safeTempo, buffer.sampleRate, renderOpts?.minimumStretch); // WSOLA changes wall-clock speed while compensating for the later pitch resample.
     return applyOutputEdgeEnvelope(stretched, buffer.sampleRate, renderOpts);
   }
 
@@ -534,7 +534,7 @@
     while (renderedByKey.size > MAX_RENDER_CACHE) renderedByKey.delete(renderedByKey.keys().next().value);
   }
   function renderBufferFor(url, decoded, context, tempo, pitchSemitones, maxTempo = MAX_TEMPO, maxPitchSemitones = MAX_SHIFT_SEMITONES, renderOpts = {}) {
-    const key = renderCacheKey(url, tempo, pitchSemitones, maxTempo, maxPitchSemitones);
+    const key = `${renderCacheKey(url, tempo, pitchSemitones, maxTempo, maxPitchSemitones)}|${renderOpts?.minimumStretch ?? 0.25}`; // Distinct fast-compression results cannot alias the ordinary renderer cache.
     if (renderedByKey.has(key)) return renderedByKey.get(key);
     const pending = Promise.resolve().then(async () => {
       const clock = typeof performance !== 'undefined' && performance?.now ? performance : Date;
@@ -562,7 +562,8 @@
     const trimSettings = opts.trimSilence && typeof opts.trimSilence === 'object' ? opts.trimSilence : {}; // Normalize only options that affect rendered samples.
     const key = [decodedRenderId(decoded), decodedRenderId(context), tempo, pitchSemitones,
       !!opts.trimSilence, trimSettings.padMs, trimSettings.absoluteFloor, trimSettings.relativeFloor,
-      opts.edgeFadeS ?? OUTPUT_EDGE_FADE_S, opts.tailPadS ?? OUTPUT_TAIL_PAD_S].join('|'); // Exact rendering identity; different pitch/timing never shares a waveform.
+      opts.edgeFadeS ?? OUTPUT_EDGE_FADE_S, opts.tailPadS ?? OUTPUT_TAIL_PAD_S,
+      opts.minimumStretch ?? 0.25].join('|'); // High-compression combo renders must not be reused for ordinary attacks or finishers. // Exact rendering identity; different pitch/timing never shares a waveform.
     if (decodedRenderCache.has(key)) {
       chargeRenderStats.cacheHits++;
       const cached = decodedRenderCache.get(key); // Refresh LRU order on a cache hit.

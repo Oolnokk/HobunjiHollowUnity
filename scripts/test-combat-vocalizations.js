@@ -152,7 +152,7 @@ vm.runInContext(voiceOwnerSource, context, { filename: 'character-voice-owner.js
 vm.runInContext(source, context, { filename: 'combat-vocalizations.js' });
 
 assert(context.window.CombatVocalizations, 'runtime API should install');
-assert.equal(context.window.CombatVocalizations.version, 4);
+assert.equal(context.window.CombatVocalizations.version, 5);
 assert.equal(typeof scheduledBreath, 'function', 'breath loop should use shared scheduler');
 
 const chargePlan = context.window.CombatVocalizations.chargeRatePlan(1.2, 4, 1.25);
@@ -171,6 +171,7 @@ assert.match(animalPlaybackSource, /extraWetBase/, 'generic combat one-shots rou
 assert.match(source, /__combatVocalWet = window\.EnvironmentalReverb\?\.connectWetNode/, 'custom charge playback also sends into the current environmental reverb space');
 assert.match(animalPlaybackSource, /function stop\(fadeOutS = 0\)/, 'shared processed voice handles must support click-safe fade stops');
 assert.match(banditSource, /voiceCategory: 'combo'/, 'NPC combo attacks must carry semantic vocal metadata');
+assert.match(banditSource, /isComboFinisher: isFinalStep/, 'NPC combo finishers must carry their actual final-step flag so short skeleton grunts never replace their finishers');
 assert.match(banditSource, /voiceCategory: 'quickAttack'/, 'NPC quick attacks must carry semantic vocal metadata');
 assert.match(banditSource, /voiceCategory: 'offensiveHold'/, 'NPC charged attacks must carry semantic vocal metadata');
 assert.match(source, /chargeRatePlan\(audibleBuffer\.duration/, 'charge duration math uses the silence-trimmed audible buffer');
@@ -434,7 +435,13 @@ assert(Math.abs(timelineContext.getWeaponAttackTimeline().activeRemainingS-1.3)<
 timelineContext.toolSwingT=0;
 assert.equal(timelineContext.getWeaponAttackTimeline(),null,'reaching Neutral releases the animation gate');
 
-// Every authored species/gender applies the same profile to all one-shot combat vocals.
+// Every authored species/gender retains its attack modulation; ordinary skeletons only vocalize when alerted or attacking.
+const combatStateStart = banditSource.indexOf('  function setCombatExpression(entity, active)'); // Exercise the shipped humanoid-hostile combat-state entry point, not just a test-only audio method.
+const combatStateEnd = banditSource.indexOf('  // ── Combatant', combatStateStart); // Isolate the real exported function without loading the BanditCombat rendering dependencies.
+assert(combatStateStart >= 0 && combatStateEnd > combatStateStart, 'shared hostile combat-state function is available');
+const skeletonStateContext = vm.createContext({ window: { CombatVocalizations: W.CombatVocalizations } }); // Fake portrait is intentionally absent: alert audio must not depend on a visible frown canvas.
+vm.runInContext(banditSource.slice(combatStateStart, combatStateEnd), skeletonStateContext);
+
 W.AudioSystem.gameAudioConfig = () => ({ enabled: true, sfxVolume: 1 });
 for (const entry of played) entry.handle?.finish();
 for (const [speciesId, genders] of Object.entries(W.CombatVocalizations.getConfig().utteranceModulation.species)) {
@@ -455,6 +462,29 @@ for (const [speciesId, genders] of Object.entries(W.CombatVocalizations.getConfi
       assert.equal(played.at(-1).volume, Math.min(1, 0.86 * expectedGain));
       if (isSkeleton) assert.equal(played.at(-1).url, skeletonShriekUrl, 'skeleton attack uses the skeleton shriek');
       played.at(-1).handle.finish();
+    }
+    if (isSkeleton) {
+      const silentStart = played.length; // Impact, DoT, stamina and dodge must not produce a shriek or a human fallback voice.
+      emit(listeners, 'hobunji-resource-change', { entity: actor, delta: -1, immediate: true });
+      emit(listeners, 'hobunji-resource-change', { entity: actor, delta: -1, immediate: false });
+      assert.equal(W.CombatVocalizations.playDodge(actor), null, 'skeleton dodge is silent');
+      scheduledBreath({ timestamp: 100000 });
+      assert.equal(played.length, silentStart, `${actor.id} stays silent when hurt, winded, or dodging`);
+      assert.equal(W.CombatVocalizations.debugSnapshot().trackedNpcBreathers, 0, 'skeleton stamina never joins the NPC breathing scheduler');
+      skeletonStateContext.setCombatExpression(actor, true);
+      assert.equal(played.length, silentStart + 1, 'entering combat raises exactly one skeleton alarm');
+      assert.equal(played.at(-1).url, skeletonShriekUrl);
+      assert.equal(W.CombatVocalizations.debugSnapshot().lastAlert.entity, actor.id, 'mobile debug records the skeleton alarm');
+      skeletonStateContext.setCombatExpression(actor, true);
+      emit(listeners, 'hobunji-resource-change', { entity: actor, delta: -4, immediate: true });
+      assert.equal(played.length, silentStart + 1, 'staying in combat and taking hits never raises duplicate alarms');
+      played.at(-1).handle.finish();
+      skeletonStateContext.setCombatExpression(actor, false);
+      skeletonStateContext.setCombatExpression(actor, true);
+      assert.equal(played.length, silentStart + 2, 'leaving and re-entering combat rearms the next alarm');
+      played.at(-1).handle.finish();
+      W.CombatVocalizations.forgetEntity(actor);
+      continue;
     }
     emit(listeners, 'hobunji-resource-change', { entity: actor, delta: -1, immediate: true });
     assert(Math.abs(played.at(-1).pitchSemitones - expectedPitch) < 1e-9, `${actor.id}/pain pitch`);
@@ -589,6 +619,68 @@ console.log('all species/gender combat voice profiles, dodge duration, native fa
       }
     }
   }
+  // Exercise the real staged NPC vocal hook: ordinary skeleton combo steps should have
+  // ONE shortened shriek across a living NPC's entire combined windup-and-strike vocal window, with no pitch shift.
+  const livingComboActor = { id: 'living-combo-probe', health: 80, appearance: { speciesId: 'harlyao', gender: 'male' } }; // Living control case provides the same authored combo attack timing.
+  const skeletalComboActor = { id: 'short-skeleton-combo-probe', health: 80, rosterRecord: { appearance: { speciesId: 'harlyao-skeleton', gender: 'male' } } }; // Skeleton keeps its dedicated shriek and pitch steps.
+  const stageNpcCombo = (actor, finalStep) => { // Real BanditCombat action metadata enters the already-wrapped Combat.beginStagedAction.
+    W.Combat.beginStagedAction({
+      windupS: 0.2, strikeS: 0.05, recoverS: 0,
+      data: { isBandit: true, attacker: actor, voiceCategory: 'combo', voiceAbilityId: 'swingCombo', comboStep: finalStep ? 2 : 0, isComboFinisher: finalStep },
+    });
+    return { spec: stagedSpec, action: stagedAction };
+  };
+  const livingCombo = stageNpcCombo(livingComboActor, false); // Living NPCs keep their original windup + strike voices.
+  livingCombo.action.t = 0.2;
+  livingCombo.spec.onUpdate(livingCombo.action);
+  const livingReleaseS = W.CombatVocalizations.debugSnapshot().lastStrike.durationS; // Canonical living NPC release span, not guessed from a separate config.
+  assert(Math.abs(livingReleaseS - 0.05) < 1e-9, 'the living strike grunt maps to its authored strike phase');
+  const livingVoiceWindowS = livingCombo.action.totalS; // The real NPC action maps the living windup voice followed by its release grunt across this full window.
+  assert(Math.abs(livingVoiceWindowS - 0.25) < 1e-9, 'living vocal window includes windup and strike, not only 50ms of strike');
+  W.CombatVocalizations.forgetEntity(livingComboActor);
+
+  const skeletonCombo = stageNpcCombo(skeletalComboActor, false);
+  assert.equal(W.CombatVocalizations.debugSnapshot().activeCharges.length, 1, 'ordinary skeleton combo starts one shriek immediately, without a separate windup voice');
+  const initialComboStrike = W.CombatVocalizations.debugSnapshot().lastStrike; // Crosses the strike callback to prove there is no second utterance.
+  assert.equal(initialComboStrike.shortSkeletonCombo, true);
+  assert.equal(initialComboStrike.durationS, livingVoiceWindowS, 'skeleton shriek spans the full living NPC vocal window');
+  skeletonCombo.action.t = 0.2;
+  skeletonCombo.spec.onUpdate(skeletonCombo.action);
+  assert.deepEqual(W.CombatVocalizations.debugSnapshot().lastStrike, initialComboStrike, 'reaching the strike never adds another skeleton shriek');
+  for (let turn = 0; turn < 64 && !W.CombatVocalizations.debugSnapshot().activeCharges.some(t => t.ready); turn++) await Promise.resolve();
+  const compressed = W.CombatVocalizations.debugSnapshot().activeCharges.find(t => t.ready);
+  assert(compressed, 'skeleton combo shriek must render in time');
+  assert.equal(compressed.targetDurationS, livingVoiceWindowS);
+  assert(Math.abs(compressed.stretchedTempo - 4.8) < 1e-9, '1.2 second shriek compresses across the 0.25 second living NPC vocal window');
+  assert.equal(compressed.pitchSemitones, 3, 'tempo compression does not raise the pre-rolled skeleton voice pitch');
+  assert.equal(W.CombatVocalizations.debugSnapshot().lastCharge.independentPitch, true);
+  assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastCharge.fullDurationS - livingVoiceWindowS) < 1e-9, 'rendered shriek has the same audible duration as the living vocal window');
+  W.CombatVocalizations.forgetEntity(skeletalComboActor);
+
+  const delayedStart = stageNpcCombo(skeletalComboActor, false); // Cold decoder/render can complete after the 250ms attack vocal window, especially on mobile.
+  now += 300; // Complete async decode 50ms after the authored voice end; the accelerated shriek should still play intact.
+  for (let turn = 0; turn < 64 && !W.CombatVocalizations.debugSnapshot().activeCharges.some(t => t.ready); turn++) await Promise.resolve();
+  const recovered = W.CombatVocalizations.debugSnapshot().activeCharges.find(t => t.ready);
+  assert(recovered, 'a slightly late skeleton combo shriek must remain audible rather than being discarded');
+  assert.equal(W.CombatVocalizations.debugSnapshot().lastCharge.progress, 0, 'late brief shrieks start from their beginning, not a clipped tail');
+  assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastCharge.lateStartS - 0.3) < 1e-9, 'Pixel Probe records first-use start lag');
+  assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastCharge.fullDurationS - livingVoiceWindowS) < 1e-9, 'late recovery never changes pitch-preserving playback duration');
+  W.CombatVocalizations.forgetEntity(skeletalComboActor);
+
+  const staleStart = stageNpcCombo(skeletalComboActor, false); // An attack cancelled long ago must not play delayed audio over the next action.
+  now += 500;
+  for (let turn = 0; turn < 64 && !W.CombatVocalizations.debugSnapshot().lastCharge?.action?.includes('skip-stale-skeleton-combo'); turn++) await Promise.resolve();
+  assert.equal(W.CombatVocalizations.debugSnapshot().activeCharges.length, 0, 'well-expired combo vocals cleanly release their claims');
+  assert.equal(W.CombatVocalizations.debugSnapshot().lastCharge.action, 'skip-stale-skeleton-combo', 'Pixel Probe explains why a stale vocal was dropped');
+  now = 0; // Isolate the real-time playback clock from the remainder of this test.
+  W.CombatVocalizations.forgetEntity(skeletalComboActor);
+
+  const finisherCombo = stageNpcCombo(skeletalComboActor, true);
+  assert.equal(W.CombatVocalizations.debugSnapshot().activeCharges.length, 1, 'skeleton combo finisher retains the original windup voice');
+  finisherCombo.action.t = 0.2;
+  finisherCombo.spec.onUpdate(finisherCombo.action);
+  assert.equal(W.CombatVocalizations.debugSnapshot().lastStrike.shortSkeletonCombo, false, 'finisher retains original length and vocal staging');
+  W.CombatVocalizations.forgetEntity(skeletalComboActor);
   // Time-stretched release playback uses independently owned Web Audio sources too, not just the one-shot backend.
   const overlappingActor = { id: 'timed-overlap-actor', appearance: { speciesId: 'nuhongan', gender: 'female' } }; // Keeps this audio-only probe separate from the species modulation loops.
   const startTimedRelease = (id, category = 'quickAttack') => W.CombatVocalizations.playStrikeGrunt(

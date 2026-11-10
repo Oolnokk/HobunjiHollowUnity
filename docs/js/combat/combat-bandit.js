@@ -789,6 +789,7 @@
   function setCombatExpression(entity, active) {
     const avatarRef = entity?.avatarRef;
     const next = !!active;
+    window.CombatVocalizations?.onHostileAlertState?.(entity, next); // The existing combat-state transition drives skeleton alarms independently of damage and of whether the portrait can show a frown.
     if (!avatarRef?.frontCanvas || avatarRef.combatExpressionActive === next) return false;
     const source = next ? avatarRef.combatFrownCanvas : avatarRef.neutralFrontCanvas; // Combat uses frown; leaving combat restores the exact spawn portrait rather than assuming neutral authoring.
     if (!copyBanditExpressionCanvas(avatarRef.frontCanvas, source)) return false;
@@ -1440,7 +1441,7 @@
       // (on the final combo step) retreatT/resets comboIndex -- a
       // landing bandit attack was silently skipping its own cooldown
       // and never retreating after its 3-hit combo.
-      data: { isBandit: true, attacker: c, comboId: loadout.tap1, comboStep, sfxPitch, voiceCategory: 'combo', voiceAbilityId: loadout.tap1 },
+      data: { isBandit: true, attacker: c, comboId: loadout.tap1, comboStep, isComboFinisher: isFinalStep, sfxPitch, voiceCategory: 'combo', voiceAbilityId: loadout.tap1 },
       onStrike: () => {
         c.telegraphState = 'strike';
         // The hit and trail use the facing frozen when pre-windup alignment completed.

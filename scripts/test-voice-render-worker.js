@@ -49,19 +49,20 @@ function sandbox(Worker = TestWorker) {
   for (let channel = 0; channel < 2; channel++) {
     for (let index = 0; index < input.length; index++) input.getChannelData(channel)[index] = Math.sin(index * (0.027 + channel * 0.009)) * 0.6;
   }
-  const cases = [[0.7, -5], [1.6, 7], [1, 0]]; // Stretch, compress, and unity transforms share precisely the fallback math.
+  const cases = [[0.7, -5], [1.6, 7], [1, 0], [24, -3]]; // Stretch, compress, unity, and opt-in fast combo playback must agree between worker and cooperative paths.
   await Promise.all(cases.map(async ([tempo, pitch]) => {
-    const expected = scope.testDsp.processConstantAxes(input, tempo, pitch, 4, 24, { tailPadS: 0 }); // Synchronous reference.
-    const actual = await scope.testDsp.processConstantAxesOffThread(input, tempo, pitch, { tailPadS: 0 });
+    const renderOpts = { tailPadS: 0, ...(tempo === 24 ? { minimumStretch: 1 / 256 } : {}) }; // Fast skeleton combo explicitly opts in; other voices retain the old DSP limit.
+    const expected = scope.testDsp.processConstantAxes(input, tempo, pitch, 64, 24, renderOpts); // Synchronous reference.
+    const actual = await scope.testDsp.processConstantAxesOffThread(input, tempo, pitch, renderOpts);
     for (let channel = 0; channel < 2; channel++) assert.deepEqual(Array.from(actual[channel]), Array.from(expected[channel]));
   }));
   assert.equal(timerYields, 0, 'worker jobs must not incur nested timer startup delays');
   assert.equal(input.getChannelData(0).length, 12000, 'transfer must preserve the cached decoded source');
-  assert.equal(scope.AnimalVoiceIndependentPlayback.debugSnapshot().chargeRendering.worker.completed, 3);
+  assert.equal(scope.AnimalVoiceIndependentPlayback.debugSnapshot().chargeRendering.worker.completed, 4);
   const context = { createBuffer: buffer }; // Exercise production cache around the worker.
   const cached = await scope.testDsp.renderBufferFor('cached.wav', input, context, 1, 2);
   assert.equal(await scope.testDsp.renderBufferFor('cached.wav', input, context, 1, 2), cached);
-  assert.equal(scope.AnimalVoiceIndependentPlayback.debugSnapshot().chargeRendering.worker.completed, 4);
+  assert.equal(scope.AnimalVoiceIndependentPlayback.debugSnapshot().chargeRendering.worker.completed, 5);
 
   const blocked = sandbox(class { constructor() { throw new Error('CSP blocked worker'); } }); // Restricted browsers must retain correct audio.
   const fallback = await blocked.testDsp.processConstantAxesOffThread(input, 1, 0, {});
