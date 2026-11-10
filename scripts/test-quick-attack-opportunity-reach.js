@@ -9,7 +9,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const abilities = {}; // Registered attack actions exercised below.
-const calls = { prepare: 0, lunges: [], swings: 0, spentFooting: 0 }; // Side-effect counters for cue-versus-strike comparisons.
+const calls = { prepare: 0, lunges: [], swings: 0, spentFooting: 0, enchantPower: 0, weaponKey: 0 }; // Side-effect and repeated-lookup counters for cue-versus-strike comparisons.
 const stats = { rangeMul: 0.15, lungeMul: 0.2, coneWidthMul: 0.3 }; // Equipped mastery/perk bonuses.
 const shape = { range: 1.25, speed: 1, efficiency: 1, power: 1 }; // Actual weapon-shape range and cadence.
 const base = { damage: 14, rangePx: 64, knockbackPxS: 360 }; // Current cut ability base geometry.
@@ -17,7 +17,7 @@ let gustActive = true; // Toggle Living Gust without changing the player's equip
 const deps = {
   TILE: 32,
   player: { x: 0, y: 0, angle: 0, health: 100, stamina: 100 },
-  currentWeaponKey: () => 'test-weapon',
+  currentWeaponKey: () => { calls.weaponKey++; return 'test-weapon'; },
   weaponAbility: () => base,
   triggerWeaponSwingVisual() { calls.swings++; },
   beginCombatLunge(distance, duration, hop, geometry) { calls.lunges.push({ distance, duration, hop, geometry }); },
@@ -43,7 +43,7 @@ const context = {
   EnchantmentSystem: {
     TUNING: { LIVING_GUST_LUNGE_MULTIPLIER: 1.25 },
     hasBase: () => gustActive,
-    getEnchantmentPowerMultiplier: () => 2,
+    getEnchantmentPowerMultiplier: () => { calls.enchantPower++; return 2; },
   },
 };
 context.window = context;
@@ -70,9 +70,14 @@ close(profile.reachPx, 328.2, 'cue limit is lunge PLUS cone length');
 close(profile.halfConeRad, 39 * Math.PI / 180 * 1.25 * 1.3, 'half-cone width includes shape and mastery');
 assert.equal(calls.prepare, 0, 'reading cue reach never invokes the attack preparation listener');
 assert.equal(calls.spentFooting, 0, 'checking the cue never spends Footing');
+assert.equal(calls.enchantPower, 1, 'read-only cue samples Living Gust power once');
 
+const previousPowerCalls = calls.enchantPower; // Live attacks already prepare their enchantment, so the geometry helper must not prepare it twice.
+const previousKeyCalls = calls.weaponKey; // The attack should reuse the equipped weapon key across preparation and geometry.
 abilities.backstabFlick.onTap();
 assert.equal(calls.prepare, 1, 'live attack still calls preparation once');
+assert.equal(calls.enchantPower, previousPowerCalls, 'live strike does not redundantly resolve enchantment power before prepare');
+assert.equal(calls.weaponKey, previousKeyCalls + 1, 'live strike reads its weapon identity only once');
 assert.equal(calls.lunges.length, 1, 'live attack starts one lunge');
 close(calls.lunges[0].distance, profile.lungePx, 'actual attack travels precisely the same lunge computed for its cue');
 close(calls.lunges[0].geometry.rangePx, profile.rangePx, 'actual hit cone uses exactly the preview range');
@@ -80,6 +85,7 @@ close(calls.lunges[0].geometry.halfConeRad, profile.halfConeRad, 'actual hit con
 
 gustActive = false;
 const noGust = quick.getReachProfile(deps, 'backstabFlick');
+assert.equal(calls.enchantPower, previousPowerCalls, 'non-Gust weapons skip Immundanity scans entirely');
 close(noGust.lungePx, noGust.baseLungePx, 'unequipping Living Gust removes its reach modifier');
 assert.ok(noGust.reachPx < profile.reachPx, 'reticle radius shrinks dynamically without enchantment');
 assert.equal(calls.prepare, 1, 'change detection still does not prepare another attack');
