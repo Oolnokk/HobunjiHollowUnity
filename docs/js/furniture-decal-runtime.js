@@ -323,7 +323,7 @@
     const container = tankanContainerState(record);
     return {
       offsetU: TANKAN_BASELINE.offsetU + finiteOr(record.offsetU, 0),
-      offsetV: TANKAN_BASELINE.offsetV + finiteOr(record.offsetV, 0),
+      offsetV: isTankanRing(record) ? finiteOr(record.offsetV, 0) : TANKAN_BASELINE.offsetV + finiteOr(record.offsetV, 0), // Circular text defaults to exact surface center; preserve legacy vertical text calibration.
       width: TANKAN_BASELINE.width * Math.max(0.001, finiteOr(record.width, 1)),
       height: TANKAN_BASELINE.height * Math.max(0.001, finiteOr(record.height, 1)),
       rotationDeg: TANKAN_BASELINE.rotationDeg + finiteOr(record.rotationDeg, 0),
