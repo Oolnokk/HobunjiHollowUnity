@@ -39,13 +39,13 @@ aside{max-height:none;overflow:visible;border-right:0;grid-template-columns:repe
 <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="../../config/scratchbones-config.js"></script>
 <script src="../../config/hand-model-profiles.js"></script>
-<script src="../../js/color-fill.js"></script>
+<script src="../../js/color-fill.js?v=20261110statueTint8"></script>
 <script src="../../js/portrait-utils.js"></script>
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/png-plane-avatar.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
 <script>window.__hobunjiFurnitureAssetBase='../../assets/';</script>
-<script src="../../js/procedural-furniture.js"></script>
+<script src="../../js/procedural-furniture.js?v=20261110statueTwoPass1"></script>
 </head>
 <body>
 <header><h1>🗿 Statue Author</h1><small>NPC appearance + frozen Attack Animation Editor pose → editable Furniture Editor pieces, all using the same chosen texture.</small></header>
@@ -410,8 +410,10 @@ $('animationFile').onchange=async event=>{
 };
 $('materialPreset').onchange=()=>{
   if($('materialPreset').value!=='other')$('materialFile').value=$('materialPreset').value;
-  $('materialRole').value=$('materialPreset').value==='boards.png'?'wood':'stone';
-  if(!$('statueTint').dataset.userEdited)$('statueTint').value=$('materialPreset').value==='boards.png'?'#b68d63':'#b9b1a2';
+  const choice=$('materialPreset').value;
+  $('materialRole').value=choice==='boards.png'?'wood':choice==='carved_smooth.png'?'stone':'other';
+  if(!$('statueTint').dataset.userEdited&&choice!=='other')
+    $('statueTint').value=choice==='boards.png'?'#b68d63':'#b9b1a2';
 };
 $('statueTint').oninput=()=>{$('statueTint').dataset.userEdited='true';};
 $('build').onclick=async()=>{
