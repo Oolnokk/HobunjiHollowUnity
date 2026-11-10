@@ -344,6 +344,12 @@
 
   function profileForMapId(mapId) {
     const id = String(mapId || '');
+    // A save loaded *inside* a fortress reaches the cavern generator before its exterior
+    // camp can be seeded. Recover its synthetic profile by map id instead of accidentally
+    // decorating it as an uninhabited wildlife den.
+    const savedStronghold = /^map_i_den_(map_[a-z0-9_]+)_bandit_stronghold_(\d+)$/i.exec(id);
+    if (!sitesByMapId.has(id) && savedStronghold)
+      registerFortifiedStronghold(savedStronghold[1], Number(savedStronghold[2]));
     if (!sitesByMapId.has(id) && id.startsWith('map_i_den_')) {
       wildlifeDeps?.zoneLayouts?.forEach?.((layout, zoneId) => {
         if (!sitesByMapId.has(id) && layout?.dens?.length) zoneSites(zoneId);
@@ -1206,6 +1212,10 @@
     for(const sites of outdoorPuzzleSitesByZone.values())for(const site of sites)sitesByMapId.delete(site.mapId);
     for(const site of rockPuzzleSitesByParent.values())sitesByMapId.delete(site.mapId);
     outdoorPuzzleSitesByZone.clear(); // A restored world must reroll its own cliff doors, not inherit the prior world's entrance registry.
+    for (const [mapId, site] of [...sitesByMapId]) if (site?.fortifiedStronghold) {
+      sitesByMapId.delete(mapId); plansByMapId.delete(mapId);
+      window.BanditStrongholds?.forgetInterior?.(mapId); // A different world must not inherit a cached fortress model.
+    }
     rockPuzzleSitesByParent.clear(); // The restored parent profiles lazily recreate the correct hidden-door identities.
     savedCaveState = saved && typeof saved === 'object' && typeof saved.identity === 'string' && saved.sites && typeof saved.sites === 'object' ? clone(saved) : null;
     stateIdentity = null; // Next access reloads from the restored payload (or the legacy key).
@@ -1320,6 +1330,7 @@
     puzzleChallengesByMapId.delete(mapId); // Retire the timed puzzle's listeners and authored meshes with the cavern.
     window.CavernOreRocks?.forgetMap?.(mapId); // Tear down the fused cave wall and its mineable indices when a relocated cave is retired.
     plansByMapId.delete(mapId);
+    window.BanditStrongholds?.forgetInterior?.(mapId); // Remove the generated cover mesh when a camp rerolls or a world changes.
     window.CaveTripwireTraps?.dispose?.(mapId); // The old cave's string meshes, pendulum, and physical cask cannot survive relocation.
     bodiesByMapId.delete(mapId);
     bodySpawnPromises.delete(mapId);
