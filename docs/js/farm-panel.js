@@ -186,7 +186,6 @@
   function normalizeStableEntry(entry) {
     progression()?.normalizeEntry?.(entry);
     petRapport()?.normalizeEntry?.(entry); // Pet Rapport lives on the same stable entry and is normalized before either UI/debug reads it.
-    refinements()?.ensureStableCaps?.();
     const max = stableMaxLevel(entry);
     entry.level = Math.max(0, Math.min(max, Math.floor(Number(entry.level) || 0)));
     if (entry.level >= max) entry.stableXp = 0;
@@ -503,7 +502,7 @@
     ensureStableRosterStyles();
     appendStableRoleTabs(list, stable);
     if (!stable.length) {
-      list.innerHTML = '<div class="farm-note">Your stable is empty. Add an undeployed creature item from the Inventory tab.</div>';
+      list.appendChild(makeText('div', 'Your stable is empty. Add an undeployed creature item from the Inventory tab.')); // Keep category buttons discoverable even when no animals have been collected.
       refinements()?.syncCompanionCombatPerks?.();
       return;
     }
@@ -524,7 +523,8 @@
     const stowedAdultCount = stable.filter(entry => entry.stowed && !stableIsBaby(entry) && stableRole(entry) === selectedStableRole).length; // Drawer counts only this page's stowed adults.
     const stowedBabyCount = stable.filter(entry => entry.stowed && stableIsBaby(entry) && stableRole(entry) === selectedStableRole).length; // Baby storage remains counted in its own category.
 
-    stable.forEach(normalizeStableEntry); // Ensure legacy level caps are normalized before comparing visible levels.
+    refinements()?.ensureStableCaps?.(); // This validates the whole roster; call only once, not once for every animal.
+    stable.forEach(normalizeStableEntry); // Normalize levels before sorting without quadratic duplicate cap scans.
     stable.slice().sort(compareStableRoster).forEach(entry => { // Sorts the UI without changing persistence order or stable IDs.
       const role = stableRole(entry);
       const meta = roleMeta(entry);
@@ -551,7 +551,7 @@
         `<span class="farm-row-value">${baby ? 'Baby · ' : ''}${entry.stowed ? 'Stowed · ' : ''}${esc(meta.label)} · Lv. ${entry.level}/${max}${points > 0 ? ` · ${points} point${points === 1 ? '' : 's'}` : ''}</span>` +
         `<span class="stable-training-chevron" style="font-size:15px;opacity:.7;margin-left:auto;">${isExpanded ? '▾' : '▸'}</span>` +
         livestockTraitsHtml(entry.genotype, entry.kind);
-      window.InventoryStacks?.applyHeadIcon?.(row.querySelector('.farm-row-icon'), entry.kind, entry.genotype); // Shared cached Nursery portrait, applied once per rebuilt row.
+      if (role === selectedStableRole) window.InventoryStacks?.applyHeadIcon?.(row.querySelector('.farm-row-icon'), entry.kind, entry.genotype); // Avoid composing hidden-page portraits and retain the shared Nursery cache.
       row.querySelector('.stable-favorite-btn')?.addEventListener('click', event => { event.stopPropagation(); toggleStableFavorite(entry); });
 
       row.querySelector('.farm-companion-btn')?.addEventListener('click', event => {
