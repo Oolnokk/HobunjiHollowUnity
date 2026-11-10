@@ -221,6 +221,10 @@ async function run(){
     assert.ok(generated.heroEquipment.armor.some(item=>item.id==='tangedcirclet'),
       'Captain helmet must use the game’s real crafted circlet blueprint');
     assert.ok(generated.heroEquipment.metalKey,'Hero weapon must use a real metal tier');
+    const torsoPart=generated.pieces.find(item=>item.id==='statue_body');
+    const mainWeaponPart=generated.pieces.find(item=>item.id==='statue_weapon_0');
+    assert.ok(mainWeaponPart?.size?.sy<=torsoPart?.size?.sy*.91,
+      'Generated hero weapons must fit the actor height without stretched art: '+JSON.stringify([torsoPart,mainWeaponPart]));
     assert.ok(generated.pieces.some(item=>item.id==='statue_weapon_0'&&item.textureReady),
       'Hero must visibly hold a weapon from the cultural bandit shape pool');
     assert.ok(generated.pieces.some(item=>item.id==='statue_weapon_1'&&item.textureReady),
