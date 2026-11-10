@@ -247,7 +247,7 @@
             // The NPC body already uses Lambert shading. Using the original
             // GLB's PBR/vertex-color material here could leave the hands and
             // feet almost black even when their material texture is correct.
-            return new THREE.MeshLambertMaterial({color:0xffffff,side:THREE.DoubleSide});
+            return new THREE.MeshBasicMaterial({color:0xffffff,side:THREE.DoubleSide}); // Unlit farm-cliff PNG parity across rigged statue pieces.
           }
           const result=material.clone();result.color?.set(resolveColor(part,baseColor));
           if(part.materialTexture)applyPartTexture(result,part);
@@ -752,7 +752,7 @@
     const t = part.transform;
     if (part.kind === 'statueSprite') {
       const geometry = new THREE.PlaneGeometry(Math.max(.001, t.sx || 1), Math.max(.001, t.sy || 1));
-      const material = new THREE.MeshLambertMaterial({color:0xffffff,side:part.statueBackMaskDataUrl?THREE.FrontSide:THREE.DoubleSide,transparent:true,alphaTest:.025,depthWrite:true});
+      const material = new THREE.MeshBasicMaterial({color:0xffffff,side:part.statueBackMaskDataUrl?THREE.FrontSide:THREE.DoubleSide,transparent:true,alphaTest:.025,depthWrite:true}); // Same unlit pixel color as farm cliff surfaces.
       const mesh = new THREE.Mesh(geometry, material);
       mesh.position.set(t.x || 0,t.y || 0,t.z || 0);
       mesh.rotation.set((t.rx || 0) * DEG,(t.ry || 0) * DEG,(t.rz || 0) * DEG);
@@ -761,7 +761,7 @@
       mesh.castShadow = true;
       applyStatueSpriteFinish(mesh, part);
       if (part.statueBackMaskDataUrl) {
-        const back = new THREE.Mesh(geometry.clone(), new THREE.MeshLambertMaterial({
+        const back = new THREE.Mesh(geometry.clone(), new THREE.MeshBasicMaterial({
           color:0xffffff,side:THREE.FrontSide,transparent:true,alphaTest:.025,depthWrite:true
         }));
         back.name = (part.name || 'Statue') + ' rear portrait';
