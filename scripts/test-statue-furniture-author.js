@@ -61,4 +61,5 @@ const cyclic=build({key:'badLinks',parts:[
 ]});
 assert.notEqual(cyclic.userData.meshById.get('a').parent,cyclic.userData.meshById.get('b').parent?.parent,
   'Impossible parent cycle is not created');
+require('./test-statue-surface-cells.js'); // Real raster algorithm is tested alongside furniture graph regression.
 console.log('Statue Author scripts, material sharing, direct furniture import, parent chains and cycle guard passed.');
