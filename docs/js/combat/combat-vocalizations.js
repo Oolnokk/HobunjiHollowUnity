@@ -869,8 +869,9 @@ function liveChargeTargetDurationS(abilityId) {
 // Grunts are time-mapped onto authored attack phases; a short windup->strike
 // interpolation can need well over the renderer's generic 4x compression.
 const MAX_MAPPED_TEMPO = 16;
+const SHORT_SKELETON_COMBO_MAX_TEMPO = 64; // Ordinary skeleton combo shrieks can be far longer than living grunts; only these hits permit stronger pitch-preserving WSOLA compression.
 
-function chargeRatePlan(bufferDurationS, targetDurationS, normalTempo) {
+function chargeRatePlan(bufferDurationS, targetDurationS, normalTempo, maxMappedTempo = MAX_MAPPED_TEMPO) {
   const clipDurationS = Math.max(0.001, Number(bufferDurationS) || 0.001);
   const targetS = Number(targetDurationS) > 0 ? Number(targetDurationS) : clipDurationS;
   const baseNormalTempo = Math.max(0.02, Number(normalTempo) || 1);
@@ -882,7 +883,7 @@ function chargeRatePlan(bufferDurationS, targetDurationS, normalTempo) {
     clipDurationS,
     targetDurationS: targetS,
     normalTempo: baseNormalTempo,
-    stretchedTempo: clamp(clipDurationS / targetS, 1 / 9, MAX_MAPPED_TEMPO), // Full charge duration is gameplay-authored; species voice tempo only defines normal/catch-up speed.
+    stretchedTempo: clamp(clipDurationS / targetS, 1 / 9, maxMappedTempo), // Preserve the attack's authored duration; ordinary skeleton combo attacks opt into stronger compression without pitch transposition.
     earlyReleaseNormalSpeedMul,
     catchUpTempo: clamp(baseNormalTempo * earlyReleaseNormalSpeedMul, 1 / 9, 4),
   };
@@ -994,6 +995,7 @@ function beginCharge(options = {}) {
       : null,
     catchUpOnRelease: options.catchUpOnRelease === true,
     createdAtMs: Number.isFinite(options.createdAtMs) ? options.createdAtMs : nowMs(),
+    shortSkeletonCombo: options.shortSkeletonCombo === true && options.category === 'combo' && hasSkeletonVoice(entity), // Only regular skeleton combo steps, never finishers, use the living-NPC strike-grunt duration.
     ready: false,
     released: false,
     cancelled: false,
@@ -1035,12 +1037,13 @@ function beginCharge(options = {}) {
     const voice = voicePlaybackPlan(special ? special.pitchOffsetSemitones : Number.isFinite(options.pitchOffsetSemitones)
       ? options.pitchOffsetSemitones // Pre-rolled by prewarmStrikeGrunt so this render is already cached.
       : randomPitchSemitones(config.grunts?.pitchRandomSemitones ?? 0), entity);
-    const plan = chargeRatePlan(audibleBuffer.duration, token.targetDurationS, voice.tempo);
+    const maxMappedTempo = token.shortSkeletonCombo ? SHORT_SKELETON_COMBO_MAX_TEMPO : MAX_MAPPED_TEMPO; // Wider tempo range only for the short, already time-mapped combo vocal.
+    const plan = chargeRatePlan(audibleBuffer.duration, token.targetDurationS, voice.tempo, maxMappedTempo);
     if (special) { // Tempo variation is independent from pitch while preserving the shared timed-attack renderer.
-      plan.stretchedTempo = clamp(plan.stretchedTempo * special.tempoMultiplier, 1 / 9, MAX_MAPPED_TEMPO);
+      plan.stretchedTempo = clamp(plan.stretchedTempo * special.tempoMultiplier, 1 / 9, maxMappedTempo);
       plan.catchUpTempo = clamp(plan.catchUpTempo * special.tempoMultiplier, 1 / 9, 4);
     }
-    const renderOpts = { pitchSemitones: voice.pitchSemitones, tailPadS: 0, trimSilence: false, maxTempo: MAX_MAPPED_TEMPO };
+    const renderOpts = { pitchSemitones: voice.pitchSemitones, tailPadS: 0, trimSilence: false, maxTempo: maxMappedTempo };
     const [fullRendered, catchUpRendered] = await Promise.all([
       renderIndependent(audibleBuffer, ctx, { ...renderOpts, tempo: plan.stretchedTempo }),
       token.catchUpOnRelease
@@ -1095,6 +1098,7 @@ function beginCharge(options = {}) {
       earlyReleaseNormalSpeedMul: plan.earlyReleaseNormalSpeedMul,
       progress,
       independentPitch: true,
+      shortSkeletonCombo: token.shortSkeletonCombo, // Pixel Probe confirms the rendered duration and independent pitch for shortened undead combo grunts.
       atMs: Math.round(nowMs()),
     };
   }).catch(error => {
@@ -1155,8 +1159,10 @@ function beginCharge(options = {}) {
   // hit, so on slower devices it started late (offset past its loud start) or
   // not at all, leaving only the windup grunt, which ends at the strike. Roll
   // the pitch and render at attack start; the windup-end call reuses the cache.
-  function prewarmStrikeGrunt(entity, category, durationS) {
+  function prewarmStrikeGrunt(entity, category, durationS, options = {}) {
     const special = specialVoiceFor(entity, 'strike'); // Keep the same pitch/tempo variation during prewarm and strike playback.
+    const maxMappedTempo = options.shortSkeletonCombo === true && category === 'combo' && hasSkeletonVoice(entity)
+      ? SHORT_SKELETON_COMBO_MAX_TEMPO : MAX_MAPPED_TEMPO; // Match the release renderer exactly so Android/worker prewarming reuses its cache.
     const url = special?.url || pickStrikeGruntUrl(category);
     if (!url || !(durationS > 0)) return url ? { url, voiceVariant: special } : null;
     const pitchOffsetSemitones = special ? special.pitchOffsetSemitones : randomPitchSemitones(config.grunts?.pitchRandomSemitones ?? 0);
@@ -1168,20 +1174,22 @@ function beginCharge(options = {}) {
         const trim = playback.trimDecodedSilence ? playback.trimDecodedSilence(buffer, ctx, { padMs: 4 }) : { buffer };
         const audible = trim.buffer || buffer; // Same trimmed buffer object beginCharge will use (trims are cached per buffer).
         const voice = voicePlaybackPlan(pitchOffsetSemitones, entity);
-        const plan = chargeRatePlan(audible.duration, durationS, voice.tempo);
-        const tempo = special ? clamp(plan.stretchedTempo * special.tempoMultiplier, 1 / 9, MAX_MAPPED_TEMPO) : plan.stretchedTempo; // Match beginCharge exactly so cached pitch-preserving audio is reusable.
-        return playback.renderDecodedIndependentBuffer(audible, ctx, { pitchSemitones: voice.pitchSemitones, tailPadS: 0, trimSilence: false, maxTempo: MAX_MAPPED_TEMPO, tempo });
+        const plan = chargeRatePlan(audible.duration, durationS, voice.tempo, maxMappedTempo);
+        const tempo = special ? clamp(plan.stretchedTempo * special.tempoMultiplier, 1 / 9, maxMappedTempo) : plan.stretchedTempo; // Match beginCharge exactly so cached pitch-preserving audio is reusable.
+        return playback.renderDecodedIndependentBuffer(audible, ctx, { pitchSemitones: voice.pitchSemitones, tailPadS: 0, trimSilence: false, maxTempo: maxMappedTempo, tempo });
       }).catch(() => {});
     }
     return { url, pitchOffsetSemitones, voiceVariant: special };
   }
 
-  function playStrikeGrunt(entity, category, abilityId, durationS = 0, elapsedS = 0, preset = null) {
+  function playStrikeGrunt(entity, category, abilityId, durationS = 0, elapsedS = 0, preset = null, options = {}) {
     const isCombo = category === 'combo';
+    const shortSkeletonCombo = isCombo && options.shortSkeletonCombo === true && hasSkeletonVoice(entity); // Finisher metadata opts out; living NPCs retain their normal timing.
     const url = preset?.url || specialVoiceFor(entity, 'strike')?.url || pickStrikeGruntUrl(category);
     if (!url) return;
     const played = durationS > 0 ? beginCharge({
       entity, category, abilityId, assetUrl: url, targetDurationS: durationS,
+      shortSkeletonCombo,
       overlapGroup: isCombo ? null : 'release-grunt',
       createdAtMs: nowMs() - Math.max(0, elapsedS) * 1000,
       pitchOffsetSemitones: preset?.pitchOffsetSemitones,
@@ -1204,6 +1212,7 @@ function beginCharge(options = {}) {
       category,
       url,
       durationS,
+      shortSkeletonCombo,
       tempo: played?.tempo ?? null,
       pitchSemitones: played?.pitchSemitones ?? null,
     };
@@ -1228,6 +1237,7 @@ function beginCharge(options = {}) {
       entity,
       id: spec.data?.voiceAbilityId || spec.data?.comboId || 'npcAttack',
       category,
+      isComboFinisher: spec.data?.isComboFinisher, // BanditCombat carries the actual last-step decision from its combo definition.
       phase: 'npc-staged-action',
     };
   }
@@ -1241,6 +1251,7 @@ function beginCharge(options = {}) {
       trackBreather(context.entity);
 
       const isPlayer = context.entity === player(); // Player visuals expose the strike hold separately from the cosmetic return tail.
+      const shortSkeletonCombo = !isPlayer && context.category === 'combo' && context.isComboFinisher === false && hasSkeletonVoice(context.entity); // First two NPC skeleton combo hits get one short shriek; final hits retain the dramatic windup and release.
       const timeline = isPlayer ? window.Combat.deps?.getWeaponAttackTimeline?.() : null; // Captured after the ability starts or releases its animation.
       const totalS = Math.max(0, Number(timeline?.activeRemainingS ?? timeline?.remainingS ?? ((Number(spec.windupS) || 0) + (Number(spec.strikeS) || 0) + (Number(spec.recoverS) || 0))) || 0);
       // Flurry strikes are too short to split into a windup grunt and a release grunt:
@@ -1256,13 +1267,13 @@ function beginCharge(options = {}) {
       let release = null; // Cancellation handle for the second voice phase.
       let releaseStarted = false; // A low frame rate or strike callback must not play the second grunt twice.
       if (charge) liveChargesByAbility.delete(context.id);
-      if (windupS > 0 && !charge) charge = beginCharge({ entity: context.entity, targetDurationS: windupS, abilityId: context.id, category: context.category, preserveGroup: 'release-grunt' });
-      const releasePreset = windupS > 0 ? prewarmStrikeGrunt(context.entity, context.category, releaseS) : null; // Rendered during the windup.
+      if (windupS > 0 && !charge && !shortSkeletonCombo) charge = beginCharge({ entity: context.entity, targetDurationS: windupS, abilityId: context.id, category: context.category, preserveGroup: 'release-grunt' }); // Skip the extra windup shriek so a regular skeleton combo is one living-grunt-length vocal.
+      const releasePreset = windupS > 0 ? prewarmStrikeGrunt(context.entity, context.category, releaseS, { shortSkeletonCombo }) : null; // Rendered during the windup.
       const startRelease = elapsedS => {
         if (releaseStarted) return;
         releaseStarted = true;
         cancelCharge(charge);
-        release = playStrikeGrunt(context.entity, context.category, context.id, releaseS, elapsedS, releasePreset);
+        release = playStrikeGrunt(context.entity, context.category, context.id, releaseS, elapsedS, releasePreset, { shortSkeletonCombo });
       };
       if (windupS <= 0) startRelease(0);
       // gameLoop clamps dt to 0.04s, so below 25 fps the staged clock falls behind the
@@ -1445,7 +1456,7 @@ function beginCharge(options = {}) {
 
   window.CombatVocalizations = {
     version: VERSION,
-    latestChange: 'Skeleton shrieks now play on enemy combat alert and offensive actions only, not damage, dodge, or breathing. Release grunts overlap without interrupting one another, including between consecutive attacks and across windups; voice priority, fades, and actor cleanup remain in force. NPC combat voices use elevation-aware distance attenuation, dry-path treble rolloff and far-field reverb while player voices remain close; breathing retries during async pitch-renderer loading and Web Audio unlock before playing, keeping species/gender shifting consistent from cold startup; mobile diagnostics expose fallback status. Release spans windup through the end of the Strike hold (one utterance per Flurry strike); the input gate ends halfway through the hold and inputs queue only after the Strike pose. Dodge uses pain intensity 1 at 75% duration; all combat vocals retain species/gender modulation.',
+    latestChange: 'Ordinary skeleton combo hits now use one pitch-preserving, time-compressed shriek matched to the living NPC strike duration; finishers retain their original windup and release. Skeleton shrieks now play on enemy combat alert and offensive actions only, not damage, dodge, or breathing. Release grunts overlap without interrupting one another, including between consecutive attacks and across windups; voice priority, fades, and actor cleanup remain in force. NPC combat voices use elevation-aware distance attenuation, dry-path treble rolloff and far-field reverb while player voices remain close; breathing retries during async pitch-renderer loading and Web Audio unlock before playing, keeping species/gender shifting consistent from cold startup; mobile diagnostics expose fallback status. Release spans windup through the end of the Strike hold (one utterance per Flurry strike); the input gate ends halfway through the hold and inputs queue only after the Strike pose. Dodge uses pain intensity 1 at 75% duration; all combat vocals retain species/gender modulation.',
     configPromise,
     reloadConfig: loadConfig,
     forgetEntity,
