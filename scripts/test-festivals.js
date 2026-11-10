@@ -112,18 +112,22 @@ assert(!api.qualityChoices('offering').some(entry => ['gold', 'forbidden'].inclu
 assert.equal(perform(prop, { key: 'keepsake', stars: 0, stat: 'madeup' }).ok, false);
 assert.equal(inventory.keepsake, 2);
 const shrinePreview=api.offeringPreview('keepsake',5);
-assert.equal(shrinePreview.stat,'goodwill','a sentimental keepsake defines the blessing, not the button used');
+assert.equal(shrinePreview.stat,'treasureFortune','a keepsake grants focused treasure fortune, not a generic relationship increase');
 assert.equal(shrinePreview.level,3,'ordinary five-star keepsake gets no unmeasured scarcity bonus');
 assert.equal(perform(prop, { key:'keepsake',stars:5,stat:'speed' }).ok,true,
   'an obsolete client-supplied stat cannot override the item-derived blessing');
 assert.equal(inventory.keepsake,1);
-assert.equal(api.blessingMultiplier('goodwill'),1.15);
-assert.equal(api.blessingMultiplier('speed'),1);
+assert.equal(api.fortuneMultiplier('treasureFortune'),1.27,'three levels of treasure fortune multiply cache mastery odds by the tuned nine percent each');
+assert.equal(api.fortuneBonus('fishingFortune'),0,'unrelated fortune probabilities never change');
+assert.equal(api.blessingMultiplier('goodwill'),1,'new fortunes cannot grant unrelated old positive Favor buffs');
 const blessingSave=api.serialize();
 assert.equal(blessingSave.blessing.sourceItem,'keepsake');
-api.restore(blessingSave); assert.equal(api.blessingMultiplier('goodwill'),1.15);
-year++;civilDay--;assert.equal(api.blessingMultiplier('goodwill'),1.15);
-civilDay++;assert.equal(api.blessingMultiplier('goodwill'),1);
+assert.equal(blessingSave.blessing.stat,'treasureFortune');
+api.restore(blessingSave); assert.equal(api.fortuneMultiplier('treasureFortune'),1.27);
+year++;civilDay--;assert.equal(api.fortuneMultiplier('treasureFortune'),1.27,'year-crossing date retains the 336-day buff');
+civilDay++;assert.equal(api.fortuneMultiplier('treasureFortune'),1,'fortune expires after 336 calendar days');
+api.restore({ blessing: { stat: 'goodwill', level: 3, expiresDay: year*336+calendar.ordinal(7,22) + 10 } });
+assert.equal(api.blessingMultiplier('goodwill'),1.15,'older ancestor blessings still restore with their original meaning');
 api.restore({ blessing: { stat: 'speed', level: 'broken', expiresDay: Infinity } }); assert.equal(api.blessingMultiplier('speed'), 1);
 // Masks stay a render copy; sweeets/masks cannot be farmed by repeating the menu.
 prop = visit('hachutukara', 'masks');
