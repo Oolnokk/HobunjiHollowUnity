@@ -36,7 +36,8 @@ const sandbox = vm.createContext({
   usesFixedKurrayaHarmony:()=>true,fixedKurrayaMixedMeterPhase:mixedPhase,
   FIXED_HARMONY_CHORD_QUARTER_BEATS:3,FIXED_HARMONY_CYCLE_CHORDS:20,
   FIXED_HARMONY_SIX_EIGHT_CHORDS:4,FIXED_HARMONY_METER_BEATS_PER_CYCLE:72,
-  KURRAYA_TIME_SIGNATURE:[6,8],fixedKurrayaProgressionStepForChord:bar=>bar%4,
+  KURRAYA_TIME_SIGNATURE:[6,8],KURRAYA_THREE_FOUR_TIME_SIGNATURE:[3,4], // Authored mixed-meter leader needs both numerators when resolving chord spans.
+  fixedKurrayaProgressionStepForChord:bar=>bar%4,
   activeKurrayaSongArrangement:()=>({introSegments:segments(state.kurrayaSongIntroSteps,0),
     bodySegments:segments(state.kurrayaSongBodySteps,4)}),
 });
