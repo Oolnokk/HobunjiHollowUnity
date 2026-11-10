@@ -173,6 +173,7 @@
   function loadImage(url) {
     return new Promise((resolve, reject) => {
       const image = new Image(); // Browser image decoder; loading each source once avoids repeated bitmap conversion during edits.
+      image.crossOrigin = 'anonymous'; // Same as portrait-utils; raw.githack/CDN redirects otherwise taint the 2D composite and break 3D/WebGL uploads.
       image.onload = () => resolve(image);
       image.onerror = () => reject(new Error('Could not load artwork: ' + url));
       image.src = url;
