@@ -151,7 +151,7 @@ async function ready(page) {
       .flatMap(pair => pair.bridges?.strokes || []).filter(op => op.recipe).length), 1, 'Bulk placement does not add Kylie recipes');
     // Bore tool is contextual: a flexible SHAFT alone does not show head-owned connector drilling.
     await page.locator('#shaft').selectOption('grapple-flail');
-    await page.locator('#head').selectOption('warhammer');
+    await page.locator('#head').selectOption('fishing-mace'); // Allowed axial mace head; hammers are deliberately excluded by the authored matrix.
     assert.equal(await page.locator('#flail-preview-figure').isVisible(),true,
       'complete 2D rig is the primary preview, not hidden beneath source thumbnails');
     assert.equal(await page.locator('#source-preview-workflow').evaluate(element=>element.open),true,
@@ -166,7 +166,7 @@ async function ready(page) {
     await page.locator('#full-assembly-guides').check();
     assert.equal(await page.locator('#shaft-bore-panel').isHidden(), true,
       'a shaft-owned flail with an ordinary rigid modular head cannot reveal connector bore tools');
-    assert.equal(await page.evaluate(() => window.ModularWeapons.flailGuide('grapple-flail','warhammer')?.explicitMount), true,
+    assert.equal(await page.evaluate(() => window.ModularWeapons.flailGuide('grapple-flail','fishing-mace')?.explicitMount), true,
       'the physical shaft rope mount still provides a visible connector guide');
     await page.locator('#shaft').selectOption('fishing-mace');
     await page.locator('#head').selectOption('grapple-flail');
@@ -175,11 +175,15 @@ async function ready(page) {
     assert.match(await page.locator('.rig-legend').innerText(),/Gold ring.*Cyan ring.*Purple dashed ruler/,
       'the visible full-rig legend explains the connector and both endpoints');
     assert.equal(await page.evaluate(() => window.ModularWeapons.flailGuide('fishing-mace','grapple-flail')?.explicitMount),
-      false,'a head-owned flail without an authored rope mount still has an inherited connector guide');
+      true,'the author's Fishing Mace has its own visible rope mount and preserved bore treatment');
+    assert.equal(await page.evaluate(() => window.ModularWeapons.isDisallowed('grapple-flail','warhammer')),true,
+      'authored flail shaft exclusions reject hammers even though mace heads are allowed');
     await page.waitForFunction(() => document.querySelector('#shaft-bore-panel')?.hidden === false,
       null,{timeout:30000});
     assert.equal(await page.locator('#bore-add').isEnabled(), true);
-    await page.locator('#bore-add').click();
+    assert.equal(await page.evaluate(() => window.ModularWeapons.getConfig().shafts['fishing-mace'].bores[0].offsetY),
+      20,'the uploaded example remains 20px below the physical connector contact');
+    await page.locator('#bore-add').click(); // The example already owns one 27px bore; add a separate default 20px bore.
     assert.equal(await page.locator('#bore-x').inputValue(), '0', 'new bore X offset is zero at the rope attachment');
     assert.equal(await page.locator('#bore-y').inputValue(), '0', 'new bore Y offset is zero at the rope attachment');
     assert.equal(await page.locator('#bore-rx').inputValue(), '20', 'new hole is 20px wide');
@@ -191,14 +195,14 @@ async function ready(page) {
       'the multi-sprite head author, not a modular fitting arrow, owns its attachment');
     assert.deepEqual(await page.evaluate(() => {
       const api=window.ModularWeapons, config=api.getConfig(), shaft=config.shafts['fishing-mace'];
-      const [hole]=api.resolvedBores(shaft,config.heads['grapple-flail']);
+      const hole=api.resolvedBores(shaft,config.heads['grapple-flail']).at(-1); // The newly added zero-offset bore is selected, not the preserved reference bore.
       const anchor=api.flailRecipe('fishing-mace','grapple-flail').flail.haftAnchor;
       return {hole:{x:hole.x,y:hole.y},anchor:{x:anchor.x,y:anchor.y}};
-    }),{hole:{x:210,y:1051},anchor:{x:210,y:1051}},
+    }),{hole:{x:193,y:850},anchor:{x:193,y:850}},
     'the pixel compositor and rope attach to the exact same authored source point');
     await page.locator('#bore-x').fill('15');
     await page.locator('#bore-x').dispatchEvent('change');
-    assert.equal(await page.evaluate(() => window.ModularWeapons.getConfig().shafts['fishing-mace'].bores[0].offsetX),15);
+    assert.equal(await page.evaluate(() => window.ModularWeapons.getConfig().shafts['fishing-mace'].bores.at(-1).offsetX),15);
     await page.locator('#head').selectOption('warhammer');
     assert.equal(await page.locator('#shaft-bore-panel').isHidden(),true,'switching to a normal head hides drilling');
     assert.equal(await page.evaluate(() => window.ModularWeapons.resolvedBores(
