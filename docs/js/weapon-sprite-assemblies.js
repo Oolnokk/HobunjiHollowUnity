@@ -225,6 +225,7 @@
         chainCenter: new THREE.Vector3(), endWorld: new THREE.Vector3(), headCenter: new THREE.Vector3(),
         chainLocal: new THREE.Vector3(), headLocal: new THREE.Vector3(), tmp: new THREE.Vector3(),
         baseQ: new THREE.Quaternion(), rootInverseQ: new THREE.Quaternion(), rootWorldQ: new THREE.Quaternion(), decomposePos: new THREE.Vector3(), // World matrices are decomposed in place; Object3D.getWorld*() would recompute from raw local transforms.
+        inverseRootMatrix: new THREE.Matrix4(), // Converts both suspended parts back into their own baked holder frame without invoking worldToLocal().
         worldQ: new THREE.Quaternion(), headQ: new THREE.Quaternion(), correction: new THREE.Quaternion(),
         deltaQ: new THREE.Quaternion(), stepQ: new THREE.Quaternion(), basis: new THREE.Matrix4(),
       }, // Reused by every animation frame, avoiding repeated vector/quaternion/matrix allocations.
@@ -390,6 +391,54 @@
     state.pitchTravelRad = Number.isFinite(options.pitchTravelDeg) ? options.pitchTravelDeg * Math.PI / 180 : null; // Authored strike-minus-windup pitch remains deterministic during editor scrubbing.
     state.yawTravelRad = Number.isFinite(options.yawTravelDeg) ? options.yawTravelDeg * Math.PI / 180 : 0; // Authored travel remains diagnostic; physical follow-through uses the measured world motion.
     state.movementPosition = options.movementPosition || null; // Player/NPC world position excludes hand-motion offsets from neutral-to-windup lag.
+  }
+
+  // Each visible duplicate is a full flail owner. Reuse decorate/updateOne and their
+  // independent pendulum state instead of trying to drag one world's rope between hands.
+  // The original stays visible until BOTH async replicas have their connector and head.
+  function syncDualWield(sourceRoot, mainMesh, offMesh, active) {
+    const source = states.get(sourceRoot);
+    const replicas = [mainMesh, offMesh].filter(Boolean); // Live duplicate weapon meshes, one per anatomical hand.
+    const readySource = !!(source?.config.flail && source.chain && source.headRoot);
+    if (active && readySource) {
+      for (const copy of replicas) {
+        if (!states.has(copy)) {
+          copy.userData.toolPlane = copy; // The copy's actual baked weapon plane is its own assembly root.
+          decorate(copy, source.itemKey, { weaponAssembly: { flail: source.config.flail } }, {
+            ...source.originalOptions, THREE: source.THREE,
+            metalOptions: source.metalOptions, masteryLevel: source.masteryLevel,
+          });
+        }
+        if (states.has(copy)) {
+          setAction(copy, {
+            attacking: source.attacking, progress: source.progress,
+            windupFrac: source.wf, strikeFrac: source.sf, holdFrac: source.hf,
+            pitchTravelDeg: Number.isFinite(source.pitchTravelRad) ? source.pitchTravelRad * 180 / Math.PI : undefined,
+            yawTravelDeg: source.yawTravelRad * 180 / Math.PI,
+            movementPosition: source.movementPosition,
+          });
+        }
+      }
+    } else {
+      for (const copy of replicas) if (states.has(copy)) drop(copy); // No invisible per-frame pendulums after leaving dual wield.
+    }
+    const ready = active && readySource && replicas.length === 2
+      && replicas.every(copy => !!(states.get(copy)?.chain && states.get(copy)?.headRoot));
+    if (source?.chain && source?.headRoot) {
+      if (ready && !source.dualWieldHidden) {
+        source.preDualVisibility = { chain: source.chain.visible !== false, head: source.headRoot.visible !== false }; // Preserve independently hidden authored pieces.
+      }
+      if (ready) {
+        source.chain.visible = false; source.headRoot.visible = false; // Hide only the flexible ORIGINAL, not the rigid copies.
+      } else if (source.dualWieldHidden) {
+        source.chain.visible = source.preDualVisibility?.chain ?? true;
+        source.headRoot.visible = source.preDualVisibility?.head ?? true;
+        source.preDualVisibility = null;
+      }
+      source.dualWieldHidden = ready; // Mobile diagnostics and enchantment routing use the same actual readiness.
+      source.dualWieldReplicas = ready ? replicas : null; // Visible head metal targets must follow these two independent assemblies.
+    }
+    return ready;
   }
 
   function ropeSpriteSizing(spec, unit, aspect) {
@@ -622,6 +671,16 @@
     return false;
   }
 
+  // localToWorld/worldToLocal call updateWorldMatrix internally and can erase a
+  // transient authored stance. Apply cached matrixWorld values only, including
+  // their rotation and scale, so offset flail anchors remain in haft-local space.
+  function bakedPoint(point, from, into, inverse, result) {
+    result.copy(point);
+    if (from) result.applyMatrix4(from.matrixWorld);
+    if (into) result.applyMatrix4(inverse.copy(into.matrixWorld).invert());
+    return result;
+  }
+
   function updateOne(state, dt, now, effectsDt = dt) {
     const { root, plane, config, scratch: q } = state;
     if (!root.parent) {
@@ -655,8 +714,7 @@
       state.baseAnchorImage = baseImage; // Re-scan only when an edited/recolored haft changes its source image.
     }
     if (!state.baseAnchor || !state.chainTop || !state.chainBottom || !state.headAnchor) return;
-    const pivot = plane.localToWorld(pixelPoint(baseImage, state.baseAnchor, unit, null, q.pivotLocal));
-    q.pivot.copy(pivot);
+    const pivot = bakedPoint(pixelPoint(baseImage, state.baseAnchor, unit, null, q.pivotLocal), plane, null, q.inverseRootMatrix, q.pivot); // Baked local Y offset rotates with its own haft.
     plane.matrixWorld.decompose(q.decomposePos, q.baseQ, q.scale); // Rotation and rendered world scale from the baked matrix (getWorldQuaternion/getWorldScale bypass holder hooks).
     const baseQ = q.baseQ;
     const normal = q.normal.set(0, 0, 1).applyQuaternion(baseQ);
@@ -773,7 +831,7 @@
     worldQ.multiply(q.correction.setFromUnitVectors(chainSpan, q.axisUp)); // Align both opaque chain endpoints, not the image rectangle.
     const chainCenterWorld = q.chainCenter.copy(pivot).sub(q.tmp.copy(topLocal).multiplyScalar(attachmentScale).applyQuaternion(worldQ)); // Keep the already axis-scaled top contact pinned to the haft.
     const rootQInverse = q.rootInverseQ.copy(q.rootWorldQ).invert(); // root's baked matrixWorld was refreshed above and is unchanged since.
-    state.chain.position.copy(root.worldToLocal(q.chainLocal.copy(chainCenterWorld)));
+    state.chain.position.copy(bakedPoint(chainCenterWorld, null, root, q.inverseRootMatrix, q.chainLocal));
     state.chain.quaternion.copy(rootQInverse).multiply(worldQ);
     const endWorld = q.endWorld.copy(chainCenterWorld).add(q.tmp.copy(bottomLocal).multiplyScalar(attachmentScale).applyQuaternion(worldQ)); // Use the stretched bottom endpoint without rescaling the head.
     const headSpec = flail.head;
@@ -799,7 +857,7 @@
       headCenterWorld.add(q.tmp.set(dx * unit, -dy * unit, 0)
         .multiplyScalar(attachmentScale * headScale).applyQuaternion(headQ)); // Pair X/Y nudges move only head art, never the rope/chain.
     }
-    state.headRoot.position.copy(root.worldToLocal(q.headLocal.copy(headCenterWorld)));
+    state.headRoot.position.copy(bakedPoint(headCenterWorld, null, root, q.inverseRootMatrix, q.headLocal));
     state.headRoot.quaternion.copy(rootQInverse).multiply(headQ);
     if (root.visible !== false) effects?.stepFire(state, effectsDt); // Flame stays in the assembled head and behind later opaque sprites.
   }
@@ -857,6 +915,7 @@
       lifetime: weakRegistry ? 'root-weak' : 'explicit-drop', // Visible fallback for browsers without weak references.
       setupFailed: s.setupFailed, retryInMs: s.setupFailed ? Math.max(0, s.nextRetryAt - performance.now()) : 0, repairedParts: s.repairedParts, // Diagnose failed textures and automatic reparent recovery on mobile.
       partsAttached: !s.config.flail || (s.chain?.parent === s.root && s.headRoot?.parent === s.root), // Confirms both children follow the same cached handle after switching tools.
+      dualFlail: s.config.flail ? { replica: !!s.root.userData?.hobunjiDualWieldDuplicate, originalHidden: !!s.dualWieldHidden, copiesReady: s.dualWieldReplicas?.length || 0 } : null, // Mobile-visible evidence that both hanging heads are independent.
     });
     }
     return snapshot;
@@ -868,7 +927,9 @@
   // from its source mesh; redirecting *every* target to clones silently dropped all flail enchantment motes.
   function dualWieldEnchantmentTargets(plane, sourceTargets) {
     const copies = [];
-    const clonedBySource = target => target.plane === plane || target.plane?.parent === plane;
+    const source = states.get(plane?.parent); // The assembly root also owns the original flexible head's metal masks.
+    const clonedBySource = target => target.plane === plane || target.plane?.parent === plane
+      || (!!source?.dualWieldHidden && source.headParts.includes(target.plane)); // Once both replica heads exist, never emit from the hidden original.
     for (const target of sourceTargets) if (!clonedBySource(target)) copies.push(target);
     plane.traverse?.(node => {
       const parentSource = node?.userData?.hobunjiDualWeaponSourceLayer; // The exact source layer cloned by the dual-wield renderer.
@@ -879,6 +940,11 @@
         }
       }
     });
+    if (source?.dualWieldHidden) {
+      for (const replica of source.dualWieldReplicas || []) {
+        copies.push(...(states.get(replica)?.metalTargets || [])); // Keep the actual head's layer-specific mask and metal coverage for EACH hand.
+      }
+    }
     return copies;
   }
 
@@ -891,7 +957,7 @@
   }
 
   global.HobunjiWeaponSpriteAssemblies = {
-    definitions: DEF, decorate, setAction, tick, drop, debugSnapshot, enchantmentTargets, dualWieldEnchantmentTargets,
+    definitions: DEF, decorate, setAction, tick, drop, syncDualWield, debugSnapshot, enchantmentTargets, dualWieldEnchantmentTargets, bakedPoint,
     opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, // Pure sizing and phase helpers have regression tests.
   };
   global.HobunjiCacheAudit?.register('weapon assemblies (weak owner registry)', () => { let count = 0; for (const entry of records) if (liveState(entry)) count++; return count; });
