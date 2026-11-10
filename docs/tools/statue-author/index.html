@@ -22,6 +22,17 @@ small{display:block;color:#b2c6da;line-height:1.4;margin:7px 0}a{color:#9edafa}.
 #viewport{order:-1;position:sticky;top:0;height:43dvh;min-height:255px;z-index:3;border-bottom:1px solid #405168}
 aside{max-height:none;overflow:visible;border-right:0;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))}
 #status{font-size:12px;max-height:34%;padding:7px}}
+@media (pointer:coarse) and (orientation:portrait){
+  /* Browser desktop-site scaling can report a 980px+ CSS viewport on phones.
+     Match the physical touch/portrait context so panels remain finger-readable. */
+  main{display:flex;flex-direction:column;height:auto}
+  #viewport{order:-1;position:sticky;top:0;height:48dvh;min-height:260px;z-index:3}
+  aside{display:block;padding:10px;max-width:640px;width:100%;margin:0 auto}
+  aside section{margin-bottom:12px}
+  input,select,button,textarea{min-height:40px;font-size:15px}
+  label{font-size:14px}
+  #status{font-size:13px}
+}
 </style>
 <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
