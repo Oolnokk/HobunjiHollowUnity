@@ -9,6 +9,11 @@
   const siteRegistrations = new Map(); // Map id -> exterior camp record, for teardown and mobile diagnostics.
   const interiorScenes = new Map(); // Map id -> already-installed prop group, avoiding duplicate draws on reentry.
   const latest = { event: 'not seeded', failed: 0 }; // Latest useful on-device diagnostic; no console required.
+  const pendingBarrels = new Set(); // Prevents duplicate asynchronous furniture builds for the same barrel id.
+  const BARREL_LOOT = Object.freeze({ // Independent, data-like drop rules; no copy of the Shattercask projectile simulation.
+    contrabandBarrel: Object.freeze({ gold:[6,14], alcoholCount:[1,3], narcoticChance:.42, komanineChance:.2 }),
+    flaskBarrel: Object.freeze({ gold:[1,4], flaskCount:[3,6], distinctRecipes:2 }),
+  });
   const WOOD = Object.freeze({ color: '#7a4924', materialRole: 'wood', materialTexture: 'boards.png' }); // Aging Barrel's planked wood, not a new procedural texture.
   const DARK_WOOD = Object.freeze({ color: '#6b4a28', materialRole: 'wood', materialTexture: 'boards.png' }); // Same darker fittings and boards as authored barrels.
   const STONE = Object.freeze({ color: '#777267', materialRole: 'stone', materialTexture: 'carved_smooth.png' });
@@ -168,7 +173,7 @@
   function buildInteriorProps(mapId, mapData, scene) {
     if (!scene || !mapData?.caveSite?.fortifiedStronghold || !registerRecipes()) return 0;
     const previous = interiorScenes.get(mapId);
-    if (previous?.scene === scene) return previous.group.children.length;
+    if (previous?.scene === scene) { ensureBarrels(mapId, mapData, scene); return previous.group.children.length; }
     if (previous) previous.scene.remove(previous.group);
     const THREE = window.THREE;
     if (!THREE) return 0;
@@ -193,7 +198,134 @@
     scene.add(group);
     interiorScenes.set(mapId, { scene, group });
     latest.event = 'interior barricades ' + selected.length + ' (' + mapId + ')';
+    ensureBarrels(mapId, mapData, scene); // Loads existing Aging Barrel art and shared Burden physics asynchronously.
     return selected.length;
+  }
+
+  function barrelPlans(plan) {
+    return plan?.strongholdBarrels || plan?.caveSitePlan?.strongholdBarrels || []; // Cave decoration and live plan expose the same immutable placements.
+  }
+
+  function rollUnit(key) {
+    return hash(String(key)) / 4294967296; // Saved encounter gets stable loot even if unrelated game RNG changes.
+  }
+  function rollCount(key, range) {
+    return range[0] + Math.floor(rollUnit(key) * (range[1] - range[0] + 1));
+  }
+
+  function registerKomanineItem(deps) {
+    if (!deps?.ITEM_DEFS) return;
+    const defs = deps.ITEM_DEFS; // Uses the same item registry as processed liquor and Technique Scrolls.
+    if (!defs.komanine) defs.komanine = {
+      icon:'📦', label:'Komanine', cat:'material', sellPrice:150,
+      tags:['Contraband','Illegal','Komanine'],
+      desc:'A sealed illicit shipment of Komanine. Consumption and gameplay effects are not yet specified.',
+    }; // Inert trade good only — deliberately no consumption action, buff, recipe or drug mechanic.
+    if (Array.isArray(deps.inventoryItems) && !deps.inventoryItems.some(item => item.key === 'komanine'))
+      deps.inventoryItems.push({ key:'komanine', icon:'📦', label:'KOMANINE', max:999 });
+  }
+
+  function installItemRegistration() {
+    const api = window.ItemProcessing;
+    if (!api?.init || api.__banditStrongholdItemPatched) return false;
+    const init = api.init; // Existing processor initialization remains the owner of dynamic liquor item definitions.
+    api.init = function strongholdItemInit(deps, ...args) {
+      const result = init.call(this, deps, ...args);
+      registerKomanineItem(deps);
+      return result;
+    };
+    api.__banditStrongholdItemPatched = true;
+    return true;
+  }
+
+  function contrabandLoot(mapId, barrelId) {
+    const id = mapId + ':' + barrelId;
+    const rules = BARREL_LOOT.contrabandBarrel;
+    const loot = { gold: rollCount(id + ':gold', rules.gold) }; // Nonempty even if specialty definitions have not loaded.
+    const options = ['needlegrain', 'heftroot']; // Existing barrel-aging recipes, never hand-made alcohol effects.
+    const source = options[Math.floor(rollUnit(id + ':liquor') * options.length)];
+    const output = window.ItemProcessing?.getProcessingOutput?.('barrelAging', source);
+    if (output?.key) {
+      window.ItemProcessing?.ensureProcessedItemDef?.(output);
+      loot[output.key] = rollCount(id + ':bottles', rules.alcoholCount);
+    }
+    const narcotic = Object.values(window.AlchemySystem?.RECIPE_DEFS || {}).find(recipe =>
+      /narcotic|rush|frenzy/i.test([recipe?.id, recipe?.label, ...(recipe?.tags||[])].join(' ')));
+    if (narcotic && rollUnit(id + ':narcotic') < rules.narcoticChance) {
+      const key = window.AlchemySystem?.ensureRecipeItemDef?.(narcotic.id, 1);
+      if (key) loot[key] = (loot[key] || 0) + 1;
+    }
+    if (rollUnit(id + ':komanine') < rules.komanineChance) loot.komanine = 1;
+    return loot;
+  }
+
+  function flaskLoot(mapId, barrelId) {
+    const id = mapId + ':' + barrelId;
+    const rules = BARREL_LOOT.flaskBarrel;
+    const loot = { gold: rollCount(id + ':gold', rules.gold) };
+    const recipes = [...(window.BanditCombat?.availableFlaskRecipeIds?.() || [])].sort(); // Existing authored throw effects, not guessed item keys.
+    if (!recipes.length) return loot; // A late alchemy init leaves at least currency instead of an undefined inventory entry.
+    const first = Math.floor(rollUnit(id + ':first-recipe') * recipes.length);
+    const selected = [recipes[first]];
+    if (recipes.length > 1 && rules.distinctRecipes > 1) {
+      const rest = recipes.filter(recipe => recipe !== selected[0]);
+      selected.push(rest[Math.floor(rollUnit(id + ':second-recipe') * rest.length)]);
+    }
+    const count = rollCount(id + ':flask-count', rules.flaskCount);
+    for (let i=0; i<count; i++) {
+      const key = window.AlchemySystem?.ensureRecipeItemDef?.(selected[i % selected.length], 1);
+      if (key) loot[key] = (loot[key] || 0) + 1;
+    }
+    return loot;
+  }
+
+  function barrelImpact(burden, cause) {
+    const id = burden?.id, mapId = burden?.mapId;
+    if (!id || !mapId) return false;
+    const claimed = window.CaveSiteSystem?.claimFortifiedBarrel?.(mapId, id);
+    window.Shattercasks?.discardBurden?.(burden); // Same carried/stowed/flying cleanup as an ordinary smashed crate.
+    if (!claimed) return true; // Duplicate projectile+ground impact must never grant twice.
+    const contents = burden.kind === 'flaskBarrel' ? flaskLoot(mapId,id) : contrabandLoot(mapId,id);
+    const gained = window.Shattercasks?.grantBurdenLoot?.(contents) || [];
+    latest.event = 'shattered ' + burden.kind + ' (' + cause + '): ' + id;
+    window.__farmLog?.('[bandit-stronghold] ' + latest.event + ': ' + JSON.stringify(contents), 'world');
+    window.AudioSystem?.playObjectSfxKey?.('woodBreak'); // Existing object SFX, no new audio/particles runtime.
+    if (gained.length) window.__farmLog?.('[bandit-stronghold] obtained ' + gained.join(', '), 'world');
+    return true;
+  }
+
+  function ensureBarrels(mapId, plan, scene) {
+    const stronghold = window.CaveSiteSystem;
+    if (!scene || !window.Shattercasks?.registerBurden || !window.AuthoredFurniture?.load || !stronghold) return 0;
+    const positions = barrelPlans(plan);
+    let pending = 0; // Cheap return value for the mobile diagnostic snapshot.
+    for (const barrel of positions) {
+      if (!barrel || !['contrabandBarrel','flaskBarrel'].includes(barrel.kind)) continue;
+      const id = mapId + ':' + String(barrel.id); // Map-qualified identity survives cave scene construction/re-entry.
+      if (!stronghold.fortifiedBarrelStatus?.(mapId,id)?.available) continue;
+      if (window.Shattercasks.getBurden?.(id,mapId) || pendingBarrels.has(id)) continue;
+      pendingBarrels.add(id);
+      pending++;
+      Promise.resolve(window.AuthoredFurniture.load('agingBarrel')).then(recipe => {
+        if (!recipe || interiorScenes.get(mapId)?.scene !== scene || !stronghold.fortifiedBarrelStatus?.(mapId,id)?.available)
+          return;
+        const group = window.AuthoredFurniture.buildGroup(recipe); // Identical boards/metal hoops to the existing aging furniture.
+        const x = Number(barrel.col) + .5, z = Number(barrel.row) + .5;
+        group.position.set(x, Number(plan?.floorSurfaceY || 0), z);
+        const registered = window.Shattercasks.registerBurden({
+          id, kind:barrel.kind, mapId, scene, group, data:recipe, hanging:false,
+          displayName:barrel.kind === 'flaskBarrel' ? 'Flask Barrel' : 'Contraband Barrel',
+          onPickup:() => stronghold.markFortifiedBarrelTaken?.(mapId,id),
+          onImpact:barrelImpact,
+        });
+        if (!registered) group.parent?.remove(group);
+        else latest.event = 'spawned ' + barrel.kind + ' ' + id;
+      }).catch(error => {
+        latest.failed++;
+        window.__farmLog?.('[bandit-stronghold] barrel load failed: ' + error.message, 'warn');
+      }).finally(() => pendingBarrels.delete(id));
+    }
+    return pending;
   }
 
   function forgetInterior(mapId) {
@@ -208,12 +340,13 @@
   function debugSnapshot() {
     return { ...latest, replacementDefault: DEFAULT_REPLACEMENT_FRACTION,
       activeSites: [...siteRegistrations.entries()].map(([mapId, site]) => ({ mapId, ...site })),
-      interiorMaps: [...interiorScenes.keys()], style: 'authored boards.png wood and carved_smooth.png stone via ProceduralFurniture' };
+      interiorMaps: [...interiorScenes.keys()], pendingBarrels: pendingBarrels.size, barrelLootRules: BARREL_LOOT, style: 'authored boards.png wood and carved_smooth.png stone via ProceduralFurniture' };
   }
 
   window.BanditStrongholds = Object.freeze({
     shouldFortify, replacementFraction, registerRecipes, upgradeCamp, removeCamp,
-    buildInteriorProps, forgetInterior, debugSnapshot, __test: Object.freeze({ hash, siteProps }),
+    buildInteriorProps, ensureBarrels, forgetInterior, debugSnapshot, installItemRegistration, BARREL_LOOT, __test: Object.freeze({ hash, siteProps }),
   });
   registerRecipes();
+  installItemRegistration();
 })();
