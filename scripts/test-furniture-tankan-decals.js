@@ -117,6 +117,38 @@ const grownGlyph = layout.fitToContainer('Hobunji Hollow', {
 assert(grownGlyph.fitScale < 1, 'glyph X growth beyond the authored 1.2 baseline must count as container overflow');
 assert.equal(grownGlyph.visualWidthPx, furnitureTwo.widthPx + 60, 'glyph X overflow should add only the growth beyond the reference scale to the visual bounds');
 
+// New circular inscription must preserve the existing column layout and expose deterministic nested rings.
+const ring = layout.measureRings("Hao'uun", {
+  canvasSizePx:512, radiusScale:.7, textScale:.19,
+  innerRings:[{text:'INNER',radiusDifferential:.2,rotationDeg:null,textScale:.8}],
+});
+assert.equal(ring.ringCount,2);
+assert.equal(ring.rings[0].glyphs.length,7,'Hao\'uun has seven equally spaced Tankan glyphs');
+assert(Math.abs(ring.rings[0].radiusScale-.7)<1e-9);
+assert(Math.abs(ring.rings[1].radiusScale-.5)<1e-9,'inner radius must subtract its own configurable differential');
+assert.equal(ring.rings[1].rotationDeg,36,'the inner line should automatically stagger by half a glyph step');
+const ringRotated = layout.measureRings('OUTER',{
+  innerRings:[{text:'IN',radiusDifferential:.3,rotationDeg:28,textScale:1.5}],
+});
+assert.equal(ringRotated.rings[1].rotationDeg,28,'authored angular offset must override automatic staggering');
+assert(ringRotated.rings[1].fontSizePx>0,'nested lines retain an independent glyph size');
+const drawn = []; // Canvas inspection checks radial equal spacing without requiring a browser font.
+const ringContext = {
+  clearRect(){}, save(){}, restore(){}, rotate(){}, fillText(){},
+  translate(x,y){drawn.push([x,y]);},
+};
+const ringCanvas={width:0,height:0,getContext:()=>ringContext};
+layout.renderRingsToCanvas(ringCanvas,"Hao'uun",{canvasSizePx:512,radiusScale:.7,textScale:.19});
+assert.equal(drawn.length,7);
+assert.equal(ringCanvas.width,512);
+for(const [x,y] of drawn)assert(Math.abs(Math.hypot(x-256,y-256)-.7*256)<1e-8,'glyph centers must lie on the same ring');
+for(let i=1;i<drawn.length;i++){
+  const first=Math.atan2(drawn[i-1][1]-256,drawn[i-1][0]-256);
+  const next=Math.atan2(drawn[i][1]-256,drawn[i][0]-256);
+  const step=(next-first+2*Math.PI)%(2*Math.PI);
+  assert(Math.abs(step-2*Math.PI/7)<1e-8,'ring characters must use equal angular spacing');
+}
+
 const loadingScreen = read('docs/js/loading-screen-runtime.js');
 assert(loadingScreen.includes("const TANKAN_FONT_URL = 'assets/hud/tankanscript_rotated_flipped_horiz.otf'"), 'loading screen must still use the rotated/flipped Tankan OTF');
 assert(loadingScreen.includes('columnSpacing: -0.55'), 'loading-screen default column spacing changed; update the neutral shared defaults with it');
@@ -163,6 +195,11 @@ assert(editor.includes('containerWidthPx') && editor.includes('containerHeightPx
 assert(!editor.includes('\u0101') && !editor.includes('\u0100'), 'canonical project spelling is Tankan; do not introduce macrons into the editor');
 assert(editor.includes('Add Tankan Text'), 'editor should expose the Tankan text decal action with canonical spelling');
 
+assert(editor.includes('addFurnitureTankanRing')&&editor.includes('addInnerTankanRing'),'furniture author must expose outer and nested Tankan ring controls');
+assert(editor.includes('decalTankanRingTextScale')&&editor.includes('decalTankanRingRadius'),'ring and lettering need independent scale controls');
+assert(editor.includes('radiusDifferential')&&editor.includes('rotationDeg'),'saved inner lines must retain stagger and radial differentials');
+assert(editor.includes('layout.createRingCanvas?.(record.tankanText, tankanRingOptions(record))'),'editor preview must use the shared circular renderer');
+
 const runtime = read('docs/js/furniture-decal-runtime.js');
 assert(runtime.includes('new THREE.CanvasTexture(canvas)'), 'runtime should use generated transparent canvas textures for Tankan text');
 assert(runtime.includes('ensureTankanLayout'), 'runtime should self-load the shared layout helper when necessary');
@@ -186,6 +223,9 @@ assert(runtime.includes('height: TANKAN_BASELINE.height * Math.max(0.001, finite
 assert(!runtime.includes('* tankanNaturalWidthFactor(record, layout)'), 'runtime container width must not multiply by text width');
 assert(!runtime.includes('* tankanNaturalHeightFactor(record, layout)'), 'runtime container height must not multiply by text height');
 assert(!runtime.includes('\u0101') && !runtime.includes('\u0100'), 'runtime warnings must keep canonical Tankan spelling');
+
+assert(runtime.includes('layout.renderRingsToCanvas(canvas, record.tankanText, tankanRingOptions(record))'),'game runtime must draw the same circular glyph arrangement');
+assert(runtime.includes("if (isTankanRing(record)) return 'tankan-ring:'"),'ring settings must participate in the runtime texture cache key');
 
 const loader = read('docs/tools/furniture-avatar-author/foliage-furniture-mode.js');
 const layoutLoad = loader.indexOf('tankan-script-layout.js');
