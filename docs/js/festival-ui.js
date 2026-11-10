@@ -140,7 +140,7 @@
       : `${f.icon} ${prop.activity.label || window.FestivalCalendar.activityLabels[type]}`;
     root.querySelector('#festivalSubtitle').textContent = `${f.name} · ${window.CalendarSystem.formatCalendarDate()} · gatherings ${api.gatheringHoursLabel()}`;
     const content = root.querySelector('#festivalContent');
-    root.querySelector('.festival-card').classList.toggle('festival-offering-view',type==='offering'); // Responsive width only for offerings.
+    root.querySelector('.festival-card')?.classList?.toggle('festival-offering-view',type==='offering'); // Responsive width only for offerings.
     let html = '';
     if (type === 'feast') {
       const dishes = api.feastMenu(); // Same persisted seven-pot lineup that the furniture service serves.
@@ -232,7 +232,7 @@
         system().eatFestivalBowl();
       render();status(result?.message||'');return;
     }
-    if (action === 'select-item') { const panel=root.querySelector('.festival-card'); const top=panel.scrollTop; selection={key:target.dataset.key,stars:Number(target.dataset.stars),...(target.hasAttribute('data-variant')?{variant:target.dataset.variant}:{})}; render(); panel.scrollTop=top; return; }
+    if (action === 'select-item') { const panel=root.querySelector('.festival-card'); const top=panel?.scrollTop ?? 0; selection={key:target.dataset.key,stars:Number(target.dataset.stars),...(target.hasAttribute('data-variant')?{variant:target.dataset.variant}:{})}; render(); if(panel) panel.scrollTop=top; return; }
     if (action !== 'perform') return;
     busy = true; target.disabled = true;
     try {
