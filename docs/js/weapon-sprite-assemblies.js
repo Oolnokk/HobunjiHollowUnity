@@ -435,8 +435,10 @@
         source.headRoot.visible = source.preDualVisibility?.head ?? true;
         source.preDualVisibility = null;
       }
+      const justRestored = source.dualWieldHidden && !ready; // Reposition a previously hidden rope immediately after exiting dual wield.
       source.dualWieldHidden = ready; // Mobile diagnostics and enchantment routing use the same actual readiness.
       source.dualWieldReplicas = ready ? replicas : null; // Visible head metal targets must follow these two independent assemblies.
+      if (justRestored && source.root.parent) updateOne(source, 0, performance.now(), 0); // One pose projection, no extra physics step or snap from an old hidden position.
     }
     return ready;
   }
@@ -881,7 +883,7 @@
           decorate(root, itemKey, originalDef, originalOptions);
           continue;
         }
-        if (state.root.parent) effects?.refreshMetal(state, now); // Detached cached tools have no visible metal; only refresh on re-equip.
+        if (state.root.parent && !state.dualWieldHidden) effects?.refreshMetal(state, now); // Hidden original uses neither material refresh nor head effects until its single-hand appearance returns.
         updateOne(state, freezePhysics ? 0 : dt, now, dt);
       }
       catch (error) {
