@@ -168,6 +168,39 @@ async function ready(page) {
       'a shaft-owned flail with an ordinary rigid modular head cannot reveal connector bore tools');
     assert.equal(await page.evaluate(() => window.ModularWeapons.flailGuide('grapple-flail','fishing-mace')?.explicitMount), true,
       'the physical shaft rope mount still provides a visible connector guide');
+    // A rigid head hanging from a flail shaft has a PAIR-LOCAL cyan contact, not an editable global rigid head mounting line.
+    assert.equal(await page.locator('#head-rope-x').isEnabled(),true);
+    assert.equal(await page.locator('#head-rope-y').isEnabled(),true);
+    assert.equal(await page.locator('#head-kind').isDisabled(),true,'rigid mounting type is locked while hanging from a flail');
+    assert.equal(await page.locator('#head-rope-x').inputValue(),'185','weight/sleeve contact defaults to the original head.mount END');
+    assert.equal(await page.locator('#head-rope-y').inputValue(),'894');
+    const originalRigidMount=await page.evaluate(() => JSON.stringify(window.ModularWeapons.getConfig().heads['fishing-mace'].mount));
+    await page.locator('#head-rope-x').fill('199');
+    await page.locator('#head-rope-x').dispatchEvent('change');
+    await page.locator('#head-rope-y').fill('911');
+    await page.locator('#head-rope-y').dispatchEvent('change');
+    await page.locator('#head-rope-scale').fill('1.35');
+    await page.locator('#head-rope-scale').dispatchEvent('change');
+    assert.deepEqual(await page.evaluate(() => {
+      const api=window.ModularWeapons, recipe=api.flailRecipe('grapple-flail','fishing-mace');
+      return {anchor:recipe.flail.head.anchor,space:recipe.flail.head.anchorSpace,scale:recipe.flail.head.scale};
+    }),{anchor:{x:199,y:911},space:'layer',scale:1.35},
+    'pair-only numeric head contact and independent scale are applied by the ACTUAL runtime assembler');
+    assert.equal(await page.evaluate(() => JSON.stringify(window.ModularWeapons.getConfig().heads['fishing-mace'].mount)),
+      originalRigidMount,'head mounting line is never changed by the hanging rope controls');
+    await page.locator('#head-contact-reset').click();
+    assert.equal(await page.locator('#head-rope-x').inputValue(),'185','reset restores the original rigid sleeve endpoint');
+    await page.locator('#head-contact-move').click(); // Open source canvas and activate pair-only point editing on mobile.
+    assert.equal(await page.locator('#source-preview-workflow').evaluate(section=>section.open),true);
+    const contactCanvas=page.locator('#head-canvas');
+    await contactCanvas.click({position:{x:80,y:110}}); // Touch click moves cyan contact, not the stored rigid arrow.
+    assert.notDeepEqual(await page.evaluate(() => window.ModularWeapons.flailRecipe('grapple-flail','fishing-mace').flail.head.anchor),
+      {x:185,y:894},'tapping source head canvas creates an editable hanging contact');
+    assert.equal(await page.evaluate(() => JSON.stringify(window.ModularWeapons.getConfig().heads['fishing-mace'].mount)),
+      originalRigidMount,'cyan source editing leaves original head coordinates unchanged');
+    await page.locator('#head').selectOption('dagger');
+    assert.equal(await page.locator('#head-rope-x').inputValue(),'207','other head pairs retain their own tang START');
+    assert.equal(await page.locator('#head-rope-y').inputValue(),'623');
     await page.locator('#shaft').selectOption('fishing-mace');
     await page.locator('#head').selectOption('grapple-flail');
     assert.equal(await page.locator('#flail-authoring-panel').evaluate(section=>section.open),true,
