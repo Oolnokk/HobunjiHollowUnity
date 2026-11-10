@@ -46,7 +46,7 @@ assert.deepEqual(pix(mapped.data,3,8),pix(before,3,8),'The original black outlin
 assert.deepEqual(pix(mapped.data,0,0),pix(before,0,0),'Transparent exterior remains fully transparent');
 assert.ok(pix(mapped.data,10,11)[0]>130,'Region one receives the lighter middle of the complete material PNG');
 assert.ok(pix(mapped.data,30,12)[0]>130,'Region two receives its own independent full material PNG');
-assert.ok(pix(mapped.data,5,11)[0]<pix(mapped.data,10,11)[0],
+assert.ok(pix(mapped.data,6,11)[0]>0&&pix(mapped.data,6,11)[0]<pix(mapped.data,10,11)[0],
   'The original material dark rim warps to the left side of an irregular region instead of being cropped away');
 assert.ok(pix(mapped.data,35,12)[0]<pix(mapped.data,30,12)[0],
   'The material dark rim also follows the second region, not a fixed global tile boundary');
