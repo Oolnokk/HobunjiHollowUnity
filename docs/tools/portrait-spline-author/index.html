@@ -22,6 +22,10 @@ input[type=number]{width:100%;font-variant-numeric:tabular-nums}input[type=file]
 .field label{display:block;margin-bottom:2px}.field input{width:100%}
 #poseMatrix{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
 #poseMatrix button{font-size:11px;padding:9px 3px}
+.entry select{width:100%;min-height:38px}
+#catalogStatus{display:block;min-height:28px;margin:8px 0;color:var(--soft);font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+#sourcePath{font:11px/1.35 ui-monospace,monospace;overflow-wrap:anywhere}
+details.manual{margin:10px 0;border:1px solid var(--line);border-radius:8px;padding:8px}
 #testWind{width:100%;accent-color:#7fb7fc}
 details summary{cursor:pointer;font-weight:700}textarea{width:100%;min-height:190px;font:11px/1.4 ui-monospace,Consolas,monospace;resize:vertical}
 footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
@@ -29,17 +33,30 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
 </style>
 <script src="../../js/tap-reliability.js?v=20261110portraitSpline1"></script>
 <script src="../../js/portrait-spline-rig.js?v=20261110portraitSpline1"></script>
+<script src="../../js/portrait-spline-catalog.js?v=20261110splineIndex1"></script>
 </head>
 <body>
 <header><a href="../character-studio/">Character Studio</a><h1>Beard &amp; Side Hair Spline Author</h1><span class="hint">v1 · per-cosmetic 3D strand + seam masks</span></header>
 <main>
 <section>
 <h2>Portrait, strand and seam paint</h2>
-<p>Load an existing cosmetic JSON to add <code>portraitSplineRig</code> without changing its other settings. Load a front sprite and optionally the rear sprite and an equipped hood for visual reference.</p>
-<div class="entry"><label for="cosmeticFile">Cosmetic JSON</label><input id="cosmeticFile" type="file" accept=".json,application/json"></div>
-<div class="entry"><label for="frontFile">Front PNG</label><input id="frontFile" type="file" accept="image/png,image/webp,image/*"></div>
-<div class="entry"><label for="rearFile">Rear PNG</label><input id="rearFile" type="file" accept="image/png,image/webp,image/*"></div>
-<div class="entry"><label for="hoodFile">Hood PNG</label><input id="hoodFile" type="file" accept="image/png,image/webp,image/*"></div>
+<p>Choose an indexed cosmetic. Its original JSON and sprite layers load directly from the repository. No uploads are required.</p>
+<div class="entry"><label for="speciesSelect">Species</label><select id="speciesSelect" disabled aria-label="Cosmetic species"><option>Loading index…</option></select></div>
+<div class="entry"><label for="genderSelect">Gender</label><select id="genderSelect" disabled aria-label="Cosmetic gender"></select></div>
+<div class="entry"><label for="slotSelect">Style type</label><select id="slotSelect"><option value="facialHair">Beard</option><option value="hairSide">Right-side hair</option><option value="hairSideL">Left-side hair</option></select></div>
+<div class="entry"><label for="cosmeticSelect">Cosmetic</label><select id="cosmeticSelect" disabled aria-label="Indexed cosmetic style"><option>Loading styles…</option></select></div>
+<div class="entry"><label for="hoodSelect">Hood reference</label><select id="hoodSelect" disabled aria-label="Optional indexed hood reference"><option value="">None</option></select></div>
+<div class="buttons"><button id="reloadIndex" type="button" class="secondary">Reload repository index</button></div>
+<output id="catalogStatus" role="status" aria-live="polite">Loading cosmetic index…</output>
+<div id="sourcePath" class="hint">Source: no cosmetic selected</div>
+<details class="manual">
+  <summary>Optional: import your own JSON or override reference PNGs</summary>
+  <p>Only needed for unfinished assets that have not yet been added to the repository index.</p>
+  <div class="entry"><label for="cosmeticFile">Cosmetic JSON</label><input id="cosmeticFile" type="file" accept=".json,application/json"></div>
+  <div class="entry"><label for="frontFile">Front PNG</label><input id="frontFile" type="file" accept="image/png,image/webp,image/*"></div>
+  <div class="entry"><label for="rearFile">Rear PNG</label><input id="rearFile" type="file" accept="image/png,image/webp,image/*"></div>
+  <div class="entry"><label for="hoodFile">Hood PNG</label><input id="hoodFile" type="file" accept="image/png,image/webp,image/*"></div>
+</details>
 <div class="buttons" style="margin:12px 0">
 <button id="moveMode" class="active">Move knots</button><button id="paintMode">Paint seam</button>
 <button id="eraseMode">Erase seam</button><button id="addPoint">Add knot</button><button id="removePoint">Remove knot</button>
@@ -79,16 +96,18 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
 <script>
 (() => {
 'use strict';
-const $=id=>document.getElementById(id),Rig=window.PortraitSplineRig;
+const $=id=>document.getElementById(id),Rig=window.PortraitSplineRig,Catalog=window.PortraitSplineCatalog;
 const DIRECTIONS=['left','right','up','down','toward','away'],FIELDS=['yaw','pitch','roll'];
 const makeSegment=()=>({deadzone:{x:4,y:4,z:6},poses:Object.fromEntries(DIRECTIONS.map(x=>[x,{yaw:0,pitch:0,roll:0}]))});
 const makeRig=()=>({version:1,enabled:true,points:[{u:.5,v:.28,depth:.015},{u:.52,v:.43,depth:.025},{u:.53,v:.6,depth:.035}],
 segments:[makeSegment(),makeSegment()],seam:[],rearOffset:{u:0,v:0},width:.1,windResponse:1,segmentsX:16,segmentsY:20});
 let rig=makeRig(),cosmetic={},loadedName='cosmetic.json',selectedKnot=0,selectedSegment=0,direction='right',mode='move';
-let images={front:null,rear:null,hood:null},dragging=false,lastPaint=null;
+let images={front:null,rear:null,hood:null,hoodRear:null},dragging=false,lastPaint=null;
+let catalog=null,styles=[],hoods=[],activeStyle=null,activeDraftKey=null,styleGeneration=0,assetGeneration=0,hoodGeneration=0,indexGeneration=0;
+const rigDrafts=new Map(); // Per-cosmetic/per-species unsaved edits survive dropdown switching until the author page closes.
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const numeric=(x,defaultValue=0)=>Number.isFinite(Number(x))?Number(x):defaultValue;
-function message(value){$('status').textContent=value;}
+function message(value){$('catalogStatus').textContent=value;} // Source loading and error messages must remain visible alongside pose diagnostics.
 function imageInput(id,key){$(id).addEventListener('change',async e=>{
   const file=e.target.files?.[0];if(!file)return;
   const url=URL.createObjectURL(file),img=new Image();
@@ -101,8 +120,12 @@ $('cosmeticFile').addEventListener('change',async e=>{
   const file=e.target.files?.[0];if(!file)return;
   try{
     const parsed=JSON.parse(await file.text());if(!parsed||Array.isArray(parsed)||typeof parsed!=='object')throw Error('Expected a cosmetic object.');
+    rememberDraft();
+    activeStyle=null;activeDraftKey=null;assetGeneration++;
+    $('cosmeticSelect').selectedIndex=-1;
     cosmetic=parsed;loadedName=file.name.replace(/^\(HA\)\s*/,'');
     rig=Rig.normalize(parsed.portraitSplineRig) || makeRig(); // Always edit the validated full schema, including every segment's default pose.
+    $('sourcePath').textContent='Local import: '+file.name;
     selectedKnot=0;selectedSegment=0;controls();render();message('Imported '+file.name+'. Export preserves existing cosmetic fields.');
   }catch(error){message('Invalid JSON: '+error.message);}
 });
@@ -144,7 +167,8 @@ function render(){
     if(shown){ctx.save();ctx.translate(rig.rearOffset.u*W,rig.rearOffset.v*H);} // Preview the same rear-only transform used on the 3D ribbon.
     ctx.drawImage(images[shown?'rear':'front'],0,0,W,H);
     if(shown)ctx.restore();ctx.globalAlpha=1;}
-  if(images.hood){ctx.globalAlpha=.28;ctx.drawImage(images.hood,0,0,W,H);ctx.globalAlpha=1;}
+  const hoodReference=shown?(images.hoodRear||images.hood):images.hood;
+  if(hoodReference){ctx.globalAlpha=.28;ctx.drawImage(hoodReference,0,0,W,H);ctx.globalAlpha=1;}
   ctx.strokeStyle='#ffb2d3';ctx.lineWidth=1;ctx.fillStyle='#ec88b643';
   for(const p of rig.seam){ctx.beginPath();ctx.arc(p.u*W,p.v*H,p.radiusPx*W/200,0,Math.PI*2);ctx.fillStyle=p.color||'#ec88b643';ctx.fill();ctx.stroke();}
   const active=normalized();if(!active){message('Invalid spline: add at least two distinct knots.');return;}
@@ -197,11 +221,17 @@ $('clearMask').onclick=()=>{rig.seam=[];render();};$('resetRig').onclick=()=>{ri
 $('applyJson').onclick=()=>{try{const candidate=JSON.parse($('json').value),valid=Rig.normalize(candidate);if(!valid)throw Error('At least two distinct, normalized knots are required.');rig=valid;selectedKnot=0;selectedSegment=0;controls();render();}catch(error){message('JSON error: '+error.message);}};
 $('copyRig').onclick=async()=>{const data=JSON.stringify(Rig.normalize(rig),null,2);try{await navigator.clipboard.writeText(data);message('Rig JSON copied.');}catch(_){$('json').value=data;$('json').select();message('Clipboard unavailable; select/copy the JSON from the text box.');}};
 $('download').onclick=()=>{const valid=Rig.normalize(rig);if(!valid){message('Cannot export invalid knots.');return;}
- const result=JSON.parse(JSON.stringify(cosmetic));result.portraitSplineRig=valid;
+ const result=JSON.parse(JSON.stringify(cosmetic));
+  if(activeStyle?.scope.variant){
+    const key=activeStyle.scope.key; // Existing species-specific sprite keeps its own rig; no other gender is changed.
+    result.speciesVariants[key]={...result.speciesVariants[key],portraitSplineRig:valid};
+  }else result.portraitSplineRig=valid; // Shared cosmetic artwork keeps a shared rig.
+  rememberDraft();
  const blob=new Blob([JSON.stringify(result,null,2)+'\n'],{type:'application/json'}),url=URL.createObjectURL(blob);
  const link=document.createElement('a');link.href=url;link.download=loadedName.replace(/^\(HA\)\s*/,'').replace(/\.json$/i,'')+'-spline.json';
  document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);message('Exported updated cosmetic JSON; no original fields removed.');};
 controls();render();
+initCatalog(); // Indexed cosmetics are the default; file import is only a fallback for unindexed WIP art.
 })();
 </script>
 </body></html>
