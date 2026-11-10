@@ -97,7 +97,7 @@
     const style = document.createElement('style'); // Static CSS transitions/layout; no per-frame resizing or DOM animation work.
     style.id = STABLE_STYLE_ID;
     style.textContent = `
-      #stableList .stable-role-tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
+      #stableList .stable-role-tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; position:sticky; top:0; z-index:2; padding:4px 0; background:var(--glass-2, #1d1b1a); }
       #stableList .stable-role-tab { flex:1 1 120px; min-width:0; min-height:38px; font-size:clamp(10px,2.2vw,13px); }
       #stableList .stable-role-tab[aria-pressed="true"] { border-color:var(--accent,#d9ad65); background:rgba(217,173,101,.18); font-weight:800; }
       #stableList .stable-training-row[hidden] { display:none !important; }
@@ -498,7 +498,7 @@
     const stable = stableDeps.getStable?.() || [];
     if (normalizeStableStorage(stable)) stableDeps.saveStable?.(); // Migrates old saves and enforces the eight-animal accessible-roster limit.
     const outCount = stable.filter(entry => !entry.stowed).length;
-    if (expandedStableId && !stable.some(entry => entry?.id === expandedStableId)) expandedStableId = null;
+    if (expandedStableId && !stable.some(entry => entry?.id === expandedStableId && stableRole(entry) === selectedStableRole)) expandedStableId = null;
     list.innerHTML = '';
     ensureStableRosterStyles();
     appendStableRoleTabs(list, stable);
@@ -521,8 +521,8 @@
     const adults = stableAgeSection('🐾 Adult Animals', 'Adult Stable animals can fill their normal role.'); // Receives every available adult row.
     const stowedRows = document.createElement('div'); // Holds stowed adults without removing them from the saved Stable roster.
     stowedRows.className = 'farm-list';
-    const stowedAdultCount = stable.filter(entry => entry.stowed && !stableIsBaby(entry)).length;
-    const stowedBabyCount = stable.filter(entry => entry.stowed && stableIsBaby(entry)).length;
+    const stowedAdultCount = stable.filter(entry => entry.stowed && !stableIsBaby(entry) && stableRole(entry) === selectedStableRole).length; // Drawer counts only this page's stowed adults.
+    const stowedBabyCount = stable.filter(entry => entry.stowed && stableIsBaby(entry) && stableRole(entry) === selectedStableRole).length; // Baby storage remains counted in its own category.
 
     stable.slice().sort(compareStableRoster).forEach(entry => { // Sorts the UI without changing persistence order or stable IDs.
       normalizeStableEntry(entry);
