@@ -189,7 +189,7 @@ async function ready(page) {
     assert.equal(await page.evaluate(() => JSON.stringify(window.ModularWeapons.getConfig().heads['fishing-mace'].mount)),
       originalRigidMount,'head mounting line is never changed by the hanging rope controls');
     // The complete canvas must visually re-render when an existing pair-specific scale/flip value changes.
-    await page.locator('#pair-workflow > summary').click(); // Section 05 expands the existing numeric/checkbox pair corrections.
+    await page.locator('#pair-workflow').evaluate(panel=>{ panel.open=true; }); // Keep section 05 open even if earlier tests already expanded it.
     const previewBefore=await page.locator('#flail-preview').evaluate(canvas=>canvas.toDataURL('image/png'));
     const scaleYField=page.locator('#fields [aria-label="Pair scaleY"]');
     await scaleYField.fill('0.45');
