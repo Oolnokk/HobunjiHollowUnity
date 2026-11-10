@@ -9,7 +9,7 @@
   const SCHEDULER_ID = 'combat-vocalizations-breath';
   const SKELETON_VOICE_SPECIES = new Set(['harlyao-skeleton', 'mao-ao-skeleton']); // Ordinary NPC skeletons shriek when alerted or attacking, never for being struck or breathing.
   const SKELETON_SHRIEK_URL = 'assets/audio/sfx/utterances/sfx_skeletonshriek_1.ogg'; // One authored recording shared by skeleton alarms and offensive voices.
-  const SKELETON_SHRIEK_TEMPO = 1; // No speed change was requested; the trailing "3x" instruction was incomplete.
+  const SKELETON_SHRIEK_TEMPO = 1; // Alerts and finishers retain the recorded tempo; ordinary combo hits use authored strike-duration compression instead.
   const SKELETON_SHRIEK_PITCH_STEPS = Object.freeze([-3, -2, -1, 0, 1, 2, 3]); // Finite random semitone choices reuse cached mobile voice renders.
   const DEFAULT_CONFIG = Object.freeze({
       "schema": "hobunji_combat_vocalizations.v2",
@@ -870,6 +870,7 @@ function liveChargeTargetDurationS(abilityId) {
 // interpolation can need well over the renderer's generic 4x compression.
 const MAX_MAPPED_TEMPO = 16;
 const SHORT_SKELETON_COMBO_MAX_TEMPO = 64; // Ordinary skeleton combo shrieks can be far longer than living grunts; only these hits permit stronger pitch-preserving WSOLA compression.
+const SHORT_SKELETON_COMBO_LATE_GRACE_S = 0.15; // A first-use decode/render may arrive after a 50ms strike; allow a short intact late shriek, never a stale one.
 
 function chargeRatePlan(bufferDurationS, targetDurationS, normalTempo, maxMappedTempo = MAX_MAPPED_TEMPO) {
   const clipDurationS = Math.max(0.001, Number(bufferDurationS) || 0.001);
@@ -1057,9 +1058,12 @@ function beginCharge(options = {}) {
     }
 
     const elapsedS = Math.max(0, (nowMs() - token.createdAtMs) / 1000);
-    const progress = clamp(elapsedS / Math.max(0.001, fullRendered.durationS), 0, 1);
-    if (progress >= 1) {
-      finishChargeToken(token); // Do not start stale audio if first-use decode/render outlives the authored windup.
+    const shortComboExpired = token.shortSkeletonCombo && elapsedS > fullRendered.durationS + SHORT_SKELETON_COMBO_LATE_GRACE_S; // Bound startup lag to this short hit rather than playing an old shriek during another attack.
+    const progress = token.shortSkeletonCombo ? 0 : clamp(elapsedS / Math.max(0.001, fullRendered.durationS), 0, 1); // A 50ms skeleton clip must remain audible in full instead of starting at its nearly silent tail.
+    if (progress >= 1 || shortComboExpired) {
+      finishChargeToken(token); // Other attack voices still skip expired clips rather than play stale audio.
+      if (shortComboExpired) debug.lastCharge = { id: token.id, action: 'skip-stale-skeleton-combo', abilityId: token.abilityId,
+        elapsedS, targetDurationS: fullRendered.durationS, atMs: Math.round(nowMs()) }; // Mobile diagnostics distinguish intentional expiry from renderer failure.
       return;
     }
 
@@ -1100,6 +1104,7 @@ function beginCharge(options = {}) {
       progress,
       independentPitch: true,
       shortSkeletonCombo: token.shortSkeletonCombo, // Pixel Probe confirms the rendered duration and independent pitch for shortened undead combo grunts.
+      lateStartS: token.shortSkeletonCombo ? elapsedS : null, // A late first-use render starts this brief shriek intact; no pitch increase or stale playback.
       atMs: Math.round(nowMs()),
     };
   }).catch(error => {
@@ -1118,7 +1123,8 @@ function beginCharge(options = {}) {
       const ctx = ensureAudioContext(); // Charge and release voices share pitch-preserving rendering and trimming.
       if (!ctx) return null;
       return decodeAudioData(ctx, await response.arrayBuffer());
-    })().catch(error => { recordPlaybackFailure('strike-decode', error, url); return null; });
+    })().catch(error => { recordPlaybackFailure('strike-decode', error, url); return null; })
+      .then(buffer => { if (!buffer && strikeBuffers.get(url) === pending) strikeBuffers.delete(url); return buffer; }); // AudioContext/network failures before unlock must not permanently cache silence.
     strikeBuffers.set(url, pending);
     return pending;
   }
@@ -1429,14 +1435,14 @@ function beginCharge(options = {}) {
       chargeBufferPromise = null;
       chargeBufferUrl = null;
       preloadChargeBuffer();
-      for (const url of [config.assets?.releaseGrunt, ...(config.assets?.comboAttackGrunts || [])]) preloadStrikeBuffer(url);
+      for (const url of [config.assets?.releaseGrunt, ...(config.assets?.comboAttackGrunts || []), SKELETON_SHRIEK_URL]) preloadStrikeBuffer(url); // Decode the actual skeleton clip alongside ordinary combat voices to reduce cold-hit latency.
       return config;
     }).catch(error => {
       configError = error?.message || String(error);
       config = merge(clone(DEFAULT_CONFIG), localOverride || {});
       configSource = localOverride ? 'defaults+local' : 'defaults';
       preloadChargeBuffer();
-      for (const url of [config.assets?.releaseGrunt, ...(config.assets?.comboAttackGrunts || [])]) preloadStrikeBuffer(url);
+      for (const url of [config.assets?.releaseGrunt, ...(config.assets?.comboAttackGrunts || []), SKELETON_SHRIEK_URL]) preloadStrikeBuffer(url); // Decode the actual skeleton clip alongside ordinary combat voices to reduce cold-hit latency.
       return config;
     });
   }
@@ -1458,7 +1464,7 @@ function beginCharge(options = {}) {
 
   window.CombatVocalizations = {
     version: VERSION,
-    latestChange: 'Ordinary skeleton combo hits now use one pitch-preserving, time-compressed shriek matched to the living NPC strike duration; finishers retain their original windup and release. Skeleton shrieks now play on enemy combat alert and offensive actions only, not damage, dodge, or breathing. Release grunts overlap without interrupting one another, including between consecutive attacks and across windups; voice priority, fades, and actor cleanup remain in force. NPC combat voices use elevation-aware distance attenuation, dry-path treble rolloff and far-field reverb while player voices remain close; breathing retries during async pitch-renderer loading and Web Audio unlock before playing, keeping species/gender shifting consistent from cold startup; mobile diagnostics expose fallback status. Release spans windup through the end of the Strike hold (one utterance per Flurry strike); the input gate ends halfway through the hold and inputs queue only after the Strike pose. Dodge uses pain intensity 1 at 75% duration; all combat vocals retain species/gender modulation.',
+    latestChange: 'Ordinary skeleton combo hits now use one pitch-preserving, time-compressed shriek matched to the living NPC strike duration, with a bounded delayed-start recovery on slower devices; finishers retain their original windup and release. Skeleton shrieks now play on enemy combat alert and offensive actions only, not damage, dodge, or breathing. Release grunts overlap without interrupting one another, including between consecutive attacks and across windups; voice priority, fades, and actor cleanup remain in force. NPC combat voices use elevation-aware distance attenuation, dry-path treble rolloff and far-field reverb while player voices remain close; breathing retries during async pitch-renderer loading and Web Audio unlock before playing, keeping species/gender shifting consistent from cold startup; mobile diagnostics expose fallback status. Release spans windup through the end of the Strike hold (one utterance per Flurry strike); the input gate ends halfway through the hold and inputs queue only after the Strike pose. Dodge uses pain intensity 1 at 75% duration; all combat vocals retain species/gender modulation.',
     configPromise,
     reloadConfig: loadConfig,
     forgetEntity,
