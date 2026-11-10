@@ -445,7 +445,7 @@
       const key = `food_${recipe.id}_${hash(signature + `|${stars}|${JSON.stringify(effects)}`)}`;
       const label = foodName(recipe, effects);
       const cookingYieldRank = window.PerkSystem?.rank?.('cooking', 'increaseCookingYield') || 0; // Used by the Cooking perk tree; one purchased rank grants the authored extra-serving chance.
-      const cookingYieldChance = Math.min(0.25, Math.max(0, cookingYieldRank) * 0.25); // Central yield tuning: rank 1 = 25%, and bonus ranks cannot push this starter perk above its authored cap.
+      const cookingYieldChance = Math.min(0.45, Math.max(0, cookingYieldRank) * 0.25 + (window.FestivalSystem?.fortuneBonus?.('cookingFortune') || 0)); // Hearth Fortune adds its own extra-serving probability. // Central yield tuning: rank 1 = 25%, and bonus ranks cannot push this starter perk above its authored cap.
       const servings = 1 + (((deps.random || Math.random)() < cookingYieldChance) ? 1 : 0); // Extra yield never consumes another ingredient because this roll happens once per completed cooking action.
       const saved = [];
       selections.forEach(({ selected }) => {
