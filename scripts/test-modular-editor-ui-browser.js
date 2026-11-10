@@ -208,7 +208,7 @@ async function ready(page) {
     assert.match(await page.locator('.rig-legend').innerText(),/Gold ring.*Cyan ring.*Purple dashed ruler/,
       'the visible full-rig legend explains the connector and both endpoints');
     assert.equal(await page.evaluate(() => window.ModularWeapons.flailGuide('fishing-mace','grapple-flail')?.explicitMount),
-      true,'the author's Fishing Mace has its own visible rope mount and preserved bore treatment');
+      true,'the hand-authored Fishing Mace has its own visible rope mount and preserved bore treatment');
     assert.equal(await page.evaluate(() => window.ModularWeapons.isDisallowed('grapple-flail','warhammer')),true,
       'authored flail shaft exclusions reject hammers even though mace heads are allowed');
     await page.waitForFunction(() => document.querySelector('#shaft-bore-panel')?.hidden === false,
