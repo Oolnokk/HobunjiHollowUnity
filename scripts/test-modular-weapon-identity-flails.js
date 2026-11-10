@@ -45,7 +45,7 @@ assert(config.heads.hoe.toolSlots.includes('hoe'),
   'a hoe head retains its crop-harvest mastery channel when its calibration is eventually approved');
 
 const original = plain(window.WEAPON_SPRITE_ASSEMBLY_CONFIG.weapons.grappleFlail); // The Tool Hub's source must not be mutated by derived weapons.
-const shaftOwner = api.flailRecipe('grapple-flail','warhammer'); // Haft-owned rope replaces the authored head with the modular sprite.
+const shaftOwner = api.flailRecipe('grapple-flail','fishing-mace'); // Haft-owned rope replaces the authored head with the modular sprite.
 assert(shaftOwner?.flail, 'rope-bearing shaft produces an actual flexible weapon assembly');
 assert.equal(shaftOwner.flail.chain.type, 'rope');
 assert.equal(shaftOwner.flail.chain.lengthPx, original.flail.chain.lengthPx);
@@ -53,11 +53,11 @@ assert.equal(shaftOwner.flail.chain.mountLengthPx, 843.75, 'new suspension line 
 assert.equal(shaftOwner.flail.chain.radiusPx, original.flail.chain.radiusPx, 'changing suspension length does not affect thickness');
 assert.equal(shaftOwner.flail.chain.scaleX, original.flail.chain.scaleX, 'rope width multiplier stays authored');
 assert.equal(shaftOwner.flail.head.scale, 1, 'hanging head size is independent of the rope line');
-assert.equal(api.matchingMounts(config.shafts['grapple-flail'], config.heads.warhammer)[0].type,'rope');
-assert.equal(api.attachmentRig(config.shafts['grapple-flail'],config.heads.warhammer,api.settings('grapple-flail','warhammer')).children[0].children.length,0,
+assert.equal(api.matchingMounts(config.shafts['grapple-flail'], config.heads['fishing-mace'])[0].type,'rope');
+assert.equal(api.attachmentRig(config.shafts['grapple-flail'],config.heads['fishing-mace'],api.settings('grapple-flail','fishing-mace')).children[0].children.length,0,
   'a rope mount is never used as an automatic rigid-head fitting/scaling axis');
 assert.equal(shaftOwner.flail.head.layers.length, 1);
-assert.equal(shaftOwner.flail.head.layers[0].sprite, config.heads.warhammer.sprite);
+assert.equal(shaftOwner.flail.head.layers[0].sprite, config.heads['fishing-mace'].sprite);
 assert.equal(shaftOwner.flail.head.anchorLayer, 'modular-head');
 assert.deepEqual(plain(shaftOwner.flail.head.anchor), plain(original.flail.head.anchor),
   'haft-owned flail keeps the contact from the Complex Tool Visuals author, ignoring modular head.mount');
@@ -67,21 +67,27 @@ const headOwner = api.flailRecipe('fishing-mace', 'grapple-flail'); // Head-owne
 assert(headOwner?.flail);
 assert.equal(headOwner.flail.head.layers.length, original.flail.head.layers.length,
   'a multi-layer flexible head retains its full authored back/front render ordering');
-assert.deepEqual(plain(headOwner.flail.haftAnchor), plain(original.flail.haftAnchor),
-  'head-owned flail uses the original authoring attachment, not a modular head or haft tang/eye arrow');
+assert.deepEqual(plain(headOwner.flail.haftAnchor), plain(config.shafts['fishing-mace'].mounts.find(m => m.type === 'rope').start),
+  'head-owned flail follows the exact uploaded Bored Wrapped Handle rope mount, not its tang/eye arrows');
 assert.deepEqual(plain(headOwner.flail.head.anchor), plain(original.flail.head.anchor),
   'original multi-sprite head contact is never replaced by a modular head arrow');
 assert.equal(headOwner.sprite, config.shafts['fishing-mace'].sprite);
-assert.equal(headOwner.flail.chain.mountLengthPx, undefined,
-  'older flails without an authored rope line preserve their original chain length');
+assert(Math.abs(headOwner.flail.chain.mountLengthPx - Math.hypot(193,525)) < 1e-8,
+  'the uploaded Fishing Mace rope line changes connector reach, not connector width or the head');
 assert.deepEqual(plain(api.matchingMounts(config.shafts['fishing-mace'],config.heads['grapple-flail'])[0].start),
-  plain(original.flail.haftAnchor), 'flail fitting uses a virtual author-owned rope mount even when no physical rope line exists');
-assert.equal(api.flailGuide('fishing-mace','grapple-flail').explicitMount,false);
-assert.equal(api.flailGuide('grapple-flail','warhammer').explicitMount,true);
+  {x:193,y:850}, 'head-owned flail uses the precise authored mount point on the Fishing Mace');
+assert.equal(api.flailGuide('fishing-mace','grapple-flail').explicitMount,true,
+  'the uploaded handle has an explicit visible connector line');
+const unmappedFlail = api.flailRecipe('dagger','grapple-flail'); // Preserve old inherited-author fallback when no rope mount is present.
+assert.deepEqual(plain(unmappedFlail.flail.haftAnchor),plain(original.flail.haftAnchor));
+assert.equal(api.flailGuide('dagger','grapple-flail').explicitMount,false);
+assert.equal(api.flailGuide('grapple-flail','fishing-mace').explicitMount,true);
 assert.equal(api.flailGuide('grapple-flail','warhammer').length,843.75,
   'the visible guide ends at the same connector reach as the 3D rope');
 assert.deepEqual(plain(window.WEAPON_SPRITE_ASSEMBLY_CONFIG.weapons.grappleFlail), original,
   'derived modular flails never overwrite the Tool Hub source recipe');
+assert.equal(api.isDisallowed('grapple-flail', 'warhammer'), true, 'hammer-shaped heads cannot hang from the grapple shaft');
+assert.equal(api.isDisallowed('dagger', 'grapple-flail'), true, 'grapple hook is restricted to five explicitly authored hafts');
 assert.equal(api.isDisallowed('grapple-flail', 'grapple-flail'), true,
   'two rope-owning pieces cannot produce two overlapping pendulums');
 assert.equal(api.flailRecipe('grapple-flail', 'grapple-flail'), null);
@@ -89,7 +95,7 @@ assert.equal(config.heads.dagger.weaponNames.prefix,'Gutter','uploaded head pref
 assert.equal(config.heads.dagger.weaponNames.suffix,'Arrow-tipped');
 assert.equal(config.shafts['fishing-spear'].nameAffix,'Leather-wrapped Pole-','uploaded naming fields are retained without importing geometry');
 
-assert(definitions[item('grapple-flail','warhammer')].weaponAssembly?.flail,
+assert(definitions[item('grapple-flail','fishing-mace')].weaponAssembly?.flail,
   'real equipment definition hands the multi-sprite runtime a dynamic head/rope assembly');
 assert(definitions[item('fishing-mace','grapple-flail')].weaponAssembly?.flail,
   'head-authored flexible assemblies reach the exact same renderer');
@@ -116,7 +122,7 @@ assert.equal(api.getConfig().shafts['fishing-mace'].bores[0].rx, 12, 'bore geome
 assert.deepEqual(plain(api.flailRecipe('fishing-mace','grapple-flail').flail.head.anchor),
   plain(original.flail.head.anchor), 'modular arrow edits and old flailHeadAnchor values cannot move the authored flail head');
 assert.deepEqual(plain(api.flailRecipe('fishing-mace','grapple-flail').flail.haftAnchor),
-  plain(original.flail.haftAnchor), 'modular head arrow edits cannot move the rope attachment');
+  {x:193,y:850}, 'moving the modular head arrow cannot change the shaft-side authored rope mount');
 assert.deepEqual(plain(api.resolvedBores(api.getConfig().shafts['fishing-mace'],api.getConfig().heads['grapple-flail'])
   .map(({x,y})=>({x,y}))), [{x:225,y:602}], 'old absolute bore centers migrate to connector-relative offsets without moving');
 assert.equal(api.resolvedBores(api.getConfig().shafts['fishing-mace'],api.getConfig().heads.warhammer).length,0,
@@ -143,6 +149,7 @@ assert.equal(api.getConfig().shafts['fishing-mace'].label, 'Bored Wrapped Handle
 // Source-art transforms and independently movable rig regions must all point to ONE actual connector.
 const rigged = plain(window.MODULAR_WEAPON_CONFIG); // Use a new editable draft, leaving committed mount geometry untouched.
 const riggedShaft = rigged.shafts['fishing-mace'];
+riggedShaft.mounts=riggedShaft.mounts.filter(mount=>mount.type!=='rope'); // Replace the authored rope, never accumulate a second primary mount.
 riggedShaft.mounts.push({ type:'rope',start:{x:210,y:900},end:{x:210,y:600} });
 riggedShaft.attachmentRigTransform={scaleX:1,scaleY:1,x:15,y:25};
 riggedShaft.shaftArtTransform={enabled:true,scaleX:2,scaleY:2,x:0,y:0};
