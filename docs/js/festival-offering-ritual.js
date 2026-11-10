@@ -23,7 +23,7 @@
     if (/\bfish\b|seafood|angling/.test(tags) || /\bfish\b/.test(name)) return 'fishingFortune';
     if (/\bseed\b|\bcrop\b|vegetable|fruit|grain|produce|farming/.test(tags) || /seed|vegetable/.test(name)) return 'harvestFortune';
     if (/\bore\b|\bmineral\b|\bmetal\b|\bbar\b|\bstone\b|mining|gem/.test(tags) || /ore|ingot|metal bar|gemstone/.test(name)) return 'miningFortune';
-    if (/herb|forage|wood|timber|mushroom|reagent|wild berry/.test(tags) || /\bwood\b|\bherb\b/.test(name)) return 'foragingFortune';
+    if (/herb|forag(?:e|ing)|wood|timber|mushroom|reagent|wild berry/.test(tags) || /\bwood\b|\bherb\b|mushroom|reagent/.test(name)) return 'foragingFortune';
     if (/weapon|armor|armour|blade|shaft|head|combat|shield|arrow|bow|spear|mace/.test(tags) || /sword|spear|blade|shield|mace|arrow/.test(name)) return 'battleFortune';
     return 'treasureFortune'; // Figurines, keepsakes, curios and unclassified valuables favor treasure discoveries.
   }
