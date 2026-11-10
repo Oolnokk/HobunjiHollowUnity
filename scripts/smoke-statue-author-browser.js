@@ -74,7 +74,9 @@ async function run(){
     }));
     assert.equal(layout.position,'sticky','Mobile layout should keep the statue preview in view');
     await page.selectOption('#npcSelect',{index:1});
-    await page.fill('#weaponPaths','assets/toolsprites/harlyao_longsword.png'); // Exercise imported PNG readback over the redirected origin.
+    await page.waitForFunction(()=>document.querySelector('#weaponSpriteSelect option[value="assets/toolsprites/harlyao_longsword.png"]'),null,{timeout:20000});
+    await page.selectOption('#weaponSpriteSelect','assets/toolsprites/harlyao_longsword.png');
+    await page.click('#addWeaponSprite'); // Test the new indexed dropdown, including redirected cross-origin PNG loading.
     await page.click('#build');
     await page.waitForFunction(()=>{
       const value=document.getElementById('status')?.textContent||'';
@@ -126,7 +128,7 @@ async function run(){
     const pahuIndex=options.findIndex(option=>/\bPahu\b/i.test(option));
     assert.ok(pahuIndex>0,'Pahu must be selectable in the repository NPC list');
     await page.selectOption('#npcSelect',{index:pahuIndex});
-    await page.fill('#weaponPaths','');
+    await page.click('#clearWeaponSprites'); // Test the new mobile Clear button rather than a hidden textarea.
     await page.click('#build');
     await page.waitForFunction(()=>{
       const debug=window.__hobunjiStatueDebug?.();
