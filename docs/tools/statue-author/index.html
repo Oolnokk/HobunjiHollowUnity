@@ -48,7 +48,7 @@ aside{max-height:none;overflow:visible;border-right:0;grid-template-columns:repe
 <section>
 <h2>2 · Frozen pose</h2>
 <label for="animationFile">Import Attack Animation Editor export</label><input id="animationFile" type="file" accept=".json,application/json">
-<label for="phase">Key pose to freeze</label><select id="phase"><option value="neutral">Neutral</option><option value="windup">Windup</option><option value="strike">Strike</option></select>
+<label for="phase">Key pose to freeze (after importing animation)</label><select id="phase" disabled><option value="neutral">Neutral</option><option value="windup">Windup</option><option value="strike">Strike</option></select>
 <small>Body yaw/sink, weapon XYZ/rotation, and free-hand channels are taken from the chosen authored key pose. Limbs remain individually editable furniture parts.</small>
 </section>
 <section>
@@ -122,8 +122,8 @@ function portraitMaskStats(canvas){
 }
 function assertPortraitMask(canvas,label,strict=true){
   const stats=portraitMaskStats(canvas);
-  if(!stats.opaque || !stats.colored || (strict&&stats.coverage>.96)){
-    throw Error(label+' is blank, all-black or an opaque rectangle ('+
+  if(!stats.opaque || (strict&&stats.coverage>.96)){
+    throw Error(label+' is blank or an opaque rectangle ('+
       Math.round(stats.coverage*100)+'% filled, '+stats.colored+' colored pixels). Check portrait assets.');
   }
   return stats;
@@ -224,7 +224,7 @@ async function makeProject(){
   const filename=$('materialFile').value.trim();
   if(!/^[a-zA-Z0-9_.-]+\.png$/.test(filename))throw Error('Enter a PNG filename under assets/textures/');
   const name=$('statueName').value.trim()||'Authored Statue';
-  const role=$('materialRole').value,phase=$('phase').value;
+  const role=$('materialRole').value,phase=animation?$('phase').value:'neutral';
   const pose=animation?.poses?.[phase]||{};
   await window.NpcAvatarPreview.ensurePortraitCosmetics({assetBase:'../../assets/',configBase:'../../config/'});
   const profile=window.NpcAvatarPreview.buildProfileFromNpcExport(npc);
@@ -276,7 +276,7 @@ function display(project){
     if(child&&parent&&child!==parent)parent.add(child);
   }
   status('Built '+project.parts.length+' editable pieces: NPC '+(project.statueSource.npcId||'imported')+
-    '\nPose: '+project.statueSource.phase+
+    '\nPose: '+project.statueSource.phase+(animation?' (authored animation)':' (neutral fallback; no animation imported)')+
     '\nShared texture: '+project.statueSource.materialFile+
     '\nWeapon layers: '+project.parts.filter(p=>p.id.startsWith('statue_weapon_')).length+
     '\nThe Furniture Editor can adjust or detach each child piece.');
@@ -303,8 +303,8 @@ $('animationFile').onchange=async event=>{
     const raw=await readJsonFile(event.target.files?.[0]);
     const value=raw?.animation?.poses?raw.animation:raw;
     if(!value?.poses||!['neutral','windup','strike'].some(k=>value.poses[k]))throw Error('Expected Attack Animation Editor poses');
-    animation=value;status('Loaded '+(animation.name||'attack animation')+'. Choose a phase and build.');
-  }catch(error){status('Pose import failed: '+error.message);}
+    animation=value;$('phase').disabled=false;status('Loaded '+(animation.name||'attack animation')+'. Choose a phase and build.');
+  }catch(error){animation=null;$('phase').value='neutral';$('phase').disabled=true;status('Pose import failed: '+error.message);}
   event.target.value='';
 };
 $('materialPreset').onchange=()=>{
