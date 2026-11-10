@@ -1108,15 +1108,18 @@
     const pickKey = `${ref.source}:${ref.id}`;
     const row = document.createElement('div');
     row.className = 'farm-row livestock-trait-row';
+    row.dataset.farmSpecies = String(entry.kind || ''); // Shared by the Farm's species filter and both roster sort groups.
+    row.dataset.farmSource = ref.source; // Distinguishes world livestock from personal-Stable breeding candidates.
     row.innerHTML =
+      `<span class="farm-animal-thumb"><span class="farm-row-icon">${STABLE_KIND_ICONS[entry.kind] || '🦆'}</span></span>` +
       (canManage ? `<input type="checkbox" class="farm-pick" ${farmPairPicks.has(pickKey) ? 'checked' : ''} ${pending ? 'disabled' : ''}>` : '') +
-      `<span class="farm-row-icon">${STABLE_KIND_ICONS[entry.kind] || '🦆'}</span>` +
       (onRename
         ? `<input class="farm-row-name" value="${deps.esc(entry.name || window.CreatureGenetics.defaultLivestockName(entry.kind))}" ${canManage ? '' : 'disabled'} maxlength="30">`
         : `<span class="farm-row-name" style="padding:2px 4px">${deps.esc(entry.name || window.CreatureGenetics.defaultLivestockName(entry.kind))}</span>`) +
       `<span class="farm-row-value${value ? ' tier-' + deps.esc(value.tier) : ''}">${value ? `${value.amount}g · ${deps.esc(value.tier)}` : 'Companion'}${pending ? ' · breeding…' : ''}</span>` +
       (onSell ? `<button class="settings-small-btn farm-sell-btn">Sell</button>` : '') +
       _livestockTraitsHtml(entry.genotype, entry.kind);
+    window.InventoryStacks?.applyHeadIcon?.(row.querySelector('.farm-row-icon'), entry.kind, entry.genotype); // Reuses Nursery's cached genotype portrait.
     if (canManage) {
       if (onRename) row.querySelector('.farm-row-name').addEventListener('change', e => onRename(e.target.value));
       row.querySelector('.farm-pick').addEventListener('change', e => {
