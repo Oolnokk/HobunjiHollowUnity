@@ -89,6 +89,55 @@ const trail = window.Combat.spawnMeleeTrail({ actor: enemy, target: { x: 0, y: 6
 assert(trail && trail.mesh && scene.children.includes(trail.mesh));
 const midpoint = trail.mesh.geometry.attributes.position.xyz(16); // Mid-sector point must aim east, never north toward the supplied target.
 assert(midpoint[0] > 1.9 && Math.abs(midpoint[2]) < 0.00001, 'enemy swipe respects explicit attack direction');
+window.Combat.update(0.23); // Fade a visible trail before testing recycled alpha reset.
+assert(trail.mesh.material.opacity < 0.85, 'a live ribbon fades during the authored tail');
 window.Combat.update(1);
-assert.equal(scene.children.length, 0, 'swipe and its GPU buffers are cleaned up at end of lifetime');
-console.log('3D swipe: correct radius, pitched arc, vertical depth, AoE width, authored yaw, and GPU cleanup: PASS');
+assert.equal(scene.children.length, 0, 'expired swipes leave the active scene immediately');
+assert.equal(trail.mesh.visible, false, 'pooled swipes do not stay visible after retirement');
+assert.notEqual(trail.mesh.geometry.disposed, true, 'retired GPU geometry is preserved for future sword strikes');
+
+// Reuse the first enemy ribbon for a different pitch/width/color in another world scene:
+// neither the old scene nor the old authored cone may survive a pooled attack.
+const nextScene = { children: [], add(mesh) { this.children.push(mesh); mesh.parent = this; },
+  remove(mesh) { const index = this.children.indexOf(mesh); if (index >= 0) this.children.splice(index, 1); mesh.parent = null; } }; // Tests zoning across scenes without retaining a removed scene.
+const second = window.Combat.spawnMeleeTrail({
+  actor: player, scene: nextScene, yaw: Math.PI / 2, pitch: 0.3,
+  rangePx: 64, halfConeRad: 0.2, color: 0x33aa99,
+});
+assert.equal(second.mesh, trail.mesh, 'the same GPU mesh is reused for a new player or bandit strike');
+assert.equal(second.mesh.material.opacity, 0.85, 'pooled alpha resets at the next impact');
+assert.equal(second.mesh.material.color, 0x33aa99, 'pooled tint follows the new weapon/affliction');
+assert.notDeepEqual(second.mesh.geometry.attributes.position.xyz(16), midpoint, 'the next swing rewrites its own cone vertices');
+window.Combat.update(1);
+assert.equal(nextScene.children.length, 0, 'the recycled strike also retires from its new scene');
+
+// A sudden bandit crowd can exceed the pool: keep only 64 detached ribbons
+// and free any excess instead of growing GPU buffers indefinitely.
+const crowd = []; // Active simultaneous attacks cannot borrow the same pooled mesh.
+for (let i = 0; i < 70; i++) {
+  crowd.push(window.Combat.spawnMeleeTrail({ actor: enemy, yaw: 0, pitch: 0, rangePx: 64, halfConeRad: 0.3, scene }));
+}
+assert.equal(new Set(crowd.map(item => item.mesh)).size, 70, 'simultaneous enemy ribbons never alias one another');
+window.Combat.update(1);
+const counters = window.__melee3DDebug.snapshot(); // The existing mobile Pixel Probe exposes these counters.
+assert.equal(scene.children.length, 0, 'all crowd ribbons retire from the world');
+assert.equal(counters.activeTrailCount, 0);
+assert.equal(counters.pooledTrailCount, 64, 'detached ribbon pool has a strict upper bound');
+assert.ok(counters.trailMeshesReused >= 2, 'both enemy/player strikes reuse the same material and geometry');
+assert.ok(counters.trailMeshesDisposed >= 6, 'crowd overflow releases excess GPU buffers');
+
+// The existing opt-in mobile profiler must distinguish player vs enemy strike
+// callbacks, not accidentally count hit-stop as JavaScript or double-fire a hit.
+const measuredLabels = []; // Emulates the ordinary PerfProfiler begin/end API.
+window.PerfProfiler = { isEnabled: () => true, begin: label => ({ label }), end: token => {
+  measuredLabels.push(token.label);
+  return token.label.includes('enemy') ? 12 : 5;
+} };
+window.Combat.beginStagedAction({ windupS: 0, strikeS: 0, data: { isBandit: true, attacker: enemy }, onStrike() {} });
+window.Combat.beginStagedAction({ windupS: 0, strikeS: 0, data: { attacker: player }, onStrike() {} });
+const afterStrikes = window.__melee3DDebug.snapshot();
+assert.deepEqual(measuredLabels, ['Combat: enemy strike callback', 'Combat: player strike callback']);
+assert.equal(afterStrikes.strikeCpuMs.enemy.max, 12);
+assert.equal(afterStrikes.strikeCpuMs.player.last, 5);
+assert.equal(afterStrikes.strikeCpuMs.enemy.samples, 1);
+console.log('3D swipe: pitched collider parity, pooled draw resources, crowd limit and strike profiling: PASS');
