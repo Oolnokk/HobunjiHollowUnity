@@ -46,4 +46,34 @@ assert(game.includes("player._freeJump.phase !== 'supported'"),
   'rope and free-flight modes cannot accidentally walk in midair');
 assert.match(index, /<script src="game\.js\?v=[A-Za-z0-9_-]+"><\/script>/,
   'game script must use an independently cache-versioned URL');
+// Also exercise the shipped Dev Companion state provider: flat-terrain freezing may be caused
+// by an external pose owner even when positional gait speed is correct.
+const debugStart = game.indexOf("      window.DevCompanion?.registerStateProvider?.('playerGait', () => {"); // Locates the exact live state exporter.
+const debugEnd = game.indexOf('\n      // Head-turn bone', debugStart); // Stops before unrelated avatar declarations.
+assert(debugStart >= 0 && debugEnd > debugStart, 'live gait diagnostic provider exists');
+let debugProvider = null; // Captured callback that the real bridge polls while connected.
+const diagnosticWindow = { DevCompanion: { registerStateProvider: (name, fn) => {
+  assert.equal(name, 'playerGait');
+  debugProvider = fn;
+} } }; // Only the already-existing low-frequency bridge contract is mocked.
+const diagnosticLegs = {
+  group: { parent: {} }, // A live attached procedural rig.
+  getStandingPoseDebug: () => ({
+    motionMode: 'walk', externalContact: { active: false },
+    gait: { cadenceHz: 2.1, strideLength: 0.31 },
+    left: { targetZ: -0.16 }, right: { targetZ: 0.11 },
+  }),
+}; // Real debug snapshot shape, including independent foot movement.
+new Function('window', 'playerGaitTravel', 'player', 'playerLegs',
+  game.slice(debugStart, debugEnd))(diagnosticWindow, state, { _freeJump: { phase: 'supported' } }, diagnosticLegs);
+assert.equal(typeof debugProvider, 'function', 'bridge received the actual gait diagnostics callback');
+const gaitDiagnostic = debugProvider(); // Probes the already-registered callback rather than duplicating its formatter.
+assert.equal(gaitDiagnostic.legRigAttached, true);
+assert.equal(gaitDiagnostic.legMode, 'walk');
+assert.equal(gaitDiagnostic.jumpPhase, 'supported');
+assert.equal(gaitDiagnostic.externalFootContact, false);
+assert.equal(gaitDiagnostic.gaitCadenceHz, 2.1);
+assert.equal(gaitDiagnostic.strideLength, 0.31);
+assert.equal(gaitDiagnostic.footTargetZ.left, -0.16);
+assert.equal(gaitDiagnostic.footTargetZ.right, 0.11);
 console.log('player foot gait from real travel: all checks passed');
