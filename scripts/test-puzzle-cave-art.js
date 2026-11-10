@@ -50,7 +50,7 @@ async function main(){
   };
   vm.runInNewContext(read('docs/js/puzzle-cave-plate-art.js'),{window,Promise,console});
   const art=window.PuzzleCavePlateArt;
-  assert.equal(art.INSCRIPTION,"hao'uun");
+  assert.equal(art.INSCRIPTION,"Hao'uun");
   const small=new Mesh(new Geometry(.46,.09),new Material());
   const large=new Mesh(new Geometry(.46,.15),new Material());
   const a=art.decorate(THREE,small,{radius:.46,thickness:.09});
@@ -61,14 +61,14 @@ async function main(){
   assert(Math.abs(large.children[0].rotation.y-Math.PI/2)<1e-10,
     'an eastward doorway must turn the writing a full quarter-turn, not a diagonal');
   assert.deepEqual(requests.map(p=>p.materialTexture),['carved_smooth.png','carved_smooth.png']);
-  assert.equal(small.userData.puzzleCaveTankanText,"hao'uun");
+  assert.equal(small.userData.puzzleCaveTankanText,"Hao'uun");
   assert.equal(large.userData.puzzleCavePlateTexture,'carved_smooth.png');
   assert.equal(small.children[0].visible,false,'unloaded lettering must not render as a blank rectangle');
   b.dispose(); // Leave the cave before the asynchronous shared font finishes loading.
   resolveFont();
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(textCalls.length,1,'all cave plates should share one Tankan raster');
-  assert.equal(textCalls[0].text,"hao'uun");
+  assert.equal(textCalls[0].text,"Hao'uun");
   assert.equal(textCalls[0].options.radiusScale,.68,'inscription uses the circular Tankan layout');
   assert.equal(small.userData.puzzleCaveTankanLayout,'ring','the pressure plate exposes its ring mode in mobile diagnostics');
   assert.equal(small.children[0].geometry.width,small.children[0].geometry.height,'circular inscription must use a square top-facing canvas');
