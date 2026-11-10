@@ -20,7 +20,7 @@ function fixture(editor) {
     Combat: { deps: { __weaponToolStanceVisualHooks: true, triggerWeaponSwingVisual() {}, triggerWeaponHoldVisual() {} } },
     HobunjiAttackEditorToolContext: { toolKey: 'hatchet' },
   };
-  const scope = { window, location: window.location, document: { getElementById: id => controls[id] || null }, performance: { now: () => 0 } };
+  const scope = { window, URL, location: window.location, document: { getElementById: id => controls[id] || null }, performance: { now: () => 0 } };
   vm.runInNewContext(assemblySource, scope); // Game HTML loads flail assemblies before the lazy hand/dual modules.
   const firstTick = tasks.get('weapon-sprite-assemblies'); // Stable callback identity must survive all ordering changes.
   vm.runInNewContext(gripSource, scope);
