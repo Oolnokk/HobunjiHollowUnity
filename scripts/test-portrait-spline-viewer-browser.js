@@ -49,16 +49,23 @@ const server=http.createServer((req,res)=>{
     const debug=()=>page.evaluate(()=>window.HobunjiSplineAuthorDiagnostics?.());
     await page.waitForFunction(()=>{
       const info=window.HobunjiSplineAuthorDiagnostics?.();
-      return info?.viewer?.webgl===true&&info?.viewer?.headLoaded&&info?.viewer?.hairLoaded;
+      return info?.viewer?.webgl===true&&info?.viewer?.headLoaded&&info?.viewer?.hairLoaded
+        &&info?.canonicalPortrait?.loaded; // Verify the full body from the real Pants Rig Author portrait renderer, not only two detached images.
     },null,{timeout:60000}).catch(async error=>{throw new Error('WebGL head/hair did not load: '+error.message+'\n'+errors.join('\n').slice(0,3000)
       +'\nStatus: '+(await page.locator('#viewerStatus').innerText()));});
     const before=await debug();
     assert.equal(before.selected.species,'mao-ao');
     assert.equal(before.selected.gender,'male');
+    assert(before.canonicalPortrait.loaded,'shared NPC portrait produced a full character model, including torso/arms');
+    assert.equal(before.canonicalPortrait.error,null,'canonical portrait integration is error-free');
+    assert.equal(Object.keys(before.viewer.textureErrors||{}).length,0,
+      'no origin-tainted or invalid PNG textures: '+JSON.stringify(before.viewer.textureErrors));
     assert.equal(before.viewer.knots,3,'the 3D viewer builds the same three rest knots as the 2D author');
     assert(before.viewer.ribbonVertices>100,'the real WebGL ribbon has deformable vertex geometry');
     assert(before.viewer.textures.head?.colored>10 && before.viewer.textures.hair?.colored>10,
-      'head and hair textures contain real colored RGBA sprite pixels, not blank/black image buffers');
+      'canonical body/head and hair textures contain real colored RGBA sprite pixels, not blank/black image buffers');
+    assert.equal(before.viewer.textures.head.format,'canonical CanvasTexture',
+      '3D editor uses the shared PNG-plane pipeline, not a custom DataTexture uploader');
     assert(before.viewer.gpuHead?.ok,
       'the head sprite must actually render colored pixels on the GPU (not merely have a material.map): '+JSON.stringify(before.viewer.gpuHead));
     assert(before.viewer.gpuHair?.ok,
