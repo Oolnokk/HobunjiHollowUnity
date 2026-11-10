@@ -858,6 +858,7 @@
           <div class="perfHudRow perfHudCombo"><span>Combo</span><strong data-perf="combo">0</strong><span data-perf="accuracy" class="perfHudAccuracy"></span></div>
         </div>
         <div class="perfHudChord" data-perf="chord"></div>
+        <div class="perfHudJamSync" data-perf="jam" style="font-size:11px;opacity:.86" aria-live="off"></div>
         <div class="perfHudFeedback" data-perf="feedback"></div>`;
       document.body.appendChild(performanceHud);
     }
@@ -866,6 +867,7 @@
       combo: performanceHud.querySelector('[data-perf="combo"]'),
       accuracy: performanceHud.querySelector('[data-perf="accuracy"]'),
       chord: performanceHud.querySelector('[data-perf="chord"]'),
+      jam: performanceHud.querySelector('[data-perf="jam"]'),
       feedback: performanceHud.querySelector('[data-perf="feedback"]'),
     };
     const onStatusMessage = event => {
@@ -1091,7 +1093,14 @@
       const hint = leftMount.querySelector('[data-auto-pick-hint]');
       if (hint) hint.textContent = activeInputLayout === 'keyboard' ? 'Hold Shift' : (activeInputLayout === 'controller' ? 'Left stick' : 'Tap direction');
     };
-    const readMode = () => updateModeLabels(bridge.getState?.());
+    let lastJamHudAt = -Infinity; // Existing 180 ms HUD refresh reads potentially expensive chord diagnostics only once a second.
+    const readMode = () => {
+      updateModeLabels(bridge.getState?.());
+      if (!perfHudNodes.jam || Date.now() - lastJamHudAt < 1000) return;
+      lastJamHudAt = Date.now();
+      const jam = bridge.jamFollowState?.(); // Read cached follower clock; no extra controller loop or audio transport.
+      perfHudNodes.jam.textContent = jam?.active ? `NPC sync · ${jam.bpm} BPM · ${jam.chord} · drift ${jam.driftMs} ms` : '';
+    };
 
     // ── Keyboard: installed on BOTH the host window and the iframe's own
     // window, since frameEl.contentWindow.focus() (see onPlayerFrameLoaded)
