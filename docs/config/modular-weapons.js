@@ -13939,7 +13939,10 @@ window.MODULAR_WEAPON_CONFIG = {
           "disallow": false,
           "layerOrder": "head-over-haft",
           "flipY": true,
-          "dmgType": "blunt"
+          "dmgType": "blunt",
+          "scaleY": 1.1,
+          "x": -3,
+          "y": -5
         },
         "pickshovel-scoop": {
           "disallow": false,
@@ -13949,12 +13952,14 @@ window.MODULAR_WEAPON_CONFIG = {
         "plains-blade": {
           "disallow": false,
           "layerOrder": "head-over-haft",
-          "scaleY": 0.4
+          "scaleY": 0.6,
+          "y": -20
         },
         "porakaneki-greatclub": {
           "disallow": false,
-          "layerOrder": "haft-over-head",
-          "scaleY": 0.75
+          "layerOrder": "head-over-haft",
+          "scaleY": 0.85,
+          "y": -50
         },
         "war-cleaver": {
           "disallow": false,
