@@ -46,6 +46,7 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
 <canvas id="preview" width="400" height="400" aria-label="Spline, mask and reference art editor"></canvas>
 <div class="row"><label for="viewSelect">Sprite plane</label><select id="viewSelect"><option value="front">Front</option><option value="rear">Rear</option></select>
 <label for="brush">Mask radius, px</label><input type="number" id="brush" value="3" min=".5" max="15" step=".5" style="width:74px"></div>
+<div class="row"><label for="bridgePaint"><input id="bridgePaint" type="checkbox"> Paint opaque bridge pixels</label><input id="bridgeColor" type="color" value="#90664c" title="Color of painted connecting pixels"></div>
 <p>Yellow dots are knot positions, the yellow line is the unposed spline, cyan is its projected 3D pose and pink circles are passage-mask paint. Drag knots, or paint onto the hood-to-hair seam.</p>
 <div class="entry"><label for="rearU">Rear X offset</label><input id="rearU" type="number" min="-.25" max=".25" step=".005" value="0"></div>
 <div class="entry"><label for="rearV">Rear Y offset</label><input id="rearV" type="number" min="-.25" max=".25" step=".005" value="0"></div>
@@ -100,8 +101,7 @@ $('cosmeticFile').addEventListener('change',async e=>{
   try{
     const parsed=JSON.parse(await file.text());if(!parsed||Array.isArray(parsed)||typeof parsed!=='object')throw Error('Expected a cosmetic object.');
     cosmetic=parsed;loadedName=file.name.replace(/^\(HA\)\s*/,'');
-    rig=parsed.portraitSplineRig?JSON.parse(JSON.stringify(parsed.portraitSplineRig)):makeRig();
-    if(!Rig.normalize(rig))rig=makeRig();
+    rig=Rig.normalize(parsed.portraitSplineRig) || makeRig(); // Always edit the validated full schema, including every segment's default pose.
     selectedKnot=0;selectedSegment=0;controls();render();message('Imported '+file.name+'. Export preserves existing cosmetic fields.');
   }catch(error){message('Invalid JSON: '+error.message);}
 });
@@ -139,10 +139,13 @@ function render(){
   ctx.strokeStyle='#26364d';ctx.lineWidth=1;
   for(let i=0;i<=10;i++){ctx.beginPath();ctx.moveTo(i*W/10,0);ctx.lineTo(i*W/10,H);ctx.stroke();ctx.beginPath();ctx.moveTo(0,i*H/10);ctx.lineTo(W,i*H/10);ctx.stroke();}
   const shown=$('viewSelect').value==='rear';
-  if(images[shown?'rear':'front']){ctx.globalAlpha=.8;ctx.drawImage(images[shown?'rear':'front'],0,0,W,H);ctx.globalAlpha=1;}
+  if(images[shown?'rear':'front']){ctx.globalAlpha=.8;
+    if(shown){ctx.save();ctx.translate(rig.rearOffset.u*W,rig.rearOffset.v*H);} // Preview the same rear-only transform used on the 3D ribbon.
+    ctx.drawImage(images[shown?'rear':'front'],0,0,W,H);
+    if(shown)ctx.restore();ctx.globalAlpha=1;}
   if(images.hood){ctx.globalAlpha=.28;ctx.drawImage(images.hood,0,0,W,H);ctx.globalAlpha=1;}
   ctx.strokeStyle='#ffb2d3';ctx.lineWidth=1;ctx.fillStyle='#ec88b643';
-  for(const p of rig.seam){ctx.beginPath();ctx.arc(p.u*W,p.v*H,p.radiusPx*W/200,0,Math.PI*2);ctx.fill();ctx.stroke();}
+  for(const p of rig.seam){ctx.beginPath();ctx.arc(p.u*W,p.v*H,p.radiusPx*W/200,0,Math.PI*2);ctx.fillStyle=p.color||'#ec88b643';ctx.fill();ctx.stroke();}
   const active=normalized();if(!active){message('Invalid spline: add at least two distinct knots.');return;}
   const posed=Rig.posePoints(active,wind()),pts=posed.points;
   ctx.lineWidth=3;ctx.strokeStyle='#fcd36e';ctx.beginPath();rig.points.forEach((p,i)=>i?ctx.lineTo(p.u*W,p.v*H):ctx.moveTo(p.u*W,p.v*H));ctx.stroke();
@@ -160,7 +163,7 @@ function render(){
 function updateKnots(){while(rig.segments.length<rig.points.length-1)rig.segments.push(makeSegment());rig.segments.length=rig.points.length-1;controls();render();}
 function pick(e){const bounds=$('preview').getBoundingClientRect();return{u:clamp((e.clientX-bounds.left)/bounds.width,0,1),v:clamp((e.clientY-bounds.top)/bounds.height,0,1)};}
 function paint(p){
-  if(mode==='paint'){const last=rig.seam[rig.seam.length-1];if(last&&Math.hypot(last.u-p.u,last.v-p.v)<numeric($('brush').value,3)/700)return;rig.seam.push({...p,radiusPx:clamp(numeric($('brush').value,3),.5,15)});if(rig.seam.length>128)rig.seam.shift();}
+  if(mode==='paint'){const last=rig.seam[rig.seam.length-1];if(last&&Math.hypot(last.u-p.u,last.v-p.v)<numeric($('brush').value,3)/700)return;rig.seam.push({...p,radiusPx:clamp(numeric($('brush').value,3),.5,15),...($('bridgePaint').checked?{color:$('bridgeColor').value}:{})});if(rig.seam.length>128)rig.seam.shift();}
   else if(mode==='erase'){let idx=-1,best=Infinity;rig.seam.forEach((m,i)=>{const d=Math.hypot(m.u-p.u,m.v-p.v);if(d<best){best=d;idx=i;}});if(best<.05&&idx>=0)rig.seam.splice(idx,1);}
   else{rig.points[selectedKnot].u=p.u;rig.points[selectedKnot].v=p.v;}
   render();
