@@ -1441,7 +1441,7 @@
       // (on the final combo step) retreatT/resets comboIndex -- a
       // landing bandit attack was silently skipping its own cooldown
       // and never retreating after its 3-hit combo.
-      data: { isBandit: true, attacker: c, comboId: loadout.tap1, comboStep, sfxPitch, voiceCategory: 'combo', voiceAbilityId: loadout.tap1 },
+      data: { isBandit: true, attacker: c, comboId: loadout.tap1, comboStep, isComboFinisher: isFinalStep, sfxPitch, voiceCategory: 'combo', voiceAbilityId: loadout.tap1 },
       onStrike: () => {
         c.telegraphState = 'strike';
         // The hit and trail use the facing frozen when pre-windup alignment completed.
