@@ -1975,7 +1975,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   };
 
   // Draws body/cosmetic/hood layers with full breathing + emote deformation.
-  const drawBreathingLayers = (layerList, isHood = false) => {
+  const drawBreathingLayers = (layerList, isHood = layerList === hoodLayers || layerList === hoodBackLayers) => {
     for (const entry of layerList) withPixelDyeLayer(entry, (img, tint, sourceKey) => {
       const seamWarp = isHood && splineSeams.length > 0;
       const warpedCanvas = seamWarp ? document.createElement('canvas') : null; // Allocated only when a rig actually pierces a hood.
@@ -2039,9 +2039,9 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       overwear:      () => drawBreathingLayers(overwearLayers),
       hatUnder:      () => drawEmoteLayers(hatUnderLayers),
       hood:          () => {
-        drawBreathingLayers(hoodBackLayers, true);
+        drawBreathingLayers(hoodBackLayers);
         const rearTrim = _isFurLinedHood(hood) && hoodLayers[0]?.layer?.paletteColorKey === 'B' ? hoodLayers[0] : null; // Only the Fur-lined Hood uses its front trim as rear fur fringe.
-        if (!rearTrim) { drawBreathingLayers(hoodLayers, true); return; }
+        if (!rearTrim) { drawBreathingLayers(hoodLayers); return; }
         const xf = resolveXform(rearTrim.layer); // Match the rear trim's transformed source rectangle.
         const height = PORTRAIT_L * xf.sy; // Crop the unrelated topmost 20% of the reused front trim without touching its fringe.
         const cropTop = PORTRAIT_CH / 2 - xf.ax * PORTRAIT_L - height * 0.30; // Source pixels at y=35/173 and below remain visible.
@@ -2079,7 +2079,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     drawBreathingLayers(torsoClothingLayers);
     drawBreathingLayers(overwearLayers);
   }
-  drawBreathingLayers(hoodBackLayers, true); // Rear hood cloth must sit behind the skull/head; front opening is drawn later with ordinary hood layers.
+  drawBreathingLayers(hoodBackLayers); // Rear hood cloth must sit behind the skull/head; front opening is drawn later with ordinary hood layers.
   const _beardBelowHead = _BEARD_BELOW_HEAD_SPECIES.has(String(speciesId || '').toLowerCase().replace(/_/g, '-'));
   drawEmoteLayers(sideLeftLayers);
   if (_beardBelowHead) drawEmoteLayers(facialHairLayers);
@@ -2144,7 +2144,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   drawEmoteLayers(upperFaceLayers);
   drawEmoteLayers(hatUnderLayers);
   drawEmoteLayers(elevatedEyeAccessoryLayers);
-  drawBreathingLayers(hoodLayers, true);
+  drawBreathingLayers(hoodLayers);
   drawEmoteLayers(maskLayers); // Face masks sit over the hood opening in the front portrait (hood first, mask on top).
   if (!headCosmeticsOnly) drawEmoteLayers(pauldronLayers);
   for (const mid of aboveHoodBelowHatUrLayers) {
