@@ -453,6 +453,7 @@ window.__hobunjiStatueDebug=()=>{
       material:meshMaterialStats(mesh)});
   });
   return {built:!!exportProject,record:selectedRecord?.id||$('npcSelect').value,
+    builtNpcId:exportProject?.statueSource?.npcId||null,buildActive:$('build').disabled,
     importedAnimation:animation?.name||null,phase:exportProject?.statueSource?.phase||null,
     sourceRig:exportProject?.statueSource?.sourceRig||null,
     texture:exportProject?.statueSource?.materialFile||$('materialFile').value,
