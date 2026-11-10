@@ -150,13 +150,36 @@ function maskedPart(source,rectangle,remove=null){
   }
   return out.toDataURL('image/png');
 }
-function headPixelsFromFullPortrait(full,headAlpha){
-  const output=transparentCanvas(full.width,full.height);
-  const ctx=output.getContext('2d');
-  ctx.drawImage(full,0,0);
-  ctx.globalCompositeOperation='destination-in';
-  ctx.drawImage(headAlpha,0,0); // Keep the complete NPC face, eyes and cosmetics, not an unadorned head.
-  return output;
+function splitFullPortrait(full,headGuide){
+  const width=full.width,height=full.height;
+  const original=full.getContext('2d',{willReadFrequently:true}).getImageData(0,0,width,height);
+  const guide=headGuide.getContext('2d',{willReadFrequently:true}).getImageData(0,0,width,height).data;
+  const body=transparentCanvas(width,height),head=transparentCanvas(width,height);
+  const bodyPixels=new ImageData(new Uint8ClampedArray(original.data),width,height);
+  const headPixels=new ImageData(new Uint8ClampedArray(original.data),width,height);
+  // Split at the same alpha threshold as the rest of the portrait pipeline.
+  // Fractional "destination-out" left transparent holes under antialiased
+  // facial pixels; a disjoint mask retains *every* original composite pixel.
+  let assignedHead=0,assignedBody=0;
+  for(let i=0;i<original.data.length;i+=4){
+    if(guide[i+3]>8 && original.data[i+3]>8){
+      bodyPixels.data[i+3]=0;assignedHead++;
+    }else{
+      headPixels.data[i+3]=0;
+      if(original.data[i+3]>8)assignedBody++;
+    }
+  }
+  if(!assignedHead||!assignedBody)throw Error('NPC head mask cannot be separated into head and body');
+  body.getContext('2d').putImageData(bodyPixels,0,0);
+  head.getContext('2d').putImageData(headPixels,0,0);
+  return {body,head};
+}
+function unionHeadBounds(front,rear){
+  if(!front)return rear;
+  if(!rear)return front;
+  const x=Math.min(front.x,rear.x),y=Math.min(front.y,rear.y);
+  const right=Math.max(front.x+front.w,rear.x+rear.w),bottom=Math.max(front.y+front.h,rear.y+rear.h);
+  return {x,y,w:right-x,h:bottom-y};
 }
 
 function sprite(id,name,mask,backMask,finish,role,pose,parentId=null){
@@ -199,15 +222,12 @@ function measureNpcRig(frameFront,frameBack,profile,npc){
 }
 function makeStaticParts(front,back,head,backHead,profile,pose,finish,role,weaponMasks,frame){
   const w=front.width,h=front.height;
-  let bounds=maskBounds(head);
-  if(!bounds){
-    bounds={x:Math.round(w*.25),y:0,w:Math.round(w*.5),h:Math.round(h*.32)};
-  }
+  const bounds=unionHeadBounds(maskBounds(head),maskBounds(backHead));
+  if(!bounds)throw Error('The NPC head cannot be separated from its portrait');
   const full={x:0,y:0,w,h};
-  const composedHead=headPixelsFromFullPortrait(front,head); // Source pixels always match the NPC's fully layered portrait.
-  const composedRearHead=headPixelsFromFullPortrait(back,backHead);
-  const bodyMask=maskedPart(front,full,head),headMask=maskedPart(composedHead,bounds);
-  const backBodyMask=maskedPart(back,full,backHead),backHeadMask=maskedPart(composedRearHead,bounds);
+  const splitFront=splitFullPortrait(front,head),splitBack=splitFullPortrait(back,backHead);
+  const bodyMask=maskedPart(splitFront.body,full),headMask=maskedPart(splitFront.head,bounds);
+  const backBodyMask=maskedPart(splitBack.body,full),backHeadMask=maskedPart(splitBack.head,bounds);
   const nominalHeight=Math.max(.25,frame?.modelHeight||1),nominalWidth=Math.max(.25,frame?.modelWidth||1);
   const sizeMultiplier=.9; // Only the complete statue's furniture scale, not species-specific anatomy.
   const bodyWidth=nominalWidth*sizeMultiplier,bodyHeight=nominalHeight*sizeMultiplier;
