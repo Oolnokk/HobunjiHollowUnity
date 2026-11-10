@@ -729,11 +729,19 @@
   };
 
   if (global.RuntimeFrameScheduler?.register) {
-    global.RuntimeFrameScheduler.register('dual-wield-weapon-visuals', syncAll, {
+    const scheduler = global.RuntimeFrameScheduler; // Both registrations share this scheduler; visuals must be posed before ropes are projected.
+    const moveAssemblyAfterDual = scheduler.unregister?.('weapon-sprite-assemblies') === true; // Assemblies load earlier in game HTML, otherwise they'd draw ropes one stale stance behind.
+    scheduler.register('dual-wield-weapon-visuals', syncAll, {
       phase: 'pre-render',
       owner: 'HobunjiDualWieldWeaponVisuals',
       description: 'Maintains hidden-original dual weapon duplicates, plane-normal separation, authored idle offhand placement, and small main-hand attack lag.',
     });
+    if (moveAssemblyAfterDual) {
+      scheduler.register('weapon-sprite-assemblies', context => global.HobunjiWeaponSpriteAssemblies?.tick?.((context?.deltaMs || 0) / 1000), {
+        phase: 'pre-render', owner: 'HobunjiWeaponSpriteAssemblies',
+        description: 'Updates layered weapons and world-space chain/head positions after both dual-wield haft poses are baked',
+      }); // Keep exactly one assembly tick per frame, after the original and both copied handle matrices are current.
+    }
   }
   // Standalone editor contexts do not need a second RAF loop: the hand frame driver,
   // grip-mode toggles, idle preview controls, and transformSocketForHand() call syncNow().
