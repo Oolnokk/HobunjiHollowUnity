@@ -198,6 +198,31 @@
     return round1(restored);
   }
 
+  // The opportunity cue needs the strike's maximum approach distance without
+  // running CombatAttackEvents.prepare(): Living Gust's prepare listener spends
+  // Footing, so checking range every render frame must remain strictly read-only.
+  function getReachProfile(deps, attackId, suppliedEffects = null, suppliedShape = null, suppliedBase = null, options = {}) {
+    const technique = TECHNIQUES[attackId]; // Configured Quick Attack selected in tap2.
+    const tile = Number(deps?.TILE) || 0; // Tile size converts its lunge multiplier into the same pixels used by beginCombatLunge.
+    if (!technique || tile <= 0) return null;
+    const weaponKey = options.weaponKey ?? deps.currentWeaponKey?.(); // Existing weapon identity is reusable by onTap to avoid repeated equipment lookups.
+    const effects = suppliedEffects || window.CombatProgression?.getEffects?.(weaponKey, attackId) || { stats: {} }; // Existing progression source for both live attacks and cues.
+    const stats = effects.stats || {}; // Reach and lunge upgrades, including perk-derived ranks.
+    const shape = suppliedShape || window.WeaponShapeStats?.current?.() || { range: 1 }; // Equipped shape changes hit-cone length.
+    const base = suppliedBase || deps.weaponAbility?.('cut') || { rangePx: tile * 1.05 }; // Same base cone length the jab uses.
+    const rangePx = Math.max(0, (Number(base.rangePx) || 0) * (technique.rangeMul ?? 1) * RANGE_SCALE * (1 + (stats.rangeMul || 0)) * (shape.range || 1)); // Final cone length after mastery and weapon shape.
+    const halfConeRad = Math.min(Math.PI, technique.halfConeDeg * Math.PI / 180 * (shape.range || 1) * (1 + (stats.coneWidthMul || 0))); // Final strike angle after those same modifiers.
+    const baseLungePx = Math.max(0, tile * LUNGE_TILE_MUL * (1 + (stats.lungeMul || 0))); // Same base distance passed to attack preparation.
+    const enchantment = options.includeEnchantments === false ? null : window.EnchantmentSystem; // Live onTap uses prepare() for its lunge modifiers, so skip a duplicate enchantment lookup there.
+    const hasGust = !!enchantment?.hasBase?.('livingGust', weaponKey); // Avoid computing Immundanity when no equipped enchantment affects lunges.
+    const gustPower = hasGust ? Number(enchantment.getEnchantmentPowerMultiplier?.(weaponKey)) : 0; // Read-only Living Gust strength.
+    const gustScale = hasGust ? Number(enchantment.TUNING?.LIVING_GUST_LUNGE_MULTIPLIER) : 1; // Read the same authored enchantment scalar as prepareLivingGust.
+    const lungeMultiplier = hasGust && Number.isFinite(gustPower) && Number.isFinite(gustScale)
+      ? Math.max(0, 1 + (gustScale - 1) * gustPower) : 1; // Do not invoke the Footing-spending attack prepare hook.
+    const lungePx = baseLungePx * lungeMultiplier; // Furthest possible forward travel before the cone lands.
+    return { rangePx, halfConeRad, baseLungePx, lungePx, reachPx: lungePx + rangePx, effects }; // Share mastery effects with the indicator's affliction tint pass.
+  }
+
   function registerQuickAttack(id, def) {
     let busyAction = null;
 
@@ -212,7 +237,8 @@
       // of the base numbers below, comes from the player's own chosen
       // upgrades (see combat-progression.js) — a fresh, unleveled jab deals
       // plain damage with no afflictions at all.
-      const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), id) || { afflictions: {}, stats: {} };
+      const weaponKey = deps.currentWeaponKey(); // One equipped-weapon identity reused by mastery, reach and combat-event preparation.
+      const effects = window.CombatProgression?.getEffects(weaponKey, id) || { afflictions: {}, stats: {} };
       const requestedCost = (COST_COMMIT * (1 + (effects.stats.staminaCostMul || 0)) / shapeStats.efficiency); // Pre-ResourceSystem cost; perks/alchemy may reduce the real spend below this.
 
       // Never refuses for lack of stamina — overspending pushes into
@@ -225,12 +251,10 @@
       const windupS = WINDUP_S * timeScale;
       const strikeS = STRIKE_S * timeScale;
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
-      const rangePx = baseAbil.rangePx * def.rangeMul * RANGE_SCALE * (1 + (effects.stats.rangeMul || 0)) * shapeStats.range;
-      const halfConeRad = Math.min(Math.PI, def.halfConeDeg * Math.PI / 180 * shapeStats.range * (1 + (effects.stats.coneWidthMul || 0)));
-      const baseLungePx = deps.TILE * LUNGE_TILE_MUL * (1 + (effects.stats.lungeMul || 0)); // Existing Quick Attack lunge remains the base that Living Gust scales.
+      const { rangePx, halfConeRad, baseLungePx } = getReachProfile(deps, id, effects, shapeStats, baseAbil, { weaponKey, includeEnchantments: false }); // The real strike's prepare listener handles enchantment modifiers exactly once.
       const attackContext = window.CombatAttackEvents?.prepare?.({
         attacker: deps.player,
-        weaponKey: deps.currentWeaponKey(),
+        weaponKey,
         abilityId: id,
         damage: baseAbil.damage * (1 + (effects.stats.damageMul || 0)),
         afflictionBonuses: effects.afflictions,
@@ -418,7 +442,7 @@
   window.Combat.quickAttackData = {
     TECHNIQUES, WINDUP_S, STRIKE_S, COST_COMMIT, CONDITIONAL_REFUND_FRACTION,
     BONUS_EFFECT_COOLDOWN_S, BONUS_EFFECT_POWER_MULTIPLIER,
-    RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S, getConditions, refundStamina, quickAttackPose,
+    RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S, getConditions, refundStamina, quickAttackPose, getReachProfile,
     bonusEffectCooldownS, bonusEffectCooldownRemaining, isBonusEffectReady, beginBonusEffectCooldown, resetBonusEffectCooldowns,
     cooldownSnapshot: () => Object.fromEntries([...bonusCooldownUntilMs.entries()].map(([enemy, until]) => [enemy?.id || enemy?.name || 'enemy', Math.max(0, round1((until - performance.now()) / 1000))])),
     lastResolution: null,
@@ -451,7 +475,7 @@
     Object.assign(window.Combat.quickAttackData, {
       WINDUP_S, STRIKE_S, COST_COMMIT, CONDITIONAL_REFUND_FRACTION,
       BONUS_EFFECT_COOLDOWN_S, BONUS_EFFECT_POWER_MULTIPLIER,
-      RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S, getConditions, refundStamina, quickAttackPose,
+      RANGE_SCALE, LUNGE_TILE_MUL, HOLD_S, getConditions, refundStamina, quickAttackPose, getReachProfile,
     });
   };
 })();
