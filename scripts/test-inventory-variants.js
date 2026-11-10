@@ -89,6 +89,21 @@ async function run() {
   for (let index = 0; index < 30; index++) await stacks.headIcon('grehlr', coat);
   assert.equal(composites, 1, 'refreshes do not reapply colors/patterns');
   assert.equal(stacks.getDebug().cachedHeads, 1);
-  console.log('inventory variants: exact lineage selection, persistence, qualities and cached head crops passed');
+  // The festival reuses the same full-genome variant signature as Farm deployment.
+  const offerVariant = persistence.groupsFor('egg', 2)[0].variant; // Selected allele/coat/size combination from the existing durable queue.
+  const noConsume = persistence.consumeVariant('egg', offerVariant, inventory.egg, () => false);
+  assert.equal(noConsume.ok, false, 'failed quality debit cannot silently remove an animal genotype');
+  assert.equal(inventory.egg, 2);
+  assert.equal(persistence.groupsFor('egg', 2)[0].count, 2, 'failed offering preserves the existing genotype stack');
+  const released = persistence.consumeVariant('egg', offerVariant, inventory.egg, () => { inventory.egg--; return true; });
+  assert.equal(released.ok, true, 'a matching lineage can be offered exactly once');
+  assert.deepEqual(plain(released.genotype), coat, 'offering releases the selected original genotype, including carrier alleles');
+  assert.equal(inventory.egg, 1);
+  assert.equal(persistence.groupsFor('egg', 1)[0].count, 1, 'only one of the identical genotypes is debited');
+  assert.equal(JSON.parse(storage.hobunjiSaveMeta).worlds[0].members.player.nonGearInventory.egg, 1,
+    'the saved inventory count and saved lineage count agree after a festival sacrifice');
+  assert.equal(persistence.consumeVariant('egg', 'other-gene', 1, () => { throw Error('must not consume'); }).ok,false,
+    'stale selections cannot consume another animal accidentally');
+  console.log('inventory variants: exact lineage selection, persistence, qualities, festival offerings and cached head crops passed');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });
