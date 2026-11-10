@@ -10,6 +10,8 @@ const vm = require('node:vm');
 const registry = fs.readFileSync('docs/config/weapon-sprite-assemblies.js', 'utf8'); // Uses the live Grapple-Flail recipe.
 const runtime = fs.readFileSync('docs/js/weapon-sprite-assemblies.js', 'utf8'); // Exercises actual assembly construction and cleanup.
 const effectsRuntime = fs.readFileSync('docs/js/weapon-layer-effects.js', 'utf8'); // Verifies late-created particle materials are tracked for root-GC cleanup.
+const equipment = fs.readFileSync('docs/js/equipment-panel.js', 'utf8'); // Validates real player equipment cache ownership without initializing inventory UI.
+assert.match(equipment, /function ownsCachedToolRoot\(root\)/, 'EquipmentPanel exports its authoritative cached tool identity for diagnostics');
 const vector = () => ({ set() {}, copy() {} }); // Texture UV parameters are not modified after creation in this regression.
 class Vector3 {
   constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
@@ -162,6 +164,17 @@ api.decorate(root, 'grappleFlail', { shapeKey:'grappleFlail' }, { THREE });
   assert(rope, 'rope survives the same long detachment');
   assert(api.debugSnapshot()[0]?.detachedForMs > 300000, 'mobile diagnostics report long detachment without destruction');
   assert(!head.children[0].material.disposed, 'head materials are never disposed while the cached root remains alive');
+  assert.equal(api.debugSnapshot()[0]?.cachedPlayerOwned, false, 'no exposed tool slot currently claims this still-live root');
+  window.Combat.deps.toolMeshMap = new Map(); // Real integrations can omit the cached player handle from all combat/hand adapters.
+  const ownerStart = equipment.indexOf('  function ownsCachedToolRoot(root) {'); // Uses production EquipmentPanel logic rather than duplicating identity checks.
+  const ownerEnd = equipment.indexOf('\n  // Read-only bridge', ownerStart);
+  assert(ownerStart >= 0 && ownerEnd > ownerStart, 'equipment ownership bridge has a stable, testable boundary');
+  const ownsCachedToolRoot = new Function('deps', equipment.slice(ownerStart, ownerEnd) + '\nreturn ownsCachedToolRoot;')({ toolMeshMap: { weapon: root } });
+  window.EquipmentPanel = { ownsCachedToolRoot }; // Injects the actual cached owner independently of optional runtime adapters.
+  assert.equal(api.debugSnapshot()[0]?.cachedPlayerOwned, true, 'mobile diagnostics recognize EquipmentPanel as the true weapon owner');
+  now += 12000; // A long gap does not convert debug ownership into an expiration deadline.
+  api.tick(0);
+  assert.equal(api.debugSnapshot()[0]?.loaded, true, 'ownership diagnostics do not interfere with weak-root assembly lifetime');
 
   root.parent = { isScene:true }; // Equipping uses this SAME cached root instead of requiring a fresh decorate call.
   assert.equal(api.debugSnapshot()[0]?.attached, true, 'equip exposes the preserved rope/head immediately');
@@ -195,7 +208,7 @@ api.decorate(root, 'grappleFlail', { shapeKey:'grappleFlail' }, { THREE });
   api.decorate(discarded, 'grappleFlail', { shapeKey:'grappleFlail' }, { THREE });
   for (let i = 0; i < 20 && !api.debugSnapshot()[0]?.loaded; i++) await Promise.resolve();
   assert.equal(api.debugSnapshot().length, 1, 'retired equipment builds using the same live assembly API');
-  now = 314100;
+  now = 326100; // Continue from the prior EquipmentPanel ownership check without rewinding the synthetic clock.
   api.tick(0);
   now = 900000;
   api.tick(0);

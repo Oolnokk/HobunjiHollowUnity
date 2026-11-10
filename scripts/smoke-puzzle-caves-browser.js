@@ -97,12 +97,14 @@ async function main(){
 
         state.phase='music';
         let opened=0,closed=0,player={x:room.x+room.w/2,z:room.z+room.d/2-1.6};
+        let scoreClockMs=performance.now(); // The browser smoke advances an authored score without waiting through its full real-time duration.
         music=window.RuinLayerChallenges.compose({
           THREE,parent:group,room,id:'browser-music-test',kind:'timedMelody',area,y:0,authoredCliffDoor:true,
           isActive:()=>state.phase==='music',onSolved:()=>state.solved++,
           music:{beginPlayerSession:()=>{opened++;return true;},close:()=>{closed++;}},
           puzzleCaveMelody:window.PuzzleCaveMelody,songOptions:{difficulty:5},
           getPlayerY:()=>0,getPlayerPosition:()=>player,
+          clockMs:()=>scoreClockMs, // Keeps the real score/judge on the same deterministic monotonic clock during manual tick(dt) tests.
         });
         if(music.song.bpm>100||music.song.measures!==2)throw Error('Generated score violates requested tempo/length');
         const songBpm=music.song.bpm; // Preserved after teardown for the mobile Chromium smoke result.
@@ -145,7 +147,7 @@ async function main(){
         let elapsed=0;
         for(let index=0;index<music.song.notes.length;index++){
           const note=music.song.notes[index],target=(note.startTick+.10)*music.song.secondsPerTick;
-          while(elapsed<target-1e-8){const dt=Math.min(.04,target-elapsed);music.tick(dt);elapsed+=dt;}
+          while(elapsed<target-1e-8){const dt=Math.min(.04,target-elapsed);scoreClockMs+=dt*1000;music.tick(dt);elapsed+=dt;}
           if(music.session.activeIndex()!==index)throw Error('Glyph beat/tick diverged from the authored melody');
           window.dispatchEvent(new CustomEvent('hobunji-kurraya-puzzle-note',{
             detail:{area,noteIndex:note.index}

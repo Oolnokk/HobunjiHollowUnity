@@ -608,6 +608,20 @@
     hooked.updateMatrixWorld(true);
   }
 
+  function isCachedPlayerToolRoot(root) {
+    // Read-only ownership diagnostics: the actual assembly lifetime follows
+    // its root's references, never a slot map or a fixed detachment timeout.
+    if (!root) return false;
+    if (global.EquipmentPanel?.ownsCachedToolRoot?.(root)) return true;
+    for (const deps of [global.ProceduralHandAttachments?.gameDeps, global.Combat?.deps]) {
+      const map = deps?.toolMeshMap; // Optional adapters sometimes omit the authoritative equipment cache.
+      if (!map) continue;
+      const candidates = typeof map.values === 'function' ? map.values() : Object.values(map);
+      for (const visual of candidates) if (visual === root) return true;
+    }
+    return false;
+  }
+
   function updateOne(state, dt, now, effectsDt = dt) {
     const { root, plane, config, scratch: q } = state;
     if (!root.parent) {
@@ -823,6 +837,7 @@
       snapshot.push({
       itemKey: s.itemKey, loaded: s.config.flail ? !!(s.chain && s.headRoot) : !!s.staticReady,
       attached: !!s.root.parent, attacking: s.attacking,
+      cachedPlayerOwned: isCachedPlayerToolRoot(s.root), // Displays cached equipment identity; weak-root lifetime remains independent of the map.
       detachedForMs: s.root.parent || !s.detachedAt ? 0 : Math.max(0, performance.now() - s.detachedAt), // Mobile proof that no time limit can destroy cached rope/head.
       progress: s.progress, direction: s.direction.toArray(),
       attackTiming: { windup: s.wf, strike: s.sf, hold: s.hf }, // Mobile-readable phase diagnostics.
