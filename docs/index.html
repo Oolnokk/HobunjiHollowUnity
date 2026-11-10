@@ -100,8 +100,8 @@
        window.FarmEditor.init(...) very early (right after
        createInitialGrid(), before loading any saved farm layout) and
        window.FarmEditor.loadFarmLayout()/etc. immediately after. -->
-  <script src="js/farm-editor.js?v=20261102tablechild1"></script>
-  <script src="js/farm-plot-editor.js?v=20261109family1"></script> <!-- Shared family plot records and workers. -->
+  <script src="js/farm-editor.js?v=20261109headvisual1"></script>
+  <script src="js/farm-plot-editor.js?v=20261109headvisual1"></script> <!-- Shared family plot records and workers. -->
   <script src="js/farmwork-ui.js?v=20261029seedblocks2"></script> <!-- Controller-capable normal gameplay Farmwork manager. -->
   <!-- Terrain/path tile geometry builders, extracted out of game.js. Must
        load before game.js, which calls window.TerrainGeometry.init(...)
@@ -332,7 +332,7 @@
   <script src="js/combat/shared-attack-pose.js?v=20261030h12f55f4"></script>
   <script src="config/weapon-sprite-assemblies.js?v=20261109ropebrown3"></script> <!-- Authoritative multi-sprite weapon recipes shared with Tool Hub. -->
   <script src="js/weapon-layer-effects.js?v=20261031h7702074"></script> <!-- Recolor, visibility masks and fire behind head overlays. -->
-  <script src="js/weapon-sprite-assemblies.js?v=20261109modularcached3"></script> <!-- Shared layered PNG weapon + flail component runtime; pre-render updates player and enemy assemblies. -->
+  <script src="js/weapon-sprite-assemblies.js?v=20261109headvisual1"></script> <!-- Shared layered PNG weapon + flail component runtime; pre-render updates player and enemy assemblies. -->
   <script src="js/tool-activity-stages.js?v=20261027h59190d9"></script> <!-- NPC dig/tool-action stages. -->
   <script src="js/combat/weapon-shape-stats.js?v=20261109grappledonor1"></script> <!-- Shared melee shape stat resolver; Foundry head modifiers are mitigated. -->
   <script src="js/combat/combat-core.js?v=20261108attackpower1"></script>
@@ -480,7 +480,7 @@
        window.FarmAnimals.init(...) during its own setup. -->
   <script src="js/farm-production.js?v=20261107moot2"></script>
   <script src="js/honeyfuzzle-house.js?v=20261026honeyEggGenes3"></script> <!-- Honeyfuzzle House: 1x1 egg/swarm slot on a FarmProduction entry; hooked by farm-production.js, initialised by game.js. -->
-  <script src="js/farm-layout-editor.js?v=20261016a"></script>
+  <script src="js/farm-layout-editor.js?v=20261109headvisual1"></script>
   <script src="js/world-meta-store.js?v=20261109rarityMain1"></script>
   <script src="js/farm-animals.js?v=20261109provenance3"></script>
   <!-- Farm buildings: barn placement/construction/demolition
@@ -713,11 +713,11 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.MetalCraftShop.init(...) during
        its own setup. -->
-  <script src="config/modular-weapons.js?v=20261109modularidentity1"></script>
+  <script src="config/modular-weapons.js?v=20261109pairdamage1"></script>
   <script src="js/modular-weapon-bridge-fill.js?v=20261109boreflex1"></script>
-  <script src="js/modular-weapons.js?v=20261109modularidentity1"></script>
+  <script src="js/modular-weapons.js?v=20261109pairdamage1"></script>
   <script src="js/town-proposals.js?v=20261016proposals1"></script>
-  <script src="js/foundry-shop.js?v=20261109modularidentity1"></script>
+  <script src="js/foundry-shop.js?v=20261109pairdamage1"></script>
   <script src="js/metal-craft-shop.js?v=20261104hPatternQuick1435a"></script>
   <!-- Ambient wildlife den spawning, per-den shared genotype rolls, and
        wildlife-vs-wildlife skirmish damage (window.WildlifeSpawn) — reads
@@ -3051,7 +3051,7 @@
   <script src="js/opening-story-cutscene.js?v=20261109missingNpcRestore1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
-  <script src="js/ui-element-editor.js?v=20260814a"></script>
+  <script src="js/ui-element-editor.js?v=20261109headvisual1"></script>
   <script src="js/controller-ui-nav.js?v=20261103offscreenAct3"></script>
   <!-- ◀/▶ stepper buttons beside every <select> so controller players can change any dropdown. -->
   <script src="js/controller-select-steppers.js?v=20261014h3e0bf66"></script>
