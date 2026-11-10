@@ -60,6 +60,7 @@ small{display:block;color:#b2c6da;line-height:1.4;margin:7px 0}a{color:#9edafa}.
 <h2>4 · Assemble and export</h2>
 <label for="statueName">Furniture name / key</label><input id="statueName" value="Authored Ancestor Statue">
 <button id="build" class="primary">Build statue pieces</button>
+<button id="diagnostics" type="button" style="margin-top:8px">Inspect / copy statue diagnostics</button>
 <div class="buttons" style="margin-top:8px"><button id="send" disabled>Send to Furniture Editor</button><button id="download" disabled>Download furniture JSON</button></div>
 <small>Open from the Tools Hub to send directly to its Furniture Editor tab. JSON can also be imported using the Furniture Editor’s existing Import JSON controls. The pieces retain editable parent links; detach any piece without losing its world position.</small>
 </section>
@@ -112,8 +113,8 @@ function maskedPart(source,rectangle,remove=null){
   }
   return out.toDataURL('image/png');
 }
-function sprite(id,name,mask,finish,role,pose,parentId=null){
-  return {id,name,kind:'statueSprite',parentPartId:parentId,statueMaskDataUrl:mask,
+function sprite(id,name,mask,backMask,finish,role,pose,parentId=null){
+  return {id,name,kind:'statueSprite',parentPartId:parentId,statueMaskDataUrl:mask,statueBackMaskDataUrl:backMask,
     materialTexture:finish,materialRole:role,color:'#ffffff',surfaceOpacity:1,
     transform:pose,wonkiness:0,topScaleX:1,topScaleZ:1,bottomScaleX:1,bottomScaleZ:1};
 }
@@ -127,18 +128,19 @@ function limbPaths(species){
   const foot=cfg?.species?.[species]?.glb;
   return {hand:model?.glb||'assets/models/hands/hand_feline.glb',foot:foot||'assets/models/feet/foot_feline.glb'};
 }
-function makeStaticParts(front,head,profile,pose,finish,role,paths,weaponMasks){
+function makeStaticParts(front,back,head,backHead,profile,pose,finish,role,weaponMasks){
   const w=front.width,h=front.height;
   let bounds=maskBounds(head);
   if(!bounds){
     bounds={x:Math.round(w*.25),y:0,w:Math.round(w*.5),h:Math.round(h*.32)};
   }
   const full={x:0,y:0,w,h},bodyMask=maskedPart(front,full,head),headMask=maskedPart(front,bounds);
+  const backBodyMask=maskedPart(back,full,backHead),backHeadMask=maskedPart(back,bounds);
   const size=.9,drop=clamp(num(pose.bodySink),0,25)*size/100;
   const bodyYaw=clamp(num(pose.bodyYaw),-360,360);
   const p=[
-    sprite('statue_body','Body and clothing',bodyMask,finish,role,transform(0,.45-drop,0,0,bodyYaw,0,size,size,.02)),
-    sprite('statue_head','Head, hair and face',headMask,finish,role,transform(((bounds.x+bounds.w/2)/w-.5)*size,
+    sprite('statue_body','Body and clothing',bodyMask,backBodyMask,finish,role,transform(0,.45-drop,0,0,bodyYaw,0,size,size,.02)),
+    sprite('statue_head','Head, hair and face',headMask,backHeadMask,finish,role,transform(((bounds.x+bounds.w/2)/w-.5)*size,
       (.5-(bounds.y+bounds.h/2)/h)*size,.015,0,-bodyYaw,0,bounds.w/w*size,bounds.h/h*size,.02),'statue_body')
   ];
   const limb=limbPaths(profile.fighter?.speciesId||profile.speciesId||'mao-ao');
@@ -155,7 +157,7 @@ function makeStaticParts(front,head,profile,pose,finish,role,paths,weaponMasks){
     transform(.16,-.41+drop,.03,0,0,0,.18,.14,.25),'statue_body'));
   for(let i=0;i<weaponMasks.length;i++){
     const entry=weaponMasks[i];
-    p.push(sprite('statue_weapon_'+i,'Weapon '+(i+1)+' — '+entry.path.split('/').pop(),entry.mask,finish,role,
+    p.push(sprite('statue_weapon_'+i,'Weapon '+(i+1)+' — '+entry.path.split('/').pop(),entry.mask,null,finish,role,
       transform(i?0:0,i?0:-.22,i?.018:.015,i?0:num(pose.pitch),i?0:num(pose.yaw),
         i?0:num(pose.roll),.37,.37*entry.aspect,.02),i?'statue_weapon_0':'statue_right_hand'));
   }
@@ -192,11 +194,14 @@ async function makeProject(){
   const profile=window.NpcAvatarPreview.buildProfileFromNpcExport(npc);
   if(!profile)throw Error('NPC appearance could not be rendered');
   const front=transparentCanvas(256,256),head=transparentCanvas(256,256);
+  const back=transparentCanvas(256,256),backHead=transparentCanvas(256,256);
   await window.NpcAvatarPreview.renderProfileToCanvas(front,profile,{forceEyesOpen:true,breathingComposer:null});
   await window.NpcAvatarPreview.renderProfileToCanvas(head,profile,{onlyHeadSprite:true,forceEyesOpen:true,breathingComposer:null});
+  await window.NpcAvatarPreview.renderProfileToCanvas(back,profile,{portraitView:'behind',forceEyesOpen:true,breathingComposer:null});
+  await window.NpcAvatarPreview.renderProfileToCanvas(backHead,profile,{portraitView:'behind',onlyHeadSprite:true,forceEyesOpen:true,breathingComposer:null});
   const weapons=await weaponsFromInput();
   if(myGeneration!==generation)return null;
-  const parts=makeStaticParts(front,head,profile,pose,filename,role,null,weapons);
+  const parts=makeStaticParts(front,back,head,backHead,profile,pose,filename,role,weapons);
   // The runtime schema is also accepted by Furniture Author's existing JSON import.
   return {schema:'hobunji_furniture_surface_author.v58',key:safeName(name).toLowerCase(),id:safeName(name),
     name,notes:'Generated with Statue Author from NPC '+(npc.name||npc.id||'unknown')+' / pose '+phase,
@@ -271,6 +276,20 @@ $('build').onclick=async()=>{
   finally{$('build').disabled=false;}
 };
 $('download').onclick=()=>{if(exportProject)downloadJson(exportProject);};
+$('diagnostics').onclick=async()=>{
+  const report={built:!!exportProject,record:selectedRecord?.id||$('npcSelect').value,
+    pose:animation?.name||null,phase:$('phase').value,texture:$('materialFile').value,
+    parts:exportProject?.parts.map(p=>({id:p.id,kind:p.kind,parentPartId:p.parentPartId}))||[],
+    errors:[],loading:[]};
+  statueGroup?.traverse(node=>{
+    if(node.userData?.glbError)report.errors.push({node:node.name,error:node.userData.glbError});
+    if(node.userData?.statueTextureError)report.errors.push({node:node.name,error:node.userData.statueTextureError});
+    if(node.userData?.furnitureGlbPart&&!node.userData?.glbReady&&!node.userData?.glbError)report.loading.push(node.name);
+  });
+  const text=JSON.stringify(report,null,2);
+  status(text);
+  try{await navigator.clipboard.writeText(text);}catch(_){/* Diagnostics remain visible for copying on mobile. */}
+};
 $('send').onclick=()=>{
   if(!exportProject)return;
   try{
