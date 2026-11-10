@@ -4,10 +4,18 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
+function childCollection() {
+  // Browser HTMLCollection is iterable and indexable but has no Array.some().
+  // Keep other array helpers used by this test's lightweight DOM fixture.
+  return new Proxy([], { get(target, key, receiver) {
+    return key === 'some' ? undefined : Reflect.get(target, key, receiver);
+  } });
+}
+
 class FakeElement {
   constructor(tagName = 'div') {
     this.tagName = String(tagName).toUpperCase();
-    this.children = [];
+    this.children = childCollection();
     this.parentNode = null;
     this.style = {};
     this.dataset = {};
@@ -23,7 +31,7 @@ class FakeElement {
 
   set innerHTML(value) {
     this._innerHTML = String(value ?? '');
-    this.children = [];
+    this.children = childCollection();
     this._synthetic = Object.create(null);
     if (this._innerHTML.includes('farm-companion-btn')) {
       const button = new FakeElement('button');
@@ -299,6 +307,7 @@ context.FarmPanel.init({
   showToast() {},
   esc: value => String(value),
 });
+assert.equal(stableList.children.some, undefined, 'Stable DOM fixture models HTMLCollection without Array.some');
 context.FarmPanel.renderStablePanel();
 
 const roleButtons = descendantsByClass(stableList, 'stable-role-tab'); // Actual native page controls, shared with controller bumper actions.
