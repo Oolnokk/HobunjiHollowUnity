@@ -221,7 +221,7 @@
       lastStretchCoverage = 1;
       return channels.map(() => new Float32Array(1));
     }
-    const safeStretch = clamp(finite(stretch, 1), 0.25, 9); // Accommodates the snore's one-ninth tempo at neutral pitch.
+    const safeStretch = clamp(finite(stretch, 1), 1 / 256, 9); // Real attack-time mapping can require >4x pitch-preserving compression; the caller's tempo limit still protects ordinary animal voices.
     const targetLength = Math.max(1, Math.round(sourceLength * safeStretch));
     lastStretchSourceSamples = sourceLength;
     lastStretchTargetSamples = targetLength;
