@@ -563,19 +563,6 @@
     if (!/^[\w.-]+\.png$/i.test(name)) throw new Error('Unsupported statue material texture filename');
     return (window.__hobunjiFurnitureAssetBase || 'assets/') + 'textures/' + name;
   }
-  function fillStatueFinish(context, texture, width, height, tiles = 12) {
-    // The furniture material PNG can have very dark edges (e.g. carved_smooth).
-    // Reusing the *middle of that same image* inside each tile keeps a carved
-    // texture without stretching its outer dark frame across an entire statue.
-    const iw = texture.naturalWidth || texture.width;
-    const ih = texture.naturalHeight || texture.height;
-    const insetX = iw * .15, insetY = ih * .15;
-    const n = Math.max(1,Math.round(tiles)), cw = width / n, ch = height / n;
-    for (let row=0;row<n;row++) for(let col=0;col<n;col++) {
-      context.drawImage(texture, insetX,insetY,iw-2*insetX,ih-2*insetY,
-        col*cw,row*ch,cw,ch);
-    }
-  }
   // Raster counterpart of SurfaceStretchUV's per-connected-surface mapping:
   // each outlined portrait region gets ONE complete material PNG whose dark
   // perimeter follows that region's irregular silhouette. Unlike a regular
@@ -765,23 +752,37 @@
 
   function statueGlbTexture(part) {
     const url=statueFinishPath(part);
-    if(!statueUniformTextures.has(url)) {
+    const colorKey=String(part.statueBaseColor||'from-material');
+    const key=url+'|'+colorKey; // One texture shared by all 3D parts with the same finish and sculpture tint.
+    if(!statueUniformTextures.has(key)){
       const pending=statueImage(url).then(image=>{
         const canvas=document.createElement('canvas');canvas.width=canvas.height=256;
-        const context=canvas.getContext('2d');
-        fillStatueFinish(context,image,256,256,1);
+        const context=canvas.getContext('2d',{willReadFrequently:true});
+        context.drawImage(image,0,0,256,256); // Whole material texture, not a grid of individual cells.
+        const pixels=context.getImageData(0,0,256,256);
+        const info=statueOverlayInfo(image);
+        const rgb=statueBaseRgb(part.statueBaseColor||info.baseRgb,pixels.data);
+        const luminance=window.ColorFill.relativeLuminance;
+        for(let p=0;p<pixels.data.length;p+=4){
+          const level=Math.max(0,Math.min(1,luminance(pixels.data[p],pixels.data[p+1],pixels.data[p+2])/Math.max(.00001,info.peak)));
+          const gray=Math.round(255*level);
+          const alpha=(1-level)*(pixels.data[p+3]/255);
+          for(let c=0;c<3;c++)pixels.data[p+c]=Math.round(rgb[c]*(1-alpha)+gray*alpha);
+          pixels.data[p+3]=255; // A grayscale finish is a solid overlay on sculpture geometry, not a hole in the mesh.
+        }
+        context.putImageData(pixels,0,0);
         const texture=new THREE.CanvasTexture(canvas);
         texture.wrapS=texture.wrapT=THREE.RepeatWrapping;
         if(THREE.sRGBEncoding)texture.encoding=THREE.sRGBEncoding;
         texture.needsUpdate=true;
-        texture.userData=texture.userData||{}; // Three.js r128 CanvasTexture does not create userData automatically.
-        texture.userData.statueSharedTexture=true; // Shared by every statue GLB with this material.
-        texture.dispose=()=>{}; // Matches the existing furniture shared-texture cache's no-op ownership policy.
+        texture.userData=texture.userData||{};
+        texture.userData.statueSharedTexture=true;
+        texture.dispose=()=>{}; // Shared materials are owned by the furniture texture cache, not individual parts.
         return texture;
-      }).catch(error=>{statueUniformTextures.delete(url);throw error;});
-      statueUniformTextures.set(url,pending);
+      }).catch(error=>{statueUniformTextures.delete(key);throw error;});
+      statueUniformTextures.set(key,pending);
     }
-    return statueUniformTextures.get(url);
+    return statueUniformTextures.get(key);
   }
   function applyStatueSpriteFinish(mesh, part) {
     if (!/^data:image\/(?:png|webp);base64,/i.test(part.statueMaskDataUrl || '')) {
@@ -796,7 +797,9 @@
     mesh.material.opacity=0; // Hide the unfinished rectangular plane until its alpha cutout is ready.
     Promise.all([statueImage(part.statueMaskDataUrl),statueImage(textureUrl)]).then(([mask,finish])=>{
       if(mesh.userData.statueFinishToken!==token||mesh.userData.glbDisposed)return;
-      const canvas=paintedStatueCanvas(mask,finish,{preserveInk:part.statueKeepOutline!==false,allowFullMask:part.statueKeepOutline===false});
+      const canvas=paintedStatueCanvas(mask,finish,{preserveInk:part.statueKeepOutline!==false,
+        allowFullMask:part.statueKeepOutline===false,baseColor:part.statueBaseColor,
+        overlayFrame:part.statueOverlayFrame});
       const tex=new THREE.CanvasTexture(canvas);
       if(THREE.sRGBEncoding)tex.encoding=THREE.sRGBEncoding;
       tex.needsUpdate=true;
