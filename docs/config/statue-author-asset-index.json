@@ -1,0 +1,270 @@
+{
+  "schema": "hobunji_statue_asset_index.v1",
+  "description": "Checked-in asset index for the Statue Author. Regenerate with scripts/generate-statue-author-index.js when new PNG assets land; runtime also uses the canonical species and built-in animation registries.",
+  "sources": {
+    "species": "config/species/index.json",
+    "npcs": "config/npcs/hobunji-starter-npc-database.json",
+    "banditClothing": "config/bandits/bandit-gang-config.json",
+    "culturalWeapons": "config/weapon-trust-visits.js",
+    "animations": "js/held-action-animations.js"
+  },
+  "textures": [
+    {
+      "name": "boards.png",
+      "role": "wood"
+    },
+    {
+      "name": "canvas.png",
+      "role": "other"
+    },
+    {
+      "name": "carved_smooth.png",
+      "role": "stone"
+    },
+    {
+      "name": "cloud_forest_mist.png",
+      "role": "other"
+    },
+    {
+      "name": "crate_side.png",
+      "role": "other"
+    },
+    {
+      "name": "dark_oil.png.png",
+      "role": "other"
+    },
+    {
+      "name": "general_store_sign_text.png",
+      "role": "other"
+    },
+    {
+      "name": "inn_sign_text.png",
+      "role": "other"
+    },
+    {
+      "name": "iridescent_sheen.png",
+      "role": "other"
+    },
+    {
+      "name": "log.png",
+      "role": "wood"
+    },
+    {
+      "name": "potion_shop_sign_text.png",
+      "role": "other"
+    },
+    {
+      "name": "wavy_surface.png",
+      "role": "other"
+    },
+    {
+      "name": "wibbly_surface.png",
+      "role": "other"
+    }
+  ],
+  "toolSprites": [
+    {
+      "name": "arrow_long.png",
+      "path": "assets/toolsprites/arrow_long.png"
+    },
+    {
+      "name": "arrow_short.png",
+      "path": "assets/toolsprites/arrow_short.png"
+    },
+    {
+      "name": "axe_hatchet.png",
+      "path": "assets/toolsprites/axe_hatchet.png"
+    },
+    {
+      "name": "b'gungku.png",
+      "path": "assets/toolsprites/b'gungku.png"
+    },
+    {
+      "name": "b'shuakauitl.png",
+      "path": "assets/toolsprites/b'shuakauitl.png"
+    },
+    {
+      "name": "chainlink_square.png",
+      "path": "assets/toolsprites/chainlink_square.png"
+    },
+    {
+      "name": "dagger-sword_sweep.png",
+      "path": "assets/toolsprites/dagger-sword_sweep.png"
+    },
+    {
+      "name": "dagger-sword_thrust.png",
+      "path": "assets/toolsprites/dagger-sword_thrust.png"
+    },
+    {
+      "name": "dagger.png",
+      "path": "assets/toolsprites/dagger.png"
+    },
+    {
+      "name": "flute.png",
+      "path": "assets/toolsprites/flute.png"
+    },
+    {
+      "name": "fuel_rag-wad.png",
+      "path": "assets/toolsprites/fuel_rag-wad.png"
+    },
+    {
+      "name": "grapple-flail_grapple-back.png",
+      "path": "assets/toolsprites/grapple-flail_grapple-back.png"
+    },
+    {
+      "name": "grapple-flail_grapple-front.png",
+      "path": "assets/toolsprites/grapple-flail_grapple-front.png"
+    },
+    {
+      "name": "grapple-flail_handle.png",
+      "path": "assets/toolsprites/grapple-flail_handle.png"
+    },
+    {
+      "name": "hachutu_torch-flail_chain.png",
+      "path": "assets/toolsprites/hachutu_torch-flail_chain.png"
+    },
+    {
+      "name": "hachutu_torch-flail_handle.png",
+      "path": "assets/toolsprites/hachutu_torch-flail_handle.png"
+    },
+    {
+      "name": "hachutu_torch-staff.png",
+      "path": "assets/toolsprites/hachutu_torch-staff.png"
+    },
+    {
+      "name": "harlyao_broadsword.png",
+      "path": "assets/toolsprites/harlyao_broadsword.png"
+    },
+    {
+      "name": "harlyao_longsword.png",
+      "path": "assets/toolsprites/harlyao_longsword.png"
+    },
+    {
+      "name": "harpoon_fishingmace.png",
+      "path": "assets/toolsprites/harpoon_fishingmace.png"
+    },
+    {
+      "name": "harpoon_fishingspear.png",
+      "path": "assets/toolsprites/harpoon_fishingspear.png"
+    },
+    {
+      "name": "heavy_mallet.png",
+      "path": "assets/toolsprites/heavy_mallet.png"
+    },
+    {
+      "name": "hoe_bronzehoe.png",
+      "path": "assets/toolsprites/hoe_bronzehoe.png"
+    },
+    {
+      "name": "kurraya_front.png",
+      "path": "assets/toolsprites/kurraya_front.png"
+    },
+    {
+      "name": "kurraya_top.png",
+      "path": "assets/toolsprites/kurraya_top.png"
+    },
+    {
+      "name": "kylie.png",
+      "path": "assets/toolsprites/kylie.png"
+    },
+    {
+      "name": "plains-sword.png",
+      "path": "assets/toolsprites/plains-sword.png"
+    },
+    {
+      "name": "porakaneki_greatclub.png",
+      "path": "assets/toolsprites/porakaneki_greatclub.png"
+    },
+    {
+      "name": "rag-wad.png",
+      "path": "assets/toolsprites/rag-wad.png"
+    },
+    {
+      "name": "ranged_crossbow.png",
+      "path": "assets/toolsprites/ranged_crossbow.png"
+    },
+    {
+      "name": "ranged_crossbow_loaded.png",
+      "path": "assets/toolsprites/ranged_crossbow_loaded.png"
+    },
+    {
+      "name": "ranged_scatterbow.png",
+      "path": "assets/toolsprites/ranged_scatterbow.png"
+    },
+    {
+      "name": "ranged_scatterbow_loaded.png",
+      "path": "assets/toolsprites/ranged_scatterbow_loaded.png"
+    },
+    {
+      "name": "roundshield.png",
+      "path": "assets/toolsprites/roundshield.png"
+    },
+    {
+      "name": "shovel_pickshovel.png",
+      "path": "assets/toolsprites/shovel_pickshovel.png"
+    },
+    {
+      "name": "torch-flail_brazier-back.png",
+      "path": "assets/toolsprites/torch-flail_brazier-back.png"
+    },
+    {
+      "name": "torch-flail_brazier-front.png",
+      "path": "assets/toolsprites/torch-flail_brazier-front.png"
+    },
+    {
+      "name": "torch-flail_brazier-fuel.png",
+      "path": "assets/toolsprites/torch-flail_brazier-fuel.png"
+    },
+    {
+      "name": "torch-flail_brazier-handle.png",
+      "path": "assets/toolsprites/torch-flail_brazier-handle.png"
+    },
+    {
+      "name": "war-cleaver.png",
+      "path": "assets/toolsprites/war-cleaver.png"
+    },
+    {
+      "name": "warhammer.png",
+      "path": "assets/toolsprites/warhammer.png"
+    },
+    {
+      "name": "work_hammer.png",
+      "path": "assets/toolsprites/work_hammer.png"
+    }
+  ],
+  "shapeSprites": {
+    "workhammer": [
+      "assets/toolsprites/work_hammer.png"
+    ],
+    "hatchet": [
+      "assets/toolsprites/axe_hatchet.png"
+    ],
+    "fishingmace": [
+      "assets/toolsprites/harpoon_fishingmace.png"
+    ],
+    "fishingspear": [
+      "assets/toolsprites/harpoon_fishingspear.png"
+    ],
+    "pickshovel": [
+      "assets/toolsprites/shovel_pickshovel.png"
+    ],
+    "bshuakauitl": [
+      "assets/toolsprites/b'shuakauitl.png"
+    ],
+    "daggerSword": [
+      "assets/toolsprites/dagger-sword_sweep.png"
+    ],
+    "plainsSword": [
+      "assets/toolsprites/plains-sword.png"
+    ],
+    "dagger": [
+      "assets/toolsprites/dagger.png"
+    ],
+    "kylie": [
+      "assets/toolsprites/kylie.png"
+    ],
+    "warCleaver": [
+      "assets/toolsprites/war-cleaver.png"
+    ]
+  }
+}
