@@ -439,7 +439,16 @@ window.__hobunjiStatueDebug=()=>{
   camera?.updateMatrixWorld(true);
   statueGroup?.traverse(mesh=>{
     if(!mesh.userData?.statuePieceId)return;
-    const box=new THREE.Box3().setFromObject(mesh);
+    const box=new THREE.Box3(); // Exclude nested authored children; their dimensions are measured separately.
+    const visitOwn=node=>{
+      if(node!==mesh&&node.userData?.statuePieceId)return;
+      if(node.isMesh&&node.geometry){
+        if(!node.geometry.boundingBox)node.geometry.computeBoundingBox();
+        box.union(node.geometry.boundingBox.clone().applyMatrix4(node.matrixWorld));
+      }
+      for(const child of node.children)visitOwn(child);
+    };
+    visitOwn(mesh);
     const worldSize=box.getSize(new THREE.Vector3()),screenCenter=box.getCenter(new THREE.Vector3()).project(camera);
     meshes.push({id:mesh.userData.statuePieceId,type:mesh.userData.authoredPart?.kind||'piece',
       worldSize:worldSize.toArray(),screenCenter:screenCenter.toArray(),
