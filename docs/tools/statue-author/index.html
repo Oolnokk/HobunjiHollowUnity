@@ -380,7 +380,7 @@ function measureNpcRig(frameFront,frameBack,profile,npc){
     api.disposeAvatarModel?.(measured);
   }
 }
-function makeStaticParts(front,back,head,backHead,profile,pose,finish,role,weaponMasks,frame,baseColor){
+function makeStaticParts(front,back,head,backHead,profile,pose,finish,role,weaponMasks,frame,baseColor,heroMode=false){
   const w=front.width,h=front.height;
   const bounds=unionHeadBounds(maskBounds(head),maskBounds(backHead));
   if(!bounds)throw Error('The NPC head cannot be separated from its portrait');
@@ -429,7 +429,9 @@ function makeStaticParts(front,back,head,backHead,profile,pose,finish,role,weapo
     transform(footX,footY,.03,0,0,0,footHeight*1.2,footHeight,footHeight*1.6),'statue_body',baseColor));
   for(let i=0;i<weaponMasks.length;i++){
     const entry=weaponMasks[i];
-    const weaponWidth=.37,weaponHeight=.37*entry.aspect;
+    const defaultWeaponHeight=.37*entry.aspect;
+    const weaponHeight=heroMode?Math.min(defaultWeaponHeight,bodyHeight*.9):defaultWeaponHeight;
+    const weaponWidth=weaponHeight/entry.aspect; // Generated hero arms scale down towering weapon PNGs without stretching their art.
     const frameW=entry.width*bodyWidth/weaponWidth,frameH=entry.height*bodyHeight/weaponHeight;
     const cx=.5+holderX/bodyWidth,cy=.5-holderY/bodyHeight;
     const overlayFrame={
@@ -497,7 +499,7 @@ async function makeProject(){
     for(const weapon of weapons)weapon.offhand=weapon.path===heroLoadout.offhandPath;
   if(myGeneration!==generation)return null;
   const rig=measureNpcRig(front,back,profile,npc);
-  const parts=makeStaticParts(front,back,head,backHead,profile,pose,filename,role,weapons,rig,baseColor);
+  const parts=makeStaticParts(front,back,head,backHead,profile,pose,filename,role,weapons,rig,baseColor,!!npc.statueHeroLoadout);
   // The runtime schema is also accepted by Furniture Author's existing JSON import.
   return {schema:'hobunji_furniture_surface_author.v58',key:safeName(name).toLowerCase(),id:safeName(name),
     name,notes:'Generated with Statue Author from NPC '+(npc.name||npc.id||'unknown')+' / pose '+phase,
