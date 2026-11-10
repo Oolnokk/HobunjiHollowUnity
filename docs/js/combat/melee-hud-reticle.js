@@ -219,16 +219,10 @@
 
   function targetState(deps, direction, slotProfiles) {
     const area = deps.getCurrentArea?.() || deps.currentArea?.() || null;
-    const candidates = [];
-    const seen = new Set();
-    const add = (entity, source) => {
-      if (!entity || entity.health <= 0 || (area && entity.areaId && entity.areaId !== area) || seen.has(entity)) return;
-      seen.add(entity);
-      candidates.push({ entity, source });
-    };
-    try { add(deps.getMeleeReticleTarget?.(), 'combat-target'); } catch (err) {}
-    try { add(window.RangedWeapons?.focusedHostile?.(24)?.candidate?.data, 'interaction-ray'); } catch (err) {}
-    for (const entity of (deps.hostileObjects || [])) add(entity, 'hostile-scan');
+    const candidates = []; // Ray focus has priority; other candidates must lie near real equipped melee reach.
+    let focused = null; // Eliminate a duplicate camera-ray scan in the same HUD refresh.
+    try { focused = deps.getMeleeReticleTarget?.() || null; } catch (_) {}
+    if (focused?.health > 0 && (!area || focused.areaId === area)) candidates.push({ entity: focused, source: 'combat-target' });
 
     const origin = new THREE.Vector3(
       deps.player.x / deps.TILE,
@@ -239,6 +233,13 @@
     let maxReachPx = 0;
     for (const profile of slotProfiles) if (profile.attackId && profile.reachPx > maxReachPx) maxReachPx = profile.reachPx;
     const maxReachWorld = maxReachPx / deps.TILE + OUT_OF_REACH_MARGIN_WORLD;
+    if (maxReachWorld > 0) for (const entity of (deps.hostileObjects || [])) {
+      if (!entity || entity === focused || entity.health <= 0 || (area && entity.areaId !== area) || entity._denHidden) continue;
+      const halfWidthWorld = Math.max(1.5, Number(entity.halfWidth || entity.radius || 0) / deps.TILE); // Broadphase has slack for large actors; exact hitboxes decide final reach.
+      const reach = maxReachWorld + halfWidthWorld;
+      if (Math.abs(entity.x / deps.TILE - origin.x) > reach || Math.abs(entity.y / deps.TILE - origin.z) > reach) continue;
+      candidates.push({ entity, source: 'nearby-cone' });
+    }
     let selected = null;
     for (const candidate of candidates) {
       const target = candidate.entity;
