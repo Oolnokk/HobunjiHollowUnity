@@ -58,11 +58,11 @@ function sandbox(Worker = TestWorker) {
   }));
   assert.equal(timerYields, 0, 'worker jobs must not incur nested timer startup delays');
   assert.equal(input.getChannelData(0).length, 12000, 'transfer must preserve the cached decoded source');
-  assert.equal(scope.AnimalVoiceIndependentPlayback.debugSnapshot().chargeRendering.worker.completed, 3);
+  assert.equal(scope.AnimalVoiceIndependentPlayback.debugSnapshot().chargeRendering.worker.completed, 4);
   const context = { createBuffer: buffer }; // Exercise production cache around the worker.
   const cached = await scope.testDsp.renderBufferFor('cached.wav', input, context, 1, 2);
   assert.equal(await scope.testDsp.renderBufferFor('cached.wav', input, context, 1, 2), cached);
-  assert.equal(scope.AnimalVoiceIndependentPlayback.debugSnapshot().chargeRendering.worker.completed, 4);
+  assert.equal(scope.AnimalVoiceIndependentPlayback.debugSnapshot().chargeRendering.worker.completed, 5);
 
   const blocked = sandbox(class { constructor() { throw new Error('CSP blocked worker'); } }); // Restricted browsers must retain correct audio.
   const fallback = await blocked.testDsp.processConstantAxesOffThread(input, 1, 0, {});
