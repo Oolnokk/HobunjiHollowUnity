@@ -147,14 +147,52 @@
         }
       };
       const start = () => {
-        const preferred = resolvePath(path); // Re-evaluate AFTER shipped manifest is available.
+        const optimizedGameMode = root.GeometryAutoLOD?.isEnabled?.() && modelPath(path);
+        if (optimizedGameMode) {
+          // Critical: the ORIGINAL GLB remains the result used by gameplay for
+          // physics, raycasts, procedural edits and interactions. Load the
+          // prebaked file only as an auxiliary render-geometry source.
+          const onOriginal = gltf => {
+            success(gltf, false); // Give callers the original immediately.
+            const tryBaked = () => {
+              if (!root.GeometryAutoLOD?.isEnabled?.()) return;
+              const preferred = resolvePath(path);
+              if (preferred === path) return; // Never probe a guessed URL.
+              try {
+                previous.call(this, preferred, baked => {
+                  const installed = root.GeometryAutoLOD?.registerPrebaked?.(gltf, baked) || 0;
+                  if (installed) { diagnostics.prebakedLoads++; updateStatus(); }
+                  else {
+                    diagnostics.lastError = 'Prebaked GLB not compatible with original runtime geometry: ' + path;
+                    updateStatus();
+                  }
+                }, undefined, error => {
+                  // Not fatal: primary original GLB already loaded correctly.
+                  diagnostics.fallbackCount++;
+                  diagnostics.lastFallback = path + ' ← ' + preferred;
+                  diagnostics.lastError = String(error?.message || error);
+                  updateStatus();
+                });
+              } catch (error) {
+                diagnostics.lastError = 'Optional optimized variant: ' + String(error?.message || error);
+                updateStatus();
+              }
+            };
+            if (!diagnostics.loaded) ready.then(tryBaked).catch(() => {});
+            else tryBaked();
+          };
+          try {
+            return previous.call(this, path, onOriginal, onProgress, error => failure(error, path));
+          } catch (error) { failure(error, path); return undefined; }
+        }
+        const preferred = resolvePath(path); // Manual High/Medium/Low selection when global mode is off.
         try {
           return previous.call(this, preferred, gltf => success(gltf, preferred !== path),
             onProgress, error => failure(error, preferred));
         } catch (error) { failure(error, preferred); return undefined; }
       };
-      if (!diagnostics.loaded && modelPath(path)) {
-        ready.then(start, error => failure(error, path)); // Wait once for packaged profiles, rather than race first model loads.
+      if (!diagnostics.loaded && modelPath(path) && !root.GeometryAutoLOD?.isEnabled?.()) {
+        ready.then(start, error => failure(error, path)); // Manual quality settings require the shipped manifest first.
         return undefined;
       }
       return start();

@@ -11,6 +11,7 @@ const manifest = {schema:'hobunji_geometry_quality.v1', profiles:[{source,varian
 let globalMode = true; // Mimics user's Optimize Geometry checkbox.
 let failPreferred = false; // Simulate missing precomputed GLB fallback.
 const requests = []; // Record actual file requests rather than guessing what the renderer loaded.
+const bakedPairs = []; // Verified pairings retain original GLTF for physics and store reduced render-only geometry.
 const storage = new Map();
 const settings = Object.fromEntries(['settingGeometryDetail','settingGeometryQualityImport',
   'settingGeometryQualityClear','geometryQualityStatus'].map(k=>[k,{
@@ -28,7 +29,7 @@ class Loader {
 }
 const window = {
   THREE:{GLTFLoader:Loader},
-  GeometryAutoLOD:{isEnabled:()=>globalMode},
+  GeometryAutoLOD:{isEnabled:()=>globalMode,registerPrebaked(original,baked){bakedPairs.push({original,baked});return 1;}},
   document:{readyState:'complete',getElementById(id){return settings[id]||null;}},
   localStorage:{getItem(k){return storage.get(k)??null;},setItem(k,v){storage.set(k,String(v))},removeItem(k){storage.delete(k)}},
   fetch:async url=>{assert.equal(url,'config/geometry-quality-presets.json');return {ok:true,json:async()=>manifest}},
@@ -42,16 +43,18 @@ const quality=window.GeometryQuality;
   assert.equal(quality.resolvePath(source),variant,'global mode picks shipped Low variant even with High selector');
   assert.equal(quality.resolvePath(source,'high'),source,'explicit request for High is not overridden');
   const first=await new Promise((resolve,reject)=>new Loader().load(source,resolve,null,reject));
-  assert.equal(requests.at(-1),variant,'automatic loader intercept uses precomputed GLB without per-system patches');
-  assert.equal(first.scene.mesh.userData.geometryQualityGLBSource,true,'precomputed mesh tagged to skip CPU decimation');
-  assert.equal(first.scene.mesh.geometry.userData.geometryQualityPrebakedVariant,true);
+  assert.deepEqual(requests.slice(-2),[source,variant],'global mode must load ORIGINAL first and optimized render geometry second');
+  assert.equal(first.scene.mesh.userData.geometryQualityGLBSource,true,'source GLB tagged to skip procedural decimation');
+  assert.equal(first.scene.mesh.geometry.userData.geometryQualityPrebakedVariant,false,'physics/source GLB is NEVER replaced by an optimized GLB');
+  assert.equal(bakedPairs.length,1);
+  assert.equal(bakedPairs[0].original.scene,first.scene,'baked geometry is registered alongside original geometry, not returned as gameplay source');
   assert.equal(quality.snapshot().prebakedLoads,1);
   assert.match(settings.geometryQualityStatus.textContent,/baked models loaded/);
 
   failPreferred=true;
   let result;
   result=await new Promise((resolve,reject)=>new Loader().load(source,resolve,null,reject));
-  assert.deepEqual(requests.slice(-2),[variant,source],'missing variant falls back to original model');
+  assert.deepEqual(requests.slice(-2),[source,variant],'original remains loaded even when optional optimized GLB is missing');
   assert.equal(result.scene.mesh.geometry.userData.geometryQualityPrebakedVariant,false);
   assert.equal(result.scene.mesh.userData.geometryQualityGLBSource,true);
   assert.ok(quality.snapshot().fallbackCount>=1);
@@ -60,7 +63,7 @@ const quality=window.GeometryQuality;
   requests.length = 0;
   const once = await quality.loadWithFallback(source, requested => new Promise((resolve,reject) =>
     new Loader().load(requested,resolve,null,reject)));
-  assert.deepEqual(requests,[variant,source],'missing optimized variant fetched just once');
+  assert.deepEqual(requests,[source,variant],'missing optimized variant fetched just once; original is never retried');
   assert.equal(once.scene.mesh.userData.geometryQualityGLBSource,true);
 
   globalMode=false;

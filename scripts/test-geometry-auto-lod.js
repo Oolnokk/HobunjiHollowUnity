@@ -112,5 +112,34 @@ assert.equal(lod.protectedMesh(authored),true,'GLBs must not be reduced again at
   assert.equal(rendered[0].geo.index.count,360,'re-enable reuses cached mesh without re-decimating');
   assert.equal(simplifyCount,1);
   assert.ok(status.textContent.includes('60%')===false || status.textContent.length>10);
+  // A separately loaded authored GLB retains its original geometry for
+  // raycasts/physics. The precomputed candidate may replace it ONLY during
+  // renderer.render, using the same scene-scan ownership as procedural LODs.
+  const authoredGeometry = { ...actualOriginal, index:{count:900,version:0},
+    attributes:{position:actualOriginal.attributes.position},
+    getAttribute(name){return this.attributes[name];} };
+  const bakedGeometry = { ...authoredGeometry,index:{count:360,version:0},
+    attributes:{position:authoredGeometry.attributes.position},dispose(){this.disposed=true;} };
+  authored.geometry = authoredGeometry;
+  const bakedMesh = { ...authored,geometry:bakedGeometry };
+  const originalAsset = { scene:{traverse(fn){fn(authored);} } };
+  const optimizedAsset = { scene:{traverse(fn){fn(bakedMesh);} } };
+  assert.equal(lod.registerPrebaked(originalAsset,optimizedAsset),1);
+  assert.equal(lod.snapshot().prebakedRegistered,1);
+  assert.equal(authored.geometry,authoredGeometry,'registration never swaps collision geometry');
+  rendered=[];
+  renderer.render(scene,{});
+  for(let i=0;i<6&&callbacks.length;i++) while(callbacks.length)callbacks.shift()({timeRemaining:()=>5});
+  rendered=[];
+  renderer.render(scene,{});
+  assert.equal(rendered[2].geo,bakedGeometry,'authored GLB uses offline-baked buffer solely during draw');
+  assert.equal(authored.geometry,authoredGeometry,'source restored for raycasts and interactions immediately afterward');
+  assert.equal(lod.snapshot().lastDrawSaved,540,'render savings include cached procedural + precomputed authored triangles');
+  assert.equal(simplifyCount,1,'precomputed GLBs never invoke meshoptimizer again');
+  lod.setEnabled(false);
+  rendered=[];
+  renderer.render(scene,{});
+  assert.equal(rendered[2].geo,authoredGeometry,'disabling mode immediately restores original authored GLB for drawing too');
+  lod.setEnabled(true);
   console.log('Global pre-baked geometry 60%: lazy optimizer, authored GLB exclusion, preserved physics, idle-only procedural cache and live toggle OK');
 })().catch(error=>{console.error(error);process.exitCode=1;});

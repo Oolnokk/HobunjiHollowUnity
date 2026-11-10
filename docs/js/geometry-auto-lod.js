@@ -21,13 +21,14 @@
   const SCAN_MS_PER_SLICE = 4;
   const MAX_SWAPS_PER_RENDER = 3000; // Worst-case renderer wrapper bound; deferred items remain originals.
 
-  const cache = new WeakMap(); // Original BufferGeometry -> simplification result, owned by this module.
+  const cache = new WeakMap(); // Procedural source geometry -> once-simplified cached geometry.
+  const precomputed = new WeakMap(); // Authored original geometry -> offline-baked render-only alternate, never used by physics.
   const readyMeshes = new Map(); // Mesh -> geometry entry; sampled only during actual renderer.render().
   const knownCached = new Set(); // Track owned cache allocations for explicit GPU disposal on zone unload.
   const queue = []; // Unique pending geometries processed outside the render/physics frame.
   const counters = {
     scanned: 0, submitted: 0, processed: 0, skipped: 0, cached: 0,
-    sourceTriangles: 0, optimizedTriangles: 0, lastDrawSaved: 0,
+    sourceTriangles: 0, optimizedTriangles: 0, prebakedRegistered: 0, lastDrawSaved: 0,
     lastRenderMeshes: 0, renderSwaps: 0, lastSkip: '', lastError: '',
   }; // Mobile-visible diagnostic counters, not per-frame logger output.
 
@@ -62,7 +63,8 @@
     if (!message && elapsed < 700) return;
     statusAt = now();
     el.textContent = (enabled ? 'Enabled' : 'Off') +
-      ' · ' + counters.processed + ' mesh geometries optimized' +
+      ' · ' + counters.processed + ' procedural geometries optimized' +
+      ' · ' + counters.prebakedRegistered + ' precomputed geometry buffers ready' +
       ' · ' + (counters.sourceTriangles - counters.optimizedTriangles).toLocaleString() +
       ' triangles saved across cached geometry' +
       ' · ' + counters.lastDrawSaved.toLocaleString() + ' triangle draws avoided last pass' +
@@ -154,21 +156,96 @@
     activeSourceBudget = Math.max(0, activeSourceBudget - entry.triangles);
     counters.sourceTriangles -= entry.triangles;
     counters.optimizedTriangles -= entry.optimizedTriangles;
-    cache.delete(entry.source); // Future re-entry will build a fresh LOD for this model.
+    if (entry.fromBaked) precomputed.delete(entry.source);
+    else cache.delete(entry.source); // Future re-entry will build a fresh LOD for procedural meshes.
     entry.variant = null;
     entry.status = 'retired';
   }
   function geometryStamp(geo) {
-    // Invalidate cached LODs when a procedural mesh mutates position/index data in place.
-    const pos = geo.getAttribute?.('position');
-    return String(pos?.version || 0) + ':' + String(geo.index?.version || 0) +
-      ':' + String(pos?.count || 0) + ':' + String(geo.index?.count || 0);
+    // A texture/UV/normal rewrite can make the baked source geometry obsolete
+    // without moving its POSITIONs. Include every attribute's identity/version.
+    const attributes = geo?.attributes || {};
+    const parts = Object.keys(attributes).sort().map(name => {
+      const a = attributes[name];
+      return name + ':' + String(a?.version || 0) + ':' + String(a?.count || 0) + ':' + String(a?.itemSize || 0);
+    });
+    return parts.join('|') + ';indices=' + String(geo?.index?.version || 0) +
+      ':' + String(geo?.index?.count || 0);
+  }
+  function registerPrebaked(originalGLTF, optimizedGLTF) {
+    if (!enabled) return 0;
+    const originals = [], optimized = []; // Corresponding source/optimized mesh traversal order.
+    const visit = (asset, output) => {
+      const scene = asset?.scene || asset?.scenes?.[0] || asset;
+      scene?.traverse?.(node => { if (node.isMesh) output.push(node); });
+    };
+    visit(originalGLTF, originals);
+    visit(optimizedGLTF, optimized);
+    if (!originals.length || originals.length !== optimized.length) return 0;
+    let installed = 0; // Number of compatible authored mesh buffers registered for render-only substitution.
+    for (let i = 0; i < originals.length; i++) {
+      const sourceMesh = originals[i], variantMesh = optimized[i];
+      const source = sourceMesh.geometry, variant = variantMesh.geometry;
+      if (!source?.isBufferGeometry || !variant?.isBufferGeometry ||
+        sourceMesh.isSkinnedMesh || variantMesh.isSkinnedMesh) continue;
+      const sourceNames = Object.keys(source.attributes || {}).sort();
+      const candidateNames = Object.keys(variant.attributes || {}).sort();
+      if (sourceNames.join(',') !== candidateNames.join(',')) continue;
+      if (sourceNames.some(name => source.attributes[name].itemSize !== variant.attributes[name].itemSize ||
+        source.attributes[name].normalized !== variant.attributes[name].normalized)) continue;
+      const groupsA = (source.groups || []).map(g => g.materialIndex).join(',');
+      const groupsB = (variant.groups || []).map(g => g.materialIndex).join(',');
+      if (groupsA !== groupsB) continue;
+      const originalMats = Array.isArray(sourceMesh.material) ? sourceMesh.material.length : 1;
+      const optimizedMats = Array.isArray(variantMesh.material) ? variantMesh.material.length : 1;
+      if (originalMats !== optimizedMats) continue;
+      const sourceCount = triangles(source), targetCount = triangles(variant);
+      if (!(sourceCount > targetCount && targetCount > 0)) continue;
+      if (activeGeometries >= MAX_CACHED_GEOMETRIES ||
+        activeSourceBudget + sourceCount > MAX_CACHED_SOURCE_TRIANGLES) break;
+      if (precomputed.has(source)) continue;
+      const entry = {
+        source, variant, stamp: geometryStamp(source), triangles: sourceCount,
+        optimizedTriangles: targetCount, status: 'done', fromBaked: true, targets: new Set(),
+      }; // The offline-baked BufferGeometry is only swapped into scene meshes while renderer.render executes.
+      precomputed.set(source, entry);
+      knownCached.add(entry);
+      activeGeometries++;
+      activeSourceBudget += sourceCount;
+      counters.sourceTriangles += sourceCount;
+      counters.optimizedTriangles += targetCount;
+      counters.prebakedRegistered++;
+      installed++;
+    }
+    if (installed) {
+      lastScanAt = 0; // New variant can apply to existing clones at next bounded idle scan.
+      status('Precomputed render geometry registered; original source kept for collision/raycast.');
+    }
+    return installed;
   }
   function scheduleIdle(fn) {
     if (typeof root.requestIdleCallback === 'function') root.requestIdleCallback(fn, { timeout: 1000 });
     else root.setTimeout?.(() => fn({ timeRemaining: () => 5 }), 30);
   }
   function track(mesh) {
+    const baked = precomputed.get(mesh?.geometry);
+    if (baked && baked.status === 'done') {
+      const flags = mesh.userData || {};
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      if (mesh.isSkinnedMesh || [
+        'isCollisionMesh', 'isCollisionHelper', 'isInteractionTrigger',
+        'physicsProxy', 'geometryAutoLODExclude', 'isClimbBranch', 'isClimbable',
+      ].some(key => flags[key]) || materials.some(m => m?.transparent || m?.alphaTest > 0 || m?.alphaMap)) return;
+      if (geometryStamp(baked.source) !== baked.stamp) {
+        // A visual mesh re-authored its UV/normal/position after load. The
+        // offline GLB must not overwrite that edit or its collision geometry.
+        retire(baked);
+        knownCached.delete(baked);
+        return;
+      }
+      readyMeshes.set(mesh, baked);
+      return;
+    }
     if (protectedMesh(mesh)) return;
     const geo = mesh.geometry, stamp = geometryStamp(geo);
     let entry = cache.get(geo);
@@ -298,7 +375,7 @@
           else used.add(entry);
         }
         // Retire only abandoned LODs; shared geometries survive as long as one live mesh references them.
-        for (const entry of knownCached) if (!used.has(entry)) {
+        for (const entry of knownCached) if (!used.has(entry) && !entry.fromBaked) {
           retire(entry);
           knownCached.delete(entry);
         }
@@ -389,5 +466,5 @@
     else bindSettings();
   }
   if (enabled) setEnabled(true);
-  root.GeometryAutoLOD = Object.freeze({ setEnabled, isEnabled: () => enabled, snapshot, bindSettings, protectedMesh, geometryStamp });
+  root.GeometryAutoLOD = Object.freeze({ setEnabled, isEnabled: () => enabled, snapshot, bindSettings, protectedMesh, geometryStamp, registerPrebaked });
 })(typeof window !== 'undefined' ? window : null);
