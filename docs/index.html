@@ -394,7 +394,7 @@
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
   <script src="js/combat/enemy-loadout-rules.js?v=20261101playerhead3"></script>
-  <script src="js/combat/combat-bandit.js?v=20261110shortCombo1"></script>
+  <script src="js/combat/combat-bandit.js?v=20261110fortifiedThrow1"></script>
   <script src="js/combat/ghoul-special-variants.js?v=20261031ghoulvar1"></script>
   <script src="js/combat/bandit-rank-wardrobe.js?v=20261031rankwardrobe1"></script> <!-- Lieutenant/captain pauldrons and circlet, patterned pants and captain overwear. --> <!-- Shadowknight / Wyrm-witch wardrobe, patterns and enchanted weapons. -->
   <script src="js/combat/combat-ghoul-wyrm-witches.js?v=20261027hcd7121b"></script> <!-- Distinct mobile-friendly Wyrm-witch cloud and stationary water-cone actions. -->
@@ -411,7 +411,7 @@
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
-  <script src="js/bandit-camps.js?v=20261110fortified1625c"></script>
+  <script src="js/bandit-camps.js?v=20261110fortified1625e"></script>
   <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
@@ -943,7 +943,7 @@
   <script src="js/locale-cliff-wall-mounts.js?v=20261105cliffPortal1"></script><!-- Mount editor-authored furniture on the resolved procedural wall normal and elevation. -->
   <script src="js/puzzle-cave-entrances.js?v=20261110onetile1"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
   <script src="js/cave-tripwire-traps.js?v=20261110tripwire2"></script><!-- Wall-spanning hidden-cache strings and suspended Shattercasks; runtime physics bind once HangingRopes loads. -->
-  <script src="js/cave-site-system.js?v=20261110fortified1625c"></script>
+  <script src="js/cave-site-system.js?v=20261110fortified1625e"></script>
   <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
        hooks bind before game.js initializes the subsystems; also handles touch prompts. -->
   <!-- Capability/event substrate (window.WorldEvents, window.Targetables): pure registries with no
@@ -952,9 +952,10 @@
   <script src="js/targetables.js?v=1"></script>
   <script src="js/shattercasks.js?v=20261108h9110afe"></script>
   <script src="js/crate-piles.js?v=20261105hf6df591"></script>
-  <script src="js/bandit-strongholds.js?v=20261110fortified1625d"></script><!-- Reuses authored board/stone materials and physical Shattercask Burdens in fortified caves. -->
-  <script src="js/bandit-stronghold-cover.js?v=20261110fortifiedCover1"></script><!-- Native projectile/LOS cover; WorldEvents blast and existing fire patch destroy wooden boards. -->
-  <script src="js/bandit-stronghold-wolves.js?v=20261110fortifiedWolves1"></script><!-- Authored board/verdigris stakes, stretched existing chain PNG, native gar-wolf cave allies. -->
+  <script src="js/bandit-strongholds.js?v=20261110fortified1625e"></script><!-- Reuses authored board/stone materials and physical Shattercask Burdens in fortified caves. -->
+  <script src="js/bandit-stronghold-cover.js?v=20261110fortifiedCover2"></script><!-- Native projectile/LOS cover; WorldEvents blast and existing fire patch destroy wooden boards. -->
+  <script src="js/bandit-stronghold-wolves.js?v=20261110fortifiedWolves2"></script><!-- Authored board/verdigris stakes, stretched existing chain PNG, native gar-wolf cave allies. -->
+  <script src="js/bandit-stronghold-combat.js?v=20261110fortifiedCasks1"></script><!-- Selected garrison bandits use the shared staged throw and physical Burden arc. -->
   <script src="js/hronal-witch-bombs.js?v=20261108hf7dc41b"></script>
   <script src="js/pingdort-flocks.js?v=20261108hdenlineage4"></script> <!-- Wild Drenkirra-hunting flocks, fertile nests, and companion rock-bomber attacks. -->
   <!-- Hanging ropes: the shared rope swing arithmetic (pure) and the rope component burdens hang from. Needs Shattercasks at
