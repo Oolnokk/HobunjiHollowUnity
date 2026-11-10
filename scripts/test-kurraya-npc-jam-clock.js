@@ -11,13 +11,13 @@ function section(start,end) {
   return source.slice(i,j);
 }
 
-const intro = [0,1,2,3]; // NPC's authored four 6/8 bars.
-const body = Array(16).fill(0); // NPC's following 3/4 bars, including a deliberately different tonic chord.
+const intro = [0,1,2,3]; // NPC’s authored four 6/8 bars.
+const body = Array(16).fill(0); // NPC’s following 3/4 bars, including a deliberately different tonic chord.
 body[6] = 4;
 const state = {
   game:{active:false},harmonyBpm:96,harmonyStartTime:9500,
   kurrayaSongIntroSteps:intro,kurrayaSongBodySteps:body
-}; // Mimics the player's idle free-play engine before they follow the NPC.
+}; // Mimics the player’s idle free-play engine before they follow the NPC.
 const sixEight = {numerator:6,quarterUnitsPerBeat:0.5,label:'6/8',groupStarts:[0,3]};
 const threeFour = {numerator:3,quarterUnitsPerBeat:1,label:'3/4',groupStarts:[0]};
 const mixedPhase = quarter => {
@@ -51,22 +51,22 @@ const leader = {songId:'when-the-kininjis-bloom',bpm:120,elapsedMs:15000,
   receivedAtMs:10000,countInMs:3000,countInBeats:6}; // NPC 30 quarter-beats into a 120-BPM song.
 sandbox.follow(leader);
 const joined = sandbox.clockAt(10000);
-assert.equal(joined.bpm,120,'the player's transport inherits NPC quarter-note tempo');
+assert.equal(joined.bpm,120,'the player’s transport inherits NPC quarter-note tempo');
 assert.equal(joined.transportElapsedMs,15000,'joining mid-performance does not restart the NPC phrase');
 assert.equal(joined.performanceElapsedMs,12000,'the NPC count-in is preserved in the shared song transport');
 assert.equal(joined.meter.label,'3/4','the follower enters the NPC melody section at the actual meter');
 assert.equal(joined.harmonyQuarterBeatFloat,30,'the NPC chord timeline keeps its 6/8 introduction when calculating its position');
 assert.equal(sandbox.cadenceAt(joined).progressionStep,4,'the player resolves the NPC-authored tonic chord, not their solo four-chord loop');
 const halfSecondLater = sandbox.clockAt(10500);
-assert.equal(halfSecondLater.harmonyQuarterBeatFloat,31,'the player's beat clock advances continuously between cheap one-second resyncs');
+assert.equal(halfSecondLater.harmonyQuarterBeatFloat,31,'the player’s beat clock advances continuously between cheap one-second resyncs');
 assert.equal(halfSecondLater.bpm,120);
 sandbox.follow({...leader,elapsedMs:2500,receivedAtMs:10000});
 const introPhase = sandbox.clockAt(10000);
-assert.equal(introPhase.meter.label,'6/8','rejoining during the 6/8 intro uses the NPC's original meter');
+assert.equal(introPhase.meter.label,'6/8','rejoining during the 6/8 intro uses the NPC’s original meter');
 assert.equal(sandbox.cadenceAt(introPhase).progressionStep,1,'intro chord progression is also copied from the NPC');
 sandbox.follow(null);
 const solo = sandbox.clockAt(10000);
-assert.equal(solo.bpm,96,'disengaging restores the player's separate solo tempo');
+assert.equal(solo.bpm,96,'disengaging restores the player’s separate solo tempo');
 assert.equal(solo.countInBeats,0,'a solo player does not inherit the NPC count-in after leaving');
 assert.match(host,/syncPlayerWithNpc\(performers\)/,'existing ambient scheduler corrects drift without a second polling loop');
 assert.match(source,/type:'ambient-transport-changed'/,'each NPC song regeneration triggers an immediate event-driven sync');
