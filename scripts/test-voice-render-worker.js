@@ -49,7 +49,7 @@ function sandbox(Worker = TestWorker) {
   for (let channel = 0; channel < 2; channel++) {
     for (let index = 0; index < input.length; index++) input.getChannelData(channel)[index] = Math.sin(index * (0.027 + channel * 0.009)) * 0.6;
   }
-  const cases = [[0.7, -5], [1.6, 7], [1, 0], [24, -3]]; // Fast skeleton combo compression must match the worker and cooperative paths exactly. // Stretch, compress, and unity transforms share precisely the fallback math.
+  const cases = [[0.7, -5], [1.6, 7], [1, 0], [24, -3]]; // Stretch, compress, unity, and opt-in fast combo playback must agree between worker and cooperative paths.
   await Promise.all(cases.map(async ([tempo, pitch]) => {
     const renderOpts = { tailPadS: 0, ...(tempo === 24 ? { minimumStretch: 1 / 256 } : {}) }; // Fast skeleton combo explicitly opts in; other voices retain the old DSP limit.
     const expected = scope.testDsp.processConstantAxes(input, tempo, pitch, 64, 24, renderOpts); // Synchronous reference.
