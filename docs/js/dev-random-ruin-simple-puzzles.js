@@ -1255,6 +1255,9 @@
       session:null,melodyState:null,heardNotes:[],attempts:0,mistakes:0,solved:false,solveCount:0,
       flashRemaining:0,flashGlyphIndex:-1,onComplete:typeof slot.onComplete==='function'?slot.onComplete:null}; // Native room ownership and completion callback remain unchanged.
     set.session=composer.createSession(song,{
+      lookaheadMs:window.AudioSystem?.metronomeLookaheadMs||0, // Uses the performance transport's 90 ms lookahead when the game's Web Audio adapter is installed.
+      clockMs:window.AudioSystem?.metronomeLookaheadMs?()=>window.performance?.now?.()??Date.now():null, // Audio and score glyphs share the same monotonic clock.
+      onStop:()=>window.RuinInteractionAudio?.metronomeStop?.(), // Stop queued future beats on plate exit or solve.
       onBeat:beat=>window.RuinInteractionAudio?.metronomeTick?.(beat),
       onSolved:()=>completeEchoSet(set),
       onChanged:snapshot=>{
