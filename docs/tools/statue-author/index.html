@@ -320,9 +320,42 @@ $('build').onclick=async()=>{
   finally{$('build').disabled=false;}
 };
 $('download').onclick=()=>{if(exportProject)downloadJson(exportProject);};
+function meshMaterialStats(mesh) {
+  let map=mesh.material?.map || (Array.isArray(mesh.material)?mesh.material.find(mat=>mat?.map)?.map:null);
+  let color=null;
+  const canvas=map?.image;
+  if(canvas?.getContext){
+    const ctx=canvas.getContext('2d',{willReadFrequently:true});
+    const data=ctx?.getImageData?.(0,0,canvas.width,canvas.height)?.data;
+    if(data){
+      let covered=0,nonBlack=0;const stride=4*4;
+      for(let i=0;i<data.length;i+=stride){
+        if(data[i+3]>8){covered++;if(data[i]+data[i+1]+data[i+2]>96)nonBlack++;}
+      }
+      color={coverage:+(covered/Math.max(1,Math.ceil(data.length/stride))).toFixed(3),
+        brightCoverage:+(nonBlack/Math.max(1,covered)).toFixed(3)};
+    }
+  }
+  return color;
+}
+window.__hobunjiStatueDebug=()=>{
+  const meshes=[];
+  statueGroup?.traverse(mesh=>{
+    if(!mesh.userData?.statuePieceId)return;
+    meshes.push({id:mesh.userData.statuePieceId,type:mesh.userData.authoredPart?.kind||'piece',
+      textureReady:mesh.userData.statueTextureReady===true,
+      modelReady:mesh.userData.glbReady===true,
+      textureError:mesh.userData.statueTextureError||null,
+      modelError:mesh.userData.glbError||null,
+      material:meshMaterialStats(mesh)});
+  });
+  return {built:!!exportProject,record:selectedRecord?.id||$('npcSelect').value,
+    importedAnimation:animation?.name||null,phase:exportProject?.statueSource?.phase||null,
+    texture:exportProject?.statueSource?.materialFile||$('materialFile').value,
+    pieces:meshes,visibleStatus:$('status').textContent};
+}; // Safe read-only mobile diagnostics and browser-smoke verification.
 $('diagnostics').onclick=async()=>{
-  const report={built:!!exportProject,record:selectedRecord?.id||$('npcSelect').value,
-    pose:animation?.name||null,phase:$('phase').value,texture:$('materialFile').value,
+  const report={...window.__hobunjiStatueDebug(),
     parts:exportProject?.parts.map(p=>({id:p.id,kind:p.kind,parentPartId:p.parentPartId}))||[],
     errors:[],loading:[]};
   statueGroup?.traverse(node=>{
