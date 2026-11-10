@@ -41,6 +41,7 @@
     const hoodPlane = makeSheet(null,.001,THREE.DoubleSide,.25);
     sheetGroup.add(headPlane,hoodPlane,hairPlane,rearPlane);
     let mode='translate', state=null, disposed=false, dirty=false;
+    let verifiedTexturePair=''; // One on-screen GPU-health warning per loaded head/hair pair; avoids mobile readback every pose frame.
     let lastGeometryKey=''; // Only rebuild the deformable ribbon when its points/pose/wind/UV settings actually change.
     let selectedIndex=1, dots=[], handles=[], drag=null;
     const raycaster=new THREE.Raycaster(); // Used only for direct pointer selection and gizmo manipulation.
@@ -259,6 +260,16 @@
         if(camera.aspect!==w/h){camera.aspect=w/h;camera.updateProjectionMatrix();}
         controls?.update();
         renderer.render(scene,camera);
+        const head=headPlane.material.map,hair=hairPlane.material.map;
+        if(head&&hair){
+          const pair=head.id+':'+hair.id;
+          if(pair!==verifiedTexturePair){
+            verifiedTexturePair=pair;
+            const headGpu=probeGpuTexture(head),hairGpu=probeGpuTexture(hair); // Verify actual rendered WebGL pixels, not just material-map existence.
+            if(!headGpu?.ok||!hairGpu?.ok)
+              handlers.onStatus?.('3D texture pixels did not render correctly. Use Copy 3D diagnostics for the head/hair GPU readback.');
+          }
+        }
       });
     }
     function setCameraView(view){
