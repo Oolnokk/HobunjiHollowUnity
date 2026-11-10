@@ -9,7 +9,7 @@ const vm=require('node:vm');
 const colorSource=fs.readFileSync('docs/js/color-fill.js','utf8');
 const furnitureSource=fs.readFileSync('docs/js/procedural-furniture.js','utf8');
 const start=furnitureSource.indexOf('  function statueMaterialColor(');
-const end=furnitureSource.indexOf('  const statueOverlayInfoCache=',start);
+const end=furnitureSource.indexOf('  const statueOverlayAtlasCache=',start);
 assert.ok(start>0&&end>start,'Real connected-cell and overlay painter is required');
 const context={window:{}};
 vm.runInNewContext(colorSource,context,{filename:'color-fill.js'});
