@@ -255,8 +255,8 @@
     const horizontal=axes[0],vertical=axes[1],w=Math.max(.00001,size[horizontal]),h=Math.max(.00001,size[vertical]);
     const projected=new Float32Array(positions.count*2);
     for(let i=0;i<positions.count;i++){
-      projected[i*2]=(positions[horizontal](i)-bounds.min[horizontal])/w;
-      projected[i*2+1]=(positions[vertical](i)-bounds.min[vertical])/h;
+      projected[i*2]=(positions['get'+horizontal.toUpperCase()](i)-bounds.min[horizontal])/w;
+      projected[i*2+1]=(positions['get'+vertical.toUpperCase()](i)-bounds.min[vertical])/h;
     }
     geometry.setAttribute('uv',new THREE.BufferAttribute(projected,2));
     geometry.attributes.uv.needsUpdate=true;
