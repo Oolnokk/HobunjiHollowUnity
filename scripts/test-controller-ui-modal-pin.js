@@ -105,6 +105,7 @@ const festivalSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 
       const category={depth:ui.debugState().groupDepth,focused:ui.focusedElement()===first};
       ui.press('confirm'); // A previews the selected exact genotype and automatically enters details.
       const detail={depth:ui.debugState().groupDepth,focusedAction:ui.focusedElement()?.dataset.festivalAction,
+        confirmVisible:ui.debugState().focusedControlOnScreen,
         chosen:root.querySelector('.festival-offering-choice[aria-pressed="true"]')===first,
         sameCard:root.querySelectorAll('.festival-offering-choice')[0]===first,
         builds:window.FestivalUI.diagnostics().listBuilds,updated:window.FestivalUI.diagnostics().detailUpdates};
@@ -147,6 +148,7 @@ const festivalSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 
     assert.equal(offering.category.focused,true,'first category opens on an actual item');
     assert.equal(offering.detail.depth,2,'A on an item enters its confirmation panel');
     assert.equal(offering.detail.focusedAction,'perform','A focuses the confirmation button');
+    assert.equal(offering.detail.confirmVisible,true,'the controller can activate the selected confirmation without manually scrolling to an offscreen button');
     assert.equal(offering.detail.chosen,true,'the highlighted genome is the selected one');
     assert.equal(offering.detail.sameCard,true,'item selection preserves the original DOM node');
     assert.equal(offering.detail.builds,1,'selecting an item never performs a full grid rebuild');
