@@ -732,6 +732,7 @@
       tex.needsUpdate=true;
       if(mesh.userData.statueOwnedTexture)mesh.userData.statueOwnedTexture.dispose();
       mesh.userData.statueOwnedTexture=tex;
+      mesh.userData.statueSurfaceStats=canvas.statueSurfaceStats; // Mobile debug and smoke tests report actual enclosed surfaces.
       mesh.material.map=tex;
       mesh.material.opacity=1;
       mesh.material.color.set(0xffffff);
@@ -1315,6 +1316,7 @@ function campfireRecipe() {
   ];
 
   window.ProceduralFurniture = {
+    paintStatueSurfaceCells, // Pure typed-array raster mapping also used by deterministic authored-surface tests.
     hangingSignSupportPart,
     buildFurnitureGroup,
     buildPartMesh,
