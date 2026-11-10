@@ -36,9 +36,9 @@ const server=http.createServer((req,res)=>{
     await context.route(/^https:\/\/esm\.sh\/three@0\.128\.0/,async route=>{
       const url=route.request().url();
       if(url.includes('/examples/jsm/controls/OrbitControls.js'))
-        return route.fulfill({status:200,contentType:'application/javascript',body:orbitSource});
+        return route.fulfill({status:200,contentType:'application/javascript',body:orbitSource,headers:{'Access-Control-Allow-Origin':'*'}});
       if(url==='https://esm.sh/three@0.128.0')
-        return route.fulfill({status:200,contentType:'application/javascript',body:threeMain});
+        return route.fulfill({status:200,contentType:'application/javascript',body:threeMain,headers:{'Access-Control-Allow-Origin':'*'}});
       return route.abort('blockedbyclient');
     });
     const page=await context.newPage(),errors=[]; // Errors appear in CI without needing browser devtools.
