@@ -118,11 +118,11 @@ const lineageB={base:{color:'#ddeeff'},sizeClass:'medium'}; // Distinguishes the
 window.LivestockItemGenotypePersistence={groupsFor:(key,count)=>key==='grehlrBaby' && count===3
   ? [{variant:'gene-a',count:1,genotype:lineageA},{variant:'gene-b',count:2,genotype:lineageB}]:null};
 const animalEntries=api.qualityChoices('offering').filter(entry=>entry.key==='grehlrBaby');
-assert.deepEqual(animalEntries.map(entry=>entry.variant),['gene-a','gene-b'],
+assert.deepEqual(Array.from(animalEntries,entry=>entry.variant),['gene-a','gene-b'],
   'the ancestor screen lists one row per saved genome instead of a combined species stack');
-assert.deepEqual(animalEntries.map(entry=>entry.count),[1,2],
+assert.deepEqual(Array.from(animalEntries,entry=>entry.count),[1,2],
   'identical animals share their real counts, while different genotypes never merge');
-assert.deepEqual(animalEntries.map(entry=>entry.stars),[2,2],
+assert.deepEqual(Array.from(animalEntries,entry=>entry.stars),[2,2],
   'a shared next-available quality tier prevents fabricating variant-specific quality data');
 assert(animalEntries.every(entry=>entry.sharedQuality===true),
   'the UI acknowledges that item-wide stars are not associated with individual animals');
