@@ -152,7 +152,7 @@ vm.runInContext(voiceOwnerSource, context, { filename: 'character-voice-owner.js
 vm.runInContext(source, context, { filename: 'combat-vocalizations.js' });
 
 assert(context.window.CombatVocalizations, 'runtime API should install');
-assert.equal(context.window.CombatVocalizations.version, 4);
+assert.equal(context.window.CombatVocalizations.version, 5);
 assert.equal(typeof scheduledBreath, 'function', 'breath loop should use shared scheduler');
 
 const chargePlan = context.window.CombatVocalizations.chargeRatePlan(1.2, 4, 1.25);
@@ -434,7 +434,13 @@ assert(Math.abs(timelineContext.getWeaponAttackTimeline().activeRemainingS-1.3)<
 timelineContext.toolSwingT=0;
 assert.equal(timelineContext.getWeaponAttackTimeline(),null,'reaching Neutral releases the animation gate');
 
-// Every authored species/gender applies the same profile to all one-shot combat vocals.
+// Every authored species/gender retains its attack modulation; ordinary skeletons only vocalize when alerted or attacking.
+const combatStateStart = banditSource.indexOf('  function setCombatExpression(entity, active)'); // Exercise the shipped humanoid-hostile combat-state entry point, not just a test-only audio method.
+const combatStateEnd = banditSource.indexOf('  // ── Combatant', combatStateStart); // Isolate the real exported function without loading the BanditCombat rendering dependencies.
+assert(combatStateStart >= 0 && combatStateEnd > combatStateStart, 'shared hostile combat-state function is available');
+const skeletonStateContext = vm.createContext({ window: { CombatVocalizations: W.CombatVocalizations } }); // Fake portrait is intentionally absent: alert audio must not depend on a visible frown canvas.
+vm.runInContext(banditSource.slice(combatStateStart, combatStateEnd), skeletonStateContext);
+
 W.AudioSystem.gameAudioConfig = () => ({ enabled: true, sfxVolume: 1 });
 for (const entry of played) entry.handle?.finish();
 for (const [speciesId, genders] of Object.entries(W.CombatVocalizations.getConfig().utteranceModulation.species)) {
@@ -455,6 +461,29 @@ for (const [speciesId, genders] of Object.entries(W.CombatVocalizations.getConfi
       assert.equal(played.at(-1).volume, Math.min(1, 0.86 * expectedGain));
       if (isSkeleton) assert.equal(played.at(-1).url, skeletonShriekUrl, 'skeleton attack uses the skeleton shriek');
       played.at(-1).handle.finish();
+    }
+    if (isSkeleton) {
+      const silentStart = played.length; // Impact, DoT, stamina and dodge must not produce a shriek or a human fallback voice.
+      emit(listeners, 'hobunji-resource-change', { entity: actor, delta: -1, immediate: true });
+      emit(listeners, 'hobunji-resource-change', { entity: actor, delta: -1, immediate: false });
+      assert.equal(W.CombatVocalizations.playDodge(actor), null, 'skeleton dodge is silent');
+      scheduledBreath({ timestamp: 100000 });
+      assert.equal(played.length, silentStart, `${actor.id} stays silent when hurt, winded, or dodging`);
+      assert.equal(W.CombatVocalizations.debugSnapshot().trackedNpcBreathers, 0, 'skeleton stamina never joins the NPC breathing scheduler');
+      skeletonStateContext.setCombatExpression(actor, true);
+      assert.equal(played.length, silentStart + 1, 'entering combat raises exactly one skeleton alarm');
+      assert.equal(played.at(-1).url, skeletonShriekUrl);
+      assert.equal(W.CombatVocalizations.debugSnapshot().lastAlert.entity, actor.id, 'mobile debug records the skeleton alarm');
+      skeletonStateContext.setCombatExpression(actor, true);
+      emit(listeners, 'hobunji-resource-change', { entity: actor, delta: -4, immediate: true });
+      assert.equal(played.length, silentStart + 1, 'staying in combat and taking hits never raises duplicate alarms');
+      played.at(-1).handle.finish();
+      skeletonStateContext.setCombatExpression(actor, false);
+      skeletonStateContext.setCombatExpression(actor, true);
+      assert.equal(played.length, silentStart + 2, 'leaving and re-entering combat rearms the next alarm');
+      played.at(-1).handle.finish();
+      W.CombatVocalizations.forgetEntity(actor);
+      continue;
     }
     emit(listeners, 'hobunji-resource-change', { entity: actor, delta: -1, immediate: true });
     assert(Math.abs(played.at(-1).pitchSemitones - expectedPitch) < 1e-9, `${actor.id}/pain pitch`);
