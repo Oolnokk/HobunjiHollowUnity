@@ -1347,8 +1347,9 @@
       if(!deps.CREATURE_DB?.[offer.species])continue;
       const hash=[...offer.id].reduce((n,ch)=>(n*33+ch.charCodeAt(0))>>>0,5381);
       const anchor=roamingHerdAnchor(zoneId,hash%7,7); // Existing generated safe forage anchors, never a guessed town tile.
-      const genotype=window.CreatureGenetics?.makeDefaultGenotype?.(offer.species)||null;
-      if(genotype)genotype.sizeClass='small'; // Real creature-genetics small-size rig keeps a freed baby visibly juvenile.
+      const genotype=offer.genotype && typeof offer.genotype==='object'
+        ? JSON.parse(JSON.stringify(offer.genotype)) : window.CreatureGenetics?.makeDefaultGenotype?.(offer.species)||null; // Release the actually chosen bloodline, not a new random animal.
+      if(genotype && !offer.genotype)genotype.sizeClass='small'; // Generic untracked babies keep the prior juvenile presentation; inherited size genes are never rewritten.
       const creature=deps.makeCreatureEntity(offer.species,anchor.x,anchor.y,{
         genotype,streamVisuals:true,wildlifeRole:'prey',homeX:anchor.x,homeY:anchor.y,
         wanderRadiusPx:deps.TILE*6,festivalReleased:true,festivalReleaseId:offer.id,
