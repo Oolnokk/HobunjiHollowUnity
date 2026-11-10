@@ -108,11 +108,13 @@
     }
     return html;
   }
-  function updateOfferingDetail(api=system()) {
-    const detail=root?.querySelector('#festivalOfferingDetail'); // Only the small inspector is changed; offering cards, scroll and controller focus stay intact.
+  function updateOfferingDetail(api=system(),reveal=false) {
+    const detail=root?.querySelector('#festivalOfferingDetail'); // Only the small inspector is changed; offering cards and controller focus stay intact.
     if (!detail) return;
     detail.innerHTML=offeringDetailHtml(api);
     offeringUiDebug.detailUpdates++;
+    if (reveal) detail.querySelector('button[data-festival-action="perform"]')?.scrollIntoView?.({block:'nearest',inline:'nearest'});
+    // ControllerUI enters this detail group with scroll:false, so reveal the confirm control before it tries to focus it.
   }
   function open(anchor = system().nearestActivity()) {
     if (!anchor || !system().atProp(anchor) || !system().festival()) return false;
@@ -268,7 +270,7 @@
         if (selectedOfferingButton && selectedOfferingButton!==target) selectedOfferingButton.setAttribute('aria-pressed','false');
         selectedOfferingButton=target;
         target.setAttribute('aria-pressed','true');
-        updateOfferingDetail(); // Leave category nodes and controller focus untouched: A can immediately enter its detail group.
+        updateOfferingDetail(system(),true); // Reveal its confirmation button before ControllerUI enters the group; keep every category card mounted.
       } else render();
       return;
     }
