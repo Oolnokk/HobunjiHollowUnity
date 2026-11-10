@@ -15,10 +15,11 @@
   const MAX_IMPORT_BYTES = 300000;
   const VALID_MODEL_PATH = /^assets\/models\/[A-Za-z0-9_.\/-]+\.glb$/i;
   const templates = new Map(); // Canonical model source path -> selected baked variants.
-  const diagnostics = { fallbackCount: 0, lastFallback: '', lastError: '', loaded: false }; // Mobile Settings diagnostics.
+  const diagnostics = { fallbackCount: 0, lastFallback: '', lastError: '', loaded: false, prebakedLoads: 0, originalLoads: 0 }; // Mobile Settings diagnostics.
   let tier = readTier(); // Player's persisted geometry detail level.
   let uiMounted = false; // Only installs the Performance settings listeners once.
   let shippedProfiles = []; // Packaged profiles, restored after clearing local imports.
+  let loaderInstalled = false; // One global GLTFLoader wrapper covers authored models without duplicating per-system loading code.
 
   function readTier() {
     try { const value = root.localStorage?.getItem(STORAGE_TIER); return TIERS.includes(value) ? value : 'high'; }
@@ -86,20 +87,94 @@
   function getTier() { return tier; }
   function resolvePath(source, requestedTier = tier) {
     if (!modelPath(source) || !TIERS.includes(requestedTier)) return source;
-    return templates.get(source)?.variants?.[requestedTier] || source;
+    // When the global optimized mode is on, use baked low-detail variants
+    // FIRST even if an older save still has 'High' selected. Explicit tier
+    // arguments continue to honor the exact tier the caller requested.
+    const globalMode = arguments.length < 2 && root.GeometryAutoLOD?.isEnabled?.();
+    const effectiveTier = globalMode ? 'low' : requestedTier;
+    return templates.get(source)?.variants?.[effectiveTier] || source;
+  }
+  function markLoadedGLB(result, wasOptimized = false) {
+    // All authored GLBs (even missing-LOD fallbacks) must be distinguished
+    // from procedurally-generated geometry. Only the latter is simplified
+    // in an idle callback; authored meshes use precomputed files exclusively.
+    const object = result?.scene || result?.scenes?.[0] || result;
+    if (!object?.traverse) return result;
+    if (!object.userData?.geometryQualityGLBCounted) {
+      object.userData = { ...(object.userData || {}), geometryQualityGLBCounted: true };
+      if (wasOptimized) diagnostics.prebakedLoads++;
+      else diagnostics.originalLoads++;
+      updateStatus(); // A mobile-visible count differentiates baked GLBs from session-simplified procedural geometry.
+    }
+    object.traverse(node => {
+      if (!node.isMesh) return;
+      node.userData = { ...(node.userData || {}), geometryQualityGLBSource: true };
+      if (node.geometry) {
+        node.geometry.userData = { ...(node.geometry.userData || {}), geometryQualityGLBSource: true,
+          geometryQualityPrebakedVariant: !!wasOptimized };
+      }
+    });
+    return result;
+  }
+  function installGlobalLoader() {
+    if (loaderInstalled || !root.document?.getElementById?.('settingGeometryDetail')) return false;
+    const klass = root.THREE?.GLTFLoader;
+    if (!klass?.prototype?.load) return false;
+    const previous = klass.prototype.load; // Preserve the existing loader/progress/decoder pipeline unchanged.
+    klass.prototype.load = function qualityBakedGLBLoad(path, onLoad, onProgress, onError) {
+      let completed = false; // A failing optimized URL must call the original callback at most once.
+      const success = (gltf, optimized) => {
+        if (completed) return;
+        completed = true;
+        onLoad?.(markLoadedGLB(gltf, optimized));
+      };
+      const failure = (error, preferred) => {
+        if (completed) return;
+        if (preferred === path) { completed = true; onError?.(error); return; }
+        diagnostics.fallbackCount++;
+        diagnostics.lastFallback = path + ' ← ' + preferred;
+        diagnostics.lastError = String(error?.message || error);
+        updateStatus();
+        try {
+          previous.call(this, path, gltf => success(gltf, false), onProgress, originalError => {
+            if (completed) return;
+            completed = true;
+            onError?.(originalError);
+          });
+        } catch (originalError) {
+          completed = true;
+          onError?.(originalError);
+        }
+      };
+      const start = () => {
+        const preferred = resolvePath(path); // Re-evaluate AFTER shipped manifest is available.
+        try {
+          return previous.call(this, preferred, gltf => success(gltf, preferred !== path),
+            onProgress, error => failure(error, preferred));
+        } catch (error) { failure(error, preferred); return undefined; }
+      };
+      if (!diagnostics.loaded && modelPath(path)) {
+        ready.then(start, error => failure(error, path)); // Wait once for packaged profiles, rather than race first model loads.
+        return undefined;
+      }
+      return start();
+    };
+    loaderInstalled = true;
+    updateStatus();
+    return true;
   }
   async function loadWithFallback(source, loader) {
     if (typeof loader !== 'function') throw new Error('Quality loader requires a callback.');
     await ready;
     const candidate = resolvePath(source);
-    if (candidate === source) return loader(source);
-    try { return await loader(candidate); }
+    if (candidate === source) return markLoadedGLB(await loader(source), false);
+    try { return markLoadedGLB(await loader(candidate), candidate !== source); }
     catch (error) {
       diagnostics.fallbackCount++;
       diagnostics.lastFallback = source + ' ← ' + candidate;
       diagnostics.lastError = String(error?.message || error);
       updateStatus();
-      return loader(source);
+      return markLoadedGLB(await loader(source), false);
     }
   }
   function importProfiles(documentObject) {
@@ -147,7 +222,8 @@
   const ready = loadShipped(); // Initial GLB requests await this one-time quality manifest read.
   function snapshot() {
     return {
-      tier, loaded: diagnostics.loaded, profiles: templates.size, imported: localProfiles.length,
+      tier, effectiveTier: root.GeometryAutoLOD?.isEnabled?.() ? 'low' : tier, loaderInstalled, loaded: diagnostics.loaded, profiles: templates.size, imported: localProfiles.length,
+      prebakedLoads: diagnostics.prebakedLoads, originalLoads: diagnostics.originalLoads,
       fallbackCount: diagnostics.fallbackCount, lastFallback: diagnostics.lastFallback || null,
       lastError: diagnostics.lastError || null,
     };
@@ -155,7 +231,8 @@
   function updateStatus() {
     const element = root.document?.getElementById?.('geometryQualityStatus');
     if (!element) return;
-    element.textContent = tier + ' geometry · ' + templates.size + ' quality profiles · ' +
+    element.textContent = (root.GeometryAutoLOD?.isEnabled?.() ? 'Global optimized (pre-baked Low variants preferred)' : tier + ' geometry') +
+      ' · ' + templates.size + ' quality profiles · ' + diagnostics.prebakedLoads + ' baked models loaded · ' +
       diagnostics.fallbackCount + ' missing-variant fallbacks.' +
       (diagnostics.lastError ? ' ' + diagnostics.lastError : '') +
       ' Changes apply to newly loaded models; reload the game to update existing ones.';
@@ -181,6 +258,7 @@
       finally { input.value = ''; }
     });
     clear.addEventListener('click', clearImported);
+    installGlobalLoader();
     updateStatus();
   }
   if (root.document) {
@@ -189,6 +267,6 @@
   }
   return Object.freeze({
     SCHEMA, TIERS, CONFIG_URL, ready, modelPath, normalizeProfile, validate, importProfiles,
-    clearImported, getTier, setTier, resolvePath, loadWithFallback, snapshot, bindSettings,
+    clearImported, getTier, setTier, resolvePath, markLoadedGLB, installGlobalLoader, loadWithFallback, snapshot, bindSettings, refreshStatus: updateStatus,
   });
 });

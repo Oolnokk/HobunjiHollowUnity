@@ -28,10 +28,11 @@ function mesh(name, material, additions={}){
     material:material||{opacity:1,visible:true,transparent:false,alphaTest:0},userData:{},...additions};
 }
 const a=mesh('one'),b=mesh('two'),
+  authored=mesh('prebaked-source',null,{userData:{geometryQualityGLBSource:true}}),
   alpha=mesh('alpha',{opacity:1,visible:true,transparent:true}),
   collision=mesh('collision',null,{userData:{isCollisionMesh:true}}),
   skinned=mesh('skinned',null,{isSkinnedMesh:true});
-const scene={isScene:true,visible:true,children:[a,b,alpha,collision,skinned]};
+const scene={isScene:true,visible:true,children:[a,b,authored,alpha,collision,skinned]};
 for(const m of scene.children)m.parent=scene;
 const nativeRender=function(){
   for(const mesh of scene.children)rendered.push({name:mesh.name,geo:mesh.geometry});
@@ -62,17 +63,24 @@ assert.equal(lod.protectedMesh(alpha),true);
 assert.equal(lod.protectedMesh(collision),true);
 assert.equal(lod.protectedMesh(skinned),true);
 assert.equal(lod.protectedMesh(a),false);
+assert.equal(lod.protectedMesh(authored),true,'GLBs must not be reduced again at runtime');
 (async()=>{
   lod.setEnabled(true);
   await new Promise(resolve=>setImmediate(resolve)); // Wait for ready optimizers and renderer attachment.
-  assert.equal(lod.snapshot().ready,true);
+  assert.equal(lod.snapshot().ready,false,'prebaked mode must not download WASM eagerly');
   assert.equal(mem.get('hobunjiGlobalGeometryOptimize60.v1'),'true');
   assert.equal(renderer.render(scene,{}),'rendered');
   assert.equal(rendered[0].geo,actualOriginal,'no heavy geometry changes synchronously in the render call');
   assert.equal(simplifyCount,0,'the render path cannot invoke meshoptimizer');
   let steps=0;
-  while(callbacks.length&&steps++<100)callbacks.shift()({timeRemaining:()=>5});
+  while(lod.snapshot().processed===0 && steps++<100){
+    while(callbacks.length)callbacks.shift()({timeRemaining:()=>5});
+    // Loading WASM is asynchronous, and the first pass merely SCANS for
+    // procedural meshes. Only a later idle slice may simplify the geometry.
+    await new Promise(resolve=>setImmediate(resolve));
+  }
   assert.ok(steps<100,'idle work must finish rather than recurse forever');
+  assert.equal(lod.snapshot().ready,true,'optimizer initializes only after eligible procedural discovery');
   assert.equal(simplifyCount,1,'shared geometry simplified once for multiple meshes');
   assert.equal(lod.snapshot().processed,1);
   assert.equal(lod.snapshot().sourceTriangles,300);
@@ -81,9 +89,10 @@ assert.equal(lod.protectedMesh(a),false);
   renderer.render(scene,{});
   assert.equal(rendered[0].geo.index.count,360,'opaque mesh one uses reduced triangles in render');
   assert.equal(rendered[1].geo.index.count,360,'opaque mesh two uses the cached simplified geometry');
-  assert.equal(rendered[2].geo,actualOriginal,'transparent mesh stays intact');
-  assert.equal(rendered[3].geo,actualOriginal,'collision proxy stays intact');
-  assert.equal(rendered[4].geo,actualOriginal,'skinned mesh stays intact');
+  assert.equal(rendered[2].geo,actualOriginal,'authored GLB stays intact; precomputed variant is selected while loading');
+  assert.equal(rendered[3].geo,actualOriginal,'transparent mesh stays intact');
+  assert.equal(rendered[4].geo,actualOriginal,'collision proxy stays intact');
+  assert.equal(rendered[5].geo,actualOriginal,'skinned mesh stays intact');
   assert.equal(a.geometry,actualOriginal,'the source is restored immediately after render');
   assert.equal(b.geometry,actualOriginal,'shared source is restored');
   assert.equal(lod.snapshot().lastDrawSaved,360,'two rendered copies each avoid 180 triangles');
@@ -101,5 +110,5 @@ assert.equal(lod.protectedMesh(a),false);
   assert.equal(rendered[0].geo.index.count,360,'re-enable reuses cached mesh without re-decimating');
   assert.equal(simplifyCount,1);
   assert.ok(status.textContent.includes('60%')===false || status.textContent.length>10);
-  console.log('Global geometry 60%: opt-in, preserved raycasts, idle-only simplification, cached shared mesh, protected materials, live toggle OK');
+  console.log('Global pre-baked geometry 60%: lazy optimizer, authored GLB exclusion, preserved physics, idle-only procedural cache and live toggle OK');
 })().catch(error=>{console.error(error);process.exitCode=1;});

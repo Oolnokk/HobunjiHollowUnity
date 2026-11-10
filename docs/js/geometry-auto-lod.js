@@ -1,7 +1,7 @@
-// Opt-in gameplay-wide 60% geometry simplification.
-// Everything eligible is simplified once in idle time using the SAME
-// meshoptimizer/Core.reduceGeometry code as the Geometry Workshop.
-// Render-only geometry swaps preserve raycasts, collision and authoring data.
+// Pre-baked-first gameplay-wide optimized geometry mode (up to 60% reduction).
+// Authored GLBs select precomputed variants through GeometryQuality / GLTFLoader.
+// Only eligible PROCEDURAL meshes are simplified once, during idle time, into
+// a session cache. Render-only swaps preserve collision, raycasts and source geometry.
 (function (root) {
   'use strict';
   if (!root || root.GeometryAutoLOD) return;
@@ -34,6 +34,7 @@
   let enabled = readEnabled(); // Persisted experimental graphics-quality preference.
   let ready = false; // Whether WASM and the shared Geometry Workshop reducer are ready.
   let loadingPromise = null; // Prevent duplicate optional CDN/WASM downloads.
+  let optimizerFailed = false; // Avoid repeatedly loading a blocked CDN on every discovered mesh.
   let renderer = null; // Only the real __hobunjiGameRenderer, never an editor renderer.
   let originalRender = null; // Existing renderer.render chain, preserved under the wrapper.
   let renderDepth = 0; // Nested outline/occlusion passes cannot restore geometry prematurely.
@@ -65,6 +66,7 @@
       ' · ' + (counters.sourceTriangles - counters.optimizedTriangles).toLocaleString() +
       ' triangles saved across cached geometry' +
       ' · ' + counters.lastDrawSaved.toLocaleString() + ' triangle draws avoided last pass' +
+      ' · ' + (root.GeometryQuality?.snapshot?.().prebakedLoads || 0) + ' pre-baked GLBs loaded' +
       ' · ' + queue.length + ' queued' +
       ' · ' + counters.skipped + ' skipped.' +
       (message ? ' ' + message : '') +
@@ -113,6 +115,9 @@
   function protectedMesh(mesh) {
     if (!mesh?.isMesh || !mesh.geometry?.isBufferGeometry || !mesh.visible || !mesh.parent) return true;
     if (mesh.isSkinnedMesh || mesh.isBone || mesh.isBatchedMesh) return true;
+    if (mesh.userData?.geometryQualityGLBSource || mesh.geometry?.userData?.geometryQualityGLBSource) {
+      return true; // Authored GLBs use pre-baked variants; never double-reduce them with the procedural idle cache.
+    }
     const flags = mesh.userData || {};
     if ([
       'isCollisionMesh','isClimbBranch','noOutline','isPngPlane','isCollisionHelper',
@@ -197,7 +202,13 @@
     scheduleWork();
   }
   function scheduleWork() {
-    if (!enabled || !ready || workScheduled || !queue.length) return;
+    if (!enabled || workScheduled || !queue.length) return;
+    if (!ready) {
+      if (!optimizerFailed) ensureReducer().then(() => {
+        if (enabled) scheduleWork();
+      }).catch(() => { optimizerFailed = true; status('Procedural optimizer unavailable; pre-baked GLBs still work.'); });
+      return; // No download at startup: procedural meshes trigger it only when needed.
+    }
     workScheduled = true;
     scheduleIdle(deadline => {
       workScheduled = false;
@@ -254,7 +265,7 @@
     });
   }
   function startScan(scene) {
-    if (!enabled || !ready || scan || !scene?.isScene || !Array.isArray(scene.children)) return;
+    if (!enabled || scan || !scene?.isScene || !Array.isArray(scene.children)) return;
     scan = { root: scene, stack: [scene], seen: 0 };
     scanScheduled = false;
     scheduleScanSlice();
@@ -264,7 +275,7 @@
     scanScheduled = true;
     scheduleIdle(() => {
       scanScheduled = false;
-      if (!enabled || !ready || !scan) return;
+      if (!enabled || !scan) return;
       const start = now();
       let count = 0;
       while (scan.stack.length && count++ < SCAN_NODES_PER_SLICE && now() - start < SCAN_MS_PER_SLICE) {
@@ -301,7 +312,7 @@
     originalRender = renderer.render; // Existing render wrappers remain in the chain.
     const nativeRender = originalRender; // Per-renderer closure prevents cross-renderer chain corruption.
     renderer.render = function geometryAutoLODRender(scene, camera) {
-      if (!enabled || !ready || renderDepth) return nativeRender.call(this, scene, camera);
+      if (!enabled || renderDepth) return nativeRender.call(this, scene, camera);
       if (scene?.isScene && scene.children?.length > 3 && now() - lastScanAt > SCAN_INTERVAL_MS) {
         startScan(scene); // Merely SCHEDULES work; no heavy traversal within render().
       }
@@ -346,15 +357,16 @@
     try { root.localStorage?.setItem(STORAGE_KEY, String(enabled)); } catch (_) {}
     const control = root.document?.getElementById?.('settingGeometryAutoOptimize');
     if (control) control.checked = enabled;
+    root.GeometryQuality?.refreshStatus?.(); // The Geometry Detail caption reflects pre-baked Low mode while this toggle is on.
     if (enabled) {
-      status('Preparing meshoptimizer (one-time download).');
-      ensureReducer().then(() => {
-        if (!enabled) return;
-        bootRetries = 0;
-        attachWhenReady();
-        scheduleWork();
-        status();
-      }).catch(() => {}); // Failure is reported visibly in Settings.
+      // Attach to gameplay immediately; no optimizer download until an eligible
+      // procedural mesh needs a cached variant. Precomputed GLBs start working
+      // as soon as the quality loader chooses their shipped manifest paths.
+      optimizerFailed = false;
+      bootRetries = 0;
+      attachWhenReady();
+      scheduleWork();
+      status('Precomputed GLB variants preferred; procedural meshes are cached when encountered.');
     } else {
       scan = null;
       scanScheduled = false;
