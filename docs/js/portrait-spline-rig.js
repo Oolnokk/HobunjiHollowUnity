@@ -26,6 +26,11 @@
           yaw: clamp(finite(pose.yaw), -85, 85),
           pitch: clamp(finite(pose.pitch), -85, 85),
           roll: clamp(finite(pose.roll), -85, 85),
+          translate: {
+            x: clamp(finite(pose.translate?.x), -.35, .35),
+            y: clamp(finite(pose.translate?.y), -.35, .35),
+            z: clamp(finite(pose.translate?.z), -.35, .35),
+          }, // Direction-specific 3D endpoint offset authored with the viewer gizmos; old rotational poses normalize to zero.
         };
       }
       return {
@@ -71,13 +76,17 @@
     const d = segment.deadzone;
     const x = axisAmount(wind.x, d.x), y = axisAmount(wind.y, d.y), z = axisAmount(wind.z, d.z);
     const angles = { yaw: 0, pitch: 0, roll: 0 };
+    const translation = { x: 0, y: 0, z: 0 }; // Accumulates direction-weighted knot translations; excluded from neutral output for legacy clients.
     for (const [axis, low, high, strength] of [['x', 'left', 'right', x], ['y', 'down', 'up', y], ['z', 'away', 'toward', z]]) {
       const pose = segment.poses[strength < 0 ? low : high];
       for (const component of ['yaw', 'pitch', 'roll']) angles[component] += Math.abs(strength) * pose[component];
+      for (const component of ['x', 'y', 'z']) translation[component] += Math.abs(strength) * (pose.translate?.[component] || 0);
     }
     // Independent axes blend without allowing a diagonal gust to triple the authored excursion.
     const divisor = Math.max(1, Math.hypot(x, y, z));
     for (const component of ['yaw', 'pitch', 'roll']) angles[component] = clamp(angles[component] / divisor, -85, 85);
+    for (const component of ['x', 'y', 'z']) translation[component] = clamp(translation[component] / divisor, -.35, .35);
+    if (Object.values(translation).some(value => Math.abs(value) > 1e-9)) angles.translate = translation;
     return angles;
   }
 
@@ -88,8 +97,10 @@
     const z1 = dz * Math.cos(yaw) - dx * Math.sin(yaw);
     const y2 = dy * Math.cos(pitch) - z1 * Math.sin(pitch);
     const z2 = dy * Math.sin(pitch) + z1 * Math.cos(pitch);
-    return { x: x1 * Math.cos(roll) - y2 * Math.sin(roll),
-      y: x1 * Math.sin(roll) + y2 * Math.cos(roll), z: z2 };
+    const t = angles.translate || {}; // Offsets apply in portrait-local XYZ, so gizmo movement matches game wind poses.
+    return { x: x1 * Math.cos(roll) - y2 * Math.sin(roll) + (t.x || 0) * factor,
+      y: x1 * Math.sin(roll) + y2 * Math.cos(roll) + (t.y || 0) * factor,
+      z: z2 + (t.z || 0) * factor };
   }
 
   function posePoints(rig, wind = {}) {
