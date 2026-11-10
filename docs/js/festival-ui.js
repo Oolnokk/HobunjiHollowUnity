@@ -29,7 +29,7 @@
     root.addEventListener('pointerdown', event => event.stopPropagation());
     root.addEventListener('pointerup', event => event.stopPropagation());
     root.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } });
-    window.addEventListener('keydown', event => { // ControllerUI sends Escape to window when the Close button is clipped below the scrolling card.
+    window.addEventListener?.('keydown', event => { // Real windows support this; minimal headless festival DOM fixtures may omit it.
       if (event.key === 'Escape' && (prop || feastInspectIndex !== null)) close(); // Scope the fallback to the active festival modal; nested Back is consumed by ControllerUI first.
     });
     root.addEventListener('click', event => { const target = event.target.closest('button[data-festival-action]'); if (target && !target.disabled) void handle(target); });
