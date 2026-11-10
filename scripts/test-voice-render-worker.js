@@ -49,9 +49,9 @@ function sandbox(Worker = TestWorker) {
   for (let channel = 0; channel < 2; channel++) {
     for (let index = 0; index < input.length; index++) input.getChannelData(channel)[index] = Math.sin(index * (0.027 + channel * 0.009)) * 0.6;
   }
-  const cases = [[0.7, -5], [1.6, 7], [1, 0]]; // Stretch, compress, and unity transforms share precisely the fallback math.
+  const cases = [[0.7, -5], [1.6, 7], [1, 0], [24, -3]]; // Fast skeleton combo compression must match the worker and cooperative paths exactly. // Stretch, compress, and unity transforms share precisely the fallback math.
   await Promise.all(cases.map(async ([tempo, pitch]) => {
-    const expected = scope.testDsp.processConstantAxes(input, tempo, pitch, 4, 24, { tailPadS: 0 }); // Synchronous reference.
+    const expected = scope.testDsp.processConstantAxes(input, tempo, pitch, 64, 24, { tailPadS: 0 }); // Synchronous reference.
     const actual = await scope.testDsp.processConstantAxesOffThread(input, tempo, pitch, { tailPadS: 0 });
     for (let channel = 0; channel < 2; channel++) assert.deepEqual(Array.from(actual[channel]), Array.from(expected[channel]));
   }));
