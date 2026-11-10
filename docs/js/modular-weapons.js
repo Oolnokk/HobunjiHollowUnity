@@ -214,6 +214,9 @@
     if (Object.hasOwn(raw || {}, 'flailHeadScale')) {
       result.flailHeadScale = finite(raw.flailHeadScale, 1, 0.05, 8); // Only this shaft/head pairing uses this hanging scale.
     }
+    if (raw?.dmgType === 'sharp' || raw?.dmgType === 'blunt') {
+      result.dmgType = raw.dmgType; // Damage overrides belong to one authorized part pairing, never the shared head definition.
+    }
     if (raw?.animation === 'thrust' || raw?.animation === 'sweep') result.animation = raw.animation;
     else if (!partial) result.animation = fallbackAnimation;
     const bridges = cleanBridges(raw?.bridges); // Optional pair-specific bridge brush strokes.
@@ -486,10 +489,12 @@
       const pair = shaft.overrides?.[headKey] || {}; // Custom contact belongs to THIS flexible shaft/head combination, never the shared head rig.
       const mountContact = head.mount?.type === 'blade' ? head.mount.start : head.mount?.end; // Tang at START; sleeve/weight at END.
       const contact = pair.flailHeadAnchor || mountContact; // Keep rigid head.mount authoritative until THIS pair is explicitly adjusted.
+      const values = settings(shaftKey, headKey); // Existing pair-specific flip/scale/rotate/translation authoring now drives flexible heads too.
       recipe.flail.head = {
         anchorSpace: 'layer', anchorLayer: 'modular-head',
         anchor: point(contact || { x: 225, y: 602 }), // Layer-local source pixel: both Three.js and the full 2D preview use it.
         scale: finite(pair.flailHeadScale, head.flailHeadScale || authoredHead.scale || 1, 0.05, 8),
+        visualTransform: Object.fromEntries(transforms.map(key => [key, values[key]])), // Pair-only artwork adjustment around the rope contact; never stretches the chain.
         layers: [{ id: 'modular-head', sprite: head.sprite, material: 'metal' }],
       };
     } // Head-owned flails retain their entire original Tool Hub head and untouched authored contact.
@@ -498,6 +503,13 @@
       recipe.flail.haftAnchor = duplicatePoint(recipe.flail.haftAnchor, shaftArt);
     }
     return recipe;
+  }
+  function weaponDamageType(shaftKey, headKey) {
+    const shaft = config.shafts[shaftKey], head = config.heads[headKey]; // Pair-aware damage metadata for combat definitions and Foundry labels.
+    if (!shaft || !head) return null;
+    const pair = shaft.overrides?.[headKey]; // Only a rope-bearing shaft with a rigid head may change that head's damage classification.
+    return shaft.flailAssembly && !head.flailAssembly && (pair?.dmgType === 'sharp' || pair?.dmgType === 'blunt')
+      ? pair.dmgType : head.dmgType;
   }
   function weaponName(shaftKey, headKey, metalLabel = '') {
     const shaft = config.shafts[shaftKey], head = config.heads[headKey];
@@ -888,7 +900,7 @@
         const assembly = flailRecipe(shaftKey, headKey); // Dynamic head/rope config rides the existing gameplay and editor renderer.
         defs[key] = { ...source, animStyle: animation, comboStyle: animation,
           label: weaponName(shaftKey, headKey, metals[metalKey]?.label || metalKey), icon: '⚒️', sprite: key,
-          slots: ['weapon', ...new Set(toolSlots)], dmgType: head.dmgType, spinning: false,
+          slots: ['weapon', ...new Set(toolSlots)], dmgType: weaponDamageType(shaftKey, headKey), spinning: false,
           shapeKey: shaft.sourceShape, metalKey, itemKey: key,
           modular: { shaft: shaftKey, head: headKey }, ...(assembly ? { weaponAssembly: assembly } : {}),
           weaponIdleClass: source.weaponIdleClass || 'light' };
@@ -919,7 +931,7 @@
     else if (prior) replace(addCompanionsToPreviousDraft(JSON.parse(prior)), true);
     else if (oldest) replace(JSON.parse(oldest), true);
   } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
-  global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, weaponName, flailRecipe, flailGuide, authoredFlailAnchor, isFlailHead, resolvedBores, boreShaft, cleanBores, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, registerDefinitions, unlockedParts, matchingMounts,
+  global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, weaponName, weaponDamageType, flailRecipe, flailGuide, authoredFlailAnchor, isFlailHead, resolvedBores, boreShaft, cleanBores, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, registerDefinitions, unlockedParts, matchingMounts,
     duplicateTransform, duplicatePoint, shaftRigTransform, shaftArtTransform, cleanRigRegions, regionAt, regionAffine, affinePoint, rigPoint, shaftMounts, attachmentRig, rigBridgeOperations, multiplyAffine, JUNCTIONS, junctionPath, drawJunction, expandOps,
     diagnostics: key => ({ parts: decode(key), gripSource: sourceShape(key),
       name: decode(key) ? weaponName(decode(key).shaft, decode(key).head, decode(key).metal) : null,
