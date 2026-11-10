@@ -257,7 +257,7 @@ async function generateHero(){
   $('heroResult').textContent='Generated '+rolled.npc.name+' ('+rolled.gender+
     ') • Captain armor: '+(rolled.npc.metalArmorItems||[]).map(item=>item.baseCosmeticId).join(', ')+
     ' • '+rolled.shapeKey+' / '+rolled.metalKey+(secondary?' + '+ranged:'');
-  await $('build').click(); // Normal statue authoring/export pipeline, never a separate rendering shortcut.
+  await buildCurrentStatue(); // Await the normal builder so repeated mobile taps cannot overlap an unfinished NPC render.
 }
 function maskBounds(canvas){
   const ctx=canvas.getContext('2d',{willReadFrequently:true}),w=canvas.width,h=canvas.height;
@@ -594,14 +594,16 @@ $('materialPreset').onchange=()=>{
     $('statueTint').value=choice==='boards.png'?'#b68d63':'#b9b1a2';
 };
 $('statueTint').oninput=()=>{$('statueTint').dataset.userEdited='true';};
-$('build').onclick=async()=>{
+async function buildCurrentStatue(){
+  if($('build').disabled)return; // One active NPC/GLB render at a time, including the hero shortcut.
   $('build').disabled=true;status('Rendering NPC appearance and statue layers…');
   try{
     exportProject=await makeProject();
     if(exportProject){display(exportProject);$('send').disabled=false;$('download').disabled=false;}
   }catch(error){exportProject=null;$('send').disabled=true;$('download').disabled=true;status('Build failed: '+(error?.stack||error));}
   finally{$('build').disabled=false;}
-};
+}
+$('build').onclick=buildCurrentStatue;
 $('download').onclick=()=>{if(exportProject)downloadJson(exportProject);};
 function meshMaterialStats(mesh) {
   let map=mesh.material?.map || (Array.isArray(mesh.material)?mesh.material.find(mat=>mat?.map)?.map:null);
