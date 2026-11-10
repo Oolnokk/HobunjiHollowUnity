@@ -548,7 +548,7 @@
         col*cw,row*ch,cw,ch);
     }
   }
-  function paintedStatueCanvas(source, finish) {
+  function paintedStatueCanvas(source, finish, options = {}) {
     const width = Math.max(1,source.naturalWidth || source.width);
     const height = Math.max(1,source.naturalHeight || source.height);
     const canvas = document.createElement('canvas'); canvas.width=width;canvas.height=height;
@@ -567,7 +567,7 @@
       const a=mask.data[i+3];
       if(a<=8){painted.data[i+3]=0;continue;}
       opaque++;
-      const isInk=mask.data[i]<=18&&mask.data[i+1]<=18&&mask.data[i+2]<=18;
+      const isInk=options.preserveInk!==false&&mask.data[i]<=18&&mask.data[i+1]<=18&&mask.data[i+2]<=18;
       if(isInk){
         painted.data[i]=mask.data[i];painted.data[i+1]=mask.data[i+1];painted.data[i+2]=mask.data[i+2];ink++;
       }else{
@@ -578,7 +578,7 @@
     // Avoid rendering the exact black rectangles from the original broken
     // preview when a missing NPC sprite or an unexpected opaque background
     // causes a full-canvas mask.
-    if(!opaque || opaque>=width*height*.96 || !bright) {
+    if(!opaque || (!options.allowFullMask && opaque>=width*height*.96) || (!bright && options.preserveInk!==false)) {
       throw new Error('Statue portrait mask is blank, all-black or rectangular; rebuild its NPC appearance');
     }
     context.putImageData(painted,0,0);
@@ -612,15 +612,17 @@
     catch(error){mesh.userData.statueTextureError=error.message;return;}
     const token = {}; // Cancels late async finishes when an editor piece has been disposed/replaced.
     mesh.userData.statueFinishToken = token;
+    mesh.material.opacity=0; // Hide the unfinished rectangular plane until its alpha cutout is ready.
     Promise.all([statueImage(part.statueMaskDataUrl),statueImage(textureUrl)]).then(([mask,finish])=>{
       if(mesh.userData.statueFinishToken!==token||mesh.userData.glbDisposed)return;
-      const canvas=paintedStatueCanvas(mask,finish);
+      const canvas=paintedStatueCanvas(mask,finish,{preserveInk:part.statueKeepOutline!==false,allowFullMask:part.statueKeepOutline===false});
       const tex=new THREE.CanvasTexture(canvas);
       if(THREE.sRGBEncoding)tex.encoding=THREE.sRGBEncoding;
       tex.needsUpdate=true;
       if(mesh.userData.statueOwnedTexture)mesh.userData.statueOwnedTexture.dispose();
       mesh.userData.statueOwnedTexture=tex;
       mesh.material.map=tex;
+      mesh.material.opacity=1;
       mesh.material.color.set(0xffffff);
       mesh.material.needsUpdate=true;
       mesh.userData.statueTextureError='';
