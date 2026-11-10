@@ -352,19 +352,30 @@
   function ingredientEffectTotals(definition, stars) {
     const effects = {}; // Used by picker labels and meal totals so an ingredient's displayed buff always matches its cooked contribution.
     if (!definition) return effects;
-    const tier = data().processingTiers[definition.cookingProcessingTier] || data().processingTiers.raw || { multiplier: 1 }; // Backward compatibility for legacy pre-processed goods with no recorded stages.
-    const stageMultiplier = Number(definition.cookingProcessMultiplier); // Each inherited manual-processing stage multiplies buffs; saved history supersedes tier shortcuts.
-    const multiplier = Number.isFinite(stageMultiplier) && stageMultiplier > 0 ? stageMultiplier : (tier.multiplier || 1);
+    const tier = data().processingTiers[definition.cookingProcessingTier] || data().processingTiers.raw || { multiplier: 1 }; // Legacy products still have their old tier estimate.
+    const recordedMultiplier = Number(definition.cookingProcessMultiplier); // Used for migrated goods and to recover any pre-history processing factor.
+    const totalMultiplier = Number.isFinite(recordedMultiplier) && recordedMultiplier > 0 ? recordedMultiplier : (tier.multiplier || 1);
+    const steps = Array.isArray(definition.cookingProcessSteps) ? definition.cookingProcessSteps : []; // Each independent processor rounds its own output upward.
+    const stepFactors = steps.map(step => Number(step.multiplier) || window.ItemProcessing?.processBuffMultiplier?.(step.method) || 1);
+    const product = stepFactors.reduce((factor, value) => factor * value, 1); // Used to avoid applying inherited stage multipliers twice.
+    const inheritedFactor = Math.max(1, totalMultiplier / Math.max(0.001, product)); // Legacy one-shot tier value precedes explicitly recorded steps.
+    function roundedProcessedBuff(base) {
+      let amount = Math.max(1, Number(base) || 1); // Kept fractional until the first actual processing step.
+      if (inheritedFactor > 1 + 1e-8) amount = Math.ceil(amount * inheritedFactor);
+      if (!stepFactors.length) return Math.max(1, Math.ceil(amount * totalMultiplier / Math.max(1, inheritedFactor)));
+      for (const factor of stepFactors) amount = Math.ceil(amount * factor); // A 1.2× stage rounds up before the next, possibly much longer stage.
+      return Math.max(1, amount);
+    }
     if (definition.foodEffects && Object.keys(definition.foodEffects).length) {
       Object.entries(definition.foodEffects).forEach(([effect, amount]) => {
-        effects[effect] = Math.max(1, Math.ceil((Number(amount) || 1) * multiplier));
+        effects[effect] = roundedProcessedBuff(amount);
       });
       return effects;
     }
     if (!definition.cookingPrimaryEffect) return effects;
     const safeStars = Math.max(1, Math.min(5, Math.round(Number(stars) || Number(definition.cookingDefaultStars) || 3))); // Keep the original quality curve.
     const prototypeQuality = 1 + (safeStars - 1) / 2;
-    effects[definition.cookingPrimaryEffect] = Math.max(1, Math.ceil((definition.cookingBaseBoost || 1) * prototypeQuality * multiplier));
+    effects[definition.cookingPrimaryEffect] = roundedProcessedBuff((definition.cookingBaseBoost || 1) * prototypeQuality);
     return effects;
   }
 
