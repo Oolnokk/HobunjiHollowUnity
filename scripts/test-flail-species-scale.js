@@ -29,9 +29,14 @@ class Matrix {
   clone() { return new Matrix(this.elements); }
   copy(other) { this.elements = [...other.elements]; return this; }
   compose(position, rotation, scale) {
-    const cos = 1 - 2 * rotation.z * rotation.z, sin = 2 * rotation.z * rotation.w;
-    this.elements = [cos * scale.x, sin * scale.x, 0, 0, -sin * scale.y, cos * scale.y, 0, 0,
-      0, 0, scale.z, 0, position.x, position.y, position.z, 1];
+    const {x,y,z,w} = rotation;
+    const xx=x*x,yy=y*y,zz=z*z,xy=x*y,xz=x*z,yz=y*z,xw=x*w,yw=y*w,zw=z*w; // Full 3D quaternion rotation, like Three.js Matrix4.compose.
+    this.elements = [
+      (1-2*(yy+zz))*scale.x, (2*(xy+zw))*scale.x, (2*(xz-yw))*scale.x, 0,
+      (2*(xy-zw))*scale.y, (1-2*(xx+zz))*scale.y, (2*(yz+xw))*scale.y, 0,
+      (2*(xz+yw))*scale.z, (2*(yz-xw))*scale.z, (1-2*(xx+yy))*scale.z, 0,
+      position.x,position.y,position.z,1,
+    ];
     return this;
   }
   multiply(other) {
@@ -42,16 +47,19 @@ class Matrix {
     return this;
   }
   invert() {
-    const e = this.elements, a = e[0], b = e[1], c = e[4], d = e[5], z = e[10];
-    const det = a * d - b * c;
-    assert(Math.abs(det) > 1e-10 && Math.abs(z) > 1e-10, 'fixture requires an invertible parent');
-    const ai = d / det, bi = -b / det, ci = -c / det, di = a / det;
-    this.elements = [ai, bi, 0, 0, ci, di, 0, 0, 0, 0, 1 / z, 0,
-      -ai * e[12] - ci * e[13], -bi * e[12] - di * e[13], -e[14] / z, 1];
+    const e=this.elements,a=e[0],b=e[4],c=e[8],d=e[1],f=e[9],g=e[2],h=e[6],i=e[10],m=e[5];
+    const det=a*(m*i-f*h)-b*(d*i-f*g)+c*(d*h-m*g);
+    assert(Math.abs(det)>1e-10, 'fixture requires an invertible parent');
+    const A=(m*i-f*h)/det,B=(c*h-b*i)/det,C=(b*f-c*m)/det;
+    const D=(f*g-d*i)/det,E=(a*i-c*g)/det,F=(c*d-a*f)/det;
+    const G=(d*h-m*g)/det,H=(b*g-a*h)/det,I=(a*m-b*d)/det;
+    const tx=e[12],ty=e[13],tz=e[14]; // Body root translation also must be canceled by the part's inverse-root matrix.
+    this.elements=[A,D,G,0,B,E,H,0,C,F,I,0,
+      -A*tx-B*ty-C*tz,-D*tx-E*ty-F*tz,-G*tx-H*ty-I*tz,1];
     return this;
   }
 }
-const quaternion = radians => ({ z: Math.sin(radians / 2), w: Math.cos(radians / 2) }); // Rotation fixture includes inclined holders and swinging connectors.
+const quaternion = (axis, radians) => { const m=Math.hypot(...axis);return {x:axis[0]/m*Math.sin(radians/2),y:axis[1]/m*Math.sin(radians/2),z:axis[2]/m*Math.sin(radians/2),w:Math.cos(radians/2)}; }; // Unit quaternions cover 3D pitch, yaw, and roll.
 const position = (x, y, z) => ({ x, y, z });
 const scale = (x, y = x, z = x) => ({ x, y, z }); // Flexible parts retain authored X/Y ratios while sharing the haft's longitudinal size.
 function assertMatrixNear(actual, expected, label) {
@@ -60,9 +68,9 @@ function assertMatrixNear(actual, expected, label) {
       label + ' matrix component ' + i + ': ' + actual.elements[i] + ' vs ' + expected.elements[i]);
 }
 for (const speciesScale of [scale(1), scale(0.6, 1.9, 0.6), scale(1.8, 0.7, 1.8)]) {
-  const parent = new Matrix().compose(position(1.3, -0.25, 0.8), quaternion(0.4), speciesScale);
+  const parent = new Matrix().compose(position(1.3, -0.25, 0.8), quaternion([1,2,3],0.4), speciesScale);
   const inverse = parent.clone().invert(); // Exact root correction; a decomposed quaternion/scale cannot undo shear.
-  const location = position(2.2, 3.4, -0.7), swing = quaternion(-0.8);
+  const location = position(2.2, 3.4, -0.7), swing = quaternion([2,-1,3],-0.8);
   for (const [name, size] of [
     ['rope sprite', scale(1.5 * 3.75)],
     ['raster chain', scale(1.5 * 0.8, 1.5 * 2.25, 1.5)],
@@ -77,4 +85,4 @@ for (const speciesScale of [scale(1), scale(0.6, 1.9, 0.6), scale(1.8, 0.7, 1.8)
     assert.equal(part.matrixWorldNeedsUpdate, true, 'next render must refresh the world matrix');
   }
 }
-console.log('flail species weapon scaling: PASS (longitudinal size, endpoint/physics parity, rotated anisotropic parents, head and rope world matrices)');
+console.log('flail species weapon scaling: PASS (longitudinal size, endpoint/physics parity, 3D-rotated anisotropic parents, head and rope world matrices)');
