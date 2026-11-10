@@ -498,7 +498,8 @@
 
     const worldHeading = ensureRosterHeading(container, WORLD_HEADING_ID, 'Farm livestock', 'housed / outdoors adults');
     const stableHeading = ensureRosterHeading(container, STABLE_HEADING_ID, 'Your Stable', 'breeding candidates only');
-    stableHeading.hidden = !stableRows.some(matchesSpecies);
+    const hideStableHeading = !stableRows.some(matchesSpecies); // Avoid a MutationObserver loop when the selected species is unchanged.
+    if (stableHeading.hidden !== hideStableHeading) stableHeading.hidden = hideStableHeading;
     let filterEmpty = document.getElementById(FILTER_EMPTY_ID);
     if (!filterEmpty) {
       filterEmpty = document.createElement('div'); // Persistent note avoids transient blank results during a filter change.
@@ -506,7 +507,8 @@
       filterEmpty.className = 'farm-note';
       filterEmpty.textContent = 'No animals of this species in either roster.';
     }
-    filterEmpty.hidden = !selectedSpecies || rows.some(matchesSpecies);
+    const hideEmptyNote = !selectedSpecies || rows.some(matchesSpecies); // Only update the node when the filter result actually changes.
+    if (filterEmpty.hidden !== hideEmptyNote) filterEmpty.hidden = hideEmptyNote;
     const desiredNodes = [nursery, worldHeading, ...worldRows, ...emptyWorldNotes, stableHeading, ...stableRows, filterEmpty]; // Used as the one flat visual order for every visible roster element we manage.
     const managed = new Set(desiredNodes); // Used to ignore the hidden identity sentinel and any future unrelated child FarmPanel may add.
     const currentManaged = [...container.children].filter(child => managed.has(child)); // Used to make this mutation-observer presentation pass idempotent.
