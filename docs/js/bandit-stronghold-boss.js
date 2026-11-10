@@ -251,7 +251,10 @@
   function updateAI(actor,dt,target) {
     if(!actor?.banditStrongholdBoss||actor.banditStrongholdVariant!=='demolitionist'||!target||target.health<=0)return null;
     actor._strongholdVolleyCooldown=Math.max(0,(actor._strongholdVolleyCooldown||0)-Math.max(0,Number(dt)||0));
-    if(actor._strongholdVolleyActive||actor._banditAction||actor._strongholdVolleyCooldown>0)return null;
+    if(actor._strongholdVolleyActive)return {handled:true,aimAngle:actor.facing||0,moving:false};
+    if(actor._banditAction)return null;
+    if(actor._strongholdVolleyCooldown>0) return actor._strongholdVolleyCount>0
+      ?{handled:true,aimAngle:Math.atan2(target.y-actor.y,target.x-actor.x),moving:false}:null; // The 3-volley sequence finishes before melee resumes.
     if(!window.Combat?.beginStagedAction||!window.AlchemyFlasks?.throwFromEntity
       ||!window.BanditStrongholdCombat?.launch)return null;
     const t=Number(actor._strongholdTileSize)||64;
@@ -266,13 +269,14 @@
     actor._strongholdVolleyCount=actor._strongholdVolleyCount||0; // Three distinct volleys, then a fixed melee recovery.
     actor._banditSwingAnim=animation.style||'chop';
     actor._banditSwingPose=animation.poses;actor.telegraphState='windup';
+    let released=false; // A staggered windup is not one of the three promised physical volleys.
     const cleanup=()=>{
       actor._strongholdVolleyActive=false;
-      actor._strongholdVolleyCount++;
+      if(released)actor._strongholdVolleyCount++;
       if(actor._strongholdVolleyCount>=3){
         actor._strongholdVolleyCount=0;
         actor._strongholdVolleyCooldown=6; // A clear melee interval after exactly three projectile volleys.
-      }else actor._strongholdVolleyCooldown=1.5;
+      }else actor._strongholdVolleyCooldown=released?1.5:1;
       window.BanditCombat?.finishAction?.(actor);
     };
     actor._banditAction=window.Combat.beginStagedAction({
@@ -280,6 +284,7 @@
       data:{isBandit:true,attacker:actor,strongholdDemolitionist:true},
       onStrike:()=>{
         if(actor.health<=0)return;
+        released=true; // Interrupted telegraphs never advance the three-volley sequence.
         const area=actor.areaId;
         Promise.resolve(window.BanditStrongholdCombat.launch(actor,target,'shattercask',area))
           .catch(error=>window.__farmLog?.('[bandit-lord] barrel volley failed: '+error.message,'warn'));
