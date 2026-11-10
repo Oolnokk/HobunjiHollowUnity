@@ -24,6 +24,8 @@ function makeHost() {
   let abortedPresses = 0; // Opening an instrument disarms an in-progress weapon hold.
   let playerNotes = 0; // Tracks player-only sounded notes during a two-instrument jam.
   let npcNotes = 0; // Tracks notes from the still-independent NPC frame.
+  const jamSyncSnapshots = []; // Records compact NPC tempo/tonic/arrangement handoffs to the real player host.
+  let jamStopCount = 0; // Confirms leaving Performance restores the solo transport.
   let initialKeys = []; // Simulate an input already held when the iframe finishes loading.
   let pointerReleases = 0; // The HUD needs mouse input even when opened from a locked camera.
   let bookToggles = 0; // Count real keyboard and controller shortcut dispatches.
@@ -54,14 +56,22 @@ function makeHost() {
       const element = makeElement();
       element.contentWindow={HobunjiMusicControlBridge:{scaleAuditionState:()=>({arrangement:{
         introSteps:[0,0,0,0],bodySteps:Array(16).fill(0),melodyNotes:[{degree:0,durationQuarterBeats:1}]
-      }})}};
+      }}),
+      jamLeaderSnapshot:()=>({playing:true,songId:'when-the-kininjis-bloom',sampledEpochMs:Date.now(),
+        elapsedMs:5500,bpm:108,tonicMidi:48,scaleName:'Pentatonic Minor',countInMs:1600,countInBeats:6,
+        introSteps:[0,1,2,3],bodySteps:Array(16).fill(4)}),
+      startAmbientLead:noop}};
       element.remove=()=>ambientRemoved++;
       ambientCreated++;
       ambientElements.push(element);
       return element;
     }
   };
-  frame.contentWindow={HobunjiPuzzleInstrument:{playNote:index=>notes.push(index),setInputDevice:(...args)=>hints.push(args),toggleSongbook:()=>bookToggles++}}; // Both keyboard and controller must reach this same note owner.
+  frame.contentWindow={
+    HobunjiPuzzleInstrument:{playNote:index=>notes.push(index),setInputDevice:(...args)=>hints.push(args),toggleSongbook:()=>bookToggles++},
+    HobunjiMusicControlBridge:{enterJamMode:noop,followJamLeader:snapshot=>{jamSyncSnapshots.push(snapshot);return true;},
+      stopJamFollow:()=>{jamStopCount++;return true;},jamFollowState:()=>({active:jamSyncSnapshots.length>0})}
+  }; // The visible frame owns its playable instrument and receives audio-free NPC transport updates.
   vm.runInNewContext(read('docs/js/music-minigame.js'),{
     window,document,localStorage:{getItem:()=>null,setItem:noop},
     setTimeout:noop,clearTimeout:noop,setInterval:noop,clearInterval:noop
@@ -87,6 +97,8 @@ function makeHost() {
     setInstrument:value=>{equippedInstrument=value;},setPerformers:value=>{performers=value;},
     ambientCounts:()=>({created:ambientCreated,removed:ambientRemoved}),ambientFrames:()=>ambientElements,
     sendNote:(source,performer='lead')=>{for(const handler of listeners.get('message')||[])handler({source,data:{source:'hobunji-music-minigame',type:'sounded-note',performer}});},
+    announceNpcTransport:source=>{for(const handler of listeners.get('message')||[])handler({source,data:{source:'hobunji-music-minigame',type:'ambient-transport-changed'}});},
+    sync:()=>({count:jamSyncSnapshots.length,last:jamSyncSnapshots.at(-1),jamStopCount}),
     actions:()=>({instrumentLockCount,instrumentLockReleases,abortedPresses,playerNotes,npcNotes}),getCameraEnds:()=>cameraEnd
   };
 }
@@ -150,8 +162,17 @@ function makeHost() {
   assert.equal(game.window.ControllerInput.gameplaySuspended(),true);
   assert.equal(game.ambientCounts().created,2,'switching to Performance resumes the NPC immediately in a separate iframe');
   assert.equal(game.ambientCounts().removed,1,'Performance never removes the NPC audio again');
+  game.frame.handlers.get('load')(); // Real host binds the newly created Performance iframe and copies only NPC timing/chord data.
+  assert.equal(game.sync().count,1,'initial Performance load reads the leader clock immediately');
+  assert.equal(game.sync().last.bpm,108,'player receives the NPC quarter-note tempo');
+  assert.equal(game.sync().last.tonicMidi,48,'player receives the NPC tonic');
+  assert.deepEqual(Array.from(game.sync().last.introSteps),[0,1,2,3],'player receives the NPC six-eight intro bars');
+  assert.equal(game.sync().last.bodySteps.length,16,'player receives the NPC three-four melody harmony');
+  game.announceNpcTransport(game.ambientFrames()[1].contentWindow); // NPC song resets must sync without waiting for the ambient scheduler.
+  assert.equal(game.sync().count,2,'the NPC announces each new procedural song transport');
   game.window.MusicMinigame.tick(1.1);
   assert.equal(game.ambientCounts().created,2,'the scheduled tick does not duplicate the resumed NPC voice');
+  assert.equal(game.sync().count,3,'existing NPC tick corrects drift using one compact snapshot');
   game.sendNote(game.frame.contentWindow); // A flute note is the player's event.
   game.sendNote(game.ambientFrames()[1].contentWindow); // The independent Kurraya frame still owns NPC notes.
   assert.equal(game.actions().playerNotes,1,"flute playback animates only the player's instrument");
@@ -160,6 +181,7 @@ function makeHost() {
   game.window.MusicMinigame.switchInstrumentMode('puzzle');
   assert.equal(game.ambientCounts().removed,2,'returning to Puzzle suspends the NPC again');
   assert.equal(game.window.ControllerInput.owner,'music-puzzle','Puzzle retakes controller ownership from Performance');
+  assert.equal(game.sync().jamStopCount,1,'leaving Performance releases the NPC transport');
   game.window.MusicMinigame.switchInstrumentMode('performance');
   assert.equal(game.ambientCounts().created,3,'the NPC resumes independently on repeated mode switches');
   game.window.MusicMinigame.close();
@@ -189,6 +211,12 @@ function makeHost() {
   joiningNpc.setPerformers([{npcId:'foroji',name:'Foroji',area:'town',songId:'when-the-kininjis-bloom'}]);
   joiningNpc.window.MusicMinigame.tick(1.1);
   assert.equal(joiningNpc.ambientCounts().created,1,'NPCs can join an already-running player performance');
+  assert.equal(joiningNpc.window.MusicMinigame.state.mode,'jam','the late NPC becomes the live tempo/harmony leader');
+  assert.equal(joiningNpc.sync().count,1,'late arrival receives immediate NPC clock state');
+  joiningNpc.setPerformers([]);
+  joiningNpc.window.MusicMinigame.tick(1.1);
+  assert.equal(joiningNpc.window.MusicMinigame.state.mode,'lead','leaving NPC restores independent solo performance');
+  assert.equal(joiningNpc.sync().jamStopCount,1,'the player releases the missing NPC clock');
   joiningNpc.window.MusicMinigame.close();
 
   const sounds = []; // Fake voice creation and stop events for validating monophonic playback.
