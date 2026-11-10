@@ -132,6 +132,7 @@
   }
 
   function upgradeCamp(rec, deps) {
+    if (rec?.stronghold) return true; // Re-entry and async setup cannot duplicate an already converted camp.
     if (!rec || !deps || !registerRecipes()) return false;
     if (!siteProps(rec).length) return false;
     const site = window.CaveSiteSystem?.registerFortifiedStronghold?.(rec.zoneId, rec.discoverySlot);
