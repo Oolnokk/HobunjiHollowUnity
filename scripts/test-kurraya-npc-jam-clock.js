@@ -72,4 +72,6 @@ assert.equal(solo.countInBeats,0,'a solo player does not inherit the NPC count-i
 assert.match(host,/syncPlayerWithNpc\(performers\)/,'existing ambient scheduler corrects drift without a second polling loop');
 assert.match(source,/type:'ambient-transport-changed'/,'each NPC song regeneration triggers an immediate event-driven sync');
 assert.match(source,/iteration < 10/,'audio lookahead uses the bounded sub-millisecond binary search optimization');
+assert.ok(source.includes('if (!jamLeaderSync || state.ambientOnly) {'),'following the NPC must skip duplicate player metronome scheduling');
+assert.ok(source.includes('if (!state.rootPadEnabled || HOSTED_FLUTE_PERFORMANCE) return;'),'flute performances must skip a root-pad search they can never use');
 console.log('NPC jam clock, 6/8→3/4 harmony, mid-song joining, solo restore and transport optimization passed.');
