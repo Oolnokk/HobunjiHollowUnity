@@ -42,11 +42,7 @@ window.MODULAR_WEAPON_CONFIG = {
       "toolSlots": [
         "axe"
       ],
-      "flailHeadScale": 1,
-      "flailHeadAnchor": {
-        "x": 184,
-        "y": 552
-      }
+      "flailHeadScale": 1
     },
     "dagger": {
       "label": "Mao'ao Short-blade",
@@ -71,11 +67,7 @@ window.MODULAR_WEAPON_CONFIG = {
       "toolSlots": [
         "pick"
       ],
-      "flailHeadScale": 1,
-      "flailHeadAnchor": {
-        "x": 207,
-        "y": 623
-      }
+      "flailHeadScale": 1
     },
     "fishing-mace": {
       "label": "Barb-flanged Mace Head",
@@ -100,11 +92,7 @@ window.MODULAR_WEAPON_CONFIG = {
       "toolSlots": [
         "harpoon"
       ],
-      "flailHeadScale": 1,
-      "flailHeadAnchor": {
-        "x": 185,
-        "y": 894
-      }
+      "flailHeadScale": 1
     },
     "fishing-spear": {
       "label": "Barbed Spearhead",
@@ -129,11 +117,7 @@ window.MODULAR_WEAPON_CONFIG = {
       "toolSlots": [
         "axe"
       ],
-      "flailHeadScale": 1,
-      "flailHeadAnchor": {
-        "x": 209,
-        "y": 866
-      }
+      "flailHeadScale": 1
     },
     "harlyao-broadsword": {
       "label": "Harlyao-style Broad-blade",
@@ -158,11 +142,7 @@ window.MODULAR_WEAPON_CONFIG = {
       "toolSlots": [
         "axe"
       ],
-      "flailHeadScale": 1,
-      "flailHeadAnchor": {
-        "x": 200,
-        "y": 664
-      }
+      "flailHeadScale": 1
     },
     "harlyao-longsword": {
       "label": "Harlyao-style Long-blade",
@@ -185,11 +165,7 @@ window.MODULAR_WEAPON_CONFIG = {
         "suffix": "Hilted Long-bladed"
       },
       "toolSlots": [],
-      "flailHeadScale": 1,
-      "flailHeadAnchor": {
-        "x": 196,
-        "y": 709
-      }
+      "flailHeadScale": 1
     },
     "hatchet": {
       "label": "Hatchet Head",
@@ -316,11 +292,7 @@ window.MODULAR_WEAPON_CONFIG = {
       "toolSlots": [
         "shovel"
       ],
-      "flailHeadScale": 1,
-      "flailHeadAnchor": {
-        "x": 195,
-        "y": 856
-      }
+      "flailHeadScale": 1
     },
     "plains-blade": {
       "label": "Oliphanti Broad-tipped Blade",
@@ -343,11 +315,7 @@ window.MODULAR_WEAPON_CONFIG = {
         "suffix": "Broad-tipped"
       },
       "toolSlots": [],
-      "flailHeadScale": 1,
-      "flailHeadAnchor": {
-        "x": 187,
-        "y": 408
-      }
+      "flailHeadScale": 1
     },
     "porakaneki-greatclub": {
       "label": "Spiked Wooden Head",
@@ -372,11 +340,7 @@ window.MODULAR_WEAPON_CONFIG = {
       "toolSlots": [
         "pick"
       ],
-      "flailHeadScale": 1,
-      "flailHeadAnchor": {
-        "x": 189,
-        "y": 729
-      }
+      "flailHeadScale": 1
     },
     "war-cleaver": {
       "label": "War-cleaver Blade",
@@ -400,11 +364,7 @@ window.MODULAR_WEAPON_CONFIG = {
         "suffix": "Cleaver-bladed"
       },
       "toolSlots": [],
-      "flailHeadScale": 1,
-      "flailHeadAnchor": {
-        "x": 239,
-        "y": 858
-      }
+      "flailHeadScale": 1
     },
     "warhammer": {
       "label": "Warhammer Head",
