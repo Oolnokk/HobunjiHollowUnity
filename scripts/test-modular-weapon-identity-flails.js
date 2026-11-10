@@ -59,8 +59,8 @@ assert.equal(pickOnRope.flail.head.visualTransform.flipY,true,
   'user-authored flipY follows the hanging head in the real flail assembly');
 assert.equal(pickOnRope.flail.chain.mountLengthPx,843.75,'head flips never change rope length');
 for(const [key,field,value] of [
-  ['pickshovel-scoop','scaleX',0.8],['plains-blade','scaleY',0.4],
-  ['porakaneki-greatclub','scaleY',0.75]
+  ['pickshovel-scoop','scaleX',0.8],['plains-blade','scaleY',0.6],
+  ['porakaneki-greatclub','scaleY',0.85]
 ]) assert.equal(api.flailRecipe('grapple-flail',key).flail.head.visualTransform[field],value,
   key+' authored nonuniform pair scale is used by the complete flail rig');
 assert.deepEqual(plain(api.flailRecipe('grapple-flail','fishing-spear').flail.head.anchor),{x:209,y:925});
