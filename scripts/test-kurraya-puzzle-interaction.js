@@ -154,7 +154,7 @@ function makeHost() {
   assert.equal(game.ambientCounts().created,2,'the scheduled tick does not duplicate the resumed NPC voice');
   game.sendNote(game.frame.contentWindow); // A flute note is the player's event.
   game.sendNote(game.ambientFrames()[1].contentWindow); // The independent Kurraya frame still owns NPC notes.
-  assert.equal(game.actions().playerNotes,1,'flute playback animates only the player's instrument');
+  assert.equal(game.actions().playerNotes,1,"flute playback animates only the player's instrument");
   assert.equal(game.actions().npcNotes,1,'the ambient Kurraya continues animating its NPC');
   assert.equal(game.actions().instrumentLockReleases,2,'switching modes does not release the action lock early');
   game.window.MusicMinigame.switchInstrumentMode('puzzle');
