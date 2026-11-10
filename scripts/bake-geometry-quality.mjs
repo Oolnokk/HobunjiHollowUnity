@@ -60,7 +60,11 @@ function unsafeReason(document, info) {
     if (p.getMode() !== 4 || (p.listTargets?.().length || 0)) return 'non-triangle or morph-target primitive';
     const m = p.getMaterial();
     if (m && m.getAlphaMode() !== 'OPAQUE') return 'transparent/alpha-tested material';
-    if (!p.getAttribute('POSITION') || !p.getAttribute('NORMAL')) return 'no position/normal attribute';
+    // glTF allows missing NORMALs; r128's GLTFLoader derives them for
+    // visualization. Keep this absence intact in the output instead of
+    // rejecting most simple authored furniture. The error/structure checks
+    // still protect these models during simplification.
+    if (!p.getAttribute('POSITION')) return 'no position attribute';
     if ((p.getIndices()?.getCount() || 0) < 6) return 'unindexed or tiny material primitive';
   }
   return '';

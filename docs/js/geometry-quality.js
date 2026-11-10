@@ -166,6 +166,12 @@
   async function loadWithFallback(source, loader) {
     if (typeof loader !== 'function') throw new Error('Quality loader requires a callback.');
     await ready;
+    if (loaderInstalled && modelPath(source)) {
+      // Existing hand/foot/furniture callers already use the intercepted
+      // GLTFLoader. Ask for the CANONICAL URL once; otherwise a missing LOD
+      // would be requested twice through nested fallback handlers.
+      return loader(source);
+    }
     const candidate = resolvePath(source);
     if (candidate === source) return markLoadedGLB(await loader(source), false);
     try { return markLoadedGLB(await loader(candidate), candidate !== source); }

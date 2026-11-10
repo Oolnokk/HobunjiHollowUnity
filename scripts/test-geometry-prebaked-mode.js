@@ -55,6 +55,13 @@ const quality=window.GeometryQuality;
   assert.equal(result.scene.mesh.geometry.userData.geometryQualityPrebakedVariant,false);
   assert.equal(result.scene.mesh.userData.geometryQualityGLBSource,true);
   assert.ok(quality.snapshot().fallbackCount>=1);
+  // Existing rig loaders already call quality.loadWithFallback; ensure a
+  // missing precomputed file isn't requested twice through nested handlers.
+  requests.length = 0;
+  const once = await quality.loadWithFallback(source, requested => new Promise((resolve,reject) =>
+    new Loader().load(requested,resolve,null,reject)));
+  assert.deepEqual(requests,[variant,source],'missing optimized variant fetched just once');
+  assert.equal(once.scene.mesh.userData.geometryQualityGLBSource,true);
 
   globalMode=false;
   result=await new Promise((resolve,reject)=>new Loader().load(source,resolve,null,reject));
