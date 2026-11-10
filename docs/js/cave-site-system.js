@@ -614,12 +614,12 @@
     const trapCandidates = candidates.filter(tile => {
       const d = Math.hypot(tile.col - cacheTile.col, tile.row - cacheTile.row);
       return d >= 1.1 && d <= 4.5 && !blockedKeys.has(tileKey(tile.col, tile.row))
-        && !!window.CaveTripwireTraps?.spanFor?.(tile, walkableKeys);
+        && !!window.CaveTripwireTraps?.spanFor?.(tile, walkableKeys, rockKeys);
     }); // Each rope physically spans two rock walls; no invisible radius-only hazards.
     const trapCount = trapCandidates.length ? 1 + (rng() < 0.45 ? 1 : 0) : 0;
     plan.traps = pickSpacedTiles(rng, trapCandidates, trapCount, blockedKeys, 2).map((tile, index) => ({
       id: `${plan.cache.id}_trap_${index + 1}`, col: tile.col, row: tile.row,
-      kind: 'swingingShattercask', span: window.CaveTripwireTraps.spanFor(tile, walkableKeys),
+      kind: 'swingingShattercask', span: window.CaveTripwireTraps.spanFor(tile, walkableKeys, rockKeys),
     }));
     mapData.caveTraps = clone(plan.traps);
     // Fill the deep chamber with mundane supplies, but leave the chest approach and traps clear.
