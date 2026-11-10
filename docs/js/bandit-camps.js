@@ -340,7 +340,7 @@
           mesh.rotation.y = (Number(obj.rotY) || 0) * Math.PI / 180;
           deps.markOutline(mesh);
           zi.scene.add(mesh);
-          const collisionTiles = obj.key === 'fortifiedHighCover' || obj.key === 'fortifiedWatchtower'
+          const collisionTiles = ['fortifiedLowRail','fortifiedHighCover','fortifiedWatchtower'].includes(obj.key)
             ? _applyBanditTentGridCollision(zoneId, obj) : []; // Existing pathfinding mask, restored on camp teardown.
           meshes.set(obj.id, { mesh, light: null, sfxSource: null, collisionTiles, propId: obj.id });
           if (obj.coverId) window.BanditStrongholdCover?.register?.({
