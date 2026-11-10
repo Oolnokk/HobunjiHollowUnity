@@ -367,7 +367,7 @@
     new URL('js/procedural-hand-foot-material-roles.js?v=20260821e', docsBase).href,
     new URL('js/hand-tool-grips.js?v=20261107kurrayaGripOptIn1', docsBase).href,
     new URL('js/hand-tool-grip-authored-overrides.js?v=20261022hbc21c80', docsBase).href, // Must follow hand-tool-grips.js: migrates authored spear/bshuakauitl grips onto its live data.
-    new URL('js/dual-wield-weapon-visuals.js?v=20261110flailorder1', docsBase).href,
+    new URL('js/dual-wield-weapon-visuals.js?v=20261110flailorder2', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20261005h2e47f31', docsBase).href,
     new URL('js/hand-shoulder-pose-runtime.js?v=20261107instrNeutral2', docsBase).href,
     new URL('js/portrait-arm-cloud-mask.js?v=20261005h2d40d1a', docsBase).href,
@@ -378,7 +378,7 @@
     new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261109nohuknuk1', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20261017h3921033', docsBase).href,
     new URL('js/procedural-hand-shoulder-aim.js?v=20261107instrHand1', docsBase).href,
-    new URL('js/procedural-hand-frame-driver.js?v=20261108handGripScan1', docsBase).href,
+    new URL('js/procedural-hand-frame-driver.js?v=20261110flailorder2', docsBase).href,
   ];
   if (isAttackEditor) {
     // The editor starts its first avatar rebuild immediately after these parser-time
