@@ -87,9 +87,12 @@
     if(outerMat){outerMat.color?.setHex?.(transition.color);outerMat.opacity=transition.outer;}
     return {...transition}; // Also available to the existing in-game debug/inspection path.
   }
-  function createSession(song,{onSolved=()=>{},onChanged=()=>{},onBeat=()=>{}}={}){
+  function createSession(song,{onSolved=()=>{},onChanged=()=>{},onBeat=()=>{},onStop=()=>{},clockMs=null,lookaheadMs=0}={}){
     if(!song||!Array.isArray(song.notes)||!song.notes.length)throw new Error('Puzzle Cave song is missing its note sequence.');
     let standing=false,solved=false,elapsed=0,progress=0,mistakes=0,cycle=0,lastSignature='';
+    let startedAtMs=null,nextScheduledBeat=1; // The plate's monotonic start and next unqueued beat keep both score judgment and audio on one clock.
+    const quarterSeconds=song.secondsPerTick*4; // Four sixteenth ticks per numbered stonebeat recording; independent of MP3 duration.
+    const lookaheadSeconds=clamp((Number(lookaheadMs)||0)/1000,0,.15); // Performance-mode-style audio lead; tests without a clock retain exact delta-time behavior.
     const tickAt=()=>elapsed/song.secondsPerTick;
     function activeIndex(){
       if(!standing||solved)return -1;
@@ -107,21 +110,34 @@
     }
     function step(dt,isStanding){
       const down=!!isStanding;
+      const sampledMs=typeof clockMs==='function'?Number(clockMs()):NaN; // Browser performance.now; deterministic unit tests use dt when no clock is injected.
       if(!down){
-        if(standing){standing=false;elapsed=0;progress=0;cycle=0;}
+        if(standing){
+          standing=false;elapsed=0;progress=0;cycle=0;startedAtMs=null;nextScheduledBeat=1;
+          onStop(); // Cancel only future scheduled picks when a plate is vacated; sounded tails may finish.
+        }
         return notify();
       }
       if(!standing){
         standing=true;elapsed=0;progress=0;cycle=0;
-        if(!solved)onBeat({beatIndex:0,absoluteBeat:0,downbeat:true,elapsed:0}); // A pick strike on the first beat establishes the BPM as soon as the plate is occupied.
+        startedAtMs=Number.isFinite(sampledMs)?sampledMs:null;
+        nextScheduledBeat=1;
+        if(!solved)onBeat({beatIndex:0,absoluteBeat:0,downbeat:true,elapsed:0,whenMs:startedAtMs}); // First beat starts at the same clock origin as the score and all future picks.
       }else if(!solved){
-        const delta=Number.isFinite(Number(dt))?Math.max(0,Number(dt)):0; // Keep real BPM on slow frames rather than stretching every note by silently truncating elapsed time.
+        const delta=Number.isFinite(Number(dt))?Math.max(0,Number(dt)):0;
         const previousCycle=Math.floor(tickAt()/song.cycleTicks);
-        const previousBeat=Math.floor(tickAt()/4+1e-8); // Four sixteenth ticks form a quarter-note metronome beat.
-        elapsed+=delta;
-        const absoluteBeat=Math.floor(tickAt()/4+1e-8);
-        if(absoluteBeat>previousBeat)onBeat({beatIndex:absoluteBeat%4,absoluteBeat,downbeat:absoluteBeat%4===0,elapsed});
-        // A dropped mobile frame plays only the most recent beat, never a burst of late pick recordings.
+        elapsed=startedAtMs!==null&&Number.isFinite(sampledMs)
+          ?Math.max(0,(sampledMs-startedAtMs)/1000):elapsed+delta; // Real-time clock resists capped frames, pauses in rendering and expensive world updates.
+        const currentBeat=Math.floor(elapsed/quarterSeconds+1e-8);
+        const lookaheadBeat=Math.floor((elapsed+lookaheadSeconds)/quarterSeconds+1e-8);
+        if(lookaheadBeat>=nextScheduledBeat){
+          const dueBeat=Math.max(currentBeat,nextScheduledBeat); // After a long stall, skip obsolete sounds instead of bursting through missed beats.
+          if(dueBeat<=lookaheadBeat)onBeat({
+            beatIndex:dueBeat%4,absoluteBeat:dueBeat,downbeat:dueBeat%4===0,elapsed,
+            whenMs:startedAtMs===null?null:startedAtMs+dueBeat*quarterSeconds*1000,
+          });
+          nextScheduledBeat=lookaheadBeat+1;
+        }
         const nextCycle=Math.floor(tickAt()/song.cycleTicks);
         if(nextCycle!==previousCycle){cycle=nextCycle;progress=0;}
         else if(progress<song.notes.length){
@@ -145,6 +161,7 @@
       progress++;
       if(progress===song.notes.length){
         solved=true;
+        onStop(); // Retire future metronome events as soon as the score completes.
         onSolved(snapshot());
       }
       notify();
