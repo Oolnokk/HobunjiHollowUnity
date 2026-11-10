@@ -3,20 +3,18 @@
   'use strict';
   if (window.PuzzleCavePlateArt?.installed) return;
 
-  const INSCRIPTION = "hao'uun"; // Both exterior and interior melody plates carry the same authored Tankan word.
+  const INSCRIPTION = "Hao'uun"; // Both exterior and interior melody plates carry the same authored Tankan word.
   let texturePromise = null; // A single async Tankan canvas texture serves every cave plate without duplicate font/texture uploads.
 
   function tankanTexture(THREE) {
     if (texturePromise) return texturePromise;
     texturePromise = Promise.resolve(window.FurnitureDecalRuntime?.ensureTankanLayout?.() || window.TankanScriptLayout)
       .then(async layout => {
-        if (!layout?.ensureFontLoaded || !layout?.createCanvas) throw new Error('Tankan furniture lettering system is unavailable');
+        if (!layout?.ensureFontLoaded || !layout?.createRingCanvas) throw new Error('Tankan furniture lettering system is unavailable');
         await layout.ensureFontLoaded(); // Never substitute a fallback alphabet while the Tankan font is loading.
-        const result = layout.createCanvas(INSCRIPTION, {
-          fontSizePx: 128, columnSpacingEm: -0.35, glyphAdvanceEm: 0.6,
-          glyphScaleX: 1.2, glyphScaleY: 0.84,
-          paddingXEm: 0.8, paddingYEm: 0.28, color: '#dfbf83',
-        }); // Furniture Editor's shared column layout and rotated/flipped Tankan font, rather than hand-built glyphs.
+        const result = layout.createRingCanvas(INSCRIPTION, {
+          canvasSizePx: 512, radiusScale: 0.68, textScale: 0.20, color: '#dfbf83',
+        }); // Exact Furniture Author concentric-ring renderer; one Tankan inscription cached for every pressure plate.
         if (!result?.canvas) throw new Error('Tankan script rasterizer returned no canvas');
         const texture = new THREE.CanvasTexture(result.canvas);
         if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
@@ -40,8 +38,9 @@
     plate.userData ||= {};
     plate.userData.puzzleCavePlateTexture = 'carved_smooth.png'; // Mobile scene inspection can distinguish the authored finish.
     plate.userData.puzzleCaveTankanText = INSCRIPTION;
+    plate.userData.puzzleCaveTankanLayout = 'ring'; // Mobile diagnostics identify the circular inscription.
 
-    const width = radius * .76, height = radius * 1.35; // Fit the entire vertical word inside the circular plate, including its corners.
+    const width = radius * 1.72, height = width; // Square, centered ring remains safely inside the one-tile plate.
     const glyph = new THREE.Mesh(new THREE.PlaneGeometry(width,height),
       new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,depthWrite:false,side:THREE.DoubleSide}));
     glyph.name='puzzle-cave-tankan-hao-uun';

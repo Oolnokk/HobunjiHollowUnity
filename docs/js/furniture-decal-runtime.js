@@ -44,6 +44,19 @@
     return record?.sourceType === TANKAN_SOURCE_TYPE || (!!record?.tankanText && !record?.imageSource);
   }
 
+  function isTankanRing(record) { return isTankanTextDecal(record) && record.tankanLayoutMode === 'ring'; }
+
+  function tankanRingOptions(record) {
+    return {
+      canvasSizePx: 512,
+      radiusScale: clamp(finiteOr(record?.tankanRingRadius, 0.72), 0.08, 0.9), // Mirrored outer radius from the Furniture Author.
+      textScale: clamp(finiteOr(record?.tankanRingTextScale, 0.19), 0.025, 0.42), // Independent glyph size control.
+      rotationDeg: finiteOr(record?.tankanRingRotationDeg, 0),
+      innerRings: Array.isArray(record?.tankanRingLines) ? record.tankanRingLines.slice(0,7) : [], // Each inner line owns its differential and stagger.
+      color: String(record?.tankanColor || TANKAN_BASELINE.color),
+    };
+  }
+
   function isNormalizedTankan(record) {
     return isTankanTextDecal(record) && Number(record?.tankanSettingsVersion) >= TANKAN_NORMALIZED_VERSION;
   }
@@ -91,8 +104,8 @@
         return;
       }
       const script = document.createElement('script');
-      try { script.src = SCRIPT_SRC ? new URL('tankan-script-layout.js', SCRIPT_SRC).href : 'js/tankan-script-layout.js'; }
-      catch (_) { script.src = 'js/tankan-script-layout.js'; }
+      try { script.src = SCRIPT_SRC ? new URL('tankan-script-layout.js?v=20261110ring1', SCRIPT_SRC).href : 'js/tankan-script-layout.js?v=20261110ring1'; }
+      catch (_) { script.src = 'js/tankan-script-layout.js?v=20261110ring1'; }
       script.async = false;
       script.dataset.hobunjiTankanLayout = '1';
       script.onload = finish;
@@ -185,6 +198,10 @@
   }
 
   function tankanContainerState(record) {
+    if (isTankanRing(record)) {
+      const layout = window.TankanScriptLayout?.measureRings?.(record.tankanText, tankanRingOptions(record)) || {ringCount:0};
+      return {layout,visualWidthPx:512,visualHeightPx:512,containerWidthPx:512,containerHeightPx:512,fitScale:1};
+    }
     const options = tankanTextureOptions(record);
     const layout = measureTankanLayout(record?.tankanText, options);
     const container = tankanContainerPixels(record);
@@ -216,6 +233,7 @@
   }
 
   function tankanTextureKey(record) {
+    if (isTankanRing(record)) return 'tankan-ring:' + record.tankanText + ':' + JSON.stringify(tankanRingOptions(record));
     const options = tankanRenderOptions(record);
     return `tankan:${record?.tankanText || ''}\u0000${options.columnSpacingEm}\u0000${options.glyphAdvanceEm}\u0000${options.glyphScaleX}\u0000${options.glyphScaleY}\u0000${options.paddingXEm ?? ''}\u0000${options.paddingYEm ?? ''}\u0000${options.containerWidthPx ?? ''}\u0000${options.containerHeightPx ?? ''}\u0000${options.color}`;
   }
@@ -232,7 +250,9 @@
       if (!layout?.renderToCanvas) throw new Error('TankanScriptLayout unavailable');
       return Promise.resolve(layout.ensureFontLoaded?.()).then(() => layout);
     }).then(layout => {
-      const rendered = layout.renderToCanvas(canvas, record.tankanText, tankanRenderOptions(record));
+      const rendered = isTankanRing(record)
+        ? layout.renderRingsToCanvas(canvas, record.tankanText, tankanRingOptions(record))
+        : layout.renderToCanvas(canvas, record.tankanText, tankanRenderOptions(record));
       window.HobunjiSpritePngSurface?.carveCanvas?.(canvas); // Same dark inner rim as furniture engravings, retaining the sign's authored opacity.
       texture.userData = { ...(texture.userData || {}), tankanLayout: rendered || null };
       texture.needsUpdate = true;
@@ -262,7 +282,9 @@
   }
 
   function hasVisualSource(record) {
-    return isTankanTextDecal(record) ? !!String(record?.tankanText || '').trim() : !!resolvedImageSource(record);
+    return isTankanTextDecal(record)
+      ? !!String(record?.tankanText || '').trim() || (isTankanRing(record) && (record.tankanRingLines || []).some(line => String(line.text || '').trim()))
+      : !!resolvedImageSource(record);
   }
 
   function vector3(values) {
@@ -301,7 +323,7 @@
     const container = tankanContainerState(record);
     return {
       offsetU: TANKAN_BASELINE.offsetU + finiteOr(record.offsetU, 0),
-      offsetV: TANKAN_BASELINE.offsetV + finiteOr(record.offsetV, 0),
+      offsetV: isTankanRing(record) ? finiteOr(record.offsetV, 0) : TANKAN_BASELINE.offsetV + finiteOr(record.offsetV, 0), // Circular text defaults to exact surface center; preserve legacy vertical text calibration.
       width: TANKAN_BASELINE.width * Math.max(0.001, finiteOr(record.width, 1)),
       height: TANKAN_BASELINE.height * Math.max(0.001, finiteOr(record.height, 1)),
       rotationDeg: TANKAN_BASELINE.rotationDeg + finiteOr(record.rotationDeg, 0),
