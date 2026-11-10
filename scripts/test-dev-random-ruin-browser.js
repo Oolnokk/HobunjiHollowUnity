@@ -596,8 +596,17 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.ok((active.materialStats?.ceilingCells||0) > 0, 'generated ruin must build a real ceiling over the authored floor footprint: '+JSON.stringify(active.materialStats));
     assert.equal(active.materialStats?.ceilingTextured, true, 'generated ceiling must carry the canonical stone texture map: '+JSON.stringify(active.materialStats));
     assert.equal(active.materialStats?.ceilingMaterialTexture, 'carved_smooth.png', 'generated ceiling must use the same carved-smooth furniture PNG as ruin stone: '+JSON.stringify(active.materialStats));
-    if(active.simple.ropes.length)assert.ok(Math.abs((active.simple.ropes[0]?.ceilingY||0)-(active.materialStats?.ceilingY||0))<.06,
-      'every present rope anchor must terminate at the real textured ceiling datum: '+JSON.stringify({rope:active.simple.ropes[0],materialStats:active.materialStats}));
+    if (active.simple.ropes.length) {
+      const firstRope = active.simple.ropes[0]; // Compared to its own floor's ceiling when the rope belongs to a multi-level chain.
+      const isLayerRope = active.simple.ropeChains?.some(chain => firstRope.roomId === 'layer_' + chain.hallId);
+      if (isLayerRope) {
+        assert.ok(Math.abs(firstRope.anchor?.y - firstRope.ceilingY) < .06 && firstRope.bob?.y < firstRope.ceilingY,
+          'a multi-floor rope must hang from its actual layer ceiling rather than the ground-floor ceiling: '+JSON.stringify(firstRope));
+      } else {
+        assert.ok(Math.abs((firstRope.ceilingY||0)-(active.materialStats?.ceilingY||0))<.06,
+          'a single-level rope anchor must terminate at the real textured ceiling datum: '+JSON.stringify({rope:firstRope,materialStats:active.materialStats}));
+      }
+    }
     assert.equal(active.wallRender.litSourceMaterials, 0, 'visible game-realm ruin sources must contain zero lit materials: '+JSON.stringify(active.wallRender));
     assert.ok(active.runtimeHallways?.count > 0, JSON.stringify(active.runtimeHallways));
     assert.ok(active.runtimeHallways.minCrossCells >= 5, JSON.stringify(active.runtimeHallways));
