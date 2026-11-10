@@ -214,6 +214,34 @@
     return !!(profile?.fortifiedStronghold && stateFor(profile).occupantsCleared);
   }
 
+  function strongholdWolfStatus(mapId, slot) {
+    const profile = profileForMapId(mapId);
+    if (!profile?.fortifiedStronghold || !Number.isInteger(Number(slot))) return { freed:false, dead:false };
+    const state = stateFor(profile);
+    return { freed:!!state.strongholdWolfFreed?.includes(Number(slot)),
+      dead:!!state.strongholdWolfDead?.includes(Number(slot)) };
+  }
+
+  function markStrongholdWolfFreed(mapId, slot) {
+    const profile = profileForMapId(mapId), index = Number(slot);
+    if (!profile?.fortifiedStronghold || !Number.isInteger(index) || index < 0) return false;
+    const state = stateFor(profile);
+    if (state.strongholdWolfDead?.includes(index) || state.strongholdWolfFreed?.includes(index)) return false;
+    (state.strongholdWolfFreed ||= []).push(index); // Unlocked wolf fights transfer from exterior stake to interior cave on entry.
+    persistState(true);
+    return true;
+  }
+
+  function markStrongholdWolfDead(mapId, slot) {
+    const profile = profileForMapId(mapId), index = Number(slot);
+    if (!profile?.fortifiedStronghold || !Number.isInteger(index) || index < 0) return false;
+    const state = stateFor(profile);
+    if (state.strongholdWolfDead?.includes(index)) return false;
+    (state.strongholdWolfDead ||= []).push(index); // Dead animals may not respawn as rescued interior allies after a reload.
+    persistState(true);
+    return true;
+  }
+
   function fortifiedCoverDestroyed(mapId, coverId) {
     const profile = profileForMapId(mapId);
     return !!(profile?.fortifiedStronghold && stateFor(profile).strongholdCoverDestroyed?.includes(String(coverId)));
@@ -1779,6 +1807,8 @@
     markDiscovered(profile, state);
     if (profile.fortifiedStronghold) {
       window.BanditStrongholdCover?.tick?.(mapId, CAVE_RUNTIME_INTERVAL_S); // Shared fire patches, at the cave's existing throttled cadence.
+      window.BanditStrongholdWolves?.ensureInterior?.(profile, state, wildlifeDeps);
+      window.BanditStrongholdWolves?.tickInterior?.(mapId, wildlifeDeps);
       window.BanditStrongholds?.ensureBarrels?.(mapId, plan,
         wildlifeDeps?.zoneScenes?.get?.(mapId)?.scene || wildlifeDeps?.getActiveScene?.());
     }
@@ -1917,7 +1947,9 @@
       currentState: profileForMapId(currentArea) ? clone(stateFor(profileForMapId(currentArea))) : null,
       fortifiedStrongholds: [...sitesByMapId.values()].filter(site => site.fortifiedStronghold).map(site => ({ mapId:site.mapId, cleared:!!stateFor(site).occupantsCleared,
         barrelsTaken:stateFor(site).strongholdBarrelsTaken?.length||0, barrelsClaimed:stateFor(site).strongholdBarrelsClaimed?.length||0,
-        coverDestroyed:stateFor(site).strongholdCoverDestroyed?.length||0 })),
+        coverDestroyed:stateFor(site).strongholdCoverDestroyed?.length||0,
+        freedWolves:stateFor(site).strongholdWolfFreed?.length||0,
+        lostWolves:stateFor(site).strongholdWolfDead?.length||0 })),
       fortifiedAssets: window.BanditStrongholds?.debugSnapshot?.() || null,
     };
   }
@@ -1928,6 +1960,7 @@
     applyWorkspaceProfiles,
     registerFortifiedStronghold, forgetFortifiedStronghold, fortifiedStrongholdCleared,
     fortifiedCoverDestroyed, markFortifiedCoverDestroyed, activeStrongholdGrid,
+    strongholdWolfStatus, markStrongholdWolfFreed, markStrongholdWolfDead,
     fortifiedBarrelStatus, markFortifiedBarrelTaken, claimFortifiedBarrel,
     registerOutdoorPuzzleSites,
     exteriorPuzzleState,markExteriorPuzzleSolved,
