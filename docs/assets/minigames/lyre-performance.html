@@ -2858,12 +2858,14 @@
 
   function scheduleTransportAudioAhead() {
     if (state.paused || document.hidden || !state.audioContext || state.audioContext.state !== 'running' || !state.master) return;
-    const beatBoundary = findUpcomingTransportBoundary(clock => clock.transportAbsoluteBeat);
-    if (beatBoundary && state.scheduledMetronomeBeat !== beatBoundary.value) {
-      playMetronomeClick(currentHarmonyBeatData(beatBoundary.clock), false, beatBoundary.atMs);
-      state.scheduledMetronomeBeat = beatBoundary.value;
+    if (!jamLeaderSync || state.ambientOnly) { // The NPC is already sounding the shared beat; skip the player's entire click lookahead search.
+      const beatBoundary = findUpcomingTransportBoundary(clock => clock.transportAbsoluteBeat);
+      if (beatBoundary && state.scheduledMetronomeBeat !== beatBoundary.value) {
+        playMetronomeClick(currentHarmonyBeatData(beatBoundary.clock), false, beatBoundary.atMs);
+        state.scheduledMetronomeBeat = beatBoundary.value;
+      }
     }
-    if (!state.rootPadEnabled) return;
+    if (!state.rootPadEnabled || HOSTED_FLUTE_PERFORMANCE) return; // A flute never has root-pad voices, so do not run an unused chord-boundary binary search.
     const padBoundary = findUpcomingTransportBoundary(rootPadAudioKey);
     if (padBoundary && state.scheduledRootPadKey !== padBoundary.value) {
       if (syncRootPad(!state.rootPadSampleBuffer, padBoundary.atMs, padBoundary.clock)) {
