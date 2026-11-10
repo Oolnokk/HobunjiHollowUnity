@@ -325,7 +325,7 @@
     }
   }
 
-  function detach(root) { live.delete(root); }
+  function detach(root) { discardPieces(root); } // Hostile 3D appendages may live outside the old avatar's mesh tree.
   function debug() {
     return [...live].map(root => ({
       name: root.name, active: root.userData?.portraitSplineParts?.length || 0,
