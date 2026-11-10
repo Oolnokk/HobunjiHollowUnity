@@ -87,9 +87,14 @@
       stableDeps?.showToast?.('You can favorite up to 3 animals in each Stable role.', false);
       return;
     }
+    const restoreFavoriteFocus = document.activeElement?.closest?.('.stable-favorite-btn')?.closest?.('.stable-training-row')?.dataset?.stableTrainingId === String(entry.id); // Controller/keyboard focus must follow a pin when its row moves to the top.
     entry.stableFavorite = !entry.stableFavorite;
     stableDeps?.saveStable?.();
     renderStablePanelNative();
+    if (restoreFavoriteFocus && typeof requestAnimationFrame === 'function') requestAnimationFrame(() => {
+      const replacement = [...document.querySelectorAll('#stableList .stable-training-row')].find(row => row.dataset.stableTrainingId === String(entry.id)); // Exact ID avoids focusing a different animal after resorting.
+      try { replacement?.querySelector('.stable-favorite-btn')?.focus({ preventScroll: true }); } catch (_) { replacement?.querySelector('.stable-favorite-btn')?.focus?.(); }
+    });
   }
 
   function ensureStableRosterStyles() {
