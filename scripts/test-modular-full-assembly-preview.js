@@ -103,6 +103,15 @@ assert.equal(calls.slice(correctedCount).filter(op=>op[0]==='image').length,4,
 assert.deepEqual(corrected.parts[0].corners.length,4,
   'scaled and rotated bounds are computed for every corner to prevent clipping');
 
+// Pair painter order must also affect a hanging flexible head, not just rigid head/haft compositions.
+const behindPlan=api.layout({...recipe,flail:{...recipe.flail,head:{...correctedHead,layerOrder:'haft-over-head'}}},
+  composed,ropeImage,headImages);
+const beforeBehind=calls.length;
+api.render(canvas,behindPlan,false);
+assert.deepEqual(calls.slice(beforeBehind).filter(op=>op[0]==='image').map(op=>op[1]),
+  [...headImages,composed,ropeImage],
+  'head-over/shaft-over choice controls the real drawn order of hanging art and the haft, without removing rope');
+
 // Raster chain: the authored top/bottom (not transparent PNG bounds) remain the true connectors.
 const raster={type:'chain',scaleX:2,scaleY:1,mountLengthPx:300,
   top:{x:6,y:10},bottom:{x:14,y:90}};
