@@ -12,6 +12,10 @@
   let expandedStableId = null; // Tracks the animal training row expanded in the Stable panel.
   let stableBabyInventoryCollapsed = true; // Keeps the dedicated baby inventory closed by default.
   let stableStowageCollapsed = true; // Keeps stored adult animals tucked away until requested.
+  let selectedStableRole = 'companion'; // Remembers the currently visible companion/mount/shoulder-pet page.
+  const MAX_FAVORITES_PER_ROLE = 3; // Limits pinned animals independently for each Stable role.
+  const STABLE_PAGE_ORDER = ['companion', 'mount', 'shoulderPet']; // Shared by the visible buttons and controller page turns.
+  const STABLE_STYLE_ID = 'stableRosterPageStyles'; // Identifies this module's single, event-driven stylesheet.
 
   function esc(value) {
     if (stableDeps?.esc) return stableDeps.esc(value);
@@ -65,6 +69,74 @@
 
   function roleMeta(entry) {
     return STABLE_ROLE_META[stableRole(entry)] || STABLE_ROLE_META.companion;
+  }
+
+  function compareStableRoster(a, b) {
+    const pinned = Number(b?.stableFavorite === true) - Number(a?.stableFavorite === true); // Favorites precede even higher-level nonfavorites within a role.
+    if (pinned) return pinned;
+    const level = (Number(b?.level) || 0) - (Number(a?.level) || 0);
+    if (level) return level;
+    const species = speciesLabel(a).localeCompare(speciesLabel(b));
+    return species || String(a.name || a.id || '').localeCompare(String(b.name || b.id || ''));
+  }
+
+  function toggleStableFavorite(entry) {
+    const stable = stableDeps?.getStable?.() || []; // Uses the same saved animal record as training and stowage.
+    if (!stable.includes(entry)) return;
+    if (!entry.stableFavorite && stable.filter(candidate => stableRole(candidate) === stableRole(entry) && candidate.stableFavorite === true).length >= MAX_FAVORITES_PER_ROLE) {
+      stableDeps?.showToast?.('You can favorite up to 3 animals in each Stable role.', false);
+      return;
+    }
+    entry.stableFavorite = !entry.stableFavorite;
+    stableDeps?.saveStable?.();
+    renderStablePanelNative();
+  }
+
+  function ensureStableRosterStyles() {
+    if (document.getElementById(STABLE_STYLE_ID)) return;
+    const style = document.createElement('style'); // Static CSS transitions/layout; no per-frame resizing or DOM animation work.
+    style.id = STABLE_STYLE_ID;
+    style.textContent = `
+      #stableList .stable-role-tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
+      #stableList .stable-role-tab { flex:1 1 120px; min-width:0; min-height:38px; font-size:clamp(10px,2.2vw,13px); }
+      #stableList .stable-role-tab[aria-pressed="true"] { border-color:var(--accent,#d9ad65); background:rgba(217,173,101,.18); font-weight:800; }
+      #stableList .stable-training-row[hidden] { display:none !important; }
+      #stableList .stable-training-row { min-width:0; container-type:inline-size; gap:5px; }
+      #stableList .stable-training-row .farm-row-name { min-width:0; flex:1 1 100px; max-width:100%; font-size:clamp(10px,2.5cqw,13px); box-sizing:border-box; }
+      #stableList .stable-training-row .farm-row-value { min-width:0; max-width:100%; white-space:normal; overflow-wrap:anywhere; font-size:clamp(10px,2.2cqw,12px); }
+      #stableList .farm-animal-thumb { width:40px; height:40px; flex:0 0 40px; display:grid; place-items:center; overflow:hidden; border:1px solid var(--border,#4b443a); border-radius:7px; background:rgba(0,0,0,.16); box-sizing:border-box; }
+      #stableList .farm-animal-thumb .farm-row-icon { display:block; width:100%; height:100%; text-align:center; line-height:38px; font-size:20px; }
+      #stableList .stable-favorite-btn { flex:0 0 auto; min-width:30px; color:#e7bd61; }
+      #stableList .stable-role-summary { font-size:11px; opacity:.85; margin:0 0 7px; }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function appendStableRoleTabs(list, stable) {
+    const tabs = document.createElement('div'); // Buttons use the same click actions as the configured controller's page inputs.
+    tabs.id = 'stableRoleTabs';
+    tabs.className = 'stable-role-tabs';
+    tabs.setAttribute('role', 'group');
+    tabs.setAttribute('aria-label', 'Stable animal category');
+    for (const role of STABLE_PAGE_ORDER) {
+      const count = stable.filter(entry => stableRole(entry) === role).length;
+      const meta = STABLE_ROLE_META[role];
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'settings-small-btn stable-role-tab';
+      button.dataset.stableRole = role;
+      button.textContent = `${meta.icon} ${role === 'companion' ? 'Animal Companions' : role === 'mount' ? 'Mounts' : 'Shoulder Pets'} (${count})`;
+      button.setAttribute('aria-pressed', String(selectedStableRole === role));
+      button.addEventListener('click', () => {
+        if (selectedStableRole === role) return;
+        selectedStableRole = role;
+        expandedStableId = null;
+        renderStablePanelNative();
+      });
+      tabs.appendChild(button);
+    }
+    list.appendChild(tabs);
+    return tabs;
   }
 
   function activeStableIdForRole(role) {
@@ -428,6 +500,8 @@
     const outCount = stable.filter(entry => !entry.stowed).length;
     if (expandedStableId && !stable.some(entry => entry?.id === expandedStableId)) expandedStableId = null;
     list.innerHTML = '';
+    ensureStableRosterStyles();
+    appendStableRoleTabs(list, stable);
     if (!stable.length) {
       list.innerHTML = '<div class="farm-note">Your stable is empty. Add an undeployed creature item from the Inventory tab.</div>';
       refinements()?.syncCompanionCombatPerks?.();
@@ -436,7 +510,10 @@
 
     const tonicLabel = growth()?.CONFIG?.item?.label || 'Growth Tonic'; // Used in baby-section guidance and growth controls.
     const tonicIcon = growth()?.CONFIG?.item?.icon || '🧪'; // Used to keep the native grow button consistent with AnimalGrowth.
-    list.appendChild(makeText('div', `Outside storage: ${outCount}/${MAX_OUT_OF_STORAGE_STABLE_ANIMALS}. Stowed animals remain here indefinitely.`, 'font-size:11px;opacity:.8;margin:0 0 8px;'));
+    const roleCount = stable.filter(entry => stableRole(entry) === selectedStableRole).length; // Summarizes only the selected role while retaining the global accessible-roster limit.
+    const roleSummary = makeText('div', `${roleCount} in this category · Outside storage: ${outCount}/${MAX_OUT_OF_STORAGE_STABLE_ANIMALS} · Up to ${MAX_FAVORITES_PER_ROLE} favorites per category.`);
+    roleSummary.className = 'stable-role-summary';
+    list.appendChild(roleSummary);
     const babies = stableAgeSection('🐣 Baby Animals', `Baby Stable animals cannot be mounts, companions, or shoulder pets until you use a ${tonicLabel}.`, {
       collapsed: stableBabyInventoryCollapsed,
       onToggle: () => { stableBabyInventoryCollapsed = !stableBabyInventoryCollapsed; renderStablePanelNative(); },
@@ -447,7 +524,7 @@
     const stowedAdultCount = stable.filter(entry => entry.stowed && !stableIsBaby(entry)).length;
     const stowedBabyCount = stable.filter(entry => entry.stowed && stableIsBaby(entry)).length;
 
-    stable.forEach(entry => {
+    stable.slice().sort(compareStableRoster).forEach(entry => { // Sorts the UI without changing persistence order or stable IDs.
       normalizeStableEntry(entry);
       const role = stableRole(entry);
       const meta = roleMeta(entry);
@@ -461,16 +538,21 @@
       row.className = 'farm-row livestock-trait-row stable-training-row';
       row.dataset.stableTrainingId = entry.id;
       row.dataset.stableLifeStage = baby ? 'baby' : 'adult';
+      row.dataset.stableRole = role; // Used by the one-selected-page presentation and touch/controller diagnostics.
+      row.hidden = role !== selectedStableRole; // Keeps each role's rows on its own visible page without deleting save-backed controls.
       row.style.cursor = 'pointer';
       row.style.flexWrap = 'wrap';
       row.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
       row.innerHTML =
+        `<span class="farm-animal-thumb"><span class="farm-row-icon">${STABLE_KIND_ICONS[entry.kind] || '🐾'}</span></span>` +
         `<button class="settings-small-btn farm-companion-btn${isActive ? ' active' : ''}" title="${entry.stowed ? 'Stowed — take this animal out of storage first' : baby ? `${tonicLabel} required — grow and set as ${meta.label.toLowerCase()}` : isActive ? `Active ${meta.label.toLowerCase()}` : `Set as ${meta.label.toLowerCase()}`}" ${entry.stowed ? 'disabled' : ''}>${meta.icon}</button>` +
-        `<span class="farm-row-icon">${STABLE_KIND_ICONS[entry.kind] || '🐾'}</span>` +
+        `<button class="settings-small-btn stable-favorite-btn" aria-label="${entry.stableFavorite ? 'Unfavorite' : 'Favorite'} ${esc(entry.name || speciesLabel(entry))}" aria-pressed="${entry.stableFavorite === true}" title="Pin up to 3 per category">${entry.stableFavorite ? '★' : '☆'}</button>` +
         `<input class="farm-row-name" value="${esc(entry.name || window.CreatureGenetics?.defaultLivestockName?.(entry.kind) || entry.kind)}" maxlength="30">` +
         `<span class="farm-row-value">${baby ? 'Baby · ' : ''}${entry.stowed ? 'Stowed · ' : ''}${esc(meta.label)} · Lv. ${entry.level}/${max}${points > 0 ? ` · ${points} point${points === 1 ? '' : 's'}` : ''}</span>` +
         `<span class="stable-training-chevron" style="font-size:15px;opacity:.7;margin-left:auto;">${isExpanded ? '▾' : '▸'}</span>` +
         livestockTraitsHtml(entry.genotype, entry.kind);
+      window.InventoryStacks?.applyHeadIcon?.(row.querySelector('.farm-row-icon'), entry.kind, entry.genotype); // Shared cached Nursery portrait, applied once per rebuilt row.
+      row.querySelector('.stable-favorite-btn')?.addEventListener('click', event => { event.stopPropagation(); toggleStableFavorite(entry); });
 
       row.querySelector('.farm-companion-btn')?.addEventListener('click', event => {
         event.stopPropagation();
@@ -530,8 +612,8 @@
       (baby ? babies.rows : isStowedAdult ? stowedRows : adults.rows).appendChild(row);
     });
 
-    if (!babies.rows.children.length) babies.rows.innerHTML = '<div class="farm-note">No baby animals in your Stable.</div>';
-    if (!adults.rows.children.length) adults.rows.innerHTML = '<div class="farm-note">No adult animals are outside storage.</div>';
+    if (!babies.rows.children.some(row => !row.hidden)) babies.rows.appendChild(makeText('div', 'No baby animals in this category.'));
+    if (!adults.rows.children.some(row => !row.hidden)) adults.rows.appendChild(makeText('div', 'No adult animals in this category outside storage.'));
     list.appendChild(babies.section);
     list.appendChild(adults.section);
     if (stowedAdultCount || stowedBabyCount) {
@@ -586,6 +668,9 @@
       return {
         mostRecentChange: 'Companions train to level 30. Training / Perks includes saved per-ability frequency, effect focus, and combat tempo.',
         expandedStableId,
+        selectedRole: selectedStableRole,
+        favoritesPerRole: Object.fromEntries(STABLE_PAGE_ORDER.map(role => [role, stable.filter(entry => stableRole(entry) === role && entry.stableFavorite).length])),
+        maxFavoritesPerRole: MAX_FAVORITES_PER_ROLE,
         maxLevel: stableMaxLevel(),
         babyCount: stable.filter(stableIsBaby).length,
         adultCount: stable.filter(entry => !stableIsBaby(entry)).length,
