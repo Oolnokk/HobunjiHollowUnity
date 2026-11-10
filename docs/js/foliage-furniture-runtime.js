@@ -321,7 +321,7 @@
   };
   if (root.TreeAssetLibrary) { activate(); return; }
   const script = root.document.createElement('script');
-  script.src = 'js/tree-asset-library.js?v=20261109geomquality1';
+  script.src = 'js/tree-asset-library.js?v=20261110cloneaudit2';
   script.async = true;
   script.onload = activate;
   script.onerror = () => { /* optional runtime optimization; procedural fallback remains */ };
