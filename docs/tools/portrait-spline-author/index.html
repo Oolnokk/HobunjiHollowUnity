@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Portrait Spline Author · Hobunji Hollow</title>
+<style>
+:root{color-scheme:dark;--bg:#09111b;--panel:#142335;--line:#34506b;--ink:#eaf2ff;--soft:#aabbd0;--blue:#76b9ff;--pink:#fba6c7}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,Arial,sans-serif}
+header{padding:12px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#101d2c;border-bottom:1px solid var(--line)}
+header h1{font-size:18px;margin:0}a{color:var(--blue)}main{max-width:1380px;margin:auto;padding:14px;display:grid;grid-template-columns:minmax(285px,420px) minmax(320px,1fr);gap:14px}
+section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;min-width:0}h2{font-size:15px;margin:0 0 8px}h3{font-size:13px;margin:14px 0 6px;color:var(--blue)}
+p,.hint{color:var(--soft);font-size:12px;margin:6px 0 12px}.row{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin:8px 0}
+button,input,select,textarea{font:inherit;color:var(--ink);background:#07131f;border:1px solid var(--line);border-radius:7px;padding:7px;min-width:0}
+button{cursor:pointer;background:#24374c}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--blue)}
+button.active{background:#205081;border-color:var(--blue)}button:disabled{opacity:.45}
+label{font-size:12px;color:var(--soft)}.entry{display:grid;grid-template-columns:100px minmax(0,1fr);align-items:center;gap:8px;margin:8px 0}
+input[type=number]{width:100%;font-variant-numeric:tabular-nums}input[type=file]{max-width:100%;font-size:11px}
+#preview{width:100%;max-width:420px;display:block;margin:auto;aspect-ratio:1;image-rendering:pixelated;touch-action:none;background:#0c1926;border:1px solid #38506c;border-radius:10px}
+.buttons{display:flex;flex-wrap:wrap;gap:6px}#status{min-height:55px;background:#07131f;color:#c8def7;border:1px solid #2e4866;padding:9px;border-radius:8px;white-space:pre-wrap;font:12px/1.4 ui-monospace,Consolas,monospace}
+#segmentEditor{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.field label{display:block;margin-bottom:2px}.field input{width:100%}
+#poseMatrix{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
+#poseMatrix button{font-size:11px;padding:9px 3px}
+#testWind{width:100%;accent-color:#7fb7fc}
+details summary{cursor:pointer;font-weight:700}textarea{width:100%;min-height:190px;font:11px/1.4 ui-monospace,Consolas,monospace;resize:vertical}
+footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
+@media(max-width:760px){main{display:block;padding:8px}section{margin-bottom:10px}header{padding:10px}#preview{max-width:360px}}
+</style>
+<script src="../../js/portrait-spline-rig.js?v=20261110portraitSpline1"></script>
+</head>
+<body>
+<header><a href="../character-studio/">Character Studio</a><h1>Beard &amp; Side Hair Spline Author</h1><span class="hint">v1 · per-cosmetic 3D strand + seam masks</span></header>
+<main>
+<section>
+<h2>Portrait, strand and seam paint</h2>
+<p>Load an existing cosmetic JSON to add <code>portraitSplineRig</code> without changing its other settings. Load a front sprite and optionally the rear sprite and an equipped hood for visual reference.</p>
+<div class="entry"><label for="cosmeticFile">Cosmetic JSON</label><input id="cosmeticFile" type="file" accept=".json,application/json"></div>
+<div class="entry"><label for="frontFile">Front PNG</label><input id="frontFile" type="file" accept="image/png,image/webp,image/*"></div>
+<div class="entry"><label for="rearFile">Rear PNG</label><input id="rearFile" type="file" accept="image/png,image/webp,image/*"></div>
+<div class="entry"><label for="hoodFile">Hood PNG</label><input id="hoodFile" type="file" accept="image/png,image/webp,image/*"></div>
+<div class="buttons" style="margin:12px 0">
+<button id="moveMode" class="active">Move knots</button><button id="paintMode">Paint seam</button>
+<button id="eraseMode">Erase seam</button><button id="addPoint">Add knot</button><button id="removePoint">Remove knot</button>
+</div>
+<canvas id="preview" width="400" height="400" aria-label="Spline, mask and reference art editor"></canvas>
+<div class="row"><label for="viewSelect">Sprite plane</label><select id="viewSelect"><option value="front">Front</option><option value="rear">Rear</option></select>
+<label for="brush">Mask radius, px</label><input type="number" id="brush" value="3" min=".5" max="15" step=".5" style="width:74px"></div>
+<p>Yellow dots are knot positions, the yellow line is the unposed spline, cyan is its projected 3D pose and pink circles are passage-mask paint. Drag knots, or paint onto the hood-to-hair seam.</p>
+<div class="entry"><label for="rearU">Rear X offset</label><input id="rearU" type="number" min="-.25" max=".25" step=".005" value="0"></div>
+<div class="entry"><label for="rearV">Rear Y offset</label><input id="rearV" type="number" min="-.25" max=".25" step=".005" value="0"></div>
+<div class="entry"><label for="strandWidth">Spline width</label><input id="strandWidth" type="number" min=".01" max=".5" step=".01" value=".1"></div>
+<div class="entry"><label for="response">Wind response</label><input id="response" type="number" min="0" max="5" step=".1" value="1"></div>
+<div class="buttons"><button id="clearMask">Clear seam paint</button><button id="resetRig">New 3-knot spline</button></div>
+</section>
+<section>
+<h2>Directional blend space</h2>
+<p>Choose an extremity pose. Set rotation angles for the selected spline segment. At runtime, local wind axes blend these six poses and apply segment-specific angular deadzones. The collision solver restricts any pose that would push the strand through the character portrait plane.</p>
+<div id="poseMatrix">
+<button data-direction="up">↑ Up</button><button data-direction="toward">⊙ Toward viewer</button><button data-direction="away">⊗ Away from viewer</button>
+<button data-direction="left">← Left</button><button data-direction="down">↓ Down</button><button data-direction="right">Right →</button>
+</div>
+<div class="entry"><label for="segmentSelect">Spline segment</label><select id="segmentSelect"></select></div>
+<div id="segmentEditor"></div>
+<h3>Preview the directional wind</h3>
+<div class="entry"><label for="testStrength">Gust strength</label><input type="range" id="testStrength" min="0" max="1" value="1" step=".01"></div>
+<div class="row"><label for="testStrength">Blend:</label><span id="windName">Right · 100%</span></div>
+<p><strong>Deadzone (°)</strong> is the minimum projected wind angle needed before that joint responds. Directional poses define the maximum rotation, not an extra global multiplier.</p>
+<h3>Pixel attachment and collision checks</h3>
+<output id="status" role="status" aria-live="polite">No cosmetic loaded. The default 3-knot spline is editable.</output>
+<div class="buttons" style="margin-top:10px"><button id="download">Export updated cosmetic JSON</button><button id="copyRig">Copy rig JSON</button></div>
+<details style="margin-top:12px"><summary>Rig JSON and mobile debug</summary><p>JSON shown here is the exact authored property added to the exported cosmetic. You can also paste a rig JSON and choose Apply.</p>
+<textarea id="json"></textarea><button id="applyJson">Apply rig JSON</button></details>
+</section>
+</main>
+<footer>Existing flat hairstyles remain unchanged. Facewraps continue hiding beards and do not receive beard clearance masks.</footer>
+<script>
+(() => {
+'use strict';
+const $=id=>document.getElementById(id),Rig=window.PortraitSplineRig;
+const DIRECTIONS=['left','right','up','down','toward','away'],FIELDS=['yaw','pitch','roll'];
+const makeSegment=()=>({deadzone:{x:4,y:4,z:6},poses:Object.fromEntries(DIRECTIONS.map(x=>[x,{yaw:0,pitch:0,roll:0}]))});
+const makeRig=()=>({version:1,enabled:true,points:[{u:.5,v:.28,depth:.015},{u:.52,v:.43,depth:.025},{u:.53,v:.6,depth:.035}],
+segments:[makeSegment(),makeSegment()],seam:[],rearOffset:{u:0,v:0},width:.1,windResponse:1,segmentsX:16,segmentsY:20});
+let rig=makeRig(),cosmetic={},loadedName='cosmetic.json',selectedKnot=0,selectedSegment=0,direction='right',mode='move';
+let images={front:null,rear:null,hood:null},dragging=false,lastPaint=null;
+const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
+const numeric=(x,defaultValue=0)=>Number.isFinite(Number(x))?Number(x):defaultValue;
+function message(value){$('status').textContent=value;}
+function imageInput(id,key){$(id).addEventListener('change',async e=>{
+  const file=e.target.files?.[0];if(!file)return;
+  const url=URL.createObjectURL(file),img=new Image();
+  img.onload=()=>{URL.revokeObjectURL(url);images[key]=img;render();message('Loaded '+file.name+' ('+img.width+' × '+img.height+').');};
+  img.onerror=()=>{URL.revokeObjectURL(url);message('Could not decode '+file.name);};
+  img.src=url;
+});}
+imageInput('frontFile','front');imageInput('rearFile','rear');imageInput('hoodFile','hood');
+$('cosmeticFile').addEventListener('change',async e=>{
+  const file=e.target.files?.[0];if(!file)return;
+  try{
+    const parsed=JSON.parse(await file.text());if(!parsed||Array.isArray(parsed)||typeof parsed!=='object')throw Error('Expected a cosmetic object.');
+    cosmetic=parsed;loadedName=file.name.replace(/^\(HA\)\s*/,'');
+    rig=parsed.portraitSplineRig?JSON.parse(JSON.stringify(parsed.portraitSplineRig)):makeRig();
+    if(!Rig.normalize(rig))rig=makeRig();
+    selectedKnot=0;selectedSegment=0;controls();render();message('Imported '+file.name+'. Export preserves existing cosmetic fields.');
+  }catch(error){message('Invalid JSON: '+error.message);}
+});
+function normalized(){return Rig.normalize(rig);}
+function safeSegment(){return rig.segments[selectedSegment]||rig.segments[0];}
+function controls(){
+  $('segmentSelect').replaceChildren(...rig.segments.map((_,i)=>{const opt=document.createElement('option');opt.value=i;opt.textContent=(i+1)+': knot '+(i+1)+' → '+(i+2);return opt;}));
+  selectedSegment=clamp(selectedSegment,0,rig.segments.length-1);$('segmentSelect').value=selectedSegment;
+  for(const el of document.querySelectorAll('[data-direction]'))el.classList.toggle('active',el.dataset.direction===direction);
+  for(const el of ['rearU','rearV','strandWidth','response']){
+    const values={rearU:rig.rearOffset.u,rearV:rig.rearOffset.v,strandWidth:rig.width,response:rig.windResponse};
+    $(el).value=values[el];
+  }
+  const slot=safeSegment(),holder=$('segmentEditor');holder.replaceChildren();
+  const field=(label,value,min,max,step,changed)=>{
+    const div=document.createElement('div');div.className='field';
+    const title=document.createElement('label');title.textContent=label;
+    const input=document.createElement('input');input.type='number';input.min=min;input.max=max;input.step=step;input.value=value;
+    input.addEventListener('change',()=>{changed(clamp(numeric(input.value,value),min,max));input.value=clamp(numeric(input.value,value),min,max);render();});
+    div.append(title,input);return div;
+  };
+  for(const key of FIELDS)holder.append(field(key+' (°)',slot.poses[direction][key],-85,85,1,v=>slot.poses[direction][key]=v));
+  for(const key of ['x','y','z'])holder.append(field('Deadzone '+key+'°',slot.deadzone[key],0,44,1,v=>slot.deadzone[key]=v));
+  holder.append(field('Knot depth',rig.points[selectedKnot].depth,.003,.35,.005,v=>rig.points[selectedKnot].depth=v));
+  $('json').value=JSON.stringify(rig,null,2);
+}
+function wind(){
+  const v=numeric($('testStrength').value,1),axes={x:0,y:0,z:0};
+  axes[({left:'x',right:'x',up:'y',down:'y',toward:'z',away:'z'})[direction]]=v*(['left','down','away'].includes(direction)?-1:1);
+  $('windName').textContent=direction+' · '+Math.round(v*100)+'%';return axes;
+}
+function render(){
+  const c=$('preview'),ctx=c.getContext('2d'),W=c.width,H=c.height;
+  ctx.clearRect(0,0,W,H);ctx.fillStyle='#091725';ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='#26364d';ctx.lineWidth=1;
+  for(let i=0;i<=10;i++){ctx.beginPath();ctx.moveTo(i*W/10,0);ctx.lineTo(i*W/10,H);ctx.stroke();ctx.beginPath();ctx.moveTo(0,i*H/10);ctx.lineTo(W,i*H/10);ctx.stroke();}
+  const shown=$('viewSelect').value==='rear';
+  if(images[shown?'rear':'front']){ctx.globalAlpha=.8;ctx.drawImage(images[shown?'rear':'front'],0,0,W,H);ctx.globalAlpha=1;}
+  if(images.hood){ctx.globalAlpha=.28;ctx.drawImage(images.hood,0,0,W,H);ctx.globalAlpha=1;}
+  ctx.strokeStyle='#ffb2d3';ctx.lineWidth=1;ctx.fillStyle='#ec88b643';
+  for(const p of rig.seam){ctx.beginPath();ctx.arc(p.u*W,p.v*H,p.radiusPx*W/200,0,Math.PI*2);ctx.fill();ctx.stroke();}
+  const active=normalized();if(!active){message('Invalid spline: add at least two distinct knots.');return;}
+  const posed=Rig.posePoints(active,wind()),pts=posed.points;
+  ctx.lineWidth=3;ctx.strokeStyle='#fcd36e';ctx.beginPath();rig.points.forEach((p,i)=>i?ctx.lineTo(p.u*W,p.v*H):ctx.moveTo(p.u*W,p.v*H));ctx.stroke();
+  ctx.lineWidth=2;ctx.strokeStyle='#7cf0e1';ctx.beginPath();
+  pts.forEach((p,i)=>{const X=(.5+p.x+p.z*.4)*W,Y=(.5-p.y-p.z*.17)*H;i?ctx.lineTo(X,Y):ctx.moveTo(X,Y);});ctx.stroke();
+  rig.points.forEach((p,i)=>{ctx.beginPath();ctx.arc(p.u*W,p.v*H,i===selectedKnot?7:5,0,Math.PI*2);ctx.fillStyle=i===selectedKnot?'#fff2a2':'#ffd365';ctx.fill();ctx.strokeStyle='#1f2a37';ctx.stroke();});
+  const seamNote=rig.seam.length?'paint dabs: '+rig.seam.length:'no connection mask painted';
+  $('status').textContent=rig.points.length+' knots / '+rig.segments.length+' segments / '+seamNote+
+    '\nCollision-limited segments in preview: '+posed.collisions+
+    '\nSelected: knot '+(selectedKnot+1)+', segment '+(selectedSegment+1)+', '+direction+
+    '\nPortrait plane: '+(shown?'rear (offset '+rig.rearOffset.u+', '+rig.rearOffset.v+')':'front')+
+    '\nOnly enabled styles create extra geometry; others retain 2D rendering.';
+  $('json').value=JSON.stringify(rig,null,2);
+}
+function updateKnots(){while(rig.segments.length<rig.points.length-1)rig.segments.push(makeSegment());rig.segments.length=rig.points.length-1;controls();render();}
+function pick(e){const bounds=$('preview').getBoundingClientRect();return{u:clamp((e.clientX-bounds.left)/bounds.width,0,1),v:clamp((e.clientY-bounds.top)/bounds.height,0,1)};}
+function paint(p){
+  if(mode==='paint'){const last=rig.seam[rig.seam.length-1];if(last&&Math.hypot(last.u-p.u,last.v-p.v)<numeric($('brush').value,3)/700)return;rig.seam.push({...p,radiusPx:clamp(numeric($('brush').value,3),.5,15)});if(rig.seam.length>128)rig.seam.shift();}
+  else if(mode==='erase'){let idx=-1,best=Infinity;rig.seam.forEach((m,i)=>{const d=Math.hypot(m.u-p.u,m.v-p.v);if(d<best){best=d;idx=i;}});if(best<.05&&idx>=0)rig.seam.splice(idx,1);}
+  else{rig.points[selectedKnot].u=p.u;rig.points[selectedKnot].v=p.v;}
+  render();
+}
+$('preview').addEventListener('pointerdown',e=>{e.preventDefault();const p=pick(e);dragging=true;$('preview').setPointerCapture(e.pointerId);
+  if(mode==='move'){let best=Infinity;rig.points.forEach((m,i)=>{const d=Math.hypot(m.u-p.u,m.v-p.v);if(d<best){best=d;selectedKnot=i;}});selectedSegment=clamp(selectedKnot-1,0,rig.segments.length-1);controls();}
+  paint(p);
+});
+$('preview').addEventListener('pointermove',e=>{if(dragging){e.preventDefault();paint(pick(e));}});
+for(const event of ['pointerup','pointercancel','lostpointercapture'])$('preview').addEventListener(event,()=>dragging=false);
+for(const m of ['move','paint','erase'])$(m+'Mode').addEventListener('click',()=>{mode=m;for(const k of ['move','paint','erase'])$(k+'Mode').classList.toggle('active',k===m);});
+$('addPoint').onclick=()=>{const i=selectedKnot,p=rig.points[i],other=rig.points[i+1]||{u:p.u+.03,v:p.v+.1,depth:p.depth+.01};rig.points.splice(i+1,0,{u:(p.u+other.u)/2,v:(p.v+other.v)/2,depth:(p.depth+other.depth)/2});selectedKnot=i+1;updateKnots();};
+$('removePoint').onclick=()=>{if(rig.points.length<=2){message('At least two knots are required.');return;}rig.points.splice(selectedKnot,1);selectedKnot=clamp(selectedKnot-1,0,rig.points.length-1);updateKnots();};
+$('segmentSelect').onchange=e=>{selectedSegment=+e.target.value;selectedKnot=selectedSegment+1;controls();render();};
+for(const b of document.querySelectorAll('[data-direction]'))b.onclick=()=>{direction=b.dataset.direction;controls();render();};
+$('testStrength').oninput=render;$('viewSelect').onchange=render;
+for(const [id,fn] of [['rearU',v=>rig.rearOffset.u=v],['rearV',v=>rig.rearOffset.v=v],['strandWidth',v=>rig.width=v],['response',v=>rig.windResponse=v]]){
+  $(id).onchange=e=>{fn(numeric(e.target.value));rig=Object.assign(rig,Rig.normalize(rig));controls();render();};
+}
+$('clearMask').onclick=()=>{rig.seam=[];render();};$('resetRig').onclick=()=>{rig=makeRig();selectedKnot=0;selectedSegment=0;controls();render();};
+$('applyJson').onclick=()=>{try{const candidate=JSON.parse($('json').value),valid=Rig.normalize(candidate);if(!valid)throw Error('At least two distinct, normalized knots are required.');rig=valid;selectedKnot=0;selectedSegment=0;controls();render();}catch(error){message('JSON error: '+error.message);}};
+$('copyRig').onclick=async()=>{const data=JSON.stringify(Rig.normalize(rig),null,2);try{await navigator.clipboard.writeText(data);message('Rig JSON copied.');}catch(_){$('json').value=data;$('json').select();message('Clipboard unavailable; select/copy the JSON from the text box.');}};
+$('download').onclick=()=>{const valid=Rig.normalize(rig);if(!valid){message('Cannot export invalid knots.');return;}
+ const result=JSON.parse(JSON.stringify(cosmetic));result.portraitSplineRig=valid;
+ const blob=new Blob([JSON.stringify(result,null,2)+'\n'],{type:'application/json'}),url=URL.createObjectURL(blob);
+ const link=document.createElement('a');link.href=url;link.download=loadedName.replace(/^\(HA\)\s*/,'').replace(/\.json$/i,'')+'-spline.json';
+ document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);message('Exported updated cosmetic JSON; no original fields removed.');};
+controls();render();
+})();
+</script>
+</body></html>
