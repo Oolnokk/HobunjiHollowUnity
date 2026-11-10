@@ -42,6 +42,7 @@
       seam: (input.seam || []).slice(0, 128).map(p => ({
         u: clamp(finite(p?.u, .5), 0, 1), v: clamp(finite(p?.v, .5), 0, 1),
         radiusPx: clamp(finite(p?.radiusPx, 3), .5, 15),
+        ...(typeof p?.color === 'string' && /^#[0-9a-f]{6}$/i.test(p.color) ? { color: p.color } : {}), // Optional authored bridge pixels; absent means sample the original strand artwork.
       })),
       rearOffset: {
         u: clamp(finite(input.rearOffset?.u), -.25, .25),
@@ -179,13 +180,22 @@
     ctx.save();
     ctx.beginPath();
     for (const dab of seam) {
-      const r = dab.radiusPx * image.width / 200;
+      const r = dab.radiusPx * image.width / 200; // Match the author's logical 200px portrait pixel grid.
       ctx.moveTo(dab.u * image.width + r, dab.v * image.height);
       ctx.arc(dab.u * image.width, dab.v * image.height, r, 0, Math.PI * 2);
     }
     ctx.clip();
-    ctx.drawImage(image, 0, 0, image.width, image.height);
+    ctx.drawImage(image, 0, 0, image.width, image.height); // The original tinted strand provides matching pixels wherever it already has coverage.
     ctx.restore();
+    for (const dab of seam) {
+      if (!dab.color) continue;
+      const r = dab.radiusPx * image.width / 200, x = dab.u * image.width, y = dab.v * image.height;
+      // The author may paint an opaque connecting bridge beyond the strand's original
+      // silhouette. Paint on the portrait, NOT on the detached moving mesh, so the seam
+      // stays with the skull when the strand swings away from it.
+      ctx.save(); ctx.fillStyle = dab.color;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+    }
   }
 
   function makePart(THREE, front, rear, width, height, name) {
