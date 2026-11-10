@@ -1401,6 +1401,7 @@
     };
     root.userData.armLengthSource = Number.isFinite(rigArmLength) && rigArmLength > 0 ? 'attachment-rig-shoulder-to-resting-wrist' : 'legacy-species-config';
     root.add(assembly);
+    window.PortraitSplineRig?.attach?.(THREE, root, assembly, sourceCanvas, options.backCanvas || options.backImage || null, modelWidth, modelHeight); // Authored head appendages share the neck bone and need no per-actor scheduler.
     root.userData.sourceCanvas = sourceCanvas;
     root.userData.backCanvas = options.backCanvas || options.backImage || null;
     root.userData.frontTexture = textures.frontOriginal;
@@ -1430,11 +1431,13 @@
       drawVariantCanvas(root.userData.backTexture.image, nextSource, { flipX: true, blackSilhouette: true });
       root.userData.backTexture.needsUpdate = true;
     }
+    window.PortraitSplineRig?.refresh?.(root, nextSource, nextBack); // Keep separately tinted strands current after wardrobe/expression changes.
     return true;
   }
 
   function disposeAvatarModel(root) {
     if (!root) return;
+    window.PortraitSplineRig?.detach?.(root); // Release mobile debug references when the owning avatar is discarded.
     portraitGlowModels.delete(root);
     for (const glowLight of root.userData?.portraitGlowLights || []) { glowLight.parent?.remove(glowLight); glowLight.dispose?.(); }
     if (root.userData) { root.userData.portraitGlowLights = []; root.userData.portraitGlowLight = null; }
