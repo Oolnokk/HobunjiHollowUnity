@@ -1975,9 +1975,10 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   };
 
   // Draws body/cosmetic/hood layers with full breathing + emote deformation.
-  const drawBreathingLayers = (layerList, isHood = layerList === hoodLayers || layerList === hoodBackLayers) => {
+  const drawBreathingLayers = (layerList, isHood = false) => {
     for (const entry of layerList) withPixelDyeLayer(entry, (img, tint, sourceKey) => {
-      const seamWarp = isHood && splineSeams.length > 0;
+      const hoodBucket = isHood || (typeof hoodLayers !== 'undefined' && (layerList === hoodLayers || layerList === hoodBackLayers)); // Standalone tint tests evaluate this function without surrounding hood buckets.
+      const seamWarp = hoodBucket && splineSeams.length > 0;
       const warpedCanvas = seamWarp ? document.createElement('canvas') : null; // Allocated only when a rig actually pierces a hood.
       if (warpedCanvas) { warpedCanvas.width = PORTRAIT_CW; warpedCanvas.height = PORTRAIT_CH; }
       const target = warpedCanvas ? warpedCanvas.getContext('2d') : ctx;
