@@ -8,15 +8,22 @@
 
   const scriptUrl = document.currentScript?.src || new URL('js/weapon-sprite-assemblies.js', location.href).href; // Resolves shared art from either gameplay or the attack editor.
   const images = new Map(); // Loaded source textures; each visible mesh clones the texture so editor disposal never damages the cache.
-  const records = new Set(); // Active or recently detached assemblies, updated at the pre-render checkpoint.
-  const states = new WeakMap(); // One attachment state per held visual; no global weapon pose is shared between actors.
+  const records = new Set(); // Weak references to assembled roots; the animation scheduler must never become an equipment owner.
+  const states = new WeakMap(); // Root-owned assembly state survives unequipping, but retired weapons remain garbage-collectible.
+  const weakRegistry = typeof WeakRef === 'function'; // Supported browsers keep dormant weapons alive only through their actual equipment/actor caches.
+  const gpuFinalizer = weakRegistry && typeof FinalizationRegistry === 'function'
+    ? new FinalizationRegistry(resources => {
+        for (const resource of resources) {
+          try { resource?.dispose?.(); } catch (_) { /* GC cleanup cannot interrupt game rendering. */ }
+        }
+      })
+    : null; // Releases only assembly-owned GPU resources once an abandoned root is collected; explicit drop still cleans immediately.
   const alphaBounds = new WeakMap(); // Transparent-pixel anchor scans are cached by the loaded image.
   const ropeSpriteBounds = new WeakMap(); // Original ruin rope alpha extents are scanned once per decoded image; every flail shares the result.
   const tintedRopeTextures = new WeakMap(); // Retains reusable recolored templates for each source PNG; live weapons own independent texture clones.
   const ROPE_TINT_CACHE_LIMIT = 12; // Limits the full-resolution canvas footprint when mobile authors try many rope colors.
   const PIXEL_ALPHA = 128; // Treat only the solid half of an antialiased edge as the opaque connection tip.
   const MAX_DT = 0.08; // Prevent tab-resume and loading stalls from launching the head sideways.
-  const DETACHED_TIMEOUT = 5000; // Cleans orphaned assemblies, but never a root still owned by the player's current equipment cache.
   const MOTION_LAG = 0.065; // Converts haft travel velocity to idle trailing angle.
   const DEF = global.WEAPON_SPRITE_ASSEMBLY_CONFIG?.weapons || {}; // Single committed recipe registry shared with the Tool Hub; tool-specific definitions may still override it.
   const effects = global.HobunjiLayeredWeaponEffects; // Materials, interleaved fire, and visible-metal source masks live outside the animation module.
@@ -35,14 +42,18 @@
   function textureFor(THREE, path) {
     const url = imageUrl(path);
     if (!images.has(url)) {
-      images.set(url, new Promise((resolve, reject) => {
+      const pending = new Promise((resolve, reject) => {
         new THREE.TextureLoader().load(url, tex => {
           const surface = global.HobunjiSpritePngSurface || global.HobunjiPngPlaneUnlit;
           if (surface?.configureTexture) surface.configureTexture(THREE, tex, url); // Shared authored PNG color-management and filtering policy.
           else tex.magFilter = tex.minFilter = THREE.NearestFilter;
           resolve(tex);
         }, undefined, reject);
-      }));
+      }).catch(error => {
+        images.delete(url); // A transient missing PNG must not poison all future weapons sharing its cached promise.
+        throw error;
+      });
+      images.set(url, pending);
     }
     return images.get(url);
   }
@@ -135,11 +146,32 @@
     node?.parent?.remove?.(node);
   }
 
+  function trackOwnedGpuResources(state) {
+    if (!state.gcResources) return; // Older environments use deterministic drop without retaining a second resource registry.
+    for (const part of state.owned) part.traverse?.(node => {
+      if (!node.userData?.hobunjiWeaponAssemblyPart) return;
+      if (node.geometry) state.gcResources.add(node.geometry);
+      const materials = Array.isArray(node.material) ? node.material : [node.material];
+      for (const material of materials) {
+        if (!material) continue;
+        state.gcResources.add(material);
+        if (material.map) state.gcResources.add(material.map); // Mesh textures are cloned; never finalize shared source PNGs.
+      }
+    });
+    if (state.ownedBaseMap) state.gcResources.add(state.ownedBaseMap); // Owns only the marker recolor clone, never the original held-tool map.
+  }
+
+  function liveState(entry) {
+    const root = weakRegistry ? entry.deref() : entry; // Do not prolong a retired actor's lifetime just because it was once rendered.
+    return root ? states.get(root) : null;
+  }
+
   function drop(root) {
     const state = states.get(root);
     if (!state) return;
     state.dead = true;
-    records.delete(state);
+    records.delete(state.registryEntry);
+    if (gpuFinalizer) gpuFinalizer.unregister(state.finalizerToken); // Explicit disposal wins over eventual garbage-collection cleanup.
     effects?.dispose(state); // Dispose pooled fire sprites before removing their head owner.
     if (state.ownedBaseMap) {
       if (state.plane.material.map === state.ownedBaseMap) {
@@ -149,6 +181,7 @@
       state.ownedBaseMap.dispose();
     }
     for (const child of state.owned) destroyPart(child);
+    state.gcResources?.clear(); // Do not retain disposed textures/materials through a previously cached state.
     states.delete(root);
   }
 
@@ -162,7 +195,14 @@
     const THREE = options.THREE || global.THREE;
     const config = definitionFor(itemKey, def);
     if (!root?.userData?.toolPlane || !THREE || !config) return root;
-    if (states.has(root)) return root;
+    const existing = states.get(root);
+    if (existing) {
+      // The same cached handle can be decorated again when its slot is reselected.
+      // Restore temporarily detached connector/head without rebuilding or disposing their materials.
+      if (existing.chain && existing.chain.parent !== root) { root.add(existing.chain); existing.repairedParts++; }
+      if (existing.headRoot && existing.headRoot.parent !== root) { root.add(existing.headRoot); existing.repairedParts++; }
+      return root;
+    }
     const plane = root.userData.toolPlane;
     const state = {
       root, plane, itemKey, THREE, config, owned: [], headParts: [], chain: null,
@@ -189,10 +229,23 @@
         deltaQ: new THREE.Quaternion(), stepQ: new THREE.Quaternion(), basis: new THREE.Matrix4(),
       }, // Reused by every animation frame, avoiding repeated vector/quaternion/matrix allocations.
       attacking: false, progress: 0, wf: 0.16, sf: 0.28, hf: 0.68, pitchTravelRad: null, yawTravelRad: 0, detachedAt: 0, dead: false, // Per-weapon attack timing supplied by player, enemies, or editor.
+      registryEntry: weakRegistry ? new WeakRef(root) : root, // Frame iteration never strongly retains an unequipped actor/weapon graph.
+      gcResources: gpuFinalizer ? new Set() : null, // Finalizer holds only cloned GPU resources, not meshes, groups, state, or root.
+      finalizerToken: {}, // Explicit drop unregisters only this weapon's finalization callback.
+      originalDef: def, originalOptions: options, // A failed async source load can reconstruct this exact authored part recipe, not a generic fallback.
+      setupFailed: false, nextRetryAt: 0, repairedParts: 0, // Pre-render retry and recovery counters are visible through mobile diagnostics.
     }; // Tracks per-instance lag, asset loading and render nodes without altering the original grip.
     states.set(root, state);
-    records.add(state);
+    records.add(state.registryEntry);
+    gpuFinalizer?.register(root, state.gcResources, state.finalizerToken);
     const layers = config.layers || def?.spriteLayers || []; // Committed Tool Hub recipe overrides shape defaults when both are present.
+    const setupFailure = error => {
+      if (state.dead) return;
+      trackOwnedGpuResources(state); // Partial setups still release owned textures if this root later becomes unreachable.
+      state.setupFailed = true;
+      state.nextRetryAt = performance.now() + 2000; // Retriable source/texture failures get a short, bounded-backoff window.
+      report(itemKey + ': ' + (error?.message || error));
+    }; // Reinitialization is deferred to the owner-attached tick, avoiding overlapping async setup calls.
     const modularShaft = def?.modular && global.ModularWeapons?.getConfig?.().shafts?.[def.modular.shaft]; // Foundry shaft can own the entire living weapon and its VFX.
     const setup = async () => {
       const baseImg = plane.material?.map?.image;
@@ -249,7 +302,7 @@
         effects?.activateStatic(state, config.base, layers, staticMeshes, source, unit); // Base-sprite fire also works with zero overlay layers.
         state.staticReady = true; // Mobile diagnostics distinguish finished single-sprite assembly from a still-loading rigid base.
       }
-      if (!config.flail) return;
+      if (!config.flail) { trackOwnedGpuResources(state); return; }
       const f = config.flail;
       const isRope = f.chain.type === 'rope'; // Generated suspension shares the same attachment animation as a raster chain.
       const chainTex = isRope ? null : await textureFor(THREE, f.chain.sprite);
@@ -285,6 +338,7 @@
         ? { x: Number(f.head.anchor?.x) || 0, y: Number(f.head.anchor?.y) || 0 }
         : anchor(state.headAnchorImage, f.head.anchor, 'bottom'); // Composite coordinates may lie BETWEEN the two head sprites.
       effects?.activateHead(state, f.head, headTextures, unit); // Compute post-assembly visible-metal sources and fuel→front interleaved fire once.
+      trackOwnedGpuResources(state); // Register complete head/rope clones for eventual owner-GC cleanup without retaining their root.
       // Place the suspension at the grip as soon as the artwork finishes loading.
       // Otherwise newly equipped flails briefly show their unpositioned, horizontal rope at the root origin.
       updateOne(state, 0, performance.now());
@@ -292,15 +346,15 @@
     };
     // The base PNG can still be loading while the equipment holder is built.
     const baseImage = plane.material?.map?.image;
-    if (baseImage?.width || baseImage?.naturalWidth) setup().catch(error => report(itemKey + ': ' + error.message));
+    if (baseImage?.width || baseImage?.naturalWidth) setup().catch(setupFailure);
     else {
       const startAt = performance.now();
       const trySetup = () => {
         if (state.dead) return;
         if (plane.material?.map?.image?.width || plane.material?.map?.image?.naturalWidth) {
-          setup().catch(error => report(itemKey + ': ' + error.message));
+          setup().catch(setupFailure);
         } else if (performance.now() - startAt < 10000) setTimeout(trySetup, 50);
-        else report(itemKey + ': base PNG did not finish loading');
+        else setupFailure(new Error('base PNG did not finish loading'));
       };
       trySetup();
     }
@@ -540,30 +594,23 @@
     hooked.updateMatrixWorld(true);
   }
 
-  function isCachedPlayerToolRoot(root) {
-    // The player's equipment map retains unequipped tool roots by reference,
-    // even when they have no parent. A rebuilt/discarded tool is absent from
-    // the current map, so it remains eligible for the ordinary timeout.
-    for (const deps of [global.ProceduralHandAttachments?.gameDeps, global.Combat?.deps]) {
-      const map = deps?.toolMeshMap; // Authoritative live equipment-slot ownership, shared by both gameplay integration paths.
-      if (!map) continue;
-      const candidates = typeof map.values === 'function' ? map.values() : Object.values(map); // Supports the game's object map and editor/test Map adapters.
-      for (const visual of candidates) if (visual === root) return true;
-    }
-    return false;
-  }
-
   function updateOne(state, dt, now, effectsDt = dt) {
     const { root, plane, config, scratch: q } = state;
     if (!root.parent) {
-      if (!state.detachedAt) state.detachedAt = now;
-      // Cached unequipped weapons must outlive the old five-second timeout.
-      // Abandoned meshes (e.g. replaced loadouts) can still be reclaimed,
-      // avoiding an unbounded records/texture leak during equipment rebuilds.
-      if (now - state.detachedAt > DETACHED_TIMEOUT && !isCachedPlayerToolRoot(root)) drop(root);
+      if (!state.detachedAt) {
+        state.detachedAt = now;
+        state.hasPivot = false; // Re-equipping resets old idle momentum rather than launching the suspended head.
+        state.hasPhysicsVelocity = false;
+        state.angularVelocity.set(0, 0, 0);
+      }
+      // Parent removal does not imply disposal: the player (and preview tools)
+      // can retain this exact handle for arbitrarily long without a visible parent.
+      // Lifetime follows the root's real owner; weak registry entries never pin discarded roots.
       return;
     }
     state.detachedAt = 0;
+    if (state.chain && state.chain.parent !== root) { root.add(state.chain); state.repairedParts++; } // Self-heal an external cleanup/reparent operation on next equipped frame.
+    if (state.headRoot && state.headRoot.parent !== root) { root.add(state.headRoot); state.repairedParts++; } // Preserve all authored head layers and their current textures.
     if (!state.chain || !state.headRoot) {
       if (root.visible !== false) effects?.stepFire(state, effectsDt); // Ordinary multi-layer tools can have interleaved VFX without a chain.
       return;
@@ -711,9 +758,16 @@
   function tick(deltaS, freezePhysics = false) {
     const now = performance.now();
     const dt = Math.min(MAX_DT, Math.max(0, Number.isFinite(deltaS) ? deltaS : 1 / 60));
-    for (const state of records) {
-      if (state.dead) { records.delete(state); continue; }
+    for (const entry of records) {
+      const state = liveState(entry);
+      if (!state || state.dead) { records.delete(entry); continue; } // Prune collected roots lazily, without a separate timer.
       try {
+        if (state.setupFailed && state.root.parent && now >= state.nextRetryAt) {
+          const { root, itemKey, originalDef, originalOptions } = state;
+          drop(root); // Dispose partial meshes before starting a fresh, idempotent reconstruction.
+          decorate(root, itemKey, originalDef, originalOptions);
+          continue;
+        }
         if (state.root.parent) effects?.refreshMetal(state, now); // Detached cached tools have no visible metal; only refresh on re-equip.
         updateOne(state, freezePhysics ? 0 : dt, now, dt);
       }
@@ -727,10 +781,14 @@
   }
 
   function debugSnapshot() {
-    return [...records].map(s => ({
+    const snapshot = []; // Mobile-accessible live-root diagnostics, including cached handles regardless of slot-map injection.
+    for (const entry of records) {
+      const s = liveState(entry);
+      if (!s || s.dead) { records.delete(entry); continue; }
+      snapshot.push({
       itemKey: s.itemKey, loaded: s.config.flail ? !!(s.chain && s.headRoot) : !!s.staticReady,
       attached: !!s.root.parent, attacking: s.attacking,
-      detachedForMs: s.root.parent ? 0 : Math.max(0, performance.now() - s.detachedAt), // Mobile proof that cached unequipped weapons retain their rope/head without a timeout.
+      detachedForMs: s.root.parent || !s.detachedAt ? 0 : Math.max(0, performance.now() - s.detachedAt), // Mobile proof that no time limit can destroy cached rope/head.
       progress: s.progress, direction: s.direction.toArray(),
       attackTiming: { windup: s.wf, strike: s.sf, hold: s.hf }, // Mobile-readable phase diagnostics.
       pitchTravelDeg: Number.isFinite(s.pitchTravelRad) ? s.pitchTravelRad * 180 / Math.PI : s.strikeTurnRad * 180 / Math.PI, // Authored pitch travel for comparison with physical motion.
@@ -746,7 +804,12 @@
       connector: s.config.flail?.chain?.type === 'rope' ? 'rope' : s.config.flail ? 'chain' : null, // Mobile diagnostics expose both handle-relative multipliers.
       ropeArt: s.chain?.userData?.hobunjiRuinRopeSprite ? 'assets/objectsprites/rope_long.png' : null, // Mobile confirmation of the rope source.
       ropeTint: s.chain?.userData?.hobunjiRuinRopeSprite ? { color: s.config.flail.chain.color, method: s.chain.children?.[0]?.userData?.ropeTintMethod || 'unavailable' } : null, // Confirms the real 3D texture was shade-filled, including editor previews, without accessing devtools.
-    }));
+      lifetime: weakRegistry ? 'root-weak' : 'explicit-drop', // Visible fallback for browsers without weak references.
+      setupFailed: s.setupFailed, retryInMs: s.setupFailed ? Math.max(0, s.nextRetryAt - performance.now()) : 0, repairedParts: s.repairedParts, // Diagnose failed textures and automatic reparent recovery on mobile.
+      partsAttached: !s.config.flail || (s.chain?.parent === s.root && s.headRoot?.parent === s.root), // Confirms both children follow the same cached handle after switching tools.
+    });
+    }
+    return snapshot;
   }
 
   // Pure selection step, exported for tests. While dual wield is active the held plane's base and its direct-child
@@ -781,7 +844,7 @@
     definitions: DEF, decorate, setAction, tick, drop, debugSnapshot, enchantmentTargets, dualWieldEnchantmentTargets,
     opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, // Pure sizing and phase helpers have regression tests.
   };
-  global.HobunjiCacheAudit?.register('weapon assemblies (active or awaiting cleanup)', () => records.size);
+  global.HobunjiCacheAudit?.register('weapon assemblies (weak owner registry)', () => { let count = 0; for (const entry of records) if (liveState(entry)) count++; return count; });
   if (global.RuntimeFrameScheduler?.register) {
     global.RuntimeFrameScheduler.register('weapon-sprite-assemblies', context => tick((context?.deltaMs || 0) / 1000), {
       phase: 'pre-render', owner: 'HobunjiWeaponSpriteAssemblies',
