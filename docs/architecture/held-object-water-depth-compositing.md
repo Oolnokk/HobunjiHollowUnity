@@ -81,7 +81,7 @@ standing elevation and tile of their owning actor:
   without the required standard chunks fail closed: their ground remains fully opaque to the
   held/foot overlay rather than guessing an elevation.
 
-Actors at effectively the same elevation can share a replay when their gear bounds cannot overlap each other’s projected floor neighborhoods. Unknown/custom draw hooks still use conservative separate replays. Procedural hands and feet may join batching only when their registered parity hook owns the mesh's onBeforeRender without an earlier custom hook: the projection encloses both the current transform and a fresh prior visible transform, plus up to 2× shell-thickness expansion. If another hook replaces that callback, batching automatically falls back to conservative bounds. The renderer prepares the ground material list once per pass and narrows each depth draw to its own screen bounds when it can prove them. Parts that cannot be covered by their neighborhood use ordinary ground depth. The shell-outline pass uses the same tile and elevation filter. The final colorless ground
+Actors at effectively the same elevation can share a replay when their gear bounds cannot overlap each other’s projected floor neighborhoods. Unknown/custom draw hooks still use conservative separate replays. Procedural hands and feet may join batching only when their registered parity hook owns the mesh's onBeforeRender without an earlier custom hook: the projection encloses both the current transform and a fresh prior visible transform, plus up to 2× shell-thickness expansion. If another hook replaces that callback, batching automatically falls back to conservative bounds. The current procedural leg rig installs a separate camera-relative foot-depth-push callback **before** the outline-parity adapter. Those foot meshes therefore deliberately fail this trusted-hook requirement and keep their conservative depth grouping. The synthetic 24-to-3 hand-like grouping test is a capacity check, **not** a measured NPC or enemy frame improvement. The renderer prepares the ground material list once per pass and narrows each depth draw to its own screen bounds when it can prove them. Parts that cannot be covered by their neighborhood use ordinary ground depth. The shell-outline pass uses the same tile and elevation filter. The final colorless ground
 restore remains before translucent water/slush tinting.
 
 ## Ordinary-depth replay supplement
@@ -340,7 +340,8 @@ procedural hands/feet, depth textures or render-target setup:
   `uHobunjiSurfaceOcclusionDepthOnly` uniform returns to 0. The alpha
   threshold is used only in colorless depth passes, never normal water color.
 - Run `node scripts/test-town-render-hotpaths.js`,
-  `node scripts/test-xray-shell-rig-bounds.js` and the repository's
+  `node scripts/test-xray-shell-rig-bounds.js`,
+  `node scripts/test-outdoor-xray-pass-budget.js` and the repository's
   full Regression suite. These guard against ordering/source regressions
   but do **not** prove the actual GPU pixels; the above live flood/
   submersion cases remain required visual checks.
