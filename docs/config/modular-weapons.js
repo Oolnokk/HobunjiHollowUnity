@@ -2398,7 +2398,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "disallow": true
         },
         "grapple-flail": {
-          "disallow": true
+          "disallow": true,
+          "layerOrder": "haft-over-head"
         }
       },
       "mounts": [
@@ -3324,7 +3325,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "grapple-flail": {
-          "disallow": true
+          "disallow": true,
+          "layerOrder": "haft-over-head"
         }
       },
       "maxAttachments": 8,
@@ -3472,7 +3474,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "animation": "thrust"
         },
         "grapple-flail": {
-          "disallow": true
+          "disallow": true,
+          "layerOrder": "haft-over-head"
         }
       },
       "mounts": [
@@ -3610,7 +3613,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "grapple-flail": {
-          "disallow": false
+          "disallow": false,
+          "layerOrder": "haft-over-head"
         }
       },
       "mounts": [
@@ -3772,7 +3776,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "animation": "thrust"
         },
         "grapple-flail": {
-          "disallow": false
+          "disallow": false,
+          "layerOrder": "haft-over-head"
         }
       },
       "mounts": [
@@ -3915,7 +3920,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "haft-over-head"
         },
         "grapple-flail": {
-          "disallow": true
+          "disallow": true,
+          "layerOrder": "haft-over-head"
         }
       },
       "mounts": [
@@ -4051,7 +4057,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "grapple-flail": {
-          "disallow": true
+          "disallow": true,
+          "layerOrder": "haft-over-head"
         }
       },
       "mounts": [
@@ -9451,7 +9458,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "grapple-flail": {
-          "disallow": true
+          "disallow": true,
+          "layerOrder": "haft-over-head"
         }
       },
       "mounts": [
@@ -9588,7 +9596,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "grapple-flail": {
-          "disallow": false
+          "disallow": false,
+          "layerOrder": "haft-over-head"
         }
       },
       "mounts": [
@@ -9713,7 +9722,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "grapple-flail": {
-          "disallow": true
+          "disallow": true,
+          "layerOrder": "haft-over-head"
         }
       },
       "editorOnly": true,
@@ -9812,7 +9822,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "grapple-flail": {
-          "disallow": false
+          "disallow": false,
+          "layerOrder": "haft-over-head"
         }
       },
       "editorOnly": true,
@@ -9939,7 +9950,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "grapple-flail": {
-          "disallow": true
+          "disallow": true,
+          "layerOrder": "haft-over-head"
         }
       },
       "editorOnly": true,
@@ -11414,7 +11426,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "grapple-flail": {
-          "disallow": true
+          "disallow": true,
+          "layerOrder": "haft-over-head"
         }
       },
       "editorOnly": false,
@@ -11734,7 +11747,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "animation": "thrust"
         },
         "grapple-flail": {
-          "disallow": false
+          "disallow": false,
+          "layerOrder": "haft-over-head"
         }
       },
       "editorOnly": true,
@@ -11873,7 +11887,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "grapple-flail": {
-          "disallow": true
+          "disallow": true,
+          "layerOrder": "haft-over-head"
         }
       },
       "editorOnly": true,
@@ -13794,7 +13809,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "disallow": true
         },
         "grapple-flail": {
-          "disallow": true
+          "disallow": true,
+          "layerOrder": "haft-over-head"
         }
       },
       "mounts": [
@@ -13912,58 +13928,76 @@ window.MODULAR_WEAPON_CONFIG = {
       ],
       "overrides": {
         "grapple-flail": {
-          "disallow": true
+          "disallow": true,
+          "layerOrder": "haft-over-head"
         },
         "dagger-sword": {
-          "disallow": false
+          "disallow": false,
+          "layerOrder": "head-over-haft"
         },
         "dagger": {
-          "disallow": false
+          "disallow": false,
+          "layerOrder": "head-over-haft"
         },
         "fishing-mace": {
-          "disallow": false
+          "disallow": false,
+          "layerOrder": "head-over-haft"
         },
         "fishing-spear": {
-          "disallow": false
+          "disallow": false,
+          "layerOrder": "head-over-haft"
         },
         "harlyao-broadsword": {
-          "disallow": false
+          "disallow": false,
+          "layerOrder": "head-over-haft"
         },
         "harlyao-longsword": {
-          "disallow": false
+          "disallow": false,
+          "layerOrder": "head-over-haft"
         },
         "hatchet": {
-          "disallow": true
+          "disallow": true,
+          "layerOrder": "head-over-haft"
         },
         "hoe": {
-          "disallow": true
+          "disallow": true,
+          "layerOrder": "head-over-haft"
         },
         "kylie": {
-          "disallow": true
+          "disallow": true,
+          "layerOrder": "head-over-haft"
         },
         "pick-shovel-pick": {
-          "disallow": true
+          "disallow": true,
+          "layerOrder": "head-over-haft"
         },
         "pickshovel-scoop": {
-          "disallow": false
+          "disallow": false,
+          "layerOrder": "head-over-haft"
         },
         "plains-blade": {
-          "disallow": false
+          "disallow": false,
+          "layerOrder": "head-over-haft"
         },
         "porakaneki-greatclub": {
-          "disallow": false
+          "disallow": false,
+          "layerOrder": "head-over-haft"
         },
         "war-cleaver": {
-          "disallow": false
+          "disallow": false,
+          "layerOrder": "head-over-haft"
         },
         "warhammer": {
-          "disallow": true
+          "disallow": true,
+          "layerOrder": "head-over-haft"
         },
         "work-hammer": {
-          "disallow": true
+          "disallow": true,
+          "layerOrder": "head-over-haft"
         },
         "bshuakauitl": {
-          "disallow": true
+          "disallow": true,
+          "layerOrder": "head-over-haft"
         }
       },
       "maxAttachments": 8,
