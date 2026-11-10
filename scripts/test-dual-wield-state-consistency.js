@@ -7,10 +7,13 @@ const visualSource = fs.readFileSync('docs/js/dual-wield-weapon-visuals.js', 'ut
 function fixture(editor) {
   const controls = Object.fromEntries(Object.entries({ scrub: 0, playbackSequence: 'attack', handGripContextSelect: 'melee', toolSpriteSelect: 'hatchet' }).map(([id, value]) => [id, { value }]));
   const tasks = new Map();
+  const assemblyTicks = []; // Captures the single real assembly callback after its pre-render registration is relocated.
+  tasks.set('weapon-sprite-assemblies', () => assemblyTicks.push('stale-order')); // Simulates the eager weapon loader preceding the lazy dual-wield loader.
   let snapshot = { activeSlot: 'weapon', itemKey: 'hatchet', combatNeutralInjected: false };
   const window = {
     location: { pathname: editor ? '/tools/attack-animation-editor/index.html' : '/index.html' },
-    RuntimeFrameScheduler: { register: (id, cb) => tasks.set(id, cb) },
+    RuntimeFrameScheduler: { register: (id, cb) => tasks.set(id, cb), unregister: id => tasks.delete(id) },
+    HobunjiWeaponSpriteAssemblies: { tick(delta) { assemblyTicks.push(delta); } },
     WeaponToolStances: { getRuntimeState: () => snapshot },
     Combat: { deps: { __weaponToolStanceVisualHooks: true, triggerWeaponSwingVisual() {}, triggerWeaponHoldVisual() {} } },
     HobunjiAttackEditorToolContext: { toolKey: 'hatchet' },
@@ -19,9 +22,15 @@ function fixture(editor) {
   vm.runInNewContext(gripSource, scope);
   vm.runInNewContext(visualSource, scope);
   tasks.get('hand-tool-grips-install')();
-  return { window, grips: window.HobunjiHandToolGrips, controls, setSnapshot: value => { snapshot = value; } };
+  return { window, grips: window.HobunjiHandToolGrips, controls, tasks, assemblyTicks, setSnapshot: value => { snapshot = value; } };
 }
 const ed = fixture(true);
+const renderOrder = Array.from(ed.tasks.keys()); // Registration order is execution order inside RuntimeFrameScheduler's pre-render phase.
+assert(renderOrder.indexOf('dual-wield-weapon-visuals') >= 0, 'dual-wield pose updater is registered');
+assert(renderOrder.indexOf('dual-wield-weapon-visuals') < renderOrder.indexOf('weapon-sprite-assemblies'),
+  'both weapon poses update before the once-per-frame flail rope projection');
+ed.tasks.get('weapon-sprite-assemblies')({ deltaMs:16 });
+assert.deepEqual(ed.assemblyTicks, [0.016], 'relocated assembly registration still invokes one live physics tick with seconds, not the stale callback');
 ed.window.HobunjiAttackEditorToolContext.toolKey = 'dagger';
 ed.window.HobunjiDualWieldWeaponVisuals.setEditorIdlePreview(true);
 assert.equal(ed.grips.currentSecondaryGripAnimationState().dualWieldInfluence, 1, 'pair preview must enable hand ownership as well as visible copies');
