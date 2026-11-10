@@ -22,6 +22,7 @@
     RUIN_ENTRANCE: 'ruin_entrance',
     MUSHROOM_CAVE: 'mushroom_cave',
     PUZZLE_CAVE: 'puzzle_cave', // A compact one-challenge cavern, separate from a multiwing ruin.
+    FORTIFIED_STRONGHOLD: 'fortified_stronghold', // Synthetic camp-linked cavern; no wildlife den anchor.
     // Inhabitants
     BANDIT_HIDEOUT: 'bandit_hideout',
     ANIMAL_DEN: 'animal_den',
@@ -29,6 +30,7 @@
   });
 
   const TYPE_LABELS = Object.freeze({
+    [TYPES.FORTIFIED_STRONGHOLD]: 'Fortified Bandit Stronghold',
     [TYPES.ORE_MINE]: 'Ore-rich Cave',
     [TYPES.TRAPPED_CACHE]: 'Hidden Cache',
     [TYPES.CATACOMB]: 'Ancient Catacomb',
@@ -178,6 +180,38 @@
       mouthAnchor: den?.mouthAnchor ? clone(den.mouthAnchor) : null,
       source: 'promoted_den_anchor',
     };
+  }
+
+  // Stronghold entrances use the same map id prefix, shell generator, and save identity as ordinary caves,
+  // but deliberately never enter zoneSites() or wildlife-den counts.
+  function registerFortifiedStronghold(zoneId, slot) {
+    const safeZone = String(zoneId || '');
+    const safeSlot = Math.max(0, Math.floor(Number(slot) || 0));
+    if (!safeZone) return null;
+    const denId = 'bandit_stronghold_' + safeSlot; // Stable per camp slot; not a new wildlife-den anchor.
+    const mapId = caveMapId(safeZone, denId);
+    const profile = {
+      schema: PROFILE_SCHEMA, id: 'fortified_' + safeSlot, zoneId: safeZone, denId,
+      mapId, signature: safeZone + ':fortified-stronghold:' + safeSlot,
+      contents: TYPES.FORTIFIED_STRONGHOLD, inhabitant: TYPES.BANDIT_HIDEOUT,
+      layers: [TYPES.FORTIFIED_STRONGHOLD, TYPES.BANDIT_HIDEOUT],
+      exteriorLabel: 'Fortified Cave', discoveredLabel: 'Fortified Bandit Stronghold',
+      fortifiedStronghold: true, source: 'bandit_camp_conversion',
+    };
+    sitesByMapId.set(mapId, profile);
+    return clone(profile);
+  }
+
+  function forgetFortifiedStronghold(mapId) {
+    const profile = sitesByMapId.get(String(mapId));
+    if (!profile?.fortifiedStronghold) return false;
+    resetCave(profile.mapId); // Existing cave teardown clears old props/occupants/state when the camp rerolls.
+    return true;
+  }
+
+  function fortifiedStrongholdCleared(mapId) {
+    const profile = sitesByMapId.get(String(mapId));
+    return !!(profile?.fortifiedStronghold && stateFor(profile).occupantsCleared);
   }
 
   const MAX_OUTDOOR_PUZZLE_CAVES = 24; // Upper bound for independent entrances in a wilderness zone.
@@ -560,8 +594,8 @@
     for (const rock of mapData.oreRocks) blockedKeys.add(tileKey(rock.col, rock.row));
   }
 
-  function addBanditLayer(mapData, rng, candidates, blockedKeys, plan) {
-    const count = clamp(2 + Math.floor(rng() * 3), 2, 4); // Small hideout population reused by BanditCombat at runtime.
+  function addBanditLayer(mapData, rng, candidates, blockedKeys, plan, fortified = false) {
+    const count = fortified ? 6 : clamp(2 + Math.floor(rng() * 3), 2, 4); // Fortified cave interiors have a larger garrison.
     const picks = pickSpacedTiles(rng, sortTilesByDistance(candidates, mapData.exitCol, mapData.exitRow, true).slice(0, Math.max(8, Math.floor(candidates.length * 0.7))), count, blockedKeys, 2.2);
     // Extra cave charges reserve space near entrances. Keep the hideout's
     // established minimum bandit population by broadening its candidate pool
@@ -570,7 +604,10 @@
       picks.push(...pickSpacedTiles(rng,candidates.filter(tile=>!blockedKeys.has(tileKey(tile.col,tile.row))),
         Math.min(count,2)-picks.length,blockedKeys,1.45));
     }
-    plan.banditSpawns = picks.map((tile, index) => ({ col: tile.col, row: tile.row, rank: index === picks.length - 1 && picks.length >= 3 ? 'lieutenant' : 'grunt', tier: 1 + (rng() < 0.25 ? 1 : 0) }));
+    plan.banditSpawns = picks.map((tile, index) => ({ col: tile.col, row: tile.row,
+      rank: fortified ? (index % 4 === 3 ? 'flasker' : index === picks.length - 1 ? 'lieutenant' : 'grunt')
+        : index === picks.length - 1 && picks.length >= 3 ? 'lieutenant' : 'grunt',
+      tier: 1 + (rng() < 0.25 ? 1 : 0) }));
     mapData.caveBanditSpawns = clone(plan.banditSpawns);
   }
 
@@ -745,6 +782,7 @@
     window.CaveTripwireTraps?.build?.(mapId, mapData, scene, trapProfile ? stateFor(trapProfile) : null);
     buildMushroomClusters(mapId, mapData, scene);
     buildPuzzleCaveChallenge(mapId,mapData,scene); // Puzzle rooms are physical challenges, not authored furniture-only props.
+    window.BanditStrongholds?.buildInteriorProps?.(mapId,mapData,scene); // Styled low/high barricades reuse existing furniture materials.
     const id = String(mapId); // Shared key with the mushroom index and cave profile.
     const propRecord = { scene, groups: new Map() }; // Replaced on rebuild; late async furniture loads cannot register in a stale cave.
     for(const [propId,group] of propMeshesByMapId.get(id)?.groups||[])if(group.userData?.caveSiteProp?.key==='crateStack')
@@ -957,7 +995,7 @@
     // doesn't reshuffle loot in caves where no suitable chokepoint exists.
     const contents = profile.contents;
     const extensionRng = makeRng(`${profile.signature}:extension`); // Stable optional annex roll per cave incarnation.
-    const wantsRockPuzzle = contents !== TYPES.PUZZLE_CAVE && awayFromEntrance.length >= MIN_OPTIONAL_EXTENSION_FLOOR
+    const wantsRockPuzzle = contents !== TYPES.PUZZLE_CAVE && contents !== TYPES.FORTIFIED_STRONGHOLD && awayFromEntrance.length >= MIN_OPTIONAL_EXTENSION_FLOOR
       && makeRng(profile.signature + ':puzzle-rock-roll')() < ROCK_PUZZLE_CHANCE; // Independent of ordinary cave contents and inhabitants.
     if (contents !== TYPES.PUZZLE_CAVE && (wantsRockPuzzle || contents === TYPES.TRAPPED_CACHE || (awayFromEntrance.length >= MIN_OPTIONAL_EXTENSION_FLOOR && extensionRng() < (EXTENSION_CHANCES[contents] || 0)))) {
       installMineableSeparator(mapData, extensionRng, blockedKeys, plan);
@@ -1028,7 +1066,7 @@
         reachable = reachable.filter(tile => Math.hypot(tile.col - ruin.col, tile.row - ruin.row) >= Math.max(5, farthest * 0.65));
       }
       for (const rock of mapData.oreRocks || []) blockedKeys.add(tileKey(rock.col, rock.row));
-      addBanditLayer(mapData, rng, reachable, blockedKeys, plan);
+      addBanditLayer(mapData, rng, reachable, blockedKeys, plan, contents === TYPES.FORTIFIED_STRONGHOLD);
     }
 
     if (wantsRockPuzzle && plan.separator) {
@@ -1074,6 +1112,14 @@
       exit.spawnCol = Number(profile.returnCol) || 0;
       exit.spawnRow = Number(profile.returnRow) || 0;
       exit.label = 'Back to the cave';
+    }
+
+    if (profile.fortifiedStronghold && mapData.exits?.length) {
+      const exterior = mapData.exits[0]; // Explicit return target: a synthetic stronghold is not a WildlifeSpawn den.
+      exterior.targetMap = profile.zoneId;
+      exterior.targetSpotId = 'bandit_fortified_' + String(profile.denId).replace('bandit_stronghold_', '') + '_enter';
+      exterior.label = 'Back to the stronghold entrance';
+      mapData.entrySpots = { ...(mapData.entrySpots || {}), den_exit: { col: mapData.exitCol, row: mapData.exitRow } };
     }
 
     plan.outerRimTileCount = mapData.outerRimTiles?.length || 0;
@@ -1235,6 +1281,7 @@
   }
 
   function generatedCaveName(profile) {
+    if (profile?.fortifiedStronghold) return 'Fortified Bandit Stronghold'; // No animal-den collapse naming for camp-linked cave sites.
     const prefixes = ['Whispering', 'Hollow', 'Broken', 'Mossy', 'Sunken', 'Echoing', 'Shrouded', 'Twisted', 'Silent', 'Weeping', 'Cold', 'Hidden', 'Winding', 'Damp', 'Forgotten', 'Shattered']; // Descriptive name parts shared by all cave contents.
     const places = ['Stone', 'Root', 'Tooth', 'Vein', 'Lantern', 'Shadow', 'Water', 'Bone', 'Thorn', 'Ash', 'Claw', 'Ember', 'Mist', 'Crag', 'Moon', 'Flint']; // Second name part keeps the generated name independent of undiscovered inhabitants/loot.
     const generation = window.WildlifeSpawn?.denTurnoverStateForCavern?.(profile.mapId)?.generation || 0; // Renewed cave slots receive a fresh deterministic name.
@@ -1770,6 +1817,8 @@
         mushrooms: plansByMapId.get(currentArea).mushrooms,
       }) : null,
       currentState: profileForMapId(currentArea) ? clone(stateFor(profileForMapId(currentArea))) : null,
+      fortifiedStrongholds: [...sitesByMapId.values()].filter(site => site.fortifiedStronghold).map(site => ({ mapId:site.mapId, cleared:!!stateFor(site).occupantsCleared })),
+      fortifiedAssets: window.BanditStrongholds?.debugSnapshot?.() || null,
     };
   }
 
@@ -1777,6 +1826,7 @@
     TYPES,
     TYPE_LABELS,
     applyWorkspaceProfiles,
+    registerFortifiedStronghold, forgetFortifiedStronghold, fortifiedStrongholdCleared,
     registerOutdoorPuzzleSites,
     exteriorPuzzleState,markExteriorPuzzleSolved,
     sitesForZone,
