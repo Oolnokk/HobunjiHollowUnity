@@ -789,6 +789,7 @@
   function setCombatExpression(entity, active) {
     const avatarRef = entity?.avatarRef;
     const next = !!active;
+    window.CombatVocalizations?.onHostileAlertState?.(entity, next); // The existing combat-state transition drives skeleton alarms independently of damage and of whether the portrait can show a frown.
     if (!avatarRef?.frontCanvas || avatarRef.combatExpressionActive === next) return false;
     const source = next ? avatarRef.combatFrownCanvas : avatarRef.neutralFrontCanvas; // Combat uses frown; leaving combat restores the exact spawn portrait rather than assuming neutral authoring.
     if (!copyBanditExpressionCanvas(avatarRef.frontCanvas, source)) return false;
