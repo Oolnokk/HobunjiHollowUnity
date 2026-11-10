@@ -363,6 +363,8 @@
         playerBridge?.stopJamFollow?.(); // Recovers the player's original scale, tonic and solo clock when the NPC leaves.
         Object.assign(playerSession,{mode:'lead',npcId:null,songId:null});
         leaderByArea.set(area,{type:'player',id:'player',startedAt:Date.now()});
+        const picker = document.getElementById('compactSongPicker'); // Existing picker resumes without rebuilding musical input handlers.
+        if (picker) picker.style.display = '';
       }
       return false;
     }
@@ -371,6 +373,8 @@
     if (!leaderSnapshot?.playing || !playerBridge?.followJamLeader?.(leaderSnapshot)) return false; // Retry after asynchronous NPC/player iframe load.
     if (playerSession.mode === 'lead' && leaderByArea.get(area)?.type === 'player') leaderByArea.delete(area);
     Object.assign(playerSession,{mode:'jam',npcId:musician.npcId,songId:musician.songId});
+    const picker = document.getElementById('compactSongPicker'); // Late NPC arrival hides conflicting solo song controls.
+    if (picker) picker.style.display = 'none';
     return true;
   }
 
@@ -693,8 +697,8 @@
     const heldBankControls = new Set(); // Real keyboard/controller bank holds own the Lyre highlight until physical release.
     const hostedControllerSources = new Map(); // Records held gamepad notes/banks so Controller layout routes every down/up pair through the bridge.
 
-    // An NPC-led jam follows that musician's exact tempo and harmony; switching to solo restores the player's own song picker.
-    const showSongPicker = playerSession?.mode === 'lead';
+    // Create the picker once in a real session: hide it for an NPC-led jam, reshow it if the musician leaves.
+    const showSongPicker = Boolean(playerSession);
 
     leftMount.innerHTML = `
       <aside class="edgeMusicPanel compactUtilityPanel" aria-label="Left-side utility controls">
@@ -745,6 +749,7 @@
     if (showSongPicker) {
       compactSongPicker = document.createElement('section');
       compactSongPicker.id = 'compactSongPicker';
+      compactSongPicker.style.display = playerSession?.mode === 'jam' ? 'none' : ''; // Initial NPC-led session must not invite an unsynchronized song change.
       compactSongPicker.setAttribute('aria-label', 'Song selector');
       compactSongPicker.innerHTML = `<button id="compactSongPickerToggle" type="button" aria-expanded="false"><span class="songPickerTitle">Song</span><span class="songPickerChevron">▼</span></button><div id="compactSongPickerList" role="listbox" aria-label="Songs"></div>`;
       leftMount.parentElement?.appendChild(compactSongPicker);
