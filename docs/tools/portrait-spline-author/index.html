@@ -41,7 +41,10 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
 <script src="../../js/portrait-spline-catalog.js?v=20261110splineHead3"></script>
 <script src="../../js/portrait-spline-seam.js?v=20261110splineSeam1"></script>
 <script src="../../config/scratchbones-config.js?v=20261110spline3d1"></script>
-<script src="../../js/portrait-spline-viewer.js?v=20261110splineViewer1"></script>
+<script src="../../js/color-fill.js?v=20260923colorfill7"></script>
+<script src="../../js/portrait-utils.js?v=20261110splineCanon1"></script>
+<script src="../../js/npc-avatar-preview-utils.js?v=20261110splineCanon1"></script>
+<script src="../../js/portrait-spline-viewer.js?v=20261110splineViewer2"></script>
 </head>
 <body>
 <header><a href="../character-studio/">Character Studio</a><h1>Beard &amp; Side Hair Spline Author</h1><span class="hint">v1 · per-cosmetic 3D strand + seam masks</span></header>
@@ -125,7 +128,8 @@ const makeSegment=()=>({deadzone:{x:4,y:4,z:6},poses:Object.fromEntries(DIRECTIO
 const makeRig=()=>({version:1,enabled:true,points:[{u:.5,v:.28,depth:.015},{u:.52,v:.43,depth:.025},{u:.53,v:.6,depth:.035}],
 segments:[makeSegment(),makeSegment()],seam:[],rearOffset:{u:0,v:0},width:.1,windResponse:1,segmentsX:16,segmentsY:20});
 let rig=makeRig(),cosmetic={},loadedName='cosmetic.json',selectedKnot=1,selectedSegment=0,direction='right',mode='move';
-let images={front:null,rear:null,hood:null,hoodRear:null,head:null},dragging=false,lastPaint=null;
+let images={front:null,rear:null,hood:null,hoodRear:null,head:null,character:null},dragging=false,lastPaint=null;
+let canonicalPortraitPromise=null,canonicalPortraitGeneration=0,canonicalPortraitError=null; // Reuses Pants Rig Author's species/gender portrait registry and naked-character render path.
 let viewer=null,viewerMode='translate',selectedSeam=0,seamBackup=null,headGeneration=0; // 3D gizmo and silhouette edit state shared with the 2D author.
 let catalog=null,styles=[],hoods=[],activeStyle=null,activeDraftKey=null,styleGeneration=0,assetGeneration=0,hoodGeneration=0,indexGeneration=0;
 let manualSelected=false; // Explicit file import is not silently replaced by a concurrent index fetch.
@@ -187,7 +191,8 @@ async function loadStyles(){
   const generation=++styleGeneration;
   assetGeneration++; // An outstanding sprite fetch from another species must never repaint this one's preview.
   if(!catalog || !selectedSpecies() || !selectedGender())return;
-  void loadHead(); // Read the gender-specific headSprite from config/species/index.json, independent of which hair style is selected.
+  void loadHead(); // A head-only alpha reference remains authoritative for seam tracing.
+  void loadCanonicalCharacter(); // Pants Rig Author's full canonical body portrait is the shared 3D background, not a manually scaled head-only sprite.
   rememberDraft();
   setSelect('cosmeticSelect',[],'Loading indexed cosmetics…');
   message('Loading '+selectedSpecies()+' '+selectedGender()+' cosmetics…');
@@ -201,6 +206,45 @@ async function loadStyles(){
   }catch(error){
     if(generation!==styleGeneration)return;
     styles=[];fillStyles();message('Unable to load styles: '+error.message);
+  }
+}
+async function loadCanonicalCharacter(){
+  const generation=++canonicalPortraitGeneration;
+  const species=selectedSpecies(),gender=selectedGender();
+  images.character=null;canonicalPortraitError=null;render();
+  if(!species||!gender)return;
+  try{
+    if(!canonicalPortraitPromise){
+      canonicalPortraitPromise=Promise.resolve().then(async()=>{
+        window.setPortraitAssetBase?.('../../assets/');
+        return window.NpcAvatarPreview.ensurePortraitCosmetics({
+          assetBase:'../../assets/',configBase:'../../config/',
+        }); // Exactly the Pants Rig Author bootstrap: the real portrait renderer loads all indexed fighters, body layers and cosmetic groups.
+      }).catch(error=>{canonicalPortraitPromise=null;throw error;});
+    }
+    await canonicalPortraitPromise;
+    if(generation!==canonicalPortraitGeneration)return;
+    const normalized=species.replace(/-/g,'_');
+    const fighter=(window.getPortraitFighters?.()||[]).find(entry=>
+      (entry.speciesId===species||entry.speciesId===normalized)
+      &&String(entry.gender).toLowerCase()===gender);
+    if(!fighter)throw Error('No canonical '+species+' '+gender+' portrait fighter.');
+    const none={id:'none',label:'None',tintSlot:null,layers:[]};
+    const profile={fighter,bodyColors:{},hair:none,hairFront:none,hairBack:none,
+      hairSide:none,hairSideL:none,hood:none,eyes:none,upperFace:none,
+      facialHair:none,pauldron:none,hat:none,torsoCosmetic:none,armCosmetic:none};
+    const canvas=document.createElement('canvas');canvas.width=canvas.height=200; // Canonical PNG composite used by the Pants Rig Author, not a new sprite coordinate approximation.
+    const result=await window.NpcAvatarPreview.renderProfileToCanvas(canvas,profile,{
+      forceEyesOpen:true,portraitView:'front',
+    });
+    if(!result)throw Error('Canonical portrait renderer returned false.');
+    if(generation!==canonicalPortraitGeneration)return;
+    images.character=canvas;render();
+  }catch(error){
+    if(generation!==canonicalPortraitGeneration)return;
+    canonicalPortraitError=String(error?.message||error);
+    message('The full portrait could not render: '+canonicalPortraitError+'. The indexed head silhouette remains available.');
+    render();
   }
 }
 async function loadHead(){
@@ -402,7 +446,9 @@ function render(){
     '\nPortrait plane: '+(shown?'rear (offset '+rig.rearOffset.u+', '+rig.rearOffset.v+')':'front')+
     '\nOnly enabled styles create extra geometry; others retain 2D rendering.';
   $('json').value=JSON.stringify(rig,null,2);
-  if(viewer)viewer.update({rig,wind:wind(),selectedKnot,direction,head:images.head,front:images.front,rear:images.rear,hood:shown?(images.hoodRear||images.hood):images.hood}); // Render precisely the same posed geometry as the runtime, plus reference art and interactive handles.
+  if(viewer)viewer.update({rig,wind:wind(),selectedKnot,direction,
+    head:images.character||images.head,front:images.front,rear:images.rear,
+    hood:shown?(images.hoodRear||images.hood):images.hood}); // Render precisely the same posed geometry as the runtime, plus reference art and interactive handles.
 }
 function updateKnots(){while(rig.segments.length<rig.points.length-1)rig.segments.push(makeSegment());rig.segments.length=rig.points.length-1;controls();render();}
 function pick(e){const bounds=$('preview').getBoundingClientRect();return{u:clamp((e.clientX-bounds.left)/bounds.width,0,1),v:clamp((e.clientY-bounds.top)/bounds.height,0,1)};}
@@ -511,6 +557,7 @@ window.HobunjiSplineAuthorDiagnostics=()=>({
   selected:{species:selectedSpecies(),gender:selectedGender(),cosmetic:activeStyle?.label||loadedName,slot:activeStyle?.slot||null},
   direction,selectedKnot,selectedSegment,mode,viewer:viewer?.debug()||{webgl:false},
   seamCount:rig.seam.length,headLoaded:!!images.head,
+  canonicalPortrait:{loaded:!!images.character,error:canonicalPortraitError,registryReady:!!canonicalPortraitPromise},
   pose:JSON.parse(JSON.stringify(rig.segments[selectedSegment]?.poses[direction]||{})),
 }); // Visible/copyable diagnostics for mobile users who do not have devtools.
 $('copyDiagnostics').onclick=async()=>{const value=JSON.stringify(window.HobunjiSplineAuthorDiagnostics(),null,2);
