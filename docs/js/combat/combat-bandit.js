@@ -416,7 +416,7 @@
       warmCanvas.width = warmCanvas.height = PORTRAIT_SIZE;
       await window.NpcAvatarPreview.renderProfileToCanvas(warmCanvas, profile, { forceEyesOpen: true });
     }
-    await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, { forceEyesOpen: true });
+    await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, { forceEyesOpen: true, deferSplineParts: true });
     const neutralFrontCanvas = document.createElement('canvas'); // Immutable neutral/resting source used to restore this enemy immediately when combat ends.
     neutralFrontCanvas.width = neutralFrontCanvas.height = PORTRAIT_SIZE;
     neutralFrontCanvas.getContext('2d').drawImage(frontCanvas, 0, 0);
@@ -431,7 +431,7 @@
     const backCanvas = document.createElement('canvas');
     backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
     characterBuildStatus.stage = 'back-portrait';
-    await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
+    await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true, deferSplineParts: true });
     // Imlao keeps an articulated, normally sized head rig but has no skull: the portrait is re-rendered with the head sprite skipped,
     // so the torso, collar and rear cloth the skull normally hides show through (not an erased hole).
     // The untouched renders below stay as the rig canvases, so head bones and weights still come from the real skull.
@@ -448,7 +448,7 @@
       }
       const redraw = async (canvas, options) => {
         canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
-        await window.NpcAvatarPreview.renderProfileToCanvas(canvas, profile, { forceEyesOpen: true, skipHeadSprite: true, ...options });
+        await window.NpcAvatarPreview.renderProfileToCanvas(canvas, profile, { forceEyesOpen: true, skipHeadSprite: true, deferSplineParts: true, ...options });
       };
       await redraw(frontCanvas, {});
       const neutralContext = neutralFrontCanvas.getContext('2d');
@@ -542,6 +542,23 @@
     backPivot.rotation.y = -Math.PI / 2;
     frontPivot.add(renderedFrontMesh);
     backPivot.add(renderedBackMesh);
+    // The hostile converts a humanoid avatar into two independently pivoted planes.
+    // Move already-authored hair off the discarded assembly and onto the actual visible
+    // head bone, otherwise beard/hair stays with the hidden hand-driver portrait.
+    const splineHolder = portrait.userData?.portraitSplineHolder; // Authored cosmetic child formerly attached to the temporary base plane.
+    const splineBone = frontNeckSkin?.headScaleBone || null; // Same articulated head transform the hostile's front portrait already uses.
+    if (splineHolder) {
+      const splineHost = splineBone || frontPivot; // A headless/rigless hostile retains a rigid, correctly-facing fallback.
+      splineHost.add(splineHolder);
+      portrait.userData.portraitSplineHeadBone = splineBone;
+      portrait.userData.portraitSplineNeckLocal = frontNeckSkin?.neckLocal || null;
+      if (splineBone) {
+        splineHolder.position.set(-(frontNeckSkin.neckLocal?.x || 0), -(frontNeckSkin.neckLocal?.y || 0), 0);
+      } else splineHolder.position.set(0, 0, 0);
+    }
+    if (portrait.userData?.portraitSplineAttachment) {
+      portrait.userData.portraitSplineAttachment.assembly = frontPivot; // Later wardrobe changes rebuild at the same visible hostile pivot.
+    }
     // Keeps the portrait's own species/gender grounding offset (the
     // assembly's y position inside the model root) now that the meshes no
     // longer sit under it.
