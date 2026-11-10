@@ -44,11 +44,13 @@ textured silhouette, not a black blob. Each sprite reports region counts,
 untouched ink pixels, and material shade variation in mobile diagnostics.
 
 For hand/foot GLBs the same selected material PNG is mapped as one cached
-texture. The farm cliffs' unlit `MeshBasicMaterial` shading is also used on
-all statue pieces, so one selected finish has consistent color rather than
-different Lambert lighting on portrait and limbs. The mobile preview stays
-visible while scrolling and exposes original front/back/head canvases plus
-copyable material and GLB readiness diagnostics.
+texture. The **UV treatment**, rather than the farm cliffs' unlit shader, is
+the shared behavior: statue portrait and hand/foot materials retain
+`MeshLambertMaterial`, because the actual browser screenshot demonstrated
+that applying unlit material directly made the source PNG too dark for the
+statue preview. The mobile preview stays visible while scrolling and exposes
+original front/back/head canvases plus copyable material, detected cell,
+outline and GLB readiness diagnostics.
 
 The additional `scripts/smoke-statue-author-browser.js` regression runs the
 actual authored NPC and Three.js r128 stack in headless Chromium at a 390px
