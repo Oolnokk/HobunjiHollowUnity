@@ -333,10 +333,14 @@
           window.CratePiles?.registerPile?.({id:obj.id,mapId:zoneId,scene:zi.scene,group:mesh,
             count:obj.crateCount??3,lootable:true,onChange:count=>{obj.crateCount=count;}});
         } else if (obj.key && window.ProceduralFurniture) {
-          const result = deps.makeDecorativeFurnitureMesh(obj.x, obj.y, obj.key, zi.scene, zoneId);
+          const result = deps.makeDecorativeFurnitureMesh(obj.x, obj.y, obj.key, zi.scene, zoneId, obj.rotY || 0);
           if (!result) continue;
           result.mesh.position.y += y;
           if (result.light) result.light.position.y += y;
+          if (obj.strongholdProp && (obj.key === 'fortifiedHighCover' || obj.key === 'fortifiedWatchtower')) {
+            result.collisionTiles = _applyBanditTentGridCollision(zoneId, obj); // Existing tile collision/restore path; same update as a burned tent.
+            result.propId = obj.id;
+          }
           meshes.set(obj.id, result);
         }
       }
@@ -412,9 +416,10 @@
   }
 
   function isBanditCampCleared(rec) {
+    if (rec?.stronghold && !window.CaveSiteSystem?.fortifiedStrongholdCleared?.(rec.stronghold.mapId)) return false; // Garrison, not burnt tents, owns fortress clearance.
     const view = _banditZoneViews.get(rec.zoneId);
     if (!view) return false;
-    if (window.TemporaryLocales.livingTents(view, rec.instance).length) return false;
+    if (!rec.stronghold && window.TemporaryLocales.livingTents(view, rec.instance).length) return false;
     for (const c of deps.hostileObjects) {
       if (c.banditCampInstanceId === rec.instance.id && c.health > 0) return false;
     }
@@ -763,11 +768,15 @@
     if (rec.zoneId !== deps.getCurrentArea()) return null;
     if ((rec.reserveByRank[rank] || 0) <= 0) return null;
     rec.reserveByRank[rank]--; // Claimed before the async avatar build: concurrent callers can never spawn past the camp's reserve.
-    const point = simpleHydraPoint(rec, exterior);
+    const point = rec.stronghold && exterior
+      ? { x: (rec.instance.site.x + (rec._strongholdGuardIndex++ % 2 ? rec.instance.site.w - 2 : 1) + .5) * deps.TILE,
+          y: (rec.instance.site.y + 1.5) * deps.TILE }
+      : simpleHydraPoint(rec, exterior); // Tower garrisons occupy the real lookouts, not tent reinforcement positions.
     let c = null;
     try {
       c = await spawnConfiguredBandit(rec, rank, point.x, point.y, {
         zoneId: rec.zoneId,
+        ...(rec.stronghold && exterior ? { defOverride: { rangedWeaponKey: 'crossbow' } } : {}),
         extra: {
           homeX: rec.homeX,
           homeY: rec.homeY,
@@ -803,6 +812,7 @@
     }
 
     for (const rec of recs) {
+      if (rec.stronghold) continue; // No Simple Hydra reinforcements or exterior captain in an inhabited cave fortress.
       if (!rec.activeRanksById) continue;
       let nonCaptainDeaths = 0;
       for (const [id, rank] of [...rec.activeRanksById]) {
@@ -973,6 +983,9 @@
     };
     tracked.push(rec);
     _banditCampInstances.set(zoneId, tracked);
+    rec._strongholdGuardIndex = 0; // Alternates lookout towers while staging the initial crossbow guards.
+    if (!pinThisCamp && window.BanditStrongholds?.shouldFortify?.(zoneId, discoverySlot, cfg))
+      window.BanditStrongholds.upgradeCamp(rec, deps); // Alternative to tents; never creates an extra camp or consumes a second site.
     ensureBanditCampMeshes(zoneId);
 
     const comp = cfg?.gangComposition || {};
@@ -986,7 +999,7 @@
     rec.captainName = (pinThisCamp ? bountyPin.captainName : null)
       || window.BanditCombat.randomName?.('captain')
       || 'Bandit Captain';
-    const initialGuardCount = Math.min(3, rec.reserveByRank.grunt);
+    const initialGuardCount = Math.min(rec.stronghold ? 2 : 3, rec.reserveByRank.grunt);
     let initialGuards = 0;
     for (let i = 0; i < initialGuardCount; i++) {
       const guard = await spawnSimpleHydraBandit(rec, 'grunt', undefined, true);
@@ -1037,6 +1050,7 @@
       window.WildernessMap?.forgetDiscoveredThreat?.(rec.discoveryKey);
       for(const obj of rec.props||[])if(obj.key==='crateStack')window.CratePiles?.forgetPile?.(zoneId,obj.id);
       for (const id of rec.instance.stampedObjectIds) removeBanditCampProp(zoneId, id);
+      if (rec.stronghold) window.BanditStrongholds?.removeCamp?.(rec, deps); // Retire synthetic cave and transition with the original locale.
       window.TemporaryLocales.release(view, rec.instance);
       _syncBanditFlora(zoneId, rec.instance.removedObjectSnapshots, true);
       const idx = tracked.indexOf(rec);
@@ -1047,6 +1061,7 @@
   }
 
   function forgetZoneBanditState(zoneId) {
+    for(const rec of _banditCampInstances.get(zoneId)||[])if(rec.stronghold)window.BanditStrongholds?.removeCamp?.(rec,deps);
     for(const rec of _banditCampInstances.get(zoneId)||[])for(const obj of rec.props||[])
       if(obj.key==='crateStack')window.CratePiles?.unregisterPile?.(zoneId,obj.id);
     _banditCampMeshes.delete(zoneId);
