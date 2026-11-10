@@ -544,6 +544,9 @@
     // The player's equipment map retains unequipped tool roots by reference,
     // even when they have no parent. A rebuilt/discarded tool is absent from
     // the current map, so it remains eligible for the ordinary timeout.
+    // EquipmentPanel owns the authoritative map even if hand/combat adapters
+    // were initialized without toolMeshMap (the former fix's untested hole).
+    if (global.EquipmentPanel?.ownsCachedToolRoot?.(root)) return true;
     for (const deps of [global.ProceduralHandAttachments?.gameDeps, global.Combat?.deps]) {
       const map = deps?.toolMeshMap; // Authoritative live equipment-slot ownership, shared by both gameplay integration paths.
       if (!map) continue;
@@ -730,6 +733,7 @@
     return [...records].map(s => ({
       itemKey: s.itemKey, loaded: s.config.flail ? !!(s.chain && s.headRoot) : !!s.staticReady,
       attached: !!s.root.parent, attacking: s.attacking,
+      cachedPlayerOwned: isCachedPlayerToolRoot(s.root), // Mobile diagnostics expose when all live ownership adapters fail to recognize a reusable weapon.
       detachedForMs: s.root.parent ? 0 : Math.max(0, performance.now() - s.detachedAt), // Mobile proof that cached unequipped weapons retain their rope/head without a timeout.
       progress: s.progress, direction: s.direction.toArray(),
       attackTiming: { windup: s.wf, strike: s.sf, hold: s.hf }, // Mobile-readable phase diagnostics.
