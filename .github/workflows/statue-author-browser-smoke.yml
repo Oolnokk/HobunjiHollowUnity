@@ -9,6 +9,13 @@ on:
       - 'scripts/smoke-statue-author-browser.js'
       - 'scripts/test-statue-surface-cells.js'
       - 'scripts/test-statue-furniture-author.js'
+      - 'scripts/test-statue-hero-pools.js'
+      - 'scripts/generate-statue-author-index.js'
+      - 'docs/config/statue-author-asset-index.json'
+      - 'docs/js/combat/bandit-equipment-pools.js'
+      - 'docs/js/combat/combat-bandit.js'
+      - 'docs/js/weapon-trust-bandit-loadouts.js'
+      - 'docs/js/metal-armor-system.js'
       - '.github/workflows/statue-author-browser-smoke.yml'
   workflow_dispatch:
 
@@ -25,6 +32,10 @@ jobs:
           node-version: '22'
       - name: Check ink-boundary region mapping and furniture hierarchy
         run: node scripts/test-statue-furniture-author.js
+      - name: Check repository indexes and bandit species-locked hero pools
+        run: |
+          node scripts/generate-statue-author-index.js
+          node scripts/test-statue-hero-pools.js
       - name: Install pinned browser dependencies
         run: npm install --no-save --package-lock=false playwright@1.55.1 three@0.128.0
       - name: Install Chromium
