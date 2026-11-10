@@ -144,9 +144,10 @@
     const consumed = new Set(state.triggeredTraps || []);
     for (const entry of record.entries) {
       if (consumed.has(entry.trap.id)) continue;
-      if (entry.burden?.exploded) {
-        consumed.add(entry.trap.id); // Shooting the real cask before crossing harmlessly disarms its tripwire.
-      } else if (entry.rope && entry.burden) {
+      if (entry.burden && (entry.burden.exploded || entry.burden.carried
+        || entry.rope?.burden !== entry.burden || entry.rope?.armed)) {
+        consumed.add(entry.trap.id); // Shooting, picking up, or striking the real cask disarms the trip string.
+      } else if (entry.rope?.burden === entry.burden && entry.burden) {
         if (!crossed(entry.trap.span, previous, point)) continue;
         const normal = entry.trap.span.axis === 'x' ? 'z' : 'x';
         const dir = previous && point[normal] < previous[normal] ? -1 : 1;
