@@ -10598,14 +10598,25 @@
         playerGaitTravel.source = source;
         return gaitSpeed;
       }
-      window.DevCompanion?.registerStateProvider?.('playerGait', () => ({
-        area: playerGaitTravel.area,
-        gaitSpeedTilesPerSecond: playerGaitTravel.speed,
-        velocitySpeedTilesPerSecond: playerGaitTravel.reportedSpeed,
-        source: playerGaitTravel.source,
-        jumpPhase: player._freeJump?.phase || null,
-        legMode: playerLegs?.getStandingPoseDebug?.()?.motionMode || null,
-      })); // On-device diagnostics distinguish moving support/zero-velocity from airborne, seated and idle rigs.
+      window.DevCompanion?.registerStateProvider?.('playerGait', () => {
+        const legDebug = playerLegs?.getStandingPoseDebug?.() || null; // Reuses the canonical foot-rig snapshot at Dev Companion's low polling rate.
+        return {
+          area: playerGaitTravel.area,
+          gaitSpeedTilesPerSecond: playerGaitTravel.speed,
+          velocitySpeedTilesPerSecond: playerGaitTravel.reportedSpeed,
+          source: playerGaitTravel.source,
+          jumpPhase: player._freeJump?.phase || null,
+          legRigAttached: !!playerLegs?.group?.parent,
+          legMode: legDebug?.motionMode || null,
+          externalFootContact: !!legDebug?.externalContact?.active,
+          gaitCadenceHz: legDebug?.gait?.cadenceHz ?? null,
+          strideLength: legDebug?.gait?.strideLength ?? null,
+          footTargetZ: {
+            left: legDebug?.left?.targetZ ?? null,
+            right: legDebug?.right?.targetZ ?? null,
+          },
+        };
+      }); // Mobile checks can now distinguish frozen input, airborne/paired-pose ownership, and a rig that isn't attached.
       // Head-turn bone built by buildSinglePlaneAvatarModel's neckRig option
       // (null if no neck pivot could be detected for the player's current
       // portrait) — same mechanism the animation-author tool/NPC dialogue
