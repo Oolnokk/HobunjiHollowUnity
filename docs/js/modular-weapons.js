@@ -214,8 +214,8 @@
     if (Object.hasOwn(raw || {}, 'flailHeadScale')) {
       result.flailHeadScale = finite(raw.flailHeadScale, 1, 0.05, 8); // Only this shaft/head pairing uses this hanging scale.
     }
-    if (raw?.dmgType === 'sharp' || raw?.dmgType === 'blunt') {
-      result.dmgType = raw.dmgType; // Damage overrides belong to one authorized part pairing, never the shared head definition.
+    if (raw?.dmgType === 'sharp' || raw?.dmgType === 'blunt' || raw?.dmgType === 'inherit') {
+      result.dmgType = raw.dmgType; // Explicit 'inherit' can turn off a shipped blunt override for this pair only.
     }
     if (raw?.animation === 'thrust' || raw?.animation === 'sweep') result.animation = raw.animation;
     else if (!partial) result.animation = fallbackAnimation;
@@ -590,6 +590,10 @@
         if (pair.layerOrder && !shaft.overrides[head]?.layerOrder) {
           if (!shaft.overrides[head]) shaft.overrides[head] = {};
           shaft.overrides[head].layerOrder = pair.layerOrder; // Missing values from old exports inherit each explicitly authored layer choice.
+        }
+        if (pair.dmgType && !Object.hasOwn(raw.overrides?.[head] || {}, 'dmgType')) {
+          if (!shaft.overrides[head]) shaft.overrides[head] = {};
+          shaft.overrides[head].dmgType = pair.dmgType; // Legacy uploads still inherit newly shipped blunt-pick flail classification.
         }
         if (pair.bridges && !Object.hasOwn(raw.overrides?.[head] || {}, 'bridges') && !shaft.overrides[head]?.bridges) {
           const bridges = cleanBridges(pair.bridges); // Imports predating bridge strokes keep the committed ones.
