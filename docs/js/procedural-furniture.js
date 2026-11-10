@@ -234,14 +234,16 @@
         child.geometry = child.geometry.clone();
         if(part.rockShape?.enabled){const original=child.geometry;rockSourceGeometries.set(child,original.clone());child.geometry=createRockGeometry(original,part.rockShape,child.userData.rockSourceKey);original.dispose();if(child.isSkinnedMesh)convertedSkins.push(child);}
         const color = material => {
-          const result = material.clone();result.color?.set(resolveColor(part,baseColor));
-          if (part.statueUniformFinish===true) {
-            // GLB limbs and weapon meshes inherit the *same selected PNG*
-            // rather than sampling its dark outer border on each arbitrary UV.
-            result.map=null;result.color?.set(0xffffff);result.needsUpdate=true;
-          } else if(part.materialTexture)applyPartTexture(result,part);
+          if(part.statueUniformFinish===true){
+            // The NPC body already uses Lambert shading. Using the original
+            // GLB's PBR/vertex-color material here could leave the hands and
+            // feet almost black even when their material texture is correct.
+            return new THREE.MeshLambertMaterial({color:0xffffff,side:THREE.DoubleSide});
+          }
+          const result=material.clone();result.color?.set(resolveColor(part,baseColor));
+          if(part.materialTexture)applyPartTexture(result,part);
           return result;
-        }; // Existing GLB path is unchanged for ordinary non-statue furniture.
+        }; // Ordinary furniture GLBs keep their original authored materials.
         child.material = part.rockShape?.enabled?makePartMaterial(rockMaterialPart(part),baseColor):Array.isArray(child.material) ? child.material.map(color) : color(child.material);
         child.castShadow = child.receiveShadow = true;
       });
