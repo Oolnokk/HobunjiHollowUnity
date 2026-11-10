@@ -228,8 +228,8 @@
   // attackMultiplier/damageTakenMultiplier/rareFishWeightMultiplier below) —
   // otherwise those meals would show an active buff icon that does nothing.
   function bonusYieldChance(skillKey) {
-    if (skillKey === 'foraging') return Math.min(0.6, (window.PerkSystem?.rank('foraging', 'increaseYieldChance') || 0) * 0.1 + foodStacks('foraging') * 0.02); // Increase Yield Chance perk.
-    if (skillKey === 'mining') return Math.min(0.35, (window.PerkSystem?.rank('mining', 'increaseMiningYield') || 0) * 0.07 + foodStacks('mining') * 0.02); // Increase Mining Yield perk; five ranks preserve the former 35% cap.
+    if (skillKey === 'foraging') return Math.min(0.75, Math.min(0.6, (window.PerkSystem?.rank('foraging', 'increaseYieldChance') || 0) * 0.1 + foodStacks('foraging') * 0.02) + (window.FestivalSystem?.fortuneBonus?.('foragingFortune') || 0)); // Preserve the established base cap before adding the independent fortune. // Increase Yield Chance perk.
+    if (skillKey === 'mining') return Math.min(0.55, Math.min(0.35, (window.PerkSystem?.rank('mining', 'increaseMiningYield') || 0) * 0.07 + foodStacks('mining') * 0.02) + (window.FestivalSystem?.fortuneBonus?.('miningFortune') || 0)); // Keep the exact old .35 cap at perk rank five without floating-point drift. // Increase Mining Yield perk; five ranks preserve the former 35% cap.
     return Math.min(0.35, normalizedPower(skillKey) * 0.35); // Used by stone and future ore rewards.
   }
 
