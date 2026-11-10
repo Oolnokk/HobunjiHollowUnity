@@ -189,7 +189,7 @@
         if(standings)html+=`<p class="festival-note">Current highest NPC entry: ${esc(standings.strongest?.label||'None')} · ${standings.strongest?.score||0}★. ${standings.entry ? 'Your entry: '+esc(standings.entry.label)+' · '+standings.entry.score+'★'+(standings.winning?' (currently ahead or tied).':' (try stronger ingredients next year).') : 'You have not entered yet.'}</p>`;
         html+=`<p class="festival-note">To eat: sit in a festival dining chair and use the Eat bowl prompt. Your character will take another bite every few seconds, with the normal Drink animation and a ${bowl?.uses ?? 0}/10 portion counter. Stand or switch equipment to stop.</p>`;
       }
-      if (done) html += '<p class="festival-offering-preview">Your annual contribution is complete. Your fortune lasts 336 game days from the ceremony.</p>';
+      if (done) html += type==='offering' ? '<p class="festival-offering-preview">Your annual ancestor offering is complete. Its fortune lasts 336 game days from the ceremony.</p>' : '<p>Your festival meal has already been contributed.</p>';
       else if (type==='offering') html += offeringChoicesHtml(api);
       else {
         html += '<div class="festival-options">'+api.qualityChoices(type).map(choice => button(choice.label+' · '+('★'.repeat(choice.stars))+' ×'+choice.count, 'select-item', false, 'data-key="'+esc(choice.key)+'" data-stars="'+choice.stars+'" aria-pressed="'+(selection.key===choice.key && selection.stars===choice.stars)+'"')).join('')+'</div>';
