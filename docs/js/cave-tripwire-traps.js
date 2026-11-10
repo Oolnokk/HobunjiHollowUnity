@@ -29,7 +29,7 @@
       let minus = 1, plus = 1;
       while (minus <= MAX_WALL_STEPS && floorKeys.has(key(tile.col - minus * dx, tile.row - minus * dz))) minus++;
       while (plus <= MAX_WALL_STEPS && floorKeys.has(key(tile.col + plus * dx, tile.row + plus * dz))) plus++;
-      if (minus > MAX_WALL_STEPS || plus > MAX_WALL_STEPS || minus + plus < 4) continue;
+      if (minus > MAX_WALL_STEPS || plus > MAX_WALL_STEPS || minus + plus < 2) continue;
       const halfMinus = minus - .5, halfPlus = plus - .5;
       const span = {
         axis,
