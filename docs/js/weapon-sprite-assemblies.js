@@ -42,14 +42,18 @@
   function textureFor(THREE, path) {
     const url = imageUrl(path);
     if (!images.has(url)) {
-      images.set(url, new Promise((resolve, reject) => {
+      const pending = new Promise((resolve, reject) => {
         new THREE.TextureLoader().load(url, tex => {
           const surface = global.HobunjiSpritePngSurface || global.HobunjiPngPlaneUnlit;
           if (surface?.configureTexture) surface.configureTexture(THREE, tex, url); // Shared authored PNG color-management and filtering policy.
           else tex.magFilter = tex.minFilter = THREE.NearestFilter;
           resolve(tex);
         }, undefined, reject);
-      }));
+      }).catch(error => {
+        images.delete(url); // A transient missing PNG must not poison all future weapons sharing its cached promise.
+        throw error;
+      });
+      images.set(url, pending);
     }
     return images.get(url);
   }
@@ -194,9 +198,9 @@
     const existing = states.get(root);
     if (existing) {
       // The same cached handle can be decorated again when its slot is reselected.
-      // Restore a temporarily reparented connector/head without rebuilding or disposing their materials.
-      if (existing.chain && existing.chain.parent !== root) root.add(existing.chain);
-      if (existing.headRoot && existing.headRoot.parent !== root) root.add(existing.headRoot);
+      // Restore temporarily detached connector/head without rebuilding or disposing their materials.
+      if (existing.chain && existing.chain.parent !== root) { root.add(existing.chain); existing.repairedParts++; }
+      if (existing.headRoot && existing.headRoot.parent !== root) { root.add(existing.headRoot); existing.repairedParts++; }
       return root;
     }
     const plane = root.userData.toolPlane;
@@ -228,11 +232,20 @@
       registryEntry: weakRegistry ? new WeakRef(root) : root, // Frame iteration never strongly retains an unequipped actor/weapon graph.
       gcResources: gpuFinalizer ? new Set() : null, // Finalizer holds only cloned GPU resources, not meshes, groups, state, or root.
       finalizerToken: {}, // Explicit drop unregisters only this weapon's finalization callback.
+      originalDef: def, originalOptions: options, // A failed async source load can reconstruct this exact authored part recipe, not a generic fallback.
+      setupFailed: false, nextRetryAt: 0, repairedParts: 0, // Pre-render retry and recovery counters are visible through mobile diagnostics.
     }; // Tracks per-instance lag, asset loading and render nodes without altering the original grip.
     states.set(root, state);
     records.add(state.registryEntry);
     gpuFinalizer?.register(root, state.gcResources, state.finalizerToken);
     const layers = config.layers || def?.spriteLayers || []; // Committed Tool Hub recipe overrides shape defaults when both are present.
+    const setupFailure = error => {
+      if (state.dead) return;
+      trackOwnedGpuResources(state); // Partial setups still release owned textures if this root later becomes unreachable.
+      state.setupFailed = true;
+      state.nextRetryAt = performance.now() + 2000; // Retriable source/texture failures get a short, bounded-backoff window.
+      report(itemKey + ': ' + (error?.message || error));
+    }; // Reinitialization is deferred to the owner-attached tick, avoiding overlapping async setup calls.
     const modularShaft = def?.modular && global.ModularWeapons?.getConfig?.().shafts?.[def.modular.shaft]; // Foundry shaft can own the entire living weapon and its VFX.
     const setup = async () => {
       const baseImg = plane.material?.map?.image;
@@ -333,15 +346,15 @@
     };
     // The base PNG can still be loading while the equipment holder is built.
     const baseImage = plane.material?.map?.image;
-    if (baseImage?.width || baseImage?.naturalWidth) setup().catch(error => report(itemKey + ': ' + error.message));
+    if (baseImage?.width || baseImage?.naturalWidth) setup().catch(setupFailure);
     else {
       const startAt = performance.now();
       const trySetup = () => {
         if (state.dead) return;
         if (plane.material?.map?.image?.width || plane.material?.map?.image?.naturalWidth) {
-          setup().catch(error => report(itemKey + ': ' + error.message));
+          setup().catch(setupFailure);
         } else if (performance.now() - startAt < 10000) setTimeout(trySetup, 50);
-        else report(itemKey + ': base PNG did not finish loading');
+        else setupFailure(new Error('base PNG did not finish loading'));
       };
       trySetup();
     }
@@ -596,6 +609,8 @@
       return;
     }
     state.detachedAt = 0;
+    if (state.chain && state.chain.parent !== root) { root.add(state.chain); state.repairedParts++; } // Self-heal an external cleanup/reparent operation on next equipped frame.
+    if (state.headRoot && state.headRoot.parent !== root) { root.add(state.headRoot); state.repairedParts++; } // Preserve all authored head layers and their current textures.
     if (!state.chain || !state.headRoot) {
       if (root.visible !== false) effects?.stepFire(state, effectsDt); // Ordinary multi-layer tools can have interleaved VFX without a chain.
       return;
@@ -747,6 +762,12 @@
       const state = liveState(entry);
       if (!state || state.dead) { records.delete(entry); continue; } // Prune collected roots lazily, without a separate timer.
       try {
+        if (state.setupFailed && state.root.parent && now >= state.nextRetryAt) {
+          const { root, itemKey, originalDef, originalOptions } = state;
+          drop(root); // Dispose partial meshes before starting a fresh, idempotent reconstruction.
+          decorate(root, itemKey, originalDef, originalOptions);
+          continue;
+        }
         if (state.root.parent) effects?.refreshMetal(state, now); // Detached cached tools have no visible metal; only refresh on re-equip.
         updateOne(state, freezePhysics ? 0 : dt, now, dt);
       }
@@ -784,6 +805,7 @@
       ropeArt: s.chain?.userData?.hobunjiRuinRopeSprite ? 'assets/objectsprites/rope_long.png' : null, // Mobile confirmation of the rope source.
       ropeTint: s.chain?.userData?.hobunjiRuinRopeSprite ? { color: s.config.flail.chain.color, method: s.chain.children?.[0]?.userData?.ropeTintMethod || 'unavailable' } : null, // Confirms the real 3D texture was shade-filled, including editor previews, without accessing devtools.
       lifetime: weakRegistry ? 'root-weak' : 'explicit-drop', // Visible fallback for browsers without weak references.
+      setupFailed: s.setupFailed, retryInMs: s.setupFailed ? Math.max(0, s.nextRetryAt - performance.now()) : 0, repairedParts: s.repairedParts, // Diagnose failed textures and automatic reparent recovery on mobile.
       partsAttached: !s.config.flail || (s.chain?.parent === s.root && s.headRoot?.parent === s.root), // Confirms both children follow the same cached handle after switching tools.
     });
     }
