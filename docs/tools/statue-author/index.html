@@ -240,7 +240,7 @@ function makeStaticParts(front,back,head,backHead,profile,pose,finish,role,weapo
   const bodyMask=maskedPart(splitFront.body,full),headMask=maskedPart(splitFront.head,bounds);
   const backBodyMask=maskedPart(splitBack.body,full),backHeadMask=maskedPart(splitBack.head,bounds);
   const nominalHeight=Math.max(.25,frame?.modelHeight||1),nominalWidth=Math.max(.25,frame?.modelWidth||1);
-  const sizeMultiplier=.9; // Only the complete statue's furniture scale, not species-specific anatomy.
+  const sizeMultiplier=.9/Math.max(nominalWidth,nominalHeight); // Fit tall or unusually scaled NPC rigs inside one furniture tile, preserving their aspect and attachment ratios.
   const bodyWidth=nominalWidth*sizeMultiplier,bodyHeight=nominalHeight*sizeMultiplier;
   const bodyCenterY=clamp(frame?.placementRatio??.5,.1,.9)*bodyHeight;
   const drop=clamp(num(pose.bodySink),0,25)*bodyHeight/100;
@@ -337,7 +337,7 @@ async function makeProject(){
   // The runtime schema is also accepted by Furniture Author's existing JSON import.
   return {schema:'hobunji_furniture_surface_author.v58',key:safeName(name).toLowerCase(),id:safeName(name),
     name,notes:'Generated with Statue Author from NPC '+(npc.name||npc.id||'unknown')+' / pose '+phase,
-    statueSource:{npcId:npc.id||null,animationName:animation?.name||null,phase,materialFile:filename,materialRole:role},
+    statueSource:{npcId:npc.id||null,animationName:animation?.name||null,phase,materialFile:filename,materialRole:role,sourceRig:rig},
     tileBase:{visible:true,tileSize:1,footprintW:1,footprintD:1,y:0,gridOpacity:.55},
     surfaceRecognition:{splitAngleDeg:24,colorCode:false,selectSurfaces:true,multiSelect:true},parts,
     avatar:{visible:false}};
@@ -440,12 +440,16 @@ window.__hobunjiStatueDebug=()=>{
     meshes.push({id:mesh.userData.statuePieceId,type:mesh.userData.authoredPart?.kind||'piece',
       textureReady:mesh.userData.statueTextureReady===true,
       modelReady:mesh.userData.glbReady===true,
+      visible:mesh.visible,opacity:mesh.material?.opacity??1,
+      position:mesh.position.toArray(),rotation:mesh.rotation.toArray().slice(0,3),
+      size:(exportProject?.parts.find(part=>part.id===mesh.userData.statuePieceId)?.transform)||null,
       textureError:mesh.userData.statueTextureError||null,
       modelError:mesh.userData.glbError||null,
       material:meshMaterialStats(mesh)});
   });
   return {built:!!exportProject,record:selectedRecord?.id||$('npcSelect').value,
     importedAnimation:animation?.name||null,phase:exportProject?.statueSource?.phase||null,
+    sourceRig:exportProject?.statueSource?.sourceRig||null,
     texture:exportProject?.statueSource?.materialFile||$('materialFile').value,
     pieces:meshes,runtimeErrors:runtimeErrors.slice(-15),visibleStatus:$('status').textContent};
 }; // Safe read-only mobile diagnostics and browser-smoke verification.
