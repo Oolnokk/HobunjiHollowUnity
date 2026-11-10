@@ -44,6 +44,10 @@ aside{max-height:none;overflow:visible;border-right:0;grid-template-columns:repe
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/png-plane-avatar.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
+<script src="../../config/weapon-trust-visits.js?v=20261110hero1"></script>
+<script src="../../js/combat/bandit-equipment-pools.js?v=20261110hero1"></script>
+<script src="../../js/metal-armor-system.js?v=20261110hero1"></script>
+<script src="../../js/combat/bandit-rank-wardrobe.js?v=20261110hero1"></script>
 <script>window.__hobunjiFurnitureAssetBase='../../assets/';</script>
 <script src="../../js/procedural-furniture.js?v=20261110statueTwoPass1"></script>
 </head>
@@ -54,25 +58,39 @@ aside{max-height:none;overflow:visible;border-right:0;grid-template-columns:repe
 <section>
 <h2>1 · Character</h2>
 <label for="npcSelect">Repository NPC</label><select id="npcSelect"><option value="">Loading NPCs…</option></select>
-<label for="npcFile">Or import a Character Studio NPC export (.json)</label><input id="npcFile" type="file" accept=".json,application/json">
+<label for="heroSpecies">Random hero species</label>
+<select id="heroSpecies" aria-label="Species for random hero"><option value="">Loading repository species index…</option></select>
+<button id="generateHero" type="button" class="primary" disabled>Generate Random Hero (captain gear)</button>
+<small id="heroResult">Uses the real species cosmetic whitelist, captain bandit clothing, crafted armor, and cultural weapon restrictions.</small>
+<details><summary>Import a separate Character Studio NPC JSON</summary>
+<label for="npcFile">Custom NPC export</label><input id="npcFile" type="file" accept=".json,application/json"></details>
 <small>The source portrait retains clothing, age, species and cosmetics. No living NPC or animation loop is created.</small>
 </section>
 <section>
 <h2>2 · Frozen pose</h2>
-<label for="animationFile">Import Attack Animation Editor export</label><input id="animationFile" type="file" accept=".json,application/json">
+<label for="repoAnimation">Repository pose / animation</label>
+<select id="repoAnimation"><option value="">Neutral pose (no animation)</option></select>
+<details><summary>Import a separate Attack Animation Editor JSON</summary>
+<label for="animationFile">Custom animation export</label><input id="animationFile" type="file" accept=".json,application/json"></details>
 <label for="phase">Key pose to freeze (after importing animation)</label><select id="phase" disabled><option value="neutral">Neutral</option><option value="windup">Windup</option><option value="strike">Strike</option></select>
 <small>Body yaw/sink, weapon XYZ/rotation, and free-hand channels are taken from the chosen authored key pose. Limbs remain individually editable furniture parts.</small>
 </section>
 <section>
 <h2>3 · Material and equipment</h2>
 <label for="materialPreset">Uniform statue finish</label>
-<select id="materialPreset"><option value="carved_smooth.png">Carved smooth</option><option value="boards.png">Boards / wood</option><option value="other">Custom repository texture…</option></select>
-<label for="materialFile">Material PNG (assets/textures/)</label><input id="materialFile" value="carved_smooth.png" spellcheck="false">
+<select id="materialPreset"><option value="carved_smooth.png">Loading repository material index…</option></select>
+<details><summary>Manual texture filename (advanced)</summary>
+<label for="materialFile">Material PNG (assets/textures/)</label><input id="materialFile" value="carved_smooth.png" spellcheck="false"></details>
 <label for="statueTint">Statue base color (animal-style cell shading)</label><input id="statueTint" type="color" value="#b9b1a2">
 <small>Each outlined region keeps its original relative brightness, recolored to this base color. The PNG becomes one grayscale overlay across the entire statue; white is transparent, gray partially transparent, and black opaque. Head and body share one overlay alignment.</small>
 <label for="materialRole">Material classification</label><select id="materialRole"><option value="stone">Stone</option><option value="wood">Wood</option><option value="metal">Metal</option><option value="other">Other</option></select>
-<label for="weaponPaths">Weapon PNG layers (assets/toolsprites/, one per line)</label><textarea id="weaponPaths" rows="3" placeholder="assets/toolsprites/harlyao_longsword.png"></textarea>
-<small>Leave weapon paths empty for unarmed statues. For modular weapons supply each visible sprite layer; every layer becomes its own child piece and shares the finish.</small>
+<label for="weaponSpriteSelect">Repository weapon sprite</label>
+<select id="weaponSpriteSelect"><option value="">Loading repository weapon index…</option></select>
+<div class="buttons"><button id="addWeaponSprite" type="button">Add selected weapon</button><button id="clearWeaponSprites" type="button">Clear weapons</button></div>
+<small id="weaponChoiceSummary">No weapons selected. You can add multiple indexed sprites, including modular layers.</small>
+<details><summary>Review or edit weapon PNG layers (advanced)</summary>
+<label for="weaponPaths">Weapon sprite paths (one per line)</label><textarea id="weaponPaths" rows="3" placeholder="assets/toolsprites/axe_hatchet.png"></textarea>
+<small>Hero generation uses the bandit species-locked weapon pool, not arbitrary sprites.</small></details>
 <details><summary>Inspect source portrait / alpha masks</summary><div id="portraitDiagnostics" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px"></div></details>
 </section>
 <section>
