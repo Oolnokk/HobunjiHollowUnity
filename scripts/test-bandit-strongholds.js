@@ -121,12 +121,12 @@ const registered = new Map(); // Live ordinary Burden records, not a parallel ba
 const grants = []; // Each real impact must award its loot once, including after re-entry.
 const furnitureLoads = []; // Ensures all new barrels reuse an authored furniture asset.
 const itemDeps = { ITEM_DEFS: {}, inventoryItems: [] }; // Canonical inventory registration for inert Komanine.
-context.AlchemySystem = { RECIPE_DEFS: {
+environment.AlchemySystem = { RECIPE_DEFS: {
   fire: { id: 'fire', useMode:'throw' }, frost: { id: 'frost', useMode:'throw' },
   narcoticRush: { id:'narcoticRush', label:'Narcotic Rush' },
 }, ensureRecipeItemDef(id) { return 'flask_' + id; } };
-context.BanditCombat = { availableFlaskRecipeIds() { return ['fire','frost']; } };
-context.ItemProcessing = {
+environment.BanditCombat = { availableFlaskRecipeIds() { return ['fire','frost']; } };
+environment.ItemProcessing = {
   init(deps) { this.deps=deps; },
   getProcessingOutput(method, source) {
     assert.equal(method,'barrelAging');
@@ -135,15 +135,15 @@ context.ItemProcessing = {
   ensureProcessedItemDef(item) { this.deps.ITEM_DEFS[item.key]=item; },
 };
 assert.equal(strongholds.installItemRegistration(),true,'registers on the canonical ItemProcessing initializer');
-context.ItemProcessing.init(itemDeps);
+environment.ItemProcessing.init(itemDeps);
 assert.equal(itemDeps.ITEM_DEFS.komanine.label,'Komanine');
 assert.equal(itemDeps.ITEM_DEFS.komanine.consumeAction,undefined,'Komanine effects are intentionally unspecified');
-context.AuthoredFurniture = {
+environment.AuthoredFurniture = {
   peek(key) { return key === 'looseCrate' ? { carryable:{handTargets:{},billboardAnchor:{}} } : null; },
   async load(key) { furnitureLoads.push(key); return { key, parts:[{kind:'barrel',transform:{y:.4269,sy:.8327,sz:.76}}] }; },
   buildGroup() { const group = new Group(); group.isObject3D = true; return group; },
 };
-context.Shattercasks = {
+environment.Shattercasks = {
   registerBurden(data) { const burden={ ...data };registered.set(data.id,burden);return burden; },
   getBurden(id) { return registered.get(id) || null; },
   discardBurden(burden) { registered.delete(burden.id);return true; },
@@ -187,8 +187,8 @@ async function testPhysicalBarrels() {
   caves.restore(savedAfterClaims);
   assert.equal(caves.fortifiedBarrelStatus(mapId,flaskId).claimed,true,'world save retains claim on reload');
   assert.equal(strongholds.ensureBarrels(mapId,map,scene),0,'re-entry never regenerates spent barrels');
-  assert.equal(strongholds.forgetInterior(mapId),true);
-  assert.equal(scene.children.length,0,'scene teardown removes physical cover presentation');
+  assert.equal(strongholds.forgetInterior(mapId),false,'world restore already disposed the previous cave scene');
+  assert.equal(scene.children.length,0,'world restore removes stale cave cover presentation');
   console.log('Bandit stronghold placement, saved cave reentry, styled furniture, physical barrels and once-only loot: OK');
 }
 testPhysicalBarrels().catch(error => { console.error(error);process.exitCode=1; });
