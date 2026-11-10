@@ -831,7 +831,7 @@
   function cycleTabs(delta) {
     const panel = activePanel();
     if (!panel || panelOwnsAction(panel, delta < 0 ? 'previous' : 'next')) return;
-    const stableTabOpen = panel.id === 'menuPanel' && !!panel.querySelector('.mp-tab.active[data-mpanel="stable"]'); // Only the actual Stable page borrows the configured menu page-turn inputs.
+    const stableTabOpen = panel.id === 'menuPanel' && !!panel.querySelector('.mp-tab.active[data-mpanel="stable"]') && !!currentTarget?.closest?.('#mpStable'); // Only focus inside Stable borrows bumpers; focus on the top tab bar still switches main destinations.
     if (stableTabOpen) {
       const pages = [...panel.querySelectorAll('#stableRoleTabs > .stable-role-tab')]; // Existing clickable/tappable buttons are the single role-page selection authority.
       if (pages.length > 1) {
