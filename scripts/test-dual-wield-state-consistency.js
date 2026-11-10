@@ -142,6 +142,7 @@ for (const editor of [true, false]) {
   const sync = vm.runInNewContext(`(${visualSource.slice(syncStart, syncEnd).trim()})`, {
     states: new Map([['player', current]]), PLAYER_KEY: 'player', keyFor: () => 'player', teardown() {}, buildState() { throw new Error('the player state already exists'); }, editorOffhandAuthoring: false, currentContext: () => context, currentDualState: () => ({ influence: 1, idleBlend: 1 }), ACTIVE_EPSILON: 0.0001,
     inAttackEditor: () => editor, clamp01: value => value, hideOriginalMaterial() {}, syncAssemblyLayers() {}, // Only stance order is under test; layered sprite copies need real meshes.
+    global: { HobunjiWeaponSpriteAssemblies: { syncDualWield: () => false } }, // The isolated sync must supply the new flail-assembly service even with no weapon art.
     idleOffhandLocalTransform() {
       assert.equal(operations[0], editor ? 'editor-bake' : 'game-bake', 'source matrices must be baked before calculating the offhand idle pose');
       operations.push('idle-pose'); return { position: new Vector(), quaternion: new Quaternion() };
@@ -166,6 +167,7 @@ for (const editor of [true, false]) {
   const sync = vm.runInNewContext(`(${visualSource.slice(syncStart, syncEnd).trim()})`, {
     states: new Map([['player', current]]), PLAYER_KEY: 'player', keyFor: () => 'player', teardown() {}, buildState() { throw new Error('the player state already exists'); }, editorOffhandAuthoring: true, currentContext: () => context, currentDualState: () => ({ influence: 1, idleBlend: 1 }), ACTIVE_EPSILON: 0.0001,
     inAttackEditor: () => true, clamp01: value => value, hideOriginalMaterial() {}, syncAssemblyLayers() {}, // The authored offhand pose is independent of sprite-copy synchronization.
+    global: { HobunjiWeaponSpriteAssemblies: { syncDualWield: () => false } }, // Editor pose fixture has no loaded flail root, but keeps the real dependency boundary.
     idleOffhandLocalTransform() { operations.push('offhand-derived-from-holder'); return { position: new Vector(), quaternion: new Quaternion() }; },
     idleStancePoses: () => poses,
     idleCounterpartTransform(_current, source, derived) { operations.push(`${derived.id}-derived-from-${source.id}`); return { position: new Vector(), quaternion: new Quaternion() }; },
