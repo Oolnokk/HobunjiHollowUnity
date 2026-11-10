@@ -44,6 +44,7 @@ const BROWSER = new Set([
   'test-surface-foliage-styles-browser.js', // Real THREE and shared editor growth-style browser smoke.
   'test-omgurku-gameplay-browser.js', // Full game NPC spawn/transfer/despawn coverage.
   'test-omgurku-calibration-browser.js', // Runs in the existing browser workflow step.
+  'test-bipedal-monster-preview-browser.js', // Chromium/GLTFLoader model-swap smoke; run by the Animation Author browser workflow.
   'test-omgurku-tribe-browser.js', // Full game Omgurku-vs-Porakaneki hostile fight and camp placement.
   'test-spouse-kiss-live-player-rig.js', // Needs three@0.128.0; runs in smoke-animation-author-scene-url.yml after installing it.
 ]);

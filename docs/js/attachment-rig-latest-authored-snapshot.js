@@ -16,6 +16,7 @@
     new URL('harlyao-species-runtime.js?v=20260909a', base).href,
     new URL('omgurku-connector-rig.js?v=20261022pantsFallback1', base).href,
     new URL('omgurku-species-runtime.js?v=20261028h1e29db1', base).href,
+    new URL('bipedal-monster-assembler.js?v=20261109nohuknuk1', base).href,
     new URL('skeleton-species-runtime.js?v=20261027guardian1', base).href,
     new URL('harlyao-skeleton-species-runtime.js?v=20261010h93464d4', base).href,
     new URL('mao-ao-skeleton-species-runtime.js?v=20261101maoskelrear1', base).href,
