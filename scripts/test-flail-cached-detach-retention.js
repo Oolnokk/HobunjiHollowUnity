@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 
-// The real flail setup must survive long detachment in the *current* player
-// equipment map, but orphaned objects must still be released after five seconds.
+// Weapon-root ownership (not being parented, a slot-map lookup, or any timer)
+// determines the lifetime of its authored rope and all head layers.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
@@ -137,27 +137,40 @@ api.decorate(root, 'grappleFlail', { shapeKey:'grappleFlail' }, { THREE });
   const head = root.children.find(child => child.name === 'grappleFlail_flail_head'); // Parent group is the two-layer metal grapple head.
   assert(head && head.children.length === 2, 'the complete composite head exists before detachment');
 
-  window.ProceduralHandAttachments = { gameDeps:{ toolMeshMap:{ weapon:root } } }; // Mirrors the game's live slot map, which retains unequipped roots.
+  // Shipped procedural-hand dependencies can omit toolMeshMap entirely.
+  window.ProceduralHandAttachments = { gameDeps:{ toolHolder:{ children:[] } } };
   now = 200;
   api.tick(0);
-  now = 7000; // Old timeout would discard all child meshes here.
+  now = 7000; // Previously destroyed both suspended parts at the 5-second boundary.
   api.tick(0);
-  window.ProceduralHandAttachments.gameDeps.toolMeshMap = {}; // Verify the alternative live Combat adapter uses Map without duplicating player references.
-  window.Combat = { deps:{ toolMeshMap:new Map([['weapon', root]]) } };
-  now = 14000;
+  window.Combat = { deps:{ toolMeshMap:new Map([['weapon', {}]]) } }; // A stale slot-map entry must not control this root's lifetime.
+  now = 314000; // More than five minutes of unequipped time.
   api.tick(0);
-  assert(api.debugSnapshot()[0]?.loaded, 'detached equipment retains its loaded assembly beyond both timeout windows');
-  assert(root.children.includes(head), 'head survives a long unequipped interval');
-  assert(root.children.some(child => child.name === 'flail_ruin_rope'), 'rope survives the same unequipped interval');
-  assert(api.debugSnapshot()[0]?.detachedForMs >= 10000, 'mobile diagnostics prove the detached assembly is still retained');
+  assert(api.debugSnapshot()[0]?.loaded, 'cached flail survives an arbitrarily long detachment with no matching cache map');
+  assert.equal(api.debugSnapshot()[0]?.lifetime, 'root-weak', 'mobile debug reports root-based weak registry ownership');
+  assert.equal(api.debugSnapshot()[0]?.partsAttached, true, 'head and rope still share their preserved handle root');
+  assert(root.children.includes(head), 'both head layers survive the detachment');
+  const rope = root.children.find(child => child.name === 'flail_ruin_rope'); // Exact cached connector should remain intact across repeated slot switches.
+  assert(rope, 'rope survives the same long detachment');
+  assert(api.debugSnapshot()[0]?.detachedForMs > 300000, 'mobile diagnostics report long detachment without destruction');
+  assert(!head.children[0].material.disposed, 'head materials are never disposed while the cached root remains alive');
 
-  root.parent = { isScene:true }; // Equipping uses the SAME cached root instead of calling decorate again.
-  assert.equal(api.debugSnapshot()[0]?.attached, true, 'equipping exposes existing rope/head without reconstructing art');
-  assert.equal(api.debugSnapshot()[0]?.loaded, true, 'equipping does not require a new asynchronous setup');
+  root.parent = { isScene:true }; // Equipping uses this SAME cached root instead of requiring a fresh decorate call.
+  assert.equal(api.debugSnapshot()[0]?.attached, true, 'equip exposes the preserved rope/head immediately');
+  api.decorate(root, 'grappleFlail', { shapeKey:'grappleFlail' }, { THREE }); // Idempotent redecoration must not duplicate layers.
+  assert.equal(root.children.filter(child => child.name === 'flail_ruin_rope').length, 1, 'redecoration never duplicates the connector');
+  assert.equal(root.children.filter(child => child.name === 'grappleFlail_flail_head').length, 1, 'redecoration never duplicates the head');
+  root.remove(rope);
+  root.remove(head);
+  assert.equal(api.debugSnapshot()[0]?.partsAttached, false, 'diagnostics reveal an external temporary reparenting mistake');
+  api.decorate(root, 'grappleFlail', { shapeKey:'grappleFlail' }, { THREE });
+  assert(root.children.includes(rope) && root.children.includes(head), 'redecoration recovers both original components without new texture loads');
+  assert.equal(api.debugSnapshot()[0]?.partsAttached, true, 'mobile diagnostics confirm both parts are repaired');
   root.parent = null;
-  api.drop(root); // Actual owner disposal (enemy cleanup / preview teardown) is still authoritative.
-  assert.equal(api.debugSnapshot().length, 0, 'explicit teardown releases the state and its strong registry entry');
-  assert.equal(root.children.length, 1, 'explicit teardown removes rope and head but preserves the base tool plane');
+  api.drop(root); // Owner disposal remains authoritative for both gameplay and authoring preview.
+  assert.equal(api.debugSnapshot().length, 0, 'explicit teardown unregisters the root immediately');
+  assert.equal(root.children.length, 1, 'explicit teardown removes connector and head but keeps the handle plane');
+  assert(head.children.every(child => child.material.disposed), 'explicit teardown disposes every head-layer material');
 
   const discarded = new Object3D(); // A superseded cached loadout no longer referenced by either current equipment map.
   discarded.userData.toolPlane = new Mesh(new PlaneGeometry(.5, 1204/900), new MeshBasicMaterial({map:new Texture(handleImage)}));
@@ -165,14 +178,14 @@ api.decorate(root, 'grappleFlail', { shapeKey:'grappleFlail' }, { THREE });
   api.decorate(discarded, 'grappleFlail', { shapeKey:'grappleFlail' }, { THREE });
   for (let i = 0; i < 20 && !api.debugSnapshot()[0]?.loaded; i++) await Promise.resolve();
   assert.equal(api.debugSnapshot().length, 1, 'retired equipment builds using the same live assembly API');
-  now = 14100;
+  now = 314100;
   api.tick(0);
-  now = 19000;
+  now = 900000;
   api.tick(0);
-  assert.equal(api.debugSnapshot().length, 1, 'orphan is not dropped before the original five-second grace period');
-  now = 19001;
-  api.tick(0);
-  assert.equal(api.debugSnapshot().length, 0, 'orphaned assembly is reclaimed when no live equipment cache owns it');
-  assert.equal(discarded.children.length, 1, 'orphan cleanup preserves the base mesh while removing the connector/head');
-  console.log('flail cached-detach retention: PASS (rope + two-layer head, 14s idle, Map/object ownership, explicit and automatic cleanup)');
+  assert.equal(api.debugSnapshot().length, 1, 'an unparented but still externally referenced actor is never silently mutilated');
+  assert(discarded.children.find(child => child.name === 'flail_ruin_rope'), 'an idle NPC/preview keeps its suspension too');
+  api.drop(discarded); // Retirement/disposal is an explicit ownership event; unreachable roots are weakly collectible.
+  assert.equal(api.debugSnapshot().length, 0, 'retired actor cleanup explicitly releases the registry entry');
+  assert.equal(discarded.children.length, 1, 'retirement leaves only the external base plane');
+  console.log('flail root-lifetime retention: PASS (5+ minutes idle, no slot map, stale map, original head/rope, reattach, explicit cleanup)');
 })().catch(error => { console.error(error); process.exitCode = 1; });
