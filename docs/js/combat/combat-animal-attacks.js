@@ -220,12 +220,74 @@
     return state.lungeTraveledPx + 0.0001 >= state.lungeMaxDistancePx ? 'range' : null;
   }
 
+  // Each short-lived attack burst is normally one draw per visible mote. Batch
+  // same-material tetrahedra into one instanced draw, while retaining the
+  // original attack-owned simulation, timing and visual transforms.
+  function createParticleBatch(THREE, parent, geometry, materials, capacity) {
+    if (!THREE?.InstancedMesh || !THREE?.Object3D || !parent?.add || !geometry || !materials?.length) return null;
+    const limit = Math.max(1, Math.min(1024, Math.ceil(Number(capacity) || 1))); // Hard GPU allocation ceiling for malformed authored rates.
+    const meshes = []; // Owned scene nodes: one per color/material, never one per particle.
+    const positions = new Uint16Array(materials.length); // Reused per-material instance offsets on every frame.
+    const transform = new THREE.Object3D(); // One reusable transform/matrix scratch for the whole burst.
+    let pendingGeometry = null; // Disposed if constructing or attaching an instanced mesh throws.
+    try {
+      for (const material of materials) {
+        pendingGeometry = geometry.clone(); // Each batch owns the tiny tetra geometry and can release its instance GPU buffer without invalidating the shared source.
+        const mesh = new THREE.InstancedMesh(pendingGeometry, material, limit);
+        mesh.count = 0;
+        mesh.frustumCulled = false; // Burst particles move independently of the static instance bounding sphere.
+        mesh.instanceMatrix?.setUsage?.(THREE.DynamicDrawUsage);
+        parent.add(mesh);
+        meshes.push(mesh);
+        pendingGeometry = null;
+      }
+    } catch (error) {
+      pendingGeometry?.dispose?.();
+      for (const mesh of meshes) {
+        mesh.parent?.remove?.(mesh);
+        if (mesh.geometry !== geometry) mesh.geometry?.dispose?.();
+      }
+      return null; // Older or incomplete renderers keep the existing per-mote fallback.
+    }
+    let disposed = false; // Prevent a cancelled attack from updating removed scene nodes.
+    return {
+      meshes,
+      capacity: limit,
+      sync(particles, writeTransform) {
+        if (disposed) return;
+        positions.fill(0);
+        for (const particle of particles) {
+          const materialIndex = Math.max(0, Math.min(meshes.length - 1, particle.materialIndex || 0)); // Visual shade chosen by the owning attack.
+          const index = positions[materialIndex]++;
+          if (index >= limit) { positions[materialIndex] = limit; continue; }
+          writeTransform(transform, particle);
+          transform.updateMatrix();
+          meshes[materialIndex].setMatrixAt(index, transform.matrix);
+        }
+        for (let i = 0; i < meshes.length; i++) {
+          const mesh = meshes[i];
+          const count = positions[i];
+          if (count || mesh.count !== count) mesh.instanceMatrix.needsUpdate = true;
+          mesh.count = count;
+        }
+      },
+      dispose() {
+        if (disposed) return;
+        disposed = true;
+        for (const mesh of meshes) {
+          mesh.parent?.remove?.(mesh);
+          if (mesh.geometry !== geometry) mesh.geometry?.dispose?.();
+        }
+      },
+    };
+  }
+
   window.Combat.animalAttacks = {
     register, start, update, isBusy, isStriking, isWindingUp, cancel,
     mostExpensiveCompanionSpecial, startFuriousSpecial,
     furiousDebug: c => ({ active: !!c?._furiousSpecial, threshold: mostExpensiveCompanionSpecial(c, { target: c })?.cost ?? null, last: c?._lastFuriousSpecial || null }),
     beginConeLunge, advanceConeLunge, leapConeDetect, advanceLeap,
-    companionEngagementRangePx,
+    companionEngagementRangePx, createParticleBatch,
     companionLungeTuning: Object.freeze({ maxTiles: COMPANION_LUNGE_MAX_TILES, durationS: COMPANION_LUNGE_DURATION_S }), // Mobile-accessible inspection of shared engagement timing.
   };
 
@@ -408,7 +470,7 @@
     if (isPlayer) deps.damagePlayer(state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses, attacker: c });
     else if (window.CompanionOffense) window.CompanionOffense.damageCreature(deps.damageCreature, c, ref, state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses, attacker: c }); // Whistle/Sicced empowerment for player companions; wild attackers pass through unchanged.
     else deps.damageCreature(ref, state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
-    window.BanditStrongholdBoss?.onWolfPounce?.(c,ref,deps); // Beastkeeper's wolves spend extra Footing and may collide with their own lord.
+    window.BanditStrongholdBoss?.onWolfPounce?.(c,ref,deps); // Preserve the newest native pounce hit code with the Lord's Footing/collateral hook.
     deps.playCreatureClawHit?.(c);
     return false; // hit landed; stop in place (update() lowers the hop)
   }

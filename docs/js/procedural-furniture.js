@@ -243,7 +243,10 @@
         child.geometry = child.geometry.clone();
         if(part.rockShape?.enabled){const original=child.geometry;rockSourceGeometries.set(child,original.clone());child.geometry=createRockGeometry(original,part.rockShape,child.userData.rockSourceKey);original.dispose();if(child.isSkinnedMesh)convertedSkins.push(child);}
         const color = material => {const result = material.clone(); result.color?.set(resolveColor(part, baseColor)); if (part.materialTexture) applyPartTexture(result, part); return result; }; // Existing per-part furniture texture/color pipeline.
-        child.material = part.rockShape?.enabled?makePartMaterial(rockMaterialPart(part),baseColor):Array.isArray(child.material) ? child.material.map(color) : color(child.material);
+        child.material = part.rockShape?.enabled ? makePartMaterial(rockMaterialPart(part),baseColor)
+          : (part.statueBaked === true && part.preserveMaterials === true)
+            ? (Array.isArray(child.material) ? child.material.map(material => material.clone()) : child.material.clone()) // Preserve the finish already baked into the figure and weapon.
+            : Array.isArray(child.material) ? child.material.map(color) : color(child.material);
         child.castShadow = child.receiveShadow = true;
       });
       for(const skin of convertedSkins){
