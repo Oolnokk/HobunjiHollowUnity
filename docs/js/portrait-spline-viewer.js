@@ -274,7 +274,7 @@
         .map(item=>({axis:item.userData.axis,...screen(item)}));
       const rings=handles.filter(item=>mode==='rotate'&&item.geometry?.type==='TorusGeometry')
         .map(item=>{
-          const point=new THREE.Vector3(.16,0,0).applyMatrix4(item.matrixWorld).project(camera);
+          const point=new THREE.Vector3(.16/Math.SQRT2,.16/Math.SQRT2,0).applyMatrix4(item.matrixWorld).project(camera); // A diagonal ring point avoids intersections where two axis rings cross.
           return {axis:item.userData.axis,x:box.left+(point.x+1)*box.width/2,y:box.top+(1-point.y)*box.height/2};
         });
       return {
