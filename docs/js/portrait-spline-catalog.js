@@ -102,7 +102,9 @@
       if (!data) throw Error('No indexed ' + gender + ' head for ' + speciesId);
       const headPath = (view === 'rear' && data.behindHeadSprite) || data.headSprite;
       if (!headPath) throw Error('Head sprite not authored for ' + speciesId + ' ' + gender);
-      const image = await imageLoader(assetUrl(headPath));
+      const portraitPath = /^(?:\.\/)?assets\//i.test(headPath) || /^https?:\/\//i.test(headPath)
+        ? headPath : 'assets/' + headPath.replace(/^\.\//, ''); // Species JSON headSprite is relative to assets/, unlike cosmetic JSON image.url.
+      const image = await imageLoader(assetUrl(portraitPath));
       const xform = data.headXform || {};
       const sx = Number(xform.sx ?? xform.scaleX ?? .95), sy = Number(xform.sy ?? xform.scaleY ?? 1.14);
       const ax = Number(xform.ax ?? 0), ay = Number(xform.ay ?? -.1);
