@@ -19,7 +19,7 @@
     if (mode === 'release') return 'breedingFortune'; // Releasing young protects future animal lineages.
     const tags = [definition.cat,definition.category,...(definition.tags || []),...(definition.cookingCategories || [])].map(words).join(' ');
     const name = words(key+' '+(definition.label || '')); // Only fallback evidence when authored categories are missing.
-    if (definition.isCookedFood || /cooked|prepared|meal|dish|processed food/.test(tags)) return 'cookingFortune';
+    if (definition.isCookedFood || /cooked|prepared|meal|dish|processed food/.test(tags) || (/broth|stew|meal|soup/.test(name) && definition.foodEffects)) return 'cookingFortune';
     if (/\bfish\b|seafood|angling/.test(tags) || /\bfish\b/.test(name)) return 'fishingFortune';
     if (/\bseed\b|\bcrop\b|vegetable|fruit|grain|produce|farming/.test(tags) || /seed|vegetable/.test(name)) return 'harvestFortune';
     if (/\bore\b|\bmineral\b|\bmetal\b|\bbar\b|\bstone\b|mining|gem/.test(tags) || /ore|ingot|metal bar|gemstone/.test(name)) return 'miningFortune';
