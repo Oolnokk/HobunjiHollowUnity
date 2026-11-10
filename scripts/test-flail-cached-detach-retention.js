@@ -9,6 +9,7 @@ const vm = require('node:vm');
 
 const registry = fs.readFileSync('docs/config/weapon-sprite-assemblies.js', 'utf8'); // Uses the live Grapple-Flail recipe.
 const runtime = fs.readFileSync('docs/js/weapon-sprite-assemblies.js', 'utf8'); // Exercises actual assembly construction and cleanup.
+const effectsRuntime = fs.readFileSync('docs/js/weapon-layer-effects.js', 'utf8'); // Verifies late-created particle materials are tracked for root-GC cleanup.
 const vector = () => ({ set() {}, copy() {} }); // Texture UV parameters are not modified after creation in this regression.
 class Vector3 {
   constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
@@ -173,6 +174,15 @@ api.decorate(root, 'grappleFlail', { shapeKey:'grappleFlail' }, { THREE });
   api.decorate(root, 'grappleFlail', { shapeKey:'grappleFlail' }, { THREE });
   assert(root.children.includes(rope) && root.children.includes(head), 'redecoration recovers both original components without new texture loads');
   assert.equal(api.debugSnapshot()[0]?.partsAttached, true, 'mobile diagnostics confirm both parts are repaired');
+  root.remove(rope);
+  root.remove(head);
+  plane.updateWorldMatrix = () => {}; // The real pre-render tick repairs the mesh tree before the pose update.
+  const originalImage = plane.material.map.image; // A missing base frame stops synthetic 3D math after attachment repair.
+  plane.material.map.image = null;
+  api.tick(0);
+  plane.material.map.image = originalImage;
+  assert(root.children.includes(rope) && root.children.includes(head), 'the equipped pre-render tick repairs both parts without a fresh decorate call');
+  assert.equal(api.debugSnapshot()[0]?.repairedParts, 4, 'mobile diagnostics count two repairs from decorate and two from the automatic tick');
   root.parent = null;
   api.drop(root); // Owner disposal remains authoritative for both gameplay and authoring preview.
   assert.equal(api.debugSnapshot().length, 0, 'explicit teardown unregisters the root immediately');
@@ -216,5 +226,31 @@ api.decorate(root, 'grappleFlail', { shapeKey:'grappleFlail' }, { THREE });
   assert.equal(flakyRoot.children.find(child => child.name === 'flakyFlail_flail_head')?.children.length, 2, 'retry restores both head layers');
   api.drop(flakyRoot);
   assert.equal(api.debugSnapshot().length, 0, 'repaired weapon still supports deterministic disposal');
-  console.log('flail root-lifetime retention: PASS (5+ minutes idle, no slot map, stale map, original head/rope, reattach, async image recovery, cleanup)');
+
+  // Head/shaft fire motes are allocated only on an active frame, after the initial
+  // flail GPU-resource scan. The root finalizer must also own these late materials.
+  const effectsWindow = {}; // Separate effects instance avoids changing the earlier headless assembly fixture.
+  THREE.SpriteMaterial = class extends MeshBasicMaterial {
+    constructor(props) { super(props); this.color = { set() {} }; }
+  };
+  THREE.Sprite = class extends Object3D {
+    constructor(material) { super(); this.material = material; this.layers = { set() {} }; this.scale = { setScalar() {} }; }
+  };
+  vm.runInNewContext(effectsRuntime, { window:effectsWindow, document, console, THREE });
+  const fireOwner = new Object3D(); // Mock parent for a fire layer on a flail head.
+  const fireEmitter = {
+    config:{ type:'fire', rate:2, size:.035, life:.65 }, sourceLayer:{ id:'fuel' }, image:{ width:4, height:4 },
+    sources:[5], group:fireOwner, renderOrder:2, unit:1, particles:[], pool:[], accumulation:0,
+    worldRise:false, visualScale:1, clusters:null, anchors:null, texture:new Texture({ width:16, height:16 }),
+  }; // Minimal real interleaved emitter: one sprite created by production stepFire().
+  const fireResources = new Set(); // Represents the same mutable finalizer resource set owned by the weapon root.
+  const fireState = { THREE, gcResources:fireResources, fireEmitters:[fireEmitter], itemKey:'grappleFlail', masteryLevel:()=>5 };
+  effectsWindow.HobunjiLayeredWeaponEffects.stepFire(fireState, .5);
+  assert.equal(fireEmitter.particles.length, 1, 'production fire step spawns a material after assembly construction');
+  const newFireMaterial = fireEmitter.particles[0].sprite.material;
+  assert(fireResources.has(newFireMaterial), 'late sprite material is registered with the weak-root resource finalizer');
+  assert(!fireResources.has(fireEmitter.texture), 'the shared fire texture is never finalized with an individual weapon');
+  effectsWindow.HobunjiLayeredWeaponEffects.dispose(fireState);
+  assert(newFireMaterial.disposed, 'explicit weapon disposal still releases the dynamically registered particle material');
+  console.log('flail root-lifetime retention: PASS (long detach, self-repair, texture retry, late particle cleanup)');
 })().catch(error => { console.error(error); process.exitCode = 1; });
