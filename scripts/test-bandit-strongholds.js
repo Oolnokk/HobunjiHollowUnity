@@ -47,6 +47,7 @@ environment.PersistentGroundFire = { intersects:()=>fireIsActive };
 environment.NearbyVolumeCollision = { invalidate:()=>{coverInvalidations++;} };
 vm.runInContext(read('docs/js/bandit-stronghold-cover.js'), environment, { filename:'bandit-stronghold-cover.js' });
 vm.runInContext(read('docs/js/bandit-stronghold-wolves.js'), environment, { filename:'bandit-stronghold-wolves.js' });
+vm.runInContext(read('docs/js/bandit-stronghold-combat.js'), environment, { filename:'bandit-stronghold-combat.js' });
 
 const caves = environment.CaveSiteSystem;
 const strongholds = environment.BanditStrongholds;
@@ -289,6 +290,63 @@ async function testPhysicalBarrels() {
   assert.equal(strongholds.ensureBarrels(mapId,map,scene),0,'re-entry never regenerates spent barrels');
   assert.equal(strongholds.forgetInterior(mapId),false,'world restore already disposed the previous cave scene');
   assert.equal(scene.children.length,0,'world restore removes stale cave cover presentation');
-  console.log('Bandit stronghold placement, saved cave reentry, styled furniture, physical barrels and once-only loot: OK');
+  // Only selected cave garrison bandits should throw physical, friendly-fire Shattercasks.
+  const throwApi = environment.BanditStrongholdCombat;
+  const thrower = {
+    id:'bandit-thrower',banditStrongholdThrower:true,_strongholdTileSize:64,
+    areaId:mapId,scene,health:50,x:64*9,y:64*8,
+    avatarRef:{group:{position:{y:1.2}}},def:{},telegraphState:null,
+  };
+  const target = {id:'player',areaId:mapId,health:100,x:64*14,y:64*9};
+  assert.equal(throwApi.updateThrow({...thrower,banditStrongholdThrower:false},.1,target),null,
+    'only explicit stronghold throwers use the optional ballistics');
+  const shotStart={x:1,y:1,z:2},shotEnd={x:5,y:.3,z:4};
+  const initial=throwApi.arc(shotStart,shotEnd);
+  const computedY=shotStart.y+initial.y*initial.flightSeconds-.5*13*initial.flightSeconds**2;
+  assert(Math.abs(computedY-shotEnd.y)<1e-7,'planned arc uses the same 13 unit/s² gravity as Shattercasks');
+  assert.equal(throwApi.__test.chooseKind(thrower),'shattercask');
+  assert.equal(throwApi.__test.chooseKind(thrower),'flameShattercask');
+  let staged=null, launched=null;
+  environment.GridTileAccessors={getCurrentArea:()=>mapId};
+  environment.RangedWeapons={hasLineOfSight:()=>true,actorHitbox:()=>({box:{min:{y:0}}})};
+  environment.HeldActionAnimations={throwFlask:{poses:{neutral:{}},durationS:1,style:'chop'}};
+  environment.Combat={beginStagedAction(spec){staged=spec;return{active:true}}};
+  environment.BanditCombat.finishAction=c=>{c._banditAction=null;};
+  environment.Shattercasks.createHangingBurden=async options=>{
+    launched=options;return{id:options.id,kind:options.kind,mapId:options.mapId};
+  };
+  let release=null;
+  environment.Shattercasks.releaseBurdenWithVelocity=(burden,velocity,cause)=>{
+    release={burden,velocity,cause};return true;
+  };
+  thrower._strongholdThrowCooldown=0;
+  assert.equal(throwApi.updateThrow(thrower,.1,target)?.handled,true,'native staged attack activates at valid range and LOS');
+  assert(staged?.data?.strongholdCask,'staged attack carries native combat metadata');
+  staged.onStrike();
+  await Promise.resolve();await Promise.resolve();await Promise.resolve();
+  assert.equal(launched?.furnitureKey,'shattercaskBlasting','physical weapon uses authored Shattercask furniture');
+  assert.equal(release?.cause,'bandit-thrown-shattercask','real Burden flight is used instead of bespoke projectile damage');
+  assert([release.velocity.x,release.velocity.y,release.velocity.z].every(Number.isFinite));
+  assert.equal(release.burden.kind,'shattercask');
+  staged.onComplete();
+  assert.equal(thrower._strongholdThrowPending,false,'completing the existing staged action releases its AI lock');
+  assert(thrower._strongholdThrowCooldown>0);
+  thrower._strongholdThrowCooldown=0;
+  const blocked=environment.RangedWeapons.hasLineOfSight;
+  environment.RangedWeapons.hasLineOfSight=()=>false;
+  assert.equal(throwApi.updateThrow(thrower,.1,target),null,'existing LOS cover prevents throws behind intact boards');
+  environment.RangedWeapons.hasLineOfSight=blocked;
+  const stale=environment.Shattercasks.releaseBurdenWithVelocity;
+  let discarded=0;
+  environment.Shattercasks.discardBurden=()=>{discarded++;return true;};
+  let completeBuild;
+  environment.Shattercasks.createHangingBurden=()=>new Promise(resolve=>{completeBuild=resolve;});
+  const canceled=throwApi.launch(thrower,target,'flameShattercask',mapId);
+  thrower.areaId='elsewhere'; // A transition while authored furniture loads must never launch into the new scene.
+  completeBuild({id:'late',kind:'flameShattercask',mapId});
+  assert.equal(await canceled,false);
+  assert.equal(discarded,1,'late Burden canceled after area transition without explosion');
+  environment.Shattercasks.releaseBurdenWithVelocity=stale;
+  console.log('Bandit stronghold placement, cover destruction, chained wolves, physical barrels and staged Shattercask throws: OK');
 }
 testPhysicalBarrels().catch(error => { console.error(error);process.exitCode=1; });
