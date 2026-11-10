@@ -1807,7 +1807,7 @@
     markDiscovered(profile, state);
     if (profile.fortifiedStronghold) {
       window.BanditStrongholdCover?.tick?.(mapId, CAVE_RUNTIME_INTERVAL_S); // Shared fire patches, at the cave's existing throttled cadence.
-      window.BanditStrongholdWolves?.ensureInterior?.(profile, state, wildlifeDeps);
+      window.BanditStrongholdWolves?.ensureInterior?.(profile, plan, state, wildlifeDeps);
       window.BanditStrongholdWolves?.tickInterior?.(mapId, wildlifeDeps);
       window.BanditStrongholds?.ensureBarrels?.(mapId, plan,
         wildlifeDeps?.zoneScenes?.get?.(mapId)?.scene || wildlifeDeps?.getActiveScene?.());
