@@ -312,8 +312,23 @@
         const group = window.AuthoredFurniture.buildGroup(recipe); // Identical boards/metal hoops to the existing aging furniture.
         const x = Number(barrel.col) + .5, z = Number(barrel.row) + .5;
         group.position.set(x, Number(plan?.floorSurfaceY || 0), z);
+        const borrow = window.AuthoredFurniture.peek?.('looseCrate')?.carryable || {}; // The shared crate hand/carry rig is already authored for physical Burdens.
+        const barrelPart = recipe.parts?.find(part => part.kind === 'barrel');
+        const centerY = Number(barrelPart?.transform?.y) || .43; // Aging Barrel's actual geometry center keeps the rig origin on its body.
+        const barrelHalfWidth = Math.max(.2, Number(barrelPart?.transform?.sy) / 2 || .42); // Aging Barrel is horizontal (rotated barrel primitive).
+        const carryable = {
+          ...borrow,
+          enabled: true,
+          billboardAnchor: { ...(borrow.billboardAnchor || {}), coordinateSpace:'posterior-relative',
+            position: { x:0,y:centerY,z:-.25 }, size:1 },
+          handTargets: {
+            left: { x:barrelHalfWidth,y:centerY,z:0,rotation:{x:180,y:0,z:-90} },
+            right: { x:-barrelHalfWidth,y:centerY,z:0,rotation:{x:0,y:0,z:90} },
+          },
+          hitbox: { enabled:true,center:{x:0,y:centerY,z:0},size:{x:barrelHalfWidth*2,y:centerY*2,z:Math.max(.5,Number(barrelPart?.transform?.sz)||.76)} },
+        }; // Computed from authored barrel dimensions; both variants share one existing carry/throw renderer.
         const registered = window.Shattercasks.registerBurden({
-          id, kind:barrel.kind, mapId, scene, group, data:recipe, hanging:false,
+          id, kind:barrel.kind, mapId, scene, group, data:{ ...recipe, carryable }, hanging:false,
           displayName:barrel.kind === 'flaskBarrel' ? 'Flask Barrel' : 'Contraband Barrel',
           onPickup:() => stronghold.markFortifiedBarrelTaken?.(mapId,id),
           onImpact:barrelImpact,
