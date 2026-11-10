@@ -149,9 +149,18 @@ function render(){
   for(const p of rig.seam){ctx.beginPath();ctx.arc(p.u*W,p.v*H,p.radiusPx*W/200,0,Math.PI*2);ctx.fillStyle=p.color||'#ec88b643';ctx.fill();ctx.stroke();}
   const active=normalized();if(!active){message('Invalid spline: add at least two distinct knots.');return;}
   const posed=Rig.posePoints(active,wind()),pts=posed.points;
-  ctx.lineWidth=3;ctx.strokeStyle='#fcd36e';ctx.beginPath();rig.points.forEach((p,i)=>i?ctx.lineTo(p.u*W,p.v*H):ctx.moveTo(p.u*W,p.v*H));ctx.stroke();
-  ctx.lineWidth=2;ctx.strokeStyle='#7cf0e1';ctx.beginPath();
-  pts.forEach((p,i)=>{const X=(.5+p.x+p.z*.4)*W,Y=(.5-p.y-p.z*.17)*H;i?ctx.lineTo(X,Y):ctx.moveTo(X,Y);});ctx.stroke();
+  const drawCurve=(controlPoints,neutral)=>{
+    ctx.beginPath();
+    for(let i=0;i<controlPoints.length-1;i++)for(let j=0;j<=12;j++){
+      if(i && !j)continue;
+      const p=Rig.curvePoint(controlPoints,i,j/12,neutral); // Preview the same smooth Catmull-Rom spline used to deform the in-world PNG.
+      const X=(.5+p.x+(neutral?0:p.z*.4))*W,Y=(.5-p.y-(neutral?0:p.z*.17))*H;
+      if(!i && !j)ctx.moveTo(X,Y);else ctx.lineTo(X,Y);
+    }
+    ctx.stroke();
+  };
+  ctx.lineWidth=3;ctx.strokeStyle='#fcd36e';drawCurve(rig.points,true);
+  ctx.lineWidth=2;ctx.strokeStyle='#7cf0e1';drawCurve(pts,false);
   rig.points.forEach((p,i)=>{ctx.beginPath();ctx.arc(p.u*W,p.v*H,i===selectedKnot?7:5,0,Math.PI*2);ctx.fillStyle=i===selectedKnot?'#fff2a2':'#ffd365';ctx.fill();ctx.strokeStyle='#1f2a37';ctx.stroke();});
   const seamNote=rig.seam.length?'paint dabs: '+rig.seam.length:'no connection mask painted';
   $('status').textContent=rig.points.length+' knots / '+rig.segments.length+' segments / '+seamNote+
