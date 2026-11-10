@@ -5,22 +5,25 @@ const fs = require('node:fs'); // Reads the actual renderer and rig adapters ins
 const renderer = fs.readFileSync('docs/js/held-object-render-order.js','utf8'); // Current depth-grouping and scissor owner.
 const hand = fs.readFileSync('docs/js/procedural-hand-outline-parity.js','utf8'); // Procedural hand pose-parity owner.
 const foot = fs.readFileSync('docs/js/procedural-feet-outline-parity.js','utf8'); // Procedural foot pose-parity owner.
+const leg = fs.readFileSync('docs/js/procedural-leg-animation.js','utf8'); // The real foot depth-push callback is installed before parity wrapping.
 function section(a,b) {
   const i=renderer.indexOf(a),j=renderer.indexOf(b,i+a.length);
   assert(i>=0&&j>i,'production renderer boundary: '+a);
   return renderer.slice(i,j);
 } // Extracts exact production functions into GPU-free fixtures.
 
+const cullableCode=section('  function isReplayCullable(', '  function hasAlternateReplayPose(');
+const actualReplayCullable=new Function(cullableCode+'\nreturn isReplayCullable;')(); // The real eligibility policy, including geometry and frustum flags.
 const canBoundCode=section('  function canBoundXrayMesh(', '  function buildXrayGroups(');
 const noop=function noop(){}; // The default THREE.Object3D draw hook is safe to project.
 const canBound=new Function('isReplayCullable','objectProto',canBoundCode+'\nreturn canBoundXrayMesh;')(
-  mesh=>!mesh.isSkinnedMesh&&!mesh.isInstancedMesh&&(!mesh.children||!mesh.children.length),
+  actualReplayCullable,
   {onBeforeRender:noop}
 );
 const hooked=function hooked(){}; // Recognized hand/foot pose-parity draw hook.
 const otherHook=function unknownAnimation(){}; // Arbitrary custom animation must never be assumed projection-safe.
-const mkMesh=(hook=null)=>({isMesh:true,children:[],isSkinnedMesh:false,material:{isShaderMaterial:false},
-  userData:{},onBeforeRender:hook||noop});
+const mkMesh=(hook=null)=>({isMesh:true,children:[],isSkinnedMesh:false,isInstancedMesh:false,frustumCulled:true,
+  geometry:{morphAttributes:{}},material:{isShaderMaterial:false},userData:{},onBeforeRender:hook||noop});
 assert(canBound(mkMesh()),'ordinary static weapon sprite stays boundable');
 assert(!canBound(mkMesh(otherHook)),'unrecognized dynamic onBeforeRender remains a conservative unbatchable group');
 const trusted=mkMesh(hooked);
@@ -50,7 +53,7 @@ const groupActors=new Function('actorXrayScope','replayScissorRect','isReplayCul
     else Object.assign(out,{x:meshes[0].x,y:meshes[0].z,z:.12,w:.12});
     return true;
   },
-  mesh=>!mesh.isSkinnedMesh&&!mesh.children.length,
+  actualReplayCullable,
   {onBeforeRender:noop},
 );
 const isolated=Array.from({length:24},(_,i)=>{
@@ -58,12 +61,19 @@ const isolated=Array.from({length:24},(_,i)=>{
   mesh.x=i*10+.5;mesh.z=.5;mesh.scope={col:i*10,row:0,elevation:0};
   mesh.__hobunjiXrayBoundParity={hook:hooked,isFresh:()=>true,visibleMatrixWorld:{}};
   return mesh;
-}); // 24 real player/NPC/enemy hand/foot parts whose gear rectangles cannot overlap another tile neighborhood.
+}); // Synthetic safe-to-bound hand-like meshes at separated tiles; not a measurement of actual NPC draw calls.
 const batch=groupActors({},null,{},isolated);
 assert.equal(batch.groups.length,3,'24 spaced trusted rigs share three eight-tile depth builds instead of 24');
 assert(batch.groups.every(x=>x.regions.length===8),'shader tile uniform budget remains capped at eight');
 const untrusted=isolated.map(mesh=>({...mesh,__hobunjiXrayBoundParity:null}));
 assert.equal(groupActors({},null,{},untrusted).groups.length,24,'unknown onBeforeRender hooks keep 24 conservative independent depth draws');
+assert.match(leg,/mesh\.onBeforeRender = function footDepthPushBefore\(/,
+  'the real leg rig already applies a camera-relative draw-time foot depth push');
+assert.match(foot,/if \(!previousBefore \|\| previousBefore === THREE\.Object3D\?\.prototype\?\.onBeforeRender\)/,
+  'feet with the earlier depth-push callback must not advertise boundable parity');
+const depthPushedFeet=isolated.map(mesh=>({...mesh,__hobunjiXrayBoundParity:null}));
+assert.equal(groupActors({},null,{},depthPushedFeet).groups.length,24,
+  'a realistic untrusted foot hook cannot claim the hand-only batching benefit');
 const overlapping=isolated.slice(0,2).map((mesh,i)=>({...mesh,x:i+.5,z:.5,scope:{col:i,row:0,elevation:0}}));
 assert.equal(groupActors({},null,{},overlapping).groups.length,2,'neighboring projected floor exemptions never share a potentially leaking depth buffer');
 
@@ -118,8 +128,8 @@ assert(narrow.z<wide.z,'stale snapshots no longer inflate scissor work');
 sourceMesh.__hobunjiXrayBoundParity.isFresh=()=>true;
 
 const shellCode=section('  function wrappedRender(scene, camera) {','  wrappedRender.__hobunjiHeldRenderOrderWrapped');
-function shellScenario(withException){
-  const metrics={normal:0,depthReplays:0,hidden:[],replayed:[],padding:0};
+function shellScenario(withException,enableScissor=false){
+  const metrics={normal:0,depthReplays:0,hidden:[],replayed:[],padding:0,scissorParticipants:null};
   const plain=mkMesh(),special=mkMesh(hooked);
   special.__hobunjiXrayBoundParity={hook:hooked,visibleMatrixWorld:{},isFresh:()=>true};
   const held=[plain,special];
@@ -133,19 +143,20 @@ function shellScenario(withException){
     window:{HobunjiHandOutlineParity:{refreshHeldMatrices(){}}},buildXrayGroups:(renderer,scene,camera,meshes)=>{
       return withException?{groups:[{meshes:[special],regions:[{col:1,row:2,elevation:0}]}],ordinary:[plain]}:{groups:[],ordinary:meshes};
     },
-    replayScissorEnabled:false,replayScissorRect(){throw Error('unneeded scissor');},
+    replayScissorEnabled:enableScissor,replayScissorRect(_renderer,_camera,parts){metrics.scissorParticipants=parts.slice();return true;},
     hideObjects(parts){metrics.hidden=parts.slice();return new Map(parts.map(x=>[x,true]));},
     restoreVisibility(){},replayShellOutlineXray(renderer,scene,camera,parts,ground,top,scissored,groups,padding){metrics.depthReplays++;metrics.replayed=parts.slice();metrics.padding=padding;},
   };
   const setup=new Function('h',[
     'const {internalReplay,retiredScenes,originalRender,scanScene,isShellOutlinePass,heldRegistry,waterOccludedRegistry,groundRegistry,topFaceGroundRegistry,collectVisible,SHELL_LAYER,hasLayer,filterOffscreenReplayMeshes,window,buildXrayGroups,replayScissorEnabled,replayScissorRect,hideObjects,restoreVisibility,replayShellOutlineXray}=h;',
     'let lastShellReplayCandidates=0,lastShellOffscreenFiltered=0,lastShellElevationGroups=0,lastShellFullscreenReason="none",ordinaryShellMeshesDrawnOnce=0,ordinaryShellReplaysAvoided=0;',
+    'const scissorRect={x:0,y:0,z:100,w:100};',
     shellCode,
     'return {run:wrappedRender,stats:()=>({ordinaryShellMeshesDrawnOnce,ordinaryShellReplaysAvoided})};'
   ].join('\n'))(h);
   const fakeScene={isScene:true,overrideMaterial:{uniforms:{uThickness:{value:.02}}}};
   const fakeCamera={isCamera:true,layers:{mask:1<<1}};
-  assert.equal(setup.run.call({state:{}},fakeScene,fakeCamera),42,'original render result is preserved');
+  assert.equal(setup.run.call({state:{scissor(){},setScissorTest(){}}},fakeScene,fakeCamera),42,'original render result is preserved');
   return {...metrics,stats:setup.stats(),plain,special};
 } // Exercises the actual shell entrypoint without WebGL side effects.
 const ordinary=shellScenario(false);
@@ -158,4 +169,7 @@ assert.equal(mixed.depthReplays,1,'exceptional floor x-ray still gets dedicated 
 assert.deepEqual(mixed.hidden,[mixed.special],'ordinary NPC/enemy shells are not removed from the normal pass');
 assert.deepEqual(mixed.replayed,[mixed.special],'only the floor-exception part is depth-replayed');
 assert.equal(mixed.padding,.04,'two-times hand/foot thickness is accounted for in shell scissor');
-console.log('X-ray shell: real ordinary/mixed pass selection, pose-hook trust and dual-matrix scissor tests passed.');
+const tight=shellScenario(true,true);
+assert.deepEqual(tight.scissorParticipants,[tight.special],
+  'ordinary, possibly unbounded NPC gear cannot widen the special tile-replay scissor');
+console.log('X-ray shell: real shell/cull predicates, ordinary/mixed replay, safe hand-vs-foot trust, and bounded scissor tests passed.');
