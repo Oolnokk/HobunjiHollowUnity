@@ -111,6 +111,10 @@ jobs:
         if: steps.select.outputs.statue == 'true'
         run: node scripts/test-statue-pose-bake-browser.js
 
+      - name: Portrait spline 3D WebGL texture and gizmo browser smoke
+        if: steps.select.outputs.portrait_spline == 'true'
+        run: node scripts/test-portrait-spline-viewer-browser.js
+
       - name: Omgurku hybrid calibration browser smoke
         if: steps.select.outputs.omgurku_cal == 'true'
         run: node scripts/test-omgurku-calibration-browser.js
