@@ -14,7 +14,7 @@ const { api, committed } = boot();
 const eyeLocations = [
   ['bshuakauitl', 0], ['bshuakauitl', 1], ['hachutuTorchStaff', 0], ['hachutuTorchStaff', 1],
   ['fishing-mace', 0], ['warhammer', 0], ['bgungku', 0],
-  ['hatchet', 0], ['hoe', 0], ['kylie', 0], ['pick-shovel', 0]
+  ['hatchet', 0], ['hoe', 0], ['kylie', 0], ['pick-shovel', 0], ['grapple-flail', 0]
 ]; // All nine manually authored eye locations, including the two-ended and mixed-mount weapons.
 let totalEye = 0, totalTang = 0;
 for (const [shaftKey, shaft] of Object.entries(committed.shafts)) {
@@ -40,6 +40,13 @@ for (const [shaftKey, shaft] of Object.entries(committed.shafts)) {
       }
       continue;
     }
+    if (shaftKey === 'grapple-flail') {
+      const rope = shaft.mounts.filter(m => m.type === 'rope'); // Dedicated flexible connector mounts intentionally do not require a perpendicular rigid companion tang.
+      assert.equal(rope.length, 1, 'Grapple-Flail has one independent rope connector');
+      assert(Math.abs(Math.hypot(rope[0].end.x - rope[0].start.x, rope[0].end.y - rope[0].start.y) - 843.75) < 1e-8,
+        'Grapple-Flail mount controls original connector reach without resizing the head or rope diameter');
+      continue;
+    }
     if (shaftKey === 'kylie') {
       // This is an explicit editor export: Kylie mounts were independently moved/rotated after companion creation.
       assert.equal(eyes.length, 1);
@@ -62,15 +69,22 @@ for (const [shaftKey, shaft] of Object.entries(committed.shafts)) {
   }
   for (const [headKey, head] of Object.entries(committed.heads)) {
     const pair = shaft.overrides[headKey];
-    assert(pair, shaftKey + '/' + headKey + ': every pair explicitly authored');
+    if (!pair && (shaft.flailAssembly || head.flailAssembly)) {
+      // Flexible rope recipes reuse one shared pendulum: legacy rigid head/haft layer-order overrides are not required.
+      assert(shaft.flailAssembly || head.flailAssembly, 'Flexible combination has a real rope owner');
+      continue;
+    }
+    assert(pair, shaftKey + '/' + headKey + ': every rigid pair explicitly authored');
     // Pair layer order is hand-authored in the editor (collars and tang joins flip it per head), so only its validity is pinned.
     assert(['haft-over-head', 'head-over-haft'].includes(pair.layerOrder), shaftKey + '/' + headKey + ': explicit pair layer order');
     assert.equal(api.settings(shaftKey, headKey).layerOrder, pair.layerOrder);
   }
 }
 assert.equal(totalEye, eyeLocations.length);
-assert.equal(totalTang, 19, 'Torch-Staff adds both independently authored B\'shuakauitl tang copies');
-assert.equal(Object.keys(committed.shafts).length * Object.keys(committed.heads).length, 272);
+assert.equal(totalTang, 20, 'All original tangs plus the Grapple-Flail legacy rigid tang remain registered');
+const rigidShafts = Object.values(committed.shafts).filter(shaft => !shaft.flailAssembly); // Legacy authored pair count stays unchanged when new flexible shafts are registered.
+const rigidHeads = Object.values(committed.heads).filter(head => !head.flailAssembly); // Flexible heads do not require a full rigid Cartesian layer-order table.
+assert.equal(rigidShafts.length * rigidHeads.length, 272, 'All original 272 explicitly authored rigid pairs remain intact');
 assert.deepEqual(plain(committed.heads['pick-shovel-pick'].mount), { type: 'blade',
   start: { x: 193.7686592344786, y: 313.0526330990026 },
   end: { x: 192.22762058461228, y: 248.07090335994735 } },
@@ -123,4 +137,4 @@ storage['hobunji.modularWeapons.v5'] = JSON.stringify(current);
 const reloaded = boot(storage);
 assert.equal(reloaded.api.getConfig().shafts.warhammer.mounts.filter(m => m.type === 'tang').length, 0,
   'Do not repeatedly re-create manually removed tangs on current-version drafts');
-console.log('Companion mounts: 8 centered companions, Torch-Staff copied rig, 272 explicit layer choices, Kylie edits and v4->v5 draft migration passed.');
+console.log('Companion mounts: original 272 rigid layer choices and calibrated companions retained; independent Grapple-Flail rope mount, Kylie edits and v4->v5 migration passed.');

@@ -310,20 +310,34 @@
       if (state.dead) return;
       const headTextures = await Promise.all(f.head.layers.map(layer => textureFor(THREE, layer.sprite)));
       if (state.dead) return;
-      const ropePixels = Math.max(2, Math.min(2048, Number(f.chain.lengthPx) || 160));
-      const chainImg = isRope ? { width: 1, height: ropePixels + 1 } : chainTex.image; // Virtual raster frame puts rope endpoints at the geometric cylinder ends.
+      const authoredRopeScale = connectorAxisScale(f.chain, 'scaleY'); // Width and head scale are never inferred from a mount line.
+      const requestedLength = Number(f.chain.mountLengthPx); // Present only on a modular rope mount, never an ordinary authored flail.
+      const ropePixels = Math.max(2, Math.min(2048,
+        isRope && Number.isFinite(requestedLength) && requestedLength > 0
+          ? requestedLength / authoredRopeScale : Number(f.chain.lengthPx) || 160));
+      const chainImg = isRope ? { width: 1, height: ropePixels + 1 } : chainTex.image; // Only the virtual rope endpoint span changes.
       const chain = isRope
-        ? makeRope(THREE, f.chain, unit, order + 0.01, ropeTexture)
+        ? makeRope(THREE, { ...f.chain, lengthPx: ropePixels }, unit, order + 0.01, ropeTexture)
         : buildPlane(THREE, chainImg, chainTex, unit, order + 0.01);
       if (!isRope) effects?.registerLayer(state, chain, f.chain, chainImg); // Chain shares verdigris/plating; generated natural rope keeps its authored bark-brown surface.
       const headRoot = new THREE.Group();
       headRoot.name = itemKey + '_flail_head';
       headRoot.userData.hobunjiWeaponAssemblyPart = false;
+      const pairVisual = f.head.visualTransform; // Only a modular replacement head needs the extra transform group.
+      const headArtworkRoot = pairVisual ? new THREE.Group() : headRoot; // Original multilayer flails keep their flat, directly parented head sprites.
+      if (pairVisual) {
+        const sx = (Number(pairVisual.scaleX) || 1) * (pairVisual.flipX ? -1 : 1);
+        const sy = (Number(pairVisual.scaleY) || 1) * (pairVisual.flipY ? -1 : 1);
+        headArtworkRoot.scale.set(sx, sy, 1); // Flexible pair's head-only scale and flip.
+        headArtworkRoot.rotation.z = -(Number(pairVisual.rotation) || 0) * Math.PI / 180; // Source bitmap Y is down, Three.js Y is up.
+        headRoot.add(headArtworkRoot); // Avoid changing the legacy Grapple-Flail/Torch-Flail child hierarchy.
+      }
+      const headOrder = f.head.layerOrder === 'haft-over-head' ? order - 0.02 : order + 0.02; // Pair-only foreground choice; original multi-sprite flails keep their authored front order.
       f.head.layers.forEach((layer, i) => {
-        const mesh = buildPlane(THREE, headTextures[i].image, headTextures[i], unit, order + 0.02 + i * 0.001, layer.offsetPx);
-        headRoot.add(mesh);
+        const mesh = buildPlane(THREE, headTextures[i].image, headTextures[i], unit, headOrder + i * 0.001, layer.offsetPx);
+        headArtworkRoot.add(mesh); // Shared pair transform preserves authored per-layer geometry and effects.
         state.headParts.push(mesh);
-        effects?.registerLayer(state, mesh, layer, headTextures[i].image); // Each head layer owns its material and may spawn effects between neighboring layers.
+        effects?.registerLayer(state, mesh, layer, headTextures[i].image);
       });
       root.add(chain, headRoot);
       state.owned.push(chain, headRoot);
@@ -594,6 +608,20 @@
     hooked.updateMatrixWorld(true);
   }
 
+  function isCachedPlayerToolRoot(root) {
+    // Read-only ownership diagnostics: the actual assembly lifetime follows
+    // its root's references, never a slot map or a fixed detachment timeout.
+    if (!root) return false;
+    if (global.EquipmentPanel?.ownsCachedToolRoot?.(root)) return true;
+    for (const deps of [global.ProceduralHandAttachments?.gameDeps, global.Combat?.deps]) {
+      const map = deps?.toolMeshMap; // Optional adapters sometimes omit the authoritative equipment cache.
+      if (!map) continue;
+      const candidates = typeof map.values === 'function' ? map.values() : Object.values(map);
+      for (const visual of candidates) if (visual === root) return true;
+    }
+    return false;
+  }
+
   function updateOne(state, dt, now, effectsDt = dt) {
     const { root, plane, config, scratch: q } = state;
     if (!root.parent) {
@@ -637,7 +665,14 @@
     const attachmentScale = Math.max(0.00001, Math.abs(q.scale.x)); // Authoritative world-space handle pixel scale, not a fixed weapon baseline.
     const localHandleScale = attachmentScale / Math.max(0.00001, Math.abs(q.rootScale.x)); // Compensates for extra scale applied to the handle plane itself.
     const chainScaleX = connectorAxisScale(flail.chain, 'scaleX'); // Chain width or generated-rope radius relative to the final rendered handle.
-    const chainScaleY = connectorAxisScale(flail.chain, 'scaleY'); // Connector length relative to the handle, independent of width.
+    let chainScaleY = connectorAxisScale(flail.chain, 'scaleY'); // Reach uses Y only; head size and connector width stay independently authored.
+    const mountLength = Number(flail.chain.mountLengthPx); // Rope-mount line length, expressed in unchanged source-haft pixels.
+    if (!state.chain.userData?.hobunjiRuinRopeSprite && Number.isFinite(mountLength) && mountLength > 0) {
+      const spanX = (state.chainBottom.x - state.chainTop.x) * chainScaleX;
+      const spanY = Math.abs(state.chainBottom.y - state.chainTop.y);
+      if (spanY > 1e-5) chainScaleY = Math.sqrt(Math.max(1e-8, mountLength * mountLength - spanX * spanX)) / spanY;
+      // Original raster chain may be diagonal: preserve its X width/offset and solve only Y stretch for the desired span.
+    }
     const headScale = relativePartScale(flail.head); // Head size is still independently handle-relative.
     if (state.chain.userData?.hobunjiRuinRopeSprite) {
       state.chain.scale.setScalar(localHandleScale * chainScaleY); // Child width already compensates for both authoring axes; keep the billboard uniformly scaled.
@@ -749,7 +784,21 @@
     const headAnchorLocal = headSpec.anchorSpace === 'composite'
       ? q.headAnchorLocal.set(state.headAnchor.x * unit, -state.headAnchor.y * unit, 0)
       : pixelPoint(state.headAnchorImage, state.headAnchor, unit, layer?.offsetPx, q.headAnchorLocal); // Shared center-frame contacts are allowed in the transparent gap between two sprite layers.
-    const headCenterWorld = q.headCenter.copy(endWorld).sub(q.tmp.copy(headAnchorLocal).multiplyScalar(attachmentScale * headScale).applyQuaternion(headQ)); // Keep the independently scaled head contact at the scaled chain's end.
+    const visual = headSpec.visualTransform; // Pair-only rigid head corrections, absent from the original grapple head.
+    if (visual) {
+      const sx = (Number(visual.scaleX) || 1) * (visual.flipX ? -1 : 1);
+      const sy = (Number(visual.scaleY) || 1) * (visual.flipY ? -1 : 1);
+      const angle = -(Number(visual.rotation) || 0) * Math.PI / 180;
+      const xx = headAnchorLocal.x * sx, yy = headAnchorLocal.y * sy;
+      headAnchorLocal.set(Math.cos(angle) * xx - Math.sin(angle) * yy,
+        Math.sin(angle) * xx + Math.cos(angle) * yy, 0); // Head contact inherits the very same scale, flip and rotation as artwork.
+    }
+    const headCenterWorld = q.headCenter.copy(endWorld).sub(q.tmp.copy(headAnchorLocal).multiplyScalar(attachmentScale * headScale).applyQuaternion(headQ)); // Transformed contact stays at the rope's end.
+    if (visual) {
+      const dx = Number(visual.x) || 0, dy = Number(visual.y) || 0;
+      headCenterWorld.add(q.tmp.set(dx * unit, -dy * unit, 0)
+        .multiplyScalar(attachmentScale * headScale).applyQuaternion(headQ)); // Pair X/Y nudges move only head art, never the rope/chain.
+    }
     state.headRoot.position.copy(root.worldToLocal(q.headLocal.copy(headCenterWorld)));
     state.headRoot.quaternion.copy(rootQInverse).multiply(headQ);
     if (root.visible !== false) effects?.stepFire(state, effectsDt); // Flame stays in the assembled head and behind later opaque sprites.
@@ -788,6 +837,7 @@
       snapshot.push({
       itemKey: s.itemKey, loaded: s.config.flail ? !!(s.chain && s.headRoot) : !!s.staticReady,
       attached: !!s.root.parent, attacking: s.attacking,
+      cachedPlayerOwned: isCachedPlayerToolRoot(s.root), // Displays cached equipment identity; weak-root lifetime remains independent of the map.
       detachedForMs: s.root.parent || !s.detachedAt ? 0 : Math.max(0, performance.now() - s.detachedAt), // Mobile proof that no time limit can destroy cached rope/head.
       progress: s.progress, direction: s.direction.toArray(),
       attackTiming: { windup: s.wf, strike: s.sf, hold: s.hf }, // Mobile-readable phase diagnostics.

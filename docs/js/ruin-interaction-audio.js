@@ -72,7 +72,7 @@
   }
   function igniteTorch(){return play('igniteLarge');}
   function igniteAmmo(){return play('igniteSmall');}
-  function metronomeTick({downbeat=false,beatIndex=0}={}){
+  function metronomeTick({downbeat=false,beatIndex=0,whenMs=null}={}){
     const audio=root.AudioSystem;
     const normalizedBeat=Number.isFinite(beatIndex)?((Math.trunc(beatIndex)%4+4)%4):0; // Stable 1-2-3-4 sequence regardless of score duration or replay.
     const key='stoneBeat'+(normalizedBeat+1); // Match the configured filename number; the judge supplies beat 0 on entry.
@@ -83,7 +83,7 @@
       debug.lastCue=key;return false;
     }
     const volume=downbeat?.72:.54; // Preserve the existing downbeat accent without changing the new recording's pitch or tempo.
-    if(audio.playObjectSfxKeyMetronome(volume,normalizedBeat)===false){
+    if(audio.playObjectSfxKeyMetronome(volume,normalizedBeat,whenMs)===false){
       debug.metronomeError=key+' unavailable or audio muted';debug.lastCue=key;return false;
     }
     const playback=audio.objectSfxDebugSnapshot?.()?.last; // Pixel Probe reveals the active numbered recording and preload state.
@@ -91,6 +91,7 @@
     debug.metronomePreloaded=playback?.preloaded??null;
     debug.metronomeReadyState=playback?.readyState??null;
     debug.metronomeVolume=volume;
+    debug.metronomeScheduledAtMs=Number.isFinite(whenMs)?whenMs:null; // Pixel Probe distinguishes precise audio deadlines from frame-time requests.
     debug.metronomeShortVoice=playback?.oneVoice??true;
     debug.metronomeMaxDurationSec=playback?.maxDurationSec??null;
     debug.metronomeError=playback?.found===false?key+' recording failed to resolve':null;
@@ -98,6 +99,7 @@
     debug.metronomeBeats++;debug.lastMetronomeDownbeat=!!downbeat;debug.lastMetronomeBeatIndex=normalizedBeat;debug.plays++;
     return !debug.metronomeError;
   }
+  function metronomeStop(){root.AudioSystem?.cancelObjectSfxMetronome?.();} // A released plate cancels future sounds without truncating past Web Audio tails.
   function watchMovement(object,progress,options={}){
     if(!object||!Number.isFinite(progress))return false;
     const previous=movement.get(object);
@@ -128,6 +130,6 @@
     if(options.silent||previous===undefined&&!next)return false; // An initial unpressed plate is silent.
     return activator(object,options); // A newly seated or released stone plate clicks only on its state edge.
   }
-  return Object.freeze({pitchFor,spanFor,activator,mechanism,puzzleComplete,progress,igniteTorch,igniteAmmo,metronomeTick,watchMovement,watchPlate,
+  return Object.freeze({pitchFor,spanFor,activator,mechanism,puzzleComplete,progress,igniteTorch,igniteAmmo,metronomeTick,metronomeStop,watchMovement,watchPlate,
     debugSnapshot:()=>({...debug,trackedMotion:'per-object',trackedPlates:'per-object'})});
 });

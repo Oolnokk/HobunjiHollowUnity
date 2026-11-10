@@ -457,6 +457,9 @@
     const song=root.PuzzleCaveMelody.generate(portal.site.signature+':outdoor',{difficulty:portal.difficulty});
     portal.song=song;
     portal.session=root.PuzzleCaveMelody.createSession(song,{
+      lookaheadMs:root.AudioSystem?.metronomeLookaheadMs||0, // Uses the performance transport's 90 ms lookahead when the game's Web Audio adapter is installed.
+      clockMs:root.AudioSystem?.metronomeLookaheadMs?()=>root.performance?.now?.()??Date.now():null, // Audio and score glyphs share the same monotonic clock.
+      onStop:()=>root.RuinInteractionAudio?.metronomeStop?.(), // Stop queued future beats on plate exit or solve.
       onBeat:beat=>root.RuinInteractionAudio?.metronomeTick?.(beat), // One recorded pick per actual quarter-note boundary, only while the raised plate is occupied.
       onSolved:()=>{
         portal.solved=true;portal.openWait=.95; // Solving never closes or commandeers the player's manually equipped instrument.

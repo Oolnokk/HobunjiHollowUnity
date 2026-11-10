@@ -1417,6 +1417,17 @@
     return true;
   }
 
+  function ownsCachedToolRoot(root) {
+    // EquipmentPanel holds the real tool mesh map, including holstered roots.
+    // Combat/hand dependencies may intentionally expose only the current holder,
+    // so assembly diagnostics consult this owner without making slot maps determine lifetime.
+    const map = deps?.toolMeshMap; // Source of truth for cached player equipment, exposed to assembly diagnostics.
+    if (!root || !map) return false;
+    const values = typeof map.values === 'function' ? map.values() : Object.values(map);
+    for (const visual of values) if (visual === root) return true;
+    return false;
+  }
+
   // Read-only bridge for the Loadout's 3D viewport. The equipment panel
   // already owns the complete map, including meshes that are currently holstered.
   function getEquippedWeaponPreviewPlane(itemKey) {
@@ -1429,6 +1440,7 @@
     ensureStarterFlute,
     dispelCurse,
     getEquippedWeaponPreviewPlane,
+    ownsCachedToolRoot, // Read-only equipment ownership visibility for assembly diagnostics, not a disposal guard.
     refreshPlayerAvatar: () => deps?.refreshPlayerAvatar?.(), // Dev Companion uses the game's existing complete in-place portrait/rig rebuild.
     devWornClothing: () => deps?.getGearInventory?.()?.clothing || null, // Appearance inspector edits only visual fields on the actual currently equipped gear objects.
     squareToolIcon,

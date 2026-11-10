@@ -13,12 +13,14 @@ module.exports=async function runNativeV50Playthrough(page){
     const THREE=window.THREE,DS=window.DynamicSurfaces;
     const hit=window.DevRandomRuinHitPuzzles,controls=()=>game.getInteractionControls();
     const steps=[],sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms)); // Brief yields allow browser input callbacks to settle without assuming a software-WebGL frame rate.
+    let activeScoreClock=null; // Gives V50's existing 50 ms simulated stage ticks a matching monotonic note-judgment clock.
     const advance=async(frames=30)=>{
       const count=Math.min(200,Math.max(0,Math.floor(Number(frames)||0)));
       const source=document.getElementById('devRandomRuinGeneratorFrame')?.contentWindow?.DebrisifierV50;
       if(!source?.tickRuntime||typeof hit?.debugAdvanceSignals!=='function')
         throw new Error('V50 autoplayer needs the original generator tick and development-only hit-signal interpolation');
       for(let i=0;i<count;i++){
+        if(activeScoreClock)activeScoreClock.now+=50; // Advance the same virtual clock exposed to the real PuzzleCaveMelody judge.
         if(hit.debugAdvanceSignals(1)!==1)throw new Error('Genuine V50 hit runtime stopped while advancing the puzzle');
         source.tickRuntime(.05); // Same unchanged original V50 linked-cube and particle animation update as the ordinary game frame.
         owner.tick(.05); // Executes the actual source mechanism pose, authored progression gate and interactive puzzle animation.
@@ -279,6 +281,9 @@ module.exports=async function runNativeV50Playthrough(page){
         const song=stage.song,session=stage.session; // The live authored score, not an obsolete completion-event shortcut.
         if(!song?.notes?.length||!session?.snapshot||!session?.note)
           fail('authored timed Scratchbone score is missing its judge',record,stage);
+        const virtualClock={now:performance.now()}; // This instrumented playthrough does not consume real time between 50 ms stage updates.
+        activeScoreClock=virtualClock;
+        session.setClockSource?.(()=>virtualClock.now); // All real authored glyph and note windows follow the injected simulation clock.
         await advance(1); // Occupy the physical plate and start the shared metronome.
         if(!session.snapshot().standing)
           fail('physical melody plate did not arm its timed judge',record,stage,{plate:stage.melodyPlate});
@@ -295,6 +300,7 @@ module.exports=async function runNativeV50Playthrough(page){
           if(session.snapshot().progress!==index+1)
             fail('correctly timed instrument note was rejected',record,stage,{index,note,after:session.snapshot()});
         }
+        activeScoreClock=null;
         steps.push({floor:record.floor,stage:stage.id,event:'real-timed-melody-judge',bpm:song.bpm,notes:song.notes.length});
       }else if(stage.kind==='ropeChain'){
         if(!stage.ropeLinked)fail('V50 rope physics never registered',record,stage);

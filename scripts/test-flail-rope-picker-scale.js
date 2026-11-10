@@ -22,7 +22,10 @@ assert.match(index,/id="headScale"/);
 assert.match(index,/id="pickCanvas"/);
 assert.match(app,/function writeCoordinate/);
 assert.match(app,/HobunjiSpritePointPicker\?\.create/);
-assert.match(runtime,/makeRope\(THREE, f\.chain, unit, order \+ 0\.01, ropeTexture\)/);
+assert.match(runtime,/makeRope\(THREE, \{ \.\.\.f\.chain, lengthPx: ropePixels \}, unit, order \+ 0\.01, ropeTexture\)/,
+  'modular rope reach changes only the generated connector length, not width or head scale');
+assert.match(runtime,/const requestedLength = Number\(f\.chain\.mountLengthPx\)/,
+  'custom modular mount line may override rope reach without mutating authored legacy recipe');
 assert.match(runtime,/plane\.matrixWorld\.decompose\(q\.decomposePos, q\.baseQ, q\.scale\)/,'final visible haft scale must be inherited from the baked world matrix');
 assert.match(runtime,/state\.chain\.scale\.set\(/);
 assert.match(runtime,/connectorAxisScale\(flail\.chain, 'scaleX'\)/);

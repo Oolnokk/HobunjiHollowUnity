@@ -15,6 +15,192 @@ localStorage draft. An authored key must resolve to an existing
 `TOOL_ITEM_DEFS` item or `shapeKey`; the editor does not invent gameplay
 weapon definitions or acquisitions.
 
+## Foundry modular part names, tool roles, and flexible flails
+
+The [Modular Weapon Editor](../tools/modular-weapon-editor/index.html) owns each
+**part's own descriptive label** (which no longer needs the donor weapon's
+name), the shaft's `namePosition: 'prefix'|'suffix'` and `nameAffix`,
+and the head's `weaponNames: { prefix, suffix }`. The head provides
+**both** grammatical forms. For example:
+
+- The Fishing Mace unlocks a **Bored Wrapped Handle** and a **Barb-flanged
+  Mace Head**. The imported authoring affix produces **Copper Looped Fishing Mace**.
+- The Harlyao Longsword unlocks a **Tall Crescent Hilt** and a
+  **Harlyao-style Long-blade**. The imported affixes produce
+  **Copper Crescent-hilted Long-Hilted Slicer**.
+These are the uploaded naming values only: geometry, sockets, pair overrides,
+brush strokes and sprite paths were deliberately not imported. The author's
+head `weaponNames.prefix` and `weaponNames.suffix` values were swapped during
+migration as requested.
+
+The unchanged `modular:<shaftKey>:<headKey>:<metalKey>` saved ID is still
+the crafting, ownership, mastery and source-shape authority. The labels
+and grammatical affixes are not encoded into inventory keys. Older
+browser drafts with no naming fields inherit the newly shipped names.
+
+A modular head may declare `toolSlots` (e.g. `['axe']`,
+`['pick']`, `['harpoon']`). A shaft may declare `toolWorthy: true`.
+Only when **both** conditions match does the assembled equipment add
+noncombat slots to its always-present `weapon` slot. All configured
+slots then follow the existing `ToolMastery` and
+`HobunjiMasteryPolicy` event routing: successful ordinary tool
+actions, worth-based hoe harvests and shovel digs where applicable,
+and player-attributed combat kills retain their existing source-specific
+XP amounts and the normal dual-role combat multiplier.
+The head never makes a non-tool-worthy weapon hilt into a tool.
+
+### Choosing the owner of a flail
+
+**Step 1 — Tool Hub → Complex Tool Visuals:** Create or select a
+flail **recipe** (a reusable recipe ID need not itself be an item key).
+Author the original shaft/rope or chain, suspension color and
+thickness, effective length, movement damping, inertial lag,
+original separate head-layer stack, head scale, anchors and effects.
+Export and commit `config/weapon-sprite-assemblies.js` as usual.
+
+**Step 2 — Modular Weapon Editor:** Attach that recipe ID to **either**
+the head (`head.flailAssembly`) or the shaft
+(`shaft.flailAssembly`) and export/commit
+`config/modular-weapons.js`. It is invalid for **both** selected
+pieces to own a flail recipe.
+
+- **Head-owned flail:** The final shaft sprite remains rigid. The recipe
+  supplies the hanging head's original multi-layer textures and chain
+  physics. The newly authored `rope` shaft mount controls its top contact
+  and full reach; shafts without one retain their legacy tang/eye contact
+  and preexisting chain length. This supports reusable complete flexible
+  heads on many shafts.
+- **Shaft-owned flail:** The final shaft sprite and the original
+  recipe's rope texture, color and motion remain unchanged. A `rope`
+  shaft mount sets attachment and rope/chain reach; without one the
+  original recipe's values remain. The authored head layers are replaced
+  by the selected `head.sprite`, using that head's
+  `flailHeadAnchor` and `flailHeadScale`. This supports one swinging
+  shaft paired with many different modular heads.
+
+### Flexible mount geometry and preview
+
+A shaft's directed line may now have `type: 'rope'`. The line's origin
+is the connector's attachment on the original haft artwork; the
+distance from that origin to its arrow tip is the **desired full
+connector length**, in unmodified source pixels. It is a suspension
+setting, never an axis-fit transform on the head. The 3D renderer solves
+the rope/chain's Y stretch while preserving authored `scaleX`,
+`radiusPx`, `head.scale`, colors and head-layer offsets. A shaft
+attachment-rig transform can alter the visible rope line length, but
+does not scale the hanging head. A head may use `mount.type: 'flail'`
+to require a flexible assembly rather than accidentally forging a rigid
+copy. One rope mount is used per modular weapon.
+
+The [Modular Weapon Editor](../tools/modular-weapon-editor/index.html)
+now opens with the **complete 2D assembled rig as its primary preview**.
+For flails, it renders the real forged haft (including conditional bores),
+the tinted connector PNG and every independently layered head sprite,
+using the same `flailRecipe`, authored contacts and layer offsets as the
+runtime's Three.js pendulum. At rest the rope hangs under gravity; its
+head and shaft anchor are marked in gold and cyan, with a separate
+purple length guide that **always appears** in the full assembly view,
+including flails without a separately authored shaft rope line.
+The real moving pendulum still belongs exclusively to gameplay.
+Use **Show connector guides** to hide only the annotations; it does not
+change the weapon art, physical rope or saved rig.
+
+Rigid weapons also appear in this complete-rig preview, with their
+transformed attachment marks. The original 450×1204 shaft/head/bridge
+canvases remain available under **Source canvases** for touch editing,
+without changing their authoring coordinate frame. Source canvases
+open automatically when beginning a bore drag, mount adjustment or
+recipe operation; they remain closed by default to prioritize the full
+weapon. The remaining controls are grouped into eight numbered
+collapsible workflows: identity and tool roles; flail and bore; haft
+art/rig regions; mount lines; pair corrections; component cleanup;
+metalwork brushes; and PNG source cutting. User drafts and history are
+unchanged by this layout-only reorganization.
+
+### Recalculating bores in original shaft artwork
+
+The modular editor's **Recalculating bores** panel only appears
+when a valid **flail head** is selected. A bore is a connector socket
+drilled into the shaft at the **exact physical rope attachment**: the
+`rope` mount's start when present, or the Complex Tool Visuals
+recipe's authored `flail.haftAnchor` for an older shaft without one.
+The editor also draws a purple dashed connector line from the rope
+mount's start to its tip; its length matches the connector's runtime
+reach, without stretching the separate head or rope width.
+
+Bores are stored in `shaft.bores`, but are applied to a weapon
+**only if its selected head is a flail**. Each bore stores
+`offsetX` and `offsetY`, not absolute sprite coordinates; its
+center is `connectorAnchor + offset`. **New defaults are (0, 0)
+offset, 20 × 20 pixels (X/Y diameter), and a 3px interior outline.**
+The editor has numeric width/height controls, relative translation,
+rotation, shaded rim, edge deformation and light direction. Its
+non-destructive compositor reuses the shaft/head outlining style to
+draw an opaque-black **interior** ink ring around the transparent
+opening, while keeping the original material colors further out.
+Moving the connector's authored mount automatically moves the bore,
+and moving the bore recalculates pixels from the uncut source PNG.
+Old absolute `x/y` bore drafts are migrated to relative offsets
+without shifting the old visible hole. Brush, smudge, junction and
+pair operations remain separate.
+
+A **flail head on a normal haft** keeps its original Complex Tool Visuals
+`flail.head.anchor` and authored layers. The modular editor's head
+tang/eye arrows cannot move that contact; the Tool Hub owns it.
+Bore openings are relative to the shaft-side rope mount and visible
+only for genuine flail heads.
+
+An **ordinary rigid head on a flail haft** works differently. It is
+rendered as an independent hanging head plane with a **layer-local
+contact** in its original source PNG (450 × 1204 pixels). By default
+the contact is the original rigid head `mount.start` for tang/blade
+heads, or `mount.end` for sleeve/weight heads. The selected shaft's
+`overrides[headKey].flailHeadAnchor` and optional `flailHeadScale`
+replace those defaults for **only that pairing**. The modular editor
+shows a cyan movable target over the head source image and numeric
+X/Y/scale fields; moving it never touches `heads[headKey].mount` or
+other rigid weapons. The old head-global `flailHeadAnchor` was unused
+by gameplay and is no longer authored. Live Three.js and the full
+2D resting-pose preview share this same per-pair contact.
+Head size and connector reach are controlled independently.
+
+For the same **flail-haft + rigid-head pair**, ordinary `overrides[headKey]`
+visual values (`scaleX`, `scaleY`, `flipX`, `flipY`, `rotation`,
+`x` and `y`) now affect **only the hanging head artwork**, both
+in the full-assembly 2D preview and the live Three.js pendulum.
+The sprite is rotated and mirrored about its resolved rope contact;
+the user-entered X/Y values additionally nudge the head relative to the
+rope end, without changing connector reach or thickness. The original
+shared head artwork, tang/sleeve line and rigid weapon combinations
+remain unchanged.
+
+A `dmgType: 'blunt'|'sharp'|'inherit'` pairing value may override
+the hanging rigid head's combat classification **only** when the
+shaft itself owns a flail recipe. The uploaded Pick Head +
+Grapple-Flail shaft is an allowed pairing with `flipY: true` and
+`dmgType: 'blunt'`, while the original Pick Head remains `sharp` on
+ordinary hafts. Older imported drafts without the new damage field
+inherit the shipped pair damage; selecting `inherit` in section 02
+explicitly restores the head's ordinary damage type for that pairing.
+The Foundry uses the effective weapon definition's damage type, rather
+than labeling the item solely from its shared head.
+
+The first `grappleFlail` reusable reference is available from either
+a dedicated Rope-bound Grapple Handle or a Grapple Hook Head, unlocked
+through the original weapon's `grappleFlail` source shape. The combo
+of both is forbidden. The old ordinary Grapple-Flail and Hachutu
+Torch-Flail recipes and animations remain untouched.
+
+For a flail, the Foundry's 2D tool sprite represents the **shaft only**.
+The runtime's existing `HobunjiWeaponSpriteAssemblies` Three.js decorator
+loads the chain and the separate, replaceable head and updates their
+position with the real gameplay pendulum physics. It reuses the exact
+same equipment item key and equip stance as rigid modular weapons,
+without baking or double-drawing the moving head. The Foundry's
+details and the modular editor's debug panel explicitly say when a
+flail is active. The 2D Foundry picture does *not* try to imitate the
+live pendulum.
+
 ## Hachutu Torch-Staff: two flame regions
 
 `hachutuTorchStaff` uses the new
