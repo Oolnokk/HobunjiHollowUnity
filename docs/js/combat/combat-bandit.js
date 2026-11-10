@@ -2149,6 +2149,8 @@
       const witchResult = window.GhoulWyrmWitches?.update?.(c, dt, targetPlayer, distToPlayer, witchApi); // Dedicated spells run before normal ranged/melee.
       if (witchResult?.handled) return witchResult;
     }
+    const strongholdCask = window.BanditStrongholdCombat?.updateThrow?.(c, dt, targetPlayer);
+    if (strongholdCask?.handled) return strongholdCask; // Same staged tool animation/Burden flight, only selected fortress bandits.
     const flaskResult = updateBanditFlaskAI(c, dt, targetPlayer, distToPlayer); // Flaskers get first refusal on ranged combat before ordinary crossbow/melee logic.
     if (flaskResult?.handled) return flaskResult;
     const rangedResult = window.RangedWeapons?.updateBanditAI?.(c, dt, targetPlayer, distToPlayer);
