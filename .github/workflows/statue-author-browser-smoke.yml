@@ -7,6 +7,8 @@ on:
       - 'docs/js/procedural-furniture.js'
       - 'docs/js/authored-furniture-runtime.js'
       - 'scripts/smoke-statue-author-browser.js'
+      - 'scripts/test-statue-surface-cells.js'
+      - 'scripts/test-statue-furniture-author.js'
       - '.github/workflows/statue-author-browser-smoke.yml'
   workflow_dispatch:
 
@@ -21,6 +23,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Check ink-boundary region mapping and furniture hierarchy
+        run: node scripts/test-statue-furniture-author.js
       - name: Install pinned browser dependencies
         run: npm install --no-save --package-lock=false playwright@1.55.1 three@0.128.0
       - name: Install Chromium
