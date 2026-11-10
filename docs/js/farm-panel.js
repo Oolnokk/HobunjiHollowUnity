@@ -612,8 +612,8 @@
       (baby ? babies.rows : isStowedAdult ? stowedRows : adults.rows).appendChild(row);
     });
 
-    if (!babies.rows.children.some(row => !row.hidden)) babies.rows.appendChild(makeText('div', 'No baby animals in this category.'));
-    if (!adults.rows.children.some(row => !row.hidden)) adults.rows.appendChild(makeText('div', 'No adult animals in this category outside storage.'));
+    if (!Array.prototype.some.call(babies.rows.children, row => !row.hidden)) babies.rows.appendChild(makeText('div', 'No baby animals in this category.')); // HTMLCollection has no native .some().
+    if (!Array.prototype.some.call(adults.rows.children, row => !row.hidden)) adults.rows.appendChild(makeText('div', 'No adult animals in this category outside storage.')); // Avoid allocating a temporary array on every render.
     list.appendChild(babies.section);
     list.appendChild(adults.section);
     if (stowedAdultCount || stowedBabyCount) {
