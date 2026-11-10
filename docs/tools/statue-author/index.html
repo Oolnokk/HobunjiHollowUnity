@@ -322,6 +322,13 @@ $('build').onclick=async()=>{
 $('download').onclick=()=>{if(exportProject)downloadJson(exportProject);};
 function meshMaterialStats(mesh) {
   let map=mesh.material?.map || (Array.isArray(mesh.material)?mesh.material.find(mat=>mat?.map)?.map:null);
+  // A GLB furniture part is a tiny invisible driver mesh; its actual model
+  // and shared authored finish live on descendant meshes after async load.
+  if(!map)mesh.traverse(child=>{
+    if(map||!child.isMesh||child===mesh)return;
+    const materials=Array.isArray(child.material)?child.material:[child.material];
+    map=materials.find(material=>material?.map)?.map||null;
+  });
   let color=null;
   const canvas=map?.image;
   if(canvas?.getContext){
