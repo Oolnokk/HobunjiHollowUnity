@@ -247,7 +247,7 @@
             // The NPC body already uses Lambert shading. Using the original
             // GLB's PBR/vertex-color material here could leave the hands and
             // feet almost black even when their material texture is correct.
-            return new THREE.MeshLambertMaterial({color:0xffffff,side:THREE.DoubleSide}); // Preserve enough light on the sampled hand/foot texture in the statue preview.
+            return new THREE.MeshBasicMaterial({color:0xffffff,side:THREE.DoubleSide,skinning:child.isSkinnedMesh===true}); // Pixel-matched tint without relying on GLB normals/light; statue source shading is already baked.
           }
           const result=material.clone();result.color?.set(resolveColor(part,baseColor));
           if(part.materialTexture)applyPartTexture(result,part);
@@ -709,23 +709,29 @@
     }};
   }
 
-  const statueOverlayInfoCache=new WeakMap(); // Decoded texture image -> one shared whole-statue peak/tint calculation.
-  function statueOverlayInfo(image){
-    if(statueOverlayInfoCache.has(image))return statueOverlayInfoCache.get(image);
+  const statueOverlayAtlasCache=new WeakMap(); // One center-cropped material atlas per decoded PNG, shared by body, head, and limbs.
+  function statueOverlayAtlas(image) {
+    const cached=statueOverlayAtlasCache.get(image);
+    if(cached)return cached;
+    // Many authored furniture PNGs (notably carved_smooth) have a nearly
+    // black border meant for individual tiles. Mapped once over an NPC, that
+    // border darkened the entire hood/face while leaving the torso bright.
+    // Sample the interior ONCE for the statue, not once per outlined cell.
     const canvas=document.createElement('canvas');
-    canvas.width=image.naturalWidth||image.width;canvas.height=image.naturalHeight||image.height;
-    const context=canvas.getContext('2d',{willReadFrequently:true});
-    context.drawImage(image,0,0);
-    const pixels=context.getImageData(0,0,canvas.width,canvas.height).data;
+    canvas.width=canvas.height=256;
+    const ctx=canvas.getContext('2d',{willReadFrequently:true});
+    const iw=image.naturalWidth||image.width,ih=image.naturalHeight||image.height;
+    const insetX=iw*.16,insetY=ih*.16;
+    ctx.drawImage(image,insetX,insetY,iw-2*insetX,ih-2*insetY,0,0,256,256);
+    const pixels=ctx.getImageData(0,0,256,256).data;
     const luminance=window.ColorFill?.relativeLuminance;
     if(typeof luminance!=='function')throw new Error('Statue material needs canonical ColorFill');
     let peak=0;
-    for(let p=0;p<pixels.length;p+=4)if(pixels[p+3]>8){
+    for(let p=0;p<pixels.length;p+=4)if(pixels[p+3]>8)
       peak=Math.max(peak,luminance(pixels[p],pixels[p+1],pixels[p+2]));
-    }
-    const info={peak,baseRgb:statueMaterialColor(pixels)};
-    statueOverlayInfoCache.set(image,info);
-    return info;
+    const atlas={canvas,peak,baseRgb:statueMaterialColor(pixels)};
+    statueOverlayAtlasCache.set(image,atlas);
+    return atlas;
   }
 
   function paintedStatueCanvas(source,finish,options={}){
@@ -741,9 +747,9 @@
     const fx=Number(frame.x)||0,fy=Number(frame.y)||0;
     // The head is a crop from the same 256px portrait atlas as the body:
     // offset the *single* texture so its grain continues across their seam.
-    context.drawImage(finish,-fx,-fy,fw,fh);
+    const overlayInfo=statueOverlayAtlas(finish);
+    context.drawImage(overlayInfo.canvas,-fx,-fy,fw,fh);
     const material=context.getImageData(0,0,width,height);
-    const overlayInfo=statueOverlayInfo(finish);
     const painted=paintStatueSurfaceCells(pixels.data,material.data,width,height,{
       ...options,overlayPeak:overlayInfo.peak,baseColor:options.baseColor||overlayInfo.baseRgb
     });
@@ -761,9 +767,9 @@
       const pending=statueImage(url).then(image=>{
         const canvas=document.createElement('canvas');canvas.width=canvas.height=256;
         const context=canvas.getContext('2d',{willReadFrequently:true});
-        context.drawImage(image,0,0,256,256); // Whole material texture, not a grid of individual cells.
+        const info=statueOverlayAtlas(image);
+        context.drawImage(info.canvas,0,0,256,256); // Identical whole-statue interior atlas, with no black tile-border sampling.
         const pixels=context.getImageData(0,0,256,256);
-        const info=statueOverlayInfo(image);
         const rgb=statueBaseRgb(part.statueBaseColor||info.baseRgb,pixels.data);
         const luminance=window.ColorFill.relativeLuminance;
         for(let p=0;p<pixels.data.length;p+=4){
@@ -828,7 +834,7 @@
     const t = part.transform;
     if (part.kind === 'statueSprite') {
       const geometry = new THREE.PlaneGeometry(Math.max(.001, t.sx || 1), Math.max(.001, t.sy || 1));
-      const material = new THREE.MeshLambertMaterial({color:0xffffff,side:part.statueBackMaskDataUrl?THREE.FrontSide:THREE.DoubleSide,transparent:true,alphaTest:.025,depthWrite:true}); // Irregular UV cells still share the complete texture while retaining useful scene lighting.
+      const material = new THREE.MeshBasicMaterial({color:0xffffff,side:part.statueBackMaskDataUrl?THREE.FrontSide:THREE.DoubleSide,transparent:true,alphaTest:.025,depthWrite:true}); // Source-art shading is baked per cell: do not make hood and body differently lit.
       const mesh = new THREE.Mesh(geometry, material);
       mesh.position.set(t.x || 0,t.y || 0,t.z || 0);
       mesh.rotation.set((t.rx || 0) * DEG,(t.ry || 0) * DEG,(t.rz || 0) * DEG);
@@ -837,7 +843,7 @@
       mesh.castShadow = true;
       applyStatueSpriteFinish(mesh, part);
       if (part.statueBackMaskDataUrl) {
-        const back = new THREE.Mesh(geometry.clone(), new THREE.MeshLambertMaterial({
+        const back = new THREE.Mesh(geometry.clone(), new THREE.MeshBasicMaterial({
           color:0xffffff,side:THREE.FrontSide,transparent:true,alphaTest:.025,depthWrite:true
         }));
         back.name = (part.name || 'Statue') + ' rear portrait';
