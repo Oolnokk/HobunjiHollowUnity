@@ -180,16 +180,21 @@ async function loadStyles(){
 }
 function fillStyles(){
   const previous=activeStyle?.entry?.url;
+  assetGeneration++; // A previous image load cannot replace a selection that has since become empty.
   const matches=styles.filter(style=>style.slot===$('slotSelect').value);
   setSelect('cosmeticSelect',matches.map(style=>({value:style.key,label:style.label})),'No indexed styles for this slot');
   if(matches.some(style=>style.key===previous))$('cosmeticSelect').value=previous;
   if(!matches.length){
-    rememberDraft();activeStyle=null;activeDraftKey=null;
-    images.front=null;images.rear=null;
-    $('sourcePath').textContent='No compatible indexed cosmetic in this species/gender/slot.';
-    render();return;
+    if(!manualSelected){
+      rememberDraft();activeStyle=null;activeDraftKey=null;
+      images.front=null;images.rear=null;
+      $('sourcePath').textContent='No compatible indexed cosmetic in this species/gender/slot.';
+      render();
+    }
+    return;
   }
-  if(!manualSelected)void selectIndexedStyle();
+  if(manualSelected)$('cosmeticSelect').selectedIndex=-1; // Do not display a repository style as selected while a local import remains active.
+  else void selectIndexedStyle();
 }
 async function selectIndexedStyle(){
   const selected=styles.find(style=>style.key===$('cosmeticSelect').value);
