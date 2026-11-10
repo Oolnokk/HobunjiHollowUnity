@@ -613,6 +613,7 @@
         texture.wrapS=texture.wrapT=THREE.RepeatWrapping;
         if(THREE.sRGBEncoding)texture.encoding=THREE.sRGBEncoding;
         texture.needsUpdate=true;
+        texture.userData=texture.userData||{}; // Three.js r128 CanvasTexture does not create userData automatically.
         texture.userData.statueSharedTexture=true; // Shared by every statue GLB with this material.
         texture.dispose=()=>{}; // Matches the existing furniture shared-texture cache's no-op ownership policy.
         return texture;
