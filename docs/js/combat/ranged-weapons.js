@@ -1151,6 +1151,32 @@
     return null;
   }
 
+  function hitboxPoseMatches(node, pose) {
+    let index = 0; // Checks the full inherited transform without updating matrices on a cache hit.
+    for (; node; node = node.parent) {
+      const saved = pose?.[index++]; // Captured entries are reused across builds rather than allocated every frame.
+      if (!saved || saved.node !== node || node.matrixAutoUpdate === false
+        || saved.px !== node.position?.x || saved.py !== node.position?.y || saved.pz !== node.position?.z
+        || saved.qx !== node.quaternion?.x || saved.qy !== node.quaternion?.y || saved.qz !== node.quaternion?.z || saved.qw !== node.quaternion?.w
+        || saved.sx !== node.scale?.x || saved.sy !== node.scale?.y || saved.sz !== node.scale?.z) return false;
+    }
+    return index === pose?.length;
+  }
+
+  function captureHitboxPose(node, pose = []) {
+    let index = 0; // Truncation releases ancestors when a portrait changes scene or rig ownership.
+    for (; node; node = node.parent) {
+      const saved = pose[index] || (pose[index] = {}); // Reuse one metadata record per ancestor across rendered frames.
+      saved.node = node;
+      saved.px = node.position?.x; saved.py = node.position?.y; saved.pz = node.position?.z;
+      saved.qx = node.quaternion?.x; saved.qy = node.quaternion?.y; saved.qz = node.quaternion?.z; saved.qw = node.quaternion?.w;
+      saved.sx = node.scale?.x; saved.sy = node.scale?.y; saved.sz = node.scale?.z;
+      index++;
+    }
+    pose.length = index;
+    return pose;
+  }
+
   function actorHitbox(actor) {
     if (!deps || !actor) return null;
     if (typeof actor.__targetableHitbox === 'function') return actor.__targetableHitbox(); // Stand-in actors from js/targetables.js (burdens, props) share this one melee/lunge geometry.
@@ -1160,8 +1186,7 @@
     const cached = actorHitboxCache.get(actor);
     const sameFrame = Number.isFinite(frame) ? cached?.frame === frame : cached && now - cached.at < ACTOR_HITBOX_CACHE_MS; // Standalone tools keep the bounded time fallback.
     if (sameFrame && cached.x === actor.x && cached.y === actor.y && cached.node === avatarNode
-      && cached.px === avatarNode?.position?.x && cached.py === avatarNode?.position?.y && cached.pz === avatarNode?.position?.z
-      && cached.sx === avatarNode?.scale?.x && cached.sy === avatarNode?.scale?.y && cached.sz === avatarNode?.scale?.z) {
+      && hitboxPoseMatches(avatarNode, cached.pose)) {
       actorHitboxReuses++;
       return cached.value;
     }
@@ -1219,8 +1244,7 @@
       bodyScale: { x: bodyScale.x, y: bodyScale.y, z: bodyScale.z },
     };
     actorHitboxCache.set(actor, { at: now, frame, x: actor.x, y: actor.y, node: avatarNode,
-      px: avatarNode?.position?.x, py: avatarNode?.position?.y, pz: avatarNode?.position?.z,
-      sx: avatarNode?.scale?.x, sy: avatarNode?.scale?.y, sz: avatarNode?.scale?.z, value });
+      pose: captureHitboxPose(avatarNode, cached?.pose), value });
     return value;
   }
 
@@ -1849,7 +1873,7 @@
     return result;
   }
 
-  function hasLineOfSight(observer, target) {
+  function hasLineOfSight(observer, target, forceRefresh = false) {
     if (!deps || !observer || !target) return true; // Missing optional runtime dependencies must not make every hostile blind.
     const now = performance.now();
     const area = deps.getCurrentArea?.() ?? null;
@@ -1860,7 +1884,7 @@
     const targetMoved = cached ? Math.hypot(target.x - cached.tx, target.y - cached.ty) : Infinity;
     const observerHeightMoved = cached && Number.isFinite(observerWorldY) && Math.abs(observerWorldY - cached.observerWorldY) > 0.04;
     const targetHeightMoved = cached && Number.isFinite(targetWorldY) && Math.abs(targetWorldY - cached.targetWorldY) > 0.04;
-    if (cached && cached.area === area && cached.target === target && now - cached.at < BANDIT_LOS_CACHE_MS
+    if (!forceRefresh && cached && cached.area === area && cached.target === target && now - cached.at < BANDIT_LOS_CACHE_MS
       && moved < deps.TILE * 0.08 && targetMoved < deps.TILE * 0.08 && !observerHeightMoved && !targetHeightMoved) return cached.clear;
     const result = computeBanditLos(observer, target, { projectileRadiusPx: 0, losTerrainStepTiles: 0.25 });
     observer._enemyVisibilityLosCache = {

@@ -71,7 +71,6 @@ assert.match(ranged, /InteriorDoorTiles\?\.blocksBox\?\.\(deps\.getCurrentArea\(
 assert.match(ranged, /function engagementRangePx\(itemKey\)[\s\S]{0,220}RANGE_FALLOFF_DISTANCE_MULTIPLIER/, "ranged engagement radius follows the projectile's actual maximum travel distance");
 assert.match(ranged, /function rangedAttackRadiusPx\(entity\)[\s\S]{0,260}rangedAttackRadiusPx/, 'an enemy definition may reduce its ranged attack radius without exceeding projectile reach');
 assert.match(ranged, /if \(distToPlayer > maxRange\) \{\s*return \{ aimAngle, moving: false, handled: true, holdingRange: true \}/, 'ranged bandits hold position instead of approaching targets');
-assert.match(ranged, /function hasLineOfSight\(observer, target\)/, 'ranged collision exposes the NPC visibility entry point');
 assert.match(ranged, /const result = computeBanditLos\(observer, target, \{ projectileRadiusPx: 0, losTerrainStepTiles: 0\.25 \}\)/, 'NPC perception uses the real terrain and cover segment test');
 assert.match(ranged, /NearbyVolumeCollision\?\.segmentSightHit/, 'NPC sight uses the setting-independent semantic-cover query');
 assert.match(nv, /function ensureCandidates\(forSight = false\)[\s\S]{0,260}if \(!deps \|\| \(!forSight && \(!options\.enabled \|\| !options\.projectiles\)\)\)/, 'sight candidate indexing bypasses projectile-only settings while ordinary projectile checks still respect them');

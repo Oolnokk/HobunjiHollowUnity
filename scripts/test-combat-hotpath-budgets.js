@@ -13,7 +13,7 @@ let visible = true; // Simulates a wall/door occluding all observers.
 let cone = true; // Tests immediate facing eligibility independently of LOS leases.
 const window = {
   Combat: { targetInsideAttackCone: () => cone },
-  RangedWeapons: { hasLineOfSight: () => { queries++; return visible; } },
+  RangedWeapons: { hasLineOfSight: (_observer, _target, fresh) => { assert.equal(fresh, true); queries++; return visible; } },
 };
 vm.runInNewContext(read('docs/js/combat/enemy-search-ai.js'), {
   window, performance: { now: () => now }, THREE: { MathUtils: { degToRad: x => x * Math.PI / 180 } },
@@ -84,8 +84,8 @@ now += 17;
 assert.notEqual(geometryScope.actorHitbox(actor), fallback);
 geometryScope.deps.getFrameSerial = () => frame;
 const poseNode = { position: { x: 2, y: 1, z: 1 }, scale: { x: 1, y: 1, z: 1 }, userData: {},
-  getWorldPosition(out) { return out.set(this.position.x, this.position.y, this.position.z); },
-  getWorldScale(out) { return out.set(this.scale.x, this.scale.y, this.scale.z); } }; // Live height and scale may change after the AI queried the hitbox.
+  getWorldPosition(out) { return out.set(this.position.x + (this.parent?.position?.x || 0), this.position.y + (this.parent?.position?.y || 0), this.position.z + (this.parent?.position?.z || 0)); },
+  getWorldScale(out) { return out.set(this.scale.x * (this.parent?.scale?.x || 1), this.scale.y * (this.parent?.scale?.y || 1), this.scale.z * (this.parent?.scale?.z || 1)); } }; // Live height and scale may change after the AI queried the hitbox.
 geometryScope.avatarNodeForActor = () => poseNode;
 const grounded = geometryScope.actorHitbox(actor); // Used to prove pose invalidation without advancing the frame or X/Z.
 poseNode.position.y = 3;
@@ -93,4 +93,25 @@ assert.notEqual(geometryScope.actorHitbox(actor), grounded);
 assert.equal(geometryScope.actorHitbox(actor).center.y, 3, 'jump/climb pose is live inside the same game frame');
 poseNode.scale.y = 2;
 assert.equal(geometryScope.actorHitbox(actor).height, 4, 'same-frame rig scaling invalidates the volume');
+const parentPose = { position: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } }; // Detached/nested portrait rigs inherit movement from their owning parent.
+poseNode.parent = parentPose;
+const nestedBefore = geometryScope.actorHitbox(actor); // Reparenting itself must invalidate the old pose entry.
+parentPose.position.y = 2;
+assert.notEqual(geometryScope.actorHitbox(actor), nestedBefore, 'same-frame parent motion invalidates a nested portrait hitbox');
+assert.equal(geometryScope.actorHitbox(actor).center.y, 5, 'nested hitbox center follows inherited height');
+const parentMoved = geometryScope.actorHitbox(actor); // Rotation can move an offset child without changing its local position.
+parentPose.quaternion.y = .5;
+assert.notEqual(geometryScope.actorHitbox(actor), parentMoved, 'same-frame parent rotation invalidates the cached center/scale');
+const rotated = geometryScope.actorHitbox(actor); // Parent scaling changes the inherited portrait dimensions.
+parentPose.scale.x = 2;
+assert.notEqual(geometryScope.actorHitbox(actor), rotated, 'same-frame parent scale invalidates the volume');
+assert.equal(geometryScope.actorHitbox(actor).width, 2, 'nested hitbox width follows inherited scale');
+const stableNested = geometryScope.actorHitbox(actor); // Comparing ancestor local transforms should still reuse a stable rig.
+assert.equal(geometryScope.actorHitbox(actor), stableNested);
+parentPose.matrixAutoUpdate = false;
+const manuallyManaged = geometryScope.actorHitbox(actor); // A direct matrix writer cannot promise stable inherited transforms.
+assert.notEqual(geometryScope.actorHitbox(actor), manuallyManaged, 'manual matrices conservatively bypass cache reuse');
+parentPose.matrixAutoUpdate = true;
+poseNode.parent = { ...parentPose, position: { x: 0, y: 6, z: 0 } };
+assert.equal(geometryScope.actorHitbox(actor).center.y, 9, 'reparenting receives a fresh world-space center');
 console.log('combat hotpath budgets passed');

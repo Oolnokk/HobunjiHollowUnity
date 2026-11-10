@@ -45,7 +45,7 @@
       sightGeometryReuses++;
       return cached.visible;
     }
-    const visible = window.RangedWeapons?.hasLineOfSight?.(c, target) ?? true; // Tile and real scene-geometry occlusion gate acquisition/reacquisition.
+    const visible = window.RangedWeapons?.hasLineOfSight?.(c, target, true) ?? true; // A due perception decision bypasses the inner LOS cache so leases cannot stack.
     sightGeometryChecks++;
     const interval = cached ? SIGHT_DECISION_INTERVAL_MS : 60 + (sightDecisionSerial++ % 5) * 10; // Spread the first refresh, then retain each actor's cadence.
     sightDecisions.set(c, { target, area: c.areaId, targetArea: target.areaId, nextAt: now + interval, visible });

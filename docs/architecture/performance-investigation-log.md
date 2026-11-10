@@ -38,6 +38,14 @@ redundant work; those old timings are **not** post-change measurements.
   in the middle of a batch. Position changes invalidate within a frame, and standalone
   tools retain their short wall-clock fallback. Hitbox math is unchanged.
 
+Review follow-up: hitbox reuse also validates each portrait ancestor's position,
+quaternion, scale and identity, using reusable metadata. Nested rigs invalidate on
+parent movement or reparenting within a slow frame; manually managed matrix nodes
+use fresh geometry. A composed perception/LOS regression also found that the first
+60 ms staggered decision could reuse the inner 80 ms LOS cache and defer a new wall
+until the next decision. Due perception decisions now explicitly refresh geometry,
+so the two leases cannot stack. Both regressions failed before these fixes.
+
 `test-held-ordinary-depth-budget.js` executes the compositor with ordinary, mixed,
 fallback and throwing-renderer fixtures; `test-combat-hotpath-budgets.js` executes
 perception and hitbox ownership. Pixel Probe exposes saved depth clears/skipped

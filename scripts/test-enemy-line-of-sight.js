@@ -260,4 +260,16 @@ shatterHit = null;
 now += 100;
 assert.equal(window.RangedWeapons.wouldHitShattercask(), false, 'reticle clears when no Shattercask intercepts the shot');
 
+// Compose the real perception lease with the real LOS cache: a staggered
+// 60 ms decision must not accept a still-cached 80 ms geometry result.
+vm.runInNewContext(fs.readFileSync('docs/js/combat/enemy-search-ai.js', 'utf8'), context);
+window.Combat = { targetInsideAttackCone: () => true };
+terrainBlock = false; raisedTerrainY = null; closedDoor = false; shotDoorClosed = false; sightObjects = [];
+const leasedObserver = actor(64, 64); // First sight lease refreshes at 60 ms.
+const leasedTarget = actor(192, 64); // Fixed actors prevent movement invalidation from masking the double-cache bug.
+assert.equal(window.EnemySearchAI.enemyCanSeeTarget(leasedObserver, leasedTarget, 1000), true);
+sightObjects = [{ name: 'new-wall', blocksSight: true, visible: true }];
+now += 61;
+assert.equal(window.EnemySearchAI.enemyCanSeeTarget(leasedObserver, leasedTarget, 1000), false,
+  'a due staggered perception decision obtains fresh geometry despite the inner 80 ms cache');
 console.log('enemy line of sight: all checks passed');
