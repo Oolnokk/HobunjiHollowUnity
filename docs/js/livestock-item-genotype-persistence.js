@@ -209,6 +209,25 @@
     return groups;
   }
 
+  function consumeVariant(itemKey, variant, availableTotal, consumeUnit) {
+    if (!ensureLoaded() || typeof consumeUnit !== 'function' || typeof variant !== 'string') return { ok:false };
+    const groups = groupsFor(itemKey, availableTotal); // Offerings and Farm use the same exact-genotype grouping authority.
+    if (!groups?.some(group => group.variant === variant && group.count > 0) || injectedIntoFarmAnimals.has(itemKey)) return { ok:false };
+    const list = queues[itemKey] || []; // Used to remove only the chosen genotype after the exact quality unit has been debited.
+    const index = variant === 'generic' ? -1 : list.findIndex(gene => window.InventoryStacks.genotypeKey(gene) === variant);
+    if (variant !== 'generic' && index < 0) return { ok:false };
+    if (variant === 'generic' && Math.max(0,Math.floor(Number(availableTotal)||0)) <= list.length) return { ok:false };
+    if (consumeUnit() !== true) return { ok:false }; // No trait metadata is lost when the inventory/quality debit fails.
+    const genotype = index >= 0 ? clonePlain(list.splice(index,1)[0]) : null; // Retain the released animal's actual inherited traits for wildlife placement.
+    if (!list.length) delete queues[itemKey];
+    groupCache.delete(itemKey);
+    debug.consumed++;
+    debug.lastItemKey = itemKey;
+    debug.lastAction = 'festival-offering';
+    saveQueues({ consumedItemKey:itemKey }); // Saves lineage and bag count together, as existing Farm deployment does.
+    return { ok:true,genotype };
+  }
+
   function wrapDeployment(original, itemKey, args) {
     const selection = args[0]?.inventoryVariant; // Optional exact stack selected in Pack; old Farm actions retain FIFO behavior.
     if (selection != null) {
@@ -288,6 +307,7 @@
   window.LivestockItemGenotypePersistence = {
     install,
     groupsFor,
+    consumeVariant,
     flush: saveQueues,
     reload() { activeIdentity = null; return ensureLoaded(); },
     getDebug() {
