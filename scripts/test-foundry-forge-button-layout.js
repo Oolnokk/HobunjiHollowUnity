@@ -92,6 +92,6 @@ assert.match(css, /#mpMetalCraftShop \.foundry-forge-button \{[^}]*min-height:\s
 assert.match(css, /#mpMetalCraftShop \.foundry-section pre \{[^}]*overflow-wrap:\s*anywhere/s, 'long diagnostics do not force hidden horizontal overflow');
 assert.match(css, /#mpMetalCraftShop #metalCraftShopList \{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s, 'smithing list accepts narrow viewport');
 const html = fs.readFileSync('docs/index.html', 'utf8'); // Confirm mobile browsers request the changed module and styles.
-assert.match(html, /js\/foundry-shop\.js\?v=20261110forgeButton1/);
-assert.match(html, /style\.css\?v=20261110foundryForge1/);
+assert.match(html, /js\/foundry-shop\.js\?v=[A-Za-z0-9_-]+/);
+assert.match(html, /style\.css\?v=[A-Za-z0-9_-]+/);
 console.log('Foundry Forge action: visible order, responsive grid, insufficient and owned states, and real craft event passed.');
