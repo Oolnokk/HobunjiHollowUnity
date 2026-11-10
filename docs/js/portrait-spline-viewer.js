@@ -281,6 +281,42 @@
       }
       axes.geometry?.dispose();axes.material?.dispose?.();renderer.dispose();
     }
+    const gpuProbes=new WeakMap(); // One GPU pixel readback per loaded texture, only when mobile diagnostics or browser smoke request it.
+    function probeGpuTexture(texture){
+      if(!texture)return null;
+      if(gpuProbes.has(texture))return gpuProbes.get(texture);
+      const target=new THREE.WebGLRenderTarget(48,48,{depthBuffer:false,stencilBuffer:false});
+      const probeScene=new THREE.Scene();
+      probeScene.background=new THREE.Color(0x0b1726);
+      const probeGeometry=new THREE.PlaneGeometry(1,1);
+      const probeMaterial=new THREE.MeshBasicMaterial({map:texture,transparent:true,alphaTest:.005,depthWrite:false,side:THREE.DoubleSide});
+      const probeMesh=new THREE.Mesh(probeGeometry,probeMaterial);
+      probeScene.add(probeMesh);
+      const probeCamera=new THREE.OrthographicCamera(-.5,.5,.5,-.5,.1,2);
+      probeCamera.position.set(0,0,1);
+      let check={ok:false,nonBackground:0,black:0,total:48*48};
+      const original=renderer.getRenderTarget();
+      try{
+        renderer.setRenderTarget(target);
+        renderer.clear(true,true,true);
+        renderer.render(probeScene,probeCamera);
+        const pixels=new Uint8Array(48*48*4); // GPU framebuffer bytes, unlike source canvases or mere material-map existence.
+        renderer.readRenderTargetPixels(target,0,0,48,48,pixels);
+        let colored=0,black=0;
+        for(let i=0;i<pixels.length;i+=4){
+          const red=pixels[i],green=pixels[i+1],blue=pixels[i+2];
+          if(red<4&&green<4&&blue<4)black++;
+          if(red>30||green>42||blue>55)colored++;
+        }
+        check={ok:colored>4,nonBackground:colored,black,total:48*48};
+      }catch(error){check={ok:false,error:error.message,nonBackground:0,black:0,total:48*48};}
+      finally{
+        renderer.setRenderTarget(original);
+        target.dispose();probeGeometry.dispose();probeMaterial.dispose();
+      }
+      gpuProbes.set(texture,check);
+      return check;
+    }
     function debug(){
       scene.updateMatrixWorld(true);
       const box=canvas.getBoundingClientRect();
@@ -302,6 +338,7 @@
         textures:{head:headPlane.userData.pixelStats||null,hair:hairPlane.userData.pixelStats||null,
           rear:rearPlane.userData.pixelStats||null,hood:hoodPlane.userData.pixelStats||null},
         gpuTextureCount:renderer.info.memory.textures,
+        gpuHead:probeGpuTexture(headPlane.material.map),gpuHair:probeGpuTexture(hairPlane.material.map),
         arrows,rings, // Mobile diagnostics and browser pointer-test coordinates for actual visible gizmo handles.
       };
     }
