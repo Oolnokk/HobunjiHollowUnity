@@ -76,6 +76,19 @@
       group.add(mesh);
       meshById.set(part.id, mesh);
     }
+    // Parent links are opt-in and local-space. Only the authored statue pieces
+    // use them today; legacy furniture remains the same flat group.
+    for (const part of data.parts) {
+      if (!part.parentPartId || part.parentPartId === part.id) continue;
+      const child = meshById.get(part.id), parent = meshById.get(part.parentPartId);
+      if (!child || !parent) continue;
+      let cursor = parent, cyclic = false;
+      while (cursor && cursor !== group) {
+        if (cursor === child) { cyclic = true; break; }
+        cursor = cursor.parent;
+      }
+      if (!cyclic) parent.add(child); // Imported transforms are relative to the parent piece.
+    }
     group.userData.meshById = meshById;
     group.userData.partById = partById;
     if(data.parts.some(part=>part.rockShape?.enabled)&&window.ProceduralFurniture.applyRockContacts){
