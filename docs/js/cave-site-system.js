@@ -304,7 +304,18 @@
     if (!profile?.fortifiedStronghold || !Number.isInteger(Number(slot))) return { freed:false, dead:false };
     const state = stateFor(profile);
     return { freed:!!state.strongholdWolfFreed?.includes(Number(slot)),
-      dead:!!state.strongholdWolfDead?.includes(Number(slot)) };
+      dead:!!state.strongholdWolfDead?.includes(Number(slot)),
+      activated:!!state.strongholdWolfAttackActivated }; // Unfreed animals move into the cave only after the first entry.
+  }
+
+  function markStrongholdWolfAttackActivated(mapId) {
+    const profile=profileForMapId(mapId);
+    if(!profile?.fortifiedStronghold)return false;
+    const state=stateFor(profile);
+    if(state.strongholdWolfAttackActivated)return false;
+    state.strongholdWolfAttackActivated=true; // Cave entry, never mere exterior proximity, activates wolf aggression.
+    persistState(true);
+    return true;
   }
 
   function markStrongholdWolfFreed(mapId, slot) {
@@ -1926,6 +1937,7 @@
       grantPuzzleCaveReward(profile,plan,state); // Deliver a sealed prize when its definitions become available, even without leaving this cave.
     }
     markDiscovered(profile, state);
+    if(profile.fortifiedStronghold)markStrongholdWolfAttackActivated(mapId); // First real interior visit arms the wolf fight.
     window.BanditStrongholdBoss?.tick?.(profile,plan,state,wildlifeDeps); // Boss arena, gate-seal sync and separate chest/tank encounter.
     if (profile.fortifiedStronghold) {
       window.BanditStrongholdCover?.tick?.(mapId, CAVE_RUNTIME_INTERVAL_S); // Shared fire patches, at the cave's existing throttled cadence.
@@ -2085,7 +2097,7 @@
     rememberStrongholdGate,strongholdGateReturn,markStrongholdGarrisonSeal,
     claimStrongholdLordKey,claimStrongholdChest,
     fortifiedCoverDestroyed, markFortifiedCoverDestroyed, activeStrongholdGrid,
-    strongholdWolfStatus, markStrongholdWolfFreed, markStrongholdWolfDead,
+    strongholdWolfStatus, markStrongholdWolfAttackActivated, markStrongholdWolfFreed, markStrongholdWolfDead,
     fortifiedBarrelStatus, markFortifiedBarrelTaken, claimFortifiedBarrel,
     registerOutdoorPuzzleSites,
     exteriorPuzzleState,markExteriorPuzzleSolved,
