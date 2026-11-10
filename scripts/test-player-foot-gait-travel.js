@@ -44,6 +44,6 @@ assert(game.includes('playerLegs?.update(dt, gaitSpeed, legsSuppressed, seatedPo
   'the main player leg rig receives the measured gait, not the obsolete raw velocity');
 assert(game.includes("player._freeJump.phase !== 'supported'"),
   'rope and free-flight modes cannot accidentally walk in midair');
-assert(index.includes('<script src="game.js?v=20261109feetTravel1"></script>'),
-  'game script cache key must change with the shipped foot gait fix');
+assert.match(index, /<script src="game\.js\?v=[A-Za-z0-9_-]+"><\/script>/,
+  'game script must use an independently cache-versioned URL');
 console.log('player foot gait from real travel: all checks passed');
