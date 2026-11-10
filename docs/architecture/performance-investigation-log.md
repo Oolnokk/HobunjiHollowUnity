@@ -12,6 +12,20 @@ conditions on the same machine; they are not what a player sees.** Counts come f
 comes from CDP CPU profiles. One headless world per run, and bandit/tribe camps are random, so repeat anything
 close before trusting it.
 
+## 10 Nov 2026: creature combat burst particle batching
+
+Grehlr stink spray emitted one Three.js tetrahedron Mesh per droplet; Voorg-Ass Rear Kick emitted
+18 separate tetrahedron Meshes (nine of each earth shade). Each was separately visited by scene
+render passes even though the geometry and materials were already shared.
+
+`Combat.animalAttacks.createParticleBatch` now provides a single instanced draw per material,
+with per-attack lifetime, transform, death and cancellation ownership unchanged. Both attacks
+use it where supported and fall back to their existing individual-mesh path otherwise.
+In a synthetic renderer contract test, one active Grehlr spray uses one submitted mesh,
+and the 18-particle Voorg kick uses two instead of 18. Instance buffers are released on
+attack completion/cancellation. This is a **draw-call-count improvement**, not a real-device
+FPS measurement. It is independent of the larger shell-outline and enemy AI costs above.
+
 ## What the symptom turned out to be
 
 "Slow in the wilderness, gets worse after fights, never recovers" had **two** causes, both fixed:
