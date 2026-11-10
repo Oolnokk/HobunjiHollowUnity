@@ -625,6 +625,7 @@
     return {
       qualityBuckets: JSON.parse(JSON.stringify(qualityBuckets)),
       cookedDefinitions: JSON.parse(JSON.stringify(cookedDefinitions)),
+      processedDefinitions: window.ItemProcessing?.serializeProcessedDefinitions?.() || [], // Restore the buffs and provenance of completed ingredient batches.
       activeFoodEffects: activeFoodEffects.map(effect => ({ key: effect.key, stacks: effect.stacks, durationHours: FOOD_DURATION_HOURS, remainingHours: Number.isFinite(now) && Number.isFinite(effect.expiresAtGameHour) ? effect.expiresAtGameHour - now : Math.max(0, Number(effect.remainingHours) || FOOD_DURATION_HOURS) })).filter(effect => effect.remainingHours > 0),
       unlockedRecipeIds: [...unlockedRecipeIds],
       favoriteRecipes: favoriteRecipes.map(entry => ({ id: entry.id, recipeId: entry.recipeId, ingredients: { ...entry.ingredients } })),
@@ -650,6 +651,7 @@
     activeFavoriteId = null;
     cookedDefinitions = {};
     Object.entries(saved.cookedDefinitions || {}).forEach(([key, definition]) => registerCookedDefinition(key, definition));
+    window.ItemProcessing?.restoreProcessedDefinitions?.(saved.processedDefinitions);
     const now = currentGameHour(); // New saves restore exact game-hours; legacy five-minute timers are upgraded to the new 24-hour rule.
     activeFoodEffects = (saved.activeFoodEffects || []).filter(effect => Number(effect.remainingHours ?? effect.remainingS) > 0).map(effect => {
       const remainingHours = Number.isFinite(Number(effect.remainingHours))

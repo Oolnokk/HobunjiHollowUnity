@@ -10,6 +10,7 @@
   // (declared later in game.js than this cluster originally sat, so it's
   // a getter to stay forward-reference-safe regardless of init() timing).
   let deps = null;
+  const processedDefinitions = new Map(); // Records completed output definitions so their processing stages survive reloading the member.
   function init(injectedDeps) { deps = injectedDeps; }
 
   // Unmodified hours for a single manually operated processor. Used by production jobs and every ingredient-stage buff.
@@ -405,6 +406,26 @@
     return repaired;
   }
 
+  function isTrackedProcessedOutput(output) {
+    return !!output && typeof output.key === 'string' && /^[\w-]+$/.test(output.key) && !Object.hasOwn(Object.prototype, output.key)
+      && Number.isFinite(output.cookingProcessMultiplier) && output.cookingProcessMultiplier > 0
+      && Array.isArray(output.cookingProcessSteps) && output.cookingProcessSteps.length > 0
+      && output.cookingProcessSteps.every(step => step && typeof step.method === 'string')
+      && ['tags', 'cookingCategories', 'ingredientKeys', 'giftIngredientKeys'].every(field =>
+        output[field] == null || Array.isArray(output[field]));
+  }
+
+  function serializeProcessedDefinitions() {
+    return JSON.parse(JSON.stringify([...processedDefinitions.values()]));
+  }
+
+  function restoreProcessedDefinitions(saved) {
+    processedDefinitions.clear();
+    for (const output of Array.isArray(saved) ? saved : []) {
+      if (isTrackedProcessedOutput(output)) ensureProcessedItemDef(output);
+    }
+  }
+
   function ensureProcessedItemDef(output) {
     if (!output?.cookingCategories?.length) { // Saved batch snapshots predate cooking metadata.
       const current = currentPreservedOutput(output?.key, output?.giftIngredientKeys?.[0]);
@@ -429,6 +450,10 @@
       ...(Number.isFinite(Number(output.cookingProcessMultiplier)) ? { cookingProcessMultiplier: Number(output.cookingProcessMultiplier) } : {}),
       ...(Array.isArray(output.cookingProcessSteps) ? { cookingProcessSteps: output.cookingProcessSteps.map(step => ({ ...step })) } : {}),
     }; // Used to make dynamically generated fats valid hearth ingredients immediately.
+    if (isTrackedProcessedOutput(output)) {
+      processedDefinitions.set(output.key, { key: output.key, ...presentationMetadata, ...cookingMetadata,
+        ingredientKeys: [...(output.ingredientKeys || [])], giftIngredientKeys: [...(output.giftIngredientKeys || [])] });
+    }
     if (deps.ITEM_DEFS[output.key]) {
       if (output.ingredientKeys?.length) deps.ITEM_DEFS[output.key].ingredientKeys = [...output.ingredientKeys];
       if (output.giftIngredientKeys?.length) deps.ITEM_DEFS[output.key].giftIngredientKeys = [...output.giftIngredientKeys];
@@ -471,6 +496,8 @@
     getProcessingOutputs,
     isWheelEligible,
     ensureProcessedItemDef,
+    serializeProcessedDefinitions,
+    restoreProcessedDefinitions,
     repairPreservedDefs,
     BASE_PROCESS_HOURS, baseProcessHours, processBuffMultiplier, gameHour, formatProcessHours, enrichOutputs,
   };

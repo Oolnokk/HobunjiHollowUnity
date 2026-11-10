@@ -86,6 +86,16 @@ assert.equal(window.CookingSystem.ingredientEffectTotals(second,5).speed,Math.ce
 assert.ok(window.ItemProcessing.baseProcessHours('barrelAging')>window.ItemProcessing.baseProcessHours('smoking'));
 assert.ok(window.ItemProcessing.processBuffMultiplier('barrelAging')>window.ItemProcessing.processBuffMultiplier('smoking'));
 
+window.ItemProcessing.ensureProcessedItemDef(second);
+const savedCooking = JSON.parse(JSON.stringify(window.CookingSystem.serialize())); // Reopen with only the static item catalog loaded.
+delete ITEM_DEFS.jamA;
+delete ITEM_DEFS.driedJamA;
+window.CookingSystem.restore(savedCooking);
+assert.equal(ITEM_DEFS.driedJamA.label,'Dried Jam A');
+assert.equal(ITEM_DEFS.driedJamA.cookingProcessSteps.length,2);
+assert.equal(window.CookingSystem.ingredientEffectTotals(ITEM_DEFS.driedJamA,5).speed,
+  window.CookingSystem.ingredientEffectTotals(second,5).speed,'processed ingredient strength survives a character reload');
+
 // Missing bookmarked optional slots cannot quietly turn into a different dish.
 window.CookingSystem.restore({qualityBuckets,favoriteRecipes:[
   {recipeId:'duo',ingredients:{left:'fruitA',right:'fruitA',extra:'unavailableFruit'}},
@@ -135,4 +145,28 @@ assert.ok(game.includes('readyAtGameHour: now + durationHours'));
 assert.ok(game.includes('function jobRemainingHours()'));
 assert.match(game,/member\.alchemyFavoriteRecipes\s*=\s*window\.AlchemySystem\.serializeFavorites(?:\?\.)?\(/);
 assert.match(game,/window\.AlchemySystem\.restoreFavorites(?:\?\.)?\(playerData\.alchemyFavoriteRecipes\)/);
+
+const migrationStart = game.indexOf('        if (job && !Number.isFinite(job.readyAtGameHour))');
+const migrationEnd = game.indexOf('        // ── Processing VFX',migrationStart);
+assert.ok(migrationStart >= 0 && migrationEnd > migrationStart);
+const migration = {window,calendar:{day:6,time01:.5},NIGHT_HOUR:22,MORNING_HOUR:6,
+  job:{kind:'aging',readyDay:7},def:{method:'barrelAging'},baseProcessingHours:window.ItemProcessing.baseProcessHours};
+day=6;
+hour=14;
+vm.runInNewContext(game.slice(migrationStart,migrationEnd),migration);
+assert.equal(migration.job.readyAtGameHour,7*24+6,'legacy aging stays collectible at the start of its original ready day');
+
+const onboarding=fs.readFileSync('docs/onboarding-core.js','utf8');
+const playSave=onboarding.slice(onboarding.indexOf('  function _playSaveSelect()'),onboarding.indexOf('  // ── HTML renderers'));
+const member={alchemyFavoriteRecipes:window.AlchemySystem.serializeFavorites()}; // Read the saved favorite through the real returning-player handoff.
+const savedWorld={id:'farm'};
+const startup={window:{},_selCharId:'member',_selWorldId:'farm',_saveMeta:{characters:[{id:'member',playerId:'player',stats:{},gearInventory:{},skillLevels:{}}]},
+  _el:{classList:{add(){}}},worldsForCharacter:()=>[savedWorld],ensureWorldMember:()=>member,
+  ensureCharacterStarterFlute(){},saveSaveMeta(){},saveProfile(){},isWorldOwner:()=>true,getFarmhandPermissions:()=>({}),
+  document,CustomEvent:context.CustomEvent,setTimeout(){},removeOnboardingOverlay(){}};
+vm.runInNewContext(playSave+'\n_playSaveSelect();',startup);
+assert.deepEqual([...startup.window.__hobunjiPlayerProfile.alchemyFavoriteRecipes],member.alchemyFavoriteRecipes);
+delete member.alchemyFavoriteRecipes;
+vm.runInNewContext('_playSaveSelect();',startup);
+assert.equal(startup.window.__hobunjiPlayerProfile.alchemyFavoriteRecipes.length,0,'older saves load without a favorites field');
 console.log('crafting hourly favorites ok');

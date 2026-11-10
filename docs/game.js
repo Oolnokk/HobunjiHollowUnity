@@ -2942,8 +2942,9 @@
         let job = savedJob ? { ...savedJob, kind: savedJob.kind || (savedJob.readyDay != null ? 'aging' : 'timed'), inputStars: Number(savedJob.inputStars) || 3 } : null;
         if (job && !Number.isFinite(job.readyAtGameHour)) {
           const durationHours = baseProcessingHours(def.method); // Used for legacy-to-hour conversion without applying perks.
+          const elapsedToday = Math.max(0, Number(calendar.time01) || 0) * (NIGHT_HOUR - MORNING_HOUR); // Old aging jobs were collectible as soon as the ready day began.
           const remainingHours = job.kind === 'aging'
-            ? Math.max(0, ((Number(job.readyDay) || calendar.day) - calendar.day) * 24)
+            ? Math.max(0, ((Number(job.readyDay) || calendar.day) - calendar.day) * 24 - elapsedToday)
             : Math.min(1, Math.max(0, (Number(job.readyAtMs) - Date.now()) / (Math.max(0.1, Number(job.durationS) || 12) * 1000))) * durationHours;
           job.durationHours = durationHours;
           job.legacyRemainingHours = Number.isFinite(remainingHours) ? remainingHours : durationHours;
