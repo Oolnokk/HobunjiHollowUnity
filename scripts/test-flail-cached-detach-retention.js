@@ -9,6 +9,8 @@ const vm = require('node:vm');
 
 const registry = fs.readFileSync('docs/config/weapon-sprite-assemblies.js', 'utf8'); // Uses the live Grapple-Flail recipe.
 const runtime = fs.readFileSync('docs/js/weapon-sprite-assemblies.js', 'utf8'); // Exercises actual assembly construction and cleanup.
+const equipment = fs.readFileSync('docs/js/equipment-panel.js', 'utf8'); // The live equipment sidebar owns the cached weapon map even if hand/combat omit it.
+assert.match(equipment,/function ownsCachedToolRoot\(root\)/,'EquipmentPanel exposes its true cached-root identity to the flail orphan guard');
 const vector = () => ({ set() {}, copy() {} }); // Texture UV parameters are not modified after creation in this regression.
 class Vector3 {
   constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
@@ -146,6 +148,12 @@ api.decorate(root, 'grappleFlail', { shapeKey:'grappleFlail' }, { THREE });
   window.Combat = { deps:{ toolMeshMap:new Map([['weapon', root]]) } };
   now = 14000;
   api.tick(0);
+  window.Combat.deps.toolMeshMap = new Map(); // Integration can omit equipment caches from the combat/hand runtime adapters.
+  window.EquipmentPanel = { ownsCachedToolRoot:visual => visual === root }; // Mirrors the authoritative panel's identity bridge.
+  now = 21000;
+  api.tick(0);
+  assert.equal(api.debugSnapshot()[0]?.cachedPlayerOwned,true,
+    'an unequipped weapon remains recognized even when only EquipmentPanel exposes the ownership map');
   assert(api.debugSnapshot()[0]?.loaded, 'detached equipment retains its loaded assembly beyond both timeout windows');
   assert(root.children.includes(head), 'head survives a long unequipped interval');
   assert(root.children.some(child => child.name === 'flail_ruin_rope'), 'rope survives the same unequipped interval');
