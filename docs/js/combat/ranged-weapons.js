@@ -69,6 +69,8 @@
   const actorHitboxCache = new WeakMap(); // Used by actorHitbox() to share one computed portrait volume across same-frame callers.
   const opaqueSpriteBoundsCache = new WeakMap(); // Alpha-scanned once per loaded sprite image; shared by cloned thrown-weapon textures.
   const thrownRadiusByDefinition = new WeakMap(); // Keeps NPC LOS and player reticle clearance consistent with the last decoded opaque hitbox.
+  let actorHitboxBuilds = 0; // Mobile diagnostics compare actual portrait-volume builds with reused frame entries.
+  let actorHitboxReuses = 0; // Counts avoided matrix/geometry work across reticle, melee and hostile LOS callers.
   let wouldHitCacheAt = -Infinity;
   let wouldHitCacheValue = false;
   let projectileSerial = 0; // Monotonic launch order used only to choose the oldest embedded copy when a per-weapon visual cap is exceeded.
@@ -1153,9 +1155,17 @@
     if (!deps || !actor) return null;
     if (typeof actor.__targetableHitbox === 'function') return actor.__targetableHitbox(); // Stand-in actors from js/targetables.js (burdens, props) share this one melee/lunge geometry.
     const now = performance.now();
+    const frame = deps.getFrameSerial?.(); // Game-owned frame identity survives slow frames where a 16 ms wall-clock cache expires mid-batch.
+    const avatarNode = avatarNodeForActor(actor); // Direct avatar handles are cheap; live pose changes must invalidate even inside the same frame.
     const cached = actorHitboxCache.get(actor);
-    if (cached && now - cached.at < ACTOR_HITBOX_CACHE_MS) return cached.value;
-    const avatarNode = avatarNodeForActor(actor);
+    const sameFrame = Number.isFinite(frame) ? cached?.frame === frame : cached && now - cached.at < ACTOR_HITBOX_CACHE_MS; // Standalone tools keep the bounded time fallback.
+    if (sameFrame && cached.x === actor.x && cached.y === actor.y && cached.node === avatarNode
+      && cached.px === avatarNode?.position?.x && cached.py === avatarNode?.position?.y && cached.pz === avatarNode?.position?.z
+      && cached.sx === avatarNode?.scale?.x && cached.sy === avatarNode?.scale?.y && cached.sz === avatarNode?.scale?.z) {
+      actorHitboxReuses++;
+      return cached.value;
+    }
+    actorHitboxBuilds++;
     const portraitWidth = positiveNumber(
       avatarNode?.userData?.portraitModelWidth,
       actor.avatarRef?.modelWidth,
@@ -1208,7 +1218,9 @@
       portraitWidth, portraitHeight, verticalOffset,
       bodyScale: { x: bodyScale.x, y: bodyScale.y, z: bodyScale.z },
     };
-    actorHitboxCache.set(actor, { at: now, value });
+    actorHitboxCache.set(actor, { at: now, frame, x: actor.x, y: actor.y, node: avatarNode,
+      px: avatarNode?.position?.x, py: avatarNode?.position?.y, pz: avatarNode?.position?.z,
+      sx: avatarNode?.scale?.x, sy: avatarNode?.scale?.y, sz: avatarNode?.scale?.z, value });
     return value;
   }
 
@@ -2152,6 +2164,7 @@
     get config() { return CONFIG; },
   };
   window.__rangedDebug = {
+    get hitboxWork() { return { builds: actorHitboxBuilds, reuses: actorHitboxReuses }; }, // Shared CPU-work evidence, available without browser devtools.
     get projectiles() { return projectiles.map(p => ({ itemKey: p.itemKey, team: p.team, ammoId: p.ammoId, x: p.x, y: p.y, vx: p.vx, vy: p.vy, worldY: p.worldY, vyWorld: p.vyWorld, distancePx: p.distancePx, flightDistancePx: p.flightDistancePx, projectileSpeedPxS: p.projectileSpeedPxS, projectileSpeedMultiplier: p.projectileSpeedMultiplier, projectileDropStartTiles: p.projectileDropStartTiles, projectileGravityWorldS2: p.projectileGravityWorldS2, lockLaunchAlignment: p.lockLaunchAlignment, embedded: p.embedded, embeddedAgeS: p.embeddedAgeS, impactKind: p.impactKind, fading: p.fading, fadeReason: p.fadeReason, launchTransformMode: p.launchTransformMode, facingSource: p.launchTransformMode === 'held-strike-plane' ? 'sampled-held-plane' : (p.def?.toolEndFlip === true ? 'config-flip-fallback' : 'flight-frame'), spinAxis: p.spinRateRad ? 'png-local-z' : null, collisionRadiusWorld: projectileCollisionRadiusWorld(p), opaqueBounds: p.mesh?.userData?.projectilePlane?.userData?.opaqueBounds || null, trailAfflictionIds: [...p.trailAfflictionIds] })); },
     get playerAction() { return playerAction ? { ...playerAction, def: undefined, releaseAtS: playerAction.durationS * fireReleaseFrac(playerAction.def) } : null; },
     get lastEvent() { return lastEvent; },

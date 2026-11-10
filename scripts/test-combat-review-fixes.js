@@ -79,7 +79,6 @@ assert.match(ranged, /sceneGeometrySightBlock\(segment\)/, "NPC perception rayca
 assert.match(game, /getSightOccluders: enemySightOccluders/, 'game supplies cached active-area wall and building meshes to NPC sight');
 assert.match(enemySearch, /_enemyLastSeenX = target\.x[\s\S]{0,1400}_enemySearchLastKnownX = freshSighting \? c\._enemyLastSeenX/, 'search begins from a recently confirmed visible position (behavior covered by test-enemy-search-last-seen.js)');
 assert.match(ranged, /hasLineOfSight,/, 'ranged collision exposes the shared geometric LOS check');
-assert.match(enemySearch, /targetInsideAttackCone[\s\S]{0,180}RangedWeapons\?\.hasLineOfSight/, 'enemy acquisition requires both facing and geometric LOS');
 assert.doesNotMatch(game, /distToPlayer > def\.leashRangePx/, 'player distance alone cannot immediately break combat');
 assert.match(game, /lastKnownDistance > TILE \* 0\.45[\s\S]{0,180}moveCreatureToward\(c, lastKnownX, lastKnownY, def\.chaseSpeed, entityDt\)/, 'searching hostiles navigate toward their last-known player position');
 assert.doesNotMatch(game, /function (enemyCanSeeTarget|beginEnemySearch|updateEnemySearch|enemyAttackAlignment|enemyAttackBusy)\(/, 'no duplicate enemy search implementation remains in game.js');
@@ -90,9 +89,10 @@ assert(coreTag > 0 && searchTag > coreTag && searchTag < gameTag, 'enemy-search-
 
 let inCone = false;
 let lineOfSightClear = true;
+let sightNow = 1000; // Drives real perception samples instead of assuming one geometry query per render frame.
 const searchRuntime = {
   THREE: { MathUtils },
-  performance: { now: () => 1000 },
+  performance: { now: () => sightNow },
   window: {
     FormatUtils: { clamp: MathUtils.clamp },
     Combat: { targetInsideAttackCone: () => inCone, postAttackTurnMultiplier: () => 1 },
@@ -113,6 +113,7 @@ assert.equal(AI.enemyCanSeeTarget(meleeGuard, distantTarget, 500), false, 'melee
 target.x = 25;
 target.y = 100; // The player moves around the NPC to the opposite side after disappearing.
 lineOfSightClear = false;
+sightNow += 101; // The next 10 Hz geometry decision must observe the wall.
 assert.equal(AI.enemyCanSeeTarget(hostile, target, 500), false, 'a wall blocks the next sight sample');
 AI.beginEnemySearch(hostile, target);
 assert.equal(hostile.state, 'searching');
@@ -130,6 +131,7 @@ lineOfSightClear = false;
 AI.updateEnemySearch(hostile, 0.1, target);
 assert.equal(hostile.state, 'searching', 'a wall still blocks reacquisition inside the facing cone');
 lineOfSightClear = true;
+sightNow += 101; // Reacquisition follows a fresh geometry sample.
 AI.updateEnemySearch(hostile, 0.1, target);
 assert.equal(hostile.state, 'chase', 'regaining geometric line of sight resumes the chase');
 inCone = false;
