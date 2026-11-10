@@ -112,7 +112,7 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
 <output id="status" role="status" aria-live="polite">No cosmetic loaded. The default 3-knot spline is editable.</output>
 <div class="buttons" style="margin-top:10px"><button id="download">Export updated cosmetic JSON</button><button id="copyRig">Copy rig JSON</button></div>
 <details style="margin-top:12px"><summary>Rig JSON and mobile debug</summary><p>JSON shown here is the exact authored property added to the exported cosmetic. You can also paste a rig JSON and choose Apply.</p>
-<textarea id="json"></textarea><button id="applyJson">Apply rig JSON</button></details>
+<textarea id="json"></textarea><div class="buttons"><button id="applyJson">Apply rig JSON</button><button id="copyDiagnostics">Copy 3D diagnostics</button></div></details>
 </section>
 </main>
 <footer>Existing flat hairstyles remain unchanged. Facewraps continue hiding beards and do not receive beard clearance masks.</footer>
@@ -507,6 +507,15 @@ for(const button of document.querySelectorAll('[data-camera]'))
   button.addEventListener('click',()=>viewer?.setCameraView(button.dataset.camera));
 window.addEventListener('resize',()=>viewer?.schedule());
 controls();render();
+window.HobunjiSplineAuthorDiagnostics=()=>({
+  selected:{species:selectedSpecies(),gender:selectedGender(),cosmetic:activeStyle?.label||loadedName,slot:activeStyle?.slot||null},
+  direction,selectedKnot,selectedSegment,mode,viewer:viewer?.debug()||{webgl:false},
+  seamCount:rig.seam.length,headLoaded:!!images.head,
+  pose:JSON.parse(JSON.stringify(rig.segments[selectedSegment]?.poses[direction]||{})),
+}); // Visible/copyable diagnostics for mobile users who do not have devtools.
+$('copyDiagnostics').onclick=async()=>{const value=JSON.stringify(window.HobunjiSplineAuthorDiagnostics(),null,2);
+  try{await navigator.clipboard.writeText(value);message('Copied 3D viewer and rig diagnostics.');}
+  catch(_){$('json').value=value;$('json').select();message('Clipboard unavailable; select diagnostics from the text area.');}};
 void init3D();
 initCatalog(); // Indexed cosmetics are the default; file import is only a fallback for unindexed WIP art.
 })();
