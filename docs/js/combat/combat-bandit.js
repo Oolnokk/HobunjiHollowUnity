@@ -150,6 +150,7 @@
   // may wear and cosmeticWeights only biases the pick when it happens to
   // list the item.
   function _banditClothingCandidates(speciesDef, gender, slot, poolIds, exclusiveIds) {
+    if (window.HobunjiBanditEquipmentPools?.clothingCandidates) return window.HobunjiBanditEquipmentPools.clothingCandidates(speciesDef, gender, slot, poolIds, exclusiveIds); // Same species whitelist/weights used by the Statue Author.
     const genderData = speciesDef?.[gender] || speciesDef?.male || null;
     const allowed = new Set(genderData?.allowedCosmetics || []);
     const exclusive = new Set(exclusiveIds || []);
