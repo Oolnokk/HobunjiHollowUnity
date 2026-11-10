@@ -89,7 +89,7 @@ const save = () => {};
   assert(rope?.burden === actualBurden, 'real HangingRopes registry owns the burden');
   assert(Math.abs(rope.anchor.y - 4) < 1e-6, 'actual sampled floor and cave-vault heights determine anchor');
   T.tick(mapId, state, crossed, 32, .12, save);
-  assert.deepEqual(state.triggeredTraps, [trap.id], 'true crossing persisted');
+  assert.deepEqual(Array.from(state.triggeredTraps), [trap.id], 'true crossing persisted');
   assert(rope.armed, 'the full pendulum integrator is now active');
 
   for (let frame = 0; frame < 200 && impactFlights.length === 0; frame++)
