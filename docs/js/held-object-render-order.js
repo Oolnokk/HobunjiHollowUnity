@@ -1013,7 +1013,7 @@
     // draw even when matrixWorld currently projects outside this viewport.
     // It is unsafe to cull these meshes against the current matrix alone.
     const parity = object?.__hobunjiXrayBoundParity; // Existing trusted per-rig draw-hook registration.
-    return parity?.hook === object?.onBeforeRender && !!parity.visibleMatrixWorld && parity.isFresh?.() === true;
+    return !!parity && parity.hook === object?.onBeforeRender && !!parity.visibleMatrixWorld && parity.isFresh?.() === true;
   }
 
   function collectReplayCulled(scene, keep, groupCandidates = null) {
@@ -1105,7 +1105,7 @@
       if (!geometry.boundingBox) geometry.computeBoundingBox();
       if (!geometry.boundingBox || geometry.boundingBox.isEmpty()) return true;
       const parity = mesh.__hobunjiXrayBoundParity;
-      const capturedPose = parity?.hook === mesh.onBeforeRender && parity.isFresh?.()
+      const capturedPose = parity && parity.hook === mesh.onBeforeRender && parity.isFresh?.()
         ? parity.visibleMatrixWorld : null; // May be the alternative matrix in the real parity draw.
       // A fixed one- or two-pass loop avoids allocating a closure or array for
       // each tool, NPC hand and foot during every projected x-ray bounds test.
@@ -1903,7 +1903,7 @@
         return originalRender.call(this, scene, camera);
       }
       const baseShellPadding = Math.abs(Number(scene.overrideMaterial.uniforms.uThickness.value) || 0); // Source shell thickness before per-limb pose adapters.
-      const shellPadding = baseShellPadding * (xrayMeshes.some(mesh => mesh.__hobunjiXrayBoundParity?.hook === mesh.onBeforeRender) ? 2 : 1); // Hand/foot outlines can double their authored shell thickness; bound the maximum.
+      const shellPadding = baseShellPadding * (xrayMeshes.some(mesh => !!mesh.__hobunjiXrayBoundParity && mesh.__hobunjiXrayBoundParity.hook === mesh.onBeforeRender) ? 2 : 1); // Hand/foot outlines can double their authored shell thickness; bound the maximum.
       const { groups, ordinary } = buildXrayGroups(this, scene, camera, xrayMeshes, shellPadding);
       lastShellElevationGroups = groups.length;
       // Ordinary shells use the real scene depth unchanged; reconstructing all
