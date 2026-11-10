@@ -100,6 +100,8 @@
   let activeEffects = []; // Timed alchemy effects exposed through EffectBuffBar.
   let selectedReagents = []; // Existing table selection state.
   let targetedRecipeId = null; // Current intentional known recipe.
+  let favoriteRecipes = []; // Per-character three-reagent assemblies, with optional known reaction targets.
+  let activeFavoriteId = null; // Used to consume the highest held quality when a saved assembly is brewed.
   let lastBrewDiagnostics = null; // Last exact source-assignment report.
   let lastContextSignature = ''; // Thresholded selector refresh state.
 
@@ -181,7 +183,7 @@
     const rarityFactor = Math.sqrt(Math.min(1, outcomeWeight(target) / highestWeight)); // Rare recipes remain targetable, but never as reliably as equally weighted reactions.
     return Math.min(0.99, baseChance * rarityFactor);
   }
-  function setTargetRecipe(recipeId) { targetedRecipeId = recipeId && discoveredRecipes.has(recipeId) && RECIPE_DEFS[recipeId] ? recipeId : null; renderPanel(); return targetedRecipeId; }
+  function setTargetRecipe(recipeId) { targetedRecipeId = recipeId && discoveredRecipes.has(recipeId) && RECIPE_DEFS[recipeId] ? recipeId : null; activeFavoriteId = null; renderPanel(); return targetedRecipeId; }
   function chooseOutcome(outcomes, targetId = targetedRecipeId, random = deps?.random || window.GameRandom?.random || Math.random, levelOverride = null) {
     if (!outcomes.length) return null;
     const target = outcomes.find(outcome => outcome.recipeId === targetId); // Produce target only when ingredients allow it.
@@ -338,7 +340,14 @@
     const targetLevel = options.targetAlchemyLevel ?? alchemyLevel(); // Herbalist caps this away from a real Alchemy Table; potency below stays at the real level.
     const chosen = chooseOutcome(outcomes, target, options.random, targetLevel); // Always a valid defined recipe.
     const tier = potencyTierForLevel(options.alchemyLevel ?? alchemyLevel()); // Potency fixed at creation.
-    keys.forEach(key => { deps.inventory[key]--; deps.clampInventoryStack?.(key); });
+    const selectedQuality = {}; // Tracks quality actually consumed by a saved assembly, visible in diagnostics for mobile.
+    keys.forEach(key => {
+      const stars = options.preferBestQuality
+        ? window.CookingSystem?.consumeBestQuality?.(key, 1)
+        : window.CookingSystem?.consumeLowestQuality?.(key, 1);
+      if (stars != null) selectedQuality[key] = stars;
+      else { deps.inventory[key]--; deps.clampInventoryStack?.(key); }
+    });
     const itemKey = ensureRecipeItemDef(chosen.recipeId, tier, keys); // One recipe per result.
     const batch = batchCountFor(chosen.recipeId); // Base batch (see recipe.baseBatch), scaled by Empower Flasks/Healing & Cures.
     deps.inventory[itemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[itemKey] || 0) + batch);
@@ -348,7 +357,7 @@
     if (target && chosen.recipeId === target) window.SkillSystem?.award?.('alchemy', window.SkillSystem?.XP_GAINS?.alchemyTarget || 5, 'targeted recipe');
     const brewedItemDef = deps?.ITEM_DEFS?.[itemKey]; // Used to expose the actual stored flask colors in mobile-safe diagnostics.
     const flaskSprite = RECIPE_DEFS[chosen.recipeId]?.useMode === 'throw' ? { spriteIcon: brewedItemDef?.spriteIcon || null, primaryColor: brewedItemDef?.spriteColor == null ? null : `#${flaskColorHex(brewedItemDef.spriteColor)}`, afflictColor: brewedItemDef?.spriteSecondaryColor == null ? null : `#${flaskColorHex(brewedItemDef.spriteSecondaryColor)}`, afflictKeys: [...(brewedItemDef?.alchemyFlaskAfflictKeys || [])], otherKeys: [...(brewedItemDef?.alchemyFlaskOtherKeys || [])], colorSource: brewedItemDef?.alchemyFlaskColorSource || null } : null; // Dev report for the special throwing-flask palette split.
-    lastBrewDiagnostics = { keys, outcomes, target, probability: target ? targetingProbability(targetLevel, outcomes, target) : null, chosenRecipeId: chosen.recipeId, potencyTier: tier, batch, flaskSprite, everyIngredientContributes: outcomes.every(outcome => outcome.assignments.every(a => Object.values(a.contributes).every(list => list.length))) }; // Dev report.
+    lastBrewDiagnostics = { keys, selectedQuality, preferredHighestQuality: !!options.preferBestQuality, outcomes, target, probability: target ? targetingProbability(targetLevel, outcomes, target) : null, chosenRecipeId: chosen.recipeId, potencyTier: tier, batch, flaskSprite, everyIngredientContributes: outcomes.every(outcome => outcome.assignments.every(a => Object.values(a.contributes).every(list => list.length))) }; // Dev report.
     document.dispatchEvent(new CustomEvent('hobunji-alchemy-change', { detail: { type: 'brew', recipeId: chosen.recipeId, itemKey } }));
     return { ok: true, message: `⚗️ Brewed ${batch > 1 ? `${batch}× ` : ''}${RECIPE_DEFS[chosen.recipeId].label}${discovered ? ' — new reaction discovered!' : ''}`, consumed: keys, recipeId: chosen.recipeId, itemKey, potencyTier: tier, batch, outcomes };
   }
@@ -360,6 +369,8 @@
   }
   function brew() {
     const brewOptions = campfireBrewing ? { targetAlchemyLevel: alchemyLevel() * herbalistPrecisionFraction() } : {};
+    const favorite = favoriteRecipes.find(entry => entry.id === activeFavoriteId); // Saved assemblies always choose the best available quality at brew time.
+    if (favorite && favoriteId(selectedReagents, targetedRecipeId) === activeFavoriteId) brewOptions.preferBestQuality = true;
     const result = brewFrom(selectedReagents, brewOptions);
     if (result.ok) {
       // Keep the same three reagents ready for another batch, dropping only exhausted stacks.
@@ -514,7 +525,56 @@
     return { inCombat:!!deps?.getInCombat?.(), healing:{needed:missingHealth>0,owned:healing.length>0,usefulItems:missingHealth>0?healing:[],urgentMissing:missingHealth>0&&!healing.length}, cures:{needed:cures.length>0,usefulItems:cures,coverage:cureCoverage(entity)}, buffs:{owned:buffs.length>0,usefulItems:usefulBuffs,items:[...usefulBuffs,...buffs.filter(entry=>!usefulBuffs.includes(entry))]}, flasks:{owned:flasks.length>0,items:flasks}, recommendation:contextualRestoratives(entity)[0]||null };
   }
 
-  function toggleReagent(key) { const index = selectedReagents.indexOf(key); if (index >= 0) selectedReagents.splice(index, 1); else if (selectedReagents.length < MAX_REAGENTS && (!selectedReagents.length || canAddReagent(selectedReagents, key))) selectedReagents.push(key); if (targetedRecipeId && !enumerateRecipes(selectedReagents).some(outcome => outcome.recipeId === targetedRecipeId)) targetedRecipeId = null; renderPanel(); } // Existing table selection.
+  function favoriteId(keys, targetId = null) {
+    return [...keys].sort().join('|') + '::' + (targetId || 'any'); // Order-independent source identity plus intentional recipe.
+  }
+  function serializeFavorites() {
+    return favoriteRecipes.map(entry => ({ keys: [...entry.keys], targetRecipeId: entry.targetRecipeId }));
+  }
+  function restoreFavorites(saved) {
+    favoriteRecipes = (Array.isArray(saved) ? saved : []).filter(entry =>
+      Array.isArray(entry?.keys) && entry.keys.length === MAX_REAGENTS
+      && new Set(entry.keys).size === MAX_REAGENTS
+      && entry.keys.every(key => REAGENT_DEFS[key])
+      && (!entry.targetRecipeId || RECIPE_DEFS[entry.targetRecipeId])
+      && enumerateRecipes(entry.keys).some(outcome => !entry.targetRecipeId || outcome.recipeId === entry.targetRecipeId)
+    ).map(entry => ({
+      keys: [...entry.keys],
+      targetRecipeId: entry.targetRecipeId || null,
+      id: favoriteId(entry.keys, entry.targetRecipeId),
+    })); // Ignore malformed/stale favorite inputs without breaking a character load.
+    activeFavoriteId = null;
+  }
+  function toggleFavorite() {
+    if (selectedReagents.length !== MAX_REAGENTS || !enumerateRecipes(selectedReagents).length) return false;
+    const id = favoriteId(selectedReagents, targetedRecipeId); // Quality is deliberately not part of a saved recipe.
+    const index = favoriteRecipes.findIndex(entry => entry.id === id);
+    if (index >= 0) {
+      favoriteRecipes.splice(index, 1);
+      if (activeFavoriteId === id) activeFavoriteId = null;
+    } else {
+      favoriteRecipes.push({ id, keys: [...selectedReagents], targetRecipeId: targetedRecipeId });
+      activeFavoriteId = id;
+    }
+    deps?.saveMemberWorldData?.();
+    renderPanel();
+    return true;
+  }
+  function loadFavorite(id) {
+    const favorite = favoriteRecipes.find(entry => entry.id === id);
+    if (!favorite) return false;
+    if (favorite.keys.some(key => (deps?.inventory?.[key] || 0) < 1)) {
+      deps?.showToast?.('Some reagents for that favorite are missing.', false);
+      return false;
+    }
+    selectedReagents = [...favorite.keys];
+    targetedRecipeId = favorite.targetRecipeId && discoveredRecipes.has(favorite.targetRecipeId) ? favorite.targetRecipeId : null;
+    activeFavoriteId = id;
+    renderPanel();
+    return true;
+  }
+
+  function toggleReagent(key) { activeFavoriteId = null; const index = selectedReagents.indexOf(key); if (index >= 0) selectedReagents.splice(index, 1); else if (selectedReagents.length < MAX_REAGENTS && (!selectedReagents.length || canAddReagent(selectedReagents, key))) selectedReagents.push(key); if (targetedRecipeId && !enumerateRecipes(selectedReagents).some(outcome => outcome.recipeId === targetedRecipeId)) targetedRecipeId = null; renderPanel(); } // Existing table selection.
   function renderPanel() {
     const list = document.getElementById('alchemyReagentList'); // Existing reagent list.
     const selectedHost = document.getElementById('alchemySelectedStrip'); // Existing selection strip.
@@ -532,6 +592,27 @@
     preview?.querySelectorAll('[data-recipe]').forEach(button => button.addEventListener('click', () => setTargetRecipe(button.dataset.recipe === targetedRecipeId ? null : button.dataset.recipe)));
     const brewButton = document.getElementById('alchemyBrewBtn'); // Existing Brew control.
     if (brewButton) brewButton.disabled = !outcomes.length;
+    const favoritesHost = document.getElementById('alchemyFavorites'); // Uses the existing Alchemy Table panel instead of opening another station modal.
+    if (favoritesHost) {
+      const selectedId = favoriteId(selectedReagents, targetedRecipeId);
+      const alreadySaved = favoriteRecipes.some(entry => entry.id === selectedId);
+      const labels = key => REAGENT_DEFS[key]?.label || key;
+      const rows = favoriteRecipes.map(entry => {
+        const missing = entry.keys.some(key => (deps?.inventory?.[key] || 0) < 1);
+        const name = entry.keys.map(labels).join(' · ');
+        const target = entry.targetRecipeId ? ' → ' + (RECIPE_DEFS[entry.targetRecipeId]?.label || entry.targetRecipeId) : '';
+        return `<div class="alch-favorite-row"><button type="button" data-alch-load="${entry.id}" ${missing ? 'disabled' : ''}>${activeFavoriteId === entry.id ? '★' : '☆'} ${name}${target}<small>${missing ? 'Missing reagents' : 'Use highest-quality stock'}</small></button><button type="button" data-alch-remove="${entry.id}" aria-label="Remove saved alchemy recipe">×</button></div>`;
+      }).join('');
+      favoritesHost.innerHTML = `<div class="alch-favorite-title">★ Saved combinations</div>${rows || '<p class="alch-empty-hint">No saved combinations yet.</p>'}<button type="button" class="shop-buy-btn" data-alch-favorite ${outcomes.length && selectedReagents.length === MAX_REAGENTS ? '' : 'disabled'}>${alreadySaved ? '★ Unfavorite current combination' : '☆ Favorite current combination'}</button>`;
+      favoritesHost.querySelector('[data-alch-favorite]')?.addEventListener('click', toggleFavorite);
+      favoritesHost.querySelectorAll('[data-alch-load]').forEach(button => button.addEventListener('click', () => loadFavorite(button.dataset.alchLoad)));
+      favoritesHost.querySelectorAll('[data-alch-remove]').forEach(button => button.addEventListener('click', () => {
+        favoriteRecipes = favoriteRecipes.filter(entry => entry.id !== button.dataset.alchRemove);
+        if (activeFavoriteId === button.dataset.alchRemove) activeFavoriteId = null;
+        deps?.saveMemberWorldData?.();
+        renderPanel();
+      }));
+    }
     const diagnostics = document.getElementById('alchemyDiagnostics'); // Mobile-visible dev area.
     if (diagnostics) diagnostics.textContent = diagnosticsText();
   }
@@ -542,7 +623,7 @@
     const selectedKey = deps?.getSelectedItemKey?.() || null; // Current held/selected item.
     const flaskPayload = parseBrewedItemKey(selectedKey); // Current alchemy payload.
     const flaskDefinition = flaskPayload && RECIPE_DEFS[flaskPayload.recipeId]; // Current flask recipe.
-    return { alchemy:{level:alchemyLevel(),xp:skillSnapshot?.experience?.alchemy||0}, selectedReagents:selectedReagents.map(key=>({key,traits:REAGENT_DEFS[key]?.traits})), repeatBrewReady:selectedReagents.length===MAX_REAGENTS&&selectedReagents.every(key=>(deps?.inventory?.[key]||0)>0)&&outcomes.length>0, outcomes:outcomes.map(outcome=>({recipeId:outcome.recipeId,assignments:outcome.assignments})), everyIngredientContributes:outcomes.every(outcome=>outcome.assignments.every(a=>Object.values(a.contributes).every(list=>list.length))), targetedRecipeId, targetingProbability:targetedRecipeId?targetingProbability(alchemyLevel(),outcomes,targetedRecipeId):null, outcomeWeights:Object.fromEntries(outcomes.map(outcome=>[outcome.recipeId,outcomeWeight(outcome)])), discoveredRecipeCount:discoveredRecipes.size, activeEffects:serializeActiveEffects(), afflictions:afflictionTotals(entity), contextualRecommendation:contextualRestoratives(entity)[0]?.recipeId||null, selectedFlask:flaskDefinition?.useMode==='throw'?{recipeId:flaskDefinition.id,basePotency:flaskDefinition.amount,splashRadius:flaskDefinition.splashRadius}:null, projectile:window.AlchemyFlasks?.diagnostics?.()||null, lastBrew:lastBrewDiagnostics };
+    return { alchemy:{level:alchemyLevel(),xp:skillSnapshot?.experience?.alchemy||0}, favoriteCount:favoriteRecipes.length, activeFavoriteId, selectedReagents:selectedReagents.map(key=>({key,traits:REAGENT_DEFS[key]?.traits})), repeatBrewReady:selectedReagents.length===MAX_REAGENTS&&selectedReagents.every(key=>(deps?.inventory?.[key]||0)>0)&&outcomes.length>0, outcomes:outcomes.map(outcome=>({recipeId:outcome.recipeId,assignments:outcome.assignments})), everyIngredientContributes:outcomes.every(outcome=>outcome.assignments.every(a=>Object.values(a.contributes).every(list=>list.length))), targetedRecipeId, targetingProbability:targetedRecipeId?targetingProbability(alchemyLevel(),outcomes,targetedRecipeId):null, outcomeWeights:Object.fromEntries(outcomes.map(outcome=>[outcome.recipeId,outcomeWeight(outcome)])), discoveredRecipeCount:discoveredRecipes.size, activeEffects:serializeActiveEffects(), afflictions:afflictionTotals(entity), contextualRecommendation:contextualRestoratives(entity)[0]?.recipeId||null, selectedFlask:flaskDefinition?.useMode==='throw'?{recipeId:flaskDefinition.id,basePotency:flaskDefinition.amount,splashRadius:flaskDefinition.splashRadius}:null, projectile:window.AlchemyFlasks?.diagnostics?.()||null, lastBrew:lastBrewDiagnostics };
   }
   function diagnosticsText() { return JSON.stringify(diagnosticsSnapshot(), null, 2); }
   window._doBrewPotion = () => { const result = brew(); deps?.showToast?.(result.message, result.ok !== false); renderPanel(); if (result.ok) deps?.saveMemberWorldData?.(); };
@@ -552,6 +633,7 @@
     RECIPE_DEFS,RECIPE_BY_TRAITS,REAGENT_DEFS,POTION_ITEMS,
     init,reagentsForZone,validateTraits,nativeRecipeForReagent,enumerateRecipes,canCompleteSelection,canAddReagent,outcomeWeight,weightedOutcome,targetingProbability,potencyTierForLevel,potencyMultiplier,setTargetRecipe,chooseOutcome,
     brewFrom,brew,setCampfireBrewing,herbalistPrecisionFraction,batchCountFor,discoverRecipe,isRecipeKnown,discoveryCount,serializeKnownRecipes,restoreKnownRecipes,serializeKnownEffects,restoreKnownEffects,
+    serializeFavorites,restoreFavorites,loadFavorite,toggleFavorite,
     itemKeyForRecipe,parseBrewedItemKey,throwingFlaskColors,ensureRecipeItemDef,recipeScrollKey,ensureRecipeScrollItemDef,readRecipeItem,ensurePotionItemDef,getPotionEffectsFromKey,migrateLegacyPotionInventory,consumeRawReagent,drinkPotion,consumeBrewedItem:drinkPotion,applyRecipeToEntity,
     serializeActiveEffects,restoreActiveEffects,update,getActiveStatMagnitude:statMagnitude,getMovementSpeedMultiplier,getSpeedMul,getAttackSpeedMultiplier,getOutgoingDamageMultiplier,getStaminaSpendMultiplier,getHealthRegenMultiplier,getStaminaRegenMultiplier,getMaxFootingMultiplier,getMaxStaminaMultiplier,getIncomingDamageAfflictionMultiplier,getPositiveFavorMultiplier,getPerceptionMultiplier,getFootingDamageMultiplier,getWorkSpeedMultiplier,
     afflictionTotals,restorativeScore,contextualRestoratives,cureCoverage,potionCategoryState,toggleReagent,renderPanel,diagnosticsSnapshot,diagnosticsText,
