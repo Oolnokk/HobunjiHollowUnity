@@ -7,7 +7,7 @@
   //
   // Normal world color renders without held planes/registered feet. In a
   // separate depth-reconstructed overlay, hands/weapons/feet ignore ONLY base
-  // grass and authored paths, not props, snow or other solid occluders. The
+  // grass, authored paths and nearby walkable floors. The
   // subsequent water/slush tint uses the original translucent material and
   // only affects geometrically submerged pixels marked in stencil.
   //
@@ -1187,6 +1187,7 @@
   const XRAY_ELEVATION_TOLERANCE = 0.18; // Separates the authored trench/raised offsets and map tiers while allowing small body/terrain sampling drift.
   const XRAY_ELEVATION_GROUP_EPSILON = 0.05; // Actors on effectively the same standing surface share one depth replay.
   const XRAY_TILE_RADIUS = 1; // A holder can reveal ground in its tile and the eight adjacent tiles.
+  const XRAY_TILE_EDGE_EPSILON = 0.0001; // Bias slab side fragments into their own tile at shared grid edges.
   const XRAY_MAX_BATCH_TILES = 8; // Fixed shader uniform budget for screen-separated holders.
   const xrayGearRect = new THREE.Vector4(); // Used to compare each holder's gear against projected tile boundaries.
   const xrayGroundRect = new THREE.Vector4(); // Holds the projected floor band used for conservative batching.
@@ -1307,8 +1308,8 @@
           continue;
         }
         region.gearRect = { x: xrayGearRect.x, y: xrayGearRect.y, z: xrayGearRect.z, w: xrayGearRect.w };
-        xrayGroundBox.min.set(col - XRAY_TILE_RADIUS, elevation - band, row - XRAY_TILE_RADIUS);
-        xrayGroundBox.max.set(col + XRAY_TILE_RADIUS + 1, elevation + band, row + XRAY_TILE_RADIUS + 1);
+        xrayGroundBox.min.set(col - XRAY_TILE_RADIUS - XRAY_TILE_EDGE_EPSILON, elevation - band, row - XRAY_TILE_RADIUS - XRAY_TILE_EDGE_EPSILON);
+        xrayGroundBox.max.set(col + XRAY_TILE_RADIUS + 1 + XRAY_TILE_EDGE_EPSILON, elevation + band, row + XRAY_TILE_RADIUS + 1 + XRAY_TILE_EDGE_EPSILON);
         if (replayScissorRect(renderer, camera, [], xrayGroundRect, xrayGroundBox)) {
           if (!rectsOverlap(xrayGearRect, xrayGroundRect)) {
             ordinary.push(...region.meshes);
@@ -1386,12 +1387,12 @@
       shader.vertexShader = vertex
         .replace('#include <common>', '#include <common>\nvarying float vHobunjiXrayWorldY;\nvarying vec2 vHobunjiXrayWorldXZ;\nvarying vec3 vHobunjiXrayWorldNormal;')
         .replace('#include <worldpos_vertex>', worldPositionCode);
-      // Path bricks (anyFacing) are see-through on every face within the
-      // actor's elevation band; terrain keeps cliff/wall faces as occluders.
+      // Path bricks and interior slabs can expose their sides within the
+      // actor's elevation band. Mixed terrain keeps cliff/wall faces solid.
       shader.fragmentShader = fragment
         .replace('#include <common>', `#include <common>\nuniform float uHobunjiXrayActorElevation;\nuniform float uHobunjiXrayElevationEnabled;\nuniform float uHobunjiXrayAnyFacing;\nuniform int uHobunjiXrayTileCount;\nuniform vec2 uHobunjiXrayTiles[${XRAY_MAX_BATCH_TILES}];\nvarying float vHobunjiXrayWorldY;\nvarying vec2 vHobunjiXrayWorldXZ;\nvarying vec3 vHobunjiXrayWorldNormal;`)
         .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\nif (uHobunjiXrayElevationEnabled > 0.5 && abs(vHobunjiXrayWorldY - uHobunjiXrayActorElevation) <= ${XRAY_ELEVATION_TOLERANCE} && (uHobunjiXrayAnyFacing > 0.5 || (gl_FrontFacing && vHobunjiXrayWorldNormal.y >= ${XRAY_GROUND_NORMAL_MIN_Y}))) {
-  vec2 groundTile = floor(vHobunjiXrayWorldXZ);
+  vec2 groundTile = floor(vHobunjiXrayWorldXZ - vHobunjiXrayWorldNormal.xz * (uHobunjiXrayAnyFacing * ${XRAY_TILE_EDGE_EPSILON}));
   for (int i = 0; i < ${XRAY_MAX_BATCH_TILES}; ++i) {
     if (i >= uHobunjiXrayTileCount) break;
     if (all(lessThanEqual(abs(groundTile - uHobunjiXrayTiles[i]), vec2(${XRAY_TILE_RADIUS}.0)))) discard;
@@ -1405,7 +1406,7 @@
       state.supported = true;
     };
     material.customProgramCacheKey = function hobunjiElevationAwareGroundCacheKey() {
-      return (previousCacheKey ? previousCacheKey.call(this) : '') + '|hobunji-ground-tile-xray-v3';
+      return (previousCacheKey ? previousCacheKey.call(this) : '') + '|hobunji-ground-tile-xray-v4';
     };
     material.needsUpdate = true;
     return state;
@@ -1438,7 +1439,7 @@
           state.geometryHasNormals = false;
           material.needsUpdate = true; // A shared basic material must not assume normals if any registered ground geometry lacks them.
         }
-        if (roadSurface) state.uniforms.anyFacing.value = 1;
+        if (roadSurface || material.userData?.hobunjiInteriorFloorMaterial === true) state.uniforms.anyFacing.value = 1;
         if (seen.has(material)) return;
         seen.add(material);
         if (state.supported) materialCount++;
@@ -1462,9 +1463,8 @@
   }
 
   function replaySelectiveHeldOverlay(renderer, scene, camera, held, feet, ground, topFaceGround, tintCovers, originalCameraMask) {
-    // Each actor elevation gets its own depth replay. Same-level upward-facing
-    // ground fragments are omitted; other tiers, trench/raised surfaces, walls,
-    // props and protective covers remain real occluders.
+    // Each actor elevation gets its own depth replay. The filter omits nearby
+    // same-level floor faces, including slab edges, and retains solid cover.
     if (!held.length && !feet.length) {
       lastBaseElevationGroups = 0;
       lastHeldFullscreenReason = 'no-visible-participants';
