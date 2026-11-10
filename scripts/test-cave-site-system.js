@@ -44,6 +44,7 @@ context.CavernSculptor.carveFootprintCavern = floor => {
 };
 vm.runInContext(fs.readFileSync(path.join(root, 'docs/js/cavern-generator.js'), 'utf8'), context);
 const expandCavernMapData = context.CavernGenerator.expandCavernMapData; // Keep the real footprint/collision/grounding owner when testing later installation hooks.
+vm.runInContext(fs.readFileSync(path.join(root, 'docs/js/cave-tripwire-traps.js'), 'utf8'), context, { filename: 'cave-tripwire-traps.js' });
 vm.runInContext(source, context, { filename: 'cave-site-system.js' });
 const Cave = context.CaveSiteSystem;
 assert(Cave, 'CaveSiteSystem exports');
@@ -239,6 +240,16 @@ assert(denCatMap.caveBodies.length > 0, 'bodies coexist with inhabitants when sp
 const cacheMap = decorate(profile('map_i_test_cache', 'trapped_cache', 'bandit_hideout'));
 assert(cacheMap.caveProps.some(item => item.key === 'ruinDungeonChestT2'), 'cache places the authored dungeon chest');
 assert(cacheMap.caveCache && cacheMap.caveTraps.length >= 1, 'cache has functional runtime plan plus at least one trap');
+assert(cacheMap.caveTraps.every(trap => trap.kind === 'swingingShattercask' && trap.span?.length >= 3),
+  'hidden-cache traps are real, traversable wall-to-wall string spans with swinging shattercask payloads');
+const wireFixture = cacheMap.caveTraps[0].span;
+const wireMidX = (wireFixture.x1 + wireFixture.x2) / 2, wireMidZ = (wireFixture.z1 + wireFixture.z2) / 2;
+const wireApproach = wireFixture.axis === 'x' ? { x: wireMidX, z: wireMidZ - 2 } : { x: wireMidX - 2, z: wireMidZ };
+const wireBeyond = wireFixture.axis === 'x' ? { x: wireMidX, z: wireMidZ + 2 } : { x: wireMidX + 2, z: wireMidZ };
+assert(context.CaveTripwireTraps.crossed(wireFixture, wireApproach, wireBeyond),
+  'a high-speed crossing still triggers the physical rope without proximity-tick tunneling');
+assert(!context.CaveTripwireTraps.crossed(wireFixture, wireApproach, wireApproach),
+  'standing away from the rope does not trigger an invisible trap');
 const wall = cacheMap.caveSitePlan.separatorRock;
 assert(wall && wall.cells.length === cacheMap.oreRocks.filter(rock => rock.caveSeparator).length, 'hidden cache is sealed behind a wall of mineable ore rocks');
 assert(wall.cells.some(cell => cell.layer === 5), 'sealed chamber uses five successive mineable strata');
@@ -550,6 +561,7 @@ const scriptIndex = name => indexHtml.search(new RegExp(`<script src="(?:js/)?${
 for (const dep of ['wildlife-spawn.js', 'dev-spawner.js', 'cavern-generator.js', 'cavern-ore-rocks.js', 'locale-cave-runtime.js']) {
   assert(scriptIndex(dep) >= 0 && scriptIndex(dep) < scriptIndex('cave-site-system.js'), `${dep} loads before cave-site-system.js`);
 }
+assert(scriptIndex('cave-tripwire-traps.js') < scriptIndex('cave-site-system.js'), 'physical tripwire planner loads before cave-site generation');
 assert(scriptIndex('cave-site-system.js') < scriptIndex('game.js'), 'cave-site-system.js loads before game.js');
 
 console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${expectedAnimalDens} animal den cave(s); contents x inhabitant layers; cache wall ${wall.cells.length} rock(s)`);

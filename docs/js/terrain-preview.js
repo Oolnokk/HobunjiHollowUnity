@@ -149,8 +149,15 @@
     for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
       const t = m.tiles?.[`${c},${r}`];
       const key = `${c + offsetC},${r + offsetR}`;
-      if (!t || (t.plateau && !isCarvedPlateauOverride(t))) {
+      const isGeneratedBoulder = t?.plateau && t.type === 'rock' && t.generatedObjectType === 'undiggableBoulder'; // Keep collision-bearing boulder tiles when the plateau mask stakes its floor.
+            if (!t || (t.plateau && !isCarvedPlateauOverride(t) && !isGeneratedBoulder)) {
         if (!outTiles.has(key)) outTiles.set(key, { c: c + offsetC, r: r + offsetR, type: 'grass', elevTier: baseTier, skipFloor: false, rampElevation: 0, incline: false });
+        continue;
+      }
+      if (isGeneratedBoulder) {
+        // Preserve the already-staked mesa elevation/edge while restoring every solid tile of a wide generated boulder.
+        const staked = outTiles.get(key) || { c: c + offsetC, r: r + offsetR, elevTier: baseTier, skipFloor: true, rampElevation: 0, incline: false }; // Used to keep plateau collision and rock geometry on the same tile.
+        outTiles.set(key, { ...staked, type: 'rock', rockKind: 'undiggableBoulder', boulderId: t.generatedObjectId ? (m.parentMapId || m.id) + ':' + t.generatedObjectId : undefined });
         continue;
       }
       if (isCarvedPlateauOverride(t)) {
@@ -187,7 +194,7 @@
         // Exact generator identity lets the runtime assemble this authored
         // multi-tile boulder once instead of rediscovering it per chunk.
         boulderId: type === 'rock' && t.generatedObjectType === 'undiggableBoulder' && t.generatedObjectId
-          ? m.id + ':' + t.generatedObjectId
+          ? (m.parentMapId || m.id) + ':' + t.generatedObjectId
           : undefined,
       });
     }
