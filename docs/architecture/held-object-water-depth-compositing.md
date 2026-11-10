@@ -84,6 +84,22 @@ standing elevation and tile of their owning actor:
 Actors at effectively the same elevation can share a replay when their gear bounds cannot overlap each other’s projected floor neighborhoods. Uncertain projections use separate replays. The renderer prepares the ground material list once per pass and narrows each depth draw to its own screen bounds when it can prove them. Parts that cannot be covered by their neighborhood use ordinary ground depth. The shell-outline pass uses the same tile and elevation filter. The final colorless ground
 restore remains before translucent water/slush tinting.
 
+## Ordinary-depth replay supplement
+
+When every source in a group is proven not to need the holder-local floor
+exception, the first replay group retains the complete base depth instead of
+clearing it. It adds only the PNG cutout/protected-cover depth missing from the
+normal draw. Ordinary opaque leaf meshes are hidden during that supplement;
+mesh ancestors and custom render hooks stay conservative. The source color and
+stencil draw then uses the supplemented depth.
+
+With no floor-exception groups, ground depth was never removed, so its final
+restore is redundant. Water/slush tint still runs against complete ground depth,
+then restores translucent-cover depth as before. Mixed groups and renderers
+without color-mask locking retain the ground restore and original ordering.
+`test-held-ordinary-depth-budget.js` executes these pass budgets and restoration
+on both success and a thrown render.
+
 ## Shared surface occlusion composer
 
 `surface-occlusion-composer.js` is the policy layer shared by world/character

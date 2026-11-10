@@ -1462,6 +1462,23 @@
     }
   }
 
+  // Ordinary parts need repaired cutout/cover depth, but opaque world depth is
+  // already present from the base draw. Keep ancestor meshes conservatively:
+  // hiding one would also hide a required descendant.
+  let ordinaryDepthLeavesSkipped = 0; // Pixel Probe reports redundant leaves excluded from ordinary-depth supplements.
+  let ordinaryDepthClearsAvoided = 0; // Counts groups that retain the base depth instead of reconstructing the world.
+  function hideOrdinaryDepthRedraws(scene, cutouts, covers) {
+    const required = new Set([...cutouts, ...covers]); // Only these materials gain depth writes in the supplement.
+    const redundant = []; // Restored before source color and every elevation replay.
+    scene.traverseVisible(object => {
+      if ((!object.isMesh && !object.isSprite) || object.children?.length || required.has(object)) return;
+      if (object.onBeforeRender && object.onBeforeRender !== objectProto.onBeforeRender) return;
+      redundant.push(object);
+    });
+    ordinaryDepthLeavesSkipped += redundant.length;
+    return hideObjects(redundant);
+  }
+
   function replaySelectiveHeldOverlay(renderer, scene, camera, held, feet, ground, topFaceGround, tintCovers, originalCameraMask) {
     // Each actor elevation gets its own depth replay. The filter omits nearby
     // same-level floor faces, including slab edges, and retains solid cover.
@@ -1537,7 +1554,9 @@
       for (const group of groups) {
         const groupScissored = scissored && applyElevationScissor(renderer, camera, group.meshes, glState);
         if (group.regions.length) setGroundElevationFilter(groundMaterials, group);
-        renderer.clearDepth();
+        const supplementDepth = !group.regions.length && canLockColorMask; // The ordinary group runs first, while complete base depth is intact.
+        if (supplementDepth) ordinaryDepthClearsAvoided++;
+        else renderer.clearDepth();
         const prepPerf = window.PerfProfiler?.begin('held-overlay: depth material prep');
         const depthMaterialStates = canLockColorMask
           ? prepareCutoutDepthMaterials(cutoutDepthMeshes, protectedDepthMeshes)
@@ -1548,6 +1567,7 @@
         }
         window.PerfProfiler?.end(prepPerf);
         let groupCulled = null; // Only depth needs the bounded world occluder list.
+        const redundantDepth = supplementDepth ? hideOrdinaryDepthRedraws(scene, cutoutDepthMeshes, protectedDepthMeshes) : null; // Retain normal opaque cover while repairing cutouts.
         try {
           if (groupScissored && groupCullCandidates) groupCulled = cullReplayGroup(camera, groupCullCandidates);
           camera.layers.mask = originalCameraMask;
@@ -1556,6 +1576,7 @@
           window.PerfProfiler?.end(depthRebuildPerf);
           nonGroundDepthReplayCount++;
         } finally {
+          if (redundantDepth) restoreVisibility(redundantDepth);
           if (groupCulled) restoreVisibility(groupCulled);
           if (canLockColorMask) {
             colorBuffer.setLocked(false);
@@ -1591,13 +1612,16 @@
       // Restore the original complete ground depth before water/slush tinting.
       restoreVisibility(overlayHidden);
       overlayHidden = null;
-      const groundMaterialStates = prepareGroundDepthMaterials(topFaceGround.length ? groundMeshes : ground);
+      const needsGroundRestore = groups.some(group => group.regions.length) || !canLockColorMask; // An ordinary supplement never removes existing floor depth.
+      const groundMaterialStates = needsGroundRestore ? prepareGroundDepthMaterials(topFaceGround.length ? groundMeshes : ground) : new Map();
       try {
         camera.layers.mask = GROUND_REPLAY_MASK;
-        const groundRestorePerf = window.PerfProfiler?.begin('held-overlay: ground restore render');
-        rawRender.call(renderer, scene, camera);
-        window.PerfProfiler?.end(groundRestorePerf);
-        groundDepthRestoreCount++;
+        if (needsGroundRestore) {
+          const groundRestorePerf = window.PerfProfiler?.begin('held-overlay: ground restore render');
+          rawRender.call(renderer, scene, camera);
+          window.PerfProfiler?.end(groundRestorePerf);
+          groundDepthRestoreCount++;
+        }
       } finally {
         restoreMaterialStates(groundMaterialStates);
       }
@@ -1965,6 +1989,8 @@
       baseElevationGroups: lastBaseElevationGroups,
       shellElevationGroups: lastShellElevationGroups,
       shellSceneTraversalsAvoided,
+      ordinaryDepthLeavesSkipped,
+      ordinaryDepthClearsAvoided,
       groupScissors: groupScissorCount,
       lastReplayScissorCoverage: Number(lastReplayScissorCoverage.toFixed(4)),
       replayCullEnabled,

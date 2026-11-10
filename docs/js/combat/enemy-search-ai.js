@@ -10,7 +10,13 @@
 (() => {
   'use strict';
 
-  const LAST_SEEN_MAX_AGE_MS = 4000; // A sighting older than this predates the current pursuit (chase checks sight every frame, so a real sample is only frames old).
+  const SIGHT_DECISION_INTERVAL_MS = 100; // Geometry perception runs at 10 Hz; facing, range, movement and committed attacks stay live.
+  let sightDecisionSerial = 0; // Staggers the first refresh across a spawned crowd without consuming gameplay RNG.
+  let sightGeometryChecks = 0; // Pixel Probe exposes perception work performed.
+  let sightGeometryReuses = 0; // Pixel Probe exposes full LOS queries avoided.
+  const sightDecisions = new WeakMap(); // Per-observer target/area leases never retain despawned creatures.
+
+  const LAST_SEEN_MAX_AGE_MS = 4000; // A sighting older than this predates the current pursuit (geometry perception runs at 10 Hz, so a real sample is at most one decision old).
   const ENEMY_SEARCH_DURATION_S = 8; // Gives a hostile time to reach the last-known position and search nearby.
   const ENEMY_SEARCH_SWEEP_HALF_RAD = Math.PI * 0.85; // Alternating scan reaches well behind the creature before returning.
   const ENEMY_SEARCH_TURN_RATE_RAD_S = THREE.MathUtils.degToRad(190); // Base search rotation, also scaled by post-attack recovery.
@@ -33,7 +39,16 @@
     if (!target || target.health <= 0 || Math.hypot(target.x - c.x, target.y - c.y) > acquisitionRadiusPx) return false;
     const insideFacingCone = window.Combat?.targetInsideAttackCone?.(c, target, c.facing || 0) ?? true;
     if (!insideFacingCone) return false;
-    const visible = window.RangedWeapons?.hasLineOfSight?.(c, target) ?? true; // Tile and real scene-geometry occlusion gate acquisition/reacquisition.
+    const now = performance.now(); // Only geometry perception is leased; the cheap range and cone checks above run on every call.
+    const cached = sightDecisions.get(c); // A different opponent or area always receives an immediate fresh query.
+    if (cached && cached.target === target && cached.area === c.areaId && cached.targetArea === target.areaId && now < cached.nextAt) {
+      sightGeometryReuses++;
+      return cached.visible;
+    }
+    const visible = window.RangedWeapons?.hasLineOfSight?.(c, target, true) ?? true; // A due perception decision bypasses the inner LOS cache so leases cannot stack.
+    sightGeometryChecks++;
+    const interval = cached ? SIGHT_DECISION_INTERVAL_MS : 60 + (sightDecisionSerial++ % 5) * 10; // Spread the first refresh, then retain each actor's cadence.
+    sightDecisions.set(c, { target, area: c.areaId, targetArea: target.areaId, nextAt: now + interval, visible });
     if (visible) {
       c._enemyLastSeenX = target.x; // Updated only when the target is actually inside range, facing cone, and clear sight.
       c._enemyLastSeenY = target.y; // The search destination must never follow an unseen player's current position.
@@ -93,6 +108,7 @@
   }
 
   window.EnemySearchAI = Object.freeze({
+    debugSnapshot: () => ({ geometryChecks: sightGeometryChecks, geometryReuses: sightGeometryReuses, intervalMs: SIGHT_DECISION_INTERVAL_MS, latestChange: '10 Hz geometry perception; live movement, range and facing' }),
     enemyAttackBusy,
     enemyCanSeeTarget,
     beginEnemySearch,
