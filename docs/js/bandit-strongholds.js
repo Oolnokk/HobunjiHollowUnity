@@ -200,9 +200,11 @@
       .filter(tile=>Number.isFinite(tile.col)&&Number.isFinite(tile.row));
     const entry={col:Number(mapData?.exitCol)||0,row:Number(mapData?.exitRow)||0};
     if(floor.length<12)return null; // Do not invent a lane in tiny/generated single-puzzle rooms.
-    const goal=[...floor].sort((a,b)=>Math.hypot(b.col-entry.col,b.row-entry.row)
-      -Math.hypot(a.col-entry.col,a.row-entry.row))[0];
-    const length=Math.hypot(goal.col-entry.col,goal.row-entry.row);
+    let goal=floor[0], length=0;
+    for(const tile of floor) {
+      const distance=Math.hypot(tile.col-entry.col,tile.row-entry.row);
+      if(distance>length){length=distance;goal=tile;}
+    } // One linear scan, not a full sort every time a cave scene mounts.
     if(length<7)return null;
     const axis={x:(goal.col-entry.col)/length,z:(goal.row-entry.row)/length};
     const lateral={x:-axis.z,z:axis.x}; // Opposite-facing cover flanks a shared, unobstructed center line.
@@ -211,14 +213,15 @@
     for(const [i,along] of alongs.entries())for(const side of [-1,1]){
       const x=entry.col+axis.x*along+lateral.x*side*2.55;
       const z=entry.row+axis.z*along+lateral.z*side*2.55;
-      const tile=[...floor].sort((a,b)=>Math.hypot(a.col-x,a.row-z)-Math.hypot(b.col-x,b.row-z))
-        .find(candidate=>{
-          const key=candidate.col+','+candidate.row;
-          if(used.has(key)||Math.hypot(candidate.col-x,candidate.row-z)>1.4)return false;
-          const relX=candidate.col-entry.col,relZ=candidate.row-entry.row;
-          const across=Math.abs(relX*lateral.x+relZ*lateral.z);
-          return across>=1.7 && placements.every(p=>Math.hypot(p.col-candidate.col,p.row-candidate.row)>=2.1);
-        });
+      let tile=null, nearest=1.4; // Six short O(N) floor scans instead of sorting all cave tiles 6 times.
+      for(const candidate of floor){
+        const distance=Math.hypot(candidate.col-x,candidate.row-z);
+        if(distance>=nearest||used.has(candidate.col+','+candidate.row))continue;
+        const relX=candidate.col-entry.col,relZ=candidate.row-entry.row;
+        const across=Math.abs(relX*lateral.x+relZ*lateral.z);
+        if(across<1.7||placements.some(p=>Math.hypot(p.col-candidate.col,p.row-candidate.row)<2.1))continue;
+        nearest=distance;tile=candidate;
+      }
       if(!tile)continue;
       used.add(tile.col+','+tile.row);
       placements.push({col:tile.col,row:tile.row,side,along,
@@ -240,9 +243,7 @@
     if (!THREE) return 0;
     const group = new THREE.Group(); // A single parent owns every decorative barricade; no extra frame loop.
     group.name = 'fortified-bandit-interior';
-    const floor = (mapData.floor || []).filter(tile => Array.isArray(tile) && tile.length >= 2);
-    const exitCol = Number(mapData.exitCol) || 0, exitRow = Number(mapData.exitRow) || 0;
-    const lane=chargeLaneForMap(mapData);
+    const lane=chargeLaneForMap(mapData); // Reuse the logical cave-floor planner; no separate lane geometry or extra frame update.
     const selected = []; // Only positions safely offset from the charge lane become physical cover blockers.
     for (const tile of lane?.placements || []) {
       selected.push(tile);
