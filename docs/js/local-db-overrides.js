@@ -161,7 +161,23 @@
         npc.creatureKind = species;
         npc.appearance.creatureKind = species;
         npc.appearance.avatarType = 'animal';
+      } else if (override?.kind === 'bipedal-monster' && override.bipedalMonsterRig?.sprite) {
+        // Keep ordinary NPC identity and GLB limbs; only its painted body/neck use creature presentation.
+        delete npc.creatureKind;
+        const hybrid = JSON.parse(JSON.stringify(override.bipedalMonsterRig)); // Shared named-NPC profile used by preview, gameplay, and the rig inspector.
+        npc.bipedalMonsterRig = hybrid;
+        npc.appearance.bipedalMonsterRig = hybrid;
+        npc.appearance.avatarType = 'bipedal-monster';
+        const furColor = hybrid.materials?.body?.color; // Only this NPC's model uses its author-specified fur tint.
+        if (/^#[0-9a-f]{6}$/i.test(String(furColor || ''))) {
+          npc.appearance.bodyColors = { ...(npc.appearance.bodyColors || {}), A: { hex: furColor } };
+        }
+        delete npc.appearance.creatureKind;
+        delete npc.appearance.animalKind;
+        delete npc.appearance.chatheadCreatureKind;
       } else {
+        delete npc.bipedalMonsterRig;
+        delete npc.appearance.bipedalMonsterRig;
         delete npc.creatureKind;
         delete npc.appearance.creatureKind;
         delete npc.appearance.animalKind;
@@ -286,7 +302,7 @@
   function _installNamedAnimalNpcModule() {
     if (typeof document === 'undefined' || !LOCAL_DB_SCRIPT_URL) return;
     if (document.querySelector('script[data-hobunji-named-animal-npc="1"]')) return;
-    const moduleUrl = new URL('named-animal-npc.js?v=20260923banubuscale2', LOCAL_DB_SCRIPT_URL).href; // Shared bridge URL resolved next to local-db-overrides.js in docs/js/; explicit version prevents a stale 200px world-animal bridge after deploy.
+    const moduleUrl = new URL('named-animal-npc.js?v=20261109bipedalmonster1', LOCAL_DB_SCRIPT_URL).href; // Shared bridge URL resolved next to local-db-overrides.js in docs/js/; explicit version prevents a stale 200px world-animal bridge after deploy.
     if (document.readyState === 'loading' && typeof document.write === 'function') {
       document.write(`<script src="${moduleUrl}" data-hobunji-named-animal-npc="1"><\/script>`); // Parser-synchronous load guarantees global assignment hooks exist before later avatar/game scripts execute.
       return;
