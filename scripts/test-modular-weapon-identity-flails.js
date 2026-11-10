@@ -80,6 +80,20 @@ assert.equal(api.weaponDamageType('grapple-flail','pick-shovel-pick'),'blunt');
 assert.deepEqual(plain(api.getConfig().heads['pick-shovel-pick'].mount),
   plain(config.heads['pick-shovel-pick'].mount),'flail authoring must not change shared rigid pick geometry');
 api.replace(plain(config)); // Subsequent tests retain the committed catalog.
+const oldPickDraft=plain(config); // User exported this before the new blunt-only pair type existed.
+delete oldPickDraft.shafts['grapple-flail'].overrides['pick-shovel-pick'].dmgType;
+api.replace(oldPickDraft);
+assert.equal(api.weaponDamageType('grapple-flail','pick-shovel-pick'),'blunt',
+  'importing the user’s older local export must not silently revert this pair to sharp');
+const explicitNormal=plain(api.getConfig());
+explicitNormal.shafts['grapple-flail'].overrides['pick-shovel-pick'].dmgType='inherit';
+api.replace(explicitNormal);
+assert.equal(api.weaponDamageType('grapple-flail','pick-shovel-pick'),'sharp',
+  'explicit inherit sentinel restores ordinary pick damage for only the chosen flail pair');
+assert.equal(api.getConfig().heads['pick-shovel-pick'].dmgType,'sharp',
+  'switching damage inheritance never edits the shared pick head');
+api.replace(plain(config)); // Subsequent tests keep the committed flail pair classification.
+
 
 
 const authoredFlailShafts = { // Exact five shaft-side rope and aperture choices from the user's November 9 export.
