@@ -114,4 +114,81 @@ assert.equal(caves.profileForMapId(mapId).fortifiedStronghold,true);
 const index=read('docs/index.html');
 assert(index.indexOf('bandit-strongholds.js')>index.indexOf('cave-site-system.js'), 'stronghold module loads after cave owner');
 assert(index.indexOf('bandit-strongholds.js')<index.indexOf('src="game.js'), 'feature is registered before gameplay boot');
-console.log('Bandit stronghold placement, styled assets, native entrance, save/reentry and teardown: OK');
+// Barrel gameplay uses the exact production stronghold and CaveSiteSystem modules.
+// The authored Aging Barrel supplies its artwork, and the shared Shattercasks Burden
+// supplies pickup, throw and impact behavior. Only those browser dependencies are stubbed.
+const registered = new Map(); // Live ordinary Burden records, not a parallel barrel physics system.
+const grants = []; // Each real impact must award its loot once, including after re-entry.
+const furnitureLoads = []; // Ensures all new barrels reuse an authored furniture asset.
+const itemDeps = { ITEM_DEFS: {}, inventoryItems: [] }; // Canonical inventory registration for inert Komanine.
+context.AlchemySystem = { RECIPE_DEFS: {
+  fire: { id: 'fire', useMode:'throw' }, frost: { id: 'frost', useMode:'throw' },
+  narcoticRush: { id:'narcoticRush', label:'Narcotic Rush' },
+}, ensureRecipeItemDef(id) { return 'flask_' + id; } };
+context.BanditCombat = { availableFlaskRecipeIds() { return ['fire','frost']; } };
+context.ItemProcessing = {
+  init(deps) { this.deps=deps; },
+  getProcessingOutput(method, source) {
+    assert.equal(method,'barrelAging');
+    return { key:source === 'needlegrain' ? 'needlegrainSake' : 'heftrootVodka',label:'Aged liquor' };
+  },
+  ensureProcessedItemDef(item) { this.deps.ITEM_DEFS[item.key]=item; },
+};
+assert.equal(strongholds.installItemRegistration(),true,'registers on the canonical ItemProcessing initializer');
+context.ItemProcessing.init(itemDeps);
+assert.equal(itemDeps.ITEM_DEFS.komanine.label,'Komanine');
+assert.equal(itemDeps.ITEM_DEFS.komanine.consumeAction,undefined,'Komanine effects are intentionally unspecified');
+context.AuthoredFurniture = {
+  peek(key) { return key === 'looseCrate' ? { carryable:{handTargets:{},billboardAnchor:{}} } : null; },
+  async load(key) { furnitureLoads.push(key); return { key, parts:[{kind:'barrel',transform:{y:.4269,sy:.8327,sz:.76}}] }; },
+  buildGroup() { const group = new Group(); group.isObject3D = true; return group; },
+};
+context.Shattercasks = {
+  registerBurden(data) { const burden={ ...data };registered.set(data.id,burden);return burden; },
+  getBurden(id) { return registered.get(id) || null; },
+  discardBurden(burden) { registered.delete(burden.id);return true; },
+  grantBurdenLoot(loot) { grants.push(plain(loot)); return Object.keys(loot); },
+};
+
+async function testPhysicalBarrels() {
+  const restoredProfile = caves.profileForMapId(mapId);
+  const map = {
+    caveSite:restoredProfile, exitCol:2,exitRow:2,floorSurfaceY:.42,
+    floor:Array.from({length:20},(_,x)=>Array.from({length:20},(_,y)=>[x,y])).flat(),
+    caveSitePlan:{ strongholdBarrels:[
+      { id:'contraband-0',kind:'contrabandBarrel',col:9,row:10 },
+      { id:'flasks-1',kind:'flaskBarrel',col:12,row:10 },
+    ] },
+  };
+  const scene = new Group();
+  const count = strongholds.buildInteriorProps(mapId,map,scene);
+  assert(count>0,'barrel visuals coexist with existing material-matched cover');
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  assert.deepEqual(plain(furnitureLoads),['agingBarrel','agingBarrel'],'uses the same authored Aging Barrel for both kinds');
+  assert.equal(registered.size,2,'one physical Burden of each variant');
+  const contraband = registered.get(mapId+':contraband-0');
+  const flask = registered.get(mapId+':flasks-1');
+  assert(contraband.data.carryable?.handTargets?.left && flask.data.carryable?.handTargets?.right,
+    'barrels inherit existing held-item rig with geometry-sized hand targets');
+  assert.equal(contraband.group.position.y,.42,'barrel sits at real cavern floor elevation');
+  assert.equal(contraband.onImpact(contraband,'thrown'),true);
+  assert.equal(contraband.onImpact(contraband,'duplicate'),true);
+  assert.equal(grants.length,1,'same-barrel duplicate hit awards nothing');
+  assert(Object.keys(grants[0]).some(key=>['needlegrainSake','heftrootVodka'].includes(key)),
+    'contraband uses existing barrel-aged alcohol recipes');
+  assert.equal(registered.size,1);
+  const flaskId=flask.id;
+  flask.onPickup(flask);
+  assert.equal(caves.fortifiedBarrelStatus(mapId,flaskId).taken,true,'pickup persists before throw');
+  assert.equal(flask.onImpact(flask,'thrown'),true);
+  assert.equal(grants.length,2,'flask barrel has an independent once-only drop');
+  assert(Object.keys(grants[1]).some(key=>key.startsWith('flask_')),'flask loot comes from real throwable recipe ids');
+  const savedAfterClaims = caves.serialize();
+  caves.restore(savedAfterClaims);
+  assert.equal(caves.fortifiedBarrelStatus(mapId,flaskId).claimed,true,'world save retains claim on reload');
+  assert.equal(strongholds.ensureBarrels(mapId,map,scene),0,'re-entry never regenerates spent barrels');
+  assert.equal(strongholds.forgetInterior(mapId),true);
+  assert.equal(scene.children.length,0,'scene teardown removes physical cover presentation');
+  console.log('Bandit stronghold placement, saved cave reentry, styled furniture, physical barrels and once-only loot: OK');
+}
+testPhysicalBarrels().catch(error => { console.error(error);process.exitCode=1; });
