@@ -9,7 +9,7 @@
 .line-length-field button{min-width:42px}
 .line-length-field .line-length-label{font-weight:600;min-width:115px}
 #gizmo-draw.active,#gizmo-move.active,#gizmo-rotate.active{background:#3c6572;border-color:#a4ead8;box-shadow:inset 0 0 0 1px #a4ead8}
-#shaft-canvas,#head-canvas{max-height:none;object-fit:contain}@media(max-width:760px){main{grid-template-columns:1fr}.sprites{grid-template-columns:repeat(3,1fr)}canvas{max-height:none}header{position:static}}
+#shaft-canvas,#head-canvas{max-height:none;object-fit:contain}#shaft-bore-panel{padding:10px;margin:12px 0;background:#203945;border-radius:7px}#shaft-bore-panel summary{cursor:pointer;font-weight:700}#shaft-bore-panel input:not([type=checkbox]),#shaft-bore-panel select{width:100%;box-sizing:border-box}#shaft-bore-panel .toolbar button{flex:1 1 130px}#bore-drag[aria-pressed=true]{border-color:#ffe28b;background:#665437}#flail-preview-figure[hidden]{display:none}@media(max-width:760px){main{grid-template-columns:1fr}.sprites{grid-template-columns:repeat(3,1fr)}canvas{max-height:none}header{position:static}}
 .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}#shaft-art-panel,#rig-region-panel{margin:12px 0;padding:10px;background:#203945;border-radius:7px}#rig-region-panel h3{margin:4px 0 8px;font-size:15px}#region-select[aria-pressed=true]{background:#3c6572;border-color:#a4ead8}#rig-region-panel input{width:100%}#shaft-duplicate-panel{background:#1d3540;padding:10px;margin:10px 0}#shaft-duplicate-panel input{width:100%}#sprite-cutter{grid-column:1/-1}.cut-grid{display:grid;grid-template-columns:minmax(240px,340px) minmax(250px,1fr);gap:16px}.cut-controls{display:flex;flex-direction:column;gap:6px}.cut-controls label{margin:4px 0}.cut-controls input:not([type=file]),.cut-controls select{width:100%}.cut-stage{width:100%;max-width:470px;justify-self:center}.cut-stage canvas{width:100%;max-height:none;object-fit:contain;image-rendering:pixelated}.cut-stage figcaption{word-break:break-word}#cut-status{min-height:3em}#cut-output{font-family:monospace;overflow-wrap:anywhere;color:#7de0cb}#cut-debug{font-size:12px}@media(max-width:760px){.cut-grid{grid-template-columns:1fr}.cut-stage{max-width:min(100%,450px)}}
 /* Pinned previews: each stays in view while its settings scroll (header height comes from editor.js). */
 .pair-area{grid-column:1/-1;display:grid;gap:12px;grid-template-columns:minmax(270px,390px) minmax(300px,1fr)}
@@ -45,13 +45,107 @@
 .assembly-element-panel button:disabled{opacity:.5}
 #assembly-status{min-height:1.5em}
 .assembly-provenance-warning{margin:10px 0;padding:8px;border:1px solid #78968f;border-radius:6px}
-.assembly-provenance-warning button{width:100%;white-space:normal}
+.assembly-provenance-warning button{width:100%;white-space:normal}#part-identity-panel{background:#203945;padding:10px;border-radius:7px;margin:12px 0}#part-identity-panel>summary{cursor:pointer}#part-identity-panel .grid2 label{min-width:0}#part-identity-panel input:not([type=checkbox]),#part-identity-panel select{width:100%;box-sizing:border-box}#part-identity-panel p{font-size:13px}
+#flail-preview-figure{grid-column:1/-1}
+#flail-preview-figure canvas{height:60vh;max-height:74vh;max-width:min(100%,680px);margin-inline:auto}
+#flail-preview-status{font-size:12px;color:#d4e7df;margin:6px auto}
+@media(max-width:760px){#flail-preview-figure canvas{height:58vh;max-height:70vh;width:100%}}
+
+/* Progressive disclosure keeps the actual rig visually central, especially on mobile. */
+.workflow-section{border:1px solid #345662;border-radius:9px;background:#1b3440;padding:10px;margin:10px 0}
+.workflow-section>summary{cursor:pointer;font-size:15px;font-weight:650;line-height:1.5;padding:7px 4px;list-style-position:inside}
+.workflow-section[open]>summary{margin-bottom:9px;border-bottom:1px solid #547a8060}
+.workflow-section summary:focus-visible{outline:2px solid #b6eddf;outline-offset:2px}
+.workflow-section[hidden],#shaft-bore-panel[hidden]{display:none!important}
+.source-previews{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+#source-preview-workflow{grid-column:1/-1;margin-top:6px}
+#flail-preview-figure{grid-column:1/-1;display:flex;flex-direction:column}
+#flail-preview-figure canvas{width:100%;height:calc(100vh - var(--header-h,0px) - 210px);min-height:360px;max-height:78vh;object-fit:contain;image-rendering:auto}
+#flail-preview-status{font-size:13px;line-height:1.45;max-width:700px}
+.rig-guide-toggle{display:flex;align-items:center;gap:8px;margin:0;flex:1 1 180px}
+.rig-guide-toggle input{flex:0 0 auto}
+.float-panel .source-previews canvas{height:34vh;min-height:210px;max-height:450px}
+@media(max-width:760px){
+#flail-preview-figure canvas{min-height:300px;height:56vh;max-height:65vh}
+.source-previews{grid-template-columns:repeat(2,minmax(0,1fr))}
+.float-panel .source-previews canvas{height:34vh;min-height:190px}
+.workflow-section>summary{font-size:14px}
+}
+
+.rig-legend{flex:1 1 220px;font-size:12px;line-height:1.45;color:#d6e8e2;padding:4px 0}
+#head-contact-move[aria-pressed=true]{background:#244e5c;border-color:#72e6ff;box-shadow:inset 0 0 0 1px #72e6ff}
+#head-contact-status{font-size:13px;line-height:1.4}
+/* Undo/Redo are in the document's primary action bar, never beneath the preview label. */
+header .toolbar{align-items:center}
+header .toolbar #pair-undo,header .toolbar #pair-redo{min-width:88px;position:relative}
+.rig-guide-toggle{display:inline-flex;align-items:center;width:max-content;max-width:100%;flex:none;padding:3px 0;white-space:normal}
+.float-panel>.float-bar{display:flex;align-items:center;justify-content:flex-start;min-height:52px}
+#pair-undo,#pair-redo{scroll-margin-top:calc(var(--header-h,0px) + 12px)}
 </style></head><body>
-<header><h1>Modular Weapon Attachment Editor</h1><div>Latest change: duplicated attachment primitives and tang/sleeve rigs can be scaled and translated independently, leaving shaft artwork and fire untouched.</div><div class="toolbar"><button id="random" type="button">Random valid combination</button><button id="export">Export game config</button><button id="import">Import config</button><button id="reset">Reset draft</button><input id="file" type="file" accept=".json,.js" hidden></div><p id="status" role="status">Loading…</p></header>
-<main><div class="pair-area"><section><h2>Directed head and haft mounts</h2>
+<header><h1>Modular Weapon Attachment Editor</h1><div>Complete rig first: see the real assembled haft, hanging connector and authored head together. Expand a numbered section to edit that system; none of the saved geometry was reset.</div><div class="toolbar"><button id="pair-undo" type="button" disabled>↶ Undo</button><button id="pair-redo" type="button" disabled>↷ Redo</button><button id="random" type="button">Random valid combination</button><button id="export">Export game config</button><button id="import">Import config</button><button id="reset">Reset draft</button><input id="file" type="file" accept=".json,.js" hidden></div><p id="status" role="status">Loading…</p></header>
+<main><div class="pair-area"><section><h2>Choose a haft and head</h2><p>Pick the two parts first. The complete assembled rig stays visible above or beside the controls; open only the editing sections you need.</p>
 <label>Haft <select id="shaft"></select></label><label>Head <select id="head"></select></label>
-<div class="panel" id="shaft-duplicate-panel">
-<h2>Shaft attachment scaling rig</h2>
+<details id="part-identity-panel" class="workflow-section"><summary>01 · Names, tool roles and forging</summary>
+<p>Part labels describe the actual unlocked piece. A haft chooses whether it supplies a weapon-name prefix or suffix; every head supplies both matching forms. Stable internal IDs, grip donors, materials and saved gear stay unchanged.</p>
+<div class="grid2">
+<label>Haft part name <input id="shaft-part-label" maxlength="96"></label>
+<label>Haft contributes <select id="shaft-name-position"><option value="prefix">Prefix (before head)</option><option value="suffix">Suffix (after head)</option></select></label>
+<label>Haft prefix / suffix words <input id="shaft-name-affix" maxlength="96"></label>
+<label><input id="shaft-tool-worthy" type="checkbox"> Tool-worthy haft (allows compatible head tool slots)</label>
+<label>Head part name <input id="head-part-label" maxlength="96"></label>
+<label>Head form when haft is a prefix <input id="head-name-prefix" maxlength="96"></label>
+<label>Head form when haft is a suffix <input id="head-name-suffix" maxlength="96"></label>
+<label>Head tool slots (comma-separated) <input id="head-tool-slots" placeholder="axe, pick, shovel, hoe, harpoon"></label>
+</div>
+<p id="identity-preview" aria-live="polite">Resulting weapon name and eligible slots appear here.</p>
+</details>
+<details id="flail-authoring-panel" class="workflow-section" open><summary>02 · Flail connector and bored haft</summary>
+<h3>Flexible head and rope authoring</h3>
+<p><strong>Pair-specific transformations:</strong> To flip, rotate, stretch X/Y, or nudge a rigid head on a flexible haft, use the controls in <strong>05 · Pair-specific corrections</strong>. They now affect both the full rig preview and gameplay; only the selected combination changes. Connector length and width stay independent.</p><p><strong>Two different modes:</strong> For a <strong>Grapple Hook head</strong> on an ordinary haft, its layered contact comes from <a href="../multi-sprite-weapon-editor/" target="_blank" rel="noopener">Complex Tool Visuals</a>; author the haft bore and purple rope mount here. For an <strong>ordinary head on the Grapple-Flail haft</strong>, the cyan head contact is editable below and on the head source sprite <em>for this pairing only</em>. It starts at the rigid tang's START or sleeve's END and never changes the original head's mount arrow. The rope line on the haft still controls the other endpoint and total reach.</p>
+<div class="grid2">
+<label>Head-owned flail recipe <select id="head-flail-assembly"></select></label>
+<label>Haft-owned flail recipe <select id="shaft-flail-assembly"></select></label>
+<label>Haft rope point X (450px source) <input id="shaft-rope-x" type="number" step="1" min="0" max="450" placeholder="Auto: first compatible socket"></label>
+<label>Haft rope point Y (1204px source) <input id="shaft-rope-y" type="number" step="1" min="0" max="1204" placeholder="Auto: first compatible socket"></label>
+<label>Head rope contact X (pair-only, source px) <input id="head-rope-x" type="number" min="0" max="450" step="1" disabled></label>
+<label>Head rope contact Y (pair-only, source px) <input id="head-rope-y" type="number" min="0" max="1204" step="1" disabled></label>
+<label>Hanging-head scale for this combination <input id="head-rope-scale" type="number" step=".05" min=".05" max="8" disabled></label>
+<label>Damage for this flail combination <select id="pair-damage-type" disabled>
+<option value="inherit">Head's normal damage type</option>
+<option value="blunt">Blunt</option><option value="sharp">Sharp</option></select></label>
+</div>
+<div class="toolbar"><button id="head-contact-move" type="button" aria-pressed="false">Move contact on head sprite</button><button id="head-contact-reset" type="button">Reset contact to head mount</button></div>
+<p id="head-contact-status" aria-live="polite">Select a flail haft and a rigid head to edit its independent rope-to-head contact.</p>
+<p id="pair-transform-status" aria-live="polite">For a hanging rigid head, section 05's scale X/Y, flips, rotation and X/Y corrections affect only the head artwork — not the rope.</p>
+<p id="identity-flail-status" aria-live="polite"></p>
+<details id="shaft-bore-panel" open hidden>
+<summary><strong>Recalculating bores in the shaft artwork</strong></summary>
+<p>Only visible when a valid <strong>flail head</strong> is selected. Each bore follows that head's exact connector attachment on the shaft. A zero-offset bore drills directly through the attachment: the default opening is <strong>20 × 20 pixels</strong>, with a regenerated interior black outline, shading and deformation. Move a bore or change the rope mount and everything recalculates from the untouched PNG; no manual brush strokes are overwritten.</p>
+<div class="toolbar">
+<button id="bore-add" type="button">+ Add bore</button>
+<button id="bore-remove" type="button">Remove bore</button>
+<button id="bore-drag" type="button" aria-pressed="false">Move selected bore on haft sprite</button>
+</div>
+<label>Bore <select id="bore-list"></select></label>
+<div class="grid2">
+<label>X offset from connector (px) <input id="bore-x" type="number" min="-450" max="450" step="1" value="0"></label>
+<label>Y offset from connector (px) <input id="bore-y" type="number" min="-1204" max="1204" step="1" value="0"></label>
+<label>Opening width X (px) <input id="bore-rx" type="number" min="4" max="320" step="1" value="20"></label>
+<label>Opening height Y (px) <input id="bore-ry" type="number" min="4" max="320" step="1" value="20"></label>
+<label>Rotation (degrees) <input id="bore-rotation" type="number" min="-360" max="360" step="1"></label>
+<label>Rim width (px) <input id="bore-rim" type="number" min="0.5" max="24" step=".5"></label>
+<label>Interior black outline thickness (px) <input id="bore-outline" type="number" min="1" max="12" step=".5" value="3"></label>
+<label>Edge deformation (px) <input id="bore-warp" type="number" min="0" max="6" step=".25"></label>
+<label>Edge shade intensity <input id="bore-shade" type="number" min="0" max="1" step=".05"></label>
+<label>Light direction X <input id="bore-lightX" type="number" min="-1" max="1" step=".1"></label>
+<label>Light direction Y <input id="bore-lightY" type="number" min="-1" max="1" step=".1"></label>
+</div>
+<label><input id="bore-enabled" type="checkbox"> Enable this bore</label>
+<p id="bore-status" aria-live="polite">No shaft bores.</p>
+</details>
+</details>
+<details class="panel workflow-section" id="shaft-duplicate-panel">
+<summary>03 · Haft art, rig transforms and regions</summary>
 <button id="duplicate-shaft" type="button">Duplicate selected shaft + mounts + fitting rules</button>
 <p>Use the four settings below on <strong>any selected shaft</strong>, whether original or duplicated. The parent transform moves and scales every child tang/sleeve mount and fitted head primitive. It never moves the shaft PNG, held pose or live flames. Duplicate a shaft above only when you want a new independent copy.</p>
 <label>Duplicated shaft PNG <input id="duplicate-sprite" list="shaft-sprites" placeholder="assets/toolsprites/your_sprite.png"></label>
@@ -71,6 +165,7 @@
 <label>Shaft X offset <input id="shaft-art-x" type="number" min="-2400" max="2400" step="1"></label>
 <label>Shaft Y offset <input id="shaft-art-y" type="number" min="-2400" max="2400" step="1"></label>
 </div></details>
+
 <div id="rig-region-panel">
 <h3>Local rig regions</h3>
 <p>Choose <strong>Select rectangle</strong>, then drag on the assembled preview. A region selects complete head attachments by their tang/sleeve <strong>midpoints</strong>, individual bridge/junction operations by their centers, and whole placed recipes by their box centers. Selected children gain their own X/Y scale and translation; the rest of the rig is unchanged. Operations are selected as whole objects, not split pixel-by-pixel. Overlapping areas use the last region drawn.</p>
@@ -87,27 +182,29 @@
 <p id="duplicate-note" aria-live="polite">Choose any shaft and edit its attachment scaling rig.</p>
 <pre id="rig-tree" aria-label="Attachment rig hierarchy" style="white-space:pre-wrap;font-size:12px;overflow-wrap:anywhere"></pre>
 <p>The combined preview shows shaft art (optionally transformed), the overall rig, and locally transformed mounting regions. Shaft flames follow the optional shaft-art transform, never the rig or its regions.</p>
-</div>
+</details>
+<details id="mount-editor-workflow" class="workflow-section"><summary>04 · Rigid fitting lines and rope mounts</summary>
 <label><input id="allow-shaft" type="checkbox"> Allow selected haft in Foundry after calibration</label>
 <label><input id="allow-head" type="checkbox"> Allow selected head in Foundry after calibration</label>
 <p id="part-readiness">Heads and hafts require matching tang or eye lines to assemble.</p>
 <p id="head-construction-note" aria-live="polite"></p>
-<p>Drag from one end of a mounting line to the arrow tip directly on the sprite. Arrows align direction-to-direction, then automatically rotate the head and stretch it only along the head arrow axis to match the haft line; its perpendicular width stays unchanged. Gold lines are tangs; aqua lines are eyes/sleeves. All lines use the original 450 × 1204 sprite coordinates.</p>
+<p>For ordinary rigid pairs, tang/eye arrows determine fitting, rotation and length-axis stretch. When a rigid head hangs from a flail shaft, its cyan rope contact is edited separately in section 02; the shared rigid head arrow is protected. A <strong>flail head ignores its modular head arrow entirely</strong>: Complex Tool Visuals supplies its attachment point. Purple dashed haft connector guides indicate the physical rope start and the mounting-line extension. Gold lines are tangs and aqua lines eyes; all coordinates use the original 450 × 1204 sprite frame.</p>
 <div class="toolbar" role="group" aria-label="Mount line editing mode">
 <button id="gizmo-draw" type="button" aria-pressed="true">✏️ Draw line</button>
 <button id="gizmo-move" type="button" aria-pressed="false"><span aria-hidden="true">✥</span> Move line</button>
 <button id="gizmo-rotate" type="button" aria-pressed="false"><span aria-hidden="true">↻</span> Rotate line</button>
 </div>
 <p>In Draw mode, drag base to arrow tip. In Move mode, drag the crosshair to shift the whole line. In Rotate mode, drag the circle on its short arm to turn the line around its midpoint without changing its length.</p>
-<label>Head construction <select id="head-kind"><option value="blade">Blade — tang</option><option value="weight">Weight — eye/sleeve</option></select></label>
+<label>Head construction <select id="head-kind"><option value="blade">Blade — tang</option><option value="weight">Weight — eye/sleeve</option><option value="flail">Flexible head — rope/chain</option></select></label>
 <label>Haft mounting line <select id="socket"></select></label>
-<label>Selected haft mount type <select id="mount-kind"><option value="tang">Tang</option><option value="eye">Eye/sleeve</option></select></label>
+<label>Selected haft mount type <select id="mount-kind"><option value="tang">Tang</option><option value="eye">Eye/sleeve</option><option value="rope">Rope/chain — span controls reach only</option></select></label>
 <div class="toolbar"><button id="add" type="button">Add haft line</button><button id="remove" type="button">Remove selected line</button></div>
-<p>Line length is the distance from its fixed origin (base) to its arrow tip. Use the number box, its native arrows, or the − / + buttons to adjust length without changing direction.</p>
+<p>Line length is the distance from its fixed origin to its arrow tip. For a <strong>rope</strong> line, this is the full hanging connector reach only; changing it never scales the head or changes rope/chain thickness. Use the number box, its native arrows, or the − / + buttons.</p>
 <div id="attach-controls"></div>
 <label><input id="disallow" type="checkbox"> Explicitly disallow this head on this haft</label>
-<p>A haft can have tang lines, eye lines, or both; only the matching type accepts each head. Explicit exclusions take precedence even for compatible lines.</p>
-<h2>Selected head + haft corrections</h2>
+<p>A haft may have tang, eye and rope lines. The <strong>rope line</strong> is the exact attachment and connector reach whenever present. Without one, the flail uses the exact attachment authored in Complex Tool Visuals — never a modular-head fitting line. Explicit exclusions still take precedence.</p>
+</details>
+<details id="pair-workflow" class="workflow-section"><summary>05 · Pair-specific corrections</summary>
 <label>Sprite layer order <select id="layer-order" aria-label="Selected head and haft sprite layer order">
 <option value="haft-over-head">Haft over head</option>
 <option value="head-over-haft">Head over haft</option>
@@ -116,8 +213,10 @@
 <p>There are no longer global transformations. The matching arrows supply initial translation, rotation, and scaling only along the line direction. These controls adjust only this exact combination, on top of its automatic transform.</p>
 <table><thead><tr><th>Pair correction</th><th>Setting</th></tr></thead><tbody id="fields"></tbody></table>
 <button id="reset-pair" type="button">Reset this pair's manual corrections</button>
-<details class="assembly-element-panel" id="assembly-elements" open>
-<summary>Assembly elements — inspect and remove</summary>
+</details>
+<details class="assembly-element-panel workflow-section" id="assembly-elements"><summary>06 · Inspect components and remove old recipes</summary>
+<div class="assembly-panel-intro">
+</div>
 <p>A head primitive appears once for every compatible mounting line. Those are not recipe boxes. Recipe boxes replay saved metalwork instructions and are listed separately below. Removing a mount affects every head on this haft; removing an operation affects only the selected head + haft.</p>
 <p id="assembly-summary" aria-live="polite"></p>
 <h3>Mounting primitives (whole haft)</h3><div id="assembly-mount-elements"></div>
@@ -133,7 +232,7 @@
 <p>Cleanup removes placements, not saved recipe definitions or unrelated strokes. Confirmed bulk removal is one Undo step. These files do not record who originally placed each recipe.</p>
 <p id="assembly-status" role="status" aria-live="polite"></p>
 </details>
-<h2>Bridge brush for this pair</h2>
+<details id="bridge-workflow" class="workflow-section"><summary>07 · Metalwork, brushes and recipe boxes</summary>
 <p>Click Auto-bridge gaps to join a head that floats off its haft automatically, or paint fat strokes on the assembled weapon yourself; each stroke applies as soon as you let go. The game re-runs the same hollow-and-fill once when it builds this exact combination (cached, never per frame). Metal under strokes is kept; only empty space and outlines are regrown.</p>
 <label><input id="pair-bridge-on" type="checkbox"> Paint on the assembled weapon preview</label>
 <label>Brush <select id="pair-brush-mode"><option value="bridge">Bridge fill — paint a stroke, it fills with metal</option><option value="smudge">Smudge metal — push metal around; the outline is rebuilt on release</option><option value="junction">Place junction piece — a metal connector to bridge to</option><option value="recipe">Recipe box — copy a manual process into a scaled box</option><option value="revert">Revert brush — ease back toward before smudging</option><option value="plow">Pixel plow — push metal flat against a moving blade</option><option value="puff">Puff out — fill dents in the edge (size scales with radius × strength)</option><option value="clean">Clean outline — pull black out and even the outline where you paint</option></select></label>
@@ -178,12 +277,20 @@
 <p id="pair-bridge-status" aria-live="polite"></p>
 <p>White-highlighted arrow is the selected haft line. Move and Rotate gizmos act on the whole selected line, while leaving other lines untouched. The first arrow point is the mounting base, and the arrow tip is the forward direction. Matching directed lines determine position and orientation. Multi-ended hafts may have multiple lines of either kind.</p>
 <p>Drafts save in this browser; gameplay uses the validated draft on reload. Export and commit docs/config/modular-weapons.js to publish your weapon changes for everyone.</p>
-<details><summary>Mobile diagnostics</summary><pre id="debug"></pre></details></section>
-<section class="float-panel" aria-label="Weapon previews"><div class="float-bar" role="toolbar" aria-label="History"><button id="pair-undo" type="button" disabled>↶ Undo</button><button id="pair-redo" type="button" disabled>↷ Redo</button></div><div class="sprites">
-<figure><canvas id="shaft-canvas" width="450" height="1204"></canvas><figcaption>Haft lines <button class="max-toggle" type="button" data-max aria-pressed="false" aria-label="Maximize haft lines preview">⤢ Maximize</button></figcaption></figure>
-<figure><canvas id="head-canvas" width="450" height="1204"></canvas><figcaption>Head line <button class="max-toggle" type="button" data-max aria-pressed="false" aria-label="Maximize head line preview">⤢ Maximize</button></figcaption></figure>
-<figure><canvas id="preview" width="450" height="1204"></canvas><figcaption>Assembled weapon <button class="max-toggle" type="button" data-max aria-pressed="false" aria-label="Maximize assembled weapon preview">⤢ Maximize</button></figcaption></figure></div>
-</section></div><section id="sprite-cutter"><h2>Make a modular head or shaft from a full weapon</h2>
+</details>
+<details id="editor-debug-workflow" class="workflow-section"><summary>Advanced diagnostics (mobile-friendly)</summary><pre id="debug"></pre></details></section>
+<section class="float-panel" aria-label="Weapon previews">
+<div class="float-bar" role="group" aria-label="Full assembly display controls">
+<label class="rig-guide-toggle"><input id="full-assembly-guides" type="checkbox" checked> Show connector endpoints and reach</label><span class="rig-legend">Gold ring = rope starts on haft · Cyan ring = rope attaches to head · Purple dashed ruler = connector reach (not another weapon part)</span>
+</div>
+<div class="sprites"><figure id="flail-preview-figure"><canvas id="flail-preview" width="450" height="1500" aria-label="Full modular flail with actual rope or chain and separately scaled head"></canvas><figcaption>Full assembled rig · complete 2D resting pose, including the actual rope/chain and all head layers <button class="max-toggle" type="button" data-max aria-pressed="false" aria-label="Maximize flail preview">⤢ Maximize</button></figcaption><p id="flail-preview-status" aria-live="polite">The full assembled haft, connector and head are rendered here; markers identify the actual attachment points.</p></figure>
+<details id="source-preview-workflow" class="workflow-section"><summary>Source canvases · edit haft, head and bridge work</summary>
+<p>Open these three workspaces to drag mounts, reposition an authored bore, or paint metalwork. The full rig stays visible above.</p>
+<div class="source-previews"><figure><canvas id="shaft-canvas" width="450" height="1204"></canvas><figcaption>Haft lines <button class="max-toggle" type="button" data-max aria-pressed="false" aria-label="Maximize haft lines preview">⤢ Maximize</button></figcaption></figure>
+<figure><canvas id="head-canvas" width="450" height="1204"></canvas><figcaption>Head source · cyan contact for flail-haft pairs, rigid line otherwise <button class="max-toggle" type="button" data-max aria-pressed="false" aria-label="Maximize head line preview">⤢ Maximize</button></figcaption></figure>
+<figure><canvas id="preview" width="450" height="1204"></canvas><figcaption>Assembled weapon <button class="max-toggle" type="button" data-max aria-pressed="false" aria-label="Maximize assembled weapon preview">⤢ Maximize</button></figcaption></figure></div></details></div>
+</section></div><section id="sprite-cutter"><details id="sprite-cutter-workflow" class="workflow-section"><summary>08 · Make a new part from a weapon sprite (PNG tools)</summary>
+<h2>Make a modular head or shaft from a full weapon</h2>
 <p>Load a complete PNG, draw around any pixels with a finger, stylus, or mouse, then remove the selected region or keep only the selection. Repeat on the remaining image; Undo and Reset protect the original artwork. Export retains the game’s 450 × 1204 coordinates and all surviving RGBA colors/transparency.</p>
 <div class="cut-grid"><div class="cut-controls">
 <label>Existing weapon sprite <select id="cut-existing"></select></label><button id="cut-load-existing" type="button">Load selected weapon</button>
@@ -235,8 +342,8 @@
 <details><summary>Sprite cutter diagnostics</summary><pre id="cut-debug"></pre></details>
 </div><figure class="cut-stage float-panel"><div class="float-bar" role="toolbar" aria-label="Sprite cutter history"><button id="cut-undo" type="button" disabled>↶ Undo</button><button id="cut-redo" type="button" disabled>↷ Redo</button> <button class="max-toggle" type="button" data-max aria-pressed="false" aria-label="Maximize sprite cutter canvas">⤢ Maximize</button></div><canvas id="cut-canvas" width="450" height="1204" aria-label="Draw a lasso around pixels in this weapon sprite"></canvas><figcaption>Lasso editor — drag a loop; releasing closes it. Only PNG pixels, not the yellow selection outline, are exported.</figcaption></figure></div>
 <p>Place the downloaded file in <code>docs/assets/toolsprites/modular_pieces/</code>. To make the new part selectable in the Foundry, add its entry and attachment pivot/socket coordinates to <code>docs/config/modular-weapons.js</code>. Exporting a PNG does not automatically modify the game catalog.</p>
-</section></main>
-<script src="../../config/modular-weapons.js?v=20261107h13e54a4"></script><script src="../../js/modular-weapon-bridge-fill.js?v=20261030rigops6"></script><script src="../../config/weapon-sprite-assemblies.js?v=20261109ropebrown3"></script>
+</details></section></main>
+<script src="../../config/modular-weapons.js?v=20261110pairvalues3"></script><script src="../../js/modular-weapon-bridge-fill.js?v=20261109boreflex1"></script><script src="../../js/color-fill.js?v=20260923colorfill7"></script><script src="../../config/weapon-sprite-assemblies.js?v=20261109ropebrown3"></script>
 <script src="../../js/weapon-layer-effects.js?v=20261109flailFireGC2"></script>
-<script src="../../js/modular-weapons.js?v=20261107auditfix3"></script><script src="mount-gizmos.js?v=20261025length001"></script><script src="junction-picker.js?v=20261029recipes001"></script><script src="recipe-provenance.js?v=20261107recipeaudit2"></script><script src="editor.js?v=20261107recipeaudit2"></script><script src="sprite-outline.js?v=20261025b"></script><script src="sprite-cutter.js?v=20261029recipes001"></script>
+<script src="../../js/modular-weapons.js?v=20261109pairdamage2"></script><script src="mount-gizmos.js?v=20261025length001"></script><script src="junction-picker.js?v=20261029recipes001"></script><script src="recipe-provenance.js?v=20261107recipeaudit2"></script><script src="full-assembly-preview.js?v=20261109headvisual2"></script><script src="editor.js?v=20261110pairfield4"></script><script src="sprite-outline.js?v=20261025b"></script><script src="sprite-cutter.js?v=20261029recipes001"></script>
 </body></html>

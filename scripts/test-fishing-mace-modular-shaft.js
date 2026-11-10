@@ -23,7 +23,18 @@ assert(shaft, 'Fishing Mace shaft must be registered.');
 assert.equal(shaft.sourceShape, 'fishingmace');
 assert.equal(shaft.sprite, 'assets/toolsprites/modular_pieces/weaponshaft_fishing_mace.png');
 assert.equal(fs.existsSync(`docs/${shaft.sprite}`), true, 'Configured Fishing Mace shaft sprite must exist.');
-assert.deepEqual(plain(shaft.mounts), [{ type: 'eye', start: { x: 193, y: 850 }, end: { x: 193, y: 770 } }, { type: 'tang', start: { x: 173, y: 810 }, end: { x: 213, y: 810 } }]); // Hand-authored centered, perpendicular companion tang.
+assert.deepEqual(plain(shaft.mounts.filter(mount => mount.type !== 'rope')),
+  [{ type: 'eye', start: { x: 193, y: 850 }, end: { x: 193, y: 770 } },
+    { type: 'tang', start: { x: 173, y: 810 }, end: { x: 213, y: 810 } }],
+  'Hand-authored eye and perpendicular companion tang remain unchanged beneath the optional flail line.');
+assert.deepEqual(plain(shaft.mounts.find(mount => mount.type === 'rope')),
+  { type: 'rope', start: { x: 193, y: 850 }, end: { x: 0, y: 325 } },
+  'Preserve the user-authored flexible connector without replacing the original rigid mounts.');
+assert.deepEqual(plain(shaft.bores[0]), {
+  id: 'bore-1', offsetX: 0, offsetY: 20, rx: 13.5, ry: 13.5,
+  rotation: 0, rim: 5, outline: 12, shade: 0.65, warp: 1.5,
+  lightX: -0.6, lightY: -0.8, enabled: true,
+}, 'The exact hand-authored bore treatment must survive game-data updates.');
 assert.equal(api.settings('fishing-mace', 'dagger').animation, 'sweep'); // Existing per-pair animation survived the schema conversion.
 assert.equal(shaft.defaults, undefined, 'Global shaft transforms have been removed.');
 assert.equal(api.getConfig().heads['fishing-mace'].mount.type, 'weight');

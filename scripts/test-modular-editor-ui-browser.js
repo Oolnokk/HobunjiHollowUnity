@@ -74,6 +74,7 @@ async function ready(page) {
       'Legacy draft adds two boxes without discarding hand-authored brush strokes');
     assert.equal(await page.locator('#assembly-operation-elements .assembly-element-row button').filter({hasText:'Edit box'}).count(), 2,
       'Only two accidental recipe boxes expose recipe editing');
+    await page.locator('#assembly-elements > summary').click(); // Numbered advanced sections start collapsed; activate before touching their buttons.
     assert.match(await page.locator('#assembly-summary').innerText(), /1 matching head primitive/);
 
     // The new element list opens the correct existing recipe and haft line editors.
@@ -148,6 +149,159 @@ async function ready(page) {
     assert.match(confirmation, /Kylie/);
     assert.equal(await page.evaluate(() => Object.values(window.ModularWeapons.getConfig().shafts.kylie.overrides)
       .flatMap(pair => pair.bridges?.strokes || []).filter(op => op.recipe).length), 1, 'Bulk placement does not add Kylie recipes');
+    // Bore tool is contextual: a flexible SHAFT alone does not show head-owned connector drilling.
+    await page.locator('#shaft').selectOption('grapple-flail');
+    await page.locator('#head').selectOption('fishing-mace'); // Allowed axial mace head; hammers are deliberately excluded by the authored matrix.
+    assert.equal(await page.locator('#flail-preview-figure').isVisible(),true,
+      'complete 2D rig is the primary preview, not hidden beneath source thumbnails');
+    assert.equal(await page.locator('#source-preview-workflow').evaluate(element=>element.open),true,
+      'selecting a mount line automatically opens the source workspace');
+    await page.waitForFunction(()=>document.querySelector('#flail-preview')?.dataset?.rigKind==='flail',
+      null,{timeout:30000});
+    assert.match(await page.locator('#flail-preview-status').innerText(),/Complete rest-pose rig/,
+      'full renderer includes actual flail geometry and annotated real contacts');
+    assert.equal(await page.locator('#full-assembly-guides').isChecked(),true);
+    await page.locator('#full-assembly-guides').uncheck();
+    assert.equal(await page.locator('#full-assembly-guides').isChecked(),false,'hide guide does not modify part authoring');
+    await page.locator('#full-assembly-guides').check();
+    assert.equal(await page.locator('#shaft-bore-panel').isHidden(), true,
+      'a shaft-owned flail with an ordinary rigid modular head cannot reveal connector bore tools');
+    assert.equal(await page.evaluate(() => window.ModularWeapons.flailGuide('grapple-flail','fishing-mace')?.explicitMount), true,
+      'the physical shaft rope mount still provides a visible connector guide');
+    // A rigid head hanging from a flail shaft has a PAIR-LOCAL cyan contact, not an editable global rigid head mounting line.
+    assert.equal(await page.locator('#head-rope-x').isEnabled(),true);
+    assert.equal(await page.locator('#head-rope-y').isEnabled(),true);
+    assert.equal(await page.locator('#head-kind').isDisabled(),true,'rigid mounting type is locked while hanging from a flail');
+    assert.equal(await page.locator('#head-rope-x').inputValue(),'185','weight/sleeve contact defaults to the original head.mount END');
+    assert.equal(await page.locator('#head-rope-y').inputValue(),'894');
+    const originalRigidMount=await page.evaluate(() => JSON.stringify(window.ModularWeapons.getConfig().heads['fishing-mace'].mount));
+    await page.locator('#head-rope-x').fill('199');
+    await page.locator('#head-rope-x').press('Tab'); // Native blur commits once without a second synthetic change.
+    await page.locator('#head-rope-y').fill('911');
+    await page.locator('#head-rope-y').press('Tab');
+    const hangingScale=page.locator('#head-rope-scale');
+    await hangingScale.evaluate(input=>{input.dataset.editMarker='keep-contact-controls';});
+    await hangingScale.fill('1.35');
+    await hangingScale.press('Tab');
+    assert.equal(await hangingScale.getAttribute('data-edit-marker'),'keep-contact-controls',
+      'the head scale editor must remain mounted when leaving the field for pair corrections');
+    assert.deepEqual(await page.evaluate(() => {
+      const api=window.ModularWeapons, recipe=api.flailRecipe('grapple-flail','fishing-mace');
+      return {anchor:recipe.flail.head.anchor,space:recipe.flail.head.anchorSpace,scale:recipe.flail.head.scale};
+    }),{anchor:{x:199,y:911},space:'layer',scale:1.35},
+    'pair-only numeric head contact and independent scale are applied by the ACTUAL runtime assembler');
+    assert.equal(await page.evaluate(() => JSON.stringify(window.ModularWeapons.getConfig().heads['fishing-mace'].mount)),
+      originalRigidMount,'head mounting line is never changed by the hanging rope controls');
+    // The complete canvas must visually re-render when an existing pair-specific scale/flip value changes.
+    await page.locator('#pair-workflow').evaluate(panel=>{ panel.open=true; }); // Keep section 05 open even if earlier tests already expanded it.
+    const previewBefore=await page.locator('#flail-preview').evaluate(canvas=>canvas.toDataURL('image/png'));
+    const scaleYField=page.locator('#fields [aria-label="Pair scaleY"]');
+    await scaleYField.evaluate(input => { input.dataset.editorSaveMarker = 'preserve-active-field'; });
+    await scaleYField.fill('0.45');
+    await scaleYField.press('Tab'); // Save a real numeric edit once; do not dispatch a second event on a replacement input.
+    assert.equal(await scaleYField.getAttribute('data-editor-save-marker'),'preserve-active-field',
+      'saving a pair correction must not replace its focused number field or lose mobile keyboard editing');
+    const pairedScale=await page.evaluate(() => {
+      const api=window.ModularWeapons, pair=api.getConfig().shafts['grapple-flail'].overrides['fishing-mace'];
+      return {field:document.querySelector('#fields [aria-label="Pair scaleY"]')?.value,
+        pairScaleY:pair.scaleY,renderScaleY:api.flailRecipe('grapple-flail','fishing-mace')?.flail?.head?.visualTransform?.scaleY,
+        status:document.querySelector('#status')?.textContent};
+    }); // Fail with actual browser state rather than an opaque 30-second polling timeout.
+    assert.equal(pairedScale.renderScaleY,0.45,
+      'Pair scaleY must survive the editor save and reach the real flail recipe: '+JSON.stringify(pairedScale));
+    await page.waitForFunction(previous => document.querySelector('#flail-preview')?.toDataURL('image/png')!==previous,
+      previewBefore,{timeout:30000});
+    assert.match(await page.locator('#pair-transform-status').innerText(),/scale 1 × 0.45/,
+      'mobile diagnostics report the head-only visual correction actually used in the full rig');
+    const flipYField=page.locator('#fields [aria-label="Pair flipY"]');
+    await flipYField.check(); // Flipping a suspended head changes art only, not the authored rigid fitting line.
+    await page.waitForFunction(()=>window.ModularWeapons.flailRecipe(
+      'grapple-flail','fishing-mace')?.flail?.head?.visualTransform?.flipY===true);
+    assert.equal(await page.evaluate(() => window.ModularWeapons.flailRecipe(
+      'grapple-flail','fishing-mace').flail.chain.mountLengthPx),843.75,
+      'pair-specific head scaling and reversal do not alter connector length');
+    assert.equal(await page.evaluate(() => JSON.stringify(window.ModularWeapons.getConfig().heads['fishing-mace'].mount)),
+      originalRigidMount,'pair scale and flip never alter original mace head mounting geometry');
+    await page.locator('#head').selectOption('pick-shovel-pick'); // Exact new allowance and damage override from user export.
+    assert.equal(await page.locator('#pair-damage-type').inputValue(),'blunt');
+    assert.deepEqual(await page.evaluate(() => {
+      const api=window.ModularWeapons,head=api.getConfig().heads['pick-shovel-pick'];
+      const flail=api.flailRecipe('grapple-flail','pick-shovel-pick');
+      return {allowed:!api.isDisallowed('grapple-flail','pick-shovel-pick'),
+        flailDamage:api.weaponDamageType('grapple-flail','pick-shovel-pick'),
+        normalDamage:api.weaponDamageType('fishing-spear','pick-shovel-pick'),
+        headDamage:head.dmgType,flipY:flail.flail.head.visualTransform.flipY};
+    }),{allowed:true,flailDamage:'blunt',normalDamage:'sharp',headDamage:'sharp',flipY:true},
+    'Pick Head is blunt only on this flail shaft, while its original sharp geometry and ordinary weapons remain intact');
+    assert.match(await page.locator('#pair-transform-status').innerText(),/blunt damage/);
+    await page.locator('#head').selectOption('fishing-mace'); // Reset the correct pair; Pick Head was selected only for its blunt damage check.
+    await page.locator('#head-contact-reset').click();
+    assert.equal(await page.locator('#head-rope-x').inputValue(),'185','reset restores the original rigid sleeve endpoint');
+    await page.locator('#head-contact-move').click(); // Open source canvas and activate pair-only point editing on mobile.
+    assert.equal(await page.locator('#source-preview-workflow').evaluate(section=>section.open),true);
+    const contactCanvas=page.locator('#head-canvas');
+    await contactCanvas.click({position:{x:80,y:110}}); // Touch click moves cyan contact, not the stored rigid arrow.
+    assert.notDeepEqual(await page.evaluate(() => window.ModularWeapons.flailRecipe('grapple-flail','fishing-mace').flail.head.anchor),
+      {x:185,y:894},'tapping source head canvas creates an editable hanging contact');
+    assert.equal(await page.evaluate(() => JSON.stringify(window.ModularWeapons.getConfig().heads['fishing-mace'].mount)),
+      originalRigidMount,'cyan source editing leaves original head coordinates unchanged');
+    await page.locator('#head').selectOption('dagger');
+    assert.equal(await page.locator('#head-rope-x').inputValue(),'207','other head pairs retain their own tang START');
+    assert.equal(await page.locator('#head-rope-y').inputValue(),'623');
+    await page.locator('#shaft').selectOption('fishing-mace');
+    await page.locator('#head').selectOption('grapple-flail');
+    assert.equal(await page.locator('#flail-authoring-panel').evaluate(section=>section.open),true,
+      'active flail controls are open while unrelated systems remain collapsible');
+    assert.match(await page.locator('.rig-legend').innerText(),/Gold ring.*Cyan ring.*Purple dashed ruler/,
+      'the visible full-rig legend explains the connector and both endpoints');
+    assert.equal(await page.evaluate(() => window.ModularWeapons.flailGuide('fishing-mace','grapple-flail')?.explicitMount),
+      true,'the hand-authored Fishing Mace has its own visible rope mount and preserved bore treatment');
+    assert.equal(await page.evaluate(() => window.ModularWeapons.isDisallowed('grapple-flail','warhammer')),true,
+      'authored flail shaft exclusions reject hammers even though mace heads are allowed');
+    await page.waitForFunction(() => document.querySelector('#shaft-bore-panel')?.hidden === false,
+      null,{timeout:30000});
+    assert.equal(await page.locator('#bore-add').isEnabled(), true);
+    assert.equal(await page.evaluate(() => window.ModularWeapons.getConfig().shafts['fishing-mace'].bores[0].offsetY),
+      20,'the uploaded example remains 20px below the physical connector contact');
+    await page.locator('#bore-add').click(); // The example already owns one 27px bore; add a separate default 20px bore.
+    assert.equal(await page.locator('#bore-x').inputValue(), '0', 'new bore X offset is zero at the rope attachment');
+    assert.equal(await page.locator('#bore-y').inputValue(), '0', 'new bore Y offset is zero at the rope attachment');
+    assert.equal(await page.locator('#bore-rx').inputValue(), '20', 'new hole is 20px wide');
+    assert.equal(await page.locator('#bore-ry').inputValue(), '20', 'new hole is 20px high');
+    assert.equal(await page.locator('#bore-outline').inputValue(), '3', 'a black interior rim is automatically authored');
+    assert.equal(await page.locator('#source-preview-workflow').evaluate(section=>section.open),true,
+      'starting a bore drag reveals the touch-editable haft canvas automatically');
+    assert.equal(await page.locator('#head-rope-x').isDisabled(), true,
+      'the multi-sprite head author, not a modular fitting arrow, owns its attachment');
+    assert.deepEqual(await page.evaluate(() => {
+      const api=window.ModularWeapons, config=api.getConfig(), shaft=config.shafts['fishing-mace'];
+      const hole=api.resolvedBores(shaft,config.heads['grapple-flail']).at(-1); // The newly added zero-offset bore is selected, not the preserved reference bore.
+      const anchor=api.flailRecipe('fishing-mace','grapple-flail').flail.haftAnchor;
+      return {hole:{x:hole.x,y:hole.y},anchor:{x:anchor.x,y:anchor.y}};
+    }),{hole:{x:193,y:850},anchor:{x:193,y:850}},
+    'the pixel compositor and rope attach to the exact same authored source point');
+    await page.locator('#bore-x').fill('15');
+    await page.locator('#bore-x').dispatchEvent('change');
+    assert.equal(await page.evaluate(() => window.ModularWeapons.getConfig().shafts['fishing-mace'].bores.at(-1).offsetX),15);
+    await page.locator('#head').selectOption('warhammer');
+    assert.equal(await page.locator('#shaft-bore-panel').isHidden(),true,'switching to a normal head hides drilling');
+    assert.equal(await page.evaluate(() => window.ModularWeapons.resolvedBores(
+      window.ModularWeapons.getConfig().shafts['fishing-mace'],
+      window.ModularWeapons.getConfig().heads.warhammer).length),0,'a normal weapon never receives the bore in gameplay');
+    await page.locator('#head').selectOption('grapple-flail');
+    assert.equal(await page.locator('#bore-x').inputValue(),'15','relative offsets survive switching heads');
+    await page.waitForFunction(() => document.querySelector('#flail-preview-figure')?.hidden === false,
+      null,{timeout:30000});
+    // Test authored-head anchor is preserved even if the modular editor's stored head arrow is radically moved.
+    assert.deepEqual(await page.evaluate(() => {
+      const api=window.ModularWeapons, config=JSON.parse(JSON.stringify(api.getConfig()));
+      const before=api.flailRecipe('fishing-mace','grapple-flail').flail.head.anchor;
+      config.heads['grapple-flail'].mount={type:'weight',start:{x:5,y:7},end:{x:90,y:101}};
+      api.replace(config);
+      const after=api.flailRecipe('fishing-mace','grapple-flail').flail.head.anchor;
+      return {before,after};
+    }).then(value=>JSON.parse(JSON.stringify(value))),{before:{x:8,y:190},after:{x:8,y:190}},
+    'moving the unused modular head arrow cannot move the real multi-sprite flail attachment');
     assert.deepEqual(errors, [], 'Actual mobile editor should not throw JS exceptions');
     console.log('Modular editor browser: PASS (old Kylie draft, primitive rows, recipe edit, cleanup, Undo/Redo, bulk scope)');
   } finally { await browser?.close(); await new Promise(resolve => server.close(resolve)); }
