@@ -3,7 +3,7 @@
 (() => {
   'use strict';
   if(window.BanditStrongholdCombat)return;
-  const MIN_RANGE_TILES=2.9; // Range for the optional thrower AI; nearby targets use normal melee.
+  const MIN_RANGE_TILES=5.8; // Must exceed the real Shattercask's 5-tile blast radius; close enemies use melee.
   const MAX_RANGE_TILES=10; // Upper throw distance limited by actual cover/LOS.
   const MIN_COOLDOWN=5.1; // Per-enemy deterministic stagger avoids simultaneous projectile bursts.
   const MAX_COOLDOWN=8.7; // Upper throw gap; does not affect ordinary bandits.
@@ -28,11 +28,18 @@
       z:(target.z-start.z)/flightSeconds,flightSeconds,horizontal};
   }
 
+  function selfBlastSafe(actor,target,tile=Number(actor?._strongholdTileSize)||64) {
+    if(!actor||!target||!Number.isFinite(Number(tile))||tile<=0)return false;
+    const blastRadius=Math.max(0,Number(window.Shattercasks?.RADIUS)||5); // Source-of-truth shared explosion radius, not a guessed smaller grenade splash.
+    const distance=Math.hypot(Number(target.x)-Number(actor.x),Number(target.y)-Number(actor.y))/tile;
+    return Number.isFinite(distance)&&distance>=Math.max(MIN_RANGE_TILES,blastRadius+.8);
+  }
+
   async function launch(actor,target,kind,owningArea) {
     const api=window.Shattercasks,scene=actor?.scene;
     const tile=Number(actor?._strongholdTileSize)||64;
     if(!api?.createHangingBurden||!api?.releaseBurdenWithVelocity||!scene||!target||actor.health<=0)return false;
-    if(actor.areaId!==owningArea||(target.areaId&&target.areaId!==owningArea))return false;
+    if(actor.areaId!==owningArea||(target.areaId&&target.areaId!==owningArea)||!selfBlastSafe(actor,target,tile))return false; // Own blast is forbidden even when allied bandits are within the splash.
     const sourceY=Number(actor.avatarRef?.group?.position?.y);
     const start={x:actor.x/tile,y:Number.isFinite(sourceY)?sourceY+.22:.95,z:actor.y/tile};
     const hitbox=window.RangedWeapons?.actorHitbox?.(target);
@@ -76,7 +83,7 @@
     if(actor._strongholdThrowPending||actor._banditAction||actor.retreatT>0||actor._strongholdThrowCooldown>0)return null;
     const tile=Number(actor._strongholdTileSize)||64;
     const distance=Math.hypot(target.x-actor.x,target.y-actor.y);
-    if(distance<MIN_RANGE_TILES*tile||distance>MAX_RANGE_TILES*tile)return null;
+    if(distance>MAX_RANGE_TILES*tile||!selfBlastSafe(actor,target,tile))return null; // Friendlies are intentionally *not* in this check.
     if(window.RangedWeapons?.hasLineOfSight?.(actor,target)===false)return null;
     const anim=window.HeldActionAnimations?.throwFlask;
     if(!anim?.poses||!window.Combat?.beginStagedAction)return null;
@@ -110,5 +117,5 @@
 
   const debugSnapshot=()=>({...stats,lastThrow,gravity:GRAVITY_WORLD_S2,cooldown:[MIN_COOLDOWN,MAX_COOLDOWN]});
   window.BanditStrongholdCombat=Object.freeze({updateThrow,launch,arc,debugSnapshot,
-    __test:Object.freeze({chooseKind,cooldownFor})});
+    __test:Object.freeze({chooseKind,cooldownFor,selfBlastSafe})});
 })();
