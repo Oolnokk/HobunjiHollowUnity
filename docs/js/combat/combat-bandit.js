@@ -1139,6 +1139,8 @@
     return fallbackTarget;
   } // Keeps ordinary player combat unchanged whenever no local faction target is assigned.
   function damageBanditCombatTarget(c, target, amount, fromX, fromY, knockbackPxS, opts = {}) {
+    if(c?.banditStrongholdBoss && target?.banditStrongholdBossWolf
+      && target.banditStrongholdBossId===c.id)return false; // Lord attacks cannot damage his own summoned wolves.
     opts = window.BanditStrongholdBoss?.enrichHit?.(c,opts) || opts; // Mastery-5 Lord draws three genuine affliction rows per successful hit.
     const actorTarget = target && (
       target.isBandit === true
