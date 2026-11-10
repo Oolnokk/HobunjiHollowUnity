@@ -409,14 +409,19 @@
             metalOptions: source.metalOptions, masteryLevel: source.masteryLevel,
           });
         }
-        if (states.has(copy)) {
-          setAction(copy, {
-            attacking: source.attacking, progress: source.progress,
-            windupFrac: source.wf, strikeFrac: source.sf, holdFrac: source.hf,
-            pitchTravelDeg: Number.isFinite(source.pitchTravelRad) ? source.pitchTravelRad * 180 / Math.PI : undefined,
-            yawTravelDeg: source.yawTravelRad * 180 / Math.PI,
-            movementPosition: source.movementPosition,
-          });
+        const replica = states.get(copy); // The other hand has its own pendulum history, never shared with this source state.
+        if (replica) {
+          if (replica.attacking !== source.attacking || replica.progress !== source.progress
+            || replica.wf !== source.wf || replica.sf !== source.sf || replica.hf !== source.hf
+            || replica.pitchTravelRad !== source.pitchTravelRad || replica.yawTravelRad !== source.yawTravelRad) {
+            setAction(copy, {
+              attacking: source.attacking, progress: source.progress,
+              windupFrac: source.wf, strikeFrac: source.sf, holdFrac: source.hf,
+              pitchTravelDeg: Number.isFinite(source.pitchTravelRad) ? source.pitchTravelRad * 180 / Math.PI : undefined,
+              yawTravelDeg: source.yawTravelRad * 180 / Math.PI,
+              movementPosition: source.movementPosition,
+            });
+          } else replica.movementPosition = source.movementPosition; // Avoid resetting idle gravity/lag on every socket sync.
         }
       }
     } else {
