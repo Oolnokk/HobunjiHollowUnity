@@ -12,6 +12,36 @@ conditions on the same machine; they are not what a player sees.** Counts come f
 comes from CDP CPU profiles. One headless world per run, and bandit/tribe camps are random, so repeat anything
 close before trusting it.
 
+## 10 Nov 2026: attack-frame hitch investigation — pooled melee swipe ribbons
+
+The shared `Combat.spawnMeleeTrail` path, used by player and humanoid/bandit strike effects, allocated
+a new BufferGeometry, index array, position buffer, material and Mesh for **every** displayed
+attack ribbon, then disposed them after roughly 0.34 seconds. Multi-affliction bandits can
+spawn up to four differently colored ribbons per strike. This is a credible source of
+one-frame CPU allocations, GPU buffer uploads and shader state churn **on impact**, but has
+not yet been isolated in a real-device trace as the cause of the reported pauses.
+
+The shared combat owner now reuses fully retired ribbon meshes and position buffers across
+attacks, resets geometry/colors/opacity for every new hit and keeps at most 64 idle ribbons;
+overflow is disposed. A regression fires 70 simultaneous trails and checks distinct live meshes,
+the bounded cache, cross-scene reuse and scene cleanup. The existing Performance Profiler now
+measures separately the **player** and **enemy** strike callbacks; Pixel Probe shows their last
+and peak measured CPU milliseconds alongside GPU ribbon allocation/reuse totals. Timings
+appear only with the profiler enabled; they do not include GPU render time.
+
+**Follow-up observation:** the freeze also occurs on swings that miss. Bandits create their
+swoosh ribbons before hit testing, so those attacks still exercise the pooled path.
+The new regression explicitly fires a missed hostile attack without damage and confirms
+the ribbon is recycled. Additionally, the bandit weapon-pose update measures its own CPU
+time while the swing or recovery is active (with Performance Profiler enabled); Pixel Probe
+reports the peak/last per-bandit pose cost. No production FPS improvement is claimed.
+
+**Important distinction:** `GameFeel.hitStop` deliberately slows simulation by up to 0.14 s
+on certain hits while rendering should continue. A perceived animation pause at the
+impact frame is not proof of a GPU or JS stall; **a completely missed attack does not
+explain itself through hit-stop**. Compare hardware frame time, the new swing-pose profile,
+strike callback max and hit-stop events before declaring a full freeze fixed.
+
 ## What the symptom turned out to be
 
 "Slow in the wilderness, gets worse after fights, never recovers" had **two** causes, both fixed:
@@ -164,6 +194,22 @@ something new is leaking; take the `survive` listing and look at the holder path
 Scratch-only debug hooks were used for the measurement and are not in the repo; the analyser logic is described above
 (BFS retainer paths over snapshots, id-range to date objects). Hooks that are in the game and useful here:
 `__zoneCacheDebug` (`built()`, `blocker(mapId)`, `history()`), `HobunjiCacheAudit`, `renderer.info.memory`.
+
+## Cliffside fight trace (9 Nov 2026)
+
+The Opera trace during a fight with Omgurku showed about 4.36 s inclusive in `findNpcPath`, 2.16 s self time in
+`isNpcPositionWalkable`, and 2.40 s of style recalculation across the capture. NPC A* now discards edges that
+cannot improve the route before sweeping, reuses checked center footprints, and skips repeated structural
+point checks inside a clear body footprint. Ruin entrance boxes are indexed when the zone meshes build, and
+table point probes go directly to one bucket. The action arch also keeps its decorated buttons intact when
+reticle movement leaves their action and markup unchanged.
+
+In a deterministic 24×24 cliff fixture, an unreachable search expanded the same 287 nodes with 402 sweeps
+instead of 1,038. Exact structural provider calls dropped from 86,640 to 3,210 per search, including point
+calls through the old furniture query. All 240 seeded route comparisons matched, including maps with ramps
+and elevation changes. Pixel Probe reports skipped A* edges and action-button markup writes. The trace
+does not attribute style recalculation to a specific caller or isolate a Three.js render pass. These
+measurements are from the collision fixture, and the change has no live fight FPS measurement yet.
 
 ## Real but not fixed (start here if you are asked to go further)
 

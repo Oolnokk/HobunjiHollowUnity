@@ -21,7 +21,7 @@
   document.write('<script src="js/ruin-footprint-pixel-probe.js?v=20261015ruinfootprintprobe1"></scr' + 'ipt>'); // One-shot Pixel Probe adapter: ray-tests the exact oriented ruin footprints used by movement/projectile occupancy.
   if (!window.DynamicSurfaces) document.write('<script src="js/dynamic-surfaces.js?v=20260914v50wallsinputs1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-config.js?v=20260929config1"></scr' + 'ipt>'); // docs/config/random-ruin/ruin-config.json loader, read by every ruin module below.
-  if (!window.FurnitureDecalRuntime) document.write('<script src="js/furniture-decal-runtime.js?v=20261108h4717d33"></scr' + 'ipt>'); // Authored decals + state glow (usually already loaded by zone features).
+  if (!window.FurnitureDecalRuntime) document.write('<script src="js/furniture-decal-runtime.js?v=20261110tankanring1"></scr' + 'ipt>'); // Authored decals + state glow (usually already loaded by zone features).
   document.write('<script src="js/dev-random-ruin-furniture-pieces.js?v=20261107combined1520_1524_1"></scr' + 'ipt>'); // Door seals, glyph plaques, Great Door as authored furniture.
   document.write('<script src="js/dev-random-ruin-hit-puzzles.js?v=20261108h0dc210f"></scr' + 'ipt>'); // Plain source (formerly nine base64 part files reassembled with eval).
   document.write('<script src="js/dev-random-ruin-prototype-hooks.js?v=20261018badge1"></scr' + 'ipt>');
@@ -34,7 +34,7 @@
   document.write('<script src="js/stone-age-ruin-scenery.js?v=20261102h20daaea"></scr' + 'ipt>'); // Same quarry floor, wall rockification and Temple vegetation as the author preview.
   document.write('<script src="js/dev-random-ruin-door-slabs.js?v=20261105slab1"></scr' + 'ipt>'); // Must precede the interior map: its material pass calls DevRandomRuinDoorSlabs.normalize.
   document.write('<script src="js/dev-random-ruin-cube-pillars.js?v=20261105cube2"></scr' + 'ipt>'); // Must precede the interior map: its material pass calls DevRandomRuinCubePillars.normalize.
-  document.write('<script src="js/dev-random-ruin-interior-map.js?v=20261109ropeLabPreset1shellaudit1pitCutout1"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-interior-map.js?v=20261110hff182fb"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-wall-planes.js?v=20260927geometry1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-wall-render-proxy.js?v=20261107nativeglyphsource1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-collision-precision.js?v=20261107hf7aabd8"></scr' + 'ipt>');
@@ -43,7 +43,7 @@
   document.write('<script src="js/dev-random-ruin-ceiling-target-visuals.js?v=20261108h810cd97"></scr' + 'ipt>'); // Reused, connected stone block + four glowing decals, for fixed and moving overhead targets.
   if (!window.RopeCore) document.write('<script src="js/rope-core.js?v=1"></scr' + 'ipt>'); // The ruin rope runtime delegates its swing math to RopeCore (also loaded by index.html for other rope users).
   document.write('<script src="js/ruin-melody-glyph-decal.js?v=20261104scratchbone3"></scr' + 'ipt>'); // Procedural, non-interactive floor inscription for each generated melody.
-  document.write('<script src="js/dev-random-ruin-simple-puzzles.js?v=20261109whiteRopeZigzag1pitCutout1"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-simple-puzzles.js?v=20261109stoneclockflail3"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-rope-rewards.js?v=20261107ruinpngglow1"></scr' + 'ipt>'); // Registers rope payoffs + lava basins as a simple-puzzle composer.
   document.write('<script src="js/dev-random-ruin-rope-variants.js?v=20261106h1a72ad5"></scr' + 'ipt>'); // Pump-to-height and rope-to-rope standalone rope rooms.
   document.write('<script src="js/dev-random-ruin-rail-targets.js?v=20261018sconceaudit2"></scr' + 'ipt>'); // Ceiling-rail projectile targets that emerge from the walls while the player is in their room.

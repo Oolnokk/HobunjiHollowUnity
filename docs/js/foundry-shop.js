@@ -61,7 +61,7 @@
     const status = global.TownMine.improvementStatus('foundry'); // Same authority owns durable investment state and costs.
     if (!status) return;
     const section = element('section', '', 'foundry-section'); // Live investment/builder panel inside the smith menu.
-    section.style.cssText = 'padding:12px;border:1px solid #479c89;border-radius:8px;margin-bottom:12px;display:grid;gap:10px';
+    section.style.cssText = 'padding:12px;border:1px solid #479c89;border-radius:8px;margin-bottom:12px;display:grid;grid-template-columns:minmax(0,1fr);min-width:0;max-width:100%;box-sizing:border-box;gap:10px';
     list.appendChild(section);
     section.appendChild(element('h3', status.built ? '⚒️ Foundry — Custom Weapons' : 'Town Improvement — Foundry'));
     if (!status.built) {
@@ -82,28 +82,43 @@
     if (!deps.VERDIGRIS_METAL_KEYS.includes(selection.metal)) selection.metal = deps.VERDIGRIS_METAL_KEYS[0];
     section.appendChild(select('Shaft', available.shafts, key => config.shafts[key].label, selection.shaft, value => { selection.shaft = value; }));
     if (!allowedHeads.length) { section.appendChild(element('p', 'No unlocked heads are allowed on this shaft. Choose another shaft.')); return; }
-    section.appendChild(select('Head', allowedHeads, key => `${config.heads[key].label} (${config.heads[key].dmgType})`, selection.head, value => { selection.head = value; }));
+    section.appendChild(select('Head', allowedHeads, key => `${config.heads[key].label} (${global.ModularWeapons.weaponDamageType(selection.shaft,key)})`, selection.head, value => { selection.head = value; }));
     section.appendChild(select('Metal', deps.VERDIGRIS_METAL_KEYS, key => deps.METAL_DEFS[key].label, selection.metal, value => { selection.metal = value; }));
+    const item = global.ModularWeapons.itemKey(selection.shaft, selection.head, selection.metal); // Preview and purchase refer to the same saved key.
+    const definition = deps.TOOL_ITEM_DEFS[item]; // Registered combined head/haft abilities, including canonical equipment slots and mastery policies.
+    const cost = config.craftCost; // Authored new-weapon cost.
+    const owned = !!deps.getGearInventory()?.tools?.[item]; // One owned weapon per part/material combination, matching normal smithing.
+    const shortages = []; // Human-readable missing-resource status below the Forge action, rather than an invisible disabled button.
+    if (count('gold') < cost.gold) shortages.push(`${cost.gold - count('gold')} bronze`);
+    if (count(deps.metalBarItemKey(selection.metal)) < cost.bars) shortages.push(`${cost.bars - count(deps.metalBarItemKey(selection.metal))} ${deps.METAL_DEFS[selection.metal].label} bars`);
+    if (woodCount() < cost.wood) shortages.push(`${cost.wood - woodCount()} wood`);
+    section.appendChild(element('p', definition.label, 'foundry-weapon-name')); // The actual forged name is authored grammatically, never as "head / shaft".
+    section.appendChild(element('p', `${cost.gold} bronze · ${cost.bars} metal bars · ${cost.wood} wood`, 'foundry-craft-cost')); // Price remains visible even if a disabled action is skipped by controller navigation.
+    const button = element('button', owned ? 'Already forged' : 'Forge custom weapon', 'shop-buy-btn foundry-forge-button'); // The main action stays immediately beside the selected recipe, above the tall preview and details.
+    button.type = 'button'; button.disabled = owned || shortages.length > 0;
+    button.onclick = () => { const result = craft(selection.shaft, selection.head, selection.metal); deps.showToast(result.message, result.ok); deps.rerender(); };
+    section.appendChild(button);
+    if (owned || shortages.length) section.appendChild(element('p', owned ? 'This exact combination is already in your equipment.' : `To forge, you still need: ${shortages.join(', ')}.`, 'foundry-craft-status'));
     const image = document.createElement('img'); // Cached composition uses exactly the runtime sprite; metal uses the existing recolorer.
     const serial = ++previewSerial; // Ignore older selections resolving after the current one.
-    image.alt = 'Custom weapon preview'; image.style.cssText = 'height:220px;width:100px;object-fit:contain;justify-self:center';
+    image.alt = 'Custom weapon preview'; image.style.cssText = 'height:clamp(100px,22vh,170px);width:min(100px,100%);object-fit:contain;justify-self:center';
     section.appendChild(image);
-    const item = global.ModularWeapons.itemKey(selection.shaft, selection.head, selection.metal); // Preview and purchase refer to the same saved key.
     global.ToolMetalRecolor.getRecoloredCanvas(item, { targetHex: deps.METAL_DEFS[selection.metal].hex }).then(canvas => {
       if (serial === previewSerial && image.isConnected) image.src = canvas.toDataURL('image/png');
     }).catch(error => { if (serial === previewSerial && image.isConnected) { image.alt = error.message; deps.showToast(error.message, false); } }); // Ignore an outdated preview failure.
     const donor = config.shafts[selection.shaft].sourceShape; // Explain the donor rules before spending resources.
     const handMode = global.HobunjiHandToolGrips?.weaponHandModeForTool?.(donor) || 'two-hand'; // Shared runtime handedness.
-    section.appendChild(element('p', `${handMode} · ${config.heads[selection.head].dmgType} · Attacks: ${deps.TOOL_ITEM_DEFS[item].animStyle} · Grip, scale and idle stance follow ${config.shafts[selection.shaft].label}.`));
-    const cost = config.craftCost; // Authored new-weapon cost.
-    const owned = !!deps.getGearInventory()?.tools?.[item]; // One owned weapon per part/material combination, matching normal smithing.
-    const button = element('button', owned ? 'Already forged' : `Forge — ${cost.gold} bronze + ${cost.bars} bars + ${cost.wood} wood`, 'shop-buy-btn'); // Final purchase action.
-    button.type = 'button'; button.disabled = owned || count('gold') < cost.gold || count(deps.metalBarItemKey(selection.metal)) < cost.bars || woodCount() < cost.wood;
-    button.onclick = () => { const result = craft(selection.shaft, selection.head, selection.metal); deps.showToast(result.message, result.ok); deps.rerender(); };
-    section.appendChild(button);
-    const debug = element('details', ''); // Console-free mobile diagnostics, opened only on demand.
+    const weaponDetails = element('details', '', 'foundry-weapon-details'); // Long technical descriptions stay available without pushing the primary action off a phone screen.
+    weaponDetails.appendChild(element('summary', 'Weapon details'));
+    weaponDetails.appendChild(element('p', `${handMode} · ${definition.dmgType} · Attacks: ${definition.animStyle} · Slots: ${definition.slots.join(', ')} · Grip and idle stance follow ${config.shafts[selection.shaft].label}.`));
+    if (definition.slots.some(slot => slot !== 'weapon'))
+      weaponDetails.appendChild(element('p', 'This head supplies utility abilities on a tool-worthy haft. Each tool slot uses its existing action-specific Mastery XP source and amount.'));
+    if (definition.weaponAssembly?.flail)
+      weaponDetails.appendChild(element('p', 'Flexible rope/chain: attached to the haft and head with live swinging physics. The still image previews the haft; the head is rendered separately while equipped.'));
+    section.appendChild(weaponDetails);
+    const debug = element('details', '', 'foundry-weapon-diagnostics'); // Console-free mobile diagnostics, opened only on demand.
     debug.appendChild(element('summary', 'Weapon assembly diagnostics'));
-    debug.appendChild(element('pre', JSON.stringify({ ...global.ModularWeapons.diagnostics(item), handMode, settings: global.ModularWeapons.settings(selection.shaft, selection.head) }, null, 2)));
+    debug.appendChild(element('pre', JSON.stringify({ ...global.ModularWeapons.diagnostics(item), slots: definition.slots, handMode, flail: definition.weaponAssembly?.flail || null, settings: global.ModularWeapons.settings(selection.shaft, selection.head), forgeButton: { present: true, disabled: button.disabled, owned, shortages } }, null, 2)));
     section.appendChild(debug);
   }
   global.FoundryShop = { init: value => { deps = value; }, render, craft, choices };

@@ -30,7 +30,7 @@
       || document.querySelector('script[data-hobunji-held-render-order]')) return;
 
   const composerSrc = 'js/surface-occlusion-composer.js?v=20261102composer2';
-  const heldSrc = 'js/held-object-render-order.js?v=20261109scopeReplayFix1';
+  const heldSrc = 'js/held-object-render-order.js?v=20261110hbf9c869';
 
   function loadHeldRenderer() {
     if (window.HeldObjectRenderOrder?.installed

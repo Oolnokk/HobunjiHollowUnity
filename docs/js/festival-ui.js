@@ -7,7 +7,10 @@
   let eventId = ''; // Prevents stale menus surviving a festival/date change.
   let lock = null; // Existing character-action authority owns movement/tool blocking while the menu is open.
   let previousFocus = null; // Restored on dismissal for keyboard and controller users.
-  let selection = {}; // Exact inventory quality and blessing chosen before committing an offering.
+  let selection = {}; // Exact inventory quality and genotype variant selected for the ancestor offering.
+  let offeringFilter = ''; // Touch search persists while a controller user moves between category groups.
+  let selectedOfferingButton = null; // Lets preview updates change only the old/new button state instead of rebuilding every card.
+  const offeringUiDebug = { listBuilds:0, detailUpdates:0, lastVisibleCount:0 }; // Copied with festival diagnostics for mobile performance/focus checks.
   let busy = false; // Stops double-clicked async activities and reward actions.
   const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])); // Shared safe text interpolation.
   function system() { return window.FestivalSystem; }
@@ -17,15 +20,101 @@
     const style = document.createElement('style'); // Scoped styles support phone portrait/landscape and the existing game palette.
     style.textContent = '#festivalDialog{position:fixed;inset:0;z-index:1100;background:#071318bb;display:none;align-items:center;justify-content:center;padding:12px;box-sizing:border-box}#festivalDialog .festival-card{width:min(620px,100%);max-height:85dvh;overflow:auto;background:#162622;color:#f3ebd8;border:2px solid var(--festival-color,#dbc296);border-radius:14px;padding:18px;box-sizing:border-box;box-shadow:0 15px 65px #0009}#festivalDialog h2{margin:0 0 6px;color:var(--festival-color)}#festivalDialog p{line-height:1.5}#festivalDialog button{min-height:44px;padding:9px 12px;margin:4px;border:1px solid #b5c4ac;border-radius:7px;background:#30483d;color:#fff;font:inherit}#festivalDialog button:disabled{opacity:.45}#festivalDialog .festival-options{display:flex;flex-wrap:wrap;gap:4px}#festivalDialog [aria-pressed=true]{background:#51652d;border:2px solid #ffe08a}#festivalDialog .festival-note{font-size:13px;color:#b8c8b9}#festivalDialog pre{white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;font-size:12px}#festivalDialog .festival-status{padding:8px;background:#0c1916;border-radius:6px}';
     style.textContent += '#festivalDialog .festival-dish-picker{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:5px}#festivalDialog .festival-dish-picker button{margin:0;text-align:left;white-space:pre-line;overflow-wrap:anywhere}#festivalDialog .festival-dish-picker button[aria-pressed=true]{border-color:#ffe08a;background:#465b36}#festivalDialog .festival-dish-info{margin-top:14px;border-top:1px solid #68775f;padding-top:10px}#festivalDialog .festival-ingredient-list{list-style:none;padding:0;margin:8px 0}#festivalDialog .festival-ingredient-list li{padding:9px 4px;border-bottom:1px solid #56665a}#festivalDialog .festival-ingredient-list small{display:block;color:#b8c8b9;margin-top:3px}#festivalDialog .festival-dish-total{padding:7px 10px;background:#253a31;border-radius:6px}';
+    style.textContent += '#festivalDialog .festival-card.festival-offering-view{width:min(860px,100%)}#festivalDialog .festival-offering-search{width:100%;min-height:44px;background:#0c1916;color:#fff;border:1px solid #879b81;border-radius:8px;padding:10px;font:inherit;box-sizing:border-box}#festivalDialog .festival-offering-group{margin:12px 0;padding:10px;background:#192e29;border:1px solid #44584e;border-radius:10px}#festivalDialog .festival-offering-group h3{margin:0 0 9px;font-size:17px}#festivalDialog .festival-offering-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,230px),1fr));gap:8px}#festivalDialog .festival-offering-choice{display:flex;gap:9px;align-items:flex-start;width:100%;margin:0;text-align:left;min-height:62px;padding:10px;background:#263d35}#festivalDialog .festival-offering-choice span{display:block;min-width:0;overflow-wrap:anywhere}#festivalDialog .festival-offering-choice small{display:block;color:#c0d4c6;line-height:1.35;font-size:12px;margin-top:4px}#festivalDialog .festival-offering-choice .festival-offering-icon{font-size:25px;min-width:30px;text-align:center}#festivalDialog .festival-offering-group[hidden],#festivalDialog .festival-offering-choice[hidden]{display:none}#festivalDialog .festival-offering-preview{background:#263a33;border:1px solid #8ca281;border-radius:10px;padding:12px;margin-top:14px}#festivalDialog .festival-offering-preview h3{margin:3px 0 8px}#festivalDialog .festival-offering-math{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr));gap:6px;padding:8px 0}#festivalDialog .festival-offering-math span{background:#10251e;border-radius:5px;padding:7px;font-size:12px}#festivalDialog .festival-offering-commit{font-weight:bold;border-color:#f7d991;background:#475b39;padding:12px 18px}';
     document.head.append(style);
     root = document.createElement('section');
-    root.id = 'festivalDialog'; root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-labelledby', 'festivalTitle'); root.setAttribute('data-ctrl-panel', '');
-    root.innerHTML = '<div class="festival-card"><header><h2 id="festivalTitle"></h2><div id="festivalSubtitle" class="festival-note"></div></header><div id="festivalContent"></div><p id="festivalStatus" class="festival-status" role="status" hidden></p><footer><button type="button" data-festival-action="close" data-ctrl-cancel>Close</button><button type="button" data-festival-action="debug">Copy diagnostics</button></footer></div>';
+    root.id = 'festivalDialog'; root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-labelledby', 'festivalTitle'); root.setAttribute('data-ctrl-panel', ''); root.setAttribute('data-ctrl-modal', ''); // Keep this ceremony on top of newly appearing unrelated controller panels.
+    root.innerHTML = '<div class="festival-card" data-ctrl-scroll><header><h2 id="festivalTitle"></h2><div id="festivalSubtitle" class="festival-note"></div></header><div id="festivalContent"></div><p id="festivalStatus" class="festival-status" role="status" hidden></p><footer><button type="button" data-festival-action="close" data-ctrl-cancel>Close</button><button type="button" data-festival-action="debug">Copy diagnostics</button></footer></div>';
     document.body.append(root);
     root.addEventListener('pointerdown', event => event.stopPropagation());
     root.addEventListener('pointerup', event => event.stopPropagation());
     root.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } });
+    window.addEventListener?.('keydown', event => { // Real windows support this; minimal headless festival DOM fixtures may omit it.
+      if (event.key === 'Escape' && (prop || feastInspectIndex !== null)) close(); // Scope the fallback to the active festival modal; nested Back is consumed by ControllerUI first.
+    });
     root.addEventListener('click', event => { const target = event.target.closest('button[data-festival-action]'); if (target && !target.disabled) void handle(target); });
+    root.addEventListener('input', event => { if (event.target.matches?.('[data-offering-filter]')) { offeringFilter=event.target.value; filterOfferingChoices(); } });
+  }
+  function filterOfferingChoices() {
+    if (!root) return;
+    const needle=offeringFilter.trim().toLocaleLowerCase(); // Filter existing offering cards without closing the mobile keyboard.
+    let visible = 0; // Mobile diagnostics verifies a typed search doesn't rebuild the offering grid.
+    for (const group of root.querySelectorAll('.festival-offering-group')) {
+      let showing=0;
+      for (const choice of group.querySelectorAll('.festival-offering-choice')) {
+        choice.hidden=!!needle && !(choice.dataset.search || '').includes(needle);
+        if (!choice.hidden) { showing++; visible++; }
+      }
+      group.hidden=!showing;
+    }
+    offeringUiDebug.lastVisibleCount=visible;
+    const empty=root.querySelector('[data-offering-no-results]'); // Search feedback for mobile users.
+    if (empty) empty.hidden=!!root.querySelector('.festival-offering-choice:not([hidden])');
+  }
+  function offeringChoicesHtml(api) {
+    const choices=api.qualityChoices('offering'); // Already separated by exact inherited genotype when applicable.
+    offeringUiDebug.listBuilds++; // Counts costly full-grid builds, which selecting an item must no longer trigger.
+    selectedOfferingButton=null;
+    const categories=new Map(); // Groups item cards by their independently tunable fortune effect.
+    for (const choice of choices) {
+      const id=choice.category || 'treasureFortune';
+      if (!categories.has(id)) categories.set(id,[]);
+      categories.get(id).push(choice);
+    }
+    let html='<label for="festivalOfferingFilter"><strong>Find an offering</strong></label><input data-ctrl-skip id="festivalOfferingFilter" data-offering-filter class="festival-offering-search" type="search" placeholder="Search items, traits or fortunes" value="'+esc(offeringFilter)+'" autocomplete="off">';
+    html+='<p class="festival-note">Use A to enter a fortune category and select an offering, then A to confirm; B returns to your previous selection. Different animal genotypes, including hidden carriers, remain separate. Identical genotypes may stack. One offering replaces the previous fortune.</p>';
+    for (const [id,rows] of categories) {
+      const firstCategory = id === categories.keys().next().value; // The first group starts controller focus above the long inventory grid.
+      const def=window.FestivalCalendar.blessings[id]; // One authored definition supplies label, target and actual effect strength.
+      html+='<section id="festival-offering-'+esc(id)+'" class="festival-offering-group" data-ctrl-group tabindex="0" aria-label="'+esc((def?.label || id)+' offerings')+'"'+(firstCategory?' data-ctrl-default':'')+'><h3>'+esc((def?.icon || '✨')+' '+(def?.label || id))+'</h3><p class="festival-note">'+esc(def?.target || 'Fortune')+'</p><div class="festival-offering-grid">';
+      for (const choice of rows) {
+        const selected=selection.key===choice.key && selection.stars===choice.stars && selection.variant===choice.variant;
+        const traits=choice.traitSummary || '';
+        const search=[choice.label,traits,def?.label,def?.target].filter(Boolean).join(' ').toLocaleLowerCase();
+        const variant=typeof choice.variant==='string' ? ' data-variant="'+esc(choice.variant)+'"' : '';
+        const identity=esc(JSON.stringify([choice.key,choice.stars,choice.variant ?? null])); // Controller navigation reselects an exact genome even if other sibling cards change.
+        html+='<button type="button" class="festival-offering-choice" data-ctrl-detail="festivalOfferingDetail" data-stack-id="'+identity+'" data-festival-action="select-item" data-search="'+esc(search)+'" data-key="'+esc(choice.key)+'" data-stars="'+choice.stars+'"'+variant+' aria-pressed="'+selected+'"><span class="festival-offering-icon">'+esc(choice.icon)+'</span><span><strong>'+esc(choice.label)+'</strong><small>'+esc('★'.repeat(choice.stars)+'☆'.repeat(5-choice.stars))+' · ×'+choice.count+(choice.sharedQuality?' · shared star tier':'')+'</small>'+(traits?'<small>'+esc(traits)+'</small>':'')+'</span></button>';
+      }
+      html+='</div></section>';
+    }
+    if (!choices.length) html+='<p class="festival-note">No suitable keepsakes or young animals in your bag.</p>';
+    else html+='<p data-offering-no-results hidden class="festival-note">No offerings match this search.</p>';
+    html+='<section id="festivalOfferingDetail" data-ctrl-detail-panel tabindex="0" aria-label="Selected offering details"></section>'; // Controller A enters this after selecting an item; B returns to its exact card.
+    return html;
+  }
+  function offeringDetailHtml(api) {
+    const preview=selection.key ? api.offeringPreview?.(selection.key,selection.stars,selection.variant) : null; // Appraisal matches the exact selected genotype.
+    const bless=preview && window.FestivalCalendar.blessings[preview.stat];
+    let html = '';
+    if (preview && bless) {
+      const amount=Math.round(bless.perLevel*preview.level*1000)/10; // Probability points and relative rarity weights remain distinguishable.
+      const effect=bless.unit==='chance' ? '+'+amount+' percentage points' : '+'+amount+'% to the relevant chance or rarity weight';
+      html+='<div class="festival-offering-preview" aria-label="Selected fortune"><h3>'+
+        esc((preview.mode==='release'?'🐣 Release alive':'🔥 Offer to the pyre')+' · '+bless.icon+' '+bless.label)+
+        '</h3><p>'+esc(preview.statement)+'</p><strong>'+esc(bless.description)+': '+effect+'</strong>'+
+        '<p class="festival-note">Power '+esc(preview.level)+'/5 · Duration 336 game days · Target: '+esc(bless.target||bless.description)+'</p>'+
+        '<div class="festival-offering-math"><span>Quality ×'+preview.qualityUnits.toFixed(2)+'</span><span>Source rarity ×'+preview.scarcityFactor.toFixed(2)+'</span>'+
+        '<span>Value ×'+preview.valueFactor.toFixed(2)+'</span><span>Processing ×'+preview.effortFactor.toFixed(2)+'</span>'+
+        (preview.traitFactor>1?'<span>Inherited traits ×'+preview.traitFactor.toFixed(2)+'</span>':'')+'</div>'+
+        '<p class="festival-note">Known source: '+esc(preview.sourceLabel)+' ('+esc(preview.confidence)+'). Conditional source odds are not global drop rates.</p>'+
+        (typeof selection.variant==='string'?'<p class="festival-note">This exact animal’s genes are preserved. Star quality is recorded per item type, not per animal, so the ceremony uses the next available quality tier.</p>':'')+
+        '</div>';
+    } else if (selection.key) {
+      html+='<p class="festival-note">This exact offering is no longer available. Select another.</p>';
+    }
+    if (selection.key) {
+      html+='<div class="festival-options">'+button(preview?.mode==='release'?'Confirm: release this exact animal':'Confirm: sacrifice this keepsake',
+        'perform',!preview,'class="festival-offering-commit" data-ctrl-default')+'</div>';
+    }
+    return html;
+  }
+  function updateOfferingDetail(api=system(),reveal=false) {
+    const detail=root?.querySelector('#festivalOfferingDetail'); // Only the small inspector is changed; offering cards and controller focus stay intact.
+    if (!detail) return;
+    detail.innerHTML=offeringDetailHtml(api);
+    offeringUiDebug.detailUpdates++;
+    if (reveal) detail.querySelector('button[data-festival-action="perform"]')?.scrollIntoView?.({block:'nearest',inline:'nearest'});
+    // ControllerUI enters this detail group with scroll:false, so reveal the confirm control before it tries to focus it.
   }
   function open(anchor = system().nearestActivity()) {
     if (!anchor || !system().atProp(anchor) || !system().festival()) return false;
@@ -37,12 +126,12 @@
     }
     ensure();
     close();
-    prop = anchor; eventId = `${system().year()}:${system().festival().id}`; selection = {}; previousFocus = document.activeElement;
+    prop = anchor; eventId = `${system().year()}:${system().festival().id}`; selection = {}; offeringFilter=''; selectedOfferingButton=null; previousFocus = document.activeElement;
     root.style.display = 'flex'; root.style.setProperty('--festival-color', system().festival().color);
     document.exitPointerLock?.();
     lock = window.CharacterActionLocks?.acquire?.({ owner: 'festival-menu', reason: 'Festival activity menu', participants: [{ id: 'player', channels: ['movement', 'tools', 'actions'] }] });
     render();
-    root.querySelector('button:not(:disabled)')?.focus();
+    (anchor.activity?.type==='offering' ? root.querySelector('[data-ctrl-default]') : root.querySelector('button:not(:disabled)'))?.focus?.();
     return true;
   }
   function openFeast(index = 0) {
@@ -82,6 +171,7 @@
       : `${f.icon} ${prop.activity.label || window.FestivalCalendar.activityLabels[type]}`;
     root.querySelector('#festivalSubtitle').textContent = `${f.name} · ${window.CalendarSystem.formatCalendarDate()} · gatherings ${api.gatheringHoursLabel()}`;
     const content = root.querySelector('#festivalContent');
+    root.querySelector('.festival-card')?.classList?.toggle('festival-offering-view',type==='offering'); // Responsive width only for offerings.
     let html = '';
     if (type === 'feast') {
       const dishes = api.feastMenu(); // Same persisted seven-pot lineup that the furniture service serves.
@@ -118,7 +208,7 @@
       const done = api.claimed(type);
       html = `<p>${type === 'potluck' && f.id==='gorkunash'
         ? 'Enter one cooked dish in the seven-day potluck competition. Every ingredient contributes its own star level; processed ingredients earn twice their source ingredient score per processing step, and known source rarity multiplies that result. Rivals have fixed quality ceilings. The seventh serving pot is yours for the rest of the festival. After the festival, Hreesh visits the winning cook with the Replica Helm of Bzabag. Your normal 10× friendly gift Favor still applies.'
-        : type==='potluck'?'Give one cooked meal to the feast.':'Surrender a keepsake to the ancestor pyre, or release a baby animal alive. Item rarity, scarcity of its sources, its value, crafting effort and star quality multiply into a 336-day blessing. The item decides the stat, not a separate choice.'}</p>`;
+        : type==='potluck'?'Give one cooked meal to the feast.':'Surrender a keepsake to the ancestor pyre, or release a baby animal alive. Item rarity, scarcity of its sources, its value, crafting effort and star quality multiply into a 336-day blessing. The type of offering determines its unique fortune; rarity, quality, effort and inherited animal traits determine its power.'}</p>`;
       if(type==='potluck'&&f.id==='gorkunash') {
         const bowl=api.festivalBowl();
         const dishes=api.feastMenu();
@@ -130,26 +220,11 @@
         if(standings)html+=`<p class="festival-note">Current highest NPC entry: ${esc(standings.strongest?.label||'None')} · ${standings.strongest?.score||0}★. ${standings.entry ? 'Your entry: '+esc(standings.entry.label)+' · '+standings.entry.score+'★'+(standings.winning?' (currently ahead or tied).':' (try stronger ingredients next year).') : 'You have not entered yet.'}</p>`;
         html+=`<p class="festival-note">To eat: sit in a festival dining chair and use the Eat bowl prompt. Your character will take another bite every few seconds, with the normal Drink animation and a ${bowl?.uses ?? 0}/10 portion counter. Stand or switch equipment to stop.</p>`;
       }
-      if (done) html += '<p>You have already contributed your one festival meal or offering.</p>';
+      if (done) html += type==='offering' ? '<p class="festival-offering-preview">Your annual ancestor offering is complete. Its fortune lasts 336 game days from the ceremony.</p>' : '<p>Your festival meal has already been contributed.</p>';
+      else if (type==='offering') html += offeringChoicesHtml(api);
       else {
-        html += `<div class="festival-options">${api.qualityChoices(type).map(choice => button(`${choice.label} · ${'★'.repeat(choice.stars)} ×${choice.count}`, 'select-item', false, `data-key="${esc(choice.key)}" data-stars="${choice.stars}" aria-pressed="${selection.key === choice.key && selection.stars === choice.stars}"`)).join('') || '<p>No eligible items in your bag.</p>'}</div>`;
-        if (type === 'offering' && selection.key) {
-          const preview = api.offeringPreview?.(selection.key,selection.stars); // The same frozen appraisal as actual sacrifice, not an unrelated UI formula.
-          const bless = preview && window.FestivalCalendar.blessings[preview.stat];
-          if (preview && bless) {
-            const percent = Math.round(bless.perLevel * preview.level * 1000) / 10;
-            html += '<section class="festival-dish-info"><h3>' +
-              (preview.mode === 'release' ? '🐣 Return a young animal to the wild' : '🔥 Offer to the communal pyre') +
-              '</h3><p>' + esc(preview.statement) + '</p><div class="festival-dish-total"><strong>' +
-              esc(bless.icon + ' ' + bless.label + ' · level ' + preview.level) + '</strong> · ' + esc(bless.description) +
-              ' +' + percent + '% for 336 days</div><p class="festival-note">Quality ' +
-              preview.qualityUnits.toFixed(2) + ' × source rarity ' + preview.scarcityFactor.toFixed(2) +
-              ' × value ' + preview.valueFactor.toFixed(2) + ' × processing ' + preview.effortFactor.toFixed(2) +
-              ' (capped at level 5).</p><p class="festival-note">Source: ' + esc(preview.sourceLabel) +
-              ' · ' + esc(preview.confidence) + '. Conditional loot odds do not equal universal encounter odds.</p></section>';
-          }
-        }
-        html += button(type === 'offering' ? (api.offeringPreview?.(selection.key,selection.stars)?.mode === 'release' ? 'Confirm: release the animal' : 'Confirm: surrender the keepsake') : 'Confirm: give one selected item', 'perform', !selection.key);
+        html += '<div class="festival-options">'+api.qualityChoices(type).map(choice => button(choice.label+' · '+('★'.repeat(choice.stars))+' ×'+choice.count, 'select-item', false, 'data-key="'+esc(choice.key)+'" data-stars="'+choice.stars+'" aria-pressed="'+(selection.key===choice.key && selection.stars===choice.stars)+'"')).join('')+'</div>';
+        html += button('Confirm: give one selected item','perform',!selection.key);
       }
     } else if (type === 'gifts' || type === 'sweets') {
       const candidates = type === 'sweets' ? api.residents() : api.getNpcs().filter(npc => !npc.deceased && !npc.dead && !String(npc.homeId || '').includes('deceased') && api.favorHearts(npc.id) >= 3);
@@ -157,19 +232,20 @@
     } else if (type === 'masks') {
       html = '<p>Choose one free animal mask. It is ordinary wearable clothing and stays yours after the festival.</p><div class="festival-options">' + api.MASKS.map(mask => button(mask, 'perform', api.claimed('mask'), `data-mask="${esc(mask)}"`)).join('') + '</div>';
     } else if (type === 'remembrance') {
-      html = '<p>Little wooden carvings stand for the ancestors. Honor those lost, and appreciate the peace in death.</p><p>“Everyone gets a little engh-sho-ey today,” Kinami says of the Mashtzarr.</p><p class="festival-note">The offering shrine grants a year-long blessing based on each sacrificed keepsake. Baby animals are released alive, never burned.</p>';
+      html = '<p>Little wooden carvings stand for the ancestors. Honor those lost, and appreciate the peace in death.</p><p>“Everyone gets a little engh-sho-ey today,” Kinami says of the Mashtzarr.</p><p class="festival-note">The offering shrine grants a year of targeted fortune based on the offering. Baby animals are released alive, never burned.</p>';
     } else {
       const descriptions = { dance: `${f.id === 'five_blossoms' ? 'The Five Blossom Dance' : 'The festival dance'}: stay in the marked court and dance for 20 seconds. Your first completed dance this festival earns +2 Favor with every townsfolk. You can dance again for pleasure.`, story: 'Hear Father Hunundi tell how laughter defeated the Hachutu and their magical masks.', duel: 'Spearhead supervises a safe, live sparring round with Oddclaw in this ring. Land three hits. Borrowed equipment and your original resources are restored when you finish or leave. First completion: +6 Favor with each of them.', music: 'Join the existing music minigame. The festival musician supplies live accompaniment when present.', liquor: 'The festival keg pours a free, already-filled cup. Hold it to drink or offer a swig (which earns Festival Fun) through the ordinary alcohol system, and refill whenever you like. It cannot be stowed or gifted.' }; // Mechanical promises shown before entering an activity.
       html = `<p>${esc(descriptions[type] || '')}</p>${button(window.FestivalCalendar.activityLabels[type], 'perform', false)}`;
     }
     content.innerHTML = html;
+    if (type==='offering') { updateOfferingDetail(api); filterOfferingChoices(); } // Build one grid, then one lightweight preview.
     status('');
   }
   async function handle(target) {
     const action = target.dataset.festivalAction; // Standard click works with touch, keyboard, and ControllerUI.
     if (action === 'close') { close(); return; }
     if (action === 'debug') {
-      const report = JSON.stringify(system().diagnostics(), null, 2);
+      const report = JSON.stringify({ ...system().diagnostics(), offeringUI:{...offeringUiDebug,selectedKey:selection.key || null,hasGenotypeSelection:typeof selection.variant==='string'} }, null, 2);
       try { await navigator.clipboard.writeText(report); status('Diagnostics copied.'); }
       catch { const output = document.createElement('textarea'); output.value = report; output.style.cssText = 'width:100%;height:180px'; root.querySelector('#festivalContent').append(output); output.select(); status('Select and copy the diagnostics below.'); }
       return;
@@ -187,7 +263,17 @@
         system().eatFestivalBowl();
       render();status(result?.message||'');return;
     }
-    if (action === 'select-item') { selection.key = target.dataset.key; selection.stars = Number(target.dataset.stars); render(); return; }
+    if (action === 'select-item') {
+      selection={key:target.dataset.key,stars:Number(target.dataset.stars),
+        ...(target.hasAttribute('data-variant')?{variant:target.dataset.variant}:{})}; // Preserve the exact animal bloodline chosen in the original card.
+      if (prop?.activity?.type==='offering') {
+        if (selectedOfferingButton && selectedOfferingButton!==target) selectedOfferingButton.setAttribute('aria-pressed','false');
+        selectedOfferingButton=target;
+        target.setAttribute('aria-pressed','true');
+        updateOfferingDetail(system(),true); // Reveal its confirmation button before ControllerUI enters the group; keep every category card mounted.
+      } else render();
+      return;
+    }
     if (action !== 'perform') return;
     busy = true; target.disabled = true;
     try {
@@ -203,5 +289,6 @@
     }
     if (prop && (!system().atProp(prop) || eventId !== `${system().year()}:${system().festival()?.id}`)) close();
   }
-  window.FestivalUI = { open, openFeast, close, update, isOpen: () => !!prop || feastInspectIndex !== null };
+  window.FestivalUI = { open, openFeast, close, update, isOpen: () => !!prop || feastInspectIndex !== null,
+    diagnostics: () => ({ ...offeringUiDebug, selectedKey:selection.key || null, hasGenotypeSelection:typeof selection.variant==='string' }) };
 })();

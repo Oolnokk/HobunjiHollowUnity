@@ -972,6 +972,7 @@
       devSessionOnly:true,devSeed:seed,devRuinTileScale:RUIN_TILE_SCALE,sourceGenerator:'HobunjiDebrisifierV50'};
     const occlusionMeshes=[]; // Normal map_i_* camera boom reads this array from _buildingScenes; generated walls must participate exactly like authored den/shop walls.
     roots.localeRoot.traverse(mesh=>{if(isCameraStructural(mesh,roots.localeRoot))occlusionMeshes.push(mesh);});
+    if(ceilingMesh)occlusionMeshes.push(ceilingMesh); // Rays from inside hit the roof's inward face.
     return {scene,grid:projected.grid,cols:projected.cols,rows:projected.rows,mapData,wallStyle:'cavern',sanctumPlan:projected.sanctumPlan,floorSet:projected.walkable,exits:mapData.exits,spawn,localeRoot:roots.localeRoot,particleRoot:roots.particleRoot,ceilingMesh,occlusionMeshes,ceilingCellCount:Number(ceilingMesh?.userData?.devRandomRuinCeilingCells)||0,ceilingY:Number(ceilingMesh?.userData?.devRandomRuinCeilingY)||null,denMaterialMeshCount:materialStats.stoneMeshes,unlitConvertedMaterialCount:materialStats.convertedMaterials,remainingLitMaterialCount:materialStats.remainingLitMaterials,legacyStoneMaterialCount:materialStats.legacyStoneMaterials,totalRuinMeshCount:materialStats.totalMeshes};
   }
 
@@ -1505,7 +1506,7 @@
     if(!mesh?.isMesh)return false;
     for(let node=mesh;node;node=node.parent){
       const d=node.userData||{},role=String(d.interiorRuinRole||'');
-      if(d.ruinInteriorWall||d.archFootprint||d.transitDoor||d.squarePillarHousing||d.movingDaisPlatform||d.pushable||/ceiling support pillar|doorway flank pillar/i.test(role))return true;
+      if(d.cameraObstacle||d.ruinInteriorWall||d.archFootprint||d.transitDoor||d.squarePillarHousing||d.movingDaisPlatform||d.pushable||/ceiling support pillar|doorway flank pillar/i.test(role))return true;
       if(node===stopAt)break;
     }
     return false;
@@ -1569,6 +1570,7 @@
     geometry.rotateX(-Math.PI/2);
     const backing=new THREE.InstancedMesh(geometry,stone,floorHeights.size);
     backing.name='ruin-supported-floor-gap-backing';
+    backing.userData.hobunjiGroundTopFacesOnly=true; // The repair participates in the same-height held-object floor replay.
     backing.userData.devRuinFootprintIgnore=true; // Visual repair cannot create support/collision; DynamicSurfaces and rope-pit cutouts remain authoritative.
     backing.raycast=()=>{};
     owner.scene.add(backing);
@@ -1634,6 +1636,7 @@
   }
 
   function clearRuntime(removeMap=true) {
+    if(ruin?.scene)window.HeldObjectRenderOrder?.forgetScene?.(ruin.scene); // Drop registered ruin geometry before any of its roots detach.
     if(ruin?.singleRoomTrial)window.DevRandomRuinSimplePuzzles?.clear?.(); // Release the old lab's rope, fire and encounter state before rebuilding its scene.
     window.RuinEncounters?.clearScope?.(MAP_ID); // No statue encounter or enemy survives a regenerated map.
     window.HangingRopes?.clearScope?.(MAP_ID); // Disarm attached bombs and remove hanging rope visuals.
@@ -2360,7 +2363,7 @@
     },
     isShaftNetworkComplete:()=>ruin?.shaftLayerRuntime?ruin.shaftNetworkComplete===true:true, // No allocation in the hot Sanctum Great Door update path.
     isSlidingPushBlock:block=>ruin?.blockSlide?.block===block, // Keeps the separate floor-settling pass from adjusting a block mid-slide.
-    getGenerationProgress:()=>({phase:generationPhase,elapsedS:+((performance.now()-generationStartedMs)/1000).toFixed(1),attempts:lastGenerationAudit?.attempts?.length||0}),getDarknessSettings,setDebugBadgePart,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,getPlayerGroundSupportY,shaftSegmentHit,shaftCreatureCanEnter,syncShaftCreatureFloor,registerShaftGrid,unregisterShaftGrid:scope=>ruin?.shaftGrids?.delete(scope),setLevelRelativeSupport:on=>{if(ruin)ruin.levelRelativeSupport=on!==false;return !!ruin?.levelRelativeSupport;},getGroundSupportYAt,acceptFreeJumpLanding,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,setPresentationSink,flightClear,getState:()=>ruin?{mapId:MAP_ID,storyVault:ruin.storyVault ? {footprints:ruin.storyVaultFootprintCount,doorBlocks:false,puzzles:0,decalReady:ruin.storyVaultDecalReady,decalError:ruin.storyVaultDecalError||null} : null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,noLoot:ruin.noLoot===true,shaftConnection:ruin.shaftConnection||null, // The mobile debug snapshot reports the laboratory's chosen puzzle and reward policy.shaftLayerRuntime:ruin.shaftLayerRuntime?.getState?.()||null,
+    getGenerationProgress:()=>({phase:generationPhase,elapsedS:+((performance.now()-generationStartedMs)/1000).toFixed(1),attempts:lastGenerationAudit?.attempts?.length||0}),getDarknessSettings,setDebugBadgePart,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,getPlayerGroundSupportY,shaftSegmentHit,shaftCreatureCanEnter,syncShaftCreatureFloor,registerShaftGrid,unregisterShaftGrid:scope=>ruin?.shaftGrids?.delete(scope),setLevelRelativeSupport:on=>{if(ruin)ruin.levelRelativeSupport=on!==false;return !!ruin?.levelRelativeSupport;},getGroundSupportYAt,acceptFreeJumpLanding,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,setPresentationSink,flightClear,getState:()=>ruin?{mapId:MAP_ID,storyVault:ruin.storyVault ? {footprints:ruin.storyVaultFootprintCount,doorBlocks:false,puzzles:0,decalReady:ruin.storyVaultDecalReady,decalError:ruin.storyVaultDecalError||null} : null,seed:ruin.seed,theme:ruin.theme,tier:ruin.tier||null,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,noLoot:ruin.noLoot===true,shaftConnection:ruin.shaftConnection||null, // The mobile debug snapshot reports the laboratory's chosen puzzle and reward policy.shaftLayerRuntime:ruin.shaftLayerRuntime?.getState?.()||null,
     nativeV50Runtime:ruin.nativeV50Runtime?.getState?.()||null,
     checkpointTravel:ruin.checkpointRuntime?.getState?.()||null,
     floorShellRepair:ruin.floorShellRepair?.count||0, // Visible supported cells after intentionally floorless puzzle areas have been cut out.

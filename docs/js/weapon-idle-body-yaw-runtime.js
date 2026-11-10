@@ -73,4 +73,5 @@
     owner: 'WeaponIdleBodyYawRuntime',
     description: 'Applies the authored idle-stance body yaw into the player body transform composer.',
   });
+  global.HobunjiWeaponSpriteAssemblies?.scheduleTickAfterPose?.(); // Reproject visible flail rope contacts after this body-composer pose writer, not one frame behind the haft.
 })(window);

@@ -92,6 +92,24 @@ context.activeSurfaceYAtWorld = () => 0;
 const seatedResult = aim(0.9, 30); // Existing seated floor behavior remains compatible with its wall-side search.
 assert.ok(Math.abs(pitchOf(seatedResult, 0.9) - 30) < 1e-7);
 assert.equal(context.debug(), null, 'scripted/seated cameras do not report a manual shoulder solve');
+// The minimum body setback must yield to a close ruin wall after framing.
+context.currentArea = 'map_i_dev_random_ruin';
+context._isBuildingArea = area => area === 'map_i_dev_random_ruin';
+context.activeCameraMode = 'shoulderSurf';
+context.currentAreaOcclusionMeshes = () => [{}];
+context.camTargetX = 0;
+context.camTargetZ = 0;
+context.s_shoulderSurfOffsetH_current = 0;
+context._cameraOcclusionRaycaster.intersectObjects = function() {
+  return this.far >= 0.28 ? [{ distance: 0.28 }] : [];
+};
+const ruinWall = aim(0.62, 0);
+assert.ok(ruinWall.z > 0 && ruinWall.z < 0.28, 'final shoulder framing stays inside the ruin wall');
+assert.equal(context.debug().directHitDistance, 0.28, 'the mobile camera readout includes the final ruin wall hit');
+context.currentArea = 'farm';
+context._isBuildingArea = () => false;
+context.currentAreaOcclusionMeshes = () => [];
+
 // Execute the normal camera update too, so the actual input-to-solver path,
 // lowered offset guard, and near-plane behavior are covered together.
 const updateStart = game.indexOf('      function updateCameraPosition() {'); // Locates the real gameplay camera integration.

@@ -75,6 +75,7 @@ const schedulerState = {
 let queued = 0; // Counts successful pad scheduling; prevents duplicate submissions inside the lookahead window.
 const scheduleAudio = vm.runInNewContext(schedulerFn + '\nscheduleTransportAudioAhead;', {
   state:schedulerState,
+  jamLeaderSync:null,HOSTED_FLUTE_PERFORMANCE:false, // Isolated NPC test must supply the new player-only follow state and instrument flag.
   document:{hidden:false},
   rootPadAudioKey:rootKey,
   findUpcomingTransportBoundary: callback => callback === rootKey ? {value:'pluck:8:2',atMs:1234,clock:atBar(8, 2)} : null,
@@ -90,6 +91,16 @@ scheduleAudio();
 assert.equal(queued, 1, 'One lookahead root voice per measure, not one per frame');
 assert.equal(schedulerState.scheduledRootPadKey, 'pluck:8:2');
 
+let skippedLookaheads = 0; // Counts searches that should never be needed by a flute following an NPC's audible beat.
+const followerScheduler = vm.runInNewContext(schedulerFn + '\nscheduleTransportAudioAhead;', {
+  state:{...schedulerState,scheduledMetronomeBeat:null,scheduledRootPadKey:null},
+  jamLeaderSync:{songId:'when-the-kininjis-bloom'},HOSTED_FLUTE_PERFORMANCE:true,
+  document:{hidden:false},
+  findUpcomingTransportBoundary:()=>{skippedLookaheads++;return null;},
+});
+followerScheduler();
+assert.equal(skippedLookaheads,0,'following flute skips both duplicate metronome and impossible root-pad searches');
+
 const syncSource = section('  function syncRootPad(', '  function bankFooterMarkup('); // Actual root-pad function under review.
 assert.equal((syncSource.match(/state\.lastRootPadKey = rootPadAudioKey\(targetClock\)/g) || []).length, 2,
   'Immediate root creation and live-root reuse must mark the bar as handled');
@@ -100,7 +111,7 @@ const played = []; // Records actual root voices created by the production sync 
 const live = {rootPadEnabled:true,paused:false,audioContext:{state:'running'},master:{},
   rootPadSampleBuffer:null,rootPadVoices:[],rootPadRootMidi:null,lastRootPadKey:null,rootPadLevel:.02};
 const playRoot = vm.runInNewContext(syncSource + '\nsyncRootPad;', {
-  state:live,HOSTED_FLUTE_PERFORMANCE:false,document:{hidden:false},sharedTransportData:() => atBar(0,2), // This isolated harness tests an NPC Kurraya, not a flute.
+  state:live,HOSTED_FLUTE_PERFORMANCE:false,jamLeaderSync:null,document:{hidden:false},sharedTransportData:() => atBar(0,2), // This isolated harness tests an NPC Kurraya, not a flute.
   rootPadAudioKey:rootKey,rootPadTargetMidi:() => 40,PAD_SYNTH_CROSSFADE_S:.8,
   createRootPadVoice:midi => {
     const voice = {midi,kind:'kurraya',active:true,stopping:false}; // Tracks each mock root attack through normal root voice bookkeeping.

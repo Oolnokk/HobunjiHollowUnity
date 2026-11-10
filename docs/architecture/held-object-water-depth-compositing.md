@@ -57,8 +57,8 @@ against the held parts and tests the filled, terrain-projected blast preview.
 ## Elevation-aware ground x-ray
 
 Ground is no longer removed wholesale from the held/foot depth rebuild.
-Each replay groups visible tools, hands, feet and shell sources by the
-standing elevation of their owning actor:
+Each replay scopes visible tools, hands, feet and shell sources to the
+standing elevation and tile of their owning actor:
 
 - The player uses the movement root plus the active
   `townSubtleElevation` composer channel, which is the same lift used for
@@ -67,6 +67,7 @@ standing elevation of their owning actor:
   by the NPC held-equipment runtime). NPC procedural body parts can resolve
   through the existing `hobunjiCharacterRigScaleRoot` marker. Named-animal
   body groups use their existing `namedAnimalNpc` marker.
+- The holder’s tile and its eight neighbors are eligible for the ground exemption. The holder’s world X/Z selects that area even when a weapon or rig part swings across a boundary.
 - Ground materials with standard Three.js world-position shaders discard only
   front-facing, upward-facing fragments within 0.18 world units of the actor's standing
   elevation. Lit materials use their transformed normal; unlit MeshBasic grass
@@ -80,10 +81,7 @@ standing elevation of their owning actor:
   without the required standard chunks fail closed: their ground remains fully opaque to the
   held/foot overlay rather than guessing an elevation.
 
-Actors at effectively the same elevation share a replay; different elevations
-get separate depth replays. The shell-outline pass uses the same grouping and
-fragment filter, so an object's visible pixels and expanded shell cannot
-disagree about which ground level blocks them. The final colorless ground
+Actors at effectively the same elevation can share a replay when their gear bounds cannot overlap each other’s projected floor neighborhoods. Uncertain projections use separate replays. The renderer prepares the ground material list once per pass and narrows each depth draw to its own screen bounds when it can prove them. Parts that cannot be covered by their neighborhood use ordinary ground depth. The shell-outline pass uses the same tile and elevation filter. The final colorless ground
 restore remains before translucent water/slush tinting.
 
 ## Shared surface occlusion composer
@@ -164,8 +162,7 @@ world occlusion, underwater tint, or avatar ordering.
 current scene's `held`, `feet`, `ground`, `topFaceGround`, and
 `tintCovers`. It hides the selected held/foot meshes for the **ordinary
 world color pass**, then invokes `replaySelectiveHeldOverlay`. The selective
-overlay now runs one depth/overlay pair per actor-elevation group; it keeps
-ground meshes in the depth replay and filters only same-elevation top faces.
+overlay runs one depth/overlay pair per compatible batch of holders. The depth replay filters same-elevation top faces inside the batch’s tile neighborhoods.
 
 The replay order is:
 
@@ -197,7 +194,7 @@ V50 ruin plateau, and rooted Stone Age) while preserving ordinary raised
 geometry, cave walls, snow/slush caps, water, and grass billboards as
 occluders. Carved cave shells retain their full original geometry during depth
 reconstruction. The elevation shader discards only same-height, front-facing
-upward floor fragments; different-height top faces, vertical walls and ceilings
+upward floor fragments in an eligible holder neighborhood; different-height top faces, vertical walls and ceilings
 continue to write depth.
 The screen-space scissor, per-scene registries, and conservative cover/
 overlay overlap check limit the cost. Near-plane/uncertain geometry can

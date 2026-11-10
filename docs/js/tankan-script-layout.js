@@ -188,6 +188,70 @@
     return { canvas, layout };
   }
 
+
+  // Circular Tankan inscription shared by the Furniture Author, its runtime, and melody plates.
+  // Each line has equal angular glyph spacing; additional lines move inward by an authored radius differential.
+  function measureRings(text, options = {}) {
+    const canvasSizePx = Math.round(clamp(finiteOr(options.canvasSizePx, 512), 64, 2048)); // Canvas resolution for consistent editor/runtime glyph detail.
+    const radiusScale = clamp(finiteOr(options.radiusScale, 0.72), 0.08, 0.9); // Outer ring radius as a fraction of the canvas half-width.
+    const textScale = clamp(finiteOr(options.textScale, 0.19), 0.025, 0.42); // Glyph font size relative to canvas width, independent of ring diameter.
+    const rotationDeg = finiteOr(options.rotationDeg, 0); // Manual angular alignment of the outer inscription.
+    const innerRings = Array.isArray(options.innerRings) ? options.innerRings.slice(0, 7) : []; // Seven optional nested lines bound canvas work.
+    const source = [{ text, radiusDifferential: 0, rotationDeg, textScale: 1 }, ...innerRings];
+    let radius = radiusScale;
+    const rings = [];
+    for (let index = 0; index < source.length; index++) {
+      const entry = source[index] || {};
+      if (index) radius = Math.max(0.035, radius - clamp(finiteOr(entry.radiusDifferential, 0.22), 0.02, 0.6));
+      const glyphs = Array.from(String(entry.text || '').trim());
+      if (!glyphs.length) continue;
+      const automaticOffset = index && (index % 2) ? 180 / glyphs.length : 0; // Adjacent rings stagger rather than forming radial columns.
+      const offset = entry.rotationDeg === '' || entry.rotationDeg == null ? automaticOffset : finiteOr(entry.rotationDeg, automaticOffset);
+      const radiusPx = radius * canvasSizePx / 2;
+      const requestedSize = canvasSizePx * textScale * clamp(finiteOr(entry.textScale, 1), 0.2, 3);
+      const arcClearance = (2 * Math.PI * radiusPx / glyphs.length) * 0.92; // Letters never overlap on dense rings.
+      const edgeClearance = Math.max(4, canvasSizePx / 2 - radiusPx - 2) * 1.65; // Letters must stay inside their transparent canvas.
+      const fontSizePx = Math.max(2, Math.min(requestedSize, arcClearance, edgeClearance));
+      rings.push({ glyphs, index, radiusScale: radius, radiusPx, fontSizePx, rotationDeg: offset });
+    }
+    return { canvasSizePx, radiusScale, textScale, rings, ringCount: rings.length, color: String(options.color || DEFAULTS.color) };
+  }
+
+  function renderRingsToCanvas(canvas, text, options = {}) {
+    if (!canvas?.getContext) return null;
+    if (typeof document !== 'undefined' && document.fonts && fontState !== 'loaded') {
+      throw new Error('Tankan font is not loaded; refusing to rasterize with a fallback font.');
+    }
+    const layout = measureRings(text, options);
+    canvas.width = canvas.height = layout.canvasSizePx;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = layout.color;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const center = layout.canvasSizePx / 2; // Shared center for all nested rings, including the pressure-plate word.
+    for (const ring of layout.rings) {
+      ctx.font = ring.fontSizePx + 'px "' + FONT_FAMILY + '"';
+      for (let index = 0; index < ring.glyphs.length; index++) {
+        const angle = -Math.PI / 2 + (ring.rotationDeg * Math.PI / 180) + index * 2 * Math.PI / ring.glyphs.length;
+        ctx.save();
+        ctx.translate(center + Math.cos(angle) * ring.radiusPx, center + Math.sin(angle) * ring.radiusPx);
+        ctx.rotate(angle + Math.PI / 2); // Tangential lettering follows the circular inscription.
+        ctx.fillText(ring.glyphs[index], 0, 0);
+        ctx.restore();
+      }
+    }
+    return layout;
+  }
+
+  function createRingCanvas(text, options = {}) {
+    if (typeof document === 'undefined') return { canvas: null, layout: measureRings(text, options) };
+    const canvas = document.createElement('canvas');
+    const layout = renderRingsToCanvas(canvas, text, options);
+    return { canvas, layout };
+  }
+
   window.TankanScriptLayout = {
     installed: true,
     version: 6,
@@ -200,6 +264,9 @@
     ensureFontLoaded,
     renderToCanvas,
     createCanvas,
+    measureRings,
+    renderRingsToCanvas,
+    createRingCanvas,
     get fontStatus() { return fontState; },
     get fontLoadError() { return fontError; },
     get registeredFontFace() { return fontFace; },

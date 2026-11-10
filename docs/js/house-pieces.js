@@ -60,7 +60,7 @@
     // Decorates Calendar day cells with the nightly route and reveals zone/direction details when a marked date is clicked.
     ['HarlyaoNightMarchCalendar', 'harlyao-night-march-calendar.js?v=20260909b'],
     // Appends route/chunk/build/placement/provocation state to the copyable Pixel Probe report on mobile without requiring console access.
-    ['HarlyaoNightMarchPixelProbe', 'harlyao-night-march-pixel-probe.js?v=20261021h381bf6c'],
+    ['HarlyaoNightMarchPixelProbe', 'harlyao-night-march-pixel-probe.js?v=20261110meleePool1'],
     // Keep Cloud Forest mist in the ordinary scene render. The retired soft-depth
     // post-composite pass disabled depth testing and could wash mist over the player
     // and nearby world geometry even when every cylinder surface was behind them.

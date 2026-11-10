@@ -69,7 +69,26 @@ assert(api?.installed, 'module installs against the fake THREE');
   scene.add(held2);
   const renderer = new WebGLRenderer();
   renderer.render(scene, new Camera());
+  const floorBacking = makeMesh({ isInstancedMesh: true, userData: { hobunjiGroundTopFacesOnly: true } });
+  const wall = makeMesh({ isInstancedMesh: true });
+  scene.add(floorBacking, wall);
+  api.snapshot(); // Flush the newly added floor and wall classifications without another render.
+  assert(floorBacking.layers.mask & (1 << api.GROUND_REPLAY_LAYER), 'the instanced floor repair is registered for upward-face x-ray');
+  assert.equal(wall.layers.mask & (1 << api.GROUND_REPLAY_LAYER), 0, 'untagged instanced walls keep ordinary depth');
   assert.equal(renderCalls, 1);
   assert(held2.layers.mask & (1 << api.HELD_OVERLAY_LAYER), 'first render after add() has enforced the held overlay layer');
-  console.log('held classification batching: ok');
+  const pendingFloor = makeMesh({ userData: { hobunjiGroundTopFacesOnly: true } }); // Simulates geometry queued just before a generation is discarded.
+  scene.add(pendingFloor);
+  assert.equal(api.forgetScene(scene), 3, 'retiring the scene drops placed and unplaced replay meshes');
+  renderer.render(scene, new Camera()); // The old ruin can still render while its replacement is loading.
+  api.scanScene(scene, true);
+  api.snapshot();
+  assert.equal(api.forgetScene(scene), 0, 'a delayed classification or render cannot restore discarded meshes');
+  assert.equal(pendingFloor.layers.mask & (1 << api.GROUND_REPLAY_LAYER), 0, 'queued floor classifications were canceled');
+  const replacement = new Scene(); // Reused weapon meshes must still classify when moved to the next ruin.
+  replacement.add(held2);
+  api.scanScene(replacement, true);
+  assert.equal(api.forgetScene(replacement), 1, 'moving the held mesh re-registers it in the replacement scene');
+
+  console.log('held classification batching and scene retirement: ok');
 })().catch((error) => { console.error(error); process.exit(1); });

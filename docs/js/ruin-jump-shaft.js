@@ -262,11 +262,13 @@
     for (const p of plan.platforms) {
       const holder = new THREE.Group(); holder.name = p.id; holder.position.set(p.x, p.y, p.z); group.add(holder);
       const slab = new THREE.Mesh(new THREE.BoxGeometry(p.w, THICKNESS, p.d), stone);
+      slab.userData.hobunjiGroundTopFacesOnly = true; // Only the walkable face participates in same-level x-ray.
       slab.position.y = -THICKNESS / 2; slab.name = p.id + '-stone'; holder.add(slab); owned.push(slab);
       // A thin coloured lip tells the player which tradition's trick a platform plays.
       // Top-facing plane only: a box would show its translucent underside as a floating coloured
       // sheet to anyone standing on a lower platform.
       const lip = new THREE.Mesh(new THREE.PlaneGeometry(p.w + .04, p.d + .04), p.kind === 'ice' ? iceMaterial : trimMaterial);
+      lip.userData.hobunjiGroundTopFacesOnly = true; // The ice/trim overlay follows the slab's floor replay.
       lip.rotation.x = -Math.PI / 2; lip.position.y = .014; lip.renderOrder = 2; lip.name = p.id + '-trim'; holder.add(lip); owned.push(lip);
       const record = { ...p, width: Math.max(p.w, p.d), holder, baseY: p.y - THICKNESS, moving: false };
       columns.set(p.id, record);

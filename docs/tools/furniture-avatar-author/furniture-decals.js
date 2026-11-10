@@ -48,12 +48,29 @@ function isTankanTextDecal(record) {
   return record?.sourceType === TANKAN_SOURCE_TYPE || (!!record?.tankanText && !record?.imageSource);
 }
 
+function normalizedRingSettings(record) {
+  return {
+    tankanLayoutMode: record?.tankanLayoutMode === 'ring' ? 'ring' : 'columns', // Legacy vertical decals keep the old layout.
+    tankanRingRadius: dclamp(finiteOr(record?.tankanRingRadius, 0.72), 0.08, 0.9), // Ring size independent of its lettering.
+    tankanRingTextScale: dclamp(finiteOr(record?.tankanRingTextScale, 0.19), 0.025, 0.42), // Text scale independent of the ring diameter.
+    tankanRingRotationDeg: finiteOr(record?.tankanRingRotationDeg, 0), // Rotation of the outer line.
+    tankanRingLines: (Array.isArray(record?.tankanRingLines) ? record.tankanRingLines : []).slice(0, 7).map(line => ({
+      text: String(line?.text || '').slice(0, 160),
+      radiusDifferential: dclamp(finiteOr(line?.radiusDifferential, 0.22), 0.02, 0.6), // Distance inward from preceding ring.
+      rotationDeg: line?.rotationDeg === '' || line?.rotationDeg == null ? null : finiteOr(line.rotationDeg, 0), // Null means stagger automatically.
+      textScale: dclamp(finiteOr(line?.textScale, 1), 0.2, 3),
+    })),
+  };
+}
+function isTankanRing(record) { return isTankanTextDecal(record) && record.tankanLayoutMode === 'ring'; }
+
 function normalizedTankanRecord(record) {
   const settingsVersion = Number(record?.tankanSettingsVersion) || 0;
   if (settingsVersion >= 2) {
     const priorUniformSize = Math.max(0.001, finiteOr(record.tankanGlyphSize, 1)); // Version 2 stored one glyph-size value; migrate it to both axes.
     return {
       tankanSettingsVersion: TANKAN_SETTINGS_VERSION,
+      ...normalizedRingSettings(record),
       tankanColumnSpacing: finiteOr(record.tankanColumnSpacing, 0),
       tankanGlyphAdvance: Math.max(0.001, finiteOr(record.tankanGlyphAdvance, 1)),
       tankanGlyphSizeX: Math.max(0.001, finiteOr(record.tankanGlyphSizeX, priorUniformSize)),
@@ -78,6 +95,7 @@ function normalizedTankanRecord(record) {
   const legacyLift = finiteOr(record?.normalOffset, TANKAN_BASELINE.normalOffset);
   return {
     tankanSettingsVersion: TANKAN_SETTINGS_VERSION,
+    ...normalizedRingSettings(record),
     tankanColumnSpacing: legacyColumnSpacing - TANKAN_BASELINE.columnSpacingEm,
     tankanGlyphAdvance: legacyGlyphAdvance / TANKAN_BASELINE.glyphAdvanceEm,
     tankanGlyphSizeX: 1,
@@ -239,6 +257,10 @@ function tankanContainerPixels(record) {
 }
 
 function tankanContainerState(record) {
+  if (isTankanRing(record)) {
+    const layout = window.TankanScriptLayout?.measureRings?.(record.tankanText, tankanRingOptions(record)) || { ringCount: 0 };
+    return {layout,visualWidthPx:512,visualHeightPx:512,containerWidthPx:512,containerHeightPx:512,fitScale:1};
+  }
   const options = tankanTextureOptions(record);
   const layout = measureTankanLayout(record?.tankanText, options);
   const container = tankanContainerPixels(record);
@@ -267,6 +289,18 @@ function tankanRenderOptions(record) {
   };
 }
 
+function tankanRingOptions(record) {
+  const settings = normalizedRingSettings(record);
+  return {
+    canvasSizePx: 512,
+    radiusScale: settings.tankanRingRadius,
+    textScale: settings.tankanRingTextScale,
+    rotationDeg: settings.tankanRingRotationDeg,
+    innerRings: settings.tankanRingLines,
+    color: String(record.tankanColor || TANKAN_BASELINE.color),
+  };
+}
+
 function resolvedDecalTransform(record) {
   if (!isTankanTextDecal(record)) {
     return {
@@ -283,7 +317,7 @@ function resolvedDecalTransform(record) {
   const container = tankanContainerState(record);
   return {
     offsetU: TANKAN_BASELINE.offsetU + finiteOr(record.offsetU, 0),
-    offsetV: TANKAN_BASELINE.offsetV + finiteOr(record.offsetV, 0),
+    offsetV: isTankanRing(record) ? finiteOr(record.offsetV, 0) : TANKAN_BASELINE.offsetV + finiteOr(record.offsetV, 0), // Circular text defaults to exact surface center; preserve legacy vertical text calibration.
     width: TANKAN_BASELINE.width * Math.max(0.001, finiteOr(record.width, 1)),
     height: TANKAN_BASELINE.height * Math.max(0.001, finiteOr(record.height, 1)),
     rotationDeg: TANKAN_BASELINE.rotationDeg + finiteOr(record.rotationDeg, 0),
@@ -309,6 +343,7 @@ function buildDecalTexturePair(image) {
 
 function decalTextureKey(record) {
   if (isTankanTextDecal(record)) {
+    if (isTankanRing(record)) return 'tankan-ring:' + record.tankanText + ':' + JSON.stringify(tankanRingOptions(record));
     const options = tankanRenderOptions(record);
     return `tankan:${record.tankanText}\u0000${options.columnSpacingEm}\u0000${options.glyphAdvanceEm}\u0000${options.glyphScaleX}\u0000${options.glyphScaleY}\u0000${options.paddingXEm}\u0000${options.paddingYEm}\u0000${options.containerWidthPx}\u0000${options.containerHeightPx}\u0000${options.color}`;
   }
@@ -316,14 +351,18 @@ function decalTextureKey(record) {
 }
 
 function decalHasVisualSource(record) {
-  return isTankanTextDecal(record) ? !!String(record.tankanText || '').trim() : !!record.imageSource;
+  return isTankanTextDecal(record)
+    ? !!String(record.tankanText || '').trim() || (isTankanRing(record) && record.tankanRingLines.some(line => String(line.text).trim()))
+    : !!record.imageSource;
 }
 
 function buildTankanDecalTexture(record) {
   const layout = window.TankanScriptLayout;
   if (!layout?.createCanvas) return Promise.reject(new Error('TankanScriptLayout is unavailable. Reload the editor so the shared script renderer can load.'));
   return Promise.resolve(layout.ensureFontLoaded?.()).then(() => {
-    const result = layout.createCanvas(record.tankanText, tankanRenderOptions(record));
+    const result = isTankanRing(record)
+      ? layout.createRingCanvas?.(record.tankanText, tankanRingOptions(record))
+      : layout.createCanvas(record.tankanText, tankanRenderOptions(record));
     if (!result?.canvas) throw new Error('Could not create Tankan-script canvas.');
     window.HobunjiSpritePngSurface?.carveCanvas?.(result.canvas); // Preview uses the runtime carving appearance.
     const texture = configureDecalTexture(new THREE.CanvasTexture(result.canvas));
@@ -518,20 +557,25 @@ function addDecalFromFile(file, surfaceId) {
   reader.readAsDataURL(file);
 }
 
-function addTankanTextDecal() {
+function addTankanTextDecal(asRing = false) {
   const surface = selectedSurfaceForDecal();
   if (!surface) { log?.('Select a recognized furniture surface first.', 'warn'); return; }
   const record = normalizeDecal({
     ...baseRecordForSurface(surface),
-    name: 'Tankan Text',
+    name: asRing ? 'Tankan Text Ring' : 'Tankan Text',
     sourceType: TANKAN_SOURCE_TYPE,
-    tankanText: TANKAN_BASELINE_TEXT,
+    tankanText: asRing ? "Hao'uun" : TANKAN_BASELINE_TEXT,
+    tankanLayoutMode: asRing ? 'ring' : 'columns',
     tankanSettingsVersion: TANKAN_SETTINGS_VERSION,
     tankanColumnSpacing: 0,
     tankanGlyphAdvance: 1,
     tankanGlyphSizeX: 1,
     tankanGlyphSizeY: 1,
     tankanColor: TANKAN_BASELINE.color,
+    tankanRingRadius: 0.72,
+    tankanRingTextScale: 0.19,
+    tankanRingRotationDeg: 0,
+    tankanRingLines: [],
     offsetU: 0,
     offsetV: 0,
     width: 1,
@@ -649,6 +693,18 @@ function updateSelectedDecalFromUi({ recordHistory = true } = {}) {
     record.tankanGlyphSizeX = dclamp(dq('decalTankanGlyphSizeX')?.value ?? 1, 0.25, 2);
     record.tankanGlyphSizeY = dclamp(dq('decalTankanGlyphSizeY')?.value ?? 1, 0.25, 2);
     record.tankanColor = dq('decalTankanColor')?.value || TANKAN_BASELINE.color;
+    record.tankanLayoutMode = dq('decalTankanLayoutMode')?.value === 'ring' ? 'ring' : 'columns';
+    record.tankanRingRadius = dclamp(finiteOr(dq('decalTankanRingRadius')?.value, 0.72), 0.08, 0.9);
+    record.tankanRingTextScale = dclamp(finiteOr(dq('decalTankanRingTextScale')?.value, 0.19), 0.025, 0.42);
+    record.tankanRingRotationDeg = finiteOr(dq('decalTankanRingRotationDeg')?.value, 0);
+    if (record.tankanLayoutMode === 'ring') {
+      record.tankanRingLines = [...(dq('decalTankanRingLines')?.querySelectorAll('[data-tankan-ring-line]') || [])].map(node => ({
+        text: String(node.querySelector('[data-ring-text]')?.value || '').slice(0, 160),
+        radiusDifferential: dclamp(finiteOr(node.querySelector('[data-ring-differential]')?.value, 0.22), 0.02, 0.6),
+        rotationDeg: node.querySelector('[data-ring-rotation]')?.value.trim() === '' ? null : finiteOr(node.querySelector('[data-ring-rotation]')?.value, 0),
+        textScale: dclamp(finiteOr(node.querySelector('[data-ring-text-scale]')?.value, 1), 0.2, 3),
+      })).slice(0, 7);
+    }
   }
   buildDecalMesh(record);
   renderDecalList();
@@ -687,6 +743,10 @@ function renderTankanDebug(record = selectedDecal()) {
   if (!record || !isTankanTextDecal(record)) { readout.textContent = ''; return; }
   const container = tankanContainerState(record);
   const layout = container.layout;
+  if (isTankanRing(record)) {
+    readout.textContent = 'Circular Tankan · ' + (layout.ringCount || 0) + ' lines · evenly spaced glyphs · radius ' + record.tankanRingRadius + ' · text scale ' + record.tankanRingTextScale + ' · inner rings staggered by default';
+    return;
+  }
   const fitLabel = container.fitScale < 0.9995 ? `fit-down ${container.fitScale.toFixed(2)}×` : 'natural size';
   readout.textContent = `${layout.columnCount} word column${layout.columnCount === 1 ? '' : 's'} · longest ${layout.longestWord} glyph${layout.longestWord === 1 ? '' : 's'} · normalized spacing ${finiteOr(record.tankanColumnSpacing, 0).toFixed(2)} · advance ${finiteOr(record.tankanGlyphAdvance, 1).toFixed(2)}× · glyph X ${finiteOr(record.tankanGlyphSizeX, 1).toFixed(2)}× · glyph Y ${finiteOr(record.tankanGlyphSizeY, 1).toFixed(2)}× · container ${finiteOr(record.width, 1).toFixed(2)}×${finiteOr(record.height, 1).toFixed(2)} · ${fitLabel} · visual ${Math.round(container.visualWidthPx)}×${Math.round(container.visualHeightPx)}px in ${container.containerWidthPx}×${container.containerHeightPx}px`;
 }
@@ -725,6 +785,23 @@ function renderDecalEditor() {
     dq('decalTankanGlyphSizeX').value = record.tankanGlyphSizeX;
     dq('decalTankanGlyphSizeY').value = record.tankanGlyphSizeY;
     dq('decalTankanColor').value = record.tankanColor;
+    dq('decalTankanLayoutMode').value = isTankanRing(record) ? 'ring' : 'columns';
+    dq('decalTankanRingFields')?.classList.toggle('hidden', !isTankanRing(record));
+    dq('decalTankanRingRadius').value = record.tankanRingRadius;
+    dq('decalTankanRingTextScale').value = record.tankanRingTextScale;
+    dq('decalTankanRingRotationDeg').value = record.tankanRingRotationDeg;
+    const lines = dq('decalTankanRingLines');
+    if (lines) {
+      const escapeAttribute = value => String(value ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); // Safe for texts imported from furniture JSON.
+      lines.innerHTML = (record.tankanRingLines || []).map((line, index) =>
+        '<div class="section" data-tankan-ring-line="' + index + '">' +
+        '<div class="row"><b>Inner ring ' + (index + 1) + '</b><button data-ring-delete="' + index + '" type="button" class="bad">Remove</button></div>' +
+        '<label>Text</label><input data-ring-text type="text" value="' + escapeAttribute(line.text) + '" maxlength="160" spellcheck="false">' +
+        '<div class="g3"><div><label>Radius differential</label><input data-ring-differential type="number" min=".02" max=".6" step=".01" value="' + line.radiusDifferential + '"></div>' +
+        '<div><label>Angle offset ° (blank = stagger)</label><input data-ring-rotation type="number" step="1" placeholder="Auto" value="' + (line.rotationDeg ?? '') + '"></div>' +
+        '<div><label>Relative text size</label><input data-ring-text-scale type="number" min=".2" max="3" step=".05" value="' + line.textScale + '"></div></div></div>'
+      ).join('');
+    }
   }
   const label = dq('decalSurfaceReadout');
   if (label) label.textContent = `${decalSurfaceLabel(record)} · ${decalSourceLabel(record)}`;
@@ -746,6 +823,7 @@ function installDecalUi() {
   panel.innerHTML = `<h2>Surface Decals</h2>
     <div class="muted">Place image artwork or editable Tankan-script text over a recognized furniture surface. For Tankan text, Width/Height define a 2D container: text stays at its authored glyph size and spacing while there is room, and only uniformly scales down when it would overflow the box.</div>
     <div class="g2"><button id="addFurnitureDecal" class="ok">＋ Add Image to Selected Surface</button><button id="addFurnitureTankanText" class="ok">＋ Add Tankan Text</button></div>
+    <button id="addFurnitureTankanRing" class="ok" style="width:100%;margin-top:6px">＋ Add Tankan Text Ring</button>
     <button id="retargetFurnitureDecal" style="width:100%;margin-top:6px">Retarget Selected Decal</button>
     <input id="furnitureDecalFile" type="file" accept="image/png,image/webp,image/jpeg" hidden>
     <div id="furnitureDecalList" class="list" style="margin-top:7px"></div>
@@ -753,7 +831,16 @@ function installDecalUi() {
       <hr><div id="decalSurfaceReadout" class="readout muted"></div>
       <label>Name</label><input id="decalName" type="text">
       <div id="decalTankanFields" class="hidden">
-        <label>Tankan-script text</label><textarea id="decalTankanText" rows="3" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+        <label>Layout</label><select id="decalTankanLayoutMode"><option value="columns">Vertical word columns</option><option value="ring">Concentric text rings</option></select>
+        <label>Tankan-script text (outer ring in circular mode)</label><textarea id="decalTankanText" rows="3" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+        <div id="decalTankanRingFields" class="hidden">
+          <div class="g3"><div><label>Outer ring radius</label><input id="decalTankanRingRadius" type="number" min=".08" max=".9" step=".02"></div>
+          <div><label>Text size</label><input id="decalTankanRingTextScale" type="number" min=".025" max=".42" step=".01"></div>
+          <div><label>Ring rotation °</label><input id="decalTankanRingRotationDeg" type="number" step="1"></div></div>
+          <div id="decalTankanRingLines"></div>
+          <button id="addInnerTankanRing" type="button" class="ok">＋ Add offset inner ring</button>
+          <div class="muted tight">Each circle spaces glyphs equally. Inner lines use independently configured radius differentials, sizes, and angular offsets. Leave rotation blank to stagger automatically.</div>
+        </div>
         <div class="g2"><div><label>Word-column spacing</label><input id="decalTankanColumnSpacing" type="number" min="-0.6" max="4.35" step="0.05"></div><div><label>Glyph advance</label><input id="decalTankanGlyphAdvance" type="number" min="0.1667" max="6.6667" step="0.05"></div></div>
         <div class="g3"><div><label>Glyph size X</label><input id="decalTankanGlyphSizeX" type="number" min="0.25" max="2" step="0.05"></div><div><label>Glyph size Y</label><input id="decalTankanGlyphSizeY" type="number" min="0.25" max="2" step="0.05"></div><div><label>Text color</label><input id="decalTankanColor" type="color" value="#000000"></div></div>
         <div id="decalTankanReadout" class="readout muted" style="margin-top:6px"></div>
@@ -774,7 +861,35 @@ function installDecalUi() {
     </div>`;
   host.prepend(panel);
   dq('addFurnitureDecal').onclick = requestDecalImage;
-  dq('addFurnitureTankanText').onclick = addTankanTextDecal;
+  dq('addFurnitureTankanText').onclick = () => addTankanTextDecal(false);
+  dq('addFurnitureTankanRing').onclick = () => addTankanTextDecal(true);
+  dq('addInnerTankanRing').onclick = () => {
+    const record = selectedDecal();
+    if (!record || !isTankanRing(record) || record.tankanRingLines.length >= 7) {
+      log?.('Select a Tankan text ring; up to 7 inner lines are supported.', 'warn');
+      return;
+    }
+    updateSelectedDecalFromUi({recordHistory:false}); // Persist the currently edited outer line before rebuilding controls.
+    record.tankanRingLines.push({text:'',radiusDifferential:0.22,rotationDeg:null,textScale:1}); // Additional ring defaults to automatic staggering.
+    renderDecalEditor();
+    queueUndoHistory?.('add inner Tankan ring');
+  };
+  dq('decalTankanRingLines').addEventListener('change', () => updateSelectedDecalFromUi({recordHistory:true}));
+  dq('decalTankanRingLines').addEventListener('input', event => {
+    if (!event.target?.matches?.('[data-ring-text]')) return;
+    clearTimeout(tankanInputTimer);
+    tankanInputTimer = setTimeout(() => updateSelectedDecalFromUi({recordHistory:false}), 100);
+  });
+  dq('decalTankanRingLines').addEventListener('click', event => {
+    const button = event.target.closest('[data-ring-delete]');
+    if (!button) return;
+    const record = selectedDecal();
+    if (!record) return;
+    record.tankanRingLines.splice(Number(button.dataset.ringDelete), 1);
+    renderDecalEditor();
+    buildDecalMesh(record);
+    queueUndoHistory?.('remove inner Tankan ring');
+  });
   dq('retargetFurnitureDecal').onclick = retargetSelectedDecal;
   dq('furnitureDecalFile').addEventListener('change', event => {
     const file = event.target?.files?.[0];
@@ -783,8 +898,8 @@ function installDecalUi() {
   for (const id of ['decalGlowEnabled','decalGlowOff','decalGlowOn','decalGlowCycle','decalGlowPulse','decalGlowPreview']) {
     dq(id)?.addEventListener('change', () => updateSelectedDecalFromUi({ recordHistory: true }));
   }
-  for (const id of ['decalName','decalOffsetU','decalOffsetV','decalWidth','decalHeight','decalRotation','decalLift','decalOpacity','decalVisible','decalTankanColumnSpacing','decalTankanGlyphAdvance','decalTankanGlyphSizeX','decalTankanGlyphSizeY','decalTankanColor']) {
-    dq(id)?.addEventListener('change', () => updateSelectedDecalFromUi({ recordHistory: true }));
+  for (const id of ['decalName','decalOffsetU','decalOffsetV','decalWidth','decalHeight','decalRotation','decalLift','decalOpacity','decalVisible','decalTankanColumnSpacing','decalTankanGlyphAdvance','decalTankanGlyphSizeX','decalTankanGlyphSizeY','decalTankanColor','decalTankanLayoutMode','decalTankanRingRadius','decalTankanRingTextScale','decalTankanRingRotationDeg']) {
+    dq(id)?.addEventListener('change', () => { updateSelectedDecalFromUi({ recordHistory: true }); if (id === 'decalTankanLayoutMode') renderDecalEditor(); });
   }
   dq('decalTankanText')?.addEventListener('input', () => {
     clearTimeout(tankanInputTimer);
@@ -837,6 +952,7 @@ exportData = function exportFurnitureWithDecals(...args) {
     sourceTypes: [IMAGE_SOURCE_TYPE, TANKAN_SOURCE_TYPE],
     tankanLayout: 'vertical-word-columns',
     tankanSizing: 'container-fit-down-v1',
+    tankanRingLayout: 'concentric-equal-angle-v1',
   };
   return data;
 };

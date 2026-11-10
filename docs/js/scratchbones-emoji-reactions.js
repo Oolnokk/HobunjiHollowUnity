@@ -1,6 +1,5 @@
 // Scratchbones emoji reactions, adapted from its original card-game effects.
-// Reuses the original silhouette PNGs and shows them as world-space billboards
-// above NPC and livestock models, without changing character animations.
+// Sends the original silhouettes and animation curves to the shared world popup renderer.
 (() => {
   'use strict';
   const TYPES = Object.freeze({ // Animation timing and tint used by all world actors.
@@ -13,15 +12,14 @@
   });
   const COINS = Object.freeze(['emoji_gloat_coin1.png', 'emoji_gloat_coin2.png', 'emoji_gloat_coin3.png']); // Original animated gloat-coin variations.
   const COIN_COLORS = Object.freeze(['#4d9980', '#dad4af', '#a2a0a0']); // Verdigris, white bronze and tin.
+  const EMOJI_SIZE_FACTOR = 1 / 3; // Shrinks only reaction art and its animation travel, leaving other world popups alone.
+  const EMOJI_GLOW_BLUR_PX = 5; // Subtle colored edge glow for each cached PNG mask.
   const ASSET_BASE = typeof document !== 'undefined' && document.currentScript?.src
     ? new URL('../assets/symbols/', document.currentScript.src).href : 'assets/symbols/'; // Asset path relative to module, not page URL.
-  const textures = new Map(); // Promise cache for recolored PNG-mask textures shared by every speaker.
-  const active = new Set(); // Live short-lived effects; the updater never traverses the entire scene.
+  const masks = new Map(); // Cached tinted canvases, reused across actors and repeated coin particles.
   const lastByRoot = new WeakMap(); // Actor-specific cooldown shared by NPC and animal reaction triggers.
-  const stats = { triggered: 0, completed: 0, failedAssets: 0, last: null }; // Read by Pixel Probe or ?emojiDebug=1.
-  const FRAME_SUBSCRIBER_ID = 'scratchbones-emoji-reactions'; // Single owner for render-time animation, managed by RuntimeFrameScheduler.
-  let frameRegistered = false; // Lazy registration keeps this effect entirely inactive until first use.
-  const generationByRoot = new WeakMap(); // Ignores stale async image loads when a newer reaction takes over the same actor.
+  const POPUP_KIND = 'scratchbonesEmoji'; // Used to replace a prior reaction and report active popups.
+  const stats = { triggered: 0, completed: 0, failedAssets: 0, last: null, lastAssetError: null }; // Read by ?emojiDebug=1 and debugSnapshot().
 
   const POSE_FRAMES = Object.freeze({ // Immutable source animation curves reused by every frame without allocating arrays.
     love: [[0,0,0,.1,0,0], [.12,0,0,1.55,1,0], [.22,0,0,1.1,1,0],
@@ -73,46 +71,50 @@
     return null;
   }
 
-  function textureFor(icon, color) {
-    const key = icon + ':' + color; // Same recolored source is shared by all instances.
-    if (textures.has(key)) return textures.get(key);
+  function maskFor(icon, color) {
+    const key = icon + ':' + color; // The same tinted mask backs every use of this icon and color.
+    if (masks.has(key)) return masks.get(key);
     const promise = new Promise(resolve => {
-      if (!window.THREE?.CanvasTexture || typeof Image === 'undefined' || typeof document === 'undefined') {
+      const image = new Image(); // Load anonymously before setting src so the composed canvas can be uploaded to WebGL.
+      image.crossOrigin = 'anonymous';
+      const fail = error => {
+        stats.failedAssets++;
+        stats.lastAssetError = { icon, reason: error.message };
+        const label = document.getElementById('hobunjiEmojiDebugStatus'); // Reports image failures without needing devtools.
+        if (label) label.textContent = icon + ': ' + error.message;
+        masks.delete(key); // A later reaction can retry a temporary image failure.
         resolve(null);
-        return;
-      }
-      const image = new Image(); // Original source mask loaded through browser's image cache.
-      image.onerror = () => { stats.failedAssets++; resolve(null); };
+      };
+      image.onerror = () => fail(new Error('PNG could not be loaded'));
       image.onload = () => {
         try {
-          const mask = document.createElement('canvas'); // One intermediate canvas applies the tint through alpha masking.
-          const canvas = document.createElement('canvas'); // Final cached glow/billboard texture.
+          const mask = document.createElement('canvas'); // Tint the source silhouette using its alpha.
+          const canvas = document.createElement('canvas'); // Cache the final tint and glow.
           mask.width = mask.height = canvas.width = canvas.height = 128;
           const maskCtx = mask.getContext('2d'), ctx = canvas.getContext('2d');
           if (!maskCtx || !ctx) throw new Error('2D canvas unavailable');
-          const factor = Math.min(90 / (image.width || 1), 90 / (image.height || 1)); // Fits original transparent pixels within an icon square.
+          const factor = Math.min(90 / image.naturalWidth, 90 / image.naturalHeight); // Center the artwork without stretching it.
           maskCtx.imageSmoothingEnabled = false;
-          maskCtx.drawImage(image, (128 - image.width * factor) / 2,
-            (128 - image.height * factor) / 2, image.width * factor, image.height * factor);
+          maskCtx.drawImage(image, (128 - image.naturalWidth * factor) / 2,
+            (128 - image.naturalHeight * factor) / 2, image.naturalWidth * factor, image.naturalHeight * factor);
           maskCtx.globalCompositeOperation = 'source-in';
           maskCtx.fillStyle = color;
           maskCtx.fillRect(0, 0, 128, 128);
           ctx.shadowColor = color;
-          ctx.shadowBlur = 17;
+          ctx.shadowBlur = EMOJI_GLOW_BLUR_PX;
           ctx.drawImage(mask, 0, 0);
           ctx.shadowBlur = 0;
           ctx.drawImage(mask, 0, 0);
-          const texture = new window.THREE.CanvasTexture(canvas); // Global per-color cache; no redraw in tick().
-          if (window.THREE.SRGBColorSpace) texture.colorSpace = window.THREE.SRGBColorSpace;
-          else if (window.THREE.sRGBEncoding) texture.encoding = window.THREE.sRGBEncoding; // The shipped Three r128 expects .encoding rather than the newer .colorSpace.
-          texture.magFilter = window.THREE.LinearFilter;
-          texture.minFilter = window.THREE.LinearFilter;
-          resolve(texture);
-        } catch (_) { stats.failedAssets++; resolve(null); }
+          const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data; // Reject blank or CORS-tainted art before WebGL upload.
+          let pixel = 3; // Walk the alpha channel until the first visible pixel.
+          while (pixel < pixels.length && !pixels[pixel]) pixel += 4;
+          if (pixel >= pixels.length) throw new Error('PNG mask is empty');
+          resolve(canvas);
+        } catch (error) { fail(error); }
       };
       image.src = ASSET_BASE + icon;
     });
-    textures.set(key, promise);
+    masks.set(key, promise);
     return promise;
   }
   function partsFor(type) {
@@ -140,88 +142,36 @@
       return Number.isFinite(height) && height > .2 ? Math.min(6, height) : fallbackHeight;
     } catch (_) { return fallbackHeight; }
   }
-  function end(effect) {
-    active.delete(effect);
-    for (const item of effect.items) {
-      effect.root.remove(item.sprite);
-      item.sprite.material.dispose(); // Dispose only per-instance materials, never shared textures.
-    }
-    stats.completed++;
-  }
-  function update(frameContext) {
-    const now = Number(frameContext?.timestamp) || performance.now(); // Authoritative pre-render frame time, shared with the game.
-    for (const effect of active) {
-      const progress = (now - effect.startedAt) / effect.duration;
-      if (!effect.root.parent || effect.root.visible === false || progress >= 1) {
-        end(effect);
-        continue;
-      }
-      for (const item of effect.items) {
-        const pose = sample(effect.type, progress, item.part, item.index);
-        const sprite = item.sprite;
-        sprite.visible = !!pose && pose.alpha > .001;
-        if (!pose) continue;
-        sprite.position.set(pose.x * effect.size, effect.height + .28 + pose.y * effect.size, .05);
-        const factor = item.part === 'cloud' ? 2 : item.part === 'coin' ? .72 : item.part === 'ray' ? .8 : 1;
-        sprite.scale.set(effect.size * pose.scale * factor, effect.size * pose.scale *
-          (item.part === 'cloud' ? .92 : factor), 1);
-        sprite.material.opacity = pose.alpha;
-        sprite.material.rotation = pose.rotation * Math.PI / 180;
-      }
-    }
-    if (!active.size) window.RuntimeFrameScheduler?.setEnabled?.(FRAME_SUBSCRIBER_ID, false); // Nothing remains to animate between reactions.
-  }
-  function ensureFrameOwner() {
-    const scheduler = window.RuntimeFrameScheduler; // The parser-bootstrapped game scheduler owns every persistent browser frame.
-    if (!scheduler?.register || !scheduler?.setEnabled) return false;
-    if (frameRegistered) return true;
-    scheduler.register(FRAME_SUBSCRIBER_ID, update, {
-      phase: 'pre-render', enabled: false, owner: 'HobunjiEmojiReactions',
-      description: 'Move and expire Scratchbones emoji billboards after gameplay pose updates, before scene render.',
-    });
-    frameRegistered = true;
-    return true;
-  }
-
   function trigger(root, inputType, options = {}) {
     const type = String(inputType || '').toLowerCase();
-    if (!TYPES[type] || !root?.isObject3D || !root.parent || root.visible === false || !ensureFrameOwner()) return false;
-    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const popup = window.WorldPopupText; // Owns the billboard, animation clock, and scene lifecycle.
+    if (!Object.hasOwn(TYPES, type) || !root?.isObject3D || !root.parent || root.visible === false || !popup?.showIconEffect) return false;
+    const now = performance.now();
     const last = lastByRoot.get(root); // Limits repeated emotional reactions on any one character.
     if (!options.force && last != null && now - last < 900) return false;
-    if (active.size >= 20) return false; // Hard cap for crowded festival scenes.
+    const height = heightFor(root, options.height); // Popups attach to the scene, so previous reactions never affect actor bounds.
+    const accepted = popup.showIconEffect(root, {
+      kind: POPUP_KIND,
+      duration: TYPES[type].duration,
+      height: height + .28,
+      size: Math.max(.25, Math.min(.62, height * .38)) * EMOJI_SIZE_FACTOR,
+      loadParts: () => Promise.all(partsFor(type).map(async item => {
+        const widthScale = item.part === 'cloud' ? 2 : item.part === 'coin' ? .72 : item.part === 'ray' ? .8 : 1; // Preserve the source cloud, coin and ray proportions.
+        return { part: item.part, index: item.index, canvas: await maskFor(item.icon, item.color),
+          name: 'scratchbones_emoji_' + type, widthScale, heightScale: item.part === 'cloud' ? .92 : widthScale };
+      })),
+      sample: (progress, part, index) => sample(type, progress, part, index),
+      onDispose: () => { stats.completed++; },
+    });
+    if (!accepted) return false;
     lastByRoot.set(root, now);
-    for (const effect of active) if (effect.root === root) end(effect); // Do not stack sprites or mistake a previous emoji for character height.
-    const generation = (generationByRoot.get(root) || 0) + 1; // Newer reactions supersede pending async masks for this actor.
-    generationByRoot.set(root, generation);
-    const height = heightFor(root, options.height); // Read geometry after retiring any previous emoji from this root.
-    const size = Math.max(.25, Math.min(.62, height * .38)); // Proportional to species size but still legible on small animals.
-    const parts = partsFor(type); // Sprite specifications for a single icon, five rays or a cloud/coin shower.
     stats.triggered++;
     stats.last = { actor: root.name || 'character', type, at: Date.now() };
-    Promise.all(parts.map(item => textureFor(item.icon, item.color))).then(loaded => {
-      if (!root.parent || root.visible === false || active.size >= 20 || generationByRoot.get(root) !== generation) return;
-      const items = []; // Own one disposable material per sprite; share recolored mask textures.
-      for (let i = 0; i < parts.length; i++) {
-        if (!loaded[i]) continue;
-        const material = new window.THREE.SpriteMaterial({ map: loaded[i], transparent: true,
-          opacity: 0, depthTest: true, depthWrite: false, fog: false, toneMapped: false }); // Opaque world surfaces occlude the FX; avoid through-wall emojis.
-        const sprite = new window.THREE.Sprite(material);
-        sprite.name = 'scratchbones_emoji_' + type;
-        sprite.userData.hobunjiEmojiFx = true;
-        sprite.renderOrder = 9990;
-        root.add(sprite);
-        items.push({ sprite, part: parts[i].part, index: parts[i].index });
-      }
-      if (!items.length) return;
-      active.add({ root, type, items, height, size, duration: TYPES[type].duration, startedAt: performance.now() });
-      window.RuntimeFrameScheduler.setEnabled(FRAME_SUBSCRIBER_ID, true); // Wake the dormant pre-render subscriber only for an active reaction.
-    }).catch(() => { stats.failedAssets++; });
     return true;
   }
   function reactionForDialogue(options = {}) {
     if (options.emojiReaction === false) return null;
-    if (TYPES[options.emojiReaction]) return options.emojiReaction;
+    if (Object.hasOwn(TYPES, options.emojiReaction)) return options.emojiReaction;
     const tone = String(options.tone || '').toLowerCase(); // Existing NPC tone categories, not guessed text sentiment.
     if (tone === 'animal') return null; // Creature vocalizations have their own warning/growl hook.
     if (tone === 'shock' || tone === 'surprise' || tone === 'startled') return 'shock';
@@ -236,7 +186,10 @@
     const type = reactionForDialogue(options);
     return type ? trigger(root, type, options) : false;
   }
-  function debugSnapshot() { return { ...stats, active: active.size, loadedMasks: textures.size }; }
+  function debugSnapshot() {
+    return { ...stats, active: window.WorldPopupText?.countIconEffects?.(POPUP_KIND) || 0, loadedMasks: masks.size,
+      latestChange: 'Reaction sprites are one-third size with subtler glow; other popups are unchanged.' };
+  }
   function debugControls() {
     if (typeof document === 'undefined' || typeof location === 'undefined' || !new URLSearchParams(location.search).has('emojiDebug')) return;
     const mount = () => {
@@ -245,7 +198,9 @@
       panel.id = 'hobunjiEmojiDebug';
       panel.style.cssText = 'position:fixed;right:10px;bottom:95px;z-index:30001;background:#1b2028e8;color:white;border:1px solid #aaa;border-radius:10px;padding:8px;max-width:240px;font:12px sans-serif';
       const label = document.createElement('div'); // The button result appears above the buttons without needing the console.
-      label.textContent = 'Scratchbones emoji debug';
+      label.id = 'hobunjiEmojiDebugStatus';
+      label.setAttribute('role', 'status');
+      label.textContent = 'Scratchbones emoji popup debug';
       panel.appendChild(label);
       for (const type of Object.keys(TYPES)) {
         const button = document.createElement('button'); // Trigger each source animation on the live player rig.
@@ -256,7 +211,7 @@
           e.stopPropagation();
           const root = window.PlayerBodyTransformComposer?.getPlayerMesh?.()
             || window.Combat?.deps?.playerMesh || null;
-          label.textContent = root && trigger(root, type, { force: true }) ? 'Playing ' + type : 'Player rig not available';
+          label.textContent = root && trigger(root, type, { force: true }) ? 'Playing ' + type : 'Emoji popup unavailable';
         });
         panel.appendChild(button);
       }

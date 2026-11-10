@@ -175,6 +175,7 @@
   function teardown(key = PLAYER_KEY) {
     const old = states.get(key);
     if (!old) return;
+    global.HobunjiWeaponSpriteAssemblies?.syncDualWield?.(old.visual, old.mainMesh, old.offMesh, false); // Release both independent suspension rigs before their parent meshes are disposed.
     restoreOriginalMaterial(old);
     old.mainRoot?.parent?.remove?.(old.mainRoot);
     old.offRoot?.parent?.remove?.(old.offRoot);
@@ -577,6 +578,7 @@
     } else if (active && !invisible) applyMainLag(current);
     current.offRoot.updateMatrixWorld?.(true);
     current.mainRoot.updateMatrixWorld?.(true);
+    current.flailCopiesReady = !!global.HobunjiWeaponSpriteAssemblies?.syncDualWield?.(current.visual, current.mainMesh, current.offMesh, active); // Each hand has its own real flail physics and head, never a world-space clone of the original rope.
     return current;
   }
 
@@ -691,6 +693,7 @@
       mainChildLocalPosition: state?.mainMesh?.position?.toArray?.() || null,
       offChildLocalPosition: state?.offMesh?.position?.toArray?.() || null,
       offChildMirroredX: Number(state?.offMesh?.scale?.x) < 0,
+      flailCopiesReady: !!state?.flailCopiesReady, // Readable on mobile without console/devtools; false while the replica art is loading.
       mainRootParentIsHiddenOriginalPlane: !!state && state.mainRoot?.parent === state.plane,
       offRootParentIsHiddenOriginalPlane: !!state && state.offRoot?.parent === state.plane,
       editorIdlePreviewActive: currentDualState().source === 'editor-dual-wield-idle',
@@ -731,6 +734,7 @@
       owner: 'HobunjiDualWieldWeaponVisuals',
       description: 'Maintains hidden-original dual weapon duplicates, plane-normal separation, authored idle offhand placement, and small main-hand attack lag.',
     });
+    global.HobunjiWeaponSpriteAssemblies?.scheduleTickAfterPose?.(); // Move the ONE rope projector after our updated haft poses; the later hand driver repeats this once at load.
   }
   // Standalone editor contexts do not need a second RAF loop: the hand frame driver,
   // grip-mode toggles, idle preview controls, and transformSocketForHand() call syncNow().

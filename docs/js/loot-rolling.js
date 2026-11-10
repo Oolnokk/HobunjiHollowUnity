@@ -45,7 +45,10 @@
     const config = _lootPools[poolId]?.mastery; // Authored source chance, rank weights and apportioned effect ids live beside the ordinary loot pools.
     if (!config) return {};
     const random = context.random || (() => window.GameRandom?.random?.() ?? Math.random()); // Seeded callers can supply the same event RNG as their other loot.
-    if (random() >= config.chance) { lastMasteryRoll = { poolId, dropped: false }; return {}; }
+    const cacheSource = context.masterySource === 'caveCache' || /^mastery_(ruin|final)_/.test(poolId); // Treasure and defeated-foe fortunes never bleed into each other's mastery sources.
+    const fortuneId = cacheSource ? 'treasureFortune' : 'battleFortune';
+    const chance = Math.min(1,Math.max(0,Number(config.chance)||0) * (window.FestivalSystem?.fortuneMultiplier?.(fortuneId) || 1)); // The authored base drop chance remains the only source of the probability.
+    if (random() >= chance) { lastMasteryRoll = { poolId, dropped: false, chance, fortuneId }; return {}; }
     const ranks = Object.entries(config.rankWeights).filter(([, weight]) => Number(weight) > 0); // Weighted rank is rolled only after the single per-source drop chance succeeds.
     let roll = random() * ranks.reduce((sum, [, weight]) => sum + Number(weight), 0); // Unnormalized weights preserve the captain's stated 66:33 ratio.
     let rank = Number(ranks.at(-1)?.[0]); // Rounding-safe fallback for the final weighted bucket.

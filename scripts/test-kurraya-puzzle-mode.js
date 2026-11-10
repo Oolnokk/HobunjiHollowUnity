@@ -52,8 +52,10 @@ assert.match(host,/puzzle-song-recognized/,'a recognized song is forwarded to ga
 assert.match(host,/function silenceAmbientForPuzzle\(\)/,'puzzle explicitly silences nearby NPC backing tracks');
 assert.match(host,/playerSession\?\.instrumentMode === 'puzzle' && playerSession\.area === performer\.area/,
   'NPC scheduled audio never restarts inside the puzzle');
-assert.match(host,/suspendedNpcSong\?\.npcId === performer\.npcId/,
-  'switching to legacy Performance resumes the captured NPC melody');
+assert.match(host,/if \(!ambientFrames\.has\(performer\.npcId\)\) startAmbientForNpc\(performer\.npcId, performer\.songId\)/,
+  'Performance resumes the NPC through its own audio frame after Puzzle');
+assert.match(host,/setOwner\?\.\('music-performance'\)/,
+  'Performance exclusively owns remapped controller inputs');
 assert.match(instrument,/overlay\.dataset\.instrumentMode === 'performance'/,'puzzle iframe is not hidden by the old performance minimizer');
 assert.match(puzzle,/music\.matchSuffix\(history\)/,'notes are recognized by ordered suffix, never timestamp or rhythm');
 assert.doesNotMatch(puzzle,/rootPad|metronome|chordDown|noteDown\(/i,'puzzle UI has no root pad, metronome, or chords');

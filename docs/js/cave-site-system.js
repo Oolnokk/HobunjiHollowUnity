@@ -1600,7 +1600,7 @@
     const tileSize = Number(wildlifeDeps?.TILE) || 32;
     ruinParentZone = profile.zoneId;
     const returnAnchor = { area: profile.zoneId, x: (Number(anchor.x) + 0.5) * tileSize, y: (Number(anchor.y) + 0.5) * tileSize };
-    Promise.resolve(ruin.generate(plan.ruinEntrance.seed, { site: true, label: 'Ancient Ruin', returnAnchor }))
+    Promise.resolve(ruin.generate(plan.ruinEntrance.seed, { site: true, tier: 'cave', label: 'Ancient Ruin', returnAnchor }))
       .then(ok => {
         if (!ok) wildlifeDeps?.showToast?.('The ancient passage cannot be entered right now.', false);
       })

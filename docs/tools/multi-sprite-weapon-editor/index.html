@@ -61,10 +61,10 @@ h3{font-size:13px;margin:5px 0}
 <script src="../../config/weapon-sprite-assemblies.js?v=20261109ropebrown3"></script>
 <script src="../../js/weapon-layer-effects.js?v=20261109flailFireGC2"></script>
 <script src="../../js/combat/shared-attack-pose.js?v=20261030preview3d1"></script>
-<script src="../../js/weapon-sprite-assemblies.js?v=20261109rootlife2"></script>
+<script src="../../js/weapon-sprite-assemblies.js?v=20261110flailorder2"></script>
 <script src="preview-renderer.js?v=20261030torchstaffgeometry3"></script>
 <script src="pick-on-sprite.js?v=20261030pixelpick1"></script>
-<script defer src="app.js?v=20261109ropebrown3"></script>
+<script defer src="app.js?v=20261109modularidentity1"></script>
 </head>
 <body>
 <main>
@@ -84,6 +84,7 @@ h3{font-size:13px;margin:5px 0}
 <label for="weaponLabel">Display label</label><input id="weaponLabel">
 <label for="baseSpriteGeneral">Base tool sprite PNG</label><input list="repoSprites" id="baseSpriteGeneral" placeholder="assets/toolsprites/my_weapon.png">
 <p class="help">Any tool with an existing TOOL_ITEM_DEFS key or shape can use rigid-sprite materials, marker effects, layered components and/or flail assemblies. Export the config to commit it for gameplay; local drafts are preview-only.</p>
+<p class="help">Modular Foundry bridge: author a reusable flail recipe here (rope/chain texture, length, tint, movement, original layered head and contact points), then open the <a href="../modular-weapon-editor/" target="_blank" rel="noopener">Modular Weapon Editor</a> to assign its ID to a head or haft. A head-owned recipe retains these layers while anchoring its rope to a selected shaft; a haft-owned recipe keeps this rope and swaps its original head layers for the chosen modular PNG. The two pieces cannot both own a rope. This editor never rewrites individual Foundry parts.</p>
 </div>
 <nav class="tabs" aria-label="Assembly editor">
 <button data-tab="flails" aria-selected="true">1. Flails</button>

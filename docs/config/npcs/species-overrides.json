@@ -15,20 +15,47 @@
         "gender": "male",
         "uvMode": "stretch-fit",
         "materials": {
-          "body": { "texture": "assets/textures/canvas.png", "color": "#CECECE" },
-          "bone": { "texture": "assets/textures/canvas.png", "color": "#0D0D0D" }
+          "body": {
+            "texture": "assets/textures/canvas.png",
+            "color": "#CECECE"
+          },
+          "bone": {
+            "texture": "assets/textures/canvas.png",
+            "color": "#0D0D0D"
+          }
         },
         "modelWidth": 1.18,
         "modelHeight": 1.19,
-        "bodyOffsetY": 0.0,
+        "bodyOffsetY": 0,
         "neck": {
-          "pivot": { "x": 0.35, "y": 0.47 },
-          "center": { "x": 0.19, "y": 0.30 },
-          "radius": { "x": 0.25, "y": 0.30 },
+          "pivot": {
+            "x": 0.35,
+            "y": 0.47
+          },
+          "center": {
+            "x": 0.19,
+            "y": 0.3
+          },
+          "radius": {
+            "x": 0.25,
+            "y": 0.3
+          },
           "minDeg": -30,
           "maxDeg": 30,
           "turnSpeedDeg": 120
         }
+      },
+      "wildernessRoaming": {
+        "zoneId": "map_western_slope",
+        "region": "western-slope",
+        "sightRadiusTiles": 9,
+        "fleeDistanceTiles": 5.5,
+        "fleeMaxSeconds": 4,
+        "diveSeconds": 0.5,
+        "relocationMinTiles": 17,
+        "roamMinSeconds": 5,
+        "roamMaxSeconds": 11,
+        "scanIntervalSeconds": 0.24
       }
     },
     "banubu": {

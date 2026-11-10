@@ -438,12 +438,12 @@ async function run() {
   const editorDrawnMounts = []; // Receives positions of actual overlay lines, not just source draft values.
   const editorDrawnGizmos = [];
   const editorHelpers = new Function('api', 'chosenShaft', 'chosenHead', 'cachedImages', 'byId',
-    'lineMarker', 'drawGizmo', 'mountIndex', rigHelperSource +
+    'lineMarker', 'drawGizmo', 'mountIndex', 'boreIsVisible', rigHelperSource +
     '\nreturn { rigLayout, displayMounts, rigToLocal, drawLines };')(
     api, () => fixture, () => api.getConfig().heads.warhammer, { 'shaft-canvas': {} },
     () => authorCanvas,
     (_ctx, mount) => editorDrawnMounts.push(mount),
-    (_ctx, mount) => editorDrawnGizmos.push(mount), 0);
+    (_ctx, mount) => editorDrawnGizmos.push(mount), 0, () => false); // The rigid-head fixture intentionally has no bore panel or flail guide.
   editorHelpers.drawLines('shaft-canvas');
   assert.equal(editorCanvasOps.filter(event => event[0] === 'haft').length, 1,
     'rig edit draws the original shaft only once, with no source-image scaling');

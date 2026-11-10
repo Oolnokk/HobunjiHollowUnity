@@ -718,6 +718,13 @@
     if (music) lines.push(`NPC music: ${JSON.stringify(music)}`);
     const stoneAudio=window.RuinInteractionAudio?.debugSnapshot?.(); // The Debug tab exposes the latest recorded cue/pitch on mobile without a console.
     if(stoneAudio)lines.push(`Ruin stone/fire audio: ${JSON.stringify(stoneAudio)}`);
+    const stoneBeatTransport=window.AudioSystem?.stoneBeatDebugSnapshot?.(); // Mobile-readable Web Audio vs native fallback, decoded buffers, queued voices, and decode failures.
+    if(stoneBeatTransport) lines.push(`Stonebeat transport: ${JSON.stringify(stoneBeatTransport)}`);
+    const cachedFlails=window.HobunjiWeaponSpriteAssemblies?.debugSnapshot?.().filter(entry=>entry.connector); // Only flails matter for detached rope/head ownership; omit ordinary weapons.
+    if(cachedFlails?.length) lines.push(`Flail retained roots: ${JSON.stringify(cachedFlails.slice(0,6).map(entry=>({
+      itemKey:entry.itemKey,attached:entry.attached,loaded:entry.loaded,cachedPlayerOwned:entry.cachedPlayerOwned,
+      detachedForMs:entry.detachedForMs,connector:entry.connector,
+    })))}`);
     const erroring = entries.filter(entry => entry.errorCount > 0);
     if (erroring.length) {
       lines.push(`>>> Frame scheduler subscriber errors: ${erroring.map(entry => `${entry.id}(${entry.owner}) x${entry.errorCount}: ${String(entry.lastError || '').split('\n')[0]}`).join(' | ')}`);
@@ -1107,7 +1114,7 @@
     if (farmhouseLightingDebug) lines.push(`Farmhouse lighting: installed=${farmhouseLightingDebug.installed} playerScenes=${farmhouseLightingDebug.playerFarmhouseSceneCount} overlay=${farmhouseLightingDebug.overlayLightingAuthority} activePlayerHouse=${activeScene?.userData?.hobunjiPlayerFarmhouseInterior === true}`);
     const heldRenderDebug = window.HeldObjectRenderOrder?.snapshot?.(); // Exposes the retained selective-x-ray render mode and pass counters on mobile.
     if (heldRenderDebug) lines.push(`Held x-ray: mode=${heldRenderDebug.mode} ground=${heldRenderDebug.groundMeshes} interiorFloor=${heldRenderDebug.interiorFloorMeshes ?? 0} cavernShell=${heldRenderDebug.topFaceGroundMeshes ?? 0} farmhouseFloor=${heldRenderDebug.farmhouseFloorMeshes ?? 0} held=${heldRenderDebug.heldMeshes} footWater=${heldRenderDebug.waterOccludedMeshes ?? '-'}/${heldRenderDebug.waterReplayMeshes ?? '-'}/${heldRenderDebug.waterReplays ?? '-'} stencil=${heldRenderDebug.stencilBits ?? '-'} skips=${heldRenderDebug.missingStencilFootReplaySkips ?? '-'} passes=${heldRenderDebug.baseWorldRenders}/${heldRenderDebug.selectiveOverlays}/${heldRenderDebug.nonGroundDepthReplays}/${heldRenderDebug.groundDepthRestores} shellXray=${heldRenderDebug.shellXrayPasses ?? 0}/${heldRenderDebug.shellXrayMeshes ?? 0} elevationGroups=${heldRenderDebug.elevationReplayGroups ?? 0} unknownElevation=${heldRenderDebug.unknownElevationMeshes ?? 0} elevationShaders=${heldRenderDebug.elevationShaderMaterials ?? 0}/${heldRenderDebug.elevationShaderFallbacks ?? 0} surfaceComposer=${heldRenderDebug.surfaceOcclusionComposer?.version ?? '-'}:${heldRenderDebug.surfaceOcclusionComposer?.consumers?.join(',') ?? '-'} waterDepthAlpha=${heldRenderDebug.surfaceOcclusionComposer?.waterDepthAlphaThreshold ?? '-'}`);
-    if (heldRenderDebug) lines.push(`Held replay budget: offscreen=${heldRenderDebug.baseOffscreenFiltered ?? '-'}/${heldRenderDebug.baseReplayCandidates ?? '-'} shellOffscreen=${heldRenderDebug.shellOffscreenFiltered ?? '-'}/${heldRenderDebug.shellReplayCandidates ?? '-'} elevationGroupScissors=${heldRenderDebug.groupScissors ?? '-'} fullscreenReasons=${heldRenderDebug.lastHeldFullscreenReason ?? '-'}/${heldRenderDebug.lastShellFullscreenReason ?? '-'} scissorCoverage=${heldRenderDebug.lastReplayScissorCoverage ?? '-'}`); // Mobile A/B proof that expensive outdoor depth passes are filtered and individually bounded.
+    if (heldRenderDebug) lines.push(`Held replay budget: offscreen=${heldRenderDebug.baseOffscreenFiltered ?? '-'}/${heldRenderDebug.baseReplayCandidates ?? '-'} shellOffscreen=${heldRenderDebug.shellOffscreenFiltered ?? '-'}/${heldRenderDebug.shellReplayCandidates ?? '-'} tileRegions=${heldRenderDebug.xrayTileRegions ?? '-'} ordinaryDepth=${heldRenderDebug.xrayOrdinaryMeshes ?? '-'} groupScissors=${heldRenderDebug.groupScissors ?? '-'} fullscreenReasons=${heldRenderDebug.lastHeldFullscreenReason ?? '-'}/${heldRenderDebug.lastShellFullscreenReason ?? '-'} scissorCoverage=${heldRenderDebug.lastReplayScissorCoverage ?? '-'}`); // Mobile A/B proof that expensive outdoor depth passes are filtered and individually bounded.
     const waterFootLines = _pixelProbeWaterFootContactLines(activeScene, currentArea, playerMesh); // Used to distinguish real foot/water intersection from camera-perspective illusions on mobile.
     if (waterFootLines) lines.push(...waterFootLines);
     const controllerDebug = window.HOBUNJI_CONTROLLER_STATUS; // Published by game.js so controller ownership and raw browser mapping are copyable on mobile.
@@ -1270,6 +1277,12 @@
       lines.push(result
         ? `3D melee ${result.shape || 'collider'}: hit=${result.hit ? 'YES' : 'no'} range=${Number(result.bestDistanceWorld).toFixed(2)}/${Number(result.rangeWorld).toFixed(2)} angle=${Number(result.bestAngleDeg).toFixed(1)}°/${Number(result.halfConeDeg).toFixed(1)}° pitch=${Number(result.pitchDeg).toFixed(1)}° height=${Number(result.halfHeightWorld || 0).toFixed(2)} trails=${meleeDebug.activeTrailCount}`
         : `3D melee: no resolved swing yet; trails=${meleeDebug.activeTrailCount}`);
+      lines.push(`Melee trail pool: free=${meleeDebug.pooledTrailCount || 0} created=${meleeDebug.trailMeshesCreated || 0} reused=${meleeDebug.trailMeshesReused || 0} freed=${meleeDebug.trailMeshesDisposed || 0}`); // Mobile-visible proof that successive strikes reuse GPU buffers.
+      const strikeTimes = meleeDebug.strikeCpuMs; // Combat's small snapshot avoids collecting all profiler buckets during live debugging.
+      if ((strikeTimes?.enemy?.samples || 0) + (strikeTimes?.player?.samples || 0) > 0)
+        lines.push(`Strike CPU peak/last: enemy=${Number(strikeTimes.enemy.max).toFixed(1)}/${Number(strikeTimes.enemy.last).toFixed(1)}ms player=${Number(strikeTimes.player.max).toFixed(1)}/${Number(strikeTimes.player.last).toFixed(1)}ms (Performance Profiler)`);
+      const swingPose = window.BanditCombat?.swingPoseCpuMs; // Per-enemy animation cost, also captured on completely missed attacks.
+      if (swingPose?.samples) lines.push(`Bandit swing pose CPU peak/last: ${Number(swingPose.peakMs).toFixed(1)}/${Number(swingPose.lastMs).toFixed(1)}ms per bandit (Profiler)`);
     }
     const held = deps.getHeldObjectDebug?.();
     if (held) lines.push(`Held objects: mode=${held.mode} tool=${held.toolVisible ? 'visible' : 'hidden'}/${held.toolParent} item=${held.heldItemVisible ? 'visible' : 'hidden'}/${held.heldItemParent} key=${held.heldItemKey || '-'} drink=${held.drinkAnimating ? `${held.drinkPhase}@${Math.round(held.drinkProgress * 100)}%` : 'idle'}`);
@@ -1280,6 +1293,8 @@
     if (held?.actionArch?.length) {
       const archState = held.actionArch.map(button => `${button.id}=${button.hidden ? 'hidden' : (button.action || 'empty')}${button.blocked ? '/blocked' : ''}`).join(' ');
       lines.push(`Mobile action arch: ${archState}`);
+      const markupWrites = held.actionArch.map(button => `${button.id}=${button.markupWrites ?? 0}`).join(' '); // Per-slot totals distinguish stable controls from buttons repeatedly rebuilt while aiming.
+      lines.push(`Action arch markup writes: ${markupWrites}`);
     }
     if (held?.characterActionLocks?.length) {
       const lockState = held.characterActionLocks.map(lock => `${lock.owner}[${lock.participants.map(participant => `${participant.id}:${participant.channels.join('+')}`).join(',')}]`).join(' ');

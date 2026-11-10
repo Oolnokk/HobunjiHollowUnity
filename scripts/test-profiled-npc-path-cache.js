@@ -37,4 +37,32 @@ assert.ok(pathing.canNpcTraverse('town', 4.5, 5.5, 5.5, 5.5),
 wallEnabled = true;
 assert.equal(pathing.canNpcTraverse('town', 4.5, 5.5, 5.5, 5.5), false,
   'live movement detects a building wall reintroduced after the search');
-console.log('profiled NPC path cache: per-search footprint reuse and live invalidation ok');
+const cliff = Array.from({ length: 24 }, () => Array.from({ length: 24 }, () => ({ type: 0 }))); // A separated ledge forces A* to exhaust its reachable side.
+for (const row of cliff) row[12].incline = true;
+let exactProbes = 0; // Counts calls to the shared footprint provider.
+let furnitureProbes = 0; // Counts ordinary point furniture samples inside a clear footprint.
+let legacyPointProbes = 0; // Counts calls to the fallback that would also repeat the structural check.
+windowStub.AreaFootprintBlockers.blocksBox = (_area, x, z, half) => {
+  exactProbes++;
+  return Math.abs(x - 5.5) < half + 0.1 && Math.abs(z - 6.5) < half + 0.1;
+};
+pathing.init({
+  ...deps,
+  isZoneArea: () => true,
+  npcGridForArea: () => cliff,
+  isTownBuildingCollisionTile: () => false,
+  furnitureBlocksMovementAt: () => { legacyPointProbes++; return false; },
+  furnitureOnlyBlocksMovementAt: () => { furnitureProbes++; return false; },
+});
+assert.equal(pathing.isNpcPositionWalkable('slope', 5.31, 6.5), false, 'exact geometry still blocks a body whose center clears it');
+assert.equal(furnitureProbes, 0, 'blocked bodies never reach the furniture samples');
+assert.equal(pathing.isNpcPositionWalkable('slope', 6.5, 6.5), true, 'empty bodies are still walkable');
+assert.equal(furnitureProbes, 9, 'ordinary furniture keeps all nine samples');
+assert.equal(exactProbes, 2, 'each position checks the exact structural providers once');
+assert.equal(legacyPointProbes, 0, 'already-cleared structural providers are skipped at contained points');
+const beforeCliff = pathing.debugSnapshot(); // Isolates the edge count for the unreachable cliff crossing.
+assert.equal(pathing.findNpcPath('slope', 4.4, 6.5, 17, 6, { padding: 20 }), null, 'the planner still respects impassable cliff faces');
+const afterCliff = pathing.debugSnapshot(); // Verifies the planner did less work on the same unreachable area.
+assert(afterCliff.pathNonImprovingEdgesSkipped > 500, 'the search avoids hundreds of unnecessary sweeps on a disconnected ledge');
+assert(afterCliff.pathEdgeSweeps - beforeCliff.pathEdgeSweeps < 700, 'the unreachable search bounds swept collision work');
+console.log('profiled NPC path cache: footprint reuse, edge pruning, and live invalidation ok');

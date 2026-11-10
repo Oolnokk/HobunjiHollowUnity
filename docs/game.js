@@ -3321,6 +3321,11 @@
 
       function furnitureBlocksMovementAt(area, x, z, worldY = null) {
         if (window.AreaFootprintBlockers?.blocksBox(area, x, z, 0, worldY)) return true;
+        return furnitureOnlyBlocksMovementAt(area, x, z, worldY);
+      }
+
+      // NPC sweeps already checked the whole footprint against structural providers.
+      function furnitureOnlyBlocksMovementAt(area, x, z, worldY = null) {
         if (window.FurnitureTableSystem?.blocksBox(area, x, z, 0, worldY)) return true; // Exterior and locale furniture share the normal NPC/player movement authority.
         if (_isZoneArea(area) && window.FoliageFurnitureRuntime?.blocksPoint(area, x, z)) return true;
         if (interiorFurnitureObjects.some(obj => obj.area === area && decorativeFurnitureBlocksPoint(obj, x, z))) return true;
@@ -9551,6 +9556,7 @@
         member.minedRockState = serializeZoneMinedRockState();
         member.townMineState = window.TownMine?.serialize?.() || null;
         member.slagothimTradersState = window.SlagothimTraders?.serialize?.() || null;
+        member.nohuknukWildernessState = window.NohuknukWilderness?.serialize?.() || null; // Persists his logical snowfield position after an unseen burrow.
         member.tzatzulNestState = window.TzatzulNestEncounter?.serialize?.() || null;
         member.caveSiteState = window.CaveSiteSystem?.serialize?.() || null;
         member.doorstepVisitState = window.DoorstepVisits?.serialize?.() || {};
@@ -10575,6 +10581,48 @@
       // driven each frame from updatePlayerMesh. See
       // docs/js/procedural-leg-animation.js.
       let playerLegs = null;
+      // The rendered gait follows actual displacement: support walking, mini-cliff shelves and
+      // other traversal owners can move player.x/y while intentionally keeping player.vx/vy at zero.
+      const playerGaitTravel = { area: null, x: NaN, y: NaN, speed: 0, reportedSpeed: 0, source: 'uninitialized' }; // Last physical sample and mobile diagnostics; never writes to movement physics.
+      function samplePlayerGaitSpeed(area, x, y, dt, reportedTilesPerSecond) {
+        let gaitSpeed = Number.isFinite(reportedTilesPerSecond) ? Math.max(0, reportedTilesPerSecond) : 0; // Fallback for first/transition/teleport frames.
+        let source = 'velocity'; // Identifies why this frame used physical travel or the velocity fallback in Dev Companion.
+        if (playerGaitTravel.area === area && Number.isFinite(dt) && dt > 0 && dt <= 0.2
+          && Number.isFinite(playerGaitTravel.x) && Number.isFinite(playerGaitTravel.y)) {
+          const traveledTilesPerSecond = Math.hypot(x - playerGaitTravel.x, y - playerGaitTravel.y) / (TILE * dt); // True ground-plane distance, including support-owned walking.
+          const plausibleMaximum = Math.max(16, gaitSpeed * 3); // Reject teleport/checkpoint jumps, but retain fast buffed or dev-speed travel.
+          if (Number.isFinite(traveledTilesPerSecond) && traveledTilesPerSecond <= plausibleMaximum) {
+            gaitSpeed = traveledTilesPerSecond;
+            source = 'travel';
+          } else source = 'teleport';
+        } else source = 'reset';
+        playerGaitTravel.area = area;
+        playerGaitTravel.x = x;
+        playerGaitTravel.y = y;
+        playerGaitTravel.speed = gaitSpeed;
+        playerGaitTravel.reportedSpeed = Number.isFinite(reportedTilesPerSecond) ? reportedTilesPerSecond : 0;
+        playerGaitTravel.source = source;
+        return gaitSpeed;
+      }
+      window.DevCompanion?.registerStateProvider?.('playerGait', () => {
+        const legDebug = playerLegs?.getStandingPoseDebug?.() || null; // Reuses the canonical foot-rig snapshot at Dev Companion's low polling rate.
+        return {
+          area: playerGaitTravel.area,
+          gaitSpeedTilesPerSecond: playerGaitTravel.speed,
+          velocitySpeedTilesPerSecond: playerGaitTravel.reportedSpeed,
+          source: playerGaitTravel.source,
+          jumpPhase: player._freeJump?.phase || null,
+          legRigAttached: !!playerLegs?.group?.parent,
+          legMode: legDebug?.motionMode || null,
+          externalFootContact: !!legDebug?.externalContact?.active,
+          gaitCadenceHz: legDebug?.gait?.cadenceHz ?? null,
+          strideLength: legDebug?.gait?.strideLength ?? null,
+          footTargetZ: {
+            left: legDebug?.left?.targetZ ?? null,
+            right: legDebug?.right?.targetZ ?? null,
+          },
+        };
+      }); // Mobile checks can now distinguish frozen input, airborne/paired-pose ownership, and a rig that isn't attached.
       // Head-turn bone built by buildSinglePlaneAvatarModel's neckRig option
       // (null if no neck pivot could be detected for the player's current
       // portrait) — same mechanism the animation-author tool/NPC dialogue
@@ -12908,6 +12956,7 @@
         isZoneArea: _isZoneArea,
         isBuildingArea: _isBuildingArea,
         furnitureBlocksMovementAt,
+        furnitureOnlyBlocksMovementAt,
         npcGridForArea,
         npcSurfaceY, // Cliff route graph uses the same tier surface as scheduled NPCs.
         tileSurfaceYInArea, // Injected so graph builds never depend on tile coordinate metadata.
@@ -12929,6 +12978,14 @@
         areaLinksFrom,
         findNpcAreaLink,
       } = window.NpcPathfinding;
+
+      window.NohuknukWilderness?.init?.({
+        npcWalkers, hostileObjects, player, TILE, EXTERIOR_ZONES,
+        getZoneLayout: area => _zoneLayouts.get(area), // Existing generated wilderness data drives all safe wandering/relocation choices.
+        getCurrentArea: () => currentArea, // Reciprocal LOS only runs where a player is physically present.
+        getNpcRecord: id => scheduledNpcRecords.get(id), // Named NPC species override supplies its own authored roaming parameters.
+        npcSurfaceY, damageCreature, // Reuse the live terrain surface and NPC-attributed creature combat.
+      });
 
       // Fixed local "right" axis for station tool-swing animation — see makeNpcWalker.
       const NPC_TOOL_SWING_AXIS = new THREE.Vector3(-1, 0, 0);
@@ -13895,6 +13952,7 @@
         // NPC detection below running so a frozen villager is still talkable.
         if (!window.DevTestingSwitchbox?.flags?.noNpcBehavior) {
           updateNpcVisitorArrivals(dt);
+          window.NohuknukWilderness?.update?.(dt); // Attach the single roaming NPC to the normal walker tick; no parallel NPC simulation.
           const npcUpdateNowMs = performance.now(); // Bounds retries for one broken NPC without stalling the rest of the simulation.
           // Backwards indexed loop (not `for...of [...npcWalkers]`) so a walker
           // that despawns itself mid-update (npcWalkers.splice in
@@ -22175,6 +22233,11 @@
         // player, unlike the outdoor case just above.
         if (_isBuildingArea(currentArea)) {
           for (const m of (_buildingScenes.get(currentArea)?.occlusionMeshes || [])) {
+            if (currentArea === 'map_i_dev_random_ruin') {
+              let node = m.userData?.ruinCameraStoryRoot || m; // Detached wing barriers follow their story's visibility.
+              while (node.visible !== false && node.parent) node = node.parent;
+              if (node.visible === false) continue;
+            }
             if (!cameraObstacleIsCurrentSeat(m)) meshes.push(m); // Seated camera must not hit its own pew, including tagged child meshes and chunk proxies.
           }
         }
@@ -22700,6 +22763,37 @@
             resultY = lookAtY + (resultY - lookAtY) * fraction;
             resultZ = lookAtZ + (resultZ - lookAtZ) * fraction;
             resultY = Math.max(resultY, cameraSurfaceYAtWorld(resultX, resultZ) + 0.01); // An authored target buried in cover still cannot leave the camera beneath it.
+          }
+        }
+        if (currentArea === 'map_i_dev_random_ruin' && obstacles.length) {
+          // Recheck the final camera against the ruin shell. The framing minimum
+          // and lateral shoulder shift can otherwise put it back across a wall.
+          const originX = shoulderBoom && Number.isFinite(camTargetX) ? camTargetX : lookAtX;
+          const originZ = shoulderBoom && Number.isFinite(camTargetZ) ? camTargetZ : lookAtZ;
+          const x = resultX - originX, y = resultY - lookAtY, z = resultZ - originZ;
+          const length = Math.hypot(x, y, z);
+          if (length > 0.02) {
+            _cameraOcclusionRaycaster.set(
+              _cameraOcclusionOriginVec.set(originX, lookAtY, originZ),
+              _cameraOcclusionDirVec.set(x / length, y / length, z / length),
+            );
+            _cameraOcclusionRaycaster.near = 0.001;
+            _cameraOcclusionRaycaster.far = length;
+            const hit = _cameraOcclusionRaycaster.intersectObjects(obstacles, true)[0];
+            if (hit) {
+              const clearance = Math.min(INTERIOR_CAMERA_WALL_CLEARANCE, hit.distance * 0.5); // Keep room for the near plane in tight corners.
+              const fraction = (hit.distance - clearance) / length;
+              resultX = originX + x * fraction;
+              resultY = lookAtY + y * fraction;
+              resultZ = originZ + z * fraction;
+              adjustedLookAtX = originX;
+              adjustedLookAtZ = originZ;
+              if (_cameraBoomDebug) {
+                _cameraBoomDebug.latestChange = 'The final ruin camera is pulled inside the stone boundary after shoulder framing.';
+                _cameraBoomDebug.directHitDistance = hit.distance;
+                _cameraBoomDebug.solvedDistance = Math.hypot(resultX - adjustedLookAtX, resultY - lookAtY, resultZ - adjustedLookAtZ);
+              }
+            }
           }
         }
         return { x: resultX, y: resultY, z: resultZ, lookAtX: adjustedLookAtX, lookAtZ: adjustedLookAtZ }; // Camera and reticle keep the same adjusted look target.
@@ -24878,6 +24972,7 @@
             action: button.dataset.action || null,
             hidden: button.classList.contains('abt-hidden'),
             blocked: button.classList.contains('blocked'),
+            markupWrites: button._abtMarkupWrites || 0, // Helps Pixel Probe distinguish display changes from churn as the reticle moves.
           }));
         return {
           area: currentArea,
@@ -25846,6 +25941,7 @@
         // governs it in updateMovement), not a flat distance the instant
         // movement starts.
         const speed = Math.hypot(player.vx, player.vy);
+        const gaitSpeed = samplePlayerGaitSpeed(currentArea, player.x, player.y, dt, speed / TILE); // Use real displacement for visual stepping without changing gameplay velocity.
         if (speed > 5) {
           const bobEffort = window.FormatUtils.clamp(speed / (MOVE_SPEED * devGlobalSpeedMul), 0, 1);
           playerMesh.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * bobEffort);
@@ -25884,11 +25980,12 @@
         // ragdoll pose instead of stepping aside for it.
         if (window.ImpactRagdollPlayback?.isActive()) window.ImpactRagdollPlayback.update(dt);
         else if (window.PlayerCrawl?.isActive?.() && playerLegs) window.PlayerCrawl.applyLegs(playerLegs); // Downed crawl poses the legs itself (js/player-crawl.js).
-        else playerLegs?.update(dt, speed / TILE, legsSuppressed, seatedPose, {
+        else playerLegs?.update(dt, gaitSpeed, legsSuppressed, seatedPose, {
           combat: isPlayerInCombat() || player.lunging,
           allowSpeedRun: true,
           lunging: !!player.lunging,
-          airborne: ordinaryLungeHopY > 0.03 || (Number.isFinite(player.lungeFlightWorldY) && player.lungeFlightWorldY > groundedTargetY + 0.03)
+          airborne: (player._freeJump && player._freeJump.phase !== 'supported') // Air/rope motion keeps dangling legs even if the avatar's reported ground equals its physical feet.
+            || ordinaryLungeHopY > 0.03 || (Number.isFinite(player.lungeFlightWorldY) && player.lungeFlightWorldY > groundedTargetY + 0.03)
             || !!player._knockbackLedgeAir || !!player._knockbackLedgeFall
             || (player.climbing && player.climbSurfaceEndY < player.climbSurfaceStartY)
             || (!player.climbing && !player.onBranch && !player.onClimbSurface && playerMesh.position.y > groundedTargetY + 0.12),
@@ -27992,7 +28089,7 @@
         });
         // Dynamic providers (including the asynchronously loaded consumable
         // bridge) can change the resolved arch without changing tile/item state.
-        const actionButtonKey = btns.map(button => `${button.action}:${button.allowed !== false ? 1 : 0}:${button.label}:${button.swigFraction || ''}:${button.holdLabel || ''}`).join(',');
+        const actionButtonKey = btns.map(button => `${button.action}:${button.allowed !== false ? 1 : 0}:${button.label}:${button.icon}:${button.swigFraction || ''}:${button.holdLabel || ''}`).join(',');
         // window.Fishing?.state?.phase (not just .active) must be in this key:
         // computeActionButtons() returns different button sets across the
         // cast/waiting/bite/active/caught sequence (empty until 'bite', the
@@ -28059,17 +28156,23 @@
         function applyAbt(elId, b, originalIdx) {
           const el = document.getElementById(elId);
           if (!el) return;
-          if (!b) { el.classList.add('abt-hidden'); return; }
-          el.classList.remove('abt-hidden');
+          el.classList.toggle('abt-hidden', !b);
+          if (!b) return;
           el.classList.toggle('blocked', !b.allowed);
-          el.dataset.action = b.action;
+          const actionChanged = el.dataset.action !== b.action; // A new action may need to discard the previous action's icon decorations.
+          if (actionChanged) el.dataset.action = b.action;
           const keyBadge = isDesktop && originalIdx >= 0 && originalIdx < DESK_KEYS.length
             ? `<span class="abt-key">[${DESK_KEYS[originalIdx]}]</span>` : '';
           const swigBadge = b.swigFraction
             ? `<span class="alcohol-swig-badge">${b.swigFraction}</span>` : '';
-          el.innerHTML = keyBadge +
+          const markup = keyBadge + // Compare the last base markup because icon decorators intentionally modify the live children.
             `<span class="abt-icon">${b.icon}${swigBadge}</span>` +
             `<span class="abt-label">${b.label}</span>`;
+          if (actionChanged || el._abtMarkup !== markup) {
+            el.innerHTML = markup;
+            el._abtMarkup = markup;
+            el._abtMarkupWrites = (el._abtMarkupWrites || 0) + 1;
+          }
           if (!el._abtDragInit) {
             el._abtDragInit = true;
             let _ptId = null, _cx = 0, _cy = 0, _sockR = 0;
@@ -33418,6 +33521,7 @@
         restoreZoneMinedRockState(playerData.minedRockState);
         window.TownMine?.restore?.(playerData.townMineState);
         window.SlagothimTraders?.restore?.(playerData.slagothimTradersState);
+        window.NohuknukWilderness?.restore?.(playerData.nohuknukWildernessState); // Restore position before the next visible wilderness encounter.
         window.TzatzulNestEncounter?.restore?.(playerData.tzatzulNestState);
         window.CaveSiteSystem?.restore?.(playerData.caveSiteState);
         // Potion items just restored into `inventory` above have no ITEM_DEFS

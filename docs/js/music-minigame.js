@@ -12,18 +12,14 @@
   // page's DOM/CSS (see the srcdoc comment in the original mockup this was
   // ported from: it avoids ID/CSS collisions with the host page).
   //
-  // ── Leader/backup model ──────────────────────────────────────────────
-  // Whoever starts playing first in a given area leads (picks the song, or
-  // in the player's case, free chords/tempo); everyone who joins after
-  // falls in as backup on the leader's song. This applies symmetrically:
-  // an instrument NPC (see deps.listInstrumentPerformers, keyed off
-  // game.js's INSTRUMENT_NPC_DEFS) ambiently loops its song for as long as
-  // it's on duty and nothing else is leading in its area; the player
-  // (holding a Kurraya, pressing "Play") either joins an already-leading
-  // NPC as backup, or becomes the leader themselves if no one's playing
-  // there yet — at which point any instrument NPC whose schedule kicks in
-  // afterward defers instead of interrupting them. leaderByArea is the
-  // single source of truth for this per area.
+  // ── Independent performances ─────────────────────────────────────────
+  // NPC instruments own hidden audio iframes; the player's Performance mode
+  // owns a separate visible iframe. Jam sessions must not replace an NPC's
+  // playback with the player's sampler: flute and Kurraya timbres, rhythm and
+  // note animations must all stay independent. Puzzle mode alone temporarily
+  // suspends NPC backing audio while its single-note challenge is active.
+  // leaderByArea tracks area/session ownership for transitions; it never
+  // mutes an independently performing musician.
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
@@ -32,7 +28,7 @@
   // browser that already cached an older lyre-performance.html under this
   // exact URL would keep serving it indefinitely after an update, since
   // nothing about the request ever changes.
-  const MUSIC_MINIGAME_SRC = 'assets/minigames/lyre-performance.html?v=20261107fluteMonophonic1';
+  const MUSIC_MINIGAME_SRC = 'assets/minigames/lyre-performance.html?v=20261110npcFollowAudit4';
   const PUZZLE_MINIGAME_SRC = 'assets/minigames/kurraya-puzzle.html?v=20261107fluteMonophonic1'; // The default eight-note puzzle surface, independent of the performance engine.
   // The ONE songbook entry the ported app currently knows (see
   // lyre-performance.html's SONGBOOK) — surfaced to the compact song
@@ -245,7 +241,8 @@
     close();
   }, true);
 
-  let playerSession = null; // { mode:'lead'|'backup', area, npcId, songId } while the overlay is open, else null.
+  let playerSession = null; // { mode:'lead'|'jam'|'puzzle', area, npcId, songId } while the overlay is open, else null.
+  let musicActionLock = null; // Suppresses player tool/item attacks while either hosted instrument mode owns inputs.
   const leaderByArea = new Map(); // area -> { type:'player'|'npc', id, songId, startedAt }
   const ambientFrames = new Map(); // npcId -> hidden <iframe>, for each NPC currently the ambient audio source in their area.
   let unsubscribePuzzleController = null; // Shared music-priority controller subscription, retired when the puzzle closes or changes mode.
@@ -258,13 +255,7 @@
     if (!area || playerSession?.instrumentMode !== 'puzzle') return;
     for (const performer of deps?.listInstrumentPerformers?.() || []) {
       if (performer.area !== area || !ambientFrames.has(performer.npcId)) continue;
-      if (!playerSession.suspendedNpcSong || playerSession.suspendedNpcSong.npcId !== performer.npcId) {
-        playerSession.suspendedNpcSong = {
-          npcId:performer.npcId,
-          songSnapshot:ambientSongSnapshotForNpc(performer.npcId)
-        }; // Reuse the exact procedural song if the player switches to Performance.
-      }
-      stopAmbientForNpc(performer.npcId);
+      stopAmbientForNpc(performer.npcId); // The NPC's own song will restart independently when the puzzle ends.
     }
   }
   function puzzleNote(index) {
@@ -361,18 +352,40 @@
     catch { return null; }
   }
 
-  function ambientSongSnapshotForNpc(npcId) {
-    const frame = ambientFrames.get(npcId); // Captures the exact procedural song Foroji is currently leading before his hidden iframe is torn down for player backup mode.
-    const snapshot = bridgeOf(frame)?.scaleAuditionState?.();
-    const arrangement = snapshot?.arrangement;
-    if (!arrangement) return null;
-    const melodyNotes = (arrangement.melodyNotes || []).map(note => [Number(note.degree) || 0, Number(note.durationQuarterBeats) || 0]);
-    if (!melodyNotes.length) return null;
-    return {
-      introSteps:Array.isArray(arrangement.introSteps) ? arrangement.introSteps.slice() : null,
-      bodySteps:Array.isArray(arrangement.bodySteps) ? arrangement.bodySteps.slice() : null,
-      melodyNotes,
-    };
+  function syncPlayerWithNpc(performers = deps?.listInstrumentPerformers?.() || []) {
+    if (playerSession?.instrumentMode !== 'performance') return false; // Never synchronize the puzzle instrument.
+    const playerBridge = bridgeOf(frameEl); // Player keeps this separate voice regardless of the NPC's instrument sample.
+    const area = playerSession.area;
+    const musician = performers.find(person => person.area === area && person.npcId === playerSession.npcId)
+      || performers.find(person => person.area === area); // Retain the existing leader while on duty; choose a new one only when necessary.
+    if (!musician) {
+      if (playerSession.mode === 'jam') {
+        playerBridge?.stopJamFollow?.(); // Recovers the player's original scale, tonic and solo clock when the NPC leaves.
+        Object.assign(playerSession,{mode:'lead',npcId:null,songId:null});
+        leaderByArea.set(area,{type:'player',id:'player',startedAt:Date.now()});
+        const picker = document.getElementById('compactSongPicker'); // Existing picker resumes without rebuilding musical input handlers.
+        if (picker) picker.style.display = '';
+      }
+      return false;
+    }
+    if (playerSession.mode === 'jam' && playerSession.npcId && playerSession.npcId !== musician.npcId) {
+      playerBridge?.stopJamFollow?.(); // Do not follow the departed musician's beat while their replacement iframe loads.
+      playerSession.npcId = musician.npcId;
+      playerSession.songId = musician.songId;
+    }
+    if (!ambientFrames.has(musician.npcId)) startAmbientForNpc(musician.npcId,musician.songId); // A freshly arrived NPC still owns its own audio.
+    const leaderSnapshot = bridgeOf(ambientFrames.get(musician.npcId))?.jamLeaderSnapshot?.(); // Small cached-state read, no audio copies or DOM work.
+    if (!leaderSnapshot?.playing) return false; // A newly loaded NPC may still be resolving its audio/sample.
+    if (leaderSnapshot.songId !== KNOWN_SONG_ID) {
+      playerBridge?.stopJamFollow?.(); // Unsupported future songs remain audible but must not leave a stale harmony clock.
+      return false;
+    }
+    if (!playerBridge?.followJamLeader?.(leaderSnapshot)) return false; // Retry after asynchronous player iframe load.
+    if (playerSession.mode === 'lead' && leaderByArea.get(area)?.type === 'player') leaderByArea.delete(area);
+    Object.assign(playerSession,{mode:'jam',npcId:musician.npcId,songId:musician.songId});
+    const picker = document.getElementById('compactSongPicker'); // Late NPC arrival hides conflicting solo song controls.
+    if (picker) picker.style.display = 'none';
+    return true;
   }
 
   // ── Player session (the visible overlay) ────────────────────────────
@@ -392,12 +405,8 @@
     }
     const bridge = bridgeOf(frameEl);
     if (!bridge) { window.__farmLog?.('music minigame: control bridge missing after load', 'warn'); return; }
-    if (playerSession.mode === 'backup') {
-      const snapshot = playerSession.songSnapshot; // Rehydrates the exact generated Foroji song that was audible a moment ago instead of silently reverting to the authored practice melody.
-      if (snapshot?.introSteps && snapshot?.bodySteps) bridge.setKurrayaSongArrangement?.({introSteps:snapshot.introSteps,bodySteps:snapshot.bodySteps});
-      if (snapshot?.melodyNotes?.length) bridge.setKurrayaSongMelody?.(snapshot.melodyNotes);
-      bridge.startBackupPreviewSong?.(playerSession.songId);
-    } else bridge.enterJamMode?.(); // Regular/improvise mode — the compact song picker (see buildEdgeControls) handles picking a real song from here.
+    bridge.enterJamMode?.(); // The player owns an independent voice; the NPC keeps playing through its own ambient frame.
+    syncPlayerWithNpc(); // Join the NPC's running tempo and chord measure immediately if both iframes are ready.
     const footstepUrls = deps.getPlayerFootstepSampleUrls?.() || []; // Surface recordings feed the same sample-accurate beat scheduler used in Music Lab.
     bridge.useGameplayFootstepMetronome?.(footstepUrls).catch(error => window.__farmLog?.(`kurraya metronome: ${error.message}`, 'warn'));
     buildEdgeControls(frameEl);
@@ -432,26 +441,22 @@
     if (playerSession.instrumentMode === next) return true;
     teardownEdgeControls();
     stopPuzzleInputs();
+    if (playerSession.instrumentMode === 'performance') bridgeOf(frameEl)?.stopJamFollow?.(); // Switching back to Puzzle releases the NPC clock without persisting pitch changes.
     const area = playerSession.area;
     if (next === 'performance') {
-      const performer = deps.listInstrumentPerformers?.().find(person => person.area === area);
+      const performer = deps.listInstrumentPerformers?.()?.find(person => person.area === area); // An NPC's separate audio source may have been suspended by the puzzle.
       if (performer) {
-        // Legacy backup/accompaniment stays intact when explicitly entering Performance.
-        const songSnapshot = ambientSongSnapshotForNpc(performer.npcId) ||
-          (playerSession.suspendedNpcSong?.npcId === performer.npcId ? playerSession.suspendedNpcSong.songSnapshot : null);
-        stopAmbientForNpc(performer.npcId);
-        Object.assign(playerSession,{mode:'backup',npcId:performer.npcId,songId:performer.songId,songSnapshot});
+        if (!ambientFrames.has(performer.npcId)) startAmbientForNpc(performer.npcId, performer.songId); // Resume independently immediately instead of duplicating their song in the player's iframe.
+        Object.assign(playerSession,{mode:'jam',npcId:performer.npcId,songId:performer.songId,songSnapshot:null});
         deps.showToast?.('Playing along with ' + performer.name + '.',true);
       } else {
         leaderByArea.set(area,{type:'player',id:'player',startedAt:Date.now()});
         Object.assign(playerSession,{mode:'lead',npcId:null,songId:null,songSnapshot:null});
       }
+      window.ControllerInput?.setOwner?.('music-performance'); // Performance has the same exclusive controller ownership as Puzzle, including LT/Action 2.
     } else {
-      if (playerSession.mode === 'backup' && playerSession.npcId) {
-        playerSession.suspendedNpcSong = {npcId:playerSession.npcId,songSnapshot:playerSession.songSnapshot};
-      }
       if (playerSession.mode === 'lead' && leaderByArea.get(area)?.type === 'player') leaderByArea.delete(area);
-      playerSession.mode = 'puzzle'; // Nearby NPC audio is suspended to keep puzzle notes strictly monophonic.
+      playerSession.mode = 'puzzle'; // Puzzle alone suspends the nearby NPC soundtrack.
       playerSession.npcId = null;
       playerSession.songSnapshot = null;
     }
@@ -494,6 +499,11 @@
       instrumentKey:instrumentKey,instrumentItem:{key:instrumentKey},
       echoChallenge:proposedEcho ? {id:String(proposedEcho.id),notes:proposedEcho.notes.slice()} : null
     };
+    musicActionLock = window.CharacterActionLocks?.acquire?.({
+      owner:'music-minigame',reason:'Playing an instrument',
+      participants:[{id:'player',channels:['tools','actions']}],
+    }) || null; // Combat and held-item actions obey this even outside the shared controller dispatcher.
+    window.Combat?.input?.abortAllPresses?.(); // Cancel a weapon hold already underway, without turning its release into an attack.
     overlayEl.classList.add('open');
     if (modeBtnEl) { modeBtnEl.disabled = !!proposedEcho; modeBtnEl.hidden = !!proposedEcho; } // Ruin echoes use puzzle-only controls; restore the performance switch on close.
     switchInstrumentMode('puzzle'); // Puzzle is always the default.
@@ -516,6 +526,9 @@
     if (modeBtnEl) { modeBtnEl.disabled = false; modeBtnEl.hidden = false; }
     if (overlayEl?.dataset) delete overlayEl.dataset.instrumentMode;
     stopPuzzleInputs();
+    if (window.ControllerInput?.owner === 'music-performance') window.ControllerInput.setOwner('gameplay'); // Restore pad input on either exit path.
+    musicActionLock?.release?.();
+    musicActionLock = null;
     unsubscribeModeToggle?.();
     unsubscribeModeToggle = null;
     if (frameEl) frameEl.src = 'about:blank'; // Tears the iframe down immediately, stopping its AudioContext with it.
@@ -524,10 +537,8 @@
       const leader = leaderByArea.get(area);
       if (leader?.type === 'player') leaderByArea.delete(area); // Frees the area up — an on-duty instrument NPC picks leadership back up on tick()'s next pass.
     }
-    // Backup mode leaves the NPC's leaderByArea entry untouched — it's
-    // still "their" song; tick() below notices their ambient audio isn't
-    // running (the player's overlay was standing in for it) and restarts
-    // it plainly.
+    // Jam mode never tears down the NPC's separate iframe, so leaving the
+    // performance does not restart or change the NPC's song.
     deps?.endMusicCamera?.();
     deps?.refreshActionBar?.();
     setHostChromeSuppressed(false);
@@ -581,8 +592,14 @@
   // the player's overlay in backup mode, which role the note itself was.
   window.addEventListener('message', (event) => {
     const data = event.data;
-    if (!data || data.source !== 'hobunji-music-minigame' || data.type !== 'sounded-note') return;
-    onSoundedNote(data, event.source);
+    if (!data || data.source !== 'hobunji-music-minigame') return;
+    if (data.type === 'ambient-transport-changed') {
+      for (const frame of ambientFrames.values()) {
+        if (event.source === frame.contentWindow) { syncPlayerWithNpc(); break; } // New NPC song/loop: align before waiting for the next 1 Hz scheduled check.
+      }
+      return;
+    }
+    if (data.type === 'sounded-note') onSoundedNote(data, event.source);
   });
   // One 'kurraya_played' activity per player session, on the first note the
   // player actually sounds (see js/activity-events.js).
@@ -598,18 +615,8 @@
   }
   function onSoundedNote(data, source) {
     if (source === frameEl?.contentWindow) {
-      if (playerSession?.mode === 'backup') {
-        // backupAccompaniment is on for this session, so 'lead' notes here
-        // are the joined NPC's own autoplaying line (their ambient frame
-        // was torn down for the duration — see beginPlayerSession — so this
-        // is the only place those notes are still observable) and 'backup'
-        // notes are the player's own input.
-        if (data.performer === 'backup') { animatePlayerNote(); announcePlayerPlaying(); } // Accompaniment sounds only animate the actual player voice.
-        else if (playerSession.npcId) deps?.triggerNpcKurrayaTwitch?.(playerSession.npcId);
-      } else {
-        animatePlayerNote();
-        announcePlayerPlaying();
-      }
+      animatePlayerNote(); // This iframe never speaks for an NPC, even when the player is jamming alongside one.
+      announcePlayerPlaying();
       return;
     }
     for (const [npcId, frame] of ambientFrames) {
@@ -700,9 +707,8 @@
     const heldBankControls = new Set(); // Real keyboard/controller bank holds own the Lyre highlight until physical release.
     const hostedControllerSources = new Map(); // Records held gamepad notes/banks so Controller layout routes every down/up pair through the bridge.
 
-    // Only meaningful in lead/solo mode — joining an NPC as backup already
-    // fixes the song to whatever they're leading (see beginPlayerSession).
-    const showSongPicker = playerSession?.mode === 'lead';
+    // Create the picker once in a real session: hide it for an NPC-led jam, reshow it if the musician leaves.
+    const showSongPicker = Boolean(playerSession);
 
     leftMount.innerHTML = `
       <aside class="edgeMusicPanel compactUtilityPanel" aria-label="Left-side utility controls">
@@ -753,6 +759,7 @@
     if (showSongPicker) {
       compactSongPicker = document.createElement('section');
       compactSongPicker.id = 'compactSongPicker';
+      compactSongPicker.style.display = playerSession?.mode === 'jam' ? 'none' : ''; // Initial NPC-led session must not invite an unsynchronized song change.
       compactSongPicker.setAttribute('aria-label', 'Song selector');
       compactSongPicker.innerHTML = `<button id="compactSongPickerToggle" type="button" aria-expanded="false"><span class="songPickerTitle">Song</span><span class="songPickerChevron">▼</span></button><div id="compactSongPickerList" role="listbox" aria-label="Songs"></div>`;
       leftMount.parentElement?.appendChild(compactSongPicker);
@@ -861,6 +868,7 @@
           <div class="perfHudRow perfHudCombo"><span>Combo</span><strong data-perf="combo">0</strong><span data-perf="accuracy" class="perfHudAccuracy"></span></div>
         </div>
         <div class="perfHudChord" data-perf="chord"></div>
+        <div class="perfHudJamSync" data-perf="jam" style="font-size:11px;opacity:.86" aria-live="off"></div>
         <div class="perfHudFeedback" data-perf="feedback"></div>`;
       document.body.appendChild(performanceHud);
     }
@@ -869,6 +877,7 @@
       combo: performanceHud.querySelector('[data-perf="combo"]'),
       accuracy: performanceHud.querySelector('[data-perf="accuracy"]'),
       chord: performanceHud.querySelector('[data-perf="chord"]'),
+      jam: performanceHud.querySelector('[data-perf="jam"]'),
       feedback: performanceHud.querySelector('[data-perf="feedback"]'),
     };
     const onStatusMessage = event => {
@@ -1094,7 +1103,14 @@
       const hint = leftMount.querySelector('[data-auto-pick-hint]');
       if (hint) hint.textContent = activeInputLayout === 'keyboard' ? 'Hold Shift' : (activeInputLayout === 'controller' ? 'Left stick' : 'Tap direction');
     };
-    const readMode = () => updateModeLabels(bridge.getState?.());
+    let lastJamHudAt = -Infinity; // Existing 180 ms HUD refresh reads potentially expensive chord diagnostics only once a second.
+    const readMode = () => {
+      updateModeLabels(bridge.getState?.());
+      if (!perfHudNodes.jam || Date.now() - lastJamHudAt < 1000) return;
+      lastJamHudAt = Date.now();
+      const jam = bridge.jamFollowState?.(); // Read cached follower clock; no extra controller loop or audio transport.
+      perfHudNodes.jam.textContent = jam?.active ? `NPC sync · ${jam.bpm} BPM · ${jam.chord} · drift ${jam.driftMs} ms` : '';
+    };
 
     // ── Keyboard: installed on BOTH the host window and the iframe's own
     // window, since frameEl.contentWindow.focus() (see onPlayerFrameLoaded)
@@ -1441,7 +1457,7 @@
     _tickAccum = 0;
     if (!deps) return;
     const performers = deps.listInstrumentPerformers();
-    const performingIds = new Set(performers.map(p => p.npcId));
+    const performerById = new Map(performers.map(performer => [performer.npcId,performer])); // One linear lookup table replaces an O(N²) schedule scan when multiple hidden NPC frames exist.
     if (playerSession?.instrumentMode === 'puzzle') silenceAmbientForPuzzle(); // Includes NPCs whose schedules become active mid-puzzle.
     // The hidden ambient <iframe> plays through the browser's normal (non-
     // positional) audio output, so it's audible everywhere regardless of
@@ -1452,7 +1468,7 @@
     // Stop ambient audio (and release leadership) for anyone no longer on
     // duty, or on duty in a map the player has since left.
     for (const npcId of [...ambientFrames.keys()]) {
-      const performer = performers.find(p => p.npcId === npcId);
+      const performer = performerById.get(npcId);
       if (performer && performer.area === currentArea) continue;
       stopAmbientForNpc(npcId);
       for (const [area, leader] of leaderByArea) {
@@ -1464,12 +1480,12 @@
       if (performer.area !== currentArea) continue; // Not audible from here — don't even start it.
       if (playerSession?.instrumentMode === 'puzzle' && playerSession.area === performer.area) continue; // Puzzle mode never has an NPC chord or root-pad backing track.
       if (ambientFrames.has(performer.npcId)) continue; // Already sounding.
-      if (playerSession?.mode === 'backup' && playerSession.area === performer.area && playerSession.npcId === performer.npcId) continue; // The player's own overlay is standing in as this NPC's audio right now.
       const leader = leaderByArea.get(performer.area);
-      if (leader && leader.type === 'player') continue; // The player already claimed this area as lead — the NPC defers rather than interrupting them.
+      if (leader?.type === 'player' && playerSession?.instrumentMode !== 'performance') continue; // Outside a jam, preserve the original leader's claim.
       leaderByArea.set(performer.area, { type: 'npc', id: performer.npcId, songId: performer.songId, startedAt: Date.now() });
       startAmbientForNpc(performer.npcId, performer.songId);
     }
+    syncPlayerWithNpc(performers); // Reuses this existing one-second scheduler: no extra animation frame loop or timer.
   }
 
   window.MusicMinigame = {
@@ -1489,7 +1505,9 @@
     // js/music-system.js, which ducks the game's ambient bgm/cues for as
     // long as either this or the player session is active.
     get ambientActive() { return ambientFrames.size > 0; },
-    diagnostics: () => ({latestChange:'Puzzle instrument publishes player note events for passive ruin melody listeners; ordinary instrument modes stay independent.',
+    diagnostics: () => ({latestChange:'Independent instrument audio with NPC-tempo/chord transport follow, mobile drift diagnostics and exclusive action input.',
+      controllerOwner:window.ControllerInput?.owner||null,actionLockActive:!!musicActionLock,
+      jamFollow:bridgeOf(frameEl)?.jamFollowState?.()||{active:false},
       player:playerSession?{mode:playerSession.mode,instrumentMode:playerSession.instrumentMode,instrumentKey:playerSession.instrumentKey,echoChallengeId:playerSession.echoChallenge?.id||null,npcId:playerSession.npcId||null}:null,
       lastPuzzleSong:lastPuzzleSong,
       flute:window.KurrayaInstrument?.fluteDiagnostics?.()||null,

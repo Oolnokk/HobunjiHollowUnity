@@ -581,13 +581,18 @@
     return originalStart(creature, resolvedId, context);
   };
 
+  function sampleForagingDivePose(progress) {
+    const eased = easeOutCubic(progress); // Shared dive profile used by Grehlr and Nohuknuk without copying its tilt/scale easing.
+    return { progress: eased, pitchRad: tuning.DIVE_TILT_DEG * Math.PI / 180 * eased,
+      scaleY: 1 - (1 - tuning.HIDDEN_SCALE_Y) * eased };
+  }
   function applyForagingDivePose(creature, progress) {
-    const eased = easeOutCubic(progress); // Shares the first Grehlr burrow animation and allows a straight reverse instead of emergence.
-    setDivePose(creature, eased);
-    creature.scaleY = 1 - (1 - tuning.HIDDEN_SCALE_Y) * eased;
+    const pose = sampleForagingDivePose(progress); // Existing Grehlr callers retain the same appearance; other NPC rigs may sample it.
+    setDivePose(creature, pose.progress);
+    creature.scaleY = pose.scaleY;
   }
 
-  window.HobunjiGrehlrBurrow = { applyConfig, tuning, applyForagingDivePose }; // Used by debug/editor integrations and the compatibility loader's already-loaded check.
+  window.HobunjiGrehlrBurrow = { applyConfig, tuning, applyForagingDivePose, sampleForagingDivePose }; // Used by debug/editor integrations and the compatibility loader's already-loaded check.
 
   const initialConfig = window.__attackValuesConfig?.creatureAttacks?.grehlrBurrow; // Used when authored combat config finished loading before this module executed.
   if (initialConfig) applyConfig(initialConfig);

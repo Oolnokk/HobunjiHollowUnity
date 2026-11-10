@@ -38,7 +38,7 @@
     // Bountiful Harvest (Farming perk): a chance for one extra crop unit
     // from the same harvest, capped well below Foraging/Mining's yield
     // perks since processed goods already amplify quality economically.
-    const bonusChance = Math.min(0.3, (window.PerkSystem?.rank('farming', 'bountifulHarvest') || 0) * 0.06);
+    const bonusChance = Math.min(0.55, (window.PerkSystem?.rank('farming', 'bountifulHarvest') || 0) * 0.06 + (window.FestivalSystem?.fortuneBonus?.('harvestFortune') || 0)); // Harvest Fortune adds a separate per-level extra-crop opportunity.
     const amount = 1 + ((window.GameRandom?.random?.() ?? Math.random()) < bonusChance ? 1 : 0);
     deps.inventory[data.cropKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[data.cropKey] || 0) + amount);
     const stars = window.LootRolling.rollItemStars('farming');

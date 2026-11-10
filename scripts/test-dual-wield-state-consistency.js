@@ -4,24 +4,55 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const gripSource = fs.readFileSync('docs/js/hand-tool-grips.js', 'utf8');
 const visualSource = fs.readFileSync('docs/js/dual-wield-weapon-visuals.js', 'utf8');
+const assemblySource = fs.readFileSync('docs/js/weapon-sprite-assemblies.js', 'utf8'); // Exercises the real re-registration hook, not a test-only replica.
+const handDriverSource = fs.readFileSync('docs/js/procedural-hand-frame-driver.js', 'utf8'); // Confirms that the later-loaded final hand pose also reschedules flail projection.
+const bodyYawSource = fs.readFileSync('docs/js/weapon-idle-body-yaw-runtime.js', 'utf8'); // Late pose writer rotates player and weapon.
+const bodyDropSource = fs.readFileSync('docs/js/weapon-stance-drop-runtime.js', 'utf8'); // Later pose writer translates body and weapon.
 function fixture(editor) {
   const controls = Object.fromEntries(Object.entries({ scrub: 0, playbackSequence: 'attack', handGripContextSelect: 'melee', toolSpriteSelect: 'hatchet' }).map(([id, value]) => [id, { value }]));
-  const tasks = new Map();
+  const tasks = new Map(); // Real scheduler insertion order is reproduced with one callback per subscriber id.
   let snapshot = { activeSlot: 'weapon', itemKey: 'hatchet', combatNeutralInjected: false };
   const window = {
-    location: { pathname: editor ? '/tools/attack-animation-editor/index.html' : '/index.html' },
-    RuntimeFrameScheduler: { register: (id, cb) => tasks.set(id, cb) },
+    location: { pathname: editor ? '/tools/attack-animation-editor/index.html' : '/index.html',
+      href: 'https://example.test' + (editor ? '/tools/attack-animation-editor/index.html' : '/index.html') },
+    RuntimeFrameScheduler: { register: (id, cb) => tasks.set(id, cb), unregister: id => tasks.delete(id) },
     WeaponToolStances: { getRuntimeState: () => snapshot },
     Combat: { deps: { __weaponToolStanceVisualHooks: true, triggerWeaponSwingVisual() {}, triggerWeaponHoldVisual() {} } },
     HobunjiAttackEditorToolContext: { toolKey: 'hatchet' },
   };
-  const scope = { window, location: window.location, document: { getElementById: id => controls[id] || null }, performance: { now: () => 0 } };
+  const scope = { window, URL, location: window.location, document: { getElementById: id => controls[id] || null }, performance: { now: () => 0 } };
+  vm.runInNewContext(assemblySource, scope); // Game HTML loads flail assemblies before the lazy hand/dual modules.
+  const firstTick = tasks.get('weapon-sprite-assemblies'); // Stable callback identity must survive all ordering changes.
   vm.runInNewContext(gripSource, scope);
   vm.runInNewContext(visualSource, scope);
   tasks.get('hand-tool-grips-install')();
-  return { window, grips: window.HobunjiHandToolGrips, controls, setSnapshot: value => { snapshot = value; } };
+  return { window, grips: window.HobunjiHandToolGrips, controls, tasks, firstTick, setSnapshot: value => { snapshot = value; } };
 }
 const ed = fixture(true);
+const renderOrder = Array.from(ed.tasks.keys()); // Registration order is execution order inside RuntimeFrameScheduler's pre-render phase.
+assert(renderOrder.indexOf('dual-wield-weapon-visuals') >= 0, 'dual-wield pose updater is registered');
+assert(renderOrder.indexOf('dual-wield-weapon-visuals') < renderOrder.indexOf('weapon-sprite-assemblies'),
+  'both weapon poses update before the once-per-frame flail rope projection');
+assert.equal(ed.tasks.get('weapon-sprite-assemblies'), ed.firstTick,
+  'reordering preserves the exact production flail tick callback without adding another simulation');
+ed.tasks.get('weapon-sprite-assemblies')({ deltaMs:16 }); // One invocation with zero active flails must remain valid after reordering.
+ed.tasks.set('procedural-hand-pose-sync', () => {}); // Simulates the later-loaded hand module registering its final pre-render pose pass.
+assert(ed.window.HobunjiWeaponSpriteAssemblies.scheduleTickAfterPose(), 'the final hand module can safely move the same flail callback again');
+const finalOrder = Array.from(ed.tasks.keys()); // Last hand socket sync must run before all rope/head world projections.
+assert(finalOrder.indexOf('procedural-hand-pose-sync') < finalOrder.indexOf('weapon-sprite-assemblies'),
+  'flail positions follow the final procedural-hand pose without a one-frame attachment lag');
+assert.equal(ed.tasks.get('weapon-sprite-assemblies'), ed.firstTick, 'late hand sync still retains exactly one identical flail updater');
+assert.match(handDriverSource, /register\('procedural-hand-pose-sync'[\s\S]*?scheduleTickAfterPose\?\.\(\)/,
+  'production procedural hand loader requests the same ordering guarantee');
+vm.runInNewContext(bodyYawSource, { window: ed.window }); // Execute the actual late gameplay body-pose registrations in loader order.
+vm.runInNewContext(bodyDropSource, { window: ed.window });
+const bodyOrder = Array.from(ed.tasks.keys()); // Projection must be last after both world-space body pose modifiers.
+assert(bodyOrder.indexOf('weapon-idle-body-yaw-sync') < bodyOrder.indexOf('weapon-sprite-assemblies'),
+  'flail follows the final body yaw');
+assert(bodyOrder.indexOf('weapon-stance-drop-sync') < bodyOrder.indexOf('weapon-sprite-assemblies'),
+  'flail follows the final stance-drop translation');
+assert.equal(ed.tasks.get('weapon-sprite-assemblies'), ed.firstTick,
+  'body-pose load order reuses the original callback instead of adding a new pendulum simulation');
 ed.window.HobunjiAttackEditorToolContext.toolKey = 'dagger';
 ed.window.HobunjiDualWieldWeaponVisuals.setEditorIdlePreview(true);
 assert.equal(ed.grips.currentSecondaryGripAnimationState().dualWieldInfluence, 1, 'pair preview must enable hand ownership as well as visible copies');
@@ -142,6 +173,7 @@ for (const editor of [true, false]) {
   const sync = vm.runInNewContext(`(${visualSource.slice(syncStart, syncEnd).trim()})`, {
     states: new Map([['player', current]]), PLAYER_KEY: 'player', keyFor: () => 'player', teardown() {}, buildState() { throw new Error('the player state already exists'); }, editorOffhandAuthoring: false, currentContext: () => context, currentDualState: () => ({ influence: 1, idleBlend: 1 }), ACTIVE_EPSILON: 0.0001,
     inAttackEditor: () => editor, clamp01: value => value, hideOriginalMaterial() {}, syncAssemblyLayers() {}, // Only stance order is under test; layered sprite copies need real meshes.
+    global: { HobunjiWeaponSpriteAssemblies: { syncDualWield: () => false } }, // The isolated sync must supply the new flail-assembly service even with no weapon art.
     idleOffhandLocalTransform() {
       assert.equal(operations[0], editor ? 'editor-bake' : 'game-bake', 'source matrices must be baked before calculating the offhand idle pose');
       operations.push('idle-pose'); return { position: new Vector(), quaternion: new Quaternion() };
@@ -166,6 +198,7 @@ for (const editor of [true, false]) {
   const sync = vm.runInNewContext(`(${visualSource.slice(syncStart, syncEnd).trim()})`, {
     states: new Map([['player', current]]), PLAYER_KEY: 'player', keyFor: () => 'player', teardown() {}, buildState() { throw new Error('the player state already exists'); }, editorOffhandAuthoring: true, currentContext: () => context, currentDualState: () => ({ influence: 1, idleBlend: 1 }), ACTIVE_EPSILON: 0.0001,
     inAttackEditor: () => true, clamp01: value => value, hideOriginalMaterial() {}, syncAssemblyLayers() {}, // The authored offhand pose is independent of sprite-copy synchronization.
+    global: { HobunjiWeaponSpriteAssemblies: { syncDualWield: () => false } }, // Editor pose fixture has no loaded flail root, but keeps the real dependency boundary.
     idleOffhandLocalTransform() { operations.push('offhand-derived-from-holder'); return { position: new Vector(), quaternion: new Quaternion() }; },
     idleStancePoses: () => poses,
     idleCounterpartTransform(_current, source, derived) { operations.push(`${derived.id}-derived-from-${source.id}`); return { position: new Vector(), quaternion: new Quaternion() }; },
