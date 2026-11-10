@@ -31,6 +31,7 @@ aside{max-height:none;overflow:visible;border-right:0;grid-template-columns:repe
 <script src="../../js/color-fill.js"></script>
 <script src="../../js/portrait-utils.js"></script>
 <script src="../../js/portrait-breathing.js"></script>
+<script src="../../js/png-plane-avatar.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
 <script>window.__hobunjiFurnitureAssetBase='../../assets/';</script>
 <script src="../../js/procedural-furniture.js"></script>
@@ -174,7 +175,29 @@ function limbPaths(species){
   const foot=cfg?.species?.[species]?.glb;
   return {hand:model?.glb||'assets/models/hands/hand_feline.glb',foot:foot||'assets/models/feet/foot_feline.glb'};
 }
-function makeStaticParts(front,back,head,backHead,profile,pose,finish,role,weaponMasks){
+function measureNpcRig(frameFront,frameBack,profile,npc){
+  const api=window.PNGPlaneAvatar;
+  if(!api?.buildSinglePlaneAvatarModel)throw Error('Shared PNG-plane NPC rig is unavailable');
+  // The source avatar owns the authoritative species/age/placement numbers.
+  // We use only its metadata; the temporary rig is never stored or animated.
+  const measured=api.buildSinglePlaneAvatarModel(window.THREE,frameFront,{
+    backCanvas:frameBack,profile,npcRecord:npc,neckRig:false
+  });
+  try {
+    const u=measured.userData || {};
+    return {
+      modelWidth:num(u.portraitModelWidth,1),
+      modelHeight:num(u.portraitModelHeight,1),
+      placementRatio:num(u.portraitVerticalPlacementRatio,.5),
+      handAttachX:num(u.handAttachX,-.28),
+      handAttachY:num(u.handAttachY,.35),
+      speciesId:u.speciesId||profile?.fighter?.speciesId||null
+    };
+  }finally{
+    api.disposeAvatarModel?.(measured);
+  }
+}
+function makeStaticParts(front,back,head,backHead,profile,pose,finish,role,weaponMasks,frame){
   const w=front.width,h=front.height;
   let bounds=maskBounds(head);
   if(!bounds){
@@ -185,25 +208,43 @@ function makeStaticParts(front,back,head,backHead,profile,pose,finish,role,weapo
   const composedRearHead=headPixelsFromFullPortrait(back,backHead);
   const bodyMask=maskedPart(front,full,head),headMask=maskedPart(composedHead,bounds);
   const backBodyMask=maskedPart(back,full,backHead),backHeadMask=maskedPart(composedRearHead,bounds);
-  const size=.9,drop=clamp(num(pose.bodySink),0,25)*size/100;
+  const nominalHeight=Math.max(.25,frame?.modelHeight||1),nominalWidth=Math.max(.25,frame?.modelWidth||1);
+  const sizeMultiplier=.9; // Only the complete statue's furniture scale, not species-specific anatomy.
+  const bodyWidth=nominalWidth*sizeMultiplier,bodyHeight=nominalHeight*sizeMultiplier;
+  const bodyCenterY=clamp(frame?.placementRatio??.5,.1,.9)*bodyHeight;
+  const drop=clamp(num(pose.bodySink),0,25)*bodyHeight/100;
   const bodyYaw=clamp(num(pose.bodyYaw),-360,360);
   const p=[
-    sprite('statue_body','Body and clothing',bodyMask,backBodyMask,finish,role,transform(0,.45-drop,0,0,bodyYaw,0,size,size,.02)),
-    sprite('statue_head','Head, hair and face',headMask,backHeadMask,finish,role,transform(((bounds.x+bounds.w/2)/w-.5)*size,
-      (.5-(bounds.y+bounds.h/2)/h)*size,.015,0,-bodyYaw,0,bounds.w/w*size,bounds.h/h*size,.02),'statue_body')
+    sprite('statue_body','Body and clothing',bodyMask,backBodyMask,finish,role,
+      transform(0,bodyCenterY-drop,0,0,bodyYaw,0,bodyWidth,bodyHeight,.02)),
+    sprite('statue_head','Head, hair and face',headMask,backHeadMask,finish,role,
+      transform(((bounds.x+bounds.w/2)/w-.5)*bodyWidth,
+        (.5-(bounds.y+bounds.h/2)/h)*bodyHeight,.015,0,-bodyYaw,0,
+        bounds.w/w*bodyWidth,bounds.h/h*bodyHeight,.02),'statue_body')
   ];
-  const limb=limbPaths(profile.fighter?.speciesId||profile.speciesId||'mao-ao');
-  const holderX=.29+num(pose.x)*.18,holderY=.04+num(pose.y)*.16,holderZ=.04+num(pose.z)*.18;
+  const limb=limbPaths(frame?.speciesId||profile.fighter?.speciesId||profile.speciesId||'mao-ao');
+  const handX=clamp(Math.abs(frame?.handAttachX||-.28)*sizeMultiplier,bodyWidth*.15,bodyWidth*.4);
+  const handY=clamp((frame?.handAttachY??.35)*sizeMultiplier-bodyCenterY,-bodyHeight*.38,bodyHeight*.35);
+  const handSize=clamp(bodyHeight*.13,.06,.17);
+  const holderX=handX+num(pose.x)*bodyWidth*.2;
+  const holderY=handY+num(pose.y)*bodyHeight*.18;
+  const holderZ=.04+num(pose.z)*bodyWidth*.18;
   const free=pose.rightHand?.enabled===true?pose.rightHand:null;
   p.push(glb('statue_right_hand','Right hand',limb.hand,finish,role,
     transform(holderX,holderY,holderZ,
-      num(free?.pitch,num(pose.pitch))*1,num(free?.yaw,num(pose.yaw)),num(free?.roll,num(pose.roll)),.14,.15,.15),'statue_body'));
+      num(free?.pitch,num(pose.pitch)),num(free?.yaw,num(pose.yaw)),num(free?.roll,num(pose.roll)),
+      handSize,handSize,handSize),'statue_body'));
   p.push(glb('statue_left_hand','Left hand',limb.hand,finish,role,
-    transform(-.29,.03,.04,0,0,-12,.14,.15,.15),'statue_body'));
+    transform(-handX,handY,.04,0,0,-12,handSize,handSize,handSize),'statue_body'));
+  const footConfig=window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet || {};
+  const footHeight=clamp(bodyHeight*num(footConfig.footHeightFraction,.11)*
+    num(footConfig.sizeBalanceMultiplier,1),.06,.17);
+  const footX=clamp(bodyWidth*num(footConfig.stanceWidthFraction,.16),.065,bodyWidth*.28);
+  const footY=footHeight*.5-bodyCenterY+drop;
   p.push(glb('statue_left_foot','Left foot',limb.foot,finish,role,
-    transform(-.16,-.41+drop,.03,0,0,0,.18,.14,.25),'statue_body'));
+    transform(-footX,footY,.03,0,0,0,footHeight*1.2,footHeight,footHeight*1.6),'statue_body'));
   p.push(glb('statue_right_foot','Right foot',limb.foot,finish,role,
-    transform(.16,-.41+drop,.03,0,0,0,.18,.14,.25),'statue_body'));
+    transform(footX,footY,.03,0,0,0,footHeight*1.2,footHeight,footHeight*1.6),'statue_body'));
   for(let i=0;i<weaponMasks.length;i++){
     const entry=weaponMasks[i];
     p.push(sprite('statue_weapon_'+i,'Weapon '+(i+1)+' — '+entry.path.split('/').pop(),entry.mask,null,finish,role,
@@ -260,7 +301,8 @@ async function makeProject(){
   assertPortraitMask(head,'Head mask',false);
   const weapons=await weaponsFromInput();
   if(myGeneration!==generation)return null;
-  const parts=makeStaticParts(front,back,head,backHead,profile,pose,filename,role,weapons);
+  const rig=measureNpcRig(front,back,profile,npc);
+  const parts=makeStaticParts(front,back,head,backHead,profile,pose,filename,role,weapons,rig);
   // The runtime schema is also accepted by Furniture Author's existing JSON import.
   return {schema:'hobunji_furniture_surface_author.v58',key:safeName(name).toLowerCase(),id:safeName(name),
     name,notes:'Generated with Statue Author from NPC '+(npc.name||npc.id||'unknown')+' / pose '+phase,
