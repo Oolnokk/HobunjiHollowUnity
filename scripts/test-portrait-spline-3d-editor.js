@@ -81,4 +81,39 @@ const ref=JSON.parse(read('docs/config/species/index.json'));
 assert(ref.entries.some(entry=>entry.speciesId==='mao-ao'),'species head assets are discoverable through the index');
 const mao=JSON.parse(read('docs/config/species/mao-ao.json'));
 assert(mao.male.headSprite && mao.female.headSprite,'head silhouette input is gender-specific');
-console.log('Spline 3D editor + auto head-silhouette seam: geometry, rotation compatibility, collision, author wiring, and contour masks pass.');
+// Verify the real species-index lookup, the explicit assets/ headSprite convention,
+// and compositing into the editor's fixed 200px portrait canvas.
+async function checkIndexedHead() {
+  const source = read('docs/js/portrait-spline-catalog.js');
+  const drawn = []; // Records head-art image placement without a headless WebGL or browser dependency.
+  const scope = { window: {}, document: {
+    baseURI: 'https://example.invalid/docs/tools/portrait-spline-author/',
+    createElement() { return { width: 0, height: 0, getContext() { return { drawImage(...args) { drawn.push(args); } }; } }; },
+  }, URL };
+  vm.runInNewContext(source, scope);
+  const canonical = scope.window.PortraitSplineCatalog;
+  const speciesIndex = JSON.parse(read('docs/config/species/index.json'));
+  const fetchSpecies = async url => {
+    if (url.endsWith('/species/index.json')) return speciesIndex;
+    const item = speciesIndex.entries.find(item => url.endsWith('/species/' + item.path.replace(/^\.\//, '')));
+    assert(item, 'head art must be fetched from an indexed species JSON: ' + url);
+    return JSON.parse(read('docs/config/species/' + item.path.replace(/^\.\//, '')));
+  };
+  const catalogInstance = canonical.createCatalog({entries: []}, fetchSpecies,
+    'https://example.invalid/docs/config/cosmetics/index.json');
+  for (const speciesId of ['mao-ao', 'tletingan', 'kenkari']) {
+    for (const gender of ['male', 'female']) {
+      const config = JSON.parse(read('docs/config/species/' + speciesId + '.json'));
+      const expected = 'https://example.invalid/docs/assets/' + config[gender].headSprite.replace(/^\.?\/*assets\//, '');
+      const result = await catalogInstance.headArtwork(speciesId, gender, 'front', async url => {
+        assert.equal(url, expected, 'headSprite URLs must resolve through docs/assets/');
+        return { width: 80, height: 80, naturalWidth: 80, naturalHeight: 80 };
+      });
+      assert.equal(result.width, 200);
+      assert.equal(result.height, 200);
+    }
+  }
+  assert.equal(drawn.length, 6, 'every selected head must be positioned for the silhouette and 3D preview');
+}
+checkIndexedHead().then(() => console.log('Spline 3D editor + auto head-silhouette seam: geometry, indexed sprite paths, collision, author wiring, and contour masks pass.'))
+  .catch(error => { console.error(error); process.exitCode = 1; });
