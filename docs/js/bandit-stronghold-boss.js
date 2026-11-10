@@ -109,9 +109,10 @@
     mapData.entrySpots={den_exit:{...south,side:'south'}};
     mapData.keyGatedDoors=[];mapData.caveProps=[];mapData.furniture=[];
     mapData.oreRocks=[];mapData.creatureSpawns=[];mapData.nestCol=null;mapData.nestRow=null;
-    mapData.denResidentSpecies=null;mapData.denMotherDefeated=true; // A captain cave is never a wildlife Den-Mother room.
+    mapData.denResidentSpecies=null;mapData.denMotherKind=null;mapData.denMotherDefeated=true; // A captain cave is never a wildlife Den-Mother room.
     const rng=rngFor(profile.signature+':round-room');
     window.CavernGenerator?.expandCavernMapData?.(mapData,[],rng); // Native shell/colliders, same material lighting and cave x-ray.
+    mapData.colliders=mapData.outerRimTiles||[]; // Never retain colliders from the original generic den maze inside the new circular room.
     const floor=new Set((mapData.floor||[]).map(([x,y])=>x+','+y));
     const centerCandidates=(mapData.floor||[]).map(([x,y])=>({col:x,row:y}))
       .sort((a,b)=>Math.hypot(a.col-cx,a.row-cy)-Math.hypot(b.col-cx,b.row-cy));
