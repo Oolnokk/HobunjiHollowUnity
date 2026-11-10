@@ -30,6 +30,40 @@
     });
     return result;
   }
+  function edgeDiagnostics(rootObject, edgePercent = 12) {
+    // Evaluates the true edge-length threshold against each source mesh, so an
+    // intentionally shape-preserving subdivision cannot masquerade as a remesh.
+    const result = { inspected: 0, skipped: 0, edgesAboveCutoff: 0, maximumEdgePercent: 0, maximumEdgeLength: 0 };
+    const fraction = Math.max(0.005, Math.min(0.5, (Number(edgePercent) || 12) / 100));
+    rootObject?.traverse?.(node => {
+      if (!node.isMesh || !node.geometry) return;
+      const geo = node.geometry, pos = geo.getAttribute?.('position'), index = geo.index;
+      if (!pos || pos.itemSize !== 3) return;
+      const size = index?.count ?? pos.count, faces = Math.floor(size / 3);
+      if (faces > 100000) { result.skipped++; return; } // Bounded mobile diagnostics; no frame-loop work.
+      geo.computeBoundingBox?.();
+      const box = geo.boundingBox;
+      if (!box) return;
+      const dimensions = box.getSize(new THREE.Vector3());
+      const diag = Math.hypot(dimensions.x, dimensions.y, dimensions.z);
+      if (!(diag > 0)) return;
+      result.inspected++;
+      const cutoffSq = (diag * fraction) ** 2;
+      const readIndex = i => index ? index.getX(i) : i;
+      for (let i = 0; i < faces * 3; i += 3) {
+        const ids = [readIndex(i),readIndex(i + 1),readIndex(i + 2)];
+        for (let edge = 0; edge < 3; edge++) {
+          const a = ids[edge], b = ids[(edge + 1) % 3];
+          const dx = pos.getX(a) - pos.getX(b), dy = pos.getY(a) - pos.getY(b), dz = pos.getZ(a) - pos.getZ(b);
+          const squared = dx * dx + dy * dy + dz * dz;
+          result.maximumEdgeLength = Math.max(result.maximumEdgeLength, Math.sqrt(squared));
+          result.maximumEdgePercent = Math.max(result.maximumEdgePercent, Math.sqrt(squared) / diag * 100);
+          if (squared > cutoffSq) result.edgesAboveCutoff++; // Triangle-edge references, not unique edges.
+        }
+      }
+    });
+    return result;
+  }
   function hasProtectedMaterial(mesh, protectCards) {
     if (!protectCards) return false;
     if (IGNORE_TAGS.some(tag => !!mesh.userData?.[tag])) return true;
@@ -175,6 +209,12 @@
       }
       groups.push({ start, count: out.length - start, materialIndex: group.materialIndex });
     }
+    if (!cache.size) {
+      // Adaptive subdivision produced no new vertices: do not manufacture a
+      // duplicate geometry or advertise a visibly changed 'remesh' in JSON.
+      if (geometry !== source) geometry.dispose();
+      return source;
+    }
     const remeshed = geometry.clone();
     for (const [name, attr] of Object.entries(geometry.attributes)) {
       const converted = new attr.array.constructor(vertexData[name]);
@@ -248,6 +288,9 @@
             warnings.push(label + ': remesh skipped (aggregate mobile triangle budget)');
           } else {
             working = splitLongEdges(before.geometry, edgeFraction, available);
+            if (working === before.geometry) {
+              warnings.push(label + ': adaptive edge subdivision skipped — no edge exceeds ' + (edgeFraction * 100).toFixed(1) + '% of its bounding-box diagonal.');
+            }
           }
         }
         if (reduction) {
@@ -283,5 +326,5 @@
       return slotsMatch && usedA.size === usedB.size && [...usedA].every(index => usedB.has(index));
     });
   }
-  return Object.freeze({ triangles, stats, process, preservedMaterials, splitLongEdges, reduceGeometry, MAX_OUTPUT_TRIANGLES });
+  return Object.freeze({ triangles, stats, edgeDiagnostics, process, preservedMaterials, splitLongEdges, reduceGeometry, MAX_OUTPUT_TRIANGLES });
 });

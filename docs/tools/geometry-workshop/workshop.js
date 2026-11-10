@@ -94,15 +94,38 @@
   }
   function addDisplay(scene, root) {
     if (!root) return null;
-    const display = renderPreview?.decorate(root, displayPath(), $('game-surfaces').checked, $('sample-body-color').value) || root.clone(true);
+    const display = renderPreview?.decorate(root, displayPath(), $('game-surfaces').checked, $('sample-body-color').value, {
+      wireframe: $('show-triangles').checked, isCandidate: scene === sceneB,
+    }) || root.clone(true); // Topology lines affect display clones only, never exported source/candidate GLBs.
     scene.add(display);
     return display;
+  }
+  function updateDisplayVerification() {
+    const sourceCount = Core.stats(original).triangles;
+    const candidateCount = Core.stats(candidate).triangles;
+    const displayedSource = Core.stats(displayOriginal).triangles;
+    const displayedCandidate = Core.stats(displayCandidate).triangles;
+    const valid = displayedSource === sourceCount && displayedCandidate === candidateCount;
+    // Display copies must contain exactly the optimized geometry; line overlays
+    // are LineSegments, not extra triangle meshes counted by Core.stats.
+    const overlay = $('show-triangles').checked
+      ? ' · triangle edges: ' + (displayOriginal?.userData?.workshopWireframeTriangles || 0).toLocaleString() +
+        ' original / ' + (displayCandidate?.userData?.workshopWireframeTriangles || 0).toLocaleString() + ' candidate'
+      : '';
+    $('display-verification').textContent = valid
+      ? 'Rendered geometry confirmed: ' + displayedSource.toLocaleString() + ' → ' + displayedCandidate.toLocaleString() +
+        ' triangles' + overlay + '.'
+      : '⚠ Preview geometry mismatch: source ' + sourceCount + ' vs displayed ' + displayedSource +
+        '; candidate ' + candidateCount + ' vs displayed ' + displayedCandidate + '.';
+    if (!valid) log('WARNING: displayed mesh triangle counts differ from the candidate/source!', true);
+    return valid;
   }
   function rebuildDisplays() {
     renderPreview?.disposeDisplay(sceneA, displayOriginal);
     renderPreview?.disposeDisplay(sceneB, displayCandidate);
     displayOriginal = addDisplay(sceneA, original);
     displayCandidate = addDisplay(sceneB, candidate);
+    updateDisplayVerification();
     $('game-surface-status').textContent = $('game-surfaces').checked
       ? 'Game hand/foot PNG material roles · representative body tint ' + $('sample-body-color').value + ' · display-only'
       : 'Source GLB embedded materials · display-only, no overrides';
@@ -115,7 +138,7 @@
     // Lock settings during asynchronous processing so sliders cannot invalidate a request mid-flight.
     for (const id of ['source-kind', 'repo-preset', 'repo-path', 'generator', 'seed', 'file', 'pick-scope',
       'pick-game', 'remesh', 'edge-size', 'reduction', 'error', 'protect-cards', 'quality-tier', 'game-source-path',
-      'game-surfaces', 'sample-body-color', 'show-shell']) $(id).disabled = value;
+      'game-surfaces', 'sample-body-color', 'show-shell', 'show-triangles']) $(id).disabled = value;
     $('export').disabled = value || !candidateMatchesControls || !candidate || !original || !Core.preservedMaterials(original,candidate);
     $('export-json').disabled = $('export').disabled;
   }
@@ -230,6 +253,20 @@
       before.vertices.toLocaleString() + ' → ' + after.vertices.toLocaleString() + ' vertices; ' +
       after.meshes + ' mesh(es), ' + after.materialSlots + ' material slots.';
     const safe = Core.preservedMaterials(original, candidate);
+    const edges = Core.edgeDiagnostics(original, $('edge-size').value); // Actual source-edge cutoff explains ineffective subdivision controls.
+    const requested = Number($('edge-size').value);
+    $('edge-diagnostics').textContent = edges.inspected
+      ? 'Adaptive edge threshold: ' + requested + '% of mesh diagonal. Longest source edge: ' +
+        edges.maximumEdgePercent.toFixed(2) + '% of diagonal. ' +
+        edges.edgesAboveCutoff.toLocaleString() + ' triangle-edge references qualify' +
+        (edges.edgesAboveCutoff === 0 ? ' — subdivision cannot change this source at that setting.' :
+          ' — subdivision adds vertices but does NOT move or smooth the surface.') +
+        (edges.skipped ? ' (' + edges.skipped + ' large mesh(es) skipped.)' : '.')
+      : 'No supported source edge diagnostics available.';
+    const noOpRemesh = $('remesh').checked && edges.inspected && !edges.edgesAboveCutoff;
+    if (noOpRemesh && Number($('reduction').value) > 0) {
+      log('Adaptive edge remesh has no effect at ' + requested + '%; the triangle reduction is from decimation alone.');
+    }
     const processingRequested = $('remesh').checked || Number($('reduction').value) > 0;
     const meaningfulResult = !processingRequested || result.details.length > 0; // No-op/unsupported outputs must not be labeled optimized exports.
     $('materials').textContent = (safe ? '✓ Materials and group assignments preserved. ' : '⚠ Material assignments changed — export disabled. ') +
@@ -265,6 +302,7 @@
       displayCandidate = addDisplay(sceneB, candidate);
       listMaterials(original);
       showStats(result);
+      updateDisplayVerification();
       $('loading-note').textContent = 'Original and preview use the same camera and material definitions.';
     } catch (error) {
       if (version === generation) log('Preview failed: ' + (error?.message || error), true);
@@ -610,6 +648,9 @@
   $('export-json').addEventListener('click', exportQualityJson);
   $('game-lighting').addEventListener('change', () => renderPreview?.setMode($('game-lighting').value));
   $('show-shell').addEventListener('change', () => renderPreview?.setShellEnabled($('show-shell').checked)); // Isolates black-shell artifacts from real mesh gaps.
+  $('show-triangles').addEventListener('change', () => {
+    if (!updating) rebuildDisplays(); // Rebuild lines on current original AND candidate; no geometry processing/export changes.
+  });
   for (const id of ['game-surfaces', 'sample-body-color']) $(id).addEventListener('change', () => {
     if (!updating) rebuildDisplays(); // Only scene materials change; optimized geometry/export stays unmodified.
   }); // Color pickers can emit dozens of input events; build tinted CanvasTextures only once on commit.
@@ -623,7 +664,7 @@
     renderer.dispose();
   });
   $('copy-report').addEventListener('click', async () => {
-    const report = sourceName + '\n' + $('summary').textContent + '\n' + $('materials').textContent + '\n' + $('mesh-integrity').textContent + '\n' + $('log').textContent;
+    const report = sourceName + '\n' + $('summary').textContent + '\n' + $('materials').textContent + '\n' + $('mesh-integrity').textContent + '\n' + $('edge-diagnostics').textContent + '\n' + $('display-verification').textContent + '\n' + $('log').textContent;
     try { await navigator.clipboard.writeText(report); log('Report copied.'); }
     catch (e) { $('diagnostics').open = true; $('log').focus(); log('Clipboard unavailable; select the text above to copy.', true); }
   });

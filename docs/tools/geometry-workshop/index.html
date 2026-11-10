@@ -22,8 +22,8 @@
 <script src="js/foliage-generator.js?v=20261031h87aa596"></script>
 <script src="js/procedural-furniture.js"></script>
 <script src="js/geometry-quality.js?v=20261109quality1"></script>
-<script src="tools/geometry-workshop/core.js?v=20261109a"></script>
-<script src="tools/geometry-workshop/game-preview.js?v=20261109shellclear4"></script>
+<script src="tools/geometry-workshop/core.js?v=20261110edgeproof1"></script>
+<script src="tools/geometry-workshop/game-preview.js?v=20261110edgeproof1"></script>
 </head>
 <body>
 <div id="shell">
@@ -72,6 +72,8 @@
         <option value="storm">Storm</option>
       </select>
       <label class="check"><input id="show-shell" type="checkbox" checked> Show gameplay shell outlines</label>
+      <label class="check"><input id="show-triangles" type="checkbox"> Show triangle edges — original blue / candidate amber</label>
+      <small>Reveals actual mesh topology. The edge overlay is for inspection only and is never exported.</small>
       <small>Turn this off to check whether dark seams or openings belong to the mesh or the outline renderer.</small>
       <label class="check"><input id="game-surfaces" type="checkbox" checked> Use gameplay PNG textures for hand/foot GLBs</label>
       <label for="sample-body-color">Representative body dye for hand/foot preview</label>
@@ -81,7 +83,7 @@
     </section>
     <section>
       <h2>3 · Geometry controls</h2>
-      <label class="check"><input id="remesh" type="checkbox"> Adaptive edge remesh <span>— subdivide long triangle edges</span></label>
+      <label class="check"><input id="remesh" type="checkbox"> Adaptive edge subdivision <span>— inserts vertices without changing the surface shape</span></label>
       <label for="edge-size">Maximum edge length <output id="edge-out">12%</output></label>
       <input id="edge-size" type="range" min="2" max="40" step="1" value="12">
       <small>Percentage of the mesh bounding-box diagonal. A smaller value adds more triangles to preserve curves. One bounded subdivision pass.</small>
@@ -98,6 +100,8 @@
       <p id="summary" role="status">Load an object to compare geometry.</p>
       <div id="materials"></div>
       <small id="mesh-integrity" role="status" aria-live="polite">Mesh integrity is checked when an asset loads.</small>
+      <small id="edge-diagnostics" role="status" aria-live="polite">Edge-length cutoff will be measured from the source geometry.</small>
+      <small id="display-verification" role="status" aria-live="polite">Rendered triangle counts will be verified after processing.</small>
       <button id="export" type="button" disabled>Download optimized GLB</button>
       <div id="manual-download"></div>
       <h2 style="margin-top:15px">Gameplay quality JSON</h2>
@@ -123,6 +127,6 @@
     <div id="footer"><span id="busy">Ready</span><span id="loading-note">Loading Three.js and game mesh generators…</span></div>
   </main>
 </div>
-<script src="tools/geometry-workshop/workshop.js?v=20261109shellclear4"></script>
+<script src="tools/geometry-workshop/workshop.js?v=20261110edgeproof1"></script>
 </body>
 </html>

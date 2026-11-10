@@ -63,11 +63,14 @@
       (isCharacterSolid || (!material.transparent && !material.alphaTest)) && material.opacity !== 0);
   }
 
-  function decorate(source, sourcePath, useGameSurfaces, bodyColor) {
+  function decorate(source, sourcePath, useGameSurfaces, bodyColor, options = {}) {
     if (!source) return null;
     const display = source.clone(true);
     const ownedGeometries = new Set(); // New UV buffers for display-only body/foot surface mapping.
     const ownedMaterials = new Set(); // Cloned PNG materials can be safely released on re-preview.
+    const wireframes = []; // Paired edge overlays expose real topology without changing either export mesh.
+    const MAX_WIREFRAME_TRIANGLES = 40000; // Keep edge inspection fast even on mobile GPU drivers.
+    let wireTriangleCount = 0; // Total triangles considered for the optional visual wireframe.
     const surfaces = window.NaturalSurfaceMaterials;
     const isRoleModel = /^assets\/models\/(?:hands|feet)\//.test(sourcePath || '');
     const materialRoles = isRoleModel ? rolesFor(sourcePath) : {};
@@ -124,7 +127,30 @@
       }
       if (previewableMesh(mesh)) mesh.layers.enable(OUTLINE_LAYER);
       else mesh.layers.disable(OUTLINE_LAYER);
+      if (options.wireframe) wireframes.push(mesh);
     });
+    if (options.wireframe) {
+      // Add line topology after traversal. Edges are never exported, and they
+      // remain layer 0 so the game's shell ShaderMaterial never inflates them.
+      for (const mesh of wireframes) {
+        const triangles = Math.floor((mesh.geometry?.index?.count ?? mesh.geometry?.getAttribute?.('position')?.count ?? 0) / 3);
+        if (!triangles || wireTriangleCount + triangles > MAX_WIREFRAME_TRIANGLES) continue;
+        wireTriangleCount += triangles;
+        const geometry = new T.WireframeGeometry(mesh.geometry);
+        const material = new T.LineBasicMaterial({
+          color: options.isCandidate ? 0xffbd65 : 0x66dafa,
+          opacity: 0.82, transparent: true, depthTest: true, depthWrite: false,
+        });
+        const edges = new T.LineSegments(geometry, material);
+        edges.name = 'workshop_triangle_edges';
+        edges.layers.set(0);
+        edges.renderOrder = 1; // Draw after the filled surface for clear triangle comparisons.
+        mesh.add(edges);
+        ownedGeometries.add(geometry);
+        ownedMaterials.add(material);
+      }
+    }
+    display.userData.workshopWireframeTriangles = wireTriangleCount; // On-screen verification of actually drawn overlay geometry.
     display.userData.workshopDisplayResources = { ownedGeometries, ownedMaterials }; // Preview-only resources, never exported.
     return display;
   }

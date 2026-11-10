@@ -19,7 +19,7 @@ assert.match(shell, /tools\/enemy-loadout-editor\/source-data\.js\?v=/);
 assert.match(shell, /tools\/geometry-workshop\/game-preview\.js\?v=/);
 assert.match(shell, /js\/weather-fx\.js\?v=/);
 assert.match(shell, /js\/natural-surface-materials\.js\?v=/);
-for (const id of ['game-lighting','game-surfaces','sample-body-color','game-render-status','show-shell','mesh-integrity']) assert.match(shell, new RegExp('id="' + id + '"'));
+for (const id of ['game-lighting','game-surfaces','sample-body-color','game-render-status','show-shell','show-triangles','mesh-integrity','edge-diagnostics','display-verification']) assert.match(shell, new RegExp('id="' + id + '"'));
 assert.match(css, /workshop-lighting-overlay.*pointer-events:none/);
 assert.match(workshop, /renderer\.outputEncoding = T\.LinearEncoding/);
 assert.doesNotMatch(workshop, /renderer\.outputEncoding = T\.sRGBEncoding/);
@@ -40,8 +40,9 @@ class FakeGeometry {
   dispose() { this.disposed = true; }
 }
 class FakeMesh {
-  constructor(geometry, material) { this.isMesh = true; this.geometry = geometry; this.material = material; this.userData = {}; this.layers = {mask:1,enable(n){this.mask |= 1<<n},disable(n){this.mask &= ~(1<<n)}}; }
+  constructor(geometry, material) { this.isMesh = true; this.geometry = geometry; this.material = material; this.userData = {}; this.children = []; this.layers = {mask:1,enable(n){this.mask |= 1<<n},disable(n){this.mask &= ~(1<<n)}}; }
   clone() { return new FakeMesh(this.geometry, this.material); }
+  add(child) { this.children.push(child); }
 }
 const originalGeo = new FakeGeometry();
 const originalMat = new FakeMaterial('Mat 1');
@@ -55,7 +56,11 @@ const originalRoot = {
 const fakeWindow = {
   THREE: {
     Mesh:FakeMesh, BufferAttribute: class { constructor(array,size){this.array=array;this.itemSize=size;} },
-    MeshBasicMaterial: FakeMaterial, FogExp2:class{constructor(color,density){this.color=color;this.density=density}},
+    MeshBasicMaterial: FakeMaterial,
+    WireframeGeometry: class { constructor(geometry) { this.sourceGeometry = geometry; } dispose() { this.disposed = true; } },
+    LineBasicMaterial: class { constructor(options) { Object.assign(this, options); } dispose() { this.disposed = true; } },
+    LineSegments: class { constructor(geometry,material) { this.geometry = geometry; this.material = material; this.layers = {set(n){this.mask=1<<n;}}; } },
+    FogExp2:class{constructor(color,density){this.color=color;this.density=density}},
     Color:class{constructor(value){this.value=value}}, LinearEncoding:3000, NoToneMapping:0, PCFSoftShadowMap:2,
   },
   WeatherFX: {
@@ -102,6 +107,15 @@ assert.equal(originalRoot.children[0].material, originalMat);
 assert.equal(originalRoot.children[0].geometry, originalGeo);
 assert.equal(tintCalls,1);
 assert.ok(display.children[0].layers.mask&(1<<1),'3D model joins shell outline layer');
+const withEdges=adapter.decorate(originalRoot,'assets/models/hands/hand_feline.glb',true,'#7dc89a',{wireframe:true,isCandidate:true});
+assert.equal(withEdges.children[0].children.length,1,'wireframe is a line child of the display clone');
+assert.equal(withEdges.children[0].children[0].material.color,0xffbd65,'candidate uses amber triangle edges');
+assert.equal(withEdges.children[0].children[0].layers.mask,1,'edge lines must never enter layer-1 shell pass');
+assert.equal(withEdges.userData.workshopWireframeTriangles,1);
+assert.equal(originalRoot.children[0].geometry,originalGeo,'edge overlay must not alter source geometry');
+adapter.disposeDisplay({remove(){}},withEdges);
+assert.equal(originalGeo.disposed,false,'disposal must not release source geometry');
+assert.equal(withEdges.children[0].children[0].geometry.disposed,true,'overlay wire geometry released');
 const scene = label => ({name:label,overrideMaterial:null,background:null,fog:null,children:[],add(value){this.children.push(value)},remove(){}});
 const scenes=[scene('left'),scene('right')];
 const camera={layers:{mask:1,set(value){this.mask=1<<value}}};

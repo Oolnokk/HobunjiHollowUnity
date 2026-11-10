@@ -97,6 +97,35 @@ function twoMaterialMesh(){
   const invalid=await core.process(malformed,{reduction:50,protectCards:false});
   assert.ok(invalid.warnings.some(x=>x.includes('Overlapping material groups')));
   assert.equal(invalid.object.geometry,malformed.geometry);
+  // Real shipped feline hand: remesh at 40% cannot split any edge. Previous
+  // implementation still cloned it and advertised a 'remeshed' result.
+  const handData=fs.readFileSync(path.resolve(__dirname,'../docs/assets/models/hands/hand_feline.glb'));
+  const jsonLength=handData.readUInt32LE(12);
+  const gltf=JSON.parse(handData.subarray(20,20+jsonLength).toString('utf8'));
+  const binaryStart=20+jsonLength+8;
+  const posAccessor=gltf.accessors[0], normAccessor=gltf.accessors[1], idxAccessor=gltf.accessors[2];
+  const positions=new Float32Array(posAccessor.count*3), normals=new Float32Array(normAccessor.count*3);
+  for(const [accessor,output] of [[posAccessor,positions],[normAccessor,normals]]){
+    const view=gltf.bufferViews[accessor.bufferView],start=binaryStart+view.byteOffset;
+    for(let k=0;k<output.length;k++)output[k]=handData.readFloatLE(start+k*4);
+  }
+  const indexView=gltf.bufferViews[idxAccessor.bufferView],indices=new Uint16Array(idxAccessor.count);
+  for(let i=0;i<indices.length;i++)indices[i]=handData.readUInt16LE(binaryStart+indexView.byteOffset+i*2);
+  const handGeometry=new BufferGeometry();
+  handGeometry.setAttribute('position',new BufferAttribute(positions,3));
+  handGeometry.setAttribute('normal',new BufferAttribute(normals,3));
+  handGeometry.setIndex([...indices]);
+  const hand=new Mesh(handGeometry,{name:'MAT_None_7a4e2e',transparent:false,alphaTest:0});
+  const diag=core.edgeDiagnostics(hand,40);
+  assert.equal(diag.edgesAboveCutoff,0,'40% exceeds every actual edge of hand_feline');
+  assert.ok(diag.maximumEdgePercent>8 && diag.maximumEdgePercent<9,'longest hand edge is ~8.5% of bounds diagonal');
+  const noOp=await core.process(hand,{remesh:true,edgePercent:40,reduction:0,protectCards:false});
+  assert.equal(noOp.object.geometry,handGeometry,'no-op remesh must not allocate a fake edited mesh');
+  assert.equal(noOp.details.length,0,'zero subdivision does not count as an edited result');
+  assert.match(noOp.warnings.join(' '),/no edge exceeds 40/);
+  assert.equal(core.triangles(handGeometry),3120,'original mesh is intact');
+  assert.match(fs.readFileSync(path.resolve(__dirname,'../docs/tools/geometry-workshop/workshop.js'),'utf8'),
+    /updateDisplayVerification\(\)/,'workshop should verify actual drawn candidates, not trust JSON counts alone');
   const coreSource=fs.readFileSync(path.resolve(__dirname,'../docs/tools/geometry-workshop/core.js'),'utf8');
   const uiSource=fs.readFileSync(path.resolve(__dirname,'../docs/tools/geometry-workshop/workshop.js'),'utf8');
   assert.match(coreSource,/let outputTriangleCount = sourceStats\.triangles/, 'aggregate remeshing budget must be tracked');
