@@ -46,6 +46,10 @@
   const MAX_MELEE_AIM_PITCH_RAD = Math.PI / 2; // Melee can follow the reticle all the way to straight up/down; upward lunge distance is separately reduced below.
   const MELEE_LEAP_START_PITCH_RAD = THREE.MathUtils.degToRad(12);
   const activeMeleeTrails = []; // Transient pitched ribbons aged by updateMeleeTrails().
+  const MAX_POOLED_MELEE_TRAILS = 64; // Keeps reusable attack-ribbon GPU buffers bounded across crowded bandit fights.
+  const pooledMeleeTrailMeshes = []; // Detached meshes recycled by player and enemy attacks; never retain their old scene.
+  const meleeTrailStats = { created: 0, reused: 0, disposed: 0 }; // Mobile Pixel Probe diagnostics for attack-spike investigation.
+  const strikeCpuStats = { player: { last: 0, max: 0, samples: 0 }, enemy: { last: 0, max: 0, samples: 0 } }; // Per-strike worst/last CPU cost, populated only while Performance Profiler is enabled.
   const activeMeleeColliderDebug = new Map(); // Recent real pie-prism volumes drawn by Show Hitboxes.
   let meleeProbePoint = null, meleeRayPoint = null, meleeProbeRay = null, meleeColliderScratch = null; // Lazy reuse: headless tests need only THREE.MathUtils.
   let lastMelee3DResult = null; // Mobile-readable record of the latest 3D collider decision.
@@ -600,6 +604,39 @@
     positionAttr.needsUpdate = true;
   }
 
+  function createMeleeTrailMesh() {
+    const samples = 16; // One shared ribbon topology; only position data changes with each cone/pitch.
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array((samples + 1) * 2 * 3), 3));
+    const indices = []; // Built only on a pool miss rather than at every sword impact.
+    for (let sample = 0; sample < samples; sample++) {
+      const a = sample * 2, b = a + 1, c = a + 2, d = a + 3;
+      indices.push(a, b, c, b, d, c);
+    }
+    geometry.setIndex(indices);
+    const material = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true, opacity: 0.85, depthWrite: false,
+      blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.frustumCulled = false; // World-space ribbons already own their precise visible lifetime.
+    meleeTrailStats.created++;
+    return mesh;
+  }
+
+  function releaseMeleeTrailMesh(mesh) {
+    mesh.parent?.remove?.(mesh);
+    mesh.visible = false;
+    if (pooledMeleeTrailMeshes.length < MAX_POOLED_MELEE_TRAILS) {
+      pooledMeleeTrailMeshes.push(mesh);
+      return;
+    }
+    mesh.geometry.dispose();
+    mesh.material.dispose();
+    meleeTrailStats.disposed++;
+  }
+
   function spawnMeleeTrail(opts = {}) {
     const actor = opts.actor;
     const target = opts.target || null;
@@ -609,32 +646,25 @@
     const collider = meleeColliderVolume(actor, opts, solution); // Reused by Show Hitboxes so trail and damage volume share an origin.
     if (opts.debug !== false) rememberMeleeColliderDebug(collider);
     if (opts.debugOnly) return null; // A multi-colored enemy trail uses several visual lanes but one full-cone hitbox.
-    const samples = 16;
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array((samples + 1) * 2 * 3), 3));
-    const indices = [];
-    for (let sample = 0; sample < samples; sample++) {
-      const a = sample * 2, b = a + 1, c = a + 2, d = a + 3;
-      indices.push(a, b, c, b, d, c);
-    }
-    geometry.setIndex(indices);
-    writeMeleeTrailRibbon(geometry.attributes.position, {
-      samples, origin: solution.origin, direction: solution.direction,
+    const scene = opts.scene || actor?.scene || deps?.getActiveScene?.();
+    if (!scene) return null; // Do not allocate GPU resources when a world or scene is unloading.
+
+    const mesh = pooledMeleeTrailMeshes.pop() || createMeleeTrailMesh(); // Reuse the same topology, GPU buffer and shader instead of uploading on every attack.
+    if (mesh.visible === false) meleeTrailStats.reused++;
+    mesh.visible = true;
+    mesh.material.opacity = 0.85; // A recycled faded ribbon always starts fully visible.
+    const tint = opts.color ?? (actor === deps?.player ? 0xffffff : 0xff6a6a);
+    if (mesh.material.color?.set) mesh.material.color.set(tint);
+    else mesh.material.color = tint; // Minimal Three.js test doubles can represent colors as numbers.
+
+    writeMeleeTrailRibbon(mesh.geometry.attributes.position, {
+      samples: 16, origin: solution.origin, direction: solution.direction,
       rangeTiles: Math.max(0, Number(opts.rangePx) || 0) / (deps?.TILE || 64),
       halfConeRad: opts.halfConeRad,
       halfHeightWorld: collider.halfHeightWorld, // NPC swipe follows its own portrait-height collider.
       halfThickness: opts.halfThickness,
       archUnits: opts.archUnits,
     });
-    const material = new THREE.MeshBasicMaterial({
-      color: opts.color ?? (actor === deps?.player ? 0xffffff : 0xff6a6a),
-      transparent: true, opacity: 0.85, depthWrite: false,
-      blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
-    });
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.frustumCulled = false;
-    const scene = opts.scene || actor?.scene || deps?.getActiveScene?.();
-    if (!scene) { geometry.dispose(); material.dispose(); return null; }
     scene.add(mesh);
     const trail = {
       mesh, scene, age: 0,
@@ -654,9 +684,7 @@
       if (trail.age <= trail.holdS) continue;
       const fade = 1 - (trail.age - trail.holdS) / trail.fadeS;
       if (fade > 0.01) { trail.mesh.material.opacity = fade * 0.85; continue; }
-      trail.scene.remove(trail.mesh);
-      trail.mesh.geometry.dispose();
-      trail.mesh.material.dispose();
+      releaseMeleeTrailMesh(trail.mesh); // Detached once, hidden and available for a later strike.
       activeMeleeTrails.splice(i, 1);
     }
   }
@@ -732,8 +760,20 @@
   function fireStagedStrike(action) {
     if (action.strikeFired) return;
     action.strikeFired = true;
-    if (!action.data?.silentSfx) deps?.playWeaponSlashSfx?.(action.data?.sfxPitch, action.data?.comboStep, action.data?.attacker || deps?.player); // NPC swings inherit their attacker's 3D audio origin.
-    if (action.onStrike) action.onStrike(action);
+    const profiler = window.PerfProfiler; // Existing opt-in mobile profiler; no timing work while disabled.
+    const timing = profiler?.isEnabled?.() ? profiler.begin(action.data?.isBandit ? 'Combat: enemy strike callback' : 'Combat: player strike callback') : null;
+    try {
+      if (!action.data?.silentSfx) deps?.playWeaponSlashSfx?.(action.data?.sfxPitch, action.data?.comboStep, action.data?.attacker || deps?.player); // NPC swings inherit their attacker's 3D audio origin.
+      if (action.onStrike) action.onStrike(action);
+    } finally {
+      if (timing) {
+        const elapsedMs = profiler.end(timing); // Existing opt-in profiler owns the actual timing; no extra clock reads.
+        const bucket = action.data?.isBandit ? strikeCpuStats.enemy : strikeCpuStats.player;
+        bucket.last = elapsedMs;
+        bucket.max = Math.max(bucket.max, elapsedMs);
+        bucket.samples++;
+      }
+    }
   }
 
   function finishStagedAction(action) {
@@ -860,6 +900,11 @@
       latestChange: 'Melee swipes now follow the true pitched outer face of their 3D hit cones, with curved vertical bands instead of flat ribbons.',
       lastResult: lastMelee3DResult,
       activeTrailCount: activeMeleeTrails.length,
+      pooledTrailCount: pooledMeleeTrailMeshes.length, // Mobile-visible saved draws and GPU buffers.
+      trailMeshesCreated: meleeTrailStats.created,
+      trailMeshesReused: meleeTrailStats.reused,
+      trailMeshesDisposed: meleeTrailStats.disposed,
+      strikeCpuMs: { player: { ...strikeCpuStats.player }, enemy: { ...strikeCpuStats.enemy } }, // Cheap mobile copy; does not enumerate the entire profiler subsystem map.
       activeColliders: debugMeleeColliders().map(collider => ({
         actor: collider.actor?.id || collider.actor?.name || (collider.actor === deps?.player ? 'player' : 'actor'),
         shape: 'pie-prism',
