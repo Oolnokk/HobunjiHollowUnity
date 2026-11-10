@@ -20,6 +20,7 @@ assert(source.includes("window.RuntimeFrameScheduler.register(SCHEDULER_ID, sche
 assert(source.includes("phase: 'pre-game'"), 'Quick Attack must be on the pre-game phase to keep running before gameLoop');
 
 const offscreenX = new Set(); // Anchor x positions the stub frustum reports as outside the camera view.
+let proceduralStrokes = 0; // Counts fallback canvas stroke/upload requests across all readiness frames.
 
 function buildContext() {
   const registered = new Map();
@@ -32,7 +33,7 @@ function buildContext() {
         return {
           style: {},
           getContext: () => ({
-            clearRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {},
+            clearRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() { proceduralStrokes++; },
           }),
         };
       },
@@ -327,6 +328,49 @@ deps.isDialogueOpen = () => true;
 scheduledFrame({ timestamp: ++clock.now });
 assert.equal(context.QuickAttackBonusIndicator.snapshot().visible, false, 'dialogue immediately suppresses an active impact');
 deps.isDialogueOpen = () => false;
+
+// A full cooldown suppresses all expensive avatar probes, and only retains
+// one nearest-hostile condition lookup for the optional diagnostic fallback.
+const neighbourCooling = hostile('neighbour-cooling', 64); // Additional cooling target in the half-moon.
+deps.hostileObjects = [near, neighbourCooling, forward];
+context.Combat.quickAttackData.bonusEffectCooldownRemaining = () => 2;
+scheduledFrame({ timestamp: 3000 });
+snap = context.QuickAttackBonusIndicator.snapshot();
+assert.equal(snap.checkedConditions, 1, 'cooldown short-circuits condition evaluation for all but the nearest diagnostic target');
+assert.equal(snap.visualProbes, 0, 'cooling enemies do not pay for avatar transforms');
+assert.equal(snap.visibleCount, 0, 'cooldown continues to suppress every cue');
+context.Combat.quickAttackData.bonusEffectCooldownRemaining = () => 0;
+
+// The range cache reduces mastery/loadout work without limiting the cadence
+// of real bonus-condition checks, and invalidates instantly on gear changes.
+let reachCalculations = 0; // Counts the actual expensive reach-profile calculations.
+let activeWeapon = 'cached-weapon'; // Changing equipped weapon must invalidate reach within the same 50ms window.
+let activeQuick = 'tap2'; // Changing assigned Quick Attack must also invalidate immediately.
+deps.currentWeaponKey = () => activeWeapon;
+context.Combat.loadout.getSlot = () => activeQuick;
+context.Combat.quickAttackData.TECHNIQUES.otherQuick = { condKey: 'behind', label: 'Other Quick Attack' };
+context.Combat.quickAttackData.getReachProfile = () => {
+  reachCalculations++;
+  return { reachPx: deps.TILE * 6, effects: { quickBonusAfflictions: { bleeding: 1 } } };
+};
+deps.hostileObjects = [near];
+scheduledFrame({ timestamp: 4000 });
+const strokesAfterRefresh = proceduralStrokes; // Base count after a scheduled procedural canvas draw.
+scheduledFrame({ timestamp: 4016 });
+assert.equal(reachCalculations, 1, 'same equipped weapon and attack reuse the reach snapshot within 50ms');
+assert.equal(proceduralStrokes, strokesAfterRefresh, 'fallback canvas redraws are throttled without hiding the live cue');
+activeWeapon = 'swapped-weapon';
+scheduledFrame({ timestamp: 4020 });
+assert.equal(reachCalculations, 2, 'weapon swap invalidates cached reach immediately');
+activeQuick = 'otherQuick';
+scheduledFrame({ timestamp: 4024 });
+assert.equal(reachCalculations, 3, 'Quick Attack swap invalidates cached reach immediately');
+scheduledFrame({ timestamp: 4075 });
+assert.equal(reachCalculations, 4, 'reach snapshot refreshes automatically after 50ms');
+assert.ok(proceduralStrokes > strokesAfterRefresh, 'fallback canvas still updates at its capped rate');
+clock.now = 4080;
+context.QuickAttackBonusIndicator.refresh();
+assert.equal(reachCalculations, 5, 'explicit refresh bypasses the range cache');
 
 // A throwing readiness/render pass must still detach the reticle and record
 // its own error snapshot, exactly like the old try/catch inside frame().
