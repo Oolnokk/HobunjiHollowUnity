@@ -57,6 +57,12 @@ const server=http.createServer((req,res)=>{
     assert.equal(before.selected.gender,'male');
     assert.equal(before.viewer.knots,3,'the 3D viewer builds the same three rest knots as the 2D author');
     assert(before.viewer.ribbonVertices>100,'the real WebGL ribbon has deformable vertex geometry');
+    assert(before.viewer.textures.head?.colored>10 && before.viewer.textures.hair?.colored>10,
+      'head and hair textures contain real colored RGBA sprite pixels, not blank/black image buffers');
+    assert(before.viewer.gpuHead?.ok,
+      'the head sprite must actually render colored pixels on the GPU (not merely have a material.map): '+JSON.stringify(before.viewer.gpuHead));
+    assert(before.viewer.gpuHair?.ok,
+      'the beard must actually render colored pixels on the GPU: '+JSON.stringify(before.viewer.gpuHair));
     assert(before.viewer.arrows.some(item=>item.axis==='x'),'the selected knot has a real X-axis move gizmo');
     await page.locator('#autoSeam').click();
     const seam=await debug();
