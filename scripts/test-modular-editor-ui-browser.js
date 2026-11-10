@@ -227,6 +227,7 @@ async function ready(page) {
     }),{allowed:true,flailDamage:'blunt',normalDamage:'sharp',headDamage:'sharp',flipY:true},
     'Pick Head is blunt only on this flail shaft, while its original sharp geometry and ordinary weapons remain intact');
     assert.match(await page.locator('#pair-transform-status').innerText(),/blunt damage/);
+    await page.locator('#head').selectOption('fishing-mace'); // Reset the correct pair; Pick Head was selected only for its blunt damage check.
     await page.locator('#head-contact-reset').click();
     assert.equal(await page.locator('#head-rope-x').inputValue(),'185','reset restores the original rigid sleeve endpoint');
     await page.locator('#head-contact-move').click(); // Open source canvas and activate pair-only point editing on mobile.
