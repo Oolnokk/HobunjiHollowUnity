@@ -48,45 +48,69 @@
     const ndc=new THREE.Vector2();
     const axisUnit=axis=>new THREE.Vector3(...AXES[axis]);
     const coordinate=e=>{const box=canvas.getBoundingClientRect();return {x:(e.clientX-box.left)/box.width*2-1,y:1-(e.clientY-box.top)/box.height*2,box};};
+    const spriteSurface = window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit; // Same PNG-plane material factory as Pants Garment Renderer and AvatarPreviewScene.
+    const textureFailures = new Map(); // Captures per-surface mobile CORS/decode/upload issues without hiding the 3D gizmos.
     function makeSheet(image,z,side,opacity=1) {
-      const material = new THREE.MeshBasicMaterial({ transparent:true, alphaTest:.005, depthWrite:false, side, opacity });
-      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1,1),material);
-      mesh.position.z=z;mesh.visible=false;
+      const label = opacity < 1 ? 'spline_hood_reference' : side===THREE.BackSide ? 'spline_rear' : z===0 ? 'spline_character' : 'spline_hair';
+      const overrides={side,transparent:true,depthWrite:z===0,opacity};
+      const material = spriteSurface?.makeMaterial
+        ? spriteSurface.makeMaterial(THREE,null,label,overrides)
+        : new THREE.MeshBasicMaterial({transparent:true,alphaTest:.005,depthWrite:false,side,opacity});
+      const mesh=new THREE.Mesh(new THREE.PlaneGeometry(1,1),material);
+      mesh.name=label;mesh.position.z=z;mesh.visible=false;
       return mesh;
     }
-    function replaceTexture(mesh,image,mirror=false){
-      if(mesh.userData.image===image && mesh.userData.mirror===mirror)return;
-      mesh.material.map?.dispose();
-      mesh.userData.image=image;mesh.userData.mirror=mirror;
-      if(!image){mesh.visible=false;mesh.material.map=null;mesh.userData.pixelStats=null;return;}
-      const width=Math.round(image.naturalWidth||image.width||0),height=Math.round(image.naturalHeight||image.height||0);
-      if(width<1||height<1||width*height>4194304)throw new Error('Invalid 3D sprite reference size: '+width+' × '+height);
-      const pixelsCanvas=document.createElement('canvas'); // Single 2D staging surface shared by imported PNGs and repository-generated portrait canvases.
-      pixelsCanvas.width=width;pixelsCanvas.height=height;
-      const ctx=pixelsCanvas.getContext('2d',{willReadFrequently:true});
-      if(!ctx)throw new Error('Could not obtain the 3D portrait pixel source.');
-      if(mirror){ctx.translate(width,0);ctx.scale(-1,1);}
-      ctx.drawImage(image,0,0,width,height);
-      // Explicit RGBA DataTexture bypasses Android canvas-to-WebGL black-texture uploads.
-      // All artwork is static until its selected style changes, so no per-frame readback/upload is needed.
-      const rgba=new Uint8Array(ctx.getImageData(0,0,width,height).data);
-      let opaque=0,colored=0;
-      for(let offset=0;offset<rgba.length;offset+=4){
-        if(rgba[offset+3]<8)continue;
-        opaque++;
-        if(rgba[offset]>12||rgba[offset+1]>12||rgba[offset+2]>12)colored++;
+    function replaceTexture(mesh,image,mirror=false) {
+      if(mesh.userData.image===image&&mesh.userData.mirror===mirror&&mesh.material.map)return;
+      if(!image){
+        mesh.material.map?.dispose();
+        mesh.material.map=null;mesh.material.needsUpdate=true;mesh.visible=false;
+        mesh.userData.image=null;mesh.userData.pixelStats=null;
+        textureFailures.delete(mesh.name);return;
       }
-      mesh.userData.pixelStats={width,height,opaque,colored,format:'RGBA8 DataTexture'}; // Source-pixel health check surfaced in mobile diagnostics.
-      const texture=new THREE.DataTexture(rgba,width,height,THREE.RGBAFormat,THREE.UnsignedByteType);
-      texture.flipY=true; // Canvas data has a top-left origin; Three's plane UVs and authoring canvas use an upward V.
-      texture.unpackAlignment=1;
-      texture.generateMipmaps=false;
-      texture.magFilter=THREE.NearestFilter;texture.minFilter=THREE.NearestFilter;
-      texture.wrapS=THREE.ClampToEdgeWrapping;texture.wrapT=THREE.ClampToEdgeWrapping;
-      if ('colorSpace' in texture)texture.colorSpace=THREE.SRGBColorSpace;
-      else if (THREE.sRGBEncoding)texture.encoding=THREE.sRGBEncoding;
-      texture.needsUpdate=true;
-      mesh.material.map=texture;mesh.material.needsUpdate=true;mesh.visible=true;
+      try {
+        const width=Math.round(image.naturalWidth||image.width||0),height=Math.round(image.naturalHeight||image.height||0);
+        if(width<1||height<1||width*height>4194304)throw Error('Invalid sprite canvas dimensions '+width+' × '+height);
+        const source=document.createElement('canvas'); // Reuse the Pants Rig Author's clean 200px source canvas contract.
+        source.width=width;source.height=height;
+        const ctx=source.getContext('2d');
+        if(!ctx)throw Error('No 2D context for authored portrait texture');
+        if(mirror){ctx.translate(width,0);ctx.scale(-1,1);}
+        ctx.drawImage(image,0,0,width,height);
+        // This check is diagnostic only: unlike the previous DataTexture code it cannot abort a valid sprite upload.
+        // A failed alpha read is reported as a possible cross-origin taint, not silently treated as empty artwork.
+        let opaque=-1,colored=-1,readError=null;
+        try {
+          const rgba=ctx.getImageData(0,0,width,height).data;
+          opaque=0;colored=0;
+          for(let i=0;i<rgba.length;i+=4){
+            if(rgba[i+3]<8)continue;
+            opaque++;
+            if(rgba[i]>12||rgba[i+1]>12||rgba[i+2]>12)colored++;
+          }
+        }catch(error){readError=error.name+': '+error.message;}
+        const texture=spriteSurface?.makeCanvasTexture
+          ? spriteSurface.makeCanvasTexture(THREE,source,mesh.name)
+          : new THREE.CanvasTexture(source);
+        texture.needsUpdate=true;
+        const previous=mesh.material.map;
+        mesh.material.map=texture;
+        if(mesh.material.depthWrite && spriteSurface?.maskAlphaTest)
+          mesh.material.alphaTest=Math.max(mesh.material.alphaTest,spriteSurface.maskAlphaTest());
+        mesh.material.needsUpdate=true;mesh.visible=true;
+        mesh.userData.image=image;mesh.userData.mirror=mirror; // Commit cache identity only after the texture is successfully constructed.
+        mesh.userData.pixelStats={width,height,opaque,colored,format:'canonical CanvasTexture',readError};
+        previous?.dispose();
+        if(readError)textureFailures.set(mesh.name,readError);
+        else textureFailures.delete(mesh.name);
+      }catch(error){
+        const reason=error.name+': '+error.message;
+        textureFailures.set(mesh.name,reason);
+        mesh.userData.image=null; // A failed attempt must never poison the identical-input retry path.
+        mesh.userData.pixelStats={error:reason};
+        mesh.material.map?.dispose();mesh.material.map=null;mesh.material.needsUpdate=true;mesh.visible=false;
+        handlers.onStatus?.('3D '+mesh.name+' texture failed: '+reason);
+      }
     }
     function replaceMeshGeometry(mesh,newGeometry) {
       if(mesh.geometry===newGeometry)return;
@@ -261,6 +285,9 @@
         controls?.update();
         renderer.render(scene,camera);
         const head=headPlane.material.map,hair=hairPlane.material.map;
+        if(textureFailures.size){
+          handlers.onStatus?.('3D sprite error: '+[...textureFailures].map(([key,value])=>key+': '+value).join(' | '));
+        }
         if(head&&hair){
           const pair=head.id+':'+hair.id;
           if(pair!==verifiedTexturePair){
@@ -349,6 +376,7 @@
         textures:{head:headPlane.userData.pixelStats||null,hair:hairPlane.userData.pixelStats||null,
           rear:rearPlane.userData.pixelStats||null,hood:hoodPlane.userData.pixelStats||null},
         gpuTextureCount:renderer.info.memory.textures,
+        textureErrors:Object.fromEntries(textureFailures), // Mobile-accessible reason, including SecurityError on a tainted canvas.
         gpuHead:probeGpuTexture(headPlane.material.map),gpuHair:probeGpuTexture(hairPlane.material.map),
         arrows,rings, // Mobile diagnostics and browser pointer-test coordinates for actual visible gizmo handles.
       };
