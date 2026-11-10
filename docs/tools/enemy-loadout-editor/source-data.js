@@ -41,6 +41,42 @@
       throw Error('Game catalog declaration missing: ' + name);
     return Function('"use strict";return (' + expression + ');')();
   }
+  function renderingFromGame(game) {
+    const shellSource =
+      /const shellOutlineMat = (new THREE\.ShaderMaterial\([\s\S]*?\n      \}\));/.exec(
+        game,
+      )?.[1];
+    const lightingSource =
+      /const ambientLight = new THREE\.AmbientLight[\s\S]*?scene\.add\(hemiLight\);/.exec(
+        game,
+      )?.[0];
+    const lightingUpdate =
+      /ambientLight\.intensity = 0\.3[\s\S]*?scene\.fog\.color\.copy\(scene\.background\);/.exec(
+        game,
+      )?.[0];
+    if (!shellSource || !lightingSource || !lightingUpdate)
+      throw Error(
+        'Game rendering source unavailable; preview cannot claim rendering parity',
+      );
+    const makeShellMaterial = Function(
+      'THREE',
+      'return (' + shellSource + ');',
+    );
+    const makeLighting = Function(
+      'THREE',
+      'scene',
+      lightingSource + '\nreturn {ambientLight,sunLight,hemiLight};',
+    );
+    const applyLighting = Function(
+      'scene',
+      'ambientLight',
+      'sunLight',
+      'state',
+      'const {r,g,b,a}=state;const brightnessMul=1-a*0.7;\n' +
+        lightingUpdate,
+    );
+    return { makeShellMaterial, makeLighting, applyLighting };
+  }
   async function load() {
     const [gang, porakaneki, omgurku, game, attackValues, index, npcDb] =
       await Promise.all([
@@ -82,39 +118,7 @@
     )(metals);
     // Evaluate the live game's shader and lighting setup, just as we read its
     // immutable equipment tables. The workshop never maintains a shader copy.
-    const shellSource =
-      /const shellOutlineMat = (new THREE\.ShaderMaterial\([\s\S]*?\n      \}\));/.exec(
-        game,
-      )?.[1];
-    const lightingSource =
-      /const ambientLight = new THREE\.AmbientLight[\s\S]*?scene\.add\(hemiLight\);/.exec(
-        game,
-      )?.[0];
-    const lightingUpdate =
-      /ambientLight\.intensity = 0\.3[\s\S]*?scene\.fog\.color\.copy\(scene\.background\);/.exec(
-        game,
-      )?.[0];
-    if (!shellSource || !lightingSource || !lightingUpdate)
-      throw Error(
-        'Game rendering source unavailable; preview cannot claim rendering parity',
-      );
-    const makeShellMaterial = Function(
-      'THREE',
-      'return (' + shellSource + ');',
-    );
-    const makeLighting = Function(
-      'THREE',
-      'scene',
-      lightingSource + '\nreturn {ambientLight,sunLight,hemiLight};',
-    );
-    const applyLighting = Function(
-      'scene',
-      'ambientLight',
-      'sunLight',
-      'state',
-      'const {r,g,b,a}=state;const brightnessMul=1-a*0.7;\n' +
-        lightingUpdate,
-    );
+    const { makeShellMaterial, makeLighting, applyLighting } = renderingFromGame(game);
     const toolMeshSource =
       /function makeToolPlaneMesh\(itemKey, opts = \{\}\) \{[\s\S]*?\n      \}/.exec(
         game,
@@ -442,6 +446,7 @@
     types,
     load,
     declaration,
+    renderingFromGame,
     defaults,
     spawn,
   });

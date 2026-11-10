@@ -227,42 +227,51 @@
     if (!Loader) {
       const reason = 'GLTFLoader unavailable';
       failures.set(state, reason);
-      if (mode === 'baked') warnOnce(`loader:${state}`, `${filename} cannot load (${reason}); using available fallback.`);
+      if (mode === 'baked') warnOnce('loader:' + state, filename + ' cannot load (' + reason + '); using available fallback.');
       return Promise.resolve(null);
     }
-    const promise = new Promise(resolve => {
+
+    const quality = root.GeometryQuality; // Optional graphics-quality profiles select pre-baked GLB variants.
+    const sourcePath = BASE_PATH + filename; // Existing tree GLB path remains authoritative if no quality variant loads.
+    const promise = Promise.resolve(quality?.ready).then(() => new Promise(resolve => {
       let loader;
       try { loader = new Loader(); }
       catch (error) {
         const reason = String(error?.message || error);
         failures.set(state, reason);
-        if (mode === 'baked') warnOnce(`loader:${state}`, `${filename} loader creation failed (${reason}); using available fallback.`);
+        if (mode === 'baked') warnOnce('loader:' + state, filename + ' loader creation failed (' + reason + '); using available fallback.');
         resolve(null);
         return;
       }
-      loader.load(
-        `${BASE_PATH}${filename}`,
-        gltf => {
-          const treeRoot = normalizeLoadedRoot(entry, gltf, level, branched);
-          if (treeRoot) {
-            cache.set(key, treeRoot);
-            failures.delete(state);
-          } else {
-            const reason = 'GLB contained no tree scene';
-            failures.set(state, reason);
-            if (mode === 'baked') warnOnce(`empty:${state}`, `${filename} ${reason}; using available fallback.`);
-          }
-          resolve(treeRoot);
-        },
-        undefined,
-        error => {
-          const reason = String(error?.message || error || 'load failed');
+      // When the global GLTFLoader wrapper is installed it already handles
+      // baked visual LODs and preserves the ORIGINAL as the gameplay tree.
+      // Never pass an optimized URL as the authoritative tree geometry.
+      const preferred = quality?.snapshot?.().loaderInstalled
+        ? sourcePath : (quality?.resolvePath?.(sourcePath) || sourcePath);
+      const onLoaded = gltf => {
+        const treeRoot = normalizeLoadedRoot(entry, gltf, level, branched);
+        if (treeRoot) {
+          cache.set(key, treeRoot);
+          failures.delete(state);
+        } else {
+          const reason = 'GLB contained no tree scene';
           failures.set(state, reason);
-          if (mode === 'baked') warnOnce(`load:${state}`, `${filename} failed to load (${reason}); using available fallback.`);
-          resolve(null);
+          if (mode === 'baked') warnOnce('empty:' + state, filename + ' ' + reason + '; using available fallback.');
         }
-      );
-    }).finally(() => pending.delete(state));
+        resolve(treeRoot);
+      };
+      const onLoadFailed = error => {
+        const reason = String(error?.message || error || 'load failed');
+        failures.set(state, reason);
+        if (mode === 'baked') warnOnce('load:' + state, filename + ' failed to load (' + reason + '); using available fallback.');
+        resolve(null);
+      };
+      loader.load(preferred, onLoaded, undefined, error => {
+        if (preferred === sourcePath) { onLoadFailed(error); return; }
+        // Missing quality variants must not leave previously working baked trees invisible.
+        loader.load(sourcePath, onLoaded, undefined, onLoadFailed);
+      });
+    })).finally(() => pending.delete(state));
     pending.set(state, promise);
     return promise;
   }

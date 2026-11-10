@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<base href="../../">
+<title>Hobunji Hollow — Geometry Workshop</title>
+<link rel="stylesheet" href="tools/geometry-workshop/workshop.css?v=20261109game1">
+<script src="js/tap-reliability.js?v=20261010a"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/meshoptimizer@0.22.0/meshopt_simplifier.js"></script>
+<script src="js/GLTFLoader.js?v=20260712d"></script>
+<!-- Use the SAME character dye/PNG surface, geometry mapping, and weather scripts that gameplay uses. -->
+<script src="config/scratchbones-config.js?v=20261109gamepreview3"></script>
+<script src="config/hand-model-profiles.js?v=20261109geom-preview1"></script>
+<script src="js/portrait-utils.js?v=20261107h7418f3e"></script>
+<script src="js/natural-surface-materials.js?v=20261109geom-preview1"></script>
+<script src="js/weather-fx.js?v=20261109htzizw1"></script>
+<script src="tools/enemy-loadout-editor/source-data.js?v=20261109parity1"></script>
+<script src="js/foliage-generator.js?v=20261031h87aa596"></script>
+<script src="js/procedural-furniture.js"></script>
+<script src="js/geometry-quality.js?v=20261110cloneaudit2"></script>
+<script src="tools/geometry-workshop/core.js?v=20261110edgeproof2"></script>
+<script src="tools/geometry-workshop/game-preview.js?v=20261110edgeproof1"></script>
+</head>
+<body>
+<div id="shell">
+  <aside id="controls">
+    <header><h1>Geometry Workshop</h1><p>Non-destructive remeshing and decimation of authored GLBs and generated meshes. Original materials and their triangle assignments stay intact.</p></header>
+    <section>
+      <h2>1 · Source</h2>
+      <label for="source-kind">Object type</label>
+      <select id="source-kind">
+        <option value="repository">Repository GLB</option>
+        <option value="generated">Procedural game object</option>
+        <option value="local">Local GLB file</option>
+        <option value="live">Pick mesh from running game</option>
+      </select>
+      <div id="source-repository">
+        <label for="repo-preset">Common assets</label><select id="repo-preset"></select>
+        <label for="repo-path">Or any repository GLB path (relative to docs/)</label>
+        <input type="text" id="repo-path" spellcheck="false" value="assets/models/hands/hand_feline.glb">
+      </div>
+      <div id="source-generated" hidden>
+        <label for="generator">Game generator / authored recipe</label>
+        <select id="generator"></select>
+        <label for="seed">Generation coordinates / seed</label><input id="seed" type="number" value="1" min="-10000" max="10000" step="1">
+        <small>Uses the real FoliageGenerator and ProceduralFurniture code, not a mock mesh.</small>
+      </div>
+      <div id="source-local" hidden>
+        <label for="file">Choose a binary glTF (.glb)</label>
+        <input id="file" type="file" accept=".glb,model/gltf-binary">
+      </div>
+      <div id="source-live" hidden>
+        <p class="muted">Pick any visible authored or generated mesh from a linked game tab. Only Dev Mode permits picking. Tap here, switch to the game tab and tap the object, then return to the workshop.</p>
+        <label for="pick-scope">Capture scope</label><select id="pick-scope"><option value="mesh">Clicked mesh</option><option value="group">Nearest named parent group</option></select>
+        <button id="open-game" type="button">Open / focus linked game</button>
+        <button id="pick-game" type="button">Pick from game</button>
+        <small id="live-status" role="status">Requires the game and workshop on the same website/origin.</small>
+      </div>
+      <button id="load" type="button">Load object</button>
+    </section>
+    <section>
+      <h2>2 · Gameplay appearance</h2>
+      <label for="game-lighting">Lighting / time of day</label>
+      <select id="game-lighting">
+        <option value="noon" selected>Noon</option>
+        <option value="sunset">Sunset</option>
+        <option value="night">Night</option>
+        <option value="storm">Storm</option>
+      </select>
+      <label class="check"><input id="show-shell" type="checkbox" checked> Show gameplay shell outlines</label>
+      <label class="check"><input id="show-triangles" type="checkbox"> Show triangle edges — original blue / candidate amber</label>
+      <small>Reveals actual mesh topology. The edge overlay is for inspection only and is never exported.</small>
+      <small>Turn this off to check whether dark seams or openings belong to the mesh or the outline renderer.</small>
+      <label class="check"><input id="game-surfaces" type="checkbox" checked> Use gameplay PNG textures for hand/foot GLBs</label>
+      <label for="sample-body-color">Representative body dye for hand/foot preview</label>
+      <input id="sample-body-color" type="color" value="#7dc89a" aria-label="Representative body dye for preview">
+      <small id="game-surface-status">Embedded GLB textures are retained. Game hand/foot surface materials affect only display clones, never exports.</small>
+      <small id="game-render-status" role="status" aria-live="polite">Loading the live game's shell shader and lighting definitions…</small>
+    </section>
+    <section>
+      <h2>3 · Geometry controls</h2>
+      <label class="check"><input id="remesh" type="checkbox"> Adaptive edge subdivision <span>— inserts vertices without changing the surface shape</span></label>
+      <label for="edge-size">Maximum edge length <output id="edge-out">12%</output></label>
+      <input id="edge-size" type="range" min="2" max="40" step="1" value="12">
+      <small>Percentage of the mesh bounding-box diagonal. A smaller value adds more triangles to preserve curves. One bounded subdivision pass.</small>
+      <label for="reduction">Decimate triangles <output id="reduction-out">55%</output></label>
+      <input id="reduction" type="range" min="0" max="95" step="5" value="55">
+      <label for="error">Maximum simplification error <output id="error-out">2%</output></label>
+      <input id="error" type="range" min="0.1" max="10" step="0.1" value="2">
+      <small>Constrained edge collapses; material borders are locked. Actual reduction may be less than requested.</small>
+      <label class="check"><input id="protect-cards" type="checkbox" checked> Preserve transparent cards, collision helpers and climbable branches</label>
+      <button id="update" class="primary" type="button">Update preview</button>
+    </section>
+    <section>
+      <h2>4 · Output</h2>
+      <p id="summary" role="status">Load an object to compare geometry.</p>
+      <div id="materials"></div>
+      <small id="mesh-integrity" role="status" aria-live="polite">Mesh integrity is checked when an asset loads.</small>
+      <small id="edge-diagnostics" role="status" aria-live="polite">Edge-length cutoff will be measured from the source geometry.</small>
+      <small id="subdivision-status" role="status" aria-live="polite">Actual subdivision work will be reported after Update preview.</small>
+      <small id="display-verification" role="status" aria-live="polite">Rendered triangle counts will be verified after processing.</small>
+      <button id="export" type="button" disabled>Download optimized GLB</button>
+      <div id="manual-download"></div>
+      <h2 style="margin-top:15px">Gameplay quality JSON</h2>
+      <label for="quality-tier">Graphics quality tier for this candidate</label>
+      <select id="quality-tier">
+        <option value="low">Low</option>
+        <option value="medium" selected>Medium</option>
+        <option value="high">High</option>
+      </select>
+      <label for="game-source-path">Original GLB path used by gameplay</label>
+      <input type="text" id="game-source-path" placeholder="assets/models/hands/hand_feline.glb" spellcheck="false">
+      <small>For a procedural object, enter the path of its baked gameplay GLB. A generated-object profile only affects gameplay when that asset is loaded from this same path. Importing JSON does not automatically replace a live generator.</small>
+      <button id="export-json" type="button" disabled>Download quality profile JSON</button>
+      <div id="json-download"></div>
+      <small>Export the matching optimized GLB too, then publish it to the expected assets/models/ path. In-game Settings → Performance → Geometry Detail can import one or more profile JSONs; tiers merge by source.</small>
+      <small>Export creates a new file; it does not replace a repository asset or change gameplay. Original GLB is never overwritten.</small>
+    </section>
+    <details id="diagnostics"><summary>Diagnostics · mobile-friendly</summary><pre id="log" aria-live="polite"></pre><button id="copy-report" type="button">Copy report</button></details>
+  </aside>
+  <main id="viewer">
+    <div id="view-header"><strong>Original</strong><span>Drag to orbit · pinch/scroll to zoom</span><strong>Candidate</strong></div>
+    <div id="canvas-host"></div>
+    <div id="footer"><span id="busy">Ready</span><span id="loading-note">Loading Three.js and game mesh generators…</span></div>
+  </main>
+</div>
+<script src="tools/geometry-workshop/workshop.js?v=20261110edgeproof2"></script>
+</body>
+</html>

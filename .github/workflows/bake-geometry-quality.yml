@@ -1,0 +1,51 @@
+name: Bake geometry-quality GLBs (feature branch only)
+
+# Run only on the feature PR, NEVER on main. This writes generated optimized
+# variants back to the same opt-in branch; originals are never overwritten.
+on:
+  push:
+    branches:
+      - feature/global-prebaked-geometry-quality-20261110
+    paths:
+      - 'scripts/bake-geometry-quality.mjs'
+      - '.github/workflows/bake-geometry-quality.yml'
+      - 'docs/config/geometry-quality-presets.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bake:
+    if: github.ref == 'refs/heads/feature/global-prebaked-geometry-quality-20261110'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/global-prebaked-geometry-quality-20261110
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install isolated offline baking dependencies
+        run: npm install --no-save --package-lock=false @gltf-transform/core@4.3.0 @gltf-transform/functions@4.3.0 meshoptimizer@0.22.0
+      - name: Bake eligible GLBs (60% target, 2% error)
+        run: node --max-old-space-size=4096 scripts/bake-geometry-quality.mjs
+      - name: Verify GLB paths and manifest references
+        run: node scripts/validate-baked-geometry-quality.js
+      - name: Commit prebaked artifacts to THIS feature branch only
+        env:
+          GITHUB_BRANCH: feature/global-prebaked-geometry-quality-20261110
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/$GITHUB_BRANCH"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/assets/models docs/config/geometry-quality-presets.json
+          if git diff --cached --quiet; then
+            echo "All pre-baked assets are up to date."
+          else
+            git commit -m "Bake eligible geometry-quality GLB variants at 60% target [skip ci]"
+            git push origin "HEAD:refs/heads/$GITHUB_BRANCH"
+          fi
