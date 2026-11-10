@@ -439,7 +439,7 @@ function makeStaticParts(front,back,head,backHead,profile,pose,finish,role,weapo
     p.push(sprite('statue_weapon_'+i,'Weapon '+(i+1)+' — '+entry.path.split('/').pop(),entry.mask,null,finish,role,
       transform(i?0:0,i?0:-.22,i?.018:.015,i?0:num(pose.pitch),i?0:num(pose.yaw),
         i?0:num(pose.roll),weaponWidth,weaponHeight,.02),
-      i?'statue_weapon_0':'statue_right_hand',overlayFrame,baseColor));
+      entry.offhand?'statue_left_hand':i?'statue_weapon_0':'statue_right_hand',overlayFrame,baseColor));
   }
   return p;
 }
@@ -453,7 +453,7 @@ async function weaponsFromInput(){
   if(paths.length>12)throw Error('Maximum 12 weapon sprite layers per statue');
   const result=[];
   for(const path of paths){
-    if(!/^assets\/toolsprites\/[\w./ -]+\.png$/i.test(path)||path.includes('..'))throw Error('Use valid assets/toolsprites/*.png paths');
+    if(!/^assets\/toolsprites\/[\w.' -]+\.png$/i.test(path)||path.includes('..'))throw Error('Use valid assets/toolsprites/*.png paths');
     const img=await imageForUrl('../../'+path);
     const original=transparentCanvas(img.naturalWidth||img.width,img.naturalHeight||img.height);
     original.getContext('2d').drawImage(img,0,0);
