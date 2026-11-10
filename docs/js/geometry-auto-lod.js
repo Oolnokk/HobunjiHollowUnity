@@ -1,7 +1,7 @@
-// Opt-in gameplay-wide 60% geometry simplification.
-// Everything eligible is simplified once in idle time using the SAME
-// meshoptimizer/Core.reduceGeometry code as the Geometry Workshop.
-// Render-only geometry swaps preserve raycasts, collision and authoring data.
+// Pre-baked-first gameplay-wide optimized geometry mode (up to 60% reduction).
+// Authored GLBs select precomputed variants through GeometryQuality / GLTFLoader.
+// Only eligible PROCEDURAL meshes are simplified once, during idle time, into
+// a session cache. Render-only swaps preserve collision, raycasts and source geometry.
 (function (root) {
   'use strict';
   if (!root || root.GeometryAutoLOD) return;
@@ -21,19 +21,22 @@
   const SCAN_MS_PER_SLICE = 4;
   const MAX_SWAPS_PER_RENDER = 3000; // Worst-case renderer wrapper bound; deferred items remain originals.
 
-  const cache = new WeakMap(); // Original BufferGeometry -> simplification result, owned by this module.
+  const cache = new WeakMap(); // Procedural source geometry -> once-simplified cached geometry.
+  const precomputed = new WeakMap(); // Original or cloned GLB BufferGeometry -> render-only entry.
+  const precomputedBySourceUid = new Map(); // Immutable GLB source UUID -> precomputed entry, reused by runtime-owned visual clones.
   const readyMeshes = new Map(); // Mesh -> geometry entry; sampled only during actual renderer.render().
   const knownCached = new Set(); // Track owned cache allocations for explicit GPU disposal on zone unload.
   const queue = []; // Unique pending geometries processed outside the render/physics frame.
   const counters = {
     scanned: 0, submitted: 0, processed: 0, skipped: 0, cached: 0,
-    sourceTriangles: 0, optimizedTriangles: 0, lastDrawSaved: 0,
+    sourceTriangles: 0, optimizedTriangles: 0, prebakedRegistered: 0, lastDrawSaved: 0,
     lastRenderMeshes: 0, renderSwaps: 0, lastSkip: '', lastError: '',
   }; // Mobile-visible diagnostic counters, not per-frame logger output.
 
   let enabled = readEnabled(); // Persisted experimental graphics-quality preference.
   let ready = false; // Whether WASM and the shared Geometry Workshop reducer are ready.
   let loadingPromise = null; // Prevent duplicate optional CDN/WASM downloads.
+  let optimizerFailed = false; // Avoid repeatedly loading a blocked CDN on every discovered mesh.
   let renderer = null; // Only the real __hobunjiGameRenderer, never an editor renderer.
   let originalRender = null; // Existing renderer.render chain, preserved under the wrapper.
   let renderDepth = 0; // Nested outline/occlusion passes cannot restore geometry prematurely.
@@ -61,10 +64,12 @@
     if (!message && elapsed < 700) return;
     statusAt = now();
     el.textContent = (enabled ? 'Enabled' : 'Off') +
-      ' · ' + counters.processed + ' mesh geometries optimized' +
+      ' · ' + counters.processed + ' procedural geometries optimized' +
+      ' · ' + counters.prebakedRegistered + ' precomputed geometry buffers ready' +
       ' · ' + (counters.sourceTriangles - counters.optimizedTriangles).toLocaleString() +
       ' triangles saved across cached geometry' +
       ' · ' + counters.lastDrawSaved.toLocaleString() + ' triangle draws avoided last pass' +
+      ' · ' + (root.GeometryQuality?.snapshot?.().prebakedLoads || 0) + ' pre-baked GLBs loaded' +
       ' · ' + queue.length + ' queued' +
       ' · ' + counters.skipped + ' skipped.' +
       (message ? ' ' + message : '') +
@@ -113,6 +118,9 @@
   function protectedMesh(mesh) {
     if (!mesh?.isMesh || !mesh.geometry?.isBufferGeometry || !mesh.visible || !mesh.parent) return true;
     if (mesh.isSkinnedMesh || mesh.isBone || mesh.isBatchedMesh) return true;
+    if (mesh.userData?.geometryQualityGLBSource || mesh.geometry?.userData?.geometryQualityGLBSource) {
+      return true; // Authored GLBs use pre-baked variants; never double-reduce them with the procedural idle cache.
+    }
     const flags = mesh.userData || {};
     if ([
       'isCollisionMesh','isClimbBranch','noOutline','isPngPlane','isCollisionHelper',
@@ -149,21 +157,174 @@
     activeSourceBudget = Math.max(0, activeSourceBudget - entry.triangles);
     counters.sourceTriangles -= entry.triangles;
     counters.optimizedTriangles -= entry.optimizedTriangles;
-    cache.delete(entry.source); // Future re-entry will build a fresh LOD for this model.
+    if (entry.fromBaked) {
+      precomputed.delete(entry.source);
+      if (entry.parentBaked) { entry.variant = null; entry.status = 'retired'; return; }
+      if (entry.sourceUid && precomputedBySourceUid.get(entry.sourceUid) === entry)
+        precomputedBySourceUid.delete(entry.sourceUid);
+      for (const derived of entry.derivedUvs?.values?.() || []) derived.dispose?.(); // Derived stretch-fit UV buffers are owned by the base GLB entry.
+    } else cache.delete(entry.source); // Future re-entry will build a fresh LOD for procedural meshes.
     entry.variant = null;
     entry.status = 'retired';
   }
   function geometryStamp(geo) {
-    // Invalidate cached LODs when a procedural mesh mutates position/index data in place.
-    const pos = geo.getAttribute?.('position');
-    return String(pos?.version || 0) + ':' + String(geo.index?.version || 0) +
-      ':' + String(pos?.count || 0) + ':' + String(geo.index?.count || 0);
+    // A texture/UV/normal rewrite can make the baked source geometry obsolete
+    // without moving its POSITIONs. Include every attribute's identity/version.
+    const attributes = geo?.attributes || {};
+    const parts = Object.keys(attributes).sort().map(name => {
+      const a = attributes[name];
+      return name + ':' + String(a?.version || 0) + ':' + String(a?.count || 0) + ':' + String(a?.itemSize || 0);
+    });
+    return parts.join('|') + ';indices=' + String(geo?.index?.version || 0) +
+      ':' + String(geo?.index?.count || 0);
+  }
+  function supportsClonedGeometry(source, clone) {
+    if (!source || !clone?.isBufferGeometry || !source.isBufferGeometry) return false;
+    const baseline = source.getAttribute?.('position'), current = clone.getAttribute?.('position');
+    if (!baseline || !current || baseline.count !== current.count) return false;
+    const baselineKeys = Object.keys(source.attributes || {}).sort();
+    const currentKeys = Object.keys(clone.attributes || {}).sort();
+    const extraKeys = currentKeys.filter(name => !baselineKeys.includes(name));
+    if (extraKeys.length && !(extraKeys.length === 1 && extraKeys[0] === 'uv' &&
+      /^[xyz]{2}$/.test(clone.userData?.hobunjiStretchFitUvAxes || ''))) return false;
+    if (baselineKeys.some(name => {
+      const a = source.getAttribute(name), b = clone.getAttribute?.(name);
+      return !b || a.count !== b.count || a.itemSize !== b.itemSize || a.normalized !== b.normalized;
+    })) return false;
+    // A clone may have been reshaped by rock contacts, physics, authoring or
+    // stylized props. Sample its coordinates before allowing an original LOD
+    // to replace its independently edited geometry.
+    const n = current.count, probes = Math.min(24, n);
+    for (let k = 0; k < probes; k++) {
+      const i = Math.floor(k * (n - 1) / Math.max(1, probes - 1));
+      if (baseline.getX(i) !== current.getX(i) || baseline.getY(i) !== current.getY(i) ||
+        baseline.getZ(i) !== current.getZ(i)) return false;
+    }
+    return true;
+  }
+  function stretchFitVariant(entry, sourceClone) {
+    const axes = sourceClone.userData?.hobunjiStretchFitUvAxes;
+    if (!/^[xyz]{2}$/.test(axes || '')) return null;
+    const cached = entry.derivedUvs?.get(axes);
+    if (cached) return cached;
+    const position = entry.variant.getAttribute?.('position');
+    const bounds = sourceClone.boundingBox || (sourceClone.computeBoundingBox?.(), sourceClone.boundingBox);
+    if (!bounds || !position || !root.THREE?.BufferAttribute) return null;
+    const boundsAxis = key => ({min:bounds.min[key],
+      span:Math.max(1e-6,bounds.max[key]-bounds.min[key])});
+    const u = boundsAxis(axes[0]), v = boundsAxis(axes[1]);
+    const read = (key,i) => key === 'x' ? position.getX(i) : key === 'y' ? position.getY(i) : position.getZ(i);
+    const array = new Float32Array(position.count * 2); // Uses the game's whole-model stretch-fit UV convention.
+    for (let i = 0; i < position.count; i++) {
+      array[2 * i] = Math.max(0,Math.min(1,(read(axes[0],i)-u.min)/u.span));
+      array[2 * i + 1] = Math.max(0,Math.min(1,(read(axes[1],i)-v.min)/v.span));
+    }
+    const variant = entry.variant.clone(); // Never mutate the author's shared baked data.
+    variant.setAttribute('uv',new root.THREE.BufferAttribute(array,2));
+    if (!entry.derivedUvs) entry.derivedUvs = new Map();
+    entry.derivedUvs.set(axes,variant);
+    return variant;
+  }
+  function lookupPrebaked(mesh) {
+    const geometry = mesh?.geometry;
+    const exact = precomputed.get(geometry);
+    if (exact?.status === 'done') return exact;
+    const uid = geometry?.userData?.geometryQualitySourceUid;
+    const base = uid && precomputedBySourceUid.get(uid);
+    if (!base || base.status !== 'done' || !supportsClonedGeometry(base.source,geometry)) return null;
+    const changedUV = !!geometry.getAttribute?.('uv') && !base.source.getAttribute?.('uv');
+    const variant = changedUV ? stretchFitVariant(base,geometry) : base.variant;
+    if (!variant) return null;
+    const sourceCount = triangles(geometry);
+    if (triangles(variant) >= sourceCount) return null;
+    const cloneEntry = { source:geometry, variant, stamp:geometryStamp(geometry),
+      triangles:sourceCount, optimizedTriangles:triangles(variant), status:'done',
+      fromBaked:true, parentBaked:base, targets:new Set() }; // Shared derived LOD is owned by base entry, not this clone.
+    precomputed.set(geometry,cloneEntry);
+    return cloneEntry;
+  }
+  function registerPrebaked(originalGLTF, optimizedGLTF) {
+    if (!enabled) return 0;
+    const originals = [], optimized = []; // Corresponding source/optimized mesh traversal order.
+    const visit = (asset, output) => {
+      const scene = asset?.scene || asset?.scenes?.[0] || asset;
+      scene?.traverse?.(node => { if (node.isMesh) output.push(node); });
+    };
+    visit(originalGLTF, originals);
+    visit(optimizedGLTF, optimized);
+    if (!originals.length || originals.length !== optimized.length) return 0;
+    let installed = 0; // Number of compatible authored mesh buffers registered for render-only substitution.
+    for (let i = 0; i < originals.length; i++) {
+      const sourceMesh = originals[i], variantMesh = optimized[i];
+      const source = sourceMesh.geometry, variant = variantMesh.geometry;
+      if (!source?.isBufferGeometry || !variant?.isBufferGeometry ||
+        sourceMesh.isSkinnedMesh || variantMesh.isSkinnedMesh) continue;
+      const sourceNames = Object.keys(source.attributes || {}).sort();
+      const candidateNames = Object.keys(variant.attributes || {}).sort();
+      if (sourceNames.join(',') !== candidateNames.join(',')) continue;
+      if (sourceNames.some(name => source.attributes[name].itemSize !== variant.attributes[name].itemSize ||
+        source.attributes[name].normalized !== variant.attributes[name].normalized)) continue;
+      const groupsA = (source.groups || []).map(g => g.materialIndex).join(',');
+      const groupsB = (variant.groups || []).map(g => g.materialIndex).join(',');
+      if (groupsA !== groupsB) continue;
+      const originalMats = Array.isArray(sourceMesh.material) ? sourceMesh.material.length : 1;
+      const optimizedMats = Array.isArray(variantMesh.material) ? variantMesh.material.length : 1;
+      if (originalMats !== optimizedMats) continue;
+      const sourceCount = triangles(source), targetCount = triangles(variant);
+      if (!(sourceCount > targetCount && targetCount > 0)) continue;
+      if (activeGeometries >= MAX_CACHED_GEOMETRIES ||
+        activeSourceBudget + sourceCount > MAX_CACHED_SOURCE_TRIANGLES) break;
+      if (precomputed.has(source)) continue;
+      const entry = {
+        source, variant, stamp: geometryStamp(source), triangles: sourceCount,
+        optimizedTriangles: targetCount, status: 'done', fromBaked: true, targets: new Set(),
+      }; // The offline-baked BufferGeometry is only swapped into scene meshes while renderer.render executes.
+      precomputed.set(source, entry);
+      entry.sourceUid = source.userData?.geometryQualitySourceUid || source.uuid || null;
+      if (entry.sourceUid) precomputedBySourceUid.set(entry.sourceUid,entry);
+      knownCached.add(entry);
+      activeGeometries++;
+      activeSourceBudget += sourceCount;
+      counters.sourceTriangles += sourceCount;
+      counters.optimizedTriangles += targetCount;
+      counters.prebakedRegistered++;
+      installed++;
+    }
+    if (installed) {
+      lastScanAt = 0; // New variant can apply to existing clones at next bounded idle scan.
+      status('Precomputed render geometry registered; original source kept for collision/raycast.');
+    }
+    return installed;
   }
   function scheduleIdle(fn) {
     if (typeof root.requestIdleCallback === 'function') root.requestIdleCallback(fn, { timeout: 1000 });
     else root.setTimeout?.(() => fn({ timeRemaining: () => 5 }), 30);
   }
   function track(mesh) {
+    const baked = lookupPrebaked(mesh);
+    if (baked && baked.status === 'done') {
+      const flags = mesh.userData || {};
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      const isStretchFitRig = !!mesh.geometry?.userData?.hobunjiStretchFitUvAxes &&
+        materials.every(m => m?.userData?.hobunjiHandRole || m?.userData?.hobunjiFootRole);
+      if (mesh.isSkinnedMesh || [
+        'isCollisionMesh', 'isCollisionHelper', 'isInteractionTrigger',
+        'physicsProxy', 'geometryAutoLODExclude', 'isClimbBranch', 'isClimbable',
+        'hobunjiOutlineOccluderDepthReplay', 'hobunjiPortraitOccludedWingLayer',
+      ].some(key => flags[key]) ||
+        (!isStretchFitRig && materials.some(m => m?.transparent || m?.alphaTest > 0 || m?.alphaMap))) return;
+      // Authored hands/feet are true 3D rigs with the game's stretch-fit PNG
+      // UVs; transparent alpha-cutout CARD geometry is still never simplified.
+      if (geometryStamp(baked.source) !== baked.stamp) {
+        // A visual mesh re-authored its UV/normal/position after load. The
+        // offline GLB must not overwrite that edit or its collision geometry.
+        retire(baked);
+        knownCached.delete(baked);
+        return;
+      }
+      readyMeshes.set(mesh, baked);
+      return;
+    }
     if (protectedMesh(mesh)) return;
     const geo = mesh.geometry, stamp = geometryStamp(geo);
     let entry = cache.get(geo);
@@ -197,7 +358,13 @@
     scheduleWork();
   }
   function scheduleWork() {
-    if (!enabled || !ready || workScheduled || !queue.length) return;
+    if (!enabled || workScheduled || !queue.length) return;
+    if (!ready) {
+      if (!optimizerFailed) ensureReducer().then(() => {
+        if (enabled) scheduleWork();
+      }).catch(() => { optimizerFailed = true; status('Procedural optimizer unavailable; pre-baked GLBs still work.'); });
+      return; // No download at startup: procedural meshes trigger it only when needed.
+    }
     workScheduled = true;
     scheduleIdle(deadline => {
       workScheduled = false;
@@ -254,17 +421,17 @@
     });
   }
   function startScan(scene) {
-    if (!enabled || !ready || scan || !scene?.isScene || !Array.isArray(scene.children)) return;
+    if (!enabled || scan || !scene?.isScene || !Array.isArray(scene.children)) return;
     scan = { root: scene, stack: [scene], seen: 0 };
     scanScheduled = false;
     scheduleScanSlice();
   }
   function scheduleScanSlice() {
-    if (!enabled || !ready || !scan || scanScheduled) return;
+    if (!enabled || !scan || scanScheduled) return; // Scan is what DISCOVERS the first procedural mesh and lazily starts WASM.
     scanScheduled = true;
     scheduleIdle(() => {
       scanScheduled = false;
-      if (!enabled || !ready || !scan) return;
+      if (!enabled || !scan) return;
       const start = now();
       let count = 0;
       while (scan.stack.length && count++ < SCAN_NODES_PER_SLICE && now() - start < SCAN_MS_PER_SLICE) {
@@ -287,7 +454,7 @@
           else used.add(entry);
         }
         // Retire only abandoned LODs; shared geometries survive as long as one live mesh references them.
-        for (const entry of knownCached) if (!used.has(entry)) {
+        for (const entry of knownCached) if (!used.has(entry) && !entry.fromBaked) {
           retire(entry);
           knownCached.delete(entry);
         }
@@ -301,7 +468,7 @@
     originalRender = renderer.render; // Existing render wrappers remain in the chain.
     const nativeRender = originalRender; // Per-renderer closure prevents cross-renderer chain corruption.
     renderer.render = function geometryAutoLODRender(scene, camera) {
-      if (!enabled || !ready || renderDepth) return nativeRender.call(this, scene, camera);
+      if (!enabled || renderDepth) return nativeRender.call(this, scene, camera);
       if (scene?.isScene && scene.children?.length > 3 && now() - lastScanAt > SCAN_INTERVAL_MS) {
         startScan(scene); // Merely SCHEDULES work; no heavy traversal within render().
       }
@@ -346,15 +513,16 @@
     try { root.localStorage?.setItem(STORAGE_KEY, String(enabled)); } catch (_) {}
     const control = root.document?.getElementById?.('settingGeometryAutoOptimize');
     if (control) control.checked = enabled;
+    root.GeometryQuality?.refreshStatus?.(); // The Geometry Detail caption reflects pre-baked Low mode while this toggle is on.
     if (enabled) {
-      status('Preparing meshoptimizer (one-time download).');
-      ensureReducer().then(() => {
-        if (!enabled) return;
-        bootRetries = 0;
-        attachWhenReady();
-        scheduleWork();
-        status();
-      }).catch(() => {}); // Failure is reported visibly in Settings.
+      // Attach to gameplay immediately; no optimizer download until an eligible
+      // procedural mesh needs a cached variant. Precomputed GLBs start working
+      // as soon as the quality loader chooses their shipped manifest paths.
+      optimizerFailed = false;
+      bootRetries = 0;
+      attachWhenReady();
+      scheduleWork();
+      status('Precomputed GLB variants preferred; procedural meshes are cached when encountered.');
     } else {
       scan = null;
       scanScheduled = false;
@@ -377,5 +545,5 @@
     else bindSettings();
   }
   if (enabled) setEnabled(true);
-  root.GeometryAutoLOD = Object.freeze({ setEnabled, isEnabled: () => enabled, snapshot, bindSettings, protectedMesh, geometryStamp });
+  root.GeometryAutoLOD = Object.freeze({ setEnabled, isEnabled: () => enabled, snapshot, bindSettings, protectedMesh, geometryStamp, registerPrebaked });
 })(typeof window !== 'undefined' ? window : null);
