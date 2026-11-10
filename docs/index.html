@@ -160,7 +160,7 @@
   <script src="debug.js?v=20261107h4ad2a3b"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20261026h7f369c3"></script>
-  <script src="config/scratchbones-config.js?v=20261108harlyao2"></script>
+  <script src="config/scratchbones-config.js?v=20261109stonebeatcfg1"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
@@ -168,7 +168,7 @@
   <script src="js/tool-metal-recolor.js?v=20261109profile1"></script>
   <script src="js/metal-armor-system.js?v=20261104hPatternQuick1435a"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
-  <script src="config/attachment-rig-profiles.js?v=20261026homgurkulower03"></script>
+  <script src="config/attachment-rig-profiles.js?v=20261109nohuknuk1"></script>
   <link rel="stylesheet" href="style.css?v=20261107rewardReadout1">
   <link rel="stylesheet" href="cooking-ui.css?v=20261009mobiletarget3">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
@@ -196,7 +196,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261031h9b18729"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261109h6aea7e8"></script>
+  <script src="js/held-action-animations.js?v=20261109nohuknuk1"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -213,7 +213,7 @@
   <script src="js/leg-bones.js?v=20261013hb53d07e"></script>
   <!-- Procedural leg/foot animation for non-creature avatars (player + NPC walkers) -->
   <script src="js/actor-body-sink.js?v=20261030a"></script> <!-- Body sink for enemies and NPCs: lowers their own roots while the leg handle folds the knees. -->
-  <script src="js/procedural-leg-animation.js?v=20261108kiss3"></script>
+  <script src="js/procedural-leg-animation.js?v=20261109nohuknuk1"></script>
   <!-- In-game pants garment: skinned onto the procedural legs (rig data in config/pants-rigs.js, maths in js/pants-rig-core.js) -->
   <script src="config/pants-rigs.js?v=20261015h74422e2"></script>
   <script src="js/pants-rig-core.js?v=20261022omgurkuMerge1"></script>
@@ -257,7 +257,7 @@
   <script src="js/procedural-furniture.js?v=20261106hlantern9"></script>
   <script src="js/furniture-puzzle-properties.js?v=20261103h9f3db40"></script>
   <script src="js/game-feel.js?v=20261108feel1"></script> <!-- Camera shake, hit-stop, hurt flash, puzzle-solve chime and reveal shot. -->
-  <script src="js/ruin-interaction-audio.js?v=20261108h6329763"></script> <!-- Shared, size-pitched stone mechanisms and ignition cues; loaded before shaft mechanisms. -->
+  <script src="js/ruin-interaction-audio.js?v=20261109stonebeat1"></script> <!-- Shared, size-pitched stone mechanisms and ignition cues; loaded before shaft mechanisms. -->
   <script src="js/furniture-puzzle-runtime.js?v=20261107combined1520_1524_1"></script>
   <script src="js/interior-door-tiles.js?v=20261104crossheightAudit2"></script>
 <script src="js/farmhouse-room-planner.js?v=20261029roomspace3"></script> <!-- Saved farmhouse wall segments and movable one-tile door slots. -->
@@ -293,7 +293,7 @@
   <!-- Local database overrides (window.LocalDBOverrides) — lets docs/tools/
        editors save edited repo-tracked JSON into localStorage and have the
        game load that instead of the repo file when Local source is selected. -->
-  <script src="js/local-db-overrides.js?v=20261013ha525e98"></script>
+  <script src="js/local-db-overrides.js?v=20261109nohuknuk1"></script>
   <script>
     // species-pose-scaling parser-loads earlier for avatar consumers, then
     // re-resolves its config now that LocalDBOverrides knows the selected
@@ -331,8 +331,8 @@
   <script src="config/portrait-mouth-points.js?v=20261025mouth1"></script>
   <script src="js/combat/shared-attack-pose.js?v=20261030h12f55f4"></script>
   <script src="config/weapon-sprite-assemblies.js?v=20261109ropebrown3"></script> <!-- Authoritative multi-sprite weapon recipes shared with Tool Hub. -->
-  <script src="js/weapon-layer-effects.js?v=20261031h7702074"></script> <!-- Recolor, visibility masks and fire behind head overlays. -->
-  <script src="js/weapon-sprite-assemblies.js?v=20261109headvisual2"></script> <!-- Shared layered PNG weapon + flail component runtime; pre-render updates player and enemy assemblies. -->
+  <script src="js/weapon-layer-effects.js?v=20261109flailFireGC2"></script> <!-- Recolor, visibility masks and fire behind head overlays. -->
+  <script src="js/weapon-sprite-assemblies.js?v=20261110pairroot3"></script> <!-- Shared layered PNG weapon + flail component runtime; pre-render updates player and enemy assemblies. -->
   <script src="js/tool-activity-stages.js?v=20261027h59190d9"></script> <!-- NPC dig/tool-action stages. -->
   <script src="js/combat/weapon-shape-stats.js?v=20261109grappledonor1"></script> <!-- Shared melee shape stat resolver; Foundry head modifiers are mitigated. -->
   <script src="js/combat/combat-core.js?v=20261108attackpower1"></script>
@@ -444,7 +444,7 @@
   <script src="js/tea-grinder.js?v=20261019h0edeaef"></script>
   <script src="js/persistent-ground-fire.js?v=20261107integratedDungeon1"></script><!-- Area-scoped fire patches shared by flasks, Shattercasks and stone sconces. -->
   <script src="js/throw-cover-trajectory.js?v=20261107burdenCombined1"></script> <!-- Shared height-aware throw cover and outlined ground previews; loads before both consumers. -->
-  <script src="js/alchemy-flasks.js?v=20261107burdenCombined1"></script>
+  <script src="js/alchemy-flasks.js?v=20261109idleStyles1"></script>
   <!-- Dye catalog/ownership (window.DyeSystem) — character creation, the
        redye panel, General Store clothing stock, and treasure loot all
        draw from it. Self-contained aside from deps injected via init(), so
@@ -659,7 +659,7 @@
   <script src="js/animal-shoulder-spline.js?v=20261105tzFlight1"></script> <!-- Required by the actual seven-point flying rig perch deformation. -->
   <script src="js/flying-animal-rig.js?v=20261108tzflightnest2"></script> <!-- Canonical authored two-bone bird wing/body assembly. -->
   <script src="js/tzatzul-registration.js?v=20261108tzflightnest2"></script> <!-- Tzatzul dev species, hatchling peck, stable individual tint and flying-rig JSON. -->
-  <script src="js/skeeri-ruins.js?v=20261108hb17c172"></script> <!-- Three authored Skeeri sizes, concealed ruin hatches and shaft witch-bomb runs. -->
+  <script src="js/skeeri-ruins.js?v=20261109hatchrange1"></script> <!-- Three authored Skeeri sizes, concealed ruin hatches and shaft witch-bomb runs. -->
   <script src="js/tzatzul-live-visuals.js?v=20261108tzflightnest2"></script>
   <script src="js/tzatzul-cliff-sites.js?v=20261108tzflightnest2"></script> <!-- Separate rock-textured, non-climbable Tzatzul spires. -->
   <script src="js/tzatzul-flight-runtime.js?v=20261108tzflightnest2"></script> <!-- Shared swept-body dive for exterior and nest mothers. -->
@@ -713,7 +713,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.MetalCraftShop.init(...) during
        its own setup. -->
-  <script src="config/modular-weapons.js?v=20261109pairdamage2"></script>
+  <script src="config/modular-weapons.js?v=20261110pairvalues3"></script>
   <script src="js/modular-weapon-bridge-fill.js?v=20261109boreflex1"></script>
   <script src="js/modular-weapons.js?v=20261109pairdamage2"></script>
   <script src="js/town-proposals.js?v=20261016proposals1"></script>
@@ -2823,7 +2823,7 @@
   <script src="js/companion-movement-speed.js?v=20261102ownerpace1"></script> <!-- Companion move/chase speeds follow each owner's live effective pace. -->
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
-  <script src="js/audio-system.js?v=20261109chopspatial1"></script>
+  <script src="js/audio-system.js?v=20261109stonebeat1"></script>
   <script src="js/honeyfuzzle-audio.js?v=20261026hivebuzz2"></script> <!-- Shared 24-tile hive + swarm ambience, one decoded seam-crossfaded loop per nearby source, live aggression and Doppler. -->
   <!-- Semantic animal-call scheduler. Gameplay systems emit vocal intents;
        AudioSystem above remains the replaceable low-level renderer. -->

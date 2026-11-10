@@ -15,6 +15,9 @@ on:
       - 'scripts/test-spouse-kiss-live-player-rig.js'
       - 'docs/config/npcs/hobunji-starter-npc-database.json'
       - 'scripts/smoke-animation-author-scene-url.js'
+      - 'scripts/test-bipedal-monster-preview-browser.js'
+      - 'docs/assets/models/hands/hand_primate.glb'
+      - 'docs/assets/models/feet/foot_primate.glb'
       - '.github/workflows/smoke-animation-author-scene-url.yml'
   workflow_dispatch:
 
@@ -46,3 +49,5 @@ jobs:
         run: python3 -m http.server 8000 --directory docs >/tmp/hobunji-anim-author-http.log 2>&1 &
       - name: Rebuild Pahu and Leaf from URL and exercise real Three.js author/exports
         run: node scripts/smoke-animation-author-scene-url.js
+      - name: Verify Old Man Nohuknuk swaps the placeholder hands and feet for real primate GLBs
+        run: node scripts/test-bipedal-monster-preview-browser.js
