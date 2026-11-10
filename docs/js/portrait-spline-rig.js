@@ -119,8 +119,20 @@
     return { points, collisions };
   }
 
-  function pointOnSegment(a, b, t) {
-    return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t };
+  function cubic(a, b, c, d, t) {
+    const t2 = t * t, t3 = t2 * t; // Catmull-Rom interpolant; knots remain in place while first derivatives join smoothly.
+    return .5 * (2 * b + (c - a) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
+  }
+
+  function curvePoint(points, index, fraction, normalized = false) {
+    const a = points[Math.max(0, index - 1)], b = points[index];
+    const c = points[index + 1], d = points[Math.min(points.length - 1, index + 2)];
+    const value = (point, axis) => normalized
+      ? axis === 'x' ? point.u - .5 : axis === 'y' ? .5 - point.v : point.depth
+      : point[axis]; // The author uses normalized (u,v,depth); posed strands use model-relative (x,y,z).
+    const t = clamp(fraction, 0, 1);
+    return Object.fromEntries(['x', 'y', 'z'].map(axis => [axis,
+      cubic(value(a, axis), value(b, axis), value(c, axis), value(d, axis), t)]));
   }
 
   function deformPosition(rig, posed, u, v, width, height) {
@@ -134,10 +146,8 @@
       const squared = (x - ax - t * dx) ** 2 + (y - ay - t * dy) ** 2;
       if (squared < closest) { closest = squared; index = i; fraction = t; }
     }
-    const rest = pointOnSegment(
-      { x: rig.points[index].u - .5, y: .5 - rig.points[index].v, z: rig.points[index].depth },
-      { x: rig.points[index + 1].u - .5, y: .5 - rig.points[index + 1].v, z: rig.points[index + 1].depth }, fraction);
-    const target = pointOnSegment(posed[index], posed[index + 1], fraction);
+    const rest = curvePoint(rig.points, index, fraction, true); // Cubic neutral centerline blends each neighboring knot instead of a kinked polyline.
+    const target = curvePoint(posed, index, fraction); // Pose in the same continuous parametric space before displacing texture vertices.
     const influence = 1 - clamp(Math.sqrt(closest) / Math.max(.01, rig.width), 0, 1) ** 2;
     return { x: (x + (target.x - rest.x) * influence) * width,
       y: (y + (target.y - rest.y) * influence) * height,
@@ -349,6 +359,6 @@
       })),
     }));
   }
-  window.PortraitSplineRig = { normalize, resolveOptionRig, blendSegment, posePoints,
+  window.PortraitSplineRig = { normalize, resolveOptionRig, blendSegment, posePoints, curvePoint,
     deformPosition, warpHoodCanvas, paintSeamBridge, attach, refresh, detach, debug };
 })();
