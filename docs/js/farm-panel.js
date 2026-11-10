@@ -91,10 +91,11 @@
     entry.stableFavorite = !entry.stableFavorite;
     stableDeps?.saveStable?.();
     renderStablePanelNative();
-    if (restoreFavoriteFocus && typeof requestAnimationFrame === 'function') requestAnimationFrame(() => {
-      const replacement = [...document.querySelectorAll('#stableList .stable-training-row')].find(row => row.dataset.stableTrainingId === String(entry.id)); // Exact ID avoids focusing a different animal after resorting.
-      try { replacement?.querySelector('.stable-favorite-btn')?.focus({ preventScroll: true }); } catch (_) { replacement?.querySelector('.stable-favorite-btn')?.focus?.(); }
-    });
+    if (restoreFavoriteFocus) {
+      const replacement = [...document.querySelectorAll('#stableList .stable-training-row')].find(row => row.dataset.stableTrainingId === String(entry.id)); // Rebuilt rows are already in the DOM; no frame callback is needed.
+      const focusTarget = replacement?.querySelector('.stable-favorite-btn'); // Keeps a selected favorite under controller focus even when resorting moves it.
+      try { focusTarget?.focus({ preventScroll: true }); } catch (_) { focusTarget?.focus?.(); }
+    }
   }
 
   function ensureStableRosterStyles() {
