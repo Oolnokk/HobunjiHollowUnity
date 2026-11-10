@@ -9,8 +9,8 @@
   const siteRegistrations = new Map(); // Map id -> exterior camp record, for teardown and mobile diagnostics.
   const interiorScenes = new Map(); // Map id -> already-installed prop group, avoiding duplicate draws on reentry.
   const latest = { event: 'not seeded', failed: 0 }; // Latest useful on-device diagnostic; no console required.
-  const WOOD = Object.freeze({ color: '#60452c', materialRole: 'wood', materialTexture: 'carved_smooth.png' });
-  const DARK_WOOD = Object.freeze({ color: '#493725', materialRole: 'wood', materialTexture: 'carved_smooth.png' });
+  const WOOD = Object.freeze({ color: '#7a4924', materialRole: 'wood', materialTexture: 'boards.png' }); // Aging Barrel's planked wood, not a new procedural texture.
+  const DARK_WOOD = Object.freeze({ color: '#6b4a28', materialRole: 'wood', materialTexture: 'boards.png' }); // Same darker fittings and boards as authored barrels.
   const STONE = Object.freeze({ color: '#777267', materialRole: 'stone', materialTexture: 'carved_smooth.png' });
 
   function hash(text) {
@@ -148,7 +148,7 @@
     return true;
   }
 
-  function removeCamp(rec, deps) {
+  function removeCamp(rec, deps, retire = false) {
     const mapId = rec?.stronghold?.mapId;
     if (!mapId) return;
     const id = 'bandit_fortified_' + rec.discoverySlot + '_enter';
@@ -161,7 +161,7 @@
       live.scene.remove(ring); ring.geometry?.dispose(); ring.material?.dispose();
     }
     siteRegistrations.delete(mapId);
-    window.CaveSiteSystem?.forgetFortifiedStronghold?.(mapId);
+    if (retire) window.CaveSiteSystem?.forgetFortifiedStronghold?.(mapId); // Never erase saved cave progress merely because an exterior scene is unloaded.
   }
 
   function buildInteriorProps(mapId, mapData, scene) {
@@ -198,7 +198,7 @@
   function debugSnapshot() {
     return { ...latest, replacementDefault: DEFAULT_REPLACEMENT_FRACTION,
       activeSites: [...siteRegistrations.entries()].map(([mapId, site]) => ({ mapId, ...site })),
-      interiorMaps: [...interiorScenes.keys()], style: 'ProceduralFurniture shared carved_smooth wood/stone' };
+      interiorMaps: [...interiorScenes.keys()], style: 'authored boards.png wood and carved_smooth.png stone via ProceduralFurniture' };
   }
 
   window.BanditStrongholds = Object.freeze({
