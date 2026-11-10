@@ -136,6 +136,19 @@ const count=grants.length;
 ctx.BanditCamps.makeCorpseWorldObject(lordEntity).onAction('obj_loot_corpse');
 assert.equal(grants.length,count,'corpse loot hook cannot grant duplicate treasury keys or scrolls');
 assert.equal(Cave.strongholdStage(lord.mapId).lordKeyClaimed,true);
+const unlooted=Cave.registerFortifiedStronghold('map_western_slope',2);
+const orphanProfile=Cave.profileForMapId(unlooted.mapId+'_boss');
+Cave.strongholdStage(orphanProfile.mapId); // Initializes its independent cave-state record.
+const orphanState=Cave.__test.runtimeStateBySignature.get(orphanProfile.signature);
+orphanState.occupantsCleared=true;
+const grantsBeforeRecovery=grants.length;
+assert.equal(Boss.recoverLostBossKeyOnReentry(orphanProfile,orphanState),true,
+  'revisiting a previously defeated Lord cannot softlock an unclaimed treasury key');
+assert.equal(grants.length,grantsBeforeRecovery+1);
+assert.equal(grants.at(-1).strongholdTreasuryKey,1);
+assert.equal(Boss.recoverLostBossKeyOnReentry(orphanProfile,orphanState),false,
+  'the recovery path never grants a second key after the first save');
+assert.equal(Cave.strongholdStage(orphanProfile.mapId).lordKeyClaimed,true);
 
 const chest=annex.strongholdTreasuryChests[0],chestPlan={strongholdTreasuryChests:annex.strongholdTreasuryChests};
 const object=Boss.objectAt(treasury,chestPlan,chest.col,chest.row,{},
