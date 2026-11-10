@@ -23,7 +23,7 @@
 <script src="js/procedural-furniture.js"></script>
 <script src="js/geometry-quality.js?v=20261109quality1"></script>
 <script src="tools/geometry-workshop/core.js?v=20261109a"></script>
-<script src="tools/geometry-workshop/game-preview.js?v=20261109game3"></script>
+<script src="tools/geometry-workshop/game-preview.js?v=20261109shellclear4"></script>
 </head>
 <body>
 <div id="shell">
@@ -71,6 +71,8 @@
         <option value="night">Night</option>
         <option value="storm">Storm</option>
       </select>
+      <label class="check"><input id="show-shell" type="checkbox" checked> Show gameplay shell outlines</label>
+      <small>Turn this off to check whether dark seams or openings belong to the mesh or the outline renderer.</small>
       <label class="check"><input id="game-surfaces" type="checkbox" checked> Use gameplay PNG textures for hand/foot GLBs</label>
       <label for="sample-body-color">Representative body dye for hand/foot preview</label>
       <input id="sample-body-color" type="color" value="#7dc89a" aria-label="Representative body dye for preview">
@@ -95,6 +97,7 @@
       <h2>4 · Output</h2>
       <p id="summary" role="status">Load an object to compare geometry.</p>
       <div id="materials"></div>
+      <small id="mesh-integrity" role="status" aria-live="polite">Mesh integrity is checked when an asset loads.</small>
       <button id="export" type="button" disabled>Download optimized GLB</button>
       <div id="manual-download"></div>
       <h2 style="margin-top:15px">Gameplay quality JSON</h2>
@@ -120,6 +123,6 @@
     <div id="footer"><span id="busy">Ready</span><span id="loading-note">Loading Three.js and game mesh generators…</span></div>
   </main>
 </div>
-<script src="tools/geometry-workshop/workshop.js?v=20261109game3"></script>
+<script src="tools/geometry-workshop/workshop.js?v=20261109shellclear4"></script>
 </body>
 </html>

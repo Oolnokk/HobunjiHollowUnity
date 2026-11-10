@@ -19,7 +19,7 @@ assert.match(shell, /tools\/enemy-loadout-editor\/source-data\.js\?v=/);
 assert.match(shell, /tools\/geometry-workshop\/game-preview\.js\?v=/);
 assert.match(shell, /js\/weather-fx\.js\?v=/);
 assert.match(shell, /js\/natural-surface-materials\.js\?v=/);
-for (const id of ['game-lighting','game-surfaces','sample-body-color','game-render-status']) assert.match(shell, new RegExp('id="' + id + '"'));
+for (const id of ['game-lighting','game-surfaces','sample-body-color','game-render-status','show-shell','mesh-integrity']) assert.match(shell, new RegExp('id="' + id + '"'));
 assert.match(css, /workshop-lighting-overlay.*pointer-events:none/);
 assert.match(workshop, /renderer\.outputEncoding = T\.LinearEncoding/);
 assert.doesNotMatch(workshop, /renderer\.outputEncoding = T\.sRGBEncoding/);
@@ -113,7 +113,13 @@ const renderer={
   setViewport(...args){this.viewport=args;},
   setScissor(...args){this.scissorRect=args;},
   clear(...args){clear.push({viewport:this.viewport,...args})},
-  render(scene,camera){frames.push({scene:scene.name,shader:!!scene.overrideMaterial,mask:camera.layers.mask,viewport:this.viewport.slice()});},
+  render(scene,camera){
+    // Three.js r128 forcibly clears when Scene.background is a Color, regardless
+    // of renderer.autoClear; that's the original black-hand regression.
+    if (scene.background) this.forcedBackgroundClears = (this.forcedBackgroundClears || 0) + 1;
+    frames.push({scene:scene.name,shader:!!scene.overrideMaterial,mask:camera.layers.mask,
+      backgroundActive:!!scene.background,viewport:this.viewport.slice()});
+  },
 };
 const statuses=[];
 (async () => {
@@ -127,6 +133,9 @@ const statuses=[];
   assert.deepEqual(frames.map(f=>[f.scene,f.shader,f.mask]),[
     ['left',false,1],['left',true,2],['right',false,1],['right',true,2],
   ]);
+  assert.deepEqual(frames.map(f=>f.backgroundActive),[true,false,true,false],
+    'shell pass must NOT re-render a Color background and wipe the base color/depth');
+  assert.equal(renderer.forcedBackgroundClears,2,'only one forced Color background clear per viewport');
   assert.deepEqual(frames[0].viewport,[0,0,200,300]);
   assert.deepEqual(frames[2].viewport,[200,0,200,300]);
   assert.equal(camera.layers.mask,1,'camera layers restored after shell pass');
@@ -134,6 +143,51 @@ const statuses=[];
   assert.equal(renderer.autoClear,true,'renderer clear state restored');
   assert.equal(renderer.scissor,false,'scissor state restored');
   assert.equal(skyCalls,2,'same WeatherFX sky tint on each side');
+  preview.setShellEnabled(false); // Inspect true surfaces without black shell; should not change source geometry.
+  const priorFrameCount = frames.length;
+  preview.render(400,300);
+  assert.deepEqual(frames.slice(priorFrameCount).map(f=>f.shader),[false,false], 'no shader pass with outlines disabled');
+  assert.equal(camera.layers.mask,1);
+  preview.setShellEnabled(true);
+  preview.render(400,300);
+  assert.deepEqual(frames.slice(-2).map(f=>f.backgroundActive),[true,false], 're-enabled shell still preserves background state');
+  // Verify the real shipped hand, not just a synthetic mesh. It has six
+  // individually closed lobes; apparent gray slits in the old screenshot were
+  // created by the second render clearing the first-pass depth.
+  const glb=fs.readFileSync(path.join(docs,'assets/models/hands/hand_feline.glb'));
+  const jsonBytes=glb.readUInt32LE(12);
+  const model=JSON.parse(glb.subarray(20,20+jsonBytes).toString('utf8'));
+  const bin=20+jsonBytes+8, accessors=model.accessors, views=model.bufferViews;
+  const positionAccessor=accessors[0], positionView=views[positionAccessor.bufferView];
+  const indexAccessor=accessors[2], indexView=views[indexAccessor.bufferView];
+  const getPosition=(i,d)=>glb.readFloatLE(bin+positionView.byteOffset+i*12+d*4);
+  const shippedMesh={
+    isMesh:true,
+    geometry:{
+      getAttribute(name){return name==='position'?{
+        count:positionAccessor.count, getX:i=>getPosition(i,0),getY:i=>getPosition(i,1),getZ:i=>getPosition(i,2),
+      }:null;},
+      getIndex(){return {count:indexAccessor.count,getX:i=>glb.readUInt16LE(bin+indexView.byteOffset+i*2)};},
+    },
+  };
+  const integrity=adapter.inspectMeshIntegrity({traverse(fn){fn(shippedMesh);}});
+  assert.equal(integrity.triangles,3120);
+  assert.equal(integrity.components,6);
+  assert.equal(integrity.boundaryEdges,0,'feline GLB has no actual missing polygon faces');
+  assert.equal(integrity.nonManifoldEdges,0);
+  assert.match(adapter.topologyDescription(integrity),/closed/);
+  // An open tetrahedron genuinely reports its missing face (3 border edges).
+  const vertices=[[0,0,0],[1,0,0],[0,1,0],[0,0,1]];
+  const triangleIndices=[0,2,1, 0,1,3, 0,3,2]; // Only three of four tetra faces.
+  const synthetic={isMesh:true,geometry:{
+    getAttribute(name){return name==='position'?{
+      count:vertices.length,getX:i=>vertices[i][0],getY:i=>vertices[i][1],getZ:i=>vertices[i][2],
+    }:null;},
+    getIndex(){return {count:triangleIndices.length,getX:i=>triangleIndices[i]};},
+  }};
+  const missingFace=adapter.inspectMeshIntegrity({traverse(fn){fn(synthetic);}});
+  assert.equal(missingFace.boundaryEdges,3,'genuinely missing triangle face detected');
+  assert.equal(missingFace.components,1);
   adapter.disposeDisplay(scenes[0],display);
   assert.equal(originalGeo.disposed,false,'disposing a preview must not dispose source geometry');
   preview.dispose();

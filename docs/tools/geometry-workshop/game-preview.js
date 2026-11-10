@@ -137,6 +137,71 @@
     for (const geometry of resources?.ownedGeometries || []) geometry.dispose?.();
   }
 
+  function inspectMeshIntegrity(root) {
+    // On-demand, non-destructive topology check. Weld only coincident POSITIONs
+    // within each mesh for connectivity; preserve original normals/UVs/GLB bytes.
+    const result = { meshes: 0, triangles: 0, components: 0, boundaryEdges: 0, nonManifoldEdges: 0, skipped: 0 };
+    if (!root?.traverse) return result;
+    root.traverse(mesh => {
+      if (!mesh.isMesh) return;
+      const geometry = mesh.geometry, position = geometry?.getAttribute?.('position');
+      if (!position?.count || typeof position.getX !== 'function') return;
+      const index = geometry.getIndex?.() || geometry.index;
+      const indexCount = index?.count ?? position.count;
+      const faces = Math.floor(indexCount / 3);
+      result.meshes++;
+      result.triangles += faces;
+      if (!faces) return;
+      if (faces > 250000) { result.skipped++; return; } // Avoid blocking mobile UI for huge procedural environments.
+      const weld = new Map(); // Rounded, coincident local positions identify shared surface edges despite normal seams.
+      const vertexIds = new Map(); // Source vertex index -> welded vertex index.
+      const parent = []; // Union-find tracks genuine disconnected surface components.
+      const edgeCounts = new Map(); // Undirected edge incidence determines missing/open vs manifold edges.
+      const getVertex = originalIndex => {
+        if (vertexIds.has(originalIndex)) return vertexIds.get(originalIndex);
+        const key = [position.getX(originalIndex), position.getY(originalIndex), position.getZ(originalIndex)]
+          .map(n => Math.round(n * 100000)).join(',');
+        if (!weld.has(key)) { const id = weld.size; weld.set(key, id); parent.push(id); }
+        const id = weld.get(key);
+        vertexIds.set(originalIndex, id);
+        return id;
+      };
+      const find = node => {
+        while (parent[node] !== node) { parent[node] = parent[parent[node]]; node = parent[node]; }
+        return node;
+      };
+      const union = (a, b) => { a = find(a); b = find(b); if (a !== b) parent[a] = b; };
+      const edge = (a, b) => {
+        const key = a < b ? a + ':' + b : b + ':' + a;
+        edgeCounts.set(key, (edgeCounts.get(key) || 0) + 1);
+      };
+      for (let i = 0; i < faces * 3; i += 3) {
+        const a = getVertex(index ? index.getX(i) : i);
+        const b = getVertex(index ? index.getX(i + 1) : i + 1);
+        const c = getVertex(index ? index.getX(i + 2) : i + 2);
+        if (a === b || b === c || a === c) continue;
+        union(a, b); union(a, c);
+        edge(a, b); edge(b, c); edge(c, a);
+      }
+      result.components += new Set(parent.map((_, i) => find(i))).size;
+      for (const count of edgeCounts.values()) {
+        if (count === 1) result.boundaryEdges++;
+        else if (count > 2) result.nonManifoldEdges++;
+      }
+    });
+    return result;
+  }
+  function topologyDescription(stats) {
+    const count = stats.triangles.toLocaleString();
+    if (stats.skipped) return 'Topology: ' + count + ' triangles; ' + stats.skipped + ' very large mesh(es) skipped.';
+    const status = stats.boundaryEdges === 0 && stats.nonManifoldEdges === 0
+      ? 'All inspected surfaces are closed; no missing polygon faces.'
+      : 'Open/nonmanifold edges found; inspect model geometry before export.';
+    return 'Mesh integrity: ' + count + ' triangles · ' + stats.components +
+      ' separate component(s) · ' + stats.boundaryEdges + ' open boundary edges · ' +
+      stats.nonManifoldEdges + ' nonmanifold edges. ' + status +
+      (stats.components > 1 ? ' Separate closed parts can still leave physical gaps at their intersections.' : '');
+  }
   function build(renderer, scenes, camera, host, writeStatus) {
     let shaders = null; // Latest parsed game material/lighting factories.
     let shell = null; // Shared read-only shell ShaderMaterial for both viewports.
@@ -144,6 +209,7 @@
     let lighting = null; // WeatherFX day/sky-tint data used by both viewports.
     let mode = 'noon'; // UI-selected gameplay lighting condition.
     let ready = false; // Whether both viewports can claim game-source render parity.
+    let shellEnabled = true; // Preview-only outline visibility toggle for comparing solid surfaces against shell rendering.
     let lastError = ''; // Visible diagnostic for mobile users.
     const overlay = document.createElement('canvas'); // Sky tint composited above both viewport halves.
     overlay.className = 'workshop-lighting-overlay';
@@ -151,6 +217,10 @@
     host.appendChild(overlay);
     const context = overlay.getContext('2d');
 
+    function setShellEnabled(value) {
+      shellEnabled = !!value; // Disables only the comparison outline overlay, never source/export geometry.
+      writeStatus('Shell outlines ' + (shellEnabled ? 'enabled' : 'disabled') + '; lighting remains ' + mode + '.');
+    }
     function setMode(value) {
       mode = Object.hasOwn(STATES, value) ? value : 'noon';
       if (!ready) return;
@@ -219,12 +289,24 @@
           renderer.setScissor(left, 0, width, rendererHeight);
           renderer.clear(true, true, true); // Each half needs an independent color/depth buffer.
           camera.layers.mask = oldLayer;
-          renderer.render(scene, camera);
-          if (ready && shell) {
-            scene.overrideMaterial = shell;
-            camera.layers.set(OUTLINE_LAYER);
-            renderer.render(scene, camera); // Same inverted-hull shader, composited against the base depth.
-            scene.overrideMaterial = null;
+          const originalBackground = scene.background; // THREE r128 forcibly clears on a Color background, even with autoClear=false.
+          const originalOverride = scene.overrideMaterial; // Restore arbitrary caller state if an outline shader throws.
+          try {
+            renderer.render(scene, camera);
+            if (ready && shell && shellEnabled) {
+              // CRITICAL: Rendering again with scene.background still set to a Color
+              // clears BOTH the shaded hand and its depth. The black back-face
+              // shell then fills the whole mesh, revealing fake 'holes' between
+              // its six closed parts. Temporarily omit that background solely
+              // on the second pass; keep the original color/depth buffer intact.
+              scene.background = null;
+              scene.overrideMaterial = shell;
+              camera.layers.set(OUTLINE_LAYER);
+              renderer.render(scene, camera); // Real game shader over the PRESERVED first-pass depth.
+            }
+          } finally {
+            scene.background = originalBackground;
+            scene.overrideMaterial = originalOverride;
             camera.layers.mask = oldLayer;
           }
         }
@@ -262,8 +344,8 @@
       shell?.dispose?.();
       overlay.remove();
     }
-    return { init, render, setMode, decorate, disposeDisplay, dispose, get ready() { return ready; }, get error() { return lastError; } };
+    return { init, render, setMode, setShellEnabled, decorate, disposeDisplay, dispose, get ready() { return ready; }, get error() { return lastError; } };
   }
 
-  window.GeometryWorkshopGamePreview = Object.freeze({ build, decorate, disposeDisplay, rolesFor, surfacePath, previewableMesh });
+  window.GeometryWorkshopGamePreview = Object.freeze({ build, decorate, disposeDisplay, rolesFor, surfacePath, previewableMesh, inspectMeshIntegrity, topologyDescription });
 })();

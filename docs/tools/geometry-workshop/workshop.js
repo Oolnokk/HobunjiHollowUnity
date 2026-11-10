@@ -115,7 +115,7 @@
     // Lock settings during asynchronous processing so sliders cannot invalidate a request mid-flight.
     for (const id of ['source-kind', 'repo-preset', 'repo-path', 'generator', 'seed', 'file', 'pick-scope',
       'pick-game', 'remesh', 'edge-size', 'reduction', 'error', 'protect-cards', 'quality-tier', 'game-source-path',
-      'game-surfaces', 'sample-body-color']) $(id).disabled = value;
+      'game-surfaces', 'sample-body-color', 'show-shell']) $(id).disabled = value;
     $('export').disabled = value || !candidateMatchesControls || !candidate || !original || !Core.preservedMaterials(original,candidate);
     $('export-json').disabled = $('export').disabled;
   }
@@ -135,6 +135,13 @@
     const lines = [...count.entries()].slice(0, 16).map(([name, n]) => name + (n > 1 ? ' ×' + n : ''));
     if (count.size > 16) lines.push('…' + (count.size - 16) + ' more');
     $('materials').textContent = 'Material slots (' + count.size + ' distinct names): ' + (lines.join(', ') || 'none');
+    try {
+      const geometry = RenderPreview?.inspectMeshIntegrity?.(root); // On-demand topological audit, never changes author meshes.
+      $('mesh-integrity').textContent = geometry
+        ? RenderPreview.topologyDescription(geometry) : 'Topology inspector unavailable.';
+    } catch (error) {
+      $('mesh-integrity').textContent = 'Topology could not be inspected: ' + (error?.message || error);
+    }
   }
   function fitCamera(object) {
     object.updateMatrixWorld(true);
@@ -602,6 +609,7 @@
   $('export').addEventListener('click', exportGLB);
   $('export-json').addEventListener('click', exportQualityJson);
   $('game-lighting').addEventListener('change', () => renderPreview?.setMode($('game-lighting').value));
+  $('show-shell').addEventListener('change', () => renderPreview?.setShellEnabled($('show-shell').checked)); // Isolates black-shell artifacts from real mesh gaps.
   for (const id of ['game-surfaces', 'sample-body-color']) $(id).addEventListener('change', () => {
     if (!updating) rebuildDisplays(); // Only scene materials change; optimized geometry/export stays unmodified.
   }); // Color pickers can emit dozens of input events; build tinted CanvasTextures only once on commit.
@@ -615,7 +623,7 @@
     renderer.dispose();
   });
   $('copy-report').addEventListener('click', async () => {
-    const report = sourceName + '\n' + $('summary').textContent + '\n' + $('materials').textContent + '\n' + $('log').textContent;
+    const report = sourceName + '\n' + $('summary').textContent + '\n' + $('materials').textContent + '\n' + $('mesh-integrity').textContent + '\n' + $('log').textContent;
     try { await navigator.clipboard.writeText(report); log('Report copied.'); }
     catch (e) { $('diagnostics').open = true; $('log').focus(); log('Clipboard unavailable; select the text above to copy.', true); }
   });
