@@ -53,12 +53,19 @@ const images = {
   'rope_long.png': { width:16, height:40 },
   'grapple-flail_grapple-back.png': { width:30, height:60 },
   'grapple-flail_grapple-front.png': { width:30, height:60 },
-}; // The rope and both composite-head PNGs load as distinct asynchronous source textures.
+  'flaky-head.png': { width:30, height:60 },
+}; // A unique flaky sprite exercises real cached-promise eviction without altering the shipped art.
+let failHeadOnce = true; // Used by the isolated failed-texture reassembly test.
+let flakyLoadAttempts = 0; // Proves a retry actually requests the formerly failed asset again.
 class TextureLoader {
-  load(url, success) {
+  load(url, success, _progress, onError) {
     const key = url.split('/').at(-1);
     const image = images[key];
     if (!image) throw new Error('unexpected asset ' + key);
+    if (key === 'flaky-head.png') {
+      flakyLoadAttempts++;
+      if (failHeadOnce) { failHeadOnce = false; onError(new Error('transient sprite load failure')); return; }
+    }
     success(new Texture(image));
   }
 }
@@ -187,5 +194,27 @@ api.decorate(root, 'grappleFlail', { shapeKey:'grappleFlail' }, { THREE });
   api.drop(discarded); // Retirement/disposal is an explicit ownership event; unreachable roots are weakly collectible.
   assert.equal(api.debugSnapshot().length, 0, 'retired actor cleanup explicitly releases the registry entry');
   assert.equal(discarded.children.length, 1, 'retirement leaves only the external base plane');
-  console.log('flail root-lifetime retention: PASS (5+ minutes idle, no slot map, stale map, original head/rope, reattach, explicit cleanup)');
+
+  const flakyRecipe = JSON.parse(JSON.stringify(window.WEAPON_SPRITE_ASSEMBLY_CONFIG.weapons.grappleFlail)); // Keep canonical geometry, change only the simulated texture path.
+  flakyRecipe.flail.head.layers[0].sprite = 'assets/toolsprites/flaky-head.png';
+  const flakyRoot = new Object3D();
+  flakyRoot.userData.toolPlane = new Mesh(new PlaneGeometry(.5, 1204/900), new MeshBasicMaterial({ map:new Texture(handleImage) }));
+  flakyRoot.add(flakyRoot.userData.toolPlane);
+  api.decorate(flakyRoot, 'flakyFlail', { shapeKey:'grappleFlail', weaponAssembly:flakyRecipe }, { THREE });
+  for (let i = 0; i < 40 && !api.debugSnapshot()[0]?.setupFailed; i++) await Promise.resolve();
+  assert.equal(api.debugSnapshot()[0]?.setupFailed, true, 'a failed async image request leaves a diagnosable, repairable assembly');
+  assert.equal(flakyLoadAttempts, 1, 'initial flaky texture was requested once');
+  now += 3000;
+  flakyRoot.parent = { isScene:true }; // Only an actually equipped root triggers repair; dormant caches stay dormant.
+  api.tick(0);
+  flakyRoot.parent = null; // Synthetic Three stub cannot calculate holder matrices, so finish load in cached state.
+  for (let i = 0; i < 40 && !api.debugSnapshot()[0]?.loaded; i++) await Promise.resolve();
+  assert.equal(flakyLoadAttempts, 2, 'failed image promise is evicted, allowing the source to load on retry');
+  assert.equal(api.debugSnapshot()[0]?.loaded, true, 'retry recreates the genuine flail rope and multilayer head');
+  assert.equal(api.debugSnapshot()[0]?.setupFailed, false, 'repaired cache no longer reports failure');
+  assert.equal(flakyRoot.children.filter(child => child.name === 'flail_ruin_rope').length, 1, 'retry creates exactly one rope');
+  assert.equal(flakyRoot.children.find(child => child.name === 'flakyFlail_flail_head')?.children.length, 2, 'retry restores both head layers');
+  api.drop(flakyRoot);
+  assert.equal(api.debugSnapshot().length, 0, 'repaired weapon still supports deterministic disposal');
+  console.log('flail root-lifetime retention: PASS (5+ minutes idle, no slot map, stale map, original head/rope, reattach, async image recovery, cleanup)');
 })().catch(error => { console.error(error); process.exitCode = 1; });
