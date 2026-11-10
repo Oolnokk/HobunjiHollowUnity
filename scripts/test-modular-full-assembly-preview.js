@@ -78,6 +78,31 @@ const local=api.authoredContact(anchored,[{layer:head.layers[0],image:headImages
 assert.equal(local.x,40.5-60+7);
 assert.equal(local.y,50.5-30-10);
 
+// Ordinary heads hanging from a rope must honor ALL pair corrections, not just flailHeadAnchor/head.scale.
+const correctedHead={...anchored,visualTransform:{
+  scaleX:1.25,scaleY:0.4,flipX:true,flipY:true,rotation:30,x:12,y:-18
+}}; // A real authored mirror + squashed blade + offset fixture from the modular pair controls.
+const corrected=api.layout({...recipe,flail:{...recipe.flail,head:correctedHead}},composed,ropeImage,headImages);
+assert.equal(corrected.rope.reach,plan.rope.reach,'head pair transforms cannot stretch the rope');
+assert.equal(corrected.rope.width,plan.rope.width,'head pair transforms cannot thicken the rope');
+assert.equal(corrected.headContact.x,corrected.end.x+12);
+assert.equal(corrected.headContact.y,corrected.end.y-18);
+assert.equal(corrected.visual.scaleX,-1.25);
+assert.equal(corrected.visual.scaleY,-0.4);
+assert(Math.abs(corrected.visual.angle-Math.PI/6)<1e-12);
+assert.notEqual(corrected.parts[0].x,plan.parts[0].x,
+  'the full-rig preview must actually move and rotate the hanging head pixels');
+assert.notEqual(corrected.parts[0].width,plan.parts[0].width,
+  'nonuniform pair scaling changes displayed sprite dimensions');
+const correctedCount=calls.length;
+const correctedResult=api.render(canvas,corrected,true);
+assert.equal(correctedResult.visualTransform.scaleY,-0.4,
+  'the full 2D renderer receives the pair-specific flipped Y scale');
+assert.equal(calls.slice(correctedCount).filter(op=>op[0]==='image').length,4,
+  'corrected preview still renders complete shaft, rope, and both real head layers');
+assert.deepEqual(corrected.parts[0].corners.length,4,
+  'scaled and rotated bounds are computed for every corner to prevent clipping');
+
 // Raster chain: the authored top/bottom (not transparent PNG bounds) remain the true connectors.
 const raster={type:'chain',scaleX:2,scaleY:1,mountLengthPx:300,
   top:{x:6,y:10},bottom:{x:14,y:90}};
