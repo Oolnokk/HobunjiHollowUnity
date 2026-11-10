@@ -270,20 +270,26 @@ assert.match(
 
 assert.match(
   hostSource,
-  /function ambientSongSnapshotForNpc\(npcId\)[\s\S]*?scaleAuditionState[\s\S]*?melodyNotes/,
-  'the gameplay host must snapshot Foroji\'s currently generated melody before replacing his ambient iframe'
+  /function onPlayerFrameLoaded\(\)[\s\S]*?bridge\.enterJamMode\?\.\(\)/,
+  'the visible player iframe must enter independent jam mode instead of replaying the NPC song'
 );
 
 assert.match(
   hostSource,
-  /function onPlayerFrameLoaded\(\)[\s\S]*?playerSession\.songSnapshot[\s\S]*?setKurrayaSongArrangement[\s\S]*?setKurrayaSongMelody[\s\S]*?startBackupPreviewSong/,
-  'the visible backup iframe must rehydrate Foroji\'s procedural chords and melody before playback starts'
+  /function switchInstrumentMode\(view\)[\s\S]*?if \(!ambientFrames\.has\(performer\.npcId\)\) startAmbientForNpc\(performer\.npcId, performer\.songId\)[\s\S]*?Object\.assign\(playerSession,\{mode:'jam'/,
+  'Performance must keep NPC audio in its own iframe even when the player uses a different instrument'
 );
 
 assert.match(
   hostSource,
-  /function switchInstrumentMode\(view\)[\s\S]*?const songSnapshot = ambientSongSnapshotForNpc\(performer\.npcId\)[\s\S]*?Object\.assign\(playerSession,\{mode:'backup'[\s\S]*?songSnapshot\}\)/,
-  'explicit Performance mode must still carry the NPC\'s procedural composition into the backup session state'
+  /function onSoundedNote\(data, source\)[\s\S]*?animatePlayerNote\(\)[\s\S]*?for \(const \[npcId, frame\] of ambientFrames\)[\s\S]*?triggerNpcKurrayaTwitch/,
+  'NPC and player note animations must follow their separate iframe sources'
+);
+
+assert.doesNotMatch(
+  hostSource,
+  /startBackupPreviewSong\?\.\(playerSession\.songId\)/,
+  'the player must never duplicate an NPC performance in the player sampler'
 );
 
 assert.match(musicLab, /HobunjiMusicControlBridge/, 'the standalone tool must use the shared Kurraya bridge');
