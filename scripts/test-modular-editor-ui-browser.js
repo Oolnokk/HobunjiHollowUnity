@@ -192,8 +192,11 @@ async function ready(page) {
     await page.locator('#pair-workflow').evaluate(panel=>{ panel.open=true; }); // Keep section 05 open even if earlier tests already expanded it.
     const previewBefore=await page.locator('#flail-preview').evaluate(canvas=>canvas.toDataURL('image/png'));
     const scaleYField=page.locator('#fields [aria-label="Pair scaleY"]');
+    await scaleYField.evaluate(input => { input.dataset.editorSaveMarker = 'preserve-active-field'; });
     await scaleYField.fill('0.45');
-    await scaleYField.press('Tab'); // Commit like a real editor user: blur ONCE. Save rebuilds #fields, so dispatching a second change on the replacement input resets it.
+    await scaleYField.press('Tab'); // Save a real numeric edit once; do not dispatch a second event on a replacement input.
+    assert.equal(await scaleYField.getAttribute('data-editor-save-marker'),'preserve-active-field',
+      'saving a pair correction must not replace its focused number field or lose mobile keyboard editing');
     const pairedScale=await page.evaluate(() => {
       const api=window.ModularWeapons, pair=api.getConfig().shafts['grapple-flail'].overrides['fishing-mace'];
       return {field:document.querySelector('#fields [aria-label="Pair scaleY"]')?.value,
