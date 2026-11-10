@@ -233,6 +233,35 @@
       && boss && stateFor(boss).occupantsCleared); // A cleared entrance is not an abandoned camp while the Bandit Lord lives.
   }
 
+  function rememberStrongholdGate(mapId,kind,point) {
+    const profile=profileForMapId(mapId);
+    if(!profile?.fortifiedStronghold&&!profile?.fortifiedStrongholdChild)return false;
+    const key=kind==='boss'?'boss':'treasury';
+    const col=Number(point?.col),row=Number(point?.row);
+    if(!Number.isFinite(col)||!Number.isFinite(row))return false;
+    const state=stateFor(profile);
+    const old=state.strongholdGateReturn?.[key];
+    if(old?.col===col&&old?.row===row)return true;
+    (state.strongholdGateReturn||={})[key]={col,row}; // Return exits never send players to unwalkable 0,0.
+    persistState(true);
+    return true;
+  }
+
+  function strongholdGateReturn(mapId,kind) {
+    const profile=profileForMapId(mapId);
+    return profile?clone(stateFor(profile).strongholdGateReturn?.[String(kind||'')]||null):null;
+  }
+
+  function markStrongholdGarrisonSeal(mapId) {
+    const profile=profileForMapId(mapId);
+    if(!profile?.fortifiedStronghold)return false;
+    const state=stateFor(profile);
+    if(state.strongholdGarrisonSealGranted)return false;
+    state.strongholdGarrisonSealGranted=true; // The native key-gated exit has a durable unlock record.
+    persistState(true);
+    return true;
+  }
+
   function strongholdStage(mapId) {
     const parentId=String(mapId||'').replace(/_(boss|treasury)$/,'');
     const parent=profileForMapId(parentId);
@@ -320,7 +349,7 @@
 
   function fortifiedBarrelStatus(mapId, barrelId) {
     const profile = profileForMapId(mapId);
-    if (!profile?.fortifiedStronghold) return { available: false, claimed: false, taken: false };
+    if (!profile?.fortifiedStronghold && profile?.fortifiedStrongholdChild!=='treasury') return { available: false, claimed: false, taken: false };
     const state = stateFor(profile);
     const id = String(barrelId || '');
     const claimed = !!state.strongholdBarrelsClaimed?.includes(id);
@@ -330,7 +359,7 @@
 
   function markFortifiedBarrelTaken(mapId, barrelId) {
     const profile = profileForMapId(mapId);
-    if (!profile?.fortifiedStronghold) return false;
+    if (!profile?.fortifiedStronghold && profile?.fortifiedStrongholdChild!=='treasury') return false;
     const state = stateFor(profile);
     const id = String(barrelId || '');
     if (!id || state.strongholdBarrelsTaken?.includes(id) || state.strongholdBarrelsClaimed?.includes(id)) return false;
@@ -341,7 +370,7 @@
 
   function claimFortifiedBarrel(mapId, barrelId) {
     const profile = profileForMapId(mapId);
-    if (!profile?.fortifiedStronghold) return false;
+    if (!profile?.fortifiedStronghold && profile?.fortifiedStrongholdChild!=='treasury') return false;
     const state = stateFor(profile);
     const id = String(barrelId || '');
     if (!id || state.strongholdBarrelsClaimed?.includes(id)) return false;
@@ -925,6 +954,8 @@
     window.CaveTripwireTraps?.build?.(mapId, mapData, scene, trapProfile ? stateFor(trapProfile) : null);
     buildMushroomClusters(mapId, mapData, scene);
     buildPuzzleCaveChallenge(mapId,mapData,scene); // Puzzle rooms are physical challenges, not authored furniture-only props.
+    if(mapData?.caveSite?.fortifiedStrongholdChild==='treasury')
+      window.BanditStrongholds?.ensureBarrels?.(mapId,mapData,scene); // Native Aging Barrel Burdens, same lifecycle as outer stronghold supplies.
     window.BanditStrongholds?.buildInteriorProps?.(mapId,mapData,scene); // Styled low/high barricades reuse existing furniture materials.
     const id = String(mapId); // Shared key with the mushroom index and cave profile.
     const propRecord = { scene, groups: new Map() }; // Replaced on rebuild; late async furniture loads cannot register in a stale cave.
@@ -1093,9 +1124,11 @@
         bodies:[],traps:[],coffins:[],mineRocks:[],mushrooms:[],
         cache:null,ruinEntrance:null,puzzleCave:null,puzzleTreasure:null,
         strongholdTreasuryChests:clone(child.strongholdTreasuryChests||[]),
+        strongholdBarrels:clone(child.strongholdBarrels||[]),
         floorSurfaceY:Number(child.floorSurfaceY)||0};
       child.caveSite=clone(profile);
-      child.caveSitePlan={banditSpawns:clone(plan.banditSpawns),strongholdTreasuryChests:clone(plan.strongholdTreasuryChests)};
+      child.caveSitePlan={banditSpawns:clone(plan.banditSpawns),strongholdTreasuryChests:clone(plan.strongholdTreasuryChests),
+        strongholdBarrels:clone(plan.strongholdBarrels)};
       plansByMapId.set(String(mapId),plan);
       return child;
     }
@@ -1399,6 +1432,7 @@
     for (const [mapId, site] of [...sitesByMapId]) if (site?.fortifiedStronghold || site?.fortifiedStrongholdChild) {
       sitesByMapId.delete(mapId); plansByMapId.delete(mapId);
       window.BanditStrongholds?.forgetInterior?.(mapId); // A different world must not inherit a cached fortress model.
+      window.BanditStrongholdBoss?.forgetMap?.(mapId,wildlifeDeps); // No prior-world boss pets survive restore.
     }
     rockPuzzleSitesByParent.clear(); // The restored parent profiles lazily recreate the correct hidden-door identities.
     savedCaveState = saved && typeof saved === 'object' && typeof saved.identity === 'string' && saved.sites && typeof saved.sites === 'object' ? clone(saved) : null;
@@ -1515,6 +1549,7 @@
     window.CavernOreRocks?.forgetMap?.(mapId); // Tear down the fused cave wall and its mineable indices when a relocated cave is retired.
     plansByMapId.delete(mapId);
     window.BanditStrongholds?.forgetInterior?.(mapId); // Remove the generated cover mesh when a camp rerolls or a world changes.
+    window.BanditStrongholdBoss?.forgetMap?.(mapId,wildlifeDeps); // Retired arena frees real wolf pets and boss cache.
     window.CaveTripwireTraps?.dispose?.(mapId); // The old cave's string meshes, pendulum, and physical cask cannot survive relocation.
     bodiesByMapId.delete(mapId);
     bodySpawnPromises.delete(mapId);
@@ -2047,6 +2082,7 @@
     TYPE_LABELS,
     applyWorkspaceProfiles,
     registerFortifiedStronghold, forgetFortifiedStronghold, fortifiedStrongholdCleared, strongholdStage,
+    rememberStrongholdGate,strongholdGateReturn,markStrongholdGarrisonSeal,
     claimStrongholdLordKey,claimStrongholdChest,
     fortifiedCoverDestroyed, markFortifiedCoverDestroyed, activeStrongholdGrid,
     strongholdWolfStatus, markStrongholdWolfFreed, markStrongholdWolfDead,
