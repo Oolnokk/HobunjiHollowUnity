@@ -12,6 +12,8 @@
   });
   const COINS = Object.freeze(['emoji_gloat_coin1.png', 'emoji_gloat_coin2.png', 'emoji_gloat_coin3.png']); // Original animated gloat-coin variations.
   const COIN_COLORS = Object.freeze(['#4d9980', '#dad4af', '#a2a0a0']); // Verdigris, white bronze and tin.
+  const EMOJI_SIZE_FACTOR = 1 / 3; // Shrinks only reaction art and its animation travel, leaving other world popups alone.
+  const EMOJI_GLOW_BLUR_PX = 5; // Subtle colored edge glow for each cached PNG mask.
   const ASSET_BASE = typeof document !== 'undefined' && document.currentScript?.src
     ? new URL('../assets/symbols/', document.currentScript.src).href : 'assets/symbols/'; // Asset path relative to module, not page URL.
   const masks = new Map(); // Cached tinted canvases, reused across actors and repeated coin particles.
@@ -99,7 +101,7 @@
           maskCtx.fillStyle = color;
           maskCtx.fillRect(0, 0, 128, 128);
           ctx.shadowColor = color;
-          ctx.shadowBlur = 17;
+          ctx.shadowBlur = EMOJI_GLOW_BLUR_PX;
           ctx.drawImage(mask, 0, 0);
           ctx.shadowBlur = 0;
           ctx.drawImage(mask, 0, 0);
@@ -152,7 +154,7 @@
       kind: POPUP_KIND,
       duration: TYPES[type].duration,
       height: height + .28,
-      size: Math.max(.25, Math.min(.62, height * .38)),
+      size: Math.max(.25, Math.min(.62, height * .38)) * EMOJI_SIZE_FACTOR,
       loadParts: () => Promise.all(partsFor(type).map(async item => {
         const widthScale = item.part === 'cloud' ? 2 : item.part === 'coin' ? .72 : item.part === 'ray' ? .8 : 1; // Preserve the source cloud, coin and ray proportions.
         return { part: item.part, index: item.index, canvas: await maskFor(item.icon, item.color),
@@ -186,7 +188,7 @@
   }
   function debugSnapshot() {
     return { ...stats, active: window.WorldPopupText?.countIconEffects?.(POPUP_KIND) || 0, loadedMasks: masks.size,
-      latestChange: 'Uses the shared world popup renderer and checks PNG masks before uploading them.' };
+      latestChange: 'Reaction sprites are one-third size with subtler glow; other popups are unchanged.' };
   }
   function debugControls() {
     if (typeof document === 'undefined' || typeof location === 'undefined' || !new URLSearchParams(location.search).has('emojiDebug')) return;

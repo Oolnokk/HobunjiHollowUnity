@@ -41,6 +41,7 @@ class Mesh extends Group {
 }
 class Box3 { constructor() { this.max = { y: 1.7 }; } setFromObject() { return this; } isEmpty() { return false; } }
 let failNextImage = false; // Exercises recovery when a CDN image fails or refuses CORS.
+let strongestGlowBlur = 0; // Captures the largest cached emoji mask glow to prevent over-bright reactions.
 class FakeImage {
   constructor() { this.naturalWidth = 42; this.naturalHeight = 30; }
   set src(value) {
@@ -53,6 +54,7 @@ class FakeImage {
 }
 function canvas() {
   return { width: 0, height: 0, getContext: () => ({
+    set shadowBlur(value) { strongestGlowBlur = Math.max(strongestGlowBlur, value); },
     drawImage() {}, fillRect() {}, getImageData: () => ({ data: [0, 0, 0, 255] }),
   }) };
 }
@@ -120,6 +122,7 @@ function billboard() { return scene.children.find(group => !group.name); }
   assert.equal(livestock.children.length, 0);
   assert.equal(love.children.length, 1);
   const icon = love.children[0];
+  assert.equal(strongestGlowBlur, 5, 'emoji mask glow must remain subtle');
   assert.equal(icon.isMesh, true);
   assert.equal(icon.material.map.isCanvasTexture, true);
   assert.equal(icon.material.depthTest, false);
@@ -132,6 +135,10 @@ function billboard() { return scene.children.find(group => !group.name); }
   assert.ok(love.position.y > 3.9, 'anchor remains above the actor');
   assert.equal(love.quaternion.source, camera.quaternion);
   assert.ok(icon.visible && icon.material.opacity > 0);
+  const expectedSize = Math.max(.25, Math.min(.62, 1.7 * .38)) / 3; // Actor bounds are 1.7 high in this mock; the reaction is a third of its former size.
+  const expectedScale = expectedSize * api.sample('love', now / 1650).scale; // Original animation curves still drive the smaller billboard.
+  assert.ok(Math.abs(icon.scale.x - expectedScale) < 1e-9, 'emoji width must be one-third of previous baseline');
+  assert.ok(Math.abs(icon.scale.y - expectedScale) < 1e-9, 'emoji height must be one-third of previous baseline');
   now = 1651;
   step();
   assert.equal(billboard(), undefined, 'ended reaction removed');
