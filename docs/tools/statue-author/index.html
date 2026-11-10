@@ -363,11 +363,9 @@ function display(project){
     const child=map.get(piece.id),parent=map.get(piece.parentPartId);
     if(child&&parent&&child!==parent)parent.add(child);
   }
-  status('Built '+project.parts.length+' editable pieces: NPC '+(project.statueSource.npcId||'imported')+
-    '\nPose: '+project.statueSource.phase+(animation?' (authored animation)':' (neutral fallback; no animation imported)')+
-    '\nShared texture: '+project.statueSource.materialFile+
-    '\nWeapon layers: '+project.parts.filter(p=>p.id.startsWith('statue_weapon_')).length+
-    '\nThe Furniture Editor can adjust or detach each child piece.');
+  status('Built '+project.parts.length+' editable pieces · '+(project.statueSource.npcId||'imported')+
+    ' · '+project.statueSource.phase+' · '+project.statueSource.materialFile+
+    '\nInspect / copy statue diagnostics for full part and material details.');
 }
 function downloadJson(project){
   const blob=new Blob([JSON.stringify(project,null,2)],{type:'application/json'});
@@ -504,10 +502,10 @@ function initPreview(){
   }
   const host=$('viewport');
   scene=new THREE.Scene();scene.background=new THREE.Color('#0d1824');
-  camera=new THREE.PerspectiveCamera(50,1,.03,100);camera.position.set(1.7,1.8,2.4);
+  camera=new THREE.PerspectiveCamera(48,1,.03,100);camera.position.set(1.15,1.25,1.85); // Closer default view keeps a one-tile statue readable on mobile.
   renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
   host.insertBefore(renderer.domElement,$('status'));
-  controls=new THREE.OrbitControls(camera,renderer.domElement);controls.target.set(0,.5,0);controls.update();
+  controls=new THREE.OrbitControls(camera,renderer.domElement);controls.target.set(0,.46,0);controls.update();
   scene.add(new THREE.HemisphereLight(0xffffff,0x354050,2.2));
   const light=new THREE.DirectionalLight(0xffffff,1.6);light.position.set(2,5,4);scene.add(light);
   scene.add(new THREE.GridHelper(4,8));
