@@ -1043,7 +1043,8 @@ function beginCharge(options = {}) {
       plan.stretchedTempo = clamp(plan.stretchedTempo * special.tempoMultiplier, 1 / 9, maxMappedTempo);
       plan.catchUpTempo = clamp(plan.catchUpTempo * special.tempoMultiplier, 1 / 9, 4);
     }
-    const renderOpts = { pitchSemitones: voice.pitchSemitones, tailPadS: 0, trimSilence: false, maxTempo: maxMappedTempo };
+    const renderOpts = { pitchSemitones: voice.pitchSemitones, tailPadS: 0, trimSilence: false, maxTempo: maxMappedTempo,
+      ...(token.shortSkeletonCombo ? { minimumStretch: 1 / 256 } : {}) }; // Keep the existing 4x waveform ceiling on finishers and all other voices.
     const [fullRendered, catchUpRendered] = await Promise.all([
       renderIndependent(audibleBuffer, ctx, { ...renderOpts, tempo: plan.stretchedTempo }),
       token.catchUpOnRelease
@@ -1176,7 +1177,8 @@ function beginCharge(options = {}) {
         const voice = voicePlaybackPlan(pitchOffsetSemitones, entity);
         const plan = chargeRatePlan(audible.duration, durationS, voice.tempo, maxMappedTempo);
         const tempo = special ? clamp(plan.stretchedTempo * special.tempoMultiplier, 1 / 9, maxMappedTempo) : plan.stretchedTempo; // Match beginCharge exactly so cached pitch-preserving audio is reusable.
-        return playback.renderDecodedIndependentBuffer(audible, ctx, { pitchSemitones: voice.pitchSemitones, tailPadS: 0, trimSilence: false, maxTempo: maxMappedTempo, tempo });
+        return playback.renderDecodedIndependentBuffer(audible, ctx, { pitchSemitones: voice.pitchSemitones, tailPadS: 0, trimSilence: false, maxTempo: maxMappedTempo, tempo,
+          ...(maxMappedTempo === SHORT_SKELETON_COMBO_MAX_TEMPO ? { minimumStretch: 1 / 256 } : {}) }); // Prewarm the exact short-combo render without changing the finisher's DSP.
       }).catch(() => {});
     }
     return { url, pitchOffsetSemitones, voiceVariant: special };
