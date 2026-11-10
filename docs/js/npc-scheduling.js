@@ -121,6 +121,7 @@
     if (!npcId) return false;
     if (typeof provider === 'function') presenceProviders.set(String(npcId), provider);
     else presenceProviders.delete(String(npcId));
+    targetRevision += 1; // Visitor registration invalidates cached destinations, including departures.
     return true;
   }
   function hasPresenceSchedule(rec) { return !!rec?.visitorPresence || presenceProviders.has(rec?.id); }
