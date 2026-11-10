@@ -2,6 +2,35 @@
   "schema": "hobunji_npc_species_overrides.v1",
   "note": "Small reviewed corrections for named NPCs whose authoritative species differs from stale/generated NPC-database data. Entries may also carry an authored Character Studio avatarExport; composition applies that export as the NPC's repo-default appearance/equipment/dyes while retaining the species correction. Applied after either repo or local NPC database load; legacy chathead ID mappings remain fallback-only for older data.",
   "npcs": {
+    "nohuknuk": {
+      "species": "nohuknuk",
+      "kind": "bipedal-monster",
+      "displayName": "Old Man Nohuknuk",
+      "bipedalMonsterRig": {
+        "type": "bipedal-monster",
+        "sprite": "assets/creaturesprites/old_man_nohuknuk.png",
+        "limbSpecies": "nohuknuk",
+        "handModel": "primate",
+        "footModel": "primate",
+        "gender": "male",
+        "uvMode": "stretch-fit",
+        "materials": {
+          "body": { "texture": "assets/textures/canvas.png", "color": "#CECECE" },
+          "bone": { "texture": "assets/textures/canvas.png", "color": "#0D0D0D" }
+        },
+        "modelWidth": 1.18,
+        "modelHeight": 1.19,
+        "bodyOffsetY": 0.0,
+        "neck": {
+          "pivot": { "x": 0.35, "y": 0.47 },
+          "center": { "x": 0.19, "y": 0.30 },
+          "radius": { "x": 0.25, "y": 0.30 },
+          "minDeg": -30,
+          "maxDeg": 30,
+          "turnSpeedDeg": 120
+        }
+      }
+    },
     "banubu": {
       "species": "grehlr",
       "kind": "animal",

@@ -1420,8 +1420,8 @@
   function ownsCachedToolRoot(root) {
     // EquipmentPanel holds the real tool mesh map, including holstered roots.
     // Combat/hand dependencies may intentionally expose only the current holder,
-    // so the assembly's five-second orphan cleanup must consult this owner too.
-    const map = deps?.toolMeshMap; // Source of truth for cached player equipment, used by the flail assembly retention check.
+    // so assembly diagnostics consult this owner without making slot maps determine lifetime.
+    const map = deps?.toolMeshMap; // Source of truth for cached player equipment, exposed to assembly diagnostics.
     if (!root || !map) return false;
     const values = typeof map.values === 'function' ? map.values() : Object.values(map);
     for (const visual of values) if (visual === root) return true;
@@ -1440,7 +1440,7 @@
     ensureStarterFlute,
     dispelCurse,
     getEquippedWeaponPreviewPlane,
-    ownsCachedToolRoot, // Explicit, read-only equipment owner used by WebGL assembly orphan cleanup.
+    ownsCachedToolRoot, // Read-only equipment ownership visibility for assembly diagnostics, not a disposal guard.
     refreshPlayerAvatar: () => deps?.refreshPlayerAvatar?.(), // Dev Companion uses the game's existing complete in-place portrait/rig rebuild.
     devWornClothing: () => deps?.getGearInventory?.()?.clothing || null, // Appearance inspector edits only visual fields on the actual currently equipped gear objects.
     squareToolIcon,

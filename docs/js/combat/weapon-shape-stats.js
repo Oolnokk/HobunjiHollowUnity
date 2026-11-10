@@ -15,6 +15,7 @@
     harlyaoBroadsword: { power: 1.25, speed: 0.90, range: 1.15, efficiency: 0.90 },
     bshuakauitl: { power: 0.50, speed: 1.75, range: 1.25, efficiency: 1.20, attackPower: 18 },
     hachutuTorchStaff: { power: 0.50, speed: 1.75, range: 1.25, efficiency: 1.20 }, // Identical initial melee timings and reach to B'shuakauitl; no blowgun ranged role.
+    grappleFlail: { power: 1.00, speed: 1.00, range: 1.00, efficiency: 1.00 }, // Explicit original neutral balance: modular rope donors inherit the same baseline as the standalone Grapple-Flail.
     bgungku: { power: 1.00, speed: 1.00, range: 1.00, efficiency: 1.00 }, // Editor-only unmapped donor remains explicitly neutral until assigned a gameplay shape.
     daggerSword: { power: 0.75, speed: 1.40, range: 0.80, efficiency: 1.20 },
     plainsSword: { power: 1.30, speed: 0.85, range: 1.20, efficiency: 0.85 },

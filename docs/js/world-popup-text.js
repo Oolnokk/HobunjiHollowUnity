@@ -38,6 +38,8 @@
     infoLists: new Map(), // key -> persistent info list (Perception Mode) drawn in the loot-list style on the opposite side of its root.
   };
   const INFO_LABEL_COLOR = '#B8C5C0'; // Used for the small label words ("Growth", "Moisture") so values read first.
+  const POPUP_RENDER_ORDER = 1200; // Routes canvas meshes through the final world-popup overlay pass.
+  const MAX_ICON_EFFECTS = 20; // Bounds live and loading icon effects in crowded scenes.
   let tankanFontPromise = null; // Used to load the existing Tankan OTF once before redrawing any persistent callout canvas.
 
   const clone = value => JSON.parse(JSON.stringify(value));
@@ -164,7 +166,7 @@
     const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, fog: false, side: THREE.DoubleSide });
     const plane = new THREE.Mesh(geometry, material);
     plane.scale.setScalar(size);
-    plane.renderOrder = 1200;
+    plane.renderOrder = POPUP_RENDER_ORDER;
     plane.frustumCulled = false;
     plane.userData.isBillboard = true;
     return { plane, geometry, material, texture, width: aspect * size, height: size };
@@ -335,6 +337,14 @@
 
   function dispose(event) {
     event.plane.parent?.remove(event.plane);
+    if (event.mode === 'iconEffect') {
+      event.cancelled = true; // An image that resolves after clear/replacement cannot attach a popup.
+      for (const item of event.items) item.mesh.material.dispose();
+      for (const texture of event.textures.values()) texture.dispose();
+      event.geometry?.dispose();
+      event.onDispose?.();
+      return;
+    }
     event.geometry.dispose();
     event.material.dispose();
     event.texture.dispose();
@@ -409,6 +419,88 @@
     scene.add(event.plane);
     state.active.push(event);
     return event.sequence;
+  }
+
+  function iconAnchorScene(root) {
+    for (let node = root; node && node.visible !== false; node = node.parent) {
+      if (node.isScene) return node;
+    }
+    return null;
+  }
+
+  function showIconEffect(root, { kind, duration, height, size, loadParts, sample, onDispose }) {
+    const THREE = state.deps?.THREE; // Uses the same scene and Three instance as text popups.
+    const pngSurface = window.HobunjiSpritePngSurface; // Shared authored-PNG canvas and unlit material factories.
+    const scene = iconAnchorScene(root); // Capture the real scene so zone eviction also cancels loading effects.
+    if (!THREE || !pngSurface || !scene?.add) return false;
+    const previous = state.active.findIndex(event => event.mode === 'iconEffect' && event.kind === kind && event.root === root);
+    if (previous >= 0) dispose(state.active.splice(previous, 1)[0]);
+    else if (countIconEffects(kind) >= MAX_ICON_EFFECTS) return false;
+
+    const plane = new THREE.Group(); // One world-space billboard for all animated icon parts.
+    plane.visible = false;
+    const event = { mode: 'iconEffect', kind, root, scene, plane, items: [], textures: new Map(),
+      height, size, sample, onDispose, lifetimeMs: duration, startedAt: null };
+    state.active.push(event);
+    Promise.resolve().then(loadParts).then(parts => {
+      if (event.cancelled) return;
+      if (iconAnchorScene(root) !== scene || !parts.some(part => part.canvas)) throw new Error('Icon popup has no visible anchor or artwork');
+      event.geometry = new THREE.PlaneGeometry(1, 1);
+      for (const part of parts) {
+        if (!part.canvas) continue;
+        let texture = event.textures.get(part.canvas); // Repeated particles share an upload within this popup.
+        if (!texture) {
+          texture = pngSurface.makeCanvasTexture(THREE, part.canvas, part.name);
+          event.textures.set(part.canvas, texture);
+        }
+        const material = pngSurface.makeMaterial(THREE, texture, part.name, {
+          opacity: 0, depthTest: false, depthWrite: false, fog: false, toneMapped: false, side: THREE.DoubleSide,
+        });
+        const mesh = new THREE.Mesh(event.geometry, material); // Canvas-backed mesh qualifies for the popup overlay.
+        mesh.name = part.name;
+        mesh.renderOrder = POPUP_RENDER_ORDER;
+        mesh.frustumCulled = false;
+        mesh.visible = false;
+        plane.add(mesh);
+        event.items.push({ ...part, mesh });
+      }
+      scene.add(plane);
+      event.startedAt = performance.now();
+    }).catch(() => {
+      if (event.cancelled) return;
+      state.active.splice(state.active.indexOf(event), 1);
+      dispose(event);
+    });
+    return true;
+  }
+
+  function countIconEffects(kind) {
+    return state.active.filter(event => event.mode === 'iconEffect' && event.kind === kind).length;
+  }
+
+  function updateIconEffect(event, camera, now) {
+    if (iconAnchorScene(event.root) !== event.scene) return false;
+    if (event.startedAt === null) return true;
+    const progress = Math.max(0, (now - event.startedAt) / event.lifetimeMs);
+    if (progress >= 1) return false;
+    const { root, plane, size } = event; // Read current actor transform while the separate overlay follows it.
+    root.getWorldPosition(plane.position);
+    const matrix = root.matrixWorld.elements; // Basis lengths preserve the actor's world scale without inheriting its rotation.
+    const scaleX = Math.hypot(matrix[0], matrix[1], matrix[2]);
+    const scaleY = Math.hypot(matrix[4], matrix[5], matrix[6]);
+    plane.position.y += event.height * scaleY;
+    plane.quaternion.copy(camera.quaternion);
+    plane.visible = true;
+    for (const item of event.items) {
+      const pose = event.sample(progress, item.part, item.index); // The reaction owns its source choreography.
+      const mesh = item.mesh;
+      mesh.visible = pose.alpha > 0.001;
+      mesh.position.set(pose.x * size * scaleX, pose.y * size * scaleY, 0);
+      mesh.scale.set(size * scaleX * pose.scale * item.widthScale, size * scaleY * pose.scale * item.heightScale, 1);
+      mesh.material.opacity = pose.alpha;
+      mesh.rotation.z = pose.rotation * Math.PI / 180;
+    }
+    return true;
   }
 
   const socialGains = new Map(); // Coalesces frequent social ticks into one readable player popup per kind.
@@ -838,6 +930,13 @@
     const finishedRewards = []; // Completed rewards are forwarded in their original event order after the reverse removal pass.
     for (let index = state.active.length - 1; index >= 0; index--) {
       const event = state.active[index];
+      if (event.mode === 'iconEffect') {
+        if (!updateIconEffect(event, camera, now)) {
+          state.active.splice(index, 1);
+          dispose(event);
+        }
+        continue;
+      }
       const progress = event.interactionPrompt ? 0 : Math.max(0, Math.min(1, (now - event.startedAt) / event.lifetimeMs));
       const center = popupAnchorWorld(event.root, event.mode);
       if (!center || progress >= 1) {
@@ -938,6 +1037,7 @@
   const api = {
     releaseScene,
     init, update, showChange, queueReward, queueSocialGain, queueLevelUp,
+    showIconEffect, countIconEffects,
     setInteractionPrompts, syncInteractionPrompts, clearInteractionPrompts,
     setConditionCallout, clearConditionCallout,
     setAimLabel, clearAimLabel,
@@ -945,7 +1045,7 @@
     avatarCentroidWorld, loadSettings, applySettings, clear,
     defaults: clone(DEFAULTS), storageKey: STORAGE_KEY,
     debugSnapshot: () => ({
-      latestChange: 'Social gain batches distinguish same-named livestock by record id; all five gain types are configurable in the popup editor.',
+      latestChange: 'Scratchbones reactions use the shared world-popup overlay and scene cleanup.',
       lastSocialGains: lastSocialGains.map(gain => ({ ...gain, recipients: [...gain.recipients] })),
       pendingSocialGainKinds: [...socialGains.keys()],
       interactionSignature: state.interactionSignature,

@@ -1,16 +1,17 @@
 #!/usr/bin/env node
 'use strict';
 
-// The real flail setup must survive long detachment in the *current* player
-// equipment map, but orphaned objects must still be released after five seconds.
+// Weapon-root ownership (not being parented, a slot-map lookup, or any timer)
+// determines the lifetime of its authored rope and all head layers.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
 const registry = fs.readFileSync('docs/config/weapon-sprite-assemblies.js', 'utf8'); // Uses the live Grapple-Flail recipe.
 const runtime = fs.readFileSync('docs/js/weapon-sprite-assemblies.js', 'utf8'); // Exercises actual assembly construction and cleanup.
-const equipment = fs.readFileSync('docs/js/equipment-panel.js', 'utf8'); // The live equipment sidebar owns the cached weapon map even if hand/combat omit it.
-assert.match(equipment,/function ownsCachedToolRoot\(root\)/,'EquipmentPanel exposes its true cached-root identity to the flail orphan guard');
+const effectsRuntime = fs.readFileSync('docs/js/weapon-layer-effects.js', 'utf8'); // Verifies late-created particle materials are tracked for root-GC cleanup.
+const equipment = fs.readFileSync('docs/js/equipment-panel.js', 'utf8'); // Validates real player equipment cache ownership without initializing inventory UI.
+assert.match(equipment, /function ownsCachedToolRoot\(root\)/, 'EquipmentPanel exports its authoritative cached tool identity for diagnostics');
 const vector = () => ({ set() {}, copy() {} }); // Texture UV parameters are not modified after creation in this regression.
 class Vector3 {
   constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
@@ -55,12 +56,19 @@ const images = {
   'rope_long.png': { width:16, height:40 },
   'grapple-flail_grapple-back.png': { width:30, height:60 },
   'grapple-flail_grapple-front.png': { width:30, height:60 },
-}; // The rope and both composite-head PNGs load as distinct asynchronous source textures.
+  'flaky-head.png': { width:30, height:60 },
+}; // A unique flaky sprite exercises real cached-promise eviction without altering the shipped art.
+let failHeadOnce = true; // Used by the isolated failed-texture reassembly test.
+let flakyLoadAttempts = 0; // Proves a retry actually requests the formerly failed asset again.
 class TextureLoader {
-  load(url, success) {
+  load(url, success, _progress, onError) {
     const key = url.split('/').at(-1);
     const image = images[key];
     if (!image) throw new Error('unexpected asset ' + key);
+    if (key === 'flaky-head.png') {
+      flakyLoadAttempts++;
+      if (failHeadOnce) { failHeadOnce = false; onError(new Error('transient sprite load failure')); return; }
+    }
     success(new Texture(image));
   }
 }
@@ -139,37 +147,60 @@ api.decorate(root, 'grappleFlail', { shapeKey:'grappleFlail' }, { THREE });
   const head = root.children.find(child => child.name === 'grappleFlail_flail_head'); // Parent group is the two-layer metal grapple head.
   assert(head && head.children.length === 2, 'the complete composite head exists before detachment');
 
-  window.ProceduralHandAttachments = { gameDeps:{ toolMeshMap:{ weapon:root } } }; // Mirrors the game's live slot map, which retains unequipped roots.
+  // Shipped procedural-hand dependencies can omit toolMeshMap entirely.
+  window.ProceduralHandAttachments = { gameDeps:{ toolHolder:{ children:[] } } };
   now = 200;
   api.tick(0);
-  now = 7000; // Old timeout would discard all child meshes here.
+  now = 7000; // Previously destroyed both suspended parts at the 5-second boundary.
   api.tick(0);
-  window.ProceduralHandAttachments.gameDeps.toolMeshMap = {}; // Verify the alternative live Combat adapter uses Map without duplicating player references.
-  window.Combat = { deps:{ toolMeshMap:new Map([['weapon', root]]) } };
-  now = 14000;
+  window.Combat = { deps:{ toolMeshMap:new Map([['weapon', {}]]) } }; // A stale slot-map entry must not control this root's lifetime.
+  now = 314000; // More than five minutes of unequipped time.
   api.tick(0);
-  window.Combat.deps.toolMeshMap = new Map(); // Integration can omit equipment caches from the combat/hand runtime adapters.
-  const ownerStart = equipment.indexOf('  function ownsCachedToolRoot(root) {'); // Extracts the actual production owner, without initializing inventory UI in this 3D fixture.
+  assert(api.debugSnapshot()[0]?.loaded, 'cached flail survives an arbitrarily long detachment with no matching cache map');
+  assert.equal(api.debugSnapshot()[0]?.lifetime, 'root-weak', 'mobile debug reports root-based weak registry ownership');
+  assert.equal(api.debugSnapshot()[0]?.partsAttached, true, 'head and rope still share their preserved handle root');
+  assert(root.children.includes(head), 'both head layers survive the detachment');
+  const rope = root.children.find(child => child.name === 'flail_ruin_rope'); // Exact cached connector should remain intact across repeated slot switches.
+  assert(rope, 'rope survives the same long detachment');
+  assert(api.debugSnapshot()[0]?.detachedForMs > 300000, 'mobile diagnostics report long detachment without destruction');
+  assert(!head.children[0].material.disposed, 'head materials are never disposed while the cached root remains alive');
+  assert.equal(api.debugSnapshot()[0]?.cachedPlayerOwned, false, 'no exposed tool slot currently claims this still-live root');
+  window.Combat.deps.toolMeshMap = new Map(); // Real integrations can omit the cached player handle from all combat/hand adapters.
+  const ownerStart = equipment.indexOf('  function ownsCachedToolRoot(root) {'); // Uses production EquipmentPanel logic rather than duplicating identity checks.
   const ownerEnd = equipment.indexOf('\n  // Read-only bridge', ownerStart);
-  assert(ownerStart >= 0 && ownerEnd > ownerStart, 'the equipment ownership bridge has a testable boundary');
-  const ownsCachedToolRoot = new Function('deps', equipment.slice(ownerStart, ownerEnd) + '\nreturn ownsCachedToolRoot;')({toolMeshMap:{weapon:root}});
-  window.EquipmentPanel = { ownsCachedToolRoot }; // Simulates the real injected equipment map, not another reimplemented lookup.
-  now = 21000;
+  assert(ownerStart >= 0 && ownerEnd > ownerStart, 'equipment ownership bridge has a stable, testable boundary');
+  const ownsCachedToolRoot = new Function('deps', equipment.slice(ownerStart, ownerEnd) + '\nreturn ownsCachedToolRoot;')({ toolMeshMap: { weapon: root } });
+  window.EquipmentPanel = { ownsCachedToolRoot }; // Injects the actual cached owner independently of optional runtime adapters.
+  assert.equal(api.debugSnapshot()[0]?.cachedPlayerOwned, true, 'mobile diagnostics recognize EquipmentPanel as the true weapon owner');
+  now += 12000; // A long gap does not convert debug ownership into an expiration deadline.
   api.tick(0);
-  assert.equal(api.debugSnapshot()[0]?.cachedPlayerOwned,true,
-    'an unequipped weapon remains recognized even when only EquipmentPanel exposes the ownership map');
-  assert(api.debugSnapshot()[0]?.loaded, 'detached equipment retains its loaded assembly beyond both timeout windows');
-  assert(root.children.includes(head), 'head survives a long unequipped interval');
-  assert(root.children.some(child => child.name === 'flail_ruin_rope'), 'rope survives the same unequipped interval');
-  assert(api.debugSnapshot()[0]?.detachedForMs >= 10000, 'mobile diagnostics prove the detached assembly is still retained');
+  assert.equal(api.debugSnapshot()[0]?.loaded, true, 'ownership diagnostics do not interfere with weak-root assembly lifetime');
 
-  root.parent = { isScene:true }; // Equipping uses the SAME cached root instead of calling decorate again.
-  assert.equal(api.debugSnapshot()[0]?.attached, true, 'equipping exposes existing rope/head without reconstructing art');
-  assert.equal(api.debugSnapshot()[0]?.loaded, true, 'equipping does not require a new asynchronous setup');
+  root.parent = { isScene:true }; // Equipping uses this SAME cached root instead of requiring a fresh decorate call.
+  assert.equal(api.debugSnapshot()[0]?.attached, true, 'equip exposes the preserved rope/head immediately');
+  api.decorate(root, 'grappleFlail', { shapeKey:'grappleFlail' }, { THREE }); // Idempotent redecoration must not duplicate layers.
+  assert.equal(root.children.filter(child => child.name === 'flail_ruin_rope').length, 1, 'redecoration never duplicates the connector');
+  assert.equal(root.children.filter(child => child.name === 'grappleFlail_flail_head').length, 1, 'redecoration never duplicates the head');
+  root.remove(rope);
+  root.remove(head);
+  assert.equal(api.debugSnapshot()[0]?.partsAttached, false, 'diagnostics reveal an external temporary reparenting mistake');
+  api.decorate(root, 'grappleFlail', { shapeKey:'grappleFlail' }, { THREE });
+  assert(root.children.includes(rope) && root.children.includes(head), 'redecoration recovers both original components without new texture loads');
+  assert.equal(api.debugSnapshot()[0]?.partsAttached, true, 'mobile diagnostics confirm both parts are repaired');
+  root.remove(rope);
+  root.remove(head);
+  plane.updateWorldMatrix = () => {}; // The real pre-render tick repairs the mesh tree before the pose update.
+  const originalImage = plane.material.map.image; // A missing base frame stops synthetic 3D math after attachment repair.
+  plane.material.map.image = null;
+  api.tick(0);
+  plane.material.map.image = originalImage;
+  assert(root.children.includes(rope) && root.children.includes(head), 'the equipped pre-render tick repairs both parts without a fresh decorate call');
+  assert.equal(api.debugSnapshot()[0]?.repairedParts, 4, 'mobile diagnostics count two repairs from decorate and two from the automatic tick');
   root.parent = null;
-  api.drop(root); // Actual owner disposal (enemy cleanup / preview teardown) is still authoritative.
-  assert.equal(api.debugSnapshot().length, 0, 'explicit teardown releases the state and its strong registry entry');
-  assert.equal(root.children.length, 1, 'explicit teardown removes rope and head but preserves the base tool plane');
+  api.drop(root); // Owner disposal remains authoritative for both gameplay and authoring preview.
+  assert.equal(api.debugSnapshot().length, 0, 'explicit teardown unregisters the root immediately');
+  assert.equal(root.children.length, 1, 'explicit teardown removes connector and head but keeps the handle plane');
+  assert(head.children.every(child => child.material.disposed), 'explicit teardown disposes every head-layer material');
 
   const discarded = new Object3D(); // A superseded cached loadout no longer referenced by either current equipment map.
   discarded.userData.toolPlane = new Mesh(new PlaneGeometry(.5, 1204/900), new MeshBasicMaterial({map:new Texture(handleImage)}));
@@ -177,14 +208,62 @@ api.decorate(root, 'grappleFlail', { shapeKey:'grappleFlail' }, { THREE });
   api.decorate(discarded, 'grappleFlail', { shapeKey:'grappleFlail' }, { THREE });
   for (let i = 0; i < 20 && !api.debugSnapshot()[0]?.loaded; i++) await Promise.resolve();
   assert.equal(api.debugSnapshot().length, 1, 'retired equipment builds using the same live assembly API');
-  now = 21100;
+  now = 314100;
   api.tick(0);
-  now = 26000;
+  now = 900000;
   api.tick(0);
-  assert.equal(api.debugSnapshot().length, 1, 'orphan is not dropped before the original five-second grace period');
-  now = 26101;
+  assert.equal(api.debugSnapshot().length, 1, 'an unparented but still externally referenced actor is never silently mutilated');
+  assert(discarded.children.find(child => child.name === 'flail_ruin_rope'), 'an idle NPC/preview keeps its suspension too');
+  api.drop(discarded); // Retirement/disposal is an explicit ownership event; unreachable roots are weakly collectible.
+  assert.equal(api.debugSnapshot().length, 0, 'retired actor cleanup explicitly releases the registry entry');
+  assert.equal(discarded.children.length, 1, 'retirement leaves only the external base plane');
+
+  const flakyRecipe = JSON.parse(JSON.stringify(window.WEAPON_SPRITE_ASSEMBLY_CONFIG.weapons.grappleFlail)); // Keep canonical geometry, change only the simulated texture path.
+  flakyRecipe.flail.head.layers[0].sprite = 'assets/toolsprites/flaky-head.png';
+  const flakyRoot = new Object3D();
+  flakyRoot.userData.toolPlane = new Mesh(new PlaneGeometry(.5, 1204/900), new MeshBasicMaterial({ map:new Texture(handleImage) }));
+  flakyRoot.add(flakyRoot.userData.toolPlane);
+  api.decorate(flakyRoot, 'flakyFlail', { shapeKey:'grappleFlail', weaponAssembly:flakyRecipe }, { THREE });
+  for (let i = 0; i < 40 && !api.debugSnapshot()[0]?.setupFailed; i++) await Promise.resolve();
+  assert.equal(api.debugSnapshot()[0]?.setupFailed, true, 'a failed async image request leaves a diagnosable, repairable assembly');
+  assert.equal(flakyLoadAttempts, 1, 'initial flaky texture was requested once');
+  now += 3000;
+  flakyRoot.parent = { isScene:true }; // Only an actually equipped root triggers repair; dormant caches stay dormant.
   api.tick(0);
-  assert.equal(api.debugSnapshot().length, 0, 'orphaned assembly is reclaimed when no live equipment cache owns it');
-  assert.equal(discarded.children.length, 1, 'orphan cleanup preserves the base mesh while removing the connector/head');
-  console.log('flail cached-detach retention: PASS (rope + two-layer head, 14s idle, Map/object ownership, explicit and automatic cleanup)');
+  flakyRoot.parent = null; // Synthetic Three stub cannot calculate holder matrices, so finish load in cached state.
+  for (let i = 0; i < 40 && !api.debugSnapshot()[0]?.loaded; i++) await Promise.resolve();
+  assert.equal(flakyLoadAttempts, 2, 'failed image promise is evicted, allowing the source to load on retry');
+  assert.equal(api.debugSnapshot()[0]?.loaded, true, 'retry recreates the genuine flail rope and multilayer head');
+  assert.equal(api.debugSnapshot()[0]?.setupFailed, false, 'repaired cache no longer reports failure');
+  assert.equal(flakyRoot.children.filter(child => child.name === 'flail_ruin_rope').length, 1, 'retry creates exactly one rope');
+  assert.equal(flakyRoot.children.find(child => child.name === 'flakyFlail_flail_head')?.children.length, 2, 'retry restores both head layers');
+  api.drop(flakyRoot);
+  assert.equal(api.debugSnapshot().length, 0, 'repaired weapon still supports deterministic disposal');
+
+  // Head/shaft fire motes are allocated only on an active frame, after the initial
+  // flail GPU-resource scan. The root finalizer must also own these late materials.
+  const effectsWindow = {}; // Separate effects instance avoids changing the earlier headless assembly fixture.
+  THREE.SpriteMaterial = class extends MeshBasicMaterial {
+    constructor(props) { super(props); this.color = { set() {} }; }
+  };
+  THREE.Sprite = class extends Object3D {
+    constructor(material) { super(); this.material = material; this.layers = { set() {} }; this.scale = { setScalar() {} }; }
+  };
+  vm.runInNewContext(effectsRuntime, { window:effectsWindow, document, console, THREE });
+  const fireOwner = new Object3D(); // Mock parent for a fire layer on a flail head.
+  const fireEmitter = {
+    config:{ type:'fire', rate:2, size:.035, life:.65 }, sourceLayer:{ id:'fuel' }, image:{ width:4, height:4 },
+    sources:[5], group:fireOwner, renderOrder:2, unit:1, particles:[], pool:[], accumulation:0,
+    worldRise:false, visualScale:1, clusters:null, anchors:null, texture:new Texture({ width:16, height:16 }),
+  }; // Minimal real interleaved emitter: one sprite created by production stepFire().
+  const fireResources = new Set(); // Represents the same mutable finalizer resource set owned by the weapon root.
+  const fireState = { THREE, gcResources:fireResources, fireEmitters:[fireEmitter], itemKey:'grappleFlail', masteryLevel:()=>5 };
+  effectsWindow.HobunjiLayeredWeaponEffects.stepFire(fireState, .5);
+  assert.equal(fireEmitter.particles.length, 1, 'production fire step spawns a material after assembly construction');
+  const newFireMaterial = fireEmitter.particles[0].sprite.material;
+  assert(fireResources.has(newFireMaterial), 'late sprite material is registered with the weak-root resource finalizer');
+  assert(!fireResources.has(fireEmitter.texture), 'the shared fire texture is never finalized with an individual weapon');
+  effectsWindow.HobunjiLayeredWeaponEffects.dispose(fireState);
+  assert(newFireMaterial.disposed, 'explicit weapon disposal still releases the dynamically registered particle material');
+  console.log('flail root-lifetime retention: PASS (long detach, self-repair, texture retry, late particle cleanup)');
 })().catch(error => { console.error(error); process.exitCode = 1; });

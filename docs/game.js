@@ -10575,6 +10575,48 @@
       // driven each frame from updatePlayerMesh. See
       // docs/js/procedural-leg-animation.js.
       let playerLegs = null;
+      // The rendered gait follows actual displacement: support walking, mini-cliff shelves and
+      // other traversal owners can move player.x/y while intentionally keeping player.vx/vy at zero.
+      const playerGaitTravel = { area: null, x: NaN, y: NaN, speed: 0, reportedSpeed: 0, source: 'uninitialized' }; // Last physical sample and mobile diagnostics; never writes to movement physics.
+      function samplePlayerGaitSpeed(area, x, y, dt, reportedTilesPerSecond) {
+        let gaitSpeed = Number.isFinite(reportedTilesPerSecond) ? Math.max(0, reportedTilesPerSecond) : 0; // Fallback for first/transition/teleport frames.
+        let source = 'velocity'; // Identifies why this frame used physical travel or the velocity fallback in Dev Companion.
+        if (playerGaitTravel.area === area && Number.isFinite(dt) && dt > 0 && dt <= 0.2
+          && Number.isFinite(playerGaitTravel.x) && Number.isFinite(playerGaitTravel.y)) {
+          const traveledTilesPerSecond = Math.hypot(x - playerGaitTravel.x, y - playerGaitTravel.y) / (TILE * dt); // True ground-plane distance, including support-owned walking.
+          const plausibleMaximum = Math.max(16, gaitSpeed * 3); // Reject teleport/checkpoint jumps, but retain fast buffed or dev-speed travel.
+          if (Number.isFinite(traveledTilesPerSecond) && traveledTilesPerSecond <= plausibleMaximum) {
+            gaitSpeed = traveledTilesPerSecond;
+            source = 'travel';
+          } else source = 'teleport';
+        } else source = 'reset';
+        playerGaitTravel.area = area;
+        playerGaitTravel.x = x;
+        playerGaitTravel.y = y;
+        playerGaitTravel.speed = gaitSpeed;
+        playerGaitTravel.reportedSpeed = Number.isFinite(reportedTilesPerSecond) ? reportedTilesPerSecond : 0;
+        playerGaitTravel.source = source;
+        return gaitSpeed;
+      }
+      window.DevCompanion?.registerStateProvider?.('playerGait', () => {
+        const legDebug = playerLegs?.getStandingPoseDebug?.() || null; // Reuses the canonical foot-rig snapshot at Dev Companion's low polling rate.
+        return {
+          area: playerGaitTravel.area,
+          gaitSpeedTilesPerSecond: playerGaitTravel.speed,
+          velocitySpeedTilesPerSecond: playerGaitTravel.reportedSpeed,
+          source: playerGaitTravel.source,
+          jumpPhase: player._freeJump?.phase || null,
+          legRigAttached: !!playerLegs?.group?.parent,
+          legMode: legDebug?.motionMode || null,
+          externalFootContact: !!legDebug?.externalContact?.active,
+          gaitCadenceHz: legDebug?.gait?.cadenceHz ?? null,
+          strideLength: legDebug?.gait?.strideLength ?? null,
+          footTargetZ: {
+            left: legDebug?.left?.targetZ ?? null,
+            right: legDebug?.right?.targetZ ?? null,
+          },
+        };
+      }); // Mobile checks can now distinguish frozen input, airborne/paired-pose ownership, and a rig that isn't attached.
       // Head-turn bone built by buildSinglePlaneAvatarModel's neckRig option
       // (null if no neck pivot could be detected for the player's current
       // portrait) — same mechanism the animation-author tool/NPC dialogue
@@ -25846,6 +25888,7 @@
         // governs it in updateMovement), not a flat distance the instant
         // movement starts.
         const speed = Math.hypot(player.vx, player.vy);
+        const gaitSpeed = samplePlayerGaitSpeed(currentArea, player.x, player.y, dt, speed / TILE); // Use real displacement for visual stepping without changing gameplay velocity.
         if (speed > 5) {
           const bobEffort = window.FormatUtils.clamp(speed / (MOVE_SPEED * devGlobalSpeedMul), 0, 1);
           playerMesh.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * bobEffort);
@@ -25884,11 +25927,12 @@
         // ragdoll pose instead of stepping aside for it.
         if (window.ImpactRagdollPlayback?.isActive()) window.ImpactRagdollPlayback.update(dt);
         else if (window.PlayerCrawl?.isActive?.() && playerLegs) window.PlayerCrawl.applyLegs(playerLegs); // Downed crawl poses the legs itself (js/player-crawl.js).
-        else playerLegs?.update(dt, speed / TILE, legsSuppressed, seatedPose, {
+        else playerLegs?.update(dt, gaitSpeed, legsSuppressed, seatedPose, {
           combat: isPlayerInCombat() || player.lunging,
           allowSpeedRun: true,
           lunging: !!player.lunging,
-          airborne: ordinaryLungeHopY > 0.03 || (Number.isFinite(player.lungeFlightWorldY) && player.lungeFlightWorldY > groundedTargetY + 0.03)
+          airborne: (player._freeJump && player._freeJump.phase !== 'supported') // Air/rope motion keeps dangling legs even if the avatar's reported ground equals its physical feet.
+            || ordinaryLungeHopY > 0.03 || (Number.isFinite(player.lungeFlightWorldY) && player.lungeFlightWorldY > groundedTargetY + 0.03)
             || !!player._knockbackLedgeAir || !!player._knockbackLedgeFall
             || (player.climbing && player.climbSurfaceEndY < player.climbSurfaceStartY)
             || (!player.climbing && !player.onBranch && !player.onClimbSurface && playerMesh.position.y > groundedTargetY + 0.12),

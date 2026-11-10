@@ -1434,7 +1434,76 @@
     });
   }
 
-  global.ModularWeaponBridgeFill = Object.freeze({ fillBridge, stampLine, stampStroke, autoBridgeStrokes,
+  // Non-destructive haft bore: regenerate from the original sprite every time its position/shape changes.
+  // Uses the same unmodified source pixels and alpha channel as the manual brush/outline tools.
+  function borePixels(source, width, height, bores) {
+    const w = Math.max(0, Math.floor(width)), h = Math.max(0, Math.floor(height));
+    if (!w || !h || !Array.isArray(bores) || !bores.length) return new Uint8ClampedArray(source);
+    let pixels = new Uint8ClampedArray(source); // Current result between multiple independent bore operations.
+    for (const bore of bores) {
+      if (bore?.enabled === false) continue;
+      const rx = Math.max(2, Number(bore.rx) || 12), ry = Math.max(2, Number(bore.ry) || 12);
+      const x = Number(bore.x) || 0, y = Number(bore.y) || 0;
+      const rim = Math.max(0.5, Math.min(24, Number(bore.rim) || 5)); // Physical bevel width, independent of hole diameter.
+      const outline = Math.max(1, Math.min(12, Number(bore.outline) || 3)); // Interior cutout outline: same opaque-black, 8-connected ink treatment as the head/haft sprite authoring outline tool.
+      const strength = Math.max(0, Math.min(1, Number.isFinite(Number(bore.shade)) ? Number(bore.shade) : 0.65));
+      const warp = Math.max(0, Math.min(6, Number.isFinite(Number(bore.warp)) ? Number(bore.warp) : 1.5)); // Small outward lip deformation, retaining the underlying sprite material.
+      const angle = (Number(bore.rotation) || 0) * Math.PI / 180;
+      const c = Math.cos(angle), sn = Math.sin(angle);
+      const vx = Number(bore.lightX), vy = Number(bore.lightY);
+      const norm = Math.hypot(Number.isFinite(vx) ? vx : -0.6, Number.isFinite(vy) ? vy : -0.8) || 1;
+      const lightX = (Number.isFinite(vx) ? vx : -0.6) / norm, lightY = (Number.isFinite(vy) ? vy : -0.8) / norm;
+      const border = Math.max(rx, ry) + rim + warp + 3;
+      const x0 = Math.max(0, Math.floor(x - border)), x1 = Math.min(w - 1, Math.ceil(x + border));
+      const y0 = Math.max(0, Math.floor(y - border)), y1 = Math.min(h - 1, Math.ceil(y + border));
+      const original = new Uint8ClampedArray(pixels); // Rebuild every pixel from the unmodified pre-bore state; no accumulated drag artefacts.
+      const radiusMin = Math.min(rx, ry);
+      const sourceAt = (sx, sy) => {
+        const ix = Math.round(sx), iy = Math.round(sy);
+        return ix >= 0 && iy >= 0 && ix < w && iy < h ? (iy * w + ix) * 4 : -1;
+      };
+      for (let py = y0; py <= y1; py++) for (let px = x0; px <= x1; px++) {
+        const dx = px + 0.5 - x, dy = py + 0.5 - y;
+        const ox = c * dx + sn * dy, oy = -sn * dx + c * dy;
+        const u = ox / rx, v = oy / ry;
+        const distance = Math.hypot(u, v);
+        const edge = (distance - 1) * radiusMin; // Approximate distance from elliptical edge in sprite pixels.
+        if (edge > Math.max(rim + warp + 1, outline + 1)) continue; // Long interior outlines are never cut short by a narrow bevel.
+        const offset = (py * w + px) * 4;
+        if (edge < -0.65) { pixels[offset] = pixels[offset + 1] = pixels[offset + 2] = pixels[offset + 3] = 0; continue; }
+        if (edge < 0.65) {
+          const coverage = Math.max(0, Math.min(1, (edge + 0.65) / 1.3)); // Anti-aliased cutout without a jagged pixel stair.
+          pixels[offset + 3] = Math.round(original[offset + 3] * coverage);
+          // Match the existing sprite-cutter's pure-black antialiased outline at the cut boundary,
+          // not a stray colored wood/metal fringe between the hole and its interior ink ring.
+          pixels[offset] = pixels[offset + 1] = pixels[offset + 2] = 0;
+          continue;
+        }
+        if (edge >= Math.max(rim, outline + 1)) continue;
+        const influence = Math.max(0, 1 - edge / rim);
+        const rad = Math.hypot(dx, dy) || 1;
+        const nx = dx / rad, ny = dy / rad;
+        const sample = sourceAt(px + 0.5 - nx * warp * influence, py + 0.5 - ny * warp * influence);
+        // Push adjacent source colors outward a little: this is the bevel's deform, not destructive smearing.
+        const chosen = sample >= 0 && original[sample + 3] >= 32 ? sample : offset;
+        if (!original[chosen + 3]) continue;
+        const directional = Math.max(-1, Math.min(1, nx * lightX + ny * lightY));
+        const innerShadow = strength * influence * 0.68;
+        const highlight = strength * influence * Math.max(0, directional) * 0.35;
+        const brightness = Math.max(0.24, Math.min(1.2, 1 - innerShadow + highlight));
+        // Follow the existing head/haft outline tool's pure-black ink: a narrow, continuous
+        // 8-connected border is painted INTO the surviving shaft pixels around the hole.
+        // Unlike expanding the sprite silhouette, this never fills the hole or inks the exterior.
+        const ink = Math.max(0, Math.min(1, outline + 0.5 - edge));
+        for (let channel = 0; channel < 3; channel++)
+          pixels[offset + channel] = Math.round(original[chosen + channel] * brightness * (1 - ink));
+        pixels[offset + 3] = original[chosen + 3]; // Wood, metal, straps and their existing alpha remain intact outside the cutout.
+      }
+    }
+    return pixels;
+  }
+
+  global.ModularWeaponBridgeFill = Object.freeze({ borePixels, fillBridge, stampLine, stampStroke, autoBridgeStrokes,
     smudgeStep, rebuildOutline, smudgeStroke, makeClassifier, revertStep, plowStep, puffStep, toolStepper, toolStroke,
     separateShading, removeSpecks, cleanOutline, changedRegion, gaussBlur, maskWobble, measureOutline,
     learnStyle, evenOutline, styleCleanup, opsInBox, mapBox, mapMountBox, mapOps });
