@@ -676,6 +676,13 @@ window.__hobunjiStatueDebug=()=>{
     builtNpcId:exportProject?.statueSource?.npcId||null,buildActive:$('build').disabled,
     importedAnimation:animation?.name||null,phase:exportProject?.statueSource?.phase||null,
     sourceRig:exportProject?.statueSource?.sourceRig||null,
+    heroEquipment:selectedRecord?.statueHeroLoadout?{
+      ...selectedRecord.statueHeroLoadout,
+      cosmetics:[...(selectedRecord.equippedCosmetics||[])],
+      armor:(selectedRecord.metalArmorItems||[]).map(item=>({
+        id:item.baseCosmeticId,metal:item.metalKey
+      }))
+    }:null, // Debug source on mobile: shows real bandit-slot/captain-armor choices, not inferred from appearance.
     texture:exportProject?.statueSource?.materialFile||$('materialFile').value,
     pieces:meshes,runtimeErrors:runtimeErrors.slice(-15),visibleStatus:$('status').textContent};
 }; // Safe read-only mobile diagnostics and browser-smoke verification.
