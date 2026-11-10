@@ -272,11 +272,16 @@
       };
       const arrows=handles.filter(item=>mode==='translate'&&item.geometry?.type==='ConeGeometry')
         .map(item=>({axis:item.userData.axis,...screen(item)}));
+      const rings=handles.filter(item=>mode==='rotate'&&item.geometry?.type==='TorusGeometry')
+        .map(item=>{
+          const point=new THREE.Vector3(.16,0,0).applyMatrix4(item.matrixWorld).project(camera);
+          return {axis:item.userData.axis,x:box.left+(point.x+1)*box.width/2,y:box.top+(1-point.y)*box.height/2};
+        });
       return {
         webgl:true,mode,selectedKnot:selectedIndex,knots:dots.length,handles:handles.length,
         ribbonVertices:hairPlane.geometry?.attributes?.position?.count||0,
         headLoaded:!!headPlane.material.map,hairLoaded:!!hairPlane.material.map,
-        arrows, // Mobile diagnostics and browser pointer-test coordinates for the actual visible gizmo tips.
+        arrows,rings, // Mobile diagnostics and browser pointer-test coordinates for actual visible gizmo handles.
       };
     }
     setCameraView('angle');
