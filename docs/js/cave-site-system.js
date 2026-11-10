@@ -608,7 +608,9 @@
     mapData.caveCache = clone(plan.cache);
     addProp(mapData, { id: plan.cache.id, key: 'ruinDungeonChestT2', col: cacheTile.col, row: cacheTile.row, rotY: Math.floor(rng() * 4) * 90 });
 
-    const walkableKeys = new Set(floorTiles(mapData).map(tile => tileKey(tile.col, tile.row))); // Entire cavern footprint, not merely the secret cache's eligible tiles, determines real wall endpoints.
+    const rockKeys = new Set((mapData.oreRocks || []).map(rock => tileKey(rock.col, rock.row))); // Mineable partitions are still solid walls while intact.
+    const walkableKeys = new Set(floorTiles(mapData).filter(tile => !rockKeys.has(tileKey(tile.col, tile.row)))
+      .map(tile => tileKey(tile.col, tile.row))); // Real wall/floor boundaries, including the secret cache's mineable wall.
     const trapCandidates = candidates.filter(tile => {
       const d = Math.hypot(tile.col - cacheTile.col, tile.row - cacheTile.row);
       return d >= 1.1 && d <= 4.5 && !blockedKeys.has(tileKey(tile.col, tile.row))
