@@ -144,14 +144,25 @@ Old absolute `x/y` bore drafts are migrated to relative offsets
 without shifting the old visible hole. Brush, smudge, junction and
 pair operations remain separate.
 
-Flail heads use their **original Complex Tool Visuals
-`flail.head.anchor`** and authored layer offsets. The modular
-editor's head tang/eye arrows and legacy `flailHeadAnchor`
-cannot move this contact: the flail recipe and preview ignore them,
-and flail-head arrow controls are suppressed. For shaft-owned ropes
-paired with a replaceable modular head, the rope recipe's authored
-head attachment is retained while the layered head art is replaced.
-The head's scale is independent of the connector length.
+A **flail head on a normal haft** keeps its original Complex Tool Visuals
+`flail.head.anchor` and authored layers. The modular editor's head
+tang/eye arrows cannot move that contact; the Tool Hub owns it.
+Bore openings are relative to the shaft-side rope mount and visible
+only for genuine flail heads.
+
+An **ordinary rigid head on a flail haft** works differently. It is
+rendered as an independent hanging head plane with a **layer-local
+contact** in its original source PNG (450 × 1204 pixels). By default
+the contact is the original rigid head `mount.start` for tang/blade
+heads, or `mount.end` for sleeve/weight heads. The selected shaft's
+`overrides[headKey].flailHeadAnchor` and optional `flailHeadScale`
+replace those defaults for **only that pairing**. The modular editor
+shows a cyan movable target over the head source image and numeric
+X/Y/scale fields; moving it never touches `heads[headKey].mount` or
+other rigid weapons. The old head-global `flailHeadAnchor` was unused
+by gameplay and is no longer authored. Live Three.js and the full
+2D resting-pose preview share this same per-pair contact.
+Head size and connector reach are controlled independently.
 
 The first `grappleFlail` reusable reference is available from either
 a dedicated Rope-bound Grapple Handle or a Grapple Hook Head, unlocked
