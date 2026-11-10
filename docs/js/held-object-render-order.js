@@ -1488,7 +1488,12 @@
     const { groups, ordinary } = buildXrayGroups(renderer, scene, camera, overlayMeshes);
     lastBaseElevationGroups = groups.length;
     const groundMaterials = groups.length ? collectGroundElevationMaterials(groundMeshes) : null; // Reuse the same material list for every tile batch.
-    if (ordinary.length) groups.unshift({ meshes: ordinary, regions: [] }); // Keep existing cutout and water depth rules for regular parts.
+    // Ordinary participants never need the scene's depth rebuilt: the base colour
+    // pass already left normal occluder depth in place. This covers player, NPC
+    // and hostile hand/foot/gear meshes whose holder has no intersecting floor.
+    // Keep the real x-ray groups separate so their 3x3 tile/elevation filter
+    // remains unchanged and overlap cannot make another actor see through floor.
+    const ordinaryDepthReuse = ordinary.length > 0; // Instrument only genuinely reusable depth, not attempted groups.
     const tintOverlay = lastBaseStencilBits >= 1 && hasOverlappingHeldCover(renderer, camera, overlayMeshes, tintCovers);
     const hasScissorApi = !!(glState?.scissor && glState?.setScissorTest); // Separates unavailable GL scissor support from unsafe geometry.
     let scissored = replayScissorEnabled && hasScissorApi && replayScissorRect(renderer, camera, scissorMeshes, scissorRect);
@@ -1533,6 +1538,23 @@
       if (scissored) glState.setScissorTest(false);
       renderer.clearStencil?.(); // Clear the full stencil buffer so stale bits outside this frame's scissor cannot leak into later consumers.
       if (scissored) glState.setScissorTest(true);
+
+      if (ordinaryDepthReuse) {
+        // Reuse the original scene depth for regular hand/foot/gear draw. The
+        // tint stencil is still stamped exactly as it is for x-ray groups.
+        for (const mesh of ordinary) mesh.visible = overlayHidden.get(mesh) !== false;
+        const ordinaryStates = tintOverlay ? prepareSubmergedOverlayStencilMaterials(ordinary) : null;
+        try {
+          camera.layers.mask = HELD_OVERLAY_MASK;
+          const ordinaryPerf = window.PerfProfiler?.begin('held-overlay: ordinary depth reuse');
+          try { rawRender.call(renderer, scene, camera); }
+          finally { window.PerfProfiler?.end(ordinaryPerf); }
+          selectiveOverlayCount++;
+        } finally {
+          if (ordinaryStates) restoreMaterialStates(ordinaryStates);
+          for (const mesh of ordinary) mesh.visible = false;
+        }
+      }
 
       for (const group of groups) {
         const groupScissored = scissored && applyElevationScissor(renderer, camera, group.meshes, glState);
@@ -1591,15 +1613,19 @@
       // Restore the original complete ground depth before water/slush tinting.
       restoreVisibility(overlayHidden);
       overlayHidden = null;
-      const groundMaterialStates = prepareGroundDepthMaterials(topFaceGround.length ? groundMeshes : ground);
-      try {
-        camera.layers.mask = GROUND_REPLAY_MASK;
-        const groundRestorePerf = window.PerfProfiler?.begin('held-overlay: ground restore render');
-        rawRender.call(renderer, scene, camera);
-        window.PerfProfiler?.end(groundRestorePerf);
-        groundDepthRestoreCount++;
-      } finally {
-        restoreMaterialStates(groundMaterialStates);
+      // A scene with only ordinary meshes never cleared its depth, so it must
+      // not redraw every ground surface just to restore an untouched buffer.
+      if (groups.length) {
+        const groundMaterialStates = prepareGroundDepthMaterials(topFaceGround.length ? groundMeshes : ground);
+        try {
+          camera.layers.mask = GROUND_REPLAY_MASK;
+          const groundRestorePerf = window.PerfProfiler?.begin('held-overlay: ground restore render');
+          try { rawRender.call(renderer, scene, camera); }
+          finally { window.PerfProfiler?.end(groundRestorePerf); }
+          groundDepthRestoreCount++;
+        } finally {
+          restoreMaterialStates(groundMaterialStates);
+        }
       }
 
       if (tintOverlay) {
@@ -1857,9 +1883,12 @@
         return originalRender.call(this, scene, camera);
       }
       const shellPadding = Math.abs(Number(scene.overrideMaterial.uniforms.uThickness.value) || 0); // Shell vertices extend outside their source bounds in screen space.
-      const { groups, ordinary } = buildXrayGroups(this, scene, camera, xrayMeshes, shellPadding);
+      const { groups } = buildXrayGroups(this, scene, camera, xrayMeshes, shellPadding);
       lastShellElevationGroups = groups.length;
-      if (ordinary.length) groups.unshift({ meshes: ordinary, regions: [] }); // Retain cutout and translucent-cover depth for ordinary shells.
+      // Ordinary hand/foot/gear shells already obey the intact depth in the
+      // regular shell pass. Only genuine floor x-ray shells need a replay.
+      if (!groups.length) return originalRender.call(this, scene, camera);
+      const xrayGroupMeshes = groups.flatMap(group => group.meshes); // Only genuinely exceptional shells are hidden and replayed.
       const shellGlState = this.state; // Scissoring is shared with the existing held/foot replay safety switch.
       const hasShellScissorApi = !!(shellGlState?.scissor && shellGlState?.setScissorTest); // Reports unavailable scissor support distinctly from an unsafe bound.
       const scissored = replayScissorEnabled && hasShellScissorApi
@@ -1871,14 +1900,14 @@
       }
       // Avoid drawing these shells once under normal ground depth and again in
       // the selective replay. The replay redraws their complete visible shell.
-      const hiddenXrayShells = hideObjects(xrayMeshes); // Avoid a normal-depth shell draw before the selective replay.
+      const hiddenXrayShells = hideObjects(xrayGroupMeshes); // Regular-depth shells draw once; true x-ray shells are replayed with their local floor filter.
       let shellResult; // Return value of the ordinary shell pass, excluding x-ray participants.
       try {
         shellResult = originalRender.call(this, scene, camera);
       } finally {
         restoreVisibility(hiddenXrayShells);
       }
-      replayShellOutlineXray(this, scene, camera, xrayMeshes, ground, topFaceGround, scissored, groups, shellPadding);
+      replayShellOutlineXray(this, scene, camera, xrayGroupMeshes, ground, topFaceGround, scissored, groups, shellPadding);
       return shellResult;
     }
     if (!enabled || !isBaseWorldPass(scene, camera)) return originalRender.call(this, scene, camera);
