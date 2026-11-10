@@ -129,7 +129,7 @@ const stableControllerContext = vm.createContext({
   clearGroups() {},
   setFocus: node => { stablePageFocused = node.dataset.stableRole; },
 });
-vm.runInContext(stableCycleSource + '\\nthis.cycleStablePage = cycleTabs', stableControllerContext);
+vm.runInContext(stableCycleSource + '\nthis.cycleStablePage = cycleTabs', stableControllerContext);
 stableControllerContext.cycleStablePage(1);
 assert.equal(activeStableRole, 'mount', 'controller Next selects the Mounts page through its actual button');
 assert.equal(stablePageFocused, 'mount', 'focus returns to the newly rendered role-page button');
