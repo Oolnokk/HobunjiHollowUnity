@@ -69,8 +69,12 @@ function buildContext() {
   };
   context.Combat = {
     loadout: { getSlot: () => 'tap2' },
-    quickAttackData: { TECHNIQUES: { tap2: { condKey: 'behind', label: 'Test Quick Attack' } } },
-    getQuickAttackConditions: (deps, target) => ({ behind: true }),
+    quickAttackData: { TECHNIQUES: { tap2: { condKey: 'behind', label: 'Test Quick Attack' } },
+      getReachProfile: deps => ({ reachPx: deps.TILE * 6 }) }, // Pure combat-geometry seam: a six-tile forward semicircle.
+    getQuickAttackConditions: (deps, target) => {
+      context.Combat.quickAttackData.lastConditionCheck = { targetId: target.id }; // The gameplay evaluator's mobile diagnostic.
+      return { behind: true };
+    },
     deps: {
       currentWeaponKey: () => null,
       camera: null,
@@ -103,25 +107,45 @@ function hostile(id, x, extra = {}) {
   };
 }
 const near = hostile('near', 32);
+const forward = hostile('forward', 32 * 3); // Additional candidate within the forward half-moon.
 const far = hostile('far', 32 * 40); // Far outside any Quick Attack reach.
-const behindPlayer = hostile('behind-player', -32 * 6); // Opposite the aim direction.
+const behindPlayer = hostile('behind-player', -32 * 4); // Within radial range but behind the aim direction.
 deps.player = { x: 0, y: 0, angle: 0 };
 deps.TILE = 32;
 deps.getCurrentArea = () => 'test';
 deps.getHeldMode = () => 'tool';
 deps.getActiveTool = () => 'weapon';
 deps.camera = { projectionMatrix: {}, matrixWorldInverse: {}, quaternion: null };
-deps.hostileObjects = [far, near, behindPlayer];
+deps.hostileObjects = [far, near, behindPlayer, forward];
 let meleeHitCalls = 0;
-context.Combat.meleeHit = () => { meleeHitCalls++; return false; }; // Reach/aim must not gate the cue at all.
+context.Combat.meleeHit = () => { meleeHitCalls++; return false; }; // Half-moon uses a cheap dot test, never the expensive melee collider.
 context.WorldPopupText.avatarCentroidWorld = root => ({ x: root.id === 'offscreen' ? 999 : 0, y: 1, z: 0 });
 
 assert.doesNotThrow(() => scheduledFrame({ timestamp: 1016 }), 'the scheduled callback runs the readiness/reticle logic');
 let snap = context.QuickAttackBonusIndicator.snapshot();
 assert.equal(snap.visible, true, 'a met condition shows the reticle when driven by the scheduler');
-assert.equal(snap.visibleCount, 3, 'every hostile in view with the condition met gets its own reticle');
-assert.deepEqual([...snap.visibleTargetIds], ['near', 'behind-player', 'far'], 'nearest first, regardless of reach or aim direction');
-assert.equal(meleeHitCalls, 0, 'the opportunity cue never consults the Quick Attack reach/aim collider');
+assert.equal(snap.visibleCount, 2, 'only nearby hostiles in the forward-facing half-moon get a reticle');
+assert.deepEqual([...snap.visibleTargetIds], ['near', 'forward'], 'far and rear hostiles are excluded before expensive work');
+assert.equal(snap.reachPx, 192, 'snapshot reports the maximum modified lunge + cone reach');
+assert.equal(snap.checkedConditions, 2, 'only qualifying nearby targets have their conditions evaluated');
+assert.equal(context.Combat.quickAttackData.lastConditionCheck.targetId, 'near', 'nearest hostile retains diagnostic focus despite nearest-first condition checks');
+assert.equal(meleeHitCalls, 0, 'the opportunity cue uses simple spatial culling instead of melee collider tests');
+
+// The half-moon rotates with the player's current facing and never locks onto
+// a rear enemy just because its bonus condition is satisfied.
+deps.hostileObjects = [near, behindPlayer];
+deps.player.angle = Math.PI;
+scheduledFrame({ timestamp: 1017 });
+assert.deepEqual([...context.QuickAttackBonusIndicator.snapshot().visibleTargetIds], ['behind-player'], 'turning around rotates the half-moon');
+deps.player.angle = 0;
+deps.getPlayerMeleeAimDirection = () => ({ x: -1, y: 0, z: 0 }); // Camera aim wins over the actor's lagging facing.
+scheduledFrame({ timestamp: 1017.5 });
+assert.deepEqual([...context.QuickAttackBonusIndicator.snapshot().visibleTargetIds], ['behind-player'], 'camera-authored melee aim determines the half-moon');
+deps.getPlayerMeleeAimDirection = () => ({ x: 0, y: 1, z: 0 }); // Vertical aim falls back to the player's horizontal angle.
+scheduledFrame({ timestamp: 1017.7 });
+assert.deepEqual([...context.QuickAttackBonusIndicator.snapshot().visibleTargetIds], ['near'], 'vertical camera aim uses the player-facing fallback');
+delete deps.getPlayerMeleeAimDirection;
+deps.hostileObjects = [far, near, behindPlayer, forward];
 assert.equal(context.QuickAttackBonusIndicator.getReadyState().target, near, 'diagnostics focus the nearest cued hostile');
 
 // A second script load must not replace the owner of already-attached cues.
@@ -131,29 +155,29 @@ assert.equal(context.QuickAttackBonusIndicator, originalIndicator, 'repeated loa
 assert.equal(registered.get('quick-attack-bonus-indicator').fn, scheduledFrame, 'repeated loads retain the existing cleanup callback');
 near.health = 0;
 scheduledFrame({ timestamp: 1018 });
-assert.deepEqual([...context.QuickAttackBonusIndicator.snapshot().visibleTargetIds], ['behind-player', 'far'], 'one death removes only that NPC cue and preserves surviving targets');
-assert.equal(scene.children.size, 10, 'one death detaches all five of its layers');
-for (const target of [near, far, behindPlayer]) target.health = 0;
+assert.deepEqual([...context.QuickAttackBonusIndicator.snapshot().visibleTargetIds], ['forward'], 'one death removes only that NPC cue and preserves surviving nearby targets');
+assert.equal(scene.children.size, 5, 'one death detaches all five of its layers');
+for (const target of [near, far, behindPlayer, forward]) target.health = 0;
 registered.get('quick-attack-bonus-indicator').fn({ timestamp: 1020 });
 assert.equal(context.QuickAttackBonusIndicator.snapshot().visibleCount, 0, 'ordinary deaths clear every readiness cue');
 assert.equal(scene.children.size, 0, 'ordinary deaths detach the main sprite and every glow, including after a repeated load');
-for (const target of [near, far, behindPlayer]) target.health = 10;
+for (const target of [near, far, behindPlayer, forward]) target.health = 10;
 scheduledFrame({ timestamp: 1024 });
-assert.equal(scene.children.size, 15, 'pooled cues return with exactly five layers per living target');
-deps.hostileObjects = [far, behindPlayer];
+assert.equal(scene.children.size, 10, 'pooled nearby cues return with five layers each');
+deps.hostileObjects = [far, behindPlayer, forward];
 scheduledFrame({ timestamp: 1026 });
-assert.equal(scene.children.size, 10, 'removing a living target from the active collection also removes all its cue layers');
+assert.equal(scene.children.size, 5, 'removing a living nearby target detaches only its own cue layers');
 assert.equal(context.QuickAttackBonusIndicator.snapshot().visibleTargetIds.includes('near'), false, 'removed targets are no longer retained by the indicator');
-deps.hostileObjects = [near, far, behindPlayer];
+deps.hostileObjects = [near, far, behindPlayer, forward];
 scheduledFrame({ timestamp: 1028 });
-assert.equal(scene.children.size, 15, 'returning targets reuse pooled layers without leaving duplicates');
+assert.equal(scene.children.size, 10, 'returning targets reuse pooled layers without leaving duplicates');
 assert.doesNotMatch(fs.readFileSync('docs/js/input-settings-panel.js', 'utf8'), /['"]js\/combat\/quick-attack-bonus-indicator\.js(?:\?[^'"]*)?['"]/, 'Settings must not reload the parser-owned indicator');
 
 // Per-target conditions: only hostiles whose own condition is met are cued.
 context.Combat.getQuickAttackConditions = (_, target) => ({ behind: target !== near });
 scheduledFrame({ timestamp: 1032 });
 snap = context.QuickAttackBonusIndicator.snapshot();
-assert.deepEqual([...snap.visibleTargetIds].sort(), ['behind-player', 'far'], 'a hostile whose condition ends loses only its own reticle');
+assert.deepEqual([...snap.visibleTargetIds], ['forward'], 'a nearby hostile whose condition ends loses only its own reticle');
 context.Combat.getQuickAttackConditions = () => ({ behind: true });
 
 // Field of view: an anchor outside the camera frustum is not cued.
@@ -195,12 +219,16 @@ near.health = 0;
 assert.equal(context.QuickAttackBonusIndicator.getReadyState().ready, false, 'dead targets cannot show an opening');
 near.health = 10;
 
-// Many cued hostiles: bounded to the nearest twelve.
+// Many cued hostiles: enlarged modified reach still caps active sprites and
+// condition tests at twelve, even with twenty hostiles in the forward semicircle.
+context.Combat.quickAttackData.getReachProfile = deps => ({ reachPx: deps.TILE * 30 });
 deps.hostileObjects = Array.from({ length: 20 }, (_, i) => hostile('crowd' + i, 32 * (i + 1)));
 scheduledFrame({ timestamp: 1080 });
 snap = context.QuickAttackBonusIndicator.snapshot();
 assert.equal(snap.visibleCount, 12, 'reticles are capped');
+assert.equal(snap.checkedConditions, 12, 'the ready-target cap also bounds expensive condition evaluations');
 assert.ok(snap.visibleTargetIds.includes('crowd0') && !snap.visibleTargetIds.includes('crowd19'), 'the cap keeps the nearest hostiles');
+context.Combat.quickAttackData.getReachProfile = deps => ({ reachPx: deps.TILE * 6 });
 deps.hostileObjects = [near];
 
 const neighbour = hostile('neighbour', 64);

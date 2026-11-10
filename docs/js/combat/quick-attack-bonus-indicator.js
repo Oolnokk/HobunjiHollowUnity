@@ -1,10 +1,10 @@
 // Quick-attack bonus-ready cue — renders an affliction-colored opportunity
-// reticle over EVERY hostile in the camera's view on which the equipped Quick
-// Attack's bonus condition is currently met (and that enemy's own bonus
-// cooldown has run out).
-// It is independent of reach and aim: it announces openings across the field,
-// while the melee HUD's centered reticle (js/combat/melee-hud-reticle.js)
-// separately shows whether the aimed enemy is in Quick Attack range.
+// reticle over nearby hostiles whose equipped Quick Attack's bonus condition
+// is met (and whose per-target bonus cooldown has expired).
+// A cue appears within the attack's maximum lunge + hit-cone length, including
+// mastery, perk, weapon-shape, and enchantment modifiers, in the forward-facing
+// half-disc of the player's current aim. It marks nearby openings, not an exact
+// collision or line-of-sight prediction.
 //
 // Readiness comes from Combat.getQuickAttackConditions() — the exact evaluator
 // used by the attack itself — while affliction glow colors come from the same
@@ -40,7 +40,9 @@
   const spareSights = []; // Released reticles reused for the next cued target instead of rebuilding materials.
   let face = null; // One procedural (or authored) reticle texture shared by every sight.
   let frameSerial = 0; // Marks sights touched this frame; untouched ones are released.
-  let lastTarget = null; // Nearest cued (else nearest visible) hostile, for diagnostics.
+  let lastTarget = null; // Nearest cued (else nearest in-reach) hostile, for diagnostics.
+  let lastReachPx = 0; // Maximum current Quick Attack range shown in mobile debug and snapshot.
+  let lastCheckedConditions = 0; // Number of condition evaluations on the most recent frame.
   let lastFrameMs = performance.now(); // Used to make glow-layer lag frame-rate independent.
   let debugBadge = null; // Used only when the optional mobile URL debug readout is enabled.
   let debugEnabled = debugEnabledFromUrl(); // Used to make diagnostics accessible on mobile without devtools.
@@ -109,57 +111,77 @@
     return Math.abs(targetY - playerY) <= SAME_ELEVATION_MAX_DELTA;
   }
 
-  // Every live, attackable hostile in this area, at the player's elevation, whose
-  // body is inside the camera's view, nearest first. Same eligibility as Quick Attack strike
-  // resolution (deps.hostileObjects in the current area), without any reach
-  // or aim requirement.
-  function visibleCandidates(deps) {
+  // Filter by the attack's actual upper-bound reach BEFORE reading terrain,
+  // traversing avatar graphs, calculating world centroids or testing the frustum.
+  // The forward-facing half-moon excludes targets behind the player's
+  // current attack direction without paying for any 3D geometry checks.
+  function visibleCandidates(deps, reachPx) {
+    if (!(reachPx > 0) || !Number.isFinite(reachPx)) return [];
     const area = deps.getCurrentArea?.();
-    const frustum = cameraFrustum(deps.camera);
     const px = Number(deps.player?.x) || 0, py = Number(deps.player?.y) || 0;
-    const out = [];
+    const aim = deps.getPlayerMeleeAimDirection?.(); // The camera-authored lunge follows this direction, even when the character's stored facing differs.
+    const ax = Number(aim?.x) || 0, ay = Number(aim?.z) || 0; // The melee aim is a THREE world vector; world z maps to the gameplay y plane.
+    const aimLength = Math.hypot(ax, ay); // Horizontal magnitude; a vertical look uses the player's facing as a safe fallback.
+    const fallbackAngle = Number(deps.player?.angle) || 0; // Used when camera aim is not yet initialized or points straight up/down.
+    const facingX = aimLength > 0.0001 ? ax / aimLength : Math.cos(fallbackAngle);
+    const facingY = aimLength > 0.0001 ? ay / aimLength : Math.sin(fallbackAngle); // Reused for cheap half-moon checks against every hostile.
+    const reachSq = reachPx * reachPx; // Squared-radius rejection avoids sqrt/THREE work for remote enemies.
+    const out = []; // In-range, onscreen candidates sorted nearest first.
+    let frustum; // Created lazily only when a candidate survives the cheap radius checks.
     for (const target of deps.hostileObjects || []) {
       if (!target || !(target.health > 0) || (area && target.areaId !== area)) continue;
       if (target.isCompanion || target._denHidden || target._grehlrBurrowProtected) continue;
+      const dx = (Number(target.x) || 0) - px, dy = (Number(target.y) || 0) - py; // World-plane separation in gameplay pixels.
+      const distanceSq = dx * dx + dy * dy; // Shared for the radius rejection and nearest-first ordering.
+      if (distanceSq > reachSq || dx * facingX + dy * facingY < 0) continue; // Forward semicircle; no cues behind the character.
       if (!sameElevationAsPlayer(deps, target)) continue;
       const root = targetRoot(target);
       const scene = root && shownScene(target, root);
       if (!scene) continue;
-      const anchor = window.WorldPopupText.avatarCentroidWorld(root); // Same body centroid ordinary world popups use.
+      const anchor = window.WorldPopupText.avatarCentroidWorld(root); // Only nearby, shown avatars need their matrix/centroid updated.
       if (!anchor) continue;
+      if (frustum === undefined) frustum = cameraFrustum(deps.camera); // Avoid a camera matrix multiply when nothing is near enough.
       if (frustum) {
         const metrics = resolveVisualMetrics(root);
         viewSphere.center.copy(anchor);
         viewSphere.radius = Math.max(metrics.width, metrics.height) * 0.5;
         if (!frustum.intersectsSphere(viewSphere)) continue;
       }
-      out.push({ target, root, scene, anchor, distance: Math.hypot((Number(target.x) || 0) - px, (Number(target.y) || 0) - py) });
+      out.push({ target, root, scene, anchor, distanceSq });
     }
-    out.sort((a, b) => a.distance - b.distance);
+    out.sort((a, b) => a.distanceSq - b.distanceSq);
     return out;
   }
 
   function getReadyState() {
     const deps = window.Combat.deps;
     const equipped = currentQuickAttack();
-    const state = { deps, equipped, target: null, root: null, ready: false, conditionReady: false, conditions: null, cooldownRemainingS: 0, targets: [], readyTargets: [] };
+    const state = { deps, equipped, reachPx: 0, checkedConditions: 0, target: null, root: null, ready: false, conditionReady: false, conditions: null, cooldownRemainingS: 0, targets: [], readyTargets: [] };
     if (!deps || !equipped || cueSuppressed(deps)) return state;
+    const profile = window.Combat.quickAttackData?.getReachProfile?.(deps, equipped.attackId); // Pure live-attack geometry; do not call prepare() here (Living Gust spends Footing).
+    state.reachPx = Math.max(0, Number(profile?.reachPx) || 0);
+    if (!(state.reachPx > 0)) return state;
     const cooldownRemaining = window.Combat.quickAttackData?.bonusEffectCooldownRemaining; // Per-enemy clock started when that enemy last received the bonus.
     const condKey = equipped.definition.condKey;
-    const candidates = visibleCandidates(deps);
-    // Farthest first, so the shared evaluator's lastConditionCheck diagnostics
-    // end the frame describing the nearest hostile.
-    for (let i = candidates.length - 1; i >= 0; i--) {
-      const entry = candidates[i];
-      entry.conditions = getConditions(deps, entry.target); // Same public evaluator used at actual strike resolution.
+    const candidates = visibleCandidates(deps, state.reachPx);
+    // Closest first lets busy fights stop evaluating conditions once the
+    // maximum number of useful cues is reached. Off-range enemies never pay
+    // for condition checks, terrain lookup, avatar transforms or glow sprites.
+    let nearestConditionCheck = null; // Preserve the original nearest-hostile diagnostic despite our cheap nearest-first iteration.
+    for (const entry of candidates) {
+      entry.conditions = getConditions(deps, entry.target); // Exactly the condition evaluator used at actual strike resolution.
+      state.checkedConditions++;
+      if (state.checkedConditions === 1) nearestConditionCheck = window.Combat.quickAttackData?.lastConditionCheck;
       entry.conditionReady = !!entry.conditions[condKey];
       entry.cooldownRemainingS = cooldownRemaining?.(entry.target) || 0;
-      entry.ready = entry.conditionReady && entry.cooldownRemainingS <= 0; // The cue means "a Quick Attack landing on this enemy now gets the bonus".
+      entry.ready = entry.conditionReady && entry.cooldownRemainingS <= 0;
+      if (entry.ready) state.readyTargets.push(entry);
+      if (state.readyTargets.length >= MAX_RETICLES) break;
     }
+    if (nearestConditionCheck) window.Combat.quickAttackData.lastConditionCheck = nearestConditionCheck; // Keep mobile diagnostics focused on the closest inspected enemy.
     state.targets = candidates;
-    for (const entry of candidates) if (entry.ready && state.readyTargets.length < MAX_RETICLES) state.readyTargets.push(entry);
     const focus = state.readyTargets[0] || candidates.find(entry => entry.conditionReady) || candidates[0] || null;
-    if (focus) Object.assign(state, { target: focus.target, root: focus.root, conditions: focus.conditions, conditionReady: focus.conditionReady, cooldownRemainingS: focus.cooldownRemainingS });
+    if (focus) Object.assign(state, { target: focus.target, root: focus.root, conditions: focus.conditions, conditionReady: !!focus.conditionReady, cooldownRemainingS: focus.cooldownRemainingS || 0 });
     state.ready = state.readyTargets.length > 0;
     return state;
   }
@@ -496,6 +518,8 @@
   function syncReadyTargets(nowMs = performance.now()) {
     const state = getReadyState(); // Evaluated once per animation frame and shared by every sight and the debug readout.
     lastTarget = state.target;
+    lastReachPx = state.reachPx;
+    lastCheckedConditions = state.checkedConditions;
     frameSerial++;
     const dt = Math.min(0.08, Math.max(0, (nowMs - lastFrameMs) / 1000));
     if (state.readyTargets.length || sights.size) drawProceduralReticle(nowMs);
@@ -562,7 +586,8 @@
     badge.style.display = 'block';
     badge.textContent = [
       `Quick: ${state.equipped?.definition?.label || 'none'} (${state.equipped?.attackId || '-'})`,
-      `In view: ${state.targets?.length || 0} hostile(s), cued: ${state.readyTargets?.length || 0}`,
+      `In reach: ${state.targets?.length || 0} hostile(s), cued: ${state.readyTargets?.length || 0} / checked: ${state.checkedConditions}`, 
+      `Max reach: ${(state.reachPx / (Number(state.deps?.TILE) || 1)).toFixed(2)} tiles (${state.reachPx.toFixed(1)} px)`,
       `Nearest: ${state.target?.def?.label || state.target?.name || (state.target ? 'hostile' : 'none')}`,
       `Bonus ready: ${state.ready ? 'YES' : 'no'}`,
       `Condition matched: ${state.conditionReady ? 'YES' : 'no'}`,
@@ -578,7 +603,7 @@
       `Popup root: ${state.root ? 'yes' : 'no'}`,
       `Frame error: ${lastFrameError || '-'}`,
       `Reticle texture: ${face?.authored ? OPPORTUNITY_TEXTURE_URL : 'procedural fallback'}`,
-      'Cue: one opportunity reticle per cued hostile in view',
+      'Cue: forward half-moon within lunge + cone range',
     ].join('\n');
   }
 
@@ -592,8 +617,10 @@
       updateDebugBadge(getReadyState());
     },
     snapshot: () => ({
-      latestChange: 'One cue owner survives repeated script loads so death cleanup removes every reticle and glow; confirmed bonus hits still briefly burst.',
+      latestChange: 'Quick Attack cues follow the melee camera aim half-moon within modified lunge + cone reach, with remote/rear culling before condition and 3D work.',
       targetId: lastTarget?.id || null,
+      reachPx: lastReachPx,
+      checkedConditions: lastCheckedConditions,
       visible: sights.size > 0,
       visibleCount: sights.size,
       visibleTargetIds: [...sights.keys()].map(target => target?.id || target?.name || null),
@@ -607,6 +634,6 @@
   window.RuntimeFrameScheduler.register(SCHEDULER_ID, scheduledFrame, {
     phase: 'pre-game', // Historically ran before gameLoop via independent RAF registration order; pre-game preserves that same ordering explicitly.
     owner: 'QuickAttackBonusIndicator',
-    description: 'Shows/hides a Quick Attack bonus-ready reticle over every cued hostile in view.',
+    description: 'Shows bonus-ready reticles only for hostiles within the equipped Quick Attack lunge + cone reach.',
   });
 })();
