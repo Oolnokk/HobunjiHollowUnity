@@ -233,10 +233,33 @@
         if (child.userData.sharedShingle&&!part.rockShape?.enabled) { child.castShadow = child.receiveShadow = true; return; } // Keeps the roofs' shared look unless this furniture explicitly requests stone.
         child.geometry = child.geometry.clone();
         if(part.rockShape?.enabled){const original=child.geometry;rockSourceGeometries.set(child,original.clone());child.geometry=createRockGeometry(original,part.rockShape,child.userData.rockSourceKey);original.dispose();if(child.isSkinnedMesh)convertedSkins.push(child);}
-        const color = material => {const result = material.clone(); result.color?.set(resolveColor(part, baseColor)); if (part.materialTexture) applyPartTexture(result, part); return result; }; // Existing per-part furniture texture/color pipeline.
+        const color = material => {
+          const result = material.clone();result.color?.set(resolveColor(part,baseColor));
+          if (part.statueUniformFinish===true) {
+            // GLB limbs and weapon meshes inherit the *same selected PNG*
+            // rather than sampling its dark outer border on each arbitrary UV.
+            result.map=null;result.color?.set(0xffffff);result.needsUpdate=true;
+          } else if(part.materialTexture)applyPartTexture(result,part);
+          return result;
+        }; // Existing GLB path is unchanged for ordinary non-statue furniture.
         child.material = part.rockShape?.enabled?makePartMaterial(rockMaterialPart(part),baseColor):Array.isArray(child.material) ? child.material.map(color) : color(child.material);
         child.castShadow = child.receiveShadow = true;
       });
+      if(part.statueUniformFinish===true) {
+        statueGlbTexture(part).then(texture=>{
+          if(mesh.userData.glbDisposed)return;
+          instance.traverse(child=>{
+            if(!child.isMesh)return;
+            for(const material of (Array.isArray(child.material)?child.material:[child.material])){
+              if(!material)continue;
+              material.map=texture;
+              material.color?.set(0xffffff);
+              material.needsUpdate=true;
+            }
+          });
+          mesh.userData.statueTextureReady=true;
+        }).catch(error=>{mesh.userData.statueTextureError=String(error.message||error);});
+      }
       for(const skin of convertedSkins){
         const stone=new THREE.Mesh(skin.geometry,skin.material); // Rigid furniture animation still targets the original wrapper; rocks need no missing skin vertex attributes.
         stone.name=skin.name;stone.position.copy(skin.position);stone.quaternion.copy(skin.quaternion);stone.scale.copy(skin.scale);stone.visible=skin.visible;
@@ -496,48 +519,118 @@
   // Statue authors preserve the NPC's alpha silhouette as a reusable furniture sprite.
   // The chosen furniture finish is shared with its GLB hands, feet and weapons;
   // individual pieces can be edited without baking the finish into their image.
-  const statueImages = new Map(); // URL -> decoded image promise; reused by all statue parts and rebuilds.
+  const statueImages = new Map(); // URL -> decoded image promise, reused for every instance's material finish.
+  const statueUniformTextures = new Map(); // Texture filename -> one cached, non-disposable tiled finish for GLB pieces.
   function statueImage(url) {
     if (!statueImages.has(url)) statueImages.set(url, new Promise((resolve, reject) => {
       const image = new Image();
       image.onload = () => resolve(image);
-      image.onerror = () => reject(new Error('Unable to load statue mask/material'));
+      image.onerror = () => reject(new Error('Unable to load statue image: ' + url.slice(0, 140)));
       image.src = url;
     }).catch(error => { statueImages.delete(url); throw error; }));
     return statueImages.get(url);
+  }
+  function statueFinishPath(part) {
+    const name = String(part.materialTexture || 'carved_smooth.png');
+    if (!/^[\w.-]+\.png$/i.test(name)) throw new Error('Unsupported statue material texture filename');
+    return (window.__hobunjiFurnitureAssetBase || 'assets/') + 'textures/' + name;
+  }
+  function fillStatueFinish(context, texture, width, height, tiles = 12) {
+    // The furniture material PNG can have very dark edges (e.g. carved_smooth).
+    // Reusing the *middle of that same image* inside each tile keeps a carved
+    // texture without stretching its outer dark frame across an entire statue.
+    const iw = texture.naturalWidth || texture.width;
+    const ih = texture.naturalHeight || texture.height;
+    const insetX = iw * .15, insetY = ih * .15;
+    const n = Math.max(1,Math.round(tiles)), cw = width / n, ch = height / n;
+    for (let row=0;row<n;row++) for(let col=0;col<n;col++) {
+      context.drawImage(texture, insetX,insetY,iw-2*insetX,ih-2*insetY,
+        col*cw,row*ch,cw,ch);
+    }
+  }
+  function paintedStatueCanvas(source, finish) {
+    const width = Math.max(1,source.naturalWidth || source.width);
+    const height = Math.max(1,source.naturalHeight || source.height);
+    const canvas = document.createElement('canvas'); canvas.width=width;canvas.height=height;
+    const context=canvas.getContext('2d',{willReadFrequently:true});
+    // Use the real NPC alpha silhouette and keep black ink outlines, exactly
+    // as the festival ancestor portraits do. Compositing with destination-in
+    // alone could produce an opaque rectangle on faulty source images.
+    const original=document.createElement('canvas');original.width=width;original.height=height;
+    const originalContext=original.getContext('2d',{willReadFrequently:true});
+    originalContext.drawImage(source,0,0,width,height);
+    const mask=originalContext.getImageData(0,0,width,height);
+    fillStatueFinish(context,finish,width,height);
+    const painted=context.getImageData(0,0,width,height);
+    let opaque=0,ink=0,bright=0;
+    for(let i=0;i<mask.data.length;i+=4){
+      const a=mask.data[i+3];
+      if(a<=8){painted.data[i+3]=0;continue;}
+      opaque++;
+      const isInk=mask.data[i]<=18&&mask.data[i+1]<=18&&mask.data[i+2]<=18;
+      if(isInk){
+        painted.data[i]=mask.data[i];painted.data[i+1]=mask.data[i+1];painted.data[i+2]=mask.data[i+2];ink++;
+      }else{
+        bright++;
+      }
+      painted.data[i+3]=a;
+    }
+    // Avoid rendering the exact black rectangles from the original broken
+    // preview when a missing NPC sprite or an unexpected opaque background
+    // causes a full-canvas mask.
+    if(!opaque || opaque>=width*height*.96 || !bright) {
+      throw new Error('Statue portrait mask is blank, all-black or rectangular; rebuild its NPC appearance');
+    }
+    context.putImageData(painted,0,0);
+    canvas.dataset && (canvas.dataset.statueInkPixels=String(ink));
+    return canvas;
+  }
+  function statueGlbTexture(part) {
+    const url=statueFinishPath(part);
+    if(!statueUniformTextures.has(url)) {
+      const pending=statueImage(url).then(image=>{
+        const canvas=document.createElement('canvas');canvas.width=canvas.height=256;
+        const context=canvas.getContext('2d');
+        fillStatueFinish(context,image,256,256,1);
+        const texture=new THREE.CanvasTexture(canvas);
+        texture.wrapS=texture.wrapT=THREE.RepeatWrapping;
+        if(THREE.sRGBEncoding)texture.encoding=THREE.sRGBEncoding;
+        texture.needsUpdate=true;
+        return texture;
+      }).catch(error=>{statueUniformTextures.delete(url);throw error;});
+      statueUniformTextures.set(url,pending);
+    }
+    return statueUniformTextures.get(url);
   }
   function applyStatueSpriteFinish(mesh, part) {
     if (!/^data:image\/(?:png|webp);base64,/i.test(part.statueMaskDataUrl || '')) {
       mesh.userData.statueTextureError = 'Missing or invalid statue alpha mask';
       return;
     }
-    const materialFile = String(part.materialTexture || 'carved_smooth.png');
-    if (!/^[\w.-]+\.png$/i.test(materialFile)) {
-      mesh.userData.statueTextureError = 'Unsupported furniture material texture';
-      return;
-    }
-    const textureUrl = (window.__hobunjiFurnitureAssetBase || 'assets/') + 'textures/' + materialFile;
-    const token = {}; // Guards async material/mask completion after a removed editor or game mesh.
+    let textureUrl;
+    try {textureUrl=statueFinishPath(part);}
+    catch(error){mesh.userData.statueTextureError=error.message;return;}
+    const token = {}; // Cancels late async finishes when an editor piece has been disposed/replaced.
     mesh.userData.statueFinishToken = token;
-    Promise.all([statueImage(part.statueMaskDataUrl), statueImage(textureUrl)]).then(([mask, finish]) => {
-      if (mesh.userData.statueFinishToken !== token || mesh.userData.glbDisposed) return;
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.min(2048, mask.naturalWidth || mask.width);
-      canvas.height = Math.min(2048, mask.naturalHeight || mask.height);
-      if (!canvas.width || !canvas.height) return;
-      const context = canvas.getContext('2d');
-      context.drawImage(finish, 0, 0, canvas.width, canvas.height);
-      context.globalCompositeOperation = 'destination-in';
-      context.drawImage(mask, 0, 0, canvas.width, canvas.height);
-      const tex = new THREE.CanvasTexture(canvas);
-      if (THREE.sRGBEncoding) tex.encoding = THREE.sRGBEncoding;
-      const material = mesh.material;
-      if (mesh.userData.statueOwnedTexture) mesh.userData.statueOwnedTexture.dispose();
-      mesh.userData.statueOwnedTexture = tex;
-      material.map = tex;
-      material.needsUpdate = true;
-      mesh.userData.statueTextureError = '';
-    }).catch(error => { mesh.userData.statueTextureError = String(error.message || error); });
+    Promise.all([statueImage(part.statueMaskDataUrl),statueImage(textureUrl)]).then(([mask,finish])=>{
+      if(mesh.userData.statueFinishToken!==token||mesh.userData.glbDisposed)return;
+      const canvas=paintedStatueCanvas(mask,finish);
+      const tex=new THREE.CanvasTexture(canvas);
+      if(THREE.sRGBEncoding)tex.encoding=THREE.sRGBEncoding;
+      tex.needsUpdate=true;
+      if(mesh.userData.statueOwnedTexture)mesh.userData.statueOwnedTexture.dispose();
+      mesh.userData.statueOwnedTexture=tex;
+      mesh.material.map=tex;
+      mesh.material.color.set(0xffffff);
+      mesh.material.needsUpdate=true;
+      mesh.userData.statueTextureError='';
+      mesh.userData.statueTextureReady=true; // Mobile diagnostics distinguish pending vs failed silhouette paint.
+    }).catch(error=>{
+      if(mesh.userData.statueFinishToken!==token)return;
+      mesh.userData.statueTextureError=String(error.message||error);
+      // Do not show a misleading opaque rectangle if its source cannot be painted.
+      mesh.visible=false;
+    });
   }
 
   function buildPartMesh(part, baseColor) {
