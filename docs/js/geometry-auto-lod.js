@@ -187,7 +187,8 @@
       queue.push(entry);
       counters.submitted++;
     }
-    if (entry.status === 'budget' && queue.length < MAX_PENDING_GEOMETRIES) {
+    if (entry.status === 'budget' && queue.length < MAX_PENDING_GEOMETRIES &&
+      activeGeometries < MAX_CACHED_GEOMETRIES && activeSourceBudget + entry.triangles <= MAX_CACHED_SOURCE_TRIANGLES) {
       entry.status = 'pending'; // Retry when an abandoned zone releases GPU budget.
       queue.push(entry);
     }
@@ -334,8 +335,11 @@
     if (!enabled) return;
     const actual = root.__hobunjiGameRenderer;
     if (actual) { wrapRenderer(actual); return; }
-    if (bootRetries++ < 90) root.setTimeout?.(attachWhenReady, 400);
-    else { counters.lastError = 'Gameplay renderer not available; reload the game to retry.'; status(); }
+    // The opening sequence can run longer than 36 seconds before the live
+    // world renderer exists. Keep polling slowly instead of giving up.
+    const delay = bootRetries++ < 90 ? 400 : 2000;
+    if (bootRetries === 90) status('Waiting for the gameplay renderer; the optimizer will attach when the game opens.');
+    root.setTimeout?.(attachWhenReady, delay);
   }
   function setEnabled(value) {
     enabled = !!value;
