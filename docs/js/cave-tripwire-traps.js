@@ -183,8 +183,12 @@
   }
 
   function suspend() {
+    if (lastTickMapId === null) return; // Overworld wildlife ticks are frequent; don't scan old caves every frame.
     lastTickMapId = null; // Returning to the same cave is a new entry, never a movement segment from the prior visit.
-    for (const record of records.values()) record.previous = null;
+    for (const record of records.values()) {
+      record.previous = null;
+      for (const entry of record.entries) entry.queuedDirection = 0; // An unfinished loading race must not spring after leaving and re-entering.
+    }
   }
 
   function tick(mapId, state, player, tileSize, dt, onTriggered) {
