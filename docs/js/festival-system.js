@@ -532,13 +532,22 @@
       const def = deps.getItemDefs()[key]; // Used to display a predictable label/icon and the actual targeted fortune before confirmation.
       const species = kind === 'offering' ? window.FestivalOfferingRitual?.releaseSpecies?.(key,def) : null;
       const lineages = species ? window.LivestockItemGenotypePersistence?.groupsFor?.(key,total) : null; // Unique genotypes never collapse into a generic baby stack.
-      const groups = lineages?.length ? lineages : [{ count:total, variant:null, genotype:null }];
-      const qualities = window.CookingSystem?.availableQualityEntries?.(key) || [];
-      return groups.flatMap(group => qualities.filter(entry=>entry.count>0)
-        .map(entry => ({key,stars:entry.stars,count:Math.min(entry.count,group.count),
-          label:def.label || key,icon:def.icon || '🎁',category:window.FestivalOfferingRitual?.statFor?.(key,def,species?'release':'burn') || null,
-          ...(lineages ? {variant:group.variant,species,traitSummary:offeringTraitSummary(species,group.genotype)} : {})}))
-        .filter(entry=>entry.count>0));
+      const qualities = window.CookingSystem?.availableQualityEntries?.(key) || []; // Star buckets are tracked per item key, not per inherited genotype.
+      const category=window.FestivalOfferingRitual?.statFor?.(key,def,species?'release':'burn') || null; // One category lookup serves all variants and qualities of this item.
+      if (lineages?.length) {
+        const preferred=window.CookingSystem?.peekLowestQuality?.(key); // One shared quality tier avoids fabricating a cross-product of stars × individual animals.
+        const available=qualities.find(entry=>entry.stars===preferred && entry.count>0)
+          || [...qualities].reverse().find(entry=>entry.count>0); // The ordinary lowest-first policy protects higher-quality items.
+        if (!available) return [];
+        return lineages.filter(group=>group.count>0).map(group=>({
+          key,stars:available.stars,count:group.count,label:def.label || key,icon:def.icon || '🎁',category,
+          variant:group.variant,species,traitSummary:offeringTraitSummary(species,group.genotype),
+          sharedQuality:true, // Explains that item-key quality metadata cannot prove a particular baby's star tier.
+        })); // Exactly one choice per saved genotype: never the Cartesian product of variants and unrelated star buckets.
+      }
+      return qualities.filter(entry=>entry.count>0).map(entry=>({
+        key,stars:entry.stars,count:entry.count,label:def.label || key,icon:def.icon || '🎁',category,
+      }));
     });
   }
   function offeringVariant(key, variant) {
