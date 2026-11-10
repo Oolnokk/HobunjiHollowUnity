@@ -154,7 +154,7 @@
        js/wild-berries.js also read from it via their own init() calls
        further down game.js. Doesn't touch the DOM (see player-vitals.js's
        comment above and the plan notes on that bug class). -->
-  <script src="js/item-processing.js?v=20261107mushtardReview2"></script>
+  <script src="js/item-processing.js?v=20261109craftHours1"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js?v=20261107h4ad2a3b"></script>
@@ -169,8 +169,8 @@
   <script src="js/metal-armor-system.js?v=20261104hPatternQuick1435a"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
   <script src="config/attachment-rig-profiles.js?v=20261109nohuknuk1"></script>
-  <link rel="stylesheet" href="style.css?v=20261107rewardReadout1">
-  <link rel="stylesheet" href="cooking-ui.css?v=20261009mobiletarget3">
+  <link rel="stylesheet" href="style.css?v=20261109craftHours1">
+  <link rel="stylesheet" href="cooking-ui.css?v=20261109craftHours1">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
   <link rel="stylesheet" href="gameplay-ui-theme.css?v=20261025fontpolicy2">
@@ -430,15 +430,15 @@
   <script src="js/combat/specialized-combat-trinket-hooks.js?v=20261106trinkets20"></script>
   <script src="js/combat/double-edged-combat-trinkets.js?v=20261106trinkets20"></script>
   <script src="js/cooking-data.js?v=20261107mushtardReview2"></script>
-  <script src="js/food-processing.js?v=20261015hc6ddbcf"></script>
-  <script src="js/cooking-system.js?v=20261109rarityaudit4"></script>
+  <script src="js/food-processing.js?v=20261109craftHours1"></script>
+  <script src="js/cooking-system.js?v=20261109craftHours1"></script>
   <script src="js/key-item-system.js?v=20260918banubu1"></script>
   <!-- Alchemy (reagent/effect defs, potion brewing, shared timed effects) —
        window.AlchemySystem. Self-contained aside from deps injected via
        init(), so load order relative to the other systems above doesn't
        matter; must load before game.js, which calls
        window.AlchemySystem.init(...) during its own setup. -->
-  <script src="js/alchemy-system.js?v=20261106h3b90df7"></script>
+  <script src="js/alchemy-system.js?v=20261109craftHours1"></script>
   <!-- Banubu's Tea Grinder delegates trait legality/targeting to AlchemySystem
        but outputs cooking Tea Blends, so it must load after both systems. -->
   <script src="js/tea-grinder.js?v=20261019h0edeaef"></script>
@@ -1800,6 +1800,7 @@
         </div>
         <div class="menu-section alchemy-cauldron-section">
           <div class="menu-section-title">Cauldron</div>
+          <div id="alchemyFavorites" class="alchemy-favorites"></div>
           <div id="alchemySelectedStrip" class="alch-selected-strip"></div>
           <div id="alchemyEffectPreview" class="alch-effect-preview"></div>
           <button id="alchemyBrewBtn" class="shop-buy-btn alch-brew-btn" onclick="window._doBrewPotion?.()" disabled>⚗️ Brew Potion</button>
