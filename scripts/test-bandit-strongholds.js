@@ -277,6 +277,13 @@ async function testPhysicalBarrels() {
     ] },
   };
   const scene = new Group();
+  const lane=strongholds.chargeLaneForMap(map);
+  assert(lane?.placements?.length>=4,'at least four authentic low/high timber barricades flank the charged route');
+  for(const p of lane.placements){
+    const dx=p.col-lane.entry.col, dz=p.row-lane.entry.row;
+    const crossDistance=Math.abs(dx*lane.lateral.x+dz*lane.lateral.z);
+    assert(crossDistance>=1.7,'barricades leave a physical empty charge lane at least one tile to either side');
+  }
   const count = strongholds.buildInteriorProps(mapId,map,scene);
   assert(count>0,'barrel visuals coexist with existing material-matched cover');
   await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
