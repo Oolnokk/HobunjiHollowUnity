@@ -139,6 +139,13 @@ async function run(){
     }))}));
     assert.ok(pahu.built,'Pahu statue should construct: '+JSON.stringify(pahu));
     const pahuHead=pahu.pieces.find(piece=>piece.id==='statue_head');
+    const inkSurfaces=pahu.pieces.filter(piece=>piece.id==='statue_head'||piece.id==='statue_body');
+    const cells=inkSurfaces.reduce((total,piece)=>total+(piece.surfaceCells||0),0);
+    assert.ok(cells>2,'Pahu must show separate textures inside its black-outlined areas, not one flat brown surface: '+JSON.stringify(inkSurfaces));
+    assert.ok(inkSurfaces.some(piece=>piece.surfaceCellStats?.inkPixels>15),
+      'The statue must preserve original black cell outlines: '+JSON.stringify(inkSurfaces));
+    assert.ok(inkSurfaces.every(piece=>piece.material?.surfaceShadeBins>=3&&piece.material?.surfaceShadeRange>20),
+      'Per-cell material must retain both darker perimeter and lighter interior: '+JSON.stringify(inkSurfaces));
     assert.ok(pahuHead?.textureReady&&!pahuHead?.textureError,'Pahu head and cosmetics should render');
     assert.ok(pahuHead.material?.coverage>.02,'Pahu head must have a visible silhouette');
     const pahuBody=pahu.pieces.find(piece=>piece.id==='statue_body');
@@ -171,7 +178,7 @@ async function run(){
     assert.ok(pixels.brown>3500,
       'Pahu body/head must actually be visible (not merely textured off-camera): '+JSON.stringify({pixels,rig:pahu.sourceRig,body:pahuBody,head:pahuHead}));
     console.log('PASS Pahu head-and-cosmetics statue: '+JSON.stringify({
-      head:pahuHead.material,selected:options[pahuIndex],pixels,rig:pahu.sourceRig,
+      head:pahuHead.material,cells,selected:options[pahuIndex],pixels,rig:pahu.sourceRig,
       pieceBounds:pahu.pieces.map(p=>({id:p.id,worldSize:p.worldSize,visible:p.visible,screenCenter:p.screenCenter})),
       screenshot:'artifacts/statue-pahu.png'
     }));
