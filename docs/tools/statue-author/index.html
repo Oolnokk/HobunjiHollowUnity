@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hobunji Statue Author</title>
+<style>
+:root{color-scheme:dark;font:14px system-ui,sans-serif;background:#101722;color:#e5edf8}
+*{box-sizing:border-box}body{margin:0}header{padding:12px 16px;background:#1a2938;border-bottom:1px solid #41546a}h1{font-size:19px;margin:0 0 4px}h2{font-size:15px;margin:0 0 10px}
+main{display:grid;grid-template-columns:minmax(260px,350px) minmax(300px,1fr);height:calc(100dvh - 70px)}
+aside{overflow-y:auto;padding:14px;display:grid;align-content:start;gap:13px;border-right:1px solid #405168}
+section{background:#1b2837;border:1px solid #374b62;border-radius:10px;padding:12px}
+label{display:block;margin:8px 0 5px;color:#d1deee}
+input,select,button,textarea{font:inherit;border-radius:6px;border:1px solid #526780;color:#f4f7fc;background:#101e2d;padding:8px;width:100%}
+input[type=checkbox]{width:auto}button{cursor:pointer;background:#275878}button:disabled{opacity:.45;cursor:not-allowed}
+button.primary{background:#1d806c}.buttons{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+#viewport{position:relative;min-height:300px;overflow:hidden}#viewport canvas{display:block;width:100%;height:100%;touch-action:none}
+#status{position:absolute;left:12px;bottom:12px;right:12px;padding:10px;border-radius:7px;background:#13202de8;max-height:38%;overflow:auto;white-space:pre-wrap}
+small{display:block;color:#b2c6da;line-height:1.4;margin:7px 0}a{color:#9edafa}.row{display:flex;align-items:center;gap:8px}.row label{margin:0}
+@media(max-width:730px){main{display:block;height:auto}aside{max-height:none;border-right:0}#viewport{height:60vh;min-height:360px}}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="../../config/scratchbones-config.js"></script>
+<script src="../../config/hand-model-profiles.js"></script>
+<script src="../../js/color-fill.js"></script>
+<script src="../../js/portrait-utils.js"></script>
+<script src="../../js/portrait-breathing.js"></script>
+<script src="../../js/npc-avatar-preview-utils.js"></script>
+<script>window.__hobunjiFurnitureAssetBase='../../assets/';</script>
+<script src="../../js/procedural-furniture.js"></script>
+</head>
+<body>
+<header><h1>🗿 Statue Author</h1><small>NPC appearance + frozen Attack Animation Editor pose → editable Furniture Editor pieces, all using the same chosen texture.</small></header>
+<main>
+<aside>
+<section>
+<h2>1 · Character</h2>
+<label for="npcSelect">Repository NPC</label><select id="npcSelect"><option value="">Loading NPCs…</option></select>
+<label for="npcFile">Or import a Character Studio NPC export (.json)</label><input id="npcFile" type="file" accept=".json,application/json">
+<small>The source portrait retains clothing, age, species and cosmetics. No living NPC or animation loop is created.</small>
+</section>
+<section>
+<h2>2 · Frozen pose</h2>
+<label for="animationFile">Import Attack Animation Editor export</label><input id="animationFile" type="file" accept=".json,application/json">
+<label for="phase">Key pose to freeze</label><select id="phase"><option value="neutral">Neutral</option><option value="windup">Windup</option><option value="strike">Strike</option></select>
+<small>Body yaw/sink, weapon XYZ/rotation, and free-hand channels are taken from the chosen authored key pose. Limbs remain individually editable furniture parts.</small>
+</section>
+<section>
+<h2>3 · Material and equipment</h2>
+<label for="materialPreset">Uniform statue finish</label>
+<select id="materialPreset"><option value="carved_smooth.png">Carved smooth</option><option value="boards.png">Boards / wood</option><option value="other">Custom repository texture…</option></select>
+<label for="materialFile">Material PNG (assets/textures/)</label><input id="materialFile" value="carved_smooth.png" spellcheck="false">
+<label for="materialRole">Material classification</label><select id="materialRole"><option value="stone">Stone</option><option value="wood">Wood</option><option value="metal">Metal</option><option value="other">Other</option></select>
+<label for="weaponPaths">Weapon PNG layers (assets/toolsprites/, one per line)</label><textarea id="weaponPaths" rows="3" placeholder="assets/toolsprites/harlyao_longsword.png"></textarea>
+<small>Leave weapon paths empty for unarmed statues. For modular weapons supply each visible sprite layer; every layer becomes its own child piece and shares the finish.</small>
+</section>
+<section>
+<h2>4 · Assemble and export</h2>
+<label for="statueName">Furniture name / key</label><input id="statueName" value="Authored Ancestor Statue">
+<button id="build" class="primary">Build statue pieces</button>
+<div class="buttons" style="margin-top:8px"><button id="send" disabled>Send to Furniture Editor</button><button id="download" disabled>Download furniture JSON</button></div>
+<small>Open from the Tools Hub to send directly to its Furniture Editor tab. JSON can also be imported using the Furniture Editor’s existing Import JSON controls. The pieces retain editable parent links; detach any piece without losing its world position.</small>
+</section>
+</aside>
+<div id="viewport"><div id="status">Choose an NPC, material and pose, then Build statue pieces.</div></div>
+</main>
+<script>
+(function(){
+'use strict';
+const $=id=>document.getElementById(id); // Single control lookup for the Statue Author.
+const records=[]; // Repository NPC source list; never mutated by pose authoring.
+let selectedRecord=null; // Imported Character Studio record, if one is loaded.
+let animation=null; // Imported attack animation with Neutral, Windup and Strike.
+let exportProject=null; // Latest furniture-author-compatible JSON.
+let statueGroup=null; // Currently previewed static furniture group, disposed on rebuild.
+let generation=0; // Cancels stale portrait builds when a mobile user selects another NPC.
+const status=message=>{$('status').textContent=message;}; // Visible debug/status; no console needed.
+const transform=(x=0,y=0,z=0,rx=0,ry=0,rz=0,sx=1,sy=1,sz=1)=>({x,y,z,rx,ry,rz,sx,sy,sz});
+const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
+const num=(value,fallback=0)=>Number.isFinite(Number(value))?Number(value):fallback;
+const safeName=value=>String(value||'statue').trim().replace(/[^a-zA-Z0-9_-]+/g,'_').slice(0,70);
+const clone=value=>JSON.parse(JSON.stringify(value));
+const transparentCanvas=(w,h)=>{const c=document.createElement('canvas');c.width=w;c.height=h;return c;};
+async function readJsonFile(file){if(!file)return null;return JSON.parse(await file.text());}
+async function loadNpcs(){
+  try{
+    const response=await fetch('../../config/npcs/hobunji-starter-npc-database.json');
+    if(!response.ok)throw Error('NPC database HTTP '+response.status);
+    const data=await response.json();
+    records.push(...(Array.isArray(data)?data:Array.isArray(data.npcs)?data.npcs:[]).filter(n=>n.appearance));
+    $('npcSelect').replaceChildren(new Option('Choose an NPC',''),...records.map((npc,index)=>new Option(npc.name||npc.id||('NPC '+index),String(index))));
+    status('Loaded '+records.length+' NPC appearances. Import an animation JSON to use an authored attack pose.');
+  }catch(error){status('NPC database unavailable: '+error.message+'. You can still import a Character Studio NPC export.');}
+}
+function maskBounds(canvas){
+  const ctx=canvas.getContext('2d',{willReadFrequently:true}),w=canvas.width,h=canvas.height;
+  const pixels=ctx.getImageData(0,0,w,h).data;
+  let left=w,top=h,right=-1,bottom=-1;
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++)if(pixels[(y*w+x)*4+3]>8){
+    left=Math.min(left,x);right=Math.max(right,x);top=Math.min(top,y);bottom=Math.max(bottom,y);
+  }
+  return right<left?null:{x:left,y:top,w:right-left+1,h:bottom-top+1};
+}
+function maskedPart(source,rectangle,remove=null){
+  const out=transparentCanvas(rectangle.w,rectangle.h),ctx=out.getContext('2d');
+  ctx.drawImage(source,rectangle.x,rectangle.y,rectangle.w,rectangle.h,0,0,rectangle.w,rectangle.h);
+  if(remove){
+    ctx.globalCompositeOperation='destination-out';
+    ctx.drawImage(remove,-rectangle.x,-rectangle.y);
+  }
+  return out.toDataURL('image/png');
+}
+function sprite(id,name,mask,finish,role,pose,parentId=null){
+  return {id,name,kind:'statueSprite',parentPartId:parentId,statueMaskDataUrl:mask,
+    materialTexture:finish,materialRole:role,color:'#ffffff',surfaceOpacity:1,
+    transform:pose,wonkiness:0,topScaleX:1,topScaleZ:1,bottomScaleX:1,bottomScaleZ:1};
+}
+function glb(id,name,path,finish,role,pose,parentId){
+  return {id,name,kind:'glb',parentPartId:parentId,modelPath:path,materialTexture:finish,
+    materialRole:role,color:'#ffffff',surfaceOpacity:1,transform:pose};
+}
+function limbPaths(species){
+  const hands=window.HobunjiHandModelProfiles,model=hands?.modelForSpecies?.(species);
+  const cfg=window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet;
+  const foot=cfg?.species?.[species]?.glb;
+  return {hand:model?.glb||'assets/models/hands/hand_feline.glb',foot:foot||'assets/models/feet/foot_feline.glb'};
+}
+function makeStaticParts(front,head,profile,pose,finish,role,paths,weaponMasks){
+  const w=front.width,h=front.height;
+  let bounds=maskBounds(head);
+  if(!bounds){
+    bounds={x:Math.round(w*.25),y:0,w:Math.round(w*.5),h:Math.round(h*.32)};
+  }
+  const full={x:0,y:0,w,h},bodyMask=maskedPart(front,full,head),headMask=maskedPart(front,bounds);
+  const size=.9,drop=clamp(num(pose.bodySink),0,25)*size/100;
+  const bodyYaw=clamp(num(pose.bodyYaw),-360,360);
+  const p=[
+    sprite('statue_body','Body and clothing',bodyMask,finish,role,transform(0,.45-drop,0,0,bodyYaw,0,size,size,.02)),
+    sprite('statue_head','Head, hair and face',headMask,finish,role,transform(((bounds.x+bounds.w/2)/w-.5)*size,
+      (.5-(bounds.y+bounds.h/2)/h)*size,.015,0,-bodyYaw,0,bounds.w/w*size,bounds.h/h*size,.02),'statue_body')
+  ];
+  const limb=limbPaths(profile.fighter?.speciesId||profile.speciesId||'mao-ao');
+  const holderX=.29+num(pose.x)*.18,holderY=.04+num(pose.y)*.16,holderZ=.04+num(pose.z)*.18;
+  const free=pose.rightHand?.enabled===true?pose.rightHand:null;
+  p.push(glb('statue_right_hand','Right hand',limb.hand,finish,role,
+    transform(holderX,holderY,holderZ,
+      num(free?.pitch,num(pose.pitch))*1,num(free?.yaw,num(pose.yaw)),num(free?.roll,num(pose.roll)),.14,.15,.15),'statue_body'));
+  p.push(glb('statue_left_hand','Left hand',limb.hand,finish,role,
+    transform(-.29,.03,.04,0,0,-12,.14,.15,.15),'statue_body'));
+  p.push(glb('statue_left_foot','Left foot',limb.foot,finish,role,
+    transform(-.16,-.41+drop,.03,0,0,0,.18,.14,.25),'statue_body'));
+  p.push(glb('statue_right_foot','Right foot',limb.foot,finish,role,
+    transform(.16,-.41+drop,.03,0,0,0,.18,.14,.25),'statue_body'));
+  for(let i=0;i<weaponMasks.length;i++){
+    const entry=weaponMasks[i];
+    p.push(sprite('statue_weapon_'+i,'Weapon '+(i+1)+' — '+entry.path.split('/').pop(),entry.mask,finish,role,
+      transform(i?0:0,i?0:-.22,i?.018:.015,i?0:num(pose.pitch),i?0:num(pose.yaw),
+        i?0:num(pose.roll),.37,.37*entry.aspect,.02),i?'statue_weapon_0':'statue_right_hand'));
+  }
+  return p;
+}
+async function imageForUrl(url) {
+  return new Promise((resolve,reject)=>{const image=new Image();image.onload=()=>resolve(image);image.onerror=()=>reject(Error('Could not load '+url));image.src=url;});
+}
+async function weaponsFromInput(){
+  const paths=$('weaponPaths').value.split(/\r?\n/).map(p=>p.trim()).filter(Boolean);
+  if(paths.length>12)throw Error('Maximum 12 weapon sprite layers per statue');
+  const result=[];
+  for(const path of paths){
+    if(!/^assets\/toolsprites\/[\w./ -]+\.png$/i.test(path)||path.includes('..'))throw Error('Use valid assets/toolsprites/*.png paths');
+    const img=await imageForUrl('../../'+path);
+    const original=transparentCanvas(img.naturalWidth||img.width,img.naturalHeight||img.height);
+    original.getContext('2d').drawImage(img,0,0);
+    const b=maskBounds(original);
+    if(!b)throw Error('Weapon image is entirely transparent: '+path);
+    result.push({path,mask:maskedPart(original,b),aspect:b.h/b.w});
+  }
+  return result;
+}
+async function makeProject(){
+  const myGeneration=++generation;
+  const npc=selectedRecord||records[Number($('npcSelect').value)];
+  if(!npc?.appearance)throw Error('Choose an NPC with an authored appearance first');
+  const filename=$('materialFile').value.trim();
+  if(!/^[a-zA-Z0-9_.-]+\.png$/.test(filename))throw Error('Enter a PNG filename under assets/textures/');
+  const name=$('statueName').value.trim()||'Authored Statue';
+  const role=$('materialRole').value,phase=$('phase').value;
+  const pose=animation?.poses?.[phase]||{};
+  await window.NpcAvatarPreview.ensurePortraitCosmetics({assetBase:'../../assets/',configBase:'../../config/'});
+  const profile=window.NpcAvatarPreview.buildProfileFromNpcExport(npc);
+  if(!profile)throw Error('NPC appearance could not be rendered');
+  const front=transparentCanvas(256,256),head=transparentCanvas(256,256);
+  await window.NpcAvatarPreview.renderProfileToCanvas(front,profile,{forceEyesOpen:true,breathingComposer:null});
+  await window.NpcAvatarPreview.renderProfileToCanvas(head,profile,{onlyHeadSprite:true,forceEyesOpen:true,breathingComposer:null});
+  const weapons=await weaponsFromInput();
+  if(myGeneration!==generation)return null;
+  const parts=makeStaticParts(front,head,profile,pose,filename,role,null,weapons);
+  // The runtime schema is also accepted by Furniture Author's existing JSON import.
+  return {schema:'hobunji_furniture_surface_author.v58',key:safeName(name).toLowerCase(),id:safeName(name),
+    name,notes:'Generated with Statue Author from NPC '+(npc.name||npc.id||'unknown')+' / pose '+phase,
+    statueSource:{npcId:npc.id||null,animationName:animation?.name||null,phase,materialFile:filename,materialRole:role},
+    tileBase:{visible:true,tileSize:1,footprintW:1,footprintD:1,y:0,gridOpacity:.55},
+    surfaceRecognition:{splitAngleDeg:24,colorCode:false,selectSurfaces:true,multiSelect:true},parts,
+    avatar:{visible:false}};
+}
+function teardown(){
+  if(!statueGroup)return;
+  statueGroup.traverse(object=>{if(object.geometry)object.geometry.dispose();
+    if(object.material){for(const material of (Array.isArray(object.material)?object.material:[object.material])) {
+      if(material?.map&&!material.map.userData?.sharedFurnitureTexture)material.map.dispose();
+      material?.dispose();
+    }}});
+  scene.remove(statueGroup);statueGroup=null;
+}
+function display(project){
+  teardown();
+  statueGroup=new THREE.Group();statueGroup.name='Statue furniture pieces';scene.add(statueGroup);
+  const map=new Map();
+  for(const piece of project.parts){
+    const mesh=window.ProceduralFurniture.buildPartMesh(piece,0xffffff);
+    mesh.userData.statuePieceId=piece.id;statueGroup.add(mesh);map.set(piece.id,mesh);
+  }
+  for(const piece of project.parts){
+    const child=map.get(piece.id),parent=map.get(piece.parentPartId);
+    if(child&&parent&&child!==parent)parent.add(child);
+  }
+  status('Built '+project.parts.length+' editable pieces: NPC '+(project.statueSource.npcId||'imported')+
+    '\nPose: '+project.statueSource.phase+
+    '\nShared texture: '+project.statueSource.materialFile+
+    '\nWeapon layers: '+project.parts.filter(p=>p.id.startsWith('statue_weapon_')).length+
+    '\nThe Furniture Editor can adjust or detach each child piece.');
+}
+function downloadJson(project){
+  const blob=new Blob([JSON.stringify(project,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob),anchor=document.createElement('a');
+  anchor.href=url;anchor.download=safeName(project.name)+'.json';anchor.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+$('npcSelect').onchange=()=>{selectedRecord=null;};
+$('npcFile').onchange=async event=>{
+  try{
+    const raw=await readJsonFile(event.target.files?.[0]);
+    const npc=raw?.appearance?raw:raw?.npc?.appearance?raw.npc:null;
+    if(!npc)throw Error('Expected NPC export with an appearance object');
+    selectedRecord=npc;
+    status('Imported NPC '+(npc.name||npc.id||'unnamed')+'.');
+  }catch(error){status('NPC import failed: '+error.message);}
+  event.target.value='';
+};
+$('animationFile').onchange=async event=>{
+  try{
+    const raw=await readJsonFile(event.target.files?.[0]);
+    const value=raw?.animation?.poses?raw.animation:raw;
+    if(!value?.poses||!['neutral','windup','strike'].some(k=>value.poses[k]))throw Error('Expected Attack Animation Editor poses');
+    animation=value;status('Loaded '+(animation.name||'attack animation')+'. Choose a phase and build.');
+  }catch(error){status('Pose import failed: '+error.message);}
+  event.target.value='';
+};
+$('materialPreset').onchange=()=>{
+  if($('materialPreset').value!=='other')$('materialFile').value=$('materialPreset').value;
+  $('materialRole').value=$('materialPreset').value==='boards.png'?'wood':'stone';
+};
+$('build').onclick=async()=>{
+  $('build').disabled=true;status('Rendering NPC appearance and statue layers…');
+  try{
+    exportProject=await makeProject();
+    if(exportProject){display(exportProject);$('send').disabled=false;$('download').disabled=false;}
+  }catch(error){exportProject=null;$('send').disabled=true;$('download').disabled=true;status('Build failed: '+(error?.stack||error));}
+  finally{$('build').disabled=false;}
+};
+$('download').onclick=()=>{if(exportProject)downloadJson(exportProject);};
+$('send').onclick=()=>{
+  if(!exportProject)return;
+  try{
+    const tab=window.parent.document.querySelector('[data-target="furniture-avatar-author"]');
+    const frame=window.parent.document.getElementById('if-furniture-avatar-author');
+    if(!frame?.contentWindow?.HobunjiFurnitureStatueImport)throw Error('Furniture Editor iframe not loaded. Open its tab once, then try again.');
+    frame.contentWindow.HobunjiFurnitureStatueImport(clone(exportProject));
+    tab?.click();
+    status('Sent '+exportProject.parts.length+' statue pieces to Furniture Editor.');
+  }catch(error){status('Direct transfer unavailable: '+error.message+'\nUse Download furniture JSON and Furniture Editor → Import JSON instead.');}
+};
+let scene=null,camera=null,renderer=null,controls=null;
+function initPreview(){
+  if(!window.THREE||!THREE.OrbitControls||!window.ProceduralFurniture){
+    status('3D dependencies unavailable. Portrait/furniture JSON export may still work.');return;
+  }
+  const host=$('viewport');
+  scene=new THREE.Scene();scene.background=new THREE.Color('#0d1824');
+  camera=new THREE.PerspectiveCamera(50,1,.03,100);camera.position.set(1.7,1.8,2.4);
+  renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
+  host.insertBefore(renderer.domElement,$('status'));
+  controls=new THREE.OrbitControls(camera,renderer.domElement);controls.target.set(0,.5,0);controls.update();
+  scene.add(new THREE.HemisphereLight(0xffffff,0x354050,2.2));
+  const light=new THREE.DirectionalLight(0xffffff,1.6);light.position.set(2,5,4);scene.add(light);
+  scene.add(new THREE.GridHelper(4,8));
+  const resize=()=>{const w=Math.max(1,host.clientWidth),h=Math.max(1,host.clientHeight);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();};
+  new ResizeObserver(resize).observe(host);resize();
+  (function draw(){requestAnimationFrame(draw);controls.update();renderer.render(scene,camera);})();
+}
+window.addEventListener('error',event=>status('Error: '+event.message));
+window.addEventListener('unhandledrejection',event=>status('Error: '+String(event.reason)));
+initPreview();loadNpcs();
+})();
+</script>
+</body>
+</html>
