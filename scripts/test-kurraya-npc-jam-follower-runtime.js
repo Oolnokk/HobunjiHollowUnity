@@ -95,7 +95,7 @@ assert.equal(context.follower(),null,'no NPC time remains after closing the foll
 assert.equal(state.tonicMidi,36,'the original solo tonic is restored');
 assert.equal(state.scaleName,'Major','the original solo note set is restored');
 assert.deepEqual(Array.from(state.kurrayaSongIntroSteps),baseIntro,'solo authored intro bars are restored');
-assert.equal(bridge.getState().bpm,104,'solo HUD returns to the original independent BPM');
+assert.equal(bridge.getState().bpm,96,'solo HUD reports the actual free-play harmony BPM, not the songbook BPM');
 assert.equal(visualRefreshes>=2,true,'jam start and stop refresh the harmony HUD');
 state.ambientOnly=true;state.game.active=true;
 state.game.songType='when-the-kininjis-bloom';
