@@ -54,6 +54,8 @@ function categories(file) {
   if (/^\.github\/workflows\/(regression-suite|smoke-dev-random-ruin-full)\.yml$/.test(file)) return ['all'];
   if (file === 'docs/index.html' || file === 'docs/game.js') return ['all'];
   if (/^scripts\/(?:test-|smoke-|verify-|run-tests\.js|check-cache-busts\.js)/.test(file)) return ['test-only'];
+  if (/^docs\/tools\/portrait-spline-author\//.test(file)) return ['portrait_spline'];
+  if (/^docs\/js\/portrait-spline-/.test(file)) return ['portrait_spline'];
   if (/^docs\/tools\/debris-ifier\//.test(file)) return ['ruin'];
   if (/^docs\/config\/furniture-authored\/ruinPillarBridge\.json$/.test(file)) return ['ruin'];
   if (!file.startsWith('docs/js/')) return ['all'];
