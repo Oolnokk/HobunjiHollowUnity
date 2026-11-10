@@ -518,6 +518,7 @@
 
   function nurseryScrollRegion(section) {
     if (!section) return null;
+    if (section.querySelector('.nursery-grid-stack')) return null; // Inventory-style Nursery paging owns its grid; never reinstall the retired nested-scroll class.
     const existing = section.querySelector('.' + NURSERY_SCROLL_CLASS);
     if (existing) return existing;
     const candidate = [...section.children].find(child => [...child.children].some(grandchild => grandchild.tagName === 'BUTTON'));
