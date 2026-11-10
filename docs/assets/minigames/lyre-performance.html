@@ -2900,6 +2900,7 @@
   }
 
   function playMetronomeClick(beatData = 0, force = false, whenMs = null) {
+    if (jamLeaderSync && !force && !state.ambientOnly) return; // The NPC already sounds this beat; spare a duplicate click/footstep voice and Web Audio node.
     // An ambient NPC performance (state.game.loopDemo — see startAmbientLead)
     // always keeps its footstep-sample beat regardless of the player's own
     // auditory-metronome preference: that toggle is a practice aid for the
