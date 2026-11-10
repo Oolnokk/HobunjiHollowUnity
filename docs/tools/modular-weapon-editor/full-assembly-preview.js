@@ -115,6 +115,21 @@
       width:alpha.w*sx,frame:size,corners}; // Raster chain keeps its own authentic width, crop, and angled authoring endpoints.
   }
 
+  function headVisual(head) {
+    const authored = head.visualTransform; // Pair-specific head correction, never the shaft's rope scale.
+    if (!authored) return null;
+    const num = (key, fallback) => Number.isFinite(Number(authored[key])) ? Number(authored[key]) : fallback;
+    const angle = num('rotation', 0) * Math.PI / 180;
+    return { scaleX: num('scaleX',1)*(authored.flipX ? -1 : 1),
+      scaleY: num('scaleY',1)*(authored.flipY ? -1 : 1),
+      x: num('x',0), y: num('y',0), angle }; // Same local X-right/Y-down convention as the shared modular pair controls.
+  }
+  function visualPoint(point, visual) {
+    if (!visual) return { ...point };
+    const x=point.x*visual.scaleX, y=point.y*visual.scaleY;
+    return {x:Math.cos(visual.angle)*x-Math.sin(visual.angle)*y,
+      y:Math.sin(visual.angle)*x+Math.cos(visual.angle)*y}; // Match the live Three.js visual group with the Y-axis inverted there.
+  }
   function layout(recipe, composed, ropeImage, headImages) {
     if (!recipe?.flail || !composed) throw new Error('Complete flail recipe and composed shaft are required');
     const flail = recipe.flail, chain = flail.chain, head = flail.head;
@@ -132,12 +147,20 @@
     const end = {x:start.x,y:start.y+rope.reach}; // Same gravity-down rest direction as the live pendulum.
     const scale = Math.max(.05,Math.min(8,number(head.scale,1)));
     const contact = authoredContact(head,layers); // Includes per-layer offset for non-composite anchors.
-    const center = {x:end.x-scale*contact.x,y:end.y-scale*contact.y};
+    const visual = headVisual(head); // Source-file visual corrections for this exact haft/head pair.
+    const shiftedContact = visualPoint(contact,visual);
+    const headContact = {x:end.x+scale*(visual?.x||0),y:end.y+scale*(visual?.y||0)}; // X/Y are visual nudges, independent of rope physics.
+    const center = {x:headContact.x-scale*shiftedContact.x,y:headContact.y-scale*shiftedContact.y};
     const parts = layers.map(({image,layer})=>{
       const size=pixelSize(image);
-      return {image,layer, x:center.x+scale*(number(layer.offsetPx?.x)-size.width/2),
-        y:center.y+scale*(number(layer.offsetPx?.y)-size.height/2),
-        width:size.width*scale,height:size.height*scale};
+      const local={x:number(layer.offsetPx?.x)-size.width/2,y:number(layer.offsetPx?.y)-size.height/2};
+      const corners=[
+        {x:local.x,y:local.y},{x:local.x+size.width,y:local.y},
+        {x:local.x,y:local.y+size.height},{x:local.x+size.width,y:local.y+size.height}
+      ].map(point => visualPoint(point,visual)).map(point=>({x:center.x+scale*point.x,y:center.y+scale*point.y}));
+      const x=Math.min(...corners.map(p=>p.x)),y=Math.min(...corners.map(p=>p.y));
+      return {image,layer,local,x,y,width:Math.max(...corners.map(p=>p.x))-x,
+        height:Math.max(...corners.map(p=>p.y))-y,corners}; // Rotated and mirrored corners prevent preview cropping.
     });
     const frame = composed.modularFrame || {left:0,top:0,width:450,height:1204};
     let left=frame.left,top=frame.top,right=frame.left+frame.width,bottom=frame.top+frame.height;
@@ -151,7 +174,7 @@
     right=Math.max(right,guideX+165); // Reserve room for full-size attachment labels on a phone.
     const padding=28, bounds={left:Math.floor(left-padding),top:Math.floor(top-padding),
       width:Math.ceil(right-left+2*padding),height:Math.ceil(bottom-top+2*padding)};
-    return {start,end,contact,center,parts,rope,guideX,bounds,frame,headScale:scale,
+    return {start,end,contact,headContact,center,visual,parts,rope,guideX,bounds,frame,headScale:scale,
       chain,head,recipe,composed,ropeImage}; // Pure plan is inspectable and testable without renderer/Three.js state.
   }
 
@@ -182,11 +205,19 @@
       ctx.save();ctx.translate(start.x,start.y);ctx.rotate(rope.angle);ctx.scale(rope.scaleX,rope.scaleY);
       ctx.drawImage(source,-rope.top.x,-rope.top.y);ctx.restore();
     }
-    for(const part of parts) ctx.drawImage(part.image,part.x,part.y,part.width,part.height); // Same center-relative layer offsets and source order as gameplay.
+    if(plan.visual) {
+      ctx.save();ctx.translate(plan.center.x,plan.center.y);ctx.rotate(plan.visual.angle);
+      ctx.scale(headScale*plan.visual.scaleX,headScale*plan.visual.scaleY); // Flip, anisotropic scale and rotation only the moving head.
+      for(const part of parts) ctx.drawImage(part.image,part.local.x,part.local.y);
+      ctx.restore();
+    } else for(const part of parts) ctx.drawImage(part.image,part.x,part.y,part.width,part.height); // Original multi-layer Tool Hub flail remains unchanged.
     if(showGuides) {
       const x=plan.guideX,st={x,y:start.y},en={x,y:end.y};
       line(ctx,start,st,'#f5c5ff',[5,4]);line(ctx,st,en,'#ed93ff',[12,6]);
       line(ctx,en,end,'#f5c5ff',[5,4]);dot(ctx,start,'#ffe39c',6);dot(ctx,end,'#72e6ff',6);
+      if(plan.headContact.x!==end.x||plan.headContact.y!==end.y){
+        line(ctx,end,plan.headContact,'#72e6ff',[3,4]);dot(ctx,plan.headContact,'#72e6ff',6);
+      } // A pair X/Y correction shows the real moved sprite contact separately from the rope endpoint.
       ctx.save();ctx.fillStyle='#ffe39c';ctx.font='bold 15px system-ui';ctx.textBaseline='bottom';
       ctx.fillText('SHAFT ANCHOR',x+10,st.y-6);
       ctx.fillStyle='#72e6ff';ctx.textBaseline='top';ctx.fillText('HEAD CONTACT',x+10,en.y+7);
@@ -196,8 +227,8 @@
     }
     ctx.restore();
     canvas.dataset.rigKind='flail'; // Mobile/browser tests can verify the actual full-assembly renderer ran.
-    return {reach:rope.reach,width:rope.width,headScale,anchor:start,headContact:end,
-      shaftFrame:frame,visibleBounds:bounds,layerCount:parts.length,guide:showGuides};
+    return {reach:rope.reach,width:rope.width,headScale,anchor:start,headContact:plan.headContact,
+      visualTransform:plan.visual,shaftFrame:frame,visibleBounds:bounds,layerCount:parts.length,guide:showGuides};
   }
 
   function renderRigid(canvas, composed, mounts=[], showGuides=true) {
