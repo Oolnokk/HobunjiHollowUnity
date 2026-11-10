@@ -1457,6 +1457,8 @@
     let nearest = null;
     for (const c of deps.hostileObjects) {
       if (c === exclude || (exclude && c.id != null && c.id === exclude.id) || c.health <= 0 || (c.areaId && c.areaId !== areaId) || c._denHidden) continue;
+      if(exclude?.banditStrongholdBoss && c.banditStrongholdBossWolf
+        && c.banditStrongholdBossId===exclude.id)continue; // Beastkeeper's crossbow bolts pass his own wolves, not other hostiles.
       const interval = segmentHitboxInterval(start, end, actorHitbox(c), projectileRadius);
       if (!interval || (nearest && interval.enter >= nearest.interval.enter)) continue;
       nearest = { creature: c, interval };

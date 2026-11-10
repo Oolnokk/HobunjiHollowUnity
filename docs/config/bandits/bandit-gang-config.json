@@ -166,6 +166,10 @@
     "maxTier": 3,
     "tierStatBonusPerTier": 0.12
   },
+  "fortifiedStrongholds": {
+    "_comment": "Fraction of existing eligible bandit camp slots converted into fortified cave entrances. Deterministic per zone/slot/Tothal; protected tribe and wildlife reservations still use the ordinary camp placement owner.",
+    "replacementFraction": 0.25
+  },
   "campLifecycle": {
     "_comment": "How many simultaneous camps a wilderness zone with bandit_camp locales can host, and camp-clearing state used by docs/js/temporary-locales.js release()/re-stamp.",
     "maxCampsPerZone": 2,

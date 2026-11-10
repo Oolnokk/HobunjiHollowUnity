@@ -470,6 +470,7 @@
     if (isPlayer) deps.damagePlayer(state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses, attacker: c });
     else if (window.CompanionOffense) window.CompanionOffense.damageCreature(deps.damageCreature, c, ref, state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses, attacker: c }); // Whistle/Sicced empowerment for player companions; wild attackers pass through unchanged.
     else deps.damageCreature(ref, state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
+    window.BanditStrongholdBoss?.onWolfPounce?.(c,ref,deps); // Preserve the newest native pounce hit code with the Lord's Footing/collateral hook.
     deps.playCreatureClawHit?.(c);
     return false; // hit landed; stop in place (update() lowers the hop)
   }

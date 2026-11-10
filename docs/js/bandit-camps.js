@@ -264,7 +264,7 @@
   function _banditZoneTents(zoneId) {
     const out = [];
     for (const rec of (_banditCampInstances.get(zoneId) || [])) {
-      for (const prop of rec.props) if (prop.type === 'tent') out.push(prop);
+      for (const prop of rec.props) if (prop.type === 'tent' || prop.strongholdStake && !prop.freed) out.push(prop); // Existing world focus can now target usable wolf stakes.
     }
     return out;
   }
@@ -332,8 +332,25 @@
           meshes.set(obj.id,{mesh,light:null,sfxSource:null,collisionTiles:[],propId:obj.id});
           window.CratePiles?.registerPile?.({id:obj.id,mapId:zoneId,scene:zi.scene,group:mesh,
             count:obj.crateCount??3,lootable:true,onChange:count=>{obj.crateCount=count;}});
+        } else if (obj.strongholdProp && window.ProceduralFurniture?.CATALOG?.[obj.key]) {
+          // The stronghold uses the furniture renderer directly: these authored-material
+          // recipes are camp props, not normal player-purchasable furniture definitions.
+          const mesh = window.ProceduralFurniture.buildFurnitureGroup(obj.key);
+          mesh.position.set(obj.x + .5, y, obj.y + .5);
+          mesh.rotation.y = (Number(obj.rotY) || 0) * Math.PI / 180;
+          deps.markOutline(mesh);
+          zi.scene.add(mesh);
+          const collisionTiles = ['fortifiedLowRail','fortifiedHighCover','fortifiedWatchtower'].includes(obj.key)
+            ? _applyBanditTentGridCollision(zoneId, obj) : []; // Existing pathfinding mask, restored on camp teardown.
+          meshes.set(obj.id, { mesh, light: null, sfxSource: null, collisionTiles, propId: obj.id });
+          if (obj.coverId) window.BanditStrongholdCover?.register?.({
+            scope:zoneId, saveMapId:rec.stronghold?.mapId, id:obj.coverId,
+            key:obj.key, mesh, col:obj.x, row:obj.y, y,
+            externalCollision:true, // BanditCamps owns its existing grid masks and tile-speed restore path.
+            onDestroyed:()=>{ obj.destroyed=true; removeBanditCampProp(zoneId,obj.id); },
+          });
         } else if (obj.key && window.ProceduralFurniture) {
-          const result = deps.makeDecorativeFurnitureMesh(obj.x, obj.y, obj.key, zi.scene, zoneId);
+          const result = deps.makeDecorativeFurnitureMesh(obj.x, obj.y, obj.key, zi.scene, zoneId, obj.rotY || 0);
           if (!result) continue;
           result.mesh.position.y += y;
           if (result.light) result.light.position.y += y;
@@ -412,9 +429,10 @@
   }
 
   function isBanditCampCleared(rec) {
+    if (rec?.stronghold && !window.CaveSiteSystem?.fortifiedStrongholdCleared?.(rec.stronghold.mapId)) return false; // Garrison, not burnt tents, owns fortress clearance.
     const view = _banditZoneViews.get(rec.zoneId);
     if (!view) return false;
-    if (window.TemporaryLocales.livingTents(view, rec.instance).length) return false;
+    if (!rec.stronghold && window.TemporaryLocales.livingTents(view, rec.instance).length) return false;
     for (const c of deps.hostileObjects) {
       if (c.banditCampInstanceId === rec.instance.id && c.health > 0) return false;
     }
@@ -763,11 +781,15 @@
     if (rec.zoneId !== deps.getCurrentArea()) return null;
     if ((rec.reserveByRank[rank] || 0) <= 0) return null;
     rec.reserveByRank[rank]--; // Claimed before the async avatar build: concurrent callers can never spawn past the camp's reserve.
-    const point = simpleHydraPoint(rec, exterior);
+    const point = rec.stronghold && exterior
+      ? { x: (rec.instance.site.x + (rec._strongholdGuardIndex++ % 2 ? rec.instance.site.w - 2 : 1) + .5) * deps.TILE,
+          y: (rec.instance.site.y + 1.5) * deps.TILE }
+      : simpleHydraPoint(rec, exterior); // Tower garrisons occupy the real lookouts, not tent reinforcement positions.
     let c = null;
     try {
       c = await spawnConfiguredBandit(rec, rank, point.x, point.y, {
         zoneId: rec.zoneId,
+        ...(rec.stronghold && exterior ? { defOverride: { rangedWeaponKey: 'crossbow' } } : {}),
         extra: {
           homeX: rec.homeX,
           homeY: rec.homeY,
@@ -803,6 +825,7 @@
     }
 
     for (const rec of recs) {
+      if (rec.stronghold) continue; // No Simple Hydra reinforcements or exterior captain in an inhabited cave fortress.
       if (!rec.activeRanksById) continue;
       let nonCaptainDeaths = 0;
       for (const [id, rank] of [...rec.activeRanksById]) {
@@ -973,6 +996,9 @@
     };
     tracked.push(rec);
     _banditCampInstances.set(zoneId, tracked);
+    rec._strongholdGuardIndex = 0; // Alternates lookout towers while staging the initial crossbow guards.
+    if (!pinThisCamp && window.BanditStrongholds?.shouldFortify?.(zoneId, discoverySlot, cfg))
+      window.BanditStrongholds.upgradeCamp(rec, deps); // Alternative to tents; never creates an extra camp or consumes a second site.
     ensureBanditCampMeshes(zoneId);
 
     const comp = cfg?.gangComposition || {};
@@ -986,7 +1012,7 @@
     rec.captainName = (pinThisCamp ? bountyPin.captainName : null)
       || window.BanditCombat.randomName?.('captain')
       || 'Bandit Captain';
-    const initialGuardCount = Math.min(3, rec.reserveByRank.grunt);
+    const initialGuardCount = Math.min(rec.stronghold ? 2 : 3, rec.reserveByRank.grunt);
     let initialGuards = 0;
     for (let i = 0; i < initialGuardCount; i++) {
       const guard = await spawnSimpleHydraBandit(rec, 'grunt', undefined, true);
@@ -995,6 +1021,7 @@
     if (!initialGuards) {
       window.__farmLog?.('[bandits] simple hydra: initial guards could not spawn.', 'warn');
     }
+    if (rec.stronghold) window.BanditStrongholdWolves?.ensureExterior?.(rec,deps); // Native gar-wolves and stretched chain visuals follow their fixed stakes.
     const total = grunts + flaskers + lieutenants + rec.reserveByRank.captain;
     window.__farmLog?.(
       '[bandits] zone "' + zoneId + '": camp ' + instance.id
@@ -1037,6 +1064,7 @@
       window.WildernessMap?.forgetDiscoveredThreat?.(rec.discoveryKey);
       for(const obj of rec.props||[])if(obj.key==='crateStack')window.CratePiles?.forgetPile?.(zoneId,obj.id);
       for (const id of rec.instance.stampedObjectIds) removeBanditCampProp(zoneId, id);
+      if (rec.stronghold) window.BanditStrongholds?.removeCamp?.(rec, deps, true); // Retire synthetic cave only when its parent locale is actually rerolled.
       window.TemporaryLocales.release(view, rec.instance);
       _syncBanditFlora(zoneId, rec.instance.removedObjectSnapshots, true);
       const idx = tracked.indexOf(rec);
@@ -1047,6 +1075,7 @@
   }
 
   function forgetZoneBanditState(zoneId) {
+    for(const rec of _banditCampInstances.get(zoneId)||[])if(rec.stronghold)window.BanditStrongholds?.removeCamp?.(rec,deps,false); // Unloading a zone must not erase the stronghold's saved interior.
     for(const rec of _banditCampInstances.get(zoneId)||[])for(const obj of rec.props||[])
       if(obj.key==='crateStack')window.CratePiles?.unregisterPile?.(zoneId,obj.id);
     _banditCampMeshes.delete(zoneId);
@@ -1077,6 +1106,8 @@
       return;
     }
     ensureBanditCampMeshes(zoneId);
+    for(const camp of _banditCampInstances.get(zoneId)||[])if(camp.stronghold)
+      window.BanditStrongholdWolves?.ensureExterior?.(camp,deps); // Failed or late native spawn can be retried on the normal zone ecology check.
     if (!reentered) return;
     const cleared = (_banditCampInstances.get(zoneId) || []).filter(isBanditCampCleared);
     if (!cleared.length) return;
@@ -1122,7 +1153,7 @@
 
   function banditTentRayHit(zoneId, obj, raycaster) {
     const root = _banditCampMeshes.get(zoneId)?.get(obj.id)?.mesh; // Registered tent render group, never a proximity-only proxy.
-    const surface = root?.children?.find(child => child.userData?.banditTentAimSurface); // The authored canvas mesh, excluding burn flames/outline children.
+    const surface = obj.strongholdStake ? root : root?.children?.find(child => child.userData?.banditTentAimSurface); // Stakes use their actual small timber/metal mesh; tents keep their authored canvas-only focus.
     if (!root?.visible || !surface?.visible) return null;
     root.updateWorldMatrix?.(true, true);
     return raycaster.intersectObject(surface, true)
@@ -1172,12 +1203,13 @@
       _lastTentFocus = { result: 'ray-missed', nearby: nearby.length, hasRay: true, hasFocusApi: true };
       return null;
     }
-    if (focus.candidate.data.burning || !(focus.candidate.data.interactable?.lootable || focus.candidate.data.interactable?.burnable)) {
+    if (focus.candidate.data.burning || !(focus.candidate.data.strongholdStake && !focus.candidate.data.freed ||
+        focus.candidate.data.interactable?.lootable || focus.candidate.data.interactable?.burnable)) {
       _lastTentFocus = { result: 'not-actionable', nearby: nearby.length, hasRay: true, hasFocusApi: true, tentId: focus.candidate.data.id };
       return null; // A burning/empty tent physically blocks a tent behind it; never aim through its canvas.
     }
     const hostile = window.RangedWeapons.focusedHostile?.(BANDIT_TENT_AIM_MAX_WORLD);
-    if (hostile && hostile.distanceWorld <= focus.distanceWorld + 0.05) {
+    if (hostile && !focus.candidate.data.strongholdStake && hostile.distanceWorld <= focus.distanceWorld + 0.05) { // Wolf enemies are tethered close to their stake; the precisely aimed stake still gets an interaction.
       _lastTentFocus = { result: 'nearer-hostile', nearby: nearby.length, hasRay: true, hasFocusApi: true };
       return null;
     }
@@ -1195,7 +1227,12 @@
     const zoneId = deps?.getCurrentArea?.();
     if (!(zoneId && deps.isZoneArea(zoneId))) return null;
     const tent = aimedBanditTent(zoneId);
-    if (!tent || !(tent.interactable?.lootable || tent.interactable?.burnable)) return null;
+    if (!tent || !(tent.strongholdStake || tent.interactable?.lootable || tent.interactable?.burnable)) return null;
+    if(tent.strongholdStake) return {
+      icon:'🔓', label:'Free Gar-Wolf', action:'bandit_tent_interact',style:'primary',
+      allowed:true,worldInteraction:true,
+      promptRoot:_banditCampMeshes.get(zoneId)?.get(tent.id)?.mesh || null,
+    }; // Reuses the tent's controller/touch aim and hold action.
     return {
       icon: tent.interactable?.lootable ? '🪙' : '🔥',
       label: tent.interactable?.lootable ? 'Loot Tent' : 'Burn Tent',
@@ -1250,6 +1287,8 @@
   }
 
   function updateBanditTentInteraction(dt) {
+    window.BanditStrongholdCover?.tick?.(deps?.getCurrentArea?.(),dt); // Same existing frame loop, with fire probes throttled inside Cover.
+    window.BanditStrongholdWolves?.tickExterior?.(deps?.getCurrentArea?.(),dt,deps); // Restrains/repositions only the few stake-bound wolves.
     updateBanditFireEffects(dt);
     updateSimpleHydra(dt);
     const zoneIdForBurn = deps.getCurrentArea();
@@ -1277,7 +1316,7 @@
       ? Number(tent.interactable.holdSeconds) : BANDIT_TENT_HOLD_S;
     _banditTentHoldT += dt;
     showTentActionHud(
-      looting ? 'Looting Tent...' : 'Burning Tent...',
+      tent.strongholdStake ? 'Freeing Gar-Wolf...' : (looting ? 'Looting Tent...' : 'Burning Tent...'),
       (_banditTentHoldT / holdS) * 100,
     );
     if (_banditTentHoldT < holdS) return;
@@ -1285,7 +1324,10 @@
     _banditTentHoldId = null;
     _banditTentHoldInterrupted = true; // One press performs one action; release before burning a tent you just looted.
     hideTentActionHud();
-    if (looting) lootBanditTent(zoneId, tent);
+    if (tent.strongholdStake) {
+      const camp=(_banditCampInstances.get(zoneId)||[]).find(rec=>rec.props.includes(tent));
+      if(camp)window.BanditStrongholdWolves?.freeStake?.(camp,tent,deps);
+    } else if (looting) lootBanditTent(zoneId, tent);
     else burnBanditTent(zoneId, tent);
   }
 
