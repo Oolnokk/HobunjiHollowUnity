@@ -2865,7 +2865,7 @@
         state.scheduledMetronomeBeat = beatBoundary.value;
       }
     }
-    if (!state.rootPadEnabled || HOSTED_FLUTE_PERFORMANCE) return; // A flute never has root-pad voices, so do not run an unused chord-boundary binary search.
+    if (!state.rootPadEnabled || HOSTED_FLUTE_PERFORMANCE || jamLeaderSync) return; // The NPC already plays the root accompaniment; avoid duplicate chord voices and their per-frame lookahead search.
     const padBoundary = findUpcomingTransportBoundary(rootPadAudioKey);
     if (padBoundary && state.scheduledRootPadKey !== padBoundary.value) {
       if (syncRootPad(!state.rootPadSampleBuffer, padBoundary.atMs, padBoundary.clock)) {
@@ -3140,7 +3140,7 @@
   }
 
   function syncRootPad(force = false, whenMs = null, clock = null) {
-    if (HOSTED_FLUTE_PERFORMANCE || !state.rootPadEnabled || state.paused || document.hidden) { // A solo flute cannot also play a pad chord.
+    if (HOSTED_FLUTE_PERFORMANCE || jamLeaderSync || !state.rootPadEnabled || state.paused || document.hidden) { // NPC-led jams already include the lead's root pad, and a solo flute is monophonic.
       if (state.rootPadVoices.length) stopRootPad(0.35);
       return false;
     }
@@ -7318,9 +7318,11 @@
       return;
     }
     scheduleTransportAudioAhead(); // Queues predictable beat/chord audio before the render frame reaches the boundary, matching automatic-note look-ahead.
-    const harmonyStep = currentHarmonyStep();
-    const padKey = rootPadAudioKey(); // Checks both measure and chord without forcing a new root sample on every render.
-    const beatData = currentHarmonyBeatData();
+    const clock = sharedTransportData(); // Reuse one sample for chord, pad and beat instead of calculating the transport three times each frame.
+    const harmonyStep = currentHarmonyStep(clock);
+    const padEnabledHere = state.rootPadEnabled && !HOSTED_FLUTE_PERFORMANCE && !jamLeaderSync; // Only the local solo Kurraya or NPC leader needs root-pad work.
+    const padKey = padEnabledHere ? rootPadAudioKey(clock) : null; // Jam followers and flute players avoid redundant per-frame root calculations.
+    const beatData = currentHarmonyBeatData(clock);
     const chordChanged = harmonyStep !== state.lastHarmonyStep;
     const beatChanged = beatData.absoluteBeat !== state.lastMetronomeBeat;
     if (chordChanged) {
@@ -7331,8 +7333,8 @@
     }
     if (padKey !== state.lastRootPadKey) {
       state.lastRootPadKey = padKey;
-      if (state.rootPadEnabled && state.scheduledRootPadKey !== padKey) syncRootPad(!state.rootPadSampleBuffer); // Startup/stall fallback when the look-ahead did not schedule the new bar.
-    } else if (state.rootPadEnabled && (state.rootPadSampleBuffer || state.rootPadRootMidi == null) && state.audioContext?.state === 'running' && !state.rootPadVoices.some(voice => !voice.stopping && voice.active !== false)) {
+      if (padEnabledHere && state.scheduledRootPadKey !== padKey) syncRootPad(!state.rootPadSampleBuffer); // Startup/stall fallback when the look-ahead did not schedule the new bar.
+    } else if (padEnabledHere && (state.rootPadSampleBuffer || state.rootPadRootMidi == null) && state.audioContext?.state === 'running' && !state.rootPadVoices.some(voice => !voice.stopping && voice.active !== false)) {
       syncRootPad(true); // Restores a failed/ended imported pad or an uninitialized pluck without endlessly retriggering ordinary short plucks mid-bar.
     }
     if (beatChanged) {
@@ -8074,6 +8076,7 @@
         previous.lastSyncAtMs = receivedAtMs;
         previous.lastDriftMs = driftMs;
       }
+      if (!previous) stopRootPad(0.18); // Drop an already-sounding local bass when the NPC takes over accompaniment.
       if (state.scaleName !== snapshot.scaleName) applyPerformanceScale(snapshot.scaleName,{persist:false});
       if (state.tonicMidi !== snapshot.tonicMidi) applyPerformanceTonic(snapshot.tonicMidi,{persist:false});
       const changedIntro = state.kurrayaSongIntroSteps.some((step,index) => step !== snapshot.introSteps[index]);
@@ -8178,21 +8181,27 @@
       return this.gameplayMenuState();
     },
     getState() {
-      const effectiveBpm = Number(state.bpm) || 104;
       const bridgeNow = nowMs();
+      const clock = sharedTransportData(bridgeNow); // One coherent transport sample drives the returned beat, chord step and jam state.
+      const followingNpc = Boolean(jamLeaderSync && !state.game.active);
+      const effectiveBpm = followingNpc ? clock.bpm : Number(state.bpm) || 104; // Public state must describe the audible NPC clock during a jam.
       const songMeasureBeats = state.game.backupAccompaniment && state.game.active ? Math.max(1,Number(state.game.timeSignature?.[0]) || 4) : 4;
-      const measureDurationMs = songMeasureBeats * 60000 / effectiveBpm; // Backup freeplay follows the lead song's actual silent-chord measure clock.
-      const harmonyElapsedMs = state.game.backupAccompaniment
+      const measureDurationMs = followingNpc
+        ? clock.meter.measureQuarterBeats * clock.quarterBeatMs
+        : songMeasureBeats * 60000 / effectiveBpm;
+      const harmonyElapsedMs = followingNpc ? clock.harmonyQuarterBeatFloat * clock.quarterBeatMs : state.game.backupAccompaniment
         ? Math.max(0,gameTime() - (Number(state.game.countInMs) || 0))
         : Math.max(0, bridgeNow - state.harmonyStartTime);
+      const measureIndex = followingNpc ? clock.mixedPhase.absoluteChord : Math.floor(harmonyElapsedMs / measureDurationMs);
+      const measurePhaseMs = followingNpc ? clock.mixedPhase.quarterBeatIntoChord * clock.quarterBeatMs : harmonyElapsedMs % measureDurationMs;
       const heldFrets = [...state.frettedSources.values()]; // Physical note holds only; the short automatic release tail does not count as suspense holding.
       const oldestHeldAt = heldFrets.reduce((oldest, fret) => Math.min(oldest, Number(fret?.pressedAt) || bridgeNow), bridgeNow);
       const heldAutomaticNote = state.pluckInputMode !== 'direct' && heldFrets.length > 0;
       return {
         bpm: effectiveBpm,
         measureDurationMs,
-        measureIndex: Math.floor(harmonyElapsedMs / measureDurationMs),
-        measurePhaseMs: harmonyElapsedMs % measureDurationMs,
+        measureIndex,
+        measurePhaseMs,
         heldAutomaticNote,
         heldAutomaticDurationMs: heldAutomaticNote ? Math.max(0, bridgeNow - oldestHeldAt) : 0,
         heldAutomaticNoteCount: heldAutomaticNote ? heldFrets.length : 0,
@@ -8217,8 +8226,8 @@
         transportAudioLookaheadMs: TRANSPORT_AUDIO_LOOKAHEAD_MS,
         scheduledMetronomeBeat: state.scheduledMetronomeBeat,
         scheduledRootPadKey: state.scheduledRootPadKey,
-        transportAbsoluteBeat: sharedTransportData().transportAbsoluteBeat,
-        transportHarmonyStep: currentHarmonyStep(),
+        transportAbsoluteBeat: clock.transportAbsoluteBeat,
+        transportHarmonyStep: currentHarmonyStep(clock),
       };
     },
   };
