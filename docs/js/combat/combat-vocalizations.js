@@ -1262,9 +1262,10 @@ function beginCharge(options = {}) {
       const shortSkeletonCombo = !isPlayer && context.category === 'combo' && context.isComboFinisher === false && hasSkeletonVoice(context.entity); // First two NPC skeleton combo hits get one short shriek; final hits retain the dramatic windup and release.
       const timeline = isPlayer ? window.Combat.deps?.getWeaponAttackTimeline?.() : null; // Captured after the ability starts or releases its animation.
       const totalS = Math.max(0, Number(timeline?.activeRemainingS ?? timeline?.remainingS ?? ((Number(spec.windupS) || 0) + (Number(spec.strikeS) || 0) + (Number(spec.recoverS) || 0))) || 0);
-      // Flurry strikes are too short to split into a windup grunt and a release grunt:
-      // each strike gets one utterance mapped over its whole Windup -> Strike -> hold.
-      const singleUtterance = SINGLE_UTTERANCE_ABILITIES.has(context.id);
+      // Flurry strikes and ordinary skeleton combo hits use one voice across Windup -> Strike -> hold.
+      // Living NPCs still split the same window into a windup grunt and an attack grunt;
+      // shrinking the shriek to strikeS alone (often 50ms) makes it much shorter than their audible grunts.
+      const singleUtterance = shortSkeletonCombo || SINGLE_UTTERANCE_ABILITIES.has(context.id);
       const windupS = singleUtterance ? 0 : Math.min(totalS, Math.max(0, Number(timeline?.windupRemainingS ?? spec.windupS) || 0)); // Neutral to Windup endpoint only; excludes the Strike interpolation.
       // The input gate (totalS) runs to the middle of the Strike hold; the release
       // voice is time-mapped over Windup -> Strike -> the end of the hold, and keeps
@@ -1275,8 +1276,8 @@ function beginCharge(options = {}) {
       let release = null; // Cancellation handle for the second voice phase.
       let releaseStarted = false; // A low frame rate or strike callback must not play the second grunt twice.
       if (charge) liveChargesByAbility.delete(context.id);
-      if (windupS > 0 && !charge && !shortSkeletonCombo) charge = beginCharge({ entity: context.entity, targetDurationS: windupS, abilityId: context.id, category: context.category, preserveGroup: 'release-grunt' }); // Skip the extra windup shriek so a regular skeleton combo is one living-grunt-length vocal.
-      const releasePreset = windupS > 0 ? prewarmStrikeGrunt(context.entity, context.category, releaseS, { shortSkeletonCombo }) : null; // Rendered during the windup.
+      if (windupS > 0 && !charge) charge = beginCharge({ entity: context.entity, targetDurationS: windupS, abilityId: context.id, category: context.category, preserveGroup: 'release-grunt' }); // A one-utterance skeleton combo has zero separate windup audio.
+      const releasePreset = windupS > 0 || shortSkeletonCombo ? prewarmStrikeGrunt(context.entity, context.category, releaseS, { shortSkeletonCombo }) : null; // Prewarm the shared decoded/rendered variant for immediate short-combo starts too.
       const startRelease = elapsedS => {
         if (releaseStarted) return;
         releaseStarted = true;
@@ -1464,7 +1465,7 @@ function beginCharge(options = {}) {
 
   window.CombatVocalizations = {
     version: VERSION,
-    latestChange: 'Ordinary skeleton combo hits now use one pitch-preserving, time-compressed shriek matched to the living NPC strike duration, with a bounded delayed-start recovery on slower devices; finishers retain their original windup and release. Skeleton shrieks now play on enemy combat alert and offensive actions only, not damage, dodge, or breathing. Release grunts overlap without interrupting one another, including between consecutive attacks and across windups; voice priority, fades, and actor cleanup remain in force. NPC combat voices use elevation-aware distance attenuation, dry-path treble rolloff and far-field reverb while player voices remain close; breathing retries during async pitch-renderer loading and Web Audio unlock before playing, keeping species/gender shifting consistent from cold startup; mobile diagnostics expose fallback status. Release spans windup through the end of the Strike hold (one utterance per Flurry strike); the input gate ends halfway through the hold and inputs queue only after the Strike pose. Dodge uses pain intensity 1 at 75% duration; all combat vocals retain species/gender modulation.',
+    latestChange: 'Ordinary skeleton combo hits now use one pitch-preserving, time-compressed shriek across the living NPC attack vocal window (windup plus strike), with a bounded delayed-start recovery on slower devices; finishers retain their original windup and release. Skeleton shrieks now play on enemy combat alert and offensive actions only, not damage, dodge, or breathing. Release grunts overlap without interrupting one another, including between consecutive attacks and across windups; voice priority, fades, and actor cleanup remain in force. NPC combat voices use elevation-aware distance attenuation, dry-path treble rolloff and far-field reverb while player voices remain close; breathing retries during async pitch-renderer loading and Web Audio unlock before playing, keeping species/gender shifting consistent from cold startup; mobile diagnostics expose fallback status. Release spans windup through the end of the Strike hold (one utterance per Flurry strike); the input gate ends halfway through the hold and inputs queue only after the Strike pose. Dodge uses pain intensity 1 at 75% duration; all combat vocals retain species/gender modulation.',
     configPromise,
     reloadConfig: loadConfig,
     forgetEntity,
