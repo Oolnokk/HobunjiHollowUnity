@@ -28,8 +28,8 @@
   // browser that already cached an older lyre-performance.html under this
   // exact URL would keep serving it indefinitely after an update, since
   // nothing about the request ever changes.
-  const MUSIC_MINIGAME_SRC = 'assets/minigames/lyre-performance.html?v=20261110npcFollowAudit4';
-  const PUZZLE_MINIGAME_SRC = 'assets/minigames/kurraya-puzzle.html?v=20261107fluteMonophonic1'; // The default eight-note puzzle surface, independent of the performance engine.
+  const MUSIC_MINIGAME_SRC = 'assets/minigames/lyre-performance.html?v=20261110releaseGrid1';
+  const PUZZLE_MINIGAME_SRC = 'assets/minigames/kurraya-puzzle.html?v=20261110releaseGrid1'; // The default eight-note puzzle surface, independent of the performance engine.
   // The ONE songbook entry the ported app currently knows (see
   // lyre-performance.html's SONGBOOK) — surfaced to the compact song
   // picker below alongside Free Play and the built-in practice patterns.
@@ -242,6 +242,7 @@
   }, true);
 
   let playerSession = null; // { mode:'lead'|'jam'|'puzzle', area, npcId, songId } while the overlay is open, else null.
+  let puzzleBeatClock = null; // The occupied plate's tempo/time origin is also the puzzle flute's release-grid origin.
   let musicActionLock = null; // Suppresses player tool/item attacks while either hosted instrument mode owns inputs.
   const leaderByArea = new Map(); // area -> { type:'player'|'npc', id, songId, startedAt }
   const ambientFrames = new Map(); // npcId -> hidden <iframe>, for each NPC currently the ambient audio source in their area.
@@ -282,6 +283,19 @@
   const puzzleBookAction = 'musicBank3'; // Reuse the music binding that defaults to LB, including conflict checks and remaps.
   function puzzleView() {
     return frameEl?.contentWindow?.HobunjiPuzzleInstrument;
+  }
+  function setPuzzleBeatClock(bpm,startedAtMs=null) {
+    const tempo=Number(bpm);
+    if(!Number.isFinite(tempo)||tempo<=0)return false;
+    const perf=window.performance,now=perf?.now?.()??Date.now();
+    const start=startedAtMs!==null&&Number.isFinite(Number(startedAtMs))?Number(startedAtMs):now;
+    puzzleBeatClock={bpm:tempo,originEpochMs:(perf?.timeOrigin??Date.now()-now)+start}; // Convert the host clock to an epoch usable by its same-origin iframe.
+    if(playerSession?.instrumentMode==='puzzle')puzzleView()?.setBeatClock?.(puzzleBeatClock);
+    return true;
+  }
+  function clearPuzzleBeatClock() {
+    puzzleBeatClock=null;
+    if(playerSession?.instrumentMode==='puzzle')puzzleView()?.setBeatClock?.(null);
   }
   function musicControllerBindings() {
     const bindings = window.InputBindings?.getCurrentBindings?.()?.controller || {};
@@ -406,6 +420,7 @@
   function onPlayerFrameLoaded() {
     if (!playerSession) return;
     if (playerSession.instrumentMode === 'puzzle') {
+      puzzleView()?.setBeatClock?.(puzzleBeatClock); // An instrument equipped after stepping onto a plate must inherit its already-running beat.
       // The puzzle iframe owns its eight single-note buttons and audio; never boot the chord/timing bridge here.
       startPuzzleInputs();
       if (playerSession.echoChallenge) {
@@ -1507,6 +1522,7 @@
   window.MusicMinigame = {
     init,
     beginPlayerSession,
+    setPuzzleBeatClock,clearPuzzleBeatClock, // Cave and ruin scores use one existing instrument to schedule flute release.
     getEquippedInstrument: () => deps?.getEquippedInstrument?.() || null,
     close,
     switchInstrumentMode, // Lets other gameplay systems open the legacy performance controls without rewriting the puzzle path.
@@ -1525,7 +1541,7 @@
       controllerOwner:window.ControllerInput?.owner||null,actionLockActive:!!musicActionLock,
       jamFollow:bridgeOf(frameEl)?.jamFollowState?.()||{active:false},
       player:playerSession?{mode:playerSession.mode,instrumentMode:playerSession.instrumentMode,instrumentKey:playerSession.instrumentKey,echoChallengeId:playerSession.echoChallenge?.id||null,npcId:playerSession.npcId||null}:null,
-      lastPuzzleSong:lastPuzzleSong,
+      lastPuzzleSong:lastPuzzleSong,puzzleBeatClock, // Mobile diagnostics show the tempo and start timestamp used for flute note-off.
       flute:window.KurrayaInstrument?.fluteDiagnostics?.()||null,
       npcPerformances:[...ambientFrames].map(([npcId,frame])=>({npcId,...bridgeOf(frame)?.ambientPerformanceState?.()}))}),
   };
