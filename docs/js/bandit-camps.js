@@ -332,15 +332,22 @@
           meshes.set(obj.id,{mesh,light:null,sfxSource:null,collisionTiles:[],propId:obj.id});
           window.CratePiles?.registerPile?.({id:obj.id,mapId:zoneId,scene:zi.scene,group:mesh,
             count:obj.crateCount??3,lootable:true,onChange:count=>{obj.crateCount=count;}});
+        } else if (obj.strongholdProp && window.ProceduralFurniture?.CATALOG?.[obj.key]) {
+          // The stronghold uses the furniture renderer directly: these authored-material
+          // recipes are camp props, not normal player-purchasable furniture definitions.
+          const mesh = window.ProceduralFurniture.buildFurnitureGroup(obj.key);
+          mesh.position.set(obj.x + .5, y, obj.y + .5);
+          mesh.rotation.y = (Number(obj.rotY) || 0) * Math.PI / 180;
+          deps.markOutline(mesh);
+          zi.scene.add(mesh);
+          const collisionTiles = obj.key === 'fortifiedHighCover' || obj.key === 'fortifiedWatchtower'
+            ? _applyBanditTentGridCollision(zoneId, obj) : []; // Existing pathfinding mask, restored on camp teardown.
+          meshes.set(obj.id, { mesh, light: null, sfxSource: null, collisionTiles, propId: obj.id });
         } else if (obj.key && window.ProceduralFurniture) {
           const result = deps.makeDecorativeFurnitureMesh(obj.x, obj.y, obj.key, zi.scene, zoneId, obj.rotY || 0);
           if (!result) continue;
           result.mesh.position.y += y;
           if (result.light) result.light.position.y += y;
-          if (obj.strongholdProp && (obj.key === 'fortifiedHighCover' || obj.key === 'fortifiedWatchtower')) {
-            result.collisionTiles = _applyBanditTentGridCollision(zoneId, obj); // Existing tile collision/restore path; same update as a burned tent.
-            result.propId = obj.id;
-          }
           meshes.set(obj.id, result);
         }
       }
