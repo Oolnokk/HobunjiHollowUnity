@@ -27,6 +27,7 @@
   <script src="js/dev-companion-appearance.js?v=20261107appearance-audit2"></script>
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/geometry-quality.js?v=20261109quality1"></script> <!-- Baked GLB quality profiles; original-source fallback. -->
+  <script src="js/geometry-auto-lod.js?v=20261110global60a"></script> <!-- Opt-in game-wide idle-time meshoptimizer; no collision/authoring changes. -->
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20261013hd467097"></script>
   <script src="js/house-wall-fixtures.js?v=20261027h412254d"></script>
@@ -2273,7 +2274,7 @@
           <label class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Geometry Detail</div>
-              <div class="settings-desc">Selects pre-baked GLBs using imported quality profiles. Missing variants fall back to the original model. No runtime remeshing is performed.</div>
+              <div class="settings-desc">Selects optional pre-baked GLBs imported from quality profiles. Missing variants use the original. The separate experimental 60% auto-optimization toggle below also handles other eligible meshes without requiring JSONs.</div>
             </div>
             <select id="settingGeometryDetail" aria-label="3D model geometry detail" style="font-size:12px;padding:5px 8px;background:rgba(255,255,255,.06);border:1px solid var(--border-bright);border-radius:6px;color:var(--text);align-self:center">
               <option value="high">High (original)</option>
@@ -2293,6 +2294,14 @@
               <button type="button" class="settings-small-btn" id="settingGeometryQualityClear">Clear Imported Profiles</button>
             </div>
           </div>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Optimize All Eligible 3D Meshes (60%) <span style="font-size:10px;opacity:.7">(Experimental)</span></div>
+              <div class="settings-desc">Automatically decimates eligible visible solid meshes by up to 60%, without needing individual JSONs. Uses the Geometry Workshop's 2% error tolerance and protects animation, transparent cards, custom shaders and small/large or unsupported meshes. Works progressively when the browser is idle, not inside the frame loop; raycasts and collisions continue using original geometry. May add temporary memory/CPU load while it builds reduced meshes.</div>
+              <div class="settings-desc" id="geometryAutoLODStatus" role="status" aria-live="polite">Off · original gameplay meshes retained.</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingGeometryAutoOptimize"><span class="toggle-slider"></span></span>
+          </label>
           <label class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Wildlife Activation Distance</div>
