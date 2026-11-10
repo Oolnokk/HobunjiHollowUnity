@@ -104,6 +104,7 @@ segments:[makeSegment(),makeSegment()],seam:[],rearOffset:{u:0,v:0},width:.1,win
 let rig=makeRig(),cosmetic={},loadedName='cosmetic.json',selectedKnot=0,selectedSegment=0,direction='right',mode='move';
 let images={front:null,rear:null,hood:null,hoodRear:null},dragging=false,lastPaint=null;
 let catalog=null,styles=[],hoods=[],activeStyle=null,activeDraftKey=null,styleGeneration=0,assetGeneration=0,hoodGeneration=0,indexGeneration=0;
+let manualSelected=false; // Explicit file import is not silently replaced by a concurrent index fetch.
 const rigDrafts=new Map(); // Per-cosmetic/per-species unsaved edits survive dropdown switching until the author page closes.
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const numeric=(x,defaultValue=0)=>Number.isFinite(Number(x))?Number(x):defaultValue;
@@ -121,7 +122,7 @@ $('cosmeticFile').addEventListener('change',async e=>{
   try{
     const parsed=JSON.parse(await file.text());if(!parsed||Array.isArray(parsed)||typeof parsed!=='object')throw Error('Expected a cosmetic object.');
     rememberDraft();
-    activeStyle=null;activeDraftKey=null;assetGeneration++;
+    activeStyle=null;activeDraftKey=null;assetGeneration++;manualSelected=true;
     $('cosmeticSelect').selectedIndex=-1;
     cosmetic=parsed;loadedName=file.name.replace(/^\(HA\)\s*/,'');
     rig=Rig.normalize(parsed.portraitSplineRig) || makeRig(); // Always edit the validated full schema, including every segment's default pose.
@@ -129,6 +130,168 @@ $('cosmeticFile').addEventListener('change',async e=>{
     selectedKnot=0;selectedSegment=0;controls();render();message('Imported '+file.name+'. Export preserves existing cosmetic fields.');
   }catch(error){message('Invalid JSON: '+error.message);}
 });
+
+function rememberDraft(){
+  if(activeDraftKey){
+    const valid=Rig.normalize(rig);
+    if(valid)rigDrafts.set(activeDraftKey,valid); // Keep this style's current knots/deadzones while switching species or cosmetics.
+  }
+}
+function setSelect(id,options,emptyLabel){
+  const el=$(id);el.replaceChildren();
+  if(!options.length){
+    const option=document.createElement('option');option.value='';option.textContent=emptyLabel;
+    el.append(option);el.disabled=true;return;
+  }
+  for(const item of options){
+    const option=document.createElement('option');option.value=item.value;option.textContent=item.label;
+    el.append(option);
+  }
+  el.disabled=false;
+}
+function selectedSpecies(){return $('speciesSelect').value;}
+function selectedGender(){return $('genderSelect').value;}
+function fillGender(){
+  rememberDraft();
+  const previous=selectedGender();
+  const options=(catalog?.genders(selectedSpecies())||[]).map(value=>({value,label:value==='male'?'Male':'Female'}));
+  setSelect('genderSelect',options,'No indexed genders');
+  if(options.some(o=>o.value===previous))$('genderSelect').value=previous;
+  void loadStyles();
+}
+async function loadStyles(){
+  const generation=++styleGeneration;
+  assetGeneration++; // An outstanding sprite fetch from another species must never repaint this one's preview.
+  if(!catalog || !selectedSpecies() || !selectedGender())return;
+  rememberDraft();
+  setSelect('cosmeticSelect',[],'Loading indexed cosmetics…');
+  message('Loading '+selectedSpecies()+' '+selectedGender()+' cosmetics…');
+  try{
+    const result=await catalog.styles(selectedSpecies(),selectedGender());
+    if(generation!==styleGeneration)return;
+    styles=result.options;
+    fillStyles();
+    if(result.failures)message(result.failures+' indexed cosmetics could not be read. Available styles are still selectable.');
+    if($('hoodSelect').value)void loadHoodPreview(); // Hood variants follow the current species/gender.
+  }catch(error){
+    if(generation!==styleGeneration)return;
+    styles=[];fillStyles();message('Unable to load styles: '+error.message);
+  }
+}
+function fillStyles(){
+  const previous=activeStyle?.entry?.url;
+  const matches=styles.filter(style=>style.slot===$('slotSelect').value);
+  setSelect('cosmeticSelect',matches.map(style=>({value:style.key,label:style.label})),'No indexed styles for this slot');
+  if(matches.some(style=>style.key===previous))$('cosmeticSelect').value=previous;
+  if(!matches.length){
+    rememberDraft();activeStyle=null;activeDraftKey=null;
+    images.front=null;images.rear=null;
+    $('sourcePath').textContent='No compatible indexed cosmetic in this species/gender/slot.';
+    render();return;
+  }
+  if(!manualSelected)void selectIndexedStyle();
+}
+async function selectIndexedStyle(){
+  const selected=styles.find(style=>style.key===$('cosmeticSelect').value);
+  if(!selected)return;
+  rememberDraft();
+  manualSelected=false;
+  const generation=++assetGeneration;
+  const species=selectedSpecies(),gender=selectedGender();
+  const draftKey=selected.key+'|'+species+'|'+gender; // Separate in-session drafts for every indexed species/gender selection.
+  activeStyle=selected;activeDraftKey=draftKey;
+  cosmetic=selected.config;loadedName=selected.entry.path.split('/').pop().replace(/^\(HA\)\s*/,'');
+  const authored=selected.scope.variant
+    ?selected.config.speciesVariants?.[selected.scope.key]?.portraitSplineRig
+    :selected.config.portraitSplineRig;
+  rig=Rig.normalize(rigDrafts.get(draftKey)||authored||selected.config.portraitSplineRig)||makeRig();
+  selectedKnot=0;selectedSegment=0;controls();
+  images.front=null;images.rear=null;render();
+  const scopeText=selected.scope.variant?'variant '+selected.scope.key:'shared cosmetic';
+  $('sourcePath').textContent='Source: config/cosmetics/'+selected.entry.path.replace(/^\.\//,'')+' · rig scope: '+scopeText;
+  message('Loading '+selected.label+' sprite layers…');
+  const tasks=[
+    Catalog.composeArtwork(selected.config,species,gender,'front'),
+    selected.slot==='facialHair'?Promise.resolve(null):Catalog.composeArtwork(selected.config,species,gender,'rear'),
+  ];
+  const results=await Promise.allSettled(tasks);
+  if(generation!==assetGeneration)return;
+  images.front=results[0].status==='fulfilled'?results[0].value:null;
+  images.rear=results[1].status==='fulfilled'?results[1].value:null;
+  render();
+  const missing=results.filter(x=>x.status==='rejected').length;
+  if(!images.front)message('Selected JSON loaded, but its front PNG was unavailable. You can retry or load a manual PNG below.');
+  else message('Loaded '+selected.label+' from the repository'+(missing?' ('+missing+' image error)':'')+'. '+(rigDrafts.has(draftKey)?'Restored unsaved rig draft.':'Ready to author.'));
+}
+async function loadHoods(){
+  const generation=++hoodGeneration;
+  if(!catalog)return;
+  try{
+    const result=await catalog.hoods();
+    if(generation!==hoodGeneration)return;
+    const previous=$('hoodSelect').value;
+    hoods=result.options;
+    setSelect('hoodSelect',[{value:'',label:'None'},...hoods.map(item=>({value:item.key,label:item.label}))],'None');
+    if(hoods.some(item=>item.key===previous))$('hoodSelect').value=previous;
+    if($('hoodSelect').value)void loadHoodPreview();
+    if(result.failures)message('Loaded hood options; '+result.failures+' cosmetic definitions could not be read.');
+  }catch(error){
+    if(generation!==hoodGeneration)return;
+    message('Could not read indexed hood references: '+error.message);
+  }
+}
+async function loadHoodPreview(){
+  const generation=++hoodGeneration;
+  const item=hoods.find(hood=>hood.key===$('hoodSelect').value);
+  images.hood=null;images.hoodRear=null;render();
+  if(!item)return;
+  message('Loading hood reference: '+item.label+'…');
+  const species=selectedSpecies(),gender=selectedGender();
+  const settled=await Promise.allSettled([
+    Catalog.composeArtwork(item.config,species,gender,'front'),
+    Catalog.composeArtwork(item.config,species,gender,'rear'),
+  ]);
+  if(generation!==hoodGeneration)return;
+  images.hood=settled[0].status==='fulfilled'?settled[0].value:null;
+  images.hoodRear=settled[1].status==='fulfilled'?settled[1].value:null;
+  render();
+  const hidesBeard=activeStyle?.slot==='facialHair'&&item.config.tags?.includes('hides-facial-hair');
+  if(hidesBeard)message(item.label+' is a facewrap: the game hides the beard, so its hood-passage mask is disabled.');
+  else if(!images.hood)message(item.label+' has no artwork for '+species+' '+gender+'. The hair remains editable.');
+  else message('Showing '+item.label+' as a translucent hood reference.');
+}
+async function initCatalog(){
+  const generation=++indexGeneration;
+  styleGeneration++;assetGeneration++;hoodGeneration++;
+  $('reloadIndex').disabled=true;
+  message('Reading config/cosmetics/index.json…');
+  try{
+    const next=await Catalog.loadIndex(); // Loads the same canonical JSON index used by Character Studio.
+    if(generation!==indexGeneration)return;
+    catalog=next;
+    const previous=selectedSpecies();
+    const species=next.species();
+    setSelect('speciesSelect',species,'No indexed species');
+    if(species.some(item=>item.value===previous))$('speciesSelect').value=previous;
+    else if(species.some(item=>item.value==='mao-ao'))$('speciesSelect').value='mao-ao';
+    const hoodsPromise=loadHoods(); // Fetch generic hood configs in parallel with species-specific hair definitions.
+    fillGender();
+    await hoodsPromise;
+  }catch(error){
+    if(generation!==indexGeneration)return;
+    message('Repository index unavailable: '+error.message+'. Use Reload or optional local import.');
+    $('speciesSelect').disabled=true;$('genderSelect').disabled=true;$('cosmeticSelect').disabled=true;
+  }finally{
+    if(generation===indexGeneration)$('reloadIndex').disabled=false;
+  }
+}
+$('speciesSelect').addEventListener('change',fillGender);
+$('genderSelect').addEventListener('change',()=>void loadStyles());
+$('slotSelect').addEventListener('change',fillStyles);
+$('cosmeticSelect').addEventListener('change',()=>void selectIndexedStyle());
+$('hoodSelect').addEventListener('change',()=>void loadHoodPreview());
+$('reloadIndex').addEventListener('click',()=>void initCatalog());
+
 function normalized(){return Rig.normalize(rig);}
 function safeSegment(){return rig.segments[selectedSegment]||rig.segments[0];}
 function controls(){
