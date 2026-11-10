@@ -67,7 +67,7 @@ assert(Math.abs(slowFrame.snapshot().elapsed-.72)<1e-8,
 slowFrame.step(0,false);
 assert.equal(slowFrame.snapshot().elapsed,0,'stepping off still resets time after a stalled frame');
 
-const beatEvents=[]; // Same callback that game-level cave plates use for the recorded mine-pick metronome.
+const beatEvents=[]; // Same callback the game-level plates send to the recorded four-sound metronome.
 const metronome=Song.createSession(first,{onBeat:beat=>beatEvents.push(beat)});
 metronome.step(0,true);
 assert.equal(beatEvents.length,1,'stepping on a timing plate strikes the first metronome beat immediately');
@@ -86,6 +86,15 @@ assert.equal(beatEvents.length,3,'the metronome must be silent off its pressure 
 metronome.step(0,true);
 assert.equal(beatEvents.length,4,'re-entering the plate restarts its first beat immediately');
 assert.equal(beatEvents.at(-1).downbeat,true);
+
+const cycleBeats=[]; // Cross the silent measure and repeat to prove the beat number never follows the variable-length melody notes.
+const cycleMetronome=Song.createSession(first,{onBeat:beat=>cycleBeats.push(beat)});
+cycleMetronome.step(0,true);
+for(let beat=1;beat<=12;beat++)cycleMetronome.step(first.secondsPerTick*4,true);
+assert.deepEqual(cycleBeats.map(beat=>beat.beatIndex),[0,1,2,3,0,1,2,3,0,1,2,3,0],
+  'beat-number recordings repeat 1-2-3-4 across score and silence without drifting');
+assert(cycleBeats.every((beat,index)=>beat.absoluteBeat===index),
+  'beat events stay tied to the absolute BPM clock, not frame count or note count');
 
 const paint={color:{hex:null,setHex(n){this.hex=n;}}};
 const ink={material:paint,userData:{},scale:{x:.2,y:.24}}; // A carved numeral may tint but must retain the exact same physical dimensions.

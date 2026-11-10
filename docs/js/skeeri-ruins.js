@@ -37,7 +37,8 @@
   });
   const EYE_MARKER = '#7F00FF'; // The exact purple source family already used for maskbound mask/lich eye dye.
   const HATCH_OPEN_SECONDS = .65; // Stone hatch slides upward before the concealed enemies emerge.
-  const ACTIVATION_RADIUS = 3.3; // Within a few tiles, the proximity compartment opens.
+  const ACTIVATION_RADIUS = 5; // Concealed proximity compartments now react before the player reaches the wall hatch.
+  const MECHANISM_TRIGGER_RADIUS = 9; // Puzzle-triggered hatches react across larger rooms on the same floor.
   const SHAFT_RADIUS = 19; // Bomber only makes attack runs while the player is in the shaft.
   const clamp = (v,a,b) => Math.max(a,Math.min(b,Number(v)||0));
   const hash = str => {let h=2166136261;for(const ch of String(str))h=Math.imul(h^ch.charCodeAt(0),16777619)>>>0;return h;}; // Separate deterministic rolls do not perturb the generator RNG.
@@ -314,7 +315,7 @@
     const floor=Number(session.getPlayerY?.())||0;
     let opened=0;
     for(const hatch of session.hatches){
-      if(hatch.trigger!=='mechanism'||Math.abs(hatch.y-floor)>3.5||distance(p,hatch)>6)continue;
+      if(hatch.trigger!=='mechanism'||Math.abs(hatch.y-floor)>3.5||distance(p,hatch)>MECHANISM_TRIGGER_RADIUS)continue;
       hatch.reason='mechanism';
       if(openHatch(session,hatch))opened++;
     }
