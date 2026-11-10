@@ -87,11 +87,17 @@
     const cy = Math.floor(site.y + site.h / 2);
     const minX = site.x, maxX = site.x + site.w - 1;
     const minY = site.y, maxY = site.y + site.h - 1;
-    const coord = (key, x, y, rotate = 0) => ({
-      id: rec.instance.id + ':' + key, key, x: Math.max(minX, Math.min(maxX, x)),
-      y: Math.max(minY, Math.min(maxY, y)), w: 1, h: 1, rotY: rotate,
-      strongholdProp: true,
-    });
+    let pieceIndex = 0; // Guarantees separate mesh/collision identities for twin towers and matching barricades.
+    const coord = (key, x, y, rotate = 0) => {
+      const index = pieceIndex++;
+      return {
+        id: rec.instance.id + ':' + key + ':' + index,
+        coverId: 'exterior:' + rec.discoverySlot + ':' + index,
+        key, x: Math.max(minX, Math.min(maxX, x)),
+        y: Math.max(minY, Math.min(maxY, y)), w: 1, h: 1, rotY: rotate,
+        strongholdProp: true,
+      };
+    };
     return [
       coord('fortifiedCaveArch', cx, cy),
       coord('fortifiedWatchtower', minX + 1, minY + 1),
