@@ -478,7 +478,7 @@
     portal.noteHandler=e=>{
       if(portal.disposed||portal.solved||deps?.getCurrentArea?.()!==portal.area
         ||e?.detail?.area!==portal.area)return;
-      portal.session.note(e.detail.noteIndex);
+      portal.session.note(e.detail.noteIndex,e.detail.pressedAtMs);
     };
     root.addEventListener?.('hobunji-kurraya-puzzle-note',portal.noteHandler);
   }

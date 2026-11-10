@@ -192,7 +192,7 @@ button:focus-visible { outline: 2px solid #f3e6c8; outline-offset: 2px }
     return true;
   }
   echoReplay.addEventListener('click',() => replayEcho(false)); // An explicit gesture unlocks mobile Web Audio; keyboard and touch remain accessible.
-  function playNote(index) {
+  function playNote(index,inputOptions={}) {
     if (!Number.isInteger(index) || index < 0 || index >= music.NOTE_CODES.length) return false;
     if (echoChallenge && echoChallenge.phase === 'retry') {
       replayEcho(); // Controller and keyboard users can request the audio without needing a touchscreen tap.
@@ -204,7 +204,7 @@ button:focus-visible { outline: 2px solid #f3e6c8; outline-offset: 2px }
     button?.classList.add('flash');
     setTimeout(() => button?.classList.remove('flash'),110);
     const midi = music.pitchFor(index,tuning);
-    if (!echoChallenge) post({type:'puzzle-note',noteIndex:index}); // Send physical player note events immediately, regardless of audio loading or songbook recognition.
+    if (!echoChallenge && inputOptions.publishInput!==false) post({type:'puzzle-note',noteIndex:index,pressedAtEpochMs:inputOptions.pressedAtEpochMs ?? ((performance?.timeOrigin??0)+performance.now())}); // The original physical press timestamp crosses the iframe asynchronously, not the later audio callback.
     sampler.play(midi).then(played => {
       if (!played || serial !== playbackSerial) return; // A stale note never triggers a phantom instrument twitch.
       post({type:'sounded-note',performer:'lead',noteIndex:index,midi:midi});
@@ -254,7 +254,8 @@ button:focus-visible { outline: 2px solid #f3e6c8; outline-offset: 2px }
     button.addEventListener('pointerdown',event=>{
       if (event.button !== 0) return;
       event.preventDefault();
-      playNote(i);
+      const now=performance.now(),stamp=Number(event.timeStamp);
+      playNote(i,{pressedAtEpochMs:performance.timeOrigin+(Number.isFinite(stamp)&&Math.abs(stamp-now)<5000?stamp:now)});
     });
     button.addEventListener('click',event=>{ if (event.detail === 0) playNote(i); }); // Keep keyboard and assistive activation.
     notesEl.appendChild(button);
@@ -268,7 +269,10 @@ button:focus-visible { outline: 2px solid #f3e6c8; outline-offset: 2px }
     if (index<0 && event.code !== 'KeyB') return;
     event.preventDefault();
     if (index<0) toggleSongbook();
-    else playNote(index);
+    else {
+      const now=performance.now(),stamp=Number(event.timeStamp);
+      playNote(index,{pressedAtEpochMs:performance.timeOrigin+(Number.isFinite(stamp)&&Math.abs(stamp-now)<5000?stamp:now)});
+    }
   },true);
   window.addEventListener('hobunji-kurraya-puzzle-songs-changed',refreshSongs);
   window.addEventListener('error',event=>{resultEl.textContent='Puzzle error: '+event.message;render();});

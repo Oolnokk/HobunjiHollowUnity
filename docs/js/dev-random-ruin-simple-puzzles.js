@@ -2421,7 +2421,7 @@
     const note=event.detail?.noteIndex; // Only player-entered single notes may advance a ruin melody; the plate's automatic example never emits them.
     if (!Number.isInteger(note) || note<0 || note>=(window.KurrayaPuzzle?.NOTE_CODES?.length ?? 8)) return;
     for (const set of state.chordPlateSets) {
-      if(!set.solved)set.session?.note(note); // The shared judge rejects off-plate, early, late and incorrect notes.
+      if(!set.solved)set.session?.note(note,event.detail.pressedAtMs); // Judge physical input time, not the next render frame.
     }
   });
 

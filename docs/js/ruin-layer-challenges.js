@@ -209,7 +209,7 @@
       timedNoteListener=event=>{
         const area=options.area||options.mapId; // A different map, inactive floor or unoccupied plate cannot feed this score.
         if(rec.disposed||rec.solved||!isActive()||(area&&event?.detail?.area!==area))return;
-        rec.session.note(event?.detail?.noteIndex);
+        rec.session.note(event?.detail?.noteIndex,event?.detail?.pressedAtMs);
       };
       events?.addEventListener?.('hobunji-kurraya-puzzle-note',timedNoteListener);
     }

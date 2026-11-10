@@ -198,7 +198,7 @@ function testTimedRuinMelodyWiring(){
   const plan=read('docs/js/ruin-layer-plan.js');
   assert.match(ruin,/set\.session=composer\.createSession\(song/,'each random-ruin melody uses the shared timed judge');
   assert.match(ruin,/set\.session\?\.step\(dt,down\)/,'the physical plate owns the timed note clock');
-  assert.match(ruin,/set\.session\?\.note\(note\)/,'input is judged by timing, pitch and plate occupancy');
+  assert.match(ruin,/set\.session\?\.note\(note,event\.detail\.pressedAtMs\)/,'input is judged by timing, pitch and plate occupancy');
   assert.doesNotMatch(ruin,/replayEchoSet|matchSuffix\?\.\(set\.heardNotes/,'the sample demo and untimed suffix matcher must not return');
   assert.match(layered,/installTimedSession\(composer,song\)/,'layered ruins use the same cave melody judge');
   assert.doesNotMatch(layered,/onMelodyResult=/,'an echo-result message must not bypass the timed score');

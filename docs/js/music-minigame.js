@@ -258,9 +258,23 @@
       stopAmbientForNpc(performer.npcId); // The NPC's own song will restart independently when the puzzle ends.
     }
   }
-  function puzzleNote(index) {
+  function puzzlePressMs(event) {
+    const now=window.performance?.now?.()??Date.now(); // Controller edges use the host's monotonic clock; key events preserve the original hardware event time.
+    const timestamp=Number(event?.timeStamp);
+    return Number.isFinite(timestamp)&&Math.abs(timestamp-now)<5000?timestamp:now;
+  }
+  function publishPuzzleNote(index,pressedAtMs) {
+    if(playerSession?.instrumentMode!=='puzzle'||playerSession.echoChallenge)return;
+    const detail={noteIndex:index,area:playerSession.area,instrumentKey:playerSession.instrumentKey,pressedAtMs};
+    window.dispatchEvent(new CustomEvent('hobunji-kurraya-puzzle-note',{detail})); // Physical inputs can be judged before the iframe's audio or message queue runs.
+  }
+  function puzzleNote(index,pressedAtMs=puzzlePressMs()) {
     if (playerSession?.instrumentMode !== 'puzzle') return;
-    try { frameEl?.contentWindow?.HobunjiPuzzleInstrument?.playNote(index); } catch (error) {
+    try {
+      const view=puzzleView();
+      if(view?.playNote(index,{publishInput:false,pressedAtEpochMs:(window.performance?.timeOrigin??0)+pressedAtMs})!==true)return;
+      publishPuzzleNote(index,pressedAtMs); // No duplicate iframe post for host keyboard/controller input.
+    } catch (error) {
       window.__farmLog?.('Kurraya puzzle note failed: ' + error.message, 'warn');
     }
   }
@@ -298,7 +312,7 @@
     event.preventDefault();
     event.stopImmediatePropagation();
     if (index < 0) puzzleView()?.toggleSongbook?.();
-    else puzzleNote(index);
+    else puzzleNote(index,puzzlePressMs(event));
   }
   function stopPuzzleInputs() {
     window.removeEventListener?.('keydown', puzzleKeyboard, true);
@@ -338,7 +352,7 @@
       if (exit) { close(); return; }
       if (frame.pressed?.size || shiftedNow || stickMoved || book || note >= 0) showPuzzleInput('controller',binding);
       if (book) puzzleView()?.toggleSongbook?.();
-      if (note >= 0) puzzleNote(note + (shifted ? faceCodes.length : 0));
+      if (note >= 0) puzzleNote(note + (shifted ? faceCodes.length : 0),puzzlePressMs());
     }
     const initialFrame = window.ControllerInput?.frame?.(); // Snapshot from the normal controller poller, even if the overlay opened mid-press.
     if (initialFrame) readFrame(initialFrame,false);
@@ -557,8 +571,10 @@
     if (data.type === 'exit-requested') close();
     if (data.type === 'puzzle-note' && playerSession?.instrumentMode === 'puzzle' &&
         Number.isInteger(data.noteIndex) && data.noteIndex >= 0 && data.noteIndex < (window.KurrayaPuzzle?.NOTE_CODES?.length ?? 8)) {
-      const detail = {noteIndex:data.noteIndex,area:playerSession.area,instrumentKey:playerSession.instrumentKey}; // The active player's normal instrument publishes notes; ruin listeners never receive example playback or NPC notes.
-      window.dispatchEvent(new CustomEvent('hobunji-kurraya-puzzle-note',{detail})); // The iframe separately reports its sounded-note event after audio actually plays; that one alone animates.
+      const rawEpoch=Number(data.pressedAtEpochMs);
+      const projected=rawEpoch-(window.performance?.timeOrigin??NaN);
+      const pressedAtMs=Number.isFinite(projected)&&Math.abs(projected-puzzlePressMs())<5000?projected:puzzlePressMs(); // Translate child time origin before judging its actual pointer timestamp.
+      publishPuzzleNote(data.noteIndex,pressedAtMs); // The iframe separately reports its sounded-note event after audio actually plays; that one alone animates.
     }
     if (data.type === 'puzzle-echo-result' && playerSession?.instrumentMode === 'puzzle' &&
         playerSession.echoChallenge?.id === data.id) {
