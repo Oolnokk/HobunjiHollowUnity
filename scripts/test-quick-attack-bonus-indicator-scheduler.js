@@ -118,8 +118,9 @@ deps.getActiveTool = () => 'weapon';
 deps.camera = { projectionMatrix: {}, matrixWorldInverse: {}, quaternion: null };
 deps.hostileObjects = [far, near, behindPlayer, forward];
 let meleeHitCalls = 0;
+let avatarProbes = 0; // Counts real world-centroid work to prove the lazy readiness filter skips it.
 context.Combat.meleeHit = () => { meleeHitCalls++; return false; }; // Half-moon uses a cheap dot test, never the expensive melee collider.
-context.WorldPopupText.avatarCentroidWorld = root => ({ x: root.id === 'offscreen' ? 999 : 0, y: 1, z: 0 });
+context.WorldPopupText.avatarCentroidWorld = root => { avatarProbes++; return { x: root.id === 'offscreen' ? 999 : 0, y: 1, z: 0 }; };
 
 assert.doesNotThrow(() => scheduledFrame({ timestamp: 1016 }), 'the scheduled callback runs the readiness/reticle logic');
 let snap = context.QuickAttackBonusIndicator.snapshot();
@@ -128,6 +129,8 @@ assert.equal(snap.visibleCount, 2, 'only nearby hostiles in the forward-facing h
 assert.deepEqual([...snap.visibleTargetIds], ['near', 'forward'], 'far and rear hostiles are excluded before expensive work');
 assert.equal(snap.reachPx, 192, 'snapshot reports the maximum modified lunge + cone reach');
 assert.equal(snap.checkedConditions, 2, 'only qualifying nearby targets have their conditions evaluated');
+assert.equal(snap.visualProbes, 2, 'only bonus-ready nearby targets have their avatars transformed');
+assert.equal(snap.halfMoonCandidates, 2, 'remote and rear targets are excluded in the cheap broadphase');
 assert.equal(context.Combat.quickAttackData.lastConditionCheck.targetId, 'near', 'nearest hostile retains diagnostic focus despite nearest-first condition checks');
 assert.equal(meleeHitCalls, 0, 'the opportunity cue uses simple spatial culling instead of melee collider tests');
 
@@ -193,10 +196,12 @@ const ledge = hostile('ledge', 96);
 ledge.avatarRef.group.id = 'ledge';
 const rampFoot = hostile('ramp-foot', 128);
 rampFoot.avatarRef.group.id = 'ramp-foot';
-deps.worldSurfaceY = (x) => (x === 96 ? 2.5 : (x === 128 ? 0.6 : 0)); // One plateau tier up for the ledge; a gentle ramp rise for the other.
+let playerSurfaceChecks = 0; // Detects repeated player-height sampling per candidate.
+deps.worldSurfaceY = (x) => { if (x === 0) playerSurfaceChecks++; return x === 96 ? 2.5 : (x === 128 ? 0.6 : 0); }; // One plateau tier up for the ledge; a gentle ramp rise for the other.
 deps.hostileObjects = [near, ledge, rampFoot];
 scheduledFrame({ timestamp: 1052 });
 assert.deepEqual([...context.QuickAttackBonusIndicator.snapshot().visibleTargetIds], ['near', 'ramp-foot'], 'a hostile a full tier above gets no reticle, but one on the same slope still does');
+assert.equal(playerSurfaceChecks, 1, 'the player elevation is sampled only once for all ready candidates');
 delete deps.worldSurfaceY;
 deps.hostileObjects = [near];
 
@@ -227,8 +232,22 @@ scheduledFrame({ timestamp: 1080 });
 snap = context.QuickAttackBonusIndicator.snapshot();
 assert.equal(snap.visibleCount, 12, 'reticles are capped');
 assert.equal(snap.checkedConditions, 12, 'the ready-target cap also bounds expensive condition evaluations');
+assert.equal(snap.visualProbes, 12, 'crowds stop world-matrix work after finding twelve eligible cues');
+assert.equal(snap.halfMoonCandidates, 20, 'all nearby candidates remain eligible for nearest-first selection');
 assert.ok(snap.visibleTargetIds.includes('crowd0') && !snap.visibleTargetIds.includes('crowd19'), 'the cap keeps the nearest hostiles');
-context.Combat.quickAttackData.getReachProfile = deps => ({ reachPx: deps.TILE * 6 });
+// Even when twelve sights are active, affliction effects must resolve once,
+// not once per sight. The production reach profile already returns these effects,
+// so its normal path needs no extra progression query at all.
+let extraProgressionLookups = 0; // Detects redundant per-sight CombatProgression scans.
+context.CombatProgression = { getEffects: () => { extraProgressionLookups++; return { quickBonusAfflictions: { bleeding: 1 } }; } };
+deps.currentWeaponKey = () => 'instrumented-weapon';
+scheduledFrame({ timestamp: 1081 });
+assert.equal(extraProgressionLookups, 1, 'affliction glow shares one effect lookup across twelve reticles');
+context.Combat.quickAttackData.getReachProfile = deps => ({ reachPx: deps.TILE * 6, effects: { quickBonusAfflictions: { bleeding: 1 } } });
+scheduledFrame({ timestamp: 1135 }); // Beyond the 50ms cache expiry, to simulate the production reach profile.
+assert.equal(extraProgressionLookups, 1, 'the live reach profile shares its mastery snapshot with the glow renderer');
+delete context.CombatProgression;
+deps.currentWeaponKey = () => null;
 deps.hostileObjects = [near];
 
 const neighbour = hostile('neighbour', 64);
@@ -241,12 +260,16 @@ context.Combat.quickAttackData.bonusEffectCooldownRemaining = () => 2;
 assert.equal(context.QuickAttackBonusIndicator.getReadyState().conditionReady, true, 'condition remains visible in diagnostics during cooldown');
 scheduledFrame({ timestamp: 1096 });
 assert.equal(context.QuickAttackBonusIndicator.snapshot().visible, false, 'cooldown suppresses the visible bonus notification');
+assert.equal(context.QuickAttackBonusIndicator.snapshot().visualProbes, 0, 'cooling targets never trigger costly avatar-centroid probes');
 context.Combat.quickAttackData.bonusEffectCooldownRemaining = () => 0;
 scheduledFrame({ timestamp: 1112 });
 assert.equal(context.QuickAttackBonusIndicator.snapshot().visible, true, 'cue returns when cooldown expires');
 context.Combat.getQuickAttackConditions = () => ({ behind: false });
+const probesBeforeMiss = avatarProbes; // Used to verify an in-range target without a bonus does not update its matrix.
 scheduledFrame({ timestamp: 1128 });
 assert.equal(context.QuickAttackBonusIndicator.snapshot().visible, false, 'condition ending immediately hides every reticle layer');
+assert.equal(context.QuickAttackBonusIndicator.snapshot().visualProbes, 0, 'non-qualifying targets skip world-matrix/frustum work');
+assert.equal(avatarProbes, probesBeforeMiss, 'non-qualifying targets never call avatarCentroidWorld');
 context.Combat.getQuickAttackConditions = () => ({ behind: true });
 for (const tool of ['ranged', 'pick']) {
   deps.getActiveTool = () => tool;
