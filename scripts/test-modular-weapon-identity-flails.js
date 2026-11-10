@@ -44,6 +44,44 @@ assert.deepEqual(plain(definitions[item('fishing-spear','pickshovel-scoop')].slo
 assert(config.heads.hoe.toolSlots.includes('hoe'),
   'a hoe head retains its crop-harvest mastery channel when its calibration is eventually approved');
 
+const pickFlailKey=item('grapple-flail','pick-shovel-pick'); // This exact flexible pairing changes damage; the shared Pick Head remains sharp.
+assert.equal(config.heads['pick-shovel-pick'].dmgType,'sharp','normal pick head stays sharp on every rigid shaft');
+assert.equal(api.isDisallowed('grapple-flail','pick-shovel-pick'),false,'Pick Head can be forged on Grapple-Flail haft');
+assert.equal(definitions[pickFlailKey].dmgType,'blunt','Grapple-Flail with Pick Head actually inflicts blunt damage');
+assert.equal(api.weaponDamageType('grapple-flail','pick-shovel-pick'),'blunt');
+assert.equal(api.weaponDamageType('fishing-spear','pick-shovel-pick'),'sharp',
+  'a different pick-head weapon retains its usual sharp damage');
+assert.equal(definitions[item('fishing-spear','pick-shovel-pick')].dmgType,'sharp',
+  'pre-generated Foundry equipment definitions do not inherit the flail override');
+const pickOnRope=api.flailRecipe('grapple-flail','pick-shovel-pick');
+assert(pickOnRope?.flail,'newly approved pick pairing has a complete moving rope and head');
+assert.equal(pickOnRope.flail.head.visualTransform.flipY,true,
+  'user-authored flipY follows the hanging head in the real flail assembly');
+assert.equal(pickOnRope.flail.chain.mountLengthPx,843.75,'head flips never change rope length');
+for(const [key,field,value] of [
+  ['pickshovel-scoop','scaleX',0.8],['plains-blade','scaleY',0.4],
+  ['porakaneki-greatclub','scaleY',0.75]
+]) assert.equal(api.flailRecipe('grapple-flail',key).flail.head.visualTransform[field],value,
+  key+' authored nonuniform pair scale is used by the complete flail rig');
+assert.deepEqual(plain(api.flailRecipe('grapple-flail','fishing-spear').flail.head.anchor),{x:209,y:925});
+assert.deepEqual(plain(api.flailRecipe('grapple-flail','harlyao-broadsword').flail.head.anchor),{x:200,y:675});
+const savedPick=plain(config); // Temporary saved draft probes validator without changing any shared head.
+savedPick.shafts['grapple-flail'].overrides['pick-shovel-pick']={
+  ...savedPick.shafts['grapple-flail'].overrides['pick-shovel-pick'],
+  flipX:true,scaleX:1.25,scaleY:0.55,rotation:33,x:12,y:-18,flailHeadScale:1.2,dmgType:'blunt'
+};
+api.replace(savedPick);
+const editedPick=api.flailRecipe('grapple-flail','pick-shovel-pick').flail.head;
+assert.deepEqual(plain(editedPick.visualTransform),
+  {scaleX:1.25,scaleY:0.55,flipX:true,flipY:true,x:12,y:-18,rotation:33},
+  'ALL saved pair transforms reach the rendered hanging head, not just uniform scale');
+assert.equal(editedPick.scale,1.2);
+assert.equal(api.weaponDamageType('grapple-flail','pick-shovel-pick'),'blunt');
+assert.deepEqual(plain(api.getConfig().heads['pick-shovel-pick'].mount),
+  plain(config.heads['pick-shovel-pick'].mount),'flail authoring must not change shared rigid pick geometry');
+api.replace(plain(config)); // Subsequent tests retain the committed catalog.
+
+
 const authoredFlailShafts = { // Exact five shaft-side rope and aperture choices from the user's November 9 export.
   'fishing-mace':{start:[193,850],end:[0,325],offset:[0,20],size:[27,27]},
   'fishing-spear':{start:[210,830],end:[17,209],offset:[0,10],size:[22,22]},
