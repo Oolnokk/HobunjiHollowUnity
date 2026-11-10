@@ -28,6 +28,21 @@ furniture material mapper applies the same texture. Source NPC coloring is not
 baked into the output, so changing the statue finish can recolor the entire statue
 without editing its NPC source. Imported furniture can still override individual pieces.
 
+Portrait alpha is checked before export: a missing sprite, blank portrait or an
+opaque full-canvas rectangle fails with a visible message rather than exporting
+a black placeholder. The selected furniture PNG is sampled into small repeated
+regions from its interior (important for `carved_smooth.png`, whose edges are
+very dark), while the original NPC silhouette, transparency and dark ink
+outlines remain intact. The same filename is mapped onto independent GLB
+limb pieces; the shared GLB map is cached rather than repeatedly uploaded per
+character. The mobile preview remains visible while scrolling the authoring
+controls and exposes original front/back/head canvases plus copyable material
+and GLB readiness diagnostics.
+
+The additional `scripts/smoke-statue-author-browser.js` regression runs the
+actual authored NPC and Three.js r128 stack in headless Chromium at a 390px
+mobile viewport, asserting non-rectangular, non-black portrait and GLB finishes.
+
 To install a reusable authored statue in game content, save the exported JSON
 as `docs/config/furniture-authored/<key>.json` and register its key
 in `docs/config/furniture-authored/index.json`. Place that key
