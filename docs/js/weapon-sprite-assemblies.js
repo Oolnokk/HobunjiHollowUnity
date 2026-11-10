@@ -964,15 +964,22 @@
     return dualWieldEnchantmentTargets(plane, sourceTargets);
   }
 
+  const scheduledFrameTick = context => tick((context?.deltaMs || 0) / 1000); // The one canonical frame callback, reused when late-loaded pose systems subscribe.
+  const frameTickOptions = { phase: 'pre-render', owner: 'HobunjiWeaponSpriteAssemblies',
+    description: 'Projects flail ropes after dual-wield and procedural-hand poses are finalized' }; // Stable registration metadata for initial load and reordering.
+  function scheduleTickAfterPose() {
+    const scheduler = global.RuntimeFrameScheduler; // Reorders this existing callback only when another pose module registers later.
+    if (scheduler?.unregister?.('weapon-sprite-assemblies') !== true) return false;
+    scheduler.register('weapon-sprite-assemblies', scheduledFrameTick, frameTickOptions); // Map re-insertion moves the single tick after pose writers.
+    return true;
+  }
+
   global.HobunjiWeaponSpriteAssemblies = {
-    definitions: DEF, decorate, setAction, tick, drop, syncDualWield, debugSnapshot, enchantmentTargets, dualWieldEnchantmentTargets, bakedPoint,
+    definitions: DEF, decorate, setAction, tick, drop, syncDualWield, scheduleTickAfterPose, debugSnapshot, enchantmentTargets, dualWieldEnchantmentTargets, bakedPoint,
     opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, // Pure sizing and phase helpers have regression tests.
   };
   global.HobunjiCacheAudit?.register('weapon assemblies (weak owner registry)', () => { let count = 0; for (const entry of records) if (liveState(entry)) count++; return count; });
   if (global.RuntimeFrameScheduler?.register) {
-    global.RuntimeFrameScheduler.register('weapon-sprite-assemblies', context => tick((context?.deltaMs || 0) / 1000), {
-      phase: 'pre-render', owner: 'HobunjiWeaponSpriteAssemblies',
-      description: 'Updates layered weapons and world-space chain/head positions just before drawing',
-    });
+    global.RuntimeFrameScheduler.register('weapon-sprite-assemblies', scheduledFrameTick, frameTickOptions);
   }
 })(window);
