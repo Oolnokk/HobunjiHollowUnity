@@ -343,6 +343,12 @@
           const collisionTiles = obj.key === 'fortifiedHighCover' || obj.key === 'fortifiedWatchtower'
             ? _applyBanditTentGridCollision(zoneId, obj) : []; // Existing pathfinding mask, restored on camp teardown.
           meshes.set(obj.id, { mesh, light: null, sfxSource: null, collisionTiles, propId: obj.id });
+          if (obj.coverId) window.BanditStrongholdCover?.register?.({
+            scope:zoneId, saveMapId:rec.stronghold?.mapId, id:obj.coverId,
+            key:obj.key, mesh, col:obj.x, row:obj.y, y,
+            externalCollision:true, // BanditCamps owns its existing grid masks and tile-speed restore path.
+            onDestroyed:()=>{ obj.destroyed=true; removeBanditCampProp(zoneId,obj.id); },
+          });
         } else if (obj.key && window.ProceduralFurniture) {
           const result = deps.makeDecorativeFurnitureMesh(obj.x, obj.y, obj.key, zi.scene, zoneId, obj.rotY || 0);
           if (!result) continue;
@@ -1272,6 +1278,7 @@
   }
 
   function updateBanditTentInteraction(dt) {
+    window.BanditStrongholdCover?.tick?.(deps?.getCurrentArea?.(),dt); // Same existing frame loop, with fire probes throttled inside Cover.
     updateBanditFireEffects(dt);
     updateSimpleHydra(dt);
     const zoneIdForBurn = deps.getCurrentArea();
