@@ -20,7 +20,7 @@ walkers=[make('main',20.5,20.5),make('other',21.5,20.5,'a')];
 stations=[{id:'a',festivalRole:'guest',col:22,row:20},{id:'b',festivalRole:'guest',col:23,row:20}];
 reads=0;assert.equal(target(self).stationId,'b','another walker occupies station a');assert.equal(reads,1,'one roster snapshot per station selection');
 walkers=[make('main',20.5,20.5)];
-assignments.set('another',{scope:'1154:tzizkhanash:1',stationId:'a'});
+assignments.set('another',{scope:'1154:tzizkhanash:27:1',stationId:'a'});
 reads=0;assert.equal(target(self).stationId,'b','festival reservation blocks station a');assert.equal(reads,1);
 assignments.clear();stations=[];
 function brute(){for(let radius=0;radius<=4;radius++)for(let dz=-radius;dz<=radius;dz++)for(let dx=-radius;dx<=radius;dx++){
