@@ -251,7 +251,7 @@ async function generateHero(){
   $('npcSelect').value='';
   $('weaponPaths').value=[...rolled.spritePaths,...(secondary?[secondary]:[])].join('\n');
   syncWeaponSummary();
-  $('statueName').value=rolled.npc.name+' Statue';
+  $('statueName').value=rolled.npc.name+' Statue '+rolled.npc.id.split('-').at(-1); // Unique furniture key even when generating several heroes of one species.
   // Choose a repo pose that already exists. An explicit user selection wins.
   if(!animation&&registeredAnimations.has('heldItemLarge'))selectRepositoryAnimation('heldItemLarge');
   $('heroResult').textContent='Generated '+rolled.npc.name+' ('+rolled.gender+
