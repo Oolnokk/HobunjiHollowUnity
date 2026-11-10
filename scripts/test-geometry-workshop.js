@@ -75,6 +75,7 @@ function twoMaterialMesh(){
   assert.equal(core.triangles(source.geometry),2,'the input is never changed');
   assert.deepEqual(Array.from(source.geometry.index.array),oldIndices,'source index buffer untouched');
   assert.ok(core.triangles(output.object.geometry)>2,'adaptive remesh must actually split edges');
+  assert.ok(output.remeshTrianglesAdded>0,'actual subdivided triangles are counted independently of the checkbox');
   assert.ok(output.object.geometry.groups.length===2,'one source material group remains one group');
   assert.ok(output.object.geometry.groups.every(g=>g.count>3),'remeshed triangles keep their own material');
   assert.ok(core.preservedMaterials(source,output.object),'material identity and assignments preserved');
@@ -122,6 +123,7 @@ function twoMaterialMesh(){
   const noOp=await core.process(hand,{remesh:true,edgePercent:40,reduction:0,protectCards:false});
   assert.equal(noOp.object.geometry,handGeometry,'no-op remesh must not allocate a fake edited mesh');
   assert.equal(noOp.details.length,0,'zero subdivision does not count as an edited result');
+  assert.equal(noOp.remeshTrianglesAdded,0,'no-op remesh is distinguished from real remeshing in export metadata');
   assert.match(noOp.warnings.join(' '),/no edge exceeds 40/);
   assert.equal(core.triangles(handGeometry),3120,'original mesh is intact');
   assert.match(fs.readFileSync(path.resolve(__dirname,'../docs/tools/geometry-workshop/workshop.js'),'utf8'),
@@ -130,6 +132,7 @@ function twoMaterialMesh(){
   const uiSource=fs.readFileSync(path.resolve(__dirname,'../docs/tools/geometry-workshop/workshop.js'),'utf8');
   assert.match(coreSource,/let outputTriangleCount = sourceStats\.triangles/, 'aggregate remeshing budget must be tracked');
   assert.match(uiSource,/function releaseOriginal\(/, 'imported models need GPU cleanup on reload');
+  assert.match(uiSource,/latestResult\?\.remeshTrianglesAdded > 0/, 'GLB export filename must reflect actual, not requested, subdivision');
   assert.match(uiSource,/candidateMatchesControls = false/, 'pending or failed updates must invalidate export');
   assert.match(uiSource,/function invalidatePreview\(/, 'editing controls must prevent export of stale mesh');
   assert.match(uiSource,/\['source-kind', 'repo-preset', 'repo-path'[^\n]+/, 'loading must lock source and geometry controls');

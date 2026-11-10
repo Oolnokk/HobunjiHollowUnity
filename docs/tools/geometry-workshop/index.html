@@ -22,7 +22,7 @@
 <script src="js/foliage-generator.js?v=20261031h87aa596"></script>
 <script src="js/procedural-furniture.js"></script>
 <script src="js/geometry-quality.js?v=20261109quality1"></script>
-<script src="tools/geometry-workshop/core.js?v=20261110edgeproof1"></script>
+<script src="tools/geometry-workshop/core.js?v=20261110edgeproof2"></script>
 <script src="tools/geometry-workshop/game-preview.js?v=20261110edgeproof1"></script>
 </head>
 <body>
@@ -101,6 +101,7 @@
       <div id="materials"></div>
       <small id="mesh-integrity" role="status" aria-live="polite">Mesh integrity is checked when an asset loads.</small>
       <small id="edge-diagnostics" role="status" aria-live="polite">Edge-length cutoff will be measured from the source geometry.</small>
+      <small id="subdivision-status" role="status" aria-live="polite">Actual subdivision work will be reported after Update preview.</small>
       <small id="display-verification" role="status" aria-live="polite">Rendered triangle counts will be verified after processing.</small>
       <button id="export" type="button" disabled>Download optimized GLB</button>
       <div id="manual-download"></div>
@@ -127,6 +128,6 @@
     <div id="footer"><span id="busy">Ready</span><span id="loading-note">Loading Three.js and game mesh generators…</span></div>
   </main>
 </div>
-<script src="tools/geometry-workshop/workshop.js?v=20261110edgeproof1"></script>
+<script src="tools/geometry-workshop/workshop.js?v=20261110edgeproof2"></script>
 </body>
 </html>

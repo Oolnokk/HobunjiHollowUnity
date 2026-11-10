@@ -263,6 +263,11 @@
           ' — subdivision adds vertices but does NOT move or smooth the surface.') +
         (edges.skipped ? ' (' + edges.skipped + ' large mesh(es) skipped.)' : '.')
       : 'No supported source edge diagnostics available.';
+    $('subdivision-status').textContent = $('remesh').checked
+      ? (result.remeshTrianglesAdded > 0
+        ? 'Subdivision actually ran: +' + result.remeshTrianglesAdded.toLocaleString() + ' triangles before decimation.'
+        : 'Subdivision changed no triangles; this result is decimation-only.')
+      : 'Subdivision disabled; result is decimation-only.';
     const noOpRemesh = $('remesh').checked && edges.inspected && !edges.edgesAboveCutoff;
     if (noOpRemesh && Number($('reduction').value) > 0) {
       log('Adaptive edge remesh has no effect at ' + requested + '%; the triangle reduction is from decimation alone.');
@@ -535,7 +540,7 @@
   }
   function optimizedFilename() {
     return sourceName.replace(/\.glb$/i, '').replace(/[^a-zA-Z0-9_-]/g, '_') +
-      ($('remesh').checked ? '_remeshed' : '') + '_lod-' + $('reduction').value + '.glb';
+      (latestResult?.remeshTrianglesAdded > 0 ? '_subdivided' : '') + '_lod-' + $('reduction').value + '.glb'; // File name reports ACTUAL subdivision, not a no-op checkbox.
   }
   function exportQualityJson() {
     if (!candidateMatchesControls || !latestResult || updating) return;
@@ -554,6 +559,8 @@
       reductionPercent: Number($('reduction').value),
       maximumErrorPercent: Number($('error').value),
       preserveTransparentCards: $('protect-cards').checked,
+      remeshActuallyApplied: (latestResult?.remeshTrianglesAdded || 0) > 0, // Actual work, distinct from the requested remesh checkbox.
+      subdivisionTrianglesAdded: latestResult?.remeshTrianglesAdded || 0,
     }; // Metadata documents the exact workshop preview used to bake the optimized model.
     const report = {
       schema: quality.SCHEMA,
@@ -664,7 +671,7 @@
     renderer.dispose();
   });
   $('copy-report').addEventListener('click', async () => {
-    const report = sourceName + '\n' + $('summary').textContent + '\n' + $('materials').textContent + '\n' + $('mesh-integrity').textContent + '\n' + $('edge-diagnostics').textContent + '\n' + $('display-verification').textContent + '\n' + $('log').textContent;
+    const report = sourceName + '\n' + $('summary').textContent + '\n' + $('materials').textContent + '\n' + $('mesh-integrity').textContent + '\n' + $('edge-diagnostics').textContent + '\n' + $('subdivision-status').textContent + '\n' + $('display-verification').textContent + '\n' + $('log').textContent;
     try { await navigator.clipboard.writeText(report); log('Report copied.'); }
     catch (e) { $('diagnostics').open = true; $('log').focus(); log('Clipboard unavailable; select the text above to copy.', true); }
   });

@@ -270,6 +270,7 @@
     output.traverse(node => { if (node.isMesh) copies.push(node); });
     const warnings = [], details = [];
     let outputTriangleCount = sourceStats.triangles; // Tracks the aggregate remesh budget across every mesh, not merely each component.
+    let remeshTrianglesAdded = 0; // Counts successful edge-subdivision work, not a checked but ineffective UI box.
     for (let i = 0; i < originals.length; i++) {
       const before = originals[i], after = copies[i];
       if (!before.geometry) continue;
@@ -280,6 +281,7 @@
         continue;
       }
       let working = null;
+      let meshRemeshGain = 0; // Pending subdivision triangles for this mesh; count only after its complete operation succeeds.
       try {
         spans(before.geometry, materialSlots(before));
         if (remesh) {
@@ -288,6 +290,7 @@
             warnings.push(label + ': remesh skipped (aggregate mobile triangle budget)');
           } else {
             working = splitLongEdges(before.geometry, edgeFraction, available);
+            if (working !== before.geometry) meshRemeshGain = triangles(working) - triangles(before.geometry);
             if (working === before.geometry) {
               warnings.push(label + ': adaptive edge subdivision skipped — no edge exceeds ' + (edgeFraction * 100).toFixed(1) + '% of its bounding-box diagonal.');
             }
@@ -301,6 +304,7 @@
         if (working && working !== before.geometry) {
           after.geometry = working; // Never replace/dispose the live source geometry.
           outputTriangleCount += triangles(working) - triangles(before.geometry); // Include changes before deciding whether the next mesh fits.
+          remeshTrianglesAdded += meshRemeshGain; // Excludes failed processing that preserved the original mesh.
           details.push(label + ': ' + triangles(before.geometry) + ' → ' + triangles(working) + ' triangles');
         }
       } catch (error) {
@@ -308,8 +312,12 @@
         warnings.push(label + ': ' + (error?.message || error));
       }
     }
-    output.userData = { ...output.userData, geometryWorkshop: { remesh, reduction, edgePercent: edgeFraction * 100, sourceTriangles: sourceStats.triangles, outputTriangles: stats(output).triangles } };
-    return { object: output, source: sourceStats, result: stats(output), warnings, details };
+    output.userData = { ...output.userData, geometryWorkshop: {
+      remesh, remeshRequested: remesh, remeshApplied: remeshTrianglesAdded > 0, remeshTrianglesAdded,
+      reduction, edgePercent: edgeFraction * 100,
+      sourceTriangles: sourceStats.triangles, outputTriangles: stats(output).triangles,
+    } };
+    return { object: output, source: sourceStats, result: stats(output), remeshTrianglesAdded, warnings, details };
   }
   function preservedMaterials(original, candidate) {
     const a = [], b = [];
