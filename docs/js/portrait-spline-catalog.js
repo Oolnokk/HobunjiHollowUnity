@@ -81,6 +81,39 @@
       }
       return configPromises.get(entry.url);
     }
+    const speciesIndexUrl = new URL('../species/index.json', indexUrl).href; // Species head definitions come from the canonical species index, not inferred asset paths.
+    let speciesIndexPromise = null; // One shared lookup across species/gender switches; only the selected head is fetched.
+    const speciesCache = new Map(); // Cache source JSON per species while preserving the index-defined file paths.
+    async function speciesDefinition(speciesId) {
+      if (!speciesIndexPromise) speciesIndexPromise = Promise.resolve()
+        .then(() => fetchConfig(speciesIndexUrl))
+        .catch(error => { speciesIndexPromise = null; throw error; });
+      const index = await speciesIndexPromise;
+      const entry = (index.entries || []).find(item => item.speciesId === speciesId);
+      if (!entry) throw Error('Species not found in indexed head definitions: ' + speciesId);
+      const url = new URL(entry.path, speciesIndexUrl).href;
+      if (!speciesCache.has(url)) speciesCache.set(url, Promise.resolve().then(() => fetchConfig(url))
+        .catch(error => { speciesCache.delete(url); throw error; }));
+      return speciesCache.get(url);
+    }
+    async function headArtwork(speciesId, gender, view = 'front', imageLoader = loadImage) {
+      const def = await speciesDefinition(speciesId);
+      const data = def?.[gender];
+      if (!data) throw Error('No indexed ' + gender + ' head for ' + speciesId);
+      const headPath = (view === 'rear' && data.behindHeadSprite) || data.headSprite;
+      if (!headPath) throw Error('Head sprite not authored for ' + speciesId + ' ' + gender);
+      const image = await imageLoader(assetUrl(headPath));
+      const xform = data.headXform || {};
+      const sx = Number(xform.sx ?? xform.scaleX ?? .95), sy = Number(xform.sy ?? xform.scaleY ?? 1.14);
+      const ax = Number(xform.ax ?? 0), ay = Number(xform.ay ?? -.1);
+      const canvas = document.createElement('canvas'); // Exactly the 200px portrait coordinates used for the cosmetic and seam masks.
+      canvas.width = canvas.height = 200;
+      const ctx = canvas.getContext('2d');
+      const h = LAYER_SIZE * sy;
+      const w = (image.naturalWidth || image.width) / Math.max(1, image.naturalHeight || image.height) * LAYER_SIZE * Math.abs(sx);
+      ctx.drawImage(image, 100 + ay * LAYER_SIZE - w / 2, 100 - ax * LAYER_SIZE - h / 2, w, h);
+      return canvas;
+    }
     function species() {
       const pairs = new Map();
       for (const e of appearance) {
@@ -124,7 +157,7 @@
         failures: settled.filter(r => r.status === 'rejected').length,
       };
     }
-    return { species, genders, styles, hoods, configFor };
+    return { species, genders, styles, hoods, configFor, speciesDefinition, headArtwork };
   }
 
   async function loadIndex(fetchJson = async url => {
