@@ -23,6 +23,8 @@
     MUSHROOM_CAVE: 'mushroom_cave',
     PUZZLE_CAVE: 'puzzle_cave', // A compact one-challenge cavern, separate from a multiwing ruin.
     FORTIFIED_STRONGHOLD: 'fortified_stronghold', // Synthetic camp-linked cavern; no wildlife den anchor.
+    FORTIFIED_BOSS: 'fortified_boss', // Single circular boss chamber reachable only from a cleared stronghold.
+    FORTIFIED_TREASURY: 'fortified_treasury', // Boss-key-gated, persistent three-chest annex.
     // Inhabitants
     BANDIT_HIDEOUT: 'bandit_hideout',
     ANIMAL_DEN: 'animal_den',
@@ -31,6 +33,8 @@
 
   const TYPE_LABELS = Object.freeze({
     [TYPES.FORTIFIED_STRONGHOLD]: 'Fortified Bandit Stronghold',
+    [TYPES.FORTIFIED_BOSS]: 'Bandit Lord Arena',
+    [TYPES.FORTIFIED_TREASURY]: 'Bandit Treasury',
     [TYPES.ORE_MINE]: 'Ore-rich Cave',
     [TYPES.TRAPPED_CACHE]: 'Hidden Cache',
     [TYPES.CATACOMB]: 'Ancient Catacomb',
@@ -199,19 +203,71 @@
       fortifiedStronghold: true, source: 'bandit_camp_conversion',
     };
     sitesByMapId.set(mapId, profile);
+    for (const kind of ['boss','treasury']) {
+      const childDenId = denId + '_' + kind; // Same deterministic building-map id prefix as the parent; no wildlife cave anchors.
+      const child = {
+        schema: PROFILE_SCHEMA, id:profile.id + '_' + kind, zoneId:safeZone, denId:childDenId,
+        mapId:caveMapId(safeZone,childDenId), parentMapId:mapId, signature:profile.signature+':'+kind,
+        contents:kind==='boss'?TYPES.FORTIFIED_BOSS:TYPES.FORTIFIED_TREASURY,
+        inhabitant:kind==='boss'?TYPES.BANDIT_HIDEOUT:TYPES.NONE,
+        layers:[kind==='boss'?TYPES.FORTIFIED_BOSS:TYPES.FORTIFIED_TREASURY],
+        fortifiedStrongholdChild:kind, source:'bandit_stronghold_annex',
+      };
+      sitesByMapId.set(child.mapId,child);
+    }
     return clone(profile);
   }
 
   function forgetFortifiedStronghold(mapId) {
     const profile = sitesByMapId.get(String(mapId));
     if (!profile?.fortifiedStronghold) return false;
+    for (const kind of ['boss','treasury']) resetCave(profile.mapId + '_' + kind); // Children use native cave cleanup before their parent is retired.
     resetCave(profile.mapId); // Existing cave teardown clears old props/occupants/state when the camp rerolls.
     return true;
   }
 
   function fortifiedStrongholdCleared(mapId) {
     const profile = sitesByMapId.get(String(mapId));
-    return !!(profile?.fortifiedStronghold && stateFor(profile).occupantsCleared);
+    const boss = sitesByMapId.get(String(mapId) + '_boss');
+    return !!(profile?.fortifiedStronghold && stateFor(profile).occupantsCleared
+      && boss && stateFor(boss).occupantsCleared); // A cleared entrance is not an abandoned camp while the Bandit Lord lives.
+  }
+
+  function strongholdStage(mapId) {
+    const parentId=String(mapId||'').replace(/_(boss|treasury)$/,'');
+    const parent=profileForMapId(parentId);
+    if(!parent?.fortifiedStronghold)return null;
+    const boss=profileForMapId(parentId+'_boss');
+    const treasury=profileForMapId(parentId+'_treasury');
+    return {
+      parentMapId:parentId,bossMapId:boss?.mapId||null,treasuryMapId:treasury?.mapId||null,
+      garrisonCleared:!!stateFor(parent).occupantsCleared,
+      bossCleared:!!(boss&&stateFor(boss).occupantsCleared),
+      lordKeyClaimed:!!(boss&&stateFor(boss).strongholdLordKeyClaimed),
+      treasuryClaimed:treasury?stateFor(treasury).strongholdChestClaims||[]:[],
+    };
+  }
+
+  function claimStrongholdLordKey(mapId) {
+    const profile=profileForMapId(mapId);
+    if(profile?.fortifiedStrongholdChild!=='boss')return false;
+    const state=stateFor(profile);
+    if(state.strongholdLordKeyClaimed)return false;
+    state.strongholdLordKeyClaimed=true; // Claim is keyed to the boss corpse; never repeat if corpse persists/reloads.
+    persistState();
+    return true;
+  }
+
+  function claimStrongholdChest(mapId,chestId) {
+    const profile=profileForMapId(mapId);
+    if(profile?.fortifiedStrongholdChild!=='treasury')return false;
+    const id=String(chestId||'');
+    if(!id)return false;
+    const state=stateFor(profile);
+    if(state.strongholdChestClaims?.includes(id))return false;
+    (state.strongholdChestClaims||=[]).push(id); // Durable world-save claim before random loot is granted.
+    persistState();
+    return true;
   }
 
   function strongholdWolfStatus(mapId, slot) {
@@ -427,9 +483,9 @@
     // A save loaded *inside* a fortress reaches the cavern generator before its exterior
     // camp can be seeded. Recover its synthetic profile by map id instead of accidentally
     // decorating it as an uninhabited wildlife den.
-    const savedStronghold = /^map_i_den_(map_[a-z0-9_]+)_bandit_stronghold_(\d+)$/i.exec(id);
+    const savedStronghold = /^map_i_den_(map_[a-z0-9_]+)_bandit_stronghold_(\d+)(?:_(boss|treasury))?$/i.exec(id);
     if (!sitesByMapId.has(id) && savedStronghold)
-      registerFortifiedStronghold(savedStronghold[1], Number(savedStronghold[2]));
+      registerFortifiedStronghold(savedStronghold[1], Number(savedStronghold[2])); // Direct reload into boss/treasury re-registers all three maps.
     if (!sitesByMapId.has(id) && id.startsWith('map_i_den_')) {
       wildlifeDeps?.zoneLayouts?.forEach?.((layout, zoneId) => {
         if (!sitesByMapId.has(id) && layout?.dens?.length) zoneSites(zoneId);
@@ -1020,12 +1076,29 @@
         (key === 'ruinDungeonChestT2' && (group.userData.caveSiteProp.id === plansByMapId.get(mapId)?.puzzleTreasure?.id
           ? state.puzzleSolved&&!state.puzzleRewardClaimed : !state.cacheOpened))) roots.push(group); // Puzzle chest is sensed only after the gate opens.
     }
+    if(profile.fortifiedStrongholdChild==='treasury' && props?.scene===scene)for(const chest of plansByMapId.get(mapId)?.strongholdTreasuryChests||[]){
+      if(state.strongholdChestClaims?.includes(chest.id))continue;
+      const mesh=props.groups.get(chest.id);
+      if(mesh?.parent===scene)roots.push(mesh);
+    }
     return roots;
   }
 
   function decorateCavernMapData(mapId, mapData) {
     const profile = profileForMapId(mapId);
     if (!profile || !mapData) return mapData;
+    if (profile.fortifiedStrongholdChild) {
+      const child=window.BanditStrongholdBoss?.decorateChild?.(profile,mapData) || mapData; // Shares the parent cavern carver; no new map renderer.
+      const plan={profile:clone(profile),shattercasks:[],strongholdBarrels:[],banditSpawns:clone(child.caveBanditSpawns||[]),
+        bodies:[],traps:[],coffins:[],mineRocks:[],mushrooms:[],
+        cache:null,ruinEntrance:null,puzzleCave:null,puzzleTreasure:null,
+        strongholdTreasuryChests:clone(child.strongholdTreasuryChests||[]),
+        floorSurfaceY:Number(child.floorSurfaceY)||0};
+      child.caveSite=clone(profile);
+      child.caveSitePlan={banditSpawns:clone(plan.banditSpawns),strongholdTreasuryChests:clone(plan.strongholdTreasuryChests)};
+      plansByMapId.set(String(mapId),plan);
+      return child;
+    }
     const rng = makeRng(`${profile.signature}:interior`); // Feature stream isolated from profile selection, stable across reloads.
     const solidTiles = new Set([...(mapData.outerRimTiles || []), ...(mapData.colliders || [])].map(tile => tileKey(tile[0], tile[1]))); // Static walls and the untouchable rim never enter any feature pool.
     let allTiles = floorTiles(mapData).filter(tile => !solidTiles.has(tileKey(tile.col, tile.row))); // Rebuilt after the locale carver expands objective rooms.
@@ -1229,6 +1302,7 @@
       exit.label = 'Back to the cave';
     }
 
+    if (profile.fortifiedStronghold) window.BanditStrongholdBoss?.decorateParent?.(profile,mapData,plan,blockedKeys,allTiles); // Physical locked door uses native key-gated building exit.
     if (profile.fortifiedStronghold && mapData.exits?.length) {
       const exterior = mapData.exits[0]; // Explicit return target: a synthetic stronghold is not a WildlifeSpawn den.
       exterior.targetMap = profile.zoneId;
@@ -1322,7 +1396,7 @@
     for(const sites of outdoorPuzzleSitesByZone.values())for(const site of sites)sitesByMapId.delete(site.mapId);
     for(const site of rockPuzzleSitesByParent.values())sitesByMapId.delete(site.mapId);
     outdoorPuzzleSitesByZone.clear(); // A restored world must reroll its own cliff doors, not inherit the prior world's entrance registry.
-    for (const [mapId, site] of [...sitesByMapId]) if (site?.fortifiedStronghold) {
+    for (const [mapId, site] of [...sitesByMapId]) if (site?.fortifiedStronghold || site?.fortifiedStrongholdChild) {
       sitesByMapId.delete(mapId); plansByMapId.delete(mapId);
       window.BanditStrongholds?.forgetInterior?.(mapId); // A different world must not inherit a cached fortress model.
     }
@@ -1490,6 +1564,7 @@
     if (!hostileObjects) return;
     for (const entity of hostileObjects) if (entity?.caveSiteMapId === mapId && entity.health > 0) return; // Hideout still active.
     if (banditPopulatedMaps.has(mapId)) {
+      if(profile.fortifiedStrongholdChild==='boss' && window.BanditStrongholdBoss?.bossStillAlive?.(mapId,wildlifeDeps?.hostileObjects))return;
       state.occupantsCleared = true;
       persistState();
       window.__farmLog?.(`[cave-sites] cave occupants cleared: ${mapId}`, 'world');
@@ -1505,14 +1580,17 @@
       for (const spawn of spawns) {
         const x = (spawn.col + 0.5) * tileSize;
         const y = (spawn.row + 0.5) * tileSize;
-        const opts = { zoneId: mapId, extra: { homeX: x, homeY: y, state: 'idle', caveSiteMapId: mapId,
-          banditStrongholdThrower: !!spawn.strongholdThrower,
-          _strongholdTileSize: tileSize } }; // Existing BanditCombat runtime drives native Burden-throw actions.
+        const special=window.BanditStrongholdBoss?.entityOptions?.(profile,spawn,cfg)||{};
+        const opts = { zoneId: mapId, ...special,
+          extra: { homeX: x, homeY: y, state: 'idle', caveSiteMapId: mapId,
+            banditStrongholdThrower: !!spawn.strongholdThrower,
+            _strongholdTileSize: tileSize, ...(special.extra||{}) } }; // Existing BanditCombat builds the real boss/captain rig.
         const entity = await window.BanditCombat.makeEntity(cfg, spawn.rank || 'grunt', spawn.tier || 1, x, y, opts);
         if (wildlifeDeps?.getCurrentArea?.() !== mapId || plansByMapId.get(mapId) !== plan) { if (entity) devSpawnerDeps?.despawnCreature?.(entity); break; }
         if (!entity) continue;
         entity.caveSiteMapId = mapId;
         entity.caveSiteSignature = profile.signature;
+        window.BanditStrongholdBoss?.onEntitySpawned?.(profile,spawn,entity,wildlifeDeps); // Actual mastery-5 lord and native wolf variants.
         hostileObjects.add(entity);
         spawned++;
       }
@@ -1596,6 +1674,11 @@
       };
     }
     const cache = plan.cache; // The authored chest now requires an explicit press instead of proximity auto-loot.
+    const fortressInteraction=window.BanditStrongholdBoss?.objectAt?.(profile,plan,col,row,stateFor(profile),{
+      currentArea:String(wildlifeDeps?.getCurrentArea?.()||''),distanceTiles:caveDistanceTiles({col,row}),
+      showToast:wildlifeDeps?.showToast,
+    });
+    if(fortressInteraction)return fortressInteraction; // Independent treasury chest actions preserve the common object picker/controller plumbing.
     if (profile && cache && cache.col === col && cache.row === row && !stateFor(profile).cacheOpened
       && caveDistanceTiles(cache) <= CACHE_OPEN_RADIUS_TILES) {
       return {
@@ -1808,6 +1891,7 @@
       grantPuzzleCaveReward(profile,plan,state); // Deliver a sealed prize when its definitions become available, even without leaving this cave.
     }
     markDiscovered(profile, state);
+    window.BanditStrongholdBoss?.tick?.(profile,plan,state,wildlifeDeps); // Boss arena, gate-seal sync and separate chest/tank encounter.
     if (profile.fortifiedStronghold) {
       window.BanditStrongholdCover?.tick?.(mapId, CAVE_RUNTIME_INTERVAL_S); // Shared fire patches, at the cave's existing throttled cadence.
       window.BanditStrongholdWolves?.ensureInterior?.(profile, plan, state, wildlifeDeps);
@@ -1935,6 +2019,7 @@
         separator: plansByMapId.get(currentArea).separator && { col: plansByMapId.get(currentArea).separator.col, row: plansByMapId.get(currentArea).separator.row, cells: plansByMapId.get(currentArea).separator.cells, oreKind: plansByMapId.get(currentArea).separator.oreKind },
         banditSpawns: plansByMapId.get(currentArea).banditSpawns,
         strongholdBarrels: plansByMapId.get(currentArea).strongholdBarrels,
+        strongholdTreasuryChests:plansByMapId.get(currentArea).strongholdTreasuryChests,
         bodies: plansByMapId.get(currentArea).bodies,
         bodyStates: (bodiesByMapId.get(currentArea) || []).map(record => ({ id: record.body.id, riser: record.riser, armed: record.armedAt != null, risen: record.risen, looted: !!record.entity?.corpseLooted, state: record.entity?.state || null })),
         shattercasks: plansByMapId.get(currentArea).shattercasks,
@@ -1961,7 +2046,8 @@
     TYPES,
     TYPE_LABELS,
     applyWorkspaceProfiles,
-    registerFortifiedStronghold, forgetFortifiedStronghold, fortifiedStrongholdCleared,
+    registerFortifiedStronghold, forgetFortifiedStronghold, fortifiedStrongholdCleared, strongholdStage,
+    claimStrongholdLordKey,claimStrongholdChest,
     fortifiedCoverDestroyed, markFortifiedCoverDestroyed, activeStrongholdGrid,
     strongholdWolfStatus, markStrongholdWolfFreed, markStrongholdWolfDead,
     fortifiedBarrelStatus, markFortifiedBarrelTaken, claimFortifiedBarrel,
