@@ -41,7 +41,7 @@
     const hoodPlane = makeSheet(null,.001,THREE.DoubleSide,.25);
     sheetGroup.add(headPlane,hoodPlane,hairPlane,rearPlane);
     let mode='translate', state=null, disposed=false, dirty=false;
-    let geometry=null, geometryRear=null, restVertices=null, lastRigHash='';
+    let lastGeometryKey=''; // Only rebuild the deformable ribbon when its points/pose/wind/UV settings actually change.
     let selectedIndex=1, dots=[], handles=[], drag=null;
     const raycaster=new THREE.Raycaster(); // Used only for direct pointer selection and gizmo manipulation.
     const ndc=new THREE.Vector2();
@@ -138,19 +138,19 @@
       replaceTexture(hairPlane,next.front||null);
       replaceTexture(hoodPlane,next.hood||null);
       replaceTexture(rearPlane,next.rear||null,true);
-      const front=geometryFor(rig,posed.points,false);
-      replaceMeshGeometry(hairPlane,front);
-      if(next.rear){
-        const rear=geometryFor(rig,posed.points,true);
-        replaceMeshGeometry(rearPlane,rear);
+      const geometryKey=JSON.stringify([rig.points,rig.segments,rig.width,rig.segmentsX,rig.segmentsY,next.wind]);
+      if(geometryKey!==lastGeometryKey){
+        replaceMeshGeometry(hairPlane,geometryFor(rig,posed.points,false));
+        replaceMeshGeometry(rearPlane,geometryFor(rig,posed.points,true));
+        lastGeometryKey=geometryKey;
       }
       if(next.rear){
-        rearPlane.position.x=-rig.rearOffset.u;
-        rearPlane.position.y=-rig.rearOffset.v;
+        rearPlane.position.x=rig.rearOffset.u;
+        rearPlane.position.y=-rig.rearOffset.v; // Portrait-space v increases downward; u increases rightward.
       }
       addKnots(posed.points);addGizmo(posed.points);
       const blocked=posed.collisions;
-      if(blocked)handlers.onStatus?.(blocked+' segment(s) reached the portrait collision limit');
+      handlers.onStatus?.(blocked?blocked+' segment(s) reached the portrait collision limit':null);
       schedule();
     }
     function selectKnot(index){
@@ -166,7 +166,7 @@
       return mode==='translate' ? Number(pose.translate?.[axis]||0) : Number(pose[POSE_ROTATIONS[axis]]||0);
     }
     function pointerDown(e){
-      if(disposed||!state||!gizmo.visible)return;
+      if(disposed||!state)return; // Keep knot-picking live even if the anchored root knot currently hides its gizmo.
       const c=coordinate(e);ndc.set(c.x,c.y);raycaster.setFromCamera(ndc,camera);
       const hits=raycaster.intersectObjects(pickable,false);
       if(!hits.length)return; // Empty-space drag remains the normal orbit camera interaction.
