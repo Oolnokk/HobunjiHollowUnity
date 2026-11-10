@@ -530,7 +530,7 @@
       context.globalCompositeOperation = 'destination-in';
       context.drawImage(mask, 0, 0, canvas.width, canvas.height);
       const tex = new THREE.CanvasTexture(canvas);
-      tex.colorSpace = THREE.SRGBColorSpace;
+      if (THREE.sRGBEncoding) tex.encoding = THREE.sRGBEncoding;
       const material = mesh.material;
       if (mesh.userData.statueOwnedTexture) mesh.userData.statueOwnedTexture.dispose();
       mesh.userData.statueOwnedTexture = tex;
@@ -545,7 +545,7 @@
     const t = part.transform;
     if (part.kind === 'statueSprite') {
       const geometry = new THREE.PlaneGeometry(Math.max(.001, t.sx || 1), Math.max(.001, t.sy || 1));
-      const material = new THREE.MeshLambertMaterial({color:0xffffff,side:THREE.DoubleSide,transparent:true,alphaTest:.025,depthWrite:true});
+      const material = new THREE.MeshLambertMaterial({color:0xffffff,side:part.statueBackMaskDataUrl?THREE.FrontSide:THREE.DoubleSide,transparent:true,alphaTest:.025,depthWrite:true});
       const mesh = new THREE.Mesh(geometry, material);
       mesh.position.set(t.x || 0,t.y || 0,t.z || 0);
       mesh.rotation.set((t.rx || 0) * DEG,(t.ry || 0) * DEG,(t.rz || 0) * DEG);
@@ -553,6 +553,16 @@
       mesh.userData.authoredPart = part;
       mesh.castShadow = true;
       applyStatueSpriteFinish(mesh, part);
+      if (part.statueBackMaskDataUrl) {
+        const back = new THREE.Mesh(geometry.clone(), new THREE.MeshLambertMaterial({
+          color:0xffffff,side:THREE.FrontSide,transparent:true,alphaTest:.025,depthWrite:true
+        }));
+        back.name = (part.name || 'Statue') + ' rear portrait';
+        back.position.z = -.002; // Independent back PNG never z-fights with the front.
+        back.rotation.y = Math.PI;
+        mesh.add(back);
+        applyStatueSpriteFinish(back, {...part,statueMaskDataUrl:part.statueBackMaskDataUrl});
+      }
       return mesh;
     }
     if (part.kind === 'glb') {
