@@ -99,16 +99,18 @@ header .toolbar #pair-undo,header .toolbar #pair-redo{min-width:88px;position:re
 </details>
 <details id="flail-authoring-panel" class="workflow-section" open><summary>02 · Flail connector and bored haft</summary>
 <h3>Flexible head and rope authoring</h3>
-<p>Author a flail head's exact rope attachment and layered sprite in the <a href="../multi-sprite-weapon-editor/" target="_blank" rel="noopener">Multi-sprite Weapon Editor</a>. The modular head's tang/eye line is completely ignored for flails. Select a recipe owner here; the optional <strong>haft rope mount</strong> sets the opposite attachment and the connector's full reach. Its drawn line and the full flail preview show where the connector extends.</p>
+<p><strong>Two different modes:</strong> For a <strong>Grapple Hook head</strong> on an ordinary haft, its layered contact comes from <a href="../multi-sprite-weapon-editor/" target="_blank" rel="noopener">Complex Tool Visuals</a>; author the haft bore and purple rope mount here. For an <strong>ordinary head on the Grapple-Flail haft</strong>, the cyan head contact is editable below and on the head source sprite <em>for this pairing only</em>. It starts at the rigid tang's START or sleeve's END and never changes the original head's mount arrow. The rope line on the haft still controls the other endpoint and total reach.</p>
 <div class="grid2">
 <label>Head-owned flail recipe <select id="head-flail-assembly"></select></label>
 <label>Haft-owned flail recipe <select id="shaft-flail-assembly"></select></label>
 <label>Haft rope point X (450px source) <input id="shaft-rope-x" type="number" step="1" min="0" max="450" placeholder="Auto: first compatible socket"></label>
 <label>Haft rope point Y (1204px source) <input id="shaft-rope-y" type="number" step="1" min="0" max="1204" placeholder="Auto: first compatible socket"></label>
-<label>Head contact X (read-only, from Complex Tool Visuals) <input id="head-rope-x" type="number" disabled></label>
-<label>Head contact Y (read-only, from Complex Tool Visuals) <input id="head-rope-y" type="number" disabled></label>
-<label>Modular hanging-head scale <input id="head-rope-scale" type="number" step=".05" min=".05" max="8"></label>
+<label>Head rope contact X (pair-only, source px) <input id="head-rope-x" type="number" min="0" max="450" step="1" disabled></label>
+<label>Head rope contact Y (pair-only, source px) <input id="head-rope-y" type="number" min="0" max="1204" step="1" disabled></label>
+<label>Hanging-head scale for this combination <input id="head-rope-scale" type="number" step=".05" min=".05" max="8" disabled></label>
 </div>
+<div class="toolbar"><button id="head-contact-move" type="button" aria-pressed="false">Move contact on head sprite</button><button id="head-contact-reset" type="button">Reset contact to head mount</button></div>
+<p id="head-contact-status" aria-live="polite">Select a flail haft and a rigid head to edit its independent rope-to-head contact.</p>
 <p id="identity-flail-status" aria-live="polite"></p>
 <details id="shaft-bore-panel" open hidden>
 <summary><strong>Recalculating bores in the shaft artwork</strong></summary>
@@ -180,7 +182,7 @@ header .toolbar #pair-undo,header .toolbar #pair-redo{min-width:88px;position:re
 <label><input id="allow-head" type="checkbox"> Allow selected head in Foundry after calibration</label>
 <p id="part-readiness">Heads and hafts require matching tang or eye lines to assemble.</p>
 <p id="head-construction-note" aria-live="polite"></p>
-<p>For rigid heads, tang/eye arrows determine fitting, rotation and length-axis stretch. A <strong>flail head ignores its modular head arrow entirely</strong>: Complex Tool Visuals supplies the head's attachment point. Purple dashed haft connector guides indicate the physical rope start and the mounting-line extension. Gold lines are tangs and aqua lines eyes; all coordinates use the original 450 × 1204 sprite frame.</p>
+<p>For ordinary rigid pairs, tang/eye arrows determine fitting, rotation and length-axis stretch. When a rigid head hangs from a flail shaft, its cyan rope contact is edited separately in section 02; the shared rigid head arrow is protected. A <strong>flail head ignores its modular head arrow entirely</strong>: Complex Tool Visuals supplies its attachment point. Purple dashed haft connector guides indicate the physical rope start and the mounting-line extension. Gold lines are tangs and aqua lines eyes; all coordinates use the original 450 × 1204 sprite frame.</p>
 <div class="toolbar" role="group" aria-label="Mount line editing mode">
 <button id="gizmo-draw" type="button" aria-pressed="true">✏️ Draw line</button>
 <button id="gizmo-move" type="button" aria-pressed="false"><span aria-hidden="true">✥</span> Move line</button>
@@ -279,7 +281,7 @@ header .toolbar #pair-undo,header .toolbar #pair-redo{min-width:88px;position:re
 <details id="source-preview-workflow" class="workflow-section"><summary>Source canvases · edit haft, head and bridge work</summary>
 <p>Open these three workspaces to drag mounts, reposition an authored bore, or paint metalwork. The full rig stays visible above.</p>
 <div class="source-previews"><figure><canvas id="shaft-canvas" width="450" height="1204"></canvas><figcaption>Haft lines <button class="max-toggle" type="button" data-max aria-pressed="false" aria-label="Maximize haft lines preview">⤢ Maximize</button></figcaption></figure>
-<figure><canvas id="head-canvas" width="450" height="1204"></canvas><figcaption>Head line <button class="max-toggle" type="button" data-max aria-pressed="false" aria-label="Maximize head line preview">⤢ Maximize</button></figcaption></figure>
+<figure><canvas id="head-canvas" width="450" height="1204"></canvas><figcaption>Head source · cyan contact for flail-haft pairs, rigid line otherwise <button class="max-toggle" type="button" data-max aria-pressed="false" aria-label="Maximize head line preview">⤢ Maximize</button></figcaption></figure>
 <figure><canvas id="preview" width="450" height="1204"></canvas><figcaption>Assembled weapon <button class="max-toggle" type="button" data-max aria-pressed="false" aria-label="Maximize assembled weapon preview">⤢ Maximize</button></figcaption></figure></div></details></div>
 </section></div><section id="sprite-cutter"><details id="sprite-cutter-workflow" class="workflow-section"><summary>08 · Make a new part from a weapon sprite (PNG tools)</summary>
 <h2>Make a modular head or shaft from a full weapon</h2>
@@ -337,5 +339,5 @@ header .toolbar #pair-undo,header .toolbar #pair-redo{min-width:88px;position:re
 </details></section></main>
 <script src="../../config/modular-weapons.js?v=20261109modularidentity1"></script><script src="../../js/modular-weapon-bridge-fill.js?v=20261109boreflex1"></script><script src="../../js/color-fill.js?v=20260923colorfill7"></script><script src="../../config/weapon-sprite-assemblies.js?v=20261109ropebrown3"></script>
 <script src="../../js/weapon-layer-effects.js?v=20261101hachutuwle2"></script>
-<script src="../../js/modular-weapons.js?v=20261109modularidentity1"></script><script src="mount-gizmos.js?v=20261025length001"></script><script src="junction-picker.js?v=20261029recipes001"></script><script src="recipe-provenance.js?v=20261107recipeaudit2"></script><script src="full-assembly-preview.js?v=20261109fullrig1"></script><script src="editor.js?v=20261109fullrig2"></script><script src="sprite-outline.js?v=20261025b"></script><script src="sprite-cutter.js?v=20261029recipes001"></script>
+<script src="../../js/modular-weapons.js?v=20261109paircontact1"></script><script src="mount-gizmos.js?v=20261025length001"></script><script src="junction-picker.js?v=20261029recipes001"></script><script src="recipe-provenance.js?v=20261107recipeaudit2"></script><script src="full-assembly-preview.js?v=20261109fullrig1"></script><script src="editor.js?v=20261109paircontact1"></script><script src="sprite-outline.js?v=20261025b"></script><script src="sprite-cutter.js?v=20261029recipes001"></script>
 </body></html>
