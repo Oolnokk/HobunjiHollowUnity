@@ -425,6 +425,7 @@
     characterBuildStatus.stage = 'combat-portrait';
     await window.NpcAvatarPreview.renderProfileToCanvas(combatFrownCanvas, profile, {
       forceEyesOpen: true,
+      deferSplineParts: true,
       breathingComposer: COMBAT_FROWN_COMPOSER,
       seatId: 'bandit-combat-frown',
     });
@@ -547,11 +548,11 @@
     // head bone, otherwise beard/hair stays with the hidden hand-driver portrait.
     const splineHolder = portrait.userData?.portraitSplineHolder; // Authored cosmetic child formerly attached to the temporary base plane.
     const splineBone = frontNeckSkin?.headScaleBone || null; // Same articulated head transform the hostile's front portrait already uses.
+    portrait.userData.portraitSplineHeadBone = splineBone; // Later wardrobe changes must use the visible hostile's animated bone even if the old style was unrigged.
+    portrait.userData.portraitSplineNeckLocal = frontNeckSkin?.neckLocal || null; // The root-relative reattachment offset for a newly equipped strand.
     if (splineHolder) {
       const splineHost = splineBone || frontPivot; // A headless/rigless hostile retains a rigid, correctly-facing fallback.
       splineHost.add(splineHolder);
-      portrait.userData.portraitSplineHeadBone = splineBone;
-      portrait.userData.portraitSplineNeckLocal = frontNeckSkin?.neckLocal || null;
       if (splineBone) {
         splineHolder.position.set(-(frontNeckSkin.neckLocal?.x || 0), -(frontNeckSkin.neckLocal?.y || 0), 0);
       } else splineHolder.position.set(0, 0, 0);
