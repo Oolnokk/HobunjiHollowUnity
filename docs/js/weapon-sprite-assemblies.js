@@ -279,8 +279,9 @@
         headArtworkRoot.rotation.z = -(Number(pairVisual.rotation) || 0) * Math.PI / 180; // Source bitmap Y is down, Three.js Y is up.
       }
       headRoot.add(headArtworkRoot);
+      const headOrder = f.head.layerOrder === 'haft-over-head' ? order - 0.02 : order + 0.02; // Pair-only foreground choice; original multi-sprite flails keep their authored front order.
       f.head.layers.forEach((layer, i) => {
-        const mesh = buildPlane(THREE, headTextures[i].image, headTextures[i], unit, order + 0.02 + i * 0.001, layer.offsetPx);
+        const mesh = buildPlane(THREE, headTextures[i].image, headTextures[i], unit, headOrder + i * 0.001, layer.offsetPx);
         headArtworkRoot.add(mesh); // Shared pair transform preserves authored per-layer geometry and effects.
         state.headParts.push(mesh);
         effects?.registerLayer(state, mesh, layer, headTextures[i].image);
