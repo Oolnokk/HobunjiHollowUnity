@@ -111,7 +111,7 @@ const played = []; // Records actual root voices created by the production sync 
 const live = {rootPadEnabled:true,paused:false,audioContext:{state:'running'},master:{},
   rootPadSampleBuffer:null,rootPadVoices:[],rootPadRootMidi:null,lastRootPadKey:null,rootPadLevel:.02};
 const playRoot = vm.runInNewContext(syncSource + '\nsyncRootPad;', {
-  state:live,HOSTED_FLUTE_PERFORMANCE:false,document:{hidden:false},sharedTransportData:() => atBar(0,2), // This isolated harness tests an NPC Kurraya, not a flute.
+  state:live,HOSTED_FLUTE_PERFORMANCE:false,jamLeaderSync:null,document:{hidden:false},sharedTransportData:() => atBar(0,2), // This isolated harness tests an NPC Kurraya, not a flute.
   rootPadAudioKey:rootKey,rootPadTargetMidi:() => 40,PAD_SYNTH_CROSSFADE_S:.8,
   createRootPadVoice:midi => {
     const voice = {midi,kind:'kurraya',active:true,stopping:false}; // Tracks each mock root attack through normal root voice bookkeeping.
