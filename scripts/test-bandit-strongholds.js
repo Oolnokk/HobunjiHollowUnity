@@ -46,6 +46,7 @@ let coverInvalidations = 0; // Checks that breaking a barrier refreshes the exis
 environment.PersistentGroundFire = { intersects:()=>fireIsActive };
 environment.NearbyVolumeCollision = { invalidate:()=>{coverInvalidations++;} };
 vm.runInContext(read('docs/js/bandit-stronghold-cover.js'), environment, { filename:'bandit-stronghold-cover.js' });
+vm.runInContext(read('docs/js/bandit-stronghold-wolves.js'), environment, { filename:'bandit-stronghold-wolves.js' });
 
 const caves = environment.CaveSiteSystem;
 const strongholds = environment.BanditStrongholds;
@@ -61,9 +62,9 @@ assert(hitCount > 220 && hitCount < 380, 'deterministic campsite conversion pres
 
 for (const recipe of Object.values(environment.ProceduralFurniture.CATALOG)) {
   for (const component of recipe) {
-    assert(['wood','stone'].includes(component.materialRole), 'new structure uses existing material roles');
+    assert(['wood','stone','metal'].includes(component.materialRole), 'new structure uses existing material roles');
     assert.equal(component.materialTexture, component.materialRole === 'wood' ? 'boards.png' : 'carved_smooth.png',
-      'wood matches authored aging barrels; stone matches carved architecture');
+      'wood matches authored aging barrels; stone/verdigris metal match carved architecture');
   }
 }
 
@@ -77,9 +78,10 @@ const rec = {
 };
 assert.equal(strongholds.upgradeCamp(rec,deps),true);
 assert.equal(rec.props[0].destroyed,true, 'tent appearance is replaced, not another camp generated');
-assert.equal(rec.props.filter(prop => prop.strongholdProp).length,7,'two towers, barricades and one arch');
-assert.equal(new Set(rec.props.filter(prop=>prop.strongholdProp).map(prop=>prop.id)).size,7,'twin watchtowers and barricades have distinct mesh IDs');
-assert.equal(new Set(rec.props.filter(prop=>prop.strongholdProp).map(prop=>prop.coverId)).size,7,'cover save keys are individually stable');
+assert.equal(rec.props.filter(prop => prop.strongholdProp).length,9,'two towers, barricades, an arch and two wolf stakes');
+assert.equal(rec.props.filter(prop => prop.strongholdStake).length,2,'each wolf receives a separate stake and native interaction');
+assert.equal(new Set(rec.props.filter(prop=>prop.strongholdProp).map(prop=>prop.id)).size,9,'twin watchtowers and barricades have distinct mesh IDs');
+assert.equal(new Set(rec.props.filter(prop=>prop.strongholdProp).map(prop=>prop.coverId)).size,9,'cover and stake save keys are individually stable');
 assert.equal(layout.transitions.length,1,'one native cave entrance');
 assert.equal(layout.transitions[0].targetMapId,rec.stronghold.mapId);
 const count = rec.props.length;
@@ -158,8 +160,60 @@ assert.equal(cover.debugSnapshot(zoneId).active.length,0,'destroyed props leave 
 
 const index=read('docs/index.html');
 assert(index.includes('bandit-stronghold-cover.js'), 'new reusable cover module loads before game boot');
+assert(index.includes('bandit-stronghold-wolves.js'), 'wolf stakes and chase reuse the game loop before gameplay boot');
 assert(index.indexOf('bandit-strongholds.js')>index.indexOf('cave-site-system.js'), 'stronghold module loads after cave owner');
 assert(index.indexOf('bandit-strongholds.js')<index.indexOf('src="game.js'), 'feature is registered before gameplay boot');
+// Rescued gar-wolves use native creature entities, never their own combat damage.
+const wolves=environment.BanditStrongholdWolves;
+const secondCamp={
+  zoneId,discoverySlot:2,homeX:0,homeY:0,gangIds:new Set(),
+  instance:{id:'original-camp-2',site:{x:25,y:15,w:9,h:8},stampedObjectIds:['tent-b']},
+  props:[{id:'tent-b',type:'tent',destroyed:false}],
+};
+assert(strongholds.upgradeCamp(secondCamp,deps));
+secondCamp.homeX=(25+4.5)*64;secondCamp.homeY=(15+4)*64;
+const zoneScene=new Group(), zoneGrid=Array.from({length:38},()=>Array.from({length:46},()=>({})));
+let wolfSerial=0,activeArea=zoneId,despawned=0;
+const wolfHostiles=new Set();
+const wolfDeps={
+  TILE:64,zoneLayouts:deps.zoneLayouts,zoneScenes:new Map([[zoneId,{scene:zoneScene,grid:zoneGrid}]]),
+  hostileObjects:wolfHostiles,
+  getCurrentArea:()=>activeArea,getActiveScene:()=>zoneScene,getActiveGrid:()=>zoneGrid,
+  getActiveCols:()=>46,getActiveRows:()=>38,tileSurfaceYInArea:()=>0,
+  makeCreatureEntity(kind,x,y,options){assert.equal(kind,'gar-wolf');
+    return {id:'wolf-'+(++wolfSerial),creatureKey:kind,health:24,def:{aggroRangePx:256,leashRangePx:512},x,y,areaId:activeArea,...options};
+  },
+  despawnCreature(wolf){despawned++;wolfHostiles.delete(wolf);},
+  showToast(){},
+};
+assert.equal(wolves.ensureExterior(secondCamp,wolfDeps),2,'two real chained gar-wolf entities spawn at each stake');
+assert.equal(wolves.ensureExterior(secondCamp,wolfDeps),0,'exterior wolf setup is idempotent');
+const wolfStake=secondCamp.props.find(prop=>prop.strongholdStake&&prop.wolfSlot===0);
+const secondMap=secondCamp.stronghold.mapId;
+assert.equal(wolves.freeStake(secondCamp,wolfStake,wolfDeps),true,'stake interaction releases its own living wolf');
+assert.equal(wolfStake.freed,true);
+assert.equal(caves.strongholdWolfStatus(secondMap,0).freed,true,'release is persisted in the parent cave');
+assert.equal(wolves.freeStake(secondCamp,wolfStake,wolfDeps),false,'one stake cannot unlock the same wolf twice');
+for(let tick=0;tick<42;tick++)wolves.tickExterior(zoneId,.2,wolfDeps);
+assert(wolves.debugSnapshot().escaped>0,'released wolf visibly reaches the cave entrance instead of teleporting on interaction');
+const enemy={id:'enemy-native',isBandit:true,health:50,caveSiteMapId:secondMap,x:21*64,y:20*64};
+wolfHostiles.add(enemy);
+activeArea=secondMap;
+const caveProfile=caves.profileForMapId(secondMap);
+const caveState=caves.__test.runtimeStateBySignature.get(caveProfile.signature);
+assert.equal(wolves.ensureInterior(caveProfile,{banditSpawns:[{col:21,row:20}]},caveState,wolfDeps),1,
+  'liberated wolf is spawned only after entering a populated bandit cave');
+const ally=[...wolfHostiles].find(actor=>actor.banditStrongholdLiberated);
+assert(ally && ally.targetCreature===enemy && ally.targetPlayer==null && ally.def.hostile===false,
+  'liberated wolf uses native patrol-chase against bandits, never the player');
+assert.equal(wolves.ensureInterior(caveProfile,{},caveState,wolfDeps),0,'native wolf ally cannot duplicate on runtime ticks');
+ally.health=0;
+wolves.tickInterior(secondMap,wolfDeps);
+assert.equal(caves.strongholdWolfStatus(secondMap,0).dead,true,'fallen freed wolves do not respawn after a reload');
+wolves.forgetInterior(secondMap,wolfDeps);
+wolves.forgetExterior(secondCamp,wolfDeps);
+strongholds.removeCamp(secondCamp,deps,false);
+
 // Barrel gameplay uses the exact production stronghold and CaveSiteSystem modules.
 // The authored Aging Barrel supplies its artwork, and the shared Shattercasks Burden
 // supplies pickup, throw and impact behavior. Only those browser dependencies are stubbed.
