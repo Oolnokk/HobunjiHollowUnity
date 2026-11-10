@@ -400,7 +400,7 @@
     scene.add(group);portal.visualRoot=group;
     // The plate belongs on the registered cap, not at terrain height underneath.
     if(portal.requiresSong){
-      const plate=new THREE.Mesh(new THREE.CylinderGeometry(.55,.55,.09,24),
+      const plate=new THREE.Mesh(new THREE.CylinderGeometry(.46,.46,.09,24),
         root.ProceduralFurniture?.makePartMaterial?.({
           materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#7a746b',
         })||new THREE.MeshBasicMaterial({color:0x7a746b})); // PNG stone even if the Tankan artwork loader is unavailable.
@@ -408,13 +408,13 @@
       plate.position.set(portal.plate.x,portal.plate.y+.035,portal.plate.z);
       group.add(plate);portal.plateMesh=plate;
       portal.plateArt=root.PuzzleCavePlateArt?.decorate?.(THREE,plate,{
-        radius:.55,thickness:.09,
+        radius:.46,thickness:.09,
         toward:{x:portal.door.x-portal.plate.x,z:portal.door.z-portal.plate.z}
       })||null; // Furniture Author carved_smooth stone plus hao'uun in the shared Tankan font.
       portal.plateSignal=root.FurniturePatternSurfaces?.attachStoneSignal?.(plate,{
-        width:.18,height:.18,idleColor:'#a3dcc2',activeColor:'#ffe18a',
+        width:.11,height:.11,idleColor:'#a3dcc2',activeColor:'#ffe18a',
       }); // Small edge rune reports completion without covering the Tankan inscription or recoloring stone.
-      if(portal.plateSignal)portal.plateSignal.glyph.position.x=.37; // Center of the glyph sits safely within the circular plate's outer rim.
+      if(portal.plateSignal)portal.plateSignal.glyph.position.x=.31; // Center of the glyph sits safely within the circular plate's outer rim.
     }
     const furniture=root.AuthoredFurniture;
     Promise.resolve(furniture?.load?.('cliffDoor')).then(data=>{
@@ -585,7 +585,7 @@
       if(portal.disposed)continue;
       ensureIndependentTransitions(area,portal); // Late scene copies still get their own player-only portal.
       const onShelf=player?.onCliffBalcony===portal.shelf.id && !player?.climbing;
-      const down=onShelf&&Math.hypot(px-portal.plate.x,pz-portal.plate.z)<.55; // A separate activation circle leaves room to step up to the gate after the final note.
+      const down=onShelf&&Math.hypot(px-portal.plate.x,pz-portal.plate.z)<=.46; // A separate activation circle leaves room to step up to the gate after the final note.
       if(portal.session){
         root.RuinInteractionAudio?.watchPlate?.(portal.plateMesh,down); // Real raised-shelf plate press/release, never a per-frame click.
         portal.session.step(dt,down); // The active plate alone advances the rhythm; the player decides when to equip and play.
