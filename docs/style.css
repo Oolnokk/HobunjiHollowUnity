@@ -1106,6 +1106,14 @@
     .alch-target { display:flex; flex-direction:column; gap:2px; padding:6px 9px; border-radius:9px; background:rgba(255,255,255,.05); border:1px solid var(--border); color:var(--text); }
     .alch-target.selected { border-color:#f9e28a; background:rgba(249,226,138,.12); }
     .alch-target small, .alch-reaction-count, .alch-target-chance, .alch-unknown-reaction { font-size:10px; color:var(--muted); }
+    .alchemy-favorites { margin: 10px 0; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: rgba(255,255,255,.035); }
+    .alch-favorite-title { margin-bottom: 8px; font-size: 11px; color: #f4d791; font-weight: 700; }
+    .alch-favorite-row { display: flex; gap: 5px; margin: 5px 0; }
+    .alch-favorite-row button { min-width: 35px; border: 1px solid var(--border); border-radius: 7px; background: rgba(255,255,255,.06); color: var(--text); padding: 7px; }
+    .alch-favorite-row button:first-child { flex: 1; min-width: 0; text-align: left; overflow-wrap: anywhere; font-size: 11px; }
+    .alch-favorite-row button:disabled { opacity: .52; }
+    .alch-favorite-row small { display: block; color: var(--muted); margin-top: 2px; }
+
     .alchemy-diagnostics { margin-top:10px; font-size:10px; color:var(--muted); }
     .alchemy-diagnostics pre { max-height:240px; overflow:auto; white-space:pre-wrap; padding:8px; background:rgba(0,0,0,.25); border-radius:8px; }
     .alch-effect-preview { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; min-height: 20px; }

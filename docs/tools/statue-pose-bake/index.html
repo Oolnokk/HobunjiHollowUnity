@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hobunji · Statue Pose Bake</title>
+<style>
+:root{color-scheme:dark;font:14px/1.4 system-ui,sans-serif;background:#0a101a;color:#e5eaf5}
+*{box-sizing:border-box}body{margin:0}header{padding:10px 14px;background:#132133;border-bottom:1px solid #34455b;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+h1{font-size:18px;margin:0}h2{font-size:15px;margin:0 0 8px}a{color:#a6d4ff}button,select,input{font:inherit;background:#1d2d40;color:#e5eaf5;border:1px solid #52687c;border-radius:7px;padding:7px}
+button{cursor:pointer}button:disabled{opacity:.4;cursor:not-allowed}button.primary{background:#28557a;border-color:#6ca3ce}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #78c0ff}
+label{display:block;font-size:12px;color:#c4d3e1}label input,label select{display:block;width:100%;margin-top:3px}
+main{padding:9px;display:grid;grid-template-columns:minmax(280px,315px) minmax(0,1fr);gap:10px;height:calc(100dvh - 58px)}
+aside{overflow:auto;display:flex;flex-direction:column;gap:10px}.panel{background:#101e2e;border:1px solid #34465e;border-radius:9px;padding:12px}
+.controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}.controls .whole{grid-column:1/-1}
+summary{cursor:pointer;font-weight:bold}p{margin:6px 0 10px;color:#c4d3e1}
+iframe{width:100%;height:100%;border:1px solid #34465e;border-radius:9px;background:#101820}
+#previewWrap{display:none;margin-top:10px}#preview{display:block;width:100%;height:230px;border:1px solid #40566d;border-radius:7px;touch-action:none}
+#status{white-space:pre-wrap;font:12px/1.45 ui-monospace,monospace;max-height:180px;overflow:auto;background:#07101c;border:1px solid #314153;border-radius:7px;padding:9px;min-height:65px}
+#status[aria-invalid="true"]{border-color:#d97575}#posePane{min-height:400px}
+@media(max-width:820px){main{display:flex;flex-direction:column;height:auto}aside{overflow:visible}#posePane{height:76dvh;min-height:510px}header{min-height:58px}}
+</style>
+<script src="../../js/tap-reliability.js?v=20261010a"></script>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.128.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.128.0/examples/jsm/"}}</script>
+</head>
+<body>
+<header><h1>🗿 Statue Pose Bake</h1><span>Static NPC figures · weapons · shared finish</span>
+<a href="../character-studio/index.html" target="_blank" rel="noopener">Character Studio</a>
+<a href="../furniture-avatar-author/index.html" target="_blank" rel="noopener">Furniture Editor</a></header>
+<main>
+<aside>
+<section class="panel">
+<h2>1 · Character</h2>
+<p>Select an existing NPC, or import a Character Studio NPC JSON. The inset author uses the real gameplay portrait, hands, feet and attack pose controls.</p>
+<label>Find a repository NPC<input id="searchNpc" type="search" placeholder="Search by name"></label>
+<label>NPC appearance<select id="npcSelect"><option value="">Default pose-editor avatar</option></select></label>
+<label>Import NPC export / NPC database<input id="npcFile" type="file" accept=".json,application/json"></label>
+</section>
+<section class="panel">
+<h2>2 · Freeze this pose</h2>
+<div class="controls">
+<label class="whole">Statue name<input id="name" value="Posed Figure"></label>
+<label class="whole">Shared finish<select id="finish"><option value="">Choose a texture</option><option value="boards.png">Wood boards</option><option value="carved_smooth.png">Carved stone</option><option value="canvas.png">Canvas</option><option value="iridescent_sheen.png">Iridescent sheen</option></select></label>
+<label>Attack-editor key pose<select id="pose"><option value="neutral">Neutral</option><option value="windup">Windup</option><option value="strike">Strike</option></select></label>
+<label>Weapon <select id="weapon"><option value="yes">Include equipped weapon</option><option value="no">No weapon</option></select></label>
+<div class="whole"><button id="bake" class="primary">Bake statue piece</button></div>
+<div class="whole"><button id="send" disabled class="primary">Add directly to Furniture Editor</button></div>
+<div><button id="downloadJson" disabled>Export piece JSON</button></div>
+<div><button id="downloadGlb" disabled>Export GLB</button></div>
+</div>
+<p>The frozen statue imports as <b>one movable piece</b> into whatever furniture assembly you are editing. The body, legs and held weapon use the selected finish; their poses are not animated at runtime.</p>
+<div id="previewWrap"><h2>Baked statue preview</h2><canvas id="preview"></canvas></div>
+</section>
+<section class="panel">
+<h2>Diagnostics</h2>
+<div id="status" role="status">Loading attack pose editor…</div>
+<button id="copyDebug">Copy diagnostics</button>
+<details><summary>Portable statue storage</summary><p>A self-contained statue embeds the GLB inside the piece JSON so it can be imported without uploading an asset. That makes the JSON larger. For shipping many statues, export GLB separately and replace the piece's modelPath with its committed assets/models/ path.</p></details>
+</section>
+</aside>
+<div id="posePane"><iframe id="attack" title="Shared Attack Animation pose author" src="../attack-animation-editor/index.html?statueAuthor=1&v=20261110poseBake1"></iframe></div>
+</main>
+<script type="module">
+import * as THREE from 'three';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+const $=id=>document.getElementById(id);
+let characters=[],selectedNpc=null,last=null,transferTarget=null,previewRoot=null;
+const messages=[]; // One bounded user-visible debug stream, suitable for mobile without devtools.
+function status(message,error=false){
+  messages.unshift((error?'ERROR · ':'')+message);if(messages.length>20)messages.pop();
+  $('status').textContent=messages.join('\n');$('status').setAttribute('aria-invalid',String(error));
+}
+function bridge(){return $('attack').contentWindow?.HobunjiStatuePoseSource||null;}
+function cleanName(value){return String(value||'statue').replace(/[^a-z0-9_-]+/gi,'_').slice(0,80)||'statue';}
+function download(filename,content,type){
+  const blob=content instanceof Blob?content:new Blob([content],{type});
+  const url=URL.createObjectURL(blob),link=document.createElement('a');
+  link.href=url;link.download=filename;document.body.appendChild(link);link.click();link.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function loadedNpcs(data){
+  const entries=Array.isArray(data)?data:Array.isArray(data?.npcs)?data.npcs:data?.appearance?[data]:null;
+  if(!entries)throw Error('Expected an NPC record, Character Studio export, or an NPC database containing npcs[].');
+  return entries.map(npc=>npc?.avatarEditor?.rawExport?.appearance ? {...npc,...npc.avatarEditor.rawExport,appearance:npc.appearance||npc.avatarEditor.rawExport.appearance} : npc)
+    .filter(npc=>npc?.appearance?.speciesId&&npc?.appearance?.gender);
+}
+function refreshNpcList(){
+  const query=$('searchNpc').value.trim().toLowerCase(),select=$('npcSelect'),before=select.value;
+  select.replaceChildren(new Option('Default pose-editor avatar',''));
+  characters.forEach((npc,index)=>{
+    if(query&&!String(npc.name||npc.id||npc.appearance.speciesId).toLowerCase().includes(query))return;
+    select.add(new Option(npc.name||npc.id||'NPC '+(index+1),String(index)));
+  });
+  if([...select.options].some(o=>o.value===before))select.value=before;
+  else if(selectedNpc){const index=characters.indexOf(selectedNpc);if(index>=0&&[...select.options].some(o=>o.value===String(index)))select.value=String(index);}
+}
+async function chooseNpc(){
+  const index=$('npcSelect').value;
+  if(index===''){
+    await bridge()?.clearNpcExport();
+    selectedNpc=null;last=null;updateButtons();
+    status('Using the default avatar in Attack Animation Editor.');
+    return;
+  }
+  selectedNpc=characters[Number(index)];
+  const api=bridge();if(!api)throw Error('Attack Animation Editor is still loading.');
+  await api.setNpcExport(selectedNpc);
+  last=null;updateButtons();
+  status('NPC loaded: '+(selectedNpc.name||selectedNpc.id||selectedNpc.appearance.speciesId)+' · pose in the embedded Attack Animation Editor.');
+}
+async function readNpcFile(file){
+  if(file.size>35_000_000)throw Error('NPC file exceeds the 35 MB import limit.');
+  const loaded=loadedNpcs(JSON.parse(await file.text()));
+  if(!loaded.length)throw Error('No usable NPC appearances found.');
+  characters=loaded;selectedNpc=null;$('searchNpc').value='';refreshNpcList();$('npcSelect').value='0';
+  await chooseNpc();status('Imported '+loaded.length+' NPC appearance record(s).');
+}
+$('npcFile').onchange=async event=>{
+  const file=event.target.files?.[0];if(!file)return;
+  try{await readNpcFile(file);}catch(error){status('NPC import: '+error.message,true)}
+  finally{event.target.value='';}
+};
+$('npcSelect').onchange=()=>chooseNpc().catch(error=>status(error.message,true));
+$('searchNpc').oninput=refreshNpcList;
+async function fetchRepoNpcs(){
+  try{
+    const response=await fetch('../../config/npcs/hobunji-starter-npc-database.json');
+    if(!response.ok)throw Error('HTTP '+response.status);
+    characters=loadedNpcs(await response.json());refreshNpcList();
+    status(characters.length+' repository NPCs are available. Choose one, or supply your own Character Studio export.');
+  }catch(error){status('Could not load repository NPC list: '+error.message+'. File import still works.',true);}
+}
+function updateButtons(){for(const id of ['send','downloadJson','downloadGlb'])$(id).disabled=!last;}
+$('bake').onclick=async()=>{
+  const api=bridge();if(!api){status('Attack Animation Editor is not ready yet. Open its diagnostics and retry.',true);return;}
+  const finish=$('finish').value; // Every exported mesh receives this same finish.
+  if(!finish){status('Choose a shared finish before baking.',true);return;}
+  $('bake').disabled=true;status('Freezing the selected NPC rig with '+finish+'…');
+  try{
+    const result=await api.capture({poseKey:$('pose').value,includeWeapon:$('weapon').value==='yes',name:$('name').value,finish});
+    last=result;updateButtons();await preview(result.glb);
+    status('Baked '+result.meshCount+' mesh(es), '+result.skinnedCount+' skinned mesh(es), '+result.weaponCount+' weapon mesh(es) · GLB '+Math.round(result.bytes/1024)+' KiB. Ready to import as a furniture piece.');
+  }catch(error){last=null;updateButtons();status('Bake failed: '+(error?.message||error),true);}
+  finally{$('bake').disabled=false;}
+};
+$('downloadJson').onclick=()=>{if(!last)return;const {glb,...portable}=last;download(cleanName(portable.part.name)+'_statue_piece.json',JSON.stringify(portable,null,2),'application/json');status('Exported portable statue piece JSON. Import it in Furniture Editor → Pieces.');};
+$('downloadGlb').onclick=()=>{if(!last)return;download(cleanName(last.part.name)+'.glb',last.glb,'model/gltf-binary');status('Exported static statue GLB. Commit it to assets/models/ for smaller production furniture JSON.');};
+function sendToFurniture(target){
+  if(!last||!target)return;
+  const {glb,...portable}=last; // Transfer the portable piece, never the redundant raw ArrayBuffer.
+  target.postMessage({type:'hobunji-statue-piece-import',payload:portable},location.origin);
+}
+$('send').onclick=()=>{
+  if(!last)return;
+  try{
+    const hub=window.parent!==window&&window.parent.document.getElementById('if-statue-pose-bake')?.contentWindow===window?window.parent:null;
+    const existing=hub?.document.getElementById('if-furniture-avatar-author');
+    if(existing){
+      transferTarget=existing.contentWindow; // Preserve the furniture assembly that is already being edited in this Tools Hub.
+      hub.document.querySelector('button[data-target="furniture-avatar-author"]')?.click();
+      if(transferTarget.HobunjiFurnitureStatuePiecesReady)sendToFurniture(transferTarget);
+      else status('Opening the existing Furniture Editor tab. The statue will transfer as soon as it initializes.');
+      return;
+    }
+  }catch(_){/* Standalone or cross-origin host; use an isolated editor window. */}
+  const target=window.open('../furniture-avatar-author/index.html','_blank');
+  if(!target){status('Popup blocked. Download the piece JSON and import it through Furniture Editor → Pieces.',true);return;}
+  transferTarget=target;status('Furniture Editor opened. Waiting for its ready handshake to add the statue piece…');
+};
+window.addEventListener('message',event=>{
+  if(event.origin!==location.origin||event.source!==transferTarget)return;
+  if(event.data?.type==='hobunji-furniture-editor-ready'){
+    sendToFurniture(transferTarget);
+  }
+  if(event.data?.type==='hobunji-statue-piece-result'){
+    status(event.data.ok?'Inserted statue piece '+event.data.imported?.name+' into the Furniture Editor.': 'Furniture Editor import failed: '+event.data.error,!event.data.ok);
+    transferTarget=null;
+  }
+});
+$('copyDebug').onclick=async()=>{
+  const text=messages.join('\n')+'\n'+JSON.stringify(bridge()?.snapshot?.()||{});
+  try{await navigator.clipboard.writeText(text);status('Copied diagnostics.');}
+  catch{$('status').textContent=text;status('Clipboard unavailable; diagnostics are shown above.',true);}
+};
+// Preview uses the actual exported GLB, not an approximation of stone shading.
+const renderer=new THREE.WebGLRenderer({canvas:$('preview'),antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));renderer.outputEncoding=THREE.sRGBEncoding;
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x0c1726);
+scene.add(new THREE.HemisphereLight(0xffffff,0x25384e,1.5));
+const directional=new THREE.DirectionalLight(0xffffff,1.4);directional.position.set(2,4,3);scene.add(directional);
+const camera=new THREE.PerspectiveCamera(45,1,0.01,100);camera.position.set(1.5,1.2,2);
+const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;
+async function preview(bytes){
+  const gltf=await new Promise((resolve,reject)=>new GLTFLoader().parse(bytes,'',resolve,reject));
+  if(previewRoot){scene.remove(previewRoot);previewRoot.traverse(n=>{n.geometry?.dispose?.();(Array.isArray(n.material)?n.material:[n.material]).forEach(m=>m?.dispose?.());});}
+  previewRoot=gltf.scene;scene.add(previewRoot);$('previewWrap').style.display='block';
+  const box=new THREE.Box3().setFromObject(previewRoot),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());
+  const radius=Math.max(.3,size.length()*.85);controls.target.copy(center);camera.position.copy(center).add(new THREE.Vector3(radius*.85,radius*.6,radius));camera.near=.005;camera.far=Math.max(20,radius*10);camera.updateProjectionMatrix();controls.update();
+}
+function animate(){
+  requestAnimationFrame(animate);if($('previewWrap').style.display==='none')return;
+  const r=$('preview').getBoundingClientRect();if(r.width&&r.height){renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;camera.updateProjectionMatrix();controls.update();renderer.render(scene,camera);}
+}
+animate();
+$('attack').addEventListener('load',()=>{
+  let steps=0;const check=()=>{
+    if(bridge()){status('Attack Animation Editor ready. Select an NPC, edit a key pose, and bake the finished statue.');return;}
+    if(++steps<450)setTimeout(check,100);else status('Attack Animation Editor failed to initialize. Its built-in debug panel may explain the missing dependency.',true);
+  };check();
+});
+fetchRepoNpcs();
+</script>
+</body>
+</html>

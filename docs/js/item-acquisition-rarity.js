@@ -761,10 +761,15 @@
     if (cultivar) {
       const currentRoll = cultivar.origin === 'slagothim-import' ? caravanSeed({
         townValue:context.townValue ?? G.TownMine?.getTownValue?.() ?? 1,
-        targetFamily:cultivar.family,targetRegion:Number(cultivar.code[0]) }) : null;
+        targetFamily:cultivar.family,targetRegion:Number(cultivar.code[0]),
+        caravanEligible:Object.hasOwn(context,'caravanEligible') ? context.caravanEligible : true }) : null;
+      const stock = G.CropVarieties?.REGIONAL_SEED_STOCK; // Quantities are copies offered per successful seed listing.
+      const dailySeedChance = currentRoll?.specificSeedChancePerDay ?? null; // Current town odds for Shipping diagnostics.
       return { ...cultivar, acquisition:cultivar.probability === null ? null
         : source({ stages:cultivar.importStages }), // Acquisition report must not apply a second rarity markup to the live sale price.
-        currentDailyRollChance:currentRoll?.specificSeedChancePerDay ?? null,
+        currentDailyRollChance:dailySeedChance,
+        expectedOfferedSeedsPerDay:cultivar.isSeed && stock && dailySeedChance != null
+          ? dailySeedChance*(stock.min+stock.max)/2 : null,
         actualSellPrice:Number.isFinite(Number(def.sellPrice)) ? Number(def.sellPrice) : null,
         proposedSellPrice:cultivarSellPrice(key,context.nativeSellPrice ?? def.rarityBaseSellPrice ?? null),
         note:cultivar.model };

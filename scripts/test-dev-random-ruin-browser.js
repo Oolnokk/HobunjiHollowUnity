@@ -386,16 +386,22 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       const occupancy = window.DevRandomRuin.getOccupancySnapshot();
       const dynamic = window.DynamicSurfaces.debugSnapshot();
       const frame = document.getElementById('devRandomRuinGeneratorFrame');
-      const generator = frame?.contentWindow?.DebrisifierV50;
-      const generatorState = generator?.getState?.();
-      const shell = generatorState?.locale?.meta?.interiorShell || null;
+      const shell = window.DevRandomRuin.getRuntimeContext()?.meta || null; // The embedded generator may now show a detached upper floor.
       const transport = frame?.contentWindow?.__debrisifierEmbeddedTransport || null;
       const furnitureStatus = frame?.contentDocument?.getElementById('furnitureRepoStatus')?.textContent || '';
       const levels = Object.values(shell?.plateauModel?.levelByCell || {}).map(Number);
       let ladders = 0;
       const puzzleTowers = [];
+      const ropeCeilingBeams = {}; // Actual authored geometry, indexed by the owning layered rope room.
       scene?.traverse?.(object => {
         if (object.userData?.generatedAccessType === 'stoneLadder') ladders++;
+        const beam = /^ruin-abyss-ceiling-beam-(.+)$/.exec(object.name || '');
+        if (beam) {
+          const bounds = new THREE.Box3().setFromObject(object);
+          ropeCeilingBeams['layer_' + beam[1]] = {bottom:bounds.min.y,top:bounds.max.y};
+        }
+      });
+      root?.traverse?.(object => { // Entrance-floor towers use the 2D blocker set checked below. Shaft wings have their own 3D navigation.
         if (object.userData?.activatorType === 'stackedObelisk' || object.userData?.activatorType === 'linkedCubePillars') {
           const position = new THREE.Vector3();
           object.updateWorldMatrix?.(true, false);
@@ -495,6 +501,9 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         furnitureStatus,
         ladders,
         puzzleTowers,
+        ropeCeilingBeams,
+        transitDoorCount:window.DevRandomRuin.getState()?.transitDoors?.length || 0,
+        shaftLayerPlan:window.DevRandomRuin.getState()?.shaftLayerPlan || null,
         nativeCrackedPillars,
         negativeLevels:levels.filter(level => level < 0).length,
         runtimeWallPlanes:window.DevRandomRuin.getState()?.runtimeWallPlanes || null,
@@ -579,12 +588,14 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.ok((active.materialStats?.occlusionMeshes||0)>0, 'generated walls/pillars must register with the normal map_i_* camera boom: '+JSON.stringify(active.materialStats));
     assert.equal(active.occupancyBlockers, 1, JSON.stringify(active));
     assert.equal(active.legacyRuinBlockers, 0, JSON.stringify(active));
-    assert.ok(active.wallRender.sourceDoorMeshes > 0, JSON.stringify(active.wallRender));
+    assert.ok(active.wallRender.sourceWalls > 0, JSON.stringify(active.wallRender));
+    if (active.transitDoorCount > 0) {
+      assert.ok(active.wallRender.sourceDoorMeshes > 0, JSON.stringify(active.wallRender));
+      assert.ok(active.wallRender.normalizedDoorAssemblies > 0, JSON.stringify(active.wallRender));
+    }
     assert.equal(active.wallRender.visibleDoorSources, active.wallRender.sourceDoorMeshes, JSON.stringify(active.wallRender));
     assert.ok(active.wallRender.sourceDoorArchMeshes > 0, JSON.stringify(active.wallRender));
     assert.equal(active.wallRender.visibleDoorArchSources, active.wallRender.sourceDoorArchMeshes, JSON.stringify(active.wallRender));
-    assert.ok(active.wallRender.normalizedDoorAssemblies > 0, JSON.stringify(active.wallRender));
-    assert.ok(active.wallRender.sourceActivatorMeshes > 0, JSON.stringify(active.wallRender));
     assert.equal(active.wallRender.visibleActivatorSources, active.wallRender.sourceActivatorMeshes, JSON.stringify(active.wallRender));
     assert.equal(active.wallRender.renderProxyCount, 0, JSON.stringify(active.wallRender));
     assert.equal(active.wallRender.totalProxyCount, 0, JSON.stringify(active.wallRender));
@@ -596,11 +607,29 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.ok((active.materialStats?.ceilingCells||0) > 0, 'generated ruin must build a real ceiling over the authored floor footprint: '+JSON.stringify(active.materialStats));
     assert.equal(active.materialStats?.ceilingTextured, true, 'generated ceiling must carry the canonical stone texture map: '+JSON.stringify(active.materialStats));
     assert.equal(active.materialStats?.ceilingMaterialTexture, 'carved_smooth.png', 'generated ceiling must use the same carved-smooth furniture PNG as ruin stone: '+JSON.stringify(active.materialStats));
-    if(active.simple.ropes.length)assert.ok(Math.abs((active.simple.ropes[0]?.ceilingY||0)-(active.materialStats?.ceilingY||0))<.06,
-      'every present rope anchor must terminate at the real textured ceiling datum: '+JSON.stringify({rope:active.simple.ropes[0],materialStats:active.materialStats}));
+    for (const rope of active.simple.ropes) {
+      if (rope.roomId.startsWith('furniture_')) continue; // Independently authored ropes own their attachment geometry.
+      if (rope.roomId.startsWith('layer_')) {
+        const beam = active.ropeCeilingBeams[rope.roomId]; // The ceiling mount must intersect its own floor's beam, above the hanging end.
+        assert.ok(beam && rope.anchor.y >= beam.bottom - .01 && rope.anchor.y <= beam.top + .01 &&
+          Math.abs(rope.anchor.y - rope.ceilingY) < .01 && rope.bob.y < rope.anchor.y,
+          'layered rope must hang from its own ceiling beam: '+JSON.stringify({rope,beam}));
+      } else {
+        const ceilingY = active.materialStats.ceilingY;
+        assert.ok(Number.isFinite(ceilingY) && Math.abs(rope.anchor.y-ceilingY) < .11,
+          'ground-floor rope must mount at the textured ceiling: '+JSON.stringify({rope,ceilingY}));
+      }
+    }
     assert.equal(active.wallRender.litSourceMaterials, 0, 'visible game-realm ruin sources must contain zero lit materials: '+JSON.stringify(active.wallRender));
-    assert.ok(active.runtimeHallways?.count > 0, JSON.stringify(active.runtimeHallways));
-    assert.ok(active.runtimeHallways.minCrossCells >= 5, JSON.stringify(active.runtimeHallways));
+    assert.equal(active.hallwayCollision.length, active.runtimeHallways?.count ?? 0,
+      'hallway collision samples must come from the accepted entrance floor');
+    if (active.runtimeHallways?.count > 0) {
+      assert.ok(active.runtimeHallways.minCrossCells >= 5, JSON.stringify(active.runtimeHallways));
+    } else {
+      assert.ok(active.shaftLayerPlan?.floorCount > 1 &&
+        active.shaftLayerPlan.wings.some(floor => floor.sides.length > 0),
+        'a corridor-free entrance must lead into the layered shaft wings: '+JSON.stringify(active.shaftLayerPlan));
+    }
     for (const hall of active.hallwayCollision) {
       assert.ok(hall.samples > 0, `hallway ${hall.id} produced no center-lane samples`);
       assert.equal(hall.blocked.length, 0, `hallway ${hall.id} center lane is blocked: ${JSON.stringify(hall)}`);
@@ -867,67 +896,69 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       assert.equal(simpleRuntime.final.liveProjectiles,0,'the removed hallway emitters must never spawn any projectiles');
 
       if(simpleRuntime.ropeAttach) await page.waitForFunction(() => !window.DevRandomRuinSimplePuzzles.snapshot().flight && !window.Combat.deps.player.dodging, null, { timeout:30000, polling:100 }); // Only wait for ballistic flight when a rope actually launched the player.
-      const transitDoorRuntime = await page.evaluate(async () => {
-        const sleep=frames=>new Promise(resolve=>{let left=frames;const step=()=>{if(--left<=0)resolve();else requestAnimationFrame(step);};requestAnimationFrame(step);});
-        const door=window.DevRandomRuin.getState()?.transitDoors?.[0]||null;
-        if(!door?.center)return null;
-        const x=door.center.x-(door.axis==='x'?1.05:0),z=door.center.z-(door.axis==='z'?1.05:0); // Approach from the hall side; the reward brazier beyond this doorway otherwise intercepts the real reticle ray.
-        window.DevRandomRuin.setPlayerWorldPoint?.({x,z},{grounded:true});
-        await sleep(4);
-        const control=window.DevRandomRuin.getInteractionControls().find(entry=>entry.kind==='transitDoor'&&entry.object?.id===door.id);
-        if(!control?.object)throw new Error('Transit-door smoke has no interaction owner');
-        const originalFocus=window.RangedWeapons?.focusCandidates; // Simulate the user's mobile camera missing the stone panel despite being within interaction reach.
-        let withoutAim=null,popupWithoutAim=false;
-        try{
-          if(window.RangedWeapons)window.RangedWeapons.focusCandidates=()=>null;
+      if (active.transitDoorCount > 0) {
+        const transitDoorRuntime = await page.evaluate(async () => {
+          const sleep=frames=>new Promise(resolve=>{let left=frames;const step=()=>{if(--left<=0)resolve();else requestAnimationFrame(step);};requestAnimationFrame(step);});
+          const door=window.DevRandomRuin.getState()?.transitDoors?.[0]||null;
+          if(!door?.center)return null;
+          const x=door.center.x-(door.axis==='x'?1.05:0),z=door.center.z-(door.axis==='z'?1.05:0); // Approach from the hall side; the reward brazier beyond this doorway otherwise intercepts the real reticle ray.
+          window.DevRandomRuin.setPlayerWorldPoint?.({x,z},{grounded:true});
+          await sleep(4);
+          const control=window.DevRandomRuin.getInteractionControls().find(entry=>entry.kind==='transitDoor'&&entry.object?.id===door.id);
+          if(!control?.object)throw new Error('Transit-door smoke has no interaction owner');
+          const originalFocus=window.RangedWeapons?.focusCandidates; // Simulate the user's mobile camera missing the stone panel despite being within interaction reach.
+          let withoutAim=null,popupWithoutAim=false;
+          try{
+            if(window.RangedWeapons)window.RangedWeapons.focusCandidates=()=>null;
+            window.DevRandomRuinInteractions.refresh();
+            withoutAim=window.DevRandomRuinInteractions.snapshot();
+            popupWithoutAim=window.WorldPopupText.debugSnapshot()?.interactionRows?.some(entry=>entry.label==='Open Hallway Door')===true;
+          }finally{
+            if(window.RangedWeapons)window.RangedWeapons.focusCandidates=originalFocus;
+          }
+          control.object.updateWorldMatrix(true,true);
+          const aim=await window.__ruinBrowserAimAtPoint(new THREE.Box3().setFromObject(control.object).getCenter(new THREE.Vector3()));
           window.DevRandomRuinInteractions.refresh();
-          withoutAim=window.DevRandomRuinInteractions.snapshot();
-          popupWithoutAim=window.WorldPopupText.debugSnapshot()?.interactionRows?.some(entry=>entry.label==='Open Hallway Door')===true;
-        }finally{
-          if(window.RangedWeapons)window.RangedWeapons.focusCandidates=originalFocus;
-        }
-        control.object.updateWorldMatrix(true,true);
-        const aim=await window.__ruinBrowserAimAtPoint(new THREE.Box3().setFromObject(control.object).getCenter(new THREE.Vector3()));
-        window.DevRandomRuinInteractions.refresh();
-        await sleep(2);
-        const interaction=window.DevRandomRuinInteractions.snapshot();
-        const rowIndex=interaction.rows.findIndex(row=>row.kind==='transitdoor');
-        const row=rowIndex>=0?interaction.rows[rowIndex]:null;
-        const beforeOcc=window.DevRandomRuin.getOccupancySnapshot?.();
-        const sourceId='transit-door:'+door.id;
-        const hasSource=snapshot=>Object.values(snapshot?.sources||{}).some(list=>Array.isArray(list)&&list.includes(sourceId));
-        const sourceTiles=Object.entries(beforeOcc?.sources||{}).filter(([,list])=>Array.isArray(list)&&list.includes(sourceId)).map(([key])=>key);
-        const grid=window.GridTileAccessors.getActiveGrid();
-        const gridTypes=()=>sourceTiles.map(key=>{const [col,row]=key.split(',').map(Number);return grid[row]?.[col]?.type;});
-        const beforeGridTypes=gridTypes();
-        const panelHits=()=>sourceTiles.flatMap(key=>{const [col,row]=key.split(',').map(Number);const hit=window.DevRandomRuinTileOccupancy.solidAt(door.axis==='x'?door.center.x:col+.5,door.axis==='z'?door.center.z:row+.5,.02,.5);return hit?[{key,tag:hit.tag}]:[];}); // Exact panels and jambs block closed-door samples; navigation still uses tile sources.
-        const beforePanelHits=panelHits();
-        const popupBefore=window.WorldPopupText.debugSnapshot();
-        const beforeBlocked=hasSource(beforeOcc);
-        if(rowIndex>=0)window.DevRandomRuinInteractions.invoke(rowIndex);
-        await sleep(28);
-        const afterDoor=window.DevRandomRuin.getState()?.transitDoors?.find(entry=>entry.id===door.id)||null;
-        const afterBlocked=hasSource(window.DevRandomRuin.getOccupancySnapshot?.());
-        return {door,row,aim,focus:interaction.focus,withoutAimRow:withoutAim?.rows?.find(row=>row.kind==='transitdoor')||null,popupWithoutAim,player:{x:window.Combat.deps.player.x/window.Combat.deps.TILE,z:window.Combat.deps.player.y/window.Combat.deps.TILE},popupVisible:popupBefore.interactionRows?.some(entry=>entry.label==='Open Hallway Door')===true,beforeBlocked,sourceTiles,beforePanelHits,afterPanelHits:panelHits(),centerClear:!window.DevRandomRuinTileOccupancy.solidAt(door.center.x,door.center.z,.02,.5),beforeGridTypes,afterGridTypes:gridTypes(),afterDoor,afterBlocked};
-      });
-      assert.ok(transitDoorRuntime,'generated hallway must expose at least one plain transit-exit door: '+JSON.stringify(active));
-      assert.equal(transitDoorRuntime.withoutAimRow?.label,'Open Hallway Door','closed hallway door must offer an open-door action on proximity even when reticle focus is null: '+JSON.stringify(transitDoorRuntime));
-      assert.equal(transitDoorRuntime.popupWithoutAim,true,'a nearby stone door must display its ordinary mobile prompt without camera aim: '+JSON.stringify(transitDoorRuntime));
-      assert.equal(transitDoorRuntime.row?.label,'Open Hallway Door','closed hallway transit door must expose the standard floating open-door prompt: '+JSON.stringify(transitDoorRuntime));
-      assert.equal(transitDoorRuntime.popupVisible,true,'hallway door prompt must be rendered by the normal WorldPopupText action-bar path: '+JSON.stringify(transitDoorRuntime));
-      assert.equal(transitDoorRuntime.beforeBlocked,true,'visibly closed hallway door must contribute authoritative collision: '+JSON.stringify(transitDoorRuntime));
-      assert.ok((transitDoorRuntime.sourceTiles?.length||0)>1,'a visually wide hallway door must block its whole doorway run rather than one center tile: '+JSON.stringify(transitDoorRuntime));
-      assert.equal(transitDoorRuntime.beforePanelHits?.length,transitDoorRuntime.sourceTiles?.length,'closed-door panel collision must cover the full visible doorway run: '+JSON.stringify(transitDoorRuntime));
-      assert.ok((transitDoorRuntime.afterDoor?.open||0)>.78,'using the hallway door prompt must visibly retract the door: '+JSON.stringify(transitDoorRuntime));
-      assert.equal(transitDoorRuntime.afterBlocked,false,'opened hallway door must release its occupancy blocker: '+JSON.stringify(transitDoorRuntime));
-      assert.equal(transitDoorRuntime.centerClear,true,'opening the door must clear the center of the physical passage: '+JSON.stringify(transitDoorRuntime));
-      assert.ok(transitDoorRuntime.afterPanelHits.length<transitDoorRuntime.beforePanelHits.length&&transitDoorRuntime.afterPanelHits.every(hit=>hit.tag!=='door'&&transitDoorRuntime.beforePanelHits.some(before=>before.key===hit.key&&before.tag===hit.tag)),'opening the panel preserves only the existing solid doorway jambs: '+JSON.stringify(transitDoorRuntime));
-      assert.deepEqual(transitDoorRuntime.afterGridTypes,transitDoorRuntime.beforeGridTypes,'door motion preserves the underlying grid instead of replacing its tiles with coarse ROCK collision');
+          await sleep(2);
+          const interaction=window.DevRandomRuinInteractions.snapshot();
+          const rowIndex=interaction.rows.findIndex(row=>row.kind==='transitdoor');
+          const row=rowIndex>=0?interaction.rows[rowIndex]:null;
+          const beforeOcc=window.DevRandomRuin.getOccupancySnapshot?.();
+          const sourceId='transit-door:'+door.id;
+          const hasSource=snapshot=>Object.values(snapshot?.sources||{}).some(list=>Array.isArray(list)&&list.includes(sourceId));
+          const sourceTiles=Object.entries(beforeOcc?.sources||{}).filter(([,list])=>Array.isArray(list)&&list.includes(sourceId)).map(([key])=>key);
+          const grid=window.GridTileAccessors.getActiveGrid();
+          const gridTypes=()=>sourceTiles.map(key=>{const [col,row]=key.split(',').map(Number);return grid[row]?.[col]?.type;});
+          const beforeGridTypes=gridTypes();
+          const panelHits=()=>sourceTiles.flatMap(key=>{const [col,row]=key.split(',').map(Number);const hit=window.DevRandomRuinTileOccupancy.solidAt(door.axis==='x'?door.center.x:col+.5,door.axis==='z'?door.center.z:row+.5,.02,.5);return hit?[{key,tag:hit.tag}]:[];}); // Exact panels and jambs block closed-door samples; navigation still uses tile sources.
+          const beforePanelHits=panelHits();
+          const popupBefore=window.WorldPopupText.debugSnapshot();
+          const beforeBlocked=hasSource(beforeOcc);
+          if(rowIndex>=0)window.DevRandomRuinInteractions.invoke(rowIndex);
+          await sleep(28);
+          const afterDoor=window.DevRandomRuin.getState()?.transitDoors?.find(entry=>entry.id===door.id)||null;
+          const afterBlocked=hasSource(window.DevRandomRuin.getOccupancySnapshot?.());
+          return {door,row,aim,focus:interaction.focus,withoutAimRow:withoutAim?.rows?.find(row=>row.kind==='transitdoor')||null,popupWithoutAim,player:{x:window.Combat.deps.player.x/window.Combat.deps.TILE,z:window.Combat.deps.player.y/window.Combat.deps.TILE},popupVisible:popupBefore.interactionRows?.some(entry=>entry.label==='Open Hallway Door')===true,beforeBlocked,sourceTiles,beforePanelHits,afterPanelHits:panelHits(),centerClear:!window.DevRandomRuinTileOccupancy.solidAt(door.center.x,door.center.z,.02,.5),beforeGridTypes,afterGridTypes:gridTypes(),afterDoor,afterBlocked};
+        });
+        assert.ok(transitDoorRuntime,'generated hallway must expose at least one plain transit-exit door: '+JSON.stringify(active));
+        assert.equal(transitDoorRuntime.withoutAimRow?.label,'Open Hallway Door','closed hallway door must offer an open-door action on proximity even when reticle focus is null: '+JSON.stringify(transitDoorRuntime));
+        assert.equal(transitDoorRuntime.popupWithoutAim,true,'a nearby stone door must display its ordinary mobile prompt without camera aim: '+JSON.stringify(transitDoorRuntime));
+        assert.equal(transitDoorRuntime.row?.label,'Open Hallway Door','closed hallway transit door must expose the standard floating open-door prompt: '+JSON.stringify(transitDoorRuntime));
+        assert.equal(transitDoorRuntime.popupVisible,true,'hallway door prompt must be rendered by the normal WorldPopupText action-bar path: '+JSON.stringify(transitDoorRuntime));
+        assert.equal(transitDoorRuntime.beforeBlocked,true,'visibly closed hallway door must contribute authoritative collision: '+JSON.stringify(transitDoorRuntime));
+        assert.ok((transitDoorRuntime.sourceTiles?.length||0)>1,'a visually wide hallway door must block its whole doorway run rather than one center tile: '+JSON.stringify(transitDoorRuntime));
+        assert.equal(transitDoorRuntime.beforePanelHits?.length,transitDoorRuntime.sourceTiles?.length,'closed-door panel collision must cover the full visible doorway run: '+JSON.stringify(transitDoorRuntime));
+        assert.ok((transitDoorRuntime.afterDoor?.open||0)>.78,'using the hallway door prompt must visibly retract the door: '+JSON.stringify(transitDoorRuntime));
+        assert.equal(transitDoorRuntime.afterBlocked,false,'opened hallway door must release its occupancy blocker: '+JSON.stringify(transitDoorRuntime));
+        assert.equal(transitDoorRuntime.centerClear,true,'opening the door must clear the center of the physical passage: '+JSON.stringify(transitDoorRuntime));
+        assert.ok(transitDoorRuntime.afterPanelHits.length<transitDoorRuntime.beforePanelHits.length&&transitDoorRuntime.afterPanelHits.every(hit=>hit.tag!=='door'&&transitDoorRuntime.beforePanelHits.some(before=>before.key===hit.key&&before.tag===hit.tag)),'opening the panel preserves only the existing solid doorway jambs: '+JSON.stringify(transitDoorRuntime));
+        assert.deepEqual(transitDoorRuntime.afterGridTypes,transitDoorRuntime.beforeGridTypes,'door motion preserves the underlying grid instead of replacing its tiles with coarse ROCK collision');
+      }
 
       const towerInteraction = await page.evaluate(async () => {
-        const scene=window.GridTileAccessors.getActiveScene();
+        const entranceRoot=window.DevRandomRuin.getRuntimeContext()?.root;
         let tower=null;
-        scene?.traverse?.(object=>{ if(!tower && (object.userData?.activatorType==='stackedObelisk'||object.userData?.activatorType==='linkedCubePillars')) tower=object; });
+        entranceRoot?.traverse?.(object=>{ if(!tower && (object.userData?.activatorType==='stackedObelisk'||object.userData?.activatorType==='linkedCubePillars')) tower=object; });
         if(!tower)return {present:false};
         tower.updateWorldMatrix?.(true,true);
         const box=new THREE.Box3().setFromObject(tower);
@@ -1039,7 +1070,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       ladders:active.ladders,
       negativeLevels:active.negativeLevels,
       walls:active.runtimeWallPlanes.count,
-      minHallwayCells:active.runtimeHallways.minCrossCells,
+      minHallwayCells:active.runtimeHallways?.count ? active.runtimeHallways.minCrossCells : null,
       hallways:active.hallwayCollision.length,
       furnitureStatus:active.furnitureStatus,
     });

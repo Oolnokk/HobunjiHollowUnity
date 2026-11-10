@@ -109,6 +109,10 @@
     return morningHour + normalizedTime * (nightHour - morningHour);
   }
 
+  function getAbsoluteGameHour() {
+    return isInitialized() ? deps.calendar.day * 24 + getHour() : NaN; // Cheap clock for active station deadlines, including overnight passage.
+  }
+
   // ── Calendar derivations ───────────────────────────────────────────
   function dayOfYear(day = deps?.calendar?.day ?? 1) {
     return positiveModulo(civilDayOffset(day), YEAR_LENGTH_DAYS) + 1;
@@ -1106,7 +1110,7 @@
   window.CalendarSystem = {
     init,
     isInitialized,
-    getHour,
+    getHour, getAbsoluteGameHour,
     getNaturalGameHoursPerSecond,
     dayOfYear,
     yearNumber, // Civil year cycle (1-based, rolls on Firstrise 1); drives the AoT era number.
