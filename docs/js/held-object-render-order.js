@@ -808,6 +808,40 @@
     return states;
   }
 
+  function replayOrdinaryOccluderDepth(renderer, scene, camera, cutouts, protectedCover) {
+    // The ordinary scene already contains correct opaque world depth. Its
+    // exceptional cutout/cover materials, however, may have depthWrite=false
+    // in the color pass (notably PNG avatars and translucent grass/water).
+    // Incrementally write only those extra silhouettes before regular gear,
+    // without clearing depth or resubmitting every opaque object in town.
+    const depthMeshes = new Map(); // Original layer masks, restored after the temporary depth-only draw.
+    for (const object of [...cutouts, ...protectedCover]) {
+      if (!object?.isMesh || !object.visible || depthMeshes.has(object)) continue;
+      depthMeshes.set(object, object.layers.mask);
+      object.layers.enable(HELD_OVERLAY_LAYER); // Held sources are hidden; reuse their private layer for this narrow pass.
+    }
+    if (!depthMeshes.size) return false;
+    const states = prepareCutoutDepthMaterials(cutouts, protectedCover); // Existing shader/cutout policy also covers transparent terrain.
+    const previousMask = camera.layers.mask; // The regular held-overlay draw must be restored even if a shader throws.
+    try {
+      for (const object of depthMeshes.keys()) {
+        forEachMaterial(object.material, material => {
+          saveMaterialState(states, material);
+          material.colorWrite = false;
+        });
+      }
+      camera.layers.mask = HELD_OVERLAY_MASK;
+      const perf = window.PerfProfiler?.begin('held-overlay: ordinary cutout depth');
+      try { rawRender.call(renderer, scene, camera); }
+      finally { window.PerfProfiler?.end(perf); }
+      return true;
+    } finally {
+      camera.layers.mask = previousMask;
+      for (const [object, mask] of depthMeshes) object.layers.mask = mask;
+      restoreMaterialStates(states);
+    }
+  }
+
   function prepareHeldStencilMaterials(held) {
     const states = new Map();
     for (const object of held) {
@@ -1533,15 +1567,17 @@
       // Multiple actor-elevation groups use the same depth-occluder registries.
       // Resolve visible entries once after hiding overlay participants; their
       // visibility is restored between groups, but membership does not change.
-      const cutoutDepthMeshes = canLockColorMask ? collectVisible(pngDepthRegistry, scene) : null; // Reused by every grouped depth replay in this render.
-      const protectedDepthMeshes = canLockColorMask ? collectVisible(protectedCoverRegistry, scene) : null; // Same occluders, independent of actor elevation.
+      const cutoutDepthMeshes = collectVisible(pngDepthRegistry, scene); // Reused by the ordinary incremental depth pass and grouped depth replays.
+      const protectedDepthMeshes = collectVisible(protectedCoverRegistry, scene); // Preserve PNG, transparent water/slush and billboard cutout occlusion even without a full-scene rebuild.
       if (scissored) glState.setScissorTest(false);
       renderer.clearStencil?.(); // Clear the full stencil buffer so stale bits outside this frame's scissor cannot leak into later consumers.
       if (scissored) glState.setScissorTest(true);
 
       if (ordinaryDepthReuse) {
-        // Reuse the original scene depth for regular hand/foot/gear draw. The
-        // tint stencil is still stamped exactly as it is for x-ray groups.
+        // Opaque world depth is already correct. Repair only normally
+        // non-depth-writing cutout/cover occluders before using that buffer.
+        replayOrdinaryOccluderDepth(renderer, scene, camera, cutoutDepthMeshes, protectedDepthMeshes);
+        // The tint stencil is still stamped exactly as it is for x-ray groups.
         for (const mesh of ordinary) mesh.visible = overlayHidden.get(mesh) !== false;
         const ordinaryStates = tintOverlay ? prepareSubmergedOverlayStencilMaterials(ordinary) : null;
         try {
