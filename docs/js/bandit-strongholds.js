@@ -194,6 +194,40 @@
     if (retire) window.CaveSiteSystem?.forgetFortifiedStronghold?.(mapId); // Never erase saved cave progress merely because an exterior scene is unloaded.
   }
 
+  function chargeLaneForMap(mapData) {
+    const floor=(mapData?.floor||[]).filter(tile=>Array.isArray(tile)&&tile.length>=2)
+      .map(([col,row])=>({col:Number(col),row:Number(row)}))
+      .filter(tile=>Number.isFinite(tile.col)&&Number.isFinite(tile.row));
+    const entry={col:Number(mapData?.exitCol)||0,row:Number(mapData?.exitRow)||0};
+    if(floor.length<12)return null; // Do not invent a lane in tiny/generated single-puzzle rooms.
+    const goal=[...floor].sort((a,b)=>Math.hypot(b.col-entry.col,b.row-entry.row)
+      -Math.hypot(a.col-entry.col,a.row-entry.row))[0];
+    const length=Math.hypot(goal.col-entry.col,goal.row-entry.row);
+    if(length<7)return null;
+    const axis={x:(goal.col-entry.col)/length,z:(goal.row-entry.row)/length};
+    const lateral={x:-axis.z,z:axis.x}; // Opposite-facing cover flanks a shared, unobstructed center line.
+    const used=new Set(),placements=[];
+    const alongs=[4.5,7.5,10.5].filter(value=>value<length-1);
+    for(const [i,along] of alongs.entries())for(const side of [-1,1]){
+      const x=entry.col+axis.x*along+lateral.x*side*2.55;
+      const z=entry.row+axis.z*along+lateral.z*side*2.55;
+      const tile=[...floor].sort((a,b)=>Math.hypot(a.col-x,a.row-z)-Math.hypot(b.col-x,b.row-z))
+        .find(candidate=>{
+          const key=candidate.col+','+candidate.row;
+          if(used.has(key)||Math.hypot(candidate.col-x,candidate.row-z)>1.4)return false;
+          const relX=candidate.col-entry.col,relZ=candidate.row-entry.row;
+          const across=Math.abs(relX*lateral.x+relZ*lateral.z);
+          return across>=1.7 && placements.every(p=>Math.hypot(p.col-candidate.col,p.row-candidate.row)>=2.1);
+        });
+      if(!tile)continue;
+      used.add(tile.col+','+tile.row);
+      placements.push({col:tile.col,row:tile.row,side,along,
+        key:i%2===0?'fortifiedLowRail':'fortifiedHighCover',
+        rotY:Math.atan2(axis.z,axis.x)*180/Math.PI}); // Native furniture rotation; no independent cover geometry.
+    }
+    return {entry,goal,axis,lateral,length,placements};
+  }
+
   function buildInteriorProps(mapId, mapData, scene) {
     if (!scene || !mapData?.caveSite?.fortifiedStronghold || !registerRecipes()) return 0;
     const previous = interiorScenes.get(mapId);
@@ -208,18 +242,14 @@
     group.name = 'fortified-bandit-interior';
     const floor = (mapData.floor || []).filter(tile => Array.isArray(tile) && tile.length >= 2);
     const exitCol = Number(mapData.exitCol) || 0, exitRow = Number(mapData.exitRow) || 0;
-    const candidates = floor.map(([col, row]) => ({ col, row, distance: Math.hypot(col - exitCol, row - exitRow) }))
-      .filter(tile => tile.distance >= 4 && tile.distance <= 12)
-      .sort((a,b) => a.distance-b.distance || a.col-b.col || a.row-b.row);
-    const selected = [];
-    for (const tile of candidates) {
-      if (selected.length >= 4) break;
-      if (selected.some(other => Math.hypot(other.col-tile.col,other.row-tile.row)<3)) continue;
+    const lane=chargeLaneForMap(mapData);
+    const selected = []; // Only positions safely offset from the charge lane become physical cover blockers.
+    for (const tile of lane?.placements || []) {
       selected.push(tile);
-      const key = selected.length % 2 ? 'fortifiedLowRail' : 'fortifiedHighCover';
+      const key = tile.key;
       const piece = window.ProceduralFurniture.buildFurnitureGroup(key);
       piece.position.set(tile.col+.5, Number(mapData.floorSurfaceY)||0, tile.row+.5);
-      piece.rotation.y = (tile.col < exitCol ? -1 : 1) * Math.PI/2;
+      piece.rotation.y = (Number(tile.rotY)||0) * Math.PI/180;
       group.add(piece);
       const coverId = 'interior:' + (selected.length - 1); // Stable slot identity, independent of scene mesh/async initialization.
       window.BanditStrongholdCover?.register?.({
@@ -230,7 +260,7 @@
       });
     }
     scene.add(group);
-    interiorScenes.set(mapId, { scene, group });
+    interiorScenes.set(mapId, { scene, group, chargeLane:lane });
     latest.event = 'interior barricades ' + selected.length + ' (' + mapId + ')';
     ensureBarrels(mapId, mapData, scene); // Loads existing Aging Barrel art and shared Burden physics asynchronously.
     return selected.length;
@@ -394,6 +424,10 @@
     return { ...latest, replacementDefault: DEFAULT_REPLACEMENT_FRACTION,
       activeSites: [...siteRegistrations.entries()].map(([mapId, site]) => ({ mapId, ...site })),
       interiorMaps: [...interiorScenes.keys()], pendingBarrels: pendingBarrels.size, barrelLootRules: BARREL_LOOT,
+      chargeLaneLayouts:[...interiorScenes].map(([mapId,record])=>({
+        mapId,coverPieces:record.group.children.length,laneLength:record.chargeLane?.length||0,
+        chargedCenterClearance:1.7,
+      })),
       cover:window.BanditStrongholdCover?.debugSnapshot?.()||null,
       wolves:window.BanditStrongholdWolves?.debugSnapshot?.()||null,
       throws:window.BanditStrongholdCombat?.debugSnapshot?.()||null,
@@ -402,7 +436,7 @@
 
   window.BanditStrongholds = Object.freeze({
     shouldFortify, replacementFraction, registerRecipes, upgradeCamp, removeCamp,
-    buildInteriorProps, ensureBarrels, forgetInterior, debugSnapshot, installItemRegistration, BARREL_LOOT, __test: Object.freeze({ hash, siteProps }),
+    buildInteriorProps, chargeLaneForMap, ensureBarrels, forgetInterior, debugSnapshot, installItemRegistration, BARREL_LOOT, __test: Object.freeze({ hash, siteProps }),
   });
   registerRecipes();
   installItemRegistration();
