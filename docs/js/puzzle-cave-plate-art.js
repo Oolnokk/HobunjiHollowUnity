@@ -3,7 +3,7 @@
   'use strict';
   if (window.PuzzleCavePlateArt?.installed) return;
 
-  const INSCRIPTION = "hao'uun"; // Both exterior and interior melody plates carry the same authored Tankan word.
+  const INSCRIPTION = "Hao'uun"; // Both exterior and interior melody plates carry the same authored Tankan word.
   let texturePromise = null; // A single async Tankan canvas texture serves every cave plate without duplicate font/texture uploads.
 
   function tankanTexture(THREE) {
