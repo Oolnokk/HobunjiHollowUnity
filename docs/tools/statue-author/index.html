@@ -440,7 +440,7 @@ function meshMaterialStats(mesh) {
     const ctx=canvas.getContext('2d',{willReadFrequently:true});
     const data=ctx?.getImageData?.(0,0,canvas.width,canvas.height)?.data;
     if(data){
-      let covered=0,nonBlack=0,minShade=255,maxShade=0;const shades=new Set(),stride=4*4;
+      let covered=0,nonBlack=0,minShade=255,maxShade=0,brightnessTotal=0;const shades=new Set(),stride=4*4;
       for(let i=0;i<data.length;i+=stride){
         if(data[i+3]<=8)continue;
         covered++;
@@ -448,11 +448,13 @@ function meshMaterialStats(mesh) {
           nonBlack++;
           const shade=Math.round((data[i]*.3+data[i+1]*.59+data[i+2]*.11)/12);
           shades.add(shade);minShade=Math.min(minShade,shade*12);maxShade=Math.max(maxShade,shade*12);
+          brightnessTotal+=(data[i]*.2126+data[i+1]*.7152+data[i+2]*.0722);
         }
       }
       color={coverage:+(covered/Math.max(1,Math.ceil(data.length/stride))).toFixed(3),
         brightCoverage:+(nonBlack/Math.max(1,covered)).toFixed(3),
-        surfaceShadeBins:shades.size,surfaceShadeRange:nonBlack?maxShade-minShade:0};
+        surfaceShadeBins:shades.size,surfaceShadeRange:nonBlack?maxShade-minShade:0,
+        meanVisibleBrightness:nonBlack?+(brightnessTotal/nonBlack).toFixed(1):0};
     }
   }
   return color;
@@ -480,6 +482,7 @@ window.__hobunjiStatueDebug=()=>{
       surfaceCells:mesh.userData.statueSurfaceStats?.regions??null,
       surfaceCellStats:mesh.userData.statueSurfaceStats||null,
       modelReady:mesh.userData.glbReady===true,
+      glbUvModes:mesh.userData.statueUvModes||[], // Detect any anatomy asset that would have sampled the dark UV corner.
       visible:mesh.visible,opacity:mesh.material?.opacity??1,
       position:mesh.position.toArray(),rotation:mesh.rotation.toArray().slice(0,3),
       size:(exportProject?.parts.find(part=>part.id===mesh.userData.statuePieceId)?.transform)||null,
