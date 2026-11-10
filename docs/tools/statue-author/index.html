@@ -68,7 +68,8 @@ aside{max-height:none;overflow:visible;border-right:0;grid-template-columns:repe
 <label for="materialPreset">Uniform statue finish</label>
 <select id="materialPreset"><option value="carved_smooth.png">Carved smooth</option><option value="boards.png">Boards / wood</option><option value="other">Custom repository texture…</option></select>
 <label for="materialFile">Material PNG (assets/textures/)</label><input id="materialFile" value="carved_smooth.png" spellcheck="false">
-<small>Every region enclosed by black pixel outlines receives the complete selected material texture, stretched to fit its irregular shape. Original black lines remain visible; the same texture is used on attached 3D pieces.</small>
+<label for="statueTint">Statue base color (animal-style cell shading)</label><input id="statueTint" type="color" value="#b9b1a2">
+<small>Each outlined region keeps its original relative brightness, recolored to this base color. The PNG becomes one grayscale overlay across the entire statue; white is transparent, gray partially transparent, and black opaque. Head and body share one overlay alignment.</small>
 <label for="materialRole">Material classification</label><select id="materialRole"><option value="stone">Stone</option><option value="wood">Wood</option><option value="metal">Metal</option><option value="other">Other</option></select>
 <label for="weaponPaths">Weapon PNG layers (assets/toolsprites/, one per line)</label><textarea id="weaponPaths" rows="3" placeholder="assets/toolsprites/harlyao_longsword.png"></textarea>
 <small>Leave weapon paths empty for unarmed statues. For modular weapons supply each visible sprite layer; every layer becomes its own child piece and shares the finish.</small>
@@ -194,15 +195,18 @@ function unionHeadBounds(front,rear){
   return {x,y,w:right-x,h:bottom-y};
 }
 
-function sprite(id,name,mask,backMask,finish,role,pose,parentId=null){
+function sprite(id,name,mask,backMask,finish,role,pose,parentId=null,overlayFrame=null,baseColor=null){
   return {id,name,kind:'statueSprite',parentPartId:parentId,statueMaskDataUrl:mask,statueBackMaskDataUrl:backMask,
-    statueUniformFinish:true,statueKeepOutline:true,statueTextureMapping:'ink-bounded-irregular-surface-v1',
+    statueUniformFinish:true,statueKeepOutline:true,
+    statueTextureMapping:'animal-cell-shading-global-brightness-overlay-v1',
+    statueBaseColor:baseColor,statueOverlayFrame:overlayFrame,
     materialTexture:finish,materialRole:role,color:'#ffffff',surfaceOpacity:1,
     transform:pose,wonkiness:0,topScaleX:1,topScaleZ:1,bottomScaleX:1,bottomScaleZ:1};
 }
-function glb(id,name,path,finish,role,pose,parentId){
+function glb(id,name,path,finish,role,pose,parentId,baseColor=null){
   return {id,name,kind:'glb',parentPartId:parentId,modelPath:path,materialTexture:finish,
-    statueUniformFinish:true,materialRole:role,color:'#ffffff',surfaceOpacity:1,transform:pose};
+    statueUniformFinish:true,statueBaseColor:baseColor,
+    materialRole:role,color:'#ffffff',surfaceOpacity:1,transform:pose};
 }
 function limbPaths(species){
   const hands=window.HobunjiHandModelProfiles,model=hands?.modelForSpecies?.(species);
@@ -232,7 +236,7 @@ function measureNpcRig(frameFront,frameBack,profile,npc){
     api.disposeAvatarModel?.(measured);
   }
 }
-function makeStaticParts(front,back,head,backHead,profile,pose,finish,role,weaponMasks,frame){
+function makeStaticParts(front,back,head,backHead,profile,pose,finish,role,weaponMasks,frame,baseColor){
   const w=front.width,h=front.height;
   const bounds=unionHeadBounds(maskBounds(head),maskBounds(backHead));
   if(!bounds)throw Error('The NPC head cannot be separated from its portrait');
@@ -248,11 +252,13 @@ function makeStaticParts(front,back,head,backHead,profile,pose,finish,role,weapo
   const bodyYaw=clamp(num(pose.bodyYaw),-360,360);
   const p=[
     sprite('statue_body','Body and clothing',bodyMask,backBodyMask,finish,role,
-      transform(0,bodyCenterY-drop,0,0,bodyYaw,0,bodyWidth,bodyHeight,.02)),
+      transform(0,bodyCenterY-drop,0,0,bodyYaw,0,bodyWidth,bodyHeight,.02),
+      null,{width:w,height:h,x:0,y:0},baseColor),
     sprite('statue_head','Head, hair and face',headMask,backHeadMask,finish,role,
       transform(((bounds.x+bounds.w/2)/w-.5)*bodyWidth,
         (.5-(bounds.y+bounds.h/2)/h)*bodyHeight,.015,0,-bodyYaw,0,
-        bounds.w/w*bodyWidth,bounds.h/h*bodyHeight,.02),'statue_body')
+        bounds.w/w*bodyWidth,bounds.h/h*bodyHeight,.02),
+      'statue_body',{width:w,height:h,x:bounds.x,y:bounds.y},baseColor)
   ];
   const limb=limbPaths(frame?.speciesId||profile.fighter?.speciesId||profile.speciesId||'mao-ao');
   const handX=clamp(Math.abs(frame?.handAttachX||-.28)*sizeMultiplier,bodyWidth*.15,bodyWidth*.4);
@@ -265,23 +271,31 @@ function makeStaticParts(front,back,head,backHead,profile,pose,finish,role,weapo
   p.push(glb('statue_right_hand','Right hand',limb.hand,finish,role,
     transform(holderX,holderY,holderZ,
       num(free?.pitch,num(pose.pitch)),num(free?.yaw,num(pose.yaw)),num(free?.roll,num(pose.roll)),
-      handSize,handSize,handSize),'statue_body'));
+      handSize,handSize,handSize),'statue_body',baseColor));
   p.push(glb('statue_left_hand','Left hand',limb.hand,finish,role,
-    transform(-handX,handY,.04,0,0,-12,handSize,handSize,handSize),'statue_body'));
+    transform(-handX,handY,.04,0,0,-12,handSize,handSize,handSize),'statue_body',baseColor));
   const footConfig=window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet || {};
   const footHeight=clamp(bodyHeight*num(footConfig.footHeightFraction,.11)*
     num(footConfig.sizeBalanceMultiplier,1),.06,.17);
   const footX=clamp(bodyWidth*num(footConfig.stanceWidthFraction,.16),.065,bodyWidth*.28);
   const footY=footHeight*.5-bodyCenterY+drop;
   p.push(glb('statue_left_foot','Left foot',limb.foot,finish,role,
-    transform(-footX,footY,.03,0,0,0,footHeight*1.2,footHeight,footHeight*1.6),'statue_body'));
+    transform(-footX,footY,.03,0,0,0,footHeight*1.2,footHeight,footHeight*1.6),'statue_body',baseColor));
   p.push(glb('statue_right_foot','Right foot',limb.foot,finish,role,
-    transform(footX,footY,.03,0,0,0,footHeight*1.2,footHeight,footHeight*1.6),'statue_body'));
+    transform(footX,footY,.03,0,0,0,footHeight*1.2,footHeight,footHeight*1.6),'statue_body',baseColor));
   for(let i=0;i<weaponMasks.length;i++){
     const entry=weaponMasks[i];
+    const weaponWidth=.37,weaponHeight=.37*entry.aspect;
+    const frameW=entry.width*bodyWidth/weaponWidth,frameH=entry.height*bodyHeight/weaponHeight;
+    const cx=.5+holderX/bodyWidth,cy=.5-holderY/bodyHeight;
+    const overlayFrame={
+      width:frameW,height:frameH,
+      x:frameW*cx-entry.width*.5,y:frameH*cy-entry.height*.5
+    }; // Approximate world-projected shared grain when a weapon follows its rigged hand.
     p.push(sprite('statue_weapon_'+i,'Weapon '+(i+1)+' — '+entry.path.split('/').pop(),entry.mask,null,finish,role,
       transform(i?0:0,i?0:-.22,i?.018:.015,i?0:num(pose.pitch),i?0:num(pose.yaw),
-        i?0:num(pose.roll),.37,.37*entry.aspect,.02),i?'statue_weapon_0':'statue_right_hand'));
+        i?0:num(pose.roll),weaponWidth,weaponHeight,.02),
+      i?'statue_weapon_0':'statue_right_hand',overlayFrame,baseColor));
   }
   return p;
 }
@@ -301,7 +315,7 @@ async function weaponsFromInput(){
     original.getContext('2d').drawImage(img,0,0);
     const b=maskBounds(original);
     if(!b)throw Error('Weapon image is entirely transparent: '+path);
-    result.push({path,mask:maskedPart(original,b),aspect:b.h/b.w});
+    result.push({path,mask:maskedPart(original,b),aspect:b.h/b.w,width:b.w,height:b.h});
   }
   return result;
 }
@@ -312,7 +326,7 @@ async function makeProject(){
   const filename=$('materialFile').value.trim();
   if(!/^[a-zA-Z0-9_.-]+\.png$/.test(filename))throw Error('Enter a PNG filename under assets/textures/');
   const name=$('statueName').value.trim()||'Authored Statue';
-  const role=$('materialRole').value,phase=animation?$('phase').value:'neutral';
+  const role=$('materialRole').value,baseColor=$('statueTint').value,phase=animation?$('phase').value:'neutral';
   const pose=animation?.poses?.[phase]||{};
   await window.NpcAvatarPreview.ensurePortraitCosmetics({assetBase:'../../assets/',configBase:'../../config/'});
   const profile=window.NpcAvatarPreview.buildProfileFromNpcExport(npc);
@@ -334,11 +348,11 @@ async function makeProject(){
   const weapons=await weaponsFromInput();
   if(myGeneration!==generation)return null;
   const rig=measureNpcRig(front,back,profile,npc);
-  const parts=makeStaticParts(front,back,head,backHead,profile,pose,filename,role,weapons,rig);
+  const parts=makeStaticParts(front,back,head,backHead,profile,pose,filename,role,weapons,rig,baseColor);
   // The runtime schema is also accepted by Furniture Author's existing JSON import.
   return {schema:'hobunji_furniture_surface_author.v58',key:safeName(name).toLowerCase(),id:safeName(name),
     name,notes:'Generated with Statue Author from NPC '+(npc.name||npc.id||'unknown')+' / pose '+phase,
-    statueSource:{npcId:npc.id||null,animationName:animation?.name||null,phase,materialFile:filename,materialRole:role,sourceRig:rig},
+    statueSource:{npcId:npc.id||null,animationName:animation?.name||null,phase,materialFile:filename,materialRole:role,baseColor,sourceRig:rig},
     tileBase:{visible:true,tileSize:1,footprintW:1,footprintD:1,y:0,gridOpacity:.55},
     surfaceRecognition:{splitAngleDeg:24,colorCode:false,selectSurfaces:true,multiSelect:true},parts,
     avatar:{visible:false}};
@@ -397,7 +411,9 @@ $('animationFile').onchange=async event=>{
 $('materialPreset').onchange=()=>{
   if($('materialPreset').value!=='other')$('materialFile').value=$('materialPreset').value;
   $('materialRole').value=$('materialPreset').value==='boards.png'?'wood':'stone';
+  if(!$('statueTint').dataset.userEdited)$('statueTint').value=$('materialPreset').value==='boards.png'?'#b68d63':'#b9b1a2';
 };
+$('statueTint').oninput=()=>{$('statueTint').dataset.userEdited='true';};
 $('build').onclick=async()=>{
   $('build').disabled=true;status('Rendering NPC appearance and statue layers…');
   try{
