@@ -22,7 +22,7 @@ const canBound=new Function('isReplayCullable','objectProto',canBoundCode+'\nret
 );
 const hooked=function hooked(){}; // Recognized hand/foot pose-parity draw hook.
 const otherHook=function unknownAnimation(){}; // Arbitrary custom animation must never be assumed projection-safe.
-const mkMesh=(hook=null)=>({isMesh:true,children:[],isSkinnedMesh:false,isInstancedMesh:false,frustumCulled:true,
+const mkMesh=(hook=null)=>({isMesh:true,visible:true,children:[],isSkinnedMesh:false,isInstancedMesh:false,frustumCulled:true,
   geometry:{morphAttributes:{}},material:{isShaderMaterial:false},userData:{},onBeforeRender:hook||noop});
 assert(canBound(mkMesh()),'ordinary static weapon sprite stays boundable');
 assert(!canBound(mkMesh(otherHook)),'unrecognized dynamic onBeforeRender remains a conservative unbatchable group');
@@ -125,6 +125,44 @@ sourceMesh.__hobunjiXrayBoundParity.isFresh=()=>false;
 const narrow=new Vec4();
 assert(project(view,camera,[sourceMesh],narrow),'stale snapshot falls back to current transform');
 assert(narrow.z<wide.z,'stale snapshots no longer inflate scissor work');
+sourceMesh.__hobunjiXrayBoundParity.isFresh=()=>true;
+
+// Earlier visibility culls must not reject a procedural hand just because
+// its current mesh matrix is outside while the fresh captured outline matrix
+// lies inside. The shared depth-rebuild cull has the same requirement.
+const cullingCode=section('  function hasAlternateReplayPose(', '  function applyElevationScissor(');
+const rejectCurrentMatrix={
+  setFromProjectionMatrix(){},
+  intersectsObject(){return false;},
+  intersectsSprite(){return false;},
+}; // Current pose is outside a camera/sub-frustum; the captured pose may still draw.
+const culling=new Function('h',[
+  'const {isReplayCullable,participantProjection,participantFrustum,replayCullFrustum,setReplayCullFrustum,elevationScissorRect,scissorTargetWidth,scissorTargetHeight}=h;',
+  'let lastReplayCulledCount=0,lastReplayKeptCount=0;',
+  cullingCode,
+  'return {filterOffscreenReplayMeshes,collectReplayCulled,cullReplayGroup};'
+].join('\n'))({
+  isReplayCullable:actualReplayCullable,
+  participantProjection:{multiplyMatrices(){}},
+  participantFrustum:rejectCurrentMatrix,
+  replayCullFrustum:rejectCurrentMatrix,
+  setReplayCullFrustum:()=>true,
+  elevationScissorRect:{x:0,y:0,z:30,w:30},
+  scissorTargetWidth:100,scissorTargetHeight:100,
+});
+const viewCamera={projectionMatrix:{},matrixWorldInverse:{}};
+assert.deepEqual(culling.filterOffscreenReplayMeshes(viewCamera,[sourceMesh]),[sourceMesh],
+  'fresh captured pose keeps a hand in the shell replay even when its current matrix is off-screen');
+const visibleScene={traverseVisible(visitor){visitor(sourceMesh);}};
+assert.equal(culling.collectReplayCulled(visibleScene,new Set()).length,0,
+  'shared depth rebuild cannot cull a known rig solely by its unrepresentative current pose');
+assert.equal(culling.cullReplayGroup(viewCamera,[sourceMesh]).size,0,
+  'individual x-ray group depth cannot cull a mesh with a fresh alternate pose');
+sourceMesh.__hobunjiXrayBoundParity.isFresh=()=>false;
+assert.equal(culling.filterOffscreenReplayMeshes(viewCamera,[sourceMesh]).length,0,
+  'stale snapshots re-enable normal camera-frustum pruning');
+assert.equal(culling.collectReplayCulled(visibleScene,new Set()).length,1,
+  'stale snapshots re-enable normal depth-scissor pruning');
 sourceMesh.__hobunjiXrayBoundParity.isFresh=()=>true;
 
 const shellCode=section('  function wrappedRender(scene, camera) {','  wrappedRender.__hobunjiHeldRenderOrderWrapped');
