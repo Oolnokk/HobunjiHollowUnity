@@ -1008,11 +1008,19 @@
     return !!geometry && !geometry.morphAttributes?.position?.length;
   }
 
+  function hasAlternateReplayPose(object) {
+    // A fresh hand/foot parity snapshot can be the transform used by a later
+    // draw even when matrixWorld currently projects outside this viewport.
+    // It is unsafe to cull these meshes against the current matrix alone.
+    const parity = object?.__hobunjiXrayBoundParity; // Existing trusted per-rig draw-hook registration.
+    return parity?.hook === object?.onBeforeRender && !!parity.visibleMatrixWorld && parity.isFresh?.() === true;
+  }
+
   function collectReplayCulled(scene, keep, groupCandidates = null) {
     const culled = [];
     let kept = 0;
     scene.traverseVisible((object) => {
-      if (keep.has(object) || !isReplayCullable(object)) return;
+      if (keep.has(object) || hasAlternateReplayPose(object) || !isReplayCullable(object)) return;
       const inside = object.isSprite ? replayCullFrustum.intersectsSprite(object) : replayCullFrustum.intersectsObject(object);
       if (inside) {
         kept++;
@@ -1028,7 +1036,7 @@
     if (!candidates.length || !setReplayCullFrustum(camera, elevationScissorRect, scissorTargetWidth, scissorTargetHeight)) return null;
     const hidden = new Map(); // Restored immediately after this group’s colorless depth draw.
     for (const object of candidates) {
-      if (!object.visible) continue;
+      if (!object.visible || hasAlternateReplayPose(object)) continue;
       const inside = object.isSprite ? replayCullFrustum.intersectsSprite(object) : replayCullFrustum.intersectsObject(object);
       if (inside) continue;
       hidden.set(object, true);
@@ -1044,7 +1052,7 @@
     return meshes.filter(mesh => {
       // Only rigid leaf bounds are trustworthy. Keep animated/instanced meshes,
       // child-bearing weapon assemblies and VFX with extra shader/particle extent.
-      if (!mesh?.isMesh || !mesh.geometry || !mesh.matrixWorld || mesh.frustumCulled === false
+      if (hasAlternateReplayPose(mesh) || !mesh?.isMesh || !mesh.geometry || !mesh.matrixWorld || mesh.frustumCulled === false
           || mesh.isSkinnedMesh || mesh.isInstancedMesh || mesh.children?.length
           || mesh.geometry.morphAttributes?.position?.length
           || mesh.userData?.hobunjiReplayNeverCull === true
