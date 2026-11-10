@@ -89,6 +89,20 @@ assert.match(layoutSource, /buttonDown \|\| analog > 0\.15/, 'idle connected con
 assert.match(layoutSource, /lastControllerInputAt = -Infinity/, 'pointer input explicitly takes ownership away from controller restoration');
 assert.match(layoutSource, /window\.__farmMenuLayoutDebug/, 'Farm menu layout exposes an in-page diagnostic hook');
 
+// Exercise the production Nursery scroll-owner guard, not just its source text.
+// A 7-column inventory-style Nursery page must never regain the retired scrollbar.
+const nurseryScrollTest = vm.runInNewContext(
+  `const NURSERY_SCROLL_CLASS = 'farm-nursery-scroll'; ${layoutFunction('nurseryScrollRegion')}; nurseryScrollRegion;`
+);
+let legacyScrollClassAdds = 0; // Counts accidental attempts to put a second scrollbar back into a paged Nursery.
+const pagedNurserySection = {
+  querySelector(selector) { return selector === '.nursery-grid-stack' ? { tagName: 'DIV' } : null; },
+  children: [{ children: [{ tagName: 'BUTTON' }], classList: { add() { legacyScrollClassAdds++; } } }],
+};
+assert.equal(nurseryScrollTest(pagedNurserySection), null, 'paged Nursery provides no legacy nested scroll container');
+assert.equal(legacyScrollClassAdds, 0, 'Farm layout never resurrects the retired Nursery scroll marker');
+
+
 assert.match(paletteSource, /sell_crate:\s*'#ff8a3d'/, 'Shipping Box gets its own orange map marker instead of sharing yellow');
 assert.match(paletteSource, /supply_box:\s*'#6ea8ff'/, 'Supply / Order Box gets a separate blue map marker');
 assert.match(paletteSource, /livestock:\s*'#ff8fd8'/, 'live livestock get a high-contrast pink map marker');
