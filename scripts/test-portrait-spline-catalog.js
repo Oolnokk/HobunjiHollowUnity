@@ -85,6 +85,10 @@ async function check() {
     assert(html.includes('id="' + id + '"'), 'standalone editor exposes '+id);
   assert(html.includes('portrait-spline-catalog.js?v='), 'catalog loader is cache-versioned in editor');
   assert(html.includes('initCatalog();'), 'editor auto-loads on opening');
+  const catalogSource=read('docs/js/portrait-spline-catalog.js');
+  assert(catalogSource.indexOf("image.crossOrigin = 'anonymous'")>=0
+    && catalogSource.indexOf("image.crossOrigin = 'anonymous'")<catalogSource.indexOf('image.src = url'),
+    'indexed cosmetic images must be CORS-clean before loading, like the canonical portrait asset loader');
   assert(html.includes('rigDrafts.set(activeDraftKey'), 'switching cosmetics preserves unsaved rig work');
   assert(html.includes('result.speciesVariants[key]'), 'existing sprite variants export isolated rigs');
   console.log('Indexed portrait spline catalog: species, gender, slots, real sprites, hood variants, caching and author wiring verified.');
