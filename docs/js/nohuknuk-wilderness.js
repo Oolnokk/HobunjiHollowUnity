@@ -527,5 +527,5 @@
     window.NpcScheduling?.registerTargetOverride?.(OWNER, targetFor); // Overrides this NPC only; ordinary schedule resolution remains authoritative for everyone else.
   }
   window.NohuknukWilderness = Object.freeze({ init, update, serialize, restore, debugSnapshot,
-    DEFAULTS, __test: Object.freeze({ targetFor, findWitness, chooseActivity, beginFlight, beginDig, tryRelocate, validTile, settings }) });
+    DEFAULTS, __test: Object.freeze({ targetFor, findWitness, findFishSpot, chooseActivity, beginFlight, beginDig, tryRelocate, validTile, settings }) });
 })();
