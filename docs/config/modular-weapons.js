@@ -3795,12 +3795,12 @@ window.MODULAR_WEAPON_CONFIG = {
         {
           "type": "rope",
           "start": {
-            "x": 204,
-            "y": 896
+            "x": 210,
+            "y": 830
           },
           "end": {
-            "x": 11,
-            "y": 371
+            "x": 17,
+            "y": 209
           }
         }
       ],
@@ -3820,9 +3820,9 @@ window.MODULAR_WEAPON_CONFIG = {
         {
           "id": "bore-1",
           "offsetX": 0,
-          "offsetY": 20,
-          "rx": 13.5,
-          "ry": 13.5,
+          "offsetY": 10,
+          "rx": 11,
+          "ry": 11,
           "rotation": 0,
           "rim": 5,
           "outline": 12,
@@ -9626,12 +9626,12 @@ window.MODULAR_WEAPON_CONFIG = {
         {
           "type": "rope",
           "start": {
-            "x": 206,
-            "y": 996
+            "x": 207,
+            "y": 952
           },
           "end": {
-            "x": 13,
-            "y": 471
+            "x": 14,
+            "y": 275
           }
         }
       ],
@@ -9651,9 +9651,9 @@ window.MODULAR_WEAPON_CONFIG = {
         {
           "id": "bore-1",
           "offsetX": 0,
-          "offsetY": 20,
-          "rx": 13.5,
-          "ry": 13.5,
+          "offsetY": 0,
+          "rx": 17.5,
+          "ry": 17.5,
           "rotation": 0,
           "rim": 5,
           "outline": 12,
@@ -9853,11 +9853,11 @@ window.MODULAR_WEAPON_CONFIG = {
         {
           "type": "rope",
           "start": {
-            "x": 206,
+            "x": 198,
             "y": 1004
           },
           "end": {
-            "x": 13,
+            "x": 5,
             "y": 479
           }
         }
@@ -11789,12 +11789,12 @@ window.MODULAR_WEAPON_CONFIG = {
         {
           "type": "rope",
           "start": {
-            "x": 195,
-            "y": 856
+            "x": 198,
+            "y": 803
           },
           "end": {
-            "x": 2,
-            "y": 331
+            "x": 2.842170943040401e-14,
+            "y": 150
           }
         }
       ],
@@ -11815,7 +11815,7 @@ window.MODULAR_WEAPON_CONFIG = {
         {
           "id": "bore-1",
           "offsetX": 0,
-          "offsetY": 20,
+          "offsetY": 0,
           "rx": 13.5,
           "ry": 13.5,
           "rotation": 0,
