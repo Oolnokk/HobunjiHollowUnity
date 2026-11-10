@@ -50,7 +50,7 @@ const server=http.createServer((req,res)=>{
     await page.waitForFunction(()=>{
       const info=window.HobunjiSplineAuthorDiagnostics?.();
       return info?.viewer?.webgl===true&&info?.viewer?.headLoaded&&info?.viewer?.hairLoaded;
-    },null,{timeout:60000}).catch(error=>{throw new Error('WebGL head/hair did not load: '+error.message+'\n'+errors.join('\n').slice(0,3000)
+    },null,{timeout:60000}).catch(async error=>{throw new Error('WebGL head/hair did not load: '+error.message+'\n'+errors.join('\n').slice(0,3000)
       +'\nStatus: '+(await page.locator('#viewerStatus').innerText()));});
     const before=await debug();
     assert.equal(before.selected.species,'mao-ao');
