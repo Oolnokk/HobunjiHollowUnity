@@ -208,7 +208,7 @@ api.decorate(root, 'grappleFlail', { shapeKey:'grappleFlail' }, { THREE });
   api.decorate(discarded, 'grappleFlail', { shapeKey:'grappleFlail' }, { THREE });
   for (let i = 0; i < 20 && !api.debugSnapshot()[0]?.loaded; i++) await Promise.resolve();
   assert.equal(api.debugSnapshot().length, 1, 'retired equipment builds using the same live assembly API');
-  now = 314100;
+  now = 326100; // Continue from the prior EquipmentPanel ownership check without rewinding the synthetic clock.
   api.tick(0);
   now = 900000;
   api.tick(0);
