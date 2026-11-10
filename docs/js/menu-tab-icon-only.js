@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  if (window.HobunjiMenuTabIcons?.version >= 10) return;
+  if (window.HobunjiMenuTabIcons?.version >= 11) return;
 
   const TAB_SELECTOR = '.mp-tabs .mp-tab[data-mpanel]'; // Used to target only the main menu's navigation tabs.
   const RELATIONSHIPS_PANEL_ID = 'relationships'; // Used to preserve the PNG heart authored by generic-hud-icons.js.
@@ -77,9 +77,9 @@
         justify-content: center;
         position: relative;
         flex: 0 0 auto;
-        min-width: 80px;
+        min-width: 46px;
         min-height: 44px;
-        gap: .4em;
+        gap: 0;
         padding: 18px 9px 6px;
         overflow: visible;
       }
@@ -91,7 +91,16 @@
         position: absolute; top: 3px; left: 9px;
         font-size: 9px; color: var(--muted); letter-spacing: .08em;
       }
-      ${TAB_SELECTOR} .menu-tab-label { pointer-events: none; font-size: 11px; }
+      ${TAB_SELECTOR} .menu-tab-label {
+        pointer-events: none; display: inline-block; min-width: 0; max-width: 0;
+        overflow: hidden; white-space: nowrap; opacity: 0; margin-left: 0;
+        font-size: 11px;
+        transition: max-width .24s cubic-bezier(.22, 1, .36, 1), margin-left .24s cubic-bezier(.22, 1, .36, 1), opacity .15s ease;
+      }
+      ${TAB_SELECTOR}.active .menu-tab-label { max-width: 110px; margin-left: 7px; opacity: 1; }
+      @media (prefers-reduced-motion: reduce) {
+        ${TAB_SELECTOR} .menu-tab-label { transition: none; }
+      }
       .menu-page-context { flex: 0 0 auto; padding: 7px 12px; border-bottom: 1px solid var(--border); background: #0002; }
       .menu-page-context strong { display: block; color: var(--accent); font-size: 12px; }
       .menu-page-context p { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
@@ -100,10 +109,7 @@
         .menu-page-context strong { flex: 0 0 auto; }
         .menu-page-context p { margin: 0; font-size: 10px; }
       }
-      ${TAB_SELECTOR}[data-mpanel="compendium"] {
-        gap: .35em;
-        padding-inline: 10px;
-      }
+      ${TAB_SELECTOR}[data-mpanel="compendium"] { padding-inline: 10px; }
       ${TAB_SELECTOR} .menu-tab-glyph {
         display: inline-flex;
         align-items: center;
@@ -594,7 +600,9 @@
   function debugSnapshot() {
     const tabs = [...document.querySelectorAll(TAB_SELECTOR)]; // Used to inspect all icon-only tab state without devtools.
     return {
-      version: 10,
+      version: 11,
+      activeLabelOnly: true,
+      compactTabMinWidth: 46,
       transformed: debugState.transformed,
       lastPanel: debugState.lastPanel,
       dynamicTabTransforms: debugState.dynamicTabTransforms,
@@ -618,7 +626,7 @@
       currencyColor: CURRENCY_VERDIGRIS_COLOR,
       currencyGlowColor: CURRENCY_VERDIGRIS_GLOW,
       currencyOutlined: true,
-      latestChange: 'Menu destinations now show names, purpose groups and a visible location with a plain-language explanation.',
+      latestChange: 'Inactive menu tabs show only the icon; the selected name expands with a CSS easing transition without a JS animation loop.',
       currencyIconScale: CURRENCY_ICON_SCALE,
       currencyIconAnchor: 'bottom-left',
     };
@@ -629,6 +637,6 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', transformAll, { once: true });
   else transformAll();
 
-  window.HobunjiMenuTabIcons = Object.freeze({ version: 10, refresh: transformAll, debugSnapshot });
+  window.HobunjiMenuTabIcons = Object.freeze({ version: 11, refresh: transformAll, debugSnapshot });
   window.__menuTabIconsDebug = debugSnapshot;
 })();

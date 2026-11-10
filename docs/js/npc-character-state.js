@@ -37,7 +37,9 @@
     walker._legsPrevX = root.position.x;
     walker._legsPrevZ = root.position.z;
     walker._moveSpeedTiles = 0;
-    walker.currentScheduleTarget = options.resolveScheduleTarget?.(walker.rec) || null;
+    if (walker.currentScheduleTarget === undefined) {
+      walker.currentScheduleTarget = options.resolveScheduleTarget?.(walker.rec) || null; // Standalone walkers without a game-loop decision keep their schedule fallback.
+    } // Live walkers already resolved/normalized their sleep or seat pose before movement locks; do not overwrite it.
     const groundY = options.surfaceY?.(walker.area, Math.floor(root.position.x), Math.floor(root.position.z));
     if (!Number.isFinite(groundY)) return;
     root.position.y += (groundY - root.position.y) * (1 - Math.exp(-13.4 * dt)); // Framerate-independent ground-snap (matches game.js's own NPC ground-follow rate).

@@ -1398,6 +1398,8 @@
     };
   }
 
+  const activeAmmoDebuffActors = new Set(); // Only afflicted actors need per-frame movement-sensitive shrapnel and expiry updates.
+  let nextAmmoDebuffDiscoveryAt = 0; // Low-frequency recovery for effects loaded from saves/legacy writers.
   function applySpecialAmmoDebuff(entity, ammoId) {
     if (!entity || !ammoId) return;
     const now = performance.now();
@@ -1409,6 +1411,7 @@
     } else if (ammoId === 'concussive') {
       entity._rangedAmmoDebuffs.disorientUntil = Math.max(entity._rangedAmmoDebuffs.disorientUntil || 0, now + DISORIENT_DURATION_MS);
     }
+    if (Object.keys(entity._rangedAmmoDebuffs).length) activeAmmoDebuffActors.add(entity); // Activation is event-driven.
   }
 
   function applySticky(entity, durationMs = 2200) {
@@ -1416,6 +1419,7 @@
     if (!entity._rangedAmmoDebuffs) entity._rangedAmmoDebuffs = {};
     const duration = Math.max(0, Math.min(15000, Number(durationMs) || 0)); // Used to bound impact Sticky duration.
     entity._rangedAmmoDebuffs.stickyUntil = Math.max(entity._rangedAmmoDebuffs.stickyUntil || 0, performance.now() + duration);
+    if (duration > 0) activeAmmoDebuffActors.add(entity); // Sticky cleanup runs only while the actor is affected.
   }
   function movementSpeedMultiplier(entity) {
     return entity?._rangedAmmoDebuffs?.stickyUntil > performance.now() ? .2 : 1;
@@ -1449,8 +1453,16 @@
   }
 
   function updateAmmoDebuffs() {
-    updateEntityAmmoDebuffs(deps.player);
-    for (const entity of deps.hostileObjects) updateEntityAmmoDebuffs(entity);
+    const nowMs = performance.now(); // Legacy effects are discovered periodically instead of rescanning the entire roster each frame.
+    if (nowMs >= nextAmmoDebuffDiscoveryAt) {
+      nextAmmoDebuffDiscoveryAt = nowMs + 1500;
+      if (deps.player?._rangedAmmoDebuffs) activeAmmoDebuffActors.add(deps.player);
+      for (const entity of deps.hostileObjects) if (entity?._rangedAmmoDebuffs) activeAmmoDebuffActors.add(entity);
+    }
+    for (const entity of activeAmmoDebuffActors) {
+      if (entity._rangedAmmoDebuffs) updateEntityAmmoDebuffs(entity); // Active shrapnel still samples each frame's movement.
+      if (!entity._rangedAmmoDebuffs || entity.health <= 0) activeAmmoDebuffActors.delete(entity);
+    }
   }
 
   function nearestHostileHit(start, end, projectileRadius, areaId, exclude = null) {
@@ -2092,9 +2104,13 @@
 
   function updateBanditAimLabel() {
     if (!deps?.isWeaponAiming?.()) {
+      updateBanditAimLabel.nextDecisionAt = 0; // Instantly reacquire when aim is re-enabled.
       window.WorldPopupText?.clearAimLabel?.();
       return;
     }
+    const nowMs = typeof performance === 'undefined' ? 0 : performance.now(); // Compatible with isolated runtime/test contexts without a browser clock.
+    if (nowMs < (updateBanditAimLabel.nextDecisionAt || 0)) return;
+    updateBanditAimLabel.nextDecisionAt = nowMs + 80; // Cosmetic target choice only; world label presentation stays frame-accurate.
     const focused = focusedHostile(deps.getAimLabelRangeWorld?.() ?? 14);
     const bandit = focused?.candidate?.data;
     if (!bandit?.isBandit || !bandit.avatarRef?.group) {

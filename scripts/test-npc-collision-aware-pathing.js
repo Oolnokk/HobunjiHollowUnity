@@ -183,6 +183,7 @@ function makeMovingWalker(id, x, z, target) {
     area: 'interior', rec: { id }, currentScheduleTarget: target,
     root: { position: { x, z } }, state: 'on-route',
     _stepGridPath: stepGridPath, _tryStartGridPath() { return false; },
+    canBeelineDecision(c, r) { return window.NpcPathfinding.canNpcBeeline(this.area, this.root.position.x, this.root.position.z, c, r); }, // Isolated walker preserves canonical swept checks; memoization is exercised separately.
     moveToward(tx, tz, dt) {
       const dx = tx - this.root.position.x, dz = tz - this.root.position.z; // Direction to this frame's waypoint.
       const distance = Math.hypot(dx, dz), travel = Math.min(distance, dt * 1.25); // Same speed-limited movement as production.

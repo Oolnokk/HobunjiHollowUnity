@@ -4,10 +4,18 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
+function childCollection() {
+  // Browser HTMLCollection is iterable and indexable but has no Array.some().
+  // Keep other array helpers used by this test's lightweight DOM fixture.
+  return new Proxy([], { get(target, key, receiver) {
+    return key === 'some' ? undefined : Reflect.get(target, key, receiver);
+  } });
+}
+
 class FakeElement {
   constructor(tagName = 'div') {
     this.tagName = String(tagName).toUpperCase();
-    this.children = [];
+    this.children = childCollection();
     this.parentNode = null;
     this.style = {};
     this.dataset = {};
@@ -23,12 +31,17 @@ class FakeElement {
 
   set innerHTML(value) {
     this._innerHTML = String(value ?? '');
-    this.children = [];
+    this.children = childCollection();
     this._synthetic = Object.create(null);
     if (this._innerHTML.includes('farm-companion-btn')) {
       const button = new FakeElement('button');
       button.className = 'settings-small-btn farm-companion-btn';
       this._synthetic['.farm-companion-btn'] = button;
+    }
+    if (this._innerHTML.includes('stable-favorite-btn')) {
+      const button = new FakeElement('button'); // Gives the new pin button a real click path in this lightweight DOM fixture.
+      button.className = 'settings-small-btn stable-favorite-btn';
+      this._synthetic['.stable-favorite-btn'] = button;
     }
     if (this._innerHTML.includes('farm-row-name')) {
       const input = new FakeElement('input');
@@ -294,7 +307,15 @@ context.FarmPanel.init({
   showToast() {},
   esc: value => String(value),
 });
+assert.equal(stableList.children.some, undefined, 'Stable DOM fixture models HTMLCollection without Array.some');
 context.FarmPanel.renderStablePanel();
+
+const roleButtons = descendantsByClass(stableList, 'stable-role-tab'); // Actual native page controls, shared with controller bumper actions.
+assert.equal(roleButtons.length, 3, 'Stable exposes Companion, Mount and Shoulder Pet pages');
+assert.deepEqual(roleButtons.map(button => button.dataset.stableRole), ['companion', 'mount', 'shoulderPet']);
+assert.equal(context.FarmPanel.stableTrainingDebug().selectedRole, 'companion');
+assert.equal(stableRowById(stableList, 'mount1').hidden, true, 'off-page mounts are retained but not visible or controller-selectable');
+assert.equal(stableRowById(stableList, 'hound2').hidden, false, 'selected Companion page is visible');
 
 const ageSections = descendantsByClass(stableList, 'stable-age-section'); // Used to verify the native renderer owns both age groups.
 assert.equal(ageSections.length, 2, 'native Stable renderer creates Baby and Adult sections');
@@ -362,6 +383,11 @@ assert.equal(progression.perkRank(stable.find(entry => entry.id === 'hound2'), s
 assert.equal(descendantsByClass(companionRow, 'stable-entry-perk-tree').length, 1, 'buying a perk keeps this animal tree expanded after rerender');
 assert.equal(descendantsByClass(companionRow, 'stable-training-toggle')[0].getAttribute('data-ctrl-detail'), 'stableTrainingDetail_hound2', 'purchase retains the exact controller return action');
 
+descendantsByClass(stableList, 'stable-role-tab').find(button => button.dataset.stableRole === 'mount').listeners.click(); // Same action used by touch and controller navigation.
+assert.equal(context.FarmPanel.stableTrainingDebug().selectedRole, 'mount', 'role page button changes the actual visible list');
+assert.equal(stableRowById(stableList, 'mount1').hidden, false, 'mount becomes visible on its own page');
+assert.equal(stableRowById(stableList, 'hound2').hidden, true, 'companion is hidden without removing its entry');
+mountRow = stableRowById(stableList, 'mount1');
 mountRow.listeners.click({ target: { closest: () => null } });
 companionRow = stableRowById(stableList, 'hound2');
 mountRow = stableRowById(stableList, 'mount1');
@@ -394,6 +420,19 @@ assert.equal(context.FarmPanel.stableTrainingDebug().outsideStorageLimit, 8, 'St
 assert.equal(context.FarmPanel.stableTrainingDebug().outsideStorageCount, 8, 'Stable never exposes more than eight animals outside storage');
 assert.equal(context.FarmPanel.stableTrainingDebug().stowedCount, 1, 'the ninth acquired animal is retained in indefinite stowage');
 assert.equal(stable.at(-1).stowed, true, 'a new animal is immediately saved as stowed when the accessible roster is full');
+for (const id of ['mount1', 'incoming_3', 'incoming_4']) { // Exercise real favorite-button handlers on three Mounts.
+  const row = stableRowById(stableList, id);
+  assert.ok(row, id + ' has a Stable role row');
+  row.querySelector('.stable-favorite-btn').listeners.click({ stopPropagation() {} });
+}
+assert.equal(context.FarmPanel.stableTrainingDebug().favoritesPerRole.mount, 3, 'three favorite Mounts are saved and pinned');
+const beforeOverLimit = saveCount;
+stableRowById(stableList, 'incoming_5').querySelector('.stable-favorite-btn').listeners.click({ stopPropagation() {} });
+assert.equal(context.FarmPanel.stableTrainingDebug().favoritesPerRole.mount, 3, 'fourth favorite is rejected for that category');
+assert.equal(saveCount, beforeOverLimit, 'rejected favorite does not dirty the save');
+assert.equal(stable.find(entry => entry.id === 'mount1').stableFavorite, true, 'pin uses the existing Stable animal record');
+const orderedMounts = descendantsByClass(stableList, 'stable-training-row').filter(row => row.dataset.stableRole === 'mount' && row.dataset.stableLifeStage === 'adult');
+assert.deepEqual(orderedMounts.slice(0, 3).map(row => row.dataset.stableTrainingId), ['mount1', 'incoming_3', 'incoming_4'], 'pinned Mounts sort first, then other Mounts by level');
 assert.match(source, /function installStableStorageAcquisitionGuard\(/, 'the item-to-Stable intake path applies the cap before another menu render');
 
 let mountRowForStowing = stableRowById(stableList, 'mount1'); // Used to prove the user can stow and later withdraw an existing animal.
@@ -418,5 +457,19 @@ assert.match(source, /stableAgeSection\('🐣 Baby Animals'/, 'native Stable ren
 assert.match(source, /api\?\.growStableBaby\?\.\(entry\.id/, 'native Stable growth delegates to the shared AnimalGrowth lifecycle');
 assert.match(source, /stable-pet-rapport-partial-heart/, 'Stable Pet Rapport reuses gradual clipped-heart presentation');
 assert.match(source, /armNativeInstallOnFarmPanelPublication/, 'browser parser timing is handled at the FarmPanel publication boundary');
+
+// Browser-like collection and empty-Stable regression: category buttons remain usable
+// even before the player adopts their first animal.
+const savedStableForEmptyCase = stable.splice(0); // Restored immediately after this isolated empty-inventory render check.
+context.FarmPanel.renderStablePanel();
+assert.equal(descendantsByClass(stableList, 'stable-role-tab').length, 3, 'empty Stable still exposes all three category pages');
+assert.match(allText(stableList), /Your stable is empty/, 'empty Stable retains its acquisition guidance');
+stable.push(...savedStableForEmptyCase);
+
+const portraitCalls = []; // Tracks only actual visible-page portrait requests, not stowed/off-page background work.
+context.InventoryStacks = { applyHeadIcon(element, kind) { portraitCalls.push(kind); } };
+context.FarmPanel.renderStablePanel();
+const visibleRole = context.FarmPanel.stableTrainingDebug().selectedRole;
+assert.equal(portraitCalls.length, stable.filter(entry => entry.role === visibleRole).length, 'only the selected Stable role composes animal portraits');
 
 console.log('Native Stable panel training, stowage, cap, and collapsible baby-inventory regression tests passed.');
