@@ -70,7 +70,7 @@ const compound=window.ItemProcessing.processBuffMultiplier('mashing')
   *window.ItemProcessing.processBuffMultiplier('drying');
 assert.ok(Math.abs(second.cookingProcessMultiplier-compound)<1e-9);
 assert.equal(second.cookingProcessSteps.length,2);
-assert.equal(window.CookingSystem.ingredientEffectTotals(second,5).speed,Math.ceil(3*compound));
+assert.equal(window.CookingSystem.ingredientEffectTotals(second,5).speed,Math.ceil(Math.ceil(3*window.ItemProcessing.processBuffMultiplier('mashing'))*window.ItemProcessing.processBuffMultiplier('drying')), 'each stage rounds before the following multiplier');
 assert.ok(window.ItemProcessing.baseProcessHours('barrelAging')>window.ItemProcessing.baseProcessHours('smoking'));
 assert.ok(window.ItemProcessing.processBuffMultiplier('barrelAging')>window.ItemProcessing.processBuffMultiplier('smoking'));
 
