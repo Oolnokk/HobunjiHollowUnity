@@ -111,6 +111,7 @@ let activeStableRole = 'companion'; // Fake button click updates the selected ro
 let stablePageClicks = 0; // Confirms configured controller input operates the same touch buttons.
 let stablePageFocused = '';
 let stableTabSelected = true;
+let focusInsideStable = true; // Focus on the top menu tab bar must restore ordinary main-tab bumper behavior.
 const stableRoleButtons = ['companion', 'mount', 'shoulderPet'].map(role => ({
   dataset: { stableRole: role },
   getAttribute: key => key === 'aria-pressed' ? String(activeStableRole === role) : null,
@@ -123,6 +124,7 @@ const stableTestPanel = {
 };
 const stableControllerContext = vm.createContext({
   activePanel: () => stableTestPanel,
+  currentTarget: { closest: selector => selector === '#mpStable' && focusInsideStable ? {} : null },
   panelOwnsAction: () => false,
   localSubtabs: () => null,
   findTabGroup: () => null, // An absent menu-bar fallback means other pages must not turn Stable categories.
@@ -137,6 +139,9 @@ stableControllerContext.cycleStablePage(-1);
 assert.equal(activeStableRole, 'companion', 'controller Previous returns to Animal Companions');
 stableControllerContext.cycleStablePage(-1);
 assert.equal(activeStableRole, 'shoulderPet', 'category page turning wraps backward');
+focusInsideStable = false;
+stableControllerContext.cycleStablePage(1);
+assert.equal(stablePageClicks, 3, 'top-level menu tab focus keeps its ordinary controller page-turn behavior');
 stableTabSelected = false;
 stableControllerContext.cycleStablePage(1);
 assert.equal(stablePageClicks, 3, 'other main menu tabs do not borrow Stable role navigation');
