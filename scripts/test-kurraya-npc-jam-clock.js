@@ -74,4 +74,6 @@ assert.match(source,/type:'ambient-transport-changed'/,'each NPC song regenerati
 assert.match(source,/iteration < 10/,'audio lookahead uses the bounded sub-millisecond binary search optimization');
 assert.ok(source.includes('if (!jamLeaderSync || state.ambientOnly) {'),'following the NPC must skip duplicate player metronome scheduling');
 assert.ok(source.includes('if (!state.rootPadEnabled || HOSTED_FLUTE_PERFORMANCE) return;'),'flute performances must skip a root-pad search they can never use');
+assert.ok(host.includes('data-perf="jam"'),'mobile performance HUD must show NPC synchronization status');
+assert.ok(host.includes('lastJamHudAt'),'mobile sync diagnostics must reuse the existing HUD cadence rather than spawning another timer');
 console.log('NPC jam clock, 6/8→3/4 harmony, mid-song joining, solo restore and transport optimization passed.');
