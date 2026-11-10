@@ -208,6 +208,12 @@
         : finite(raw?.[key], key.startsWith('scale') ? 1 : 0, key.startsWith('scale') ? 0.05 : -2400, key.startsWith('scale') ? 8 : 2400);
     }
     if (raw?.layerOrder === 'haft-over-head' || raw?.layerOrder === 'head-over-haft') result.layerOrder = raw.layerOrder; // Pair-specific painter order, validated against the two supported options.
+    if (raw?.flailHeadAnchor && Number.isFinite(raw.flailHeadAnchor.x) && Number.isFinite(raw.flailHeadAnchor.y)) {
+      result.flailHeadAnchor = point(raw.flailHeadAnchor); // Pair-local contact on a hanging rigid head, never the original rigid mounting line.
+    }
+    if (Object.hasOwn(raw || {}, 'flailHeadScale')) {
+      result.flailHeadScale = finite(raw.flailHeadScale, 1, 0.05, 8); // Only this shaft/head pairing uses this hanging scale.
+    }
     if (raw?.animation === 'thrust' || raw?.animation === 'sweep') result.animation = raw.animation;
     else if (!partial) result.animation = fallbackAnimation;
     const bridges = cleanBridges(raw?.bridges); // Optional pair-specific bridge brush strokes.
@@ -476,14 +482,17 @@
         transformed.end.x - transformed.start.x, transformed.end.y - transformed.start.y))); // The rope alone adopts this length; never head size or connector diameter.
     }
     if (!head.flailAssembly) {
-      const authoredHead = recipe.flail.head; // Use the anchor from the original complex-tool author even when swapping art.
+      const authoredHead = recipe.flail.head; // The Tool Hub still owns the rope, physics and its original dedicated grapple head.
+      const pair = shaft.overrides?.[headKey] || {}; // Custom contact belongs to THIS flexible shaft/head combination, never the shared head rig.
+      const mountContact = head.mount?.type === 'blade' ? head.mount.start : head.mount?.end; // Tang at START; sleeve/weight at END.
+      const contact = pair.flailHeadAnchor || mountContact; // Keep rigid head.mount authoritative until THIS pair is explicitly adjusted.
       recipe.flail.head = {
-        anchorSpace: authoredHead.anchorSpace, anchorLayer: 'modular-head',
-        anchor: { ...authoredHead.anchor }, // NEVER derive the flail's connector contact from head.mount or the old modular-editor flailHeadAnchor.
-        scale: Number.isFinite(head.flailHeadScale) ? head.flailHeadScale : authoredHead.scale,
+        anchorSpace: 'layer', anchorLayer: 'modular-head',
+        anchor: point(contact || { x: 225, y: 602 }), // Layer-local source pixel: both Three.js and the full 2D preview use it.
+        scale: finite(pair.flailHeadScale, head.flailHeadScale || authoredHead.scale || 1, 0.05, 8),
         layers: [{ id: 'modular-head', sprite: head.sprite, material: 'metal' }],
       };
-    } // For head-owned flails, keep the full head and its exact Complex Tool Visuals anchor unchanged.
+    } // Head-owned flails retain their entire original Tool Hub head and untouched authored contact.
     const shaftArt = shaftArtTransform(shaft); // A moved/scaled shaft PNG moves its physical rope contact with it, not the separate attachment rig.
     if (shaftArt.enabled && Number.isFinite(recipe.flail.haftAnchor?.x) && Number.isFinite(recipe.flail.haftAnchor?.y)) {
       recipe.flail.haftAnchor = duplicatePoint(recipe.flail.haftAnchor, shaftArt);
