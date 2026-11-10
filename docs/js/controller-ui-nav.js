@@ -838,11 +838,10 @@
         const current = Math.max(0, pages.findIndex(button => button.getAttribute('aria-pressed') === 'true'));
         const next = pages[(current + delta + pages.length) % pages.length];
         const role = next.dataset.stableRole; // Used to recover the freshly rendered button after the click replaces the Stable list.
-        if (clickOnScreen(next, 'tab')) {
-          clearGroups(panel);
-          const replacement = [...panel.querySelectorAll('#stableRoleTabs > .stable-role-tab')].find(button => button.dataset.stableRole === role);
-          if (replacement) setFocus(replacement, { scroll: false });
-        }
+        next.click(); // Page turning must work even after the player scrolls a long animal list below the selector.
+        clearGroups(panel);
+        const replacement = [...panel.querySelectorAll('#stableRoleTabs > .stable-role-tab')].find(button => button.dataset.stableRole === role);
+        if (replacement) setFocus(replacement, { scroll: false });
         return;
       }
     }
