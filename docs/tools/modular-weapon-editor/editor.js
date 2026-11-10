@@ -128,12 +128,19 @@
     savedState = JSON.stringify(data); pendingStrokes = [];
     updateShaftList(); render(); syncBridgeControls(); historyButtons();
   }
-  function save() {
+  function save({ keepPairFields = false } = {}) {
     try {
-      data = JSON.parse(JSON.stringify(api.replace(data, true))); // Persist validated line and pair data to browser draft.
+      data = JSON.parse(JSON.stringify(api.replace(data, true))); // Persist the validated draft and keep Undo/Redo history intact.
       record();
-      msg('Draft saved. Matching tang/eye arrows drive head rotation and size.');
-      render();
+      if (keepPairFields) {
+        msg('Pair correction saved. Live assembly and original head attachment are unchanged except for this pair.');
+        drawIdentity(); // Refresh the pair-specific contact, damage and scale diagnostics without deleting the active input.
+        updateRigTree(); // Rig output must match the same corrected pair as the live preview.
+        preview(); // Rebuild only the assembled artwork; do not recreate #fields during a number input change.
+      } else {
+        msg('Draft saved. Mounts and pair settings applied to the assembled preview.');
+        render();
+      }
     } catch (error) { msg('Save failed: ' + error.message); }
   }
   function compatible() {
@@ -724,7 +731,7 @@
         const value = bool ? input.checked : key === 'animation' ? input.value : Number(input.value);
         const currentPair = (chosenShaft().overrides[byId('head').value] ||= {}); // Always edit the current draft, even after async preview/save replaces its object graph.
         if (value === neutral[key]) delete currentPair[key]; else currentPair[key] = value; // Store only exceptions for this exact combination.
-        save();
+        save({ keepPairFields: true }); // Live changes update the flail/rig without destroying and resetting this focused mobile field.
       };
       cell.appendChild(input); row.append(title, cell); byId('fields').appendChild(row);
     }
