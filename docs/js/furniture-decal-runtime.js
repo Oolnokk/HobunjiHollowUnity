@@ -104,8 +104,8 @@
         return;
       }
       const script = document.createElement('script');
-      try { script.src = SCRIPT_SRC ? new URL('tankan-script-layout.js', SCRIPT_SRC).href : 'js/tankan-script-layout.js'; }
-      catch (_) { script.src = 'js/tankan-script-layout.js'; }
+      try { script.src = SCRIPT_SRC ? new URL('tankan-script-layout.js?v=20261110ring1', SCRIPT_SRC).href : 'js/tankan-script-layout.js?v=20261110ring1'; }
+      catch (_) { script.src = 'js/tankan-script-layout.js?v=20261110ring1'; }
       script.async = false;
       script.dataset.hobunjiTankanLayout = '1';
       script.onload = finish;
