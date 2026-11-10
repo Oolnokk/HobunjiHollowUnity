@@ -30,18 +30,34 @@ without editing its NPC source. Imported furniture can still override individual
 
 Portrait alpha is checked before export: a missing sprite, blank portrait or an
 opaque full-canvas rectangle fails with a visible message rather than exporting
-a black placeholder. The selected furniture PNG is sampled into small repeated
-regions from its interior (important for `carved_smooth.png`, whose edges are
-very dark), while the original NPC silhouette, transparency and dark ink
-outlines remain intact. The same filename is mapped onto independent GLB
-limb pieces; the shared GLB map is cached rather than repeatedly uploaded per
-character. The mobile preview remains visible while scrolling the authoring
-controls and exposes original front/back/head canvases plus copyable material
-and GLB readiness diagnostics.
+a black placeholder. **The portrait is not painted with one uniform brown
+plane or a fixed 12-by-12 grid:** `ProceduralFurniture.paintStatueSurfaceCells`
+uses four-neighbour region detection on the original non-black opaque pixels.
+Black ink strokes and transparent pixels are never overwritten. Each contiguous
+cell receives one complete copy of the selected furniture PNG (including its
+dark border), fitted by independent row and column spans so that the shaded
+perimeter follows the irregular enclosed outline. This is the *raster equivalent*
+of `SurfaceStretchUV`'s per-irregular-surface full-square mapping used by
+the farm cliffs; it does **not** remesh the portrait into 3D cliff geometry.
+A fully black sprite without detectable interior cells falls back to one
+textured silhouette, not a black blob. Each sprite reports region counts,
+untouched ink pixels, and material shade variation in mobile diagnostics.
+
+For hand/foot GLBs the same selected material PNG is mapped as one cached
+texture. The farm cliffs' unlit `MeshBasicMaterial` shading is also used on
+all statue pieces, so one selected finish has consistent color rather than
+different Lambert lighting on portrait and limbs. The mobile preview stays
+visible while scrolling and exposes original front/back/head canvases plus
+copyable material and GLB readiness diagnostics.
 
 The additional `scripts/smoke-statue-author-browser.js` regression runs the
 actual authored NPC and Three.js r128 stack in headless Chromium at a 390px
-mobile viewport, asserting non-rectangular, non-black portrait and GLB finishes.
+mobile viewport, asserting non-rectangular, non-black portrait and GLB finishes,
+actual Pahu on-screen color, multiple enclosed cells, original black ink and
+distinct dark-edge/light-interior material shades. The pure typed-array mapper
+is also exercised by `scripts/test-statue-surface-cells.js`, including
+irregular disconnected regions, all-black weapon silhouettes, alpha invariance
+and malformed source rejection.
 
 To install a reusable authored statue in game content, save the exported JSON
 as `docs/config/furniture-authored/<key>.json` and register its key
