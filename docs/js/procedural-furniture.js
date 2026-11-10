@@ -229,6 +229,41 @@
     if (!ROOF_SHINGLE_GLB.test(path) || typeof gen?.makeShingleModel !== 'function') return null;
     return gen.loadShingleGlb().then(() => gen.makeShingleModel('farm'));
   }
+  function ensureStatueModelUV(child) {
+    const geometry=child.geometry;
+    const positions=geometry?.getAttribute?.('position');
+    if(!positions?.count||positions.count>200000)return 'no-positions';
+    const uv=geometry.getAttribute('uv');
+    if(uv?.count===positions.count){
+      let uMin=Infinity,uMax=-Infinity,vMin=Infinity,vMax=-Infinity;
+      // Early-exit as soon as both authored dimensions span useful texture
+      // space; avoid scanning huge valid GLBs on every statue rebuild.
+      for(let i=0;i<uv.count;i++){
+        const u=uv.getX(i),v=uv.getY(i);
+        uMin=Math.min(uMin,u);uMax=Math.max(uMax,u);
+        vMin=Math.min(vMin,v);vMax=Math.max(vMax,v);
+        if(uMax-uMin>.06&&vMax-vMin>.06)return 'authored';
+      }
+    }
+    // Hand/foot models can lack UVs entirely; Three.js then samples the
+    // bottom-left (near-black) pixel of every texture over the entire mesh.
+    // Project the source mesh's two broadest axes into [0,1] instead, leaving
+    // authored UVs and all non-statue furniture untouched.
+    if(!geometry.boundingBox)geometry.computeBoundingBox();
+    const bounds=geometry.boundingBox,size=bounds.getSize(new THREE.Vector3());
+    const axes=['x','y','z'].sort((a,b)=>size[b]-size[a]);
+    const horizontal=axes[0],vertical=axes[1],w=Math.max(.00001,size[horizontal]),h=Math.max(.00001,size[vertical]);
+    const projected=new Float32Array(positions.count*2);
+    for(let i=0;i<positions.count;i++){
+      projected[i*2]=(positions[horizontal](i)-bounds.min[horizontal])/w;
+      projected[i*2+1]=(positions[vertical](i)-bounds.min[vertical])/h;
+    }
+    geometry.setAttribute('uv',new THREE.BufferAttribute(projected,2));
+    geometry.attributes.uv.needsUpdate=true;
+    child.userData.statueGeneratedUv=true;
+    return 'projected-'+horizontal+vertical;
+  }
+
   function attachGlb(mesh, part, baseColor) {
     const path = /^(?:https?:|data:|blob:|\/)/.test(part.modelPath || '') ? part.modelPath : (window.__hobunjiFurnitureAssetBase || 'assets/') + String(part.modelPath || '').replace(/^assets\//, ''); // Runtime and isolated editor resolve the same saved model identity.
     (loadRoofShingle(path) || loadFurnitureGlb(path).then(template => template.clone(true))).then(instance => {
@@ -241,6 +276,7 @@
         child.userData.rockSourceKey=String(sourceMeshIndex++);
         if (child.userData.sharedShingle&&!part.rockShape?.enabled) { child.castShadow = child.receiveShadow = true; return; } // Keeps the roofs' shared look unless this furniture explicitly requests stone.
         child.geometry = child.geometry.clone();
+        if(part.statueUniformFinish===true)child.userData.statueUvMode=ensureStatueModelUV(child);
         if(part.rockShape?.enabled){const original=child.geometry;rockSourceGeometries.set(child,original.clone());child.geometry=createRockGeometry(original,part.rockShape,child.userData.rockSourceKey);original.dispose();if(child.isSkinnedMesh)convertedSkins.push(child);}
         const color = material => {
           if(part.statueUniformFinish===true){
@@ -272,6 +308,9 @@
             }
           });
           mesh.userData.statueTextureReady=true;
+          mesh.userData.statueUvModes=[...new Set((()=>{
+            const modes=[];instance.traverse(child=>{if(child.isMesh)modes.push(child.userData.statueUvMode||'unknown');});return modes;
+          })())]; // Copyable, per-piece phone diagnostics verify UV fallback was actually considered.
         }).catch(error=>{mesh.userData.statueTextureError=String(error.message||error);});
       }
       for(const skin of convertedSkins){
