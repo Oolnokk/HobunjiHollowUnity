@@ -522,12 +522,18 @@
   const statueImages = new Map(); // URL -> decoded image promise, reused for every instance's material finish.
   const statueUniformTextures = new Map(); // Texture filename -> one cached, non-disposable tiled finish for GLB pieces.
   function statueImage(url) {
-    if (!statueImages.has(url)) statueImages.set(url, new Promise((resolve, reject) => {
-      const image = new Image();
-      image.onload = () => resolve(image);
-      image.onerror = () => reject(new Error('Unable to load statue image: ' + url.slice(0, 140)));
-      image.src = url;
-    }).catch(error => { statueImages.delete(url); throw error; }));
+    const decode=()=>new Promise((resolve,reject)=>{
+      const image=new Image();
+      image.onload=()=>resolve(image);
+      image.onerror=()=>reject(new Error('Unable to load statue image: '+url.slice(0,140)));
+      image.src=url;
+    });
+    // Every NPC/pose produces a unique data: PNG; retaining those keys would
+    // permanently accumulate full-resolution image bytes on mobile.
+    if(url.startsWith('data:'))return decode();
+    if(!statueImages.has(url))statueImages.set(url,decode().catch(error=>{
+      statueImages.delete(url);throw error;
+    }));
     return statueImages.get(url);
   }
   function statueFinishPath(part) {
@@ -596,6 +602,8 @@
         texture.wrapS=texture.wrapT=THREE.RepeatWrapping;
         if(THREE.sRGBEncoding)texture.encoding=THREE.sRGBEncoding;
         texture.needsUpdate=true;
+        texture.userData.statueSharedTexture=true; // Shared by every statue GLB with this material.
+        texture.dispose=()=>{}; // Matches the existing furniture shared-texture cache's no-op ownership policy.
         return texture;
       }).catch(error=>{statueUniformTextures.delete(url);throw error;});
       statueUniformTextures.set(url,pending);
