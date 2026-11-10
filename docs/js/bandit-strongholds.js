@@ -169,6 +169,7 @@
     for (const holder of [layout, live]) {
       if (holder?.transitions) holder.transitions = holder.transitions.filter(t => t?.id !== id);
     }
+    for (const prop of rec.props || []) if (prop.coverId) window.BanditStrongholdCover?.unregister?.(rec.zoneId,prop.coverId);
     for (const ring of [...(live?.scene?.children || [])]) if (ring.userData?.banditStrongholdTransitionId === id) {
       live.scene.remove(ring); ring.geometry?.dispose(); ring.material?.dispose();
     }
@@ -180,7 +181,10 @@
     if (!scene || !mapData?.caveSite?.fortifiedStronghold || !registerRecipes()) return 0;
     const previous = interiorScenes.get(mapId);
     if (previous?.scene === scene) { ensureBarrels(mapId, mapData, scene); return previous.group.children.length; }
-    if (previous) previous.scene.remove(previous.group);
+    if (previous) {
+      window.BanditStrongholdCover?.forgetScope?.(mapId); // Old interior collision references must not survive its scene.
+      previous.scene.remove(previous.group);
+    }
     const THREE = window.THREE;
     if (!THREE) return 0;
     const group = new THREE.Group(); // A single parent owns every decorative barricade; no extra frame loop.
@@ -200,6 +204,13 @@
       piece.position.set(tile.col+.5, Number(mapData.floorSurfaceY)||0, tile.row+.5);
       piece.rotation.y = (tile.col < exitCol ? -1 : 1) * Math.PI/2;
       group.add(piece);
+      const coverId = 'interior:' + (selected.length - 1); // Stable slot identity, independent of scene mesh/async initialization.
+      window.BanditStrongholdCover?.register?.({
+        scope:mapId, saveMapId:mapId, id:coverId, key, mesh:piece,
+        col:tile.col, row:tile.row, y:Number(mapData.floorSurfaceY)||0,
+        getGrid:()=>window.CaveSiteSystem?.activeStrongholdGrid?.(mapId),
+        onDestroyed:()=>group.remove(piece),
+      });
     }
     scene.add(group);
     interiorScenes.set(mapId, { scene, group });
@@ -350,6 +361,7 @@
   }
 
   function forgetInterior(mapId) {
+    window.BanditStrongholdCover?.forgetScope?.(String(mapId)); // Releases collision and capability records before disposing meshes.
     const old = interiorScenes.get(String(mapId)); // Only models belonging to this cave may be disposed on a map reset.
     if (!old) return false;
     old.group.parent?.remove(old.group);
