@@ -195,6 +195,15 @@
     return selected.length;
   }
 
+  function forgetInterior(mapId) {
+    const old = interiorScenes.get(String(mapId)); // Only models belonging to this cave may be disposed on a map reset.
+    if (!old) return false;
+    old.group.parent?.remove(old.group);
+    old.group.traverse?.(node => { node.geometry?.dispose?.(); node.material?.dispose?.(); });
+    interiorScenes.delete(String(mapId));
+    return true;
+  }
+
   function debugSnapshot() {
     return { ...latest, replacementDefault: DEFAULT_REPLACEMENT_FRACTION,
       activeSites: [...siteRegistrations.entries()].map(([mapId, site]) => ({ mapId, ...site })),
@@ -203,7 +212,7 @@
 
   window.BanditStrongholds = Object.freeze({
     shouldFortify, replacementFraction, registerRecipes, upgradeCamp, removeCamp,
-    buildInteriorProps, debugSnapshot, __test: Object.freeze({ hash, siteProps }),
+    buildInteriorProps, forgetInterior, debugSnapshot, __test: Object.freeze({ hash, siteProps }),
   });
   registerRecipes();
 })();
