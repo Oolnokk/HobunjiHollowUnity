@@ -653,6 +653,28 @@ console.log('all species/gender combat voice profiles, dodge duration, native fa
   assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastCharge.fullDurationS - livingReleaseS) < 1e-9, 'rendered shriek has the same audible duration as the living grunt');
   W.CombatVocalizations.forgetEntity(skeletalComboActor);
 
+  const delayedStart = stageNpcCombo(skeletalComboActor, false); // Cold decoder/render can complete after a very short strike, especially on mobile.
+  delayedStart.action.t = 0.2;
+  delayedStart.spec.onUpdate(delayedStart.action);
+  now += 100; // Complete async decode 100ms after its intended start; the 50ms clip should still play in full.
+  for (let turn = 0; turn < 64 && !W.CombatVocalizations.debugSnapshot().activeCharges.some(t => t.ready); turn++) await Promise.resolve();
+  const recovered = W.CombatVocalizations.debugSnapshot().activeCharges.find(t => t.ready);
+  assert(recovered, 'a slightly late skeleton combo shriek must remain audible rather than being discarded');
+  assert.equal(W.CombatVocalizations.debugSnapshot().lastCharge.progress, 0, 'late brief shrieks start from their beginning, not a clipped tail');
+  assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastCharge.lateStartS - 0.1) < 1e-9, 'Pixel Probe records first-use start lag');
+  assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastCharge.fullDurationS - livingReleaseS) < 1e-9, 'late recovery never changes pitch-preserving playback duration');
+  W.CombatVocalizations.forgetEntity(skeletalComboActor);
+
+  const staleStart = stageNpcCombo(skeletalComboActor, false); // An attack cancelled long ago must not play delayed audio over the next action.
+  staleStart.action.t = 0.2;
+  staleStart.spec.onUpdate(staleStart.action);
+  now += 300;
+  for (let turn = 0; turn < 64 && !W.CombatVocalizations.debugSnapshot().lastCharge?.action?.includes('skip-stale-skeleton-combo'); turn++) await Promise.resolve();
+  assert.equal(W.CombatVocalizations.debugSnapshot().activeCharges.length, 0, 'well-expired combo vocals cleanly release their claims');
+  assert.equal(W.CombatVocalizations.debugSnapshot().lastCharge.action, 'skip-stale-skeleton-combo', 'Pixel Probe explains why a stale vocal was dropped');
+  now = 0; // Isolate the real-time playback clock from the remainder of this test.
+  W.CombatVocalizations.forgetEntity(skeletalComboActor);
+
   const finisherCombo = stageNpcCombo(skeletalComboActor, true);
   assert.equal(W.CombatVocalizations.debugSnapshot().activeCharges.length, 1, 'skeleton combo finisher retains the original windup voice');
   finisherCombo.action.t = 0.2;
