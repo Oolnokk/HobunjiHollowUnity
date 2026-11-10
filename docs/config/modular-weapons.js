@@ -13905,11 +13905,19 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "fishing-spear": {
           "disallow": false,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "flailHeadAnchor": {
+            "x": 209,
+            "y": 925
+          }
         },
         "harlyao-broadsword": {
           "disallow": false,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "flailHeadAnchor": {
+            "x": 200,
+            "y": 675
+          }
         },
         "harlyao-longsword": {
           "disallow": false,
@@ -13928,20 +13936,25 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "pick-shovel-pick": {
-          "disallow": true,
-          "layerOrder": "head-over-haft"
+          "disallow": false,
+          "layerOrder": "head-over-haft",
+          "flipY": true,
+          "dmgType": "blunt"
         },
         "pickshovel-scoop": {
           "disallow": false,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "scaleX": 0.8
         },
         "plains-blade": {
           "disallow": false,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "scaleY": 0.4
         },
         "porakaneki-greatclub": {
           "disallow": false,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "haft-over-head",
+          "scaleY": 0.75
         },
         "war-cleaver": {
           "disallow": false,
