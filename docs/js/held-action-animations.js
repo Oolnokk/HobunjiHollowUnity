@@ -367,7 +367,7 @@
     new URL('js/procedural-hand-foot-material-roles.js?v=20260821e', docsBase).href,
     new URL('js/hand-tool-grips.js?v=20261107kurrayaGripOptIn1', docsBase).href,
     new URL('js/hand-tool-grip-authored-overrides.js?v=20261022hbc21c80', docsBase).href, // Must follow hand-tool-grips.js: migrates authored spear/bshuakauitl grips onto its live data.
-    new URL('js/dual-wield-weapon-visuals.js?v=20261110dualflail1', docsBase).href,
+    new URL('js/dual-wield-weapon-visuals.js?v=20261110flailorder1', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20261005h2e47f31', docsBase).href,
     new URL('js/hand-shoulder-pose-runtime.js?v=20261107instrNeutral2', docsBase).href,
     new URL('js/portrait-arm-cloud-mask.js?v=20261005h2d40d1a', docsBase).href,
