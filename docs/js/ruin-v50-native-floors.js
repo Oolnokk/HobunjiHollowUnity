@@ -364,6 +364,7 @@
         for(const [height,cells] of heightGroups){
           const backing=new THREE.InstancedMesh(gapGeometry,material,cells.length);
           backing.name='native-v50-floor-gap-backing-'+item.floor+'-'+height;
+          backing.userData.hobunjiGroundTopFacesOnly=true; // Upper-story floor seam backing shares the floor's x-ray policy.
           backing.userData.devRuinFootprintIgnore=true;
           backing.raycast=()=>{}; // Backing is a visual repair, never a new projectile or walking collider.
           const matrix=new THREE.Matrix4();
@@ -382,6 +383,7 @@
             bounds:{minX:rect.minC,maxX:rect.maxC+1,minZ:rect.minR,maxZ:rect.maxR+1},topY:floor.y});
         const hall=new THREE.InstancedMesh(new THREE.BoxGeometry(1,.12,1),material,route.tiles.length);
         hall.name='native-v50-walkway-'+item.floor;
+        hall.userData.hobunjiGroundTopFacesOnly=true;
         const matrix=new THREE.Matrix4();
         route.tiles.forEach(([x,z],i)=>hall.setMatrixAt(i,matrix.makeTranslation(x+.5,floor.y-.06,z+.5)));
         hall.instanceMatrix.needsUpdate=true;group.add(hall);

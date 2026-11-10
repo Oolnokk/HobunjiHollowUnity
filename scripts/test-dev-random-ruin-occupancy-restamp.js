@@ -150,3 +150,16 @@ tick(.24);
 assert.equal(block.position.x,2.25,'the prompted push uses the same slide and grid distance');
 assert.equal(gate.progress,1,'the real pressure-plate overlap fully opens the gate at the final stop');
 console.log('stone block contact, smooth motion, exact collision, and swept blockers passed');
+
+// Clear the live runtime with a registered scene and confirm cleanup sees its original graph.
+const scene = {}; // The identity retired by the held-object replay registry.
+const teardown = []; // Recorded to make sure the registry can still reach the floor meshes.
+ruin.scene = scene;
+ruin.localeRoot = {parent:{remove(){teardown.push('detach');}}};
+window.DynamicSurfaces.clearScope = () => {};
+window.HeldObjectRenderOrder = {forgetScene(removedScene){
+  assert.equal(removedScene, scene);
+  teardown.push('forget');
+}};
+window.DevRandomRuin.clear();
+assert.deepEqual(teardown, ['forget', 'detach'], 'ruin disposal unregisters held replay meshes before detaching scene geometry');

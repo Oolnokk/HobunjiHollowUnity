@@ -83,7 +83,9 @@
     const plateMat=tintedStone('#8c735b',0x8c735b);
     const gateMat=tintedStone('#4f3b32',0x4f3b32);
     const brazierMat=tintedStone('#665346',0x665346);
-    const materials=[material,plateMat,gateMat,brazierMat]; // Disposed together with the geometry and owned interactive controls.
+    const cameraWalls=[]; // Detached geometry is only visible to the camera boom's raycasts.
+    const cameraWallMaterial=new THREE.MeshBasicMaterial();
+    const materials=[material,plateMat,gateMat,brazierMat,cameraWallMaterial]; // Disposed together with the geometry and owned interactive controls.
     const wingFlameVisuals=[]; // Owns the player's campfire particle emitters for every ignited wing brazier.
     const roomLights=[]; // One light per puzzle room (and, outside Kanthic, each goal room): a room fills with light when its puzzle is solved.
     const brazierLights=[]; // Kanthic-only completed-wing flames feed the shared darkness overlay without adding real Three.js lights.
@@ -121,6 +123,11 @@
       DS.clearScope(scope);group.parent?.remove(group);
       const geometries=new Set();
       group.traverse(node=>{if(node.geometry)geometries.add(node.geometry);});
+      for(const wall of cameraWalls){
+        const index=rec.occlusionMeshes.indexOf(wall);
+        if(index>=0)rec.occlusionMeshes.splice(index,1);
+        geometries.add(wall.geometry);
+      }
       for(const geometry of geometries)geometry.dispose?.();
       for(const mat of materials)mat.dispose?.();
     };
@@ -134,6 +141,7 @@
       const matrix=new THREE.Matrix4(); // Reused for this batch instead of allocating a Matrix4 per floor tile.
       cells.forEach((cell,i)=>{const p=where(cell);object.setMatrixAt(i,matrix.makeTranslation(p.x,p.y,p.z));});
       object.instanceMatrix.needsUpdate=true;activeRoot.add(object);owner.geometryCount++;
+      return object;
     }
     // A wing's stone as real faces (js/ruin-wall-faces.js) instead of one-unit instanced boxes: the floor merges into
     // big rectangles and each wall line into runs, all cut into stretch-to-fit patches of at most 6 units. The few
@@ -154,7 +162,8 @@
         const w=maxX-minX+1,h=maxZ-minZ+1,mask=new Uint8Array(w*h);
         for(const [x,z] of floorCells)mask[(z-minZ)*w+(x-minX)]=1;
         const rects=Faces.mergeMask(mask,w,h).map(r=>({axis:'y',side:1,plane:0,a0:r.i0,a1:r.i1,b0:r.j0,b1:r.j1}));
-        add(wingName+'-floor',Faces.buildQuads(rects,{origin:{x:minX,y,z:minZ},size:{x:1,y:1,z:1},patch:PATCH}));
+        const floor=add(wingName+'-floor',Faces.buildQuads(rects,{origin:{x:minX,y,z:minZ},size:{x:1,y:1,z:1},patch:PATCH}));
+        floor.userData.hobunjiGroundTopFacesOnly=true;
       }
       const runs=Faces.mergeEdges([
         ...wallsX.map(([cx,z,faces])=>({along:'x',line:z,from:cx-.5,to:cx+.5,side:faces})),
@@ -174,6 +183,12 @@
         for(const run of features)add('wing-feature-wall',Faces.buildEdgeWallQuads([run],wallOptions),group);
       }
       add(wingName+'-walls',Faces.buildEdgeWallQuads(pieces.filter(piece=>!featured.has(piece)),wallOptions));
+      if(rec.occlusionMeshes&&runs.length){
+        const boundary=Faces.buildEdgeWallQuads(runs,{...wallOptions,y0:y+WALL_HEIGHT,y1:y+plan.options.floorHeight});
+        const wall=new THREE.Mesh(Faces.toGeometry(THREE,boundary),cameraWallMaterial);
+        wall.userData.ruinCameraStoryRoot=activeRoot; // Upper stories hidden by the wing renderer must also stop affecting the camera.
+        rec.occlusionMeshes.push(wall);cameraWalls.push(wall);
+      }
     }
     function setGate(record,blocked,silent=false){
       if(!record?.gate)return;
@@ -239,7 +254,8 @@
         const wingName='floor'+floor.floor+'-'+wing.side;
         if(root.RuinWallFaces)masonry(wingName,floor.y,supportedCells,wallsX,wallsZ);
         else{ // Loaded without the face mesher: the original one-unit boxes.
-          instance(wingName+'-floor',new THREE.BoxGeometry(1,.12,1),supportedCells,material,([x,z])=>({x:x+.5,y:floor.y-.06,z:z+.5}));
+          const slab=instance(wingName+'-floor',new THREE.BoxGeometry(1,.12,1),supportedCells,material,([x,z])=>({x:x+.5,y:floor.y-.06,z:z+.5}));
+          if(slab)slab.userData.hobunjiGroundTopFacesOnly=true;
           instance(wingName+'-wall-ns',new THREE.BoxGeometry(1,2.3,.14),wallsX,material,([x,z])=>({x,y:floor.y+1.15,z}));
           instance(wingName+'-wall-ew',new THREE.BoxGeometry(.14,2.3,1),wallsZ,material,([x,z])=>({x,y:floor.y+1.15,z}));
         }

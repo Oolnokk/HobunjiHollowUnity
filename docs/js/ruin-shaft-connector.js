@@ -91,7 +91,9 @@
       if(!keys.has(key(c,r-1)))wallsX.push([c+.5,r]);
       if(!keys.has(key(c,r+1)))wallsX.push([c+.5,r+1]);
     }
-    floors.name='ruin-corridor-carved-floor';group.add(floors);
+    floors.name='ruin-corridor-carved-floor';
+    floors.userData.hobunjiGroundTopFacesOnly=true; // Replay the floor's top while keeping its slab edges opaque.
+    group.add(floors);
     const buildWalls=(positions,geometry,name)=>{
       const mesh=new THREE.InstancedMesh(geometry,wallMat,positions.length);
       positions.forEach(([x,z],i)=>mesh.setMatrixAt(i,mat.makeTranslation(x,baseY+1.15,z)));

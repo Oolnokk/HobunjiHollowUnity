@@ -1,12 +1,12 @@
 # Ruin tiers, the jump-platform shaft and tradition witch-bombs
 
-## Tiers (`RuinLayerPlan.TIERS`, passed as `opts.tier` by `js/ruin-sites.js`)
+## Tiers (`RuinLayerPlan.TIERS`)
 
-Cliff-entrance ruins and dug-hole ruins share the middle (`hole`) tier; the named lich tomb is `lich`; `cave` is reserved for ruins found inside caves (no such site kind yet).
+`RuinSites` selects `hole` for cliff entrances and burrows and `lich` for named tombs. `CaveSiteSystem` selects `cave` when a passage inside a cave leads to a ruin.
 
 | Tier | Where | Floors | Central chamber | Wings (total) | Rooms per wing | Braziers |
 | --- | --- | --- | --- | --- | --- | --- |
-| `cave` | (reserved: ruins inside caves) | 2 | 37.5 % (13 cells) | 3 | 2 (1 puzzle + brazier) | 3 |
+| `cave` | ruins inside caves | 2 | 37.5 % (13 cells) | 3 | 2 (1 puzzle + brazier) | 3 |
 | `hole` | cliff-entrance and burrow-hole ruins | 3 | 75 % (27) | 4 | 3 (2 puzzles + brazier) | 4 |
 | `lich` | the named tomb of a tradition | 4 | 112.5 % (39) | 5 | 3 | 5 |
 

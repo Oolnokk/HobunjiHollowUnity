@@ -65,6 +65,7 @@
   // keeps that per-frame cost proportional to the current map. Members are
   // re-queued whenever they are (re)added anywhere, which is how a held tool
   // that moves with the player into another scene gets re-bucketed.
+  const retiredScenes = new WeakSet(); // A discarded scene may still render briefly while its replacement is generated.
   class SceneRegistry {
     constructor() {
       this.all = new Set();
@@ -86,6 +87,10 @@
       return true;
     }
     place(object, scene) {
+      if (retiredScenes.has(scene)) {
+        this.delete(object);
+        return;
+      }
       this.unplace(object);
       let bucket = this.byScene.get(scene);
       if (!bucket) this.byScene.set(scene, bucket = new Set());
@@ -262,7 +267,7 @@
   // whole shell would let weapons x-ray cave walls; keeping it would bury
   // weapons under the floor. Only its upward faces are treated as ground.
   function isTopFacesGroundSurface(object) {
-    if (!object?.isMesh || object.isSkinnedMesh || object.isInstancedMesh) return false;
+    if (!object?.isMesh || object.isSkinnedMesh) return false;
     return object.userData?.hobunjiGroundTopFacesOnly === true;
   }
 
@@ -580,7 +585,7 @@
   wrapAdd(sceneProto, '__hobunjiHeldGroundXraySceneAdd');
 
   function scanScene(scene, force = false) {
-    if (!scene?.isScene) return;
+    if (!scene?.isScene || retiredScenes.has(scene)) return;
     if (classificationScheduled) flushClassification(); // Registries must reflect every add() made before this scan/render.
     const now = performance.now();
     const previous = lastSceneScan.get(scene) || -Infinity;
@@ -1199,6 +1204,11 @@
     let elevation = worldYOf(root);
     if (!Number.isFinite(elevation)) return NaN;
     if (actor.isPlayer) {
+      const ruinFloor = window.DevRandomRuin?.getPlayerGroundSupportY?.(); // The active ruin owns physical footing, independent of rig animation and plasm sink.
+      if (Number.isFinite(ruinFloor)) {
+        cache?.set(root, ruinFloor);
+        return ruinFloor;
+      }
       // Read the exact elevation channel already used by the player composer.
       // The wrapper runs before the visible draw applies its temporary body
       // transforms, so root.worldY plus this channel is the standing surface.
@@ -1718,7 +1728,7 @@
   }
 
   function wrappedRender(scene, camera) {
-    if (internalReplay || !scene?.isScene || !camera?.isCamera) {
+    if (internalReplay || !scene?.isScene || !camera?.isCamera || retiredScenes.has(scene)) {
       return originalRender.call(this, scene, camera);
     }
 
@@ -1884,6 +1894,7 @@
   // members not yet placed through a traversal.
   function forgetScene(scene) {
     if (!scene) return 0;
+    retiredScenes.add(scene);
     const registries = [heldRegistry, groundRegistry, topFaceGroundRegistry, waterRegistry, tintCoverRegistry, protectedCoverRegistry, waterOccludedRegistry, pngDepthRegistry];
     let removed = 0;
     for (const registry of registries) {
@@ -1891,7 +1902,10 @@
       if (bucket) for (const object of [...bucket]) if (registry.delete(object)) removed++;
       registry.byScene.delete(scene);
     }
-    scene.traverse?.(object => { for (const registry of registries) if (registry.delete(object)) removed++; });
+    scene.traverse?.(object => {
+      pendingClassification.delete(object); // A queued add must not restore references after scene disposal.
+      for (const registry of registries) if (registry.delete(object)) removed++;
+    });
     lastSceneScan.delete(scene);
     return removed;
   }
