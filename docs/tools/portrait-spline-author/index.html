@@ -136,7 +136,7 @@ function message(value){$('catalogStatus').textContent=value;} // Source loading
 function imageInput(id,key){$(id).addEventListener('change',async e=>{
   const file=e.target.files?.[0];if(!file)return;
   const url=URL.createObjectURL(file),img=new Image();
-  img.onload=()=>{URL.revokeObjectURL(url);images[key]=img;render();message('Loaded '+file.name+' ('+img.width+' × '+img.height+').');};
+  img.onload=()=>{URL.revokeObjectURL(url);if(key==='head')headGeneration++;images[key]=img;render();message('Loaded '+file.name+' ('+img.width+' × '+img.height+').');};
   img.onerror=()=>{URL.revokeObjectURL(url);message('Could not decode '+file.name);};
   img.src=url;
 });}
@@ -407,18 +407,35 @@ function render(){
 function updateKnots(){while(rig.segments.length<rig.points.length-1)rig.segments.push(makeSegment());rig.segments.length=rig.points.length-1;controls();render();}
 function pick(e){const bounds=$('preview').getBoundingClientRect();return{u:clamp((e.clientX-bounds.left)/bounds.width,0,1),v:clamp((e.clientY-bounds.top)/bounds.height,0,1)};}
 function paint(p){
-  if(mode==='paint'){const last=rig.seam[rig.seam.length-1];if(last&&Math.hypot(last.u-p.u,last.v-p.v)<numeric($('brush').value,3)/700)return;rig.seam.push({...p,radiusPx:clamp(numeric($('brush').value,3),.5,15),...($('bridgePaint').checked?{color:$('bridgeColor').value}:{})});if(rig.seam.length>128)rig.seam.shift();}
-  else if(mode==='erase'){let idx=-1,best=Infinity;rig.seam.forEach((m,i)=>{const d=Math.hypot(m.u-p.u,m.v-p.v);if(d<best){best=d;idx=i;}});if(best<.05&&idx>=0)rig.seam.splice(idx,1);}
+  if(mode==='seamMove'){
+    const target=rig.seam[selectedSeam];
+    if(!target)return;
+    target.u=p.u;target.v=p.v; // Editable generated silhouette points remain the ordinary mask-dab schema.
+  }
+  else if(mode==='paint'){const last=rig.seam[rig.seam.length-1];if(last&&Math.hypot(last.u-p.u,last.v-p.v)<numeric($('brush').value,3)/700)return;rig.seam.push({...p,radiusPx:clamp(numeric($('brush').value,3),.5,15),...($('bridgePaint').checked?{color:$('bridgeColor').value}:{})});if(rig.seam.length>128)rig.seam.shift();}
+  else if(mode==='erase'){let idx=-1,best=Infinity;rig.seam.forEach((m,i)=>{const d=Math.hypot(m.u-p.u,m.v-p.v);if(d<best){best=d;idx=i;}});if(best<.05&&idx>=0){rig.seam.splice(idx,1);selectedSeam=clamp(selectedSeam,0,Math.max(0,rig.seam.length-1));}}
   else{rig.points[selectedKnot].u=p.u;rig.points[selectedKnot].v=p.v;}
   render();
 }
-$('preview').addEventListener('pointerdown',e=>{e.preventDefault();const p=pick(e);dragging=true;$('preview').setPointerCapture(e.pointerId);
+$('preview').addEventListener('pointerdown',e=>{e.preventDefault();const p=pick(e);
+  if(mode==='seamMove'){
+    let nearest=Infinity,found=-1;
+    rig.seam.forEach((dab,i)=>{const d=Math.hypot(dab.u-p.u,dab.v-p.v);if(d<nearest){nearest=d;found=i;}});
+    if(found<0 || nearest>.045){dragging=false;message('Tap a pink seam point to select and drag it, or generate a new mask.');return;}
+    selectedSeam=found;
+    $('seamPointRadius').value=rig.seam[found].radiusPx;
+  }
+  dragging=true;$('preview').setPointerCapture(e.pointerId);
   if(mode==='move'){let best=Infinity;rig.points.forEach((m,i)=>{const d=Math.hypot(m.u-p.u,m.v-p.v);if(d<best){best=d;selectedKnot=i;}});selectedSegment=clamp(selectedKnot-1,0,rig.segments.length-1);controls();}
   paint(p);
 });
 $('preview').addEventListener('pointermove',e=>{if(dragging){e.preventDefault();paint(pick(e));}});
 for(const event of ['pointerup','pointercancel','lostpointercapture'])$('preview').addEventListener(event,()=>dragging=false);
-for(const m of ['move','paint','erase'])$(m+'Mode').addEventListener('click',()=>{mode=m;for(const k of ['move','paint','erase'])$(k+'Mode').classList.toggle('active',k===m);});
+function setPaintMode(next){
+  mode=next;
+  for(const key of ['move','seamMove','paint','erase'])$(key+'Mode').classList.toggle('active',key===next);
+}
+for(const m of ['move','seamMove','paint','erase'])$(m+'Mode').addEventListener('click',()=>setPaintMode(m));
 $('addPoint').onclick=()=>{const i=selectedKnot,p=rig.points[i],other=rig.points[i+1]||{u:p.u+.03,v:p.v+.1,depth:p.depth+.01};rig.points.splice(i+1,0,{u:(p.u+other.u)/2,v:(p.v+other.v)/2,depth:(p.depth+other.depth)/2});selectedKnot=i+1;updateKnots();};
 $('removePoint').onclick=()=>{if(rig.points.length<=2){message('At least two knots are required.');return;}rig.points.splice(selectedKnot,1);selectedKnot=clamp(selectedKnot-1,0,rig.points.length-1);updateKnots();};
 $('segmentSelect').onchange=e=>{selectedSegment=+e.target.value;selectedKnot=selectedSegment+1;controls();render();};
@@ -427,7 +444,26 @@ $('testStrength').oninput=render;$('viewSelect').onchange=render;
 for(const [id,fn] of [['rearU',v=>rig.rearOffset.u=v],['rearV',v=>rig.rearOffset.v=v],['strandWidth',v=>rig.width=v],['response',v=>rig.windResponse=v]]){
   $(id).onchange=e=>{fn(numeric(e.target.value));rig=Object.assign(rig,Rig.normalize(rig));controls();render();};
 }
-$('clearMask').onclick=()=>{rig.seam=[];render();};$('resetRig').onclick=()=>{rig=makeRig();selectedKnot=0;selectedSegment=0;controls();render();};
+$('clearMask').onclick=()=>{seamBackup=rig.seam.map(p=>({...p}));rig.seam=[];selectedSeam=0;render();};
+$('resetRig').onclick=()=>{rig=makeRig();selectedKnot=1;selectedSegment=0;selectedSeam=0;controls();render();};
+$('autoSeam').onclick=()=>{
+  if(!images.head){message('Head silhouette not loaded; select a repository species/gender or provide a 200×200 head reference.');return;}
+  try {
+    const result=window.PortraitSplineSeam.generate(images.head,rig.points[0],{
+      radiusPx:clamp(numeric($('brush').value,3),.5,15),
+      arcPx:clamp(numeric($('seamArc').value,26),2,90),
+    });
+    if(!result.seam.length){message('No exterior head silhouette found near the first knot (nearest '+(result.closestPx?.toFixed(1)||'unknown')+' px). Move the first knot to its hair attachment point and retry.');return;}
+    seamBackup=rig.seam.map(p=>({...p})); // One-click undo if the generated outline should be regenerated with a different span.
+    rig.seam=result.seam;selectedSeam=0;$('seamPointRadius').value=rig.seam[0].radiusPx;
+    setPaintMode('seamMove');render();
+    message('Generated '+result.seam.length+' editable seam points from the head exterior ('+result.closestPx.toFixed(1)+' px from the root). Drag pink points to refine, paint/erase as desired.');
+  }catch(error){message('Silhouette tracing failed: '+error.message);}
+};
+$('undoSeam').onclick=()=>{if(!seamBackup){message('No earlier seam generation to restore.');return;}
+  rig.seam=seamBackup;seamBackup=null;selectedSeam=0;render();message('Restored the preceding seam mask.');};
+$('seamPointRadius').onchange=e=>{const dab=rig.seam[selectedSeam];if(!dab)return;
+  dab.radiusPx=clamp(numeric(e.target.value,dab.radiusPx),.5,15);e.target.value=dab.radiusPx;render();};
 $('applyJson').onclick=()=>{try{const candidate=JSON.parse($('json').value),valid=Rig.normalize(candidate);if(!valid)throw Error('At least two distinct, normalized knots are required.');rig=valid;selectedKnot=0;selectedSegment=0;controls();render();}catch(error){message('JSON error: '+error.message);}};
 $('copyRig').onclick=async()=>{const data=JSON.stringify(Rig.normalize(rig),null,2);try{await navigator.clipboard.writeText(data);message('Rig JSON copied.');}catch(_){$('json').value=data;$('json').select();message('Clipboard unavailable; select/copy the JSON from the text box.');}};
 $('download').onclick=()=>{const valid=Rig.normalize(rig);if(!valid){message('Cannot export invalid knots.');return;}
@@ -440,7 +476,38 @@ $('download').onclick=()=>{const valid=Rig.normalize(rig);if(!valid){message('Ca
  const blob=new Blob([JSON.stringify(result,null,2)+'\n'],{type:'application/json'}),url=URL.createObjectURL(blob);
  const link=document.createElement('a');link.href=url;link.download=loadedName.replace(/^\(HA\)\s*/,'').replace(/\.json$/i,'')+'-spline.json';
  document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);message('Exported updated cosmetic JSON; no original fields removed.');};
+async function init3D(){
+  try {
+    viewer=await window.PortraitSplineViewer.create($('view3d'),{
+      onSelect:index=>{selectedKnot=index;selectedSegment=clamp(index-1,0,rig.segments.length-1);controls();render();},
+      onEdit:({index,mode:operation,axis,rotationKey,value})=>{
+        const segment=rig.segments[index-1];if(!segment)return;
+        const pose=segment.poses[direction];
+        if(operation==='translate')pose.translate[axis]=value;
+        else pose[rotationKey]=value;
+        // Keep numeric inputs in sync during a 3D drag without replacing the focused pointer/canvas handlers.
+        const label=operation==='translate'?'Translate '+axis.toUpperCase():rotationKey+' (°)';
+        const input=[...$('segmentEditor').querySelectorAll('input')].find(node=>node.dataset.poseField===label);
+        if(input)input.value=Number(value.toFixed(3));
+        render();
+      },
+      onStatus:text=>{$('viewerStatus').textContent=text||'3D ready · drag axes or rings, tap knots, or orbit on empty space.';},
+    });
+    viewer.setMode(viewerMode);render();
+    $('viewerStatus').textContent='3D ready · tap a knot, then drag an XYZ gizmo. Empty space orbits the camera.';
+  }catch(error){
+    $('viewerStatus').textContent='3D renderer unavailable: '+error.message+' · the 2D rig and numeric pose controls remain usable.';
+  }
+}
+for(const [id,modeName] of [['gizmoTranslate','translate'],['gizmoRotate','rotate']]){
+  $(id).onclick=()=>{viewerMode=modeName;viewer?.setMode(modeName);
+    for(const [btn,m] of [['gizmoTranslate','translate'],['gizmoRotate','rotate']])$(btn).classList.toggle('active',m===modeName);};
+}
+for(const button of document.querySelectorAll('[data-camera]'))
+  button.addEventListener('click',()=>viewer?.setCameraView(button.dataset.camera));
+window.addEventListener('resize',()=>viewer?.schedule());
 controls();render();
+void init3D();
 initCatalog(); // Indexed cosmetics are the default; file import is only a fallback for unindexed WIP art.
 })();
 </script>
