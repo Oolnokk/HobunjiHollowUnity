@@ -608,12 +608,17 @@
     mapData.caveCache = clone(plan.cache);
     addProp(mapData, { id: plan.cache.id, key: 'ruinDungeonChestT2', col: cacheTile.col, row: cacheTile.row, rotY: Math.floor(rng() * 4) * 90 });
 
+    const walkableKeys = new Set(floorTiles(mapData).map(tile => tileKey(tile.col, tile.row))); // Entire cavern footprint, not merely the secret cache's eligible tiles, determines real wall endpoints.
     const trapCandidates = candidates.filter(tile => {
       const d = Math.hypot(tile.col - cacheTile.col, tile.row - cacheTile.row);
-      return d >= 1.1 && d <= 4.5 && !blockedKeys.has(tileKey(tile.col, tile.row));
-    }); // Nearby approach tiles used for actual one-shot cave hazards.
+      return d >= 1.1 && d <= 4.5 && !blockedKeys.has(tileKey(tile.col, tile.row))
+        && !!window.CaveTripwireTraps?.spanFor?.(tile, walkableKeys);
+    }); // Each rope physically spans two rock walls; no invisible radius-only hazards.
     const trapCount = trapCandidates.length ? 1 + (rng() < 0.45 ? 1 : 0) : 0;
-    plan.traps = pickSpacedTiles(rng, trapCandidates, trapCount, blockedKeys, 2).map((tile, index) => ({ id: `${plan.cache.id}_trap_${index + 1}`, col: tile.col, row: tile.row, damage: 9 + Math.floor(rng() * 7), tag: rng() < 0.5 ? 'sharp' : 'blunt' }));
+    plan.traps = pickSpacedTiles(rng, trapCandidates, trapCount, blockedKeys, 2).map((tile, index) => ({
+      id: `${plan.cache.id}_trap_${index + 1}`, col: tile.col, row: tile.row,
+      kind: 'swingingShattercask', span: window.CaveTripwireTraps.spanFor(tile, walkableKeys),
+    }));
     mapData.caveTraps = clone(plan.traps);
     // Fill the deep chamber with mundane supplies, but leave the chest approach and traps clear.
     const crateCandidates=candidates.filter(tile=>{
@@ -735,6 +740,8 @@
   }
 
   function buildInteriorProps(mapId, mapData, scene) {
+    const trapProfile = sitesByMapId.get(String(mapId)); // Save identity shared with hidden-cache lockpicking and trap one-shot flags.
+    window.CaveTripwireTraps?.build?.(mapId, mapData, scene, trapProfile ? stateFor(trapProfile) : null);
     buildMushroomClusters(mapId, mapData, scene);
     buildPuzzleCaveChallenge(mapId,mapData,scene); // Puzzle rooms are physical challenges, not authored furniture-only props.
     const id = String(mapId); // Shared key with the mushroom index and cave profile.
@@ -1265,6 +1272,7 @@
     puzzleChallengesByMapId.delete(mapId); // Retire the timed puzzle's listeners and authored meshes with the cavern.
     window.CavernOreRocks?.forgetMap?.(mapId); // Tear down the fused cave wall and its mineable indices when a relocated cave is retired.
     plansByMapId.delete(mapId);
+    window.CaveTripwireTraps?.dispose?.(mapId); // The old cave's string meshes, pendulum, and physical cask cannot survive relocation.
     bodiesByMapId.delete(mapId);
     bodySpawnPromises.delete(mapId);
     banditSpawnPromises.delete(mapId);
@@ -1345,18 +1353,11 @@
   }
 
   function triggerTraps(profile, plan, state) {
-    if (!plan.traps?.length) return;
-    const triggered = new Set(state.triggeredTraps || []); // Persisted trap ids that must remain harmless on revisits/reloads.
-    for (const trap of plan.traps) {
-      if (triggered.has(trap.id) || caveDistanceTiles(trap) > TRAP_TRIGGER_RADIUS_TILES) continue;
-      triggered.add(trap.id);
-      state.triggeredTraps = [...triggered];
-      const tileSize = Number(wildlifeDeps?.TILE) || 32;
-      wildlifeDeps?.damagePlayer?.(trap.damage, (trap.col + 0.5) * tileSize, (trap.row + 0.5) * tileSize, 0, { tag: trap.tag || 'sharp', caveTrap: true });
-      wildlifeDeps?.showToast?.('A concealed cave trap snaps!', false);
-      window.__farmLog?.(`[cave-sites] trap ${trap.id} triggered for ${trap.damage} ${trap.tag} damage.`, 'world');
-      persistState();
-    }
+    // A tripwire releases a real hanging Burden via HangingRopes; there is no
+    // direct, invisible damagePlayer trap remaining. The persistent triggeredTraps
+    // ids still belong to the original cave save so revisits never re-arm one.
+    window.CaveTripwireTraps?.tick?.(profile.mapId, state, wildlifeDeps?.player,
+      Number(wildlifeDeps?.TILE) || 32, CAVE_RUNTIME_INTERVAL_S, () => persistState(true));
   }
 
   function narcoticRecipe() {
@@ -1738,8 +1739,9 @@
     return {
       ready: integrationsInstalled,
       currentArea,
-      latestChange: 'Puzzle Caves are now separately rolled: plentiful inert cliff doors and optional secret stone doors behind ordinary caves\' mineable walls. Ordinary cave counts/loot/inhabitants are preserved.',
+      latestChange: 'Hidden cache traps are visible wall-to-wall tripwires that release ceiling-hung physical Shattercasks. They share HangingRopes physics and Shattercasks explosion damage.',
       groundFire: window.PersistentGroundFire?.debugSnapshot?.() || null,
+      caveTripwires: window.CaveTripwireTraps?.debugSnapshot?.(currentArea) || null, // Mobile-friendly armed/disarmed/rope state.
       cliffEntrances: window.PuzzleCaveEntrances?.debugSnapshot?.() || null, // Mobile-accessible outside score, raised support and gate lock state. // Mobile-safe inspection of active fire without devtools.
       zoneCount: zones.length,
       caveCount: sites.length, // Ordinary caves only.
