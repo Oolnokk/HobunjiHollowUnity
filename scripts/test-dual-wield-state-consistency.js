@@ -6,6 +6,8 @@ const gripSource = fs.readFileSync('docs/js/hand-tool-grips.js', 'utf8');
 const visualSource = fs.readFileSync('docs/js/dual-wield-weapon-visuals.js', 'utf8');
 const assemblySource = fs.readFileSync('docs/js/weapon-sprite-assemblies.js', 'utf8'); // Exercises the real re-registration hook, not a test-only replica.
 const handDriverSource = fs.readFileSync('docs/js/procedural-hand-frame-driver.js', 'utf8'); // Confirms that the later-loaded final hand pose also reschedules flail projection.
+const bodyYawSource = fs.readFileSync('docs/js/weapon-idle-body-yaw-runtime.js', 'utf8'); // Late pose writer rotates player and weapon.
+const bodyDropSource = fs.readFileSync('docs/js/weapon-stance-drop-runtime.js', 'utf8'); // Later pose writer translates body and weapon.
 function fixture(editor) {
   const controls = Object.fromEntries(Object.entries({ scrub: 0, playbackSequence: 'attack', handGripContextSelect: 'melee', toolSpriteSelect: 'hatchet' }).map(([id, value]) => [id, { value }]));
   const tasks = new Map(); // Real scheduler insertion order is reproduced with one callback per subscriber id.
@@ -42,6 +44,15 @@ assert(finalOrder.indexOf('procedural-hand-pose-sync') < finalOrder.indexOf('wea
 assert.equal(ed.tasks.get('weapon-sprite-assemblies'), ed.firstTick, 'late hand sync still retains exactly one identical flail updater');
 assert.match(handDriverSource, /register\('procedural-hand-pose-sync'[\s\S]*?scheduleTickAfterPose\?\.\(\)/,
   'production procedural hand loader requests the same ordering guarantee');
+vm.runInNewContext(bodyYawSource, { window: ed.window }); // Execute the actual late gameplay body-pose registrations in loader order.
+vm.runInNewContext(bodyDropSource, { window: ed.window });
+const bodyOrder = Array.from(ed.tasks.keys()); // Projection must be last after both world-space body pose modifiers.
+assert(bodyOrder.indexOf('weapon-idle-body-yaw-sync') < bodyOrder.indexOf('weapon-sprite-assemblies'),
+  'flail follows the final body yaw');
+assert(bodyOrder.indexOf('weapon-stance-drop-sync') < bodyOrder.indexOf('weapon-sprite-assemblies'),
+  'flail follows the final stance-drop translation');
+assert.equal(ed.tasks.get('weapon-sprite-assemblies'), ed.firstTick,
+  'body-pose load order reuses the original callback instead of adding a new pendulum simulation');
 ed.window.HobunjiAttackEditorToolContext.toolKey = 'dagger';
 ed.window.HobunjiDualWieldWeaponVisuals.setEditorIdlePreview(true);
 assert.equal(ed.grips.currentSecondaryGripAnimationState().dualWieldInfluence, 1, 'pair preview must enable hand ownership as well as visible copies');
