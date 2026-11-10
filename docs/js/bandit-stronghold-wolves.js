@@ -12,6 +12,7 @@
   const CHAIN_SPRITE = 'assets/toolsprites/hachutu_torch-flail_chain.png'; // Original weapon chain, not a new flat procedural texture.
   const exteriorByZone = new Map(); // Zone -> records for only its loaded strongholds (maximum two wolves per stronghold).
   const interiorByMap = new Map(); // Cave map -> slot/actor map; no duplicate allies on revisits.
+  const interiorDepsByMap = new Map(); // Native creature owner used to despawn allies after the cave scene is retired.
   let chainMaterial = null; // One shared transparent texture/material for every tether.
   let chainGeometry = null; // Stretched plane; no chain nodes or per-link physics.
   const debug = {last:'not spawned', exteriorSpawned:0, released:0, interiorSpawned:0, deaths:0, escaped:0}; // On-device telemetry.
@@ -202,6 +203,7 @@
   function ensureInterior(profile,plan,state,deps) {
     if(!profile?.fortifiedStronghold || state?.occupantsCleared || !deps?.makeCreatureEntity || !deps?.hostileObjects) return 0;
     const mapId=profile.mapId,tile=Number(deps.TILE)||64;
+    interiorDepsByMap.set(mapId,deps); // Cleanup uses the actual scene/creature dependency owner, not a parallel model.
     if(deps.getCurrentArea?.()!==mapId)return 0;
     const enemies=[...deps.hostileObjects].filter(c=>c?.isBandit&&c.caveSiteMapId===mapId&&c.health>0);
     if(!enemies.length)return 0; // The wolf-on-bandit fight only starts after entering and populating the actual cave.
@@ -252,6 +254,8 @@
   }
 
   function forgetInterior(mapId,deps) {
+    deps ||= interiorDepsByMap.get(String(mapId)); // Called by CaveSiteSystem reset with no explicit dependency bag.
+    interiorDepsByMap.delete(String(mapId));
     const bucket=interiorByMap.get(String(mapId));
     if(!bucket)return 0;
     for(const wolf of bucket.values()) {
