@@ -38,6 +38,7 @@ const BROWSER = new Set([
   'test-controller-mastery-inventory-browser.js', // Runs in the existing Chromium workflow step.
   'test-interior-editor-exit-browser.js', // Runs after Chromium installation in regression-suite.yml.
   'test-modular-editor-ui-browser.js', // Real touch controls and same-browser Kylie draft recovery after Chromium is installed.
+  'test-foundry-forge-button-browser.js', // Actual small mobile viewport and touch forge; run after Chromium installation.
   'test-root-mechanism-runtime-browser.js', // Actual V50/root growth and gameplay collision browser regression.
   'test-stone-age-multiroom-browser.js', // Real THREE stone/UV floor, V50 cell masking and native layer preservation.
   'test-root-snare-author-browser.js', // Real THREE hidden wall node and procedural NPC preview regression.
