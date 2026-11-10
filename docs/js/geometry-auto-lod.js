@@ -271,7 +271,7 @@
     scheduleScanSlice();
   }
   function scheduleScanSlice() {
-    if (!enabled || !ready || !scan || scanScheduled) return;
+    if (!enabled || !scan || scanScheduled) return; // Scan is what DISCOVERS the first procedural mesh and lazily starts WASM.
     scanScheduled = true;
     scheduleIdle(() => {
       scanScheduled = false;

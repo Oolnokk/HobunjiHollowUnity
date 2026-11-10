@@ -13,6 +13,8 @@ assert.match(index,/id="geometryAutoLODStatus"/);
 assert.match(index,/js\/geometry-auto-lod\.js\?v=/);
 assert.match(source,/GeometryWorkshopCore\.reduceGeometry\(geo, TARGET_REDUCTION, MAX_SIMPLIFY_ERROR\)/);
 assert.doesNotMatch(source,/THREE\.WebGLRenderer\s*=/,'never rewrap the WebGLRenderer constructor');
+assert.match(source,/if \(!enabled \|\| !scan \|\| scanScheduled\) return;/,'discovery scan must run before WASM is ready');
+assert.doesNotMatch(source,/if \(!enabled \|\| !ready \|\| !scan \|\| scanScheduled\)/,'no circular readiness dependency during discovery');
 execFileSync(process.execPath,['--check',script],{stdio:'pipe'});
 const callbacks=[]; // Simulated idle scheduler used to distinguish render work from background simplification.
 const mem=new Map(); // LocalStorage contract for the experimental setting.
