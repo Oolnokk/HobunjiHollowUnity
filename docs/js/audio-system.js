@@ -1245,7 +1245,7 @@
   }
 
   function stoneBeatAudioContext() {
-    if (stoneBeatContext?.state !== 'closed') return stoneBeatContext;
+    if (stoneBeatContext && stoneBeatContext.state !== 'closed') return stoneBeatContext;
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return null;
     try {
