@@ -1010,6 +1010,72 @@
       background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 8px; color: var(--text);
     }
 
+    /* ── Foundry's custom weapon builder ─────────────────────────
+       The pane scrolls as a whole. A long sprite/diagnostic string must not
+       widen the grid and push the forge action outside the visible viewport. */
+    #mpMetalCraftShop #metalCraftShopList {
+      grid-template-columns: minmax(0, 1fr);
+      overflow-y: visible;
+    }
+    #mpMetalCraftShop .foundry-section > * {
+      min-width: 0;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+    #mpMetalCraftShop .foundry-section > h3,
+    #mpMetalCraftShop .foundry-section > p { margin: 0; }
+    #mpMetalCraftShop .foundry-section label {
+      display: grid;
+      grid-template-columns: minmax(50px, auto) minmax(0, 1fr);
+      align-items: center;
+      gap: 8px;
+    }
+    #mpMetalCraftShop .foundry-section select {
+      min-width: 0;
+      width: 100%;
+      padding: 7px 9px;
+      background: rgba(255,255,255,0.07);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font: inherit;
+    }
+    #mpMetalCraftShop .foundry-weapon-name {
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+    #mpMetalCraftShop .foundry-craft-cost,
+    #mpMetalCraftShop .foundry-craft-status {
+      color: var(--muted);
+      font-size: 11px;
+      overflow-wrap: anywhere;
+    }
+    #mpMetalCraftShop .foundry-forge-button {
+      display: block;
+      width: 100%;
+      min-width: 0;
+      min-height: 44px;
+      padding: 10px;
+      font-size: 13px;
+      font-weight: 700;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    #mpMetalCraftShop .foundry-forge-button:disabled { opacity: .65; }
+    #mpMetalCraftShop .foundry-section details {
+      min-width: 0;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+    }
+    #mpMetalCraftShop .foundry-section details p { margin: 8px 0; }
+    #mpMetalCraftShop .foundry-section pre {
+      max-width: 100%;
+      overflow-x: auto;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+      box-sizing: border-box;
+    }
+
     /* ── Alchemy panel ──────────────────────────────────────── */
     .alch-reagent-row.selected { border-color: rgba(178,140,220,0.55); background: rgba(178,140,220,0.1); }
     .alch-count { color: var(--muted); font-size: 10px; margin-left: 4px; }
