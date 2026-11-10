@@ -201,10 +201,12 @@
     for(let slot=0;slot<3;slot++){
       const ang=(slot/3)*Math.PI*2;
       const x=boss.x+Math.cos(ang)*t*1.5,y=boss.y+Math.sin(ang)*t*1.5;
+      const genotype=window.CreatureGenetics?.makeDefaultGenotype?.('gar-wolf')||null;
+      if(genotype)genotype.sizeClass='large'; // Existing CreatureGenetics size class, rig scaling and hitboxes; do not scale rendered planes a second time.
       const creature=deps.makeCreatureEntity('gar-wolf',x,y,{
         scene:deps.getActiveScene?.(),grid:deps.getActiveGrid?.(),
         cols:deps.getActiveCols?.(),rows:deps.getActiveRows?.(),
-        genotype:window.CreatureGenetics?.makeDefaultGenotype?.('gar-wolf')||null,
+        genotype,
         master:boss,banditCompanion:true,homeX:boss.x,homeY:boss.y,state:'idle',
       });
       if(!creature)continue;
@@ -213,9 +215,7 @@
       creature.def={...creature.def,maxHealth:hp,hostile:true};
       creature.banditStrongholdBossWolf=true;creature.banditCompanion=true;
       creature.banditStrongholdBossId=boss.id;creature.areaId=profile.mapId;
-      creature.visualScaleX=(Number(creature.visualScaleX)||1)*1.28;
-      creature.visualScaleY=(Number(creature.visualScaleY)||1)*1.28;
-      creature.visualScaleZ=(Number(creature.visualScaleZ)||1)*1.28;
+      creature.sizeClass='large'; // Metadata mirrors the actual genetic size tier rather than an untracked rendering multiplier.
       deps.hostileObjects.add(creature);deps.companionObjects.add(creature);
       wolves.push(creature);
     }
