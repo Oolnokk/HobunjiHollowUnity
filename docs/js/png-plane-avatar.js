@@ -1297,7 +1297,9 @@
       ?? { x: fallbackOrbit, y: 1, z: fallbackOrbit };
     const poseOrbitScale = poseOrbitAxes.x; // Horizontal X orbit as a single number, for callers that predate per-axis scales.
     const anchorZ = options.anchorZ ?? cfg().anchorZ ?? 0;
-    const textures = buildTextureSet(THREE, sourceCanvas, options.backCanvas || options.backImage || null);
+    const textures = buildTextureSet(THREE,
+      sourceCanvas.hobunjiSplineBaseCanvas || sourceCanvas,
+      (options.backCanvas || options.backImage)?.hobunjiSplineBaseCanvas || options.backCanvas || options.backImage || null); // 2D UI retains its complete portrait; WebGL receives the no-double-draw base.
     const root = new THREE.Group();
     root.name = options.name || 'Temporary_NPC_Portrait_Model';
     root.userData = {
@@ -1417,14 +1419,14 @@
     const nextSource = sourceCanvas || root.userData.sourceCanvas;
     if (!nextSource) return false;
     root.userData.sourceCanvas = nextSource;
-    drawVariantCanvas(root.userData.frontTexture.image, nextSource);
+    drawVariantCanvas(root.userData.frontTexture.image, nextSource.hobunjiSplineBaseCanvas || nextSource);
     root.userData.frontTexture.needsUpdate = true;
     syncPortraitGlow(portraitThreeByRoot.get(root), root, nextSource);
 
     const nextBack = options.backCanvas || options.backImage || root.userData.backCanvas;
     if (nextBack && root.userData.backTexture) {
       root.userData.backCanvas = nextBack;
-      drawVariantCanvas(root.userData.backTexture.image, nextBack, { flipX: true });
+      drawVariantCanvas(root.userData.backTexture.image, nextBack.hobunjiSplineBaseCanvas || nextBack, { flipX: true });
       root.userData.backTexture.needsUpdate = true;
       root.userData.backTextureUsesSilhouette = false;
     } else if (options.refreshSilhouette && root.userData.backTexture && root.userData.backTextureUsesSilhouette) {
