@@ -371,11 +371,14 @@
         const color=(dye?.hex&&/^#[0-9a-f]{6}$/i.test(dye.hex))?dye.hex:colors[Math.floor(Math.random()*colors.length)];
         // Existing torch flames persist without enchantments; enchantment changes their COLOR, not their shape, density or world-up motion.
         let sprite = fx.pool.pop();
-        if (!sprite) sprite = new THREE.Sprite(new THREE.SpriteMaterial({
-          map: fx.texture, transparent: true, opacity: 0,
-          depthWrite: false, depthTest: true,
-          blending: fx.config.blendMode === 'normal' ? THREE.NormalBlending : THREE.AdditiveBlending, // Non-additive flames keep distinct colors instead of white-hot overdraw.
-        }));
+        if (!sprite) {
+          sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: fx.texture, transparent: true, opacity: 0,
+            depthWrite: false, depthTest: true,
+            blending: fx.config.blendMode === 'normal' ? THREE.NormalBlending : THREE.AdditiveBlending, // Non-additive flames keep distinct colors instead of white-hot overdraw.
+          }));
+          state.gcResources?.add(sprite.material); // Late-created fire sprite materials join the weapon-root finalizer; pooled sprites reuse the same material.
+        }
         sprite.material.color.set(color);
         sprite.renderOrder = fx.renderOrder; // Interleaved between fuel and later metal silhouettes (front).
         const overlayLayer = global.HeldObjectRenderOrder?.HELD_OVERLAY_LAYER; // Shared x-ray held-object replay draws fire with the assembled metal, never through world geometry.
