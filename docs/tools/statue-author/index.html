@@ -422,12 +422,19 @@ function meshMaterialStats(mesh) {
     const ctx=canvas.getContext('2d',{willReadFrequently:true});
     const data=ctx?.getImageData?.(0,0,canvas.width,canvas.height)?.data;
     if(data){
-      let covered=0,nonBlack=0;const stride=4*4;
+      let covered=0,nonBlack=0,minShade=255,maxShade=0;const shades=new Set(),stride=4*4;
       for(let i=0;i<data.length;i+=stride){
-        if(data[i+3]>8){covered++;if(data[i]+data[i+1]+data[i+2]>96)nonBlack++;}
+        if(data[i+3]<=8)continue;
+        covered++;
+        if(data[i]+data[i+1]+data[i+2]>96){
+          nonBlack++;
+          const shade=Math.round((data[i]*.3+data[i+1]*.59+data[i+2]*.11)/12);
+          shades.add(shade);minShade=Math.min(minShade,shade*12);maxShade=Math.max(maxShade,shade*12);
+        }
       }
       color={coverage:+(covered/Math.max(1,Math.ceil(data.length/stride))).toFixed(3),
-        brightCoverage:+(nonBlack/Math.max(1,covered)).toFixed(3)};
+        brightCoverage:+(nonBlack/Math.max(1,covered)).toFixed(3),
+        surfaceShadeBins:shades.size,surfaceShadeRange:nonBlack?maxShade-minShade:0};
     }
   }
   return color;
