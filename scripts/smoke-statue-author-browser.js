@@ -63,8 +63,10 @@ async function run(){
     await page.waitForFunction(()=>{
       const debug=window.__hobunjiStatueDebug?.();
       if(!debug?.built)return true;
-      return debug.pieces.filter(p=>p.id==='statue_body'||p.id==='statue_head')
-        .every(p=>p.textureReady||p.textureError);
+      return debug.pieces.every(p=>
+        p.id.includes('_hand')||p.id.includes('_foot')
+          ? p.modelError||p.textureError||(p.modelReady&&p.textureReady)
+          : p.textureReady||p.textureError);
     },null,{timeout:30000});
     const output=await page.evaluate(()=>window.__hobunjiStatueDebug());
     assert.ok(output.built,'Real NPC statue must build: '+JSON.stringify(output));
@@ -80,8 +82,13 @@ async function run(){
       assert.ok(piece.material.brightCoverage>.12,
         'Finish must not paint the avatar nearly black: '+JSON.stringify(piece));
     }
-    for(const limb of output.pieces.filter(p=>p.id.includes('_hand')||p.id.includes('_foot')))
+    for(const limb of output.pieces.filter(p=>p.id.includes('_hand')||p.id.includes('_foot'))) {
       assert.equal(limb.modelError,null,'Species limb GLB should load: '+JSON.stringify(limb));
+      assert.equal(limb.modelReady,true,'The real hand/foot model must be loaded: '+JSON.stringify(limb));
+      assert.equal(limb.textureReady,true,'The chosen finish must cover hand/foot meshes: '+JSON.stringify(limb));
+      assert.ok(limb.material?.brightCoverage>.12,
+        'The same statue texture must not leave limb GLBs black: '+JSON.stringify(limb));
+    }
     assert.equal(pageErrors.length,0,'No unhandled browser errors: '+pageErrors.join('\n'));
     console.log('PASS actual Chromium mobile statue: '+JSON.stringify({
       layout,body:body.material,head:head.material,pieces:output.pieces.length,pose:output.phase
