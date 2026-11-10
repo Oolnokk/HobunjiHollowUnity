@@ -189,7 +189,7 @@
       rec.notes=song.notes.map(note=>note.index); // Kept for mobile diagnostics and older authored module consumers.
       rec.session=composer.createSession(song,{
         lookaheadMs:root.AudioSystem?.metronomeLookaheadMs||0, // Uses the performance transport's 90 ms lookahead when the game's Web Audio adapter is installed.
-      clockMs:root.AudioSystem?.metronomeLookaheadMs?()=>root.performance?.now?.()??Date.now():null, // Audio and score glyphs share the same monotonic clock.
+      clockMs:typeof options.clockMs==='function'?options.clockMs:(root.AudioSystem?.metronomeLookaheadMs?()=>root.performance?.now?.()??Date.now():null), // Deterministic trial harnesses inject their own monotonic clock; gameplay shares the audio clock.
       onStop:()=>root.RuinInteractionAudio?.metronomeStop?.(), // Stop queued future beats on plate exit or solve.
       onBeat:beat=>root.RuinInteractionAudio?.metronomeTick?.(beat),
         onSolved:()=>complete(), // The instrument remains equipped; only the owning mechanism unlocks.
