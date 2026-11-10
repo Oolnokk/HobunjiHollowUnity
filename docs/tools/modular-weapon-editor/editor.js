@@ -608,6 +608,14 @@
     byId('head-rope-x').disabled = byId('head-rope-y').disabled = !editable; // Only the selected combination can adjust the contact.
     byId('head-rope-scale').value = editable ? (pair.flailHeadScale ?? head.flailHeadScale ?? 1) : (authoredHead?.scale ?? 1);
     byId('head-rope-scale').disabled = !editable;
+    byId('pair-damage-type').disabled = !editable;
+    byId('pair-damage-type').value = editable ? (pair.dmgType || 'inherit') : 'inherit'; // Only selected flexible pair can alter damage typing.
+    const actualType = api.weaponDamageType(byId('shaft').value,byId('head').value); // Same effective type used by combat and the smith.
+    byId('pair-transform-status').textContent = editable
+      ? 'This pair: '+actualType+' damage · offset X '+(pair.x||0)+', Y '+(pair.y||0)
+        +' · scale '+(pair.scaleX??1)+' × '+(pair.scaleY??1)
+        +' · flip X '+!!pair.flipX+', flip Y '+!!pair.flipY+', rotation '+(pair.rotation||0)+'°. Open 04 · Pair corrections to change these head-only transforms.'
+      : 'Pair-only damage and artwork transforms apply to an ordinary rigid head on a flail haft.';
     if (!editable) {headContactMoveEnabled=false;headContactDrag=null;}
     byId('head-contact-move').disabled = !editable;
     byId('head-contact-move').setAttribute('aria-pressed',String(editable && headContactMoveEnabled));
@@ -967,6 +975,14 @@
     const raw=byId('head-rope-scale').value.trim(),value=Number(raw);
     if(!raw||!Number.isFinite(value)||value<0.05||value>8) {drawIdentity();return;}
     (chosenShaft().overrides[byId('head').value] ||= {}).flailHeadScale=value;save();
+  };
+  byId('pair-damage-type').onchange = () => {
+    if (!shaftOwnsFlail()) {drawIdentity();return;}
+    const value=byId('pair-damage-type').value;
+    const pair=(chosenShaft().overrides[byId('head').value] ||= {}); // This pairing alone owns the damage override.
+    if (value==='blunt'||value==='sharp') pair.dmgType=value;
+    else delete pair.dmgType; // Restore the original head's normal damage type without mutating it.
+    save();
   };
   byId('head-contact-move').onclick=()=>{
     if(!shaftOwnsFlail())return;
