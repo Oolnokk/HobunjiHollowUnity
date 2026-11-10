@@ -19,7 +19,7 @@ const veg = read('docs/js/vegetation-crop-rendering.js');
 
 assert.match(held, /function setReplayCullFrustum\(camera, rect, width, height\)/,
   'replay builds a sub-frustum from the scissor rectangle');
-assert.match(held, /replayCulled = hideObjects\(collectReplayCulled\(scene, new Set\(scissorMeshes\)\)\)/,
+assert.match(held, /replayCulled = hideObjects\(collectReplayCulled\(scene, new Set\(scissorMeshes\), groupCullCandidates\)\)/,
   'scissored replays hide renderables outside the scissor sub-frustum, never the held/foot meshes that define it');
 assert.match(held, /if \(replayCulled\) restoreVisibility\(replayCulled\);/,
   'culled renderables are restored in the replay finally block');

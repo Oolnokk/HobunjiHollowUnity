@@ -327,32 +327,60 @@ assert.equal(classifyTintCover(coverMesh({ environmentSurfaceMicroPlateau: true 
 assert.equal(classifyTintCover(coverMesh({ isWildernessGrassChunk: true })), false, 'billboard grass occludes rather than tints feet');
 const elevationNewline = String.fromCharCode(10);
 const elevationHelperStart = heldRender.indexOf('  function isDescendantOf(');
-const elevationHelperEnd = heldRender.indexOf('  function groupXrayMeshesByElevation(', elevationHelperStart);
-assert.ok(elevationHelperStart >= 0 && elevationHelperEnd > elevationHelperStart, 'elevation resolver helper');
+const elevationHelperEnd = heldRender.indexOf('  function rectsOverlap(', elevationHelperStart);
+assert.ok(elevationHelperStart >= 0 && elevationHelperEnd > elevationHelperStart, 'holder scope resolver');
 const actorScene = { isScene: true, position: { y: 0 }, matrixWorld: { elements: Array(16).fill(0) } };
-const playerRoot = { name: 'player_mesh', position: { x: 2, y: 1, z: 3 }, matrixWorld: { elements: Object.assign(Array(16).fill(0), { 12: 2, 13: 1, 14: 3 }) }, parent: actorScene, userData: {} };
-const playerHandRoot = { name: 'player_hand_external_root', position: { y: 0 }, parent: actorScene, userData: {} };
-const elevationWindow = { PlayerBodyTransformComposer: { getPlayerMesh: () => playerRoot, getVisualRoots: () => [playerHandRoot], getDebug: () => ({ channels: [{ name: 'townSubtleElevation', enabled: true, translation: { y: 0.3 } }] }) }, GridTileAccessors: { getCurrentArea: () => 'town' } };
-const resolveActorElevation = new Function('window', heldRender.slice(elevationHelperStart, elevationHelperEnd) + elevationNewline + 'return actorElevationForXrayMesh;')(elevationWindow);
-assert.equal(resolveActorElevation({ parent: playerRoot }, actorScene), 1.3, 'player body elevation');
-assert.equal(resolveActorElevation({ parent: playerHandRoot }, actorScene), 1.3, 'composer-owned external hand/foot roots inherit the player standing elevation');
-const npcRoot = { name: 'npc_walker_test', position: { x: 4, y: 2.5, z: 6 }, matrixWorld: { elements: Object.assign(Array(16).fill(0), { 12: 4, 13: 2.5, 14: 6 }) }, parent: actorScene, userData: {} };
-assert.equal(resolveActorElevation({ parent: npcRoot }, actorScene), 2.5, 'NPC root elevation');
+const actorAt = (name, x, y, z) => ({ name, position: { x, y, z }, matrixWorld: { elements: Object.assign(Array(16).fill(0), { 12: x, 13: y, 14: z }) }, parent: actorScene, userData: {} });
+const playerRoot = actorAt('player_mesh', -0.1, 1, 3.95);
+const playerHandRoot = actorAt('player_hand_external_root', 13, 0, 14);
+const elevationWindow = { PlayerBodyTransformComposer: { getPlayerMesh: () => playerRoot, getVisualRoots: () => [playerHandRoot], getDebug: () => ({ channels: [{ name: 'townSubtleElevation', enabled: true, translation: { y: 0.3 } }] }) } };
+const resolveScope = new Function('window', heldRender.slice(elevationHelperStart, elevationHelperEnd) + elevationNewline + 'return actorXrayScope;')(elevationWindow);
+const playerScope = { elevation: 1.3, col: -1, row: 3 };
+assert.deepEqual(resolveScope({ parent: playerRoot }, actorScene, new Map()), playerScope, 'world tile uses floor, including negative coordinates');
+assert.deepEqual(resolveScope({ parent: playerHandRoot }, actorScene, new Map()), playerScope, 'detached rig parts inherit the holder tile and standing elevation');
+elevationWindow.DevRandomRuin = { getPlayerGroundSupportY: () => 6 };
+assert.deepEqual(resolveScope({ parent: playerHandRoot }, actorScene, new Map()), { ...playerScope, elevation: 6 }, 'ruin support height remains authoritative');
+const npcRoot = actorAt('npc_walker_test', 4, 2.5, 6);
 const animalVisual = { name: 'animal_avatar_visual', position: { y: 8 }, matrixWorld: { elements: Object.assign(Array(16).fill(0), { 13: 8 }) }, parent: npcRoot, userData: { namedAnimalNpc: true } };
-assert.equal(resolveActorElevation({ parent: animalVisual }, actorScene), 2.5,
+assert.deepEqual(resolveScope({ parent: animalVisual }, actorScene, new Map()), { elevation: 2.5, col: 4, row: 6 },
   'named-animal visual offsets defer to the enclosing floor-level walker root');
 assert.ok(npcHeldEquipment.includes('walker.root.userData.hobunjiXrayActorRoot = true'),
   'NPC held-equipment registration exposes the actual walker root to the x-ray resolver');
-assert.equal(Number.isNaN(resolveActorElevation({ parent: { parent: actorScene, position: { y: 0 } } }, actorScene)), true, 'unknown actor fails closed');
-const groupStart = heldRender.indexOf('  function groupXrayMeshesByElevation(');
-const groupEnd = heldRender.indexOf('  function installGroundElevationShader(', groupStart);
-const groupMeshes = new Function('XRAY_ELEVATION_GROUP_EPSILON', heldRender.slice(groupStart, groupEnd) + elevationNewline + 'return groupXrayMeshesByElevation;')(0.05);
-const grouped = groupMeshes([{ level: 1 }, { level: 1.02 }, { level: 1.5 }, { level: 3.5 }, { level: NaN }], mesh => mesh.level);
-assert.equal(grouped.length, 4, 'same-height actors share a replay while trench/raised offsets and map tiers remain separate');
-assert.deepEqual(grouped.map(group => group.meshes.length), [2, 1, 1, 1], 'unknown actors share a fail-closed group');
+assert.equal(resolveScope({ parent: actorScene }, actorScene, new Map()), null, 'unknown actor fails closed');
+
+const groupEnd = heldRender.indexOf('  function installGroundElevationShader(', elevationHelperEnd);
+const groupMeshes = new Function('actorXrayScope', 'replayScissorRect', 'isReplayCullable', heldRender.slice(elevationHelperEnd, groupEnd).replace(
+  '  function rectsOverlap', `  const XRAY_TILE_RADIUS = 1, XRAY_MAX_BATCH_TILES = 8, XRAY_ELEVATION_GROUP_EPSILON = 0.05, XRAY_ELEVATION_TOLERANCE = 0.18;
+  let lastElevationReplayGroups, lastUnknownElevationMeshes, lastXrayTileRegions, lastXrayOrdinaryMeshes, scissorMinimumWorldY = 2;
+  const xrayGearRect = {}, xrayGroundRect = {};
+  const point = () => ({ set(x, y, z) { Object.assign(this, { x, y, z }); } });
+  const xrayGroundBox = { min: point(), max: point() };
+  function rectsOverlap`
+) + elevationNewline + 'return buildXrayGroups;')(
+  mesh => mesh.scope,
+  (renderer, camera, meshes, out, box) => {
+    if (meshes.some(mesh => mesh.uncertain)) return false;
+    if (box) Object.assign(out, { x: box.min.x, y: box.min.z, z: box.max.x - box.min.x, w: box.max.z - box.min.z });
+    else Object.assign(out, { x: meshes[0].x, y: meshes[0].z, z: 0.2, w: 0.2 });
+    return true;
+  },
+  () => true,
+);
+const part = (col, row, elevation = 0, x = col + 0.5, z = row + 0.5) => ({ scope: { col, row, elevation }, x, z });
+const a = part(0, 0), sameTile = part(0, 0), far = part(10, 0), nearby = part(1, 0), upper = part(0, 0, 6);
+const outside = part(30, 0, 0, 32.5), uncertain = { ...part(20, 0), uncertain: true }, noHolder = {};
+const grouped = groupMeshes({}, actorScene, {}, [a, sameTile, far, nearby, upper, outside, uncertain, noHolder]);
+assert.deepEqual(grouped.groups.map(group => group.meshes), [[a, sameTile, far], [nearby], [upper], [uncertain]],
+  'only screen-separated same-height holder neighborhoods share a depth rebuild');
+assert.deepEqual(grouped.ordinary, [noHolder, outside], 'unknown ownership and parts beyond their projected floor use ordinary depth');
+assert.deepEqual([...grouped.groups[0].tiles.slice(0, 4)], [0, 0, 10, 0], 'one batch carries both tile origins to the shader');
+const eyeAbove = { isPerspectiveCamera: true, matrixWorld: { elements: { 13: 4 } } };
+assert.deepEqual(groupMeshes({}, actorScene, eyeAbove, [a]).ordinary, [a], 'perspective eye and rigid gear above the floor need no floor exemption');
+assert.equal(groupMeshes({}, actorScene, eyeAbove, [a], 0.01).groups.length, 1, 'shell extrusion uses projection rather than the base-part height shortcut');
+
 const shaderStart = heldRender.indexOf('  function installGroundElevationShader(');
-const shaderEnd = heldRender.indexOf('  function setGroundElevationFilter(', shaderStart);
-const installElevationShader = new Function('XRAY_ELEVATION_TOLERANCE', 'XRAY_GROUND_NORMAL_MIN_Y', heldRender.slice(shaderStart, shaderEnd) + elevationNewline + 'return installGroundElevationShader;')(0.18, 0.55);
+const shaderEnd = heldRender.indexOf('  function collectGroundElevationMaterials(', shaderStart);
+const installElevationShader = new Function('XRAY_ELEVATION_TOLERANCE', 'XRAY_GROUND_NORMAL_MIN_Y', 'XRAY_MAX_BATCH_TILES', 'XRAY_TILE_RADIUS', heldRender.slice(shaderStart, shaderEnd) + elevationNewline + 'return installGroundElevationShader;')(0.18, 0.55, 8, 1);
 const groundMaterial = { userData: {}, needsUpdate: false };
 const groundShaderState = installElevationShader(groundMaterial);
 groundShaderState.geometryHasNormals = true; // setGroundElevationFilter records this before the first compile.
@@ -419,48 +447,50 @@ missingLitMaterial.onBeforeCompile(missingLitShader, {});
 assert.equal(missingLitState.supported, false, 'lit ground without a normal attribute also retains full-depth occlusion');
 
 
-const filterStart = heldRender.indexOf('  function setGroundElevationFilter(');
-const filterEnd = heldRender.indexOf('  function clearGroundElevationFilter(', filterStart);
-const setElevationFilter = new Function('forEachMaterial', 'installGroundElevationShader', 'isRoadXrayMesh',
-  heldRender.slice(filterStart, filterEnd) + elevationNewline + 'return setGroundElevationFilter;')(
+const filterStart = heldRender.indexOf('  function collectGroundElevationMaterials(');
+const filterEnd = heldRender.indexOf('  function replaySelectiveHeldOverlay(', filterStart);
+const { collect, setFilter } = new Function('forEachMaterial', 'installGroundElevationShader', 'isRoadXrayMesh',
+  'let lastElevationShaderMaterials, lastElevationShaderFallbacks;' + heldRender.slice(filterStart, filterEnd)
+  + elevationNewline + 'return { collect: collectGroundElevationMaterials, setFilter: setGroundElevationFilter };')(
     (material, callback) => { if (Array.isArray(material)) material.forEach(callback); else if (material) callback(material); },
     installElevationShader,
     mesh => mesh.road === true);
 const drawable = (extra = {}) => ({ attributes: Object.assign({ position: { count: 3 } }, extra) });
 const filterMaterial = { userData: {} };
-setElevationFilter([{ material: filterMaterial, geometry: drawable() }], null);
-assert.equal(filterMaterial.userData.hobunjiXrayElevationShader.uniforms.enabled.value, 0,
-  'a missing actor elevation never gets coerced to world height zero');
-setElevationFilter([{ material: filterMaterial, geometry: drawable() }], 2.5);
-assert.equal(filterMaterial.userData.hobunjiXrayElevationShader.uniforms.enabled.value, 1,
-  'a resolved map elevation enables the depth filter');
-assert.equal(filterMaterial.userData.hobunjiXrayElevationShader.uniforms.elevation.value, 2.5);
+const filterStates = collect([{ material: filterMaterial, geometry: drawable({ normal: {} }) }]);
+const tileBatch = grouped.groups[0];
+setFilter(filterStates, tileBatch);
+const uniforms = filterMaterial.userData.hobunjiXrayElevationShader.uniforms;
+assert.equal(uniforms.enabled.value, 1);
+assert.equal(uniforms.elevation.value, tileBatch.elevation);
+assert.equal(uniforms.tileCount.value, 2);
+assert.equal(uniforms.tiles.value, tileBatch.tiles);
+setFilter(filterStates, null);
+assert.equal(uniforms.enabled.value, 0, 'ordinary depth and subsequent lighting passes disable the tile filter');
+assert.match(standardGroundShader.fragmentShader, /lessThanEqual\(abs\(groundTile - uHobunjiXrayTiles\[i\]\), vec2\(1\.0\)\)/,
+  'shader accepts the holder tile and one tile on both world axes');
+assert.ok(standardGroundShader.vertexShader.includes('vHobunjiXrayWorldXZ = hobunjiXrayWorldPosition.xz;'));
 const sharedGroundMaterial = { userData: {}, needsUpdate: false };
-setElevationFilter([
+collect([
   { material: sharedGroundMaterial, geometry: drawable({ normal: {} }) },
   { material: sharedGroundMaterial, geometry: drawable() },
-], 1);
+]);
 assert.equal(sharedGroundMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, false,
   'a shared unlit ground material fails closed if any registered mesh lacks normals');
-// TerrainRenderChunks leaves an empty-geometry source mesh beside its chunks;
-// it draws nothing and must not disable the x-ray for the shared material.
 const chunkedGroundMaterial = { userData: {}, needsUpdate: false };
-setElevationFilter([
+collect([
   { material: chunkedGroundMaterial, geometry: { attributes: {} } },
   { material: chunkedGroundMaterial, geometry: drawable({ normal: {} }) },
-], 1);
+]);
 assert.equal(chunkedGroundMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, true,
-  'an empty chunk-source husk does not poison its chunks\' shared material');
+  'an empty chunk-source husk does not poison its chunks’ shared material');
 const instancedBrickMaterial = { userData: {}, needsUpdate: false };
-setElevationFilter([{ material: instancedBrickMaterial, isInstancedMesh: true, road: true, geometry: drawable({ normal: {} }) }], 1);
+collect([{ material: instancedBrickMaterial, isInstancedMesh: true, road: true, geometry: drawable({ normal: {} }) }]);
 assert.equal(instancedBrickMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, true, 'instanced path bricks keep their normals');
-assert.equal(instancedBrickMaterial.userData.hobunjiXrayElevationShader.uniforms.anyFacing.value, 1, 'path bricks x-ray on every face near the actor elevation');
+assert.equal(instancedBrickMaterial.userData.hobunjiXrayElevationShader.uniforms.anyFacing.value, 1, 'path bricks x-ray on every face in the holder’s floor neighborhood');
 assert.equal(sharedGroundMaterial.userData.hobunjiXrayElevationShader.uniforms.anyFacing.value, 0, 'terrain keeps its walls and cliff faces as occluders');
-
-assert.ok(heldRender.includes('groupXrayMeshesByElevation(xrayMeshes'),
-  'shell outlines are grouped by the same actor elevations as visible overlays');
-assert.ok(heldRender.includes('setGroundElevationFilter(groundMeshes, group.elevation)'),
-  'shell depth uses the same elevation filter as the source object');
+assert.match(heldRender, /buildXrayGroups\(this, scene, camera, xrayMeshes, shellPadding\)/,
+  'shell outlines use the same holder tile scope as the visible overlay');
 
 const customMaterial = { userData: {}, needsUpdate: false };
 const customState = installElevationShader(customMaterial);
@@ -479,7 +509,7 @@ assert.match(heldRender, /const groundMeshes = \[\.\.\.ground, \.\.\.topFaceGrou
   'cave shell floors stay in the depth buffer so elevation decides which top faces may be x-rayed');
 assert.doesNotMatch(heldRender, /swapToOccluderGeometry|restoreSwappedGeometry/,
   'the old blanket top-face removal cannot bypass the actor-elevation filter');
-assert.match(heldRender, /setGroundElevationFilter\(groundMeshes, group\.elevation\)/,
+assert.match(heldRender, /setGroundElevationFilter\(groundMaterials, group\)/,
   'cave floor top faces are filtered by the owning actor elevation');
 assert.match(plateauMesa, /mesh\.userData\.hobunjiGroundSurface = true/,
   'raised wilderness mesa surfaces explicitly register as ground');
@@ -493,7 +523,7 @@ assert.match(heldRender, /const heldVisibility = hideObjects\(\[\.\.\.held, \.\.
   'feet are absent from the original color pass so they cannot pop over transparent water');
 assert.match(heldRender, /overlayHidden = hideObjects\(\[\.\.\.overlayMeshes, \.\.\.\(tintOverlay \? tintCovers : \[\]\)\]\)/,
   'the elevation rebuild retains ground while excluding held meshes and deferred translucent covers');
-assert.match(heldRender, /setGroundElevationFilter\(groundMeshes, group\.elevation\)/,
+assert.match(heldRender, /setGroundElevationFilter\(groundMaterials, group\)/,
   'the ground shader receives the owning actor surface height for each replay group');
 assert.match(heldRender, /const tintOverlay = lastBaseStencilBits >= 1 && hasOverlappingHeldCover\(renderer, camera, overlayMeshes, tintCovers\)/,
   'overlap checks cover both feet and held objects without tint when stencil is unavailable');
@@ -539,7 +569,7 @@ const shellReplayEnd = heldRender.indexOf('  function wrappedRender(', shellRepl
 assert.ok(shellReplayStart >= 0 && shellReplayEnd > shellReplayStart,
   'the renderer has a dedicated shell x-ray replay');
 const shellReplay = heldRender.slice(shellReplayStart, shellReplayEnd);
-const shellGroundFilterAt = shellReplay.indexOf('setGroundElevationFilter(groundMeshes, group.elevation)');
+const shellGroundFilterAt = shellReplay.indexOf('setGroundElevationFilter(groundMaterials, group)');
 const shellDepthAt = shellReplay.indexOf('prepareNonGroundDepthMaterials(scene, replayCandidates.depth)', shellGroundFilterAt);
 const shellDepthDrawAt = shellReplay.indexOf('rawRender.call(renderer, scene, camera)', shellDepthAt);
 const shellOnlyAt = shellReplay.indexOf('hideNonXrayShellMeshes(scene, groupSet, replayCandidates.shell)');
@@ -557,7 +587,7 @@ assert.ok(heldRender.includes('const shellCandidates = [...new Set([...held, ...
   'all held/foot ground-x-ray participants retain shell parity before conservative camera culling');
 assert.ok(pixelProbe.includes('shellXray=${heldRenderDebug.shellXrayPasses ?? 0}/${heldRenderDebug.shellXrayMeshes ?? 0}'),
   'mobile Pixel Probe reports shell x-ray replay activity');
-assert.ok(heldRender.includes('replayShellOutlineXray(this, scene, camera, xrayMeshes, ground, topFaceGround, scissored)'),
+assert.ok(heldRender.includes('replayShellOutlineXray(this, scene, camera, xrayMeshes, ground, topFaceGround, scissored, groups, shellPadding)'),
   'the shell pass reuses the same classified ground and top-face floor geometry as object x-ray');
 
 // This hard-won ordering contract must stay discoverable to subsequent
@@ -626,7 +656,7 @@ assert.equal((heldRender.match(/window.PerfProfiler\?\.begin\('held-overlay: ele
 assert.doesNotMatch(heldRender, /requestedFootWaterComposite/,
   'the old patchy foot-water tint path is not used');
 const overlapStart = heldRender.indexOf('  function hasOverlappingHeldCover(');
-const overlapEnd = heldRender.indexOf('  function replaySelectiveHeldOverlay(', overlapStart);
+const overlapEnd = heldRender.indexOf('  const XRAY_ELEVATION_TOLERANCE', overlapStart);
 assert.ok(overlapStart > 0 && overlapEnd > overlapStart, 'the live renderer exposes the conservative overlap check');
 const screenRect = { x: 0, y: 0, z: 48, w: 48 };
 const heldOverlap = new Function('replayScissorRect', 'footTintScreenRect', 'setReplayCullFrustum',

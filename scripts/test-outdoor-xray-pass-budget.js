@@ -99,7 +99,7 @@ assert.doesNotMatch(depthIteration, /collectVisible\((pngDepthRegistry|protected
 
 for (const [name, body, flag] of [['held', held, 'scissored'], ['shell', shell, 'scissorActive']]) {
   const group = body.indexOf('for (const group of groups)');
-  const bounded = body.indexOf('applyElevationScissor(renderer, camera, group.meshes, glState)', group);
+  const bounded = body.indexOf('applyElevationScissor(renderer, camera, group.meshes, glState', group);
   const depth = body.indexOf('renderer.clearDepth();', group);
   const restore = body.lastIndexOf('glState.scissor(scissorRect)');
   assert(group >= 0 && bounded > group && bounded < depth, name + ': group scissor precedes depth clear');
