@@ -568,6 +568,7 @@
     const mask=originalContext.getImageData(0,0,width,height);
     fillStatueFinish(context,finish,width,height);
     const painted=context.getImageData(0,0,width,height);
+    const materialPixels=painted.data.slice(); // Solid-black NPC silhouettes still receive material rather than staying solid black.
     let opaque=0,ink=0,bright=0;
     for(let i=0;i<mask.data.length;i+=4){
       const a=mask.data[i+3];
@@ -584,8 +585,16 @@
     // Avoid rendering the exact black rectangles from the original broken
     // preview when a missing NPC sprite or an unexpected opaque background
     // causes a full-canvas mask.
-    if(!opaque || (!options.allowFullMask && opaque>=width*height*.96) || (!bright && options.preserveInk!==false)) {
-      throw new Error('Statue portrait mask is blank, all-black or rectangular; rebuild its NPC appearance');
+    if(!opaque || (!options.allowFullMask && opaque>=width*height*.96)) {
+      throw new Error('Statue portrait mask is blank or rectangular; rebuild its NPC appearance');
+    }
+    if(!bright && options.preserveInk!==false){
+      // Some canon characters are nearly-black silhouettes. The selected
+      // furniture texture must still appear on them instead of turning into
+      // the same black pane reported in the mobile preview.
+      for(let i=0;i<mask.data.length;i+=4)if(mask.data[i+3]>8){
+        painted.data[i]=materialPixels[i];painted.data[i+1]=materialPixels[i+1];painted.data[i+2]=materialPixels[i+2];
+      }
     }
     context.putImageData(painted,0,0);
     canvas.dataset && (canvas.dataset.statueInkPixels=String(ink));
