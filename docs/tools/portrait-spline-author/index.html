@@ -17,6 +17,11 @@ button.active{background:#205081;border-color:var(--blue)}button:disabled{opacit
 label{font-size:12px;color:var(--soft)}.entry{display:grid;grid-template-columns:100px minmax(0,1fr);align-items:center;gap:8px;margin:8px 0}
 input[type=number]{width:100%;font-variant-numeric:tabular-nums}input[type=file]{max-width:100%;font-size:11px}
 #preview{width:100%;max-width:420px;display:block;margin:auto;aspect-ratio:1;image-rendering:pixelated;touch-action:none;background:#0c1926;border:1px solid #38506c;border-radius:10px}
+#view3d{width:100%;height:380px;display:block;touch-action:none;background:#0b1726;border:1px solid #38506c;border-radius:10px}
+#viewerStatus{min-height:22px;display:block;font-size:12px;color:var(--soft);margin:6px 0 10px;overflow-wrap:anywhere}
+#poseActions{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+#seamTools{margin:10px 0;padding:8px;border:1px solid var(--line);border-radius:8px}
+#seamTools .entry{grid-template-columns:minmax(130px,155px) minmax(0,1fr)}
 .buttons{display:flex;flex-wrap:wrap;gap:6px}#status{min-height:55px;background:#07131f;color:#c8def7;border:1px solid #2e4866;padding:9px;border-radius:8px;white-space:pre-wrap;font:12px/1.4 ui-monospace,Consolas,monospace}
 #segmentEditor{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
 .field label{display:block;margin-bottom:2px}.field input{width:100%}
@@ -29,11 +34,14 @@ details.manual{margin:10px 0;border:1px solid var(--line);border-radius:8px;padd
 #testWind{width:100%;accent-color:#7fb7fc}
 details summary{cursor:pointer;font-weight:700}textarea{width:100%;min-height:190px;font:11px/1.4 ui-monospace,Consolas,monospace;resize:vertical}
 footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
-@media(max-width:760px){main{display:block;padding:8px}section{margin-bottom:10px}header{padding:10px}#preview{max-width:360px}}
+@media(max-width:760px){main{display:block;padding:8px}section{margin-bottom:10px}header{padding:10px}#preview{max-width:360px}#view3d{height:320px}}
 </style>
 <script src="../../js/tap-reliability.js?v=20261110portraitSpline1"></script>
 <script src="../../js/portrait-spline-rig.js?v=20261110portraitSpline1"></script>
-<script src="../../js/portrait-spline-catalog.js?v=20261110splineIndex1"></script>
+<script src="../../js/portrait-spline-catalog.js?v=20261110splineHead3"></script>
+<script src="../../js/portrait-spline-seam.js?v=20261110splineSeam1"></script>
+<script src="../../config/scratchbones-config.js?v=20261110spline3d1"></script>
+<script src="../../js/portrait-spline-viewer.js?v=20261110splineViewer1"></script>
 </head>
 <body>
 <header><a href="../character-studio/">Character Studio</a><h1>Beard &amp; Side Hair Spline Author</h1><span class="hint">v1 · per-cosmetic 3D strand + seam masks</span></header>
@@ -56,16 +64,24 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
   <div class="entry"><label for="frontFile">Front PNG</label><input id="frontFile" type="file" accept="image/png,image/webp,image/*"></div>
   <div class="entry"><label for="rearFile">Rear PNG</label><input id="rearFile" type="file" accept="image/png,image/webp,image/*"></div>
   <div class="entry"><label for="hoodFile">Hood PNG</label><input id="hoodFile" type="file" accept="image/png,image/webp,image/*"></div>
+  <div class="entry"><label for="headFile">Full head silhouette</label><input id="headFile" type="file" accept="image/png,image/webp,image/*" title="Optional 200×200 aligned head reference"></div>
 </details>
 <div class="buttons" style="margin:12px 0">
-<button id="moveMode" class="active">Move knots</button><button id="paintMode">Paint seam</button>
+<button id="moveMode" class="active">Move 2D knots</button><button id="seamMoveMode">Move seam points</button><button id="paintMode">Paint seam</button>
 <button id="eraseMode">Erase seam</button><button id="addPoint">Add knot</button><button id="removePoint">Remove knot</button>
 </div>
 <canvas id="preview" width="400" height="400" aria-label="Spline, mask and reference art editor"></canvas>
 <div class="row"><label for="viewSelect">Sprite plane</label><select id="viewSelect"><option value="front">Front</option><option value="rear">Rear</option></select>
 <label for="brush">Mask radius, px</label><input type="number" id="brush" value="3" min=".5" max="15" step=".5" style="width:74px"></div>
 <div class="row"><label for="bridgePaint"><input id="bridgePaint" type="checkbox"> Paint opaque bridge pixels</label><input id="bridgeColor" type="color" value="#90664c" title="Color of painted connecting pixels"></div>
-<p>Yellow dots are knot positions, the yellow line is the unposed spline, cyan is its projected 3D pose and pink circles are passage-mask paint. Drag knots, or paint onto the hood-to-hair seam.</p>
+<p>Yellow dots are resting 2D knots, cyan is the 3D-projected wind pose, and pink circles mark seam points. Drag knots to place the neutral strand; adjust wind transforms in the 3D view. A selected seam point is highlighted in gold.</p>
+<div id="seamTools">
+  <h3>Head silhouette → editable seam</h3>
+  <p>Trace the selected species' actual head alpha silhouette near the first knot. The mask is saved as ordinary editable dabs; it is not regenerated automatically during gameplay.</p>
+  <div class="entry"><label for="seamArc">Silhouette span (px)</label><input id="seamArc" type="number" value="26" min="2" max="90" step="1"></div>
+  <div class="buttons"><button id="autoSeam">Generate from head silhouette</button><button id="undoSeam">Undo generation</button></div>
+  <div class="entry"><label for="seamPointRadius">Selected point radius (px)</label><input id="seamPointRadius" type="number" value="3" min=".5" max="15" step=".5"></div>
+</div>
 <div class="entry"><label for="rearU">Rear X offset</label><input id="rearU" type="number" min="-.25" max=".25" step=".005" value="0"></div>
 <div class="entry"><label for="rearV">Rear Y offset</label><input id="rearV" type="number" min="-.25" max=".25" step=".005" value="0"></div>
 <div class="entry"><label for="strandWidth">Spline width</label><input id="strandWidth" type="number" min=".01" max=".5" step=".01" value=".1"></div>
@@ -73,18 +89,25 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
 <div class="buttons"><button id="clearMask">Clear seam paint</button><button id="resetRig">New 3-knot spline</button></div>
 </section>
 <section>
-<h2>Directional blend space</h2>
-<p>Choose an extremity pose. Set rotation angles for the selected spline segment. At runtime, local wind axes blend these six poses and apply segment-specific angular deadzones. The collision solver restricts any pose that would push the strand through the character portrait plane.</p>
+<h2>3D directional blend-space author</h2>
+<p>Place resting knots on the left in 2D, then choose a wind direction and manipulate its 3D pose here. Tap a knot sphere to select it. Drag a colored axis gizmo to <strong>translate</strong> its endpoint or a colored ring to <strong>rotate</strong> that segment. Drag empty space to orbit the camera. The first knot is anchored to the head.</p>
+<canvas id="view3d" width="540" height="380" aria-label="Interactive 3D head and hair viewer with knot translation and rotation gizmos"></canvas>
+<output id="viewerStatus" role="status" aria-live="polite">Loading 3D viewer…</output>
+<div id="poseActions">
+  <button id="gizmoTranslate" class="active">Translate XYZ</button><button id="gizmoRotate">Rotate XYZ</button>
+  <button data-camera="front">Front</button><button data-camera="angle">Angle</button>
+  <button data-camera="side">Side</button><button data-camera="rear">Rear</button>
+</div>
 <div id="poseMatrix">
 <button data-direction="up">↑ Up</button><button data-direction="toward">⊙ Toward viewer</button><button data-direction="away">⊗ Away from viewer</button>
 <button data-direction="left">← Left</button><button data-direction="down">↓ Down</button><button data-direction="right">Right →</button>
 </div>
-<div class="entry"><label for="segmentSelect">Spline segment</label><select id="segmentSelect"></select></div>
+<div class="entry"><label for="segmentSelect">Selected 3D knot</label><select id="segmentSelect"></select></div>
 <div id="segmentEditor"></div>
 <h3>Preview the directional wind</h3>
 <div class="entry"><label for="testStrength">Gust strength</label><input type="range" id="testStrength" min="0" max="1" value="1" step=".01"></div>
 <div class="row"><label for="testStrength">Blend:</label><span id="windName">Right · 100%</span></div>
-<p><strong>Deadzone (°)</strong> is the minimum projected wind angle needed before that joint responds. Directional poses define the maximum rotation, not an extra global multiplier.</p>
+<p><strong>Translation XYZ</strong> is authored in portrait-relative coordinates and blends with the directional rotations. Deadzones apply to both operations. The collision solver prevents strands passing through the portrait plane.</p>
 <h3>Pixel attachment and collision checks</h3>
 <output id="status" role="status" aria-live="polite">No cosmetic loaded. The default 3-knot spline is editable.</output>
 <div class="buttons" style="margin-top:10px"><button id="download">Export updated cosmetic JSON</button><button id="copyRig">Copy rig JSON</button></div>
