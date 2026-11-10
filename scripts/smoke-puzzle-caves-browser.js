@@ -106,7 +106,7 @@ async function main(){
           getPlayerY:()=>0,getPlayerPosition:()=>player,
           clockMs:()=>scoreClockMs, // Keeps the real score/judge on the same deterministic monotonic clock during manual tick(dt) tests.
         });
-        if(music.song.bpm>100||music.song.measures!==2)throw Error('Generated score violates requested tempo/length');
+        if(music.song.bpm>88||music.song.bpm<60||music.song.measures!==4||music.song.notes.some(note=>note.lengthTicks<2))throw Error('Generated score violates slower eighth-note/four-measure constraints');
         const songBpm=music.song.bpm; // Preserved after teardown for the mobile Chromium smoke result.
         if(!collision.blocksBox(area,gateX,gateZ,.18))throw Error('Closed melody slab is not collidable');
         music.tick(0);
