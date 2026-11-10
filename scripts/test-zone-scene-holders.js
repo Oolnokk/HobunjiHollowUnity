@@ -24,16 +24,17 @@ function slice(source, from, to) {
 // ---- HeldObjectRenderOrder: SceneRegistry.forgetScene ------------------------
 {
   const source = read('docs/js/held-object-render-order.js');
-  const registryClass = slice(source, 'class SceneRegistry {', 'const heldMeshes = new WeakSet();');
+  const registryClass = slice(source, 'const retiredScenes = new WeakSet();', 'const heldMeshes = new WeakSet();');
   const forgetFn = slice(source, 'function forgetScene(scene) {', 'window.HeldObjectRenderOrder = {');
   const context = vm.createContext({});
   vm.runInContext(`${registryClass}
     const heldRegistry = new SceneRegistry(), groundRegistry = new SceneRegistry(), topFaceGroundRegistry = new SceneRegistry(), waterRegistry = new SceneRegistry(),
       tintCoverRegistry = new SceneRegistry(), protectedCoverRegistry = new SceneRegistry(), waterOccludedRegistry = new SceneRegistry(), pngDepthRegistry = new SceneRegistry();
     const lastSceneScan = new WeakMap();
+    const pendingClassification = new Set(); // The deferred add queue also holds scene members until the next flush.
     ${forgetFn}
-    this.api = { forgetScene, registries: { heldRegistry, groundRegistry, topFaceGroundRegistry, waterRegistry, tintCoverRegistry, protectedCoverRegistry, waterOccludedRegistry, pngDepthRegistry } };`, context);
-  const { forgetScene, registries } = context.api;
+    this.api = { forgetScene, pendingClassification, registries: { heldRegistry, groundRegistry, topFaceGroundRegistry, waterRegistry, tintCoverRegistry, protectedCoverRegistry, waterOccludedRegistry, pngDepthRegistry } };`, context);
+  const { forgetScene, pendingClassification, registries } = context.api;
   const scene = children => ({ children, traverse(fn) { children.forEach(fn); } });
   const meshesA = [{ id: 'a1' }, { id: 'a2' }, { id: 'a3' }], meshesB = [{ id: 'b1' }, { id: 'b2' }];
   const sceneA = scene(meshesA), sceneB = scene(meshesB);
@@ -43,7 +44,10 @@ function slice(source, from, to) {
     registry.add(meshesA[2]); // Added but not placed yet (still pending), also in scene A.
     for (const m of meshesB) { registry.add(m); registry.pending.delete(m); registry.place(m, sceneB); }
   }
+  pendingClassification.add(meshesA[2]);
+  pendingClassification.add(meshesB[0]);
   const removed = forgetScene(sceneA);
+  assert.deepEqual([...pendingClassification], [meshesB[0]], 'only the discarded scene leaves the pending classification queue');
   assert.equal(removed, 3 * Object.keys(registries).length, 'every member of the scene leaves every registry');
   for (const [name, registry] of Object.entries(registries)) {
     for (const m of meshesA) {
@@ -55,6 +59,10 @@ function slice(source, from, to) {
     assert.equal(registry.byScene.get(sceneB)?.size, 2, `${name}: another scene's bucket is untouched`);
     assert.equal(registry.all.size, 2, `${name}: other scenes' members stay registered`);
     assert.equal(registry.sceneOf.get(meshesB[0]), sceneB);
+    registry.add(meshesA[2]);
+    registry.place(meshesA[2], sceneA);
+    assert.equal(registry.byScene.has(sceneA), false, `${name}: a late add cannot recreate the old scene bucket`);
+    assert.equal(registry.has(meshesA[2]), false, `${name}: a late add cannot retain an old mesh`);
   }
   assert.equal(forgetScene(sceneA), 0, 'forgetting twice is harmless');
   assert.equal(forgetScene(null), 0, 'a missing scene is ignored');
