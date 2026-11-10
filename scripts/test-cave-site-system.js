@@ -417,6 +417,28 @@ const census = context.WildlifeSpawn.denNestCensus('map_test_wilds');
 assert.equal(census.caveCount, workspace.animalDens.length, 'wildlife diagnostics expose generic cave total');
 assert.equal(census.denCount, expectedAnimalDens, 'wildlife diagnostics retain true animal-den count');
 
+// Exercise the live cave threshold, including the license check and generator arguments.
+{
+  const previousArea = deps.getCurrentArea;
+  const entrance = Cave.__test.plansByMapId.get(ruinMap.id).ruinEntrance;
+  const calls = [];
+  context.DevRandomRuin = { generate(seed, options) { calls.push({ seed, options }); return true; } };
+  deps.getCurrentArea = () => ruinMap.id;
+  deps.player.x = (entrance.col + 0.5) * deps.TILE;
+  deps.player.y = (entrance.row + 0.5) * deps.TILE;
+  Cave.updateCurrentCaveRuntime(1);
+  assert.equal(calls.length, 0, 'the ruin still requires a Delver’s Stone');
+  context.DelversGuild = { hasStone: () => true };
+  Cave.updateCurrentCaveRuntime(1);
+  assert.equal(calls.length, 1, 'the licensed passage starts generation once');
+  assert.equal(calls[0].seed, entrance.seed, 'the cave keeps its deterministic entrance seed');
+  assert.equal(calls[0].options.tier, 'cave', 'the cave threshold must use the sized cave layout');
+  assert.equal(calls[0].options.site, true);
+  deps.getCurrentArea = previousArea;
+  delete context.DelversGuild;
+  delete context.DevRandomRuin;
+}
+
 // Cave cache loot is no longer auto-granted while walking near its rendered chest.
 // The existing aimed cave world action must claim a lock and wait for a victory.
 {

@@ -22223,6 +22223,11 @@
         // player, unlike the outdoor case just above.
         if (_isBuildingArea(currentArea)) {
           for (const m of (_buildingScenes.get(currentArea)?.occlusionMeshes || [])) {
+            if (currentArea === 'map_i_dev_random_ruin') {
+              let node = m.userData?.ruinCameraStoryRoot || m; // Detached wing barriers follow their story's visibility.
+              while (node.visible !== false && node.parent) node = node.parent;
+              if (node.visible === false) continue;
+            }
             if (!cameraObstacleIsCurrentSeat(m)) meshes.push(m); // Seated camera must not hit its own pew, including tagged child meshes and chunk proxies.
           }
         }
@@ -22748,6 +22753,37 @@
             resultY = lookAtY + (resultY - lookAtY) * fraction;
             resultZ = lookAtZ + (resultZ - lookAtZ) * fraction;
             resultY = Math.max(resultY, cameraSurfaceYAtWorld(resultX, resultZ) + 0.01); // An authored target buried in cover still cannot leave the camera beneath it.
+          }
+        }
+        if (currentArea === 'map_i_dev_random_ruin' && obstacles.length) {
+          // Recheck the final camera against the ruin shell. The framing minimum
+          // and lateral shoulder shift can otherwise put it back across a wall.
+          const originX = shoulderBoom && Number.isFinite(camTargetX) ? camTargetX : lookAtX;
+          const originZ = shoulderBoom && Number.isFinite(camTargetZ) ? camTargetZ : lookAtZ;
+          const x = resultX - originX, y = resultY - lookAtY, z = resultZ - originZ;
+          const length = Math.hypot(x, y, z);
+          if (length > 0.02) {
+            _cameraOcclusionRaycaster.set(
+              _cameraOcclusionOriginVec.set(originX, lookAtY, originZ),
+              _cameraOcclusionDirVec.set(x / length, y / length, z / length),
+            );
+            _cameraOcclusionRaycaster.near = 0.001;
+            _cameraOcclusionRaycaster.far = length;
+            const hit = _cameraOcclusionRaycaster.intersectObjects(obstacles, true)[0];
+            if (hit) {
+              const clearance = Math.min(INTERIOR_CAMERA_WALL_CLEARANCE, hit.distance * 0.5); // Keep room for the near plane in tight corners.
+              const fraction = (hit.distance - clearance) / length;
+              resultX = originX + x * fraction;
+              resultY = lookAtY + y * fraction;
+              resultZ = originZ + z * fraction;
+              adjustedLookAtX = originX;
+              adjustedLookAtZ = originZ;
+              if (_cameraBoomDebug) {
+                _cameraBoomDebug.latestChange = 'The final ruin camera is pulled inside the stone boundary after shoulder framing.';
+                _cameraBoomDebug.directHitDistance = hit.distance;
+                _cameraBoomDebug.solvedDistance = Math.hypot(resultX - adjustedLookAtX, resultY - lookAtY, resultZ - adjustedLookAtZ);
+              }
+            }
           }
         }
         return { x: resultX, y: resultY, z: resultZ, lookAtX: adjustedLookAtX, lookAtZ: adjustedLookAtZ }; // Camera and reticle keep the same adjusted look target.

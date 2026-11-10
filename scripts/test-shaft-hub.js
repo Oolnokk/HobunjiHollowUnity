@@ -401,6 +401,7 @@ class Material {clone(){return new Material()}dispose(){}}
 class BufferAttribute {constructor(array,itemSize){this.array=array;this.itemSize=itemSize}}
 class BufferGeometry {constructor(){this.attributes={}}setAttribute(name,attribute){this.attributes[name]=attribute}setIndex(index){this.index=index}dispose(){}} // The shaft's stone is real merged faces now (js/ruin-wall-faces.js).
 class InstancedMesh {
+  userData = {}; // Match Three.Object3D semantic tags on generated floor batches.
   constructor(geometry,material,count){this.geometry=geometry;this.material=material;this.count=count;this.instances=[];this.instanceMatrix={needsUpdate:false};}
   setMatrixAt(i,matrix){this.instances[i]=matrix.xyz}
 }
@@ -572,7 +573,7 @@ for(const side of ['north','east','south','west']){
       center:isX?48:50}};
   const makeTile=walkable=>({type:walkable?'grass':'rock'});
   const rec={cols:150,rows:140,grid:Array.from({length:140},()=>Array.from({length:150},()=>makeTile(false))),
-    floorSet:new Set(),mapData:{id:'map_i_dev_random_ruin',floor:[]},scene:new Group()};
+    floorSet:new Set(),mapData:{id:'map_i_dev_random_ruin',floor:[]},scene:new Group(),occlusionMeshes:[]};
   const ruin={localeRoot:new Group(),occupancy:{},mechanisms:new Map(),transitDoors:[],activators:[],pushBlocks:[],controls:[],
     theme:side==='north'?'kanthic':'hronal'}; // One real multiwing run verifies Kanthic firelight while the others verify non-Kanthic isolation.
   let player={x:5,z:7,y:0}; // Mutable position to test upper-story plate activation.
@@ -602,6 +603,7 @@ for(const side of ['north','east','south','west']){
   assert(featureGroup&&featureGroup.children.length>=4&&featureGroup.children.length<=24,'the broad shaft walls are individual meshes in a feature group, capped to bound engraving atlas memory');
   for(const mesh of featureGroup.children){
     assert.equal(mesh.name,'shaft-hub-feature-wall','one shared name, so they form a single pattern type');
+    assert.equal(mesh.userData.cameraObstacle,true,'engraved panels participate in camera collision');
     const p=mesh.geometry.attributes.position.array,lo=[1e9,1e9,1e9],hi=[-1e9,-1e9,-1e9];
     for(let i=0;i<p.length;i+=3)for(let k=0;k<3;k++){lo[k]=Math.min(lo[k],p[i+k]);hi[k]=Math.max(hi[k],p[i+k]);}
     assert(Math.max(hi[0]-lo[0],hi[2]-lo[2])>=3-1e-6&&hi[1]-lo[1]>=2-1e-6,'a feature wall is at least 3 wide and 2 tall');
@@ -619,6 +621,11 @@ for(const side of ['north','east','south','west']){
   assert(ruin.shaftConnection.supportRects<100,'hallway support surfaces merged');
   assert.deepEqual(ruin.occupancy.getPosition(),{x:5,z:7},'occupancy must reuse injected player adapter');
   const network=connected.layerRuntime;
+  assert.equal(rec.occlusionMeshes.length,connected.plan.totalWings,'each open-topped wing registers one upper camera boundary');
+  for(const wall of rec.occlusionMeshes){
+    assert.equal(wall.parent,null,'camera-only geometry stays out of rendering and projectile queries');
+    assert(wall.userData.ruinCameraStoryRoot,'each boundary follows its story visibility');
+  }
   network.tick(0);
   // Wings draw their stone as merged stretch-to-fit faces too, with a capped handful of engravable feature walls each.
   const wingBoxes=[],wingFloors=[],wingWalls=[],wingFeatureGroups=[];
@@ -726,6 +733,7 @@ for(const side of ['north','east','south','west']){
   assert.equal(musicClosed,0,'teardown must not close the player-owned flute');
   globalThis.MusicMinigame=oldMusic;
   assert(network.disposed,'all secondary wing collision grids and meshes are disposable');
+  assert.equal(rec.occlusionMeshes.length,0,'reroll removes detached wing camera boundaries');
   assert.equal(network.lightSources().length,0,'reroll removes all wing-brazier illumination sources');
   assert.equal(ruin.controls.filter(control=>control.kind==='layerBrazier'||control.kind==='dungeonFireSource').length,0,
     'reroll clears the authored wing brazier and fire-source interactions');
