@@ -148,6 +148,15 @@ function maskedPart(source,rectangle,remove=null){
   }
   return out.toDataURL('image/png');
 }
+function headPixelsFromFullPortrait(full,headAlpha){
+  const output=transparentCanvas(full.width,full.height);
+  const ctx=output.getContext('2d');
+  ctx.drawImage(full,0,0);
+  ctx.globalCompositeOperation='destination-in';
+  ctx.drawImage(headAlpha,0,0); // Keep the complete NPC face, eyes and cosmetics, not an unadorned head.
+  return output;
+}
+
 function sprite(id,name,mask,backMask,finish,role,pose,parentId=null){
   return {id,name,kind:'statueSprite',parentPartId:parentId,statueMaskDataUrl:mask,statueBackMaskDataUrl:backMask,
     statueUniformFinish:true,statueKeepOutline:!id.startsWith('statue_weapon_'),
@@ -170,8 +179,11 @@ function makeStaticParts(front,back,head,backHead,profile,pose,finish,role,weapo
   if(!bounds){
     bounds={x:Math.round(w*.25),y:0,w:Math.round(w*.5),h:Math.round(h*.32)};
   }
-  const full={x:0,y:0,w,h},bodyMask=maskedPart(front,full,head),headMask=maskedPart(front,bounds);
-  const backBodyMask=maskedPart(back,full,backHead),backHeadMask=maskedPart(back,bounds);
+  const full={x:0,y:0,w,h};
+  const composedHead=headPixelsFromFullPortrait(front,head); // Source pixels always match the NPC's fully layered portrait.
+  const composedRearHead=headPixelsFromFullPortrait(back,backHead);
+  const bodyMask=maskedPart(front,full,head),headMask=maskedPart(composedHead,bounds);
+  const backBodyMask=maskedPart(back,full,backHead),backHeadMask=maskedPart(composedRearHead,bounds);
   const size=.9,drop=clamp(num(pose.bodySink),0,25)*size/100;
   const bodyYaw=clamp(num(pose.bodyYaw),-360,360);
   const p=[
@@ -238,9 +250,9 @@ async function makeProject(){
       throw Error('Portrait renderer was unavailable for '+label);
   };
   await render(front,{forceEyesOpen:true,breathingComposer:null},'front');
-  await render(head,{onlyHeadSprite:true,forceEyesOpen:true,breathingComposer:null},'head');
+  await render(head,{headCosmeticsOnly:true,forceEyesOpen:true,breathingComposer:null},'head and cosmetics');
   await render(back,{portraitView:'behind',forceEyesOpen:true,breathingComposer:null},'behind');
-  await render(backHead,{portraitView:'behind',onlyHeadSprite:true,forceEyesOpen:true,breathingComposer:null},'behind head');
+  await render(backHead,{portraitView:'behind',onlyHeadSprite:true,forceEyesOpen:true,breathingComposer:null},'behind head alpha guide');
   showPortraitDebug({front,back,head,backHead});
   assertPortraitMask(front,'Front portrait');
   assertPortraitMask(back,'Behind portrait');
