@@ -107,3 +107,23 @@ The standalone preview and editor include mobile-visible load diagnostics.
 This integration requires a live browser visual pass on several species, as
 well as a separately authored modular weapon, before treating poses as exact
 one-click replicas of the Attack Animation Editor's scene.
+
+
+## Repository-backed authoring and Random Hero
+
+The Statue Author's normal controls use repository dropdowns, not manual uploads:
+
+- **Character**: the existing \`config/npcs/hobunji-starter-npc-database.json\` NPC list, plus a separate species dropdown from \`config/species/index.json\`
+- **Frozen pose**: an indexed snapshot of the canonical \`HeldActionAnimations\` presets (no fabricated Attack Animation Editor exports)
+- **Texture**: actual PNG filenames in \`assets/textures/\`
+- **Weapons**: actual PNGs in \`assets/toolsprites/\`; Add/Clear controls support multi-layer weapons, while the original textarea remains an Advanced fallback
+
+\`config/statue-author-asset-index.json\` contains the material, weapon-sprite, and shared-animation index. It is generated/checked by
+\`node scripts/generate-statue-author-index.js --write\` / \`node scripts/generate-statue-author-index.js\`.
+A new PNG or authored held-action pose becomes selectable after updating this checked-in manifest. Species and NPCs stay sourced directly from their own authoritative indexes. A separate custom NPC/animation import is still available under Advanced for files not yet authored in the repository.
+
+**Generate Random Hero** keeps the selected species instead of rolling the gang's species weights. It uses \`HobunjiBanditEquipmentPools.rollCaptainHero\`—the same \`clothingCandidates\` function now called by \`BanditCombat\` and the same \`allowedMeleeShapes\` restriction now called by \`WeaponTrustBanditLoadouts\`. The actual bandit config supplies clothing, ranked metal tier, and the ranged-weapon pool; the actual species definition supplies cosmetic whitelists/weights, and cultural melee weapons require the species of the trust-gift NPC. No second whitelist or random weapon catalog exists inside Statue Author.
+
+Captain gear comes from \`BanditRankWardrobe.style\` and \`MetalArmorSystem.makeCraftedItem\` so the hero gets real rounded pauldrons and a metal circlet when supported, not fabricated armor textures. \`MetalArmorSystem.decorateAvatarDataWithMetalArmor\` adds real metal portrait data before rendering. The hero holds a real indexed melee weapon in the right hand and a captain-pool ranged weapon in the left, both as editable furniture child pieces. \`__hobunjiStatueDebug()\` includes the exact rolled species, cosmetic IDs, armor IDs/alloy and weapon shape/ranged selection for mobile inspection.
+
+A successful dropdown/pool unit test is not a substitute for live visual review. \`scripts/smoke-statue-author-browser.js\` exercises the actual mobile controls, assembles a Mao-ao hero with both weapons, verifies captain armor and image readiness, and saves screenshots. Full procedural attack-animation IK baking remains outside this feature.
