@@ -157,6 +157,16 @@ api.decorate(root, 'grappleFlail', { shapeKey:'grappleFlail' }, { THREE });
   for (let i = 0; i < 25 && api.debugSnapshot().filter(item => item.dualFlail?.replica && item.loaded).length !== 2; i++) await Promise.resolve();
   assert.equal(api.debugSnapshot().filter(item => item.dualFlail?.replica && item.loaded).length, 2, 'both replica assemblies finish loading');
   assert.equal(api.syncDualWield(root, dualMain, dualOff, true), true, 'switch to both real connectors only when complete');
+  const physicsOwners = api.debugSnapshot(); // Count actual simulated owners; GPU meshes still exist separately for both hands.
+  assert.equal(physicsOwners.filter(item => item.dualFlail?.physics === 'simulated').length, 1,
+    'dual-wield flails integrate only the source pendulum, never two additional physics states');
+  assert.equal(physicsOwners.filter(item => item.dualFlail?.physics === 'shared-world-sway').length, 2,
+    'both visible ropes follow that one world-space sway vector');
+  api.setAction(root, { attacking:true, progress:.55, windupFrac:.16, strikeFrac:.28 });
+  api.syncDualWield(root, dualMain, dualOff, true);
+  const copiedAction = api.debugSnapshot().filter(item => item.dualFlail?.replica);
+  assert(copiedAction.every(item => item.attacking && item.progress === .55),
+    'shared sway keeps both heads in the source attack phase without a second pendulum');
   assert.equal(root.children.find(child => child.name === 'flail_ruin_rope').visible, false, 'original single rope is hidden');
   assert.equal(head.visible, false, 'original single head is hidden');
   const dualMainRope = dualMain.children.find(child => child.name === 'flail_ruin_rope'); // Per-hand connector instance for render and disposal checks.
