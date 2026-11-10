@@ -48,15 +48,29 @@ materials use two independent passes:**
    pieces share the original 256px portrait atlas and its origin, so their
    material grain lines up when imported as separate furniture parts. Weapons
    inherit an approximate projected atlas offset from their attachment pose;
-   separate 3D hands/feet use the same full material PNG on their mesh UVs.
+   separate 3D hands/feet use the same processed overlay material on their mesh UVs.
 
 Unlike the earlier experiment, the texture's dark border is **not fitted to
 each region**. The black ink creates the cell boundaries; the material simply
 passes over them. The selected base color is independent of stone, wood or any
 other texture, and the entire hierarchy remains editable. The chosen finish is
-used on GLB limbs as a cached, opaque base-color-plus-grayscale map. For
-lighting, statue materials retain `MeshLambertMaterial`; the earlier unlit
-experiment darkened the real Pahu browser preview.
+used on GLB limbs as a cached, opaque base-color-plus-grayscale map.
+
+**Brightness consistency fix:** Some material PNGs, especially
+`carved_smooth.png`, have a nearly black *outer perimeter* intended for
+individual tiles. When the whole source PNG was stretched across a statue, its
+perimeter darkened the hood and head more than the body, and GLBs could sample
+the dark corner repeatedly. The source is now center-cropped **once** by 16%
+on every side into a cached 256×256 atlas used by the head, body and all limbs;
+the entire atlas remains continuous across the statue, never restarted at
+each outlined cell. Non-ink/alpha pixels still retain the canonical color-fill
+shading. Where a hand/foot GLB lacks usable UV coordinates, the Statue Author
+generates UVs from its two broadest geometric axes without modifying the
+original asset or other furniture. All statue parts use
+`MeshBasicMaterial` because their authored source shading is already
+in the pixel colors; preview lights/normals must not darken the limbs
+relative to the portrait. The mobile diagnostics expose actual material
+brightness and generated/authored UV status.
 
 The mobile preview stays visible while scrolling and exposes original
 front/back/head canvases plus copyable shading-region and material diagnostics.
@@ -69,7 +83,9 @@ original black ink and a shared brightness-transparent overlay. The mapper is
 also exercised by `scripts/test-statue-surface-cells.js`, including
 independent brightness references, white-inclusive fills, grayscale alpha,
 unmodified outlines and transparency, all-black weapon silhouettes, and
-malformed source rejection.
+malformed source rejection. The test also checks that missing/flat GLB UVs
+receive valid projected coordinates, existing authored UVs survive, and the
+PNG is center-cropped once and reused as a shared atlas.
 
 To install a reusable authored statue in game content, save the exported JSON
 as `docs/config/furniture-authored/<key>.json` and register its key
