@@ -138,8 +138,13 @@
         cookingCategories: [BLEND_CATEGORY],
         foodEffects: { [effect]: BLEND_STACKS },
         cookingDefaultStars: 3,
+        cookingProcessMultiplier: global.ItemProcessing?.processBuffMultiplier?.('teaGrinding') || 1, // Nine Leaf Tea inherits the Tea Grinder's manual-hour buff stage.
+        cookingProcessSteps: [{ method: 'teaGrinding', baseHours: global.ItemProcessing?.baseProcessHours?.('teaGrinding') || 0.5 }], // Mobile diagnostics expose provenance of the tea-grinding stage.
       }; // Used by CookingSystem so the blend contributes its exact stored buff amount to Nine Leaf Tea.
     }
+    const blend = deps.ITEM_DEFS[key]; // Older saves created this definition before process inheritance existed.
+    blend.cookingProcessMultiplier ||= global.ItemProcessing?.processBuffMultiplier?.('teaGrinding') || 1;
+    blend.cookingProcessSteps ||= [{ method: 'teaGrinding', baseHours: global.ItemProcessing?.baseProcessHours?.('teaGrinding') || 0.5 }];
     return key;
   }
 

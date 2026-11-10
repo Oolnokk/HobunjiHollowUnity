@@ -104,11 +104,11 @@ canvas{display:block;width:100%;height:100%}
 }
 </style>
 <script src="../../js/panel-ui.js?v=20261109htzizpanelentry1"></script>
-<script src="../../config/weapon-sprite-assemblies.js?v=20261109ropebrown3"></script>
+<script src="../../config/weapon-sprite-assemblies.js?v=20261110flailspecies3"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/tool-metal-recolor.js?v=20261030rigall5"></script>
 <script src="../../js/weapon-layer-effects.js?v=20261109flailFireGC2"></script>
-<script src="../../js/weapon-sprite-assemblies.js?v=20261110flailorder2"></script>
+<script src="../../js/weapon-sprite-assemblies.js?v=20261110flailspecies3"></script>
 <!-- Three.js r128 ESM — matches the version used by the main game (docs/index.html) -->
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.128.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.128.0/examples/jsm/"}}</script>
 </head>
@@ -333,10 +333,13 @@ canvas{display:block;width:100%;height:100%}
 <script src="../../js/combat/shared-attack-pose.js?v=20261030h12f55f4"></script>
 <script src="../../js/combat/melee-pose-spacing.js?v=20260920spacing2"></script>
 <script src="../../js/combat/attack-pose-templates.js?v=20261017a"></script>
+<script src="../../js/festival-ancestor-figures.js?v=20261109festivalMerge2"></script> <!-- Shared carved_smooth portrait recoloring; the Statue Author reuses the exact Tzizkhanash mask. -->
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
+// Statue Author freezes the already-assembled rig into reusable furniture geometry.
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 
 const $ = id => document.getElementById(id);
 const logLines = [];
@@ -457,7 +460,9 @@ function ensureCosmetics() {
   }
   return _cosmeticsReady;
 }
+let statueNpcExport = null; // Optional source NPC portrait record, used by the Statue Author without altering ordinary attack editing.
 function buildDefaultAvatarExport(speciesId, gender) {
+  if (statueNpcExport?.appearance?.speciesId===speciesId && statueNpcExport?.appearance?.gender===gender) return statueNpcExport; // Character Studio appearance remains authoritative until the preview species/gender changes.
   return {
     schema: 'npc_avatar_editor_export.v1',
     source: 'attack-animation-editor default',
@@ -766,16 +771,23 @@ function populateGenderSelect(speciesId, preferred) {
 }
 $('avatarSpecies').innerHTML = SPECIES_LIST.map(s => `<option value="${s.id}">${s.label}</option>`).join('');
 populateGenderSelect(SPECIES_LIST[0].id, 'male');
+let statueAvatarRebuildPromise=Promise.resolve(); // The Statue Author awaits whichever NPC rebuild the editor started most recently.
+function trackedAvatarRebuild(speciesId,gender){
+  statueAvatarRebuildPromise=rebuildAvatar(speciesId,gender);
+  return statueAvatarRebuildPromise;
+}
 $('avatarSpecies').addEventListener('change', () => {
+  statueNpcExport=null; // A deliberate preview species change discards the previously imported NPC identity.
   const speciesId = $('avatarSpecies').value;
   populateGenderSelect(speciesId, $('avatarGender').value);
-  rebuildAvatar(speciesId, $('avatarGender').value).catch(e => logDebug('Avatar rebuild failed: ' + e.message));
+  trackedAvatarRebuild(speciesId, $('avatarGender').value).catch(e => logDebug('Avatar rebuild failed: ' + e.message));
 });
 $('avatarGender').addEventListener('change', () => {
-  rebuildAvatar($('avatarSpecies').value, $('avatarGender').value).catch(e => logDebug('Avatar rebuild failed: ' + e.message));
+  statueNpcExport=null; // Never export a new gender using a stale imported NPC record.
+  trackedAvatarRebuild($('avatarSpecies').value, $('avatarGender').value).catch(e => logDebug('Avatar rebuild failed: ' + e.message));
 });
 
-rebuildAvatar($('avatarSpecies').value, $('avatarGender').value)
+trackedAvatarRebuild($('avatarSpecies').value, $('avatarGender').value)
   .catch(e => logDebug('Avatar rebuild failed: ' + e.message));
 
 // toolHolder is what the authored pose (pos+pitch+yaw+roll) actually drives.
@@ -2688,6 +2700,176 @@ window.HobunjiAttackEditorState = Object.freeze({
   },
 });
 
+// Statue Author bridge: capture the existing live preview rig, not a second pose solver.
+// Meshes are baked to world positions before export so no combat, NPC or weapon updates
+// are needed when these are placed as ordinary furniture pieces in ruins/wilderness.
+function loadStatueFinish(filename) {
+  if (!['boards.png','carved_smooth.png','canvas.png','iridescent_sheen.png'].includes(filename)) {
+    throw Error('Choose a supported statue finish.');
+  }
+  return new Promise((resolve,reject) => {
+    const image = new Image(); // The selected finish is read back from a canvas during capture.
+    image.crossOrigin = 'anonymous';
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(Error('The finish texture could not load: '+filename));
+    image.src = '../../assets/textures/'+filename;
+  });
+}
+function statueTexture(source, finishImage, cache) {
+  const cacheKey=source||'__untextured_statue__'; // GLB limbs with no source texture still use the same finish.
+  if (cache.has(cacheKey)) return cache.get(cacheKey);
+  const image = source?.image;
+  const width = source ? (image?.width || image?.naturalWidth) : 256;
+  const height = source ? (image?.height || image?.naturalHeight) : 256;
+  if (!(width > 0 && height > 0)) throw Error('A statue mesh has an unloaded sprite texture. Try the export again after its artwork appears.');
+  const original = document.createElement('canvas');original.width=width;original.height=height;
+  const ctx=original.getContext('2d',{willReadFrequently:true});
+  try { if(source)ctx.drawImage(image,0,0,width,height);else{ctx.fillStyle='#ffffff';ctx.fillRect(0,0,width,height);} }
+  catch (error) { throw Error('Could not read a statue sprite: '+String(error.message||error)); }
+  const carved=window.FestivalAncestorFigures.carvedCanvas(original,finishImage);
+  const texture=window.HobunjiSpritePngSurface.makeCanvasTexture(THREE,carved,'Statue finish');
+  texture.encoding=THREE.sRGBEncoding; // r128's GLTF exporter reads encoding rather than colorSpace.
+  texture.flipY=source?.flipY!==false;
+  if(source){ // Preserve source UV transforms, including portrait mirroring and trimmed weapon sprites.
+    texture.wrapS=source.wrapS;texture.wrapT=source.wrapT;
+    texture.repeat.copy(source.repeat);texture.offset.copy(source.offset);
+    texture.center.copy(source.center);texture.rotation=source.rotation;
+    texture.matrixAutoUpdate=source.matrixAutoUpdate;
+    if(!source.matrixAutoUpdate)texture.matrix.copy(source.matrix);
+  }
+  texture.needsUpdate=true;
+  cache.set(cacheKey,texture);
+  return texture;
+}
+function freezeStatueGeometry(mesh) {
+  const geometry=mesh.geometry.clone(); // Never mutate the gameplay/editor rig's buffers.
+  if (mesh.isSkinnedMesh) {
+    if (typeof mesh.boneTransform!=='function')throw Error('Skinned avatar geometry cannot be frozen on this Three.js build.');
+    mesh.skeleton?.update();
+    const positions=geometry.getAttribute('position'),point=new THREE.Vector3();
+    for(let i=0;i<positions.count;i++){
+      point.fromBufferAttribute(mesh.geometry.getAttribute('position'),i); // r128 boneTransform requires the ORIGINAL vertex coordinate as input.
+      mesh.boneTransform(i,point);
+      positions.setXYZ(i,point.x,point.y,point.z);
+    }
+    geometry.deleteAttribute('skinIndex');geometry.deleteAttribute('skinWeight');
+    positions.needsUpdate=true;
+    geometry.computeVertexNormals();
+  }
+  if(!geometry.getAttribute('uv')){
+    geometry.computeBoundingBox();
+    const bounds=geometry.boundingBox,size=bounds.getSize(new THREE.Vector3());
+    const a=size.x>=size.z?'x':'z',v=size.y>0.0001?'y':(a==='x'?'z':'x'); // Untextured GLB limbs use a stable planar stone projection.
+    const positions=geometry.getAttribute('position'),uv=[];
+    for(let i=0;i<positions.count;i++){const p=new THREE.Vector3().fromBufferAttribute(positions,i);uv.push((p[a]-bounds.min[a])/Math.max(.0001,size[a]),(p[v]-bounds.min[v])/Math.max(.0001,size[v]));}
+    geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+  }
+  geometry.applyMatrix4(mesh.matrixWorld); // Freeze source hierarchy, body yaw, hand, leg and weapon transforms.
+  return geometry;
+}
+async function bakeStatuePiece({poseKey='neutral',includeWeapon=true,name='Posed figure',finish}={}) {
+  if(!['neutral','windup','strike'].includes(poseKey))throw Error('Choose Neutral, Windup or Strike.');
+  try{await statueAvatarRebuildPromise;}catch(error){throw Error('NPC avatar rebuild failed: '+error.message);}
+  if(!avatarModel)throw Error('NPC preview rig has not loaded yet.');
+  if(includeWeapon && !toolPlaneMesh)throw Error('The chosen weapon has not finished loading.');
+  const assembly=window.HobunjiWeaponSpriteAssemblies?.debugSnapshot?.().find(record=>record.itemKey===currentToolKey&&record.attached);
+  if(includeWeapon&&assembly&&!assembly.loaded)throw Error('The weapon assembly is still loading its connector/head/layers. Export only when the whole weapon is visible.');
+  const finishImage=await loadStatueFinish(finish); // Load on demand so regular Attack Editor sessions do not request a statue texture.
+  const previousPlaying=playing,previousT=previewT,previousPhase=editPhase; // Restores the source editor after capture.
+  const exportGroup=new THREE.Group(),textures=new Map(); // One shared carved canvas per source sprite.
+  let meshCount=0,weaponCount=0,skinnedCount=0;
+  try{
+    playing=false; // Prevent an animated frame from changing the pose during export.
+    selectEditPhase(poseKey); // Existing hand/shoulder controls follow the active keyframe; do not capture stale phase hands.
+    const sample=phasePreviewT(poseKey);
+    previewT=sample; $('scrub').value=sample; updateTimelineMarker(sample);
+    applyPoseToRig(anim.poses[poseKey]);
+    editorLegs?.update?.(0,0,true,null,{});
+    await new Promise(resolve=>requestAnimationFrame(resolve)); // Let existing hand/weapon frame owners settle before freezing the rig.
+    if(previewT!==sample)throw Error('The editor pose changed during the statue capture.');
+    replayPreviewFlail(sample); // Existing deterministic swing reconstruction fixes chain/head at the authored phase, not an idle droop.
+    applyPoseToRig(anim.poses[poseKey]); // Reassert the exact authored phase after the hand/weapon frame owner synchronizes.
+    updatePreviewFlail(sample,0); // Reanchor the rope after the exact keyframe without advancing simulated time.
+    rig.updateMatrixWorld(true);
+    const capture=(root,weapon=false)=>{
+      root?.traverse(node=>{
+        if(!node.isMesh||!node.visible||!node.geometry?.getAttribute?.('position'))return;
+        if(/(?:^|[_ -])(debug|gizmo|guide|marker|hitbox|reticle|xray)(?:$|[_ -])/i.test(node.name||'')||node.userData?.referenceShape==='folded-paper-grasp')return; // Only the posed character and weapon, never editor calibration overlays.
+        for(let parent=node.parent;parent&&parent!==root;parent=parent.parent)if(parent.visible===false)return;
+        const originalMaterials=Array.isArray(node.material)?node.material:[node.material];
+        const materials=originalMaterials.map(original=>{
+          const map=statueTexture(original?.map,finishImage,textures);
+          return window.HobunjiSpritePngSurface.makeMaterial(THREE,map,'Statue finish',{
+            side:THREE.DoubleSide
+          });
+        });
+        const mesh=new THREE.Mesh(freezeStatueGeometry(node),Array.isArray(node.material)?materials:materials[0]);
+        mesh.name=(weapon?'statue_weapon_':'statue_body_')+meshCount;
+        exportGroup.add(mesh);
+        meshCount++;if(weapon)weaponCount++;if(node.isSkinnedMesh)skinnedCount++;
+      });
+    };
+    capture(characterBodyScaleRoot);
+    if(includeWeapon)capture(toolPlaneMesh,true);
+    if(!meshCount)throw Error('No visible statue geometry was captured.');
+    if(includeWeapon&&!weaponCount)throw Error('The weapon has no visible geometry to capture.');
+    const bounds=new THREE.Box3().setFromObject(exportGroup);
+    const dimensions=bounds.getSize(new THREE.Vector3());
+    if(![dimensions.x,dimensions.y,dimensions.z].every(n=>Number.isFinite(n))||dimensions.x<=0||dimensions.y<=0)throw Error('The frozen statue has invalid bounds.');
+    dimensions.z=Math.max(.01,dimensions.z); // Flat PNG-plane statues are valid furniture, even when a species has no volumetric limb assets.
+    // Static artwork is exported in the very same world-scale rig space displayed in Attack Editor.
+    const buffer=await new Promise((resolve,reject)=>{ // Three.js r128: parse(input, onDone, options), NOT the newer four-argument form.
+      try{new GLTFExporter().parse(exportGroup,resolve,{binary:true,onlyVisible:true});}catch(error){reject(error);}
+    });
+    if(!(buffer instanceof ArrayBuffer))throw Error('GLTFExporter did not produce binary GLB data.');
+    const url=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(reader.error);reader.readAsDataURL(new Blob([buffer],{type:'model/gltf-binary'}));});
+    const npc=statueNpcExport ? JSON.parse(JSON.stringify(statueNpcExport)) : buildDefaultAvatarExport(currentSpeciesId,currentGender);
+    const part={
+      kind:'glb',id:'statue_'+Date.now().toString(36),name:String(name).trim().slice(0,96)||'Posed figure',
+      modelPath:url,preserveMaterials:true,statueBaked:true,
+      statueSource:{schema:'hobunji_statue_source.v1',npc,animation:exportAnimObject(),poseKey,finish,toolKey:includeWeapon?currentToolKey:null},
+      color:'#ffffff',
+      transform:{x:0,y:dimensions.y/2,z:0,rx:0,ry:0,rz:0,
+        sx:dimensions.x,sy:dimensions.y,sz:dimensions.z}
+    };
+    return {schema:'hobunji_statue_piece.v1',part,bytes:buffer.byteLength,meshCount,weaponCount,skinnedCount,glb:buffer};
+  }finally{
+    for(const child of [...exportGroup.children]){
+      child.geometry?.dispose?.();const mats=Array.isArray(child.material)?child.material:[child.material];
+      mats.forEach(material=>material?.dispose?.());
+    }
+    for(const texture of textures.values())texture.dispose();
+    previewT=previousT;playing=previousPlaying;
+    selectEditPhase(previousPhase,{focus:false});
+    $('scrub').value=previousT;
+    updateTimelineMarker(previousT);
+    try{replayPreviewFlail(previousT);applyPoseToRig(poseAt(previousT).pose);}catch(error){logDebug('Restoring preview after statue export failed: '+error.message);}
+  }
+}
+window.HobunjiStatuePoseSource=Object.freeze({
+  async setNpcExport(record){
+    const npc=record?.appearance?record:record?.avatarExport?.appearance?record.avatarExport:null;
+    if(!npc?.appearance?.speciesId||!npc?.appearance?.gender)throw Error('Import a Character Studio NPC export with appearance.speciesId and appearance.gender.');
+    statueNpcExport=JSON.parse(JSON.stringify(npc));
+    const species=npc.appearance.speciesId,gender=npc.appearance.gender;
+    if(![...$('avatarSpecies').options].some(option=>option.value===species))$('avatarSpecies').add(new Option(species,species));
+    $('avatarSpecies').value=species;
+    populateGenderSelect(species,gender);
+    if($('avatarGender').value!==gender)$('avatarGender').add(new Option(gender,gender));
+    $('avatarGender').value=gender;
+    await trackedAvatarRebuild(species,gender);
+    applyPoseToRig(anim.poses[editPhase]);
+    return true;
+  },
+  async clearNpcExport() {
+    statueNpcExport=null;
+    await trackedAvatarRebuild($('avatarSpecies').value,$('avatarGender').value);
+    applyPoseToRig(anim.poses[editPhase]);
+  },
+  capture:bakeStatuePiece,
+  snapshot:()=>({poseKey:editPhase,toolKey:currentToolKey,npcId:statueNpcExport?.id||null}),
+});
+
 function resize() {
   const r = $('viewport').getBoundingClientRect();
   renderer.setSize(r.width, r.height, false);
@@ -2708,6 +2890,16 @@ function updatePreviewFlail(sampleT, sampleDt) {
     pitchTravelDeg: (Number(anim.poses?.strike?.pitch) || 0) - (Number(anim.poses?.windup?.pitch) || 0),
   }); // Shared runtime keeps gravity through windup, straightens during strike, and releases physical momentum during Hold.
   window.HobunjiWeaponSpriteAssemblies?.tick(sampleDt); // No gameplay scheduler runs in the standalone ESM preview.
+}
+function replayPreviewFlail(targetT) {
+  applyPoseToRig(poseAt(0).pose);
+  updatePreviewFlail(0,0);
+  const steps=Math.ceil(targetT*Math.max(.05,anim.durationS)*120); // The same 120Hz deterministic replay as the existing paused-scrub preview.
+  for(let step=1;step<=steps;step++){
+    const t=targetT*step/steps;
+    applyPoseToRig(poseAt(t).pose);
+    updatePreviewFlail(t,Math.max(.05,anim.durationS)*targetT/steps);
+  }
 }
 
 let lastFrameTime = performance.now();
@@ -2730,14 +2922,7 @@ function animate() {
   controls.update();
   const flailPreviewChanged = previewT !== lastFlailPreviewT; // Paused scrubbing reconstructs momentum from the complete preceding swing.
   if (!playing && flailPreviewChanged) {
-    applyPoseToRig(poseAt(0).pose);
-    updatePreviewFlail(0, 0);
-    const replaySteps = Math.ceil(previewT * Math.max(0.05, anim.durationS) * 120); // Same physical timeline at 120 Hz, including direct seeks into Hold.
-    for (let step = 1; step <= replaySteps; step++) { // Only replay on a changed scrub position, never continuously while paused.
-      const sampleT = previewT * step / replaySteps; // Normalized replay time supplies both pose and connector input.
-      applyPoseToRig(poseAt(sampleT).pose);
-      updatePreviewFlail(sampleT, Math.max(0.05, anim.durationS) * previewT / replaySteps);
-    }
+    replayPreviewFlail(previewT); // Same shared reconstruction used by the Statue Author; no duplicated flail solver.
     refreshPreviewDebug(); // Existing mobile debug panel shows the reconstructed physical state.
   } else updatePreviewFlail(previewT, playing ? dt : 0);
   lastFlailPreviewT = previewT;

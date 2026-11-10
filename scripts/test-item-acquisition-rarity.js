@@ -94,6 +94,20 @@ crops.attach({cropData:nativeCrop,ITEM_DEFS:nativeDefs,inventory:{},inventoryIte
 const importedHeftroot=crops.ensure('cv_heftroot_333333');
 assert(nativeDefs[importedHeftroot.id].sellPrice > Math.round(34*1.2),'real crop selling value includes scarcity');
 assert(nativeDefs[importedHeftroot.seedKey].sellPrice > Math.round(5*1.4),'real seed selling value includes scarcity');
+// The expected stock count uses the same quantity range as a real seed offer.
+const savedCrops = globalThis.CropVarieties;
+globalThis.CropVarieties = crops;
+try {
+  const stock = rarity.item(importedHeftroot.seedKey,{townValue:2});
+  assert(Math.abs(stock.expectedOfferedSeedsPerDay - .21 * 4/55 * 3.5) < 1e-12);
+  assert.equal(rarity.item(importedHeftroot.seedKey,{caravanEligible:false}).expectedOfferedSeedsPerDay,0);
+  assert.equal(rarity.item(importedHeftroot.seedKey,{caravanEligible:null}).expectedOfferedSeedsPerDay,null);
+  assert.equal(rarity.item(importedHeftroot.id).expectedOfferedSeedsPerDay,null,'caravans list seed quantities, not harvested produce');
+  assert.equal(crops.offers(()=>0)[0].qty,crops.REGIONAL_SEED_STOCK.min);
+  assert.equal(crops.offers(()=>.999)[0].qty,crops.REGIONAL_SEED_STOCK.max);
+} finally {
+  globalThis.CropVarieties = savedCrops;
+}
 const childHeftroot=crops.breed(importedHeftroot.id,'heftroot',()=>.6);
 assert.equal(crops.lastBreeding.offspring,childHeftroot.id,'last breeding reports real registered child');
 assert.equal(crops.lastBreeding.parentA,importedHeftroot.id);

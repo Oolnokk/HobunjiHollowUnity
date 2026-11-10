@@ -579,6 +579,7 @@
       alcoholBottleSwigs: {},         // { [itemKey]: remainingSwigs } for the currently open bottle in each stack
       npcAlcoholState: {},            // { [npcId]: { sobriety, blackoutUntilMinute, lastDrinkKey } }
       alchemyKnownEffects: {},        // { [reagentKey]: [effectIndex, ...] } — discovered reagent effects
+      alchemyFavoriteRecipes: [],     // Exact saved reagent combinations for this member.
       alchemyActiveEffects: [],       // [{ key, remainingS }] — still-active buffs/debuffs at last save
       alchemyReagentState: {},        // { [zoneMapId]: { day, placements: [{col,row,key}] } }
       cookingState: {},               // quality buckets, generated meals, and active food effects
@@ -1494,6 +1495,7 @@
       npcDiscoveredGiftTraits: { ...(memberState.npcDiscoveredGiftTraits || {}) },
       alchemyKnownEffects: { ...(memberState.alchemyKnownEffects || {}) },
       alchemyKnownRecipes: [...(memberState.alchemyKnownRecipes || [])],
+      alchemyFavoriteRecipes: Array.isArray(memberState.alchemyFavoriteRecipes) ? [...memberState.alchemyFavoriteRecipes] : [],
       alchemyActiveEffects: [...(memberState.alchemyActiveEffects || [])],
       alchemyReagentState: { ...(memberState.alchemyReagentState || {}) },
       knownFurnitureBlueprints: [...(memberState.knownFurnitureBlueprints || [])],
@@ -1879,6 +1881,7 @@
       playerData.npcDiscoveredGiftTraits = { ...(memberState.npcDiscoveredGiftTraits || {}) };
       playerData.alchemyKnownEffects = { ...(memberState.alchemyKnownEffects || {}) };
       playerData.alchemyKnownRecipes = [...(memberState.alchemyKnownRecipes || [])];
+      playerData.alchemyFavoriteRecipes = Array.isArray(memberState.alchemyFavoriteRecipes) ? [...memberState.alchemyFavoriteRecipes] : [];
       playerData.alchemyActiveEffects = [...(memberState.alchemyActiveEffects || [])];
       playerData.alchemyReagentState = { ...(memberState.alchemyReagentState || {}) };
       playerData.knownFurnitureBlueprints = [...(memberState.knownFurnitureBlueprints || [])];

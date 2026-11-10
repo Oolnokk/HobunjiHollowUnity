@@ -1152,13 +1152,17 @@
     const job = obj.getJob ? obj.getJob() : null;
     const list = livestock || (def.method === 'squeezing' ? deps._loadWorldLivestock() : null);
     const worker = def.method === 'squeezing' && list ? list.find(l => l.assignedVatId === obj.id && window.DewVats.vatCanAccept(l.kind, l.genotype)) : null;
-    if (job?.kind === 'timed') {
-      const secondsLeft = Math.max(0, Math.ceil((Number(job.readyAtMs) - Date.now()) / 1000)); // Used to mirror the live authored-process countdown shown at the vat.
-      return { status: 'working', label: `Squeezing — ${secondsLeft}s${worker ? ` · ${worker.name}` : ''}`, worker };
-    }
-    if (isAging && job) {
-      const daysLeft = Math.max(0, job.readyDay - deps.calendar.day);
-      return daysLeft > 0 ? { status: 'working', label: `Aging — ${daysLeft}d left` } : { status: 'ready', label: 'Ready to collect' };
+    if (job) {
+      const currentHour = window.ItemProcessing?.gameHour?.(); // Used to report the same in-game deadline as the processor object.
+      const baseHours = window.ItemProcessing?.baseProcessHours?.(def.method) || 1;
+      const remainingHours = Number.isFinite(currentHour) && Number.isFinite(Number(job.readyAtGameHour)) && job.readyAtGameHour != null
+        ? Math.max(0, Number(job.readyAtGameHour) - currentHour)
+        : job.readyDay != null ? Math.max(0, (Number(job.readyDay) - deps.calendar.day) * 24)
+        : Math.max(0, Number(job.legacyRemainingHours ?? job.durationHours) || baseHours);
+      const label = isAging ? 'Aging' : def.name; // Keep vats, mills, racks and smokers distinguishable on the farm's mobile processor grid.
+      return remainingHours > 0
+        ? { status: 'working', label: `${label} — ${window.ItemProcessing?.formatProcessHours?.(remainingHours) || remainingHours.toFixed(1) + 'h'} left${worker ? ` · ${worker.name}` : ''}`, worker }
+        : { status: 'ready', label: 'Ready to collect', worker };
     }
     if (worker) return { status: 'livestock', label: `Worked by ${worker.name}`, worker };
     return { status: 'idle', label: 'Idle' };

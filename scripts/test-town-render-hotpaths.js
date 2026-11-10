@@ -350,7 +350,7 @@ assert.equal(resolveScope({ parent: actorScene }, actorScene, new Map()), null, 
 
 const groupEnd = heldRender.indexOf('  function installGroundElevationShader(', elevationHelperEnd);
 const groupMeshes = new Function('actorXrayScope', 'replayScissorRect', 'isReplayCullable', heldRender.slice(elevationHelperEnd, groupEnd).replace(
-  '  function rectsOverlap', `  const XRAY_TILE_RADIUS = 1, XRAY_MAX_BATCH_TILES = 8, XRAY_ELEVATION_GROUP_EPSILON = 0.05, XRAY_ELEVATION_TOLERANCE = 0.18;
+  '  function rectsOverlap', `  const XRAY_TILE_RADIUS = 1, XRAY_TILE_EDGE_EPSILON = 0.0001, XRAY_MAX_BATCH_TILES = 8, XRAY_ELEVATION_GROUP_EPSILON = 0.05, XRAY_ELEVATION_TOLERANCE = 0.18;
   let lastElevationReplayGroups, lastUnknownElevationMeshes, lastXrayTileRegions, lastXrayOrdinaryMeshes, scissorMinimumWorldY = 2;
   const xrayGearRect = {}, xrayGroundRect = {};
   const point = () => ({ set(x, y, z) { Object.assign(this, { x, y, z }); } });
@@ -380,7 +380,7 @@ assert.equal(groupMeshes({}, actorScene, eyeAbove, [a], 0.01).groups.length, 1, 
 
 const shaderStart = heldRender.indexOf('  function installGroundElevationShader(');
 const shaderEnd = heldRender.indexOf('  function collectGroundElevationMaterials(', shaderStart);
-const installElevationShader = new Function('XRAY_ELEVATION_TOLERANCE', 'XRAY_GROUND_NORMAL_MIN_Y', 'XRAY_MAX_BATCH_TILES', 'XRAY_TILE_RADIUS', heldRender.slice(shaderStart, shaderEnd) + elevationNewline + 'return installGroundElevationShader;')(0.18, 0.55, 8, 1);
+const installElevationShader = new Function('XRAY_ELEVATION_TOLERANCE', 'XRAY_GROUND_NORMAL_MIN_Y', 'XRAY_MAX_BATCH_TILES', 'XRAY_TILE_RADIUS', 'XRAY_TILE_EDGE_EPSILON', heldRender.slice(shaderStart, shaderEnd) + elevationNewline + 'return installGroundElevationShader;')(0.18, 0.55, 8, 1, 0.0001);
 const groundMaterial = { userData: {}, needsUpdate: false };
 const groundShaderState = installElevationShader(groundMaterial);
 groundShaderState.geometryHasNormals = true; // setGroundElevationFilter records this before the first compile.
@@ -415,7 +415,7 @@ assert.ok(standardGroundShader.vertexShader.indexOf('#ifdef USE_BATCHING') < sta
 assert.ok(standardGroundShader.vertexShader.includes('mat3(modelMatrix) * hobunjiXrayObjectNormal') && standardGroundShader.vertexShader.includes('mat3(instanceMatrix) * hobunjiXrayObjectNormal'),
   'world normals follow the model and instance rotations (instanced path bricks)');
 assert.ok(standardGroundShader.fragmentShader.includes('gl_FrontFacing') && standardGroundShader.fragmentShader.includes('vHobunjiXrayWorldNormal.y >= 0.55') && standardGroundShader.fragmentShader.includes('discard;'), 'only same-height top faces are discarded');
-assert.ok(standardGroundShader.fragmentShader.includes('uHobunjiXrayAnyFacing > 0.5 ||'), 'path surfaces may opt out of the top-face-only rule');
+assert.ok(standardGroundShader.fragmentShader.includes('uHobunjiXrayAnyFacing > 0.5 ||'), 'slab and path surfaces may opt out of the top-face-only rule');
 assert.equal(standardGroundShader.uniforms.uHobunjiXrayAnyFacing, groundShaderState.uniforms.anyFacing);
 assert.equal(standardGroundShader.uniforms.uHobunjiXrayActorElevation, groundShaderState.uniforms.elevation);
 const basicMaterial = { userData: {}, needsUpdate: false };
@@ -488,6 +488,9 @@ const instancedBrickMaterial = { userData: {}, needsUpdate: false };
 collect([{ material: instancedBrickMaterial, isInstancedMesh: true, road: true, geometry: drawable({ normal: {} }) }]);
 assert.equal(instancedBrickMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, true, 'instanced path bricks keep their normals');
 assert.equal(instancedBrickMaterial.userData.hobunjiXrayElevationShader.uniforms.anyFacing.value, 1, 'path bricks x-ray on every face in the holder’s floor neighborhood');
+const interiorSlabMaterial = { userData: { hobunjiInteriorFloorMaterial: true } }; // Shared material used by the gameplay interior tile builder.
+collect([{ material: interiorSlabMaterial, geometry: drawable({ normal: {} }) }]);
+assert.equal(interiorSlabMaterial.userData.hobunjiXrayElevationShader.uniforms.anyFacing.value, 1, 'interior tile sides must not clip the weapon at floor seams');
 assert.equal(sharedGroundMaterial.userData.hobunjiXrayElevationShader.uniforms.anyFacing.value, 0, 'terrain keeps its walls and cliff faces as occluders');
 assert.match(heldRender, /buildXrayGroups\(this, scene, camera, xrayMeshes, shellPadding\)/,
   'shell outlines use the same holder tile scope as the visible overlay');

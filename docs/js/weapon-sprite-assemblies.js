@@ -226,6 +226,7 @@
         chainLocal: new THREE.Vector3(), headLocal: new THREE.Vector3(), tmp: new THREE.Vector3(),
         baseQ: new THREE.Quaternion(), rootInverseQ: new THREE.Quaternion(), rootWorldQ: new THREE.Quaternion(), decomposePos: new THREE.Vector3(), // World matrices are decomposed in place; Object3D.getWorld*() would recompute from raw local transforms.
         inverseRootMatrix: new THREE.Matrix4(), // Converts both suspended parts back into their own baked holder frame without invoking worldToLocal().
+        rootInverseWorld: new THREE.Matrix4(), partWorldMatrix: new THREE.Matrix4(), partWorldScale: new THREE.Vector3(), // Exact world-space rope/head transforms cancel non-uniform species body scaling.
         worldQ: new THREE.Quaternion(), headQ: new THREE.Quaternion(), correction: new THREE.Quaternion(),
         deltaQ: new THREE.Quaternion(), stepQ: new THREE.Quaternion(), basis: new THREE.Matrix4(),
       }, // Reused by every animation frame, avoiding repeated vector/quaternion/matrix allocations.
@@ -683,6 +684,17 @@
     return result;
   }
 
+  // The haft may inherit separate species X/Y rig scales. A flexible part must
+  // remain world-oriented while matching its LONG (local Y) dimension; composing
+  // its world pose and multiplying by the exact inverse holder matrix cancels
+  // body anisotropy without shearing the rope or head or changing authored ratios.
+  function placeFlexiblePartWorld(part, inverseRootWorld, position, rotation, scale, worldMatrix) {
+    worldMatrix.compose(position, rotation, scale);
+    part.matrix.copy(inverseRootWorld).multiply(worldMatrix);
+    part.matrixAutoUpdate = false; // A subsequent parent update must not replace the corrected matrix with a decomposed local TRS.
+    part.matrixWorldNeedsUpdate = true;
+  }
+
   function updateOne(state, dt, now, effectsDt = dt) {
     const { root, plane, config, scratch: q } = state;
     if (!root.parent) {
@@ -722,7 +734,8 @@
     const normal = q.normal.set(0, 0, 1).applyQuaternion(baseQ);
     // q.scale (above) is the current haft's rendered world scale, including pre-existing grips, stances and item-size modifiers.
     root.matrixWorld.decompose(q.decomposePos, q.rootWorldQ, q.rootScale); // Both child parts live under root, not under the transformed haft plane.
-    const attachmentScale = Math.max(0.00001, Math.abs(q.scale.x)); // Authoritative world-space handle pixel scale, not a fixed weapon baseline.
+    const attachmentScale = Math.max(0.00001, Math.abs(q.scale.y)); // The haft's long local Y axis is the source of species/character-height weapon sizing, not its X width.
+    state.renderedHaftLongScale = attachmentScale; state.renderedHaftWidthScale = Math.abs(q.scale.x); // Console-free scaling diagnosis for the currently equipped species.
     const localHandleScale = attachmentScale / Math.max(0.00001, Math.abs(q.rootScale.x)); // Compensates for extra scale applied to the handle plane itself.
     const chainScaleX = connectorAxisScale(flail.chain, 'scaleX'); // Chain width or generated-rope radius relative to the final rendered handle.
     let chainScaleY = connectorAxisScale(flail.chain, 'scaleY'); // Reach uses Y only; head size and connector width stay independently authored.
@@ -841,6 +854,11 @@
     const rootQInverse = q.rootInverseQ.copy(q.rootWorldQ).invert(); // root's baked matrixWorld was refreshed above and is unchanged since.
     state.chain.position.copy(bakedPoint(chainCenterWorld, null, root, q.inverseRootMatrix, q.chainLocal));
     state.chain.quaternion.copy(rootQInverse).multiply(worldQ);
+    const inverseRootWorld = q.rootInverseWorld.copy(root.matrixWorld).invert(); // Shared parent correction; a species' nonuniform body dimensions never distort world-facing suspension.
+    const ropeWidthScale = state.chain.userData?.hobunjiRuinRopeSprite ? chainScaleY : chainScaleX; // The textured ribbon already compensates authored X/Y proportions inside its geometry.
+    const ropeDepthScale = state.chain.userData?.hobunjiRuinRopeSprite ? chainScaleY : (state.chain.userData?.hobunjiGeneratedRope ? chainScaleX : 1);
+    placeFlexiblePartWorld(state.chain, inverseRootWorld, chainCenterWorld, worldQ,
+      q.partWorldScale.set(attachmentScale * ropeWidthScale, attachmentScale * chainScaleY, attachmentScale * ropeDepthScale), q.partWorldMatrix);
     const endWorld = q.endWorld.copy(chainCenterWorld).add(q.tmp.copy(bottomLocal).multiplyScalar(attachmentScale).applyQuaternion(worldQ)); // Use the stretched bottom endpoint without rescaling the head.
     const headSpec = flail.head;
     // The brazier remains world-up at rest; in a swing its top faces the haft.
@@ -867,6 +885,8 @@
     }
     state.headRoot.position.copy(bakedPoint(headCenterWorld, null, root, q.inverseRootMatrix, q.headLocal));
     state.headRoot.quaternion.copy(rootQInverse).multiply(headQ);
+    placeFlexiblePartWorld(state.headRoot, inverseRootWorld, headCenterWorld, headQ,
+      q.partWorldScale.setScalar(attachmentScale * headScale), q.partWorldMatrix); // A single world-size head, independent of body-axis stretch and rope reach.
     if (root.visible !== false && !state.dualWieldHidden) effects?.stepFire(state, effectsDt); // Never emit a third set of particles from the hidden original head.
   }
 
@@ -916,6 +936,7 @@
         chainX: connectorAxisScale(s.config.flail.chain, 'scaleX'),
         chainY: connectorAxisScale(s.config.flail.chain, 'scaleY'),
         head: relativePartScale(s.config.flail.head),
+        renderedHaftLong: s.renderedHaftLongScale ?? null, renderedHaftWidth: s.renderedHaftWidthScale ?? null, // Mobile-readable evidence of which baked haft axis drives the flexible parts.
       } : null, // Mobile diagnostics expose both independent connector axes.
       connector: s.config.flail?.chain?.type === 'rope' ? 'rope' : s.config.flail ? 'chain' : null, // Mobile diagnostics expose both handle-relative multipliers.
       ropeArt: s.chain?.userData?.hobunjiRuinRopeSprite ? 'assets/objectsprites/rope_long.png' : null, // Mobile confirmation of the rope source.

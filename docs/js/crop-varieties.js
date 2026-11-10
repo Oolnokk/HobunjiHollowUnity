@@ -25,6 +25,7 @@
     'needlegrain', 'heftroot', 'garlink', 'ongyums', 'redberries', 'blueberries',
     'yellowberries', 'whiteberries', 'blackberries', 'blackMustard', 'greenMustard',
   ]); // Existing farm crops remain the species boundary for uncomplicated crossbreeding.
+  const REGIONAL_SEED_STOCK = Object.freeze({ min:2, max:5 }); // Shared by the actual caravan offer roll and rarity diagnostics.
   const MUSHTARD_LABELS = Object.freeze({ blackMustard: 'Black Mushtard', greenMustard: 'Green Mushtard' }); // Player-facing names only; unchanged species IDs preserve existing saves and recipes.
   const mushtardDisplayText = value => String(value).replace(/mustard/gi, match => match === match.toUpperCase() ? 'MUSHTARD' : match[0] === 'M' ? 'Mushtard' : 'mushtard'); // Keeps mobile pack labels' original capitalization while changing only visible text.
   const NATIVE_COLORS = Object.freeze({
@@ -281,7 +282,7 @@
     return pool.map(({ family }) => {
       const region = 1 + Math.floor(rng() * (REGIONS.length - 1));
       const variety = register(family, String(region).repeat(6));
-      return variety ? { key: variety.seedKey, qty: 2 + Math.floor(rng() * 4), region: variety.region } : null;
+      return variety ? { key: variety.seedKey, qty: REGIONAL_SEED_STOCK.min + Math.floor(rng() * (REGIONAL_SEED_STOCK.max - REGIONAL_SEED_STOCK.min + 1)), region: variety.region } : null;
     }).filter(Boolean);
   }
   function produceFamily(key) {
@@ -347,7 +348,7 @@
     const a = produceFamily(firstKey), b = produceFamily(secondKey); // Incompatible crop species cannot mix.
     return a && a === b ? mixHex(colorOf(firstKey), colorOf(secondKey)) : null;
   }
-  window.CropVarieties = Object.freeze({ REGIONS, FAMILIES, attach, ensure, hydrate, registered, refreshBrushes, offers, produceFamily, breed, details, colorOf, seedColorOf, blendedColor,
+  window.CropVarieties = Object.freeze({ REGIONS, FAMILIES, REGIONAL_SEED_STOCK, attach, ensure, hydrate, registered, refreshBrushes, offers, produceFamily, breed, details, colorOf, seedColorOf, blendedColor,
     provenanceFor, // World-scoped parent-pair evidence, safe to inspect on mobile; not tied to individual stacked items.
     get provenanceStatus() { syncProvenanceWorld(); return {worldId:provenanceWorldId,recordedCultivars:Object.keys(provenanceLedger.records).length}; },
     get lastChange() { return lastChange; }, get lastBreeding() { return lastBreeding && { ...lastBreeding }; } }); // Exposed for mobile production diagnostics and regression tests.
