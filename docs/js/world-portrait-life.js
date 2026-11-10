@@ -101,6 +101,8 @@
     const ctx = target.getContext('2d'); // Full-canvas copy keeps clothing, dyes, face, and current authored portrait composition intact.
     ctx.clearRect(0, 0, target.width, target.height);
     ctx.drawImage(source, 0, 0, target.width, target.height);
+    target.hobunjiSplineBaseCanvas = source.hobunjiSplineBaseCanvas || null; // A copied world expression must use its own freshly detached base, not an earlier canvas.
+    target.hobunjiSplineParts = source.hobunjiSplineParts || []; // Preserve tinted appendage pieces across the scratch-to-avatar copy.
     return true;
   }
 
