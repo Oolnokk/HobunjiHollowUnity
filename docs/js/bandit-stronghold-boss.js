@@ -8,6 +8,7 @@
   const GARRISON_KEY='strongholdGarrisonSeal'; // Untradeable gate pass granted when the native cave garrison is defeated.
   const TREASURY_KEY='strongholdTreasuryKey'; // Boss-corpse reward, required by the existing interior key-gated door.
   const BOSS_HEALTH_MULTIPLIER=2.35; // Applies to the actual mastery-5 captain's rolled Health once.
+  const BOSS_DAMAGE_MULTIPLIER=1.32; // Boss attacks are stronger than a captain's before adding its genuine mastery afflictions.
   const WOLF_HEALTH_MULTIPLIER=1.65; // Beastkeeper's three actual gar-wolves are sturdier than wild animals.
   const BOSS_RADIUS=7; // Circle of walkable tiles passed to the existing cavern shell carver.
   const TREASURY_RADIUS=6; // Separate compact circular room using the same cave material and lighting.
@@ -151,7 +152,7 @@
       for(const p of barrelSites) {
         if(barrels.length>=slots)break;
         if(barrels.some(old=>Math.hypot(old.col-p.col,old.row-p.row)<1.6))continue;
-        barrels.push({id:'treasury-barrel-'+barrels.length,kind:barrels.length%2?'flaskBarrel':'contrabandBarrel',
+        barrels.push({id:'treasury-barrel-'+barrels.length,kind:'contrabandBarrel',
           col:p.col,row:p.row});
       }
       mapData.caveSitePlan={strongholdBarrels:barrels};
@@ -178,7 +179,8 @@
     entity.name='Bandit Lord';
     entity.banditMastery=5; // Original captain at tier 3 is masteryBase 2 + tier 3 = 5.
     const hp=Math.max(1,Math.round((Number(entity.maxHealth)||Number(entity.def?.maxHealth)||80)*BOSS_HEALTH_MULTIPLIER));
-    entity.health=entity.maxHealth=hp;entity.def={...entity.def,maxHealth:hp,leashRangePx:(Number(deps?.TILE)||64)*18};
+    const damage=Math.max(1,Math.round((Number(entity.def?.attackDamage)||12)*BOSS_DAMAGE_MULTIPLIER)); // Same canonical attack formula, increased once on the boss definition.
+    entity.health=entity.maxHealth=hp;entity.def={...entity.def,maxHealth:hp,attackDamage:damage,leashRangePx:(Number(deps?.TILE)||64)*18};
     liveLords.set(profile.mapId,entity);
     if(entity.banditStrongholdVariant==='beastkeeper')spawnBeastkeeperWolves(profile,entity,deps);
     status.last='Spawned '+entity.banditStrongholdVariant+' Lord '+profile.mapId;
@@ -398,11 +400,21 @@
         if(action!=='obj_loot_stronghold_chest'||!valid())return {ok:false,message:'The chest is no longer available.'};
         if(!window.LootRolling?.rollLootPool||!window.Shattercasks?.grantBurdenLoot)
           return {ok:false,message:'Treasure is not yet ready.',deferMemberSave:true};
-        const items=window.LootRolling.rollLootPool('dungeonChest_tier'+chest.tier,
+        // A *Puzzle Cave* chest earns one of its authentic exclusive benefit/drawback
+        // trinkets. The ordinary dungeon chest pool adds coins/materials using the
+        // established rarity generator without replacing that reward.
+        const puzzle=window.LootRolling.rollLootPool('puzzleCave',{
+          rewardTier:chest.tier,masterySource:'banditStronghold',zoneId:profile.zoneId,
+        })||{};
+        if(!Object.keys(puzzle).length || typeof window.TrinketSystem?.claimLoot!=='function')
+          return {ok:false,message:'The Puzzle Cave treasure is not ready.',deferMemberSave:true};
+        const ordinary=window.LootRolling.rollLootPool('dungeonChest_tier'+chest.tier,
           {masterySource:'banditStronghold',zoneId:profile.zoneId})||{};
+        const items={...ordinary};
+        for(const [key,count] of Object.entries(puzzle))items[key]=(Number(items[key])||0)+Number(count);
         if(!window.CaveSiteSystem.claimStrongholdChest(profile.mapId,chest.id))
           return {ok:false,message:'This chest has already been looted.',deferMemberSave:true};
-        const trinkets=window.TrinketSystem?.claimLoot?.(items,'banditStronghold')||[];
+        const trinkets=window.TrinketSystem.claimLoot(items,'banditStronghold')||[]; // Mutates items, consuming trinket_ keys so inventory never receives duplicate/unknown trinkets.
         const granted=window.Shattercasks.grantBurdenLoot(items)||[];
         status.chestsClaimed++;status.last='Treasury '+chest.id+' looted';
         return {ok:true,message:[...granted,...trinkets].length
