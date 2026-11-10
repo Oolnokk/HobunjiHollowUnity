@@ -68,6 +68,7 @@ aside{max-height:none;overflow:visible;border-right:0;grid-template-columns:repe
 <label for="materialPreset">Uniform statue finish</label>
 <select id="materialPreset"><option value="carved_smooth.png">Carved smooth</option><option value="boards.png">Boards / wood</option><option value="other">Custom repository texture…</option></select>
 <label for="materialFile">Material PNG (assets/textures/)</label><input id="materialFile" value="carved_smooth.png" spellcheck="false">
+<small>Every region enclosed by black pixel outlines receives the complete selected material texture, stretched to fit its irregular shape. Original black lines remain visible; the same texture is used on attached 3D pieces.</small>
 <label for="materialRole">Material classification</label><select id="materialRole"><option value="stone">Stone</option><option value="wood">Wood</option><option value="metal">Metal</option><option value="other">Other</option></select>
 <label for="weaponPaths">Weapon PNG layers (assets/toolsprites/, one per line)</label><textarea id="weaponPaths" rows="3" placeholder="assets/toolsprites/harlyao_longsword.png"></textarea>
 <small>Leave weapon paths empty for unarmed statues. For modular weapons supply each visible sprite layer; every layer becomes its own child piece and shares the finish.</small>
@@ -195,7 +196,7 @@ function unionHeadBounds(front,rear){
 
 function sprite(id,name,mask,backMask,finish,role,pose,parentId=null){
   return {id,name,kind:'statueSprite',parentPartId:parentId,statueMaskDataUrl:mask,statueBackMaskDataUrl:backMask,
-    statueUniformFinish:true,statueKeepOutline:!id.startsWith('statue_weapon_'),
+    statueUniformFinish:true,statueKeepOutline:true,statueTextureMapping:'ink-bounded-irregular-surface-v1',
     materialTexture:finish,materialRole:role,color:'#ffffff',surfaceOpacity:1,
     transform:pose,wonkiness:0,topScaleX:1,topScaleZ:1,bottomScaleX:1,bottomScaleZ:1};
 }
@@ -451,6 +452,8 @@ window.__hobunjiStatueDebug=()=>{
     meshes.push({id:mesh.userData.statuePieceId,type:mesh.userData.authoredPart?.kind||'piece',
       worldSize:worldSize.toArray(),screenCenter:screenCenter.toArray(),
       textureReady:mesh.userData.statueTextureReady===true,
+      surfaceCells:mesh.userData.statueSurfaceStats?.regions??null,
+      surfaceCellStats:mesh.userData.statueSurfaceStats||null,
       modelReady:mesh.userData.glbReady===true,
       visible:mesh.visible,opacity:mesh.material?.opacity??1,
       position:mesh.position.toArray(),rotation:mesh.rotation.toArray().slice(0,3),
