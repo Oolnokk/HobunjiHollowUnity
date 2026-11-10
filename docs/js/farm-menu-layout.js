@@ -13,6 +13,9 @@
   const STABLE_HEADING_ID = 'farmStableBreedingHeading';
   const WORLD_IDENTITY_SENTINEL_ID = 'farmWorldLivestockIdentitySentinel';
   const NURSERY_SCROLL_CLASS = 'farm-nursery-scroll';
+  const SPECIES_SELECT_ID = 'farmRosterSpeciesFilter'; // The same filter applies to farm livestock and personal-Stable breeding candidates.
+  const FILTER_EMPTY_ID = 'farmFilteredAnimalsEmpty'; // Explains an empty species result without altering underlying animal data.
+  let selectedSpecies = ''; // Persists the selected filter across FarmPanel's fresh row render cycles.
   const LEGACY_GROUP_IDS = ['farmWorldLivestockGroup', 'farmStableBreedingGroup'];
 
   let installed = false; // Used to keep observers/listeners idempotent.
@@ -96,7 +99,7 @@
       }
       #${BREEDING_ACTIONS_ID} {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-columns: minmax(0, 1fr) auto minmax(135px, .7fr);
         gap: 7px;
         align-items: stretch;
         margin: 5px 0 7px;
@@ -105,6 +108,28 @@
         border-bottom: 1px solid color-mix(in srgb, var(--accent, #d9ad65) 45%, var(--border, #4b443a));
         background: linear-gradient(90deg, color-mix(in srgb, var(--accent, #d9ad65) 8%, transparent), transparent 72%);
       }
+      #${SPECIES_SELECT_ID} { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+      #farmLivestockList .farm-row[hidden], #farmLivestockList .farm-animal-divider[hidden] { display: none !important; }
+      #farmLivestockList .farm-row.livestock-trait-row {
+        min-width: 0; container-type: inline-size; gap: 5px; align-items: center;
+      }
+      #farmLivestockList .farm-row-name {
+        flex: 1 1 110px; min-width: 0; max-width: 100%; box-sizing: border-box;
+        font-size: clamp(10px, 2.4cqw, 13px);
+      }
+      #farmLivestockList .farm-row-name:not(input) { white-space: normal; overflow-wrap: anywhere; }
+      #farmLivestockList .farm-row-value { min-width: 0; max-width: 100%; overflow-wrap: anywhere; font-size: clamp(10px, 2.2cqw, 12px); }
+      #farmLivestockList .farm-animal-thumb {
+        flex: 0 0 40px; width: 40px; height: 40px; display: grid; place-items: center;
+        overflow: hidden; border-radius: 7px; border: 1px solid var(--border, #4b443a);
+        background: rgba(0,0,0,.16); box-sizing: border-box;
+      }
+      #farmLivestockList .farm-animal-thumb .farm-row-icon { display: block; width: 100%; height: 100%; font-size: 20px; line-height: 38px; text-align: center; }
+      #${STABLE_HEADING_ID} {
+        font-size: 19px; border-top: 4px solid var(--accent, #d9ad65);
+        margin-top: 19px; padding: 13px 0 5px;
+      }
+      #${STABLE_HEADING_ID}::after { height: 3px; }
       #farmPairBtn {
         min-height: 34px;
         font-weight: 800;
@@ -192,15 +217,14 @@
       }
       #livestockNurserySection .${NURSERY_SCROLL_CLASS},
       #livestockNurserySection > div:nth-child(3) {
-        max-height: 76px !important;
+        max-height: none !important;
         min-height: 0 !important;
-        overflow-y: scroll !important;
-        overflow-x: hidden !important;
+        overflow-y: visible !important;
+        overflow-x: visible !important;
         overscroll-behavior: contain;
-        scrollbar-gutter: stable;
-        scrollbar-width: thin;
+        scrollbar-gutter: auto;
+        scrollbar-width: none;
         touch-action: pan-y;
-        -webkit-overflow-scrolling: touch;
         gap: 2px !important;
         padding-right: 3px !important;
       }
@@ -329,9 +353,52 @@
     const oldParents = new Set([pairButton?.parentElement, addButton?.parentElement].filter(Boolean)); // Used to remove the obsolete empty toolbar wrapper after its controls move.
     if (pairButton && pairButton.parentElement !== bar) bar.appendChild(pairButton);
     if (addButton && addButton.parentElement !== bar) bar.appendChild(addButton);
+    ensureSpeciesFilter(bar);
     for (const parent of oldParents) {
       if (parent !== bar && parent.classList?.contains('farm-toolbar') && !parent.children.length) parent.remove();
     }
+  }
+
+  function ensureSpeciesFilter(bar) {
+    if (!bar) return;
+    let select = document.getElementById(SPECIES_SELECT_ID); // Reuses the same select node and controller focus across rerenders.
+    if (!select) {
+      select = document.createElement('select');
+      select.id = SPECIES_SELECT_ID;
+      select.className = 'settings-select';
+      select.setAttribute('aria-label', 'Filter farm and Stable animals by species');
+      select.title = 'Filter both livestock and Stable breeding candidates by species';
+      select.addEventListener('change', () => {
+        selectedSpecies = select.value;
+        scheduleApply();
+      });
+    }
+    if (select.parentElement !== bar) bar.appendChild(select);
+  }
+
+  function sortAnimalRows(a, b) {
+    const kindCompare = String(a.dataset.farmSpecies || '').localeCompare(String(b.dataset.farmSpecies || ''));
+    if (kindCompare) return kindCompare;
+    const name = row => row.querySelector('.farm-row-name')?.value || row.querySelector('.farm-row-name')?.textContent || ''; // Same species share a readable alphabetical ordering.
+    return String(name(a)).localeCompare(String(name(b)));
+  }
+
+  function refreshSpeciesFilter(rows) {
+    const select = document.getElementById(SPECIES_SELECT_ID);
+    if (!select) return;
+    const species = [...new Set(rows.map(row => String(row.dataset.farmSpecies || '')).filter(Boolean))].sort(); // Both rosters contribute to one set of species choices.
+    if (selectedSpecies && !species.includes(selectedSpecies)) selectedSpecies = '';
+    const signature = species.join('|'); // Avoid rewriting options on every Nursery mutation/observer pass.
+    if (select.dataset.speciesSignature !== signature) {
+      select.replaceChildren();
+      select.add(new Option('All species', ''));
+      for (const kind of species) {
+        const label = window.CREATURE_DB?.[kind]?.label || window.CreatureGenetics?.defaultLivestockName?.(kind) || kind.replace(/[-_]/g, ' ');
+        select.add(new Option(label, kind));
+      }
+      select.dataset.speciesSignature = signature;
+    }
+    if (select.value !== selectedSpecies) select.value = selectedSpecies;
   }
 
   function makeDivider(id, titleText, detailText = '') {
@@ -419,8 +486,11 @@
     flattenLegacyRosterGroups(container);
     const rows = [...container.querySelectorAll(':scope > .farm-row.livestock-trait-row')].filter(row => row.id !== WORLD_IDENTITY_SENTINEL_ID); // Direct real rows only: no nested wrappers or hidden identity sentinel.
     ensureWorldIdentitySentinel(container, rows);
-    const worldRows = rows.filter(row => row.dataset.nurseryWorldLivestockId);
-    const stableRows = rows.filter(row => !row.dataset.nurseryWorldLivestockId);
+    const worldRows = rows.filter(row => row.dataset.nurseryWorldLivestockId).sort(sortAnimalRows);
+    const stableRows = rows.filter(row => !row.dataset.nurseryWorldLivestockId).sort(sortAnimalRows);
+    refreshSpeciesFilter(rows);
+    const matchesSpecies = row => !selectedSpecies || row.dataset.farmSpecies === selectedSpecies; // Filtering hides rows, never removes their DOM identity or breeding selection.
+    for (const row of rows) if (row.hidden !== !matchesSpecies(row)) row.hidden = !matchesSpecies(row);
     const legacyStableHeader = [...container.querySelectorAll(':scope > .farm-note')].find(note => /your stable\s*\(breeding only/i.test(note.textContent || ''));
     legacyStableHeader?.remove();
     const emptyWorldNotes = [...container.querySelectorAll(':scope > .farm-note')].filter(note => /no livestock on the farm/i.test(note.textContent || ''));
@@ -428,9 +498,16 @@
 
     const worldHeading = ensureRosterHeading(container, WORLD_HEADING_ID, 'Farm livestock', 'housed / outdoors adults');
     const stableHeading = ensureRosterHeading(container, STABLE_HEADING_ID, 'Your Stable', 'breeding candidates only');
-    stableHeading.hidden = stableRows.length === 0;
-
-    const desiredNodes = [nursery, worldHeading, ...worldRows, ...emptyWorldNotes, stableHeading, ...stableRows]; // Used as the one flat visual order for every visible roster element we manage.
+    stableHeading.hidden = !stableRows.some(matchesSpecies);
+    let filterEmpty = document.getElementById(FILTER_EMPTY_ID);
+    if (!filterEmpty) {
+      filterEmpty = document.createElement('div'); // Persistent note avoids transient blank results during a filter change.
+      filterEmpty.id = FILTER_EMPTY_ID;
+      filterEmpty.className = 'farm-note';
+      filterEmpty.textContent = 'No animals of this species in either roster.';
+    }
+    filterEmpty.hidden = !selectedSpecies || rows.some(matchesSpecies);
+    const desiredNodes = [nursery, worldHeading, ...worldRows, ...emptyWorldNotes, stableHeading, ...stableRows, filterEmpty]; // Used as the one flat visual order for every visible roster element we manage.
     const managed = new Set(desiredNodes); // Used to ignore the hidden identity sentinel and any future unrelated child FarmPanel may add.
     const currentManaged = [...container.children].filter(child => managed.has(child)); // Used to make this mutation-observer presentation pass idempotent.
     const alreadyOrdered = currentManaged.length === desiredNodes.length && desiredNodes.every((node, index) => currentManaged[index] === node); // Prevents our own node moves from generating another observer pass once the roster is already correct.
@@ -552,6 +629,9 @@
       rosterDirectRows: directRows.length,
       worldCandidateRows: directRows.filter(row => row.dataset.nurseryWorldLivestockId).length,
       stableCandidateRows: directRows.filter(row => !row.dataset.nurseryWorldLivestockId).length,
+      speciesFilter: selectedSpecies,
+      visibleSpeciesRows: directRows.filter(row => !row.hidden).length,
+      scrollOwners: ['farmMenuWorkspace (desktop)', 'mpFarm (narrow viewport)'],
       worldIdentitySentinel: !!document.getElementById(WORLD_IDENTITY_SENTINEL_ID),
       legacyNestedGroupsRemaining: LEGACY_GROUP_IDS.filter(id => !!document.getElementById(id)),
       nurseryFocusIndex,
