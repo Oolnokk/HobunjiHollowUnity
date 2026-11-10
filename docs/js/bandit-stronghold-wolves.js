@@ -88,7 +88,7 @@
       if (owner.some(rec=>rec.slot===stake.wolfSlot)) continue;
       const status=window.CaveSiteSystem?.strongholdWolfStatus?.(mapId,stake.wolfSlot)||{};
       stake.freed=!!status.freed;
-      if (status.freed || status.dead) continue;
+      if (status.freed || status.dead || status.activated) continue; // Entering once migrates unrescued wolves into cave combat.
       const origin=pointForStake(stake,deps,area);
       const worldX=origin.x/tile, worldZ=origin.z/tile;
       const x=(worldX+(stake.wolfSlot?-.45:.45))*tile;
@@ -99,7 +99,8 @@
         homeX:origin.x,homeY:origin.z,state:'idle',
       });
       if (!wolf) { window.__farmLog?.('[bandit-wolves] Could not build gar-wolf at '+mapId,'warn'); continue; }
-      wolf.def={...wolf.def,hostile:true,leashRangePx:TETHER_TILES*tile,aggroRangePx:Math.min(Number(wolf.def?.aggroRangePx)||3*tile,3*tile)};
+      wolf.def={...wolf.def,hostile:false,behaviorType:'passive',
+        leashRangePx:TETHER_TILES*tile,aggroRangePx:0}; // Chained exterior wolves never attack before cave entry.
       wolf.homeX=origin.x;wolf.homeY=origin.z;
       wolf.banditStrongholdWolf=true;wolf.banditStrongholdSlot=stake.wolfSlot;wolf.banditStrongholdStakeId=stake.id;
       wolf.areaId=area; wolf.targetCreature=null;
@@ -107,7 +108,7 @@
       camp.gangIds?.add(wolf.id);
       const record={
         camp,stake,slot:stake.wolfSlot,wolf,mapId,zoneId:area,anchorX:origin.x,anchorZ:origin.z,
-        anchorY:origin.worldY,tile,chain:makeChain(scene),released:false,escaped:false,
+        anchorY:origin.worldY,tile,chain:makeChain(scene),released:false,escaped:false,deps, // Native owner retained for the threshold migration.
       }; // The chain follows this live creature and remains bounded by this one fixed stake.
       existing.add(record);
       updateChain(record);
@@ -200,36 +201,61 @@
     return best;
   }
 
+  function migrateExteriorAtEntrance(mapId) {
+    let removed=0;
+    for(const [zone,records] of [...exteriorByZone]) {
+      for(const record of [...records]) {
+        if(record.mapId!==mapId)continue;
+        removeWolf(record,record.deps); // Transfer the animal into the native cave scene; no duplicate exterior/cave entities.
+        records.delete(record);removed++;
+      }
+      if(!records.size)exteriorByZone.delete(zone);
+    }
+    return removed;
+  }
+
   function ensureInterior(profile,plan,state,deps) {
     if(!profile?.fortifiedStronghold || state?.occupantsCleared || !deps?.makeCreatureEntity || !deps?.hostileObjects) return 0;
     const mapId=profile.mapId,tile=Number(deps.TILE)||64;
     interiorDepsByMap.set(mapId,deps); // Cleanup uses the actual scene/creature dependency owner, not a parallel model.
     if(deps.getCurrentArea?.()!==mapId)return 0;
     const enemies=[...deps.hostileObjects].filter(c=>c?.isBandit&&c.caveSiteMapId===mapId&&c.health>0);
-    if(!enemies.length)return 0; // The wolf-on-bandit fight only starts after entering and populating the actual cave.
+    if(!enemies.length)return 0; // Wait for the actual combatants: wolves must not attack in an empty shell.
+    migrateExteriorAtEntrance(mapId); // The native transition begins the wolf fight; the chains now belong to an empty exterior stake.
     let bucket=interiorByMap.get(mapId);
     if(!bucket)interiorByMap.set(mapId,bucket=new Map());
     let made=0;
-    for(const slot of state.strongholdWolfFreed||[]){
+    for(const slot of [0,1]){
       if(state.strongholdWolfDead?.includes(slot)||bucket.has(slot))continue;
+      const rescued=!!state.strongholdWolfFreed?.includes(slot);
+      if(!rescued && !state.strongholdWolfAttackActivated)continue; // No hostile wolves from a preview that has not crossed the entrance.
       const enemy=enemies[slot%enemies.length];
-      const x=enemy.x+tile*.35*(slot?1:-1),y=enemy.y+tile*.35;
-      const wolf=deps.makeCreatureEntity(WOLF_KIND,x,y,{
+      const entrance=plan?.entranceTile; // Guaranteed walkable cave entrance resolved by the cavern shell owner.
+      const x=rescued?enemy.x+tile*.35*(slot?1:-1):(Number(entrance?.col)+.5+(slot?1:-1))*tile;
+      const y=rescued?enemy.y+tile*.35:(Number(entrance?.row)+2.5)*tile;
+      const fallbackX=deps.player?.x??enemy.x,fallbackY=deps.player?.y??enemy.y;
+      const spawnX=Number.isFinite(x)?x:fallbackX+(slot?tile:-tile);
+      const spawnY=Number.isFinite(y)?y:fallbackY+tile*1.3;
+      const wolf=deps.makeCreatureEntity(WOLF_KIND,spawnX,spawnY,{
         scene:deps.getActiveScene?.(),grid:deps.getActiveGrid?.(),
         cols:deps.getActiveCols?.(),rows:deps.getActiveRows?.(),
         genotype:window.CreatureGenetics?.makeDefaultGenotype?.(WOLF_KIND)||null,
-        homeX:x,homeY:y,state:'idle',
+        homeX:spawnX,homeY:spawnY,state:'idle',
       });
       if(!wolf)continue;
       wolf.areaId=mapId;
-      wolf.isCompanion=false;wolf.banditCompanion=false;wolf.banditStrongholdLiberated=true;wolf.banditStrongholdSlot=slot;
-      wolf.def={...wolf.def,hostile:false,aggroRangePx:tile*12,leashRangePx:tile*20};
-      wolf.targetPlayer=null;wolf.targetCreature=enemy;wolf.state='patrol-chase'; // Native animal-vs-creature attack path, never direct scripted damage.
+      wolf.isCompanion=false;wolf.banditCompanion=false;
+      wolf.banditStrongholdSlot=slot;wolf.banditStrongholdLiberated=rescued;
+      wolf.banditStrongholdGateWolf=!rescued;
+      wolf.def={...wolf.def,hostile:!rescued,aggroRangePx:tile*12,leashRangePx:tile*20};
+      wolf.targetPlayer=rescued?null:deps.player||null;
+      wolf.targetCreature=rescued?enemy:null;
+      wolf.state='patrol-chase'; // Native wildlife attack path switches sides using the saved stake state.
       deps.hostileObjects.add(wolf);
       bucket.set(slot,wolf);
       made++;
     }
-    if(made){debug.interiorSpawned+=made;debug.last='liberated wolves joined '+mapId;}
+    if(made){debug.interiorSpawned+=made;debug.last='cave entry armed '+made+' wolves ('+mapId+')';}
     return made;
   }
 
@@ -241,6 +267,10 @@
       if(!wolf || wolf.health<=0){
         window.CaveSiteSystem?.markStrongholdWolfDead?.(mapId,slot);
         bucket.delete(slot);debug.deaths++;continue;
+      }
+      if(!wolf.banditStrongholdLiberated){
+        if(deps.player?.health>0)wolf.targetPlayer=deps.player; // Unrescued wolves attack only after the cave threshold.
+        continue; // Never incorrectly retarget chained wolves toward their former owners.
       }
       const enemy=nearestBandit(wolf,deps.hostileObjects,mapId);
       if(enemy && (wolf.targetCreature!==enemy || wolf.state!=='patrol-chase')){
