@@ -1050,7 +1050,7 @@
       window.WildernessMap?.forgetDiscoveredThreat?.(rec.discoveryKey);
       for(const obj of rec.props||[])if(obj.key==='crateStack')window.CratePiles?.forgetPile?.(zoneId,obj.id);
       for (const id of rec.instance.stampedObjectIds) removeBanditCampProp(zoneId, id);
-      if (rec.stronghold) window.BanditStrongholds?.removeCamp?.(rec, deps); // Retire synthetic cave and transition with the original locale.
+      if (rec.stronghold) window.BanditStrongholds?.removeCamp?.(rec, deps, true); // Retire synthetic cave only when its parent locale is actually rerolled.
       window.TemporaryLocales.release(view, rec.instance);
       _syncBanditFlora(zoneId, rec.instance.removedObjectSnapshots, true);
       const idx = tracked.indexOf(rec);
@@ -1061,7 +1061,7 @@
   }
 
   function forgetZoneBanditState(zoneId) {
-    for(const rec of _banditCampInstances.get(zoneId)||[])if(rec.stronghold)window.BanditStrongholds?.removeCamp?.(rec,deps);
+    for(const rec of _banditCampInstances.get(zoneId)||[])if(rec.stronghold)window.BanditStrongholds?.removeCamp?.(rec,deps,false); // Unloading a zone must not erase the stronghold's saved interior.
     for(const rec of _banditCampInstances.get(zoneId)||[])for(const obj of rec.props||[])
       if(obj.key==='crateStack')window.CratePiles?.unregisterPile?.(zoneId,obj.id);
     _banditCampMeshes.delete(zoneId);
