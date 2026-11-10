@@ -9,14 +9,14 @@ const path=require('node:path');
 let chromium;
 try{({chromium}=require('playwright'));}
 catch(error){if(error.code!=='MODULE_NOT_FOUND')throw error;console.log('skip: playwright not installed');process.exit(0);}
+const root=path.resolve(__dirname,'..'); // Serves this checkout's actual author, cosmetics index, and sprite PNGs.
 let threeMain,orbitSource;
 try{
-  threeMain=fs.readFileSync(require.resolve('three/build/three.module.js'),'utf8');
-  orbitSource=fs.readFileSync(require.resolve('three/examples/jsm/controls/OrbitControls.js'),'utf8')
+  threeMain=fs.readFileSync(path.join(root,'node_modules/three/build/three.module.js'),'utf8');
+  orbitSource=fs.readFileSync(path.join(root,'node_modules/three/examples/jsm/controls/OrbitControls.js'),'utf8')
     .replace(/from ['"]three['"]/g,"from 'https://esm.sh/three@0.128.0'");
-}catch(error){if(error.code!=='MODULE_NOT_FOUND')throw error;console.log('skip: pinned Three.js module not installed');process.exit(0);}
+}catch(error){if(error.code!=='ENOENT')throw error;console.log('skip: pinned Three.js module not installed');process.exit(0);}
 
-const root=path.resolve(__dirname,'..'); // Serves this checkout's actual author, cosmetics index, and sprite PNGs.
 const mime={'.js':'application/javascript','.html':'text/html','.json':'application/json','.png':'image/png','.webp':'image/webp','.css':'text/css'};
 const server=http.createServer((req,res)=>{
   const route=decodeURIComponent((req.url||'/').split('?')[0]).replace(/^\/+/,'');
