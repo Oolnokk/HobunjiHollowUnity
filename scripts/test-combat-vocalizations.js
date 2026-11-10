@@ -620,7 +620,7 @@ console.log('all species/gender combat voice profiles, dodge duration, native fa
     }
   }
   // Exercise the real staged NPC vocal hook: ordinary skeleton combo steps should have
-  // ONE short shriek matching a living NPC's mapped release-grunt duration, with no pitch shift.
+  // ONE shortened shriek across a living NPC's entire combined windup-and-strike vocal window, with no pitch shift.
   const livingComboActor = { id: 'living-combo-probe', health: 80, appearance: { speciesId: 'harlyao', gender: 'male' } }; // Living control case provides the same authored combo attack timing.
   const skeletalComboActor = { id: 'short-skeleton-combo-probe', health: 80, rosterRecord: { appearance: { speciesId: 'harlyao-skeleton', gender: 'male' } } }; // Skeleton keeps its dedicated shriek and pitch steps.
   const stageNpcCombo = (actor, finalStep) => { // Real BanditCombat action metadata enters the already-wrapped Combat.beginStagedAction.
@@ -635,40 +635,40 @@ console.log('all species/gender combat voice profiles, dodge duration, native fa
   livingCombo.spec.onUpdate(livingCombo.action);
   const livingReleaseS = W.CombatVocalizations.debugSnapshot().lastStrike.durationS; // Canonical living NPC release span, not guessed from a separate config.
   assert(Math.abs(livingReleaseS - 0.05) < 1e-9, 'the living strike grunt maps to its authored strike phase');
+  const livingVoiceWindowS = livingCombo.action.totalS; // The real NPC action maps the living windup voice followed by its release grunt across this full window.
+  assert(Math.abs(livingVoiceWindowS - 0.25) < 1e-9, 'living vocal window includes windup and strike, not only 50ms of strike');
   W.CombatVocalizations.forgetEntity(livingComboActor);
 
   const skeletonCombo = stageNpcCombo(skeletalComboActor, false);
-  assert.equal(W.CombatVocalizations.debugSnapshot().activeCharges.length, 0, 'short skeleton combo must not emit a second shriek during windup');
+  assert.equal(W.CombatVocalizations.debugSnapshot().activeCharges.length, 1, 'ordinary skeleton combo starts one shriek immediately, without a separate windup voice');
+  const initialComboStrike = W.CombatVocalizations.debugSnapshot().lastStrike; // Crosses the strike callback to prove there is no second utterance.
+  assert.equal(initialComboStrike.shortSkeletonCombo, true);
+  assert.equal(initialComboStrike.durationS, livingVoiceWindowS, 'skeleton shriek spans the full living NPC vocal window');
   skeletonCombo.action.t = 0.2;
   skeletonCombo.spec.onUpdate(skeletonCombo.action);
-  assert.equal(W.CombatVocalizations.debugSnapshot().lastStrike.shortSkeletonCombo, true);
-  assert.equal(W.CombatVocalizations.debugSnapshot().lastStrike.durationS, livingReleaseS, 'skeleton strike uses living NPC grunt span');
+  assert.deepEqual(W.CombatVocalizations.debugSnapshot().lastStrike, initialComboStrike, 'reaching the strike never adds another skeleton shriek');
   for (let turn = 0; turn < 64 && !W.CombatVocalizations.debugSnapshot().activeCharges.some(t => t.ready); turn++) await Promise.resolve();
   const compressed = W.CombatVocalizations.debugSnapshot().activeCharges.find(t => t.ready);
   assert(compressed, 'skeleton combo shriek must render in time');
-  assert.equal(compressed.targetDurationS, livingReleaseS);
-  assert(Math.abs(compressed.stretchedTempo - 24) < 1e-9, '1.2 second shriek compresses to the 0.05 second living strike grunt (>16x)');
+  assert.equal(compressed.targetDurationS, livingVoiceWindowS);
+  assert(Math.abs(compressed.stretchedTempo - 4.8) < 1e-9, '1.2 second shriek compresses across the 0.25 second living NPC vocal window');
   assert.equal(compressed.pitchSemitones, 3, 'tempo compression does not raise the pre-rolled skeleton voice pitch');
   assert.equal(W.CombatVocalizations.debugSnapshot().lastCharge.independentPitch, true);
-  assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastCharge.fullDurationS - livingReleaseS) < 1e-9, 'rendered shriek has the same audible duration as the living grunt');
+  assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastCharge.fullDurationS - livingVoiceWindowS) < 1e-9, 'rendered shriek has the same audible duration as the living vocal window');
   W.CombatVocalizations.forgetEntity(skeletalComboActor);
 
-  const delayedStart = stageNpcCombo(skeletalComboActor, false); // Cold decoder/render can complete after a very short strike, especially on mobile.
-  delayedStart.action.t = 0.2;
-  delayedStart.spec.onUpdate(delayedStart.action);
-  now += 100; // Complete async decode 100ms after its intended start; the 50ms clip should still play in full.
+  const delayedStart = stageNpcCombo(skeletalComboActor, false); // Cold decoder/render can complete after the 250ms attack vocal window, especially on mobile.
+  now += 300; // Complete async decode 50ms after the authored voice end; the accelerated shriek should still play intact.
   for (let turn = 0; turn < 64 && !W.CombatVocalizations.debugSnapshot().activeCharges.some(t => t.ready); turn++) await Promise.resolve();
   const recovered = W.CombatVocalizations.debugSnapshot().activeCharges.find(t => t.ready);
   assert(recovered, 'a slightly late skeleton combo shriek must remain audible rather than being discarded');
   assert.equal(W.CombatVocalizations.debugSnapshot().lastCharge.progress, 0, 'late brief shrieks start from their beginning, not a clipped tail');
-  assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastCharge.lateStartS - 0.1) < 1e-9, 'Pixel Probe records first-use start lag');
-  assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastCharge.fullDurationS - livingReleaseS) < 1e-9, 'late recovery never changes pitch-preserving playback duration');
+  assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastCharge.lateStartS - 0.3) < 1e-9, 'Pixel Probe records first-use start lag');
+  assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastCharge.fullDurationS - livingVoiceWindowS) < 1e-9, 'late recovery never changes pitch-preserving playback duration');
   W.CombatVocalizations.forgetEntity(skeletalComboActor);
 
   const staleStart = stageNpcCombo(skeletalComboActor, false); // An attack cancelled long ago must not play delayed audio over the next action.
-  staleStart.action.t = 0.2;
-  staleStart.spec.onUpdate(staleStart.action);
-  now += 300;
+  now += 500;
   for (let turn = 0; turn < 64 && !W.CombatVocalizations.debugSnapshot().lastCharge?.action?.includes('skip-stale-skeleton-combo'); turn++) await Promise.resolve();
   assert.equal(W.CombatVocalizations.debugSnapshot().activeCharges.length, 0, 'well-expired combo vocals cleanly release their claims');
   assert.equal(W.CombatVocalizations.debugSnapshot().lastCharge.action, 'skip-stale-skeleton-combo', 'Pixel Probe explains why a stale vocal was dropped');
