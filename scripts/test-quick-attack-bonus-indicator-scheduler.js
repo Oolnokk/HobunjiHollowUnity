@@ -246,6 +246,7 @@ assert.equal(extraProgressionLookups, 1, 'affliction glow shares one effect look
 context.Combat.quickAttackData.getReachProfile = deps => ({ reachPx: deps.TILE * 6, effects: { quickBonusAfflictions: { bleeding: 1 } } });
 scheduledFrame({ timestamp: 1135 }); // Beyond the 50ms cache expiry, to simulate the production reach profile.
 assert.equal(extraProgressionLookups, 1, 'the live reach profile shares its mastery snapshot with the glow renderer');
+context.Combat.quickAttackData.getReachProfile = deps => ({ reachPx: deps.TILE * 6 }); // Restore a fresh progression lookup for the later multi-affliction impact test.
 delete context.CombatProgression;
 deps.currentWeaponKey = () => null;
 deps.hostileObjects = [near];
