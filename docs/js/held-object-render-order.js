@@ -154,6 +154,9 @@
   let nonGroundDepthReplayCount = 0;
   let groundDepthRestoreCount = 0;
   let invariantRepairCount = 0;
+  let ordinaryDepthReuseCount = 0; // Reuse the intact world depth rather than clearing and rebuilding for regular gear/limbs.
+  let ordinaryCutoutDepthPassCount = 0; // Narrow, depth-only PNG/cover repairs instead of repeating an opaque-scene pass.
+  let ordinaryShellReuseCount = 0; // Shell participants that stay in the regular render instead of a separate x-ray replay.
   let shellXrayPassCount = 0; // Shell passes replay registered x-ray objects against elevation-filtered ground depth.
   let shellXrayMeshDrawCount = 0; // Registered x-ray meshes whose shell was redrawn with matching visibility.
   let lastXrayTileRegions = 0; // Active neighborhoods before merging compatible depth draws.
@@ -828,12 +831,14 @@
         forEachMaterial(object.material, material => {
           saveMaterialState(states, material);
           material.colorWrite = false;
+          material.stencilWrite = false; // Silhouette prepass is depth-only; stencil belongs exclusively to the gear/water tint pass.
         });
       }
       camera.layers.mask = HELD_OVERLAY_MASK;
       const perf = window.PerfProfiler?.begin('held-overlay: ordinary cutout depth');
       try { rawRender.call(renderer, scene, camera); }
       finally { window.PerfProfiler?.end(perf); }
+      ordinaryCutoutDepthPassCount++;
       return true;
     } finally {
       camera.layers.mask = previousMask;
@@ -1574,6 +1579,7 @@
       if (scissored) glState.setScissorTest(true);
 
       if (ordinaryDepthReuse) {
+        ordinaryDepthReuseCount++;
         // Opaque world depth is already correct. Repair only normally
         // non-depth-writing cutout/cover occluders before using that buffer.
         replayOrdinaryOccluderDepth(renderer, scene, camera, cutoutDepthMeshes, protectedDepthMeshes);
@@ -1923,8 +1929,12 @@
       lastShellElevationGroups = groups.length;
       // Ordinary hand/foot/gear shells already obey the intact depth in the
       // regular shell pass. Only genuine floor x-ray shells need a replay.
-      if (!groups.length) return originalRender.call(this, scene, camera);
+      if (!groups.length) {
+        ordinaryShellReuseCount += xrayMeshes.length; // All shells can use the existing world depth without a new pass.
+        return originalRender.call(this, scene, camera);
+      }
       const xrayGroupMeshes = groups.flatMap(group => group.meshes); // Only genuinely exceptional shells are hidden and replayed.
+      ordinaryShellReuseCount += xrayMeshes.length - xrayGroupMeshes.length; // Ordinary NPC/enemy/player shells remain in the one normal shell draw.
       const shellGlState = this.state; // Scissoring is shared with the existing held/foot replay safety switch.
       const hasShellScissorApi = !!(shellGlState?.scissor && shellGlState?.setScissorTest); // Reports unavailable scissor support distinctly from an unsafe bound.
       const scissored = replayScissorEnabled && hasShellScissorApi
@@ -2040,6 +2050,9 @@
       nonGroundDepthReplays: nonGroundDepthReplayCount,
       groundDepthRestores: groundDepthRestoreCount,
       invariantRepairs: invariantRepairCount,
+      ordinaryDepthReuses: ordinaryDepthReuseCount,
+      ordinaryCutoutDepthPasses: ordinaryCutoutDepthPassCount,
+      ordinaryShellReuses: ordinaryShellReuseCount,
       shellXrayPasses: shellXrayPassCount,
       shellXrayMeshes: shellXrayMeshDrawCount,
       elevationReplayGroups: lastElevationReplayGroups,
