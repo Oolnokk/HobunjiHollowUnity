@@ -124,4 +124,5 @@
     owner: 'WeaponStanceDropRuntime',
     description: 'Sinks the player body for weapon stances and swing poses and asks the legs to fold the knees to match.',
   });
+  global.HobunjiWeaponSpriteAssemblies?.scheduleTickAfterPose?.(); // Reproject visible flail rope contacts after this body-composer pose writer, not one frame behind the haft.
 })(window);

@@ -147,6 +147,43 @@ api.decorate(root, 'grappleFlail', { shapeKey:'grappleFlail' }, { THREE });
   const head = root.children.find(child => child.name === 'grappleFlail_flail_head'); // Parent group is the two-layer metal grapple head.
   assert(head && head.children.length === 2, 'the complete composite head exists before detachment');
 
+  // Both visible hands own complete real flails, not a copied static sprite
+  // with a connector that remains attached to the hidden original weapon.
+  const dualMain = new Mesh(new PlaneGeometry(.5, 1204/900), new MeshBasicMaterial({ map:new Texture(handleImage) })); // Main-hand flail carries its own pendulum.
+  const dualOff = new Mesh(new PlaneGeometry(.5, 1204/900), new MeshBasicMaterial({ map:new Texture(handleImage) })); // Offhand flail must have a separate connector and head.
+  dualMain.userData.hobunjiDualWieldDuplicate = true; // Matches the production visible main duplicate marker used by mobile diagnostics.
+  dualOff.userData.hobunjiDualWieldDuplicate = true; // Matches the production visible offhand duplicate marker.
+  assert.equal(api.syncDualWield(root, dualMain, dualOff, true), false, 'source stays visible while copies load');
+  for (let i = 0; i < 25 && api.debugSnapshot().filter(item => item.dualFlail?.replica && item.loaded).length !== 2; i++) await Promise.resolve();
+  assert.equal(api.debugSnapshot().filter(item => item.dualFlail?.replica && item.loaded).length, 2, 'both replica assemblies finish loading');
+  assert.equal(api.syncDualWield(root, dualMain, dualOff, true), true, 'switch to both real connectors only when complete');
+  const physicsOwners = api.debugSnapshot(); // Count actual simulated owners; GPU meshes still exist separately for both hands.
+  assert.equal(physicsOwners.filter(item => item.dualFlail?.physics === 'simulated').length, 1,
+    'dual-wield flails integrate only the source pendulum, never two additional physics states');
+  assert.equal(physicsOwners.filter(item => item.dualFlail?.physics === 'shared-world-sway').length, 2,
+    'both visible ropes follow that one world-space sway vector');
+  api.setAction(root, { attacking:true, progress:.55, windupFrac:.16, strikeFrac:.28 });
+  api.syncDualWield(root, dualMain, dualOff, true);
+  const copiedAction = api.debugSnapshot().filter(item => item.dualFlail?.replica);
+  assert(copiedAction.every(item => item.attacking && item.progress === .55),
+    'shared sway keeps both heads in the source attack phase without a second pendulum');
+  assert.equal(root.children.find(child => child.name === 'flail_ruin_rope').visible, false, 'original single rope is hidden');
+  assert.equal(head.visible, false, 'original single head is hidden');
+  const dualMainRope = dualMain.children.find(child => child.name === 'flail_ruin_rope'); // Per-hand connector instance for render and disposal checks.
+  const dualOffRope = dualOff.children.find(child => child.name === 'flail_ruin_rope'); // The second connector must never reuse the first object.
+  const dualMainHead = dualMain.children.find(child => child.name === 'grappleFlail_flail_head'); // Complete main-hand head, including every authored layer.
+  const dualOffHead = dualOff.children.find(child => child.name === 'grappleFlail_flail_head'); // Complete offhand head, independently positioned.
+  assert(dualMainRope && dualOffRope && dualMainRope !== dualOffRope, 'the two ropes are independent scene objects');
+  assert(dualMainHead && dualOffHead && dualMainHead !== dualOffHead, 'the two heads are independent scene objects');
+  assert.equal(dualMainHead.children.length, 2);
+  assert.equal(dualOffHead.children.length, 2);
+  assert.equal(api.syncDualWield(root, dualMain, dualOff, false), false, 'leaving dual wield restores the source');
+  assert.equal(root.children.find(child => child.name === 'flail_ruin_rope').visible, true, 'original connector returns');
+  assert.equal(head.visible, true, 'original head returns');
+  assert.equal(api.debugSnapshot().length, 1, 'dual-wield teardown drops both replica physics states');
+  assert.equal(dualMain.children.length, 0, 'main-hand rope and head were disposed');
+  assert.equal(dualOff.children.length, 0, 'offhand rope and head were disposed');
+
   // Shipped procedural-hand dependencies can omit toolMeshMap entirely.
   window.ProceduralHandAttachments = { gameDeps:{ toolHolder:{ children:[] } } };
   now = 200;

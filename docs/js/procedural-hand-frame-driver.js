@@ -977,6 +977,7 @@
       owner: 'ProceduralHandFrameDriver',
       description: 'Ensures each managed rig\'s render sentinel exists and refreshes its fallback gait pose from this frame\'s state.',
     });
+    global.HobunjiWeaponSpriteAssemblies?.scheduleTickAfterPose?.(); // Final hand/socket sync can move dual hafts again; project rope contacts after it, once per frame.
   } else {
     // The standalone Attack Animation Editor and Animation Author tool pages
     // (docs/tools/*) also load this module but never load
