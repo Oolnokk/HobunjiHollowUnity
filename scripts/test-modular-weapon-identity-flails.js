@@ -44,6 +44,29 @@ assert.deepEqual(plain(definitions[item('fishing-spear','pickshovel-scoop')].slo
 assert(config.heads.hoe.toolSlots.includes('hoe'),
   'a hoe head retains its crop-harvest mastery channel when its calibration is eventually approved');
 
+const authoredFlailShafts = { // Exact five shaft-side rope and aperture choices from the user's November 9 export.
+  'fishing-mace':{start:[193,850],end:[0,325],offset:[0,20],size:[27,27]},
+  'fishing-spear':{start:[210,830],end:[17,209],offset:[0,10],size:[22,22]},
+  'warhammer':{start:[207,952],end:[14,275],offset:[0,0],size:[35,35]},
+  'hatchet':{start:[198,1004],end:[5,479],offset:[0,20],size:[27,27]},
+  'pick-shovel':{start:[198,803],end:[2.842170943040401e-14,150],offset:[0,0],size:[27,27]}
+};
+for (const [shaftKey, expected] of Object.entries(authoredFlailShafts)) {
+  const shaft=config.shafts[shaftKey],rope=shaft.mounts.find(line=>line.type==='rope'),hole=shaft.bores[0];
+  assert.deepEqual(plain([rope.start.x,rope.start.y]),expected.start,shaftKey+': uploaded rope origin');
+  assert.deepEqual(plain([rope.end.x,rope.end.y]),expected.end,shaftKey+': uploaded rope tip');
+  assert.deepEqual(plain([hole.offsetX,hole.offsetY]),expected.offset,shaftKey+': exact bore offset');
+  assert.deepEqual(plain([hole.rx*2,hole.ry*2]),expected.size,shaftKey+': opening size');
+  assert.equal(api.isDisallowed(shaftKey,'grapple-flail'),false,shaftKey+': chosen Grapple Hook haft stays allowed');
+}
+assert.equal(config.shafts.hatchet.mounts.find(line=>line.type==='eye').start.x,206,
+  'artist adjusted the rope origin only; a shifted rigid hatchet sleeve must NOT leak into other weapons');
+assert.equal(config.shafts['plains-sword'].mounts[0].type,'eye',
+  'the original Plains-sword rigid mount type is restored');
+assert.deepEqual(plain(config.heads['war-cleaver'].mount.start),{x:239,y:858},
+  'the War-cleaver head rigid mounting arrow is restored from the reference');
+assert.equal(Object.values(config.heads).some(head=>!head.flailAssembly&&head.flailHeadAnchor!==undefined),false,
+  'old head-global flail pivot guesses have been retired; head rigs stay shared and untouched');
 const original = plain(window.WEAPON_SPRITE_ASSEMBLY_CONFIG.weapons.grappleFlail); // The Tool Hub's source must not be mutated by derived weapons.
 const shaftOwner = api.flailRecipe('grapple-flail','fishing-mace'); // Haft-owned rope replaces the authored head with the modular sprite.
 assert(shaftOwner?.flail, 'rope-bearing shaft produces an actual flexible weapon assembly');
