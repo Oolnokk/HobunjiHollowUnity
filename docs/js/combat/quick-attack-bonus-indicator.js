@@ -35,6 +35,7 @@
   const MAX_RETICLES = 12; // Nearest cued hostiles only, bounding per-frame sprite work in large fights.
   const POP_DURATION_MS = 480; // Keeps confirmed bonus impacts visible through cooldown and killing blows.
   const PROCEDURAL_REDRAW_INTERVAL_MS = 50; // Caps fallback canvas texture uploads at 20 Hz; sprite motion and condition checks still run each render frame.
+  const REACH_REFRESH_INTERVAL_MS = 50; // Rebuilds expensive weapon mastery/shape/enchantment reach every 50ms or immediately after equipment changes.
   const visualRootCache = new WeakMap(); // Used to avoid re-traversing a target avatar every frame when sizing the reticle.
 
   const sights = new Map(); // target -> its reticle (main sprite + glow layers), alive while that target stays cued.
@@ -46,6 +47,7 @@
   let lastCheckedConditions = 0; // Number of condition evaluations on the most recent frame.
   let lastVisualProbes = 0; // Number of avatar-centroid/frustum probes after readiness is confirmed.
   let lastHalfMoonCandidates = 0; // Cheap spatial-filter survivors from the most recent frame.
+  let reachCache = null; // Short-lived read-only reach snapshot; only the geometry is cached, never active bonus conditions.
   let lastFrameMs = performance.now(); // Used to make glow-layer lag frame-rate independent.
   let debugBadge = null; // Used only when the optional mobile URL debug readout is enabled.
   let debugEnabled = debugEnabledFromUrl(); // Used to make diagnostics accessible on mobile without devtools.
@@ -141,12 +143,23 @@
     return out;
   }
 
-  function getReadyState() {
+  function currentReachProfile(deps, attackId, nowMs) {
+    const weaponKey = deps.currentWeaponKey?.(); // Equipment identity invalidates the cache immediately.
+    const tile = Number(deps.TILE) || 0; // Tile-scale changes also invalidate the cached reach.
+    const cached = reachCache; // Last range calculation, reused only for 50ms between equipment changes.
+    if (cached && cached.attackId === attackId && cached.weaponKey === weaponKey
+      && cached.tile === tile && nowMs >= cached.atMs && nowMs - cached.atMs < REACH_REFRESH_INTERVAL_MS) return cached.profile;
+    const profile = window.Combat.quickAttackData?.getReachProfile?.(deps, attackId) || null; // Actual attack geometry, not a second formula.
+    reachCache = { attackId, weaponKey, tile, atMs: nowMs, profile }; // Keeps per-frame condition and facing checks independent of this cache.
+    return profile;
+  }
+
+  function getReadyState(nowMs = performance.now()) {
     const deps = window.Combat.deps;
     const equipped = currentQuickAttack();
     const state = { deps, equipped, reachPx: 0, checkedConditions: 0, visualProbes: 0, halfMoonCandidates: 0, target: null, root: null, ready: false, conditionReady: false, conditions: null, cooldownRemainingS: 0, targets: [], readyTargets: [] };
     if (!deps || !equipped || cueSuppressed(deps)) return state;
-    const profile = window.Combat.quickAttackData?.getReachProfile?.(deps, equipped.attackId); // Read-only live geometry; prepare() would spend Footing.
+    const profile = currentReachProfile(deps, equipped.attackId, nowMs); // Cache only reach briefly; prepare() would spend Footing.
     state.reachPx = Math.max(0, Number(profile?.reachPx) || 0);
     if (!(state.reachPx > 0)) return state;
     state.profile = profile; // Reused below by affliction glow, instead of rebuilding mastery effects for each sight.
@@ -534,7 +547,7 @@
   }
 
   function syncReadyTargets(nowMs = performance.now()) {
-    const state = getReadyState(); // Evaluated once per animation frame and shared by every sight and the debug readout.
+    const state = getReadyState(nowMs); // Evaluate conditions every frame; only read-only range and fallback texture uploads use short caches.
     lastTarget = state.target;
     lastReachPx = state.reachPx;
     lastCheckedConditions = state.checkedConditions;
@@ -633,13 +646,13 @@
     getConditions,
     getReadyState,
     getAfflictions: () => resolvedAfflictions(getReadyState()),
-    refresh: () => syncReadyTargets(performance.now()),
+    refresh: () => { reachCache = null; return syncReadyTargets(performance.now()); }, // Explicit UI refresh bypasses the short geometry cache.
     setDebugEnabled(enabled) {
       debugEnabled = !!enabled;
       updateDebugBadge(getReadyState());
     },
     snapshot: () => ({
-      latestChange: 'Quick bonus uses a cheap forward half-moon broadphase, checks readiness before costly avatar transforms, reuses one affliction snapshot, and throttles only fallback texture uploads.',
+      latestChange: 'Quick bonus uses forward half-moon broadphase; expensive visual probes only for ready targets; shared mastery effects and short reach/texture caches while checking bonuses every frame.',
       targetId: lastTarget?.id || null,
       reachPx: lastReachPx,
       checkedConditions: lastCheckedConditions,
