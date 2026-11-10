@@ -457,7 +457,7 @@
         new THREE.BoxGeometry(1,.14,1),plateMat,cx,y+.07,cz);
       const plateSkin=authored('ruinRewardPlate',cx,y,cz);
       if(plateSkin){
-        plateSkin.scale.set(1,1,1); // Authored stone is .74×.74 tiles, never enlarged beyond its one-tile reservation.
+        plateSkin.scale.set(1.24,1,1.24); // The authored .74-tile stone becomes .918 across, matching the .92 trigger diameter without crossing its single tile.
         const invisible=basic(0xffffff);
         invisible.transparent=true;invisible.opacity=0;invisible.depthWrite=false;
         plate.material=invisible;
