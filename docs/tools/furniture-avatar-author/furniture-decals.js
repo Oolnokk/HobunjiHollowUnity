@@ -785,6 +785,23 @@ function renderDecalEditor() {
     dq('decalTankanGlyphSizeX').value = record.tankanGlyphSizeX;
     dq('decalTankanGlyphSizeY').value = record.tankanGlyphSizeY;
     dq('decalTankanColor').value = record.tankanColor;
+    dq('decalTankanLayoutMode').value = isTankanRing(record) ? 'ring' : 'columns';
+    dq('decalTankanRingFields')?.classList.toggle('hidden', !isTankanRing(record));
+    dq('decalTankanRingRadius').value = record.tankanRingRadius;
+    dq('decalTankanRingTextScale').value = record.tankanRingTextScale;
+    dq('decalTankanRingRotationDeg').value = record.tankanRingRotationDeg;
+    const lines = dq('decalTankanRingLines');
+    if (lines) {
+      const escapeAttribute = value => String(value ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); // Safe for texts imported from furniture JSON.
+      lines.innerHTML = (record.tankanRingLines || []).map((line, index) =>
+        '<div class="section" data-tankan-ring-line="' + index + '">' +
+        '<div class="row"><b>Inner ring ' + (index + 1) + '</b><button data-ring-delete="' + index + '" type="button" class="bad">Remove</button></div>' +
+        '<label>Text</label><input data-ring-text type="text" value="' + escapeAttribute(line.text) + '" maxlength="160" spellcheck="false">' +
+        '<div class="g3"><div><label>Radius differential</label><input data-ring-differential type="number" min=".02" max=".6" step=".01" value="' + line.radiusDifferential + '"></div>' +
+        '<div><label>Angle offset ° (blank = stagger)</label><input data-ring-rotation type="number" step="1" placeholder="Auto" value="' + (line.rotationDeg ?? '') + '"></div>' +
+        '<div><label>Relative text size</label><input data-ring-text-scale type="number" min=".2" max="3" step=".05" value="' + line.textScale + '"></div></div></div>'
+      ).join('');
+    }
   }
   const label = dq('decalSurfaceReadout');
   if (label) label.textContent = `${decalSurfaceLabel(record)} · ${decalSourceLabel(record)}`;
@@ -806,6 +823,7 @@ function installDecalUi() {
   panel.innerHTML = `<h2>Surface Decals</h2>
     <div class="muted">Place image artwork or editable Tankan-script text over a recognized furniture surface. For Tankan text, Width/Height define a 2D container: text stays at its authored glyph size and spacing while there is room, and only uniformly scales down when it would overflow the box.</div>
     <div class="g2"><button id="addFurnitureDecal" class="ok">＋ Add Image to Selected Surface</button><button id="addFurnitureTankanText" class="ok">＋ Add Tankan Text</button></div>
+    <button id="addFurnitureTankanRing" class="ok" style="width:100%;margin-top:6px">＋ Add Tankan Text Ring</button>
     <button id="retargetFurnitureDecal" style="width:100%;margin-top:6px">Retarget Selected Decal</button>
     <input id="furnitureDecalFile" type="file" accept="image/png,image/webp,image/jpeg" hidden>
     <div id="furnitureDecalList" class="list" style="margin-top:7px"></div>
@@ -813,7 +831,16 @@ function installDecalUi() {
       <hr><div id="decalSurfaceReadout" class="readout muted"></div>
       <label>Name</label><input id="decalName" type="text">
       <div id="decalTankanFields" class="hidden">
-        <label>Tankan-script text</label><textarea id="decalTankanText" rows="3" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+        <label>Layout</label><select id="decalTankanLayoutMode"><option value="columns">Vertical word columns</option><option value="ring">Concentric text rings</option></select>
+        <label>Tankan-script text (outer ring in circular mode)</label><textarea id="decalTankanText" rows="3" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+        <div id="decalTankanRingFields" class="hidden">
+          <div class="g3"><div><label>Outer ring radius</label><input id="decalTankanRingRadius" type="number" min=".08" max=".9" step=".02"></div>
+          <div><label>Text size</label><input id="decalTankanRingTextScale" type="number" min=".025" max=".42" step=".01"></div>
+          <div><label>Ring rotation °</label><input id="decalTankanRingRotationDeg" type="number" step="1"></div></div>
+          <div id="decalTankanRingLines"></div>
+          <button id="addInnerTankanRing" type="button" class="ok">＋ Add offset inner ring</button>
+          <div class="muted tight">Each circle spaces glyphs equally. Inner lines use independently configured radius differentials, sizes, and angular offsets. Leave rotation blank to stagger automatically.</div>
+        </div>
         <div class="g2"><div><label>Word-column spacing</label><input id="decalTankanColumnSpacing" type="number" min="-0.6" max="4.35" step="0.05"></div><div><label>Glyph advance</label><input id="decalTankanGlyphAdvance" type="number" min="0.1667" max="6.6667" step="0.05"></div></div>
         <div class="g3"><div><label>Glyph size X</label><input id="decalTankanGlyphSizeX" type="number" min="0.25" max="2" step="0.05"></div><div><label>Glyph size Y</label><input id="decalTankanGlyphSizeY" type="number" min="0.25" max="2" step="0.05"></div><div><label>Text color</label><input id="decalTankanColor" type="color" value="#000000"></div></div>
         <div id="decalTankanReadout" class="readout muted" style="margin-top:6px"></div>
@@ -834,7 +861,35 @@ function installDecalUi() {
     </div>`;
   host.prepend(panel);
   dq('addFurnitureDecal').onclick = requestDecalImage;
-  dq('addFurnitureTankanText').onclick = addTankanTextDecal;
+  dq('addFurnitureTankanText').onclick = () => addTankanTextDecal(false);
+  dq('addFurnitureTankanRing').onclick = () => addTankanTextDecal(true);
+  dq('addInnerTankanRing').onclick = () => {
+    const record = selectedDecal();
+    if (!record || !isTankanRing(record) || record.tankanRingLines.length >= 7) {
+      log?.('Select a Tankan text ring; up to 7 inner lines are supported.', 'warn');
+      return;
+    }
+    updateSelectedDecalFromUi({recordHistory:false}); // Persist the currently edited outer line before rebuilding controls.
+    record.tankanRingLines.push({text:'',radiusDifferential:0.22,rotationDeg:null,textScale:1}); // Additional ring defaults to automatic staggering.
+    renderDecalEditor();
+    queueUndoHistory?.('add inner Tankan ring');
+  };
+  dq('decalTankanRingLines').addEventListener('change', () => updateSelectedDecalFromUi({recordHistory:true}));
+  dq('decalTankanRingLines').addEventListener('input', event => {
+    if (!event.target?.matches?.('[data-ring-text]')) return;
+    clearTimeout(tankanInputTimer);
+    tankanInputTimer = setTimeout(() => updateSelectedDecalFromUi({recordHistory:false}), 100);
+  });
+  dq('decalTankanRingLines').addEventListener('click', event => {
+    const button = event.target.closest('[data-ring-delete]');
+    if (!button) return;
+    const record = selectedDecal();
+    if (!record) return;
+    record.tankanRingLines.splice(Number(button.dataset.ringDelete), 1);
+    renderDecalEditor();
+    buildDecalMesh(record);
+    queueUndoHistory?.('remove inner Tankan ring');
+  });
   dq('retargetFurnitureDecal').onclick = retargetSelectedDecal;
   dq('furnitureDecalFile').addEventListener('change', event => {
     const file = event.target?.files?.[0];
@@ -843,8 +898,8 @@ function installDecalUi() {
   for (const id of ['decalGlowEnabled','decalGlowOff','decalGlowOn','decalGlowCycle','decalGlowPulse','decalGlowPreview']) {
     dq(id)?.addEventListener('change', () => updateSelectedDecalFromUi({ recordHistory: true }));
   }
-  for (const id of ['decalName','decalOffsetU','decalOffsetV','decalWidth','decalHeight','decalRotation','decalLift','decalOpacity','decalVisible','decalTankanColumnSpacing','decalTankanGlyphAdvance','decalTankanGlyphSizeX','decalTankanGlyphSizeY','decalTankanColor']) {
-    dq(id)?.addEventListener('change', () => updateSelectedDecalFromUi({ recordHistory: true }));
+  for (const id of ['decalName','decalOffsetU','decalOffsetV','decalWidth','decalHeight','decalRotation','decalLift','decalOpacity','decalVisible','decalTankanColumnSpacing','decalTankanGlyphAdvance','decalTankanGlyphSizeX','decalTankanGlyphSizeY','decalTankanColor','decalTankanLayoutMode','decalTankanRingRadius','decalTankanRingTextScale','decalTankanRingRotationDeg']) {
+    dq(id)?.addEventListener('change', () => { updateSelectedDecalFromUi({ recordHistory: true }); if (id === 'decalTankanLayoutMode') renderDecalEditor(); });
   }
   dq('decalTankanText')?.addEventListener('input', () => {
     clearTimeout(tankanInputTimer);
