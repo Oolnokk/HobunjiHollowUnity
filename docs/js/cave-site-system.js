@@ -1590,6 +1590,8 @@
     if (lastCaveArea !== profile.mapId) {
       wildlifeDeps?.showZoneBanner?.(name.toUpperCase());
       lastCaveArea = profile.mapId;
+      if(profile.fortifiedStrongholdChild==='boss')
+        window.BanditStrongholdBoss?.recoverLostBossKeyOnReentry?.(profile,state); // A cleared, unloaded corpse cannot permanently seal the treasury.
     }
     if (state.discovered && state.name === name) return;
     state.name = name;
