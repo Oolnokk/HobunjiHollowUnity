@@ -126,6 +126,9 @@ const narrow=new Vec4();
 assert(project(view,camera,[sourceMesh],narrow),'stale snapshot falls back to current transform');
 assert(narrow.z<wide.z,'stale snapshots no longer inflate scissor work');
 sourceMesh.__hobunjiXrayBoundParity.isFresh=()=>true;
+const noParity={...sourceMesh,__hobunjiXrayBoundParity:undefined,onBeforeRender:undefined}; // Ordinary NPC weapon without any hook metadata.
+assert(project(view,camera,[noParity],new Vec4()),
+  'projecting unmarked gear cannot access a missing pose record');
 
 // Earlier visibility culls must not reject a procedural hand just because
 // its current mesh matrix is outside while the fresh captured outline matrix
@@ -151,6 +154,8 @@ const culling=new Function('h',[
   scissorTargetWidth:100,scissorTargetHeight:100,
 });
 const viewCamera={projectionMatrix:{},matrixWorldInverse:{}};
+assert.deepEqual(culling.filterOffscreenReplayMeshes(viewCamera,[noParity]),[],
+  'normal off-screen meshes with undefined onBeforeRender must not dereference absent pose metadata');
 assert.deepEqual(culling.filterOffscreenReplayMeshes(viewCamera,[sourceMesh]),[sourceMesh],
   'fresh captured pose keeps a hand in the shell replay even when its current matrix is off-screen');
 const visibleScene={traverseVisible(visitor){visitor(sourceMesh);}};
