@@ -253,11 +253,11 @@
     const parts = Array.isArray(frontCanvas?.hobunjiSplineParts) ? frontCanvas.hobunjiSplineParts : [];
     if (!parts.length) { root.userData.portraitSplineParts = []; return []; }
     const rears = new Map((backCanvas?.hobunjiSplineParts || []).map(p => [p.key, p]));
-    const joint = root.userData?.neckRig?.headScaleJoint || null;
+    const joint = root.userData?.portraitSplineHeadBone || root.userData?.neckRig?.headScaleJoint || null;
     const host = joint || assembly;
     const holder = new THREE.Group(); holder.name = 'portrait_spline_appendages';
     if (joint) {
-      const pivot = root.userData.neckRig.neckLocal;
+      const pivot = root.userData.portraitSplineNeckLocal || root.userData.neckRig?.neckLocal;
       holder.position.set(-finite(pivot?.x), -finite(pivot?.y), 0);
     }
     host.add(holder);
