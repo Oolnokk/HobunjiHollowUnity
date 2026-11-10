@@ -1381,9 +1381,9 @@
     if (remainingMs > 4) {
       const timer = setTimeout(() => {stoneBeatFallbackTimers.delete(timer);fallback();},remainingMs);
       stoneBeatFallbackTimers.add(timer);
-      lastObjectSfxKeyDebug = {...baseDebug,oneVoice:true,backend:'native-fallback',playbackState:'queued'};
+      lastObjectSfxKeyDebug = {...baseDebug,oneVoice:true,maxDurationSec:3,backend:'native-fallback',playbackState:'queued'};
     } else {
-      lastObjectSfxKeyDebug = {...baseDebug,oneVoice:true,backend:'native-fallback',playbackState:'requested'};
+      lastObjectSfxKeyDebug = {...baseDebug,oneVoice:true,maxDurationSec:3,backend:'native-fallback',playbackState:'requested'};
       fallback();
     }
     return true;
