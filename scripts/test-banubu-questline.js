@@ -626,7 +626,7 @@ assert.match(cookingSource, /minStacks:\s*3,\s*label:\s*'Concentrated'/);
 assert.match(cookingSource, /recipe\?\.outputIcon/, 'CookingSystem must honor bespoke recipe output icons');
 assert.match(cookingSource, /slot\.contributesEffects === false/);
 assert.match(cookingSource, /recipe\.slots\.forEach\(slot => \{[\s\S]{0,260}selectedSlots\[slot\.id\][\s\S]{0,520}ingredientEffectTotals\(definition, selected\?\.stars\)/, 'CookingSystem effect totals must evaluate every contributing recipe slot, including Three-Fish Pie flour and fat');
-assert.match(cookingSource, /function ingredientEffectTotals\([\s\S]{0,900}cookingPrimaryEffect/, 'the shared ingredient-effect helper must still resolve ordinary primary cooking buffs');
+assert.match(cookingSource, /function ingredientEffectTotals\([\s\S]{0,3200}effects\[definition\.cookingPrimaryEffect\] = roundedProcessedBuff/, 'the shared ingredient-effect helper resolves primary cooking buffs through per-stage rounding');
 assert.match(cookingSource, /formatEffectStrength\(effect, amount\)/);
 assert.match(cookingSource, /effectStrengthLabel\(effect\.stacks\)/);
 
