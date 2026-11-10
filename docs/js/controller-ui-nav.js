@@ -831,6 +831,21 @@
   function cycleTabs(delta) {
     const panel = activePanel();
     if (!panel || panelOwnsAction(panel, delta < 0 ? 'previous' : 'next')) return;
+    const stableTabOpen = panel.id === 'menuPanel' && !!panel.querySelector('.mp-tab.active[data-mpanel="stable"]'); // Only the actual Stable page borrows the configured menu page-turn inputs.
+    if (stableTabOpen) {
+      const pages = [...panel.querySelectorAll('#stableRoleTabs > .stable-role-tab')]; // Existing clickable/tappable buttons are the single role-page selection authority.
+      if (pages.length > 1) {
+        const current = Math.max(0, pages.findIndex(button => button.getAttribute('aria-pressed') === 'true'));
+        const next = pages[(current + delta + pages.length) % pages.length];
+        const role = next.dataset.stableRole; // Used to recover the freshly rendered button after the click replaces the Stable list.
+        if (clickOnScreen(next, 'tab')) {
+          clearGroups(panel);
+          const replacement = [...panel.querySelectorAll('#stableRoleTabs > .stable-role-tab')].find(button => button.dataset.stableRole === role);
+          if (replacement) setFocus(replacement, { scroll: false });
+        }
+        return;
+      }
+    }
     const local = localSubtabs(panel); // The deepest entered section borrows configured tab actions until Back leaves it.
     if (local) {
       const state = subtabsByGroup.get(local.node); // The visible choice strip and bumpers share the same section owner.
