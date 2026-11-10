@@ -69,10 +69,6 @@
   function blendSegment(segment, wind) {
     const d = segment.deadzone;
     const x = axisAmount(wind.x, d.x), y = axisAmount(wind.y, d.y), z = axisAmount(wind.z, d.z);
-    const mix = (axis, neg, pos) => {
-      const pose = segment.poses[axis < 0 ? neg : pos];
-      return Math.abs(axis) * pose.yaw;
-    };
     const angles = { yaw: 0, pitch: 0, roll: 0 };
     for (const [axis, low, high, strength] of [['x', 'left', 'right', x], ['y', 'down', 'up', y], ['z', 'away', 'toward', z]]) {
       const pose = segment.poses[strength < 0 ? low : high];
@@ -252,8 +248,10 @@
   }
 
   function attach(THREE, root, assembly, frontCanvas, backCanvas, modelWidth, modelHeight) {
+    if (!THREE || !root || !assembly) return [];
+    root.userData.portraitSplineAttachment = { THREE, assembly, modelWidth, modelHeight }; // Supports cosmetic changes after the avatar was built without a 3D hairstyle.
     const parts = Array.isArray(frontCanvas?.hobunjiSplineParts) ? frontCanvas.hobunjiSplineParts : [];
-    if (!parts.length || !THREE || !assembly) return [];
+    if (!parts.length) { root.userData.portraitSplineParts = []; return []; }
     const rears = new Map((backCanvas?.hobunjiSplineParts || []).map(p => [p.key, p]));
     const joint = root.userData?.neckRig?.headScaleJoint || null;
     const host = joint || assembly;
@@ -263,12 +261,14 @@
       holder.position.set(-finite(pivot?.x), -finite(pivot?.y), 0);
     }
     host.add(holder);
+    root.userData.portraitSplineHolder = holder; // Owned by this avatar and removed when its selected hairstyle changes.
     const attached = [];
     for (const part of parts) {
       if (!part.rig || !part.canvas) continue;
       const rendered = makePart(THREE, part, part.slot === 'facialHair' ? null : rears.get(part.key), modelWidth, modelHeight, part.key);
       holder.add(rendered.frontMesh);
       if (rendered.rearMesh) holder.add(rendered.rearMesh);
+      rendered.signature = JSON.stringify(part.rig); // Compare authored geometry/motion without recreating on ordinary breathing refreshes.
       attached.push(rendered);
     }
     root.userData.portraitSplineParts = attached; // World-space/mobile debug and optional authored pose controls.
@@ -276,12 +276,40 @@
     return attached;
   }
 
+  function discardPieces(root) {
+    const holder = root?.userData?.portraitSplineHolder;
+    if (!holder) return;
+    const materials = new Set(), geometries = new Set();
+    holder.traverse(mesh => {
+      if (mesh.geometry) geometries.add(mesh.geometry);
+      if (mesh.material) (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).forEach(mat => materials.add(mat));
+    });
+    holder.parent?.remove(holder);
+    for (const geometry of geometries) geometry.dispose?.();
+    for (const material of materials) { material.map?.dispose?.(); material.dispose?.(); }
+    root.userData.portraitSplineHolder = null;
+    root.userData.portraitSplineParts = [];
+    live.delete(root);
+  }
+
   function refresh(root, frontCanvas, backCanvas) {
-    const parts = root?.userData?.portraitSplineParts;
-    if (!parts?.length) return;
-    const fronts = new Map((frontCanvas?.hobunjiSplineParts || []).map(p => [p.key, p]));
+    if (!root) return;
+    const requested = Array.isArray(frontCanvas?.hobunjiSplineParts) ? frontCanvas.hobunjiSplineParts : [];
+    const active = root.userData?.portraitSplineParts || [];
+    const byName = new Map(active.map(part => [part.name, part]));
+    const changed = requested.length !== active.length || requested.some(part => {
+      const current = byName.get(part.key);
+      return !current || current.signature !== JSON.stringify(part.rig);
+    });
+    if (changed) {
+      discardPieces(root);
+      const owner = root.userData?.portraitSplineAttachment;
+      if (owner && requested.length) attach(owner.THREE, root, owner.assembly, frontCanvas, backCanvas, owner.modelWidth, owner.modelHeight);
+      return;
+    }
+    const fronts = new Map(requested.map(p => [p.key, p]));
     const rears = new Map((backCanvas?.hobunjiSplineParts || []).map(p => [p.key, p]));
-    for (const part of parts) {
+    for (const part of active) {
       const f = fronts.get(part.name), b = rears.get(part.name);
       for (const [mesh, canvas] of [[part.frontMesh, f?.canvas], [part.rearMesh, b?.canvas]]) {
         if (!mesh || !canvas) continue;
