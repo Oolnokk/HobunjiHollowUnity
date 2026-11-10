@@ -393,8 +393,9 @@
     state.movementPosition = options.movementPosition || null; // Player/NPC world position excludes hand-motion offsets from neutral-to-windup lag.
   }
 
-  // Each visible duplicate is a full flail owner. Reuse decorate/updateOne and their
-  // independent pendulum state instead of trying to drag one world's rope between hands.
+  // Each visible duplicate owns its rope/head artwork, but the original weapon
+  // supplies ONE shared world-space pendulum direction. Per-hand contact points
+  // and head placements remain independent under each weapon's baked transform.
   // The original stays visible until BOTH async replicas have their connector and head.
   function syncDualWield(sourceRoot, mainMesh, offMesh, active) {
     const source = states.get(sourceRoot);
@@ -409,19 +410,13 @@
             metalOptions: source.metalOptions, masteryLevel: source.masteryLevel,
           });
         }
-        const replica = states.get(copy); // The other hand has its own pendulum history, never shared with this source state.
+        const replica = states.get(copy); // Visible side-specific art; only the source owns time-stepped pendulum physics.
         if (replica) {
-          if (replica.attacking !== source.attacking || replica.progress !== source.progress
-            || replica.wf !== source.wf || replica.sf !== source.sf || replica.hf !== source.hf
-            || replica.pitchTravelRad !== source.pitchTravelRad || replica.yawTravelRad !== source.yawTravelRad) {
-            setAction(copy, {
-              attacking: source.attacking, progress: source.progress,
-              windupFrac: source.wf, strikeFrac: source.sf, holdFrac: source.hf,
-              pitchTravelDeg: Number.isFinite(source.pitchTravelRad) ? source.pitchTravelRad * 180 / Math.PI : undefined,
-              yawTravelDeg: source.yawTravelRad * 180 / Math.PI,
-              movementPosition: source.movementPosition,
-            });
-          } else replica.movementPosition = source.movementPosition; // Avoid resetting idle gravity/lag on every socket sync.
+          replica.dualPhysicsSource = source; // Every swing copies this one authoritative WORLD-space direction, never a local-space angle.
+          replica.attacking = source.attacking; replica.progress = source.progress;
+          replica.wf = source.wf; replica.sf = source.sf; replica.hf = source.hf;
+          replica.pitchTravelRad = source.pitchTravelRad; replica.yawTravelRad = source.yawTravelRad;
+          replica.movementPosition = source.movementPosition; // One actor supplies locomotion; each replica still resolves its own pivot.
         }
       }
     } else {
@@ -755,6 +750,10 @@
     if (chainSpan.lengthSq() < 1e-10) return; // Degenerate all-transparent/one-pixel chain cannot form a lever.
     state.physicsLength = Math.max(0.01, chainSpan.length() * attachmentScale); // World-space rope length supplies the pendulum lever arm.
     chainSpan.normalize();
+    const sharedPhysics = state.dualPhysicsSource?.dead ? null : state.dualPhysicsSource; // The original updates before its later-created visible copies in the shared frame scheduler.
+    if (sharedPhysics) {
+      state.direction.copy(sharedPhysics.direction); // Identical world-space sway; each side still uses its own baked haft attachment below.
+    } else {
     q.measuredPivotVelocity.copy(pivot).sub(state.lastPivot).divideScalar(Math.max(0.001, dt)); // The animated attachment transfers real handle momentum.
     q.pivotAcceleration.copy(q.measuredPivotVelocity).sub(state.pivotVelocity).divideScalar(Math.max(0.001, dt));
     if (!state.hasPivot || pivot.distanceToSquared(state.lastPivot) > 9) {
@@ -832,6 +831,8 @@
       else state.angularVelocity.set(0, 0, 0);
     }
     if (dt > 0) state.hasPhysicsVelocity = true;
+    }
+    if (state.dualWieldHidden) return; // Hidden original still simulates the ONE pendulum, but need not position invisible rope/head art.
     const worldQ = planeQuaternion(q.headUp.copy(state.direction).negate(), normal, q.worldQ, q);
     worldQ.multiply(q.correction.setFromUnitVectors(chainSpan, q.axisUp)); // Align both opaque chain endpoints, not the image rectangle.
     const chainCenterWorld = q.chainCenter.copy(pivot).sub(q.tmp.copy(topLocal).multiplyScalar(attachmentScale).applyQuaternion(worldQ)); // Keep the already axis-scaled top contact pinned to the haft.
@@ -864,7 +865,7 @@
     }
     state.headRoot.position.copy(bakedPoint(headCenterWorld, null, root, q.inverseRootMatrix, q.headLocal));
     state.headRoot.quaternion.copy(rootQInverse).multiply(headQ);
-    if (root.visible !== false) effects?.stepFire(state, effectsDt); // Flame stays in the assembled head and behind later opaque sprites.
+    if (root.visible !== false && !state.dualWieldHidden) effects?.stepFire(state, effectsDt); // Never emit a third set of particles from the hidden original head.
   }
 
   function tick(deltaS, freezePhysics = false) {
@@ -920,7 +921,7 @@
       lifetime: weakRegistry ? 'root-weak' : 'explicit-drop', // Visible fallback for browsers without weak references.
       setupFailed: s.setupFailed, retryInMs: s.setupFailed ? Math.max(0, s.nextRetryAt - performance.now()) : 0, repairedParts: s.repairedParts, // Diagnose failed textures and automatic reparent recovery on mobile.
       partsAttached: !s.config.flail || (s.chain?.parent === s.root && s.headRoot?.parent === s.root), // Confirms both children follow the same cached handle after switching tools.
-      dualFlail: s.config.flail ? { replica: !!s.root.userData?.hobunjiDualWieldDuplicate, originalHidden: !!s.dualWieldHidden, copiesReady: s.dualWieldReplicas?.length || 0 } : null, // Mobile-visible evidence that both hanging heads are independent.
+      dualFlail: s.config.flail ? { replica: !!s.root.userData?.hobunjiDualWieldDuplicate, originalHidden: !!s.dualWieldHidden, copiesReady: s.dualWieldReplicas?.length || 0, physics: s.dualPhysicsSource ? 'shared-world-sway' : 'simulated', physicsOwner: s.dualPhysicsSource?.itemKey || null } : null, // Mobile-visible confirmation: one simulated pendulum, both heads rendered.
     });
     }
     return snapshot;
