@@ -718,6 +718,13 @@
     if (music) lines.push(`NPC music: ${JSON.stringify(music)}`);
     const stoneAudio=window.RuinInteractionAudio?.debugSnapshot?.(); // The Debug tab exposes the latest recorded cue/pitch on mobile without a console.
     if(stoneAudio)lines.push(`Ruin stone/fire audio: ${JSON.stringify(stoneAudio)}`);
+    const stoneBeatTransport=window.AudioSystem?.stoneBeatDebugSnapshot?.(); // Mobile-readable Web Audio vs native fallback, decoded buffers, queued voices, and decode failures.
+    if(stoneBeatTransport) lines.push(`Stonebeat transport: ${JSON.stringify(stoneBeatTransport)}`);
+    const cachedFlails=window.HobunjiWeaponSpriteAssemblies?.debugSnapshot?.().filter(entry=>entry.connector); // Only flails matter for detached rope/head ownership; omit ordinary weapons.
+    if(cachedFlails?.length) lines.push(`Flail retained roots: ${JSON.stringify(cachedFlails.slice(0,6).map(entry=>({
+      itemKey:entry.itemKey,attached:entry.attached,loaded:entry.loaded,cachedPlayerOwned:entry.cachedPlayerOwned,
+      detachedForMs:entry.detachedForMs,connector:entry.connector,
+    })))}`);
     const erroring = entries.filter(entry => entry.errorCount > 0);
     if (erroring.length) {
       lines.push(`>>> Frame scheduler subscriber errors: ${erroring.map(entry => `${entry.id}(${entry.owner}) x${entry.errorCount}: ${String(entry.lastError || '').split('\n')[0]}`).join(' | ')}`);
