@@ -555,7 +555,6 @@
       applyStatueSpriteFinish(mesh, part);
       return mesh;
     }
-    const t = part.transform;
     if (part.kind === 'glb') {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(.001, .001, .001), new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false })); // Animation/picking owner while the bone-hidden model loads.
       mesh.position.set(t.x || 0, t.y || 0, t.z || 0); mesh.rotation.set((t.rx || 0) * DEG, (t.ry || 0) * DEG, (t.rz || 0) * DEG);
