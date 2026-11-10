@@ -8184,16 +8184,15 @@
       const bridgeNow = nowMs();
       const clock = sharedTransportData(bridgeNow); // One coherent transport sample drives the returned beat, chord step and jam state.
       const followingNpc = Boolean(jamLeaderSync && !state.game.active);
-      const effectiveBpm = followingNpc ? clock.bpm : Number(state.bpm) || 104; // Public state must describe the audible NPC clock during a jam.
+      const effectiveBpm = clock.bpm; // The public bridge always reports the audible clock: NPC tempo, solo free-play harmony BPM or song BPM.
       const songMeasureBeats = state.game.backupAccompaniment && state.game.active ? Math.max(1,Number(state.game.timeSignature?.[0]) || 4) : 4;
-      const measureDurationMs = followingNpc
-        ? clock.meter.measureQuarterBeats * clock.quarterBeatMs
-        : songMeasureBeats * 60000 / effectiveBpm;
+      const mixedMeter = clock.mixedPhase; // Fixed Kurraya's 6/8→3/4 transport also applies to solo free play, not just NPC jams.
+      const measureDurationMs = mixedMeter ? clock.meter.measureQuarterBeats * clock.quarterBeatMs : songMeasureBeats * 60000 / effectiveBpm;
       const harmonyElapsedMs = followingNpc ? clock.harmonyQuarterBeatFloat * clock.quarterBeatMs : state.game.backupAccompaniment
         ? Math.max(0,gameTime() - (Number(state.game.countInMs) || 0))
         : Math.max(0, bridgeNow - state.harmonyStartTime);
-      const measureIndex = followingNpc ? clock.mixedPhase.absoluteChord : Math.floor(harmonyElapsedMs / measureDurationMs);
-      const measurePhaseMs = followingNpc ? clock.mixedPhase.quarterBeatIntoChord * clock.quarterBeatMs : harmonyElapsedMs % measureDurationMs;
+      const measureIndex = mixedMeter ? mixedMeter.absoluteChord : Math.floor(harmonyElapsedMs / measureDurationMs);
+      const measurePhaseMs = mixedMeter ? mixedMeter.quarterBeatIntoChord * clock.quarterBeatMs : harmonyElapsedMs % measureDurationMs;
       const heldFrets = [...state.frettedSources.values()]; // Physical note holds only; the short automatic release tail does not count as suspense holding.
       const oldestHeldAt = heldFrets.reduce((oldest, fret) => Math.min(oldest, Number(fret?.pressedAt) || bridgeNow), bridgeNow);
       const heldAutomaticNote = state.pluckInputMode !== 'direct' && heldFrets.length > 0;
