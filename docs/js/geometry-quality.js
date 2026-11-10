@@ -29,6 +29,20 @@
     if (typeof value !== 'string' || !VALID_MODEL_PATH.test(value) || value.includes('..') || value.includes('//')) return null;
     return value;
   }
+  function canonicalModelPath(requested) {
+    if (modelPath(requested)) return requested;
+    if (typeof requested !== 'string' || typeof root.URL !== 'function') return null;
+    try {
+      const baseUrl = root.document?.baseURI || root.location?.href;
+      if (!baseUrl) return null;
+      const rootURL = new root.URL('assets/models/', baseUrl);
+      const absolute = new root.URL(requested, baseUrl);
+      if (absolute.origin !== rootURL.origin || absolute.search || absolute.hash ||
+        !absolute.pathname.startsWith(rootURL.pathname)) return null;
+      const canonical = 'assets/models/' + absolute.pathname.slice(rootURL.pathname.length);
+      return modelPath(canonical); // Never accept arbitrary/cross-origin URLs or traversal.
+    } catch (_) { return null; }
+  }
   function normalizeProfile(value) {
     if (!value || typeof value !== 'object') throw new Error('Quality profile must be an object.');
     const source = modelPath(value.source);
@@ -86,13 +100,14 @@
   }
   function getTier() { return tier; }
   function resolvePath(source, requestedTier = tier) {
-    if (!modelPath(source) || !TIERS.includes(requestedTier)) return source;
+    const canonical = canonicalModelPath(source);
+    if (!canonical || !TIERS.includes(requestedTier)) return source;
     // When the global optimized mode is on, use baked low-detail variants
     // FIRST even if an older save still has 'High' selected. Explicit tier
     // arguments continue to honor the exact tier the caller requested.
     const globalMode = arguments.length < 2 && root.GeometryAutoLOD?.isEnabled?.();
     const effectiveTier = globalMode ? 'low' : requestedTier;
-    return templates.get(source)?.variants?.[effectiveTier] || source;
+    return templates.get(canonical)?.variants?.[effectiveTier] || source;
   }
   function markLoadedGLB(result, wasOptimized = false) {
     // All authored GLBs (even missing-LOD fallbacks) must be distinguished
@@ -110,8 +125,14 @@
       if (!node.isMesh) return;
       node.userData = { ...(node.userData || {}), geometryQualityGLBSource: true };
       if (node.geometry) {
-        node.geometry.userData = { ...(node.geometry.userData || {}), geometryQualityGLBSource: true,
-          geometryQualityPrebakedVariant: !!wasOptimized };
+        node.geometry.userData = { ...(node.geometry.userData || {}),
+          geometryQualityGLBSource: true,
+          geometryQualityPrebakedVariant: !!wasOptimized,
+          // BufferGeometry.clone() copies userData. This immutable source key
+          // lets the renderer match hands/feet/furniture clones to the
+          // original's separately loaded pre-baked visual LOD.
+          geometryQualitySourceUid: node.geometry.userData?.geometryQualitySourceUid ||
+            node.geometry.uuid || null };
       }
     });
     return result;
@@ -147,7 +168,7 @@
         }
       };
       const start = () => {
-        const optimizedGameMode = root.GeometryAutoLOD?.isEnabled?.() && modelPath(path);
+        const optimizedGameMode = root.GeometryAutoLOD?.isEnabled?.() && canonicalModelPath(path);
         if (optimizedGameMode) {
           // Critical: the ORIGINAL GLB remains the result used by gameplay for
           // physics, raycasts, procedural edits and interactions. Load the
@@ -191,7 +212,7 @@
             onProgress, error => failure(error, preferred));
         } catch (error) { failure(error, preferred); return undefined; }
       };
-      if (!diagnostics.loaded && modelPath(path) && !root.GeometryAutoLOD?.isEnabled?.()) {
+      if (!diagnostics.loaded && canonicalModelPath(path) && !root.GeometryAutoLOD?.isEnabled?.()) {
         ready.then(start, error => failure(error, path)); // Manual quality settings require the shipped manifest first.
         return undefined;
       }
@@ -204,7 +225,7 @@
   async function loadWithFallback(source, loader) {
     if (typeof loader !== 'function') throw new Error('Quality loader requires a callback.');
     await ready;
-    if (loaderInstalled && modelPath(source)) {
+    if (loaderInstalled && canonicalModelPath(source)) {
       // Existing hand/foot/furniture callers already use the intercepted
       // GLTFLoader. Ask for the CANONICAL URL once; otherwise a missing LOD
       // would be requested twice through nested fallback handlers.
@@ -310,7 +331,7 @@
     else bindSettings();
   }
   return Object.freeze({
-    SCHEMA, TIERS, CONFIG_URL, ready, modelPath, normalizeProfile, validate, importProfiles,
+    SCHEMA, TIERS, CONFIG_URL, ready, modelPath, canonicalModelPath, normalizeProfile, validate, importProfiles,
     clearImported, getTier, setTier, resolvePath, markLoadedGLB, installGlobalLoader, loadWithFallback, snapshot, bindSettings, refreshStatus: updateStatus,
   });
 });

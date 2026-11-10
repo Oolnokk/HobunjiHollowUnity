@@ -30,7 +30,8 @@ class Loader {
 const window = {
   THREE:{GLTFLoader:Loader},
   GeometryAutoLOD:{isEnabled:()=>globalMode,registerPrebaked(original,baked){bakedPairs.push({original,baked});return 1;}},
-  document:{readyState:'complete',getElementById(id){return settings[id]||null;}},
+  URL,
+  document:{baseURI:'https://game.example/docs/index.html',readyState:'complete',getElementById(id){return settings[id]||null;}},
   localStorage:{getItem(k){return storage.get(k)??null;},setItem(k,v){storage.set(k,String(v))},removeItem(k){storage.delete(k)}},
   fetch:async url=>{assert.equal(url,'config/geometry-quality-presets.json');return {ok:true,json:async()=>manifest}},
 };
@@ -42,13 +43,25 @@ const quality=window.GeometryQuality;
   assert.equal(quality.snapshot().loaderInstalled,true,'existing GLTFLoader global class is patched exactly once');
   assert.equal(quality.resolvePath(source),variant,'global mode picks shipped Low variant even with High selector');
   assert.equal(quality.resolvePath(source,'high'),source,'explicit request for High is not overridden');
+  const absolute = 'https://game.example/docs/assets/models/hands/hand_feline.glb';
+  assert.equal(quality.canonicalModelPath(absolute),source,'same-origin absolute GLB requests normalize to manifest identity');
+  assert.equal(quality.resolvePath(absolute),variant,'hands/feet absolute URLs must prefer baked model');
+  assert.equal(quality.canonicalModelPath('https://evil.example/docs/assets/models/hands/hand_feline.glb'),null,
+    'cross-origin model URL must never use local manifest');
+  assert.equal(quality.canonicalModelPath('https://game.example/docs/assets/models/../secret.glb'),null,
+    'absolute traversal must never reach manifest models');
   const first=await new Promise((resolve,reject)=>new Loader().load(source,resolve,null,reject));
   assert.deepEqual(requests.slice(-2),[source,variant],'global mode must load ORIGINAL first and optimized render geometry second');
   assert.equal(first.scene.mesh.userData.geometryQualityGLBSource,true,'source GLB tagged to skip procedural decimation');
   assert.equal(first.scene.mesh.geometry.userData.geometryQualityPrebakedVariant,false,'physics/source GLB is NEVER replaced by an optimized GLB');
   assert.equal(bakedPairs.length,1);
+  requests.length = 0;
+  await new Promise((resolve,reject)=>new Loader().load(absolute,resolve,null,reject));
+  assert.deepEqual(requests,[absolute,variant],'real hand/foot loader uses absolute original then baked counterpart');
+  assert.equal(bakedPairs.length,2);
+  requests.length = 0;
   assert.equal(bakedPairs[0].original.scene,first.scene,'baked geometry is registered alongside original geometry, not returned as gameplay source');
-  assert.equal(quality.snapshot().prebakedLoads,1);
+  assert.equal(quality.snapshot().prebakedLoads,2,'both relative and absolute GLB loads registered baked visuals');
   assert.match(settings.geometryQualityStatus.textContent,/baked models loaded/);
 
   failPreferred=true;
@@ -87,6 +100,8 @@ const quality=window.GeometryQuality;
   assert.match(baker,/error: ERROR, lockBorder: true/);
   assert.match(baker,/writeFile\(output, binary\)/);
   assert.doesNotMatch(baker,/writeFile\(source,/,'builder cannot overwrite source model');
+  const tree=fs.readFileSync(path.join(rootPath,'docs/js/tree-asset-library.js'),'utf8');
+  assert.match(tree,/quality\?\.snapshot\?\.\(\)\.loaderInstalled/,'trees must leave original geometry authoritative when loader wrapper is active');
   const autoLod=fs.readFileSync(path.join(rootPath,'docs/js/geometry-auto-lod.js'),'utf8');
   assert.match(autoLod,/geometryQualityGLBSource/);
   assert.match(autoLod,/if \(!ready\) \{/,'lazy procedural optimizer is required');

@@ -243,7 +243,11 @@
         resolve(null);
         return;
       }
-      const preferred = quality?.resolvePath?.(sourcePath) || sourcePath;
+      // When the global GLTFLoader wrapper is installed it already handles
+      // baked visual LODs and preserves the ORIGINAL as the gameplay tree.
+      // Never pass an optimized URL as the authoritative tree geometry.
+      const preferred = quality?.snapshot?.().loaderInstalled
+        ? sourcePath : (quality?.resolvePath?.(sourcePath) || sourcePath);
       const onLoaded = gltf => {
         const treeRoot = normalizeLoadedRoot(entry, gltf, level, branched);
         if (treeRoot) {

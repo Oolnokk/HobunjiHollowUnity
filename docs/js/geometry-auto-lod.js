@@ -22,7 +22,8 @@
   const MAX_SWAPS_PER_RENDER = 3000; // Worst-case renderer wrapper bound; deferred items remain originals.
 
   const cache = new WeakMap(); // Procedural source geometry -> once-simplified cached geometry.
-  const precomputed = new WeakMap(); // Authored original geometry -> offline-baked render-only alternate, never used by physics.
+  const precomputed = new WeakMap(); // Original or cloned GLB BufferGeometry -> render-only entry.
+  const precomputedBySourceUid = new Map(); // Immutable GLB source UUID -> precomputed entry, reused by runtime-owned visual clones.
   const readyMeshes = new Map(); // Mesh -> geometry entry; sampled only during actual renderer.render().
   const knownCached = new Set(); // Track owned cache allocations for explicit GPU disposal on zone unload.
   const queue = []; // Unique pending geometries processed outside the render/physics frame.
@@ -156,8 +157,13 @@
     activeSourceBudget = Math.max(0, activeSourceBudget - entry.triangles);
     counters.sourceTriangles -= entry.triangles;
     counters.optimizedTriangles -= entry.optimizedTriangles;
-    if (entry.fromBaked) precomputed.delete(entry.source);
-    else cache.delete(entry.source); // Future re-entry will build a fresh LOD for procedural meshes.
+    if (entry.fromBaked) {
+      precomputed.delete(entry.source);
+      if (entry.parentBaked) { entry.variant = null; entry.status = 'retired'; return; }
+      if (entry.sourceUid && precomputedBySourceUid.get(entry.sourceUid) === entry)
+        precomputedBySourceUid.delete(entry.sourceUid);
+      for (const derived of entry.derivedUvs?.values?.() || []) derived.dispose?.(); // Derived stretch-fit UV buffers are owned by the base GLB entry.
+    } else cache.delete(entry.source); // Future re-entry will build a fresh LOD for procedural meshes.
     entry.variant = null;
     entry.status = 'retired';
   }
@@ -171,6 +177,71 @@
     });
     return parts.join('|') + ';indices=' + String(geo?.index?.version || 0) +
       ':' + String(geo?.index?.count || 0);
+  }
+  function supportsClonedGeometry(source, clone) {
+    if (!source || !clone?.isBufferGeometry || !source.isBufferGeometry) return false;
+    const baseline = source.getAttribute?.('position'), current = clone.getAttribute?.('position');
+    if (!baseline || !current || baseline.count !== current.count) return false;
+    const baselineKeys = Object.keys(source.attributes || {}).sort();
+    const currentKeys = Object.keys(clone.attributes || {}).sort();
+    const extraKeys = currentKeys.filter(name => !baselineKeys.includes(name));
+    if (extraKeys.length && !(extraKeys.length === 1 && extraKeys[0] === 'uv' &&
+      /^[xyz]{2}$/.test(clone.userData?.hobunjiStretchFitUvAxes || ''))) return false;
+    if (baselineKeys.some(name => {
+      const a = source.getAttribute(name), b = clone.getAttribute?.(name);
+      return !b || a.count !== b.count || a.itemSize !== b.itemSize || a.normalized !== b.normalized;
+    })) return false;
+    // A clone may have been reshaped by rock contacts, physics, authoring or
+    // stylized props. Sample its coordinates before allowing an original LOD
+    // to replace its independently edited geometry.
+    const n = current.count, probes = Math.min(24, n);
+    for (let k = 0; k < probes; k++) {
+      const i = Math.floor(k * (n - 1) / Math.max(1, probes - 1));
+      if (baseline.getX(i) !== current.getX(i) || baseline.getY(i) !== current.getY(i) ||
+        baseline.getZ(i) !== current.getZ(i)) return false;
+    }
+    return true;
+  }
+  function stretchFitVariant(entry, sourceClone) {
+    const axes = sourceClone.userData?.hobunjiStretchFitUvAxes;
+    if (!/^[xyz]{2}$/.test(axes || '')) return null;
+    const cached = entry.derivedUvs?.get(axes);
+    if (cached) return cached;
+    const position = entry.variant.getAttribute?.('position');
+    const bounds = sourceClone.boundingBox || (sourceClone.computeBoundingBox?.(), sourceClone.boundingBox);
+    if (!bounds || !position || !root.THREE?.BufferAttribute) return null;
+    const boundsAxis = key => ({min:bounds.min[key],
+      span:Math.max(1e-6,bounds.max[key]-bounds.min[key])});
+    const u = boundsAxis(axes[0]), v = boundsAxis(axes[1]);
+    const read = (key,i) => key === 'x' ? position.getX(i) : key === 'y' ? position.getY(i) : position.getZ(i);
+    const array = new Float32Array(position.count * 2); // Uses the game's whole-model stretch-fit UV convention.
+    for (let i = 0; i < position.count; i++) {
+      array[2 * i] = Math.max(0,Math.min(1,(read(axes[0],i)-u.min)/u.span));
+      array[2 * i + 1] = Math.max(0,Math.min(1,(read(axes[1],i)-v.min)/v.span));
+    }
+    const variant = entry.variant.clone(); // Never mutate the author's shared baked data.
+    variant.setAttribute('uv',new root.THREE.BufferAttribute(array,2));
+    if (!entry.derivedUvs) entry.derivedUvs = new Map();
+    entry.derivedUvs.set(axes,variant);
+    return variant;
+  }
+  function lookupPrebaked(mesh) {
+    const geometry = mesh?.geometry;
+    const exact = precomputed.get(geometry);
+    if (exact?.status === 'done') return exact;
+    const uid = geometry?.userData?.geometryQualitySourceUid;
+    const base = uid && precomputedBySourceUid.get(uid);
+    if (!base || base.status !== 'done' || !supportsClonedGeometry(base.source,geometry)) return null;
+    const changedUV = !!geometry.getAttribute?.('uv') && !base.source.getAttribute?.('uv');
+    const variant = changedUV ? stretchFitVariant(base,geometry) : base.variant;
+    if (!variant) return null;
+    const sourceCount = triangles(geometry);
+    if (triangles(variant) >= sourceCount) return null;
+    const cloneEntry = { source:geometry, variant, stamp:geometryStamp(geometry),
+      triangles:sourceCount, optimizedTriangles:triangles(variant), status:'done',
+      fromBaked:true, parentBaked:base, targets:new Set() }; // Shared derived LOD is owned by base entry, not this clone.
+    precomputed.set(geometry,cloneEntry);
+    return cloneEntry;
   }
   function registerPrebaked(originalGLTF, optimizedGLTF) {
     if (!enabled) return 0;
@@ -209,6 +280,8 @@
         optimizedTriangles: targetCount, status: 'done', fromBaked: true, targets: new Set(),
       }; // The offline-baked BufferGeometry is only swapped into scene meshes while renderer.render executes.
       precomputed.set(source, entry);
+      entry.sourceUid = source.userData?.geometryQualitySourceUid || source.uuid || null;
+      if (entry.sourceUid) precomputedBySourceUid.set(entry.sourceUid,entry);
       knownCached.add(entry);
       activeGeometries++;
       activeSourceBudget += sourceCount;
@@ -228,14 +301,20 @@
     else root.setTimeout?.(() => fn({ timeRemaining: () => 5 }), 30);
   }
   function track(mesh) {
-    const baked = precomputed.get(mesh?.geometry);
+    const baked = lookupPrebaked(mesh);
     if (baked && baked.status === 'done') {
       const flags = mesh.userData || {};
       const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      const isStretchFitRig = !!mesh.geometry?.userData?.hobunjiStretchFitUvAxes &&
+        materials.every(m => m?.userData?.hobunjiHandRole || m?.userData?.hobunjiFootRole);
       if (mesh.isSkinnedMesh || [
         'isCollisionMesh', 'isCollisionHelper', 'isInteractionTrigger',
         'physicsProxy', 'geometryAutoLODExclude', 'isClimbBranch', 'isClimbable',
-      ].some(key => flags[key]) || materials.some(m => m?.transparent || m?.alphaTest > 0 || m?.alphaMap)) return;
+        'hobunjiOutlineOccluderDepthReplay', 'hobunjiPortraitOccludedWingLayer',
+      ].some(key => flags[key]) ||
+        (!isStretchFitRig && materials.some(m => m?.transparent || m?.alphaTest > 0 || m?.alphaMap))) return;
+      // Authored hands/feet are true 3D rigs with the game's stretch-fit PNG
+      // UVs; transparent alpha-cutout CARD geometry is still never simplified.
       if (geometryStamp(baked.source) !== baked.stamp) {
         // A visual mesh re-authored its UV/normal/position after load. The
         // offline GLB must not overwrite that edit or its collision geometry.
