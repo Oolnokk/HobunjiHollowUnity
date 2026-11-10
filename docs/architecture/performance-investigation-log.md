@@ -12,6 +12,28 @@ conditions on the same machine; they are not what a player sees.** Counts come f
 comes from CDP CPU profiles. One headless world per run, and bandit/tribe camps are random, so repeat anything
 close before trusting it.
 
+## 10 Nov 2026: attack-frame hitch investigation — pooled melee swipe ribbons
+
+The shared `Combat.spawnMeleeTrail` path, used by player and humanoid/bandit strike effects, allocated
+a new BufferGeometry, index array, position buffer, material and Mesh for **every** displayed
+attack ribbon, then disposed them after roughly 0.34 seconds. Multi-affliction bandits can
+spawn up to four differently colored ribbons per strike. This is a credible source of
+one-frame CPU allocations, GPU buffer uploads and shader state churn **on impact**, but has
+not yet been isolated in a real-device trace as the cause of the reported pauses.
+
+The shared combat owner now reuses fully retired ribbon meshes and position buffers across
+attacks, resets geometry/colors/opacity for every new hit and keeps at most 64 idle ribbons;
+overflow is disposed. A regression fires 70 simultaneous trails and checks distinct live meshes,
+the bounded cache, cross-scene reuse and scene cleanup. The existing Performance Profiler now
+measures separately the **player** and **enemy** strike callbacks; Pixel Probe shows their last
+and peak measured CPU milliseconds alongside GPU ribbon allocation/reuse totals. Timings
+appear only with the profiler enabled; they do not include GPU render time.
+
+**Important distinction:** `GameFeel.hitStop` deliberately slows simulation by up to 0.14 s
+on certain hits while rendering should continue. A perceived animation pause at the
+impact frame is not proof of a GPU or JS stall. Compare hardware frame time, strike callback
+max and hit-stop events before declaring a full freeze fixed.
+
 ## What the symptom turned out to be
 
 "Slow in the wilderness, gets worse after fights, never recovers" had **two** causes, both fixed:
