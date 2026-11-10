@@ -18,6 +18,8 @@
   let activeFoodEffects = []; // Used as an independent timed effect source beside alchemy.
   const externalFoodProviders = new Map(); // Independent festival meals augment cooked-food stats without refreshing or replacing real meal timers.
   let unlockedRecipeIds = new Set(); // Used to persist opt-in recipe templates such as Banubu's Three-Fish Pie.
+  let favoriteRecipes = []; // Per-character assembled ingredient combinations, saved without fixed quality tiers.
+  let activeFavoriteId = null; // Used to refill a loaded favorite with the best available stars after each cooking batch.
   let cookTimer = null; // Used to prevent duplicate cooks during the hearth animation.
   let maxIngredientsLimit = null; // Used by the Foraging Survivalist perk to cap recipes when cooking away from an indoor hearth.
 
@@ -227,6 +229,53 @@
     return consumeQualityByPolicy(key, amount, 'lowest')?.stars ?? null;
   }
 
+  function favoriteId(recipe, slots) {
+    return recipe.id + '|' + recipe.slots.map(slot => slot.id + ':' + (slots[slot.id]?.key || slots[slot.id] || '')).join('|');
+  }
+  function bestAvailableSelection(recipe, desired = null) {
+    const used = {}; // Prevents the same item-quality unit being assigned to two recipe slots.
+    const result = {}; // Used by Auto-fill best and by saved recipes that store only ingredient identities.
+    for (const slot of recipe.slots) {
+      const choices = ingredientCandidates(slot)
+        .filter(([key]) => !desired || key === desired[slot.id])
+        .flatMap(([key]) => availableQualityEntries(key).map(entry => ({ key, stars: entry.stars, count: entry.count })))
+        .sort((a, b) => b.stars - a.stars || a.key.localeCompare(b.key));
+      const chosen = choices.find(entry => (used[entry.key + ':' + entry.stars] || 0) < entry.count);
+      if (!chosen) continue;
+      result[slot.id] = { key: chosen.key, stars: chosen.stars };
+      used[chosen.key + ':' + chosen.stars] = (used[chosen.key + ':' + chosen.stars] || 0) + 1;
+    }
+    return result;
+  }
+  function loadFavorite(id) {
+    const favorite = favoriteRecipes.find(entry => entry.id === id); // A stored assembly can be recalled even when some inputs are currently missing.
+    if (!favorite) return false;
+    const recipe = data().recipes.find(entry => entry.id === favorite.recipeId);
+    if (!recipe || !recipeAllowed(recipe)) return false;
+    selectedRecipeId = recipe.id;
+    activeFavoriteId = favorite.id;
+    selectedSlots = bestAvailableSelection(recipe, favorite.ingredients);
+    return true;
+  }
+  function toggleFavorite() {
+    const recipe = selectedRecipe();
+    if (!selectionIsValid(recipe)) return false;
+    const ingredients = Object.fromEntries(recipe.slots.filter(slot => selectedSlots[slot.id])
+      .map(slot => [slot.id, selectedSlots[slot.id].key])); // Exact assembly; quality deliberately resolved afresh each time.
+    const id = favoriteId(recipe, ingredients);
+    const index = favoriteRecipes.findIndex(entry => entry.id === id);
+    if (index >= 0) {
+      favoriteRecipes.splice(index, 1);
+      if (activeFavoriteId === id) activeFavoriteId = null;
+    } else {
+      favoriteRecipes.push({ id, recipeId: recipe.id, ingredients });
+      activeFavoriteId = id;
+    }
+    deps?.saveMemberWorldData?.();
+    render();
+    return true;
+  }
+
   function ingredientCandidates(slot) {
     return Object.entries(deps.ITEM_DEFS).filter(([key, definition]) =>
       (deps.inventory[key] || 0) > 0 && definition.cookingCategories?.some(category => slot.accepts.includes(category))
@@ -303,18 +352,19 @@
   function ingredientEffectTotals(definition, stars) {
     const effects = {}; // Used by picker labels and meal totals so an ingredient's displayed buff always matches its cooked contribution.
     if (!definition) return effects;
+    const tier = data().processingTiers[definition.cookingProcessingTier] || data().processingTiers.raw || { multiplier: 1 }; // Backward compatibility for legacy pre-processed goods with no recorded stages.
+    const stageMultiplier = Number(definition.cookingProcessMultiplier); // Each inherited manual-processing stage multiplies buffs; saved history supersedes tier shortcuts.
+    const multiplier = Number.isFinite(stageMultiplier) && stageMultiplier > 0 ? stageMultiplier : (tier.multiplier || 1);
     if (definition.foodEffects && Object.keys(definition.foodEffects).length) {
       Object.entries(definition.foodEffects).forEach(([effect, amount]) => {
-        effects[effect] = Math.max(1, Number(amount) || 1);
+        effects[effect] = Math.max(1, Math.ceil((Number(amount) || 1) * multiplier));
       });
       return effects;
     }
     if (!definition.cookingPrimaryEffect) return effects;
-    const tier = data().processingTiers[definition.cookingProcessingTier] || data().processingTiers.raw || { multiplier: 1 }; // Used to preserve processing-strength multipliers in both the picker and cooked result.
-    const safeStars = Math.max(1, Math.min(5, Math.round(Number(stars) || Number(definition.cookingDefaultStars) || 3))); // Used to make ingredient previews robust for legacy/untracked stacks.
-    const prototypeQuality = 1 + (safeStars - 1) / 2; // Used to preserve the prototype's 1–3 quality effect curve atop 1–5 stars.
-    const amount = Math.max(1, Math.ceil((definition.cookingBaseBoost || 1) * prototypeQuality * (tier.multiplier || 1))); // Used as the exact buff-stack amount contributed by this ingredient quality.
-    effects[definition.cookingPrimaryEffect] = amount;
+    const safeStars = Math.max(1, Math.min(5, Math.round(Number(stars) || Number(definition.cookingDefaultStars) || 3))); // Keep the original quality curve.
+    const prototypeQuality = 1 + (safeStars - 1) / 2;
+    effects[definition.cookingPrimaryEffect] = Math.max(1, Math.ceil((definition.cookingBaseBoost || 1) * prototypeQuality * multiplier));
     return effects;
   }
 
@@ -362,6 +412,8 @@
         totals[effect] = (totals[effect] || 0) + amount;
       });
     });
+    const cookingMultiplier = window.ItemProcessing?.processBuffMultiplier?.('cooking') || 1; // The final cooking step adds its own fractional multiplier, rounded up only after assembly.
+    Object.keys(totals).forEach(effect => { totals[effect] = Math.max(1, Math.ceil(totals[effect] * cookingMultiplier)); });
     return totals;
   }
 
@@ -424,6 +476,10 @@
 
   function cook() {
     const recipe = selectedRecipe();
+    if (activeFavoriteId) {
+      const favorite = favoriteRecipes.find(entry => entry.id === activeFavoriteId);
+      if (favorite?.recipeId === recipe?.id) selectedSlots = bestAvailableSelection(recipe, favorite.ingredients);
+    }
     if (!selectionIsValid(recipe) || cookTimer) return;
     const selections = recipe.slots.map(slot => ({ slot, selected: selectedSlots[slot.id] })).filter(entry => entry.selected); // Used to revalidate selected stock while allowing optional recipe slots to remain empty.
     if (!selectionIsValid(recipe)) {
@@ -434,6 +490,12 @@
     const button = document.querySelector('[data-cook-now]'); // Used to show the prototype's short hearth cooking state.
     if (button) { button.disabled = true; button.textContent = '🔥 Cooking…'; }
     cookTimer = setTimeout(() => {
+      if (!selectionIsValid(recipe)) {
+        cookTimer = null;
+        deps.showToast('One of those ingredients is no longer available.', false);
+        render();
+        return;
+      }
       const effects = effectTotals(recipe); // Used before selections are cleared.
       const stars = outputQuality(recipe); // Used as the persistent cooked-food quality.
       const contestIngredients = selections.map(({slot,selected}) => ({
@@ -471,7 +533,8 @@
       recordItemQuality(key, stars, servings); // Both servings share the same completed dish quality/effects because the perk increases batch yield, not recipe resolution.
       window.SkillSystem?.award?.('cooking', window.SkillSystem?.XP_GAINS?.cook || 8, recipe.name);
       window.HobunjiActivityEvents?.emit('meal_cooked', { itemKey: key, recipe: recipe.name });
-      selectedSlots = {};
+      selectedSlots = activeFavoriteId && favoriteRecipes.some(entry => entry.id === activeFavoriteId)
+        ? bestAvailableSelection(recipe, favoriteRecipes.find(entry => entry.id === activeFavoriteId).ingredients) : {};
       cookTimer = null;
       deps.refreshItemScroll();
       deps.buildInventoryGrid();
@@ -553,6 +616,7 @@
       cookedDefinitions: JSON.parse(JSON.stringify(cookedDefinitions)),
       activeFoodEffects: activeFoodEffects.map(effect => ({ key: effect.key, stacks: effect.stacks, durationHours: FOOD_DURATION_HOURS, remainingHours: Number.isFinite(now) && Number.isFinite(effect.expiresAtGameHour) ? effect.expiresAtGameHour - now : Math.max(0, Number(effect.remainingHours) || FOOD_DURATION_HOURS) })).filter(effect => effect.remainingHours > 0),
       unlockedRecipeIds: [...unlockedRecipeIds],
+      favoriteRecipes: favoriteRecipes.map(entry => ({ id: entry.id, recipeId: entry.recipeId, ingredients: { ...entry.ingredients } })),
     };
   }
 
@@ -560,6 +624,16 @@
     heldQuality = null;
     qualityBuckets = saved.qualityBuckets && typeof saved.qualityBuckets === 'object' ? JSON.parse(JSON.stringify(saved.qualityBuckets)) : {};
     unlockedRecipeIds = new Set(Array.isArray(saved.unlockedRecipeIds) ? saved.unlockedRecipeIds : []); // Used to restore opt-in recipe visibility before the next hearth render.
+    favoriteRecipes = (Array.isArray(saved.favoriteRecipes) ? saved.favoriteRecipes : []).filter(entry => {
+      const recipe = data().recipes.find(value => value.id === entry?.recipeId);
+      return recipe && entry.ingredients && typeof entry.ingredients === 'object'
+        && recipe.slots.every(slot => !entry.ingredients[slot.id] || typeof entry.ingredients[slot.id] === 'string');
+    }).map(entry => {
+      const recipe = data().recipes.find(value => value.id === entry.recipeId);
+      const ingredients = Object.fromEntries(recipe.slots.filter(slot => entry.ingredients[slot.id]).map(slot => [slot.id, entry.ingredients[slot.id]]));
+      return { recipeId: recipe.id, ingredients, id: favoriteId(recipe, ingredients) };
+    }); // Restore only valid template/slot identities; stale inventory inputs remain visible as unavailable.
+    activeFavoriteId = null;
     cookedDefinitions = {};
     Object.entries(saved.cookedDefinitions || {}).forEach(([key, definition]) => registerCookedDefinition(key, definition));
     const now = currentGameHour(); // New saves restore exact game-hours; legacy five-minute timers are upgraded to the new 24-hour rule.
@@ -618,11 +692,19 @@
     const list = document.querySelector('[data-recipe-list]');
     if (!list) return;
     const query = document.querySelector('[data-recipe-search]')?.value.trim().toLowerCase() || ''; // Used to filter the 17 prototype recipes.
-    list.innerHTML = data().recipes.filter(recipeAllowed).filter(recipe => !query || `${recipe.name} ${recipe.description}`.toLowerCase().includes(query)).map(recipe => {
+    list.innerHTML = data().recipes.filter(recipeAllowed).filter(recipe => !query || `${recipe.name} ${recipe.description}`.toLowerCase().includes(query))
+      .sort((a, b) => Number(favoriteRecipes.some(f => f.recipeId === b.id)) - Number(favoriteRecipes.some(f => f.recipeId === a.id)))
+      .map(recipe => {
       const ready = recipe.slots.every(slot => !slot.required || ingredientCandidates(slot).length); // Used to show whether any valid ingredient combination exists.
-      return `<button type="button" class="cooking-recipe-card${recipe.id === selectedRecipeId ? ' selected' : ''}" data-recipe="${esc(recipe.id)}"><span>${esc(recipeOutputIcon(recipe))}</span><div><strong>${esc(recipe.name)}</strong><small>${recipe.slots.length} ingredients · ${ready ? 'available' : 'missing items'}</small></div></button>`;
+      const favoriteCount = favoriteRecipes.filter(entry => entry.recipeId === recipe.id).length; // Makes bookmarked assemblies discoverable in the normal recipe list.
+      return `<button type="button" class="cooking-recipe-card${recipe.id === selectedRecipeId ? ' selected' : ''}" data-recipe="${esc(recipe.id)}"><span>${esc(recipeOutputIcon(recipe))}</span><div><strong>${esc(recipe.name)}${favoriteCount ? ' ★' + favoriteCount : ''}</strong><small>${recipe.slots.length} ingredients · ${ready ? 'available' : 'missing items'}</small></div></button>`;
     }).join('') || `<p class="cooking-empty">${maxIngredientsLimit ? 'No recipes this simple yet — improve Survivalist to cook more at camp.' : 'No recipes match.'}</p>`;
-    list.querySelectorAll('[data-recipe]').forEach(button => button.addEventListener('click', () => { selectedRecipeId = button.dataset.recipe; selectedSlots = {}; render(); }));
+    list.querySelectorAll('[data-recipe]').forEach(button => button.addEventListener('click', () => { selectedRecipeId = button.dataset.recipe; selectedSlots = {}; activeFavoriteId = null; render(); }));
+  }
+
+  function selectionIsValidForFavorite(recipe, favorite) {
+    const resolved = bestAvailableSelection(recipe, favorite.ingredients); // Read-only availability check for a saved combination.
+    return recipe.slots.every(slot => !slot.required || (resolved[slot.id] && resolved[slot.id].key === favorite.ingredients[slot.id]));
   }
 
   function renderDetail() {
@@ -638,10 +720,26 @@
     }).join('');
     const effects = effectTotals(recipe);
     const effectMarkup = Object.entries(effects).map(([effect, amount]) => `<span>${EFFECT_ICONS[effect] || '✦'} ${esc(formatEffectStrength(effect, amount))}</span>`).join('') || '<span>No effects until ingredients are selected.</span>';
-    root.innerHTML = `<div class="cooking-recipe-head"><h3>${esc(recipe.name)}</h3><p>${esc(recipe.description)}</p></div>${slots}<div class="cooking-preview"><strong>Meal effects</strong><div>${effectMarkup}</div></div><div class="cooking-footer"><button type="button" data-auto-fill>Auto-fill best</button><button type="button" class="cooking-primary" data-cook-now ${selectionIsValid(recipe) ? '' : 'disabled'}>🔥 Cook</button></div>`;
-    root.querySelectorAll('[data-pick-slot]').forEach(button => button.addEventListener('click', () => { selectedSlots[button.dataset.pickSlot] = { key: button.dataset.pickKey, stars: Number(button.dataset.pickStars) }; renderDetail(); renderDebug(); }));
-    root.querySelectorAll('[data-clear-slot]').forEach(button => button.addEventListener('click', () => { delete selectedSlots[button.dataset.clearSlot]; renderDetail(); renderDebug(); }));
-    root.querySelector('[data-auto-fill]')?.addEventListener('click', () => { recipe.slots.forEach(slot => { const first = ingredientCandidates(slot).flatMap(([key]) => availableQualityEntries(key).map(entry => ({ key, stars: entry.stars })))[0]; if (first) selectedSlots[slot.id] = first; }); renderDetail(); renderDebug(); });
+    const id = favoriteId(recipe, selectedSlots); // Used to label a currently assembled favorite without tying it to its selected quality stars.
+    const isFavorite = favoriteRecipes.some(entry => entry.id === id);
+    const savedForRecipe = favoriteRecipes.filter(entry => entry.recipeId === recipe.id);
+    const favoriteMarkup = savedForRecipe.length ? `<div class="cooking-saved-favorites"><strong>★ Saved combinations</strong>${savedForRecipe.map(entry => {
+      const names = recipe.slots.filter(slot => entry.ingredients[slot.id]).map(slot => deps.ITEM_DEFS[entry.ingredients[slot.id]]?.label || entry.ingredients[slot.id]).join(' · ');
+      const available = selectionIsValidForFavorite(recipe, entry); // Preview availability without changing the active assembly.
+      return `<div class="cooking-favorite-row"><button type="button" data-load-favorite="${esc(entry.id)}">${activeFavoriteId === entry.id ? '★ ' : '☆ '}${esc(names)} <small>${available ? 'Ready' : 'Missing ingredients'}</small></button><button type="button" data-remove-favorite="${esc(entry.id)}" aria-label="Remove saved combination">×</button></div>`;
+    }).join('')}</div>` : '';
+    root.innerHTML = `<div class="cooking-recipe-head"><h3>${esc(recipe.name)}</h3><p>${esc(recipe.description)}</p></div>${favoriteMarkup}${slots}<div class="cooking-preview"><strong>Meal effects</strong><div>${effectMarkup}</div><small>Cooking itself: ×${(window.ItemProcessing?.processBuffMultiplier?.('cooking') || 1).toFixed(2)} buff strength (0.75 in-game h).</small></div><div class="cooking-footer"><button type="button" data-auto-fill>Auto-fill best</button><button type="button" data-favorite-assembly ${selectionIsValid(recipe) ? '' : 'disabled'}>${isFavorite ? '★ Unfavorite combination' : '☆ Favorite combination'}</button><button type="button" class="cooking-primary" data-cook-now ${selectionIsValid(recipe) ? '' : 'disabled'}>🔥 Cook</button></div>`;
+    root.querySelectorAll('[data-pick-slot]').forEach(button => button.addEventListener('click', () => { selectedSlots[button.dataset.pickSlot] = { key: button.dataset.pickKey, stars: Number(button.dataset.pickStars) }; activeFavoriteId = null; renderDetail(); renderDebug(); }));
+    root.querySelectorAll('[data-clear-slot]').forEach(button => button.addEventListener('click', () => { delete selectedSlots[button.dataset.clearSlot]; activeFavoriteId = null; renderDetail(); renderDebug(); }));
+    root.querySelector('[data-auto-fill]')?.addEventListener('click', () => { activeFavoriteId = null; selectedSlots = bestAvailableSelection(recipe); renderDetail(); renderDebug(); });
+    root.querySelector('[data-favorite-assembly]')?.addEventListener('click', toggleFavorite);
+    root.querySelectorAll('[data-load-favorite]').forEach(button => button.addEventListener('click', () => { loadFavorite(button.dataset.loadFavorite); render(); }));
+    root.querySelectorAll('[data-remove-favorite]').forEach(button => button.addEventListener('click', () => {
+      favoriteRecipes = favoriteRecipes.filter(entry => entry.id !== button.dataset.removeFavorite);
+      if (activeFavoriteId === button.dataset.removeFavorite) activeFavoriteId = null;
+      deps?.saveMemberWorldData?.();
+      render();
+    }));
     root.querySelector('[data-cook-now]')?.addEventListener('click', cook);
   }
 
@@ -656,12 +754,15 @@
     const cookingYieldChance = Math.min(0.25, Math.max(0, cookingYieldRank) * 0.25); // Mirrors the authoritative cook() roll above for mobile-readable diagnostics.
     const now = currentGameHour(); // Makes the active timer values inspectable on mobile without developer tools.
     const activeSummary = activeFoodEffects.map(effect => `${effect.key}+${effect.stacks} (${Number.isFinite(now) && Number.isFinite(effect.expiresAtGameHour) ? Math.max(0, effect.expiresAtGameHour - now).toFixed(1) : Number(effect.remainingHours || 0).toFixed(1)}h)`).join(', ') || 'none';
-    output.textContent = `Station: ${isOpen() ? 'hearth open' : 'closed'}\nFood duration: ${FOOD_DURATION_HOURS} in-game hours\nCooking Yield perk: ${cookingYieldRank} (extra serving ${(cookingYieldChance * 100).toFixed(0)}%)\nRecipes: ${data().recipes.length}\nUnlocked special recipes: ${[...unlockedRecipeIds].join(', ') || 'none'}\nRegistered ingredients: ${Object.keys(deps.ITEM_DEFS).filter(key => deps.ITEM_DEFS[key].cookingCategories).length}\nTracked quality units: ${tracked}\nCooked definitions: ${Object.keys(cookedDefinitions).length}\nActive food effects: ${activeSummary}\n\n${processingDiagnostics}${lastProcessing ? `\n\n${lastProcessing}` : ''}${banubuDiagnostics ? `\n\n${banubuDiagnostics}` : ''}`;
+    output.textContent = `Station: ${isOpen() ? 'hearth open' : 'closed'}\nFood duration: ${FOOD_DURATION_HOURS} in-game hours\nCooking Yield perk: ${cookingYieldRank} (extra serving ${(cookingYieldChance * 100).toFixed(0)}%)\nRecipes: ${data().recipes.length}\nUnlocked special recipes: ${[...unlockedRecipeIds].join(', ') || 'none'}\nSaved assemblies: ${favoriteRecipes.length} (loaded: ${activeFavoriteId || 'none'})\nRegistered ingredients: ${Object.keys(deps.ITEM_DEFS).filter(key => deps.ITEM_DEFS[key].cookingCategories).length}\nTracked quality units: ${tracked}\nCooked definitions: ${Object.keys(cookedDefinitions).length}\nActive food effects: ${activeSummary}\n\n${processingDiagnostics}${lastProcessing ? `\n\n${lastProcessing}` : ''}${banubuDiagnostics ? `\n\n${banubuDiagnostics}` : ''}`;
   }
 
   function render() {
     window.ItemProcessing?.repairPreservedDefs?.(deps.inventory); // Held smoked/dried/jerky goods from older saves regain their cooking categories.
     if (!selectedRecipeId) selectedRecipeId = data().recipes[0]?.id || null;
+    const favorite = favoriteRecipes.find(entry => entry.id === activeFavoriteId);
+    const recipe = favorite && data().recipes.find(entry => entry.id === favorite.recipeId);
+    if (recipe && recipe.id === selectedRecipeId) selectedSlots = bestAvailableSelection(recipe, favorite.ingredients);
     renderRecipeList();
     renderDetail();
     renderDebug();
@@ -709,5 +810,6 @@
     registerExternalFoodProvider,
     unlockRecipe, isRecipeUnlocked, listIngredientDefinitions, listCookedInventory, consumeCookedInventoryItem, effectLabel,
     FOOD_DURATION_HOURS, FOOD_EFFECT_STRENGTH_TIERS, effectStrengthLabel, formatEffectStrength, ingredientEffectTotals, ingredientBuffText,
+    bestAvailableSelection, get favoriteRecipes() { return favoriteRecipes.map(entry => ({ ...entry, ingredients: { ...entry.ingredients } })); }, loadFavorite,
   };
 })();
