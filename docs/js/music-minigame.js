@@ -18,8 +18,8 @@
   // playback with the player's sampler: flute and Kurraya timbres, rhythm and
   // note animations must all stay independent. Puzzle mode alone temporarily
   // suspends NPC backing audio while its single-note challenge is active.
-  // leaderByArea only records who began playing first; it never mutes an
-  // independently performing musician.
+  // leaderByArea tracks area/session ownership for transitions; it never
+  // mutes an independently performing musician.
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
@@ -255,13 +255,7 @@
     if (!area || playerSession?.instrumentMode !== 'puzzle') return;
     for (const performer of deps?.listInstrumentPerformers?.() || []) {
       if (performer.area !== area || !ambientFrames.has(performer.npcId)) continue;
-      if (!playerSession.suspendedNpcSong || playerSession.suspendedNpcSong.npcId !== performer.npcId) {
-        playerSession.suspendedNpcSong = {
-          npcId:performer.npcId,
-          songSnapshot:ambientSongSnapshotForNpc(performer.npcId)
-        }; // Reuse the exact procedural song if the player switches to Performance.
-      }
-      stopAmbientForNpc(performer.npcId);
+      stopAmbientForNpc(performer.npcId); // The NPC's own song will restart independently when the puzzle ends.
     }
   }
   function puzzleNote(index) {
@@ -356,20 +350,6 @@
   function bridgeOf(frame) {
     try { return frame?.contentWindow?.HobunjiMusicControlBridge || null; }
     catch { return null; }
-  }
-
-  function ambientSongSnapshotForNpc(npcId) {
-    const frame = ambientFrames.get(npcId); // Captures the exact procedural song Foroji is currently leading before his hidden iframe is torn down for player backup mode.
-    const snapshot = bridgeOf(frame)?.scaleAuditionState?.();
-    const arrangement = snapshot?.arrangement;
-    if (!arrangement) return null;
-    const melodyNotes = (arrangement.melodyNotes || []).map(note => [Number(note.degree) || 0, Number(note.durationQuarterBeats) || 0]);
-    if (!melodyNotes.length) return null;
-    return {
-      introSteps:Array.isArray(arrangement.introSteps) ? arrangement.introSteps.slice() : null,
-      bodySteps:Array.isArray(arrangement.bodySteps) ? arrangement.bodySteps.slice() : null,
-      melodyNotes,
-    };
   }
 
   // ── Player session (the visible overlay) ────────────────────────────
@@ -1423,7 +1403,6 @@
     _tickAccum = 0;
     if (!deps) return;
     const performers = deps.listInstrumentPerformers();
-    const performingIds = new Set(performers.map(p => p.npcId));
     if (playerSession?.instrumentMode === 'puzzle') silenceAmbientForPuzzle(); // Includes NPCs whose schedules become active mid-puzzle.
     // The hidden ambient <iframe> plays through the browser's normal (non-
     // positional) audio output, so it's audible everywhere regardless of
