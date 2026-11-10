@@ -1139,6 +1139,7 @@
     return fallbackTarget;
   } // Keeps ordinary player combat unchanged whenever no local faction target is assigned.
   function damageBanditCombatTarget(c, target, amount, fromX, fromY, knockbackPxS, opts = {}) {
+    opts = window.BanditStrongholdBoss?.enrichHit?.(c,opts) || opts; // Mastery-5 Lord draws three genuine affliction rows per successful hit.
     const actorTarget = target && (
       target.isBandit === true
       || target.isPorakanekiHunter === true
@@ -2149,6 +2150,8 @@
       const witchResult = window.GhoulWyrmWitches?.update?.(c, dt, targetPlayer, distToPlayer, witchApi); // Dedicated spells run before normal ranged/melee.
       if (witchResult?.handled) return witchResult;
     }
+    const lordVolley=window.BanditStrongholdBoss?.updateAI?.(c,dt,targetPlayer);
+    if(lordVolley?.handled)return lordVolley; // Demolitionist's three staged native Shattercask+flask volleys before melee.
     const strongholdCask = window.BanditStrongholdCombat?.updateThrow?.(c, dt, targetPlayer);
     if (strongholdCask?.handled) return strongholdCask; // Same staged tool animation/Burden flight, only selected fortress bandits.
     const flaskResult = updateBanditFlaskAI(c, dt, targetPlayer, distToPlayer); // Flaskers get first refusal on ranged combat before ordinary crossbow/melee logic.
