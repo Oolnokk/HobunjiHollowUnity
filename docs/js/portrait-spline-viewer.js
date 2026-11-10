@@ -263,8 +263,24 @@
       }
       axes.geometry?.dispose();axes.material?.dispose?.();renderer.dispose();
     }
+    function debug(){
+      scene.updateMatrixWorld(true);
+      const box=canvas.getBoundingClientRect();
+      const screen=object=>{
+        const pt=object.getWorldPosition(new THREE.Vector3()).project(camera);
+        return {x:box.left+(pt.x+1)*box.width/2,y:box.top+(1-pt.y)*box.height/2};
+      };
+      const arrows=handles.filter(item=>mode==='translate'&&item.geometry?.type==='ConeGeometry')
+        .map(item=>({axis:item.userData.axis,...screen(item)}));
+      return {
+        webgl:true,mode,selectedKnot:selectedIndex,knots:dots.length,handles:handles.length,
+        ribbonVertices:hairPlane.geometry?.attributes?.position?.count||0,
+        headLoaded:!!headPlane.material.map,hairLoaded:!!hairPlane.material.map,
+        arrows, // Mobile diagnostics and browser pointer-test coordinates for the actual visible gizmo tips.
+      };
+    }
     setCameraView('angle');
-    return { update,setMode,setCameraView,schedule,dispose,THREE };
+    return { update,setMode,setCameraView,schedule,dispose,debug,THREE };
   }
   window.PortraitSplineViewer={create};
 })();
