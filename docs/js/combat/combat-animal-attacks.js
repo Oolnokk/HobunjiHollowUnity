@@ -229,17 +229,20 @@
     const meshes = []; // Owned scene nodes: one per color/material, never one per particle.
     const positions = new Uint16Array(materials.length); // Reused per-material instance offsets on every frame.
     const transform = new THREE.Object3D(); // One reusable transform/matrix scratch for the whole burst.
+    let pendingGeometry = null; // Disposed if constructing or attaching an instanced mesh throws.
     try {
       for (const material of materials) {
-        const batchGeometry = geometry.clone(); // Own the tiny tetra geometry so disposing a burst frees its instance GPU buffer without invalidating the shared source.
-        const mesh = new THREE.InstancedMesh(batchGeometry, material, limit);
+        pendingGeometry = geometry.clone(); // Each batch owns the tiny tetra geometry and can release its instance GPU buffer without invalidating the shared source.
+        const mesh = new THREE.InstancedMesh(pendingGeometry, material, limit);
         mesh.count = 0;
         mesh.frustumCulled = false; // Burst particles move independently of the static instance bounding sphere.
         mesh.instanceMatrix?.setUsage?.(THREE.DynamicDrawUsage);
         parent.add(mesh);
         meshes.push(mesh);
+        pendingGeometry = null;
       }
     } catch (error) {
+      pendingGeometry?.dispose?.();
       for (const mesh of meshes) {
         mesh.parent?.remove?.(mesh);
         if (mesh.geometry !== geometry) mesh.geometry?.dispose?.();
