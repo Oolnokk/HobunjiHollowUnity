@@ -144,6 +144,7 @@
     state.frameIndex = -1; // Tracks which quantized tilt was last shown, avoiding needless texture rebinds.
     state.frameApplied = false;
     state.kickParticles = []; // Transient scene-owned dust motes cleaned on recovery/cancellation.
+    state.kickParticleBatch = null; // Optional GPU-instanced draw owner for this one attack.
     const reach = Math.max(Number(creature.def?.attackRangePx) || 0, deps.TILE * 1.18); // Same cone reach used later by strike().
     window.Combat.animalAttacks.beginConeLunge(creature, state, context, deps, {
       rangePx: reach,
@@ -185,44 +186,82 @@
     state.frameApplied = true;
   }
 
+  function syncKickParticleBatch(state) {
+    state.kickParticleBatch?.sync(state.kickParticles, (transform, mote) => {
+      transform.position.set(mote.x, mote.y, mote.z);
+      transform.rotation.set(mote.rx, 0, mote.rz);
+      transform.scale.setScalar(mote.scale);
+    }); // Both dirt shades keep their original per-mote motion with two draw calls total.
+  }
+
   function emitKickParticles(creature, state, deps) {
-    const THREE = window.THREE; // Optional in isolated headless tests; gameplay uses the existing THREE world scene.
+    const THREE = window.THREE; // No WebGL needed in the attack logic or isolated headless fixtures.
     const parent = creature.avatarRef?.group?.parent;
     if (!parent || !THREE?.Mesh || !THREE?.TetrahedronGeometry || !THREE?.MeshBasicMaterial) return;
     if (!impactGeometry) impactGeometry = new THREE.TetrahedronGeometry(0.045, 0);
     if (!impactMaterials) impactMaterials = [0x9a8468, 0xd2c29b].map(color => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, depthWrite: false }));
-    const yaw = Number(state.angleToward) || 0; // The hindquarters point toward the kicked target after the animal turns around.
+    const batch = window.Combat?.animalAttacks?.createParticleBatch?.(THREE, parent, impactGeometry, impactMaterials, IMPACT_PARTICLE_COUNT) || null; // GPU instancing is optional, with identical legacy motes as fallback.
+    state.kickParticleBatch = batch; // Owned by this attack; clear on recovery, death, or cancellation.
+    const yaw = Number(state.angleToward) || 0;
     const surfaceY = (Number(creature.avatarRef.group?.position?.y) || 0) - Math.max(0.2, Number(creature.halfHeight) || 0.35);
     for (let index = 0; index < IMPACT_PARTICLE_COUNT; index++) {
       const spread = (index / IMPACT_PARTICLE_COUNT - 0.5) * Math.PI * 1.25;
       const angle = yaw + spread;
-      const speed = 1.5 + (index % 5) * 0.28; // Deterministic, uneven scatter looks punchy and avoids simulation RNG changes.
-      const mesh = new THREE.Mesh(impactGeometry, impactMaterials[index % impactMaterials.length]);
-      mesh.position.set(creature.x / deps.TILE + Math.cos(yaw) * 0.35, surfaceY + 0.09, creature.y / deps.TILE + Math.sin(yaw) * 0.35);
-      mesh.scale.setScalar(0.65 + (index % 4) * 0.2);
-      parent.add(mesh);
-      state.kickParticles.push({ mesh, vx: Math.cos(angle) * speed, vz: Math.sin(angle) * speed, vy: 0.65 + (index % 6) * 0.19, life: IMPACT_PARTICLE_LIFE_S }); // Updated and culled by tickKickParticles.
+      const speed = 1.5 + (index % 5) * 0.28; // Preserve deterministic impact scatter and gameplay RNG independence.
+      const x = creature.x / deps.TILE + Math.cos(yaw) * 0.35;
+      const y = surfaceY + 0.09;
+      const z = creature.y / deps.TILE + Math.sin(yaw) * 0.35;
+      const mote = {
+        vx: Math.cos(angle) * speed, vz: Math.sin(angle) * speed,
+        vy: 0.65 + (index % 6) * 0.19, life: IMPACT_PARTICLE_LIFE_S,
+      }; // One simulation record per mote regardless of draw strategy.
+      if (batch) {
+        Object.assign(mote, { x, y, z, rx: 0, rz: 0, scale: 0.65 + (index % 4) * 0.2, materialIndex: index % impactMaterials.length });
+      } else {
+        const mesh = new THREE.Mesh(impactGeometry, impactMaterials[index % impactMaterials.length]);
+        mesh.position.set(x, y, z);
+        mesh.scale.setScalar(0.65 + (index % 4) * 0.2);
+        parent.add(mesh);
+        mote.mesh = mesh; // Existing non-instanced path remains available to browser/fixture renderers.
+      }
+      state.kickParticles.push(mote);
     }
+    syncKickParticleBatch(state); // Show the hit burst on its first frame, not one update after hoof contact.
   }
 
   function tickKickParticles(state, dt) {
+    const batch = state.kickParticleBatch; // Reused instanced geometry for this impact's entire 0.42-second lifetime.
     for (let i = (state.kickParticles?.length || 0) - 1; i >= 0; i--) {
       const mote = state.kickParticles[i];
       mote.life -= dt;
       mote.vy -= 8.5 * dt;
-      mote.mesh.position.x += mote.vx * dt;
-      mote.mesh.position.z += mote.vz * dt;
-      mote.mesh.position.y += mote.vy * dt;
-      mote.mesh.rotation.x += dt * 6;
-      mote.mesh.rotation.z += dt * 4;
-      mote.mesh.scale.multiplyScalar(Math.max(0.75, 1 - dt * 2));
-      if (mote.life <= 0) { mote.mesh.parent?.remove(mote.mesh); state.kickParticles.splice(i, 1); }
+      if (batch) {
+        mote.x += mote.vx * dt;
+        mote.z += mote.vz * dt;
+        mote.y += mote.vy * dt;
+        mote.rx += dt * 6;
+        mote.rz += dt * 4;
+        mote.scale *= Math.max(0.75, 1 - dt * 2);
+      } else {
+        mote.mesh.position.x += mote.vx * dt;
+        mote.mesh.position.z += mote.vz * dt;
+        mote.mesh.position.y += mote.vy * dt;
+        mote.mesh.rotation.x += dt * 6;
+        mote.mesh.rotation.z += dt * 4;
+        mote.mesh.scale.multiplyScalar(Math.max(0.75, 1 - dt * 2));
+      }
+      if (mote.life <= 0) {
+        mote.mesh?.parent?.remove(mote.mesh);
+        state.kickParticles.splice(i, 1);
+      }
     }
+    syncKickParticleBatch(state);
   }
 
   function clearKickParticles(state) {
-    for (const mote of state?.kickParticles || []) mote.mesh.parent?.remove(mote.mesh);
-    if (state) state.kickParticles = [];
+    for (const mote of state?.kickParticles || []) mote.mesh?.parent?.remove(mote.mesh);
+    state?.kickParticleBatch?.dispose(); // Reclaims per-impact instance buffers; shared dust geometry/material stay cached.
+    if (state) { state.kickParticleBatch = null; state.kickParticles = []; }
   }
 
   function finish(creature) {
