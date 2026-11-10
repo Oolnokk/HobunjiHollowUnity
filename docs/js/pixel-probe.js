@@ -1280,6 +1280,8 @@
     if (held?.actionArch?.length) {
       const archState = held.actionArch.map(button => `${button.id}=${button.hidden ? 'hidden' : (button.action || 'empty')}${button.blocked ? '/blocked' : ''}`).join(' ');
       lines.push(`Mobile action arch: ${archState}`);
+      const markupWrites = held.actionArch.map(button => `${button.id}=${button.markupWrites ?? 0}`).join(' '); // Per-slot totals distinguish stable controls from buttons repeatedly rebuilt while aiming.
+      lines.push(`Action arch markup writes: ${markupWrites}`);
     }
     if (held?.characterActionLocks?.length) {
       const lockState = held.characterActionLocks.map(lock => `${lock.owner}[${lock.participants.map(participant => `${participant.id}:${participant.channels.join('+')}`).join(',')}]`).join(' ');
