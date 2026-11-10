@@ -121,3 +121,19 @@ tables.nearbySurface('diagonal-test',3.5,.6);
 assert.equal(tables.snapshot('diagonal-test').surfaceCamera.probe.scans,cachedScans+3,'crossing a tile boundary checks immediately');
 tables.clearArea('diagonal-test');
 assert.equal(tables.nearbySurface('diagonal-test',3.5,.6).active,false,'layout deletion invalidates cached proximity immediately');
+
+let frame = 1; // The gameplay frame stamp activates the indexed collision path.
+tables.init({ frameId: () => frame });
+const indexed = root(4, 4); // Spans multiple broad-phase cells and checks exact point and body queries.
+tables.registerPlacement('indexed', { id:'table', key:'tableSmall', col:4, row:4 }, indexed, { fw:2, fd:2 });
+assert.equal(tables.blocksBox('indexed', 3.5, 4.5), true);
+assert.equal(tables.blocksBox('indexed', 4.5, 3.5), true);
+assert.equal(tables.blocksBox('indexed', 3, 4.5), false, 'the exact edge of a table is outside a point probe');
+assert.equal(tables.blocksBox('indexed', 3, 4.5, 0.1), true, 'a whole body can overlap the same edge');
+assert.equal(tables.blocksBox('indexed', 4.5, 4.5, 0, 4), false, 'a high projectile clears the table');
+indexed.position.x = 8;
+frame++;
+assert.equal(tables.blocksBox('indexed', 4.5, 4.5), false, 'new frames read current transforms');
+assert.equal(tables.blocksBox('indexed', 8, 4.5), true);
+tables.clearArea('indexed');
+assert.equal(tables.blocksBox('indexed', 8, 4.5), false, 'a same-frame removal invalidates the index');

@@ -165,6 +165,22 @@ Scratch-only debug hooks were used for the measurement and are not in the repo; 
 (BFS retainer paths over snapshots, id-range to date objects). Hooks that are in the game and useful here:
 `__zoneCacheDebug` (`built()`, `blocker(mapId)`, `history()`), `HobunjiCacheAudit`, `renderer.info.memory`.
 
+## Cliffside fight trace (9 Nov 2026)
+
+The Opera trace during a fight with Omgurku showed about 4.36 s inclusive in `findNpcPath`, 2.16 s self time in
+`isNpcPositionWalkable`, and 2.40 s of style recalculation across the capture. NPC A* now discards edges that
+cannot improve the route before sweeping, reuses checked center footprints, and skips repeated structural
+point checks inside a clear body footprint. Ruin entrance boxes are indexed when the zone meshes build, and
+table point probes go directly to one bucket. The action arch also keeps its decorated buttons intact when
+reticle movement leaves their action and markup unchanged.
+
+In a deterministic 24×24 cliff fixture, an unreachable search expanded the same 287 nodes with 402 sweeps
+instead of 1,038. Exact structural provider calls dropped from 86,640 to 3,210 per search, including point
+calls through the old furniture query. All 240 seeded route comparisons matched, including maps with ramps
+and elevation changes. Pixel Probe reports skipped A* edges and action-button markup writes. The trace
+does not attribute style recalculation to a specific caller or isolate a Three.js render pass. These
+measurements are from the collision fixture, and the change has no live fight FPS measurement yet.
+
 ## Real but not fixed (start here if you are asked to go further)
 
 Ranked roughly by how much the numbers say they matter. None of these were the "never recovers" cause.
