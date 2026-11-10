@@ -43,6 +43,13 @@ assert(moved.points.every(p => p.z >= .002999), 'every wind-blown segment must r
 assert(moved.points.some((p, i) => Math.abs(p.x - rest.points[i].x) > .01), 'wind must move the authored points');
 assert.deepEqual(JSON.parse(JSON.stringify(Rig.blendSegment(normalized.segments[0], { x: 0, y: 0, z: 0 }))),
   { yaw: 0, pitch: 0, roll: 0 }, 'the neutral pose is wind-free');
+const midpoint = Rig.curvePoint(rest.points, 0, .5);
+assert(midpoint.z > 0, 'smooth neutral strand interpolation preserves outward depth');
+const join = Rig.curvePoint(rest.points, 0, 1);
+const left = Rig.curvePoint(rest.points, 0, .999);
+const right = Rig.curvePoint(rest.points, 1, .001);
+const leftSlope = (join.x - left.x) / .001, rightSlope = (right.x - join.x) / .001; // Adjacent cubic segments must meet with a continuous tangent.
+assert(Math.abs(leftSlope - rightSlope) < .002, 'neighboring spline segments meet smoothly without a visible kink');
 const extreme = Rig.normalize({ ...makeRig(), points: [{u: .5,v:.3,depth:.002},{u:.5,v:.5,depth:.002}], segments: [{ poses: { away: { pitch: 85 } } }] });
 assert(Rig.posePoints(extreme, { z: -1 }).points[1].z >= .002999, 'an authored inward pose clamps against the portrait');
 const warped = Rig.deformPosition(normalized, moved.points, .52, .58, 1, 1);
@@ -134,4 +141,4 @@ assert(portrait.includes("seamForView(rig)"), 'rear seam positions track rear sp
 assert(html.includes('portrait-spline-rig.js'), 'game loads the spline runtime');
 assert(studio.includes('portrait-spline-rig.js'), 'Character Studio loads the same runtime');
 assert(editor.includes('bridgeColor') && editor.includes('segmentSelect'), 'the mobile editor exposes bridge paint and per-segment controls');
-console.log('Portrait spline rig: 20 regression assertions passed.');
+console.log('Portrait spline rig: 22 regression assertions passed.');
