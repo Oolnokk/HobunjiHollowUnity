@@ -100,7 +100,13 @@ const state=caves.__test.runtimeStateBySignature.get(profile.signature);
 state.occupantsCleared=true;
 caves.__test.persistState();
 assert(writes>0, 'cleared garrison is saved through the original cave save owner');
-assert.equal(caves.fortifiedStrongholdCleared(mapId),true);
+assert.equal(caves.fortifiedStrongholdCleared(mapId),false,'garrison alone never clears the camp before the Bandit Lord dies');
+const bossProfile=caves.profileForMapId(mapId+'_boss'); // Boss arena now carries its own persistent population state.
+caves.strongholdStage(mapId); // Allocates the child record through the same cave-state owner.
+const bossState=caves.__test.runtimeStateBySignature.get(bossProfile.signature);
+bossState.occupantsCleared=true;
+caves.__test.persistState();
+assert.equal(caves.fortifiedStrongholdCleared(mapId),true,'boss death completes the stronghold lifecycle');
 const worldSave=caves.serialize();
 
 // Save recovery must work while loading directly inside this synthetic cave, before
