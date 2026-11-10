@@ -201,6 +201,7 @@
   function makePart(THREE, front, rear, width, height, name) {
     const rig = front.rig, geometry = new THREE.PlaneGeometry(width, height, rig.segmentsX, rig.segmentsY);
     const base = new Float32Array(geometry.attributes.position.array); // Stable rest data reused by every wind update.
+    const rearGeometry = rear?.canvas ? geometry.clone() : null; // The rear-facing strand must sit BEHIND the rear portrait, not behind the front camera.
     const makeTexture = (canvas, rearView) => {
       const source = rearView ? document.createElement('canvas') : canvas;
       if (rearView) {
@@ -218,7 +219,7 @@
       const material = new THREE.MeshBasicMaterial({ map: makeTexture(canvas, back), transparent: true,
         alphaTest: .02, side: back ? THREE.BackSide : THREE.FrontSide, depthWrite: false });
       material.toneMapped = false;
-      const mesh = new THREE.Mesh(geometry, material);
+      const mesh = new THREE.Mesh(back ? rearGeometry : geometry, material);
       mesh.name = name + (back ? '_rear' : '_front');
       mesh.renderOrder = 4; mesh.frustumCulled = false;
       mesh.userData.noOutline = true; // A 2D cosmetic ribbon must not get a large solid 3D outline shell.
@@ -227,6 +228,7 @@
     const frontMesh = makeMesh(front.canvas, false);
     const rearMesh = rear?.canvas ? makeMesh(rear.canvas, true) : null;
     const rest = geometry.attributes.position;
+    const rearPositions = rearGeometry?.attributes.position || null; // Same authored UV-to-spline mapping, with mirrored depth relative to the rear plane.
     let lastTime = -Infinity, lastX = NaN, lastY = NaN, lastZ = NaN;
     const applyWind = (wind = { x: 0, y: 0, z: 0 }, force = false) => {
       if (!force && Math.abs(wind.x - lastX) + Math.abs(wind.y - lastY) + Math.abs(wind.z - lastZ) < .025) return;
@@ -236,9 +238,11 @@
         const u = base[i * 3] / width + .5, v = .5 - base[i * 3 + 1] / height;
         const p = deformPosition(rig, posed.points, u, v, width, height);
         rest.setXYZ(i, p.x, p.y, p.z);
+        rearPositions?.setXYZ(i, p.x, p.y, -p.z); // Independent rear geometry prevents occlusion by the opaque back portrait.
       }
       rest.needsUpdate = true;
       geometry.computeBoundingSphere();
+      if (rearPositions) { rearPositions.needsUpdate = true; rearGeometry.computeBoundingSphere(); }
       frontMesh.userData.portraitSplineCollisionLimits = posed.collisions;
     };
     const update = () => {
