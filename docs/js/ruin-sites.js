@@ -37,6 +37,7 @@
   const DOOR_INSET = .3; // Leaf sits this far inside the cliff line so the tunnel's front lip frames it.
   const PILLAR_HALF = .43;
   const TUNNEL_HEIGHT = 3.57; // ruinEntranceTunnel roof top in its authored units.
+  const BLOCKER_CELL_SIZE = 4; // Broad-phase cell size in world tiles for static entrance pieces.
 
   let deps = null;
   let piecesReady = null;
@@ -266,6 +267,26 @@
     return { minX:box.min.x + shrink, maxX:box.max.x - shrink, minZ:box.min.z + shrink, maxZ:box.max.z - shrink, minY:box.min.y, maxY:box.max.y };
   }
 
+  function indexBlockers(blockers) {
+    const columns = new Map(); // Numeric spatial keys avoid building strings on every collision probe.
+    for (const box of blockers) {
+      const minC = Math.floor(Math.min(box.minX, box.maxX) / BLOCKER_CELL_SIZE); // Normalize the index bounds even if a shrunken piece has inverted bounds.
+      const maxC = Math.floor(Math.max(box.minX, box.maxX) / BLOCKER_CELL_SIZE);
+      const minR = Math.floor(Math.min(box.minZ, box.maxZ) / BLOCKER_CELL_SIZE);
+      const maxR = Math.floor(Math.max(box.minZ, box.maxZ) / BLOCKER_CELL_SIZE);
+      if (![minC, maxC, minR, maxR].every(Number.isSafeInteger)) return null;
+      for (let c = minC; c <= maxC; c++) {
+        if (!columns.has(c)) columns.set(c, new Map());
+        const column = columns.get(c); // Contains the blocker lists for this world column.
+        for (let r = minR; r <= maxR; r++) {
+          if (!column.has(r)) column.set(r, []);
+          column.get(r).push(box);
+        }
+      }
+    }
+    return columns;
+  }
+
   function buildZoneMeshes(zScene, zGrid, mapId) {
     const zoneId = String(mapId || '');
     const serial = (buildSerials.get(zoneId) || 0) + 1; // Invalidates an older in-flight ensurePieces() completion for this zone.
@@ -297,6 +318,7 @@
         const built = buildHole(STORY_VAULT_ID, { ...storySite, story:true, state:'open' }, group, zGrid, runtime);
         if (built) runtime.holes.push(built); // Unlike ordinary holes, this persists through Tothal and relocates with the world story.
       }
+      runtime.blockerColumns = indexBlockers(runtime.blockers); // Rebuilt with the static boxes on every mesh refresh.
       zScene.add(group);
       rendered.set(zoneId, runtime);
       debug.rendered = runtime.sites.length;
@@ -643,13 +665,34 @@
     return rendered.get(String(area))?.cells.get(`${col},${row}`) || null;
   }
 
-  function blocksBox(area, x, z, half, worldY) {
-    const runtime = rendered.get(String(area));
-    if (!runtime) return false;
-    for (const box of runtime.blockers) {
-      if (x + half <= box.minX || x - half >= box.maxX || z + half <= box.minZ || z - half >= box.maxZ) continue;
+  function overlapsBlockers(blockers, minX, maxX, minZ, maxZ, worldY) {
+    for (const box of blockers) {
+      if (maxX <= box.minX || minX >= box.maxX || maxZ <= box.minZ || minZ >= box.maxZ) continue;
       if (worldY != null && (worldY < box.minY - .05 || worldY > box.maxY + .05)) continue;
       return true;
+    }
+    return false;
+  }
+
+  function blocksBox(area, x, z, half, worldY) {
+    const runtime = rendered.get(String(area));
+    if (!runtime?.blockers.length) return false;
+    const minX = x - half, maxX = x + half, minZ = z - half, maxZ = z + half; // Reused by the broad phase and exact overlap tests.
+    const minC = Math.floor(minX / BLOCKER_CELL_SIZE), maxC = Math.floor(maxX / BLOCKER_CELL_SIZE);
+    const minR = Math.floor(minZ / BLOCKER_CELL_SIZE), maxR = Math.floor(maxZ / BLOCKER_CELL_SIZE);
+    const cells = (maxC - minC + 1) * (maxR - minR + 1); // A wide box is cheaper to check directly than to enumerate empty cells.
+    if (!runtime.blockerColumns || !(cells > 0 && cells < runtime.blockers.length)
+        || !Number.isSafeInteger(minC) || !Number.isSafeInteger(maxC)
+        || !Number.isSafeInteger(minR) || !Number.isSafeInteger(maxR)) {
+      return overlapsBlockers(runtime.blockers, minX, maxX, minZ, maxZ, worldY);
+    }
+    for (let c = minC; c <= maxC; c++) {
+      const column = runtime.blockerColumns.get(c); // Empty terrain skips all exact ruin-piece checks.
+      if (!column) continue;
+      for (let r = minR; r <= maxR; r++) {
+        const bucket = column.get(r);
+        if (bucket && overlapsBlockers(bucket, minX, maxX, minZ, maxZ, worldY)) return true;
+      }
     }
     return false;
   }

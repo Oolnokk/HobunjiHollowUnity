@@ -78,4 +78,59 @@ assert.strictEqual(CS.tothalCycle(1), 1, 'raw day 1 keeps Tothal cycle 1 (existi
 assert.strictEqual(CS.tothalCycle(28), 1);
 assert.strictEqual(CS.tothalCycle(29), 2, 'the Tothal Shift rolls every 28-day civil month');
 assert.strictEqual(CS.nextTothalShiftDay(5), 29);
-console.log('ruin sites checks passed');
+async function testEntranceCollision() {
+  const world = {}; // Runs the real registry and ruin-site builder with minimal mesh adapters.
+  class Group {
+    constructor() {
+      this.type = 'Group';
+      this.position = { set(x, y, z) { Object.assign(this, { x, y, z }); } };
+      this.rotation = {};
+      this.scale = {};
+      this.userData = {};
+    }
+    add(group) { group.parent = this; }
+    remove(group) { group.parent = null; }
+    traverse() {}
+    updateMatrixWorld() {}
+  }
+  class Box3 {
+    setFromObject() { return this; }
+    expandByScalar() { return this; }
+  }
+  Object.assign(world, {
+    THREE: { Group, Box3 },
+    RuinSiteLocales: RL,
+    AuthoredFurniture: { load: () => Promise.resolve(), peek: key => key === 'ruinTargetPillar', buildGroup: () => new Group() },
+  });
+  const context = vm.createContext({ window: world, THREE: world.THREE }); // Only pillar pieces are needed for this collision fixture.
+  for (const file of ['area-footprint-blockers', 'ruin-sites']) vm.runInContext(read(`docs/js/${file}.js`), context);
+  const zone = 'map_cliff_collision'; // Test zone avoids story vault side effects.
+  const scene = Object.assign(new Group(), { type: 'Scene' }); // Live scene used to publish and replace the runtime collision index.
+  const sites = world.RuinSites; // Registers the same geometry provider as gameplay.
+  const blockers = world.AreaFootprintBlockers; // Queried by movement and projectiles.
+  sites.init({ getCurrentArea: () => zone, NORMAL_TOP: 0, PLATEAU_UNIT: 2.5 });
+  sites.registerWorkspace(zone, { localeInstances: [{
+    category: RL.CATEGORY, localeId: 'test', objects: [
+      { kind: 'ruinDoor', x: 8, y: 8 },
+      { kind: 'ruinSlot', id: 'edge', x: 3.6, y: 3.8 },
+      { kind: 'ruinSlot', id: 'other', x: 20, y: 20 },
+      { kind: 'ruinSlot', id: 'negative', x: -8, y: -8 },
+    ],
+  }] });
+  sites.buildZoneMeshes(scene, [], zone);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(blockers.blocksBox(zone, 3.9, 4.2), true, 'a pillar spanning a cell boundary blocks a point on the far side');
+  assert.equal(blockers.blocksBox(zone, 3.6, 4.3, 0.12), true, 'a body overlap survives the cell boundary');
+  assert.equal(blockers.blocksBox(zone, 4.1, 4.3, 0, 3), false, 'height still clears the pillar for projectiles');
+  assert.equal(blockers.blocksBox(zone, -7.5, -7.5), true, 'negative-world coordinates remain indexed');
+  assert.equal(blockers.blocksBox(zone, 9, 9), false, 'empty terrain does not collide');
+  assert.equal(blockers.blocksBox(zone, 9, 9, 8), true, 'wide queries retain exact overlap behavior');
+  sites.registerWorkspace(zone, {});
+  sites.buildZoneMeshes(scene, [], zone);
+  assert.equal(blockers.blocksBox(zone, 3.9, 4.2), false, 'zone refresh drops the previous collision index');
+}
+
+testEntranceCollision().then(() => console.log('ruin sites checks passed')).catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+});

@@ -421,7 +421,9 @@
     const rarityWeight = { common: 6, uncommon: 3, rare: 1 };
     const rareFishPerkRank = window.PerkSystem?.rank('fishing', 'increaseRareFishChance') || 0; // Increased Chance of Rare Fish perk — the sole source of this bonus now that Fishing no longer scales it automatically by level.
     const perkMul = { common: 1, uncommon: 1 + rareFishPerkRank * 0.25, rare: 1 + rareFishPerkRank * 0.55 };
-    const weights = pool.map(f => (rarityWeight[f.rarity] || 1) * (deps.rareFishWeightMultiplier?.(f.rarity) || 1) * (perkMul[f.rarity] || 1));
+    const ancestorBonus = window.FestivalSystem?.fortuneBonus?.('fishingFortune') || 0; // Angler's Fortune weights only uncommon/rare catches, never the common pool.
+    const weights = pool.map(f => (rarityWeight[f.rarity] || 1) * (deps.rareFishWeightMultiplier?.(f.rarity) || 1) * (perkMul[f.rarity] || 1)
+      * (f.rarity === 'rare' ? 1 + ancestorBonus : f.rarity === 'uncommon' ? 1 + ancestorBonus * 0.5 : 1));
     let r = Math.random() * weights.reduce((a, b) => a + b, 0);
     for (let i = 0; i < pool.length; i++) {
       r -= weights[i];

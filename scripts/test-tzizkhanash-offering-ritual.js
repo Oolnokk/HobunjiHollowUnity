@@ -31,15 +31,15 @@ const engine={
 };
 const choose=(key,stars)=>ritual.assess(key,stars,defs,{rarity:engine,game:W.SCRATCHBONES_CONFIG.game});
 assert.equal(choose('ordinary',5).level,3,'common five-star item must not earn an unmeasured rarity bonus');
-assert.equal(choose('ordinary',5).stat,'goodwill','a sentimental gift determines the appropriate blessing');
+assert.equal(choose('ordinary',5).stat,'treasureFortune','a sentimental keepsake gives targeted treasure-finding fortune');
 const rareOne=choose('rare',1);
 assert(rareOne.level>choose('ordinary',5).level,'an extremely difficult one-star item can outrank a common five-star gift');
 assert.equal(rareOne.source,'artifact','festival uses the real tier-dependent chest source rather than assigning random scarcity');
 assert(rareOne.scarcityFactor>1,'source odds must actually influence the final multiplier');
 assert.equal(rareOne.level,5,'raw strength is bounded by the existing five-level blessing balance');
-assert.equal(choose('crafted',2).stat,'vigor','real stamina input determines a food-based blessing');
+assert.equal(choose('crafted',2).stat,'cookingFortune','a prepared dish grants the independently tunable cooking fortune');
 assert(choose('crafted',2).effortFactor>1,'processing depth contributes multiplicatively, never as an arbitrary quality tier');
-assert.equal(choose('swift',2).stat,'speed','travel equipment grants a movement-themed ancestor blessing');
+assert.equal(choose('swift',2).stat,'treasureFortune','unclassified travel keepsakes fall back to discovery fortune');
 assert.equal(choose('ordinary',3).scarcityFactor,1,'unquantified item sources remain neutral');
 assert.equal(choose('ordinary',0),null,'quality zero is not a free offering');
 assert.equal(choose('missing',5),null,'undefined physical items cannot generate ritual rewards');
@@ -47,13 +47,28 @@ assert.equal(choose('ordinary',6),null,'star quality outside the real 1–5 inve
 assert.equal(choose('puktukBaby',2).mode,'release','a living Puktuk is never burned');
 assert.equal(choose('puktukBaby',2).species,'puktuk','the baby becomes a real creature of its registered species');
 assert.equal(choose('fertilePingdortEgg',3).mode,'release','a hatchable Pingdort egg is saved, not incinerated');
-assert.equal(choose('fertilePingdortEgg',3).stat,'goodwill','releasing a young creature is a goodwill ritual');
+assert.equal(choose('fertilePingdortEgg',3).stat,'breedingFortune','releasing a young creature blesses future animal lineages');
 assert.equal(choose('commonEgg',3).mode,'burn','unfertilized cooking eggs are not released as animals');
 assert.equal(choose('adultCrate',3).mode,'burn','adult livestock is not a rescue merely because its item has a Livestock tag');
 assert.equal(ritual.releaseSpecies('unregisteredBaby',defs.puktukBaby,W.SCRATCHBONES_CONFIG.game),null,
   'an arbitrary item name cannot forge a species outside the official livestock catalog');
 const fallback=ritual.assess('ordinary',4,defs,{game:W.SCRATCHBONES_CONFIG.game,rarity:null});
 assert.equal(fallback.scarcityFactor,1,'the festival remains safe while the dependent rarity PR has not yet loaded');
+const categories=[
+  ['rawFish',{label:'Fish',tags:['Fish']},'fishingFortune'],
+  ['carrotSeed',{label:'Carrot seed',tags:['Seed']},'harvestFortune'],
+  ['mushroom',{label:'Wild mushroom',tags:['Foraging']},'foragingFortune'],
+  ['tinOre',{label:'Tin ore',tags:['Ore']},'miningFortune'],
+  ['stew',{label:'Hunter stew',isCookedFood:true},'cookingFortune'],
+  ['sword',{label:'Sword',tags:['Weapon']},'battleFortune'],
+  ['artifact',{label:'Ancestor figurine',tags:['Artifact']},'treasureFortune'],
+];
+for (const [key,def,fortune] of categories) assert.equal(ritual.statFor(key,def),fortune,'offering '+key+' targets '+fortune);
+W.CreatureGenetics={sellValueFor:()=>({amount:1000})};
+const preservedGenes={sizeClass:'large',bodystripes:{copies:1,enabled:false,carrier:true,color:'#cccccc'}};
+const inherited=ritual.assess('puktukBaby',2,defs,{rarity:engine,game:W.SCRATCHBONES_CONFIG.game,genotype:preservedGenes});
+assert(inherited.traitFactor>1,'rare genetic value increases the existing multiplicative rarity appraisal');
+assert(inherited.level>choose('puktukBaby',2).level,'inherited traits influence the actual ancestor strength');
 const map=JSON.parse(read('docs/config/maps/hobunji_hollow_town.map.json'));
 const tziz=map.layouts.find(l=>l.id==='festival_tzizkhanash');
 const pyres=tziz.decor.filter(d=>d.festivalOfferingPyre);
@@ -70,11 +85,13 @@ assert(rules.includes("registerActivity('offering'"),'the real once-per-year wor
 assert(rules.includes("pendingAnimalReleases()"),'donated juveniles remain in the saved festival queue until delivery');
 const wildlife=read('docs/js/wildlife-spawn.js');
 assert(wildlife.includes('deliverFestivalAnimalReleases(zoneId);'),'the live wilderness lifecycle delivers queued releases');
-assert(wildlife.includes('genotype.sizeClass=\'small\''),'released creatures reuse the small-size genotype renderer');
+assert(wildlife.includes("if(genotype && !offer.genotype)genotype.sizeClass='small'"),'untracked babies retain the original small-size fallback without altering a recorded genotype');
 const ui=read('docs/js/festival-ui.js');
 assert(!ui.includes("action === 'select-stat'"),'arbitrary stat selection was retired in favor of item-determined buffs');
 assert(ui.includes('preview.scarcityFactor.toFixed(2)'),'mobile offering inspector explains the actual source multiplier');
-const pending=[{id:'1156:tzizkhanash:release:0',key:'puktukBaby',species:'puktuk',stars:3,createdDay:9}];
+assert(ui.includes('offeringChoicesHtml(api)'),'the searchable offering picker is integrated into the existing festival modal');
+assert(ui.includes('data-variant'),'animal selection carries the exact genotype signature to confirmation');
+const pending=[{id:'1156:tzizkhanash:release:0',key:'puktukBaby',species:'puktuk',stars:3,createdDay:9,genotype:preservedGenes}];
 const released=[]; // Real makeCreatureEntity calls captured from the production WildlifeSpawn delivery method.
 const spawnWindow={
   SCRATCHBONES_CONFIG:W.SCRATCHBONES_CONFIG,
@@ -108,7 +125,9 @@ assert.equal(wild.deliverFestivalAnimalReleases('map_western_slope'),1,
   'the real wilderness factory receives the rescued animal when its native area is loaded');
 assert.equal(pending.length,0,'successful animal delivery acknowledges and clears the persisted ritual queue');
 assert.equal(released[0].species,'puktuk','the animal retains its actual species');
-assert.equal(released[0].genotype.sizeClass,'small','the released juvenile uses the genetic small-size pose');
+assert.equal(released[0].genotype.sizeClass,'large','the exact inherited size gene survives animal release');
+assert.equal(released[0].genotype.bodystripes.carrier,true,'hidden recessive carriers survive the journey into wildlife');
+assert.notStrictEqual(released[0].genotype,preservedGenes,'wildlife receives a cloned genotype, not shared saved-metadata references');
 assert.equal(released[0].opts.wildlifeRole,'prey','ordinary wildlife AI is authoritative after release');
 assert(hostiles.has(released[0]),'the creature is inserted into the real wilderness creature set');
 assert.equal(wild.lastFestivalRelease.zoneId,'map_western_slope','on-device debug records where the animal was released');

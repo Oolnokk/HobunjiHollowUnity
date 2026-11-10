@@ -27,7 +27,7 @@ window.CookingSystem = {
 window.AlchemySystem = { RECIPE_DEFS: { healing: { id: 'healing', useMode: 'drink', traits: { drive: 'restore' } } }, ensureRecipeItemDef: (id, tier) => { const key = `${id}_${tier}`; defs[key] = { label: 'Potent healing' }; return key; } }; // Existing potion definition/grant contract.
 load(context, 'festival-potluck-contest'); load(context, 'festival-offering-ritual'); load(context, 'festival-system');
 let heldChoice=null; // The ordinary held-item selection drives direct meal contribution.
-window.CookingSystem.peekLowestQuality=key=>key==='meal'?3:undefined;
+window.CookingSystem.peekLowestQuality=key=>key==='meal'?3:key==='grehlrBaby'?2:undefined; // Babies' stars are keyed by species item, not specific genotype.
 const mealServices=new Map(); // Captures providers while the separate table-system regression exercises real targeting.
 window.FurnitureTableSystem={registerService:(id,provider)=>mealServices.set(id,provider)};
 const api = window.FestivalSystem, calendar = window.FestivalCalendar; // Production APIs under test.
@@ -108,22 +108,47 @@ assert.equal(api.feastMenu().length,7,"another year's festival retains the seven
 assert.equal(buckets.meal[1], 1, 'unselected tier survives');
 // Offerings validate choice before consumption, persist exact quality, and expire after one full year.
 prop = visit('tzizkhanash', 'offering');
+// Quality buckets belong to an item key, not to an individual lineage. Cross-product rows would double-count babies.
+inventory.grehlrBaby=3; // Two inheritable bloodlines, three living animals.
+defs.grehlrBaby={label:'Grehlr Baby',tags:['Baby','Livestock']}; // Registered hatchable item used only by this offering test.
+buckets.grehlrBaby={2:1,5:2}; // Two quality tiers must not create six selectable animals.
+window.SCRATCHBONES_CONFIG={game:{livestock:{itemKinds:{grehlrBaby:'grehlr'}}}};
+const lineageA={base:{color:'#aabbcc'},sizeClass:'small'}; // Distinguishes the first saved genome.
+const lineageB={base:{color:'#ddeeff'},sizeClass:'medium'}; // Distinguishes the other two genetically identical animals.
+window.LivestockItemGenotypePersistence={groupsFor:(key,count)=>key==='grehlrBaby' && count===3
+  ? [{variant:'gene-a',count:1,genotype:lineageA},{variant:'gene-b',count:2,genotype:lineageB}]:null};
+const animalEntries=api.qualityChoices('offering').filter(entry=>entry.key==='grehlrBaby');
+assert.deepEqual(Array.from(animalEntries,entry=>entry.variant),['gene-a','gene-b'],
+  'the ancestor screen lists one row per saved genome instead of a combined species stack');
+assert.deepEqual(Array.from(animalEntries,entry=>entry.count),[1,2],
+  'identical animals share their real counts, while different genotypes never merge');
+assert.deepEqual(Array.from(animalEntries,entry=>entry.stars),[2,2],
+  'a shared next-available quality tier prevents fabricating variant-specific quality data');
+assert(animalEntries.every(entry=>entry.sharedQuality===true),
+  'the UI acknowledges that item-wide stars are not associated with individual animals');
+assert.equal(api.offeringPreview('grehlrBaby',2,'gone'),null,
+  'stale genotypes cannot preview or sacrifice a different animal');
+
 assert(!api.qualityChoices('offering').some(entry => ['gold', 'forbidden'].includes(entry.key)));
 assert.equal(perform(prop, { key: 'keepsake', stars: 0, stat: 'madeup' }).ok, false);
 assert.equal(inventory.keepsake, 2);
 const shrinePreview=api.offeringPreview('keepsake',5);
-assert.equal(shrinePreview.stat,'goodwill','a sentimental keepsake defines the blessing, not the button used');
+assert.equal(shrinePreview.stat,'treasureFortune','a keepsake grants focused treasure fortune, not a generic relationship increase');
 assert.equal(shrinePreview.level,3,'ordinary five-star keepsake gets no unmeasured scarcity bonus');
 assert.equal(perform(prop, { key:'keepsake',stars:5,stat:'speed' }).ok,true,
   'an obsolete client-supplied stat cannot override the item-derived blessing');
 assert.equal(inventory.keepsake,1);
-assert.equal(api.blessingMultiplier('goodwill'),1.15);
-assert.equal(api.blessingMultiplier('speed'),1);
+assert.equal(api.fortuneMultiplier('treasureFortune'),1.27,'three levels of treasure fortune multiply cache mastery odds by the tuned nine percent each');
+assert.equal(api.fortuneBonus('fishingFortune'),0,'unrelated fortune probabilities never change');
+assert.equal(api.blessingMultiplier('goodwill'),1,'new fortunes cannot grant unrelated old positive Favor buffs');
 const blessingSave=api.serialize();
 assert.equal(blessingSave.blessing.sourceItem,'keepsake');
-api.restore(blessingSave); assert.equal(api.blessingMultiplier('goodwill'),1.15);
-year++;civilDay--;assert.equal(api.blessingMultiplier('goodwill'),1.15);
-civilDay++;assert.equal(api.blessingMultiplier('goodwill'),1);
+assert.equal(blessingSave.blessing.stat,'treasureFortune');
+api.restore(blessingSave); assert.equal(api.fortuneMultiplier('treasureFortune'),1.27);
+year++;civilDay--;assert.equal(api.fortuneMultiplier('treasureFortune'),1.27,'year-crossing date retains the 336-day buff');
+civilDay++;assert.equal(api.fortuneMultiplier('treasureFortune'),1,'fortune expires after 336 calendar days');
+api.restore({ blessing: { stat: 'goodwill', level: 3, expiresDay: year*336+calendar.ordinal(7,22) + 10 } });
+assert.equal(api.blessingMultiplier('goodwill'),1.15,'older ancestor blessings still restore with their original meaning');
 api.restore({ blessing: { stat: 'speed', level: 'broken', expiresDay: Infinity } }); assert.equal(api.blessingMultiplier('speed'), 1);
 // Masks stay a render copy; sweeets/masks cannot be farmed by repeating the menu.
 prop = visit('hachutukara', 'masks');

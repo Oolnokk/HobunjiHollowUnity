@@ -68,12 +68,12 @@
        window.LootRolling.init(...) and .loadLootShopConfig() during its
        own setup, and before every other module whose init(deps) is handed
        window.LootRolling.rollItemStars/starRatingText/etc. -->
-  <script src="js/loot-rolling.js?v=20261105puzzleCaves1"></script>
+  <script src="js/loot-rolling.js?v=20261110tzkFortune1"></script>
   <!-- Seed planting/crop harvesting, extracted out of game.js. Must load
        before game.js, which calls window.CropPlanting.init(...). -->
   <script src="js/item-acquisition-rarity.js?v=20261109rarityaudit10"></script> <!-- Acquisition odds, crop value premiums, and festival ingredient-source rarity. -->
   <script src="js/crop-varieties.js?v=20261109provenance1"></script>
-  <script src="js/crop-planting.js?v=20261107h5b0aac4"></script>
+  <script src="js/crop-planting.js?v=20261110tzkFortune1"></script>
   <!-- Wilderness den teleport + Den-Mother nest hold-to-take interaction,
        extracted out of game.js. Must load before game.js, which calls
        window.DenNestSystem.init(...) (binds its own devTeleportDenBtn/
@@ -264,7 +264,7 @@
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
   <script src="js/table-chair-placement.js?v=20261102chairreview3"></script>
-  <script src="js/furniture-table-system.js?v=20261107nearbygift2"></script>
+  <script src="js/furniture-table-system.js?v=20261110cliffsideMerge1"></script>
   <script src="js/furniture-surface-png-runtime.js?v=20261103materialv3"></script> <!-- Opt-in per-face PNG tiling, alpha padding and opacity from Furniture Editor. -->
   <script src="js/authored-furniture-runtime.js?v=20261105stoneSyntaxFix2"></script>
   <!-- Preserve authored sign decals when house fixtures render at town load. -->
@@ -365,7 +365,7 @@
   <script src="js/combat/combat-blink-dodge.js?v=20261026hmaskalpha10"></script>
   <script src="js/combat/combat-charged-breaker.js?v=20261106charge879"></script>
   <script src="js/combat/combat-flurry.js?v=20261106trinkets20"></script>
-  <script src="js/combat/combat-loadout-ui.js?v=20261108attackpower1"></script>
+  <script src="js/combat/combat-loadout-ui.js?v=20261110tzkFortune1"></script>
   <!-- Weapon Enchantments + Immundanity (Base/Flourish, planar cancellation, Sicced/Fury/...). -->
   <script src="js/combat/combat-enchantments.js?v=20261027shapeaudit1"></script>
   <script src="js/combat/weapon-enchantment-vfx.js?v=20261103particlesheld1"></script>
@@ -422,7 +422,7 @@
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
   <script src="js/effect-buff-bar.js?v=20261102-food24h"></script>
-  <script src="js/skill-system.js?v=20261015h31a0bda"></script>
+  <script src="js/skill-system.js?v=20261110tzkFortune1"></script>
   <script src="js/perk-system.js?v=20261031aoeWidth1"></script>
   <!-- Trinkets + shared 8-point Attunement budget; registers stat/perk/companion providers. -->
   <script src="js/trinket-system.js?v=20261106trinkets20"></script>
@@ -482,7 +482,7 @@
   <script src="js/honeyfuzzle-house.js?v=20261026honeyEggGenes3"></script> <!-- Honeyfuzzle House: 1x1 egg/swarm slot on a FarmProduction entry; hooked by farm-production.js, initialised by game.js. -->
   <script src="js/farm-layout-editor.js?v=20261016a"></script>
   <script src="js/world-meta-store.js?v=20261109rarityMain1"></script>
-  <script src="js/farm-animals.js?v=20261109provenance3"></script>
+  <script src="js/farm-animals.js?v=20261110tzkFortune1"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
        via init(), and reads window.FarmAnimals at call time (already
@@ -568,7 +568,7 @@
        load-order dependency on anything else here; game.js calls into it
        from loadBuildingScene/_loadTownFromWorkspace and its own live-swap
        check. -->
-  <script src="js/festival-calendar.js?v=20261109festivalMerge2"></script>
+  <script src="js/festival-calendar.js?v=20261110tzkFortune1"></script>
   <script src="js/map-layout-system.js?v=20261019h5ca2b48"></script>
   <!-- Gives interior furniture an authored tile footprint/quarter-turn transform and derives occupied-tile collision before the scene consumes the effective layout. -->
   <script src="js/interior-furniture-grid.js?v=20261102chairreview2"></script>
@@ -725,7 +725,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20261109festivalMerge2"></script>
+  <script src="js/wildlife-spawn.js?v=20261110tzkFortune1"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -969,7 +969,7 @@
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20261102h082455e"></script>
   <script src="js/tothal-zone-cache.js?v=20261102a"></script>
-  <script src="js/ruin-sites.js?v=20261109rarityMain1"></script>
+  <script src="js/ruin-sites.js?v=20261110cliffsideMerge1"></script>
   <script src="js/zone-den-totem-features.js?v=20261109festivalMerge2"></script>
   <script src="js/transition-markers.js?v=20261004h46d3bfb"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
@@ -2847,7 +2847,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261109stoneclockflail3"></script>
+  <script src="js/pixel-probe.js?v=20261110cliffsideMerge1"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2874,10 +2874,10 @@
   <script src="js/npc-shared-meals.js?v=20261021hdde83ea"></script>
   <script src="js/festival-potluck-contest.js?v=20261109festRarityMerge2"></script>
   <script src="js/festival-locale-activities.js?v=20261109festivalMerge2"></script>
-  <script src="js/festival-offering-ritual.js?v=20261109festivalMerge2"></script>
-  <script src="js/festival-system.js?v=20261109festRarityMerge2"></script>
+  <script src="js/festival-offering-ritual.js?v=20261110tzkFortune1"></script>
+  <script src="js/festival-system.js?v=20261110tzkFortune1"></script>
   <script src="js/festival-dialogue.js?v=20261022h561ec26"></script>
-  <script src="js/festival-ui.js?v=20261109festivalMerge2"></script>
+  <script src="js/festival-ui.js?v=20261110tzkFortune1"></script>
   <script src="js/tutorial-unlock-visits.js?v=20260930doorstep1"></script>
   <script src="js/farmhouse-login-spawn.js?v=20260930doorstep1"></script>
   <script src="js/banubu-questline.js?v=20261026banubuoverpass3"></script>
@@ -2903,7 +2903,7 @@
   <!-- Spearfishing minigame + fishing FX particles (window.Fishing) — must
        load before game.js, which injects the shared thrown-weapon pose seams
        used by fishing's held Windup → Strike presentation. -->
-  <script src="js/fishing-minigame.js?v=20261107instrPose1"></script>
+  <script src="js/fishing-minigame.js?v=20261110tzkFortune1"></script>
   <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
        — must load before game.js, which calls window.KurrayaInstrument.init(...)
        during its own setup, mirroring window.Fishing above. -->
@@ -2955,7 +2955,7 @@
   <!-- NPC walkability/beeline checks + area-graph pathfinding
        (window.NpcPathfinding) — must load before game.js, which calls
        window.NpcPathfinding.init(...) during its own setup. -->
-  <script src="js/npc-pathfinding.js?v=20261109skipDistantDens1"></script>
+  <script src="js/npc-pathfinding.js?v=20261110cliffsideMerge1"></script>
   <script src="js/npc-route-graph.js?v=20261009h41465f3"></script>
   <!-- Cutscene Director "Preview in game" one-shot handoff — must run
        BEFORE game.js so window.__hobunjiPlayerProfile is already set when

@@ -1630,7 +1630,7 @@
   }
   function breedingMutationChance(avgHeart) {
     const base = window.CreatureGenetics.MUTATION_CHANCE || 0.05;
-    return base * (1 + (avgHeart / HEART_MAX) * 2); // base .. 3x base
+    return Math.min(0.85,base * (1 + (avgHeart / HEART_MAX) * 2) * (window.FestivalSystem?.fortuneMultiplier?.('breedingFortune') || 1)); // Kindred Fortune increases each existing independent genetic mutation roll.
   }
   function parentHeartLevel(parent) {
     return Number.isFinite(parent?.heartLevel) ? parent.heartLevel : HEART_DEFAULT; // Stable pets/legacy records carry no heart level — treat as the neutral default rather than penalizing them as starved.

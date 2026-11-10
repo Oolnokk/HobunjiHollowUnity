@@ -527,16 +527,30 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.equal(active.hit.active, true, JSON.stringify(active.hit));
     assert.equal(active.motion.active, true, JSON.stringify(active.motion));
     assert.equal(active.simple.active, true, JSON.stringify(active.simple));
-    assert.equal(active.simple.safeGrids.length, 1, 'simple mode should place one safe-path pressure grid: '+JSON.stringify(active.simple));
-    assert.ok(active.simple.safeGrids[0]?.hallId && active.simple.safeGrids[0]?.mandatoryTraversal, 'safe-path pressure grid must occupy a mandatory hallway traversal: '+JSON.stringify(active.simple.safeGrids[0]));
+    const hasSafeGrid = active.simple.safeGrids.length === 1; // Selects the matching generated traversal assertions below.
+    const ropeChains = active.simple.ropeChains || []; // Whole-layer rope chains supersede the old safe-path pressure grid for some seeds.
+    if (hasSafeGrid) {
+      assert.ok(active.simple.safeGrids[0]?.hallId && active.simple.safeGrids[0]?.mandatoryTraversal, 'safe-path pressure grid must occupy a mandatory hallway traversal: '+JSON.stringify(active.simple.safeGrids[0]));
+    } else {
+      assert.equal(active.simple.safeGrids.length, 0, 'a pressure grid cannot be duplicated or partially placed: '+JSON.stringify(active.simple));
+      assert.ok(ropeChains.length > 0, 'a grid-free ruin needs a real rope-chain traversal: '+JSON.stringify(active.simple));
+      assert.ok(ropeChains.every(chain => chain.ropeCount >= 2 && chain.checkpoints?.start && chain.checkpoints?.end &&
+        active.simple.ropes.filter(rope => rope.roomId === 'layer_' + chain.hallId).length === chain.ropeCount),
+        'each rope-chain abyss must have its authored rope count and both endpoint checkpoints: '+JSON.stringify(active.simple));
+      assert.ok(active.simple.modules.some(module => module.type === 'layerRopeChainAbyss'),
+        'rope-chain traversal must be registered as an authored layer module: '+JSON.stringify(active.simple.modules));
+    }
     if(!active.simple.ropes.length){
       assert.ok(active.simple.composers?.ropeVariants?.rejects?.length>0 &&
         active.simple.safeGrids.length===1 && active.simple.modules.some(m=>m.type==='safePathGrid'),
         'a seed without a geometrically valid rope must show explicit layout rejections and preserve another mandatory traversal: '+JSON.stringify(active.simple));
     }
-    const swappableHallwayModules=active.simple.modules.filter(module=>module.slotKind==='hallway'&&['layerRopeChainAbyss','ropeChainAbyss','timedMelodyTrigger','hallwayGlyphGate'].includes(module.type));
-    assert.ok(swappableHallwayModules.length >= 1, 'simple mode should fill at least one generic hallway module slot: '+JSON.stringify(active.simple));
-    assert.ok(active.simple.checkpoints.doorwayCount > 0, 'generated ruin should expose doorway checkpoints: '+JSON.stringify(active.simple.checkpoints));
+    const swappableHallwayModules=active.simple.modules.filter(module=>
+      (module.slotKind==='hallway'&&['layerRopeChainAbyss','ropeChainAbyss','timedMelodyTrigger','hallwayGlyphGate'].includes(module.type)) ||
+      (module.slotKind==='layer'&&module.type==='layerRopeChainAbyss')); // Layer puzzle modules serve the same mandatory traversal purpose.
+    assert.ok(swappableHallwayModules.length >= 1, 'simple mode should fill a hallway or reserved-layer traversal slot: '+JSON.stringify(active.simple));
+    assert.ok(active.simple.checkpoints.doorwayCount > 0 || ropeChains.length > 0,
+      'generated ruin must expose a doorway or rope-chain checkpoint route: '+JSON.stringify(active.simple.checkpoints));
     assert.equal(active.simple.checkpoints.triggered.includes('ruin-entry'), true, 'entering the ruin must immediately establish the first checkpoint');
     assert.equal(active.coverage.effectiveUnhandled.length, 0, JSON.stringify(active.coverage));
     assert.ok(active.coverage.torchSourceCoverage.complete, JSON.stringify(active.coverage.torchSourceCoverage));
@@ -778,6 +792,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         const final=window.DevRandomRuinSimplePuzzles.snapshot();
         return {initial,burningAfter,revealRow,revealMs,checkpointBefore,checkpointAfterCross,respawn,ropeAttach,final};
       });
+      if (simpleRuntime.initial.safeGrids?.length) { // Run pressure-plate and doorway-checkpoint interactions only for generated pressure-grid layouts.
       assert.ok(simpleRuntime.burningAfter>=20,'unsafe pressure plate must apply Burning Health: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.revealRow?.label,'Reveal Safe Path','safe-path button must enter the ordinary world input list: '+JSON.stringify(simpleRuntime));
       assert.ok(simpleRuntime.revealMs>0,'safe-path button must temporarily reveal the safe plates: '+JSON.stringify(simpleRuntime));
@@ -803,7 +818,15 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       assert.equal(simpleRuntime.respawn?.directHit?.reason,'bleed-out','canonical direct-hit checkpoint recovery must identify the downed bleed-out death path: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.respawn?.directHit?.area,'map_i_dev_random_ruin','direct-hit checkpoint recovery must not send the player to a Root Totem/farm: '+JSON.stringify(simpleRuntime));
       assert.ok(Math.abs(simpleRuntime.respawn.directHit.x-simpleRuntime.respawn.directHit.activePoint.x)<.02&&Math.abs(simpleRuntime.respawn.directHit.z-simpleRuntime.respawn.directHit.activePoint.z)<.02,'direct-hit respawn must land on the active doorway checkpoint: '+JSON.stringify(simpleRuntime));
+      } else {
+        assert.equal(simpleRuntime.checkpointBefore?.activeId,'ruin-entry','the entry brazier remains the safe checkpoint before crossing a rope abyss');
+        assert.equal(simpleRuntime.checkpointBefore?.whiteFireAuthority,true,'rope-chain layouts retain the white checkpoint authority');
+        assert.ok(simpleRuntime.initial.ropeChains?.every(chain => chain.checkpoints?.start && chain.checkpoints?.end),
+          'the rope-chain layout exposes checkpoint endpoints even without a doorway');
+      }
       if(simpleRuntime.ropeAttach){
+      const chainRope = simpleRuntime.initial.ropeChains?.some(chain =>
+        simpleRuntime.ropeAttach.sourceId.startsWith('rope-layer_' + chain.hallId + '-')); // Whole-layer ropes do not have the older raised destination slab.
       assert.equal(simpleRuntime.ropeAttach?.grabRow?.label,'Grab Rope','approaching the traversal rope must expose the ordinary floating input prompt before attachment: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.grabPopupVisible,true,'idle rope grab must render through WorldPopupText: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.grabRow?.inputAction,'action1','nearby rope grab intentionally claims Action 1 so one physical input cannot attack and grab at the same time: '+JSON.stringify(simpleRuntime));
@@ -819,17 +842,21 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       assert.equal(simpleRuntime.ropeAttach?.releaseRow?.nativeInput,true,'rope jump-off must remain owned by canonical Dodge handling: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.brakeRow?.label,'Hold to Stop / Adjust Rope','attached rope must expose its held brake/adjust input: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.worldPopupVisible,true,'rope controls must render through WorldPopupText: '+JSON.stringify(simpleRuntime));
-      assert.equal(simpleRuntime.ropeAttach?.ceilingMounted,true,'rope must visibly attach to the authored room ceiling: '+JSON.stringify(simpleRuntime));
+      assert.ok(simpleRuntime.ropeAttach?.ceilingMounted===true || chainRope,'rope must have either a ceiling mount or the new layer-chain mounting scheme: '+JSON.stringify(simpleRuntime));
       assert.ok(Math.abs((simpleRuntime.ropeAttach?.ceilingY||0)-(simpleRuntime.ropeAttach?.anchorY||0))<.001,'rope line origin must equal the ceiling mount datum: '+JSON.stringify(simpleRuntime));
       const ropeBasin=simpleRuntime.initial.composers?.ropeRewards?.basins?.find(basin=>basin.ropes.includes(simpleRuntime.ropeAttach.sourceId));
       if(ropeBasin){
         const nodeIndex=ropeBasin.ropes.indexOf(simpleRuntime.ropeAttach.sourceId);
         assert.equal(simpleRuntime.ropeAttach.startTopY,ropeBasin.nodes[nodeIndex].topY,'basin rope starts at its authored launch pad');
         assert.equal(simpleRuntime.ropeAttach.endTopY,ropeBasin.nodes[nodeIndex+1].topY,'basin rope reaches its authored pillar across the lava gap');
-      }else{
+      } else if (chainRope) {
+        assert.ok(simpleRuntime.ropeAttach.grabY < simpleRuntime.ropeAttach.anchorY,
+          'a layer-chain rope grip must be suspended below its ceiling anchor: '+JSON.stringify(simpleRuntime));
+      } else {
         assert.ok((simpleRuntime.ropeAttach?.endTopY||0)-(simpleRuntime.ropeAttach?.startTopY||0)>.42,'hallway rope destination must be visibly above the ordinary ruin step limit: '+JSON.stringify(simpleRuntime));
       }
-      assert.ok(Math.abs((simpleRuntime.ropeAttach?.grabY||0)-((simpleRuntime.ropeAttach?.startTopY||0)+.86))<.08,'idle rope grip must stay at reachable launch-side height instead of inheriting the raised destination: '+JSON.stringify(simpleRuntime));
+      if (!chainRope) assert.ok(Math.abs((simpleRuntime.ropeAttach?.grabY||0)-((simpleRuntime.ropeAttach?.startTopY||0)+.86))<.08,
+        'legacy hallway rope grip must stay at reachable launch-side height instead of inheriting the raised destination: '+JSON.stringify(simpleRuntime));
       assert.ok((simpleRuntime.ropeAttach?.ceilingY||0)>(simpleRuntime.ropeAttach?.bobY||0),'rope must hang downward from the ceiling: '+JSON.stringify(simpleRuntime));
       assert.ok((simpleRuntime.final?.ropes?.[0]?.bottomY??-Infinity)>=(simpleRuntime.final?.ropes?.[0]?.minBobY??Infinity)-.02,'rope pendulum bottom must stay above its authored floor-clearance datum: '+JSON.stringify(simpleRuntime.final?.ropes?.[0]));
       assert.equal(simpleRuntime.ropeAttach?.weaponStowed,true,'grabbing the rope must put the drawn weapon/tool away: '+JSON.stringify(simpleRuntime));

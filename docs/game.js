@@ -3342,6 +3342,11 @@
 
       function furnitureBlocksMovementAt(area, x, z, worldY = null) {
         if (window.AreaFootprintBlockers?.blocksBox(area, x, z, 0, worldY)) return true;
+        return furnitureOnlyBlocksMovementAt(area, x, z, worldY);
+      }
+
+      // NPC sweeps already checked the whole footprint against structural providers.
+      function furnitureOnlyBlocksMovementAt(area, x, z, worldY = null) {
         if (window.FurnitureTableSystem?.blocksBox(area, x, z, 0, worldY)) return true; // Exterior and locale furniture share the normal NPC/player movement authority.
         if (_isZoneArea(area) && window.FoliageFurnitureRuntime?.blocksPoint(area, x, z)) return true;
         if (interiorFurnitureObjects.some(obj => obj.area === area && decorativeFurnitureBlocksPoint(obj, x, z))) return true;
@@ -12972,6 +12977,7 @@
         isZoneArea: _isZoneArea,
         isBuildingArea: _isBuildingArea,
         furnitureBlocksMovementAt,
+        furnitureOnlyBlocksMovementAt,
         npcGridForArea,
         npcSurfaceY, // Cliff route graph uses the same tier surface as scheduled NPCs.
         tileSurfaceYInArea, // Injected so graph builds never depend on tile coordinate metadata.
@@ -24942,6 +24948,7 @@
             action: button.dataset.action || null,
             hidden: button.classList.contains('abt-hidden'),
             blocked: button.classList.contains('blocked'),
+            markupWrites: button._abtMarkupWrites || 0, // Helps Pixel Probe distinguish display changes from churn as the reticle moves.
           }));
         return {
           area: currentArea,
@@ -28058,7 +28065,7 @@
         });
         // Dynamic providers (including the asynchronously loaded consumable
         // bridge) can change the resolved arch without changing tile/item state.
-        const actionButtonKey = btns.map(button => `${button.action}:${button.allowed !== false ? 1 : 0}:${button.label}:${button.swigFraction || ''}:${button.holdLabel || ''}`).join(',');
+        const actionButtonKey = btns.map(button => `${button.action}:${button.allowed !== false ? 1 : 0}:${button.label}:${button.icon}:${button.swigFraction || ''}:${button.holdLabel || ''}`).join(',');
         // window.Fishing?.state?.phase (not just .active) must be in this key:
         // computeActionButtons() returns different button sets across the
         // cast/waiting/bite/active/caught sequence (empty until 'bite', the
@@ -28125,17 +28132,23 @@
         function applyAbt(elId, b, originalIdx) {
           const el = document.getElementById(elId);
           if (!el) return;
-          if (!b) { el.classList.add('abt-hidden'); return; }
-          el.classList.remove('abt-hidden');
+          el.classList.toggle('abt-hidden', !b);
+          if (!b) return;
           el.classList.toggle('blocked', !b.allowed);
-          el.dataset.action = b.action;
+          const actionChanged = el.dataset.action !== b.action; // A new action may need to discard the previous action's icon decorations.
+          if (actionChanged) el.dataset.action = b.action;
           const keyBadge = isDesktop && originalIdx >= 0 && originalIdx < DESK_KEYS.length
             ? `<span class="abt-key">[${DESK_KEYS[originalIdx]}]</span>` : '';
           const swigBadge = b.swigFraction
             ? `<span class="alcohol-swig-badge">${b.swigFraction}</span>` : '';
-          el.innerHTML = keyBadge +
+          const markup = keyBadge + // Compare the last base markup because icon decorators intentionally modify the live children.
             `<span class="abt-icon">${b.icon}${swigBadge}</span>` +
             `<span class="abt-label">${b.label}</span>`;
+          if (actionChanged || el._abtMarkup !== markup) {
+            el.innerHTML = markup;
+            el._abtMarkup = markup;
+            el._abtMarkupWrites = (el._abtMarkupWrites || 0) + 1;
+          }
           if (!el._abtDragInit) {
             el._abtDragInit = true;
             let _ptId = null, _cx = 0, _cy = 0, _sockR = 0;
