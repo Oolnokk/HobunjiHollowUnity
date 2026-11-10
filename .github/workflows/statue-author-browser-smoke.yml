@@ -1,0 +1,29 @@
+name: Statue Author mobile browser smoke
+on:
+  pull_request:
+    paths:
+      - 'docs/tools/statue-author/**'
+      - 'docs/tools/furniture-avatar-author/**'
+      - 'docs/js/procedural-furniture.js'
+      - 'docs/js/authored-furniture-runtime.js'
+      - 'scripts/smoke-statue-author-browser.js'
+      - '.github/workflows/statue-author-browser-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  statue-author:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pinned browser dependencies
+        run: npm install --no-save --package-lock=false playwright@1.55.1 three@0.128.0
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Build real NPC statue and inspect alpha/material on a mobile viewport
+        run: node scripts/smoke-statue-author-browser.js
