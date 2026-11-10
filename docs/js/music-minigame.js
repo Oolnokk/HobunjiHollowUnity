@@ -368,9 +368,19 @@
       }
       return false;
     }
+    if (playerSession.mode === 'jam' && playerSession.npcId && playerSession.npcId !== musician.npcId) {
+      playerBridge?.stopJamFollow?.(); // Do not follow the departed musician's beat while their replacement iframe loads.
+      playerSession.npcId = musician.npcId;
+      playerSession.songId = musician.songId;
+    }
     if (!ambientFrames.has(musician.npcId)) startAmbientForNpc(musician.npcId,musician.songId); // A freshly arrived NPC still owns its own audio.
     const leaderSnapshot = bridgeOf(ambientFrames.get(musician.npcId))?.jamLeaderSnapshot?.(); // Small cached-state read, no audio copies or DOM work.
-    if (!leaderSnapshot?.playing || !playerBridge?.followJamLeader?.(leaderSnapshot)) return false; // Retry after asynchronous NPC/player iframe load.
+    if (!leaderSnapshot?.playing) return false; // A newly loaded NPC may still be resolving its audio/sample.
+    if (leaderSnapshot.songId !== KNOWN_SONG_ID) {
+      playerBridge?.stopJamFollow?.(); // Unsupported future songs remain audible but must not leave a stale harmony clock.
+      return false;
+    }
+    if (!playerBridge?.followJamLeader?.(leaderSnapshot)) return false; // Retry after asynchronous player iframe load.
     if (playerSession.mode === 'lead' && leaderByArea.get(area)?.type === 'player') leaderByArea.delete(area);
     Object.assign(playerSession,{mode:'jam',npcId:musician.npcId,songId:musician.songId});
     const picker = document.getElementById('compactSongPicker'); // Late NPC arrival hides conflicting solo song controls.
