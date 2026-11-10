@@ -790,7 +790,8 @@
       rank: fortified ? (index % 4 === 3 ? 'flasker' : index === picks.length - 1 ? 'lieutenant' : 'grunt')
         : index === picks.length - 1 && picks.length >= 3 ? 'lieutenant' : 'grunt',
       tier: 1 + (rng() < 0.25 ? 1 : 0),
-      strongholdThrower: fortified && index % 3 === 2 })); // Select a few existing garrison bandits, not extra entities.
+      strongholdThrower: fortified && index % 3 === 2,
+      strongholdRole:fortified ? (index<2?'crossbowman':'charger') : null })); // First two guard the lane with crossbows; remaining existing bandits charge.
     mapData.caveBanditSpawns = clone(plan.banditSpawns);
   }
 
@@ -1290,6 +1291,9 @@
       for (const rock of mapData.oreRocks || []) blockedKeys.add(tileKey(rock.col, rock.row));
       addBanditLayer(mapData, rng, reachable, blockedKeys, plan, contents === TYPES.FORTIFIED_STRONGHOLD);
       if (contents === TYPES.FORTIFIED_STRONGHOLD) {
+        plan.chargeLane=window.BanditStrongholds?.chargeLaneForMap?.(mapData)||null; // Same authored floor planner positions cover and keeps the central route free.
+        mapData.strongholdChargeLane=clone(plan.chargeLane);
+        mapData.caveBanditSpawns=clone(plan.banditSpawns);
         const barrelTiles = pickSpacedTiles(makeRng(profile.signature + ':barrel-supplies'),
           reachable.filter(tile => !blockedKeys.has(tileKey(tile.col,tile.row))
             && plan.banditSpawns.every(guard => Math.hypot(guard.col-tile.col,guard.row-tile.row) >= 2)),
@@ -1363,7 +1367,8 @@
     mapData.name = window.WildlifeSpawn?.denTurnoverStateForCavern?.(mapId)?.name || 'Unexplored cave';
     mapData.caveSite = clone(profile);
     mapData.caveSitePlan = {
-      shattercasks: clone(plan.shattercasks), strongholdBarrels: clone(plan.strongholdBarrels), entranceTile:clone(plan.entranceTile), separatorRock: plan.separator ? { col: plan.separator.col, row: plan.separator.row, cells: clone(plan.separator.cells), oreKind: plan.separator.oreKind } : null,
+      shattercasks: clone(plan.shattercasks), strongholdBarrels: clone(plan.strongholdBarrels), entranceTile:clone(plan.entranceTile),
+      chargeLane:clone(plan.chargeLane), separatorRock: plan.separator ? { col: plan.separator.col, row: plan.separator.row, cells: clone(plan.separator.cells), oreKind: plan.separator.oreKind } : null,
       banditSpawns: clone(plan.banditSpawns), bodies: clone(plan.bodies), traps: clone(plan.traps), cache: clone(plan.cache),
       coffins: clone(plan.coffins), ruinEntrance: clone(plan.ruinEntrance), puzzleCave: clone(plan.puzzleCave), puzzleDoor:clone(plan.puzzleDoor), mushrooms: clone(plan.mushrooms), mineRockCount: plan.mineRocks.length,
       extension: plan.separator ? { contentType: contents, hiddenTiles: plan.separator.farKeys.length } : null,
@@ -2067,6 +2072,7 @@
         separator: plansByMapId.get(currentArea).separator && { col: plansByMapId.get(currentArea).separator.col, row: plansByMapId.get(currentArea).separator.row, cells: plansByMapId.get(currentArea).separator.cells, oreKind: plansByMapId.get(currentArea).separator.oreKind },
         banditSpawns: plansByMapId.get(currentArea).banditSpawns,
         strongholdBarrels: plansByMapId.get(currentArea).strongholdBarrels,
+        chargeLane:plansByMapId.get(currentArea).chargeLane,
         strongholdTreasuryChests:plansByMapId.get(currentArea).strongholdTreasuryChests,
         bodies: plansByMapId.get(currentArea).bodies,
         bodyStates: (bodiesByMapId.get(currentArea) || []).map(record => ({ id: record.body.id, riser: record.riser, armed: record.armedAt != null, risen: record.risen, looted: !!record.entity?.corpseLooted, state: record.entity?.state || null })),
