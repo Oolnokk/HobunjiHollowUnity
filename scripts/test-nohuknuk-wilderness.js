@@ -70,7 +70,7 @@ function environment(options = {}) {
   let visibleFrom = options.visibleFrom || (() => true); // Test-controlled *directional* LOS.
   let activeArea = options.area || ZONE;
   let walkable = options.walkable || (() => true);
-  const tracks = { snow: [], damage: [], los: [], overrides: new Map() }; // Captures integration effects without real rendering.
+  const tracks = { snow: [], damage: [], los: [], overrides: new Map(), sharedWaterQueries: 0 }; // Captures the shared water cache, sight and gameplay integration.
   const player = { x: 32.5 * TILE, y: 20.5 * TILE, health: 100 };
   if (options.playerFar) { player.x = 2 * TILE; player.y = 2 * TILE; }
   const named = makeWalker('nohuknuk');
@@ -93,6 +93,10 @@ function environment(options = {}) {
       return visibleFrom(observer, target, player);
     } },
     WildBerries: { nearestAvailableBerry() { return null; }, removeBerryBush() { return true; } },
+    HobunjiGrehlrForaging: { waterTilesFor(area) {
+      tracks.sharedWaterQueries++; // Proves fishing requests the existing Grehlr water index rather than re-filtering the whole map.
+      return area === ZONE ? zoneLayout.tiles.filter(tile => tile.type === 'river' || tile.type === 'stream') : null;
+    } },
     WildlifeFoodWeb: { emitDig(actor, substrate, tile) {
       tracks.snow.push({ substrate, tile, actorX: actor.x, root: actor.root });
     } },
@@ -133,6 +137,12 @@ function environment(options = {}) {
   const target = override(e.named.rec);
   assert.equal(target.area, ZONE);
   assert(target.c >= 2 && target.c <= 47, 'NPC destinations span the whole Western Slope');
+  const fishingBank = e.api.__test.findFishSpot(e.named); // The cached river candidate must resolve to a standable neighboring bank.
+  assert(fishingBank && Math.abs(fishingBank.c - 34) + Math.abs(fishingBank.r - 18) === 1,
+    'Fishing finds an existing water-bank tile using the shared water index');
+  assert.equal(e.tracks.sharedWaterQueries, 1, 'Fishing uses Grehlr water tiles rather than a second full-map filter');
+  e.window.HobunjiGrehlrForaging = null; // Standalone animation previews have no wildlife module; retain their safe fallback.
+  assert(e.api.__test.findFishSpot(e.named), 'NPC fishing still works when the shared Grehlr runtime has not initialized');
   assert.equal(e.api.__test.validTile(2, 20), true,
     'The western snowfields must be eligible for roaming, fishing, hunting and relocation');
   assert.equal(e.api.__test.validTile(25, 20), true, 'Central snowfields remain eligible');
@@ -291,6 +301,7 @@ for (const [kind, setup] of [
 const game = read('docs/game.js');
 const index = read('docs/index.html');
 const grehlr = read('docs/js/combat/combat-grehlr-burrow.js');
+const grehlrForaging = read('docs/js/wildlife-grehlr-foraging.js'); // Checks that the shared water index stays exported as a stable dependency.
 const food = read('docs/js/wildlife-food-web.js');
 const composer = read('docs/js/local-db-overrides.js');
 assert(index.includes('js/nohuknuk-wilderness.js'), 'Main game loads new module before initializing the NPC roster');
@@ -299,6 +310,8 @@ assert(game.includes('window.NohuknukWilderness?.update?.(dt)'), 'Normal NPC loo
 assert(game.includes('member.nohuknukWildernessState = window.NohuknukWilderness?.serialize?.()'), 'Member save persists his location');
 assert(game.includes('window.NohuknukWilderness?.restore?.(playerData.nohuknukWildernessState)'), 'Save load restores his location');
 assert(grehlr.includes('sampleForagingDivePose'), 'Grehlr exposes its identical dive easing for the NPC');
+assert(grehlrForaging.includes('applyForagingPose, waterTilesFor'), 'Nohuknuk reuses the existing tilesRef-keyed Grehlr water cache');
+assert(grehlrForaging.includes('if (!deps?.zoneLayouts || !deps?.TileType) return null;'), 'Shared water cache is safe before wildlife initialization');
 assert(food.includes('npcWalkerStrike, emitDig,'), 'Snow burrow uses existing globally capped particle simulation');
 assert(composer.includes('npc.wildernessRoaming = JSON.parse(JSON.stringify(override.wildernessRoaming))'),
   'All NPC database sources receive the authored Nohuknuk-only roaming settings');
