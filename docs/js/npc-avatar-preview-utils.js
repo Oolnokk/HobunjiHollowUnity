@@ -319,6 +319,16 @@
     return profile;
   }
 
+  async function renderAuthoredPortrait(renderer, canvas, profile, renderOptions) {
+    const weaving = window.ClothingWeavingSystem; // Stable shared garment adapter; called for the original portrait and the optional 3D-extracted base.
+    if (typeof weaving?.renderProfileWithWovenPatterns === 'function') {
+      await weaving.renderProfileWithWovenPatterns(renderer, canvas, profile, renderOptions);
+    } else {
+      await renderer(canvas, profile, renderOptions);
+    }
+    return true;
+  }
+
   async function renderProfileToCanvas(canvas, profile, renderOptions = {}) {
     const renderer = window.renderPortraitProfile; // Current live portrait renderer; later runtime wrappers are allowed to replace the original global function.
     if (!canvas || !profile || typeof renderer !== 'function') return false;
@@ -328,11 +338,7 @@
       composer?.setDefaultExpression?.(seatId, profile.restingExpression); // Register the fallback even when a timed expression currently has the same face; timed overrides remain intact.
       renderOptions = { ...renderOptions, seatId };
     }
-    const weaving = window.ClothingWeavingSystem; // Optional runtime bridge that reapplies woven rendering when a later wrapper replaced the initially woven global renderer.
-    const draw = (target, options) => typeof weaving?.renderProfileWithWovenPatterns === 'function'
-      ? weaving.renderProfileWithWovenPatterns(renderer, target, profile, options)
-      : renderer(target, profile, options); // Keep woven garments and original portrait ordering on both render targets.
-    await draw(canvas, renderOptions);
+    await renderAuthoredPortrait(renderer, canvas, profile, renderOptions); // Original full 2D portrait path remains identical for every existing caller.
     canvas.hobunjiSplineBaseCanvas = null; // An old hairstyle must never leave a stale 3D base on a reused canvas.
     const hasSpline = !renderOptions.onlyHeadSprite && !renderOptions.headCosmeticsOnly
       && ['facialHair', 'hairSide', 'hairSideL'].some(slot =>
@@ -340,7 +346,7 @@
     if (hasSpline && !renderOptions.deferSplineParts) {
       const base = document.createElement('canvas'); // Full 2D portraits keep their hair; only a WebGL avatar consumes the detached base.
       base.width = canvas.width; base.height = canvas.height;
-      await draw(base, { ...renderOptions, deferSplineParts: true });
+      await renderAuthoredPortrait(renderer, base, profile, { ...renderOptions, deferSplineParts: true });
       canvas.hobunjiSplineBaseCanvas = base;
       canvas.hobunjiSplineParts = base.hobunjiSplineParts; // Same pieces, tint, seam bridge and garment masks as the extracted base.
     }
