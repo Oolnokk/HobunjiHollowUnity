@@ -125,7 +125,7 @@ async function run() {
   Traps.tick('caveA', state, playerAt(beyond), 32, .12, save);
   assert.equal(calls.struck, 1, 'one crossing applies one genuine HangingRopes strike');
   assert.equal(calls.persisted, 1, 'trap is saved exactly once when released');
-  assert.deepEqual(state.triggeredTraps, [trap.id], 'existing cave save identifies the spent trap');
+  assert.deepEqual(Array.from(state.triggeredTraps), [trap.id], 'existing cave save identifies the spent trap');
   Traps.tick('caveA', state, playerAt(approach), 32, .12, save);
   assert.equal(calls.struck, 1, 'walking backwards after triggering cannot re-arm a trap');
   assert(!Traps.debugSnapshot('caveA').wires[0].drawn, 'the visible string disappears after a swing');
@@ -146,7 +146,7 @@ async function run() {
   const previousStrikes = calls.struck; // Verifies one extra strike rather than relying on prior scenario counts.
   Traps.tick('lateCave', lateState, playerAt(beyond), 32, .12, save);
   assert.equal(calls.struck, previousStrikes + 1, 'queued crossing launches the actual cask');
-  assert.deepEqual(lateState.triggeredTraps, [trap.id], 'late release persists once');
+  assert.deepEqual(Array.from(lateState.triggeredTraps), [trap.id], 'late release persists once');
 
   // Real feet clearance allows jumping over a rope without touching it.
   const jumpState = { triggeredTraps: [] };
@@ -170,7 +170,7 @@ async function run() {
   const manuallyStruck = calls.struck;
   Traps.tick('manualCave', manualState, playerAt(beyond), 32, .12, save);
   assert.equal(calls.struck, manuallyStruck, 'player attack does not cause a second trap swing');
-  assert.deepEqual(manualState.triggeredTraps, [trap.id], 'manual detachment disarms persistently');
+  assert.deepEqual(Array.from(manualState.triggeredTraps), [trap.id], 'manual detachment disarms persistently');
 
   // Re-entering the same cave must not invent a crossing from the old exit.
   const reentryState = { triggeredTraps: [] };
