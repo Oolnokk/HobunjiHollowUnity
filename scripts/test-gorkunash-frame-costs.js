@@ -79,7 +79,9 @@ const ambient = vm.createContext({
     ], endAt: 1000, attempts: 0, hits: 0, combo: 0, score: 0 } },
   refs: new Proxy({}, { get() { throw new Error('ambient frame touched the DOM'); } }),
   requestAnimationFrame() { frames++; },
-  scheduleTransportAudioAhead() {}, currentHarmonyStep: () => 0,
+  scheduleTransportAudioAhead() {}, sharedTransportData: () => ({}), // Frame cost test supplies the newly reused shared clock once per render.
+  HOSTED_FLUTE_PERFORMANCE:false,jamLeaderSync:null, // No flute or NPC follower is active in this isolated ambient-NPC case.
+  currentHarmonyStep: () => 0,
   rootPadAudioKey: () => 'pluck:0:0', // Stubs the new per-measure audio identity without introducing Web Audio in a frame-layout test.
   randomNpcAutoPickPattern: () => 'arp-forward-8', // Keeps the NPC loop deterministic; pattern selection has its own regression coverage.
   currentHarmonyBeatData: () => ({ absoluteBeat: 0 }), gameTime: () => clock,

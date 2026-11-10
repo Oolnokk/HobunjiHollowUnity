@@ -1607,6 +1607,10 @@
     log:[]
   };
 
+  let jamLeaderSync = null; // Player-only NPC transport clock and original pitch/arrangement; never creates a second NPC audio voice.
+  const JAM_SYNC_DRIFT_TOLERANCE_MS = 6; // Avoid re-anchoring the player's audio clock for ordinary cross-iframe scheduling jitter.
+  const JAM_SYNC_HARD_RESET_MS = 120; // Song restarts and large tab stalls reset beat scheduling instead of double-playing intermediate beats.
+
   const refs = {
     sampleStatus:$('#sampleStatus'), audioReadyBtn:$('#audioReadyBtn'), scaleHud:$('#scaleHud'), scoreHud:$('#scoreHud'), comboHud:$('#comboHud'), accuracyHud:$('#accuracyHud'),
     transportStatus:$('#transportStatus'), previewPlaythroughBtn:$('#previewPlaythroughBtn'), stage:$('#stage'), feedback:$('#feedback'), modeChip:$('#modeChip'), modeBankGrid:$('#modeBankGrid'), timingNoteField:$('#timingNoteField'), lyreField:$('#lyreField'), visualPresetSelect:$('#visualPresetSelect'), timingPromptPicker:$('#timingPromptPicker'), timingPromptBeatsSelect:$('#timingPromptBeatsSelect'), leftModifierPad:$('#leftModifierPad'),
@@ -2201,7 +2205,7 @@
   }
 
   function activeClockBpm() {
-    return clamp(state.game.active ? state.bpm : state.harmonyBpm, 40, 300);
+    return clamp(jamLeaderSync && !state.game.active ? jamLeaderSync.bpm : state.game.active ? state.bpm : state.harmonyBpm, 40, 300);
   }
 
   function gameClockElapsedMs(referenceNowMs = nowMs()) {
@@ -2211,23 +2215,27 @@
   }
 
   function sharedTransportData(referenceNowMs = nowMs()) {
+    const follower = !state.game.active ? jamLeaderSync : null; // Shares timing data; never starts a second NPC audio track.
+    const followingSong = Boolean(follower);
     const bpm = activeClockBpm();
     const quarterBeatMs = 60000 / bpm;
     const fixedKurraya = usesFixedKurrayaHarmony();
     const initialMeter = fixedKurraya ? (activeKurrayaLabMeter() || kurrayaSixEightMeter()) : activeSongMeter(0);
-    const transportElapsedMs = state.game.active ? gameClockElapsedMs(referenceNowMs) : Math.max(0, referenceNowMs - state.harmonyStartTime);
+    const transportElapsedMs = followingSong
+      ? Math.max(0, follower.elapsedMs + referenceNowMs - follower.receivedAtMs)
+      : state.game.active ? gameClockElapsedMs(referenceNowMs) : Math.max(0, referenceNowMs - state.harmonyStartTime);
     const initialBeatMs = quarterBeatMs * initialMeter.quarterUnitsPerBeat;
-    const countInBeats = state.game.active ? Math.max(0,Math.round(state.game.countInBeats || initialMeter.numerator)) : 0;
-    const countInMs = state.game.active ? (state.game.countInMs || initialBeatMs * countInBeats) : 0;
-    const inCountIn = state.game.active && transportElapsedMs < countInMs;
-    const performanceElapsedMs = state.game.active ? Math.max(0,transportElapsedMs - countInMs) : transportElapsedMs;
+    const countInBeats = followingSong ? follower.countInBeats : state.game.active ? Math.max(0,Math.round(state.game.countInBeats || initialMeter.numerator)) : 0;
+    const countInMs = followingSong ? follower.countInMs : state.game.active ? (state.game.countInMs || initialBeatMs * countInBeats) : 0;
+    const inCountIn = (state.game.active || followingSong) && transportElapsedMs < countInMs;
+    const performanceElapsedMs = state.game.active || followingSong ? Math.max(0,transportElapsedMs - countInMs) : transportElapsedMs;
     const performanceBeatFloat = performanceElapsedMs / Math.max(1,quarterBeatMs);
-    const rawHarmonyQuarterBeatFloat = fixedKurraya && state.game.active
+    const rawHarmonyQuarterBeatFloat = fixedKurraya && (state.game.active || followingSong)
       ? transportElapsedMs / Math.max(1,quarterBeatMs)
-      : performanceBeatFloat; // During the authored song, harmony advances through the four 6/8 intro bars while melody performance time remains parked at zero.
-    const harmonyQuarterBeatFloat = fixedKurraya && state.game.active
+      : performanceBeatFloat; // The NPC's 6/8 intro keeps moving while their melody has not started yet.
+    const harmonyQuarterBeatFloat = fixedKurraya && (state.game.active || followingSong)
       ? Math.min(rawHarmonyQuarterBeatFloat,(activeKurrayaLabMeter()?.measureQuarterBeats || FIXED_HARMONY_CHORD_QUARTER_BEATS) * FIXED_HARMONY_CYCLE_CHORDS - 1e-6)
-      : rawHarmonyQuarterBeatFloat; // Holds the final authored root through the song's short post-melody tail instead of wrapping before playback actually stops.
+      : rawHarmonyQuarterBeatFloat; // Hold the final root through the song tail without wrapping early.
     const mixedPhase = fixedKurraya ? fixedKurrayaMixedMeterPhase(harmonyQuarterBeatFloat) : null;
     const meter = fixedKurraya ? mixedPhase.meter : activeSongMeter(performanceBeatFloat);
     const beatMs = quarterBeatMs * meter.quarterUnitsPerBeat;
@@ -2279,7 +2287,8 @@
 
   function fixedKurrayaHarmonyCadence(clock = sharedTransportData()) {
     const phase = clock.mixedPhase || fixedKurrayaMixedMeterPhase(clock.performanceBeatFloat);
-    const authoredSongActive = state.game.active && (state.game.songType || state.selectedSong) === 'when-the-kininjis-bloom'; // Only authored-song playback follows the Music Lab arrangement; free play keeps the fixed repeating progression.
+    const authoredSongActive = (state.game.active && (state.game.songType || state.selectedSong) === 'when-the-kininjis-bloom')
+      || (!state.game.active && jamLeaderSync?.songId === 'when-the-kininjis-bloom'); // A jam reuses the NPC's authored bars instead of the solo four-chord loop.
     if (authoredSongActive) {
       const arrangement = activeKurrayaSongArrangement();
       const inIntro = phase.chordWithinCycle < FIXED_HARMONY_SIX_EIGHT_CHORDS;
@@ -2344,7 +2353,7 @@
     const progression = HARMONY_PATTERNS[state.harmonyPattern] || HARMONY_PATTERNS[FIXED_HARMONY_PATTERN_ID];
     const step = fixedCadence ? fixedCadence.eventSerial : songSegment ? songSegment.index : currentHarmonyStep(clock);
     const fixedStep = fixedCadence
-      ? (state.game.active && (state.game.songType || state.selectedSong) === 'when-the-kininjis-bloom'
+      ? ((state.game.active && (state.game.songType || state.selectedSong) === 'when-the-kininjis-bloom') || (!state.game.active && jamLeaderSync?.songId === 'when-the-kininjis-bloom')
           ? KURRAYA_AUTHORING_STEPS[fixedCadence.progressionStep]
           : FIXED_HARMONY_STEPS[fixedCadence.progressionStep])
       : songSegment
@@ -2702,10 +2711,10 @@
   }
 
   function automaticTapTiming(inputAt = nowMs()) {
-    const clockNow = nowMs(); // Samples both clocks together so the stored face-button timestamp can be projected onto the harmony grid.
-    const elapsedNow = harmonyElapsedMs();
-    const bpm = clamp(state.game.active ? state.bpm : state.harmonyBpm, 40, 240);
-    const beatMs = 60000 / bpm;
+    const clockNow = nowMs(); // Sample once: NPC tempo and phase must agree with the metronome.
+    const clock = sharedTransportData(clockNow);
+    const elapsedNow = jamLeaderSync && !state.game.active ? clock.transportElapsedMs : clock.performanceElapsedMs;
+    const beatMs = clock.quarterBeatMs;
     const elapsedAtInput = Math.max(0, elapsedNow - Math.max(0, clockNow - inputAt));
     const nearestBeatElapsed = Math.round(elapsedAtInput / beatMs) * beatMs;
     const beatAnchorAt = inputAt + (nearestBeatElapsed - elapsedAtInput);
@@ -2717,7 +2726,7 @@
     const sampledAt = nowMs();
     const clock = sharedTransportData();
     const beatMs = Math.max(1,clock.quarterBeatMs); // Preserve the existing Auto Pick note-value grid while the Kurraya metronome itself counts six eighth-note beats per measure.
-    const elapsedAtReference = clock.performanceElapsedMs - (sampledAt - referenceAt); // Projects an input timestamp onto the exact clock used by the audible metronome.
+    const elapsedAtReference = (jamLeaderSync && !state.game.active ? clock.transportElapsedMs : clock.performanceElapsedMs) - (sampledAt - referenceAt); // Uses the leader's intro and melody clock for synchronized arpeggios.
     const remainder = ((elapsedAtReference % beatMs) + beatMs) % beatMs;
     const delay = remainder < 2 ? beatMs : beatMs - remainder;
     return referenceAt + delay;
@@ -2837,7 +2846,7 @@
     if (Object.is(currentValue, horizonValue)) return null;
     let low = sampledAt;
     let high = horizonAt;
-    for (let iteration = 0; iteration < 14; iteration++) {
+    for (let iteration = 0; iteration < 10; iteration++) { // 90 ms / 2^10 < 0.09 ms: sub-millisecond precision with eight fewer clock evaluations per frame.
       const midpoint = (low + high) * 0.5;
       if (Object.is(valueForClock(sharedTransportData(midpoint)), currentValue)) low = midpoint;
       else high = midpoint;
@@ -2849,12 +2858,14 @@
 
   function scheduleTransportAudioAhead() {
     if (state.paused || document.hidden || !state.audioContext || state.audioContext.state !== 'running' || !state.master) return;
-    const beatBoundary = findUpcomingTransportBoundary(clock => clock.transportAbsoluteBeat);
-    if (beatBoundary && state.scheduledMetronomeBeat !== beatBoundary.value) {
-      playMetronomeClick(currentHarmonyBeatData(beatBoundary.clock), false, beatBoundary.atMs);
-      state.scheduledMetronomeBeat = beatBoundary.value;
+    if (!jamLeaderSync || state.ambientOnly) { // The NPC is already sounding the shared beat; skip the player's entire click lookahead search.
+      const beatBoundary = findUpcomingTransportBoundary(clock => clock.transportAbsoluteBeat);
+      if (beatBoundary && state.scheduledMetronomeBeat !== beatBoundary.value) {
+        playMetronomeClick(currentHarmonyBeatData(beatBoundary.clock), false, beatBoundary.atMs);
+        state.scheduledMetronomeBeat = beatBoundary.value;
+      }
     }
-    if (!state.rootPadEnabled) return;
+    if (!state.rootPadEnabled || HOSTED_FLUTE_PERFORMANCE || jamLeaderSync) return; // The NPC already plays the root accompaniment; avoid duplicate chord voices and their per-frame lookahead search.
     const padBoundary = findUpcomingTransportBoundary(rootPadAudioKey);
     if (padBoundary && state.scheduledRootPadKey !== padBoundary.value) {
       if (syncRootPad(!state.rootPadSampleBuffer, padBoundary.atMs, padBoundary.clock)) {
@@ -2891,6 +2902,7 @@
   }
 
   function playMetronomeClick(beatData = 0, force = false, whenMs = null) {
+    if (jamLeaderSync && !force && !state.ambientOnly) return; // The NPC already sounds this beat; spare a duplicate click/footstep voice and Web Audio node.
     // An ambient NPC performance (state.game.loopDemo — see startAmbientLead)
     // always keeps its footstep-sample beat regardless of the player's own
     // auditory-metronome preference: that toggle is a practice aid for the
@@ -3128,7 +3140,7 @@
   }
 
   function syncRootPad(force = false, whenMs = null, clock = null) {
-    if (HOSTED_FLUTE_PERFORMANCE || !state.rootPadEnabled || state.paused || document.hidden) { // A solo flute cannot also play a pad chord.
+    if (HOSTED_FLUTE_PERFORMANCE || jamLeaderSync || !state.rootPadEnabled || state.paused || document.hidden) { // NPC-led jams already include the lead's root pad, and a solo flute is monophonic.
       if (state.rootPadVoices.length) stopRootPad(0.35);
       return false;
     }
@@ -7042,6 +7054,9 @@
       : `${song.countInBeats}-beat shared count-in`; // Makes the authored pre-melody harmony offset visible without requiring Mobile Debug.
     refs.transportStatus.innerHTML = `<strong>${demoMode ? 'Successful preview' : songTitle(type)}</strong> · ${songTitle(type)} · ${state.bpm} quarter-BPM · ${song.timeSignature[0]}/${song.timeSignature[1]} · ${introStatus}${song.beatGrouping.length>1 ? ` · accents ${song.beatGrouping.join('+')}` : ''}${demoMode ? ` · ${automaticPluckLabel(demoMode)} selected` : ''}${melody?.chords ? ' · silent song chords active' : ''}`;
     log(demoMode ? 'Successful preview started' : 'Song started', `${songTitle(type)}, ${state.bpm} quarter-BPM, ${song.timeSignature[0]}/${song.timeSignature[1]}, ±${state.hitWindow} ms${demoMode ? `, ${automaticPluckLabel(demoMode)}` : ''}`);
+    if (state.ambientOnly) {
+      try { parent.postMessage({source:'hobunji-music-minigame',type:'ambient-transport-changed'},'*'); } catch (_) {} // Immediately sync the host on the first note cycle and every NPC composition restart, without another timer.
+    }
   }
 
   function updateFreePlayStatus(message = 'Free play.') {
@@ -7303,9 +7318,11 @@
       return;
     }
     scheduleTransportAudioAhead(); // Queues predictable beat/chord audio before the render frame reaches the boundary, matching automatic-note look-ahead.
-    const harmonyStep = currentHarmonyStep();
-    const padKey = rootPadAudioKey(); // Checks both measure and chord without forcing a new root sample on every render.
-    const beatData = currentHarmonyBeatData();
+    const clock = sharedTransportData(); // Reuse one sample for chord, pad and beat instead of calculating the transport three times each frame.
+    const harmonyStep = currentHarmonyStep(clock);
+    const padEnabledHere = state.rootPadEnabled && !HOSTED_FLUTE_PERFORMANCE && !jamLeaderSync; // Only the local solo Kurraya or NPC leader needs root-pad work.
+    const padKey = padEnabledHere ? rootPadAudioKey(clock) : null; // Jam followers and flute players avoid redundant per-frame root calculations.
+    const beatData = currentHarmonyBeatData(clock);
     const chordChanged = harmonyStep !== state.lastHarmonyStep;
     const beatChanged = beatData.absoluteBeat !== state.lastMetronomeBeat;
     if (chordChanged) {
@@ -7316,8 +7333,8 @@
     }
     if (padKey !== state.lastRootPadKey) {
       state.lastRootPadKey = padKey;
-      if (state.rootPadEnabled && state.scheduledRootPadKey !== padKey) syncRootPad(!state.rootPadSampleBuffer); // Startup/stall fallback when the look-ahead did not schedule the new bar.
-    } else if (state.rootPadEnabled && (state.rootPadSampleBuffer || state.rootPadRootMidi == null) && state.audioContext?.state === 'running' && !state.rootPadVoices.some(voice => !voice.stopping && voice.active !== false)) {
+      if (padEnabledHere && state.scheduledRootPadKey !== padKey) syncRootPad(!state.rootPadSampleBuffer); // Startup/stall fallback when the look-ahead did not schedule the new bar.
+    } else if (padEnabledHere && (state.rootPadSampleBuffer || state.rootPadRootMidi == null) && state.audioContext?.state === 'running' && !state.rootPadVoices.some(voice => !voice.stopping && voice.active !== false)) {
       syncRootPad(true); // Restores a failed/ended imported pad or an uninitialized pluck without endlessly retriggering ordinary short plucks mid-bar.
     }
     if (beatChanged) {
@@ -8014,8 +8031,89 @@
         beatMs:Number(state.game.beatMs) || (60000 / Math.max(1,Number(state.bpm) || 104)),
       };
     },
-    // songId lets a host join the player into whatever a nearby NPC is
-    // already leading rather than always falling back to state.selectedSong.
+    // Compact, audio-free snapshot: the NPC keeps its own audio context and instrument sample.
+    jamLeaderSnapshot() {
+      if (!state.ambientOnly || !state.game.active || state.paused) return null;
+      const sampledAtMs = nowMs(); // NPC clock and epoch anchor are sampled together.
+      const snapshot = {
+        playing:true, songId:state.game.songType || state.selectedSong,
+        sampledEpochMs:Date.now(), elapsedMs:gameClockElapsedMs(sampledAtMs),
+        bpm:state.bpm, tonicMidi:state.tonicMidi, scaleName:state.scaleName,
+        countInMs:state.game.countInMs, countInBeats:state.game.countInBeats
+      };
+      if (snapshot.songId === 'when-the-kininjis-bloom') {
+        const arrangement = activeKurrayaSongArrangement(); // Memoized; only 20 chord indices cross the iframe.
+        snapshot.introSteps = arrangement.introSteps.slice();
+        snapshot.bodySteps = arrangement.bodySteps.slice();
+      }
+      return snapshot;
+    },
+    followJamLeader(snapshot) {
+      if (state.ambientOnly || !snapshot?.playing || snapshot.songId !== 'when-the-kininjis-bloom'
+        || !Number.isFinite(snapshot.elapsedMs) || !Number.isFinite(snapshot.bpm)
+        || !Number.isFinite(snapshot.sampledEpochMs) || snapshot.bpm < 40 || snapshot.bpm > 300
+        || !Array.isArray(snapshot.introSteps) || snapshot.introSteps.length !== FIXED_HARMONY_SIX_EIGHT_CHORDS
+        || !Array.isArray(snapshot.bodySteps) || snapshot.bodySteps.length !== FIXED_HARMONY_THREE_FOUR_CHORDS) return false;
+      if (state.game.active) stopSong('Playing along with an NPC.'); // No duplicated authored demo under the actual NPC.
+      const receivedAtMs = nowMs(); // Local monotonic anchor; does not assume shared iframe timeOrigin.
+      const sampleAgeMs = clamp(Date.now() - snapshot.sampledEpochMs,0,1000); // Epoch compensates only the cross-frame call latency.
+      const elapsedMs = Math.max(0,snapshot.elapsedMs + sampleAgeMs);
+      const previous = jamLeaderSync; // Retains the original solo configuration across lightweight periodic corrections.
+      const previousElapsed = previous ? previous.elapsedMs + receivedAtMs - previous.receivedAtMs : null;
+      const changedSong = !previous || previous.songId !== snapshot.songId || previous.bpm !== snapshot.bpm;
+      const driftMs = previous ? elapsedMs - previousElapsed : 0;
+      const hardReset = changedSong || Math.abs(driftMs) > JAM_SYNC_HARD_RESET_MS;
+      const original = previous?.original || {
+        tonicMidi:state.tonicMidi,scaleName:state.scaleName,
+        introSteps:state.kurrayaSongIntroSteps.slice(),bodySteps:state.kurrayaSongBodySteps.slice()
+      };
+      if (!previous || hardReset || Math.abs(driftMs) > JAM_SYNC_DRIFT_TOLERANCE_MS) {
+        const correctedElapsed = previous && !hardReset ? previousElapsed + driftMs * 0.35 : elapsedMs; // Small corrections converge smoothly without restarting notes.
+        jamLeaderSync = {songId:snapshot.songId,bpm:snapshot.bpm,elapsedMs:correctedElapsed,receivedAtMs,
+          countInMs:Math.max(0,Number(snapshot.countInMs)||0),countInBeats:Math.max(0,Number(snapshot.countInBeats)||0),
+          lastSyncAtMs:receivedAtMs,lastDriftMs:driftMs,original};
+      } else {
+        previous.lastSyncAtMs = receivedAtMs;
+        previous.lastDriftMs = driftMs;
+      }
+      if (!previous) stopRootPad(0.18); // Drop an already-sounding local bass when the NPC takes over accompaniment.
+      if (state.scaleName !== snapshot.scaleName) applyPerformanceScale(snapshot.scaleName,{persist:false});
+      if (state.tonicMidi !== snapshot.tonicMidi) applyPerformanceTonic(snapshot.tonicMidi,{persist:false});
+      const changedIntro = state.kurrayaSongIntroSteps.some((step,index) => step !== snapshot.introSteps[index]);
+      const changedBody = state.kurrayaSongBodySteps.some((step,index) => step !== snapshot.bodySteps[index]);
+      if (changedIntro || changedBody) {
+        state.kurrayaSongIntroSteps = normalizeKurrayaArrangementSteps(snapshot.introSteps,FIXED_HARMONY_SIX_EIGHT_CHORDS,KURRAYA_DEFAULT_INTRO_STEPS);
+        state.kurrayaSongBodySteps = normalizeKurrayaArrangementSteps(snapshot.bodySteps,FIXED_HARMONY_THREE_FOUR_CHORDS,KURRAYA_DEFAULT_BODY_STEPS);
+      }
+      if (hardReset || changedIntro || changedBody) {
+        state.lastHarmonyStep = -1;
+        state.lastRootPadKey = null; state.scheduledRootPadKey = null;
+        state.lastMetronomeBeat = -1; state.scheduledMetronomeBeat = null;
+        updateHarmonyVisual(true,true);
+      }
+      return true;
+    },
+    stopJamFollow() {
+      if (!jamLeaderSync) return false;
+      const original = jamLeaderSync.original; // Restore solo pitch and harmony if the NPC leaves while the player continues.
+      jamLeaderSync = null;
+      state.harmonyStartTime = nowMs();
+      state.kurrayaSongIntroSteps = original.introSteps;
+      state.kurrayaSongBodySteps = original.bodySteps;
+      if (state.scaleName !== original.scaleName) applyPerformanceScale(original.scaleName,{persist:false});
+      if (state.tonicMidi !== original.tonicMidi) applyPerformanceTonic(original.tonicMidi,{persist:false});
+      state.lastHarmonyStep = -1;
+      state.lastRootPadKey = null; state.scheduledRootPadKey = null;
+      state.lastMetronomeBeat = -1; state.scheduledMetronomeBeat = null;
+      updateHarmonyVisual(true,true);
+      return true;
+    },
+    jamFollowState() {
+      return jamLeaderSync ? {active:true,songId:jamLeaderSync.songId,bpm:jamLeaderSync.bpm,
+        driftMs:Math.round(jamLeaderSync.lastDriftMs),lastSyncAgeMs:Math.round(nowMs()-jamLeaderSync.lastSyncAtMs),
+        chord:currentHarmonyData().chordName,measure:sharedTransportData().mixedPhase?.absoluteChord ?? null} : {active:false};
+    },
+    // Kept for standalone Music Lab preview compatibility; overworld jams use followJamLeader instead.
     async startBackupPreviewSong(songId) {
       state.ambientOnly = false;
       await ensureAudio();
@@ -8075,6 +8173,7 @@
       return this.gameplayMenuState();
     },
     enterJamMode() {
+      this.stopJamFollow(); // Fresh player session starts with no stale NPC clock.
       stopSong('Jam mode.');
       state.game.backupAccompaniment = false;
       document.body.classList.remove('backup-accompaniment','backup-player-stowed');
@@ -8082,21 +8181,26 @@
       return this.gameplayMenuState();
     },
     getState() {
-      const effectiveBpm = Number(state.bpm) || 104;
       const bridgeNow = nowMs();
+      const clock = sharedTransportData(bridgeNow); // One coherent transport sample drives the returned beat, chord step and jam state.
+      const followingNpc = Boolean(jamLeaderSync && !state.game.active);
+      const effectiveBpm = clock.bpm; // The public bridge always reports the audible clock: NPC tempo, solo free-play harmony BPM or song BPM.
       const songMeasureBeats = state.game.backupAccompaniment && state.game.active ? Math.max(1,Number(state.game.timeSignature?.[0]) || 4) : 4;
-      const measureDurationMs = songMeasureBeats * 60000 / effectiveBpm; // Backup freeplay follows the lead song's actual silent-chord measure clock.
-      const harmonyElapsedMs = state.game.backupAccompaniment
+      const mixedMeter = clock.mixedPhase; // Fixed Kurraya's 6/8→3/4 transport also applies to solo free play, not just NPC jams.
+      const measureDurationMs = mixedMeter ? clock.meter.measureQuarterBeats * clock.quarterBeatMs : songMeasureBeats * 60000 / effectiveBpm;
+      const harmonyElapsedMs = followingNpc ? clock.harmonyQuarterBeatFloat * clock.quarterBeatMs : state.game.backupAccompaniment
         ? Math.max(0,gameTime() - (Number(state.game.countInMs) || 0))
         : Math.max(0, bridgeNow - state.harmonyStartTime);
+      const measureIndex = mixedMeter ? mixedMeter.absoluteChord : Math.floor(harmonyElapsedMs / measureDurationMs);
+      const measurePhaseMs = mixedMeter ? mixedMeter.quarterBeatIntoChord * clock.quarterBeatMs : harmonyElapsedMs % measureDurationMs;
       const heldFrets = [...state.frettedSources.values()]; // Physical note holds only; the short automatic release tail does not count as suspense holding.
       const oldestHeldAt = heldFrets.reduce((oldest, fret) => Math.min(oldest, Number(fret?.pressedAt) || bridgeNow), bridgeNow);
       const heldAutomaticNote = state.pluckInputMode !== 'direct' && heldFrets.length > 0;
       return {
         bpm: effectiveBpm,
         measureDurationMs,
-        measureIndex: Math.floor(harmonyElapsedMs / measureDurationMs),
-        measurePhaseMs: harmonyElapsedMs % measureDurationMs,
+        measureIndex,
+        measurePhaseMs,
         heldAutomaticNote,
         heldAutomaticDurationMs: heldAutomaticNote ? Math.max(0, bridgeNow - oldestHeldAt) : 0,
         heldAutomaticNoteCount: heldAutomaticNote ? heldFrets.length : 0,
@@ -8121,8 +8225,8 @@
         transportAudioLookaheadMs: TRANSPORT_AUDIO_LOOKAHEAD_MS,
         scheduledMetronomeBeat: state.scheduledMetronomeBeat,
         scheduledRootPadKey: state.scheduledRootPadKey,
-        transportAbsoluteBeat: sharedTransportData().transportAbsoluteBeat,
-        transportHarmonyStep: currentHarmonyStep(),
+        transportAbsoluteBeat: clock.transportAbsoluteBeat,
+        transportHarmonyStep: currentHarmonyStep(clock),
       };
     },
   };
