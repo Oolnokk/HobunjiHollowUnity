@@ -119,6 +119,8 @@ const festivalSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 
       ui.press('confirm'); // A commits the selected lineage through the ordinary perform handler.
       await sleep();
       const committed=window.__offeringTest.performed[0];
+      window.FestivalUI.close();
+      await sleep(); // Allow the controller's mutation observer to release the old nested detail group between sessions.
       window.__offeringTest.offered=false;
       window.FestivalUI.open(anchor);
       await sleep();
