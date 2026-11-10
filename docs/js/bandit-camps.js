@@ -264,7 +264,7 @@
   function _banditZoneTents(zoneId) {
     const out = [];
     for (const rec of (_banditCampInstances.get(zoneId) || [])) {
-      for (const prop of rec.props) if (prop.type === 'tent') out.push(prop);
+      for (const prop of rec.props) if (prop.type === 'tent' || prop.strongholdStake && !prop.freed) out.push(prop); // Existing world focus can now target usable wolf stakes.
     }
     return out;
   }
@@ -1021,6 +1021,7 @@
     if (!initialGuards) {
       window.__farmLog?.('[bandits] simple hydra: initial guards could not spawn.', 'warn');
     }
+    if (rec.stronghold) window.BanditStrongholdWolves?.ensureExterior?.(rec,deps); // Native gar-wolves and stretched chain visuals follow their fixed stakes.
     const total = grunts + flaskers + lieutenants + rec.reserveByRank.captain;
     window.__farmLog?.(
       '[bandits] zone "' + zoneId + '": camp ' + instance.id
@@ -1150,7 +1151,7 @@
 
   function banditTentRayHit(zoneId, obj, raycaster) {
     const root = _banditCampMeshes.get(zoneId)?.get(obj.id)?.mesh; // Registered tent render group, never a proximity-only proxy.
-    const surface = root?.children?.find(child => child.userData?.banditTentAimSurface); // The authored canvas mesh, excluding burn flames/outline children.
+    const surface = obj.strongholdStake ? root : root?.children?.find(child => child.userData?.banditTentAimSurface); // Stakes use their actual small timber/metal mesh; tents keep their authored canvas-only focus.
     if (!root?.visible || !surface?.visible) return null;
     root.updateWorldMatrix?.(true, true);
     return raycaster.intersectObject(surface, true)
@@ -1200,12 +1201,13 @@
       _lastTentFocus = { result: 'ray-missed', nearby: nearby.length, hasRay: true, hasFocusApi: true };
       return null;
     }
-    if (focus.candidate.data.burning || !(focus.candidate.data.interactable?.lootable || focus.candidate.data.interactable?.burnable)) {
+    if (focus.candidate.data.burning || !(focus.candidate.data.strongholdStake && !focus.candidate.data.freed ||
+        focus.candidate.data.interactable?.lootable || focus.candidate.data.interactable?.burnable)) {
       _lastTentFocus = { result: 'not-actionable', nearby: nearby.length, hasRay: true, hasFocusApi: true, tentId: focus.candidate.data.id };
       return null; // A burning/empty tent physically blocks a tent behind it; never aim through its canvas.
     }
     const hostile = window.RangedWeapons.focusedHostile?.(BANDIT_TENT_AIM_MAX_WORLD);
-    if (hostile && hostile.distanceWorld <= focus.distanceWorld + 0.05) {
+    if (hostile && !focus.candidate.data.strongholdStake && hostile.distanceWorld <= focus.distanceWorld + 0.05) { // Wolf enemies are tethered close to their stake; the precisely aimed stake still gets an interaction.
       _lastTentFocus = { result: 'nearer-hostile', nearby: nearby.length, hasRay: true, hasFocusApi: true };
       return null;
     }
@@ -1223,7 +1225,12 @@
     const zoneId = deps?.getCurrentArea?.();
     if (!(zoneId && deps.isZoneArea(zoneId))) return null;
     const tent = aimedBanditTent(zoneId);
-    if (!tent || !(tent.interactable?.lootable || tent.interactable?.burnable)) return null;
+    if (!tent || !(tent.strongholdStake || tent.interactable?.lootable || tent.interactable?.burnable)) return null;
+    if(tent.strongholdStake) return {
+      icon:'🔓', label:'Free Gar-Wolf', action:'bandit_tent_interact',style:'primary',
+      allowed:true,worldInteraction:true,
+      promptRoot:_banditCampMeshes.get(zoneId)?.get(tent.id)?.mesh || null,
+    }; // Reuses the tent's controller/touch aim and hold action.
     return {
       icon: tent.interactable?.lootable ? '🪙' : '🔥',
       label: tent.interactable?.lootable ? 'Loot Tent' : 'Burn Tent',
@@ -1279,6 +1286,7 @@
 
   function updateBanditTentInteraction(dt) {
     window.BanditStrongholdCover?.tick?.(deps?.getCurrentArea?.(),dt); // Same existing frame loop, with fire probes throttled inside Cover.
+    window.BanditStrongholdWolves?.tickExterior?.(deps?.getCurrentArea?.(),dt,deps); // Restrains/repositions only the few stake-bound wolves.
     updateBanditFireEffects(dt);
     updateSimpleHydra(dt);
     const zoneIdForBurn = deps.getCurrentArea();
@@ -1306,7 +1314,7 @@
       ? Number(tent.interactable.holdSeconds) : BANDIT_TENT_HOLD_S;
     _banditTentHoldT += dt;
     showTentActionHud(
-      looting ? 'Looting Tent...' : 'Burning Tent...',
+      tent.strongholdStake ? 'Freeing Gar-Wolf...' : (looting ? 'Looting Tent...' : 'Burning Tent...'),
       (_banditTentHoldT / holdS) * 100,
     );
     if (_banditTentHoldT < holdS) return;
@@ -1314,7 +1322,10 @@
     _banditTentHoldId = null;
     _banditTentHoldInterrupted = true; // One press performs one action; release before burning a tent you just looted.
     hideTentActionHud();
-    if (looting) lootBanditTent(zoneId, tent);
+    if (tent.strongholdStake) {
+      const camp=(_banditCampInstances.get(zoneId)||[]).find(rec=>rec.props.includes(tent));
+      if(camp)window.BanditStrongholdWolves?.freeStake?.(camp,tent,deps);
+    } else if (looting) lootBanditTent(zoneId, tent);
     else burnBanditTent(zoneId, tent);
   }
 
