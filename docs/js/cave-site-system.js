@@ -1095,6 +1095,23 @@
       plan.shattercasks.push({id:'loose-charge',col:tile.col,row:tile.row});
       blockedKeys.add(tileKey(tile.col,tile.row));
     }
+    if (contents === TYPES.FORTIFIED_STRONGHOLD) {
+      // Every fortified interior must contain both existing explosive-pottery variants.
+      // Use the CaveSiteSystem's safe floor planner rather than introducing
+      // another random prop placer or a different explosion implementation.
+      const supplyTiles = pickSpacedTiles(makeRng(profile.signature + ':fortified-shattercasks'),
+        freeChargeTiles.filter(tile => !blockedKeys.has(tileKey(tile.col,tile.row))
+          && plan.shattercasks.every(charge => Math.hypot(charge.col-tile.col,charge.row-tile.row) >= 3)),
+        2, blockedKeys, 2.5);
+      const variants = ['shattercask','flameShattercask'];
+      for (let index=0; index<supplyTiles.length; index++) {
+        const tile = supplyTiles[index];
+        plan.shattercasks.push({ id:'fortress-supply-' + index, kind:variants[index], col:tile.col, row:tile.row, guaranteed:true });
+        blockedKeys.add(tileKey(tile.col,tile.row));
+      }
+      if (supplyTiles.length < 2) window.__farmLog?.(
+        '[bandit-stronghold] not enough clear tiles to place both Shattercask variants','warn');
+    }
     mapData.caveShattercasks = clone(plan.shattercasks);
     if (profile.inhabitant === TYPES.BANDIT_HIDEOUT) {
       let reachable = plan.separator ? tilePoolFromKeys(awayFromEntrance, plan.separator.nearKeys) : awayFromEntrance;
@@ -1171,6 +1188,7 @@
       mapData.entrySpots = { ...(mapData.entrySpots || {}), den_exit: { col: mapData.exitCol, row: mapData.exitRow } };
     }
 
+    plan.floorSurfaceY = Number(mapData.floorSurfaceY) || 0; // Barrel Burdens spawned on the later cave tick retain the same floor elevation.
     plan.outerRimTileCount = mapData.outerRimTiles?.length || 0;
     plan.wallHeightScale = mapData.cavernCarvedHeightScale || window.CavernGenerator?.caveShape?.().base || mapData.wallHeightScale || 1; // Peak carved height (ruin caves: at the door).
 
