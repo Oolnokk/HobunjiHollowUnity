@@ -113,7 +113,7 @@ async function main(){
         if(opened!==0||closed!==0)throw Error('Stepping on a song plate must never open or close the player instrument');
         if(music.backdrop!==null)throw Error('Melody gate should not construct any fake black passage');
         if(music.plate.userData.puzzleCavePlateTexture!=='carved_smooth.png'||
-          music.plate.userData.puzzleCaveTankanText!=="hao'uun")
+          music.plate.userData.puzzleCaveTankanText!=="Hao'uun")
           throw Error('Melody plate is missing authored carved_smooth material or Tankan hao\'uun inscription');
         await waitFor(()=>music.plate.userData.puzzleCaveTankanReady||music.plate.userData.puzzleCaveTankanError,
           'Tankan glyph canvas and actual furniture font');
