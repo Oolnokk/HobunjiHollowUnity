@@ -149,7 +149,11 @@ api.decorate(root, 'grappleFlail', { shapeKey:'grappleFlail' }, { THREE });
   now = 14000;
   api.tick(0);
   window.Combat.deps.toolMeshMap = new Map(); // Integration can omit equipment caches from the combat/hand runtime adapters.
-  window.EquipmentPanel = { ownsCachedToolRoot:visual => visual === root }; // Mirrors the authoritative panel's identity bridge.
+  const ownerStart = equipment.indexOf('  function ownsCachedToolRoot(root) {'); // Extracts the actual production owner, without initializing inventory UI in this 3D fixture.
+  const ownerEnd = equipment.indexOf('\n  // Read-only bridge', ownerStart);
+  assert(ownerStart >= 0 && ownerEnd > ownerStart, 'the equipment ownership bridge has a testable boundary');
+  const ownsCachedToolRoot = new Function('deps', equipment.slice(ownerStart, ownerEnd) + '\nreturn ownsCachedToolRoot;')({toolMeshMap:{weapon:root}});
+  window.EquipmentPanel = { ownsCachedToolRoot }; // Simulates the real injected equipment map, not another reimplemented lookup.
   now = 21000;
   api.tick(0);
   assert.equal(api.debugSnapshot()[0]?.cachedPlayerOwned,true,
