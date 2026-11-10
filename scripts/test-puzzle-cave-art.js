@@ -14,7 +14,7 @@ async function main(){
   let fontsLoaded=false; // Gates tests so canvas lettering never renders before the real font is ready.
   const layout={
     ensureFontLoaded:async()=>{await fontReady;fontsLoaded=true;return true;},
-    createCanvas:(text,options)=>{
+    createRingCanvas:(text,options)=>{
       assert(fontsLoaded,'Tankan canvas must wait for the font');
       textCalls.push({text,options});return {canvas:{width:128,height:512}};
     },
@@ -51,10 +51,10 @@ async function main(){
   vm.runInNewContext(read('docs/js/puzzle-cave-plate-art.js'),{window,Promise,console});
   const art=window.PuzzleCavePlateArt;
   assert.equal(art.INSCRIPTION,"hao'uun");
-  const small=new Mesh(new Geometry(.55,.09),new Material());
-  const large=new Mesh(new Geometry(1.18,.15),new Material());
-  const a=art.decorate(THREE,small,{radius:.55,thickness:.09});
-  const b=art.decorate(THREE,large,{radius:1.18,thickness:.15,toward:{x:1,z:0}});
+  const small=new Mesh(new Geometry(.46,.09),new Material());
+  const large=new Mesh(new Geometry(.46,.15),new Material());
+  const a=art.decorate(THREE,small,{radius:.46,thickness:.09});
+  const b=art.decorate(THREE,large,{radius:.46,thickness:.15,toward:{x:1,z:0}});
   assert(a&&b);
   assert.equal(small.children[0].rotation.order,'YXZ','Tankan surface normal must stay upward after yaw');
   assert.equal(small.children[0].rotation.z,Math.PI,'text must face away from the approaching player');
@@ -69,6 +69,9 @@ async function main(){
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(textCalls.length,1,'all cave plates should share one Tankan raster');
   assert.equal(textCalls[0].text,"hao'uun");
+  assert.equal(textCalls[0].options.radiusScale,.68,'inscription uses the circular Tankan layout');
+  assert.equal(small.userData.puzzleCaveTankanLayout,'ring','the pressure plate exposes its ring mode in mobile diagnostics');
+  assert.equal(small.children[0].geometry.width,small.children[0].geometry.height,'circular inscription must use a square top-facing canvas');
   assert.equal(small.children[0].visible,true);
   assert.equal(small.children[0].material.map.image.width,128);
   assert.equal(large.children.length,0,'disposed caves must never regain late-loading lettering');
@@ -87,6 +90,11 @@ async function main(){
   assert(ruin.includes('maxColumns:1'),'each carved interior pillar carries a single vertical note column');
   assert(!ruin.includes('surfaces:[scoreFace]'),'no interior melody glyph is ever decaled onto the rough cave wall');
   assert(caves.includes('supportedScorePillarPair'),'exterior melodies also use paired standing score pillars');
+  assert(caves.includes('new THREE.CylinderGeometry(.46,.46,.09,24)'),'outdoor melody stone must stay entirely within one tile');
+  assert(caves.includes('Math.hypot(px-portal.plate.x,pz-portal.plate.z)<=.46'),'outdoor timing trigger must match the new one-tile plate');
+  assert(ruin.includes('const MELODY_PLATE_RADIUS=0.46'),'interior melodies need one canonical one-tile radius');
+  assert(ruin.includes('radius:MELODY_PLATE_RADIUS'),'interior judge must use the same radius as its stone plate');
+  assert(ruin.includes("rec.plateArtStoneMesh=visiblePlate"),'ordinary ruin melody plates must also carry the concentric inscription');
   assert(ruin.includes('rec.inscription?.setVisible?.(down)'),'interior clue must only appear on the plate');
   assert(caves.includes('portal.scoreBoard.visible=!!down'),'exterior clue must only appear on the plate');
   const gate=JSON.parse(read('docs/config/furniture-authored/cliffGate.json')); // The physical cave gate must be an unobstructed passage once its slab opens.
