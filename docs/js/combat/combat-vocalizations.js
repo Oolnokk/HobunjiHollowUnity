@@ -3,12 +3,12 @@
 (() => {
   'use strict';
 
-  const VERSION = 4;
+  const VERSION = 5;
   const CONFIG_URL = 'config/combat/combat-vocalizations.json';
   const LOCAL_OVERRIDE_KEY = 'hobunji_combat_vocalizations_override_v1';
   const SCHEDULER_ID = 'combat-vocalizations-breath';
-  const SKELETON_VOICE_SPECIES = new Set(['harlyao-skeleton', 'mao-ao-skeleton']); // NPC skeletons use one dedicated shriek in all combat vocal events.
-  const SKELETON_SHRIEK_URL = 'assets/audio/sfx/utterances/sfx_skeletonshriek_1.ogg'; // Real authored recording for skeleton attacks, reactions, and breathing.
+  const SKELETON_VOICE_SPECIES = new Set(['harlyao-skeleton', 'mao-ao-skeleton']); // Ordinary NPC skeletons shriek when alerted or attacking, never for being struck or breathing.
+  const SKELETON_SHRIEK_URL = 'assets/audio/sfx/utterances/sfx_skeletonshriek_1.ogg'; // One authored recording shared by skeleton alarms and offensive voices.
   const SKELETON_SHRIEK_TEMPO = 1; // No speed change was requested; the trailing "3x" instruction was incomplete.
   const SKELETON_SHRIEK_PITCH_STEPS = Object.freeze([-3, -2, -1, 0, 1, 2, 3]); // Finite random semitone choices reuse cached mobile voice renders.
   const DEFAULT_CONFIG = Object.freeze({
@@ -248,6 +248,7 @@
   const activeChargeTokens = new Set(); // Used for cleanup/debug without coupling tokens to one combat archetype.
   const trackedBreathers = new Set(); // Only non-player humanoids currently below max Stamina stay in the frame scheduler set.
   const breathStateByEntity = new WeakMap(); // Per-character cadence prevents NPCs from sharing the player's next-breath clock.
+  let skeletonAlarmActiveByEntity = new WeakMap(); // Tracks each skeleton's current combat-alert transition without retaining despawned actors.
   let lastBreathPlaybackHandle = null; // Mobile diagnostics inspect this handle after asynchronous render failures can switch playback to native audio.
   let pitchBackendMissingSinceMs = null; // Bounds the startup wait for the asynchronously loaded pitch renderer before native compatibility fallback.
   const VOICE_FADE_OUT_S = 0.008; // Same sudden anti-pop handoff used by dialogue ownership.
@@ -261,6 +262,7 @@
     lastPain: null,
     lastDodge: null,
     lastStrike: null,
+    lastAlert: null,
     lastCharge: null,
     failedPlayback: null,
     wrappedAbilities: [],
@@ -326,6 +328,10 @@
     };
   }
 
+  function hasSkeletonVoice(entity) {
+    return !!entity && SKELETON_VOICE_SPECIES.has(voiceIdentity(entity).speciesId);
+  }
+
   function voiceModulation(entity = player()) {
     const { speciesId, gender } = voiceIdentity(entity);
     const root = config.utteranceModulation || {};
@@ -348,7 +354,7 @@
   function specialVoiceFor(entity, event) {
     const maskboundVoice = window.MaskboundGuardianCombat?.voiceVariantFor?.(entity, event); // Keep existing Maskbound Guardian vocal variants authoritative.
     if (maskboundVoice) return maskboundVoice;
-    if (!SKELETON_VOICE_SPECIES.has(voiceIdentity(entity).speciesId)) return null;
+    if (!hasSkeletonVoice(entity) || !['alert', 'strike', 'charge'].includes(event)) return null;
     const pitchIndex = Math.floor(Math.random() * SKELETON_SHRIEK_PITCH_STEPS.length); // Seven fixed semitone steps keep playback varied without unbounded WSOLA cache churn.
     return {
       url: SKELETON_SHRIEK_URL,
@@ -418,7 +424,8 @@
 
   function playOneShot(entity, url, baseVolume, pitchRandomSemitones, debugKind, detail = {}, voiceKind = 'active', durationScale = 1, overlapGroup = null) {
     if (!isHumanoidVocalEntity(entity)) return null;
-    const special = specialVoiceFor(entity, debugKind === 'dodge' ? 'dodge' : debugKind === 'pain' ? 'pain' : debugKind === 'breath' ? 'breath' : 'strike'); // Attack, pain, dodge and stamina breathing share the same scream.
+    if (hasSkeletonVoice(entity) && (debugKind === 'pain' || debugKind === 'breath' || debugKind === 'dodge')) return null; // Never replace silent skeleton reactions with generic human recordings.
+    const special = specialVoiceFor(entity, debugKind === 'alert' ? 'alert' : debugKind === 'dodge' ? 'dodge' : debugKind === 'pain' ? 'pain' : debugKind === 'breath' ? 'breath' : 'strike'); // Ordinary skeletons use their own recording only for attacks and first alert.
     url = special?.url || url; // Prevent generic human voice files from reaching the guardian's playback channel.
     if (!url) return null;
     const audio = audioConfig();
@@ -582,7 +589,7 @@
   }
 
   function trackBreather(entity) {
-    if (!isHumanoidVocalEntity(entity) || !(Number(entity?.maxStamina) > 0) || !(Number(entity?.health) > 0)) return;
+    if (!isHumanoidVocalEntity(entity) || hasSkeletonVoice(entity) || !(Number(entity?.maxStamina) > 0) || !(Number(entity?.health) > 0)) return;
     if (entity.exhaustion?.active || Number(entity.stamina) < Number(entity.maxStamina)) trackedBreathers.add(entity);
   }
 
@@ -598,6 +605,7 @@
   function forgetEntity(entity) {
     trackedBreathers.delete(entity);
     breathStateByEntity.delete(entity);
+    skeletonAlarmActiveByEntity.delete(entity);
     lastDotPainAtMsByEntity.delete(entity);
     window.CharacterVoiceOwner?.stop?.(entity, VOICE_FADE_OUT_S);
     for (const token of activeChargeTokens) if (token.entity === entity) cancelCharge(token);
@@ -610,7 +618,7 @@
       forgetEntity(entity);
       return;
     }
-    if (!isHumanoidVocalEntity(entity) || !(Number(entity?.maxStamina) > 0) || !(Number(entity?.health) > 0)) {
+    if (!isHumanoidVocalEntity(entity) || hasSkeletonVoice(entity) || !(Number(entity?.maxStamina) > 0) || !(Number(entity?.health) > 0)) {
       trackedBreathers.delete(entity);
       return;
     }
@@ -670,6 +678,7 @@
   }
 
   function playPain(entity, kind, delta, atMs) {
+    if (hasSkeletonVoice(entity)) return; // Impacts and damage-over-time do not trigger an undead alarm.
     const intensity = choosePainIntensity(entity);
     if (intensity == null) return;
     const played = playOneShot(
@@ -696,6 +705,7 @@
   }
 
   function playDodge(entity = player()) {
+    if (hasSkeletonVoice(entity)) return null; // Skeletons have no pain-style dodge vocal.
     const played = playOneShot( // Uses the same voice owner, modulation, and spatial routing as combat pain/breathing.
       entity,
       config.assets?.pain?.[1],
@@ -722,7 +732,7 @@
   function onResourceChange(event) {
     const detail = event?.detail || {};
     const entity = detail.entity;
-    if (!isHumanoidVocalEntity(entity) || !(Number(detail.delta) < 0)) return;
+    if (!isHumanoidVocalEntity(entity) || hasSkeletonVoice(entity) || !(Number(detail.delta) < 0)) return;
     trackBreather(entity);
     const atMs = nowMs();
     if (detail.immediate === true) {
@@ -734,6 +744,19 @@
     if (Number.isFinite(previous) && atMs - previous < repeatMs) return;
     lastDotPainAtMsByEntity.set(entity, atMs);
     playPain(entity, 'dot', Number(detail.delta) || 0, atMs);
+  }
+
+  function onHostileAlertState(entity, active) {
+    if (!hasSkeletonVoice(entity)) return null; // Other humanoids and Maskbound Guardians retain their own voice systems.
+    if (!active || !(Number(entity.health) > 0)) {
+      skeletonAlarmActiveByEntity.delete(entity); // Leaving combat rearms the next genuine detection alarm.
+      return null;
+    }
+    if (skeletonAlarmActiveByEntity.has(entity)) return null; // Do not shriek every AI/presentation frame.
+    skeletonAlarmActiveByEntity.set(entity, true);
+    const played = playOneShot(entity, SKELETON_SHRIEK_URL, config.grunts?.volume ?? 0.86, 0, 'alert', { trigger: 'combat-entry' }, 'active');
+    debug.lastAlert = { atMs: Math.round(nowMs()), entity: entity.id || entity.name || 'skeleton', suppressed: !played || !!played.suppressed }; // Pixel Probe can distinguish alerts from hit reactions on mobile.
+    return played;
   }
 
   function ensureAudioContext() {
@@ -1364,6 +1387,7 @@ function beginCharge(options = {}) {
     window.Combat?.input?.abortAllPresses?.();
     lastDotPainAtMsByEntity = new WeakMap();
     trackedBreathers.clear();
+    skeletonAlarmActiveByEntity = new WeakMap(); // Starting a new world permits fresh detection alerts from surviving entity objects.
     for (const value of liveChargesByAbility.values()) Promise.resolve(value).then(token => cancelCharge(token));
     liveChargesByAbility.clear();
     for (const token of [...activeChargeTokens]) cancelCharge(token);
@@ -1421,7 +1445,7 @@ function beginCharge(options = {}) {
 
   window.CombatVocalizations = {
     version: VERSION,
-    latestChange: 'Release grunts overlap without interrupting one another, including between consecutive attacks and across windups; voice priority, fades, and actor cleanup remain in force. NPC combat voices use elevation-aware distance attenuation, dry-path treble rolloff and far-field reverb while player voices remain close; breathing retries during async pitch-renderer loading and Web Audio unlock before playing, keeping species/gender shifting consistent from cold startup; mobile diagnostics expose fallback status. Release spans windup through the end of the Strike hold (one utterance per Flurry strike); the input gate ends halfway through the hold and inputs queue only after the Strike pose. Dodge uses pain intensity 1 at 75% duration; all combat vocals retain species/gender modulation.',
+    latestChange: 'Skeleton shrieks now play on enemy combat alert and offensive actions only, not damage, dodge, or breathing. Release grunts overlap without interrupting one another, including between consecutive attacks and across windups; voice priority, fades, and actor cleanup remain in force. NPC combat voices use elevation-aware distance attenuation, dry-path treble rolloff and far-field reverb while player voices remain close; breathing retries during async pitch-renderer loading and Web Audio unlock before playing, keeping species/gender shifting consistent from cold startup; mobile diagnostics expose fallback status. Release spans windup through the end of the Strike hold (one utterance per Flurry strike); the input gate ends halfway through the hold and inputs queue only after the Strike pose. Dodge uses pain intensity 1 at 75% duration; all combat vocals retain species/gender modulation.',
     configPromise,
     reloadConfig: loadConfig,
     forgetEntity,
@@ -1431,6 +1455,7 @@ function beginCharge(options = {}) {
     playStrikeGrunt,
     prewarmStrikeGrunt,
     playDodge,
+    onHostileAlertState, // Called by the shared hostile combat-state transition, not by damage callbacks.
     attackStartDelayS,
     attackQueueOpen,
     chargeRatePlan,
@@ -1444,6 +1469,7 @@ function beginCharge(options = {}) {
       maskboundVoiceSource: window.MaskboundGuardianCombat?.voiceSource || null, // Mobile debug proves all guardian combat utterances use the same recorded scream.
       skeletonVoiceSource: SKELETON_SHRIEK_URL, // Mobile Pixel Probe identifies the skeleton recording without inferring extra sound processing.
       skeletonVoiceTempo: SKELETON_SHRIEK_TEMPO,
+      skeletonVoiceEvents: 'alert, attack',
       configSource,
       configError,
       attackStartDelayS: attackStartDelayS(),
@@ -1476,6 +1502,7 @@ function beginCharge(options = {}) {
       lastPain: debug.lastPain ? { ...debug.lastPain } : null,
       lastDodge: debug.lastDodge ? { ...debug.lastDodge } : null,
       lastStrike: debug.lastStrike ? { ...debug.lastStrike } : null,
+      lastAlert: debug.lastAlert ? { ...debug.lastAlert } : null,
       lastCharge: debug.lastCharge ? { ...debug.lastCharge } : null,
       failedPlayback: debug.failedPlayback ? { ...debug.failedPlayback } : null,
       wrappedAbilities: debug.wrappedAbilities.map(entry => ({ ...entry })),
