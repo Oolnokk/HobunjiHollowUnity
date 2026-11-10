@@ -2,7 +2,7 @@
 // Source probabilities come from ItemAcquisitionRarity (stacked PR #1573), never from a new guessed spawn table.
 (() => {
   'use strict';
-  const MAX_POWER = 5; // The established three ancestor buffs still cap at level five.
+  const MAX_POWER = 5; // Every targeted fortune shares the established bounded strength scale.
   const qualityBase = stars => 0.5 + Number(stars) * 0.5; // Five-star common items get level three; genuinely scarce offerings earn higher levels.
   const clamp = (value,low,high) => Math.max(low,Math.min(high,value));
   const number = value => Number.isFinite(Number(value)) ? Number(value) : null;
@@ -16,24 +16,16 @@
     return young ? String(mapped) : null;
   }
   function statFor(key, definition = {}, mode = 'burn') {
-    if (mode === 'release') return 'goodwill'; // Saving a young creature is an act of compassion.
-    const evidence = [definition.primaryEffect,definition.stat,definition.statId,
-      ...Object.keys(definition.foodEffects || {}),...(definition.tags || []),definition.cat,definition.category,
-      definition.label || key].map(words).join(' ');
-    const scores = {
-      speed: /movement|move|speed|agility|evasion|dodg|quick|travel|escape|sprint|footing|throw|weapon|blade|bow|spear/.test(evidence) ? 2 : 0,
-      vigor: /health|stamina|heal|recovery|regen|vigor|farm|food|crop|cook|veget|berry|fish|fruit|strength|breath|growth|endurance/.test(evidence) ? 2 : 0,
-      goodwill: /favor|friend|social|affection|gift|keepsake|memori|figurine|charisma|companion|bond|family|love/.test(evidence) ? 2 : 0,
-    }; // Explicit item properties and concrete category traits, not a hash or random stat.
-    for (const [key,value] of Object.entries(definition.foodEffects || {})) {
-      const k = words(key),amount = number(value);
-      if (amount === null || amount <= 0) continue;
-      if (/favor|friend|social|bond/.test(k)) scores.goodwill += amount;
-      else if (/speed|mov|evad|dodge/.test(k)) scores.speed += amount;
-      else scores.vigor += amount;
-    }
-    const ranked = Object.entries(scores).sort((a,b)=>b[1]-a[1]);
-    return ranked[0][1] > 0 ? ranked[0][0] : 'goodwill'; // An unfamiliar keepsake is symbolically a bond with the departed.
+    if (mode === 'release') return 'breedingFortune'; // Releasing young protects future animal lineages.
+    const tags = [definition.cat,definition.category,...(definition.tags || []),...(definition.cookingCategories || [])].map(words).join(' ');
+    const name = words(key+' '+(definition.label || '')); // Only fallback evidence when authored categories are missing.
+    if (definition.isCookedFood || /cooked|prepared|meal|dish|processed food/.test(tags)) return 'cookingFortune';
+    if (/\bfish\b|seafood|angling/.test(tags) || /\bfish\b/.test(name)) return 'fishingFortune';
+    if (/\bseed\b|\bcrop\b|vegetable|fruit|grain|produce|farming/.test(tags) || /seed|vegetable/.test(name)) return 'harvestFortune';
+    if (/\bore\b|\bmineral\b|\bmetal\b|\bbar\b|\bstone\b|mining|gem/.test(tags) || /ore|ingot|metal bar|gemstone/.test(name)) return 'miningFortune';
+    if (/herb|forage|wood|timber|mushroom|reagent|wild berry/.test(tags) || /\bwood\b|\bherb\b/.test(name)) return 'foragingFortune';
+    if (/weapon|armor|armour|blade|shaft|head|combat|shield|arrow|bow|spear|mace/.test(tags) || /sword|spear|blade|shield|mace|arrow/.test(name)) return 'battleFortune';
+    return 'treasureFortune'; // Figurines, keepsakes, curios and unclassified valuables favor treasure discoveries.
   }
   function sourceEvidence(key,def,rarity,definitions = {}) {
     if (!rarity) return {factor:1,kind:'unmeasured',label:'No acquisition model loaded',confidence:'unknown',sources:[]};
@@ -79,15 +71,18 @@
     const valueFactor = Math.min(1.55,1 + Math.log1p(value/25)*.09); // Economic cost of foregoing a valuable, nonrenewable keepsake.
     const processTier = clamp(number(def.cookingProcessingTier ?? def.processingTier) || 0,0,6);
     const effortFactor = 1 + Math.min(0.5,processTier * .12); // Only recorded recipe steps contribute a modest labor premium.
-    const raw = qualityBase(quality) * scarcity.factor * valueFactor * effortFactor;
+    const ancestry = mode === 'release' && options.genotype && typeof options.genotype === 'object' ? options.genotype : null; // Exactly selected lineage, not another egg from the same key.
+    const geneValue = ancestry ? Number(window.CreatureGenetics?.sellValueFor?.(ancestry,species)?.amount) : NaN; // Reuse the Farm's genetic value model for rare inherited traits.
+    const traitFactor = Number.isFinite(geneValue) && geneValue > 0 ? clamp(1 + Math.log1p(geneValue / Math.max(1,value,50)) * 0.18,1,1.35) : 1;
+    const raw = qualityBase(quality) * scarcity.factor * valueFactor * effortFactor * traitFactor;
     const level = Math.round(clamp(raw,1,MAX_POWER)*100)/100; // Unlike old quality-only offerings, fractional rarity persists.
     const stat = statFor(key,def,mode);
     return {key,stars:quality,mode,species,stat,level,qualityUnits:qualityBase(quality),
-      scarcityFactor:scarcity.factor,valueFactor:Math.round(valueFactor*1000)/1000,
+      scarcityFactor:scarcity.factor,traitFactor:Math.round(traitFactor*1000)/1000,valueFactor:Math.round(valueFactor*1000)/1000,
       effortFactor:Math.round(effortFactor*1000)/1000,source:scarcity.kind,sourceLabel:scarcity.label,
       confidence:scarcity.confidence,sourceBreakdown:scarcity.sources,
-      statement:mode==='release'?'A young creature is taken to compatible wilderness alive; never placed in the pyre.'
-        :'The keepsake is surrendered to the communal pyre. Its meaning shapes a year-long ancestor blessing.'};
+      statement:mode==='release'?'This exact young animal is released into its native wilderness alive; never placed in the pyre.'
+        :'The keepsake is surrendered to the communal pyre. Its kind guides a year of targeted good fortune.'};
   }
   window.FestivalOfferingRitual = Object.freeze({assess,releaseSpecies,statFor,sourceEvidence,qualityBase,MAX_POWER});
 })();
