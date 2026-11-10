@@ -34,6 +34,7 @@
   ]; // Used for additive affliction glow; lower layers are larger, dimmer, and fractionally slower.
   const MAX_RETICLES = 12; // Nearest cued hostiles only, bounding per-frame sprite work in large fights.
   const POP_DURATION_MS = 480; // Keeps confirmed bonus impacts visible through cooldown and killing blows.
+  const PROCEDURAL_REDRAW_INTERVAL_MS = 50; // Caps fallback canvas texture uploads at 20 Hz; sprite motion and condition checks still run each render frame.
   const visualRootCache = new WeakMap(); // Used to avoid re-traversing a target avatar every frame when sizing the reticle.
 
   const sights = new Map(); // target -> its reticle (main sprite + glow layers), alive while that target stays cued.
@@ -43,6 +44,8 @@
   let lastTarget = null; // Nearest cued (else nearest in-reach) hostile, for diagnostics.
   let lastReachPx = 0; // Maximum current Quick Attack range shown in mobile debug and snapshot.
   let lastCheckedConditions = 0; // Number of condition evaluations on the most recent frame.
+  let lastVisualProbes = 0; // Number of avatar-centroid/frustum probes after readiness is confirmed.
+  let lastHalfMoonCandidates = 0; // Cheap spatial-filter survivors from the most recent frame.
   let lastFrameMs = performance.now(); // Used to make glow-layer lag frame-rate independent.
   let debugBadge = null; // Used only when the optional mobile URL debug readout is enabled.
   let debugEnabled = debugEnabledFromUrl(); // Used to make diagnostics accessible on mobile without devtools.
@@ -99,98 +102,113 @@
     return viewFrustum.setFromProjectionMatrix(viewMatrix);
   }
 
-  // True when the target stands at the player's terrain elevation. Uses the same
-  // worldSurfaceY the combat deps expose (plateau tiers + ramps), so a hostile on
-  // a cliff ledge above or a shelf below never gets a cue the player cannot act on.
-  // Without the lookup (early boot, test stubs) every target counts as level.
-  function sameElevationAsPlayer(deps, target) {
+  // Only sample the player's terrain height once for a readiness pass; the
+  // confirmed bonus burst may still call this standalone without a cached Y.
+  function sameElevationAsPlayer(deps, target, playerSurfaceY = null) {
     if (typeof deps?.worldSurfaceY !== 'function' || !deps.player) return true;
-    const playerY = Number(deps.worldSurfaceY(Number(deps.player.x) || 0, Number(deps.player.y) || 0));
+    const playerY = playerSurfaceY === null
+      ? Number(deps.worldSurfaceY(Number(deps.player.x) || 0, Number(deps.player.y) || 0))
+      : playerSurfaceY; // Shared player elevation from the one-frame readiness pass.
     const targetY = Number(deps.worldSurfaceY(Number(target.x) || 0, Number(target.y) || 0));
     if (!Number.isFinite(playerY) || !Number.isFinite(targetY)) return true;
     return Math.abs(targetY - playerY) <= SAME_ELEVATION_MAX_DELTA;
   }
 
-  // Filter by the attack's actual upper-bound reach BEFORE reading terrain,
-  // traversing avatar graphs, calculating world centroids or testing the frustum.
-  // The forward-facing half-moon excludes targets behind the player's
-  // current attack direction without paying for any 3D geometry checks.
-  function visibleCandidates(deps, reachPx) {
+  // Spatial broadphase only: scanning the area's hostile list is unavoidable
+  // without a shared spatial index, but remote/rear enemies never need their
+  // hierarchy, terrain, condition, cooldown graphics, or matrix evaluated.
+  function nearbyCandidates(deps, reachPx) {
     if (!(reachPx > 0) || !Number.isFinite(reachPx)) return [];
-    const area = deps.getCurrentArea?.();
-    const px = Number(deps.player?.x) || 0, py = Number(deps.player?.y) || 0;
-    const aim = deps.getPlayerMeleeAimDirection?.(); // The camera-authored lunge follows this direction, even when the character's stored facing differs.
-    const ax = Number(aim?.x) || 0, ay = Number(aim?.z) || 0; // The melee aim is a THREE world vector; world z maps to the gameplay y plane.
-    const aimLength = Math.hypot(ax, ay); // Horizontal magnitude; a vertical look uses the player's facing as a safe fallback.
-    const fallbackAngle = Number(deps.player?.angle) || 0; // Used when camera aim is not yet initialized or points straight up/down.
+    const area = deps.getCurrentArea?.(); // Current loaded area limits the scan.
+    const px = Number(deps.player?.x) || 0, py = Number(deps.player?.y) || 0; // Actor position in gameplay pixels.
+    const aim = deps.getPlayerMeleeAimDirection?.(); // The camera-authored lunge's direction takes precedence over avatar facing.
+    const ax = Number(aim?.x) || 0, ay = Number(aim?.z) || 0; // Three.js X/Z projects onto the gameplay X/Y plane.
+    const aimLength = Math.hypot(ax, ay); // Nearly-vertical aim falls back to actor facing.
+    const fallbackAngle = Number(deps.player?.angle) || 0; // Used before camera targeting is initialized.
     const facingX = aimLength > 0.0001 ? ax / aimLength : Math.cos(fallbackAngle);
-    const facingY = aimLength > 0.0001 ? ay / aimLength : Math.sin(fallbackAngle); // Reused for cheap half-moon checks against every hostile.
-    const reachSq = reachPx * reachPx; // Squared-radius rejection avoids sqrt/THREE work for remote enemies.
-    const out = []; // In-range, onscreen candidates sorted nearest first.
-    let frustum; // Created lazily only when a candidate survives the cheap radius checks.
+    const facingY = aimLength > 0.0001 ? ay / aimLength : Math.sin(fallbackAngle); // Unit half-moon forward normal.
+    const reachSq = reachPx * reachPx; // Squared range avoids a sqrt for each distant actor.
+    const out = []; // Nearby forward-only candidates, ordered nearest first below.
     for (const target of deps.hostileObjects || []) {
       if (!target || !(target.health > 0) || (area && target.areaId !== area)) continue;
       if (target.isCompanion || target._denHidden || target._grehlrBurrowProtected) continue;
-      const dx = (Number(target.x) || 0) - px, dy = (Number(target.y) || 0) - py; // World-plane separation in gameplay pixels.
-      const distanceSq = dx * dx + dy * dy; // Shared for the radius rejection and nearest-first ordering.
-      if (distanceSq > reachSq || dx * facingX + dy * facingY < 0) continue; // Forward semicircle; no cues behind the character.
-      if (!sameElevationAsPlayer(deps, target)) continue;
-      const root = targetRoot(target);
-      const scene = root && shownScene(target, root);
-      if (!scene) continue;
-      const anchor = window.WorldPopupText.avatarCentroidWorld(root); // Only nearby, shown avatars need their matrix/centroid updated.
-      if (!anchor) continue;
-      if (frustum === undefined) frustum = cameraFrustum(deps.camera); // Avoid a camera matrix multiply when nothing is near enough.
-      if (frustum) {
-        const metrics = resolveVisualMetrics(root);
-        viewSphere.center.copy(anchor);
-        viewSphere.radius = Math.max(metrics.width, metrics.height) * 0.5;
-        if (!frustum.intersectsSphere(viewSphere)) continue;
-      }
-      out.push({ target, root, scene, anchor, distanceSq });
+      const dx = (Number(target.x) || 0) - px, dy = (Number(target.y) || 0) - py; // Horizontal separation in gameplay pixels.
+      const distanceSq = dx * dx + dy * dy; // Shared radius/order metric, never a square root.
+      if (distanceSq > reachSq || dx * facingX + dy * facingY < 0) continue;
+      out.push({ target, distanceSq }); // Do not resolve a single avatar or terrain sample in this stage.
     }
-    out.sort((a, b) => a.distanceSq - b.distanceSq);
+    out.sort((a, b) => a.distanceSq - b.distanceSq); // Prioritize the nearest eligible cues when crowded.
     return out;
   }
 
   function getReadyState() {
     const deps = window.Combat.deps;
     const equipped = currentQuickAttack();
-    const state = { deps, equipped, reachPx: 0, checkedConditions: 0, target: null, root: null, ready: false, conditionReady: false, conditions: null, cooldownRemainingS: 0, targets: [], readyTargets: [] };
+    const state = { deps, equipped, reachPx: 0, checkedConditions: 0, visualProbes: 0, halfMoonCandidates: 0, target: null, root: null, ready: false, conditionReady: false, conditions: null, cooldownRemainingS: 0, targets: [], readyTargets: [] };
     if (!deps || !equipped || cueSuppressed(deps)) return state;
-    const profile = window.Combat.quickAttackData?.getReachProfile?.(deps, equipped.attackId); // Pure live-attack geometry; do not call prepare() here (Living Gust spends Footing).
+    const profile = window.Combat.quickAttackData?.getReachProfile?.(deps, equipped.attackId); // Read-only live geometry; prepare() would spend Footing.
     state.reachPx = Math.max(0, Number(profile?.reachPx) || 0);
     if (!(state.reachPx > 0)) return state;
-    const cooldownRemaining = window.Combat.quickAttackData?.bonusEffectCooldownRemaining; // Per-enemy clock started when that enemy last received the bonus.
+    state.profile = profile; // Reused below by affliction glow, instead of rebuilding mastery effects for each sight.
+    const cooldownRemaining = window.Combat.quickAttackData?.bonusEffectCooldownRemaining; // Shared per-enemy cooldown, cheap to read.
     const condKey = equipped.definition.condKey;
-    const candidates = visibleCandidates(deps, state.reachPx);
-    // Closest first lets busy fights stop evaluating conditions once the
-    // maximum number of useful cues is reached. Off-range enemies never pay
-    // for condition checks, terrain lookup, avatar transforms or glow sprites.
-    let nearestConditionCheck = null; // Preserve the original nearest-hostile diagnostic despite our cheap nearest-first iteration.
+    const candidates = nearbyCandidates(deps, state.reachPx);
+    state.halfMoonCandidates = candidates.length;
+    state.targets = candidates; // Debug count includes all spatial candidates, not only ones with active bonus effects.
+    let firstInspected = null; // Nearest inspected hostile provides fallback debug information when no bonus is ready.
+    let firstConditionMatch = null; // Nearest matching condition, even during cooldown, is the next debug fallback.
+    let nearestConditionCheck = null; // Retains Combat's nearest-target condition diagnostics after later evaluations.
+    let frustum; // Created lazily only for bonus-ready avatars, not for every nearby enemy.
+    let playerSurfaceY = null; // Sampled lazily once if at least one candidate actually needs terrain filtering.
     for (const entry of candidates) {
-      entry.conditions = getConditions(deps, entry.target); // Exactly the condition evaluator used at actual strike resolution.
+      const target = entry.target;
+      const root = targetRoot(target); // Hierarchy lookup remains cheap; no world-matrix update yet.
+      const scene = root && shownScene(target, root);
+      if (!scene) continue; // Hidden/detached targets must not consume readiness work.
+      const cooldownRemainingS = cooldownRemaining?.(target) || 0; // Skip conditional status math during active cooldown when safe.
+      // The nearest candidate remains fully inspectable for mobile diagnostics,
+      // and optional debugging can inspect every cooling target as before.
+      if (cooldownRemainingS > 0 && firstInspected && !debugEnabled) continue;
+      const conditions = getConditions(deps, target); // Exact gameplay bonus predicate, checked every frame for non-cooling candidates.
       state.checkedConditions++;
-      if (state.checkedConditions === 1) nearestConditionCheck = window.Combat.quickAttackData?.lastConditionCheck;
-      entry.conditionReady = !!entry.conditions[condKey];
-      entry.cooldownRemainingS = cooldownRemaining?.(entry.target) || 0;
-      entry.ready = entry.conditionReady && entry.cooldownRemainingS <= 0;
-      if (entry.ready) state.readyTargets.push(entry);
-      if (state.readyTargets.length >= MAX_RETICLES) break;
+      const conditionCheck = window.Combat.quickAttackData?.lastConditionCheck; // Same diagnostics the real attack updates.
+      if (!nearestConditionCheck) nearestConditionCheck = conditionCheck;
+      const conditionReady = !!conditions[condKey];
+      const evaluated = { ...entry, root, scene, conditions, conditionReady, cooldownRemainingS, ready: false }; // Per-target state shared by visual cues and debug.
+      if (!firstInspected) firstInspected = evaluated;
+      if (conditionReady && !firstConditionMatch) firstConditionMatch = evaluated;
+      if (!conditionReady || cooldownRemainingS > 0) continue;
+      if (playerSurfaceY === null && typeof deps.worldSurfaceY === 'function' && deps.player) {
+        playerSurfaceY = Number(deps.worldSurfaceY(Number(deps.player.x) || 0, Number(deps.player.y) || 0)); // One player height per frame, however many targets need checking.
+      }
+      if (!sameElevationAsPlayer(deps, target, playerSurfaceY)) continue;
+      const anchor = window.WorldPopupText.avatarCentroidWorld(root); // Matrix updates only for candidates with bonuses ready.
+      state.visualProbes++;
+      if (!anchor) continue;
+      if (frustum === undefined) frustum = cameraFrustum(deps.camera); // One projection pass, only when a cue might exist.
+      if (frustum) {
+        const metrics = resolveVisualMetrics(root);
+        viewSphere.center.copy(anchor);
+        viewSphere.radius = Math.max(metrics.width, metrics.height) * 0.5;
+        if (!frustum.intersectsSphere(viewSphere)) continue;
+      }
+      evaluated.anchor = anchor;
+      evaluated.ready = true;
+      state.readyTargets.push(evaluated);
+      if (state.readyTargets.length >= MAX_RETICLES) break; // Bound both sprite work and further status checks.
     }
-    if (nearestConditionCheck) window.Combat.quickAttackData.lastConditionCheck = nearestConditionCheck; // Keep mobile diagnostics focused on the closest inspected enemy.
-    state.targets = candidates;
-    const focus = state.readyTargets[0] || candidates.find(entry => entry.conditionReady) || candidates[0] || null;
-    if (focus) Object.assign(state, { target: focus.target, root: focus.root, conditions: focus.conditions, conditionReady: !!focus.conditionReady, cooldownRemainingS: focus.cooldownRemainingS || 0 });
+    if (nearestConditionCheck) window.Combat.quickAttackData.lastConditionCheck = nearestConditionCheck;
+    const focus = state.readyTargets[0] || firstConditionMatch || firstInspected;
+    if (focus) Object.assign(state, { target: focus.target, root: focus.root, conditions: focus.conditions, conditionReady: focus.conditionReady, cooldownRemainingS: focus.cooldownRemainingS });
     state.ready = state.readyTargets.length > 0;
     return state;
   }
 
   function resolvedAfflictions(state) {
     const weaponKey = state?.deps?.currentWeaponKey?.(); // Used to resolve the same weapon-specific Quick Attack progression applied during execution.
-    const progression = weaponKey && state?.equipped?.attackId
+    const progression = state?.profile?.effects || (weaponKey && state?.equipped?.attackId
       ? window.CombatProgression?.getEffects?.(weaponKey, state.equipped.attackId)
-      : null;
+      : null); // Share the exact progression snapshot already queried for the attack reach.
     const rawAfflictions = progression?.quickBonusAfflictions || progression?.afflictions || state?.equipped?.definition?.afflictions || []; // Quick Attack mastery afflictions now live in the cooldown-gated bonus payload.
     const afflictions = Array.isArray(rawAfflictions)
       ? rawAfflictions
@@ -369,7 +387,7 @@
   // Redraws the shared procedural face at most once per frame, however many
   // sights display it.
   function drawProceduralReticle(nowMs) {
-    if (!face || face.authored || face.drawnAtMs === nowMs) return;
+    if (!face || face.authored || (face.drawnAtMs >= 0 && nowMs - face.drawnAtMs < PROCEDURAL_REDRAW_INTERVAL_MS)) return; // Throttle texture uploads only; sprite drift, conditions and pops stay full frame rate.
     face.drawnAtMs = nowMs;
     const sight = face; // Canvas/context/texture of the shared face.
     const t = nowMs * 0.001;
@@ -415,7 +433,7 @@
     scene.add(layerSprite);
   }
 
-  function attachSight(entry, state, nowMs, dt) {
+  function attachSight(entry, state, nowMs, dt, sharedAfflictions = null) {
     const sight = acquireSight(entry.target);
     if (sight.popStartedMs !== null) return; // A confirmed impact owns this sight until its burst finishes.
     sight.frame = frameSerial;
@@ -467,7 +485,7 @@
       glow.sprite.visible = true;
     }
 
-    applyAfflictionGlow(sight, state);
+    applyAfflictionGlow(sight, state, sharedAfflictions); // Resolve afflictions once per frame for all cued targets.
   }
 
   function popConfirmedBonus(event) {
@@ -520,10 +538,13 @@
     lastTarget = state.target;
     lastReachPx = state.reachPx;
     lastCheckedConditions = state.checkedConditions;
+    lastVisualProbes = state.visualProbes;
+    lastHalfMoonCandidates = state.halfMoonCandidates;
     frameSerial++;
     const dt = Math.min(0.08, Math.max(0, (nowMs - lastFrameMs) / 1000));
     if (state.readyTargets.length || sights.size) drawProceduralReticle(nowMs);
-    for (const entry of state.readyTargets) attachSight(entry, state, nowMs, dt);
+    const sharedAfflictions = state.readyTargets.length ? resolvedAfflictions(state) : null; // One weapon-mastery lookup for all active sights, even in crowded fights.
+    for (const entry of state.readyTargets) attachSight(entry, state, nowMs, dt, sharedAfflictions);
     for (const [target, sight] of sights) {
       if (sight.popStartedMs !== null) {
         if (cueSuppressed(state.deps) || target.areaId !== state.deps?.getCurrentArea?.() || !animatePop(sight, nowMs)) releaseSight(target, sight);
@@ -586,7 +607,8 @@
     badge.style.display = 'block';
     badge.textContent = [
       `Quick: ${state.equipped?.definition?.label || 'none'} (${state.equipped?.attackId || '-'})`,
-      `In reach: ${state.targets?.length || 0} hostile(s), cued: ${state.readyTargets?.length || 0} / checked: ${state.checkedConditions}`, 
+      `Half-moon candidates: ${state.halfMoonCandidates}, cued: ${state.readyTargets.length}`,
+      `Condition checks: ${state.checkedConditions}, avatar probes: ${state.visualProbes}`, 
       `Max reach: ${(state.reachPx / (Number(state.deps?.TILE) || 1)).toFixed(2)} tiles (${state.reachPx.toFixed(1)} px)`,
       `Nearest: ${state.target?.def?.label || state.target?.name || (state.target ? 'hostile' : 'none')}`,
       `Bonus ready: ${state.ready ? 'YES' : 'no'}`,
@@ -617,10 +639,12 @@
       updateDebugBadge(getReadyState());
     },
     snapshot: () => ({
-      latestChange: 'Quick Attack cues follow the melee camera aim half-moon within modified lunge + cone reach, with remote/rear culling before condition and 3D work.',
+      latestChange: 'Quick bonus uses a cheap forward half-moon broadphase, checks readiness before costly avatar transforms, reuses one affliction snapshot, and throttles only fallback texture uploads.',
       targetId: lastTarget?.id || null,
       reachPx: lastReachPx,
       checkedConditions: lastCheckedConditions,
+      halfMoonCandidates: lastHalfMoonCandidates,
+      visualProbes: lastVisualProbes,
       visible: sights.size > 0,
       visibleCount: sights.size,
       visibleTargetIds: [...sights.keys()].map(target => target?.id || target?.name || null),
