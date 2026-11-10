@@ -24,6 +24,10 @@ const decoded = {length:samples.length,numberOfChannels:1,sampleRate:48000,durat
   assert.equal(allocations,1);
   assert.equal(await api.renderDecodedIndependentBuffer(decoded,context,{tempo:.25,pitchSemitones:0,tailPadS:0}),result);
   assert.equal(allocations,1,'cache hit does not regenerate samples');
+  const fastSkeletonCombo = await api.renderDecodedIndependentBuffer(decoded,context,{ tempo:24, maxTempo:64, pitchSemitones:3, tailPadS:0 }); // Skeleton shriek must really shrink beyond 4x without coupling voice speed to pitch.
+  assert(Math.abs(fastSkeletonCombo.durationS - 1/24) < 0.0001, '24x timed combo compression has the requested audible length');
+  assert.equal(fastSkeletonCombo.pitchSemitones, 3, 'high compression does not alter the authored skeleton voice semitones');
+  assert(Math.abs(fastSkeletonCombo.playbackRate-Math.pow(2,3/12))<1e-9, 'only explicit pitch transposition changes playback rate');
   const padded = await api.renderDecodedIndependentBuffer(decoded,context,{tempo:.25,pitchSemitones:0,tailPadS:.01}); // Output-envelope options must remain part of the key.
   assert.equal(padded.durationS,4.01);
   const tiny = {length:32,numberOfChannels:1,sampleRate:48000,duration:32/48000,getChannelData:()=>samples.subarray(0,32)}; // Fast variants exercise eviction without a timing-heavy test.
