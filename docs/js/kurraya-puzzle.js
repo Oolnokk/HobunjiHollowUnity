@@ -136,7 +136,7 @@
   function createSampler(url, options = {}) {
     const useCustomSample = options.useCustomSample !== false; // Flute uses its own authored sample rather than a Kurraya Music Lab recording.
     const allowMidiFallback = options.fallback === 'midi'; // The flute remains playable through Web Audio synthesis until its named sample is uploaded.
-    const FLUTE_NOTE_DURATION_S = 4.5; // Same sustained one-voice breath duration as Performance Mode.
+    const DEFAULT_FLUTE_BPM = 76; // Unaccompanied notes use a calm quarter-note clock until a real puzzle plate supplies BPM.
     let context = null; // Allocated on first gesture, preserving mobile autoplay policy.
     let buffer = null; // Decoded bundled Kurraya pluck, shared across all subsequent notes.
     let pending = null; // Coalesces decode when several notes are pressed during first load.
@@ -192,8 +192,10 @@
       const AudioCtor = root.AudioContext || root.webkitAudioContext;
       if (!AudioCtor) throw new Error('Web Audio is unavailable.');
       if (!context) context = new AudioCtor();
-      if (context.state === 'suspended') await context.resume();
-      if (buffer || usingMidiFallback) return context;
+      if (buffer || usingMidiFallback) {
+        if(context.state==='suspended')await context.resume(); // Loading/decoding is separate from mobile gesture authorization.
+        return context;
+      }
       if (!pending) pending = (async () => {
         if (useCustomSample && await restoreImportedKurrayaSample()) return;
         try {
@@ -211,15 +213,21 @@
         }
       })().catch(error => { pending = null; lastError = String(error.message || error); throw error; });
       await pending;
+      if(context.state==='suspended')await context.resume();
       return context;
     }
-    async function play(midi) {
+    async function play(midi,timing={}) {
       const serial = ++requestSerial;
       const ctx = await ready();
       if (serial !== requestSerial) return false; // The later note is authoritative even across asynchronous decode.
       if (voice) { try { voice.stop(); } catch (_) {} voice = null; }
       const source = usingMidiFallback ? ctx.createOscillator() : ctx.createBufferSource();
       const gain = ctx.createGain();
+      const bpm=Number(timing?.bpm)>0?Number(timing.bpm):DEFAULT_FLUTE_BPM;
+      const duration=allowMidiFallback
+        ? (root.FluteNoteTiming?.durationSeconds?.(bpm,timing?.quarterPosition??0) ?? 30/bpm)
+        : 0; // Release is quantized; start remains immediate.
+      const releaseLead=Math.min(.06,duration*.25); // Eighth-note breaths keep the next attack distinct.
       const start = ctx.currentTime + 0.001; // Connect the voice before scheduling its start, including on Safari's stricter Web Audio pipeline.
       if (usingMidiFallback) {
         // A simple MIDI-pitched sine flute with breathlike attack/release; no audio asset or external synth library is required.
@@ -227,8 +235,8 @@
         source.frequency.value = 440 * Math.pow(2, (Number(midi) - 69) / 12);
         gain.gain.setValueAtTime(0.0001,start);
         gain.gain.exponentialRampToValueAtTime(Math.max(0.0002,configuredGain() * 0.65),start + 0.045);
-        gain.gain.setValueAtTime(Math.max(0.0002,configuredGain() * 0.65),start + FLUTE_NOTE_DURATION_S - 0.2); // Sustain after the attack, then exhale only at the end.
-        gain.gain.exponentialRampToValueAtTime(0.0001,start + FLUTE_NOTE_DURATION_S);
+        gain.gain.setValueAtTime(Math.max(0.0002,configuredGain() * 0.65),start + duration - releaseLead);
+        gain.gain.exponentialRampToValueAtTime(0.0001,start + duration);
       } else {
         source.buffer = buffer;
         // The sample is pitched by the same playback-rate method as Kurraya Music Lab.
@@ -239,13 +247,13 @@
           const loopEnd = Math.min(buffer.duration * 0.8,buffer.duration);
           if (loopEnd - loopStart > 0.06) { source.loop = true; source.loopStart = loopStart; source.loopEnd = loopEnd; }
           gain.gain.setValueAtTime(configuredGain(),start);
-          gain.gain.setValueAtTime(configuredGain(),start + FLUTE_NOTE_DURATION_S - 0.2);
-          gain.gain.linearRampToValueAtTime(0.0001,start + FLUTE_NOTE_DURATION_S);
+          gain.gain.setValueAtTime(configuredGain(),start + duration - releaseLead);
+          gain.gain.linearRampToValueAtTime(0.0001,start + duration);
         }
       }
       source.connect(gain); gain.connect(ctx.destination);
       source.start(start);
-      if (allowMidiFallback) source.stop(start + FLUTE_NOTE_DURATION_S);
+      if (allowMidiFallback) source.stop(start + duration);
       voice = source;
       source.onended = () => { if (voice === source) voice = null; source.disconnect(); gain.disconnect(); };
       lastError = '';

@@ -1284,6 +1284,7 @@
 
 <div class="toast" id="toast">Saved</div>
 
+<script src="../../js/flute-note-timing.js?v=20261110releaseGrid1"></script>
 <script>
 (() => {
   'use strict';
@@ -1343,7 +1344,7 @@
   const NOTE_GLYPHS = ['X','A','B','Y'];
   const ROMAN_DEGREES = ['I','II','III','IV','V','VI','VII'];
   const STRUM_NOTE_DELAY_MS = 9; // Close-spaced string attacks imitate a fast classical-guitar brush.
-  const FLUTE_NOTE_DURATION_S = 4.5; // Solo flute sustains one long breath until the next note interrupts it.
+  const FLUTE_NOTE_DURATION_S = 4.5; // Length of the loopable fallback *sample*; actual note releases are quantized to the transport.
   const AUTO_PICK_COMPAT_VOICES = 8; // Eight primed mobile media channels keep successive automatic plucks from stealing the same sample tail.
   const PULSE_LOOKAHEAD_MS = 90; // Fires automatic pluck-continuation timers this much early so the precise Web Audio start() call (not the jitter-prone JS timer) governs exactly when each pulse actually sounds.
   const TRANSPORT_AUDIO_LOOKAHEAD_MS = PULSE_LOOKAHEAD_MS; // Keeps the metronome/footstep and chord-root pad on the same ahead-of-time audio grid as automatic Kurraya notes.
@@ -3815,9 +3816,13 @@
     const {source, gain} = voice;
     const rate = Math.max(0.01, source.playbackRate.value);
     try {
-      const outputDuration = HOSTED_FLUTE_PERFORMANCE ? FLUTE_NOTE_DURATION_S : Math.max(0.025, (markers.trimEnd - markers.trimStart) / rate);
+      const noteAtMs=whenMs==null?nowMs():Number(whenMs); // Direct input plays immediately; automatic successors keep their authored beat-grid attack.
+      const clock=HOSTED_FLUTE_PERFORMANCE?sharedTransportData(noteAtMs):null;
+      const outputDuration=HOSTED_FLUTE_PERFORMANCE
+        ? (window.FluteNoteTiming?.durationSeconds?.(clock.bpm,clock.transportElapsedMs/clock.quarterBeatMs) ?? 30/clock.bpm)
+        : Math.max(0.025,(markers.trimEnd-markers.trimStart)/rate);
       const releaseStart = HOSTED_FLUTE_PERFORMANCE
-        ? startAt + outputDuration - 0.16
+        ? startAt + outputDuration - Math.min(.06,outputDuration*.25)
         : startAt + Math.max(state.attack + 0.02, outputDuration - Math.min(0.2, state.release));
       if (HOSTED_FLUTE_PERFORMANCE) {
         const loopStart = Math.max(0,Number(markers.loopIn) || 0);
@@ -7510,7 +7515,7 @@
       `Buffer: ${state.buffer ? `${state.buffer.duration.toFixed(3)}s / ${state.buffer.numberOfChannels}ch / ${state.buffer.sampleRate}Hz` : 'none'} | imported output ${state.playbackEngine} | cache ${state.sampleCacheStatus}`,
       `Pitch cache: ${state.pitchCacheStatus} | ${state.pitchCacheReadyCount}/${state.pitchCacheTargetCount} prepared | mode ${state.pitchCacheMode}`,
       `Sample: ${state.sampleName} | ${state.sampleImported ? 'imported' : 'fallback'} | root ${midiName(state.sampleRootMidi)} | mode ${state.playMode}`,
-      `Flute: ${HOSTED_FLUTE_PERFORMANCE ? (state.fluteVoice && !state.fluteVoice.released ? midiName(state.fluteVoice.midi) + ' sounding' : 'silent') + ' | one voice / ' + FLUTE_NOTE_DURATION_S + 's breath' : 'not equipped'} | fast strum ${STRUM_NOTE_DELAY_MS} ms/string`, // Existing on-screen Mobile Debug reports the actual single flute voice without devtools.
+      `Flute: ${HOSTED_FLUTE_PERFORMANCE ? (state.fluteVoice && !state.fluteVoice.released ? midiName(state.fluteVoice.midi) + ' sounding' : 'silent') + ' | one voice / eighth-grid release' : 'not equipped'} | fast strum ${STRUM_NOTE_DELAY_MS} ms/string`, // Existing on-screen Mobile Debug reports the actual single flute voice without devtools.
       `Import: ${state.sourceChannels} source ch → ${state.monoStrategy} | corr ${state.stereoCorrelation.toFixed(2)} | gain ×${state.sampleNormalizationGain.toFixed(2)} | peak ${state.samplePeakDb.toFixed(1)} dBFS`,
       `Markers: ${marker.trimStart.toFixed(3)} > ${marker.loopIn.toFixed(3)} ⇄ ${marker.loopOut.toFixed(3)} > ${marker.trimEnd.toFixed(3)}`,
       `Note set: ${state.scaleName} ${midiName(state.tonicMidi)} | locked layout ${state.layoutPreset} | visual ${state.visualPreset}${state.visualPreset === 'timing-rings' ? ` (${state.timingPromptBeats} beats ahead)` : ''} | melody bank ${modeLabelFromOffset(currentModeOffset())} (notes ${currentModeOffset() + 1}–${currentModeOffset() + 4})${usesAutomaticPluckInput() && currentFretData() ? ` | held melody ${midiName(noteMidi(currentFretData().noteIndex,currentFretData().modeOffset))}` : ''}${state.autoReleaseTail ? ` | beat fill until boundary ${midiName(noteMidi(state.autoReleaseTail.fret.noteIndex,state.autoReleaseTail.fret.modeOffset))}` : ''}`,

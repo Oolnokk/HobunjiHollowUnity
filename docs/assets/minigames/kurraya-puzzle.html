@@ -63,7 +63,8 @@ button:focus-visible { outline: 2px solid #f3e6c8; outline-offset: 2px }
   <div id="songList" hidden></div>
 </section>
 <details id="diagnostics" hidden><summary>Diagnostics</summary><div id="debug"></div></details>
-<script src="../../js/kurraya-puzzle.js?v=20261107fluteMonophonic1"></script>
+<script src="../../js/flute-note-timing.js?v=20261110releaseGrid1"></script>
+<script src="../../js/kurraya-puzzle.js?v=20261110releaseGrid1"></script>
 <script>
 (function () {
   'use strict';
@@ -85,6 +86,8 @@ button:focus-visible { outline: 2px solid #f3e6c8; outline-offset: 2px }
   const echoReplay = document.getElementById('echoReplay');
   let echoChallenge = null; // Active ruin echo and its attempted note index; ordinary song recognition is suspended while it exists.
   let echoGeneration = 0; // Cancels delayed playback when replaying or closing, preventing stale notes from changing the next attempt.
+  let beatClock = null; // Active plate tempo/phase controls the flute release, never delaying a note's onset.
+  let freeplayOriginEpochMs = null; // The first unaccompanied note establishes the release grid.
 
   let history = []; // Recent note indices used for sequence recognition without timing constraints.
   let lastMatched = ''; // Last recognized melody, visible in diagnostics for mobile testing.
@@ -134,6 +137,23 @@ button:focus-visible { outline: 2px solid #f3e6c8; outline-offset: 2px }
       '\nsampler=' + JSON.stringify(sampler.diagnostics);
   }
   function delay(ms) { return new Promise(resolve => setTimeout(resolve,ms)); }
+  function inputEpochMs(event) {
+    const perf=typeof performance==='object'?performance:null; // Same-origin iframe navigation may have a different monotonic time origin.
+    const now=perf?.now?.()??0,raw=Number(event?.timeStamp);
+    const sampled=Number.isFinite(raw)&&Math.abs(raw-now)<5000?raw:now;
+    return (perf?.timeOrigin??Date.now()-now)+sampled;
+  }
+  function setBeatClock(clock) {
+    const bpm=Number(clock?.bpm),epoch=Number(clock?.originEpochMs);
+    beatClock=Number.isFinite(bpm)&&bpm>0&&Number.isFinite(epoch)?{bpm,originEpochMs:epoch}:null;
+    freeplayOriginEpochMs=null; // A new plate or music mode never inherits a previous phrase's release phase.
+  }
+  function noteTiming(pressedAtEpochMs) {
+    const bpm=beatClock?.bpm||76;
+    if(freeplayOriginEpochMs===null)freeplayOriginEpochMs=pressedAtEpochMs;
+    const origin=beatClock?.originEpochMs??freeplayOriginEpochMs;
+    return {bpm,quarterPosition:Math.max(0,(pressedAtEpochMs-origin)*bpm/60000)};
+  }
   async function replayEcho(passive = false) {
     const challenge = echoChallenge;
     if (!challenge) return false;
@@ -154,13 +174,14 @@ button:focus-visible { outline: 2px solid #f3e6c8; outline-offset: 2px }
         return false;
       }
       await delay(300);
-      for (const note of challenge.notes) {
+      const bpm=beatClock?.bpm||76,beatMs=60000/bpm; // The example's subsequent automatic attacks follow a fixed quarter-beat grid.
+      const firstAt=Date.now(); // Correct for decoding/callback jitter instead of drifting 510+110 ms per note.
+      for (const [position,note] of challenge.notes.entries()) {
         if (challenge !== echoChallenge || generation !== echoGeneration) return false;
-        await sampler.play(music.pitchFor(note,tuning)); // The same configured eight-note tuning is used for both examples and player input.
-        await delay(510);
-        if (challenge !== echoChallenge || generation !== echoGeneration) return false; // An older replay must never stop the newer replay's voice.
-        if (!isFlute) sampler.stop(); // Flute example notes ring until the following note interrupts them; the last note can finish naturally.
-        await delay(110);
+        if(position>0)await delay(Math.max(0,firstAt+position*beatMs-Date.now()));
+        if (challenge !== echoChallenge || generation !== echoGeneration) return false;
+        await sampler.play(music.pitchFor(note,tuning),{bpm,quarterPosition:position});
+        if (!isFlute) sampler.stop(); // Preserve the Kurraya demonstration's original plucked-note release.
       }
       if (challenge !== echoChallenge || generation !== echoGeneration) return false;
       challenge.phase = 'input';
@@ -204,8 +225,10 @@ button:focus-visible { outline: 2px solid #f3e6c8; outline-offset: 2px }
     button?.classList.add('flash');
     setTimeout(() => button?.classList.remove('flash'),110);
     const midi = music.pitchFor(index,tuning);
-    if (!echoChallenge && inputOptions.publishInput!==false) post({type:'puzzle-note',noteIndex:index,pressedAtEpochMs:inputOptions.pressedAtEpochMs ?? ((performance?.timeOrigin??0)+performance.now())}); // The original physical press timestamp crosses the iframe asynchronously, not the later audio callback.
-    sampler.play(midi).then(played => {
+    const pressedAtEpochMs=Number.isFinite(Number(inputOptions.pressedAtEpochMs))?
+      Number(inputOptions.pressedAtEpochMs):inputEpochMs(); // Retain the original physical note-on event for the score judge.
+    if (!echoChallenge && inputOptions.publishInput!==false) post({type:'puzzle-note',noteIndex:index,pressedAtEpochMs});
+    sampler.play(midi,noteTiming(pressedAtEpochMs)).then(played => {
       if (!played || serial !== playbackSerial) return; // A stale note never triggers a phantom instrument twitch.
       post({type:'sounded-note',performer:'lead',noteIndex:index,midi:midi});
     }).catch(error => {
@@ -254,8 +277,7 @@ button:focus-visible { outline: 2px solid #f3e6c8; outline-offset: 2px }
     button.addEventListener('pointerdown',event=>{
       if (event.button !== 0) return;
       event.preventDefault();
-      const now=performance.now(),stamp=Number(event.timeStamp);
-      playNote(i,{pressedAtEpochMs:performance.timeOrigin+(Number.isFinite(stamp)&&Math.abs(stamp-now)<5000?stamp:now)});
+      playNote(i,{pressedAtEpochMs:inputEpochMs(event)});
     });
     button.addEventListener('click',event=>{ if (event.detail === 0) playNote(i); }); // Keep keyboard and assistive activation.
     notesEl.appendChild(button);
@@ -270,15 +292,15 @@ button:focus-visible { outline: 2px solid #f3e6c8; outline-offset: 2px }
     event.preventDefault();
     if (index<0) toggleSongbook();
     else {
-      const now=performance.now(),stamp=Number(event.timeStamp);
-      playNote(index,{pressedAtEpochMs:performance.timeOrigin+(Number.isFinite(stamp)&&Math.abs(stamp-now)<5000?stamp:now)});
+      playNote(index,{pressedAtEpochMs:inputEpochMs(event)});
     }
   },true);
   window.addEventListener('hobunji-kurraya-puzzle-songs-changed',refreshSongs);
   window.addEventListener('error',event=>{resultEl.textContent='Puzzle error: '+event.message;render();});
-  window.HobunjiPuzzleInstrument={playNote,startEchoChallenge,setInputDevice,toggleSongbook,
+  window.HobunjiPuzzleInstrument={playNote,startEchoChallenge,setInputDevice,setBeatClock,toggleSongbook,
     getState:()=>({history:history.slice(),lastMatched:lastMatched,echo:echoChallenge?{id:echoChallenge.id,phase:echoChallenge.phase,progress:echoChallenge.progress,length:echoChallenge.notes.length,mistakes:echoChallenge.mistakes}:null,sampler:sampler.diagnostics,...tuning})};
   refreshSongs();render();
+  if(typeof sampler.ready==='function')void sampler.ready().catch(()=>{}); // Decode on iframe load, then wake Web Audio only after a gesture.
   post({type:'puzzle-ready'});
 })();
 </script>
