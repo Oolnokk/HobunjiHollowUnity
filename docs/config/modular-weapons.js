@@ -42,7 +42,11 @@ window.MODULAR_WEAPON_CONFIG = {
       "toolSlots": [
         "axe"
       ],
-      "flailHeadScale": 1
+      "flailHeadScale": 1,
+      "flailHeadAnchor": {
+        "x": 184,
+        "y": 552
+      }
     },
     "dagger": {
       "label": "Mao'ao Short-blade",
@@ -67,7 +71,11 @@ window.MODULAR_WEAPON_CONFIG = {
       "toolSlots": [
         "pick"
       ],
-      "flailHeadScale": 1
+      "flailHeadScale": 1,
+      "flailHeadAnchor": {
+        "x": 207,
+        "y": 623
+      }
     },
     "fishing-mace": {
       "label": "Barb-flanged Mace Head",
@@ -92,7 +100,11 @@ window.MODULAR_WEAPON_CONFIG = {
       "toolSlots": [
         "harpoon"
       ],
-      "flailHeadScale": 1
+      "flailHeadScale": 1,
+      "flailHeadAnchor": {
+        "x": 185,
+        "y": 894
+      }
     },
     "fishing-spear": {
       "label": "Barbed Spearhead",
@@ -117,7 +129,11 @@ window.MODULAR_WEAPON_CONFIG = {
       "toolSlots": [
         "axe"
       ],
-      "flailHeadScale": 1
+      "flailHeadScale": 1,
+      "flailHeadAnchor": {
+        "x": 209,
+        "y": 866
+      }
     },
     "harlyao-broadsword": {
       "label": "Harlyao-style Broad-blade",
@@ -142,7 +158,11 @@ window.MODULAR_WEAPON_CONFIG = {
       "toolSlots": [
         "axe"
       ],
-      "flailHeadScale": 1
+      "flailHeadScale": 1,
+      "flailHeadAnchor": {
+        "x": 200,
+        "y": 664
+      }
     },
     "harlyao-longsword": {
       "label": "Harlyao-style Long-blade",
@@ -165,7 +185,11 @@ window.MODULAR_WEAPON_CONFIG = {
         "suffix": "Hilted Long-bladed"
       },
       "toolSlots": [],
-      "flailHeadScale": 1
+      "flailHeadScale": 1,
+      "flailHeadAnchor": {
+        "x": 196,
+        "y": 709
+      }
     },
     "hatchet": {
       "label": "Hatchet Head",
@@ -292,7 +316,11 @@ window.MODULAR_WEAPON_CONFIG = {
       "toolSlots": [
         "shovel"
       ],
-      "flailHeadScale": 1
+      "flailHeadScale": 1,
+      "flailHeadAnchor": {
+        "x": 195,
+        "y": 856
+      }
     },
     "plains-blade": {
       "label": "Oliphanti Broad-tipped Blade",
@@ -315,7 +343,11 @@ window.MODULAR_WEAPON_CONFIG = {
         "suffix": "Broad-tipped"
       },
       "toolSlots": [],
-      "flailHeadScale": 1
+      "flailHeadScale": 1,
+      "flailHeadAnchor": {
+        "x": 187,
+        "y": 408
+      }
     },
     "porakaneki-greatclub": {
       "label": "Spiked Wooden Head",
@@ -340,7 +372,11 @@ window.MODULAR_WEAPON_CONFIG = {
       "toolSlots": [
         "pick"
       ],
-      "flailHeadScale": 1
+      "flailHeadScale": 1,
+      "flailHeadAnchor": {
+        "x": 189,
+        "y": 729
+      }
     },
     "war-cleaver": {
       "label": "War-cleaver Blade",
@@ -364,7 +400,11 @@ window.MODULAR_WEAPON_CONFIG = {
         "suffix": "Cleaver-bladed"
       },
       "toolSlots": [],
-      "flailHeadScale": 1
+      "flailHeadScale": 1,
+      "flailHeadAnchor": {
+        "x": 239,
+        "y": 858
+      }
     },
     "warhammer": {
       "label": "Warhammer Head",
@@ -2356,6 +2396,9 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleY": 0.9,
           "layerOrder": "head-over-haft",
           "disallow": true
+        },
+        "grapple-flail": {
+          "disallow": true
         }
       },
       "mounts": [
@@ -3279,6 +3322,9 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "kylie": {
           "layerOrder": "head-over-haft"
+        },
+        "grapple-flail": {
+          "disallow": true
         }
       },
       "maxAttachments": 8,
@@ -3424,6 +3470,9 @@ window.MODULAR_WEAPON_CONFIG = {
           "y": 45,
           "layerOrder": "head-over-haft",
           "animation": "thrust"
+        },
+        "grapple-flail": {
+          "disallow": true
         }
       },
       "mounts": [
@@ -3559,6 +3608,9 @@ window.MODULAR_WEAPON_CONFIG = {
           "x": 5,
           "y": 30,
           "layerOrder": "head-over-haft"
+        },
+        "grapple-flail": {
+          "disallow": false
         }
       },
       "mounts": [
@@ -3583,6 +3635,17 @@ window.MODULAR_WEAPON_CONFIG = {
             "x": 213,
             "y": 810
           }
+        },
+        {
+          "type": "rope",
+          "start": {
+            "x": 193,
+            "y": 850
+          },
+          "end": {
+            "x": 0,
+            "y": 325
+          }
         }
       ],
       "maxAttachments": 8,
@@ -3596,7 +3659,24 @@ window.MODULAR_WEAPON_CONFIG = {
       },
       "namePosition": "prefix",
       "nameAffix": "Looped",
-      "toolWorthy": true
+      "toolWorthy": true,
+      "bores": [
+        {
+          "id": "bore-1",
+          "offsetX": 0,
+          "offsetY": 20,
+          "rx": 13.5,
+          "ry": 13.5,
+          "rotation": 0,
+          "rim": 5,
+          "outline": 12,
+          "shade": 0.65,
+          "warp": 1.5,
+          "lightX": -0.6,
+          "lightY": -0.8,
+          "enabled": true
+        }
+      ]
     },
     "fishing-spear": {
       "label": "Leather-wrapped Long-haft",
@@ -3690,6 +3770,9 @@ window.MODULAR_WEAPON_CONFIG = {
         "bshuakauitl": {
           "layerOrder": "head-over-haft",
           "animation": "thrust"
+        },
+        "grapple-flail": {
+          "disallow": false
         }
       },
       "mounts": [
@@ -3702,6 +3785,17 @@ window.MODULAR_WEAPON_CONFIG = {
           "end": {
             "x": 204,
             "y": 826
+          }
+        },
+        {
+          "type": "rope",
+          "start": {
+            "x": 204,
+            "y": 896
+          },
+          "end": {
+            "x": 11,
+            "y": 371
           }
         }
       ],
@@ -3716,7 +3810,28 @@ window.MODULAR_WEAPON_CONFIG = {
       },
       "namePosition": "prefix",
       "nameAffix": "Leather-wrapped Pole-",
-      "toolWorthy": true
+      "toolWorthy": true,
+      "bores": [
+        {
+          "id": "bore-1",
+          "offsetX": 0,
+          "offsetY": 20,
+          "rx": 13.5,
+          "ry": 13.5,
+          "rotation": 0,
+          "rim": 5,
+          "outline": 12,
+          "shade": 0.65,
+          "warp": 1.5,
+          "lightX": -0.6,
+          "lightY": -0.8,
+          "enabled": true
+        }
+      ],
+      "unlockSourceShapes": [
+        "fishingspear",
+        "hoe"
+      ]
     },
     "harlyao-broadsword": {
       "label": "Broad Crescent Hilt",
@@ -3798,6 +3913,9 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "harlyao-longsword": {
           "layerOrder": "haft-over-head"
+        },
+        "grapple-flail": {
+          "disallow": true
         }
       },
       "mounts": [
@@ -3931,6 +4049,9 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleX": 0.9,
           "scaleY": 1.1,
           "layerOrder": "head-over-haft"
+        },
+        "grapple-flail": {
+          "disallow": true
         }
       },
       "mounts": [
@@ -9328,6 +9449,9 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "bshuakauitl": {
           "layerOrder": "head-over-haft"
+        },
+        "grapple-flail": {
+          "disallow": true
         }
       },
       "mounts": [
@@ -9462,6 +9586,9 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleX": 1.65,
           "x": 5,
           "layerOrder": "head-over-haft"
+        },
+        "grapple-flail": {
+          "disallow": false
         }
       },
       "mounts": [
@@ -9486,6 +9613,17 @@ window.MODULAR_WEAPON_CONFIG = {
             "x": 226,
             "y": 956
           }
+        },
+        {
+          "type": "rope",
+          "start": {
+            "x": 206,
+            "y": 996
+          },
+          "end": {
+            "x": 13,
+            "y": 471
+          }
         }
       ],
       "maxAttachments": 8,
@@ -9499,7 +9637,24 @@ window.MODULAR_WEAPON_CONFIG = {
       },
       "namePosition": "prefix",
       "nameAffix": "Heavy-hafted",
-      "toolWorthy": true
+      "toolWorthy": true,
+      "bores": [
+        {
+          "id": "bore-1",
+          "offsetX": 0,
+          "offsetY": 20,
+          "rx": 13.5,
+          "ry": 13.5,
+          "rotation": 0,
+          "rim": 5,
+          "outline": 12,
+          "shade": 0.65,
+          "warp": 1.5,
+          "lightX": -0.6,
+          "lightY": -0.8,
+          "enabled": true
+        }
+      ]
     },
     "bgungku": {
       "label": "Arching Wooden Haft",
@@ -9556,6 +9711,9 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "work-hammer": {
           "layerOrder": "head-over-haft"
+        },
+        "grapple-flail": {
+          "disallow": true
         }
       },
       "editorOnly": true,
@@ -9652,6 +9810,9 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "work-hammer": {
           "layerOrder": "head-over-haft"
+        },
+        "grapple-flail": {
+          "disallow": false
         }
       },
       "editorOnly": true,
@@ -9677,6 +9838,17 @@ window.MODULAR_WEAPON_CONFIG = {
             "x": 226,
             "y": 964
           }
+        },
+        {
+          "type": "rope",
+          "start": {
+            "x": 206,
+            "y": 1004
+          },
+          "end": {
+            "x": 13,
+            "y": 479
+          }
         }
       ],
       "maxAttachments": 8,
@@ -9690,7 +9862,24 @@ window.MODULAR_WEAPON_CONFIG = {
       },
       "namePosition": "prefix",
       "nameAffix": "Spike-pommeled",
-      "toolWorthy": true
+      "toolWorthy": true,
+      "bores": [
+        {
+          "id": "bore-1",
+          "offsetX": 0,
+          "offsetY": 20,
+          "rx": 13.5,
+          "ry": 13.5,
+          "rotation": 0,
+          "rim": 5,
+          "outline": 12,
+          "shade": 0.65,
+          "warp": 1.5,
+          "lightX": -0.6,
+          "lightY": -0.8,
+          "enabled": true
+        }
+      ]
     },
     "hoe": {
       "label": "Hoe Handle",
@@ -9748,6 +9937,9 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "work-hammer": {
           "layerOrder": "head-over-haft"
+        },
+        "grapple-flail": {
+          "disallow": true
         }
       },
       "editorOnly": true,
@@ -9786,7 +9978,8 @@ window.MODULAR_WEAPON_CONFIG = {
       },
       "namePosition": "prefix",
       "nameAffix": "Long-handled",
-      "toolWorthy": true
+      "toolWorthy": true,
+      "legacyAliasOf": "fishing-spear"
     },
     "kylie": {
       "label": "Kylie Haft",
@@ -11219,6 +11412,9 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleX": 0.5,
           "scaleY": 2.5,
           "layerOrder": "head-over-haft"
+        },
+        "grapple-flail": {
+          "disallow": true
         }
       },
       "editorOnly": false,
@@ -11536,6 +11732,9 @@ window.MODULAR_WEAPON_CONFIG = {
         "bshuakauitl": {
           "layerOrder": "head-over-haft",
           "animation": "thrust"
+        },
+        "grapple-flail": {
+          "disallow": false
         }
       },
       "editorOnly": true,
@@ -11572,6 +11771,17 @@ window.MODULAR_WEAPON_CONFIG = {
             "x": 227,
             "y": 279
           }
+        },
+        {
+          "type": "rope",
+          "start": {
+            "x": 195,
+            "y": 856
+          },
+          "end": {
+            "x": 2,
+            "y": 331
+          }
         }
       ],
       "maxAttachments": 8,
@@ -11586,7 +11796,24 @@ window.MODULAR_WEAPON_CONFIG = {
       },
       "namePosition": "prefix",
       "nameAffix": "Pick-pommeled",
-      "toolWorthy": true
+      "toolWorthy": true,
+      "bores": [
+        {
+          "id": "bore-1",
+          "offsetX": 0,
+          "offsetY": 20,
+          "rx": 13.5,
+          "ry": 13.5,
+          "rotation": 0,
+          "rim": 5,
+          "outline": 12,
+          "shade": 0.65,
+          "warp": 1.5,
+          "lightX": -0.6,
+          "lightY": -0.8,
+          "enabled": true
+        }
+      ]
     },
     "plains-sword": {
       "label": "Long Leather-wrapped Hilt",
@@ -11644,6 +11871,9 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "work-hammer": {
           "layerOrder": "head-over-haft"
+        },
+        "grapple-flail": {
+          "disallow": true
         }
       },
       "editorOnly": true,
@@ -13562,6 +13792,9 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleY": 0.9,
           "layerOrder": "head-over-haft",
           "disallow": true
+        },
+        "grapple-flail": {
+          "disallow": true
         }
       },
       "mounts": [
@@ -13677,7 +13910,62 @@ window.MODULAR_WEAPON_CONFIG = {
           }
         }
       ],
-      "overrides": {},
+      "overrides": {
+        "grapple-flail": {
+          "disallow": true
+        },
+        "dagger-sword": {
+          "disallow": false
+        },
+        "dagger": {
+          "disallow": false
+        },
+        "fishing-mace": {
+          "disallow": false
+        },
+        "fishing-spear": {
+          "disallow": false
+        },
+        "harlyao-broadsword": {
+          "disallow": false
+        },
+        "harlyao-longsword": {
+          "disallow": false
+        },
+        "hatchet": {
+          "disallow": true
+        },
+        "hoe": {
+          "disallow": true
+        },
+        "kylie": {
+          "disallow": true
+        },
+        "pick-shovel-pick": {
+          "disallow": true
+        },
+        "pickshovel-scoop": {
+          "disallow": false
+        },
+        "plains-blade": {
+          "disallow": false
+        },
+        "porakaneki-greatclub": {
+          "disallow": false
+        },
+        "war-cleaver": {
+          "disallow": false
+        },
+        "warhammer": {
+          "disallow": true
+        },
+        "work-hammer": {
+          "disallow": true
+        },
+        "bshuakauitl": {
+          "disallow": true
+        }
+      },
       "maxAttachments": 8,
       "editorOnly": false,
       "namePosition": "suffix",
