@@ -154,6 +154,19 @@ assert.equal(scene.children.length, 0, 'a missed attack also returns its ribbon 
 
 // Exercise the real bandit swing profiling seam with a lightweight pose stub.
 const banditSource = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8'); // Production attack-pose wrapper, not a duplicated test implementation.
+// Execute the actual shared bandit attack-ribbon helper, then deliberately never run a hit check.
+const arcStart = banditSource.indexOf('  const BANDIT_TRAIL_HALF_THICKNESS_TILES = ');
+const arcEnd = banditSource.indexOf('  // A dual-wield weapon rests', arcStart);
+assert(arcStart >= 0 && arcEnd > arcStart, 'the real enemy attack trail helper is present');
+const arcContext = vm.createContext({ window: { Combat: { spawnMeleeTrail: opts => window.Combat.spawnMeleeTrail(opts) } } });
+vm.runInContext(banditSource.slice(arcStart, arcEnd) + '\nthis.banditArc = spawnBanditTrailArc;', arcContext);
+arcContext.banditArc({ def: { attackTag: 'sharp' }, scene, x: 0, y: 0, facing: 0 }, 64, 0.2, 0.2, 0);
+assert.equal(scene.children.length, 1, 'actual bandit trail helper renders without needing a successful meleeHit');
+const firstOnStrike = banditSource.indexOf('        spawnBanditTrailArc(c, rangePx, halfConeRad, c.facing);');
+assert(firstOnStrike > 0 && banditSource.slice(firstOnStrike, firstOnStrike + 280).includes('meleeHit'), 'bandit spawns its ribbon before hit resolution');
+window.Combat.update(1);
+assert.equal(scene.children.length, 0, 'a genuine bandit attack ribbon returns to the pool after a miss');
+
 const measureStart = banditSource.indexOf('  const banditSwingPoseCpuStats = ');
 const measureEnd = banditSource.indexOf('  window.BanditCombat = {', measureStart);
 assert(measureStart >= 0 && measureEnd > measureStart, 'the real bandit pose timing wrapper is present');
