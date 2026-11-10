@@ -171,6 +171,7 @@ assert.match(animalPlaybackSource, /extraWetBase/, 'generic combat one-shots rou
 assert.match(source, /__combatVocalWet = window\.EnvironmentalReverb\?\.connectWetNode/, 'custom charge playback also sends into the current environmental reverb space');
 assert.match(animalPlaybackSource, /function stop\(fadeOutS = 0\)/, 'shared processed voice handles must support click-safe fade stops');
 assert.match(banditSource, /voiceCategory: 'combo'/, 'NPC combo attacks must carry semantic vocal metadata');
+assert.match(banditSource, /isComboFinisher: isFinalStep/, 'NPC combo finishers must carry their actual final-step flag so short skeleton grunts never replace their finishers');
 assert.match(banditSource, /voiceCategory: 'quickAttack'/, 'NPC quick attacks must carry semantic vocal metadata');
 assert.match(banditSource, /voiceCategory: 'offensiveHold'/, 'NPC charged attacks must carry semantic vocal metadata');
 assert.match(source, /chargeRatePlan\(audibleBuffer\.duration/, 'charge duration math uses the silence-trimmed audible buffer');
@@ -618,6 +619,47 @@ console.log('all species/gender combat voice profiles, dodge duration, native fa
       }
     }
   }
+  // Exercise the real staged NPC vocal hook: ordinary skeleton combo steps should have
+  // ONE short shriek matching a living NPC's mapped release-grunt duration, with no pitch shift.
+  const livingComboActor = { id: 'living-combo-probe', health: 80, appearance: { speciesId: 'harlyao', gender: 'male' } }; // Living control case provides the same authored combo attack timing.
+  const skeletalComboActor = { id: 'short-skeleton-combo-probe', health: 80, rosterRecord: { appearance: { speciesId: 'harlyao-skeleton', gender: 'male' } } }; // Skeleton keeps its dedicated shriek and pitch steps.
+  const stageNpcCombo = (actor, finalStep) => { // Real BanditCombat action metadata enters the already-wrapped Combat.beginStagedAction.
+    W.Combat.beginStagedAction({
+      windupS: 0.2, strikeS: 0.05, recoverS: 0,
+      data: { isBandit: true, attacker: actor, voiceCategory: 'combo', voiceAbilityId: 'swingCombo', comboStep: finalStep ? 2 : 0, isComboFinisher: finalStep },
+    });
+    return { spec: stagedSpec, action: stagedAction };
+  };
+  const livingCombo = stageNpcCombo(livingComboActor, false); // Living NPCs keep their original windup + strike voices.
+  assert.equal(W.CombatVocalizations.debugSnapshot().activeCharges.some(c => c.entity === livingComboActor.id), false); // Token diagnostics do not expose owner identity.
+  livingCombo.action.t = 0.2;
+  livingCombo.spec.onUpdate(livingCombo.action);
+  const livingReleaseS = W.CombatVocalizations.debugSnapshot().lastStrike.durationS; // Canonical living NPC release span, not guessed from a separate config.
+  assert.equal(livingReleaseS, 0.05);
+  W.CombatVocalizations.forgetEntity(livingComboActor);
+
+  const skeletonCombo = stageNpcCombo(skeletalComboActor, false);
+  assert.equal(W.CombatVocalizations.debugSnapshot().activeCharges.length, 0, 'short skeleton combo must not emit a second shriek during windup');
+  skeletonCombo.action.t = 0.2;
+  skeletonCombo.spec.onUpdate(skeletonCombo.action);
+  assert.equal(W.CombatVocalizations.debugSnapshot().lastStrike.shortSkeletonCombo, true);
+  assert.equal(W.CombatVocalizations.debugSnapshot().lastStrike.durationS, livingReleaseS, 'skeleton strike uses living NPC grunt span');
+  for (let turn = 0; turn < 64 && !W.CombatVocalizations.debugSnapshot().activeCharges.some(t => t.ready); turn++) await Promise.resolve();
+  const compressed = W.CombatVocalizations.debugSnapshot().activeCharges.find(t => t.ready);
+  assert(compressed, 'skeleton combo shriek must render in time');
+  assert.equal(compressed.targetDurationS, livingReleaseS);
+  assert.equal(compressed.stretchedTempo, 24, '1.2 second shriek compresses to the 0.05 second living strike grunt (>16x)');
+  assert.equal(compressed.pitchSemitones, 3, 'tempo compression does not raise the pre-rolled skeleton voice pitch');
+  assert.equal(W.CombatVocalizations.debugSnapshot().lastCharge.independentPitch, true);
+  assert(Math.abs(W.CombatVocalizations.debugSnapshot().lastCharge.fullDurationS - livingReleaseS) < 1e-9, 'rendered shriek has the same audible duration as the living grunt');
+  W.CombatVocalizations.forgetEntity(skeletalComboActor);
+
+  const finisherCombo = stageNpcCombo(skeletalComboActor, true);
+  assert.equal(W.CombatVocalizations.debugSnapshot().activeCharges.length, 1, 'skeleton combo finisher retains the original windup voice');
+  finisherCombo.action.t = 0.2;
+  finisherCombo.spec.onUpdate(finisherCombo.action);
+  assert.equal(W.CombatVocalizations.debugSnapshot().lastStrike.shortSkeletonCombo, false, 'finisher retains original length and vocal staging');
+  W.CombatVocalizations.forgetEntity(skeletalComboActor);
   // Time-stretched release playback uses independently owned Web Audio sources too, not just the one-shot backend.
   const overlappingActor = { id: 'timed-overlap-actor', appearance: { speciesId: 'nuhongan', gender: 'female' } }; // Keeps this audio-only probe separate from the species modulation loops.
   const startTimedRelease = (id, category = 'quickAttack') => W.CombatVocalizations.playStrikeGrunt(
