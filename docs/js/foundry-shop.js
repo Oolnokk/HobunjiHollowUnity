@@ -82,7 +82,7 @@
     if (!deps.VERDIGRIS_METAL_KEYS.includes(selection.metal)) selection.metal = deps.VERDIGRIS_METAL_KEYS[0];
     section.appendChild(select('Shaft', available.shafts, key => config.shafts[key].label, selection.shaft, value => { selection.shaft = value; }));
     if (!allowedHeads.length) { section.appendChild(element('p', 'No unlocked heads are allowed on this shaft. Choose another shaft.')); return; }
-    section.appendChild(select('Head', allowedHeads, key => `${config.heads[key].label} (${config.heads[key].dmgType})`, selection.head, value => { selection.head = value; }));
+    section.appendChild(select('Head', allowedHeads, key => `${config.heads[key].label} (${global.ModularWeapons.weaponDamageType(selection.shaft,key)})`, selection.head, value => { selection.head = value; }));
     section.appendChild(select('Metal', deps.VERDIGRIS_METAL_KEYS, key => deps.METAL_DEFS[key].label, selection.metal, value => { selection.metal = value; }));
     const image = document.createElement('img'); // Cached composition uses exactly the runtime sprite; metal uses the existing recolorer.
     const serial = ++previewSerial; // Ignore older selections resolving after the current one.
@@ -96,7 +96,7 @@
     const handMode = global.HobunjiHandToolGrips?.weaponHandModeForTool?.(donor) || 'two-hand'; // Shared runtime handedness.
     const definition = deps.TOOL_ITEM_DEFS[item]; // Registered combined head/haft abilities, including canonical equipment slots and mastery policies.
     section.appendChild(element('p', definition.label)); // The actual forged name is authored grammatically, never as "head / shaft".
-    section.appendChild(element('p', `${handMode} · ${config.heads[selection.head].dmgType} · Attacks: ${definition.animStyle} · Slots: ${definition.slots.join(', ')} · Grip and idle stance follow ${config.shafts[selection.shaft].label}.`));
+    section.appendChild(element('p', `${handMode} · ${definition.dmgType} · Attacks: ${definition.animStyle} · Slots: ${definition.slots.join(', ')} · Grip and idle stance follow ${config.shafts[selection.shaft].label}.`));
     if (definition.slots.some(slot => slot !== 'weapon'))
       section.appendChild(element('p', 'This head supplies utility abilities on a tool-worthy haft. Each tool slot uses its existing action-specific Mastery XP source and amount.'));
     if (definition.weaponAssembly?.flail)
