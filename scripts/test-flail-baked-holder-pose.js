@@ -92,5 +92,5 @@ assert(Math.abs(mainAnchor.x - 2) < 1e-9 && Math.abs(mainAnchor.y - 2.6) < 1e-9,
 assert(Math.abs(offAnchor.x - 7.4) < 1e-9 && Math.abs(offAnchor.y + 2) < 1e-9, 'side-held haft rotates local Y into world X and stays attached');
 const sameFramePoint = bakedPoint(offAnchor, null, bakedOff, inverseScratch, new Point());
 assert(Math.abs(sameFramePoint.x) < 1e-9 && Math.abs(sameFramePoint.y + 0.4) < 1e-9, 'rope and head both convert back to their own baked weapon coordinates');
-assert(!/\\.localToWorld\\(|\\.worldToLocal\\(/.test(updateOne), 'animation update never re-enters raw world-matrix recalculation');
+assert(!/\.localToWorld\(|\.worldToLocal\(/.test(updateOne), 'animation update never re-enters raw world-matrix recalculation');
 console.log('flail baked holder pose tests passed');
