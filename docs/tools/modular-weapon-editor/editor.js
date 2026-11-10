@@ -749,6 +749,11 @@
   function gesture(id) {
     const element = byId(id); // Source sprites accept one active line/handle drag.
     function update(event) {
+      if (headContactDrag?.id === id && headContactDrag.pointer === event.pointerId) {
+        const p=pointFor(element,event), pair=(chosenShaft().overrides[byId('head').value] ||= {});
+        pair.flailHeadAnchor={x:Math.max(0,Math.min(450,p.x)),y:Math.max(0,Math.min(1204,p.y))}; // Only the selected pair, not heads[].mount.
+        drawLines('head-canvas');refreshHeadContactPreview();return;
+      }
       if (boreDrag?.id === id && boreDrag.pointer === event.pointerId) {
         const bore = selectedBore();
         if (!bore) return;
@@ -779,7 +784,16 @@
       if (id === 'head-canvas' && api.isFlailHead(chosenHead())) {
         msg('Flail head contact belongs to Complex Tool Visuals; its modular mounting arrows are ignored.'); return;
       }
-      if (drawing || boreDrag || !event.isPrimary) return;
+      if (id === 'head-canvas' && shaftOwnsFlail()) {
+        if (!headContactMoveEnabled || drawing || boreDrag || headContactDrag || !event.isPrimary) {
+          msg('Enable Move contact in section 02 to edit this pairing; the original head mounting line is protected.');return;
+        }
+        event.preventDefault();
+        const pair=chosenShaft().overrides[byId('head').value] || {};
+        headContactDrag={id,pointer:event.pointerId,original:pair.flailHeadAnchor?{...pair.flailHeadAnchor}:null};
+        element.setPointerCapture(event.pointerId);update(event);return;
+      }
+      if (drawing || boreDrag || headContactDrag || !event.isPrimary) return;
       if (id === 'shaft-canvas' && boreIsVisible() && boreMoveEnabled && selectedBore()) {
         event.preventDefault();
         boreDrag = { id, pointer: event.pointerId,
@@ -803,11 +817,21 @@
       element.setPointerCapture(event.pointerId); drawLines(id);
     });
     element.addEventListener('pointermove', event => {
+      if (headContactDrag?.id === id && headContactDrag.pointer === event.pointerId) {
+        event.preventDefault();update(event);return;
+      }
       if (boreDrag?.id === id && boreDrag.pointer === event.pointerId) { event.preventDefault(); update(event); return; }
       if (!drawing || drawing.id !== id || drawing.pointer !== event.pointerId) return;
       event.preventDefault(); update(event); // Live arrows and handles update without expensive image recomposition.
     });
     element.addEventListener('pointerup', event => {
+      if (headContactDrag?.id === id && headContactDrag.pointer === event.pointerId) {
+        event.preventDefault();update(event);
+        const pair=chosenShaft().overrides[byId('head').value],before=headContactDrag.original;
+        const changed=JSON.stringify(pair?.flailHeadAnchor) !== JSON.stringify(before);
+        headContactDrag=null;
+        if(changed)save();else drawLines('head-canvas');return;
+      }
       if (boreDrag?.id === id && boreDrag.pointer === event.pointerId) {
         event.preventDefault(); update(event);
         const changed = selectedBore() && (selectedBore().offsetX !== boreDrag.original.offsetX || selectedBore().offsetY !== boreDrag.original.offsetY);
@@ -828,6 +852,11 @@
       if (length >= 2 && changed) save(); else drawLines(id);
     });
     function cancel(event) {
+      if (headContactDrag?.id === id && headContactDrag.pointer === event.pointerId) {
+        const pair=chosenShaft().overrides[byId('head').value];
+        if(pair){if(headContactDrag.original)pair.flailHeadAnchor=headContactDrag.original;else delete pair.flailHeadAnchor;}
+        headContactDrag=null;refreshHeadContactPreview();return;
+      }
       if (boreDrag?.id === id && boreDrag.pointer === event.pointerId) {
         const bore = selectedBore(); if (bore) Object.assign(bore,boreDrag.original);
         boreDrag = null; scheduleBorePreview(); return; // Cancellation restores the unmodified drag-start aperture.
@@ -849,7 +878,7 @@
     byId('shaft').value = selected.shaft; byId('head').value = selected.head; mountIndex = 0;
     render(); msg('Compatible combination: ' + data.shafts[selected.shaft].label + ' / ' + data.heads[selected.head].label);
   };
-  byId('shaft').onchange = () => { mountIndex = 0; activeRegionId=null;regionSelecting=false;regionDraft=null;selectedBoreId=null;boreMoveEnabled=false;render(); };
+  byId('shaft').onchange = () => { mountIndex = 0; activeRegionId=null;regionSelecting=false;regionDraft=null;selectedBoreId=null;boreMoveEnabled=false;headContactMoveEnabled=false;headContactDrag=null;render(); };
   byId('bore-add').onclick = () => {
     if (!boreIsVisible() || !currentBoreAnchor()) { msg('Select a flail head with an authored connector first.'); return; }
     const shaft = chosenShaft(), bores = shaft.bores ||= [];
@@ -1037,7 +1066,7 @@
     }
     shaft.sprite = sprite; save(); // Replacement PNG is the entire shaft; copied sockets still align to its authoring frame.
   };
-  byId('head').onchange = render;
+  byId('head').onchange = () => {headContactMoveEnabled=false;headContactDrag=null;render();};
   byId('socket').onchange = () => { mountIndex = Number(byId('socket').value);
     openWorkspace('mount-editor-workflow'); render(); // Selecting a mount opens the viewport where the line is drawn.
   };
