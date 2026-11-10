@@ -214,6 +214,26 @@
     return !!(profile?.fortifiedStronghold && stateFor(profile).occupantsCleared);
   }
 
+  function fortifiedCoverDestroyed(mapId, coverId) {
+    const profile = profileForMapId(mapId);
+    return !!(profile?.fortifiedStronghold && stateFor(profile).strongholdCoverDestroyed?.includes(String(coverId)));
+  }
+
+  function markFortifiedCoverDestroyed(mapId, coverId) {
+    const profile = profileForMapId(mapId);
+    if (!profile?.fortifiedStronghold || !String(coverId || '').trim()) return false;
+    const state = stateFor(profile);
+    if (state.strongholdCoverDestroyed?.includes(String(coverId))) return false;
+    (state.strongholdCoverDestroyed ||= []).push(String(coverId)); // The parent's save tracks surviving defensive cover.
+    persistState(true); // Batched idle world-save avoids blocking Shattercask blast frames.
+    return true;
+  }
+
+  function activeStrongholdGrid(mapId) {
+    if (String(wildlifeDeps?.getCurrentArea?.() || '') !== String(mapId)) return null;
+    return wildlifeDeps?.getActiveGrid?.() || wildlifeDeps?.zoneScenes?.get?.(mapId)?.grid || null;
+  }
+
   function fortifiedBarrelStatus(mapId, barrelId) {
     const profile = profileForMapId(mapId);
     if (!profile?.fortifiedStronghold) return { available: false, claimed: false, taken: false };
@@ -1757,8 +1777,11 @@
       grantPuzzleCaveReward(profile,plan,state); // Deliver a sealed prize when its definitions become available, even without leaving this cave.
     }
     markDiscovered(profile, state);
-    if (profile.fortifiedStronghold) window.BanditStrongholds?.ensureBarrels?.(mapId, plan,
-      wildlifeDeps?.zoneScenes?.get?.(mapId)?.scene); // Only the ordinary cave tick rehydrates lost scene records.
+    if (profile.fortifiedStronghold) {
+      window.BanditStrongholdCover?.tick?.(mapId, CAVE_RUNTIME_INTERVAL_S); // Shared fire patches, at the cave's existing throttled cadence.
+      window.BanditStrongholds?.ensureBarrels?.(mapId, plan,
+        wildlifeDeps?.zoneScenes?.get?.(mapId)?.scene || wildlifeDeps?.getActiveScene?.());
+    }
     ensureOccupants(profile, plan, state);
     triggerTraps(profile, plan, state);
     syncPuzzleTreasureVisual(mapId); // Update visibility when an attempted claim was pending a late loot-definition load.
@@ -1893,7 +1916,8 @@
       }) : null,
       currentState: profileForMapId(currentArea) ? clone(stateFor(profileForMapId(currentArea))) : null,
       fortifiedStrongholds: [...sitesByMapId.values()].filter(site => site.fortifiedStronghold).map(site => ({ mapId:site.mapId, cleared:!!stateFor(site).occupantsCleared,
-        barrelsTaken:stateFor(site).strongholdBarrelsTaken?.length||0, barrelsClaimed:stateFor(site).strongholdBarrelsClaimed?.length||0 })),
+        barrelsTaken:stateFor(site).strongholdBarrelsTaken?.length||0, barrelsClaimed:stateFor(site).strongholdBarrelsClaimed?.length||0,
+        coverDestroyed:stateFor(site).strongholdCoverDestroyed?.length||0 })),
       fortifiedAssets: window.BanditStrongholds?.debugSnapshot?.() || null,
     };
   }
@@ -1903,6 +1927,7 @@
     TYPE_LABELS,
     applyWorkspaceProfiles,
     registerFortifiedStronghold, forgetFortifiedStronghold, fortifiedStrongholdCleared,
+    fortifiedCoverDestroyed, markFortifiedCoverDestroyed, activeStrongholdGrid,
     fortifiedBarrelStatus, markFortifiedBarrelTaken, claimFortifiedBarrel,
     registerOutdoorPuzzleSites,
     exteriorPuzzleState,markExteriorPuzzleSolved,
