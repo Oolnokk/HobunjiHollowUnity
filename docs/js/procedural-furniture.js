@@ -284,7 +284,17 @@
       instance.traverse(child => { if (child.isMesh && child.visible) { child.geometry.computeBoundingBox(); box.union(child.geometry.boundingBox.clone().applyMatrix4(child.matrixWorld)); } });
       if (box.isEmpty()) throw new Error('GLB has no visible geometry');
       const size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3()); // Imported model fills authored X/Y/Z dimensions independently.
-      const holder = new THREE.Group(); holder.scale.set(part.transform.sx / Math.max(.001, size.x), part.transform.sy / Math.max(.001, size.y), part.transform.sz / Math.max(.001, size.z)); // Geometry stays centered like every other furniture part.
+      const holder = new THREE.Group();
+      if(part.statueUniformFinish===true){
+        // Anatomy GLBs must keep their original proportions. Per-axis fitting
+        // inflated the nearly flat hand source along its narrowest axis into a
+        // tall wooden plank when imported as statue furniture.
+        const sourceExtent=Math.max(.001,size.x,size.y,size.z);
+        const targetExtent=Math.max(.001,part.transform.sx,part.transform.sy,part.transform.sz);
+        holder.scale.setScalar(targetExtent/sourceExtent);
+      }else{
+        holder.scale.set(part.transform.sx/Math.max(.001,size.x),part.transform.sy/Math.max(.001,size.y),part.transform.sz/Math.max(.001,size.z));
+      } // Ordinary furniture GLBs retain their independent authored X/Y/Z dimensions.
       instance.position.sub(center); holder.add(instance); mesh.add(holder);
       mesh.material.colorWrite = false; mesh.material.depthWrite = false; mesh.castShadow = false; mesh.receiveShadow = false; // Keeps a tiny renderable driver for existing rigid-piece animation hooks.
       mesh.userData.glbReady = true;
