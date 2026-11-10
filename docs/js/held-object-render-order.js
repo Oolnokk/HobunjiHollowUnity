@@ -1096,7 +1096,13 @@
       }
       if (!geometry.boundingBox) geometry.computeBoundingBox();
       if (!geometry.boundingBox || geometry.boundingBox.isEmpty()) return true;
-      const includeMatrixBounds = matrix => {
+      const parity = mesh.__hobunjiXrayBoundParity;
+      const capturedPose = parity?.hook === mesh.onBeforeRender && parity.isFresh?.()
+        ? parity.visibleMatrixWorld : null; // May be the alternative matrix in the real parity draw.
+      // A fixed one- or two-pass loop avoids allocating a closure or array for
+      // each tool, NPC hand and foot during every projected x-ray bounds test.
+      for (let poseIndex = 0; poseIndex < (capturedPose ? 2 : 1); poseIndex++) {
+        const matrix = poseIndex === 0 ? mesh.matrixWorld : capturedPose;
         scissorBox.copy(geometry.boundingBox).applyMatrix4(matrix);
         const vfxPadding = Number(mesh.userData?.hobunjiHeldOverlayVfxPadding) || 0; // Preserve the original dynamic aura margin.
         if (vfxPadding > 0) scissorBox.expandByScalar(vfxPadding * matrix.getMaxScaleOnAxis());
@@ -1107,15 +1113,8 @@
           scissorBox.min.z -= lateral; scissorBox.max.z += lateral;
           scissorBox.min.y -= lateral; scissorBox.max.y += dungeonRise;
         }
-        return includeBox(scissorBox);
-      }; // One precise projection for each matrix a trusted parity hook can use.
-      if (!includeMatrixBounds(mesh.matrixWorld)) return false;
-      // Known procedural hand/foot callbacks may replay a recent visible pose
-      // instead of the current transform. Enclose BOTH possible matrices; do
-      // not tighten bounds for unknown onBeforeRender hooks or skinned meshes.
-      const parity = mesh.__hobunjiXrayBoundParity;
-      if (parity?.hook === mesh.onBeforeRender && parity.isFresh?.()
-          && parity.visibleMatrixWorld && !includeMatrixBounds(parity.visibleMatrixWorld)) return false;
+        if (!includeBox(scissorBox)) return false;
+      }
       return true;
     }
     function includeBox({ min, max }) {
