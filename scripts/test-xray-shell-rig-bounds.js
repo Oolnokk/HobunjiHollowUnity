@@ -71,7 +71,7 @@ const view={getRenderTarget(){return {width:100,height:100};},
   getCurrentViewport(v){v.set(0,0,100,100);}};
 const camera={isOrthographicCamera:true,isPerspectiveCamera:false,matrixWorldInverse:{},projectionMatrix:{},near:0.1};
 const sourceMesh=mkMesh(hooked);
-sourceMesh.geometry={boundingBox:{min:new Vec(-.07,-.07,-.07),max:new Vec(.07,.07,.07)}};
+sourceMesh.geometry={boundingBox:Object.assign(new Box(),{min:new Vec(-.07,-.07,-.07),max:new Vec(.07,.07,.07)})};
 sourceMesh.matrixWorld={dx:-.45,dy:0,dz:0}; // Mesh position used for visible-actor bounds before hook.
 sourceMesh.__hobunjiXrayBoundParity={hook:hooked,visibleMatrixWorld:{dx:.45,dy:0,dz:0},isFresh:()=>true}; // Pose reused by a near-adjacent outline pass.
 const wide=new Vec4();
