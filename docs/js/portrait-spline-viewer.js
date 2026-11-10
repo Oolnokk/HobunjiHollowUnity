@@ -35,6 +35,8 @@
     const markers = new THREE.Group();scene.add(markers);
     const gizmo = new THREE.Group();scene.add(gizmo);
     const pickable = []; // Active 3D knot spheres and axis handles, no invisible full-scene raycasts.
+    const spriteSurface = window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit; // Same PNG-plane material factory as Pants Garment Renderer and AvatarPreviewScene.
+    const textureFailures = new Map(); // Captures per-surface mobile CORS/decode/upload issues without hiding the 3D gizmos.
     const headPlane = makeSheet(null,0,THREE.DoubleSide);
     const hairPlane = makeSheet(null,.002,THREE.FrontSide);
     const rearPlane = makeSheet(null,-.002,THREE.BackSide);
@@ -48,8 +50,6 @@
     const ndc=new THREE.Vector2();
     const axisUnit=axis=>new THREE.Vector3(...AXES[axis]);
     const coordinate=e=>{const box=canvas.getBoundingClientRect();return {x:(e.clientX-box.left)/box.width*2-1,y:1-(e.clientY-box.top)/box.height*2,box};};
-    const spriteSurface = window.HobunjiSpritePngSurface || window.HobunjiPngPlaneUnlit; // Same PNG-plane material factory as Pants Garment Renderer and AvatarPreviewScene.
-    const textureFailures = new Map(); // Captures per-surface mobile CORS/decode/upload issues without hiding the 3D gizmos.
     function makeSheet(image,z,side,opacity=1) {
       const label = opacity < 1 ? 'spline_hood_reference' : side===THREE.BackSide ? 'spline_rear' : z===0 ? 'spline_character' : 'spline_hair';
       const overrides={side,transparent:true,depthWrite:z===0,opacity};
