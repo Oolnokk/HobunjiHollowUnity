@@ -61,8 +61,8 @@ for (const [shaftKey, expected] of Object.entries(authoredFlailShafts)) {
 }
 assert.equal(config.shafts.hatchet.mounts.find(line=>line.type==='eye').start.x,206,
   'artist adjusted the rope origin only; a shifted rigid hatchet sleeve must NOT leak into other weapons');
-assert.equal(config.shafts['plains-sword'].mounts[0].type,'eye',
-  'the original Plains-sword rigid mount type is restored');
+assert.equal(config.shafts['plains-sword'].mounts[0].type,'tang',
+  'the Plains-sword keeps its canonical main-branch tang mount; old uploaded eye data is not imported');
 assert.deepEqual(plain(config.heads['war-cleaver'].mount.start),{x:239,y:858},
   'the War-cleaver head rigid mounting arrow is restored from the reference');
 assert.equal(Object.values(config.heads).some(head=>!head.flailAssembly&&head.flailHeadAnchor!==undefined),false,
