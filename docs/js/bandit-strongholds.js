@@ -10,6 +10,7 @@
   const interiorScenes = new Map(); // Map id -> already-installed prop group, avoiding duplicate draws on reentry.
   const latest = { event: 'not seeded', failed: 0 }; // Latest useful on-device diagnostic; no console required.
   const pendingBarrels = new Set(); // Prevents duplicate asynchronous furniture builds for the same barrel id.
+  const barrelScenesByMapId = new Map(); // Exact scene identities prevent late authored barrel loads after changing maps.
   const BARREL_LOOT = Object.freeze({ // Independent, data-like drop rules; no copy of the Shattercask projectile simulation.
     contrabandBarrel: Object.freeze({ gold:[6,14], alcoholCount:[1,3], narcoticChance:.42, komanineChance:.2 }),
     flaskBarrel: Object.freeze({ gold:[1,4], flaskCount:[3,6], distinctRecipes:2 }),
@@ -330,6 +331,7 @@
   function ensureBarrels(mapId, plan, scene) {
     const stronghold = window.CaveSiteSystem;
     if (!scene || !window.Shattercasks?.registerBurden || !window.AuthoredFurniture?.load || !stronghold) return 0;
+    barrelScenesByMapId.set(String(mapId),scene); // Treasury also uses the same physical barrel owner without adding furniture cover.
     const positions = barrelPlans(plan);
     let pending = 0; // Cheap return value for the mobile diagnostic snapshot.
     for (const barrel of positions) {
@@ -340,7 +342,7 @@
       pendingBarrels.add(id);
       pending++;
       Promise.resolve(window.AuthoredFurniture.load('agingBarrel')).then(recipe => {
-        if (!recipe || interiorScenes.get(mapId)?.scene !== scene || !stronghold.fortifiedBarrelStatus?.(mapId,id)?.available)
+        if (!recipe || barrelScenesByMapId.get(String(mapId)) !== scene || !stronghold.fortifiedBarrelStatus?.(mapId,id)?.available)
           return;
         const group = window.AuthoredFurniture.buildGroup(recipe); // Identical boards/metal hoops to the existing aging furniture.
         const x = Number(barrel.col) + .5, z = Number(barrel.row) + .5;
@@ -377,6 +379,7 @@
   }
 
   function forgetInterior(mapId) {
+    barrelScenesByMapId.delete(String(mapId)); // Async barrel loads cannot repopulate a retired or restored cave scene.
     window.BanditStrongholdWolves?.forgetInterior?.(String(mapId)); // Enemy targets/avatars may not survive a retired cave scene.
     window.BanditStrongholdCover?.forgetScope?.(String(mapId)); // Releases collision and capability records before disposing meshes.
     const old = interiorScenes.get(String(mapId)); // Only models belonging to this cave may be disposed on a map reset.
@@ -393,7 +396,8 @@
       interiorMaps: [...interiorScenes.keys()], pendingBarrels: pendingBarrels.size, barrelLootRules: BARREL_LOOT,
       cover:window.BanditStrongholdCover?.debugSnapshot?.()||null,
       wolves:window.BanditStrongholdWolves?.debugSnapshot?.()||null,
-      throws:window.BanditStrongholdCombat?.debugSnapshot?.()||null, style: 'authored boards.png wood and carved_smooth.png stone via ProceduralFurniture' };
+      throws:window.BanditStrongholdCombat?.debugSnapshot?.()||null,
+      boss:window.BanditStrongholdBoss?.debugSnapshot?.()||null, style: 'authored boards.png wood and carved_smooth.png stone via ProceduralFurniture' };
   }
 
   window.BanditStrongholds = Object.freeze({
