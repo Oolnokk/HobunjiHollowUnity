@@ -186,11 +186,15 @@
         state.particles.splice(index, 1);
       }
     }
-    batch?.sync(state.particles, (transform, particle) => {
+    syncSprayParticles(state);
+  }
+
+  function syncSprayParticles(state) {
+    state.particleBatch?.sync(state.particles, (transform, particle) => {
       transform.position.set(particle.x, particle.y, particle.z);
       transform.rotation.set(particle.rx, particle.ry, particle.rz);
       transform.scale.setScalar(particle.scale);
-    });
+    }); // Updates all active stink motes in one draw on instancing-capable devices.
   }
 
   function clearParticles(state) {
@@ -345,6 +349,7 @@
         state.particleCarry -= 1;
         spawnParticle(creature, state, deps);
       }
+      syncSprayParticles(state); // First-frame emission must appear immediately, not after the next update.
       if (state.t >= tuning.SPRAY_S) {
         state.stage = 'recover';
         state.t = 0;
