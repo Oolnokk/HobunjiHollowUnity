@@ -693,7 +693,8 @@
     plan.banditSpawns = picks.map((tile, index) => ({ col: tile.col, row: tile.row,
       rank: fortified ? (index % 4 === 3 ? 'flasker' : index === picks.length - 1 ? 'lieutenant' : 'grunt')
         : index === picks.length - 1 && picks.length >= 3 ? 'lieutenant' : 'grunt',
-      tier: 1 + (rng() < 0.25 ? 1 : 0) }));
+      tier: 1 + (rng() < 0.25 ? 1 : 0),
+      strongholdThrower: fortified && index % 3 === 2 })); // Select a few existing garrison bandits, not extra entities.
     mapData.caveBanditSpawns = clone(plan.banditSpawns);
   }
 
@@ -1504,7 +1505,9 @@
       for (const spawn of spawns) {
         const x = (spawn.col + 0.5) * tileSize;
         const y = (spawn.row + 0.5) * tileSize;
-        const opts = { zoneId: mapId, extra: { homeX: x, homeY: y, state: 'idle', caveSiteMapId: mapId } };
+        const opts = { zoneId: mapId, extra: { homeX: x, homeY: y, state: 'idle', caveSiteMapId: mapId,
+          banditStrongholdThrower: !!spawn.strongholdThrower,
+          _strongholdTileSize: tileSize } }; // Existing BanditCombat runtime drives native Burden-throw actions.
         const entity = await window.BanditCombat.makeEntity(cfg, spawn.rank || 'grunt', spawn.tier || 1, x, y, opts);
         if (wildlifeDeps?.getCurrentArea?.() !== mapId || plansByMapId.get(mapId) !== plan) { if (entity) devSpawnerDeps?.despawnCreature?.(entity); break; }
         if (!entity) continue;
