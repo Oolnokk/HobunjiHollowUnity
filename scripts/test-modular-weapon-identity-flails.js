@@ -48,6 +48,15 @@ const pickFlailKey=item('grapple-flail','pick-shovel-pick'); // This exact flexi
 assert.equal(config.heads['pick-shovel-pick'].dmgType,'sharp','normal pick head stays sharp on every rigid shaft');
 assert.equal(api.isDisallowed('grapple-flail','pick-shovel-pick'),false,'Pick Head can be forged on Grapple-Flail haft');
 assert.equal(definitions[pickFlailKey].dmgType,'blunt','Grapple-Flail with Pick Head actually inflicts blunt damage');
+assert.deepEqual(plain(definitions[pickFlailKey].slots),['weapon','pick'],
+  'blunt Pick Head flail intentionally retains its useful pick tool slot (the funny combination is supported)');
+const pickPair=config.shafts['grapple-flail'].overrides['pick-shovel-pick']; // User's latest independent pairing calibration.
+assert.equal(pickPair.scaleY,1.1);
+assert.equal(pickPair.x,-3);assert.equal(pickPair.y,-5);
+assert.equal(pickPair.flipY,true);
+assert.equal(config.shafts['grapple-flail'].overrides['plains-blade'].y,-20);
+assert.equal(config.shafts['grapple-flail'].overrides['porakaneki-greatclub'].y,-50);
+assert.equal(config.shafts['grapple-flail'].overrides['porakaneki-greatclub'].layerOrder,'head-over-haft');
 assert.equal(api.weaponDamageType('grapple-flail','pick-shovel-pick'),'blunt');
 assert.equal(api.weaponDamageType('fishing-spear','pick-shovel-pick'),'sharp',
   'a different pick-head weapon retains its usual sharp damage');
