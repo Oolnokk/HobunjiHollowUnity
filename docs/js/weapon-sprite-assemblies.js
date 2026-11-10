@@ -270,11 +270,20 @@
       const headRoot = new THREE.Group();
       headRoot.name = itemKey + '_flail_head';
       headRoot.userData.hobunjiWeaponAssemblyPart = false;
+      const headArtworkRoot = new THREE.Group(); // Pair-local transform wraps only hanging head art; it never moves the rope or holder.
+      const pairVisual = f.head.visualTransform; // Omitted for original authored multi-sprite flail heads.
+      if (pairVisual) {
+        const sx = (Number(pairVisual.scaleX) || 1) * (pairVisual.flipX ? -1 : 1);
+        const sy = (Number(pairVisual.scaleY) || 1) * (pairVisual.flipY ? -1 : 1);
+        headArtworkRoot.scale.set(sx, sy, 1); // Flexible pair's head-only scale and flip.
+        headArtworkRoot.rotation.z = -(Number(pairVisual.rotation) || 0) * Math.PI / 180; // Source bitmap Y is down, Three.js Y is up.
+      }
+      headRoot.add(headArtworkRoot);
       f.head.layers.forEach((layer, i) => {
         const mesh = buildPlane(THREE, headTextures[i].image, headTextures[i], unit, order + 0.02 + i * 0.001, layer.offsetPx);
-        headRoot.add(mesh);
+        headArtworkRoot.add(mesh); // Shared pair transform preserves authored per-layer geometry and effects.
         state.headParts.push(mesh);
-        effects?.registerLayer(state, mesh, layer, headTextures[i].image); // Each head layer owns its material and may spawn effects between neighboring layers.
+        effects?.registerLayer(state, mesh, layer, headTextures[i].image);
       });
       root.add(chain, headRoot);
       state.owned.push(chain, headRoot);
@@ -709,7 +718,21 @@
     const headAnchorLocal = headSpec.anchorSpace === 'composite'
       ? q.headAnchorLocal.set(state.headAnchor.x * unit, -state.headAnchor.y * unit, 0)
       : pixelPoint(state.headAnchorImage, state.headAnchor, unit, layer?.offsetPx, q.headAnchorLocal); // Shared center-frame contacts are allowed in the transparent gap between two sprite layers.
-    const headCenterWorld = q.headCenter.copy(endWorld).sub(q.tmp.copy(headAnchorLocal).multiplyScalar(attachmentScale * headScale).applyQuaternion(headQ)); // Keep the independently scaled head contact at the scaled chain's end.
+    const visual = headSpec.visualTransform; // Pair-only rigid head corrections, absent from the original grapple head.
+    if (visual) {
+      const sx = (Number(visual.scaleX) || 1) * (visual.flipX ? -1 : 1);
+      const sy = (Number(visual.scaleY) || 1) * (visual.flipY ? -1 : 1);
+      const angle = -(Number(visual.rotation) || 0) * Math.PI / 180;
+      const xx = headAnchorLocal.x * sx, yy = headAnchorLocal.y * sy;
+      headAnchorLocal.set(Math.cos(angle) * xx - Math.sin(angle) * yy,
+        Math.sin(angle) * xx + Math.cos(angle) * yy, 0); // Head contact inherits the very same scale, flip and rotation as artwork.
+    }
+    const headCenterWorld = q.headCenter.copy(endWorld).sub(q.tmp.copy(headAnchorLocal).multiplyScalar(attachmentScale * headScale).applyQuaternion(headQ)); // Transformed contact stays at the rope's end.
+    if (visual) {
+      const dx = Number(visual.x) || 0, dy = Number(visual.y) || 0;
+      headCenterWorld.add(q.tmp.set(dx * unit, -dy * unit, 0)
+        .multiplyScalar(attachmentScale * headScale).applyQuaternion(headQ)); // Pair X/Y nudges move only head art, never the rope/chain.
+    }
     state.headRoot.position.copy(root.worldToLocal(q.headLocal.copy(headCenterWorld)));
     state.headRoot.quaternion.copy(rootQInverse).multiply(headQ);
     if (root.visible !== false) effects?.stepFire(state, effectsDt); // Flame stays in the assembled head and behind later opaque sprites.
