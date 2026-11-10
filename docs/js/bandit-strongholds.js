@@ -17,6 +17,7 @@
   const WOOD = Object.freeze({ color: '#7a4924', materialRole: 'wood', materialTexture: 'boards.png' }); // Aging Barrel's planked wood, not a new procedural texture.
   const DARK_WOOD = Object.freeze({ color: '#6b4a28', materialRole: 'wood', materialTexture: 'boards.png' }); // Same darker fittings and boards as authored barrels.
   const STONE = Object.freeze({ color: '#777267', materialRole: 'stone', materialTexture: 'carved_smooth.png' });
+  const METAL = Object.freeze({ color: '#43b3ae', materialRole: 'metal', materialTexture: 'carved_smooth.png' }); // Aging Barrel's existing verdigris hoop color/material.
 
   function hash(text) {
     let value = 2166136261 >>> 0; // FNV-1a site selection never consumes the combat/spawn RNG.
@@ -77,6 +78,11 @@
       part('arch-wood-side-left', -.61, .86, -.21, .14, 1.71, .18),
       part('arch-wood-side-right', .61, .86, -.21, .14, 1.71, .18),
     ]; // Intentionally no black portal plane: the native cave transition renders the opening.
+    catalog.fortifiedWolfStake = [
+      part('stake-wood-post',0,.53,0,.18,1.06,.18,WOOD),
+      part('stake-ground-base',0,.08,0,.38,.16,.38,DARK_WOOD),
+      part('stake-chain-ring',0,.77,0,.31,.09,.31,METAL,'hoop'),
+    ]; // Exactly the same board/metal roles and texture families as existing Aging Barrel furniture.
     return true;
   }
 
@@ -98,7 +104,7 @@
         strongholdProp: true,
       };
     };
-    return [
+    const props = [
       coord('fortifiedCaveArch', cx, cy),
       coord('fortifiedWatchtower', minX + 1, minY + 1),
       coord('fortifiedWatchtower', maxX - 1, minY + 1),
@@ -107,6 +113,13 @@
       coord('fortifiedHighCover', minX + 1, cy),
       coord('fortifiedHighCover', maxX - 1, cy),
     ];
+    for(const slot of [0,1]){
+      const stake=coord('fortifiedWolfStake',slot===0?minX+2:maxX-2,cy-1);
+      stake.strongholdStake=true;stake.wolfSlot=slot;stake.freed=false;
+      stake.interactable={holdSeconds:.85}; // Uses the existing tent hold/aim action, not a parallel mobile input.
+      props.push(stake);
+    }
+    return props;
   }
 
   function upsertEntrance(rec, deps, mapId) {
@@ -151,6 +164,8 @@
     if (!upsertEntrance(rec, deps, site.mapId)) return false;
     for (const prop of rec.props) if (prop.type === 'tent') prop.destroyed = true; // Physical walls replace the Simple Hydra tent stage.
     const props = siteProps(rec);
+    for(const prop of props)if(prop.strongholdStake)
+      prop.freed=!!window.CaveSiteSystem?.strongholdWolfStatus?.(site.mapId,prop.wolfSlot)?.freed;
     rec.props.push(...props);
     rec.instance.stampedObjectIds.push(...props.map(prop => prop.id)); // Same locale release lifecycle as existing camp furniture.
     rec.stronghold = { mapId: site.mapId, slot: rec.discoverySlot, entrance: site.mapId };
@@ -169,6 +184,7 @@
     for (const holder of [layout, live]) {
       if (holder?.transitions) holder.transitions = holder.transitions.filter(t => t?.id !== id);
     }
+    window.BanditStrongholdWolves?.forgetExterior?.(rec,deps); // Native animal owner removes the live rig; the cave save preserves rescue/death.
     for (const prop of rec.props || []) if (prop.coverId) window.BanditStrongholdCover?.unregister?.(rec.zoneId,prop.coverId);
     for (const ring of [...(live?.scene?.children || [])]) if (ring.userData?.banditStrongholdTransitionId === id) {
       live.scene.remove(ring); ring.geometry?.dispose(); ring.material?.dispose();
@@ -361,6 +377,7 @@
   }
 
   function forgetInterior(mapId) {
+    window.BanditStrongholdWolves?.forgetInterior?.(String(mapId)); // Enemy targets/avatars may not survive a retired cave scene.
     window.BanditStrongholdCover?.forgetScope?.(String(mapId)); // Releases collision and capability records before disposing meshes.
     const old = interiorScenes.get(String(mapId)); // Only models belonging to this cave may be disposed on a map reset.
     if (!old) return false;
@@ -373,7 +390,9 @@
   function debugSnapshot() {
     return { ...latest, replacementDefault: DEFAULT_REPLACEMENT_FRACTION,
       activeSites: [...siteRegistrations.entries()].map(([mapId, site]) => ({ mapId, ...site })),
-      interiorMaps: [...interiorScenes.keys()], pendingBarrels: pendingBarrels.size, barrelLootRules: BARREL_LOOT, style: 'authored boards.png wood and carved_smooth.png stone via ProceduralFurniture' };
+      interiorMaps: [...interiorScenes.keys()], pendingBarrels: pendingBarrels.size, barrelLootRules: BARREL_LOOT,
+      cover:window.BanditStrongholdCover?.debugSnapshot?.()||null,
+      wolves:window.BanditStrongholdWolves?.debugSnapshot?.()||null, style: 'authored boards.png wood and carved_smooth.png stone via ProceduralFurniture' };
   }
 
   window.BanditStrongholds = Object.freeze({
