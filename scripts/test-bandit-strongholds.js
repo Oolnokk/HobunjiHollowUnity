@@ -36,6 +36,16 @@ environment.window = environment;
 vm.createContext(environment);
 vm.runInContext(read('docs/js/cave-site-system.js'), environment, { filename:'cave-site-system.js' });
 vm.runInContext(read('docs/js/bandit-strongholds.js'), environment, { filename:'bandit-strongholds.js' });
+const eventHandlers = new Map(); // Same scoped events used by Shattercask explosions and melee impacts.
+environment.WorldEvents = {
+  on(kind,fn) { if (!eventHandlers.has(kind)) eventHandlers.set(kind,new Set()); eventHandlers.get(kind).add(fn); return ()=>eventHandlers.get(kind)?.delete(fn); },
+  emit(kind,data) { for(const fn of eventHandlers.get(kind)||[]) fn(data); },
+};
+let fireIsActive = false; // Controls the shared PersistentGroundFire.intersects result in the burn regression.
+let coverInvalidations = 0; // Checks that breaking a barrier refreshes the existing projectile/LOS cover cache.
+environment.PersistentGroundFire = { intersects:()=>fireIsActive };
+environment.NearbyVolumeCollision = { invalidate:()=>{coverInvalidations++;} };
+vm.runInContext(read('docs/js/bandit-stronghold-cover.js'), environment, { filename:'bandit-stronghold-cover.js' });
 
 const caves = environment.CaveSiteSystem;
 const strongholds = environment.BanditStrongholds;
@@ -68,6 +78,8 @@ const rec = {
 assert.equal(strongholds.upgradeCamp(rec,deps),true);
 assert.equal(rec.props[0].destroyed,true, 'tent appearance is replaced, not another camp generated');
 assert.equal(rec.props.filter(prop => prop.strongholdProp).length,7,'two towers, barricades and one arch');
+assert.equal(new Set(rec.props.filter(prop=>prop.strongholdProp).map(prop=>prop.id)).size,7,'twin watchtowers and barricades have distinct mesh IDs');
+assert.equal(new Set(rec.props.filter(prop=>prop.strongholdProp).map(prop=>prop.coverId)).size,7,'cover save keys are individually stable');
 assert.equal(layout.transitions.length,1,'one native cave entrance');
 assert.equal(layout.transitions[0].targetMapId,rec.stronghold.mapId);
 const count = rec.props.length;
@@ -111,7 +123,41 @@ assert.equal(layout.transitions.length,0);
 assert.equal(caves.fortifiedStrongholdCleared(mapId),true);
 assert.equal(caves.profileForMapId(mapId).fortifiedStronghold,true);
 
+// Physical boards share the native WorldEvents blast/fire signal and the original tile collision marker.
+const cover = environment.BanditStrongholdCover;
+const coverTile = {}; // Exact tile object must be restored when this specific board breaks.
+const coverGrid = Array.from({length:8},()=>Array.from({length:8},()=>({})));
+coverGrid[3][4] = coverTile;
+const coverScene = new Group(), coverMesh = new Group();
+coverScene.add(coverMesh);
+let removedCover=0;
+assert.equal(cover.register({scope:zoneId,saveMapId:mapId,id:'exterior:1:test',
+  key:'fortifiedHighCover',mesh:coverMesh,col:4,row:3,y:0,getGrid:()=>coverGrid,
+  onDestroyed:()=>{removedCover++;}}),true);
+assert.equal(coverTile._banditTentCollisionId,'stronghold-cover:exterior:1:test','same game collision mask blocks movement');
+environment.WorldEvents.emit('blast',{scope:'other-map',x:4.5,z:3.5,radius:2});
+assert.equal(removedCover,0,'other areas cannot destroy this board');
+environment.WorldEvents.emit('blast',{scope:zoneId,x:4.5,z:3.5,radius:2});
+assert.equal(removedCover,1,'existing Shattercask blast event destroys the matching board');
+assert.equal(coverTile._banditTentCollisionId,undefined,'destroying cover restores its walkable grid tile');
+assert.equal(coverMesh.parent,null,'destroyed barricade stops blocking projectile and sight cover');
+assert.equal(caves.fortifiedCoverDestroyed(mapId,'exterior:1:test'),true,'destruction belongs to existing cave save');
+assert(coverInvalidations>0,'existing NearbyVolumeCollision index invalidated');
+assert.equal(cover.register({scope:zoneId,saveMapId:mapId,id:'exterior:1:test',key:'fortifiedHighCover',
+  mesh:new Group(),col:4,row:3,getGrid:()=>coverGrid,onDestroyed:()=>{removedCover++;}}),false,'saved cover remains gone after scene rebuild');
+assert.equal(removedCover,2,'saved destruction removes new rendering immediately without a duplicate reward');
+const fireMesh = new Group();coverScene.add(fireMesh);
+assert.equal(cover.register({scope:zoneId,saveMapId:mapId,id:'exterior:1:fire',
+  key:'fortifiedLowRail',mesh:fireMesh,col:5,row:4,getGrid:()=>coverGrid}),true);
+fireIsActive=true;
+for(let step=0;step<7;step++)cover.tick(zoneId,.4);
+fireIsActive=false;
+assert.equal(caves.fortifiedCoverDestroyed(mapId,'exterior:1:fire'),true,'sustained real ground-fire contact burns through low wood');
+assert.equal(fireMesh.parent,null,'burnt boards no longer intercept projectiles');
+assert.equal(cover.debugSnapshot(zoneId).active.length,0,'destroyed props leave no per-frame fire candidates');
+
 const index=read('docs/index.html');
+assert(index.includes('bandit-stronghold-cover.js'), 'new reusable cover module loads before game boot');
 assert(index.indexOf('bandit-strongholds.js')>index.indexOf('cave-site-system.js'), 'stronghold module loads after cave owner');
 assert(index.indexOf('bandit-strongholds.js')<index.indexOf('src="game.js'), 'feature is registered before gameplay boot');
 // Barrel gameplay uses the exact production stronghold and CaveSiteSystem modules.
