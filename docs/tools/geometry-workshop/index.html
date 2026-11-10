@@ -5,17 +5,25 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <base href="../../">
 <title>Hobunji Hollow — Geometry Workshop</title>
-<link rel="stylesheet" href="tools/geometry-workshop/workshop.css?v=20261109a">
+<link rel="stylesheet" href="tools/geometry-workshop/workshop.css?v=20261109game1">
 <script src="js/tap-reliability.js?v=20261010a"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/meshoptimizer@0.22.0/meshopt_simplifier.js"></script>
 <script src="js/GLTFLoader.js?v=20260712d"></script>
+<!-- Use the SAME character dye/PNG surface, geometry mapping, and weather scripts that gameplay uses. -->
+<script src="config/scratchbones-config.js?v=20261109stonebeatcfg1"></script>
+<script src="config/hand-model-profiles.js?v=20261109geom-preview1"></script>
+<script src="js/portrait-utils.js?v=20261107h7418f3e"></script>
+<script src="js/natural-surface-materials.js?v=20261109geom-preview1"></script>
+<script src="js/weather-fx.js?v=20261109htzizw1"></script>
+<script src="tools/enemy-loadout-editor/source-data.js?v=20261109parity1"></script>
 <script src="js/foliage-generator.js?v=20261031h87aa596"></script>
 <script src="js/procedural-furniture.js"></script>
 <script src="js/geometry-quality.js?v=20261109quality1"></script>
 <script src="tools/geometry-workshop/core.js?v=20261109a"></script>
+<script src="tools/geometry-workshop/game-preview.js?v=20261109game1"></script>
 </head>
 <body>
 <div id="shell">
@@ -55,7 +63,22 @@
       <button id="load" type="button">Load object</button>
     </section>
     <section>
-      <h2>2 · Geometry controls</h2>
+      <h2>2 · Gameplay appearance</h2>
+      <label for="game-lighting">Lighting / time of day</label>
+      <select id="game-lighting">
+        <option value="noon" selected>Noon</option>
+        <option value="sunset">Sunset</option>
+        <option value="night">Night</option>
+        <option value="storm">Storm</option>
+      </select>
+      <label class="check"><input id="game-surfaces" type="checkbox" checked> Use gameplay PNG textures for hand/foot GLBs</label>
+      <label for="sample-body-color">Representative body dye for hand/foot preview</label>
+      <input id="sample-body-color" type="color" value="#7dc89a" aria-label="Representative body dye for preview">
+      <small id="game-surface-status">Embedded GLB textures are retained. Game hand/foot surface materials affect only display clones, never exports.</small>
+      <small id="game-render-status" role="status" aria-live="polite">Loading the live game's shell shader and lighting definitions…</small>
+    </section>
+    <section>
+      <h2>3 · Geometry controls</h2>
       <label class="check"><input id="remesh" type="checkbox"> Adaptive edge remesh <span>— subdivide long triangle edges</span></label>
       <label for="edge-size">Maximum edge length <output id="edge-out">12%</output></label>
       <input id="edge-size" type="range" min="2" max="40" step="1" value="12">
@@ -69,7 +92,7 @@
       <button id="update" class="primary" type="button">Update preview</button>
     </section>
     <section>
-      <h2>3 · Output</h2>
+      <h2>4 · Output</h2>
       <p id="summary" role="status">Load an object to compare geometry.</p>
       <div id="materials"></div>
       <button id="export" type="button" disabled>Download optimized GLB</button>
@@ -97,6 +120,6 @@
     <div id="footer"><span id="busy">Ready</span><span id="loading-note">Loading Three.js and game mesh generators…</span></div>
   </main>
 </div>
-<script src="tools/geometry-workshop/workshop.js?v=20261109quality1"></script>
+<script src="tools/geometry-workshop/workshop.js?v=20261109game1"></script>
 </body>
 </html>

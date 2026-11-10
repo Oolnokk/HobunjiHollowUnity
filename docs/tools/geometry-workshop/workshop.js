@@ -27,6 +27,7 @@
   const messages = []; // Latest on-page diagnostics, available without a console.
   let original = null; // Currently loaded source object; never mutated by the workshop.
   let candidate = null; // Generated preview clone with its own edited geometry.
+  let displayOriginal = null, displayCandidate = null; // Disposable gameplay-shaded scene copies, never exported.
   let sourceName = 'model'; // Name for diagnostics and exported GLB files.
   let downloadUrl = null; // Retains a manual-tap GLB link on mobile until replaced.
   let profileUrl = null; // Retains a separate manual-tap JSON download on mobile.
@@ -45,6 +46,7 @@
     return;
   }
   const sceneA = new T.Scene(), sceneB = new T.Scene(); // Isolated views; original and candidate never overlap.
+  const RenderPreview = window.GeometryWorkshopGamePreview; // Game shader, lighting and texture bridge shared by both views.
   const camera = new T.PerspectiveCamera(39, 1, 0.02, 2000); // Identical camera for both geometries.
   let renderer = null; // One WebGL context shared by both views.
   try { renderer = new T.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'low-power' }); }
@@ -56,7 +58,7 @@
   let lastWidth = 0, lastHeight = 0; // Avoid resizing/reallocating the canvas on every animation frame.
   const controls = T.OrbitControls ? new T.OrbitControls(camera, renderer.domElement) : null; // Touch-friendly orbital review.
   renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1));
-  renderer.outputEncoding = T.sRGBEncoding;
+  renderer.outputEncoding = T.LinearEncoding; // Live game r128 output is linear; sRGB would double-convert authored colors.
   renderer.autoClear = true;
   host.appendChild(renderer.domElement);
   if (controls) {
@@ -65,11 +67,7 @@
     controls.screenSpacePanning = true;
   }
   function prepareScene(scene) {
-    scene.background = new T.Color(0x111d2a);
-    scene.add(new T.HemisphereLight(0xe3efff, 0x324052, 1.5));
-    const key = new T.DirectionalLight(0xffffff, 1.12);
-    key.position.set(3, 8, 5);
-    scene.add(key);
+    scene.background = new T.Color(0x162118); // Placeholder until the actual game lighting is installed.
     const grid = new T.GridHelper(20, 20, 0x36556a, 0x263746);
     grid.material.opacity = 0.25;
     grid.material.transparent = true;
@@ -83,6 +81,31 @@
     $('log').textContent = messages.join('\n');
     $('busy').textContent = error ? 'Error — see diagnostics' : line;
     $('busy').style.color = error ? '#fda4af' : '#9ae6cc';
+  }
+  const renderPreview = RenderPreview?.build?.(renderer, [sceneA, sceneB], camera, host, (message, error) => {
+    $('game-render-status').textContent = message; // On-screen mobile-friendly report; never silently fake game parity.
+    log(message, error);
+  });
+  if (!renderPreview) log('Game preview adapter missing; displaying original material data without shell outlines.', true);
+  else renderPreview.init().catch(error => log('Game render initialization failed: ' + error.message, true));
+  function displayPath() {
+    const kind = $('source-kind').value;
+    return kind === 'repository' ? $('repo-path').value.trim() : $('game-source-path').value.trim();
+  }
+  function addDisplay(scene, root) {
+    if (!root) return null;
+    const display = renderPreview?.decorate(root, displayPath(), $('game-surfaces').checked, $('sample-body-color').value) || root.clone(true);
+    scene.add(display);
+    return display;
+  }
+  function rebuildDisplays() {
+    renderPreview?.disposeDisplay(sceneA, displayOriginal);
+    renderPreview?.disposeDisplay(sceneB, displayCandidate);
+    displayOriginal = addDisplay(sceneA, original);
+    displayCandidate = addDisplay(sceneB, candidate);
+    $('game-surface-status').textContent = $('game-surfaces').checked
+      ? 'Game hand/foot PNG material roles · representative body tint ' + $('sample-body-color').value + ' · display-only'
+      : 'Source GLB embedded materials · display-only, no overrides';
   }
   function setBusy(value) {
     updating = value;
@@ -137,16 +160,21 @@
     if (!host.clientWidth || !host.clientHeight || document.hidden) return;
     resize();
     controls?.update();
-    const w = renderer.domElement.width, h = renderer.domElement.height;
-    const half = Math.floor(w / 2);
-    renderer.setScissorTest(true);
-    renderer.setViewport(0, 0, half, h);
-    renderer.setScissor(0, 0, half, h);
-    renderer.render(sceneA, camera);
-    renderer.setViewport(half, 0, w - half, h);
-    renderer.setScissor(half, 0, w - half, h);
-    renderer.render(sceneB, camera);
-    renderer.setScissorTest(false);
+    // WebGLRenderer.setViewport/setScissor take CSS pixels and scale internally;
+    // drawing-buffer dimensions would double the offsets on high-DPI mobile.
+    const w = host.clientWidth, h = host.clientHeight;
+    if (renderPreview) renderPreview.render(w, h);
+    else {
+      const half = Math.floor(w / 2);
+      renderer.setScissorTest(true);
+      renderer.setViewport(0, 0, half, h);
+      renderer.setScissor(0, 0, half, h);
+      renderer.render(sceneA, camera);
+      renderer.setViewport(half, 0, w - half, h);
+      renderer.setScissor(half, 0, w - half, h);
+      renderer.render(sceneB, camera);
+      renderer.setScissorTest(false);
+    }
   }
   function disposeImported(rootObject) {
     if (!rootObject) return;
@@ -170,14 +198,16 @@
   }
   function releaseOriginal() {
     if (!original) return;
-    sceneA.remove(original);
+    renderPreview?.disposeDisplay(sceneA, displayOriginal);
+    displayOriginal = null;
     if (originalOwnsResources) disposeImported(original);
     original = null;
     originalOwnsResources = false;
   }
   function disposeCandidate() {
     if (!candidate) return;
-    sceneB.remove(candidate);
+    renderPreview?.disposeDisplay(sceneB, displayCandidate);
+    displayCandidate = null;
     // Candidate clones may share geometries with original on skipped meshes.
     const owned = new Set();
     original?.traverse?.(node => { if (node.isMesh && node.geometry) owned.add(node.geometry); });
@@ -224,7 +254,7 @@
       if (version !== generation) return;
       disposeCandidate();
       candidate = result.object;
-      sceneB.add(candidate);
+      displayCandidate = addDisplay(sceneB, candidate);
       listMaterials(original);
       showStats(result);
       $('loading-note').textContent = 'Original and preview use the same camera and material definitions.';
@@ -441,7 +471,7 @@
       originalOwnsResources = ownsResources;
       original.name ||= name;
       sourceName = name;
-      sceneA.add(original);
+      displayOriginal = addDisplay(sceneA, original);
       $('manual-download').replaceChildren();
       if (downloadUrl) { URL.revokeObjectURL(downloadUrl); downloadUrl = null; }
       fitCamera(original);
@@ -570,12 +600,17 @@
   for (const id of ['remesh','edge-size','reduction','error','protect-cards']) $(id).addEventListener('input', invalidatePreview);
   $('export').addEventListener('click', exportGLB);
   $('export-json').addEventListener('click', exportQualityJson);
+  $('game-lighting').addEventListener('change', () => renderPreview?.setMode($('game-lighting').value));
+  for (const id of ['game-surfaces', 'sample-body-color']) $(id).addEventListener('input', () => {
+    if (!updating) rebuildDisplays(); // Only scene materials change; optimized geometry/export stays unmodified.
+  });
   window.addEventListener('pagehide', () => {
     cancelPick();
     disposeCandidate();
     releaseOriginal();
     if (downloadUrl) URL.revokeObjectURL(downloadUrl);
     if (profileUrl) URL.revokeObjectURL(profileUrl);
+    renderPreview?.dispose();
     renderer.dispose();
   });
   $('copy-report').addEventListener('click', async () => {
