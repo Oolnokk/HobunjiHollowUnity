@@ -79,6 +79,9 @@ assert(viewer.includes("cfg.threeModuleUrl") && viewer.includes("cfg.orbitContro
 assert(viewer.includes("window.HobunjiSpritePngSurface") && viewer.includes("spriteSurface.makeCanvasTexture") && viewer.includes("spriteSurface.makeMaterial"),
   '3D appearance reuses the canonical PNG-plane texture and material API used by Pants Rig Author');
 assert(!viewer.includes("new THREE.DataTexture(rgba"), '3D author must not use a competing custom RGBA texture uploader');
+assert(viewer.indexOf('const spriteSurface =') >= 0
+  && viewer.indexOf('const spriteSurface =') < viewer.indexOf('const headPlane ='),
+  'canonical PNG material factory must initialize before the WebGL head and hair sheets are constructed');
 assert(editor.includes("NpcAvatarPreview.renderProfileToCanvas") && editor.includes("NpcAvatarPreview.ensurePortraitCosmetics"),
   '3D author uses the same canonical full-character source as the Pants Rig Author');
 assert(viewer.includes("textureFailures") && editor.includes("canonicalPortraitError"),
