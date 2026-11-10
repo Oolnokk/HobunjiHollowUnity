@@ -166,6 +166,14 @@
   }
 
   function entityOptions(profile,spawn,cfg) {
+    if(profile?.fortifiedStronghold && spawn?.strongholdRole) {
+      const role=spawn.strongholdRole; // The existing cave bandit roster uses regular BanditCombat actors.
+      if(role==='crossbowman')return {
+        defOverride:{rangedWeaponKey:'crossbow'}, // Native weapon holder and RangedWeapons AI, not a fake visual crossbow.
+        extra:{banditStrongholdRole:role,state:'chase'},
+      };
+      return {extra:{banditStrongholdRole:'charger',state:'chase'}}; // Melee troops run down the unobstructed center lane.
+    }
     if(profile?.fortifiedStrongholdChild!=='boss'||!spawn?.strongholdLord)return null;
     return { nameOverride:'Bandit Lord',avatarRigScale:{x:1.1,y:1.14,head:1.1},
       extra:{banditStrongholdBoss:true,banditStrongholdVariant:spawn.bossVariant||kindFor(profile),
