@@ -214,6 +214,38 @@
     return !!(profile?.fortifiedStronghold && stateFor(profile).occupantsCleared);
   }
 
+  function fortifiedBarrelStatus(mapId, barrelId) {
+    const profile = profileForMapId(mapId);
+    if (!profile?.fortifiedStronghold) return { available: false, claimed: false, taken: false };
+    const state = stateFor(profile);
+    const id = String(barrelId || '');
+    const claimed = !!state.strongholdBarrelsClaimed?.includes(id);
+    const taken = !!state.strongholdBarrelsTaken?.includes(id);
+    return { available: !!id && !claimed && !taken, claimed, taken };
+  }
+
+  function markFortifiedBarrelTaken(mapId, barrelId) {
+    const profile = profileForMapId(mapId);
+    if (!profile?.fortifiedStronghold) return false;
+    const state = stateFor(profile);
+    const id = String(barrelId || '');
+    if (!id || state.strongholdBarrelsTaken?.includes(id) || state.strongholdBarrelsClaimed?.includes(id)) return false;
+    (state.strongholdBarrelsTaken ||= []).push(id); // A carried Burden cannot rematerialize at its original cave tile.
+    persistState(); // Persist pickup before allowing cross-area carry or world reload.
+    return true;
+  }
+
+  function claimFortifiedBarrel(mapId, barrelId) {
+    const profile = profileForMapId(mapId);
+    if (!profile?.fortifiedStronghold) return false;
+    const state = stateFor(profile);
+    const id = String(barrelId || '');
+    if (!id || state.strongholdBarrelsClaimed?.includes(id)) return false;
+    (state.strongholdBarrelsClaimed ||= []).push(id); // Mark before inventory grant; impacts can be reported twice by different collision owners.
+    persistState();
+    return true;
+  }
+
   const MAX_OUTDOOR_PUZZLE_CAVES = 24; // Upper bound for independent entrances in a wilderness zone.
   const MIN_OUTDOOR_PUZZLE_CAVES = 4; // Favor several doors where enough genuine balconies exist.
   const OUTDOOR_PUZZLE_DENSITY = 0.72; // Independent per-balcony roll, with a minimum floor.
@@ -981,7 +1013,7 @@
       clearanceFootprints,
       separator: null,
       shattercasks: [], // Deterministic explosives spawned outside separator walls and occasionally elsewhere in caves.
-      banditSpawns: [], bodies: [], traps: [], coffins: [], mineRocks: [], mushrooms: [], cache: null, ruinEntrance: null, puzzleCave: null, puzzleTreasure:null,
+      banditSpawns: [], strongholdBarrels: [], bodies: [], traps: [], coffins: [], mineRocks: [], mushrooms: [], cache: null, ruinEntrance: null, puzzleCave: null, puzzleTreasure:null,
     }; // Runtime-only plan mirrors map decorations and drives mechanics that cannot live in static building map data.
     if (profile.contents === TYPES.RUIN_ENTRANCE) addRuinLayer(mapData, rng,
       allTiles.filter(tile => Math.hypot(tile.col - Number(mapData.exitCol), tile.row - Number(mapData.exitRow)) >= 3), blockedKeys, plan);
@@ -1073,6 +1105,17 @@
       }
       for (const rock of mapData.oreRocks || []) blockedKeys.add(tileKey(rock.col, rock.row));
       addBanditLayer(mapData, rng, reachable, blockedKeys, plan, contents === TYPES.FORTIFIED_STRONGHOLD);
+      if (contents === TYPES.FORTIFIED_STRONGHOLD) {
+        const barrelTiles = pickSpacedTiles(makeRng(profile.signature + ':barrel-supplies'),
+          reachable.filter(tile => !blockedKeys.has(tileKey(tile.col,tile.row))
+            && plan.banditSpawns.every(guard => Math.hypot(guard.col-tile.col,guard.row-tile.row) >= 2)),
+          4, blockedKeys, 2.2); // Supplies sit on walkable floor away from the charge lane and enemy spawn feet.
+        plan.strongholdBarrels = barrelTiles.map((tile, index) => ({
+          id: 'stronghold-barrel-' + index, kind: index % 2 ? 'flaskBarrel' : 'contrabandBarrel',
+          col: tile.col, row: tile.row,
+        })); // Independent contraband/flask loot is resolved at the physical Burden's break event.
+        for (const tile of barrelTiles) blockedKeys.add(tileKey(tile.col,tile.row));
+      }
     }
 
     if (wantsRockPuzzle && plan.separator) {
@@ -1134,7 +1177,7 @@
     mapData.name = window.WildlifeSpawn?.denTurnoverStateForCavern?.(mapId)?.name || 'Unexplored cave';
     mapData.caveSite = clone(profile);
     mapData.caveSitePlan = {
-      shattercasks: clone(plan.shattercasks), separatorRock: plan.separator ? { col: plan.separator.col, row: plan.separator.row, cells: clone(plan.separator.cells), oreKind: plan.separator.oreKind } : null,
+      shattercasks: clone(plan.shattercasks), strongholdBarrels: clone(plan.strongholdBarrels), separatorRock: plan.separator ? { col: plan.separator.col, row: plan.separator.row, cells: clone(plan.separator.cells), oreKind: plan.separator.oreKind } : null,
       banditSpawns: clone(plan.banditSpawns), bodies: clone(plan.bodies), traps: clone(plan.traps), cache: clone(plan.cache),
       coffins: clone(plan.coffins), ruinEntrance: clone(plan.ruinEntrance), puzzleCave: clone(plan.puzzleCave), puzzleDoor:clone(plan.puzzleDoor), mushrooms: clone(plan.mushrooms), mineRockCount: plan.mineRocks.length,
       extension: plan.separator ? { contentType: contents, hiddenTiles: plan.separator.farKeys.length } : null,
@@ -1696,6 +1739,8 @@
       grantPuzzleCaveReward(profile,plan,state); // Deliver a sealed prize when its definitions become available, even without leaving this cave.
     }
     markDiscovered(profile, state);
+    if (profile.fortifiedStronghold) window.BanditStrongholds?.ensureBarrels?.(mapId, plan,
+      wildlifeDeps?.zoneScenes?.get?.(mapId)?.scene); // Only the ordinary cave tick rehydrates lost scene records.
     ensureOccupants(profile, plan, state);
     triggerTraps(profile, plan, state);
     syncPuzzleTreasureVisual(mapId); // Update visibility when an attempted claim was pending a late loot-definition load.
@@ -1815,6 +1860,7 @@
         clearanceFootprints: plansByMapId.get(currentArea).clearanceFootprints,
         separator: plansByMapId.get(currentArea).separator && { col: plansByMapId.get(currentArea).separator.col, row: plansByMapId.get(currentArea).separator.row, cells: plansByMapId.get(currentArea).separator.cells, oreKind: plansByMapId.get(currentArea).separator.oreKind },
         banditSpawns: plansByMapId.get(currentArea).banditSpawns,
+        strongholdBarrels: plansByMapId.get(currentArea).strongholdBarrels,
         bodies: plansByMapId.get(currentArea).bodies,
         bodyStates: (bodiesByMapId.get(currentArea) || []).map(record => ({ id: record.body.id, riser: record.riser, armed: record.armedAt != null, risen: record.risen, looted: !!record.entity?.corpseLooted, state: record.entity?.state || null })),
         shattercasks: plansByMapId.get(currentArea).shattercasks,
@@ -1828,7 +1874,8 @@
         mushrooms: plansByMapId.get(currentArea).mushrooms,
       }) : null,
       currentState: profileForMapId(currentArea) ? clone(stateFor(profileForMapId(currentArea))) : null,
-      fortifiedStrongholds: [...sitesByMapId.values()].filter(site => site.fortifiedStronghold).map(site => ({ mapId:site.mapId, cleared:!!stateFor(site).occupantsCleared })),
+      fortifiedStrongholds: [...sitesByMapId.values()].filter(site => site.fortifiedStronghold).map(site => ({ mapId:site.mapId, cleared:!!stateFor(site).occupantsCleared,
+        barrelsTaken:stateFor(site).strongholdBarrelsTaken?.length||0, barrelsClaimed:stateFor(site).strongholdBarrelsClaimed?.length||0 })),
       fortifiedAssets: window.BanditStrongholds?.debugSnapshot?.() || null,
     };
   }
@@ -1838,6 +1885,7 @@
     TYPE_LABELS,
     applyWorkspaceProfiles,
     registerFortifiedStronghold, forgetFortifiedStronghold, fortifiedStrongholdCleared,
+    fortifiedBarrelStatus, markFortifiedBarrelTaken, claimFortifiedBarrel,
     registerOutdoorPuzzleSites,
     exteriorPuzzleState,markExteriorPuzzleSolved,
     sitesForZone,
