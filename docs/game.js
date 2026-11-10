@@ -9563,7 +9563,7 @@
         member.npcDiscoveredGiftTraits = window.NpcGifting?.serializeDiscoveredPrefs?.() || {};
         member.alchemyKnownEffects = window.AlchemySystem.serializeKnownEffects();
         member.alchemyKnownRecipes = window.AlchemySystem.serializeKnownRecipes();
-        member.alchemyFavoriteRecipes = window.AlchemySystem.serializeFavorites(); // Save this character's assembled reagent combinations.
+        member.alchemyFavoriteRecipes = window.AlchemySystem.serializeFavorites?.() || []; // Save this character's assembled reagent combinations.
         member.alchemyActiveEffects = window.AlchemySystem.serializeActiveEffects();
         member.alchemyReagentState = window.ReagentPlants.serializeZoneReagentState();
         member.knownFurnitureBlueprints = window.CraftingPanel?.serializeBlueprints?.() || [];
@@ -33486,7 +33486,7 @@
         // today's (not-yet-picked) wilderness reagent placements — all
         // world-scoped per character, same as the fields just above.
         window.AlchemySystem.restoreKnownRecipes(playerData.alchemyKnownRecipes, playerData.alchemyKnownEffects);
-        window.AlchemySystem.restoreFavorites(playerData.alchemyFavoriteRecipes); // Restore saved assemblies without fixing ingredient star tiers.
+        window.AlchemySystem.restoreFavorites?.(playerData.alchemyFavoriteRecipes); // Restore saved assemblies without fixing ingredient star tiers.
         window.AlchemySystem.restoreActiveEffects(playerData.alchemyActiveEffects);
         window.ReagentPlants.restoreZoneReagentState(playerData.alchemyReagentState);
         window.WildBerries.restoreState(playerData.wildBerryState);
