@@ -4,13 +4,13 @@
   const BANUBU_AREA_ID = 'map_northern_cliffs'; // Used to keep the exterior cave snore out of unrelated maps and Banubu's interior.
   const BANUBU_LOCALE_ID = 'locale_banubu_shrine'; // Used to resolve the live Tothal-shifted entrance transition rather than the locale anchor.
   const BANUBU_INTERIOR_ID = 'map_i_den_banubu'; // Used only as a compatibility fallback when an older generated transition lacks generatedLocaleId.
-  const MAX_CHUNK_DISTANCE = 2; // Used by the coarse proximity gate: the player's chunk may be the entrance chunk or up to two chunks away.
+  const MAX_CHUNK_DISTANCE = 4; // Used by the coarse proximity gate: double the previous two-chunk range to four chunks.
   const IDLE_RECHECK_MS = 250; // Used only while no snore is playing so range/night checks stay cheap off-screen.
   const FAILED_START_RETRY_MS = 1000; // Used to avoid frame-spamming a temporarily blocked audio backend.
   const SNORE_TEMPO = 1 / 9; // Used to triple the existing one-third-speed Grehlr snore's audible duration.
   const SHORT_SNORE_TEMPO = 2 / 3; // Used by the short follow-up so its authored utterance lasts 50% longer while keeping the separate +2-semitone pitch.
   const SHORT_SNORE_PITCH_OFFSET = 2; // Raises only the short follow-up by a couple of semitones.
-  const ACOUSTIC_EARSHOT_CHUNKS = 5; // Used only for smooth distance/elevation attenuation after the stricter two-chunk gate passes.
+  const ACOUSTIC_EARSHOT_CHUNKS = 10; // Used for smooth distance/elevation attenuation; doubled with the four-chunk activation radius.
   const SCHEDULER_ID = 'banubu-night-snore'; // Used to keep development reloads from registering duplicate frame subscribers.
 
   let nextAttemptAtMs = 0; // Used to enforce the measured post-snore silence and throttle inactive/failed checks.
@@ -22,6 +22,7 @@
   let nextSnorePhase = 'long'; // Chooses the long or short call when the next eligible frame starts playback.
   let cycleDurationMs = 0; // Accumulates audible durations of the two calls for the following equal-length pause.
   let activeSnoreToken = 0; // Invalidates delayed audio callbacks after dialogue or disposal cancels a call.
+  let discoveredOnThisInteriorVisit = false; // Avoids reading and rewriting persistent map-discovery metadata on every audio tick.
 
   const debugState = {
     status: 'booting',
@@ -201,7 +202,7 @@
       acousticGain,
     });
 
-    if (chunkDistance > MAX_CHUNK_DISTANCE) return { ok: false, reason: `outside two-chunk range (${chunkDistance})` };
+    if (chunkDistance > MAX_CHUNK_DISTANCE) return { ok: false, reason: `outside four-chunk range (${chunkDistance})` };
     if (acousticGain <= 0) return { ok: false, reason: 'acoustically out of range' };
 
     return {
@@ -344,7 +345,13 @@
 
   function update(frameContext = {}) {
     const timestamp = finite(frameContext.timestamp, nowMs());
+    window.ZoneDenTotemFeatures?.updateBanubuVisibility?.(); // Keep twilight fades and the discovered cave facade current even during a long snore.
     const deps = gameDeps(); // Dialogue state is authoritative even while a slowed snore is already playing.
+    const insideBanubu = currentArea(deps) === BANUBU_INTERIOR_ID; // Reused for one-shot discovery on interior transitions.
+    if (insideBanubu && !discoveredOnThisInteriorVisit && window.WildernessMap?.discoverEnteredLocale) {
+      window.WildernessMap.discoverEnteredLocale(BANUBU_LOCALE_ID); // Never discover the cave from exterior fog proximity.
+      discoveredOnThisInteriorVisit = true;
+    } else if (!insideBanubu) discoveredOnThisInteriorVisit = false;
     if (deps?.isDialogueOpen?.() && (currentArea(deps) === BANUBU_INTERIOR_ID || currentArea(deps) === BANUBU_AREA_ID)) {
       activeSnoreToken++;
       activeSnoreController?.abort();
