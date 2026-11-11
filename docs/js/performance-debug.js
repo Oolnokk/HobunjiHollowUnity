@@ -1240,6 +1240,14 @@
     }
 
     anchor.insertAdjacentElement('afterend', box);
+    // Player-facing (not dev-only): lets the player's own rig use the same lower vertex cap as NPCs, enemies and animals.
+    const budgetApi = root.PNGPlaneAvatar?.meshBudget;
+    if (budgetApi && !document.getElementById('settingPlayerMeshCap')) {
+      const playerCap = makeCheckboxRow('settingPlayerMeshCap', 'Player uses the NPC mesh cap', budgetApi.playerMode() === 'npc',
+        'Off (default): your character keeps full mesh detail. On: your character uses the same lower vertex cap as NPCs, enemies and animals, which costs less to draw. Your character is rebuilt when you change this.');
+      playerCap.input.addEventListener('change', () => budgetApi.setPlayerMode(playerCap.input.checked ? 'npc' : 'full'));
+      anchor.insertAdjacentElement('afterend', playerCap.row);
+    }
     syncDebugSettingsUI();
   }
 
