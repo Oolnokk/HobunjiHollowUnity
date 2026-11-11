@@ -24,6 +24,41 @@ for(let index=0;index<80;index++){
   assert.ok(song.notes.every(note=>note.lengthTicks>=2&&note.startTick%2===0),'eighth-note grid has no sixteenth attacks');
 }
 
+
+function barsOf(song){
+  return Array.from({length:song.measures},(_,bar)=>song.notes.filter(note=>
+    Math.floor(note.startTick/16)===bar).map(note=>({
+      pitch:note.index,at:note.startTick%16,length:note.lengthTicks,
+    })));
+}
+for(let difficulty=1;difficulty<=5;difficulty++){
+  for(let i=0;i<100;i++){
+    const song=Song.generate('rhythm-proof-'+difficulty+'-'+i,{difficulty});
+    const bars=barsOf(song);
+    assert.equal(song.notes[0].startTick,0,'each song starts on beat one');
+    assert.equal(song.notes.at(-1).startTick+song.notes.at(-1).lengthTicks,song.totalTicks,
+      'phrases do not leave accidental silences or dangling notes');
+    for(const bar of bars){
+      assert.equal(bar[0].at,0,'each 4/4 bar begins with a downbeat attack');
+      assert.ok(bar.some(note=>note.at===8),'beat three stays a rhythmic anchor');
+      assert.equal(bar.reduce((sum,note)=>sum+note.length,0),16,'each motif fills its bar exactly');
+      assert.ok(bar.every(note=>[2,4,8].includes(note.length)),'all motifs use quarter, half or eighth notes');
+      assert.equal(bar[bar.length-1].at+bar[bar.length-1].length,16,'each bar ends on the measure boundary');
+    }
+    if(song.measures===4){
+      assert.deepEqual(bars[0],bars[1],'bar two repeats the recognizable rhythm and melody');
+      assert.deepEqual(bars[0],bars[2],'bar three recalls the motif before the cadence');
+    }
+    if(song.measures>1)assert.deepEqual(
+      bars[0].filter(note=>note.at<8).map(note=>note.at),
+      bars.at(-1).filter(note=>note.at<8).map(note=>note.at),
+      'the final bar retains its motif before the cadential variation'
+    );
+    assert.equal(bars.at(-1).at(-1).pitch,0,'the song resolves onto the tonic');
+    assert.equal(bars.at(-1).at(-1).length,8,'the ending note lasts a full half-note');
+  }
+}
+
 const requestedMeasures=Song.generate('four-bars',{measures:4,bpm:300});
 assert.equal(requestedMeasures.measures,4);
 assert.equal(requestedMeasures.totalTicks,64);
