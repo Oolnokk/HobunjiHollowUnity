@@ -41,8 +41,8 @@
     const hairPlane = makeSheet(null,.002,THREE.FrontSide);
     const rearPlane = makeSheet(null,-.002,THREE.BackSide);
     const hoodPlane = makeSheet(null,.001,THREE.DoubleSide,.25);
-    const rigidFrontPlane = makeSheet(null,.0015,THREE.FrontSide); // Rigid beard/side-hair pixels remain on the head portrait plane, not the bending mesh.
-    const rigidRearPlane = makeSheet(null,-.0015,THREE.BackSide); // Separate rear attachment mask for hairstyles with both planes.
+    const rigidFrontPlane = makeSheet(null,.0008,THREE.FrontSide); // Rigid pixels sit just above the head but beneath the hood and moving 3D hair.
+    const rigidRearPlane = makeSheet(null,-.0008,THREE.BackSide); // Rear pixels remain on their unbent portrait surface.
     rigidFrontPlane.name='spline_rigid_front';rigidRearPlane.name='spline_rigid_rear';
     sheetGroup.add(headPlane,hoodPlane,rigidFrontPlane,rigidRearPlane,hairPlane,rearPlane);
     let mode='translate', state=null, disposed=false, dirty=false;
