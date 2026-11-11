@@ -71,9 +71,26 @@ const server=http.createServer((req,res)=>{
     assert(before.viewer.gpuHair?.ok,
       'the beard must actually render colored pixels on the GPU: '+JSON.stringify(before.viewer.gpuHair));
     assert(before.viewer.arrows.some(item=>item.axis==='x'),'the selected knot has a real X-axis move gizmo');
-    await page.locator('#autoSeam').click();
-    const seam=await debug();
-    assert(seam.seamCount>3,'generate head silhouette produces editable mask dabs from the indexed head image');
+    assert(before.regionMasks.front>0,'actual head-overlapping beard pixels default to the rigid region');
+    assert(before.viewer.textures.rigidFront?.opaque>0,'the non-deforming head attachment has its own visible 3D sprite');
+    await page.locator('#autoMask').click();
+    const initial=await debug();
+    assert(initial.regionMasks.front>0,'automatic overlap classification produces a non-empty rigid region');
+    const sample=await page.evaluate(()=>{
+      const mask=JSON.parse(document.querySelector('#json').value).regionMasks.front;
+      const [start,length]=mask.runs[Math.floor(mask.runs.length/2)];
+      const index=start+Math.floor(length/2);
+      return {u:(index%200+.5)/200,v:(Math.floor(index/200)+.5)/200};
+    }); // Choose an actual rigid pixel, not a guessed beard coordinate.
+    const bounds=await page.locator('#preview').boundingBox();
+    const px=bounds.x+sample.u*bounds.width,py=bounds.y+sample.v*bounds.height;
+    await page.locator('#eraseMode').click();await page.mouse.click(px,py);
+    const erased=await debug();
+    assert(erased.regionMasks.front<initial.regionMasks.front,'eraser transfers pixels from rigid to flexible');
+    await page.locator('#paintMode').click();await page.mouse.click(px,py);
+    const repainted=await debug();
+    assert(repainted.regionMasks.front>erased.regionMasks.front,'brush transfers pixel ownership back to the rigid head plane');
+    await page.locator('#moveMode').click();
     await page.locator('#gizmoTranslate').click();
     const move=(await debug()).viewer.arrows.find(item=>item.axis==='x');
     await page.mouse.move(move.x,move.y);
@@ -92,10 +109,11 @@ const server=http.createServer((req,res)=>{
     await page.mouse.up();
     const rotated=await debug();
     assert(Math.abs(rotated.pose.roll)>0.5,'dragging the Z rotation ring authors the real roll pose');
-    assert.equal(rotated.seamCount,seam.seamCount,'3D authoring does not discard the editable generated mask');
+    assert.equal(rotated.regionMasks.front,repainted.regionMasks.front,
+      '3D knot posing does not discard the separately authored rigid/flexible pixel region');
     assert.equal(errors.filter(text=>/uncaught|typeerror|referenceerror|syntaxerror/i.test(text)).length,0,
       'No unhandled source error: '+errors.join('\n').slice(-2400));
-    console.log('Portrait spline author browser: indexed head/hair and 3D WebGL gizmos + editable silhouette seam pass.');
+    console.log('Portrait spline author browser: indexed head and separate rigid/flexible WebGL hair surfaces, 2D brush/eraser, and 3D gizmos pass.');
   }finally{
     await browser?.close();await new Promise(resolve=>server.close(resolve));
   }
