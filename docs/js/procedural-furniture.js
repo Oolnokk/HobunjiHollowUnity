@@ -334,6 +334,18 @@
         const sourceExtent=Math.max(.001,size.x,size.y,size.z);
         const targetExtent=Math.max(.001,part.transform.sx,part.transform.sy,part.transform.sz);
         holder.scale.setScalar(targetExtent/sourceExtent);
+        if(part.statuePartScaleAxes){
+          // Rig Coordinates authors independent floor-frame hand/foot dimensions.
+          // The source model's original proportions are preserved before these
+          // additional statue-only anatomy multipliers (ordinary furniture is untouched).
+          const axes=part.statuePartScaleAxes;
+          holder.scale.multiply(new THREE.Vector3(
+            Number(axes.x)>0?Number(axes.x):1,
+            Number(axes.y)>0?Number(axes.y):1,
+            Number(axes.z)>0?Number(axes.z):1
+          ));
+        }
+        if(part.statueMirrorX===true)holder.scale.x*=-1; // Same left-source -> right-hand mirror as ProceduralHandAttachments.
       }else{
         holder.scale.set(part.transform.sx/Math.max(.001,size.x),part.transform.sy/Math.max(.001,size.y),part.transform.sz/Math.max(.001,size.z));
       } // Ordinary furniture GLBs retain their independent authored X/Y/Z dimensions.
