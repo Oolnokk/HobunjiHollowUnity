@@ -333,7 +333,19 @@
         // tall wooden plank when imported as statue furniture.
         const sourceExtent=Math.max(.001,size.x,size.y,size.z);
         const targetExtent=Math.max(.001,part.transform.sx,part.transform.sy,part.transform.sz);
-        holder.scale.setScalar(targetExtent/sourceExtent);
+        if(part.statueRigAlignment==='hand'||part.statueRigAlignment==='foot'){
+          // The living GLB solvers normalize on Y, *not* max dimension. Hand art
+          // uses its imported 0,0,0 as the grip; foot art uses the bottom center
+          // as ground contact. Furniture's default bounding-box recentering
+          // destroys those rig conventions even when the transforms are right.
+          holder.scale.setScalar(Math.max(.001,part.transform.sy)/Math.max(.001,size.y));
+          if(part.statueRigAlignment==='foot'){
+            instance.position.x-=center.x;
+            instance.position.y-=box.min.y;
+            instance.position.z-=center.z;
+          }
+          // Hands retain their untouched imported grip origin.
+        }else holder.scale.setScalar(targetExtent/sourceExtent);
         if(part.statuePartScaleAxes){
           // Rig Coordinates authors independent floor-frame hand/foot dimensions.
           // The source model's original proportions are preserved before these
@@ -349,7 +361,8 @@
       }else{
         holder.scale.set(part.transform.sx/Math.max(.001,size.x),part.transform.sy/Math.max(.001,size.y),part.transform.sz/Math.max(.001,size.z));
       } // Ordinary furniture GLBs retain their independent authored X/Y/Z dimensions.
-      instance.position.sub(center); holder.add(instance); mesh.add(holder);
+      if(!part.statueRigAlignment)instance.position.sub(center); // Legacy furniture stays centered; rig-aligned statues preserve anatomical pivots.
+      holder.add(instance); mesh.add(holder);
       mesh.material.colorWrite = false; mesh.material.depthWrite = false; mesh.castShadow = false; mesh.receiveShadow = false; // Keeps a tiny renderable driver for existing rigid-piece animation hooks.
       mesh.userData.glbReady = true;
       mesh.userData.onRockSourceReady?.(); // Resolve contacts against real imported geometry after all asynchronous model parts become available.
