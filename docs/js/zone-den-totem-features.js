@@ -80,9 +80,12 @@
       for (const material of (Array.isArray(mesh.material) ? mesh.material : [mesh.material])) {
         if (!material) continue;
         material.opacity = alpha;
-        material.transparent = alpha < 0.999;
-        material.depthWrite = alpha >= 0.999;
-        material.needsUpdate = true;
+        const fadeTransparent = alpha < 0.999; // Avoid needless shader recompilation while an existing twilight fade is progressing.
+        if (material.transparent !== fadeTransparent || material.depthWrite === fadeTransparent) {
+          material.transparent = fadeTransparent;
+          material.depthWrite = !fadeTransparent;
+          material.needsUpdate = true;
+        }
       }
     }
     return alpha;
