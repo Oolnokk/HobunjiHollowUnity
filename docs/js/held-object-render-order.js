@@ -1608,15 +1608,19 @@
         }
         window.PerfProfiler?.end(prepPerf);
         let groupCulled = null; // Only depth needs the bounded world occluder list.
+        let npcReplayRestore = null; // Remove off-scissor uncullable NPC rigs only during this depth submission.
         const redundantDepth = supplementDepth ? hideOrdinaryDepthRedraws(scene, cutoutDepthMeshes, protectedDepthMeshes) : null; // Retain normal opaque cover while repairing cutouts.
         try {
           if (groupScissored && groupCullCandidates) groupCulled = cullReplayGroup(camera, groupCullCandidates);
+          if (groupScissored) npcReplayRestore = window.NpcViewFrustumCull?.suspendOutsideReplayRect?.(
+            scene, camera, elevationScissorRect, scissorTargetWidth, scissorTargetHeight, group.meshes);
           camera.layers.mask = originalCameraMask;
           const depthRebuildPerf = window.PerfProfiler?.begin('held-overlay: elevation depth rebuild');
           rawRender.call(renderer, scene, camera);
           window.PerfProfiler?.end(depthRebuildPerf);
           nonGroundDepthReplayCount++;
         } finally {
+          npcReplayRestore?.(); // Restore NPC appearance before the held/stencil color draw.
           if (redundantDepth) restoreVisibility(redundantDepth);
           if (groupCulled) restoreVisibility(groupCulled);
           if (canLockColorMask) {
@@ -1835,11 +1839,15 @@
         scene.overrideMaterial = null;
         camera.layers.mask = MASK_ALL;
         let groupCulled = null; // Keep the final depth restore outside this group’s tighter cull.
+        let npcReplayRestore = null; // Skip remote NPC portraits/limbs during just this local depth rebuild.
         try {
           if (groupScissored && groupCullCandidates) groupCulled = cullReplayGroup(camera, groupCullCandidates);
+          if (groupScissored) npcReplayRestore = window.NpcViewFrustumCull?.suspendOutsideReplayRect?.(
+            scene, camera, elevationScissorRect, scissorTargetWidth, scissorTargetHeight, group.meshes);
           rawRender.call(renderer, scene, camera);
           nonGroundDepthReplayCount++;
         } finally {
+          npcReplayRestore?.(); // Restore original actor visibility before drawing the group shell.
           if (groupCulled) restoreVisibility(groupCulled);
           if (group.regions.length) setGroundElevationFilter(groundMaterials, null);
         }
