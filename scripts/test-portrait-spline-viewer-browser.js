@@ -72,6 +72,16 @@ const server=http.createServer((req,res)=>{
     assert(before.viewer.gpuHair?.ok,
       'the beard must actually render colored pixels on the GPU: '+JSON.stringify(before.viewer.gpuHair));
     assert(before.viewer.arrows.some(item=>item.axis==='x'),'the selected knot has a real X-axis move gizmo');
+    const natural=await page.evaluate(()=>{
+      const authored=JSON.parse(document.querySelector('#json').value);
+      return {tip:authored.segments.at(-1).poses.right.translate.x,
+        upper:authored.segments[0].poses.right.translate.x,
+        blendRadius:authored.blendRadiusPx,follow:authored.tipFollow};
+    });
+    assert(natural.tip>natural.upper&&natural.tip>0,
+      'new cosmetics start with natural, tip-led poses based on actual strand length: '+JSON.stringify(natural));
+    assert(natural.blendRadius>0&&natural.follow>0,
+      'automatic motion blend and bottom-parent influence are enabled by default');
     assert(before.regionMasks.front>0,'actual head-overlapping beard pixels default to the rigid region');
     assert(before.viewer.textures.rigidFront?.opaque>0,'the non-deforming head attachment has its own visible 3D sprite');
     await page.locator('#autoMask').click();
@@ -96,6 +106,10 @@ const server=http.createServer((req,res)=>{
     const repainted=await debug();
     assert(repainted.regionMasks.front>erased.regionMasks.front,
       'brush transfers pixel ownership back to the rigid head plane: '+JSON.stringify({afterErase:erased.regionMasks,afterPaint:repainted.regionMasks}));
+    await page.locator('#generateBlend').click();
+    const generated=await debug();
+    assert.equal(generated.regionMasks.front,repainted.regionMasks.front,
+      'regenerating natural six-direction poses never discards manual rigid/flexible mask edits');
     await page.locator('#moveMode').click();
     await page.locator('#gizmoTranslate').click();
     const move=(await debug()).viewer.arrows.find(item=>item.axis==='x');
