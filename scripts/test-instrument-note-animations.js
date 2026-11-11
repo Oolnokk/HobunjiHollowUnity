@@ -611,7 +611,7 @@ const loader=vm.runInNewContext(editor.slice(loaderStart,loaderEnd)+'\nloadAnimO
   defaultPose:(x,y,z,pitch,yaw,bodyYaw,roll)=>({x,y,z,pitch,yaw,bodyYaw,roll}),
   FREE_RIGHT_HAND_CHANNELS:['x','y','z','pitch','yaw','roll'],ATTACK_POSE_SIDES:['left','right'],
   normalizedPoseElbow:p=>p && [p.x,p.y,p.z].every(Number.isFinite)?{...p}:null,
-  SharedAttackPose:{MAX_BODY_SINK_PCT:25},
+  SharedAttackPose:{MAX_BODY_SINK_PCT:25, validFlailLength:value=>value == null || !Number.isFinite(Number(value)) ? 1 : Math.max(0.1,Math.min(3,Number(value)))}, // Editor imports an optional connector reach alongside instrument pose fields.
   window:{
     HobunjiAttackEditorHandShoulderControls:{loadFromAnimationObject:()=>{}},
     HobunjiHandToolGrips:{loadEditorAnimationGrip:o=>importGripCalls.push(o)},
@@ -629,6 +629,7 @@ assert.equal(importedAnim.poses.strike.elbows.right.y,-0.28,'import must preserv
 assert.equal(importedAnim.poses.neutral.scale,0.85,'import must preserve Kurraya neutral scale');
 assert.equal(importedAnim.poses.strike.roll,11,'import must preserve distinct Strike roll');
 assert.equal(importedAnim.poses.strike.bodySink,3,'import must preserve the new 3% body sink');
+assert.equal(importedAnim.poses.neutral.flailLengthScale,1,'old instrument pose exports remain natural connector length');
 assert.equal(importGripCalls[0].poses.neutral.secondaryGrip.enabled,true,'import must forward Neutral 2H to the shared grip system');
 assert.equal(importModeCalls[0].gripMode,'palm-parallel','import must restore the exact palm mode');
 
