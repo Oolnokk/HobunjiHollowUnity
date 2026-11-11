@@ -1956,7 +1956,9 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
           drawLayerWithEmote(img, resolveXform(entry.layer), tint, 1, sourceKey, partCtx));
         const key = slot + ':' + String(entry.group?.id || 'unknown') + ':' + i; // Matches front and back independently composed slot indices.
         const view = renderBehindView ? 'rear' : 'front'; // Distinct rigid/flexible author masks for independently rendered planes.
-        const layers = window.PortraitSplineRig?.splitByMask?.(partCanvas, rig.regionMasks?.[view]);
+        const layers = window.PortraitSplineRig?.splitByMask?.(partCanvas, rig.regionMasks?.[view], {
+          stitchPx: window.PortraitSplineRig.stitchWidthPx(rig),
+        }); // Carry a full vertex-cell of rigid pixels on the anchored end of the flexible mesh so the cut cannot open into a visible gap.
         if (layers?.rigid) ctx.drawImage(layers.rigid, 0, 0, PORTRAIT_CW, PORTRAIT_CH); // Head-attached pixels stay on the original portrait plane, preserving tint and layer order.
         canvas.hobunjiSplineParts.push({ key, slot, rig, canvas: layers?.flexible || partCanvas, phase: (i + 1) * 1.37 });
         continue; // Only pixels assigned to the flexible region enter the spline's moving mesh.
