@@ -30836,6 +30836,7 @@
       });
 
       window.RangedWeapons?.init({
+        getFrameSerial: () => gameFrameSerial, // Shares one portrait hitbox batch across hostile AI and reticle consumers even on slow frames.
         player,
         playerRadius: PLAYER_RADIUS,
         TILE,

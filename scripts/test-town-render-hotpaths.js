@@ -622,7 +622,7 @@ const stencilAt = heldRender.indexOf('prepareSubmergedOverlayStencilMaterials(gr
 const heldDrawAt = heldRender.indexOf("window.PerfProfiler?.begin('held-overlay: elevation overlay render')");
 const tintAt = heldRender.indexOf('const tintStates = prepareOverlayCoverTintMaterials(tintCovers);');
 const coverDepthAt = heldRender.indexOf('const coverDepthStates = prepareTintCoverDepthMaterials(tintCovers);');
-const groundDepthRestoreAt = heldRender.indexOf('const groundMaterialStates = prepareGroundDepthMaterials(', heldDrawAt);
+const groundDepthRestoreAt = heldRender.indexOf('const groundMaterialStates =', heldDrawAt);
 assert.ok(depthClearAt >= 0 && depthClearAt < depthDrawAt && depthDrawAt < stencilAt && stencilAt < heldDrawAt && heldDrawAt < groundDepthRestoreAt && groundDepthRestoreAt < tintAt && tintAt < coverDepthAt,
   'reconstructed solid depth, gear/hand/foot draw, opaque grass-depth restore BEFORE tint, then translucent depth restore');
 
@@ -644,7 +644,7 @@ for (const probe of probes) {
     probe.name + ': a lower flood fragment cannot pass restored opaque grass depth');
 }
 assert.equal(0.5 <= 1.0, true, 'foreground water remains eligible to tint an object behind it');
-assert.match(heldRender, /const groundMaterialStates = prepareGroundDepthMaterials\([\s\S]*?camera.layers.mask = GROUND_REPLAY_MASK/,
+assert.match(heldRender, /const groundMaterialStates =[\s\S]*?prepareGroundDepthMaterials\([\s\S]*?camera.layers.mask = GROUND_REPLAY_MASK/,
   'ground restore runs on the dedicated colorless depth layer');
 assert.match(heldRender, /function prepareGroundDepthMaterials\(ground\)[\s\S]*?material.colorWrite = false/,
   'restoring ground cannot overwrite the already drawn visible held/hand/foot colors');
