@@ -68,8 +68,8 @@ const renderer={
     assert.equal(this.autoClear,false,'query pass never clears the real scene depth');
     for(const mesh of scene.children)if(mesh.visible){
       mesh.onBeforeRender?.(this,scene,camera,mesh.geometry,mesh.material);
+      if(forcedFailure)throw Error('simulated renderer exception'); // Tests a throw while WebGL2 query is still active.
       mesh.onAfterRender?.(this,scene,camera,mesh.geometry,mesh.material);
-      if(forcedFailure)throw Error('simulated renderer exception');
     }
   },
 }; // One renderer.render for the whole query batch; 8 objects maximum per pass.
@@ -163,6 +163,7 @@ api.probeAfterBase();
 api.endFrame();
 forcedFailure=false;
 assert(api.snapshot().gpuError,'unexpected WebGL render failure fails open permanently');
+assert.equal(currentQuery,null,'exception recovery closes the active WebGL query before normal rendering resumes');
 assert.equal(covered.visible,true,'query error restores every NPC visual immediately');
 api.setEnabled(false);
 assert.equal(api.snapshot().tracked,0,'disabled mode releases all historical actor states');
