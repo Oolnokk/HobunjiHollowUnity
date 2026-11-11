@@ -1518,6 +1518,7 @@ function flipPose(p) {
   const mirrored = SharedAttackPose.MIRRORED_POSE_KEYS; // Same left/right-handed channels the game negates for Backhand.
   const flipped = defaultPose(mirrored.x ? -p.x : p.x, mirrored.y ? -p.y : p.y, mirrored.z ? -p.z : p.z, mirrored.pitch ? -p.pitch : p.pitch, mirrored.yaw ? -p.yaw : p.yaw, mirrored.bodyYaw ? -p.bodyYaw : p.bodyYaw, mirrored.roll ? -(p.roll || 0) : (p.roll || 0));
   if (p.scale != null) flipped.scale = p.scale;
+  if (p.flailLengthScale != null) flipped.flailLengthScale = SharedAttackPose.validFlailLength(p.flailLengthScale); // Mirroring a strike cannot erase its authored rope/chain reach.
   if (p.bodySink != null) flipped.bodySink = p.bodySink; // Sinking is symmetric about the midline; Backhand never mirrors it.
   if (p.shoulderAim) flipped.shoulderAim = { ...p.shoulderAim };
   if (p.secondaryGrip) flipped.secondaryGrip = { ...p.secondaryGrip };
