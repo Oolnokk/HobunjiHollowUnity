@@ -58,7 +58,7 @@
     longHaftedTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
     heavyWeapon: Object.freeze({ x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 }),
     lightWeapon: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114, flailLengthScale: 0.6 }),
-    dualWieldMain: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }),
+    dualWieldMain: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114, flailLengthScale: 0.6 }),
     dualWieldOffhand: Object.freeze({ x: 0.13, y: -0.04, z: 0.1, pitch: 40, yaw: 88, bodyYaw: -40, roll: -73 }),
   });
   const PREVIOUS_TOP_HEAVY_TOOL_STANCE = Object.freeze({ x: -0.14, y: -0.07, z: -0.18, pitch: -22, yaw: -21, bodyYaw: -8, roll: -99 }); // Recognizes untouched pre-copy browser overrides.
@@ -640,6 +640,7 @@
       combatStrikeFrac: visual?.sf ?? null,
       combatHoldFrac: visual?.hf ?? null,
       combatPoseScale: visual?.poseScale ?? 1,
+      flailLengthScale: getRuntimeState().flailLengthScale, // Existing debugSnapshot stays in parity with the allocation-free runtime view.
       combatDirSign: visual?.dirSign ?? 1,
       combatNeutralMirrorSign: visual?.neutralMirrorSign ?? 1,
       combatReturnNeutralMirrorSign: visual?.returnNeutralMirrorSign ?? 1,
