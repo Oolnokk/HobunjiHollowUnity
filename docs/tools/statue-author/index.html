@@ -521,7 +521,11 @@ async function makeProject(){
   if(myGeneration!==generation)return null;
   const rig=measureNpcRig(front,back,profile,npc);
   const sampledRig=window.HobunjiStatueRigSnapshot?.resolve?.({THREE,npc,profile,frame:rig});
-  if(!sampledRig?.rigProfileFound)throw Error('No canonical Multi-Avatar rig profile for '+(rig.speciesId||npc.appearance.speciesId)+' / '+npc.appearance.gender);
+  if(!sampledRig)throw Error('Shared Multi-Avatar rig snapshot could not be created');
+  // Creature-bodied and not-yet-authored humanoids have no canonical character
+  // anchor profile. Retain measured PNGPlaneAvatar dimensions rather than
+  // silently borrowing another species' authored shoulder/leg coordinates.
+  if(!sampledRig.rigProfileFound)runtimeErrors.push('Missing Rig Coordinates profile: '+sampledRig.profileKey+'; measured avatar proportions retained.');
   const parts=makeStaticParts(front,back,head,backHead,profile,pose,filename,role,weapons,rig,baseColor,!!npc.statueHeroLoadout,sampledRig);
   // The runtime schema is also accepted by Furniture Author's existing JSON import.
   return {schema:'hobunji_furniture_surface_author.v58',key:safeName(name).toLowerCase(),id:safeName(name),
