@@ -149,8 +149,8 @@
   function flailLengthScaleAt(pose, progress, wf, sf, hf, sequence = 'attack', power = 1) {
     const neutral = validFlailLength(pose?.neutral?.[FLAIL_LENGTH_KEY]);
     const returning = validFlailLength(pose?.returnNeutral?.[FLAIL_LENGTH_KEY], neutral);
-    const windup = validFlailLength(pose?.windup?.[FLAIL_LENGTH_KEY], neutral);
-    const strike = validFlailLength(pose?.strike?.[FLAIL_LENGTH_KEY], neutral);
+    const windup = validFlailLength(pose?.windup?.[FLAIL_LENGTH_KEY]); // Unset attack keyframes use natural reach, matching the editor's 1× slider.
+    const strike = validFlailLength(pose?.strike?.[FLAIL_LENGTH_KEY]); // Neutral shortening remains a separate authorable pose value.
     const p = Number.isFinite(power) ? power : 1;
     return validFlailLength(sequencedPoseLerp(sequence, progress, wf, sf, hf,
       neutral + (windup - neutral) * p, neutral + (strike - neutral) * p, neutral, returning));
