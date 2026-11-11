@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>Tropical Wet/Dry Trench Farm</title>
   <link rel="stylesheet" href="utility-spyglass.css?v=20261103spyglassControls1" />
+  <link rel="stylesheet" href="world-town-progress.css?v=20261111worldProgress1" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <!-- Parser-time dependency gate used by modules that may be dynamically
        injected long before game.js. Keep this near the top: livestock
@@ -1357,6 +1358,7 @@
         <button class="mp-tab"        data-mpanel="progress"      role="tab">⭐ Progress</button>
         <button class="mp-tab"        data-mpanel="crafting"      role="tab">🔨 Crafting</button>
         <button class="mp-tab"        data-mpanel="map"           role="tab">🗺 Map</button>
+        <button class="mp-tab"        data-mpanel="worldProgress" role="tab">📈 Town Progress</button>
         <button class="mp-tab"        data-mpanel="tasks"         role="tab">📋 Tasks</button>
         <button class="mp-tab"        data-mpanel="calendar"      role="tab">📅 Calendar</button>
         <button class="mp-tab"        data-mpanel="farm"          role="tab">🚜 Farm</button>
@@ -1536,6 +1538,12 @@
           </div>
         </div>
       </div><!-- /mpMap -->
+
+      <!-- ── World Town Progress pane: read-only permanent town and Great Fey progress.
+           See window.TownProgressPanel; separate from character-saved mpProgress. -->
+      <div class="mp-pane" id="mpWorldProgress" aria-label="Town Progress">
+        <div class="town-progress-page"><div class="town-progress-muted">Loading town progress…</div></div>
+      </div><!-- /mpWorldProgress -->
 
       <!-- ── Farm pane: the farm's identity/progression hub — name, owner,
            a read-only layout glance, livestock roster + breeding, shared
@@ -2915,6 +2923,7 @@
   <script src="js/tutorial-unlock-visits.js?v=20260930doorstep1"></script>
   <script src="js/farmhouse-login-spawn.js?v=20260930doorstep1"></script>
   <script src="js/banubu-questline.js?v=20261026banubuoverpass3"></script>
+  <script src="js/world-town-progress.js?v=20261111worldProgress1"></script> <!-- Save-backed World → Town Progress pane; no polling or extra quest storage. -->
   <!-- Completed world-space loot and XP rewards move into the five-row, screen-fixed reading queue. -->
   <script src="js/reward-readout.js?v=20261107rewardReadout1"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
