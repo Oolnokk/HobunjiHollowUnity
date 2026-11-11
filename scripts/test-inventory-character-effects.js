@@ -159,8 +159,8 @@ assert.match(dodgeSource, /BASE_DODGE_SOMERSAULT_DUR_S = 0\.22/, 'UI dodge-durat
 assert.deepEqual({ ...api.__test.BASE_DODGE_PROFILE }, { durationS: 0.22, iframeMs: 380 }, 'module exposes its dodge timing baseline for regression tests');
 
 
-assert.match(source, /panel\\.replaceChildren\\(trinketCard, outfitCard, finalCard\\)/, 'trinket effects sit before Outfit and Final Values in the left effects stack');
-assert.match(source, /renderRows\\(ui\\.trinketCard/, 'trinket summary rows refresh when the Gear panel refreshes');
+assert.match(source, /panel\.replaceChildren\(trinketCard, outfitCard, finalCard\)/, 'trinket effects sit before Outfit and Final Values in the left effects stack');
+assert.match(source, /renderRows\(ui\.trinketCard/, 'trinket summary rows refresh when the Gear panel refreshes');
 const noTrinkets = api.__test.composeTrinketEffects({ equippedEntries: () => [], capacity: () => 8 }); // Empty Gear must show a readable state without affecting the other cards.
 assert.equal(noTrinkets.equipped, 0);
 assert.equal(noTrinkets.rows[0].label, 'No trinkets equipped');
