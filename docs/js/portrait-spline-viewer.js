@@ -386,6 +386,8 @@
       return {
         webgl:true,mode,selectedKnot:selectedIndex,knots:dots.length,handles:handles.length,
         ribbonVertices:hairPlane.geometry?.attributes?.position?.count||0,
+        stitchedFrontPixels:state?.stitchedFrontPixels||0,
+        stitchedRearPixels:state?.stitchedRearPixels||0, // Counts original rigid pixels carried on the flat end of the continuous hair mesh.
         headLoaded:!!headPlane.material.map,hairLoaded:!!hairPlane.material.map,
         textures:{head:headPlane.userData.pixelStats||null,hair:hairPlane.userData.pixelStats||null,
           rear:rearPlane.userData.pixelStats||null,hood:hoodPlane.userData.pixelStats||null,
