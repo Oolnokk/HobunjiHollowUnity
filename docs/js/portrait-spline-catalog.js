@@ -105,9 +105,9 @@
       const portraitPath = /^(?:\.\/)?assets\//i.test(headPath) || /^https?:\/\//i.test(headPath)
         ? headPath : 'assets/' + headPath.replace(/^\.\//, ''); // Species JSON headSprite is relative to assets/, unlike cosmetic JSON image.url.
       const image = await imageLoader(assetUrl(portraitPath));
-      const xform = data.headXform || {};
-      const sx = Number(xform.sx ?? xform.scaleX ?? .95), sy = Number(xform.sy ?? xform.scaleY ?? 1.14);
-      const ax = Number(xform.ax ?? 0), ay = Number(xform.ay ?? -.1);
+      const xform = window.getPortraitXformPreset?.('B') || PRESERVED_B; // Emergency fallback must match the game's live portrait B preset, NOT species anatomy headXform.
+      const sx = Number(xform.sx ?? xform.scaleX ?? PRESERVED_B.sx), sy = Number(xform.sy ?? xform.scaleY ?? PRESERVED_B.sy);
+      const ax = Number(xform.ax ?? PRESERVED_B.ax), ay = Number(xform.ay ?? PRESERVED_B.ay);
       const canvas = document.createElement('canvas'); // Exactly the 200px portrait coordinates used for the cosmetic and seam masks.
       canvas.width = canvas.height = 200;
       const ctx = canvas.getContext('2d');
