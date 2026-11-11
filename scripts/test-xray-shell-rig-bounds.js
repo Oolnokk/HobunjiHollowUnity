@@ -84,12 +84,32 @@ assert(batch.groups.every(x=>x.regions.length===8),'shader tile uniform budget r
 const untrusted=isolated.map(mesh=>({...mesh,__hobunjiXrayBoundParity:null}));
 assert.equal(groupActors({},null,{},untrusted).groups.length,24,'unknown onBeforeRender hooks keep 24 conservative independent depth draws');
 assert.match(leg,/mesh\.onBeforeRender = function footDepthPushBefore\(/,
-  'the real leg rig already applies a camera-relative draw-time foot depth push');
-assert.match(foot,/if \(!previousBefore \|\| previousBefore === THREE\.Object3D\?\.prototype\?\.onBeforeRender\)/,
-  'feet with the earlier depth-push callback must not advertise boundable parity');
-const depthPushedFeet=isolated.map(mesh=>({...mesh,__hobunjiXrayBoundParity:null}));
-assert.equal(groupActors({},null,{},depthPushedFeet).groups.length,24,
-  'a realistic untrusted foot hook cannot claim the hand-only batching benefit');
+  'foot pose installs a camera-relative draw-time depth push');
+assert.match(leg,/mesh\.onBeforeRender\.__hobunjiScreenSpaceInvariantDepthPush\s*=/,
+  'screen-preserving known depth-push hooks receive explicit provenance, not a wildcard trust');
+assert.match(leg,/!camera\?\.isPerspectiveCamera/,
+  'orthographic cameras skip the camera-scaled depth push');
+assert.match(leg,/const k = 1 \+ \(state\.footDepthPush \+ fore\) \/ distance/,
+  'the certified push remains uniform eye-relative scaling');
+assert.match(leg,/e\[12\] = pushCamera\.x \+ dx \* k/,
+  'the foot camera translation is uniformly scaled with its geometry');
+assert.match(foot,/previousBefore\.__hobunjiScreenSpaceInvariantDepthPush === true/,
+  'only previously certified foot push hooks may expose safe two-pose scissor bounds');
+const trustMatch=foot.match(/if \((!previousBefore[\s\S]*?)\) \{\s*\/\/ The foot-depth push/);
+assert(trustMatch,'extract real foot parity registration guard');
+const acceptsFootHook = new Function('previousBefore','THREE','return ('+trustMatch[1]+');');
+const threeLike={Object3D:{prototype:{onBeforeRender:noop}}};
+const knownPush=function knownFootPush(){};
+knownPush.__hobunjiScreenSpaceInvariantDepthPush=true;
+assert(acceptsFootHook(knownPush,threeLike),'certified depth push unlocks conservative foot batching');
+assert(!acceptsFootHook(otherHook,threeLike),'untrusted foot hook still cannot batch');
+assert(acceptsFootHook(noop,threeLike),'ordinary foot with no depth push remains safe');
+const projectedFeet=isolated.map(mesh=>({...mesh,__hobunjiXrayBoundParity:{hook:hooked,visibleMatrixWorld:{},isFresh:()=>true}}));
+assert.equal(groupActors({},null,{},projectedFeet).groups.length,3,
+  '24 mock eye-scaled foot parts may batch in three screen-separated groups');
+const untrustedFeet=isolated.map(mesh=>({...mesh,__hobunjiXrayBoundParity:null}));
+assert.equal(groupActors({},null,{},untrustedFeet).groups.length,24,
+  'unproven custom foot hooks still receive separate conservative depth replays');
 const overlapping=isolated.slice(0,2).map((mesh,i)=>({...mesh,x:i+.5,z:.5,scope:{col:i,row:0,elevation:0}}));
 assert.equal(groupActors({},null,{},overlapping).groups.length,2,'neighboring projected floor exemptions never share a potentially leaking depth buffer');
 
