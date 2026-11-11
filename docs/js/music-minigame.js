@@ -508,6 +508,7 @@
       ? PUZZLE_MINIGAME_SRC + (playerSession.instrumentKey === 'flute' ? '&instrument=flute' : '') +
         (/(?:[?&])debugMusic=1(?:&|$)/.test(window.location?.search || '') ? '&debugMusic=1' : '')
       : MUSIC_MINIGAME_SRC + (playerSession.instrumentKey === 'flute' ? '&instrument=flute' : ''); // Performance retains its chords, arpeggios and song controls while the iframe selects the flute's own sound.
+    if(next==='puzzle')startPuzzleInputs(); // Capture physical notes immediately; iframe load only attaches/restarts the audible instrument.
     return true;
   }
   modeBtnEl?.addEventListener('click',event => {

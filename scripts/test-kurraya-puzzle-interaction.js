@@ -107,6 +107,14 @@ function makeHost() {
 }
 
 (async()=>{
+  const loadingGame=makeHost(); // Note judging must not block on the iframe completing its first load.
+  assert.equal(loadingGame.window.MusicMinigame.beginPlayerSession(),true);
+  delete loadingGame.frame.contentWindow.HobunjiPuzzleInstrument.playNote;
+  loadingGame.key('KeyA');
+  assert.deepEqual(loadingGame.judgedNotes,[0],'host judges a physical note before the audio iframe loads');
+  assert.deepEqual(loadingGame.notes,[],'the missing iframe audio function must not manufacture a played sample');
+  loadingGame.window.MusicMinigame.close();
+
   const game=makeHost();
   assert.equal(game.window.MusicMinigame.beginPlayerSession(),true);
   assert.equal(game.window.MusicMinigame.state.instrumentMode,'puzzle');
