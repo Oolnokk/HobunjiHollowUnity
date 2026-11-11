@@ -37,54 +37,130 @@
     return roll < replacementFraction(cfg);
   }
 
-  function part(name, x, y, z, sx, sy, sz, surface = WOOD, kind = 'box') {
-    return { id: name, name, kind, ...surface, transform: { x, y, z, sx, sy, sz } };
+  function part(name, x, y, z, sx, sy, sz, surface = WOOD, kind = 'box', distress = null) {
+    const transform = { x, y, z, sx, sy, sz }; // Existing furniture author primitive; optional rotation makes salvage boards genuinely crooked.
+    if (distress) for (const axis of ['rx', 'ry', 'rz']) {
+      if (Number.isFinite(distress[axis])) transform[axis] = distress[axis];
+    }
+    const shape = distress ? Object.fromEntries(Object.entries(distress).filter(([key]) => !['rx','ry','rz'].includes(key))) : {};
+    return { id: name, name, kind, ...surface, ...shape, transform };
   }
 
   function registerRecipes() {
     const catalog = window.ProceduralFurniture?.CATALOG;
     if (!catalog) return false;
     if (catalog.fortifiedWatchtower) return true;
-    const planks = [
-      part('tower-deck', 0, 1.45, 0, 1.75, .18, 1.75),
-      part('tower-crossbar-n', 0, 2.12, -.81, 1.75, .11, .14),
-      part('tower-crossbar-s', 0, 2.12, .81, 1.75, .11, .14),
-      part('tower-crossbar-w', -.81, 2.12, 0, .14, .11, 1.75),
-      part('tower-crossbar-e', .81, 2.12, 0, .14, .11, 1.75),
-      part('tower-roof', 0, 2.75, 0, 1.9, .13, 1.9, DARK_WOOD),
-      part('tower-ladder', .2, .7, .85, .45, 1.38, .08, DARK_WOOD),
+    // These are deliberately mismatched salvaged planks rather than smooth walls or a flat roof.
+    // Every wood/stone/metal surface still uses the same texture family as existing furniture.
+    const tower = [
+      part('frame-front-sill', 0, .45, -.70, 1.66, .17, .20, DARK_WOOD, 'box', { rz: 3, topScaleX: .95 }),
+      part('frame-back-sill', .06, .54, .70, 1.73, .15, .17, WOOD, 'box', { rz: -4 }),
+      part('frame-left-joist', -.71, 1.39, 0, .14, .18, 1.8, DARK_WOOD),
+      part('frame-right-joist', .70, 1.43, 0, .15, .18, 1.8, WOOD, 'box', { rx: 3 }),
+      part('brace-front-left', -.43, .94, -.76, .13, 1.41, .13, WOOD, 'box', { rz: -30 }),
+      part('brace-back-right', .43, .99, .75, .13, 1.32, .13, DARK_WOOD, 'box', { rz: 28 }),
+      part('brace-left-face', -.76, .98, -.39, .12, 1.40, .13, WOOD, 'box', { rx: -29 }),
+      part('brace-right-face', .76, .96, .37, .11, 1.34, .12, DARK_WOOD, 'box', { rx: 33 }),
     ];
-    for (const sx of [-.7, .7]) for (const sz of [-.7, .7]) {
-      planks.push(part('tower-post-' + sx + '-' + sz, sx, 1.32, sz, .15, 2.64, .15));
+    for (const [index, x] of [-.72, .72].entries()) for (const [side, z] of [-.72, .72].entries()) {
+      const height = 2.92 + (index ? -.14 : .05) + (side ? -.10 : .04); // Four uneven timber uprights hold a level-ish deck.
+      tower.push(part('tower-post-'+index+'-'+side, x, height/2, z, .17, height, .18,
+        (index+side)%2 ? DARK_WOOD : WOOD, 'box',
+        { rz:index ? -3 : 4, rx:side ? -3 : 2, topScaleX:.88, topScaleZ:.86, bottomScaleX:1.12 }));
     }
-    catalog.fortifiedWatchtower = planks;
-    catalog.fortifiedLowRail = [
-      part('rail-low-plank-a', 0, .48, 0, 1.85, .29, .16),
-      part('rail-low-plank-b', 0, .79, 0, 1.85, .24, .16, DARK_WOOD),
-      part('rail-post-left', -.83, .55, 0, .14, 1.1, .18),
-      part('rail-post-right', .83, .55, 0, .14, 1.1, .18),
+    for (let i=0;i<6;i++) {
+      if (i===2) continue; // Missing, broken deck board: an unmistakable gap between patched planks.
+      const z=-.66+i*.26;
+      tower.push(part('deck-reclaimed-'+i, (i%2?-.03:.03), 1.52+(i%3)*.015, z,
+        i===4?1.48:1.81,.12,.245, i%2?DARK_WOOD:WOOD,'box',
+        { rz:(i%3-1)*2.6, topScaleX:i===4?.78:.94, bottomScaleX:1.06 }));
+    }
+    tower.push(
+      part('deck-repair-scrap',-.31,1.59,-.15,.76,.10,.22,WOOD,'box',{ ry:19, topScaleX:.72 }),
+      part('rail-broken-front-left',-.47,2.13,-.77,.88,.15,.15,WOOD,'box',{ rz:-9,topScaleX:.78 }),
+      part('rail-broken-front-right',.53,2.05,-.79,.56,.13,.13,DARK_WOOD,'box',{ rz:13,topScaleX:.72 }),
+      part('rail-side-right',.77,2.05,-.14,.14,.13,1.17,WOOD,'box',{ rx:8 }),
+      part('rail-side-left-stump',-.78,1.91,.48,.13,.13,.54,DARK_WOOD,'box',{ rx:-10 }),
+      part('ladder-rail-left',.11,.78,.91,.10,1.49,.11,DARK_WOOD,'box',{ rz:8 }),
+      part('ladder-rail-right',.56,.80,.95,.09,1.58,.12,WOOD,'box',{ rz:-4 }),
+      part('ladder-rung-low',.33,.35,1.0,.45,.09,.11,WOOD,'box',{rz:-7}),
+      part('ladder-rung-mid',.33,.73,.98,.47,.08,.12,DARK_WOOD,'box',{rz:9}),
+      part('ladder-rung-high-scrap',.34,1.11,.98,.36,.08,.11,WOOD,'box',{rz:-15,topScaleX:.72}),
+      part('roof-main-beam',0,3.14,-.04,1.78,.14,.18,DARK_WOOD,'box',{rz:3}),
+      part('roof-repair-angled-beam',.12,3.10,.45,1.50,.12,.14,WOOD,'box',{rz:-5}),
+    );
+    for(let i=0;i<5;i++) {
+      if (i===3) continue; // A large missing roof patch exposes the hurried repairs beneath.
+      const z=-.76+i*.38;
+      tower.push(part('roof-patch-'+i,(i%2?-.13:.07),3.28+(i%3)*.035,z,
+        i===4?1.17:1.92,.11,.33,i%2?DARK_WOOD:WOOD,'box',
+        { rz:i%2?7:-4,rx:(i-2)*2,topScaleX:i===4?.69:.93,bottomScaleX:1.05 }));
+    }
+    tower.push(
+      part('roof-repair-scrap',-.37,3.37,.28,.62,.09,.47,WOOD,'box',{ry:-20,rz:6,topScaleX:.77}),
+      part('patch-metal-strap',-.72,1.97,-.80,.23,.29,.055,METAL,'box',{rz:-18,topScaleX:.79}),
+    );
+    catalog.fortifiedWatchtower=tower;
+
+    // Firing-height rails deliberately don't form one intact continuous plane.
+    catalog.fortifiedLowRail=[
+      part('rail-left-post',-.80,.52,0,.16,1.04,.17,WOOD,'box',{rz:7,topScaleX:.79}),
+      part('rail-right-post',.77,.56,.01,.17,1.13,.17,DARK_WOOD,'box',{rz:-5,topScaleX:.84}),
+      part('rail-bottom-salvage',-.37,.38,-.02,1.14,.23,.17,WOOD,'box',{rz:-4,topScaleX:.86}),
+      part('rail-bottom-splinter',.48,.35,-.03,.65,.16,.17,DARK_WOOD,'box',{rz:9,topScaleX:.53}),
+      part('rail-upper-short',-.41,.79,.02,1.12,.17,.16,DARK_WOOD,'box',{rz:6,topScaleX:.72}),
+      part('rail-upper-jagged',.55,.73,-.025,.56,.15,.14,WOOD,'box',{rz:-12,topScaleX:.55}),
+      part('repair-cross-scrap',-.05,.57,.16,.14,.84,.15,WOOD,'box',{rz:-33,topScaleX:.62}),
+      part('repair-metal-binding',-.76,.73,-.12,.20,.13,.08,METAL,'box',{rz:7}),
     ];
-    catalog.fortifiedHighCover = [
-      part('cover-plank-low', 0, .40, 0, 1.85, .52, .2),
-      part('cover-plank-middle', 0, .95, 0, 1.85, .52, .2, DARK_WOOD),
-      part('cover-plank-upper', 0, 1.5, 0, 1.85, .52, .2),
-      part('cover-post-left', -.8, .94, 0, .19, 1.88, .25),
-      part('cover-post-right', .8, .94, 0, .19, 1.88, .25),
+
+    catalog.fortifiedHighCover=[
+      part('cover-left-post',-.81,.88,0,.18,1.76,.20,WOOD,'box',{rz:5,topScaleX:.73}),
+      part('cover-right-battered-post',.78,.76,0,.19,1.52,.21,DARK_WOOD,'box',{rz:-8,topScaleX:.65}),
+      part('cover-low-plank',-.11,.34,-.025,1.77,.39,.19,WOOD,'box',{rz:-3,topScaleX:.96}),
+      part('cover-middle-board',-.05,.80,.035,1.85,.39,.20,DARK_WOOD,'box',{rz:5,topScaleX:.90}),
+      part('cover-upper-left',-.41,1.22,.015,1.12,.36,.19,WOOD,'box',{rz:-6,topScaleX:.72}),
+      part('cover-upper-right-fragment',.53,1.38,-.025,.75,.24,.17,DARK_WOOD,'box',{rz:14,topScaleX:.56}),
+      part('cover-top-shattered-stump',-.57,1.61,.025,.52,.17,.18,WOOD,'box',{rz:17,topScaleX:.42}),
+      part('repair-diagonal-scrap',.27,.92,.17,.15,1.53,.14,WOOD,'box',{rz:31,topScaleX:.83}),
+      part('repair-top-patch',.18,1.48,.22,.66,.15,.13,DARK_WOOD,'box',{rz:-18,topScaleX:.67}),
+      part('repair-metal-bracket',-.77,1.10,-.12,.26,.25,.09,METAL,'box',{rz:-12,topScaleX:.77}),
     ];
-    catalog.fortifiedCaveArch = [
-      part('arch-stone-left', -.91, 1, .06, .52, 2.04, .7, STONE),
-      part('arch-stone-right', .91, 1, .06, .52, 2.04, .7, STONE),
-      part('arch-stone-lintel', 0, 2.14, .06, 2.36, .5, .7, STONE),
-      part('arch-wood-lintel', 0, 1.79, -.18, 1.4, .15, .18),
-      part('arch-wood-side-left', -.61, .86, -.21, .14, 1.71, .18),
-      part('arch-wood-side-right', .61, .86, -.21, .14, 1.71, .18),
-    ]; // Intentionally no black portal plane: the native cave transition renders the opening.
-    catalog.fortifiedWolfStake = [
-      part('stake-wood-post',0,.53,0,.18,1.06,.18,WOOD),
-      part('stake-ground-base',0,.08,0,.38,.16,.38,DARK_WOOD),
-      part('stake-chain-ring',0,.77,0,.31,.09,.31,METAL,'hoop'),
-    ]; // Exactly the same board/metal roles and texture families as existing Aging Barrel furniture.
+
+    catalog.fortifiedCaveArch=[
+      part('arch-stone-left-base',-.91,.55,.055,.58,1.10,.72,STONE,'box',{rz:3,topScaleX:.89}),
+      part('arch-stone-left-chipped',-.91,1.60,.055,.51,1.02,.65,STONE,'box',{rz:-5,topScaleZ:.90}),
+      part('arch-stone-right-base',.92,.52,.065,.59,1.04,.75,STONE,'box',{rz:-4,topScaleX:.86}),
+      part('arch-stone-right-upper',.90,1.57,.06,.52,1.06,.66,STONE,'box',{rz:6,topScaleZ:.88}),
+      part('arch-stone-lintel-left',-.59,2.19,.04,1.15,.46,.74,STONE,'box',{rz:5,topScaleX:.91}),
+      part('arch-stone-lintel-right',.60,2.20,.035,1.16,.40,.70,STONE,'box',{rz:-6,topScaleX:.85}),
+      part('arch-wood-side-left',-.63,.88,-.26,.17,1.75,.18,DARK_WOOD,'box',{rz:-8,topScaleX:.67}),
+      part('arch-wood-side-right',.66,.84,-.25,.16,1.69,.17,WOOD,'box',{rz:7,topScaleX:.84}),
+      part('arch-wood-repair-lintel',.01,1.75,-.25,1.56,.14,.16,WOOD,'box',{rz:-6,topScaleX:.86}),
+      part('arch-wood-repair-scrap',-.53,1.32,-.40,.14,.83,.14,DARK_WOOD,'box',{rz:36}),
+      part('arch-metal-corner-binding',.63,1.61,-.37,.25,.13,.09,METAL,'box',{rz:12}),
+    ]; // No black portal plane; the existing cave transition still renders its own opening.
+
+    catalog.fortifiedWolfStake=[
+      part('stake-wood-post',-.02,.49,0,.17,.98,.18,WOOD,'box',{rz:-7,topScaleX:.58,topScaleZ:.66}),
+      part('stake-ground-base',0,.09,0,.35,.16,.37,DARK_WOOD,'box',{ry:16,topScaleX:.78}),
+      part('stake-chain-ring',-.03,.74,0,.30,.08,.31,METAL,'hoop'),
+      part('stake-repair-splinter',.10,.32,-.07,.08,.36,.08,DARK_WOOD,'box',{rz:15,topScaleX:.54}),
+    ]; // The original chain remains a stretched PNG between this stake and its real wolf.
     return true;
+  }
+
+  function distressFurnitureGroup(group, seed) {
+    if (!group?.children || !String(seed||'')) return group;
+    for (const mesh of group.children) {
+      if (!/^(?:repair-|roof-patch-|deck-repair-|patch-|rail-upper-jagged|cover-upper-right-fragment)/.test(mesh.name||'')) continue;
+      const mark=hash(String(seed)+':damage:'+mesh.name); // Stable per campsite/slot and cave re-entry; consumes no gameplay RNG.
+      const offset = (mark%101)/100-.5; // Very small hand-placement variation only on non-loadbearing repair scraps.
+      if (mesh.rotation) mesh.rotation.z += offset*.13;
+      if (mesh.position) { mesh.position.y += offset*.045; mesh.position.x += offset*.055; }
+      if (/^roof-patch-/.test(mesh.name||'') && mark%13===0) mesh.visible=false; // Some tower roofs lost a further board.
+    }
+    return group;
   }
 
   function siteProps(rec) {
@@ -248,7 +324,7 @@
     for (const tile of lane?.placements || []) {
       selected.push(tile);
       const key = tile.key;
-      const piece = window.ProceduralFurniture.buildFurnitureGroup(key);
+      const piece = distressFurnitureGroup(window.ProceduralFurniture.buildFurnitureGroup(key), mapId+':'+selected.length);
       piece.position.set(tile.col+.5, Number(mapData.floorSurfaceY)||0, tile.row+.5);
       piece.rotation.y = (Number(tile.rotY)||0) * Math.PI/180;
       group.add(piece);
@@ -436,7 +512,7 @@
   }
 
   window.BanditStrongholds = Object.freeze({
-    shouldFortify, replacementFraction, registerRecipes, upgradeCamp, removeCamp,
+    shouldFortify, replacementFraction, registerRecipes, distressFurnitureGroup, upgradeCamp, removeCamp,
     buildInteriorProps, chargeLaneForMap, ensureBarrels, forgetInterior, debugSnapshot, installItemRegistration, BARREL_LOOT, __test: Object.freeze({ hash, siteProps }),
   });
   registerRecipes();
