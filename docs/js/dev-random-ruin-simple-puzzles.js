@@ -1887,8 +1887,8 @@
     deps.player.prone=false;
     if(deps.player.staggered)deps.player.staggered={active:false,direction:null,endsAt:0};
     deps.player.invulnUntil=performance.now()+CHECKPOINT_INVULN_MS;
+    window.PlayerJump?.reset?.(); // A raised landing or rope flight must release its height before the checkpoint takes over.
     setPlayerWorld(checkpoint.point,true,true);
-    if (deps.player._freeJump?.external) window.PlayerJump?.reset?.();
     state.flight=null;
     if(state.activeRope){state.activeRope.attached=false;state.activeRope.braking=false;}
     state.activeRope=null;

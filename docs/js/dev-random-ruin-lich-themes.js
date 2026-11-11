@@ -1163,7 +1163,7 @@
       return;
     }
     const baseY=room.plasmFloorY.get(key)??floorY(kit,point.x,point.z); // Keep static puddles at the original floor, even if a bridge appears later.
-    if(kit.ownsPlayerMotion?.()||player.climbing||player._freeJump?.phase==='air'||playerY>baseY+PLASM_DEPTH+.08||(world.sink===0&&playerY<baseY-.3)){ // A mid-air hop over plasm neither sinks nor pulls you.
+    if(kit.ownsPlayerMotion?.()||player.climbing||player.onClimbSurface||player._freeJump?.phase==='air'||playerY>baseY+PLASM_DEPTH+.08||playerY<baseY-.3){ // Compare physical heights even if the player was already sinking on another level.
       world.sink=0;
       restorePlasmPresentation();
       return; // Ropes, flying and elevated supports take precedence.

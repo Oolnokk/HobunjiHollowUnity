@@ -154,7 +154,7 @@ function assertPlasmSeams(t) {
   const respawn=vm.runInNewContext('('+puzzlesSource.slice(start,end)+')',{
     inRuin:()=>true,state:recovery,deps:t.kit.deps,composers:[t.composer],MAP_ID:'map_i_dev_random_ruin',
     restorePlayerScene(){},clearPlayerAfflictions(){},setPlayerWorld(){},restoreRopeEquipment(){},
-    clonePoint:p=>({...p}),CHECKPOINT_INVULN_MS:1000,performance:{now:()=>100},console,
+    clonePoint:p=>({...p}),CHECKPOINT_INVULN_MS:1000,performance:{now:()=>100},console,window:{},
   });
   t.player.maxHealth=100;t.player.health=0;
   assert.equal(respawn('combat'),true);
@@ -470,7 +470,8 @@ console.log('Harlyao ruin lich-theme tests passed: static Kanthic patches, cache
 }
 
 {
-  const t=setup('kanthic');
+  let respawn; // The mounted hazard calls the real checkpoint recovery function below.
+  const t=setup('kanthic',3.1,3.1,{respawnAtCheckpoint:reason=>respawn(reason)});
   const shaftSource=fs.readFileSync('docs/js/ruin-jump-shaft.js','utf8');
   const shaftWindow={DevRandomRuinLichThemes:t.api};
   vm.runInNewContext(shaftSource,{self:shaftWindow});
@@ -503,6 +504,21 @@ console.log('Harlyao ruin lich-theme tests passed: static Kanthic patches, cache
   const renderStandY=new Function('window','player',gameSource.slice(gameSource.indexOf('        const supportedJump ='),
     gameSource.indexOf('        const standY = knockbackVisualSurfaceY'))+'\nreturn ordinaryStandY;');
   const renderWindow={DevRandomRuin:getSupport};
+  const jumpWindow={}; // Load the real PlayerJump reset used by checkpoint recovery.
+  vm.runInNewContext(fs.readFileSync('docs/js/player-jump.js','utf8'),{window:jumpWindow});
+  jumpWindow.PlayerJump.init({player:t.player});
+  const point={x:3.5,z:3.5,y:0}; // Simulated dry checkpoint below the elevated slab.
+  const checkpoints={active:{point},respawnCount:0};
+  respawn=vm.runInNewContext(puzzlesSource.slice(puzzlesSource.indexOf('  function respawnAtCheckpoint('),
+    puzzlesSource.indexOf('  function buildCheckpoints('))+'\nrespawnAtCheckpoint;',{
+    window:jumpWindow,inRuin:()=>true,deps:{player:t.player},state:{checkpoints,kit:t.kit},
+    composers:[t.composer],MAP_ID:'ruin',CHECKPOINT_INVULN_MS:1200,performance,
+    restorePlayerScene(){},clearPlayerAfflictions(){},restoreRopeEquipment(){},clonePoint:p=>({...p}),
+    setPlayerWorld(p){
+      assert.equal(t.player.physicalFeetY,null,'The old platform height must clear before the checkpoint positions the player');
+      t.player.x=p.x*64;t.player.y=p.z*64;
+    },
+  });
   t.player.x=(tile.x+.5)*64;
   t.player.y=(tile.z+.5)*64;
   t.player._freeJump={phase:'supported'};
@@ -517,6 +533,27 @@ console.log('Harlyao ruin lich-theme tests passed: static Kanthic patches, cache
   assert.equal(renderStandY(renderWindow,t.player),platform.y,'Airborne rendering ignores the old immersion immediately');
   t.tick(1);
   assert.equal(t.api.snapshot().sinking,0,'Jumping out resets immersion');
+  t.player._freeJump.phase='supported';
+  t.tick(1);
+  t.player.physicalFeetY=platform.y-.4;
+  t.tick(1);
+  assert.equal(t.api.snapshot().sinking,0,'The slab cannot keep sinking a player on a lower level');
+  t.player.physicalFeetY=platform.y;
+  t.tick(1);
+  const [dryX,dryZ]=platform.clearTiles[0].split(',').map(Number); // Clear stepping tile on the same slab.
+  t.player.x=(dryX+.5)*64;t.player.y=(dryZ+.5)*64;
+  t.tick(1);
+  assert.equal(t.api.snapshot().sinking,0,'Stepping onto bare stone clears immersion');
+  t.player.x=(tile.x+.5)*64;t.player.y=(tile.z+.5)*64;
+  t.player.maxHealth=100;
+  t.tick(11);
+  assert.equal(checkpoints.respawnCount,0,'Platform plasm allows the full escape window');
+  t.tick(1);
+  assert.equal(checkpoints.lastReason,'kanthic-plasm');
+  assert.equal(checkpoints.respawnCount,1);
+  assert.equal(t.player.health,50,'Fatal sinking uses normal checkpoint recovery');
+  assert.equal(t.player._freeJump,null,'Respawn releases the elevated jump support');
+  assert.equal(-t.presentationHeights.at(-1),0,'Checkpoint recovery clears the visible sink');
   shaft.dispose();
   t.composer.clear();
 }
