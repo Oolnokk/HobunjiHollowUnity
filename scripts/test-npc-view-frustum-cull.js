@@ -104,7 +104,7 @@ assert.equal(offscreen.visible,true,'renderer error must never strand an NPC hid
 
 assert.match(game,/NpcViewFrustumCull\?\.suspendForRender\?\.\(npcWalkers, activeScene, camera\)/,
   'game world render invokes one coarse cull across all its draw/depth/outline passes');
-assert.match(game,/\} finally \{\s*restoreNpcVisuals\?\.\(\)/,
+assert.match(game,/\} finally \{\s*window\.ActorRenderOcclusion\?\.endFrame\?\.\(\);\s*restoreNpcVisuals\?\.\(\)/,
   'all camera-visible NPC roots are restored in a finally block');
 assert.match(fs.readFileSync('docs/js/house-pieces.js','utf8'),/npc-view-frustum-cull\.js\?v=/,
   'core loader delivers the culler before game.js starts');
