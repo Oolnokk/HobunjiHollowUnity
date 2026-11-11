@@ -112,7 +112,7 @@ assert.equal(first.options.meaning, 'chatter', 'snore remains ambient chatter fo
 
 const horizontalPx = Math.hypot(first.sourceEntity.x - player.x, first.sourceEntity.y - player.y);
 assert(first.options.acousticDistancePx > horizontalPx, 'elevation must increase acoustic distance beyond flat tile distance');
-assert.equal(first.options.earshotTiles, CHUNK_TILES * 5, 'smooth attenuation range is independent from the stricter two-chunk activation gate');
+assert.equal(first.options.earshotTiles, CHUNK_TILES * 10, 'snore attenuation must double with the four-chunk activation gate');
 
 first.options.onStarted();
 now = 11500;
@@ -171,11 +171,11 @@ windowObject.Combat.deps.getCurrentArea = () => 'map_northern_cliffs';
 talking = false;
 
 phase = 'night';
-player.x = (64.5) * TILE; // Entrance chunk=1, player chunk=4 -> three chunks away.
+player.x = (96.5) * TILE; // Entrance chunk=1, player chunk=6 -> five chunks away.
 now = 28850;
 scheduled({ timestamp: now });
-assert.equal(calls.length, 4, 'player more than two chunks away must not hear a new snore');
-assert.match(windowObject.BanubuSnore.debugSnapshot().status, /outside two-chunk range/, 'debug state must explain the chunk-range suppression');
+assert.equal(calls.length, 4, 'player more than four chunks away must not hear a new snore');
+assert.match(windowObject.BanubuSnore.debugSnapshot().status, /outside four-chunk range/, 'debug state must explain the chunk-range suppression');
 
 assert(audioSource.includes('function animalVoiceAcousticDistancePx(c, opts = {})'), 'AudioSystem must accept an acoustic-distance override');
 assert(audioSource.includes('const distance = animalVoiceAcousticDistancePx(c, opts);'), 'animal voice volume falloff must consume acoustic distance');
