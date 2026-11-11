@@ -363,6 +363,7 @@
     const saved = _loadWaypoint();
     if (!saved) return null;
     if (saved.source === 'locale') {
+      if (ENTER_ONLY_LOCALE_IDS.has(saved.localeId) && !localeIsDiscovered({ localeId: saved.localeId }, _loadDiscoveredLocales())) return null; // Hide stale previously-selected Banubu waypoints until the cave is actually entered.
       const live = _allLocaleInstances().find(inst => inst.localeId === saved.localeId);
       return live ? { ...saved, zoneId: live.zoneId, col: live.col + 0.5, row: live.row + 0.5, label: live.name } : saved;
     }
