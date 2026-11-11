@@ -8,7 +8,7 @@
   // NPC simulation, schedule, social interactions and collision never stop.
   let enabled = true; // Settings -> Performance & diagnostics: safe default-on A/B control.
   let diagnosticHideAll = false; // Opt-in visual-only A/B; simulation continues normally.
-  const BOUND_RADIUS_TILES = 4.5; // Conservative body, species size, animation and carried-tool extent.
+  const BOUND_RADIUS_TILES = 5.5; // Must enclose the same enlarged rig/tool volume tested by GPU occlusion; avoids prematurely culling a visible weapon.
   const EXTRA_NEAR_KEEP_TILES = 3; // Close actors must remain drawable even just outside the view edge.
   let frustum = null, viewProjection = null, bounds = null; // Reused world-view primitives per render call.
   let clipProjection = null; // Crops the existing perspective/orthographic camera to a scissored depth-pass rectangle.
@@ -55,7 +55,7 @@
       eligible++;
       const visualScale = walker._npcCharacterRigRoot?.scale; // Longoran and other authored rig scales.
       const scale = Math.max(1, Number(visualScale?.x) || 1, Number(visualScale?.y) || 1, Number(visualScale?.z) || 1);
-      const radius = Math.max(BOUND_RADIUS_TILES, (2.5 + (Number(walker.avatarHeight) || 1) * 1.5) * scale);
+      const radius = Math.max(BOUND_RADIUS_TILES, (2.5 + (Number(walker.avatarHeight) || 1) * 1.5) * scale + 1);
       const x = root.position.x, y = root.position.y + Math.min(1.5, radius * .3), z = root.position.z;
       // Actor bounds include long equipment, lean, jump and all normal rig poses.
       // The whole root is hidden only if the generous sphere is off-camera.
@@ -120,7 +120,7 @@
           || protectedRoots.has(root) || !root.position) continue;
       const visualScale = walker._npcCharacterRigRoot?.scale;
       const scale = Math.max(1, Number(visualScale?.x) || 1, Number(visualScale?.y) || 1, Number(visualScale?.z) || 1);
-      const radius = Math.max(BOUND_RADIUS_TILES, (2.5 + (Number(walker.avatarHeight) || 1) * 1.5) * scale);
+      const radius = Math.max(BOUND_RADIUS_TILES, (2.5 + (Number(walker.avatarHeight) || 1) * 1.5) * scale + 1);
       bounds.center.set(root.position.x, root.position.y + Math.min(1.5, radius * .3), root.position.z);
       bounds.radius = radius;
       stats.replayChecks++;
