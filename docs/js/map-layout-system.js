@@ -302,6 +302,7 @@
         row: piece.row + (Number(piece.postZ) || 0),
         rotY: Number.isFinite(piece.rotY) ? piece.rotY : (Number(station.rotY) || 0),
         sourceFurnitureKey: sourceKey,
+        furnitureId: station.furnitureId || piece.id, // Physical seat identity remains exact even when placement offsets move its station.
         furnitureKey: station.furnitureKey || sourceKey,
       };
     });
@@ -360,6 +361,12 @@
     const merged = { ...mapData, activeLayoutId: layout.id };
     for (const key of OVERRIDABLE_KEYS) {
       if (Object.prototype.hasOwnProperty.call(layout, key)) merged[key] = layout[key];
+    }
+    const additions = Array.isArray(layout.npcStationAdditions) ? layout.npcStationAdditions : []; // Temporary event seats augment the original station registry.
+    if (additions.length) {
+      const existing = Array.isArray(merged.npcStations) ? merged.npcStations : []; // Keeps ordinary NPC destinations and Teacup's dedicated stool.
+      const knownIds = new Set(existing.map(station => station?.id)); // Avoids duplicate ids when resolving an already-effective layout.
+      merged.npcStations = [...existing, ...additions.filter(station => station?.id && !knownIds.has(station.id))];
     }
     return resolveFestivalLocales(resolveFurnitureBoundStations(merged));
   }
