@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Portrait Spline Author · Hobunji Hollow</title>
+<title>Portrait Spline &amp; Pixel Region Author · Hobunji Hollow</title>
 <style>
 :root{color-scheme:dark;--bg:#09111b;--panel:#142335;--line:#34506b;--ink:#eaf2ff;--soft:#aabbd0;--blue:#76b9ff;--pink:#fba6c7}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,Arial,sans-serif}
@@ -20,8 +20,10 @@ input[type=number]{width:100%;font-variant-numeric:tabular-nums}input[type=file]
 #view3d{width:100%;height:380px;display:block;touch-action:none;background:#0b1726;border:1px solid #38506c;border-radius:10px}
 #viewerStatus{min-height:22px;display:block;font-size:12px;color:var(--soft);margin:6px 0 10px;overflow-wrap:anywhere}
 #poseActions{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
-#seamTools{margin:10px 0;padding:8px;border:1px solid var(--line);border-radius:8px}
-#seamTools .entry{grid-template-columns:minmax(130px,155px) minmax(0,1fr)}
+#regionTools{margin:10px 0;padding:8px;border:1px solid var(--line);border-radius:8px}
+#regionLegend{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:8px 0;font-size:12px}
+#regionLegend span::before{content:'';width:12px;height:12px;display:inline-block;margin-right:5px;vertical-align:middle;border-radius:3px;background:var(--region-color)}
+#regionTools .entry{grid-template-columns:minmax(130px,155px) minmax(0,1fr)}
 .buttons{display:flex;flex-wrap:wrap;gap:6px}#status{min-height:55px;background:#07131f;color:#c8def7;border:1px solid #2e4866;padding:9px;border-radius:8px;white-space:pre-wrap;font:12px/1.4 ui-monospace,Consolas,monospace}
 #segmentEditor{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
 .field label{display:block;margin-bottom:2px}.field input{width:100%}
@@ -47,10 +49,10 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
 <script src="../../js/portrait-spline-viewer.js?v=20261110splineViewer2"></script>
 </head>
 <body>
-<header><a href="../character-studio/">Character Studio</a><h1>Beard &amp; Side Hair Spline Author</h1><span class="hint">v1 · per-cosmetic 3D strand + seam masks</span></header>
+<header><a href="../character-studio/">Character Studio</a><h1>Beard &amp; Side Hair Spline Author</h1><span class="hint">v2 · rigid/flexible pixel regions</span></header>
 <main>
 <section>
-<h2>Portrait, strand and seam paint</h2>
+<h2>2D spline rigging and pixel masks</h2>
 <p>Choose an indexed cosmetic. Its original JSON and sprite layers load directly from the repository. No uploads are required.</p>
 <div class="entry"><label for="speciesSelect">Species</label><select id="speciesSelect" disabled aria-label="Cosmetic species"><option>Loading index…</option></select></div>
 <div class="entry"><label for="genderSelect">Gender</label><select id="genderSelect" disabled aria-label="Cosmetic gender"></select></div>
@@ -70,26 +72,25 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
   <div class="entry"><label for="headFile">Full head silhouette</label><input id="headFile" type="file" accept="image/png,image/webp,image/*" title="Optional 200×200 aligned head reference"></div>
 </details>
 <div class="buttons" style="margin:12px 0">
-<button id="moveMode" class="active">Move 2D knots</button><button id="seamMoveMode">Move seam points</button><button id="paintMode">Paint seam</button>
-<button id="eraseMode">Erase seam</button><button id="addPoint">Add knot</button><button id="removePoint">Remove knot</button>
+<button id="moveMode" class="active">Move 2D knots</button><button id="paintMode">Brush: Rigid</button>
+<button id="eraseMode">Eraser: Flexible</button><button id="addPoint">Add knot</button><button id="removePoint">Remove knot</button>
 </div>
 <canvas id="preview" width="400" height="400" aria-label="Spline, mask and reference art editor"></canvas>
 <div class="row"><label for="viewSelect">Sprite plane</label><select id="viewSelect"><option value="front">Front</option><option value="rear">Rear</option></select>
-<label for="brush">Mask radius, px</label><input type="number" id="brush" value="3" min=".5" max="15" step=".5" style="width:74px"></div>
-<div class="row"><label for="bridgePaint"><input id="bridgePaint" type="checkbox"> Paint opaque bridge pixels</label><input id="bridgeColor" type="color" value="#90664c" title="Color of painted connecting pixels"></div>
-<p>Yellow dots are resting 2D knots, cyan is the 3D-projected wind pose, and pink circles mark seam points. Drag knots to place the neutral strand; adjust wind transforms in the 3D view. A selected seam point is highlighted in gold.</p>
-<div id="seamTools">
-  <h3>Head silhouette → editable seam</h3>
-  <p>Trace the selected species' actual head alpha silhouette near the first knot. The mask is saved as ordinary editable dabs; it is not regenerated automatically during gameplay.</p>
-  <div class="entry"><label for="seamArc">Silhouette span (px)</label><input id="seamArc" type="number" value="26" min="2" max="90" step="1"></div>
-  <div class="buttons"><button id="autoSeam">Generate from head silhouette</button><button id="undoSeam">Undo generation</button></div>
-  <div class="entry"><label for="seamPointRadius">Selected point radius (px)</label><input id="seamPointRadius" type="number" value="3" min=".5" max="15" step=".5"></div>
+<label for="brush">Brush radius, px</label><input type="number" id="brush" value="6" min=".5" max="60" step=".5" style="width:74px"></div>
+<div id="regionTools">
+  <h3>Rigid portrait pixels vs. flexible spline pixels</h3>
+  <p>The mask starts with every opaque hair/beard pixel that overlaps the selected head silhouette assigned to the rigid group. Brush adds rigid pixels; eraser returns pixels to the moving spline. Rigid pixels never bend or move off the portrait.</p>
+  <div id="regionLegend"><span style="--region-color:#43d0d1">Rigid · anchored to portrait</span><span style="--region-color:#c66de7">Flexible · follows spline</span></div>
+  <div class="row"><label for="showRegions"><input id="showRegions" type="checkbox" checked> Show pixel region overlay</label></div>
+  <div class="buttons"><button id="autoMask">Reset from head overlap</button><button id="undoMask">Undo mask edit</button><button id="clearMask">Make all flexible</button></div>
 </div>
+<p>Yellow knots position the resting spline in 2D; cyan traces its directional 3D pose. Edit the mask on the artwork in the front or rear view. The two pixel groups use the exact same sprite and only the flexible group gets 3D deformation.</p>
 <div class="entry"><label for="rearU">Rear X offset</label><input id="rearU" type="number" min="-.25" max=".25" step=".005" value="0"></div>
 <div class="entry"><label for="rearV">Rear Y offset</label><input id="rearV" type="number" min="-.25" max=".25" step=".005" value="0"></div>
 <div class="entry"><label for="strandWidth">Spline width</label><input id="strandWidth" type="number" min=".01" max=".5" step=".01" value=".1"></div>
 <div class="entry"><label for="response">Wind response</label><input id="response" type="number" min="0" max="5" step=".1" value="1"></div>
-<div class="buttons"><button id="clearMask">Clear seam paint</button><button id="resetRig">New 3-knot spline</button></div>
+<div class="buttons"><button id="resetRig">New 3-knot spline</button></div>
 </section>
 <section>
 <h2>3D directional blend-space author</h2>
@@ -111,14 +112,14 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
 <div class="entry"><label for="testStrength">Gust strength</label><input type="range" id="testStrength" min="0" max="1" value="1" step=".01"></div>
 <div class="row"><label for="testStrength">Blend:</label><span id="windName">Right · 100%</span></div>
 <p><strong>Translation XYZ</strong> is authored in portrait-relative coordinates and blends with the directional rotations. Deadzones apply to both operations. The collision solver prevents strands passing through the portrait plane.</p>
-<h3>Pixel attachment and collision checks</h3>
+<h3>Pixel region and collision checks</h3>
 <output id="status" role="status" aria-live="polite">No cosmetic loaded. The default 3-knot spline is editable.</output>
 <div class="buttons" style="margin-top:10px"><button id="download">Export updated cosmetic JSON</button><button id="copyRig">Copy rig JSON</button></div>
 <details style="margin-top:12px"><summary>Rig JSON and mobile debug</summary><p>JSON shown here is the exact authored property added to the exported cosmetic. You can also paste a rig JSON and choose Apply.</p>
 <textarea id="json"></textarea><div class="buttons"><button id="applyJson">Apply rig JSON</button><button id="copyDiagnostics">Copy 3D diagnostics</button></div></details>
 </section>
 </main>
-<footer>Existing flat hairstyles remain unchanged. Facewraps continue hiding beards and do not receive beard clearance masks.</footer>
+<footer>Existing flat hairstyles remain unchanged. Facewraps continue hiding beards. Pixel regions are saved per cosmetic and per front/rear view.</footer>
 <script>
 (() => {
 'use strict';
@@ -126,11 +127,12 @@ const $=id=>document.getElementById(id),Rig=window.PortraitSplineRig,Catalog=win
 const DIRECTIONS=['left','right','up','down','toward','away'],FIELDS=['yaw','pitch','roll'];
 const makeSegment=()=>({deadzone:{x:4,y:4,z:6},poses:Object.fromEntries(DIRECTIONS.map(x=>[x,{yaw:0,pitch:0,roll:0,translate:{x:0,y:0,z:0}}]))});
 const makeRig=()=>({version:1,enabled:true,points:[{u:.5,v:.28,depth:.015},{u:.52,v:.43,depth:.025},{u:.53,v:.6,depth:.035}],
-segments:[makeSegment(),makeSegment()],seam:[],rearOffset:{u:0,v:0},width:.1,windResponse:1,segmentsX:16,segmentsY:20});
+segments:[makeSegment(),makeSegment()],regionMasks:{},rearOffset:{u:0,v:0},width:.1,windResponse:1,segmentsX:16,segmentsY:20});
 let rig=makeRig(),cosmetic={},loadedName='cosmetic.json',selectedKnot=1,selectedSegment=0,direction='right',mode='move';
-let images={front:null,rear:null,hood:null,hoodRear:null,head:null,character:null},dragging=false,lastPaint=null;
+let images={front:null,rear:null,hood:null,hoodRear:null,head:null,headRear:null,character:null},dragging=false,lastPaint=null;
 let canonicalPortraitPromise=null,canonicalPortraitGeneration=0,canonicalPortraitError=null; // Reuses Pants Rig Author's species/gender portrait registry and naked-character render path.
-let viewer=null,viewerMode='translate',selectedSeam=0,seamBackup=null,headGeneration=0; // 3D gizmo and silhouette edit state shared with the 2D author.
+let viewer=null,viewerMode='translate',maskUndo=null,headGeneration=0; // The rigid/flexible mask replaces arbitrary seam-dab and hood-warp controls.
+let regionOverlayCache=null,regionSourcesCache=null; // Cached bitmap and 3D texture splits; invalidated only when artwork or masks change.
 let catalog=null,styles=[],hoods=[],activeStyle=null,activeDraftKey=null,styleGeneration=0,assetGeneration=0,hoodGeneration=0,indexGeneration=0;
 let manualSelected=false; // Explicit file import is not silently replaced by a concurrent index fetch.
 const rigDrafts=new Map(); // Per-cosmetic/per-species unsaved edits survive dropdown switching until the author page closes.
