@@ -798,6 +798,16 @@
     return workspace;
   }
 
+  function isolatedLocaleAvoidPoints(layout, localeId = 'locale_banubu_shrine') {
+    const instance = layout?.localeInstances?.find(item => item.localeId === localeId); // Late-spawned camps must avoid the same live cave site selected by the terrain generator.
+    if (!instance) return [];
+    const anchor = instance.connectors?.[0] || instance.objects?.[0] || instance; // Prefer the actual walkable mouth over the stamped locale origin.
+    const col = Number(anchor.x ?? anchor.col), row = Number(anchor.y ?? anchor.row);
+    if (!Number.isFinite(col) || !Number.isFinite(row)) return [];
+    const size = Math.min(Number(layout.cols) || 0, Number(layout.rows) || 0); // Final-grid dimensions yield a scale-appropriate separation buffer.
+    return [{ col, row, minDistance: Math.max(16, size * 0.25) }];
+  }
+
   function allowedInZone(locale, zoneMapId) {
     const allowed = locale?.placement?.allowedZones; // Empty allowed-zone list preserves the existing “any wilderness zone” convention.
     return !Array.isArray(allowed) || allowed.length === 0 || allowed.includes(zoneMapId);
@@ -839,6 +849,7 @@
     inferGenerationScale,
     appendInteriorTransition,
     placeTerrainAwareLocales,
+    isolatedLocaleAvoidPoints, // Shared camp-distance policy; tribe and bandit generators must not duplicate the cave locator.
     evaluateCandidateForTest(workspace, locale, anchorC, anchorR, options = {}) {
       const scale = Math.max(1, Number(options.scale) || inferGenerationScale(workspace, options.sourceWidth)); // Test hook uses the same compiler/context as production placement.
       const compiled = compileLocale(locale, scale);
