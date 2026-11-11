@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-// Node regression coverage for authoring 3D poses and silhouette-based, manually editable seam dabs.
+// Node regression coverage for 3D poses and alpha-overlap-generated rigid/flexible pixel-region masks.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -10,10 +10,8 @@ const root = path.resolve(__dirname, '..'); // Use the repository checkout, not 
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const globals = { window: {}, console, Uint8Array, Int16Array, Int32Array, Math, Number };
 vm.runInNewContext(read('docs/js/portrait-spline-rig.js'), globals);
-vm.runInNewContext(read('docs/js/portrait-spline-seam.js'), globals);
 const Rig = globals.window.PortraitSplineRig;
-const Seam = globals.window.PortraitSplineSeam;
-assert(Rig && Seam, '3D runtime and seam tracer share the head portrait coordinate system');
+assert(Rig, 'the runtime provides both 3D deformation and pixel-accurate rigid/flexible region masks');
 const raw = {
   points: [{u:.5,v:.3,depth:.02},{u:.52,v:.6,depth:.035}],
   segments:[{deadzone:{x:4,y:4,z:6},poses:{
@@ -41,37 +39,33 @@ assert.equal(old.segments[0].poses.right.translate.z,0,'preexisting rotation-onl
 const center=Rig.deformPosition(rig,moved.points,.52,.59,1,1);
 assert(center.z>=.003 && Number.isFinite(center.x),'the preview can reuse the same deformPosition as the game');
 
-function alphaFixture() {
-  const width=200,height=200;
-  const data=new Uint8ClampedArray(width*height*4); // Only alpha is relevant; colored head pixels and transparent holes remain distinguishable.
-  const solid=(x,y)=>{data[(y*width+x)*4+3]=255;};
-  for(let y=55;y<145;y++)for(let x=60;x<140;x++)solid(x,y);
-  for(let y=95;y<104;y++)for(let x=94;x<106;x++)data[(y*width+x)*4+3]=0; // A transparent eye hole should NOT become the external head contour.
-  for(let y=5;y<9;y++)for(let x=5;x<9;x++)solid(x,y); // Distant disconnected island should never join the head's attachment mask.
-  return {width,height,getContext(){return {getImageData(){return {data};}};}};
-}
-const canvas=alphaFixture();
-const result=Seam.generate(canvas,{u:.5,v:.26},{arcPx:24,spacingPx:2.5,radiusPx:4});
-assert(result.seam.length>=5 && result.seam.length<=128,'auto trace yields a bounded set of editable mask dabs');
-assert(result.seam.every(x=>x.radiusPx===4),'generated seam dabs respect the authored brush radius');
-assert(result.seam.every(x=>x.v>.20&&x.v<.40),'seam follows the head exterior near the root, not internal eye holes');
-assert(result.seam.every(x=>x.u>.2&&x.u<.8),'seam cannot jump to disconnected alpha islands');
-const empty={width:200,height:200,getContext(){return {getImageData(){return {data:new Uint8ClampedArray(200*200*4)};}};}};
-assert.equal(Seam.generate(empty,{u:.5,v:.5}).seam.length,0,'a missing head silhouette never invents a seam');
-assert.equal(Seam.generate(canvas,{u:0,v:1},{reachPx:4}).seam.length,0,'distant knots do not trace unrelated head boundaries');
-assert.throws(()=>Seam.generate(null,{u:.5,v:.5}),/loaded species head/,'unavailable head art is diagnosed');
+const pixels=new Uint8Array(40000); // The exact 200px portrait mask, not an approximate silhouette circle.
+pixels[60*200+100]=1;
+const encoded=Rig.encodePixelMask(pixels);
+assert.equal(encoded.runs.length,1,'contiguous anchored pixels serialize as compact spans');
+assert.equal(Rig.decodePixelMask(encoded)[60*200+100],1,'mask round-trips without changing rigid ownership');
+const expanded=Rig.paintPixelMask(encoded,.5,.3,4,true);
+assert(Rig.decodePixelMask(expanded).reduce((sum,x)=>sum+x,0)>1,
+  'the rigid brush adds whole authored pixels near its center');
+const erased=Rig.paintPixelMask(expanded,.5,.3,4,false);
+assert.equal(Rig.decodePixelMask(erased)[60*200+100],0,'eraser returns anchor pixels to flexible state');
+const malformed=Rig.normalizePixelMask({size:200,runs:[[90,12],[93,5],[-1,3],[40000,5]]});
+assert.equal(JSON.stringify(malformed.runs),'[[90,12]]','malformed/overlapping RLE spans clamp and merge safely');
+const views=Rig.normalize({...raw,regionMasks:{front:encoded,rear:expanded}});
+assert.equal(views.regionMasks.front.runs.length,1,'front mask survives serialization');
+assert.equal(views.regionMasks.rear.runs.length,expanded.runs.length,'rear mask is independently authorable');
 
 const editor=read('docs/tools/portrait-spline-author/index.html');
 const viewer=read('docs/js/portrait-spline-viewer.js');
 const catalog=read('docs/js/portrait-spline-catalog.js');
 new vm.Script(editor.match(/<script>([\s\S]+?)<\/script>/)[1],{filename:'portrait-spline-author inline script'});
 new vm.Script(viewer,{filename:'portrait-spline-viewer.js'});
-for(const id of ['view3d','gizmoTranslate','gizmoRotate','autoSeam','seamArc','seamMoveMode','seamPointRadius','undoSeam'])
+for(const id of ['view3d','gizmoTranslate','gizmoRotate','autoMask','undoMask','clearMask','showRegions','paintMode','eraseMode','brush'])
   assert(editor.includes('id="'+id+'"'),'editor must expose '+id+' for touch and mouse authoring');
-assert(editor.includes("window.PortraitSplineSeam.generate(images.head"),'auto tracing uses the selected species head, not a synthetic contour');
+assert(editor.includes("Rig.maskFromOverlap(sprite,head"),'auto mask uses actual cosmetic/head alpha overlap rather than seam-length heuristics');
 assert(editor.includes("pose.translate[axis]=value"),'the 3D translation gizmo changes the serialized runtime pose');
 assert(editor.includes("pose[rotationKey]=value"),'the rotation ring changes the actual runtime pose');
-assert(editor.includes("target.u=p.u;target.v=p.v"),'generated mask dabs remain drag-editable in 2D');
+assert(editor.includes("Rig.paintPixelMask(current,p.u,p.v"),'the 2D brush and eraser modify the serialized pixel-region mask');
 assert(editor.includes("void loadHead()") && catalog.includes("speciesIndexUrl"),'head silhouettes are loaded through the species index');
 assert(viewer.includes("new THREE.WebGLRenderer")&&viewer.includes("new THREE.Raycaster"),'the pose view is a true interactive 3D scene');
 assert(viewer.includes("window.PortraitSplineRig.deformPosition"),'the 3D mesh is generated by the same deformation as the game');
@@ -85,7 +79,7 @@ assert(viewer.indexOf('const spriteSurface =') >= 0
 assert(editor.includes("NpcAvatarPreview.renderProfileToCanvas") && editor.includes("NpcAvatarPreview.ensurePortraitCosmetics"),
   '3D author uses the same canonical full-character source as the Pants Rig Author');
 assert(editor.includes("portraitView:'front',onlyHeadSprite:true"),
-  'the 2D seam generator must use the canonical head-only portrait (same B scaling as the runtime)');
+  'automatic rigid-region classification uses the canonical head-only portrait (same B scaling as runtime)');
 assert(editor.includes('const portraitReference=images.character||images.head'),
   'the 2D canvas should show the canonical full-character portrait instead of drawing a separately scaled head');
 assert(!editor.includes("void loadHead(); // A head-only alpha reference"),
@@ -138,5 +132,5 @@ async function checkIndexedHead() {
   }
   assert.equal(drawn.length, 6, 'every selected head must be positioned for the silhouette and 3D preview');
 }
-checkIndexedHead().then(() => console.log('Spline 3D editor + auto head-silhouette seam: geometry, indexed sprite paths, collision, author wiring, and contour masks pass.'))
+checkIndexedHead().then(() => console.log('Spline 3D editor + rigid/flexible masks: indexed sprite paths, collision, and brush/eraser wiring pass.'))
   .catch(error => { console.error(error); process.exitCode = 1; });
