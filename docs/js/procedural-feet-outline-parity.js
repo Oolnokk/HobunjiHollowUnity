@@ -180,6 +180,29 @@
       }
     };
 
+    // This adapter has a known, bounded pose change: it may replace the
+    // current world matrix with the last visible matrix in its secondary draw.
+    // Advertise both matrices to shared held/shell scissor grouping ONLY when
+    // the original draw hook was the built-in no-op. Unknown hook chains stay
+    // unbounded and retain their conservative independent depth replays.
+    if (!previousBefore || previousBefore === THREE.Object3D?.prototype?.onBeforeRender
+        || previousBefore.__hobunjiScreenSpaceInvariantDepthPush === true) {
+      // The foot-depth push translates/scales about the perspective eye, so
+      // its *screen footprint* is unchanged. The current and captured matrices
+      // enclose both parity poses even though their depth values differ.
+      Object.defineProperty(mesh, '__hobunjiXrayBoundParity', {
+        configurable: true, // Mesh replacement/disposal must never retain a stale pose adapter.
+        value: {
+          hook: mesh.onBeforeRender,
+          visibleMatrixWorld: state.visibleMatrixWorld, // The alternative matrix used during a fresh outline/depth draw.
+          isFresh: () => {
+            const age = performance.now() - state.visibleCapturedAt;
+            return age >= 0 && age <= MAX_SNAPSHOT_AGE_MS;
+          },
+        },
+      });
+    }
+
     mesh.onAfterRender = function feetOutlineParityAfter(...args) {
       previousAfter?.apply(this, args);
       const restoreMatrix = state.restoreStack.pop();

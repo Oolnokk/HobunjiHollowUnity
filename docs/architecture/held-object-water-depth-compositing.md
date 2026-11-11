@@ -81,7 +81,7 @@ standing elevation and tile of their owning actor:
   without the required standard chunks fail closed: their ground remains fully opaque to the
   held/foot overlay rather than guessing an elevation.
 
-Actors at effectively the same elevation can share a replay when their gear bounds cannot overlap each other’s projected floor neighborhoods. Uncertain projections use separate replays. The renderer prepares the ground material list once per pass and narrows each depth draw to its own screen bounds when it can prove them. Parts that cannot be covered by their neighborhood use ordinary ground depth. The shell-outline pass uses the same tile and elevation filter. The final colorless ground
+Actors at effectively the same elevation can share a replay when their gear bounds cannot overlap each other’s projected floor neighborhoods. Unknown/custom draw hooks still use conservative separate replays. Procedural hands and feet may join batching only when their registered parity hook owns the mesh's onBeforeRender without an earlier custom hook: the projection encloses both the current transform and a fresh prior visible transform, plus up to 2× shell-thickness expansion. If another hook replaces that callback, batching automatically falls back to conservative bounds. The leg rig's existing foot-depth-push callback is now explicitly certified as *screen-projection invariant* only when it has no preceding custom hook: a uniform scale about a perspective camera moves the foot in depth without changing its projected outline, while an orthographic view skips this adjustment. The feet parity adapter may trust that certified callback, expanding the existing batching opportunity to hands and feet across players, civilians and enemies. Any other draw-hook chain remains conservative. The synthetic 24-to-3 grouping test is a capacity check, **not** a measured NPC or enemy frame improvement. The renderer prepares the ground material list once per pass and narrows each depth draw to its own screen bounds when it can prove them. Parts that cannot be covered by their neighborhood use ordinary ground depth. The shell-outline pass uses the same tile and elevation filter. The final colorless ground
 restore remains before translucent water/slush tinting.
 
 ## Ordinary-depth replay supplement
@@ -220,6 +220,10 @@ partial tint.
 
 ## Shell outlines inherit the source object's ground-x-ray visibility
 
+Flat character portrait PNGs, modular weapon sprite layers, flail-rope PNGs, merged leaf cards, and grass/weed billboards carry their **own authored outlines** and must not join layer 1. The only character parts requiring an inverted-hull outline are the volumetric hands and feet; independent volumetric terrain/furniture still uses its ordinary shell policy. The held renderer removes accidental layer-1 membership from authored weapon planes while retaining their held-object x-ray and water mask layers. The shell replayer also filters authored planes defensively.
+
+The occluder depth material transaction is prepared **once per shell replay**, not once per elevation group: each group updates only ground tile/elevation uniforms. The final full-depth restore uses that same material transaction, and the outer `finally` restores material/camera/renderer flags even if a draw throws.
+
 The inverted-hull shell pass is a separate render from the visible object draw.
 Without an explicit parity step, the base mesh can correctly x-ray through
 classified ground while its shell is still rejected by the ordinary ground
@@ -227,8 +231,11 @@ depth left in the framebuffer.
 
 HeldObjectRenderOrder applies the same rule to both representations:
 
-1. The normal layer-1 shell pass temporarily omits registered held/foot x-ray
-   meshes, preventing a duplicate shell draw under ordinary ground depth.
+1. The normal layer-1 shell pass omits **only** registered held/foot meshes
+   whose owning tile/elevation actually requires the special floor exception.
+   Ordinary-depth player, civilian, enemy and companion shells stay in the
+   ordinary pass and draw once. If none needs a floor exception, there is no
+   shell-depth reconstruction at all.
 2. A scissored replay clears depth only around those meshes and reconstructs
    solid depth while excluding the exact groundKind() set used by the
    visible held/foot x-ray. The source meshes remain in the depth replay (with
@@ -336,7 +343,9 @@ procedural hands/feet, depth textures or render-target setup:
 - After the depth replay, confirm water's
   `uHobunjiSurfaceOcclusionDepthOnly` uniform returns to 0. The alpha
   threshold is used only in colorless depth passes, never normal water color.
-- Run `node scripts/test-town-render-hotpaths.js` and the repository's
+- Run `node scripts/test-town-render-hotpaths.js`,
+  `node scripts/test-xray-shell-rig-bounds.js`,
+  `node scripts/test-outdoor-xray-pass-budget.js` and the repository's
   full Regression suite. These guard against ordering/source regressions
   but do **not** prove the actual GPU pixels; the above live flood/
   submersion cases remain required visual checks.

@@ -332,18 +332,21 @@
     farmGrassBillMesh.count = 0;
     farmGrassBillMesh.visible = deps.getGrassEnabled();
     farmGrassBillMesh.userData.isBillboard = true;
+    farmGrassBillMesh.userData.noOutline = true; // Authored grass blade art already contains its own border.
     deps.scene.add(farmGrassBillMesh);
 
     farmWeedBillMesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, cap);
     farmWeedBillMesh.frustumCulled = false;
     farmWeedBillMesh.count = 0;
     farmWeedBillMesh.userData.isBillboard = true;
+    farmWeedBillMesh.userData.noOutline = true; // Don't outline individual flat weed cards.
     deps.scene.add(farmWeedBillMesh);
 
     cuttableBillboardGlowMesh = new THREE.InstancedMesh(_grassBladeGeo, cuttableBillboardGlowMat || grassBillboardMat, 28);
     cuttableBillboardGlowMesh.frustumCulled = false;
     cuttableBillboardGlowMesh.count = 0;
     cuttableBillboardGlowMesh.userData.isBillboard = true;
+    cuttableBillboardGlowMesh.userData.noOutline = true; // Colored highlight pass is separate from shell rendering.
     deps.scene.add(cuttableBillboardGlowMesh);
   }
 
@@ -394,6 +397,7 @@
     townGrassBillMesh.frustumCulled = false;
     townGrassBillMesh.visible = deps.getGrassEnabled();
     townGrassBillMesh.userData.isBillboard = true;
+    townGrassBillMesh.userData.noOutline = true; // Festival lawn blade cards already carry authored ink.
     const dummy = new THREE.Object3D();
     let idx = 0;
     for (let row = 0; row < trows; row++) {

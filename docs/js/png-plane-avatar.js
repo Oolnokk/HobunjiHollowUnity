@@ -832,12 +832,14 @@
     const planeGeo = new THREE.PlaneGeometry(config.planeWidth, config.planeHeight);
     const frontMesh = new THREE.Mesh(planeGeo, makeSpriteMaterial(THREE, config.textures.frontOriginal, 'npc_avatar_front_material'));
     frontMesh.name = 'npc_avatar_front_plane';
+    frontMesh.userData.noOutline = true; // The portrait PNG owns the character body's silhouette ink.
     frontMesh.position.z = config.anchorZ;
     frontMesh.renderOrder = 2;
     group.add(frontMesh);
 
     const backMesh = new THREE.Mesh(planeGeo.clone(), makeSpriteMaterial(THREE, config.textures.backForOriginal, 'npc_avatar_back_material'));
     backMesh.name = 'npc_avatar_back_plane';
+    backMesh.userData.noOutline = true; // Only the separate volumetric hands and feet need generated outlines.
     backMesh.position.z = config.anchorZ - (cfg().backPlaneOffsetZ ?? 0.001);
     backMesh.rotation.y = Math.PI;
     backMesh.renderOrder = 2;
@@ -949,12 +951,14 @@
     frontMesh.rotation.y = Math.PI / 2;
     frontMesh.renderOrder = 2;
     frontMesh.name = (options.name || 'animal') + '_front_plane';
+    frontMesh.userData.noOutline = true; // Animal sprites are already outlined in their art.
 
     const backMesh = new THREE.Mesh(backGeo, backMat);
     backMesh.position.x = -faceSeparation;
     backMesh.rotation.y = -Math.PI / 2;
     backMesh.renderOrder = 2;
     backMesh.name = (options.name || 'animal') + '_back_plane';
+    backMesh.userData.noOutline = true; // Preserve inked silhouette without a generated shell.
 
     const group = new THREE.Group();
     group.name = (options.name || 'animal_plane') + '_group';

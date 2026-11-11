@@ -154,6 +154,8 @@
   let nonGroundDepthReplayCount = 0;
   let groundDepthRestoreCount = 0;
   let invariantRepairCount = 0;
+  let ordinaryShellMeshesDrawnOnce = 0; // Normal-depth outlines kept in the existing scene pass, shared by all actor types.
+  let ordinaryShellReplaysAvoided = 0; // Entire depth-rebuild shell sequences skipped when no part needs a tile exception.
   let shellXrayPassCount = 0; // Shell passes replay registered x-ray objects against elevation-filtered ground depth.
   let shellXrayMeshDrawCount = 0; // Registered x-ray meshes whose shell was redrawn with matching visibility.
   let lastXrayTileRegions = 0; // Active neighborhoods before merging compatible depth draws.
@@ -379,6 +381,18 @@
     preparedLights.add(light);
   }
 
+  function isAuthoredInkPlane(mesh) {
+    // Only flat authored sprite/billboard art carries its outline in its PNG.
+    // GLB hands/feet and genuinely volumetric held objects retain their
+    // inverted shell and their independent ground/water depth treatment.
+    if (mesh?.userData?.hobunjiProceduralHand === true || mesh?.userData?.hobunjiProceduralFoot === true) return false;
+    const data = mesh?.userData || {}; // Mesh-authored art classification; never infer from a material shared with 3D props.
+    return data.noOutline === true || data.isPngPlane === true
+      || data.hobunjiWeaponAssemblyPart === true || data.isBillboard === true
+      || data.isWildernessGrassChunk === true || data.isRichFoliageBillboard === true
+      || mesh?.geometry?.type === 'PlaneGeometry';
+  }
+
   function enforceHeldMesh(mesh) {
     if (!mesh?.isMesh) return false;
     let repaired = false;
@@ -389,6 +403,13 @@
       repaired = true;
     }
     mesh.userData.hobunjiLegacyRenderOrder = LEGACY_HELD_RENDER_ORDER;
+    if (isAuthoredInkPlane(mesh)) {
+      mesh.userData.noOutline = true; // Author-supplied ink must never acquire a synthetic black shell.
+      if (hasLayer(mesh, SHELL_LAYER)) {
+        mesh.layers.disable(SHELL_LAYER); // Retains default, held-overlay and water/x-ray depth layers.
+        repaired = true;
+      }
+    }
 
     // Neutral renderOrder restores Three's ordinary positioning semantics in
     // any non-overlay/debug view. The selective depth replay supplies the one
@@ -1006,11 +1027,19 @@
     return !!geometry && !geometry.morphAttributes?.position?.length;
   }
 
+  function hasAlternateReplayPose(object) {
+    // A fresh hand/foot parity snapshot can be the transform used by a later
+    // draw even when matrixWorld currently projects outside this viewport.
+    // It is unsafe to cull these meshes against the current matrix alone.
+    const parity = object?.__hobunjiXrayBoundParity; // Existing trusted per-rig draw-hook registration.
+    return !!parity && parity.hook === object?.onBeforeRender && !!parity.visibleMatrixWorld && parity.isFresh?.() === true;
+  }
+
   function collectReplayCulled(scene, keep, groupCandidates = null) {
     const culled = [];
     let kept = 0;
     scene.traverseVisible((object) => {
-      if (keep.has(object) || !isReplayCullable(object)) return;
+      if (keep.has(object) || hasAlternateReplayPose(object) || !isReplayCullable(object)) return;
       const inside = object.isSprite ? replayCullFrustum.intersectsSprite(object) : replayCullFrustum.intersectsObject(object);
       if (inside) {
         kept++;
@@ -1026,7 +1055,7 @@
     if (!candidates.length || !setReplayCullFrustum(camera, elevationScissorRect, scissorTargetWidth, scissorTargetHeight)) return null;
     const hidden = new Map(); // Restored immediately after this group’s colorless depth draw.
     for (const object of candidates) {
-      if (!object.visible) continue;
+      if (!object.visible || hasAlternateReplayPose(object)) continue;
       const inside = object.isSprite ? replayCullFrustum.intersectsSprite(object) : replayCullFrustum.intersectsObject(object);
       if (inside) continue;
       hidden.set(object, true);
@@ -1042,7 +1071,7 @@
     return meshes.filter(mesh => {
       // Only rigid leaf bounds are trustworthy. Keep animated/instanced meshes,
       // child-bearing weapon assemblies and VFX with extra shader/particle extent.
-      if (!mesh?.isMesh || !mesh.geometry || !mesh.matrixWorld || mesh.frustumCulled === false
+      if (hasAlternateReplayPose(mesh) || !mesh?.isMesh || !mesh.geometry || !mesh.matrixWorld || mesh.frustumCulled === false
           || mesh.isSkinnedMesh || mesh.isInstancedMesh || mesh.children?.length
           || mesh.geometry.morphAttributes?.position?.length
           || mesh.userData?.hobunjiReplayNeverCull === true
@@ -1094,17 +1123,26 @@
       }
       if (!geometry.boundingBox) geometry.computeBoundingBox();
       if (!geometry.boundingBox || geometry.boundingBox.isEmpty()) return true;
-      scissorBox.copy(geometry.boundingBox).applyMatrix4(mesh.matrixWorld);
-      const vfxPadding = Number(mesh.userData?.hobunjiHeldOverlayVfxPadding) || 0; // Ordinary enchantment particles retain their symmetric world overdraw budget.
-      if (vfxPadding > 0) scissorBox.expandByScalar(vfxPadding * mesh.matrixWorld.getMaxScaleOnAxis());
-      const dungeonRise = Number(mesh.userData?.hobunjiDungeonFireVfxPadding) || 0; // The charged flame rises in world +Y, not radially around the weapon.
-      if (dungeonRise > 0) {
-        const lateral = .55; // Covers the authored fire emitter's initial radius, random spread and point size without full-screen redraws.
-        scissorBox.min.x -= lateral; scissorBox.max.x += lateral;
-        scissorBox.min.z -= lateral; scissorBox.max.z += lateral;
-        scissorBox.min.y -= lateral; scissorBox.max.y += dungeonRise; // Plume height is already world-space; never multiply it by shaft scale.
+      const parity = mesh.__hobunjiXrayBoundParity;
+      const capturedPose = parity && parity.hook === mesh.onBeforeRender && parity.isFresh?.()
+        ? parity.visibleMatrixWorld : null; // May be the alternative matrix in the real parity draw.
+      // A fixed one- or two-pass loop avoids allocating a closure or array for
+      // each tool, NPC hand and foot during every projected x-ray bounds test.
+      for (let poseIndex = 0; poseIndex < (capturedPose ? 2 : 1); poseIndex++) {
+        const matrix = poseIndex === 0 ? mesh.matrixWorld : capturedPose;
+        scissorBox.copy(geometry.boundingBox).applyMatrix4(matrix);
+        const vfxPadding = Number(mesh.userData?.hobunjiHeldOverlayVfxPadding) || 0; // Preserve the original dynamic aura margin.
+        if (vfxPadding > 0) scissorBox.expandByScalar(vfxPadding * matrix.getMaxScaleOnAxis());
+        const dungeonRise = Number(mesh.userData?.hobunjiDungeonFireVfxPadding) || 0; // Preserve the fire plume's world-Y reach.
+        if (dungeonRise > 0) {
+          const lateral = .55;
+          scissorBox.min.x -= lateral; scissorBox.max.x += lateral;
+          scissorBox.min.z -= lateral; scissorBox.max.z += lateral;
+          scissorBox.min.y -= lateral; scissorBox.max.y += dungeonRise;
+        }
+        if (!includeBox(scissorBox)) return false;
       }
-      return includeBox(scissorBox);
+      return true;
     }
     function includeBox({ min, max }) {
       minWorldY = Math.min(minWorldY, min.y);
@@ -1267,7 +1305,10 @@
   }
 
   function canBoundXrayMesh(mesh) {
-    if (!isReplayCullable(mesh) || (mesh.onBeforeRender && mesh.onBeforeRender !== objectProto.onBeforeRender)
+    const parity = mesh.__hobunjiXrayBoundParity; // Only trusted rig adapters can bound a per-draw pose change.
+    const unknownHook = mesh.onBeforeRender && mesh.onBeforeRender !== objectProto.onBeforeRender
+      && parity?.hook !== mesh.onBeforeRender;
+    if (!isReplayCullable(mesh) || unknownHook
         || mesh.userData?.hobunjiReplayNeverCull === true
         || Number(mesh.userData?.hobunjiHeldOverlayVfxPadding) > 0 || Number(mesh.userData?.hobunjiDungeonFireVfxPadding) > 0) return false;
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]; // Custom vertex deformation needs an isolated replay.
@@ -1567,15 +1608,19 @@
         }
         window.PerfProfiler?.end(prepPerf);
         let groupCulled = null; // Only depth needs the bounded world occluder list.
+        let npcReplayRestore = null; // Remove off-scissor uncullable NPC rigs only during this depth submission.
         const redundantDepth = supplementDepth ? hideOrdinaryDepthRedraws(scene, cutoutDepthMeshes, protectedDepthMeshes) : null; // Retain normal opaque cover while repairing cutouts.
         try {
           if (groupScissored && groupCullCandidates) groupCulled = cullReplayGroup(camera, groupCullCandidates);
+          if (groupScissored) npcReplayRestore = window.NpcViewFrustumCull?.suspendOutsideReplayRect?.(
+            scene, camera, elevationScissorRect, scissorTargetWidth, scissorTargetHeight, group.meshes);
           camera.layers.mask = originalCameraMask;
           const depthRebuildPerf = window.PerfProfiler?.begin('held-overlay: elevation depth rebuild');
           rawRender.call(renderer, scene, camera);
           window.PerfProfiler?.end(depthRebuildPerf);
           nonGroundDepthReplayCount++;
         } finally {
+          npcReplayRestore?.(); // Restore NPC appearance before the held/stencil color draw.
           if (redundantDepth) restoreVisibility(redundantDepth);
           if (groupCulled) restoreVisibility(groupCulled);
           if (canLockColorMask) {
@@ -1741,7 +1786,8 @@
     let depthWasCleared = false;
     let replayCulled = null; // Renderables outside the scissor, hidden for every pass below (including the final depth restore, which is scissored too).
     let replayCandidates = null; // Shared between the replay loop and finally's depth restore; assigned after optional culling.
-
+    let depthStates = null; // Preserve the one depth-only material transaction across all group draws and final restoration.
+    
     internalReplay = true;
     try {
       if (scissored) {
@@ -1770,6 +1816,17 @@
       if (shadowMap) shadowMap.autoUpdate = false;
       replayCandidates = collectShellReplayCandidates(scene); // Snapshot after scissor culling; reused while the synchronous replay only changes temporary visibility.
       shellSceneTraversalsAvoided += groups.length * 2; // Former full-tree walks: one depth + one shell mask per group, plus final depth, replaced by this one walk.
+      // These source materials are identical for all elevation groups; only
+      // the ground shader's tile uniforms change. A single transaction avoids
+      // rescanning and rewriting every mesh/material once per actor group.
+      depthStates = prepareNonGroundDepthMaterials(scene, replayCandidates.depth);
+      for (const mesh of xrayMeshes) {
+        forEachMaterial(mesh.material, material => {
+          saveMaterialState(depthStates, material);
+          material.depthTest = true;
+          material.depthWrite = true;
+        });
+      }
 
       // Use the same holder neighborhoods and ground-fragment filter as the
       // visible tool/hand/foot replay. The shell cannot become visible through
@@ -1781,22 +1838,17 @@
         depthWasCleared = true;
         scene.overrideMaterial = null;
         camera.layers.mask = MASK_ALL;
-        const depthStates = prepareNonGroundDepthMaterials(scene, replayCandidates.depth);
-        for (const mesh of xrayMeshes) {
-          forEachMaterial(mesh.material, material => {
-            saveMaterialState(depthStates, material);
-            material.depthTest = true;
-            material.depthWrite = true;
-          });
-        }
         let groupCulled = null; // Keep the final depth restore outside this group’s tighter cull.
+        let npcReplayRestore = null; // Skip remote NPC portraits/limbs during just this local depth rebuild.
         try {
           if (groupScissored && groupCullCandidates) groupCulled = cullReplayGroup(camera, groupCullCandidates);
+          if (groupScissored) npcReplayRestore = window.NpcViewFrustumCull?.suspendOutsideReplayRect?.(
+            scene, camera, elevationScissorRect, scissorTargetWidth, scissorTargetHeight, group.meshes);
           rawRender.call(renderer, scene, camera);
           nonGroundDepthReplayCount++;
         } finally {
+          npcReplayRestore?.(); // Restore original actor visibility before drawing the group shell.
           if (groupCulled) restoreVisibility(groupCulled);
-          restoreMaterialStates(depthStates);
           if (group.regions.length) setGroundElevationFilter(groundMaterials, null);
         }
 
@@ -1826,21 +1878,10 @@
           scene.overrideMaterial = null;
           camera.layers.mask = MASK_ALL;
           renderer.clearDepth();
-          const restoreStates = prepareNonGroundDepthMaterials(scene, replayCandidates.depth);
-          for (const mesh of xrayMeshes) {
-            forEachMaterial(mesh.material, material => {
-              saveMaterialState(restoreStates, material);
-              material.depthTest = true;
-              material.depthWrite = true;
-            });
-          }
-          try {
-            rawRender.call(renderer, scene, camera);
-          } finally {
-            restoreMaterialStates(restoreStates);
-          }
+          rawRender.call(renderer, scene, camera); // The one original-depth transaction already covers the final unfiltered restore.
         }
       } finally {
+        if (depthStates) restoreMaterialStates(depthStates); // Also restores on a thrown depth/shell/ground draw.
         if (replayCulled) restoreVisibility(replayCulled);
         if (scissorActive) restoreRendererScissor(renderer);
         camera.layers.mask = oldCameraMask;
@@ -1866,7 +1907,7 @@
     if (isShellOutlinePass(scene, camera)) {
       const held = collectVisible(heldRegistry, scene);
       const feet = collectVisible(waterOccludedRegistry, scene);
-      const shellCandidates = [...new Set([...held, ...feet])].filter(mesh => hasLayer(mesh, SHELL_LAYER)); // Only source meshes with a real shell need the matching outline replay.
+      const shellCandidates = [...new Set([...held, ...feet])].filter(mesh => hasLayer(mesh, SHELL_LAYER) && !isAuthoredInkPlane(mesh)); // Hands, feet and true 3D props only; PNG weapon/character art already has ink.
       window.HobunjiHandOutlineParity?.refreshHeldMatrices?.(shellCandidates); // Refresh live hand matrices before camera culling or shell scissor projections.
       const xrayMeshes = filterOffscreenReplayMeshes(camera, shellCandidates);
       lastShellReplayCandidates = shellCandidates.length;
@@ -1880,14 +1921,23 @@
       if (!xrayMeshes.length || (!ground.length && !topFaceGround.length)) {
         return originalRender.call(this, scene, camera);
       }
-      const shellPadding = Math.abs(Number(scene.overrideMaterial.uniforms.uThickness.value) || 0); // Shell vertices extend outside their source bounds in screen space.
+      const baseShellPadding = Math.abs(Number(scene.overrideMaterial.uniforms.uThickness.value) || 0); // Source shell thickness before per-limb pose adapters.
+      const shellPadding = baseShellPadding * (xrayMeshes.some(mesh => !!mesh.__hobunjiXrayBoundParity && mesh.__hobunjiXrayBoundParity.hook === mesh.onBeforeRender) ? 2 : 1); // Hand/foot outlines can double their authored shell thickness; bound the maximum.
       const { groups, ordinary } = buildXrayGroups(this, scene, camera, xrayMeshes, shellPadding);
       lastShellElevationGroups = groups.length;
-      if (ordinary.length) groups.unshift({ meshes: ordinary, regions: [] }); // Retain cutout and translucent-cover depth for ordinary shells.
+      // Ordinary shells use the real scene depth unchanged; reconstructing all
+      // geometry for them duplicates the existing shell pass. Keep their normal
+      // silhouettes in that pass, including NPC, hostile, pet and player rigs.
+      ordinaryShellMeshesDrawnOnce += ordinary.length;
+      if (!groups.length) {
+        ordinaryShellReplaysAvoided++;
+        return originalRender.call(this, scene, camera);
+      }
+      const xrayGroupMeshes = groups.flatMap(group => group.meshes); // Only genuine local floor exemptions need a depth reconstruction.
       const shellGlState = this.state; // Scissoring is shared with the existing held/foot replay safety switch.
       const hasShellScissorApi = !!(shellGlState?.scissor && shellGlState?.setScissorTest); // Reports unavailable scissor support distinctly from an unsafe bound.
       const scissored = replayScissorEnabled && hasShellScissorApi
-        && replayScissorRect(this, camera, xrayMeshes, scissorRect, null, shellPadding);
+        && replayScissorRect(this, camera, xrayGroupMeshes, scissorRect, null, shellPadding); // Ordinary shells were drawn in the normal pass and must not inflate the exceptional replay rectangle.
       lastShellFullscreenReason = scissored ? 'none' : !replayScissorEnabled ? 'disabled'
         : !hasShellScissorApi ? 'scissor-api-unavailable' : lastScissorFailureReason;
       if (scissored && (scissorRect.z <= 0 || scissorRect.w <= 0)) {
@@ -1895,14 +1945,14 @@
       }
       // Avoid drawing these shells once under normal ground depth and again in
       // the selective replay. The replay redraws their complete visible shell.
-      const hiddenXrayShells = hideObjects(xrayMeshes); // Avoid a normal-depth shell draw before the selective replay.
+      const hiddenXrayShells = hideObjects(xrayGroupMeshes); // Ordinary shells are drawn once in the standard outline pass.
       let shellResult; // Return value of the ordinary shell pass, excluding x-ray participants.
       try {
         shellResult = originalRender.call(this, scene, camera);
       } finally {
         restoreVisibility(hiddenXrayShells);
       }
-      replayShellOutlineXray(this, scene, camera, xrayMeshes, ground, topFaceGround, scissored, groups, shellPadding);
+      replayShellOutlineXray(this, scene, camera, xrayGroupMeshes, ground, topFaceGround, scissored, groups, shellPadding);
       return shellResult;
     }
     if (!enabled || !isBaseWorldPass(scene, camera)) return originalRender.call(this, scene, camera);
@@ -2001,6 +2051,8 @@
       nonGroundDepthReplays: nonGroundDepthReplayCount,
       groundDepthRestores: groundDepthRestoreCount,
       invariantRepairs: invariantRepairCount,
+      ordinaryShellMeshesDrawnOnce,
+      ordinaryShellReplaysAvoided,
       shellXrayPasses: shellXrayPassCount,
       shellXrayMeshes: shellXrayMeshDrawCount,
       elevationReplayGroups: lastElevationReplayGroups,

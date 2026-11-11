@@ -92,14 +92,18 @@
     for (let i = 0; i < meshes.length; i++) {
       const object = meshes[i];
       let root = object;
-      while (root.parent) root = root.parent;
+      let hierarchyVisible = root.visible !== false; // NPC render-only culling hides roots, not every child plane.
+      while (root.parent) {
+        root = root.parent;
+        if (root.visible === false) hierarchyVisible = false;
+      }
       if (!root.isScene) { // Despawned -- drop from the registry.
         registered.delete(object);
         continue;
       }
       meshes[writeIdx++] = object;
       if (root !== activeScene) continue; // Retain inactive-area actors without modifying their materials.
-      if (!object.isMesh || !object.visible || !(object.layers.mask & (1 << LAYER))) continue;
+      if (!object.isMesh || !hierarchyVisible || !(object.layers.mask & (1 << LAYER))) continue;
       meshCount++;
       if (Array.isArray(object.material)) {
         for (const material of object.material) captureMaterial(material);

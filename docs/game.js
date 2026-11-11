@@ -27175,6 +27175,19 @@
         // in one frame, so this bucket captures the true per-frame total.
         const renderPassPerf = window.PerfProfiler?.begin('render passes');
         const activeScene = window.GridTileAccessors.getActiveScene();
+        // A walker has a stable floor-anchored root even though its skinned
+        // portrait, limbs and clothing disable Three's individual frustum
+        // culling. Suspend off-camera NPC visuals across ALL world passes,
+        // then restore before any gameplay tick or subsequent render.
+        const restoreNpcVisuals = window.NpcViewFrustumCull?.suspendForRender?.(npcWalkers, activeScene, camera);
+        try {
+        // Frame-scoped whole-actor suppression; simulation still runs before and
+        // after this render. Existing frustum culling handles camera-offscreen
+        // walkers; the new renderer adds covered NPCs and hostile humanoids.
+        window.ActorRenderOcclusion?.beginFrame?.({
+          renderer, camera, scene:activeScene, walkers:npcWalkers, hostiles:hostileObjects,
+          area:currentArea, playerPosition:{x:player.x/TILE,z:player.y/TILE}
+        });
         if (s_outlines) {
           // Colour + depth into an offscreen target so the post-process
           // composite below can read real per-pixel depth afterwards —
@@ -27192,6 +27205,9 @@
           const rpPngOccluderPerf = window.PerfProfiler?.begin('render: png occluder depth'); // Does a full activeScene.traverse() every frame -- prime suspect for scaling with total scene object count.
           window.PngPlaneOutlineOccluder.renderDepth(activeScene);
           window.PerfProfiler?.end(rpPngOccluderPerf);
+          const actorProbePerf = window.PerfProfiler?.begin('render: actor occlusion probes');
+          window.ActorRenderOcclusion?.probeAfterBase?.(); // Use existing world + PNG depth; no extra world redraw.
+          window.PerfProfiler?.end(actorProbePerf);
 
           // Selective shell outline pass (layer-1 objects only)
           const rpShellPerf = window.PerfProfiler?.begin('render: shell outline');
@@ -27271,6 +27287,9 @@
           window.PngPlaneOutlineOccluder.prune(); // Outlines off skips the pass that otherwise compacts this registry every frame.
           renderer.setRenderTarget(null);
           renderer.render(activeScene, camera);
+          const actorProbePerf = window.PerfProfiler?.begin('render: actor occlusion probes');
+          window.ActorRenderOcclusion?.probeAfterBase?.(); // Same visibility checks even with all shell outlines disabled.
+          window.PerfProfiler?.end(actorProbePerf);
           // Coloured target outline pass (layer-2 objects — green allowed, red blocked)
           if (_targetOutlineMeshes.length > 0) {
             renderer.autoClearColor = false;
@@ -27284,6 +27303,10 @@
             renderer.autoClearDepth = true;
           }
           window.PerceptionMode?.renderOverlay(renderer, activeScene, camera);
+        }
+        } finally {
+          window.ActorRenderOcclusion?.endFrame?.(); // Release all render-only hostile/NPC suppressions before resuming game systems.
+          restoreNpcVisuals?.(); // Never leave simulation-visible walkers hidden between frames.
         }
         window.PerfProfiler?.end(renderPassPerf);
         window.MobileRenderBudget?.sample(now, !paused && !window.PixelProbe?.armed);

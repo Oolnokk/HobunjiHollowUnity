@@ -133,6 +133,7 @@
     mesh.renderOrder = order;
     mesh.userData.hobunjiHeldObjectPlane = true; // Reuse the existing held-object occlusion/replay pipeline for all chain/head layers.
     mesh.userData.hobunjiWeaponAssemblyPart = true; // HeldObjectRenderOrder preserves this assembly plane's ordered overlay layer.
+    mesh.userData.noOutline = true; // The weapon PNG already contains its hand-drawn ink: never submit an inverted shell.
     return mesh;
   }
 
@@ -562,7 +563,7 @@
     mesh.userData.hobunjiGeneratedRope = true; // Tool Hub frames the actual plane bounds, not a PNG's blank margins.
     mesh.userData.dungeonRopeSprite = spec.sprite || 'assets/objectsprites/rope_long.png'; // Mobile diagnostics identify the art source.
     mesh.userData.ropeTintMethod = tintedSource === sourceTexture ? 'source-fallback' : 'ColorFill.shadeFillPixels'; // Distinguishes a successful animal shade-fill from a silently uncolored source on mobile.
-    mesh.userData.noOutline = false;
+    mesh.userData.noOutline = true; // The rope PNG already carries its outline artwork.
     const group = new THREE.Group(); // Reuses the current pendulum carrier and grip/head positioning.
     group.name = 'flail_ruin_rope';
     group.userData.hobunjiRuinRopeSprite = true; // Uniform world scale avoids skewing the camera-facing ribbon.

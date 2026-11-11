@@ -12,6 +12,58 @@ conditions on the same machine; they are not what a player sees.** Counts come f
 comes from CDP CPU profiles. One headless world per run, and bandit/tribe camps are random, so repeat anything
 close before trusting it.
 
+## 10–11 Nov 2026: camera-aimed NPC visual cost and depth replay
+
+An Opera recording of Tzizkhanash reported **2–4 FPS** while looking
+across the crowded town, versus **13 FPS** looking at the sky from the
+same session. The user independently identified NPCs as the trigger.
+These are real on-device FPS observations, but **not** controlled GPU
+time measurements; changes of scene coverage and render passes can
+contribute. Avoid comparing different camera angles as matched
+benchmarks.
+
+The NPC walker visuals include skinned PNG portrait planes, GLB hands,
+feet, and pants. Several intentionally set `frustumCulled=false` to
+protect moving/deformed vertices. That is safe for correctness, but
+Three.js continues submitting them in the world draw and repeated
+x-ray/depth renders even when the entire NPC is outside the camera
+or an already-scissored depth-repair region.
+
+- `NpcViewFrustumCull` uses a **generous actor-root sphere**, not
+  untrustworthy skinned-mesh bind-pose bounds. It suspends complete
+  off-camera NPC visual roots *only within the synchronous world-render
+  call*, restoring them in `finally` before NPC schedules, collision,
+  dialogue and animation update. Near and very large actors retain
+  generous bounds. NPC simulation remains fully active.
+- Both held-object and shell-outline **local colorless-depth replays**
+  now skip unrelated NPC visual roots whose entire conservative sphere
+  is outside the group scissor. Meshes belonging to the group being
+  reconstructed are explicitly protected; global depth restoration
+  and tile/elevation x-ray shader policy remain unchanged. Every
+  temporarily hidden rig is restored immediately after its depth draw.
+- The PNG occluder registry now checks ancestor visibility, so
+  render-suspended NPCs don't force an unnecessary alpha-cutout
+  occlusion draw. It retains entries for attached but hidden NPCs and
+  prunes only actually detached/despawned portraits.
+- Settings > **Performance & diagnostics** includes two mobile-accessible
+  A/B controls: default-on *Cull completely off-camera NPC visuals*
+  and opt-in *Hide ALL NPC visuals (diagnostic ONLY)*. The latter
+  deliberately makes scheduled NPCs visually absent but leaves
+  simulation running; turn it off after comparing the **same view**.
+  The profiler reports main-view hidden NPCs plus local depth-replay
+  skips so a zero-effect case can be distinguished from an actual
+  optimization.
+- Regressions: `scripts/test-npc-view-frustum-cull.js` and
+  `scripts/test-npc-png-depth-ancestor-cull.js` exercise shipping
+  helpers, scene ownership, near/oversized actors, camera changes,
+  protected x-ray owners, errors, and reversible PNG registry state.
+
+**Tradeoff:** the new culling removes out-of-view visual work, not the
+draw cost of NPCs genuinely visible in the current camera view.
+The user should compare identical angles with view culling on/off
+and with NPC visuals temporarily hidden to quantify the residual
+visible-rig cost. Actual per-scene FPS gains are **unmeasured**.
+
 ## 10 Nov 2026: held replay, hostile perception and reticle hitbox work
 
 Targeted follow-up to the historical 19–29 ms held replay, 10–12 ms `updateHostiles`

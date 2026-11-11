@@ -43,8 +43,9 @@ const frustum = {
   intersectsObject(mesh) { return mesh.inView; },
 };
 const filter = new Function('participantProjection', 'participantFrustum',
-  block('  function filterOffscreenReplayMeshes(', '  function applyElevationScissor(')
-  + '\nreturn filterOffscreenReplayMeshes;')(projection, frustum);
+  block('  function hasAlternateReplayPose(', '  function collectReplayCulled(')
+  + block('  function filterOffscreenReplayMeshes(', '  function applyElevationScissor(')
+  + '\nreturn filterOffscreenReplayMeshes;')(projection, frustum); // Source-extracted predicate shares the shipped trusted-pose culling guard.
 const camera = { projectionMatrix: {}, matrixWorldInverse: {} };
 const rigid = (inView, extra = {}) => ({
   isMesh: true, geometry: {}, matrixWorld: {}, frustumCulled: true,
