@@ -184,6 +184,11 @@ player.x = (80.5) * TILE; // Entrance chunk=1, player chunk=5: exactly the new f
 now = 29100;
 scheduled({ timestamp: now });
 assert.equal(calls.length, 5, 'nighttime snoring must remain audible at four chunks, after the previous two-chunk limit');
+entrance.target = 'banubu_cave_hidden'; // Simulates a saved daytime transition whose undefined original target was discarded by JSON serialization.
+delete entrance.__banubuVisibleTarget;
+now = 29400;
+scheduled({ timestamp: now });
+assert.equal(entrance.target, undefined, 'a stale serialized daytime entrance must be restored on nightfall');
 
 assert(audioSource.includes('function animalVoiceAcousticDistancePx(c, opts = {})'), 'AudioSystem must accept an acoustic-distance override');
 assert(audioSource.includes('const distance = animalVoiceAcousticDistancePx(c, opts);'), 'animal voice volume falloff must consume acoustic distance');
