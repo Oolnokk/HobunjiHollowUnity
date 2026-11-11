@@ -66,4 +66,52 @@ assert.match(editor, /flailLengthScale: SharedAttackPose\.flailLengthScaleAt\(an
   'editor scrubbing uses gameplay-length sampling instead of a second timing implementation');
 assert.match(editor, /anim\.poses\[phase\]\.flailLengthScale = SharedAttackPose\.validFlailLength\(raw\?\.flailLengthScale\)/,
   'imports restore authored connector length while old exports retain full length');
+// Equip real standalone flail recipes through the existing WeaponToolStances module;
+// otherwise authoring Light's 0.6 Neutral would silently do nothing for those weapons.
+const stanceWindow = {}; // Browser-global actors, assembly definitions and stance state share one VM context.
+const stanceContext = vm.createContext({
+  window: stanceWindow,
+  document: { currentScript: { src: 'https://example.test/docs/js/weapon-sprite-assemblies.js' } },
+  location: { href: 'https://example.test/docs/game.html', pathname: '/game.html' },
+  performance: { now: () => 1000 },
+  localStorage: { getItem: () => null },
+  fetch: async () => ({ ok: true, json: async () => config }),
+  setTimeout: () => 0, clearTimeout: () => {},
+  console,
+});
+for (const file of [
+  'docs/js/combat/shared-attack-pose.js',
+  'docs/config/weapon-sprite-assemblies.js',
+  'docs/js/weapon-sprite-assemblies.js',
+  'docs/js/weapon-tool-stances.js',
+]) vm.runInContext(fs.readFileSync(file, 'utf8'), stanceContext, { filename: file });
+const realFlails = {
+  grappleFlail: { shapeKey: 'grappleFlail', animStyle: 'sweep' },
+  hachutuTorchFlail: { shapeKey: 'hachutuTorchFlail', animStyle: 'sweep' },
+  forcedHeavyFlail: { shapeKey: 'grappleFlail', animStyle: 'sweep', weaponIdleClass: 'heavy' },
+  ordinaryWeapon: { shapeKey: 'unclassified', animStyle: 'sweep' },
+}; // Both native flails are previously unclassified; an explicit heavy override must still take precedence.
+let equipped = 'grappleFlail'; // Switches active weapon for the same runtime state view, as in actual equipment slots.
+stanceWindow.WeaponToolStances.init({
+  getActiveTool: () => 'weapon',
+  equipmentSlots: { get weapon() { return equipped; } },
+  TOOL_ITEM_DEFS: realFlails, toolMeshMap: {},
+  toolHolder: { updateMatrixWorld() {}, matrixWorld: { clone: () => ({}) } },
+});
+for (const key of ['grappleFlail', 'hachutuTorchFlail']) {
+  equipped = key;
+  assert.equal(stanceWindow.WeaponToolStances.debugSnapshot().weaponIdleClass, 'light',
+    `${key}: default flail must actually use the Light neutral stance`);
+  assert.equal(stanceWindow.WeaponToolStances.getRuntimeState().flailLengthScale, 0.6,
+    `${key}: equipped flail should shorten by 40% at rest`);
+}
+equipped = 'forcedHeavyFlail';
+assert.equal(stanceWindow.WeaponToolStances.debugSnapshot().weaponIdleClass, 'heavy',
+  'an explicitly heavy flail keeps its heavier stance');
+assert.equal(stanceWindow.WeaponToolStances.getRuntimeState().flailLengthScale, 1,
+  'heavy flail has natural length unless its own stance was authored');
+equipped = 'ordinaryWeapon';
+assert.equal(stanceWindow.WeaponToolStances.getRuntimeState().flailLengthScale, 1,
+  'normal weapons cannot inherit the flail rest multiplier');
+
 console.log('flail pose connector length: PASS (shared lerp, Light neutral, authoring, preview, physics)');
