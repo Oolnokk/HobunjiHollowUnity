@@ -36,6 +36,9 @@ for (const [t, expected] of [[0, 0.6], [WF/2, 0.8], [WF, 1], [SF, 1], [HF, 1], [
     t, WF, SF, HF, -1); // Mirroring flips the attack, never the connector's length.
   close(sampled.flailLengthScale, expected, `mirrored pose reach t=${t}`);
 }
+const untouchedEndpoints = { neutral: { flailLengthScale: 0.6 }, windup: {}, strike: {} }; // Only Neutral was edited; untouched slider values must still describe 1× attack reach.
+close(SAP.flailLengthScaleAt(untouchedEndpoints, WF, WF, SF, HF), 1, 'unmodified windup slider stays natural length');
+close(SAP.flailLengthScaleAt(untouchedEndpoints, SF, WF, SF, HF), 1, 'unmodified strike slider stays natural length');
 const custom = { neutral: { flailLengthScale: 0.6 }, windup: { flailLengthScale: 0.3 },
   strike: { flailLengthScale: 1.5 } }; // Every phase may extend or shorten its own connector.
 close(SAP.flailLengthScaleAt(custom, WF, WF, SF, HF), 0.3, 'authored windup');
