@@ -24,13 +24,13 @@ function makeRig() {
       { deadzone: { x: 5, y: 8, z: 12 }, poses: { right: { yaw: 60, pitch: 35, roll: 25 }, left: { yaw: -55 } } },
       { deadzone: { x: 4, y: 7, z: 11 }, poses: { right: { yaw: 65, pitch: 35, roll: 15 }, away: { pitch: 50 } } },
     ],
-    seam: [{ u: .5, v: .34, radiusPx: 3, color: '#af7e55' }],
+    regionMasks: { front: { size: 200, runs: [[123, 10]] } }, // Explicit rigid region remains pixel-accurate on export.
     rearOffset: { u: .015, v: -.02 },
   };
 }
 const normalized = Rig.normalize(makeRig());
 assert(normalized && normalized.points.length === 3);
-assert.equal(normalized.seam[0].color, '#af7e55', 'painted bridge color round trips through normalization');
+assert.equal(normalized.regionMasks.front.runs[0][1], 10, 'rigid mask pixels survive cosmetic normalization');
 assert.equal(normalized.segments[0].deadzone.z, 12, 'per-axis rotation deadzone survives');
 assert.equal(Rig.normalize({ enabled: true, points: [] }), null, 'malformed rig stays unrigged');
 assert.equal(Rig.resolveOptionRig(null, null), null, 'ordinary hairstyles remain flat');
@@ -137,8 +137,11 @@ const studio = read('docs/tools/character-studio/index.html');
 const editor = read('docs/tools/portrait-spline-author/index.html');
 assert(portrait.includes("hoodHidesFacialHair(hood)") && portrait.includes("splineRigFor(group)"), 'facewrap hiding and spline opt-in share portrait layer resolution');
 assert(portrait.includes("renderBehindView && slot === 'facialHair'"), 'a rigged beard does not paint a second rear portrait');
-assert(portrait.includes("seamForView(rig)"), 'rear seam positions track rear sprite offsets');
+assert(portrait.includes("splitByMask?.(partCanvas, rig.regionMasks?.[view])"), 'front/rear masks partition each cosmetic into stationary and deforming pixels');
+assert(!portrait.includes("warpHoodCanvas?.(") && !portrait.includes("paintSeamBridge?.("),
+  'new masks do not carve hood pixels or paint artificial seam bridges');
 assert(html.includes('portrait-spline-rig.js'), 'game loads the spline runtime');
 assert(studio.includes('portrait-spline-rig.js'), 'Character Studio loads the same runtime');
-assert(editor.includes('bridgeColor') && editor.includes('segmentSelect'), 'the mobile editor exposes bridge paint and per-segment controls');
+assert(editor.includes('id="paintMode"') && editor.includes('id="eraseMode"') && editor.includes('segmentSelect'),
+  'mobile editor exposes rigid brush, flexible eraser, and per-segment pose controls');
 console.log('Portrait spline rig: 22 regression assertions passed.');
