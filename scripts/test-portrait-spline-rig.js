@@ -45,7 +45,7 @@ assert.deepEqual(JSON.parse(JSON.stringify(Rig.blendSegment(normalized.segments[
   { yaw: 0, pitch: 0, roll: 0 }, 'the neutral pose is wind-free');
 // Hierarchy regression: an authored tip gust should pull the middle, never the head; editing the middle must not move the tip.
 const restingPoints=[{u:.5,v:.3,depth:.02},{u:.5,v:.5,depth:.03},{u:.5,v:.7,depth:.04}];
-const endPose=({translate})=>({deadzone:{x:0,y:0,z:0},poses:{right:{translate}}});
+const endPose=translate=>({deadzone:{x:0,y:0,z:0},poses:{right:{translate}}});
 const tipDriven=Rig.normalize({points:restingPoints,segments:[endPose({x:0}),endPose({x:.1})],tipFollow:.58});
 const upperOnly=Rig.normalize({points:restingPoints,segments:[endPose({x:.1}),endPose({x:0})],tipFollow:.58});
 const tipNeutral=Rig.posePoints(tipDriven).points,tipWind=Rig.posePoints(tipDriven,{x:1}).points;
