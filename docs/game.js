@@ -27204,8 +27204,10 @@
           renderer.autoClearDepth = false;
           const rpPngOccluderPerf = window.PerfProfiler?.begin('render: png occluder depth'); // Does a full activeScene.traverse() every frame -- prime suspect for scaling with total scene object count.
           window.PngPlaneOutlineOccluder.renderDepth(activeScene);
-          window.ActorRenderOcclusion?.probeAfterBase?.(); // Reuse world + PNG silhouette depth to recognize characters hidden behind cutout scenery.
           window.PerfProfiler?.end(rpPngOccluderPerf);
+          const actorProbePerf = window.PerfProfiler?.begin('render: actor occlusion probes');
+          window.ActorRenderOcclusion?.probeAfterBase?.(); // Use existing world + PNG depth; no extra world redraw.
+          window.PerfProfiler?.end(actorProbePerf);
 
           // Selective shell outline pass (layer-1 objects only)
           const rpShellPerf = window.PerfProfiler?.begin('render: shell outline');
@@ -27285,7 +27287,9 @@
           window.PngPlaneOutlineOccluder.prune(); // Outlines off skips the pass that otherwise compacts this registry every frame.
           renderer.setRenderTarget(null);
           renderer.render(activeScene, camera);
+          const actorProbePerf = window.PerfProfiler?.begin('render: actor occlusion probes');
           window.ActorRenderOcclusion?.probeAfterBase?.(); // Same visibility checks even with all shell outlines disabled.
+          window.PerfProfiler?.end(actorProbePerf);
           // Coloured target outline pass (layer-2 objects — green allowed, red blocked)
           if (_targetOutlineMeshes.length > 0) {
             renderer.autoClearColor = false;
