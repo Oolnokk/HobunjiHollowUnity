@@ -83,9 +83,9 @@
   // stand height) because shaft platforms re-publish their own support height every frame, which used to erase the sink.
   let presentationSink = 0;
   function setPresentationSink(depth) { presentationSink = Math.max(0, Number(depth) || 0); }
-  function getPlayerSupportY() {
+  function getPlayerSupportY(standY = lastPresentationElevation) {
     if (!ruin || deps?.getCurrentArea?.() !== MAP_ID) return null;
-    return Number.isFinite(lastPresentationElevation) ? lastPresentationElevation - presentationSink : null;
+    return Number.isFinite(standY) ? standY - presentationSink : null;
   }
   function getPlayerGroundSupportY() {
     if (!ruin || deps?.getCurrentArea?.() !== MAP_ID) return null;
