@@ -10,6 +10,11 @@ on:
       - 'scripts/test-statue-surface-cells.js'
       - 'scripts/test-statue-furniture-author.js'
       - 'scripts/test-statue-hero-pools.js'
+      - 'scripts/test-statue-rig-snapshot.js'
+      - 'docs/js/statue-rig-snapshot.js'
+      - 'docs/config/attachment-rig-profiles.js'
+      - 'docs/js/character-rig-scale.js'
+      - 'docs/js/procedural-leg-animation.js'
       - 'scripts/generate-statue-author-index.js'
       - 'docs/config/statue-author-asset-index.json'
       - 'docs/js/combat/bandit-equipment-pools.js'
@@ -36,6 +41,7 @@ jobs:
         run: |
           node scripts/generate-statue-author-index.js
           node scripts/test-statue-hero-pools.js
+          node scripts/test-statue-rig-snapshot.js
       - name: Install pinned browser dependencies
         run: npm install --no-save --package-lock=false playwright@1.55.1 three@0.128.0
       - name: Install Chromium
