@@ -217,9 +217,9 @@
     "floorMode": "nextLowerCliffTier",
     "minDistanceFromEntry": 0,
     "sameSectorAsEntry": false,
-    "alwaysVisibleOnMap": true,
+    "alwaysVisibleOnMap": false,
     "groundOnly": false,
-    "notes": "Northern Cliffs only. The cave mouth is pinned to the LOW side of a naturally generated north-facing internal plateau cliff and the rear row must already overlap HIGH plateau mass. The locale never carves, lowers, removes, or reshapes plateau cells: cave_small clips into the existing cliff face. The three cells directly north/in front of the mouth must be free, open terrain on the cave floor. Boundary escarpments are rejected. Banubu's cave facade renders at 1.5x width and 1.5x height while keeping its original depth.",
+    "notes": "Northern Cliffs only. The cave mouth is pinned to the LOW side of a naturally generated north-facing internal plateau cliff and the rear row must already overlap HIGH plateau mass. The locale never carves, lowers, removes, or reshapes plateau cells: cave_small clips into the existing cliff face. The three cells directly north/in front of the mouth must be free, open terrain on the cave floor. Boundary escarpments are rejected. Banubu's cave facade renders at 1.5x width and 1.5x height while keeping its original depth. Placement ranks valid cliff faces after all generated features, maximizing separation from zone entry, Garanki's tent and other large landmarks before considering nearby clutter.",
     "terrainAnchors": {
       "3,2": {
         "terrain": "plateauCliff",
@@ -364,7 +364,9 @@
         "4,3"
       ],
       "notes": "If the full-width cliff fit has no valid site, keep the cave on an existing north-facing internal plateau cliff using the center approach/mouth/backing probes and center embedded cell; never carve the host cliff."
-    }
+    },
+    "placeLast": true,
+    "preferIsolation": true
   },
   "meta": {
     "createdAt": "2026-07-19T00:00:00.000Z",

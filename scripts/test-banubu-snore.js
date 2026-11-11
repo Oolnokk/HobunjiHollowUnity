@@ -112,7 +112,7 @@ assert.equal(first.options.meaning, 'chatter', 'snore remains ambient chatter fo
 
 const horizontalPx = Math.hypot(first.sourceEntity.x - player.x, first.sourceEntity.y - player.y);
 assert(first.options.acousticDistancePx > horizontalPx, 'elevation must increase acoustic distance beyond flat tile distance');
-assert.equal(first.options.earshotTiles, CHUNK_TILES * 5, 'smooth attenuation range is independent from the stricter two-chunk activation gate');
+assert.equal(first.options.earshotTiles, CHUNK_TILES * 10, 'snore attenuation must double with the four-chunk activation gate');
 
 first.options.onStarted();
 now = 11500;
@@ -148,6 +148,8 @@ calls[2].options.onFinished();
 now = 28200;
 scheduled({ timestamp: now });
 assert.equal(calls.length, 3, 'daytime must suppress Banubu snoring outdoors');
+assert.equal(entrance.target, 'banubu_cave_hidden', 'daytime must deactivate the vanished exterior cave transition');
+assert.equal(windowObject.BanubuSnore.debugSnapshot().gatedEntrances, 1, 'mobile debug must identify the gated entrance');
 
 let talking = false; // Simulates Banubu dialogue while the player is indoors.
 windowObject.Combat.deps.isDialogueOpen = () => talking;
@@ -171,11 +173,22 @@ windowObject.Combat.deps.getCurrentArea = () => 'map_northern_cliffs';
 talking = false;
 
 phase = 'night';
-player.x = (64.5) * TILE; // Entrance chunk=1, player chunk=4 -> three chunks away.
+player.x = (96.5) * TILE; // Entrance chunk=1, player chunk=6 -> five chunks away.
 now = 28850;
 scheduled({ timestamp: now });
-assert.equal(calls.length, 4, 'player more than two chunks away must not hear a new snore');
-assert.match(windowObject.BanubuSnore.debugSnapshot().status, /outside two-chunk range/, 'debug state must explain the chunk-range suppression');
+assert.equal(entrance.target, undefined, 'nightfall must restore the original cave transition target, including absent original values');
+assert.equal(calls.length, 4, 'player more than four chunks away must not hear a new snore');
+assert.match(windowObject.BanubuSnore.debugSnapshot().status, /outside four-chunk range/, 'debug state must explain the chunk-range suppression');
+assert.equal(windowObject.BanubuSnore.debugSnapshot().maxChunkDistance, 4, 'public mobile diagnostics must report the doubled activation gate');
+player.x = (80.5) * TILE; // Entrance chunk=1, player chunk=5: exactly the new four-chunk limit.
+now = 29100;
+scheduled({ timestamp: now });
+assert.equal(calls.length, 5, 'nighttime snoring must remain audible at four chunks, after the previous two-chunk limit');
+entrance.target = 'banubu_cave_hidden'; // Simulates a saved daytime transition whose undefined original target was discarded by JSON serialization.
+delete entrance.__banubuVisibleTarget;
+now = 29400;
+scheduled({ timestamp: now });
+assert.equal(entrance.target, undefined, 'a stale serialized daytime entrance must be restored on nightfall');
 
 assert(audioSource.includes('function animalVoiceAcousticDistancePx(c, opts = {})'), 'AudioSystem must accept an acoustic-distance override');
 assert(audioSource.includes('const distance = animalVoiceAcousticDistancePx(c, opts);'), 'animal voice volume falloff must consume acoustic distance');
