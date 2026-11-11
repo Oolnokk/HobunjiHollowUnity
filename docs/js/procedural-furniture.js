@@ -357,6 +357,17 @@
             Number(axes.z)>0?Number(axes.z):1
           ));
         }
+        if(part.statueRigBodyScale){
+          const x=Number(part.statueRigBodyScale.x),y=Number(part.statueRigBodyScale.y);
+          // Furniture sprites have their body X/Y scale baked into geometry.
+          // These detached GLBs need the equivalent ancestor transform applied
+          // explicitly, or hands/feet ignore CharacterRigScale's nonuniform X/Y.
+          holder.scale.multiply(new THREE.Vector3(
+            x>0&&Number.isFinite(x)?x:1,
+            y>0&&Number.isFinite(y)?y:1,
+            x>0&&Number.isFinite(x)?x:1
+          ));
+        }
         if(part.statueMirrorX===true)holder.scale.x*=-1; // Same left-source -> right-hand mirror as ProceduralHandAttachments.
       }else{
         holder.scale.set(part.transform.sx/Math.max(.001,size.x),part.transform.sy/Math.max(.001,size.y),part.transform.sz/Math.max(.001,size.z));
