@@ -37,7 +37,7 @@ const root=(x,{parent=scene,visible=true}={})=>({
   children:[{isSkinnedMesh:true,frustumCulled:false}], // Actual NPC portrait/pants rigs do not support mesh-level frustum culling.
 });
 const near=root(2), visible=root(20), offscreen=root(42), hidden=root(43,{visible:false}), elsewhere=root(44,{parent:otherScene});
-const remoteInFrame=root(13); // Visible to the full camera, but outside a small weapon x-ray patch.
+const remoteInFrame=root(17); // Fully outside the small x-ray patch even with the enlarged 5.5-tile rig/tool bounds and 12px scissor margin.
 const huge=root(31);
 const walkers=[
   {root:near,area:'town',avatarHeight:1},
