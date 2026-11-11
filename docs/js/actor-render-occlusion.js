@@ -46,6 +46,8 @@
   let lastCamPos = null; // Stored previous viewpoint for conservative query-history invalidation.
   let lastCamQuat = null; // Stored previous orientation for immediate turn-around wakeup.
   let lastArea = ''; // Cached area identity, used to drop results from other maps.
+  let lastCamera = null; // Swapping cameras also invalidates sampled occlusion.
+  let lastProjection = null; // Mobile aspect/FOV/zoom changes can reveal a formerly hidden actor.
   let queryDisabled = false; // Fail-open if context/query calls do not work.
   let generation = 0; // Increments after any significant camera/area change.
   let cursor = 0; // Fair round-robin offset so distant NPCs never starve.
@@ -117,6 +119,7 @@
       // Query results are only authoritative for the view, area and actor
       // position at submission; stale negatives must never make actors vanish.
       if (pending.generation !== generation
+          || Math.abs(state.radius-pending.radius) > 0.01
           || Math.hypot(state.root.position.x-pending.x, state.root.position.y-pending.y,
             state.root.position.z-pending.z) > ACTOR_RESET_DISTANCE) {
         stats.discarded++;
@@ -155,7 +158,7 @@
     return proxy;
   }
 
-  function addActor(root, area, activeScene, playerPosition, canOcclude, requestedRadius) {
+  function addActor(root, area, activeScene, playerPosition, cameraPosition, canOcclude, requestedRadius) {
     if (!root?.isObject3D || root.visible !== true || !inScene(root, activeScene)) return;
     const state = getState(root);
     state.seen = stats.frames;
@@ -171,7 +174,12 @@
     }
     const dx = p.x-playerPosition.x, dz = p.z-playerPosition.z;
     const nearRadius = Math.max(ALWAYS_DRAW_TILES, radius + NEAR_BOUND_MARGIN_TILES);
-    const nearby = dx*dx + dz*dz <= nearRadius*nearRadius;
+    const relativeY = cameraPosition.y - (p.y + Math.min(1.5,radius*.3));
+    const cameraDx = p.x-cameraPosition.x, cameraDz=p.z-cameraPosition.z;
+    // A free/cutscene camera can be INSIDE the proxy even when the player is far away.
+    // Querying there would falsely report no visible proxy fragments.
+    const cameraInside = cameraDx*cameraDx + relativeY*relativeY + cameraDz*cameraDz <= nearRadius*nearRadius;
+    const nearby = dx*dx + dz*dz <= nearRadius*nearRadius || cameraInside;
     let outside = false;
     if (!nearby && currentViewValid) {
       sphere.center.set(p.x, p.y + Math.min(1.5, radius*.3), p.z);
@@ -210,7 +218,14 @@
     // must never make a newly revealed actor disappear.
     const pos=camera.getWorldPosition?.(eye) || camera.position;
     const quat=(eyeRotation && camera.getWorldQuaternion?.(eyeRotation)) || camera.quaternion;
-    const changed = lastArea!==currentArea || !lastCamPos
+    const projection = camera.projectionMatrix?.elements; // Three's mutable lens matrix changes after zoom/aspect adjustments.
+    let projectionChanged = !lastProjection && !!projection;
+    if (lastProjection && projection) {
+      for (let i=0;i<16;i++) if (Math.abs(lastProjection[i]-projection[i]) > 0.00001) {
+        projectionChanged=true; break;
+      }
+    }
+    const changed = lastCamera!==camera || lastArea!==currentArea || !lastCamPos || projectionChanged
       || lastCamPos.distanceToSquared(pos) > CAMERA_RESET_DISTANCE*CAMERA_RESET_DISTANCE
       || Math.abs(lastCamQuat.dot(quat)) < CAMERA_RESET_DOT;
     if (changed) {
@@ -220,6 +235,9 @@
       // accumulate into a completely different view without waking NPCs.
       if (!lastCamPos) {lastCamPos=pos.clone();lastCamQuat=quat.clone();}
       else {lastCamPos.copy(pos);lastCamQuat.copy(quat);}
+      if (projection) lastProjection=projection.slice(); // New stable projection anchor, including mobile viewport rotation.
+      else lastProjection=null;
+      lastCamera=camera;
     }
     lastArea=currentArea;
     pollQueries();
@@ -229,7 +247,7 @@
       const scale=w._npcCharacterRigRoot?.scale; // NPC species width/height; already used by the original whole-root culler.
       const mult=Math.max(1,Number(scale?.x)||1,Number(scale?.y)||1,Number(scale?.z)||1);
       const radius=Math.max(FRUSTUM_RADIUS_TILES,(2.5+(Number(w.avatarHeight)||1)*1.5)*mult+BOUND_MARGIN_TILES);
-      addActor(w.root,w.area,activeScene,player,true,radius);
+      addActor(w.root,w.area,activeScene,player,pos,true,radius);
     }
     for (const c of hostiles||[]) {
       if (c.areaId!==currentArea || !(c.health>0) || c._denHidden || c.tzatzulCapturedBy) continue;
@@ -241,7 +259,7 @@
       const scale=c.avatarRef?.group?.scale; // Creature/bandit authored size; large or stretched rigs receive a larger fail-open proxy.
       const mult=Math.max(1,Number(scale?.x)||1,Number(scale?.y)||1,Number(scale?.z)||1);
       const radius=Math.max(FRUSTUM_RADIUS_TILES,4.5*mult+BOUND_MARGIN_TILES);
-      addActor(c.avatarRef?.group,c.areaId,activeScene,player,!combat,radius);
+      addActor(c.avatarRef?.group,c.areaId,activeScene,player,pos,!combat,radius);
     }
     for (const [root,state] of states) if (state.seen!==stats.frames) {
       release(state);
@@ -273,7 +291,7 @@
         const side=state.radius*2; // Must enclose the complete character/frustum sphere, not just the PNG torso.
         proxy.scale.set(side,side,side); // Smaller boxes can self-occlude in the already-drawn depth and produce false negatives.
         proxy.visible=true; chosen.push(state);
-        state.pending={query:q,started:false,generation,x:p.x,y:p.y,z:p.z};
+        state.pending={query:q,started:false,generation,x:p.x,y:p.y,z:p.z,radius:state.radius};
         state.nextProbeFrame=stats.frames+PROBE_INTERVAL_FRAMES;
       }
       currentRenderer.autoClear=false; // Preserve the main scene's opaque depth and color.
@@ -311,7 +329,7 @@
   function reset() {
     endFrame();
     for(const state of states.values()) release(state);
-    states.clear(); lastCamPos=null; lastCamQuat=null; lastArea=''; clearHistory();
+    states.clear(); lastCamPos=null; lastCamQuat=null; lastArea=''; lastCamera=null; lastProjection=null; clearHistory();
   }
 
   function snapshot() {
