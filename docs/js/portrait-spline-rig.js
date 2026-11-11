@@ -66,9 +66,17 @@
           bits[py * MASK_SIZE + px] = rigid ? 1 : 0;
     return encodePixelMask(bits);
   }
-  function splitByMask(sprite, input) {
+  function stitchWidthPx(rig) {
+    // A full mesh-grid cell of anchored pixels hides the UV/grid seam even when the nearest
+    // deforming vertex is several portrait pixels away from the painted mask boundary.
+    const x = clamp(Math.round(finite(rig?.segmentsX,24)),4,40);
+    const y = clamp(Math.round(finite(rig?.segmentsY,32)),4,48);
+    return clamp(Math.ceil(MASK_SIZE / Math.min(x,y)) + 2, 5, 18);
+  }
+
+  function splitByMask(sprite, input, options = {}) {
     const mask = normalizePixelMask(input);
-    if (!mask || !sprite) return { rigid: null, flexible: sprite }; // Old unconverted cosmetics remain entirely flexible.
+    if (!mask || !sprite) return { rigid: null, flexible: sprite, stitchedPixels: 0 }; // Old unconverted cosmetics remain entirely flexible.
     const width = sprite.width, height = sprite.height;
     const copy = () => {
       const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
@@ -77,15 +85,57 @@
       return { canvas, ctx, data: ctx.getImageData(0, 0, width, height) };
     };
     const a = copy(), b = copy(), bits = decodePixelMask(mask);
+    const pixelCount = width * height;
+    const rigid = new Uint8Array(pixelCount); // Full-resolution ownership for this cosmetic's actual canvas dimensions.
+    const widthInCanvasPixels = clamp(finite(options.stitchPx), 0, 18)
+      * Math.min(width, height) / MASK_SIZE; // Caller opts into a seam-stitching collar; default preserves legacy exact split.
+    const distance = widthInCanvasPixels > 0 ? new Float32Array(pixelCount) : null;
+    let hasFlexibleArt = false;
     for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-      const at = (y * width + x) * 4;
-      const rigidPixel = bits[Math.min(MASK_SIZE - 1, Math.floor(y * MASK_SIZE / height)) * MASK_SIZE
+      const i = y * width + x;
+      rigid[i] = bits[Math.min(MASK_SIZE - 1, Math.floor(y * MASK_SIZE / height)) * MASK_SIZE
         + Math.min(MASK_SIZE - 1, Math.floor(x * MASK_SIZE / width))];
-      if (rigidPixel) b.data.data[at + 3] = 0;
-      else a.data.data[at + 3] = 0;
+      if (!distance) continue;
+      const flexibleArtwork = !rigid[i] && a.data.data[i * 4 + 3] >= 8;
+      if (flexibleArtwork) hasFlexibleArt = true;
+      distance[i] = flexibleArtwork ? 0 : 1e6; // Only actual moving hair is a seed; empty transparent space is not.
+    }
+    if (distance && hasFlexibleArt) {
+      const diagonal = Math.SQRT2;
+      // Chamfer distance from the unanchored hair. This moves the two-sheet *texture* cut
+      // inside an unmoving area, instead of right on the deformed edge where it can open.
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+        const i = y * width + x;
+        if (x) distance[i] = Math.min(distance[i], distance[i - 1] + 1);
+        if (y) {
+          distance[i] = Math.min(distance[i], distance[i - width] + 1);
+          if (x) distance[i] = Math.min(distance[i], distance[i - width - 1] + diagonal);
+          if (x < width - 1) distance[i] = Math.min(distance[i], distance[i - width + 1] + diagonal);
+        }
+      }
+      for (let y = height - 1; y >= 0; y--) for (let x = width - 1; x >= 0; x--) {
+        const i = y * width + x;
+        if (x < width - 1) distance[i] = Math.min(distance[i], distance[i + 1] + 1);
+        if (y < height - 1) {
+          distance[i] = Math.min(distance[i], distance[i + width] + 1);
+          if (x) distance[i] = Math.min(distance[i], distance[i + width - 1] + diagonal);
+          if (x < width - 1) distance[i] = Math.min(distance[i], distance[i + width + 1] + diagonal);
+        }
+      }
+    }
+    let stitchedPixels = 0;
+    for (let i = 0; i < pixelCount; i++) {
+      const at = i * 4;
+      const collar = rigid[i] && distance && hasFlexibleArt && distance[i] <= widthInCanvasPixels
+        && a.data.data[at + 3] >= 8;
+      if (collar) stitchedPixels++;
+      if (!rigid[i] || collar) a.data.data[at + 3] = 0; // Deep rigid pixels remain exclusively on the flat portrait.
+      else b.data.data[at + 3] = 0; // Flexible art *and* its anchored collar share one continuous mesh.
     }
     a.ctx.putImageData(a.data, 0, 0); b.ctx.putImageData(b.data, 0, 0);
-    return { rigid: a.canvas, flexible: b.canvas }; // Exactly one copy of every original opaque pixel survives in one of the two groups.
+    return { rigid: a.canvas, flexible: b.canvas, stitchedPixels };
+    // Ownership is still exclusive: collar pixels transfer from the flat texture to a pinned
+    // segment of the same mesh as the moving hair. Nothing gets alpha-blended or double-drawn.
   }
 
   function attachmentBlendField(mask, radiusPx = 18) {
@@ -515,7 +565,7 @@
     }));
   }
   window.PortraitSplineRig = { normalize, resolveOptionRig, blendSegment, posePoints, curvePoint,
-    deformPosition, attachmentBlendField, sampleAttachmentBlend, makeDefaultSegments, suggestRestPoints,
+    deformPosition, attachmentBlendField, sampleAttachmentBlend, stitchWidthPx, makeDefaultSegments, suggestRestPoints,
     normalizePixelMask, decodePixelMask, encodePixelMask, maskFromOverlap, paintPixelMask, splitByMask,
     attach, refresh, detach, debug };
 })();
