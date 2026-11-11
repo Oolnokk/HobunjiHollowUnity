@@ -27196,7 +27196,6 @@
           const rpMainPerf = window.PerfProfiler?.begin('render: main scene');
           renderer.setRenderTarget(_mainRT);
           renderer.render(activeScene, camera);
-          window.ActorRenderOcclusion?.probeAfterBase?.(); // Query against the existing main-scene depth, without stalling the GPU.
           window.PerfProfiler?.end(rpMainPerf);
 
           // Preserve the colour/depth result while PNG silhouettes add only
@@ -27205,6 +27204,7 @@
           renderer.autoClearDepth = false;
           const rpPngOccluderPerf = window.PerfProfiler?.begin('render: png occluder depth'); // Does a full activeScene.traverse() every frame -- prime suspect for scaling with total scene object count.
           window.PngPlaneOutlineOccluder.renderDepth(activeScene);
+          window.ActorRenderOcclusion?.probeAfterBase?.(); // Reuse world + PNG silhouette depth to recognize characters hidden behind cutout scenery.
           window.PerfProfiler?.end(rpPngOccluderPerf);
 
           // Selective shell outline pass (layer-1 objects only)
