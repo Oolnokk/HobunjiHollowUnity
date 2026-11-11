@@ -634,7 +634,12 @@
       _sharedPartTextures.set(key, tex);
     }
     mat.map = tex;
-    mat.color.set(0xffffff);
+    // Optional per-part weathering tint multiplies the EXISTING shared texture;
+    // un-tinted authored furniture keeps its original white color unchanged.
+    // Material tint lives on the mesh, not a new texture clone or GPU upload.
+    const tint = part.materialTextureTint; // Salvaged stronghold wood/stone/metal shade variation only.
+    mat.color.set(typeof tint === 'string' && /^#[0-9a-f]{6}$/i.test(tint) ? tint
+      : Number.isInteger(tint) && tint >= 0 && tint <= 0xffffff ? tint : 0xffffff);
     mat.transparent = !!part.textureTransparent;
     mat.needsUpdate = true;
   }
