@@ -108,7 +108,7 @@ canvas{display:block;width:100%;height:100%}
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/tool-metal-recolor.js?v=20261030rigall5"></script>
 <script src="../../js/weapon-layer-effects.js?v=20261109flailFireGC2"></script>
-<script src="../../js/weapon-sprite-assemblies.js?v=20261110inkWeapon1"></script>
+<script src="../../js/weapon-sprite-assemblies.js?v=20261111flailPose1"></script>
 <!-- Three.js r128 ESM — matches the version used by the main game (docs/index.html) -->
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.128.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.128.0/examples/jsm/"}}</script>
 </head>
@@ -330,7 +330,7 @@ canvas{display:block;width:100%;height:100%}
 <!-- Shared attack-pose math (window.SharedAttackPose): the SAME timeline, rest poses and mirroring rule the game plays for the player and every enemy. -->
 <script src="../../config/portrait-mouth-points.js?v=20261025mouth1"></script>
 <script src="../../js/attack-editor-mouth-point.js?v=20261025mouth1"></script>
-<script src="../../js/combat/shared-attack-pose.js?v=20261030h12f55f4"></script>
+<script src="../../js/combat/shared-attack-pose.js?v=20261111flailPose1"></script>
 <script src="../../js/combat/melee-pose-spacing.js?v=20260920spacing2"></script>
 <script src="../../js/combat/attack-pose-templates.js?v=20261017a"></script>
 <script src="../../js/festival-ancestor-figures.js?v=20261111h74436ed"></script> <!-- Shared carved_smooth portrait recoloring; the Statue Author reuses the exact Tzizkhanash mask. -->
@@ -1201,6 +1201,7 @@ const FIELD_DEFS = [
   { key: 'roll', label: 'Tool Z rotation°', min: -180, max: 180, step: 1, angle: true },
   { key: 'bodyYaw', label: 'Character Y rotation°', min: -180, max: 180, step: 1, angle: true },
   { key: 'bodySink', label: 'Body sink (% of total height)', min: 0, max: 25, step: 0.5, angle: false, percent: true },
+  { key: 'flailLengthScale', label: 'Flail connector length (1 = normal; flails only)', min: 0.1, max: 3, step: 0.01, angle: false }, // Interpolates separately from tool/haft scale on all three attack phases.
   { key: 'scale', label: 'Tool scale (uniform)', min: 0.1, max: 3, step: 0.01, angle: false, neutralOnly: true },
 ];
 
@@ -1429,7 +1430,7 @@ function renderActivePosePanel() {
 function syncPosePanelFromState(phase = editPhase) {
   if (phase !== editPhase || !$('activePosePanel')) return;
   for (const f of poseFieldDefs(editPhase)) {
-    const v = f.key === 'bodySink' ? sinkPctForPhase(editPhase) : safeNum(anim.poses[editPhase][f.key], f.key === 'scale' ? 1 : 0); // An unauthored sink shows the value it inherits.
+    const v = f.key === 'bodySink' ? sinkPctForPhase(editPhase) : safeNum(anim.poses[editPhase][f.key], ['scale', 'flailLengthScale'].includes(f.key) ? 1 : 0); // An unauthored sink shows the value it inherits.
     $(`pose_${f.key}`).value = v;
     $(`pose_${f.key}_val`).textContent = f.angle ? `${v.toFixed(0)}°` : f.percent ? `${v.toFixed(1)}%` : v.toFixed(2);
   }
@@ -1662,7 +1663,8 @@ const WEAPON_IDLE_POSE_FIELDS = ['x', 'y', 'z', 'pitch', 'yaw', 'bodyYaw', 'roll
 let weaponIdlePresetRetryCount = 0; // Diagnostic retry count for transient stance fetch failures.
 let weaponIdlePresetRetryTimer = null; // One editor-owned recovery timer, separate from the idle-stance sidebar.
 function sameWeaponIdlePose(actual, expected) {
-  return WEAPON_IDLE_POSE_FIELDS.every(key => Number(actual?.[key]) === Number(expected?.[key]));
+  return WEAPON_IDLE_POSE_FIELDS.every(key => Number(actual?.[key]) === Number(expected?.[key]))
+    && SharedAttackPose.validFlailLength(actual?.flailLengthScale) === SharedAttackPose.validFlailLength(expected?.flailLengthScale); // Don't overwrite an artist's connector-only edit when the idle preset fetch completes.
 }
 async function loadWeaponIdlePresets() {
   const controller = typeof AbortController === 'function' ? new AbortController() : null; // Prevent a stalled request from occupying the entire editing session.
@@ -1719,8 +1721,9 @@ function applyPreset(preset) {
     $('animName').value = anim.name;
   }
   anim.poses.neutral = { ...neutralPoseFor(preset.style), ...(preset.neutral || {}) };
-  anim.poses.windup = { ...preset.windup };
-  anim.poses.strike = { ...preset.strike };
+  const presetEndpointLength = preset.still ? SharedAttackPose.validFlailLength(anim.poses.neutral.flailLengthScale) : 1; // Still idle previews keep their authored connector length throughout the timeline.
+  anim.poses.windup = { flailLengthScale: presetEndpointLength, ...preset.windup };
+  anim.poses.strike = { flailLengthScale: presetEndpointLength, ...preset.strike };
   // The selected Action owns hand-follow and elbow pose fields too. Reload the
   // hand adapter every time so state from the previously selected Action cannot leak.
   window.HobunjiAttackEditorHandShoulderControls?.loadFromAnimationObject?.({ poses: anim.poses });
@@ -1803,12 +1806,13 @@ function poseChannelsAt(t) {
   const phase = anim.sequence === 'load' ? (t <= wf ? 'load windup' : 'load return')
     : anim.sequence === 'fire' ? (t <= sf ? 'fire' : (t <= hf ? 'recoil hold' : 'fire return'))
     : (t <= wf ? 'windup' : (t <= sf ? 'strike' : (t <= hf ? 'hold' : 'return')));
-  if (phase === 'hold' || phase === 'recoil hold') return { pose: { ...strike }, phase };
+  if (phase === 'hold' || phase === 'recoil hold') return { pose: { ...strike, flailLengthScale: SharedAttackPose.validFlailLength(strike.flailLengthScale, SharedAttackPose.validFlailLength(neutral.flailLengthScale)) }, phase };
   // A 0% windup has always shown the windup pose at t = 0 here; keep that authoring behavior.
-  if (anim.sequence !== 'load' && anim.sequence !== 'fire' && wf <= 0 && t <= 0) return { pose: defaultPose(windup.x || 0, windup.y || 0, windup.z || 0, windup.pitch || 0, windup.yaw || 0, windup.bodyYaw || 0, windup.roll || 0), phase };
+  if (anim.sequence !== 'load' && anim.sequence !== 'fire' && wf <= 0 && t <= 0) return { pose: { ...defaultPose(windup.x || 0, windup.y || 0, windup.z || 0, windup.pitch || 0, windup.yaw || 0, windup.bodyYaw || 0, windup.roll || 0), flailLengthScale: SharedAttackPose.validFlailLength(windup.flailLengthScale) }, phase };
   const channel = key => SharedAttackPose.sequencedPoseLerp(anim.sequence, t, wf, sf, hf, windup[key] || 0, strike[key] || 0, neutral[key] || 0, neutral[key] || 0);
   const k = SharedAttackPose.POSE_KEYS;
-  return { pose: defaultPose(channel(k[0]), channel(k[1]), channel(k[2]), channel(k[3]), channel(k[4]), channel(k[5]), channel(k[6])), phase };
+  return { pose: { ...defaultPose(channel(k[0]), channel(k[1]), channel(k[2]), channel(k[3]), channel(k[4]), channel(k[5]), channel(k[6])),
+    flailLengthScale: SharedAttackPose.flailLengthScaleAt(anim.poses, t, wf, sf, hf, anim.sequence) }, phase };
 }
 // Sinks the whole previewed body (portrait, hands, tool base) by `pct` of its total height. The leg handle raises its group by the same amount so
 // the soles stay on the floor and folds the two-bone legs at full length (knees bend); update(0) re-skins the pants onto the bent legs.
@@ -2569,6 +2573,7 @@ function loadAnimObject(data) {
   for (const [phase, raw] of [['neutral', n], ['windup', w], ['strike', s]]) {
     anim.poses[phase].headRelative = anim.headRelative;
     if (raw?.bodySink != null && Number.isFinite(Number(raw.bodySink))) anim.poses[phase].bodySink = Math.max(0, Math.min(SharedAttackPose.MAX_BODY_SINK_PCT, Number(raw.bodySink)));
+    anim.poses[phase].flailLengthScale = SharedAttackPose.validFlailLength(raw?.flailLengthScale); // Old exports default to the original full-length connector.
     if (raw?.shoulderAim && typeof raw.shoulderAim === 'object') anim.poses[phase].shoulderAim = { ...raw.shoulderAim };
     if (raw?.secondaryGrip && typeof raw.secondaryGrip === 'object') anim.poses[phase].secondaryGrip = { ...raw.secondaryGrip };
     if (raw?.dualWield != null) anim.poses[phase].dualWield = typeof raw.dualWield === 'object' ? { ...raw.dualWield } : raw.dualWield;
@@ -2886,6 +2891,7 @@ function updatePreviewFlail(sampleT, sampleDt) {
     attacking: sampleT > 0.001 && sampleT < 0.999, progress: sampleT,
     movementPosition: rig.position, // Preview character stays stationary unless authoring moves the rig; animation itself cannot tilt the hanging chain.
     windupFrac: anim.windupFrac, strikeFrac: anim.strikeFrac, holdFrac: anim.holdFrac,
+    flailLengthScale: SharedAttackPose.flailLengthScaleAt(anim.poses, sampleT, anim.windupFrac, anim.strikeFrac, anim.holdFrac, anim.sequence), // Same keyframe interpolation as player and enemy swings.
     yawTravelDeg: window.HobunjiWeaponSpriteAssemblies?.flailYawTravel(anim.poses?.windup, anim.poses?.strike), // Authored travel remains available in mobile diagnostics.
     pitchTravelDeg: (Number(anim.poses?.strike?.pitch) || 0) - (Number(anim.poses?.windup?.pitch) || 0),
   }); // Shared runtime keeps gravity through windup, straightens during strike, and releases physical momentum during Hold.
