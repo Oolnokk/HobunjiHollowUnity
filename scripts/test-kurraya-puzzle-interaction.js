@@ -30,6 +30,7 @@ function makeHost() {
   let pointerReleases = 0; // The HUD needs mouse input even when opened from a locked camera.
   let bookToggles = 0; // Count real keyboard and controller shortcut dispatches.
   const notes = []; // Actual indices routed through the hosted instrument's public API.
+  const judgedNotes = []; // Host events reach the timed puzzle judge before the iframe's audio UI.
   const listeners = new Map(); // Captures the host's capture-phase input events.
   const subscribers = new Map(); // Captures ControllerInput's music-priority subscriber.
   const overlay = makeElement(),frame = makeElement(),menu = makeElement(),mode = makeElement();
@@ -41,6 +42,7 @@ function makeHost() {
     KurrayaInstrument:{playFluteNote:()=>playerNotes++,playPlayerKurrayaNote:()=>playerNotes++},
     CharacterActionLocks:{acquire:()=>{instrumentLockCount++;let released=false;return {release:()=>{if(!released){released=true;instrumentLockReleases++;}}};}},
     addEventListener(name,callback){if(!listeners.has(name))listeners.set(name,new Set());listeners.get(name).add(callback);},
+    dispatchEvent(event){if(event.type==='hobunji-kurraya-puzzle-note')judgedNotes.push(event.detail.noteIndex);},
     removeEventListener(name,callback){listeners.get(name)?.delete(callback);},
     InputBindings:{getCurrentBindings:()=>({controller:controllerBindings}),getDefaultBindings:()=>({musicNote1:'X',musicNote2:'A',musicNote3:'B',musicNote4:'Y',musicBank1:'LT',musicBank3:'LB',musicPause:'START',musicModeToggle:'RS'})},
     ControllerInput:{owner:'gameplay',PRIORITY:{music:40},frame:()=>({pad:{},isDown:code=>initialKeys.includes(code)}),
@@ -72,8 +74,9 @@ function makeHost() {
     HobunjiMusicControlBridge:{enterJamMode:noop,followJamLeader:snapshot=>{jamSyncSnapshots.push(snapshot);return true;},
       stopJamFollow:()=>{jamStopCount++;return true;},jamFollowState:()=>({active:jamSyncSnapshots.length>0})}
   }; // The visible frame owns its playable instrument and receives audio-free NPC transport updates.
+  class CustomEvent {constructor(type,options){this.type=type;this.detail=options.detail;}} // Browser event constructor used by the new synchronous host score path.
   vm.runInNewContext(read('docs/js/music-minigame.js'),{
-    window,document,localStorage:{getItem:()=>null,setItem:noop},
+    window,document,CustomEvent,localStorage:{getItem:()=>null,setItem:noop},
     setTimeout:noop,clearTimeout:noop,setInterval:noop,clearInterval:noop
   });
   let performers = []; // Switches simulated NPC schedules while testing ambient resume.
@@ -93,7 +96,7 @@ function makeHost() {
     subscribers.get('music-puzzle')?.(frame);
   };
   return {
-    window,frame,mode,notes,key,controller,subscribers,hints,setInitialKeys:keys=>{initialKeys=keys;},setControllerBindings:bindings=>{controllerBindings=bindings;},getBookToggles:()=>bookToggles,getPointerReleases:()=>pointerReleases,
+    window,frame,mode,notes,judgedNotes,key,controller,subscribers,hints,setInitialKeys:keys=>{initialKeys=keys;},setControllerBindings:bindings=>{controllerBindings=bindings;},getBookToggles:()=>bookToggles,getPointerReleases:()=>pointerReleases,
     setInstrument:value=>{equippedInstrument=value;},setPerformers:value=>{performers=value;},
     ambientCounts:()=>({created:ambientCreated,removed:ambientRemoved}),ambientFrames:()=>ambientElements,
     sendNote:(source,performer='lead')=>{for(const handler of listeners.get('message')||[])handler({source,data:{source:'hobunji-music-minigame',type:'sounded-note',performer}});},
@@ -121,10 +124,12 @@ function makeHost() {
   game.key('KeyA');game.key('KeyG');game.key('KeyG',{repeat:true});
   game.key('KeyA',{altKey:true});
   assert.deepEqual(game.notes,[0,4],'keyboard notes are single edges with repeats/modifiers ignored');
+  assert.deepEqual(game.judgedNotes,[0,4],'each keyboard press reaches the host judge as soon as it occurs');
   game.key('KeyK');game.key('KeyB');
   game.controller('LT');game.controller('LT','A');game.controller('LT','A');game.controller('A');
   game.controller();game.controller('Y');game.controller();game.controller('LT','Y');game.controller('LB');
   assert.deepEqual(game.notes,[0,4,7,5,3,7],'LT changes new face presses only and supports the upper octave');
+  assert.deepEqual(game.judgedNotes,game.notes,'controller note edges dispatch the same physical inputs exactly once');
   assert.deepEqual(Array.from(game.hints.at(-1)[1]),['X','A','B','Y','LT + X','LT + A','LT + B','LT + Y']);
   assert.equal(game.getBookToggles(),2,'keyboard and controller can each toggle the songbook');
   game.controller('START');
