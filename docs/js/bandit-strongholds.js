@@ -15,10 +15,11 @@
     contrabandBarrel: Object.freeze({ gold:[6,14], alcoholCount:[1,3], narcoticChance:.42, komanineChance:.2 }),
     flaskBarrel: Object.freeze({ gold:[1,4], flaskCount:[3,6], distinctRecipes:2 }),
   });
-  const WOOD = Object.freeze({ color: '#7a4924', materialRole: 'wood', materialTexture: 'boards.png' }); // Aging Barrel's planked wood, not a new procedural texture.
-  const DARK_WOOD = Object.freeze({ color: '#6b4a28', materialRole: 'wood', materialTexture: 'boards.png' }); // Same darker fittings and boards as authored barrels.
-  const STONE = Object.freeze({ color: '#777267', materialRole: 'stone', materialTexture: 'carved_smooth.png' });
-  const METAL = Object.freeze({ color: '#43b3ae', materialRole: 'metal', materialTexture: 'carved_smooth.png' }); // Aging Barrel's existing verdigris hoop color/material.
+  const WOOD = Object.freeze({ color: '#7a4924', materialRole: 'wood', materialTexture: 'boards.png', materialTextureTint:'#f1e7d7' }); // Existing plank texture, dusty sun-bleached salvage.
+  const DARK_WOOD = Object.freeze({ color: '#6b4a28', materialRole: 'wood', materialTexture: 'boards.png', materialTextureTint:'#bfa890' }); // Same boards, darkened by age and accumulated grime.
+  const SCARRED_WOOD = Object.freeze({ color:'#57432d', materialRole:'wood', materialTexture:'boards.png', materialTextureTint:'#958579' }); // Old broken boards; one shared original texture, not an added texture.
+  const STONE = Object.freeze({ color: '#777267', materialRole: 'stone', materialTexture: 'carved_smooth.png', materialTextureTint:'#d0c9bd' }); // Chipped existing carved stone.
+  const METAL = Object.freeze({ color: '#43b3ae', materialRole: 'metal', materialTexture: 'carved_smooth.png', materialTextureTint:'#9fbeb7' }); // Existing verdigris fittings, still in the carved-stone texture family.
 
   function hash(text) {
     let value = 2166136261 >>> 0; // FNV-1a site selection never consumes the combat/spawn RNG.
@@ -78,7 +79,7 @@
     tower.push(
       part('deck-repair-scrap',-.31,1.59,-.15,.76,.10,.22,WOOD,'box',{ ry:19, topScaleX:.72 }),
       part('rail-broken-front-left',-.47,2.13,-.77,.88,.15,.15,WOOD,'box',{ rz:-9,topScaleX:.78 }),
-      part('rail-broken-front-right',.53,2.05,-.79,.56,.13,.13,DARK_WOOD,'box',{ rz:13,topScaleX:.72 }),
+      part('rail-broken-front-right',.53,2.05,-.79,.56,.13,.13,SCARRED_WOOD,'box',{ rz:13,topScaleX:.72 }),
       part('rail-side-right',.77,2.05,-.14,.14,.13,1.17,WOOD,'box',{ rx:8 }),
       part('rail-side-left-stump',-.78,1.91,.48,.13,.13,.54,DARK_WOOD,'box',{ rx:-10 }),
       part('ladder-rail-left',.11,.78,.91,.10,1.49,.11,DARK_WOOD,'box',{ rz:8 }),
@@ -97,7 +98,7 @@
         { rz:i%2?7:-4,rx:(i-2)*2,topScaleX:i===4?.69:.93,bottomScaleX:1.05 }));
     }
     tower.push(
-      part('roof-repair-scrap',-.37,3.37,.28,.62,.09,.47,WOOD,'box',{ry:-20,rz:6,topScaleX:.77}),
+      part('roof-repair-scrap',-.37,3.37,.28,.62,.09,.47,SCARRED_WOOD,'box',{ry:-20,rz:6,topScaleX:.77}),
       part('patch-metal-strap',-.72,1.97,-.80,.23,.29,.055,METAL,'box',{rz:-18,topScaleX:.79}),
     );
     catalog.fortifiedWatchtower=tower;
@@ -109,7 +110,7 @@
       part('rail-bottom-salvage',-.37,.38,-.02,1.14,.23,.17,WOOD,'box',{rz:-4,topScaleX:.86}),
       part('rail-bottom-splinter',.48,.35,-.03,.65,.16,.17,DARK_WOOD,'box',{rz:9,topScaleX:.53}),
       part('rail-upper-short',-.41,.79,.02,1.12,.17,.16,DARK_WOOD,'box',{rz:6,topScaleX:.72}),
-      part('rail-upper-jagged',.55,.73,-.025,.56,.15,.14,WOOD,'box',{rz:-12,topScaleX:.55}),
+      part('rail-upper-jagged',.55,.73,-.025,.56,.15,.14,SCARRED_WOOD,'box',{rz:-12,topScaleX:.55}),
       part('repair-cross-scrap',-.05,.57,.16,.14,.84,.15,WOOD,'box',{rz:-33,topScaleX:.62}),
       part('repair-metal-binding',-.76,.73,-.12,.20,.13,.08,METAL,'box',{rz:7}),
     ];
@@ -120,7 +121,7 @@
       part('cover-low-plank',-.11,.34,-.025,1.77,.39,.19,WOOD,'box',{rz:-3,topScaleX:.96}),
       part('cover-middle-board',-.05,.80,.035,1.85,.39,.20,DARK_WOOD,'box',{rz:5,topScaleX:.90}),
       part('cover-upper-left',-.41,1.22,.015,1.12,.36,.19,WOOD,'box',{rz:-6,topScaleX:.72}),
-      part('cover-upper-right-fragment',.53,1.38,-.025,.75,.24,.17,DARK_WOOD,'box',{rz:14,topScaleX:.56}),
+      part('cover-upper-right-fragment',.53,1.38,-.025,.75,.24,.17,SCARRED_WOOD,'box',{rz:14,topScaleX:.56}),
       part('cover-top-shattered-stump',-.57,1.61,.025,.52,.17,.18,WOOD,'box',{rz:17,topScaleX:.42}),
       part('repair-diagonal-scrap',.27,.92,.17,.15,1.53,.14,WOOD,'box',{rz:31,topScaleX:.83}),
       part('repair-top-patch',.18,1.48,.22,.66,.15,.13,DARK_WOOD,'box',{rz:-18,topScaleX:.67}),
@@ -137,7 +138,7 @@
       part('arch-wood-side-left',-.63,.88,-.26,.17,1.75,.18,DARK_WOOD,'box',{rz:-8,topScaleX:.67}),
       part('arch-wood-side-right',.66,.84,-.25,.16,1.69,.17,WOOD,'box',{rz:7,topScaleX:.84}),
       part('arch-wood-repair-lintel',.01,1.75,-.25,1.56,.14,.16,WOOD,'box',{rz:-6,topScaleX:.86}),
-      part('arch-wood-repair-scrap',-.53,1.32,-.40,.14,.83,.14,DARK_WOOD,'box',{rz:36}),
+      part('arch-wood-repair-scrap',-.53,1.32,-.40,.14,.83,.14,SCARRED_WOOD,'box',{rz:36}),
       part('arch-metal-corner-binding',.63,1.61,-.37,.25,.13,.09,METAL,'box',{rz:12}),
     ]; // No black portal plane; the existing cave transition still renders its own opening.
 
