@@ -1491,14 +1491,14 @@
     let changed = 0;
     const layout = zoneLayout(zoneId);
     for (const transition of layout?.transitions || []) {
-      if(transition?.puzzleCaveOnly)continue; // Inert cliff-door labels never become wildlife Den-Mother cave labels.
+      if(transition?.puzzleCaveOnly || sitesByMapId.get(transition?.targetMapId)?.fortifiedStronghold || sitesByMapId.get(transition?.targetMapId)?.fortifiedStrongholdChild)continue; // Camp-linked cave names are owned by the stronghold, not wildlife den turnover.
       if (!byMapId.has(transition?.targetMapId)) continue;
       const label = window.WildlifeSpawn?.denTurnoverStateForCavern?.(transition.targetMapId)?.name || 'Unexplored cave'; // Exterior labels reveal the name only after entry.
       if (transition.label !== label) { transition.label = label; changed++; }
     }
     const info = wildlifeDeps?.zoneScenes?.get?.(zoneId);
     for (const transition of info?.transitions || []) {
-      if(transition?.puzzleCaveOnly)continue; // Preserve dedicated stone-door labels in the live scene.
+      if(transition?.puzzleCaveOnly || sitesByMapId.get(transition?.targetMapId)?.fortifiedStronghold || sitesByMapId.get(transition?.targetMapId)?.fortifiedStrongholdChild)continue; // Preserve stronghold and annex labels in cached live scenes.
       if (!byMapId.has(transition?.targetMapId)) continue;
       const label = window.WildlifeSpawn?.denTurnoverStateForCavern?.(transition.targetMapId)?.name || 'Unexplored cave'; // Exterior labels reveal the name only after entry.
       if (transition.label !== label) { transition.label = label; changed++; }
