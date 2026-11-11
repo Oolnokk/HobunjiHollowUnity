@@ -15,6 +15,7 @@
   const MIN_HIDDEN_RESULTS = 2; // Two separate missing-sample results are required to hide an actor.
   const PROBE_INTERVAL_FRAMES = 3; // Spread expensive probes across render frames, including hidden actors.
   const BOUND_MARGIN_TILES = 1; // Extra margin around rig + tool volume; a too-large query only keeps an actor visible.
+  const MAX_GPU_RADIUS_TILES = 9; // Huge unbounded rig effects/oversized species cannot be confidently probed; draw those normally.
   const NEAR_BOUND_MARGIN_TILES = 2; // Never query from inside the actor's proxy box.
 
   const states = new Map(); // Actor root -> short-lived occlusion history and its own GPU query lifecycle.
@@ -181,6 +182,8 @@
     // Querying there would falsely report no visible proxy fragments.
     const cameraInside = cameraDx*cameraDx + relativeY*relativeY + cameraDz*cameraDz <= nearRadius*nearRadius;
     const nearby = dx*dx + dz*dz <= nearRadius*nearRadius || cameraInside;
+    if (!canOcclude) {state.occluded=false;state.misses=0;} // An actively fighting enemy must not inherit a stale noncombat occlusion result.
+    const queryAllowed = canOcclude && !nearby && radius <= MAX_GPU_RADIUS_TILES;
     let outside = false;
     if (!nearby && currentViewValid) {
       sphere.center.set(p.x, p.y + Math.min(1.5, radius*.3), p.z);
@@ -194,8 +197,8 @@
       stats.frustumHidden++;
       return;
     }
-    active.push({state, queryAllowed:canOcclude && !nearby});
-    if (canOcclude && !nearby && state.occluded && stats.gpuAvailable) {
+    active.push({state, queryAllowed});
+    if (queryAllowed && state.occluded && stats.gpuAvailable) {
       hidden.push(root);
       root.visible = false;
       stats.occludedHidden++;
