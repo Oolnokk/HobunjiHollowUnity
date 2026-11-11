@@ -123,11 +123,6 @@
     });
     return {
       version: 1, enabled: true, points, segments,
-      seam: (input.seam || []).slice(0, 128).map(p => ({
-        u: clamp(finite(p?.u, .5), 0, 1), v: clamp(finite(p?.v, .5), 0, 1),
-        radiusPx: clamp(finite(p?.radiusPx, 3), .5, 15),
-        ...(typeof p?.color === 'string' && /^#[0-9a-f]{6}$/i.test(p.color) ? { color: p.color } : {}), // Optional authored bridge pixels; absent means sample the original strand artwork.
-      })),
       regionMasks: Object.fromEntries(['front', 'rear'].flatMap(view => {
         const normalized = normalizePixelMask(input.regionMasks?.[view]);
         return normalized ? [[view, normalized]] : [];
@@ -246,60 +241,6 @@
     return { x: (x + (target.x - rest.x) * influence) * width,
       y: (y + (target.y - rest.y) * influence) * height,
       z: Math.max(.003, rest.z + (target.z - rest.z) * influence) * height };
-  }
-
-  function warpHoodCanvas(source, seam) {
-    if (!seam?.length || !source?.getContext) return source;
-    const w = source.width, h = source.height, ctx = source.getContext('2d', { willReadFrequently: true });
-    const original = ctx.getImageData(0, 0, w, h), result = ctx.createImageData(w, h);
-    result.data.set(original.data);
-    let touched = false;
-    for (const dab of seam) {
-      const cx = dab.u * w, cy = dab.v * h, r = dab.radiusPx * w / 200;
-      const outer = Math.ceil(r + 3), minX = Math.max(0, Math.floor(cx - outer)), maxX = Math.min(w - 1, Math.ceil(cx + outer));
-      const minY = Math.max(0, Math.floor(cy - outer)), maxY = Math.min(h - 1, Math.ceil(cy + outer));
-      for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) {
-        const dx = x - cx, dy = y - cy, distance = Math.hypot(dx, dy);
-        if (distance > r + 2) continue;
-        const dest = (y * w + x) * 4;
-        if (distance <= r * .55) {
-          result.data[dest + 3] = 0; touched = true; continue;
-        }
-        // Pull pixels inward from the old edge so the resulting opaque border
-        // moves outward; preserve nearest-neighbor palette/shading rather than blur.
-        const move = Math.max(0, r + 2 - distance) * .55;
-        const sx = clamp(Math.round(x - dx / Math.max(.01, distance) * move), 0, w - 1);
-        const sy = clamp(Math.round(y - dy / Math.max(.01, distance) * move), 0, h - 1);
-        const src = (sy * w + sx) * 4;
-        for (let c = 0; c < 4; c++) result.data[dest + c] = original.data[src + c];
-        touched = true;
-      }
-    }
-    if (touched) ctx.putImageData(result, 0, 0);
-    return source;
-  }
-
-  function paintSeamBridge(ctx, image, seam) {
-    if (!ctx || !image || !seam?.length) return;
-    ctx.save();
-    ctx.beginPath();
-    for (const dab of seam) {
-      const r = dab.radiusPx * image.width / 200; // Match the author's logical 200px portrait pixel grid.
-      ctx.moveTo(dab.u * image.width + r, dab.v * image.height);
-      ctx.arc(dab.u * image.width, dab.v * image.height, r, 0, Math.PI * 2);
-    }
-    ctx.clip();
-    ctx.drawImage(image, 0, 0, image.width, image.height); // The original tinted strand provides matching pixels wherever it already has coverage.
-    ctx.restore();
-    for (const dab of seam) {
-      if (!dab.color) continue;
-      const r = dab.radiusPx * image.width / 200, x = dab.u * image.width, y = dab.v * image.height;
-      // The author may paint an opaque connecting bridge beyond the strand's original
-      // silhouette. Paint on the portrait, NOT on the detached moving mesh, so the seam
-      // stays with the skull when the strand swings away from it.
-      ctx.save(); ctx.fillStyle = dab.color;
-      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.restore();
-    }
   }
 
   function makePart(THREE, front, rear, width, height, name) {
@@ -455,5 +396,5 @@
   }
   window.PortraitSplineRig = { normalize, resolveOptionRig, blendSegment, posePoints, curvePoint,
     deformPosition, normalizePixelMask, decodePixelMask, encodePixelMask, maskFromOverlap, paintPixelMask, splitByMask,
-    warpHoodCanvas, paintSeamBridge, attach, refresh, detach, debug };
+    attach, refresh, detach, debug };
 })();
