@@ -331,7 +331,7 @@
         ? `Scheduler top (avg ≥${SCHEDULER_SUBSCRIBER_DISPLAY_FLOOR_MS}ms):\n${schedulerTop.map(entry => `  ${entry.id} [${entry.phase}] ${entry.averageDurationMs.toFixed(2)} ms  last ${entry.lastDurationMs.toFixed(2)} ms  ×${entry.callCount}`).join('\n')}`
         : (schedulerProfile?.profilingEnabled ? 'Scheduler top: none above display floor yet' : 'Scheduler timings: profiler disabled'),
       ...(outlinePerfLine ? [outlinePerfLine] : []),
-      npcVisual ? `NPC view cull: ${npcVisual.hidden}/${npcVisual.eligible} rigs skipped · ${npcVisual.close} nearby retained · ${npcVisual.inside} in view${npcVisual.diagnostic ? ' · TEST: all NPC visuals hidden' : ''}` : 'NPC view culling: unavailable',
+      npcVisual ? `NPC view cull: ${npcVisual.hidden}/${npcVisual.eligible} camera-hidden · ${npcVisual.replayHidden}/${npcVisual.replayChecks} depth-replay skips · ${npcVisual.close} near · ${npcVisual.inside} onscreen${npcVisual.diagnostic ? ' · TEST: all NPC visuals hidden' : ''}` : 'NPC view culling: unavailable',
       `Render CPU ${avgRender.toFixed(2)} ms`,
       `Draw calls ${formatCount(perfState.calls)}   tris ${formatCount(perfState.triangles)}`,
       `GPU refs  geom ${formatCount(perfState.geometries)}   tex ${formatCount(perfState.textures)}`,
