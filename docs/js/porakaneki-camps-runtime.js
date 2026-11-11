@@ -609,7 +609,9 @@
     const recs = window.BanditCamps?.campInstances?.get?.(zoneId);
     const sites = (recs || []).map(rec => rec?.instance?.site);
     for (const rival of earlierTribes()) sites.push(...rival.occupiedSites(zoneId), ...rival.reservedSites(zoneId)); // Rival tribes keep the same spacing a bandit camp gets.
-    return sites.map(site => site ? { col: site.x + site.w * 0.5, row: site.y + site.h * 0.5, minDistance } : null).filter(Boolean);
+    const competing = sites.map(site => site ? { col: site.x + site.w * 0.5, row: site.y + site.h * 0.5, minDistance } : null).filter(Boolean); // Keep the original tribe/bandit spacing constraints.
+    const layout = combatDeps?.zoneLayouts?.get?.(zoneId); // Already-built wilderness map carries Banubu's relocated entry.
+    return competing.concat(window.LocaleTerrainPlacement?.isolatedLocaleAvoidPoints?.(layout) || []);
   }
   function huntingCampPreferredPoint(zoneState, zoneId) {
     const view = zoneState.view; // This map's dimensions determine which pair of opposing edges are its "ends".
@@ -636,7 +638,7 @@
       clearanceTiles: minimumFallback ? 0 : (smallLocaleDef.placement?.clearanceTiles ?? 2),
       requiresFlatGround: minimumFallback ? false : (smallLocaleDef.placement?.requiresFlatGround !== false),
       minDistanceFromEntry: minimumFallback ? 0 : (smallLocaleDef.placement?.minDistanceFromEntry ?? 10),
-      avoidPoints: minimumFallback ? [] : banditCampAvoidPoints(zoneId, smallLocaleDef.placement?.minDistanceFromBanditCamp ?? 12),
+      avoidPoints: minimumFallback ? [] : banditCampAvoidPoints(zoneId, smallLocaleDef.placement?.minDistanceFromBanditCamp ?? 12), // First try keeps Banubu and the tribes well apart; minimum fallback may relax to preserve the required camp.
       avoidChunks: banditCampAvoidChunks(zoneId),
       chunkSizeTiles: streamChunkSizeTiles(),
       instanceId,
