@@ -36,7 +36,8 @@
       "pitch": 37,
       "yaw": -68,
       "bodyYaw": -40,
-      "roll": -114
+      "roll": -114,
+      "flailLengthScale": 0.6
     },
     "dualWieldMain": {
       "x": -0.09,
