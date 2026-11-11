@@ -95,11 +95,12 @@ async function testMidiFallback() {
   assert(Math.abs(played[1]/played[0]-2)<1e-8,'an octave must double the oscillator frequency');
 }
 
-async function testIframeEchoInput() {
+async function testIframeEchoInput(instrument='flute') {
   const html=read('docs/assets/minigames/kurraya-puzzle.html');
   const embedded=html.match(/<script>\s*([\s\S]*?)<\/script>/)?.[1]; // Execute the shipped eight-note iframe itself, not a simplified imitation.
   assert(embedded,'eight-note puzzle iframe must contain its playable script');
   const messages=[], timers=[]; // Captures completion events and advances playback delays without a browser or waiting for real seconds.
+  const audioEvents=[]; // Verifies an echo's plucked notes retain a sounding window before each stop.
   const listeners={};
   const makeNode=()=>({
     textContent:'',value:'',disabled:false,hidden:false,children:[],style:{},
@@ -113,7 +114,7 @@ async function testIframeEchoInput() {
   const ids=Object.fromEntries(['notes','result','songList','debug','echoReplay','bookToggle','bookHint','diagnostics'].map(name=>[name,makeNode()]));
   const music={
     SCALES:{'Pentatonic Major':[0,2,4,7,9]},NOTE_CODES:require('../docs/js/kurraya-puzzle.js').NOTE_CODES,
-    createSampler:()=>({ready:()=>Promise.resolve(),play:()=>Promise.resolve(true),stop:noop,diagnostics:{ready:true}}),
+    createSampler:()=>({ready:()=>Promise.resolve(),play:()=>{audioEvents.push({kind:'play'});return Promise.resolve(true);},stop:()=>audioEvents.push({kind:'stop'}),diagnostics:{ready:true}}),
     listSongs:()=>[],settings:()=>({scale:'Pentatonic Major',tonicMidi:60}),noteName:midi=>String(midi),
     pitchFor:index=>60+index,matchSuffix:()=>null,setSettings:noop,
   }; // A deterministic silent audio transport keeps this focused on the real Simon Says sequence/state machine.
@@ -121,17 +122,26 @@ async function testIframeEchoInput() {
     window:{KurrayaPuzzle:music,addEventListener:(name,fn)=>{listeners[name]=fn;}},
     document:{getElementById:id=>ids[id],createElement:()=>makeNode(),activeElement:{tagName:'BODY'}},
     parent:{postMessage:data=>messages.push(data)},
-    location:{search:'?instrument=flute'},URLSearchParams,
-    setTimeout:(fn,ms)=>{timers.push(fn);if(ms!==850&&ms!==1800)queueMicrotask(fn);return timers.length;}, // Watchdog timeouts must not fire before an immediately ready audio context in this test.
+    location:{search:'?instrument='+instrument},URLSearchParams,
+    setTimeout:(fn,ms)=>{timers.push(fn);if(ms!==850&&ms!==1800){audioEvents.push({kind:'delay',ms});queueMicrotask(fn);}return timers.length;}, // Watchdog timeouts must not fire before an immediately ready audio context in this test.
   };
   vm.runInNewContext(embedded,sandbox,{filename:'kurraya-puzzle.html inline'});
   const api=sandbox.window.HobunjiPuzzleInstrument;
   assert.equal(api.playNote(0),true);
   assert.equal(messages.filter(entry=>entry.type==='puzzle-note'&&entry.noteIndex===0).length,1,'ordinary instrument note is sent to the ruin regardless of audio loading');
+  const exampleStart=audioEvents.length;
   assert(api.startEchoChallenge('test-puzzle',[0,1,7]));
   const settle=async()=>{for(let i=0;i<80;i++)await Promise.resolve();};
   await settle();
   assert.equal(api.getState().echo.phase,'input','challenge example must finish before note input is accepted');
+  if(instrument!=='flute'){
+    const example=audioEvents.slice(exampleStart);
+    const firstPlay=example.findIndex(event=>event.kind==='play');
+    const firstStop=example.findIndex((event,index)=>index>firstPlay&&event.kind==='stop');
+    assert(firstPlay>=0&&firstStop>firstPlay,'the plucked echo example must start and end each note');
+    assert(example.slice(firstPlay+1,firstStop).some(event=>event.kind==='delay'&&event.ms>100),
+      'a plucked echo note must be audible before stop(), not silenced in its own callback');
+  }
   assert.equal(api.playNote(0),true);
   assert.equal(api.playNote(3),true);
   assert.equal(api.getState().echo.phase,'retry');
@@ -231,6 +241,7 @@ function testTimedRuinMelodyWiring(){
   testFluteSpriteMatte();
   await testMidiFallback();
   await testIframeEchoInput();
+  await testIframeEchoInput('kurraya');
   testChallengeHandoff();
   testTimedRuinMelodyWiring();
   console.log('starter flute + timed ruin melody tests passed');

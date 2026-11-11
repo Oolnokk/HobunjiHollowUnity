@@ -177,12 +177,19 @@ button:focus-visible { outline: 2px solid #f3e6c8; outline-offset: 2px }
       const bpm=beatClock?.bpm||76,beatMs=60000/bpm; // The example's subsequent automatic attacks follow a fixed quarter-beat grid.
       const firstAt=Date.now(); // Correct for decoding/callback jitter instead of drifting 510+110 ms per note.
       for (const [position,note] of challenge.notes.entries()) {
+        const noteAt=firstAt+position*beatMs;
         if (challenge !== echoChallenge || generation !== echoGeneration) return false;
-        if(position>0)await delay(Math.max(0,firstAt+position*beatMs-Date.now()));
+        if(position>0)await delay(Math.max(0,noteAt-Date.now()));
         if (challenge !== echoChallenge || generation !== echoGeneration) return false;
         await sampler.play(music.pitchFor(note,tuning),{bpm,quarterPosition:position});
-        if (!isFlute) sampler.stop(); // Preserve the Kurraya demonstration's original plucked-note release.
+        if (!isFlute) {
+          const audibleUntil=Math.max(noteAt+beatMs-80,Date.now()+Math.min(140,beatMs*.4)); // Leave an audible pluck, even if decoding finished behind schedule.
+          await delay(Math.max(0,audibleUntil-Date.now()));
+          if (challenge !== echoChallenge || generation !== echoGeneration) return false; // Never stop a newer playback's voice.
+          sampler.stop(); // A short gap precedes the next fixed-grid demonstration note.
+        }
       }
+      await delay(Math.max(0,firstAt+challenge.notes.length*beatMs-Date.now())); // The final note gets its full listening window before player input starts.
       if (challenge !== echoChallenge || generation !== echoGeneration) return false;
       challenge.phase = 'input';
       resultEl.textContent = 'Your turn: repeat ' + challenge.notes.length + ' notes by ear.';

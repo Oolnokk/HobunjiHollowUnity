@@ -72,6 +72,33 @@ lateJudge.step(0,true);
 pressClock+=timestampSong.notes[0].lengthTicks*timestampSong.secondsPerTick*1000+90;
 assert.equal(lateJudge.note(timestampSong.notes[0].index,pressClock),false,
   'an actually late press cannot use the grace window to skip a missed note');
+let queuedNow=12000; // Simulates the render thread running past note two before its physical key event is delivered.
+const queuedSong=Song.generate('delayed-second-note',{difficulty:1,measures:1,bpm:60});
+const queuedJudge=Song.createSession(queuedSong,{clockMs:()=>queuedNow});
+queuedJudge.step(0,true);
+assert.equal(queuedJudge.note(queuedSong.notes[0].index,queuedNow),true,'the first note starts an attempt');
+const second=queuedSong.notes[1];
+const secondDeadline=12000+(second.startTick+second.lengthTicks)*queuedSong.secondsPerTick*1000;
+queuedNow=secondDeadline+40;
+queuedJudge.step(0.04,true);
+assert.equal(queuedJudge.snapshot().progress,0,'the live display resets as soon as a note is missed');
+assert.equal(queuedJudge.note(second.index,secondDeadline-10),true,
+  'the physical second-note press still counts after the display has reset due to a delayed callback');
+let graceNow=22000; // An actually late-but-within-grace press must not be discarded by a prior render frame.
+const graceJudge=Song.createSession(queuedSong,{clockMs:()=>graceNow});
+graceJudge.step(0,true);
+assert.equal(graceJudge.note(queuedSong.notes[0].index,graceNow),true);
+const graceDeadline=22000+(second.startTick+second.lengthTicks)*queuedSong.secondsPerTick*1000;
+graceNow=graceDeadline+45;
+graceJudge.step(0.045,true);
+assert.equal(graceJudge.note(second.index,graceDeadline+45),true,
+  'the 75 ms boundary grace remains active even after step() notices the missed deadline');
+const prePlateClock=33000; // A queued key event from before standing on the plate must never count as its opening note.
+const prePlateJudge=Song.createSession(queuedSong,{clockMs:()=>prePlateClock});
+prePlateJudge.step(0,true);
+assert.equal(prePlateJudge.note(queuedSong.notes[0].index,prePlateClock-20),false,
+  'a timestamp before stepping onto the plate cannot satisfy the first glyph');
+
 const replay=Song.createSession(first);
 replay.step(0,true);
 for(let t=0;t<first.totalTicks+1;t++)replay.step(first.secondsPerTick,true);

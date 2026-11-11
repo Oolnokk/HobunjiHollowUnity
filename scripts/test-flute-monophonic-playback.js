@@ -126,7 +126,7 @@ async function main() {
   assert.match(engine,/const stringDelay = stringIndex \* STRUM_NOTE_DELAY_MS/,'automatic strums must use the same spacing');
   assert.match(engine,/scheduledAt \+ stringIndex \* STRUM_NOTE_DELAY_MS/,'preview strums must use the same spacing');
   assert.match(engine,/!HOSTED_FLUTE_PERFORMANCE && voice && Number\(step\?\.gate\)/,'flute must not inherit short Kurraya pluck gates');
-  assert.match(echo,/if \(!isFlute\) sampler\.stop\(\)/,'echo examples must hand each flute note to the next');
+  assert.match(echo,/if \(!isFlute\) \{[\s\S]*?await delay\([\s\S]*?sampler\.stop\(\)/,'echo plucks must ring before stopping; flute retains natural eighth-grid note-offs');
   assert.match(host,/lyre-performance\.html\?v=[A-Za-z0-9_-]+/,'gameplay must load a cache-versioned performance engine');
   assert.match(host,/kurraya-puzzle\.html\?v=[A-Za-z0-9_-]+/,'gameplay must load a cache-versioned puzzle');
   console.log('Flute monophonic and micro-strum regression checks passed.');
