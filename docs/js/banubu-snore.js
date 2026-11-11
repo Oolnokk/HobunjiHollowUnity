@@ -22,6 +22,7 @@
   let nextSnorePhase = 'long'; // Chooses the long or short call when the next eligible frame starts playback.
   let cycleDurationMs = 0; // Accumulates audible durations of the two calls for the following equal-length pause.
   let activeSnoreToken = 0; // Invalidates delayed audio callbacks after dialogue or disposal cancels a call.
+  let discoveredOnThisInteriorVisit = false; // Avoids reading and rewriting persistent map-discovery metadata on every audio tick.
 
   const debugState = {
     status: 'booting',
@@ -346,7 +347,11 @@
     const timestamp = finite(frameContext.timestamp, nowMs());
     window.ZoneDenTotemFeatures?.updateBanubuVisibility?.(); // Keep twilight fades and the discovered cave facade current even during a long snore.
     const deps = gameDeps(); // Dialogue state is authoritative even while a slowed snore is already playing.
-    if (currentArea(deps) === BANUBU_INTERIOR_ID) window.WildernessMap?.discoverEnteredLocale?.(BANUBU_LOCALE_ID); // Entering the interior, never approaching the exterior, unlocks its map marker.
+    const insideBanubu = currentArea(deps) === BANUBU_INTERIOR_ID; // Reused for one-shot discovery on interior transitions.
+    if (insideBanubu && !discoveredOnThisInteriorVisit && window.WildernessMap?.discoverEnteredLocale) {
+      window.WildernessMap.discoverEnteredLocale(BANUBU_LOCALE_ID); // Never discover the cave from exterior fog proximity.
+      discoveredOnThisInteriorVisit = true;
+    } else if (!insideBanubu) discoveredOnThisInteriorVisit = false;
     if (deps?.isDialogueOpen?.() && (currentArea(deps) === BANUBU_INTERIOR_ID || currentArea(deps) === BANUBU_AREA_ID)) {
       activeSnoreToken++;
       activeSnoreController?.abort();
