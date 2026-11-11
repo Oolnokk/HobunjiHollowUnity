@@ -60,6 +60,10 @@ browser.WildernessMap.init({
   showToast: () => {},
 });
 assert.strictEqual(browser.WildernessMap._test.visibleLandmarks('map_northern_cliffs').length, 0, 'a stale alwaysVisible flag must not reveal the cave');
+const oldSave = JSON.parse(store.get('hobunjiSaveMeta')); // Previous builds allowed waypointing to undiscovered cave entrances.
+oldSave.worlds[0].mapWaypoint = { id: 'locale:locale_banubu_shrine', source: 'locale', localeId: 'locale_banubu_shrine', zoneId: 'map_northern_cliffs', col: 28.5, row: 21.5 };
+store.set('hobunjiSaveMeta', JSON.stringify(oldSave));
+assert.strictEqual(browser.WildernessMap.getCompassWaypoint(), null, 'legacy saved waypoints must also remain invisible before actual cave entry');
 assert.strictEqual(browser.WildernessMap.discoverEnteredLocale('locale_banubu_shrine'), false, 'standing outside must not reveal it');
 area = 'map_i_den_banubu';
 assert.strictEqual(browser.WildernessMap.discoverEnteredLocale('locale_banubu_shrine'), true, 'entering the interior must discover Banubu');
