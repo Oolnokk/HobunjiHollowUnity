@@ -513,8 +513,10 @@ function render(){
     if(shown)ctx.restore();ctx.globalAlpha=1;}
   const hoodReference=shown?(images.hoodRear||images.hood):images.hood;
   if(hoodReference){ctx.globalAlpha=.28;ctx.drawImage(hoodReference,0,0,W,H);ctx.globalAlpha=1;}
-  ctx.strokeStyle='#ffb2d3';ctx.lineWidth=1;ctx.fillStyle='#ec88b643';
-  for(let i=0;i<rig.seam.length;i++){const p=rig.seam[i];ctx.beginPath();ctx.arc(p.u*W,p.v*H,p.radiusPx*W/200,0,Math.PI*2);ctx.fillStyle=p.color||'#ec88b643';ctx.fill();ctx.strokeStyle=(i===selectedSeam?'#ffe087':'#ffb2d3');ctx.lineWidth=i===selectedSeam?2:1;ctx.stroke();}
+  if($('showRegions').checked){
+    try{const overlay=makeRegionOverlay();if(overlay)ctx.drawImage(overlay,0,0,W,H);} // Cyan pixels are anchored; translucent purple pixels follow the spline.
+    catch(error){message('Could not display the pixel region mask: '+error.message);}
+  }
   const active=normalized();if(!active){message('Invalid spline: add at least two distinct knots.');return;}
   const posed=Rig.posePoints(active,wind()),pts=posed.points;
   const drawCurve=(controlPoints,neutral)=>{
@@ -530,49 +532,56 @@ function render(){
   ctx.lineWidth=3;ctx.strokeStyle='#fcd36e';drawCurve(rig.points,true);
   ctx.lineWidth=2;ctx.strokeStyle='#7cf0e1';drawCurve(pts,false);
   rig.points.forEach((p,i)=>{ctx.beginPath();ctx.arc(p.u*W,p.v*H,i===selectedKnot?7:5,0,Math.PI*2);ctx.fillStyle=i===selectedKnot?'#fff2a2':'#ffd365';ctx.fill();ctx.strokeStyle='#1f2a37';ctx.stroke();});
-  const seamNote=rig.seam.length?'paint dabs: '+rig.seam.length:'no connection mask painted';
-  $('status').textContent=rig.points.length+' knots / '+rig.segments.length+' segments / '+seamNote+
+  const view=activeView(),mask=rig.regionMasks?.[view],rigidPixels=mask?.runs.reduce((n,p)=>n+p[1],0)||0;
+  const regionNote=mask ? 'rigid: '+rigidPixels+'px / flexible: '+(40000-rigidPixels)+'px'
+    : 'waiting for artwork and head overlap to classify pixel regions';
+  $('status').textContent=rig.points.length+' knots / '+rig.segments.length+' segments / '+regionNote+
     '\nCollision-limited segments in preview: '+posed.collisions+
     '\nSelected: knot '+(selectedKnot+1)+', segment '+(selectedSegment+1)+', '+direction+
     '\nPortrait plane: '+(shown?'rear (offset '+rig.rearOffset.u+', '+rig.rearOffset.v+')':'front')+
     '\nOnly enabled styles create extra geometry; others retain 2D rendering.';
   $('json').value=JSON.stringify(rig,null,2);
-  if(viewer)viewer.update({rig,wind:wind(),selectedKnot,direction,
-    head:images.character||images.head,front:images.front,rear:images.rear,
-    hood:shown?(images.hoodRear||images.hood):images.hood}); // Render precisely the same posed geometry as the runtime, plus reference art and interactive handles.
+  if(viewer){
+    const sources=viewerRegionSources();
+    viewer.update({rig,wind:wind(),selectedKnot,direction,
+      head:images.character||images.head,front:sources.front,rear:sources.rear,
+      rigidFront:sources.rigidFront,rigidRear:sources.rigidRear,
+      hood:shown?(images.hoodRear||images.hood):images.hood}); // Exact same rigid/flexible split as the game renderer.
+  }
 }
 function updateKnots(){while(rig.segments.length<rig.points.length-1)rig.segments.push(makeSegment());rig.segments.length=rig.points.length-1;controls();render();}
 function pick(e){const bounds=$('preview').getBoundingClientRect();return{u:clamp((e.clientX-bounds.left)/bounds.width,0,1),v:clamp((e.clientY-bounds.top)/bounds.height,0,1)};}
 function paint(p){
-  if(mode==='seamMove'){
-    const target=rig.seam[selectedSeam];
-    if(!target)return;
-    target.u=p.u;target.v=p.v; // Editable generated silhouette points remain the ordinary mask-dab schema.
+  if(mode==='paint'||mode==='erase'){
+    const view=activeView();
+    if(!images[view])return;
+    rig.regionMasks=rig.regionMasks||{};
+    const current=rig.regionMasks[view]||Rig.encodePixelMask(new Uint8Array(40000));
+    rig.regionMasks[view]=Rig.paintPixelMask(current,p.u,p.v,numeric($('brush').value,6),mode==='paint');
+    markRegionDirty(); // Recompute the overlay and the flexible 3D texture only when region pixels change.
+  }else{
+    rig.points[selectedKnot].u=p.u;rig.points[selectedKnot].v=p.v;
   }
-  else if(mode==='paint'){const last=rig.seam[rig.seam.length-1];if(last&&Math.hypot(last.u-p.u,last.v-p.v)<numeric($('brush').value,3)/700)return;rig.seam.push({...p,radiusPx:clamp(numeric($('brush').value,3),.5,15),...($('bridgePaint').checked?{color:$('bridgeColor').value}:{})});if(rig.seam.length>128)rig.seam.shift();}
-  else if(mode==='erase'){let idx=-1,best=Infinity;rig.seam.forEach((m,i)=>{const d=Math.hypot(m.u-p.u,m.v-p.v);if(d<best){best=d;idx=i;}});if(best<.05&&idx>=0){rig.seam.splice(idx,1);selectedSeam=clamp(selectedSeam,0,Math.max(0,rig.seam.length-1));}}
-  else{rig.points[selectedKnot].u=p.u;rig.points[selectedKnot].v=p.v;}
   render();
 }
-$('preview').addEventListener('pointerdown',e=>{e.preventDefault();const p=pick(e);
-  if(mode==='seamMove'){
-    let nearest=Infinity,found=-1;
-    rig.seam.forEach((dab,i)=>{const d=Math.hypot(dab.u-p.u,dab.v-p.v);if(d<nearest){nearest=d;found=i;}});
-    if(found<0 || nearest>.045){dragging=false;message('Tap a pink seam point to select and drag it, or generate a new mask.');return;}
-    selectedSeam=found;
-    $('seamPointRadius').value=rig.seam[found].radiusPx;
-  }
+$('preview').addEventListener('pointerdown',e=>{
+  e.preventDefault();
+  const p=pick(e);
   dragging=true;$('preview').setPointerCapture(e.pointerId);
-  if(mode==='move'){let best=Infinity;rig.points.forEach((m,i)=>{const d=Math.hypot(m.u-p.u,m.v-p.v);if(d<best){best=d;selectedKnot=i;}});selectedSegment=clamp(selectedKnot-1,0,rig.segments.length-1);controls();}
+  if(mode==='move'){
+    let best=Infinity;
+    rig.points.forEach((m,i)=>{const d=Math.hypot(m.u-p.u,m.v-p.v);if(d<best){best=d;selectedKnot=i;}});
+    selectedSegment=clamp(selectedKnot-1,0,rig.segments.length-1);controls();
+  }else recordMaskUndo();
   paint(p);
 });
 $('preview').addEventListener('pointermove',e=>{if(dragging){e.preventDefault();paint(pick(e));}});
 for(const event of ['pointerup','pointercancel','lostpointercapture'])$('preview').addEventListener(event,()=>dragging=false);
 function setPaintMode(next){
   mode=next;
-  for(const key of ['move','seamMove','paint','erase'])$(key+'Mode').classList.toggle('active',key===next);
+  for(const key of ['move','paint','erase'])$(key+'Mode').classList.toggle('active',key===next);
 }
-for(const m of ['move','seamMove','paint','erase'])$(m+'Mode').addEventListener('click',()=>setPaintMode(m));
+for(const m of ['move','paint','erase'])$(m+'Mode').addEventListener('click',()=>setPaintMode(m));
 $('addPoint').onclick=()=>{const i=selectedKnot,p=rig.points[i],other=rig.points[i+1]||{u:p.u+.03,v:p.v+.1,depth:p.depth+.01};rig.points.splice(i+1,0,{u:(p.u+other.u)/2,v:(p.v+other.v)/2,depth:(p.depth+other.depth)/2});selectedKnot=i+1;updateKnots();};
 $('removePoint').onclick=()=>{if(rig.points.length<=2){message('At least two knots are required.');return;}rig.points.splice(selectedKnot,1);selectedKnot=clamp(selectedKnot-1,0,rig.points.length-1);updateKnots();};
 $('segmentSelect').onchange=e=>{selectedSegment=+e.target.value;selectedKnot=selectedSegment+1;controls();render();};
@@ -581,27 +590,34 @@ $('testStrength').oninput=render;$('viewSelect').onchange=render;
 for(const [id,fn] of [['rearU',v=>rig.rearOffset.u=v],['rearV',v=>rig.rearOffset.v=v],['strandWidth',v=>rig.width=v],['response',v=>rig.windResponse=v]]){
   $(id).onchange=e=>{fn(numeric(e.target.value));rig=Object.assign(rig,Rig.normalize(rig));controls();render();};
 }
-$('clearMask').onclick=()=>{seamBackup=rig.seam.map(p=>({...p}));rig.seam=[];selectedSeam=0;render();};
-$('resetRig').onclick=()=>{rig=makeRig();selectedKnot=1;selectedSegment=0;selectedSeam=0;controls();render();};
-$('autoSeam').onclick=()=>{
-  if(!images.head){message('Head silhouette not loaded; select a repository species/gender or provide a 200×200 head reference.');return;}
-  try {
-    const result=window.PortraitSplineSeam.generate(images.head,rig.points[0],{
-      radiusPx:clamp(numeric($('brush').value,3),.5,15),
-      arcPx:clamp(numeric($('seamArc').value,26),2,90),
-    });
-    if(!result.seam.length){message('No exterior head silhouette found near the first knot (nearest '+(result.closestPx?.toFixed(1)||'unknown')+' px). Move the first knot to its hair attachment point and retry.');return;}
-    seamBackup=rig.seam.map(p=>({...p})); // One-click undo if the generated outline should be regenerated with a different span.
-    rig.seam=result.seam;selectedSeam=0;$('seamPointRadius').value=rig.seam[0].radiusPx;
-    setPaintMode('seamMove');render();
-    message('Generated '+result.seam.length+' editable seam points from the head exterior ('+result.closestPx.toFixed(1)+' px from the root). Drag pink points to refine, paint/erase as desired.');
-  }catch(error){message('Silhouette tracing failed: '+error.message);}
+$('clearMask').onclick=()=>{
+  recordMaskUndo();
+  rig.regionMasks=rig.regionMasks||{};
+  rig.regionMasks[activeView()]=Rig.encodePixelMask(new Uint8Array(40000)); // Explicit empty mask stays all-flexible, not auto-reinitialized.
+  markRegionDirty();render();
+  message('This sprite view is now entirely flexible. Use the rigid brush to attach selected pixels to the portrait.');
 };
-$('undoSeam').onclick=()=>{if(!seamBackup){message('No earlier seam generation to restore.');return;}
-  rig.seam=seamBackup;seamBackup=null;selectedSeam=0;render();message('Restored the preceding seam mask.');};
-$('seamPointRadius').onchange=e=>{const dab=rig.seam[selectedSeam];if(!dab)return;
-  dab.radiusPx=clamp(numeric(e.target.value,dab.radiusPx),.5,15);e.target.value=dab.radiusPx;render();};
-$('applyJson').onclick=()=>{try{const candidate=JSON.parse($('json').value),valid=Rig.normalize(candidate);if(!valid)throw Error('At least two distinct, normalized knots are required.');rig=valid;selectedKnot=0;selectedSegment=0;controls();render();}catch(error){message('JSON error: '+error.message);}};
+$('resetRig').onclick=()=>{rig=makeRig();maskUndo=null;selectedKnot=1;selectedSegment=0;markRegionDirty();maybeInitializeMasks();controls();render();};
+$('autoMask').onclick=()=>{
+  const view=activeView(),sprite=images[view],head=regionHead(view);
+  if(!sprite||!head){message('Load the cosmetic and its canonical head reference before resetting pixel regions.');return;}
+  try{
+    recordMaskUndo();
+    rig.regionMasks=rig.regionMasks||{};
+    rig.regionMasks[view]=Rig.maskFromOverlap(sprite,head,view==='rear'?{dx:rig.rearOffset.u,dy:rig.rearOffset.v}:{});
+    markRegionDirty();render();
+    message('Reset '+view+' mask: every pixel where the hair overlaps the head is rigid; remaining pixels are flexible.');
+  }catch(error){message('Pixel-overlap classification failed: '+error.message);}
+};
+$('undoMask').onclick=()=>{
+  if(!maskUndo){message('There is no mask change to undo.');return;}
+  rig.regionMasks=rig.regionMasks||{};
+  if(maskUndo.mask)rig.regionMasks[maskUndo.view]=maskUndo.mask;
+  else delete rig.regionMasks[maskUndo.view];
+  maskUndo=null;markRegionDirty();render();message('Restored the previous rigid/flexible mask.');
+};
+$('showRegions').onchange=render;
+$('applyJson').onclick=()=>{try{const candidate=JSON.parse($('json').value),valid=Rig.normalize(candidate);if(!valid)throw Error('At least two distinct, normalized knots are required.');rig=valid;maskUndo=null;markRegionDirty();selectedKnot=1;selectedSegment=0;controls();render();}catch(error){message('JSON error: '+error.message);}};
 $('copyRig').onclick=async()=>{const data=JSON.stringify(Rig.normalize(rig),null,2);try{await navigator.clipboard.writeText(data);message('Rig JSON copied.');}catch(_){$('json').value=data;$('json').select();message('Clipboard unavailable; select/copy the JSON from the text box.');}};
 $('download').onclick=()=>{const valid=Rig.normalize(rig);if(!valid){message('Cannot export invalid knots.');return;}
  const result=JSON.parse(JSON.stringify(cosmetic));
@@ -647,7 +663,7 @@ controls();render();
 window.HobunjiSplineAuthorDiagnostics=()=>({
   selected:{species:selectedSpecies(),gender:selectedGender(),cosmetic:activeStyle?.label||loadedName,slot:activeStyle?.slot||null},
   direction,selectedKnot,selectedSegment,mode,viewer:viewer?.debug()||{webgl:false},
-  seamCount:rig.seam.length,headLoaded:!!images.head,
+  regionMasks:Object.fromEntries(['front','rear'].map(view=>[view,rig.regionMasks?.[view]?.runs.reduce((n,p)=>n+p[1],0)??null])),headLoaded:!!images.head,
   canonicalPortrait:{loaded:!!images.character,error:canonicalPortraitError,registryReady:!!canonicalPortraitPromise},
   pose:JSON.parse(JSON.stringify(rig.segments[selectedSegment]?.poses[direction]||{})),
 }); // Visible/copyable diagnostics for mobile users who do not have devtools.
