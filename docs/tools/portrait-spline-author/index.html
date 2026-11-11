@@ -142,7 +142,8 @@ function message(value){$('catalogStatus').textContent=value;} // Source loading
 function imageInput(id,key){$(id).addEventListener('change',async e=>{
   const file=e.target.files?.[0];if(!file)return;
   const url=URL.createObjectURL(file),img=new Image();
-  img.onload=()=>{URL.revokeObjectURL(url);if(key==='head')headGeneration++;images[key]=img;render();message('Loaded '+file.name+' ('+img.width+' × '+img.height+').');};
+  img.onload=()=>{URL.revokeObjectURL(url);if(key==='head')headGeneration++;images[key]=img;
+    markRegionDirty();maybeInitializeMasks();render();message('Loaded '+file.name+' ('+img.width+' × '+img.height+').');};
   img.onerror=()=>{URL.revokeObjectURL(url);message('Could not decode '+file.name);};
   img.src=url;
 });}
@@ -155,7 +156,8 @@ $('cosmeticFile').addEventListener('change',async e=>{
     activeStyle=null;activeDraftKey=null;assetGeneration++;manualSelected=true;
     $('cosmeticSelect').selectedIndex=-1;
     cosmetic=parsed;loadedName=file.name.replace(/^\(HA\)\s*/,'');
-    rig=Rig.normalize(parsed.portraitSplineRig) || makeRig(); // Always edit the validated full schema, including every segment's default pose.
+    rig=Rig.normalize(parsed.portraitSplineRig) || makeRig(); // Preserve authored rigid/flexible masks alongside poses and spline knots.
+    maskUndo=null;markRegionDirty();maybeInitializeMasks();
     $('sourcePath').textContent='Local import: '+file.name;
     selectedKnot=1;selectedSegment=0;controls();render();message('Imported '+file.name+'. Export preserves existing cosmetic fields.');
   }catch(error){message('Invalid JSON: '+error.message);}
@@ -166,6 +168,76 @@ function rememberDraft(){
     const valid=Rig.normalize(rig);
     if(valid)rigDrafts.set(activeDraftKey,valid); // Keep this style's current knots/deadzones while switching species or cosmetics.
   }
+}
+function markRegionDirty(){
+  regionOverlayCache=null;regionSourcesCache=null; // Rebuild 2D overlay and 3D texture partitions only after artwork or mask edits.
+}
+function activeView(){return $('viewSelect').value==='rear'?'rear':'front';}
+function regionHead(view){return view==='rear'?(images.headRear||images.head):images.head;}
+function maybeInitializeMasks(){
+  if(!rig.regionMasks)rig.regionMasks={};
+  let assigned=0;
+  for(const view of ['front','rear']){
+    if(rig.regionMasks[view])continue; // Painted or previously exported masks always win over automatic defaults.
+    const sprite=images[view],head=regionHead(view);
+    if(!sprite||!head)continue;
+    try {
+      rig.regionMasks[view]=Rig.maskFromOverlap(sprite,head,view==='rear'?{dx:rig.rearOffset.u,dy:rig.rearOffset.v}:{});
+      assigned++;
+    }catch(error){message('Could not initialize '+view+' pixel regions: '+error.message);}
+  }
+  if(assigned){markRegionDirty();message('Automatically classified '+assigned+' sprite view(s) using the actual head/hair alpha overlap.');}
+  return assigned;
+}
+function makeRegionOverlay(){
+  const view=activeView(),sprite=images[view],mask=rig.regionMasks?.[view];
+  if(!sprite||!mask)return null;
+  const key=JSON.stringify(mask);
+  if(regionOverlayCache&&regionOverlayCache.source===sprite&&regionOverlayCache.view===view
+    &&regionOverlayCache.key===key&&regionOverlayCache.offset===rig.rearOffset.u+':'+rig.rearOffset.v)
+    return regionOverlayCache.canvas;
+  const canvas=document.createElement('canvas');canvas.width=canvas.height=200;
+  const ctx=canvas.getContext('2d',{willReadFrequently:true});
+  if(view==='rear')ctx.drawImage(sprite,rig.rearOffset.u*200,rig.rearOffset.v*200,200,200);
+  else ctx.drawImage(sprite,0,0,200,200);
+  const data=ctx.getImageData(0,0,200,200),bits=Rig.decodePixelMask(mask);
+  for(let i=0;i<bits.length;i++){
+    const at=i*4,alpha=data.data[at+3];
+    if(!alpha)continue;
+    if(bits[i]){data.data[at]=67;data.data[at+1]=208;data.data[at+2]=209;data.data[at+3]=Math.round(alpha*.64);}
+    else{data.data[at]=198;data.data[at+1]=109;data.data[at+2]=231;data.data[at+3]=Math.round(alpha*.25);}
+  }
+  ctx.putImageData(data,0,0);
+  regionOverlayCache={source:sprite,view,key,offset:rig.rearOffset.u+':'+rig.rearOffset.v,canvas};
+  return canvas;
+}
+function viewerRegionSources(){
+  const key=JSON.stringify(rig.regionMasks||{})+':'+rig.rearOffset.u+':'+rig.rearOffset.v;
+  const character=images.character||images.head;
+  if(regionSourcesCache&&regionSourcesCache.key===key&&regionSourcesCache.front===images.front
+    &&regionSourcesCache.rear===images.rear&&regionSourcesCache.character===character)
+    return regionSourcesCache.data;
+  const data={front:images.front,rear:images.rear,rigidFront:null,rigidRear:null};
+  for(const view of ['front','rear']){
+    const sprite=images[view],mask=rig.regionMasks?.[view];
+    if(!sprite||!mask)continue;
+    try{
+      const src=document.createElement('canvas');src.width=src.height=200;
+      const ctx=src.getContext('2d');
+      if(view==='rear')ctx.drawImage(sprite,rig.rearOffset.u*200,rig.rearOffset.v*200,200,200);
+      else ctx.drawImage(sprite,0,0,200,200);
+      const pieces=Rig.splitByMask(src,mask);
+      data[view]=pieces.flexible;
+      if(view==='front')data.rigidFront=pieces.rigid;
+      else data.rigidRear=pieces.rigid;
+    }catch(error){message('Could not split '+view+' sprite mask for 3D: '+error.message);}
+  }
+  regionSourcesCache={key,front:images.front,rear:images.rear,character,data};
+  return data;
+}
+function recordMaskUndo(){
+  const view=activeView(),current=rig.regionMasks?.[view];
+  maskUndo={view,mask:current?JSON.parse(JSON.stringify(current)):null}; // One stroke or auto-classification can be undone without altering other views.
 }
 function setSelect(id,options,emptyLabel){
   const el=$(id);el.replaceChildren();
@@ -212,7 +284,7 @@ async function loadStyles(){
 async function loadCanonicalCharacter(){
   const generation=++canonicalPortraitGeneration;
   const species=selectedSpecies(),gender=selectedGender();
-  images.character=null;images.head=null;canonicalPortraitError=null;render();
+  images.character=null;images.head=null;images.headRear=null;canonicalPortraitError=null;markRegionDirty();render();
   if(!species||!gender)return;
   try{
     if(!canonicalPortraitPromise){
@@ -249,7 +321,15 @@ async function loadCanonicalCharacter(){
     if(!headRendered)throw Error('Canonical head-only renderer returned false.');
     if(generation!==canonicalPortraitGeneration)return;
     images.head=headCanvas;
-    render(); // Seam-generation and the 2D author now use the canonical silhouette coordinate system.
+    if(images.rear){
+      const rearCanvas=document.createElement('canvas');rearCanvas.width=rearCanvas.height=200;
+      await window.NpcAvatarPreview.renderProfileToCanvas(rearCanvas,profile,{
+        forceEyesOpen:true,portraitView:'behind',onlyHeadSprite:true,
+      }); // Rear hair receives its own head-overlap mask instead of reusing the front silhouette.
+      if(generation!==canonicalPortraitGeneration)return;
+      images.headRear=rearCanvas;
+    }
+    markRegionDirty();maybeInitializeMasks();render(); // Rigid overlap uses the canonical head silhouette at the correct portrait scale.
   }catch(error){
     if(generation!==canonicalPortraitGeneration)return;
     canonicalPortraitError=String(error?.message||error);
@@ -265,7 +345,7 @@ async function loadHead(){
   try{
     const image=await catalog.headArtwork(species,gender);
     if(generation!==headGeneration || species!==selectedSpecies() || gender!==selectedGender())return;
-    images.head=image;render(); // The same aligned head canvas is used by silhouette tracing and the WebGL reference plane.
+    images.head=image;markRegionDirty();maybeInitializeMasks();render(); // Fallback uses the same normalized portrait pixels.
   }catch(error){
     if(generation===headGeneration)message('Could not load '+species+' head silhouette: '+error.message+'. Manual head reference is available below.');
   }
@@ -302,8 +382,8 @@ async function selectIndexedStyle(){
     ?selected.config.speciesVariants?.[selected.scope.key]?.portraitSplineRig
     :selected.config.portraitSplineRig;
   rig=Rig.normalize(rigDrafts.get(draftKey)||authored||selected.config.portraitSplineRig)||makeRig();
-  selectedKnot=1;selectedSegment=0;controls();
-  images.front=null;images.rear=null;render();
+  maskUndo=null;selectedKnot=1;selectedSegment=0;controls();
+  images.front=null;images.rear=null;markRegionDirty();render();
   const scopeText=selected.scope.variant?'variant '+selected.scope.key:'shared cosmetic';
   $('sourcePath').textContent='Source: config/cosmetics/'+selected.entry.path.replace(/^\.\//,'')+' · rig scope: '+scopeText;
   message('Loading '+selected.label+' sprite layers…');
@@ -315,7 +395,7 @@ async function selectIndexedStyle(){
   if(generation!==assetGeneration)return;
   images.front=results[0].status==='fulfilled'?results[0].value:null;
   images.rear=results[1].status==='fulfilled'?results[1].value:null;
-  render();
+  markRegionDirty();maybeInitializeMasks();render();
   const missing=results.filter(x=>x.status==='rejected').length;
   if(!images.front)message('Selected JSON loaded, but its front PNG was unavailable. You can retry or load a manual PNG below.');
   else message('Loaded '+selected.label+' from the repository'+(missing?' ('+missing+' image error)':'')+'. '+(rigDrafts.has(draftKey)?'Restored unsaved rig draft.':'Ready to author.'));
