@@ -334,7 +334,7 @@
     if (typeof document === 'undefined') return null;
     const panel = document.querySelector('#mpInventory .gear-outfit-stats');
     if (!panel) return null;
-    panel.classList.add('gear-character-effects-host');
+    if (!panel.classList.contains('gear-character-effects-host')) panel.classList.add('gear-character-effects-host'); // Avoid redundant class mutations that wake the Gear layout observer.
     let trinketCard = panel.querySelector('.gear-character-effects-trinkets');
     let outfitCard = panel.querySelector('.gear-character-effects-outfit');
     let finalCard = panel.querySelector('.gear-character-effects-final');
@@ -393,7 +393,8 @@
       const outfit = snapshot.outfit;
       const final = snapshot.final;
       const trinketHeading = ui.trinketCard.querySelector('.gear-loadout-heading'); // Shows current Attunement without a second read of saved equipment.
-      if (trinketHeading) trinketHeading.textContent = 'Trinket effects · ' + snapshot.trinkets.used + '/' + snapshot.trinkets.capacity;
+      const headingText = 'Trinket effects · ' + snapshot.trinkets.used + '/' + snapshot.trinkets.capacity; // Only rewrite Attunement heading when the displayed value changes.
+      if (trinketHeading && trinketHeading.textContent !== headingText) trinketHeading.textContent = headingText;
       renderRows(ui.trinketCard.querySelector('.gear-effects-list'), snapshot.trinkets.rows);
 
       renderRows(ui.outfitCard.querySelector('.gear-effects-list'), [
