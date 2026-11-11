@@ -46,8 +46,12 @@ for(let difficulty=1;difficulty<=5;difficulty++){
       assert.equal(bar[bar.length-1].at+bar[bar.length-1].length,16,'each bar ends on the measure boundary');
     }
     if(song.measures===4){
-      assert.deepEqual(bars[0],bars[1],'bar two repeats the recognizable rhythm and melody');
-      assert.deepEqual(bars[0],bars[2],'bar three recalls the motif before the cadence');
+      assert.deepEqual(bars[0].map(note=>[note.at,note.length]),
+        bars[1].map(note=>[note.at,note.length]),
+        'bar two retains the motif timing while its pitches form a short answer');
+      assert.notDeepEqual(bars[0].map(note=>note.pitch),bars[1].map(note=>note.pitch),
+        'the answering bar develops the melody instead of replaying an identical measure');
+      assert.deepEqual(bars[0],bars[2],'bar three recalls the opening motif exactly');
     }
     if(song.measures>1)assert.deepEqual(
       bars[0].filter(note=>note.at<8).map(note=>note.at),
@@ -57,6 +61,17 @@ for(let difficulty=1;difficulty<=5;difficulty++){
     assert.equal(bars.at(-1).at(-1).pitch,0,'the song resolves onto the tonic');
     assert.equal(bars.at(-1).at(-1).length,8,'the ending note lasts a full half-note');
   }
+}
+
+const minimumRhythmVariety=[2,3,4,3,3]; // Beginner, easy, medium and hard difficulties should not collapse to one score rhythm.
+for(let difficulty=1;difficulty<=5;difficulty++){
+  const rhythms=new Set(); // Collect distinct absolute attack grids, independent of pitch or tempo.
+  for(let i=0;i<300;i++){
+    const song=Song.generate('rhythm-variety-'+difficulty+'-'+i,{difficulty});
+    rhythms.add(song.notes.map(note=>[note.startTick,note.lengthTicks].join(':')).join('|'));
+  }
+  assert.ok(rhythms.size>=minimumRhythmVariety[difficulty-1],
+    'different caves should have a real variety of rhythms even at low difficulty');
 }
 
 const requestedMeasures=Song.generate('four-bars',{measures:4,bpm:300});
