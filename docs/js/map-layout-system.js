@@ -368,6 +368,11 @@
       const knownIds = new Set(existing.map(station => station?.id)); // Avoids duplicate ids when resolving an already-effective layout.
       merged.npcStations = [...existing, ...additions.filter(station => station?.id && !knownIds.has(station.id))];
     }
+    if (Object.prototype.hasOwnProperty.call(layout, 'furniture') && Array.isArray(merged.npcStations)) {
+      const activeFurnitureIds = new Set((merged.furniture || []).map(piece => String(piece?.id || '')).filter(Boolean)); // Only chairs physically present in this furniture-replacing layout can back seat stations.
+      merged.npcStations = merged.npcStations.filter(station => !station?.sourceFurnitureId
+        || activeFurnitureIds.has(String(station.sourceFurnitureId))); // Prevents phantom service pews after Communion moves the benches; leaves Teacup's stool and unbound schedule stations intact.
+    }
     return resolveFestivalLocales(resolveFurnitureBoundStations(merged));
   }
 
