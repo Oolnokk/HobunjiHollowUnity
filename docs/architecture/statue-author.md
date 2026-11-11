@@ -127,3 +127,22 @@ A new PNG or authored held-action pose becomes selectable after updating this ch
 Captain gear comes from \`BanditRankWardrobe.style\` and \`MetalArmorSystem.makeCraftedItem\` so the hero gets real rounded pauldrons and a metal circlet when supported, not fabricated armor textures. \`MetalArmorSystem.decorateAvatarDataWithMetalArmor\` adds real metal portrait data before rendering. The hero holds a real indexed melee weapon in the right hand and a captain-pool ranged weapon in the left, both as editable furniture child pieces. \`__hobunjiStatueDebug()\` includes the exact rolled species, cosmetic IDs, armor IDs/alloy and weapon shape/ranged selection for mobile inspection.
 
 A successful dropdown/pool unit test is not a substitute for live visual review. \`scripts/smoke-statue-author-browser.js\` exercises the actual mobile controls, assembles a Mao-ao hero with both weapons, verifies captain armor and image readiness, and saves screenshots. Full procedural attack-animation IK baking remains outside this feature.
+
+
+## Species/gender rig snapshots — Multi-Avatar Animation Author parity
+
+The original Statue Author used a generic fraction of the torso height for feet and hands, and ignored a large part of the avatar's authored anatomy. That is not a valid character-rig freeze. The statue construction now calls \`HobunjiStatueRigSnapshot.resolve\` (in \`docs/js/statue-rig-snapshot.js\`) after rendering the NPC portrait and measuring its true \`PNGPlaneAvatar\` geometry.
+
+The sampler consults the **same** exported rig data as Rig Coordinates in the Multi-Avatar Animation Author: \`config/attachment-rig-profiles.js\`, \`HobunjiCharacterRigScale.scaleFor\`, \`HobunjiHandModelProfiles\`, and \`ProceduralLegAnimation.attach\`. It preserves:
+
+- Portrait grounding/vertical placement and species/child size from the built avatar.
+- Independently authored body X/Y scales, compensated head scale and offset, plus the NPC's age/hunch contribution.
+- Hand dimensions, handedness and GLB identity from the model catalog, along with the NPC model's already-resolved hand attachment positions and authored hand-axis scales. Shoulder coordinates remain available in the export and mobile diagnostics.
+- The **actual** resting hip/ankle positions from \`ProceduralLegAnimation.getRestStance()\` after a zero-time grounded update; a transient solver is disposed immediately after sampling. The exported feet use the matching authored foot-scale and X/Y/Z axes.
+- The normal source portrait, clothing, rigid pieces and shared global statue-texture overlay.
+
+The editor reports the selected rig-profile key and whether leg sampling succeeded. \`window.__hobunjiStatueDebug()\` includes an \`authoredRig\` block recording the exact source metadata, original anatomy, scaled body/head, hand shoulders, foot rest stance and provenance. A species without a Rig Coordinates profile is **reported**, not silently assigned a different species' shoulder profile.
+
+This is a **static furniture snapshot**, not an animation runtime. A frozen statue has separately editable body, head, limb and weapon furniture pieces. A live skinned neck, dynamic arms, IK step transitions, deforming pants garments and the Multi-Avatar author's full actor-to-actor animation track hierarchy are not serialized as live rigs by this pass. Those would require baking mesh deformation and the relevant authored timeline state into static geometry, not inventing hand/foot offsets.
+
+Validation: \`node scripts/test-statue-rig-snapshot.js\` exercises actual repository anatomy, independent body/head axes, age offset, authoritative foot stance, cleanup and missing-profile reporting. \`scripts/smoke-statue-author-browser.js\` verifies real Rakakoan and Mao-ao rig snapshots and statue construction in mobile Chromium.
