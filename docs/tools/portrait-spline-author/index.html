@@ -191,8 +191,7 @@ async function loadStyles(){
   const generation=++styleGeneration;
   assetGeneration++; // An outstanding sprite fetch from another species must never repaint this one's preview.
   if(!catalog || !selectedSpecies() || !selectedGender())return;
-  void loadHead(); // A head-only alpha reference remains authoritative for seam tracing.
-  void loadCanonicalCharacter(); // Pants Rig Author's full canonical body portrait is the shared 3D background, not a manually scaled head-only sprite.
+  void loadCanonicalCharacter(); // Share the exact runtime portrait coordinate space for the full character and 2D silhouette seam.
   rememberDraft();
   setSelect('cosmeticSelect',[],'Loading indexed cosmetics…');
   message('Loading '+selectedSpecies()+' '+selectedGender()+' cosmetics…');
@@ -211,7 +210,7 @@ async function loadStyles(){
 async function loadCanonicalCharacter(){
   const generation=++canonicalPortraitGeneration;
   const species=selectedSpecies(),gender=selectedGender();
-  images.character=null;canonicalPortraitError=null;render();
+  images.character=null;images.head=null;canonicalPortraitError=null;render();
   if(!species||!gender)return;
   try{
     if(!canonicalPortraitPromise){
@@ -239,12 +238,21 @@ async function loadCanonicalCharacter(){
     });
     if(!result)throw Error('Canonical portrait renderer returned false.');
     if(generation!==canonicalPortraitGeneration)return;
-    images.character=canvas;render();
+    images.character=canvas;render(); // Preserve the correctly scaled, existing 3D character backing.
+    const headCanvas=document.createElement('canvas'); // Shared 200×200 portrait pixel space; no independently scaled sprite reference.
+    headCanvas.width=headCanvas.height=canvas.width;
+    const headRendered=await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas,profile,{
+      forceEyesOpen:true,portraitView:'front',onlyHeadSprite:true,
+    }); // Exactly the head-only alpha-mask path used by the game: same live B preset, tint, and placement.
+    if(!headRendered)throw Error('Canonical head-only renderer returned false.');
+    if(generation!==canonicalPortraitGeneration)return;
+    images.head=headCanvas;
+    render(); // Seam-generation and the 2D author now use the canonical silhouette coordinate system.
   }catch(error){
     if(generation!==canonicalPortraitGeneration)return;
     canonicalPortraitError=String(error?.message||error);
-    message('The full portrait could not render: '+canonicalPortraitError+'. The indexed head silhouette remains available.');
-    render();
+    message('Canonical head reference unavailable: '+canonicalPortraitError+'. Trying indexed sprite fallback.');
+    void loadHead(); // Still supports head authoring if the full portrait registry fails.
   }
 }
 async function loadHead(){
@@ -415,7 +423,8 @@ function render(){
   ctx.strokeStyle='#26364d';ctx.lineWidth=1;
   for(let i=0;i<=10;i++){ctx.beginPath();ctx.moveTo(i*W/10,0);ctx.lineTo(i*W/10,H);ctx.stroke();ctx.beginPath();ctx.moveTo(0,i*H/10);ctx.lineTo(W,i*H/10);ctx.stroke();}
   const shown=$('viewSelect').value==='rear';
-  if(images.head){ctx.globalAlpha=.72;ctx.drawImage(images.head,0,0,W,H);ctx.globalAlpha=1;}
+  const portraitReference=images.character||images.head; // The 2D reference uses the same complete, scaled portrait as Pants Rig Author.
+  if(portraitReference){ctx.globalAlpha=.72;ctx.drawImage(portraitReference,0,0,W,H);ctx.globalAlpha=1;}
   if(images[shown?'rear':'front']){ctx.globalAlpha=.8;
     if(shown){ctx.save();ctx.translate(rig.rearOffset.u*W,rig.rearOffset.v*H);} // Preview the same rear-only transform used on the 3D ribbon.
     ctx.drawImage(images[shown?'rear':'front'],0,0,W,H);
