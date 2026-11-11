@@ -381,6 +381,18 @@
     preparedLights.add(light);
   }
 
+  function isAuthoredInkPlane(mesh) {
+    // Only flat authored sprite/billboard art carries its outline in its PNG.
+    // GLB hands/feet and genuinely volumetric held objects retain their
+    // inverted shell and their independent ground/water depth treatment.
+    if (mesh?.userData?.hobunjiProceduralHand === true || mesh?.userData?.hobunjiProceduralFoot === true) return false;
+    const data = mesh?.userData || {}; // Mesh-authored art classification; never infer from a material shared with 3D props.
+    return data.noOutline === true || data.isPngPlane === true
+      || data.hobunjiWeaponAssemblyPart === true || data.isBillboard === true
+      || data.isWildernessGrassChunk === true || data.isRichFoliageBillboard === true
+      || mesh?.geometry?.type === 'PlaneGeometry';
+  }
+
   function enforceHeldMesh(mesh) {
     if (!mesh?.isMesh) return false;
     let repaired = false;
@@ -391,6 +403,13 @@
       repaired = true;
     }
     mesh.userData.hobunjiLegacyRenderOrder = LEGACY_HELD_RENDER_ORDER;
+    if (isAuthoredInkPlane(mesh)) {
+      mesh.userData.noOutline = true; // Author-supplied ink must never acquire a synthetic black shell.
+      if (hasLayer(mesh, SHELL_LAYER)) {
+        mesh.layers.disable(SHELL_LAYER); // Retains default, held-overlay and water/x-ray depth layers.
+        repaired = true;
+      }
+    }
 
     // Neutral renderOrder restores Three's ordinary positioning semantics in
     // any non-overlay/debug view. The selective depth replay supplies the one
@@ -1763,7 +1782,8 @@
     let depthWasCleared = false;
     let replayCulled = null; // Renderables outside the scissor, hidden for every pass below (including the final depth restore, which is scissored too).
     let replayCandidates = null; // Shared between the replay loop and finally's depth restore; assigned after optional culling.
-
+    let depthStates = null; // Preserve the one depth-only material transaction across all group draws and final restoration.
+    
     internalReplay = true;
     try {
       if (scissored) {
@@ -1792,6 +1812,17 @@
       if (shadowMap) shadowMap.autoUpdate = false;
       replayCandidates = collectShellReplayCandidates(scene); // Snapshot after scissor culling; reused while the synchronous replay only changes temporary visibility.
       shellSceneTraversalsAvoided += groups.length * 2; // Former full-tree walks: one depth + one shell mask per group, plus final depth, replaced by this one walk.
+      // These source materials are identical for all elevation groups; only
+      // the ground shader's tile uniforms change. A single transaction avoids
+      // rescanning and rewriting every mesh/material once per actor group.
+      depthStates = prepareNonGroundDepthMaterials(scene, replayCandidates.depth);
+      for (const mesh of xrayMeshes) {
+        forEachMaterial(mesh.material, material => {
+          saveMaterialState(depthStates, material);
+          material.depthTest = true;
+          material.depthWrite = true;
+        });
+      }
 
       // Use the same holder neighborhoods and ground-fragment filter as the
       // visible tool/hand/foot replay. The shell cannot become visible through
@@ -1803,14 +1834,6 @@
         depthWasCleared = true;
         scene.overrideMaterial = null;
         camera.layers.mask = MASK_ALL;
-        const depthStates = prepareNonGroundDepthMaterials(scene, replayCandidates.depth);
-        for (const mesh of xrayMeshes) {
-          forEachMaterial(mesh.material, material => {
-            saveMaterialState(depthStates, material);
-            material.depthTest = true;
-            material.depthWrite = true;
-          });
-        }
         let groupCulled = null; // Keep the final depth restore outside this group’s tighter cull.
         try {
           if (groupScissored && groupCullCandidates) groupCulled = cullReplayGroup(camera, groupCullCandidates);
@@ -1818,7 +1841,6 @@
           nonGroundDepthReplayCount++;
         } finally {
           if (groupCulled) restoreVisibility(groupCulled);
-          restoreMaterialStates(depthStates);
           if (group.regions.length) setGroundElevationFilter(groundMaterials, null);
         }
 
@@ -1848,21 +1870,10 @@
           scene.overrideMaterial = null;
           camera.layers.mask = MASK_ALL;
           renderer.clearDepth();
-          const restoreStates = prepareNonGroundDepthMaterials(scene, replayCandidates.depth);
-          for (const mesh of xrayMeshes) {
-            forEachMaterial(mesh.material, material => {
-              saveMaterialState(restoreStates, material);
-              material.depthTest = true;
-              material.depthWrite = true;
-            });
-          }
-          try {
-            rawRender.call(renderer, scene, camera);
-          } finally {
-            restoreMaterialStates(restoreStates);
-          }
+          rawRender.call(renderer, scene, camera); // The one original-depth transaction already covers the final unfiltered restore.
         }
       } finally {
+        if (depthStates) restoreMaterialStates(depthStates); // Also restores on a thrown depth/shell/ground draw.
         if (replayCulled) restoreVisibility(replayCulled);
         if (scissorActive) restoreRendererScissor(renderer);
         camera.layers.mask = oldCameraMask;
@@ -1888,7 +1899,7 @@
     if (isShellOutlinePass(scene, camera)) {
       const held = collectVisible(heldRegistry, scene);
       const feet = collectVisible(waterOccludedRegistry, scene);
-      const shellCandidates = [...new Set([...held, ...feet])].filter(mesh => hasLayer(mesh, SHELL_LAYER)); // Only source meshes with a real shell need the matching outline replay.
+      const shellCandidates = [...new Set([...held, ...feet])].filter(mesh => hasLayer(mesh, SHELL_LAYER) && !isAuthoredInkPlane(mesh)); // Hands, feet and true 3D props only; PNG weapon/character art already has ink.
       window.HobunjiHandOutlineParity?.refreshHeldMatrices?.(shellCandidates); // Refresh live hand matrices before camera culling or shell scissor projections.
       const xrayMeshes = filterOffscreenReplayMeshes(camera, shellCandidates);
       lastShellReplayCandidates = shellCandidates.length;
