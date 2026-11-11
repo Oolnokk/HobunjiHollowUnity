@@ -32,9 +32,10 @@ assert.doesNotMatch(occluderSource,
 assert.match(occluderSource,
   /material\.depthTest = state\.depthTest;[\s\S]{0,100}material\.depthFunc = state\.depthFunc;/,
   'portrait depth-test state must be restored immediately after the outline-occluder replay');
-assert.match(gameSource,
-  /window\.PngPlaneOutlineOccluder\.renderDepth\(activeScene\);[\s\S]{0,220}activeScene\.overrideMaterial = shellOutlineMat;/,
-  'avatar occlusion depth is written before furniture shell outlines');
+const pngDepthAt = gameSource.indexOf('window.PngPlaneOutlineOccluder.renderDepth(activeScene);');
+const shellAt = gameSource.indexOf('activeScene.overrideMaterial = shellOutlineMat;', pngDepthAt);
+assert(pngDepthAt >= 0 && shellAt > pngDepthAt && shellAt - pngDepthAt < 2000,
+  'avatar occlusion depth and actor visibility queries precede furniture shell outlines');
 assert.match(gameSource,
   /const camera = new THREE\.PerspectiveCamera\([^\n]*\n\s*window\.PngPlaneOutlineOccluder\.init\(\{ renderer, camera \}\);/,
   'the occluder module receives the live renderer and camera once both exist');
