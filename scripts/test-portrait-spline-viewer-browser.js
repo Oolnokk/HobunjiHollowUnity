@@ -83,14 +83,19 @@ const server=http.createServer((req,res)=>{
       const index=start+Math.floor(length/2);
       return {u:(index%200+.5)/200,v:(Math.floor(index/200)+.5)/200};
     }); // Choose an actual rigid pixel, not a guessed beard coordinate.
-    const bounds=await page.locator('#preview').boundingBox();
-    const px=bounds.x+sample.u*bounds.width,py=bounds.y+sample.v*bounds.height;
-    await page.locator('#eraseMode').click();await page.mouse.click(px,py);
+    const clickMaskPixel=async()=>{
+      await page.locator('#preview').scrollIntoViewIfNeeded();
+      const bounds=await page.locator('#preview').boundingBox(); // Toolbar clicks can scroll the page, invalidating previously projected pixel coordinates.
+      await page.mouse.click(bounds.x+sample.u*bounds.width,bounds.y+sample.v*bounds.height);
+    };
+    await page.locator('#eraseMode').click();await clickMaskPixel();
     const erased=await debug();
-    assert(erased.regionMasks.front<initial.regionMasks.front,'eraser transfers pixels from rigid to flexible');
-    await page.locator('#paintMode').click();await page.mouse.click(px,py);
+    assert(erased.regionMasks.front<initial.regionMasks.front,
+      'eraser transfers pixels from rigid to flexible: '+JSON.stringify({before:initial.regionMasks,after:erased.regionMasks,sample,mode:erased.mode}));
+    await page.locator('#paintMode').click();await clickMaskPixel();
     const repainted=await debug();
-    assert(repainted.regionMasks.front>erased.regionMasks.front,'brush transfers pixel ownership back to the rigid head plane');
+    assert(repainted.regionMasks.front>erased.regionMasks.front,
+      'brush transfers pixel ownership back to the rigid head plane: '+JSON.stringify({afterErase:erased.regionMasks,afterPaint:repainted.regionMasks}));
     await page.locator('#moveMode').click();
     await page.locator('#gizmoTranslate').click();
     const move=(await debug()).viewer.arrows.find(item=>item.axis==='x');
