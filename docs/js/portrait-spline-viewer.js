@@ -41,7 +41,10 @@
     const hairPlane = makeSheet(null,.002,THREE.FrontSide);
     const rearPlane = makeSheet(null,-.002,THREE.BackSide);
     const hoodPlane = makeSheet(null,.001,THREE.DoubleSide,.25);
-    sheetGroup.add(headPlane,hoodPlane,hairPlane,rearPlane);
+    const rigidFrontPlane = makeSheet(null,.0015,THREE.FrontSide); // Rigid beard/side-hair pixels remain on the head portrait plane, not the bending mesh.
+    const rigidRearPlane = makeSheet(null,-.0015,THREE.BackSide); // Separate rear attachment mask for hairstyles with both planes.
+    rigidFrontPlane.name='spline_rigid_front';rigidRearPlane.name='spline_rigid_rear';
+    sheetGroup.add(headPlane,hoodPlane,rigidFrontPlane,rigidRearPlane,hairPlane,rearPlane);
     let mode='translate', state=null, disposed=false, dirty=false;
     let verifiedTexturePair=''; // One on-screen GPU-health warning per loaded head/hair pair; avoids mobile readback every pose frame.
     let lastGeometryKey=''; // Only rebuild the deformable ribbon when its points/pose/wind/UV settings actually change.
@@ -185,6 +188,8 @@
       replaceTexture(hairPlane,next.front||null);
       replaceTexture(hoodPlane,next.hood||null);
       replaceTexture(rearPlane,next.rear||null,true);
+      replaceTexture(rigidFrontPlane,next.rigidFront||null);
+      replaceTexture(rigidRearPlane,next.rigidRear||null,true);
       const geometryKey=JSON.stringify([rig.points,rig.segments,rig.width,rig.segmentsX,rig.segmentsY,next.wind]);
       if(geometryKey!==lastGeometryKey){
         deformMesh(hairPlane,rig,posed.points,false);
@@ -192,8 +197,8 @@
         lastGeometryKey=geometryKey;
       }
       if(next.rear){
-        rearPlane.position.x=rig.rearOffset.u;
-        rearPlane.position.y=-rig.rearOffset.v; // Portrait-space v increases downward; u increases rightward.
+        rearPlane.position.x=next.rearAligned?0:rig.rearOffset.u;
+        rearPlane.position.y=next.rearAligned?0:-rig.rearOffset.v; // Masked rear artwork is already shifted before its pixels are partitioned.
       }
       addKnots(posed.points);addGizmo(posed.points);
       const blocked=posed.collisions;
@@ -314,7 +319,7 @@
       canvas.removeEventListener('pointerup',pointerUp,true);
       canvas.removeEventListener('pointercancel',pointerUp,true);
       controls?.dispose();clearChildren(markers);clearChildren(gizmo);
-      for(const mesh of [headPlane,hairPlane,rearPlane,hoodPlane]){
+      for(const mesh of [headPlane,hairPlane,rearPlane,hoodPlane,rigidFrontPlane,rigidRearPlane]){
         mesh.geometry?.dispose();mesh.material.map?.dispose();mesh.material?.dispose();
       }
       axes.geometry?.dispose();axes.material?.dispose?.();renderer.dispose();
@@ -374,7 +379,8 @@
         ribbonVertices:hairPlane.geometry?.attributes?.position?.count||0,
         headLoaded:!!headPlane.material.map,hairLoaded:!!hairPlane.material.map,
         textures:{head:headPlane.userData.pixelStats||null,hair:hairPlane.userData.pixelStats||null,
-          rear:rearPlane.userData.pixelStats||null,hood:hoodPlane.userData.pixelStats||null},
+          rear:rearPlane.userData.pixelStats||null,hood:hoodPlane.userData.pixelStats||null,
+          rigidFront:rigidFrontPlane.userData.pixelStats||null,rigidRear:rigidRearPlane.userData.pixelStats||null},
         gpuTextureCount:renderer.info.memory.textures,
         textureErrors:Object.fromEntries(textureFailures), // Mobile-accessible reason, including SecurityError on a tainted canvas.
         gpuHead:probeGpuTexture(headPlane.material.map),gpuHair:probeGpuTexture(hairPlane.material.map),
