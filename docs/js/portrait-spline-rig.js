@@ -400,10 +400,12 @@
     const target = curvePoint(posed, index, fraction); // Pose in the same continuous parametric space before displacing texture vertices.
     const attachment=clamp(finite(attachmentWeight,1),0,1);
     const influence=(1-clamp(Math.sqrt(closest)/Math.max(.01,rig.width),0,1)**2)*attachment;
-    const restingDepth=.003+(rest.z-.003)*attachment; // Near the rigid boundary the ribbon also settles onto the portrait plane; no visible 3D ledge.
+    const contactDepth=.0008; // Matches the pinned rigid surface in the 3D author; the actual game portrait is the same local plane.
+    const restingDepth=contactDepth+(rest.z-contactDepth)*attachment;
     return { x: (x + (target.x - rest.x) * influence) * width,
       y: (y + (target.y - rest.y) * influence) * height,
-      z: Math.max(.003,restingDepth+(target.z-rest.z)*influence)*height };
+      z: Math.max(attachment<1 ? contactDepth : .003,
+        restingDepth+(target.z-rest.z)*influence)*height }; // The anchored collar reaches the flat surface, not a raised .003-unit ledge.
   }
 
   function makePart(THREE, front, rear, width, height, name) {
