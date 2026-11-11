@@ -28,6 +28,8 @@
     status: 'booting',
     area: null,
     night: false,
+    caveVisualAlpha: 0, // Used by mobile diagnostics to identify cave visibility at any calendar hour.
+    gatedEntrances: 0, // Counts the real layout and scene transitions whose activity follows the cave facade.
     originSource: null,
     transitionId: null,
     entranceCol: null,
@@ -343,10 +345,37 @@
     return true;
   }
 
+  function syncBanubuEntranceVisibility(deps, alpha) {
+    const visible = alpha > 0.05; // Matches the cave facade's existing camera-obstacle threshold; ghost-invisible entrances are not interactable.
+    const layout = deps?.zoneLayouts?.get?.(BANUBU_AREA_ID); // Final Tothal-shifted layout contains the relocated, authored cave transition.
+    const scene = deps?.zoneScenes?.get?.(BANUBU_AREA_ID); // Cached renderer scenes sometimes carry distinct copies of the same transition.
+    const transitions = new Set([...(layout?.transitions || []), ...(scene?.transitions || [])]); // Only a few transitions exist; no world-object scan is required.
+    let matched = 0; // Exposed in the mobile debug snapshot to verify that the cave can be entered only while visible.
+    for (const transition of transitions) {
+      if (!transition || (transition.generatedLocaleId !== BANUBU_LOCALE_ID
+        && transition.id !== `sp_locale_${BANUBU_LOCALE_ID}`
+        && transition.targetMapId !== BANUBU_INTERIOR_ID)) continue;
+      matched++;
+      if (!visible) {
+        if (!Object.prototype.hasOwnProperty.call(transition, '__banubuVisibleTarget')) {
+          transition.__banubuVisibleTarget = transition.target; // Save even an undefined original target; only the ordinary transition handler owns its meaning.
+        }
+        transition.target = 'banubu_cave_hidden'; // Existing transition selection ignores unknown types, exactly like puzzle_cave_locked.
+      } else if (Object.prototype.hasOwnProperty.call(transition, '__banubuVisibleTarget')) {
+        transition.target = transition.__banubuVisibleTarget;
+        delete transition.__banubuVisibleTarget;
+      }
+    }
+    debugState.caveVisualAlpha = alpha;
+    debugState.gatedEntrances = matched;
+  }
+
   function update(frameContext = {}) {
     const timestamp = finite(frameContext.timestamp, nowMs());
-    window.ZoneDenTotemFeatures?.updateBanubuVisibility?.(); // Keep twilight fades and the discovered cave facade current even during a long snore.
-    const deps = gameDeps(); // Dialogue state is authoritative even while a slowed snore is already playing.
+    const alpha = window.ZoneDenTotemFeatures?.updateBanubuVisibility?.() // Keep the cave facade and its interaction gate driven by the same dusk/dawn alpha.
+      ?? (window.Fishing?.timeOfDay?.() === 'night' ? 1 : 0);
+    const deps = gameDeps();
+    syncBanubuEntranceVisibility(deps, alpha); // Prevent daytime entry through a completely invisible cave mouth. // Dialogue state is authoritative even while a slowed snore is already playing.
     const insideBanubu = currentArea(deps) === BANUBU_INTERIOR_ID; // Reused for one-shot discovery on interior transitions.
     if (insideBanubu && !discoveredOnThisInteriorVisit && window.WildernessMap?.discoverEnteredLocale) {
       window.WildernessMap.discoverEnteredLocale(BANUBU_LOCALE_ID); // Never discover the cave from exterior fog proximity.
