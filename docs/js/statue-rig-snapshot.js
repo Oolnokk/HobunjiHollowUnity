@@ -17,8 +17,19 @@
     const solver=global.ProceduralLegAnimation?.attach;
     if(typeof solver!=='function')return {stance:null,debug:null,reason:'ProceduralLegAnimation unavailable'};
     const owner=new THREE.Group(); // The temporary, floor-relative actor carrier sampled once at authoring time.
+    const footCfg=global.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet;
+    const originalTable=footCfg?.footScale;
+    const key=actor.speciesId,gender=actor.gender;
+    const originalEntry=originalTable?.[key];
     let feet=null;
     try{
+      // Rig Coordinates' anatomy.footScale is written into this very config
+      // before preview-actor construction. Apply it only while sampling this
+      // transient statue rig, and restore the shared setting synchronously.
+      if(footCfg&&positive(actor.footScale,0)>0){
+        footCfg.footScale||={};
+        footCfg.footScale[key]={...(originalEntry||{}),[gender]:actor.footScale};
+      }
       feet=solver(THREE,owner,{
         speciesId:actor.speciesId,gender:actor.gender,modelWidth:actor.modelWidth,
         modelHeight:actor.modelHeight,handAttachY:actor.handAttachY,
@@ -29,7 +40,13 @@
       feet.update?.(0,0,false,null);
       return {stance:clone(feet.getRestStance()),debug:clone(feet.getStandingPoseDebug?.()||null),reason:null};
     }catch(error){return {stance:null,debug:null,reason:String(error?.message||error)};}
-    finally{feet?.dispose?.();owner.clear?.();}
+    finally{
+      feet?.dispose?.();owner.clear?.();
+      if(footCfg){
+        if(originalTable){footCfg.footScale=originalTable;if(originalEntry===undefined)delete originalTable[key];else originalTable[key]=originalEntry;}
+        else delete footCfg.footScale;
+      }
+    }
   }
   function resolve({THREE,npc,profile,frame}){
     if(!THREE?.Group||!npc?.appearance||!frame)throw Error('Snapshot requires the real NPC, its avatar profile and Three.js rig');
@@ -43,7 +60,9 @@
     const modelWidth=positive(frame.modelWidth,.9),modelHeight=positive(frame.modelHeight,modelWidth);
     const fit=.9/Math.max(modelWidth*bodyScale.x,modelHeight*bodyScale.y); // Exactly one tile-wide authored furniture footprint.
     const width=modelWidth*fit*bodyScale.x,height=modelHeight*fit*bodyScale.y;
-    const placement=finite(frame.placementRatio,finite(anatomy.portraitVerticalPlacementRatio,.5));
+    const measuredPlacement=finite(frame.placementRatio,.5);
+    const placement=finite(anatomy.portraitVerticalPlacementRatio,measuredPlacement);
+    const handAttachY=finite(frame.handAttachY,modelHeight*.4)+(placement-measuredPlacement)*modelHeight; // Multi-Avatar applyCharacterPortraitPlacementV1530 shifts handAttachY by the same placement delta.
     const centerY=placement*height; // PNGPlaneAvatar's floor-anchored canvas placement, not a generic half-height guess.
     const age=scaleApi?.ageFor?.(npc)||null;
     const ageDrop=finite(scaleApi?.ageHunchFraction?.(age));
@@ -66,19 +85,20 @@
     // arm-length/posterior rule. Applying those offsets a second time here
     // would move the idle hand too low on long-armed species.
     const handX=Math.abs(finite(frame.handAttachX,-modelWidth*.28))*fit*bodyScale.x;
-    const handY=finite(frame.handAttachY,modelHeight*.4)*fit*bodyScale.y;
+    const handY=handAttachY*fit*bodyScale.y;
     const handsApi=global.HobunjiHandModelProfiles;
     const handModel=handsApi?.modelForSpecies?.(speciesId)||null;
     const handBase=positive(handsApi?.data?.handHeightFraction,.12);
-    const handScale=positive(handsApi?.effectiveScaleFor?.(speciesId,gender),
-      positive(handModel?.scale)*positive(handsApi?.speciesScaleFor?.(speciesId,gender)));
+    const handScale=positive(handModel?.scale)*positive(anatomy.handScale,
+      positive(handsApi?.speciesScaleFor?.(speciesId,gender))); // Multi-Avatar writes anatomy.handScale into speciesScaleOverrides before building its hand GLBs.
     const handHeight=modelHeight*fit*handBase*handScale;
     const footConfig=global.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet||{};
+    const authoredFootScale=positive(anatomy.footScale,positive(handsApi?.footScaleFor?.(speciesId,gender)));
     const footHeight=modelHeight*fit*positive(footConfig.footHeightFraction,.11)*
-      positive(footConfig.sizeBalanceMultiplier)*positive(handsApi?.footScaleFor?.(speciesId,gender))*
+      positive(footConfig.sizeBalanceMultiplier)*authoredFootScale*
       (speciesId==='kenkari'||speciesId==='rakakoan'?1:.75)*2; // Imported GLB normalization: radius*2*autofit(2)*species contact-Y, exactly ProceduralLegAnimation.buildGlbFoot.
     const sampled=snapshotLegStance(THREE,{
-      npc,profile,speciesId,gender,modelWidth,modelHeight,handAttachY:frame.handAttachY
+      npc,profile,speciesId,gender,modelWidth,modelHeight,handAttachY,footScale:authoredFootScale
     });
     const footFallbackX=modelWidth*positive(footConfig.stanceWidthFraction,.16)*.5;
     const footYFallback=footHeight/(2*Math.max(.001,fit));
@@ -95,6 +115,7 @@
       version:1,speciesId,gender,profileKey:speciesId+'::'+gender,
       rigProfileFound:!!rig,frame:clone(frame),
       modelWidth,modelHeight,fit,bodyScale,anatomy:clone(anatomy),
+      placement:{measured:measuredPlacement,authored:placement,handAttachY},
       body:{width,height,centerY},
       head:{scale:headScale,
         offsetY:(bodyScale.offsetY+ageDrop)*modelHeight*fit*bodyScale.y,
