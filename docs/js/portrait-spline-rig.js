@@ -88,6 +88,109 @@
     return { rigid: a.canvas, flexible: b.canvas }; // Exactly one copy of every original opaque pixel survives in one of the two groups.
   }
 
+  function attachmentBlendField(mask, radiusPx = 18) {
+    const bits = decodePixelMask(mask), radius = clamp(finite(radiusPx,18), 0, 48);
+    if (!mask || !bits.includes(1) || radius === 0) return null; // No anchored region means there is no transition to blend.
+    const size = MASK_SIZE, dist = new Float32Array(size * size); // Cached chamfer distance-to-anchored-pixel map, generated only when the mask changes.
+    for (let i = 0; i < dist.length; i++) dist[i] = bits[i] ? 0 : 1e6;
+    const diagonal = Math.SQRT2;
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+      const i = y * size + x;
+      if (x) dist[i] = Math.min(dist[i], dist[i-1] + 1);
+      if (y) {
+        dist[i] = Math.min(dist[i], dist[i-size] + 1);
+        if (x) dist[i] = Math.min(dist[i], dist[i-size-1] + diagonal);
+        if (x < size-1) dist[i] = Math.min(dist[i], dist[i-size+1] + diagonal);
+      }
+    }
+    for (let y = size - 1; y >= 0; y--) for (let x = size - 1; x >= 0; x--) {
+      const i = y * size + x;
+      if (x < size-1) dist[i] = Math.min(dist[i], dist[i+1] + 1);
+      if (y < size-1) {
+        dist[i] = Math.min(dist[i], dist[i+size] + 1);
+        if (x) dist[i] = Math.min(dist[i], dist[i+size-1] + diagonal);
+        if (x < size-1) dist[i] = Math.min(dist[i], dist[i+size+1] + diagonal);
+      }
+    }
+    for (let i=0;i<dist.length;i++) {
+      const t=clamp(dist[i]/radius,0,1);
+      dist[i]=t*t*(3-2*t); // Smoothstep in movement space, not an alpha fade; every original pixel stays fully opaque in exactly one region.
+    }
+    return dist;
+  }
+  function sampleAttachmentBlend(field,u,v) {
+    if (!field) return 1;
+    const fx=clamp(finite(u)*MASK_SIZE-.5,0,MASK_SIZE-1),fy=clamp(finite(v)*MASK_SIZE-.5,0,MASK_SIZE-1);
+    const x=Math.floor(fx),y=Math.floor(fy),nx=Math.min(x+1,MASK_SIZE-1),ny=Math.min(y+1,MASK_SIZE-1);
+    const a=fx-x,b=fy-y;
+    return field[y*MASK_SIZE+x]*(1-a)*(1-b) + field[y*MASK_SIZE+nx]*a*(1-b)
+      +field[ny*MASK_SIZE+x]*(1-a)*b +field[ny*MASK_SIZE+nx]*a*b;
+  }
+  function makeDefaultSegments(points) {
+    if (!Array.isArray(points) || points.length < 2) return [];
+    let totalLength=0;
+    for(let i=1;i<points.length;i++) totalLength+=Math.hypot(points[i].u-points[i-1].u,points[i].v-points[i-1].v);
+    const reach=clamp(totalLength*.22,.016,.09); // Natural gust displacement scales with the authored beard/hair length, not a constant pose per species.
+    return points.slice(1).map((point,i)=>{
+      const previous=points[i],length=Math.hypot(point.u-previous.u,point.v-previous.v);
+      const fraction=(i+1)/(points.length-1),tension=.3+.7*fraction; // Upper knots resist wind, outermost tip gets most of the bend.
+      const amplitude=reach*tension,vertical=Math.abs(point.v-previous.v)/Math.max(length,.001);
+      const roll=clamp(vertical*12*tension,0,12),pitch=clamp(9*tension,0,9);
+      const poses={};
+      for(const dir of ['left','right','up','down','toward','away']){
+        const sign=['left','down','away'].includes(dir)?-1:1;
+        const lateral=dir==='left'||dir==='right',verticalWind=dir==='up'||dir==='down';
+        poses[dir]={
+          yaw:lateral ? sign*3*tension : 0,
+          pitch:verticalWind ? sign*4*tension : (dir==='toward'||dir==='away'?sign*pitch:0),
+          roll:lateral ? sign*roll : 0,
+          translate:{
+            x:lateral?sign*amplitude:0,
+            y:verticalWind?sign*amplitude*.7:0,
+            z:!lateral&&!verticalWind?sign*amplitude*.55:0,
+          },
+        };
+      }
+      return {deadzone:{x:Math.round(6-3*fraction),y:Math.round(8-3*fraction),z:Math.round(9-3*fraction)},poses};
+    });
+  }
+  function suggestRestPoints(sprite, head) {
+    if (!sprite?.width || !sprite?.height) return null;
+    const c=document.createElement('canvas');c.width=c.height=MASK_SIZE;
+    const ctx=c.getContext('2d',{willReadFrequently:true});
+    ctx.drawImage(sprite,0,0,MASK_SIZE,MASK_SIZE);
+    const art=ctx.getImageData(0,0,MASK_SIZE,MASK_SIZE).data;
+    let skin=null;
+    if(head){ctx.clearRect(0,0,MASK_SIZE,MASK_SIZE);ctx.drawImage(head,0,0,MASK_SIZE,MASK_SIZE);skin=ctx.getImageData(0,0,MASK_SIZE,MASK_SIZE).data;}
+    let minY=MASK_SIZE,maxY=-1,minX=MASK_SIZE,maxX=-1,overlapX=0,overlapY=0,overlapCount=0;
+    const rowSum=new Float64Array(MASK_SIZE),rowCount=new Uint16Array(MASK_SIZE); // Portrait-space strand centerline inferred from visible art, no per-species fixed coordinates.
+    for(let y=0;y<MASK_SIZE;y++)for(let x=0;x<MASK_SIZE;x++){
+      const k=(y*MASK_SIZE+x)*4;
+      if(art[k+3]<16)continue;
+      minY=Math.min(minY,y);maxY=Math.max(maxY,y);minX=Math.min(minX,x);maxX=Math.max(maxX,x);
+      rowSum[y]+=x;rowCount[y]++;
+      if(skin && skin[k+3]>=16){overlapX+=x;overlapY+=y;overlapCount++;}
+    }
+    if(maxY<0) return null;
+    const rootY=overlapCount?clamp(Math.round(overlapY/overlapCount),minY,Math.min(maxY,minY+Math.round((maxY-minY)*.5))):minY;
+    const tipY=maxY,midY=Math.round((rootY+tipY)/2);
+    const centerAt=y=>{
+      for(let gap=0;gap<MASK_SIZE;gap++){
+        if(y-gap>=0&&rowCount[y-gap])return rowSum[y-gap]/rowCount[y-gap];
+        if(y+gap<MASK_SIZE&&rowCount[y+gap])return rowSum[y+gap]/rowCount[y+gap];
+      }
+      return (minX+maxX)*.5;
+    };
+    const rootX=overlapCount?overlapX/overlapCount:centerAt(rootY);
+    const points=[
+      {u:clamp((rootX+.5)/MASK_SIZE,0,1),v:(rootY+.5)/MASK_SIZE,depth:.012},
+      {u:clamp((centerAt(midY)+.5)/MASK_SIZE,0,1),v:(midY+.5)/MASK_SIZE,depth:.021},
+      {u:clamp((centerAt(tipY)+.5)/MASK_SIZE,0,1),v:(tipY+.5)/MASK_SIZE,depth:.032},
+    ];
+    if(points[2].v-points[0].v<.035) return null; // Tiny/sideways ornament retains the editable generic spline instead of a degenerate suggestion.
+    return points;
+  }
+
   function normalize(input) {
     if (!input || input.enabled === false || !Array.isArray(input.points) || input.points.length < 2) return null;
     const points = input.points.slice(0, 16).map((point, i) => ({
@@ -96,8 +199,9 @@
       depth: clamp(finite(point?.depth, 0.012 + i * 0.004), 0.003, 0.35),
     }));
     if (points.every(p => p.u === points[0].u && p.v === points[0].v)) return null;
+    const suggested = makeDefaultSegments(points); // Old unconfigured cosmetics receive usable poses without overwriting explicitly authored ones.
     const segments = points.slice(1).map((_, i) => {
-      const source = input.segments?.[i] || {};
+      const source = input.segments?.[i] || suggested[i];
       const directions = {};
       for (const key of ['left', 'right', 'up', 'down', 'toward', 'away']) {
         const pose = source.poses?.[key] || {};
@@ -133,8 +237,10 @@
       },
       width: clamp(finite(input.width, .1), .01, .5),
       windResponse: clamp(finite(input.windResponse, 1), 0, 5),
-      segmentsX: clamp(Math.round(finite(input.segmentsX, 16)), 4, 32),
-      segmentsY: clamp(Math.round(finite(input.segmentsY, 20)), 4, 40),
+      tipFollow: clamp(finite(input.tipFollow, .58), 0, .9), // Bottom-most knot drives the middle one; the head attachment remains immobile.
+      blendRadiusPx: clamp(finite(input.blendRadiusPx, 18), 0, 48), // Distance to rigid region controls a smooth deformation ramp.
+      segmentsX: clamp(Math.round(finite(input.segmentsX, 32)), 4, 40),
+      segmentsY: clamp(Math.round(finite(input.segmentsY, 40)), 4, 48),
     };
   }
 
@@ -182,30 +288,35 @@
   }
 
   function posePoints(rig, wind = {}) {
-    const points = [{ x: rig.points[0].u - .5, y: .5 - rig.points[0].v, z: rig.points[0].depth }];
-    let collisions = 0;
-    for (let i = 0; i < rig.segments.length; i++) {
-      const from = rig.points[i], to = rig.points[i + 1], prev = points[i], angles = blendSegment(rig.segments[i], wind);
-      const candidate = factor => {
-        const v = segmentVector(from, to, angles, factor);
-        return { x: prev.x + v.x, y: prev.y + v.y, z: prev.z + v.z };
-      };
-      let next = candidate(1);
-      // The portrait is an opaque plane: the strand must never cross its front surface.
-      // Binary-search the maximum permitted segment rotation instead of letting the art clip.
-      if (next.z < .003) {
+    const rest=rig.points.map(p=>({x:p.u-.5,y:.5-p.v,z:p.depth}));
+    const points=rest.map(p=>({...p})), offset=rest.map(()=>({x:0,y:0,z:0}));
+    const follow=clamp(finite(rig.tipFollow,.58),0,.9);
+    let collisions=0;
+    // Evaluate tip-first. A gust on the last knot partially pulls the middle knot, but
+    // moving the middle knot alone never drags the tip. Root remains anchored to the skull.
+    for(let i=rig.segments.length-1;i>=0;i--){
+      const angles=blendSegment(rig.segments[i],wind);
+      const v=segmentVector(rig.points[i],rig.points[i+1],angles,1);
+      const previous=rest[i],target=rest[i+1],child=offset[i+2]||{x:0,y:0,z:0};
+      const delta={x:v.x-(target.x-previous.x)+child.x*follow,
+        y:v.y-(target.y-previous.y)+child.y*follow,
+        z:v.z-(target.z-previous.z)+child.z*follow}; // Tip motion propagates upward with declining influence.
+      const candidate=factor=>({x:target.x+delta.x*factor,y:target.y+delta.y*factor,z:target.z+delta.z*factor});
+      let next=candidate(1);
+      if(next.z<.003){
         collisions++;
-        let low = 0, high = 1;
-        for (let j = 0; j < 12; j++) {
-          const mid = (low + high) / 2;
-          if (candidate(mid).z >= .003) low = mid; else high = mid;
+        let lo=0,hi=1;
+        for(let pass=0;pass<12;pass++){
+          const middle=(lo+hi)/2;
+          if(candidate(middle).z>=.003)lo=middle;else hi=middle;
         }
-        next = candidate(low);
-        if (next.z < .003) next.z = .003;
+        next=candidate(lo);
+        if(next.z<.003)next.z=.003;
       }
-      points.push(next);
+      points[i+1]=next;
+      offset[i+1]={x:next.x-target.x,y:next.y-target.y,z:next.z-target.z};
     }
-    return { points, collisions };
+    return {points,collisions};
   }
 
   function cubic(a, b, c, d, t) {
@@ -224,7 +335,7 @@
       cubic(value(a, axis), value(b, axis), value(c, axis), value(d, axis), t)]));
   }
 
-  function deformPosition(rig, posed, u, v, width, height) {
+  function deformPosition(rig, posed, u, v, width, height, attachmentWeight = 1) {
     const x = u - .5, y = .5 - v;
     let index = 0, fraction = 0, closest = Infinity;
     for (let i = 0; i < rig.points.length - 1; i++) {
@@ -237,7 +348,8 @@
     }
     const rest = curvePoint(rig.points, index, fraction, true); // Cubic neutral centerline blends each neighboring knot instead of a kinked polyline.
     const target = curvePoint(posed, index, fraction); // Pose in the same continuous parametric space before displacing texture vertices.
-    const influence = 1 - clamp(Math.sqrt(closest) / Math.max(.01, rig.width), 0, 1) ** 2;
+    const influence = (1 - clamp(Math.sqrt(closest) / Math.max(.01, rig.width), 0, 1) ** 2)
+      * clamp(finite(attachmentWeight,1),0,1); // Distance-to-head blend smoothly lowers displacement near rigid pixels.
     return { x: (x + (target.x - rest.x) * influence) * width,
       y: (y + (target.y - rest.y) * influence) * height,
       z: Math.max(.003, rest.z + (target.z - rest.z) * influence) * height };
@@ -273,6 +385,8 @@
     const frontMesh = makeMesh(front.canvas, false);
     const rearMesh = rear?.canvas ? makeMesh(rear.canvas, true) : null;
     const rest = geometry.attributes.position;
+    const frontBlend=attachmentBlendField(rig.regionMasks?.front,rig.blendRadiusPx);
+    const rearBlend=rearGeometry?attachmentBlendField(rig.regionMasks?.rear,rig.blendRadiusPx):null; // Cached for this hairstyle, not recomputed each wind frame.
     const rearPositions = rearGeometry?.attributes.position || null; // Same authored UV-to-spline mapping, with mirrored depth relative to the rear plane.
     let lastTime = -Infinity, lastX = NaN, lastY = NaN, lastZ = NaN;
     const applyWind = (wind = { x: 0, y: 0, z: 0 }, force = false) => {
@@ -281,9 +395,14 @@
       const posed = posePoints(rig, wind);
       for (let i = 0; i < rest.count; i++) {
         const u = base[i * 3] / width + .5, v = .5 - base[i * 3 + 1] / height;
-        const p = deformPosition(rig, posed.points, u, v, width, height);
-        rest.setXYZ(i, p.x, p.y, p.z);
-        rearPositions?.setXYZ(i, p.x, p.y, -p.z); // Independent rear geometry prevents occlusion by the opaque back portrait.
+        const strength=sampleAttachmentBlend(frontBlend,u,v);
+        const p=deformPosition(rig,posed.points,u,v,width,height,strength);
+        rest.setXYZ(i,p.x,p.y,p.z);
+        if(rearPositions){
+          const backStrength=sampleAttachmentBlend(rearBlend,1-u,v); // The rear PNG is mirrored for Three.js BackSide UVs.
+          const back=deformPosition(rig,posed.points,u,v,width,height,backStrength);
+          rearPositions.setXYZ(i,back.x,back.y,-back.z);
+        }
       }
       rest.needsUpdate = true;
       geometry.computeBoundingSphere();
@@ -395,6 +514,7 @@
     }));
   }
   window.PortraitSplineRig = { normalize, resolveOptionRig, blendSegment, posePoints, curvePoint,
-    deformPosition, normalizePixelMask, decodePixelMask, encodePixelMask, maskFromOverlap, paintPixelMask, splitByMask,
+    deformPosition, attachmentBlendField, sampleAttachmentBlend, makeDefaultSegments, suggestRestPoints,
+    normalizePixelMask, decodePixelMask, encodePixelMask, maskFromOverlap, paintPixelMask, splitByMask,
     attach, refresh, detach, debug };
 })();
