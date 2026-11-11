@@ -234,12 +234,14 @@ function makeRegionOverlay(){
   return canvas;
 }
 function viewerRegionSources(){
-  const key=JSON.stringify(rig.regionMasks||{})+':'+rig.rearOffset.u+':'+rig.rearOffset.v;
+  const key=JSON.stringify(rig.regionMasks||{})+':'+rig.rearOffset.u+':'+rig.rearOffset.v+':'+Rig.stitchWidthPx(rig);
+  // Texture partition must rebuild whenever mask, rear offset, or seam collar grid size changes.
   const character=images.character||images.head;
   if(regionSourcesCache&&regionSourcesCache.key===key&&regionSourcesCache.front===images.front
     &&regionSourcesCache.rear===images.rear&&regionSourcesCache.character===character)
     return regionSourcesCache.data;
-  const data={front:images.front,rear:images.rear,rigidFront:null,rigidRear:null};
+  const data={front:images.front,rear:images.rear,rigidFront:null,rigidRear:null,
+    stitchedFrontPixels:0,stitchedRearPixels:0}; // Diagnostics show how much of the anchored region carries the seamless mesh join.
   for(const view of ['front','rear']){
     const sprite=images[view],mask=rig.regionMasks?.[view];
     if(!sprite||!mask)continue;
@@ -248,10 +250,15 @@ function viewerRegionSources(){
       const ctx=src.getContext('2d');
       if(view==='rear')ctx.drawImage(sprite,rig.rearOffset.u*200,rig.rearOffset.v*200,200,200);
       else ctx.drawImage(sprite,0,0,200,200);
-      const pieces=Rig.splitByMask(src,mask);
-      data[view]=pieces.flexible;
-      if(view==='front')data.rigidFront=pieces.rigid;
-      else data.rigidRear=pieces.rigid;
+      const pieces=Rig.splitByMask(src,mask,{stitchPx:Rig.stitchWidthPx(rig)});
+      data[view]=pieces.flexible; // A pinned strip of rigid pixels follows the continuous hair surface, eliminating the physical two-plane cut.
+      if(view==='front'){
+        data.rigidFront=pieces.rigid;
+        data.stitchedFrontPixels=pieces.stitchedPixels;
+      }else{
+        data.rigidRear=pieces.rigid;
+        data.stitchedRearPixels=pieces.stitchedPixels;
+      }
     }catch(error){message('Could not split '+view+' sprite mask for 3D: '+error.message);}
   }
   regionSourcesCache={key,front:images.front,rear:images.rear,character,data};
@@ -570,6 +577,7 @@ function render(){
     viewer.update({rig,wind:wind(),selectedKnot,direction,
       head:images.character||images.head,front:sources.front,rear:sources.rear,
       rigidFront:sources.rigidFront,rigidRear:sources.rigidRear,
+      stitchedFrontPixels:sources.stitchedFrontPixels,stitchedRearPixels:sources.stitchedRearPixels,
       rearAligned:!!rig.regionMasks?.rear,
       hood:shown?(images.hoodRear||images.hood):images.hood}); // Exact same rigid/flexible split as the game renderer.
   }
