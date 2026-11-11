@@ -70,6 +70,31 @@ assert.equal(normalized.regionMasks.rear.runs.length,0,'rear mask is independent
 assert.equal(Rig.decodePixelMask(normalized.regionMasks.front)[idx(90,70)],1);
 assert.equal(Rig.splitByMask(hair,null).flexible,hair,'legacy styles without a mask continue moving as before');
 assert.equal(Rig.splitByMask(hair,null).rigid,null,'legacy styles do not acquire phantom head attachments');
+const blend=Rig.attachmentBlendField(mask,18); // Cached pixel-distance weights, shared by game renderer and 3D author.
+assert(blend&&blend.length===40000,'rigid/flexible transition uses a full portrait-grid influence field');
+assert.equal(Rig.sampleAttachmentBlend(blend,90.5/200,70.5/200),0,'rigid pixel has zero deformation influence');
+const adjacent=Rig.sampleAttachmentBlend(blend,90.5/200,101.5/200);
+const midway=Rig.sampleAttachmentBlend(blend,90.5/200,109.5/200);
+const distant=Rig.sampleAttachmentBlend(blend,90.5/200,142.5/200);
+assert(adjacent>0&&adjacent<midway&&midway<distant,'blend rises continuously with distance away from the head');
+assert.equal(distant,1,'fully flexible pixels beyond blend radius receive all authored motion');
+assert.equal(Rig.attachmentBlendField(empty,18),null,'an explicitly all-flexible style requires no distance field');
+assert.equal(Rig.attachmentBlendField(mask,0),null,'zero blend radius preserves old immediate deformation behavior');
+const reference=Rig.normalize({points:[{u:.45,v:.30,depth:.02},{u:.47,v:.55,depth:.03}],
+  segments:[{deadzone:{x:0,y:0,z:0},poses:{right:{translate:{x:.1}}}}],blendRadiusPx:18});
+const rest=Rig.posePoints(reference).points,moved=Rig.posePoints(reference,{x:1}).points;
+const still=Rig.deformPosition(reference,moved,.46,.45,1,1,0);
+const blended=Rig.deformPosition(reference,moved,.46,.45,1,1,.5);
+const free=Rig.deformPosition(reference,moved,.46,.45,1,1,1);
+const neutral=Rig.deformPosition(reference,rest,.46,.45,1,1,1);
+assert(Math.abs(still.x-neutral.x)<1e-9,'a rigid boundary vertex stays at its neutral location');
+assert(free.x>blended.x&&blended.x>still.x,'automatic blend controls vertex motion rather than fading the original artwork');
+const defaultWind=Rig.makeDefaultSegments([{u:.5,v:.2},{u:.5,v:.5},{u:.5,v:.8}]);
+assert(defaultWind[1].poses.left.translate.x<0&&defaultWind[1].poses.right.translate.x>0,
+  'default wind directions use opposite, shape-scaled motions, not six empty poses');
+const suggested=Rig.suggestRestPoints(hair,head);
+assert(suggested&&suggested.length===3&&suggested[0].v<suggested[1].v&&suggested[1].v<suggested[2].v,
+  'rest spline is fitted to opaque hair bounds and head-overlapping root, rather than fixed coordinates');
 const portrait=fs.readFileSync(path.join(root,'docs/js/portrait-utils.js'),'utf8');
 assert(portrait.includes('ctx.drawImage(layers.rigid, 0, 0'),'rigid pixels must be composited on the original game portrait');
 assert(portrait.includes('canvas: layers?.flexible || partCanvas'),'only flexible pixels enter the 3D spline');
