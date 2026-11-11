@@ -507,7 +507,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261110banubuNightAudit2&surfaceUv=20261026orequad1"></script>
+  <script src="js/house-pieces.js?v=20261110banubuNightAudit3&surfaceUv=20261026orequad1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -3090,7 +3090,7 @@
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261109missingNpcRestore1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
-  <script src="js/banubu-snore.js?v=20261110banubuNightAudit2"></script>
+  <script src="js/banubu-snore.js?v=20261110banubuNightAudit3"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
   <script src="js/controller-ui-nav.js?v=20261110barnStableUI2"></script>
   <!-- ◀/▶ stepper buttons beside every <select> so controller players can change any dropdown. -->
