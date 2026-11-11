@@ -191,8 +191,8 @@
       rec.session=composer.createSession(song,{
         lookaheadMs:root.AudioSystem?.metronomeLookaheadMs||0, // Uses the performance transport's 90 ms lookahead when the game's Web Audio adapter is installed.
       clockMs:typeof options.clockMs==='function'?options.clockMs:(root.AudioSystem?.metronomeLookaheadMs?()=>root.performance?.now?.()??Date.now():null), // Deterministic trial harnesses inject their own monotonic clock; gameplay shares the audio clock.
-      onStop:()=>root.RuinInteractionAudio?.metronomeStop?.(), // Stop queued future beats on plate exit or solve.
-      onBeat:beat=>root.RuinInteractionAudio?.metronomeTick?.(beat),
+      onStop:()=>{root.RuinInteractionAudio?.metronomeStop?.();root.MusicMinigame?.clearPuzzleBeatClock?.();}, // Keep flute note-off and stonebeat in one lifecycle.
+      onBeat:beat=>{if(beat.absoluteBeat===0)root.MusicMinigame?.setPuzzleBeatClock?.(song.bpm,beat.whenMs);root.RuinInteractionAudio?.metronomeTick?.(beat);},
         onSolved:()=>complete(), // The instrument remains equipped; only the owning mechanism unlocks.
         onChanged:snapshot=>{
           if(snapshot.mistakes>(rec.melodyState?.mistakes||0)){
@@ -209,7 +209,7 @@
       timedNoteListener=event=>{
         const area=options.area||options.mapId; // A different map, inactive floor or unoccupied plate cannot feed this score.
         if(rec.disposed||rec.solved||!isActive()||(area&&event?.detail?.area!==area))return;
-        rec.session.note(event?.detail?.noteIndex);
+        rec.session.note(event?.detail?.noteIndex,event?.detail?.pressedAtMs);
       };
       events?.addEventListener?.('hobunji-kurraya-puzzle-note',timedNoteListener);
     }

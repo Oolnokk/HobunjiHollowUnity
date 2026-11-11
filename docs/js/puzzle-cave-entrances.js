@@ -459,8 +459,8 @@
     portal.session=root.PuzzleCaveMelody.createSession(song,{
       lookaheadMs:root.AudioSystem?.metronomeLookaheadMs||0, // Uses the performance transport's 90 ms lookahead when the game's Web Audio adapter is installed.
       clockMs:root.AudioSystem?.metronomeLookaheadMs?()=>root.performance?.now?.()??Date.now():null, // Audio and score glyphs share the same monotonic clock.
-      onStop:()=>root.RuinInteractionAudio?.metronomeStop?.(), // Stop queued future beats on plate exit or solve.
-      onBeat:beat=>root.RuinInteractionAudio?.metronomeTick?.(beat), // One recorded pick per actual quarter-note boundary, only while the raised plate is occupied.
+      onStop:()=>{root.RuinInteractionAudio?.metronomeStop?.();root.MusicMinigame?.clearPuzzleBeatClock?.();}, // Retire the metronome and its flute release clock together.
+      onBeat:beat=>{if(beat.absoluteBeat===0)root.MusicMinigame?.setPuzzleBeatClock?.(song.bpm,beat.whenMs);root.RuinInteractionAudio?.metronomeTick?.(beat);}, // The plate's first downbeat establishes both clocks.
       onSolved:()=>{
         portal.solved=true;portal.openWait=.95; // Solving never closes or commandeers the player's manually equipped instrument.
         root.CaveSiteSystem?.markExteriorPuzzleSolved?.(portal.mapId,song.rewardTier);
@@ -478,7 +478,7 @@
     portal.noteHandler=e=>{
       if(portal.disposed||portal.solved||deps?.getCurrentArea?.()!==portal.area
         ||e?.detail?.area!==portal.area)return;
-      portal.session.note(e.detail.noteIndex);
+      portal.session.note(e.detail.noteIndex,e.detail.pressedAtMs);
     };
     root.addEventListener?.('hobunji-kurraya-puzzle-note',portal.noteHandler);
   }

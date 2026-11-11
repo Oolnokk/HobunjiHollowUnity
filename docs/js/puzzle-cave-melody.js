@@ -9,8 +9,8 @@
   'use strict';
   const TICKS_PER_MEASURE=16; // Sixteenth-note time base shared by composition, timing and the UI.
   const NOTE_COUNT=8; // The existing Kurraya puzzle instrument has eight playable note controls.
-  const MIN_BPM=66,MAX_BPM=100; // Slow but not languid; all generated songs stay at or below 100 BPM.
-  const DURATIONS=[1,2,4,8,16]; // Sixteenth, eighth, quarter, half, whole; each event lasts its full written duration.
+  const MIN_BPM=60,MAX_BPM=88; // Slightly slower than the original 66–100 BPM range to leave room for live button input.
+  const DURATIONS=[2,4,8,16]; // Eighth note is the shortest value; quarter, half and whole notes remain possible.
   const clamp=(n,a,b)=>Math.min(b,Math.max(a,n));
   function hash(value){
     let seed=2166136261;
@@ -24,15 +24,15 @@
   function generate(id,options={}){
     const rng=seeded(String(id)+':puzzle-cave-song-v1');
     const difficulty=clamp(Math.floor(Number(options.difficulty)||1),1,5);
-    const measures=options.measures===1||options.measures===2?options.measures:(difficulty>=3?2:1);
-    const bpm=clamp(Math.round(Number(options.bpm)||Math.round(68+rng()*32)),MIN_BPM,MAX_BPM);
+    const measures=[1,2,4].includes(options.measures)?options.measures:(difficulty>=5?4:difficulty>=3?2:1); // Complete 4/4 phrases only: one, two or four bars.
+    const bpm=clamp(Math.round(Number(options.bpm)||Math.round(MIN_BPM+rng()*(MAX_BPM-MIN_BPM))),MIN_BPM,MAX_BPM);
     const totalTicks=measures*TICKS_PER_MEASURE;
     const notes=[];
     let tick=0,previous=2;
     while(tick<totalTicks){
       const left=totalTicks-tick;
       const available=DURATIONS.filter(length=>length<=left && (difficulty>=4||length>=2) && (difficulty>=2||length>=4));
-      const pool=available.length?available:[1];
+      const pool=available.length?available:[2]; // The entire phrase is tiled with binary note values, never sixteenths.
       const length=pool[Math.floor(rng()*pool.length)];
       // Mostly stepwise motion with occasional melodic leaps; end on the tonic.
       const step=rng()<.76?(rng()<.5?-1:1)*(rng()<.75?1:2):(rng()<.5?-3:3);
@@ -91,6 +91,7 @@
     if(!song||!Array.isArray(song.notes)||!song.notes.length)throw new Error('Puzzle Cave song is missing its note sequence.');
     let standing=false,solved=false,elapsed=0,progress=0,mistakes=0,cycle=0,lastSignature='';
     let startedAtMs=null,nextScheduledBeat=1; // The plate's monotonic start and next unqueued beat keep both score judgment and audio on one clock.
+    let expiredProgress=null; // Keeps the last expired attempt available to timestamped inputs delivered after a stalled render frame.
     let currentClockMs=clockMs; // The optional author/test clock can be swapped without changing the live game's absolute-time source.
     const quarterSeconds=song.secondsPerTick*4; // Four sixteenth ticks per numbered stonebeat recording; independent of MP3 duration.
     const lookaheadSeconds=clamp((Number(lookaheadMs)||0)/1000,0,.15); // Performance-mode-style audio lead; tests without a clock retain exact delta-time behavior.
@@ -114,13 +115,13 @@
       const sampledMs=typeof currentClockMs==='function'?Number(currentClockMs()):NaN; // Browser performance.now; deterministic unit tests use dt when no clock is injected.
       if(!down){
         if(standing){
-          standing=false;elapsed=0;progress=0;cycle=0;startedAtMs=null;nextScheduledBeat=1;
+          standing=false;elapsed=0;progress=0;cycle=0;startedAtMs=null;nextScheduledBeat=1;expiredProgress=null;
           onStop(); // Cancel only future scheduled picks when a plate is vacated; sounded tails may finish.
         }
         return notify();
       }
       if(!standing){
-        standing=true;elapsed=0;progress=0;cycle=0;
+        standing=true;elapsed=0;progress=0;cycle=0;expiredProgress=null;
         startedAtMs=Number.isFinite(sampledMs)?sampledMs:null;
         nextScheduledBeat=1;
         if(!solved)onBeat({beatIndex:0,absoluteBeat:0,downbeat:true,elapsed:0,whenMs:startedAtMs}); // First beat starts at the same clock origin as the score and all future picks.
@@ -140,20 +141,41 @@
           nextScheduledBeat=lookaheadBeat+1;
         }
         const nextCycle=Math.floor(tickAt()/song.cycleTicks);
-        if(nextCycle!==previousCycle){cycle=nextCycle;progress=0;}
-        else if(progress<song.notes.length){
+        if(nextCycle!==previousCycle){
+          if(progress>0&&startedAtMs!==null)expiredProgress={progress,cycle:previousCycle}; // A queued press may predate a skipped song-cycle boundary.
+          cycle=nextCycle;progress=0;
+        }else if(progress<song.notes.length){
           const expected=song.notes[progress];
           const localTick=tickAt()%song.cycleTicks;
-          if(localTick>=expected.startTick+expected.lengthTicks)progress=0; // A missed window invalidates the attempt, not the looping score.
+          if(localTick>=expected.startTick+expected.lengthTicks){
+            if(progress>0&&startedAtMs!==null)expiredProgress={progress,cycle:nextCycle}; // Don't discard an earlier physical note just because rendering reached its deadline first.
+            progress=0; // The live display resets immediately; timestamped notes can recover the just-expired attempt.
+          }
         }
       }
       return notify();
     }
-    function note(index){
+    function note(index,pressedAtMs=null){
       if(!standing||solved||!Number.isInteger(index)||index<0||index>=NOTE_COUNT)return false;
-      const at=activeIndex();
+      const eventMs=Number(pressedAtMs); // The physical key/pointer event's timestamp survives asynchronous iframe messaging and slow render frames.
+      const hasPhysicalTime=pressedAtMs!==null&&Number.isFinite(eventMs);
+      const sampleMs=hasPhysicalTime?eventMs:
+        typeof currentClockMs==='function'?Number(currentClockMs()):NaN;
+      const playedElapsed=startedAtMs!==null&&Number.isFinite(sampleMs)
+        ?(sampleMs-startedAtMs)/1000:elapsed;
+      const absoluteTick=Math.max(0,playedElapsed/song.secondsPerTick);
+      const localTick=absoluteTick%song.cycleTicks; // Judge the actual press, not the last animation-frame snapshot.
+      const pressCycle=Math.floor(absoluteTick/song.cycleTicks);
+      const graceTicks=.075/song.secondsPerTick; // A 75 ms late edge compensates for input/frame delivery without allowing early notes.
+      const queued=hasPhysicalTime&&expiredProgress?.cycle===pressCycle? song.notes[expiredProgress.progress]:null;
+      if(queued&&localTick>=queued.startTick-1e-7&&localTick<queued.startTick+queued.lengthTicks+graceTicks)
+        progress=expiredProgress.progress; // Recover a successful press queued before step() reset progress.
+      expiredProgress=null; // One physical input consumes the stale attempt; it cannot be replayed to advance twice.
       const expected=song.notes[progress];
-      if(at!==progress||!expected||index!==expected.index){
+      const onTime=!(startedAtMs!==null&&Number.isFinite(sampleMs)&&sampleMs<startedAtMs)
+        &&!!expected&&localTick>=expected.startTick-1e-7
+        &&localTick<expected.startTick+expected.lengthTicks+graceTicks;
+      if(!onTime||index!==expected.index){
         mistakes++;
         progress=0; // The lights keep cycling; the next successful run starts on the next first glyph.
         notify();

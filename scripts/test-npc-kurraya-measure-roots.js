@@ -10,7 +10,7 @@ const vm = require('node:vm');
 
 const html = fs.readFileSync(path.join(__dirname, '../docs/assets/minigames/lyre-performance.html'), 'utf8');
 const host = fs.readFileSync(path.join(__dirname, '../docs/js/music-minigame.js'), 'utf8');
-const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)].map(match => match[1]);
+const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)].map(match => match[1]).filter(script => script.trim()); // External flute timing library is not an inline application script.
 assert.equal(scripts.length, 2, 'Kurraya should retain its app and hosted bridge scripts');
 scripts.forEach((script, index) => new vm.Script(script, {filename: 'lyre-performance-inline-' + index + '.js'}));
 

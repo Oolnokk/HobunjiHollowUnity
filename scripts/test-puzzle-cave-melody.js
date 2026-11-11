@@ -5,23 +5,29 @@ const Song=require('../docs/js/puzzle-cave-melody.js'); // Exercises the exact b
 const first=Song.generate('wilderness:puzzle:1',{difficulty:1});
 assert.deepEqual(first,Song.generate('wilderness:puzzle:1',{difficulty:1}),'one cave retains its score on reload');
 assert.equal(first.measures,1);
-assert.ok(first.bpm<=100&&first.bpm>=66,'all tempos are slow and bounded');
+assert.ok(first.bpm<=88&&first.bpm>=60,'all tempos are slower and bounded');
 assert.equal(first.cycleTicks-first.totalTicks,16,'one full measure of silence separates repeats');
 assert.ok(first.notes.length>=2);
 assert.ok(first.notes.every(note=>Number.isInteger(note.index)&&note.index>=0&&note.index<8));
-assert.ok(first.notes.every(note=>[1,2,4,8,16].includes(note.lengthTicks)));
+assert.ok(first.notes.every(note=>[2,4,8,16].includes(note.lengthTicks)),'no note is shorter than an eighth');
 
 const harder=Song.generate('wilderness:puzzle:2',{difficulty:5});
-assert.equal(harder.measures,2);
-assert.equal(harder.totalTicks,32);
+assert.equal(harder.measures,4);
+assert.equal(harder.totalTicks,64);
 assert.ok(harder.rewardTier>=first.rewardTier,'a longer, complex melody should not award lower-tier treasure');
 for(let index=0;index<80;index++){
   const song=Song.generate('cave-'+index,{difficulty:1+index%5});
   assert.ok(song.notes.every(note=>note.startTick+note.lengthTicks<=song.totalTicks));
   assert.ok(song.notes.some(note=>note.startTick===0),'all scores start with a playable note');
-  assert.ok(song.bpm<=100);
+  assert.ok(song.bpm<=88);
+  assert.ok([1,2,4].includes(song.measures)&&song.totalTicks===song.measures*16,'every phrase fills one, two or four full 4/4 bars');
+  assert.ok(song.notes.every(note=>note.lengthTicks>=2&&note.startTick%2===0),'eighth-note grid has no sixteenth attacks');
 }
 
+const requestedMeasures=Song.generate('four-bars',{measures:4,bpm:300});
+assert.equal(requestedMeasures.measures,4);
+assert.equal(requestedMeasures.totalTicks,64);
+assert.equal(requestedMeasures.bpm,88,'explicit out-of-range BPM is still clamped');
 let solved=0;
 const session=Song.createSession(harder,{onSolved:()=>solved++});
 assert.equal(session.note(harder.notes[0].index),false,'off-plate music cannot solve the cave');
@@ -51,6 +57,47 @@ for(let i=0;i<harder.notes.length;i++){
 assert.equal(session.solved,true);
 assert.equal(solved,1,'reward callback fires exactly once');
 assert.equal(session.note(harder.notes[0].index),false,'a solved song cannot be submitted twice');
+
+let pressClock=1000; // Simulates a delayed iframe callback arriving after the next render tick.
+const timestampSong=Song.generate('hardware-press',{difficulty:1,measures:1,bpm:60});
+const timestampJudge=Song.createSession(timestampSong,{clockMs:()=>pressClock});
+timestampJudge.step(0,true);
+const firstEndMs=pressClock+timestampSong.notes[0].lengthTicks*timestampSong.secondsPerTick*1000;
+pressClock=firstEndMs+30;
+timestampJudge.step(0.03,true);
+assert.equal(timestampJudge.note(timestampSong.notes[0].index,firstEndMs-20),true,
+  'a press captured before the note ended is accepted even when the iframe callback arrives later');
+const lateJudge=Song.createSession(timestampSong,{clockMs:()=>pressClock});
+lateJudge.step(0,true);
+pressClock+=timestampSong.notes[0].lengthTicks*timestampSong.secondsPerTick*1000+90;
+assert.equal(lateJudge.note(timestampSong.notes[0].index,pressClock),false,
+  'an actually late press cannot use the grace window to skip a missed note');
+let queuedNow=12000; // Simulates the render thread running past note two before its physical key event is delivered.
+const queuedSong=Song.generate('delayed-second-note',{difficulty:1,measures:1,bpm:60});
+const queuedJudge=Song.createSession(queuedSong,{clockMs:()=>queuedNow});
+queuedJudge.step(0,true);
+assert.equal(queuedJudge.note(queuedSong.notes[0].index,queuedNow),true,'the first note starts an attempt');
+const second=queuedSong.notes[1];
+const secondDeadline=12000+(second.startTick+second.lengthTicks)*queuedSong.secondsPerTick*1000;
+queuedNow=secondDeadline+40;
+queuedJudge.step(0.04,true);
+assert.equal(queuedJudge.snapshot().progress,0,'the live display resets as soon as a note is missed');
+assert.equal(queuedJudge.note(second.index,secondDeadline-10),true,
+  'the physical second-note press still counts after the display has reset due to a delayed callback');
+let graceNow=22000; // An actually late-but-within-grace press must not be discarded by a prior render frame.
+const graceJudge=Song.createSession(queuedSong,{clockMs:()=>graceNow});
+graceJudge.step(0,true);
+assert.equal(graceJudge.note(queuedSong.notes[0].index,graceNow),true);
+const graceDeadline=22000+(second.startTick+second.lengthTicks)*queuedSong.secondsPerTick*1000;
+graceNow=graceDeadline+45;
+graceJudge.step(0.045,true);
+assert.equal(graceJudge.note(second.index,graceDeadline+45),true,
+  'the 75 ms boundary grace remains active even after step() notices the missed deadline');
+const prePlateClock=33000; // A queued key event from before standing on the plate must never count as its opening note.
+const prePlateJudge=Song.createSession(queuedSong,{clockMs:()=>prePlateClock});
+prePlateJudge.step(0,true);
+assert.equal(prePlateJudge.note(queuedSong.notes[0].index,prePlateClock-20),false,
+  'a timestamp before stepping onto the plate cannot satisfy the first glyph');
 
 const replay=Song.createSession(first);
 replay.step(0,true);

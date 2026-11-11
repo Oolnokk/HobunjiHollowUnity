@@ -28,8 +28,8 @@
   // browser that already cached an older lyre-performance.html under this
   // exact URL would keep serving it indefinitely after an update, since
   // nothing about the request ever changes.
-  const MUSIC_MINIGAME_SRC = 'assets/minigames/lyre-performance.html?v=20261110npcFollowAudit4';
-  const PUZZLE_MINIGAME_SRC = 'assets/minigames/kurraya-puzzle.html?v=20261107fluteMonophonic1'; // The default eight-note puzzle surface, independent of the performance engine.
+  const MUSIC_MINIGAME_SRC = 'assets/minigames/lyre-performance.html?v=20261110releaseGrid1';
+  const PUZZLE_MINIGAME_SRC = 'assets/minigames/kurraya-puzzle.html?v=20261110releaseGrid1'; // The default eight-note puzzle surface, independent of the performance engine.
   // The ONE songbook entry the ported app currently knows (see
   // lyre-performance.html's SONGBOOK) — surfaced to the compact song
   // picker below alongside Free Play and the built-in practice patterns.
@@ -242,6 +242,7 @@
   }, true);
 
   let playerSession = null; // { mode:'lead'|'jam'|'puzzle', area, npcId, songId } while the overlay is open, else null.
+  let puzzleBeatClock = null; // The occupied plate's tempo/time origin is also the puzzle flute's release-grid origin.
   let musicActionLock = null; // Suppresses player tool/item attacks while either hosted instrument mode owns inputs.
   const leaderByArea = new Map(); // area -> { type:'player'|'npc', id, songId, startedAt }
   const ambientFrames = new Map(); // npcId -> hidden <iframe>, for each NPC currently the ambient audio source in their area.
@@ -258,9 +259,23 @@
       stopAmbientForNpc(performer.npcId); // The NPC's own song will restart independently when the puzzle ends.
     }
   }
-  function puzzleNote(index) {
-    if (playerSession?.instrumentMode !== 'puzzle') return;
-    try { frameEl?.contentWindow?.HobunjiPuzzleInstrument?.playNote(index); } catch (error) {
+  function puzzlePressMs(event) {
+    const now=window.performance?.now?.()??Date.now(); // Controller edges use the host's monotonic clock; key events preserve the original hardware event time.
+    const timestamp=Number(event?.timeStamp);
+    return Number.isFinite(timestamp)&&Math.abs(timestamp-now)<5000?timestamp:now;
+  }
+  function publishPuzzleNote(index,pressedAtMs) {
+    if(playerSession?.instrumentMode!=='puzzle'||playerSession.echoChallenge)return;
+    const detail={noteIndex:index,area:playerSession.area,instrumentKey:playerSession.instrumentKey,pressedAtMs};
+    window.dispatchEvent(new CustomEvent('hobunji-kurraya-puzzle-note',{detail})); // Physical inputs can be judged before the iframe's audio or message queue runs.
+  }
+  function puzzleNote(index,pressedAtMs=puzzlePressMs()) {
+    if (playerSession?.instrumentMode !== 'puzzle' || !Number.isInteger(index)
+      || index<0 || index>=(window.KurrayaPuzzle?.NOTE_CODES?.length??8)) return;
+    publishPuzzleNote(index,pressedAtMs); // Judge the physical edge before any iframe/audio work, even when the iframe has not loaded yet.
+    try {
+      puzzleView()?.playNote?.(index,{publishInput:false,pressedAtEpochMs:(window.performance?.timeOrigin??Date.now()-puzzlePressMs())+pressedAtMs});
+    } catch (error) {
       window.__farmLog?.('Kurraya puzzle note failed: ' + error.message, 'warn');
     }
   }
@@ -268,6 +283,19 @@
   const puzzleBookAction = 'musicBank3'; // Reuse the music binding that defaults to LB, including conflict checks and remaps.
   function puzzleView() {
     return frameEl?.contentWindow?.HobunjiPuzzleInstrument;
+  }
+  function setPuzzleBeatClock(bpm,startedAtMs=null) {
+    const tempo=Number(bpm);
+    if(!Number.isFinite(tempo)||tempo<=0)return false;
+    const perf=window.performance,now=perf?.now?.()??Date.now();
+    const start=startedAtMs!==null&&Number.isFinite(Number(startedAtMs))?Number(startedAtMs):now;
+    puzzleBeatClock={bpm:tempo,originEpochMs:(perf?.timeOrigin??Date.now()-now)+start}; // Convert the host clock to an epoch usable by its same-origin iframe.
+    if(playerSession?.instrumentMode==='puzzle')puzzleView()?.setBeatClock?.(puzzleBeatClock);
+    return true;
+  }
+  function clearPuzzleBeatClock() {
+    puzzleBeatClock=null;
+    if(playerSession?.instrumentMode==='puzzle')puzzleView()?.setBeatClock?.(null);
   }
   function musicControllerBindings() {
     const bindings = window.InputBindings?.getCurrentBindings?.()?.controller || {};
@@ -298,7 +326,7 @@
     event.preventDefault();
     event.stopImmediatePropagation();
     if (index < 0) puzzleView()?.toggleSongbook?.();
-    else puzzleNote(index);
+    else puzzleNote(index,puzzlePressMs(event));
   }
   function stopPuzzleInputs() {
     window.removeEventListener?.('keydown', puzzleKeyboard, true);
@@ -338,7 +366,7 @@
       if (exit) { close(); return; }
       if (frame.pressed?.size || shiftedNow || stickMoved || book || note >= 0) showPuzzleInput('controller',binding);
       if (book) puzzleView()?.toggleSongbook?.();
-      if (note >= 0) puzzleNote(note + (shifted ? faceCodes.length : 0));
+      if (note >= 0) puzzleNote(note + (shifted ? faceCodes.length : 0),puzzlePressMs());
     }
     const initialFrame = window.ControllerInput?.frame?.(); // Snapshot from the normal controller poller, even if the overlay opened mid-press.
     if (initialFrame) readFrame(initialFrame,false);
@@ -392,6 +420,7 @@
   function onPlayerFrameLoaded() {
     if (!playerSession) return;
     if (playerSession.instrumentMode === 'puzzle') {
+      puzzleView()?.setBeatClock?.(puzzleBeatClock); // An instrument equipped after stepping onto a plate must inherit its already-running beat.
       // The puzzle iframe owns its eight single-note buttons and audio; never boot the chord/timing bridge here.
       startPuzzleInputs();
       if (playerSession.echoChallenge) {
@@ -479,6 +508,7 @@
       ? PUZZLE_MINIGAME_SRC + (playerSession.instrumentKey === 'flute' ? '&instrument=flute' : '') +
         (/(?:[?&])debugMusic=1(?:&|$)/.test(window.location?.search || '') ? '&debugMusic=1' : '')
       : MUSIC_MINIGAME_SRC + (playerSession.instrumentKey === 'flute' ? '&instrument=flute' : ''); // Performance retains its chords, arpeggios and song controls while the iframe selects the flute's own sound.
+    if(next==='puzzle')startPuzzleInputs(); // Capture physical notes immediately; iframe load only attaches/restarts the audible instrument.
     return true;
   }
   modeBtnEl?.addEventListener('click',event => {
@@ -557,8 +587,10 @@
     if (data.type === 'exit-requested') close();
     if (data.type === 'puzzle-note' && playerSession?.instrumentMode === 'puzzle' &&
         Number.isInteger(data.noteIndex) && data.noteIndex >= 0 && data.noteIndex < (window.KurrayaPuzzle?.NOTE_CODES?.length ?? 8)) {
-      const detail = {noteIndex:data.noteIndex,area:playerSession.area,instrumentKey:playerSession.instrumentKey}; // The active player's normal instrument publishes notes; ruin listeners never receive example playback or NPC notes.
-      window.dispatchEvent(new CustomEvent('hobunji-kurraya-puzzle-note',{detail})); // The iframe separately reports its sounded-note event after audio actually plays; that one alone animates.
+      const rawEpoch=Number(data.pressedAtEpochMs);
+      const projected=rawEpoch-(window.performance?.timeOrigin??NaN);
+      const pressedAtMs=Number.isFinite(projected)&&Math.abs(projected-puzzlePressMs())<5000?projected:puzzlePressMs(); // Translate child time origin before judging its actual pointer timestamp.
+      publishPuzzleNote(data.noteIndex,pressedAtMs); // The iframe separately reports its sounded-note event after audio actually plays; that one alone animates.
     }
     if (data.type === 'puzzle-echo-result' && playerSession?.instrumentMode === 'puzzle' &&
         playerSession.echoChallenge?.id === data.id) {
@@ -1491,6 +1523,7 @@
   window.MusicMinigame = {
     init,
     beginPlayerSession,
+    setPuzzleBeatClock,clearPuzzleBeatClock, // Cave and ruin scores use one existing instrument to schedule flute release.
     getEquippedInstrument: () => deps?.getEquippedInstrument?.() || null,
     close,
     switchInstrumentMode, // Lets other gameplay systems open the legacy performance controls without rewriting the puzzle path.
@@ -1509,7 +1542,7 @@
       controllerOwner:window.ControllerInput?.owner||null,actionLockActive:!!musicActionLock,
       jamFollow:bridgeOf(frameEl)?.jamFollowState?.()||{active:false},
       player:playerSession?{mode:playerSession.mode,instrumentMode:playerSession.instrumentMode,instrumentKey:playerSession.instrumentKey,echoChallengeId:playerSession.echoChallenge?.id||null,npcId:playerSession.npcId||null}:null,
-      lastPuzzleSong:lastPuzzleSong,
+      lastPuzzleSong:lastPuzzleSong,puzzleBeatClock, // Mobile diagnostics show the tempo and start timestamp used for flute note-off.
       flute:window.KurrayaInstrument?.fluteDiagnostics?.()||null,
       npcPerformances:[...ambientFrames].map(([npcId,frame])=>({npcId,...bridgeOf(frame)?.ambientPerformanceState?.()}))}),
   };
