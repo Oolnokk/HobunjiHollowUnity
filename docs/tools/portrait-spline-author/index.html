@@ -538,7 +538,8 @@ function render(){
     '\nPortrait plane: '+(shown?'rear (offset '+rig.rearOffset.u+', '+rig.rearOffset.v+')':'front')+
     '\nOnly enabled styles create extra geometry; others retain 2D rendering.';
   $('json').value=JSON.stringify(rig,null,2);
-  if(viewer){
+  if(viewer && !(dragging && (mode==='paint'||mode==='erase'))){
+    // Keep 2D brush strokes responsive on Android; upload two new WebGL textures only once at stroke end.
     const sources=viewerRegionSources();
     viewer.update({rig,wind:wind(),selectedKnot,direction,
       head:images.character||images.head,front:sources.front,rear:sources.rear,
@@ -574,7 +575,10 @@ $('preview').addEventListener('pointerdown',e=>{
   paint(p);
 });
 $('preview').addEventListener('pointermove',e=>{if(dragging){e.preventDefault();paint(pick(e));}});
-for(const event of ['pointerup','pointercancel','lostpointercapture'])$('preview').addEventListener(event,()=>dragging=false);
+for(const event of ['pointerup','pointercancel','lostpointercapture'])$('preview').addEventListener(event,()=>{
+  if(!dragging)return;
+  dragging=false;render(); // Commit the finished rigid/flexible mask to the 3D viewer once after the drag.
+});
 function setPaintMode(next){
   mode=next;
   for(const key of ['move','paint','erase'])$(key+'Mode').classList.toggle('active',key===next);
