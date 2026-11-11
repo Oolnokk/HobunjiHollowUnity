@@ -27,7 +27,7 @@ class Quaternion {
   dot(q){return this.x*q.x+this.y*q.y+this.z*q.z+this.w*q.w;}
 } // The occlusion culler uses only camera-pose dot products.
 class Matrix4 {constructor(){this.elements=Array(16).fill(0);} multiplyMatrices(){return this;}} // Mutable projection matrices reproduce mobile viewport and zoom updates.
-class Frustum {setFromProjectionMatrix(){return this;} intersectsSphere(s){return s.center.x < 14;}}
+class Frustum {setFromProjectionMatrix(){return this;} intersectsSphere(s){return s.center.x - s.radius < 14;}} // Tangent limbs count as visible at the view edge.
 class Sphere {constructor(center,radius){this.center=center;this.radius=radius;}}
 class Scene {
   constructor(){this.isScene=true;this.children=[];}
@@ -76,6 +76,7 @@ const renderer={
   },
 }; // One renderer.render for the whole query batch; 8 objects maximum per pass.
 const rootScene=new Scene();
+let visualScene=rootScene; // The active world can be rebuilt without changing its area name.
 const makeRoot=(x,id)=>{const root={isObject3D:true,visible:true,position:new Vector3(x,0,0),parent:rootScene,id};return root;};
 const nearRoot=makeRoot(1,'near');
 const covered=makeRoot(10,'covered');
@@ -96,7 +97,7 @@ const camera={
   projectionMatrix:new Matrix4(),layers:{mask:1,enable(n){this.mask|=1<<n;}},
   updateMatrixWorld(){}
 };
-const context=()=>({renderer,scene:rootScene,camera,walkers,hostiles,area:'town',playerPosition:{x:0,z:0}});
+const context=()=>({renderer,scene:visualScene,camera,walkers,hostiles,area:'town',playerPosition:{x:0,z:0}});
 const frame=()=>{
   api.beginFrame(context());
   const before=api.snapshot();
@@ -226,6 +227,21 @@ api.endFrame();
 walkers.pop();walkers.pop();
 assert.equal(elevated.visible,true,'elevated NPC root is restored after the world render');
 assert.equal(lower.visible,true,'below-ledge NPC root is restored after the world render');
+api.reset();
+
+// Rebuilding the same town/plateau scene changes static occluder geometry.
+// Invalidate the old hidden decision even if camera, area string and NPC
+// position remain identical.
+rehideCovered();
+const freshScene=new Scene();
+const owned=[nearRoot,covered,offscreen,idleBandit,chaseBandit];
+for(const root of owned)root.parent=freshScene;
+visualScene=freshScene;
+api.beginFrame(context());
+assert.equal(covered.visible,true,'new scene containing changed cliff/plateau geometry wakes hidden actor');
+api.endFrame();
+visualScene=rootScene;
+for(const root of owned)root.parent=rootScene;
 api.reset();
 
 const previouslyHidden={isObject3D:true,visible:false,parent:rootScene,position:new Vector3(3,0,0)};
