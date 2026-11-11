@@ -66,6 +66,8 @@ for (const recipe of Object.values(environment.ProceduralFurniture.CATALOG)) {
     assert(['wood','stone','metal'].includes(component.materialRole), 'new structure uses existing material roles');
     assert.equal(component.materialTexture, component.materialRole === 'wood' ? 'boards.png' : 'carved_smooth.png',
       'wood matches authored aging barrels; stone/verdigris metal match carved architecture');
+    assert.match(component.materialTextureTint,/^#[0-9a-f]{6}$/i,
+      'worn materials use the renderer\'s valid opt-in shared-texture tint');
   }
 }
 
@@ -83,6 +85,9 @@ for (const key of ['fortifiedWatchtower','fortifiedLowRail','fortifiedHighCover'
   const top = Math.max(...parts.map(piece => piece.transform.y + piece.transform.sy / 2));
   assert(top < coverHeights[key], key + ' projectile/target height must clear the highest damaged plank');
 }
+const woodTints = new Set(Object.values(environment.ProceduralFurniture.CATALOG)
+  .flat().filter(piece => piece.materialRole === 'wood').map(piece => piece.materialTextureTint)); // Test dark, worn, and faded wood remain separate colors with one cached board PNG.
+assert(woodTints.size >= 3, 'battle damage needs distinct dusty, dark and old splintered wood colors');
 const towerParts = environment.ProceduralFurniture.CATALOG.fortifiedWatchtower; // Broken deck/roof keep line-of-sight gaps.
 assert(!towerParts.some(piece => piece.name === 'tower-roof' || piece.name === 'tower-deck'),
   'one pristine full roof or deck must not visually erase the broken board gaps');
