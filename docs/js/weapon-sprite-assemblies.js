@@ -743,10 +743,13 @@
     state.renderedHaftLongScale = attachmentScale; state.renderedHaftWidthScale = Math.abs(q.scale.x); // Console-free scaling diagnosis for the currently equipped species.
     const localHandleScale = attachmentScale / Math.max(0.00001, Math.abs(q.rootScale.x)); // Compensates for extra scale applied to the handle plane itself.
     if (state.dualPhysicsSource) state.flailLengthScale = state.dualPhysicsSource.flailLengthScale; // Both hands follow the same sampled attack length as their original.
-    else if (!state.hasExplicitFlailScale && isCachedPlayerToolRoot(root)) {
-      const runtime = global.WeaponToolStances?.getRuntimeState?.(); // Only cached player flails borrow the weapon slot's live neutral/attack pose.
-      if (runtime?.activeSlot === 'weapon' && runtime.itemKey === state.itemKey) {
-        state.flailLengthScale = global.SharedAttackPose?.validFlailLength?.(runtime.flailLengthScale) ?? 1;
+    else if (!state.hasExplicitFlailScale) {
+      state.flailLengthScale = 1; // A preview or unequipped actor with no authored channel must not retain the last weapon's shortened reach.
+      if (isCachedPlayerToolRoot(root)) {
+        const runtime = global.WeaponToolStances?.getRuntimeState?.(); // Only cached player flails borrow the weapon slot's live neutral/attack pose.
+        if (runtime?.activeSlot === 'weapon' && runtime.itemKey === state.itemKey) {
+          state.flailLengthScale = global.SharedAttackPose?.validFlailLength?.(runtime.flailLengthScale) ?? 1;
+        }
       }
     }
     const chainScaleX = connectorAxisScale(flail.chain, 'scaleX'); // Chain width or generated-rope radius relative to the final rendered handle.
