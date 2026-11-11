@@ -34,6 +34,16 @@ for (const station of benches) {
   assert.equal(station.lookAt.row, 9);
 }
 assert(communion.npcStations.some(station => station.id === 'station_temple_altar'), 'base NPC stations remain during the event');
+const communionFurnitureIds = new Set(communion.furniture.map(piece => piece.id)); // The layout's actual furniture is authoritative for any bound NPC station.
+const absentPews = temple.npcStations.filter(station => station.sourceFurnitureId
+  && !communionFurnitureIds.has(station.sourceFurnitureId)); // Old temple-service benches are not present in this midnight layout.
+assert.equal(absentPews.length, 11, 'all eleven ordinary pew stations are displaced during Communion');
+for (const pew of absentPews) {
+  assert(!communion.npcStations.some(station => station.id === pew.id),
+    'phantom pew station ' + pew.id + ' must not be offered to idle or social NPCs');
+}
+assert(communion.npcStations.some(station => station.id === 'station_temple_counsel_ring_1'),
+  'unbound legacy ring station remains available to the social redirect');
 const stool = communion.furniture.find(piece => piece.id === 'fmtsv6eoligq5');
 const leaderStation = communion.npcStations.find(station => station.id === 'station_temple_counsel_teacup');
 assert.equal(leaderStation.furnitureId, stool.id, 'Teacup uses her exact stool, not a nearby seat by position');
