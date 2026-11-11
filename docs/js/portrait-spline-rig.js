@@ -348,11 +348,12 @@
     }
     const rest = curvePoint(rig.points, index, fraction, true); // Cubic neutral centerline blends each neighboring knot instead of a kinked polyline.
     const target = curvePoint(posed, index, fraction); // Pose in the same continuous parametric space before displacing texture vertices.
-    const influence = (1 - clamp(Math.sqrt(closest) / Math.max(.01, rig.width), 0, 1) ** 2)
-      * clamp(finite(attachmentWeight,1),0,1); // Distance-to-head blend smoothly lowers displacement near rigid pixels.
+    const attachment=clamp(finite(attachmentWeight,1),0,1);
+    const influence=(1-clamp(Math.sqrt(closest)/Math.max(.01,rig.width),0,1)**2)*attachment;
+    const restingDepth=.003+(rest.z-.003)*attachment; // Near the rigid boundary the ribbon also settles onto the portrait plane; no visible 3D ledge.
     return { x: (x + (target.x - rest.x) * influence) * width,
       y: (y + (target.y - rest.y) * influence) * height,
-      z: Math.max(.003, rest.z + (target.z - rest.z) * influence) * height };
+      z: Math.max(.003,restingDepth+(target.z-rest.z)*influence)*height };
   }
 
   function makePart(THREE, front, rear, width, height, name) {
