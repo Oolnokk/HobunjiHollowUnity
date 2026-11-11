@@ -723,7 +723,7 @@
     const cachedFlails=window.HobunjiWeaponSpriteAssemblies?.debugSnapshot?.().filter(entry=>entry.connector); // Only flails matter for detached rope/head ownership; omit ordinary weapons.
     if(cachedFlails?.length) lines.push(`Flail retained roots: ${JSON.stringify(cachedFlails.slice(0,6).map(entry=>({
       itemKey:entry.itemKey,attached:entry.attached,loaded:entry.loaded,cachedPlayerOwned:entry.cachedPlayerOwned,
-      detachedForMs:entry.detachedForMs,connector:entry.connector,
+      detachedForMs:entry.detachedForMs,connector:entry.connector,poseLength:entry.scale?.poseLength ?? 1, // Mobile Debug tab shows the actual sampled connector multiplier (0.6 = 40% shorter).
     })))}`);
     const erroring = entries.filter(entry => entry.errorCount > 0);
     if (erroring.length) {
