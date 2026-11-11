@@ -239,8 +239,8 @@
       windResponse: clamp(finite(input.windResponse, 1), 0, 5),
       tipFollow: clamp(finite(input.tipFollow, .58), 0, .9), // Bottom-most knot drives the middle one; the head attachment remains immobile.
       blendRadiusPx: clamp(finite(input.blendRadiusPx, 18), 0, 48), // Distance to rigid region controls a smooth deformation ramp.
-      segmentsX: clamp(Math.round(finite(input.segmentsX, 32)), 4, 40),
-      segmentsY: clamp(Math.round(finite(input.segmentsY, 40)), 4, 48),
+      segmentsX: clamp(Math.round(finite(input.segmentsX, 24)), 4, 40),
+      segmentsY: clamp(Math.round(finite(input.segmentsY, 32)), 4, 48),
     };
   }
 
