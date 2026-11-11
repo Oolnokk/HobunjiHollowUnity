@@ -98,3 +98,84 @@ assert.equal(resolve('late_guest', 'station_temple_counsel_ring_1').status, 'ACT
   'no vacant seat means fall back to planner, not a floor seat under the bonfire');
 
 console.log('Spirit Communion reactive seating tests passed');
+
+
+// Real NPC agenda integration: the five authored attendees mix goToStation
+// agenda beats with Bird Bone's legacy-only schedule. Test first spawn and
+// repeated live replanning through the actual activity planner and interior grid.
+{
+  const live = { console, performance: { now: () => 10000 }, window: {} }; // Isolated browser globals for an end-to-end planner integration check.
+  vm.createContext(live);
+  const run = name => vm.runInContext(read(name), live, { filename: name }); // Loads the shipped modules in their dependency order.
+  run('docs/js/map-layout-system.js');
+  run('docs/js/interior-furniture-grid.js');
+  live.window.CalendarSystem = { // Fixed Anan 01:00 means every authored Spirit Counsel agenda beat should be eligible.
+    currentWeekdayName: () => 'Anan', getHour: () => 1,
+    civilDayForRawDay: () => 3, timeDebugSnapshot: () => ({ rawDay: 3 }),
+  };
+  for (const name of [
+    'docs/js/npc-scheduling.js', 'docs/js/npc-agenda.js', 'docs/js/npc-activities.js', 'docs/js/npc-activity-planner.js',
+  ]) run(name);
+  const walkers = []; // Published NPC targets act as reservations for all later seating choices.
+  const scheduling = live.window.NpcScheduling; // Same station registry used by the actual game.
+  const area = 'map_i_temple'; // Real temple area shared by scene, stations and walkers.
+  const context = {
+    calendar: { day: 3, time01: 0.05 }, npcWalkers: walkers,
+    normalizeNpcArea: value => value, getCurrentArea: () => area,
+    getDecorativeFurnitureKeyByItemKey: key => ({ benchFurniture: 'bench', stoolFurniture: 'stool' })[key],
+    decorativeFurnitureDefs: { bench: { sit: true }, stool: { sit: true } },
+    getSharedSchedules: () => [], getWorldNpcPaths: () => [],
+    isBuildingArea: value => value.startsWith('map_i_'), buildingScenes: new Map([[area, true]]),
+    loadBuildingScene() {},
+    findNpcWalker: id => walkers.find(walker => walker.rec.id === id),
+    listNpcWalkersInArea: value => walkers.filter(walker => walker.area === value),
+  }; // Injects only the existing world-state and furniture contracts, not a fake seat resolver.
+  scheduling.init(context);
+  const active = live.window.MapLayoutSystem.getEffectiveMapData(temple, time(60)); // Includes the real interior furniture grid transform.
+  scheduling.registerNpcStations(active.npcStations, area);
+  assert.equal(scheduling.findStationsByRole('spirit_communion', { area }).length, 14);
+  live.window.NpcActivities.init({
+    ...context, resolveNpcStationTarget: scheduling.resolveNpcStationTarget,
+    findStationsByRole: scheduling.findStationsByRole,
+  });
+  live.window.NpcActivityPlanner.init({ ...context, findStationsByRole: scheduling.findStationsByRole });
+  live.window.__farmLog = () => {};
+  live.window.__farmDebugTools = {
+    ...live.window.__farmDebugTools,
+    listNpcIds: () => walkers.map(walker => walker.rec.id),
+    npcSnapshot: id => {
+      const walker = walkers.find(entry => entry.rec.id === id);
+      return walker && { area: walker.area, x: walker.root.position.x, z: walker.root.position.z,
+        currentScheduleTarget: walker.currentScheduleTarget };
+    },
+  }; // Uses the real live target snapshots to check occupancy and social preferences.
+  run('docs/config/npcs/social-relations.js');
+  run('docs/js/npc-social-seating-bridge.js');
+  const npcData = JSON.parse(read('docs/config/npcs/hobunji-starter-npc-database.json')).npcs; // Actual authored agendas and legacy schedules.
+  const attendees = [
+    'teacup_unumanuk', 'binding_hatayap', 'spearhead_unumanuk',
+    'oddclaw_unumanuk', 'tooth_hatayap', 'bird_bone',
+  ]; // Covers the leader, four agenda-driven guests, and the legacy-only guest.
+  for (const id of attendees) {
+    const rec = npcData.find(entry => entry.id === id);
+    assert(rec, id + ' exists in the authored NPC roster');
+    const target = scheduling.resolveNpcScheduleTarget(rec);
+    assert(target, id + ' resolves an initial communion destination');
+    assert(target.furnitureId, id + ' resolves a physical seat, not a floor position');
+    assert.equal(id === 'teacup_unumanuk', target.stationId === 'station_temple_counsel_teacup');
+    if (id !== 'teacup_unumanuk') assert.equal(target.socialSeatSource, 'temple-communion');
+    walkers.push({ rec, area, state: 'idle', currentScheduleTarget: target,
+      root: { position: { x: target.c + 0.5, z: target.r + 0.5 } } });
+  }
+  const firstAssignments = walkers.map(walker => walker.currentScheduleTarget.stationId); // Baseline for detecting repeated-replan seat oscillation.
+  for (let tick = 0; tick < 12; tick++) {
+    for (const walker of walkers) {
+      const target = scheduling.resolveNpcScheduleTarget(walker.rec);
+      assert(target, walker.rec.id + ' remains scheduled during communion');
+      walker.currentScheduleTarget = target;
+    }
+    const currentAssignments = walkers.map(walker => walker.currentScheduleTarget.stationId);
+    assert.deepEqual(currentAssignments, firstAssignments, 'replanning does not shuffle occupied benches or Teacup');
+    assert.equal(new Set(currentAssignments.slice(1)).size, 5, 'no attendee shares a physical bench seat');
+  }
+}
