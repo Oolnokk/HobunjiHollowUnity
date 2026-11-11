@@ -9,6 +9,85 @@
   const SLOT_NAMES = new Set(['facialHair', 'hairSide', 'hairSideL']);
   const live = new Set(); // Mobile diagnostics; entries are removed by the avatar's disposal hook.
 
+  const MASK_SIZE = 200; // Rigid/flexible pixel regions are authored in the same 200×200 portrait coordinate system as cosmetic PNGs.
+  function normalizePixelMask(input) {
+    if (!input || Number(input.size) !== MASK_SIZE || !Array.isArray(input.runs)) return null;
+    const total = MASK_SIZE * MASK_SIZE;
+    const spans = input.runs.slice(0, total).filter(pair => Array.isArray(pair) && pair.length === 2
+      && Number.isInteger(pair[0]) && Number.isInteger(pair[1]) && pair[0] >= 0 && pair[1] > 0 && pair[0] < total)
+      .map(([start, length]) => [start, Math.min(length, total - start)]).sort((a, b) => a[0] - b[0]);
+    const merged = [];
+    for (const [start, length] of spans) {
+      const last = merged[merged.length - 1];
+      if (last && start <= last[0] + last[1]) last[1] = Math.max(last[1], start + length - last[0]);
+      else merged.push([start, length]);
+    }
+    return { size: MASK_SIZE, runs: merged }; // Sparse RLE remains tiny for hair outlines, yet is pixel-accurate.
+  }
+  function decodePixelMask(input) {
+    const bits = new Uint8Array(MASK_SIZE * MASK_SIZE); // Temporary editor/runtime bitset; serialized JSON stores only contiguous rigid runs.
+    const mask = normalizePixelMask(input);
+    for (const [start, length] of mask?.runs || []) bits.fill(1, start, start + length);
+    return bits;
+  }
+  function encodePixelMask(bits) {
+    const runs = [];
+    for (let i = 0; i < MASK_SIZE * MASK_SIZE;) {
+      if (!bits[i]) { i++; continue; }
+      const start = i;
+      while (i < bits.length && bits[i]) i++;
+      runs.push([start, i - start]);
+    }
+    return { size: MASK_SIZE, runs };
+  }
+  function maskFromOverlap(sprite, head, options = {}) {
+    if (!sprite || !head) return null;
+    const canvas = document.createElement('canvas'); // Normalizes indexed, tint-composited artwork into portrait UV space before alpha comparisons.
+    canvas.width = canvas.height = MASK_SIZE;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(sprite, Math.round(finite(options.dx) * MASK_SIZE), Math.round(finite(options.dy) * MASK_SIZE), MASK_SIZE, MASK_SIZE);
+    const hair = ctx.getImageData(0, 0, MASK_SIZE, MASK_SIZE).data;
+    ctx.clearRect(0, 0, MASK_SIZE, MASK_SIZE);
+    ctx.drawImage(head, 0, 0, MASK_SIZE, MASK_SIZE);
+    const skin = ctx.getImageData(0, 0, MASK_SIZE, MASK_SIZE).data;
+    const bits = new Uint8Array(MASK_SIZE * MASK_SIZE);
+    for (let i = 0; i < bits.length; i++) bits[i] = hair[i * 4 + 3] >= 8 && skin[i * 4 + 3] >= 8 ? 1 : 0;
+    return encodePixelMask(bits); // All hair/head overlap starts rigid; everything else starts flexible.
+  }
+  function paintPixelMask(input, u, v, radiusPx, rigid) {
+    const bits = decodePixelMask(input);
+    const x = clamp(Math.floor(finite(u) * MASK_SIZE), 0, MASK_SIZE - 1);
+    const y = clamp(Math.floor(finite(v) * MASK_SIZE), 0, MASK_SIZE - 1);
+    const radius = clamp(finite(radiusPx, 3), .5, 60);
+    const reach = Math.ceil(radius);
+    for (let py = Math.max(0, y - reach); py <= Math.min(MASK_SIZE - 1, y + reach); py++)
+      for (let px = Math.max(0, x - reach); px <= Math.min(MASK_SIZE - 1, x + reach); px++)
+        if ((px + .5 - (u * MASK_SIZE)) ** 2 + (py + .5 - (v * MASK_SIZE)) ** 2 <= radius * radius)
+          bits[py * MASK_SIZE + px] = rigid ? 1 : 0;
+    return encodePixelMask(bits);
+  }
+  function splitByMask(sprite, input) {
+    const mask = normalizePixelMask(input);
+    if (!mask || !sprite) return { rigid: null, flexible: sprite }; // Old unconverted cosmetics remain entirely flexible.
+    const width = sprite.width, height = sprite.height;
+    const copy = () => {
+      const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(sprite, 0, 0, width, height);
+      return { canvas, ctx, data: ctx.getImageData(0, 0, width, height) };
+    };
+    const a = copy(), b = copy(), bits = decodePixelMask(mask);
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+      const at = (y * width + x) * 4;
+      const rigidPixel = bits[Math.min(MASK_SIZE - 1, Math.floor(y * MASK_SIZE / height)) * MASK_SIZE
+        + Math.min(MASK_SIZE - 1, Math.floor(x * MASK_SIZE / width))];
+      if (rigidPixel) b.data.data[at + 3] = 0;
+      else a.data.data[at + 3] = 0;
+    }
+    a.ctx.putImageData(a.data, 0, 0); b.ctx.putImageData(b.data, 0, 0);
+    return { rigid: a.canvas, flexible: b.canvas }; // Exactly one copy of every original opaque pixel survives in one of the two groups.
+  }
+
   function normalize(input) {
     if (!input || input.enabled === false || !Array.isArray(input.points) || input.points.length < 2) return null;
     const points = input.points.slice(0, 16).map((point, i) => ({
@@ -49,6 +128,10 @@
         radiusPx: clamp(finite(p?.radiusPx, 3), .5, 15),
         ...(typeof p?.color === 'string' && /^#[0-9a-f]{6}$/i.test(p.color) ? { color: p.color } : {}), // Optional authored bridge pixels; absent means sample the original strand artwork.
       })),
+      regionMasks: Object.fromEntries(['front', 'rear'].flatMap(view => {
+        const normalized = normalizePixelMask(input.regionMasks?.[view]);
+        return normalized ? [[view, normalized]] : [];
+      })), // Per-plane rigid/flexible regions; absence means an unconverted legacy hairstyle.
       rearOffset: {
         u: clamp(finite(input.rearOffset?.u), -.25, .25),
         v: clamp(finite(input.rearOffset?.v), -.25, .25),
@@ -371,5 +454,6 @@
     }));
   }
   window.PortraitSplineRig = { normalize, resolveOptionRig, blendSegment, posePoints, curvePoint,
-    deformPosition, warpHoodCanvas, paintSeamBridge, attach, refresh, detach, debug };
+    deformPosition, normalizePixelMask, decodePixelMask, encodePixelMask, maskFromOverlap, paintPixelMask, splitByMask,
+    warpHoodCanvas, paintSeamBridge, attach, refresh, detach, debug };
 })();
