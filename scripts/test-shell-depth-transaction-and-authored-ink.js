@@ -69,7 +69,7 @@ function fixture(failAt=0) {
       colorWrite:material.colorWrite,depthTest:material.depthTest,depthWrite:material.depthWrite});
   }; // Shared snapshot policy from the production helper.
   const deps={
-    rawRender(_renderer,_scene,_camera){
+    rawRender(_scene,_camera){
       draws++;
       if(_scene.overrideMaterial){
         shellCount++;
