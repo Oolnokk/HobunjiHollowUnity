@@ -164,7 +164,7 @@
   <script src="config/config.js?v=20261026h7f369c3"></script>
   <script src="config/scratchbones-config.js?v=20261109stonebeatcfg1"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
-  <script src="js/color-fill.js?v=20260923colorfill7"></script>
+  <script src="js/color-fill.js?v=20261110statueTint8"></script>
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
   <script src="js/pixel-work-yield.js?v=20261010pwy1"></script>
   <script src="js/tool-metal-recolor.js?v=20261109profile1"></script>
@@ -256,7 +256,7 @@
   <script src="js/roadside-koma-hedges.js?v=20261105koma1"></script> <!-- Path-adjacent shrub row detection, separate from general foliage. -->
   <script src="js/dungeon-door-ice-coverage.js?v=20261103doorice1"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
-  <script src="js/procedural-furniture.js?v=20261109statuePiece1"></script>
+  <script src="js/procedural-furniture.js?v=20261110statueTwoPass1"></script>
   <script src="js/furniture-puzzle-properties.js?v=20261103h9f3db40"></script>
   <script src="js/game-feel.js?v=20261108feel1"></script> <!-- Camera shake, hit-stop, hurt flash, puzzle-solve chime and reveal shot. -->
   <script src="js/ruin-interaction-audio.js?v=20261109stoneclockflail2"></script> <!-- Shared, size-pitched stone mechanisms and ignition cues; loaded before shaft mechanisms. -->
@@ -268,7 +268,7 @@
   <script src="js/table-chair-placement.js?v=20261102chairreview3"></script>
   <script src="js/furniture-table-system.js?v=20261110cliffsideMerge1"></script>
   <script src="js/furniture-surface-png-runtime.js?v=20261103materialv3"></script> <!-- Opt-in per-face PNG tiling, alpha padding and opacity from Furniture Editor. -->
-  <script src="js/authored-furniture-runtime.js?v=20261105stoneSyntaxFix2"></script>
+  <script src="js/authored-furniture-runtime.js?v=20261110statueParts2"></script>
   <!-- Preserve authored sign decals when house fixtures render at town load. -->
   <script src="js/ruin-emblem.js?v=20261108emblem1"></script>
   <script src="js/furniture-decal-runtime.js?v=20261110tankanring1"></script>
@@ -309,7 +309,7 @@
   <!-- Shared condition-axis schema/evaluators (window.ConditionRegistry) —
        single source of truth for the dialogue system's and the Loot & Shop
        system's condition gating, also loaded by their respective dev tools. -->
-  <script src="js/condition-registry.js?v=20261109missingNpcRestore1"></script>
+  <script src="js/condition-registry.js?v=20261110hero2"></script>
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
        game.js already use. See docs/js/local-save-folder.js. -->
@@ -394,7 +394,8 @@
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
   <script src="js/combat/enemy-loadout-rules.js?v=20261101playerhead3"></script>
-  <script src="js/combat/combat-bandit.js?v=20261110shortCombo1"></script>
+  <script src="js/combat/bandit-equipment-pools.js?v=20261110hero1"></script>
+  <script src="js/combat/combat-bandit.js?v=20261110hero2"></script>
   <script src="js/combat/ghoul-special-variants.js?v=20261031ghoulvar1"></script>
   <script src="js/combat/bandit-rank-wardrobe.js?v=20261031rankwardrobe1"></script> <!-- Lieutenant/captain pauldrons and circlet, patterned pants and captain overwear. --> <!-- Shadowknight / Wyrm-witch wardrobe, patterns and enchanted weapons. -->
   <script src="js/combat/combat-ghoul-wyrm-witches.js?v=20261027hcd7121b"></script> <!-- Distinct mobile-friendly Wyrm-witch cloud and stationary water-cone actions. -->

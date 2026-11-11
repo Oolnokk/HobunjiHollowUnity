@@ -464,6 +464,7 @@ hr{border:0;border-top:1px solid rgba(255,255,255,.11);margin:9px 0}
     <div id="partEditor" class="hidden">
       <div class="section">
         <h2>Selected furniture piece</h2>
+        <div class="g2"><label>Parent piece<select id="statueParentPart"><option value="">Independent (root)</option></select></label><button type="button" id="statueDetachPart">Detach keeping position</button></div>
         <div class="g2"><div><label>Name</label><input id="selName"></div><div><label>Kind</label><input id="selKind" disabled></div></div>
         <div class="g3"><div><label>X</label><input id="selX" type="number" step="0.01"></div><div><label>Y</label><input id="selY" type="number" step="0.01"></div><div><label>Z</label><input id="selZ" type="number" step="0.01"></div></div>
         <div class="g3"><div><label>Rot X°</label><input id="selRX" type="number" step="1"></div><div><label>Rot Y°</label><input id="selRY" type="number" step="1"></div><div><label>Rot Z°</label><input id="selRZ" type="number" step="1"></div></div>
@@ -660,12 +661,12 @@ window.HOBUNJI_PNG_PLANE_AVATAR_FALLBACK = {
 <script src="../../js/foliage-generator.js?v=20261105stone1"></script>
 <script src="../../config/natural-surface-materials.js?v=20261027h1fb8ced"></script>
 <script src="../../js/natural-surface-materials.js?v=20261027h1fb8ced"></script>
-<script src="../../js/authored-furniture-runtime.js?v=20261105stoneSyntaxFix2"></script>
+<script src="../../js/authored-furniture-runtime.js?v=20261110statueParts2"></script>
 <script src="../../js/terrain-preview.js?v=20261013he41c002"></script>
-<script src="../../js/procedural-furniture.js?v=20261109statuePiece1" onerror="window.__hobunjiThreeLoadError.push('procedural-furniture failed to load')"></script>
+<script src="../../js/procedural-furniture.js?v=20261110statueTwoPass1" onerror="window.__hobunjiThreeLoadError.push('procedural-furniture failed to load')"></script>
 <script src="../../js/runtime-frame-scheduler.js?v=organic-surfaces-1"></script>
 <script src="../../js/furniture-vessel-runtime.js?v=20261030h33c4e64"></script>
-<script src="../../js/color-fill.js?v=20260923colorfill7"></script>
+<script src="../../js/color-fill.js?v=20261110statueTint8"></script>
 <script src="../../js/portrait-utils.js" onerror="window.__hobunjiThreeLoadError.push('portrait-utils failed to load')"></script>
 <script src="../../js/portrait-breathing.js" onerror="window.__hobunjiThreeLoadError.push('portrait-breathing failed to load')"></script>
 <script src="../../js/npc-avatar-preview-utils.js" onerror="window.__hobunjiThreeLoadError.push('npc-avatar-preview-utils failed to load')"></script>
@@ -1181,7 +1182,7 @@ async function processedTextureCanvas(textureSetting) {
 async function makeSurfaceTexture(textureSetting) { const canvas=await processedTextureCanvas(textureSetting);const texture=new THREE.CanvasTexture(canvas);texture.encoding=THREE.sRGBEncoding;texture.wrapS=(textureSetting.mapping==='tile'||textureSetting.mapping==='tile-x')?THREE.RepeatWrapping:THREE.ClampToEdgeWrapping;texture.wrapT=(textureSetting.mapping==='tile'||textureSetting.mapping==='tile-y')?THREE.RepeatWrapping:THREE.ClampToEdgeWrapping;texture.needsUpdate=true;texture.name=textureSetting.name||'surface_texture';return texture; }
 function surfaceTextureOpacity(texture,base=1){return clamp((Number.isFinite(Number(texture?.opacity))?Number(texture.opacity):1)*base,0,1);}
 function surfaceTextureIsTransparent(texture,base=1){return texture?.transparent!==false||surfaceTextureOpacity(texture,base)<.999||(Number(texture?.paddingX)||0)>0||(Number(texture?.paddingY)||0)>0;}
-function disposeObject(object) { object?.traverse?.(child=>{child.geometry?.dispose?.();const materials=Array.isArray(child.material)?child.material:child.material?[child.material]:[];materials.forEach(material=>{material.map?.dispose?.();material.dispose?.();});}); }
+function disposeObject(object) { object?.traverse?.(child=>{if(child.userData?.statueFinishToken)child.userData.statueFinishToken=null;child.userData&&(child.userData.glbDisposed=true);child.geometry?.dispose?.();const materials=Array.isArray(child.material)?child.material:child.material?[child.material]:[];materials.forEach(material=>{material.map?.dispose?.();material.dispose?.();});}); }
 
 function removeDerivedSurfacesForPart(partId) { for(const [surfaceId,group] of [...surfaceGroups.entries()])if(group.partId===partId)surfaceGroups.delete(surfaceId); }
 function applyVariantPartVisibility(mesh,partId) {
@@ -1191,15 +1192,15 @@ function applyVariantPartVisibility(mesh,partId) {
   if(mesh&&variant)mesh.visible=!(variant.hiddenPartIds||[]).includes(partId);
 }
 function buildPartMesh(part) {
-  if (part.kind === 'glb'||part.rockShape?.enabled) {
+  if (part.kind === 'glb'||part.kind === 'statueSprite'||part.rockShape?.enabled) {
     const old = meshes.get(part.id); // Replaces only this independently transformable imported piece.
-    if (old) { root.remove(old); disposeObject(old); }
+    if (old) { old.parent?.remove(old); disposeObject(old); }
     removeDerivedSurfacesForPart(part.id);
     window.__hobunjiFurnitureAssetBase = '../../assets/';
     const mesh = window.ProceduralFurniture.buildPartMesh(part, hexToNum(part.color || '#8b6540')); // Shares runtime bounds normalization and hidden-bone behavior.
     mesh.userData.type = 'part'; mesh.userData.id = part.id;
     mesh.userData.authoredDimensions={sx:part.transform.sx,sy:part.transform.sy,sz:part.transform.sz};
-    if(part.kind!=='glb'){
+    if(part.kind!=='glb'&&part.kind!=='statueSprite'){
       const groups=analyzeSurfaceGroups(part,mesh.geometry); // Keep recognized surfaces and picking on the generated rock topology.
       mesh.userData.faceToSurface=Array.from({length:mesh.geometry.getAttribute('position').count/3},()=>null);
       mesh.userData.surfaceMaterialIndex={};mesh.userData.recognizedSurfaces=[];
@@ -1210,7 +1211,7 @@ function buildPartMesh(part) {
     }
     root.add(mesh); meshes.set(part.id, mesh);applyVariantPartVisibility(mesh,part.id); return mesh;
   }
-  const old=meshes.get(part.id);if(old){root.remove(old);disposeObject(old);meshes.delete(part.id);}removeDerivedSurfacesForPart(part.id);const geometry=createPartGeometry(part),groups=analyzeSurfaceGroups(part,geometry);groups.forEach(group=>{surfaceGroups.set(group.id,group);ensureSurfaceSetting(group);});applySurfaceUVs(geometry,groups);geometry.clearGroups();
+  const old=meshes.get(part.id);if(old){old.parent?.remove(old);disposeObject(old);meshes.delete(part.id);}removeDerivedSurfacesForPart(part.id);const geometry=createPartGeometry(part),groups=analyzeSurfaceGroups(part,geometry);groups.forEach(group=>{surfaceGroups.set(group.id,group);ensureSurfaceSetting(group);});applySurfaceUVs(geometry,groups);geometry.clearGroups();
   const materials=[],surfaceMaterialIndex={};groups.forEach((group,index)=>{const setting=ensureSurfaceSetting(group),isSelected=isSurfaceSelected(group.id),isLiquid=part.kind==='liquidSurface',liquidValue=isLiquid?effectiveLiquidState(part):null,color=state.surfaceRecognition.colorCode?surfaceColorFor(group,index):(isLiquid?liquidValue.color:part.color),liquidHasTexture=isLiquid&&!!setting.texture.source,liquidOpacity=isLiquid?liquidValue.opacity:1,material=new THREE.MeshStandardMaterial({color:hexToNum(liquidHasTexture?liquidTextureTint(liquidValue):color),roughness:isLiquid?(liquidHasTexture?.78:.18):.82,metalness:isLiquid?(liquidHasTexture?0:.04):.02,transparent:surfaceTextureIsTransparent(setting.texture,liquidOpacity),opacity:surfaceTextureOpacity(setting.texture,liquidOpacity),depthWrite:surfaceTextureOpacity(setting.texture,liquidOpacity)>=.999,alphaTest:setting.texture.source&&surfaceTextureIsTransparent(setting.texture,liquidOpacity)?.035:0,side:isLiquid?THREE.DoubleSide:THREE.FrontSide});if(isSelected){material.emissive=new THREE.Color(0x21496b);material.emissiveIntensity=.65;}materials.push(material);surfaceMaterialIndex[group.id]=index;for(const faceIndex of group.faceIndices)geometry.addGroup(faceIndex*3,3,index);if(!state.surfaceRecognition.colorCode&&setting.texture.source)makeSurfaceTexture(setting.texture).then(texture=>{const live=meshes.get(part.id),materialIndex=live?.userData?.surfaceMaterialIndex?.[group.id],liveMaterial=Array.isArray(live?.material)?live.material[materialIndex]:null;if(liveMaterial&&texture){liveMaterial.map=texture;const livePart=state.parts.find(candidate=>candidate.id===part.id),liquidState=livePart?.kind==='liquidSurface'?effectiveLiquidState(livePart):null;liveMaterial.color.setHex(hexToNum(liquidState?liquidTextureTint(liquidState):'#ffffff'));liveMaterial.opacity=surfaceTextureOpacity(setting.texture,liquidState?liquidState.opacity:1);liveMaterial.transparent=surfaceTextureIsTransparent(setting.texture,liquidState?liquidState.opacity:1);liveMaterial.depthWrite=liveMaterial.opacity>=.999;liveMaterial.alphaTest=liveMaterial.map&&liveMaterial.transparent?.035:0;liveMaterial.roughness=liquidState?.78:liveMaterial.roughness;liveMaterial.needsUpdate=true;}}).catch(error=>log(`Surface texture failed (${setting.texture.name||group.id}): ${error.message}`,'warn'));});
   const mesh=new THREE.Mesh(geometry,materials);mesh.name=part.name;mesh.userData={type:'part',id:part.id,authoredDimensions:{sx:Number(part.transform.sx)||.001,sy:Number(part.transform.sy)||.001,sz:Number(part.transform.sz)||.001},faceToSurface:Array.from({length:geometry.getAttribute('position').count/3},()=>null),surfaceMaterialIndex,recognizedSurfaces:groups.map(group=>({id:group.id,faceIndices:group.faceIndices,recognizedType:group.recognizedType,role:ensureSurfaceSetting(group).role,label:ensureSurfaceSetting(group).label}))};for(const group of groups)for(const faceIndex of group.faceIndices)mesh.userData.faceToSurface[faceIndex]=group.id;const authoredTransform=authoredTransformForPart(part);mesh.position.set(authoredTransform.x||0,authoredTransform.y||0,authoredTransform.z||0);mesh.rotation.set((authoredTransform.rx||0)*DEG,(authoredTransform.ry||0)*DEG,(authoredTransform.rz||0)*DEG);mesh.scale.set(1,1,1);root.add(mesh);meshes.set(part.id,mesh);applyVariantPartVisibility(mesh,part.id);window.FurniturePatternSurfaces?.applyPart?.(mesh,part);if(part.kind==='banner')materials.forEach(material=>material.visible=false);return mesh;
 }
@@ -1331,7 +1332,18 @@ function rebuildFurnitureMeshes() {
   const previousSelectedIds=state.selectedType==='surface'?(Array.isArray(state.selectedSurfaceIds)&&state.selectedSurfaceIds.length?state.selectedSurfaceIds:[state.selectedId]).filter(Boolean):[];
   const previousPrimaryId=state.selectedType==='surface'?state.selectedId:null;
   state.parts=state.parts.filter(part=>part.kind!=='liquidSurface'||state.parts.some(cup=>cup.id===part.liquidContainerId&&cup.kind==='cup'));
-  for(const object of meshes.values()){root.remove(object);disposeObject(object);}meshes.clear();surfaceGroups.clear();state.parts.forEach(buildPartMesh);
+  const formerMeshes=[...meshes.values()];
+  for(const object of formerMeshes)object.parent?.remove(object); // Detach all nested statue pieces before disposing any parent.
+  for(const object of formerMeshes)disposeObject(object);
+  meshes.clear();surfaceGroups.clear();state.parts.forEach(buildPartMesh);
+  for (const part of state.parts) {
+    if (!part.parentPartId || part.id===part.parentPartId) continue;
+    const child=meshes.get(part.id),parent=meshes.get(part.parentPartId);
+    if (!child||!parent)continue;
+    let node=parent,cycle=false;
+    while(node&&node!==root){if(node===child){cycle=true;break;}node=node.parent;}
+    if(!cycle)parent.add(child); // Pose transforms remain parent-local, matching game runtime.
+  }
   if(state.parts.some(part=>part.rockShape?.enabled)){
     const refreshRockContacts=()=>{const report=window.ProceduralFurniture.applyRockContacts(meshes,state.parts,{persist:true});$('rockContactStatus').textContent=`${report.protectedFaces} attachment groups held; contact area ${Math.round(window.ProceduralFurniture.getRockContactArea(state.parts.find(part=>part.rockShape?.enabled)?.rockShape)*100)}%.`;}; // Save joint planes in the editor's owned recipe, including imports that finish asynchronously.
     for(const part of state.parts)if(part.kind==='glb')meshes.get(part.id).userData.onRockSourceReady=refreshRockContacts;
@@ -2333,6 +2345,17 @@ function refreshSelectionUI() {
   window.FurniturePatternAuthor?.refresh?.();
   const part=selectedPart(),group=selectedPartGroup(),surface=selectedSurface(),placement=selectedPlacement(),seatAnchor=selectedSeatAnchor(),emitter=selectedEmitter(),warp=selectedWarp(),stompAttach=selectedStompAttachPoint(),liquid=part?.kind==='liquidSurface'?part:null,regularPart=part&&!liquid?part:null,has=!!(part||group.length||surface||placement||seatAnchor||emitter||warp||stompAttach);
   $('noSelection').classList.toggle('hidden',has);$('selectionSummary').classList.toggle('hidden',!has);$('partEditor').classList.toggle('hidden',!regularPart);$('partGroupEditor').classList.toggle('hidden',group.length<2);$('liquidEditor').classList.toggle('hidden',!liquid);$('surfaceEditor').classList.toggle('hidden',!surface);$('placementEditor').classList.toggle('hidden',!placement);$('seatAnchorEditor').classList.toggle('hidden',!seatAnchor);$('emitterEditor').classList.toggle('hidden',!emitter);$('warpEditor').classList.toggle('hidden',!warp);$('stompAttachEditor').classList.toggle('hidden',!stompAttach);
+  const parentChoice=$('statueParentPart');
+  if(parentChoice) {
+    parentChoice.replaceChildren(new Option('Independent (root)',''));
+    if(regularPart) for(const candidate of state.parts) {
+      if(candidate.id===regularPart.id)continue;
+      let cursor=candidate,cycle=false;const seen=new Set();
+      while(cursor?.parentPartId&&!seen.has(cursor.id)){seen.add(cursor.id);if(cursor.parentPartId===regularPart.id){cycle=true;break;}cursor=state.parts.find(value=>value.id===cursor.parentPartId);}
+      if(!cycle) parentChoice.add(new Option(candidate.name||candidate.id,candidate.id));
+    }
+    parentChoice.value=regularPart?.parentPartId||'';
+  }
   if(!has){$('selPill').textContent='Nothing selected';$('selectionSummary').textContent='Nothing selected';transform.detach();return;}
   if(group.length>=2){const centroid=calculatedPartGroupCentroid(group);$('selectionSummary').textContent=`Piece group: ${group.length} pieces`;$('selPill').textContent=`${group.length} pieces`;$('partGroupIdentity').textContent=`${group.length} pieces selected`;$('partGroupCentroid').textContent=`Centroid: X ${centroid.x.toFixed(3)} · Y ${centroid.y.toFixed(3)} · Z ${centroid.z.toFixed(3)}`;}
   if(regularPart){$('selectionSummary').textContent=`Piece: ${part.name}`;$('selPill').textContent=part.name;$('selName').value=part.name;$('selKind').value=part.kind;const t=part.transform;for(const [id,value] of [['selX',t.x],['selY',t.y],['selZ',t.z],['selRX',t.rx],['selRY',t.ry],['selRZ',t.rz],['selSX',t.sx],['selSY',t.sy],['selSZ',t.sz],['topScaleX',part.topScaleX],['topScaleZ',part.topScaleZ],['bottomScaleX',part.bottomScaleX],['bottomScaleZ',part.bottomScaleZ],['topSkewX',part.topSkewX],['topSkewZ',part.topSkewZ],['segments',part.segments],['innerScale',part.innerScale??.68],['basinDepth',part.basinDepth??.18],['wonk',part.wonkiness]])$(id).value=value;const openShape=['hoop','cup'].includes(part.kind);$('hoopInnerRow').classList.toggle('hidden',!openShape);$('basinDepthRow').classList.toggle('hidden',part.kind!=='cup');$('innerScaleLabel').textContent=part.kind==='cup'?'Basin opening diameter':'Hoop hole diameter';$('innerScaleHint').textContent=part.kind==='cup'?'Fraction of the outer profile used by the inner basin wall.':'Fraction of the outer diameter left empty. The ring remains open through its full thickness.';$('taperAxis').value=part.taperAxis||'y';$('selColor').value=colorToHex(part.color);}
@@ -2345,7 +2368,7 @@ function refreshSelectionUI() {
 }
 
 function readPartFieldsIntoState(part=selectedPart()) { if(!part)return null;part.name=$('selName').value||part.name;const t=part.transform;t.x=num('selX',t.x);t.y=num('selY',t.y);t.z=num('selZ',t.z);t.rx=num('selRX',t.rx);t.ry=num('selRY',t.ry);t.rz=num('selRZ',t.rz);t.sx=Math.max(.001,num('selSX',t.sx));t.sy=Math.max(.001,num('selSY',t.sy));t.sz=Math.max(.001,num('selSZ',t.sz));part.topScaleX=Math.max(.01,num('topScaleX',part.topScaleX));part.topScaleZ=Math.max(.01,num('topScaleZ',part.topScaleZ));part.bottomScaleX=Math.max(.01,num('bottomScaleX',part.bottomScaleX));part.bottomScaleZ=Math.max(.01,num('bottomScaleZ',part.bottomScaleZ));part.topSkewX=num('topSkewX',part.topSkewX);part.topSkewZ=num('topSkewZ',part.topSkewZ);part.taperAxis=$('taperAxis').value;part.segments=clamp(Math.round(num('segments',part.segments)),3,64);part.innerScale=clamp(num('innerScale',part.innerScale??.68),.05,.95);part.basinDepth=clamp(num('basinDepth',part.basinDepth??.18),.03,.8);part.color=$('selColor').value;part.wonkiness=Math.max(0,num('wonk',part.wonkiness));return part; }
-function rebuildEditedPart(part){if(state.parts.some(candidate=>candidate.rockShape?.enabled))rebuildFurnitureMeshes();else buildPartMesh(part);} // Committed moves/resizes refresh both sides of a rock joint, including neighboring pieces.
+function rebuildEditedPart(part){if(state.parts.some(candidate=>candidate.rockShape?.enabled)||state.parts.some(candidate=>candidate.parentPartId))rebuildFurnitureMeshes();else buildPartMesh(part);} // Committed moves/resizes refresh both sides of a rock joint, including neighboring pieces.
 function applyPartFields() { const part=readPartFieldsIntoState();if(!part)return;rebuildEditedPart(part);rebuildSurfaceFoliage();if(part.kind==='cup')updateLinkedLiquids(part.id);rebuildItemPreviews();selectObject('part',part.id,{force:true});updateStats(); }
 function rebuildSurfaceBatch(surfaces=selectedSurfaces()) { const partIds=new Set(surfaces.map(surface=>surface.partId));for(const partId of partIds){const part=state.parts.find(candidate=>candidate.id===partId);if(part)buildPartMesh(part);}rebuildItemPreviews();updateLists();updateStats();refreshSelectionUI();refreshSurfaceHighlights(); }
 function applySurfaceSemanticFields() { const surface=selectedSurface();if(!surface)return;const setting=ensureSurfaceSetting(surface);setting.label=$('surfaceLabel').value||surface.recognizedType;setting.role=$('surfaceRole').value||'none';rebuildSurfaceBatch([surface]);rebuildPlacementGrid(); }
@@ -2456,8 +2479,37 @@ function applyRockContactArea(){
   for(const part of state.parts)if(part.rockShape?.enabled)part.rockShape={...part.rockShape,contactArea};
   rebuildFurnitureMeshes();queueUndoHistory('change rock contact area');log(`Rock contact area: ${Math.round(contactArea*100)}%. Small patches retain more detail; large patches hold broader joints together.`,'ok');
 }
+function reparentSelectedStatuePiece(nextId) {
+  const part=selectedPart(),mesh=meshes.get(part?.id);
+  if(!part||!mesh)return false;
+  const parent=nextId?meshes.get(nextId):root;
+  if(!parent||parent===mesh)return false;
+  let cursor=parent;while(cursor&&cursor!==root){if(cursor===mesh)return false;cursor=cursor.parent;}
+  root.updateMatrixWorld(true);
+  const world=mesh.matrixWorld.clone();
+  const local=parent.matrixWorld.clone().invert().multiply(world);
+  const position=new THREE.Vector3(),rotation=new THREE.Quaternion(),scale=new THREE.Vector3();
+  local.decompose(position,rotation,scale);
+  const euler=new THREE.Euler().setFromQuaternion(rotation,'XYZ');
+  part.parentPartId=nextId||null;
+  Object.assign(part.transform,{x:position.x,y:position.y,z:position.z,
+    rx:euler.x*180/Math.PI,ry:euler.y*180/Math.PI,rz:euler.z*180/Math.PI});
+  rebuildFurnitureMeshes();refreshSelectionUI();queueUndoHistory('reparent statue piece');
+  return true;
+}
+// The dedicated Statue Author submits the same JSON as the existing native JSON import.
+window.HobunjiFurnitureStatueImport = function importStatueFurniturePieces(data) {
+  if(!data||!Array.isArray(data.parts)||!data.parts.some(part=>part.kind==='statueSprite'))throw Error('Not a statue furniture-pieces export');
+  loadData(data);
+  queueUndoHistory('import statue furniture');
+  log('Imported '+data.parts.length+' independently editable statue pieces.','ok');
+  return true;
+};
 function setupEvents(){
   setupRuntimeVariantEvents();
+  $('statueParentPart').onchange=()=>{if(!reparentSelectedStatuePiece($('statueParentPart').value))log('Invalid statue parent.','warn');};
+  $('statueDetachPart').onclick=()=>reparentSelectedStatuePiece('');
+
   $('rockContactArea').oninput=()=>{$('rockContactAreaValue').textContent=`${clamp(num('rockContactArea',35),0,100)}%`;};
   $('rockContactArea').onchange=applyRockContactArea;
   $('rockAllPieces').onclick=()=>convertFurnitureToRocks(true);

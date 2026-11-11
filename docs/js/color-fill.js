@@ -4,9 +4,9 @@
 (() => {
   'use strict';
 
-  if (Number(window.ColorFill?.version) >= 7) return;
+  if (Number(window.ColorFill?.version) >= 8) return;
 
-  const VERSION = 7;
+  const VERSION = 8;
   let lastShadeFill = null; // Mobile/debug diagnostics: most recent relative-shading fill.
   const lastShadeFillByLabel = new Map(); // Used by Pixel Probe to retain named renderer passes even when later generic fills overwrite "last".
   let shadeFillSequence = 0; // Monotonic render-pass id used to distinguish a current named fill from an older one in copied diagnostics.
@@ -87,15 +87,16 @@
   // as the normalization anchor. This preserves every authored intermediate
   // shade without making a saturated channel (especially on dark blue/green
   // fur) read artificially brighter than the sprite actually appears.
-  // White/near-white neutral details remain excluded so they cannot hijack
-  // dark fur/body sprites whose real color range is intentionally low.
+  // White/near-white neutral details remain excluded by default so they cannot hijack
+  // dark fur/body sprites. Statue cell fills explicitly opt into sampling white
+  // when it is genuinely the brightest pixel of an outlined sculpted surface.
   function createShadeReference(sourceData, predicate = null, options = {}) {
     const cfg = options.config || shadeFillConfig();
     let peakValue = 0; // Used by shadeFillPixels as the 1.0 normalization anchor for the selected source region.
     let count = 0;
     for (let i = 0; i < sourceData.length; i += 4) {
       if (sourceData[i + 3] === 0 || (predicate && !predicate(i))
-        || isAuthoredWhite(sourceData[i], sourceData[i + 1], sourceData[i + 2])) continue;
+        || (options.includeNearWhite !== true && isAuthoredWhite(sourceData[i], sourceData[i + 1], sourceData[i + 2]))) continue;
       peakValue = Math.max(peakValue, sourceValue(sourceData[i], sourceData[i + 1], sourceData[i + 2]));
       count++;
     }
@@ -118,7 +119,7 @@
 
     for (let i = 0; i < data.length; i += 4) {
       if (data[i + 3] === 0 || (applyPredicate && !applyPredicate(i))
-        || isAuthoredWhite(sourceData[i], sourceData[i + 1], sourceData[i + 2])) continue;
+        || (options.includeNearWhite !== true && isAuthoredWhite(sourceData[i], sourceData[i + 1], sourceData[i + 2]))) continue;
       const value = sourceValue(sourceData[i], sourceData[i + 1], sourceData[i + 2]);
       // Preserve the source sprite's full authored perceptual-lightness range
       // relative to its brightest eligible pixel. This is shared by base/body

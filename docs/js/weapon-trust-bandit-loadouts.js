@@ -44,6 +44,8 @@
   }
 
   function allowedMeleeShapes(speciesId) {
+    const shared=global.HobunjiBanditEquipmentPools;
+    if(shared?.allowedMeleeShapes) return shared.allowedMeleeShapes(speciesId,cfg,npcRecords(),Object.entries(banditDeps?.HELD_SHAPE_DEFS||{}).filter(([,def])=>def?.slots?.includes('weapon')).map(([key])=>key)); // One cultural species rule for the game and Statue Author.
     const culturalForSpecies = new Set(culturalShapesForSpecies(speciesId));
     const held = banditDeps?.HELD_SHAPE_DEFS || {};
     return [...configuredBanditShapes].filter(shapeKey => {

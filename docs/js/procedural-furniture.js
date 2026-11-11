@@ -229,6 +229,41 @@
     if (!ROOF_SHINGLE_GLB.test(path) || typeof gen?.makeShingleModel !== 'function') return null;
     return gen.loadShingleGlb().then(() => gen.makeShingleModel('farm'));
   }
+  function ensureStatueModelUV(child) {
+    const geometry=child.geometry;
+    const positions=geometry?.getAttribute?.('position');
+    if(!positions?.count||positions.count>200000)return 'no-positions';
+    const uv=geometry.getAttribute('uv');
+    if(uv?.count===positions.count){
+      let uMin=Infinity,uMax=-Infinity,vMin=Infinity,vMax=-Infinity;
+      // Early-exit as soon as both authored dimensions span useful texture
+      // space; avoid scanning huge valid GLBs on every statue rebuild.
+      for(let i=0;i<uv.count;i++){
+        const u=uv.getX(i),v=uv.getY(i);
+        uMin=Math.min(uMin,u);uMax=Math.max(uMax,u);
+        vMin=Math.min(vMin,v);vMax=Math.max(vMax,v);
+        if(uMax-uMin>.06&&vMax-vMin>.06)return 'authored';
+      }
+    }
+    // Hand/foot models can lack UVs entirely; Three.js then samples the
+    // bottom-left (near-black) pixel of every texture over the entire mesh.
+    // Project the source mesh's two broadest axes into [0,1] instead, leaving
+    // authored UVs and all non-statue furniture untouched.
+    if(!geometry.boundingBox)geometry.computeBoundingBox();
+    const bounds=geometry.boundingBox,size=bounds.getSize(new THREE.Vector3());
+    const axes=['x','y','z'].sort((a,b)=>size[b]-size[a]);
+    const horizontal=axes[0],vertical=axes[1],w=Math.max(.00001,size[horizontal]),h=Math.max(.00001,size[vertical]);
+    const projected=new Float32Array(positions.count*2);
+    for(let i=0;i<positions.count;i++){
+      projected[i*2]=(positions['get'+horizontal.toUpperCase()](i)-bounds.min[horizontal])/w;
+      projected[i*2+1]=(positions['get'+vertical.toUpperCase()](i)-bounds.min[vertical])/h;
+    }
+    geometry.setAttribute('uv',new THREE.BufferAttribute(projected,2));
+    geometry.attributes.uv.needsUpdate=true;
+    child.userData.statueGeneratedUv=true;
+    return 'projected-'+horizontal+vertical;
+  }
+
   function attachGlb(mesh, part, baseColor) {
     const path = /^(?:https?:|data:|blob:|\/)/.test(part.modelPath || '') ? part.modelPath : (window.__hobunjiFurnitureAssetBase || 'assets/') + String(part.modelPath || '').replace(/^assets\//, ''); // Runtime and isolated editor resolve the same saved model identity.
     (loadRoofShingle(path) || loadFurnitureGlb(path).then(template => template.clone(true))).then(instance => {
@@ -241,14 +276,43 @@
         child.userData.rockSourceKey=String(sourceMeshIndex++);
         if (child.userData.sharedShingle&&!part.rockShape?.enabled) { child.castShadow = child.receiveShadow = true; return; } // Keeps the roofs' shared look unless this furniture explicitly requests stone.
         child.geometry = child.geometry.clone();
+        if(part.statueUniformFinish===true)child.userData.statueUvMode=ensureStatueModelUV(child);
         if(part.rockShape?.enabled){const original=child.geometry;rockSourceGeometries.set(child,original.clone());child.geometry=createRockGeometry(original,part.rockShape,child.userData.rockSourceKey);original.dispose();if(child.isSkinnedMesh)convertedSkins.push(child);}
-        const color = material => {const result = material.clone(); result.color?.set(resolveColor(part, baseColor)); if (part.materialTexture) applyPartTexture(result, part); return result; }; // Existing per-part furniture texture/color pipeline.
+        const color = material => {
+          if(part.statueUniformFinish===true){
+            // The NPC body already uses Lambert shading. Using the original
+            // GLB's PBR/vertex-color material here could leave the hands and
+            // feet almost black even when their material texture is correct.
+            return new THREE.MeshBasicMaterial({color:0xffffff,side:THREE.DoubleSide,skinning:child.isSkinnedMesh===true}); // Pixel-matched tint without relying on GLB normals/light; statue source shading is already baked.
+          }
+          const result=material.clone();result.color?.set(resolveColor(part,baseColor));
+          if(part.materialTexture)applyPartTexture(result,part);
+          return result;
+        }; // Ordinary furniture GLBs keep their original authored materials.
         child.material = part.rockShape?.enabled ? makePartMaterial(rockMaterialPart(part),baseColor)
           : (part.statueBaked === true && part.preserveMaterials === true)
-            ? (Array.isArray(child.material) ? child.material.map(material => material.clone()) : child.material.clone()) // Preserve the finish already baked into the figure and weapon.
+            ? (Array.isArray(child.material) ? child.material.map(material => material.clone()) : child.material.clone()) // Preserve the finish baked by Statue Pose Bake.
             : Array.isArray(child.material) ? child.material.map(color) : color(child.material);
         child.castShadow = child.receiveShadow = true;
       });
+      if(part.statueUniformFinish===true) {
+        statueGlbTexture(part).then(texture=>{
+          if(mesh.userData.glbDisposed)return;
+          instance.traverse(child=>{
+            if(!child.isMesh)return;
+            for(const material of (Array.isArray(child.material)?child.material:[child.material])){
+              if(!material)continue;
+              material.map=texture;
+              material.color?.set(0xffffff);
+              material.needsUpdate=true;
+            }
+          });
+          mesh.userData.statueTextureReady=true;
+          mesh.userData.statueUvModes=[...new Set((()=>{
+            const modes=[];instance.traverse(child=>{if(child.isMesh)modes.push(child.userData.statueUvMode||'unknown');});return modes;
+          })())]; // Copyable, per-piece phone diagnostics verify UV fallback was actually considered.
+        }).catch(error=>{mesh.userData.statueTextureError=String(error.message||error);});
+      }
       for(const skin of convertedSkins){
         const stone=new THREE.Mesh(skin.geometry,skin.material); // Rigid furniture animation still targets the original wrapper; rocks need no missing skin vertex attributes.
         stone.name=skin.name;stone.position.copy(skin.position);stone.quaternion.copy(skin.quaternion);stone.scale.copy(skin.scale);stone.visible=skin.visible;
@@ -262,8 +326,54 @@
       instance.traverse(child => { if (child.isMesh && child.visible) { child.geometry.computeBoundingBox(); box.union(child.geometry.boundingBox.clone().applyMatrix4(child.matrixWorld)); } });
       if (box.isEmpty()) throw new Error('GLB has no visible geometry');
       const size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3()); // Imported model fills authored X/Y/Z dimensions independently.
-      const holder = new THREE.Group(); holder.scale.set(part.transform.sx / Math.max(.001, size.x), part.transform.sy / Math.max(.001, size.y), part.transform.sz / Math.max(.001, size.z)); // Geometry stays centered like every other furniture part.
-      instance.position.sub(center); holder.add(instance); mesh.add(holder);
+      const holder = new THREE.Group();
+      if(part.statueUniformFinish===true){
+        // Anatomy GLBs must keep their original proportions. Per-axis fitting
+        // inflated the nearly flat hand source along its narrowest axis into a
+        // tall wooden plank when imported as statue furniture.
+        const sourceExtent=Math.max(.001,size.x,size.y,size.z);
+        const targetExtent=Math.max(.001,part.transform.sx,part.transform.sy,part.transform.sz);
+        if(part.statueRigAlignment==='hand'||part.statueRigAlignment==='foot'){
+          // The living GLB solvers normalize on Y, *not* max dimension. Hand art
+          // uses its imported 0,0,0 as the grip; foot art uses the bottom center
+          // as ground contact. Furniture's default bounding-box recentering
+          // destroys those rig conventions even when the transforms are right.
+          holder.scale.setScalar(Math.max(.001,part.transform.sy)/Math.max(.001,size.y));
+          if(part.statueRigAlignment==='foot'){
+            instance.position.x-=center.x;
+            instance.position.y-=box.min.y;
+            instance.position.z-=center.z;
+          }
+          // Hands retain their untouched imported grip origin.
+        }else holder.scale.setScalar(targetExtent/sourceExtent);
+        if(part.statuePartScaleAxes){
+          // Rig Coordinates authors independent floor-frame hand/foot dimensions.
+          // The source model's original proportions are preserved before these
+          // additional statue-only anatomy multipliers (ordinary furniture is untouched).
+          const axes=part.statuePartScaleAxes;
+          holder.scale.multiply(new THREE.Vector3(
+            Number(axes.x)>0?Number(axes.x):1,
+            Number(axes.y)>0?Number(axes.y):1,
+            Number(axes.z)>0?Number(axes.z):1
+          ));
+        }
+        if(part.statueRigBodyScale){
+          const x=Number(part.statueRigBodyScale.x),y=Number(part.statueRigBodyScale.y);
+          // Furniture sprites have their body X/Y scale baked into geometry.
+          // These detached GLBs need the equivalent ancestor transform applied
+          // explicitly, or hands/feet ignore CharacterRigScale's nonuniform X/Y.
+          holder.scale.multiply(new THREE.Vector3(
+            x>0&&Number.isFinite(x)?x:1,
+            y>0&&Number.isFinite(y)?y:1,
+            x>0&&Number.isFinite(x)?x:1
+          ));
+        }
+        if(part.statueMirrorX===true)holder.scale.x*=-1; // Same left-source -> right-hand mirror as ProceduralHandAttachments.
+      }else{
+        holder.scale.set(part.transform.sx/Math.max(.001,size.x),part.transform.sy/Math.max(.001,size.y),part.transform.sz/Math.max(.001,size.z));
+      } // Ordinary furniture GLBs retain their independent authored X/Y/Z dimensions.
+      if(!part.statueRigAlignment)instance.position.sub(center); // Legacy furniture stays centered; rig-aligned statues preserve anatomical pivots.
+      holder.add(instance); mesh.add(holder);
       mesh.material.colorWrite = false; mesh.material.depthWrite = false; mesh.castShadow = false; mesh.receiveShadow = false; // Keeps a tiny renderable driver for existing rigid-piece animation hooks.
       mesh.userData.glbReady = true;
       mesh.userData.onRockSourceReady?.(); // Resolve contacts against real imported geometry after all asynchronous model parts become available.
@@ -505,9 +615,320 @@
     return ensureUvs(geometry);
   }
 
+  // Statue authors preserve the NPC's alpha silhouette as a reusable furniture sprite.
+  // The chosen furniture finish is shared with its GLB hands, feet and weapons;
+  // individual pieces can be edited without baking the finish into their image.
+  const statueImages = new Map(); // URL -> decoded image promise, reused for every instance's material finish.
+  const statueUniformTextures = new Map(); // Texture filename -> one cached, non-disposable tiled finish for GLB pieces.
+  function statueImage(url) {
+    const decode=()=>new Promise((resolve,reject)=>{
+      const image=new Image();
+      image.crossOrigin='anonymous'; // Commit-pinned CDNs can redirect the image to a different origin; preserve canvas pixel reads.
+      image.onload=()=>resolve(image);
+      image.onerror=()=>reject(new Error('Unable to load statue image: '+url.slice(0,140)));
+      image.src=url;
+    });
+    // Every NPC/pose produces a unique data: PNG; retaining those keys would
+    // permanently accumulate full-resolution image bytes on mobile.
+    if(url.startsWith('data:'))return decode();
+    if(!statueImages.has(url))statueImages.set(url,decode().catch(error=>{
+      statueImages.delete(url);throw error;
+    }));
+    return statueImages.get(url);
+  }
+  function statueFinishPath(part) {
+    const name = String(part.materialTexture || 'carved_smooth.png');
+    if (!/^[\w.-]+\.png$/i.test(name)) throw new Error('Unsupported statue material texture filename');
+    return (window.__hobunjiFurnitureAssetBase || 'assets/') + 'textures/' + name;
+  }
+  // Raster counterpart of SurfaceStretchUV's per-connected-surface mapping:
+  // each outlined portrait region gets ONE complete material PNG whose dark
+  // perimeter follows that region's irregular silhouette. Unlike a regular
+  // grid, the UV frame is computed from the region's row/column spans.
+  // Pixel arrays are plain RGBA; no Three.js state or DOM is used in this pass.
+  // Return the source material's lightest visible RGB color for older statue
+  // exports which predate an explicit base tint. The same target is reused by
+  // every ink-bounded region, rather than picking a new material per region.
+  function statueMaterialColor(material) {
+    let maximum = -1, selected = [182, 174, 161]; // Fallback tint for an empty overlay source.
+    const luminance = window.ColorFill?.relativeLuminance;
+    if (typeof luminance !== 'function') throw new Error('ColorFill unavailable during statue authoring');
+    for (let i = 0; i < material.length; i += 4) {
+      if (material[i + 3] <= 8) continue;
+      const value = luminance(material[i], material[i + 1], material[i + 2]);
+      if (value > maximum) {maximum = value; selected = [material[i], material[i + 1], material[i + 2]];}
+    }
+    return selected;
+  }
+  function statueBaseRgb(value, material) {
+    if (Array.isArray(value) && value.length === 3
+        && value.every(channel => Number.isFinite(Number(channel)))) {
+      return value.map(channel => Math.min(255,Math.max(0,Math.round(Number(channel)))));
+    }
+    const match = /^#([0-9a-f]{6})$/i.exec(String(value || ''));
+    return match
+      ? [parseInt(match[1].slice(0,2),16),parseInt(match[1].slice(2,4),16),parseInt(match[1].slice(4,6),16)]
+      : statueMaterialColor(material);
+  }
+
+  // Animal ColorFill shading runs on each connected ink-bounded NPC region.
+  // A *single* grayscale material atlas is blended once afterwards, ignoring
+  // the region labels entirely. White/high brightness becomes transparent;
+  // darker material pixels progressively cover the recolored statue surface.
+  // The source alpha and original black ink are never altered.
+  function paintStatueSurfaceCells(source, material, width, height, options = {}) {
+    const pixels = width * height;
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1
+        || pixels > 4194304 || source?.length !== pixels * 4 || material?.length !== pixels * 4) {
+      throw new Error('Statue material mapping requires equally sized, bounded RGBA images');
+    }
+    const colorFill = window.ColorFill;
+    if (typeof colorFill?.shadeFillPixels !== 'function' || typeof colorFill.createShadeReference !== 'function'
+        || Number(colorFill.version) < 8) throw new Error('ColorFill v8 required for white-inclusive animal-style statue fills');
+    const output = new Uint8ClampedArray(source); // Independent output: the authoring sprite is never modified.
+    const threshold = Math.min(64,Math.max(0,Math.round(Number(options.inkThreshold) || 18)));
+    const baseRgb = statueBaseRgb(options.baseColor,material); // One sculpture color shared by every limb/piece.
+    let opaque=0,colored=0,ink=0;
+    const alphaThreshold=8;
+    for(let i=0;i<pixels;i++){
+      const p=i*4;
+      if(source[p+3]<=alphaThreshold)continue;
+      opaque++;
+      if(source[p]>threshold||source[p+1]>threshold||source[p+2]>threshold)colored++;
+      else ink++;
+    }
+    if(!opaque||(!options.allowFullMask&&opaque>=pixels*.96)){
+      throw new Error('Statue portrait mask is blank or rectangular; rebuild its NPC appearance');
+    }
+    const inkBarrier=options.preserveInk!==false&&colored>0;
+    const visited=new Uint8Array(pixels); // 1 painted/visited; 2 transparent/ink barrier.
+    const labels=new Int32Array(pixels).fill(-1); // Keeps animal fill confined to each independent source-art cell.
+    const queue=new Int32Array(pixels); // Reused bounded flood-fill queue across all regions.
+    let regions=0,largest=0,tiny=0,painted=0;
+    const eligible=index=>{
+      const p=index*4;
+      return source[p+3]>alphaThreshold
+        &&(!inkBarrier||source[p]>threshold||source[p+1]>threshold||source[p+2]>threshold);
+    };
+    for(let start=0;start<pixels;start++){
+      if(visited[start])continue;
+      if(!eligible(start)){visited[start]=2;continue;}
+      let tail=1;
+      queue[0]=start;visited[start]=1;labels[start]=regions;
+      for(let head=0;head<tail;head++){
+        const index=queue[head],y=Math.floor(index/width),x=index-y*width;
+        const push=neighbour=>{
+          if(visited[neighbour])return;
+          if(!eligible(neighbour)){visited[neighbour]=2;return;}
+          visited[neighbour]=1;labels[neighbour]=regions;queue[tail++]=neighbour;
+        };
+        if(x>0)push(index-1);
+        if(x+1<width)push(index+1);
+        if(y>0)push(index-width);
+        if(y+1<height)push(index+width);
+      }
+      const label=regions++;
+      largest=Math.max(largest,tail);
+      if(tail<=4)tiny++;
+      painted+=tail;
+      if(!inkBarrier){
+        // Entirely black silhouettes (e.g. some weapons) have no detectable
+        // internal fill; paint their opaque shape with the same base color.
+        for(let j=0;j<tail;j++){
+          const p=queue[j]*4;
+          output[p]=baseRgb[0];output[p+1]=baseRgb[1];output[p+2]=baseRgb[2];
+        }
+      }else{
+        const belongs=index=>labels[index>>2]===label;
+        const shadeReference=colorFill.createShadeReference(source,belongs,{includeNearWhite:true});
+        colorFill.shadeFillPixels(output,baseRgb,{
+          sourceData:source,applyPredicate:belongs,shadeReference,includeNearWhite:true
+        });
+      }
+    }
+    // Overlay is deliberately processed only *after* the individual cell
+    // recolors and its sampling coordinates do NOT depend on region labels.
+    // Normalize the whole source PNG's brightest grayscale value to white so
+    // that material PNGs like carved_smooth (with no literal white pixels)
+    // still have fully transparent highlights.
+    const luminance=colorFill.relativeLuminance;
+    let overlayPeak=Number(options.overlayPeak);
+    if(!Number.isFinite(overlayPeak)||overlayPeak<=0){
+      overlayPeak=0;
+      for(let p=0;p<material.length;p+=4){
+        if(material[p+3]<=8)continue;
+        overlayPeak=Math.max(overlayPeak,luminance(material[p],material[p+1],material[p+2]));
+      }
+    }
+    let overlayPixels=0,overlayAlphaSum=0;
+    for(let index=0;index<pixels;index++){
+      if(!visited[index]||visited[index]===2)continue; // Transparent and original ink remain bit-for-bit unchanged.
+      const p=index*4;
+      if(material[p+3]<=8)continue;
+      const level=Math.max(0,Math.min(1,luminance(material[p],material[p+1],material[p+2])/Math.max(.00001,overlayPeak)));
+      const grayscale=Math.round(255*level);
+      const overlayAlpha=(1-level)*(material[p+3]/255); // White=0, black=1, gray=intermediate.
+      if(overlayAlpha<=0)continue;
+      for(let channel=0;channel<3;channel++){
+        output[p+channel]=Math.round(output[p+channel]*(1-overlayAlpha)+grayscale*overlayAlpha);
+      }
+      overlayPixels++;
+      overlayAlphaSum+=overlayAlpha;
+    }
+    return {data:output,stats:{
+      mode:'animal-cell-shading-global-brightness-overlay',
+      regions,largest,tiny,painted,inkPixels:inkBarrier?ink:0,
+      sourceOpaquePixels:opaque,fallbackAllBlack:!inkBarrier,
+      baseRgb,overlayPeak:+overlayPeak.toFixed(4),overlayPixels,
+      meanOverlayAlpha:overlayPixels?+(overlayAlphaSum/overlayPixels).toFixed(3):0
+    }};
+  }
+
+  const statueOverlayAtlasCache=new WeakMap(); // One center-cropped material atlas per decoded PNG, shared by body, head, and limbs.
+  function statueOverlayAtlas(image) {
+    const cached=statueOverlayAtlasCache.get(image);
+    if(cached)return cached;
+    // Many authored furniture PNGs (notably carved_smooth) have a nearly
+    // black border meant for individual tiles. Mapped once over an NPC, that
+    // border darkened the entire hood/face while leaving the torso bright.
+    // Sample the interior ONCE for the statue, not once per outlined cell.
+    const canvas=document.createElement('canvas');
+    canvas.width=canvas.height=256;
+    const ctx=canvas.getContext('2d',{willReadFrequently:true});
+    const iw=image.naturalWidth||image.width,ih=image.naturalHeight||image.height;
+    const insetX=iw*.16,insetY=ih*.16;
+    ctx.drawImage(image,insetX,insetY,iw-2*insetX,ih-2*insetY,0,0,256,256);
+    const pixels=ctx.getImageData(0,0,256,256).data;
+    const luminance=window.ColorFill?.relativeLuminance;
+    if(typeof luminance!=='function')throw new Error('Statue material needs canonical ColorFill');
+    let peak=0;
+    for(let p=0;p<pixels.length;p+=4)if(pixels[p+3]>8)
+      peak=Math.max(peak,luminance(pixels[p],pixels[p+1],pixels[p+2]));
+    const atlas={canvas,peak,baseRgb:statueMaterialColor(pixels)};
+    statueOverlayAtlasCache.set(image,atlas);
+    return atlas;
+  }
+
+  function paintedStatueCanvas(source,finish,options={}){
+    const width=Math.max(1,source.naturalWidth||source.width),height=Math.max(1,source.naturalHeight||source.height);
+    const original=document.createElement('canvas');original.width=width;original.height=height;
+    const originalCtx=original.getContext('2d',{willReadFrequently:true});
+    originalCtx.drawImage(source,0,0,width,height);
+    const pixels=originalCtx.getImageData(0,0,width,height);
+    const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+    const context=canvas.getContext('2d',{willReadFrequently:true});
+    const frame=options.overlayFrame||{width,height,x:0,y:0};
+    const fw=Number(frame.width)||width,fh=Number(frame.height)||height;
+    const fx=Number(frame.x)||0,fy=Number(frame.y)||0;
+    // The head is a crop from the same 256px portrait atlas as the body:
+    // offset the *single* texture so its grain continues across their seam.
+    const overlayInfo=statueOverlayAtlas(finish);
+    context.drawImage(overlayInfo.canvas,-fx,-fy,fw,fh);
+    const material=context.getImageData(0,0,width,height);
+    const painted=paintStatueSurfaceCells(pixels.data,material.data,width,height,{
+      ...options,overlayPeak:overlayInfo.peak,baseColor:options.baseColor||overlayInfo.baseRgb
+    });
+    material.data.set(painted.data);
+    context.putImageData(material,0,0);
+    canvas.statueSurfaceStats=painted.stats;
+    return canvas;
+  }
+
+  function statueGlbTexture(part) {
+    const url=statueFinishPath(part);
+    const colorKey=String(part.statueBaseColor||'from-material');
+    const key=url+'|'+colorKey; // One texture shared by all 3D parts with the same finish and sculpture tint.
+    if(!statueUniformTextures.has(key)){
+      const pending=statueImage(url).then(image=>{
+        const canvas=document.createElement('canvas');canvas.width=canvas.height=256;
+        const context=canvas.getContext('2d',{willReadFrequently:true});
+        const info=statueOverlayAtlas(image);
+        context.drawImage(info.canvas,0,0,256,256); // Identical whole-statue interior atlas, with no black tile-border sampling.
+        const pixels=context.getImageData(0,0,256,256);
+        const rgb=statueBaseRgb(part.statueBaseColor||info.baseRgb,pixels.data);
+        const luminance=window.ColorFill.relativeLuminance;
+        for(let p=0;p<pixels.data.length;p+=4){
+          const level=Math.max(0,Math.min(1,luminance(pixels.data[p],pixels.data[p+1],pixels.data[p+2])/Math.max(.00001,info.peak)));
+          const gray=Math.round(255*level);
+          const alpha=(1-level)*(pixels.data[p+3]/255);
+          for(let c=0;c<3;c++)pixels.data[p+c]=Math.round(rgb[c]*(1-alpha)+gray*alpha);
+          pixels.data[p+3]=255; // A grayscale finish is a solid overlay on sculpture geometry, not a hole in the mesh.
+        }
+        context.putImageData(pixels,0,0);
+        const texture=new THREE.CanvasTexture(canvas);
+        texture.wrapS=texture.wrapT=THREE.RepeatWrapping;
+        if(THREE.sRGBEncoding)texture.encoding=THREE.sRGBEncoding;
+        texture.needsUpdate=true;
+        texture.userData=texture.userData||{};
+        texture.userData.statueSharedTexture=true;
+        texture.dispose=()=>{}; // Shared materials are owned by the furniture texture cache, not individual parts.
+        return texture;
+      }).catch(error=>{statueUniformTextures.delete(key);throw error;});
+      statueUniformTextures.set(key,pending);
+    }
+    return statueUniformTextures.get(key);
+  }
+  function applyStatueSpriteFinish(mesh, part) {
+    if (!/^data:image\/(?:png|webp);base64,/i.test(part.statueMaskDataUrl || '')) {
+      mesh.userData.statueTextureError = 'Missing or invalid statue alpha mask';
+      return;
+    }
+    let textureUrl;
+    try {textureUrl=statueFinishPath(part);}
+    catch(error){mesh.userData.statueTextureError=error.message;return;}
+    const token = {}; // Cancels late async finishes when an editor piece has been disposed/replaced.
+    mesh.userData.statueFinishToken = token;
+    mesh.material.opacity=0; // Hide the unfinished rectangular plane until its alpha cutout is ready.
+    Promise.all([statueImage(part.statueMaskDataUrl),statueImage(textureUrl)]).then(([mask,finish])=>{
+      if(mesh.userData.statueFinishToken!==token||mesh.userData.glbDisposed)return;
+      const canvas=paintedStatueCanvas(mask,finish,{preserveInk:part.statueKeepOutline!==false,
+        allowFullMask:part.statueKeepOutline===false,baseColor:part.statueBaseColor,
+        overlayFrame:part.statueOverlayFrame});
+      const tex=new THREE.CanvasTexture(canvas);
+      if(THREE.sRGBEncoding)tex.encoding=THREE.sRGBEncoding;
+      tex.needsUpdate=true;
+      if(mesh.userData.statueOwnedTexture)mesh.userData.statueOwnedTexture.dispose();
+      mesh.userData.statueOwnedTexture=tex;
+      mesh.userData.statueSurfaceStats=canvas.statueSurfaceStats; // Mobile debug and smoke tests report actual enclosed surfaces.
+      mesh.material.map=tex;
+      mesh.material.opacity=1;
+      mesh.material.color.set(0xffffff);
+      mesh.material.needsUpdate=true;
+      mesh.userData.statueTextureError='';
+      mesh.userData.statueTextureReady=true; // Mobile diagnostics distinguish pending vs failed silhouette paint.
+    }).catch(error=>{
+      if(mesh.userData.statueFinishToken!==token)return;
+      mesh.userData.statueTextureError=String(error.message||error);
+      // Do not show a misleading opaque rectangle if its source cannot be painted.
+      mesh.visible=false;
+    });
+  }
+
   function buildPartMesh(part, baseColor) {
     let geo;
     const t = part.transform;
+    if (part.kind === 'statueSprite') {
+      const geometry = new THREE.PlaneGeometry(Math.max(.001, t.sx || 1), Math.max(.001, t.sy || 1));
+      const material = new THREE.MeshBasicMaterial({color:0xffffff,side:part.statueBackMaskDataUrl?THREE.FrontSide:THREE.DoubleSide,transparent:true,alphaTest:.025,depthWrite:true}); // Source-art shading is baked per cell: do not make hood and body differently lit.
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(t.x || 0,t.y || 0,t.z || 0);
+      mesh.rotation.set((t.rx || 0) * DEG,(t.ry || 0) * DEG,(t.rz || 0) * DEG);
+      mesh.name = part.name || 'Statue portrait piece';
+      mesh.userData.authoredPart = part;
+      mesh.castShadow = true;
+      applyStatueSpriteFinish(mesh, part);
+      if (part.statueBackMaskDataUrl) {
+        const back = new THREE.Mesh(geometry.clone(), new THREE.MeshBasicMaterial({
+          color:0xffffff,side:THREE.FrontSide,transparent:true,alphaTest:.025,depthWrite:true
+        }));
+        back.name = (part.name || 'Statue') + ' rear portrait';
+        back.position.z = -.002; // Independent back PNG never z-fights with the front.
+        back.rotation.y = Math.PI;
+        mesh.add(back);
+        applyStatueSpriteFinish(back, {...part,statueMaskDataUrl:part.statueBackMaskDataUrl});
+      }
+      return mesh;
+    }
     if (part.kind === 'glb') {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(.001, .001, .001), new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false })); // Animation/picking owner while the bone-hidden model loads.
       mesh.position.set(t.x || 0, t.y || 0, t.z || 0); mesh.rotation.set((t.rx || 0) * DEG, (t.ry || 0) * DEG, (t.rz || 0) * DEG);
@@ -1052,6 +1473,7 @@ function campfireRecipe() {
   ];
 
   window.ProceduralFurniture = {
+    paintStatueSurfaceCells, // Pure typed-array raster mapping also used by deterministic authored-surface tests.
     hangingSignSupportPart,
     buildFurnitureGroup,
     buildPartMesh,

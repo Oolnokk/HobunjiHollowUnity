@@ -1,0 +1,59 @@
+name: Statue Author mobile browser smoke
+on:
+  pull_request:
+    paths:
+      - 'docs/tools/statue-author/**'
+      - 'docs/tools/furniture-avatar-author/**'
+      - 'docs/js/procedural-furniture.js'
+      - 'docs/js/authored-furniture-runtime.js'
+      - 'scripts/smoke-statue-author-browser.js'
+      - 'scripts/test-statue-surface-cells.js'
+      - 'scripts/test-statue-furniture-author.js'
+      - 'scripts/test-statue-hero-pools.js'
+      - 'scripts/test-statue-rig-snapshot.js'
+      - 'docs/js/statue-rig-snapshot.js'
+      - 'docs/config/attachment-rig-profiles.js'
+      - 'docs/js/character-rig-scale.js'
+      - 'docs/js/procedural-leg-animation.js'
+      - 'scripts/generate-statue-author-index.js'
+      - 'docs/config/statue-author-asset-index.json'
+      - 'docs/js/combat/bandit-equipment-pools.js'
+      - 'docs/js/combat/combat-bandit.js'
+      - 'docs/js/weapon-trust-bandit-loadouts.js'
+      - 'docs/js/metal-armor-system.js'
+      - '.github/workflows/statue-author-browser-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  statue-author:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check ink-boundary region mapping and furniture hierarchy
+        run: node scripts/test-statue-furniture-author.js
+      - name: Check repository indexes and bandit species-locked hero pools
+        run: |
+          node scripts/generate-statue-author-index.js
+          node scripts/test-statue-hero-pools.js
+          node scripts/test-statue-rig-snapshot.js
+      - name: Install pinned browser dependencies
+        run: npm install --no-save --package-lock=false playwright@1.55.1 three@0.128.0
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Build real NPC statue and inspect alpha/material on a mobile viewport
+        run: node scripts/smoke-statue-author-browser.js
+      - name: Attach Pahu statue screenshot for composition review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: statue-pahu-mobile-preview
+          path: |
+            artifacts/statue-pahu.png
+            artifacts/statue-hero.png
+          if-no-files-found: ignore
