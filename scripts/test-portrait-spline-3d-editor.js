@@ -84,6 +84,14 @@ assert(viewer.indexOf('const spriteSurface =') >= 0
   'canonical PNG material factory must initialize before the WebGL head and hair sheets are constructed');
 assert(editor.includes("NpcAvatarPreview.renderProfileToCanvas") && editor.includes("NpcAvatarPreview.ensurePortraitCosmetics"),
   '3D author uses the same canonical full-character source as the Pants Rig Author');
+assert(editor.includes("portraitView:'front',onlyHeadSprite:true"),
+  'the 2D seam generator must use the canonical head-only portrait (same B scaling as the runtime)');
+assert(editor.includes('const portraitReference=images.character||images.head'),
+  'the 2D canvas should show the canonical full-character portrait instead of drawing a separately scaled head');
+assert(!editor.includes("void loadHead(); // A head-only alpha reference"),
+  'indexed raw head artwork must no longer race the canonical head-only silhouette during normal loading');
+assert(catalog.includes("window.getPortraitXformPreset?.('B') || PRESERVED_B"),
+  'fallback head rendering must use the live game portrait B transform, never species headXform');
 assert(viewer.includes("textureFailures") && editor.includes("canonicalPortraitError"),
   'rendering errors remain visible on mobile rather than being swallowed as empty textures');
 assert(editor.includes("init3D()") && editor.includes("initCatalog()"),'3D viewer and index-backed 2D rigger both auto-initialize');
@@ -121,6 +129,11 @@ async function checkIndexedHead() {
       });
       assert.equal(result.width, 200);
       assert.equal(result.height, 200);
+      const [sprite, x, y, w, h] = drawn[drawn.length - 1];
+      assert(sprite && Math.abs(x - (-6.072)) < .00001 && Math.abs(y - 8.264) < .00001,
+        speciesId + ' ' + gender + ': indexed head fallback must match portrait B placement, not the smaller species headXform');
+      assert(Math.abs(w - 199.2) < .00001 && Math.abs(h - 199.2) < .00001,
+        'render fallback uses exactly the canonical 80px layer size and 2.49x portrait B scaling');
     }
   }
   assert.equal(drawn.length, 6, 'every selected head must be positioned for the silhouette and 3D preview');
