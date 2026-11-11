@@ -191,7 +191,7 @@ async function run(){
     },'data:image/png;base64,'+image.toString('base64'));
     assert.ok(pixels.statuePixels>3500,
       'Pahu body/head must actually be visible (not merely textured off-camera): '+JSON.stringify({pixels,rig:pahu.sourceRig,body:pahuBody,head:pahuHead}));
-    assert.equal(pahu.authoredRig?.rigProfileFound,true,
+    assert.equal(pahu.authoredRig?.profileFound,true,
       'Pahu should use the actual Rakakoan Rig Coordinates profile, not a guessed avatar.');
     assert.ok(pahu.authoredRig?.feet?.restStance?.left?.ankle
       &&pahu.authoredRig.feet.restStance.right.ankle,
@@ -225,7 +225,7 @@ async function run(){
           : piece.textureReady);
     },null,{timeout:30000});
     const generated=await page.evaluate(()=>window.__hobunjiStatueDebug());
-    assert.ok(generated.authoredRig?.rigProfileFound&&generated.authoredRig?.feet?.restStance?.left,
+    assert.ok(generated.authoredRig?.profileFound&&generated.authoredRig?.feet?.restStance?.left,
       'Generated hero must use the real Mao-ao standing rig, not a per-species guessed foot offset');
     assert.equal(generated.authoredRig?.feet?.samplingWarning,null,
       'The hero leg solver must complete without fallback');
