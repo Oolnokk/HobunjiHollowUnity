@@ -630,7 +630,8 @@
     const instanceId = minimumFallback
       ? `${KEY}_small_${zoneId}_minimum`
       : `${KEY}_small_${zoneId}_${campIndex}`; // Distinct fallback id makes the one-camp guarantee visible in diagnostics/tests.
-    const instance = window.TemporaryLocales.stamp(zoneState.view, smallLocaleDef, {
+    const caveAvoid = window.LocaleTerrainPlacement?.isolatedLocaleAvoidPoints?.(combatDeps?.zoneLayouts?.get?.(zoneId)) || []; // Shared live cave position, kept even when the required camp relaxes its flat-ground and clearance rules.
+    const stampOptions = {
       rng: seededRng(`${generationYear()}:${zoneId}:${KEY}-small-site:${minimumFallback ? 'minimum' : campIndex}`),
       preferredPoint: huntingCampPreferredPoint(zoneState, zoneId), // Rank legal camp sites toward the assigned end; all hard exclusions still apply.
       clearableTypes: new Set(),
@@ -638,11 +639,15 @@
       clearanceTiles: minimumFallback ? 0 : (smallLocaleDef.placement?.clearanceTiles ?? 2),
       requiresFlatGround: minimumFallback ? false : (smallLocaleDef.placement?.requiresFlatGround !== false),
       minDistanceFromEntry: minimumFallback ? 0 : (smallLocaleDef.placement?.minDistanceFromEntry ?? 10),
-      avoidPoints: minimumFallback ? [] : banditCampAvoidPoints(zoneId, smallLocaleDef.placement?.minDistanceFromBanditCamp ?? 12), // First try keeps Banubu and the tribes well apart; minimum fallback may relax to preserve the required camp.
+      avoidPoints: minimumFallback ? caveAvoid : banditCampAvoidPoints(zoneId, smallLocaleDef.placement?.minDistanceFromBanditCamp ?? 12), // Relax terrain first, preserve a remote cave site whenever possible.
       avoidChunks: banditCampAvoidChunks(zoneId),
       chunkSizeTiles: streamChunkSizeTiles(),
       instanceId,
-    });
+    }; // Shared options ensure the soft-distance retry never relaxes the hard rival-camp chunk exclusion.
+    let instance = window.TemporaryLocales.stamp(zoneState.view, smallLocaleDef, stampOptions);
+    if (!instance && minimumFallback && caveAvoid.length) {
+      instance = window.TemporaryLocales.stamp(zoneState.view, smallLocaleDef, { ...stampOptions, avoidPoints: [] }); // Final ecology-floor guarantee, only when no distant site fits.
+    }
     if (!instance) return null;
     const cohortSizes = historicalHuntingCohortsForZone(zoneId); // Recover the former map-wide total instead of only the first camp's residents.
     const camp = makeCamp(zoneState, instance, 'small', cohortSizes.reduce((sum, size) => sum + size, 0),
