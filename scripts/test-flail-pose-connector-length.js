@@ -66,6 +66,16 @@ assert.match(editor, /flailLengthScale: SharedAttackPose\.flailLengthScaleAt\(an
   'editor scrubbing uses gameplay-length sampling instead of a second timing implementation');
 assert.match(editor, /anim\.poses\[phase\]\.flailLengthScale = SharedAttackPose\.validFlailLength\(raw\?\.flailLengthScale\)/,
   'imports restore authored connector length while old exports retain full length');
+const flipStart = editor.indexOf('function flipPose(p) {'); // Mirror control creates a new pose and must preserve the optional flail scalar.
+const flipEnd = editor.indexOf("$('headRelative').onchange", flipStart);
+assert(flipStart >= 0 && flipEnd > flipStart, 'the attack editor still exposes its existing midline flip helper');
+const flipPose = vm.runInNewContext(editor.slice(flipStart, flipEnd) + '\nflipPose', {
+  SharedAttackPose: SAP,
+  defaultPose: (x, y, z, pitch, yaw, bodyYaw, roll) => ({ x, y, z, pitch, yaw, bodyYaw, roll }),
+});
+const flippedPose = flipPose({ x: 0.2, y: 0, z: 0, pitch: 0, yaw: 10, bodyYaw: 0, roll: 0, flailLengthScale: 1.4 });
+assert.equal(flippedPose.x, -0.2, 'mirrored poses still negate their ordinary handedness channel');
+assert.equal(flippedPose.flailLengthScale, 1.4, 'midline flips preserve an authored extension without treating it as a mirrored axis');
 // Equip real standalone flail recipes through the existing WeaponToolStances module;
 // otherwise authoring Light's 0.6 Neutral would silently do nothing for those weapons.
 const stanceWindow = {}; // Browser-global actors, assembly definitions and stance state share one VM context.
