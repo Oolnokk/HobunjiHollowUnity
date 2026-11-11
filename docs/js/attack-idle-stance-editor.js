@@ -488,8 +488,9 @@
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           const parsed = await response.json();
           const complete = parsed?.kind === 'hobunji_weapon_idle_stances'
-            && parsed.stances && STANCE_ORDER.every(key => FIELD_DEFS.every(field =>
-              typeof parsed.stances[key]?.[field.key] === 'number' && Number.isFinite(parsed.stances[key][field.key]))); // Missing committed poses must retry, not silently fall back for this session.
+            && parsed.stances && STANCE_ORDER.every(key => FIELD_DEFS.filter(field => field.key !== 'flailLengthScale').every(field =>
+              typeof parsed.stances[key]?.[field.key] === 'number' && Number.isFinite(parsed.stances[key][field.key]))
+              && (parsed.stances[key]?.flailLengthScale == null || Number.isFinite(parsed.stances[key].flailLengthScale))); // Connector reach is optional for existing non-flail/older stance records. // Missing committed poses must retry, not silently fall back for this session.
           if (!complete) throw new Error('incomplete stance config');
           fileConfig = normalizeConfig(parsed, FALLBACK_CONFIG);
           if (JSON.stringify(workingConfig) === lastAutoAppliedConfig) {
