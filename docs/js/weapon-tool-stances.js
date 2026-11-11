@@ -177,6 +177,7 @@
     const shape = shapeFor(itemKey, def);
     if (shape === 'hoe' || shape === 'hatchet') return 'heavy';
     if (shape === 'fishingmace' || shape === 'fishingspear' || shape === 'pickshovel') return 'light';
+    if (window.HobunjiWeaponSpriteAssemblies?.definitionFor?.(itemKey, def)?.flail) return 'light'; // Previously unclassified standalone flails need a Light Neutral for the authored 60% connector length; explicit Heavy classifications above still win.
     return null;
   }
 
