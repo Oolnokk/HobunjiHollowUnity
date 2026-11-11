@@ -27181,6 +27181,13 @@
         // then restore before any gameplay tick or subsequent render.
         const restoreNpcVisuals = window.NpcViewFrustumCull?.suspendForRender?.(npcWalkers, activeScene, camera);
         try {
+        // Frame-scoped whole-actor suppression; simulation still runs before and
+        // after this render. Existing frustum culling handles camera-offscreen
+        // walkers; the new renderer adds covered NPCs and hostile humanoids.
+        window.ActorRenderOcclusion?.beginFrame?.({
+          renderer, camera, scene:activeScene, walkers:npcWalkers, hostiles:hostileObjects,
+          area:currentArea, playerPosition:{x:player.x/TILE,z:player.y/TILE}
+        });
         if (s_outlines) {
           // Colour + depth into an offscreen target so the post-process
           // composite below can read real per-pixel depth afterwards —
@@ -27189,6 +27196,7 @@
           const rpMainPerf = window.PerfProfiler?.begin('render: main scene');
           renderer.setRenderTarget(_mainRT);
           renderer.render(activeScene, camera);
+          window.ActorRenderOcclusion?.probeAfterBase?.(); // Query against the existing main-scene depth, without stalling the GPU.
           window.PerfProfiler?.end(rpMainPerf);
 
           // Preserve the colour/depth result while PNG silhouettes add only
@@ -27277,6 +27285,7 @@
           window.PngPlaneOutlineOccluder.prune(); // Outlines off skips the pass that otherwise compacts this registry every frame.
           renderer.setRenderTarget(null);
           renderer.render(activeScene, camera);
+          window.ActorRenderOcclusion?.probeAfterBase?.(); // Same visibility checks even with all shell outlines disabled.
           // Coloured target outline pass (layer-2 objects — green allowed, red blocked)
           if (_targetOutlineMeshes.length > 0) {
             renderer.autoClearColor = false;
@@ -27292,6 +27301,7 @@
           window.PerceptionMode?.renderOverlay(renderer, activeScene, camera);
         }
         } finally {
+          window.ActorRenderOcclusion?.endFrame?.(); // Release all render-only hostile/NPC suppressions before resuming game systems.
           restoreNpcVisuals?.(); // Never leave simulation-visible walkers hidden between frames.
         }
         window.PerfProfiler?.end(renderPassPerf);
