@@ -164,7 +164,9 @@ const studio = read('docs/tools/character-studio/index.html');
 const editor = read('docs/tools/portrait-spline-author/index.html');
 assert(portrait.includes("hoodHidesFacialHair(hood)") && portrait.includes("splineRigFor(entry.group)"), 'facewrap hiding and spline opt-in share portrait layer resolution');
 assert(portrait.includes("renderBehindView && slot === 'facialHair'"), 'a rigged beard does not paint a second rear portrait');
-assert(portrait.includes("splitByMask?.(partCanvas, rig.regionMasks?.[view])"), 'front/rear masks partition each cosmetic into stationary and deforming pixels');
+assert(portrait.includes("splitByMask?.(partCanvas, rig.regionMasks?.[view], {")
+  && portrait.includes("stitchPx: window.PortraitSplineRig.stitchWidthPx(rig)"),
+  'front/rear masks attach a pinned collar to the continuous hair mesh rather than cutting at the flexible boundary');
 assert(!portrait.includes("warpHoodCanvas?.(") && !portrait.includes("paintSeamBridge?.("),
   'new masks do not carve hood pixels or paint artificial seam bridges');
 assert(html.includes('portrait-spline-rig.js'), 'game loads the spline runtime');
