@@ -431,8 +431,13 @@ function makeStaticParts(front,back,head,backHead,profile,pose,finish,role,weapo
   const leftHand=glb('statue_left_hand','Left hand',snapshot?.hands?.modelPath||limb.hand,finish,role,
     transform(handX,handY,.04,0,90,-12,handSize,handSize,handSize),'statue_body',baseColor);
   if(snapshot){
-    for(const part of [rightHand,leftHand])part.statuePartScaleAxes=snapshot.hands.axes; // Applies the authored GLB hand anatomy on the furniture part.
+    for(const part of [rightHand,leftHand]){
+      part.statuePartScaleAxes=snapshot.hands.axes; // Applies the authored GLB hand anatomy on the furniture part.
+      part.statueRigAlignment='hand'; // Keep the source GLB's authored 0,0,0 grip/wrist pivot instead of centering its bounding box.
+    }
     rightHand.statueMirrorX=snapshot.hands.mirrorRight; // Source hand models are LEFT by default; gameplay mirrors the right.
+    leftHand.statueMirrorX=!snapshot.hands.mirrorRight; // Author may choose a right-handed source GLB instead.
+    rightHand.transform.ry+=180; // ProceduralHandAttachments' RIGHT_SHOULDER_AXIS_TWIST_DEG applied after the socket medial yaw.
   }
   p.push(rightHand,leftHand);
   const footConfig=window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet || {};
@@ -445,8 +450,12 @@ function makeStaticParts(front,back,head,backHead,profile,pose,finish,role,weapo
     const y=(saved?.y??footHeight*.5)-bodyCenterY+drop;
     const z=(saved?.z??0)+.03;
     const part=glb('statue_'+side+'_foot',side==='left'?'Left foot':'Right foot',limb.foot,finish,role,
-      transform(x,y,z,0,0,0,footHeight*1.2,footHeight,footHeight*1.6),'statue_body',baseColor);
-    if(snapshot)part.statuePartScaleAxes=snapshot.feet.axes; // Preserve Rig Coordinates’ per-axis anatomy in the frozen GLB.
+      transform(x,y,z,0,0,0,footHeight,footHeight,footHeight),'statue_body',baseColor);
+    if(snapshot){
+      part.statuePartScaleAxes=snapshot.feet.axes; // Preserve Rig Coordinates' per-axis anatomy in the frozen GLB.
+      part.statueRigAlignment='foot'; // Original source y-min contacts the ground; floor origin must survive import.
+      part.statueMirrorX=side==='left'; // ProceduralLegAnimation builds mirrored left foot from the right-source GLB.
+    }
     p.push(part);
   }
   for(let i=0;i<weaponMasks.length;i++){
