@@ -137,7 +137,23 @@
   // mirrorBlend runs 1 -> -1 across a true midline flip (1 when the pose has no
   // mirror sequence) and multiplies the hand-attach X.
   function createSample() {
-    return { x: 0, y: 0, z: 0, pitchRad: 0, yawRad: 0, rollRad: 0, bodyYawRad: 0, bodySink: 0, scale: 1, mirrorBlend: 1, hasMirrorSequence: false };
+    return { x: 0, y: 0, z: 0, pitchRad: 0, yawRad: 0, rollRad: 0, bodyYawRad: 0, bodySink: 0, scale: 1, flailLengthScale: 1, mirrorBlend: 1, hasMirrorSequence: false };
+  }
+
+  const FLAIL_LENGTH_KEY = 'flailLengthScale'; // Pose-authored connector reach; the flail assembly alone consumes it, never ordinary weapons.
+  function validFlailLength(value, fallback = 1) {
+    const number = value == null ? NaN : Number(value);
+    return Number.isFinite(number) ? Math.max(0.1, Math.min(3, number)) : fallback;
+  }
+
+  function flailLengthScaleAt(pose, progress, wf, sf, hf, sequence = 'attack', power = 1) {
+    const neutral = validFlailLength(pose?.neutral?.[FLAIL_LENGTH_KEY]);
+    const returning = validFlailLength(pose?.returnNeutral?.[FLAIL_LENGTH_KEY], neutral);
+    const windup = validFlailLength(pose?.windup?.[FLAIL_LENGTH_KEY], neutral);
+    const strike = validFlailLength(pose?.strike?.[FLAIL_LENGTH_KEY], neutral);
+    const p = Number.isFinite(power) ? power : 1;
+    return validFlailLength(sequencedPoseLerp(sequence, progress, wf, sf, hf,
+      neutral + (windup - neutral) * p, neutral + (strike - neutral) * p, neutral, returning));
   }
 
   const _neutral = {}; // Scratch: pose.neutral merged over the style neutral.
@@ -188,6 +204,7 @@
     out.rollRad = poseChannel('roll', true, pose, progress, wf, sf, hf, sign, power, sequence) * DEG_TO_RAD;
     out.bodyYawRad = poseChannel('bodyYaw', true, pose, progress, wf, sf, hf, sign, power, sequence) * DEG_TO_RAD;
     out.bodySink = Math.max(0, poseChannel(SINK_KEY, false, pose, progress, wf, sf, hf, sign, power, sequence)); // Percent of avatar height; the swing's sunk-ness at this instant.
+    out.flailLengthScale = flailLengthScaleAt(pose, progress, wf, sf, hf, sequence, power); // No mirroring: connector reach is the same in either hand.
     return out;
   }
 
@@ -206,6 +223,7 @@
     out.bodyYawRad = fourPhaseLerp(progress, wf, sf, hf, T.windupBodyYawDeg * DEG_TO_RAD * power, T.strikeBodyYawDeg * DEG_TO_RAD * power);
     out.bodySink = NaN; // Legacy arcs author no sink: consumers fall back to the stance's idle sink.
     out.scale = 1;
+    out.flailLengthScale = 1;
     out.mirrorBlend = 1;
     out.hasMirrorSequence = false;
     out.headRelative = false;
@@ -229,6 +247,7 @@
     out.bodyYawRad = fourPhaseLerp(progress, wf, sf, hf, S.windupRad * power * dir, S.strikeRad * power * dir);
     out.bodySink = NaN;
     out.scale = 1;
+    out.flailLengthScale = 1;
     out.mirrorBlend = dir;
     out.hasMirrorSequence = false;
     out.headRelative = false;
@@ -258,6 +277,9 @@
     for (const key of POSE_KEYS) {
       const value = Number(raw?.[key]);
       pose[key] = Number.isFinite(value) ? value : (Number(fallback?.[key]) || 0);
+    }
+    if (raw?.[FLAIL_LENGTH_KEY] != null || fallback?.[FLAIL_LENGTH_KEY] != null) {
+      pose[FLAIL_LENGTH_KEY] = validFlailLength(raw?.[FLAIL_LENGTH_KEY], validFlailLength(fallback?.[FLAIL_LENGTH_KEY]));
     }
     return pose;
   }
@@ -301,6 +323,10 @@
       const endpoint = Number.isFinite(rawValue) ? rawValue : sourceNeutral[key];
       out[key] = sourceNeutral[key] + (endpoint - sourceNeutral[key]) * power;
     }
+    if (raw?.[FLAIL_LENGTH_KEY] != null) {
+      const base = validFlailLength(sourceNeutral?.[FLAIL_LENGTH_KEY]);
+      out[FLAIL_LENGTH_KEY] = validFlailLength(base + (validFlailLength(raw[FLAIL_LENGTH_KEY]) - base) * power);
+    }
     return out;
   }
 
@@ -318,6 +344,7 @@
     for (const key of POSE_KEYS) {
       out[key] = MIRRORED_POSE_KEYS[key] ? targetNeutral[key] * visibleSign * runtimeSign : targetNeutral[key];
     }
+    if (targetNeutral?.[FLAIL_LENGTH_KEY] != null) out[FLAIL_LENGTH_KEY] = validFlailLength(targetNeutral[FLAIL_LENGTH_KEY]);
     return out;
   }
 
@@ -367,6 +394,11 @@
     const startNeutralSign = alternatesHeavyNeutral ? effectiveSign : 1;
     const returnNeutralSign = alternatesHeavyNeutral ? -effectiveSign : 1;
     const { windup, strike } = bakeAttackEndpoints(anim, authoredPose, power, { meleeSpacing });
+    if (targetNeutral?.[FLAIL_LENGTH_KEY] != null) {
+      // A shortened idle connector grows to normal reach at unspecified attack endpoints.
+      windup[FLAIL_LENGTH_KEY] = validFlailLength(windup[FLAIL_LENGTH_KEY]);
+      strike[FLAIL_LENGTH_KEY] = validFlailLength(strike[FLAIL_LENGTH_KEY]);
+    }
     return {
       effectiveSign, startNeutralSign, returnNeutralSign, windup, strike,
       neutral: neutralInputForSigns(targetNeutral, startNeutralSign, effectiveSign),
@@ -584,6 +616,7 @@
     holdFrac,
     swingTimeline,
     createSample,
+    FLAIL_LENGTH_KEY, validFlailLength, flailLengthScaleAt,
     samplePose,
     sampleLegacyThrust,
     sampleLegacySweep,
