@@ -122,7 +122,7 @@
     ['js/sleep-passage-action-bridge.js?v=20261027h78a21a9', () => Number(window.HobunjiSleepPassageActionBridge?.version) >= 3],
     ['js/day-progress-review.js?v=20261017h455b5d7', () => Number(window.DayProgressReview?.version) >= 1],
     ['js/day-progress-review-relationship-ui.js?v=20261016h4aa30ec', () => Number(window.DayProgressReviewRelationshipUi?.version) >= 1],
-    ['js/menu-tab-icon-only.js?v=20261110barnStableUI1', () => Number(window.HobunjiMenuTabIcons?.version) >= 1],
+    ['js/menu-tab-icon-only.js?v=20261111worldProgress2', () => Number(window.HobunjiMenuTabIcons?.version) >= 1],
     ['js/npc-social-seating-bridge.js?v=20261021h5c4cd26', () => !!window.HobunjiNpcSocialSeating],
     ['js/performance-loop-optimizations.js?v=20261103cleanup2', () => !!window.HobunjiPerformanceLoopOptimizations],
     ['js/combat/enemy-target-facing.js?v=20261027hlock2', () => Number(window.EnemyTargetFacing?.version) >= 1],
