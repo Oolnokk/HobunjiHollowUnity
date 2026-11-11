@@ -88,6 +88,8 @@ const blended=Rig.deformPosition(reference,moved,.46,.45,1,1,.5);
 const free=Rig.deformPosition(reference,moved,.46,.45,1,1,1);
 const neutral=Rig.deformPosition(reference,rest,.46,.45,1,1,1);
 assert(Math.abs(still.x-neutral.x)<1e-9,'a rigid boundary vertex stays at its neutral location');
+assert(Math.abs(still.z-.003)<1e-9,'near the rigid edge the flexible ribbon settles onto the portrait plane');
+assert(free.z>blended.z&&blended.z>still.z,'attachment depth is continuously tapered to prevent a visible 3D ledge');
 assert(free.x>blended.x&&blended.x>still.x,'automatic blend controls vertex motion rather than fading the original artwork');
 const defaultWind=Rig.makeDefaultSegments([{u:.5,v:.2},{u:.5,v:.5},{u:.5,v:.8}]);
 assert(defaultWind[1].poses.left.translate.x<0&&defaultWind[1].poses.right.translate.x>0,
