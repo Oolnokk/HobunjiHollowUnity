@@ -56,6 +56,28 @@ for(let i=0;i<200*200;i++){
   assert.equal(split.rigid.pixels[i*4+3]+split.flexible.pixels[i*4+3],hair.pixels[i*4+3],
     'the pixel partition must preserve original alpha at '+i);
 }
+const seamWidth=Rig.stitchWidthPx({segmentsX:24,segmentsY:32});
+assert(seamWidth>=10&&seamWidth<=14,'auto seam collar covers at least a whole vertex-grid cell without dense remeshing');
+const joined=Rig.splitByMask(hair,mask,{stitchPx:seamWidth});
+assert(joined.stitchedPixels>0,'hair/head join transfers a real strip of rigid artwork into the contiguous flex mesh');
+assert.deepEqual(pixel(joined.rigid,90,95),[90,65,45,0],
+  'pixels inside the original rigid region near the bend move onto the anchored part of the same mesh');
+assert.deepEqual(pixel(joined.flexible,90,95),[90,65,45,255],
+  'the moving hair mesh extends across the former cut into a non-deforming collar');
+assert.deepEqual(pixel(joined.rigid,90,70),[90,65,45,255],
+  'deeply attached artwork remains on the flat original portrait');
+assert.deepEqual(pixel(joined.flexible,90,70),[90,65,45,0],
+  'the mesh collar does not needlessly duplicate all head-attached artwork');
+assert.deepEqual(pixel(joined.flexible,90,105),[90,65,45,255],
+  'the same unbroken PNG surface continues across the old moving/static boundary');
+for(let i=0;i<200*200;i++){
+  assert.equal(joined.rigid.pixels[i*4+3]+joined.flexible.pixels[i*4+3],hair.pixels[i*4+3],
+    'seam stitch must transfer, never duplicate/drop, the original artwork at pixel '+i);
+}
+const beforeSeam=Rig.splitByMask(hair,mask,{stitchPx:0});
+assert.equal(beforeSeam.stitchedPixels,0,'zero-width seam request preserves exact legacy mask ownership');
+assert.deepEqual(pixel(beforeSeam.rigid,90,95),[90,65,45,255],
+  'existing exact-split callers continue to own the rigid border on the flat portrait');
 const extend=Rig.paintPixelMask(mask,(90.5)/200,(120.5)/200,3,true);
 assert.equal(Rig.decodePixelMask(extend)[idx(90,120)],1,'brush can anchor previously flexible pixels');
 const erase=Rig.paintPixelMask(extend,90.5/200,70.5/200,3,false);
@@ -88,7 +110,7 @@ const blended=Rig.deformPosition(reference,moved,.46,.45,1,1,.5);
 const free=Rig.deformPosition(reference,moved,.46,.45,1,1,1);
 const neutral=Rig.deformPosition(reference,rest,.46,.45,1,1,1);
 assert(Math.abs(still.x-neutral.x)<1e-9,'a rigid boundary vertex stays at its neutral location');
-assert(Math.abs(still.z-.003)<1e-9,'near the rigid edge the flexible ribbon settles onto the portrait plane');
+assert(Math.abs(still.z-.0008)<1e-9,'anchored mesh collar sits exactly on the rigid preview portrait depth, not .003 above it');
 assert(free.z>blended.z&&blended.z>still.z,'attachment depth is continuously tapered to prevent a visible 3D ledge');
 assert(free.x>blended.x&&blended.x>still.x,'automatic blend controls vertex motion rather than fading the original artwork');
 const defaultWind=Rig.makeDefaultSegments([{u:.5,v:.2},{u:.5,v:.5},{u:.5,v:.8}]);
@@ -99,6 +121,8 @@ assert(suggested&&suggested.length===3&&suggested[0].v<suggested[1].v&&suggested
   'rest spline is fitted to opaque hair bounds and head-overlapping root, rather than fixed coordinates');
 const portrait=fs.readFileSync(path.join(root,'docs/js/portrait-utils.js'),'utf8');
 assert(portrait.includes('ctx.drawImage(layers.rigid, 0, 0'),'rigid pixels must be composited on the original game portrait');
-assert(portrait.includes('canvas: layers?.flexible || partCanvas'),'only flexible pixels enter the 3D spline');
+assert(portrait.includes('canvas: layers?.flexible || partCanvas'),'only flexible pixels and their pinned collar enter the 3D spline');
+assert(portrait.includes('stitchPx: window.PortraitSplineRig.stitchWidthPx(rig)'),
+  'game renderer enables the same automatically sized pinned collar as the 3D editor');
 assert(!portrait.includes('warpHoodCanvas?.('),'hoods are not carved by the old seam author');
-console.log('Rigid/flexible spline region masks: 200px alpha overlap, brush, eraser, undo, RLE, and disjoint 3D partition pass.');
+console.log('Rigid/flexible spline masks: alpha ownership, contiguous pinned seam mesh, 3D depth alignment, brush, eraser and RLE pass.');
