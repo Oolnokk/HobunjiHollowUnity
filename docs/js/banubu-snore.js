@@ -4,13 +4,13 @@
   const BANUBU_AREA_ID = 'map_northern_cliffs'; // Used to keep the exterior cave snore out of unrelated maps and Banubu's interior.
   const BANUBU_LOCALE_ID = 'locale_banubu_shrine'; // Used to resolve the live Tothal-shifted entrance transition rather than the locale anchor.
   const BANUBU_INTERIOR_ID = 'map_i_den_banubu'; // Used only as a compatibility fallback when an older generated transition lacks generatedLocaleId.
-  const MAX_CHUNK_DISTANCE = 2; // Used by the coarse proximity gate: the player's chunk may be the entrance chunk or up to two chunks away.
+  const MAX_CHUNK_DISTANCE = 4; // Used by the coarse proximity gate: double the previous two-chunk range to four chunks.
   const IDLE_RECHECK_MS = 250; // Used only while no snore is playing so range/night checks stay cheap off-screen.
   const FAILED_START_RETRY_MS = 1000; // Used to avoid frame-spamming a temporarily blocked audio backend.
   const SNORE_TEMPO = 1 / 9; // Used to triple the existing one-third-speed Grehlr snore's audible duration.
   const SHORT_SNORE_TEMPO = 2 / 3; // Used by the short follow-up so its authored utterance lasts 50% longer while keeping the separate +2-semitone pitch.
   const SHORT_SNORE_PITCH_OFFSET = 2; // Raises only the short follow-up by a couple of semitones.
-  const ACOUSTIC_EARSHOT_CHUNKS = 5; // Used only for smooth distance/elevation attenuation after the stricter two-chunk gate passes.
+  const ACOUSTIC_EARSHOT_CHUNKS = 10; // Used for smooth distance/elevation attenuation; doubled with the four-chunk activation radius.
   const SCHEDULER_ID = 'banubu-night-snore'; // Used to keep development reloads from registering duplicate frame subscribers.
 
   let nextAttemptAtMs = 0; // Used to enforce the measured post-snore silence and throttle inactive/failed checks.
@@ -22,11 +22,14 @@
   let nextSnorePhase = 'long'; // Chooses the long or short call when the next eligible frame starts playback.
   let cycleDurationMs = 0; // Accumulates audible durations of the two calls for the following equal-length pause.
   let activeSnoreToken = 0; // Invalidates delayed audio callbacks after dialogue or disposal cancels a call.
+  let discoveredOnThisInteriorVisit = false; // Avoids reading and rewriting persistent map-discovery metadata on every audio tick.
 
   const debugState = {
     status: 'booting',
     area: null,
     night: false,
+    caveVisualAlpha: 0, // Used by mobile diagnostics to identify cave visibility at any calendar hour.
+    gatedEntrances: 0, // Counts the real layout and scene transitions whose activity follows the cave facade.
     originSource: null,
     transitionId: null,
     entranceCol: null,
@@ -201,7 +204,7 @@
       acousticGain,
     });
 
-    if (chunkDistance > MAX_CHUNK_DISTANCE) return { ok: false, reason: `outside two-chunk range (${chunkDistance})` };
+    if (chunkDistance > MAX_CHUNK_DISTANCE) return { ok: false, reason: `outside four-chunk range (${chunkDistance})` };
     if (acousticGain <= 0) return { ok: false, reason: 'acoustically out of range' };
 
     return {
@@ -342,9 +345,44 @@
     return true;
   }
 
+  function syncBanubuEntranceVisibility(deps, alpha) {
+    const visible = alpha > 0.05; // Matches the cave facade's existing camera-obstacle threshold; ghost-invisible entrances are not interactable.
+    const layout = deps?.zoneLayouts?.get?.(BANUBU_AREA_ID); // Final Tothal-shifted layout contains the relocated, authored cave transition.
+    const scene = deps?.zoneScenes?.get?.(BANUBU_AREA_ID); // Cached renderer scenes sometimes carry distinct copies of the same transition.
+    const transitions = new Set([...(layout?.transitions || []), ...(scene?.transitions || [])]); // Only a few transitions exist; no world-object scan is required.
+    let matched = 0; // Exposed in the mobile debug snapshot to verify that the cave can be entered only while visible.
+    for (const transition of transitions) {
+      if (!transition || (transition.generatedLocaleId !== BANUBU_LOCALE_ID
+        && transition.id !== `sp_locale_${BANUBU_LOCALE_ID}`
+        && transition.targetMapId !== BANUBU_INTERIOR_ID)) continue;
+      matched++;
+      if (!visible) {
+        if (!Object.prototype.hasOwnProperty.call(transition, '__banubuVisibleTarget')) {
+          transition.__banubuVisibleTarget = transition.target; // Save even an undefined original target; only the ordinary transition handler owns its meaning.
+        }
+        transition.target = 'banubu_cave_hidden'; // Existing transition selection ignores unknown types, exactly like puzzle_cave_locked.
+      } else if (Object.prototype.hasOwnProperty.call(transition, '__banubuVisibleTarget')) {
+        transition.target = transition.__banubuVisibleTarget;
+        delete transition.__banubuVisibleTarget;
+      } else if (transition.target === 'banubu_cave_hidden') {
+        delete transition.target; // A serialized daytime transition may lose its undefined original-target marker; restore the authored missing-target default.
+      }
+    }
+    debugState.caveVisualAlpha = alpha;
+    debugState.gatedEntrances = matched;
+  }
+
   function update(frameContext = {}) {
     const timestamp = finite(frameContext.timestamp, nowMs());
-    const deps = gameDeps(); // Dialogue state is authoritative even while a slowed snore is already playing.
+    const alpha = window.ZoneDenTotemFeatures?.updateBanubuVisibility?.() // Keep the cave facade and its interaction gate driven by the same dusk/dawn alpha.
+      ?? (window.Fishing?.timeOfDay?.() === 'night' ? 1 : 0);
+    const deps = gameDeps();
+    syncBanubuEntranceVisibility(deps, alpha); // Prevent daytime entry through a completely invisible cave mouth. // Dialogue state is authoritative even while a slowed snore is already playing.
+    const insideBanubu = currentArea(deps) === BANUBU_INTERIOR_ID; // Reused for one-shot discovery on interior transitions.
+    if (insideBanubu && !discoveredOnThisInteriorVisit && window.WildernessMap?.discoverEnteredLocale) {
+      window.WildernessMap.discoverEnteredLocale(BANUBU_LOCALE_ID); // Never discover the cave from exterior fog proximity.
+      discoveredOnThisInteriorVisit = true;
+    } else if (!insideBanubu) discoveredOnThisInteriorVisit = false;
     if (deps?.isDialogueOpen?.() && (currentArea(deps) === BANUBU_INTERIOR_ID || currentArea(deps) === BANUBU_AREA_ID)) {
       activeSnoreToken++;
       activeSnoreController?.abort();

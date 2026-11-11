@@ -71,7 +71,6 @@ assert.match(ranged, /InteriorDoorTiles\?\.blocksBox\?\.\(deps\.getCurrentArea\(
 assert.match(ranged, /function engagementRangePx\(itemKey\)[\s\S]{0,220}RANGE_FALLOFF_DISTANCE_MULTIPLIER/, "ranged engagement radius follows the projectile's actual maximum travel distance");
 assert.match(ranged, /function rangedAttackRadiusPx\(entity\)[\s\S]{0,260}rangedAttackRadiusPx/, 'an enemy definition may reduce its ranged attack radius without exceeding projectile reach');
 assert.match(ranged, /if \(distToPlayer > maxRange\) \{\s*return \{ aimAngle, moving: false, handled: true, holdingRange: true \}/, 'ranged bandits hold position instead of approaching targets');
-assert.match(ranged, /function hasLineOfSight\(observer, target\)/, 'ranged collision exposes the NPC visibility entry point');
 assert.match(ranged, /const result = computeBanditLos\(observer, target, \{ projectileRadiusPx: 0, losTerrainStepTiles: 0\.25 \}\)/, 'NPC perception uses the real terrain and cover segment test');
 assert.match(ranged, /NearbyVolumeCollision\?\.segmentSightHit/, 'NPC sight uses the setting-independent semantic-cover query');
 assert.match(nv, /function ensureCandidates\(forSight = false\)[\s\S]{0,260}if \(!deps \|\| \(!forSight && \(!options\.enabled \|\| !options\.projectiles\)\)\)/, 'sight candidate indexing bypasses projectile-only settings while ordinary projectile checks still respect them');
@@ -79,7 +78,6 @@ assert.match(ranged, /sceneGeometrySightBlock\(segment\)/, "NPC perception rayca
 assert.match(game, /getSightOccluders: enemySightOccluders/, 'game supplies cached active-area wall and building meshes to NPC sight');
 assert.match(enemySearch, /_enemyLastSeenX = target\.x[\s\S]{0,1400}_enemySearchLastKnownX = freshSighting \? c\._enemyLastSeenX/, 'search begins from a recently confirmed visible position (behavior covered by test-enemy-search-last-seen.js)');
 assert.match(ranged, /hasLineOfSight,/, 'ranged collision exposes the shared geometric LOS check');
-assert.match(enemySearch, /targetInsideAttackCone[\s\S]{0,180}RangedWeapons\?\.hasLineOfSight/, 'enemy acquisition requires both facing and geometric LOS');
 assert.doesNotMatch(game, /distToPlayer > def\.leashRangePx/, 'player distance alone cannot immediately break combat');
 assert.match(game, /lastKnownDistance > TILE \* 0\.45[\s\S]{0,180}moveCreatureToward\(c, lastKnownX, lastKnownY, def\.chaseSpeed, entityDt\)/, 'searching hostiles navigate toward their last-known player position');
 assert.doesNotMatch(game, /function (enemyCanSeeTarget|beginEnemySearch|updateEnemySearch|enemyAttackAlignment|enemyAttackBusy)\(/, 'no duplicate enemy search implementation remains in game.js');
@@ -90,9 +88,10 @@ assert(coreTag > 0 && searchTag > coreTag && searchTag < gameTag, 'enemy-search-
 
 let inCone = false;
 let lineOfSightClear = true;
+let sightNow = 1000; // Drives real perception samples instead of assuming one geometry query per render frame.
 const searchRuntime = {
   THREE: { MathUtils },
-  performance: { now: () => 1000 },
+  performance: { now: () => sightNow },
   window: {
     FormatUtils: { clamp: MathUtils.clamp },
     Combat: { targetInsideAttackCone: () => inCone, postAttackTurnMultiplier: () => 1 },
@@ -113,6 +112,7 @@ assert.equal(AI.enemyCanSeeTarget(meleeGuard, distantTarget, 500), false, 'melee
 target.x = 25;
 target.y = 100; // The player moves around the NPC to the opposite side after disappearing.
 lineOfSightClear = false;
+sightNow += 101; // The next 10 Hz geometry decision must observe the wall.
 assert.equal(AI.enemyCanSeeTarget(hostile, target, 500), false, 'a wall blocks the next sight sample');
 AI.beginEnemySearch(hostile, target);
 assert.equal(hostile.state, 'searching');
@@ -130,6 +130,7 @@ lineOfSightClear = false;
 AI.updateEnemySearch(hostile, 0.1, target);
 assert.equal(hostile.state, 'searching', 'a wall still blocks reacquisition inside the facing cone');
 lineOfSightClear = true;
+sightNow += 101; // Reacquisition follows a fresh geometry sample.
 AI.updateEnemySearch(hostile, 0.1, target);
 assert.equal(hostile.state, 'chase', 'regaining geometric line of sight resumes the chase');
 inCone = false;

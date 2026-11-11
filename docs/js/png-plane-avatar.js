@@ -832,12 +832,14 @@
     const planeGeo = new THREE.PlaneGeometry(config.planeWidth, config.planeHeight);
     const frontMesh = new THREE.Mesh(planeGeo, makeSpriteMaterial(THREE, config.textures.frontOriginal, 'npc_avatar_front_material'));
     frontMesh.name = 'npc_avatar_front_plane';
+    frontMesh.userData.noOutline = true; // The portrait PNG owns the character body's silhouette ink.
     frontMesh.position.z = config.anchorZ;
     frontMesh.renderOrder = 2;
     group.add(frontMesh);
 
     const backMesh = new THREE.Mesh(planeGeo.clone(), makeSpriteMaterial(THREE, config.textures.backForOriginal, 'npc_avatar_back_material'));
     backMesh.name = 'npc_avatar_back_plane';
+    backMesh.userData.noOutline = true; // Only the separate volumetric hands and feet need generated outlines.
     backMesh.position.z = config.anchorZ - (cfg().backPlaneOffsetZ ?? 0.001);
     backMesh.rotation.y = Math.PI;
     backMesh.renderOrder = 2;
@@ -949,12 +951,14 @@
     frontMesh.rotation.y = Math.PI / 2;
     frontMesh.renderOrder = 2;
     frontMesh.name = (options.name || 'animal') + '_front_plane';
+    frontMesh.userData.noOutline = true; // Animal sprites are already outlined in their art.
 
     const backMesh = new THREE.Mesh(backGeo, backMat);
     backMesh.position.x = -faceSeparation;
     backMesh.rotation.y = -Math.PI / 2;
     backMesh.renderOrder = 2;
     backMesh.name = (options.name || 'animal') + '_back_plane';
+    backMesh.userData.noOutline = true; // Preserve inked silhouette without a generated shell.
 
     const group = new THREE.Group();
     group.name = (options.name || 'animal_plane') + '_group';
@@ -1299,7 +1303,7 @@
     const anchorZ = options.anchorZ ?? cfg().anchorZ ?? 0;
     const textures = buildTextureSet(THREE,
       sourceCanvas.hobunjiSplineBaseCanvas || sourceCanvas,
-      (options.backCanvas || options.backImage)?.hobunjiSplineBaseCanvas || options.backCanvas || options.backImage || null); // 2D UI retains its complete portrait; WebGL receives the no-double-draw base.
+      (options.backCanvas || options.backImage)?.hobunjiSplineBaseCanvas || options.backCanvas || options.backImage || null); // Preserve complete 2D portraits while avoiding duplicate hair in the 3D base.
     const root = new THREE.Group();
     root.name = options.name || 'Temporary_NPC_Portrait_Model';
     root.userData = {
@@ -1403,7 +1407,7 @@
     };
     root.userData.armLengthSource = Number.isFinite(rigArmLength) && rigArmLength > 0 ? 'attachment-rig-shoulder-to-resting-wrist' : 'legacy-species-config';
     root.add(assembly);
-    window.PortraitSplineRig?.attach?.(THREE, root, assembly, sourceCanvas, options.backCanvas || options.backImage || null, modelWidth, modelHeight); // Authored head appendages share the neck bone and need no per-actor scheduler.
+    window.PortraitSplineRig?.attach?.(THREE, root, assembly, sourceCanvas, options.backCanvas || options.backImage || null, modelWidth, modelHeight); // Use existing neck/head attach rig.
     root.userData.sourceCanvas = sourceCanvas;
     root.userData.backCanvas = options.backCanvas || options.backImage || null;
     root.userData.frontTexture = textures.frontOriginal;
@@ -1433,13 +1437,13 @@
       drawVariantCanvas(root.userData.backTexture.image, nextSource, { flipX: true, blackSilhouette: true });
       root.userData.backTexture.needsUpdate = true;
     }
-    window.PortraitSplineRig?.refresh?.(root, nextSource, nextBack); // Keep separately tinted strands current after wardrobe/expression changes.
+    window.PortraitSplineRig?.refresh?.(root, nextSource, nextBack); // Refresh hairstyle on wardrobe/expression changes.
     return true;
   }
 
   function disposeAvatarModel(root) {
     if (!root) return;
-    window.PortraitSplineRig?.detach?.(root); // Release mobile debug references when the owning avatar is discarded.
+    window.PortraitSplineRig?.detach?.(root); // Release child geometry before other avatar materials.
     portraitGlowModels.delete(root);
     for (const glowLight of root.userData?.portraitGlowLights || []) { glowLight.parent?.remove(glowLight); glowLight.dispose?.(); }
     if (root.userData) { root.userData.portraitGlowLights = []; root.userData.portraitGlowLight = null; }

@@ -34,6 +34,9 @@
     ['EntityDistanceLod', 'entity-distance-lod.js?v=20260919b'],
     // View-direction counterpart: hostile leg/hand procedural animation pauses while the actor is behind or beside the camera.
     ['OffscreenRigLod', 'offscreen-rig-lod.js?v=20261107a'],
+    // Whole-NPC camera broad-phase: temporarily hides off-view visual rigs
+    // across every color/depth/outline pass without pausing walker simulation.
+    ['NpcViewFrustumCull', 'npc-view-frustum-cull.js?v=20261110npcReplayCull2'],
     ['WildernessSimulationLOD', 'wilderness-simulation-lod.js?v=20261109tribeAiSleepPerf1'],
     // Wildlife's own visibility/render-cost LOD (distance-hidden avatar/shadow/ring HUD), sibling to the bandit-sleep LOD just above.
     ['WildlifeVisualLod', 'wildlife-visual-lod.js?v=20261108h3efca83'],
@@ -46,7 +49,7 @@
     // Porakaneki temporary locales can clear ordinary procedural shrub/rock clutter and relax only their own placement margins when dense wilderness would otherwise prevent any camp from existing.
     ['PorakanekiCampPlacementPolicy', 'porakaneki-camp-placement-policy.js?v=20261105h58f3c87'],
     // Porakaneki camp network: distance/hysteresis LOD, shared den-to-den hunting parties, planner-owned destinations, shared hostile-loop locomotion/rendering, and seasonal chief migration.
-    ['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20261109tribeAiSleepPerf1'],
+    ['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20261110banubuNightAudit3'],
     // Keeps neutral Porakaneki off companion target lists, classifies self-defense vs initiated kills, applies Omgurku rivalry favor, and composes the faction rename into NPC database loads.
     ['PorakanekiFactionRules', 'porakaneki-faction-rules.js?v=20261104faction-luau1'],
     // Map-only locale proxies: chief camp is always known; each little camp gets its own independent discovery identity through the existing wilderness-map fog/discovery system.

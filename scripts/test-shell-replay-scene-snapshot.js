@@ -114,8 +114,10 @@ assert.match(replay, /let replayCandidates = null;/,
   'shell candidate snapshot remains in scope through the final depth restore');
 assert.match(replay, /replayCandidates = collectShellReplayCandidates\(scene\)/,
   'shell replay captures the scene after temporary culling is installed');
-assert.equal((replay.match(/prepareNonGroundDepthMaterials\(scene, replayCandidates\.depth\)/g) || []).length, 2,
-  'grouped depth pass and final depth restore both reuse that one candidate set');
+assert.equal((replay.match(/prepareNonGroundDepthMaterials\(scene, replayCandidates\.depth\)/g) || []).length, 1,
+  'all elevation groups and the final depth restore share one colorless-material transaction');
+assert.match(replay, /if \(depthStates\) restoreMaterialStates\(depthStates\)/,
+  'depth material mutations restore once in finally even if a shell draw throws');
 assert.match(replay, /hideNonXrayShellMeshes\(scene, groupSet, replayCandidates\.shell\)/,
   'every elevation group uses cached shell candidates');
 

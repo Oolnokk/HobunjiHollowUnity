@@ -12,6 +12,100 @@ conditions on the same machine; they are not what a player sees.** Counts come f
 comes from CDP CPU profiles. One headless world per run, and bandit/tribe camps are random, so repeat anything
 close before trusting it.
 
+## 10–11 Nov 2026: camera-aimed NPC visual cost and depth replay
+
+An Opera recording of Tzizkhanash reported **2–4 FPS** while looking
+across the crowded town, versus **13 FPS** looking at the sky from the
+same session. The user independently identified NPCs as the trigger.
+These are real on-device FPS observations, but **not** controlled GPU
+time measurements; changes of scene coverage and render passes can
+contribute. Avoid comparing different camera angles as matched
+benchmarks.
+
+The NPC walker visuals include skinned PNG portrait planes, GLB hands,
+feet, and pants. Several intentionally set `frustumCulled=false` to
+protect moving/deformed vertices. That is safe for correctness, but
+Three.js continues submitting them in the world draw and repeated
+x-ray/depth renders even when the entire NPC is outside the camera
+or an already-scissored depth-repair region.
+
+- `NpcViewFrustumCull` uses a **generous actor-root sphere**, not
+  untrustworthy skinned-mesh bind-pose bounds. It suspends complete
+  off-camera NPC visual roots *only within the synchronous world-render
+  call*, restoring them in `finally` before NPC schedules, collision,
+  dialogue and animation update. Near and very large actors retain
+  generous bounds. NPC simulation remains fully active.
+- Both held-object and shell-outline **local colorless-depth replays**
+  now skip unrelated NPC visual roots whose entire conservative sphere
+  is outside the group scissor. Meshes belonging to the group being
+  reconstructed are explicitly protected; global depth restoration
+  and tile/elevation x-ray shader policy remain unchanged. Every
+  temporarily hidden rig is restored immediately after its depth draw.
+- The PNG occluder registry now checks ancestor visibility, so
+  render-suspended NPCs don't force an unnecessary alpha-cutout
+  occlusion draw. It retains entries for attached but hidden NPCs and
+  prunes only actually detached/despawned portraits.
+- Settings > **Performance & diagnostics** includes two mobile-accessible
+  A/B controls: default-on *Cull completely off-camera NPC visuals*
+  and opt-in *Hide ALL NPC visuals (diagnostic ONLY)*. The latter
+  deliberately makes scheduled NPCs visually absent but leaves
+  simulation running; turn it off after comparing the **same view**.
+  The profiler reports main-view hidden NPCs plus local depth-replay
+  skips so a zero-effect case can be distinguished from an actual
+  optimization.
+- Regressions: `scripts/test-npc-view-frustum-cull.js` and
+  `scripts/test-npc-png-depth-ancestor-cull.js` exercise shipping
+  helpers, scene ownership, near/oversized actors, camera changes,
+  protected x-ray owners, errors, and reversible PNG registry state.
+
+**Tradeoff:** the new culling removes out-of-view visual work, not the
+draw cost of NPCs genuinely visible in the current camera view.
+The user should compare identical angles with view culling on/off
+and with NPC visuals temporarily hidden to quantify the residual
+visible-rig cost. Actual per-scene FPS gains are **unmeasured**.
+
+## 10 Nov 2026: held replay, hostile perception and reticle hitbox work
+
+Targeted follow-up to the historical 19–29 ms held replay, 10–12 ms `updateHostiles`
+and 2–7.5 ms shoulder reticle baselines below. These changes remove identified
+redundant work; those old timings are **not** post-change measurements.
+
+- Held parts proven unable to intersect their holder's same-floor neighborhood now
+  retain base world depth. A colorless supplement repairs PNG cutout and protected
+  cover depth while skipping ordinary opaque leaves. With only ordinary participants,
+  replay uses two passes instead of three, without redrawing opaque terrain in the
+  supplement. Real x-ray groups still rebuild depth and restore ground before tint.
+  The exception remains the holder's tile plus eight neighbors at its standing floor;
+  distant walls and cover continue to occlude. Unknown bounds/ownership and renderers
+  without color-mask locking keep the existing conservative path.
+- `EnemySearchAI` leases geometry perception for at most 100 ms, staggered across a
+  crowd. Range and facing eligibility, movement, cooldowns and attacks remain live.
+  Target/area changes query immediately; cached visibility never fabricates updated
+  last-seen coordinates. A 60 Hz deterministic moving-crowd fixture performs 318
+  geometry queries instead of 1,800 for 30 actors over one second (321 including
+  explicit invalidation checks). Tradeoff: a new geometry occluder can take up to
+  100 ms to affect perception.
+- `RangedWeapons.actorHitbox` now uses the existing game-frame serial shared by AI,
+  reticle and projectile consumers. Slow frames no longer expire the old 16 ms cache
+  in the middle of a batch. Position changes invalidate within a frame, and standalone
+  tools retain their short wall-clock fallback. Hitbox math is unchanged.
+
+Review follow-up: hitbox reuse also validates each portrait ancestor's position,
+quaternion, scale and identity, using reusable metadata. Nested rigs invalidate on
+parent movement or reparenting within a slow frame; manually managed matrix nodes
+use fresh geometry. A composed perception/LOS regression also found that the first
+60 ms staggered decision could reuse the inner 80 ms LOS cache and defer a new wall
+until the next decision. Due perception decisions now explicitly refresh geometry,
+so the two leases cannot stack. Both regressions failed before these fixes.
+
+`test-held-ordinary-depth-budget.js` executes the compositor with ordinary, mixed,
+fallback and throwing-renderer fixtures; `test-combat-hotpath-budgets.js` executes
+perception and hitbox ownership. Pixel Probe exposes saved depth clears/skipped
+leaves, sight queries/reuses and hitbox builds/reuses. Draw savings are CPU
+submission counts in controlled fixtures, **not** real-device FPS or GPU timings.
+A live headless launch was attempted, but this environment denied Chromium's
+process-singleton socket (`Operation not permitted`), before any game page ran.
+
 ## 10 Nov 2026: attack-frame hitch investigation — pooled melee swipe ribbons
 
 The shared `Combat.spawnMeleeTrail` path, used by player and humanoid/bandit strike effects, allocated
@@ -235,10 +329,10 @@ Ranked roughly by how much the numbers say they matter. None of these were the "
    scene (758). Turning outlines off cut draw calls and triangles by 59% and render CPU by ~40%; a trace from a
    player's real machine during a ~28-bandit fight showed world render passes 104 → 60 ms with outlines off. It scales with the number of
    outlined characters. Untested idea: outline only the nearest few.
-2. **`updateHostiles`**: ~10–12 ms per frame with 30 bandits (JS, not GL), independent of outlines. Matches the
+2. **`updateHostiles`** (perception work reduced by the 10 Nov follow-up above; re-profile remaining cost): ~10–12 ms per frame with 30 bandits (JS, not GL), independent of outlines. Matches the
    real-hardware trace (10–12 ms).
-3. **`updateShoulderSurfReticleAim`**: 0.2 ms empty → 2–7.5 ms with 30 bandits (it varied between runs).
-4. **Held-object overlay replay** (`held-object-render-order.js`): 19–29 ms in the real-hardware trace and it stays
+3. **`updateShoulderSurfReticleAim`** (shared frame hitboxes added above; re-profile remaining cost): 0.2 ms empty → 2–7.5 ms with 30 bandits (it varied between runs).
+4. **Held-object overlay replay** (`held-object-render-order.js`; ordinary-depth replay reduced above; re-profile actual x-ray/shell groups): 19–29 ms in the real-hardware trace and it stays
    with outlines off. The pass-start stack traces point at `replaySelectiveHeldOverlay` and `replayShellOutlineXray`.
 5. **Scheduler `checkpoint` ~5.5 ms**: this is only the dispatcher for every `pre-render` subscriber, so it is the sum
    of many modules. The scheduler's `getDebug()` has per-subscriber timings; the real-hardware trace named

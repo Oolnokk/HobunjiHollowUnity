@@ -115,7 +115,7 @@ const timed=compose({THREE,parent,room,id:'music-test',kind:'timedMelody',y:0,ar
   isActive:()=>activeArea===area,onSolved:()=>awarded++,getPlayerPosition:()=>player,getPlayerY:()=>0,
   music,events,puzzleCaveMelody:Song,songOptions:{difficulty:5},DynamicSurfaces:dynamicSurfaces,AreaFootprintBlockers:areaFootprints,
 });
-assert.equal(timed.song.measures,2);
+assert.equal(timed.song.measures,4,'highest-tier cave melodies occupy four full measures');
 const chamber=parent.children.find(child=>child.name==='ruin-layer-challenge-music-test');
 const musicPosts=chamber.children.filter(child=>/^puzzle-cave-melody-pillar-\d+$/.test(child.name));
 assert.equal(musicPosts.length,2,'a cave melody has two symmetrical freestanding carved pillars');

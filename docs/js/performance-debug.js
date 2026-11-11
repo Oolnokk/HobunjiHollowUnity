@@ -306,6 +306,8 @@
       .sort((a, b) => b[1].samples - a[1].samples);
     const wildlifeLod = root.WildernessSimulationLOD?.snapshot?.(); // Adds active/sleeping creature counts to the same mobile-visible overlay.
     const outlinePerfLine = outlineRenderPerfLine();
+    const npcVisual = root.NpcViewFrustumCull?.snapshot?.() || null; // Counters for the last world-render view, independent of NPC simulation.
+    const actorOcclusion = root.ActorRenderOcclusion?.snapshot?.() || null; // Mobile-query culling counts without devtools.
     const schedulerProfile = schedulerProfileSnapshot();
     const schedulerOutsideMs = schedulerProfile?.outsideGameLoopMs || 0;
     const unattributedFrameMs = gameLoopTotal ? perfState.frameMs - gameLoopTotal.avg - schedulerOutsideMs : null;
@@ -330,6 +332,8 @@
         ? `Scheduler top (avg ≥${SCHEDULER_SUBSCRIBER_DISPLAY_FLOOR_MS}ms):\n${schedulerTop.map(entry => `  ${entry.id} [${entry.phase}] ${entry.averageDurationMs.toFixed(2)} ms  last ${entry.lastDurationMs.toFixed(2)} ms  ×${entry.callCount}`).join('\n')}`
         : (schedulerProfile?.profilingEnabled ? 'Scheduler top: none above display floor yet' : 'Scheduler timings: profiler disabled'),
       ...(outlinePerfLine ? [outlinePerfLine] : []),
+      npcVisual ? `NPC view cull: ${npcVisual.hidden}/${npcVisual.eligible} camera-hidden · ${npcVisual.replayHidden}/${npcVisual.replayChecks} depth-replay skips · ${npcVisual.close} near · ${npcVisual.inside} onscreen${npcVisual.diagnostic ? ' · TEST: all NPC visuals hidden' : ''}` : 'NPC view culling: unavailable',
+      actorOcclusion ? `Actor occlusion: ${actorOcclusion.frustumHidden} frustum · ${actorOcclusion.occludedHidden} covered · ${actorOcclusion.visible} drawn · ${actorOcclusion.probes} GPU probes · ${actorOcclusion.queriesPending} pending · ${actorOcclusion.gpuAvailable ? 'WebGL2 active' : actorOcclusion.gpuError ? 'fail-open' : 'GPU unavailable'}` : 'Actor occlusion: unavailable',
       `Render CPU ${avgRender.toFixed(2)} ms`,
       `Draw calls ${formatCount(perfState.calls)}   tris ${formatCount(perfState.triangles)}`,
       `GPU refs  geom ${formatCount(perfState.geometries)}   tex ${formatCount(perfState.textures)}`,
@@ -1051,6 +1055,23 @@
     perf.input.addEventListener('change', () => setProfilerEnabled(perf.input.checked));
     box.appendChild(perf.row);
 
+    const npcCull = makeCheckboxRow('settingNpcViewCull', 'Cull completely off-camera NPC visuals', root.NpcViewFrustumCull?.enabled !== false,
+      'Camera-frustum culling for complete NPC visual rigs, including the normally uncullable skinned portrait, hands, feet and pants. Schedules, movement and social AI remain active. Default on; switch off to A/B the visual cost without changing NPC behavior.');
+    npcCull.input.addEventListener('change', () => root.NpcViewFrustumCull?.setEnabled?.(npcCull.input.checked));
+    box.appendChild(npcCull.row);
+    const actorRender = makeCheckboxRow('settingActorRenderCull', 'Cull invisible NPC and enemy rigs', root.ActorRenderOcclusion?.snapshot?.()?.enabled !== false,
+      'Skips whole character rigs only during drawing, preserving all AI, combat, schedules, interaction, outlines and 3x3-tile weapon x-ray. Camera frustum is always safe; WebGL2 can additionally skip fully covered characters after multiple asynchronous tests. Disable to A/B at the same camera angle.');
+    actorRender.input.addEventListener('change', () => root.ActorRenderOcclusion?.setEnabled?.(actorRender.input.checked));
+    box.appendChild(actorRender.row);
+    const gpuOcclusion = makeCheckboxRow('settingGpuActorOcclusion', 'Use GPU cover checks for hidden actors', root.ActorRenderOcclusion?.snapshot?.()?.gpuEnabled !== false,
+      'WebGL2 only: asynchronously checks a conservatively oversized NPC/enemy bounding volume against existing scene depth, without readPixels or a GPU stall. Covers actors obscured by buildings and other opaque objects. Turn off to compare GPU query overhead while preserving simple frustum culling.');
+    gpuOcclusion.input.addEventListener('change', () => root.ActorRenderOcclusion?.setGpuEnabled?.(gpuOcclusion.input.checked));
+    box.appendChild(gpuOcclusion.row);
+    const npcHidden = makeCheckboxRow('settingNpcHideVisuals', 'Hide ALL NPC visuals (diagnostic ONLY)', root.NpcViewFrustumCull?.diagnosticHideAll === true,
+      'Temporarily hides only scheduled NPC render rigs, not their AI, movement or collision. Close this menu and compare FPS at the SAME camera angle, then turn it off. NPCs remain interactive but invisible while this diagnostic is enabled.');
+    npcHidden.input.addEventListener('change', () => root.NpcViewFrustumCull?.setDiagnosticHideAll?.(npcHidden.input.checked));
+    box.appendChild(npcHidden.row);
+
     const livestockTrace = makeCheckboxRow('settingTraceLivestockCallers', 'Trace livestock callers (expensive)', traceLivestockCallers,
       'Captures a stack for livestock reads while Performance Profiler is enabled. Off on every reload; leave off for normal performance measurements.'); // Mobile-accessible opt-in for the nursery caller investigation.
     livestockTrace.input.addEventListener('change', () => { traceLivestockCallers = livestockTrace.input.checked; });
@@ -1278,6 +1299,8 @@
         geometries: perfState.geometries,
         textures: perfState.textures,
         geometryCategories: { ...perfState.geometryCategories },
+        npcViewCull: root.NpcViewFrustumCull?.snapshot?.() || null, // Mobile-copyable proof of actual cull counts and diagnostic state.
+        actorOcclusion: root.ActorRenderOcclusion?.snapshot?.() || null, // Mobile-copyable actor GPU query and frustum statistics.
         scanMs: perfState.scanMs,
         scheduler: schedulerProfileSnapshot(),
         subsystems: Object.fromEntries([...perfState.subsystem.entries()].map(([key,value]) => [key,{...value}]))

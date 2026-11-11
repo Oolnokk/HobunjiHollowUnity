@@ -1257,8 +1257,8 @@
     set.session=composer.createSession(song,{
       lookaheadMs:window.AudioSystem?.metronomeLookaheadMs||0, // Uses the performance transport's 90 ms lookahead when the game's Web Audio adapter is installed.
       clockMs:window.AudioSystem?.metronomeLookaheadMs?()=>window.performance?.now?.()??Date.now():null, // Audio and score glyphs share the same monotonic clock.
-      onStop:()=>window.RuinInteractionAudio?.metronomeStop?.(), // Stop queued future beats on plate exit or solve.
-      onBeat:beat=>window.RuinInteractionAudio?.metronomeTick?.(beat),
+      onStop:()=>{window.RuinInteractionAudio?.metronomeStop?.();window.MusicMinigame?.clearPuzzleBeatClock?.();}, // No stale flute clock after the score resets.
+      onBeat:beat=>{if(beat.absoluteBeat===0)window.MusicMinigame?.setPuzzleBeatClock?.(song.bpm,beat.whenMs);window.RuinInteractionAudio?.metronomeTick?.(beat);},
       onSolved:()=>completeEchoSet(set),
       onChanged:snapshot=>{
         if(snapshot.mistakes>set.mistakes){
@@ -2421,7 +2421,7 @@
     const note=event.detail?.noteIndex; // Only player-entered single notes may advance a ruin melody; the plate's automatic example never emits them.
     if (!Number.isInteger(note) || note<0 || note>=(window.KurrayaPuzzle?.NOTE_CODES?.length ?? 8)) return;
     for (const set of state.chordPlateSets) {
-      if(!set.solved)set.session?.note(note); // The shared judge rejects off-plate, early, late and incorrect notes.
+      if(!set.solved)set.session?.note(note,event.detail.pressedAtMs); // Judge physical input time, not the next render frame.
     }
   });
 

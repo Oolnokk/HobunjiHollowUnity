@@ -573,24 +573,24 @@ assert.ok(shellReplayStart >= 0 && shellReplayEnd > shellReplayStart,
   'the renderer has a dedicated shell x-ray replay');
 const shellReplay = heldRender.slice(shellReplayStart, shellReplayEnd);
 const shellGroundFilterAt = shellReplay.indexOf('setGroundElevationFilter(groundMaterials, group)');
-const shellDepthAt = shellReplay.indexOf('prepareNonGroundDepthMaterials(scene, replayCandidates.depth)', shellGroundFilterAt);
+const shellDepthAt = shellReplay.indexOf('prepareNonGroundDepthMaterials(scene, replayCandidates.depth)');
 const shellDepthDrawAt = shellReplay.indexOf('rawRender.call(renderer, scene, camera)', shellDepthAt);
 const shellOnlyAt = shellReplay.indexOf('hideNonXrayShellMeshes(scene, groupSet, replayCandidates.shell)');
 const shellOutlineDrawAt = shellReplay.indexOf('rawRender.call(renderer, scene, camera)', shellOnlyAt);
 const shellRestoreAt = shellReplay.indexOf('renderer.clearDepth();', shellOutlineDrawAt);
-const shellDepthRestoreAt = shellReplay.indexOf('prepareNonGroundDepthMaterials(scene, replayCandidates.depth)', shellRestoreAt);
+const shellDepthRestoreAt = shellReplay.indexOf('if (depthStates) restoreMaterialStates(depthStates)', shellRestoreAt);
 assert.match(shellReplay, /material\.depthTest = true;\s*material\.depthWrite = true;/,
   'source-mesh depth remains available to mask the expanded back-face shell');
-assert.ok(shellGroundFilterAt >= 0 && shellGroundFilterAt < shellDepthAt
-  && shellDepthAt < shellDepthDrawAt && shellDepthDrawAt < shellOnlyAt
+assert.ok(shellDepthAt >= 0 && shellDepthAt < shellGroundFilterAt
+  && shellGroundFilterAt < shellDepthDrawAt && shellDepthDrawAt < shellOnlyAt
   && shellOnlyAt < shellOutlineDrawAt && shellOutlineDrawAt < shellRestoreAt && shellRestoreAt < shellDepthRestoreAt,
-  'shell replay filters only same-elevation ground, draws the matching shells, then restores full scene depth');
-assert.ok(heldRender.includes('const shellCandidates = [...new Set([...held, ...feet])].filter(mesh => hasLayer(mesh, SHELL_LAYER))')
+  'shell replay prepares depth once, changes only the per-group elevation mask, then restores complete depth and materials');
+assert.ok(heldRender.includes('const shellCandidates = [...new Set([...held, ...feet])].filter(mesh => hasLayer(mesh, SHELL_LAYER) && !isAuthoredInkPlane(mesh))')
   && heldRender.includes('const xrayMeshes = filterOffscreenReplayMeshes(camera, shellCandidates)'),
   'all held/foot ground-x-ray participants retain shell parity before conservative camera culling');
 assert.ok(pixelProbe.includes('shellXray=${heldRenderDebug.shellXrayPasses ?? 0}/${heldRenderDebug.shellXrayMeshes ?? 0}'),
   'mobile Pixel Probe reports shell x-ray replay activity');
-assert.ok(heldRender.includes('replayShellOutlineXray(this, scene, camera, xrayMeshes, ground, topFaceGround, scissored, groups, shellPadding)'),
+assert.ok(heldRender.includes('replayShellOutlineXray(this, scene, camera, xrayGroupMeshes, ground, topFaceGround, scissored, groups, shellPadding)'),
   'the shell pass reuses the same classified ground and top-face floor geometry as object x-ray');
 
 // This hard-won ordering contract must stay discoverable to subsequent
@@ -622,7 +622,7 @@ const stencilAt = heldRender.indexOf('prepareSubmergedOverlayStencilMaterials(gr
 const heldDrawAt = heldRender.indexOf("window.PerfProfiler?.begin('held-overlay: elevation overlay render')");
 const tintAt = heldRender.indexOf('const tintStates = prepareOverlayCoverTintMaterials(tintCovers);');
 const coverDepthAt = heldRender.indexOf('const coverDepthStates = prepareTintCoverDepthMaterials(tintCovers);');
-const groundDepthRestoreAt = heldRender.indexOf('const groundMaterialStates = prepareGroundDepthMaterials(', heldDrawAt);
+const groundDepthRestoreAt = heldRender.indexOf('const groundMaterialStates =', heldDrawAt);
 assert.ok(depthClearAt >= 0 && depthClearAt < depthDrawAt && depthDrawAt < stencilAt && stencilAt < heldDrawAt && heldDrawAt < groundDepthRestoreAt && groundDepthRestoreAt < tintAt && tintAt < coverDepthAt,
   'reconstructed solid depth, gear/hand/foot draw, opaque grass-depth restore BEFORE tint, then translucent depth restore');
 
@@ -644,7 +644,7 @@ for (const probe of probes) {
     probe.name + ': a lower flood fragment cannot pass restored opaque grass depth');
 }
 assert.equal(0.5 <= 1.0, true, 'foreground water remains eligible to tint an object behind it');
-assert.match(heldRender, /const groundMaterialStates = prepareGroundDepthMaterials\([\s\S]*?camera.layers.mask = GROUND_REPLAY_MASK/,
+assert.match(heldRender, /const groundMaterialStates =[\s\S]*?prepareGroundDepthMaterials\([\s\S]*?camera.layers.mask = GROUND_REPLAY_MASK/,
   'ground restore runs on the dedicated colorless depth layer');
 assert.match(heldRender, /function prepareGroundDepthMaterials\(ground\)[\s\S]*?material.colorWrite = false/,
   'restoring ground cannot overwrite the already drawn visible held/hand/foot colors');

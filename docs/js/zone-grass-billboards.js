@@ -79,6 +79,7 @@
     mesh.frustumCulled = true;
     mesh.visible = true;
     mesh.userData.isBillboard = true;
+    mesh.userData.noOutline = true; // Grass cards contain their own ink; the volumetric shell pass must ignore them.
     mesh.userData.isWildernessGrassChunk = true;
     mesh.userData.wildernessChunkOwnsGeometry = true;
     mesh.userData.skipOcclusionFade = true;
@@ -285,6 +286,7 @@
       );
       if (!mesh) continue;
       mesh.userData.isRichFoliageBillboard = true;
+      mesh.userData.noOutline = true; // Authored foliage card colors/edges have no generated outline.
       instances += mesh.count;
       group.add(mesh);
     }
