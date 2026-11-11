@@ -307,6 +307,7 @@
     const wildlifeLod = root.WildernessSimulationLOD?.snapshot?.(); // Adds active/sleeping creature counts to the same mobile-visible overlay.
     const outlinePerfLine = outlineRenderPerfLine();
     const npcVisual = root.NpcViewFrustumCull?.snapshot?.() || null; // Counters for the last world-render view, independent of NPC simulation.
+    const actorOcclusion = root.ActorRenderOcclusion?.snapshot?.() || null; // Mobile-query culling counts without devtools.
     const schedulerProfile = schedulerProfileSnapshot();
     const schedulerOutsideMs = schedulerProfile?.outsideGameLoopMs || 0;
     const unattributedFrameMs = gameLoopTotal ? perfState.frameMs - gameLoopTotal.avg - schedulerOutsideMs : null;
@@ -332,6 +333,7 @@
         : (schedulerProfile?.profilingEnabled ? 'Scheduler top: none above display floor yet' : 'Scheduler timings: profiler disabled'),
       ...(outlinePerfLine ? [outlinePerfLine] : []),
       npcVisual ? `NPC view cull: ${npcVisual.hidden}/${npcVisual.eligible} camera-hidden · ${npcVisual.replayHidden}/${npcVisual.replayChecks} depth-replay skips · ${npcVisual.close} near · ${npcVisual.inside} onscreen${npcVisual.diagnostic ? ' · TEST: all NPC visuals hidden' : ''}` : 'NPC view culling: unavailable',
+      actorOcclusion ? `Actor occlusion: ${actorOcclusion.frustumHidden} frustum · ${actorOcclusion.occludedHidden} covered · ${actorOcclusion.visible} drawn · ${actorOcclusion.probes} GPU probes · ${actorOcclusion.queriesPending} pending · ${actorOcclusion.gpuAvailable ? 'WebGL2 active' : actorOcclusion.gpuError ? 'fail-open' : 'GPU unavailable'}` : 'Actor occlusion: unavailable',
       `Render CPU ${avgRender.toFixed(2)} ms`,
       `Draw calls ${formatCount(perfState.calls)}   tris ${formatCount(perfState.triangles)}`,
       `GPU refs  geom ${formatCount(perfState.geometries)}   tex ${formatCount(perfState.textures)}`,
@@ -1290,6 +1292,7 @@
         textures: perfState.textures,
         geometryCategories: { ...perfState.geometryCategories },
         npcViewCull: root.NpcViewFrustumCull?.snapshot?.() || null, // Mobile-copyable proof of actual cull counts and diagnostic state.
+        actorOcclusion: root.ActorRenderOcclusion?.snapshot?.() || null, // Mobile-copyable actor GPU query and frustum statistics.
         scanMs: perfState.scanMs,
         scheduler: schedulerProfileSnapshot(),
         subsystems: Object.fromEntries([...perfState.subsystem.entries()].map(([key,value]) => [key,{...value}]))
