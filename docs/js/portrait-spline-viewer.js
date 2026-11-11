@@ -129,9 +129,17 @@
         mesh.userData.grid=grid;
       }
       const plane=mesh.geometry,p=plane.attributes.position,original=mesh.userData.rest;
+      const maskKey=JSON.stringify([rig.regionMasks?.[rear?'rear':'front'],rig.blendRadiusPx]);
+      if(mesh.userData.blendKey!==maskKey){
+        mesh.userData.blendKey=maskKey; // Rebuild the distance-to-rigid mask only when painting or changing its blend radius.
+        mesh.userData.blendField=window.PortraitSplineRig.attachmentBlendField(
+          rig.regionMasks?.[rear?'rear':'front'],rig.blendRadiusPx);
+      }
+      const field=mesh.userData.blendField;
       for(let i=0;i<p.count;i++){
         const u=original[i*3]+.5,v=.5-original[i*3+1];
-        const at=window.PortraitSplineRig.deformPosition(rig,posed,u,v,1,1);
+        const strength=window.PortraitSplineRig.sampleAttachmentBlend(field,rear?1-u:u,v);
+        const at=window.PortraitSplineRig.deformPosition(rig,posed,u,v,1,1,strength);
         p.setXYZ(i,at.x,at.y,rear?-at.z:at.z);
       }
       p.needsUpdate=true;plane.computeVertexNormals();plane.computeBoundingSphere();
@@ -190,7 +198,8 @@
       replaceTexture(rearPlane,next.rear||null,true);
       replaceTexture(rigidFrontPlane,next.rigidFront||null);
       replaceTexture(rigidRearPlane,next.rigidRear||null,true);
-      const geometryKey=JSON.stringify([rig.points,rig.segments,rig.width,rig.segmentsX,rig.segmentsY,next.wind]);
+      const geometryKey=JSON.stringify([rig.points,rig.segments,rig.tipFollow,rig.blendRadiusPx,rig.regionMasks,
+        rig.width,rig.segmentsX,rig.segmentsY,next.wind]); // Mask edits and hierarchical pose strength must invalidate the live 3D ribbon.
       if(geometryKey!==lastGeometryKey){
         deformMesh(hairPlane,rig,posed.points,false);
         deformMesh(rearPlane,rig,posed.points,true);
