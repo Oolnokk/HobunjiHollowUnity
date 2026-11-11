@@ -21,30 +21,47 @@
     let n=hash(value);
     return ()=>{n=(Math.imul(n,1664525)+1013904223)>>>0;return n/4294967296;};
   }
+  const RHYTHM_MOTIFS=Object.freeze({
+    easy:Object.freeze([[4,4,4,4],[4,4,8]]),
+    medium:Object.freeze([[4,2,2,4,4],[4,4,2,2,4],[2,2,4,4,4],[8,2,2,4]]),
+    hard:Object.freeze([[4,2,2,2,2,4],[2,2,4,2,2,4],[2,2,2,2,4,4]]),
+  }); // Each authored-feeling 4/4 bar has a clear downbeat, beat-three anchor and no shorter-than-eighth attacks.
+  const MELODIC_CONTOURS=Object.freeze([
+    [2,3,4,3,2,1,2],
+    [1,2,3,4,3,2,2],
+    [3,4,3,2,3,1,2],
+    [2,4,3,2,3,1,2],
+  ]); // Reused with the rhythm motif so repeating bars sound like a phrase rather than fresh random notes.
+  function cadenceRhythm(motif){
+    const ending=motif.slice(); // Only the last half of the final bar changes; the listener can anticipate the opening rhythm.
+    const last=ending.length-1;
+    if(last>=1&&ending[last-1]===4&&ending[last]===4)ending.splice(last-1,2,8);
+    else if(last>=2&&ending[last-2]===2&&ending[last-1]===2&&ending[last]===4)ending.splice(last-2,3,8);
+    return ending; // A held half-note resolves the phrase instead of another random short attack.
+  }
   function generate(id,options={}){
-    const rng=seeded(String(id)+':puzzle-cave-song-v1');
+    const rng=seeded(String(id)+':puzzle-cave-song-rhythm-v2');
     const difficulty=clamp(Math.floor(Number(options.difficulty)||1),1,5);
-    const measures=[1,2,4].includes(options.measures)?options.measures:(difficulty>=5?4:difficulty>=3?2:1); // Complete 4/4 phrases only: one, two or four bars.
+    const measures=[1,2,4].includes(options.measures)?options.measures:(difficulty>=5?4:difficulty>=3?2:1); // Only full 1-, 2- or 4-bar phrases.
     const bpm=clamp(Math.round(Number(options.bpm)||Math.round(MIN_BPM+rng()*(MAX_BPM-MIN_BPM))),MIN_BPM,MAX_BPM);
+    const motifs=difficulty<=2?RHYTHM_MOTIFS.easy:difficulty===3?RHYTHM_MOTIFS.medium:RHYTHM_MOTIFS.hard; // Increased difficulty adds eighth-note pairs, not arbitrary changes to meter.
+    const motif=motifs[Math.floor(rng()*motifs.length)];
+    const contour=MELODIC_CONTOURS[Math.floor(rng()*MELODIC_CONTOURS.length)];
     const totalTicks=measures*TICKS_PER_MEASURE;
     const notes=[];
-    let tick=0,previous=2;
-    while(tick<totalTicks){
-      const left=totalTicks-tick;
-      const available=DURATIONS.filter(length=>length<=left && (difficulty>=4||length>=2) && (difficulty>=2||length>=4));
-      const pool=available.length?available:[2]; // The entire phrase is tiled with binary note values, never sixteenths.
-      const length=pool[Math.floor(rng()*pool.length)];
-      // Mostly stepwise motion with occasional melodic leaps; end on the tonic.
-      const step=rng()<.76?(rng()<.5?-1:1)*(rng()<.75?1:2):(rng()<.5?-3:3);
-      const index=tick+length>=totalTicks?0:clamp(previous+step,0,NOTE_COUNT-1);
-      const isRest=difficulty>=3 && tick>0 && tick+length<totalTicks && rng()<.12;
-      if(!isRest)notes.push({index,startTick:tick,lengthTicks:length});
-      previous=index;
-      tick+=length;
-    }
-    if(notes.length<2){
-      notes.splice(0,notes.length,{index:2,startTick:0,lengthTicks:totalTicks/2},
-        {index:0,startTick:totalTicks/2,lengthTicks:totalTicks/2});
+    for(let bar=0;bar<measures;bar++){
+      const finalBar=bar===measures-1;
+      const durations=finalBar?cadenceRhythm(motif):motif; // A-A (or A-A-A) repetition with a final cadential response.
+      let barTick=0; // Shared phrase-local tick; startTick must be absolute for the existing judge and glyphs.
+      for(let i=0;i<durations.length;i++){
+        const length=durations[i];
+        const contourStep=Math.round(i*(contour.length-1)/(durations.length-1));
+        let index=contour[contourStep];
+        if(finalBar&&i===durations.length-1)index=0; // Every song resolves to the tonic.
+        else if(finalBar&&i===durations.length-2)index=1; // A nearby approach tone makes the cadence singable.
+        notes.push({index,startTick:bar*TICKS_PER_MEASURE+barTick,lengthTicks:length});
+        barTick+=length;
+      }
     }
     const shortest=Math.min(...notes.map(note=>note.lengthTicks));
     const complexity=notes.length+Math.max(0,4-shortest)*1.1+measures*2;
@@ -55,7 +72,7 @@
       cycleTicks:totalTicks+TICKS_PER_MEASURE,
       secondsPerTick:60/bpm/4,
       rewardTier,
-      // All timing and ranking comes from the stable id: reloading never rerolls a solved cave.
+      // Stable cave IDs repeat the same motif and cadence on reload; the judge and instrument timings are unchanged.
     });
   }
   const GLYPH_COLORS=Object.freeze({idle:0xeaf5ff,current:0xffec64,accepted:0x80ffbb,rejected:0xff6666}); // Consistent white/yellow/green/red response for both indoor and outdoor carved notes.
