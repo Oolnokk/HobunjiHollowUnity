@@ -13093,7 +13093,7 @@
 
         const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
           THREE, frontCanvas,
-          { backCanvas, headCanvas, profile, npcRecord: rec, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
+          { backCanvas, headCanvas, profile, npcRecord: rec, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true, lod: 'npc' }
         );
         const baseAvatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W; // Unscaled model height produced by the portrait/animal-plane builder.
         const avatarHeight = namedAnimalDef ? baseAvatarHeight * namedAnimalSizeScale.y : baseAvatarHeight; // Dialogue/interaction height follows the actually rendered animal size.
@@ -13179,7 +13179,7 @@
         const npcPants = window.PantsGarmentRenderer?.garmentForCosmetics(rec?.equippedCosmetics); // Resolves skirts and layered pants through the same authored rig registry.
         if (legs && npcPants) {
           window.PantsGarmentRenderer?.attachToLegs(THREE, legs, {
-            avatarGroup, speciesId: appearance.speciesId, gender: appearance.gender, name: rec?.id || rec?.name || 'npc', garmentId: npcPants,
+            avatarGroup, speciesId: appearance.speciesId, gender: appearance.gender, name: rec?.id || rec?.name || 'npc', garmentId: npcPants, lod: 'npc', // Town NPCs use the crowd-density garment grid.
             appearance: window.PantsGarmentRenderer.appearanceFromBodyColors(profile?.bodyColors),
             overlayMask: window.PantsGarmentRenderer.buildOverlayMask(frontCanvas, profile, { forceEyesOpen: true }), // Arm clothing/overwear/pauldron/hood art stays in front of the pants.
           });

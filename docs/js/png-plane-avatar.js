@@ -544,6 +544,7 @@
   // The posterior (hip) anchor in the skinned plane's frame, where the spine chain starts (js/character-spine.js); null when unknown (the spine module then estimates).
   const spinePosteriorLocalY = (speciesId, gender, modelHeight, placementRatio, handAttachY) => window.HobunjiCharacterSpine?.posteriorLocalY?.({ speciesId, gender, modelHeight, placementRatio, handAttachY }) ?? null;
 
+  const NPC_PLANE_SEGMENTS = Object.freeze({ segmentsX: 20, segmentsY: 26 }); // ~half the default 28x36 cells; rig weights are sampled per vertex so bends stay smooth.
   function buildSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal, options = {}) {
     const segmentsX = Math.max(4, Math.round(Number(options.segmentsX) || 28));
     const segmentsY = Math.max(6, Math.round(Number(options.segmentsY) || 36));
@@ -667,6 +668,7 @@
       headBoundsPx: gatedHeadBounds,
       posteriorY,
       spineBaseY: spineBase.y,
+      ...(config.lod === 'npc' ? NPC_PLANE_SEGMENTS : null), // Crowd NPCs draw this mesh in every scene pass; the player keeps the full grid.
     });
     if (!geometry) return null;
     const frontMaterial = makeSpriteMaterial(THREE, textures.frontOriginal, 'npc_avatar_skinned_front_material');
@@ -1332,7 +1334,7 @@
           headCanvas: options.headCanvas, alphaThreshold: options.neckAlphaThreshold,
           speciesId, headGate,
           cosmeticIds: options.cosmeticIds || ['mask', 'hat', 'hood', 'upperFace', 'facialHair'].map(key => options.profile?.[key]?.id).filter(Boolean), // Worn pieces that can override the species head gate.
-          name: `${root.name}_skinned_plane_assembly`,
+          name: `${root.name}_skinned_plane_assembly`, lod: options.lod,
         })
       : null;
     const assembly = skinnedRig ? skinnedRig.group : createSinglePlaneAssembly(THREE, {

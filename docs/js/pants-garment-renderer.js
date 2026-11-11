@@ -16,7 +16,8 @@
   if (global.PantsGarmentRenderer) return;
 
   const HOOP_CORE = 0.03, HOOP_FADE = 0.07; // Distance (garment units) around an ankle spline that is fully rigid, and where that fades out.
-  const SEGMENTS = 64; // Vertices per side of the garment grid: fine enough that weight transitions deform smoothly instead of faceting.
+  const DEFAULT_SEGMENTS = 64; // Vertices per side of the garment grid: fine enough that weight transitions deform smoothly instead of faceting.
+  const NPC_SEGMENTS = 32; // Crowd NPCs (attach option lod:'npc'): a quarter of the triangles; the pants rig author's own preview uses this density.
   const NPC_DEFAULT_PANTS_DYE = 'dye:CLOTH:brown'; // Same dye-reference format as the NPC overwear dye (appliedDyes.CLOTH).
   const PANTLESS_SPECIES = new Set(['omgurku']); // The hybrid lower body has no humanoid leg/pants rig.
   const DEFAULT_GARMENT_ID = 'pants_basic';
@@ -123,7 +124,7 @@
   }
 
   // Static part of the garment for one avatar: rest vertices, weights, 2D bones in avatar-local space.
-  function buildGarmentData(THREE, Core, model, plane, garment, character) {
+  function buildGarmentData(THREE, Core, model, plane, garment, character, SEGMENTS = DEFAULT_SEGMENTS) {
     const transform = Core.solveAffine(garment.pantsBeltSpline, character.portraitBeltSpline); // The art's beltline laid onto the portrait's.
     if (!transform) return null;
     const dimensions = portraitDimensions(model, plane);
@@ -388,7 +389,7 @@
    * @param opts.appearance  {primaryHex, secondaryHex, patternHex, weaving}
    * @returns handle {update, setAppearance, dispose, mesh} or null when pants cannot be drawn for this avatar
    */
-  function attach(THREE, { avatarGroup, legHandle, speciesId, gender, garmentId = DEFAULT_GARMENT_ID, appearance = {}, name = 'pants', overlayMask = null, garmentRecord = null, characterRecord = null, imageUrl = null, footObjects = null, debugSplines = false, spine = null } = {}) {
+  function attach(THREE, { avatarGroup, legHandle, speciesId, gender, garmentId = DEFAULT_GARMENT_ID, appearance = {}, name = 'pants', overlayMask = null, garmentRecord = null, characterRecord = null, imageUrl = null, footObjects = null, debugSplines = false, spine = null, lod = null } = {}) {
     if (!characterRecord && isPantlessSpecies(speciesId)) return null; // The author's live preview (explicit records) can still show them.
     const Core = core();
     const garment = garmentRecord || rigConfig().garments?.[garmentId]; // The editor passes its live, unsaved authoring records here.
@@ -401,11 +402,11 @@
     }
     const feet = (footObjects || ['left_foot', 'right_foot'].map(foot => legHandle.group?.getObjectByName?.(foot))).filter(Boolean); // The procedural foot models.
     const footLift = footFrontLift(THREE, avatarGroup, feet);
-    const data = buildGarmentData(THREE, Core, avatarGroup, plane, garment, character);
+    const data = buildGarmentData(THREE, Core, avatarGroup, plane, garment, character, lod === 'npc' ? NPC_SEGMENTS : DEFAULT_SEGMENTS);
     if (!data) return null;
     const handle = {
       name, garmentId, legHandle, model: avatarGroup, nodes, mesh: null, disposed: false, texture: null, material: null,
-      geometry: data.geometry, basePositions: data.basePositions, weights: data.weights, bones2D: data.bones2D,
+      segments: lod === 'npc' ? NPC_SEGMENTS : DEFAULT_SEGMENTS, geometry: data.geometry, basePositions: data.basePositions, weights: data.weights, bones2D: data.bones2D,
       beltCenter: data.beltCenter, beltEnds: data.beltEnds, planeNormal: data.planeNormal, rings: data.rings, splineSpec: data.splines, debugLines: null, showSplines: !!debugSplines,
       legRollGain: Math.min(4, Math.max(1, Number(character.legRollGain) || 2)),
       maskMapping: data.maskMapping, footLift, rest: null, restRaw: null, rotationScale: { left: 1, right: 1 }, restFrames: { left: {}, right: {} },
@@ -590,6 +591,7 @@
       }
     };
     const updateDebugSplines = () => {
+      const SEGMENTS = handle.segments;
       ensureDebugLines();
       const pos = handle.geometry.getAttribute('position').array;
       const stride = SEGMENTS + 1;
@@ -646,6 +648,7 @@
       handle.spineShift = shifts;
     };
     handle.update = () => {
+      const SEGMENTS = handle.segments;
       if (handle.disposed || !handle.mesh || !handle.model.parent) return;
       const visible = handle.model.visible !== false && legHandle.group?.visible !== false;
       if (handle.mesh.visible !== visible) handle.mesh.visible = visible;
@@ -756,6 +759,7 @@
     handle.captureRest(); // The legs' stance at attach is the rest pose the initial 2D warp targets.
     handle.baseOriginal = new Float32Array(handle.basePositions); // The art as the portrait places it, before the alignment below (which is redone whenever the rest stance changes).
     handle.alignToRest = () => {
+      const SEGMENTS = handle.segments;
       handle.basePositions.set(handle.baseOriginal);
       // Initial alignment (purely 2D): each leg is a quad whose top is the beltline and whose bottom is its leg opening. The belt
       // stays exactly where the portrait puts it and the opening (ankle spline, shape and width intact) is moved onto the 3D ankle

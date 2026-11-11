@@ -12,6 +12,28 @@ conditions on the same machine; they are not what a player sees.** Counts come f
 comes from CDP CPU profiles. One headless world per run, and bandit/tribe camps are random, so repeat anything
 close before trusting it.
 
+## 11 Nov 2026: per-NPC rig triangle cost (why a visible crowd is still slow)
+
+Measured in the headless harness with the real game (exact geometry counts, not FPS). One town NPC rig was
+**13,396 triangles**, drawn again in every scene pass (base world, held/foot overlay, PNG depth, shell/outline
+x-ray replays). Draw calls per rig are small (~6 per pass); the cost is vertex/triangle volume times pass count.
+`frustumCulled=false` on every rig mesh means no pass skips a rig on its own; only `NpcViewFrustumCull` hides
+fully off-camera ones, so a crowd that is genuinely on screen pays full price in each pass.
+
+- Skinned portrait plane: 28x36 cells, built front *and* back = ~4,000 tris (12,096 verts, non-indexed).
+- Pants garment: 64x64 grid = ~8,200 tris (about two thirds of the rig).
+- Hands/feet: 13 tiny meshes, negligible.
+
+Change: `lod: 'npc'` on `PNGPlaneAvatar.buildSinglePlaneAvatarModel` (20x26 plane grid) and on
+`PantsGarmentRenderer.attach/attachToLegs` (32x32 garment grid, stored per handle as `handle.segments`).
+Town NPCs and Tzizkhanash ancestor statues pass it; the player, bandits and editors keep the full grids.
+Measured NPC rig: **5,300 triangles (-60%)**; player rig unchanged at 13,396.
+
+**Not measured:** a real-device FPS gain. The headless whole-frame totals did not change between old and new
+(they did not include the NPC passes), so only the per-rig counts above are claimed. Visual check of neck/hip
+bend at close range with the coarser grids is still owed. Next levers if still slow: distance-based LOD, dropping
+distant NPCs from x-ray/shell/depth replays, and a plain quad for frozen ancestor statues.
+
 ## 10–11 Nov 2026: camera-aimed NPC visual cost and depth replay
 
 An Opera recording of Tzizkhanash reported **2–4 FPS** while looking
