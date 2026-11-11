@@ -46,6 +46,7 @@
   let lastCamPos = null; // Stored previous viewpoint for conservative query-history invalidation.
   let lastCamQuat = null; // Stored previous orientation for immediate turn-around wakeup.
   let lastArea = ''; // Cached area identity, used to drop results from other maps.
+  let lastScene = null; // Regenerated plateau/cliff geometry in a new scene must invalidate occlusion history.
   let lastCamera = null; // Swapping cameras also invalidates sampled occlusion.
   let lastProjection = null; // Mobile aspect/FOV/zoom changes can reveal a formerly hidden actor.
   let queryDisabled = false; // Fail-open if context/query calls do not work.
@@ -225,7 +226,7 @@
         projectionChanged=true; break;
       }
     }
-    const changed = lastCamera!==camera || lastArea!==currentArea || !lastCamPos || projectionChanged
+    const changed = lastCamera!==camera || lastScene!==activeScene || lastArea!==currentArea || !lastCamPos || projectionChanged
       || lastCamPos.distanceToSquared(pos) > CAMERA_RESET_DISTANCE*CAMERA_RESET_DISTANCE
       || Math.abs(lastCamQuat.dot(quat)) < CAMERA_RESET_DOT;
     if (changed) {
@@ -238,6 +239,7 @@
       if (projection) lastProjection=projection.slice(); // New stable projection anchor, including mobile viewport rotation.
       else lastProjection=null;
       lastCamera=camera;
+      lastScene=activeScene;
     }
     lastArea=currentArea;
     pollQueries();
@@ -329,7 +331,7 @@
   function reset() {
     endFrame();
     for(const state of states.values()) release(state);
-    states.clear(); lastCamPos=null; lastCamQuat=null; lastArea=''; lastCamera=null; lastProjection=null; clearHistory();
+    states.clear(); lastCamPos=null; lastCamQuat=null; lastArea=''; lastScene=null; lastCamera=null; lastProjection=null; clearHistory();
   }
 
   function snapshot() {
