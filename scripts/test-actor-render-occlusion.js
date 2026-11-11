@@ -199,6 +199,35 @@ api.beginFrame(context());
 assert.equal(covered.visible,true,'mobile resize, zoom or FOV change wakes previously hidden NPC');
 api.endFrame();
 
+// A detached player camera may stand inside the actor's expanded GPU proxy
+// even when the PLAYER is far away. Test that the proxy is never submitted
+// from inside itself, where own/deeper depth could cause a false negative.
+api.reset(); cameraWorld.set(10,0,0); covered.position.set(10,0,0);
+const queryCountBeforeNear=nextQuery;
+for(let i=0;i<4;i++)frame();
+assert.equal(nextQuery,queryCountBeforeNear,'free camera inside proxy cannot submit a self-occluding actor query');
+api.beginFrame(context());
+assert.equal(covered.visible,true,'in-proxy free camera always renders this NPC');
+api.endFrame();
+cameraWorld.set(0,0,0);
+
+// Cliff edges and raised walkable mini-plateaus use the same 3D depth test as
+// any other opaque terrain. These fixture probes verify elevated and below-
+// ledge ACTORS participate, not real-GPU depth or exact plateau triangles.
+api.reset();
+const elevated=makeRoot(11,'upper_plateau'); elevated.position.y=8;
+const lower=makeRoot(12,'below_ledge'); lower.position.y=-8;
+walkers.push({root:elevated,area:'town'},{root:lower,area:'town'});
+for(let i=0;i<9;i++)frame();
+api.beginFrame(context());
+assert.equal(elevated.visible,false,'fully covered upper-plateau NPC follows the 3D depth query');
+assert.equal(lower.visible,false,'fully covered below-ledge NPC follows the same 3D depth query');
+api.endFrame();
+walkers.pop();walkers.pop();
+assert.equal(elevated.visible,true,'elevated NPC root is restored after the world render');
+assert.equal(lower.visible,true,'below-ledge NPC root is restored after the world render');
+api.reset();
+
 const previouslyHidden={isObject3D:true,visible:false,parent:rootScene,position:new Vector3(3,0,0)};
 walkers.push({root:previouslyHidden,area:'town'});
 api.beginFrame(context()); api.endFrame();
