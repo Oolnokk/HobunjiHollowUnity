@@ -3,6 +3,15 @@
 const assert = require('node:assert/strict'); // Verify production actor visibility and asynchronous query behavior.
 const fs = require('node:fs'); // Load the exact shipped module rather than copying its algorithm.
 const code = fs.readFileSync('docs/js/actor-render-occlusion.js','utf8'); // Renderer-only NPC/hostile culling source.
+const html = fs.readFileSync('docs/index.html','utf8'); // Browser bootstrap must load both culling modules.
+const game = fs.readFileSync('docs/game.js','utf8'); // Production world passes must use the actor query for both render modes.
+assert(html.includes('js/npc-view-frustum-cull.js?v='),'existing NPC frustum culler is actually loaded');
+assert(html.includes('js/actor-render-occlusion.js?v='),'actor GPU occlusion module is actually loaded');
+assert(game.includes('window.ActorRenderOcclusion?.beginFrame?.('),'renderWorldPasses enters actor culling');
+assert.equal(game.split('window.ActorRenderOcclusion?.probeAfterBase?.()').length-1,2,
+  'outlines enabled and disabled both call the depth query');
+assert(game.includes('window.ActorRenderOcclusion?.endFrame?.()'),'all world render passes restore actors in finally');
+
 
 class Vector3 {
   constructor(x=0,y=0,z=0){this.set(x,y,z);}
