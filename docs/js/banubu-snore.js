@@ -364,6 +364,8 @@
       } else if (Object.prototype.hasOwnProperty.call(transition, '__banubuVisibleTarget')) {
         transition.target = transition.__banubuVisibleTarget;
         delete transition.__banubuVisibleTarget;
+      } else if (transition.target === 'banubu_cave_hidden') {
+        delete transition.target; // A serialized daytime transition may lose its undefined original-target marker; restore the authored missing-target default.
       }
     }
     debugState.caveVisualAlpha = alpha;
