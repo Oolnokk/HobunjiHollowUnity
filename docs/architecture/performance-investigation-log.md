@@ -12,6 +12,44 @@ conditions on the same machine; they are not what a player sees.** Counts come f
 comes from CDP CPU profiles. One headless world per run, and bandit/tribe camps are random, so repeat anything
 close before trusting it.
 
+## 11 Nov 2026: per-NPC rig triangle cost (why a visible crowd is still slow)
+
+Measured in the headless harness with the real game (exact geometry counts, not FPS). One town NPC rig was
+**13,396 triangles**, drawn again in every scene pass (base world, held/foot overlay, PNG depth, shell/outline
+x-ray replays). Draw calls per rig are small (~6 per pass); the cost is vertex/triangle volume times pass count.
+`frustumCulled=false` on every rig mesh means no pass skips a rig on its own; only `NpcViewFrustumCull` hides
+fully off-camera ones, so a crowd that is genuinely on screen pays full price in each pass.
+
+- Skinned portrait plane: 28x36 cells, built front *and* back = ~4,000 tris (12,096 verts, non-indexed).
+- Pants garment: 64x64 grid = ~8,200 tris (about two thirds of the rig).
+- Hands/feet: 13 tiny meshes, negligible.
+
+Change: one shared **mesh budget** (`PNGPlaneAvatar.meshBudget`, table in `png-plane-avatar.js`). Option
+`meshBudget: 'npc'` on `buildSinglePlaneAvatarModel` and `PantsGarmentRenderer.attach/attachToLegs` selects it
+(`'full'` is the original detail). `npc` budget: portrait plane 20x26 cells, pants 32x32 grid (`handle.segments`),
+enemy head-mask grid 34x44, animal/livestock/pet planes clamped to 30 segments. Town NPCs, every `BanditCombat`
+humanoid (bandits, ghouls, skeletons), the ancestor statues and all animal planes use it. The player defaults to
+`full`; Settings > "Player uses the NPC mesh cap" (stored per device, `hobunji_player_mesh_budget_v1`) switches
+the player rig and rebuilds it. Measured in the real game: NPC rig **5,300 tris (-60%)**, enemy portrait plane
+12,096 -> 6,240 verts, animal planes (dabinggi-hound) 1,078 -> 434 verts each, player pants 4,225 <-> 1,089 verts
+when toggled.
+
+**Not measured:** a real-device FPS gain. The headless whole-frame totals did not change between old and new
+(they did not include the NPC passes), so only the per-rig counts above are claimed. Visual check of neck/hip
+bend at close range with the coarser grids is still owed. Next levers if still slow: distance-based LOD, dropping
+distant NPCs from x-ray/shell/depth replays, and a plain quad for frozen ancestor statues.
+
+### Patterns (11 Nov 2026)
+
+- **Fur-lined hood "missing base pattern" is layer coverage, not a failed pattern.** The base pattern renders
+  (identical for every species, 24-49% of pixels on an ordinary hood), but the opaque fur trim sprite covers 84%
+  of the base sprite, so only ~16% of the base is visible (5-10% patterned). Fix would be art/layer order, not code.
+- **Flaky first-load patterns:** `RepoPatternLibrary.load()` cached a failed/empty load for the whole session and
+  fetched with `no-store`, so one failed request left pets/garments unpatterned until reload. It now retries (4 s
+  back-off), warns, and revalidates with `no-cache`. `scripts/test-repo-pattern-library-retry.js`.
+- Still silent by design: `renderClothingLayers` falls back to plain unpatterned art if the weaver throws, and
+  `renderProfileWithWovenPatterns` keeps the first render if every pending pattern composite rejects.
+
 ## 10–11 Nov 2026: camera-aimed NPC visual cost and depth replay
 
 An Opera recording of Tzizkhanash reported **2–4 FPS** while looking
