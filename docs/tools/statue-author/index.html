@@ -41,6 +41,7 @@ aside{max-height:none;overflow:visible;border-right:0;grid-template-columns:repe
 <script src="../../config/hand-model-profiles.js"></script>
 <script src="../../config/attachment-rig-profiles.js?v=20261110statueRig1"></script>
 <script src="../../config/character-rig-scale-defaults.js?v=20261110statueRig1"></script>
+<script src="../../js/procedural-hand-attachments.js?v=20261110statueRig1"></script>
 <script src="../../js/character-rig-scale.js?v=20261110statueRig1"></script>
 <script src="../../js/leg-bones.js?v=20261110statueRig1"></script>
 <script src="../../js/procedural-leg-animation.js?v=20261110statueRig1"></script>
@@ -558,8 +559,12 @@ function display(project){
     const child=map.get(piece.id),parent=map.get(piece.parentPartId);
     if(child&&parent&&child!==parent)parent.add(child);
   }
+  const rig=project.statueSource.rigSnapshot;
   status('Built '+project.parts.length+' editable pieces · '+(project.statueSource.npcId||'imported')+
     ' · '+project.statueSource.phase+' · '+project.statueSource.materialFile+
+    '\nRig: '+(rig?.profileKey||'unavailable')+
+    (rig?.feet?.samplingWarning?' · Foot solver: '+rig.feet.samplingWarning:' · Feet sampled from gameplay leg rig')+
+    (rig?.rigProfileFound?'':' · No authored species/gender anchors')+
     '\nInspect / copy statue diagnostics for full part and material details.');
 }
 function downloadJson(project){
@@ -708,6 +713,17 @@ window.__hobunjiStatueDebug=()=>{
     builtNpcId:exportProject?.statueSource?.npcId||null,buildActive:$('build').disabled,
     importedAnimation:animation?.name||null,phase:exportProject?.statueSource?.phase||null,
     sourceRig:exportProject?.statueSource?.sourceRig||null,
+    authoredRig:exportProject?.statueSource?.rigSnapshot?{
+      profileKey:exportProject.statueSource.rigSnapshot.profileKey,
+      profileFound:exportProject.statueSource.rigSnapshot.rigProfileFound,
+      anatomy:exportProject.statueSource.rigSnapshot.anatomy,
+      bodyScale:exportProject.statueSource.rigSnapshot.bodyScale,
+      body:exportProject.statueSource.rigSnapshot.body,
+      head:exportProject.statueSource.rigSnapshot.head,
+      hands:exportProject.statueSource.rigSnapshot.hands,
+      feet:exportProject.statueSource.rigSnapshot.feet,
+      provenance:exportProject.statueSource.rigSnapshot.provenance
+    }:null, // Copyable phone diagnostics show actual saved Rig Coordinates and procedural-leg sampling.
     heroEquipment:selectedRecord?.statueHeroLoadout?{
       ...selectedRecord.statueHeroLoadout,
       cosmetics:[...(selectedRecord.equippedCosmetics||[])],
