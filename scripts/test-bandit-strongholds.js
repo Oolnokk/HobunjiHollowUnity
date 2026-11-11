@@ -69,6 +69,36 @@ for (const recipe of Object.values(environment.ProceduralFurniture.CATALOG)) {
   }
 }
 
+// Authoring contract: war damage is geometry, not pristine walls with a new texture.
+// Use the same existing board, carved stone and verdigris material roles for every salvage piece.
+const coverHeights = environment.BanditStrongholdCover.__test.HEIGHT_BY_KEY; // Physics targetables must encompass the visible damaged cover.
+for (const key of ['fortifiedWatchtower','fortifiedLowRail','fortifiedHighCover']) {
+  const parts = environment.ProceduralFurniture.CATALOG[key]; // Authored tilted/broken parts are drawn by the existing furniture renderer.
+  const tilted = parts.filter(piece => ['rx','ry','rz'].some(axis => Math.abs(piece.transform[axis] || 0) > 0));
+  const irregular = parts.filter(piece => piece.topScaleX !== undefined || piece.topScaleZ !== undefined);
+  const damaged = parts.filter(piece => /repair|scrap|patch|splinter|broken|shattered|battered|jagged/i.test(piece.name));
+  assert(tilted.length >= 4, key + ' should look assembled crookedly, not made of square stock walls');
+  assert(irregular.length >= 4, key + ' should have uneven/tapered, damaged plank ends');
+  assert(damaged.length >= 4, key + ' should include visible scraps, splinters and repairs');
+  const top = Math.max(...parts.map(piece => piece.transform.y + piece.transform.sy / 2));
+  assert(top < coverHeights[key], key + ' projectile/target height must clear the highest damaged plank');
+}
+const towerParts = environment.ProceduralFurniture.CATALOG.fortifiedWatchtower; // Broken deck/roof keep line-of-sight gaps.
+assert(!towerParts.some(piece => piece.name === 'tower-roof' || piece.name === 'tower-deck'),
+  'one pristine full roof or deck must not visually erase the broken board gaps');
+assert(towerParts.some(piece => piece.name === 'roof-repair-scrap'), 'watchtower receives an obvious salvage roof patch');
+const sampleDamage = () => ({ children:[ // Stable visual variation must never displace load-bearing posts.
+  {name:'roof-patch-1',position:{x:0,y:3,z:0},rotation:{z:0},visible:true},
+  {name:'tower-post-0-0',position:{x:0,y:1,z:0},rotation:{z:0},visible:true},
+] });
+const damageA=sampleDamage(),damageB=sampleDamage(),damageC=sampleDamage();
+strongholds.distressFurnitureGroup(damageA,'camp-a');
+strongholds.distressFurnitureGroup(damageB,'camp-a');
+strongholds.distressFurnitureGroup(damageC,'camp-b');
+assert.equal(JSON.stringify(damageA),JSON.stringify(damageB),'site-specific wear is deterministic after reentry');
+assert.notEqual(JSON.stringify(damageA),JSON.stringify(damageC),'different camps get visibly different roof patches');
+assert.equal(damageA.children[1].position.y,1,'repair variation must not shift the structural posts');
+
 const zoneId = 'map_western_slope';
 const layout = { transitions: [] }; // Real zone placement owner has already reserved a footprint for this existing camp.
 const deps = { zoneLayouts:new Map([[zoneId,layout]]), zoneScenes:new Map() };
