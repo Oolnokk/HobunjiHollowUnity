@@ -185,7 +185,11 @@
     // Advertise both matrices to shared held/shell scissor grouping ONLY when
     // the original draw hook was the built-in no-op. Unknown hook chains stay
     // unbounded and retain their conservative independent depth replays.
-    if (!previousBefore || previousBefore === THREE.Object3D?.prototype?.onBeforeRender) {
+    if (!previousBefore || previousBefore === THREE.Object3D?.prototype?.onBeforeRender
+        || previousBefore.__hobunjiScreenSpaceInvariantDepthPush === true) {
+      // The foot-depth push translates/scales about the perspective eye, so
+      // its *screen footprint* is unchanged. The current and captured matrices
+      // enclose both parity poses even though their depth values differ.
       Object.defineProperty(mesh, '__hobunjiXrayBoundParity', {
         configurable: true, // Mesh replacement/disposal must never retain a stale pose adapter.
         value: {
