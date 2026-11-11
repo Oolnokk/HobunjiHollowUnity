@@ -89,6 +89,9 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
 <div class="entry"><label for="rearV">Rear Y offset</label><input id="rearV" type="number" min="-.25" max=".25" step=".005" value="0"></div>
 <div class="entry"><label for="strandWidth">Spline width</label><input id="strandWidth" type="number" min=".01" max=".5" step=".01" value=".1"></div>
 <div class="entry"><label for="response">Wind response</label><input id="response" type="number" min="0" max="5" step=".1" value="1"></div>
+<div class="entry"><label for="blendRadius">Automatic attachment blend (px)</label><input id="blendRadius" type="number" min="0" max="48" step="1" value="18"></div>
+<div class="entry"><label for="tipFollow">Bottom leads middle</label><input id="tipFollow" type="range" min="0" max=".9" step=".01" value=".58" aria-label="How much the bottom knot pulls the middle knot"></div>
+<p>The rigid region stays fixed; the flexible hair gradually gains motion across the attachment blend distance. The tip controls the middle knot, never the reverse, while the head root remains anchored.</p>
 <div class="buttons"><button id="resetRig">New 3-knot spline</button></div>
 </section>
 <section>
@@ -107,10 +110,12 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
 </div>
 <div class="entry"><label for="segmentSelect">Selected 3D knot</label><select id="segmentSelect"></select></div>
 <div id="segmentEditor"></div>
+<div class="buttons"><button id="generateBlend" type="button">Generate natural 6-direction poses</button></div>
+<p>Default wind poses are calculated from the current strand length, orientation, and knot position. Regenerating replaces only directional poses and deadzones; it keeps your pixel masks and resting knots.</p>
 <h3>Preview the directional wind</h3>
 <div class="entry"><label for="testStrength">Gust strength</label><input type="range" id="testStrength" min="0" max="1" value="1" step=".01"></div>
 <div class="row"><label for="testStrength">Blend:</label><span id="windName">Right · 100%</span></div>
-<p><strong>Translation XYZ</strong> is authored in portrait-relative coordinates and blends with the directional rotations. Deadzones apply to both operations. The collision solver prevents strands passing through the portrait plane.</p>
+<p><strong>Translation XYZ</strong> uses portrait-local axes. The bottom knot leads the middle one, with declining influence toward the fixed root. Directional rotations and translations blend with deadzones; the collision solver prevents crossing the portrait plane.</p>
 <h3>Pixel region and collision checks</h3>
 <output id="status" role="status" aria-live="polite">No cosmetic loaded. The default 3-knot spline is editable.</output>
 <div class="buttons" style="margin-top:10px"><button id="download">Export updated cosmetic JSON</button><button id="copyRig">Copy rig JSON</button></div>
@@ -125,13 +130,15 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
 const $=id=>document.getElementById(id),Rig=window.PortraitSplineRig,Catalog=window.PortraitSplineCatalog;
 const DIRECTIONS=['left','right','up','down','toward','away'],FIELDS=['yaw','pitch','roll'];
 const makeSegment=()=>({deadzone:{x:4,y:4,z:6},poses:Object.fromEntries(DIRECTIONS.map(x=>[x,{yaw:0,pitch:0,roll:0,translate:{x:0,y:0,z:0}}]))});
-const makeRig=()=>({version:1,enabled:true,points:[{u:.5,v:.28,depth:.015},{u:.52,v:.43,depth:.025},{u:.53,v:.6,depth:.035}],
-segments:[makeSegment(),makeSegment()],regionMasks:{},rearOffset:{u:0,v:0},width:.1,windResponse:1,segmentsX:16,segmentsY:20});
+const makeRig=(providedPoints)=>{const points=providedPoints||[{u:.5,v:.28,depth:.015},{u:.52,v:.43,depth:.025},{u:.53,v:.6,depth:.035}]; // New rigs start with fitted natural poses, not six empty wind directions.
+ return {version:1,enabled:true,points,segments:Rig.makeDefaultSegments(points),regionMasks:{},
+ rearOffset:{u:0,v:0},width:.1,windResponse:1,tipFollow:.58,blendRadiusPx:18,segmentsX:32,segmentsY:40};};
 let rig=makeRig(),cosmetic={},loadedName='cosmetic.json',selectedKnot=1,selectedSegment=0,direction='right',mode='move';
 let images={front:null,rear:null,hood:null,hoodRear:null,head:null,headRear:null,character:null},dragging=false,lastPaint=null;
 let canonicalPortraitPromise=null,canonicalPortraitGeneration=0,canonicalPortraitError=null; // Reuses Pants Rig Author's species/gender portrait registry and naked-character render path.
 let viewer=null,viewerMode='translate',maskUndo=null,headGeneration=0; // The rigid/flexible mask replaces arbitrary seam-dab and hood-warp controls.
 let regionOverlayCache=null,regionSourcesCache=null; // Cached bitmap and 3D texture splits; invalidated only when artwork or masks change.
+let autoLayoutPending=false; // A newly selected unrigged cosmetic receives one art-fitted default spline, never overwriting manual knot edits.
 let catalog=null,styles=[],hoods=[],activeStyle=null,activeDraftKey=null,styleGeneration=0,assetGeneration=0,hoodGeneration=0,indexGeneration=0;
 let manualSelected=false; // Explicit file import is not silently replaced by a concurrent index fetch.
 const rigDrafts=new Map(); // Per-cosmetic/per-species unsaved edits survive dropdown switching until the author page closes.
@@ -156,6 +163,7 @@ $('cosmeticFile').addEventListener('change',async e=>{
     $('cosmeticSelect').selectedIndex=-1;
     cosmetic=parsed;loadedName=file.name.replace(/^\(HA\)\s*/,'');
     rig=Rig.normalize(parsed.portraitSplineRig) || makeRig(); // Preserve authored rigid/flexible masks alongside poses and spline knots.
+    autoLayoutPending=!Rig.normalize(parsed.portraitSplineRig); // A manually imported unrigged style may be fitted after its reference PNG arrives.
     images.front=null;images.rear=null; // Never auto-classify an imported cosmetic using the previously selected style's artwork.
     maskUndo=null;markRegionDirty();maybeInitializeMasks();
     $('sourcePath').textContent='Local import: '+file.name;
@@ -175,6 +183,16 @@ function markRegionDirty(){
 function activeView(){return $('viewSelect').value==='rear'?'rear':'front';}
 function regionHead(view){return view==='rear'?(images.headRear||images.head):images.head;}
 function maybeInitializeMasks(){
+  if(autoLayoutPending && images.front && images.head){
+    try{
+      const points=Rig.suggestRestPoints(images.front,images.head);
+      if(points){
+        rig.points=points;rig.segments=Rig.makeDefaultSegments(points);
+        autoLayoutPending=false;selectedKnot=1;selectedSegment=0;controls();
+        message('Fitted the new spline and six natural wind poses to the actual hair silhouette.');
+      }
+    }catch(error){message('Could not fit spline to artwork: '+error.message);}
+  }
   if(!rig.regionMasks)rig.regionMasks={};
   let assigned=0;
   for(const view of ['front','rear']){
@@ -192,7 +210,7 @@ function maybeInitializeMasks(){
 function makeRegionOverlay(){
   const view=activeView(),sprite=images[view],mask=rig.regionMasks?.[view];
   if(!sprite||!mask)return null;
-  const key=JSON.stringify(mask);
+  const key=JSON.stringify([mask,rig.blendRadiusPx]);
   if(regionOverlayCache&&regionOverlayCache.source===sprite&&regionOverlayCache.view===view
     &&regionOverlayCache.key===key&&regionOverlayCache.offset===rig.rearOffset.u+':'+rig.rearOffset.v)
     return regionOverlayCache.canvas;
@@ -201,11 +219,15 @@ function makeRegionOverlay(){
   if(view==='rear')ctx.drawImage(sprite,rig.rearOffset.u*200,rig.rearOffset.v*200,200,200);
   else ctx.drawImage(sprite,0,0,200,200);
   const data=ctx.getImageData(0,0,200,200),bits=Rig.decodePixelMask(mask);
+  const field=Rig.attachmentBlendField(mask,rig.blendRadiusPx); // Preview the same motion falloff calculated by the runtime.
   for(let i=0;i<bits.length;i++){
     const at=i*4,alpha=data.data[at+3];
     if(!alpha)continue;
-    if(bits[i]){data.data[at]=67;data.data[at+1]=208;data.data[at+2]=209;data.data[at+3]=Math.round(alpha*.64);}
-    else{data.data[at]=198;data.data[at+1]=109;data.data[at+2]=231;data.data[at+3]=Math.round(alpha*.25);}
+    const blend=bits[i]?0:(field?field[i]:1);
+    data.data[at]=Math.round(67+(198-67)*blend);
+    data.data[at+1]=Math.round(208+(109-208)*blend);
+    data.data[at+2]=Math.round(209+(231-209)*blend);
+    data.data[at+3]=Math.round(alpha*(bits[i]?.64:.28)); // Cyan remains fixed; cyan→purple pixels progressively flex.
   }
   ctx.putImageData(data,0,0);
   regionOverlayCache={source:sprite,view,key,offset:rig.rearOffset.u+':'+rig.rearOffset.v,canvas};
@@ -379,7 +401,9 @@ async function selectIndexedStyle(){
   const authored=selected.scope.variant
     ?selected.config.speciesVariants?.[selected.scope.key]?.portraitSplineRig
     :selected.config.portraitSplineRig;
-  rig=Rig.normalize(rigDrafts.get(draftKey)||authored||selected.config.portraitSplineRig)||makeRig();
+  const stored=Rig.normalize(rigDrafts.get(draftKey)||authored||selected.config.portraitSplineRig);
+  rig=stored||makeRig();
+  autoLayoutPending=!stored; // Generate initial rest geometry from real head/hair pixels only for newly rigged cosmetics.
   maskUndo=null;selectedKnot=1;selectedSegment=0;controls();
   images.front=null;images.rear=null;markRegionDirty();render();
   const scopeText=selected.scope.variant?'variant '+selected.scope.key:'shared cosmetic';
@@ -473,8 +497,9 @@ function controls(){
   $('segmentSelect').replaceChildren(...rig.segments.map((_,i)=>{const opt=document.createElement('option');opt.value=i;opt.textContent=(i+1)+': knot '+(i+1)+' → '+(i+2);return opt;}));
   selectedSegment=clamp(selectedSegment,0,rig.segments.length-1);$('segmentSelect').value=selectedSegment;
   for(const el of document.querySelectorAll('[data-direction]'))el.classList.toggle('active',el.dataset.direction===direction);
-  for(const el of ['rearU','rearV','strandWidth','response']){
-    const values={rearU:rig.rearOffset.u,rearV:rig.rearOffset.v,strandWidth:rig.width,response:rig.windResponse};
+  for(const el of ['rearU','rearV','strandWidth','response','blendRadius','tipFollow']){
+    const values={rearU:rig.rearOffset.u,rearV:rig.rearOffset.v,strandWidth:rig.width,response:rig.windResponse,
+      blendRadius:rig.blendRadiusPx??18,tipFollow:rig.tipFollow??.58};
     $(el).value=values[el];
   }
   const slot=safeSegment(),holder=$('segmentEditor');holder.replaceChildren();
@@ -549,7 +574,11 @@ function render(){
       hood:shown?(images.hoodRear||images.hood):images.hood}); // Exact same rigid/flexible split as the game renderer.
   }
 }
-function updateKnots(){while(rig.segments.length<rig.points.length-1)rig.segments.push(makeSegment());rig.segments.length=rig.points.length-1;controls();render();}
+function updateKnots(){
+  const defaults=Rig.makeDefaultSegments(rig.points);
+  while(rig.segments.length<rig.points.length-1)rig.segments.push(defaults[rig.segments.length]||makeSegment());
+  rig.segments.length=rig.points.length-1;controls();render();
+}
 function pick(e){const bounds=$('preview').getBoundingClientRect();return{u:clamp((e.clientX-bounds.left)/bounds.width,0,1),v:clamp((e.clientY-bounds.top)/bounds.height,0,1)};}
 function paint(p){
   if(mode==='paint'||mode==='erase'){
@@ -569,6 +598,7 @@ $('preview').addEventListener('pointerdown',e=>{
   const p=pick(e);
   dragging=true;$('preview').setPointerCapture(e.pointerId);
   if(mode==='move'){
+    autoLayoutPending=false; // An author moving knots explicitly owns their placement; do not auto-fit it later.
     let best=Infinity;
     rig.points.forEach((m,i)=>{const d=Math.hypot(m.u-p.u,m.v-p.v);if(d<best){best=d;selectedKnot=i;}});
     selectedSegment=clamp(selectedKnot-1,0,rig.segments.length-1);controls();
@@ -590,7 +620,9 @@ $('removePoint').onclick=()=>{if(rig.points.length<=2){message('At least two kno
 $('segmentSelect').onchange=e=>{selectedSegment=+e.target.value;selectedKnot=selectedSegment+1;controls();render();};
 for(const b of document.querySelectorAll('[data-direction]'))b.onclick=()=>{direction=b.dataset.direction;controls();render();};
 $('testStrength').oninput=render;$('viewSelect').onchange=render;
-for(const [id,fn] of [['rearU',v=>rig.rearOffset.u=v],['rearV',v=>rig.rearOffset.v=v],['strandWidth',v=>rig.width=v],['response',v=>rig.windResponse=v]]){
+for(const [id,fn] of [['rearU',v=>rig.rearOffset.u=v],['rearV',v=>rig.rearOffset.v=v],
+  ['strandWidth',v=>rig.width=v],['response',v=>rig.windResponse=v],
+  ['blendRadius',v=>rig.blendRadiusPx=v],['tipFollow',v=>rig.tipFollow=v]]){
   $(id).onchange=e=>{fn(numeric(e.target.value));rig=Object.assign(rig,Rig.normalize(rig));markRegionDirty();controls();render();};
 }
 $('clearMask').onclick=()=>{
@@ -600,7 +632,11 @@ $('clearMask').onclick=()=>{
   markRegionDirty();render();
   message('This sprite view is now entirely flexible. Use the rigid brush to attach selected pixels to the portrait.');
 };
-$('resetRig').onclick=()=>{rig=makeRig();maskUndo=null;selectedKnot=1;selectedSegment=0;markRegionDirty();maybeInitializeMasks();controls();render();};
+$('resetRig').onclick=()=>{
+  const points=images.front?Rig.suggestRestPoints(images.front,images.head):null;
+  rig=makeRig(points||undefined);autoLayoutPending=!points;
+  maskUndo=null;selectedKnot=1;selectedSegment=0;markRegionDirty();maybeInitializeMasks();controls();render();
+};
 $('autoMask').onclick=()=>{
   const view=activeView(),sprite=images[view],head=regionHead(view);
   if(!sprite||!head){message('Load the cosmetic and its canonical head reference before resetting pixel regions.');return;}
@@ -620,7 +656,12 @@ $('undoMask').onclick=()=>{
   maskUndo=null;markRegionDirty();render();message('Restored the previous rigid/flexible mask.');
 };
 $('showRegions').onchange=render;
-$('applyJson').onclick=()=>{try{const candidate=JSON.parse($('json').value),valid=Rig.normalize(candidate);if(!valid)throw Error('At least two distinct, normalized knots are required.');rig=valid;maskUndo=null;markRegionDirty();selectedKnot=1;selectedSegment=0;controls();render();}catch(error){message('JSON error: '+error.message);}};
+$('generateBlend').onclick=()=>{
+  rig.segments=Rig.makeDefaultSegments(rig.points); // Replace only directional poses and deadzones; keep manually painted masks and knot locations.
+  controls();render();
+  message('Generated six natural wind directions for the current strand. Bottom knot leads the middle, with the head anchored.');
+};
+$('applyJson').onclick=()=>{try{const candidate=JSON.parse($('json').value),valid=Rig.normalize(candidate);if(!valid)throw Error('At least two distinct, normalized knots are required.');rig=valid;autoLayoutPending=false;maskUndo=null;markRegionDirty();selectedKnot=1;selectedSegment=0;controls();render();}catch(error){message('JSON error: '+error.message);}};
 $('copyRig').onclick=async()=>{const data=JSON.stringify(Rig.normalize(rig),null,2);try{await navigator.clipboard.writeText(data);message('Rig JSON copied.');}catch(_){$('json').value=data;$('json').select();message('Clipboard unavailable; select/copy the JSON from the text box.');}};
 $('download').onclick=()=>{const valid=Rig.normalize(rig);if(!valid){message('Cannot export invalid knots.');return;}
  const result=JSON.parse(JSON.stringify(cosmetic));
