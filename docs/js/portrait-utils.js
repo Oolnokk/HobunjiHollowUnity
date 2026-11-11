@@ -1593,16 +1593,6 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const splineSlots = new Map([[facialHair, 'facialHair'], [hairSide, 'hairSide'], [hairSideL, 'hairSideL']]); // Only beard and side hairstyle slots.
   const splineRigFor = group => deferSplineParts && group && !hiddenCosmeticGroups.has(group)
     ? window.PortraitSplineRig?.resolveOptionRig?.(group, resolvedFighter) : null;
-  const seamForView = rig => !rig ? [] : !renderBehindView ? rig.seam
-    : rig.seam.map(dab => ({ ...dab,
-      u: Math.max(0, Math.min(1, dab.u + rig.rearOffset.u)),
-      v: Math.max(0, Math.min(1, dab.v + rig.rearOffset.v)),
-    })); // Rear sprite offsets also move its hood passage and connecting paint.
-  const splineSeams = [facialHair, hairSide, hairSideL].flatMap(group => {
-    if (renderBehindView && group === facialHair) return []; // Never project a beard onto the rear plane.
-    return seamForView(splineRigFor(group));
-  }); // Painted crossings alone control the hood edge warp.
-
   const pushToTarget = (group, target) => {
     if (!group || hiddenCosmeticGroups?.has(group)) return;
     const groupLayers = resolveOptionLayers(group, resolvedFighter);
@@ -1965,9 +1955,11 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
         withPixelDyeLayer(entry, (img, tint, sourceKey) =>
           drawLayerWithEmote(img, resolveXform(entry.layer), tint, 1, sourceKey, partCtx));
         const key = slot + ':' + String(entry.group?.id || 'unknown') + ':' + i; // Matches front and back independently composed slot indices.
-        canvas.hobunjiSplineParts.push({ key, slot, rig, canvas: partCanvas, phase: (i + 1) * 1.37 });
-        window.PortraitSplineRig?.paintSeamBridge?.(ctx, partCanvas, seamForView(rig)); // Pixel-colored hinge bridge stays on the skull/hood canvas.
-        continue;
+        const view = renderBehindView ? 'rear' : 'front'; // Distinct rigid/flexible author masks for independently rendered planes.
+        const layers = window.PortraitSplineRig?.splitByMask?.(partCanvas, rig.regionMasks?.[view]);
+        if (layers?.rigid) ctx.drawImage(layers.rigid, 0, 0, PORTRAIT_CW, PORTRAIT_CH); // Head-attached pixels stay on the original portrait plane, preserving tint and layer order.
+        canvas.hobunjiSplineParts.push({ key, slot, rig, canvas: layers?.flexible || partCanvas, phase: (i + 1) * 1.37 });
+        continue; // Only pixels assigned to the flexible region enter the spline's moving mesh.
       }
       withPixelDyeLayer(entry, (img, tint, sourceKey) =>
         drawLayerWithEmote(img, resolveXform(entry.layer), tint, 1, sourceKey));
@@ -1977,19 +1969,11 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   // Draws body/cosmetic/hood layers with full breathing + emote deformation.
   const drawBreathingLayers = (layerList, isHood = false) => {
     for (const entry of layerList) withPixelDyeLayer(entry, (img, tint, sourceKey) => {
-      const hoodBucket = isHood || (typeof hoodLayers !== 'undefined' && (layerList === hoodLayers || layerList === hoodBackLayers)); // Standalone tint tests evaluate this function without surrounding hood buckets.
-      const seamWarp = hoodBucket && splineSeams.length > 0;
-      const warpedCanvas = seamWarp ? document.createElement('canvas') : null; // Allocated only when a rig actually pierces a hood.
-      if (warpedCanvas) { warpedCanvas.width = PORTRAIT_CW; warpedCanvas.height = PORTRAIT_CH; }
-      const target = warpedCanvas ? warpedCanvas.getContext('2d') : ctx;
+      // Rigid/flexible masks partition the cosmetic itself; hood pixels are never punched out or reprojected.
       if (breathingComposer || staticDeform) {
-        drawPortraitLayerWarped(target, img, resolveXform(entry.layer), tint, breathingComposer, speciesId, gender, nowMs, breathingPhaseOffset, seatId, staticDeform, sourceKey, imageForTint);
+        drawPortraitLayerWarped(ctx, img, resolveXform(entry.layer), tint, breathingComposer, speciesId, gender, nowMs, breathingPhaseOffset, seatId, staticDeform, sourceKey, imageForTint);
       } else {
-        drawPortraitLayer(target, img, resolveXform(entry.layer), tint, sourceKey, imageForTint);
-      }
-      if (warpedCanvas) {
-        window.PortraitSplineRig?.warpHoodCanvas?.(warpedCanvas, splineSeams);
-        ctx.drawImage(warpedCanvas, 0, 0, PORTRAIT_CW, PORTRAIT_CH);
+        drawPortraitLayer(ctx, img, resolveXform(entry.layer), tint, sourceKey, imageForTint);
       }
     });
   };
