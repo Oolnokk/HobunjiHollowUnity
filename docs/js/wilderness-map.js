@@ -124,7 +124,7 @@
     for (const zoneId of (typeof WildernessMapGenerator !== 'undefined' ? WildernessMapGenerator.zoneMapIds() : [])) {
       const layout = deps._zoneLayouts.get(zoneId);
       for (const inst of (layout?.localeInstances || [])) {
-        out.push({ localeId: inst.localeId, name: inst.name, category: inst.category, zoneId, col: inst.x, row: inst.y, fixed: false, alwaysVisible: !!inst.alwaysVisible });
+        out.push({ localeId: inst.localeId, name: inst.name, category: inst.category, zoneId, col: inst.x, row: inst.y, fixed: false, alwaysVisible: !ENTER_ONLY_LOCALE_IDS.has(inst.localeId) && !!inst.alwaysVisible });
       }
     }
     return out;
