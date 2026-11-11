@@ -292,8 +292,19 @@
       queriesPending:[...states.values()].filter(s=>s.pending).length };
   }
 
+  function safeBeginFrame(args) {
+    try { beginFrame(args); }
+    catch (_) {
+      // Culling is optional. Never let a malformed actor, camera or context
+      // interrupt the main game loop or leave a previous frame's actors hidden.
+      endFrame();
+      enabled = false;
+      stats.disabledReason = 'actor-cull-failed-open';
+    }
+  }
+
   window.ActorRenderOcclusion=Object.freeze({
-    beginFrame,probeAfterBase,endFrame,snapshot,
+    beginFrame:safeBeginFrame,probeAfterBase,endFrame,snapshot,
     reset,
     setEnabled(value){enabled=value!==false;if(!enabled)reset();return enabled;},
     setGpuEnabled(value){gpuEnabled=value!==false;queryDisabled=false;stats.disabledReason='';reset();return gpuEnabled;},
