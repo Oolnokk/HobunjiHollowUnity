@@ -148,6 +148,8 @@ calls[2].options.onFinished();
 now = 28200;
 scheduled({ timestamp: now });
 assert.equal(calls.length, 3, 'daytime must suppress Banubu snoring outdoors');
+assert.equal(entrance.target, 'banubu_cave_hidden', 'daytime must deactivate the vanished exterior cave transition');
+assert.equal(windowObject.BanubuSnore.debugSnapshot().gatedEntrances, 1, 'mobile debug must identify the gated entrance');
 
 let talking = false; // Simulates Banubu dialogue while the player is indoors.
 windowObject.Combat.deps.isDialogueOpen = () => talking;
@@ -174,6 +176,7 @@ phase = 'night';
 player.x = (96.5) * TILE; // Entrance chunk=1, player chunk=6 -> five chunks away.
 now = 28850;
 scheduled({ timestamp: now });
+assert.equal(entrance.target, undefined, 'nightfall must restore the original cave transition target, including absent original values');
 assert.equal(calls.length, 4, 'player more than four chunks away must not hear a new snore');
 assert.match(windowObject.BanubuSnore.debugSnapshot().status, /outside four-chunk range/, 'debug state must explain the chunk-range suppression');
 assert.equal(windowObject.BanubuSnore.debugSnapshot().maxChunkDistance, 4, 'public mobile diagnostics must report the doubled activation gate');
