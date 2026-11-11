@@ -42,7 +42,7 @@ class Mesh {
   }
 } // Shared single material/geometry bounding cuboids.
 const THREE={
-  Sphere,Vector3,Frustum,Matrix4,Scene,Mesh,
+  Sphere,Vector3,Frustum,Matrix4,Quaternion,Scene,Mesh,
   BoxGeometry:class{},MeshBasicMaterial:class{constructor(options){Object.assign(this,options);}},
   DoubleSide:2
 }; // Production module runs unchanged with deterministic GPU-free primitives.
@@ -125,6 +125,22 @@ api.endFrame();
 camera.position.set(1,0,0); // Significant motion immediately invalidates the previous hidden results.
 api.beginFrame(context());
 assert.equal(covered.visible,true,'camera motion wakes an occluded NPC on the next render');
+api.endFrame();
+
+// A dialogue camera mounted under another transform must invalidate occlusion
+// even when its LOCAL position/quaternion remain unchanged.
+api.reset();
+camera.position.set(0,0,0);
+const cameraWorld = new Vector3(0,0,0);
+camera.getWorldPosition = out => out.copy(cameraWorld);
+camera.getWorldQuaternion = out => out.copy(camera.quaternion);
+for(let n=0;n<9;n++)frame();
+api.beginFrame(context());
+assert.equal(covered.visible,false,'stable world-camera occlusion can hide a covered NPC');
+api.endFrame();
+cameraWorld.set(2,0,0);
+api.beginFrame(context());
+assert.equal(covered.visible,true,'parented camera movement instantly invalidates stale hidden-state');
 api.endFrame();
 
 const previouslyHidden={isObject3D:true,visible:false,parent:rootScene,position:new Vector3(3,0,0)};
