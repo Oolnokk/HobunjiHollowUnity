@@ -191,6 +191,18 @@ async function run(){
     },'data:image/png;base64,'+image.toString('base64'));
     assert.ok(pixels.statuePixels>3500,
       'Pahu body/head must actually be visible (not merely textured off-camera): '+JSON.stringify({pixels,rig:pahu.sourceRig,body:pahuBody,head:pahuHead}));
+    assert.equal(pahu.authoredRig?.rigProfileFound,true,
+      'Pahu should use the actual Rakakoan Rig Coordinates profile, not a guessed avatar.');
+    assert.ok(pahu.authoredRig?.feet?.restStance?.left?.ankle
+      &&pahu.authoredRig.feet.restStance.right.ankle,
+      'Pahu feet must come from the actual procedural leg solver: '+JSON.stringify(pahu.authoredRig?.feet));
+    assert.equal(pahu.authoredRig?.feet?.samplingWarning,null,
+      'Do not silently replace a broken procedural rig with guessed feet.');
+    assert.equal(pahu.authoredRig?.provenance?.footPosition,'ProceduralLegAnimation.getRestStance()');
+    assert.ok(pahu.authoredRig?.hands?.shoulders?.left&&pahu.authoredRig.hands.shoulders.right,
+      'Actual hand shoulder coordinates must survive the furniture snapshot.');
+    assert.ok(pahu.authoredRig?.head?.scale>0&&pahu.authoredRig?.bodyScale?.x>0,
+      'Rig body axes and independent head scale must survive the snapshot.');
     console.log('PASS Pahu head-and-cosmetics statue: '+JSON.stringify({
       head:pahuHead.material,cells,selected:options[pahuIndex],pixels,rig:pahu.sourceRig,
       pieceBounds:pahu.pieces.map(p=>({id:p.id,worldSize:p.worldSize,visible:p.visible,screenCenter:p.screenCenter})),
@@ -213,6 +225,10 @@ async function run(){
           : piece.textureReady);
     },null,{timeout:30000});
     const generated=await page.evaluate(()=>window.__hobunjiStatueDebug());
+    assert.ok(generated.authoredRig?.rigProfileFound&&generated.authoredRig?.feet?.restStance?.left,
+      'Generated hero must use the real Mao-ao standing rig, not a per-species guessed foot offset');
+    assert.equal(generated.authoredRig?.feet?.samplingWarning,null,
+      'The hero leg solver must complete without fallback');
     assert.equal(generated.heroEquipment.speciesId,'mao-ao',
       'Hero species must be selected by the user, not bandit gang species weights');
     assert.ok(generated.heroEquipment.cosmetics.length>0,'Hero must have actual whitelist-approved clothing');
