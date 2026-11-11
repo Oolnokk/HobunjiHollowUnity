@@ -335,10 +335,12 @@
         } else if (obj.strongholdProp && window.ProceduralFurniture?.CATALOG?.[obj.key]) {
           // The stronghold uses the furniture renderer directly: these authored-material
           // recipes are camp props, not normal player-purchasable furniture definitions.
-          const mesh = window.ProceduralFurniture.buildFurnitureGroup(obj.key);
+          const mesh = window.BanditStrongholds?.distressFurnitureGroup?.(
+            window.ProceduralFurniture.buildFurnitureGroup(obj.key), obj.id)
+            || window.ProceduralFurniture.buildFurnitureGroup(obj.key); // Stable battered repairs; no per-frame animation.
           mesh.position.set(obj.x + .5, y, obj.y + .5);
           mesh.rotation.y = (Number(obj.rotY) || 0) * Math.PI / 180;
-          deps.markOutline(mesh);
+          // Stronghold wood and stone already have authored surface edges; only hands and feet need rig outlines.
           zi.scene.add(mesh);
           const collisionTiles = ['fortifiedLowRail','fortifiedHighCover','fortifiedWatchtower'].includes(obj.key)
             ? _applyBanditTentGridCollision(zoneId, obj) : []; // Existing pathfinding mask, restored on camp teardown.
