@@ -75,7 +75,8 @@
     const handHeight=modelHeight*fit*handBase*handScale;
     const footConfig=global.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet||{};
     const footHeight=modelHeight*fit*positive(footConfig.footHeightFraction,.11)*
-      positive(footConfig.sizeBalanceMultiplier)*positive(handsApi?.footScaleFor?.(speciesId,gender));
+      positive(footConfig.sizeBalanceMultiplier)*positive(handsApi?.footScaleFor?.(speciesId,gender))*
+      (speciesId==='kenkari'||speciesId==='rakakoan'?1:.75)*2; // Imported GLB normalization: radius*2*autofit(2)*species contact-Y, exactly ProceduralLegAnimation.buildGlbFoot.
     const sampled=snapshotLegStance(THREE,{
       npc,profile,speciesId,gender,modelWidth,modelHeight,handAttachY:frame.handAttachY
     });
