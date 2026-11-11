@@ -51,7 +51,7 @@ const server=http.createServer((req,res)=>{
       const info=window.HobunjiSplineAuthorDiagnostics?.();
       return info?.viewer?.webgl===true&&info?.viewer?.headLoaded&&info?.viewer?.hairLoaded
         &&info?.canonicalPortrait?.loaded&&info?.regionMasks?.front>0
-        &&info?.viewer?.textures?.rigidFront?.opaque>0; // Head overlap is loaded asynchronously after the full canonical character. // Verify the full body from the real Pants Rig Author portrait renderer, not only two detached images.
+        &&info?.viewer?.stitchedFrontPixels>0; // Rigid pixels now form a pinned collar on the same continuous mesh; the separate flat image may be empty for thin beards.
     },null,{timeout:60000}).catch(async error=>{throw new Error('WebGL head/hair did not load: '+error.message+'\n'+errors.join('\n').slice(0,3000)
       +'\nStatus: '+(await page.locator('#viewerStatus').innerText()));});
     const before=await debug();
@@ -83,7 +83,12 @@ const server=http.createServer((req,res)=>{
     assert(natural.blendRadius>0&&natural.follow>0,
       'automatic motion blend and bottom-parent influence are enabled by default');
     assert(before.regionMasks.front>0,'actual head-overlapping beard pixels default to the rigid region');
-    assert(before.viewer.textures.rigidFront?.opaque>0,'the non-deforming head attachment has its own visible 3D sprite');
+    assert(before.viewer.stitchedFrontPixels>0,
+      'the moving hair mesh overlaps the old cut with anchored rigid artwork rather than leaving a sheer two-plane seam');
+    assert(before.viewer.stitchedFrontPixels<=before.regionMasks.front,
+      'seam pixels can only transfer out of the genuinely rigid region');
+    assert(before.viewer.textures.hair?.opaque>0,
+      'flexible mesh retains actual visible beard pixels and its pinned transition collar');
     await page.locator('#autoMask').click();
     const initial=await debug();
     assert(initial.regionMasks.front>0,'automatic overlap classification produces a non-empty rigid region');
