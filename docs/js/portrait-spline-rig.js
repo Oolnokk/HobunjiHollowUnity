@@ -133,7 +133,7 @@
     const reach=clamp(totalLength*.22,.016,.09); // Natural gust displacement scales with the authored beard/hair length, not a constant pose per species.
     return points.slice(1).map((point,i)=>{
       const previous=points[i],length=Math.hypot(point.u-previous.u,point.v-previous.v);
-      const fraction=(i+1)/(points.length-1),tension=.3+.7*fraction; // Upper knots resist wind, outermost tip gets most of the bend.
+      const fraction=(i+1)/(points.length-1),tension=.08+.92*fraction*fraction; // Root-adjacent segments are substantially stiffer; the tip leads and pulls the middle instead of the middle outrunning it.
       const amplitude=reach*tension,vertical=Math.abs(point.v-previous.v)/Math.max(length,.001);
       const roll=clamp(vertical*12*tension,0,12),pitch=clamp(9*tension,0,9);
       const poses={};
