@@ -321,14 +321,12 @@ async function loadCanonicalCharacter(){
     if(!headRendered)throw Error('Canonical head-only renderer returned false.');
     if(generation!==canonicalPortraitGeneration)return;
     images.head=headCanvas;
-    if(images.rear){
-      const rearCanvas=document.createElement('canvas');rearCanvas.width=rearCanvas.height=200;
-      await window.NpcAvatarPreview.renderProfileToCanvas(rearCanvas,profile,{
-        forceEyesOpen:true,portraitView:'behind',onlyHeadSprite:true,
-      }); // Rear hair receives its own head-overlap mask instead of reusing the front silhouette.
-      if(generation!==canonicalPortraitGeneration)return;
-      images.headRear=rearCanvas;
-    }
+    const rearCanvas=document.createElement('canvas');rearCanvas.width=rearCanvas.height=200;
+    const rearRendered=await window.NpcAvatarPreview.renderProfileToCanvas(rearCanvas,profile,{
+      forceEyesOpen:true,portraitView:'behind',onlyHeadSprite:true,
+    }); // Load rear head consistently even if rear cosmetic artwork arrives after the canonical head.
+    if(generation!==canonicalPortraitGeneration)return;
+    if(rearRendered)images.headRear=rearCanvas;
     markRegionDirty();maybeInitializeMasks();render(); // Rigid overlap uses the canonical head silhouette at the correct portrait scale.
   }catch(error){
     if(generation!==canonicalPortraitGeneration)return;
@@ -546,6 +544,7 @@ function render(){
     viewer.update({rig,wind:wind(),selectedKnot,direction,
       head:images.character||images.head,front:sources.front,rear:sources.rear,
       rigidFront:sources.rigidFront,rigidRear:sources.rigidRear,
+      rearAligned:!!rig.regionMasks?.rear,
       hood:shown?(images.hoodRear||images.hood):images.hood}); // Exact same rigid/flexible split as the game renderer.
   }
 }
@@ -588,7 +587,7 @@ $('segmentSelect').onchange=e=>{selectedSegment=+e.target.value;selectedKnot=sel
 for(const b of document.querySelectorAll('[data-direction]'))b.onclick=()=>{direction=b.dataset.direction;controls();render();};
 $('testStrength').oninput=render;$('viewSelect').onchange=render;
 for(const [id,fn] of [['rearU',v=>rig.rearOffset.u=v],['rearV',v=>rig.rearOffset.v=v],['strandWidth',v=>rig.width=v],['response',v=>rig.windResponse=v]]){
-  $(id).onchange=e=>{fn(numeric(e.target.value));rig=Object.assign(rig,Rig.normalize(rig));controls();render();};
+  $(id).onchange=e=>{fn(numeric(e.target.value));rig=Object.assign(rig,Rig.normalize(rig));markRegionDirty();controls();render();};
 }
 $('clearMask').onclick=()=>{
   recordMaskUndo();
