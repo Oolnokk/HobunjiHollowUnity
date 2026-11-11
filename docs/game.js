@@ -13093,7 +13093,7 @@
 
         const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
           THREE, frontCanvas,
-          { backCanvas, headCanvas, profile, npcRecord: rec, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true, lod: 'npc' }
+          { backCanvas, headCanvas, profile, npcRecord: rec, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true, meshBudget: 'npc' }
         );
         const baseAvatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W; // Unscaled model height produced by the portrait/animal-plane builder.
         const avatarHeight = namedAnimalDef ? baseAvatarHeight * namedAnimalSizeScale.y : baseAvatarHeight; // Dialogue/interaction height follows the actually rendered animal size.
@@ -13179,7 +13179,7 @@
         const npcPants = window.PantsGarmentRenderer?.garmentForCosmetics(rec?.equippedCosmetics); // Resolves skirts and layered pants through the same authored rig registry.
         if (legs && npcPants) {
           window.PantsGarmentRenderer?.attachToLegs(THREE, legs, {
-            avatarGroup, speciesId: appearance.speciesId, gender: appearance.gender, name: rec?.id || rec?.name || 'npc', garmentId: npcPants, lod: 'npc', // Town NPCs use the crowd-density garment grid.
+            avatarGroup, speciesId: appearance.speciesId, gender: appearance.gender, name: rec?.id || rec?.name || 'npc', garmentId: npcPants, meshBudget: 'npc', // Town NPCs use the capped garment grid.
             appearance: window.PantsGarmentRenderer.appearanceFromBodyColors(profile?.bodyColors),
             overlayMask: window.PantsGarmentRenderer.buildOverlayMask(frontCanvas, profile, { forceEyesOpen: true }), // Arm clothing/overwear/pauldron/hood art stays in front of the pants.
           });
@@ -18439,6 +18439,7 @@
         }
       }
 
+      window.addEventListener('hobunji:player-mesh-budget-changed', () => { refreshPlayerAvatar().catch(error => console.warn('player mesh budget refresh failed', error)); }); // Settings > Player mesh cap; rebuilds the player's own rig with the new budget.
       async function refreshPlayerAvatar() {
         if (!_playerData || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
         const refreshGeneration = ++playerAvatarRefreshGeneration;
@@ -18504,7 +18505,7 @@
         if (refreshGeneration !== playerAvatarRefreshGeneration) { playerAvatarRefreshDebug.superseded++; return; }
         const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
           THREE, frontCanvas,
-          { backCanvas, headCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
+          { backCanvas, headCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true, meshBudget: window.PNGPlaneAvatar?.meshBudget?.forPlayer?.() }
         );
         avatarGroup.name = 'player_avatar';
         playerNeckJoint = avatarGroup.userData?.neckRig?.neckJoint || null;
@@ -18605,7 +18606,7 @@
         const wornPants = gearInventory?.clothing?.pants; // The equipped pants item carries its dye/weave (js/pants-garment-renderer.js).
         if (playerLegs && wornPants) {
           window.PantsGarmentRenderer?.attachToLegs(THREE, playerLegs, {
-            avatarGroup, speciesId: _playerData?.appearance?.speciesId, gender: _playerData?.appearance?.gender, name: 'player', garmentId: wornPants.cosmeticId,
+            avatarGroup, speciesId: _playerData?.appearance?.speciesId, gender: _playerData?.appearance?.gender, name: 'player', garmentId: wornPants.cosmeticId, meshBudget: window.PNGPlaneAvatar?.meshBudget?.forPlayer?.(), // Player rig follows the Settings mesh-cap choice.
             appearance: window.PantsGarmentRenderer.appearanceFromItem(wornPants),
             overlayMask: window.PantsGarmentRenderer.buildOverlayMask(frontCanvas, profile, staticRenderOptions),
           });

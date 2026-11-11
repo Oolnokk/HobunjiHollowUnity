@@ -17,7 +17,8 @@
 
   const HOOP_CORE = 0.03, HOOP_FADE = 0.07; // Distance (garment units) around an ankle spline that is fully rigid, and where that fades out.
   const DEFAULT_SEGMENTS = 64; // Vertices per side of the garment grid: fine enough that weight transitions deform smoothly instead of faceting.
-  const NPC_SEGMENTS = 32; // Crowd NPCs (attach option lod:'npc'): a quarter of the triangles; the pants rig author's own preview uses this density.
+  const NPC_SEGMENTS = 32; // Fallback for meshBudget:'npc' when PNGPlaneAvatar.meshBudget is absent; its table is the one place to tune this.
+  const segmentsForBudget = mode => (mode === 'npc' ? (global.PNGPlaneAvatar?.meshBudget?.table?.npc?.pantsSegments || NPC_SEGMENTS) : DEFAULT_SEGMENTS);
   const NPC_DEFAULT_PANTS_DYE = 'dye:CLOTH:brown'; // Same dye-reference format as the NPC overwear dye (appliedDyes.CLOTH).
   const PANTLESS_SPECIES = new Set(['omgurku']); // The hybrid lower body has no humanoid leg/pants rig.
   const DEFAULT_GARMENT_ID = 'pants_basic';
@@ -389,7 +390,7 @@
    * @param opts.appearance  {primaryHex, secondaryHex, patternHex, weaving}
    * @returns handle {update, setAppearance, dispose, mesh} or null when pants cannot be drawn for this avatar
    */
-  function attach(THREE, { avatarGroup, legHandle, speciesId, gender, garmentId = DEFAULT_GARMENT_ID, appearance = {}, name = 'pants', overlayMask = null, garmentRecord = null, characterRecord = null, imageUrl = null, footObjects = null, debugSplines = false, spine = null, lod = null } = {}) {
+  function attach(THREE, { avatarGroup, legHandle, speciesId, gender, garmentId = DEFAULT_GARMENT_ID, appearance = {}, name = 'pants', overlayMask = null, garmentRecord = null, characterRecord = null, imageUrl = null, footObjects = null, debugSplines = false, spine = null, meshBudget = null } = {}) {
     if (!characterRecord && isPantlessSpecies(speciesId)) return null; // The author's live preview (explicit records) can still show them.
     const Core = core();
     const garment = garmentRecord || rigConfig().garments?.[garmentId]; // The editor passes its live, unsaved authoring records here.
@@ -402,11 +403,11 @@
     }
     const feet = (footObjects || ['left_foot', 'right_foot'].map(foot => legHandle.group?.getObjectByName?.(foot))).filter(Boolean); // The procedural foot models.
     const footLift = footFrontLift(THREE, avatarGroup, feet);
-    const data = buildGarmentData(THREE, Core, avatarGroup, plane, garment, character, lod === 'npc' ? NPC_SEGMENTS : DEFAULT_SEGMENTS);
+    const data = buildGarmentData(THREE, Core, avatarGroup, plane, garment, character, segmentsForBudget(meshBudget));
     if (!data) return null;
     const handle = {
       name, garmentId, legHandle, model: avatarGroup, nodes, mesh: null, disposed: false, texture: null, material: null,
-      segments: lod === 'npc' ? NPC_SEGMENTS : DEFAULT_SEGMENTS, geometry: data.geometry, basePositions: data.basePositions, weights: data.weights, bones2D: data.bones2D,
+      segments: segmentsForBudget(meshBudget), geometry: data.geometry, basePositions: data.basePositions, weights: data.weights, bones2D: data.bones2D,
       beltCenter: data.beltCenter, beltEnds: data.beltEnds, planeNormal: data.planeNormal, rings: data.rings, splineSpec: data.splines, debugLines: null, showSplines: !!debugSplines,
       legRollGain: Math.min(4, Math.max(1, Number(character.legRollGain) || 2)),
       maskMapping: data.maskMapping, footLift, rest: null, restRaw: null, rotationScale: { left: 1, right: 1 }, restFrames: { left: {}, right: {} },

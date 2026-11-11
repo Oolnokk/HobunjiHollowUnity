@@ -110,7 +110,7 @@
     await preview.renderProfileToCanvas(back,profile,{portraitView:'behind',forceEyesOpen:true,seatId:'ancestor-stone-back:'+index,breathingComposer:null});
     const carvedFront=carvedCanvas(front,stone), carvedBack=carvedCanvas(back,stone);
     const model=avatar.buildSinglePlaneAvatarModel(THREE,carvedFront,{
-      name:'tzizkhanash_ancestor_'+index,backCanvas:carvedBack,profile,npcRecord:record,neckRig:true,lod:'npc'
+      name:'tzizkhanash_ancestor_'+index,backCanvas:carvedBack,profile,npcRecord:record,neckRig:true,meshBudget:'npc'
     });
     model.userData.ancestorSourceId=record.id || record.name || 'unrecorded';
     model.userData.ancestorPose={...pose}; // Mobile inspection can see the frozen authored pose and identity.
