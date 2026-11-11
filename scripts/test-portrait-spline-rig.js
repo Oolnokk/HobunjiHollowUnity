@@ -135,7 +135,7 @@ const portrait = read('docs/js/portrait-utils.js');
 const html = read('docs/index.html');
 const studio = read('docs/tools/character-studio/index.html');
 const editor = read('docs/tools/portrait-spline-author/index.html');
-assert(portrait.includes("hoodHidesFacialHair(hood)") && portrait.includes("splineRigFor(group)"), 'facewrap hiding and spline opt-in share portrait layer resolution');
+assert(portrait.includes("hoodHidesFacialHair(hood)") && portrait.includes("splineRigFor(entry.group)"), 'facewrap hiding and spline opt-in share portrait layer resolution');
 assert(portrait.includes("renderBehindView && slot === 'facialHair'"), 'a rigged beard does not paint a second rear portrait');
 assert(portrait.includes("splitByMask?.(partCanvas, rig.regionMasks?.[view])"), 'front/rear masks partition each cosmetic into stationary and deforming pixels');
 assert(!portrait.includes("warpHoodCanvas?.(") && !portrait.includes("paintSeamBridge?.("),
