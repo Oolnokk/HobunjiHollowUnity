@@ -85,6 +85,17 @@ assert.equal(new Set(rec.props.filter(prop=>prop.strongholdProp).map(prop=>prop.
 assert.equal(new Set(rec.props.filter(prop=>prop.strongholdProp).map(prop=>prop.coverId)).size,9,'cover and stake save keys are individually stable');
 assert.equal(layout.transitions.length,1,'one native cave entrance');
 assert.equal(layout.transitions[0].targetMapId,rec.stronghold.mapId);
+assert.equal(caves.__test.isWildlifeLabelTransition(layout.transitions[0]),false,
+  'wildlife den name refresh cannot overwrite the fortified entrance label');
+assert.equal(caves.__test.isWildlifeLabelTransition({ targetMapId:rec.stronghold.mapId+'_boss' }),false,
+  'wildlife den name refresh cannot overwrite the boss annex label');
+const ordinaryDen = { mapId:'test-animal-den', zoneId, contents:caves.TYPES.EMPTY }; // Test-only ordinary wildlife cave.
+caves.__test.sitesByMapId.set(ordinaryDen.mapId,ordinaryDen);
+assert.equal(caves.__test.isWildlifeLabelTransition({ targetMapId:ordinaryDen.mapId }),true,
+  'ordinary animal cave labels remain synchronized with wildlife turnover');
+assert.equal(caves.__test.isWildlifeLabelTransition({ targetMapId:ordinaryDen.mapId,puzzleCaveOnly:true }),false,
+  'puzzle cliff-door labels remain owned by their puzzle entrance');
+caves.__test.sitesByMapId.delete(ordinaryDen.mapId);
 const count = rec.props.length;
 assert.equal(strongholds.upgradeCamp(rec,deps),true);
 assert.equal(rec.props.length,count,'repeated initialization does not duplicate props');
