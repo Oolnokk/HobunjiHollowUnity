@@ -156,6 +156,7 @@ $('cosmeticFile').addEventListener('change',async e=>{
     $('cosmeticSelect').selectedIndex=-1;
     cosmetic=parsed;loadedName=file.name.replace(/^\(HA\)\s*/,'');
     rig=Rig.normalize(parsed.portraitSplineRig) || makeRig(); // Preserve authored rigid/flexible masks alongside poses and spline knots.
+    images.front=null;images.rear=null; // Never auto-classify an imported cosmetic using the previously selected style's artwork.
     maskUndo=null;markRegionDirty();maybeInitializeMasks();
     $('sourcePath').textContent='Local import: '+file.name;
     selectedKnot=1;selectedSegment=0;controls();render();message('Imported '+file.name+'. Export preserves existing cosmetic fields.');
