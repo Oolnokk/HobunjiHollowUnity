@@ -1806,7 +1806,7 @@ function poseChannelsAt(t) {
   const phase = anim.sequence === 'load' ? (t <= wf ? 'load windup' : 'load return')
     : anim.sequence === 'fire' ? (t <= sf ? 'fire' : (t <= hf ? 'recoil hold' : 'fire return'))
     : (t <= wf ? 'windup' : (t <= sf ? 'strike' : (t <= hf ? 'hold' : 'return')));
-  if (phase === 'hold' || phase === 'recoil hold') return { pose: { ...strike, flailLengthScale: SharedAttackPose.validFlailLength(strike.flailLengthScale, SharedAttackPose.validFlailLength(neutral.flailLengthScale)) }, phase };
+  if (phase === 'hold' || phase === 'recoil hold') return { pose: { ...strike, flailLengthScale: SharedAttackPose.validFlailLength(strike.flailLengthScale) }, phase };
   // A 0% windup has always shown the windup pose at t = 0 here; keep that authoring behavior.
   if (anim.sequence !== 'load' && anim.sequence !== 'fire' && wf <= 0 && t <= 0) return { pose: { ...defaultPose(windup.x || 0, windup.y || 0, windup.z || 0, windup.pitch || 0, windup.yaw || 0, windup.bodyYaw || 0, windup.roll || 0), flailLengthScale: SharedAttackPose.flailLengthScaleAt(anim.poses, t, wf, sf, hf, anim.sequence) }, phase };
   const channel = key => SharedAttackPose.sequencedPoseLerp(anim.sequence, t, wf, sf, hf, windup[key] || 0, strike[key] || 0, neutral[key] || 0, neutral[key] || 0);
