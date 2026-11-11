@@ -1664,7 +1664,7 @@ let weaponIdlePresetRetryCount = 0; // Diagnostic retry count for transient stan
 let weaponIdlePresetRetryTimer = null; // One editor-owned recovery timer, separate from the idle-stance sidebar.
 function sameWeaponIdlePose(actual, expected) {
   return WEAPON_IDLE_POSE_FIELDS.every(key => Number(actual?.[key]) === Number(expected?.[key]))
-    && SharedAttackPose.validFlailLength(actual?.flailLengthScale) === SharedAttackPose.validFlailLength(expected?.flailLengthScale); // Don't overwrite an artist's connector-only edit when the idle preset fetch completes.
+    && Number(actual?.flailLengthScale ?? 1) === Number(expected?.flailLengthScale ?? 1); // Optional connector-only edits keep priority while old still presets without the channel remain compatible.
 }
 async function loadWeaponIdlePresets() {
   const controller = typeof AbortController === 'function' ? new AbortController() : null; // Prevent a stalled request from occupying the entire editing session.
