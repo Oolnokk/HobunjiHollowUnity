@@ -103,7 +103,9 @@
     const style = document.createElement('style'); // Static CSS transitions/layout; no per-frame resizing or DOM animation work.
     style.id = STABLE_STYLE_ID;
     style.textContent = `
-      #stableList .stable-role-tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; position:sticky; top:0; z-index:2; padding:4px 0; background:var(--glass-2, #1d1b1a); }
+      /* The Stable pane scrolls the full roster, including expanded age groups and stowage. */
+      #stableList, #stableList .farm-list { max-height:none; overflow:visible; }
+      #stableList .stable-role-tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; padding:4px 0; }
       #stableList .stable-role-tab { flex:1 1 120px; min-width:0; min-height:38px; font-size:clamp(10px,2.2vw,13px); }
       #stableList .stable-role-tab[aria-pressed="true"] { border-color:var(--accent,#d9ad65); background:rgba(217,173,101,.18); font-weight:800; }
       #stableList .stable-training-row[hidden] { display:none !important; }
@@ -138,6 +140,8 @@
         selectedStableRole = role;
         expandedStableId = null;
         renderStablePanelNative();
+        const pane = document.getElementById('mpStable'); // Show the new category from its header even when a bumper changes it deep in the roster.
+        if (pane) pane.scrollTop = 0;
       });
       tabs.appendChild(button);
     }
@@ -488,7 +492,7 @@
       if (existing) { existing.remove(); return; }
       const pre = document.createElement('pre');
       pre.className = 'stable-entry-training-debug';
-      pre.style.cssText = 'margin:0;max-height:220px;overflow:auto;white-space:pre-wrap;font-size:10px;background:rgba(0,0,0,.35);padding:8px;border-radius:6px;';
+      pre.style.cssText = 'margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:10px;background:rgba(0,0,0,.35);padding:8px;border-radius:6px;';
       pre.textContent = JSON.stringify(stableDebugEntry(entry), null, 2);
       panel.appendChild(pre);
     });
@@ -672,7 +676,7 @@
     panel.stableTrainingDebug = () => {
       const stable = stableDeps?.getStable?.() || []; // Used to expose age counts alongside per-animal Stable diagnostics.
       return {
-        mostRecentChange: 'Companions train to level 30. Training / Perks includes saved per-ability frequency, effect focus, and combat tempo.',
+        mostRecentChange: 'The role selector and animal entries share one Stable pane scrollbar. Changing roles returns to the top.',
         expandedStableId,
         selectedRole: selectedStableRole,
         favoritesPerRole: Object.fromEntries(STABLE_PAGE_ORDER.map(role => [role, stable.filter(entry => stableRole(entry) === role && entry.stableFavorite).length])),
