@@ -59,6 +59,7 @@ assert.equal(results.hands.shoulders.left.x>0,true);
 assert.equal(results.hands.shoulders.right.x<0,true);
 assert.equal(results.hands.mirrorRight,true);
 assert.equal(results.feet.restStance.left.ankle.x,-.08);
+assert.ok(results.feet.height>.13,'Imported foot auto-fit must include the same gameplay contact diameter multiplier');
 assert.equal(results.feet.positions.right.z<0,true,'3D foot z comes from procedural stance, not a fixed 2D translation');
 assert.equal(results.feet.positions.left.x<results.feet.positions.right.x,true);
 assert.equal(legCalls.length,1);
@@ -81,4 +82,12 @@ assert.match(page,/snapshot\.feet\.axes/);
 assert.match(page,/snapshot\.hands\.axes/);
 assert.match(read('js/procedural-furniture.js'),/statuePartScaleAxes/);
 assert.match(read('js/procedural-furniture.js'),/statueMirrorX/);
+assert.match(page,/statueRigAlignment='hand'/,'Hand GLBs must retain source grip origin in furniture');
+assert.match(page,/statueRigAlignment='foot'/,'Foot GLBs must retain bottom contact as floor origin');
+assert.match(read('js/procedural-furniture.js'),/part\.statueRigAlignment==='hand'\|\|part\.statueRigAlignment==='foot'/,
+  'Static GLB importer needs an anatomy origin-safe branch');
+assert.match(read('js/procedural-furniture.js'),/part\.transform\.sy\)\/Math\.max\(\.001,size\.y\)/,
+  'Statue GLB normalization must match the real rig Y-height fit, not longest geometry axis');
+assert.match(read('js/procedural-furniture.js'),/if\(!part\.statueRigAlignment\)instance\.position\.sub\(center\)/,
+  'Do not recenter authored hand grip or foot ground contact');
 console.log('PASS Statue rig sampler: canonical species/gender anatomy, age head offset, independent body/head axes, authored shoulders, real leg rest stance, dimensions, mirroring and cleanup.');
