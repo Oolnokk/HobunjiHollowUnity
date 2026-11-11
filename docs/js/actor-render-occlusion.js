@@ -264,6 +264,14 @@
       currentRenderer.render(scene,currentCamera); // One lightweight proxy render, not one render per NPC.
       stats.probes=chosen.length;
     } catch (_) {
+      // If WebGL threw between a mesh's onBeforeRender/onAfterRender hooks,
+      // close the still-active query before the next world pass. Otherwise
+      // the WebGL2 context can remain in a broken query state despite the
+      // render-only culler falling back to full actor visibility.
+      for (const state of chosen) if (state.pending?.started) {
+        try { gl.endQuery(target); } catch (_) { /* Context may be lost. */ }
+        state.pending.started = false;
+      }
       disableGpu('query-pass-failed'); // Fail open and keep the scene fully visible.
     } finally {
       for(const state of chosen) if (state.proxy) state.proxy.visible=false;
