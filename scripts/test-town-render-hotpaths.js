@@ -590,7 +590,7 @@ assert.ok(heldRender.includes('const shellCandidates = [...new Set([...held, ...
   'all held/foot ground-x-ray participants retain shell parity before conservative camera culling');
 assert.ok(pixelProbe.includes('shellXray=${heldRenderDebug.shellXrayPasses ?? 0}/${heldRenderDebug.shellXrayMeshes ?? 0}'),
   'mobile Pixel Probe reports shell x-ray replay activity');
-assert.ok(heldRender.includes('replayShellOutlineXray(this, scene, camera, xrayMeshes, ground, topFaceGround, scissored, groups, shellPadding)'),
+assert.ok(heldRender.includes('replayShellOutlineXray(this, scene, camera, xrayGroupMeshes, ground, topFaceGround, scissored, groups, shellPadding)'),
   'the shell pass reuses the same classified ground and top-face floor geometry as object x-ray');
 
 // This hard-won ordering contract must stay discoverable to subsequent
