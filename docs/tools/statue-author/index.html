@@ -39,6 +39,12 @@ aside{max-height:none;overflow:visible;border-right:0;grid-template-columns:repe
 <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="../../config/scratchbones-config.js"></script>
 <script src="../../config/hand-model-profiles.js"></script>
+<script src="../../config/attachment-rig-profiles.js?v=20261110statueRig1"></script>
+<script src="../../config/character-rig-scale-defaults.js?v=20261110statueRig1"></script>
+<script src="../../js/character-rig-scale.js?v=20261110statueRig1"></script>
+<script src="../../js/leg-bones.js?v=20261110statueRig1"></script>
+<script src="../../js/procedural-leg-animation.js?v=20261110statueRig1"></script>
+<script src="../../js/statue-rig-snapshot.js?v=20261110statueRig1"></script>
 <script src="../../js/color-fill.js?v=20261110statueTint8"></script>
 <script src="../../js/portrait-utils.js"></script>
 <script src="../../js/portrait-breathing.js"></script>
@@ -374,13 +380,16 @@ function measureNpcRig(frameFront,frameBack,profile,npc){
       placementRatio:num(u.portraitVerticalPlacementRatio,.5),
       handAttachX:num(u.handAttachX,-.28),
       handAttachY:num(u.handAttachY,.35),
-      speciesId:u.speciesId||profile?.fighter?.speciesId||null
+      speciesId:u.speciesId||profile?.fighter?.speciesId||null,
+      childHeadFactor:u.hobunjiCharacterRigHeadRuntime?.childHeadFactor
+        ||measured.userData?.hobunjiCharacterRigHeadRuntime?.childHeadFactor||1,
+      rigNeckAvailable:!!u.neckRig?.neckJoint
     };
   }finally{
     api.disposeAvatarModel?.(measured);
   }
 }
-function makeStaticParts(front,back,head,backHead,profile,pose,finish,role,weaponMasks,frame,baseColor,heroMode=false){
+function makeStaticParts(front,back,head,backHead,profile,pose,finish,role,weaponMasks,frame,baseColor,heroMode=false,snapshot=null){
   const w=front.width,h=front.height;
   const bounds=unionHeadBounds(maskBounds(head),maskBounds(backHead));
   if(!bounds)throw Error('The NPC head cannot be separated from its portrait');
@@ -389,9 +398,10 @@ function makeStaticParts(front,back,head,backHead,profile,pose,finish,role,weapo
   const bodyMask=maskedPart(splitFront.body,full),headMask=maskedPart(splitFront.head,bounds);
   const backBodyMask=maskedPart(splitBack.body,full),backHeadMask=maskedPart(splitBack.head,bounds);
   const nominalHeight=Math.max(.25,frame?.modelHeight||1),nominalWidth=Math.max(.25,frame?.modelWidth||1);
-  const sizeMultiplier=.9/Math.max(nominalWidth,nominalHeight); // Fit tall or unusually scaled NPC rigs inside one furniture tile, preserving their aspect and attachment ratios.
-  const bodyWidth=nominalWidth*sizeMultiplier,bodyHeight=nominalHeight*sizeMultiplier;
-  const bodyCenterY=clamp(frame?.placementRatio??.5,.1,.9)*bodyHeight;
+  const sizeMultiplier=snapshot?.fit??(.9/Math.max(nominalWidth,nominalHeight)); // Rig sampler fits the already-authored full-body X/Y axes once.
+  const bodyWidth=snapshot?.body?.width??nominalWidth*sizeMultiplier;
+  const bodyHeight=snapshot?.body?.height??nominalHeight*sizeMultiplier;
+  const bodyCenterY=snapshot?.body?.centerY??clamp(frame?.placementRatio??.5,.1,.9)*bodyHeight;
   const drop=clamp(num(pose.bodySink),0,25)*bodyHeight/100;
   const bodyYaw=clamp(num(pose.bodyYaw),-360,360);
   const p=[
@@ -400,33 +410,44 @@ function makeStaticParts(front,back,head,backHead,profile,pose,finish,role,weapo
       null,{width:w,height:h,x:0,y:0},baseColor),
     sprite('statue_head','Head, hair and face',headMask,backHeadMask,finish,role,
       transform(((bounds.x+bounds.w/2)/w-.5)*bodyWidth,
-        (.5-(bounds.y+bounds.h/2)/h)*bodyHeight,.015,0,-bodyYaw,0,
-        bounds.w/w*bodyWidth,bounds.h/h*bodyHeight,.02),
+        (.5-(bounds.y+bounds.h/2)/h)*bodyHeight+(snapshot?.head?.offsetY||0),.015,0,-bodyYaw,0,
+        bounds.w/w*(snapshot?nominalWidth*sizeMultiplier*snapshot.head.scale:bodyWidth),
+        bounds.h/h*(snapshot?nominalHeight*sizeMultiplier*snapshot.head.scale:bodyHeight),.02),
       'statue_body',{width:w,height:h,x:bounds.x,y:bounds.y},baseColor)
   ];
   const limb=limbPaths(frame?.speciesId||profile.fighter?.speciesId||profile.speciesId||'mao-ao');
-  const handX=clamp(Math.abs(frame?.handAttachX||-.28)*sizeMultiplier,bodyWidth*.15,bodyWidth*.4);
-  const handY=clamp((frame?.handAttachY??.35)*sizeMultiplier-bodyCenterY,-bodyHeight*.38,bodyHeight*.35);
-  const handSize=clamp(bodyHeight*.13,.06,.17);
-  const holderX=handX+num(pose.x)*bodyWidth*.2;
+  const handX=snapshot?.hands?.x??clamp(Math.abs(frame?.handAttachX||-.28)*sizeMultiplier,bodyWidth*.15,bodyWidth*.4);
+  const handY=(snapshot?.hands?.y??(frame?.handAttachY??.35)*sizeMultiplier)-bodyCenterY;
+  const handSize=snapshot?.hands?.height??clamp(bodyHeight*.13,.06,.17);
+  const holderX=-handX+num(pose.x)*bodyWidth*.2; // Gameplay's right socket uses handAttachX (negative), not its absolute value.
   const holderY=handY+num(pose.y)*bodyHeight*.18;
   const holderZ=.04+num(pose.z)*bodyWidth*.18;
   const free=pose.rightHand?.enabled===true?pose.rightHand:null;
-  p.push(glb('statue_right_hand','Right hand',limb.hand,finish,role,
+  const rightHand=glb('statue_right_hand','Right hand',snapshot?.hands?.modelPath||limb.hand,finish,role,
     transform(holderX,holderY,holderZ,
-      num(free?.pitch,num(pose.pitch)),num(free?.yaw,num(pose.yaw)),num(free?.roll,num(pose.roll)),
-      handSize,handSize,handSize),'statue_body',baseColor));
-  p.push(glb('statue_left_hand','Left hand',limb.hand,finish,role,
-    transform(-handX,handY,.04,0,0,-12,handSize,handSize,handSize),'statue_body',baseColor));
+      num(free?.pitch,num(pose.pitch)),num(free?.yaw,num(pose.yaw,90)),num(free?.roll,num(pose.roll)),
+      handSize,handSize,handSize),'statue_body',baseColor);
+  const leftHand=glb('statue_left_hand','Left hand',snapshot?.hands?.modelPath||limb.hand,finish,role,
+    transform(handX,handY,.04,0,90,-12,handSize,handSize,handSize),'statue_body',baseColor);
+  if(snapshot){
+    for(const part of [rightHand,leftHand])part.statuePartScaleAxes=snapshot.hands.axes; // Applies the authored GLB hand anatomy on the furniture part.
+    rightHand.statueMirrorX=snapshot.hands.mirrorRight; // Source hand models are LEFT by default; gameplay mirrors the right.
+  }
+  p.push(rightHand,leftHand);
   const footConfig=window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet || {};
-  const footHeight=clamp(bodyHeight*num(footConfig.footHeightFraction,.11)*
+  const footHeight=snapshot?.feet?.height??clamp(bodyHeight*num(footConfig.footHeightFraction,.11)*
     num(footConfig.sizeBalanceMultiplier,1),.06,.17);
-  const footX=clamp(bodyWidth*num(footConfig.stanceWidthFraction,.16),.065,bodyWidth*.28);
-  const footY=footHeight*.5-bodyCenterY+drop;
-  p.push(glb('statue_left_foot','Left foot',limb.foot,finish,role,
-    transform(-footX,footY,.03,0,0,0,footHeight*1.2,footHeight,footHeight*1.6),'statue_body',baseColor));
-  p.push(glb('statue_right_foot','Right foot',limb.foot,finish,role,
-    transform(footX,footY,.03,0,0,0,footHeight*1.2,footHeight,footHeight*1.6),'statue_body',baseColor));
+  const footX=clamp(bodyWidth*num(footConfig.stanceWidthFraction,.16)*.5,.02,bodyWidth*.28);
+  for(const side of ['left','right']){
+    const saved=snapshot?.feet?.positions?.[side];
+    const x=saved?.x??(side==='left'?-footX:footX);
+    const y=(saved?.y??footHeight*.5)-bodyCenterY+drop;
+    const z=(saved?.z??0)+.03;
+    const part=glb('statue_'+side+'_foot',side==='left'?'Left foot':'Right foot',limb.foot,finish,role,
+      transform(x,y,z,0,0,0,footHeight*1.2,footHeight,footHeight*1.6),'statue_body',baseColor);
+    if(snapshot)part.statuePartScaleAxes=snapshot.feet.axes; // Preserve Rig Coordinates’ per-axis anatomy in the frozen GLB.
+    p.push(part);
+  }
   for(let i=0;i<weaponMasks.length;i++){
     const entry=weaponMasks[i];
     const defaultWeaponHeight=.37*entry.aspect;
@@ -499,11 +520,14 @@ async function makeProject(){
     for(const weapon of weapons)weapon.offhand=weapon.path===heroLoadout.offhandPath;
   if(myGeneration!==generation)return null;
   const rig=measureNpcRig(front,back,profile,npc);
-  const parts=makeStaticParts(front,back,head,backHead,profile,pose,filename,role,weapons,rig,baseColor,!!npc.statueHeroLoadout);
+  const sampledRig=window.HobunjiStatueRigSnapshot?.resolve?.({THREE,npc,profile,frame:rig});
+  if(!sampledRig?.rigProfileFound)throw Error('No canonical Multi-Avatar rig profile for '+(rig.speciesId||npc.appearance.speciesId)+' / '+npc.appearance.gender);
+  const parts=makeStaticParts(front,back,head,backHead,profile,pose,filename,role,weapons,rig,baseColor,!!npc.statueHeroLoadout,sampledRig);
   // The runtime schema is also accepted by Furniture Author's existing JSON import.
   return {schema:'hobunji_furniture_surface_author.v58',key:safeName(name).toLowerCase(),id:safeName(name),
     name,notes:'Generated with Statue Author from NPC '+(npc.name||npc.id||'unknown')+' / pose '+phase,
     statueSource:{npcId:npc.id||null,animationName:animation?.name||null,phase,materialFile:filename,materialRole:role,baseColor,sourceRig:rig,
+      rigSnapshot:sampledRig,
       ...(npc.statueHeroLoadout?{heroLoadout:clone(npc.statueHeroLoadout)}:{})},
     tileBase:{visible:true,tileSize:1,footprintW:1,footprintD:1,y:0,gridOpacity:.55},
     surfaceRecognition:{splitAngleDeg:24,colorCode:false,selectSurfaces:true,multiSelect:true},parts,
