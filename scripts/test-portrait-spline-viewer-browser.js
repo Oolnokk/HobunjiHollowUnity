@@ -50,7 +50,8 @@ const server=http.createServer((req,res)=>{
     await page.waitForFunction(()=>{
       const info=window.HobunjiSplineAuthorDiagnostics?.();
       return info?.viewer?.webgl===true&&info?.viewer?.headLoaded&&info?.viewer?.hairLoaded
-        &&info?.canonicalPortrait?.loaded; // Verify the full body from the real Pants Rig Author portrait renderer, not only two detached images.
+        &&info?.canonicalPortrait?.loaded&&info?.regionMasks?.front>0
+        &&info?.viewer?.textures?.rigidFront?.opaque>0; // Head overlap is loaded asynchronously after the full canonical character. // Verify the full body from the real Pants Rig Author portrait renderer, not only two detached images.
     },null,{timeout:60000}).catch(async error=>{throw new Error('WebGL head/hair did not load: '+error.message+'\n'+errors.join('\n').slice(0,3000)
       +'\nStatus: '+(await page.locator('#viewerStatus').innerText()));});
     const before=await debug();
