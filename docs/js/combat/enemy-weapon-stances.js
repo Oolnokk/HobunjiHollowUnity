@@ -92,7 +92,7 @@
     for (let i = 0; i < POSE_KEYS.length; i += 1) {
       if (cache.stanceValues[i] !== source[POSE_KEYS[i]]) return false;
     }
-    return true;
+    return cache.flailLengthScale === window.SharedAttackPose.validFlailLength(source.flailLengthScale);
   }
 
   // Synthetic authored pose that swaps only Neutral while preserving the original
@@ -143,6 +143,7 @@
     entity._enemyPreparedPose = {
       source, alternatesHeavyNeutral, action, originalAnim, originalPose, requestedSign, power, spacing, idleSink,
       stanceValues: POSE_KEYS.map(key => source[key]),
+      flailLengthScale: SAP.validFlailLength(source.flailLengthScale), // Invalidates the cached enemy pose when its live idle connector slider changes.
       prepared,
     };
     return prepared;
