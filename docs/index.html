@@ -571,7 +571,7 @@
        from loadBuildingScene/_loadTownFromWorkspace and its own live-swap
        check. -->
   <script src="js/festival-calendar.js?v=20261110tzkFortune1"></script>
-  <script src="js/map-layout-system.js?v=20261019h5ca2b48"></script>
+  <script src="js/map-layout-system.js?v=20261111communion2"></script>
   <!-- Gives interior furniture an authored tile footprint/quarter-turn transform and derives occupied-tile collision before the scene consumes the effective layout. -->
   <script src="js/interior-furniture-grid.js?v=20261102chairreview2"></script>
   <!-- Keeps authored seat anchors/surfaces on the same post-placement transform as interior-editor furniture visuals. -->
@@ -2958,7 +2958,7 @@
   <script src="js/npc-agenda.js?v=20261018a"></script>
   <script src="js/npc-activities.js?v=20261109lazyCaveNpc1"></script>
   <script src="js/npc-social-stimuli.js?v=20260902a"></script>
-  <script src="js/npc-activity-planner.js?v=20261018b"></script>
+  <script src="js/npc-activity-planner.js?v=20261111communion1"></script>
   <!-- NPC scheduling (resolveNpcScheduleTarget, station registry, on-duty
        checks — window.NpcScheduling) — must load before game.js, which
        calls window.NpcScheduling.init(...) during its own setup.
@@ -2974,7 +2974,7 @@
        referencing it at all until now — the seating bridge it feeds was
        consequently always inert in the shipped game (see that file's own
        header). -->
-  <script src="config/npcs/social-relations.js?v=20261013h9b7e0bc"></script>
+  <script src="config/npcs/social-relations.js?v=20261111communion1"></script>
   <!-- Social seating (window.NpcSocialSeating) — decorates
        NpcActivities.resolveDestination so a "sit" destination picks the
        best-scoring free seat (nearby family/partner/friends weighted in)
@@ -2985,7 +2985,7 @@
        NpcActivities.resolveDestination/NpcScheduling.findStationsByRole
        existing) — same previously-untagged situation as social-relations.js
        above. -->
-  <script src="js/npc-social-seating-bridge.js?v=20261021h5c4cd26"></script>
+  <script src="js/npc-social-seating-bridge.js?v=20261111communion1"></script>
   <!-- NPC walkability/beeline checks + area-graph pathfinding
        (window.NpcPathfinding) — must load before game.js, which calls
        window.NpcPathfinding.init(...) during its own setup. -->
