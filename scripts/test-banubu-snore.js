@@ -176,6 +176,11 @@ now = 28850;
 scheduled({ timestamp: now });
 assert.equal(calls.length, 4, 'player more than four chunks away must not hear a new snore');
 assert.match(windowObject.BanubuSnore.debugSnapshot().status, /outside four-chunk range/, 'debug state must explain the chunk-range suppression');
+assert.equal(windowObject.BanubuSnore.debugSnapshot().maxChunkDistance, 4, 'public mobile diagnostics must report the doubled activation gate');
+player.x = (80.5) * TILE; // Entrance chunk=1, player chunk=5: exactly the new four-chunk limit.
+now = 29100;
+scheduled({ timestamp: now });
+assert.equal(calls.length, 5, 'nighttime snoring must remain audible at four chunks, after the previous two-chunk limit');
 
 assert(audioSource.includes('function animalVoiceAcousticDistancePx(c, opts = {})'), 'AudioSystem must accept an acoustic-distance override');
 assert(audioSource.includes('const distance = animalVoiceAcousticDistancePx(c, opts);'), 'animal voice volume falloff must consume acoustic distance');
