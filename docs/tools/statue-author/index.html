@@ -434,6 +434,7 @@ function makeStaticParts(front,back,head,backHead,profile,pose,finish,role,weapo
     for(const part of [rightHand,leftHand]){
       part.statuePartScaleAxes=snapshot.hands.axes; // Applies the authored GLB hand anatomy on the furniture part.
       part.statueRigAlignment='hand'; // Keep the source GLB's authored 0,0,0 grip/wrist pivot instead of centering its bounding box.
+      part.statueRigBodyScale={x:snapshot.bodyScale.x,y:snapshot.bodyScale.y}; // The live rig scales all limb models under the same floor-parent, not just the portrait.
     }
     rightHand.statueMirrorX=snapshot.hands.mirrorRight; // Source hand models are LEFT by default; gameplay mirrors the right.
     leftHand.statueMirrorX=!snapshot.hands.mirrorRight; // Author may choose a right-handed source GLB instead.
@@ -454,6 +455,7 @@ function makeStaticParts(front,back,head,backHead,profile,pose,finish,role,weapo
     if(snapshot){
       part.statuePartScaleAxes=snapshot.feet.axes; // Preserve Rig Coordinates' per-axis anatomy in the frozen GLB.
       part.statueRigAlignment='foot'; // Original source y-min contacts the ground; floor origin must survive import.
+      part.statueRigBodyScale={x:snapshot.bodyScale.x,y:snapshot.bodyScale.y}; // Match the same nonuniform floor-parent scale as the body/hand rig.
       part.statueMirrorX=side==='left'; // ProceduralLegAnimation builds mirrored left foot from the right-source GLB.
     }
     p.push(part);
