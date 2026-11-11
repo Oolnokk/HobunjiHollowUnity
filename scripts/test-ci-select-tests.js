@@ -109,8 +109,10 @@ test('every conditional browser step is matched by a selector output', () => {
     const text = fs.readFileSync(path.resolve(__dirname, '..', filename), 'utf8');
     assert(text.includes('--suite=' + suite));
     const allowed = new Set([...Object.keys(selectTests(suite, [], { full: true }).output)]);
-    const guarded = [...text.matchAll(/if:\s+steps\.select\.outputs\.([a-z_]+)\s*==\s*'true'/g)];
-    assert(guarded.length >= 8, suite + ' must guard expensive checks');
+    const guardedSteps = [...text.matchAll(/if:\s+steps\.select\.outputs\.([a-z_]+)\s*==\s*'true'/g)];
+    const guardedJobs = [...text.matchAll(/if:\s+needs\.smoke\.outputs\.([a-z_]+)\s*==\s*'true'/g)]; // Heavy ruin browser jobs consume the shared selector's explicit outputs.
+    const guarded = guardedSteps.concat(guardedJobs);
+    assert(guarded.length >= 8, suite + ' must guard expensive checks and separately scheduled browser jobs');
     for (const match of guarded) assert(allowed.has(match[1]), suite + ' has an unknown output: ' + match[1]);
   }
 });

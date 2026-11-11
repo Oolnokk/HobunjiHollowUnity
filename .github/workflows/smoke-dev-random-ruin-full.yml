@@ -70,7 +70,11 @@ permissions:
 jobs:
   smoke:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30 # Established-player WebGL fixtures run both an isolated seed and the complete multi-seed audit.
+    timeout-minutes: 30 # Fast smoke owns static, Hachutu, collision and single-room checks only.
+    outputs:
+      construction: ${{ steps.select.outputs.construction }}
+      seed: ${{ steps.select.outputs.seed }}
+      audit: ${{ steps.select.outputs.audit }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -120,19 +124,67 @@ jobs:
       - name: Verify shared occupancy and puzzle visibility
         if: steps.select.outputs.collision == 'true'
         run: node scripts/test-dev-random-ruin-collision-browser.js
-      - name: Verify playable composed trial and shaft wing in the real game
-        if: steps.select.outputs.construction == 'true'
-        run: node scripts/test-ruin-construction-browser.js
       - name: Verify single-room no-loot puzzle lab in real Chromium
         if: steps.select.outputs.lab == 'true'
         run: node scripts/smoke-dev-ruin-single-room-browser.js
+
+  construction:
+    needs: smoke
+    if: needs.smoke.outputs.construction == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40 # Native V50 full playthrough can exceed twenty minutes on software WebGL.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install browser
+        run: |
+          npm install --no-save --package-lock=false playwright@1.55.0 three@0.128.0
+          npx playwright install --with-deps chromium
+      - name: Serve repo
+        run: python3 -m http.server 8000 --directory docs >/tmp/hobunji-http.log 2>&1 &
+      - name: Verify playable composed trial and shaft wing in the real game
+        run: node scripts/test-ruin-construction-browser.js
+
+  seed:
+    needs: smoke
+    if: needs.smoke.outputs.seed == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45 # Isolated seed no longer waits behind the slow native construction smoke.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install browser
+        run: |
+          npm install --no-save --package-lock=false playwright@1.55.0 three@0.128.0
+          npx playwright install --with-deps chromium
+      - name: Serve repo
+        run: python3 -m http.server 8000 --directory docs >/tmp/hobunji-http.log 2>&1 &
       - name: Isolate previously failing seed
-        if: steps.select.outputs.seed == 'true'
         env:
           HOBUNJI_RUIN_FIXED_SEEDS: '0x2468ace0'
           HOBUNJI_RUIN_AUDIT_SEEDS: '0'
         run: node scripts/test-dev-random-ruin-browser.js
+
+  audit:
+    needs: smoke
+    if: needs.smoke.outputs.audit == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75 # The full optional multi-seed audit runs separately instead of canceling mandatory checks.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install browser
+        run: |
+          npm install --no-save --package-lock=false playwright@1.55.0 three@0.128.0
+          npx playwright install --with-deps chromium
+      - name: Serve repo
+        run: python3 -m http.server 8000 --directory docs >/tmp/hobunji-http.log 2>&1 &
       - name: Exercise sequential rerolls, hallway clearance, optional wall planes, and multi-seed audit
-        if: steps.select.outputs.audit == 'true'
         continue-on-error: true
         run: node scripts/test-dev-random-ruin-browser.js
