@@ -11,12 +11,18 @@ class Vec3 {
 } // Fake renderer world-position primitive.
 class Sphere { constructor(center,radius){this.center=center;this.radius=radius;} }
 class Matrix4 {
-  multiplyMatrices(projection){this.maxX=projection.maxX;return this;}
-} // Passes the camera's frame-specific visible-X plane into the fake frustum.
+  multiplyMatrices(projection){this.maxX=projection.maxX;this.isCrop=false;return this;}
+  set(sx,_,__,tx){this.sx=sx;this.tx=tx;this.isCrop=true;return this;}
+  multiply(projection){
+    this.minX=(((-1-this.tx)/this.sx)+1)*projection.maxX*.5;
+    this.maxX=(((1-this.tx)/this.sx)+1)*projection.maxX*.5;
+    return this;
+  }
+} // Simulates the production clip-space crop of the same perspective camera.
 class Frustum {
-  setFromProjectionMatrix(matrix){this.maxX=matrix.maxX;return this;}
-  intersectsSphere(sphere){return sphere.center.x - sphere.radius < this.maxX;}
-} // Conservative fixture: a sphere touching the view edge must remain visible.
+  setFromProjectionMatrix(matrix){this.minX=matrix.isCrop?matrix.minX:-Infinity;this.maxX=matrix.maxX;return this;}
+  intersectsSphere(sphere){return sphere.center.x+sphere.radius>=this.minX && sphere.center.x-sphere.radius<this.maxX;}
+} // Conservative fixture: touching spheres remain visible at either crop boundary.
 
 const windowLike={THREE:{Frustum,Matrix4,Sphere,Vector3:Vec3}};
 new Function('window',source)(windowLike);
@@ -27,14 +33,16 @@ assert(!culler.diagnosticHideAll,'hide-all diagnostics default off');
 
 const scene={isScene:true}, otherScene={isScene:true};
 const root=(x,{parent=scene,visible=true}={})=>({
-  parent,visible,position:{x,y:0,z:0},
+  name:'npc_walker_'+x,parent,visible,position:{x,y:0,z:0},
   children:[{isSkinnedMesh:true,frustumCulled:false}], // Actual NPC portrait/pants rigs do not support mesh-level frustum culling.
 });
 const near=root(2), visible=root(20), offscreen=root(42), hidden=root(43,{visible:false}), elsewhere=root(44,{parent:otherScene});
+const remoteInFrame=root(13); // Visible to the full camera, but outside a small weapon x-ray patch.
 const huge=root(31);
 const walkers=[
   {root:near,area:'town',avatarHeight:1},
   {root:visible,area:'town',avatarHeight:1},
+  {root:remoteInFrame,area:'town',avatarHeight:1},
   {root:offscreen,area:'town',avatarHeight:1},
   {root:hidden,area:'town',avatarHeight:1},
   {root:elsewhere,area:'other',avatarHeight:1},
@@ -51,8 +59,16 @@ assert.equal(offscreen.visible,false,'offscreen NPC hides entire uncullable skin
 assert.equal(hidden.visible,false,'pre-hidden gameplay NPC remains untouched');
 assert.equal(elsewhere.visible,true,'unrelated scene never changes');
 assert.equal(huge.visible,true,'oversized Longoran-like rigs get conservative enlarged bounds');
-assert.equal(culler.snapshot().eligible,4,'count only visible scene-owned NPC roots');
+assert.equal(culler.snapshot().eligible,5,'count only visible scene-owned NPC roots');
 assert.equal(culler.snapshot().hidden,1,'only one actual off-camera world rig removed');
+const replayRestore=culler.suspendOutsideReplayRect(scene,camera,{x:0,y:0,z:20,w:100},100,100,
+  [{parent:visible}]); // Protect the NPC whose x-ray shell is being drawn.
+assert.equal(visible.visible,true,'the owner of an NPC x-ray part is never culled from its own replay');
+assert.equal(remoteInFrame.visible,false,'a different on-camera NPC outside the local patch skips its mesh submission');
+assert.equal(near.visible,true,'a nearby NPC whose sphere overlaps the patch still occludes correctly');
+assert.equal(culler.snapshot().replayHidden,1,'mobile diagnostics count culled replay NPCs');
+replayRestore();
+assert.equal(remoteInFrame.visible,true,'restore the local replay-hidden NPC before other draws');
 restore();
 assert.equal(offscreen.visible,true,'world render must restore hidden roots before the next NPC AI update');
 assert.equal(hidden.visible,false,'existing hidden flags are never overwritten by restore');
@@ -92,4 +108,6 @@ assert.match(game,/\} finally \{\s*restoreNpcVisuals\?\.\(\)/,
   'all camera-visible NPC roots are restored in a finally block');
 assert.match(fs.readFileSync('docs/js/house-pieces.js','utf8'),/npc-view-frustum-cull\.js\?v=/,
   'core loader delivers the culler before game.js starts');
+assert.equal((fs.readFileSync('docs/js/held-object-render-order.js','utf8').match(/suspendOutsideReplayRect/g)||[]).length,2,
+  'both held and shell depth reconstruction use NPC replay-subfrustum culling');
 console.log('NPC view culling: real module, reversible frustum/near/large/area and render-failure tests passed.');
