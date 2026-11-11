@@ -1,0 +1,68 @@
+/* World → Town Progress: one native pane scrollbar, touch and controller friendly. */
+#mpWorldProgress { overscroll-behavior: contain; }
+#mpWorldProgress .town-progress-page {
+  box-sizing: border-box;
+  width: min(100%, 920px);
+  margin: 0 auto;
+  padding: clamp(12px, 2.5vmin, 24px);
+  display: flex;
+  flex-direction: column;
+  gap: 17px;
+  color: var(--text, #eee);
+}
+#mpWorldProgress .town-progress-hero {
+  padding: clamp(15px, 3vmin, 26px);
+  border: 1px solid #8fbd9270;
+  border-radius: 13px;
+  background: linear-gradient(135deg, #1c362a, #182124);
+}
+#mpWorldProgress .town-progress-kicker {
+  text-transform: uppercase;
+  letter-spacing: .16em;
+  font-size: 12px;
+  color: #c2dbc5;
+  font-weight: 700;
+}
+#mpWorldProgress .town-progress-value {
+  font-size: clamp(45px, 8vmin, 82px);
+  line-height: 1.04;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #d4f3d4;
+  margin: 5px 0 8px;
+}
+#mpWorldProgress .town-progress-section { display: flex; flex-direction: column; gap: 9px; }
+#mpWorldProgress .town-progress-heading { font-size: clamp(16px, 2.4vmin, 21px); margin: 0; }
+#mpWorldProgress .town-progress-overview { font-size: 13px; font-weight: 700; margin: 0; }
+#mpWorldProgress .town-progress-muted { font-size: 12px; line-height: 1.45; color: #b2bab7; }
+#mpWorldProgress p.town-progress-muted { margin: 0 0 4px; }
+#mpWorldProgress .town-progress-fey-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+#mpWorldProgress .town-progress-fey-card,
+#mpWorldProgress .town-progress-row {
+  min-width: 0;
+  border: 1px solid #61716d;
+  border-radius: 9px;
+  background: #1b2223;
+  padding: 12px 13px;
+}
+#mpWorldProgress .town-progress-fey-card { display: flex; flex-direction: column; gap: 8px; }
+#mpWorldProgress .town-progress-fey-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+#mpWorldProgress .town-progress-fey-name,
+#mpWorldProgress .town-progress-row-title { margin: 0; font-size: 14px; font-weight: 700; }
+#mpWorldProgress .town-progress-status { border-radius: 12px; padding: 3px 8px; font-size: 10px; font-weight: 700; line-height: 1.3; }
+#mpWorldProgress .town-progress-status.is-partial { color: #f2d4a0; border: 1px solid #b18b50; }
+#mpWorldProgress .town-progress-status.is-unbuilt { color: #c8cbd0; border: 1px solid #737984; }
+#mpWorldProgress .town-progress-fey-count { font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; }
+#mpWorldProgress .town-progress-track { height: 7px; background: #3a4848; border-radius: 5px; overflow: hidden; width: 100%; }
+#mpWorldProgress .town-progress-fill { height: 100%; border-radius: inherit; background: #80c399; }
+#mpWorldProgress .town-progress-detail { font-size: 12px; line-height: 1.4; margin: 0; }
+#mpWorldProgress .town-progress-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+#mpWorldProgress .town-progress-row-info { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; gap: 7px; }
+#mpWorldProgress .town-progress-row-value { flex: 0 0 auto; font-size: 13px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+#mpWorldProgress .town-progress-diagnostics { padding: 6px; color: #abb7b6; font-size: 11px; }
+#mpWorldProgress .town-progress-diagnostics pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 10px; }
+@media (max-width: 670px) {
+  #mpWorldProgress .town-progress-fey-list { grid-template-columns: 1fr; }
+  #mpWorldProgress .town-progress-row { align-items: flex-start; flex-wrap: wrap; gap: 7px; }
+  #mpWorldProgress .town-progress-row-value { text-align: left; }
+}
