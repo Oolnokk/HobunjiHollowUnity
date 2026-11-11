@@ -12,6 +12,22 @@ function section(a,b) {
   return renderer.slice(i,j);
 } // Extracts exact production functions into GPU-free fixtures.
 
+const isAuthoredInkPlane=new Function(section('  function isAuthoredInkPlane(', '  function enforceHeldMesh(')
+  + '\nreturn isAuthoredInkPlane;')(); // Production classification for PNG bodies, weapon art and grass/leaf cards.
+assert(isAuthoredInkPlane({geometry:{type:'PlaneGeometry'},userData:{}}),
+  'PNG weapon planes cannot enter the generated shell pass');
+assert(isAuthoredInkPlane({geometry:{type:'BufferGeometry'},userData:{noOutline:true}}),
+  'merged leaf cards marked noOutline remain excluded');
+assert(isAuthoredInkPlane({geometry:{type:'BufferGeometry'},userData:{isBillboard:true}}),
+  'instanced grass billboards remain excluded');
+assert(isAuthoredInkPlane({userData:{hobunjiWeaponAssemblyPart:true}}),
+  'modular flail rope and head sprite parts remain excluded');
+assert(!isAuthoredInkPlane({geometry:{type:'BufferGeometry'},userData:{hobunjiProceduralHand:true}}),
+  'volumetric character hands retain the generated shell');
+assert(!isAuthoredInkPlane({geometry:{type:'BufferGeometry'},userData:{hobunjiProceduralFoot:true}}),
+  'volumetric character feet retain the generated shell');
+assert(!isAuthoredInkPlane({geometry:{type:'BufferGeometry'},userData:{}}),
+  'ordinary 3D props keep their authored shell outline behavior');
 const cullableCode=section('  function isReplayCullable(', '  function hasAlternateReplayPose(');
 const actualReplayCullable=new Function(cullableCode+'\nreturn isReplayCullable;')(); // The real eligibility policy, including geometry and frustum flags.
 const canBoundCode=section('  function canBoundXrayMesh(', '  function buildXrayGroups(');
@@ -181,7 +197,7 @@ function shellScenario(withException,enableScissor=false){
     scanScene(){},isShellOutlinePass(){return true;},
     heldRegistry:'held',waterOccludedRegistry:'feet',groundRegistry:'ground',topFaceGroundRegistry:'top',
     collectVisible(name){return name==='held'?held:name==='ground'?[{visible:true}]:[];},
-    SHELL_LAYER:1,hasLayer(){return true;},
+    SHELL_LAYER:1,hasLayer(){return true;},isAuthoredInkPlane,
     filterOffscreenReplayMeshes:(camera,parts)=>parts,
     window:{HobunjiHandOutlineParity:{refreshHeldMatrices(){}}},buildXrayGroups:(renderer,scene,camera,meshes)=>{
       return withException?{groups:[{meshes:[special],regions:[{col:1,row:2,elevation:0}]}],ordinary:[plain]}:{groups:[],ordinary:meshes};
@@ -191,7 +207,7 @@ function shellScenario(withException,enableScissor=false){
     restoreVisibility(){},replayShellOutlineXray(renderer,scene,camera,parts,ground,top,scissored,groups,padding){metrics.depthReplays++;metrics.replayed=parts.slice();metrics.padding=padding;},
   };
   const setup=new Function('h',[
-    'const {internalReplay,retiredScenes,originalRender,scanScene,isShellOutlinePass,heldRegistry,waterOccludedRegistry,groundRegistry,topFaceGroundRegistry,collectVisible,SHELL_LAYER,hasLayer,filterOffscreenReplayMeshes,window,buildXrayGroups,replayScissorEnabled,replayScissorRect,hideObjects,restoreVisibility,replayShellOutlineXray}=h;',
+    'const {internalReplay,retiredScenes,originalRender,scanScene,isShellOutlinePass,heldRegistry,waterOccludedRegistry,groundRegistry,topFaceGroundRegistry,collectVisible,SHELL_LAYER,hasLayer,isAuthoredInkPlane,filterOffscreenReplayMeshes,window,buildXrayGroups,replayScissorEnabled,replayScissorRect,hideObjects,restoreVisibility,replayShellOutlineXray}=h;',
     'let lastShellReplayCandidates=0,lastShellOffscreenFiltered=0,lastShellElevationGroups=0,lastShellFullscreenReason="none",ordinaryShellMeshesDrawnOnce=0,ordinaryShellReplaysAvoided=0;',
     'const scissorRect={x:0,y:0,z:100,w:100};',
     shellCode,
