@@ -132,7 +132,7 @@ const DIRECTIONS=['left','right','up','down','toward','away'],FIELDS=['yaw','pit
 const makeSegment=()=>({deadzone:{x:4,y:4,z:6},poses:Object.fromEntries(DIRECTIONS.map(x=>[x,{yaw:0,pitch:0,roll:0,translate:{x:0,y:0,z:0}}]))});
 const makeRig=(providedPoints)=>{const points=providedPoints||[{u:.5,v:.28,depth:.015},{u:.52,v:.43,depth:.025},{u:.53,v:.6,depth:.035}]; // New rigs start with fitted natural poses, not six empty wind directions.
  return {version:1,enabled:true,points,segments:Rig.makeDefaultSegments(points),regionMasks:{},
- rearOffset:{u:0,v:0},width:.1,windResponse:1,tipFollow:.58,blendRadiusPx:18,segmentsX:32,segmentsY:40};};
+ rearOffset:{u:0,v:0},width:.1,windResponse:1,tipFollow:.58,blendRadiusPx:18,segmentsX:24,segmentsY:32};};
 let rig=makeRig(),cosmetic={},loadedName='cosmetic.json',selectedKnot=1,selectedSegment=0,direction='right',mode='move';
 let images={front:null,rear:null,hood:null,hoodRear:null,head:null,headRear:null,character:null},dragging=false,lastPaint=null;
 let canonicalPortraitPromise=null,canonicalPortraitGeneration=0,canonicalPortraitError=null; // Reuses Pants Rig Author's species/gender portrait registry and naked-character render path.
