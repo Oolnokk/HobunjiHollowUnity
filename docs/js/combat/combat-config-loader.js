@@ -98,7 +98,7 @@
     ['js/clothing-weaving-system.js?v=20261104hPatternQuick1435a', () => Number(window.ClothingWeavingSystem?.version) >= 1],
     ['js/fur-hood-leatherworking.js?v=20261107furPreview1', () => !!window.FurHoodLeatherworking],
     ['js/clothing-weight-dodge-policy.js?v=20260913a', () => Number(window.ClothingWeightDodgePolicy?.version) >= 1],
-    ['js/inventory-character-effects.js?v=20261106trinkets1', () => Number(window.InventoryCharacterEffects?.version) >= 1],
+    ['js/inventory-character-effects.js?v=20261111trinketSummary2', () => Number(window.InventoryCharacterEffects?.version) >= 1],
     ['js/inventory-gear-compact-effects.js?v=20261107inactivefit1', () => Number(window.InventoryGearCompactEffects?.version) >= 2],
     ['js/combat/technique-scrolls.js?v=20261105koma1', () => !!window.TechniqueScrolls],
     ['js/combat/combat-vocalizations.js?v=20261110shortCombo3', () => Number(window.CombatVocalizations?.version) >= 5],
