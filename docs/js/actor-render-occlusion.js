@@ -28,6 +28,8 @@
   const viewMatrix = THREE ? new THREE.Matrix4() : null; // Camera projection * inverse-world matrix.
   const scene = THREE ? new THREE.Scene() : null; // Tiny isolated proxy scene, never added to gameplay world.
   const geometry = THREE ? new THREE.BoxGeometry(1, 1, 1) : null; // A single shared conservative query cuboid.
+  const eye = THREE ? new THREE.Vector3() : null; // World-space eye for parented cutscene cameras and immediate occlusion wakeups.
+  const eyeRotation = THREE?.Quaternion ? new THREE.Quaternion() : null; // Cached world-space camera orientation.
   const material = THREE ? new THREE.MeshBasicMaterial({
     colorWrite:false, depthWrite:false, depthTest:true, transparent:false,
     side:THREE.DoubleSide, fog:false, toneMapped:false
@@ -50,9 +52,8 @@
   let cursor = 0; // Fair round-robin offset so distant NPCs never starve.
 
   function inScene(root, expected) {
-    for (let node = root; node; node = node.parent) if (node === expected) return true;
-    return false;
-  } // Skip detached NPCs and residents attached to an inactive interior scene.
+    return root?.parent === expected; // Only directly scene-owned actors have a verified world-space root position.
+  } // Nested dance/cutscene rigs use their own visibility policies; never guess their transforms.
 
   function release(state) {
     if (state.pending && gl) {
@@ -197,7 +198,11 @@
     viewMatrix.multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse);
     frustum.setFromProjectionMatrix(viewMatrix);
     currentViewValid=true;
-    const pos=camera.position,quat=camera.quaternion;
+    // Parent-mounted dialogue/cutscene cameras move in world space even when
+    // their local position/quaternion stay constant; their old occlusion result
+    // must never make a newly revealed actor disappear.
+    const pos=camera.getWorldPosition?.(eye) || camera.position;
+    const quat=(eyeRotation && camera.getWorldQuaternion?.(eyeRotation)) || camera.quaternion;
     const changed = lastArea!==currentArea || !lastCamPos
       || lastCamPos.distanceToSquared(pos) > CAMERA_RESET_DISTANCE*CAMERA_RESET_DISTANCE
       || Math.abs(lastCamQuat.dot(quat)) < CAMERA_RESET_DOT;
@@ -291,6 +296,6 @@
     beginFrame,probeAfterBase,endFrame,snapshot,
     reset,
     setEnabled(value){enabled=value!==false;if(!enabled)reset();return enabled;},
-    setGpuEnabled(value){gpuEnabled=value!==false;reset();return gpuEnabled;},
+    setGpuEnabled(value){gpuEnabled=value!==false;queryDisabled=false;stats.disabledReason='';reset();return gpuEnabled;},
   });
 })();
