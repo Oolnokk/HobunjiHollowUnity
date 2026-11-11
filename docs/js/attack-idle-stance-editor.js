@@ -22,6 +22,7 @@
     { key: 'yaw', label: 'Tool Y rotation°', min: -180, max: 180, step: 1, angle: true },
     { key: 'roll', label: 'Tool Z rotation°', min: -180, max: 180, step: 1, angle: true },
     { key: 'bodyYaw', label: 'Character Y rotation°', min: -180, max: 180, step: 1, angle: true },
+    { key: 'flailLengthScale', label: 'Flail connector length (1 = normal; flails only)', min: 0.1, max: 3, step: 0.01, angle: false }, // Saved per stance; ordinary weapons ignore it.
   ]);
 
   const FALLBACK_CONFIG = Object.freeze({
@@ -33,7 +34,7 @@
       topHeavyTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
       longHaftedTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
       heavyWeapon: Object.freeze({ x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 }),
-      lightWeapon: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }),
+      lightWeapon: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114, flailLengthScale: 0.6 }),
       dualWieldMain: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }),
       dualWieldOffhand: Object.freeze({ x: 0.13, y: -0.04, z: 0.1, pitch: 40, yaw: 88, bodyYaw: -40, roll: -73 }),
     }),
@@ -47,7 +48,11 @@
   function normalizePose(raw, fallback) {
     const source = raw && typeof raw === 'object' ? raw : {};
     const out = {};
-    for (const field of FIELD_DEFS) out[field.key] = numberOr(source[field.key], fallback[field.key]);
+    for (const field of FIELD_DEFS) {
+      const fallbackValue = field.key === 'flailLengthScale' ? (fallback[field.key] ?? 1) : fallback[field.key]; // Older saved stance JSONs inherit natural reach, except Light's new 0.6 default.
+      const value = numberOr(source[field.key], fallbackValue);
+      out[field.key] = field.key === 'flailLengthScale' ? Math.max(0.1, Math.min(3, value)) : value;
+    }
     return out;
   }
 
@@ -57,12 +62,12 @@
       out.stances[key] = normalizePose(raw?.stances?.[key], fallback.stances[key]);
     }
     const incomingLight = raw?.stances?.lightWeapon;
-    const wasPreviousDefault = incomingLight && FIELD_DEFS.every(field =>
+    const wasPreviousDefault = incomingLight && FIELD_DEFS.filter(field => field.key !== 'flailLengthScale').every(field =>
       Math.abs(numberOr(incomingLight[field.key]) - PREVIOUS_LIGHT_WEAPON_STANCE[field.key]) < 1e-9
     );
     if (wasPreviousDefault) out.stances.lightWeapon.y = 0; // Keep editor/runtime parity for exact old saved defaults without touching authored variants.
     const incomingTopHeavy = raw?.stances?.topHeavyTool; // An older browser's unedited Top-heavy saved pose should inherit the new Pick-Shovel copy.
-    if (incomingTopHeavy && FIELD_DEFS.every(field =>
+    if (incomingTopHeavy && FIELD_DEFS.filter(field => field.key !== 'flailLengthScale').every(field =>
       Math.abs(numberOr(incomingTopHeavy[field.key]) - PREVIOUS_TOP_HEAVY_TOOL_STANCE[field.key]) < 1e-9)) {
       out.stances.topHeavyTool = { ...fallback.stances.topHeavyTool }; // Preserve any user-customized pose instead of overwriting it.
     }
