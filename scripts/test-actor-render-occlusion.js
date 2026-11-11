@@ -26,7 +26,7 @@ class Quaternion {
   copy(q){Object.assign(this,q);return this;}
   dot(q){return this.x*q.x+this.y*q.y+this.z*q.z+this.w*q.w;}
 } // The occlusion culler uses only camera-pose dot products.
-class Matrix4 {multiplyMatrices(){return this;}}
+class Matrix4 {constructor(){this.elements=Array(16).fill(0);} multiplyMatrices(){return this;}} // Mutable projection matrices reproduce mobile viewport and zoom updates.
 class Frustum {setFromProjectionMatrix(){return this;} intersectsSphere(s){return s.center.x < 14;}}
 class Sphere {constructor(center,radius){this.center=center;this.radius=radius;}}
 class Scene {
@@ -67,6 +67,8 @@ const renderer={
     drawCalls++;
     assert.equal(this.autoClear,false,'query pass never clears the real scene depth');
     for(const mesh of scene.children)if(mesh.visible){
+      assert(mesh.scale.x>=11 && mesh.scale.y>=11 && mesh.scale.z>=11,
+        'depth proxy must enclose at least the complete 5.5-tile whole-rig sphere');
       mesh.onBeforeRender?.(this,scene,camera,mesh.geometry,mesh.material);
       if(forcedFailure)throw Error('simulated renderer exception'); // Tests a throw while WebGL2 query is still active.
       mesh.onAfterRender?.(this,scene,camera,mesh.geometry,mesh.material);
@@ -141,6 +143,60 @@ api.endFrame();
 cameraWorld.set(2,0,0);
 api.beginFrame(context());
 assert.equal(covered.visible,true,'parented camera movement instantly invalidates stale hidden-state');
+api.endFrame();
+
+// The original culler reset its movement anchor EVERY frame. Repeated tiny
+// steps/rotations therefore accumulated into a large view change without
+// invalidating a previously hidden NPC. Keep the comparison anchored.
+function rehideCovered(){
+  api.reset();
+  cameraWorld.set(0,0,0);
+  camera.quaternion = new Quaternion();
+  covered.position.set(10,0,0);
+  camera.projectionMatrix.elements[0] = 1;
+  for(let i=0;i<9;i++)frame();
+  api.beginFrame(context());
+  assert.equal(covered.visible,false,'fixture establishes a conservatively hidden actor');
+  api.endFrame();
+}
+rehideCovered();
+for(const x of [.25,.5]){
+  cameraWorld.set(x,0,0); api.beginFrame(context());
+  assert.equal(covered.visible,false,'small cumulative camera steps retain recently confirmed occlusion');
+  api.endFrame();
+}
+cameraWorld.set(.75,0,0); api.beginFrame(context());
+assert.equal(covered.visible,true,'total camera displacement wakes NPC despite small individual steps');
+api.endFrame();
+
+rehideCovered();
+for(const degrees of [3,6]){
+  camera.quaternion=new Quaternion(0,Math.sin(degrees*Math.PI/360),0,Math.cos(degrees*Math.PI/360));
+  api.beginFrame(context());
+  assert.equal(covered.visible,false,'subthreshold view turns can retain confirmed cover');
+  api.endFrame();
+}
+camera.quaternion=new Quaternion(0,Math.sin(12*Math.PI/360),0,Math.cos(12*Math.PI/360));
+api.beginFrame(context());
+assert.equal(covered.visible,true,'small incremental view turns must eventually invalidate occlusion');
+api.endFrame();
+
+rehideCovered();
+for(const x of [10.16,10.32]){
+  covered.position.set(x,0,0);
+  api.beginFrame(context());
+  assert.equal(covered.visible,false,'minor actor displacement keeps old conservative query result');
+  api.endFrame();
+}
+covered.position.set(10.48,0,0);
+api.beginFrame(context());
+assert.equal(covered.visible,true,'accumulated slow NPC steps invalidate old hidden state');
+api.endFrame();
+
+rehideCovered();
+camera.projectionMatrix.elements[0]=1.08;
+api.beginFrame(context());
+assert.equal(covered.visible,true,'mobile resize, zoom or FOV change wakes previously hidden NPC');
 api.endFrame();
 
 const previouslyHidden={isObject3D:true,visible:false,parent:rootScene,position:new Vector3(3,0,0)};
