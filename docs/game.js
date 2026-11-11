@@ -27175,6 +27175,12 @@
         // in one frame, so this bucket captures the true per-frame total.
         const renderPassPerf = window.PerfProfiler?.begin('render passes');
         const activeScene = window.GridTileAccessors.getActiveScene();
+        // A walker has a stable floor-anchored root even though its skinned
+        // portrait, limbs and clothing disable Three's individual frustum
+        // culling. Suspend off-camera NPC visuals across ALL world passes,
+        // then restore before any gameplay tick or subsequent render.
+        const restoreNpcVisuals = window.NpcViewFrustumCull?.suspendForRender?.(npcWalkers, activeScene, camera);
+        try {
         if (s_outlines) {
           // Colour + depth into an offscreen target so the post-process
           // composite below can read real per-pixel depth afterwards —
@@ -27284,6 +27290,9 @@
             renderer.autoClearDepth = true;
           }
           window.PerceptionMode?.renderOverlay(renderer, activeScene, camera);
+        }
+        } finally {
+          restoreNpcVisuals?.(); // Never leave simulation-visible walkers hidden between frames.
         }
         window.PerfProfiler?.end(renderPassPerf);
         window.MobileRenderBudget?.sample(now, !paused && !window.PixelProbe?.armed);
