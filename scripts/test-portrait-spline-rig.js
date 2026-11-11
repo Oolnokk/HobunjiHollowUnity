@@ -43,6 +43,33 @@ assert(moved.points.every(p => p.z >= .002999), 'every wind-blown segment must r
 assert(moved.points.some((p, i) => Math.abs(p.x - rest.points[i].x) > .01), 'wind must move the authored points');
 assert.deepEqual(JSON.parse(JSON.stringify(Rig.blendSegment(normalized.segments[0], { x: 0, y: 0, z: 0 }))),
   { yaw: 0, pitch: 0, roll: 0 }, 'the neutral pose is wind-free');
+// Hierarchy regression: an authored tip gust should pull the middle, never the head; editing the middle must not move the tip.
+const restingPoints=[{u:.5,v:.3,depth:.02},{u:.5,v:.5,depth:.03},{u:.5,v:.7,depth:.04}];
+const endPose=({translate})=>({deadzone:{x:0,y:0,z:0},poses:{right:{translate}}});
+const tipDriven=Rig.normalize({points:restingPoints,segments:[endPose({x:0}),endPose({x:.1})],tipFollow:.58});
+const upperOnly=Rig.normalize({points:restingPoints,segments:[endPose({x:.1}),endPose({x:0})],tipFollow:.58});
+const tipNeutral=Rig.posePoints(tipDriven).points,tipWind=Rig.posePoints(tipDriven,{x:1}).points;
+const upperWind=Rig.posePoints(upperOnly,{x:1}).points;
+assert.equal(tipWind[0].x,tipNeutral[0].x,'head attachment is immovable regardless of gust direction');
+assert(Math.abs((tipWind[1].x-tipNeutral[1].x)-.058)<1e-9,'bottom knot drives 58% of its displacement into the middle');
+assert(Math.abs((tipWind[2].x-tipNeutral[2].x)-.1)<1e-9,'bottom knot receives its own authored displacement');
+assert(Math.abs(upperWind[2].x-tipNeutral[2].x)<1e-9,'changing only the middle never drags the bottom tip');
+assert(Math.abs((upperWind[1].x-tipNeutral[1].x)-.1)<1e-9,'middle knot retains independently authored local motion');
+const natural=Rig.makeDefaultSegments(restingPoints);
+const naturalRig=Rig.normalize({points:restingPoints,segments:natural});
+assert(natural.some(segment=>Math.abs(segment.poses.left.translate.x)>.005),'natural default responds to a left gust');
+assert(natural.some(segment=>Math.abs(segment.poses.right.translate.x)>.005),'natural default responds to a right gust');
+assert(natural.some(segment=>Math.abs(segment.poses.up.translate.y)>.005),'natural default responds to an updraft');
+assert(natural.some(segment=>Math.abs(segment.poses.down.translate.y)>.005),'natural default responds to downward wind');
+assert(natural.some(segment=>Math.abs(segment.poses.toward.translate.z)>.005),'natural default responds to wind toward the camera');
+assert(natural.some(segment=>Math.abs(segment.poses.away.translate.z)>.005),'natural default responds to wind away from the camera');
+assert(natural[0].poses.right.translate.x<natural[1].poses.right.translate.x,
+  'default upper strand is stiffer and the bottom tip is the leading wind parent');
+const naturalRest=Rig.posePoints(naturalRig).points,naturalGust=Rig.posePoints(naturalRig,{x:1}).points;
+assert(naturalGust[1].x-naturalRest[1].x<naturalGust[2].x-naturalRest[2].x,
+  'default side gust never makes the middle outrun the tip');
+assert(Rig.normalize({points:restingPoints}).segments[1].poses.right.translate.x>0,
+  'a newly normalized, unrigged style receives useful default poses');
 const midpoint = Rig.curvePoint(rest.points, 0, .5);
 assert(midpoint.z > 0, 'smooth neutral strand interpolation preserves outward depth');
 const join = Rig.curvePoint(rest.points, 0, 1);
