@@ -96,6 +96,31 @@ const server = http.createServer((req, res) => {
     const ropeActor = rope.physics.find(weapon => weapon.itemKey === 'grappleFlail'); // This is the assembled, actually rendered rope, not the model's draft dimensions.
     assert.deepEqual(ropeActor.ropeTint, { color: '#6B4728', method: 'ColorFill.shadeFillPixels' },
       'the rendered 3D rope uses the shared Gar-wolf shade-fill, not the uncolored PNG fallback');
+    const fullPhysicsLength = ropeActor.physics.length; // Baseline from the real WebGL assembly, not a mocked geometry helper.
+    await page.evaluate(() => {
+      const api = window.HobunjiWeaponSpriteAssemblies; // Actual preview frame calls this same runtime module.
+      window.__flailPoseTestLength = 0.6; // Test-only pose multiplier, consumed on the next rendered frame.
+      window.__flailPoseOriginalSetAction = api.setAction; // Restored after measurements so regular authoring stays untouched.
+      api.setAction = (root, options = {}) => window.__flailPoseOriginalSetAction(root,
+        { ...options, flailLengthScale: window.__flailPoseTestLength }); // Reuse production setAction and connector physics.
+    });
+    for (const multiplier of [0.6, 1.4]) {
+      await page.evaluate(value => { window.__flailPoseTestLength = value; }, multiplier);
+      await page.waitForFunction(value => {
+        const weapon = window.HobunjiWeaponSpriteAssemblies?.debugSnapshot()
+          ?.find(entry => entry.itemKey === 'grappleFlail' && entry.attached);
+        return weapon?.scale?.poseLength === value;
+      }, multiplier, { timeout: 10000 });
+      const sized = await debug();
+      const measured = sized.physics.find(weapon => weapon.itemKey === 'grappleFlail' && weapon.attached);
+      assert(measured?.physics.length > 0, 'the resized connector maintains a positive physical lever');
+      assert(Math.abs(measured.physics.length / fullPhysicsLength - multiplier) < 0.002,
+        `real rope reach is ${multiplier}× the unchanged original authoring length`);
+    }
+    await page.evaluate(() => {
+      window.HobunjiWeaponSpriteAssemblies.setAction = window.__flailPoseOriginalSetAction; // Leave no test-only wrapper installed.
+      delete window.__flailPoseTestLength; delete window.__flailPoseOriginalSetAction;
+    });
     const sharedFill = await page.evaluate(() => window.ColorFill?.debugSnapshot()?.shadeFillsByLabel?.['weapon-rope:#6B4728']); // ColorFill records actual pixels processed from the PNG.
     assert(sharedFill?.appliedCount > 0 && sharedFill.sampledCount > 0,
       'Chromium has decoded and shade-filled the real ruin-rope PNG through the animal color-fill pipeline');
