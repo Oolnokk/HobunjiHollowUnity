@@ -1059,11 +1059,11 @@
       'Camera-frustum culling for complete NPC visual rigs, including the normally uncullable skinned portrait, hands, feet and pants. Schedules, movement and social AI remain active. Default on; switch off to A/B the visual cost without changing NPC behavior.');
     npcCull.input.addEventListener('change', () => root.NpcViewFrustumCull?.setEnabled?.(npcCull.input.checked));
     box.appendChild(npcCull.row);
-    const actorRender = makeCheckboxRow('settingActorRenderCull', 'Cull invisible NPC and enemy rigs', root.ActorRenderOcclusion?.snapshot?.().enabled !== false,
+    const actorRender = makeCheckboxRow('settingActorRenderCull', 'Cull invisible NPC and enemy rigs', root.ActorRenderOcclusion?.snapshot?.()?.enabled !== false,
       'Skips whole character rigs only during drawing, preserving all AI, combat, schedules, interaction, outlines and 3x3-tile weapon x-ray. Camera frustum is always safe; WebGL2 can additionally skip fully covered characters after multiple asynchronous tests. Disable to A/B at the same camera angle.');
     actorRender.input.addEventListener('change', () => root.ActorRenderOcclusion?.setEnabled?.(actorRender.input.checked));
     box.appendChild(actorRender.row);
-    const gpuOcclusion = makeCheckboxRow('settingGpuActorOcclusion', 'Use GPU cover checks for hidden actors', root.ActorRenderOcclusion?.snapshot?.().gpuEnabled !== false,
+    const gpuOcclusion = makeCheckboxRow('settingGpuActorOcclusion', 'Use GPU cover checks for hidden actors', root.ActorRenderOcclusion?.snapshot?.()?.gpuEnabled !== false,
       'WebGL2 only: asynchronously checks a conservatively oversized NPC/enemy bounding volume against existing scene depth, without readPixels or a GPU stall. Covers actors obscured by buildings and other opaque objects. Turn off to compare GPU query overhead while preserving simple frustum culling.');
     gpuOcclusion.input.addEventListener('change', () => root.ActorRenderOcclusion?.setGpuEnabled?.(gpuOcclusion.input.checked));
     box.appendChild(gpuOcclusion.row);
