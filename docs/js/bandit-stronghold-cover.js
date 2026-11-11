@@ -9,8 +9,8 @@
   const FIRE_BURN_SECONDS = 2.1; // Heat exposure before ordinary boards crumble; checked on the existing zone/cave ticks.
   const FIRE_TICK_SECONDS = .35; // Limits fire queries to a handful per second, even when called every frame.
   const HEIGHT_BY_KEY = Object.freeze({
-    fortifiedLowRail: .95, fortifiedHighCover: 1.88, fortifiedWatchtower: 2.82,
-  }); // Shared authored recipe extents bound melee/targetable volume height.
+    fortifiedLowRail: 1.18, fortifiedHighCover: 1.88, fortifiedWatchtower: 3.55,
+  }); // Clearance heights include crooked uprights, broken rails and patched tower roofs.
   const recordsByScope = new Map(); // Area id -> Map(coverId, record); cave and exterior scopes are independent.
   let blastUnsubscribe = null; // One WorldEvents listener shared by all loaded stronghold cover.
   let struckUnsubscribe = null; // Lets the existing attack event substrate target a specific breakable object.
