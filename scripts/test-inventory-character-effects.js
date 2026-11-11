@@ -161,6 +161,8 @@ assert.deepEqual({ ...api.__test.BASE_DODGE_PROFILE }, { durationS: 0.22, iframe
 
 assert.match(source, /panel\.replaceChildren\(trinketCard, outfitCard, finalCard\)/, 'trinket effects sit before Outfit and Final Values in the left effects stack');
 assert.match(source, /renderRows\(ui\.trinketCard/, 'trinket summary rows refresh when the Gear panel refreshes');
+assert.match(source, /trinketHeading\.textContent !== headingText/, 'stable Attunement heading must not trigger redundant mutation/layout work');
+assert.match(source, /row\.classList\.contains\(tone\) !== active/, 'the 1 Hz effect refresh must not rewrite unchanged bonus/drawback classes');
 const noTrinkets = api.__test.composeTrinketEffects({ equippedEntries: () => [], capacity: () => 8 }); // Empty Gear must show a readable state without affecting the other cards.
 assert.equal(noTrinkets.equipped, 0);
 assert.equal(noTrinkets.rows[0].label, 'No trinkets equipped');
