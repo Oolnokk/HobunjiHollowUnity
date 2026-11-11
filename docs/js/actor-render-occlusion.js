@@ -7,16 +7,15 @@
   // reject fully covered character rigs. No synchronous readPixels/GPU wait.
   const THREE = window.THREE; // Shared Three.js version used by game.js.
   const ALWAYS_DRAW_TILES = 5; // Nearby actors, interaction partners and their shadows stay visible.
-  const FRUSTUM_RADIUS_TILES = 4.25; // Covers oversized humanoid rigs, raised arms and held weapons.
+  const FRUSTUM_RADIUS_TILES = 5.5; // Bound at least as generous as the pre-existing NPC whole-rig frustum, including carried weapons.
   const CAMERA_RESET_DISTANCE = 0.6; // Camera changes invalidate old occlusion, never hide a newly revealed actor.
   const CAMERA_RESET_DOT = 0.997; // About nine degrees: a significant view rotation wakes all actors.
   const ACTOR_RESET_DISTANCE = 0.4; // Moving NPCs immediately invalidate stale hidden results.
   const MAX_QUERY_PER_FRAME = 8; // Bound added GPU draws even during a large Tzizkhanash crowd.
   const MIN_HIDDEN_RESULTS = 2; // Two separate missing-sample results are required to hide an actor.
   const PROBE_INTERVAL_FRAMES = 3; // Spread expensive probes across render frames, including hidden actors.
-  const PROBE_WIDTH_TILES = 4.5; // Conservative tile-space bound includes hands, feet and held tool arcs.
-  const PROBE_HEIGHT_TILES = 7; // Includes tall Longoran rig poses while standing or sitting.
-  const PROBE_DEPTH_TILES = 4.5; // Deliberately oversized: false visibility is safe; false occlusion is not.
+  const BOUND_MARGIN_TILES = 1; // Extra margin around rig + tool volume; a too-large query only keeps an actor visible.
+  const NEAR_BOUND_MARGIN_TILES = 2; // Never query from inside the actor's proxy box.
 
   const states = new Map(); // Actor root -> short-lived occlusion history and its own GPU query lifecycle.
   const active = []; // Scratch list of roots belonging to the current rendered area.
@@ -77,7 +76,8 @@
     let state = states.get(root);
     if (!state) {
       state = { root, pending:null, proxy:null, occluded:false, misses:0,
-        x:root.position.x, y:root.position.y, z:root.position.z, nextProbeFrame:0, seen:stats.frames };
+        x:root.position.x, y:root.position.y, z:root.position.z,
+        radius:FRUSTUM_RADIUS_TILES, nextProbeFrame:0, seen:stats.frames };
       states.set(root, state);
     }
     return state;
@@ -155,20 +155,27 @@
     return proxy;
   }
 
-  function addActor(root, area, activeScene, playerPosition, canOcclude) {
+  function addActor(root, area, activeScene, playerPosition, canOcclude, requestedRadius) {
     if (!root?.isObject3D || root.visible !== true || !inScene(root, activeScene)) return;
     const state = getState(root);
     state.seen = stats.frames;
     const p = root.position; // Top-level NPC/hostile roots use world tile coordinates.
-    if (Math.hypot(p.x-state.x, p.y-state.y, p.z-state.z) > ACTOR_RESET_DISTANCE) {
+    const radius = Math.max(FRUSTUM_RADIUS_TILES,
+      Number.isFinite(requestedRadius) ? requestedRadius : FRUSTUM_RADIUS_TILES); // Conservative whole-rig sphere for Longorans and wielded equipment.
+    if (Math.hypot(p.x-state.x, p.y-state.y, p.z-state.z) > ACTOR_RESET_DISTANCE
+        || Math.abs(state.radius-radius) > 0.01) {
       state.occluded = false; state.misses = 0;
+      // Keep an anchor until enough small steps accumulate. Updating it every
+      // frame permitted a slowly wandering NPC to remain hidden indefinitely.
+      state.x = p.x; state.y = p.y; state.z = p.z; state.radius = radius;
     }
-    state.x = p.x; state.y = p.y; state.z = p.z;
     const dx = p.x-playerPosition.x, dz = p.z-playerPosition.z;
-    const nearby = dx*dx + dz*dz <= ALWAYS_DRAW_TILES*ALWAYS_DRAW_TILES;
+    const nearRadius = Math.max(ALWAYS_DRAW_TILES, radius + NEAR_BOUND_MARGIN_TILES);
+    const nearby = dx*dx + dz*dz <= nearRadius*nearRadius;
     let outside = false;
     if (!nearby && currentViewValid) {
-      sphere.center.set(p.x, p.y+1, p.z);
+      sphere.center.set(p.x, p.y + Math.min(1.5, radius*.3), p.z);
+      sphere.radius = radius;
       outside = !frustum.intersectsSphere(sphere);
     }
     stats.candidates++;
@@ -206,15 +213,23 @@
     const changed = lastArea!==currentArea || !lastCamPos
       || lastCamPos.distanceToSquared(pos) > CAMERA_RESET_DISTANCE*CAMERA_RESET_DISTANCE
       || Math.abs(lastCamQuat.dot(quat)) < CAMERA_RESET_DOT;
-    if (changed) clearHistory();
-    if (!lastCamPos) {lastCamPos=pos.clone();lastCamQuat=quat.clone();}
-    else {lastCamPos.copy(pos);lastCamQuat.copy(quat);}
+    if (changed) {
+      clearHistory();
+      // Keep a stable viewpoint reference until the total movement/rotation
+      // exceeds the threshold. Otherwise subthreshold turns every frame can
+      // accumulate into a completely different view without waking NPCs.
+      if (!lastCamPos) {lastCamPos=pos.clone();lastCamQuat=quat.clone();}
+      else {lastCamPos.copy(pos);lastCamQuat.copy(quat);}
+    }
     lastArea=currentArea;
     pollQueries();
     const player = playerPosition || {x:pos.x,z:pos.z};
     for (const w of walkers||[]) {
-      if (w.area===currentArea && !w.combatTutorialSuspended)
-        addActor(w.root,w.area,activeScene,player,true);
+      if (w.area!==currentArea || w.combatTutorialSuspended) continue;
+      const scale=w._npcCharacterRigRoot?.scale; // NPC species width/height; already used by the original whole-root culler.
+      const mult=Math.max(1,Number(scale?.x)||1,Number(scale?.y)||1,Number(scale?.z)||1);
+      const radius=Math.max(FRUSTUM_RADIUS_TILES,(2.5+(Number(w.avatarHeight)||1)*1.5)*mult+BOUND_MARGIN_TILES);
+      addActor(w.root,w.area,activeScene,player,true,radius);
     }
     for (const c of hostiles||[]) {
       if (c.areaId!==currentArea || !(c.health>0) || c._denHidden || c.tzatzulCapturedBy) continue;
@@ -223,7 +238,10 @@
       if (!c.isBandit && !c.isTribeHunter) continue;
       const combat = c.state==='chase' || c.state==='attacking' || c.state==='attack'
         || c.state==='searching' || c.combatTutorialTarget || c.maskboundTroop;
-      addActor(c.avatarRef?.group,c.areaId,activeScene,player,!combat);
+      const scale=c.avatarRef?.group?.scale; // Creature/bandit authored size; large or stretched rigs receive a larger fail-open proxy.
+      const mult=Math.max(1,Number(scale?.x)||1,Number(scale?.y)||1,Number(scale?.z)||1);
+      const radius=Math.max(FRUSTUM_RADIUS_TILES,4.5*mult+BOUND_MARGIN_TILES);
+      addActor(c.avatarRef?.group,c.areaId,activeScene,player,!combat,radius);
     }
     for (const [root,state] of states) if (state.seen!==stats.frames) {
       release(state);
@@ -251,8 +269,9 @@
         if (!q) throw Error('create-query-failed');
         const proxy=state.proxy || makeProxy(state);
         const p=state.root.position;
-        proxy.position.set(p.x,p.y+1,p.z);
-        proxy.scale.set(PROBE_WIDTH_TILES,PROBE_HEIGHT_TILES,PROBE_DEPTH_TILES);
+        proxy.position.set(p.x,p.y+Math.min(1.5,state.radius*.3),p.z);
+        const side=state.radius*2; // Must enclose the complete character/frustum sphere, not just the PNG torso.
+        proxy.scale.set(side,side,side); // Smaller boxes can self-occlude in the already-drawn depth and produce false negatives.
         proxy.visible=true; chosen.push(state);
         state.pending={query:q,started:false,generation,x:p.x,y:p.y,z:p.z};
         state.nextProbeFrame=stats.frames+PROBE_INTERVAL_FRAMES;
