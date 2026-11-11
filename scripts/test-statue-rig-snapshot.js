@@ -15,7 +15,7 @@ global.ProceduralLegAnimation={
   attach(three,parent,opts){
     assert.equal(three,fakeThree);
     assert.equal(parent instanceof fakeThree.Group,true);
-    legCalls.push(opts);
+    legCalls.push({...opts,configuredFootScale:global.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.footScale?.[opts.speciesId]?.[opts.gender]});
     let cleaned=false; // Ensures every disposable solver instance is cleaned after sampling.
     return{
       update(dt,speed,suppressed,seated){assert.equal(dt,0);assert.equal(speed,0);},
@@ -65,6 +65,16 @@ assert.equal(results.feet.positions.left.x<results.feet.positions.right.x,true);
 assert.equal(legCalls.length,1);
 assert.equal(legCalls[0].disposed,true,'Temporary pose sampler must not leave a live runtime rig');
 assert.equal(legCalls[0].handAttachY,frame.handAttachY);
+assert.equal(legCalls[0].configuredFootScale,shared.characters['mao-ao::male'].anatomy.footScale,
+  'Leg sampler uses authored species/gender foot scale while sampling');
+assert.equal(global.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.footScale,undefined,
+  'Sampling must restore the global foot scale table after creating a disposable solver');
+assert.equal(results.placement.authored,.95);
+const shifted=api.resolve({THREE:fakeThree,npc,profile:{bodyColors:{}},
+  frame:{...frame,placementRatio:.5}});
+assert.ok(Math.abs(shifted.placement.handAttachY-(frame.handAttachY+(.95-.5)*frame.modelHeight))<1e-9,
+  'Author portrait-Y offset must shift the measured hand attachment exactly as Multi-Avatar does');
+
 const tla=api.resolve({THREE:fakeThree,npc:{appearance:{speciesId:'tletingan',gender:'male'}},profile:{bodyColors:{}},
   frame:{speciesId:'tletingan',modelWidth:.765,modelHeight:.765,placementRatio:.645,handAttachX:-.2,handAttachY:.25}});
 assert.notEqual(tla.body.height,results.body.height,'Species/gender portrait scale must remain independent');
