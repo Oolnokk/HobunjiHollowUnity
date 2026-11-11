@@ -130,6 +130,30 @@
     return out;
   }
 
+  const ENTER_ONLY_LOCALE_IDS = new Set(['locale_banubu_shrine']); // Only a successful interior visit may reveal these locales on the map.
+
+  function localeIsDiscovered(instance, discovered) {
+    const record = discovered[instance.localeId]; // Existing proximity-only discoveries cannot reveal an enter-only cave.
+    return ENTER_ONLY_LOCALE_IDS.has(instance.localeId) ? record?.entered === true : !!record;
+  }
+
+  function discoverEnteredLocale(localeId) {
+    if (!ENTER_ONLY_LOCALE_IDS.has(localeId) || deps?.getCurrentArea?.() !== 'map_i_den_banubu') return false;
+    const discovered = _loadDiscoveredLocales(); // Persist the visited flag across shifts and protect old proximity-only save records.
+    if (discovered[localeId]?.entered) return false;
+    const instance = _allLocaleInstances().find(item => item.localeId === localeId);
+    discovered[localeId] = {
+      ...(discovered[localeId] || {}),
+      name: instance?.name || "Banubu's Cave",
+      category: instance?.category || 'great_fey_shrine',
+      firstDiscoveredYear: discovered[localeId]?.firstDiscoveredYear ?? deps.currentTothalYear(),
+      entered: true,
+    };
+    _saveDiscoveredLocales(discovered);
+    deps.showToast?.("Discovered: Banubu's Cave", true);
+    return true;
+  }
+
   // Called whenever fog newly reveals ground in `zoneId` -- checks every
   // locale instance currently placed there against the just-revealed
   // radius and flags it discovered forever. Discovery only ever records
@@ -142,7 +166,7 @@
     const discovered = _loadDiscoveredLocales();
     let changed = false;
     for (const inst of _allLocaleInstances()) {
-      if (inst.zoneId !== zoneId || discovered[inst.localeId]) continue;
+      if (inst.zoneId !== zoneId || discovered[inst.localeId] || ENTER_ONLY_LOCALE_IDS.has(inst.localeId)) continue;
       const dist = Math.hypot(inst.col - pc, inst.row - pr);
       if (dist > FOG_REVEAL_RADIUS) continue;
       discovered[inst.localeId] = { name: inst.name, category: inst.category, firstDiscoveredYear: deps.currentTothalYear() };
@@ -155,6 +179,7 @@
   let _lastFogRevealTile = null;
   function updateZoneFogAroundPlayer() {
     const currentArea = deps.getCurrentArea();
+    if (currentArea === 'map_i_den_banubu') discoverEnteredLocale('locale_banubu_shrine'); // The existing fog tick also handles interior entry without introducing a polling system.
     if (!deps._isZoneArea(currentArea)) return;
     const zoneId = currentArea;
     const entry = _loadZoneFog(zoneId);
@@ -310,7 +335,7 @@
     const discovered = _loadDiscoveredLocales();
     const landmarks = [];
     for (const inst of _allLocaleInstances()) {
-      if (inst.zoneId !== zoneId || (!inst.alwaysVisible && !discovered[inst.localeId])) continue;
+      if (inst.zoneId !== zoneId || (!inst.alwaysVisible && !localeIsDiscovered(inst, discovered))) continue;
       landmarks.push({
         id: `locale:${inst.localeId}`, source: 'locale', localeId: inst.localeId,
         label: inst.name, category: inst.category || 'misc', zoneId,
@@ -448,7 +473,7 @@
     const interactiveLandmarks = new Map(_visibleLandmarks(zoneId).map(landmark => [landmark.id, landmark]));
     for (const inst of _allLocaleInstances()) {
       if (inst.zoneId !== zoneId) continue;
-      if (!inst.alwaysVisible && !discovered[inst.localeId]) continue;
+      if (!inst.alwaysVisible && !localeIsDiscovered(inst, discovered)) continue;
       const mx = (inst.col + 0.5) * scaleX, my = (inst.row + 0.5) * scaleY;
       ctx.beginPath();
       ctx.arc(mx, my, markerR, 0, Math.PI * 2);
@@ -629,6 +654,7 @@
   window.WildernessMap = {
     init,
     updateFogAroundPlayer: updateZoneFogAroundPlayer,
+    discoverEnteredLocale, // Explicit entry hook also used by BanubuSnore's already-registered lightweight scheduler.
     renderMapPanel: renderWildernessMapPanel,
     setWaypoint,
     clearWaypoint,
