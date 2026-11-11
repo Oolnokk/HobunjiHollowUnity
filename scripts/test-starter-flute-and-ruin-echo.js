@@ -165,6 +165,7 @@ function testChallengeHandoff() {
   const win={
     addEventListener:(name,callback)=>{(fns[name]||=[]).push(callback);},
     dispatchEvent:event=>out.push(['event',event.type,event.detail.id ?? event.detail.noteIndex]),
+    KurrayaPuzzle:{NOTE_CODES:require('../docs/js/kurraya-puzzle.js').NOTE_CODES}, // Host-side key map must be usable even before the puzzle iframe finishes loading.
     KurrayaInstrument:{beginFlute:()=>out.push('flute-begin'),endFlute:()=>out.push('flute-end')},
   };
   class CustomEvent {constructor(type,options){this.type=type;this.detail=options.detail;}}
@@ -198,6 +199,11 @@ function testChallengeHandoff() {
   sendNote(99);
   assert.equal(out.filter(item=>Array.isArray(item)&&item[1]==='hobunji-kurraya-puzzle-note').length,1,'the bridge forwards only valid single-note events');
   assert(out.some(item=>Array.isArray(item)&&item[1]==='hobunji-kurraya-puzzle-note'&&item[2]===5));
+  loads.load(); // Start the host keyboard handler with an iframe that has no playable audio function yet.
+  const beforeKeyboard=out.filter(item=>Array.isArray(item)&&item[1]==='hobunji-kurraya-puzzle-note').length;
+  fns.keydown.at(-1)({code:'KeyA',repeat:false,timeStamp:200,preventDefault:noop,stopImmediatePropagation:noop});
+  assert.equal(out.filter(item=>Array.isArray(item)&&item[1]==='hobunji-kurraya-puzzle-note').length,beforeKeyboard+1,
+    'a physical host key is judged immediately even when the iframe audio UI has not loaded');
   win.MusicMinigame.close();
 }
 

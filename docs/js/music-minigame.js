@@ -270,11 +270,11 @@
     window.dispatchEvent(new CustomEvent('hobunji-kurraya-puzzle-note',{detail})); // Physical inputs can be judged before the iframe's audio or message queue runs.
   }
   function puzzleNote(index,pressedAtMs=puzzlePressMs()) {
-    if (playerSession?.instrumentMode !== 'puzzle') return;
+    if (playerSession?.instrumentMode !== 'puzzle' || !Number.isInteger(index)
+      || index<0 || index>=(window.KurrayaPuzzle?.NOTE_CODES?.length??8)) return;
+    publishPuzzleNote(index,pressedAtMs); // Judge the physical edge before any iframe/audio work, even when the iframe has not loaded yet.
     try {
-      const view=puzzleView();
-      if(view?.playNote(index,{publishInput:false,pressedAtEpochMs:(window.performance?.timeOrigin??0)+pressedAtMs})!==true)return;
-      publishPuzzleNote(index,pressedAtMs); // No duplicate iframe post for host keyboard/controller input.
+      puzzleView()?.playNote?.(index,{publishInput:false,pressedAtEpochMs:(window.performance?.timeOrigin??Date.now()-puzzlePressMs())+pressedAtMs});
     } catch (error) {
       window.__farmLog?.('Kurraya puzzle note failed: ' + error.message, 'warn');
     }
