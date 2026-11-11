@@ -84,6 +84,10 @@ assert.match(read('js/procedural-furniture.js'),/statuePartScaleAxes/);
 assert.match(read('js/procedural-furniture.js'),/statueMirrorX/);
 assert.match(page,/statueRigAlignment='hand'/,'Hand GLBs must retain source grip origin in furniture');
 assert.match(page,/statueRigAlignment='foot'/,'Foot GLBs must retain bottom contact as floor origin');
+assert.match(page,/statueRigBodyScale=\{x:snapshot\.bodyScale\.x,y:snapshot\.bodyScale\.y\}/,
+  'Independent body scale must reach every detached static limb GLB');
+assert.match(read('js/procedural-furniture.js'),/part\.statueRigBodyScale/,
+  'Furniture must restore the live rig floor parent body scale for hands and feet');
 assert.match(read('js/procedural-furniture.js'),/part\.statueRigAlignment==='hand'\|\|part\.statueRigAlignment==='foot'/,
   'Static GLB importer needs an anatomy origin-safe branch');
 assert.match(read('js/procedural-furniture.js'),/part\.transform\.sy\)\/Math\.max\(\.001,size\.y\)/,
