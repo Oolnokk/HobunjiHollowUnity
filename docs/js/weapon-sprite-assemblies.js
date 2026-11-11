@@ -232,6 +232,7 @@
         deltaQ: new THREE.Quaternion(), stepQ: new THREE.Quaternion(), basis: new THREE.Matrix4(),
       }, // Reused by every animation frame, avoiding repeated vector/quaternion/matrix allocations.
       attacking: false, progress: 0, wf: 0.16, sf: 0.28, hf: 0.68, pitchTravelRad: null, yawTravelRad: 0, detachedAt: 0, dead: false, // Per-weapon attack timing supplied by player, enemies, or editor.
+      flailLengthScale: 1, hasExplicitFlailScale: false, // Pose multiplier is separate from the authored rope/chain length and never changes rigid heads or non-flails.
       registryEntry: weakRegistry ? new WeakRef(root) : root, // Frame iteration never strongly retains an unequipped actor/weapon graph.
       gcResources: gpuFinalizer ? new Set() : null, // Finalizer holds only cloned GPU resources, not meshes, groups, state, or root.
       finalizerToken: {}, // Explicit drop unregisters only this weapon's finalization callback.
@@ -393,6 +394,8 @@
     state.pitchTravelRad = Number.isFinite(options.pitchTravelDeg) ? options.pitchTravelDeg * Math.PI / 180 : null; // Authored strike-minus-windup pitch remains deterministic during editor scrubbing.
     state.yawTravelRad = Number.isFinite(options.yawTravelDeg) ? options.yawTravelDeg * Math.PI / 180 : 0; // Authored travel remains diagnostic; physical follow-through uses the measured world motion.
     state.movementPosition = options.movementPosition || null; // Player/NPC world position excludes hand-motion offsets from neutral-to-windup lag.
+    state.hasExplicitFlailScale = options.flailLengthScale != null; // NPCs and editors pass their own sampled pose; cached player tools read the weapon-stance runtime.
+    if (state.hasExplicitFlailScale) state.flailLengthScale = global.SharedAttackPose?.validFlailLength?.(options.flailLengthScale) ?? 1;
   }
 
   // Each visible duplicate owns its rope/head artwork, but the original weapon
@@ -416,6 +419,7 @@
         if (replica) {
           replica.dualPhysicsSource = source; // Every swing copies this one authoritative WORLD-space direction, never a local-space angle.
           replica.attacking = source.attacking; replica.progress = source.progress;
+          replica.flailLengthScale = source.flailLengthScale; // Each duplicate has its own visual connector but shares the source pose's reach.
           replica.wf = source.wf; replica.sf = source.sf; replica.hf = source.hf;
           replica.pitchTravelRad = source.pitchTravelRad; replica.yawTravelRad = source.yawTravelRad;
           replica.movementPosition = source.movementPosition; // One actor supplies locomotion; each replica still resolves its own pivot.
@@ -738,6 +742,13 @@
     const attachmentScale = Math.max(0.00001, Math.abs(q.scale.y)); // The haft's long local Y axis is the source of species/character-height weapon sizing, not its X width.
     state.renderedHaftLongScale = attachmentScale; state.renderedHaftWidthScale = Math.abs(q.scale.x); // Console-free scaling diagnosis for the currently equipped species.
     const localHandleScale = attachmentScale / Math.max(0.00001, Math.abs(q.rootScale.x)); // Compensates for extra scale applied to the handle plane itself.
+    if (state.dualPhysicsSource) state.flailLengthScale = state.dualPhysicsSource.flailLengthScale; // Both hands follow the same sampled attack length as their original.
+    else if (!state.hasExplicitFlailScale && isCachedPlayerToolRoot(root)) {
+      const runtime = global.WeaponToolStances?.getRuntimeState?.(); // Only cached player flails borrow the weapon slot's live neutral/attack pose.
+      if (runtime?.activeSlot === 'weapon' && runtime.itemKey === state.itemKey) {
+        state.flailLengthScale = global.SharedAttackPose?.validFlailLength?.(runtime.flailLengthScale) ?? 1;
+      }
+    }
     const chainScaleX = connectorAxisScale(flail.chain, 'scaleX'); // Chain width or generated-rope radius relative to the final rendered handle.
     let chainScaleY = connectorAxisScale(flail.chain, 'scaleY'); // Reach uses Y only; head size and connector width stay independently authored.
     const mountLength = Number(flail.chain.mountLengthPx); // Rope-mount line length, expressed in unchanged source-haft pixels.
@@ -747,9 +758,11 @@
       if (spanY > 1e-5) chainScaleY = Math.sqrt(Math.max(1e-8, mountLength * mountLength - spanX * spanX)) / spanY;
       // Original raster chain may be diagonal: preserve its X width/offset and solve only Y stretch for the desired span.
     }
+    const authoredChainScaleY = chainScaleY; // Preserve the authored rope width even when a combat pose shortens its longitudinal reach.
+    chainScaleY *= state.flailLengthScale; // The same scaled endpoints drive rendered length, head contact and pendulum lever arm.
     const headScale = relativePartScale(flail.head); // Head size is still independently handle-relative.
     if (state.chain.userData?.hobunjiRuinRopeSprite) {
-      state.chain.scale.setScalar(localHandleScale * chainScaleY); // Child width already compensates for both authoring axes; keep the billboard uniformly scaled.
+      state.chain.scale.setScalar(localHandleScale * authoredChainScaleY); // Child width already compensates for both authoring axes; keep the billboard uniformly scaled.
     } else {
       state.chain.scale.set(
         localHandleScale * chainScaleX,
@@ -856,8 +869,8 @@
     state.chain.position.copy(bakedPoint(chainCenterWorld, null, root, q.inverseRootMatrix, q.chainLocal));
     state.chain.quaternion.copy(rootQInverse).multiply(worldQ);
     const inverseRootWorld = q.rootInverseWorld.copy(root.matrixWorld).invert(); // Shared parent correction; a species' nonuniform body dimensions never distort world-facing suspension.
-    const ropeWidthScale = state.chain.userData?.hobunjiRuinRopeSprite ? chainScaleY : chainScaleX; // The textured ribbon already compensates authored X/Y proportions inside its geometry.
-    const ropeDepthScale = state.chain.userData?.hobunjiRuinRopeSprite ? chainScaleY : (state.chain.userData?.hobunjiGeneratedRope ? chainScaleX : 1);
+    const ropeWidthScale = state.chain.userData?.hobunjiRuinRopeSprite ? authoredChainScaleY : chainScaleX; // Pose length changes only Y, not the rope ribbon's visible width.
+    const ropeDepthScale = state.chain.userData?.hobunjiRuinRopeSprite ? authoredChainScaleY : (state.chain.userData?.hobunjiGeneratedRope ? chainScaleX : 1);
     placeFlexiblePartWorld(state.chain, inverseRootWorld, chainCenterWorld, worldQ,
       q.partWorldScale.set(attachmentScale * ropeWidthScale, attachmentScale * chainScaleY, attachmentScale * ropeDepthScale), q.partWorldMatrix);
     const endWorld = q.endWorld.copy(chainCenterWorld).add(q.tmp.copy(bottomLocal).multiplyScalar(attachmentScale).applyQuaternion(worldQ)); // Use the stretched bottom endpoint without rescaling the head.
@@ -936,6 +949,7 @@
       scale: s.config.flail ? {
         chainX: connectorAxisScale(s.config.flail.chain, 'scaleX'),
         chainY: connectorAxisScale(s.config.flail.chain, 'scaleY'),
+        poseLength: s.flailLengthScale, // Physical length multiplier currently applied to the flail connector; 0.6 = 40% shorter.
         head: relativePartScale(s.config.flail.head),
         renderedHaftLong: s.renderedHaftLongScale ?? null, renderedHaftWidth: s.renderedHaftWidthScale ?? null, // Mobile-readable evidence of which baked haft axis drives the flexible parts.
       } : null, // Mobile diagnostics expose both independent connector axes.
