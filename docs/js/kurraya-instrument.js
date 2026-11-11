@@ -497,7 +497,7 @@
     const note = window.HeldActionAnimations?.kurrayaPlayNote;
     return window.HobunjiHandToolGrips?.animationGripAt?.(playerNoteProgress(), note, note?.poses, note?.sequence, 'kurraya') || null; // Real note timeline drives 2H percentages, not the previous weapon swing.
   }
-  const fluteState = {active:false,root:null,texture:null,frame:null,loads:0,failures:0,lastError:'',noteStartedAt:null,noteCount:0,anchorStatus:'idle'}; // Persistent, mobile-readable flute mount state.
+  const fluteState = {active:false,root:null,texture:null,frame:null,loads:0,failures:0,lastError:'',noteStartedAt:null,noteProgress:0,notePose:null,noteCount:0,anchorStatus:'idle'}; // Persistent mount state and shared pose for the flute, hands and legs.
   let fluteUpdaterInstalled = false; // Prevents repeat init() calls from accumulating per-frame callbacks.
   function installFluteUpdater() {
     if (fluteUpdaterInstalled) return;
@@ -619,7 +619,7 @@
   function beginFlute() {
     installFluteUpdater();
     fluteState.active=true;
-    fluteState.noteStartedAt=null;
+    clearFluteNote();
     fluteState.anchorStatus='waiting-for-sprite';
     window.WeaponStanceDropRuntime?.endInstrumentNote?.(); // A new performance cannot inherit an old note's body sink.
     ensureFluteMount();
@@ -627,15 +627,33 @@
   }
   function playFluteNote() {
     if(!fluteState.active)return false;
+    clearFluteNote();
     fluteState.noteStartedAt=performance.now(); // Each genuine sounded note restarts the mouth/hand animation, not the overlapping audio.
     window.WeaponStanceDropRuntime?.beginInstrumentNote?.('flute'); // Uses the same authored pose to sink body and fold legs on the sounded note.
     fluteState.noteCount++;
-    updateFlute();
     return true;
+  }
+  function clearFluteNote() {
+    fluteState.noteStartedAt=null;
+    fluteState.noteProgress=0;
+    fluteState.notePose=null;
+  }
+  function advanceFluteNote(now) {
+    const note=window.HeldActionAnimations?.flutePlayNote; // One sample per gameplay frame, reused by the body, hands and render passes.
+    if (!note || fluteState.noteStartedAt===null) return;
+    const durationMs=Math.max(50,(Number(note.durationS)||0.32)*1000); // The authored clip keeps its normal timing when frames arrive on time.
+    let progress=Math.max(0,(now-fluteState.noteStartedAt)/durationMs); // Normalized progress since the audible note began.
+    if (fluteState.noteProgress<note.strikeFrac && progress>note.holdFrac) progress=note.strikeFrac; // A long frame cannot skip the entire strike and hold.
+    if (progress>=1) {
+      clearFluteNote();
+      return;
+    }
+    fluteState.noteProgress=progress;
+    fluteState.notePose=notePoseAt(note,progress);
   }
   function endFlute() {
     fluteState.active=false;
-    fluteState.noteStartedAt=null;
+    clearFluteNote();
     fluteState.anchorStatus='idle';
     window.WeaponStanceDropRuntime?.endInstrumentNote?.(); // Release the leg/body sink immediately when the session closes.
     if(fluteState.root)fluteState.root.visible=false; // The cached geometry can be reused without fetching the sprite for every note.
@@ -652,11 +670,7 @@
       return;
     }
     const note=window.HeldActionAnimations?.flutePlayNote; // Own authored note action; blowgun pose remains a legacy fallback only.
-    const elapsed=fluteState.noteStartedAt===null ? Infinity : performance.now()-fluteState.noteStartedAt;
-    if(note && elapsed >= (Number(note.durationS)||0.32)*1000) fluteState.noteStartedAt=null;
-    const pose=note
-      ? (fluteState.noteStartedAt===null ? note.poses.neutral : notePoseAt(note,elapsed/((Number(note.durationS)||0.32)*1000)))
-      : window.HeldActionAnimations?.blowgunReady?.poses?.strike;
+    const pose=fluteState.notePose || note?.poses?.neutral || window.HeldActionAnimations?.blowgunReady?.poses?.strike; // Mount and knees see the same sampled frame.
     if(!pose||!window.SharedAttackPose?.headFrame?.(fluteState.frame,avatar)){
       root.visible=false;
       fluteState.anchorStatus='waiting-for-mouth-frame';
@@ -670,10 +684,7 @@
   }
   function playerInstrumentProgress(key) {
     if (key === 'kurraya') return playerNoteProgress(); // Right-hand, grip and elbow timelines must share the same sounded-note clock.
-    if (key !== 'flute' || !fluteState.active || fluteState.noteStartedAt === null) return 0;
-    const durationMs = Math.max(50, (Number(window.HeldActionAnimations?.flutePlayNote?.durationS) || 0.32) * 1000);
-    const elapsedMs = performance.now() - fluteState.noteStartedAt;
-    return elapsedMs >= 0 && elapsedMs < durationMs ? elapsedMs / durationMs : 0;
+    return key === 'flute' ? fluteState.noteProgress : 0;
   }
 
   function fluteHandTarget() {
@@ -690,6 +701,7 @@
   window.KurrayaInstrument = { init, buildAssembly, newTwitchState, triggerTwitch, updateTwitch,
     beginPlayerKurraya, playPlayerKurrayaNote, endPlayerKurraya, playerHeldPose, applyPlayerHeldPose, playerRightHandPose, playerGripAnimationState, playerKurrayaHandTarget,
     beginFlute, playFluteNote, endFlute, fluteHandTarget, notePoseAt, fluteDiagnostics, prepareFluteCanvas,
+    advanceFluteNote, fluteNotePose: () => fluteState.notePose,
     activePlayerInstrument: () => fluteState.active ? 'flute' : playerKurrayaNote.active ? 'kurraya' : null, // Allocation-free neutral-stance owner for the pre-render body composer.
     playerInstrumentProgress, // Shared progress for instrument elbow/shoulder poses and the two authored note actions.
     kurrayaHandDiagnostics: () => ({ active: playerKurrayaNote.active, noteCount: playerKurrayaNote.noteCount, notePlaying: playerKurrayaNote.startedAt !== null && performance.now() - playerKurrayaNote.startedAt < Math.max(50,(Number(window.HeldActionAnimations?.kurrayaPlayNote?.durationS)||0.32)*1000) }),

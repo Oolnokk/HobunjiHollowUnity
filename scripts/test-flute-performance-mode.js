@@ -143,10 +143,12 @@ function testFluteMouthMount() {
   const action = win.HeldActionAnimations.flutePlayNote; // Supplies the authored note's peak and recovery times.
   assert.equal(win.KurrayaInstrument.playFluteNote(),true);
   now = action.durationS * action.strikeFrac * 1000;
+  win.KurrayaInstrument.advanceFluteNote(now);
   renderHooks[0]([],{},null);
   assert(Math.abs(mounted.at(-1).pose.bodySink-action.poses.strike.bodySink)<1e-9,'the mounted flute samples the authored strike');
   assert.equal(win.KurrayaInstrument.fluteHandTarget()?.holder,mounted[0].root,'the grip stays on the flute during the note');
   now = action.durationS * 1000 + 1;
+  win.KurrayaInstrument.advanceFluteNote(now);
   renderHooks[0]([],{},null);
   assert.equal(mounted.at(-1).pose,action.poses.neutral,'the mouth-held flute returns to Neutral after the note');
   const nextScene=new Group();

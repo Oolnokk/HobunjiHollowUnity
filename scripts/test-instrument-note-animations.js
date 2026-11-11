@@ -271,7 +271,9 @@ const musician={
   RuntimeFrameScheduler:{register:(key,cb)=>{if(key==='weapon-stance-drop-sync')sinkCall=cb;}},
 };
 vm.runInNewContext(sinkSource,{window:musician,performance:{now:()=>clock.ms}});
-assert.equal(musician.WeaponStanceDropRuntime.beginInstrumentNote('flute'),true);
+window.WeaponStanceDropRuntime=musician.WeaponStanceDropRuntime; // Wire the real note event to the same pre-render callback that drives the knees in-game.
+api.beginFlute();
+assert.equal(api.playFluteNote(),true);
 const noteStart=clock.ms; // Shared monotonic clock makes the strike sample deterministic.
 clock.ms=noteStart+flutePlayNote.durationS*1000*flutePlayNote.strikeFrac;
 sinkCall();
@@ -285,10 +287,24 @@ musician.WeaponStanceDropRuntime.noteSwingSink(5);
 sinkCall();
 assert.equal(sinkUnits,0.05,'a real combat swing must win');
 stanceActive=false;
-musician.WeaponStanceDropRuntime.endInstrumentNote();
+api.endFlute();
 sinkCall();
 assert.equal(sinkUnits,0,'closing flute mode must release leg sink');
 assert.equal(composed.has('weapon-stance-drop'),false,'closing flute mode must clear body translation');
+api.beginFlute();
+assert.equal(api.playFluteNote(),true);
+sinkCall();
+assert.equal(sinkUnits,0,'the first frame may still land on flute Windup');
+clock.ms += flutePlayNote.durationS*1000+1; // Simulate a slow frame that would skip over both Strike and Hold.
+sinkCall();
+assert(Math.abs(sinkUnits-0.1)<1e-9,'a slow frame must still show the authored flute strike');
+assert.equal(api.playerInstrumentProgress('flute'),flutePlayNote.strikeFrac,'the grip and legs use the same catch-up strike frame');
+assert(musician.WeaponStanceDropRuntime.getDebug().instrumentNoteActive,'reading diagnostics leaves the sampled strike in place');
+clock.ms += 16;
+sinkCall();
+assert.equal(sinkUnits,0,'the frame after a delayed strike returns directly to the authored Neutral');
+assert.equal(api.fluteDiagnostics().noteActive,false,'the completed flute note releases its frame');
+api.endFlute();
 assert.equal(musician.WeaponStanceDropRuntime.beginInstrumentNote('invalid'),false,'non-instrument actions cannot request note body sink');
 assert.equal(musician.WeaponStanceDropRuntime.beginInstrumentNote('kurraya'),true,'Kurraya sound must use the shared instrument sink system');
 clock.ms += kurrayaPlayNote.durationS*1000*kurrayaPlayNote.strikeFrac;

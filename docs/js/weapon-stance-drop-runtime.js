@@ -22,7 +22,7 @@
   let swingSinkAtMs = -Infinity;
   let swingBodyYawDeg = 0;
   let instrumentNoteKey = null; // Latest sounded musical note, sampled below only while its authored animation is active.
-  let instrumentNoteAtMs = -Infinity; // Timestamp for the flute or Kurraya note; no weapon stance is required while playing.
+  let instrumentNoteAtMs = -Infinity; // Kurraya note timestamp; the flute owns one shared frame sample for all of its pose channels.
   const idleYaw = { active: false, yawDeg: 0, reason: '' }; // Reused; refilled by WeaponToolStances.idleBodyYawSnapshot.
 
   function enabled() {
@@ -39,7 +39,7 @@
   function beginInstrumentNote(key) {
     if (key !== 'flute' && key !== 'kurraya') return false; // Only authored instrument notes may own this separate leg/body channel.
     instrumentNoteKey = key;
-    instrumentNoteAtMs = performance.now();
+    if (key === 'kurraya') instrumentNoteAtMs = performance.now();
     return true;
   }
 
@@ -49,8 +49,8 @@
   }
 
   function instrumentNotePose(now) {
-    const action = instrumentNoteKey === 'flute' ? global.HeldActionAnimations?.flutePlayNote
-      : instrumentNoteKey === 'kurraya' ? global.HeldActionAnimations?.kurrayaPlayNote : null; // Both instruments sample their own actual exported action.
+    if (instrumentNoteKey === 'flute') return global.KurrayaInstrument?.fluteNotePose?.() || null;
+    const action = instrumentNoteKey === 'kurraya' ? global.HeldActionAnimations?.kurrayaPlayNote : null;
     const durationMs = Math.max(50, (Number(action?.durationS) || 0) * 1000);
     const elapsedMs = now - instrumentNoteAtMs;
     if (!action || !Number.isFinite(elapsedMs) || elapsedMs < 0 || elapsedMs >= durationMs) return null;
@@ -58,6 +58,8 @@
   }
 
   function sync() {
+    const now = performance.now(); // Shared timestamp for the current note and any higher-priority combat pose.
+    if (instrumentNoteKey === 'flute') global.KurrayaInstrument?.advanceFluteNote?.(now);
     const composer = global.PlayerBodyTransformComposer;
     const legs = composer?.getPlayerLegHandle?.();
     const stances = global.WeaponToolStances;
@@ -82,7 +84,6 @@
       lastReason = ownsBody ? 'body-pose-owned' : 'disabled';
     } else {
       const engaged = stances.stanceEngaged();
-      const now = performance.now();
       const swinging = engaged && now - swingSinkAtMs < SWING_SAMPLE_FRESH_MS && Number.isFinite(swingSinkPct);
       const notePose = swinging ? null : instrumentNotePose(now); // Actual combat attacks win; either sounded instrument note takes priority over idle stance.
       const playingNote = notePose !== null;
@@ -94,7 +95,7 @@
         : instrumentPose ? Math.max(0, Number(instrumentPose.bodySink) || 0)
         : engaged ? (global.SharedAttackPose?.idleBodySinkPct?.() ?? 0) : 0;
       legs.setStanceYawDeg?.(swinging ? swingBodyYawDeg : instrumentPose ? (Number(instrumentPose.bodyYaw) || 0) : (stances.idleBodyYawSnapshot?.(idleYaw).yawDeg || 0)); // Instrument Neutral must never inherit the sheathed weapon's turn.
-      legs.setStanceDrop(pct / 100 * (legs.modelHeight || 0), swinging || playingNote); // Normal note animation uses the authored sink; silence returns to the authored Neutral.
+      legs.setStanceDrop(pct / 100 * (legs.modelHeight || 0), swinging || playingNote || instrumentKey === 'flute'); // Finish the flute pose on its shared frame even when a long frame jumps straight to Neutral.
       lastReason = swinging ? 'swing-pose' : playingNote ? 'instrument-note' : instrumentPose ? 'instrument-neutral' : engaged ? 'idle-stance' : 'no-stance';
     }
 
