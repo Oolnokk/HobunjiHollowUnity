@@ -79,7 +79,7 @@ function testFluteMouthMount() {
     getContext:() => ({drawImage:noop,getImageData:() => ({data:pixels.slice()}),putImageData:noop}),
   }); // Mimics the origin-clean canvas already tested in the starter-flute sprite test.
   const mounted = []; // Records each actual call into the shared head-relative blowgun pose helper.
-  const renderHooks = []; // Captures the world before-render client used when the avatar changes scene.
+  const renderHooks = []; // Captures the pose hook that runs after the composer moves the head.
   const loadedAssets = []; // Guards against refetching and rebuilding the flute between modes.
   class Group {
     constructor(){this.children=[];this.visible=true;this.parent=null;}
@@ -93,22 +93,28 @@ function testFluteMouthMount() {
   }
   class PlaneGeometry {constructor(width,height){this.width=width;this.height=height;}}
   const THREE = {Group,Mesh,PlaneGeometry,DoubleSide:2};
-  const avatar = {parent:new Group(),userData:{neckRig:{available:true}}}; // A live avatar whose scene parent may change.
+  const playerRoot = new Group(); // The gameplay root has no neck rig and can change scenes.
+  new Group().add(playerRoot);
+  let avatar = {userData:{neckRig:{available:true}}}; // Only the skinned portrait owns the mouth.
+  playerRoot.add(avatar);
   const loadedPose = {headRelative:true,pitch:-180,yaw:0,roll:4,scale:1.3}; // The actual runtime resolves this from HeldActionAnimations.
+  let now = 0; // Advances the authored note clock independently of the render pass.
   const win = {
-    Combat:{deps:{playerMesh:avatar}},
+    Combat:{deps:{playerMesh:playerRoot}},
+    WorldPortraitLife:{getPlayerAvatar:() => ({group:avatar})},
+    PlayerBodyTransformComposer:{addPostHeadAimHook:fn => renderHooks.push(fn)},
     HeldActionAnimations:{blowgunReady:{poses:{strike:loadedPose}}},
     DynamicSurfaces:{addBeforeRenderClient:fn => renderHooks.push(fn)},
     SharedAttackPose:{
       createHeadFrame:() => ({}),
       headFrame:(frame,actor) => actor === avatar,
-      placeAtMouth:(root,frame,pose,scale,aperture) => mounted.push({root,pose,scale,aperture}),
+      placeAtMouth:(root,frame,pose,scale,aperture) => mounted.push({root,pose,scale,aperture,cameraPosition:frame.cameraPosition}),
     },
     HobunjiSpritePngSurface:{makeCanvasTexture:() => ({}),makeMaterial:() => ({})},
     __farmLog:noop,
   };
   const doc = {addEventListener:noop,createElement:canvas};
-  vm.runInNewContext(read('docs/js/kurraya-instrument.js'),{window:win,document:doc});
+  vm.runInNewContext(read('docs/js/kurraya-instrument.js'),{window:win,document:doc,performance:{now:() => now}});
   win.KurrayaInstrument.init({
     THREE,toolTexLoader:{
       setCrossOrigin:noop,
@@ -123,15 +129,44 @@ function testFluteMouthMount() {
   assert.equal(mounted.length,1,'start attaches the flute through shared mouth placement');
   assert.equal(mounted[0].pose,loadedPose,'the actual B’shuakauitl loaded strike pose drives the flute');
   assert.equal(mounted[0].scale,1.3);
-  assert.equal(mounted[0].root.parent,avatar.parent,'the flute belongs to the player’s current scene');
+  assert.equal(mounted[0].root.parent,playerRoot.parent,'the flute belongs to the player’s current scene');
+  assert.equal(win.KurrayaInstrument.fluteHandTarget()?.holder,mounted[0].root,'the hand rig can grip the visible flute');
   const mesh=mounted[0].root.children[0];
   assert(mesh.geometry.width>0 && mesh.geometry.height>0,'the flute silhouette must form a visible plane');
   assert(Math.abs(mesh.rotation.x-Math.PI/2)<1e-8,'the flute mouthpiece aligns with the blowgun’s local aperture');
   assert(mesh.position.z<0,'the flute barrel extends away from its mouth anchor');
+  vm.runInNewContext(read('docs/js/held-action-animations.js'),{
+    window:win,URL,
+    location:{href:'http://localhost/tools/attack-animation-editor/index.html',pathname:'/tools/attack-animation-editor/index.html'},
+    document:{readyState:'loading',currentScript:{src:'http://localhost/js/held-action-animations.js'},write:noop},
+  }); // The same flute pose asset loaded by the game and editor.
+  const action = win.HeldActionAnimations.flutePlayNote; // Supplies the authored note's peak and recovery times.
+  assert.equal(win.KurrayaInstrument.playFluteNote(),true);
+  now = action.durationS * action.strikeFrac * 1000;
+  renderHooks[0]([],{},null);
+  assert(Math.abs(mounted.at(-1).pose.bodySink-action.poses.strike.bodySink)<1e-9,'the mounted flute samples the authored strike');
+  assert.equal(win.KurrayaInstrument.fluteHandTarget()?.holder,mounted[0].root,'the grip stays on the flute during the note');
+  now = action.durationS * 1000 + 1;
+  renderHooks[0]([],{},null);
+  assert.equal(mounted.at(-1).pose,action.poses.neutral,'the mouth-held flute returns to Neutral after the note');
   const nextScene=new Group();
-  avatar.parent=nextScene;
-  renderHooks[0]();
+  nextScene.add(playerRoot);
+  avatar = {userData:{neckRig:{available:true}}}; // An equipment/species refresh replaces the portrait within the same outer root.
+  playerRoot.add(avatar);
+  const camera = {position:{x:1,y:2,z:3}}; // The final render camera drives the shared sprite edge-on correction.
+  const placementsBeforeRender = mounted.length;
+  renderHooks[0]([],{},camera);
+  assert.equal(mounted.length,placementsBeforeRender+1,'rendering resolves the rebuilt portrait’s current mouth');
+  assert.equal(mounted.at(-1).cameraPosition,camera.position);
   assert.equal(mounted[0].root.parent,nextScene,'zone transitions must reparent the active flute');
+  avatar = null;
+  renderHooks[0]([],{},camera);
+  assert.equal(win.KurrayaInstrument.fluteHandTarget(),null,'a missing portrait hides the prop and releases the grip');
+  assert.equal(win.KurrayaInstrument.fluteDiagnostics().anchorStatus,'waiting-for-portrait');
+  avatar = {userData:{neckRig:{available:true}}};
+  playerRoot.add(avatar);
+  renderHooks[0]([],{},camera);
+  assert.equal(win.KurrayaInstrument.fluteHandTarget()?.holder,mounted[0].root,'the grip returns once the replacement portrait is ready');
   win.KurrayaInstrument.endFlute();
   assert.equal(mounted[0].root.visible,false,'closing the performance hides the mouth prop');
   const count=mounted.length;

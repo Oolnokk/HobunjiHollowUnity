@@ -21,7 +21,7 @@
     deps = injectedDeps;
     installHostedSampleHook();
     installMinimalPerformanceUiHook();
-    installFluteUpdater(); // The shared world-render hook drives the mouth attachment only while a flute session exists.
+    installFluteUpdater();
   }
 
   const KURRAYA_TOP_ASSET = { path: 'assets/toolsprites/kurraya_top.png', width: 318, height: 247 };
@@ -497,11 +497,16 @@
     const note = window.HeldActionAnimations?.kurrayaPlayNote;
     return window.HobunjiHandToolGrips?.animationGripAt?.(playerNoteProgress(), note, note?.poses, note?.sequence, 'kurraya') || null; // Real note timeline drives 2H percentages, not the previous weapon swing.
   }
-  const fluteState = {active:false,root:null,texture:null,frame:null,loads:0,failures:0,lastError:'',noteStartedAt:null,noteCount:0}; // Persistent, mobile-readable flute mount state.
+  const fluteState = {active:false,root:null,texture:null,frame:null,loads:0,failures:0,lastError:'',noteStartedAt:null,noteCount:0,anchorStatus:'idle'}; // Persistent, mobile-readable flute mount state.
   let fluteUpdaterInstalled = false; // Prevents repeat init() calls from accumulating per-frame callbacks.
   function installFluteUpdater() {
-    if (fluteUpdaterInstalled || typeof window.DynamicSurfaces?.addBeforeRenderClient !== 'function') return;
-    window.DynamicSurfaces.addBeforeRenderClient(updateFlute);
+    if (fluteUpdaterInstalled) return;
+    const composer = window.PlayerBodyTransformComposer; // Supplies the head transform after the note's body sink and final neck aim.
+    if (composer?.addPostHeadAimHook) {
+      composer.addPostHeadAimHook((_undo, _debug, camera) => updateFlute(camera));
+    } else if (window.DynamicSurfaces?.addBeforeRenderClient) {
+      window.DynamicSurfaces.addBeforeRenderClient((_scene, camera) => updateFlute(camera));
+    } else return;
     fluteUpdaterInstalled = true;
   }
   function prepareFluteCanvas(source) {
@@ -572,6 +577,7 @@
     if (fluteState.root) return true;
     const root = new THREE.Group();
     root.name = 'player_flute_mouth_mount';
+    root.visible = false; // The hand rig only grips after the sprite and skinned mouth are both ready.
     const frame = window.SharedAttackPose.createHeadFrame(THREE); // Shared blowgun head-attachment scratch, reused every frame.
     fluteState.root = root;
     fluteState.frame = frame;
@@ -614,6 +620,7 @@
     installFluteUpdater();
     fluteState.active=true;
     fluteState.noteStartedAt=null;
+    fluteState.anchorStatus='waiting-for-sprite';
     window.WeaponStanceDropRuntime?.endInstrumentNote?.(); // A new performance cannot inherit an old note's body sink.
     ensureFluteMount();
     updateFlute();
@@ -629,14 +636,21 @@
   function endFlute() {
     fluteState.active=false;
     fluteState.noteStartedAt=null;
+    fluteState.anchorStatus='idle';
     window.WeaponStanceDropRuntime?.endInstrumentNote?.(); // Release the leg/body sink immediately when the session closes.
     if(fluteState.root)fluteState.root.visible=false; // The cached geometry can be reused without fetching the sprite for every note.
   }
-  function updateFlute() {
-    if(!fluteState.active||!fluteState.root)return;
-    const avatar=window.Combat?.deps?.playerMesh || window.PlayerBodyTransformComposer?.getPlayerMesh?.(); // Live skinned player with the authored head/mouth rig.
-    if(!avatar?.parent||!fluteState.root.children.length)return;
-    if(fluteState.root.parent!==avatar.parent)avatar.parent.add(fluteState.root); // Follows the player between farm/town/ruin scenes without an orphaned prop.
+  function updateFlute(camera) {
+    if(!fluteState.active||!fluteState.root?.children.length)return;
+    const root=fluteState.root; // Scene-space prop read by the player's hand solver.
+    const avatar=window.WorldPortraitLife?.getPlayerAvatar?.()?.group; // The live portrait owns the neck bones and skinned mouth pixel.
+    const playerRoot=window.Combat?.deps?.playerMesh || window.PlayerBodyTransformComposer?.getPlayerMesh?.(); // The outer player root owns scene membership.
+    const scene=playerRoot?.parent;
+    if(!avatar || avatar.parent!==playerRoot || !scene){
+      root.visible=false;
+      fluteState.anchorStatus='waiting-for-portrait';
+      return;
+    }
     const note=window.HeldActionAnimations?.flutePlayNote; // Own authored note action; blowgun pose remains a legacy fallback only.
     const elapsed=fluteState.noteStartedAt===null ? Infinity : performance.now()-fluteState.noteStartedAt;
     if(note && elapsed >= (Number(note.durationS)||0.32)*1000) fluteState.noteStartedAt=null;
@@ -644,11 +658,15 @@
       ? (fluteState.noteStartedAt===null ? note.poses.neutral : notePoseAt(note,elapsed/((Number(note.durationS)||0.32)*1000)))
       : window.HeldActionAnimations?.blowgunReady?.poses?.strike;
     if(!pose||!window.SharedAttackPose?.headFrame?.(fluteState.frame,avatar)){
-      fluteState.root.visible=false;
+      root.visible=false;
+      fluteState.anchorStatus='waiting-for-mouth-frame';
       return;
     }
-    window.SharedAttackPose.placeAtMouth(fluteState.root,fluteState.frame,pose,Number(pose.scale)||1,null);
-    fluteState.root.visible=true;
+    if(root.parent!==scene)scene.add(root); // Reparent on farm, town or ruin transitions.
+    fluteState.frame.cameraPosition=camera?.position || null;
+    window.SharedAttackPose.placeAtMouth(root,fluteState.frame,pose,Number(pose.scale)||1,null);
+    root.visible=true;
+    fluteState.anchorStatus='anchored';
   }
   function playerInstrumentProgress(key) {
     if (key === 'kurraya') return playerNoteProgress(); // Right-hand, grip and elbow timelines must share the same sounded-note clock.
@@ -660,13 +678,13 @@
 
   function fluteHandTarget() {
     if (!fluteState.active) return null;
-    updateFlute(); // Hand-frame sampling must see the same current mouth-anchored matrix as the rendered flute.
+    // The hand render hook runs after the body composer updates this holder against the final head pose.
     return fluteState.root?.visible && fluteState.root?.parent
       ? { holder: fluteState.root, toolKey: 'flute', gripContext: 'ranged' }
       : null; // Do not attach invisible hands while its sprite/portrait is loading or the performance is closed.
   }
   function fluteDiagnostics() {
-    return {active:fluteState.active,mounted:!!fluteState.root?.parent,visible:!!fluteState.root?.visible,ready:!!fluteState.root?.children.length,loads:fluteState.loads,failures:fluteState.failures,noteCount:fluteState.noteCount,noteActive:fluteState.noteStartedAt!==null,error:fluteState.lastError};
+    return {active:fluteState.active,mounted:!!fluteState.root?.parent,visible:!!fluteState.root?.visible,ready:!!fluteState.root?.children.length,anchorStatus:fluteState.anchorStatus,loads:fluteState.loads,failures:fluteState.failures,noteCount:fluteState.noteCount,noteActive:fluteState.noteStartedAt!==null,error:fluteState.lastError};
   }
 
   window.KurrayaInstrument = { init, buildAssembly, newTwitchState, triggerTwitch, updateTwitch,
