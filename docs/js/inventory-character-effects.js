@@ -374,8 +374,11 @@
     while (list.children.length > rows.length) list.lastElementChild?.remove();
     rows.forEach((spec, index) => {
       const row = list.children[index];
-      row.classList.toggle('literal', !!spec.literal);
-      for (const tone of ['bonus', 'penalty', 'neutral', 'empty']) row.classList.toggle(tone, spec.tone === tone); // Reuses nodes while switching benefit/drawback colors.
+      if (row.classList.contains('literal') !== !!spec.literal) row.classList.toggle('literal', !!spec.literal); // Avoid a redundant class rewrite on each 1 Hz stat refresh.
+      for (const tone of ['bonus', 'penalty', 'neutral', 'empty']) {
+        const active = spec.tone === tone; // Changes the benefit/drawback class only when the relevant trinket result changes.
+        if (row.classList.contains(tone) !== active) row.classList.toggle(tone, active);
+      }
       row.title = spec.title || '';
       const label = row.querySelector('.gear-effect-label');
       const value = row.querySelector('.gear-effect-value');
