@@ -1154,6 +1154,13 @@
           e[12] = pushCamera.x + dx * k; e[13] = pushCamera.y + dy * k; e[14] = pushCamera.z + dz * k;
           pushed = true;
         };
+        // Scaling uniformly around a perspective camera changes depth but
+        // leaves every projected screen pixel unchanged; orthographic cameras
+        // bypass this hook entirely. Safe only when no earlier custom draw
+        // hook can modify geometry or the transform first. Shell x-ray batching
+        // can therefore project this foot exactly like an unpushed 3D mesh.
+        mesh.onBeforeRender.__hobunjiScreenSpaceInvariantDepthPush =
+          !before || before === THREE.Object3D?.prototype?.onBeforeRender;
         mesh.onAfterRender = function footDepthPushAfter(...args) {
           if (pushed) { const e = this.matrixWorld.elements; for (let i = 0; i < 16; i++) e[i] = saved[i]; pushed = false; }
           after.apply(this, args);
