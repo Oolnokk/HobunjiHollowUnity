@@ -1485,20 +1485,26 @@
     return true;
   }
 
+  function isWildlifeLabelTransition(transition) {
+    if (!transition || transition.puzzleCaveOnly) return false;
+    const site = sitesByMapId.get(transition.targetMapId); // Cave profiles own labels, not the wildlife turnover service.
+    return !!site && !site.fortifiedStronghold && !site.fortifiedStrongholdChild;
+  }
+
   function syncTransitionLabels(zoneId) {
     if (!zoneSites(zoneId).length) return 0;
     const byMapId = sitesByMapId; // Cave lookup used to rename old den transitions without changing ids/targets.
     let changed = 0;
     const layout = zoneLayout(zoneId);
     for (const transition of layout?.transitions || []) {
-      if(transition?.puzzleCaveOnly || sitesByMapId.get(transition?.targetMapId)?.fortifiedStronghold || sitesByMapId.get(transition?.targetMapId)?.fortifiedStrongholdChild)continue; // Camp-linked cave names are owned by the stronghold, not wildlife den turnover.
+      if (!isWildlifeLabelTransition(transition)) continue; // Stronghold labels never become 'Unexplored cave'.
       if (!byMapId.has(transition?.targetMapId)) continue;
       const label = window.WildlifeSpawn?.denTurnoverStateForCavern?.(transition.targetMapId)?.name || 'Unexplored cave'; // Exterior labels reveal the name only after entry.
       if (transition.label !== label) { transition.label = label; changed++; }
     }
     const info = wildlifeDeps?.zoneScenes?.get?.(zoneId);
     for (const transition of info?.transitions || []) {
-      if(transition?.puzzleCaveOnly || sitesByMapId.get(transition?.targetMapId)?.fortifiedStronghold || sitesByMapId.get(transition?.targetMapId)?.fortifiedStrongholdChild)continue; // Preserve stronghold and annex labels in cached live scenes.
+      if (!isWildlifeLabelTransition(transition)) continue; // Same rule for cached scene transitions.
       if (!byMapId.has(transition?.targetMapId)) continue;
       const label = window.WildlifeSpawn?.denTurnoverStateForCavern?.(transition.targetMapId)?.name || 'Unexplored cave'; // Exterior labels reveal the name only after entry.
       if (transition.label !== label) { transition.label = label; changed++; }
@@ -2149,6 +2155,7 @@
       registerRockPuzzleSite,
       hashSeed,
       generatedCaveName,
+      isWildlifeLabelTransition,
       runtimeStateBySignature,
       ensureStateLoaded,
       persistState,
