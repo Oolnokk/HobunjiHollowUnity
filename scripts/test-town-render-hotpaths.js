@@ -374,6 +374,12 @@ assert.deepEqual(grouped.groups.map(group => group.meshes), [[a, sameTile, far],
   'only screen-separated same-height holder neighborhoods share a depth rebuild');
 assert.deepEqual(grouped.ordinary, [noHolder, outside], 'unknown ownership and parts beyond their projected floor use ordinary depth');
 assert.deepEqual([...grouped.groups[0].tiles.slice(0, 4)], [0, 0, 10, 0], 'one batch carries both tile origins to the shader');
+assert.match(heldRender, /const regionsByTile = new Map\(\)/,
+  'held x-ray scopes are indexed by exact tile rather than scanning every NPC for each mesh');
+const nearFloor = part(0, 0, 0.04), differentFloor = part(0, 0, 0.06);
+const sameTileFloors = groupMeshes({}, actorScene, {}, [a, nearFloor, differentFloor]);
+assert.deepEqual(sameTileFloors.groups.map(group => group.meshes), [[a, nearFloor], [differentFloor]],
+  'tile-indexed scopes preserve epsilon-based elevation grouping and prevent overlapping floors from batching');
 const eyeAbove = { isPerspectiveCamera: true, matrixWorld: { elements: { 13: 4 } } };
 assert.deepEqual(groupMeshes({}, actorScene, eyeAbove, [a]).ordinary, [a], 'perspective eye and rigid gear above the floor need no floor exemption');
 assert.equal(groupMeshes({}, actorScene, eyeAbove, [a], 0.01).groups.length, 1, 'shell extrusion uses projection rather than the base-part height shortcut');
