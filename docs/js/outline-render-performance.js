@@ -429,7 +429,16 @@
     const entries = [];
     for (const object of cached.meshes) {
       if (!isWorldTextOverlayMesh(object)) continue;
-      entries.push({ object, originalLayerMask: object.layers.mask, originalVisible: object.visible !== false });
+      // A hidden parent score board is not visible even when its individual note
+      // planes remain marked visible. Skip it before scheduling a final canvas
+      // pass; the cached candidate stays eligible immediately when the player
+      // steps onto the pressure plate, with no scene-wide rescan.
+      let visible = true; // Used only by this cached-candidate visibility walk, never the per-frame world-scene traversal.
+      for (let ancestor = object; ancestor; ancestor = ancestor.parent) {
+        if (ancestor.visible === false) { visible = false; break; }
+      }
+      if (!visible) continue;
+      entries.push({ object, originalLayerMask: object.layers.mask, originalVisible: true });
     }
     return entries;
   }
