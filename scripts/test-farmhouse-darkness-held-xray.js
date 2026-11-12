@@ -116,7 +116,7 @@ assert.equal(xray.classify(grass).ground, true, 'exterior farm terrain still x-r
 const wildernessTypes = ['weeds', 'shrub', 'tilled', 'trench', 'raised', 'paddy', 'path', 'rock', 'river', 'stream', 'waterfall']; // Every merged wilderness floor bucket shares the grass ground-depth exception.
 const wildernessFinishes = JSON.parse(read('docs/config/maps/terrain-materials.json')).byMap['*']; // The shared authored material schema backs all live wilderness floor buckets.
 for (const kind of ['grass', ...wildernessTypes]) {
-  assert.match(wildernessFinishes[kind]?.texture || '', /\\.png$/, `wilderness ${kind} has an authored PNG`);
+  assert.match(wildernessFinishes[kind]?.texture || '', /\.png$/, `wilderness ${kind} has an authored PNG`);
 }
 assert.equal(wildernessFinishes.weeds.texture, wildernessFinishes.grass.texture,
   'weed and grass substrate share the same visible PNG');
