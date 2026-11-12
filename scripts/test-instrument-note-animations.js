@@ -568,6 +568,7 @@ assert.equal(api.kurrayaHandDiagnostics().noteCount,previousPlayerNoteCount+1,'e
 const savedFreePhases=kurrayaPlayNote.poses;
 kurrayaPlayNote.poses=freePhases;
 clock.ms += 30;
+api.advancePlayerKurrayaNote(clock.ms); // The actual game samples the instrument's shared frame before hands and holder read it.
 assert(api.playerRightHandPose().influence>0,'a genuine note must interpolate the free hand');
 kurrayaPlayNote.poses=savedFreePhases;
 api.endPlayerKurraya();
