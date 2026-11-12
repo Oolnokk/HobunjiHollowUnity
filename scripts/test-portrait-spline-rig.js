@@ -129,7 +129,9 @@ const THREE = {
 };
 env.window.DeadzoneBillboard = null;
 env.document = { createElement() { return { width: 200, height: 200, getContext() {
-  return { drawImage() {}, clearRect() {}, save() {}, restore() {}, translate() {}, scale() {} };
+  return { drawImage() {}, clearRect() {}, save() {}, restore() {}, translate() {}, scale() {},
+    getImageData() { return { data: new Uint8ClampedArray(200 * 200 * 4) }; }, // Mock RGBA upload contract used by real WebGL cosmetic textures.
+    putImageData() {}, };
 } }; } };
 const avatar = new FakeGroup(); avatar.name = 'unit_test_avatar';
 const rigPart = (key, slot, points) => ({ key, slot, rig: Rig.normalize({ ...makeRig(), ...(points ? { points } : {}) }), canvas: {
