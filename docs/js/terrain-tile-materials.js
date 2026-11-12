@@ -60,6 +60,7 @@
     material.color.set(0xffffff);
     material.needsUpdate = true;
     material.userData.hobunjiTerrainTextureStatus = 'ready';
+    window.SeasonalVegetationTint?.tintMaterial?.(material); // Shared-cache hits must receive the same immediate seasonal tint as new PNG loads.
   }
 
   function getSharedTerrainTexture(path, tileSize, fillColor, stretch) {
