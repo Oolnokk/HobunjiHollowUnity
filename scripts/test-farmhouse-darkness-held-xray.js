@@ -114,6 +114,14 @@ const stoneWall = mesh(otherInterior, untaggedMaterial, { liveRootFloor: true, r
 assert.equal(xray.classify(stoneWall).ground, false, 'rooted walls never share the floor exception');
 assert.equal(xray.classify(grass).ground, true, 'exterior farm terrain still x-rays');
 const wildernessTypes = ['weeds', 'shrub', 'tilled', 'trench', 'raised', 'paddy', 'path', 'rock', 'river', 'stream', 'waterfall']; // Every merged wilderness floor bucket shares the grass ground-depth exception.
+const wildernessFinishes = JSON.parse(read('docs/config/maps/terrain-materials.json')).byMap['*']; // The shared authored material schema backs all live wilderness floor buckets.
+for (const kind of ['grass', ...wildernessTypes]) {
+  assert.match(wildernessFinishes[kind]?.texture || '', /\\.png$/, `wilderness ${kind} has an authored PNG`);
+}
+assert.equal(wildernessFinishes.weeds.texture, wildernessFinishes.grass.texture,
+  'weed and grass substrate share the same visible PNG');
+assert.equal(wildernessFinishes.shrub.texture, wildernessFinishes.grass.texture,
+  'shrub floor and grass substrate share the same visible PNG');
 for (const kind of wildernessTypes) {
   const floor = mesh(exterior, { userData: { terrainKey: kind }, map: { image: {} } },
     { mapEditorTerrain: { mapId: 'map_western_slope' } });
