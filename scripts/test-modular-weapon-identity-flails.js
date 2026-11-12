@@ -44,6 +44,34 @@ assert.deepEqual(plain(definitions[item('kylie','hatchet')].slots), ['weapon','a
   'Kylie haft gains a tool role when a compatible head provides it');
 assert.deepEqual(plain(definitions[item('kylie','plains-blade')].slots), ['weapon'],
   'a tool-worthy Kylie haft does not invent tool roles for a weapon-only head');
+const draftStore = new Map(); // Simulates a user's existing local editor draft across page reloads.
+const originalDraft = plain(config); // Older v5 catalog had Kylie set false while retaining other authored mounts.
+originalDraft.shafts.kylie.toolWorthy = false;
+draftStore.set('hobunji.modularWeapons.v5', JSON.stringify(originalDraft));
+const reopenWithDraft = () => { // Re-evaluate the actual module so boot-time draft migration is exercised.
+  const isolatedWindow = {
+    RuntimeFrameScheduler: { register() {} },
+    localStorage: {
+      getItem(key) { return draftStore.get(key) ?? null; },
+      setItem(key, value) { draftStore.set(key, value); }
+    }
+  }; // Independent game/browser globals; reuses only persisted draft bytes.
+  const isolatedContext = vm.createContext({ window: isolatedWindow }); // Fresh page reload environment.
+  for (const file of ['docs/config/weapon-sprite-assemblies.js', 'docs/config/modular-weapons.js',
+    'docs/js/modular-weapon-bridge-fill.js', 'docs/js/modular-weapons.js'])
+    vm.runInContext(fs.readFileSync(file, 'utf8'), isolatedContext, { filename: file });
+  return isolatedWindow.ModularWeapons;
+};
+const upgradedDraftApi = reopenWithDraft(); // First load must migrate the stored false flag once.
+assert.equal(upgradedDraftApi.getConfig().shafts.kylie.toolWorthy, true,
+  'older local editor drafts cannot override the newly enabled Kylie haft');
+assert.equal(JSON.parse(draftStore.get('hobunji.modularWeapons.v5')).shafts.kylie.toolWorthy, true,
+  'Kylie upgrade is persisted so subsequent reloads retain it');
+const newAuthorDraft = plain(upgradedDraftApi.getConfig()); // A future intentional editor edit must remain possible.
+newAuthorDraft.shafts.kylie.toolWorthy = false;
+upgradedDraftApi.replace(newAuthorDraft, true);
+assert.equal(reopenWithDraft().getConfig().shafts.kylie.toolWorthy, false,
+  'one-time migration does not permanently override future author choices');
 assert.deepEqual(plain(definitions[item('fishing-spear','pickshovel-scoop')].slots), ['weapon','shovel'],
   'tool role originates with the selected head, not the shaft donor');
 assert(config.heads.hoe.toolSlots.includes('hoe'),
