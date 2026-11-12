@@ -14,6 +14,7 @@ const sinkSource = fs.readFileSync('docs/js/weapon-stance-drop-runtime.js', 'utf
 const handDriver = fs.readFileSync('docs/js/procedural-hand-frame-driver.js', 'utf8'); // Live hand-grip holder and tool-selection routing.
 const equipment = fs.readFileSync('docs/js/equipment-panel.js', 'utf8'); // Registered instrument must point at its own animation.
 const gameHtml = fs.readFileSync('docs/index.html', 'utf8'); // Game entry point must load the same Kurraya revision as its animation editor.
+const poseScaleSource = fs.readFileSync('docs/js/species-pose-scaling.js','utf8'); // Uses the shipped species height/orbit mapping for numeric pose comparisons.
 const gameKurrayaToken = gameHtml.match(/kurraya-instrument\.js\?v=([A-Za-z0-9_-]+)/)?.[1]; // Cache key guards against stale game-side note playback.
 const editorKurrayaToken = editor.match(/kurraya-instrument\.js\?v=([A-Za-z0-9_-]+)/)?.[1]; // Cache key used by the editor preview.
 assert(editor.includes('function editorUnscaledToolBaseY()'), 'editor must normalize the preview hand anchor before species pose scaling');
@@ -24,6 +25,32 @@ assert(handDriver.includes('kurraya-authored-basis'), 'Kurraya cannot inherit a 
 assert(handDriver.includes('(playerKurrayaActive(record) || !!playerKurrayaTarget(record))'), 'carried Kurraya keeps its independent free Neutral hand');
 assert(gameKurrayaToken && editorKurrayaToken && gameKurrayaToken === editorKurrayaToken,
   'game and animation editor must use the same Kurraya instrument script revision');
+
+// Run the real shared scaler and editor's raw-anchor helper against a non-unit
+// species body scale, including an instrument body sink. Pure source-pattern
+// checks cannot detect the previous double-scaled hand anchor.
+const scaleTestWindow={
+  HobunjiCharacterRigScale:{scaleFor:species=>({y:species==='mao-ao'?1:1.4})},
+  SCRATCHBONES_CONFIG:{game:{assets:{pngPlaneAvatar:{worldModelWidth:0.9}}}},
+}; // Species calibration and portrait reference used by the production pose scaler.
+vm.runInNewContext(poseScaleSource,{window:scaleTestWindow});
+const realPoseScaler=scaleTestWindow.HobunjiSpeciesPoseScale; // Production forward/inverse math, not a duplicate fixture.
+const rawAnchorY=0.44, rigScaleY=1.4, authorOffsetY=0.08, sinkWorldY=0.028; // Non-unit body proportions expose repeated scaling.
+const renderedAnchorY=rawAnchorY*rigScaleY-sinkWorldY; // Editor's body-scaled hand anchor after rendered body sink.
+const anchorHelperStart=editor.indexOf('function editorUnscaledToolBaseY()'); // Extracts the actual editor helper, not a copy.
+const anchorHelperEnd=editor.indexOf("// The tool's mating point",anchorHelperStart); // Stops before unrelated editor tool logic.
+assert(anchorHelperStart>=0 && anchorHelperEnd>anchorHelperStart,'editor must publish the hand-anchor converter');
+const normalizedAnchorY=vm.runInNewContext(editor.slice(anchorHelperStart,anchorHelperEnd)+'\neditorUnscaledToolBaseY();',{
+  characterBodyScaleRoot:{scale:{y:rigScaleY}},toolBase:{position:{y:renderedAnchorY}},
+}); // Executes the real helper with a live scaled preview anchor.
+const poseScaleArgs={speciesId:'kenkari',gender:'male',modelHeight:1.1,poseOrbitScale:0.5,cx:0,cz:0,floorY:0}; // Same species and orbit in editor/game.
+const gamePosePosition={x:0,y:rawAnchorY+authorOffsetY,z:0}; // In-game holder position begins from the raw PNG hand row.
+realPoseScaler.transformPosePoint(gamePosePosition,{...poseScaleArgs,baseY:rawAnchorY});
+const editorPosePosition={x:0,y:normalizedAnchorY+authorOffsetY,z:0}; // Preview holder begins from normalized (not pre-scaled) hand row.
+realPoseScaler.transformPosePoint(editorPosePosition,{...poseScaleArgs,baseY:normalizedAnchorY});
+assert(Math.abs(editorPosePosition.y-(gamePosePosition.y-sinkWorldY))<1e-10,'editor hand/tool height must match gameplay under species scaling and note sink');
+realPoseScaler.untransformPosePoint(editorPosePosition,{...poseScaleArgs,baseY:normalizedAnchorY});
+assert(Math.abs(editorPosePosition.y-normalizedAnchorY-authorOffsetY)<1e-10,'editor gizmo inversion must round-trip the authored vertical offset');
 
 
 const begin = held.indexOf('  const fluteNeutralNotePose ='); // Includes the authored pose factory and strike-only sink constant before flutePlayNote.
@@ -184,8 +211,37 @@ assert.equal(api.playerRightHandPose().y,0.07,'carried Kurraya must use the auth
 assert.equal(api.playerRightHandPose().influence,1,'carried Kurraya must keep the authored free right-hand influence');
 carriedKurraya.parent.visible=false;
 assert.equal(api.playerRightHandPose(),null,'a hidden, unequipped Kurraya must release the free-hand pose');
+carriedKurraya.parent.visible=true;
+carriedKurraya.visible=false;
+clock.ms+=501; // Advance beyond the intentional 500ms actor-subtree lookup throttle.
+assert.equal(api.playerKurrayaHandTarget(),null,'hidden Kurraya geometry cannot claim hands through a visible bag holder');
+carriedKurraya.visible=true;
+clock.ms+=501;
+assert.equal(api.playerKurrayaHandTarget()?.holder,carriedKurraya.parent,'re-equipped visible Kurraya must be reacquired after the scan window');
 delete window.Combat;
 delete window.HobunjiHandToolGrips;
+
+// Check the actual held-item resolver rather than relying on the active music
+// flag: ordinary bag hand targets must lose to a carried Kurraya at Neutral.
+const itemRouteBegin=handDriver.indexOf('  function heldItemTarget(record) {'); // Boundary for the production generic item hand selector.
+const itemRouteEnd=handDriver.indexOf('  function modelKeyForRecord(record)',itemRouteBegin); // Only execute the small resolver in VM.
+assert(itemRouteBegin>=0 && itemRouteEnd>itemRouteBegin,'hand-driver held-item routing must exist');
+const routePlayer={}; // Player identity used by the real hand resolver.
+const routeBag={holder:{visible:true},mode:'bottle'}; // Fallback generic held-item pose.
+let routeCarryingKurraya=true; // Switches equipment state without entering a music session.
+const routeHeldItem=vm.runInNewContext(handDriver.slice(itemRouteBegin,itemRouteEnd)+'\nheldItemTarget;',{
+  inAttackEditor:()=>false,
+  gameDeps:{playerMesh:routePlayer,toolHolder:{visible:false},getHeldItemHandTarget:()=>routeBag},
+  playerKurrayaActive:()=>false,
+  playerKurrayaTarget:()=>routeCarryingKurraya?{holder:{visible:true}}:null,
+  global:{KurrayaInstrument:{fluteDiagnostics:()=>({active:false})},NpcDrinkInteraction:{heldItemTarget:()=>null}},
+  window:{Shattercasks:{heldHandTarget:()=>null}},
+});
+const routeRecord={rig:{parent:routePlayer},avatarRoot:{userData:{}}}; // Active player's procedural hand record.
+assert.equal(routeHeldItem(routeRecord),null,'carried Kurraya must supersede generic bag hands outside a music session');
+routeCarryingKurraya=false;
+assert.equal(routeHeldItem(routeRecord),routeBag,'unequipping Kurraya must return to the ordinary item holder');
+assert.equal(routeHeldItem({rig:{parent:{}},avatarRoot:{userData:{}}}),null,'player Kurraya state must never leak into NPC hands');
 
 // Ambient NPC Kurraya notes must never capture the player's hand holder (both
 // instruments can sound at once, and the previous player twitch callback is gone).
