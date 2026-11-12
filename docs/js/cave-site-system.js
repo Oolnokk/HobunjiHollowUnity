@@ -539,6 +539,7 @@
     const hasRewardSpace = floorTiles(mapData).some(tile => hidden.has(tileKey(tile.col, tile.row)) && hasFeatureClearance(tile, occupied, 2));
     if (!hasRewardSpace) return false; // Never seal an empty or inaccessible extension.
     // The excavatable wall is plain stone; only separate cave resource mounds roll ores.
+    rng(); // Consume the former wall-ore roll to preserve later seeded cave rewards and placements.
     mapData.oreRocks = [...(mapData.oreRocks || []), ...thickWall.filter(cell => !existing.has(tileKey(cell.col, cell.row))).map(cell => ({
       col: cell.col, row: cell.row, oreKind: 'stone', caveSeparator: true, caveSeparatorLayer: cell.layer,
     }))];
