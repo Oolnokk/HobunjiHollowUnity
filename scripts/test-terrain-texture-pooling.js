@@ -44,7 +44,15 @@ const THREE = {
   Color, MeshBasicMaterial: Basic, MeshLambertMaterial: Lambert,
   CanvasTexture, TextureLoader: Loader, RepeatWrapping: 1000, DoubleSide: 2,
 };
-const window = {};
+const tintedMaterials = []; // Verifies that both asynchronous loads and cached texture hits receive seasonal material tint.
+const window = {
+  SeasonalVegetationTint: {
+    tintMaterial(material) {
+      tintedMaterials.push(material);
+      material.color.set(0x96745a);
+    },
+  },
+};
 vm.runInNewContext(fs.readFileSync('docs/js/terrain-tile-materials.js', 'utf8'), {
   window, THREE, console,
   parseHexColor: hex => hex ? { r: 110, g: 120, b: 130 } : null,
@@ -79,6 +87,8 @@ assert.equal(plains.userData.hobunjiTerrainTextureStatus, 'loading');
 
 for (const request of loads) request.onSuccess(request.texture);
 assert.equal(shadeFills, 3, 'the PNG is shade-filled once per source/color/span instead of per map-material');
+assert.equal(tintedMaterials.length, 5, 'all new map materials get season-tinted when their shared PNG resolves');
+assert.equal(plains.color.value, 0x96745a, 'shared PNG load never leaves a grass material permanently white');
 assert.equal(plains.map, shrubs.map, 'grass and shrub share one GPU texture');
 assert.equal(plains.map, weeds.map, 'another wilderness zone reuses the same GPU texture');
 assert.notEqual(plains.map, rock.map, 'different tile span requires an independent texture sampler');
@@ -95,6 +105,8 @@ assert.equal(weeds instanceof Basic, true, 'vegetation cover uses unlit base mat
 assert.equal(trench instanceof Lambert, true, 'soil retains its lit material model');
 const subsequent = resolver('map_eastern_mire', 'grass');
 assert.equal(subsequent.map, plains.map, 'new zones immediately reuse a completed sampler');
+assert.equal(subsequent.color.value, 0x96745a, 'completed texture cache hits apply seasonal tint without a second loader event');
+assert.equal(tintedMaterials.length, 6, 'newly attached pooled PNG receives one targeted tint rather than a global rescan');
 assert.equal(loads.length, 3, 'already-loaded samplers never re-download');
 assert.equal(window.TerrainTileMaterials.debugSnapshot().sourceLoadsStarted, 3);
 
