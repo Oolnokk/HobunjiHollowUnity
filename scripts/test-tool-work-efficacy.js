@@ -105,6 +105,14 @@ for (const [itemKey, efficacy] of [['weak', .9], ['strong', 1.15], ['legacy', 1]
   near(fishingContext.fm.bridge.shotDuration, .16 / efficacy, `${itemKey} shot`);
   near(fishingContext.fm.bridge.retractDuration, .28 / efficacy, `${itemKey} retraction`);
 }
+// Execute the fishing artwork choice for old and crafted variants; a tiered
+// Fishing Mace must not silently render as a spear during the faster throw.
+const maceExpression = fishing.match(/const useMace = ([^;]+);/)?.[1]; // Reads the production sprite-selection expression, not a copied classification.
+assert(maceExpression, 'Fishing Mace rendering has a readable selection expression');
+const isMace = new Function('deps', `return (${maceExpression});`); // Evaluates the existing presentation classifier without requiring a DOM.
+for (const [key, expected] of [['fishingmace', true], ['fishingmace_nativeCopper', true], ['fishingmace_leadedBronze', true], ['fishingspear_nativeCopper', false]]) {
+  assert.equal(isMace({ equipmentSlots: { harpoon: key } }), expected, `harpoon sprite selection for ${key}`);
+}
 assert.match(fishing, /b\.shotTimer = Math\.min\(b\.shotDuration, b\.shotTimer \+ dt\)/, 'Outbound motion consumes per-throw duration');
 assert.match(fishing, /b\.retractTimer = Math\.min\(b\.retractDuration, b\.retractTimer \+ dt\)/, 'Retraction consumes per-throw duration');
 console.log('Tool work efficacy, held hoe tilling and harpoon flight/retraction: ok');
