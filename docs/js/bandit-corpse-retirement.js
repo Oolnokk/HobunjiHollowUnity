@@ -136,6 +136,7 @@
 
   window.BanditCorpseRetirement = {
     init, tick, retire, isRetirable, config,
+    getCorpseObjects: () => deps?.corpseObjects || null, // Read-only access to the canonical registry for renderer-only corpse culling.
     defaults: DEFAULTS,
     get stats() { return { ...stats }; },
   };
