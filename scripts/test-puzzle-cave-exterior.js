@@ -22,7 +22,7 @@ class SceneObject {
 class Group extends SceneObject {}
 class Mesh extends SceneObject {constructor(geometry,material){super();this.geometry=geometry;this.material=material;this.isMesh=true;}}
 class Material {
-  constructor(opts={}){this.color={hex:opts.color,setHex(v){this.hex=v;}};this.map=opts.map;this.opacity=opts.opacity??1;}
+  constructor(opts={}){this.color={hex:opts.color,setHex(v){this.hex=v;}};this.map=opts.map;this.opacity=opts.opacity??1;this.depthTest=opts.depthTest??true;this.depthWrite=opts.depthWrite??true;}
   dispose(){this.disposed=true;}
 }
 class Geometry {constructor(...dimensions){this.dimensions=dimensions;}dispose(){this.disposed=true;}}
@@ -184,6 +184,12 @@ for(let index=0;index<gate.glyphs.length;index++){
     'every Scratchbone note is on its authored column, in alternating left-right reading order');
 }
 assert(gate.scoreStone.visible,'the physical paired pillars remain visible even when their music glyphs are hidden');
+assert.equal(gate.scoreBoard.userData.scoreOcclusion,'notes-over-stone', 'the existing score group alone owns cliff-independent glyph rendering');
+assert(pillars.every(p=>p.material.depthTest && p.material.depthWrite), 'physical stone pillars still obey terrain occlusion');
+assert(gate.glyphs.every(g=>!g.material.depthTest && !g.material.depthWrite && !g.frustumCulled), 'score ink remains visible through nearby cliff rock while the plate is active');
+assert(gate.glyphs.every(g=>g.renderOrder>=64 && g.userData.noOutline), 'authored ink renders after stone without a synthetic outline');
+assert(gate.glyphGlows.every(g=>!g.material.depthTest && !g.material.depthWrite), 'inner note halos follow the same selective score visibility');
+assert(gate.glyphOuterGlows.every(g=>!g.material.depthTest && !g.material.depthWrite), 'outer note halos cannot vanish behind the cliff');
 assert.equal(gate.glyphGlows.length,gate.song.notes.length,'each outdoor note has a shared-visibility additive halo');
 assert(gate.glyphs.every(glyph=>typeof glyph.material.onBeforeCompile==='function'),
   'the exterior glyphs must use the Witch-bomb alpha-only ink shader');
