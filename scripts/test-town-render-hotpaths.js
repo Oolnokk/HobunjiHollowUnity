@@ -500,12 +500,14 @@ const customState = installElevationShader(customMaterial);
 customMaterial.onBeforeCompile({ uniforms: {}, vertexShader: 'void main() {}', fragmentShader: 'void main() {}' }, {});
 assert.equal(customState.supported, false, 'unsupported custom terrain shaders keep full depth occlusion');
 
-assert.match(heldRender, /materialMarksBaseGrass\(object\?\.material\) && isTerrainSurface\(object\)/,
-  'only surfaces carrying the base grass material can be removed from held-overlay depth');
+assert.match(heldRender, /data\.mapEditorTerrain != null && object\.material\?\.userData\?\.terrainKey !== 'rock'/,
+  'tagged wilderness floor buckets x-ray while solid stone-mound buckets stay as occluders');
+assert.match(heldRender, /materialMarksBaseGrass\(object\?\.material\)/,
+  'existing base grass x-ray remains available independently of the new floor-bucket tags');
 assert.match(terrainTileMaterials, /matKey === deps\.TileType\.GRASS[\s\S]{0,180}hobunjiBaseGrassTerrainMaterial = true/,
   'the live game tags the native base grass material');
-assert.match(terrainTileMaterials, /loadTerrainTileTexture[\s\S]{0,200}matKey === deps\.TileType\.GRASS[\s\S]{0,220}hobunjiBaseGrassTerrainMaterial = true/,
-  'authored texture overrides keep the exact same base grass tag');
+assert.match(terrainTileMaterials, /mat\.userData\.terrainKey = matKey[\s\S]{0,220}matKey === deps\.TileType\.GRASS[\s\S]{0,220}hobunjiBaseGrassTerrainMaterial = true/,
+  'authored PNG terrain keeps both its exact bucket identity and native grass depth tag');
 assert.match(heldRender, /if \(isTopFacesGroundSurface\(object\)\) markTopFaceGroundMesh\(object\)/,
   'the cave shell participates in selective floor-face depth replay without hiding wall triangles');
 assert.match(heldRender, /const groundMeshes = \[\.\.\.ground, \.\.\.topFaceGround\]/,
