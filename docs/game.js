@@ -11823,9 +11823,12 @@
             if (object.userData?.wildernessChunkOwnsMaterial) {
               const materials = Array.isArray(object.material) ? object.material : [object.material];
               for (const material of materials) {
-                if (!material?.map?.userData?.chunkJigsawShared) material?.map?.dispose?.();
+                if (window.TerrainTileMaterials?.isCachedMaterial?.(material)) continue; // Source materials are persistent map resources, not chunk-owned.
+                const pooled = texture => window.TerrainTileMaterials?.isSharedTexture?.(texture) === true; // Keep shared source PNGs alive when a chunk exits.
+                if (material?.map && !material.map.userData?.chunkJigsawShared && !pooled(material.map)) material.map.dispose?.();
                 for (const uniform of Object.values(material?.uniforms || {})) {
-                  if (uniform?.value?.isTexture && !uniform.value.userData?.chunkJigsawShared) uniform.value.dispose?.();
+                  const texture = uniform?.value; // Jigsaw leases are owned by their cloned material; pooled textures by TerrainTileMaterials.
+                  if (texture?.isTexture && !texture.userData?.chunkJigsawShared && !pooled(texture)) texture.dispose?.();
                 }
                 material?.dispose?.();
               }
