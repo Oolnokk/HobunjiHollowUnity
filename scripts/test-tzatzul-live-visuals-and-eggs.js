@@ -219,7 +219,7 @@ async function flush() { for (let i = 0; i < 8; i++) await Promise.resolve(); }
   playerRig = poseRoot(.18); // Character appearance/scene changes may replace the live root.
   assert.equal(visuals.restoreCaptive(capturedPlayer), false, 'stale root is discarded when the actual player rig was rebuilt');
   assert.equal(oldPlayerRig.quaternion.angle, -1.1, 'detached old player rig is never modified');
-  assert.equal(playerRig.quaternion.angle, .18, 'replacement player's clean pose is preserved');
+  assert.equal(playerRig.quaternion.angle, .18, "replacement player\'s clean pose is preserved");
   assert.equal(visuals.snapshot().captiveRestoreMisses, 1, 'mobile debug records skipped stale-root restores');
 
     console.log('Tzatzul rare infertile eggs, canonical mixed adult loot, authored live flying rig, camera animation, death, late-load cleanup and player grip-pose recovery PASS.');
