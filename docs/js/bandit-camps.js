@@ -1215,7 +1215,7 @@
     const parts = grantBanditLoot(gained);
     if (obj.interactable) obj.interactable.lootable = false;
     deps.refreshItemScroll(); deps.buildInventoryGrid(); deps.refreshActionBar();
-    deps.saveMemberWorldData();
+    (deps.scheduleLootMemberSave || deps.saveMemberWorldData)(); // Avoid a full player-save write on the tent-loot frame.
     deps.showToast(parts.length
       ? `Ransacked the tent: ${parts.join(' ')}`
       : 'Nothing worth taking in the tent.', true);
@@ -1399,6 +1399,7 @@
     return item;
   }
 
+  let lastEnemyLootMs = 0; // Latest corpse-loot input time for mobile diagnostics.
   function makeBanditCorpseWorldObject(c) {
     const holdSeconds = Number(c.lootHoldSeconds) || 0; // Bodies flagged for a short hold (cave catacomb skeletons) loot through js/corpse-hold-loot.js.
     return {
@@ -1415,6 +1416,7 @@
       onAction(action) {
         if (action !== 'obj_loot_corpse') return { ok: false, message: 'Unknown action.' };
         if(c.ruinNoLoot===true)return {ok:false,message:'This test-room opponent carries no loot.'}; // Also protects against calling the corpse action directly.
+        const lootStarted=window.performance?.now?.() ?? Date.now(); // Measure only the active loot input.
         const parts = grantBanditLoot(deps.rollLootPool(c.def.lootPool, { entity: c }));
         const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0;
         if (specialAmmo) parts.push(`🏹 Special Ammo×${specialAmmo}`);
@@ -1431,9 +1433,10 @@
         if (c.keepCorpseAfterLoot) c.corpseLooted = true;
         else { deps.corpseObjects.delete(c); deps.despawnCreature(c); }
         deps.refreshItemScroll();
-        deps.buildInventoryGrid();
-        deps.buildPackClothingSection();
-        deps.saveMemberWorldData();
+        deps.buildInventoryGrid(); // This is a no-op when the Pack is closed.
+        if (deps.isMenuOpen?.() !== false) deps.buildPackClothingSection();
+        (deps.scheduleLootMemberSave || deps.saveMemberWorldData)();
+        lastEnemyLootMs=Math.round((window.performance?.now?.() ?? Date.now())-lootStarted);
         return {
           ok: true,
           message: parts.length
@@ -1480,6 +1483,7 @@
         focus: { ..._lastTentFocus },
       };
     },
+    get lastEnemyLootMs() { return lastEnemyLootMs; }, // Exposed for mobile performance reports.
     get campInstances() { return _banditCampInstances; },
     get perceivedThreats() { return _perceivedThreats; },
     get campsEnabled() { return campsEnabled; },
