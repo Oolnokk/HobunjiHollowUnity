@@ -170,6 +170,29 @@ snap = controller.snapshot();
 assert.strictEqual(snap.loaded, 9, 'the complete low-memory neighborhood should eventually finish streaming');
 assert.strictEqual(snap.queued, 0);
 
+// Interior edits touch no chunk boundary: the previously unconditional 3x3
+// rebuild should update exactly the target chunk and keep the other eight live.
+const savedAvoided = snap.neighborRebuildsAvoided; // Measures real resident halo builds avoided by interior edits.
+const interiorEdit = context.WildernessChunks.rebuildZone(currentArea, 8 * 16 + 8, 8 * 16 + 8);
+assert.strictEqual(interiorEdit, 1, 'an interior edit rebuilds only its owning chunk');
+snap = controller.snapshot();
+assert.strictEqual(snap.loaded, 9, 'the other eight resident chunks remain intact');
+assert.strictEqual(snap.neighborRebuildsAvoided - savedAvoided, 8,
+  'interior edits skip all eight neighboring chunk teardown/rebuild operations');
+
+// A tile on the east edge needs just that neighboring chunk, not north/south or diagonals.
+const edgeEdit = context.WildernessChunks.rebuildZone(currentArea, 8 * 16 + 15, 8 * 16 + 8);
+assert.strictEqual(edgeEdit, 2, 'east seam edit rebuilds the source and east-adjacent chunk');
+context.WildernessChunks.update(0.2); // Returns the one deferred edge chunk to the full nine-chunk resident set.
+assert.strictEqual(controller.snapshot().loaded, 9);
+
+// Corner edits affect the diagonal and both orthogonal seams, no other chunks.
+const cornerEdit = context.WildernessChunks.rebuildZone(currentArea, 8 * 16 + 15, 8 * 16 + 15);
+assert.strictEqual(cornerEdit, 4, 'corner seam edit rebuilds exactly its 2x2 participating chunks');
+for (let i = 0; i < 3; i++) context.WildernessChunks.update(0.2);
+assert.strictEqual(controller.snapshot().loaded, 9);
+assert.strictEqual(controller.snapshot().editSeamMarginTiles, 4, 'mobile diagnostics report the conservative edge margin');
+
 player.x = (9 * 16 + 1) * TILE;
 context.WildernessChunks.update(0.2);
 snap = controller.snapshot();

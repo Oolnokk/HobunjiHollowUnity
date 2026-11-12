@@ -59,20 +59,35 @@
     const zi = deps._zoneScenes.get(mapId);
     if (!zi) return;
     if (zi.chunkController && window.WildernessChunks) {
+      // The global route apron is outside all streamed chunks, so rebuilding
+      // resident chunks after a late terrain-material fetch never rebinds its
+      // original flat grass material. Refresh that ONE retained material too.
+      if (col == null && row == null) {
+        const pathGround = deps._zoneFloorMeshGroups.get(mapId)?.find(
+          mesh => mesh?.userData?.wildernessGlobalPathGround === true
+        ); // Built once in game.js; never disposed by WildernessChunks.
+        if (pathGround) {
+          const material = deps.resolveTileMat(mapId, deps.TileType.GRASS); // Uses the newly loaded per-map PNG override.
+          if (material && pathGround.material !== material) {
+            pathGround.material = material; // Geometry and x-ray registration remain unchanged.
+            deps.debugLog?.(`[terrain-refresh] ${mapId}: updated global path substrate material`);
+          }
+        }
+      }
       // The route network's grass apron is zone-wide, but its index ranges
       // are recorded per tile when it is first built. Toggle this edited
       // tile and its one-cell cliff seam instead of regenerating the entire
       // route heightfield (which previously froze large wilderness maps
       // for several seconds). Filling/smoothing restores the original
       // indices through the same path.
-      window.ZonePlateauMesa.rebuildZoneMesaMeshes(mapId); // Re-tags exact steep-face ownership before the apron decides whether this tile belongs to rock.
+      window.ZonePlateauMesa.rebuildZoneMesaMeshes(mapId); // CliffRouteNetwork and mounted cave entrances also depend on edits to flat path access, not just nearby plateau geometry.
       const routeApronUpdated = zi.pathNet?.refreshTileAndSeam?.(col, row) || false; // Reported in the mobile-visible debug log below.
-      // The live grid already contains the authoritative edit. Rebuild
-      // only its resident chunk plus one-chunk seam halo; unloaded chunks
-      // will naturally read the updated grid when they are next streamed.
+      // The live grid already contains the authoritative edit. Rebuild its
+      // owning chunk plus only the neighbors within the conservative seam
+      // margin; unloaded chunks read the updated grid when streamed.
       const rebuiltChunks = window.WildernessChunks.rebuildZone(mapId, col, row); // Reported below to diagnose future mobile-only refresh failures.
       window.WildTreasure.syncZoneInteractivity(mapId);
-      deps.debugLog(`[terrain-refresh] ${mapId} c${col},r${row}: routeApron=${routeApronUpdated ? 'updated' : 'outside'} chunks=${rebuiltChunks}`);
+      deps.debugLog(`[terrain-refresh] ${mapId} c${col},r${row}: routeApron=${routeApronUpdated ? 'updated' : 'outside'} chunks=${rebuiltChunks} cliffRoutes=refreshed`);
       return;
     }
     window.ZonePlateauMesa.rebuildZoneMesaMeshes(mapId); // Refresh geometry-derived cliff ownership before rebuilding ordinary/path ground.

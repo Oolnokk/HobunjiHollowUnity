@@ -144,7 +144,7 @@
        window.ZoneRegrowth.init(...) alongside the other window.*.init(...)
        calls; js/bandit-camps.js also reads its refreshZoneGroundVisuals
        from its own init() call further down game.js. -->
-  <script src="js/zone-regrowth.js?v=20261023h5f41297"></script>
+  <script src="js/zone-regrowth.js?v=20261112cliffRoutesSafe2"></script>
   <!-- Player health/stamina/footing regen tick and the vitals-bar HUD
        refresh, extracted out of game.js. Must load before game.js, which
        calls window.PlayerVitals.init(...) alongside the other
@@ -160,7 +160,7 @@
   <script src="js/item-processing.js?v=20261110he9a9f9a"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <script src="debug.js?v=20261111hda6686f"></script>
+  <script src="debug.js?v=20261112corpseAndSharedTint1"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20261026h7f369c3"></script>
   <script src="config/scratchbones-config.js?v=20261109stonebeatcfg1"></script>
@@ -365,7 +365,7 @@
   <script src="js/combat/combat-combo.js?v=20261107combo1501a"></script>
   <script src="js/combat/combat-quickattacks.js?v=20261110quickreach2"></script>
   <script src="js/combat/combat-counter-shield.js?v=20261106trinkets20"></script>
-  <script src="js/combat/combat-blink-dodge.js?v=20261026hmaskalpha10"></script>
+  <script src="js/combat/combat-blink-dodge.js?v=20261112afterimagepool1"></script>
   <script src="js/combat/combat-charged-breaker.js?v=20261106charge879"></script>
   <script src="js/combat/combat-flurry.js?v=20261106trinkets20"></script>
   <script src="js/combat/combat-loadout-ui.js?v=20261110tzkFortune1"></script>
@@ -514,7 +514,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.CreatureDeath.init(...) during
        its own setup. -->
-  <script src="js/creature-death.js?v=20261105h1558f90"></script>
+  <script src="js/creature-death.js?v=20261112corpseDeath1"></script>
   <!-- Old, un-looted bandit corpses swap their full humanoid rig for a flat marker
        (window.BanditCorpseRetirement); game.js calls init(...) and tick(...). -->
   <script src="js/bandit-corpse-retirement.js?v=20261107hf66a80f"></script>
@@ -663,7 +663,7 @@
   <script src="js/flying-animal-rig.js?v=20261108tzflightnest2"></script> <!-- Canonical authored two-bone bird wing/body assembly. -->
   <script src="js/tzatzul-registration.js?v=20261108tzflightnest2"></script> <!-- Tzatzul dev species, hatchling peck, stable individual tint and flying-rig JSON. -->
   <script src="js/skeeri-ruins.js?v=20261109hatchrange1"></script> <!-- Three authored Skeeri sizes, concealed ruin hatches and shaft witch-bomb runs. -->
-  <script src="js/tzatzul-live-visuals.js?v=20261108tzflightnest2"></script>
+  <script src="js/tzatzul-live-visuals.js?v=20261111tzGripBaseline1"></script>
   <script src="js/tzatzul-cliff-sites.js?v=20261108tzflightnest2"></script> <!-- Separate rock-textured, non-climbable Tzatzul spires. -->
   <script src="js/tzatzul-flight-runtime.js?v=20261108tzflightnest2"></script> <!-- Shared swept-body dive for exterior and nest mothers. -->
   <script src="js/tzatzul-nest-encounter.js?v=20261108tzflightnest2"></script> <!-- Authoritative indoor mother and hatchling combat in the existing wildlife tick. -->
@@ -839,7 +839,7 @@
   <script src="js/tasks-panel.js?v=20261029hguild2"></script>
   <script src="js/supply-page.js?v=20261029seedblocks2"></script>
   <script src="js/whistle-equip.js?v=20261016hb4b3fe1"></script>
-  <script src="js/wildlife-debug-panel.js?v=20261108hdenlineage2"></script>
+  <script src="js/wildlife-debug-panel.js?v=20261111tzGripBaseline1"></script>
   <script src="js/wildlife-behavior-map.js?v=20261010hb5092df"></script>
   <!-- Shipping tab (player bag <-> shipping-box transfer UI, window.
        ShippingPanel) — pure DOM/state, no other window.* system reads;
@@ -874,7 +874,7 @@
        the top of its farm-setup sequence (well before window.BorderTerrain's
        own init() below, which captures game.js's resulting local
        resolveTileMat/resolveCliffMat aliases into its own deps). -->
-  <script src="js/terrain-tile-materials.js?v=20261019h582d56c"></script>
+  <script src="js/terrain-tile-materials.js?v=20261112texturePool1"></script>
   <!-- Procedural farm/town border terrain (window.BorderTerrain) — pure
        scene-graph generation, no other window.* system reads; must load
        before game.js, which calls window.BorderTerrain.init(...) and then
@@ -909,7 +909,7 @@
   <script src="js/cavern-generator.js?v=20261108hdenreview2"></script>
   <script src="js/tzatzul-nest-interior.js?v=20261108tzflightnest2"></script> <!-- Author four high-vault boss rooms using the existing cavern mesh and stone stalagmite generator. -->
   <script src="js/ore-rock-textures.js?v=20261102authorAssetBase1"></script> <!-- Shared metal-bodied ore and verdigris materials: mine, wilderness, caves. -->
-  <script src="js/cavern-ore-rocks.js?v=20261107caveStone1"></script>
+  <script src="js/cavern-ore-rocks.js?v=20261111stoneWallsAudit2"></script>
   <script src="js/town-mine.js?v=20261026ghouls1"></script>
   <script src="js/town-mine-descent.js?v=20261023mdesc2"></script>
   <!-- A wilderness zone's in-bounds elevated plateau/mesa terrain
@@ -944,7 +944,7 @@
   <script src="js/locale-cliff-wall-mounts.js?v=20261105cliffPortal1"></script><!-- Mount editor-authored furniture on the resolved procedural wall normal and elevation. -->
   <script src="js/puzzle-cave-entrances.js?v=20261110melodyClock1"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
   <script src="js/cave-tripwire-traps.js?v=20261110tripwire2"></script><!-- Wall-spanning hidden-cache strings and suspended Shattercasks; runtime physics bind once HangingRopes loads. -->
-  <script src="js/cave-site-system.js?v=20261110tripwire2"></script>
+  <script src="js/cave-site-system.js?v=20261111stoneWallsAudit2"></script>
   <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
        hooks bind before game.js initializes the subsystems; also handles touch prompts. -->
   <!-- Capability/event substrate (window.WorldEvents, window.Targetables): pure registries with no
@@ -987,7 +987,7 @@
        terrain/vegetation chunks while the Tothal generator remains owner of
        each zone's deterministic complete tile blueprint. -->
   <script src="js/mobile-render-budget.js?v=20261009ha68a47f"></script>
-  <script src="js/wilderness-chunks.js?v=20261009hebc5be6"></script>
+  <script src="js/wilderness-chunks.js?v=20261112seamBound1"></script>
   <!-- PNG-plane avatar outline occluders: registry of sprite-plane meshes on
        outline layer 4 plus the depth-only replay game.js runs before its
        outline passes (window.PngPlaneOutlineOccluder; game.js calls init). -->
@@ -2857,7 +2857,7 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20261110npcReplayTool2"></script>
+  <script src="js/tool-icon-render.js?v=20261112xrayTileIndexLoader1"></script>
   <script src="js/sprite-recolor.js?v=20261105koma1"></script>
   <script src="js/object-sprite-catalog.js?v=20261107pouch1"></script> <!-- Central metadata-to-authored-PNG resolver for new inventory icons. -->
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
@@ -2889,7 +2889,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261112flailPoseResolved1"></script>
+  <script src="js/pixel-probe.js?v=20261112terrainPerfProbe1"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -3094,8 +3094,8 @@
   <!-- Whole-walker frustum culling was previously referenced by game.js but not loaded. -->
   <script src="js/npc-view-frustum-cull.js?v=20261110frustumWire1"></script>
   <!-- Conservative whole-actor WebGL2 occlusion queries: only rendering is skipped; AI/physics stay active. -->
-  <script src="js/actor-render-occlusion.js?v=20261110actorOcclusion1"></script>
-  <script src="game.js?v=20261111fishFlailGame1"></script>
+  <script src="js/actor-render-occlusion.js?v=20261112corpseOcclusion1"></script>
+  <script src="game.js?v=20261112modularWorkMerge1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261109missingNpcRestore1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

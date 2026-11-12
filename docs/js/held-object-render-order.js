@@ -299,8 +299,16 @@
     );
     surfaceClassificationHints.topFaceGround = isTopFacesGroundSurface(object);
     surfaceClassificationHints.pathSurface = isRoadSurface(object);
+    // Map-editor floor buckets carry their mesh ownership independently of their
+    // materials. Grass, weeds, soil, riverbeds and texture-overridden variants
+    // must all use the same held-object ground depth policy. The separate
+    // ROCK material bucket holds solid mounds, so that one stays an occluder
+    // along with untagged rock props and cave walls.
     surfaceClassificationHints.baseGround = data.hachutuGroundRoot === true
-      || (materialMarksBaseGrass(object?.material) && isTerrainSurface(object));
+      || (isTerrainSurface(object) && (
+        (data.mapEditorTerrain != null && object.material?.userData?.terrainKey !== 'rock')
+        || materialMarksBaseGrass(object?.material)
+      ));
     surfaceClassificationHints.walkableFloor = walkableFloor;
 
     if (surfaceComposer?.classifySurface) return surfaceComposer.classifySurface(object, surfaceClassificationHints);
@@ -1318,6 +1326,7 @@
   function buildXrayGroups(renderer, scene, camera, meshes, shellPadding = null) {
     const actors = new Map(); // Resolve each actor's tile and standing floor only once per pass.
     const regions = []; // Parts on the same tile and standing floor use one projected neighborhood.
+    const regionsByTile = new Map(); // Indexes only actor-owned floor tiles, avoiding an all-region scan for every NPC weapon.
     const ordinary = []; // Parts with no possible x-ray share a normal-depth path.
     let unknown = 0; // Diagnostics count unresolved holders separately from proven ordinary parts.
     for (const mesh of meshes) {
@@ -1327,11 +1336,17 @@
         unknown++;
         continue;
       }
-      let region = regions.find(entry => entry.col === scope.col && entry.row === scope.row
-        && Math.abs(entry.elevation - scope.elevation) <= XRAY_ELEVATION_GROUP_EPSILON);
+      const tileKey = scope.col + ',' + scope.row; // Exact grid tile identity; elevation still uses the existing epsilon comparison.
+      let sameTile = regionsByTile.get(tileKey);
+      if (!sameTile) {
+        sameTile = [];
+        regionsByTile.set(tileKey, sameTile);
+      }
+      let region = sameTile.find(entry => Math.abs(entry.elevation - scope.elevation) <= XRAY_ELEVATION_GROUP_EPSILON);
       if (!region) {
         region = { ...scope, meshes: [] };
-        regions.push(region);
+        sameTile.push(region);
+        regions.push(region); // Preserve first-seen order for existing safe screen-space batch grouping.
       }
       region.meshes.push(mesh);
     }

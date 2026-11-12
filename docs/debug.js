@@ -5,7 +5,7 @@
   // Seasonal vegetation must patch THREE's texture/material constructors before
   // terrain and foliage assets start loading. Keep it parser-synchronous.
   (function loadSeasonalVegetationTintEarly() {
-    const src = 'js/seasonal-vegetation-tint.js?v=20261107h7a87107';
+    const src = 'js/seasonal-vegetation-tint.js?v=20261112sharedTerrainTint1';
     if (window.SeasonalVegetationTint || document.querySelector('script[data-seasonal-vegetation-tint]')) return;
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-seasonal-vegetation-tint="1"><\/script>`);
@@ -388,7 +388,7 @@
       return;
     }
     const script = document.createElement('script');
-    script.src = 'js/performance-debug.js?v=20261111h6bb8fa7';
+    script.src = 'js/performance-debug.js?v=20261112corpsePerf1';
     script.async = true;
     script.dataset.hobunjiPerformanceDebug = '1';
     script.onload = _installCloudForestDevModeGate;

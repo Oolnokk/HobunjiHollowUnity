@@ -374,6 +374,12 @@ assert.deepEqual(grouped.groups.map(group => group.meshes), [[a, sameTile, far],
   'only screen-separated same-height holder neighborhoods share a depth rebuild');
 assert.deepEqual(grouped.ordinary, [noHolder, outside], 'unknown ownership and parts beyond their projected floor use ordinary depth');
 assert.deepEqual([...grouped.groups[0].tiles.slice(0, 4)], [0, 0, 10, 0], 'one batch carries both tile origins to the shader');
+assert.match(heldRender, /const regionsByTile = new Map\(\)/,
+  'held x-ray scopes are indexed by exact tile rather than scanning every NPC for each mesh');
+const nearFloor = part(0, 0, 0.04), differentFloor = part(0, 0, 0.06);
+const sameTileFloors = groupMeshes({}, actorScene, {}, [a, nearFloor, differentFloor]);
+assert.deepEqual(sameTileFloors.groups.map(group => group.meshes), [[a, nearFloor], [differentFloor]],
+  'tile-indexed scopes preserve epsilon-based elevation grouping and prevent overlapping floors from batching');
 const eyeAbove = { isPerspectiveCamera: true, matrixWorld: { elements: { 13: 4 } } };
 assert.deepEqual(groupMeshes({}, actorScene, eyeAbove, [a]).ordinary, [a], 'perspective eye and rigid gear above the floor need no floor exemption');
 assert.equal(groupMeshes({}, actorScene, eyeAbove, [a], 0.01).groups.length, 1, 'shell extrusion uses projection rather than the base-part height shortcut');
@@ -500,12 +506,14 @@ const customState = installElevationShader(customMaterial);
 customMaterial.onBeforeCompile({ uniforms: {}, vertexShader: 'void main() {}', fragmentShader: 'void main() {}' }, {});
 assert.equal(customState.supported, false, 'unsupported custom terrain shaders keep full depth occlusion');
 
-assert.match(heldRender, /materialMarksBaseGrass\(object\?\.material\) && isTerrainSurface\(object\)/,
-  'only surfaces carrying the base grass material can be removed from held-overlay depth');
+assert.match(heldRender, /data\.mapEditorTerrain != null && object\.material\?\.userData\?\.terrainKey !== 'rock'/,
+  'tagged wilderness floor buckets x-ray while solid stone-mound buckets stay as occluders');
+assert.match(heldRender, /materialMarksBaseGrass\(object\?\.material\)/,
+  'existing base grass x-ray remains available independently of the new floor-bucket tags');
 assert.match(terrainTileMaterials, /matKey === deps\.TileType\.GRASS[\s\S]{0,180}hobunjiBaseGrassTerrainMaterial = true/,
   'the live game tags the native base grass material');
-assert.match(terrainTileMaterials, /loadTerrainTileTexture[\s\S]{0,200}matKey === deps\.TileType\.GRASS[\s\S]{0,220}hobunjiBaseGrassTerrainMaterial = true/,
-  'authored texture overrides keep the exact same base grass tag');
+assert.match(terrainTileMaterials, /mat\.userData\.terrainKey = matKey[\s\S]{0,220}matKey === deps\.TileType\.GRASS[\s\S]{0,220}hobunjiBaseGrassTerrainMaterial = true/,
+  'authored PNG terrain keeps both its exact bucket identity and native grass depth tag');
 assert.match(heldRender, /if \(isTopFacesGroundSurface\(object\)\) markTopFaceGroundMesh\(object\)/,
   'the cave shell participates in selective floor-face depth replay without hiding wall triangles');
 assert.match(heldRender, /const groundMeshes = \[\.\.\.ground, \.\.\.topFaceGround\]/,

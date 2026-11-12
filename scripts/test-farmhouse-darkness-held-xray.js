@@ -113,6 +113,41 @@ assert.equal(xray.classify(stoneFloor).ground, true, 'instanced rooted ruin ston
 const stoneWall = mesh(otherInterior, untaggedMaterial, { liveRootFloor: true, ruinPreviewRole: 'wall' });
 assert.equal(xray.classify(stoneWall).ground, false, 'rooted walls never share the floor exception');
 assert.equal(xray.classify(grass).ground, true, 'exterior farm terrain still x-rays');
+const wildernessTypes = ['weeds', 'shrub', 'tilled', 'trench', 'raised', 'paddy', 'path', 'river', 'stream', 'waterfall']; // Every merged wilderness floor bucket shares the grass ground-depth exception.
+const wildernessFinishes = JSON.parse(read('docs/config/maps/terrain-materials.json')).byMap['*']; // The shared authored material schema backs all live wilderness floor buckets.
+for (const kind of ['grass', 'rock', ...wildernessTypes]) {
+  assert.match(wildernessFinishes[kind]?.texture || '', /\.png$/, `wilderness ${kind} has an authored PNG`);
+}
+assert.equal(wildernessFinishes.weeds.texture, wildernessFinishes.grass.texture,
+  'weed and grass substrate share the same visible PNG');
+assert.equal(wildernessFinishes.shrub.texture, wildernessFinishes.grass.texture,
+  'shrub floor and grass substrate share the same visible PNG');
+for (const kind of wildernessTypes) {
+  const floor = mesh(exterior, { userData: { terrainKey: kind }, map: { image: {} } },
+    { mapEditorTerrain: { mapId: 'map_western_slope' } });
+  assert.equal(xray.classify(floor).ground, true, `textured wilderness ${kind} floor x-rays held equipment`);
+}
+const rockyMound = mesh(exterior, { userData: { terrainKey: 'rock' }, map: { image: {} } },
+  { mapEditorTerrain: { mapId: 'map_western_slope' } });
+assert.equal(xray.classify(rockyMound).ground, false, 'merged stone mounds remain solid obstacles, not floor x-ray surfaces');
+const solidRock = mesh(exterior, { userData: { terrainKey: 'rock' }, map: { image: {} } },
+  { wildernessChunkOwnsGeometry: true }); // Untagged cliff/rock props must not inherit the floor exception from their material.
+assert.equal(xray.classify(solidRock).ground, false, 'rock props remain true depth occluders');
+const billboard = mesh(exterior, untaggedMaterial,
+  { mapEditorTerrain: { mapId: 'map_western_slope' }, isWildernessGrassChunk: true });
+assert.equal(xray.classify(billboard).ground, false, 'grass billboards keep the protective cover classification');
+const water = mesh(exterior, untaggedMaterial,
+  { mapEditorTerrain: { mapId: 'map_western_slope' }, waterSurfaceRole: 'flood' });
+assert.equal(xray.classify(water).ground, false, 'water stays a protected cover even above x-ray ground');
+const snow = mesh(exterior, untaggedMaterial,
+  { mapEditorTerrain: { mapId: 'map_western_slope' }, environmentSurfaceMicroPlateau: true });
+assert.equal(xray.classify(snow).ground, false, 'snow retains its occlusion regardless of neighboring terrain materials');
+xray.scanScene(exterior);
+assert.equal(solidRock.userData.hobunjiHeldGroundReplay, undefined, 'rock props never enter ground depth restore');
+assert.equal(rockyMound.userData.hobunjiHeldGroundReplay, undefined, 'merged rocky mounds keep solid depth');
+assert.equal(billboard.userData.hobunjiHeldGroundReplay, undefined, 'grass billboards never enter ground depth restore');
+assert.equal(water.userData.hobunjiHeldGroundReplay, undefined, 'water never enters the ground replay');
+assert.equal(snow.userData.hobunjiHeldGroundReplay, undefined, 'snow never enters the ground replay');
 assert(xray.snapshot().farmhouseFloorMeshes >= 2, 'preexisting and newly rebuilt farmhouse floors join depth replay');
 assert(xray.snapshot().interiorFloorMeshes >= 6, 'authored, cavern, V50 and stone-age interior floors all register for depth replay');
 
