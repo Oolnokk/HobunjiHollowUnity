@@ -174,8 +174,9 @@
       // (diggableRockOre/undiggableBoulder/etc, deliberately solid) from the
       // "stray authored decorative rock" suppression this rule exists for.
       if (!t.plateau && type === 'rock' && !t.generatedObjectType) type = 'grass';
+      const mesaGroundOwned = outTiles.get(key)?.skipFloor === true && ['grass', 'weeds', 'shrub', 'path'].includes(type); // The authored child may paint plants or paving; the parent plateau still owns the ground heightfield.
       outTiles.set(key, {
-        c: c + offsetC, r: r + offsetR, type, elevTier: baseTier, skipFloor: false,
+        c: c + offsetC, r: r + offsetR, type, elevTier: baseTier, skipFloor: false, mesaGroundOwned,
         rampElevation: type === 'ramp' ? (t.rampElevation || 0) : 0, incline: false,
         // Which generator object (copse/bush/fruitBush/mushroomPatch/beehive)
         // this 'shrub' tile came from — lets the live game pick a matching
@@ -252,6 +253,7 @@
       zGrid[t.r][t.c].type = t.type || TileType.GRASS;
       zGrid[t.r][t.c].elevTier = t.elevTier || 0;
       zGrid[t.r][t.c].skipFloor = !!t.skipFloor;
+      zGrid[t.r][t.c].mesaGroundOwned = !!t.mesaGroundOwned; // Runtime floor/path builders skip duplicate ground on painted plateau children.
       zGrid[t.r][t.c].incline = !!t.incline;
       if (t.type === TileType.RAMP) zGrid[t.r][t.c].rampElevation = t.rampElevation || 0;
     }
