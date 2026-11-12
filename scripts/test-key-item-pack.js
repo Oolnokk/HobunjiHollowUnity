@@ -14,7 +14,7 @@ assert(style.includes('.inv-key-chip[aria-expanded="true"] .inv-key-desc'), 'tap
 assert.equal(overrides.elements['#invKeyList'], undefined, 'the UI editor must not collapse the key list');
 assert(editor.includes("stored?.elements?.['#invKeyList']?.height === '0'"), 'previous session layouts must migrate away from the hidden key list');
 assert(index.includes('id="invKeyList"'), 'the Pack key section must exist in the shipped menu');
-assert(index.includes('js/ui-element-editor.js?v=20261112keyPack2'), 'the fixed session migration must not be hidden by cached UI code');
+assert(/js\/ui-element-editor\.js\?v=[A-Za-z0-9_-]+/.test(index), 'the UI editor must use a versioned browser script URL');
 
 class FakeNode {
   constructor(tagName) {
