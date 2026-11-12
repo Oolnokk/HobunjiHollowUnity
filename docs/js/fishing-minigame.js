@@ -282,10 +282,10 @@
     const workStyle = def?.modular ? window.ToolActivityStages?.workStyleFor?.('harpoon', itemKey, def) : null;
     const spear = workStyle ? workStyle === 'thrust' : String(itemKey).toLowerCase().includes('fishingspear'); // Keep native Fishing Spear/Mace choices intact.
     const baseAnimation = spear ? window.HeldActionAnimations?.weaponThrowSpearSpin : window.HeldActionAnimations?.weaponThrowSpin;
-    // A modular harpoon uses its fitted weapon's actual authored stroke (rebased to the harpoon idle),
-    // raised overhead before release. Keep fishing's shoulder/hand and hold timing metadata; native
-    // Fishing Spears and Maces retain their original Spin Throw animations unchanged.
-    const workPose = workStyle ? window.ToolActivityStages?.workPoseFor?.('harpoon', itemKey, def) : null; // Weapon attack motion, rotated overhead by the shared tool-work resolver.
+    // A modular harpoon uses the fitted weapon's normal attack stroke, with no special overhead
+    // rotation. Preserve fishing's shoulder/hand and hold timing metadata; native Fishing Spears
+    // and Maces retain their original Spin Throw animations unchanged.
+    const workPose = workStyle ? window.ToolActivityStages?.workPoseFor?.('harpoon', itemKey, def) : null; // Same weapon stroke used for all tool roles, including fishing.
     const poses = workPose && baseAnimation?.poses
       ? Object.fromEntries(['neutral', 'windup', 'strike'].map(phase => [
         phase, { ...baseAnimation.poses[phase], ...workPose[phase],
@@ -296,9 +296,9 @@
       : null; // Preserve fishing's separate grip/aim choreography alongside the weapon's movement.
     const animation = workStyle && baseAnimation
       ? { ...baseAnimation, style: workStyle, poses: poses || baseAnimation.poses,
-        toolEndFlip: false, heldSpin: false } // A true overhead weapon swing must not also orbit the PNG 2½ times like a throw-flask.
+        toolEndFlip: false, heldSpin: false } // A modular weapon's normal swing replaces, rather than stacks with, native fishing's spinning flourish.
       : baseAnimation;
-    return { key: itemKey, profile: workStyle ? `modular-${workStyle}-overhead` : spear ? 'fishing-spear' : 'hatchet-spin', animation };
+    return { key: itemKey, profile: workStyle ? `modular-${workStyle}-weapon-swing` : spear ? 'fishing-spear' : 'hatchet-spin', animation };
   }
 
   function beginFishingThrowWindup(reason = 'aim') {
@@ -322,7 +322,7 @@
       windupFrac: Number.isFinite(Number(animation.windupFrac)) ? Number(animation.windupFrac) : 0.49,
       strikeFrac: Number.isFinite(Number(animation.strikeFrac)) ? Number(animation.strikeFrac) : 0.57,
       holdFrac: Number.isFinite(Number(animation.holdFrac)) ? Number(animation.holdFrac) : 0.82,
-      heldSpin: animation.heldSpin !== false, // Modular harpoons trace their weapon's overhead swing, not the native Spin Throw twirl.
+      heldSpin: animation.heldSpin !== false, // Modular harpoons swing as their weapon; native Fishing Spear/Mace keep Spin Throw.
       heldSpinBasisDeg: Number(animation.spinBasisDeg) || 0,
       heldSpinRevolutions: Math.max(0, Number(animation.spinRevolutions) || 2.5),
     });
