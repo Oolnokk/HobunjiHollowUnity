@@ -24005,26 +24005,30 @@
         strikeFired  = false;
         chargeStageSfxFired = false;
         pendingAction = null;
-        if (stageDef.pose) {
-          // Reuses the melee combo's own authored sweep pose (see
-          // combat-combo.js's SWEEP_POSE, exported as window.Combat.poses)
-          // instead of a chargeAnimOverride arc — same pose-driven branch
-          // updateToolMesh already plays for weapon swings.
-          chargeAnimOverride  = null;
-          combatSwingAnim     = 'sweep';
-          combatSwingPose     = window.Combat?.poses?.SWEEP_POSE || null;
-          combatSwingSign     = stageDef.dirSign || 1;
+        const workItemKey = equipmentSlots[chargeAction.tool]; // Current equipped assembly for the active tool's ordinary work stages.
+        const workDef = TOOL_ITEM_DEFS[workItemKey]; // An authored pair can choose its own sweep, thrust or chop independent of the tool's normal action.
+        const simpleStroke = stageDef.pose === true || ['sweep', 'thrust', 'chop'].includes(stageDef.anim); // Toss/refill flourishes must keep their specialized soil-handling arcs.
+        const workStyle = simpleStroke ? window.ToolActivityStages?.workStyleFor?.(chargeAction.tool, workItemKey, workDef) : null; // Null for every unmodified, non-modular tool.
+        const workPose = workStyle ? window.ToolActivityStages?.workPoseFor?.(chargeAction.tool, workItemKey, workDef) : null; // Resampled once per stage, not per frame.
+        if (stageDef.pose || workPose) {
+          // Normal axes retain the authored melee pose, while fitted modular tools interpolate from
+          // the tool-slot Neutral through their *weapon* attack. Mining sweeps rotate into the overhead plane.
+          chargeAnimOverride = null;
+          combatSwingAnim = workPose ? workStyle : 'sweep';
+          combatSwingPose = workPose || window.Combat?.poses?.SWEEP_POSE || null;
+          combatSwingSign = stageDef.dirSign || 1;
           combatSwingWindupFrac = 0.22;
           combatSwingStrikeFrac = 0.55;
-          combatSwingPower    = 1;
-          combatSwingHoldS    = 0;
+          combatSwingPower = 1;
+          combatSwingHoldS = 0;
           combatSwingAfflictionIds = [];
           combatSwingAfflictionMuls = {};
         } else {
-          chargeAnimOverride = stageDef.anim || null;
-          combatSwingAnim  = null;
-          combatSwingPose  = null;
+          chargeAnimOverride = workStyle || stageDef.anim || null; // Original flipped Pick-Shovel still uses its thrust arc even with an unrelated mounted head.
+          combatSwingAnim = null;
+          combatSwingPose = null;
         }
+        if (workStyle) window.ToolActivityStages?.notePlayerWork?.(chargeAction.tool, workItemKey, workStyle, !!workPose); // One mobile-readable diagnostic per stage, never a per-frame log.
       }
 
       // Plays the weapon's existing arm-swing mesh animation for durationS without
@@ -24487,7 +24491,9 @@
           // regardless of swing phase — a static idle-pose difference so a
           // pick-shovel equipped in both the shovel and pick slots at once
           // still reads as two distinct tools at rest, not just mid-swing.
-          toolMeshMap[slot] = itemKey ? makeToolPlaneMesh(itemKey, { flip: slot === 'pick' }) : null;
+          const slotDef = itemKey ? TOOL_ITEM_DEFS[itemKey] : null; // The assembly's haft controls whether mining needs the classic end-for-end Pick-Shovel flip.
+          const pickEndFlip = slot === 'pick' && (!slotDef?.modular || slotDef.modular.shaft === 'pick-shovel'); // Other modular pick-head weapons retain their authored head-end orientation.
+          toolMeshMap[slot] = itemKey ? makeToolPlaneMesh(itemKey, { flip: pickEndFlip }) : null;
           if (slot === 'ranged' && itemKey) setToolMeshLoadedState(toolMeshMap[slot], itemKey, window.RangedWeapons?.isLoaded?.(itemKey) !== false);
         }
         // machete alias → weapon mesh for legacy code paths
@@ -25353,7 +25359,7 @@
         const swingWindupPitch = Number(combatSwingPose?.windup?.pitch); // Authored tool pitch endpoints determine the flail's hold-through direction.
         const swingStrikePitch = Number(combatSwingPose?.strike?.pitch);
         window.HobunjiWeaponSpriteAssemblies?.setAction(toolMeshMap[activeTool], {
-          attacking: activeTool === 'weapon' && toolSwingT > 0, progress,
+          attacking: toolSwingT > 0 && (activeTool === 'weapon' || (chargeAction?.tool === activeTool && !!TOOL_ITEM_DEFS[equipmentSlots[activeTool]]?.modular)), progress, // A flexible modular weapon also animates its rope/head while used for tool work.
           movementPosition: playerMesh.position, // Character-world locomotion, not the swing-animated hand pivot; used for the hanging chain's lag.
           windupFrac: WF, strikeFrac: SF, holdFrac: combatSwingSequenceHoldFrac ?? HF,
           yawTravelDeg: window.HobunjiWeaponSpriteAssemblies?.flailYawTravel(combatSwingPose?.windup, combatSwingPose?.strike, combatSwingPower, combatSwingSign), // Match signed, power-scaled tool and body sweep travel.
