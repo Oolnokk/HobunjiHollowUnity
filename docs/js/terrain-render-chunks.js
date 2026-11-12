@@ -445,10 +445,11 @@
   function isEligibleTerrainMesh(mesh) {
     if (!mesh?.isMesh || mesh.isSkinnedMesh || mesh.isInstancedMesh) return false;
     if (mesh.userData?.terrainRenderChunkSource || mesh.userData?.terrainRenderChunk) return false;
-    if (!mesh.parent?.isScene || !mesh.receiveShadow) return false;
+    const explicit = mesh.userData?.terrainRenderChunkEligible === true;
+    if (!mesh.parent?.isScene || (!mesh.receiveShadow && !explicit)) return false; // An explicit opt-in (bedrock) need not receive shadows.
     // Floors opt in via the terrain material-ID layer; huge single-material
-    // meshes outside it (border terrain) opt in explicitly.
-    if (!hasLayer(mesh, MATERIAL_ID_LAYER) && mesh.userData?.terrainRenderChunkEligible !== true) return false;
+    // meshes outside it (border terrain, wilderness bedrock) opt in explicitly.
+    if (!hasLayer(mesh, MATERIAL_ID_LAYER) && !explicit) return false;
     const position = mesh.geometry?.attributes?.position;
     if (!position || position.isInterleavedBufferAttribute || !position.array) return false;
     if (Array.isArray(mesh.material) || mesh.geometry.groups?.length > 1) return false;

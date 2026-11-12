@@ -192,6 +192,7 @@
     mesh.userData.wildernessPersistentZoneFeature = 'bedrock'; // Lives on the zone scene, not a streamed chunk group.
     mesh.userData.wildernessPersistentZoneFeatureMapId = mapId;
     mesh.userData.noOutline = true;
+    mesh.userData.terrainRenderChunkEligible = true; // One zone-wide slab otherwise: lets TerrainRenderChunks split it so off-camera and behind-the-actor parts are not submitted.
     zScene.add(mesh);
     deps.markTerrainEdgeId?.(mesh, deps.edgeCategory);
 

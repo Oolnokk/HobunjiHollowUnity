@@ -12,6 +12,36 @@ conditions on the same machine; they are not what a player sees.** Counts come f
 comes from CDP CPU profiles. One headless world per run, and bandit/tribe camps are random, so repeat anything
 close before trusting it.
 
+## 12 Nov 2026: large wilderness meshes split into cells (mesa tiers, cliff decals, bedrock)
+
+What the near-only replays (next entry) still resubmitted in the wilderness was a handful of zone-spanning meshes whose
+bounds always reach in front of the actor. They also sat whole in the real draw whenever any corner was on screen.
+
+- `zone-plateau-mesa.js`'s render batching left any source above 6,000 triangles as its own draw. Those sources (the
+  largest `plateau_mesa_tier` meshes, up to ~37 k triangles and two materials, and the transparent
+  `cliff-handhold-decals` mesh, ~25 k) are now cut into the same 24x24 cells as the merged batches
+  (`splitMesaGeometry`): indexed per-cell geometries, material slots and triangle order preserved, source hidden behind
+  them exactly like a batched source, so cliff/height sampling and occlusion raycasts still use the untouched source.
+  Parts stay at the source's origin, so the decals' transparent sort position is unchanged.
+  `ZonePlateauMesa.setLargeMesaSplitEnabled(false)` is the A/B switch (next build/rebuild);
+  `mesaBatchSnapshot()` has `splitMeshes` / `splitParts`.
+- `wilderness-bedrock.js` opts its one zone-wide slab into `TerrainRenderChunks` (`terrainRenderChunkEligible`); the
+  chunker no longer requires `receiveShadow` for an explicit opt-in.
+- `scripts/test-zone-plateau-mesa-large-split.js` (real three r128, like the batching test).
+
+Same frozen frame, one base + shell frame, each step applied in turn (headless, exact counts):
+
+| View | Triangles: before -> mesa/decal split -> + bedrock | Draw calls | Pixels |
+| --- | --- | --- | --- |
+| Western slope, two actor groups | 1,132,011 -> 672,499 -> 599,310 | 740 -> 749 -> 778 | colour and depth identical |
+| Cloud forest | 1,576,860 -> 1,252,604 -> (no bedrock mesh of 12 k+) | 1,088 -> 1,096 | colour and depth identical |
+
+Western slope: 9 sources became 150 parts and the bedrock 81 chunks. The live game frame there is now about 598 k
+triangles; the first wilderness census (before any of today's work) was 1.51 M at the same spot.
+
+**Not measured:** real-device FPS. Bedrock's 81 chunks cost 29 draw calls for about 73 k triangles saved per frame;
+if draw calls turn out to matter more on a device, that opt-in is the first thing to revisit.
+
 ## 12 Nov 2026: held/shell replays rebuild only near depth and restore by depth copy
 
 The fix for "replays are the multiplier" (see the entries below). Wilderness numbers first, because nothing earlier
