@@ -10,8 +10,8 @@ const plate={x:0,y:0,z:0,radius:.46}; // A single occupied one-tile music plate 
 const tall=[{x:-1,y:2,z:-4},{x:1,y:3,z:-4},{x:-1,y:5,z:-4},{x:1,y:6,z:-4}]; // Two columns stacked above the plate.
 const wide=[{x:-6,y:1.8,z:-4},{x:6,y:1.8,z:-4},{x:-5.5,y:2,z:-4},{x:5.5,y:2,z:-4}]; // Separated cave pillars need primarily horizontal coverage.
 
-function assertFits(label,points){
-  const azimuth=0,angle=Math.PI/6,baseDistance=2.6,baseFov=42,aspect=1.6;
+function assertFits(label,points,aspect=1.6){
+  const azimuth=0,angle=Math.PI/6,baseDistance=2.6,baseFov=42;
   const fit=framing.solve(points,plate,base,baseDistance,azimuth,angle,baseFov,aspect);
   assert.ok(fit&&fit.possible,label+' should have a valid fit within the regular camera limits');
   assert.ok(fit.distanceScale>=1,label+' must not zoom in and hide a clue');
@@ -29,8 +29,10 @@ function assertFits(label,points){
 }
 const tallFit=assertFits('tall',tall);
 const wideFit=assertFits('wide',wide);
+const narrowFit=assertFits('portrait-wide',wide,.65); // Very narrow mobile screens must still fit both distant columns.
 assert.ok(tallFit.offsetY>0,'height-stacked notes must lift the camera');
 assert.ok(wideFit.distanceScale>1||wideFit.fovExtra>0,'widely separated pillars must widen the frame');
+assert.ok(narrowFit.distanceScale>wideFit.distanceScale,'portrait framing must adapt to the viewport rather than stop at a fixed ratio');
 
 let showing=false,onPlate=true; // These values simulate note discovery and the owning plate's live session.
 const glyphs=tall.map(p=>({position:p,visible:true,material:{opacity:1},parent:{visible:true}}));
@@ -48,8 +50,15 @@ showing=false;framing.update({...args,now:300});
 assert.equal(framing.debugSnapshot().active,true,'after discovery the full score stays framed even if a clue leaves the original view');
 onPlate=false;framing.update({...args,now:400});
 assert.equal(framing.debugSnapshot().active,false,'leaving the plate releases the camera');
+onPlate=true;framing.update({...args,now:450});
+assert.equal(framing.debugSnapshot().active,false,'rapid re-entry must not rediscover notes solely because the previous assisted camera has not settled');
 framing.update({...args,area:'other-map',now:500});
 assert.equal(framing.debugSnapshot().framing.distanceScale,1,'area changes reset camera offsets immediately');
+framing.update({...args,enabled:false,now:600}); // A cinematic, editor, or dialogue mode has the camera before returning to the plate.
+framing.update({...args,now:610});
+assert.equal(framing.debugSnapshot().active,false,'the first gameplay frame after a cinematic must not discover notes using the outgoing shot');
+framing.update({...args,now:710});
+assert.equal(framing.debugSnapshot().active,true,'the ordinary gameplay camera can acquire the score on its next frame');
 release();release();
 assert.equal(framing.debugSnapshot().registered,0,'repeated disposal is safe');
 
