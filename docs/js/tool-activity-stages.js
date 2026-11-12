@@ -41,7 +41,7 @@
 
   // At the start of a working stroke, rebase the weapon's original attack arc onto the normal tool-slot Neutral.
   // A mining pick / harpoon converts the *same arc* into the overhead plane; the Pick-Shovel's flipped jab is untouched.
-  function workPoseFor(slot, itemKey, def) {
+  function workPoseFor(slot, itemKey, def, dirSign = 1) {
     const style = workStyleFor(slot, itemKey, def);
     if (!style || (slot === 'pick' && def?.modular?.shaft === 'pick-shovel')) return null;
     const templates = window.AttackPoseTemplates; // Existing authored attacks supply windup, strike and two-hand grip metadata.
@@ -52,9 +52,14 @@
     const base = source.neutral || shared?.STYLE_NEUTRAL_POSE?.[style] || {}; // Delta reference for every authored attack channel.
     const toolNeutral = window.WeaponToolStances?.toolNeutralPose?.(slot, itemKey, def) || base; // Tool slot, not shaft, owns the working rest stance.
     const channels = ['x', 'y', 'z', 'pitch', 'yaw', 'roll', 'bodyYaw']; // SharedAttackPose's spatial and angular pose channels.
+    const flip = dirSign === -1 ? -1 : 1; // Alternating backhand work strokes mirror the ATTACK DELTA, never the shared tool idle.
+    const mirrored = new Set(['x', 'yaw', 'roll', 'bodyYaw']); // Match SharedAttackPose's handedness channels without flipping its neutral pose.
     const phase = part => {
       const out = { ...part }; // Keep authored grip, two-hand flags and other nonnumeric per-phase metadata.
-      for (const key of channels) out[key] = (Number(toolNeutral[key]) || 0) + (Number(part?.[key]) || 0) - (Number(base[key]) || 0);
+      for (const key of channels) {
+        const delta = (Number(part?.[key]) || 0) - (Number(base[key]) || 0); // Source weapon motion relative to its own Neutral.
+        out[key] = (Number(toolNeutral[key]) || 0) + delta * (mirrored.has(key) ? flip : 1); // Mirror motion only, so every stage starts at the same tool-slot Neutral.
+      }
       return out;
     };
     const neutral = { ...base, ...toolNeutral }; // Matches the visible tool idle when the stage starts and ends.
@@ -62,8 +67,8 @@
     const strike = phase(source.strike);
     const overhead = slot === 'pick' || slot === 'harpoon'; // Rotate mining/fishing strokes overhead without changing a weapon's swing type.
     if (overhead && style === 'sweep') {
-      windup.pitch += (Number(source.windup.bodyYaw) || 0) - (Number(base.bodyYaw) || 0);
-      strike.pitch += (Number(source.strike.bodyYaw) || 0) - (Number(base.bodyYaw) || 0);
+      windup.pitch += ((Number(source.windup.bodyYaw) || 0) - (Number(base.bodyYaw) || 0)) * flip;
+      strike.pitch += ((Number(source.strike.bodyYaw) || 0) - (Number(base.bodyYaw) || 0)) * flip;
       windup.bodyYaw = neutral.bodyYaw || 0;
       strike.bodyYaw = neutral.bodyYaw || 0;
       windup.y += 0.18; strike.y -= 0.10; // Lift above the shoulder, then land downward while retaining swing travel.
