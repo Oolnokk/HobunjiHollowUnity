@@ -104,7 +104,25 @@ assert.ok(baseFrame(renderer, scene).map(p => p.name).includes('late'), 'noticed
 const other = makeScene([]);
 assert.deepEqual(baseFrame(new Renderer(), other).map(p => p.name), [], 'a different scene has its own candidate list');
 
-// 6. The structure-epoch wrappers keep returning the wrapped method's own result.
+// 6. Invisible score parents must not schedule the expensive post-composite pass;
+//    toggling plate visibility must take effect immediately without rescanning the scene.
+const score = popup('plate-score-ink'); // A CanvasTexture note cached even when its pressure plate is inactive.
+const scoreBoard = { visible: false, parent: null }; // The invisible parent that owns all three note layers in the real game.
+score.parent = scoreBoard;
+scene.popups.push(score); scene.add(score);
+assert.ok(!baseFrame(renderer, scene).map(p => p.name).includes('plate-score-ink'),
+  'inactive pressure-plate notes are not withheld or selected for the final overlay');
+const traversalsAfterScore = traversals;
+scoreBoard.visible = true;
+assert.ok(baseFrame(renderer, scene).map(p => p.name).includes('plate-score-ink'),
+  'activating the pressure plate immediately selects the cached note for its final pass');
+assert.equal(traversals, traversalsAfterScore,
+  'score activation changes only parent visibility and must not traverse the world scene again');
+scoreBoard.visible = false;
+assert.ok(!baseFrame(renderer, scene).map(p => p.name).includes('plate-score-ink'),
+  'stepping off the pressure plate immediately removes the overlay note');
+
+// 7. The structure-epoch wrappers keep returning the wrapped method's own result.
 { const fresh = new Scene(); assert.equal(fresh.add(), fresh, 'wrapped add() still returns what the original returned'); assert.equal(fresh.remove(), fresh); assert.equal(fresh.clear(), fresh); }
 
 console.log('World text overlay scan cache checks passed.');
