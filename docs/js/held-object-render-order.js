@@ -299,8 +299,13 @@
     );
     surfaceClassificationHints.topFaceGround = isTopFacesGroundSurface(object);
     surfaceClassificationHints.pathSurface = isRoadSurface(object);
+    // Map-editor floor buckets carry their mesh ownership independently of their
+    // materials. Grass, weeds, soil, riverbeds and texture-overridden variants
+    // must all use the same held-object ground depth policy, while real rock
+    // props/cave walls without this floor tag remain solid occluders.
     surfaceClassificationHints.baseGround = data.hachutuGroundRoot === true
-      || (materialMarksBaseGrass(object?.material) && isTerrainSurface(object));
+      || (isTerrainSurface(object) && (data.mapEditorTerrain != null
+        || materialMarksBaseGrass(object?.material)));
     surfaceClassificationHints.walkableFloor = walkableFloor;
 
     if (surfaceComposer?.classifySurface) return surfaceComposer.classifySurface(object, surfaceClassificationHints);
