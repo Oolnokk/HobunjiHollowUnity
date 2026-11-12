@@ -675,24 +675,28 @@
   }
   function finishCombatFrame(frame, elapsedMs) {
     combatFrameStats.frames++;
-    const gap = frame.intervalMs;
+    const gap = frame.intervalMs; // Start-to-start interval describes the previous wait, not the current loop's work.
     if (Number.isFinite(gap) && gap > 0 && gap < 1000) combatFrameStats.maxIntervalMs = Math.max(combatFrameStats.maxIntervalMs, gap);
     combatFrameStats.maxCpuMs = Math.max(combatFrameStats.maxCpuMs, elapsedMs);
-    const top = Object.entries(frame.exclusive).sort((a, b) => b[1] - a[1]).slice(0, 10)
-      .map(([name, ms]) => ({ name, exclusiveMs: roundCombatMs(ms), calls: frame.calls[name] || 0 }));
-    const sample = {
-      at: new Date().toISOString(), index: combatFrameStats.frames,
-      cpuMs: roundCombatMs(elapsedMs), intervalMs: Number.isFinite(gap) && gap > 0 && gap < 1000 ? roundCombatMs(gap) : null,
+    const sample = { // Lightweight every-frame summary; only actual spikes pay for sorting, timestamps and copies.
+      index: combatFrameStats.frames,
+      cpuMs: roundCombatMs(elapsedMs),
+      intervalMs: Number.isFinite(gap) && gap > 0 && gap < 1000 ? roundCombatMs(gap) : null,
       renderPassCpuMs: roundCombatMs(frame.inclusive['render passes'] || 0),
-      counts: { ...frame.counts }, gauges: { ...frame.gauges }, top,
     };
     combatFrameStats.latest = sample;
-    const cpuSpike = elapsedMs >= COMBAT_SPIKE_CPU_MS;
-    const intervalSpike = sample.intervalMs != null && sample.intervalMs >= COMBAT_SPIKE_INTERVAL_MS;
+    const cpuSpike = elapsedMs >= COMBAT_SPIKE_CPU_MS; // The measured game-loop CPU budget alone.
+    const intervalSpike = sample.intervalMs != null && sample.intervalMs >= COMBAT_SPIKE_INTERVAL_MS; // A separate prior-frame scheduling/GPU hint.
     if (cpuSpike) combatFrameStats.cpuSpikes++;
     if (intervalSpike) combatFrameStats.intervalSpikes++;
     if (cpuSpike || intervalSpike) {
-      const spike = { ...sample, reason: cpuSpike && intervalSpike ? 'cpu+interval' : cpuSpike ? 'cpu' : 'interval-only (preceding frame)' };
+      const top = Object.entries(frame.exclusive).sort((a, b) => b[1] - a[1]).slice(0, 10)
+        .map(([name, ms]) => ({ name, exclusiveMs: roundCombatMs(ms), calls: frame.calls[name] || 0 })); // Measured own CPU; excludes nested timed children.
+      const spike = {
+        ...sample, at: new Date().toISOString(), top,
+        counts: { ...frame.counts }, gauges: { ...frame.gauges },
+        reason: cpuSpike && intervalSpike ? 'cpu+interval' : cpuSpike ? 'cpu' : 'interval-only (preceding frame)',
+      };
       combatFrameStats.recent.push(spike);
       if (combatFrameStats.recent.length > COMBAT_SPIKE_HISTORY_LIMIT) combatFrameStats.recent.shift();
       if (!combatFrameStats.worst || spike.cpuMs > combatFrameStats.worst.cpuMs) combatFrameStats.worst = spike;
