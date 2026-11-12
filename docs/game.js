@@ -16138,12 +16138,19 @@
         return { materials, textures };
       }
       function disposeSceneResources(zoneScene, live) {
-        const seen = new Set(); let materials = 0, textures = 0;
+        const seen = new Set(), disposedTextures = new Set(); // Protect each texture and cached terrain material across zone eviction.
+        let materials = 0, textures = 0;
         zoneScene.traverse(object => {
           for (const material of materialsOf(object)) {
-            if (!material || seen.has(material) || live.materials.has(material)) continue;
+            if (!material || seen.has(material) || live.materials.has(material)
+                || window.TerrainTileMaterials?.isCachedMaterial?.(material)) continue;
             seen.add(material);
-            for (const texture of materialTextures(material)) if (!live.textures.has(texture)) { texture.dispose(); textures++; }
+            for (const texture of materialTextures(material)) {
+              if (disposedTextures.has(texture) || live.textures.has(texture)
+                  || window.TerrainTileMaterials?.isSharedTexture?.(texture)) continue;
+              disposedTextures.add(texture);
+              texture.dispose(); textures++;
+            }
             material.dispose(); materials++;
           }
         });
