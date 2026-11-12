@@ -13,8 +13,22 @@ assert.match(alchemy, /STRENGTH_WORK_SPEED_RATIO = 1\.5/, 'Strength derives +75%
 assert.match(alchemy, /getFootingDamageMultiplier = \(\) => 1 \+ statMagnitude\('footingDamage'\) \+ recipeMagnitude\('potionOfStrength'\)/, 'Strength feeds the real Footing multiplier');
 assert.match(alchemy, /getWorkSpeedMultiplier/, 'Alchemy exports a dedicated Strength work-speed multiplier');
 assert.match(skill, /\['foraging', 'mining', 'farming'\]\.includes\(skillKey\)[\s\S]{0,120}getWorkSpeedMultiplier/, 'Strength work speed is limited to chop, mine, and dig skills');
-assert.match(game, /actionSpeedMultiplier\?\.\('farming'\)/, 'digging consumes the shared action-speed helper');
-assert.match(game, /chargeAction\.tool === 'axe' \? 'foraging' : chargeAction\.tool === 'pick' \? 'mining'/, 'axe and pick holds consume the shared action-speed helper');
+// Strength's Farming speed now flows through the shared tool-work function
+// instead of being repeated in the shovel/axe/pick action owners. Exercise that
+// production function so future equivalent refactors don't break this test.
+const workStart = game.indexOf('function getToolWorkSpeedMultiplier('); // Locates the actual work-speed policy in the game runtime.
+const workEnd = game.indexOf('function getDigSpeedMultiplier()', workStart); // End of the work-speed policy, before its shovel compatibility alias.
+assert(workStart >= 0 && workEnd > workStart, 'the common work-speed function exists');
+const speedFn = new Function('window', 'equipmentSlots', 'player', 'toolMetalMultiplier',
+  game.slice(workStart, workEnd) + '\nreturn getToolWorkSpeedMultiplier;')(
+  { SkillSystem: { actionSpeedMultiplier: skill => ({ farming: 1.5, foraging: 1.25, mining: 1.1 })[skill] } },
+  { shovel: 'shovel', hoe: 'hoe', axe: 'axe', pick: 'pick' }, { digSpeed: 1.4 }, () => 1.1,
+); // Distinct skill speeds make an accidental cross-wiring detectable.
+assert(Math.abs(speedFn('shovel') - 1.4 * 1.5 * 1.1) < 1e-9, 'shovel consumes Farming/Strength speed and metal efficacy');
+assert(Math.abs(speedFn('hoe') - 1.4 * 1.5 * 1.1) < 1e-9, 'hoe inherits shovel digging and Farming/Strength speed');
+assert(Math.abs(speedFn('axe') - 1.25 * 1.1) < 1e-9, 'axe consumes Foraging/Strength speed and metal efficacy');
+assert(Math.abs(speedFn('pick') - 1.1 * 1.1) < 1e-9, 'pick consumes Mining/Strength speed and metal efficacy');
+assert.match(game, /getToolWorkSpeedMultiplier\(chargeAction\.tool\)/, 'held tool stages consume the shared work-speed function');
 assert.match(game, /getOutgoingDamageMultiplier/, 'combat consumes potion outgoing damage');
 assert.match(game, /getFootingDamageMultiplier/, 'combat consumes potion Footing damage');
 assert.match(fish, /gurumahi_tawny: 'strength'[\s\S]{0,120}gurumahi_charcoal: 'fishing'[\s\S]{0,120}gurumahi_creamback: 'fortitude'[\s\S]{0,120}gurumahi_snowmuzzle: 'speed'/, 'Gurumahi subspecies no longer share one family-wide cooking buff');

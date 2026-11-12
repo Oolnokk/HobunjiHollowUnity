@@ -20930,6 +20930,10 @@
             startChargeAction(getReticleTile(), MINE_ROCK_STAGES);
             return;
           }
+          if (activeTool === 'hoe' && activeAction === 'till') {
+            startChargeAction(getReticleTile(), TILL_SOIL_STAGES);
+            return;
+          }
           {
             const _chargeReticle = getReticleTile();
             const _chargeTile = window.GridTileAccessors.getActiveGrid()[_chargeReticle.row]?.[_chargeReticle.col];
@@ -20941,10 +20945,9 @@
 
         const _anim = activeAnimStyle();
         toolSwingDur = _anim === 'thrust' ? 0.34 : _anim === 'chop' ? 0.42 : 0.68;
-        // Dig speed only scales shovel dig & fill swings (e.g. the single-tap
-        // trench redig below) — everything else swings at its normal pace.
-        if (activeTool === 'shovel' && (activeAction === 'dig' || activeAction === 'fill')) {
-          toolSwingDur /= getDigSpeedMultiplier();
+        // Ordinary one-swing terrain work also uses the equipped tool's efficacy.
+        if (['shovel', 'hoe', 'axe', 'pick'].includes(activeTool)) {
+          toolSwingDur /= getToolWorkSpeedMultiplier(activeTool);
         }
         toolSwingT = toolSwingDur;
         strikeFired = false;
@@ -23811,6 +23814,9 @@
       ];
       const FILL_TRENCH_STAGES = [...REFILL_FLOURISH_REP, ...REFILL_FLOURISH_REP, ...REFILL_FLOURISH_REP];
 
+      // The hoe uses the shovel's digging/Farming bonuses for this held soil-work sequence.
+      const TILL_SOIL_STAGES = [0.8, 0.7, 0.6].map(dur => ({ anim: 'chop', dur, sfxKey: 'dig', sfxAt: 0.28 })); // Three strokes; only completion tills the tile.
+
       // Felling a real tree (see isChoppableTreeTile) — a short flurry of
       // alternating forehand/backhand swings held through to the end, reusing
       // the melee combo's own authored SWEEP_POSE (window.Combat.poses) via
@@ -23919,8 +23925,17 @@
       // farming tool action) — updateCombatConeTrail then hides every lane.
       let combatSwingCone = null;
 
+      // One authority for tool working time. Per-slot metal efficacy includes
+      // reinforcement and shares the same scale as the inventory stats display.
+      function getToolWorkSpeedMultiplier(tool) {
+        const skillKey = tool === 'axe' ? 'foraging' : tool === 'pick' ? 'mining' : 'farming'; // Used to choose each tool's existing skill/perk speed.
+        const skillSpeed = window.SkillSystem?.actionSpeedMultiplier?.(skillKey) || 1; // Used for short and long work animations.
+        const digSpeed = tool === 'shovel' || tool === 'hoe' ? Math.max(0.01, player.digSpeed || 1) : 1; // Shared by digging and tilling.
+        const metalEfficacy = toolMetalMultiplier(equipmentSlots[tool]); // Uses the equipped tool's effective/reinforced metal.
+        return Math.max(0.01, skillSpeed * digSpeed * metalEfficacy);
+      }
       function getDigSpeedMultiplier() {
-        return Math.max(0.01, player.digSpeed || 1) * (window.SkillSystem?.actionSpeedMultiplier?.('farming') || 1);
+        return getToolWorkSpeedMultiplier('shovel');
       }
 
       // Prefer the selected shovel action when it is valid: explicitly
@@ -23946,6 +23961,10 @@
         if (tool === 'pick' && action === 'mine') {
           const reticle = getReticleTile();
           return isMineableRockTile(reticle.col, reticle.row);
+        }
+        if (tool === 'hoe' && action === 'till') {
+          const reticle = getReticleTile(); // A valid tile starts the hold; changing targets cancels without modifying terrain.
+          return canUseAction(tool, action, reticle.col, reticle.row);
         }
         if (tool !== 'shovel' || (action !== 'dig' && action !== 'fill')) return false;
         const reticle = getReticleTile();
@@ -23979,8 +23998,7 @@
       function beginChargeStage() {
         if (!chargeAction) return;
         const stageDef = chargeAction.stages[chargeAction.stage];
-        const skillKey = chargeAction.tool === 'axe' ? 'foraging' : chargeAction.tool === 'pick' ? 'mining' : null; // Used to map held axe/pick actions onto their progression speed bonus.
-        const speedMultiplier = skillKey ? (window.SkillSystem?.actionSpeedMultiplier?.(skillKey) || 1) : getDigSpeedMultiplier(); // Used to scale every supported held tool action independently.
+        const speedMultiplier = getToolWorkSpeedMultiplier(chargeAction.tool); // Metal, skill, and player dig speed affect each held stage.
         const dur = stageDef.dur / speedMultiplier;
         toolSwingDur = dur;
         toolSwingT   = dur;
@@ -24267,6 +24285,7 @@
         if (!chargeAction) return;
         if (!chargeAction.finalStrikeCommitted) {
           if (!actionHeldDown) { cancelChargeAction('input released'); return; }
+          if (activeTool !== chargeAction.tool || activeAction !== chargeAction.action) { cancelChargeAction('tool/action changed'); return; } // Stops a former held tool from finishing after equipment changes.
           const reticle = getReticleTile();
           if (reticle.col !== chargeAction.col || reticle.row !== chargeAction.row) { cancelChargeAction('reticle moved'); return; }
         }
@@ -28039,7 +28058,9 @@
               ? 'Hold to Fill'
               : activeTool === 'shovel' && allowed && action === 'dig' && tile.type !== TileType.TRENCH
                 ? 'Hold to Dig'
-                : window.HudUpdate.contextualActionLabel(action, tile); // Action-bar label distinguishes held excavation from single-tap trench redigging.
+                : activeTool === 'hoe' && allowed && action === 'till'
+                  ? 'Hold to Till'
+                  : window.HudUpdate.contextualActionLabel(action, tile); // Action-bar label distinguishes held excavation from single-tap trench redigging.
             btns.push({
               icon, label,
               action, style: i === 0 ? 'primary' : 'secondary', allowed,
@@ -31070,6 +31091,7 @@
         worldToOverlay,
         inventory,
         equipmentSlots,
+        toolMetalMultiplier, // Fishing's Spear Bridge uses the same metal/reinforcement efficacy as ordinary tool work.
         rollItemStars: window.LootRolling.rollItemStars,
         starRatingText: window.LootRolling.starRatingText,
         rareFishWeightMultiplier: rarity => window.SkillSystem?.rareFishWeightMultiplier?.(rarity) || 1,
