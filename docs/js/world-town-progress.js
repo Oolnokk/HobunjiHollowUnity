@@ -191,16 +191,8 @@
     if (!tab || !pane || tab.dataset.townProgressBound === '1') return;
     tab.dataset.townProgressBound = '1'; // Prevents duplicate handlers when optional modules reinitialize.
     tab.addEventListener('click', () => {
-      // Give game.js's ordinary tab switcher first chance; cover older hard-coded switchers.
-      Promise.resolve().then(() => {
-        if (!tab.classList.contains('active') || !pane.classList.contains('active')) {
-          document.querySelectorAll('#menuPanel .mp-tab[data-mpanel]').forEach(button => button.classList.remove('active'));
-          document.querySelectorAll('#menuPanel .mp-pane').forEach(other => other.classList.remove('active'));
-          tab.classList.add('active');
-          pane.classList.add('active');
-        }
-        render();
-      });
+      // game.js switches every .mp-tab/.mp-pane by data-mpanel; the view never changes navigation state.
+      if (tab.classList.contains('active') && pane.classList.contains('active')) render();
     });
     if (typeof MutationObserver === 'function') {
       const observer = new MutationObserver(() => { if (tab.classList.contains('active')) render(); });
