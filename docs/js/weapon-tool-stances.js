@@ -738,6 +738,7 @@
       return loadStanceConfig({ force: true });
     },
     combatNeutralPose: currentCombatNeutral,
+    toolNeutralPose: (slot, itemKey, def) => slot === 'weapon' ? null : targetPoseFor(slot, itemKey, def), // Shared tool-neutral authority for modular work-stage Neutral→attack blending.
     prepareCombatOptions,
     sweepTwistCancelWeight,
     idleBodyYawSnapshot,
