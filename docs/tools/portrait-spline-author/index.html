@@ -80,7 +80,7 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
 <div id="regionTools">
   <h3>Rigid portrait pixels vs. flexible spline pixels</h3>
   <p>The mask starts with every opaque hair/beard pixel that overlaps the selected head silhouette assigned to the rigid group. Brush adds rigid pixels; eraser returns pixels to the moving spline. Rigid pixels never bend or move off the portrait.</p>
-  <div id="regionLegend"><span style="--region-color:#43d0d1">Rigid · anchored to portrait</span><span style="--region-color:#c66de7">Flexible · follows spline</span></div>
+  <div id="regionLegend"><span style="--region-color:#43d0d1">Fixed · painted rigid + auto-grip</span><span style="--region-color:#c66de7">Flexible · follows spline</span></div>
   <div class="row"><label for="showRegions"><input id="showRegions" type="checkbox" checked> Show pixel region overlay</label></div>
   <div class="buttons"><button id="autoMask">Reset from head overlap</button><button id="undoMask">Undo mask edit</button><button id="clearMask">Make all flexible</button></div>
 </div>
@@ -89,9 +89,9 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
 <div class="entry"><label for="rearV">Rear Y offset</label><input id="rearV" type="number" min="-.25" max=".25" step=".005" value="0"></div>
 <div class="entry"><label for="strandWidth">Spline width</label><input id="strandWidth" type="number" min=".01" max=".5" step=".01" value=".1"></div>
 <div class="entry"><label for="response">Wind response</label><input id="response" type="number" min="0" max="5" step=".1" value="1"></div>
-<div class="entry"><label for="blendRadius">Automatic attachment blend (px)</label><input id="blendRadius" type="number" min="0" max="48" step="1" value="18"></div>
+<div class="entry"><label for="pinWidth">Head attachment grip (px)</label><input id="pinWidth" type="number" min="0" max="40" step="1" value="18"></div>
 <div class="entry"><label for="tipFollow">Bottom leads middle</label><input id="tipFollow" type="range" min="0" max=".9" step=".01" value=".58" aria-label="How much the bottom knot pulls the middle knot"></div>
-<p>The rigid region stays fixed; the flexible hair gradually gains motion across the attachment blend distance. The tip controls the middle knot, never the reverse, while the head root remains anchored.</p>
+<p>All hair pixels use one continuous 3D mesh. The painted rigid region and its automatic head-grip collar are fully pinned (no influence blending); the rest follows the spline. The tip drives the middle knot, never the reverse.</p>
 <div class="buttons"><button id="resetRig">New 3-knot spline</button></div>
 </section>
 <section>
@@ -132,7 +132,7 @@ const DIRECTIONS=['left','right','up','down','toward','away'],FIELDS=['yaw','pit
 const makeSegment=()=>({deadzone:{x:4,y:4,z:6},poses:Object.fromEntries(DIRECTIONS.map(x=>[x,{yaw:0,pitch:0,roll:0,translate:{x:0,y:0,z:0}}]))});
 const makeRig=(providedPoints)=>{const points=providedPoints||[{u:.5,v:.28,depth:.015},{u:.52,v:.43,depth:.025},{u:.53,v:.6,depth:.035}]; // New rigs start with fitted natural poses, not six empty wind directions.
  return {version:1,enabled:true,points,segments:Rig.makeDefaultSegments(points),regionMasks:{},
- rearOffset:{u:0,v:0},width:.1,windResponse:1,tipFollow:.58,blendRadiusPx:18,segmentsX:24,segmentsY:32};};
+ rearOffset:{u:0,v:0},width:.1,windResponse:1,tipFollow:.58,pinWidthPx:18,segmentsX:24,segmentsY:32};};
 let rig=makeRig(),cosmetic={},loadedName='cosmetic.json',selectedKnot=1,selectedSegment=0,direction='right',mode='move';
 let images={front:null,rear:null,hood:null,hoodRear:null,head:null,headRear:null,character:null},dragging=false,lastPaint=null;
 let canonicalPortraitPromise=null,canonicalPortraitGeneration=0,canonicalPortraitError=null; // Reuses Pants Rig Author's species/gender portrait registry and naked-character render path.
@@ -210,7 +210,7 @@ function maybeInitializeMasks(){
 function makeRegionOverlay(){
   const view=activeView(),sprite=images[view],mask=rig.regionMasks?.[view];
   if(!sprite||!mask)return null;
-  const key=JSON.stringify([mask,rig.blendRadiusPx]);
+  const key=JSON.stringify([mask,rig.pinWidthPx]);
   if(regionOverlayCache&&regionOverlayCache.source===sprite&&regionOverlayCache.view===view
     &&regionOverlayCache.key===key&&regionOverlayCache.offset===rig.rearOffset.u+':'+rig.rearOffset.v)
     return regionOverlayCache.canvas;
@@ -219,49 +219,31 @@ function makeRegionOverlay(){
   if(view==='rear')ctx.drawImage(sprite,rig.rearOffset.u*200,rig.rearOffset.v*200,200,200);
   else ctx.drawImage(sprite,0,0,200,200);
   const data=ctx.getImageData(0,0,200,200),bits=Rig.decodePixelMask(mask);
-  const field=Rig.attachmentBlendField(mask,rig.blendRadiusPx); // Preview the same motion falloff calculated by the runtime.
+  const pinned=Rig.attachmentPinField(mask,rig.pinWidthPx); // Binary vertex anchoring: no softened influence weights.
   for(let i=0;i<bits.length;i++){
     const at=i*4,alpha=data.data[at+3];
     if(!alpha)continue;
-    const blend=bits[i]?0:(field?field[i]:1);
-    data.data[at]=Math.round(67+(198-67)*blend);
-    data.data[at+1]=Math.round(208+(109-208)*blend);
-    data.data[at+2]=Math.round(209+(231-209)*blend);
-    data.data[at+3]=Math.round(alpha*(bits[i]?.64:.28)); // Cyan remains fixed; cyan→purple pixels progressively flex.
+    const anchored=bits[i] || pinned?.[i];
+    data.data[at]=anchored?67:198;data.data[at+1]=anchored?208:109;data.data[at+2]=anchored?209:231;
+    data.data[at+3]=Math.round(alpha*(bits[i]?.64:anchored?.48:.28)); // Cyan: fixed attachment/grip; purple: full spline motion.
   }
   ctx.putImageData(data,0,0);
   regionOverlayCache={source:sprite,view,key,offset:rig.rearOffset.u+':'+rig.rearOffset.v,canvas};
   return canvas;
 }
 function viewerRegionSources(){
-  const key=JSON.stringify(rig.regionMasks||{})+':'+rig.rearOffset.u+':'+rig.rearOffset.v+':'+Rig.stitchWidthPx(rig);
-  // Texture partition must rebuild whenever mask, rear offset, or seam collar grid size changes.
-  const character=images.character||images.head;
+  const key=rig.rearOffset.u+':'+rig.rearOffset.v; // Rigid/flexible brush edits now change only vertex pins, never the artwork texture.
   if(regionSourcesCache&&regionSourcesCache.key===key&&regionSourcesCache.front===images.front
-    &&regionSourcesCache.rear===images.rear&&regionSourcesCache.character===character)
-    return regionSourcesCache.data;
-  const data={front:images.front,rear:images.rear,rigidFront:null,rigidRear:null,
-    stitchedFrontPixels:0,stitchedRearPixels:0}; // Diagnostics show how much of the anchored region carries the seamless mesh join.
-  for(const view of ['front','rear']){
-    const sprite=images[view],mask=rig.regionMasks?.[view];
-    if(!sprite||!mask)continue;
-    try{
-      const src=document.createElement('canvas');src.width=src.height=200;
-      const ctx=src.getContext('2d');
-      if(view==='rear')ctx.drawImage(sprite,rig.rearOffset.u*200,rig.rearOffset.v*200,200,200);
-      else ctx.drawImage(sprite,0,0,200,200);
-      const pieces=Rig.splitByMask(src,mask,{stitchPx:Rig.stitchWidthPx(rig)});
-      data[view]=pieces.flexible; // A pinned strip of rigid pixels follows the continuous hair surface, eliminating the physical two-plane cut.
-      if(view==='front'){
-        data.rigidFront=pieces.rigid;
-        data.stitchedFrontPixels=pieces.stitchedPixels;
-      }else{
-        data.rigidRear=pieces.rigid;
-        data.stitchedRearPixels=pieces.stitchedPixels;
-      }
-    }catch(error){message('Could not split '+view+' sprite mask for 3D: '+error.message);}
+    &&regionSourcesCache.rear===images.rear) return regionSourcesCache.data;
+  let rear=images.rear;
+  if(rear){
+    const canvas=document.createElement('canvas');canvas.width=canvas.height=200;
+    const ctx=canvas.getContext('2d');
+    ctx.drawImage(rear,rig.rearOffset.u*200,rig.rearOffset.v*200,200,200); // Rear sprite offset is applied once, before the full uncut mesh texture is uploaded.
+    rear=canvas;
   }
-  regionSourcesCache={key,front:images.front,rear:images.rear,character,data};
+  const data={front:images.front,rear};
+  regionSourcesCache={key,front:images.front,rear:images.rear,data};
   return data;
 }
 function recordMaskUndo(){
@@ -504,9 +486,9 @@ function controls(){
   $('segmentSelect').replaceChildren(...rig.segments.map((_,i)=>{const opt=document.createElement('option');opt.value=i;opt.textContent=(i+1)+': knot '+(i+1)+' → '+(i+2);return opt;}));
   selectedSegment=clamp(selectedSegment,0,rig.segments.length-1);$('segmentSelect').value=selectedSegment;
   for(const el of document.querySelectorAll('[data-direction]'))el.classList.toggle('active',el.dataset.direction===direction);
-  for(const el of ['rearU','rearV','strandWidth','response','blendRadius','tipFollow']){
+  for(const el of ['rearU','rearV','strandWidth','response','pinWidth','tipFollow']){
     const values={rearU:rig.rearOffset.u,rearV:rig.rearOffset.v,strandWidth:rig.width,response:rig.windResponse,
-      blendRadius:rig.blendRadiusPx??18,tipFollow:rig.tipFollow??.58};
+      pinWidth:rig.pinWidthPx??18,tipFollow:rig.tipFollow??.58};
     $(el).value=values[el];
   }
   const slot=safeSegment(),holder=$('segmentEditor');holder.replaceChildren();
@@ -572,14 +554,12 @@ function render(){
     '\nOnly enabled styles create extra geometry; others retain 2D rendering.';
   $('json').value=JSON.stringify(rig,null,2);
   if(viewer && !(dragging && (mode==='paint'||mode==='erase'))){
-    // Keep 2D brush strokes responsive on Android; upload two new WebGL textures only once at stroke end.
+    // Keep mobile brush strokes responsive: recompute binary pinned mesh vertices only when the stroke ends, without re-uploading any sprite textures.
     const sources=viewerRegionSources();
     viewer.update({rig,wind:wind(),selectedKnot,direction,
       head:images.character||images.head,front:sources.front,rear:sources.rear,
-      rigidFront:sources.rigidFront,rigidRear:sources.rigidRear,
-      stitchedFrontPixels:sources.stitchedFrontPixels,stitchedRearPixels:sources.stitchedRearPixels,
-      rearAligned:!!rig.regionMasks?.rear,
-      hood:shown?(images.hoodRear||images.hood):images.hood}); // Exact same rigid/flexible split as the game renderer.
+      rearAligned:true, // All rear artwork is pre-aligned for the same continuous mesh as the game.
+      hood:shown?(images.hoodRear||images.hood):images.hood}); // All art is on one mesh; only geometry pins distinguish rigid/flexible pixels.
   }
 }
 function updateKnots(){
@@ -630,7 +610,7 @@ for(const b of document.querySelectorAll('[data-direction]'))b.onclick=()=>{dire
 $('testStrength').oninput=render;$('viewSelect').onchange=render;
 for(const [id,fn] of [['rearU',v=>rig.rearOffset.u=v],['rearV',v=>rig.rearOffset.v=v],
   ['strandWidth',v=>rig.width=v],['response',v=>rig.windResponse=v],
-  ['blendRadius',v=>rig.blendRadiusPx=v],['tipFollow',v=>rig.tipFollow=v]]){
+  ['pinWidth',v=>rig.pinWidthPx=v],['tipFollow',v=>rig.tipFollow=v]]){
   $(id).onchange=e=>{fn(numeric(e.target.value));rig=Object.assign(rig,Rig.normalize(rig));markRegionDirty();controls();render();};
 }
 $('clearMask').onclick=()=>{
