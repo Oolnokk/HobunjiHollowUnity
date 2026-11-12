@@ -16,6 +16,12 @@ const equipment = fs.readFileSync('docs/js/equipment-panel.js', 'utf8'); // Regi
 const gameHtml = fs.readFileSync('docs/index.html', 'utf8'); // Game entry point must load the same Kurraya revision as its animation editor.
 const gameKurrayaToken = gameHtml.match(/kurraya-instrument\.js\?v=([A-Za-z0-9_-]+)/)?.[1]; // Cache key guards against stale game-side note playback.
 const editorKurrayaToken = editor.match(/kurraya-instrument\.js\?v=([A-Za-z0-9_-]+)/)?.[1]; // Cache key used by the editor preview.
+assert(editor.includes('function editorUnscaledToolBaseY()'), 'editor must normalize the preview hand anchor before species pose scaling');
+assert(editor.includes('rawBaseY + lastAuthoredPose.y'), 'editor playback must apply the pose to the unscaled anchor');
+assert(editor.includes('poseOrbitScratch.y -= rawBaseY;'), 'gizmo inversion must subtract that same unscaled anchor');
+assert.equal((editor.match(/baseY: editorUnscaledToolBaseY\(\)/g)||[]).length,3,'all three edit/playback/secondary pivot paths need the raw anchor');
+assert(handDriver.includes('kurraya-authored-basis'), 'Kurraya cannot inherit a previous weapon sweep basis');
+assert(handDriver.includes('(playerKurrayaActive(record) || !!playerKurrayaTarget(record))'), 'carried Kurraya keeps its independent free Neutral hand');
 assert(gameKurrayaToken && editorKurrayaToken && gameKurrayaToken === editorKurrayaToken,
   'game and animation editor must use the same Kurraya instrument script revision');
 
@@ -167,6 +173,19 @@ api.advancePlayerKurrayaNote(clock.ms);
 assert.equal(api.playerHeldPose().roll,7,'finished note must return to the editor Neutral rather than retaining Strike');
 api.endPlayerKurraya();
 assert.equal(api.activePlayerInstrument(),null,'ending a performance releases its authored hand/body ownership');
+
+// Editor Neutral is a free plucking hand even before music starts. Exercise
+// the actual holder lookup and right-hand sampler with an unequipped transition.
+const carriedKurraya = {userData:{kurrayaAssembly:true},parent:{visible:true}}; // Simulated visible assembly owned by the player portrait.
+window.Combat = {deps:{playerMesh:{traverse:visit=>visit(carriedKurraya)}}};
+window.HobunjiHandToolGrips = {sampleFreeRightHand:(poses,_action,progress)=>({ ...poses.neutral.rightHand, influence:1, progress })};
+assert.equal(api.playerKurrayaHandTarget()?.holder,carriedKurraya.parent,'carried Kurraya must resolve its live holder before music starts');
+assert.equal(api.playerRightHandPose().y,0.07,'carried Kurraya must use the authored Neutral free-hand height');
+assert.equal(api.playerRightHandPose().influence,1,'carried Kurraya must keep the authored free right-hand influence');
+carriedKurraya.parent.visible=false;
+assert.equal(api.playerRightHandPose(),null,'a hidden, unequipped Kurraya must release the free-hand pose');
+delete window.Combat;
+delete window.HobunjiHandToolGrips;
 
 // Ambient NPC Kurraya notes must never capture the player's hand holder (both
 // instruments can sound at once, and the previous player twitch callback is gone).

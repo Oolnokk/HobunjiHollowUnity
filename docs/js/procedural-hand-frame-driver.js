@@ -147,8 +147,8 @@
   }
   function freeRightHandFor(record, toolKey) {
     if (inAttackEditor()) return global.HobunjiAttackEditorRightHand?.currentPose?.() || null;
-    return toolKey === 'kurraya' && playerKurrayaActive(record)
-      ? global.KurrayaInstrument?.playerRightHandPose?.() || null : null; // Live sounded-note clock is player-only.
+    return toolKey === 'kurraya' && (playerKurrayaActive(record) || !!playerKurrayaTarget(record))
+      ? global.KurrayaInstrument?.playerRightHandPose?.() || null : null; // Keep the independent free hand in authored Neutral while carrying Kurraya, between and after notes.
   }
   function currentToolKey(record = null) {
     const ownedKey = record?.avatarRoot?.userData?.proceduralHandToolKey; // Hostile/NPC avatar roots can name their own held item without leaking through the player-singleton stance state.
@@ -320,6 +320,8 @@
     const Quaternion = toolHolder.quaternion.constructor;
     const identity = new Quaternion();
     if (toolHolder.name === 'player_flute_mouth_mount') return { quaternion: identity, source: 'flute-mouth-mount', angleDeg: 0 }; // Never apply the previous weapon's sweep correction to the flute.
+    if (!inAttackEditor() && playerKurrayaTarget(record)?.holder === toolHolder)
+      return { quaternion: identity, source: 'kurraya-authored-basis', angleDeg: 0 }; // A previous weapon sweep must not rotate this thrust-style instrument's grip.
 
     // The sweep is the ONLY stance that rotates the visual plane's grip basis.
     // Decide that before traversing the weapon hierarchy: ordinary held tools,

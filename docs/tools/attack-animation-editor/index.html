@@ -325,8 +325,8 @@ canvas{display:block;width:100%;height:100%}
      in-game character dump use the exact same code/format. -->
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
 <script src="../../js/rig-transform-dump.js?v=20261029rigdump1"></script>
-<script src="../../js/held-action-animations.js?v=20261112kurrayaMerge1"></script>
-<script src="../../js/kurraya-instrument.js?v=20261112kurrayaMerge1"></script>
+<script src="../../js/held-action-animations.js?v=20261112kurrayaParity1"></script>
+<script src="../../js/kurraya-instrument.js?v=20261112kurrayaParity1"></script>
 <!-- Shared attack-pose math (window.SharedAttackPose): the SAME timeline, rest poses and mirroring rule the game plays for the player and every enemy. -->
 <script src="../../config/portrait-mouth-points.js?v=20261025mouth1"></script>
 <script src="../../js/attack-editor-mouth-point.js?v=20261025mouth1"></script>
@@ -426,6 +426,12 @@ const editorApertureScratch = new THREE.Vector3();
 function editorToolGrip() {
   const grips = window.HobunjiHandToolGrips;
   return grips?.primaryGripHolderPointForTool?.(currentToolKey, grips.currentGripContext?.(), { speciesId: currentSpeciesId, gender: currentGender }) || null;
+}
+// The visible preview's hand anchor is already body-scaled. The shared pose
+// converter expects the original PNG floor-relative anchor instead.
+function editorUnscaledToolBaseY() {
+  const rigY = Number(characterBodyScaleRoot.scale.y); // Used by pose playback and gizmo inversion to recover the unscaled hand anchor.
+  return toolBase.position.y / (Number.isFinite(rigY) && rigY > 0 ? rigY : 1);
 }
 // The tool's mating point in holder space: its authored aperture, else (held bottles have no tool entry) the sprite's top edge.
 function editorToolAperture() {
@@ -910,18 +916,21 @@ transformControls.addEventListener('objectChange', () => {
     return;
   }
   SharedAttackPose.anchorScaleAtPoint(toolHolder, editorToolGrip(), 2 - toolHolder.scale.x); // Undo the grip-pivot shift (exact inverse: same shift with the sign flipped) before reading the authored origin.
+  const rawBaseY = editorUnscaledToolBaseY(); // Use the inverse of the same floor-relative frame that gameplay uses.
   poseOrbitScratch.set(
     toolBase.position.x + toolHolder.position.x,
     toolBase.position.y + toolHolder.position.y,
     toolBase.position.z + toolHolder.position.z
   ); // Concrete selected-species point in rig space.
   window.HobunjiSpeciesPoseScale?.untransformPosePoint?.(poseOrbitScratch, {
-    cx: 0, cz: 0, floorY: 0, baseY: toolBase.position.y,
+    cx: 0, cz: 0, floorY: 0, baseY: editorUnscaledToolBaseY(),
     speciesId: currentSpeciesId, gender: currentGender,
     modelHeight: currentAvatarModelHeight,
     armLength: currentArmLength, poseOrbitScale: currentPoseOrbitScale,
   }); // Exact inverse: horizontal orbit and vertical rigger-height mapping are independent.
-  poseOrbitScratch.sub(toolBase.position);
+  poseOrbitScratch.x -= toolBase.position.x;
+  poseOrbitScratch.y -= rawBaseY;
+  poseOrbitScratch.z -= toolBase.position.z; // Invert from the raw anchor, not the already body-scaled preview anchor.
   p.x = poseOrbitScratch.x;
   p.y = poseOrbitScratch.y;
   p.z = poseOrbitScratch.z;
@@ -1880,7 +1889,8 @@ function applyPoseToRig(pose) {
     }
   }
   lastAuthoredPose.x = Number(pose.x) || 0; lastAuthoredPose.y = Number(pose.y) || 0; lastAuthoredPose.z = Number(pose.z) || 0;
-  poseOrbitScratch.set(toolBase.position.x + lastAuthoredPose.x, toolBase.position.y + lastAuthoredPose.y, toolBase.position.z + lastAuthoredPose.z); // Existing pre-arm-length finished point.
+  const rawBaseY = editorUnscaledToolBaseY(); // Reverses the preview body scale before the shared species pose scaler applies it exactly once.
+  poseOrbitScratch.set(toolBase.position.x + lastAuthoredPose.x, rawBaseY + lastAuthoredPose.y, toolBase.position.z + lastAuthoredPose.z); // Raw hand anchor plus authored displacement.
   lastRawRigPose.x = poseOrbitScratch.x; lastRawRigPose.y = poseOrbitScratch.y; lastRawRigPose.z = poseOrbitScratch.z;
   if (anim.headRelative && SharedAttackPose.headFrame(editorHeadFrame, avatarModel)) {
     // Head-anchored: the tool's aperture mates with the species mouth point; the head alone supplies rotation and scale.
@@ -1892,7 +1902,7 @@ function applyPoseToRig(pose) {
     return;
   }
   window.HobunjiSpeciesPoseScale?.transformPosePoint?.(poseOrbitScratch, {
-    cx: 0, cz: 0, floorY: 0, baseY: toolBase.position.y,
+    cx: 0, cz: 0, floorY: 0, baseY: editorUnscaledToolBaseY(),
     speciesId: currentSpeciesId, gender: currentGender,
     modelHeight: currentAvatarModelHeight,
     armLength: currentArmLength, poseOrbitScale: currentPoseOrbitScale,
@@ -2381,7 +2391,7 @@ window.HobunjiAttackEditorToolContext = Object.freeze({
     const toPosePoint = world => {
       const point = toolBase.worldToLocal(world).add(toolBase.position);
       window.HobunjiSpeciesPoseScale?.untransformPosePoint?.(point, {
-        cx: 0, cz: 0, floorY: 0, baseY: toolBase.position.y,
+        cx: 0, cz: 0, floorY: 0, baseY: editorUnscaledToolBaseY(),
         speciesId: currentSpeciesId, gender: currentGender,
         modelHeight: currentAvatarModelHeight,
         armLength: currentArmLength, poseOrbitScale: currentPoseOrbitScale,
