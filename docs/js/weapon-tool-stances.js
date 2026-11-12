@@ -527,7 +527,8 @@
       const attackInProgress = activeSlot === 'weapon' && !!visual;
       // Weapon attacks are explicitly tracked by the combat wrappers, so never let
       // their real holder rotation poison the tool-motion idle suppression timer.
-      const holderMoving = activeSlot === 'weapon' ? false : holderIsMoving(now);
+      const authoredToolActionActive = activeSlot !== 'weapon' && holder.userData?.authoredToolActionActive === true; // The game has already posed a held tool/fishing attack against the selected Neutral.
+      const holderMoving = activeSlot === 'weapon' ? false : (authoredToolActionActive || holderIsMoving(now)); // Do not double-rebase a stage that already incorporates its tool-slot Neutral.
       const idleDualState = !attackInProgress ? window.HobunjiHandToolGrips?.currentDualWieldAnimationState?.() : null;
       const idleDualWield = !!idleDualState && idleDualState.source === 'dual-wield-idle' && idleDualState.influence > 0.0001;
       const targetPose = targetPoseFor(activeSlot, itemKey, def, { dualWield: idleDualWield });
