@@ -99,6 +99,8 @@ assert.equal(window.TerrainTileMaterials.debugSnapshot().pending, 0);
 assert.equal(window.TerrainTileMaterials.debugSnapshot().sharedTextures, 3);
 assert.equal(window.TerrainTileMaterials.isSharedTexture(plains.map), true);
 assert.equal(window.TerrainTileMaterials.isCachedMaterial(plains), true);
+assert.equal(window.TerrainTileMaterials.isCachedMaterial(base.grass), true,
+  'shared native grass fallback survives a zone eviction before the PNG override finishes loading');
 assert.equal(window.TerrainTileMaterials.isCachedMaterial(weeds), true);
 assert.equal(plains instanceof Basic, true, 'grass uses unlit base material');
 assert.equal(weeds instanceof Basic, true, 'vegetation cover uses unlit base material');
