@@ -69,11 +69,15 @@ const server=http.createServer((req,res)=>{
           facialHair:none,pauldron:none,hat:none,torsoCosmetic:none,armCosmetic:none};
         const canvas=document.createElement('canvas');canvas.width=canvas.height=200;
         await window.NpcAvatarPreview.renderProfileToCanvas(canvas,profile,{forceEyesOpen:true,portraitView:'front',onlyHeadSprite:true});
-        heads.set(species+'_'+gender,canvas);
+        const rear=document.createElement('canvas');rear.width=rear.height=200; // Separately rendered rear head, never inferred by mirroring front skin pixels.
+        await window.NpcAvatarPreview.renderProfileToCanvas(rear,profile,{forceEyesOpen:true,portraitView:'behind',onlyHeadSprite:true});
+        heads.set(species+'_'+gender,{front:canvas,rear});
       }
-      const head=heads.get(species+'_'+gender);
+      const head=heads.get(species+'_'+gender).front;
       const points=Rig.suggestRestPoints(image,head);
       const mask=Rig.maskFromOverlap(image,head);
+      const rearArtwork=style.slot==='facialHair'?null:await Catalog.composeArtwork(style.config,species,gender,'rear');
+      const rearMask=rearArtwork?Rig.maskFromOverlap(rearArtwork,heads.get(species+'_'+gender).rear):null; // Actual rear overlap is an independent binary pin region.
       const source=image.getContext('2d').getImageData(0,0,200,200).data;
       let minX=200,minY=200,maxX=-1,maxY=-1,opaque=0;
       for(let y=0;y<200;y++)for(let x=0;x<200;x++){
@@ -83,7 +87,8 @@ const server=http.createServer((req,res)=>{
       }
       result.push({filename,species,gender,name:style.label,slot:style.slot,
         source:style.entry.path,points,bbox:[minX,minY,maxX,maxY],opaque,
-        rigid:mask.runs.reduce((a,v)=>a+v[1],0),runs:mask.runs});
+        rigid:mask.runs.reduce((a,v)=>a+v[1],0),runs:mask.runs,
+        rearRigid:rearMask?.runs.reduce((a,v)=>a+v[1],0)||0,rearRuns:rearMask?.runs||[]});
     }
     return result;
   },paths);
