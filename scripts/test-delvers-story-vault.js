@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const source = name => fs.readFileSync('docs/js/' + name + '.js', 'utf8'); // Authoritative shipped modules, never copied logic.
-for (const name of ['delvers-guild-story','ruin-sites','dev-random-ruin-interior-map','delvers-vault-signal']) {
+for (const name of ['key-item-system','delvers-guild-story','ruin-sites','dev-random-ruin-interior-map','delvers-vault-signal']) {
   new vm.Script(source(name), {filename:name+'.js'}); // Check parser compatibility for every new runtime seam.
 }
 
@@ -15,12 +15,14 @@ for (const name of ['delvers-guild-story','ruin-sites','dev-random-ruin-interior
 (async () => {
   let world = {delversGuild:{invited:true,member:true,trusted:true}}; // Shared world story store persists quest phases.
   const quests = {}; // TasksPanel's actual kind/status/progress shape is reused.
-  const inventory = {delversStone:1,azgarlu_key_stone:1,nanahi_key_stone:1,imlao_key_stone:1}; // Three defeated lich rewards.
+  const inventory = {}; // Story keys no longer occupy ordinary material Pack stacks.
   const defs = {}, items = [], scenes = [], toasts = []; // Inventory catalog, cutscenes, and diagnostics from the real code.
   let saves = 0; // Ensures every physical transfer persists.
   const profile = {worldId:'story-vault-world',characterId:'player',isWorldOwner:true};
+  let meta = {characters:[{id:'player',gearInventory:{keyItems:[]}}],worlds:[{id:'story-vault-world',keyItems:[]}]}; // Persistent save owners for real KeyItemSystem.
+  const storage = {getItem:key=>key==='hobunjiSaveMeta'?JSON.stringify(meta):null,setItem:(key,value)=>{if(key==='hobunjiSaveMeta')meta=JSON.parse(value);}}; // Simulated browser storage.
   const window = {
-    __hobunjiPlayerProfile:profile,__hobunjiGameStarted:true,
+    __hobunjiPlayerProfile:profile,__hobunjiGameStarted:true,localStorage:storage,
     OpeningStoryCutscene:{
       getStory:()=>world,
       updateStory:(_profile,patch)=>{world={...world,...patch};return true;},
@@ -39,8 +41,10 @@ for (const name of ['delvers-guild-story','ruin-sites','dev-random-ruin-interior
     RuinSites:{syncMapMarkers(){}},setTimeout:callback=>callback(),__farmLog(){},
   };
   const context = vm.createContext({window,document:{addEventListener(){}},console});
+  vm.runInContext(source('key-item-system'),context);
   vm.runInContext(source('delvers-guild-story'),context);
   const guild = window.DelversGuild; // This is the production API tested by the real dialogue handoff.
+  for(const id of ['delversStone','azgarlu_key_stone','nanahi_key_stone','imlao_key_stone']) assert.equal(window.KeyItemSystem.grant(id).ok,true); // Three defeated lich rewards + member license.
   guild.bindInventoryDeps({ITEM_DEFS:defs,inventoryItems:items,inventory,
     saveMemberWorldData(){saves++;},buildInventoryGrid(){},showToast(message){toasts.push(message);}});
   guild.bindQuestDeps({getQuestProgress:()=>quests});
@@ -49,16 +53,17 @@ for (const name of ['delvers-guild-story','ruin-sites','dev-random-ruin-interior
   assert.equal(guild.dialogueTree().id,'garanki_talisman_handoff');
   assert.equal(await guild.runHandoff('assemble'),true);
   assert.equal(guild.hasTalisman(),true);
-  assert.equal(inventory[guild.TALISMAN_KEY],1);
-  assert(guild.KEY_STONES.every(key=>inventory[key.id]===0));
+  assert.equal(window.KeyItemSystem.has(guild.TALISMAN_KEY),true);
+  assert(guild.KEY_STONES.every(key=>!window.KeyItemSystem.has(key.id)));
+  assert.equal(Object.keys(inventory).length,0,'no story keys in material inventory');
   assert.equal(guild.grantKeyStone('azgarlu'),false,'the same guardian cannot re-award a consumed quest component');
-  inventory[guild.TALISMAN_KEY]=0; // Simulate a crash after the world-scoped exchange but before member inventory was committed.
+  window.KeyItemSystem.revoke(guild.TALISMAN_KEY); // Simulate a crash after story phase changed but before key persistence.
   assert.equal(guild.restoreTalisman(),true,'saved search phase must recover the physical talisman on reload');
-  assert.equal(inventory[guild.TALISMAN_KEY],1);
+  assert.equal(window.KeyItemSystem.has(guild.TALISMAN_KEY),true);
   assert.equal(guild.vaultPhase(),'search');
   assert.match(quests[guild.QUEST_ID].progress.objective,/Western Slope/);
   assert.equal(await guild.runHandoff('assemble'),false); // A second handoff cannot silently mint a new talisman.
-  assert.equal(inventory[guild.TALISMAN_KEY],1);
+  assert.equal(window.KeyItemSystem.has(guild.TALISMAN_KEY),true);
 
   assert.equal(guild.saveVaultSite({zoneId:guild.VAULT_ZONE,col:24,row:26,cycle:3,revealed:false}),true);
   assert.equal(guild.uncoverVault(),true);
@@ -68,13 +73,13 @@ for (const name of ['delvers-guild-story','ruin-sites','dev-random-ruin-interior
   assert.equal(guild.dialogueTree().nodes[0].choices[0].label,'--explain what you saw--'); // Ordinary NPC dialogue uses choices/label; options/text is reserved for authored cutscenes.
   assert.equal(guild.dialogueTree().nodes[0].choices[1].actions[0].pool,'garankiEnchanting','vault report dialogue keeps the confiscated-items inventory accessible');
   assert.equal(await guild.runHandoff('report'),true);
-  assert.equal(inventory[guild.TALISMAN_KEY],0);
+  assert.equal(window.KeyItemSystem.has(guild.TALISMAN_KEY),false);
   assert.equal(guild.vaultPhase(),'complete');
   assert.equal(quests[guild.QUEST_ID].status,'complete');
   assert.equal(await guild.runHandoff('report'),false);
   assert.equal(scenes.length,2);
   assert(scenes[1].stages.some(stage=>String(stage.text).includes('bird footprints')));
-  assert(saves>=4);
+  assert(saves>=3); // Quest objective/status changes still persist via the authoritative member adapter.
 
   // A separate RuinSites instance gets only its own infrastructure and the real
   // DelversGuild-style world-scoped site protocol, not a precomputed hole.
