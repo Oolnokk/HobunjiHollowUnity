@@ -1394,6 +1394,11 @@
     hits.slice(0, 25).forEach((hit, i) => {
       const o = hit.object;
       const mats = Array.isArray(o.material) ? o.material : [o.material];
+      if (o.userData?.mapEditorTerrain) {
+        const terrainMaterial = mats.find(m => m?.userData?.terrainKey) || mats[0]; // Exact material bucket from TerrainTileMaterials, not a guessed color.
+        const xray = window.HeldObjectRenderOrder?.classify?.(o); // The same ground predicate used by actual held-object replay.
+        lines.push(`     terrain floor: bucket=${terrainMaterial?.userData?.terrainKey || '-'} PNG=${!!terrainMaterial?.map} texture=${terrainMaterial?.userData?.hobunjiTerrainTextureStatus || 'default'} xray=${xray?.ground === true} registered=${o.userData?.hobunjiHeldGroundReplay === true}`);
+      }
       const hitPointText = hit.point ? ` world=(${hit.point.x.toFixed(3)},${hit.point.y.toFixed(3)},${hit.point.z.toFixed(3)})` : ''; // Used to compare exact foot and water intersections along this screen ray.
       lines.push(`${i}. "${o.name || '(unnamed)'}" dist=${hit.distance.toFixed(3)}${hitPointText} visible=${o.visible} renderOrder=${o.renderOrder}`);
       if (hit.point && (o.userData?.terrainRenderChunk || o.userData?.wildernessGlobalPathGround || o.userData?.cameraObstacle)) {
