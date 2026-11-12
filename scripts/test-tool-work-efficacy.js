@@ -76,6 +76,16 @@ vm.runInContext('beginChargeStage()', speedContext);
 near(speedContext.toolSwingDur, .8 / (1.4 * 1.2 * 1.15), 'Hoe animation speed respects all work modifiers');
 assert.equal(speedContext.chargeAnimOverride, 'chop', 'Hoe uses chopping tool poses');
 assert.equal(speedContext.chargeAction.stages.length, 3, 'Tilling has three uninterrupted strokes');
+// The charge must not complete on a later frame after switching tools.
+speedContext.lastCancelReason = null;
+speedContext.cancelChargeAction = reason => { speedContext.lastCancelReason = reason; speedContext.chargeAction = null; };
+speedContext.activeTool = 'shovel';
+speedContext.activeAction = 'dig';
+speedContext.actionHeldDown = true;
+speedContext.chargeAction = { tool: 'hoe', action: 'till', col: 0, row: 0, stage: 0, stages: vm.runInContext('TILL_SOIL_STAGES', speedContext), finalStrikeCommitted: false };
+vm.runInContext(functionBody(game, 'updateChargeAction') + '\nupdateChargeAction()', speedContext);
+assert.equal(speedContext.lastCancelReason, 'tool/action changed', 'switching away from the hoe cancels its held till charge');
+
 
 // The fishing module builds per-cast duration fields that its motion code reads.
 const ringStart = fishing.indexOf('const FISHING_RING = {'); // Uses real ring tuning constants.
