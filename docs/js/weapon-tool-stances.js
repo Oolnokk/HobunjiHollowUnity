@@ -205,9 +205,12 @@
     return { activeSlot, itemKey, def, mesh };
   }
 
+  const MODULAR_TOOL_IDLE_BY_SLOT = Object.freeze({ axe: 'topHeavyTool', hoe: 'topHeavyTool', shovel: 'longHaftedTool', pick: 'longHaftedTool', harpoon: 'longHaftedTool' }); // Tool-equipped modular weapons borrow the selected tool's Neutral, never their haft donor's weapon Neutral.
+
   function targetPoseFor(activeSlot, itemKey, def, { dualWield = null } = {}) {
     const shape = shapeFor(itemKey, def);
     if (activeSlot !== 'weapon') {
+      if (def?.modular && MODULAR_TOOL_IDLE_BY_SLOT[activeSlot]) return idleStances[MODULAR_TOOL_IDLE_BY_SLOT[activeSlot]]; // An axe-head spear haft rests as an axe when equipped for woodcutting, for example.
       if (shape === 'hoe' || shape === 'hatchet' || shape === 'fishingmace') return idleStances.topHeavyTool; // Head-weighted tools share one carried stance.
       if (shape === 'fishingspear' || shape === 'pickshovel') return idleStances.longHaftedTool; // Same carry, pitched up 10° and gripped nearer the haft's middle.
       if (def?.animStyle === 'thrust') return idleStances.tool;
@@ -628,6 +631,8 @@
       itemKey: state.itemKey,
       shape: shapeFor(state.itemKey, state.def),
       weaponIdleClass: weaponIdleClass(state.itemKey, state.def),
+      toolIdlePreset: state.def?.modular && state.activeSlot !== 'weapon' ? (MODULAR_TOOL_IDLE_BY_SLOT[state.activeSlot] || null) : null, // Visible in the existing mobile stance inspector.
+      toolWorkStyle: state.def?.modular ? window.ToolActivityStages?.workStyleFor?.(state.activeSlot) || state.def.animStyle : null, // Reports the live head/shaft work style without opening a console.
       sourceAnimStyle: state.def?.animStyle || null,
       stanceApplied,
       hook: holderHookInstalled ? 'toolHolder.updateMatrixWorld' : 'missing',
