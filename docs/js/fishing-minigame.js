@@ -1394,7 +1394,7 @@
   // (mace only) a rapid spin while outbound that freezes once retracting.
   function renderFishingSpearSprite(startPoint, endPoint) {
     const art = FISHING_BRIDGE_ART;
-    const useMace = deps.equipmentSlots.harpoon === 'fishingmace';
+    const useMace = String(deps.equipmentSlots?.harpoon || '').toLowerCase().includes('fishingmace'); // Match smith-crafted metal variants as well as the old bare key.
     const spriteImg = useMace ? harpoonMaceSpriteImage : harpoonSpearSpriteImage;
     const dx = endPoint.x - startPoint.x, dy = endPoint.y - startPoint.y;
     const len = Math.hypot(dx, dy) || 1;
