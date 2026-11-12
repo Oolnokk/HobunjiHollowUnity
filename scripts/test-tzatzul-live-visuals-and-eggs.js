@@ -193,8 +193,53 @@ async function flush() { for (let i = 0; i < 8; i++) await Promise.resolve(); }
   visualWorld.window.PlayerBodyTransformComposer = { getPlayerMesh: () => playerRig };
   visuals.init({ hostileObjects: hostiles, getCurrentArea: () => 'map_northern_cliffs',
     player: capturedPlayer });
+  // Drive the actual alignCaptive implementation: the old test only hand-mutated a quaternion,
+  // which could pass even if the live talon attachment never saved the correct player's baseline.
+  class CarryObject3D {
+    constructor() { this.parent = null; this.matrixWorld = {}; }
+    add(child) { child.parent = this; }
+    updateWorldMatrix() {}
+    rotateY() {}
+  }
+  class CarryVector3 {
+    constructor() { this.x = 0; }
+    copy(other) { this.x = other.x; return this; }
+  }
+  class CarryMatrix4 {
+    copy() { return this; }
+    invert() { return this; }
+    multiplyMatrices() { return this; }
+    decompose(position, quaternion, scale) {
+      quaternion.angle = -1.55; scale.x = 2.5; // The real Three.js decomposition changes this exact player root.
+      return this;
+    }
+  }
+  visualWorld.window.THREE = { Object3D: CarryObject3D, Vector3: CarryVector3, Matrix4: CarryMatrix4 };
+  visualWorld.window.FlyingAnimalRig = { placeTalonPayload() {} };
+  playerRig.parent.updateWorldMatrix = () => {}; // Native scene parent used for the world-to-local talon matrix.
+  playerRig.parent.matrixWorld = {};
+  playerRig.position = {};
+  playerRig.updateWorldMatrix = () => {};
+  const carrier = { id: 'player-grip-carrier', creatureKey: 'tzatzul', health: 40,
+    areaId: 'map_northern_cliffs', avatarRef: avatar(), def: { modelWidth: 2.2 },
+    x: 64, y: 128, state: 'idle' }; // Real tracked bird owns the payload socket and its live rig.
+  carrier._tzFlight = { captive: capturedPlayer };
+  hostiles.add(carrier);
+  createDelay = null; // The preceding late-load test intentionally left loading deferred.
+  visuals.tick(.016, 'map_northern_cliffs');
+  await flush();
+  visuals.tick(.016, 'map_northern_cliffs');
+  const carryRig = created.at(-1); // Rig mounted by the ordinary bird tick, not supplied directly to alignCaptive.
+  carryRig.talonCarry = {};
+  carryRig.root.add = child => { child.parent = carryRig.root; };
+  carryRig.root.getWorldScale = value => { value.x = 1; return value; };
+  capturedPlayer.tzatzulCapturedBy = carrier.id;
   assert(visuals.rememberCaptive(capturedPlayer), 'capture snapshots the actual playerMesh before talon tilt');
-  playerRig.quaternion.angle = -1.55; playerRig.scale.x = 2.5; // The bird grips and rotates the render root.
+  assert(visuals.alignCaptive(capturedPlayer, playerRig), 'the actual talon renderer aligns the original playerMesh');
+  assert.equal(playerRig.quaternion.angle, -1.55, 'alignment demonstrably rotates the live player root');
+  assert.equal(playerRig.scale.x, 1, 'talon matrix decomposition cannot resize a carried player');
+  capturedPlayer.tzatzulCapturedBy = null; // TzatzulFlightRuntime clears this before calling restoreCaptive.
+  playerRig.scale.x = 2.5; // Simulate a scale corruption from a late non-native visual update.
   assert(visuals.restoreCaptive(capturedPlayer), 'nest delivery restores playerMesh despite the different avatarRef group');
   assert.equal(playerRig.quaternion.angle, .42, 'the carried rotation is removed from normal player animation');
   assert.equal(playerRig.scale.x, 1, 'talon-carry size cannot persist into walking and attacks');
@@ -221,6 +266,8 @@ async function flush() { for (let i = 0; i < 8; i++) await Promise.resolve(); }
   assert.equal(oldPlayerRig.quaternion.angle, -1.1, 'detached old player rig is never modified');
   assert.equal(playerRig.quaternion.angle, .18, "replacement player\'s clean pose is preserved");
   assert.equal(visuals.snapshot().captiveRestoreMisses, 1, 'mobile debug records skipped stale-root restores');
+  hostiles.delete(carrier);
+  visuals.tick(.016, 'map_northern_cliffs'); // Test-owned carrier is fully disposed after the release.
 
-    console.log('Tzatzul rare infertile eggs, canonical mixed adult loot, authored live flying rig, camera animation, death, late-load cleanup and player grip-pose recovery PASS.');
+  console.log('Tzatzul rare infertile eggs, canonical mixed adult loot, authored live flying rig, camera animation, death, late-load cleanup and player grip-pose recovery PASS.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
