@@ -179,5 +179,7 @@
     return {registered:sources.size,active:!!owner,area:areaKey,triggerNote:visibleTrigger,
       reason:lastReason,fitLimited,framing:{...output},notes:goal?.noteCount||0};
   }
-  return Object.freeze({register,update,solve,debugSnapshot,reset:()=>clear(true)});
+  return Object.freeze({register,update,solve,debugSnapshot,
+    reset:()=>{clear(true);previousNormalFrame=false;nextProbe=0;lastTime=null;}, // Authored cinematic takeover must invalidate its outgoing projection before normal gameplay can rediscover a note.
+  });
 });
