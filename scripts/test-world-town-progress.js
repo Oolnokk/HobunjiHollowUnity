@@ -79,6 +79,19 @@ const vmContext = vm.createContext({ window, document, MutationObserver: class {
 vm.runInContext(read('docs/js/world-town-progress.js'), vmContext, { filename: 'world-town-progress.js' });
 const view = window.TownProgressPanel; // Public, read-only debugging and snapshot API tested against the real module.
 
+// Exercise the actual Banubu getter too: the view must not initialize an untouched quest.
+const questProfile = { questProgress: {} }; // Untouched profile used to prove read-only access never creates or saves progress.
+const questWindow = { __hobunjiPlayerProfile: questProfile }; // Minimal quest module host with no DOM or persistence APIs.
+const questContext = vm.createContext({ window: questWindow, console }); // Isolate the authored controller from the view's fixture.
+vm.runInContext(read('docs/js/banubu-questline.js'), questContext, { filename: 'banubu-questline.js' });
+assert.equal(questWindow.BanubuQuestline.peekQuestState(), null, 'untouched Banubu quest stays absent');
+assert.equal(Object.keys(questProfile.questProgress).length, 0, 'progress reader does not create a quest');
+const liveQuest = { status: 'active', stage: 2 }; // Canonical injected quest record used to check store precedence.
+const liveQuestStore = { banubu_fish_pies: liveQuest }; // Injected game.js store must win over any stale profile mirror.
+questWindow.BanubuQuestline.init({ getQuestProgress: () => liveQuestStore });
+assert.equal(questWindow.BanubuQuestline.peekQuestState(), liveQuest, 'read-only getter uses the injected live quest store');
+assert.equal(Object.keys(questProfile.questProgress).length, 0, 'peek does not synchronize or mutate a stale profile mirror');
+
 function current() { return JSON.parse(JSON.stringify(view.snapshot())); }
 function allText(item) { return [item.textContent || '', ...item.children.flatMap(child => [allText(child)])].join(' '); }
 
