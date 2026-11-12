@@ -172,6 +172,45 @@ assert(fishingSource.includes("const mode = bridge?.projectileMode"), 'Projectil
 assert(fishingSource.includes("flailFishingHeadImages.get(bridge.flailHead)"), 'Projectile sprite uses the flexible head, not the detached shaft');
 assert(fishingSource.includes("b.projectileMode === 'flail' ? b.weaponSpinDeg : 0"), 'Flail head returns from its final spun angle without snapping');
 
+
+// Exercise the actual fishing ring sprite renderer with three projectile profiles, without a browser.
+const drawStart = fishingSource.indexOf('  function renderFishingSpearSprite(startPoint, endPoint) {'); // Production SVG renderer, not a copy.
+const drawEnd = fishingSource.indexOf('  // Ported from the prototype\'s renderImageFish:', drawStart);
+assert(drawStart >= 0 && drawEnd > drawStart);
+const makeSvg = () => ({ attributes: {}, setAttribute(key, value) { this.attributes[key] = value; } }); // Small SVG attribute recorder.
+const headImages = new WeakMap(); // One real authored head spec, one precomposited test texture.
+headImages.set(flailThrow.flailHead, { src: 'composed-flail-head.png', aspect: 1, anchorU: .2, anchorV: .8 });
+const fishingDraw = vm.createContext({
+  deps: { equipmentSlots: { harpoon: 'fishingspear' } },
+  fishingMinigame: { bridge: {} },
+  flailFishingHeadImages: headImages,
+  harpoonSpearSpriteImage: { src: 'spear.png', naturalWidth: 450 },
+  harpoonMaceSpriteImage: { src: 'mace.png', naturalWidth: 450 },
+  FISHING_BRIDGE_ART: { spriteWidth: 46, spriteHeight: 122, spearAttachFront: 10, ropeAttachBack: 23, ropeSag: .1, spriteRotationOffset: 90 },
+  fishingEls: { spearRope: makeSvg(), spearImage: makeSvg(), spearSpriteWrap: makeSvg() },
+});
+vm.runInContext(fishingSource.slice(drawStart, drawEnd) + '\nthis.drawWeapon = renderFishingSpearSprite;', fishingDraw);
+const drawMode = (mode, head = null) => {
+  fishingDraw.fishingMinigame.bridge = {
+    projectileMode: mode, flailHead: head, spearActive: true, shotTimer: .05, shotDuration: .2,
+    weaponSpinDeg: 90, frozenWeaponAngleDeg: 160,
+  };
+  fishingDraw.drawWeapon({ x: 0, y: 0 }, { x: 60, y: 0 });
+  return fishingDraw.fishingEls;
+}; // Same shot endpoint and spin clock, changing only the equipment's projectile profile.
+let svg = drawMode('spear');
+assert.equal(svg.spearImage.attributes.href, 'spear.png', 'Thrusting projectile uses the non-spinning spear artwork');
+assert(svg.spearSpriteWrap.attributes.transform.includes('rotate(90.00)'), 'Spear does not inherit outbound weapon spin');
+svg = drawMode('spin');
+assert.equal(svg.spearImage.attributes.href, 'mace.png', 'Sweeping projectile uses the original spinning art path');
+assert(svg.spearSpriteWrap.attributes.transform.includes('rotate(180.00)'), 'Sweeping projectile accumulates outbound spin');
+svg = drawMode('flail', flailThrow.flailHead);
+assert.equal(svg.spearImage.attributes.href, 'composed-flail-head.png', 'Only the fitted flexible head is shown as a projectile');
+assert.equal(svg.spearImage.attributes.x, '-7.60', 'Head spin uses the authored anchor rather than its image centre');
+assert.equal(svg.spearImage.attributes.y, '-30.40', 'Head rope connection remains the rotation pivot even with a non-central anchor');
+assert(svg.spearRope.attributes.d.endsWith('60.00 0.00'), 'Rope terminates on the launched head, not on a detached handle');
+assert(svg.spearSpriteWrap.attributes.transform.includes('rotate(180.00)'), 'Head spins using the existing outbound throw clock');
+
 const game = source('docs/game.js'); // Ensure the big gameplay monolith actually calls the extracted adapter.
 assert(game.includes("workPoseFor?.(chargeAction.tool, workItemKey, workDef, stageDef.dirSign)"));
 assert(game.includes("slotDef.modular.shaft === 'pick-shovel'"));
