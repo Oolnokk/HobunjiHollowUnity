@@ -3,6 +3,7 @@
   'use strict';
   const SCHEMA = 'hobunji_modular_weapons.v2'; // Validated editor import format.
   const DRAFT_KEY = 'hobunji.modularWeapons.v5'; // New authored companion mounts and explicit pair layering.
+  const KYLIE_TOOL_MIGRATION_KEY = 'hobunji.modularWeapons.kylieToolWorthy.v1'; // Upgrade old local drafts once without permanently locking the editor checkbox.
   const OLD_DRAFT_KEY = 'hobunji.modularWeapons.v4'; // Preserve existing v2 authoring lines while upgrading shipped mounts.
   const LEGACY_DRAFT_KEY = 'hobunji.modularWeapons.v3'; // Original v1 socket/draft backup.
   const NEUTRAL = Object.freeze({ scaleX: 1, scaleY: 1, flipX: false, flipY: false, x: 0, y: 0, rotation: 0, animation: 'sweep', layerOrder: 'haft-over-head' }); // Default sprite stacking draws heads before the haft.
@@ -930,11 +931,16 @@
     return { heads, shafts: shafts.filter(shaft => heads.some(head => !isDisallowed(shaft, head))) };
   }
   try {
-    const recent = global.localStorage?.getItem(DRAFT_KEY), prior = global.localStorage?.getItem(OLD_DRAFT_KEY);
-    const oldest = global.localStorage?.getItem(LEGACY_DRAFT_KEY); // Only migrate once; current v5 always wins.
-    if (recent) replace(JSON.parse(recent));
-    else if (prior) replace(addCompanionsToPreviousDraft(JSON.parse(prior)), true);
-    else if (oldest) replace(JSON.parse(oldest), true);
+    const storage = global.localStorage; // Shared browser draft storage, if available.
+    const recent = storage?.getItem(DRAFT_KEY), prior = storage?.getItem(OLD_DRAFT_KEY);
+    const oldest = storage?.getItem(LEGACY_DRAFT_KEY); // Existing draft preference stays v5 > v4 > v3.
+    const needsKylieUpgrade = storage?.getItem(KYLIE_TOOL_MIGRATION_KEY) !== '1'; // One-time migration preserves future explicit checkbox edits.
+    if (recent || prior || oldest) {
+      const draft = recent ? JSON.parse(recent) : prior ? addCompanionsToPreviousDraft(JSON.parse(prior)) : JSON.parse(oldest); // Preserve every other authored setting.
+      if (needsKylieUpgrade && draft.shafts?.kylie) draft.shafts.kylie.toolWorthy = true; // Old drafts must not mask the new shipped Kylie capability.
+      replace(draft, !recent || needsKylieUpgrade);
+    }
+    if (needsKylieUpgrade) storage?.setItem(KYLIE_TOOL_MIGRATION_KEY, '1');
   } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
   global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, weaponName, weaponDamageType, flailRecipe, flailGuide, authoredFlailAnchor, isFlailHead, resolvedBores, boreShaft, cleanBores, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, registerDefinitions, unlockedParts, matchingMounts,
     duplicateTransform, duplicatePoint, shaftRigTransform, shaftArtTransform, cleanRigRegions, regionAt, regionAffine, affinePoint, rigPoint, shaftMounts, attachmentRig, rigBridgeOperations, multiplyAffine, JUNCTIONS, junctionPath, drawJunction, expandOps,
