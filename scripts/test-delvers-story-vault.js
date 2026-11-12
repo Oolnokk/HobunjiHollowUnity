@@ -58,7 +58,11 @@ for (const name of ['key-item-system','delvers-guild-story','ruin-sites','dev-ra
   assert.equal(Object.keys(inventory).length,0,'no story keys in material inventory');
   assert.equal(guild.grantKeyStone('azgarlu'),false,'the same guardian cannot re-award a consumed quest component');
   window.KeyItemSystem.revoke(guild.TALISMAN_KEY); // Simulate a crash after story phase changed but before key persistence.
+  inventory[guild.TALISMAN_KEY] = 1; // Older saves may also contain the talisman as a normal Pack stack.
+  inventory.azgarlu_key_stone = 1; // Stale pre-assembly material components must not survive handoff.
   assert.equal(guild.restoreTalisman(),true,'saved search phase must recover the physical talisman on reload');
+  assert.equal(inventory[guild.TALISMAN_KEY],undefined,'talisman migration must clear its obsolete Pack stack');
+  assert.equal(inventory.azgarlu_key_stone,undefined,'assembly clears obsolete material components');
   assert.equal(window.KeyItemSystem.has(guild.TALISMAN_KEY),true);
   assert.equal(guild.vaultPhase(),'search');
   assert.match(quests[guild.QUEST_ID].progress.objective,/Western Slope/);
