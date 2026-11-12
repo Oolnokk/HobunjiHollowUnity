@@ -775,8 +775,14 @@
       active: false, timer: 0, cooldown: fishDiveCooldown(),
       inspectTargetAngle: 0, centerRadius: FISHING_RING.fishRadius * 0.3, lastDuration: 0, visualOffset: 0,
     };
+    const equippedHarpoon = deps.equipmentSlots?.harpoon; // Snapshotted at ring start so changing gear cannot warp an in-flight throw.
+    const metalEfficacy = Number(deps.toolMetalMultiplier?.(equippedHarpoon)); // Resolves the actual (possibly reinforced) tool tier.
+    const harpoonEfficacy = Number.isFinite(metalEfficacy) && metalEfficacy > 0 ? metalEfficacy : 1; // Legacy/nonmetal tools keep base timing.
     fm.bridge = {
       angle: 0, direction: 1, segmentSize: FISHING_RING.segmentSize, speed: FISHING_RING.sweepSpeed,
+      efficacy: harpoonEfficacy, // Exposed on Fishing.state.bridge for mobile diagnostics.
+      shotDuration: FISHING_RING.shotDuration / harpoonEfficacy, // Better metal reaches the fish sooner.
+      retractDuration: FISHING_RING.retractDuration / harpoonEfficacy, // Return stroke improves by exactly the same multiplier.
       markerA: null, markerB: null, spearActive: false, lineA: null, lineB: null,
       shotTimer: 0, retractTimer: 0, tipX: 0, tipY: 0, prevTipX: 0, prevTipY: 0, caughtFish: false,
       weaponSpinDeg: 0, frozenWeaponAngleDeg: 0,
@@ -1298,19 +1304,19 @@
       b.prevTipX = b.tipX;
       b.prevTipY = b.tipY;
 
-      if (b.shotTimer < FISHING_RING.shotDuration) {
+      if (b.shotTimer < b.shotDuration) {
         b.weaponSpinDeg = (b.weaponSpinDeg + FISHING_BRIDGE_ART.maceSpinRateDeg * dt) % 360;
         b.frozenWeaponAngleDeg = Math.atan2(bPt.y - a.y, bPt.x - a.x) * 180 / Math.PI + FISHING_BRIDGE_ART.spriteRotationOffset;
-        b.shotTimer = Math.min(FISHING_RING.shotDuration, b.shotTimer + dt);
-        const t = b.shotTimer / FISHING_RING.shotDuration;
+        b.shotTimer = Math.min(b.shotDuration, b.shotTimer + dt);
+        const t = b.shotTimer / b.shotDuration;
         b.tipX = a.x + (bPt.x - a.x) * t;
         b.tipY = a.y + (bPt.y - a.y) * t;
         fishingTryTipCatch(fm);
-      } else if (b.retractTimer < FISHING_RING.retractDuration) {
+      } else if (b.retractTimer < b.retractDuration) {
         b.weaponSpinDeg = 0;
         b.frozenWeaponAngleDeg = Math.atan2(bPt.y - a.y, bPt.x - a.x) * 180 / Math.PI + FISHING_BRIDGE_ART.spriteRotationOffset;
-        b.retractTimer = Math.min(FISHING_RING.retractDuration, b.retractTimer + dt);
-        const t = b.retractTimer / FISHING_RING.retractDuration;
+        b.retractTimer = Math.min(b.retractDuration, b.retractTimer + dt);
+        const t = b.retractTimer / b.retractDuration;
         b.tipX = bPt.x + (a.x - bPt.x) * t;
         b.tipY = bPt.y + (a.y - bPt.y) * t;
       } else if (b.caughtFish) {
@@ -1414,7 +1420,7 @@
 
     const baseAngleDeg = Math.atan2(dy, dx) * 180 / Math.PI + art.spriteRotationOffset;
     const b = fishingMinigame.bridge;
-    const isOutbound = b.spearActive && b.shotTimer < FISHING_RING.shotDuration;
+    const isOutbound = b.spearActive && b.shotTimer < b.shotDuration;
     let angleDeg = baseAngleDeg;
     if (useMace) {
       if (isOutbound) angleDeg = baseAngleDeg + (b.weaponSpinDeg || 0);
