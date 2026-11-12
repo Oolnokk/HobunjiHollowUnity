@@ -163,7 +163,14 @@
         const trim = document.createElement('canvas');
         trim.width = right - left + 1; trim.height = bottom - top + 1;
         trim.getContext('2d').drawImage(bounds, left, top, trim.width, trim.height, 0, 0, trim.width, trim.height);
-        flailFishingHeadImages.set(head, { src: trim.toDataURL('image/png'), aspect: trim.width / trim.height });
+        const contactLayer = head.layers.find(layer => layer.id === head.anchorLayer) || head.layers[0]; // True authored chain-to-head connection, not the visual bitmap centre.
+        const sourceAnchor = head.anchor || null; // Tool Hub's existing head contact, in original sheet pixels.
+        const offsetX = Number(contactLayer?.offsetPx?.x) || 0, offsetY = Number(contactLayer?.offsetPx?.y) || 0;
+        const anchorU = sourceAnchor && Number.isFinite(Number(sourceAnchor.x))
+          ? Math.max(0, Math.min(1, ((Number(sourceAnchor.x) + offsetX - minX) - left) / trim.width)) : .5;
+        const anchorV = sourceAnchor && Number.isFinite(Number(sourceAnchor.y))
+          ? Math.max(0, Math.min(1, ((Number(sourceAnchor.y) + offsetY - minY) - top) / trim.height)) : .5;
+        flailFishingHeadImages.set(head, { src: trim.toDataURL('image/png'), aspect: trim.width / trim.height, anchorU, anchorV }); // Ring rope and rotation share this contact point.
       } catch (error) {
         // A tainted source still displays its authored anchor layer; never substitute a detached mace shaft.
         const fallback = parts.find(part => part.img.src);
@@ -1498,8 +1505,8 @@
     const spriteW = isFlail ? 38 : art.spriteWidth; // A compact metal head, compared with the long native spear/mace shaft.
     const spriteH = isFlail ? Math.max(18, Math.min(64, spriteW / Math.max(.15, head.aspect))) : art.spriteHeight;
     fishingEls.spearImage.setAttribute('href', spriteSrc);
-    fishingEls.spearImage.setAttribute('x', (-spriteW * .5).toFixed(2));
-    fishingEls.spearImage.setAttribute('y', (isFlail || mode === 'spin' ? -spriteH * .5 : -art.spearAttachFront).toFixed(2));
+    fishingEls.spearImage.setAttribute('x', (isFlail ? -(head.anchorU ?? .5) * spriteW : -spriteW * .5).toFixed(2));
+    fishingEls.spearImage.setAttribute('y', (isFlail ? -(head.anchorV ?? .5) * spriteH : mode === 'spin' ? -spriteH * .5 : -art.spearAttachFront).toFixed(2)); // The rope terminus, rotation pivot and actual fitted head anchor coincide; native sprites stay unchanged.
     fishingEls.spearImage.setAttribute('width', spriteW.toFixed(2));
     fishingEls.spearImage.setAttribute('height', spriteH.toFixed(2));
     fishingEls.spearImage.setAttribute('transform', 'scale(1 -1)');
