@@ -136,10 +136,18 @@ assert.equal(xray.classify(solidRock).ground, false, 'rock props remain true dep
 const billboard = mesh(exterior, untaggedMaterial,
   { mapEditorTerrain: { mapId: 'map_western_slope' }, isWildernessGrassChunk: true });
 assert.equal(xray.classify(billboard).ground, false, 'grass billboards keep the protective cover classification');
+const water = mesh(exterior, untaggedMaterial,
+  { mapEditorTerrain: { mapId: 'map_western_slope' }, waterSurfaceRole: 'flood' });
+assert.equal(xray.classify(water).ground, false, 'water stays a protected cover even above x-ray ground');
+const snow = mesh(exterior, untaggedMaterial,
+  { mapEditorTerrain: { mapId: 'map_western_slope' }, environmentSurfaceMicroPlateau: true });
+assert.equal(xray.classify(snow).ground, false, 'snow retains its occlusion regardless of neighboring terrain materials');
 xray.scanScene(exterior);
 assert.equal(solidRock.userData.hobunjiHeldGroundReplay, undefined, 'rock props never enter ground depth restore');
 assert.equal(rockyMound.userData.hobunjiHeldGroundReplay, undefined, 'merged rocky mounds keep solid depth');
 assert.equal(billboard.userData.hobunjiHeldGroundReplay, undefined, 'grass billboards never enter ground depth restore');
+assert.equal(water.userData.hobunjiHeldGroundReplay, undefined, 'water never enters the ground replay');
+assert.equal(snow.userData.hobunjiHeldGroundReplay, undefined, 'snow never enters the ground replay');
 assert(xray.snapshot().farmhouseFloorMeshes >= 2, 'preexisting and newly rebuilt farmhouse floors join depth replay');
 assert(xray.snapshot().interiorFloorMeshes >= 6, 'authored, cavern, V50 and stone-age interior floors all register for depth replay');
 
