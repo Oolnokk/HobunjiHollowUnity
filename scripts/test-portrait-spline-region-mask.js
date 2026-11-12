@@ -46,38 +46,23 @@ assert.equal(bits[idx(90,120)],0,'hair outside head defaults to flexible');
 assert.equal(bits[idx(125,70)],0,'head without hair is never added to a cosmetic region mask');
 assert.equal(bits[idx(80,80)],0,'transparent holes inside the hair remain unassigned');
 assert.equal(bits.reduce((a,b)=>a+b,0),51*41-1,'mask uses the full true alpha overlap, not a finite seam span');
-const split=Rig.splitByMask(hair,mask);
 const pixel=(canvas,x,y)=>Array.from(canvas.pixels.slice(idx(x,y)*4,idx(x,y)*4+4));
-assert.deepEqual(pixel(split.rigid,90,70),[90,65,45,255],'overlapping beard pixels stay on the undeformed portrait');
-assert.deepEqual(pixel(split.flexible,90,70),[90,65,45,0],'the moving mesh has no double-painted rigid pixels');
-assert.deepEqual(pixel(split.rigid,90,120),[90,65,45,0],'static portrait contains no free-hanging beard pixels');
-assert.deepEqual(pixel(split.flexible,90,120),[90,65,45,255],'free-hanging beard pixels remain on the deformable spline');
+const prepared=Rig.prepareSplineTexture(hair);
+assert.deepEqual(pixel(prepared,90,70),pixel(hair,90,70),'the single contiguous hair texture retains every opaque source pixel');
+assert.deepEqual(pixel(prepared,90,120),pixel(hair,90,120),'flexible hanging hair stays in the same sprite as anchored beard pixels');
+assert.deepEqual(pixel(prepared,90,59),[90,65,45,1],
+  'transparent edge gets matching beard RGB with sub-alpha-test coverage instead of a black filter halo');
+assert.deepEqual(pixel(prepared,90,58),[90,65,45,1],
+  'two-pixel transparent guard band protects angled and minified sampling');
+assert.deepEqual(pixel(hair,90,59),[0,0,0,0],
+  'anti-dark-edge texture preparation never corrupts the original indexed cosmetics');
 for(let i=0;i<200*200;i++){
-  assert.equal(split.rigid.pixels[i*4+3]+split.flexible.pixels[i*4+3],hair.pixels[i*4+3],
-    'the pixel partition must preserve original alpha at '+i);
+  const original=hair.pixels[i*4+3],preparedAlpha=prepared.pixels[i*4+3];
+  if(original>=8)assert.equal(preparedAlpha,original,'no original opaque pixel may be altered at '+i);
+  else assert(preparedAlpha<=1,'a guard-band pixel must remain below the material alpha-test threshold at '+i);
 }
-const seamWidth=Rig.stitchWidthPx({segmentsX:24,segmentsY:32});
-assert(seamWidth>=10&&seamWidth<=14,'auto seam collar covers at least a whole vertex-grid cell without dense remeshing');
-const joined=Rig.splitByMask(hair,mask,{stitchPx:seamWidth});
-assert(joined.stitchedPixels>0,'hair/head join transfers a real strip of rigid artwork into the contiguous flex mesh');
-assert.deepEqual(pixel(joined.rigid,90,95),[90,65,45,0],
-  'pixels inside the original rigid region near the bend move onto the anchored part of the same mesh');
-assert.deepEqual(pixel(joined.flexible,90,95),[90,65,45,255],
-  'the moving hair mesh extends across the former cut into a non-deforming collar');
-assert.deepEqual(pixel(joined.rigid,90,70),[90,65,45,255],
-  'deeply attached artwork remains on the flat original portrait');
-assert.deepEqual(pixel(joined.flexible,90,70),[90,65,45,0],
-  'the mesh collar does not needlessly duplicate all head-attached artwork');
-assert.deepEqual(pixel(joined.flexible,90,105),[90,65,45,255],
-  'the same unbroken PNG surface continues across the old moving/static boundary');
-for(let i=0;i<200*200;i++){
-  assert.equal(joined.rigid.pixels[i*4+3]+joined.flexible.pixels[i*4+3],hair.pixels[i*4+3],
-    'seam stitch must transfer, never duplicate/drop, the original artwork at pixel '+i);
-}
-const beforeSeam=Rig.splitByMask(hair,mask,{stitchPx:0});
-assert.equal(beforeSeam.stitchedPixels,0,'zero-width seam request preserves exact legacy mask ownership');
-assert.deepEqual(pixel(beforeSeam.rigid,90,95),[90,65,45,255],
-  'existing exact-split callers continue to own the rigid border on the flat portrait');
+assert.equal(typeof Rig.splitByMask,'undefined',
+  'hair can no longer be cut into two separate artwork textures at a visible black boundary');
 const extend=Rig.paintPixelMask(mask,(90.5)/200,(120.5)/200,3,true);
 assert.equal(Rig.decodePixelMask(extend)[idx(90,120)],1,'brush can anchor previously flexible pixels');
 const erase=Rig.paintPixelMask(extend,90.5/200,70.5/200,3,false);
@@ -92,27 +77,29 @@ assert.equal(normalized.regionMasks.rear.runs.length,0,'rear mask is independent
 assert.equal(Rig.decodePixelMask(normalized.regionMasks.front)[idx(90,70)],1);
 assert.equal(Rig.splitByMask(hair,null).flexible,hair,'legacy styles without a mask continue moving as before');
 assert.equal(Rig.splitByMask(hair,null).rigid,null,'legacy styles do not acquire phantom head attachments');
-const blend=Rig.attachmentBlendField(mask,18); // Cached pixel-distance weights, shared by game renderer and 3D author.
-assert(blend&&blend.length===40000,'rigid/flexible transition uses a full portrait-grid influence field');
-assert.equal(Rig.sampleAttachmentBlend(blend,90.5/200,70.5/200),0,'rigid pixel has zero deformation influence');
-const adjacent=Rig.sampleAttachmentBlend(blend,90.5/200,101.5/200);
-const midway=Rig.sampleAttachmentBlend(blend,90.5/200,109.5/200);
-const distant=Rig.sampleAttachmentBlend(blend,90.5/200,142.5/200);
-assert(adjacent>0&&adjacent<midway&&midway<distant,'blend rises continuously with distance away from the head');
-assert.equal(distant,1,'fully flexible pixels beyond blend radius receive all authored motion');
-assert.equal(Rig.attachmentBlendField(empty,18),null,'an explicitly all-flexible style requires no distance field');
-assert.equal(Rig.attachmentBlendField(mask,0),null,'zero blend radius preserves old immediate deformation behavior');
+const pinField=Rig.attachmentPinField(mask,18);
+assert(pinField&&pinField.length===40000,'binary anchored vertex field covers the full portrait UV grid');
+assert.equal(Rig.isPinnedPixel(pinField,90.5/200,70.5/200),true,
+  'head-overlap hair vertices always stay fixed');
+assert.equal(Rig.isPinnedPixel(pinField,90.5/200,111.5/200),true,
+  'hard head grip extends beyond the authored rigid region without a graded influence');
+assert.equal(Rig.isPinnedPixel(pinField,90.5/200,142.5/200),false,
+  'the hanging tip is completely free once outside the grip');
+assert.equal(Rig.attachmentPinField(empty,18),null,
+  'explicitly all-flexible hair has no phantom anchored vertices');
+assert.equal(Rig.isPinnedPixel(null,.5,.5),false,'legacy unmasked hair remains movable');
 const reference=Rig.normalize({points:[{u:.45,v:.30,depth:.02},{u:.47,v:.55,depth:.03}],
-  segments:[{deadzone:{x:0,y:0,z:0},poses:{right:{translate:{x:.1}}}}],blendRadiusPx:18});
+  segments:[{deadzone:{x:0,y:0,z:0},poses:{right:{translate:{x:.1}}}}],pinWidthPx:18});
 const rest=Rig.posePoints(reference).points,moved=Rig.posePoints(reference,{x:1}).points;
-const still=Rig.deformPosition(reference,moved,.46,.45,1,1,0);
-const blended=Rig.deformPosition(reference,moved,.46,.45,1,1,.5);
-const free=Rig.deformPosition(reference,moved,.46,.45,1,1,1);
-const neutral=Rig.deformPosition(reference,rest,.46,.45,1,1,1);
-assert(Math.abs(still.x-neutral.x)<1e-9,'a rigid boundary vertex stays at its neutral location');
-assert(Math.abs(still.z-.0008)<1e-9,'anchored mesh collar sits exactly on the rigid preview portrait depth, not .003 above it');
-assert(free.z>blended.z&&blended.z>still.z,'attachment depth is continuously tapered to prevent a visible 3D ledge');
-assert(free.x>blended.x&&blended.x>still.x,'automatic blend controls vertex motion rather than fading the original artwork');
+const pinned=Rig.deformPosition(reference,moved,.46,.45,1,1,true);
+const free=Rig.deformPosition(reference,moved,.46,.45,1,1,false);
+const neutral=Rig.deformPosition(reference,rest,.46,.45,1,1,false);
+assert(Math.abs(pinned.x-(.46-.5))<1e-9,'pinned hair position exactly matches portrait X coordinate');
+assert(Math.abs(pinned.y-(.5-.45))<1e-9,'pinned hair position exactly matches portrait Y coordinate');
+assert(Math.abs(pinned.z-.0008)<1e-9,'pinned hair depth is fixed flush against the portrait plane');
+assert(free.x>neutral.x,'outside the rigid region, hair gets the full authored movement');
+assert.equal(reference.pinWidthPx,18,'new head-grip radius round-trips without restoring influence blends');
+assert(!('blendRadiusPx' in reference),'legacy blendRadiusPx is ignored and dropped from exported rigs');
 const defaultWind=Rig.makeDefaultSegments([{u:.5,v:.2},{u:.5,v:.5},{u:.5,v:.8}]);
 assert(defaultWind[1].poses.left.translate.x<0&&defaultWind[1].poses.right.translate.x>0,
   'default wind directions use opposite, shape-scaled motions, not six empty poses');
@@ -120,9 +107,9 @@ const suggested=Rig.suggestRestPoints(hair,head);
 assert(suggested&&suggested.length===3&&suggested[0].v<suggested[1].v&&suggested[1].v<suggested[2].v,
   'rest spline is fitted to opaque hair bounds and head-overlapping root, rather than fixed coordinates');
 const portrait=fs.readFileSync(path.join(root,'docs/js/portrait-utils.js'),'utf8');
-assert(portrait.includes('ctx.drawImage(layers.rigid, 0, 0'),'rigid pixels must be composited on the original game portrait');
-assert(portrait.includes('canvas: layers?.flexible || partCanvas'),'only flexible pixels and their pinned collar enter the 3D spline');
-assert(portrait.includes('stitchPx: window.PortraitSplineRig.stitchWidthPx(rig)'),
-  'game renderer enables the same automatically sized pinned collar as the 3D editor');
-assert(!portrait.includes('warpHoodCanvas?.('),'hoods are not carved by the old seam author');
-console.log('Rigid/flexible spline masks: alpha ownership, contiguous pinned seam mesh, 3D depth alignment, brush, eraser and RLE pass.');
+assert(portrait.includes('canvas.hobunjiSplineParts.push({ key, slot, rig, canvas: partCanvas'),
+  'the game sends all rigid and flexible pixels on ONE continuous textured mesh');
+assert(!portrait.includes('splitByMask?.('),
+  'in-game avatar no longer cuts the single hair image at the formerly visible black seam');
+assert(!portrait.includes('warpHoodCanvas?.('),'hoods remain outside the old seam authoring path');
+console.log('Single-mesh spline region masks: alpha overlap, binary head grip, untouched artwork, guarded edges, brush, eraser and RLE pass.');
