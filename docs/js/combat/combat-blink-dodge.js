@@ -27,6 +27,9 @@
   const afterimageTravelByActor = new WeakMap(); // Stores per-action traveled distance without allocating state every frame.
   const AFTERIMAGE_HOP_SAMPLES = 3; // Used by spawnHopAfterimages() to bridge the instantaneous Blink hop with frozen portraits along its traveled path.
   const AFTERIMAGE_MAX_ACTIVE = 24; // Shared cap sized for simultaneous player/enemy dodge-lunge bursts while still bounding transient portrait GPU objects.
+  const AFTERIMAGE_MAX_POOLED_ENTRIES = 24; // Maximum detached portrait mesh/material/texture sets retained for reuse between short combat movements.
+  const AFTERIMAGE_POOL_IDLE_S = 4; // Maximum time an unused snapshot remains GPU-resident after the last dodge, lunge, or Blink burst.
+  const AFTERIMAGE_TEXTURE_SLOTS = ['map', 'alphaMap', 'emissiveMap']; // Shared texture slots checked and refreshed when reusing a frozen portrait.
 
   const blinkRuntimeDebug = { // Updated by the hold state machine and exposed through HobunjiDodgeFeedback for mobile-readable diagnostics.
     active: false,
@@ -54,6 +57,8 @@
   let iframeMissCount = 0; // Used by HobunjiDodgeFeedback.getDebug() to confirm iframe-hit attempts reached this shared combat seam.
   let lastIframeMissAtMs = null; // Used by HobunjiDodgeFeedback.getDebug() to timestamp the most recent visible miss popup.
   const blinkAfterimages = []; // Used by updateBlinkAfterimages() as the complete bounded set of live frozen portrait snapshots.
+  const afterimageEntryPool = []; // Detached frozen portrait entries reused across player/NPC lunges instead of reallocating meshes, canvases, GPU textures, and materials.
+  let lastAfterimagePoolPruneAtS = -Infinity; // Throttles idle-pool disposal to once per second while combat updates are running.
   const cachedAfterimagePortraits = new WeakMap(); // Root -> portrait meshes cache reused by player and humanoid-enemy trail samples without re-traversing unchanged rigs.
   const enemyAfterimageMotion = new WeakMap(); // Enemy -> last dodge/lunge sample state used to rate-limit hostile portrait trails independently.
   let lastMoveAfterimageAtS = -Infinity; // Used by maybeSpawnMovementAfterimage() to rate-limit normal Blink locomotion samples.
@@ -72,6 +77,11 @@
     enemySnapshots: 0,
     enemyCombatants: 0,
     playerCombatFrown: false,
+    pooled: 0,
+    entriesCreated: 0,
+    entriesReused: 0,
+    textureRefreshes: 0,
+    poolEvictions: 0,
   };
 
   function now() { return performance.now() / 1000; }
@@ -157,17 +167,17 @@
     return window.GridTileAccessors?.getActiveScene?.() || null;
   }
 
-  function bakePortraitGeometry(source) {
+  function bakePortraitGeometry(source, reusableGeometry = null) {
     const THREE = window.THREE;
     const sourceGeometry = source?.geometry;
     if (!THREE || !sourceGeometry?.clone) return null;
-    const geometry = sourceGeometry.clone();
+    const geometry = reusableGeometry || sourceGeometry.clone(); // Reuses the same ghost buffer on later lunges while keeping it independent of the actor.
     if (source.isSkinnedMesh && typeof source.boneTransform === 'function') {
       const sourcePositions = sourceGeometry.getAttribute?.('position');
       const bakedPositions = geometry.getAttribute?.('position');
-      if (!sourcePositions || !bakedPositions) return geometry;
+      if (!sourcePositions || !bakedPositions || sourcePositions.count !== bakedPositions.count) return null;
       source.skeleton?.update?.();
-      const vertex = new THREE.Vector3(); // Reused for every vertex while freezing this one afterimage's current skinned pose.
+      const vertex = new THREE.Vector3(); // Reused across all vertices in this one pose-bake pass.
       for (let i = 0; i < sourcePositions.count; i += 1) {
         vertex.fromBufferAttribute(sourcePositions, i);
         source.boneTransform(i, vertex);
@@ -176,8 +186,8 @@
       bakedPositions.needsUpdate = true;
       geometry.deleteAttribute?.('skinIndex');
       geometry.deleteAttribute?.('skinWeight');
-      geometry.computeBoundingBox?.();
-      geometry.computeBoundingSphere?.();
+      // These ghosts opt out of frustum culling because their parent transforms
+      // are frozen. Skipping per-sample bounding-volume recomputation is safe.
     }
     return geometry;
   }
@@ -251,10 +261,89 @@
     afterimageRuntimeDebug.active = blinkAfterimages.length;
   }
 
+  function recycleAfterimage(record) {
+    if (!record) return;
+    const pooledAtS = now(); // Starts each detached entry's short idle-retention window.
+    for (const entry of record.entries || []) {
+      entry.mesh?.parent?.remove?.(entry.mesh);
+      entry.pooledAtS = pooledAtS;
+      if (afterimageEntryPool.length >= AFTERIMAGE_MAX_POOLED_ENTRIES) {
+        const evicted = afterimageEntryPool.shift(); // Bounded FIFO prevents inactive NPCs from retaining GPU resources indefinitely.
+        disposeAfterimage({ entries: [evicted] });
+        afterimageRuntimeDebug.poolEvictions += 1;
+      }
+      afterimageEntryPool.push(entry);
+    }
+    afterimageRuntimeDebug.pooled = afterimageEntryPool.length;
+  }
+
+  function pruneAfterimagePool() {
+    if (!afterimageEntryPool.length) return;
+    const t = now(); // Used to expire detached GPU resources even after combat activity stops.
+    if (t - lastAfterimagePoolPruneAtS < 1) return;
+    lastAfterimagePoolPruneAtS = t;
+    for (let i = afterimageEntryPool.length - 1; i >= 0; i -= 1) {
+      if (t - afterimageEntryPool[i].pooledAtS < AFTERIMAGE_POOL_IDLE_S) continue;
+      const entry = afterimageEntryPool.splice(i, 1)[0];
+      disposeAfterimage({ entries: [entry] });
+      afterimageRuntimeDebug.poolEvictions += 1;
+    }
+    afterimageRuntimeDebug.pooled = afterimageEntryPool.length;
+  }
+
+  function takePooledAfterimageEntry(source, sourceMaterials) {
+    for (let i = afterimageEntryPool.length - 1; i >= 0; i -= 1) {
+      const entry = afterimageEntryPool[i];
+      if (entry.sourceGeometry !== source.geometry || entry.sourceSkinned !== !!source.isSkinnedMesh) continue;
+      if (entry.sourceMaterials.length !== sourceMaterials.length) continue;
+      if (!sourceMaterials.every((material, m) => (
+        material === entry.sourceMaterials[m]
+        && AFTERIMAGE_TEXTURE_SLOTS.every((slot, j) => material[slot] === entry.sourceTextures[m][j])
+      ))) continue; // A swapped outfit, face map or material never inherits a stale snapshot.
+      afterimageEntryPool.splice(i, 1);
+      afterimageRuntimeDebug.pooled = afterimageEntryPool.length;
+      return entry;
+    }
+    return null;
+  }
+
+  function refreshPooledAfterimageTextures(entry, sourceMaterials) {
+    // Check all destinations first: a resized/replaced image invalidates the
+    // pooled texture rather than silently drawing a stretched or stale portrait.
+    for (let m = 0; m < sourceMaterials.length; m += 1) {
+      for (const slot of AFTERIMAGE_TEXTURE_SLOTS) {
+        const texture = sourceMaterials[m][slot];
+        if (!texture) continue;
+        const image = texture.image;
+        const canvas = entry.materials[m]?.[slot]?.image;
+        const width = Number(image?.width || image?.videoWidth || image?.naturalWidth) || 0;
+        const height = Number(image?.height || image?.videoHeight || image?.naturalHeight) || 0;
+        if (!image || !canvas?.getContext || canvas.width !== width || canvas.height !== height) return false;
+      }
+    }
+    try {
+      for (let m = 0; m < sourceMaterials.length; m += 1) {
+        for (const slot of AFTERIMAGE_TEXTURE_SLOTS) {
+          const sourceTexture = sourceMaterials[m][slot];
+          if (!sourceTexture) continue;
+          const frozen = entry.materials[m][slot];
+          const canvas = frozen.image;
+          const context = canvas.getContext('2d');
+          if (!context) return false;
+          context.clearRect(0, 0, canvas.width, canvas.height);
+          context.drawImage(sourceTexture.image, 0, 0, canvas.width, canvas.height);
+          frozen.needsUpdate = true;
+          afterimageRuntimeDebug.textureRefreshes += 1;
+        }
+      }
+    } catch (_) { return false; }
+    return true;
+  }
+
   function trimAfterimagesToLimit() {
     while (blinkAfterimages.length >= AFTERIMAGE_MAX_ACTIVE) {
       const oldest = blinkAfterimages.shift();
-      disposeAfterimage(oldest);
+      recycleAfterimage(oldest);
     }
   }
 
@@ -264,54 +353,71 @@
     const sources = findPortraitMeshes(root);
     const scene = sources.length ? afterimageSceneFor(sources[0]) : null;
     if (!THREE || !sources.length || !scene) return false;
+    scene.updateWorldMatrix?.(true, false);
+    const worldToScene = scene.matrixWorld?.clone?.()?.invert?.() || null; // One parent-space conversion per snapshot, not one per portrait plane.
     const entries = [];
     for (const source of sources) {
-      source.updateWorldMatrix?.(true, true); // Refresh each portrait plane and its child bones so the frozen snapshot carries the exact current pose/expression frame.
-      const geometry = bakePortraitGeometry(source);
-      if (!geometry) continue;
+      source.updateWorldMatrix?.(true, !!source.isSkinnedMesh); // Refresh parent transforms and, for skinned rigs, the child bones before freezing the pose.
       const sourceMaterials = afterimageMaterialsOf(source);
-      const clones = sourceMaterials.map(material => cloneAfterimageMaterial(material, opacityScale)); // Each clone deep-copies its portrait texture pixels so expression/breathing changes on the live actor cannot alter an existing ghost.
-      if (!clones.length || clones.some(clone => !clone?.material)) {
-        geometry.dispose?.();
-        for (const clone of clones) {
-          clone?.material?.dispose?.();
-          for (const texture of clone?.frozenTextures || []) texture?.dispose?.();
+      let entry = takePooledAfterimageEntry(source, sourceMaterials); // Reuse an exact matching topology; never share live materials or textures.
+      if (entry && (!refreshPooledAfterimageTextures(entry, sourceMaterials) || !bakePortraitGeometry(source, entry.geometry))) {
+        disposeAfterimage({ entries: [entry] });
+        entry = null;
+      }
+      if (!entry) {
+        const geometry = bakePortraitGeometry(source);
+        if (!geometry) continue;
+        const clones = sourceMaterials.map(material => cloneAfterimageMaterial(material, opacityScale)); // New entries freeze independent canvases; later samples draw into those same canvases.
+        if (!clones.length || clones.some(clone => !clone?.material)) {
+          geometry.dispose?.();
+          for (const clone of clones) {
+            clone?.material?.dispose?.();
+            for (const texture of clone?.frozenTextures || []) texture?.dispose?.();
+          }
+          continue;
         }
-        continue;
-      }
-      const materials = clones.map(clone => clone.material);
-      const frozenTextures = clones.flatMap(clone => clone.frozenTextures || []);
-
-      const assignedMaterial = Array.isArray(source.material) ? materials : materials[0];
-      const mesh = new THREE.Mesh(geometry, assignedMaterial);
-      mesh.name = 'combat_portrait_afterimage';
-      mesh.userData.blinkAfterimage = true;
-      mesh.userData.noOutline = true;
-      mesh.frustumCulled = false;
-      mesh.castShadow = false;
-      mesh.receiveShadow = false;
-      mesh.renderOrder = Math.max(Number(source.renderOrder) || 0, 3);
-      mesh.matrixAutoUpdate = false;
-      const worldMatrix = source.matrixWorld.clone(); // Frozen world transform of this visible front/back plane before detaching it from the moving actor hierarchy.
-      worldMatrix.elements[12] += Number(worldOffsetX) || 0;
-      worldMatrix.elements[14] += Number(worldOffsetZ) || 0;
-      scene.updateWorldMatrix?.(true, false);
-      if (scene.matrixWorld?.clone) {
-        const worldToScene = scene.matrixWorld.clone().invert();
-        mesh.matrix.multiplyMatrices(worldToScene, worldMatrix);
+        const materials = clones.map(clone => clone.material);
+        const frozenTextures = clones.flatMap(clone => clone.frozenTextures || []);
+        const assignedMaterial = Array.isArray(source.material) ? materials : materials[0];
+        const mesh = new THREE.Mesh(geometry, assignedMaterial);
+        mesh.name = 'combat_portrait_afterimage';
+        mesh.userData.blinkAfterimage = true;
+        mesh.userData.noOutline = true;
+        mesh.frustumCulled = false;
+        mesh.castShadow = false;
+        mesh.receiveShadow = false;
+        mesh.matrixAutoUpdate = false;
+        entry = {
+          mesh, geometry, materials, frozenTextures,
+          baseOpacities: materials.map(material => material.opacity),
+          sourceMaterials: sourceMaterials.slice(),
+          sourceTextures: sourceMaterials.map(material => AFTERIMAGE_TEXTURE_SLOTS.map(slot => material[slot])),
+          sourceGeometry: source.geometry,
+          sourceSkinned: !!source.isSkinnedMesh,
+          sourceName: source.name || source.type || null,
+        };
+        afterimageRuntimeDebug.entriesCreated += 1;
       } else {
-        mesh.matrix.copy(worldMatrix);
+        afterimageRuntimeDebug.entriesReused += 1;
       }
-      mesh.matrixWorldNeedsUpdate = true;
-      if (source.layers) mesh.layers.mask = source.layers.mask;
-      entries.push({
-        mesh,
-        geometry,
-        materials,
-        frozenTextures,
-        baseOpacities: materials.map(material => material.opacity),
-        sourceName: source.name || source.type || null,
-      });
+      for (let m = 0; m < entry.materials.length; m += 1) {
+        const material = entry.materials[m];
+        const original = sourceMaterials[m];
+        const sourceOpacity = Number.isFinite(Number(original.opacity)) ? Number(original.opacity) : 1;
+        const baseOpacity = Math.max(0, Math.min(1, AFTERIMAGE_BASE_OPACITY * opacityScale * sourceOpacity)); // Restores fresh opacity after a previous fade.
+        material.opacity = baseOpacity;
+        entry.baseOpacities[m] = baseOpacity;
+        material.color?.copy?.(original.color);
+        material.emissive?.copy?.(original.emissive);
+      }
+      entry.mesh.renderOrder = Math.max(Number(source.renderOrder) || 0, 3);
+      entry.mesh.matrix.copy(source.matrixWorld); // No extra world-matrix allocations on every portrait sample.
+      entry.mesh.matrix.elements[12] += Number(worldOffsetX) || 0;
+      entry.mesh.matrix.elements[14] += Number(worldOffsetZ) || 0;
+      if (worldToScene) entry.mesh.matrix.multiplyMatrices(worldToScene, entry.mesh.matrix);
+      entry.mesh.matrixWorldNeedsUpdate = true;
+      if (source.layers) entry.mesh.layers.mask = source.layers.mask;
+      entries.push(entry);
     }
     if (!entries.length) return false;
 
@@ -429,16 +535,18 @@
     for (let i = blinkAfterimages.length - 1; i >= 0; i -= 1) {
       const record = blinkAfterimages[i];
       record.ageS += safeDt;
+      if (record.ageS >= AFTERIMAGE_LIFETIME_S) {
+        blinkAfterimages.splice(i, 1);
+        recycleAfterimage(record);
+        continue;
+      }
       const fade = Math.max(0, 1 - record.ageS / AFTERIMAGE_LIFETIME_S);
       for (const entry of record.entries || []) {
         for (let m = 0; m < entry.materials.length; m += 1) entry.materials[m].opacity = entry.baseOpacities[m] * fade;
       }
-      if (record.ageS >= AFTERIMAGE_LIFETIME_S) {
-        blinkAfterimages.splice(i, 1);
-        disposeAfterimage(record);
-      }
     }
     afterimageRuntimeDebug.active = blinkAfterimages.length;
+    pruneAfterimagePool();
   }
 
   function showIframeMissPopup() {
@@ -770,6 +878,8 @@
             afterimageForcedMoveIntervalS: AFTERIMAGE_FORCED_MOVE_INTERVAL_S,
             afterimageHopSamples: AFTERIMAGE_HOP_SAMPLES,
             afterimageMaxActive: AFTERIMAGE_MAX_ACTIVE,
+            afterimageMaxPooledEntries: AFTERIMAGE_MAX_POOLED_ENTRIES,
+            afterimagePoolIdleS: AFTERIMAGE_POOL_IDLE_S,
           },
         },
       };
