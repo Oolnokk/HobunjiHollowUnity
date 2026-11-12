@@ -19,7 +19,7 @@
 
   const SESSION_KEY = 'hobunji_ui_element_editor_overrides_v1';
   const SHOW_TOGGLE_KEY = 'hobunji_ui_element_editor_show_v1';
-  const BASE_CONFIG_URL = 'config/ui/ui-element-editor-overrides.json';
+  const BASE_CONFIG_URL = 'config/ui/ui-element-editor-overrides.json?v=20261112keyPack2'; // Invalidate old shipped zero-height Key Items overrides after this UI migration.
 
   const FIELD_DEFS = [
     { key: 'text',           label: 'Text Content',    type: 'textarea', leafOnly: true },
@@ -934,7 +934,7 @@
     baseline = await loadBaseline();
     // Older shipped UI defaults accidentally forced the Key Items list to height:0.
     // A copied session override must not keep the newly functional inventory section hidden on reload.
-    if (stored?.elements?.['#invKeyList']?.height === '0' && baseline.elements?.['#invKeyList']?.height == null) {
+    if (stored?.elements?.['#invKeyList']?.height === '0') { // This exact obsolete baseline value was never a usable Pack layout.
       delete stored.elements['#invKeyList'].height;
       if (!Object.keys(stored.elements['#invKeyList']).length) delete stored.elements['#invKeyList'];
     }
