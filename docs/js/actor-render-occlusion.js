@@ -212,7 +212,7 @@
     stats.visible=0; stats.probes=0; stats.pending=0;
     if (!enabled || !THREE || !args?.camera || !args.scene) return;
     const {renderer,camera,scene:activeScene,walkers,hostiles,playerPosition,area} = args;
-    const corpses = args.corpseObjects ?? window.Combat?.deps?.corpseObjects; // Canonical corpse registry; game.js currently passes only living hostiles.
+    const corpses = args.corpseObjects ?? window.BanditCorpseRetirement?.getCorpseObjects?.() ?? window.Combat?.deps?.corpseObjects; // Shared corpse registry owned by retirement; game.js passes only living hostiles.
     currentRenderer=renderer; currentCamera=camera; currentScene=activeScene; currentArea=area||'';
     stats.gpuAvailable = supportsQueries(renderer);
     camera.updateMatrixWorld?.(true);
