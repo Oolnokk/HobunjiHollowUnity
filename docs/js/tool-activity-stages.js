@@ -39,8 +39,9 @@
     return ['thrust', 'sweep', 'chop'].includes(tool.animStyle) ? tool.animStyle : 'sweep';
   }
 
-  // Rebase every modular tool stroke onto its tool-slot Neutral without changing the assembled weapon's
-  // attack trajectory, including mining and fishing. Only a Pick-Shovel shaft keeps its original flipped jab.
+  // Rebase modular tool work onto its tool-slot Neutral, keeping the assembled weapon's attack style.
+  // Mining rotates a weapon stroke into an overhead hit; fishing instead uses its own existing spear/spin throws.
+  // The reversible Pick-Shovel haft is the lone mining exception and keeps its original flipped jab.
   function workPoseFor(slot, itemKey, def, dirSign = 1) {
     const style = workStyleFor(slot, itemKey, def);
     if (!style || (slot === 'pick' && def?.modular?.shaft === 'pick-shovel')) return null;
@@ -66,7 +67,20 @@
     const neutral = { ...base, ...toolNeutral, bodyYaw: 0 }; // Tool idle body yaw is not applied to playerMesh; keep authored weapon rotation as movement, never a rest offset.
     const windup = phase(source.windup);
     const strike = phase(source.strike);
-    return { neutral, windup, strike }; // Original weapon trajectory preserved for every tool slot.
+    if (slot === 'pick' && style === 'sweep') {
+      // Rotate the SAME authored forehand/backhand sweep travel into the overhead plane:
+      // the head lifts and comes down while the body stays at its visible tool-slot Neutral.
+      const windupYaw = (Number(source.windup.bodyYaw) || 0) - (Number(base.bodyYaw) || 0);
+      const strikeYaw = (Number(source.strike.bodyYaw) || 0) - (Number(base.bodyYaw) || 0);
+      windup.pitch += windupYaw * flip; strike.pitch += strikeYaw * flip;
+      windup.bodyYaw = neutral.bodyYaw; strike.bodyYaw = neutral.bodyYaw;
+      windup.y += .18; strike.y -= .10; // Above shoulder on Windup, downward to the rock on Strike.
+    } else if (slot === 'pick' && style === 'thrust') {
+      windup.pitch -= 75; strike.pitch += 60; // Convert the pair's own backward/forward thrust to a top-down spike.
+      windup.y += .25; strike.y -= .20;
+      windup.z -= .12; strike.z -= .12; // Keep the stab near the rock instead of reaching through the player's torso.
+    }
+    return { neutral, windup, strike }; // Every stage returns to the same carried Neutral without a mirrored idle snap.
   }
 
   let lastPlayerWork = null; // On-demand mobile diagnostics for the most recently sampled modular tool stage.
