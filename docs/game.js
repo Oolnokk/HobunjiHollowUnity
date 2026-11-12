@@ -13588,7 +13588,7 @@
               else if ((this._offAreaLegsDt = (this._offAreaLegsDt || 0) + dt) >= NPC_OFF_AREA_LEGS_INTERVAL_S) { this.legs.update(this._offAreaLegsDt, this._moveSpeedTiles, true, seatedPose, { allowSpeedRun: this._npcRunning }); this._offAreaLegsDt = 0; }
             }
             if (this._npcRunLeanPivot) {
-              const pitch = isVisibleArea && this._npcRunning && !seatedPose ? (Number(this.legs?.getRunLean?.()) || 0) : 0; // The canonical leg gait supplies the same run-lean strength used by the player.
+              const pitch = isVisibleArea && (this._npcRunning || appearance.speciesId === 'longoran') && !seatedPose ? (Number(this.legs?.getRunLean?.()) || 0) : 0; // Longoran lurch even at walking pace; other NPCs keep run-only pitch. // The canonical leg gait supplies the same run-lean strength used by the player.
               if (pitch > 0.0001) {
                 const heading = this.desiredRot - root.rotation.y; // Respect actual travel direction independently of camera-facing portrait yaw/deadzones.
                 const sinHalf = Math.sin(pitch * 0.5); // Reused for this avatar's local pitch quaternion; avoids allocations in the frame loop.
