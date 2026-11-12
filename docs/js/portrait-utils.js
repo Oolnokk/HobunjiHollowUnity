@@ -1312,6 +1312,7 @@ const _MOUTH_SPECIES_MAP = {
   'engh-sho': { sprite: 'engh',     gendered: true,  masked: false },
   'engh_sho': { sprite: 'engh',     gendered: true,  masked: false },
   'tletingan':{ sprite: 'tletingan',gendered: true,   masked: false },
+  'longoran': { sprite: 'tletingan',gendered: true,   masked: false }, // Same expression sprite family, before any runtime alias wraps direct lookups.
   'kenkari':   { sprite: 'kenkari',   gendered: false, masked: true  },
   'rakakoan':  { sprite: 'kenkari',   gendered: false, masked: true  },
   'mammakhbuur': { sprite: 'mashtz', gendered: true, masked: true },
