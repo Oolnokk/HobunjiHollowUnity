@@ -92,21 +92,36 @@ const hostiles=[
   {avatarRef:{group:idleBandit},areaId:'town',health:100,isBandit:true,state:'idle'},
   {avatarRef:{group:chaseBandit},areaId:'town',health:100,isBandit:true,state:'chase'},
 ]; // Calm hostile may be safely queried; aggressive threat must remain visibly responsive.
+const corpseRoot=makeRoot(26,'corpse'); // Settled, unlooted bandit outside the view.
+const nearCorpseRoot=makeRoot(2,'near_corpse'); // Loot prompt must never be hidden by GPU culling.
+const revivableRoot=makeRoot(27,'revivable'); // Revivable skeleton remains on its original rendering path.
+const markerRoot=makeRoot(28,'marker'); // Retired bodies have no expensive rig left to cull.
+const fallingRoot=makeRoot(29,'falling'); // Death animation still needs its rig.
+const corpseObjects=new Set([
+  {avatarRef:{group:corpseRoot},areaId:'town',health:0,isBandit:true,state:'corpse'},
+  {avatarRef:{group:nearCorpseRoot},areaId:'town',health:0,isBandit:true,state:'corpse'},
+  {avatarRef:{group:revivableRoot},areaId:'town',health:0,isBandit:true,state:'corpse',keepCorpseAfterLoot:true},
+  {avatarRef:{group:markerRoot,isCorpseMarker:true},areaId:'town',health:0,isBandit:true,state:'corpse',_banditCorpseRetired:true},
+  {avatarRef:{group:fallingRoot},areaId:'town',health:0,isBandit:true,state:'dying'},
+]); // Actual corpse registry, not a copy of the living hostile set.
 const camera={
   position:new Vector3(),quaternion:new Quaternion(),matrixWorldInverse:new Matrix4(),
   projectionMatrix:new Matrix4(),layers:{mask:1,enable(n){this.mask|=1<<n;}},
   updateMatrixWorld(){}
 };
-const context=()=>({renderer,scene:visualScene,camera,walkers,hostiles,area:'town',playerPosition:{x:0,z:0}});
+const context=()=>({renderer,scene:visualScene,camera,walkers,hostiles,corpseObjects,area:'town',playerPosition:{x:0,z:0}});
 const frame=()=>{
   api.beginFrame(context());
   const before=api.snapshot();
   assert.equal(nearRoot.visible,true,'near interaction partner remains drawable');
   assert.equal(offscreen.visible,false,'whole offscreen actor is hidden during ALL render passes');
   assert.equal(chaseBandit.visible,true,'combat threats never disappear from GPU occlusion');
+  assert.equal(corpseRoot.visible,false,'offscreen settled corpse rig is temporarily culled');
+  for(const root of [nearCorpseRoot,revivableRoot,markerRoot,fallingRoot])
+    assert.equal(root.visible,true,'nearby, revivable, retired or dying bodies keep their original rendering');
   api.probeAfterBase();
   api.endFrame();
-  for(const root of [nearRoot,covered,offscreen,idleBandit,chaseBandit])
+  for(const root of [nearRoot,covered,offscreen,idleBandit,chaseBandit,corpseRoot,nearCorpseRoot,revivableRoot,markerRoot,fallingRoot])
     assert.equal(root.visible,true,'render-only hide restores root before AI resumes');
   assert.equal(renderer.autoClear,true,'renderer clears restore');
   assert.equal(renderer.shadowMap.autoUpdate,true,'shadow configuration restores');
@@ -114,7 +129,7 @@ const frame=()=>{
   return before;
 };
 let first=frame();
-assert.equal(first.frustumHidden,1,'only the offscreen walker is frustum-hidden');
+assert.equal(first.frustumHidden,2,'offscreen walker and settled corpse are frustum-hidden');
 assert.equal(first.probes,0,'probe-after-base runs separately');
 assert.equal(drawCalls,1,'one proxy scene submission for multiple eligible actors');
 for(let i=0;i<8;i++)frame();
@@ -255,7 +270,7 @@ api.setGpuEnabled(false);
 const noGpu=frame();
 assert.equal(api.snapshot().gpuAvailable,false,'WebGL1/disabled GPU never hides covered in-frustum rigs');
 assert.equal(covered.visible,true,'GPU-disabled fallback renders all in-frustum actors');
-assert.equal(noGpu.frustumHidden,1,'GPU-disabled fallback retains robust camera-frustum culling');
+assert.equal(noGpu.frustumHidden,2,'GPU-disabled fallback retains corpse and walker frustum culling');
 
 api.setGpuEnabled(true);
 forcedFailure=true;
@@ -268,4 +283,14 @@ assert.equal(currentQuery,null,'exception recovery closes the active WebGL query
 assert.equal(covered.visible,true,'query error restores every NPC visual immediately');
 api.setEnabled(false);
 assert.equal(api.snapshot().tracked,0,'disabled mode releases all historical actor states');
-console.log('Actor occlusion: NPC+hostile frustum, delayed GPU occlusion, camera wakeup, state restoration and WebGL fail-open passed.');
+// The shipped game passes only living hostiles; the renderer must also discover
+// the canonical corpse registry without requiring a second full-game edit.
+const originalCombat=win.Combat;
+win.Combat={deps:{corpseObjects}};
+api.reset();
+const implicitContext=context(); delete implicitContext.corpseObjects;
+api.beginFrame(implicitContext);
+assert.equal(corpseRoot.visible,false,'canonical Combat corpse registry works without an explicit argument');
+api.endFrame();
+win.Combat=originalCombat;
+console.log('Actor occlusion: NPC, hostile and settled-corpse frustum, delayed GPU occlusion, camera wakeup, state restoration and WebGL fail-open passed.');
