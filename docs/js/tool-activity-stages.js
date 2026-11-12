@@ -39,8 +39,8 @@
     return ['thrust', 'sweep', 'chop'].includes(tool.animStyle) ? tool.animStyle : 'sweep';
   }
 
-  // At the start of a working stroke, rebase the weapon's original attack arc onto the normal tool-slot Neutral.
-  // A mining pick / harpoon converts the *same arc* into the overhead plane; the Pick-Shovel's flipped jab is untouched.
+  // Rebase every modular tool stroke onto its tool-slot Neutral without changing the assembled weapon's
+  // attack trajectory, including mining and fishing. Only a Pick-Shovel shaft keeps its original flipped jab.
   function workPoseFor(slot, itemKey, def, dirSign = 1) {
     const style = workStyleFor(slot, itemKey, def);
     if (!style || (slot === 'pick' && def?.modular?.shaft === 'pick-shovel')) return null;
@@ -58,34 +58,23 @@
       const out = { ...part }; // Keep authored grip, two-hand flags and other nonnumeric per-phase metadata.
       for (const key of channels) {
         const delta = (Number(part?.[key]) || 0) - (Number(base[key]) || 0); // Source weapon motion relative to its own Neutral.
-        out[key] = (Number(toolNeutral[key]) || 0) + delta * (mirrored.has(key) ? flip : 1); // Mirror motion only, so every stage starts at the same tool-slot Neutral.
+        const rest = key === 'bodyYaw' ? 0 : (Number(toolNeutral[key]) || 0); // Tool idle poses rotate the holder, not the body: prevent a body-yaw snap at swing start/end.
+        out[key] = rest + delta * (mirrored.has(key) ? flip : 1); // Mirror weapon motion only, so every stage starts at its visible tool Neutral.
       }
       return out;
     };
-    const neutral = { ...base, ...toolNeutral }; // Matches the visible tool idle when the stage starts and ends.
+    const neutral = { ...base, ...toolNeutral, bodyYaw: 0 }; // Tool idle body yaw is not applied to playerMesh; keep authored weapon rotation as movement, never a rest offset.
     const windup = phase(source.windup);
     const strike = phase(source.strike);
-    const overhead = slot === 'pick' || slot === 'harpoon'; // Rotate mining/fishing strokes overhead without changing a weapon's swing type.
-    if (overhead && style === 'sweep') {
-      windup.pitch += ((Number(source.windup.bodyYaw) || 0) - (Number(base.bodyYaw) || 0)) * flip;
-      strike.pitch += ((Number(source.strike.bodyYaw) || 0) - (Number(base.bodyYaw) || 0)) * flip;
-      windup.bodyYaw = neutral.bodyYaw || 0;
-      strike.bodyYaw = neutral.bodyYaw || 0;
-      windup.y += 0.18; strike.y -= 0.10; // Lift above the shoulder, then land downward while retaining swing travel.
-    } else if (overhead && style === 'thrust') {
-      windup.pitch -= 75; strike.pitch += 60; // Rotate the original backward/forward jab into an above-head downward stab.
-      windup.y += 0.25; strike.y -= 0.20;
-      windup.z -= 0.12; strike.z -= 0.12; // Keep the pick or harpoon close enough to the body to read as overhead.
-    }
-    return { neutral, windup, strike };
+    return { neutral, windup, strike }; // Original weapon trajectory preserved for every tool slot.
   }
 
   let lastPlayerWork = null; // On-demand mobile diagnostics for the most recently sampled modular tool stage.
   function notePlayerWork(slot, itemKey, style, hasPose) {
     const signature = `${slot}|${itemKey}|${style}|${hasPose}`; // Suppresses repeated logs across the three held strokes.
     if (lastPlayerWork?.signature === signature) return;
-    lastPlayerWork = { signature, slot, itemKey, style, overhead: slot === 'harpoon' || (slot === 'pick' && !itemKey?.startsWith('modular:pick-shovel:')), hasPose };
-    window.__farmLog?.(`[modular-tool-work] ${slot} ${style}${lastPlayerWork.overhead ? ' overhead' : ''}${hasPose ? '' : ' legacy'} (${itemKey})`, 'combat');
+    lastPlayerWork = { signature, slot, itemKey, style, hasPose, pickShovelThrust: slot === 'pick' && itemKey?.startsWith('modular:pick-shovel:') }; // Visible work diagnostics report exact fitted style and the one exception.
+    window.__farmLog?.(`[modular-tool-work] ${slot} ${style}${lastPlayerWork.pickShovelThrust ? ' flipped pick-shovel thrust' : ''}${hasPose ? '' : ' legacy'} (${itemKey})`, 'combat');
   }
 
   // Digging a trench: the thrust half of the player's dig/toss pairs (the toss is a bespoke player-only arc).
