@@ -25256,7 +25256,7 @@
       });
 
       function updateToolMesh(dt) {
-        toolHolder.userData.authoredToolActionActive = false; // Clear a previous working pose even when an instrument, bag item or action lock returns early.
+        if (toolHolder.userData) toolHolder.userData.authoredToolActionActive = false; // Clear an old work pose on instrument/lock returns; isolated instrument previews may supply a holder without metadata.
         _toolPoseCentroidDebug.reticleOrbitApplied = false;
         _toolPoseCentroidDebug.reticleOrbitPitchDeg = 0;
         _toolPoseCentroidDebug.reticleOrbitYawDeg = 0;
