@@ -81,7 +81,15 @@ const window = {
   },
   addEventListener: () => {},
 };
-const vmContext = vm.createContext({ window, document, MutationObserver: class { observe() {} }, console, Promise });
+const mutationCallbacks = []; // Simulates the browser's same-task tab and menu class observers.
+const vmContext = vm.createContext({
+  window, document,
+  MutationObserver: class {
+    constructor(callback) { mutationCallbacks.push(callback); }
+    observe() {}
+  },
+  console, Promise,
+});
 vm.runInContext(read('docs/js/world-town-progress.js'), vmContext, { filename: 'world-town-progress.js' });
 const view = window.TownProgressPanel; // Public, read-only debugging and snapshot API tested against the real module.
 
@@ -143,8 +151,10 @@ async function main() {
   assert.match(allText(pane), /Hiki-hiki/);
 
   const rendersBeforeClick = view.debugSnapshot().renderCount; // Confirms one render per click without duplicate fallback transitions.
-  tab.click(); // Exercises the actual game-owned tab-switch contract, followed by the view-owned refresh.
-  assert.equal(view.debugSnapshot().renderCount, rendersBeforeClick + 1);
+  tab.click(); // Exercises the actual game-owned tab switch contract, followed by the view-owned refresh.
+  mutationCallbacks.forEach(callback => callback([])); // Click + active-class mutation must share one scheduled render.
+  await Promise.resolve();
+  assert.equal(view.debugSnapshot().renderCount, rendersBeforeClick + 1, 'one render even when click and class observers fire together');
   assert(tab.classList.contains('active'));
   assert(pane.classList.contains('active'));
   assert(!mapTab.classList.contains('active'));
