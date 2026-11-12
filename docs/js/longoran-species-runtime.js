@@ -394,6 +394,7 @@
       label: 'Longoran',
       parentSpecies: DONOR,
       genders: clone(GENDERS), // Both genders inherit the donor and have their own editable rig.
+      female: clone(donor.female || appearance?.species?.[DONOR]?.female || {}), // onboarding-core's legacy Tletingan table only lists males; preserve the configured female cosmetic slots.
     };
     status.creatorPrivateSpeciesTableCaptured = true;
     return true;
