@@ -72,14 +72,19 @@
       try {
         const width=Math.round(image.naturalWidth||image.width||0),height=Math.round(image.naturalHeight||image.height||0);
         if(width<1||height<1||width*height>4194304)throw Error('Invalid sprite canvas dimensions '+width+' × '+height);
-        const source=document.createElement('canvas'); // Reuse the Pants Rig Author's clean 200px source canvas contract.
-        source.width=width;source.height=height;
-        const ctx=source.getContext('2d');
-        if(!ctx)throw Error('No 2D context for authored portrait texture');
         const isStrand=mesh===hairPlane||mesh===rearPlane;
-        const artwork=isStrand?window.PortraitSplineRig.prepareSplineTexture(image,mirror):image; // Use the same anti-dark-edge texture padding as the actual game.
-        if(mirror&&!isStrand){ctx.translate(width,0);ctx.scale(-1,1);}
-        ctx.drawImage(artwork,0,0,width,height);
+        const source=isStrand?window.PortraitSplineRig.prepareSplineTexture(image,mirror):document.createElement('canvas');
+        // Upload prepared single-mesh RGBA pixels DIRECTLY; copying a nearly transparent color-gutter through
+        // another canvas can re-premultiply its RGB toward black and recreate the seam on mobile.
+        if(!isStrand){
+          source.width=width;source.height=height;
+          const draw=source.getContext('2d');
+          if(!draw)throw Error('No 2D context for authored portrait texture');
+          if(mirror){draw.translate(width,0);draw.scale(-1,1);}
+          draw.drawImage(image,0,0,width,height);
+        }
+        const ctx=source.getContext('2d',{willReadFrequently:true});
+        if(!ctx)throw Error('Could not inspect the 3D portrait texture');
         // This check is diagnostic only: unlike the previous DataTexture code it cannot abort a valid sprite upload.
         // A failed alpha read is reported as a possible cross-origin taint, not silently treated as empty artwork.
         let opaque=-1,colored=-1,readError=null;
