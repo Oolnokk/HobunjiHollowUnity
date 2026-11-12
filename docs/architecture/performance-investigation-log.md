@@ -12,6 +12,52 @@ conditions on the same machine; they are not what a player sees.** Counts come f
 comes from CDP CPU profiles. One headless world per run, and bandit/tribe camps are random, so repeat anything
 close before trusting it.
 
+## 12 Nov 2026: farm/town grass drawn as camera-cullable chunks
+
+Second fix from the census below. Farm grass, farm weeds, town grass and the town border grass are each one
+InstancedMesh spanning the whole map with `frustumCulled = false`, so a bounding sphere around one covers everything.
+Several systems write to those meshes (hoe/seed/shovel refills, `BuildingGrassSuppression` footprint compaction, town
+height followers, the Settings > Grass toggle), so they were **not** split at build time.
+
+- `js/grass-billboard-render-chunks.js`: a registered source mesh stays the single authority. For the synchronous
+  world render only it is hidden and a holder of per-cell InstancedMeshes (8x8 tiles, sharing its geometry and
+  material) is shown instead; the source is restored in `renderWorldPasses`' `finally`. Chunks are re-partitioned only
+  when the source's instance buffer, count or geometry change (4 rebuilds over a whole town load here; steady state is
+  zero). They carry no `isBillboard` tag, so footprint/height writers never touch them, and they do not answer
+  raycasts. Every other renderer still sees the plain source. `GrassBillboardRenderChunks.setEnabled(false)` is the A/B
+  switch; `snapshot()` reports sources, chunks and rebuilds.
+- The chunks are tagged through `InstancedMeshBounds`, so `InstancedMeshViewCull` drops off-camera ones and the
+  held/shell replay cull drops ones outside the scissor. Town: 84,066 blade planes in 122 chunks.
+- Wilderness grass and rich-foliage chunks were already split with authored geometry bounds; they are now flagged
+  `hobunjiAuthoredInstanceBounds`, which lets the replay cull trust those bounds (before, every InstancedMesh stayed in
+  every replay).
+
+Measured headless in a crowded town (NPCs out, large held-item scissor; a heavier scene than the census below, so
+compare within this table only). Same session, same view, each switch flipped alone; triangles and draw calls for one
+base + shell frame:
+
+| Configuration | Triangles | Draw calls |
+| --- | --- | --- |
+| Everything on | 5,062,562 | 2,509 |
+| Grass chunks off | 6,181,632 | 2,340 |
+| Camera cull off | 5,426,490 | 2,598 |
+| Replay cull off (the pre-existing one too) | 7,299,234 | 5,108 |
+| All three off | 9,929,352 | 4,928 |
+
+The frame was **pixel-identical** with all three on and all three off (0 of 90,000 pixels differ); this run does apply
+the camera cull and the grass swap. In the quieter first measurement of the same session, grass went from 168 k to
+80 k triangles in the real draw and from 168 k to 50-60 k in each replay. Software-raster frame time with grass chunks
+on vs off was about 2.4-3.0 s vs 8.6 s, which repeats the grass sensitivity noted below and is likely exaggerated by
+SwiftShader.
+
+**Not measured:** real-device FPS, and the farm itself (the harness starts in town; the farm meshes go through the
+same registration and the unit test covers refills). Chunking costs draw calls: 122 chunk meshes replace 2 grass
+meshes, of which roughly 30-50 are submitted per pass in this view.
+
+**Harness traps found here:** NPC portrait renders also match "no override, all layers, render target", so pick the
+scene to time by `GridTileAccessors.getActiveScene()`, not by the last such render; and a synchronous harness frame
+bypasses `renderWorldPasses`, so call the same `suspendForRender` pairs around it or the culls are not exercised.
+
 ## 12 Nov 2026: instanced bricks now leave the camera pass and the depth replays
 
 First fix from the census below. Same town view, player only, headless, exact counts:
@@ -23,24 +69,25 @@ First fix from the census below. Same town view, player only, headless, exact co
 | Real world draw | 941,644 | 626,364 |
 | Each full depth replay | ~900,000 | ~390,000 |
 
-A synchronous base + shell frame read back from the main target was **pixel-identical** with the new culls on and with
-both `InstancedWallViewCull` and the whole replay cull off (0 of 90,000 pixels differ).
+A synchronous base + shell frame read back from the main target was **pixel-identical** with the replay cull on and
+off (0 of 90,000 pixels differ). That first check did not run the camera cull (the harness frame bypassed
+`renderWorldPasses`); the grass entry above repeats it with every cull applied.
 
-- `WallBuilder` already kept a sphere around all of a wall mesh's instances for its raycast early-out. That is now one
-  helper (`instanceLocalSphere`); built meshes are tagged `userData.hobunjiInstanceBounds` and listed through weak
-  references (`WallBuilder.forEachInstanceMesh`, `WallBuilder.instanceWorldSphere`).
-- `js/instanced-wall-view-cull.js` hides wall/path brick meshes whose sphere is outside the camera for the synchronous
-  world render only, restored in `renderWorldPasses`' `finally` (same contract as `NpcViewFrustumCull`). In the measured
-  view 51 of 73 meshes (5,375 of 8,653 bricks) were hidden. `InstancedWallViewCull.setEnabled(false)` is the A/B switch;
-  `snapshot()` reports counts.
+- The sphere around all of a mesh's instances that `WallBuilder` kept for its raycast early-out now lives in
+  `js/instanced-mesh-bounds.js` (`InstancedMeshBounds.localSphere/worldSphere/tag/forEachTracked`). Built wall meshes are
+  tagged `userData.hobunjiInstanceBounds` and tracked through weak references.
+- `js/instanced-mesh-view-cull.js` hides tagged meshes whose sphere is outside the camera for the synchronous world
+  render only, restored in `renderWorldPasses`' `finally` (same contract as `NpcViewFrustumCull`). In the measured view
+  51 of 73 brick meshes (5,375 of 8,653 bricks) were hidden. `InstancedMeshViewCull.setEnabled(false)` is the A/B
+  switch; `snapshot()` reports counts.
 - `held-object-render-order.js`'s replay cull now accepts those tagged instanced meshes (16 culled, 4 kept per replay
   here) and drops sky shells tagged `hobunjiDepthReplayInert` whose material cannot write depth (sky dome and the three
   visible cloud shells; the cloud depth masks stay in). `snapshot()` has `lastReplayInstancedCulled/Kept` and
   `lastReplayInert`.
-- `scripts/test-instanced-wall-render-cull.js` runs all three pieces.
+- `scripts/test-instanced-mesh-render-cull.js` runs every piece.
 
-**Not measured:** real-device FPS. **What is left in each replay** (about 390 k): grass billboards 168 k (two
-whole-town instanced meshes, so a bounding sphere cannot help until grass is split into spatial chunks), whole-map
+**Not measured:** real-device FPS. **What was left in each replay** (about 390 k): grass billboards 168 k (two
+whole-town instanced meshes; addressed by the grass entry above), whole-map
 terrain meshes 97 k, and the 3 or 4 large wall meshes whose sphere crosses the scissor (66 k). Wall meshes are one per
 build call, so a big building is all-or-nothing for both culls; splitting them spatially is the next step for bricks.
 

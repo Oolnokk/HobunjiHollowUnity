@@ -1,15 +1,15 @@
 (() => {
   'use strict';
 
-  // Render-only camera cull for WallBuilder's instanced brick meshes (building
-  // walls, farm/zone path bricks, town scenery paths). Three r128 cannot
-  // frustum-cull an InstancedMesh, so every brick was submitted in every world
-  // pass whatever the camera saw. WallBuilder owns a sphere around all of a
-  // mesh's instances; meshes whose sphere is outside the view are hidden for
-  // the synchronous world render only and restored before anything else runs
+  // Render-only camera cull for InstancedMeshes tagged by InstancedMeshBounds
+  // (WallBuilder brick walls and path bricks, GrassBillboardRenderChunks'
+  // farm/town grass chunks). Three r128 cannot frustum-cull an InstancedMesh,
+  // so each one was submitted in every world pass whatever the camera saw.
+  // Meshes whose instance sphere is outside the view are hidden for the
+  // synchronous world render only and restored before anything else runs
   // (same contract as NpcViewFrustumCull). Raycasts, collision and the path
   // corridor culling never see the temporary state.
-  let enabled = true; // Debug A/B switch: InstancedWallViewCull.setEnabled(false).
+  let enabled = true; // Debug A/B switch: InstancedMeshViewCull.setEnabled(false).
   let frustum = null, viewProjection = null, sphere = null; // Reused per render call.
   const hiddenScratch = []; // Meshes hidden by the current call; emptied on restore.
   const stats = { frames: 0, tracked: 0, inScene: 0, hidden: 0, hiddenInstances: 0, enabled: true };
@@ -24,10 +24,14 @@
     return true;
   }
 
-  function rootOf(object) {
+  // The scene the mesh would draw in, or null when it or an ancestor is hidden.
+  function drawnRoot(object) {
     let node = object;
-    while (node.parent) node = node.parent;
-    return node;
+    for (;;) {
+      if (node.visible === false) return null;
+      if (!node.parent) return node;
+      node = node.parent;
+    }
   }
 
   function restore() {
@@ -38,21 +42,20 @@
   // Returns a restore closure (or null when nothing was hidden). The caller
   // MUST invoke it in a finally block around all world passes.
   function suspendForRender(activeScene, camera) {
-    const builder = window.WallBuilder;
-    if (!enabled || !activeScene?.isScene || !camera?.isCamera
-        || !builder?.forEachInstanceMesh || !builder.instanceWorldSphere || !ensureThree()) return null;
-    if (hiddenScratch.length) restore(); // A previous call that was never restored must not leave walls hidden.
+    const bounds = window.InstancedMeshBounds;
+    if (!enabled || !activeScene?.isScene || !camera?.isCamera || !bounds || !ensureThree()) return null;
+    if (hiddenScratch.length) restore(); // A previous call that was never restored must not leave meshes hidden.
     camera.updateMatrixWorld?.(true); // Resolve the current view before Three's own render does.
     if (!camera.projectionMatrix || !camera.matrixWorldInverse) return null;
     viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     frustum.setFromProjectionMatrix(viewProjection);
     let tracked = 0, inScene = 0, hiddenInstances = 0;
-    builder.forEachInstanceMesh((mesh) => {
+    bounds.forEachTracked((mesh) => {
       tracked++;
-      if (!mesh.visible || !mesh.parent || rootOf(mesh) !== activeScene) return;
+      if (drawnRoot(mesh) !== activeScene) return;
       inScene++;
-      const bounds = builder.instanceWorldSphere(mesh, sphere);
-      if (!bounds || frustum.intersectsSphere(bounds)) return;
+      const world = bounds.worldSphere(mesh, sphere);
+      if (!world || frustum.intersectsSphere(world)) return;
       mesh.visible = false;
       hiddenScratch.push(mesh);
       hiddenInstances += mesh.count;
@@ -62,7 +65,7 @@
     return hiddenScratch.length ? restore : null;
   }
 
-  window.InstancedWallViewCull = Object.freeze({
+  window.InstancedMeshViewCull = Object.freeze({
     suspendForRender,
     setEnabled(value) { enabled = value !== false; stats.enabled = enabled; if (!enabled) restore(); return enabled; },
     get enabled() { return enabled; },

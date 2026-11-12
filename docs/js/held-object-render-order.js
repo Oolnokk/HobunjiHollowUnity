@@ -1046,16 +1046,22 @@
     return !!parity && parity.hook === object?.onBeforeRender && !!parity.visibleMatrixWorld && parity.isFresh?.() === true;
   }
 
-  // Wall and path bricks are InstancedMeshes, which r128 cannot bound by
-  // itself. WallBuilder owns a sphere around all of a mesh's instances, so
-  // those meshes can leave a scissored replay like any other static mesh.
-  let instancedReplaySphereScratch = null; // Created on first use; most scenes outside town have no instanced walls.
+  // InstancedMeshes cannot normally leave a replay: r128 bounds them by their
+  // base geometry only. Two kinds can: meshes tagged by InstancedMeshBounds
+  // (wall/path bricks, farm/town grass render chunks), whose sphere covers
+  // every instance, and meshes whose authored geometry bounds already enclose
+  // every instance (wilderness grass and rich-foliage chunks).
+  let instancedReplaySphereScratch = null; // Created on first use; most scenes have few tagged meshes.
   function instancedReplaySphere(object) {
     if (!object.isInstancedMesh || object.children.length || object.userData?.hobunjiInstanceBounds !== true) return null;
-    const boundsOwner = window.WallBuilder;
-    if (!boundsOwner?.instanceWorldSphere) return null;
+    const bounds = window.InstancedMeshBounds;
+    if (!bounds?.worldSphere) return null;
     if (!instancedReplaySphereScratch) instancedReplaySphereScratch = new THREE.Sphere();
-    return boundsOwner.instanceWorldSphere(object, instancedReplaySphereScratch) || null;
+    return bounds.worldSphere(object, instancedReplaySphereScratch) || null;
+  }
+  function hasAuthoredInstanceBounds(object) {
+    return !!(object.isInstancedMesh && !object.children.length && object.frustumCulled !== false
+      && object.userData?.hobunjiAuthoredInstanceBounds === true && object.geometry?.boundingSphere);
   }
 
   // Sky shells that neither test-and-write nor write depth cannot change a
@@ -1082,7 +1088,7 @@
     scene.traverseVisible((object) => {
       if (keep.has(object) || hasAlternateReplayPose(object)) return;
       if (isDepthReplayInert(object)) { culled.push(object); lastReplayInertCount++; return; }
-      const instanced = !!instancedReplaySphere(object);
+      const instanced = !!instancedReplaySphere(object) || hasAuthoredInstanceBounds(object);
       if (!instanced && !isReplayCullable(object)) return;
       const inside = replayFrustumIntersects(object);
       if (instanced) { if (inside) lastReplayInstancedKept++; else lastReplayInstancedCulled++; }

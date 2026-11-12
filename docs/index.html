@@ -30,6 +30,7 @@
   <script src="js/geometry-quality.js?v=20261110cloneaudit2"></script> <!-- Baked GLB quality profiles; source fallback. -->
   <script src="js/geometry-auto-lod.js?v=20261110cloneaudit2"></script> <!-- Opt-in render-only idle-time optimization. -->
   <script src="js/GLTFLoader.js?v=20260712d"></script>
+  <script src="js/instanced-mesh-bounds.js?v=20261112meshbounds1"></script>
   <script src="js/WallBuilder.js?v=20261112h0cf072a"></script>
   <script src="js/house-wall-fixtures.js?v=20261027h412254d"></script>
   <script src="js/HousePieceGen.js?v=20261102roofjoin1&window=20260926rebase1&wallfixtures=20261027templewindows2"></script>
@@ -121,7 +122,7 @@
        ZoneGrassBillboards, ReagentPlants, WildBerries, WildTreasure) also
        read its exported mbRng/grassBladeGeo/getGrassBillboardMat helpers
        from their own init() calls further down game.js. -->
-  <script src="js/vegetation-crop-rendering.js?v=20261110inkCropGrass1"></script>
+  <script src="js/vegetation-crop-rendering.js?v=20261112hc490ca8"></script>
   <!-- Active-area grid/scene/dimension accessors and building/den footprint
        collision checks, extracted out of game.js. Must load before game.js,
        which calls window.GridTileAccessors.init(...) alongside the other
@@ -883,7 +884,7 @@
        window.*?.init(...) calls near the bottom of game.js run), and later
        calls window.BorderTerrain.buildTownBorderTerrain() when the town
        scene is built. -->
-  <script src="js/border-terrain.js?v=20261107mireOutlet1"></script>
+  <script src="js/border-terrain.js?v=20261112h061ef99"></script>
   <!-- Farm-only road paving and border reshaping. These must be explicit
        parser-time dependencies after BorderTerrain: loading them indirectly
        from house-pieces.js ran the cliff adapter before BorderTerrain existed,
@@ -982,7 +983,7 @@
        window.ZoneGrassBillboards.init(...) alongside its sibling systems
        and its build*(...) functions lazily, from buildZoneScene and
        refreshZoneGroundVisuals, never synchronously during initial boot. -->
-  <script src="js/zone-grass-billboards.js?v=20261110inkZoneGrass1"></script>
+  <script src="js/zone-grass-billboards.js?v=20261112hd22e2f1"></script>
   <!-- Minecraft-style finite wilderness streaming: owns 16x16 runtime
        terrain/vegetation chunks while the Tothal generator remains owner of
        each zone's deterministic complete tile blueprint. -->
@@ -3093,7 +3094,8 @@
   <script src="js/lunge-targeting.js?v=1"></script>
   <!-- Whole-walker frustum culling was previously referenced by game.js but not loaded. -->
   <script src="js/npc-view-frustum-cull.js?v=20261110frustumWire1"></script>
-  <script src="js/instanced-wall-view-cull.js?v=20261112wallcull1"></script>
+  <script src="js/instanced-mesh-view-cull.js?v=20261112meshcull1"></script>
+  <script src="js/grass-billboard-render-chunks.js?v=20261112grasschunk1"></script>
   <!-- Conservative whole-actor WebGL2 occlusion queries: only rendering is skipped; AI/physics stay active. -->
   <script src="js/actor-render-occlusion.js?v=20261112corpseOcclusion1"></script>
   <script src="game.js?v=20261112h6944454"></script>
