@@ -111,7 +111,7 @@
        partway through its own setup (after camTargetX/pathWallBuilder/
        VEG_CULL_* are declared, well before the first real terrain mesh
        build). -->
-  <script src="js/terrain-geometry.js?v=20261026orefacets2"></script>
+  <script src="js/terrain-geometry.js?v=20261111mesaRoute1"></script>
   <!-- Farm/town grass & weed billboards, crop growth meshes, and per-tile
        ground+vegetation mesh building, extracted out of game.js. Must load
        before game.js, which calls window.VegetationCropRendering.init(...)
@@ -278,7 +278,7 @@
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
   <script src="js/map-boundary-guard.js?v=1"></script>
-  <script src="js/terrain-preview.js?v=20261110boulderCollision1"></script>
+  <script src="js/terrain-preview.js?v=20261111mesaPreview1"></script>
   <script src="js/den-cliff-placement.js?v=20261028localeopen1"></script>
   <script src="js/wilderness-archipelago.js?v=20261020islandatlas1"></script>
   <script src="js/wilderness-map-generator.js?v=20261107mireOutlet1"></script>
@@ -919,7 +919,7 @@
        window.ZonePlateauMesa.buildPlateauMesa(...) lazily, whenever a
        zone with tiered plateaus is first built or a plateau-top tile
        changes at runtime — never synchronously during initial boot. -->
-  <script src="js/zone-plateau-mesa.js?v=20261107hc81ce6b"></script>
+  <script src="js/zone-plateau-mesa.js?v=20261111mesaLid1"></script>
   <script src="js/wilderness-bedrock.js?v=20261027a"></script>
   <!-- One world-UV texture-backed mesh per water surface group. Dynamic
        flood/trench meshes are rebuilt only when the water simulation ticks;
@@ -2889,7 +2889,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261112terrainPerfProbe1"></script>
+  <script src="js/pixel-probe.js?v=20261111mesaProbe1"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -3095,7 +3095,7 @@
   <script src="js/npc-view-frustum-cull.js?v=20261110frustumWire1"></script>
   <!-- Conservative whole-actor WebGL2 occlusion queries: only rendering is skipped; AI/physics stay active. -->
   <script src="js/actor-render-occlusion.js?v=20261112corpseOcclusion1"></script>
-  <script src="game.js?v=20261112modularWorkMerge1"></script>
+  <script src="game.js?v=20261111mesaSubstrate1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261109missingNpcRestore1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
