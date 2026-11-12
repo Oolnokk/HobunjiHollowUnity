@@ -115,12 +115,13 @@
     let colors=new Uint8Array(pixels.length),eligible=new Uint8Array(source.width*source.height);
     colors.set(pixels);
     for(let i=0;i<eligible.length;i++)eligible[i]=pixels[i*4+3]>=8 ? 1 : 0;
+    const adjacent=[[-1,0],[1,0],[0,-1],[0,1]]; // Reuse a fixed four-neighbor table instead of allocating one for every transparent texel.
     for(let pass=0;pass<2;pass++){
       const nextColors=new Uint8Array(colors),nextEligible=new Uint8Array(eligible);
       for(let y=0;y<source.height;y++)for(let x=0;x<source.width;x++){
         const i=y*source.width+x;
         if(eligible[i])continue;
-        for(const [dx,dy] of [[-1,0],[1,0],[0,-1],[0,1]]){
+        for(const [dx,dy] of adjacent){
           const xx=x+dx,yy=y+dy;
           if(xx<0||yy<0||xx>=source.width||yy>=source.height)continue;
           const j=yy*source.width+xx;
