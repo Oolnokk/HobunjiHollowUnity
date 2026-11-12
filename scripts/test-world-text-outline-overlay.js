@@ -204,6 +204,41 @@ function testNoShellStillRestoresPopup() {
   assert.strictEqual(after.abandonedWorldTextOverlays, before.abandonedWorldTextOverlays, 'successful presentation must not increment abandoned-overlay diagnostics');
 }
 
+function testPlateGatedScoreAvoidsHiddenFinalPass() {
+  const renderer = new Renderer();
+  const note = makePopupMesh(); // Uses the same CanvasTexture/depth/renderOrder contract as outdoor Scratchbone clues.
+  note.renderOrder = 1202;
+  const board = { visible: false }; // The score itself remains cached while the player stands off its activation plate.
+  note.parent = board;
+  const scene = makeWorldScene('plate-gated-score', note);
+  const camera = { layers: new Layers(0xFFFFFFFF) };
+  const post = makePostScene('outline-post-score');
+  const postCamera = { layers: new Layers(1) };
+
+  const before = api.snapshot();
+  renderBase(renderer, scene, camera);
+  renderPost(renderer, post, postCamera);
+  assert.equal(renderer.calls.filter(call => call.scene === scene.name && call.target === null).length, 0,
+    'a hidden note must not cause an extra final canvas draw');
+  assert.equal(api.snapshot().finalWorldTextOverlayPasses, before.finalWorldTextOverlayPasses,
+    'inactive scores do not consume world text overlay passes');
+
+  board.visible = true;
+  renderBase(renderer, scene, camera);
+  renderShell(renderer, scene, camera);
+  renderPost(renderer, post, postCamera);
+  assert.equal(renderer.calls.filter(call => call.scene === scene.name && call.target === null && call.mask === (1 << 6)).length, 1,
+    'a newly active note draws once after the shell/post composite');
+  assert.equal(note.layers.mask, 1, 'the active score restores its original scene layer after presentation');
+
+  board.visible = false;
+  renderBase(renderer, scene, camera);
+  renderPost(renderer, post, postCamera);
+  assert.equal(renderer.calls.filter(call => call.scene === scene.name && call.target === null && call.mask === (1 << 6)).length, 1,
+    'deactivating the plate removes the score again without a second overlay call');
+}
+
 testFixedPostCameraAndUnrelatedPass();
 testNoShellStillRestoresPopup();
+testPlateGatedScoreAvoidsHiddenFinalPass();
 console.log('world-text final-overlay regression guard passed');
