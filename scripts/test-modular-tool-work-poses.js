@@ -1,5 +1,5 @@
 'use strict';
-// Regression contract: fitted weapon attack style + selected tool Neutral, reversible Pick-Shovel and distinct fishing throws.
+// Regression contract: fitted weapon swing + tool Neutral, overhead mining, reversible Pick-Shovel and distinct fishing throws.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
@@ -84,16 +84,18 @@ const pickStyle = work.workStyleFor('pick', fishShaftPick, defs[fishShaftPick]);
 assert.equal(pickStyle, 'thrust');
 const pickThrust = work.workPoseFor('pick', fishShaftPick, defs[fishShaftPick]);
 assert.deepEqual(plain(pickThrust.neutral), { ...plain(window.AttackPoseTemplates.poseFor('pickshovel_swing').neutral), ...plain(stances.poses.longHaftedTool), bodyYaw: 0 }, 'Work Neutral applies the holder stance without rotating the actor body at rest');
-assert(pickThrust.windup.z < pickThrust.neutral.z && pickThrust.strike.z > pickThrust.neutral.z,
-  'Pick head on another shaft uses the assembled weapon thrust trajectory, not Pick-Shovel-only jab');
+assert(pickThrust.windup.z < pickThrust.neutral.z && pickThrust.strike.z > pickThrust.neutral.z &&
+  pickThrust.windup.y > pickThrust.neutral.y && pickThrust.strike.y < pickThrust.neutral.y,
+  'Pick head on another shaft rotates its own weapon thrust into an overhead mining hit');
 assert.equal(work.workStyleFor('pick', pickShaftHatchet, defs[pickShaftHatchet]), 'thrust',
   'Any fitted Pick-Shovel head borrows the shaft-specific original thrust');
 assert.equal(work.workPoseFor('pick', pickShaftHatchet, defs[pickShaftHatchet]), null,
   'Pick-Shovel shaft retains legacy flipped pick jab, not the generic overhead transform');
 const sweep = work.workPoseFor('pick', flexShaftPick, defs[flexShaftPick]);
 assert.equal(work.workStyleFor('pick', flexShaftPick, defs[flexShaftPick]), 'sweep');
-assert(sweep.windup.bodyYaw !== sweep.neutral.bodyYaw && sweep.strike.bodyYaw !== sweep.neutral.bodyYaw, 'Sweep motion retains its authored body turn');
-assert.equal(sweep.windup.pitch, sweep.neutral.pitch, 'Tool-role work preserves the authored sweep plane');
+assert(sweep.windup.pitch !== sweep.neutral.pitch && sweep.strike.pitch !== sweep.neutral.pitch,
+  'Pick sweeps rotate the authored weapon body turn into overhead pitch');
+assert.equal(sweep.windup.bodyYaw, sweep.neutral.bodyYaw, 'Overhead pick keeps the body at its shared tool Neutral');
 const axePose = work.workPoseFor('axe', pickShaftHatchet, defs[pickShaftHatchet]);
 assert.equal(axePose.neutral.pitch, stances.poses.topHeavyTool.pitch);
 assert.equal(axePose.windup.pitch, axePose.neutral.pitch, 'Non-overhead axe preserves authored thrust pitch');
@@ -124,8 +126,8 @@ for (const channel of ['x', 'y', 'z', 'pitchRad', 'yawRad', 'rollRad', 'bodyYawR
 }
 const pickBackhand = work.workPoseFor('pick', flexShaftPick, defs[flexShaftPick], -1); // Mirrored pick sweep preserves the same working Neutral.
 assert.equal(pickBackhand.neutral.bodyYaw, sweep.neutral.bodyYaw);
-assert(Math.abs((pickBackhand.windup.bodyYaw - pickBackhand.neutral.bodyYaw) +
-  (sweep.windup.bodyYaw - sweep.neutral.bodyYaw)) < 1e-8, 'backhand mirrors the body turn, not the carried tool Neutral');
+assert(Math.abs((pickBackhand.windup.pitch - pickBackhand.neutral.pitch) +
+  (sweep.windup.pitch - sweep.neutral.pitch)) < 1e-8, 'overhead backhand mirrors pitch travel, never the carried tool Neutral');
 
 // Fishing selects the shipped non-spinning spear and spinning weapon throws; flail heads spin on their tether instead.
 window.HeldActionAnimations = {
@@ -222,4 +224,4 @@ assert(game.includes('TOOL_ITEM_DEFS, // Modular harpoon casting needs'));
 const fishing = source('docs/js/fishing-minigame.js');
 assert(fishing.includes("workStyleFor?.('harpoon', itemKey, def)"));
 assert(game.includes('fishingFlailHeadSpin: activeTool ==='), 'Game forwards flail-head spin mode without turning the shaft');
-console.log('Modular tool work and fishing: shaft/pick roles, carried neutrals, shipped spear/spin throws, tethered flail-head-only spin and native/NPC isolation passed.');
+console.log('Modular tool work and fishing: overhead picks, shaft-specific reversed jab, carried neutrals, spear/spin throws, tethered flail head and native/NPC isolation passed.');
