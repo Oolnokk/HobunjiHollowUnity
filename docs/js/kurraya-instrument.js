@@ -453,19 +453,22 @@
     // The held instrument's Neutral stance belongs to the editor even before
     // performance starts. Only a visible assembly in the player's OWN body may
     // claim the hands; never borrow a hidden bag prop or an NPC's Kurraya.
-    if (playerKurrayaNote.heldAssembly?.parent?.visible === false) playerKurrayaNote.heldAssembly = null; // Hidden unequipped holder must not monopolize the cached Kurraya target.
+    const cachedAssembly = playerKurrayaNote.heldAssembly; // Track the instrument's own visibility, not only its shared bag holder.
+    if (cachedAssembly && (!cachedAssembly.parent || cachedAssembly.visible === false || cachedAssembly.parent.visible === false))
+      playerKurrayaNote.heldAssembly = null; // An unequipped or hidden Kurraya cannot own the hands.
     if (!playerKurrayaNote.heldAssembly?.parent
         && performance.now() >= playerKurrayaNote.nextResolveAtMs) {
       playerKurrayaNote.nextResolveAtMs = performance.now() + 500; // Avoid traversing the portrait subtree every render frame on slow mobile devices.
       const player = window.Combat?.deps?.playerMesh || window.PlayerBodyTransformComposer?.getPlayerMesh?.();
       player?.traverse?.(node => {
-        if (!playerKurrayaNote.heldAssembly?.parent && node?.userData?.kurrayaAssembly && node.parent) {
+        if (!playerKurrayaNote.heldAssembly?.parent && node?.userData?.kurrayaAssembly
+            && node.visible !== false && node.parent?.visible !== false) {
           playerKurrayaNote.heldAssembly = node; // Existing held Kurraya can be gripped at Neutral before a note is sounded.
         }
       });
     }
     const assembly = playerKurrayaNote.heldAssembly;
-    if (!assembly?.parent || assembly.parent.visible === false) return null;
+    if (!assembly?.parent || assembly.visible === false || assembly.parent.visible === false) return null;
     return { holder: assembly.parent, toolKey: 'kurraya', gripContext: 'melee' }; // Neutral remains gripped when merely carrying the instrument; active notes still own independent plucking.
   }
   function clearPlayerKurrayaNote() {
