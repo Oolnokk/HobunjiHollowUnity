@@ -110,7 +110,6 @@
     if (!owner) return { ok: false, removed: false, message: 'Key owner record is missing.' };
     const list = definition.scope === 'world' ? owner.keyItems : owner.gearInventory?.keyItems; // Consumes only the defined save-lifetime list.
     if (!Array.isArray(list) || !list.includes(definition.id)) return { ok: true, removed: false, definition };
-    owner[definition.scope === 'world' ? 'keyItems' : 'gearInventory'] ||= definition.scope === 'world' ? [] : {};
     if (definition.scope === 'world') owner.keyItems = list.filter(entry => entry !== definition.id);
     else owner.gearInventory.keyItems = list.filter(entry => entry !== definition.id);
     if (!writeMeta(meta)) return { ok: false, removed: false, message: 'Could not save key item consumption.' };
