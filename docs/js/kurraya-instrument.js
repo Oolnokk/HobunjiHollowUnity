@@ -362,6 +362,14 @@
     };
   }
 
+  function sampledNoteProgress(note, startedAt, previousProgress, now) {
+    if (!note || startedAt === null) return null;
+    const durationMs = Math.max(50, (Number(note.durationS) || 0.32) * 1000); // The same authored duration is used by hands, holder and body.
+    let progress = Math.max(0, (now - startedAt) / durationMs);
+    if (previousProgress < note.strikeFrac && progress > note.holdFrac) progress = note.strikeFrac; // Show a skipped Strike for one frame.
+    return progress >= 1 ? null : progress; // The next sampled frame returns the action to Neutral.
+  }
+
   // One twitch-state record per performer (player or NPC). Existing callbacks
   // still drive it on each sounded Kurraya note, but the response is now authored.
   function newTwitchState() { return { active:false,axis:KURRAYA_TWITCH_AXIS,base:0,amplitude:0.04,startedAt:0,durationMs:0,phase:0,frequency:16,basePosition:null,baseRotation:null }; }
@@ -421,15 +429,16 @@
     group.rotation[axis]=twitchState.base+Math.sin((elapsed/1000)*twitchState.frequency+twitchState.phase)*twitchState.amplitude*envelope;
   }
 
-  const playerKurrayaNote = { active: false, startedAt: null, noteCount: 0, heldAssembly: null, nextResolveAtMs: 0 }; // Player-only note clock and hand assembly reference, resolved exclusively from the player's avatar subtree.
+  const playerKurrayaNote = { active: false, startedAt: null, noteProgress: 0, notePose: null, noteCount: 0, heldAssembly: null, nextResolveAtMs: 0 }; // Player-only note clock and hand assembly reference, resolved exclusively from the player's avatar subtree.
   function beginPlayerKurraya() {
     window.WeaponStanceDropRuntime?.endInstrumentNote?.(); // A fresh performance starts from a standing idle, not the previous flute/Kurraya body sink.
-    playerKurrayaNote.active = true; playerKurrayaNote.startedAt = null;
+    playerKurrayaNote.active = true; clearPlayerKurrayaNote();
     playerKurrayaNote.heldAssembly = null;
     playerKurrayaNote.nextResolveAtMs = 0; // Allow an immediate first scan for the already-equipped instrument.
   }
   function playPlayerKurrayaNote() {
     if (!playerKurrayaNote.active) return false;
+    clearPlayerKurrayaNote();
     playerKurrayaNote.startedAt = performance.now(); // Reset hand keyframes on each sounded player note.
     window.WeaponStanceDropRuntime?.beginInstrumentNote?.('kurraya'); // Share the exact sound timestamp for the authored 3% Strike leg/body bend.
     playerKurrayaNote.noteCount++;
@@ -437,7 +446,7 @@
   }
   function endPlayerKurraya() {
     window.WeaponStanceDropRuntime?.endInstrumentNote?.(); // Restore the player body when the Kurraya minigame closes, even if the note was interrupted.
-    playerKurrayaNote.active = false; playerKurrayaNote.startedAt = null;
+    playerKurrayaNote.active = false; clearPlayerKurrayaNote();
     playerKurrayaNote.heldAssembly = null; playerKurrayaNote.nextResolveAtMs = 0;
   }
   function playerKurrayaHandTarget() {
@@ -458,19 +467,26 @@
     if (!assembly?.parent || assembly.parent.visible === false) return null;
     return { holder: assembly.parent, toolKey: 'kurraya', gripContext: 'melee' }; // Neutral remains gripped when merely carrying the instrument; active notes still own independent plucking.
   }
+  function clearPlayerKurrayaNote() {
+    playerKurrayaNote.startedAt = null;
+    playerKurrayaNote.noteProgress = 0;
+    playerKurrayaNote.notePose = null;
+  }
+  function advancePlayerKurrayaNote(now) {
+    if (!playerKurrayaNote.active || playerKurrayaNote.startedAt === null) return;
+    const note = window.HeldActionAnimations?.kurrayaPlayNote; // The editor-authored action controls the holder, independent plucking hand and knees.
+    const progress = sampledNoteProgress(note, playerKurrayaNote.startedAt, playerKurrayaNote.noteProgress, now);
+    if (progress === null) { clearPlayerKurrayaNote(); return; }
+    playerKurrayaNote.noteProgress = progress;
+    playerKurrayaNote.notePose = notePoseAt(note, progress);
+  }
   function playerNoteProgress() {
-    const note = window.HeldActionAnimations?.kurrayaPlayNote;
-    if (!playerKurrayaNote.active || !note || playerKurrayaNote.startedAt === null) return 0;
-    const duration = Math.max(50, (Number(note.durationS) || 0.32) * 1000);
-    const elapsed = performance.now() - playerKurrayaNote.startedAt;
-    return elapsed >= 0 && elapsed < duration ? elapsed / duration : 0; // At rest or after the tail returns to Neutral.
+    return playerKurrayaNote.noteProgress; // The game loop's one frame sample is authoritative for all instrument pose consumers.
   }
   function playerHeldPose() {
     const action = window.HeldActionAnimations?.kurrayaPlayNote; // The Attack Editor's saved action is the only source of held-instrument poses.
     if (!action?.poses?.neutral) return null;
-    return playerKurrayaNote.active && playerKurrayaNote.startedAt !== null
-      ? notePoseAt(action, playerNoteProgress())
-      : action.poses.neutral; // Both a carried instrument and the pauses between notes show the authored Neutral stance.
+    return playerKurrayaNote.notePose || action.poses.neutral; // Holder, free hand and body share the same sampled note frame.
   }
 
   function applyPlayerHeldPose(holder, pose, baseX, baseY, speciesPose = null, grip = null) {
@@ -641,13 +657,8 @@
   function advanceFluteNote(now) {
     const note=window.HeldActionAnimations?.flutePlayNote; // One sample per gameplay frame, reused by the body, hands and render passes.
     if (!note || fluteState.noteStartedAt===null) return;
-    const durationMs=Math.max(50,(Number(note.durationS)||0.32)*1000); // The authored clip keeps its normal timing when frames arrive on time.
-    let progress=Math.max(0,(now-fluteState.noteStartedAt)/durationMs); // Normalized progress since the audible note began.
-    if (fluteState.noteProgress<note.strikeFrac && progress>note.holdFrac) progress=note.strikeFrac; // A long frame cannot skip the entire strike and hold.
-    if (progress>=1) {
-      clearFluteNote();
-      return;
-    }
+    const progress=sampledNoteProgress(note,fluteState.noteStartedAt,fluteState.noteProgress,now); // Both instruments now protect an unrendered Strike identically.
+    if (progress===null) { clearFluteNote(); return; }
     fluteState.noteProgress=progress;
     fluteState.notePose=notePoseAt(note,progress);
   }
@@ -702,8 +713,9 @@
     beginPlayerKurraya, playPlayerKurrayaNote, endPlayerKurraya, playerHeldPose, applyPlayerHeldPose, playerRightHandPose, playerGripAnimationState, playerKurrayaHandTarget,
     beginFlute, playFluteNote, endFlute, fluteHandTarget, notePoseAt, fluteDiagnostics, prepareFluteCanvas,
     advanceFluteNote, fluteNotePose: () => fluteState.notePose,
+    advancePlayerKurrayaNote, kurrayaNotePose: () => playerKurrayaNote.notePose,
     activePlayerInstrument: () => fluteState.active ? 'flute' : playerKurrayaNote.active ? 'kurraya' : null, // Allocation-free neutral-stance owner for the pre-render body composer.
     playerInstrumentProgress, // Shared progress for instrument elbow/shoulder poses and the two authored note actions.
-    kurrayaHandDiagnostics: () => ({ active: playerKurrayaNote.active, noteCount: playerKurrayaNote.noteCount, notePlaying: playerKurrayaNote.startedAt !== null && performance.now() - playerKurrayaNote.startedAt < Math.max(50,(Number(window.HeldActionAnimations?.kurrayaPlayNote?.durationS)||0.32)*1000) }),
+    kurrayaHandDiagnostics: () => ({ active: playerKurrayaNote.active, noteCount: playerKurrayaNote.noteCount, notePlaying: playerKurrayaNote.notePose !== null, noteProgress: playerKurrayaNote.noteProgress, holderVisible: playerKurrayaNote.heldAssembly?.parent?.visible === true }),
   };
 })();

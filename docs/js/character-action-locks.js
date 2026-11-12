@@ -49,12 +49,13 @@
     }
   }
 
-  function isLocked(participantId, channel) {
+  function isLocked(participantId, channel, ignoredOwner = null) {
     if (!participantId || !channel) return false;
     pruneExpired();
     const id = String(participantId);
     const requestedChannel = String(channel);
     for (const lock of activeLocks.values()) {
+      if (ignoredOwner && lock.owner === ignoredOwner) continue; // Music may draw its own prop while unrelated tool locks remain authoritative.
       const participant = lock.participants.find(entry => entry.id === id);
       if (participant?.channels.includes(requestedChannel)) return true;
     }
