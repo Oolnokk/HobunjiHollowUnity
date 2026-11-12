@@ -12,6 +12,79 @@ conditions on the same machine; they are not what a player sees.** Counts come f
 comes from CDP CPU profiles. One headless world per run, and bandit/tribe camps are random, so repeat anything
 close before trusting it.
 
+## 12 Nov 2026: where a quiet frame's triangles go (town, player only)
+
+Question: what has always kept the game slow even with nothing happening? Measured in the headless harness at 400x225,
+pixel ratio 1, in town right after load (player and one hound, before the NPCs arrive). Counts are exact; see the
+caveats on timings at the end.
+
+**One frame is 3.90 M triangles in 839 draw calls, and only 0.94 M of them are the picture.**
+
+| Inner render (segmented with `scene.onBeforeRender`) | Triangles | Calls |
+| --- | --- | --- |
+| Real world draw | 941,644 | 397 |
+| Real shell outline pass (layer 1) | 55,862 | 65 |
+| PNG occluder depth | 5,592 | 4 |
+| Three scissored replays of nearly the whole world (held/foot depth, shell x-ray depth, depth restore) | 3 x ~900,000 | 110-125 each |
+| Ground replay (layer 28) | 167,954 | 15 |
+| Hands + feet themselves (overlay, shell) | 2 x 7,280 | 4 each |
+
+So **74% of the triangles in a frame are depth replays whose only purpose is to sort the player's two hands and two
+feet (7,280 triangles) against the ground**, into a scissor rectangle covering 3-3.5% of the screen. Hiding those four
+meshes drops the frame from 3.89 M to 1.00 M triangles (462 calls). The replay cull does hide 1,358 objects outside the
+scissor, but `isReplayCullable` refuses anything that is an `InstancedMesh`, has `frustumCulled === false` or has
+children, and those are exactly the heavy ones: every brick, every grass blade, the whole-map terrain meshes and the sky
+domes are resubmitted in all three replays. The scissor saves pixels, not vertices.
+
+Wilderness (`map_western_slope`, one burrow NPC nearby) shows the same shape: 1.98 M triangles per frame, about 0.3 M in
+the real draw and about 1.6 M in five replays (80%).
+
+**What the real 0.94 M world draw is made of:**
+
+- **Bricks, 567,350 (60%).** `Roughbrick1.glb` is 70 triangles and every wall and path brick is its own instance: 8,653
+  instances (5,797 wall, 1,793 + 1,063 path). `MeshStandardMaterial`, `frustumCulled = false`, no per-chunk bounds, so
+  all of them are drawn whatever the camera sees; 27% had their origin inside the view frustum.
+- **Grass billboards, 168,132 (18%).** 84,066 instanced quads in two meshes (14 crossed pairs per tile),
+  `frustumCulled = false`; 20% inside the view frustum.
+- Terrain 97 k, sky 31 k (seven 64x36 spheres), surface roots 29 k, shingles 17 k. Player rig about 20 k.
+- Trees did not make the list: they are separate culled meshes (about 920 hidden by frustum culling in this view), so
+  leaves are not the base cost here. Not measured in a dense forest view.
+
+**Depth complexity** (every mesh drawn additively with no depth test): mean 22 layers per pixel, p95 43, max 109. Sky
+is 7 full-screen layers on every pixel (sky dome, three cloud depth masks, three cloud shells), bricks 2.5, grass 1.85,
+shingles/log walls 1.4 (10 where they cover), terrain 0.7, house pieces and the rest about 8. This is an upper bound on
+overdraw, not shaded fragments: depth testing rejects much of it.
+
+**Ruled out:** shadows (the map is enabled but no shadow pass ran: zero shadow draws in any scene measured), and
+render-side JavaScript (a CPU profile of the frame is over 98% inside the GL process; scene traversal and the replay
+classification are a few ms).
+
+**Software-raster timings (relative only).** Synchronous base + shell frame, `gl.finish()` plus a one-pixel read:
+full 4.6-4.8 s; hands/feet hidden (no replays) 1.35-1.44 s; no outline pass 2.78 s; grass hidden 0.61-0.66 s; grass
+hidden and no replays 0.22 s; bricks hidden, no measurable change. Forcing `uDensity = 0` (every grass fragment
+discarded at once) changed nothing, so the grass cost here is per-instance/primitive work in the software rasteriser,
+not shading. That 7x grass figure is very likely exaggerated by SwiftShader and must be checked on a real device with
+the existing grass toggle before acting on it; the triangle and pass counts above do not depend on it.
+
+**Crowd scaling, for scale:** the same view about ten minutes later, with town NPCs present, was 6.98 M triangles and
+2,384 calls.
+
+**Not fixed. Candidate work, in the order the numbers suggest:** (1) give instanced bricks and grass real per-chunk
+bounds so both the camera and the replay cull can drop them, and keep sky domes out of depth replays; (2) a cheaper
+brick (a box is 12 triangles) or a distance LOD, and a cheaper material than `MeshStandardMaterial`; (3) chunk the
+grass so off-screen tiles are not submitted; (4) see whether hands/feet can be depth-sorted without redrawing the
+world (the 3% scissor suggests a small local proxy would do).
+
+### Measurement traps (12 Nov 2026)
+
+- **Wrapping `renderer.render` on the instance attributes the replays to the outer pass.** `held-object-render-order.js`
+  wraps below that and calls the raw render several times inside one "shell outline" call, which made the shell pass look
+  like 1.88 M triangles when the real one is 56 k. Segment with `scene.onBeforeRender` and attribute triangles by wrapping
+  `renderer.renderBufferDirect`.
+- **`requestAnimationFrame` in this sandbox ticked at a flat 5.0 s per frame** whatever was hidden, so frame intervals
+  say nothing. Time a synchronous render instead.
+- GL state read in `scene.onBeforeRender` (colour mask) is the previous pass's state; do not label passes with it.
+
 ## 11 Nov 2026: per-NPC rig triangle cost (why a visible crowd is still slow)
 
 Measured in the headless harness with the real game (exact geometry counts, not FPS). One town NPC rig was
