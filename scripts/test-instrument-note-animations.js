@@ -13,6 +13,12 @@ const grips = fs.readFileSync('docs/js/hand-tool-grips.js', 'utf8'); // Canonica
 const sinkSource = fs.readFileSync('docs/js/weapon-stance-drop-runtime.js', 'utf8'); // Reuses the real body/leg stance runtime.
 const handDriver = fs.readFileSync('docs/js/procedural-hand-frame-driver.js', 'utf8'); // Live hand-grip holder and tool-selection routing.
 const equipment = fs.readFileSync('docs/js/equipment-panel.js', 'utf8'); // Registered instrument must point at its own animation.
+const gameHtml = fs.readFileSync('docs/index.html', 'utf8'); // Game entry point must load the same Kurraya revision as its animation editor.
+const gameKurrayaToken = gameHtml.match(/kurraya-instrument\.js\?v=([A-Za-z0-9_-]+)/)?.[1]; // Cache key guards against stale game-side note playback.
+const editorKurrayaToken = editor.match(/kurraya-instrument\.js\?v=([A-Za-z0-9_-]+)/)?.[1]; // Cache key used by the editor preview.
+assert(gameKurrayaToken && editorKurrayaToken && gameKurrayaToken === editorKurrayaToken,
+  'game and animation editor must use the same Kurraya instrument script revision');
+
 
 const begin = held.indexOf('  const fluteNeutralNotePose ='); // Includes the authored pose factory and strike-only sink constant before flutePlayNote.
 const end = held.indexOf('  window.HeldActionAnimations = Object.freeze', begin); // End of note definitions.
@@ -118,6 +124,7 @@ assert.equal(api.playerInstrumentProgress('kurraya'),0);
 assert.equal(api.playPlayerKurrayaNote(),true);
 const playerNoteStart=clock.ms; // All visual channels share this exact note timestamp.
 clock.ms=playerNoteStart+kurrayaPlayNote.durationS*1000*kurrayaPlayNote.strikeFrac;
+api.advancePlayerKurrayaNote(clock.ms);
 assert(Math.abs(api.playerInstrumentProgress('kurraya')-kurrayaPlayNote.strikeFrac)<1e-9,'instrument clocks must match');
 assert(Math.abs(api.playerHeldPose().roll-11)<1e-9,'gameplay holder must use the editor Strike roll, not a decorative sprite twitch');
 assert(Math.abs(api.playerHeldPose().bodySink-3)<1e-9,'gameplay holder and legs must sample the same 3% body bend');
@@ -156,6 +163,7 @@ assert.equal(playerMesh.rotation.y,playerFacing,'instrument body yaw must not in
 assert.equal(speciesPoseOptions.speciesId,'mao-ao','live pose must use the editor species scaling path');
 assert.equal(speciesPoseOptions.baseY,0.45,'live pose must use the unscaled floor-relative hand anchor');
 clock.ms=playerNoteStart+kurrayaPlayNote.durationS*1000+1;
+api.advancePlayerKurrayaNote(clock.ms);
 assert.equal(api.playerHeldPose().roll,7,'finished note must return to the editor Neutral rather than retaining Strike');
 api.endPlayerKurraya();
 assert.equal(api.activePlayerInstrument(),null,'ending a performance releases its authored hand/body ownership');
@@ -191,6 +199,7 @@ assert.equal(shoulder.currentWeights('right',npcAvatar).grip,1,'non-player shoul
 api.playPlayerKurrayaNote();
 const elbowStart=clock.ms;
 clock.ms=elbowStart+kurrayaPlayNote.durationS*1000*kurrayaPlayNote.strikeFrac;
+api.advancePlayerKurrayaNote(clock.ms);
 assert(Math.abs(shoulder.currentElbow('right',playerAvatar).y+0.28)<1e-9,'Kurraya Strike must raise and aim the authored plucking elbow');
 api.endPlayerKurraya();
 api.beginFlute();
@@ -271,7 +280,9 @@ const musician={
   RuntimeFrameScheduler:{register:(key,cb)=>{if(key==='weapon-stance-drop-sync')sinkCall=cb;}},
 };
 vm.runInNewContext(sinkSource,{window:musician,performance:{now:()=>clock.ms}});
-assert.equal(musician.WeaponStanceDropRuntime.beginInstrumentNote('flute'),true);
+window.WeaponStanceDropRuntime=musician.WeaponStanceDropRuntime; // Wire the real note event to the same pre-render callback that drives the knees in-game.
+api.beginFlute();
+assert.equal(api.playFluteNote(),true);
 const noteStart=clock.ms; // Shared monotonic clock makes the strike sample deterministic.
 clock.ms=noteStart+flutePlayNote.durationS*1000*flutePlayNote.strikeFrac;
 sinkCall();
@@ -285,23 +296,54 @@ musician.WeaponStanceDropRuntime.noteSwingSink(5);
 sinkCall();
 assert.equal(sinkUnits,0.05,'a real combat swing must win');
 stanceActive=false;
-musician.WeaponStanceDropRuntime.endInstrumentNote();
+api.endFlute();
 sinkCall();
 assert.equal(sinkUnits,0,'closing flute mode must release leg sink');
 assert.equal(composed.has('weapon-stance-drop'),false,'closing flute mode must clear body translation');
+api.beginFlute();
+assert.equal(api.playFluteNote(),true);
+sinkCall();
+assert.equal(sinkUnits,0,'the first frame may still land on flute Windup');
+clock.ms += flutePlayNote.durationS*1000+1; // Simulate a slow frame that would skip over both Strike and Hold.
+sinkCall();
+assert(Math.abs(sinkUnits-0.1)<1e-9,'a slow frame must still show the authored flute strike');
+assert.equal(api.playerInstrumentProgress('flute'),flutePlayNote.strikeFrac,'the grip and legs use the same catch-up strike frame');
+assert(musician.WeaponStanceDropRuntime.getDebug().instrumentNoteActive,'reading diagnostics leaves the sampled strike in place');
+clock.ms += 16;
+sinkCall();
+assert.equal(sinkUnits,0,'the frame after a delayed strike returns directly to the authored Neutral');
+assert.equal(api.fluteDiagnostics().noteActive,false,'the completed flute note releases its frame');
+api.endFlute();
 assert.equal(musician.WeaponStanceDropRuntime.beginInstrumentNote('invalid'),false,'non-instrument actions cannot request note body sink');
-assert.equal(musician.WeaponStanceDropRuntime.beginInstrumentNote('kurraya'),true,'Kurraya sound must use the shared instrument sink system');
+api.beginPlayerKurraya();
+assert.equal(api.playPlayerKurrayaNote(),true,'Kurraya sounded notes must reach the shared sink system');
 clock.ms += kurrayaPlayNote.durationS*1000*kurrayaPlayNote.strikeFrac;
+api.advancePlayerKurrayaNote(clock.ms);
 sinkCall();
 assert(Math.abs(sinkUnits-0.03)<1e-9,'Kurraya Strike bends legs by exactly 3% of model height');
 assert(Math.abs(composed.get('weapon-stance-drop').translation.y+0.03)<1e-9,
   'Kurraya Strike must lower the same live player body as the Flute');
 assert.equal(musician.WeaponStanceDropRuntime.getDebug().instrumentNoteKey,'kurraya','mobile diagnostics must identify the active instrument');
 clock.ms += kurrayaPlayNote.durationS*1000+1;
+api.advancePlayerKurrayaNote(clock.ms);
 sinkCall();
 assert.equal(sinkUnits,0,'finished Kurraya note must stop applying its authored body bend');
-musician.WeaponStanceDropRuntime.endInstrumentNote();
+api.endPlayerKurraya();
 assert.equal(musician.WeaponStanceDropRuntime.getDebug().instrumentNoteActive,false,'ending Kurraya mode clears stale body sink');
+api.beginPlayerKurraya();
+api.playPlayerKurrayaNote();
+api.advancePlayerKurrayaNote(clock.ms); // A regular initial Windup frame occurs before the simulated stall.
+clock.ms += kurrayaPlayNote.durationS*1000+1;
+api.advancePlayerKurrayaNote(clock.ms);
+sinkCall();
+assert(Math.abs(sinkUnits-0.03)<1e-9,'Kurraya must display its 3% Strike despite a skipped animation interval');
+assert.equal(api.playerInstrumentProgress('kurraya'),kurrayaPlayNote.strikeFrac,'hand, holder and legs share the rescued Strike frame');
+assert(Math.abs(api.playerHeldPose().roll-11)<1e-9,'the delayed frame still tilts the real Kurraya holder');
+clock.ms += 16;
+api.advancePlayerKurrayaNote(clock.ms);
+sinkCall();
+assert.equal(sinkUnits,0,'Kurraya must release its delayed Strike on the next frame');
+api.endPlayerKurraya();
 
 
 
@@ -532,6 +574,7 @@ assert.equal(api.kurrayaHandDiagnostics().noteCount,previousPlayerNoteCount+1,'e
 const savedFreePhases=kurrayaPlayNote.poses;
 kurrayaPlayNote.poses=freePhases;
 clock.ms += 30;
+api.advancePlayerKurrayaNote(clock.ms); // The actual game samples the instrument's shared frame before hands and holder read it.
 assert(api.playerRightHandPose().influence>0,'a genuine note must interpolate the free hand');
 kurrayaPlayNote.poses=savedFreePhases;
 api.endPlayerKurraya();
@@ -634,3 +677,51 @@ assert.equal(importModeCalls[0].gripMode,'palm-parallel','import must restore th
 
 
 console.log('Flute/Kurraya authored poses, 3D grip axis, right-hand mode, note routing and body sink passed');
+
+ 
+// The game's actual updateToolMesh guard must render Kurraya through its own music lock only.
+const locksSource=fs.readFileSync('docs/js/character-action-locks.js','utf8'); // Executes the real action-lock registry in isolation.
+const lockWindow={}; // Owned solely by this integration test, never the gameplay window.
+const lockCodeEnd=locksSource.indexOf('// The main page already loads');
+assert(lockCodeEnd>0,'action-lock runtime extraction marker disappeared');
+vm.runInNewContext(locksSource.slice(0,lockCodeEnd),{window:lockWindow,performance:{now:()=>clock.ms}});
+const locks=lockWindow.CharacterActionLocks;
+const musicLock=locks.acquire({owner:'music-minigame',participants:[{id:'player',channels:['tools','actions']}]});
+assert.equal(locks.isLocked('player','tools'),true,'music still blocks ordinary tool input');
+assert.equal(locks.isLockedIgnoringOwner('player','tools','music-minigame'),false,'visual-only music exception skips its own lock');
+const poseDebug={}; // Minimal real updateToolMesh guard needs only these resettable debug fields.
+const visibleTool={visible:true}; // Any previously equipped weapon must be hidden while music owns the prop.
+const visibleHeld={visible:false}; // Kurraya should become visible only through updateHeldItemHolder.
+const musicState={instrumentKey:'kurraya'}; // Switch between Kurraya, flute and ordinary gameplay without rebuilding the guard.
+let heldUpdates=0; // Counts real held-prop update calls, proving the instrument is posed rather than just shown.
+let noteSamples=0; // Confirms the Kurraya timeline is advanced before the holder consumes it.
+const guardStart=gameSource.indexOf('      function updateToolMesh(dt) {');
+const guardEnd=gameSource.indexOf("        if (heldMode === 'none')",guardStart);
+assert(guardStart>=0&&guardEnd>guardStart,'game tool rendering guard moved or disappeared');
+const guardSource=gameSource.slice(guardStart,guardEnd)+'      }\nupdateToolMesh;';
+const guard=vm.runInNewContext(guardSource,{
+  window:{CharacterActionLocks:locks,MusicMinigame:{state:musicState},
+    KurrayaInstrument:{advancePlayerKurrayaNote:()=>{noteSamples++;}}},
+  _toolPoseCentroidDebug:poseDebug,PLAYER_ACTION_LOCK_ID:'player',
+  toolHolder:visibleTool,heldItemHolder:visibleHeld,
+  updateHeldItemHolder:()=>{heldUpdates++;visibleHeld.visible=true;},
+  performance:{now:()=>clock.ms},
+});
+guard(1/60);
+assert.equal(visibleTool.visible,false,'previous weapon must not display during Kurraya playback');
+assert.equal(visibleHeld.visible,true,'music lock must not hide the Kurraya itself');
+assert.equal(heldUpdates,1,'the existing Kurraya holder must update while music input is locked');
+assert.equal(noteSamples,1,'sample its real pose before drawing the holder');
+const cinematicLock=locks.acquire({owner:'cinematic',participants:[{id:'player',channels:['tools']}]});
+visibleHeld.visible=true;
+guard(1/60);
+assert.equal(visibleHeld.visible,false,'an unrelated tool lock must still hide the musical prop');
+assert.equal(heldUpdates,1,'other tool locks must not update the instrument');
+cinematicLock.release();
+musicState.instrumentKey='flute';
+visibleHeld.visible=true;
+guard(1/60);
+assert.equal(visibleHeld.visible,false,'the head-mounted flute must never create a second chest prop');
+assert.equal(heldUpdates,1,'flute does not use the Kurraya held-item rendering path');
+musicLock.release();
+assert.equal(locks.isLocked('player','tools'),false,'closing music must restore ordinary tools');
