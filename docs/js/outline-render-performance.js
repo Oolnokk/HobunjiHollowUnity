@@ -479,50 +479,77 @@
   // There is no new scene scan while the score is hidden. The authored PNG/rig
   // materials supply their true alpha-cutout silhouette (not bounding boxes or
   // an opaque substitute material), and are restored immediately afterwards.
+  const scoreActorMeshCache = new WeakMap(); // Reuses each stable rig's meshes until the existing scene structure epoch changes.
   function prepareScoreActorDepth(scene) {
-    const layerStates = []; // Mesh layer memberships temporarily augmented by the mask layer, restored after its one render.
-    const materialStates = []; // Original draw state for character PNGs and solid hands/feet, restored after depth rendering.
-    const seenMeshes = new Set(); // One rig may be referenced by companion, hostile and walker registries at once.
-    const seenMaterials = new Set(); // Shared body materials must be saved/modified once even when multiple actors use them.
-    let roots = [];
-    try { roots = scoreActorRootProvider?.() || []; } catch (_) { /* Fail closed: the exterior note pass will hide unsupported score overlays. */ }
-    for (const root of roots) {
-      if (!root?.traverse) continue;
-      let attached = false;
-      for (let node = root; node; node = node.parent) {
-        if (node.visible === false) break;
-        if (node === scene) { attached = true; break; }
+    const layerStates = []; // Original layer membership of only the meshes eligible to write actor depth.
+    const materialStates = []; // Preserve original depth/color/alpha state for each authored rig material.
+    const seenMeshes = new Set(); // A corpse or companion may appear in more than one gameplay collection.
+    const seenMaterials = new Set(); // Shared material instances must be modified/restored only once.
+    const maskCutoff = Number(window.HobunjiSpritePngSurface?.maskAlphaTest?.()) || 0.35; // Match the established solid-coverage PNG depth threshold.
+    const restore = () => {
+      for (const [node, layers] of layerStates) node.layers.mask = layers;
+      for (const [material, colorWrite, depthWrite, depthTest, depthFunc, alphaTest] of materialStates) {
+        material.colorWrite = colorWrite;
+        material.depthWrite = depthWrite;
+        material.depthTest = depthTest;
+        material.depthFunc = depthFunc;
+        material.alphaTest = alphaTest;
       }
-      if (!attached) continue;
-      root.traverse(node => {
-        if (!node?.isMesh || !node.layers || seenMeshes.has(node)) return;
-        for (let parent = node; parent && parent !== root; parent = parent.parent) {
-          if (parent.visible === false) return;
-        }
-        seenMeshes.add(node);
-        layerStates.push([node, node.layers.mask]);
-        node.layers.enable(SCORE_ACTOR_DEPTH_LAYER);
-        for (const material of Array.isArray(node.material) ? node.material : [node.material]) {
-          if (!material || seenMaterials.has(material)) continue;
-          seenMaterials.add(material);
-          materialStates.push([material, material.colorWrite, material.depthWrite, material.depthTest]);
-          material.colorWrite = false; // Preserve per-pixel alpha clipping while writing only the actual character silhouette to depth.
-          material.depthWrite = true;
-          material.depthTest = true;
-        }
-      });
-    }
-    return {
-      meshes: layerStates.length,
-      restore() {
-        for (const [node, mask] of layerStates) node.layers.mask = mask;
-        for (const [material, colorWrite, depthWrite, depthTest] of materialStates) {
-          material.colorWrite = colorWrite;
-          material.depthWrite = depthWrite;
-          material.depthTest = depthTest;
-        }
-      },
     };
+    let roots = [];
+    try { roots = scoreActorRootProvider?.() || []; } catch (_) { return { meshes: 0, restore }; }
+    try {
+      for (const root of roots) {
+        if (!root?.traverse) continue;
+        let attached = false; // Only visible character rigs in the active scene may write this depth mask.
+        for (let node = root; node; node = node.parent) {
+          if (node.visible === false) break;
+          if (node === scene) { attached = true; break; }
+        }
+        if (!attached) continue;
+        let cached = scoreActorMeshCache.get(root);
+        if (!cached || cached.epoch !== structureEpoch) {
+          const meshes = []; // Include hidden branches; visibility can change without a scene graph mutation.
+          root.traverse(node => { if (node?.isMesh) meshes.push(node); });
+          cached = { epoch: structureEpoch, meshes };
+          scoreActorMeshCache.set(root, cached);
+        }
+        for (const node of cached.meshes) {
+          if (!node.layers || seenMeshes.has(node)) continue;
+          let visible = true;
+          for (let ancestor = node; ancestor && ancestor !== root; ancestor = ancestor.parent) {
+            if (ancestor.visible === false) { visible = false; break; }
+          }
+          if (!visible) continue;
+          const materials = Array.isArray(node.material) ? node.material : [node.material]; // Preserve the entire authored mesh material assignment.
+          // Transparent overlays without an actual alpha cutout, including additive
+          // creature eye/glow planes, would stamp their full rectangle into depth.
+          if (!materials.length || materials.some(material => !material
+              || material.visible === false || material.depthTest === false
+              || (THREE.AdditiveBlending !== undefined && material.blending === THREE.AdditiveBlending)
+              || (material.transparent && material.map && !(Number(material.alphaTest) > 0)))) continue;
+          seenMeshes.add(node);
+          layerStates.push([node, node.layers.mask]);
+          node.layers.enable(SCORE_ACTOR_DEPTH_LAYER);
+          for (const material of materials) {
+            if (seenMaterials.has(material)) continue;
+            seenMaterials.add(material);
+            materialStates.push([material, material.colorWrite, material.depthWrite, material.depthTest, material.depthFunc, material.alphaTest]);
+            material.colorWrite = false;
+            material.depthWrite = true;
+            material.depthTest = true;
+            material.depthFunc = THREE.LessEqualDepth; // Never let a farther character replace a nearer silhouette.
+            if (material.map && Number(material.alphaTest) > 0) {
+              material.alphaTest = Math.max(Number(material.alphaTest), maskCutoff); // Use actual solid PNG pixels, not antialiased fringe.
+            }
+          }
+        }
+      }
+    } catch (_) {
+      restore(); // Errors during a rig update cannot leak material or layer mutations.
+      return { meshes: 0, restore() {} };
+    }
+    return { meshes: layerStates.length, restore };
   }
 
   // Render only reserved layer 6 onto the already-composited canvas. Parent Groups

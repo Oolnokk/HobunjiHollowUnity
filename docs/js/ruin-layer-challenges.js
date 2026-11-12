@@ -735,6 +735,13 @@
         });
       }
     }
+    if(rec.session&&rec.glyphs?.length){
+      rec.releaseMelodyCamera=root.MelodyCameraFraming?.register?.({
+        area:options.area||options.mapId,
+        plate:{...rec.melodyPlate,y},glyphs:rec.glyphs,
+        isActive:()=>!rec.disposed&&!rec.solved&&isActive()&&rec.lastDown,
+      }); // One grouped view includes both of an interior cave's distant note columns.
+    }
     rec.targetCount=targets.length;
     rec.tick=(dt)=>{
       if(rec.disposed)return;
@@ -837,6 +844,7 @@
     rec.dispose=()=>{
       if(rec.disposed)return;
       rec.disposed=true;
+      rec.releaseMelodyCamera?.(); // Dispose the clue-camera source before its meshes and puzzle are removed.
       for(const remove of linkDisposers)remove();
       if(fireTargetId)fire?.unregisterTarget?.(fireTargetId);
       if(fireControl)options.removeControl?.(fireControl);

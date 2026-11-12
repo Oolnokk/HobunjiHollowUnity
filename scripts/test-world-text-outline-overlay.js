@@ -38,7 +38,8 @@ class Renderer {
 Renderer.prototype.render = function render(scene, camera) {
   this.calls.push({ scene: scene?.name || '', mask: Number(camera?.layers?.mask ?? 0) >>> 0, target: this._target,
     noteDepthTest:scene?.scoreNote?.material?.depthTest, actorColorWrite:scene?.maskActor?.material?.colorWrite,
-    actorDepthWrite:scene?.maskActor?.material?.depthWrite, actorLayers:scene?.maskActor?.layers?.mask });
+    actorDepthWrite:scene?.maskActor?.material?.depthWrite, actorAlphaTest:scene?.maskActor?.material?.alphaTest,
+    effectLayers:scene?.maskEffect?.layers?.mask, actorLayers:scene?.maskActor?.layers?.mask });
 };
 
 class Color {
@@ -217,11 +218,13 @@ function testPlateGatedScoreAvoidsHiddenFinalPass() {
   note.parent = board;
   const scene = makeWorldScene('plate-gated-score', note);
   const body={isMesh:true,visible:true,layers:new Layers(1),
-    material:{colorWrite:true,depthWrite:false,depthTest:true}}; // A transparent actor PNG that needs a temporary depth write for glyph occlusion.
-  const root={visible:true,parent:scene,traverse(callback){callback(body);}}; // Live player/NPC rig root, not an inferred bounding-box proxy.
-  body.parent=root;
-  scene.scoreNote=note;scene.maskActor=body;
-  api.setScoreCharacterRootsProvider(()=>[root]); // The game registers the same provider once from its live actor collections.
+    material:{map:{},transparent:true,alphaTest:.001,colorWrite:true,depthWrite:false,depthTest:true}}; // Soft portrait edges need the existing solid-pixel depth cutoff.
+  const effect={isMesh:true,visible:true,layers:new Layers(1),
+    material:{map:{},transparent:true,alphaTest:0,blending:THREE.AdditiveBlending,depthTest:true,depthWrite:false}}; // Additive eye/glow planes are not solid silhouettes.
+  const root={visible:true,parent:scene,traverse(callback){callback(body);callback(effect);}}; // Real rigs have both opaque cutouts and transparent effects.
+  body.parent=root;effect.parent=root;
+  scene.scoreNote=note;scene.maskActor=body;scene.maskEffect=effect;
+  api.setScoreCharacterRootsProvider(function*(){yield root;yield root;}); // Duplicate entries from active and corpse registries are deduplicated.
   const camera = { layers: new Layers(0xFFFFFFFF) };
   const post = makePostScene('outline-post-score');
   const postCamera = { layers: new Layers(1) };
@@ -250,11 +253,19 @@ function testPlateGatedScoreAvoidsHiddenFinalPass() {
     'the actor-depth pass cannot overwrite the already-composited player/NPC colors');
   assert.equal(renderer.calls[actorPass].actorDepthWrite,true,
     'character body planes write an alpha-aware depth silhouette even when their normal materials are translucent');
+  assert.equal(renderer.calls[actorPass].actorAlphaTest,.35,
+    'the actor depth pass must use solid 0.35 PNG coverage, not the soft 0.001 fringe');
+  assert.equal(renderer.calls[actorPass].effectLayers,1,
+    'an additive eye or glow plane must never stamp its full rectangle into depth');
+  assert.equal(api.snapshot().scoreActorDepthMeshes,1,
+    'a duplicated rig with a transparent glow contributes one real silhouette mesh');
   assert.equal(renderer.calls[scorePass].noteDepthTest,true,
     'the note must depth-test against the closer actor instead of covering the player or NPC');
   assert.equal(note.material.depthTest,false, 'note material returns to depth-independent base state after its final-pass mask');
   assert.equal(body.material.colorWrite,true, 'character original color-write state is restored after the mask pass');
   assert.equal(body.material.depthWrite,false, 'character original translucent depth-write behavior is restored');
+  assert.equal(body.material.alphaTest,.001, 'portrait soft-edge alpha restores after the depth-only pass');
+  assert.equal(effect.layers.mask,1, 'transparent eye glow never enters the mask layer');
   assert.equal(body.layers.mask,1, 'actor original render layers are unchanged by the temporary mask');
 
   board.visible = false;

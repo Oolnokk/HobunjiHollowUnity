@@ -22944,7 +22944,10 @@
       }
 
       function updateCameraPosition() {
-        if (applyAuthoredCinematicCamera()) return;
+        if (applyAuthoredCinematicCamera()) {
+          window.MelodyCameraFraming?.reset?.(); // The authored shot bypasses normal camera updates, so it must disarm first-note discovery before handing control back.
+          return;
+        }
         const modeCfg = cameraModeConfig(activeCameraMode);
         // A cutscene Zoom card's percent (100 = the captured shot's own
         // unmodified framing, higher = closer) — entirely separate from the
@@ -22996,6 +22999,19 @@
           activeCameraMode === SHOULDER_SURF_MODE && !portraitAim && !cutscenePreviewActive && !dialogueZoomActive() && !window.__mapEditorOrbitActive,
           performance.now()); // Existing camera update owns the lift; the actual camera ray automatically targets revealed surface items.
         if (surfaceView) { lookY += surfaceView.lift; distance *= surfaceView.distanceScale; }
+        const melodyFrame=window.MelodyCameraFraming?.update?.({
+          area:currentArea,playerX:player.x/TILE,playerZ:player.y/TILE,camera,
+          baseTarget:{x:lookAtX,y:lookY,z:lookAtZ},baseDistance:distance,azimuth,angle,
+          fovDeg:modeCfg.fovDeg??42,aspect:cameraContainerAspect(),
+          enabled:!cutscenePreviewActive&&!dialogueZoomActive()&&!dialogueOpen
+            &&!window.__mapEditorOrbitActive&&!window.CinematicCameraRuntime?.isActive?.()
+            &&activeCameraMode!=='fishing'&&activeCameraMode!=='fishCatch',
+          now:performance.now(),
+        }); // Shared gameplay camera remains authoritative; the score supplies only a discovery-gated framing correction.
+        if(melodyFrame){
+          lookAtX+=melodyFrame.offsetX;lookAtZ+=melodyFrame.offsetZ;lookY+=melodyFrame.offsetY;
+          distance*=melodyFrame.distanceScale;
+        }
         const cameraY = portraitAim?.cameraY ?? (lookY + Math.sin(angle) * distance);
         const groundDistance = Math.cos(angle) * distance;
         const idealX = lookAtX + Math.sin(azimuth) * groundDistance;
@@ -23013,7 +23029,7 @@
         // Very short ground-limited booms need a smaller near plane to keep
         // the nearby character visible; other modes retain the normal plane.
         camera.near = _cameraBoomDebug ? Math.min(0.1, Math.max(0.01, _cameraBoomDebug.solvedDistance * 0.2)) : 0.1;
-        camera.fov = modeCfg.fovDeg ?? 42;
+        camera.fov = (modeCfg.fovDeg ?? 42)+(melodyFrame?.fovExtra||0); // Preserve every non-melody camera mode's authored FOV exactly.
         camera.aspect = cameraContainerAspect();
         camera.updateProjectionMatrix();
         window.DialogueCameraFraming?.apply(camera, !!portraitAim);
@@ -30697,13 +30713,17 @@
         getCutscenePreviewAdvance: () => cutscenePreviewAdvance,
       });
 
-      window.OutlineRenderPerformance?.setScoreCharacterRootsProvider?.(() => [
-        playerMesh, // Depth-only Scratchbone clue occlusion: the live player and all character rigs, consulted only while an exterior music plate is active.
-        ...npcWalkers.map(walker => walker.root), // Friendly NPCs retain their authored real sprite/rig silhouettes over glowing cliff notes.
-        ...Array.from(hostileObjects, actor => actor.avatarRef?.group), // Bandits, enemies, wild creatures and their equipment use the same alpha-aware depth mask.
-        ...Array.from(companionObjects, actor => actor.avatarRef?.group), // Mounts, shoulder pets and companions must never be covered by notes either.
-        ...Array.from(animalObjects, actor => actor.avatarRef?.group), // Peaceful wildlife/livestock remains in front when physically closer to the camera.
-      ]);
+      // Invoked only for active exterior clue overlays; avoids copying all actor Sets each frame.
+      // Corpses can leave the hostile registry but still have visible, lootable character rigs.
+      function* scoreActorDepthRoots() {
+        yield playerMesh;
+        for (const walker of npcWalkers) yield walker.root;
+        for (const actor of hostileObjects) yield actor.avatarRef?.group;
+        for (const actor of companionObjects) yield actor.avatarRef?.group;
+        for (const actor of animalObjects) yield actor.avatarRef?.group;
+        for (const actor of corpseObjects) yield actor.avatarRef?.group;
+      }
+      window.OutlineRenderPerformance?.setScoreCharacterRootsProvider?.(scoreActorDepthRoots);
       window.PixelProbe?.init({
         animalObjects,
         hostileObjects,
