@@ -30694,6 +30694,13 @@
         getCutscenePreviewAdvance: () => cutscenePreviewAdvance,
       });
 
+      window.OutlineRenderPerformance?.setScoreCharacterRootsProvider?.(() => [
+        playerMesh, // Depth-only Scratchbone clue occlusion: the live player and all character rigs, consulted only while an exterior music plate is active.
+        ...npcWalkers.map(walker => walker.root), // Friendly NPCs retain their authored real sprite/rig silhouettes over glowing cliff notes.
+        ...hostileObjects.map(actor => actor.avatarRef?.group), // Bandits, enemies, wild creatures and their equipment use the same alpha-aware depth mask.
+        ...companionObjects.map(actor => actor.avatarRef?.group), // Mounts, shoulder pets and companions must never be covered by notes either.
+        ...animalObjects.map(actor => actor.avatarRef?.group), // Peaceful wildlife/livestock remains in front when physically closer to the camera.
+      ]);
       window.PixelProbe?.init({
         animalObjects,
         hostileObjects,
