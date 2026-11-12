@@ -70,6 +70,11 @@ assert(naturalGust[1].x-naturalRest[1].x<naturalGust[2].x-naturalRest[2].x,
   'default side gust never makes the middle outrun the tip');
 assert(Rig.normalize({points:restingPoints}).segments[1].poses.right.translate.x>0,
   'a newly normalized, unrigged style receives useful default poses');
+const neutralDepth=Rig.posePoints(naturalRig).points.at(-1).z;
+assert(Rig.posePoints(naturalRig,{z:1}).points.at(-1).z>neutralDepth,
+  'auto-generated toward wind moves a hanging strand toward the camera, not behind its head');
+assert(Rig.posePoints(naturalRig,{z:-1}).points.at(-1).z<neutralDepth,
+  'auto-generated away wind tilts a hanging strand behind its neutral tip instead of reversing direction');
 const midpoint = Rig.curvePoint(rest.points, 0, .5);
 assert(midpoint.z > 0, 'smooth neutral strand interpolation preserves outward depth');
 const join = Rig.curvePoint(rest.points, 0, 1);
