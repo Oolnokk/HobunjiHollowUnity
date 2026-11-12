@@ -277,11 +277,15 @@
   let _prevCameraOffsets = null; // Restored after fishing so the dedicated side camera can temporarily ignore prior shoulder/seated free-look rotation.
 
   function selectedFishingThrowAnimation() {
-    const spear = String(deps?.equipmentSlots?.harpoon || '').toLowerCase().includes('fishingspear'); // Selects the dedicated 90° spear throw across base/crafted keys; Fishing Mace intentionally borrows the generic hatchet Spin Throw.
-    const animation = spear
-      ? window.HeldActionAnimations?.weaponThrowSpearSpin
-      : window.HeldActionAnimations?.weaponThrowSpin;
-    return { key: spear ? 'fishingspear' : 'fishingmace', profile: spear ? 'fishing-spear' : 'hatchet-spin', animation };
+    const itemKey = deps?.equipmentSlots?.harpoon || ''; // Actual fitted assembly rather than its donor shaft or a substring.
+    const def = deps?.TOOL_ITEM_DEFS?.[itemKey]; // Determines whether a forged harpoon uses a thrust or sweeping weapon throw.
+    const workStyle = def?.modular ? window.ToolActivityStages?.workStyleFor?.('harpoon', itemKey, def) : null;
+    const spear = workStyle ? workStyle === 'thrust' : String(itemKey).toLowerCase().includes('fishingspear'); // Keep native Fishing Spear/Mace choices intact.
+    const baseAnimation = spear ? window.HeldActionAnimations?.weaponThrowSpearSpin : window.HeldActionAnimations?.weaponThrowSpin;
+    // Modular fishing attacks keep their authored throw and release timing, but rotate their spin to the overhead plane.
+    // The new head's mount orientation is authored in the Foundry, so do not force the native spear's end-for-end flip.
+    const animation = workStyle && baseAnimation ? { ...baseAnimation, spinBasisDeg: 90, toolEndFlip: false } : baseAnimation;
+    return { key: itemKey, profile: workStyle ? `modular-${workStyle}-overhead` : spear ? 'fishing-spear' : 'hatchet-spin', animation };
   }
 
   function beginFishingThrowWindup(reason = 'aim') {
