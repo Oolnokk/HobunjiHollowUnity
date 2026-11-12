@@ -8,9 +8,10 @@
   'use strict';
   const sources=new Set(); // Registered cave/ruin score groups; only nearby active plates are inspected.
   const SAFE_X=.83,SAFE_TOP=.68,SAFE_BOTTOM=.72; // Leave the score above the instrument controls and below the top HUD.
-  const MAX_FOV=82,MAX_DISTANCE_RATIO=3.5; // Avoid extreme fisheye or a camera boom far outside a cave.
+  const MAX_FOV=82,COMFORTABLE_DISTANCE_RATIO=3.5,MAX_WORLD_DISTANCE=24; // Keep familiar zoom when possible, but let genuinely wide score layouts use more distance on narrow screens.
   const output={offsetX:0,offsetY:0,offsetZ:0,distanceScale:1,fovExtra:0}; // Eased correction consumed by the existing gameplay camera.
   let owner=null,areaKey='',lastTime=null,nextProbe=0,goal=null; // One latched plate and one amortized visibility/framing sample at a time.
+  let previousNormalFrame=false; // Discovery is armed only after an unassisted gameplay-camera frame; returning from cinematics cannot trigger from their stale pose.
   let lastReason='idle',visibleTrigger=-1,fitLimited=false; // Compact mobile diagnostics for note discovery and constrained fitting.
   let scratchWorld=null,scratchScreen=null; // Reused Three.js vectors for note projection; never traverse the full scene.
 
@@ -107,8 +108,10 @@
     let distance=Math.max(baseDistance,Math.min(wantedDistance,baseDistance*2.35));
     let targetFov=Math.max(baseFov,requiredFov(fitPoints,focus,axes,distance,aspect)+1.5);
     targetFov=Math.min(MAX_FOV,targetFov);
-    distance=Math.max(distance,Math.min(baseDistance*MAX_DISTANCE_RATIO,
-      requiredDistance(fitPoints,focus,axes,Math.tan(targetFov*Math.PI/360),aspect)*1.025));
+    const fullFitDistance=requiredDistance(fitPoints,focus,axes,Math.tan(targetFov*Math.PI/360),aspect)*1.025; // Actual note extent and aspect ratio determine the necessary boom.
+    const distanceLimit=Math.max(baseDistance*COMFORTABLE_DISTANCE_RATIO,Math.min(MAX_WORLD_DISTANCE,fullFitDistance)); // Only extreme world spans are capped, not ordinary portrait framing.
+    distance=Math.max(distance,Math.min(distanceLimit,fullFitDistance));
+    targetFov=Math.min(MAX_FOV,Math.max(baseFov,requiredFov(fitPoints,focus,axes,distance,aspect)+1.5)); // Reclaim legibility when the longer boom can fit notes with less FOV distortion.
     const possible=requiredFov(fitPoints,focus,axes,distance,aspect)<=MAX_FOV+.25;
     return {offsetX:focus.x-baseTarget.x,offsetY:focus.y-baseTarget.y,offsetZ:focus.z-baseTarget.z,
       distanceScale:distance/baseDistance,fovExtra:Math.max(0,targetFov-baseFov),
@@ -120,9 +123,9 @@
   }
   function update({area,playerX,playerZ,camera,baseTarget,baseDistance,azimuth,angle,fovDeg,aspect,enabled=true,now=0}={}){
     const currentArea=String(area||'');
-    if(currentArea!==areaKey){clear(true);areaKey=currentArea;lastTime=null;nextProbe=0;lastReason='area-changed';}
+    if(currentArea!==areaKey){clear(true);areaKey=currentArea;lastTime=null;nextProbe=0;previousNormalFrame=false;lastReason='area-changed';}
     if(!enabled||!baseTarget||!Number.isFinite(Number(baseDistance))||!camera){
-      clear(true);lastReason='camera-owned-elsewhere';return null;
+      clear(true);previousNormalFrame=false;lastReason='camera-owned-elsewhere';return null;
     }
     const dt=lastTime==null?0:clamp((finite(now)-lastTime)/1000,0,.12);
     lastTime=finite(now);
@@ -133,7 +136,11 @@
           <=Math.max(.53,finite(p.radius,.46)+.10);
     };
     if(owner&&!onPlate(owner)){clear();lastReason='left-plate';}
-    if(!owner&&finite(now)>=nextProbe){
+    const residual=Math.abs(output.offsetX)+Math.abs(output.offsetY)+Math.abs(output.offsetZ)
+      +Math.abs(output.distanceScale-1)+Math.abs(output.fovExtra); // Prevent a recently assisted frame from counting as a naturally discovered clue on rapid plate re-entry.
+    const discoveryReady=previousNormalFrame&&residual<.0005;
+    previousNormalFrame=true;
+    if(!owner&&discoveryReady&&finite(now)>=nextProbe){
       nextProbe=finite(now)+85; // Once per 85 ms while searching; never raycast/traverse the world's objects.
       for(const source of sources){
         if(!onPlate(source))continue;
