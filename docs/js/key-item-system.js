@@ -97,6 +97,30 @@
     return { ok: true, granted: changed, definition };
   }
 
+  function revoke(id) { // Used for consumed story keys: removal persists in the same save scope as the original award.
+    const definition = definitions.get(String(id)); // Registered scope prevents accidentally mutating unrelated inventory records.
+    if (!definition) return { ok: false, removed: false, message: 'Unknown key item.' };
+    const liveProfile = profile(); // The active world/character must own any key being consumed.
+    if (!liveProfile?.characterId || !liveProfile?.worldId) return { ok: false, removed: false, message: 'No active character/world.' };
+    const meta = readMeta(); // Mutation operates on the canonical metadata, not a stale inventory mirror.
+    if (!meta) return { ok: false, removed: false, message: 'Save metadata is unavailable.' };
+    const owner = definition.scope === 'world'
+      ? meta.worlds?.find(entry => entry?.id === liveProfile.worldId)
+      : meta.characters?.find(entry => entry?.id === liveProfile.characterId);
+    if (!owner) return { ok: false, removed: false, message: 'Key owner record is missing.' };
+    const list = definition.scope === 'world' ? owner.keyItems : owner.gearInventory?.keyItems; // Consumes only the defined save-lifetime list.
+    if (!Array.isArray(list) || !list.includes(definition.id)) return { ok: true, removed: false, definition };
+    owner[definition.scope === 'world' ? 'keyItems' : 'gearInventory'] ||= definition.scope === 'world' ? [] : {};
+    if (definition.scope === 'world') owner.keyItems = list.filter(entry => entry !== definition.id);
+    else owner.gearInventory.keyItems = list.filter(entry => entry !== definition.id);
+    if (!writeMeta(meta)) return { ok: false, removed: false, message: 'Could not save key item consumption.' };
+    if (definition.scope === 'character') {
+      const liveKeys = characterKeys(liveProfile); // Keep the character mirror consistent only after the persistent write succeeds.
+      for (let i = liveKeys.length - 1; i >= 0; i--) if (liveKeys[i] === definition.id) liveKeys.splice(i, 1);
+    }
+    return { ok: true, removed: true, definition };
+  }
+
   function featureUnlocked(featureId) { // Used by future systems to gate features without knowing which reward item owns the feature.
     if (!featureId) return false;
     for (const definition of definitions.values()) { // Used to locate any registered key mapped to the requested feature.
@@ -120,5 +144,5 @@
 
   function definitionFor(id) { return definitions.get(String(id)) || null; } // Used by diagnostics/tests without exposing the mutable registry itself.
 
-  global.KeyItemSystem = { define, defineMany, definitionFor, has, grant, featureUnlocked, snapshot };
+  global.KeyItemSystem = { define, defineMany, definitionFor, has, grant, revoke, featureUnlocked, snapshot };
 })();
