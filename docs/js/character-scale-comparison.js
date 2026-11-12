@@ -978,6 +978,9 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
         active,
         building,
         lineup: entries.map(entry => entry.key),
+        selected: selected?.key || null, // Identifies which progressively loaded species is currently editable.
+        portraitLoading: window.__portraitPixelCacheDebug?.()?.imageLoads || null, // Displays slowest sprite and real request counts without devtools.
+        portraitImageCache: window.__portraitPixelCacheDebug?.()?.images || null, // Cache size and evictions distinguish reload churn from network slowness.
         latestChange: 'Longoran male/female inherit Tletingan representatives and expose adjustable scale, spine and Maskbound-style gait with isolated walk preview.',
       }),
     });
