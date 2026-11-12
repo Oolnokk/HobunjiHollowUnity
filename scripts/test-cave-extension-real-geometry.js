@@ -52,7 +52,8 @@ for (const seed of variants) {
     assert(!blockedReach.has(cell), seed + ': hidden chamber is actually unreachable before rock removal');
     assert(openReach.has(cell), seed + ': hidden chamber becomes reachable after all wall layers break');
   }
-  assert(map.oreRocks.some(rock => rock.caveSeparator), seed + ': wall is represented by diggable ore tiles');
+  assert(map.oreRocks.some(rock => rock.caveSeparator), seed + ': wall is represented by diggable stone tiles');
+  assert(map.oreRocks.filter(rock => rock.caveSeparator).every(rock => rock.oreKind === 'stone'), seed + ': rock walls are stone, not ore');
   assert(map.oreRocks.every(rock => floor.has(key(rock.col, rock.row))), seed + ': no wall is placed outside the carved cave floor');
 }
 console.log(`real carved cave annexes: ${eligible}/${variants.length} candidates; ${total} floor tiles checked`);

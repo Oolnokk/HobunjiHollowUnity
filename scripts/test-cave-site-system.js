@@ -110,8 +110,11 @@ function withRockRim(map) {
 const rimmed = withRockRim(baseMap('rimmed_separator_test'));
 const rimReservations = new Set(rimmed.outerRimTiles.map(cell => cell.join(',')));
 const rimPlan = { separator: null };
-assert(Cave.__test.installMineableSeparator(rimmed, rngFactory('rimmed-cave'), rimReservations, rimPlan),
+const wallSeedRng = rngFactory('rimmed-cave'); // Original seeded stream used to verify wall creation keeps its historical RNG draw.
+let wallSeedDraws = 0; // Counts the retired wall-ore roll so later cave placements retain their seed sequence.
+assert(Cave.__test.installMineableSeparator(rimmed, () => { wallSeedDraws++; return wallSeedRng(); }, rimReservations, rimPlan),
   'realistic rim/colliders no longer reject the cave corridor');
+assert.equal(wallSeedDraws, 1, 'stone walls consume the former single ore roll to preserve seeded cave contents');
 assert(rimPlan.separator.cells.some(tile => tile.layer === 5), 'the rimmed corridor still receives five contiguous mineable rock strata');
 assert(rimReservations.has('6,3'), 'installed wall is reserved for later features');
 const separator = Cave.__test.findMineableSeparator(baseMap('separator_test'));
@@ -254,6 +257,8 @@ const wall = cacheMap.caveSitePlan.separatorRock;
 assert(wall && wall.cells.length === cacheMap.oreRocks.filter(rock => rock.caveSeparator).length, 'hidden cache is sealed behind a wall of mineable ore rocks');
 assert(wall.cells.some(cell => cell.layer === 5), 'sealed chamber uses five successive mineable strata');
 assert(cacheMap.oreRocks.filter(rock=>rock.caveSeparator).every(rock=>Number.isInteger(rock.caveSeparatorLayer)), 'each wall rock records its layer for diagnostics');
+assert(cacheMap.oreRocks.filter(rock=>rock.caveSeparator).every(rock=>rock.oreKind==='stone'), 'every hidden-chamber wall generates plain stone rather than a random metal ore');
+assert.equal(cacheMap.caveSitePlan.separatorRock.oreKind,'stone','saved cave-wall metadata also identifies plain stone');
 assert(cacheMap.caveShattercasks.some(charge=>charge.guaranteed), 'every mineable cave separator guarantees an entrance-side Shattercask');
 const plan = Cave.__test.plansByMapId.get('map_i_test_cache');
 assert(plan.separator.farKeys.includes(`${cacheMap.caveCache.col},${cacheMap.caveCache.row}`), 'cache sits behind the wall');
@@ -620,8 +625,13 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
   assert.equal(fittedFaces, 5, 'Ordinary cave resource rock mounds keep the UV-preserving fitting helper');
   assert.deepEqual(newGrid[0].map(cell => cell.oreKey), ['tinCopper', 'mushistonite', 'tin'], 'Wild-cave rocks preserve all three new ore identities and drops');
   const separatorScene=new Obj(),separatorGrid=[[{},{}]],separatorMap='map_i_cave_rock_wall';
+  const caveShell=new Obj(null,{key:'actual-cave-wall-material'}); // Simulates the already-carved cavern shell; separators must reuse its material by identity.
+  caveShell.isMesh=true;caveShell.userData.interiorCavernMaterialParity='farm-cliffs';separatorScene.add(caveShell);
+  const originalSceneTraverse=separatorScene.traverse.bind(separatorScene); // Keeps the normal test scene walk while tracking expensive full-scene searches.
+  let separatorSceneScans=0; // A mined tile must re-mesh without searching every scene object again.
+  separatorScene.traverse=fn=>{separatorSceneScans++;originalSceneTraverse(fn);};
   const separatorGroups=oreCtx.CavernOreRocks.build(separatorMap,{oreRocks:[
-    {col:0,row:0,oreKind:'stone',caveSeparator:true,caveSeparatorLayer:1},
+    {col:0,row:0,oreKind:'gold',caveSeparator:true,caveSeparatorLayer:1}, // Legacy save with a metal wall must still mine only Stone.
     {col:1,row:0,oreKind:'stone',caveSeparator:true,caveSeparatorLayer:2},
   ]},separatorScene,separatorGrid); // Adjacent layers share a logical cave wall but each tile is a standalone diggable rock.
   const rock0=separatorGroups.get('0,0'),rock1=separatorGroups.get('1,0');
@@ -641,6 +651,13 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
   const fused=()=>separatorScene.children.filter(child=>child.userData?.caveSeparatorFused);
   assert.equal(fused().length,1,'touching rocks fuse into exactly one rendered rock wall, without overlapping clipped lobes');
   const oldMesh=fused()[0],oldGeo=oldMesh.geometry;
+  assert.equal(oldMesh.material,caveShell.material,'the diggable wall reuses the exact cave-shell material, not an ore material');
+  assert.equal(separatorSceneScans,1,'the shared cave-shell material is found once when building the wall');
+  assert.equal(oldMesh.userData.caveSharedWallMaterial,true,'mobile scene diagnostics identify shared native cave-wall material');
+  assert.notEqual(oldMesh.userData.naturalSurfaceUvOwner,'legacy-continuous-rock-uv','carved stone never inherits ore-only UV ownership');
+  assert.equal(fittedFaces,5,'building a fused stone wall never runs the ore-mound UV fitter');
+  assert.equal(separatorGrid[0][0].oreKind,'stone','legacy metal walls become plain stone on load');
+  assert.equal(separatorGrid[0][0].oreKey,null,'the old metal wall cannot award ore');
   assert.equal(oldMesh.userData.caveSeparatorLiveTiles,2,'shared wall tracks both independently mineable tiles');
   assert(oldGeo.userData.caveFusedRockTriangles>0,'the wall is an actual triangulated solid');
   assertSealedStone(oldMesh);
@@ -660,6 +677,8 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
   assert.equal(oldGeo.disposed,true,'old triangulations are disposed after remeshing, avoiding a mobile GPU leak');
   assert.equal(fused().length,1,'rebuilding replaces the wall mesh instead of leaving overlaid versions');
   assert.equal(fused()[0].userData.caveSeparatorLiveTiles,1,'only unbroken tiles contribute to the unified visible wall');
+  assert.equal(fused()[0].material,caveShell.material,'exposed faces after mining keep the same cave-shell material');
+  assert.equal(separatorSceneScans,1,'mining reuses the cached cave shell rather than scanning all NPCs and scene objects');
   assert(oreCtx.CavernOreRocks.probeRock(separatorMap,.55,1,.5)>0,'the mined gap is genuinely open, not an invisible overlapping mesh');
   assert(oreCtx.CavernOreRocks.probeRock(separatorMap,1.5,1,.5)<0,'remaining rock has a freshly sealed exposed rock face');
   assert.equal(oreCtx.CavernOreRocks.removeVisual(separatorMap,1,0),true,'Shattercask blasts can retire the next rock independently');
