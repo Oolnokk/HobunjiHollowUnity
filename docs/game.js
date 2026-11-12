@@ -25360,7 +25360,7 @@
         const swingWindupPitch = Number(combatSwingPose?.windup?.pitch); // Authored tool pitch endpoints determine the flail's hold-through direction.
         const swingStrikePitch = Number(combatSwingPose?.strike?.pitch);
         window.HobunjiWeaponSpriteAssemblies?.setAction(toolMeshMap[activeTool], {
-          attacking: toolSwingT > 0 && (activeTool === 'weapon' || (chargeAction?.tool === activeTool && !!TOOL_ITEM_DEFS[equipmentSlots[activeTool]]?.modular)), progress, // A flexible modular weapon also animates its rope/head while used for tool work.
+          attacking: toolSwingT > 0 && (activeTool === 'weapon' || ((chargeAction?.tool === activeTool || (activeTool === 'harpoon' && !!fishingThrowSpinVisual)) && !!TOOL_ITEM_DEFS[equipmentSlots[activeTool]]?.modular)), progress, // Flexible modular tool and harpoon strokes must animate their rope/head as well as their shaft.
           movementPosition: playerMesh.position, // Character-world locomotion, not the swing-animated hand pivot; used for the hanging chain's lag.
           windupFrac: WF, strikeFrac: SF, holdFrac: combatSwingSequenceHoldFrac ?? HF,
           yawTravelDeg: window.HobunjiWeaponSpriteAssemblies?.flailYawTravel(combatSwingPose?.windup, combatSwingPose?.strike, combatSwingPower, combatSwingSign), // Match signed, power-scaled tool and body sweep travel.
