@@ -681,7 +681,7 @@ vm.runInNewContext(locksSource.slice(0,lockCodeEnd),{window:lockWindow,performan
 const locks=lockWindow.CharacterActionLocks;
 const musicLock=locks.acquire({owner:'music-minigame',participants:[{id:'player',channels:['tools','actions']}]});
 assert.equal(locks.isLocked('player','tools'),true,'music still blocks ordinary tool input');
-assert.equal(locks.isLocked('player','tools','music-minigame'),false,'visual-only music exception skips its own lock');
+assert.equal(locks.isLockedIgnoringOwner('player','tools','music-minigame'),false,'visual-only music exception skips its own lock');
 const poseDebug={}; // Minimal real updateToolMesh guard needs only these resettable debug fields.
 const visibleTool={visible:true}; // Any previously equipped weapon must be hidden while music owns the prop.
 const visibleHeld={visible:false}; // Kurraya should become visible only through updateHeldItemHolder.

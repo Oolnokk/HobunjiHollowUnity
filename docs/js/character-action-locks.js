@@ -49,7 +49,11 @@
     }
   }
 
-  function isLocked(participantId, channel, ignoredOwner = null) {
+  function isLocked(participantId, channel) {
+    return isLockedIgnoringOwner(participantId, channel, null); // Existing callers keep the strict lock predicate unchanged.
+  }
+
+  function isLockedIgnoringOwner(participantId, channel, ignoredOwner) {
     if (!participantId || !channel) return false;
     pruneExpired();
     const id = String(participantId);
@@ -91,6 +95,7 @@
     acquire,
     release,
     isLocked,
+    isLockedIgnoringOwner, // Music visuals ignore only their own lock; other tool locks remain authoritative.
     clearParticipant,
     getDebug,
     channels: DEFAULT_CHANNELS,

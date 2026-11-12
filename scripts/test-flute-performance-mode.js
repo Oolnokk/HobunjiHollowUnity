@@ -169,6 +169,20 @@ function testFluteMouthMount() {
   playerRoot.add(avatar);
   renderHooks[0]([],{},camera);
   assert.equal(win.KurrayaInstrument.fluteHandTarget()?.holder,mounted[0].root,'the grip returns once the replacement portrait is ready');
+  playerRoot.visible=false;
+  renderHooks[0]([],{},camera);
+  assert.equal(win.KurrayaInstrument.fluteHandTarget(),null,'a hidden player must not leave a floating flute behind');
+  assert.equal(win.KurrayaInstrument.fluteDiagnostics().anchorStatus,'player-hidden');
+  playerRoot.visible=true;
+  let otherToolLock=false; // Simulates a cinematic lock while music remains active.
+  win.CharacterActionLocks={isLockedIgnoringOwner:(_id,_channel,owner)=>owner==='music-minigame' && otherToolLock};
+  otherToolLock=true;
+  renderHooks[0]([],{},camera);
+  assert.equal(win.KurrayaInstrument.fluteHandTarget(),null,'another action must hide the scene-level flute');
+  assert.equal(win.KurrayaInstrument.fluteDiagnostics().anchorStatus,'blocked-by-action');
+  otherToolLock=false;
+  renderHooks[0]([],{},camera);
+  assert.equal(win.KurrayaInstrument.fluteHandTarget()?.holder,mounted[0].root,'the flute and grip recover after a cinematic');
   win.KurrayaInstrument.endFlute();
   assert.equal(mounted[0].root.visible,false,'closing the performance hides the mouth prop');
   const count=mounted.length;

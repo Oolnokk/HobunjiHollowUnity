@@ -366,7 +366,7 @@
     if (!note || startedAt === null) return null;
     const durationMs = Math.max(50, (Number(note.durationS) || 0.32) * 1000); // The same authored duration is used by hands, holder and body.
     let progress = Math.max(0, (now - startedAt) / durationMs);
-    if (previousProgress < note.strikeFrac && progress > note.holdFrac) progress = note.strikeFrac; // Show a skipped Strike for one frame.
+    if (previousProgress < note.strikeFrac - 1e-6 && progress > note.holdFrac) progress = note.strikeFrac; // Rescue only an actually skipped Strike; rounding near Strike must not replay it.
     return progress >= 1 ? null : progress; // The next sampled frame returns the action to Neutral.
   }
 
@@ -675,9 +675,11 @@
     const avatar=window.WorldPortraitLife?.getPlayerAvatar?.()?.group; // The live portrait owns the neck bones and skinned mouth pixel.
     const playerRoot=window.Combat?.deps?.playerMesh || window.PlayerBodyTransformComposer?.getPlayerMesh?.(); // The outer player root owns scene membership.
     const scene=playerRoot?.parent;
-    if(!avatar || avatar.parent!==playerRoot || !scene){
+    const playerHidden=playerRoot?.visible===false || avatar?.visible===false; // Scene-level mouth props must hide with their owner.
+    const blocked=window.CharacterActionLocks?.isLockedIgnoringOwner?.('player','tools','music-minigame')===true; // Only this session's own lock may permit the visual.
+    if(!avatar || avatar.parent!==playerRoot || !scene || playerHidden || blocked){
       root.visible=false;
-      fluteState.anchorStatus='waiting-for-portrait';
+      fluteState.anchorStatus=blocked?'blocked-by-action':playerHidden?'player-hidden':'waiting-for-portrait';
       return;
     }
     const note=window.HeldActionAnimations?.flutePlayNote; // Own authored note action; blowgun pose remains a legacy fallback only.

@@ -25217,7 +25217,9 @@
         _toolPoseCentroidDebug.reticleOrbitYawDeg = 0;
         _toolPoseCentroidDebug.reticleTargetWorld = null;
         const musicInstrument = window.MusicMinigame?.state?.instrumentKey || null; // A live music session owns its prop without unlocking ordinary combat/tools.
-        if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'tools', musicInstrument === 'kurraya' ? 'music-minigame' : null)) {
+        if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'tools')
+            && (musicInstrument !== 'kurraya' ||
+                window.CharacterActionLocks?.isLockedIgnoringOwner?.(PLAYER_ACTION_LOCK_ID, 'tools', 'music-minigame') !== false)) {
           toolHolder.visible = false;
           heldItemHolder.visible = false;
           return;
