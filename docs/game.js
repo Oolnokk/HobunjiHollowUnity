@@ -24285,6 +24285,7 @@
         if (!chargeAction) return;
         if (!chargeAction.finalStrikeCommitted) {
           if (!actionHeldDown) { cancelChargeAction('input released'); return; }
+          if (activeTool !== chargeAction.tool || activeAction !== chargeAction.action) { cancelChargeAction('tool/action changed'); return; } // Stops a former held tool from finishing after equipment changes.
           const reticle = getReticleTile();
           if (reticle.col !== chargeAction.col || reticle.row !== chargeAction.row) { cancelChargeAction('reticle moved'); return; }
         }
