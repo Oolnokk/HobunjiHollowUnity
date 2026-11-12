@@ -158,4 +158,53 @@ assert.match(dodgeSource, /380 ms invulnerability window/, 'UI iframe baseline r
 assert.match(dodgeSource, /BASE_DODGE_SOMERSAULT_DUR_S = 0\.22/, 'UI dodge-duration baseline remains tied to the ordinary player dodge presentation contract');
 assert.deepEqual({ ...api.__test.BASE_DODGE_PROFILE }, { durationS: 0.22, iframeMs: 380 }, 'module exposes its dodge timing baseline for regression tests');
 
+
+assert.match(source, /panel\.replaceChildren\(trinketCard, outfitCard, finalCard\)/, 'trinket effects sit before Outfit and Final Values in the left effects stack');
+assert.match(source, /renderRows\(ui\.trinketCard/, 'trinket summary rows refresh when the Gear panel refreshes');
+assert.match(source, /trinketHeading\.textContent !== headingText/, 'stable Attunement heading must not trigger redundant mutation/layout work');
+assert.match(source, /row\.classList\.contains\(tone\) !== active/, 'the 1 Hz effect refresh must not rewrite unchanged bonus/drawback classes');
+const noTrinkets = api.__test.composeTrinketEffects({ equippedEntries: () => [], capacity: () => 8 }); // Empty Gear must show a readable state without affecting the other cards.
+assert.equal(noTrinkets.equipped, 0);
+assert.equal(noTrinkets.rows[0].label, 'No trinkets equipped');
+
+const equippedTrinkets = [
+  { id: 'naoung1', def: { displayName: 'Nao', attunementCost: 3, effects: { stats: { maxHealth: 1.25, healthRegenInCombat: 2.5 } } } },
+  { id: 'naoung2', def: { displayName: 'Nao', attunementCost: 3, effects: { stats: { maxHealth: 1.25 } } } },
+  { id: 'bloodrush', def: { displayName: 'Bloodrush', attunementCost: 2, effects: { stats: { attackSpeed: 1.35, attackStaminaCost: 1.35 }, perkRanks: { increaseAoe: 2 }, companion: { damage: 1.3, affliction: 1.4 } } } },
+]; // Duplicate stats multiply, perk ranks add, and companion channels stay independent.
+const equippedSummary = api.__test.composeTrinketEffects(
+  { equippedEntries: () => equippedTrinkets, capacity: () => 8 },
+  { TREES: { combat: [{ id: 'increaseAoe', name: 'Increase AoE' }] } },
+);
+const effectsByLabel = Object.fromEntries(equippedSummary.rows.map(row => [row.label, row])); // Compare exact UI strings rather than merely testing internal multipliers.
+assert.equal(equippedSummary.used, 8, 'Trinket heading reflects combined Attunement');
+assert.equal(effectsByLabel['Max Health'].value, '+56.3%', 'two +25% trinkets multiply rather than add');
+assert.equal(effectsByLabel['Health regen (combat)'].value, '+150%', 'combat-only regeneration is not mislabeled as universal recovery');
+assert.equal(effectsByLabel['Weapon attack speed'].value, '+35%', 'conditional Bloodrush modifier is included');
+assert.equal(effectsByLabel['Attack Stamina cost'].value, '+35%', 'drawbacks appear alongside benefits');
+assert.equal(effectsByLabel['Attack Stamina cost'].tone, 'penalty', 'increased attack costs are marked as penalties');
+assert.equal(effectsByLabel['Perk: Increase AoE'].value, '+2 ranks', 'combat perk bonuses are summarized independently');
+assert.equal(effectsByLabel['Companion Health damage'].value, '+30%', 'companions are summarized independently');
+assert.equal(effectsByLabel['Companion affliction buildup'].value, '+40%');
+assert.equal(effectsByLabel['Companion Footing damage'], undefined, 'missing channels are not invented');
+
+const stackedTradeoffs = api.__test.composeTrinketEffects({
+  equippedEntries: () => [
+    { def: { attunementCost: 1, effects: { stats: { knockbackDistance: 0.7, maxHealth: 1.25, killStaminaRestore: 1.4 } } } },
+    { def: { attunementCost: 1, effects: { stats: { knockbackDistance: 0.4, maxHealth: 0.8, incomingHealthDamage: 1.3 } } } },
+    { def: { attunementCost: 1, effects: { perkRanks: { increaseAoe: 2 }, stats: { attackSpeed: 1.35 } } } },
+    { def: { attunementCost: 1, effects: { perkRanks: { increaseAoe: 3 }, stats: { attackSpeed: 1.35 } } } },
+  ],
+  capacity: () => 8,
+});
+const tradeoffs = Object.fromEntries(stackedTradeoffs.rows.map(row => [row.label, row])); // Ensures user-facing stacking remains legible under two simultaneous tradeoff trinkets.
+assert.equal(tradeoffs['Knockback received'].value, '-72%');
+assert.equal(tradeoffs['Knockback received'].tone, 'bonus', 'less knockback is beneficial');
+assert.equal(tradeoffs['Max Health'].value, '0%', 'exactly cancelling modifiers are visible');
+assert.equal(tradeoffs['Max Health'].tone, 'neutral');
+assert.equal(tradeoffs['Health damage taken'].tone, 'penalty', 'more incoming Health damage is a drawback');
+assert.equal(tradeoffs['Stamina restored on kill'].value, '+40% max / kill', 'kill refund is never mislabeled as passive regen');
+assert.equal(tradeoffs['Weapon attack speed'].value, '+82.3%', 'two Bloodrush-style buffs compose multiplicatively');
+assert.equal(tradeoffs['Perk: increase Aoe'].value, '+5 ranks', 'perk ranks stack even without a named perk tree');
+
 console.log('Inventory character effects tests passed');
