@@ -6,10 +6,15 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync('docs/js/key-item-system.js', 'utf8'); // Actual runtime, not a copied inventory simulator.
 const style = fs.readFileSync('docs/style.css', 'utf8'); // Authored key-chip styling must remain present and visible.
+const editor = fs.readFileSync('docs/js/ui-element-editor.js', 'utf8'); // Session UI settings must not re-hide the key section on reload.
+const index = fs.readFileSync('docs/index.html', 'utf8'); // Key section and updated UI baseline are shipped together.
 const overrides = JSON.parse(fs.readFileSync('docs/config/ui/ui-element-editor-overrides.json', 'utf8')); // Prevents accidental reintroduction of the zero-height override.
 new vm.Script(source, {filename: 'key-item-system.js'});
 assert(style.includes('.inv-key-chip[aria-expanded="true"] .inv-key-desc'), 'tapping a key must expose its description');
 assert.equal(overrides.elements['#invKeyList'], undefined, 'the UI editor must not collapse the key list');
+assert(editor.includes("stored?.elements?.['#invKeyList']?.height === '0'"), 'previous session layouts must migrate away from the hidden key list');
+assert(index.includes('id="invKeyList"'), 'the Pack key section must exist in the shipped menu');
+assert(index.includes('js/ui-element-editor.js?v=20261112keyPack2'), 'the fixed session migration must not be hidden by cached UI code');
 
 class FakeNode {
   constructor(tagName) {
