@@ -246,7 +246,9 @@ Exterior.update(.01,area);
 assert.equal(opened,0,'stepping onto the plate must not auto-equip or open an instrument');
 assert.equal(gate.lastDown,true,'standing on the real raised plate activates the melody clue');
 assert(gate.scoreBoard.visible,'the exterior Scratchbone score lights up on the active raised plate');
-assert.equal(Exterior.debugSnapshot().areas[0].portals[0].scoreOverlayReady,true, 'mobile puzzle diagnostics confirm all clue ink is post-composite eligible');
+assert.equal(Exterior.debugSnapshot().areas[0].portals[0].scoreOverlayReady,true, 'puzzle debug snapshot confirms all clue ink is post-composite eligible');
+assert.match(read('docs/js/pixel-probe.js'), /Puzzle Cave note overlay:[^\n]*finalPassReady=/,
+  'the existing copyable mobile Pixel Probe reports active score overlay readiness');
 assert(sounds.some(event=>event.key==='stoneBeat1'&&event.volume===.72&&event.pitch===1),
   'stepping onto the plate immediately plays the real first stonebeat at its authored pitch');
 assert(context.RuinInteractionAudio.debugSnapshot().metronomeSource==='assets/audio/sfx/sfx_stonebeat-1.mp3',
