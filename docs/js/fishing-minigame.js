@@ -123,6 +123,38 @@
   loadFishSprite('assets/hud/fish_silhouette-whiskers.png', (img) => { fishWhiskersSpriteImage = img; });
   loadFishSprite('assets/toolsprites/harpoon_fishingspear.png', (img) => { harpoonSpearSpriteImage = img; });
   loadFishSprite('assets/toolsprites/harpoon_fishingmace.png', (img) => { harpoonMaceSpriteImage = img; });
+  const flailFishingHeadImages = new Map(); // One trimmed sprite per authored flail head, reused across every ring render and repeated casts.
+  function prepareFishingFlailHeadSprite(spritePath) {
+    if (!spritePath || flailFishingHeadImages.has(spritePath)) return;
+    flailFishingHeadImages.set(spritePath, null); // In-flight entry prevents duplicate image decoding and per-frame requests.
+    loadFishSprite(spritePath, (img) => {
+      try {
+        // The Tool Hub often stores head art on a mostly-transparent 450x1204 part sheet.
+        // Crop ONCE at load so the fish-ring head is visible without stretching the shaft or redrawing each frame.
+        const bounds = document.createElement('canvas'); // Temporary pixel inspection, never retained or allocated during game frames.
+        bounds.width = img.naturalWidth; bounds.height = img.naturalHeight;
+        const ctx = bounds.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(img, 0, 0);
+        const rgba = ctx.getImageData(0, 0, bounds.width, bounds.height).data; // Finds the actual opaque head rather than sheet margins.
+        let minX = bounds.width, minY = bounds.height, maxX = -1, maxY = -1;
+        for (let y = 0; y < bounds.height; y++) for (let x = 0; x < bounds.width; x++) {
+          if (rgba[(y * bounds.width + x) * 4 + 3] <= 8) continue;
+          minX = Math.min(minX, x); minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+        }
+        if (maxX < minX) throw new Error('transparent head art');
+        const trim = document.createElement('canvas');
+        trim.width = maxX - minX + 1; trim.height = maxY - minY + 1;
+        trim.getContext('2d').drawImage(bounds, minX, minY, trim.width, trim.height, 0, 0, trim.width, trim.height);
+        flailFishingHeadImages.set(spritePath, { src: trim.toDataURL('image/png'), aspect: trim.width / trim.height });
+      } catch (error) {
+        // CORS-tainted sources still render correctly with their original PNG; no crash or bogus throw.
+        flailFishingHeadImages.set(spritePath, { src: img.src, aspect: img.naturalWidth / Math.max(1, img.naturalHeight) });
+        window.__farmLog?.(`fishing flail head crop fallback: ${spritePath} (${error.message})`, 'warn');
+      }
+    });
+  }
+
 
   let fishDeformCanvas = null, fishDeformCtx = null;
   function ensureFishDeformCanvas(width, height) {
@@ -304,6 +336,7 @@
 
   function beginFishingThrowWindup(reason = 'aim') {
     const selected = selectedFishingThrowAnimation();
+    if (selected.flailHeadSprite) prepareFishingFlailHeadSprite(selected.flailHeadSprite); // Begin loading before the bite so a real flail head appears by the first cast.
     const animation = selected.animation;
     if (!animation?.poses || typeof deps?.triggerFishingWeaponVisual !== 'function') {
       fishingThrowHoldActive = false;
@@ -795,6 +828,14 @@
       inspectTargetAngle: 0, centerRadius: FISHING_RING.fishRadius * 0.3, lastDuration: 0, visualOffset: 0,
     };
     const equippedHarpoon = deps.equipmentSlots?.harpoon; // Snapshotted at ring start so changing gear cannot warp an in-flight throw.
+    const equippedDef = deps.TOOL_ITEM_DEFS?.[equippedHarpoon]; // Stable modular pair metadata for this ring's projectile graphics.
+    const flex = equippedDef?.weaponAssembly?.flail; // A flexible head is thrown while the handle remains in the player's hand.
+    const flailHeadLayer = flex?.head?.layers?.find(layer => layer.id === flex.head.anchorLayer) || flex?.head?.layers?.[0];
+    const projectileMode = flex ? 'flail' : equippedDef?.modular
+      ? (equippedDef.animStyle === 'thrust' ? 'spear' : 'spin')
+      : String(equippedHarpoon || '').toLowerCase().includes('fishingmace') ? 'spin' : 'spear'; // Matches the held throw's existing spear/spin selection.
+    const flailHeadSprite = flailHeadLayer?.sprite || null; // One actual Tool Hub head bitmap, never a detached generic mace handle.
+    if (flailHeadSprite && typeof prepareFishingFlailHeadSprite === 'function') prepareFishingFlailHeadSprite(flailHeadSprite); // Isolated timing tests can omit the sprite loader.
     const metalEfficacy = Number(deps.toolMetalMultiplier?.(equippedHarpoon)); // Resolves the actual (possibly reinforced) tool tier.
     const harpoonEfficacy = Number.isFinite(metalEfficacy) && metalEfficacy > 0 ? metalEfficacy : 1; // Legacy/nonmetal tools keep base timing.
     fm.bridge = {
@@ -805,6 +846,7 @@
       markerA: null, markerB: null, spearActive: false, lineA: null, lineB: null,
       shotTimer: 0, retractTimer: 0, tipX: 0, tipY: 0, prevTipX: 0, prevTipY: 0, caughtFish: false,
       weaponSpinDeg: 0, frozenWeaponAngleDeg: 0,
+      projectileMode, flailHeadSprite, // One ring-scoped artwork choice prevents mid-flight tool changes from swapping a tethered head into a detached shaft.
     };
     fm.panic = 0;
     fm.resolved = false;
@@ -1407,43 +1449,48 @@
     };
   }
 
-  // Ported from the prototype's renderBridgeSpearSprite: positions the real
-  // harpoon/mace PNG (business end at the image's bottom) rotated along the
-  // flight chord, with a quadratic-bezier rope back to the launch point, and
-  // (mace only) a rapid spin while outbound that freezes once retracting.
+  // The spear's tip or mace/flail-head centre remains the same minigame collision point.
+  // Rigid tools use their existing spear-or-spinning-mace presentation; flexible flails render
+  // only the real fitted head on the existing tether, never a detached shaft sprite.
   function renderFishingSpearSprite(startPoint, endPoint) {
     const art = FISHING_BRIDGE_ART;
-    const useMace = String(deps.equipmentSlots?.harpoon || '').toLowerCase().includes('fishingmace'); // Match smith-crafted metal variants as well as the old bare key.
-    const spriteImg = useMace ? harpoonMaceSpriteImage : harpoonSpearSpriteImage;
+    const useMace = String(deps.equipmentSlots?.harpoon || '').toLowerCase().includes('fishingmace'); // Preserve legacy Fishing Mace/tier recognition for the native throw.
+    const bridge = fishingMinigame?.bridge; // Ring-scoped projectile identity, snapped when the cast begins.
+    const mode = bridge?.projectileMode || (useMace ? 'spin' : 'spear'); // Modular thrusts never rotate their launched weapon; sweeps and flails do.
+    const isFlail = mode === 'flail'; // Only the fitted flexible head flies; the handle stays attached to the avatar's hand.
+    const head = isFlail ? flailFishingHeadImages.get(bridge?.flailHeadSprite) : null;
+    const spriteSrc = isFlail ? head?.src : mode === 'spin' ? harpoonMaceSpriteImage?.src : harpoonSpearSpriteImage?.src;
     const dx = endPoint.x - startPoint.x, dy = endPoint.y - startPoint.y;
     const len = Math.hypot(dx, dy) || 1;
     const ux = dx / len, uy = dy / len;
     const nx = -uy, ny = ux;
-    const ropeEndX = useMace ? endPoint.x : endPoint.x - ux * art.ropeAttachBack;
-    const ropeEndY = useMace ? endPoint.y : endPoint.y - uy * art.ropeAttachBack;
+    const ropeEndX = mode === 'spear' ? endPoint.x - ux * art.ropeAttachBack : endPoint.x;
+    const ropeEndY = mode === 'spear' ? endPoint.y - uy * art.ropeAttachBack : endPoint.y;
     const sag = Math.min(22, len * art.ropeSag);
     const ctrlX = (startPoint.x + ropeEndX) * 0.5 + nx * sag;
     const ctrlY = (startPoint.y + ropeEndY) * 0.5 + ny * sag;
     fishingEls.spearRope.setAttribute('d', `M ${startPoint.x.toFixed(2)} ${startPoint.y.toFixed(2)} Q ${ctrlX.toFixed(2)} ${ctrlY.toFixed(2)} ${ropeEndX.toFixed(2)} ${ropeEndY.toFixed(2)}`);
     fishingEls.spearRope.setAttribute('opacity', '1');
 
-    if (!spriteImg || !spriteImg.naturalWidth) { fishingEls.spearSpriteWrap.setAttribute('opacity', '0'); return; }
-
-    const spriteW = art.spriteWidth, spriteH = art.spriteHeight, front = art.spearAttachFront;
-    fishingEls.spearImage.setAttribute('href', spriteImg.src);
-    fishingEls.spearImage.setAttribute('x', (-spriteW * 0.5).toFixed(2));
-    fishingEls.spearImage.setAttribute('y', (useMace ? -spriteH * 0.5 : -front).toFixed(2));
+    if (!spriteSrc || (!isFlail && !(mode === 'spin' ? harpoonMaceSpriteImage?.naturalWidth : harpoonSpearSpriteImage?.naturalWidth))) {
+      fishingEls.spearSpriteWrap.setAttribute('opacity', '0'); // No placeholder handle can accidentally appear as a released flail.
+      return;
+    }
+    const spriteW = isFlail ? 38 : art.spriteWidth; // A compact metal head, compared with the long native spear/mace shaft.
+    const spriteH = isFlail ? Math.max(18, Math.min(64, spriteW / Math.max(.15, head.aspect))) : art.spriteHeight;
+    fishingEls.spearImage.setAttribute('href', spriteSrc);
+    fishingEls.spearImage.setAttribute('x', (-spriteW * .5).toFixed(2));
+    fishingEls.spearImage.setAttribute('y', (isFlail || mode === 'spin' ? -spriteH * .5 : -art.spearAttachFront).toFixed(2));
     fishingEls.spearImage.setAttribute('width', spriteW.toFixed(2));
     fishingEls.spearImage.setAttribute('height', spriteH.toFixed(2));
     fishingEls.spearImage.setAttribute('transform', 'scale(1 -1)');
 
     const baseAngleDeg = Math.atan2(dy, dx) * 180 / Math.PI + art.spriteRotationOffset;
-    const b = fishingMinigame.bridge;
-    const isOutbound = b.spearActive && b.shotTimer < b.shotDuration;
+    const outbound = bridge?.spearActive && bridge.shotTimer < bridge.shotDuration;
     let angleDeg = baseAngleDeg;
-    if (useMace) {
-      if (isOutbound) angleDeg = baseAngleDeg + (b.weaponSpinDeg || 0);
-      else if (Number.isFinite(b.frozenWeaponAngleDeg)) angleDeg = b.frozenWeaponAngleDeg;
+    if (mode !== 'spear') {
+      if (outbound) angleDeg += bridge?.weaponSpinDeg || 0;
+      else if (Number.isFinite(bridge?.frozenWeaponAngleDeg)) angleDeg = bridge.frozenWeaponAngleDeg;
     }
     fishingEls.spearSpriteWrap.setAttribute('transform', `translate(${endPoint.x.toFixed(2)} ${endPoint.y.toFixed(2)}) rotate(${angleDeg.toFixed(2)})`);
     fishingEls.spearSpriteWrap.setAttribute('opacity', '1');
