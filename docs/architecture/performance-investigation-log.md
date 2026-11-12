@@ -12,6 +12,36 @@ conditions on the same machine; they are not what a player sees.** Counts come f
 comes from CDP CPU profiles. One headless world per run, and bandit/tribe camps are random, so repeat anything
 close before trusting it.
 
+## 12 Nov 2026: town ground meshes now go through the terrain chunker; roots and bricks measured
+
+**Terrain.** `terrain-render-chunks.js` only split meshes of 60,000+ triangles (sized for 200x200 wilderness zones). The
+town's ground meshes are 47.9 k, 31.6 k, 21.9 k (path surface) and 17.4 k triangles, each spanning the whole map, so they
+were single draws in every pass that neither the camera nor a scissored replay could drop: about 743 k triangles per
+frame in a crowded town view. `MIN_SOURCE_TRIANGLES` is now 12,000 (about one 24x24 cell of subdivided floor; a mesh
+must still span two cells). Town: 4 meshes became 35 chunks. Measured on one frozen frame, before and after the split:
+3,048,582 -> 2,782,482 triangles, 1,599 -> 1,630 draw calls, **0 of 90,000 pixels differ**. The same meshes already
+went through this chunker in large wilderness zones (the held replays, path binding and `onTerrainGeometryReady` all
+handle it), which is why only the threshold changed. Not checked in-game: the farm and interiors, where any
+material-ID-layer floor of 12 k+ triangles spanning two cells now splits too.
+
+**Surface roots (measured, not changed).** The temple's `cornerFill` root layer (`config/pieces/temple.json`: 48
+strands per surface on 9 surfaces, radius 0.2, length 12) is 432 strands and about 198 k triangles, roughly 460 per
+strand (5 sides, a ring every 0.14 units). Standing beside the temple it is all in view and inside the replay scissor,
+so it was drawn in the world pass, the shell outline pass and six replays: about 1.0-1.2 M triangles per frame, the
+largest single item in that view. It is not a culling problem (each mesh is a 2-4 unit sphere and cullable). The
+strands follow sinusoidal curl with about ten rings per wavelength; halving the ring count would save about 2x with a
+visible change to thick, authored art, so this is left as an art decision: lower `count` in the recipe, or accept a
+coarser ring spacing in `appendCornerGrowth`.
+
+**Bricks (measured, not changed).** Still the largest steady cost: `Roughbrick1.glb` is 70 triangles and has no
+pre-baked reduced variant (only `cave_small_optimized60.glb` exists in `assets/models`). After culling, a crowded town
+view still draws about 1.5 M brick triangles per frame. A Geometry Workshop bake of the brick is the remaining lever.
+
+**Replays are the multiplier for everything near the player.** That view ran six scissored replays per frame (two
+base and two shell elevation groups), each resubmitting whatever sits inside a 10-25% scissor. A depth save/restore
+for the scissor rectangle (WebGL2 `blitFramebuffer`) with a near-only occluder set would remove most of that, but it
+rewrites the core of `held-object-render-order.js`; not attempted.
+
 ## 12 Nov 2026: farm/town grass drawn as camera-cullable chunks
 
 Second fix from the census below. Farm grass, farm weeds, town grass and the town border grass are each one

@@ -32,7 +32,12 @@
   // culling precision costs far less than the draw calls it saves.
   const CHUNK_TILES = 24;
   const CHUNK_WORLD = CHUNK_TILES;
-  const MIN_SOURCE_TRIANGLES = 60000;
+  // About one full 24x24 cell of subdivided floor. This was 60000, sized for
+  // 200x200 wilderness zones, which left the town's ground meshes (48k, 32k
+  // and 17k triangles, each spanning the whole map) as single draws that no
+  // camera or depth-replay cull could ever drop. A mesh must still span at
+  // least two cells to be split (see spatialPlan).
+  const MIN_SOURCE_TRIANGLES = 12000;
   const SCAN_INTERVAL_MS = 500;
   const MAX_SPATIAL_BUCKETS = 400;
   const POS_QUANT = 10000;
