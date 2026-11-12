@@ -66,8 +66,8 @@
       : roll < POPULATION_WEIGHTS.longoran + POPULATION_WEIGHTS.nuhongan ? 'nuhongan' : DONOR;
   }
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value)); // Isolates all derived appearance and authoring records.
-  const AUTHOR_STORAGE_KEY = 'hobunjiLongoranAuthorTuning.v1'; // Editor-local overrides are separate from shipped defaults and never affect gameplay.
-  const isAnimationAuthor = typeof location !== 'undefined' && /\\/tools\\/animation-author\\//.test(location.pathname); // Allows mobile editor previews to persist without modifying saves.
+  const AUTHOR_STORAGE_KEY = 'hobunjiLongoranAuthorTuning.v1'; // Per-gender editor tuning is used in gameplay on the same origin; repo defaults remain reviewable.
+  const isAnimationAuthor = typeof location !== 'undefined' && location.pathname.includes('/tools/animation-author/'); // Only editor pages can write gender-specific tuning.
   const authorOverrides = {}; // Species/gender posture and gait authoring edited by Full Character Scale below.
   const clamp = (value, min, max, fallback) => Number.isFinite(Number(value)) ? Math.max(min, Math.min(max, Number(value))) : fallback; // Validates imported and slider values.
   const normalizedGender = value => String(value || 'male').toLowerCase() === 'female' ? 'female' : 'male';
@@ -84,8 +84,8 @@
   }
   function tuningFor(gender) {
     const key = normalizedGender(gender);
-    const saved = isAnimationAuthor ? authorOverrides[key] : null;
-    const anatomy = isAnimationAuthor ? window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[`${ID}::${key}`]?.anatomy : null;
+    const saved = authorOverrides[key] || null; // Author tuning survives on this origin for later game loads.
+    const anatomy = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[`${ID}::${key}`]?.anatomy || null;
     return { spine: normalizedSpine(saved?.spine || anatomy?.longoranSpine || SPINE_PROFILE), gait: normalizedGait(saved?.gait || anatomy?.longoranGait || GAIT_PROFILE) };
   }
   function spineFor(gender) { return tuningFor(gender).spine; } // Used by every Longoran avatar's static skinned portrait.
@@ -98,7 +98,7 @@
     authorOverrides[key] = next;
     const anatomy = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[`${ID}::${key}`]?.anatomy;
     if (anatomy) { anatomy.longoranSpine = clone(next.spine); anatomy.longoranGait = clone(next.gait); }
-    try { localStorage.setItem(AUTHOR_STORAGE_KEY, JSON.stringify(authorOverrides)); } catch (_) {}
+    try { window.localStorage?.setItem(AUTHOR_STORAGE_KEY, JSON.stringify(authorOverrides)); } catch (_) {}
     return true;
   }
   function resetAuthorTuning(gender) {
@@ -109,14 +109,14 @@
       const anatomy = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[`${ID}::${key}`]?.anatomy;
       if (anatomy) { delete anatomy.longoranSpine; delete anatomy.longoranGait; }
     }
-    try { localStorage.setItem(AUTHOR_STORAGE_KEY, JSON.stringify(authorOverrides)); } catch (_) {}
+    try { window.localStorage?.setItem(AUTHOR_STORAGE_KEY, JSON.stringify(authorOverrides)); } catch (_) {}
   }
   function exportAuthorTuning() {
     return Object.fromEntries(GENDERS.map(gender => [gender, tuningFor(gender)])); // Full Character Scale downloads gender-specific values for review/porting into runtime.
   }
-  if (isAnimationAuthor) {
+  {
     try {
-      const parsed = JSON.parse(localStorage.getItem(AUTHOR_STORAGE_KEY) || '{}');
+      const parsed = JSON.parse(window.localStorage?.getItem(AUTHOR_STORAGE_KEY) || '{}');
       for (const gender of GENDERS) if (parsed[gender]) authorOverrides[gender] = { spine: normalizedSpine(parsed[gender].spine), gait: normalizedGait(parsed[gender].gait) };
     } catch (_) { /* Editor remains usable with defaults if storage is unavailable. */ }
   }
@@ -150,7 +150,7 @@
       ...clone(donorSpecies),
       label: 'Longoran',
       parentSpecies: DONOR,
-      genders: clone(donorSpecies.genders || GENDERS),
+      genders: clone(GENDERS), // Both authored Tletingan rig genders have matching Longoran derivatives.
     };
     if (appearance.bodyPalettes?.[DONOR]) appearance.bodyPalettes[ID] = clone(appearance.bodyPalettes[DONOR]);
     status.appearanceInstalled = appearance.species[ID]?.parentSpecies === DONOR;
@@ -393,6 +393,7 @@
       ...clone(donor),
       label: 'Longoran',
       parentSpecies: DONOR,
+      genders: clone(GENDERS), // Both genders inherit the donor and have their own editable rig.
     };
     status.creatorPrivateSpeciesTableCaptured = true;
     return true;
