@@ -902,7 +902,8 @@
         if (head.editorOnly) continue; // Uncalibrated previews lack definitions; craftDisabled heads retain definitions for existing saved weapons.
         const key = itemKey(shaftKey, headKey, metalKey); // Pre-register metadata only; no image loads for unowned combinations.
         const animation = settings(shaftKey, headKey).animation; // Authored pair override or shaft default drives attacks and combo selection.
-        const toolSlots = shaft.toolWorthy === true ? (head.toolSlots || []).filter(slot => UTILITY_SLOTS.has(slot)) : []; // Both independent component capabilities are required before tool-use XP can occur.
+        const toolSlots = shaft.toolWorthy === true ? (head.toolSlots || []).filter(slot => UTILITY_SLOTS.has(slot)) : []; // Ordinary tool roles still require a tool-worthy haft and matching head.
+        if (shaft.toolWorthy === true && shaftKey === 'pick-shovel') toolSlots.push('pick'); // Its reversible working end makes any compatible mounted head a mining pick, independent of head toolSlots.
         const assembly = flailRecipe(shaftKey, headKey); // Dynamic head/rope config rides the existing gameplay and editor renderer.
         defs[key] = { ...source, animStyle: animation, comboStyle: animation,
           label: weaponName(shaftKey, headKey, metals[metalKey]?.label || metalKey), icon: '⚒️', sprite: key,
