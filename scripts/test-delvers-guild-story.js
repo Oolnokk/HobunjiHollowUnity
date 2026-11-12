@@ -37,7 +37,8 @@ assert(tasks.includes('window.DelversGuild?.syncQuest?.()'));
   const profile = { worldId: 'test-world', characterId: 'test-character', isWorldOwner: true }; // Scoped to one world/character.
   const defs = {}, inventory = {}, inventoryItems = [], quest = {}; // Canonical inventory/task fixtures shared by all adapters.
   let meta = { characters: [{ id: profile.characterId, gearInventory: { keyItems: [] } }], worlds: [{ id: profile.worldId, keyItems: [] }, { id: 'other-world', keyItems: [] }] }; // Real save blob used by KeyItemSystem.
-  const storage = { getItem: key => key === 'hobunjiSaveMeta' ? JSON.stringify(meta) : null, setItem: (key, value) => { if (key === 'hobunjiSaveMeta') meta = JSON.parse(value); } }; // Simulates persistent browser saves.
+  let allowKeyWrites = true; // Simulates storage/quota failure during migration.
+  const storage = { getItem: key => key === 'hobunjiSaveMeta' ? JSON.stringify(meta) : null, setItem: (key, value) => { if (!allowKeyWrites) throw Error('storage full'); if (key === 'hobunjiSaveMeta') meta = JSON.parse(value); } }; // Simulates persistent browser saves and write failures.
   const sceneRuntime = {
     async run(scene, options) {
       playedScenes.push(scene);
@@ -120,6 +121,15 @@ assert(tasks.includes('window.DelversGuild?.syncQuest?.()'));
   playerReady(); // Migration is deferred until the inventory actually finishes restoring.
   assert.equal(inventory.azgarlu_key_stone, undefined);
   assert.equal(window.KeyItemSystem.has('azgarlu_key_stone'), true);
+  inventory.nanahi_key_stone = 1; // Another real legacy reward remains in the Pack before migration.
+  allowKeyWrites = false;
+  playerReady();
+  assert.equal(inventory.nanahi_key_stone, 1, 'failed key persistence must not delete the original material-stack reward');
+  assert.equal(window.KeyItemSystem.has('nanahi_key_stone'), false);
+  allowKeyWrites = true;
+  playerReady();
+  assert.equal(inventory.nanahi_key_stone, undefined, 'a later successful save migrates the preserved reward');
+  assert.equal(window.KeyItemSystem.has('nanahi_key_stone'), true);
   profile.worldId = 'other-world';
   assert.equal(window.KeyItemSystem.has('delversStone'), false, 'world-scoped keys cannot leak into other worlds');
   assert.equal(window.KeyItemSystem.has('azgarlu_key_stone'), false);
