@@ -51,7 +51,7 @@ const server=http.createServer((req,res)=>{
       const info=window.HobunjiSplineAuthorDiagnostics?.();
       return info?.viewer?.webgl===true&&info?.viewer?.headLoaded&&info?.viewer?.hairLoaded
         &&info?.canonicalPortrait?.loaded&&info?.regionMasks?.front>0
-        &&info?.viewer?.stitchedFrontPixels>0; // Rigid pixels now form a pinned collar on the same continuous mesh; the separate flat image may be empty for thin beards.
+        &&info?.viewer?.pinnedFrontVertices>0; // Every strand pixel uses one textured mesh; some of its vertices must attach to the head.
     },null,{timeout:60000}).catch(async error=>{throw new Error('WebGL head/hair did not load: '+error.message+'\n'+errors.join('\n').slice(0,3000)
       +'\nStatus: '+(await page.locator('#viewerStatus').innerText()));});
     const before=await debug();
@@ -76,19 +76,19 @@ const server=http.createServer((req,res)=>{
       const authored=JSON.parse(document.querySelector('#json').value);
       return {tip:authored.segments.at(-1).poses.right.translate.x,
         upper:authored.segments[0].poses.right.translate.x,
-        blendRadius:authored.blendRadiusPx,follow:authored.tipFollow};
+        pinWidth:authored.pinWidthPx,follow:authored.tipFollow,hasOldBlend:'blendRadiusPx' in authored};
     });
     assert(natural.tip>natural.upper&&natural.tip>0,
       'new cosmetics start with natural, tip-led poses based on actual strand length: '+JSON.stringify(natural));
-    assert(natural.blendRadius>0&&natural.follow>0,
-      'automatic motion blend and bottom-parent influence are enabled by default');
+    assert(natural.pinWidth>=18&&natural.follow>0&&!natural.hasOldBlend,
+      'rigid head-grip and bottom-parent influence are enabled, but smooth attachment influence is entirely removed');
     assert(before.regionMasks.front>0,'actual head-overlapping beard pixels default to the rigid region');
-    assert(before.viewer.stitchedFrontPixels>0,
-      'the moving hair mesh overlaps the old cut with anchored rigid artwork rather than leaving a sheer two-plane seam');
-    assert(before.viewer.stitchedFrontPixels<=before.regionMasks.front,
-      'seam pixels can only transfer out of the genuinely rigid region');
+    assert(before.viewer.seamlessSingleMesh && before.viewer.pinnedFrontVertices>0,
+      'beard geometry must consist of one full-art mesh with nonzero hard-pinned head vertices');
+    assert(!('rigidFront' in before.viewer.textures),
+      'there must be no independently rendered rigid portrait texture to open a black seam');
     assert(before.viewer.textures.hair?.opaque>0,
-      'flexible mesh retains actual visible beard pixels and its pinned transition collar');
+      'single mesh retains opaque rigid beard art and flexible hanging pixels in the same GPU texture');
     await page.locator('#autoMask').click();
     const initial=await debug();
     assert(initial.regionMasks.front>0,'automatic overlap classification produces a non-empty rigid region');
