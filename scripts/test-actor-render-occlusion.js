@@ -2,7 +2,8 @@
 'use strict';
 const assert = require('node:assert/strict'); // Verify production actor visibility and asynchronous query behavior.
 const fs = require('node:fs'); // Load the exact shipped module rather than copying its algorithm.
-const code = fs.readFileSync('docs/js/actor-render-occlusion.js','utf8'); // Renderer-only NPC/hostile culling source.
+const code = fs.readFileSync('docs/js/actor-render-occlusion.js','utf8'); // Renderer-only NPC/hostile/corpse culling source.
+const deathCode = fs.readFileSync('docs/js/creature-death.js','utf8'); // Exercise the real corpse-registry accessor.
 const html = fs.readFileSync('docs/index.html','utf8'); // Browser bootstrap must load both culling modules.
 const game = fs.readFileSync('docs/game.js','utf8'); // Production world passes must use the actor query for both render modes.
 assert(html.includes('js/npc-view-frustum-cull.js?v='),'existing NPC frustum culler is actually loaded');
@@ -256,6 +257,68 @@ const noGpu=frame();
 assert.equal(api.snapshot().gpuAvailable,false,'WebGL1/disabled GPU never hides covered in-frustum rigs');
 assert.equal(covered.visible,true,'GPU-disabled fallback renders all in-frustum actors');
 assert.equal(noGpu.frustumHidden,1,'GPU-disabled fallback retains robust camera-frustum culling');
+
+// Renderer-only corpse culling uses the live CreatureDeath registry, not the hostile list.
+const ownedCorpses = new Set(); // Test corpses read by the real death-module accessor.
+const deathWindow = {}; // Isolates the death owner from the existing Three.js fixture.
+new Function('window',deathCode)(deathWindow);
+assert.equal(deathWindow.CreatureDeath.getCorpseObjects(),null,'uninitialized death registry is optional');
+deathWindow.CreatureDeath.init({corpseObjects:ownedCorpses});
+assert.equal(deathWindow.CreatureDeath.getCorpseObjects(),ownedCorpses,'same canonical registry instance');
+win.CreatureDeath=deathWindow.CreatureDeath;
+const corpseRootNear=makeRoot(1,'loot_near'); // Keeps nearby interaction partners visible.
+const corpseRootCovered=makeRoot(11,'loot_covered'); // Exercises a covered in-frustum body.
+const corpseRootOffscreen=makeRoot(25,'loot_offscreen'); // Exercises offscreen full-rig suppression.
+const corpseMarker=makeRoot(25,'retired_marker'); // Retired presentation must not be whole-actor culled.
+const dyingRoot=makeRoot(25,'dying_animation'); // Animated death is exempt.
+const otherAreaRoot=makeRoot(25,'other_area'); // Bodies outside the map are exempt.
+const hiddenCorpseRoot=makeRoot(25,'gameplay_hidden'); // Gameplay invisibility remains authoritative.
+hiddenCorpseRoot.visible=false;
+const detachedCorpseRoot=makeRoot(25,'not_in_scene'); // No guessing nested rig transforms.
+detachedCorpseRoot.parent=null;
+const body=(root,flags={})=>({areaId:'town',state:'corpse',health:0,avatarRef:{group:root},...flags}); // Corpse fixture factory.
+const nearBody=body(corpseRootNear); // Near-body loot-visibility case.
+const coveredBody=body(corpseRootCovered); // GPU occlusion and marker-switch case.
+for(const c of [nearBody,coveredBody,body(corpseRootOffscreen),
+  body(corpseMarker,{avatarRef:{group:corpseMarker,isCorpseMarker:true},_banditCorpseRetired:true}),
+  body(dyingRoot,{state:'dying'}),body(otherAreaRoot,{areaId:'dungeon'}),
+  body(hiddenCorpseRoot),body(detachedCorpseRoot)])ownedCorpses.add(c);
+api.beginFrame(context());
+let corpseSnapshot=api.snapshot(); // Mobile debug counters distinguish corpse visibility savings.
+assert.equal(corpseSnapshot.corpseCandidates,3,'only active scene-owned full visible settled bodies qualify');
+assert.equal(corpseSnapshot.corpseFrustumHidden,1,'offscreen corpse skips all world render passes');
+assert.equal(corpseRootNear.visible,true,'nearby body remains drawable for looting');
+assert.equal(corpseRootCovered.visible,true,'WebGL-disabled in-frustum body is visible');
+assert.equal(corpseRootOffscreen.visible,false,'distant offscreen body is hidden during render');
+for(const root of [corpseMarker,dyingRoot,otherAreaRoot,detachedCorpseRoot])
+  assert.equal(root.visible,true,'unmanaged corpse presentation stays untouched');
+assert.equal(hiddenCorpseRoot.visible,false,'gameplay-hidden rig remains hidden');
+api.endFrame();
+assert.equal(corpseRootOffscreen.visible,true,'corpse rig is restored before simulation');
+assert.equal(hiddenCorpseRoot.visible,false,'restore does not override pre-existing invisibility');
+api.setGpuEnabled(true);
+for(let i=0;i<9;i++){api.beginFrame(context());api.probeAfterBase();api.endFrame();}
+api.beginFrame(context());
+corpseSnapshot=api.snapshot();
+assert.equal(corpseRootCovered.visible,false,'GPU depth query hides covered full-rig corpse');
+assert(corpseSnapshot.corpseOccludedHidden>=1,'diagnostics count covered corpse rigs');
+assert.equal(corpseRootNear.visible,true,'nearby lootable body never becomes GPU-hidden');
+api.endFrame();
+coveredBody._banditCorpseRetired=true;coveredBody.avatarRef.isCorpseMarker=true;
+api.beginFrame(context());
+assert.equal(corpseRootCovered.visible,true,'retired corpse marker is excluded');
+assert.equal(api.snapshot().corpseCandidates,2,'retired body no longer consumes query work');
+api.endFrame();
+coveredBody._banditCorpseRetired=false;coveredBody.avatarRef.isCorpseMarker=false;
+nearBody.health=10;
+api.beginFrame(context());
+assert.equal(api.snapshot().corpseCandidates,2,'reviving actor is no longer treated as corpse');
+assert.equal(corpseRootNear.visible,true,'revived body appears before combat rendering resumes');
+api.endFrame();nearBody.health=0;
+win.CreatureDeath=null; // Optional death-module integration fails open.
+api.beginFrame(context());
+assert.equal(api.snapshot().corpseCandidates,0,'missing registry cannot hide any corpses');
+api.endFrame();win.CreatureDeath=deathWindow.CreatureDeath;
 
 api.setGpuEnabled(true);
 forcedFailure=true;
