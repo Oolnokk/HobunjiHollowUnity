@@ -62,6 +62,9 @@ jobs:
       - name: Install Chromium for browser regressions
         if: steps.select.outputs.needs_browser == 'true'
         run: npx playwright install --with-deps chromium
+      - name: Inspect actual portrait hair silhouettes for authored blend-space presets
+        if: steps.select.outputs.portrait_spline == 'true'
+        run: node scripts/inspect-portrait-spline-art-browser.js
       - name: Portrait spline 3D WebGL texture and gizmo browser smoke
         if: steps.select.outputs.portrait_spline == 'true'
         run: node scripts/test-portrait-spline-viewer-browser.js
