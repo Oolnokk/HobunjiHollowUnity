@@ -41,10 +41,8 @@
     const hairPlane = makeSheet(null,.002,THREE.FrontSide);
     const rearPlane = makeSheet(null,-.002,THREE.BackSide);
     const hoodPlane = makeSheet(null,.001,THREE.DoubleSide,.25);
-    const rigidFrontPlane = makeSheet(null,.0008,THREE.FrontSide); // Rigid pixels sit just above the head but beneath the hood and moving 3D hair.
-    const rigidRearPlane = makeSheet(null,-.0008,THREE.BackSide); // Rear pixels remain on their unbent portrait surface.
-    rigidFrontPlane.name='spline_rigid_front';rigidRearPlane.name='spline_rigid_rear';
-    sheetGroup.add(headPlane,hoodPlane,rigidFrontPlane,rigidRearPlane,hairPlane,rearPlane);
+    hairPlane.material.alphaTest=.02;rearPlane.material.alphaTest=.02; // Match the in-game uncut cosmetic: no shadow from almost transparent PNG fringes.
+    sheetGroup.add(headPlane,hoodPlane,hairPlane,rearPlane); // A single full-sprite mesh replaces two abutting flat/moving textures.
     let mode='translate', state=null, disposed=false, dirty=false;
     let verifiedTexturePair=''; // One on-screen GPU-health warning per loaded head/hair pair; avoids mobile readback every pose frame.
     let lastGeometryKey=''; // Only rebuild the deformable ribbon when its points/pose/wind/UV settings actually change.
@@ -78,8 +76,10 @@
         source.width=width;source.height=height;
         const ctx=source.getContext('2d');
         if(!ctx)throw Error('No 2D context for authored portrait texture');
-        if(mirror){ctx.translate(width,0);ctx.scale(-1,1);}
-        ctx.drawImage(image,0,0,width,height);
+        const isStrand=mesh===hairPlane||mesh===rearPlane;
+        const artwork=isStrand?window.PortraitSplineRig.prepareSplineTexture(image,mirror):image; // Use the same anti-dark-edge texture padding as the actual game.
+        if(mirror&&!isStrand){ctx.translate(width,0);ctx.scale(-1,1);}
+        ctx.drawImage(artwork,0,0,width,height);
         // This check is diagnostic only: unlike the previous DataTexture code it cannot abort a valid sprite upload.
         // A failed alpha read is reported as a possible cross-origin taint, not silently treated as empty artwork.
         let opaque=-1,colored=-1,readError=null;
@@ -129,19 +129,22 @@
         mesh.userData.grid=grid;
       }
       const plane=mesh.geometry,p=plane.attributes.position,original=mesh.userData.rest;
-      const maskKey=JSON.stringify([rig.regionMasks?.[rear?'rear':'front'],rig.blendRadiusPx]);
-      if(mesh.userData.blendKey!==maskKey){
-        mesh.userData.blendKey=maskKey; // Rebuild the distance-to-rigid mask only when painting or changing its blend radius.
-        mesh.userData.blendField=window.PortraitSplineRig.attachmentBlendField(
-          rig.regionMasks?.[rear?'rear':'front'],rig.blendRadiusPx);
+      const maskKey=JSON.stringify([rig.regionMasks?.[rear?'rear':'front'],rig.pinWidthPx]);
+      if(mesh.userData.pinKey!==maskKey){
+        mesh.userData.pinKey=maskKey; // Rebuild boolean head anchor only when painting or changing grip width.
+        mesh.userData.pinField=window.PortraitSplineRig.attachmentPinField(
+          rig.regionMasks?.[rear?'rear':'front'],rig.pinWidthPx);
       }
-      const field=mesh.userData.blendField;
+      const pins=mesh.userData.pinField;
+      let anchored=0;
       for(let i=0;i<p.count;i++){
         const u=original[i*3]+.5,v=.5-original[i*3+1];
-        const strength=window.PortraitSplineRig.sampleAttachmentBlend(field,rear?1-u:u,v);
-        const at=window.PortraitSplineRig.deformPosition(rig,posed,u,v,1,1,strength);
+        const pinned=window.PortraitSplineRig.isPinnedPixel(pins,rear?1-u:u,v);
+        if(pinned)anchored++;
+        const at=window.PortraitSplineRig.deformPosition(rig,posed,u,v,1,1,pinned);
         p.setXYZ(i,at.x,at.y,rear?-at.z:at.z);
       }
+      mesh.userData.pinnedVertices=anchored; // Mobile diagnostics expose whether the same continuous mesh is physically anchored.
       p.needsUpdate=true;plane.computeVertexNormals();plane.computeBoundingSphere();
     }
     function clearChildren(group){
@@ -196,9 +199,7 @@
       replaceTexture(hairPlane,next.front||null);
       replaceTexture(hoodPlane,next.hood||null);
       replaceTexture(rearPlane,next.rear||null,true);
-      replaceTexture(rigidFrontPlane,next.rigidFront||null);
-      replaceTexture(rigidRearPlane,next.rigidRear||null,true);
-      const geometryKey=JSON.stringify([rig.points,rig.segments,rig.tipFollow,rig.blendRadiusPx,rig.regionMasks,
+      const geometryKey=JSON.stringify([rig.points,rig.segments,rig.tipFollow,rig.pinWidthPx,rig.regionMasks,
         rig.width,rig.segmentsX,rig.segmentsY,next.wind]); // Mask edits and hierarchical pose strength must invalidate the live 3D ribbon.
       if(geometryKey!==lastGeometryKey){
         deformMesh(hairPlane,rig,posed.points,false);
@@ -328,7 +329,7 @@
       canvas.removeEventListener('pointerup',pointerUp,true);
       canvas.removeEventListener('pointercancel',pointerUp,true);
       controls?.dispose();clearChildren(markers);clearChildren(gizmo);
-      for(const mesh of [headPlane,hairPlane,rearPlane,hoodPlane,rigidFrontPlane,rigidRearPlane]){
+      for(const mesh of [headPlane,hairPlane,rearPlane,hoodPlane]){
         mesh.geometry?.dispose();mesh.material.map?.dispose();mesh.material?.dispose();
       }
       axes.geometry?.dispose();axes.material?.dispose?.();renderer.dispose();
@@ -386,12 +387,12 @@
       return {
         webgl:true,mode,selectedKnot:selectedIndex,knots:dots.length,handles:handles.length,
         ribbonVertices:hairPlane.geometry?.attributes?.position?.count||0,
-        stitchedFrontPixels:state?.stitchedFrontPixels||0,
-        stitchedRearPixels:state?.stitchedRearPixels||0, // Counts original rigid pixels carried on the flat end of the continuous hair mesh.
+        pinnedFrontVertices:hairPlane.userData.pinnedVertices||0,
+        pinnedRearVertices:rearPlane.userData.pinnedVertices||0,
+        seamlessSingleMesh:true, // Unlike the previous split, hair and beard have one artwork texture and one vertex grid per view.
         headLoaded:!!headPlane.material.map,hairLoaded:!!hairPlane.material.map,
         textures:{head:headPlane.userData.pixelStats||null,hair:hairPlane.userData.pixelStats||null,
-          rear:rearPlane.userData.pixelStats||null,hood:hoodPlane.userData.pixelStats||null,
-          rigidFront:rigidFrontPlane.userData.pixelStats||null,rigidRear:rigidRearPlane.userData.pixelStats||null},
+          rear:rearPlane.userData.pixelStats||null,hood:hoodPlane.userData.pixelStats||null},
         gpuTextureCount:renderer.info.memory.textures,
         textureErrors:Object.fromEntries(textureFailures), // Mobile-accessible reason, including SecurityError on a tainted canvas.
         gpuHead:probeGpuTexture(headPlane.material.map),gpuHair:probeGpuTexture(hairPlane.material.map),
