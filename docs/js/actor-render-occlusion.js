@@ -17,6 +17,7 @@
   const BOUND_MARGIN_TILES = 1; // Extra margin around rig + tool volume; a too-large query only keeps an actor visible.
   const MAX_GPU_RADIUS_TILES = 9; // Huge unbounded rig effects/oversized species cannot be confidently probed; draw those normally.
   const NEAR_BOUND_MARGIN_TILES = 2; // Never query from inside the actor's proxy box.
+  const CORPSE_INTERACTION_TILES = 8; // Keep lootable bodies rendered near the player even if cover hides them.
 
   const states = new Map(); // Actor root -> short-lived occlusion history and its own GPU query lifecycle.
   const active = []; // Scratch list of roots belonging to the current rendered area.
@@ -211,6 +212,7 @@
     stats.visible=0; stats.probes=0; stats.pending=0;
     if (!enabled || !THREE || !args?.camera || !args.scene) return;
     const {renderer,camera,scene:activeScene,walkers,hostiles,playerPosition,area} = args;
+    const corpses = args.corpseObjects ?? window.Combat?.deps?.corpseObjects; // Canonical corpse registry; game.js currently passes only living hostiles.
     currentRenderer=renderer; currentCamera=camera; currentScene=activeScene; currentArea=area||'';
     stats.gpuAvailable = supportsQueries(renderer);
     camera.updateMatrixWorld?.(true);
@@ -265,6 +267,23 @@
       const mult=Math.max(1,Number(scale?.x)||1,Number(scale?.y)||1,Number(scale?.z)||1);
       const radius=Math.max(FRUSTUM_RADIUS_TILES,4.5*mult+BOUND_MARGIN_TILES);
       addActor(c.avatarRef?.group,c.areaId,activeScene,player,pos,!combat,radius);
+    }
+    // Settled humanoid corpses still own complete rigs until the existing retirement
+    // policy swaps them for markers. Cull only those rigs, never dying animations,
+    // revivable bodies, marker quads, or creatures with unverified bounds.
+    for (const c of corpses || []) {
+      if (c.areaId !== currentArea || c.state !== 'corpse' || c.health > 0
+          || (!c.isBandit && !c.isTribeHunter) || c.keepCorpseAfterLoot
+          || c._banditCorpseRetired || c.avatarRef?.isCorpseMarker
+          || c._denHidden || c.tzatzulCapturedBy) continue;
+      const root = c.avatarRef?.group;
+      if (!root?.isObject3D || !inScene(root,activeScene)) continue;
+      const scale = root.scale; // Existing enemy size contract also covers corpse rigs and their fallen poses.
+      const mult = Math.max(1,Number(scale?.x)||1,Number(scale?.y)||1,Number(scale?.z)||1);
+      const radius = Math.max(FRUSTUM_RADIUS_TILES,4.5*mult+BOUND_MARGIN_TILES);
+      const dx = root.position.x-player.x, dz = root.position.z-player.z;
+      if (dx*dx+dz*dz <= CORPSE_INTERACTION_TILES*CORPSE_INTERACTION_TILES) continue;
+      addActor(root,c.areaId,activeScene,player,pos,true,radius);
     }
     for (const [root,state] of states) if (state.seen!==stats.frames) {
       release(state);
