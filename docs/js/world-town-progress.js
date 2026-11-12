@@ -24,9 +24,9 @@
   function questState() {
     const liveProfile = global.__hobunjiPlayerProfile; // Only inspect the active member's quest state, never another character/world.
     if (!liveProfile) return null;
-    // Banubu's own getter reads the injected live quest store; it also performs legacy-save migration.
-    return global.BanubuQuestline?.ensureQuestState?.()
-      || liveProfile.questProgress?.[BANUBU_QUEST_ID] || null;
+    // Banubu's read-only accessor reads the live injected quest store without creating or migrating saves.
+    if (typeof global.BanubuQuestline?.peekQuestState === 'function') return global.BanubuQuestline.peekQuestState();
+    return liveProfile.questProgress?.[BANUBU_QUEST_ID] || null;
   }
 
   function banubuProgress(state) {
