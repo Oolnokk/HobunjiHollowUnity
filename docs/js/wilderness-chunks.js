@@ -65,11 +65,14 @@
       if (object.userData?.wildernessChunkOwnsMaterial) {
         const materials = Array.isArray(object.material) ? object.material : [object.material];
         for (const material of materials) {
-          if (!material?.map?.userData?.chunkJigsawShared) material?.map?.dispose?.();
+          if (window.TerrainTileMaterials?.isCachedMaterial?.(material)) continue; // A chunk never owns persistent terrain materials shared by other zones.
+          const pooled = texture => window.TerrainTileMaterials?.isSharedTexture?.(texture) === true; // Shared PNG textures outlive individual chunk materials.
+          if (material?.map && !material.map.userData?.chunkJigsawShared && !pooled(material.map)) material.map.dispose?.();
           for (const uniform of Object.values(material?.uniforms || {})) {
-            if (uniform?.value?.isTexture && !uniform.value.userData?.chunkJigsawShared) uniform.value.dispose?.();
+            const texture = uniform?.value; // Keeps cached PNGs and ref-counted Jigsaw textures alive until their actual owner releases them.
+            if (texture?.isTexture && !texture.userData?.chunkJigsawShared && !pooled(texture)) texture.dispose?.();
           }
-          material?.dispose?.();
+          material?.dispose?.(); // Jigsaw-clone dispose listeners release their own ref-counted sampler lease.
         }
       }
       if (object.userData?.mergedWaterStatKey) {
