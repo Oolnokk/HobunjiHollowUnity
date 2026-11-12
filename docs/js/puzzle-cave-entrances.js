@@ -14,6 +14,7 @@
   let pillarTexture=null; // Shared carved-smooth texture for a supported pillar when an actual wall has no usable vertical face.
   const SCORE_STEP_X=.23,SCORE_STEP_Y=.27; // Scratchbone layout spacing, reused for wall plaques and narrower standing pillars.
   const SCORE_WALL_COLUMNS=6,SCORE_PILLAR_COLUMNS=2; // A free-standing pillar is deliberately narrower than a genuine wall.
+  const SCORE_NOTE_OVERLAY_ORDER=64; // Only active Scratchbone note planes bypass cliff depth; their physical stone pillars still render normally.
   let deps=null; // WildlifeSpawn's existing game adapter, used for authoritative player, layouts and scene transitions.
   let lastArea=null; // Tracks the immediately previous area so returning from a cave can restore its actual elevated balcony support.
   const portalTag='puzzle-cave-cliff-door'; // Consistent debugging and collider identity for each generated entrance.
@@ -353,6 +354,7 @@
     }
     const board=new THREE.Group();
     board.name='puzzle-cave-exterior-score';
+    board.userData.scoreOcclusion='notes-over-stone'; // Pixel Probe/portal diagnostics identify the plate-gated, glyph-only overlay without touching held-weapon depth passes.
     board.position.set(mount.x,mount.y,mount.z);
     board.rotation.y=yaw;
     for(let index=0;index<count;index++){
@@ -365,25 +367,28 @@
       const z=cliff?0:localPosts[column].z; // Cliff glyphs stay above one validated rock face; paired glyphs track their matching pillar.
       const outer=new THREE.Mesh(new THREE.PlaneGeometry(.61,.72),
         scratchboneMaterial(THREE,haloTexture,{color:0xeaf5ff,transparent:true,opacity:.045,
-          blending:THREE.AdditiveBlending,depthTest:true,depthWrite:false,side:THREE.DoubleSide},'exterior-score-outer-'+index));
+          blending:THREE.AdditiveBlending,depthTest:false,depthWrite:false,side:THREE.DoubleSide},'exterior-score-outer-'+index));
       outer.name='puzzle-cave-outdoor-glyph-outer-glow-'+index;
       outer.position.set(x,y,z+.065);
       outer.frustumCulled=false;
-      outer.renderOrder=3; // Like the Witch-bomb engraving, glow is a dedicated additive pass after ordinary stone.
+      outer.renderOrder=SCORE_NOTE_OVERLAY_ORDER; // Puzzle clue remains readable when an intervening cliff covers its supporting pillar.
       // The wide static halo gains/loses opacity under the song clock; no scaling or sine pulsing.
       board.add(outer);portal.glyphOuterGlows.push(outer);
       const glow=new THREE.Mesh(new THREE.PlaneGeometry(.37,.46),
         scratchboneMaterial(THREE,haloTexture,{color:0xeaf5ff,transparent:true,opacity:.11,
-          blending:THREE.AdditiveBlending,depthTest:true,depthWrite:false,side:THREE.DoubleSide},'exterior-score-halo-'+index));
+          blending:THREE.AdditiveBlending,depthTest:false,depthWrite:false,side:THREE.DoubleSide},'exterior-score-halo-'+index));
       glow.name='puzzle-cave-outdoor-glyph-glow-'+index;
       glow.position.set(x,y,z+.073);
-      glow.frustumCulled=false;glow.renderOrder=4;
+      glow.frustumCulled=false;glow.renderOrder=SCORE_NOTE_OVERLAY_ORDER+1;
       // Brightness and hue lerp on each authored song update, independent of frame rate.
       board.add(glow);portal.glyphGlows.push(glow);
-      const material=scratchboneMaterial(THREE,texture,{color:0xeaf5ff,transparent:true,depthWrite:false,side:THREE.DoubleSide},'exterior-score-ink-'+index);
+      const material=scratchboneMaterial(THREE,texture,{color:0xeaf5ff,transparent:true,depthTest:false,depthWrite:false,side:THREE.DoubleSide},'exterior-score-ink-'+index);
       const mesh=new THREE.Mesh(new THREE.PlaneGeometry(.20,.24),material);
       mesh.name='puzzle-cave-outdoor-glyph-'+index;
       mesh.position.set(x,y,z+.086);
+      mesh.renderOrder=SCORE_NOTE_OVERLAY_ORDER+2; // Ink draws last, above the two translucent halo layers, but only while the plate reveals the score.
+      mesh.frustumCulled=false;
+      mesh.userData.noOutline=true; // The flat authored PNG supplies its own contour; never add a 3D outline shell.
       board.add(mesh);portal.glyphs.push(mesh); // Original note order is preserved across the two physical posts.
     }
     rootGroup.add(board);
@@ -635,6 +640,7 @@
         plate:p.plate,entry:p.entry,locked:isGateLocked(p),solved:p.solved,
         progress:p.progress,rewardTier:p.song?.rewardTier||null,modelReady:!!p.doorModel,
         scoreSurface:p.scoreSurface?.kind||null,scoreVisible:!!p.scoreBoard?.visible,
+        scoreOcclusion:p.scoreBoard?.userData?.scoreOcclusion||null,
         activeGlyph:p.progress?.activeIndex??-1,flashRemaining:p.flashRemaining,flashGlyphIndex:p.flashGlyphIndex,scoreBpm:p.song?.bpm||null,
         scorePosition:p.scoreSurface&&{x:p.scoreSurface.x,y:p.scoreSurface.y,z:p.scoreSurface.z}}))}))};
   }
