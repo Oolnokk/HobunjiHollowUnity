@@ -30,13 +30,22 @@ class Group {
   updateWorldMatrix() {}
 }
 class PositionAttribute {
-  constructor() { this.count = 2; this.values = [1, 2]; }
-  setXYZ(index, x) { this.values[index] = x; this.needsUpdate = true; }
+  constructor() {
+    this.count = 2; this.itemSize = 3;
+    this.array = new Float32Array([1, 0, 0, 2, 0, 0]); // Mutable source buffer used to verify non-skinned in-place geometry updates.
+  }
+  setXYZ(index, x) { this.array[index * 3] = x; this.needsUpdate = true; }
 }
 class Geometry {
-  constructor() { this.positions = new PositionAttribute(); }
-  clone() { counts.geometry += 1; return new Geometry(); }
-  getAttribute(name) { return name === 'position' ? this.positions : null; }
+  constructor() { this.positions = new PositionAttribute(); this.attributes = { position: this.positions }; }
+  clone() {
+    counts.geometry += 1;
+    const next = new Geometry();
+    next.positions.array.set(this.positions.array);
+    return next;
+  }
+  getAttribute(name) { return this.attributes[name] || null; }
+  getIndex() { return null; }
   deleteAttribute() {}
   dispose() { counts.geometryDisposals += 1; }
 }
@@ -63,7 +72,7 @@ class Mesh extends Group {
 }
 class Vertex {
   fromBufferAttribute(attribute, index) {
-    this.x = attribute.values[index]; this.y = 0; this.z = 0;
+    this.x = attribute.array[index * 3]; this.y = 0; this.z = 0;
     return this;
   }
 }
@@ -73,8 +82,9 @@ function makeActor(name, skinned) {
   const root = new Group(); // Root passed to findPortraitMeshes for each actor.
   scene.add(root);
   const image = { width: 8, height: 8, name }; // Mutable live face whose pixels are frozen on each sample.
-  const material = new Material('npc_avatar_skinned_front_' + name, new Texture(image)); // Material identity gates safe reuse.
-  const portrait = new Mesh(new Geometry(), material); // Rendered portrait plane with optional skinning.
+  const material = new Material('npc_avatar_skinned_front_' + name, new Texture(image)); // Front portrait material used to validate frozen facial-expression updates.
+  const rearMaterial = new Material('npc_avatar_skinned_back_' + name, new Texture({ width: 8, height: 8, name: name + ' rear' })); // The real skinned avatar also has a separate back-facing material.
+  const portrait = new Mesh(new Geometry(), [material, rearMaterial]); // Both portrait texture slots must be frozen and refreshed together.
   portrait.name = 'portrait_' + name;
   portrait.isSkinnedMesh = skinned;
   portrait.pose = 0;
@@ -114,6 +124,7 @@ const windowStub = {
   HobunjiSpritePngSurface: { alphaTest: () => 0.001 },
 };
 vm.runInNewContext(source, { window: windowStub, document: documentStub, performance: { now: () => nowMs }, console }, { filename: 'combat-blink-dodge.js' });
+enemyRig.material.alphaMap = enemyRig.material.map; // Both map and alphaMap share one frozen canvas; refreshing must not double-copy it.
 const stats = () => windowStub.HobunjiDodgeFeedback.getDebug().blink.afterimages; // Mobile diagnostics used to check pooling without relying on internal module functions.
 const ghosts = () => scene.children.filter(object => object.name === 'combat_portrait_afterimage'); // Currently attached visual snapshots.
 player.lunging = true;
@@ -126,10 +137,11 @@ combat.update(0.06);
 assert.equal(stats().active, 2, 'player and NPC lunges each produce a record');
 assert.equal(stats().entriesCreated, 2, 'one live mesh and texture created per portrait source');
 assert.equal(counts.geometry, 2);
-assert.equal(counts.materials, 2);
-assert.equal(counts.textures, 2);
-assert.equal(counts.canvases, 2);
+assert.equal(counts.materials, 4, 'front/back material clones for player and NPC');
+assert.equal(counts.textures, 4, 'front/back textures are independent');
+assert.equal(counts.canvases, 4, 'one frozen canvas per original texture');
 const firstMeshes = ghosts(); // Used to ensure both Mesh instances survive the fade/reuse cycle.
+// The front/rear material arrays are kept intact across repeated player and NPC lunges.
 assert.equal(firstMeshes.length, 2);
 player.lunging = false;
 enemy._banditLunging = false;
@@ -139,6 +151,7 @@ assert.equal(stats().active, 0);
 assert.equal(stats().pooled, 2);
 playerRig.portrait.pose = 5;
 playerRig.image.name = 'updated player expression';
+enemyRig.portrait.geometry.positions.array[0] = 9; // CPU-edited non-skinned geometry must be rebaked on reuse.
 player.lunging = true;
 enemy._banditLunging = true;
 player.x += 64;
@@ -148,13 +161,15 @@ combat.update(0.06);
 assert.equal(stats().entriesCreated, 2, 'no new ghost mesh or material after warm-up');
 assert.equal(stats().entriesReused, 2, 'both actors reuse their own pooled resources');
 assert.equal(counts.geometry, 2, 'geometry cloned once per actor');
-assert.equal(counts.materials, 2, 'material cloned once per actor');
-assert.equal(counts.textures, 2, 'GPU texture created once per actor');
-assert.equal(counts.canvases, 2, 'canvas allocated once per actor');
+assert.equal(counts.materials, 4, 'front/back material arrays are reused without new clones');
+assert.equal(counts.textures, 4, 'front/back GPU textures are reused without cloning');
+assert.equal(counts.canvases, 4, 'four frozen canvases are reused');
+assert.equal(stats().textureRefreshes, 4, 'aliased map/alphaMap textures are copied only once each');
 assert(ghosts().every(mesh => firstMeshes.includes(mesh)), 'ghost mesh identities survive recycling');
-assert(ghosts().some(mesh => mesh.geometry.positions.values[0] === 6), 'a reused skinned ghost rebakes its updated pose');
-assert(ghosts().some(mesh => mesh.material.map.image.copiedFace === 'updated player expression'), 'recycled textures freeze the latest face instead of displaying stale pixels');
-assert(ghosts().every(mesh => mesh.material.opacity > 0), 'recycled ghosts restore opacity after their previous fade');
+assert(ghosts().some(mesh => mesh.geometry.positions.array[0] === 6), 'a reused skinned ghost rebakes its updated pose');
+assert(ghosts().some(mesh => mesh.geometry.positions.array[0] === 9), 'a reused unskinned ghost copies its updated geometry');
+assert(ghosts().some(mesh => mesh.material[0].map.image.copiedFace === 'updated player expression'), 'recycled textures freeze the latest face instead of displaying stale pixels');
+assert(ghosts().every(mesh => mesh.material.every(material => material.opacity > 0)), 'both sides of the portrait restore opacity after previous fades');
 player.lunging = false;
 enemy._banditLunging = false;
 nowMs += 400;
@@ -163,5 +178,26 @@ assert.equal(stats().pooled, 2);
 nowMs += 4600;
 combat.update(0.01);
 assert.equal(stats().pooled, 0, 'idle pool releases transient resources after four seconds');
-assert(counts.geometryDisposals >= 2 && counts.textureDisposals >= 2, 'expired pooled GPU resources are actually disposed');
+assert(counts.geometryDisposals >= 2 && counts.textureDisposals >= 4, 'expired pooled GPU resources are actually disposed');
+
+// Stress a single actor past the global 24-record limit without advancing
+// simulated fade time: oldest snapshots should be reused before allocating
+// the 25th mesh, rather than only recycled after new allocations.
+enemy.state = 'idle';
+enemy._banditLunging = false;
+player.lunging = true;
+for (let sample = 0; sample < 24; sample += 1) {
+  player.x += 64; nowMs += 60;
+  combat.update(0);
+}
+assert.equal(stats().active, 24, 'the in-flight afterimage record cap is respected');
+const warmCreated = stats().entriesCreated; // Compares allocations after saturation with 3 additional snapshots.
+const warmReused = stats().entriesReused; // Checks that evicted live records become immediately available for reuse.
+for (let sample = 0; sample < 3; sample += 1) {
+  player.x += 64; nowMs += 60;
+  combat.update(0);
+}
+assert.equal(stats().active, 24, 'oldest records are removed as new ones enter at the cap');
+assert.equal(stats().entriesCreated, warmCreated, 'pool-at-cap avoids new geometry/material/texture allocations');
+assert.equal(stats().entriesReused, warmReused + 3, 'the three evicted live records are reused immediately');
 console.log('Player/NPC dodge-lunge afterimage pooling regression tests passed.');
