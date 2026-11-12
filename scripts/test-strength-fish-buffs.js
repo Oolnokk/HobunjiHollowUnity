@@ -20,7 +20,7 @@ const workStart = game.indexOf('function getToolWorkSpeedMultiplier('); // Locat
 const workEnd = game.indexOf('function getDigSpeedMultiplier()', workStart); // End of the work-speed policy, before its shovel compatibility alias.
 assert(workStart >= 0 && workEnd > workStart, 'the common work-speed function exists');
 const speedFn = new Function('window', 'equipmentSlots', 'player', 'toolMetalMultiplier',
-  game.slice(workStart, workEnd) + '\\nreturn getToolWorkSpeedMultiplier;')(
+  game.slice(workStart, workEnd) + '\nreturn getToolWorkSpeedMultiplier;')(
   { SkillSystem: { actionSpeedMultiplier: skill => ({ farming: 1.5, foraging: 1.25, mining: 1.1 })[skill] } },
   { shovel: 'shovel', hoe: 'hoe', axe: 'axe', pick: 'pick' }, { digSpeed: 1.4 }, () => 1.1,
 ); // Distinct skill speeds make an accidental cross-wiring detectable.
