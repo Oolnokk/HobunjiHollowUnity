@@ -8,6 +8,7 @@
   // discarded when it is outside the player's unload radius without changing
   // maps, landmarks, fog-of-war, routes, or save data.
   const CHUNK_TILES = 16; // Used to convert tile coordinates into stable chunk keys and bounds.
+  const EDIT_SEAM_MARGIN_TILES = 4; // Used below to include adjacent chunks only when a terrain edit could touch their 4-tile feature/seam margin.
   const IMMEDIATE_RADIUS = 0; // Keeps only the player's arrival chunk synchronous; surrounding chunks use the paced stream queue.
   const LOW_MEMORY_STREAMING = (() => {
     const deviceMemoryGb = Number(globalThis.navigator?.deviceMemory); // Used to detect browsers that explicitly report a small device-memory budget.
@@ -64,11 +65,14 @@
       if (object.userData?.wildernessChunkOwnsMaterial) {
         const materials = Array.isArray(object.material) ? object.material : [object.material];
         for (const material of materials) {
-          if (!material?.map?.userData?.chunkJigsawShared) material?.map?.dispose?.();
+          if (window.TerrainTileMaterials?.isCachedMaterial?.(material)) continue; // A chunk never owns persistent terrain materials shared by other zones.
+          const pooled = texture => window.TerrainTileMaterials?.isSharedTexture?.(texture) === true; // Shared PNG textures outlive individual chunk materials.
+          if (material?.map && !material.map.userData?.chunkJigsawShared && !pooled(material.map)) material.map.dispose?.();
           for (const uniform of Object.values(material?.uniforms || {})) {
-            if (uniform?.value?.isTexture && !uniform.value.userData?.chunkJigsawShared) uniform.value.dispose?.();
+            const texture = uniform?.value; // Keeps cached PNGs and ref-counted Jigsaw textures alive until their actual owner releases them.
+            if (texture?.isTexture && !texture.userData?.chunkJigsawShared && !pooled(texture)) texture.dispose?.();
           }
-          material?.dispose?.();
+          material?.dispose?.(); // Jigsaw-clone dispose listeners release their own ref-counted sampler lease.
         }
       }
       if (object.userData?.mergedWaterStatKey) {
@@ -148,6 +152,7 @@
       this.builds = 0;
       this.unloads = 0;
       this.rebuilds = 0;
+      this.neighborRebuildsAvoided = 0; // Accumulates loaded halo chunks skipped by the seam-bounded edit rebuild.
       this.totalBuildMs = 0;
       this.lastBuildMs = 0;
       this.maxCx = Math.max(0, Math.ceil(this.cols / CHUNK_TILES) - 1);
@@ -417,9 +422,22 @@
       if (Number.isFinite(col) && Number.isFinite(row)) {
         const targetCx = tileToChunk(col);
         const targetCz = tileToChunk(row);
-        keys = [...this.loaded.values()]
-          .filter(record => chebyshev(record.cx, record.cz, targetCx, targetCz) <= 1)
-          .map(record => record.key);
+        const localCol = col - targetCx * CHUNK_TILES; // Determines whether the edited tile can affect a neighboring chunk's horizontal seam.
+        const localRow = row - targetCz * CHUNK_TILES; // Determines whether its vertical seam and any diagonal neighbor need rebuilding.
+        let oldHaloSize = 0; // Counts the previously unconditional 3x3 rebuild candidates for mobile savings diagnostics.
+        keys = [];
+        for (const record of this.loaded.values()) {
+          const dx = record.cx - targetCx;
+          const dz = record.cz - targetCz;
+          if (Math.abs(dx) > 1 || Math.abs(dz) > 1) continue;
+          oldHaloSize++;
+          if (dx < 0 && localCol >= EDIT_SEAM_MARGIN_TILES) continue;
+          if (dx > 0 && localCol < CHUNK_TILES - EDIT_SEAM_MARGIN_TILES) continue;
+          if (dz < 0 && localRow >= EDIT_SEAM_MARGIN_TILES) continue;
+          if (dz > 0 && localRow < CHUNK_TILES - EDIT_SEAM_MARGIN_TILES) continue;
+          keys.push(record.key);
+        }
+        this.neighborRebuildsAvoided += oldHaloSize - keys.length;
       } else {
         keys = [...this.loaded.keys()];
       }
@@ -462,6 +480,8 @@
         builds: this.builds,
         unloads: this.unloads,
         rebuilds: this.rebuilds,
+        neighborRebuildsAvoided: this.neighborRebuildsAvoided, // Visible in WildernessChunks.snapshot() without browser DevTools.
+        editSeamMarginTiles: EDIT_SEAM_MARGIN_TILES,
         lastBuildMs: Number(this.lastBuildMs.toFixed(2)),
         averageBuildMs: this.builds ? Number((this.totalBuildMs / this.builds).toFixed(2)) : 0,
         loadRadius: LOAD_RADIUS,

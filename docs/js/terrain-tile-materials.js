@@ -10,7 +10,15 @@
   'use strict';
 
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    // The native (pre-override) tile materials are shared between all maps as
+    // well. Preserve them during zone eviction even if the async config has
+    // not installed its textured replacement yet.
+    for (const material of Object.values(deps?.tileMats || {})) {
+      if (material) _cachedTerrainMaterials.add(material);
+    }
+  }
 
   // Loads a docs/assets/textures/*.png as a tiling MeshLambertMaterial for
   // ground/cliff meshes — same emissive-floor treatment as game.js's floorMat
@@ -39,6 +47,86 @@
   // MeshLambertMaterial — used for grass so its textured ground override
   // reads at one consistent brightness like the base tileMats.grass does,
   // instead of dimming at night/in storms.
+  const _sharedTerrainTextures = new Map(); // One decoded/shade-filled GPU texture per unique source, fill and sampler; shared by different map/material buckets.
+  const _cachedTerrainMaterials = new WeakSet(); // Protects persistent map-specific terrain materials from transient zone scene eviction.
+  const _pooledTerrainTextures = new WeakSet(); // Protects shared PNG textures from disposal by unrelated temporary material clones.
+  let _textureReuseHits = 0; // Reported by debugSnapshot() for mobile texture reuse verification.
+  let _textureDecodeStarts = 0; // Counts source PNG loads started, rather than how many per-zone materials request them.
+
+  function sharedTextureKey(path, tileSize, fillColor, stretch) {
+    // The repeat transform lives on the Texture, not the Material: unlike
+    // colors, different repeat/stretch settings cannot safely share a sampler.
+    const span = Array.isArray(stretch) && stretch.length === 2
+      ? [Math.max(0.05, Number(stretch[0]) || 0.05), Math.max(0.05, Number(stretch[1]) || 0.05)]
+      : null; // Used to separate stretched textures from normal tile-repeat textures.
+    const repeat = span || Math.max(0.05, Number(tileSize) || 1); // Used in the key and the real sampler.
+    return JSON.stringify([path, String(fillColor || '').toLowerCase(), span ? 'stretch' : 'repeat', repeat]);
+  }
+
+  function applyReadyTerrainTexture(material, entry) {
+    material.map = entry.texture; // Every consumer reuses one immutable sampler and GPU upload.
+    material.color.set(0xffffff);
+    material.needsUpdate = true;
+    material.userData.hobunjiTerrainTextureStatus = 'ready';
+    window.SeasonalVegetationTint?.tintMaterial?.(material); // Shared-cache hits must receive the same immediate seasonal tint as new PNG loads.
+  }
+
+  function getSharedTerrainTexture(path, tileSize, fillColor, stretch) {
+    const key = sharedTextureKey(path, tileSize, fillColor, stretch); // Distinguishes actual PNG pixels and UV sampling behavior.
+    let entry = _sharedTerrainTextures.get(key); // Avoids duplicate loads while a previous request is still pending.
+    if (entry) {
+      _textureReuseHits++;
+      return entry;
+    }
+    entry = { status: 'loading', texture: null, materials: [] }; // Holds only pending consumers; released immediately when the async load resolves.
+    _sharedTerrainTextures.set(key, entry);
+    _textureDecodeStarts++;
+    const complete = () => { // Applies a single decoded source to all waiting per-map materials.
+      const waiting = entry.materials;
+      entry.materials = [];
+      for (const mat of waiting) {
+        if (entry.status === 'ready') applyReadyTerrainTexture(mat, entry);
+        else mat.userData.hobunjiTerrainTextureStatus = 'failed';
+      }
+    };
+    try {
+      new THREE.TextureLoader().load(path, tex => {
+        let finalTex = tex;
+        const rgb = fillColor && parseHexColor(fillColor);
+        if (rgb) {
+          try {
+            const canvas = getShadeFillCanvas(tex.image, path + '|' + fillColor, {
+              mode: 'shadeFill', rgb: [rgb.r, rgb.g, rgb.b], options: getPortraitTintingConfig(),
+            });
+            finalTex = new THREE.CanvasTexture(canvas);
+            if (finalTex !== tex) tex.dispose?.(); // Once the shade-filled GPU texture is ready, the original upload is unused.
+          } catch (error) {
+            console.warn('[terrain] PNG shade-fill failed; using original texture:', path, error);
+          }
+        }
+        finalTex.wrapS = finalTex.wrapT = THREE.RepeatWrapping;
+        if (Array.isArray(stretch) && stretch.length === 2) {
+          finalTex.repeat.set(1 / Math.max(0.05, stretch[0]), 1 / Math.max(0.05, stretch[1]));
+        } else {
+          finalTex.repeat.set(1 / Math.max(0.05, tileSize || 1), 1 / Math.max(0.05, tileSize || 1));
+        }
+        entry.texture = finalTex;
+        _pooledTerrainTextures.add(finalTex);
+        entry.status = 'ready';
+        complete();
+      }, undefined, error => {
+        entry.status = 'failed';
+        console.warn('[terrain] failed to load authored ground PNG:', path, error);
+        complete();
+      });
+    } catch (error) {
+      entry.status = 'failed';
+      console.warn('[terrain] failed to start authored ground PNG:', path, error);
+      complete();
+    }
+    return entry;
+  }
+
   function loadTerrainTileTexture(path, fallbackColor, tileSize, fillColor, stretch, unlit) {
     const col = fallbackColor instanceof THREE.Color ? fallbackColor : new THREE.Color(fallbackColor);
     const mat = unlit
@@ -47,34 +135,11 @@
     mat.userData = Object.assign({}, mat.userData, {
       hobunjiTerrainTextureStatus: 'loading',
       hobunjiTerrainTextureSource: path,
-    }); // Pixel Probe distinguishes a pending PNG from an intentional untextured material.
-    new THREE.TextureLoader().load(path, (tex) => {
-      let finalTex = tex;
-      const rgb = fillColor && parseHexColor(fillColor);
-      if (rgb) {
-        try {
-          const canvas = getShadeFillCanvas(tex.image, path + '|' + fillColor, {
-            mode: 'shadeFill', rgb: [rgb.r, rgb.g, rgb.b], options: getPortraitTintingConfig(),
-          });
-          finalTex = new THREE.CanvasTexture(canvas);
-        } catch (error) {
-          // Preserve the authored PNG even when its optional shade-fill fails.
-          console.warn('[terrain] PNG shade-fill failed; using original texture:', path, error);
-        }
-      }
-      finalTex.wrapS = finalTex.wrapT = THREE.RepeatWrapping;
-      if (Array.isArray(stretch) && stretch.length === 2) {
-        finalTex.repeat.set(1 / Math.max(0.05, stretch[0]), 1 / Math.max(0.05, stretch[1]));
-      } else {
-        const ts = Math.max(0.05, tileSize || 1);
-        finalTex.repeat.set(1 / ts, 1 / ts);
-      }
-      mat.map = finalTex; mat.color.set(0xffffff); mat.needsUpdate = true;
-      mat.userData.hobunjiTerrainTextureStatus = 'ready';
-    }, undefined, (error) => {
-      mat.userData.hobunjiTerrainTextureStatus = 'failed'; // Mobile Pixel Probe can show why an intended PNG stayed flat.
-      console.warn('[terrain] failed to load authored ground PNG:', path, error);
-    });
+    }); // Pixel Probe differentiates the async loading state from intentionally flat terrain.
+    const entry = getSharedTerrainTexture(path, tileSize, fillColor, stretch); // Reuses pending loads and finished textures across wilderness zones.
+    if (entry.status === 'ready') applyReadyTerrainTexture(mat, entry);
+    else if (entry.status === 'failed') mat.userData.hobunjiTerrainTextureStatus = 'failed';
+    else entry.materials.push(mat);
     return mat;
   }
 
@@ -105,6 +170,7 @@
         mat.userData = mat.userData || {};
         mat.userData.hobunjiBaseGrassTerrainMaterial = true; // Preserves the base-grass x-ray policy when map materials are texture-overridden.
       }
+      _cachedTerrainMaterials.add(mat); // Held across zone eviction because resolveTileMat caches this exact material.
       _mapTileMatCache.set(cacheKey, mat);
     }
     return mat;
@@ -121,6 +187,7 @@
     color: 0x6a6460, side: THREE.DoubleSide,
     polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
   });
+  _cachedTerrainMaterials.add(_defaultCliffMat); // Shared fallback cliff material also outlives individual zones.
   const _mapCliffMatCache = new Map(); // mapId -> THREE.Material
   window.HobunjiCacheAudit?.register('game.mapCliffMatCache', () => _mapCliffMatCache.size);
   function resolveCliffMat(mapId) {
@@ -132,6 +199,7 @@
       mat = loadTerrainTileTexture('assets/textures/' + override.texture, _defaultCliffMat.color.getHex(), override.tileSize, override.fillColor, override.stretch);
       mat.side = THREE.DoubleSide;
       mat.polygonOffset = true; mat.polygonOffsetFactor = -2; mat.polygonOffsetUnits = -2;
+      _cachedTerrainMaterials.add(mat); // Kept in the persistent map-specific cliff material cache.
       _mapCliffMatCache.set(mapId, mat);
     }
     return mat;
@@ -142,5 +210,15 @@
     loadTerrainTileTexture,
     resolveTileMat,
     resolveCliffMat,
+    isCachedMaterial: material => _cachedTerrainMaterials.has(material), // Used by zone scene eviction to protect persistent material uniforms.
+    isSharedTexture: texture => _pooledTerrainTextures.has(texture), // Used by zone scene eviction to protect pooled GPU samplers.
+    debugSnapshot: () => ({
+      sharedTextures: _sharedTerrainTextures.size,
+      savedLoads: _textureReuseHits,
+      sourceLoadsStarted: _textureDecodeStarts,
+      pending: [..._sharedTerrainTextures.values()].filter(entry => entry.status === 'loading').length,
+      failed: [..._sharedTerrainTextures.values()].filter(entry => entry.status === 'failed').length,
+      mapMaterials: _mapTileMatCache.size + _mapCliffMatCache.size,
+    }), // Read on demand by Pixel Probe rather than performing a per-frame scan.
   };
 })();
