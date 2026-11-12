@@ -69,7 +69,10 @@ const window = {
     hasImprovement: id => id === 'foundry' && state.foundry,
     getTownValue: () => state.mineValue + (state.foundry ? 3 : 0),
   },
-  BanubuQuestline: { ensureQuestState: () => state.quest },
+  BanubuQuestline: {
+    peekQuestState: () => state.quest, // The new read-only contract must be used by all snapshots and renders.
+    ensureQuestState: () => { throw new Error('A read-only Progress view must not initialize or persist Banubu quests.'); },
+  },
   addEventListener: () => {},
 };
 const vmContext = vm.createContext({ window, document, MutationObserver: class { observe() {} }, console, Promise });
@@ -89,6 +92,9 @@ async function main() {
   assert.equal(snap.playable, 2, 'only Banubu quests 1–2 are currently playable');
   assert.equal(snap.completed, 0);
   assert.equal(snap.unspecifiedFeyCount, 3);
+  state.quest = null;
+  assert.equal(current().completed, 0, 'an untouched questline stays untouched, not initialized by the viewer');
+  assert.equal(current().banubuStatus, 'not-started');
 
   state.quest = { status: 'active', stage: 1 };
   assert.equal(current().completed, 0, 'starting the pie must not count as completing it');
