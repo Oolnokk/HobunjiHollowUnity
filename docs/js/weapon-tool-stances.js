@@ -31,7 +31,7 @@
   // hand socket sync) can read it without triggering that recompute.
   let lastBakedHolderMatrixWorld = null;
 
-  const STANCE_CONFIG_URL = 'config/combat/weapon-idle-stances.json?v=20261027hcarryjson1';
+  const STANCE_CONFIG_URL = 'config/combat/weapon-idle-stances.json?v=20261111flailPose1';
   const STANCE_LOCAL_STORAGE_KEY = 'hobunji.weaponIdleStances.v1';
   // The pose schema, the legacy rest poses and the stance-baking policy (power,
   // spacing, Neutral handedness) are window.SharedAttackPose's, shared with
@@ -57,8 +57,8 @@
     topHeavyTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
     longHaftedTool: Object.freeze({ x: 0.21, y: -0.12, z: -0.08, pitch: 17, yaw: -49, bodyYaw: -8, roll: -96 }),
     heavyWeapon: Object.freeze({ x: -0.03, y: 0.27, z: 0.02, pitch: -23, yaw: 104, bodyYaw: -15, roll: 89 }),
-    lightWeapon: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }),
-    dualWieldMain: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114 }),
+    lightWeapon: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114, flailLengthScale: 0.6 }),
+    dualWieldMain: Object.freeze({ x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, bodyYaw: -40, roll: -114, flailLengthScale: 0.6 }),
     dualWieldOffhand: Object.freeze({ x: 0.13, y: -0.04, z: 0.1, pitch: 40, yaw: 88, bodyYaw: -40, roll: -73 }),
   });
   const PREVIOUS_TOP_HEAVY_TOOL_STANCE = Object.freeze({ x: -0.14, y: -0.07, z: -0.18, pitch: -22, yaw: -21, bodyYaw: -8, roll: -99 }); // Recognizes untouched pre-copy browser overrides.
@@ -177,6 +177,7 @@
     const shape = shapeFor(itemKey, def);
     if (shape === 'hoe' || shape === 'hatchet') return 'heavy';
     if (shape === 'fishingmace' || shape === 'fishingspear' || shape === 'pickshovel') return 'light';
+    if (window.HobunjiWeaponSpriteAssemblies?.definitionFor?.(itemKey, def)?.flail) return 'light'; // Previously unclassified standalone flails need a Light Neutral for the authored 60% connector length; explicit Heavy classifications above still win.
     return null;
   }
 
@@ -356,6 +357,8 @@
       windupSlowdown: Math.max(0, Number(opts?.windupSlowdown) || 0),
       poseScale: 1, // Used after a partial held release so stance/shoulder compensation follows the same Neutral→Windup fraction as the weapon pose.
       progress: 0,
+      flailPose: opts?.pose || null, // Reused to sample connector reach from the exact baked swing (no extra per-frame pose allocations).
+      flailSequence: opts?.sequence || 'attack', // Used for the same load/fire timing as the existing pose blend.
       completedAt: 0,
       clearQueued: false,
     };
@@ -602,6 +605,10 @@
     runtimeState.combatStrikeFrac = visual?.sf ?? null;
     runtimeState.combatHoldFrac = visual?.hf ?? null;
     runtimeState.combatPoseScale = visual?.poseScale ?? 1; // Used by hand/shoulder consumers to mirror partial held releases.
+    const idlePose = activeSlot === 'weapon' ? targetPoseFor(activeSlot, itemKey, def) : null; // Chooses the live Light/Heavy/Dual neutral without duplicating stance policy.
+    runtimeState.flailLengthScale = visual?.flailPose
+      ? SAP.flailLengthScaleAt(visual.flailPose, visual.progress, visual.wf, visual.sf, visual.hf, visual.flailSequence, visual.poseScale)
+      : SAP.validFlailLength(idlePose?.flailLengthScale); // The flail renderer reads this only for the player's currently equipped cached handle.
     runtimeState.combatDirSign = visual?.dirSign ?? 1;
     runtimeState.combatNeutralMirrorSign = visual?.neutralMirrorSign ?? 1;
     runtimeState.combatReturnNeutralMirrorSign = visual?.returnNeutralMirrorSign ?? 1;
@@ -634,6 +641,7 @@
       combatStrikeFrac: visual?.sf ?? null,
       combatHoldFrac: visual?.hf ?? null,
       combatPoseScale: visual?.poseScale ?? 1,
+      flailLengthScale: getRuntimeState().flailLengthScale, // Existing debugSnapshot stays in parity with the allocation-free runtime view.
       combatDirSign: visual?.dirSign ?? 1,
       combatNeutralMirrorSign: visual?.neutralMirrorSign ?? 1,
       combatReturnNeutralMirrorSign: visual?.returnNeutralMirrorSign ?? 1,
