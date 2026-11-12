@@ -61,6 +61,13 @@ listeners.get('pagehide')();
 idle.shift()();
 assert.equal(farmWrites,2,'pagehide flushes farm state even when the member save already ran');
 assert.equal(writes,6,'the explicit member save prevents a second write');
+api.scheduleLootMemberSave(true);
+window.HobunjiSessionPersistenceStartupGuard = { exitFlushSuppressed: () => 'recovery-restore' };
+idle.shift()();
+docListeners.get('visibilitychange')();
+listeners.get('pagehide')();
+assert.equal(farmWrites,2,'queued vegetation cannot overwrite the restored farm layout');
+assert.equal(writes,6,'queued mulch cannot overwrite the restored member inventory');
 assert(game.includes('if (_res.ok !== false && !_res.deferMemberSave) saveMemberWorldData();'),
   'generic world-action dispatcher must honor already deferred member save');
 const animal = game.slice(game.indexOf('function makeCorpseWorldObject(c)'),game.indexOf('function getCorpseObjectAt('));

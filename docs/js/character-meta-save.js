@@ -30,7 +30,16 @@
   }
 
   function flush() {
+    if (window.HobunjiSessionPersistenceStartupGuard?.exitFlushSuppressed?.()) return;
     for (const characterId of pending.keys()) write(characterId);
+  }
+
+  function capturePending(meta) {
+    // Folder and cloud snapshots can include live progression without writing browser storage.
+    for (const character of (meta?.characters || [])) {
+      const patch = pending.get(character.id); // The queue stays intact for a later browser write.
+      if (patch) Object.assign(character, patch);
+    }
   }
 
   function schedule(patch) {
@@ -54,5 +63,5 @@
     return !!characterId && typeof mutator === 'function' && write(characterId, mutator);
   }
 
-  window.CharacterMetaSave = Object.freeze({ META_KEY, update, schedule });
+  window.CharacterMetaSave = Object.freeze({ META_KEY, update, schedule, flush, capturePending });
 })();

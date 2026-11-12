@@ -9620,6 +9620,7 @@
       }
 
       function flushLootMemberSave() {
+        if (window.HobunjiSessionPersistenceStartupGuard?.exitFlushSuppressed?.()) return;
         if (pendingVegetationFarmSave && window.FarmEditor.saveFarmLayout()) pendingVegetationFarmSave = false;
         if (pendingLootMemberSave) saveMemberWorldData(); // Only the canonical serializer writes member data.
       }
@@ -33911,6 +33912,7 @@
         setFarmPlayerSave: value => { farmPlayerSave = value; },
         snapCameraTarget: () => _snapCameraTarget(),
         flushAll: () => {
+          window.CharacterMetaSave?.flush?.();
           saveMemberWorldData();
           window.FarmEditor?.saveFarmLayout?.();
           _saveWorldCalendar();

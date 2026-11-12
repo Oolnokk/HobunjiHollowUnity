@@ -58,3 +58,13 @@ const meta = JSON.parse(saved);
 assert.equal(meta.characters[0].skillExperience.combat, 70);
 assert.equal(meta.characters[1].skillExperience.combat, 10, 'deferred writes stay with the character who earned them');
 assert.deepEqual(meta.worlds, [{ id: 'farm' }], 'character saves preserve world data');
+
+saves.schedule({ skillExperience: { combat: 20 } });
+saved = JSON.stringify({ characters: [{ id: 'b', skillExperience: { combat: 3 } }] }); // A recovery import replaced this tab's browser data.
+window.HobunjiSessionPersistenceStartupGuard = { exitFlushSuppressed: () => 'recovery-restore' };
+idle.shift()();
+document.hidden = true;
+listeners.get('visibilitychange')();
+listeners.get('pagehide')();
+assert.equal(writes, 4, 'the old tab cannot write queued rewards over the restored save');
+assert.equal(JSON.parse(saved).characters[0].skillExperience.combat, 3);
