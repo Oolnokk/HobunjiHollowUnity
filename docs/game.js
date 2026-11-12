@@ -25256,7 +25256,7 @@
       });
 
       function updateToolMesh(dt) {
-        toolHolder.userData.authoredToolActionActive = activeTool !== 'weapon' && !!combatSwingPose && toolSwingT > 0; // Render-time stance hook must not reapply tool Neutral over held working/fishing poses.
+        toolHolder.userData.authoredToolActionActive = false; // Clear a previous working pose even when an instrument, bag item or action lock returns early.
         _toolPoseCentroidDebug.reticleOrbitApplied = false;
         _toolPoseCentroidDebug.reticleOrbitPitchDeg = 0;
         _toolPoseCentroidDebug.reticleOrbitYawDeg = 0;
@@ -25294,6 +25294,7 @@
           return;
         }
         heldItemHolder.visible = false;
+        toolHolder.userData.authoredToolActionActive = activeTool !== 'weapon' && !!combatSwingPose && toolSwingT > 0; // Only real tool work and held fishing poses suppress the idle-stance rebase.
         if (!toolMeshMap[activeTool]) { toolHolder.visible = false; return; }
         toolHolder.visible = true;
         toolHolder.userData.headRelativeBackPlane = null; // Every ordinary/melee frame clears the owner-only rear mask.
