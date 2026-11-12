@@ -20911,6 +20911,10 @@
             startChargeAction(getReticleTile(), MINE_ROCK_STAGES);
             return;
           }
+          if (activeTool === 'hoe' && activeAction === 'till') {
+            startChargeAction(getReticleTile(), TILL_SOIL_STAGES);
+            return;
+          }
           {
             const _chargeReticle = getReticleTile();
             const _chargeTile = window.GridTileAccessors.getActiveGrid()[_chargeReticle.row]?.[_chargeReticle.col];
@@ -20922,10 +20926,10 @@
 
         const _anim = activeAnimStyle();
         toolSwingDur = _anim === 'thrust' ? 0.34 : _anim === 'chop' ? 0.42 : 0.68;
-        // Dig speed only scales shovel dig & fill swings (e.g. the single-tap
-        // trench redig below) — everything else swings at its normal pace.
-        if (activeTool === 'shovel' && (activeAction === 'dig' || activeAction === 'fill')) {
-          toolSwingDur /= getDigSpeedMultiplier();
+        // Single-swing terrain work (redig, raise, smooth, brush-clearing)
+        // uses the same efficacy, skill, and digging speed as held actions.
+        if (['shovel', 'hoe', 'axe', 'pick'].includes(activeTool)) {
+          toolSwingDur /= getToolWorkSpeedMultiplier(activeTool);
         }
         toolSwingT = toolSwingDur;
         strikeFired = false;
@@ -23792,6 +23796,10 @@
       ];
       const FILL_TRENCH_STAGES = [...REFILL_FLOURISH_REP, ...REFILL_FLOURISH_REP, ...REFILL_FLOURISH_REP];
 
+      // Tilling is a held three-chop soil-working action rather than a tap.
+      // It uses the same digging and Farming speed bonuses as shovel work.
+      const TILL_SOIL_STAGES = [0.8, 0.7, 0.6].map(dur => ({ anim: 'chop', dur, sfxKey: 'dig', sfxAt: 0.28 }));
+
       // Felling a real tree (see isChoppableTreeTile) — a short flurry of
       // alternating forehand/backhand swings held through to the end, reusing
       // the melee combo's own authored SWEEP_POSE (window.Combat.poses) via
@@ -23900,8 +23908,17 @@
       // farming tool action) — updateCombatConeTrail then hides every lane.
       let combatSwingCone = null;
 
+      // Metal efficacy, including reinforcement, speeds up every work action.
+      // Hoe and shovel share the identical player digging and Farming bonuses.
+      function getToolWorkSpeedMultiplier(tool) {
+        const skillKey = tool === 'axe' ? 'foraging' : tool === 'pick' ? 'mining' : 'farming'; // Selects the existing skill modifier for this tool.
+        const skillSpeed = window.SkillSystem?.actionSpeedMultiplier?.(skillKey) || 1; // Applied by single swings and held work stages.
+        const digSpeed = tool === 'shovel' || tool === 'hoe' ? Math.max(0.01, player.digSpeed || 1) : 1; // Shared shovel/hoe digging bonus.
+        const metalEfficacy = toolMetalMultiplier(equipmentSlots[tool]); // Applies the equipped item's effective (reinforced) metal tier.
+        return Math.max(0.01, skillSpeed * digSpeed * metalEfficacy);
+      }
       function getDigSpeedMultiplier() {
-        return Math.max(0.01, player.digSpeed || 1) * (window.SkillSystem?.actionSpeedMultiplier?.('farming') || 1);
+        return getToolWorkSpeedMultiplier('shovel');
       }
 
       // Prefer the selected shovel action when it is valid: explicitly
@@ -23927,6 +23944,10 @@
         if (tool === 'pick' && action === 'mine') {
           const reticle = getReticleTile();
           return isMineableRockTile(reticle.col, reticle.row);
+        }
+        if (tool === 'hoe' && action === 'till') {
+          const reticle = getReticleTile(); // Valid grass is required before holding the hoe to till.
+          return canUseAction(tool, action, reticle.col, reticle.row);
         }
         if (tool !== 'shovel' || (action !== 'dig' && action !== 'fill')) return false;
         const reticle = getReticleTile();
@@ -23960,8 +23981,7 @@
       function beginChargeStage() {
         if (!chargeAction) return;
         const stageDef = chargeAction.stages[chargeAction.stage];
-        const skillKey = chargeAction.tool === 'axe' ? 'foraging' : chargeAction.tool === 'pick' ? 'mining' : null; // Used to map held axe/pick actions onto their progression speed bonus.
-        const speedMultiplier = skillKey ? (window.SkillSystem?.actionSpeedMultiplier?.(skillKey) || 1) : getDigSpeedMultiplier(); // Used to scale every supported held tool action independently.
+        const speedMultiplier = getToolWorkSpeedMultiplier(chargeAction.tool); // Held work stages share the equipped tool's efficacy and existing skill/digging bonuses.
         const dur = stageDef.dur / speedMultiplier;
         toolSwingDur = dur;
         toolSwingT   = dur;
@@ -28011,7 +28031,9 @@
               ? 'Hold to Fill'
               : activeTool === 'shovel' && allowed && action === 'dig' && tile.type !== TileType.TRENCH
                 ? 'Hold to Dig'
-                : window.HudUpdate.contextualActionLabel(action, tile); // Action-bar label distinguishes held excavation from single-tap trench redigging.
+                : activeTool === 'hoe' && allowed && action === 'till'
+                  ? 'Hold to Till'
+                  : window.HudUpdate.contextualActionLabel(action, tile); // Action-bar label distinguishes held excavation from single-tap trench redigging.
             btns.push({
               icon, label,
               action, style: i === 0 ? 'primary' : 'secondary', allowed,
