@@ -59,6 +59,21 @@
     const zi = deps._zoneScenes.get(mapId);
     if (!zi) return;
     if (zi.chunkController && window.WildernessChunks) {
+      // The global route apron is outside all streamed chunks, so rebuilding
+      // resident chunks after a late terrain-material fetch never rebinds its
+      // original flat grass material. Refresh that ONE retained material too.
+      if (col == null && row == null) {
+        const pathGround = deps._zoneFloorMeshGroups.get(mapId)?.find(
+          mesh => mesh?.userData?.wildernessGlobalPathGround === true
+        ); // Built once in game.js; never disposed by WildernessChunks.
+        if (pathGround) {
+          const material = deps.resolveTileMat(mapId, deps.TileType.GRASS); // Uses the newly loaded per-map PNG override.
+          if (material && pathGround.material !== material) {
+            pathGround.material = material; // Geometry and x-ray registration remain unchanged.
+            deps.debugLog?.(`[terrain-refresh] ${mapId}: updated global path substrate material`);
+          }
+        }
+      }
       // The route network's grass apron is zone-wide, but its index ranges
       // are recorded per tile when it is first built. Toggle this edited
       // tile and its one-cell cliff seam instead of regenerating the entire
