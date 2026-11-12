@@ -75,8 +75,7 @@ const normalized=Rig.normalize({points:[{u:.5,v:.25},{u:.5,v:.65}],
 assert.equal(normalized.regionMasks.front.runs.length,mask.runs.length,'front region survives JSON serialization');
 assert.equal(normalized.regionMasks.rear.runs.length,0,'rear mask is independent and can be explicitly all-flexible');
 assert.equal(Rig.decodePixelMask(normalized.regionMasks.front)[idx(90,70)],1);
-assert.equal(Rig.splitByMask(hair,null).flexible,hair,'legacy styles without a mask continue moving as before');
-assert.equal(Rig.splitByMask(hair,null).rigid,null,'legacy styles do not acquire phantom head attachments');
+assert.equal(typeof Rig.splitByMask,'undefined','no legacy two-texture seam-splitting function survives');
 const pinField=Rig.attachmentPinField(mask,18);
 assert(pinField&&pinField.length===40000,'binary anchored vertex field covers the full portrait UV grid');
 assert.equal(Rig.isPinnedPixel(pinField,90.5/200,70.5/200),true,
