@@ -4,6 +4,7 @@
   const SCHEMA = 'hobunji_modular_weapons.v2'; // Validated editor import format.
   const DRAFT_KEY = 'hobunji.modularWeapons.v5'; // New authored companion mounts and explicit pair layering.
   const KYLIE_TOOL_MIGRATION_KEY = 'hobunji.modularWeapons.kylieToolWorthy.v1'; // Upgrade old local drafts once without permanently locking the editor checkbox.
+  const PICK_SHAFT_MIGRATION_KEY = 'hobunji.modularWeapons.pickShovelForgeable.v1'; // One-time editor-only lift for saved local drafts; later explicit authoring is respected.
   const OLD_DRAFT_KEY = 'hobunji.modularWeapons.v4'; // Preserve existing v2 authoring lines while upgrading shipped mounts.
   const LEGACY_DRAFT_KEY = 'hobunji.modularWeapons.v3'; // Original v1 socket/draft backup.
   const NEUTRAL = Object.freeze({ scaleX: 1, scaleY: 1, flipX: false, flipY: false, x: 0, y: 0, rotation: 0, animation: 'sweep', layerOrder: 'haft-over-head' }); // Default sprite stacking draws heads before the haft.
@@ -902,7 +903,8 @@
         if (head.editorOnly) continue; // Uncalibrated previews lack definitions; craftDisabled heads retain definitions for existing saved weapons.
         const key = itemKey(shaftKey, headKey, metalKey); // Pre-register metadata only; no image loads for unowned combinations.
         const animation = settings(shaftKey, headKey).animation; // Authored pair override or shaft default drives attacks and combo selection.
-        const toolSlots = shaft.toolWorthy === true ? (head.toolSlots || []).filter(slot => UTILITY_SLOTS.has(slot)) : []; // Both independent component capabilities are required before tool-use XP can occur.
+        const toolSlots = shaft.toolWorthy === true ? (head.toolSlots || []).filter(slot => UTILITY_SLOTS.has(slot)) : []; // Ordinary tool roles still require a tool-worthy haft and matching head.
+        if (shaft.toolWorthy === true && shaftKey === 'pick-shovel') toolSlots.push('pick'); // Its reversible working end makes any compatible mounted head a mining pick, independent of head toolSlots.
         const assembly = flailRecipe(shaftKey, headKey); // Dynamic head/rope config rides the existing gameplay and editor renderer.
         defs[key] = { ...source, animStyle: animation, comboStyle: animation,
           label: weaponName(shaftKey, headKey, metals[metalKey]?.label || metalKey), icon: '⚒️', sprite: key,
@@ -935,12 +937,15 @@
     const recent = storage?.getItem(DRAFT_KEY), prior = storage?.getItem(OLD_DRAFT_KEY);
     const oldest = storage?.getItem(LEGACY_DRAFT_KEY); // Existing draft preference stays v5 > v4 > v3.
     const needsKylieUpgrade = storage?.getItem(KYLIE_TOOL_MIGRATION_KEY) !== '1'; // One-time migration preserves future explicit checkbox edits.
+    const needsPickShaftUpgrade = storage?.getItem(PICK_SHAFT_MIGRATION_KEY) !== '1'; // Previously stored catalog drafts still allow the newly forgeable Pick-Shovel shaft.
     if (recent || prior || oldest) {
       const draft = recent ? JSON.parse(recent) : prior ? addCompanionsToPreviousDraft(JSON.parse(prior)) : JSON.parse(oldest); // Preserve every other authored setting.
       if (needsKylieUpgrade && draft.shafts?.kylie) draft.shafts.kylie.toolWorthy = true; // Old drafts must not mask the new shipped Kylie capability.
-      replace(draft, !recent || needsKylieUpgrade);
+      if (needsPickShaftUpgrade && draft.shafts?.['pick-shovel']) draft.shafts['pick-shovel'].editorOnly = false; // Enables old user-authored drafts without altering their mounts or pair art.
+      replace(draft, !recent || needsKylieUpgrade || needsPickShaftUpgrade);
     }
     if (needsKylieUpgrade) storage?.setItem(KYLIE_TOOL_MIGRATION_KEY, '1');
+    if (needsPickShaftUpgrade) storage?.setItem(PICK_SHAFT_MIGRATION_KEY, '1');
   } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
   global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, weaponName, weaponDamageType, flailRecipe, flailGuide, authoredFlailAnchor, isFlailHead, resolvedBores, boreShaft, cleanBores, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, registerDefinitions, unlockedParts, matchingMounts,
     duplicateTransform, duplicatePoint, shaftRigTransform, shaftArtTransform, cleanRigRegions, regionAt, regionAffine, affinePoint, rigPoint, shaftMounts, attachmentRig, rigBridgeOperations, multiplyAffine, JUNCTIONS, junctionPath, drawJunction, expandOps,

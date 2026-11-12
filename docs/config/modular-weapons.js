@@ -11711,7 +11711,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "haft-over-head"
         }
       },
-      "editorOnly": true,
+      "editorOnly": false,
       "mounts": [
         {
           "type": "eye",

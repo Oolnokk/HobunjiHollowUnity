@@ -233,6 +233,7 @@
       }, // Reused by every animation frame, avoiding repeated vector/quaternion/matrix allocations.
       attacking: false, progress: 0, wf: 0.16, sf: 0.28, hf: 0.68, pitchTravelRad: null, yawTravelRad: 0, detachedAt: 0, dead: false, // Per-weapon attack timing supplied by player, enemies, or editor.
       flailLengthScale: 1, hasExplicitFlailScale: false, // Pose multiplier is separate from the authored rope/chain length and never changes rigid heads or non-flails.
+      fishingFlailHeadSpin: false, fishingFlailSpinRevolutions: 2.5, // Fishing-only head orbit; the shaft/hand pose remains the existing Spin Throw, without in-plane shaft rotation.
       registryEntry: weakRegistry ? new WeakRef(root) : root, // Frame iteration never strongly retains an unequipped actor/weapon graph.
       gcResources: gpuFinalizer ? new Set() : null, // Finalizer holds only cloned GPU resources, not meshes, groups, state, or root.
       finalizerToken: {}, // Explicit drop unregisters only this weapon's finalization callback.
@@ -394,6 +395,9 @@
     state.pitchTravelRad = Number.isFinite(options.pitchTravelDeg) ? options.pitchTravelDeg * Math.PI / 180 : null; // Authored strike-minus-windup pitch remains deterministic during editor scrubbing.
     state.yawTravelRad = Number.isFinite(options.yawTravelDeg) ? options.yawTravelDeg * Math.PI / 180 : 0; // Authored travel remains diagnostic; physical follow-through uses the measured world motion.
     state.movementPosition = options.movementPosition || null; // Player/NPC world position excludes hand-motion offsets from neutral-to-windup lag.
+    state.fishingFlailHeadSpin = !!state.config.flail && state.attacking && options.fishingFlailHeadSpin === true; // The flexible head alone spins; normal flail strikes and NPC pendulums are unaffected.
+    state.fishingFlailSpinRevolutions = Number.isFinite(Number(options.fishingFlailSpinRevolutions))
+      ? Math.max(0, Number(options.fishingFlailSpinRevolutions)) : 2.5; // Matches the authored spinning-throw revolution count, not the ring project's pixel speed.
     state.hasExplicitFlailScale = options.flailLengthScale != null; // NPCs and editors pass their own sampled pose; cached player tools read the weapon-stance runtime.
     if (state.hasExplicitFlailScale) state.flailLengthScale = global.SharedAttackPose?.validFlailLength?.(options.flailLengthScale) ?? 1;
   }
@@ -608,6 +612,13 @@
     const strikeSpan = Math.max(0.0001, strikeFrac - windupFrac);
     const t = Math.max(0, Math.min(1, (progress - windupFrac) / (strikeSpan * 0.35))); // Straighten in the first 35% of Windup → Strike.
     return t * t * (3 - 2 * t); // Gradual contact with the animated shaft; exactly aligned for the rest of strike.
+  }
+
+  function fishingFlailHeadDirection(out, shaftUp, planeNormal, progress, revolutions, workQ) {
+    const t = Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 0; // Current fishing throw phase, shared by the grip and the moving head.
+    const turns = Number.isFinite(revolutions) ? Math.max(0, revolutions) : 2.5; // Existing Spin Throw revolutions; zero means hold the head at its shaft-aligned start.
+    workQ.setFromAxisAngle(planeNormal, -Math.PI * 2 * turns * t); // Spin in the actual baked shaft plane, never the camera/screen plane.
+    return out.copy(shaftUp).applyQuaternion(workQ).normalize(); // Caller-owned direction; shaft and physical connector length remain unchanged.
   }
 
   function flailYawTravel(windup, strike, power = 1, dirSign = 1) {
@@ -826,7 +837,13 @@
     }
     state.lastShaftUp.copy(shaftUp); state.hasShaftUp = true;
     state.wasAttacking = state.attacking; state.lastFrameProgress = state.progress;
-    if (!state.attacking) {
+    if (state.fishingFlailHeadSpin) {
+      // Keep the shaft, its primary-hand grip and pivot exactly where the existing throw pose put them.
+      // Only orbit the direction of the connector/head around that real haft attachment, in the shaft's
+      // baked PNG plane. The existing endpoint solver below keeps rope and head joined every frame.
+      fishingFlailHeadDirection(state.direction, shaftUp, normal, state.progress, state.fishingFlailSpinRevolutions, q.deltaQ);
+      state.angularVelocity.set(0, 0, 0); state.hasPhysicsVelocity = false; state.hasStrikeStart = false;
+    } else if (!state.attacking) {
       // Idle suspension is a world-space pendulum: it hangs under gravity, swings
       // when the holder accelerates or turns, and settles instead of snapping to a pose.
       // The rigid grip and authored attack motion remain independent of the rope.
@@ -856,13 +873,13 @@
       // Hold and Recovery. Pivot deceleration contributes torque instead of a cap.
       stepPendulum(state, q.pivotAcceleration, state.physicsLength, dt, 9.81, flailDamping(motion));
     }
-    if (dt > 0 && state.attacking && state.progress < state.sf) {
+    if (dt > 0 && state.attacking && !state.fishingFlailHeadSpin && state.progress < state.sf) {
       q.pitchCross.crossVectors(q.previousDirection, state.direction); // Real driven angular displacement includes simultaneous pitch, yaw, roll and body movement.
       const sine = q.pitchCross.length(); // Atan2 recovers signed 3D travel without choosing a dominant authored axis.
       if (state.hasPhysicsVelocity && sine > 1e-10) state.angularVelocity.copy(q.pitchCross).multiplyScalar(Math.atan2(sine, q.previousDirection.dot(state.direction)) / (sine * dt));
       else state.angularVelocity.set(0, 0, 0);
     }
-    if (dt > 0) state.hasPhysicsVelocity = true;
+    if (dt > 0 && !state.fishingFlailHeadSpin) state.hasPhysicsVelocity = true; // Head-only spin is a kinematic orbit, not an impulse into the pendulum integrator.
     }
     if (state.dualWieldHidden) return; // Hidden original still simulates the ONE pendulum, but need not position invisible rope/head art.
     const worldQ = planeQuaternion(q.headUp.copy(state.direction).negate(), normal, q.worldQ, q);
@@ -939,6 +956,7 @@
       if (!s || s.dead) { records.delete(entry); continue; }
       snapshot.push({
       itemKey: s.itemKey, loaded: s.config.flail ? !!(s.chain && s.headRoot) : !!s.staticReady,
+      fishingFlailHeadSpin: s.fishingFlailHeadSpin, fishingFlailSpinRevolutions: s.fishingFlailHeadSpin ? s.fishingFlailSpinRevolutions : null, // On-device verification of shaft-held, head-only spin mode.
       attached: !!s.root.parent, attacking: s.attacking,
       cachedPlayerOwned: isCachedPlayerToolRoot(s.root), // Displays cached equipment identity; weak-root lifetime remains independent of the map.
       detachedForMs: s.root.parent || !s.detachedAt ? 0 : Math.max(0, performance.now() - s.detachedAt), // Mobile proof that no time limit can destroy cached rope/head.
@@ -1015,7 +1033,7 @@
 
   global.HobunjiWeaponSpriteAssemblies = {
     definitions: DEF, decorate, setAction, tick, drop, syncDualWield, scheduleTickAfterPose, debugSnapshot, enchantmentTargets, dualWieldEnchantmentTargets, bakedPoint,
-    opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, // Pure sizing and phase helpers have regression tests.
+    opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, fishingFlailHeadDirection, // Pure sizing and phase helpers have regression tests.
   };
   global.HobunjiCacheAudit?.register('weapon assemblies (weak owner registry)', () => { let count = 0; for (const entry of records) if (liveState(entry)) count++; return count; });
   if (global.RuntimeFrameScheduler?.register) {

@@ -1,10 +1,9 @@
 // The player's held tool-action animations (felling a tree, breaking a rock, digging, casting a fishing
 // spear) as data + a sampler, so NPCs play exactly what the player plays.
 //
-// game.js aliases CHOP_TREE_STAGES / MINE_ROCK_STAGES to the tables below (the player's hold timeline);
-// js/npc-held-equipment-v4.js samples poseAt() for any NPC whose schedule target carries a `toolActivity`.
-// Both read the same SharedAttackPose math, the same authored hatchet_swing pose and the same legacy
-// thrust arc the player's updateToolMesh uses — see docs/architecture/shared-attack-pose.md.
+// game.js retains player-specific working stages; this module resolves modular-work attack styles
+// for those stages and separately supplies immutable behavior tables to NPC schedules.
+// Both sample SharedAttackPose and the authored AttackPoseTemplates (see docs/architecture/shared-attack-pose.md).
 (() => {
   'use strict';
   if (window.ToolActivityStages) return;
@@ -27,6 +26,70 @@
     sfxKey: 'pick',
     terminalSfxKey: index === stages.length - 1 ? 'breakRock' : null,
   }));
+
+
+  // Resolve a modular tool's working animation from the assembled weapon, not the tool slot's legacy hard-coded arc.
+  // The Pick-Shovel haft is the one exception: its reversible pick end still jabs regardless of fitted head.
+  function workStyleFor(slot, itemKey = null, def = null) {
+    const deps = window.Combat?.deps; // Runtime owner consulted only if the caller does not provide this stage's equipment.
+    const key = itemKey || deps?.equipmentSlots?.[slot]; // The exact fitted assembly chosen for this tool slot.
+    const tool = def || deps?.TOOL_ITEM_DEFS?.[key]; // Supplies each modular pair's authored attack animation.
+    if (!tool?.modular) return null;
+    if (slot === 'pick' && tool.modular.shaft === 'pick-shovel') return 'thrust';
+    return ['thrust', 'sweep', 'chop'].includes(tool.animStyle) ? tool.animStyle : 'sweep';
+  }
+
+  // Rebase modular tool work onto its tool-slot Neutral, keeping the assembled weapon's attack style.
+  // Mining rotates a weapon stroke into an overhead hit; fishing instead uses its own existing spear/spin throws.
+  // The reversible Pick-Shovel haft is the lone mining exception and keeps its original flipped jab.
+  function workPoseFor(slot, itemKey, def, dirSign = 1) {
+    const style = workStyleFor(slot, itemKey, def);
+    if (!style || (slot === 'pick' && def?.modular?.shaft === 'pick-shovel')) return null;
+    const templates = window.AttackPoseTemplates; // Existing authored attacks supply windup, strike and two-hand grip metadata.
+    const shared = window.SharedAttackPose; // Supplies the same chop baseline the player and enemy combat already use.
+    const source = style === 'sweep' ? templates?.poseFor?.('hatchet_swing')
+      : style === 'chop' ? shared?.LEGACY_CHOP_POSE : templates?.poseFor?.('pickshovel_swing');
+    if (!source) return null;
+    const base = source.neutral || shared?.STYLE_NEUTRAL_POSE?.[style] || {}; // Delta reference for every authored attack channel.
+    const toolNeutral = window.WeaponToolStances?.toolNeutralPose?.(slot, itemKey, def) || base; // Tool slot, not shaft, owns the working rest stance.
+    const channels = ['x', 'y', 'z', 'pitch', 'yaw', 'roll', 'bodyYaw']; // SharedAttackPose's spatial and angular pose channels.
+    const flip = dirSign === -1 ? -1 : 1; // Alternating backhand work strokes mirror the ATTACK DELTA, never the shared tool idle.
+    const mirrored = new Set(['x', 'yaw', 'roll', 'bodyYaw']); // Match SharedAttackPose's handedness channels without flipping its neutral pose.
+    const phase = part => {
+      const out = { ...part }; // Keep authored grip, two-hand flags and other nonnumeric per-phase metadata.
+      for (const key of channels) {
+        const delta = (Number(part?.[key]) || 0) - (Number(base[key]) || 0); // Source weapon motion relative to its own Neutral.
+        const rest = key === 'bodyYaw' ? 0 : (Number(toolNeutral[key]) || 0); // Tool idle poses rotate the holder, not the body: prevent a body-yaw snap at swing start/end.
+        out[key] = rest + delta * (mirrored.has(key) ? flip : 1); // Mirror weapon motion only, so every stage starts at its visible tool Neutral.
+      }
+      return out;
+    };
+    const neutral = { ...base, ...toolNeutral, bodyYaw: 0 }; // Tool idle body yaw is not applied to playerMesh; keep authored weapon rotation as movement, never a rest offset.
+    const windup = phase(source.windup);
+    const strike = phase(source.strike);
+    if (slot === 'pick' && style === 'sweep') {
+      // Rotate the SAME authored forehand/backhand sweep travel into the overhead plane:
+      // the head lifts and comes down while the body stays at its visible tool-slot Neutral.
+      const windupYaw = (Number(source.windup.bodyYaw) || 0) - (Number(base.bodyYaw) || 0);
+      const strikeYaw = (Number(source.strike.bodyYaw) || 0) - (Number(base.bodyYaw) || 0);
+      windup.pitch += windupYaw * flip; strike.pitch += strikeYaw * flip;
+      windup.bodyYaw = neutral.bodyYaw; strike.bodyYaw = neutral.bodyYaw;
+      windup.y += .18; strike.y -= .10; // Above shoulder on Windup, downward to the rock on Strike.
+    } else if (slot === 'pick' && style === 'thrust') {
+      windup.pitch -= 75; strike.pitch += 60; // Convert the pair's own backward/forward thrust to a top-down spike.
+      windup.y += .25; strike.y -= .20;
+      windup.z -= .12; strike.z -= .12; // Keep the stab near the rock instead of reaching through the player's torso.
+    }
+    return { neutral, windup, strike }; // Every stage returns to the same carried Neutral without a mirrored idle snap.
+  }
+
+  let lastPlayerWork = null; // On-demand mobile diagnostics for the most recently sampled modular tool stage.
+  function notePlayerWork(slot, itemKey, style, hasPose) {
+    const signature = `${slot}|${itemKey}|${style}|${hasPose}`; // Suppresses repeated logs across the three held strokes.
+    if (lastPlayerWork?.signature === signature) return;
+    lastPlayerWork = { signature, slot, itemKey, style, hasPose, pickShovelThrust: slot === 'pick' && itemKey?.startsWith('modular:pick-shovel:') }; // Visible work diagnostics report exact fitted style and the one exception.
+    window.__farmLog?.(`[modular-tool-work] ${slot} ${style}${lastPlayerWork.pickShovelThrust ? ' flipped pick-shovel thrust' : ''}${hasPose ? '' : ' legacy'} (${itemKey})`, 'combat');
+  }
 
   // Digging a trench: the thrust half of the player's dig/toss pairs (the toss is a bespoke player-only arc).
   const DIG_THRUST_STAGES = [1.0, 0.25].map(dur => ({ anim: 'thrust', dur, sfxAt: 0.16, sfxKey: 'dig' }));
@@ -127,6 +190,10 @@
     MINE_ROCK_STAGES,
     DIG_THRUST_STAGES,
     ACTIVITIES,
+    workStyleFor,
+    workPoseFor,
+    notePlayerWork,
+    debugSnapshot: () => lastPlayerWork ? { ...lastPlayerWork } : null, // Existing on-device log can inspect the latest tool animation without devtools.
     poseAt,
     strikeTimes,
     toolKeyFor: activity => ACTIVITIES[activity]?.toolKey || '',

@@ -205,9 +205,12 @@
     return { activeSlot, itemKey, def, mesh };
   }
 
+  const MODULAR_TOOL_IDLE_BY_SLOT = Object.freeze({ axe: 'topHeavyTool', hoe: 'topHeavyTool', shovel: 'longHaftedTool', pick: 'longHaftedTool', harpoon: 'longHaftedTool' }); // Tool-equipped modular weapons borrow the selected tool's Neutral, never their haft donor's weapon Neutral.
+
   function targetPoseFor(activeSlot, itemKey, def, { dualWield = null } = {}) {
     const shape = shapeFor(itemKey, def);
     if (activeSlot !== 'weapon') {
+      if (def?.modular && MODULAR_TOOL_IDLE_BY_SLOT[activeSlot]) return idleStances[MODULAR_TOOL_IDLE_BY_SLOT[activeSlot]]; // An axe-head spear haft rests as an axe when equipped for woodcutting, for example.
       if (shape === 'hoe' || shape === 'hatchet' || shape === 'fishingmace') return idleStances.topHeavyTool; // Head-weighted tools share one carried stance.
       if (shape === 'fishingspear' || shape === 'pickshovel') return idleStances.longHaftedTool; // Same carry, pitched up 10° and gripped nearer the haft's middle.
       if (def?.animStyle === 'thrust') return idleStances.tool;
@@ -524,7 +527,8 @@
       const attackInProgress = activeSlot === 'weapon' && !!visual;
       // Weapon attacks are explicitly tracked by the combat wrappers, so never let
       // their real holder rotation poison the tool-motion idle suppression timer.
-      const holderMoving = activeSlot === 'weapon' ? false : holderIsMoving(now);
+      const authoredToolActionActive = activeSlot !== 'weapon' && holder.userData?.authoredToolActionActive === true; // The game has already posed a held tool/fishing attack against the selected Neutral.
+      const holderMoving = activeSlot === 'weapon' ? false : (authoredToolActionActive || holderIsMoving(now)); // Do not double-rebase a stage that already incorporates its tool-slot Neutral.
       const idleDualState = !attackInProgress ? window.HobunjiHandToolGrips?.currentDualWieldAnimationState?.() : null;
       const idleDualWield = !!idleDualState && idleDualState.source === 'dual-wield-idle' && idleDualState.influence > 0.0001;
       const targetPose = targetPoseFor(activeSlot, itemKey, def, { dualWield: idleDualWield });
@@ -628,6 +632,8 @@
       itemKey: state.itemKey,
       shape: shapeFor(state.itemKey, state.def),
       weaponIdleClass: weaponIdleClass(state.itemKey, state.def),
+      toolIdlePreset: state.def?.modular && state.activeSlot !== 'weapon' ? (MODULAR_TOOL_IDLE_BY_SLOT[state.activeSlot] || null) : null, // Visible in the existing mobile stance inspector.
+      toolWorkStyle: state.def?.modular ? window.ToolActivityStages?.workStyleFor?.(state.activeSlot) || state.def.animStyle : null, // Reports the live head/shaft work style without opening a console.
       sourceAnimStyle: state.def?.animStyle || null,
       stanceApplied,
       hook: holderHookInstalled ? 'toolHolder.updateMatrixWorld' : 'missing',
@@ -733,6 +739,7 @@
       return loadStanceConfig({ force: true });
     },
     combatNeutralPose: currentCombatNeutral,
+    toolNeutralPose: (slot, itemKey, def) => slot === 'weapon' ? null : targetPoseFor(slot, itemKey, def), // Shared tool-neutral authority for modular work-stage Neutral→attack blending.
     prepareCombatOptions,
     sweepTwistCancelWeight,
     idleBodyYawSnapshot,
