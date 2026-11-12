@@ -74,7 +74,7 @@ assert(read('docs/js/bandit-camps.js').includes('variant?.speciesWeights'), 'Bea
 assert(read('docs/js/combat/combat-bandit.js').includes('await loadBanditSpeciesDef(parentId)'), 'Inherited bandit clothing must be usable');
 assert(read('docs/js/slagothim-traders.js').includes('rollSubspecies?.(rng)'), 'Trader species must roll from deterministic seeds');
 assert(read('docs/js/onboarding-character-creation-redesign.js').includes('data-ob-subspecies="longoran"'), 'Creator must expose the subspecies');
-assert(read('docs/js/procedural-leg-animation.js').includes("speciesId === 'longoran' ? window.HobunjiLongoranSpecies?.gaitProfile"), 'Normal Longoran walkers need the maskbound gait');
+assert.match(read('docs/js/procedural-leg-animation.js'), /speciesId === 'longoran'[^\n]+HobunjiLongoranSpecies\?\.gaitFor/, 'Normal Longoran walkers need the authored gender-specific Maskbound gait');
 assert(read('docs/js/attachment-rig-latest-authored-snapshot.js').includes('longoran-species-runtime.js?v='), 'Runtime must load before avatar creation');
 
 // The Animation Author writes the same Longoran values that game avatars read at construction.
