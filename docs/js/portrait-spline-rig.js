@@ -138,43 +138,78 @@
     // segment of the same mesh as the moving hair. Nothing gets alpha-blended or double-drawn.
   }
 
-  function attachmentBlendField(mask, radiusPx = 18) {
-    const bits = decodePixelMask(mask), radius = clamp(finite(radiusPx,18), 0, 48);
-    if (!mask || !bits.includes(1) || radius === 0) return null; // No anchored region means there is no transition to blend.
-    const size = MASK_SIZE, dist = new Float32Array(size * size); // Cached chamfer distance-to-anchored-pixel map, generated only when the mask changes.
-    for (let i = 0; i < dist.length; i++) dist[i] = bits[i] ? 0 : 1e6;
-    const diagonal = Math.SQRT2;
-    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-      const i = y * size + x;
-      if (x) dist[i] = Math.min(dist[i], dist[i-1] + 1);
-      if (y) {
-        dist[i] = Math.min(dist[i], dist[i-size] + 1);
-        if (x) dist[i] = Math.min(dist[i], dist[i-size-1] + diagonal);
-        if (x < size-1) dist[i] = Math.min(dist[i], dist[i-size+1] + diagonal);
+  function attachmentPinField(mask, gripPx = 18) {
+    const bits=decodePixelMask(mask);
+    if (!mask || !bits.includes(1)) return null; // Unrigged legacy art retains its previous unrestricted spline.
+    const distance=new Float32Array(MASK_SIZE * MASK_SIZE); // Built once per hairstyle: exact binary head anchoring, never a smooth influence gradient.
+    const diagonal=Math.SQRT2;
+    for(let i=0;i<distance.length;i++) distance[i]=bits[i] ? 0 : 1e6;
+    for(let y=0;y<MASK_SIZE;y++)for(let x=0;x<MASK_SIZE;x++){
+      const i=y*MASK_SIZE+x;
+      if(x)distance[i]=Math.min(distance[i],distance[i-1]+1);
+      if(y){
+        distance[i]=Math.min(distance[i],distance[i-MASK_SIZE]+1);
+        if(x)distance[i]=Math.min(distance[i],distance[i-MASK_SIZE-1]+diagonal);
+        if(x<MASK_SIZE-1)distance[i]=Math.min(distance[i],distance[i-MASK_SIZE+1]+diagonal);
       }
     }
-    for (let y = size - 1; y >= 0; y--) for (let x = size - 1; x >= 0; x--) {
-      const i = y * size + x;
-      if (x < size-1) dist[i] = Math.min(dist[i], dist[i+1] + 1);
-      if (y < size-1) {
-        dist[i] = Math.min(dist[i], dist[i+size] + 1);
-        if (x) dist[i] = Math.min(dist[i], dist[i+size-1] + diagonal);
-        if (x < size-1) dist[i] = Math.min(dist[i], dist[i+size+1] + diagonal);
+    for(let y=MASK_SIZE-1;y>=0;y--)for(let x=MASK_SIZE-1;x>=0;x--){
+      const i=y*MASK_SIZE+x;
+      if(x<MASK_SIZE-1)distance[i]=Math.min(distance[i],distance[i+1]+1);
+      if(y<MASK_SIZE-1){
+        distance[i]=Math.min(distance[i],distance[i+MASK_SIZE]+1);
+        if(x)distance[i]=Math.min(distance[i],distance[i+MASK_SIZE-1]+diagonal);
+        if(x<MASK_SIZE-1)distance[i]=Math.min(distance[i],distance[i+MASK_SIZE+1]+diagonal);
       }
     }
-    for (let i=0;i<dist.length;i++) {
-      const t=clamp(dist[i]/radius,0,1);
-      dist[i]=t*t*(3-2*t); // Smoothstep in movement space, not an alpha fade; every original pixel stays fully opaque in exactly one region.
-    }
-    return dist;
+    const grip=clamp(finite(gripPx,18),0,40);
+    const pinned=new Uint8Array(distance.length); // 1 means completely fixed to the portrait; 0 means fully posed.
+    for(let i=0;i<distance.length;i++)pinned[i]=distance[i]<=grip ? 1 : 0;
+    return pinned;
   }
-  function sampleAttachmentBlend(field,u,v) {
-    if (!field) return 1;
-    const fx=clamp(finite(u)*MASK_SIZE-.5,0,MASK_SIZE-1),fy=clamp(finite(v)*MASK_SIZE-.5,0,MASK_SIZE-1);
-    const x=Math.floor(fx),y=Math.floor(fy),nx=Math.min(x+1,MASK_SIZE-1),ny=Math.min(y+1,MASK_SIZE-1);
-    const a=fx-x,b=fy-y;
-    return field[y*MASK_SIZE+x]*(1-a)*(1-b) + field[y*MASK_SIZE+nx]*a*(1-b)
-      +field[ny*MASK_SIZE+x]*(1-a)*b +field[ny*MASK_SIZE+nx]*a*b;
+  function isPinnedPixel(field,u,v) {
+    if(!field)return false;
+    const x=clamp(Math.floor(finite(u)*MASK_SIZE),0,MASK_SIZE-1);
+    const y=clamp(Math.floor(finite(v)*MASK_SIZE),0,MASK_SIZE-1);
+    return field[y*MASK_SIZE+x]===1; // No intermediate motion weights or interpolation across the authored pixel mask.
+  }
+  function prepareSplineTexture(canvas, rearView = false) {
+    if(!canvas)return null;
+    const source=document.createElement('canvas'); // One contiguous uncut sprite per front/rear appendage, unlike the previous two-sheet seam.
+    source.width=canvas.width;source.height=canvas.height;
+    const ctx=source.getContext('2d',{willReadFrequently:true});
+    if(rearView){ctx.translate(source.width,0);ctx.scale(-1,1);}
+    ctx.drawImage(canvas,0,0,source.width,source.height);
+    // A two-pixel color gutter prevents bilinear sampling of transparent black PNG texels.
+    // Only RGB in transparent pixels changes; tiny alpha (1/255) preserves RGB through canvas upload
+    // and is discarded by the existing .02 alphaTest, leaving the original silhouette unchanged.
+    const image=ctx.getImageData(0,0,source.width,source.height),pixels=image.data;
+    let colors=new Uint8Array(pixels.length),eligible=new Uint8Array(source.width*source.height);
+    colors.set(pixels);
+    for(let i=0;i<eligible.length;i++)eligible[i]=pixels[i*4+3]>=8 ? 1 : 0;
+    for(let pass=0;pass<2;pass++){
+      const nextColors=new Uint8Array(colors),nextEligible=new Uint8Array(eligible);
+      for(let y=0;y<source.height;y++)for(let x=0;x<source.width;x++){
+        const i=y*source.width+x;
+        if(eligible[i])continue;
+        for(const [dx,dy] of [[-1,0],[1,0],[0,-1],[0,1]]){
+          const xx=x+dx,yy=y+dy;
+          if(xx<0||yy<0||xx>=source.width||yy>=source.height)continue;
+          const j=yy*source.width+xx;
+          if(!eligible[j])continue;
+          nextColors.set(colors.subarray(j*4,j*4+3),i*4);
+          nextEligible[i]=1;break;
+        }
+      }
+      colors=nextColors;eligible=nextEligible;
+    }
+    for(let i=0;i<eligible.length;i++){
+      if(!eligible[i]||pixels[i*4+3]>=8)continue;
+      pixels[i*4]=colors[i*4];pixels[i*4+1]=colors[i*4+1];pixels[i*4+2]=colors[i*4+2];
+      pixels[i*4+3]=1;
+    }
+    ctx.putImageData(image,0,0);
+    return source;
   }
   function makeDefaultSegments(points) {
     if (!Array.isArray(points) || points.length < 2) return [];
@@ -288,7 +323,7 @@
       width: clamp(finite(input.width, .1), .01, .5),
       windResponse: clamp(finite(input.windResponse, 1), 0, 5),
       tipFollow: clamp(finite(input.tipFollow, .58), 0, .9), // Bottom-most knot drives the middle one; the head attachment remains immobile.
-      blendRadiusPx: clamp(finite(input.blendRadiusPx, 18), 0, 48), // Distance to rigid region controls a smooth deformation ramp.
+      pinWidthPx: clamp(finite(input.pinWidthPx, 18), 0, 40), // Binary anchoring extends beyond the painted head overlap to grip the same continuous hair mesh.
       segmentsX: clamp(Math.round(finite(input.segmentsX, 24)), 4, 40),
       segmentsY: clamp(Math.round(finite(input.segmentsY, 32)), 4, 48),
     };
@@ -385,7 +420,7 @@
       cubic(value(a, axis), value(b, axis), value(c, axis), value(d, axis), t)]));
   }
 
-  function deformPosition(rig, posed, u, v, width, height, attachmentWeight = 1) {
+  function deformPosition(rig, posed, u, v, width, height, pinned = false) {
     const x = u - .5, y = .5 - v;
     let index = 0, fraction = 0, closest = Infinity;
     for (let i = 0; i < rig.points.length - 1; i++) {
@@ -398,14 +433,11 @@
     }
     const rest = curvePoint(rig.points, index, fraction, true); // Cubic neutral centerline blends each neighboring knot instead of a kinked polyline.
     const target = curvePoint(posed, index, fraction); // Pose in the same continuous parametric space before displacing texture vertices.
-    const attachment=clamp(finite(attachmentWeight,1),0,1);
-    const influence=(1-clamp(Math.sqrt(closest)/Math.max(.01,rig.width),0,1)**2)*attachment;
-    const contactDepth=.0008; // Matches the pinned rigid surface in the 3D author; the actual game portrait is the same local plane.
-    const restingDepth=contactDepth+(rest.z-contactDepth)*attachment;
-    return { x: (x + (target.x - rest.x) * influence) * width,
-      y: (y + (target.y - rest.y) * influence) * height,
-      z: Math.max(attachment<1 ? contactDepth : .003,
-        restingDepth+(target.z-rest.z)*influence)*height }; // The anchored collar reaches the flat surface, not a raised .003-unit ledge.
+    if(pinned)return {x:x*width,y:y*height,z:.0008*height}; // Exact fixed head attachment; NO weighted/faded influence transition.
+    const influence=1-clamp(Math.sqrt(closest)/Math.max(.01,rig.width),0,1)**2; // Existing lateral spline-width falloff is unrelated to the removed attachment blend.
+    return {x:(x+(target.x-rest.x)*influence)*width,
+      y:(y+(target.y-rest.y)*influence)*height,
+      z:Math.max(.003,rest.z+(target.z-rest.z)*influence)*height}; // The shared mesh connects pinned and free vertices through its own triangles.
   }
 
   function makePart(THREE, front, rear, width, height, name) {
@@ -413,16 +445,14 @@
     const base = new Float32Array(geometry.attributes.position.array); // Stable rest data reused by every wind update.
     const rearGeometry = rear?.canvas ? geometry.clone() : null; // The rear-facing strand must sit BEHIND the rear portrait, not behind the front camera.
     const makeTexture = (canvas, rearView) => {
-      const source = rearView ? document.createElement('canvas') : canvas;
-      if (rearView) {
-        source.width = canvas.width; source.height = canvas.height;
-        const c = source.getContext('2d');
-        c.translate(source.width, 0); c.scale(-1, 1); c.drawImage(canvas, 0, 0);
-      }
-      const texture = new THREE.CanvasTexture(source);
-      if (THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
-      else if (THREE.sRGBEncoding) texture.encoding = THREE.sRGBEncoding;
-      texture.needsUpdate = true;
+      const source=prepareSplineTexture(canvas,rearView);
+      const shared=window.HobunjiSpritePngSurface; // Same canonical PNG-plane color management as Pants and the main avatar.
+      const texture=shared?.makeCanvasTexture?.(THREE,source,'portrait_spline_continuous')
+        ||new THREE.CanvasTexture(source);
+      if(THREE.SRGBColorSpace)texture.colorSpace=THREE.SRGBColorSpace;
+      else if(THREE.sRGBEncoding)texture.encoding=THREE.sRGBEncoding;
+      texture.generateMipmaps=false;texture.minFilter=THREE.LinearFilter;texture.magFilter=THREE.LinearFilter;
+      texture.needsUpdate=true;
       return texture;
     };
     const makeMesh = (canvas, back) => {
@@ -438,8 +468,8 @@
     const frontMesh = makeMesh(front.canvas, false);
     const rearMesh = rear?.canvas ? makeMesh(rear.canvas, true) : null;
     const rest = geometry.attributes.position;
-    const frontBlend=attachmentBlendField(rig.regionMasks?.front,rig.blendRadiusPx);
-    const rearBlend=rearGeometry?attachmentBlendField(rig.regionMasks?.rear,rig.blendRadiusPx):null; // Cached for this hairstyle, not recomputed each wind frame.
+    const frontPins=attachmentPinField(rig.regionMasks?.front,rig.pinWidthPx);
+    const rearPins=rearGeometry?attachmentPinField(rig.regionMasks?.rear,rig.pinWidthPx):null; // Precompute hard vertex anchors once; no 200px influence blending each wind frame.
     const rearPositions = rearGeometry?.attributes.position || null; // Same authored UV-to-spline mapping, with mirrored depth relative to the rear plane.
     let lastTime = -Infinity, lastX = NaN, lastY = NaN, lastZ = NaN;
     const applyWind = (wind = { x: 0, y: 0, z: 0 }, force = false) => {
@@ -448,12 +478,10 @@
       const posed = posePoints(rig, wind);
       for (let i = 0; i < rest.count; i++) {
         const u = base[i * 3] / width + .5, v = .5 - base[i * 3 + 1] / height;
-        const strength=sampleAttachmentBlend(frontBlend,u,v);
-        const p=deformPosition(rig,posed.points,u,v,width,height,strength);
+        const p=deformPosition(rig,posed.points,u,v,width,height,isPinnedPixel(frontPins,u,v));
         rest.setXYZ(i,p.x,p.y,p.z);
         if(rearPositions){
-          const backStrength=sampleAttachmentBlend(rearBlend,1-u,v); // The rear PNG is mirrored for Three.js BackSide UVs.
-          const back=deformPosition(rig,posed.points,u,v,width,height,backStrength);
+          const back=deformPosition(rig,posed.points,u,v,width,height,isPinnedPixel(rearPins,1-u,v)); // Rear UVs are mirrored.
           rearPositions.setXYZ(i,back.x,back.y,-back.z);
         }
       }
@@ -567,7 +595,7 @@
     }));
   }
   window.PortraitSplineRig = { normalize, resolveOptionRig, blendSegment, posePoints, curvePoint,
-    deformPosition, attachmentBlendField, sampleAttachmentBlend, stitchWidthPx, makeDefaultSegments, suggestRestPoints,
+    deformPosition, attachmentPinField, isPinnedPixel, prepareSplineTexture, stitchWidthPx, makeDefaultSegments, suggestRestPoints,
     normalizePixelMask, decodePixelMask, encodePixelMask, maskFromOverlap, paintPixelMask, splitByMask,
     attach, refresh, detach, debug };
 })();
