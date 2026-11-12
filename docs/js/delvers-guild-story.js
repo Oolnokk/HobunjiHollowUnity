@@ -78,7 +78,7 @@
   }
   function restoreTalisman() {
     if (!isMember() || !['search', 'report'].includes(vaultPhase()) || !registerItems()) return false;
-    const result = window.KeyItemSystem.grant(TALISMAN_KEY); // Repairs a interrupted handoff using the persistent world key registry.
+    const result = window.KeyItemSystem.grant(TALISMAN_KEY); // Repairs an interrupted handoff using the persistent world key registry.
     if (!result?.ok) return false;
     return consumeKeyStones(); // Assembled components cannot remain valid alongside the talisman.
   }
