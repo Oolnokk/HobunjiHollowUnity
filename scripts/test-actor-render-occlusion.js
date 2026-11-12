@@ -287,7 +287,8 @@ assert.equal(api.snapshot().tracked,0,'disabled mode releases all historical act
 // the canonical corpse registry without requiring a second full-game edit.
 const originalCombat=win.Combat;
 win.Combat={deps:{corpseObjects}};
-api.reset();
+api.setEnabled(true);
+api.setGpuEnabled(false); // Frustum-only fallback remains testable after the deliberate GPU failure.
 const implicitContext=context(); delete implicitContext.corpseObjects;
 api.beginFrame(implicitContext);
 assert.equal(corpseRoot.visible,false,'canonical Combat corpse registry works without an explicit argument');
