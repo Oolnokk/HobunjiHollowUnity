@@ -60,10 +60,16 @@ framing.update({...args,now:610});
 assert.equal(framing.debugSnapshot().active,false,'the first gameplay frame after a cinematic must not discover notes using the outgoing shot');
 framing.update({...args,now:710});
 assert.equal(framing.debugSnapshot().active,true,'the ordinary gameplay camera can acquire the score on its next frame');
+framing.reset(); // An authored cinematic bypasses update(), so the game explicitly disarms its previous camera state.
+framing.update({...args,now:810});
+assert.equal(framing.debugSnapshot().active,false,'the first frame after an authored camera override must never reuse its projection');
+framing.update({...args,now:910});
+assert.equal(framing.debugSnapshot().active,true,'a subsequent normal gameplay frame may discover a visible note');
 release();release();
 assert.equal(framing.debugSnapshot().registered,0,'repeated disposal is safe');
 
 assert.match(game,/MelodyCameraFraming\?\.update\?\.\(/,'gameplay camera calls the registered melody framing module');
+assert.match(game,/if \(applyAuthoredCinematicCamera\(\)\) \{\s*window\.MelodyCameraFraming\?\.reset\?\.\(\)/,'authored camera takeover must disarm the discovery latch');
 assert.match(game,/!window\.CinematicCameraRuntime\?\.isActive\?\.\(\)/,'authored cinematic shots override puzzle framing');
 assert.match(game,/melodyFrame\?\.fovExtra/,'the live camera uses the calculated FOV correction');
 for(const file of ['puzzle-cave-entrances.js','ruin-layer-challenges.js','dev-random-ruin-simple-puzzles.js']){
