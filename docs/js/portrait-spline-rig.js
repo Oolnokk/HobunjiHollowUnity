@@ -156,7 +156,7 @@
         const lateral=dir==='left'||dir==='right',verticalWind=dir==='up'||dir==='down';
         poses[dir]={
           yaw:lateral ? sign*3*tension : 0,
-          pitch:verticalWind ? sign*4*tension : (dir==='toward'||dir==='away'?sign*pitch:0),
+          pitch:verticalWind ? sign*4*tension : (dir==='toward'||dir==='away'?-sign*pitch:0), // Hanging strands have negative local Y: backward X pitch moves toward +Z, not forward.
           roll:lateral ? sign*roll : 0,
           translate:{
             x:lateral?sign*amplitude:0,
