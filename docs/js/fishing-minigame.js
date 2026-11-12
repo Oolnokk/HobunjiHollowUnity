@@ -123,34 +123,52 @@
   loadFishSprite('assets/hud/fish_silhouette-whiskers.png', (img) => { fishWhiskersSpriteImage = img; });
   loadFishSprite('assets/toolsprites/harpoon_fishingspear.png', (img) => { harpoonSpearSpriteImage = img; });
   loadFishSprite('assets/toolsprites/harpoon_fishingmace.png', (img) => { harpoonMaceSpriteImage = img; });
-  const flailFishingHeadImages = new Map(); // One trimmed sprite per authored flail head, reused across every ring render and repeated casts.
-  function prepareFishingFlailHeadSprite(spritePath) {
-    if (!spritePath || flailFishingHeadImages.has(spritePath)) return;
-    flailFishingHeadImages.set(spritePath, null); // In-flight entry prevents duplicate image decoding and per-frame requests.
-    loadFishSprite(spritePath, (img) => {
+  const flailFishingHeadImages = new WeakMap(); // Head-spec identity caches one complete, trimmed multi-layer image per assembled flail.
+  function prepareFishingFlailHeadSprite(head) {
+    if (!head?.layers?.length || flailFishingHeadImages.has(head)) return;
+    flailFishingHeadImages.set(head, null); // In-flight entry prevents redundant decoding during held windup, repeated throws and ring frames.
+    const images = head.layers.map(layer => { // Load every actual head layer; Grapple-Flail has front/back, Torch-Flail has a brazier stack.
+      const cached = window.ModularWeapons?.loadImage?.(layer.sprite); // Reuse the already-cached Foundry source bitmaps whenever present.
+      if (cached) return cached.catch(() => null);
+      return new Promise(resolve => {
+        const image = new Image();
+        image.crossOrigin = 'anonymous';
+        image.onload = () => resolve(image);
+        image.onerror = () => resolve(null);
+        image.src = layer.sprite;
+      });
+    });
+    Promise.all(images).then(decoded => {
+      const parts = decoded.map((img, i) => ({ img, offset: head.layers[i].offsetPx || { x: 0, y: 0 } })).filter(part => part.img?.naturalWidth);
+      if (!parts.length) { window.__farmLog?.('fishing flail head art unavailable', 'warn'); return; }
       try {
-        // The Tool Hub often stores head art on a mostly-transparent 450x1204 part sheet.
-        // Crop ONCE at load so the fish-ring head is visible without stretching the shaft or redrawing each frame.
-        const bounds = document.createElement('canvas'); // Temporary pixel inspection, never retained or allocated during game frames.
-        bounds.width = img.naturalWidth; bounds.height = img.naturalHeight;
+        let minX = 0, minY = 0, maxX = 0, maxY = 0; // Full sheet bounds including authored per-layer offsets.
+        for (const part of parts) {
+          minX = Math.min(minX, Number(part.offset.x) || 0); minY = Math.min(minY, Number(part.offset.y) || 0);
+          maxX = Math.max(maxX, (Number(part.offset.x) || 0) + part.img.naturalWidth);
+          maxY = Math.max(maxY, (Number(part.offset.y) || 0) + part.img.naturalHeight);
+        }
+        const bounds = document.createElement('canvas'); // A one-time multi-layer composite, not a per-frame render.
+        bounds.width = Math.ceil(maxX - minX); bounds.height = Math.ceil(maxY - minY);
         const ctx = bounds.getContext('2d', { willReadFrequently: true });
-        ctx.drawImage(img, 0, 0);
-        const rgba = ctx.getImageData(0, 0, bounds.width, bounds.height).data; // Finds the actual opaque head rather than sheet margins.
-        let minX = bounds.width, minY = bounds.height, maxX = -1, maxY = -1;
+        for (const part of parts) ctx.drawImage(part.img, (Number(part.offset.x) || 0) - minX, (Number(part.offset.y) || 0) - minY);
+        const rgba = ctx.getImageData(0, 0, bounds.width, bounds.height).data;
+        let left = bounds.width, top = bounds.height, right = -1, bottom = -1; // Opaque alpha bounds remove transparent part-sheet margins.
         for (let y = 0; y < bounds.height; y++) for (let x = 0; x < bounds.width; x++) {
           if (rgba[(y * bounds.width + x) * 4 + 3] <= 8) continue;
-          minX = Math.min(minX, x); minY = Math.min(minY, y);
-          maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+          left = Math.min(left, x); top = Math.min(top, y);
+          right = Math.max(right, x); bottom = Math.max(bottom, y);
         }
-        if (maxX < minX) throw new Error('transparent head art');
+        if (right < left) throw new Error('transparent head art');
         const trim = document.createElement('canvas');
-        trim.width = maxX - minX + 1; trim.height = maxY - minY + 1;
-        trim.getContext('2d').drawImage(bounds, minX, minY, trim.width, trim.height, 0, 0, trim.width, trim.height);
-        flailFishingHeadImages.set(spritePath, { src: trim.toDataURL('image/png'), aspect: trim.width / trim.height });
+        trim.width = right - left + 1; trim.height = bottom - top + 1;
+        trim.getContext('2d').drawImage(bounds, left, top, trim.width, trim.height, 0, 0, trim.width, trim.height);
+        flailFishingHeadImages.set(head, { src: trim.toDataURL('image/png'), aspect: trim.width / trim.height });
       } catch (error) {
-        // CORS-tainted sources still render correctly with their original PNG; no crash or bogus throw.
-        flailFishingHeadImages.set(spritePath, { src: img.src, aspect: img.naturalWidth / Math.max(1, img.naturalHeight) });
-        window.__farmLog?.(`fishing flail head crop fallback: ${spritePath} (${error.message})`, 'warn');
+        // A tainted source still displays its authored anchor layer; never substitute a detached mace shaft.
+        const fallback = parts.find(part => part.img.src);
+        if (fallback) flailFishingHeadImages.set(head, { src: fallback.img.src, aspect: fallback.img.naturalWidth / Math.max(1, fallback.img.naturalHeight) });
+        window.__farmLog?.(`fishing flail head composite fallback (${error.message})`, 'warn');
       }
     });
   }
@@ -322,21 +340,20 @@
     const animation = flail && baseAnimation
       ? { ...baseAnimation, toolEndFlip: false, heldSpin: false, flailHeadSpin: true }
       : baseAnimation; // Spin the flexible HEAD in its own attachment system; never twirl/detach the flail handle.
-    const head = flail?.head; // Real authored head sprite, not the placeholder Fishing Mace PNG used for rigid weapons.
-    const headLayer = head?.layers?.find(layer => layer.id === head.anchorLayer) || head?.layers?.[0];
+    const head = flail?.head || null; // Shared Tool Hub head spec contains all authored layers, not just the contact layer.
     return {
       key: itemKey,
       profile: flail ? 'flail-tethered-head-spin' : workStyle ? (spear ? 'modular-thrust-spear-throw' : 'modular-sweep-spin-throw')
         : spear ? 'fishing-spear' : 'hatchet-spin',
       projectileMode: flail ? 'flail' : spear ? 'spear' : 'spin',
-      flailHeadSprite: headLayer?.sprite || null,
+      flailHead: head, // Ring renderer uses the complete cached head composite; the original handle never enters its projectile.
       animation,
     };
   }
 
   function beginFishingThrowWindup(reason = 'aim') {
     const selected = selectedFishingThrowAnimation();
-    if (selected.flailHeadSprite) prepareFishingFlailHeadSprite(selected.flailHeadSprite); // Begin loading before the bite so a real flail head appears by the first cast.
+    if (selected.flailHead) prepareFishingFlailHeadSprite(selected.flailHead); // Begin loading all head layers before the bite, not during a live ring frame.
     const animation = selected.animation;
     if (!animation?.poses || typeof deps?.triggerFishingWeaponVisual !== 'function') {
       fishingThrowHoldActive = false;
@@ -830,12 +847,11 @@
     const equippedHarpoon = deps.equipmentSlots?.harpoon; // Snapshotted at ring start so changing gear cannot warp an in-flight throw.
     const equippedDef = deps.TOOL_ITEM_DEFS?.[equippedHarpoon]; // Stable modular pair metadata for this ring's projectile graphics.
     const flex = equippedDef?.weaponAssembly?.flail; // A flexible head is thrown while the handle remains in the player's hand.
-    const flailHeadLayer = flex?.head?.layers?.find(layer => layer.id === flex.head.anchorLayer) || flex?.head?.layers?.[0];
     const projectileMode = flex ? 'flail' : equippedDef?.modular
       ? (equippedDef.animStyle === 'thrust' ? 'spear' : 'spin')
       : String(equippedHarpoon || '').toLowerCase().includes('fishingmace') ? 'spin' : 'spear'; // Matches the held throw's existing spear/spin selection.
-    const flailHeadSprite = flailHeadLayer?.sprite || null; // One actual Tool Hub head bitmap, never a detached generic mace handle.
-    if (flailHeadSprite && typeof prepareFishingFlailHeadSprite === 'function') prepareFishingFlailHeadSprite(flailHeadSprite); // Isolated timing tests can omit the sprite loader.
+    const flailHead = flex?.head || null; // The complete authored head (all layers) is independent of its shaft.
+    if (flailHead && typeof prepareFishingFlailHeadSprite === 'function') prepareFishingFlailHeadSprite(flailHead); // Isolated timing tests can omit the sprite loader.
     const metalEfficacy = Number(deps.toolMetalMultiplier?.(equippedHarpoon)); // Resolves the actual (possibly reinforced) tool tier.
     const harpoonEfficacy = Number.isFinite(metalEfficacy) && metalEfficacy > 0 ? metalEfficacy : 1; // Legacy/nonmetal tools keep base timing.
     fm.bridge = {
@@ -846,7 +862,7 @@
       markerA: null, markerB: null, spearActive: false, lineA: null, lineB: null,
       shotTimer: 0, retractTimer: 0, tipX: 0, tipY: 0, prevTipX: 0, prevTipY: 0, caughtFish: false,
       weaponSpinDeg: 0, frozenWeaponAngleDeg: 0,
-      projectileMode, flailHeadSprite, // One ring-scoped artwork choice prevents mid-flight tool changes from swapping a tethered head into a detached shaft.
+      projectileMode, flailHead, // One ring-scoped artwork choice prevents mid-flight tool changes from swapping a tethered head into a detached shaft.
     };
     fm.panic = 0;
     fm.resolved = false;
@@ -1458,7 +1474,7 @@
     const bridge = fishingMinigame?.bridge; // Ring-scoped projectile identity, snapped when the cast begins.
     const mode = bridge?.projectileMode || (useMace ? 'spin' : 'spear'); // Modular thrusts never rotate their launched weapon; sweeps and flails do.
     const isFlail = mode === 'flail'; // Only the fitted flexible head flies; the handle stays attached to the avatar's hand.
-    const head = isFlail ? flailFishingHeadImages.get(bridge?.flailHeadSprite) : null;
+    const head = isFlail && bridge?.flailHead ? flailFishingHeadImages.get(bridge.flailHead) : null;
     const spriteSrc = isFlail ? head?.src : mode === 'spin' ? harpoonMaceSpriteImage?.src : harpoonSpearSpriteImage?.src;
     const dx = endPoint.x - startPoint.x, dy = endPoint.y - startPoint.y;
     const len = Math.hypot(dx, dy) || 1;
