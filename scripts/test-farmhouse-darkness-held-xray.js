@@ -113,6 +113,21 @@ assert.equal(xray.classify(stoneFloor).ground, true, 'instanced rooted ruin ston
 const stoneWall = mesh(otherInterior, untaggedMaterial, { liveRootFloor: true, ruinPreviewRole: 'wall' });
 assert.equal(xray.classify(stoneWall).ground, false, 'rooted walls never share the floor exception');
 assert.equal(xray.classify(grass).ground, true, 'exterior farm terrain still x-rays');
+const wildernessTypes = ['weeds', 'shrub', 'tilled', 'trench', 'raised', 'paddy', 'path', 'rock', 'river', 'stream', 'waterfall']; // Every merged wilderness floor bucket shares the grass ground-depth exception.
+for (const kind of wildernessTypes) {
+  const floor = mesh(exterior, { userData: { terrainKey: kind }, map: { image: {} } },
+    { mapEditorTerrain: { mapId: 'map_western_slope' } });
+  assert.equal(xray.classify(floor).ground, true, `textured wilderness ${kind} floor x-rays held equipment`);
+}
+const solidRock = mesh(exterior, { userData: { terrainKey: 'rock' }, map: { image: {} } },
+  { wildernessChunkOwnsGeometry: true }); // Untagged cliff/rock props must not inherit the floor exception from their material.
+assert.equal(xray.classify(solidRock).ground, false, 'rock props remain true depth occluders');
+const billboard = mesh(exterior, untaggedMaterial,
+  { mapEditorTerrain: { mapId: 'map_western_slope' }, isWildernessGrassChunk: true });
+assert.equal(xray.classify(billboard).ground, false, 'grass billboards keep the protective cover classification');
+xray.scanScene(exterior);
+assert.equal(solidRock.userData.hobunjiHeldGroundReplay, undefined, 'rock props never enter ground depth restore');
+assert.equal(billboard.userData.hobunjiHeldGroundReplay, undefined, 'grass billboards never enter ground depth restore');
 assert(xray.snapshot().farmhouseFloorMeshes >= 2, 'preexisting and newly rebuilt farmhouse floors join depth replay');
 assert(xray.snapshot().interiorFloorMeshes >= 6, 'authored, cavern, V50 and stone-age interior floors all register for depth replay');
 
