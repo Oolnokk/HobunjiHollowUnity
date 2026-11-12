@@ -22944,7 +22944,10 @@
       }
 
       function updateCameraPosition() {
-        if (applyAuthoredCinematicCamera()) return;
+        if (applyAuthoredCinematicCamera()) {
+          window.MelodyCameraFraming?.reset?.(); // The authored shot bypasses normal camera updates, so it must disarm first-note discovery before handing control back.
+          return;
+        }
         const modeCfg = cameraModeConfig(activeCameraMode);
         // A cutscene Zoom card's percent (100 = the captured shot's own
         // unmodified framing, higher = closer) — entirely separate from the
@@ -23026,7 +23029,7 @@
         // Very short ground-limited booms need a smaller near plane to keep
         // the nearby character visible; other modes retain the normal plane.
         camera.near = _cameraBoomDebug ? Math.min(0.1, Math.max(0.01, _cameraBoomDebug.solvedDistance * 0.2)) : 0.1;
-        camera.fov = Math.min(110,(modeCfg.fovDeg ?? 42)+(melodyFrame?.fovExtra||0)); // Ease wider only while a found melody needs the viewport.
+        camera.fov = (modeCfg.fovDeg ?? 42)+(melodyFrame?.fovExtra||0); // Preserve every non-melody camera mode's authored FOV exactly.
         camera.aspect = cameraContainerAspect();
         camera.updateProjectionMatrix();
         window.DialogueCameraFraming?.apply(camera, !!portraitAim);
