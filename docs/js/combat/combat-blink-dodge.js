@@ -100,6 +100,16 @@
       travel = { x: actor.x, y: actor.y, dodgeTiles: 0, lungeTiles: 0 };
       afterimageTravelByActor.set(actor, travel);
     }
+    if (!dodging && !lunging) {
+      // All idle humanoids pass through this once per combat frame. Preserve
+      // their previous position for accurate first-frame motion snapshots,
+      // but avoid the expensive hypot and numeric conversion for stationary actors.
+      travel.dodgeTiles = 0;
+      travel.lungeTiles = 0;
+      travel.x = actor.x;
+      travel.y = actor.y;
+      return travel;
+    }
     const tilePx = Math.max(1, Number(window.Combat?.deps?.TILE) || 64); // Same pixel-to-tile conversion used by Blink hops.
     const stepTiles = Math.hypot(Number(actor.x) - Number(travel.x), Number(actor.y) - Number(travel.y)) / tilePx; // Actual travel includes collision clamping rather than intended velocity.
     const distance = Number.isFinite(stepTiles) ? stepTiles : 0; // Missing coordinates cannot poison future samples.
