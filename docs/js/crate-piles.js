@@ -9,6 +9,8 @@
   const savedCounts = new Map(); // Wilderness camp supplies survive reentry and reload.
   const restoredScenes = new Map(); // Track one rehydration pass per active area scene.
   let persistenceIdentity = null; // World and Tothal cycle, partitioned like Shattercasks.
+  let supplySaveQueued = false; // Defer/coalesce persistence after walking over crate junk.
+  let lastJunkPickupMs = 0; // Measured junk pickup time for mobile debugSnapshot().
   let identityPollSeconds = 0; // Avoid repeatedly reading world-settings storage on every combat frame.
   const bursts = []; // Active crate-textured wood shard effects.
   const spareBursts = []; // At most ten reusable instanced meshes and matrices; no per-shatter GPU buffer churn.
@@ -34,6 +36,7 @@
     const identity=worldIdentity();
     if (!identity || identity===persistenceIdentity) return;
     if (persistenceIdentity && persistenceIdentity!==identity) {
+      flushQueuedSupplySave(); // Finish outgoing-world loot saves before clearing savedDrops.
       for(const drop of junk.values())drop.group.parent?.remove(drop.group);
       junk.clear();piles.clear();restoredScenes.clear();savedDrops.clear();savedCounts.clear();
     }
@@ -55,8 +58,23 @@
     try{
       localStorage.setItem('hobunji.crate-supplies.v1:'+persistenceIdentity,
         JSON.stringify({counts:Object.fromEntries(savedCounts),drops:[...savedDrops.values()]}));
+      supplySaveQueued = false; // The full write includes all queued pickups.
     }catch(error){window.__farmLog?.('[crates] supply save failed: '+error.message,'warn');}
   }
+  function flushQueuedSupplySave() {
+    if (supplySaveQueued) persistSupplies();
+  }
+  function queueSupplySave() {
+    if (supplySaveQueued || !persistenceIdentity) return;
+    supplySaveQueued = true;
+    if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(flushQueuedSupplySave, { timeout: 1500 });
+    else if (typeof setTimeout === 'function') setTimeout(flushQueuedSupplySave, 100);
+    else flushQueuedSupplySave(); // Headless harnesses do not have browser timers.
+  }
+  window.addEventListener?.('pagehide', flushQueuedSupplySave);
+  if (typeof document !== 'undefined') document.addEventListener?.('visibilitychange', () => {
+    if (document.hidden) flushQueuedSupplySave();
+  });
   function playerTiles() {
     const player = window.Combat?.deps?.player;
     return player ? { x: Number(player.x) / tileSize(), z: Number(player.y) / tileSize() } : null;
@@ -222,7 +240,7 @@
     group.position.set(x,y+.015,z);
     group.userData.crateJunkId=id;
     scene.add(group);
-    const record={id,mapId,scene,group,loot};
+    const record={id,mapId,scene,group,loot,x,z,y}; // Static pickup coordinates avoid each junk decal's world-matrix update.
     junk.set(key(mapId,id),record);
     if(!restoreId){
       ensurePersistence();
@@ -352,16 +370,17 @@
     const p=playerTiles();if(!p)return;
     for (const [id,drop] of junk) {
       if (drop.mapId!==area || drop.group.parent!==drop.scene) continue;
-      const q=positionOf(drop.group);
-      if (Math.hypot(p.x-q.x,p.z-q.z)>.65) continue;
+      if (Math.hypot(p.x-drop.x,p.z-drop.z)>.65) continue;
+      const started=window.performance?.now?.() ?? Date.now(); // Only measure the actual collection.
       // Grant first: a missing inventory service must not silently destroy a pickup.
       const awarded=window.Shattercasks?.grantBurdenLoot?.(drop.loot);
       if (!awarded || (Array.isArray(awarded)&&awarded.length===0)) continue;
       junk.delete(id);drop.group.parent?.remove(drop.group);
-      savedDrops.delete(id);persistSupplies();
+      savedDrops.delete(id);queueSupplySave(); // Only the storage write is deferred, not the loot award/removal.
       const summary=Object.keys(drop.loot).slice(0,3).join(', ');
       window.Combat?.deps?.showToast?.('Collected crate junk: '+summary,false);
       lastEvent='collected '+drop.id+': '+summary;
+      lastJunkPickupMs=Math.round((window.performance?.now?.() ?? Date.now())-started);
       window.__farmLog?.('[crates] '+lastEvent,'world');
     }
   }
@@ -372,6 +391,7 @@
     looseJunk:[...junk.values()].filter(d=>d.mapId===currentArea()).length,
     activeDebrisBursts:bursts.length,reusableDebrisBuffers:spareBursts.length,
     savedUncollectedDrops:savedDrops.size,savedCountOverrides:savedCounts.size,
+    lastJunkPickupMs,supplySaveQueued,
   });
   window.CratePiles={installed:true,registerPile,unregisterPile,nearestInteractable,takeCrate,
     shatterBurden,sweepMelee,tick,forgetPile,releaseZone,debugSnapshot};
