@@ -80,7 +80,9 @@
     if (!isMember() || !['search', 'report'].includes(vaultPhase()) || !registerItems()) return false;
     const result = window.KeyItemSystem.grant(TALISMAN_KEY); // Repairs an interrupted handoff using the persistent world key registry.
     if (!result?.ok) return false;
-    return consumeKeyStones(); // Assembled components cannot remain valid alongside the talisman.
+    if (!consumeKeyStones()) return false; // Assembled components cannot remain valid alongside the talisman.
+    clearLegacyInventory([TALISMAN_KEY]); // Existing saves must not retain an obsolete material-stack copy of the assembled key.
+    return true;
   }
   function restoreMembershipItem() {
     if (!isMember() || !registerItems()) return false;
