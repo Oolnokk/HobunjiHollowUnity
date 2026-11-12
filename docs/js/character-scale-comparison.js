@@ -646,8 +646,8 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     const front = Object.assign(document.createElement('canvas'), { width: size, height: size });
     const back = Object.assign(document.createElement('canvas'), { width: size, height: size });
     const head = Object.assign(document.createElement('canvas'), { width: size, height: size });
-    await renderPortrait(front, profile, { seatId: npc.id || npc.name || 'full-scale' });
-    await renderPortrait(back, profile, { seatId: npc.id || npc.name || 'full-scale', portraitView: 'behind' });
+    await renderPortrait(front, profile, { seatId: npc.id || npc.name || 'full-scale', forceEyesOpen: true }); // Static model texture: suppress unused blink PNG requests.
+    await renderPortrait(back, profile, { seatId: npc.id || npc.name || 'full-scale', portraitView: 'behind', forceEyesOpen: true }); // Preserve full rear cosmetics.
     // Same pattern the real game uses (see game.js's playerNeckJoint/NPC dialogue setup): a
     // head-only render lets buildSinglePlaneAvatarModel's neckRig option locate the head pixels
     // and skin-weight a neck bone for it. Without this, there is no bone for Full Character
