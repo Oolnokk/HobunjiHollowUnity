@@ -529,10 +529,14 @@
     entity._ringHud.visible = true;
     const key = makeHudKey(entity) + "|" + radius + "|" + isTarget;
     if (key !== entity._ringHudKey) {
-      entity._ringHudKey = key;
-      clearGroup(entity._ringHud);
-      entity._ringHud.add(buildGroundRingForFighter(entity, radius));
-      if (isTarget) entity._ringHud.add(buildTargetIndicatorRings(radius));
+      const rebuildPerf = window.PerfProfiler?.begin('Combat: resource ring rebuild'); // Measures full geometry churn only when a ring changes.
+      window.PerfProfiler?.count?.('ringRebuilds'); // Count for the current combat slow-frame report.
+      try {
+        entity._ringHudKey = key;
+        clearGroup(entity._ringHud);
+        entity._ringHud.add(buildGroundRingForFighter(entity, radius));
+        if (isTarget) entity._ringHud.add(buildTargetIndicatorRings(radius));
+      } finally { window.PerfProfiler?.end(rebuildPerf); }
     }
     applyAfflictionPulseTransform(entity._ringHud, entity, nowMs);
     return entity._ringHud;
