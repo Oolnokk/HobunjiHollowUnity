@@ -139,7 +139,7 @@
       const picked = pool.find(item => !isChild(item.npc)) || pool[0] || null;
       if (picked) return { ...target, npc: picked.npc };
       // Nuhongan share Tletingan appearance, but must keep their own editable scale.
-      const donor = target.species === 'nuhongan'
+      const donor = (target.species === 'nuhongan' || target.species === 'longoran')
         ? candidates.find(item => normalizeSpecies(item.appearance.speciesId) === 'tletingan' && !isChild(item.npc))
         : null; // Supplies an adult, same-gender preview without creating a world NPC.
       if (!donor) return { ...target, npc: null };
