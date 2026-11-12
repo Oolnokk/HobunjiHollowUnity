@@ -614,6 +614,13 @@
     return t * t * (3 - 2 * t); // Gradual contact with the animated shaft; exactly aligned for the rest of strike.
   }
 
+  function fishingFlailHeadDirection(out, shaftUp, planeNormal, progress, revolutions, workQ) {
+    const t = Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 0; // Current fishing throw phase, shared by the grip and the moving head.
+    const turns = Number.isFinite(revolutions) ? Math.max(0, revolutions) : 2.5; // Existing Spin Throw revolutions; zero means hold the head at its shaft-aligned start.
+    workQ.setFromAxisAngle(planeNormal, -Math.PI * 2 * turns * t); // Spin in the actual baked shaft plane, never the camera/screen plane.
+    return out.copy(shaftUp).applyQuaternion(workQ).normalize(); // Caller-owned direction; shaft and physical connector length remain unchanged.
+  }
+
   function flailYawTravel(windup, strike, power = 1, dirSign = 1) {
     if (!windup || !strike) return 0;
     return (((Number(strike.yaw) || 0) - (Number(windup.yaw) || 0))
@@ -834,8 +841,7 @@
       // Keep the shaft, its primary-hand grip and pivot exactly where the existing throw pose put them.
       // Only orbit the direction of the connector/head around that real haft attachment, in the shaft's
       // baked PNG plane. The existing endpoint solver below keeps rope and head joined every frame.
-      q.deltaQ.setFromAxisAngle(normal, -Math.PI * 2 * state.fishingFlailSpinRevolutions * state.progress);
-      state.direction.copy(shaftUp).applyQuaternion(q.deltaQ).normalize();
+      fishingFlailHeadDirection(state.direction, shaftUp, normal, state.progress, state.fishingFlailSpinRevolutions, q.deltaQ);
       state.angularVelocity.set(0, 0, 0); state.hasPhysicsVelocity = false; state.hasStrikeStart = false;
     } else if (!state.attacking) {
       // Idle suspension is a world-space pendulum: it hangs under gravity, swings
@@ -1027,7 +1033,7 @@
 
   global.HobunjiWeaponSpriteAssemblies = {
     definitions: DEF, decorate, setAction, tick, drop, syncDualWield, scheduleTickAfterPose, debugSnapshot, enchantmentTargets, dualWieldEnchantmentTargets, bakedPoint,
-    opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, // Pure sizing and phase helpers have regression tests.
+    opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, fishingFlailHeadDirection, // Pure sizing and phase helpers have regression tests.
   };
   global.HobunjiCacheAudit?.register('weapon assemblies (weak owner registry)', () => { let count = 0; for (const entry of records) if (liveState(entry)) count++; return count; });
   if (global.RuntimeFrameScheduler?.register) {
