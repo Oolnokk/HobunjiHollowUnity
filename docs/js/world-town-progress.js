@@ -15,6 +15,7 @@
   ]); // Only Banubu has authored quests; absent totals for the others are unknown, not zero.
   let lastSnapshot = null; // Reused by the mobile-accessible diagnostics when the page is open.
   let renderCount = 0; // Exposed in diagnostics to catch duplicate or unexpectedly frequent renders.
+  let refreshPending = false; // Coalesces menu clicks and same-tick tab/menu observers into one render.
 
   function boundedInt(value, max) {
     const n = Number(value); // Converts save data into safe progress values before display.
@@ -190,25 +191,26 @@
     const pane = document.getElementById(PANE_ID);
     if (!tab || !pane || tab.dataset.townProgressBound === '1') return;
     tab.dataset.townProgressBound = '1'; // Prevents duplicate handlers when optional modules reinitialize.
-    tab.addEventListener('click', () => {
-      // game.js switches every .mp-tab/.mp-pane by data-mpanel; the view never changes navigation state.
-      if (tab.classList.contains('active') && pane.classList.contains('active')) render();
-    });
+    const requestRefresh = () => {
+      if (refreshPending) return;
+      refreshPending = true;
+      Promise.resolve().then(() => {
+        refreshPending = false;
+        if (tab.classList.contains('active') && pane.classList.contains('active')) render();
+      });
+    }; // The game's own switchMenuPanel owns classes; the view only refreshes after they settle.
+    tab.addEventListener('click', requestRefresh); // Same-tab clicks update saved progress without altering tab selection.
     if (typeof MutationObserver === 'function') {
-      const observer = new MutationObserver(() => { if (tab.classList.contains('active')) render(); });
-      observer.observe(tab, { attributes: true, attributeFilter: ['class'] }); // Controller and programmatic tab changes refresh the same page.
+      const observer = new MutationObserver(requestRefresh);
+      observer.observe(tab, { attributes: true, attributeFilter: ['class'] }); // Controller and programmatic tab changes refresh this page.
       const menu = document.getElementById('menuPanel');
       if (menu) {
-        const menuObserver = new MutationObserver(() => {
-          if (tab.classList.contains('active')) render();
-        });
-        menuObserver.observe(menu, { attributes: true, attributeFilter: ['class', 'style', 'hidden'] }); // Reopening an already-selected tab refreshes it.
+        const menuObserver = new MutationObserver(requestRefresh);
+        menuObserver.observe(menu, { attributes: true, attributeFilter: ['class', 'style', 'hidden'] }); // Reopening the selected page updates its values.
       }
     }
-    global.addEventListener?.('hobunjiPlayerReady', () => {
-      if (tab.classList.contains('active')) render();
-    }); // Startup/character switching should display the correct active member.
-    if (tab.classList.contains('active')) render();
+    global.addEventListener?.('hobunjiPlayerReady', requestRefresh); // Character/world load refreshes only when this tab is active.
+    if (tab.classList.contains('active')) requestRefresh();
   }
 
   global.TownProgressPanel = Object.freeze({
