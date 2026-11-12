@@ -48,8 +48,9 @@ let meta = {
   characters:[{id:'characterA',gearInventory:{keyItems:[]}}],
   worlds:[{id:'worldA',keyItems:[]},{id:'worldB',keyItems:[]}],
 }; // In-memory copy of the real hobunjiSaveMeta persistence schema.
+let metadataReads = 0; // Detect accidental per-frame localStorage parsing on licensed ruin access.
 const storage = {
-  getItem: key => key === 'hobunjiSaveMeta' ? JSON.stringify(meta) : null,
+  getItem: key => { metadataReads++; return key === 'hobunjiSaveMeta' ? JSON.stringify(meta) : null; },
   setItem: (key, value) => { if (key === 'hobunjiSaveMeta') meta = JSON.parse(value); },
 };
 const window = {document,localStorage:storage,__hobunjiPlayerProfile:profile,__farmLog(){}}; // Same public API surface as the browser.
@@ -91,6 +92,12 @@ assert.equal(keyList.children.length,3,'world keys reappear when re-entering the
 assert.equal(api.has('color_pools_key'),true,'Banubu Color Pools Key remains accessible');
 assert.equal(api.has('delversStone'),true);
 assert.equal(api.has('azgarlu_key_stone'),false);
+const readsBeforeRepeatedGateChecks = metadataReads; // The save should already be cached from rendering/reloading.
+for (let tick = 0; tick < 180; tick++) {
+  assert.equal(api.has('delversStone'), true);
+  assert.equal(api.has('color_pools_key'), true);
+}
+assert.equal(metadataReads, readsBeforeRepeatedGateChecks, 'per-frame key ownership checks must not reparse the world save');
 assert.equal(meta.worlds[1].keyItems.length,0);
 
 console.log('Key-item Pack display, mobile details, world isolation, and key consumption: passed');
