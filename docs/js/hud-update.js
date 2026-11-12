@@ -66,6 +66,7 @@
   function rewriteCurrencyTextNode(node) {
     if (!node || node.nodeType !== 3 || typeof node.nodeValue !== 'string') return false;
     const before = node.nodeValue; // Used to preserve physical-metal wording whenever no currency-specific pattern matches.
+    if (!/gold/i.test(before)) return false; // Every translation requires "gold"; skip the regex pipeline for unrelated HUD text.
     const after = formatCurrencyText(before); // Used to translate only unambiguous legacy money phrases into ganang.
     if (after === before) return false;
     node.nodeValue = after;
@@ -76,19 +77,21 @@
 
   function rewriteCurrencySubtree(root) {
     if (!root) return 0;
-    // Every formatCurrencyText pattern requires the literal substring "gold"
-    // (case-insensitively) somewhere in the text, so a single native
-    // textContent scan lets this bail out of an entire irrelevant subtree in
-    // one call instead of manually recursing into every child/text node.
-    // This observer watches the whole document.body, so during combat --
-    // constant DOM churn from damage numbers, HUD bars, hit-flash class
-    // toggles, none of it about currency -- that recursion used to run in
-    // full on every single mutation batch.
+    // All translations need "gold". One native textContent read cheaply rejects
+    // irrelevant UI subtrees (especially damage numbers and combat HUD churn).
     if (!/gold/i.test(root.textContent || '')) return 0;
-    let changed = 0; // Used by diagnostics/tests to report how many visible text nodes were normalized.
-    if (rewriteCurrencyTextNode(root)) changed++;
-    const children = root.childNodes ? Array.from(root.childNodes) : [];
-    for (const child of children) changed += rewriteCurrencySubtree(child);
+    let changed = 0; // Counts rewritten text nodes for existing callers and diagnostics.
+    const pendingNodes = [root]; // Traverses only once; the old recursion re-read textContent for every nested element, which could rescan descendants quadratically.
+    while (pendingNodes.length) {
+      const node = pendingNodes.pop(); // Used to visit each element/text node once without recursion or temporary child arrays.
+      if (node.nodeType === 3) {
+        if (rewriteCurrencyTextNode(node)) changed++;
+        continue;
+      }
+      const children = node.childNodes; // Reads live child references so nested currency text is still discovered.
+      if (!children) continue;
+      for (let i = children.length - 1; i >= 0; i--) pendingNodes.push(children[i]);
+    }
     return changed;
   }
 
