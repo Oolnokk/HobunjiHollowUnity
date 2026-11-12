@@ -54,6 +54,7 @@ onPlate=true;framing.update({...args,now:450});
 assert.equal(framing.debugSnapshot().active,false,'rapid re-entry must not rediscover notes solely because the previous assisted camera has not settled');
 framing.update({...args,area:'other-map',now:500});
 assert.equal(framing.debugSnapshot().framing.distanceScale,1,'area changes reset camera offsets immediately');
+showing=true; // The outgoing cinematic shot can still contain a note, but that alone must not count as gameplay discovery.
 framing.update({...args,enabled:false,now:600}); // A cinematic, editor, or dialogue mode has the camera before returning to the plate.
 framing.update({...args,now:610});
 assert.equal(framing.debugSnapshot().active,false,'the first gameplay frame after a cinematic must not discover notes using the outgoing shot');
