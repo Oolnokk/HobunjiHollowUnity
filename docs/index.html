@@ -111,7 +111,7 @@
        partway through its own setup (after camTargetX/pathWallBuilder/
        VEG_CULL_* are declared, well before the first real terrain mesh
        build). -->
-  <script src="js/terrain-geometry.js?v=20261026orefacets2"></script>
+  <script src="js/terrain-geometry.js?v=20261111mesaRoute1"></script>
   <!-- Farm/town grass & weed billboards, crop growth meshes, and per-tile
        ground+vegetation mesh building, extracted out of game.js. Must load
        before game.js, which calls window.VegetationCropRendering.init(...)
@@ -199,7 +199,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261031h9b18729"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261112kurrayaMerge1"></script>
+  <script src="js/held-action-animations.js?v=20261112kurrayaParity1"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -278,7 +278,7 @@
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
   <script src="js/map-boundary-guard.js?v=1"></script>
-  <script src="js/terrain-preview.js?v=20261110boulderCollision1"></script>
+  <script src="js/terrain-preview.js?v=20261111mesaPreview1"></script>
   <script src="js/den-cliff-placement.js?v=20261028localeopen1"></script>
   <script src="js/wilderness-archipelago.js?v=20261020islandatlas1"></script>
   <script src="js/wilderness-map-generator.js?v=20261107mireOutlet1"></script>
@@ -919,7 +919,7 @@
        window.ZonePlateauMesa.buildPlateauMesa(...) lazily, whenever a
        zone with tiered plateaus is first built or a plateau-top tile
        changes at runtime — never synchronously during initial boot. -->
-  <script src="js/zone-plateau-mesa.js?v=20261107hc81ce6b"></script>
+  <script src="js/zone-plateau-mesa.js?v=20261111mesaLid1"></script>
   <script src="js/wilderness-bedrock.js?v=20261027a"></script>
   <!-- One world-UV texture-backed mesh per water surface group. Dynamic
        flood/trench meshes are rebuilt only when the water simulation ticks;
@@ -2857,7 +2857,7 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20261112xrayTileIndexLoader1"></script>
+  <script src="js/tool-icon-render.js?v=20261111mesaLoader1"></script>
   <script src="js/sprite-recolor.js?v=20261105koma1"></script>
   <script src="js/object-sprite-catalog.js?v=20261107pouch1"></script> <!-- Central metadata-to-authored-PNG resolver for new inventory icons. -->
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
@@ -2950,7 +2950,7 @@
   <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
        — must load before game.js, which calls window.KurrayaInstrument.init(...)
        during its own setup, mirroring window.Fishing above. -->
-  <script src="js/kurraya-instrument.js?v=20261112kurrayaMerge1"></script>
+  <script src="js/kurraya-instrument.js?v=20261112kurrayaParity1"></script>
   <!-- Music (Lyre) performance minigame (window.MusicMinigame) — must
        load before game.js, which calls window.MusicMinigame.init(...)
        during its own setup, mirroring window.Fishing above. -->

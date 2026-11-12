@@ -298,7 +298,7 @@
     // owned by the low neighboring tile can otherwise inherit one raised
     // mesa vertex and form a grass flap up the cliff. Ordinary per-tile
     // floor fills that seam; paved path bricks remain independent.
-    const ownsMesaSurface = tile => !!tile?.skipFloor || !!tile?.incline || !!tile?.mesaCliffFace; // Used by the route exclusion halo to identify mesa/cliff geometry owners.
+    const ownsMesaSurface = tile => !!tile?.skipFloor || !!tile?.mesaGroundOwned || !!tile?.incline || !!tile?.mesaCliffFace; // Used by the route exclusion halo to identify mesa/cliff geometry owners.
     const isExcludedCell = (ci, cj) => {
       const tile = cellAt(ci, cj);
       if (ownsMesaSurface(tile) || EXCLUDED.has(tile?.type)) return true;
