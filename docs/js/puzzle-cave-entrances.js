@@ -14,7 +14,7 @@
   let pillarTexture=null; // Shared carved-smooth texture for a supported pillar when an actual wall has no usable vertical face.
   const SCORE_STEP_X=.23,SCORE_STEP_Y=.27; // Scratchbone layout spacing, reused for wall plaques and narrower standing pillars.
   const SCORE_WALL_COLUMNS=6,SCORE_PILLAR_COLUMNS=2; // A free-standing pillar is deliberately narrower than a genuine wall.
-  const SCORE_NOTE_OVERLAY_ORDER=64; // Only active Scratchbone note planes bypass cliff depth; their physical stone pillars still render normally.
+  const SCORE_NOTE_OVERLAY_ORDER=1202; // OutlineRenderPerformance reserves CanvasTexture planes at renderOrder>=1200 for its final, post-shell overlay; note ink/glows reuse that pass only while their plate is active.
   let deps=null; // WildlifeSpawn's existing game adapter, used for authoritative player, layouts and scene transitions.
   let lastArea=null; // Tracks the immediately previous area so returning from a cave can restore its actual elevated balcony support.
   const portalTag='puzzle-cave-cliff-door'; // Consistent debugging and collider identity for each generated entrance.
@@ -354,7 +354,7 @@
     }
     const board=new THREE.Group();
     board.name='puzzle-cave-exterior-score';
-    board.userData.scoreOcclusion='notes-over-stone'; // Pixel Probe/portal diagnostics identify the plate-gated, glyph-only overlay without touching held-weapon depth passes.
+    board.userData.scoreOcclusion='post-composite-notes'; // Only its three glyph planes enter the existing final overlay; the supporting stone retains real terrain depth.
     board.position.set(mount.x,mount.y,mount.z);
     board.rotation.y=yaw;
     for(let index=0;index<count;index++){
@@ -371,7 +371,7 @@
       outer.name='puzzle-cave-outdoor-glyph-outer-glow-'+index;
       outer.position.set(x,y,z+.065);
       outer.frustumCulled=false;
-      outer.renderOrder=SCORE_NOTE_OVERLAY_ORDER; // Puzzle clue remains readable when an intervening cliff covers its supporting pillar.
+      outer.renderOrder=SCORE_NOTE_OVERLAY_ORDER; // CanvasTexture + depthTest=false make this halo eligible for the existing post-composite overlay instead of only Three's base-pass sorting.
       // The wide static halo gains/loses opacity under the song clock; no scaling or sine pulsing.
       board.add(outer);portal.glyphOuterGlows.push(outer);
       const glow=new THREE.Mesh(new THREE.PlaneGeometry(.37,.46),
@@ -386,7 +386,7 @@
       const mesh=new THREE.Mesh(new THREE.PlaneGeometry(.20,.24),material);
       mesh.name='puzzle-cave-outdoor-glyph-'+index;
       mesh.position.set(x,y,z+.086);
-      mesh.renderOrder=SCORE_NOTE_OVERLAY_ORDER+2; // Ink draws last, above the two translucent halo layers, but only while the plate reveals the score.
+      mesh.renderOrder=SCORE_NOTE_OVERLAY_ORDER+2; // Ink draws after both halos, including after the outline composite; its parent board still gates visibility to the plate.
       mesh.frustumCulled=false;
       mesh.userData.noOutline=true; // The flat authored PNG supplies its own contour; never add a 3D outline shell.
       board.add(mesh);portal.glyphs.push(mesh); // Original note order is preserved across the two physical posts.
@@ -641,6 +641,7 @@
         progress:p.progress,rewardTier:p.song?.rewardTier||null,modelReady:!!p.doorModel,
         scoreSurface:p.scoreSurface?.kind||null,scoreVisible:!!p.scoreBoard?.visible,
         scoreOcclusion:p.scoreBoard?.userData?.scoreOcclusion||null,
+        scoreOverlayReady:p.glyphs.length>0&&p.glyphs.every(g=>g.renderOrder>=1200&&g.material?.map?.isCanvasTexture&&g.material?.depthTest===false&&g.material?.depthWrite===false), // Mobile diagnostics prove final-pass eligibility without a dev console.
         activeGlyph:p.progress?.activeIndex??-1,flashRemaining:p.flashRemaining,flashGlyphIndex:p.flashGlyphIndex,scoreBpm:p.song?.bpm||null,
         scorePosition:p.scoreSurface&&{x:p.scoreSurface.x,y:p.scoreSurface.y,z:p.scoreSurface.z}}))}))};
   }
