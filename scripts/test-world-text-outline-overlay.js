@@ -19,6 +19,7 @@ class Layers {
   constructor(mask = 1) { this.mask = Number(mask) >>> 0; }
   set(channel) { this.mask = (1 << Number(channel)) >>> 0; }
   disable(channel) { this.mask = (this.mask & ~((1 << Number(channel)) >>> 0)) >>> 0; }
+  enable(channel) { this.mask = (this.mask | ((1 << Number(channel)) >>> 0)) >>> 0; }
   enableAll() { this.mask = 0xFFFFFFFF >>> 0; }
 }
 
@@ -32,9 +33,12 @@ class Renderer {
   }
   getRenderTarget() { return this._target; }
   setRenderTarget(target) { this._target = target || null; }
+  clearDepth() { this.calls.push({kind:'clearDepth',target:this._target}); } // A compositor actor-mask pass clears depth but preserves the fully rendered canvas color.
 }
 Renderer.prototype.render = function render(scene, camera) {
-  this.calls.push({ scene: scene?.name || '', mask: Number(camera?.layers?.mask ?? 0) >>> 0, target: this._target });
+  this.calls.push({ scene: scene?.name || '', mask: Number(camera?.layers?.mask ?? 0) >>> 0, target: this._target,
+    noteDepthTest:scene?.scoreNote?.material?.depthTest, actorColorWrite:scene?.maskActor?.material?.colorWrite,
+    actorDepthWrite:scene?.maskActor?.material?.depthWrite, actorLayers:scene?.maskActor?.layers?.mask });
 };
 
 class Color {
@@ -208,9 +212,16 @@ function testPlateGatedScoreAvoidsHiddenFinalPass() {
   const renderer = new Renderer();
   const note = makePopupMesh(); // Uses the same CanvasTexture/depth/renderOrder contract as outdoor Scratchbone clues.
   note.renderOrder = 1202;
+  note.userData={puzzleCaveScoreOverlay:true}; // Exactly the opt-in flag on every exterior Scratchbone ink and halo plane.
   const board = { visible: false }; // The score itself remains cached while the player stands off its activation plate.
   note.parent = board;
   const scene = makeWorldScene('plate-gated-score', note);
+  const body={isMesh:true,visible:true,layers:new Layers(1),
+    material:{colorWrite:true,depthWrite:false,depthTest:true}}; // A transparent actor PNG that needs a temporary depth write for glyph occlusion.
+  const root={visible:true,parent:scene,traverse(callback){callback(body);}}; // Live player/NPC rig root, not an inferred bounding-box proxy.
+  body.parent=root;
+  scene.scoreNote=note;scene.maskActor=body;
+  api.setScoreCharacterRootsProvider(()=>[root]); // The game registers the same provider once from its live actor collections.
   const camera = { layers: new Layers(0xFFFFFFFF) };
   const post = makePostScene('outline-post-score');
   const postCamera = { layers: new Layers(1) };
@@ -230,12 +241,30 @@ function testPlateGatedScoreAvoidsHiddenFinalPass() {
   assert.equal(renderer.calls.filter(call => call.scene === scene.name && call.target === null && call.mask === (1 << 6)).length, 1,
     'a newly active note draws once after the shell/post composite');
   assert.equal(note.layers.mask, 1, 'the active score restores its original scene layer after presentation');
+  const depthClear=renderer.calls.findIndex(call=>call.kind==='clearDepth');
+  const actorPass=renderer.calls.findIndex(call=>call.scene===scene.name&&call.target===null&&call.mask===(1<<24));
+  const scorePass=renderer.calls.findIndex(call=>call.scene===scene.name&&call.target===null&&call.mask===(1<<6));
+  assert(depthClear>=0&&depthClear<actorPass&&actorPass<scorePass,
+    'after the outline composite, clear only depth, draw real character silhouettes, then draw the cliff-visible score');
+  assert.equal(renderer.calls[actorPass].actorColorWrite,false,
+    'the actor-depth pass cannot overwrite the already-composited player/NPC colors');
+  assert.equal(renderer.calls[actorPass].actorDepthWrite,true,
+    'character body planes write an alpha-aware depth silhouette even when their normal materials are translucent');
+  assert.equal(renderer.calls[scorePass].noteDepthTest,true,
+    'the note must depth-test against the closer actor instead of covering the player or NPC');
+  assert.equal(note.material.depthTest,false, 'note material returns to depth-independent base state after its final-pass mask');
+  assert.equal(body.material.colorWrite,true, 'character original color-write state is restored after the mask pass');
+  assert.equal(body.material.depthWrite,false, 'character original translucent depth-write behavior is restored');
+  assert.equal(body.layers.mask,1, 'actor original render layers are unchanged by the temporary mask');
 
   board.visible = false;
   renderBase(renderer, scene, camera);
   renderPost(renderer, post, postCamera);
   assert.equal(renderer.calls.filter(call => call.scene === scene.name && call.target === null && call.mask === (1 << 6)).length, 1,
     'deactivating the plate removes the score again without a second overlay call');
+  assert.equal(renderer.calls.filter(call=>call.kind==='clearDepth').length,1,
+    'stepping off the plate must not trigger a second actor-depth replay');
+  api.setScoreCharacterRootsProvider(null);
 }
 
 testFixedPostCameraAndUnrelatedPass();
