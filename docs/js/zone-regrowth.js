@@ -97,9 +97,9 @@
       const rebuildMesas = editTouchesMesa(zi, col, row); // Flat-land edits never invalidate an unrelated full-zone plateau mesh.
       if (rebuildMesas) window.ZonePlateauMesa.rebuildZoneMesaMeshes(mapId);
       const routeApronUpdated = zi.pathNet?.refreshTileAndSeam?.(col, row) || false; // Reported in the mobile-visible debug log below.
-      // The live grid already contains the authoritative edit. Rebuild
-      // only its resident chunk plus one-chunk seam halo; unloaded chunks
-      // will naturally read the updated grid when they are next streamed.
+      // The live grid already contains the authoritative edit. Rebuild its
+      // owning chunk plus only the neighbors within the conservative seam
+      // margin; unloaded chunks read the updated grid when streamed.
       const rebuiltChunks = window.WildernessChunks.rebuildZone(mapId, col, row); // Reported below to diagnose future mobile-only refresh failures.
       window.WildTreasure.syncZoneInteractivity(mapId);
       deps.debugLog(`[terrain-refresh] ${mapId} c${col},r${row}: routeApron=${routeApronUpdated ? 'updated' : 'outside'} chunks=${rebuiltChunks} mesas=${rebuildMesas ? 'rebuilt' : 'unchanged'}`);
