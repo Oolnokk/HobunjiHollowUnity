@@ -175,7 +175,11 @@
     if (source.isSkinnedMesh && typeof source.boneTransform === 'function') {
       const sourcePositions = sourceGeometry.getAttribute?.('position');
       const bakedPositions = geometry.getAttribute?.('position');
-      if (!sourcePositions || !bakedPositions || sourcePositions.count !== bakedPositions.count) return null;
+      if (!sourcePositions || !bakedPositions) return geometry; // Preserve the old fallback for unconventional portrait geometries without position attributes.
+      if (sourcePositions.count !== bakedPositions.count) {
+        if (!reusableGeometry) geometry.dispose?.(); // A stale pooled topology must not leak its abandoned fresh replacement.
+        return null;
+      }
       source.skeleton?.update?.();
       const vertex = new THREE.Vector3(); // Reused across all vertices in this one pose-bake pass.
       for (let i = 0; i < sourcePositions.count; i += 1) {
