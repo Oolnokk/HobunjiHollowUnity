@@ -8,6 +8,9 @@ const vm = require('node:vm');
 
 const game = fs.readFileSync('docs/game.js', 'utf8'); // Actual game functions under test.
 const fishing = fs.readFileSync('docs/js/fishing-minigame.js', 'utf8'); // Actual spear-bridge timing source.
+const fishingInit = game.slice(game.indexOf('window.Fishing?.init({'), game.indexOf('window.Fishing?.init({') + 1700); // Validates actual game-to-fishing wiring.
+assert.match(fishingInit, /toolMetalMultiplier,/, 'Fishing must receive the equipped/reinforced metal multiplier');
+
 
 function functionBody(source, name) {
   const start = source.indexOf('function ' + name + '('); // Finds the exact production function.

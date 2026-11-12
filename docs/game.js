@@ -5506,10 +5506,11 @@
             }
             const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0; // Every creature corpse gets the same high-chance shared-ammo roll as bandits.
             if (specialAmmo) parts.push(`🏹 Special Ammo×${specialAmmo}`);
+            scheduleLootMemberSave(); // Normal animal butcher loot uses the same deferred member save as enemy corpses.
             if (c.keepCorpseAfterLoot) c.corpseLooted = true; // Tzatzul victim piles retain their bodies and one-shot searched state.
             else { corpseObjects.delete(c); despawnCreature(c); }
             return {
-              ok: true,
+              ok: true, deferMemberSave: true, // The canonical save is already queued; skip the world-action handler's immediate second write.
               message: parts.length ? `Butchered the ${c.def.label}: ${parts.join(' ')}` : `Nothing usable left on the ${c.def.label}.`,
             };
           },
@@ -9591,17 +9592,34 @@
         return meta;
       }
 
+      let pendingLootMemberSave = false; // Corpse loot is live immediately; disk serialization is coalesced until idle.
+      let queuedLootMemberSave = false; // Prevents one idle task per loot pickup.
       function saveMemberWorldData() {
         try {
           const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null'); // Existing canonical metadata receives the shared live serialization.
           if (!meta) return false;
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(captureMemberWorldData(meta)));
+          pendingLootMemberSave = false; // An ordinary explicit save also satisfies the pending loot write.
           return true; // The imperial custody handoff must know the character inventory really reached persistent storage.
         } catch (error) {
           window.__farmLog?.('[member-save] Failed to persist world-member data: ' + String(error?.message || error), 'warn');
           return false; // Existing callers may ignore this result; custody uses it to avoid finalizing incomplete transfers.
         }
       }
+
+      function flushLootMemberSave() {
+        if (pendingLootMemberSave) saveMemberWorldData(); // Only canonical member serializer writes member data.
+      }
+      function scheduleLootMemberSave() {
+        pendingLootMemberSave = true; // Item grants and world-object removal have already completed synchronously.
+        if (queuedLootMemberSave) return;
+        queuedLootMemberSave = true;
+        const flush = () => { queuedLootMemberSave = false; flushLootMemberSave(); };
+        if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(flush, { timeout: 1500 });
+        else setTimeout(flush, 100);
+      }
+      window.addEventListener?.('pagehide', flushLootMemberSave); // Persist pending loot before a tab/page closes.
+      document.addEventListener?.('visibilitychange', () => { if (document.hidden) flushLootMemberSave(); });
 
       // ── Owner/farmhand content visibility ─────────────────────────────
       // Generic gate dialogue trees and (future) quests can tag themselves
@@ -17932,6 +17950,7 @@
       }
 
       function buildInventoryGrid() {
+        if (!menuOpen) return; // Opening/switching to Pack rebuilds it; offscreen loot must not recreate dozens of DOM nodes.
         const grid = document.getElementById('invGrid');
         if (!grid) return;
         grid.innerHTML = '';
@@ -20926,8 +20945,7 @@
 
         const _anim = activeAnimStyle();
         toolSwingDur = _anim === 'thrust' ? 0.34 : _anim === 'chop' ? 0.42 : 0.68;
-        // Single-swing terrain work (redig, raise, smooth, brush-clearing)
-        // uses the same efficacy, skill, and digging speed as held actions.
+        // Ordinary one-swing terrain work also uses the equipped tool's efficacy.
         if (['shovel', 'hoe', 'axe', 'pick'].includes(activeTool)) {
           toolSwingDur /= getToolWorkSpeedMultiplier(activeTool);
         }
@@ -23796,9 +23814,8 @@
       ];
       const FILL_TRENCH_STAGES = [...REFILL_FLOURISH_REP, ...REFILL_FLOURISH_REP, ...REFILL_FLOURISH_REP];
 
-      // Tilling is a held three-chop soil-working action rather than a tap.
-      // It uses the same digging and Farming speed bonuses as shovel work.
-      const TILL_SOIL_STAGES = [0.8, 0.7, 0.6].map(dur => ({ anim: 'chop', dur, sfxKey: 'dig', sfxAt: 0.28 }));
+      // The hoe uses the shovel's digging/Farming bonuses for this held soil-work sequence.
+      const TILL_SOIL_STAGES = [0.8, 0.7, 0.6].map(dur => ({ anim: 'chop', dur, sfxKey: 'dig', sfxAt: 0.28 })); // Three strokes; only completion tills the tile.
 
       // Felling a real tree (see isChoppableTreeTile) — a short flurry of
       // alternating forehand/backhand swings held through to the end, reusing
@@ -23908,13 +23925,13 @@
       // farming tool action) — updateCombatConeTrail then hides every lane.
       let combatSwingCone = null;
 
-      // Metal efficacy, including reinforcement, speeds up every work action.
-      // Hoe and shovel share the identical player digging and Farming bonuses.
+      // One authority for tool working time. Per-slot metal efficacy includes
+      // reinforcement and shares the same scale as the inventory stats display.
       function getToolWorkSpeedMultiplier(tool) {
-        const skillKey = tool === 'axe' ? 'foraging' : tool === 'pick' ? 'mining' : 'farming'; // Selects the existing skill modifier for this tool.
-        const skillSpeed = window.SkillSystem?.actionSpeedMultiplier?.(skillKey) || 1; // Applied by single swings and held work stages.
-        const digSpeed = tool === 'shovel' || tool === 'hoe' ? Math.max(0.01, player.digSpeed || 1) : 1; // Shared shovel/hoe digging bonus.
-        const metalEfficacy = toolMetalMultiplier(equipmentSlots[tool]); // Applies the equipped item's effective (reinforced) metal tier.
+        const skillKey = tool === 'axe' ? 'foraging' : tool === 'pick' ? 'mining' : 'farming'; // Used to choose each tool's existing skill/perk speed.
+        const skillSpeed = window.SkillSystem?.actionSpeedMultiplier?.(skillKey) || 1; // Used for short and long work animations.
+        const digSpeed = tool === 'shovel' || tool === 'hoe' ? Math.max(0.01, player.digSpeed || 1) : 1; // Shared by digging and tilling.
+        const metalEfficacy = toolMetalMultiplier(equipmentSlots[tool]); // Uses the equipped tool's effective/reinforced metal.
         return Math.max(0.01, skillSpeed * digSpeed * metalEfficacy);
       }
       function getDigSpeedMultiplier() {
@@ -23946,7 +23963,7 @@
           return isMineableRockTile(reticle.col, reticle.row);
         }
         if (tool === 'hoe' && action === 'till') {
-          const reticle = getReticleTile(); // Valid grass is required before holding the hoe to till.
+          const reticle = getReticleTile(); // A valid tile starts the hold; changing targets cancels without modifying terrain.
           return canUseAction(tool, action, reticle.col, reticle.row);
         }
         if (tool !== 'shovel' || (action !== 'dig' && action !== 'fill')) return false;
@@ -23981,7 +23998,7 @@
       function beginChargeStage() {
         if (!chargeAction) return;
         const stageDef = chargeAction.stages[chargeAction.stage];
-        const speedMultiplier = getToolWorkSpeedMultiplier(chargeAction.tool); // Held work stages share the equipped tool's efficacy and existing skill/digging bonuses.
+        const speedMultiplier = getToolWorkSpeedMultiplier(chargeAction.tool); // Metal, skill, and player dig speed affect each held stage.
         const dur = stageDef.dur / speedMultiplier;
         toolSwingDur = dur;
         toolSwingT   = dur;
@@ -31064,6 +31081,7 @@
         worldToOverlay,
         inventory,
         equipmentSlots,
+        toolMetalMultiplier, // Fishing's Spear Bridge uses the same metal/reinforcement efficacy as ordinary tool work.
         rollItemStars: window.LootRolling.rollItemStars,
         starRatingText: window.LootRolling.starRatingText,
         rareFishWeightMultiplier: rarity => window.SkillSystem?.rareFishWeightMultiplier?.(rarity) || 1,
@@ -33410,6 +33428,8 @@
         buildInventoryGrid,
         refreshActionBar,
         saveMemberWorldData,
+        scheduleLootMemberSave,
+        isMenuOpen: () => menuOpen,
         despawnCreature,
         buildPackClothingSection: window.EquipmentPanel.buildPackClothingSection,
         getDyeCatalog: window.DyeSystem.getCatalog,

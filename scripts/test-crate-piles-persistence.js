@@ -24,11 +24,14 @@ const THREE={Group,Mesh,Vector3,PlaneGeometry:class{},MeshBasicMaterial:class{},
   TextureLoader:class{load(file){return{file};}},CanvasTexture:class{},DoubleSide:2};
 const memory=new Map(); // Stubs browser storage across simulated page reloads.
 const localStorage={getItem:key=>memory.get(key)||null,setItem:(key,value)=>memory.set(key,value)};
+const pagehideCallbacks=[],idleJobs=[]; // Simulate mobile browser background/exit and deferred supply writes.
 const document={createElement:()=>({getContext:()=>({clearRect(){},fillText(){}})})};
 let scene=new Group(),allowAward=false;
 const player={x:20*64,y:20*64},burdens=[],granted=[];
 const window={
   THREE,__hobunjiPlayerProfile:{worldId:'crate-persistence-regression'},
+  requestIdleCallback:cb=>idleJobs.push(cb), // Ensure a walk-over pickup actually uses idle persistence in this regression.
+  addEventListener:(name,cb)=>{if(name==='pagehide')pagehideCallbacks.push(cb);},
   CalendarSystem:{tothalCycle:()=>1},
   GridTileAccessors:{getCurrentArea:()=>'camp_zone',getActiveScene:()=>scene},
   Combat:{deps:{getCurrentArea:()=>'camp_zone',player,TILE:64,getGroundYAtWorld:()=>0,showToast(){}}},
@@ -78,7 +81,14 @@ function makePile(){const group=new Group();group.position.set(3.5,0,5.5);scene.
   afterReload.CratePiles.tick(.02);
   assert.equal(granted.length,1,'walking over the pile grants loot once');
   assert.equal(afterReload.CratePiles.debugSnapshot().looseJunk,0);
-  assert.equal(JSON.parse(memory.get(storageKey)).drops.length,0,'collecting removes persisted junk');
+  assert.equal(afterReload.CratePiles.debugSnapshot().supplySaveQueued,true,'junk collection defers its browser storage write');
+  assert.equal(JSON.parse(memory.get(storageKey)).drops.length,1,'previous storage remains intact until the scheduled write');
+  assert.equal(idleJobs.length,1,'the junk pickup schedules one idle save');
+  pagehideCallbacks.forEach(cb=>cb()); // Simulate browser navigation before the scheduled idle callback.
+  assert.equal(JSON.parse(memory.get(storageKey)).drops.length,0,'pagehide flushes collected junk before reload');
+  assert.equal(afterReload.CratePiles.debugSnapshot().supplySaveQueued,false);
+  idleJobs.shift()(); // Re-running the queued callback must not resurrect deleted supplies.
+  assert.equal(JSON.parse(memory.get(storageKey)).drops.length,0);
 
   const cave=afterReload.CratePiles.registerPile({id:'one_pile',mapId:'camp_zone',scene,group:makePile(),lootable:true,count:1,persistViaParent:true});
   assert.equal(cave.count,1,'cave world-save count overrides browser-local camp count');

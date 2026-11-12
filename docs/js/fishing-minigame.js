@@ -804,7 +804,7 @@
     _fishDeformCollisionMask = null;
     _fishCollisionSourceLog = '';
     if (!fishingThrowHoldActive) beginFishingThrowWindup('ring-open');
-    window.__farmLog?.(`fishing ring opened: zone=${fm.zoneKey} fish=${fm.fishDef.key} anchor=(${fm.anchorWorld.x.toFixed(2)},${fm.anchorWorld.y.toFixed(2)},${fm.anchorWorld.z.toFixed(2)}) bodyImgLoaded=${!!(fishBodySpriteImage && fishBodySpriteImage.naturalWidth)}`);
+    window.__farmLog?.(`fishing ring opened: zone=${fm.zoneKey} fish=${fm.fishDef.key} anchor=(${fm.anchorWorld.x.toFixed(2)},${fm.anchorWorld.y.toFixed(2)},${fm.anchorWorld.z.toFixed(2)}) bodyImgLoaded=${!!(fishBodySpriteImage && fishBodySpriteImage.naturalWidth)} efficacy=${fm.bridge.efficacy.toFixed(2)} shotS=${fm.bridge.shotDuration.toFixed(3)} retractS=${fm.bridge.retractDuration.toFixed(3)}`);
     // The prompt DOM (button/status/panic/cancel) persists across this
     // transition; only the ring SVG is fresh here.
     fishingEls = null;

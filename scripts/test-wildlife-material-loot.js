@@ -111,6 +111,7 @@ async function main() {
     itemIconForKey: () => '🟫',
     corpseObjects: new Set(),
     despawnCreature() {},
+    scheduleLootMemberSave() {}, // Stub the game-owned idle member-save scheduler in the extracted production corpse function.
   });
   const corpseSource = gameSource.slice(corpseStart, corpseEnd); // Keep the extracted production implementation available for failure diagnostics.
   vm.runInContext(corpseSource, corpseContext, { filename: 'game-corpse-interaction.js' });
@@ -134,7 +135,9 @@ async function main() {
       genotype: { base: { color: '#776655' }, belly: { enabled: true, copies: 2, color: '#aabbcc' } },
     }; // The corpse action should snapshot this particular wild animal's coat without rerolling it.
     const corpse = corpseContext.makeCorpseWorldObject(creature);
-    assert.equal(lootCorpseWithSourceDiagnostics(corpse).ok, true, creatureKey + ' corpse must be lootable');
+    const result = lootCorpseWithSourceDiagnostics(corpse);
+    assert.equal(result.ok, true, creatureKey + ' corpse must be lootable');
+    assert.equal(result.deferMemberSave, true, 'butchering skips the generic immediate world-save');
     assert.equal(corpseInventory[hideKey], beforeCount + 1, creatureKey + ' corpse must award one hide into Pack');
     const record = windowStub.AnimalHides.groupsFor(hideKey, corpseInventory[hideKey])
       .map(group => group.hideRecord).find(hide => hide?.sourceKind === creatureKey);

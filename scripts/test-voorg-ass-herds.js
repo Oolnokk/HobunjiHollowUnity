@@ -200,12 +200,15 @@ const corpseContext = vm.createContext({
   itemIconForKey: () => 'baby',
   corpseObjects: new Set(),
   despawnCreature() {},
+  scheduleLootMemberSave() {}, // Game-owned idle-save scheduler is outside this extracted function.
 });
 vm.runInContext(gameSource.slice(corpseStart, corpseEnd), corpseContext);
 const mother = living.find(c => c.isHerdMother); // Uses an actual spawned herd's genotype for loot and deployment metadata.
 const originalBabyCount = mother.carriedBabyCount; // Checks every recovered baby, before the one-shot corpse action clears the count.
 const corpse = corpseContext.makeCorpseWorldObject({ ...mother }); // Executes the production corpse-loot path without altering the living census fixture.
-assert.equal(corpse.onAction('obj_loot_corpse').ok, true);
+const firstLootResult = corpse.onAction('obj_loot_corpse');
+assert.equal(firstLootResult.ok, true);
+assert.equal(firstLootResult.deferMemberSave, true, 'Herd-Mother loot skips the immediate world-action save');
 assert.equal(inventory.voorgAssBaby, originalBabyCount);
 assert.equal(recoveredGenotypes.length, originalBabyCount);
 assert(recoveredGenotypes.every(entry => entry.key === 'voorgAssBaby' && JSON.stringify(entry.genotype) === JSON.stringify(mother.genotype)), 'recovered babies carry the exact herd genotype into the existing saved-lineage queue');

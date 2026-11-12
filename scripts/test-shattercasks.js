@@ -369,6 +369,7 @@ async function scenario(reloading=false) {
   const scene=new Node();
   const player={x:3.5*64,y:3.5*64,angle:0,health:100};
   const inventory={},damage=[],playedSfx=[]; // Records actual audio requests from the production detonation path.
+  const deferredSaves=[],pagehideCallbacks=[]; // Browser-idle and exit hooks used to verify rubble pickup persistence.
   const deps={
     TILE:64,player,inventory,TileType:{GRASS:'grass'},
     getCurrentArea:()=>area,getActiveScene:()=>scene,worldSurfaceY:()=>0,
@@ -384,6 +385,8 @@ async function scenario(reloading=false) {
     CaveSiteSystem:{__test:{plansByMapId:new Map([[area,{shattercasks:[{id:'wall-charge',col:4,row:3}]}]])}},
     AuthoredFurniture:{load:async()=>asset,buildGroup:authoredGroup},
     DevSpawner:{init(){}},ResourceSystem:{spendFooting(){}},
+    requestIdleCallback:cb=>deferredSaves.push(cb), // Browser path defers a pile-only storage write instead of blocking pickup.
+    addEventListener:(name,cb)=>{if(name==='pagehide')pagehideCallbacks.push(cb);}, // Simulate exiting after collecting rubble.
     AudioSystem:{playWeaponHitSfx(){},playObjectSfxKey(key){playedSfx.push(key);}},__farmLog(){},
   };
   game.window=game;
@@ -443,6 +446,18 @@ async function scenario(reloading=false) {
   assert.equal(game.Shattercasks.debugSnapshot().rubble.length,1,'looting does not remove the other pile');
   assert.equal(game.Shattercasks.debugSnapshot().performance.activeDebrisInstances,4,
     'looting changes only instance count, not per-tile mesh ownership');
+  assert.equal(game.Shattercasks.debugSnapshot().performance.pileSaveQueued,true,
+    'collecting rubble queues a save without serializing its history on the pickup frame');
+  assert.equal(deferredSaves.length,1,'rubble collection uses one browser idle callback');
+  const savedPileKey='hobunji.shattercasks.piles.v1:regression|1'; // Compare persisted history before and after pagehide.
+  const savedBefore=JSON.parse(storage.get(savedPileKey));
+  assert.equal(Object.keys(savedBefore[area]).length,2,'storage still has both rubble drops until the deferred save flushes');
+  pagehideCallbacks.forEach(cb=>cb()); // Simulated browser exit must save the newly collected rubble.
+  const savedAfter=JSON.parse(storage.get(savedPileKey));
+  assert.equal(Object.keys(savedAfter[area]).length,1,'pagehide flushes collected rubble before reload');
+  assert.equal(game.Shattercasks.debugSnapshot().performance.pileSaveQueued,false);
+  deferredSaves.shift()(); // A previously scheduled idle callback must be idempotent after the exit flush.
+  assert.equal(Object.keys(JSON.parse(storage.get(savedPileKey))[area]).length,1);
   // A second blast must reuse the first blast's geometry/textures.
   const phantom=new Node();phantom.position.set(4.5,0,3.5);
   const phantomCask={id:'performance-repeat',kind:'shattercask',mapId:area,col:4,row:3,
