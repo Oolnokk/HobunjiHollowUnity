@@ -254,6 +254,8 @@ const wall = cacheMap.caveSitePlan.separatorRock;
 assert(wall && wall.cells.length === cacheMap.oreRocks.filter(rock => rock.caveSeparator).length, 'hidden cache is sealed behind a wall of mineable ore rocks');
 assert(wall.cells.some(cell => cell.layer === 5), 'sealed chamber uses five successive mineable strata');
 assert(cacheMap.oreRocks.filter(rock=>rock.caveSeparator).every(rock=>Number.isInteger(rock.caveSeparatorLayer)), 'each wall rock records its layer for diagnostics');
+assert(cacheMap.oreRocks.filter(rock=>rock.caveSeparator).every(rock=>rock.oreKind==='stone'), 'every hidden-chamber wall generates plain stone rather than a random metal ore');
+assert.equal(cacheMap.caveSitePlan.separatorRock.oreKind,'stone','saved cave-wall metadata also identifies plain stone');
 assert(cacheMap.caveShattercasks.some(charge=>charge.guaranteed), 'every mineable cave separator guarantees an entrance-side Shattercask');
 const plan = Cave.__test.plansByMapId.get('map_i_test_cache');
 assert(plan.separator.farKeys.includes(`${cacheMap.caveCache.col},${cacheMap.caveCache.row}`), 'cache sits behind the wall');
@@ -620,8 +622,10 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
   assert.equal(fittedFaces, 5, 'Ordinary cave resource rock mounds keep the UV-preserving fitting helper');
   assert.deepEqual(newGrid[0].map(cell => cell.oreKey), ['tinCopper', 'mushistonite', 'tin'], 'Wild-cave rocks preserve all three new ore identities and drops');
   const separatorScene=new Obj(),separatorGrid=[[{},{}]],separatorMap='map_i_cave_rock_wall';
+  const caveShell=new Obj(null,{key:'actual-cave-wall-material'}); // Simulates the already-carved cavern shell; separators must reuse its material by identity.
+  caveShell.isMesh=true;caveShell.userData.interiorCavernMaterialParity='farm-cliffs';separatorScene.add(caveShell);
   const separatorGroups=oreCtx.CavernOreRocks.build(separatorMap,{oreRocks:[
-    {col:0,row:0,oreKind:'stone',caveSeparator:true,caveSeparatorLayer:1},
+    {col:0,row:0,oreKind:'gold',caveSeparator:true,caveSeparatorLayer:1}, // Legacy save with a metal wall must still mine only Stone.
     {col:1,row:0,oreKind:'stone',caveSeparator:true,caveSeparatorLayer:2},
   ]},separatorScene,separatorGrid); // Adjacent layers share a logical cave wall but each tile is a standalone diggable rock.
   const rock0=separatorGroups.get('0,0'),rock1=separatorGroups.get('1,0');
@@ -641,6 +645,12 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
   const fused=()=>separatorScene.children.filter(child=>child.userData?.caveSeparatorFused);
   assert.equal(fused().length,1,'touching rocks fuse into exactly one rendered rock wall, without overlapping clipped lobes');
   const oldMesh=fused()[0],oldGeo=oldMesh.geometry;
+  assert.equal(oldMesh.material,caveShell.material,'the diggable wall reuses the exact cave-shell material, not an ore material');
+  assert.equal(oldMesh.userData.caveSharedWallMaterial,true,'mobile scene diagnostics identify shared native cave-wall material');
+  assert.notEqual(oldMesh.userData.naturalSurfaceUvOwner,'legacy-continuous-rock-uv','carved stone never inherits ore-only UV ownership');
+  assert.equal(fittedFaces,5,'building a fused stone wall never runs the ore-mound UV fitter');
+  assert.equal(separatorGrid[0][0].oreKind,'stone','legacy metal walls become plain stone on load');
+  assert.equal(separatorGrid[0][0].oreKey,null,'the old metal wall cannot award ore');
   assert.equal(oldMesh.userData.caveSeparatorLiveTiles,2,'shared wall tracks both independently mineable tiles');
   assert(oldGeo.userData.caveFusedRockTriangles>0,'the wall is an actual triangulated solid');
   assertSealedStone(oldMesh);
