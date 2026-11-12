@@ -36,7 +36,7 @@
       const m = el && el.src.match(/[?&]v=([^&]+)/);
       return m ? m[1] : 'noversion';
     };
-    versionTag = `${versionOf('wilderness-map-generator.js')}_${versionOf('terrain-preview.js')}`;
+    versionTag = `${versionOf('wilderness-map-generator.js')}_${versionOf('terrain-preview.js')}_${versionOf('locale-terrain-placement.js')}`; // Isolated cliff placement changes invalidate old cave sites.
     return versionTag;
   }
 

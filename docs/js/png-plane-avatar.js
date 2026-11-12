@@ -544,6 +544,30 @@
   // The posterior (hip) anchor in the skinned plane's frame, where the spine chain starts (js/character-spine.js); null when unknown (the spine module then estimates).
   const spinePosteriorLocalY = (speciesId, gender, modelHeight, placementRatio, handAttachY) => window.HobunjiCharacterSpine?.posteriorLocalY?.({ speciesId, gender, modelHeight, placementRatio, handAttachY }) ?? null;
 
+  // Mesh budgets: the most vertices a character/animal mesh may use. 'full' is the original detail (player default);
+  // 'npc' is the cap for town NPCs, enemies, livestock and animals, which are drawn again in every scene pass.
+  // Pants grid size is read from here by js/pants-garment-renderer.js so there is one place to tune detail.
+  const MESH_BUDGETS = Object.freeze({
+    full: Object.freeze({ planeSegmentsX: 28, planeSegmentsY: 36, hostileMaskX: 48, hostileMaskY: 60, animalSegments: 72, pantsSegments: 64 }),
+    npc: Object.freeze({ planeSegmentsX: 20, planeSegmentsY: 26, hostileMaskX: 34, hostileMaskY: 44, animalSegments: 30, pantsSegments: 32 }),
+  });
+  const PLAYER_BUDGET_KEY = 'hobunji_player_mesh_budget_v1'; // 'npc' | 'full'; per-device display preference, never part of a save.
+  let playerBudgetMode = 'full';
+  try { playerBudgetMode = window.localStorage?.getItem(PLAYER_BUDGET_KEY) === 'npc' ? 'npc' : 'full'; } catch (_) { /* storage can be blocked; default full */ }
+  const meshBudget = {
+    table: MESH_BUDGETS,
+    resolve: mode => (mode === 'npc' ? MESH_BUDGETS.npc : MESH_BUDGETS.full),
+    forPlayer: () => playerBudgetMode, // Mode name handed to avatar/pants builders for the player rig.
+    playerMode: () => playerBudgetMode,
+    setPlayerMode(mode) {
+      const next = mode === 'npc' ? 'npc' : 'full';
+      if (next === playerBudgetMode) return false;
+      playerBudgetMode = next;
+      try { window.localStorage?.setItem(PLAYER_BUDGET_KEY, next); } catch (_) { /* preference just won't persist */ }
+      try { window.dispatchEvent(new Event('hobunji:player-mesh-budget-changed')); } catch (_) { /* no DOM events (tests) */ }
+      return true;
+    },
+  };
   function buildSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal, options = {}) {
     const segmentsX = Math.max(4, Math.round(Number(options.segmentsX) || 28));
     const segmentsY = Math.max(6, Math.round(Number(options.segmentsY) || 36));
@@ -667,6 +691,7 @@
       headBoundsPx: gatedHeadBounds,
       posteriorY,
       spineBaseY: spineBase.y,
+      ...(config.meshBudget === 'npc' ? { segmentsX: MESH_BUDGETS.npc.planeSegmentsX, segmentsY: MESH_BUDGETS.npc.planeSegmentsY } : null), // Capped characters draw this mesh in every scene pass.
     });
     if (!geometry) return null;
     const frontMaterial = makeSpriteMaterial(THREE, textures.frontOriginal, 'npc_avatar_skinned_front_material');
@@ -786,10 +811,12 @@
     const pixelWidth = sourceCanvas?.width || 1;
     const posteriorY = spinePosteriorLocalY(fallbackDimensions.speciesId, fallbackDimensions.gender, planeHeight, fallbackDimensions.placementRatio, fallbackDimensions.handAttachY);
     const spineBase = spineNeckBase(fallbackDimensions.speciesId, fallbackDimensions.gender, planeHeight, fallbackDimensions.placementRatio, { x: pivotLocalX, y: pivotLocalY }, posteriorY);
+    const hostileBudget = fallbackDimensions.meshBudget === 'full' ? MESH_BUDGETS.full : MESH_BUDGETS.npc; // Enemies default to the capped budget.
     const weightedGeometry = buildSkinnedPlaneGeometry(THREE, planeWidth, planeHeight,
       {x:pivotLocalX,y:pivotLocalY,z:0}, {
         frontOnly:true, posteriorY, spineBaseY: spineBase.y, pixelWidth, pixelHeight:sourceCanvas?.height || 1,
-        ...(headBounds?.headMask ? { segmentsX: 48, segmentsY: 60 } : {}), // A finer grid keeps the mask-edge stretch band thin when body width is large.
+        ...(headBounds?.headMask ? { segmentsX: hostileBudget.hostileMaskX, segmentsY: hostileBudget.hostileMaskY } // A finer grid keeps the mask-edge stretch band thin when body width is large.
+          : fallbackDimensions.meshBudget === 'full' ? {} : { segmentsX: hostileBudget.planeSegmentsX, segmentsY: hostileBudget.planeSegmentsY }),
         headBoundsPx:headBounds && mirrorX ? {...headBounds,left:pixelWidth-headBounds.right,right:pixelWidth-headBounds.left} : headBounds,
       });
     // The converted hostile keeps separate front/rear meshes. Reuse the exact
@@ -1332,7 +1359,7 @@
           headCanvas: options.headCanvas, alphaThreshold: options.neckAlphaThreshold,
           speciesId, headGate,
           cosmeticIds: options.cosmeticIds || ['mask', 'hat', 'hood', 'upperFace', 'facialHair'].map(key => options.profile?.[key]?.id).filter(Boolean), // Worn pieces that can override the species head gate.
-          name: `${root.name}_skinned_plane_assembly`,
+          name: `${root.name}_skinned_plane_assembly`, meshBudget: options.meshBudget,
         })
       : null;
     const assembly = skinnedRig ? skinnedRig.group : createSinglePlaneAssembly(THREE, {
@@ -1488,6 +1515,7 @@
     detectNeckPivotPx,
     detectHeadRigPixels,
     upgradePlaneToAutoNeckSkin,
+    meshBudget,
     headScaleGateAtPixel,
     headScaleWeightAt,
     headGateBounds,
@@ -1646,7 +1674,7 @@
     const width = finite(params.width, finite(fallbackDimensions.width, 1));
     const height = finite(params.height, finite(fallbackDimensions.height, 1));
     const mapAspect = rig.weightMap ? rig.weightMap.width / Math.max(1, rig.weightMap.height) : width / Math.max(0.0001, height);
-    const maxSeg = rig.meshResolution; // Authored/runtime mesh detail cap used for the painted deformation surface.
+    const maxSeg = Math.min(rig.meshResolution, window.PNGPlaneAvatar?.meshBudget?.table?.npc?.animalSegments ?? 30); // Authored detail, clamped to the animal/livestock/pet budget (two planes per animal).
     const segmentsX = mapAspect >= 1 ? maxSeg : Math.max(8, Math.round(maxSeg * mapAspect));
     const segmentsY = mapAspect >= 1 ? Math.max(8, Math.round(maxSeg / mapAspect)) : maxSeg;
     const geometry = new THREE.PlaneGeometry(width, height, segmentsX, segmentsY); // Dense enough for painted blend gradients without per-pixel geometry.

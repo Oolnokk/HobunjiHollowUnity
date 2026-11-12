@@ -129,6 +129,7 @@ let saveCount = 0;
 let growthCount = 0; // Counts native Stable growth requests delegated through AnimalGrowth.
 let writtenCoreScript = '';
 const stableList = new FakeElement('div');
+const stablePane = { scrollTop: 0 }; // Represents the Stable pane's shared scroll position.
 
 const document = {
   // This is the important part of the regression: in a real parser-inserted
@@ -137,7 +138,7 @@ const document = {
   readyState: 'loading',
   head: new FakeElement('head'),
   createElement: tagName => new FakeElement(tagName),
-  getElementById: id => id === 'stableList' ? stableList : null,
+  getElementById: id => id === 'stableList' ? stableList : id === 'mpStable' ? stablePane : null,
   write(html) { writtenCoreScript += String(html || ''); },
 };
 
@@ -383,8 +384,10 @@ assert.equal(progression.perkRank(stable.find(entry => entry.id === 'hound2'), s
 assert.equal(descendantsByClass(companionRow, 'stable-entry-perk-tree').length, 1, 'buying a perk keeps this animal tree expanded after rerender');
 assert.equal(descendantsByClass(companionRow, 'stable-training-toggle')[0].getAttribute('data-ctrl-detail'), 'stableTrainingDetail_hound2', 'purchase retains the exact controller return action');
 
+stablePane.scrollTop = 250;
 descendantsByClass(stableList, 'stable-role-tab').find(button => button.dataset.stableRole === 'mount').listeners.click(); // Same action used by touch and controller navigation.
 assert.equal(context.FarmPanel.stableTrainingDebug().selectedRole, 'mount', 'role page button changes the actual visible list');
+assert.equal(stablePane.scrollTop, 0, 'switching roles from deep in a roster reveals the top of the new page');
 assert.equal(stableRowById(stableList, 'mount1').hidden, false, 'mount becomes visible on its own page');
 assert.equal(stableRowById(stableList, 'hound2').hidden, true, 'companion is hidden without removing its entry');
 mountRow = stableRowById(stableList, 'mount1');

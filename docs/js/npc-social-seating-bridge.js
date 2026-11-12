@@ -150,6 +150,12 @@
   function seatRoleRequest(rec, beat, result) {
     const target = result?.target;
     if (!targetIsSeat(target)) return null;
+    // Everyone assigned an old counsel-ring floor spot requests a real communion bench instead.
+    // Teacup still uses her separately authored stool, without reactive reseating.
+    if (rec?.id !== 'teacup_unumanuk' && target.area === 'map_i_temple'
+      && /^station_temple_counsel_ring_[1-6]$/.test(String(target.stationId || ''))) {
+      return { role: 'spirit_communion', area: target.area, source: 'temple-communion' };
+    }
     const config = socialConfig();
     const redirect = config.fixedSeatRoleRedirects?.[rec?.id];
     if (redirect && (redirect.stationIds || []).includes(target.stationId)) {
@@ -280,10 +286,12 @@
     const request = seatRoleRequest(rec, beat, result);
     if (!request) return result;
     let candidates = candidateSeats(request);
-    if (candidates.length < 2) return result;
+    if (request.role === 'spirit_communion' && !candidates.length) return activities.unavailable('Spirit Communion benches are not registered');
+    if (candidates.length < 2 && request.role !== 'spirit_communion') return result;
 
     const snapshots = debugNpcSnapshots(request.area || result.target.area, rec.id);
     const free = candidates.filter(station => !isOccupied(station, snapshots, rec.id));
+    if (request.role === 'spirit_communion' && !free.length) return activities.unavailable('Spirit Communion benches are occupied');
     if (free.length) candidates = free;
     if (!candidates.length) return result;
 

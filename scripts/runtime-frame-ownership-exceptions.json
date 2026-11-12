@@ -303,7 +303,7 @@
     "function": "scheduleRefresh",
     "reason": "Guarded single RAF recomputes/re-renders the character-effects panel once after a dependency change; not a recurring loop.",
     "migrationStage": "not-planned",
-    "line": 332
+    "line": 436
   },
   {
     "file": "docs/js/inventory-gear-compact-effects.js",

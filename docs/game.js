@@ -13093,7 +13093,7 @@
 
         const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
           THREE, frontCanvas,
-          { backCanvas, headCanvas, profile, npcRecord: rec, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
+          { backCanvas, headCanvas, profile, npcRecord: rec, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true, meshBudget: 'npc' }
         );
         const baseAvatarHeight = avatarGroup.userData?.portraitModelHeight || MODEL_W; // Unscaled model height produced by the portrait/animal-plane builder.
         const avatarHeight = namedAnimalDef ? baseAvatarHeight * namedAnimalSizeScale.y : baseAvatarHeight; // Dialogue/interaction height follows the actually rendered animal size.
@@ -13179,7 +13179,7 @@
         const npcPants = window.PantsGarmentRenderer?.garmentForCosmetics(rec?.equippedCosmetics); // Resolves skirts and layered pants through the same authored rig registry.
         if (legs && npcPants) {
           window.PantsGarmentRenderer?.attachToLegs(THREE, legs, {
-            avatarGroup, speciesId: appearance.speciesId, gender: appearance.gender, name: rec?.id || rec?.name || 'npc', garmentId: npcPants,
+            avatarGroup, speciesId: appearance.speciesId, gender: appearance.gender, name: rec?.id || rec?.name || 'npc', garmentId: npcPants, meshBudget: 'npc', // Town NPCs use the capped garment grid.
             appearance: window.PantsGarmentRenderer.appearanceFromBodyColors(profile?.bodyColors),
             overlayMask: window.PantsGarmentRenderer.buildOverlayMask(frontCanvas, profile, { forceEyesOpen: true }), // Arm clothing/overwear/pauldron/hood art stays in front of the pants.
           });
@@ -18439,6 +18439,7 @@
         }
       }
 
+      window.addEventListener('hobunji:player-mesh-budget-changed', () => { refreshPlayerAvatar().catch(error => console.warn('player mesh budget refresh failed', error)); }); // Settings > Player mesh cap; rebuilds the player's own rig with the new budget.
       async function refreshPlayerAvatar() {
         if (!_playerData || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
         const refreshGeneration = ++playerAvatarRefreshGeneration;
@@ -18504,7 +18505,7 @@
         if (refreshGeneration !== playerAvatarRefreshGeneration) { playerAvatarRefreshDebug.superseded++; return; }
         const avatarGroup = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
           THREE, frontCanvas,
-          { backCanvas, headCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true }
+          { backCanvas, headCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0, alphaTest: avatarCfg.worldAlphaTest ?? 0.01, neckRig: true, meshBudget: window.PNGPlaneAvatar?.meshBudget?.forPlayer?.() }
         );
         avatarGroup.name = 'player_avatar';
         playerNeckJoint = avatarGroup.userData?.neckRig?.neckJoint || null;
@@ -18605,7 +18606,7 @@
         const wornPants = gearInventory?.clothing?.pants; // The equipped pants item carries its dye/weave (js/pants-garment-renderer.js).
         if (playerLegs && wornPants) {
           window.PantsGarmentRenderer?.attachToLegs(THREE, playerLegs, {
-            avatarGroup, speciesId: _playerData?.appearance?.speciesId, gender: _playerData?.appearance?.gender, name: 'player', garmentId: wornPants.cosmeticId,
+            avatarGroup, speciesId: _playerData?.appearance?.speciesId, gender: _playerData?.appearance?.gender, name: 'player', garmentId: wornPants.cosmeticId, meshBudget: window.PNGPlaneAvatar?.meshBudget?.forPlayer?.(), // Player rig follows the Settings mesh-cap choice.
             appearance: window.PantsGarmentRenderer.appearanceFromItem(wornPants),
             overlayMask: window.PantsGarmentRenderer.buildOverlayMask(frontCanvas, profile, staticRenderOptions),
           });
@@ -25029,7 +25030,7 @@
           heldItemParent: heldItemHolder.parent === playerMesh ? 'player' : (heldItemHolder.parent ? 'other' : 'detached'),
           heldItemVisible: !!heldItemHolder.visible,
           heldItemKey: _heldItemKey,
-          musicInstrument: window.MusicMinigame?.state?.instrumentKey || null, // Pixel Probe distinguishes music-visual ownership from a blocked ordinary tool.
+          musicInstrument: window.MusicMinigame?.state?.instrumentKey || null, // Pixel Probe distinguishes music visual ownership from a locked ordinary tool.
           drinkAnimating: !!_heldDrinkPhase,
           drinkPhase: _heldDrinkPhase,
           drinkProgress: _heldDrinkProgress,
@@ -25215,7 +25216,7 @@
         _toolPoseCentroidDebug.reticleOrbitPitchDeg = 0;
         _toolPoseCentroidDebug.reticleOrbitYawDeg = 0;
         _toolPoseCentroidDebug.reticleTargetWorld = null;
-        const musicInstrument = window.MusicMinigame?.state?.instrumentKey || null; // A real music session owns its visible instrument, not the previous equipped weapon.
+        const musicInstrument = window.MusicMinigame?.state?.instrumentKey || null; // A live music session owns its prop without unlocking ordinary combat/tools.
         if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'tools', musicInstrument === 'kurraya' ? 'music-minigame' : null)) {
           toolHolder.visible = false;
           heldItemHolder.visible = false;
@@ -25224,10 +25225,10 @@
         if (musicInstrument) {
           toolHolder.visible = false;
           if (musicInstrument === 'kurraya') {
-            window.KurrayaInstrument?.advancePlayerKurrayaNote?.(performance.now()); // Sample once before the holder, hand and pre-render knee pose all consume it.
-            updateHeldItemHolder(dt); // The Kurraya remains visible while its own lock blocks attacks and tool input.
+            window.KurrayaInstrument?.advancePlayerKurrayaNote?.(performance.now()); // One sample for holder, hands and pre-render knees.
+            updateHeldItemHolder(dt); // Music locks attacks, not the Kurraya's appearance.
           } else {
-            heldItemHolder.visible = false; // The flute is rendered at the mouth, never as a duplicate chest-held sprite.
+            heldItemHolder.visible = false; // Flute uses a mouth-mounted sprite rather than duplicating it on the chest.
           }
           return;
         }
@@ -25808,11 +25809,13 @@
         // updateClimb instead of a raw tile lookup, which would pop between
         // the cliff base and plateau top the instant the crossing tile
         // flips (see startClimb/updateClimb).
-        const ruinStandY = window.DevRandomRuin?.getPlayerSupportY?.(); // Used by the Random Test Ruin to feed dynamic multi-level support into the canonical body, shadow, resource-ring, held-equipment, and shoulder-pet render path.
+        const supportedJump = player._freeJump?.phase === 'supported'; // Elevated landings still use PlayerJump's current feet height, with the ruin's visual immersion applied.
+        const ruinStandY = window.DevRandomRuin?.getPlayerSupportY?.(supportedJump ? player.physicalFeetY : undefined);
         const ordinaryStandY = player.onBranch ? player.branchSurfaceY
           : player.onCliffBalcony ? player._cliffBalconyY
           : player.onClimbSurface ? player.wallClimbY
-          : player._freeJump ? player.physicalFeetY // Jump is an independently grounded/airborne motion, not a scripted climb.
+          : supportedJump && Number.isFinite(ruinStandY) ? ruinStandY
+          : player._freeJump ? player.physicalFeetY // Airborne and rope motion still use the independent physical elevation.
           : player.climbing ? player.climbSurfaceY
           : Number.isFinite(ruinStandY) ? ruinStandY
           : (_isZoneArea(currentArea) ? surfaceYAtWorld(currentArea, wx, wz) : tileSurfaceYInArea(tile, currentArea));

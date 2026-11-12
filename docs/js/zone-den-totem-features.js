@@ -55,6 +55,41 @@
     catch (_) { return path; }
   }
   const CAVE_SMALL_GLB_PATH = zoneFeatureAssetUrl('assets/models/cave_small.glb');
+  const BANUBU_LOCALE_ID = 'locale_banubu_shrine'; // Selects only Banubu's authored cave facade for twilight fading.
+  const _banubuCaveMeshes = new Map(); // Map id -> live scene mesh, used by the existing Banubu audio frame task to fade night-only entrances.
+
+  function banubuCaveAlpha(hour = window.CalendarSystem?.getHour?.()) {
+    const h = hour == null ? NaN : Number(hour); // Shared calendar hour drives smooth 3-hour dawn/dusk transitions, independent of fishing's broad time bands.
+    if (!Number.isFinite(h)) return window.Fishing?.timeOfDay?.() === 'night' ? 1 : 0;
+    const t = ((h % 24) + 24) % 24; // Wrapped game hour avoids a visible jump at midnight.
+    if (t >= 20 || t < 5) return 1;
+    if (t < 8) return (8 - t) / 3;
+    if (t < 17) return 0;
+    return (t - 17) / 3;
+  }
+
+  function updateBanubuVisibility(hour) {
+    const alpha = banubuCaveAlpha(hour); // One shared opacity for every mounted instance; no mesh searches or new materials per frame.
+    for (const mesh of _banubuCaveMeshes.values()) {
+      if (!mesh?.parent) continue;
+      mesh.visible = alpha > 0.001;
+      mesh.castShadow = alpha >= 0.999;
+      mesh.userData.cameraObstacle = alpha > 0.05;
+      if (Math.abs((mesh.userData.banubuOpacity ?? -1) - alpha) < 0.001) continue;
+      mesh.userData.banubuOpacity = alpha;
+      for (const material of (Array.isArray(mesh.material) ? mesh.material : [mesh.material])) {
+        if (!material) continue;
+        material.opacity = alpha;
+        const fadeTransparent = alpha < 0.999; // Avoid needless shader recompilation while an existing twilight fade is progressing.
+        if (material.transparent !== fadeTransparent || material.depthWrite === fadeTransparent) {
+          material.transparent = fadeTransparent;
+          material.depthWrite = !fadeTransparent;
+          material.needsUpdate = true;
+        }
+      }
+    }
+    return alpha;
+  }
   const ANIMAL_DEN_ENTRANCE_LOCALE_ID = 'locale_animal_den_entrance'; // Shared Locale Editor document cloned by every procedural den.
   // Cliff-backed dens record which den_entrance template the generator fitted
   // them with (den.entranceTemplateId, see js/den-cliff-placement.js); the
@@ -467,10 +502,15 @@
         mesh.userData.localeCave = true;
         mesh.userData.localeId = cave.localeId || null;
         mesh.userData.localeObjectId = cave.sourceObjectId || cave.id || null;
+        if (cave.localeId === BANUBU_LOCALE_ID) {
+          mesh.material = Array.isArray(mesh.material) ? mesh.material.map(material => material.clone()) : mesh.material.clone(); // Banubu's alpha must never affect shared den or locale materials.
+          _banubuCaveMeshes.set(mapId, mesh); // Rebuilding the same zone replaces its stale facade reference.
+        }
         deps.markOutline(mesh);
         group.add(mesh);
       }
       zScene.add(group);
+      updateBanubuVisibility(); // Apply daytime invisibility before the first visible frame, not after the next audio tick.
       console.log(`%c[zone:${mapId}] cave entrances built: ${denList.length} animal dens + ${localeCaves.length} locale caves`, 'color:#22c55e;font-weight:bold');
     });
   }
@@ -556,7 +596,7 @@
     return group;
   }
 
-  const api = { init, canonicalRootTotemRecipe, denEntranceLocaleFor: den => activeAnimalDenEntranceLocale(den), denCaveVariantFor, denEntranceCollisionFor, denEntranceCollisionState, loadAnimalDenEntranceLocale, loadAnimalDenEntranceLocaleObject, buildAnimalDenMeshes, syncAnimalDenVisual, buildRootTotemMeshes };
+  const api = { init, canonicalRootTotemRecipe, denEntranceLocaleFor: den => activeAnimalDenEntranceLocale(den), denCaveVariantFor, denEntranceCollisionFor, denEntranceCollisionState, loadAnimalDenEntranceLocale, loadAnimalDenEntranceLocaleObject, buildAnimalDenMeshes, syncAnimalDenVisual, buildRootTotemMeshes, updateBanubuVisibility, banubuCaveAlpha };
   Object.defineProperty(api, 'CANONICAL_ROOT_TOTEM_RECIPE', { enumerable: true, get: canonicalRootTotemRecipe });
   window.ZoneDenTotemFeatures = api;
 })();

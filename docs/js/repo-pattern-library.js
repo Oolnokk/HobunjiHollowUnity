@@ -17,7 +17,7 @@
   const absoluteDocsUrl = path => new URL(String(path || ''), DOCS_BASE).href;
 
   async function fetchJson(path) {
-    const response = await fetch(absoluteDocsUrl(path), { cache: 'no-store' });
+    const response = await fetch(absoluteDocsUrl(path), { cache: 'no-cache' }); // Revalidates every time (fresh authored edits) but allows a 304 instead of re-downloading each file.
     if (!response.ok) throw new Error(`HTTP ${response.status} loading ${path}`);
     return response.json();
   }
@@ -78,10 +78,15 @@
     return true;
   }
 
+  const RETRY_AFTER_FAILURE_MS = 4000; // A failed load is retried by the next caller, but not on every call while the network is down.
+  let lastFailedLoadAt = 0;
+
   async function load() {
+    if (!loadPromise && lastFailedLoadAt && Date.now() - lastFailedLoadAt < RETRY_AFTER_FAILURE_MS) return listCached(); // Just failed; don't hammer.
     if (!loadPromise) {
       loadPromise = (async () => {
-        const index = await fetchJson(INDEX_PATH).catch(() => ({ patterns: [] }));
+        let failed = false; // Any missing index/definition means the library is incomplete, so it must not be cached as final.
+        const index = await fetchJson(INDEX_PATH).catch(error => { failed = true; console.warn('[RepoPatternLibrary] pattern index failed to load; will retry', error); return { patterns: [] }; });
         const list = Array.isArray(index?.patterns) ? index.patterns : [];
         const loaded = await Promise.all(list.map(async entry => {
           if (!entry?.file) return null;
@@ -89,6 +94,7 @@
             const raw = await fetchJson(entry.file);
             return normalizeDefinition(raw, entry);
           } catch (error) {
+            failed = true;
             console.warn('[RepoPatternLibrary] failed to load', entry.file, error);
             return null;
           }
@@ -96,6 +102,8 @@
         entries = loaded.filter(Boolean);
         resolvedById.clear();
         for (const entry of entries) resolvedById.set(entry.id, entry.pattern);
+        if (failed) { lastFailedLoadAt = Date.now(); loadPromise = null; } // Patterns/pets/garments that needed the missing definitions render unpatterned until a retry succeeds.
+        else lastFailedLoadAt = 0;
         return listCached();
       })();
     }

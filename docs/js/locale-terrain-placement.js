@@ -456,10 +456,75 @@
     return hashText(`${seed}|${localeId}|${c}|${r}`) / 4294967296; // Stable fractional noise keeps equally valid placements distributed between Tothal Shift seeds.
   }
 
+
+  function isolationField(context) {
+    const root = context.root; // Exported final-grid tiles and objects supply the one-time population scan.
+    const stride = root.cols + 1; // Summed-area stride makes neighborhood density queries constant-time during cliff search.
+    const density = new Float64Array(stride * (root.rows + 1)); // Weighted occupied-cell prefix sums used to rank equally remote legal cave sites.
+    const priority = []; // Entry, Garanki's home, and any camps already stamped are the primary separation targets.
+    const landmarks = []; // Other major sites break ties away from populated portions of the map.
+    const addPoint = (target, c, r) => {
+      if (Number.isFinite(Number(c)) && Number.isFinite(Number(r)) && c != null && r != null)
+        target.push({ c: Number(c), r: Number(r) });
+    };
+    addPoint(priority, context.workspace?.entry?.col ?? context.workspace?.entry?.x, context.workspace?.entry?.row ?? context.workspace?.entry?.y);
+    for (const inst of context.workspace?.localeInstances || []) {
+      const c = inst.x ?? inst.col, r = inst.y ?? inst.row; // Generated locale coordinates, including the Researcher's Tent, are already final-grid.
+      if (inst.localeId === 'locale_researchers_tent' || /garanki/i.test(String(inst.name || ''))) addPoint(priority, c, r);
+      else addPoint(landmarks, c, r);
+    }
+    const significant = new Set(['structure', 'caveOpening', 'secretCaveOpening', 'animalDen', 'rootTotem', 'ruinEntrance', 'statue']); // Distinctive generated landmarks, not flora, matter to overall seclusion.
+    for (const obj of context.workspace?.objects || []) {
+      const c = Number(obj?.x) + (Number(obj?.w) || 0) * 0.5;
+      const r = Number(obj?.y) + (Number(obj?.h) || 0) * 0.5; // Site center, rather than its corner, is the distance reference.
+      if (!Number.isFinite(c) || !Number.isFinite(r)) continue;
+      if (/camp/i.test(String(obj?.type || '') + String(obj?.localeMeta?.name || '') + String(obj?.label || ''))) addPoint(priority, c, r);
+      else if (significant.has(obj.type)) addPoint(landmarks, c, r);
+    }
+    for (let row = 0; row < root.rows; row++) {
+      let rowSum = 0; // Incremental horizontal sum for the O(cols*rows) integral-image build.
+      for (let col = 0; col < root.cols; col++) {
+        const tile = root.tiles?.[sourceKey(col, row)];
+        const type = tile?.generatedObjectType;
+        rowSum += type ? (significant.has(type) ? 4 : 1) : 0;
+        density[(row + 1) * stride + col + 1] = density[row * stride + col + 1] + rowSum;
+      }
+    }
+    return { priority, landmarks, density, stride, cols: root.cols, rows: root.rows };
+  }
+
+  function isolationRank(field, compiled, anchorC, anchorR) {
+    const c = anchorC + (compiled.footprint.minC + compiled.footprint.maxC + 1) * 0.5;
+    const r = anchorR + (compiled.footprint.minR + compiled.footprint.maxR + 1) * 0.5; // Cave footprint center, including its cliff face.
+    const nearestDistance = sources => sources.length
+      ? Math.min(...sources.map(point => Math.hypot(c - point.c, r - point.r)))
+      : Math.hypot(field.cols, field.rows);
+    const radius = 16; // One wilderness chunk on each side defines local population density.
+    const x0 = Math.max(0, Math.floor(c - radius)), y0 = Math.max(0, Math.floor(r - radius));
+    const x1 = Math.min(field.cols, Math.ceil(c + radius)), y1 = Math.min(field.rows, Math.ceil(r + radius));
+    const d = field.density, stride = field.stride;
+    const occupiedWeight = d[y1 * stride + x1] - d[y0 * stride + x1] - d[y1 * stride + x0] + d[y0 * stride + x0];
+    return {
+      priorityDistance: nearestDistance(field.priority),
+      occupiedWeight,
+      landmarkDistance: nearestDistance(field.landmarks),
+    };
+  }
+
+  function preferIsolatedSite(candidate, best) {
+    if (!best) return true;
+    const left = candidate.isolation, right = best.isolation; // Lexicographic ranking guarantees strongest separation before population tie-breaks.
+    if (Math.abs(left.priorityDistance - right.priorityDistance) > 0.001) return left.priorityDistance > right.priorityDistance;
+    if (left.occupiedWeight !== right.occupiedWeight) return left.occupiedWeight < right.occupiedWeight;
+    if (Math.abs(left.landmarkDistance - right.landmarkDistance) > 0.001) return left.landmarkDistance > right.landmarkDistance;
+    return candidate.score > best.score + 1e-9 || (Math.abs(candidate.score - best.score) <= 1e-9 && candidate.tie > best.tie);
+  }
+
   function findCandidate(context, compiled, options = {}) {
     const rejected = []; // Small capped sample is exported for preview diagnostics without bloating workspaces.
     const maxRejected = Math.max(0, Number(options.maxRejectedDiagnostics) || 48);
-    let best = null; // Highest preferred-probe score wins; deterministic tie noise breaks equal scores.
+    let best = null; // Highest authored-probe score wins normally; isolated locales instead use the least-populated remoteness rank.
+    const isolation = compiled.locale.placement?.preferIsolation ? (context.isolation || (context.isolation = isolationField(context))) : null; // Built once for the late cave search, never per candidate.
     let tested = 0;
     let valid = 0;
     const step = Math.max(1, compiled.scale); // Source-tile alignment preserves the same grid phase as legacy pre-density locale stamping.
@@ -478,7 +543,8 @@
         valid++;
         const tie = candidateTie(context.seed, compiled.locale.id, anchorC, anchorR);
         const ranked = { anchorC, anchorR, tie, ...result };
-        if (!best || ranked.score > best.score + 1e-9 || (Math.abs(ranked.score - best.score) <= 1e-9 && ranked.tie > best.tie)) best = ranked;
+        if (isolation) ranked.isolation = isolationRank(isolation, compiled, anchorC, anchorR);
+        if (isolation ? preferIsolatedSite(ranked, best) : (!best || ranked.score > best.score + 1e-9 || (Math.abs(ranked.score - best.score) <= 1e-9 && ranked.tie > best.tie))) best = ranked;
       }
     }
     return { best, rejected, tested, valid };
@@ -700,6 +766,7 @@
           floorTier: search.best.floorTier,
           floorGroupId: search.best.floorGroupId || null,
           score: search.best.score,
+          isolation: search.best.isolation || null, // Mobile/Wilderness Lab diagnostics reveal why the cave chose this site.
           probes: search.best.probes || [],
           embedded: search.best.embedded || [],
           footprint: search.best.footprint || [],
@@ -722,13 +789,23 @@
       seed: String(options.seed || root.generatedFrom?.seed || workspace.generatedAt || 'terrain-locale'),
     }; // Shared placement context avoids rebuilding plateau lookup maps for every locale.
     const diagnostics = []; // Workspace diagnostics power the Wilderness Lab overlay and mobile-visible debugging.
-    for (const locale of locales || []) {
-      if (!hasTerrainRules(locale)) continue;
+    const ordered = (locales || []).filter(hasTerrainRules).slice().sort((a, b) => Number(!!a.placement?.placeLast) - Number(!!b.placement?.placeLast)); // Banubu claims the last valid cliff after every other generated landmark.
+    for (const locale of ordered) {
       const result = placeOne(context, locale, options);
       diagnostics.push(result.diagnostic);
     }
     workspace.localeTerrainDiagnostics = diagnostics;
     return workspace;
+  }
+
+  function isolatedLocaleAvoidPoints(layout, localeId = 'locale_banubu_shrine') {
+    const instance = layout?.localeInstances?.find(item => item.localeId === localeId); // Late-spawned camps must avoid the same live cave site selected by the terrain generator.
+    if (!instance) return [];
+    const anchor = instance.connectors?.[0] || instance.objects?.[0] || instance; // Prefer the actual walkable mouth over the stamped locale origin.
+    const col = Number(anchor.x ?? anchor.col), row = Number(anchor.y ?? anchor.row);
+    if (!Number.isFinite(col) || !Number.isFinite(row)) return [];
+    const size = Math.min(Number(layout.cols) || 0, Number(layout.rows) || 0); // Final-grid dimensions yield a scale-appropriate separation buffer.
+    return [{ col, row, minDistance: Math.max(16, size * 0.25) }];
   }
 
   function allowedInZone(locale, zoneMapId) {
@@ -772,6 +849,7 @@
     inferGenerationScale,
     appendInteriorTransition,
     placeTerrainAwareLocales,
+    isolatedLocaleAvoidPoints, // Shared camp-distance policy; tribe and bandit generators must not duplicate the cave locator.
     evaluateCandidateForTest(workspace, locale, anchorC, anchorR, options = {}) {
       const scale = Math.max(1, Number(options.scale) || inferGenerationScale(workspace, options.sourceWidth)); // Test hook uses the same compiler/context as production placement.
       const compiled = compileLocale(locale, scale);

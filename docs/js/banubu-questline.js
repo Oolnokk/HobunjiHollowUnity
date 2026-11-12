@@ -76,6 +76,13 @@
     try { global.localStorage?.setItem('hobunjiSaveMeta', JSON.stringify(meta)); return true; } catch (_) { return false; }
   }
 
+  function peekQuestState() {
+    const injected = runtimeDeps?.getQuestProgress?.(); // Uses the game's live member quest store without creating, migrating or saving quests.
+    const store = injected && typeof injected === 'object' ? injected : playerData()?.questProgress; // Fallback is the current profile, never persisted world metadata.
+    const state = store?.[QUEST_ID]; // Read-only progress for the World Town Progress pane.
+    return state && typeof state === 'object' ? state : null;
+  }
+
   function ensureQuestState() {
     const store = questStore();
     if (!store) return null;
@@ -848,6 +855,7 @@
     selectTree,
     dialogueEyesOpen,
     ensureQuestState,
+    peekQuestState,
     stageDefinition,
     allFeasibleTargets: allFeasibleFishTargets,
     allFeasibleFishTargets,

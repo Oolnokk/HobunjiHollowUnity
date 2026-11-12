@@ -1358,6 +1358,246 @@
           ]
         }
       ],
+      "npcStationAdditions": [
+        {
+          "id": "station_temple_communion_sc_bench_w1_0",
+          "label": "Seated for Spirit Communion",
+          "pose": "sit",
+          "sourceFurnitureId": "sc_bench_w1",
+          "furnitureId": "sc_bench_w1",
+          "sourceFurnitureKey": "benchFurniture",
+          "seatIndex": 0,
+          "roles": [
+            "sit",
+            "spirit_communion"
+          ],
+          "lookAt": {
+            "col": 9,
+            "row": 9
+          }
+        },
+        {
+          "id": "station_temple_communion_sc_bench_w1_1",
+          "label": "Seated for Spirit Communion",
+          "pose": "sit",
+          "sourceFurnitureId": "sc_bench_w1",
+          "furnitureId": "sc_bench_w1",
+          "sourceFurnitureKey": "benchFurniture",
+          "seatIndex": 1,
+          "roles": [
+            "sit",
+            "spirit_communion"
+          ],
+          "lookAt": {
+            "col": 9,
+            "row": 9
+          }
+        },
+        {
+          "id": "station_temple_communion_sc_bench_w2_0",
+          "label": "Seated for Spirit Communion",
+          "pose": "sit",
+          "sourceFurnitureId": "sc_bench_w2",
+          "furnitureId": "sc_bench_w2",
+          "sourceFurnitureKey": "benchFurniture",
+          "seatIndex": 0,
+          "roles": [
+            "sit",
+            "spirit_communion"
+          ],
+          "lookAt": {
+            "col": 9,
+            "row": 9
+          }
+        },
+        {
+          "id": "station_temple_communion_sc_bench_w2_1",
+          "label": "Seated for Spirit Communion",
+          "pose": "sit",
+          "sourceFurnitureId": "sc_bench_w2",
+          "furnitureId": "sc_bench_w2",
+          "sourceFurnitureKey": "benchFurniture",
+          "seatIndex": 1,
+          "roles": [
+            "sit",
+            "spirit_communion"
+          ],
+          "lookAt": {
+            "col": 9,
+            "row": 9
+          }
+        },
+        {
+          "id": "station_temple_communion_sc_bench_w3_0",
+          "label": "Seated for Spirit Communion",
+          "pose": "sit",
+          "sourceFurnitureId": "sc_bench_w3",
+          "furnitureId": "sc_bench_w3",
+          "sourceFurnitureKey": "benchFurniture",
+          "seatIndex": 0,
+          "roles": [
+            "sit",
+            "spirit_communion"
+          ],
+          "lookAt": {
+            "col": 9,
+            "row": 9
+          }
+        },
+        {
+          "id": "station_temple_communion_sc_bench_w3_1",
+          "label": "Seated for Spirit Communion",
+          "pose": "sit",
+          "sourceFurnitureId": "sc_bench_w3",
+          "furnitureId": "sc_bench_w3",
+          "sourceFurnitureKey": "benchFurniture",
+          "seatIndex": 1,
+          "roles": [
+            "sit",
+            "spirit_communion"
+          ],
+          "lookAt": {
+            "col": 9,
+            "row": 9
+          }
+        },
+        {
+          "id": "station_temple_communion_sc_bench_w4_0",
+          "label": "Seated for Spirit Communion",
+          "pose": "sit",
+          "sourceFurnitureId": "sc_bench_w4",
+          "furnitureId": "sc_bench_w4",
+          "sourceFurnitureKey": "benchFurniture",
+          "seatIndex": 0,
+          "roles": [
+            "sit",
+            "spirit_communion"
+          ],
+          "lookAt": {
+            "col": 9,
+            "row": 9
+          }
+        },
+        {
+          "id": "station_temple_communion_sc_bench_w4_1",
+          "label": "Seated for Spirit Communion",
+          "pose": "sit",
+          "sourceFurnitureId": "sc_bench_w4",
+          "furnitureId": "sc_bench_w4",
+          "sourceFurnitureKey": "benchFurniture",
+          "seatIndex": 1,
+          "roles": [
+            "sit",
+            "spirit_communion"
+          ],
+          "lookAt": {
+            "col": 9,
+            "row": 9
+          }
+        },
+        {
+          "id": "station_temple_communion_sc_bench_e1_0",
+          "label": "Seated for Spirit Communion",
+          "pose": "sit",
+          "sourceFurnitureId": "sc_bench_e1",
+          "furnitureId": "sc_bench_e1",
+          "sourceFurnitureKey": "benchFurniture",
+          "seatIndex": 0,
+          "roles": [
+            "sit",
+            "spirit_communion"
+          ],
+          "lookAt": {
+            "col": 9,
+            "row": 9
+          }
+        },
+        {
+          "id": "station_temple_communion_sc_bench_e1_1",
+          "label": "Seated for Spirit Communion",
+          "pose": "sit",
+          "sourceFurnitureId": "sc_bench_e1",
+          "furnitureId": "sc_bench_e1",
+          "sourceFurnitureKey": "benchFurniture",
+          "seatIndex": 1,
+          "roles": [
+            "sit",
+            "spirit_communion"
+          ],
+          "lookAt": {
+            "col": 9,
+            "row": 9
+          }
+        },
+        {
+          "id": "station_temple_communion_sc_bench_e2_0",
+          "label": "Seated for Spirit Communion",
+          "pose": "sit",
+          "sourceFurnitureId": "sc_bench_e2",
+          "furnitureId": "sc_bench_e2",
+          "sourceFurnitureKey": "benchFurniture",
+          "seatIndex": 0,
+          "roles": [
+            "sit",
+            "spirit_communion"
+          ],
+          "lookAt": {
+            "col": 9,
+            "row": 9
+          }
+        },
+        {
+          "id": "station_temple_communion_sc_bench_e2_1",
+          "label": "Seated for Spirit Communion",
+          "pose": "sit",
+          "sourceFurnitureId": "sc_bench_e2",
+          "furnitureId": "sc_bench_e2",
+          "sourceFurnitureKey": "benchFurniture",
+          "seatIndex": 1,
+          "roles": [
+            "sit",
+            "spirit_communion"
+          ],
+          "lookAt": {
+            "col": 9,
+            "row": 9
+          }
+        },
+        {
+          "id": "station_temple_communion_sc_bench_e3_0",
+          "label": "Seated for Spirit Communion",
+          "pose": "sit",
+          "sourceFurnitureId": "sc_bench_e3",
+          "furnitureId": "sc_bench_e3",
+          "sourceFurnitureKey": "benchFurniture",
+          "seatIndex": 0,
+          "roles": [
+            "sit",
+            "spirit_communion"
+          ],
+          "lookAt": {
+            "col": 9,
+            "row": 9
+          }
+        },
+        {
+          "id": "station_temple_communion_sc_bench_e3_1",
+          "label": "Seated for Spirit Communion",
+          "pose": "sit",
+          "sourceFurnitureId": "sc_bench_e3",
+          "furnitureId": "sc_bench_e3",
+          "sourceFurnitureKey": "benchFurniture",
+          "seatIndex": 1,
+          "roles": [
+            "sit",
+            "spirit_communion"
+          ],
+          "lookAt": {
+            "col": 9,
+            "row": 9
+          }
+        }
+      ],
       "furniture": [
         {
           "id": "sc_bench_w1",

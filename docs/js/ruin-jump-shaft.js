@@ -227,8 +227,8 @@
     materials.push(stone);
     const basic = (color, extra = {}) => { const m = new THREE.MeshBasicMaterial({ color, ...extra }); materials.push(m); return m; };
     const iceMaterial = basic(0x8bcdf5, { transparent: true, opacity: .42, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
-    const tradeTrim = { tothal: 0xb7ecfa, hronal: 0xff7a30, kanthic: 0xa072d8 }[tradition] || 0xb7ecfa;
-    const trimMaterial = basic(tradeTrim, { transparent: true, opacity: .55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }); // Offset keeps the sheet from flickering against the slab top.
+    const tradeTrim = { tothal: 0xb7ecfa, hronal: 0xff7a30 }[tradition] || 0xb7ecfa;
+    const trimMaterial = tradition === 'kanthic' ? null : basic(tradeTrim, { transparent: true, opacity: .55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }); // Offset keeps the sheet from flickering against the slab top.
     const cx = plan.centre.x, cz = plan.centre.z, half = plan.central / 2;
     // ── Death pit under the whole central chamber ─────────────────────────
     // The ground story is a gallery around it. Nothing is registered as support in the
@@ -264,12 +264,13 @@
       const slab = new THREE.Mesh(new THREE.BoxGeometry(p.w, THICKNESS, p.d), stone);
       slab.userData.hobunjiGroundTopFacesOnly = true; // Only the walkable face participates in same-level x-ray.
       slab.position.y = -THICKNESS / 2; slab.name = p.id + '-stone'; holder.add(slab); owned.push(slab);
-      // A thin coloured lip tells the player which tradition's trick a platform plays.
-      // Top-facing plane only: a box would show its translucent underside as a floating coloured
-      // sheet to anyone standing on a lower platform.
-      const lip = new THREE.Mesh(new THREE.PlaneGeometry(p.w + .04, p.d + .04), p.kind === 'ice' ? iceMaterial : trimMaterial);
-      lip.userData.hobunjiGroundTopFacesOnly = true; // The ice/trim overlay follows the slab's floor replay.
-      lip.rotation.x = -Math.PI / 2; lip.position.y = .014; lip.renderOrder = 2; lip.name = p.id + '-trim'; holder.add(lip); owned.push(lip);
+      // Kanthic slabs show the actual oil on hazardous tiles and bare stone on safe ones.
+      // Hronal and Tothal use a top-facing trim so it is hidden from the floor below.
+      if (trimMaterial) {
+        const lip = new THREE.Mesh(new THREE.PlaneGeometry(p.w + .04, p.d + .04), p.kind === 'ice' ? iceMaterial : trimMaterial); // Carries the tradition's surface treatment.
+        lip.userData.hobunjiGroundTopFacesOnly = true; // The ice/trim overlay follows the slab's floor replay.
+        lip.rotation.x = -Math.PI / 2; lip.position.y = .014; lip.renderOrder = 2; lip.name = p.id + '-trim'; holder.add(lip); owned.push(lip);
+      }
       const record = { ...p, width: Math.max(p.w, p.d), holder, baseY: p.y - THICKNESS, moving: false };
       columns.set(p.id, record);
       DS.registerSurface({ id: scope + '-' + p.id, scope, topY: p.y, priority: 4,

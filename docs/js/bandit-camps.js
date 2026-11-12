@@ -922,13 +922,15 @@
     const view = _banditZoneView(zoneId);
     if (!view) return null;
     const placement = localeDef.placement || {};
-    let avoidPoints = porakanekiAvoidPoints(zoneId, placement.minDistanceFromPorakanekiCamp ?? 12);
+    const caveAvoid = window.LocaleTerrainPlacement?.isolatedLocaleAvoidPoints?.(deps.zoneLayouts?.get?.(zoneId)) || []; // Reuse the shared live Banubu cave site, not a duplicate hardcoded location.
+    let avoidPoints = porakanekiAvoidPoints(zoneId, placement.minDistanceFromPorakanekiCamp ?? 12).concat(caveAvoid);
     let avoidChunks = porakanekiAvoidChunks(zoneId);
     let instance = tryStampBanditCamp(view, localeDef, placement, avoidPoints, avoidChunks);
 
     // The authored distance buffer is cosmetic spacing. It may relax, but the
     // same-chunk rule never does: every retry still carries avoidChunks.
-    if (!instance && avoidPoints.length) instance = tryStampBanditCamp(view, localeDef, placement, [], avoidChunks);
+    if (!instance && avoidPoints.length) instance = tryStampBanditCamp(view, localeDef, placement, caveAvoid, avoidChunks); // Relax tribe spacing before relaxing Banubu's secluded cave.
+    if (!instance && caveAvoid.length) instance = tryStampBanditCamp(view, localeDef, placement, [], avoidChunks); // Never sacrifice a valid bandit camp just because the optional cave buffer is too large.
 
     // Bandit placement may consume *surplus* Porakaneki hunting camps when chunk
     // space is constrained, but PorakanekiCamps enforces a hard one-camp floor per
@@ -939,9 +941,10 @@
     // seed places fewer bandit camps rather than erasing Porakaneki from the zone
     // or violating the hard chunk rule.
     while (!instance && (window.TribeCamps || window.PorakanekiCamps)?.reduceHuntingCampsForBandit?.(zoneId)) {
-      avoidPoints = porakanekiAvoidPoints(zoneId, placement.minDistanceFromPorakanekiCamp ?? 12);
+      avoidPoints = porakanekiAvoidPoints(zoneId, placement.minDistanceFromPorakanekiCamp ?? 12).concat(caveAvoid);
       avoidChunks = porakanekiAvoidChunks(zoneId);
       instance = tryStampBanditCamp(view, localeDef, placement, avoidPoints, avoidChunks)
+        || tryStampBanditCamp(view, localeDef, placement, caveAvoid, avoidChunks)
         || tryStampBanditCamp(view, localeDef, placement, [], avoidChunks);
     }
     if (!instance) {

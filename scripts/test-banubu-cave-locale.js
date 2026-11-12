@@ -11,7 +11,9 @@ const terrainPlacement = require('../docs/js/locale-terrain-placement.js');
 
 assert.strictEqual(locale.name, "Banubu's Cave", 'Banubu landmark must use the cave name in-game');
 assert.deepStrictEqual(locale.placement?.allowedZones, ['map_northern_cliffs'], 'Banubu Cave must be Northern Cliffs only');
-assert.strictEqual(locale.placement?.alwaysVisibleOnMap, true, 'Banubu Cave must always expose its map waypoint once the zone is generated');
+assert.strictEqual(locale.placement?.alwaysVisibleOnMap, false, 'Banubu Cave must not reveal its map waypoint before entering');
+assert.strictEqual(locale.placement?.placeLast, true, 'Banubu terrain-aware locale must rank after other authored cliff locales');
+assert.strictEqual(locale.placement?.preferIsolation, true, 'Banubu must prefer the farthest sparsely populated valid cliff site');
 assert.deepStrictEqual(locale.placement?.terrainFallback, {
   mode: 'subset',
   terrainAnchors: ['4,0', '4,2', '4,3'],
