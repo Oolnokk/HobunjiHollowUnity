@@ -144,7 +144,7 @@
        window.ZoneRegrowth.init(...) alongside the other window.*.init(...)
        calls; js/bandit-camps.js also reads its refreshZoneGroundVisuals
        from its own init() call further down game.js. -->
-  <script src="js/zone-regrowth.js?v=20261112flatMesaSkip1"></script>
+  <script src="js/zone-regrowth.js?v=20261112cliffRoutesSafe2"></script>
   <!-- Player health/stamina/footing regen tick and the vitals-bar HUD
        refresh, extracted out of game.js. Must load before game.js, which
        calls window.PlayerVitals.init(...) alongside the other
@@ -160,7 +160,7 @@
   <script src="js/item-processing.js?v=20261110he9a9f9a"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <script src="debug.js?v=20261112sharedTerrainTintLoader1"></script>
+  <script src="debug.js?v=20261112corpseAndSharedTint1"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20261026h7f369c3"></script>
   <script src="config/scratchbones-config.js?v=20261109stonebeatcfg1"></script>
@@ -514,7 +514,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.CreatureDeath.init(...) during
        its own setup. -->
-  <script src="js/creature-death.js?v=20261105h1558f90"></script>
+  <script src="js/creature-death.js?v=20261112corpseDeath1"></script>
   <!-- Old, un-looted bandit corpses swap their full humanoid rig for a flat marker
        (window.BanditCorpseRetirement); game.js calls init(...) and tick(...). -->
   <script src="js/bandit-corpse-retirement.js?v=20261107hf66a80f"></script>
@@ -3094,7 +3094,7 @@
   <!-- Whole-walker frustum culling was previously referenced by game.js but not loaded. -->
   <script src="js/npc-view-frustum-cull.js?v=20261110frustumWire1"></script>
   <!-- Conservative whole-actor WebGL2 occlusion queries: only rendering is skipped; AI/physics stay active. -->
-  <script src="js/actor-render-occlusion.js?v=20261110actorOcclusion1"></script>
+  <script src="js/actor-render-occlusion.js?v=20261112corpseOcclusion1"></script>
   <script src="game.js?v=20261112wildernessPerf1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261109missingNpcRestore1"></script>
