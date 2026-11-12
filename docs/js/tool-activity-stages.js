@@ -28,13 +28,43 @@
     terminalSfxKey: index === stages.length - 1 ? 'breakRock' : null,
   }));
 
+  // NPCs always use these authored originals; the player's modular-weapon overrides below must not change an NPC's scheduled work animation.
+  const NPC_CHOP_TREE_STAGES = CHOP_TREE_STAGES.map(stage => ({ ...stage }));
+  const NPC_MINE_ROCK_STAGES = MINE_ROCK_STAGES.map(stage => ({ ...stage }));
+
+  function workStyleFor(slot) {
+    const deps = window.Combat?.deps; // Live equipment is authoritative for choosing a player's work animation on every stage, including post-equip changes.
+    if (!deps || deps.getActiveTool?.() !== slot) return null;
+    const itemKey = deps.equipmentSlots?.[slot]; // The actual equipped modular weapon, not whichever haft template gave it its shapeKey.
+    const def = deps.TOOL_ITEM_DEFS?.[itemKey];
+    if (!def?.modular) return null;
+    if (slot === 'pick' && def.modular.shaft === 'pick-shovel') return 'thrust'; // Reversible original Pick-Shovel remains the special spike-first jab, no matter which head is fitted.
+    return def.animStyle === 'thrust' ? 'thrust' : 'sweep'; // Other modular tool actions keep the authored shaft/head pair's weapon motion.
+  }
+
+  // The player's held tree/mining stages are read by game.js at the beginning of every rep.
+  // Dynamic accessors allow mixed weapon/tool combinations without changing the shared NPC stage poses.
+  for (const stage of CHOP_TREE_STAGES) {
+    Object.defineProperties(stage, {
+      pose: { enumerable: true, configurable: true, get: () => workStyleFor('axe') !== 'thrust' },
+      anim: { enumerable: true, configurable: true, get: () => workStyleFor('axe') === 'thrust' ? 'thrust' : undefined },
+    });
+  }
+  for (const [index, stage] of MINE_ROCK_STAGES.entries()) {
+    Object.defineProperties(stage, {
+      pose: { enumerable: true, configurable: true, get: () => workStyleFor('pick') === 'sweep' },
+      anim: { enumerable: true, configurable: true, get: () => workStyleFor('pick') === 'sweep' ? 'sweep' : 'thrust' },
+      dirSign: { enumerable: true, configurable: true, value: index % 2 ? -1 : 1 }, // Alternates only when the mining weapon is a sweeping one; ordinary pick thrust ignores this.
+    });
+  }
+
   // Digging a trench: the thrust half of the player's dig/toss pairs (the toss is a bespoke player-only arc).
   const DIG_THRUST_STAGES = [1.0, 0.25].map(dur => ({ anim: 'thrust', dur, sfxAt: 0.16, sfxKey: 'dig' }));
 
   // Per-activity playback: which stage table, which sprite style, and the tool a NPC holds for it.
   const ACTIVITIES = {
-    chop: { stages: CHOP_TREE_STAGES, style: 'sweep', toolKey: 'hatchet', sfxKey: 'chop', loop: true },
-    mine: { stages: MINE_ROCK_STAGES, style: 'thrust', toolKey: 'pickshovel', flip: true, sfxKey: 'pick', loop: true },
+    chop: { stages: NPC_CHOP_TREE_STAGES, style: 'sweep', toolKey: 'hatchet', sfxKey: 'chop', loop: true },
+    mine: { stages: NPC_MINE_ROCK_STAGES, style: 'thrust', toolKey: 'pickshovel', flip: true, sfxKey: 'pick', loop: true },
     dig: { stages: DIG_THRUST_STAGES, style: 'thrust', toolKey: 'pickshovel', flip: true, sfxKey: 'dig', loop: true },
     fish: { style: 'ranged', toolKey: 'fishingspear', cycleS: 9, loop: true },
   };
@@ -127,6 +157,7 @@
     MINE_ROCK_STAGES,
     DIG_THRUST_STAGES,
     ACTIVITIES,
+    workStyleFor,
     poseAt,
     strikeTimes,
     toolKeyFor: activity => ACTIVITIES[activity]?.toolKey || '',
