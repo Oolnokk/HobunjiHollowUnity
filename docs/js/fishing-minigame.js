@@ -1390,8 +1390,11 @@
         b.tipY = a.y + (bPt.y - a.y) * t;
         fishingTryTipCatch(fm);
       } else if (b.retractTimer < b.retractDuration) {
+        if (b.projectileMode !== 'flail' || b.retractTimer === 0) {
+          b.frozenWeaponAngleDeg = Math.atan2(bPt.y - a.y, bPt.x - a.x) * 180 / Math.PI
+            + FISHING_BRIDGE_ART.spriteRotationOffset + (b.projectileMode === 'flail' ? b.weaponSpinDeg : 0); // Tethered head stops at its *actual* last spun angle; no visible snap on retraction.
+        }
         b.weaponSpinDeg = 0;
-        b.frozenWeaponAngleDeg = Math.atan2(bPt.y - a.y, bPt.x - a.x) * 180 / Math.PI + FISHING_BRIDGE_ART.spriteRotationOffset;
         b.retractTimer = Math.min(b.retractDuration, b.retractTimer + dt);
         const t = b.retractTimer / b.retractDuration;
         b.tipX = bPt.x + (a.x - bPt.x) * t;
