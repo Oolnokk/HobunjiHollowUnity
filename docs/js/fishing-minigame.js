@@ -277,28 +277,29 @@
   let _prevCameraOffsets = null; // Restored after fishing so the dedicated side camera can temporarily ignore prior shoulder/seated free-look rotation.
 
   function selectedFishingThrowAnimation() {
-    const itemKey = deps?.equipmentSlots?.harpoon || ''; // Actual fitted assembly rather than its donor shaft or a substring.
-    const def = deps?.TOOL_ITEM_DEFS?.[itemKey]; // Determines whether a forged harpoon uses a thrust or sweeping weapon throw.
-    const workStyle = def?.modular ? window.ToolActivityStages?.workStyleFor?.('harpoon', itemKey, def) : null;
-    const spear = workStyle ? workStyle === 'thrust' : String(itemKey).toLowerCase().includes('fishingspear'); // Keep native Fishing Spear/Mace choices intact.
-    const baseAnimation = spear ? window.HeldActionAnimations?.weaponThrowSpearSpin : window.HeldActionAnimations?.weaponThrowSpin;
-    // A modular harpoon uses the fitted weapon's normal attack stroke, with no special overhead
-    // rotation. Preserve fishing's shoulder/hand and hold timing metadata; native Fishing Spears
-    // and Maces retain their original Spin Throw animations unchanged.
-    const workPose = workStyle ? window.ToolActivityStages?.workPoseFor?.('harpoon', itemKey, def) : null; // Same weapon stroke used for all tool roles, including fishing.
-    const poses = workPose && baseAnimation?.poses
-      ? Object.fromEntries(['neutral', 'windup', 'strike'].map(phase => [
-        phase, { ...baseAnimation.poses[phase], ...workPose[phase],
-          shoulderAim: baseAnimation.poses[phase]?.shoulderAim,
-          secondaryGrip: baseAnimation.poses[phase]?.secondaryGrip,
-          dualWield: baseAnimation.poses[phase]?.dualWield },
-      ]))
-      : null; // Preserve fishing's separate grip/aim choreography alongside the weapon's movement.
-    const animation = workStyle && baseAnimation
-      ? { ...baseAnimation, style: workStyle, poses: poses || baseAnimation.poses,
-        toolEndFlip: false, heldSpin: false } // A modular weapon's normal swing replaces, rather than stacks with, native fishing's spinning flourish.
-      : baseAnimation;
-    return { key: itemKey, profile: workStyle ? `modular-${workStyle}-weapon-swing` : spear ? 'fishing-spear' : 'hatchet-spin', animation };
+    const itemKey = deps?.equipmentSlots?.harpoon || ''; // Currently equipped harpoon, including its modular shaft/head/metal identity.
+    const def = deps?.TOOL_ITEM_DEFS?.[itemKey]; // Tool definition identifies the fitted combat style and optional flexible flail assembly.
+    const flail = def?.weaponAssembly?.flail || null; // Flail heads remain tethered to the held shaft rather than throwing the entire assembled weapon.
+    const workStyle = def?.modular
+      ? window.ToolActivityStages?.workStyleFor?.('harpoon', itemKey, def) || def.animStyle
+      : null; // Authored pair style (thrust vs sweep/chop) decides which existing throw to reuse.
+    const spear = !flail && (workStyle ? workStyle === 'thrust'
+      : String(itemKey).toLowerCase().includes('fishingspear')); // Native Fishing Spear retains its original throw.
+    const baseAnimation = spear ? window.HeldActionAnimations?.weaponThrowSpearSpin
+      : window.HeldActionAnimations?.weaponThrowSpin; // Existing non-tumbling spear throw or spinning mace/weapon throw.
+    const animation = flail && baseAnimation
+      ? { ...baseAnimation, toolEndFlip: false, heldSpin: false, flailHeadSpin: true }
+      : baseAnimation; // Spin the flexible HEAD in its own attachment system; never twirl/detach the flail handle.
+    const head = flail?.head; // Real authored head sprite, not the placeholder Fishing Mace PNG used for rigid weapons.
+    const headLayer = head?.layers?.find(layer => layer.id === head.anchorLayer) || head?.layers?.[0];
+    return {
+      key: itemKey,
+      profile: flail ? 'flail-tethered-head-spin' : workStyle ? (spear ? 'modular-thrust-spear-throw' : 'modular-sweep-spin-throw')
+        : spear ? 'fishing-spear' : 'hatchet-spin',
+      projectileMode: flail ? 'flail' : spear ? 'spear' : 'spin',
+      flailHeadSprite: headLayer?.sprite || null,
+      animation,
+    };
   }
 
   function beginFishingThrowWindup(reason = 'aim') {
@@ -322,7 +323,8 @@
       windupFrac: Number.isFinite(Number(animation.windupFrac)) ? Number(animation.windupFrac) : 0.49,
       strikeFrac: Number.isFinite(Number(animation.strikeFrac)) ? Number(animation.strikeFrac) : 0.57,
       holdFrac: Number.isFinite(Number(animation.holdFrac)) ? Number(animation.holdFrac) : 0.82,
-      heldSpin: animation.heldSpin !== false, // Modular harpoons swing as their weapon; native Fishing Spear/Mace keep Spin Throw.
+      heldSpin: animation.heldSpin !== false, // Rigid sweeps use the native spin; a flail spins its head separately and keeps its shaft in hand.
+      flailHeadSpin: animation.flailHeadSpin === true, // Forward head-only spin to the shared weapon-assembly renderer.
       heldSpinBasisDeg: Number(animation.spinBasisDeg) || 0,
       heldSpinRevolutions: Math.max(0, Number(animation.spinRevolutions) || 2.5),
     });
