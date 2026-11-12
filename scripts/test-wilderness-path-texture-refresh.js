@@ -17,7 +17,7 @@ const globalGround = {
   material: oldMaterial,
 };
 const ordinaryFloor = { userData: { mapEditorTerrain: { mapId: 'map_western_slope' } }, material: oldMaterial };
-const grid = Array.from({ length: 24 }, () => Array.from({ length: 24 }, () => ({ type: 'grass', elevTier: 0 }))); // Local floor data drives the flat-versus-cliff edit optimization.
+const grid = Array.from({ length: 24 }, () => Array.from({ length: 24 }, () => ({ type: 'grass', elevTier: 0 }))); // A flat tile can still change CliffRouteNetwork connectivity after being dug.
 const zone = { chunkController: true, grid, pathNet: { refreshTileAndSeam() { return false; } } };
 const logs = [];
 let chunkRebuilds = 0;
@@ -56,12 +56,12 @@ activeMaterial = thirdMaterial;
 window.ZoneRegrowth.refreshZoneGroundVisuals('map_western_slope', 8, 9);
 assert.equal(globalGround.material, texturedMaterial,
   'an ordinary tile edit does not scan or replace the persistent path material');
-assert.equal(mesaRebuilds, 1, 'flat ground edit avoids rebuilding unrelated full-zone plateau geometry');
-assert.match(logs[logs.length - 1], /mesas=unchanged/, 'mobile log reports the safe flat-ground fast path');
+assert.equal(mesaRebuilds, 2, 'flat terrain edits still update the cliff-route graph and entrance mount access');
+assert.match(logs[logs.length - 1], /cliffRoutes=refreshed/, 'mobile log reports the dependent cliff-route update');
 grid[12][12].elevTier = 1; // A raised tile forces real plateau geometry ownership near the next edit.
 window.ZoneRegrowth.refreshZoneGroundVisuals('map_western_slope', 13, 12);
-assert.equal(mesaRebuilds, 2, 'edits within four tiles of a raised tier still rebuild the mesa');
-assert.match(logs[logs.length - 1], /mesas=rebuilt/, 'mobile log reports terrain rebuild around a tier edge');
+assert.equal(mesaRebuilds, 3, 'raised-tier edits still rebuild the mesa and route graph');
+assert.match(logs[logs.length - 1], /cliffRoutes=refreshed/, 'mobile log reports terrain rebuild around a tier edge');
 window.ZoneRegrowth.refreshZoneGroundVisuals('map_western_slope');
 assert.equal(globalGround.material, thirdMaterial, 'later full material refresh can replace the old finish');
 assert.equal(logs.filter(message => message.includes('updated global path substrate material')).length, 2,
