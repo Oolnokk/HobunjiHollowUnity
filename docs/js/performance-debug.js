@@ -309,6 +309,8 @@
     const npcVisual = root.NpcViewFrustumCull?.snapshot?.() || null; // Counters for the last world-render view, independent of NPC simulation.
     const actorOcclusion = root.ActorRenderOcclusion?.snapshot?.() || null; // Mobile-query culling counts without devtools.
     const schedulerProfile = schedulerProfileSnapshot();
+    const combatSpikes = combatSpikeSnapshot(); // Updated only on the overlay's half-second refresh, never formatted per render.
+    const lastCombatFrame = combatSpikes.latest; // Shows the live last frame while the copied history preserves the slowest ones.
     const schedulerOutsideMs = schedulerProfile?.outsideGameLoopMs || 0;
     const unattributedFrameMs = gameLoopTotal ? perfState.frameMs - gameLoopTotal.avg - schedulerOutsideMs : null;
     const schedulerTop = (schedulerProfile?.subscribers || [])
@@ -319,6 +321,8 @@
       : 'not scanned yet';
     return [
       `FPS ${perfState.fps.toFixed(1)}   frame ${perfState.frameMs.toFixed(2)} ms`,
+      `Combat capture: ${combatSpikes.sampledFrames} frames, ${combatSpikes.cpuSpikeFrames} CPU spikes, ${combatSpikes.intervalSpikeFrames} interval spikes (opt-in)`,
+      lastCombatFrame ? `  last loop ${lastCombatFrame.cpuMs.toFixed(2)}ms / interval ${lastCombatFrame.intervalMs?.toFixed(2) ?? '-'}ms · worst loop ${combatSpikes.maxCpuMs.toFixed(2)}ms · render ${lastCombatFrame.renderPassCpuMs.toFixed(2)}ms` : '  No game-loop samples yet',
       // RuntimeFrameScheduler now owns substantial work before/after gameLoop.
       // Only input/pre-game/post-game are truly outside gameLoop; pre-render
       // runs inside gameLoop's checkpoint and is already included in its total.
@@ -492,6 +496,7 @@
     if (input) input.checked = profilerEnabled;
     root.RuntimeFrameScheduler?.setProfilingEnabled?.(profilerEnabled); // Scheduler timings are opt-in with the existing profiler so ordinary gameplay keeps the zero-timer-overhead path.
     if (profilerEnabled) {
+      clearCombatSpikeHistory(); // A newly enabled capture starts at its own first frame, not the previous session's interval.
       installRendererProfiler();
       ensureLongTaskObserver();
       ensureProfilerOverlay();
@@ -616,6 +621,123 @@
     writeStorage(GPU_SYNC_DIAGNOSTIC_KEY, gpuSyncDiagnosticEnabled ? '1' : '0');
     const input = document.getElementById('settingGpuSyncDiagnostic');
     if (input) input.checked = gpuSyncDiagnosticEnabled;
+  }
+
+
+  // Combat frame attribution lives beside the existing profiler so every measured
+  // phase shares one clock. Bounded opt-in history; no permanent per-frame allocations
+  // while Performance Profiler is disabled.
+  const COMBAT_SPIKE_CPU_MS = 33.3; // Game-loop CPU threshold for capturing a slow frame.
+  const COMBAT_SPIKE_INTERVAL_MS = 50; // rAF start-to-start delay: potentially GPU/browser bound, NOT this frame's CPU time.
+  const COMBAT_SPIKE_HISTORY_LIMIT = 12; // Only the latest slow frames remain in memory for Android copy/paste.
+  const combatFrameStats = { frames: 0, cpuSpikes: 0, intervalSpikes: 0, maxCpuMs: 0, maxIntervalMs: 0, lastStartMs: 0, recent: [], worst: null, latest: null }; // Used by the profiler overlay, cache audit and Pixel Probe.
+  const combatTimingStack = []; // Tracks child time so the slow-frame breakdown reports exclusive CPU rather than double-counted nested passes.
+  let currentCombatFrame = null; // Set by the existing 'gameLoop total' bracket and cleared at its matching end.
+
+  const roundCombatMs = value => Math.round(value * 100) / 100; // Compact copyable millisecond values.
+  function clearCombatSpikeHistory() {
+    combatFrameStats.frames = 0;
+    combatFrameStats.cpuSpikes = 0;
+    combatFrameStats.intervalSpikes = 0;
+    combatFrameStats.maxCpuMs = 0;
+    combatFrameStats.maxIntervalMs = 0;
+    combatFrameStats.lastStartMs = 0;
+    combatFrameStats.recent.length = 0;
+    combatFrameStats.worst = null;
+    combatFrameStats.latest = null;
+    currentCombatFrame = null;
+    combatTimingStack.length = 0;
+  }
+  function combatSpikeSnapshot() {
+    return {
+      enabled: profilerEnabled,
+      cpuThresholdMs: COMBAT_SPIKE_CPU_MS,
+      intervalThresholdMs: COMBAT_SPIKE_INTERVAL_MS,
+      sampledFrames: combatFrameStats.frames,
+      cpuSpikeFrames: combatFrameStats.cpuSpikes,
+      intervalSpikeFrames: combatFrameStats.intervalSpikes,
+      maxCpuMs: roundCombatMs(combatFrameStats.maxCpuMs),
+      maxIntervalMs: roundCombatMs(combatFrameStats.maxIntervalMs),
+      latest: combatFrameStats.latest,
+      worstCpu: combatFrameStats.worst,
+      recent: combatFrameStats.recent.slice(),
+      interpretation: 'Timings are CPU-side; exclusive phase costs avoid nested double-counting. Frame interval covers the wait since the PREVIOUS game-loop start, not the current loop cost. GPU time is NOT measured unless separate GPU sync diagnostics are enabled.',
+    };
+  }
+  function addCombatMetric(kind, name, amount = 1) {
+    if (!profilerEnabled || !currentCombatFrame) return;
+    const value = Number(amount);
+    if (!Number.isFinite(value)) return;
+    const key = String(name);
+    const target = currentCombatFrame[kind];
+    if (kind === 'gauges') target[key] = value;
+    else target[key] = (target[key] || 0) + value;
+  }
+  function finishCombatFrame(frame, elapsedMs) {
+    combatFrameStats.frames++;
+    const gap = frame.intervalMs;
+    if (Number.isFinite(gap) && gap > 0 && gap < 1000) combatFrameStats.maxIntervalMs = Math.max(combatFrameStats.maxIntervalMs, gap);
+    combatFrameStats.maxCpuMs = Math.max(combatFrameStats.maxCpuMs, elapsedMs);
+    const top = Object.entries(frame.exclusive).sort((a, b) => b[1] - a[1]).slice(0, 10)
+      .map(([name, ms]) => ({ name, exclusiveMs: roundCombatMs(ms), calls: frame.calls[name] || 0 }));
+    const sample = {
+      at: new Date().toISOString(), index: combatFrameStats.frames,
+      cpuMs: roundCombatMs(elapsedMs), intervalMs: Number.isFinite(gap) && gap > 0 && gap < 1000 ? roundCombatMs(gap) : null,
+      renderPassCpuMs: roundCombatMs(frame.inclusive['render passes'] || 0),
+      counts: { ...frame.counts }, gauges: { ...frame.gauges }, top,
+    };
+    combatFrameStats.latest = sample;
+    const cpuSpike = elapsedMs >= COMBAT_SPIKE_CPU_MS;
+    const intervalSpike = sample.intervalMs != null && sample.intervalMs >= COMBAT_SPIKE_INTERVAL_MS;
+    if (cpuSpike) combatFrameStats.cpuSpikes++;
+    if (intervalSpike) combatFrameStats.intervalSpikes++;
+    if (cpuSpike || intervalSpike) {
+      const spike = { ...sample, reason: cpuSpike && intervalSpike ? 'cpu+interval' : cpuSpike ? 'cpu' : 'interval-only (preceding frame)' };
+      combatFrameStats.recent.push(spike);
+      if (combatFrameStats.recent.length > COMBAT_SPIKE_HISTORY_LIMIT) combatFrameStats.recent.shift();
+      if (!combatFrameStats.worst || spike.cpuMs > combatFrameStats.worst.cpuMs) combatFrameStats.worst = spike;
+    }
+  }
+  function beginTiming(name) {
+    if (!profilerEnabled) return null;
+    const t = performance.now();
+    const token = { name: String(name || 'unnamed'), t, childMs: 0, frame: null };
+    if (token.name === 'gameLoop total') {
+      // The game loop is the one authoritative frame boundary. No extra rAF.
+      const intervalMs = combatFrameStats.lastStartMs ? t - combatFrameStats.lastStartMs : null;
+      combatFrameStats.lastStartMs = t;
+      currentCombatFrame = { intervalMs, exclusive: Object.create(null), inclusive: Object.create(null), calls: Object.create(null), counts: Object.create(null), gauges: Object.create(null) };
+      combatTimingStack.length = 0;
+    }
+    if (currentCombatFrame) {
+      token.frame = currentCombatFrame;
+      combatTimingStack.push(token);
+    }
+    return token;
+  }
+  function endTiming(token) {
+    if (!token) return 0;
+    const elapsed = Math.max(0, performance.now() - token.t);
+    if (token.frame && token.frame === currentCombatFrame) {
+      // Only LIFO brackets can safely contribute exclusive time. Unmatched
+      // diagnostic callers still get their ordinary lifetime timing below.
+      if (combatTimingStack[combatTimingStack.length - 1] === token) {
+        combatTimingStack.pop();
+        if (token.name !== 'gameLoop total') {
+          const frame = token.frame;
+          frame.exclusive[token.name] = (frame.exclusive[token.name] || 0) + Math.max(0, elapsed - token.childMs);
+          frame.inclusive[token.name] = (frame.inclusive[token.name] || 0) + elapsed;
+          frame.calls[token.name] = (frame.calls[token.name] || 0) + 1;
+        }
+        if (combatTimingStack.length) combatTimingStack[combatTimingStack.length - 1].childMs += elapsed;
+      }
+      if (token.name === 'gameLoop total') {
+        finishCombatFrame(token.frame, elapsed);
+        currentCombatFrame = null;
+        combatTimingStack.length = 0;
+      }
+    }
+    return recordSubsystem(token.name, elapsed);
   }
 
   function recordSubsystem(name, elapsedMs) {
@@ -1169,6 +1291,47 @@
     clearTimedBtnRow.append(clearTimedBtnLabel, clearTimedBtn);
     box.appendChild(clearTimedBtnRow);
 
+    // A/B capture buttons let a phone user take one controlled combat sample,
+    // reset between idle/chase/miss/hit/volley conditions, and copy a bounded report.
+    const combatBtnRow = document.createElement('div'); // Reuses the Performance report textarea as the Android clipboard fallback.
+    combatBtnRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;flex-wrap:wrap';
+    const combatBtnLabel = document.createElement('span'); // Identifies the controlled-capture actions within the existing diagnostics section.
+    combatBtnLabel.textContent = 'Combat slow-frame capture';
+    combatBtnLabel.style.fontSize = '12px';
+    const combatCopyBtn = document.createElement('button'); // Copies recent/worst CPU breakdowns without devtools.
+    combatCopyBtn.type = 'button';
+    combatCopyBtn.textContent = 'Copy capture';
+    combatCopyBtn.style.cssText = clearTimedBtn.style.cssText;
+    combatCopyBtn.addEventListener('click', async () => {
+      const text = JSON.stringify(combatSpikeSnapshot(), null, 2);
+      try {
+        if (!root.navigator?.clipboard?.writeText) throw new Error('clipboard unavailable');
+        await root.navigator.clipboard.writeText(text);
+        flashButtonLabel(combatCopyBtn, 'Copied!');
+      } catch (_) {
+        reportText.value = text;
+        reportText.style.display = 'block';
+        reportText.focus();
+        reportText.select();
+        flashButtonLabel(combatCopyBtn, 'Report shown');
+      }
+    });
+    const combatResetBtn = document.createElement('button'); // Clears only this capture's frame window and normal subsystem averages.
+    combatResetBtn.type = 'button';
+    combatResetBtn.textContent = 'Reset capture';
+    combatResetBtn.style.cssText = clearTimedBtn.style.cssText;
+    combatResetBtn.addEventListener('click', () => {
+      clearCombatSpikeHistory();
+      perfState.subsystem.clear();
+      flashButtonLabel(combatResetBtn, 'Reset!');
+    });
+    combatBtnRow.append(combatBtnLabel, combatCopyBtn, combatResetBtn);
+    box.appendChild(combatBtnRow);
+    const combatHint = document.createElement('div'); // Used to explain the interval-vs-CPU distinction on Android.
+    combatHint.textContent = 'Enable Performance Profiler, reset, then fight for several seconds. CPU >=33.3ms or interval >=50ms captures a frame. Interval reflects the previous frame and is not GPU timing.';
+    combatHint.style.cssText = 'font-size:10px;opacity:.7;margin:0 0 5px';
+    box.appendChild(combatHint);
+
     const lagBtnRow = document.createElement('div');
     lagBtnRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0';
     const lagBtnLabel = document.createElement('span');
@@ -1288,14 +1451,17 @@
     setEnabled: setProfilerEnabled,
     setFpsEnabled,
     getLiveGpuInfo,
-    begin(name) { return profilerEnabled ? { name: String(name || 'unnamed'), t: performance.now() } : null; },
-    end(token) { return token ? recordSubsystem(token.name, performance.now() - token.t) : 0; },
+    begin: beginTiming,
+    end: endTiming,
     measure(name, fn) {
-      if (!profilerEnabled) return fn();
-      const start = performance.now();
+      const token = beginTiming(name);
       try { return fn(); }
-      finally { recordSubsystem(name, performance.now() - start); }
+      finally { endTiming(token); }
     },
+    count(name, amount = 1) { addCombatMetric('counts', name, amount); }, // Opt-in per-frame work event counts.
+    gauge(name, value) { addCombatMetric('gauges', name, value); }, // Opt-in per-frame actor/projectile population.
+    combatSpikeSnapshot,
+    resetCombatSpikes: clearCombatSpikeHistory,
     record: recordSubsystem,
     snapshot() {
       return {
@@ -1311,6 +1477,7 @@
         actorOcclusion: root.ActorRenderOcclusion?.snapshot?.() || null, // Mobile-copyable actor GPU query and frustum statistics.
         scanMs: perfState.scanMs,
         scheduler: schedulerProfileSnapshot(),
+        combatSpikes: combatSpikeSnapshot(), // Copyable from existing performance snapshot and Pixel Probe.
         subsystems: Object.fromEntries([...perfState.subsystem.entries()].map(([key,value]) => [key,{...value}]))
       };
     }
