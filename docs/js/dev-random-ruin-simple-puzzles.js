@@ -414,7 +414,10 @@
     for (const composer of composers) { try { composer.clear?.(); } catch (error) { console.warn('[Random Test Ruin] composer clear failed', error); } }
     state.singleRoomChallenge?.dispose?.(); // Release all projectile hooks, rope mounts, flute listeners and statue encounter state before disposing the room.
     restoreRopeEquipment();
-    for (const set of state.chordPlateSets) set.inscription?.dispose?.(); // Every timed inscription retires with its room; no player instrument session is owned here.
+    for (const set of state.chordPlateSets) {
+      set.releaseMelodyCamera?.(); // The retiring room cannot keep its note-focused shot active.
+      set.inscription?.dispose?.(); // Every timed inscription retires with its room; no player instrument session is owned here.
+    }
     for (const entity of state.spawnedMinions) disposeSpawnedMinion(entity); // Session/reroll ownership matches ordinary camp teardown; no sarcophagus enemy can leak into the next generated ruin.
     state.spawnedMinions.clear();
     for (const id of state.surfaceIds) DS.remove?.(id);
@@ -1273,6 +1276,10 @@
           composer.advanceGlyphGlow?.(set.glyphs[set.flashGlyphIndex],{rejected:true,dt:0});
       }
     });
+    set.releaseMelodyCamera=window.MelodyCameraFraming?.register?.({
+      area:MAP_ID,plate:plates[0],glyphs,
+      isActive:()=>!set.solved&&plates[0].down&&!!set.inscription?.group?.visible,
+    }); // Native room, hallway and compound scores use their own live placed glyphs.
     state.chordPlateSets.push(set); // Retain the established composer reference while replacing its internal musical challenge.
     if(isHallway)usedHallways?.add?.(owner.id);
     recordModulePlacement('timedMelodyTrigger',set.slotKind,id,{triggerCount:1,noteCount:melody.length,bpm:song.bpm,hasGlyphDecal:!!inscription});
