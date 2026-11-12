@@ -181,5 +181,46 @@ async function flush() { for (let i = 0; i < 8; i++) await Promise.resolve(); }
   assert.equal(created.at(-1).disposed, true, 'late loader disposes its own rig after the animal vanished');
   assert.equal(late.avatarRef.group.children.length, 2, 'no detached bird meshes were attached after cleanup');
   assert.equal(visuals.snapshot().tracked, 0);
-  console.log('Tzatzul rare infertile eggs, canonical mixed adult loot, authored live flying rig, camera animation, death and late-load cleanup PASS.');
+  // Player rendering uses game.js's playerMesh, whereas avatarRef.group may be an absent or different portrait child.
+  function poseRoot(angle) {
+    return { parent: {}, quaternion: { angle, clone() { return { angle: this.angle }; },
+      copy(value) { this.angle = value.angle; } },
+      scale: { x: 1, clone() { return { x: this.x }; }, copy(value) { this.x = value.x; } } };
+  }
+  let playerRig = poseRoot(.42); // The actual PlayerBodyTransformComposer/game.js root changed by talon alignment.
+  const portraitChild = poseRoot(.91); // An independent avatarRef child must never substitute for playerMesh on release.
+  const capturedPlayer = { health: 40, avatarRef: { group: portraitChild } };
+  visualWorld.window.PlayerBodyTransformComposer = { getPlayerMesh: () => playerRig };
+  visuals.init({ hostileObjects: hostiles, getCurrentArea: () => 'map_northern_cliffs',
+    player: capturedPlayer });
+  assert(visuals.rememberCaptive(capturedPlayer), 'capture snapshots the actual playerMesh before talon tilt');
+  playerRig.quaternion.angle = -1.55; playerRig.scale.x = 2.5; // The bird grips and rotates the render root.
+  assert(visuals.restoreCaptive(capturedPlayer), 'nest delivery restores playerMesh despite the different avatarRef group');
+  assert.equal(playerRig.quaternion.angle, .42, 'the carried rotation is removed from normal player animation');
+  assert.equal(playerRig.scale.x, 1, 'talon-carry size cannot persist into walking and attacks');
+  assert.equal(portraitChild.quaternion.angle, .91, 'the unrelated portrait child is not touched');
+  playerRig.quaternion.angle = -1.55; // A final in-flight draw attempts to reapply the tilt after release.
+  visuals.tick(.016, 'map_northern_cliffs');
+  assert.equal(playerRig.quaternion.angle, .42, 'the release correction targets the actual player root on the next native tick');
+  visuals.tick(.016, 'map_northern_cliffs');
+  playerRig.quaternion.angle = .64; // Normal combat/locomotion writes must work after the two-frame fence.
+  visuals.tick(.016, 'map_northern_cliffs');
+  assert.equal(playerRig.quaternion.angle, .64, 'post-release attack and walking pose owns the baseline again');
+  assert.match(visuals.snapshot().lastCaptiveRestore, /player: restored root baseline/);
+
+  assert(visuals.rememberCaptive(capturedPlayer), 'a second abduction samples the new native orientation');
+  playerRig.quaternion.angle = -2.1;
+  assert(visuals.restoreCaptive(capturedPlayer), 'repeated captures restore the newest baseline instead of the first one');
+  assert.equal(playerRig.quaternion.angle, .64);
+
+  assert(visuals.rememberCaptive(capturedPlayer));
+  const oldPlayerRig = playerRig; // Retained only to ensure a rebuilt rig is never modified by an obsolete capture.
+  oldPlayerRig.quaternion.angle = -1.1;
+  playerRig = poseRoot(.18); // Character appearance/scene changes may replace the live root.
+  assert.equal(visuals.restoreCaptive(capturedPlayer), false, 'stale root is discarded when the actual player rig was rebuilt');
+  assert.equal(oldPlayerRig.quaternion.angle, -1.1, 'detached old player rig is never modified');
+  assert.equal(playerRig.quaternion.angle, .18, 'replacement player's clean pose is preserved');
+  assert.equal(visuals.snapshot().captiveRestoreMisses, 1, 'mobile debug records skipped stale-root restores');
+
+    console.log('Tzatzul rare infertile eggs, canonical mixed adult loot, authored live flying rig, camera animation, death, late-load cleanup and player grip-pose recovery PASS.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
