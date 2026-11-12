@@ -24006,7 +24006,7 @@
         chargeStageSfxFired = false;
         pendingAction = null;
         const workItemKey = equipmentSlots[chargeAction.tool]; // Current equipped assembly for the active tool's ordinary work stages.
-        const workDef = TOOL_ITEM_DEFS[workItemKey]; // An authored pair can choose its own sweep, thrust or chop independent of the tool's normal action.
+        const workDef = window.ToolActivityStages && typeof TOOL_ITEM_DEFS !== 'undefined' ? TOOL_ITEM_DEFS[workItemKey] : null; // Resolve when the work-style module and definitions are available; isolated efficacy runners retain the native stage.
         const simpleStroke = stageDef.pose === true || ['sweep', 'thrust', 'chop'].includes(stageDef.anim); // Toss/refill flourishes must keep their specialized soil-handling arcs.
         const workStyle = simpleStroke ? window.ToolActivityStages?.workStyleFor?.(chargeAction.tool, workItemKey, workDef) : null; // Null for every unmodified, non-modular tool.
         const workPose = workStyle ? window.ToolActivityStages?.workPoseFor?.(chargeAction.tool, workItemKey, workDef) : null; // Resampled once per stage, not per frame.
