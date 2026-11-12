@@ -1077,6 +1077,11 @@
         lines.push(`  Palette: ${(dungeonFireDebug.fireStreams || []).map(stream => stream.color + ':' + stream.rate).join(', ')} | Last: ${dungeonFireDebug.lastEvent || '-'}`);
       }
     }
+    const rubblePickupPerf = window.Shattercasks?.debugSnapshot?.().performance; // Read only on Pixel Probe request, never on a gameplay frame.
+    const junkPickupPerf = window.CratePiles?.debugSnapshot?.(); // Mobile-only loot hitch timing and save diagnostics.
+    if (rubblePickupPerf || junkPickupPerf || window.BanditCamps) {
+      lines.push(`Loot pickup CPU (last): rubble=${rubblePickupPerf?.lastPilePickupMs ?? '-'}ms junk=${junkPickupPerf?.lastJunkPickupMs ?? '-'}ms enemy=${window.BanditCamps?.lastEnemyLootMs ?? '-'}ms; queued saves rubble=${!!rubblePickupPerf?.pileSaveQueued} junk=${!!junkPickupPerf?.supplySaveQueued}`);
+    }
     const tentDebug = window.BanditCamps?.tentInteractionDebug; // Identifies missing ray/focus/nearby state without requiring a console.
     if (tentDebug?.focus) lines.push(`Bandit tent focus: ${tentDebug.focus.result} nearby=${tentDebug.focus.nearby} ray=${tentDebug.focus.hasRay ? 1 : 0} api=${tentDebug.focus.hasFocusApi ? 1 : 0}`);
     // GPU/context capabilities — a mobile WebGL context commonly only

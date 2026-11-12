@@ -5506,10 +5506,11 @@
             }
             const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0; // Every creature corpse gets the same high-chance shared-ammo roll as bandits.
             if (specialAmmo) parts.push(`🏹 Special Ammo×${specialAmmo}`);
+            scheduleLootMemberSave(); // Normal animal butcher loot uses the same deferred member save as enemy corpses.
             if (c.keepCorpseAfterLoot) c.corpseLooted = true; // Tzatzul victim piles retain their bodies and one-shot searched state.
             else { corpseObjects.delete(c); despawnCreature(c); }
             return {
-              ok: true,
+              ok: true, deferMemberSave: true, // The canonical save is already queued; skip the world-action handler's immediate second write.
               message: parts.length ? `Butchered the ${c.def.label}: ${parts.join(' ')}` : `Nothing usable left on the ${c.def.label}.`,
             };
           },

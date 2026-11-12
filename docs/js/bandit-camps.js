@@ -1438,7 +1438,7 @@
         (deps.scheduleLootMemberSave || deps.saveMemberWorldData)();
         lastEnemyLootMs=Math.round((window.performance?.now?.() ?? Date.now())-lootStarted);
         return {
-          ok: true,
+          ok: true, deferMemberSave: true, // Avoid useActiveAction doing an immediate save after we already queued a deferred one.
           message: parts.length
             ? `Looted the ${c.name || c.def.label}: ${parts.join(' ')}`
             : `The ${c.name || c.def.label} carried nothing.`, // Minions/liches share this path; their own name, not the base 'Bandit' def label.
