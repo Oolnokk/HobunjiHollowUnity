@@ -22993,6 +22993,19 @@
           activeCameraMode === SHOULDER_SURF_MODE && !portraitAim && !cutscenePreviewActive && !dialogueZoomActive() && !window.__mapEditorOrbitActive,
           performance.now()); // Existing camera update owns the lift; the actual camera ray automatically targets revealed surface items.
         if (surfaceView) { lookY += surfaceView.lift; distance *= surfaceView.distanceScale; }
+        const melodyFrame=window.MelodyCameraFraming?.update?.({
+          area:currentArea,playerX:player.x/TILE,playerZ:player.y/TILE,camera,
+          baseTarget:{x:lookAtX,y:lookY,z:lookAtZ},baseDistance:distance,azimuth,angle,
+          fovDeg:modeCfg.fovDeg??42,aspect:cameraContainerAspect(),
+          enabled:!cutscenePreviewActive&&!dialogueZoomActive()&&!dialogueOpen
+            &&!window.__mapEditorOrbitActive&&!window.CinematicCameraRuntime?.isActive?.()
+            &&activeCameraMode!=='fishing'&&activeCameraMode!=='fishCatch',
+          now:performance.now(),
+        }); // Shared gameplay camera remains authoritative; the score supplies only a discovery-gated framing correction.
+        if(melodyFrame){
+          lookAtX+=melodyFrame.offsetX;lookAtZ+=melodyFrame.offsetZ;lookY+=melodyFrame.offsetY;
+          distance*=melodyFrame.distanceScale;
+        }
         const cameraY = portraitAim?.cameraY ?? (lookY + Math.sin(angle) * distance);
         const groundDistance = Math.cos(angle) * distance;
         const idealX = lookAtX + Math.sin(azimuth) * groundDistance;
@@ -23010,7 +23023,7 @@
         // Very short ground-limited booms need a smaller near plane to keep
         // the nearby character visible; other modes retain the normal plane.
         camera.near = _cameraBoomDebug ? Math.min(0.1, Math.max(0.01, _cameraBoomDebug.solvedDistance * 0.2)) : 0.1;
-        camera.fov = modeCfg.fovDeg ?? 42;
+        camera.fov = Math.min(110,(modeCfg.fovDeg ?? 42)+(melodyFrame?.fovExtra||0)); // Ease wider only while a found melody needs the viewport.
         camera.aspect = cameraContainerAspect();
         camera.updateProjectionMatrix();
         window.DialogueCameraFraming?.apply(camera, !!portraitAim);
