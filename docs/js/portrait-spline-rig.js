@@ -574,12 +574,11 @@
         if (!mesh || !canvas) continue;
         const image = mesh.material.map.image;
         if (!image?.getContext) continue;
-        const c = image.getContext('2d');
-        c.clearRect(0, 0, image.width, image.height);
-        if (mesh === part.rearMesh) { c.save(); c.translate(image.width, 0); c.scale(-1, 1); }
-        c.drawImage(canvas, 0, 0, image.width, image.height);
-        if (mesh === part.rearMesh) c.restore();
-        mesh.material.map.needsUpdate = true;
+        const source=prepareSplineTexture(canvas,mesh===part.rearMesh); // Wardrobe refresh retains the same anti-dark-edge gutter as first creation.
+        const c=image.getContext('2d');
+        c.clearRect(0,0,image.width,image.height);
+        c.drawImage(source,0,0,image.width,image.height);
+        mesh.material.map.needsUpdate=true;
       }
     }
   }
