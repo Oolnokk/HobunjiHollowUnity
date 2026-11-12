@@ -3103,6 +3103,12 @@
     }
   }
 
+  function measuredBanditCombatAI(c, dt, targetPlayer, distToPlayer) {
+    const aiPerf = window.PerfProfiler?.begin('Combat: bandit tactical AI'); // Includes engagement decisions, movement and collision checks.
+    try { return updateBanditCombatAI(c, dt, targetPlayer, distToPlayer); }
+    finally { window.PerfProfiler?.end(aiPerf); }
+  }
+
   window.BanditCombat = {
     init,
     applyBanditConfig,
@@ -3126,7 +3132,7 @@
     // js/slagothim-traders.js to dress caravan walkers like other Tletingans.
     rollRoster: rollBanditRoster,
     clothingCandidates: _banditClothingCandidates, // Shared effective-pool inspection for the enemy loadout workshop.
-    updateCombatAI: updateBanditCombatAI,
+    updateCombatAI: measuredBanditCombatAI,
     restNeckLook,
     updateMovementHeadLook,
     updateToolMesh: measuredBanditToolMesh, // Unchanged gameplay/pose calculation, with optional per-bandit swing timing.
