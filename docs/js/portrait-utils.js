@@ -421,14 +421,21 @@ function loadImg(relPath) {
 
   // Once the image resolves, upgrade the cache entry from Promise → Image so
   // subsequent calls get a synchronous hit and renderProfile can skip await.
-  promise.then(img => {
-    const elapsedMs = Math.max(0, Date.now() - startedAtMs); // Includes fallback attempts, which otherwise resemble a single hung loadImg call.
+  const recordLoadDuration = () => {
+    const elapsedMs = Math.max(0, Date.now() - startedAtMs); // Includes all fallback attempts for this asset, whether successful or failed.
     if (elapsedMs > 1500) portraitImageLoadDebug.slowLoads++;
-    if (elapsedMs > portraitImageLoadDebug.longestLoadMs) { portraitImageLoadDebug.longestLoadMs = elapsedMs; portraitImageLoadDebug.slowestAsset = String(relPath).slice(0, 180); }
+    if (elapsedMs > portraitImageLoadDebug.longestLoadMs) {
+      portraitImageLoadDebug.longestLoadMs = elapsedMs;
+      portraitImageLoadDebug.slowestAsset = String(relPath).slice(0, 180); // Mobile diagnostics can reveal a stalled/missing file even when its final attempt fails.
+    }
+  }; // Shared by successful and failed loads so neither delay disappears from the slow-asset report.
+  promise.then(img => {
+    recordLoadDuration();
     if (IMG_CACHE.get(relPath) !== promise) return; // Cleared/evicted requests cannot resurrect their cache entries.
     IMG_CACHE.set(relPath, img);
     if (previousFailures) portraitImageLoadDebug.recoveries++;
   }, () => {
+    recordLoadDuration();
     if (IMG_CACHE.get(relPath) !== promise) return;
     promise.portraitFailureCount = previousFailures + 1;
     promise.portraitRetryAtMs = Date.now() + Math.min(PORTRAIT_IMAGE_RETRY_MAX_MS,
