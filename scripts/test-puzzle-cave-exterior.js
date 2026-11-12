@@ -197,8 +197,10 @@ for(const [kind,parts] of [['ink',gate.glyphs],['inner glow',gate.glyphGlows],['
 const gameSource=read('docs/game.js'); // Verify the renderer receives the same live actor roots as gameplay, not a screenshot-only proxy.
 assert.match(gameSource, /setScoreCharacterRootsProvider\?\.\(\(\) => \[/,
   'the gameplay bootstrap must register the character silhouette owner for active exterior score overlays');
-for(const group of ['npcWalkers','hostileObjects','companionObjects','animalObjects'])
-  assert(gameSource.includes('...'+group+'.map('),`the note occlusion provider must include live ${group} avatars`);
+assert(gameSource.includes('...npcWalkers.map('),'the note occlusion provider must include real NPC walker roots');
+for(const group of ['hostileObjects','companionObjects','animalObjects'])
+  assert(gameSource.includes('...Array.from('+group+', actor => actor.avatarRef?.group)'),
+    `the silhouette provider must enumerate the live ${group} Set (never assume Array.map)`);
 assert.match(read('docs/js/outline-render-performance.js'), /renderer\.clearDepth\(\)/,
   'final note rendering must clear only depth before rebuilding near-character silhouettes');
 
