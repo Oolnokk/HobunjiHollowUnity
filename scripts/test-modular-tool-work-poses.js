@@ -127,27 +127,50 @@ assert.equal(overheadBackhand.neutral.bodyYaw, sweep.neutral.bodyYaw);
 assert(Math.abs((overheadBackhand.windup.pitch - overheadBackhand.neutral.pitch) +
   (sweep.windup.pitch - sweep.neutral.pitch)) < 1e-8, 'overhead backhand mirrors the pitch arc');
 
-// Fishing uses that same authored overhead work path, but preserves its shoulder-aim and release metadata.
+// Fishing selects the shipped non-spinning spear and spinning weapon throws; flail heads spin on their tether instead.
 window.HeldActionAnimations = {
-  weaponThrowSpin: { durationS: 1.04, poses: { neutral: { shoulderAim: { grip: true } }, windup: { shoulderAim: { grip: false } }, strike: { shoulderAim: { grip: false } } } },
-  weaponThrowSpearSpin: { durationS: 1.04, toolEndFlip: true, poses: { neutral: { shoulderAim: { grip: true } }, windup: { shoulderAim: { grip: false } }, strike: { shoulderAim: { grip: false } } } },
+  weaponThrowSpin: { durationS: 1.04, spinRevolutions: 2.5, projectileSpin: true, poses: { neutral: { shoulderAim: { grip: true } }, windup: { shoulderAim: { grip: false } }, strike: { shoulderAim: { grip: false } } } },
+  weaponThrowSpearSpin: { durationS: 1.04, toolEndFlip: true, projectileSpin: false, poses: { neutral: { shoulderAim: { grip: true } }, windup: { shoulderAim: { grip: false } }, strike: { shoulderAim: { grip: false } } } },
 };
-const fishingSource = source('docs/js/fishing-minigame.js'); // Inspect the real private selector without starting the DOM-bound minigame.
+const fishingSource = source('docs/js/fishing-minigame.js'); // Extract the live fishing animation selector without loading its DOM-bound render loop.
 const startFishingSelector = fishingSource.indexOf('  function selectedFishingThrowAnimation() {');
 const endFishingSelector = fishingSource.indexOf('\n  function beginFishingThrowWindup(', startFishingSelector);
 assert(startFishingSelector >= 0 && endFishingSelector > startFishingSelector);
-const fishingContext = vm.createContext({ window, deps: { equipmentSlots: { harpoon: flexShaftPick }, TOOL_ITEM_DEFS: defs } });
+const sweepingHarpoon = key('fishing-spear', 'fishing-mace'); // A normal swinging modular harpoon.
+const thrustingHarpoon = key('pick-shovel', 'fishing-mace'); // A non-spinning modular harpoon.
+const flailHarpoon = key('fishing-mace', 'grapple-flail'); // A flexible fishing head carried on an ordinary tool-worthy haft.
+for (const k of [sweepingHarpoon, thrustingHarpoon, flailHarpoon]) assert(defs[k]?.slots.includes('harpoon'), k + ' must qualify for fishing');
+const fishingContext = vm.createContext({ window, deps: { equipmentSlots: { harpoon: sweepingHarpoon }, TOOL_ITEM_DEFS: defs } });
 vm.runInContext(fishingSource.slice(startFishingSelector, endFishingSelector) + '\nthis.select = selectedFishingThrowAnimation;', fishingContext);
-const modularThrow = fishingContext.select();
-assert.equal(modularThrow.animation.style, 'sweep', 'Modular fishing uses its fitted weapon attack');
-assert.equal(modularThrow.animation.heldSpin, false, 'Do not superimpose the native 2½-turn twirl on the weapon swing');
-assert.equal(modularThrow.animation.toolEndFlip, false, 'A modular shaft does not inherit native Fishing Spear reversal');
-assert.equal(modularThrow.animation.poses.windup.pitch, work.workPoseFor('harpoon', flexShaftPick, defs[flexShaftPick]).windup.pitch,
-  'Fishing plays the actual overhead weapon windup');
-assert.deepEqual(plain(modularThrow.animation.poses.neutral.shoulderAim), { grip: true }, 'Fishing grip remains aligned');
+const sweepingThrow = fishingContext.select();
+assert.equal(sweepingThrow.animation, window.HeldActionAnimations.weaponThrowSpin,
+  'Sweeping modular fishing reuses the exact existing spinning throw animation');
+assert.equal(sweepingThrow.projectileMode, 'spin', 'Sweeping modular projectiles spin during outbound flight');
+fishingContext.deps.equipmentSlots.harpoon = thrustingHarpoon;
+const thrustingThrow = fishingContext.select();
+assert.equal(thrustingThrow.animation, window.HeldActionAnimations.weaponThrowSpearSpin,
+  'Thrusting modular fishing reuses the exact existing non-tumbling harpoon throw');
+assert.equal(thrustingThrow.projectileMode, 'spear', 'Thrusting modular projectiles do not spin in flight');
+fishingContext.deps.equipmentSlots.harpoon = flailHarpoon;
+const flailThrow = fishingContext.select();
+assert.equal(flailThrow.projectileMode, 'flail');
+assert.equal(flailThrow.animation.heldSpin, false, 'Flail handle is never spun or detached in-hand');
+assert.equal(flailThrow.animation.flailHeadSpin, true, 'Spin only the flail head/chain at the real attachment point');
+assert.equal(flailThrow.animation.toolEndFlip, false, 'Flail handle is not end-flipped during the throw');
+assert.equal(flailThrow.animation.poses, window.HeldActionAnimations.weaponThrowSpin.poses,
+  'Flail keeps the existing spinning throw body/arm path');
+assert.equal(flailThrow.flailHead, defs[flailHarpoon].weaponAssembly.flail.head,
+  'Fishing ring uses all fitted flail-head art layers rather than a generic mace');
+assert(flailThrow.flailHead.layers.length > 1, 'Multi-layer Grapple-Flail head must not be reduced to one sprite');
 fishingContext.deps.equipmentSlots.harpoon = 'fishingspear';
 const nativeThrow = fishingContext.select();
-assert.equal(nativeThrow.animation, window.HeldActionAnimations.weaponThrowSpearSpin, 'Unmodified Fishing Spear retains its authored spin throw');
+assert.equal(nativeThrow.animation, window.HeldActionAnimations.weaponThrowSpearSpin,
+  'Unmodified native Fishing Spear keeps its original thrown-weapon animation');
+assert.equal(nativeThrow.projectileMode, 'spear');
+assert(fishingSource.includes("const flailFishingHeadImages = new WeakMap()"), 'Fishing composites each multi-layer head only once');
+assert(fishingSource.includes("const mode = bridge?.projectileMode"), 'Projectile ring uses its snapped throw type');
+assert(fishingSource.includes("flailFishingHeadImages.get(bridge.flailHead)"), 'Projectile sprite uses the flexible head, not the detached shaft');
+assert(fishingSource.includes("b.projectileMode === 'flail' ? b.weaponSpinDeg : 0"), 'Flail head returns from its final spun angle without snapping');
 
 const game = source('docs/game.js'); // Ensure the big gameplay monolith actually calls the extracted adapter.
 assert(game.includes("workPoseFor?.(chargeAction.tool, workItemKey, workDef, stageDef.dirSign)"));
@@ -159,4 +182,5 @@ assert(stancesSource.includes('authoredToolActionActive || holderIsMoving(now)')
 assert(game.includes('TOOL_ITEM_DEFS, // Modular harpoon casting needs'));
 const fishing = source('docs/js/fishing-minigame.js');
 assert(fishing.includes("workStyleFor?.('harpoon', itemKey, def)"));
-console.log('Modular tool work: actual Foundry slots, saved-draft migration, idle poses, overhead strokes, native/NPC isolation and game integration passed.');
+assert(game.includes('fishingFlailHeadSpin: activeTool ==='), 'Game forwards flail-head spin mode without turning the shaft');
+console.log('Modular tool work and fishing: shaft/pick roles, idle/overhead work poses, shipped spear/spin throws, tethered flail-head-only spin and native/NPC isolation passed.');
