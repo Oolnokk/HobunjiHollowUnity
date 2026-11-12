@@ -11426,7 +11426,7 @@ window.MODULAR_WEAPON_CONFIG = {
       },
       "namePosition": "suffix",
       "nameAffix": "Kylie",
-      "toolWorthy": false
+      "toolWorthy": true
     },
     "pick-shovel": {
       "label": "Pick-pommeled Long-haft",

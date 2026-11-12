@@ -80,6 +80,8 @@
   // Blast rubble pays out more than breaking the same tile by hand (2-3 stone / 2-3 logs).
   const RUBBLE_YIELD = Object.freeze({ rockStone:[4,5], pebble:2, oreMultiplier:2, treeLogs:[4,5], mulch:2 });
   let storeIdentity = null; // Per-world persistence partition; regenerated sites have distinct vase IDs.
+  let pileSaveQueued = false; // Coalesces collected rubble's pile-only save outside the pickup frame.
+  let lastPilePickupMs = 0; // Measured rubble collection cost, shown in debugSnapshot().
   const THREE = window.THREE;
   if (!THREE) return;
   const emitterFrustum = THREE.Frustum && new THREE.Frustum();
@@ -127,6 +129,7 @@
   function loadPersistence() {
     const identity=worldId();
     if (storeIdentity===identity) return;
+    flushQueuedPileSave(); // Preserve old-world collections before replacing their persistence maps.
     // World/cycle identity changes retire both physical carries. Restore the
     // avatar's materials and detach their actual groups, not just the state
     // pointers, or a charge could remain visibly stuck on the next avatar.
@@ -156,8 +159,29 @@
         JSON.stringify(Object.fromEntries([...pileHistory].map(([area,piles])=>[area,Object.fromEntries(piles)]))));
       localStorage.setItem('hobunji.burdens.looseFruit.v1:'+storeIdentity,
         JSON.stringify(Object.fromEntries([...looseFruitHistory].map(([area,fruits])=>[area,Object.fromEntries(fruits)]))));
+      pileSaveQueued = false; // The full world write includes any waiting rubble changes.
     }catch(error){window.__farmLog?.('[shattercask] failed to persist blast/loot history: '+error.message,'warn');}
   }
+  function flushQueuedPileSave() {
+    if (!pileSaveQueued) return;
+    pileSaveQueued = false;
+    if (!storeIdentity || storeIdentity.startsWith('session|')) return;
+    try {
+      localStorage.setItem('hobunji.shattercasks.piles.v1:' + storeIdentity,
+        JSON.stringify(Object.fromEntries([...pileHistory].map(([mapId,piles]) => [mapId,Object.fromEntries(piles)]))));
+    } catch(error) { window.__farmLog?.('[shattercask] failed to save rubble: ' + error.message,'warn'); }
+  }
+  function queuePileSave() {
+    if (pileSaveQueued || !storeIdentity || storeIdentity.startsWith('session|')) return;
+    pileSaveQueued = true;
+    if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(flushQueuedPileSave, { timeout: 1500 });
+    else if (typeof setTimeout === 'function') setTimeout(flushQueuedPileSave, 100);
+    else flushQueuedPileSave(); // Tests without a browser timer keep immediate persistence semantics.
+  }
+  window.addEventListener?.('pagehide', flushQueuedPileSave);
+  if (typeof document !== 'undefined') document.addEventListener?.('visibilitychange', () => {
+    if (document.hidden) flushQueuedPileSave();
+  });
   function saveConsumed(id) {
     loadPersistence();persisted.add(id);persistWorld();
   }
@@ -1706,13 +1730,14 @@
   }
   function collectPile(pile) {
     if(!pile||!records.get(pile.mapId)?.piles.has(pile.id))return false;
+    const started=window.performance?.now?.() ?? Date.now(); // Used for the in-game pickup-duration diagnostic.
     const items=rubbleLoot(pile); // Canonical inventory keys, not descriptive stick/wood pseudo-items.
     grantLoot(items);
     records.get(pile.mapId).piles.delete(pile.id);
     pileHistory.get(pile.mapId)?.delete(pile.id);
     if(offeredPileId===pile.id)offeredPileId=null;
-    persistWorld();
-    syncPileVisuals(records.get(pile.mapId)); // Rebuild one instanced matrix batch on looting, never remove four separate meshes.
+    queuePileSave(); // The items are already awarded; storage waits for browser idle.
+    removePileVisual(records.get(pile.mapId),pile); // Touch four instance slots instead of the entire batch.
     lastEvent='looted '+pile.id;
     // Each blasted mine rock becomes exactly one rock pile, so collecting it
     // stands in for breaking that rock: it counts down the floor's remaining
@@ -1721,6 +1746,7 @@
     const summary=Object.entries(items).map(([item,count])=>count+' '+(gameDeps?.itemLabel?.(item)||item)).join(', ');
     deps()?.showToast?.('Collected '+summary+'.'+(revealed?' A hole leading deeper has been revealed!':''),true);
     deps()?.refreshActionBar?.();
+    lastPilePickupMs=Math.round((window.performance?.now?.() ?? Date.now())-started);
     return true;
   }
   // Aimed rubble is an ordinary action-arch context button (touch arch,
@@ -1950,9 +1976,35 @@
         }
       }
       state.mesh.count=needed;
+      state.piles=piles; // Per-type dense visual order enables O(1) swap-removal.
+      state.indices=new Map(piles.map((pile,index)=>[pile.id,index])); // Instance-block index lookup for a collected pile.
       state.mesh.instanceMatrix.needsUpdate=true;
       state.mesh.computeBoundingSphere?.(); // Keep normal camera frustum culling after matrix changes.
     }
+  }
+  function removePileVisual(rec,pile) {
+    const state=rec?.pileVisuals?.get(pile.kind);
+    const index=state?.indices?.get(pile.id);
+    if(index==null){syncPileVisuals(rec);return;} // Defensive compatibility with an older/reconstructed visual batch.
+    const tail=state.piles.pop();
+    state.indices.delete(pile.id);
+    if(tail && tail.id!==pile.id){
+      state.piles[index]=tail;
+      state.indices.set(tail.id,index);
+      const transform=new THREE.Object3D(); // Used only for the four moved tail instances.
+      for(let i=0;i<4;i++){
+        transform.position.set((tail.x??tail.col+.5)+Math.cos(i*1.8)*.15,
+          tail.y+.09,(tail.z??tail.row+.5)+Math.sin(i*1.8)*.15);
+        transform.rotation.set(0,0,pile.kind==='tree'?1.2+i*.08:0);
+        transform.scale.set(1,1,1);
+        transform.updateMatrix();
+        state.mesh.setMatrixAt(index*4+i,transform.matrix);
+      }
+    }
+    state.mesh.count=state.piles.length*4;
+    state.mesh.instanceMatrix.needsUpdate=true;
+    // A removed pile only shrinks the visual set: the old bounding sphere stays safely conservative.
+    // Recomputing every bound per loot would reintroduce an all-pile performance spike.
   }
   function spawnPile(mapId,rec,col,row,kind,y,woodKey='pineLog',oreKey=null,sourceId=null,restoredId=null,impact=null) {
     const baseId=kind+'_'+col+'_'+row+(sourceId?'_'+sourceId:''); // Unique source keeps nearby fruit piles distinct.
@@ -2611,7 +2663,7 @@
         stowedParts:[...heldRenderOrders.keys()].filter(mesh=>mesh.renderOrder===STOWED_BURDEN_RENDER_ORDER).length,
         heldPartsInWeaponReplay:[...heldRenderOrders.keys()].filter(mesh=>mesh.userData?.hobunjiHeldObjectPlane===true).length,
         skinnedNames:[...skinnedRearOverlays.keys()].map(mesh=>mesh.name)},
-      performance:{ruinSnapshotReads,textureBatchesCreated,
+      performance:{ruinSnapshotReads,textureBatchesCreated,lastPilePickupMs,pileSaveQueued,
         meshRaycastQueries,meshRaycastBroadphaseRejects,meshRaycastTriangleQueries,
         activePileDrawCalls:records.get(area())?.pileVisuals.size||0,
         activeDebrisInstances:[...(records.get(area())?.pileVisuals.values()||[])].reduce((sum,state)=>sum+state.mesh.count,0),

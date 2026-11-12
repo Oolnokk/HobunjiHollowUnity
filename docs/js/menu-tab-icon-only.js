@@ -40,6 +40,7 @@
     progress: ['Character', 'Review skills, mastery and perks.'],
     crafting: ['Character', 'Make items using your known recipes.'],
     map: ['World', 'Find places and plan where to go next.'],
+    worldProgress: ['World', 'Track Town Value, Great Fey quests and permanent improvements.'],
     tasks: ['World', 'Track quests, requests and rumors.'],
     calendar: ['World', 'Check upcoming events and important dates.'],
     compendium: ['World', 'Look up discoveries and information about the world.'],

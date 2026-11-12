@@ -5506,10 +5506,11 @@
             }
             const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0; // Every creature corpse gets the same high-chance shared-ammo roll as bandits.
             if (specialAmmo) parts.push(`🏹 Special Ammo×${specialAmmo}`);
+            scheduleLootMemberSave(); // Normal animal butcher loot uses the same deferred member save as enemy corpses.
             if (c.keepCorpseAfterLoot) c.corpseLooted = true; // Tzatzul victim piles retain their bodies and one-shot searched state.
             else { corpseObjects.delete(c); despawnCreature(c); }
             return {
-              ok: true,
+              ok: true, deferMemberSave: true, // The canonical save is already queued; skip the world-action handler's immediate second write.
               message: parts.length ? `Butchered the ${c.def.label}: ${parts.join(' ')}` : `Nothing usable left on the ${c.def.label}.`,
             };
           },
@@ -9591,17 +9592,34 @@
         return meta;
       }
 
+      let pendingLootMemberSave = false; // Corpse loot is live immediately; disk serialization is coalesced until idle.
+      let queuedLootMemberSave = false; // Prevents one idle task per loot pickup.
       function saveMemberWorldData() {
         try {
           const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null'); // Existing canonical metadata receives the shared live serialization.
           if (!meta) return false;
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(captureMemberWorldData(meta)));
+          pendingLootMemberSave = false; // An ordinary explicit save also satisfies the pending loot write.
           return true; // The imperial custody handoff must know the character inventory really reached persistent storage.
         } catch (error) {
           window.__farmLog?.('[member-save] Failed to persist world-member data: ' + String(error?.message || error), 'warn');
           return false; // Existing callers may ignore this result; custody uses it to avoid finalizing incomplete transfers.
         }
       }
+
+      function flushLootMemberSave() {
+        if (pendingLootMemberSave) saveMemberWorldData(); // Only canonical member serializer writes member data.
+      }
+      function scheduleLootMemberSave() {
+        pendingLootMemberSave = true; // Item grants and world-object removal have already completed synchronously.
+        if (queuedLootMemberSave) return;
+        queuedLootMemberSave = true;
+        const flush = () => { queuedLootMemberSave = false; flushLootMemberSave(); };
+        if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(flush, { timeout: 1500 });
+        else setTimeout(flush, 100);
+      }
+      window.addEventListener?.('pagehide', flushLootMemberSave); // Persist pending loot before a tab/page closes.
+      document.addEventListener?.('visibilitychange', () => { if (document.hidden) flushLootMemberSave(); });
 
       // ── Owner/farmhand content visibility ─────────────────────────────
       // Generic gate dialogue trees and (future) quests can tag themselves
@@ -17932,6 +17950,7 @@
       }
 
       function buildInventoryGrid() {
+        if (!menuOpen) return; // Opening/switching to Pack rebuilds it; offscreen loot must not recreate dozens of DOM nodes.
         const grid = document.getElementById('invGrid');
         if (!grid) return;
         grid.innerHTML = '';
@@ -25030,6 +25049,7 @@
           heldItemParent: heldItemHolder.parent === playerMesh ? 'player' : (heldItemHolder.parent ? 'other' : 'detached'),
           heldItemVisible: !!heldItemHolder.visible,
           heldItemKey: _heldItemKey,
+          musicInstrument: window.MusicMinigame?.state?.instrumentKey || null, // Pixel Probe distinguishes music visual ownership from a locked ordinary tool.
           drinkAnimating: !!_heldDrinkPhase,
           drinkPhase: _heldDrinkPhase,
           drinkProgress: _heldDrinkProgress,
@@ -25215,14 +25235,22 @@
         _toolPoseCentroidDebug.reticleOrbitPitchDeg = 0;
         _toolPoseCentroidDebug.reticleOrbitYawDeg = 0;
         _toolPoseCentroidDebug.reticleTargetWorld = null;
-        if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'tools')) {
+        const musicInstrument = window.MusicMinigame?.state?.instrumentKey || null; // A live music session owns its prop without unlocking ordinary combat/tools.
+        if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'tools')
+            && (musicInstrument !== 'kurraya' ||
+                window.CharacterActionLocks?.isLockedIgnoringOwner?.(PLAYER_ACTION_LOCK_ID, 'tools', 'music-minigame') !== false)) {
           toolHolder.visible = false;
           heldItemHolder.visible = false;
           return;
         }
-        if (window.MusicMinigame?.state?.instrumentKey) {
+        if (musicInstrument) {
           toolHolder.visible = false;
-          updateHeldItemHolder(dt);
+          if (musicInstrument === 'kurraya') {
+            window.KurrayaInstrument?.advancePlayerKurrayaNote?.(performance.now()); // One sample for holder, hands and pre-render knees.
+            updateHeldItemHolder(dt); // Music locks attacks, not the Kurraya's appearance.
+          } else {
+            heldItemHolder.visible = false; // Flute uses a mouth-mounted sprite rather than duplicating it on the chest.
+          }
           return;
         }
         if (heldMode === 'none') {
@@ -25802,11 +25830,13 @@
         // updateClimb instead of a raw tile lookup, which would pop between
         // the cliff base and plateau top the instant the crossing tile
         // flips (see startClimb/updateClimb).
-        const ruinStandY = window.DevRandomRuin?.getPlayerSupportY?.(); // Used by the Random Test Ruin to feed dynamic multi-level support into the canonical body, shadow, resource-ring, held-equipment, and shoulder-pet render path.
+        const supportedJump = player._freeJump?.phase === 'supported'; // Elevated landings still use PlayerJump's current feet height, with the ruin's visual immersion applied.
+        const ruinStandY = window.DevRandomRuin?.getPlayerSupportY?.(supportedJump ? player.physicalFeetY : undefined);
         const ordinaryStandY = player.onBranch ? player.branchSurfaceY
           : player.onCliffBalcony ? player._cliffBalconyY
           : player.onClimbSurface ? player.wallClimbY
-          : player._freeJump ? player.physicalFeetY // Jump is an independently grounded/airborne motion, not a scripted climb.
+          : supportedJump && Number.isFinite(ruinStandY) ? ruinStandY
+          : player._freeJump ? player.physicalFeetY // Airborne and rope motion still use the independent physical elevation.
           : player.climbing ? player.climbSurfaceY
           : Number.isFinite(ruinStandY) ? ruinStandY
           : (_isZoneArea(currentArea) ? surfaceYAtWorld(currentArea, wx, wz) : tileSurfaceYInArea(tile, currentArea));
@@ -33386,6 +33416,8 @@
         buildInventoryGrid,
         refreshActionBar,
         saveMemberWorldData,
+        scheduleLootMemberSave,
+        isMenuOpen: () => menuOpen,
         despawnCreature,
         buildPackClothingSection: window.EquipmentPanel.buildPackClothingSection,
         getDyeCatalog: window.DyeSystem.getCatalog,

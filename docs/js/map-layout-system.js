@@ -302,6 +302,7 @@
         row: piece.row + (Number(piece.postZ) || 0),
         rotY: Number.isFinite(piece.rotY) ? piece.rotY : (Number(station.rotY) || 0),
         sourceFurnitureKey: sourceKey,
+        furnitureId: station.furnitureId || piece.id, // Physical seat identity remains exact even when placement offsets move its station.
         furnitureKey: station.furnitureKey || sourceKey,
       };
     });
@@ -360,6 +361,17 @@
     const merged = { ...mapData, activeLayoutId: layout.id };
     for (const key of OVERRIDABLE_KEYS) {
       if (Object.prototype.hasOwnProperty.call(layout, key)) merged[key] = layout[key];
+    }
+    const additions = Array.isArray(layout.npcStationAdditions) ? layout.npcStationAdditions : []; // Temporary event seats augment the original station registry.
+    if (additions.length) {
+      const existing = Array.isArray(merged.npcStations) ? merged.npcStations : []; // Keeps ordinary NPC destinations and Teacup's dedicated stool.
+      const knownIds = new Set(existing.map(station => station?.id)); // Avoids duplicate ids when resolving an already-effective layout.
+      merged.npcStations = [...existing, ...additions.filter(station => station?.id && !knownIds.has(station.id))];
+    }
+    if (Object.prototype.hasOwnProperty.call(layout, 'furniture') && Array.isArray(merged.npcStations)) {
+      const activeFurnitureIds = new Set((merged.furniture || []).map(piece => String(piece?.id || '')).filter(Boolean)); // Only chairs physically present in this furniture-replacing layout can back seat stations.
+      merged.npcStations = merged.npcStations.filter(station => !station?.sourceFurnitureId
+        || activeFurnitureIds.has(String(station.sourceFurnitureId))); // Prevents phantom service pews after Communion moves the benches; leaves Teacup's stool and unbound schedule stations intact.
     }
     return resolveFestivalLocales(resolveFurnitureBoundStations(merged));
   }

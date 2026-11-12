@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>Tropical Wet/Dry Trench Farm</title>
   <link rel="stylesheet" href="utility-spyglass.css?v=20261103spyglassControls1" />
+  <link rel="stylesheet" href="world-town-progress.css?v=20261111worldProgress1" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <!-- Parser-time dependency gate used by modules that may be dynamically
        injected long before game.js. Keep this near the top: livestock
@@ -39,7 +40,7 @@
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
-  <script src="js/format-utils.js?v=20261110barnStableUI2"></script>
+  <script src="js/format-utils.js?v=20261111h05b7f02"></script>
   <!-- Default building entry tile (buildingSpawnFromExit) extracted out of
        game.js; uses window.FormatUtils.clamp and must load before game.js. -->
   <script src="js/building-entry-spawn.js?v=20261026hfbed948"></script>
@@ -90,7 +91,7 @@
        toolEmoji/actionName/formatClock, so must load after it and before
        game.js, which calls window.HudUpdate.init(...) (binds its own
        itemPrev/itemNext listeners) during its own setup. -->
-  <script src="js/hud-update.js?v=20261024h6a3950e"></script>
+  <script src="js/hud-update.js?v=20261112hudCurrencyLinear1"></script>
   <!-- Desktop/touch radial arc selector (tool/item wheels, ammo/potion
        entry menus, utilities wheel), extracted out of game.js; uses
        window.HudUpdate.refreshItemScroll, so must load after it and before
@@ -198,12 +199,12 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261031h9b18729"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261110xrayActionLoader1"></script>
+  <script src="js/held-action-animations.js?v=20261112kurrayaMerge1"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
-  <script src="js/character-action-locks.js?v=20261109festivalMerge2"></script>
+  <script src="js/character-action-locks.js?v=20261112kurrayaMerge1"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20261110check776afdb"></script>
   <script src="js/npc-movement-head-target.js?v=20261101rugchairbednpc3"></script> <!-- Shared invisible movement gaze for allied NPC walkers and humanoid hostiles. -->
@@ -411,7 +412,7 @@
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
-  <script src="js/bandit-camps.js?v=20261110banubuNightAudit2"></script>
+  <script src="js/bandit-camps.js?v=20261112lootPickup2"></script>
   <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
@@ -419,7 +420,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261111flailPose1"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261112flailPoseResolved1"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -499,7 +500,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmTroughs.init(...) during its own setup. -->
-  <script src="js/farm-troughs.js?v=20261107flyers2"></script>
+  <script src="js/farm-troughs.js?v=20261111h572c727"></script>
   <!-- Modular player house (window.HousePieces) — barn-shaped foundation/
        build/demolish pipeline for house-piece deeds bought from the
        Carpenter, replacing the old singular Highland House GLB. Depends on
@@ -571,7 +572,7 @@
        from loadBuildingScene/_loadTownFromWorkspace and its own live-swap
        check. -->
   <script src="js/festival-calendar.js?v=20261110tzkFortune1"></script>
-  <script src="js/map-layout-system.js?v=20261019h5ca2b48"></script>
+  <script src="js/map-layout-system.js?v=20261111communion2"></script>
   <!-- Gives interior furniture an authored tile footprint/quarter-turn transform and derives occupied-tile collision before the scene consumes the effective layout. -->
   <script src="js/interior-furniture-grid.js?v=20261102chairreview2"></script>
   <!-- Keeps authored seat anchors/surfaces on the same post-placement transform as interior-editor furniture visuals. -->
@@ -626,14 +627,14 @@
   <script src="js/climb-surfaces.js?v=20261108h4c58289"></script>
   <script src="js/ruin-wall-faces.js?v=20261106walls1"></script> <!-- Merged stretch-to-fit wall faces; shaft-hub.js builds its stone from them. -->
   <script src="js/ruin-reaching-obelisks.js?v=20261108shaftfallgrab1"></script> <!-- Complete stateful vertical traversal, after CellGrid3D and the climb pipeline. -->
-  <script src="js/ruin-jump-shaft.js?v=20261110h085ffd2"></script> <!-- Free-jump platform staircase shaft traversal (replaces the reaching obelisks for generated ruins); before shaft-hub.js. -->
+  <script src="js/ruin-jump-shaft.js?v=20261111h610a325"></script> <!-- Free-jump platform staircase shaft traversal (replaces the reaching obelisks for generated ruins); before shaft-hub.js. -->
   <script src="js/shaft-hub.js?v=20261110h175d7ad"></script>
   <script src="js/ruin-layer-plan.js?v=20261109ropeZigzag1"></script>
   <script src="js/dev-ruin-single-room-trial.js?v=20261109timedMelody1"></script> <!-- One-room developer puzzle chooser and normal-plan weighted odds. -->
   <script src="js/dev-ruin-find-blocks.js?v=20261109timedMelody1"></script> <!-- Four-block compound lab fixture, using native ruin push, fire, flute and bomb mechanics. -->
   <script src="js/ruin-shaft-corridor.js?v=20261104directVestibule1"></script>
   <script src="js/ruin-layer-defense.js?v=20261104soloNoLoot1"></script>
-  <script src="js/puzzle-cave-melody.js?v=20261110inputGrid1"></script><!-- Reusable rhythm grid and timed plate-gated cave songs. -->
+  <script src="js/puzzle-cave-melody.js?v=20261110rhythmMotifs3"></script><!-- Reusable rhythm grid and timed plate-gated cave songs. -->
   <script src="js/puzzle-cave-plate-art.js?v=20261110tankanring1"></script><!-- Carved-smooth Tankan lettering, reused by interior and exterior melody plates. -->
   <script src="js/ruin-melody-glyph-decal.js?v=20261108cliffWhiteYellowGlowPick3"></script><!-- Plate-revealed Scratchbone clues outside the dev ruin bootstrap. -->
   <script src="js/ruin-layer-challenges.js?v=20261110melodyClock1"></script>
@@ -715,9 +716,9 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.MetalCraftShop.init(...) during
        its own setup. -->
-  <script src="config/modular-weapons.js?v=20261110pairvalues3"></script>
+  <script src="config/modular-weapons.js?v=20261112kyliehaft1"></script>
   <script src="js/modular-weapon-bridge-fill.js?v=20261109boreflex1"></script>
-  <script src="js/modular-weapons.js?v=20261109pairdamage2"></script>
+  <script src="js/modular-weapons.js?v=20261112kylieruntime1"></script>
   <script src="js/town-proposals.js?v=20261016proposals1"></script>
   <script src="js/foundry-shop.js?v=20261110forgeButton1"></script>
   <script src="js/metal-craft-shop.js?v=20261104hPatternQuick1435a"></script>
@@ -826,7 +827,7 @@
        so load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.FarmPanel.init(...)
        during its own setup. -->
-  <script src="js/farm-panel.js?v=20261110barnStableConflict1"></script>
+  <script src="js/farm-panel.js?v=20261111h5f62dba"></script>
   <!-- Tasks tab (window.TasksPanel), Supplies tab (window.SupplyPage),
        whistle-equip row (window.WhistleEquip), and the Wildlife/genotype
        debug panel (window.WildlifeDebugPanel) — all read
@@ -950,8 +951,8 @@
        dependencies; must load before shattercasks.js, which feeds them. See docs/architecture/ruin-capabilities.md. -->
   <script src="js/world-events.js?v=1"></script>
   <script src="js/targetables.js?v=1"></script>
-  <script src="js/shattercasks.js?v=20261108h9110afe"></script>
-  <script src="js/crate-piles.js?v=20261105hf6df591"></script>
+  <script src="js/shattercasks.js?v=20261112lootPickup2"></script>
+  <script src="js/crate-piles.js?v=20261112lootPickup2"></script>
   <script src="js/hronal-witch-bombs.js?v=20261108hf7dc41b"></script>
   <script src="js/pingdort-flocks.js?v=20261108hdenlineage4"></script> <!-- Wild Drenkirra-hunting flocks, fertile nests, and companion rock-bomber attacks. -->
   <!-- Hanging ropes: the shared rope swing arithmetic (pure) and the rope component burdens hang from. Needs Shattercasks at
@@ -1357,6 +1358,7 @@
         <button class="mp-tab"        data-mpanel="progress"      role="tab">⭐ Progress</button>
         <button class="mp-tab"        data-mpanel="crafting"      role="tab">🔨 Crafting</button>
         <button class="mp-tab"        data-mpanel="map"           role="tab">🗺 Map</button>
+        <button class="mp-tab"        data-mpanel="worldProgress" role="tab">📈 Town Progress</button>
         <button class="mp-tab"        data-mpanel="tasks"         role="tab">📋 Tasks</button>
         <button class="mp-tab"        data-mpanel="calendar"      role="tab">📅 Calendar</button>
         <button class="mp-tab"        data-mpanel="farm"          role="tab">🚜 Farm</button>
@@ -1536,6 +1538,12 @@
           </div>
         </div>
       </div><!-- /mpMap -->
+
+      <!-- ── World Town Progress pane: read-only permanent town and Great Fey progress.
+           See window.TownProgressPanel; separate from character-saved mpProgress. -->
+      <div class="mp-pane" id="mpWorldProgress" aria-label="Town Progress">
+        <div class="town-progress-page"><div class="town-progress-muted">Loading town progress…</div></div>
+      </div><!-- /mpWorldProgress -->
 
       <!-- ── Farm pane: the farm's identity/progression hub — name, owner,
            a read-only layout glance, livestock roster + breeding, shared
@@ -2881,7 +2889,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261111flailPose1"></script>
+  <script src="js/pixel-probe.js?v=20261112flailPoseResolved1"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2914,7 +2922,8 @@
   <script src="js/festival-ui.js?v=20261110tzkFortune1"></script>
   <script src="js/tutorial-unlock-visits.js?v=20260930doorstep1"></script>
   <script src="js/farmhouse-login-spawn.js?v=20260930doorstep1"></script>
-  <script src="js/banubu-questline.js?v=20261026banubuoverpass3"></script>
+  <script src="js/banubu-questline.js?v=20261112townProgressReadOnly1"></script>
+  <script src="js/world-town-progress.js?v=20261112townProgressReviewed2"></script> <!-- Save-backed World → Town Progress pane; no polling or extra quest storage. -->
   <!-- Completed world-space loot and XP rewards move into the five-row, screen-fixed reading queue. -->
   <script src="js/reward-readout.js?v=20261107rewardReadout1"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
@@ -2941,7 +2950,7 @@
   <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
        — must load before game.js, which calls window.KurrayaInstrument.init(...)
        during its own setup, mirroring window.Fishing above. -->
-  <script src="js/kurraya-instrument.js?v=20261107instrNeutral2"></script>
+  <script src="js/kurraya-instrument.js?v=20261112kurrayaMerge1"></script>
   <!-- Music (Lyre) performance minigame (window.MusicMinigame) — must
        load before game.js, which calls window.MusicMinigame.init(...)
        during its own setup, mirroring window.Fishing above. -->
@@ -2958,7 +2967,7 @@
   <script src="js/npc-agenda.js?v=20261018a"></script>
   <script src="js/npc-activities.js?v=20261109lazyCaveNpc1"></script>
   <script src="js/npc-social-stimuli.js?v=20260902a"></script>
-  <script src="js/npc-activity-planner.js?v=20261018b"></script>
+  <script src="js/npc-activity-planner.js?v=20261111communion1"></script>
   <!-- NPC scheduling (resolveNpcScheduleTarget, station registry, on-duty
        checks — window.NpcScheduling) — must load before game.js, which
        calls window.NpcScheduling.init(...) during its own setup.
@@ -2974,7 +2983,7 @@
        referencing it at all until now — the seating bridge it feeds was
        consequently always inert in the shipped game (see that file's own
        header). -->
-  <script src="config/npcs/social-relations.js?v=20261013h9b7e0bc"></script>
+  <script src="config/npcs/social-relations.js?v=20261111communion1"></script>
   <!-- Social seating (window.NpcSocialSeating) — decorates
        NpcActivities.resolveDestination so a "sit" destination picks the
        best-scoring free seat (nearby family/partner/friends weighted in)
@@ -2985,7 +2994,7 @@
        NpcActivities.resolveDestination/NpcScheduling.findStationsByRole
        existing) — same previously-untagged situation as social-relations.js
        above. -->
-  <script src="js/npc-social-seating-bridge.js?v=20261021h5c4cd26"></script>
+  <script src="js/npc-social-seating-bridge.js?v=20261111communion1"></script>
   <!-- NPC walkability/beeline checks + area-graph pathfinding
        (window.NpcPathfinding) — must load before game.js, which calls
        window.NpcPathfinding.init(...) during its own setup. -->
@@ -3035,7 +3044,7 @@
   <script src="js/utility-spyglass.js?v=20261103spyglassControls3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
   <script src="js/ruin-objective-tracker.js?v=20261108tracker1"></script> <!-- Top-left dungeon checklist while inside a generated ruin. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261110melodyClock1"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261111he69c3fb"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -3086,7 +3095,7 @@
   <script src="js/npc-view-frustum-cull.js?v=20261110frustumWire1"></script>
   <!-- Conservative whole-actor WebGL2 occlusion queries: only rendering is skipped; AI/physics stay active. -->
   <script src="js/actor-render-occlusion.js?v=20261110actorOcclusion1"></script>
-  <script src="game.js?v=20261111h68c9a6a"></script>
+  <script src="game.js?v=20261112kurrayaLootMerge1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261109missingNpcRestore1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

@@ -42,6 +42,98 @@
     };
   }
 
+
+  const TRINKET_STAT_LABELS = Object.freeze({
+    maxHealth: 'Max Health', maxStamina: 'Max Stamina', maxFooting: 'Max Footing',
+    healthRegen: 'Health recovery', healthRegenInCombat: 'Health regen (combat)',
+    staminaRegen: 'Stamina recovery', ordinaryStaminaRegen: 'Normal Stamina regen',
+    footingRegen: 'Footing recovery', afflictionRecovery: 'Affliction recovery',
+    exhaustionRecovery: 'Exhaustion recovery', footingRecoveryDelay: 'Footing regen delay',
+    dodgeEfficacy: 'Dodge travel & i-frames', dodgeTravel: 'Dodge travel',
+    dodgeIframe: 'Dodge i-frames', dodgeStaminaCost: 'Dodge Stamina cost',
+    knockbackDistance: 'Knockback received',
+    outgoingHealthDamage: 'Weapon Health damage', outgoingFootingDamage: 'Weapon Footing damage',
+    incomingHealthDamage: 'Health damage taken', incomingFootingDamage: 'Footing damage taken',
+    heavyFootingDamage: 'Heavy Footing damage', heavyAttackStaminaCost: 'Heavy Stamina cost',
+    attackSpeed: 'Weapon attack speed', attackStaminaCost: 'Attack Stamina cost',
+    outgoingAffliction: 'Weapon affliction buildup', incomingAffliction: 'Affliction buildup taken',
+    lowHealthDamage: 'Damage below 35% HP', lowHealthHealing: 'Healing below 35% HP',
+    proneTargetDamage: 'Health damage vs prone', killStaminaRestore: 'Stamina restored on kill',
+    rangedDamage: 'Ranged Health damage', rangedProjectileSpeed: 'Ranged projectile speed',
+    flaskPower: 'Flask impact power', flaskRadius: 'Flask splash radius',
+    shatterPower: 'Shattercask power', shatterRadius: 'Shattercask radius',
+  }); // Displays every authored trinket stat channel with a short, gameplay-accurate label in the left rail.
+  const TRINKET_LOWER_IS_BETTER = new Set([
+    'footingRecoveryDelay', 'knockbackDistance', 'dodgeStaminaCost',
+    'heavyAttackStaminaCost', 'attackStaminaCost', 'incomingHealthDamage',
+    'incomingFootingDamage', 'incomingAffliction',
+  ]); // Distinguishes reduced incoming damage/cost/delay from drawbacks when coloring combined trinket-only effects.
+
+  function trinketPercent(multiplier) {
+    const percent = Math.round((multiplier - 1) * 1000) / 10; // Rounded to a tenth so multiplicative duplicate bonuses remain visible.
+    return (percent > 0 ? '+' : '') + formatNumber(percent) + '%';
+  }
+
+  function composeTrinketEffects(trinkets = window.TrinketSystem, perks = window.PerkSystem) {
+    let equipped = []; // Snapshot of equipped item instances; duplicates intentionally contribute separately.
+    try {
+      const entries = trinkets?.equippedEntries?.(); // Uses the exact equipped gear collection rather than the owned trinkets list.
+      if (Array.isArray(entries)) equipped = entries;
+    } catch (error) {
+      lastError = String(error?.message || error);
+    }
+    const stats = new Map(); // Accumulates same-channel stat effects multiplicatively, matching TrinketSystem.statMultiplier.
+    const perkRanks = new Map(); // Accumulates Combat perk bonus ranks additively, matching TrinketSystem.perkBonusRanks.
+    const companion = { damage: 1, footing: 1, affliction: 1 }; // Accumulates companion channels independently as CompanionOffense does.
+    const contributors = new Map(); // Adds source trinket names to row tooltips for diagnosing unexpectedly stacked effects.
+    let used = 0; // Displays the Attunement spent by these equipped instances beside the section heading.
+    for (const entry of equipped) {
+      const def = entry?.def || trinkets?.DEFINITIONS?.[entry?.id]; // Saved entries can resolve their definitions through either public API shape.
+      if (!def) continue;
+      used += Math.max(0, Number(def.attunementCost) || 0);
+      for (const [key, raw] of Object.entries(def.effects?.stats || {})) {
+        const value = Number(raw); // Ignores invalid or non-positive channels just like the gameplay provider.
+        if (!Number.isFinite(value) || value <= 0) continue;
+        stats.set(key, (stats.get(key) || 1) * value);
+        if (!contributors.has(key)) contributors.set(key, []);
+        contributors.get(key).push(def.displayName || entry.id || key);
+      }
+      for (const [key, raw] of Object.entries(def.effects?.perkRanks || {})) {
+        const value = Number(raw); // Trinket perk grants are additional ranks, not new purchased perk allocations.
+        if (Number.isFinite(value) && value > 0) perkRanks.set(key, (perkRanks.get(key) || 0) + value);
+      }
+      for (const channel of Object.keys(companion)) {
+        const value = Number(def.effects?.companion?.[channel]); // Non-companion trinkets leave that channel unchanged.
+        if (Number.isFinite(value) && value > 0) companion[channel] *= value;
+      }
+    }
+    const capacity = Math.max(0, safeNumber(() => trinkets?.capacity?.(), safeNumber(() => trinkets?.ATTUNEMENT_CAPACITY, 8))); // Mirrors the current Attunement budget in the heading.
+    const order = Object.keys(TRINKET_STAT_LABELS); // Keeps row positions stable when equipment selection order changes.
+    const rows = []; // Rendered at the top of the left-side character-effects list before Outfit and Final values.
+    for (const [key, multiplier] of [...stats].sort((a, b) => {
+      const aIndex = order.indexOf(a[0]), bIndex = order.indexOf(b[0]); // Unknown future keys remain visible after the known stats.
+      return (aIndex < 0 ? order.length : aIndex) - (bIndex < 0 ? order.length : bIndex) || a[0].localeCompare(b[0]);
+    })) {
+      const label = TRINKET_STAT_LABELS[key] || key.replace(/([a-z])([A-Z])/g, '$1 $2'); // New stats remain visible without needing a UI update.
+      const favorable = TRINKET_LOWER_IS_BETTER.has(key) ? multiplier < 1 : multiplier > 1; // Marks drawbacks even when the numeric value grows.
+      const tone = Math.abs(multiplier - 1) < 1e-8 ? 'neutral' : favorable ? 'bonus' : 'penalty'; // Offset effects still appear as a neutral 0% entry.
+      const value = trinketPercent(multiplier) + (key === 'killStaminaRestore' ? ' max / kill' : ''); // Death's Momentum is a refund of max Stamina, not a generic regen multiplier.
+      rows.push(rowSpec(label, value, 'Combined trinket-only effect from: ' + (contributors.get(key) || []).join(', '), false, tone));
+    }
+    const perkNames = perks?.TREES?.combat || []; // Reuses the actual Combat perk names instead of duplicating perk display text.
+    for (const [key, count] of perkRanks) {
+      const name = perkNames.find(perk => perk.id === key)?.name || key.replace(/([a-z])([A-Z])/g, '$1 $2'); // Unknown future perks retain a readable label.
+      rows.push(rowSpec('Perk: ' + name, '+' + formatNumber(count) + ' ranks', 'Bonus Combat perk ranks from equipped trinkets; purchased ranks are separate.', false, 'bonus'));
+    }
+    for (const [channel, multiplier] of Object.entries(companion)) {
+      if (multiplier === 1) continue;
+      const name = { damage: 'Companion Health damage', footing: 'Companion Footing damage', affliction: 'Companion affliction buildup' }[channel]; // Independent animal-attack channels never count twice.
+      rows.push(rowSpec(name, trinketPercent(multiplier), 'Combined equipped trinket bonus to your animal companion.', false, multiplier > 1 ? 'bonus' : 'penalty'));
+    }
+    if (!rows.length) rows.push(rowSpec(equipped.length ? 'No net trinket effects' : 'No trinkets equipped', '—', 'Equip trinkets from the middle Gear inventory.', false, 'empty'));
+    return { equipped: equipped.length, used, capacity, rows, stats: Object.fromEntries(stats), perkRanks: Object.fromEntries(perkRanks), companion };
+  }
+
   function composeSnapshot(apis = {}) {
     const clothing = apis.clothing ?? window.ClothingWeavingSystem; // Shared authority for total outfit weight and every weight-derived multiplier.
     const skill = apis.skill ?? window.SkillSystem; // Shared authority for active food/stat combat modifiers.
@@ -81,6 +173,7 @@
       : 0; // Stable literal readout; ResourceSystem includes max-resource buffs, perks, and capacity-reducing afflictions.
 
     return {
+      trinkets: composeTrinketEffects(trinkets, perks), // Live combined trinket-only summary used above Outfit and Final Values.
       outfit: {
         weightUnits: Math.max(0, finite(outfit.weightUnits, 0)),
         damageTakenMul: clamp(outfit.damageTakenMul ?? 1, 0, 99),
@@ -208,6 +301,10 @@
         white-space:nowrap;
       }
       #mpInventory .gear-character-effects-card .gear-effect-row.literal .gear-effect-value { color:#d8eef7; }
+      #mpInventory .gear-character-effects-trinkets .gear-effect-row.bonus .gear-effect-value { color:#9ee9bf; }
+      #mpInventory .gear-character-effects-trinkets .gear-effect-row.penalty .gear-effect-value { color:#ffaaa0; }
+      #mpInventory .gear-character-effects-trinkets .gear-effect-row.neutral .gear-effect-value { color:#d8eef7; }
+      #mpInventory .gear-character-effects-trinkets .gear-effect-row.empty { grid-column:1 / -1; }
       @media (max-width:720px) {
         #mpInventory .gear-character-effects-card .gear-effect-row {
           gap:2px;
@@ -237,15 +334,17 @@
     if (typeof document === 'undefined') return null;
     const panel = document.querySelector('#mpInventory .gear-outfit-stats');
     if (!panel) return null;
-    panel.classList.add('gear-character-effects-host');
+    if (!panel.classList.contains('gear-character-effects-host')) panel.classList.add('gear-character-effects-host'); // Avoid redundant class mutations that wake the Gear layout observer.
+    let trinketCard = panel.querySelector('.gear-character-effects-trinkets');
     let outfitCard = panel.querySelector('.gear-character-effects-outfit');
     let finalCard = panel.querySelector('.gear-character-effects-final');
-    if (!outfitCard || !finalCard) {
+    if (!trinketCard || !outfitCard || !finalCard) {
+      trinketCard = makeCard('trinkets', 'Trinket effects'); // First card in the left-rail stat list, before Outfit and Final Values.
       outfitCard = makeCard('outfit', 'Outfit effects');
       finalCard = makeCard('final', 'Final values');
-      panel.replaceChildren(outfitCard, finalCard);
+      panel.replaceChildren(trinketCard, outfitCard, finalCard);
     }
-    return { panel, outfitCard, finalCard };
+    return { panel, trinketCard, outfitCard, finalCard };
   }
 
   function formatMultiplier(value) {
@@ -258,8 +357,8 @@
     return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
   }
 
-  function rowSpec(label, value, title = '', literal = false) {
-    return { label, value, title, literal }; // Compact immutable-like row description consumed by renderRows below.
+  function rowSpec(label, value, title = '', literal = false, tone = '') {
+    return { label, value, title, literal, tone }; // Compact immutable-like row description consumed by renderRows below.
   }
 
   function renderRows(list, rows) {
@@ -275,7 +374,11 @@
     while (list.children.length > rows.length) list.lastElementChild?.remove();
     rows.forEach((spec, index) => {
       const row = list.children[index];
-      row.classList.toggle('literal', !!spec.literal);
+      if (row.classList.contains('literal') !== !!spec.literal) row.classList.toggle('literal', !!spec.literal); // Avoid a redundant class rewrite on each 1 Hz stat refresh.
+      for (const tone of ['bonus', 'penalty', 'neutral', 'empty']) {
+        const active = spec.tone === tone; // Changes the benefit/drawback class only when the relevant trinket result changes.
+        if (row.classList.contains(tone) !== active) row.classList.toggle(tone, active);
+      }
       row.title = spec.title || '';
       const label = row.querySelector('.gear-effect-label');
       const value = row.querySelector('.gear-effect-value');
@@ -292,6 +395,10 @@
       lastSnapshot = snapshot;
       const outfit = snapshot.outfit;
       const final = snapshot.final;
+      const trinketHeading = ui.trinketCard.querySelector('.gear-loadout-heading'); // Shows current Attunement without a second read of saved equipment.
+      const headingText = 'Trinket effects · ' + snapshot.trinkets.used + '/' + snapshot.trinkets.capacity; // Only rewrite Attunement heading when the displayed value changes.
+      if (trinketHeading && trinketHeading.textContent !== headingText) trinketHeading.textContent = headingText;
+      renderRows(ui.trinketCard.querySelector('.gear-effects-list'), snapshot.trinkets.rows);
 
       renderRows(ui.outfitCard.querySelector('.gear-effects-list'), [
         rowSpec('Total weight', `${formatNumber(outfit.weightUnits)} u`, 'Total weight of equipped craftable cloth.', true),
@@ -389,6 +496,7 @@
       inventoryUiPatched,
       panelReady: typeof document !== 'undefined' && !!document.querySelector('#mpInventory .gear-character-effects-final'),
       outfitWeight: lastSnapshot?.outfit?.weightUnits ?? null,
+      trinkets: lastSnapshot?.trinkets ? { ...lastSnapshot.trinkets, rows: lastSnapshot.trinkets.rows.map(row => ({ ...row })) } : null, // Mobile diagnostics include exactly the displayed combined bonuses.
       final: lastSnapshot?.final ? { ...lastSnapshot.final } : null,
       lastError,
     };
@@ -399,7 +507,7 @@
     refresh,
     snapshot: () => composeSnapshot(),
     debugSnapshot,
-    __test: Object.freeze({ composeSnapshot, BASE_DODGE_PROFILE }),
+    __test: Object.freeze({ composeSnapshot, composeTrinketEffects, BASE_DODGE_PROFILE }),
   });
   window.__inventoryCharacterEffectsDebug = debugSnapshot;
 

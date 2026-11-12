@@ -43,7 +43,7 @@ class Node {
   dispose() {this.disposed=true;}
 }
 class Geometry { constructor() {this.attributes={};this.indices=[];this.disposed=false;} rotateX(){return this;}rotateZ(){return this;}setAttribute(key,value){this.attributes[key]=value;return this;}getAttribute(key){return this.attributes[key];}setIndex(indices){this.indices=indices;return this;}dispose(){this.disposed=true;} }
-class Material { constructor(options) { Object.assign(this, options); } dispose() {} }
+class Material { constructor(options) { Object.assign(this, options); } clone() { return new Material(this); } dispose() {} }
 class Mesh extends Node { constructor(geometry, material) { super(); this.isMesh = true; this.geometry = geometry; this.material = material; } }
 class Instances extends Mesh { constructor(geometry, material, count) { super(geometry, material); this.count = count; this.instanceMatrix = {}; this.isInstancedMesh=true; } setMatrixAt() {} }
 const THREE = {
@@ -51,7 +51,7 @@ const THREE = {
   PlaneGeometry:Geometry, ConeGeometry:Geometry, TetrahedronGeometry:Geometry, BoxGeometry:Geometry,
   BufferGeometry:Geometry,Float32BufferAttribute:class {constructor(array,itemSize){this.array=array;this.itemSize=itemSize;this.count=array.length/itemSize;}getX(i){return this.array[i*this.itemSize];}getY(i){return this.array[i*this.itemSize+1];}getZ(i){return this.array[i*this.itemSize+2];}},
   MeshBasicMaterial:Material, DoubleSide:2, RepeatWrapping:1,
-  TextureLoader:class { load(_url, done) { const texture = {dispose(){}}; done?.(texture); return texture; } },
+  TextureLoader:class { load(url, done) { const texture = {url,dispose(){}}; done?.(texture); return texture; } },
 }; // Lightweight renderer stand-ins preserve creation, instance batching and cleanup code paths.
 
 function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
@@ -154,7 +154,7 @@ function assertPlasmSeams(t) {
   const respawn=vm.runInNewContext('('+puzzlesSource.slice(start,end)+')',{
     inRuin:()=>true,state:recovery,deps:t.kit.deps,composers:[t.composer],MAP_ID:'map_i_dev_random_ruin',
     restorePlayerScene(){},clearPlayerAfflictions(){},setPlayerWorld(){},restoreRopeEquipment(){},
-    clonePoint:p=>({...p}),CHECKPOINT_INVULN_MS:1000,performance:{now:()=>100},console,
+    clonePoint:p=>({...p}),CHECKPOINT_INVULN_MS:1000,performance:{now:()=>100},console,window:{},
   });
   t.player.maxHealth=100;t.player.health=0;
   assert.equal(respawn('combat'),true);
@@ -467,4 +467,93 @@ console.log('Harlyao ruin lich-theme tests passed: static Kanthic patches, cache
   t.player.x=seed.x*64;t.player.y=seed.z*64;t.tick(1);
   assert.ok(t.api.snapshot().sinking>0,'Elevated spell contact must not be masked by room plasm below');
   upper.dispose();t.composer.clear();
+}
+
+{
+  let respawn; // The mounted hazard calls the real checkpoint recovery function below.
+  const t=setup('kanthic',3.1,3.1,{respawnAtCheckpoint:reason=>respawn(reason)});
+  const shaftSource=fs.readFileSync('docs/js/ruin-jump-shaft.js','utf8');
+  const shaftWindow={DevRandomRuinLichThemes:t.api};
+  vm.runInNewContext(shaftSource,{self:shaftWindow});
+  const hub=require('../docs/js/shaft-hub.js').compose({
+    theme:'kanthic',seed:5,floors:2,shaft:23,spacing:6,traversal:'jumpPlatforms',
+  });
+  const parent=new Node(); // Mounted platform art, separate from the theme's plasm meshes.
+  const shaft=shaftWindow.RuinJumpShaft.mount(hub.jumpShaft,{
+    THREE,parent,DynamicSurfaces:{registerSurface(){},clearScope(){}},
+  });
+  shaft.tick();
+  assert.ok(shaft.getState().plasmSlabs>1,'The mounted shaft registers both the pit and platform plasm');
+  for(const platform of shaft.columns.values()) {
+    assert.deepEqual(platform.holder.children.map(child=>child.name),[platform.id+'-stone'],
+      'Kanthic slabs must leave the oil and safe stepping tiles free of purple trim');
+  }
+  const platform=hub.jumpShaft.platforms.find(p=>p.kind==='plasm');
+  const tile=platform.tiles[0];
+  const bomb=t.api.createPlasmPuddle(-20.5,-20.5);
+  const oilMeshes=[]; // Compare actual mounted surfaces with the temporary bomb puddle.
+  t.kit.root.traverse(mesh=>{if(mesh.name==='kanthic_plasm_connected_room_tiles')oilMeshes.push(mesh);});
+  assert.ok(oilMeshes.length>0);
+  assert.equal(bomb.mesh.material.map.url,'assets/textures/dark_oil.png.png');
+  assert.ok(oilMeshes.every(mesh=>mesh.material.map===bomb.mesh.material.map));
+
+  const getSupport=vm.runInNewContext(interiorSource.slice(interiorSource.indexOf('  let presentationSink ='),
+    interiorSource.indexOf('  function getPlayerGroundSupportY()'))+'\n({getPlayerSupportY,setPresentationSink});',{
+    ruin:{},deps:{getCurrentArea:()=> 'ruin'},MAP_ID:'ruin',lastPresentationElevation:0,
+  }); // Execute the real presentation offset, with a stale cached stand height on purpose.
+  const renderStandY=new Function('window','player',gameSource.slice(gameSource.indexOf('        const supportedJump ='),
+    gameSource.indexOf('        const standY = knockbackVisualSurfaceY'))+'\nreturn ordinaryStandY;');
+  const renderWindow={DevRandomRuin:getSupport};
+  const jumpWindow={}; // Load the real PlayerJump reset used by checkpoint recovery.
+  vm.runInNewContext(fs.readFileSync('docs/js/player-jump.js','utf8'),{window:jumpWindow});
+  jumpWindow.PlayerJump.init({player:t.player});
+  const point={x:3.5,z:3.5,y:0}; // Simulated dry checkpoint below the elevated slab.
+  const checkpoints={active:{point},respawnCount:0};
+  respawn=vm.runInNewContext(puzzlesSource.slice(puzzlesSource.indexOf('  function respawnAtCheckpoint('),
+    puzzlesSource.indexOf('  function buildCheckpoints('))+'\nrespawnAtCheckpoint;',{
+    window:jumpWindow,inRuin:()=>true,deps:{player:t.player},state:{checkpoints,kit:t.kit},
+    composers:[t.composer],MAP_ID:'ruin',CHECKPOINT_INVULN_MS:1200,performance,
+    restorePlayerScene(){},clearPlayerAfflictions(){},restoreRopeEquipment(){},clonePoint:p=>({...p}),
+    setPlayerWorld(p){
+      assert.equal(t.player.physicalFeetY,null,'The old platform height must clear before the checkpoint positions the player');
+      t.player.x=p.x*64;t.player.y=p.z*64;
+    },
+  });
+  t.player.x=(tile.x+.5)*64;
+  t.player.y=(tile.z+.5)*64;
+  t.player._freeJump={phase:'supported'};
+  t.player.physicalFeetY=platform.y;
+  assert.equal(renderStandY(renderWindow,t.player),platform.y);
+  t.tick(4);
+  getSupport.setPresentationSink(-t.presentationHeights.at(-1));
+  assert.ok(renderStandY(renderWindow,t.player)<platform.y-.5,'After a jump landing, the avatar visibly sinks while still alive');
+  assert.equal(t.player.health,100);
+  assert.equal(t.player.physicalFeetY,platform.y,'The player can still jump from the real support height');
+  t.player._freeJump.phase='air';
+  assert.equal(renderStandY(renderWindow,t.player),platform.y,'Airborne rendering ignores the old immersion immediately');
+  t.tick(1);
+  assert.equal(t.api.snapshot().sinking,0,'Jumping out resets immersion');
+  t.player._freeJump.phase='supported';
+  t.tick(1);
+  t.player.physicalFeetY=platform.y-.4;
+  t.tick(1);
+  assert.equal(t.api.snapshot().sinking,0,'The slab cannot keep sinking a player on a lower level');
+  t.player.physicalFeetY=platform.y;
+  t.tick(1);
+  const [dryX,dryZ]=platform.clearTiles[0].split(',').map(Number); // Clear stepping tile on the same slab.
+  t.player.x=(dryX+.5)*64;t.player.y=(dryZ+.5)*64;
+  t.tick(1);
+  assert.equal(t.api.snapshot().sinking,0,'Stepping onto bare stone clears immersion');
+  t.player.x=(tile.x+.5)*64;t.player.y=(tile.z+.5)*64;
+  t.player.maxHealth=100;
+  t.tick(11);
+  assert.equal(checkpoints.respawnCount,0,'Platform plasm allows the full escape window');
+  t.tick(1);
+  assert.equal(checkpoints.lastReason,'kanthic-plasm');
+  assert.equal(checkpoints.respawnCount,1);
+  assert.equal(t.player.health,50,'Fatal sinking uses normal checkpoint recovery');
+  assert.equal(t.player._freeJump,null,'Respawn releases the elevated jump support');
+  assert.equal(-t.presentationHeights.at(-1),0,'Checkpoint recovery clears the visible sink');
+  shaft.dispose();
+  t.composer.clear();
 }

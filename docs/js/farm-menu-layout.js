@@ -125,11 +125,6 @@
         background: rgba(0,0,0,.16); box-sizing: border-box;
       }
       #farmLivestockList .farm-animal-thumb .farm-row-icon { display: block; width: 100%; height: 100%; font-size: 20px; line-height: 38px; text-align: center; }
-      #${STABLE_HEADING_ID} {
-        font-size: 19px; border-top: 4px solid var(--accent, #d9ad65);
-        margin-top: 19px; padding: 13px 0 5px;
-      }
-      #${STABLE_HEADING_ID}::after { height: 3px; }
       #farmPairBtn {
         min-height: 34px;
         font-weight: 800;
@@ -175,8 +170,20 @@
         font-weight: 500;
       }
       #${STABLE_HEADING_ID} {
+        flex-wrap: wrap;
+        gap: 4px 12px;
         color: var(--accent, #d9ad65);
-        margin-top: 12px;
+        margin: 22px 0 6px;
+        padding: 10px 12px;
+        border-top: 5px solid var(--accent, #d9ad65);
+        background: color-mix(in srgb, var(--accent, #d9ad65) 17%, transparent);
+        font-size: 23px;
+      }
+      #${STABLE_HEADING_ID}::after { display: none; }
+      #${STABLE_HEADING_ID} small {
+        flex: 0 1 auto;
+        color: var(--text, #eee);
+        font-size: 12px;
       }
       #farmLivestockList {
         max-height: none !important;
@@ -624,7 +631,7 @@
     const roster = document.getElementById('farmLivestockList');
     const directRows = roster ? [...roster.querySelectorAll(':scope > .farm-row.livestock-trait-row')].filter(row => row.id !== WORLD_IDENTITY_SENTINEL_ID) : [];
     return {
-      mostRecentChange: 'Farm identity stays visible; Customize Farm owns rename, materials and layout controls. Map fits the viewport and uses shared crop icons and animal chatheads.',
+      mostRecentChange: 'A full-width divider and larger Your Stable heading mark the breeding candidates in the adult livestock roster.',
       installed,
       workspace: !!document.getElementById(WORKSPACE_ID),
       sections: [...document.querySelectorAll('#' + WORKSPACE_ID + ' > .farm-section')].map(section => section.dataset.farmMenuKind || classifySection(section)),
