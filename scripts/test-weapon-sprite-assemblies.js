@@ -31,7 +31,8 @@ assert(editor.includes('movementPosition: rig.position'), 'editor preview uses a
 assert(source.includes('state.progress <= state.wf'), 'all of neutral-to-windup uses a gravity-and-locomotion target');
 assert(source.includes('updateOne(state, 0, performance.now())'), 'newly loaded flail rope is anchored before its first rendered frame');
 assert.match(source, /if \(!state\.attacking\) \{[\s\S]*?stepPendulum\(state, q\.pivotAcceleration, state\.physicsLength, dt, 9\.81, flailDamping\(motion\)\)/, 'idle rope responds to real acceleration through the pendulum');
-assert.match(source, /if \(dt > 0 && state\.attacking && state\.progress < state\.sf\)/, 'idle pendulum momentum is not overwritten by the attack interpolation derivative');
+assert.match(source, /if \(dt > 0 && state\.attacking && !state\.fishingFlailHeadSpin && state\.progress < state\.sf\)/,
+  'ordinary flail momentum is retained while a fishing-only head spin stays kinematic');
 assert(source.includes('state.strikeStartDirection.copy(state.direction)'), 'transition starts from the real hanging-chain orientation');
 assert(!source.includes('windupStartDirection'), 'windup cannot drag the connector toward the shaft');
 assert(game.includes('(swingStrikePitch - swingWindupPitch) * combatSwingPower'), 'the player applies the same pitch-power multiplier as its sampled pose');
@@ -40,6 +41,14 @@ assert(bandits.includes('windupFrac: wf, strikeFrac: sf, holdFrac: hf'), 'NPCs p
 assert(editor.includes('windupFrac: anim.windupFrac, strikeFrac: anim.strikeFrac, holdFrac: anim.holdFrac'), 'editor preview passes authored stage timing');
 assert(editor.includes("pitchTravelDeg: (Number(anim.poses?.strike?.pitch)"), 'editor passes strike-minus-windup pitch');
 assert(source.includes('const shaftUp = q.shaftUp.set(0, -1, 0).applyQuaternion(baseQ)'), 'flails extend outward from the bottom-end haft attachment, away from the grip');
+assert(source.includes('q.deltaQ.setFromAxisAngle(normal, -Math.PI * 2 * state.fishingFlailSpinRevolutions * state.progress)'),
+  'fishing flail head spins within the haft PNG plane, never by rotating or removing the handle');
+assert(source.includes('state.direction.copy(shaftUp).applyQuaternion(q.deltaQ).normalize()'),
+  'the head follows a fixed-length orbit around its actual shaft attachment');
+assert(source.includes('placeFlexiblePartWorld(state.chain'), 'head spin reuses the standard rope contact solver');
+assert(game.includes("fishingFlailHeadSpin: activeTool === 'harpoon'"), 'player fishing routes the head-only spin to the shared flail runtime');
+assert(game.includes('heldSpin: opts.heldSpin === true'), 'existing ordinary spinning throw still uses the authored weapon spin');
+
 assert(source.includes('stepPendulum(state, q.pivotAcceleration, state.physicsLength, dt, 9.81, flailDamping(motion))'), 'live assemblies integrate the same physical pendulum in Hold and Recovery');
 
 const pixels = new Uint8ClampedArray(6 * 6 * 4); // Synthetic transparent PNG alpha data with two top and two bottom edge pixels.
