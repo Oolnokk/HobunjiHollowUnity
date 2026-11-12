@@ -13,6 +13,12 @@ const grips = fs.readFileSync('docs/js/hand-tool-grips.js', 'utf8'); // Canonica
 const sinkSource = fs.readFileSync('docs/js/weapon-stance-drop-runtime.js', 'utf8'); // Reuses the real body/leg stance runtime.
 const handDriver = fs.readFileSync('docs/js/procedural-hand-frame-driver.js', 'utf8'); // Live hand-grip holder and tool-selection routing.
 const equipment = fs.readFileSync('docs/js/equipment-panel.js', 'utf8'); // Registered instrument must point at its own animation.
+const gameHtml = fs.readFileSync('docs/index.html', 'utf8'); // Game entry point must load the same Kurraya revision as its animation editor.
+const gameKurrayaToken = gameHtml.match(/kurraya-instrument\.js\?v=([A-Za-z0-9_-]+)/)?.[1]; // Cache key guards against stale game-side note playback.
+const editorKurrayaToken = editor.match(/kurraya-instrument\.js\?v=([A-Za-z0-9_-]+)/)?.[1]; // Cache key used by the editor preview.
+assert(gameKurrayaToken && editorKurrayaToken && gameKurrayaToken === editorKurrayaToken,
+  'game and animation editor must use the same Kurraya instrument script revision');
+
 
 const begin = held.indexOf('  const fluteNeutralNotePose ='); // Includes the authored pose factory and strike-only sink constant before flutePlayNote.
 const end = held.indexOf('  window.HeldActionAnimations = Object.freeze', begin); // End of note definitions.
