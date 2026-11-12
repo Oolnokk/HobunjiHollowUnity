@@ -453,18 +453,22 @@
     // The held instrument's Neutral stance belongs to the editor even before
     // performance starts. Only a visible assembly in the player's OWN body may
     // claim the hands; never borrow a hidden bag prop or an NPC's Kurraya.
-    if ((!playerKurrayaNote.heldAssembly?.parent || !playerKurrayaNote.heldAssembly.parent.visible)
+    const cachedAssembly = playerKurrayaNote.heldAssembly; // Track the instrument's own visibility, not only its shared bag holder.
+    if (cachedAssembly && (!cachedAssembly.parent || cachedAssembly.visible === false || cachedAssembly.parent.visible === false))
+      playerKurrayaNote.heldAssembly = null; // An unequipped or hidden Kurraya cannot own the hands.
+    if (!playerKurrayaNote.heldAssembly?.parent
         && performance.now() >= playerKurrayaNote.nextResolveAtMs) {
       playerKurrayaNote.nextResolveAtMs = performance.now() + 500; // Avoid traversing the portrait subtree every render frame on slow mobile devices.
       const player = window.Combat?.deps?.playerMesh || window.PlayerBodyTransformComposer?.getPlayerMesh?.();
       player?.traverse?.(node => {
-        if (!playerKurrayaNote.heldAssembly?.parent && node?.userData?.kurrayaAssembly && node.parent) {
+        if (!playerKurrayaNote.heldAssembly?.parent && node?.userData?.kurrayaAssembly
+            && node.visible !== false && node.parent?.visible !== false) {
           playerKurrayaNote.heldAssembly = node; // Existing held Kurraya can be gripped at Neutral before a note is sounded.
         }
       });
     }
     const assembly = playerKurrayaNote.heldAssembly;
-    if (!assembly?.parent || assembly.parent.visible === false) return null;
+    if (!assembly?.parent || assembly.visible === false || assembly.parent.visible === false) return null;
     return { holder: assembly.parent, toolKey: 'kurraya', gripContext: 'melee' }; // Neutral remains gripped when merely carrying the instrument; active notes still own independent plucking.
   }
   function clearPlayerKurrayaNote() {
@@ -504,9 +508,9 @@
   }
 
   function playerRightHandPose() {
-    if (!playerKurrayaNote.active) return null;
-    const note = window.HeldActionAnimations?.kurrayaPlayNote;
-    return window.HobunjiHandToolGrips?.sampleFreeRightHand?.(note?.poses, note, playerNoteProgress(), note?.sequence) || null;
+    const note = window.HeldActionAnimations?.kurrayaPlayNote; // Gameplay and editor both own the same authored free Neutral hand.
+    if (!note?.poses?.neutral || (!playerKurrayaNote.active && !playerKurrayaHandTarget())) return null;
+    return window.HobunjiHandToolGrips?.sampleFreeRightHand?.(note.poses, note, playerNoteProgress(), note.sequence) || null; // At rest progress=0, retaining the author's right-hand placement.
   }
   function playerGripAnimationState() {
     if (!playerKurrayaNote.active) return null;
@@ -718,6 +722,6 @@
     advancePlayerKurrayaNote, kurrayaNotePose: () => playerKurrayaNote.notePose,
     activePlayerInstrument: () => fluteState.active ? 'flute' : playerKurrayaNote.active ? 'kurraya' : null, // Allocation-free neutral-stance owner for the pre-render body composer.
     playerInstrumentProgress, // Shared progress for instrument elbow/shoulder poses and the two authored note actions.
-    kurrayaHandDiagnostics: () => ({ active: playerKurrayaNote.active, noteCount: playerKurrayaNote.noteCount, notePlaying: playerKurrayaNote.notePose !== null, noteProgress: playerKurrayaNote.noteProgress, holderVisible: playerKurrayaNote.heldAssembly?.parent?.visible === true }),
+    kurrayaHandDiagnostics: () => ({ active: playerKurrayaNote.active, noteCount: playerKurrayaNote.noteCount, notePlaying: playerKurrayaNote.notePose !== null, noteProgress: playerKurrayaNote.noteProgress, holderVisible: playerKurrayaNote.heldAssembly?.parent?.visible === true, rightHandMode: playerKurrayaNote.active ? 'playing' : playerKurrayaNote.heldAssembly?.parent?.visible === true ? 'authored-neutral' : 'none' }),
   };
 })();
