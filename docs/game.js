@@ -31097,6 +31097,7 @@
         worldToOverlay,
         inventory,
         equipmentSlots,
+        TOOL_ITEM_DEFS, // Modular harpoon casting needs the fitted shaft/head pair's weapon animation style.
         toolMetalMultiplier, // Fishing's Spear Bridge uses the same metal/reinforcement efficacy as ordinary tool work.
         rollItemStars: window.LootRolling.rollItemStars,
         starRatingText: window.LootRolling.starRatingText,
