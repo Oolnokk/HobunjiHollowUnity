@@ -24009,14 +24009,14 @@
         const workDef = window.ToolActivityStages && typeof TOOL_ITEM_DEFS !== 'undefined' ? TOOL_ITEM_DEFS[workItemKey] : null; // Resolve when the work-style module and definitions are available; isolated efficacy runners retain the native stage.
         const simpleStroke = stageDef.pose === true || ['sweep', 'thrust', 'chop'].includes(stageDef.anim); // Toss/refill flourishes must keep their specialized soil-handling arcs.
         const workStyle = simpleStroke ? window.ToolActivityStages?.workStyleFor?.(chargeAction.tool, workItemKey, workDef) : null; // Null for every unmodified, non-modular tool.
-        const workPose = workStyle ? window.ToolActivityStages?.workPoseFor?.(chargeAction.tool, workItemKey, workDef) : null; // Resampled once per stage, not per frame.
+        const workPose = workStyle ? window.ToolActivityStages?.workPoseFor?.(chargeAction.tool, workItemKey, workDef, stageDef.dirSign) : null; // Resampled once per stage, with mirrored attack DELTAS anchored to a stable tool Neutral.
         if (stageDef.pose || workPose) {
           // Normal axes retain the authored melee pose, while fitted modular tools interpolate from
           // the tool-slot Neutral through their *weapon* attack. Mining sweeps rotate into the overhead plane.
           chargeAnimOverride = null;
           combatSwingAnim = workPose ? workStyle : 'sweep';
           combatSwingPose = workPose || window.Combat?.poses?.SWEEP_POSE || null;
-          combatSwingSign = stageDef.dirSign || 1;
+          combatSwingSign = workPose ? 1 : (stageDef.dirSign || 1); // The modular work pose already mirrors its attack delta without flipping the idle Neutral.
           combatSwingWindupFrac = 0.22;
           combatSwingStrikeFrac = 0.55;
           combatSwingPower = 1;
@@ -25256,6 +25256,7 @@
       });
 
       function updateToolMesh(dt) {
+        toolHolder.userData.authoredToolActionActive = activeTool !== 'weapon' && !!combatSwingPose && toolSwingT > 0; // Render-time stance hook must not reapply tool Neutral over held working/fishing poses.
         _toolPoseCentroidDebug.reticleOrbitApplied = false;
         _toolPoseCentroidDebug.reticleOrbitPitchDeg = 0;
         _toolPoseCentroidDebug.reticleOrbitYawDeg = 0;
@@ -25735,7 +25736,13 @@
           // thrust-styled pick-shovel), so baking the twist per-item at mesh creation got it
           // backwards in either direction. Deriving it from `anim` here keeps it correct
           // regardless of what's equipped.
-          const baseRotZ = anim === 'sweep' ? -Math.PI / 2 : 0;
+          const modularWorkSweep = anim === 'sweep' && activeTool !== 'weapon'
+            && chargeAction?.tool === activeTool && toolHolder.userData.authoredToolActionActive; // Only a modular tool's authored sweep needs continuity with its slot Neutral.
+          const workNeutralWeight = modularWorkSweep
+            ? (progress <= WF ? 1 - progress / Math.max(0.0001, WF)
+              : progress >= HF ? Math.min(1, (progress - HF) / Math.max(0.0001, 1 - HF)) : 0)
+            : 0; // Smoothly cancels the sweep's 90° PNG basis at the beginning/end of tool strokes.
+          const baseRotZ = anim === 'sweep' ? -Math.PI / 2 + workNeutralWeight * Math.PI / 2 : 0;
           const rangedThrowDef = activeTool === 'ranged' && combatSwingAnim === 'ranged'
             ? window.RangedWeapons?.config?.[equipmentSlots.ranged || spinItemKey]
             : null;
