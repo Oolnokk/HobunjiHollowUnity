@@ -661,7 +661,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     return Number.isFinite(configured) && configured > 0 ? configured : 0.9;
   }
 
-  async function buildPreviewEntry(rep) {
+  async function buildPreviewEntry(rep, buildId) {
     const rigProfile = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[rep.key];
     if (!rigProfile) throw new Error(`Missing rig profile ${rep.key}.`);
     rigProfile.anatomy ||= {};
@@ -673,6 +673,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     applyAnatomyConfig(rigProfile);
 
     const avatar = await buildPortrait(rep.npc);
+    if (buildId !== generation || !previewRoot) return null; // Exiting mid-network-load must never attach a stale mesh to a disposed comparison scene.
     const group = new THREE.Group(); // Preview-only parent used by portrait, hands, feet, and whole-character scale together.
     group.name = `FullScalePreview_${rep.key}`;
     group.userData.fullScalePreviewKey = rep.key;
@@ -815,11 +816,17 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
 
   async function buildLineup(buildId) {
     const reps = await representatives();
-    const missing = reps.filter(item => !item.npc);
+    const ordered = [
+      ...reps.filter(item => item.species === 'longoran'),
+      ...reps.filter(item => item.species !== 'longoran'),
+    ]; // Show the species currently being authored first, without dropping or duplicating the other comparison entries.
+    const missing = ordered.filter(item => !item.npc);
     if (missing.length) status(`Missing preview NPC: ${missing.map(item => item.key).join(', ')}`);
     entries = [];
+    const expected = ordered.filter(item => item.npc).length; // The mobile progress text counts only buildable representatives.
 
     THREE = (await window.PNGPlaneAvatar?.loadThreeModules?.())?.THREE || null;
+    if (buildId !== generation) return;
     if (!THREE) throw new Error('Three.js is unavailable.');
     const scene = window.HobunjiGameplayBackdrop?.getScene?.();
     if (!scene) throw new Error('Animation Author backdrop scene is unavailable.');
@@ -831,22 +838,52 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     previewRoot.name = 'FullCharacterScalePreviewRoot';
     previewRoot.userData.fullCharacterScalePreviewOnly = true;
     scene.add(previewRoot);
+    const chooser = document.getElementById('maaFullScaleChoose'); // Options appear as soon as their actual preview meshes are ready.
+    chooser?.replaceChildren();
 
-    for (const rep of reps) {
-      if (buildId !== generation || !rep.npc) continue;
-      status(`Building ${prettySpecies(rep.species)} ${rep.gender}…`);
-      const entry = await buildPreviewEntry(rep);
+    for (const rep of ordered) {
       if (buildId !== generation) return;
+      if (!rep.npc) continue;
+      status(`Loading ${entries.length + 1}/${expected}: ${prettySpecies(rep.species)} ${rep.gender} (ready previews remain editable)…`);
+      let entry;
+      try { entry = await buildPreviewEntry(rep, buildId); }
+      catch (error) {
+        if (buildId !== generation) return;
+        console.warn('[full-character-scale] skipped unrenderable species preview', rep.key, error);
+        status(`Skipped ${prettySpecies(rep.species)} ${rep.gender}: ${error.message}`);
+        continue; // One missing optional species asset must not discard all successfully rendered comparisons.
+      }
+      if (buildId !== generation || !entry) return;
       entries.push(entry);
+      if (chooser) {
+        const option = document.createElement('option');
+        option.value = entry.key;
+        option.textContent = `${prettySpecies(entry.species)} · ${entry.gender}`;
+        chooser.appendChild(option);
+      }
+      if (!selected) {
+        active = true; // The first Longoran becomes tweakable without waiting for every other species image.
+        layout();
+        select(entry);
+        frame();
+      } else if (entries.length % 3 === 0) {
+        layout(); // Batch expensive bounding-box layout while the remaining entries stream in.
+      }
       chrome();
+      await new Promise(resolve => setTimeout(resolve, 0)); // Yield a paint opportunity on mobile rather than monopolizing the UI between portraits.
     }
+    if (buildId !== generation) return;
     if (!entries.length) throw new Error('No repository character previews could be built.');
 
-    chair = await buildChair();
+    const finishedChair = await buildChair();
+    if (buildId !== generation) return;
+    chair = finishedChair;
     layout();
     window.ProceduralHandFrameDriver?.syncNow?.();
-    select(entries[0]);
-    frame();
+    // Do not automatically reframe after all backgrounds finish: a player may already be editing
+    // Longoran or inspecting a specific face. The existing Frame lineup action shows everyone.
+    if (!selected) { select(entries[0]); frame(); }
+    status(`All ${entries.length}/${expected} species/gender previews ready. Use Frame lineup to see everyone.`);
     setTimeout(preserveMultiSave, 350);
   }
 
