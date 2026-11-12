@@ -10,7 +10,15 @@
   'use strict';
 
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    // The native (pre-override) tile materials are shared between all maps as
+    // well. Preserve them during zone eviction even if the async config has
+    // not installed its textured replacement yet.
+    for (const material of Object.values(deps?.tileMats || {})) {
+      if (material) _cachedTerrainMaterials.add(material);
+    }
+  }
 
   // Loads a docs/assets/textures/*.png as a tiling MeshLambertMaterial for
   // ground/cliff meshes — same emissive-floor treatment as game.js's floorMat
