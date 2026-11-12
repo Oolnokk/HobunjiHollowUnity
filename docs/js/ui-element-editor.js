@@ -932,6 +932,12 @@
     ensureDom();
     const stored = loadOverridesFromStorage();
     baseline = await loadBaseline();
+    // Older shipped UI defaults accidentally forced the Key Items list to height:0.
+    // A copied session override must not keep the newly functional inventory section hidden on reload.
+    if (stored?.elements?.['#invKeyList']?.height === '0' && baseline.elements?.['#invKeyList']?.height == null) {
+      delete stored.elements['#invKeyList'].height;
+      if (!Object.keys(stored.elements['#invKeyList']).length) delete stored.elements['#invKeyList'];
+    }
     overrides = stored || { version: 1, elements: deepClone(baseline.elements) };
     applyAll();
     wireSettingsButtonWhenReady();
