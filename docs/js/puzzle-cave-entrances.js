@@ -14,6 +14,7 @@
   let pillarTexture=null; // Shared carved-smooth texture for a supported pillar when an actual wall has no usable vertical face.
   const SCORE_STEP_X=.23,SCORE_STEP_Y=.27; // Scratchbone layout spacing, reused for wall plaques and narrower standing pillars.
   const SCORE_WALL_COLUMNS=6,SCORE_PILLAR_COLUMNS=2; // A free-standing pillar is deliberately narrower than a genuine wall.
+  const SCORE_NOTE_OVERLAY_ORDER=1202; // OutlineRenderPerformance reserves CanvasTexture planes at renderOrder>=1200 for its final, post-shell overlay; note ink/glows reuse that pass only while their plate is active.
   let deps=null; // WildlifeSpawn's existing game adapter, used for authoritative player, layouts and scene transitions.
   let lastArea=null; // Tracks the immediately previous area so returning from a cave can restore its actual elevated balcony support.
   const portalTag='puzzle-cave-cliff-door'; // Consistent debugging and collider identity for each generated entrance.
@@ -353,6 +354,7 @@
     }
     const board=new THREE.Group();
     board.name='puzzle-cave-exterior-score';
+    board.userData.scoreOcclusion='post-composite-notes'; // Only its three glyph planes enter the existing final overlay; the supporting stone retains real terrain depth.
     board.position.set(mount.x,mount.y,mount.z);
     board.rotation.y=yaw;
     for(let index=0;index<count;index++){
@@ -365,25 +367,31 @@
       const z=cliff?0:localPosts[column].z; // Cliff glyphs stay above one validated rock face; paired glyphs track their matching pillar.
       const outer=new THREE.Mesh(new THREE.PlaneGeometry(.61,.72),
         scratchboneMaterial(THREE,haloTexture,{color:0xeaf5ff,transparent:true,opacity:.045,
-          blending:THREE.AdditiveBlending,depthTest:true,depthWrite:false,side:THREE.DoubleSide},'exterior-score-outer-'+index));
+          blending:THREE.AdditiveBlending,depthTest:false,depthWrite:false,side:THREE.DoubleSide},'exterior-score-outer-'+index));
       outer.name='puzzle-cave-outdoor-glyph-outer-glow-'+index;
+      outer.userData.puzzleCaveScoreOverlay=true; // Final-pass character-depth mask protects the player's and NPCs' silhouettes.
       outer.position.set(x,y,z+.065);
       outer.frustumCulled=false;
-      outer.renderOrder=3; // Like the Witch-bomb engraving, glow is a dedicated additive pass after ordinary stone.
+      outer.renderOrder=SCORE_NOTE_OVERLAY_ORDER; // CanvasTexture + depthTest=false make this halo eligible for the existing post-composite overlay instead of only Three's base-pass sorting.
       // The wide static halo gains/loses opacity under the song clock; no scaling or sine pulsing.
       board.add(outer);portal.glyphOuterGlows.push(outer);
       const glow=new THREE.Mesh(new THREE.PlaneGeometry(.37,.46),
         scratchboneMaterial(THREE,haloTexture,{color:0xeaf5ff,transparent:true,opacity:.11,
-          blending:THREE.AdditiveBlending,depthTest:true,depthWrite:false,side:THREE.DoubleSide},'exterior-score-halo-'+index));
+          blending:THREE.AdditiveBlending,depthTest:false,depthWrite:false,side:THREE.DoubleSide},'exterior-score-halo-'+index));
       glow.name='puzzle-cave-outdoor-glyph-glow-'+index;
+      glow.userData.puzzleCaveScoreOverlay=true; // Same actor-masked overlay as the note's authored ink.
       glow.position.set(x,y,z+.073);
-      glow.frustumCulled=false;glow.renderOrder=4;
+      glow.frustumCulled=false;glow.renderOrder=SCORE_NOTE_OVERLAY_ORDER+1;
       // Brightness and hue lerp on each authored song update, independent of frame rate.
       board.add(glow);portal.glyphGlows.push(glow);
-      const material=scratchboneMaterial(THREE,texture,{color:0xeaf5ff,transparent:true,depthWrite:false,side:THREE.DoubleSide},'exterior-score-ink-'+index);
+      const material=scratchboneMaterial(THREE,texture,{color:0xeaf5ff,transparent:true,depthTest:false,depthWrite:false,side:THREE.DoubleSide},'exterior-score-ink-'+index);
       const mesh=new THREE.Mesh(new THREE.PlaneGeometry(.20,.24),material);
       mesh.name='puzzle-cave-outdoor-glyph-'+index;
+      mesh.userData.puzzleCaveScoreOverlay=true; // Draws through cliffs, but not through closer characters.
       mesh.position.set(x,y,z+.086);
+      mesh.renderOrder=SCORE_NOTE_OVERLAY_ORDER+2; // Ink draws after both halos, including after the outline composite; its parent board still gates visibility to the plate.
+      mesh.frustumCulled=false;
+      mesh.userData.noOutline=true; // The flat authored PNG supplies its own contour; never add a 3D outline shell.
       board.add(mesh);portal.glyphs.push(mesh); // Original note order is preserved across the two physical posts.
     }
     rootGroup.add(board);
@@ -392,7 +400,7 @@
     portal.releaseMelodyCamera=root.MelodyCameraFraming?.register?.({
       area:portal.area,plate:portal.plate,glyphs:portal.glyphs,
       isActive:()=>!portal.disposed&&!portal.solved&&portal.lastDown&&!!portal.scoreBoard?.visible,
-    }); // The exterior cliff and paired-pillar notes share one camera-fitting group.
+    }); // Preserve the newest discovery-gated camera framing alongside post-composite note masks.
     board.visible=false; // Plate-gated light and ink; fallback pillars remain visible, while an exterior cliff needs no added masonry.
     refreshScoreGlow(portal);
   }
@@ -506,7 +514,7 @@
   }
   function destroyPortal(portal){
     portal.disposed=true;
-    portal.releaseMelodyCamera?.(); // No retired cliff glyph may keep the camera on a previous shelf.
+    portal.releaseMelodyCamera?.(); // Avoid retaining notes and camera registrations after portal teardown.
     if(portal.noteHandler)root.removeEventListener?.('hobunji-kurraya-puzzle-note',portal.noteHandler);
     portal.plateArt?.dispose?.(); // No ownership of the player instrument session; only the cave's own decal is retired.
     if(portal.blockerId)root.DynamicSurfaces?.remove?.(portal.blockerId);
@@ -640,6 +648,8 @@
         plate:p.plate,entry:p.entry,locked:isGateLocked(p),solved:p.solved,
         progress:p.progress,rewardTier:p.song?.rewardTier||null,modelReady:!!p.doorModel,
         scoreSurface:p.scoreSurface?.kind||null,scoreVisible:!!p.scoreBoard?.visible,
+        scoreOcclusion:p.scoreBoard?.userData?.scoreOcclusion||null,
+        scoreOverlayReady:p.glyphs.length>0&&p.glyphs.every(g=>g.userData?.puzzleCaveScoreOverlay===true&&g.renderOrder>=1200&&g.material?.map?.isCanvasTexture&&g.material?.depthTest===false&&g.material?.depthWrite===false), // Mobile diagnostics prove final-pass eligibility without a dev console.
         activeGlyph:p.progress?.activeIndex??-1,flashRemaining:p.flashRemaining,flashGlyphIndex:p.flashGlyphIndex,scoreBpm:p.song?.bpm||null,
         scorePosition:p.scoreSurface&&{x:p.scoreSurface.x,y:p.scoreSurface.y,z:p.scoreSurface.z}}))}))};
   }
