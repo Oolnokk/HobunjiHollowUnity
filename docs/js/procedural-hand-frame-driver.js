@@ -320,7 +320,7 @@
     const Quaternion = toolHolder.quaternion.constructor;
     const identity = new Quaternion();
     if (toolHolder.name === 'player_flute_mouth_mount') return { quaternion: identity, source: 'flute-mouth-mount', angleDeg: 0 }; // Never apply the previous weapon's sweep correction to the flute.
-    if (!inAttackEditor() && playerKurrayaTarget(record)?.holder === toolHolder)
+    if (!inAttackEditor() && typeof playerKurrayaTarget === 'function' && playerKurrayaTarget(record)?.holder === toolHolder)
       return { quaternion: identity, source: 'kurraya-authored-basis', angleDeg: 0 }; // A previous weapon sweep must not rotate this thrust-style instrument's grip.
 
     // The sweep is the ONLY stance that rotates the visual plane's grip basis.
