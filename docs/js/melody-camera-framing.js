@@ -115,7 +115,7 @@
       possible,noteCount:points.length};
   }
   function clear(immediate=false){
-    owner=null;goal=null;visibleTrigger=-1;
+    owner=null;goal=null;visibleTrigger=-1;fitLimited=false;
     if(immediate){output.offsetX=output.offsetY=output.offsetZ=output.fovExtra=0;output.distanceScale=1;}
   }
   function update({area,playerX,playerZ,camera,baseTarget,baseDistance,azimuth,angle,fovDeg,aspect,enabled=true,now=0}={}){
