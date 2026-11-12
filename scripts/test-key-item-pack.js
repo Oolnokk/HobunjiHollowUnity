@@ -49,9 +49,10 @@ let meta = {
   worlds:[{id:'worldA',keyItems:[]},{id:'worldB',keyItems:[]}],
 }; // In-memory copy of the real hobunjiSaveMeta persistence schema.
 let metadataReads = 0; // Detect accidental per-frame localStorage parsing on licensed ruin access.
+let metadataWrites = 0; // Detect redundant full-save writes on idempotent key grants.
 const storage = {
   getItem: key => { metadataReads++; return key === 'hobunjiSaveMeta' ? JSON.stringify(meta) : null; },
-  setItem: (key, value) => { if (key === 'hobunjiSaveMeta') meta = JSON.parse(value); },
+  setItem: (key, value) => { metadataWrites++; if (key === 'hobunjiSaveMeta') meta = JSON.parse(value); },
 };
 const window = {document,localStorage:storage,__hobunjiPlayerProfile:profile,__farmLog(){}}; // Same public API surface as the browser.
 vm.runInNewContext(source, {window,document,console});
@@ -69,7 +70,9 @@ assert.equal(api.grant('delversStone').granted,true);
 assert.equal(api.grant('azgarlu_key_stone').granted,true);
 assert.equal(api.grant('color_pools_key').granted,true);
 assert.equal(api.grant('personal_test_key').granted,true);
+const writesBeforeRepeat = metadataWrites; // Regranting a saved key must not serialize the world again.
 assert.equal(api.grant('delversStone').granted,false,'repeated grants cannot duplicate key chips');
+assert.equal(metadataWrites, writesBeforeRepeat, 'repeated grants must not cause a redundant full-save write');
 assert.equal(keyList.children.length,4,'all four acquired keys are shown in Key Items');
 const delvers = keyList.children.find(node => node.dataset.keyItemId === 'delversStone'); // Targeted mobile interaction check.
 assert(delvers.children.some(node => node.textContent === "Delver's Stone"), 'authored key label is visible');
