@@ -35,7 +35,10 @@ const workspace = {
       plateauGroupId: 'raised_island',
       cols: 3,
       rows: 3,
-      tiles: {},
+      tiles: {
+        '1,1': { type: 'grass' }, '0,2': { type: 'shrub' },
+        '1,2': { type: 'weeds' }, '2,2': { type: 'path' },
+      }, // Painted plateau children must keep their plants/paving without duplicating the mesa floor.
     },
   ],
   plateauGroups: [{ id: 'raised_island', elevation: 2 }],
@@ -48,7 +51,15 @@ for (const [key, type] of carvedByKey) {
   assert.equal(tile?.skipFloor, true, `${type} at ${key} must retain plateau-lid ownership metadata`);
 }
 
+for (const [key, type] of [['2,2', 'grass'], ['1,3', 'shrub'], ['2,3', 'weeds'], ['3,3', 'path']]) {
+  const tile = merged.tiles.get(key);
+  assert.equal(tile?.type, type, `${type} child tile keeps its authored feature`);
+  assert.equal(tile?.mesaGroundOwned, true, `${type} child tile reuses its parent mesa ground`);
+  assert.equal(tile?.skipFloor, false, `${type} child keeps its own feature renderer available`);
+  assert.equal(tile?.elevTier, 2, `${type} remains at the correct tier`);
+}
 const zGrid = TP.buildZGrid(merged.cols, merged.rows, merged.tiles);
+assert.equal(zGrid[3][1].mesaGroundOwned, true, 'runtime grid carries the shrub floor ownership marker');
 const mesa = merged.mesas[0];
 assert(mesa, 'synthetic plateau should produce one mesa');
 const geometry = TP.buildPlateauMesaGeometry(
@@ -84,6 +95,17 @@ assert.match(terrainGeometrySource, /const ownsMesaSurface[\s\S]{0,650}ownsMesaS
   'the route grass apron must leave a complete one-cell seam around mesa and cliff geometry owners');
 assert.match(gameSource, /const matKey = tile\.type === TileType\.PATH \? TileType\.GRASS/,
   'a route tile excluded at a cliff seam must fall back to ordinary flat grass beneath its paved bricks');
+assert.match(gameSource, /const mesaGroundOwned = outTiles\.get\(key\)\?\.skipFloor === true && \['grass', 'weeds', 'shrub', 'path'\]\.includes\(type\)/,
+  'live workspace fold must retain plateau ground ownership when a child paints plants or paving');
+assert.match(gameSource, /zGrid\[r\]\[c\]\.mesaGroundOwned = !!mesaGroundOwned/,
+  'runtime zone tiles must receive ground ownership rather than discarding it during grid construction');
+assert.match(gameSource, /if \(!tile\.mesaGroundOwned\) _addToBucket\(TileType\.GRASS, window\.TerrainGeometry\.makeFloorGeo\(c, r\)/,
+  'an authored shrub on a mesa must retain its plant without drawing a duplicate grass floor');
+assert.match(gameSource, /if \(tile\.mesaGroundOwned && \[TileType\.GRASS, TileType\.WEEDS, TileType\.PATH\]\.includes\(tile\.type\)\) continue/,
+  'the floor builder must omit grass, weeds and bare path aprons already supplied by a mesa');
+assert.match(terrainGeometrySource, /const ownsMesaSurface = tile =>[^\n]+mesaGroundOwned/,
+  'the shared route network must also exclude child-painted mesa surfaces');
+
 assert.match(gameSource, /terrainTileDebug[\s\S]{0,500}routeExcluded:/,
   'mobile Pixel Probe must receive live route exclusion metadata from the global path mesh');
 assert.match(mesaSource, /if \(steep\)[\s\S]{0,360}ownerTile\.mesaCliffFace = true/,

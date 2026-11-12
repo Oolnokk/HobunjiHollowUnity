@@ -11358,7 +11358,7 @@
             continue; // covered by the path network mesh above
           }
           if (tile.type === TileType.SHRUB) {
-            _addToBucket(TileType.GRASS, window.TerrainGeometry.makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz);
+            if (!tile.mesaGroundOwned) _addToBucket(TileType.GRASS, window.TerrainGeometry.makeFloorGeo(c, r), cx, tileYCenter(TileType.GRASS) + tierY, cz); // Keep the bush, but do not paint a second ground sheet over the mesa lid.
             if (window.FoliageGenerator) {
               // Which generated object this SHRUB tile came from (see
               // terrain-preview.js's floraKind) decides its mesh: a real
@@ -11487,6 +11487,7 @@
           // An excluded PATH seam still needs an ordinary flat grass floor
           // beneath its separate paved bricks; the route heightfield is what
           // was removed here, not the walkable terrain itself.
+          if (tile.mesaGroundOwned && [TileType.GRASS, TileType.WEEDS, TileType.PATH].includes(tile.type)) continue; // Painted child tiles reuse the continuous mesa lid; paths still receive separate paving.
           const matKey = tile.type === TileType.PATH ? TileType.GRASS : (tileMats[tile.type] ? tile.type : TileType.GRASS);
           _addToBucket(matKey, window.TerrainGeometry.makeFloorGeo(c, r), cx, tileYCenter(tile.type) + tierY, cz);
         }
@@ -11560,11 +11561,12 @@
         // elevTier (rendered below as continuous heightfield mesas, one per tier
         // transition, in the same visual style as the distant boundary terrain beyond
         // the playable area) and, for ramp tiles, its own slope-following rampElevation.
-        for (const { c, r, type, elevTier, rampElevation, skipFloor, incline, floraKind, rockKind, boulderId, mapBoundary } of (zoneData?.tiles || [])) {
+        for (const { c, r, type, elevTier, rampElevation, skipFloor, mesaGroundOwned, incline, floraKind, rockKind, boulderId, mapBoundary } of (zoneData?.tiles || [])) {
           if (!zGrid[r]?.[c]) continue;
           zGrid[r][c].type = type || TileType.GRASS;
           zGrid[r][c].elevTier = elevTier || 0;
           zGrid[r][c].skipFloor = !!skipFloor;
+          zGrid[r][c].mesaGroundOwned = !!mesaGroundOwned;
           zGrid[r][c].incline = !!incline;
           // Map-boundary escarpment (js/map-boundary-guard.js): solid to
           // movement, climbing and spawning alike.
@@ -14337,8 +14339,9 @@
               // decoration this rule was written for; without the exemption every
               // such object off-plateau silently vanished into invisible grass.
               if (!t.plateau && type === 'rock' && !t.generatedObjectType) type = 'grass';
+              const mesaGroundOwned = outTiles.get(key)?.skipFloor === true && ['grass', 'weeds', 'shrub', 'path'].includes(type); // A painted child tile may add foliage/path art, but the already-staked mesa still owns its floor.
               outTiles.set(key, {
-                c: c + offsetC, r: r + offsetR, type, elevTier: baseTier, skipFloor: false,
+                c: c + offsetC, r: r + offsetR, type, elevTier: baseTier, skipFloor: false, mesaGroundOwned,
                 rampElevation: type === 'ramp' ? (t.rampElevation || 0) : 0, incline: false,
                 // Which generator object ('diggableRockOre'/'undiggableBoulder')
                 // this 'rock' tile came from — see terrain-preview.js's mirrored

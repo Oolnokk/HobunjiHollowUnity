@@ -257,7 +257,9 @@
     // itself and the player — flagged so buildZoneScene can collect it
     // for the occlusion raycast.
     mesh.userData.cameraObstacle = true;
-    mesh.userData.hobunjiGroundSurface = true; // HeldObjectRenderOrder treats the entire raised mesa lid/skin as ground at every elevation.
+    mesh.userData.hobunjiGroundSurface = true; // Raised top and cliff skin are the genuine underlying terrain.
+    mesh.userData.hobunjiGroundXray = true; // Stable x-ray identity survives Jigsaw material replacement and render batch metadata copies.
+    mesh.userData.terrainTileDebug = (c, r) => { const tile = zGrid?.[r]?.[c]; return tile ? { type: tile.type, elevTier: tile.elevTier || 0, skipFloor: !!tile.skipFloor, mesaGroundOwned: !!tile.mesaGroundOwned, incline: !!tile.incline, mesaCliffFace: !!tile.mesaCliffFace } : null; }; // Pixel Probe identifies missing floor ownership without DevTools.
 
     console.log(`%c[zone:${mapId}] plateau mesa built for group ${groupId}: ${W}x${D} tiles, top=${(BASE+elevOffset).toFixed(2)}, margin=${MARGIN_TILES} tile(s), stone faces=${stoneIdx.length / 6}`, 'color:#22c55e;font-weight:bold');
     return mesh;
