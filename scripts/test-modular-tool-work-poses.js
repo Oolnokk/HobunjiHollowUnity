@@ -102,9 +102,60 @@ assert.equal(work.workStyleFor('pick', 'pickshovel', {animStyle:'thrust'}), null
 assert.equal(work.ACTIVITIES.mine.stages[0].anim, 'thrust', 'NPC mining is not redirected by player equipment');
 assert.equal(work.ACTIVITIES.chop.stages[0].pose, true, 'NPC tree-chopping remains its authored attack');
 
+
+// A backhand must reverse the WORK MOTION, not mirror the Tool Neutral itself.
+const sweepAxeKey = key('fishing-spear', 'hatchet'); // Existing sweep-style axe on a long fishing haft.
+assert(defs[sweepAxeKey]?.slots.includes('axe'), 'sweep-axe fixture qualifies for regular tree felling');
+const axeForward = work.workPoseFor('axe', sweepAxeKey, defs[sweepAxeKey], 1); // First forehand stroke.
+const axeBackhand = work.workPoseFor('axe', sweepAxeKey, defs[sweepAxeKey], -1); // Next stroke must not jump to a mirrored rest pose.
+assert.deepEqual(plain(axeForward.neutral), plain(axeBackhand.neutral), 'Both alternating attacks share one idle Neutral');
+for (const channel of ['x', 'yaw', 'roll', 'bodyYaw']) {
+  const forehandDelta = axeForward.windup[channel] - axeForward.neutral[channel]; // Directional windup offset from the same idle.
+  const backhandDelta = axeBackhand.windup[channel] - axeBackhand.neutral[channel]; // Corresponding mirrored stroke.
+  assert(Math.abs(forehandDelta + backhandDelta) < 1e-8, `${channel}: mirrored attack delta, stable idle`);
+}
+const sampleA = window.SharedAttackPose.createSample(); // Samples both source poses through the actual renderer's shared interpolation.
+const sampleB = window.SharedAttackPose.createSample();
+const styleNeutral = window.SharedAttackPose.STYLE_NEUTRAL_POSE.sweep; // Same built-in sweep fallback as updateToolMesh.
+window.SharedAttackPose.samplePose(sampleA, axeForward, styleNeutral, 0, .22, .55, .7, 1, 1, 'attack');
+window.SharedAttackPose.samplePose(sampleB, axeBackhand, styleNeutral, 0, .22, .55, .7, 1, 1, 'attack');
+for (const channel of ['x', 'y', 'z', 'pitchRad', 'yawRad', 'rollRad', 'bodyYawRad']) {
+  assert(Math.abs(sampleA[channel] - sampleB[channel]) < 1e-8, `${channel}: neither start frame may pop or flip`);
+}
+const overheadBackhand = work.workPoseFor('pick', flexShaftPick, defs[flexShaftPick], -1); // Pick overhead sweeps must mirror pitch direction instead of body Neutral.
+assert.equal(overheadBackhand.neutral.bodyYaw, sweep.neutral.bodyYaw);
+assert(Math.abs((overheadBackhand.windup.pitch - overheadBackhand.neutral.pitch) +
+  (sweep.windup.pitch - sweep.neutral.pitch)) < 1e-8, 'overhead backhand mirrors the pitch arc');
+
+// Fishing uses that same authored overhead work path, but preserves its shoulder-aim and release metadata.
+window.HeldActionAnimations = {
+  weaponThrowSpin: { durationS: 1.04, poses: { neutral: { shoulderAim: { grip: true } }, windup: { shoulderAim: { grip: false } }, strike: { shoulderAim: { grip: false } } } },
+  weaponThrowSpearSpin: { durationS: 1.04, toolEndFlip: true, poses: { neutral: { shoulderAim: { grip: true } }, windup: { shoulderAim: { grip: false } }, strike: { shoulderAim: { grip: false } } } },
+};
+const fishingSource = source('docs/js/fishing-minigame.js'); // Inspect the real private selector without starting the DOM-bound minigame.
+const startFishingSelector = fishingSource.indexOf('  function selectedFishingThrowAnimation() {');
+const endFishingSelector = fishingSource.indexOf('\n  function beginFishingThrowWindup(', startFishingSelector);
+assert(startFishingSelector >= 0 && endFishingSelector > startFishingSelector);
+const fishingContext = vm.createContext({ window, deps: { equipmentSlots: { harpoon: flexShaftPick }, TOOL_ITEM_DEFS: defs } });
+vm.runInContext(fishingSource.slice(startFishingSelector, endFishingSelector) + '\nthis.select = selectedFishingThrowAnimation;', fishingContext);
+const modularThrow = fishingContext.select();
+assert.equal(modularThrow.animation.style, 'sweep', 'Modular fishing uses its fitted weapon attack');
+assert.equal(modularThrow.animation.heldSpin, false, 'Do not superimpose the native 2½-turn twirl on the weapon swing');
+assert.equal(modularThrow.animation.toolEndFlip, false, 'A modular shaft does not inherit native Fishing Spear reversal');
+assert.equal(modularThrow.animation.poses.windup.pitch, work.workPoseFor('harpoon', flexShaftPick, defs[flexShaftPick]).windup.pitch,
+  'Fishing plays the actual overhead weapon windup');
+assert.deepEqual(plain(modularThrow.animation.poses.neutral.shoulderAim), { grip: true }, 'Fishing grip remains aligned');
+fishingContext.deps.equipmentSlots.harpoon = 'fishingspear';
+const nativeThrow = fishingContext.select();
+assert.equal(nativeThrow.animation, window.HeldActionAnimations.weaponThrowSpearSpin, 'Unmodified Fishing Spear retains its authored spin throw');
+
 const game = source('docs/game.js'); // Ensure the big gameplay monolith actually calls the extracted adapter.
-assert(game.includes("workPoseFor?.(chargeAction.tool, workItemKey, workDef)"));
+assert(game.includes("workPoseFor?.(chargeAction.tool, workItemKey, workDef, stageDef.dirSign)"));
 assert(game.includes("slotDef.modular.shaft === 'pick-shovel'"));
+assert(game.includes('toolHolder.userData.authoredToolActionActive ='), 'Game advertises an active tool pose before the stance hook runs');
+assert(game.includes('const modularWorkSweep ='), 'Tool swing smoothly restores the sprite-plane basis at the attack boundaries');
+const stancesSource = source('docs/js/weapon-tool-stances.js');
+assert(stancesSource.includes('authoredToolActionActive || holderIsMoving(now)'), 'Idle stance must not reapply itself over an authored tool attack');
 assert(game.includes('TOOL_ITEM_DEFS, // Modular harpoon casting needs'));
 const fishing = source('docs/js/fishing-minigame.js');
 assert(fishing.includes("workStyleFor?.('harpoon', itemKey, def)"));
