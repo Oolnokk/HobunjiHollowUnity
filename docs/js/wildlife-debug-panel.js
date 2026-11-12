@@ -142,6 +142,9 @@
       + '<div>Scout legs: ' + (flight.scouts || 0) + ' · nest stays: ' + (flight.nestStays || 0)
       + ' · flee drops: ' + (flight.fleeDrops || 0) + '</div>'
       + '<div>Live wing rigs: ' + (wings?.liveRigs ?? 0) + ' · failed loads: ' + (wings?.loadFailures ?? 0) + '</div>'
+      + '<div>Captive pose restores: ' + (wings?.captiveRestores ?? 0)
+      + ' · skipped (rig replaced): ' + (wings?.captiveRestoreMisses ?? 0)
+      + ' · last: ' + fmt(wings?.lastCaptiveRestore) + '</div>'
       + '<div>Inaccessible nest spires: ' + (flight.roosts?.find(record => record.area === area)?.count || 0) + '</div>'
       + '<div>Nest arenas: ' + (arena?.arenas?.length || 0) + ' · rock perches: ' + (arena?.rockMeshes || 0)
       + ' · stone spike layers: ' + (arena?.spikeMeshes || 0) + '</div>'
