@@ -27,7 +27,7 @@ class Material {
 }
 class Geometry {constructor(...dimensions){this.dimensions=dimensions;}dispose(){this.disposed=true;}}
 const maskPaints=[]; // Records the real white-alpha tinting operations without relying on WebGL in the headless test.
-class CanvasTexture {constructor(image){this.image=image;this.needsUpdate=false;}}
+class CanvasTexture {constructor(image){this.image=image;this.needsUpdate=false;this.isCanvasTexture=true;}} // The real three.js CanvasTexture tag selects the shared post-composite overlay.
 class TextureLoader {
   load(name,onLoad){
     const source={name,image:{width:45,height:38},dispose(){this.disposed=true;}};
@@ -184,12 +184,26 @@ for(let index=0;index<gate.glyphs.length;index++){
     'every Scratchbone note is on its authored column, in alternating left-right reading order');
 }
 assert(gate.scoreStone.visible,'the physical paired pillars remain visible even when their music glyphs are hidden');
-assert.equal(gate.scoreBoard.userData.scoreOcclusion,'notes-over-stone', 'the existing score group alone owns cliff-independent glyph rendering');
+assert.equal(gate.scoreBoard.userData.scoreOcclusion,'post-composite-notes', 'only the existing score group opts its glyphs into the post-shell overlay');
 assert(pillars.every(p=>p.material.depthTest && p.material.depthWrite), 'physical stone pillars still obey terrain occlusion');
 assert(gate.glyphs.every(g=>!g.material.depthTest && !g.material.depthWrite && !g.frustumCulled), 'score ink remains visible through nearby cliff rock while the plate is active');
-assert(gate.glyphs.every(g=>g.renderOrder>=64 && g.userData.noOutline), 'authored ink renders after stone without a synthetic outline');
+assert(gate.glyphs.every(g=>g.renderOrder>=1200 && g.userData.noOutline), 'authored ink uses the existing final canvas overlay, not just an ordinary world draw order');
 assert(gate.glyphGlows.every(g=>!g.material.depthTest && !g.material.depthWrite), 'inner note halos follow the same selective score visibility');
 assert(gate.glyphOuterGlows.every(g=>!g.material.depthTest && !g.material.depthWrite), 'outer note halos cannot vanish behind the cliff');
+const outlineSource=read('docs/js/outline-render-performance.js'); // Exercise the renderer's *actual* overlay selector rather than merely duplicating a matching number.
+const predicateStart=outlineSource.indexOf('  function isWorldTextOverlayMaterial(');
+const predicateEnd=outlineSource.indexOf('  // This used to traverse',predicateStart);
+assert(predicateStart>=0&&predicateEnd>predicateStart,'the existing post-composite overlay selector remains discoverable');
+const isPostCompositeOverlay=new Function('WORLD_TEXT_RENDER_ORDER_MIN',
+  outlineSource.slice(predicateStart,predicateEnd)+'\nreturn isWorldTextOverlayMesh;')(1200);
+for(const [kind,parts] of [['ink',gate.glyphs],['inner glow',gate.glyphGlows],['outer glow',gate.glyphOuterGlows]]){
+  assert(parts.every(isPostCompositeOverlay),`every ${kind} plane is selected for the real renderer's final canvas pass`);
+}
+assert(pillars.every(p=>!isPostCompositeOverlay(p)), 'physical score pillars must remain in the ordinary depth-tested stone pass');
+assert(!isPostCompositeOverlay({isMesh:true,renderOrder:1300,material:{map:{isCanvasTexture:false},depthTest:false,depthWrite:false}}),
+  'the final overlay remains restricted to canvas-backed clue/text planes');
+assert(!isPostCompositeOverlay({isMesh:true,renderOrder:1300,material:{map:{isCanvasTexture:true},depthTest:true,depthWrite:false}}),
+  'a depth-tested world surface never enters the last-draw overlay');
 assert.equal(gate.glyphGlows.length,gate.song.notes.length,'each outdoor note has a shared-visibility additive halo');
 assert(gate.glyphs.every(glyph=>typeof glyph.material.onBeforeCompile==='function'),
   'the exterior glyphs must use the Witch-bomb alpha-only ink shader');
@@ -232,6 +246,7 @@ Exterior.update(.01,area);
 assert.equal(opened,0,'stepping onto the plate must not auto-equip or open an instrument');
 assert.equal(gate.lastDown,true,'standing on the real raised plate activates the melody clue');
 assert(gate.scoreBoard.visible,'the exterior Scratchbone score lights up on the active raised plate');
+assert.equal(Exterior.debugSnapshot().areas[0].portals[0].scoreOverlayReady,true, 'mobile puzzle diagnostics confirm all clue ink is post-composite eligible');
 assert(sounds.some(event=>event.key==='stoneBeat1'&&event.volume===.72&&event.pitch===1),
   'stepping onto the plate immediately plays the real first stonebeat at its authored pitch');
 assert(context.RuinInteractionAudio.debugSnapshot().metronomeSource==='assets/audio/sfx/sfx_stonebeat-1.mp3',
