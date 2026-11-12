@@ -174,12 +174,16 @@
     const THREE=window.THREE;
     const geometry=fusedRockGeometry(THREE,wall); // Re-mesh every exposed side after each pickaxe strike or Shattercask tile removal.
     if(!geometry)return;
-    let caveShell=null; // The carved cave shell, not any ore rock, owns the separator's surface material.
-    wall.scene.traverse?.(node=>{
-      if(!caveShell&&node.isMesh&&node.userData?.interiorCavernMaterialParity&&!node.userData?.caveSeparatorFused&&!node.userData?.caveCarvedDoorOpening)caveShell=node;
-    });
-    const fallback=wall.material || window.OreRockTextures?.materialFor?.(THREE,'stone',{})
-      || new THREE.MeshStandardMaterial({color:0x777267,roughness:.94}); // Standalone cave tests without a shell remain lit stone.
+    let caveShell=wall.caveShell; // Reuse the discovered cave shell instead of traversing every scene object after each mined tile.
+    if(!caveShell?.parent){
+      caveShell=null;
+      wall.scene.traverse?.(node=>{
+        if(!caveShell&&node.isMesh&&node.userData?.interiorCavernMaterialParity&&!node.userData?.caveSeparatorFused&&!node.userData?.caveCarvedDoorOpening)caveShell=node;
+      });
+      wall.caveShell=caveShell; // Only re-scan if the original shell was detached or had not yet been built.
+    }
+    const fallback=caveShell?null:(wall.material || window.OreRockTextures?.materialFor?.(THREE,'stone',{})
+      || new THREE.MeshStandardMaterial({color:0x777267,roughness:.94})); // Do not create an unused ore-texture material when the cave shell is present.
     const next=new THREE.Mesh(geometry,caveShell?.material||fallback);
     if(!caveShell&&!wall.naturalized&&window.NaturalSurfaceMaterials?.naturalizeMesh){
       window.NaturalSurfaceMaterials.naturalizeMesh(next,'rocks','planar-stretch'); // Match the shell's farm-cliff finish if it is not yet in this scene.
