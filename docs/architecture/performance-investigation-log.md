@@ -12,6 +12,61 @@ conditions on the same machine; they are not what a player sees.** Counts come f
 comes from CDP CPU profiles. One headless world per run, and bandit/tribe camps are random, so repeat anything
 close before trusting it.
 
+## 12 Nov 2026: held/shell replays rebuild only near depth and restore by depth copy
+
+The fix for "replays are the multiplier" (see the entries below). Wilderness numbers first, because nothing earlier
+helped there: the western slope's real world draw was already only about 270 k triangles, and 75% of its 1.5 M frame was
+five replays resubmitting mesa tiers, snow patches and cliff decor that sit *behind* the actors.
+
+An x-ray group clears depth in its scissor and redraws the scene so its held parts can be tested against "everything
+except the floor they stand on". Only occluders nearer than those parts can change that test. Now:
+
+- `js/scissor-depth-snapshot.js` (`ScissorDepthSnapshot.save/restore`) copies the replay rectangle's depth out of the
+  current render target and back with WebGL2 `blitFramebuffer`, into one depth(-stencil) renderbuffer per renderer.
+  Supported only for an offscreen single-sample target with a depth texture (the main scene target while outlines are
+  on). One `getError` check per allocation; any failure disables it for that renderer.
+- `held-object-render-order.js`: with a snapshot taken, each group's depth rebuild hides bounded objects whose whole
+  bounding box is farther than the group's farthest held part plus 1.5 units (`hideBeyondViewDepth`,
+  `replayFarViewDepth`). The base replay's ground-restore draw and the shell replay's full "final depth restore" draw
+  are replaced by the depth copy plus a depth-only redraw of the held parts. Unbounded held parts (skinned, instanced)
+  skip the far cull but still get the copy.
+- No snapshot support (WebGL1, outlines off so the scene draws straight to the canvas, a failed restore) runs the
+  original path unchanged. `HeldObjectRenderOrder.setNearReplayEnabled(false)` is the A/B switch; `snapshot()` has
+  `nearReplaySnapshots`, `nearReplayFarCulled`, `nearReplayFallbacks`, `lastNearReplayFarDepth`.
+- `scripts/test-held-near-replay-depth-snapshot.js` runs the snapshot module against a recording GL fake and the
+  compositor with and without snapshot support.
+
+Same frozen frame, new path on vs off (headless, exact counts, one base + shell frame):
+
+| View | Triangles off -> on | Draw calls off -> on | Colour |
+| --- | --- | --- | --- |
+| Western slope, player only | 1,013,776 -> 637,371 | 664 -> 460 | identical |
+| Western slope, two actor groups | 1,725,600 -> 1,338,799 | 954 -> 771 | 110 px differ (see below) |
+| Cloud forest (sphere test, before the box refinement) | 2,819,372 -> 1,817,442 | 1,376 -> 969 | identical, depth identical |
+| Town, quiet | 2,942,401 -> 1,804,340 | 1,725 -> 1,104 | identical |
+| Town, crowded (4 groups, 54% scissor) | 5,329,973 -> 3,396,496 | 2,948 -> 1,770 | identical |
+
+**The differing pixels are the old path's bug.** On the slope the old path drew faint horizontal streaks across a
+cliff base inside the replay rectangle. Against a reference frame with every held-overlay mesh hidden (so no replay
+runs at all), the new path matched the reference in all 110 differing pixels and the old path in none; the two
+references were identical to each other. A crowded town frame that differed (142 pixels along the bottom edge) scored
+the same way: 142 of 142 matched the reference with the new path, none with the old. The base pass alone was identical on and off, and the far cull made no pixel
+difference, so the streaks came from the old path's depth after a replay (a hole where filtered floor was not put
+back), which the outline pass then drew through. The depth copy restores exactly what was there.
+
+Depth after the frame does differ inside the rectangle (a few hundred pixels around the held parts): the old path left
+forced cutout/cover depth behind there (PNG avatar silhouettes, water, snow, grass), the new one leaves the scene's
+real depth, the same as everywhere outside the rectangle. In the game `PngPlaneOutlineOccluder.renderDepth` writes the
+PNG silhouettes for the whole screen right afterwards.
+
+**What still sits in a wilderness rebuild:** a handful of zone-spanning meshes whose box always reaches in front of the
+actor: the largest `plateau_mesa_tier` meshes (up to 37 k triangles, multi-material, so the terrain chunker skips
+them), `cliff-handhold-dec` (one 23-27 k mesh), `wilderness_bedrock` (one 14-15 k mesh) and the three cloud depth
+masks. Splitting those spatially is the next step for both the real draw and the rebuilds.
+
+**Not measured:** real-device FPS, and whether every mobile driver accepts a depth-stencil blit (it falls back if the
+first one reports an error).
+
 ## 12 Nov 2026: town ground meshes now go through the terrain chunker; roots and bricks measured
 
 **Terrain.** `terrain-render-chunks.js` only split meshes of 60,000+ triangles (sized for 200x200 wilderness zones). The
