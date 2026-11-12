@@ -155,8 +155,8 @@
       changed = uniquePush(world.keyItems, definition.id);
     }
 
-    if (!writeMeta(meta)) return { ok: false, granted: false, message: 'Could not save key item ownership.' };
-    if (definition.scope === 'world') invalidateWorldKeys(); // A successful grant invalidates the hot-path cache before any UI/event observers run.
+    if (changed && !writeMeta(meta)) return { ok: false, granted: false, message: 'Could not save key item ownership.' }; // Reobserving an already-owned key should not rewrite a large world save.
+    if (definition.scope === 'world') invalidateWorldKeys(); // Refresh cache even when reobserving ownership written by a different save path.
     if (syncCharacterOwnership) uniquePush(characterKeys(liveProfile), definition.id); // Used to mirror only successfully persisted character ownership into the live profile.
     renderPackKeys(); // New grants appear immediately without requiring a Pack reload.
     try {
