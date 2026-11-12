@@ -195,9 +195,9 @@ for(const [kind,parts] of [['ink',gate.glyphs],['inner glow',gate.glyphGlows],['
     `every ${kind} plane must opt into the character-depth mask, not draw over the player/NPC`);
 }
 const gameSource=read('docs/game.js'); // Verify the renderer receives the same live actor roots as gameplay, not a screenshot-only proxy.
-assert.match(gameSource, /setScoreCharacterRootsProvider\\?\\.\\(scoreActorDepthRoots\\)/,
+assert(gameSource.includes('setScoreCharacterRootsProvider?.(scoreActorDepthRoots)'),
   'the gameplay bootstrap must register the lazy live-character silhouette provider');
-assert.match(gameSource, /function\\* scoreActorDepthRoots\\(\\)/, 'provider should yield roots without cloning collections');
+assert(gameSource.includes('function* scoreActorDepthRoots()'), 'provider should yield roots without cloning collections');
 assert(gameSource.includes('for (const walker of npcWalkers) yield walker.root'),'live NPC walkers are masked');
 for(const group of ['hostileObjects','companionObjects','animalObjects','corpseObjects'])
   assert(gameSource.includes('for (const actor of '+group+') yield actor.avatarRef?.group'),
