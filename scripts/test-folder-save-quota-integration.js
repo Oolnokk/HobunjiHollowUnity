@@ -107,7 +107,7 @@ async function boot(folder, nativeData, sessionData = new Map()) {
     setInterval: () => 1, clearInterval() {}, setTimeout: (fn, delay) => { if (delay === 0) fn(); return 1; }, clearTimeout() {},
     location: { reload() { actions.reloads++; } }, confirm: () => true, alert: message => actions.alerts.push(message),
   });
-  for (const file of ['storage-quota-guard', 'save-snapshot-core', 'local-save-folder-core', 'folder-save-primary', 'farm-editor', 'folder-save-runtime-flush', 'save-checkpoint-manager', 'folder-save-quit-guard']) {
+  for (const file of ['storage-quota-guard', 'save-snapshot-core', 'local-save-folder-core', 'folder-save-primary', 'farm-editor', 'character-meta-save', 'folder-save-runtime-flush', 'save-checkpoint-manager', 'folder-save-quit-guard']) {
     vm.runInContext(fs.readFileSync(`docs/js/${file}.js`, 'utf8'), context, { filename: `${file}.js` });
   }
   await new Promise(resolve => setImmediate(resolve));
@@ -166,8 +166,12 @@ async function boot(folder, nativeData, sessionData = new Map()) {
   const inventory = { cookedPie: 1 }; // The real member serializer must capture the current live bag.
   first.installLiveMember(inventory);
   assert.equal(first.window.HobunjiRuntimeSave.flushNow().ok, false, 'the real linked-window browser backup still hits quota');
+  first.window.CharacterMetaSave.schedule({ gearInventory: { motesOfProwess: 1 }, skillExperience: { combat: 8 } });
   const beforeCapture = first.nativeAttempts.length; // Browser writes are forbidden during the replacement live capture path.
-  assert.equal(first.window.HobunjiRuntimeSave.captureSnapshot().ok, true);
+  const captured = first.window.HobunjiRuntimeSave.captureSnapshot(); // Simulates saving while the kill rewards still await the idle callback.
+  assert.equal(captured.ok, true);
+  assert.equal(captured.snapshot.meta.characters[0].gearInventory.motesOfProwess, 1);
+  assert.equal(captured.snapshot.meta.characters[0].skillExperience.combat, 8);
   assert.equal(first.nativeAttempts.length, beforeCapture, 'direct live capture makes zero browser write attempts');
   const saved = await first.window.HobunjiSaveCheckpoints.saveManual(); // Real gameplay serializers → folder write → optional browser mirrors.
   assert.equal(saved.ok, true, JSON.stringify(saved));
@@ -185,6 +189,8 @@ async function boot(folder, nativeData, sessionData = new Map()) {
   assert.equal(second.sessionStorage.getItem('hobunjiFolderPrimarySkipOnce'), null, 'staged folder imports must not skip folder loading after reload');
   const reloaded = second.window.HobunjiSaveSnapshot.capture(); // Real snapshot adapter must now see the pie and farm layout from disk.
   assert.equal(reloaded.meta.worlds[0].members.farmer.nonGearInventory.cookedPie, 1);
+  assert.equal(reloaded.meta.characters[0].gearInventory.motesOfProwess, 1, 'the folder reload preserves queued kill rewards');
+  assert.equal(reloaded.meta.characters[0].skillExperience.combat, 8, 'combat XP survives folder-only capture under browser quota');
   assert.equal(reloaded.farmLayouts.hollow.decor[0].key, 'simpleWindow', 'linked windows survive alongside the pie');
 
   const third = await boot(folder, nativeData, sessionData); // Real pre-onboarding owner must reread disk rather than trust the stale native copy.

@@ -104,6 +104,7 @@
       // saveMemberWorldData is the canonical write of the live general bag,
       // relationships, quest/world-member state, etc. The folder mirror must
       // never run first or it can faithfully copy an older localStorage image.
+      window.CharacterMetaSave?.flush?.();
       if (typeof saveMemberWorldData === 'function') saveMemberWorldData();
       if (typeof saveFarmLayout === 'function') saveFarmLayout();
       if ((window.HobunjiStorageQuota?.getWriteFailureCount?.() || 0) > failuresBefore) {
@@ -130,6 +131,7 @@
       const worldId = window.__hobunjiPlayerProfile?.worldId; // Only the active world's physical layout is replaced by live data.
       if (!worldId) throw new Error('The active world is unavailable for folder-save capture.');
       snapshot.meta = captureMemberWorldData(snapshot.meta);
+      window.CharacterMetaSave?.capturePending?.(snapshot.meta);
       snapshot.farmLayouts[worldId] = window.FarmEditor.captureFarmLayout();
       window.HobunjiSaveSnapshot.validate(snapshot);
       const captured = JSON.parse(JSON.stringify(snapshot)); // Detach runtime arrays/objects before asynchronous disk writes begin.

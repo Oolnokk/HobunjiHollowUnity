@@ -1300,6 +1300,8 @@
         ? `3D melee ${result.shape || 'collider'}: hit=${result.hit ? 'YES' : 'no'} range=${Number(result.bestDistanceWorld).toFixed(2)}/${Number(result.rangeWorld).toFixed(2)} angle=${Number(result.bestAngleDeg).toFixed(1)}°/${Number(result.halfConeDeg).toFixed(1)}° pitch=${Number(result.pitchDeg).toFixed(1)}° height=${Number(result.halfHeightWorld || 0).toFixed(2)} trails=${meleeDebug.activeTrailCount}`
         : `3D melee: no resolved swing yet; trails=${meleeDebug.activeTrailCount}`);
       lines.push(`Melee trail pool: free=${meleeDebug.pooledTrailCount || 0} created=${meleeDebug.trailMeshesCreated || 0} reused=${meleeDebug.trailMeshesReused || 0} freed=${meleeDebug.trailMeshesDisposed || 0}`); // Mobile-visible proof that successive strikes reuse GPU buffers.
+      const swipeUploads = window.__climbDebug?.coneTrailUploads?.();
+      if (swipeUploads) lines.push(`Swing work: ribbon position writes=${swipeUploads.positions} highlight writes=${swipeUploads.colors} melee grids skipped=${meleeDebug.meleeGridRejects || 0}`);
       const strikeTimes = meleeDebug.strikeCpuMs; // Combat's small snapshot avoids collecting all profiler buckets during live debugging.
       if ((strikeTimes?.enemy?.samples || 0) + (strikeTimes?.player?.samples || 0) > 0)
         lines.push(`Strike CPU peak/last: enemy=${Number(strikeTimes.enemy.max).toFixed(1)}/${Number(strikeTimes.enemy.last).toFixed(1)}ms player=${Number(strikeTimes.player.max).toFixed(1)}/${Number(strikeTimes.player.last).toFixed(1)}ms (Performance Profiler)`);

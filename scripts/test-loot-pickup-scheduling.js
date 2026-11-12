@@ -18,8 +18,11 @@ const idle = []; // Queued idle callbacks; demonstrates one coalesced write acro
 const listeners = new Map(); // Captures pagehide for a save before navigation.
 const docListeners = new Map(); // Captures visibilitychange on mobile backgrounding.
 let writes = 0; // Counts expensive storage serializations.
+let farmWrites = 0; // Counts layout serializations coalesced with member saves.
 const document = { hidden:false, addEventListener(name,fn){docListeners.set(name,fn);} };
-const window = {requestIdleCallback(fn){idle.push(fn);},addEventListener(name,fn){listeners.set(name,fn);}};
+const window = {requestIdleCallback(fn){idle.push(fn);},addEventListener(name,fn){listeners.set(name,fn);},
+  FarmEditor: { saveFarmLayout() { farmWrites++; return true; } },
+};
 const localStorage = {
   getItem(key){return storage.get(key) || null;},
   setItem(key,value){writes++;storage.set(key,String(value));},
@@ -42,6 +45,29 @@ api.scheduleLootMemberSave();listeners.get('pagehide')();idle.shift()();
 assert.equal(writes,3,'pagehide flushes once, and its retired idle callback is inert');
 api.scheduleLootMemberSave();document.hidden=true;docListeners.get('visibilitychange')();
 assert.equal(writes,4,'backgrounding flushes live loot');
+idle.shift()();
+api.scheduleLootMemberSave(true);
+api.scheduleLootMemberSave(true);
+api.scheduleLootMemberSave();
+assert.equal(farmWrites,0,'farm strikes do not write the layout on the strike frame');
+assert.equal(writes,4,'farm strikes do not write member state on the strike frame');
+assert.equal(idle.length,1,'farm strikes and loot share the scheduled callback');
+idle.shift()();
+assert.equal(farmWrites,1,'several strikes share one farm layout write');
+assert.equal(writes,5,'several strikes and loot share one member write');
+api.scheduleLootMemberSave(true);
+api.saveMemberWorldData();
+listeners.get('pagehide')();
+idle.shift()();
+assert.equal(farmWrites,2,'pagehide flushes farm state even when the member save already ran');
+assert.equal(writes,6,'the explicit member save prevents a second write');
+api.scheduleLootMemberSave(true);
+window.HobunjiSessionPersistenceStartupGuard = { exitFlushSuppressed: () => 'recovery-restore' };
+idle.shift()();
+docListeners.get('visibilitychange')();
+listeners.get('pagehide')();
+assert.equal(farmWrites,2,'queued vegetation cannot overwrite the restored farm layout');
+assert.equal(writes,6,'queued mulch cannot overwrite the restored member inventory');
 assert(game.includes('if (_res.ok !== false && !_res.deferMemberSave) saveMemberWorldData();'),
   'generic world-action dispatcher must honor already deferred member save');
 const animal = game.slice(game.indexOf('function makeCorpseWorldObject(c)'),game.indexOf('function getCorpseObjectAt('));

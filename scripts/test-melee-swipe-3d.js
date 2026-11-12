@@ -12,8 +12,10 @@ class Vector3 {
   normalize() { const n = Math.sqrt(this.lengthSq()) || 1; return this.set(this.x / n, this.y / n, this.z / n); }
 }
 class BufferAttribute {
-  constructor(data, size) { this.array = data; this.itemSize = size; this.needsUpdate = false; }
+  constructor(data, size) { this.array = data; this.itemSize = size; this.writes = 0; }
   setXYZ(i, x, y, z) { const at = i * 3; this.array[at] = x; this.array[at + 1] = y; this.array[at + 2] = z; }
+  set needsUpdate(value) { if (value) this.writes++; }
+  get needsUpdate() { return this.writes > 0; }
   setUsage() { return this; }
   xyz(i) { return [...this.array.slice(i * 3, i * 3 + 3)]; }
 }
@@ -21,6 +23,7 @@ class BufferGeometry {
   constructor() { this.attributes = {}; }
   setAttribute(name, value) { this.attributes[name] = value; return this; }
   setIndex(index) { this.indices = index; }
+  computeBoundingSphere() { this.boundsWrites = (this.boundsWrites || 0) + 1; }
   dispose() { this.disposed = true; }
 }
 class MeshBasicMaterial {
@@ -28,7 +31,7 @@ class MeshBasicMaterial {
   dispose() { this.disposed = true; }
 }
 class Mesh {
-  constructor(geometry, material) { this.geometry = geometry; this.material = material; this.frustumCulled = true; }
+  constructor(geometry, material) { this.geometry = geometry; this.material = material; this.frustumCulled = true; this.userData = {}; this.position = new Vector3(); }
 }
 const THREE = {
   Vector3, BufferAttribute, BufferGeometry, MeshBasicMaterial, Mesh,
@@ -184,3 +187,48 @@ assert.equal(poseRuntime.stats().samples, 2, 'only active swing/recovery poses i
 assert.equal(poseRuntime.stats().peakMs, 7);
 assert.deepEqual(poseCalls, ['pose:idle', 'Combat: bandit swing pose', 'pose:missed', 'Combat: bandit swing pose', 'pose:recovering']);
 console.log('3D swipe: pitch parity, pooling, misses, crowd limit and strike/swing timing: PASS');
+
+// Execute the production player swipe update across motion, highlight travel and a cone replacement.
+const game = fs.readFileSync('docs/game.js', 'utf8');
+const coneStart = game.indexOf('      const COMBAT_CONE_TRAIL_SAMPLES =');
+const coneEnd = game.indexOf('      // Attack-lunge movement trail', coneStart);
+const coneContext = vm.createContext({
+  window, THREE, TILE: 64, toolHolder: { parent: scene }, player,
+  weaponTrailCenterY: () => 1.25, neonAfflictionColor: () => 0x33aa99,
+  combatSwingAnim: 'sweep', toolSwingT: 0.75, toolSwingDur: 1, combatSwingWindupFrac: 0.25,
+  combatSwingStrikeFrac: 0.5, combatSwingHoldS: 0.4, combatSwingSign: 1, combatSwingAfflictionIds: ['poison'],
+  combatSwingCone: { rangePx: 128, halfConeRad: 0.4, angle: yaw, pitch },
+});
+vm.runInContext(game.slice(coneStart, coneEnd) +
+  '\nthis.swipe = { updateCombatConeTrail, coneTrailLaneMeshes, coneTrailUploads };', coneContext);
+const swipe = coneContext.swipe;
+swipe.updateCombatConeTrail();
+assert.equal(swipe.coneTrailLaneMeshes.length, 1, 'one affliction only allocates one lane');
+const lane = swipe.coneTrailLaneMeshes[0]; // The same mesh and local geometry must survive position changes.
+const original = lane.geometry.attributes.position.xyz(16);
+approximate(original[0] + lane.position.x, 2 * Math.cos(pitch) * Math.cos(yaw), 'local ribbon reconstructs the same world X');
+assert.equal(lane.geometry.boundsWrites, 1);
+player.x = 16;
+swipe.updateCombatConeTrail();
+assert.equal(lane.position.x, 0.25, 'movement translates the existing ribbon');
+assert.equal(lane.geometry.attributes.position.writes, 1);
+assert.equal(lane.geometry.attributes.color.writes, 1, 'same highlight and tint skip the color upload');
+coneContext.toolSwingT = 0.625;
+swipe.updateCombatConeTrail();
+assert.equal(lane.geometry.attributes.position.writes, 1);
+assert.equal(lane.geometry.attributes.color.writes, 2, 'highlight still advances during the swing');
+coneContext.toolSwingT = 0.5;
+swipe.updateCombatConeTrail();
+coneContext.toolSwingT = 0.4;
+swipe.updateCombatConeTrail();
+assert.equal(lane.geometry.attributes.color.writes, 3, 'the post-strike hold changes opacity only');
+assert(lane.material.opacity < 0.85);
+coneContext.combatSwingCone = { ...coneContext.combatSwingCone, rangePx: 64 };
+coneContext.combatSwingAfflictionIds = ['poison', 'bleeding'];
+swipe.updateCombatConeTrail();
+assert.equal(lane.geometry.attributes.position.writes, 2, 'replacement cone rebuilds the lane once');
+assert.equal(lane.geometry.boundsWrites, 2);
+assert.equal(swipe.coneTrailLaneMeshes.length, 2);
+coneContext.combatSwingAfflictionIds = ['poison'];
+swipe.updateCombatConeTrail();
+assert.equal(swipe.coneTrailLaneMeshes[1].visible, false, 'a shorter lane list hides the unused pooled mesh');

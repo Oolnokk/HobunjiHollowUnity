@@ -49,6 +49,7 @@
   const MAX_POOLED_MELEE_TRAILS = 64; // Keeps reusable attack-ribbon GPU buffers bounded across crowded bandit fights.
   const pooledMeleeTrailMeshes = []; // Detached meshes recycled by player and enemy attacks; never retain their old scene.
   const meleeTrailStats = { created: 0, reused: 0, disposed: 0 }; // Mobile Pixel Probe diagnostics for attack-spike investigation.
+  let meleeGridRejects = 0; // Counts unreachable hitboxes that skip the 27-point melee grid.
   const strikeCpuStats = { player: { last: 0, max: 0, samples: 0 }, enemy: { last: 0, max: 0, samples: 0 } }; // Per-strike worst/last CPU cost, populated only while Performance Profiler is enabled.
   const activeMeleeColliderDebug = new Map(); // Recent real pie-prism volumes drawn by Show Hitboxes.
   let meleeProbePoint = null, meleeRayPoint = null, meleeProbeRay = null, meleeColliderScratch = null; // Lazy reuse: headless tests need only THREE.MathUtils.
@@ -381,6 +382,16 @@
       return hit;
     }
 
+    const hitbox = targetHitbox.box;
+    const min = hitbox.min, max = hitbox.max;
+    const dxToBox = Math.max(0, min.x - collider.origin.x, collider.origin.x - max.x); // Closest horizontal separation along each axis.
+    const dzToBox = Math.max(0, min.z - collider.origin.z, collider.origin.z - max.z);
+    const outsideReach = Math.hypot(dxToBox, dzToBox) > Math.max(1e-6, collider.horizontalRangeWorld) + 1e-9; // Keep the near-vertical epsilon and boundary rounding in the exact test.
+    if (outsideReach) {
+      meleeGridRejects++;
+      if (opts.debug === false) return false;
+    }
+
     let hit = false;
     let bestDistanceWorld = Infinity;
     let bestAngleRad = Infinity;
@@ -400,15 +411,15 @@
       bestAngleRad = 0;
       bestVerticalOffsetWorld = 0;
       hit = bestDistanceWorld <= collider.rangeWorld;
+      if (hit && opts.debug === false) return true;
     }
-    const hitbox = targetHitbox.box;
-    const min = hitbox.min, max = hitbox.max;
     const centerX = (min.x + max.x) * 0.5;
     const sampleCenterY = (min.y + max.y) * 0.5;
     const centerZ = (min.z + max.z) * 0.5;
-    // First test the closest point, then the exact same 3×3×3 grid as before.
-    // Reuse one vector instead of allocating 28 vectors and four nested arrays per probe.
-    for (let index = -1; index < 27; index++) {
+    // Outside reach, the closest point still supplies the exact distance and angle for Pixel Probe.
+    // In reach, check that point followed by the original grid in the original order.
+    const sampleCount = outsideReach ? 0 : 27;
+    for (let index = -1; index < sampleCount; index++) {
       if (index === -1) hitbox.clampPoint(collider.origin, meleeProbePoint);
       else {
         const ix = Math.floor(index / 9), iy = Math.floor((index % 9) / 3), iz = index % 3;
@@ -429,11 +440,13 @@
         : (horizontalDistance <= 1e-6 ? 0 : Infinity);
       const centerY = collider.origin.y + collider.verticalRiseWorld * radialFraction;
       const verticalOffset = Math.abs(point.y - centerY);
-      const distanceWorld = point.distanceTo(collider.origin);
-      if (distanceWorld < bestDistanceWorld || (distanceWorld === bestDistanceWorld && yawDelta < bestAngleRad)) {
-        bestDistanceWorld = distanceWorld;
-        bestAngleRad = yawDelta;
-        bestVerticalOffsetWorld = verticalOffset;
+      if (opts.debug !== false) {
+        const distanceWorld = point.distanceTo(collider.origin);
+        if (distanceWorld < bestDistanceWorld || (distanceWorld === bestDistanceWorld && yawDelta < bestAngleRad)) {
+          bestDistanceWorld = distanceWorld;
+          bestAngleRad = yawDelta;
+          bestVerticalOffsetWorld = verticalOffset;
+        }
       }
       if (radialFraction <= 1 && yawDelta <= halfConeRad && verticalOffset <= collider.halfHeightWorld) {
         hit = true;
@@ -583,23 +596,27 @@
     const halfThickness = Math.max(0, Number(opts.halfThickness) || 0.06);
     const halfHeightWorld = Math.max(0.01, Number(opts.halfHeightWorld) || 0.35); // Real actor half-height for NPCs, conservative player fallback for the shared game swipe.
     const archUnits = Math.max(0, Number(opts.archUnits) || 0.22); // Subtle upward curvature constrained inside the hit volume.
-    const horizontalRange = rangeTiles * Math.cos(pitch);
-    const verticalRise = rangeTiles * Math.sin(pitch);
+    const pitchCos = Math.cos(pitch); // Both edges use the same fixed pitch for every sample.
+    const pitchSin = Math.sin(pitch);
+    const horizontalRange = rangeTiles * pitchCos;
+    const verticalRise = rangeTiles * pitchSin;
     for (let sample = 0; sample <= samples; sample++) {
       const u = sample / samples;
       const angle = yaw - halfConeRad + 2 * halfConeRad * u;
       const taper = Math.sin(u * Math.PI);
       const inset = Math.min(rangeTiles, halfThickness * taper); // Never extend beyond the actual hit radius.
       const innerRange = rangeTiles - inset;
-      const outerX = origin.x + Math.cos(angle) * horizontalRange;
-      const outerZ = origin.z + Math.sin(angle) * horizontalRange;
-      const innerX = origin.x + Math.cos(angle) * innerRange * Math.cos(pitch);
-      const innerZ = origin.z + Math.sin(angle) * innerRange * Math.cos(pitch);
+      const angleCos = Math.cos(angle); // Both ribbon edges share the same sample angle.
+      const angleSin = Math.sin(angle);
+      const outerX = origin.x + angleCos * horizontalRange;
+      const outerZ = origin.z + angleSin * horizontalRange;
+      const innerX = origin.x + angleCos * innerRange * pitchCos;
+      const innerZ = origin.z + angleSin * innerRange * pitchCos;
       const vertical = halfHeightWorld * taper;
       const lift = Math.min(archUnits, halfHeightWorld * 0.2) * taper; // Still below the collider's top at the widest point.
       const vi = sample * 2;
       positionAttr.setXYZ(vi, outerX, origin.y + verticalRise - vertical + lift, outerZ);
-      positionAttr.setXYZ(vi + 1, innerX, origin.y + innerRange * Math.sin(pitch) + vertical, innerZ);
+      positionAttr.setXYZ(vi + 1, innerX, origin.y + innerRange * pitchSin + vertical, innerZ);
     }
     positionAttr.needsUpdate = true;
   }
@@ -620,7 +637,6 @@
       blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
     });
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.frustumCulled = false; // World-space ribbons already own their precise visible lifetime.
     meleeTrailStats.created++;
     return mesh;
   }
@@ -665,6 +681,7 @@
       halfThickness: opts.halfThickness,
       archUnits: opts.archUnits,
     });
+    mesh.geometry.computeBoundingSphere?.(); // Refresh pooled world-space bounds once per strike for camera culling.
     scene.add(mesh);
     const trail = {
       mesh, scene, age: 0,
@@ -897,13 +914,14 @@
     get retainedColliderCount() { return activeMeleeColliderDebug.size; }, // Passive diagnostic; does not prune the map while measuring cleanup.
     get activeTrails() { return activeMeleeTrails.map(trail => ({ actor: trail.actor, age: trail.age, pitchDeg: trail.pitchDeg })); },
     snapshot: () => ({
-      latestChange: 'Melee swipes now follow the true pitched outer face of their 3D hit cones, with curved vertical bands instead of flat ribbons.',
+      latestChange: 'Swing ribbons reuse their geometry while moving. Out-of-reach melee targets skip the detailed hitbox grid.',
       lastResult: lastMelee3DResult,
       activeTrailCount: activeMeleeTrails.length,
       pooledTrailCount: pooledMeleeTrailMeshes.length, // Mobile-visible saved draws and GPU buffers.
       trailMeshesCreated: meleeTrailStats.created,
       trailMeshesReused: meleeTrailStats.reused,
       trailMeshesDisposed: meleeTrailStats.disposed,
+      meleeGridRejects,
       strikeCpuMs: { player: { ...strikeCpuStats.player }, enemy: { ...strikeCpuStats.enemy } }, // Cheap mobile copy; does not enumerate the entire profiler subsystem map.
       activeColliders: debugMeleeColliders().map(collider => ({
         actor: collider.actor?.id || collider.actor?.name || (collider.actor === deps?.player ? 'player' : 'actor'),

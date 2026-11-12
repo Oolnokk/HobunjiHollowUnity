@@ -12,6 +12,27 @@ conditions on the same machine; they are not what a player sees.** Counts come f
 comes from CDP CPU profiles. One headless world per run, and bandit/tribe camps are random, so repeat anything
 close before trusting it.
 
+## 12 Nov 2026: swing geometry, melee misses, and strike-triggered saves
+
+A swing can clear vegetation and immediately serialize both the farm layout and world-member state.
+Combat kills also awarded Motes, skill XP and weapon mastery or armor XP through separate synchronous
+writes of character metadata. The strike paths now update tiles, inventory and progression in memory
+and queue the appropriate saves for browser idle. An explicit character save absorbs queued progression
+for that character. Backgrounding or leaving flushes pending work.
+
+With the game's Three.js r128, a twelve-frame moving swipe fixture went from four allocated lanes to one,
+12 position-buffer writes to one, and 12 color-buffer writes to nine. All 408 world-space vertices agreed
+within Float32 precision. Highlight colors still follow the sweep, while the hold updates opacity and
+the player position translates the mesh. Enemy ribbons refresh their bounds when reused so the renderer
+can cull off-camera swipes.
+
+A horizontal distance check uses the nearest edge of the target box before running the detailed melee
+grid. In a fixture of 300 out-of-reach lunge probes this removed all 300 ray and closest-point queries.
+A seeded comparison produced identical decisions for 20,000 checks, including 10,000 diagnostic snapshots.
+Pixel Probe reports skipped grids and ribbon buffer writes alongside the existing strike CPU timers.
+The Chromium launch failed before game boot because its process socket was denied. Device frame times
+remain unmeasured.
+
 ## 11 Nov 2026: per-NPC rig triangle cost (why a visible crowd is still slow)
 
 Measured in the headless harness with the real game (exact geometry counts, not FPS). One town NPC rig was
