@@ -369,6 +369,7 @@
         scratchboneMaterial(THREE,haloTexture,{color:0xeaf5ff,transparent:true,opacity:.045,
           blending:THREE.AdditiveBlending,depthTest:false,depthWrite:false,side:THREE.DoubleSide},'exterior-score-outer-'+index));
       outer.name='puzzle-cave-outdoor-glyph-outer-glow-'+index;
+      outer.userData.puzzleCaveScoreOverlay=true; // Final-pass character-depth mask protects the player's and NPCs' silhouettes.
       outer.position.set(x,y,z+.065);
       outer.frustumCulled=false;
       outer.renderOrder=SCORE_NOTE_OVERLAY_ORDER; // CanvasTexture + depthTest=false make this halo eligible for the existing post-composite overlay instead of only Three's base-pass sorting.
@@ -378,6 +379,7 @@
         scratchboneMaterial(THREE,haloTexture,{color:0xeaf5ff,transparent:true,opacity:.11,
           blending:THREE.AdditiveBlending,depthTest:false,depthWrite:false,side:THREE.DoubleSide},'exterior-score-halo-'+index));
       glow.name='puzzle-cave-outdoor-glyph-glow-'+index;
+      glow.userData.puzzleCaveScoreOverlay=true; // Same actor-masked overlay as the note's authored ink.
       glow.position.set(x,y,z+.073);
       glow.frustumCulled=false;glow.renderOrder=SCORE_NOTE_OVERLAY_ORDER+1;
       // Brightness and hue lerp on each authored song update, independent of frame rate.
@@ -385,6 +387,7 @@
       const material=scratchboneMaterial(THREE,texture,{color:0xeaf5ff,transparent:true,depthTest:false,depthWrite:false,side:THREE.DoubleSide},'exterior-score-ink-'+index);
       const mesh=new THREE.Mesh(new THREE.PlaneGeometry(.20,.24),material);
       mesh.name='puzzle-cave-outdoor-glyph-'+index;
+      mesh.userData.puzzleCaveScoreOverlay=true; // Draws through cliffs, but not through closer characters.
       mesh.position.set(x,y,z+.086);
       mesh.renderOrder=SCORE_NOTE_OVERLAY_ORDER+2; // Ink draws after both halos, including after the outline composite; its parent board still gates visibility to the plate.
       mesh.frustumCulled=false;
@@ -641,7 +644,7 @@
         progress:p.progress,rewardTier:p.song?.rewardTier||null,modelReady:!!p.doorModel,
         scoreSurface:p.scoreSurface?.kind||null,scoreVisible:!!p.scoreBoard?.visible,
         scoreOcclusion:p.scoreBoard?.userData?.scoreOcclusion||null,
-        scoreOverlayReady:p.glyphs.length>0&&p.glyphs.every(g=>g.renderOrder>=1200&&g.material?.map?.isCanvasTexture&&g.material?.depthTest===false&&g.material?.depthWrite===false), // Mobile diagnostics prove final-pass eligibility without a dev console.
+        scoreOverlayReady:p.glyphs.length>0&&p.glyphs.every(g=>g.userData?.puzzleCaveScoreOverlay===true&&g.renderOrder>=1200&&g.material?.map?.isCanvasTexture&&g.material?.depthTest===false&&g.material?.depthWrite===false), // Mobile diagnostics prove final-pass eligibility without a dev console.
         activeGlyph:p.progress?.activeIndex??-1,flashRemaining:p.flashRemaining,flashGlyphIndex:p.flashGlyphIndex,scoreBpm:p.song?.bpm||null,
         scorePosition:p.scoreSurface&&{x:p.scoreSurface.x,y:p.scoreSurface.y,z:p.scoreSurface.z}}))}))};
   }
