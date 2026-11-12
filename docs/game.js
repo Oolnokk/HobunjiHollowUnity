@@ -25068,6 +25068,7 @@
           heldItemParent: heldItemHolder.parent === playerMesh ? 'player' : (heldItemHolder.parent ? 'other' : 'detached'),
           heldItemVisible: !!heldItemHolder.visible,
           heldItemKey: _heldItemKey,
+          musicInstrument: window.MusicMinigame?.state?.instrumentKey || null, // Pixel Probe distinguishes music visual ownership from a locked ordinary tool.
           drinkAnimating: !!_heldDrinkPhase,
           drinkPhase: _heldDrinkPhase,
           drinkProgress: _heldDrinkProgress,
@@ -25253,14 +25254,22 @@
         _toolPoseCentroidDebug.reticleOrbitPitchDeg = 0;
         _toolPoseCentroidDebug.reticleOrbitYawDeg = 0;
         _toolPoseCentroidDebug.reticleTargetWorld = null;
-        if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'tools')) {
+        const musicInstrument = window.MusicMinigame?.state?.instrumentKey || null; // A live music session owns its prop without unlocking ordinary combat/tools.
+        if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'tools')
+            && (musicInstrument !== 'kurraya' ||
+                window.CharacterActionLocks?.isLockedIgnoringOwner?.(PLAYER_ACTION_LOCK_ID, 'tools', 'music-minigame') !== false)) {
           toolHolder.visible = false;
           heldItemHolder.visible = false;
           return;
         }
-        if (window.MusicMinigame?.state?.instrumentKey) {
+        if (musicInstrument) {
           toolHolder.visible = false;
-          updateHeldItemHolder(dt);
+          if (musicInstrument === 'kurraya') {
+            window.KurrayaInstrument?.advancePlayerKurrayaNote?.(performance.now()); // One sample for holder, hands and pre-render knees.
+            updateHeldItemHolder(dt); // Music locks attacks, not the Kurraya's appearance.
+          } else {
+            heldItemHolder.visible = false; // Flute uses a mouth-mounted sprite rather than duplicating it on the chest.
+          }
           return;
         }
         if (heldMode === 'none') {
