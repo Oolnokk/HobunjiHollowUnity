@@ -866,8 +866,8 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
         layout();
         select(entry);
         frame();
-      } else if (entries.length % 3 === 0) {
-        layout(); // Batch expensive bounding-box layout while the remaining entries stream in.
+      } else {
+        layout(); // Every newly loaded character receives its own slot immediately; never overlap previews while images stream.
       }
       chrome();
       await new Promise(resolve => setTimeout(resolve, 0)); // Yield a paint opportunity on mobile rather than monopolizing the UI between portraits.
