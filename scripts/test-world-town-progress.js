@@ -42,6 +42,12 @@ const pane = new FakeNode('div'); // Hosted under mp-body and therefore has the 
 const mapTab = new FakeNode('button');
 const mapPane = new FakeNode('div');
 mapTab.classList.add('active'); mapPane.classList.add('active');
+tab.addEventListener('click', () => { // game.js owns the generic tab switcher; this listener runs before the view's.
+  mapTab.classList.remove('active');
+  mapPane.classList.remove('active');
+  tab.classList.add('active');
+  pane.classList.add('active');
+});
 const document = {
   readyState: 'complete',
   getElementById: id => id === 'mpWorldProgress' ? pane : id === 'menuPanel' ? null : null,
@@ -136,8 +142,9 @@ async function main() {
   assert.match(allText(pane), /Foundry upgrade/);
   assert.match(allText(pane), /Hiki-hiki/);
 
-  tab.click(); // Exercises the compatibility fallback when a legacy main-menu switcher doesn't recognize the new destination.
-  await Promise.resolve();
+  const rendersBeforeClick = view.debugSnapshot().renderCount; // Confirms one render per click without duplicate fallback transitions.
+  tab.click(); // Exercises the actual game-owned tab-switch contract, followed by the view-owned refresh.
+  assert.equal(view.debugSnapshot().renderCount, rendersBeforeClick + 1);
   assert(tab.classList.contains('active'));
   assert(pane.classList.contains('active'));
   assert(!mapTab.classList.contains('active'));
