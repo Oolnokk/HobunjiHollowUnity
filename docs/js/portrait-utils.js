@@ -1744,6 +1744,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     ? [...eyesLayers, ...elevatedEyeAccessoryLayers].filter(isSnowgogglesLayer)
     : [];
 
+  const forceEyesOpen = renderOptions?.forceEyesOpen === true; // Static head/front/back bakes never need speculative blink sprite requests.
   const neededUrls = new Set([
     ...(headUrl ? [headUrl] : []),
     ...(renderBehindView ? behindUrLayers.map(m => m.url) : urLayerSource.map(m => m.url)),
@@ -1766,13 +1767,13 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     ...hoodLayers.map(({ layer }) => layer.url),
     ...pauldronLayers.map(({ layer }) => layer.url),
     ...hatOverLayers.map(({ layer }) => layer.url),
-    ...(renderBehindView ? [] : blinkOverlayUrlsByBase.values()),
+    ...((renderBehindView || forceEyesOpen || onlyHeadSprite) ? [] : blinkOverlayUrlsByBase.values()),
   ].filter(Boolean));
 
   const optionalBehindUrls = new Set(behindUrLayers.filter(layer => layer.optional).map(layer => layer.url));
   let imgMap;
   // Fast synchronous path: all images already resolved in cache — avoid async overhead.
-  const _allUrls = [...neededUrls];
+  const _allUrls = onlyHeadSprite ? (headUrl ? [headUrl] : []) : [...neededUrls]; // The head-only neck-rig mask draws only the head PNG; never await clothing, hair or optional art.
   const _allResolved = _allUrls.every(url => layerImageOverrides?.has(url) || IMG_CACHE.get(url) instanceof Image);
   if (_allResolved) {
     imgMap = new Map(_allUrls.map(url => [url, layerImageOverrides?.get(url) || IMG_CACHE.get(url)]));
@@ -1818,7 +1819,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   }
   // Load mouth expression sprite separately — it may not exist for all species/gender combos.
   let mouthImg = null;
-  if (mouthSpriteUrl && renderHeadSprite) {
+  if (!onlyHeadSprite && mouthSpriteUrl && renderHeadSprite) { // The alpha-only head mask does not draw an expression mouth.
     const _mouthCached = IMG_CACHE.get(mouthSpriteUrl);
     if (_mouthCached instanceof Image) {
       mouthImg = _mouthCached;
@@ -1846,7 +1847,6 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   // forceEyesOpen callers: makeNpcWalker/refreshPlayerAvatar's world avatar
   // builds). A continuously-refreshed canvas (dialogue portraits, cutscenes)
   // doesn't set this and blinks normally.
-  const forceEyesOpen = renderOptions?.forceEyesOpen === true;
   const isBlinkFrame = !forceEyesOpen && shouldRenderBlink(headUrl, nowMs);
   const resolveXform = (layer) => layer.xformPreset
     ? getPortraitXformPreset(layer.xformPreset)
