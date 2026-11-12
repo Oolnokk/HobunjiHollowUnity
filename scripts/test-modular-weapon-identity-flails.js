@@ -39,6 +39,11 @@ assert.deepEqual(plain(definitions[item('fishing-spear', 'hatchet')].slots), ['w
   'only a tool-worthy handle with an axe-capable head grants the existing axe action and mastery events');
 assert.deepEqual(plain(definitions[item('dagger','hatchet')].slots), ['weapon'],
   'the same head on a non-tool-worthy hilt must not become an axe');
+assert.equal(config.shafts.kylie.toolWorthy, true, 'Kylie haft is a tool-worthy forge component');
+assert.deepEqual(plain(definitions[item('kylie','hatchet')].slots), ['weapon','axe'],
+  'Kylie haft gains a tool role when a compatible head provides it');
+assert.deepEqual(plain(definitions[item('kylie','plains-blade')].slots), ['weapon'],
+  'a tool-worthy Kylie haft does not invent tool roles for a weapon-only head');
 assert.deepEqual(plain(definitions[item('fishing-spear','pickshovel-scoop')].slots), ['weapon','shovel'],
   'tool role originates with the selected head, not the shaft donor');
 assert(config.heads.hoe.toolSlots.includes('hoe'),
