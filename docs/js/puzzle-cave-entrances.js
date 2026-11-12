@@ -389,6 +389,10 @@
     rootGroup.add(board);
     portal.scoreBoard=board;
     portal.scoreSurface=mount;
+    portal.releaseMelodyCamera=root.MelodyCameraFraming?.register?.({
+      area:portal.area,plate:portal.plate,glyphs:portal.glyphs,
+      isActive:()=>!portal.disposed&&!portal.solved&&portal.lastDown&&!!portal.scoreBoard?.visible,
+    }); // The exterior cliff and paired-pillar notes share one camera-fitting group.
     board.visible=false; // Plate-gated light and ink; fallback pillars remain visible, while an exterior cliff needs no added masonry.
     refreshScoreGlow(portal);
   }
@@ -502,6 +506,7 @@
   }
   function destroyPortal(portal){
     portal.disposed=true;
+    portal.releaseMelodyCamera?.(); // No retired cliff glyph may keep the camera on a previous shelf.
     if(portal.noteHandler)root.removeEventListener?.('hobunji-kurraya-puzzle-note',portal.noteHandler);
     portal.plateArt?.dispose?.(); // No ownership of the player instrument session; only the cave's own decal is retired.
     if(portal.blockerId)root.DynamicSurfaces?.remove?.(portal.blockerId);
