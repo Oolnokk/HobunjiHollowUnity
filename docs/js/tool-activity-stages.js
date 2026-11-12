@@ -1,10 +1,9 @@
 // The player's held tool-action animations (felling a tree, breaking a rock, digging, casting a fishing
 // spear) as data + a sampler, so NPCs play exactly what the player plays.
 //
-// game.js aliases CHOP_TREE_STAGES / MINE_ROCK_STAGES to the tables below (the player's hold timeline);
-// js/npc-held-equipment-v4.js samples poseAt() for any NPC whose schedule target carries a `toolActivity`.
-// Both read the same SharedAttackPose math, the same authored hatchet_swing pose and the same legacy
-// thrust arc the player's updateToolMesh uses — see docs/architecture/shared-attack-pose.md.
+// game.js retains player-specific working stages; this module resolves modular-work attack styles
+// for those stages and separately supplies immutable behavior tables to NPC schedules.
+// Both sample SharedAttackPose and the authored AttackPoseTemplates (see docs/architecture/shared-attack-pose.md).
 (() => {
   'use strict';
   if (window.ToolActivityStages) return;
@@ -74,6 +73,14 @@
       windup.z -= 0.12; strike.z -= 0.12; // Keep the pick or harpoon close enough to the body to read as overhead.
     }
     return { neutral, windup, strike };
+  }
+
+  let lastPlayerWork = null; // On-demand mobile diagnostics for the most recently sampled modular tool stage.
+  function notePlayerWork(slot, itemKey, style, hasPose) {
+    const signature = `${slot}|${itemKey}|${style}|${hasPose}`; // Suppresses repeated logs across the three held strokes.
+    if (lastPlayerWork?.signature === signature) return;
+    lastPlayerWork = { signature, slot, itemKey, style, overhead: slot === 'harpoon' || (slot === 'pick' && !itemKey?.startsWith('modular:pick-shovel:')), hasPose };
+    window.__farmLog?.(`[modular-tool-work] ${slot} ${style}${lastPlayerWork.overhead ? ' overhead' : ''}${hasPose ? '' : ' legacy'} (${itemKey})`, 'combat');
   }
 
   // Digging a trench: the thrust half of the player's dig/toss pairs (the toss is a bespoke player-only arc).
@@ -177,6 +184,8 @@
     ACTIVITIES,
     workStyleFor,
     workPoseFor,
+    notePlayerWork,
+    debugSnapshot: () => lastPlayerWork ? { ...lastPlayerWork } : null, // Existing on-device log can inspect the latest tool animation without devtools.
     poseAt,
     strikeTimes,
     toolKeyFor: activity => ACTIVITIES[activity]?.toolKey || '',
