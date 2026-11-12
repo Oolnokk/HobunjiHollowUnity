@@ -44,14 +44,23 @@
     const mat = unlit
       ? new THREE.MeshBasicMaterial({ color: col })
       : new THREE.MeshLambertMaterial({ color: col, emissive: col.clone().multiplyScalar(deps.TILE_EMISSIVE_FLOOR) });
+    mat.userData = Object.assign({}, mat.userData, {
+      hobunjiTerrainTextureStatus: 'loading',
+      hobunjiTerrainTextureSource: path,
+    }); // Pixel Probe distinguishes a pending PNG from an intentional untextured material.
     new THREE.TextureLoader().load(path, (tex) => {
       let finalTex = tex;
       const rgb = fillColor && parseHexColor(fillColor);
       if (rgb) {
-        const canvas = getShadeFillCanvas(tex.image, path + '|' + fillColor, {
-          mode: 'shadeFill', rgb: [rgb.r, rgb.g, rgb.b], options: getPortraitTintingConfig(),
-        });
-        finalTex = new THREE.CanvasTexture(canvas);
+        try {
+          const canvas = getShadeFillCanvas(tex.image, path + '|' + fillColor, {
+            mode: 'shadeFill', rgb: [rgb.r, rgb.g, rgb.b], options: getPortraitTintingConfig(),
+          });
+          finalTex = new THREE.CanvasTexture(canvas);
+        } catch (error) {
+          // Preserve the authored PNG even when its optional shade-fill fails.
+          console.warn('[terrain] PNG shade-fill failed; using original texture:', path, error);
+        }
       }
       finalTex.wrapS = finalTex.wrapT = THREE.RepeatWrapping;
       if (Array.isArray(stretch) && stretch.length === 2) {
@@ -61,7 +70,11 @@
         finalTex.repeat.set(1 / ts, 1 / ts);
       }
       mat.map = finalTex; mat.color.set(0xffffff); mat.needsUpdate = true;
-    }, undefined, () => {});
+      mat.userData.hobunjiTerrainTextureStatus = 'ready';
+    }, undefined, (error) => {
+      mat.userData.hobunjiTerrainTextureStatus = 'failed'; // Mobile Pixel Probe can show why an intended PNG stayed flat.
+      console.warn('[terrain] failed to load authored ground PNG:', path, error);
+    });
     return mat;
   }
 
@@ -70,6 +83,8 @@
   function resolveTileMat(mapId, matKey) {
     const tileMats = deps.tileMats;
     const base = tileMats[matKey] || tileMats.grass;
+    base.userData = base.userData || {};
+    if (!base.userData.terrainKey) base.userData.terrainKey = matKey; // Pixel Probe identifies the floor bucket even while its texture loads.
     if (matKey === deps.TileType.GRASS) {
       base.userData = base.userData || {};
       base.userData.hobunjiBaseGrassTerrainMaterial = true; // Held-object depth replay may ignore this floor, never billboard grass or other surfaces.
@@ -83,7 +98,9 @@
     const cacheKey = mapId + ',' + matKey;
     let mat = _mapTileMatCache.get(cacheKey);
     if (!mat) {
-      mat = loadTerrainTileTexture('assets/textures/' + override.texture, base.color.getHex(), override.tileSize, override.fillColor, override.stretch, matKey === deps.TileType.GRASS);
+      const livingGround = matKey === deps.TileType.GRASS || matKey === deps.TileType.WEEDS || matKey === deps.TileType.SHRUB; // Vegetated ground shares the unlit grass lighting model.
+      mat = loadTerrainTileTexture('assets/textures/' + override.texture, base.color.getHex(), override.tileSize, override.fillColor, override.stretch, livingGround);
+      mat.userData.terrainKey = matKey; // Pixel Probe reports the actual resolved floor material rather than inferring from tint.
       if (matKey === deps.TileType.GRASS) {
         mat.userData = mat.userData || {};
         mat.userData.hobunjiBaseGrassTerrainMaterial = true; // Preserves the base-grass x-ray policy when map materials are texture-overridden.
