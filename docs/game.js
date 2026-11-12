@@ -16142,9 +16142,10 @@
         let materials = 0, textures = 0;
         zoneScene.traverse(object => {
           for (const material of materialsOf(object)) {
-            if (!material || seen.has(material) || live.materials.has(material)
+            if (!material || seen.has(material)) continue;
+            seen.add(material); // Repeated meshes using a pinned map material need only one lifetime check.
+            if (live.materials.has(material)
                 || window.TerrainTileMaterials?.isCachedMaterial?.(material)) continue;
-            seen.add(material);
             for (const texture of materialTextures(material)) {
               if (disposedTextures.has(texture) || live.textures.has(texture)
                   || window.TerrainTileMaterials?.isSharedTexture?.(texture)) continue;
