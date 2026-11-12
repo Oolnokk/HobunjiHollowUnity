@@ -3,8 +3,8 @@
 // patina coloration identical to the town mine, registered in the same mesh table
 // the outdoor ore rocks use (mineableRocksByTile/isMineableRockTile/
 // removeZoneMineableRockVisual), so mining a cavern rock needs no new code.
-// Den caverns and every cave-site history (js/cave-site-system.js — ore
-// mines, the mineable chamber separator) go through this one builder.
+// Den caverns and every cave-site history share this builder. Hidden chamber
+// separators are mineable plain stone that match the carved cave shell, not ore.
 (() => {
   'use strict';
 
@@ -174,17 +174,38 @@
     const THREE=window.THREE;
     const geometry=fusedRockGeometry(THREE,wall); // Re-mesh every exposed side after each pickaxe strike or Shattercask tile removal.
     if(!geometry)return;
-    const next=new THREE.Mesh(geometry,wall.material);
+    let caveShell=null; // The carved cave shell, not any ore rock, owns the separator's surface material.
+    wall.scene.traverse?.(node=>{
+      if(!caveShell&&node.isMesh&&node.userData?.interiorCavernMaterialParity&&!node.userData?.caveSeparatorFused&&!node.userData?.caveCarvedDoorOpening)caveShell=node;
+    });
+    const fallback=wall.material || window.OreRockTextures?.materialFor?.(THREE,'stone',{})
+      || new THREE.MeshStandardMaterial({color:0x777267,roughness:.94}); // Standalone cave tests without a shell remain lit stone.
+    const next=new THREE.Mesh(geometry,caveShell?.material||fallback);
+    if(!caveShell&&!wall.naturalized&&window.NaturalSurfaceMaterials?.naturalizeMesh){
+      window.NaturalSurfaceMaterials.naturalizeMesh(next,'rocks','planar-stretch'); // Match the shell's farm-cliff finish if it is not yet in this scene.
+      window.FacetedNaturalSurfaceShellReduction?.suppressMesh?.(next,'rocks');
+      wall.material=next.material; // Reuse the naturalized material when later mining exposes another wall face.
+      wall.naturalized=true;
+    }
+    if(window.HobunjiSurfaceStretchUV?.mapMesh){
+      delete next.geometry.userData.hobunjiSurfaceStretchSignature;
+      delete next.geometry.userData.hobunjiSurfaceStretch;
+      delete next.geometry.userData.naturalSurfaceUvMapping;
+      window.HobunjiSurfaceStretchUV.mapMesh(next,{label:'interior-cavern:separator-wall',maxPatchWorldSize:6});
+    }
     next.name='cave_separator_fused_sculpted_wall';
     next.userData.caveSeparatorMass=true;
     next.userData.caveSeparatorFused=true;
     next.userData.caveSeparatorHeight=wall.height;
     next.userData.caveSeparatorLiveTiles=wall.tiles.size; // Mobile scene-inspector reports actual mined openings without devtools.
     next.userData.caveSeparatorDoorOpening=!!wall.door;
+    next.userData.caveSharedWallMaterial=!!caveShell; // Mobile scene diagnostics distinguish the native cave shell from standalone fallback.
+    next.userData.interiorCavernMaterialParity=caveShell?.userData?.interiorCavernMaterialParity||'farm-cliffs';
+    next.userData.caveSeparatorStoneOnly=true; // The pickaxe still opens the wall, but its tiles never award ore.
     next.castShadow=next.receiveShadow=true;
-    window.OreRockTextures.fitRockMesh(next); // Shares existing stone/ore look and its continuous texture ownership.
+    // Do not call OreRockTextures.fitRockMesh: it incorrectly labels carved cave walls with legacy ore UVs.
     wall.mesh?.parent?.remove(wall.mesh);
-    wall.mesh?.geometry?.dispose?.(); // Retire old triangulation, but keep the shared authored ore material and its texture.
+    wall.mesh?.geometry?.dispose?.(); // Retire only geometry; cave-shell and cached natural-surface materials are shared.
     wall.mesh=next;
     wall.scene.add(next);
     deps.markOutline(next);
@@ -325,20 +346,20 @@
         minZ:Math.min(minRow,door ? door.z-.9 : Infinity)-.8,
         maxZ:Math.max(maxRow+1,door ? door.z+.9 : -Infinity)+.8};
       const height=Math.max(8,3*(Number(mapData.cavernCarvedHeightScale)||1.5)+3); // Deliberately pierces even the tall carved vault; no gap beneath the ceiling.
-      const material=window.OreRockTextures.materialFor(THREE,barriers[0].oreKey||barriers[0].oreKind,deps.oreDefs);
-      separatorWalls.set(mapId,{scene,tiles,bounds,height,material,door,mesh:null});
+      separatorWalls.set(mapId,{scene,tiles,bounds,height,material:null,naturalized:false,door,mesh:null}); // Resolve the actual cave-shell material when each wall mesh is built.
     }
     if(mapData.oreRocks?.length)deps.zoneMineableRockMeshes.set(mapId,oreRockMeshes);
     for(const rock of mapData.oreRocks||[]){
       if(grid[rock.row]?.[rock.col]){
         const tile=grid[rock.row][rock.col];
-        tile.type=deps.TileType.ROCK;tile.rockKind='diggableRockOre';tile.oreKind=rock.oreKind;
-        tile.oreKey=deps.oreDefs?.[rock.oreKey||rock.oreKind]?(rock.oreKey||rock.oreKind):null;
+        tile.type=deps.TileType.ROCK;tile.rockKind='diggableRockOre'; // Preserve the existing pickaxe, collision and Shattercask interactions.
+        tile.oreKind=rock.caveSeparator?'stone':rock.oreKind;
+        tile.oreKey=!rock.caveSeparator&&deps.oreDefs?.[rock.oreKey||rock.oreKind]?(rock.oreKey||rock.oreKind):null; // Even older metal-walled maps yield only Stone after loading.
         tile.caveSeparator=rock.caveSeparator===true;
         if(rock.caveSeparator)tile.projectileCoverHeightTiles=separatorWalls.get(mapId)?.height||8; // Tall stone mass must stop midair shots above the old ore-mound cover height.
       }
       const rockGroup=new THREE.Group();
-      rockGroup.name='cave_ore_'+rock.col+'_'+rock.row;
+      rockGroup.name=(rock.caveSeparator?'cave_stone_wall_':'cave_ore_')+rock.col+'_'+rock.row;
       rockGroup.userData.caveSeparatorTile=rock.caveSeparator===true;
       if(!rock.caveSeparator){
         const {stoneGeo}=window.TerrainGeometry.buildRockTileGeo(rock.col,rock.row);
