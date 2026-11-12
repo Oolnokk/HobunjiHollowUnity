@@ -31,7 +31,8 @@ assert(editor.includes('movementPosition: rig.position'), 'editor preview uses a
 assert(source.includes('state.progress <= state.wf'), 'all of neutral-to-windup uses a gravity-and-locomotion target');
 assert(source.includes('updateOne(state, 0, performance.now())'), 'newly loaded flail rope is anchored before its first rendered frame');
 assert.match(source, /if \(!state\.attacking\) \{[\s\S]*?stepPendulum\(state, q\.pivotAcceleration, state\.physicsLength, dt, 9\.81, flailDamping\(motion\)\)/, 'idle rope responds to real acceleration through the pendulum');
-assert.match(source, /if \(dt > 0 && state\.attacking && state\.progress < state\.sf\)/, 'idle pendulum momentum is not overwritten by the attack interpolation derivative');
+assert.match(source, /if \(dt > 0 && state\.attacking && !state\.fishingFlailHeadSpin && state\.progress < state\.sf\)/,
+  'ordinary flail momentum is retained while a fishing-only head spin stays kinematic');
 assert(source.includes('state.strikeStartDirection.copy(state.direction)'), 'transition starts from the real hanging-chain orientation');
 assert(!source.includes('windupStartDirection'), 'windup cannot drag the connector toward the shaft');
 assert(game.includes('(swingStrikePitch - swingWindupPitch) * combatSwingPower'), 'the player applies the same pitch-power multiplier as its sampled pose');
@@ -40,6 +41,14 @@ assert(bandits.includes('windupFrac: wf, strikeFrac: sf, holdFrac: hf'), 'NPCs p
 assert(editor.includes('windupFrac: anim.windupFrac, strikeFrac: anim.strikeFrac, holdFrac: anim.holdFrac'), 'editor preview passes authored stage timing');
 assert(editor.includes("pitchTravelDeg: (Number(anim.poses?.strike?.pitch)"), 'editor passes strike-minus-windup pitch');
 assert(source.includes('const shaftUp = q.shaftUp.set(0, -1, 0).applyQuaternion(baseQ)'), 'flails extend outward from the bottom-end haft attachment, away from the grip');
+assert(source.includes('fishingFlailHeadDirection(state.direction, shaftUp, normal, state.progress, state.fishingFlailSpinRevolutions, q.deltaQ)'),
+  'fishing flail head orbits the haft attachment with no handle rotation or detachment');
+assert(source.includes('return out.copy(shaftUp).applyQuaternion(workQ).normalize()'),
+  'the head orbit preserves connector length using the shared world-space contact solver');
+assert(source.includes('placeFlexiblePartWorld(state.chain'), 'head spin reuses the standard rope contact solver');
+assert(game.includes("fishingFlailHeadSpin: activeTool === 'harpoon'"), 'player fishing routes the head-only spin to the shared flail runtime');
+assert(game.includes('heldSpin: opts.heldSpin === true'), 'existing ordinary spinning throw still uses the authored weapon spin');
+
 assert(source.includes('stepPendulum(state, q.pivotAcceleration, state.physicsLength, dt, 9.81, flailDamping(motion))'), 'live assemblies integrate the same physical pendulum in Hold and Recovery');
 
 const pixels = new Uint8ClampedArray(6 * 6 * 4); // Synthetic transparent PNG alpha data with two top and two bottom edge pixels.
@@ -70,6 +79,26 @@ vm.runInNewContext(source, {
 });
 const api = window.HobunjiWeaponSpriteAssemblies; // Public debug and authoring API.
 assert.ok(api);
+// Exercise the real head-only spin math: one fixed shaft pivot, constant rope length, and zero allocations.
+const shaftDirection = { x: 0, y: -1, z: 0 }; // Unchanged source direction along the currently held shaft.
+const spinNormal = { x: 0, y: 0, z: 1 }; // Face normal of the authored flat PNG.
+const orbitQ = { setFromAxisAngle(axis, angle) { this.axis = axis; this.angle = angle; return this; } }; // One reused quaternion stand-in.
+const headDirection = { x: 0, y: -1, z: 0,
+  copy(v) { this.x = v.x; this.y = v.y; this.z = v.z; return this; },
+  applyQuaternion(q) { const x = this.x, y = this.y; this.x = x * Math.cos(q.angle) - y * Math.sin(q.angle); this.y = x * Math.sin(q.angle) + y * Math.cos(q.angle); return this; },
+  normalize() { const n = Math.hypot(this.x, this.y, this.z); this.x /= n; this.y /= n; this.z /= n; return this; },
+}; // Reused mutable direction object, just like the production state.direction.
+for (const t of [0, 0.16, 0.49, 0.55, 0.82, 1]) {
+  assert.equal(api.fishingFlailHeadDirection(headDirection, shaftDirection, spinNormal, t, 2.5, orbitQ), headDirection,
+    'head-only spin reuses its output rather than allocating a new vector');
+  const angle = -Math.PI * 2 * 2.5 * t; // Same revolution clock as the existing spinning throw.
+  assert(Math.abs(headDirection.x - Math.sin(angle)) < 1e-9 &&
+    Math.abs(headDirection.y + Math.cos(angle)) < 1e-9, 'head follows the taut circular connector orbit at the correct throw phase');
+  assert(Math.abs(Math.hypot(headDirection.x, headDirection.y, headDirection.z) - 1) < 1e-9,
+    'connector length never changes while the head spins');
+}
+assert.deepEqual(shaftDirection, { x: 0, y: -1, z: 0 }, 'original held shaft direction is never modified');
+
 const image = { width: 6, height: 6, pixels }; // Scanned image with a deliberately sparse alpha silhouette.
 const first = api.opaqueAt(image, 'top'); // Highest nontransparent row, horizontal center of the opaque pixels.
 const last = api.opaqueAt(image, 'bottom'); // Lowest nontransparent row, horizontal center of the opaque pixels.
