@@ -130,6 +130,9 @@ for (const kind of wildernessTypes) {
 const rockyMound = mesh(exterior, { userData: { terrainKey: 'rock' }, map: { image: {} } },
   { mapEditorTerrain: { mapId: 'map_western_slope' } });
 assert.equal(xray.classify(rockyMound).ground, false, 'merged stone mounds remain solid obstacles, not floor x-ray surfaces');
+const batchedMesa = mesh(exterior, [{ userData: {} }, { userData: { terrainKey: 'rock' } }],
+  { hobunjiGroundSurface: true, hobunjiGroundXray: true, plateauMesaRenderBatch: true }); // Jigsaw can replace the grass material with an untagged baked PNG.
+assert.equal(xray.classify(batchedMesa).ground, true, 'batched mesa x-ray reads stable mesh metadata rather than the transient materials');
 const solidRock = mesh(exterior, { userData: { terrainKey: 'rock' }, map: { image: {} } },
   { wildernessChunkOwnsGeometry: true }); // Untagged cliff/rock props must not inherit the floor exception from their material.
 assert.equal(xray.classify(solidRock).ground, false, 'rock props remain true depth occluders');
@@ -143,6 +146,7 @@ const snow = mesh(exterior, untaggedMaterial,
   { mapEditorTerrain: { mapId: 'map_western_slope' }, environmentSurfaceMicroPlateau: true });
 assert.equal(xray.classify(snow).ground, false, 'snow retains its occlusion regardless of neighboring terrain materials');
 xray.scanScene(exterior);
+assert.equal(batchedMesa.userData.hobunjiHeldGroundReplay, true, 'baked mesa batches enter the ground-depth registry');
 assert.equal(solidRock.userData.hobunjiHeldGroundReplay, undefined, 'rock props never enter ground depth restore');
 assert.equal(rockyMound.userData.hobunjiHeldGroundReplay, undefined, 'merged rocky mounds keep solid depth');
 assert.equal(billboard.userData.hobunjiHeldGroundReplay, undefined, 'grass billboards never enter ground depth restore');
