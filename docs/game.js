@@ -24141,6 +24141,7 @@
           heldSpin: opts.heldSpin === true,
           heldSpinBasisDeg: Number(opts.heldSpinBasisDeg) || 0,
           heldSpinRevolutions: Math.max(0, Number(opts.heldSpinRevolutions) || TOOL_SPIN_REVOLUTIONS),
+          flailHeadSpin: opts.flailHeadSpin === true, // A tethered fishing flail spins only its chain/head around the shaft's real attachment.
         };
         if (opts.gripMode) window.ProceduralHandGripRuntime?.beginHeld?.(opts.gripMode);
         return true;
@@ -25362,6 +25363,8 @@
         const swingStrikePitch = Number(combatSwingPose?.strike?.pitch);
         window.HobunjiWeaponSpriteAssemblies?.setAction(toolMeshMap[activeTool], {
           attacking: toolSwingT > 0 && (activeTool === 'weapon' || ((chargeAction?.tool === activeTool || (activeTool === 'harpoon' && !!fishingThrowSpinVisual)) && !!TOOL_ITEM_DEFS[equipmentSlots[activeTool]]?.modular)), progress, // Flexible modular tool and harpoon strokes must animate their rope/head as well as their shaft.
+          fishingFlailHeadSpin: activeTool === 'harpoon' && combatSwingAnim === 'ranged' && fishingThrowSpinVisual?.flailHeadSpin === true, // Flag for head-only orbit; the shaft sprite's rotation and authored hand grip are unchanged.
+          fishingFlailSpinRevolutions: fishingThrowSpinVisual?.heldSpinRevolutions ?? TOOL_SPIN_REVOLUTIONS, // Reuse the native throw's revolution count, not a new per-flail speed.
           movementPosition: playerMesh.position, // Character-world locomotion, not the swing-animated hand pivot; used for the hanging chain's lag.
           windupFrac: WF, strikeFrac: SF, holdFrac: combatSwingSequenceHoldFrac ?? HF,
           yawTravelDeg: window.HobunjiWeaponSpriteAssemblies?.flailYawTravel(combatSwingPose?.windup, combatSwingPose?.strike, combatSwingPower, combatSwingSign), // Match signed, power-scaled tool and body sweep travel.
