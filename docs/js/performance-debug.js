@@ -727,12 +727,12 @@
       // diagnostic callers still get their ordinary lifetime timing below.
       if (combatTimingStack[combatTimingStack.length - 1] === token) {
         combatTimingStack.pop();
-        if (token.name !== 'gameLoop total') {
-          const frame = token.frame;
-          frame.exclusive[token.name] = (frame.exclusive[token.name] || 0) + Math.max(0, elapsed - token.childMs);
-          frame.inclusive[token.name] = (frame.inclusive[token.name] || 0) + elapsed;
-          frame.calls[token.name] = (frame.calls[token.name] || 0) + 1;
-        }
+        const frame = token.frame; // A bracket's child time is accounted for at the same frame boundary.
+        const ownCpu = Math.max(0, elapsed - token.childMs);
+        const key = token.name === 'gameLoop total' ? 'gameLoop uninstrumented' : token.name; // Exposes CPU work not owned by any named child phase.
+        frame.exclusive[key] = (frame.exclusive[key] || 0) + ownCpu;
+        if (token.name !== 'gameLoop total') frame.inclusive[key] = (frame.inclusive[key] || 0) + elapsed;
+        frame.calls[key] = (frame.calls[key] || 0) + 1;
         if (combatTimingStack.length) combatTimingStack[combatTimingStack.length - 1].childMs += elapsed;
       }
       if (token.name === 'gameLoop total') {
