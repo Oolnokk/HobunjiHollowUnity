@@ -638,7 +638,7 @@
   <script src="js/puzzle-cave-melody.js?v=20261110rhythmMotifs3"></script><!-- Reusable rhythm grid and timed plate-gated cave songs. -->
   <script src="js/puzzle-cave-plate-art.js?v=20261110tankanring1"></script><!-- Carved-smooth Tankan lettering, reused by interior and exterior melody plates. -->
   <script src="js/ruin-melody-glyph-decal.js?v=20261108cliffWhiteYellowGlowPick3"></script><!-- Plate-revealed Scratchbone clues outside the dev ruin bootstrap. -->
-  <script src="js/ruin-layer-challenges.js?v=20261110melodyClock1"></script>
+  <script src="js/ruin-layer-challenges.js?v=20261112dynamicMelody1"></script>
   <script src="js/ruin-layer-playable.js?v=20261110h8b3a4fc"></script>
   <script src="js/ruin-v50-native-mechanisms.js?v=20261107wingDoorSoftlock2"></script>
   <script src="js/ruin-v50-native-floors.js?v=20261110h0efff27"></script>
@@ -943,7 +943,7 @@
   <script src="js/locale-cave-runtime.js?v=20261010h40fea5e"></script>
   <!-- Promotes wilderness den anchors into generic cave sites; wraps WildlifeSpawn/CavernGenerator/DevSpawner, all loaded above. -->
   <script src="js/locale-cliff-wall-mounts.js?v=20261105cliffPortal1"></script><!-- Mount editor-authored furniture on the resolved procedural wall normal and elevation. -->
-  <script src="js/puzzle-cave-entrances.js?v=20261110melodyClock1"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
+  <script src="js/puzzle-cave-entrances.js?v=20261112dynamicMelody1"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
   <script src="js/cave-tripwire-traps.js?v=20261110tripwire2"></script><!-- Wall-spanning hidden-cache strings and suspended Shattercasks; runtime physics bind once HangingRopes loads. -->
   <script src="js/cave-site-system.js?v=20261111stoneWallsAudit2"></script>
   <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
@@ -2890,7 +2890,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261112terrainPerfProbe1"></script>
+  <script src="js/pixel-probe.js?v=20261112dynamicMelody1"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -3045,7 +3045,7 @@
   <script src="js/utility-spyglass.js?v=20261103spyglassControls3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
   <script src="js/ruin-objective-tracker.js?v=20261108tracker1"></script> <!-- Top-left dungeon checklist while inside a generated ruin. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261111he69c3fb"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261112dynamicMelody1"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -3096,7 +3096,7 @@
   <script src="js/npc-view-frustum-cull.js?v=20261110frustumWire1"></script>
   <!-- Conservative whole-actor WebGL2 occlusion queries: only rendering is skipped; AI/physics stay active. -->
   <script src="js/actor-render-occlusion.js?v=20261112corpseOcclusion1"></script>
-  <script src="game.js?v=20261112modularWorkMerge1"></script>
+  <script src="game.js?v=20261112dynamicMelody1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261109missingNpcRestore1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
