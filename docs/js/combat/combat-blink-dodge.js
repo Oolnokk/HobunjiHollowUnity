@@ -167,11 +167,40 @@
     return window.GridTileAccessors?.getActiveScene?.() || null;
   }
 
+  function refreshStaticAfterimageGeometry(sourceGeometry, frozenGeometry) {
+    // Ordinary Mesh portraits can update vertex buffers in place, even when
+    // their geometry identity stays unchanged. A pooled ghost must capture
+    // those new vertices/UVs/colors just like a fresh geometry clone would.
+    const attributes = sourceGeometry.attributes; // Source attributes are checked before touching any pooled buffers.
+    if (!attributes) return true;
+    for (const [name, source] of Object.entries(attributes)) {
+      const target = frozenGeometry.getAttribute?.(name); // Destination of the next frozen static-portrait snapshot.
+      if (!target?.array?.set || target.count !== source.count || target.itemSize !== source.itemSize
+        || target.array.length !== source.array?.length) return false;
+    }
+    const sourceIndex = sourceGeometry.getIndex?.(); // Optional draw index validated and refreshed if it changes in place.
+    const targetIndex = frozenGeometry.getIndex?.();
+    if (!!sourceIndex !== !!targetIndex || (sourceIndex && (
+      !targetIndex?.array?.set || sourceIndex.array?.length !== targetIndex.array.length
+    ))) return false;
+    for (const [name, source] of Object.entries(attributes)) {
+      const target = frozenGeometry.getAttribute(name);
+      target.array.set(source.array);
+      target.needsUpdate = true;
+    }
+    if (sourceIndex) {
+      targetIndex.array.set(sourceIndex.array);
+      targetIndex.needsUpdate = true;
+    }
+    return true;
+  }
+
   function bakePortraitGeometry(source, reusableGeometry = null) {
     const THREE = window.THREE;
     const sourceGeometry = source?.geometry;
     if (!THREE || !sourceGeometry?.clone) return null;
     const geometry = reusableGeometry || sourceGeometry.clone(); // Reuses the same ghost buffer on later lunges while keeping it independent of the actor.
+    if (reusableGeometry && !source.isSkinnedMesh && !refreshStaticAfterimageGeometry(sourceGeometry, geometry)) return null;
     if (source.isSkinnedMesh && typeof source.boneTransform === 'function') {
       const sourcePositions = sourceGeometry.getAttribute?.('position');
       const bakedPositions = geometry.getAttribute?.('position');
@@ -326,11 +355,14 @@
       }
     }
     try {
+      const refreshed = new Set(); // Avoid repainting the same frozen map when map/alphaMap/emissiveMap alias it.
       for (let m = 0; m < sourceMaterials.length; m += 1) {
         for (const slot of AFTERIMAGE_TEXTURE_SLOTS) {
           const sourceTexture = sourceMaterials[m][slot];
           if (!sourceTexture) continue;
           const frozen = entry.materials[m][slot];
+          if (refreshed.has(frozen)) continue;
+          refreshed.add(frozen);
           const canvas = frozen.image;
           const context = canvas.getContext('2d');
           if (!context) return false;
@@ -359,6 +391,7 @@
     if (!THREE || !sources.length || !scene) return false;
     scene.updateWorldMatrix?.(true, false);
     const worldToScene = scene.matrixWorld?.clone?.()?.invert?.() || null; // One parent-space conversion per snapshot, not one per portrait plane.
+    trimAfterimagesToLimit(); // Free the oldest live record before snapshotting: a full pool can immediately reuse its resources.
     const entries = [];
     for (const source of sources) {
       source.updateWorldMatrix?.(true, !!source.isSkinnedMesh); // Refresh parent transforms and, for skinned rigs, the child bones before freezing the pose.
@@ -425,7 +458,6 @@
     }
     if (!entries.length) return false;
 
-    trimAfterimagesToLimit();
     for (const entry of entries) scene.add(entry.mesh);
     blinkAfterimages.push({ entries, ageS: 0, reason });
     afterimageRuntimeDebug.active = blinkAfterimages.length;
