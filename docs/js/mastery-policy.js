@@ -243,7 +243,10 @@
     withPermit(() => { record.xp = after; });
     if (metadata.combatFamily && metadata.baseFamilyXp > 0) awardFamilyProficiency(gear, metadata.combatFamily, metadata.baseFamilyXp); // Both progressions save atomically.
     window.MetalArmorSystem?.awardExperience?.(delta, 'tool/weapon Mastery XP', { save: false }); // "All experience" includes tool/weapon Mastery (same contract as tool-mastery.js); the save below persists both.
-    try { equipmentDeps?.saveGearInventory?.(); } catch (_) {}
+    try {
+      if ((reason === 'melee kill' || reason === 'ranged kill') && combatDeps?.scheduleCombatGearSave) combatDeps.scheduleCombatGearSave();
+      else equipmentDeps?.saveGearInventory?.();
+    } catch (_) {}
     debug.lastAward = { itemKey, label: toolLabel(itemKey), amount: delta, before, after, reason, metadata: { ...metadata }, at: now() };
     if (window.WorldPopupText?.showChange) {
       popupPermitDepth++;

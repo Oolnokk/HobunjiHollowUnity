@@ -169,7 +169,7 @@
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
   <script src="js/pixel-work-yield.js?v=20261010pwy1"></script>
   <script src="js/tool-metal-recolor.js?v=20261109profile1"></script>
-  <script src="js/metal-armor-system.js?v=20261104hPatternQuick1435a"></script>
+  <script src="js/metal-armor-system.js?v=20261112h9fb31ab"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
   <script src="config/attachment-rig-profiles.js?v=20261109nohuknuk1"></script>
   <link rel="stylesheet" href="style.css?v=20261112keyPack2">
@@ -338,7 +338,7 @@
   <script src="js/weapon-sprite-assemblies.js?v=20261111fishFlailHead1"></script> <!-- Shared layered PNG weapon + flail component runtime; pre-render updates player and enemy assemblies. -->
   <script src="js/tool-activity-stages.js?v=20261111modToolWork2"></script> <!-- NPC dig/tool-action stages. -->
   <script src="js/combat/weapon-shape-stats.js?v=20261109grappledonor1"></script> <!-- Shared melee shape stat resolver; Foundry head modifiers are mitigated. -->
-  <script src="js/combat/combat-core.js?v=20261110meleePool1"></script>
+  <script src="js/combat/combat-core.js?v=20261112hbb5144a"></script>
   <script src="js/combat/enemy-search-ai.js?v=20261110h608e181"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + runtime
        playback onto the player's procedural rig and quarter-turned body-only
@@ -420,12 +420,12 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261112flailPoseResolved1"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261112h0305e6e"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
   <script src="js/effect-buff-bar.js?v=20261102-food24h"></script>
-  <script src="js/skill-system.js?v=20261110tzkFortune1"></script>
+  <script src="js/skill-system.js?v=20261112he5ffaa9"></script>
   <script src="js/perk-system.js?v=20261031aoeWidth1"></script>
   <!-- Trinkets + shared 8-point Attunement budget; registers stat/perk/companion providers. -->
   <script src="js/trinket-system.js?v=20261106trinkets20"></script>
@@ -2890,7 +2890,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261112scoreMaskCameraMerge2"></script>
+  <script src="js/pixel-probe.js?v=20261112hc3c1aff"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -3062,7 +3062,7 @@
   <!-- Shoulder Cam / Character View Pointer Lock (window.ShoulderCamPointerLock); game.js calls init(...) during setup. -->
   <script src="js/shoulder-cam-pointer-lock.js?v=20261106hed5723a"></script>
   <!-- Shared character-scoped hobunjiSaveMeta update step used by game.js's save* helpers. -->
-  <script src="js/character-meta-save.js?v=20260930ench1"></script>
+  <script src="js/character-meta-save.js?v=20261112hfb494ec"></script>
   <!-- Dating / marriage / children + the hold-Action-1 NPC command wheel.
        romance-family.js must load before romance-system.js (whose init()
        wires the family module in); game.js calls both init()s. -->
@@ -3096,7 +3096,7 @@
   <script src="js/npc-view-frustum-cull.js?v=20261110frustumWire1"></script>
   <!-- Conservative whole-actor WebGL2 occlusion queries: only rendering is skipped; AI/physics stay active. -->
   <script src="js/actor-render-occlusion.js?v=20261112corpseOcclusion1"></script>
-  <script src="game.js?v=20261112scoreMaskCameraMerge2"></script>
+  <script src="game.js?v=20261112ha18ee09"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261109missingNpcRestore1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
