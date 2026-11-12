@@ -93,12 +93,14 @@ const hostiles=[
   {avatarRef:{group:chaseBandit},areaId:'town',health:100,isBandit:true,state:'chase'},
 ]; // Calm hostile may be safely queried; aggressive threat must remain visibly responsive.
 const corpseRoot=makeRoot(26,'corpse'); // Settled, unlooted bandit outside the view.
+const coveredCorpseRoot=makeRoot(12,'covered_corpse'); // An in-frustum corpse behind opaque world geometry.
 const nearCorpseRoot=makeRoot(2,'near_corpse'); // Loot prompt must never be hidden by GPU culling.
 const revivableRoot=makeRoot(27,'revivable'); // Revivable skeleton remains on its original rendering path.
 const markerRoot=makeRoot(28,'marker'); // Retired bodies have no expensive rig left to cull.
 const fallingRoot=makeRoot(29,'falling'); // Death animation still needs its rig.
 const corpseObjects=new Set([
   {avatarRef:{group:corpseRoot},areaId:'town',health:0,isBandit:true,state:'corpse'},
+  {avatarRef:{group:coveredCorpseRoot},areaId:'town',health:0,isBandit:true,state:'corpse'},
   {avatarRef:{group:nearCorpseRoot},areaId:'town',health:0,isBandit:true,state:'corpse'},
   {avatarRef:{group:revivableRoot},areaId:'town',health:0,isBandit:true,state:'corpse',keepCorpseAfterLoot:true},
   {avatarRef:{group:markerRoot,isCorpseMarker:true},areaId:'town',health:0,isBandit:true,state:'corpse',_banditCorpseRetired:true},
@@ -121,7 +123,7 @@ const frame=()=>{
     assert.equal(root.visible,true,'nearby, revivable, retired or dying bodies keep their original rendering');
   api.probeAfterBase();
   api.endFrame();
-  for(const root of [nearRoot,covered,offscreen,idleBandit,chaseBandit,corpseRoot,nearCorpseRoot,revivableRoot,markerRoot,fallingRoot])
+  for(const root of [nearRoot,covered,offscreen,idleBandit,chaseBandit,corpseRoot,coveredCorpseRoot,nearCorpseRoot,revivableRoot,markerRoot,fallingRoot])
     assert.equal(root.visible,true,'render-only hide restores root before AI resumes');
   assert.equal(renderer.autoClear,true,'renderer clears restore');
   assert.equal(renderer.shadowMap.autoUpdate,true,'shadow configuration restores');
@@ -137,12 +139,14 @@ assert(api.snapshot().results>=4,'async query results are polled without forcing
 api.beginFrame(context());
 assert.equal(covered.visible,false,'two negative conservative queries eventually hide a fully covered NPC');
 assert.equal(idleBandit.visible,false,'hostile humanoids share the same occlusion system');
+assert.equal(coveredCorpseRoot.visible,false,'settled corpse behind terrain is rejected by GPU occlusion');
 assert.equal(nearRoot.visible,true,'the nearby NPC never gets query-culled');
 api.endFrame();
 
 camera.position.set(1,0,0); // Significant motion immediately invalidates the previous hidden results.
 api.beginFrame(context());
 assert.equal(covered.visible,true,'camera motion wakes an occluded NPC on the next render');
+assert.equal(coveredCorpseRoot.visible,true,'camera motion immediately restores previously occluded corpses');
 api.endFrame();
 
 // A dialogue camera mounted under another transform must invalidate occlusion
@@ -269,6 +273,7 @@ assert(status.tracked>=4 && status.enabled && status.gpuAvailable,'tracked/avail
 api.setGpuEnabled(false);
 const noGpu=frame();
 assert.equal(api.snapshot().gpuAvailable,false,'WebGL1/disabled GPU never hides covered in-frustum rigs');
+assert.equal(coveredCorpseRoot.visible,true,'WebGL1 never GPU-culls an in-frustum corpse');
 assert.equal(covered.visible,true,'GPU-disabled fallback renders all in-frustum actors');
 assert.equal(noGpu.frustumHidden,2,'GPU-disabled fallback retains corpse and walker frustum culling');
 
